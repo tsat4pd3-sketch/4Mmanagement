@@ -52,6 +52,9 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
   const [q, setQ] = useState('');
   /* โหมดนับ: 'full' = นาทีเต็ม (มุมเครื่อง) · 'line' = ถ่วง 1/N (มุมไลน์ ตรงกับ %A) */
   const [mode, setMode] = useState('full');
+  /* รวมเครื่องที่ไม่เคยเสียในช่วงที่ดู (คำสั่ง user 2026-09-14) — ค่าเริ่มต้นเปิด เพราะไม่นับ = MTBF ต่ำกว่าจริง
+     ปิดได้เมื่ออยากดูเฉพาะตัวที่มีปัญหา (ตารางสั้นลง) */
+  const [withIdle, setWithIdle] = useState(true);
   const [raw, setRaw] = useState({ downtimes: [], sessions: [] });
   const [breaks, setBreaks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,9 +122,9 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
   const { rows, summary } = useMemo(
     () => machineReliability({
       downtimes: raw.downtimes, machines, sessions: raw.sessions,
-      lineFamilyOf, sessionLineOf, breakPolicies: breaks, parallelOf,
+      lineFamilyOf, sessionLineOf, breakPolicies: breaks, parallelOf, includeIdle: withIdle,
     }),
-    [raw, machines, lineFamilyOf, sessionLineOf, breaks, parallelOf],
+    [raw, machines, lineFamilyOf, sessionLineOf, breaks, parallelOf, withIdle],
   );
 
   const weighted = mode === 'line';
@@ -202,6 +205,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
           </span>
         )}
+        {/* ไม่นับเครื่องที่ไม่เคยเสีย = MTBF รวมต่ำกว่าจริง — เปิดไว้เป็นค่าเริ่มต้น (user 2026-09-14) */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer', marginLeft: 4 }}
+               title="เครื่องที่เดินทั้งช่วงโดยไม่เสียเลย ทำให้ MTBF ของกลุ่มสูงขึ้น — ไม่นับ = ตัวเลขต่ำกว่าจริง">
+          <input type="checkbox" checked={withIdle} onChange={e => setWithIdle(e.target.checked)} />
+          รวมเครื่องที่ไม่เคยเสีย{summary.idleCount > 0 && ` (${summary.idleCount})`}
+        </label>
       </div>
 
       {loadErr && (
@@ -213,6 +222,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         📐 <b>นับจาก downtime ที่หน้างานบันทึกจริง</b> (ไม่ใช่ใบแจ้งซ่อม) ในช่วง {days} วันล่าสุด ·
         หยุดตามแผน (PM/เปลี่ยนรุ่น) ไม่นับเป็น "ครั้งที่เสีย" แต่หักออกจากเวลาเดินเครื่อง
         <div><b>MTTR</b> = เวลาที่ไลน์หยุดเฉลี่ยต่อครั้ง (รวมเวลารอช่าง) — เฉลี่ยเฉพาะครั้งที่ปิดแล้ว</div>
+        <div>
+          <b>MTBF ของกลุ่ม</b> = Σ เวลาเดินเครื่อง ÷ Σ ครั้งที่เสีย (<b>รวมกอง ไม่ใช่เฉลี่ยค่าเฉลี่ยรายเครื่อง</b>) ·
+          เครื่องที่ไม่เคยเสีย <b>นับชั่วโมงเดินเข้าตัวตั้งด้วย</b> แต่ MTBF รายตัวเป็น “—” (เสีย 0 ครั้ง หารไม่ได้)
+          {summary.idleCount > 0 && <> · ช่วงนี้มี <b>{summary.idleCount} เครื่องที่ไม่เคยเสีย</b></>}
+          <br />⚠️ แม่พิมพ์/จิ๊กไม่ถูกเติมเข้ามา — เป็นทูลที่ขึ้นเครื่องเป็นช่วงๆ ชั่วโมงเดินยังวัดไม่ได้
+        </div>
         <div><b>MTBF</b> = เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย · <b style={{ color: '#f59e0b' }}>เวลาเดินเครื่องเป็นค่าประมาณ</b> จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)</div>
         <div>
           ⏸️ เวลาเดินเครื่อง <b>หักเวลาพักตามนโยบายแล้ว</b>
@@ -297,6 +312,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                         </div>
                       )}
                       {r.openStops > 0 && <div style={{ fontSize: 10.5, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
+                      {r.neverFailed && <div style={{ fontSize: 10.5, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
                     </td>
                     <td style={td}>
                       {meta

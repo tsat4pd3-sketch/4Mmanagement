@@ -169,6 +169,8 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
  *        ไม่ส่ง = ไม่หัก (uptime เกินจริง) · summary.hasBreakPolicy บอกจอให้เตือน
  * @param {Function} [p.parallelOf] (lineName) => N เครื่องขนานของไลน์ (parallelUnitsOf)
  *        ไม่ส่ง = 1 ทุกไลน์ (ชุด *W จะเท่ากับชุดเต็ม)
+ * @param {boolean} [p.includeIdle] รวม **เครื่องจักรที่ไม่เคยเสียเลย** ในช่วงที่ดู (default true)
+ *        คำสั่ง user 2026-09-14 "นับด้วยสิ" — ดูเหตุผลในบล็อกกฎด้านล่าง
  *
  * @returns {{rows:Array, summary:object}}
  *   row: { key, machineNo, machineName, kind, kindKnown, lineName, inMaster, via,
@@ -182,7 +184,7 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
 export function machineReliability({
   downtimes = [], machines = [], sessions = [],
   lineFamilyOf = null, sessionLineOf = null,
-  breakPolicies = [], parallelOf = null,
+  breakPolicies = [], parallelOf = null, includeIdle = true,
 } = {}) {
   const index = buildEquipIndex(machines);
   const { byLine, unknownShifts, breakMin, hasBreakPolicy } =
@@ -234,17 +236,19 @@ export function machineReliability({
     if (at && (!r.lastAt || at > r.lastAt)) r.lastAt = at;
   }
 
+  // เวลาเดินเครื่อง = ชั่วโมงกะของ "ครอบครัวไลน์" ที่เครื่องนั้นสังกัด (แม่+ลูก) · ไม่รู้ไลน์ = null
+  const opMinOf = (lineName) => {
+    if (!lineName) return null;
+    const fam = lineFamilyOf ? lineFamilyOf(lineName) : [lineName];
+    const names = fam && fam.length ? fam : [lineName];
+    let sum = 0, hit = false;
+    for (const n of names) { const v = byLine.get(n); if (v != null) { sum += v; hit = true; } }
+    return hit ? sum : null;
+  };
+
   const rows = [];
   for (const r of acc.values()) {
-    // เวลาเดินเครื่อง = ชั่วโมงกะของ "ครอบครัวไลน์" ที่เครื่องนั้นสังกัด
-    let opMin = null;
-    if (r.lineName) {
-      const fam = lineFamilyOf ? lineFamilyOf(r.lineName) : [r.lineName];
-      const names = fam && fam.length ? fam : [r.lineName];
-      let sum = 0, hit = false;
-      for (const n of names) { const v = byLine.get(n); if (v != null) { sum += v; hit = true; } }
-      if (hit) opMin = sum;
-    }
+    const opMin = opMinOf(r.lineName);
     const upMin = opMin != null ? Math.max(0, opMin - r.dtMin - r.plannedMin) : null;
     /* ชุดถ่วง 1/N — ทุกแถวในตารางนี้มี machine_no อยู่แล้ว (แถวไม่ระบุเครื่องถูกคัดออกตั้งแต่ต้น)
        ⇒ น้ำหนักเท่ากันทั้งกลุ่ม หารทีเดียวตอนท้ายได้ ผลเท่ากับหารรายแถวแบบ dtW ใน computeOEE */
@@ -278,6 +282,39 @@ export function machineReliability({
       topCause: Object.entries(r._causes).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
     });
   }
+  /* ── เครื่องจักรที่ "ไม่เคยเสียเลย" ในช่วงที่ดู (คำสั่ง user 2026-09-14 "นับด้วยสิ") ──────────
+     🔴 เดิมสร้างแถวจาก downtime เท่านั้น ⇒ เครื่องที่ไม่เคยเสีย **ไม่โผล่เลย** ⇒ ชั่วโมงเดินของมัน
+        ไม่เข้าตัวตั้งของ MTBF รวมรายชนิด = **MTBF ต่ำกว่าจริง** (วัดจริง 30 วัน: เครื่องจักร 205 ตัว
+        มี downtime แค่ 96 → หายไป 109 ตัว) · หลักการ: เครื่องที่ไม่เสียทำให้ MTBF ของกลุ่ม "สูงขึ้น"
+     ⚠️ **เฉพาะ `equipment_kind = 'machine'` เท่านั้น** — แม่พิมพ์/จิ๊กเป็น "tool ที่เอาไปใส่เครื่อง"
+        (คำ user เอง) ขึ้นเครื่องเป็นช่วงๆ ⇒ ชั่วโมงเดิน ≠ ชั่วโมงกะของไลน์ · เอาชั่วโมงไลน์ไปให้มัน
+        = MTBF แม่พิมพ์พองเป็นเลขหลอกทันที (ต้องรอ "เวลาที่ถูกใช้จริง" ก่อนถึงจะนับได้อย่างซื่อสัตย์)
+     ⚠️ MTBF รายตัวของเครื่องพวกนี้ = **null เสมอ** (เสีย 0 ครั้ง หารไม่ได้ — ความจริงคือ "เดินมาแล้ว
+        อย่างน้อยเท่าช่วงที่ดู ยังไม่เสีย") ห้ามใส่ตัวเลข · แต่ `upMin` เข้าไปรวมในตัวตั้งของกลุ่ม */
+  let idleCount = 0;
+  if (includeIdle) {
+    for (const m of machines) {
+      if ((m?.equipment_kind ?? 'machine') !== 'machine') continue;
+      if (m?.is_active === false) continue;
+      const k = normEquipKey(m?.machine_no);
+      if (!k || acc.has(k)) continue;
+      const opMin = opMinOf(m?.line_name);
+      if (opMin == null) continue;              // ไม่รู้ชั่วโมงเดิน = ไม่รู้จะนับอะไร (ห้ามเดา 0)
+      idleCount++;
+      rows.push({
+        key: k, machineNo: m.machine_no, machineName: m.machine_name || '',
+        kind: m.equipment_kind || 'machine', kindKnown: true, lineName: m.line_name || '',
+        inMaster: true, via: 'master', rawNos: [],
+        stops: 0, openStops: 0, closedStops: 0, dtMin: 0, mttrMin: null,
+        opMin: Math.round(opMin), upMin: Math.round(opMin), mtbfMin: null, availPct: 100,
+        parallelN: m.line_name && parallelOf ? Math.max(1, Number(parallelOf(m.line_name)) || 1) : 1,
+        dtMinW: 0, mttrMinW: null, upMinW: Math.round(opMin), mtbfMinW: null, availPctW: 100,
+        plannedStops: 0, plannedMin: 0, plannedMinW: 0,
+        lastAt: null, topCause: null, neverFailed: true,
+      });
+    }
+  }
+
   rows.sort((a, b) => b.dtMin - a.dtMin || b.stops - a.stops);
 
   const matched = rows.filter(r => r.inMaster).length;
@@ -292,6 +329,7 @@ export function machineReliability({
       noMachineNo,                // downtime ที่ไม่ได้ระบุเครื่องเลย
       unknownShifts,              // กะที่หาชั่วโมงไม่ได้ → เวลาเดินเครื่องต่ำกว่าจริง
       prefixCollisions: index.collisions,
+      idleCount,                  // เครื่องจักรที่ไม่เคยเสียในช่วงนี้ (เข้าตัวตั้งของ MTBF รวม)
       breakMin,                   // นาทีพักที่หักออกจากเวลาเดินเครื่องแล้ว
       hasBreakPolicy,             // false = ไม่ได้หักพัก → เทียบ %A ตรงๆ ไม่ได้ (จอต้องเตือน)
       parallelLines: rows.filter(r => r.parallelN > 1).length,
