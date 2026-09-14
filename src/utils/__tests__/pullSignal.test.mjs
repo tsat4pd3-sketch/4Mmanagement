@@ -218,7 +218,12 @@ test('🔴 parsePullFile — แถวที่อ่านไม่ออกต
   ];
   const r = parsePullFile(rows, P);
   assert.equal(r.rows.length, 7);                       // 3 แถวเสียถูกตัด
-  assert.equal(r.warnings.length, 3);
+  // ⚠️ นับเฉพาะ warning "ข้ามแถว" — ห้ามนับ warnings ทั้งก้อน
+  //    parsePullFile ยังเตือนเรื่องอื่นที่ขึ้นกับ "วันนี้" ด้วย (ไฟล์เก่ากว่าวันนี้ N วัน)
+  //    fixture ตรึงวันที่ 2026-09-08 ⇒ พอเวลาผ่านไปพอ เทสจะพังเองทั้งที่โค้ดไม่ได้เปลี่ยน
+  //    (เกิดจริง 2026-09-14: warnings = 4 เพราะมี "ไฟล์เก่ากว่าวันนี้ 6 วัน" เพิ่มมา → build ทั้งโปรเจคแดง)
+  const skipped = r.warnings.filter(w => w.includes('ข้าม'));
+  assert.equal(skipped.length, 3);
   assert.ok(r.warnings.some(w => w.includes('เวลา')));
   assert.ok(r.warnings.some(w => w.includes('จำนวน')));
   assert.ok(r.warnings.some(w => w.includes('เลขพาร์ท')));
