@@ -5,8 +5,18 @@ import assert from 'node:assert/strict';
 import {
   normEquipKey, baseEquipKey, buildEquipIndex, resolveEquip,
   dtMinutes, isOpenDt, isPlannedDt, operatingMinutesByLine,
-  machineReliability, summarizeByKind, fmtDur,
+  machineReliability, summarizeByKind, viewMetrics, fmtDur,
 } from '../mtnMetrics.js';
+
+/* นโยบายพักกะเช้าชุดจริง (break_policies ฝั่ง DR — ทุกแถวเป็น process_type 'common') */
+const DAY_BREAKS = [
+  { shift: 'day', process_type: 'common', start_time: '08:00:00', duration_min: 10 },  // ประชุมแถว
+  { shift: 'day', process_type: 'common', start_time: '10:00:00', duration_min: 10 },
+  { shift: 'day', process_type: 'common', start_time: '11:50:00', duration_min: 50 },  // พักกลางวัน
+  { shift: 'day', process_type: 'common', start_time: '15:00:00', duration_min: 10 },
+  { shift: 'day', process_type: 'common', start_time: '17:10:00', duration_min: 20 },  // 5ส.
+  { shift: 'day', process_type: 'common', start_time: '17:30:00', duration_min: 30 },  // เบรค OT (นอกกะ 08:00-17:30)
+];
 
 const planned = { category: 'planned', name_th: 'PM ตามแผน' };
 const brk = { category: 'unplanned', name_th: 'เครื่องเสีย' };
@@ -182,4 +192,74 @@ test('fmtDur: null = "—" ไม่ใช่ 0', () => {
   assert.equal(fmtDur(90), '1 ชม. 30 น.');
   assert.equal(fmtDur(120), '2 ชม.');
   assert.equal(fmtDur(1500), '1 วัน 1 ชม.');
+});
+
+/* ── ให้ตรงนิยาม %A ของ Daily Report (audit 2026-09-14) ─────────────────── */
+
+test('operatingMinutesByLine: ต้องหักเวลาพักตามนโยบาย ไม่งั้น uptime เกินจริง 100 นาที/กะ', () => {
+  const ses = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 570, start_time: '08:00:00' }];
+  const raw = operatingMinutesByLine(ses);
+  assert.equal(raw.byLine.get('L60'), 570, 'ไม่ส่งนโยบายมา = ไม่หัก (พฤติกรรมเดิม)');
+  assert.equal(raw.hasBreakPolicy, false, 'จอต้องรู้ว่ายังไม่ได้หักพัก');
+
+  const net = operatingMinutesByLine(ses, { breakPolicies: DAY_BREAKS });
+  // 10 + 10 + 50 + 10 + 20 = 100 · เบรค OT 17:30 เริ่มพอดีตอนกะจบ = ไม่ทับ
+  assert.equal(net.breakMin, 100);
+  assert.equal(net.byLine.get('L60'), 470, 'กะ 08:00-17:30 เดินจริง 470 นาที ไม่ใช่ 570');
+  assert.equal(net.hasBreakPolicy, true);
+});
+
+test('machineReliability: ไลน์เครื่องขนาน — เก็บทั้งนาทีเต็ม (มุมเครื่อง) และถ่วง 1/N (มุมไลน์)', () => {
+  const machines = [{ machine_no: 'LS-1', machine_name: 'เลเซอร์ 1', equipment_kind: 'machine', line_name: 'LASER-789' }];
+  const sessions = [{ line_name: 'LASER-789', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const downtimes = [
+    dt('LS-1', '2026-09-01T02:00:00Z', 30),
+    dt('LS-1', '2026-09-01T04:00:00Z', 30),
+    dt('LS-1', '2026-09-01T06:00:00Z', 30),
+  ];
+  const { rows, summary } = machineReliability({
+    downtimes, machines, sessions,
+    parallelOf: (ln) => (ln === 'LASER-789' ? 3 : 1),   // เลเซอร์ 3 ตัววิ่งขนาน
+  });
+  const r = rows[0];
+  assert.equal(r.parallelN, 3);
+  assert.equal(r.dtMin, 90, 'มุมเครื่อง: เครื่องตัวนี้หยุดจริง 90 นาที');
+  assert.equal(r.dtMinW, 30, 'มุมไลน์: อีก 2 ตัวยังวิ่ง → ไลน์เสียแค่ 1/3');
+  assert.equal(r.mttrMin, 30);
+  assert.equal(r.mttrMinW, 10);
+  assert.equal(r.upMin, 510);
+  assert.equal(r.upMinW, 570);
+  assert.equal(r.mtbfMin, 170);
+  assert.equal(r.mtbfMinW, 190);
+  assert.equal(r.availPct, 85);
+  assert.equal(r.availPctW, 95);
+  assert.equal(summary.parallelLines, 1, 'จอต้องรู้ว่ามีกี่ตัวที่ตัวเลข 2 ชุดไม่เท่ากัน');
+});
+
+test('machineReliability: ไลน์ปกติ (N=1) ตัวเลข 2 ชุดต้องเท่ากันเป๊ะ', () => {
+  const machines = [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }];
+  const sessions = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const { rows } = machineReliability({
+    downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)], machines, sessions,
+    parallelOf: () => 1,
+  });
+  const r = rows[0];
+  assert.equal(r.dtMinW, r.dtMin);
+  assert.equal(r.mtbfMinW, r.mtbfMin);
+  assert.equal(r.availPctW, r.availPct);
+});
+
+test('viewMetrics / summarizeByKind: สลับโหมดแล้วต้องหยิบชุดตัวเลขให้ครบทุกช่อง', () => {
+  const row = {
+    kindKnown: true, kind: 'machine', stops: 3, closedStops: 3,
+    dtMin: 90, mttrMin: 30, upMin: 510, mtbfMin: 170, availPct: 85, plannedMin: 60,
+    dtMinW: 30, mttrMinW: 10, upMinW: 570, mtbfMinW: 190, availPctW: 95, plannedMinW: 20,
+  };
+  assert.deepEqual(viewMetrics(row), { dtMin: 90, mttrMin: 30, upMin: 510, mtbfMin: 170, availPct: 85, plannedMin: 60 });
+  assert.deepEqual(viewMetrics(row, true), { dtMin: 30, mttrMin: 10, upMin: 570, mtbfMin: 190, availPct: 95, plannedMin: 20 });
+
+  assert.equal(summarizeByKind([row])[0].dtMin, 90);
+  assert.equal(summarizeByKind([row])[0].mtbfMin, 170);
+  assert.equal(summarizeByKind([row], true)[0].dtMin, 30);
+  assert.equal(summarizeByKind([row], true)[0].mtbfMin, 190, 'สรุปตามชนิดต้องเปลี่ยนตามโหมดด้วย');
 });

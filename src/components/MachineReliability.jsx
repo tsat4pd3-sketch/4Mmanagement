@@ -5,7 +5,13 @@
    การใช้งานของโปรแกรมจากส่วนกลาง" · คำสั่ง user: **นับจากเครื่องจริง ไม่เอาใบแจ้งซ่อม**
    และ **แยกได้ว่าเป็น เครื่อง / จิ๊ก / แม่พิมพ์**
 
-   สูตรทั้งหมดอยู่ `src/utils/mtnMetrics.js` (pure + เทส 12 เคส) — ห้ามคำนวณเองในไฟล์นี้
+   สูตรทั้งหมดอยู่ `src/utils/mtnMetrics.js` (pure + เทส 16 เคส) — ห้ามคำนวณเองในไฟล์นี้
+   ⚠️ **2 โหมดตัวเลข (2026-09-14)** — audit เทียบกับ %A ของ Daily Report แล้วพบว่านิยามต่างกัน:
+      · มุมเครื่อง = นาทีเต็มที่เครื่องตัวนั้นหยุด (ตอบ "เครื่องนี้เสียบ่อยแค่ไหน")
+      · มุมไลน์   = ถ่วง 1/N บนไลน์เครื่องขนาน เหมือนสูตร %A (ตอบ "ไลน์เสียเวลาไปเท่าไหร่")
+      **ต้องมีทั้งคู่** — เอาเลขมุมเครื่องไปเทียบจอ OEE ตรงๆ แล้วจะเถียงกันว่าจอไหนถูก
+   ⚠️ เวลาเดินเครื่อง **หักเวลาพักตามนโยบาย** (`break_policies`) แล้ว — ต้องส่ง policies เข้าไปเสมอ
+      ไม่ส่ง = uptime เกินจริง ~100-150 นาที/กะ (util จะตั้ง summary.hasBreakPolicy=false ให้เตือน)
    ⚠️ downtime 90 วัน > 8,000 แถว → ต้องดึงผ่าน `fetchAllRows` (กับดัก 1000 แถวของ PostgREST)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -15,7 +21,8 @@ import LineSelect from './LineSelect';
 import fetchAllRows from '../utils/fetchAllRows';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
-import { machineReliability, summarizeByKind, fmtDur } from '../utils/mtnMetrics';
+import { parallelUnitsOf } from '../utils/lineTypes';
+import { machineReliability, summarizeByKind, viewMetrics, fmtDur } from '../utils/mtnMetrics';
 
 const inp = {
   padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -43,7 +50,10 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
   const [line, setLine] = useState('');
   const [kind, setKind] = useState('all');
   const [q, setQ] = useState('');
+  /* โหมดนับ: 'full' = นาทีเต็ม (มุมเครื่อง) · 'line' = ถ่วง 1/N (มุมไลน์ ตรงกับ %A) */
+  const [mode, setMode] = useState('full');
   const [raw, setRaw] = useState({ downtimes: [], sessions: [] });
+  const [breaks, setBreaks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState('');
 
@@ -73,6 +83,20 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
     return () => { alive = false; };
   }, [days]);
 
+  /* นโยบายเวลาพัก — ไม่ผูกกับช่วงวัน โหลดครั้งเดียว
+     ⚠️ ต้องได้ process_type มาด้วย (สัญญาของ policyBreakForShift) แม้ตอนนี้ทุกแถวเป็น common */
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min')
+      .eq('is_active', true)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) toast.error('โหลดนโยบายเวลาพักไม่สำเร็จ — เวลาเดินเครื่องจะสูงกว่าจริง');
+        setBreaks(data || []);
+      });
+    return () => { alive = false; };
+  }, []);
+
   const sessionLineOf = useMemo(() => {
     const m = new Map(raw.sessions.map(s => [s.id, s.line_name]));
     return (id) => m.get(id) || '';
@@ -83,13 +107,24 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
     [lineObjs],
   );
 
+  /* N เครื่องขนานของไลน์ — parallel_stations (ตั้งที่ LineSetup) · parallel_machine ที่ไม่ตั้ง
+     = fallback นับเครื่องในทะเบียนของไลน์นั้น (สูตรเดียวกับ computeOEE ใน DailyReport) */
+  const parallelOf = useCallback((lineName) => {
+    const row = lineObjs.find(l => l.name === lineName);
+    if (!row) return 1;
+    const fallback = new Set(machines.filter(m => m.line_name === lineName).map(m => m.machine_no)).size;
+    return parallelUnitsOf(row, fallback);
+  }, [lineObjs, machines]);
+
   const { rows, summary } = useMemo(
     () => machineReliability({
       downtimes: raw.downtimes, machines, sessions: raw.sessions,
-      lineFamilyOf, sessionLineOf,
+      lineFamilyOf, sessionLineOf, breakPolicies: breaks, parallelOf,
     }),
-    [raw, machines, lineFamilyOf, sessionLineOf],
+    [raw, machines, lineFamilyOf, sessionLineOf, breaks, parallelOf],
   );
+
+  const weighted = mode === 'line';
 
   // กรองตาม scope ส่วนงาน → ไลน์ที่เลือก → ชนิด → คำค้น
   const famOfSel = useMemo(
@@ -105,17 +140,17 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       if (kind !== 'all' && kind !== '_unknown' && (!r.kindKnown || (r.kind || 'machine') !== kind)) return false;
       if (kw && !`${r.machineNo} ${r.machineName} ${r.lineName}`.toLowerCase().includes(kw)) return false;
       return true;
-    });
-  }, [rows, scopeLines, famOfSel, kind, q]);
+    })
+      // เรียงตามโหมดที่เปิดอยู่ — ถ่วง 1/N แล้วลำดับ "เสียเวลามากสุด" เปลี่ยน
+      .sort((a, b) => viewMetrics(b, weighted).dtMin - viewMetrics(a, weighted).dtMin || b.stops - a.stops);
+  }, [rows, scopeLines, famOfSel, kind, q, weighted]);
 
-  const kindRows = useMemo(() => summarizeByKind(shown), [shown]);
+  const kindRows = useMemo(() => summarizeByKind(shown, weighted), [shown, weighted]);
   const tot = useMemo(() => ({
     stops: shown.reduce((s, r) => s + r.stops, 0),
-    dtMin: shown.reduce((s, r) => s + r.dtMin, 0),
+    dtMin: shown.reduce((s, r) => s + viewMetrics(r, weighted).dtMin, 0),
     closed: shown.reduce((s, r) => s + r.closedStops, 0),
-    up: shown.reduce((s, r) => s + (r.upMin ?? 0), 0),
-    hasUp: shown.some(r => r.upMin != null),
-  }), [shown]);
+  }), [shown, weighted]);
 
   if (loading) return <div style={{ fontSize: 13, color: 'var(--muted)', padding: '30px 0', textAlign: 'center' }}>กำลังคำนวณจาก downtime จริง…</div>;
 
@@ -146,6 +181,29 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         })}
       </div>
 
+      {/* ── สลับมุมมองการนับ — ไลน์เครื่องขนานเท่านั้นที่ตัวเลข 2 ชุดต่างกัน ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
+        {[
+          { key: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', tip: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { key: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', tip: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+        ].map(m => {
+          const on = mode === m.key;
+          return (
+            <button key={m.key} onClick={() => setMode(m.key)} title={m.tip} style={{
+              padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              border: `1.5px solid ${on ? '#3b82f6' : 'var(--border2)'}`,
+              background: on ? 'rgba(59,130,246,0.12)' : 'var(--bg3)', color: on ? '#3b82f6' : 'var(--muted)',
+            }}>{m.label}</button>
+          );
+        })}
+        {summary.parallelLines > 0 && (
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
+          </span>
+        )}
+      </div>
+
       {loadErr && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 10, padding: '9px 12px', fontSize: 12.5 }}>⚠️ {loadErr}</div>
       )}
@@ -156,6 +214,17 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         หยุดตามแผน (PM/เปลี่ยนรุ่น) ไม่นับเป็น "ครั้งที่เสีย" แต่หักออกจากเวลาเดินเครื่อง
         <div><b>MTTR</b> = เวลาที่ไลน์หยุดเฉลี่ยต่อครั้ง (รวมเวลารอช่าง) — เฉลี่ยเฉพาะครั้งที่ปิดแล้ว</div>
         <div><b>MTBF</b> = เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย · <b style={{ color: '#f59e0b' }}>เวลาเดินเครื่องเป็นค่าประมาณ</b> จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)</div>
+        <div>
+          ⏸️ เวลาเดินเครื่อง <b>หักเวลาพักตามนโยบายแล้ว</b>
+          {summary.hasBreakPolicy
+            ? <> (ช่วงนี้หักไป {fmtDur(summary.breakMin)} — นิยามเดียวกับ %A ใน Daily Report)</>
+            : <b style={{ color: '#ef4444' }}> — ยังโหลดนโยบายพักไม่ได้ ตัวเลขนี้จะสูงกว่าจริง</b>}
+        </div>
+        <div style={{ color: weighted ? '#3b82f6' : 'var(--text2)' }}>
+          {weighted
+            ? <>🏭 <b>โหมดมุมไลน์</b> — DT บนไลน์เครื่องขนานถูกหาร 1/N เหมือนสูตร %A ⇒ <b>เอาไปเทียบกับจอ OEE / รายงานกะได้</b></>
+            : <>🔧 <b>โหมดมุมเครื่อง</b> — นับนาทีเต็มที่อุปกรณ์ตัวนั้นหยุด ⇒ ตัวเลขจะ<b>สูงกว่า</b>ที่จอ OEE หักจากไลน์ บนไลน์เครื่องขนาน (ไม่ใช่ตัวเลขผิด คนละคำถามกัน)</>}
+        </div>
       </div>
 
       {/* ── คุณภาพข้อมูล: บอกตรงๆ ว่าเทียบทะเบียนได้แค่ไหน ห้ามเงียบ ── */}
@@ -204,7 +273,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                 <th style={th}>ชนิด</th>
                 <th style={th}>ไลน์</th>
                 <th style={{ ...th, textAlign: 'right' }}>หยุด (ครั้ง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>DT รวม</th>
+                <th style={{ ...th, textAlign: 'right' }}>DT รวม{weighted && <span style={{ color: '#3b82f6' }}> (1/N)</span>}</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTTR</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTBF</th>
                 <th style={{ ...th, textAlign: 'right' }}>พร้อมใช้</th>
@@ -215,6 +284,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             <tbody>
               {shown.map(r => {
                 const meta = r.kindKnown ? (KIND_META[r.kind] || KIND_META.machine) : null;
+                const v = viewMetrics(r, weighted);   // ห้ามหยิบ r.dtMin ตรงๆ — สลับโหมดแล้วจะตกหล่น
                 return (
                   <tr key={r.key}>
                     <td style={td}>
@@ -233,16 +303,23 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                         ? <span>{meta.icon} {meta.label}</span>
                         : <span style={{ color: '#f59e0b', fontWeight: 700 }} title="เลขนี้ไม่มีในทะเบียนอุปกรณ์ — บอกชนิดไม่ได้">❔ ไม่อยู่ในทะเบียน</span>}
                     </td>
-                    <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>{r.lineName || '—'}</td>
-                    <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} ตามแผน)</span>}</td>
-                    <td style={tdNum}>{fmtDur(r.dtMin)}</td>
-                    <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}>{fmtDur(r.mttrMin)}</td>
-                    <td style={{ ...tdNum, color: r.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
-                        title={r.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์'}>
-                      {fmtDur(r.mtbfMin)}
+                    <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>
+                      {r.lineName || '—'}
+                      {r.parallelN > 1 && (
+                        <div style={{ fontSize: 10.5, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
+                          ⇄ ขนาน {r.parallelN} ตัว
+                        </div>
+                      )}
                     </td>
-                    <td style={{ ...tdNum, color: r.availPct == null ? 'var(--muted)' : r.availPct >= 95 ? '#22c55e' : r.availPct >= 90 ? '#f59e0b' : '#ef4444' }}>
-                      {r.availPct == null ? '—' : `${r.availPct}%`}
+                    <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} ตามแผน)</span>}</td>
+                    <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
+                    <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}>{fmtDur(v.mttrMin)}</td>
+                    <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
+                        title={v.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์ (หักเวลาพักแล้ว)'}>
+                      {fmtDur(v.mtbfMin)}
+                    </td>
+                    <td style={{ ...tdNum, color: v.availPct == null ? 'var(--muted)' : v.availPct >= 95 ? '#22c55e' : v.availPct >= 90 ? '#f59e0b' : '#ef4444' }}>
+                      {v.availPct == null ? '—' : `${v.availPct}%`}
                     </td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--text2)' }}>{r.topCause || '—'}</td>
                     <td style={{ ...tdNum, fontSize: 11.5, color: 'var(--muted)' }}>{fmtDate(r.lastAt)}</td>
