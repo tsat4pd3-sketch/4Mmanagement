@@ -21,9 +21,11 @@ import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -232,7 +234,7 @@ export default function LineSetup({ embedded = false } = {}) {
      กับ "ข้อมูลเฉพาะไลน์นี้" (ประเภทไลน์/โหมดไหลงาน/เครื่องขนาน — เป็นคุณสมบัติเครื่องจริง ไม่ตกทอด) */
   const selLineObj    = lines.find(l => l.name === selectedLine) || null;
   const parentLineObj = selLineObj?.parent_line_name ? (lines.find(l => l.name === selLineObj.parent_line_name) || null) : null;
-  // รหัส cost center ที่ไลน์อื่นใช้อยู่ — datalist ให้ไลน์ในกลุ่มเดียวกัน reuse รหัสเดิม ไม่พิมพ์เพี้ยน (cost_center_rates join ด้วยสตริงนี้) 2026-09-07
+  // รหัส cost center ที่ไลน์อื่นใช้อยู่ — ส่งเป็น history ให้ <CostCenterSelect> (กลุ่ม 📜) รหัสที่ยังไม่ลงทะเบียน cost_centers ยังเลือกได้ ไม่บล็อกงานเก่า (2026-09-07 datalist → 2026-09-08 picker กลาง)
   const ccCodes = [...new Set(lines.map(l => String(l.cost_center || '').trim()).filter(Boolean))].sort();
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
 
@@ -589,6 +591,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleUploadImage = async (e) => {
     let file = e.target.files[0];
+    e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังอัปโหลดล้มแล้วลองรูปเดิม)
     if (!file) return;
     try {
       setIsUploading(true);
@@ -606,7 +609,7 @@ export default function LineSetup({ embedded = false } = {}) {
       }
       // ผังไลน์มีจำนวนน้อยและต้องซูมอ่านรายละเอียด — บีบเบา (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอ
       const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
-      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
+      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob, uploadOpts());
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       // ⚠️ ต้องเช็ค error ก่อนลบไฟล์เก่าเสมอ — supabase-js **คืน { error } ไม่ throw**
@@ -1860,24 +1863,12 @@ export default function LineSetup({ embedded = false } = {}) {
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
                   {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
-                  <select value={machineForm.machine_no}
-                    onChange={e => setMachineForm({ ...machineForm, machine_no: e.target.value })}>
-                    <option value="">-- เลือกเครื่องจักร --</option>
-                    {selectableMachines.filter(m => !m.machine_type_id).map(m => (
-                      <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                    ))}
-                    {machineTypes.map(t => {
-                      const items = selectableMachines.filter(m => m.machine_type_id === t.id);
-                      if (!items.length) return null;
-                      return (
-                        <optgroup key={t.id} label={`${t.icon || ''} ${t.label}`}>
-                          {items.map(m => (
-                            <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `- ${m.machine_name}` : ''}</option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
+                  <SearchSelect value={machineForm.machine_no || ''} placeholder="-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --"
+                    options={[
+                      ...selectableMachines.filter(m => !m.machine_type_id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, keywords: m.machine_name || '' })),
+                      ...machineTypes.flatMap(t => selectableMachines.filter(m => m.machine_type_id === t.id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, group: `${t.icon || ''} ${t.label}`, keywords: m.machine_name || '' }))),
+                    ]}
+                    onChange={({ id }) => setMachineForm({ ...machineForm, machine_no: id })} />
                   {drMachines.filter(m => m.is_active).length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีเครื่องจักรในทะเบียนของไลน์นี้ — เพิ่มได้ที่ 🏭 ฐานข้อมูลเครื่องจักร ด้านบน</div>
                   ) : selectableMachines.length === 0 && (
@@ -2057,12 +2048,14 @@ export default function LineSetup({ embedded = false } = {}) {
             )}
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏷️ Cost Center</label>
-              {/* 2026-09-07: datalist รหัสที่ไลน์อื่นใช้อยู่ — reuse รหัสเดิมของกลุ่ม ไม่พิมพ์เพี้ยน (ยังไม่มี master cost_centers) */}
-              <input type="text" list="ls-cc-codes" value={costCenter} disabled={!canEdit}
-                onChange={e => setCostCenter(e.target.value)}
-                placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'เช่น 2140662201'}
-                style={{ marginTop: 4, fontSize: 14, fontWeight: 600 }} />
-              <datalist id="ls-cc-codes">{ccCodes.map(c => <option key={c} value={c} />)}</datalist>
+              {/* 2026-09-08: เลือกจากทะเบียน cost_centers (Main) ผ่าน <CostCenterSelect> — UI-CONVENTIONS §5.1.2 ห้าม input/datalist เอง
+                  section ของไลน์ → รหัสของส่วนงานนี้ขึ้นก่อน · history = รหัสที่ไลน์อื่นใช้อยู่ (ยังไม่ลงทะเบียนก็เลือกได้ ป้าย ⚠) */}
+              <div style={{ marginTop: 4 }}>
+                <CostCenterSelect value={costCenter} disabled={!canEdit} section={selLineObj?.section} history={ccCodes}
+                  onChange={r => setCostCenter(r.code)}
+                  placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'ค้นรหัส / ชื่อ cost center…'}
+                  inputStyle={{ fontSize: 14, fontWeight: 600 }} />
+              </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
               รวมกำลังคน <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน (เช้า+ดึก)

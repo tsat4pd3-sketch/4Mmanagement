@@ -9,6 +9,7 @@ import { laborMeta } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
+import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
@@ -437,9 +438,9 @@ export default function OrgSetup() {
                   </>
                 ) : (
                   <>
-                    {/* 2026-09-07: datalist รหัสที่มีใช้แล้วในผัง/ไลน์ — reuse รหัสเดิม ไม่พิมพ์เพี้ยน (cost_center_rates join ด้วยสตริงนี้) */}
-                    <input type="text" list="org-cc-codes" value={formCostCenter} onChange={e => setFormCostCenter(e.target.value)} placeholder="เช่น 2140662101" />
-                    <datalist id="org-cc-codes">{ccCodes.map(c => <option key={c} value={c} />)}</datalist>
+                    {/* 2026-09-08: เลือกจากทะเบียน cost_centers ผ่าน <CostCenterSelect> (แทน input+datalist) — รหัสใหม่ตั้งที่แผง 💰 ทะเบียน Cost Center ด้านล่างก่อน
+                        history = รหัสที่มีใช้แล้วในผัง/ไลน์ → ยังไม่ลงทะเบียนก็เลือกได้ (กลุ่ม 📜 + ป้าย ⚠) ไม่บล็อกของเดิม */}
+                    <CostCenterSelect value={formCostCenter} history={ccCodes} onChange={r => setFormCostCenter(r.code)} />
                   </>
                 )}
               </div>

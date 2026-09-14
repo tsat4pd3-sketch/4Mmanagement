@@ -15,6 +15,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
+import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -25,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, groupSameProductKeys, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -41,6 +42,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import MachineSelect from '../components/MachineSelect';
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -150,6 +152,42 @@ const STALE_BUCKET_KEY = '__stale_bucket__';
 // กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
 const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
 const currentShift = () => { const h = new Date().getHours(); return (h >= 20 || h < 8) ? 'night' : 'day'; };
+/* ── เพดานลิสต์ยาวของหน้านี้ (2026-09-09 · feedback user "ข้อมูลเยอะๆ ต้อง default ยุบ + มีปุ่มขยาย") ──
+   8 = จำนวนแถวที่ยังกวาดตาอ่านจบได้ในจอเดียวโดยไม่ต้องเลื่อน (ใบผลิตแถวละ ~67px · 8 แถว ≈ 540px)
+   เกินเท่านี้ถือว่า "เยอะ" → แผงเริ่มต้นแบบยุบ และเมื่อกางก็ยังตัดเหลือ 8 แถวแรก + ปุ่มแสดงอีก */
+const AUTO_COLLAPSE_ROWS = 8;
+const LIST_FIRST = 8;
+
+/* ── ลิสต์การ์ด/แถวยาวในหน้านี้ = grid หลายคอลัมน์ (2026-09-09 · feedback user
+   "พื้นที่ตรงกลางว่างหลายส่วน เพราะเป็น 1 column/row · แบ่งเป็น 2 column จะแปลกมั้ย")
+   สูตร + เหตุผล + กับดัก อยู่ที่ `src/utils/cardGrid.js` ที่เดียว — ห้ามเขียน gridTemplateColumns เองซ้ำ
+   ค่า minPx เลือกจาก "บรรทัดที่ยาวที่สุดของแถวนั้นยังอ่านครบโดยไม่ต้อง ellipsis" ไม่ใช่เลขกลมๆ:
+     · ใบผลิต 520 — prod_no + mat + ป้ายสถานะ + ยอดขวา (ต่ำกว่านี้ป้าย "➡ ส่งกะถัดไปแล้ว" โดนตัด)
+     · Downtime 640 — แถวมีปุ่มต่อท้ายได้ถึง 5 ตัว (เปิดใบซ่อม/ลงวิธีแก้ไข/💬/✎/✕) แคบกว่านี้ปุ่มตกบรรทัด
+     · งานเสีย 480 — แถวสั้นสุด (ประเภท + mat + จำนวน + ปุ่มแก้/ลบ) */
+const ORDER_GRID  = cardGrid(520, 6);
+const DT_GRID     = cardGrid(640, 8);
+const DEFECT_GRID = cardGrid(480, 6);
+
+/* ── ภาพใหญ่: 3 เรื่องคนละคอลัมน์ (2026-09-09 · feedback user
+   "แต่ละ box เป็น column เดียว แต่ภาพใหญ่ 3 เรื่องนี้คนละ column กัน") ──
+   วัดพื้นที่จริงจากจอหัวหน้ากลุ่ม: จอ 1920 → คอลัมน์เนื้อหากว้าง ~1525px
+     minPx 460 ⇒ 1525px = **3 คอลัมน์ (~500px/แผง)** ตามที่ขอ · ~1000-1420px = 2 · แคบกว่า 940px = 1
+
+   🔴 บทเรียนที่ต้องไม่ทำซ้ำ (2026-09-09 รอบแรกส่งไปแล้ว user ตีกลับ "แบบนี้ใช้ไม่ได้"):
+      ครั้งแรกใช้ `cardGrid` **แบนๆ** โดยโยนแผงทั้ง 6 เป็นลูกของ grid เดียว
+      → grid row สูงเท่า "ลูกที่สูงที่สุดในแถวนั้น" ⇒ แผงเตี้ย (สโตร์/WIP) มีช่องดำยาวใต้ตัวเอง
+        และ Downtime ตกไปอยู่แถว 2 คนเดียว = จอโหว่หนักกว่าเดิม
+      ✅ ที่ถูกคือ **grid 1 แถว ลูก 3 ตัว = 3 คอลัมน์ แล้วให้แต่ละคอลัมน์ stack เนื้อหาเองแนวตั้ง**
+        (`PANEL_STACK`) ⇒ ไม่มีแถวให้สูงตามกัน จึงไม่มีช่องโหว่กลางจอ
+      **กติกา: จะเอาแผงหลายตัวมาวางข้างกัน ให้จัดเป็น "คอลัมน์ที่ stack เอง" เสมอ
+        ห้ามโยนเป็นลูกแบนๆ ของ auto-fit grid ถ้าลูกแต่ละตัวสูงไม่เท่ากัน** (UI-CONVENTIONS §6.14)
+
+   ⚠️ grid ตัวนี้ทำให้ ORDER_GRID/DT_GRID/DEFECT_GRID ข้างในยุบเหลือ 1 คอลัมน์เองอัตโนมัติ
+      (min(100%, N) ใน cardGrid) — ตรงกับที่ user ต้องการ: กล่องละคอลัมน์เดียว */
+const PANEL_COLS  = { ...cardGrid(460, 12), rowGap: 0 };
+/* คอลัมน์ = flex stack · minWidth 0 กันเนื้อหาที่ไม่ยอมหดดันคอลัมน์ล้น (cardGrid ข้อ 3) */
+const PANEL_STACK = { display: 'flex', flexDirection: 'column', minWidth: 0 };
 const fmtMin = (min) => {
   if (!min && min !== 0) return '—';
   const m = Math.round(min);
@@ -268,6 +306,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
 
   const [showOpen, setShowOpen] = useState(false);
+  const [openingSession, setOpeningSession] = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
   const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
   const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
@@ -297,8 +336,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     try { localStorage.setItem(`dr_live_collapse_${key}`, next ? '1' : '0'); } catch { /* localStorage ปิดใช้งาน */ }
     return { ...c, [key]: next };
   });
-  const prodOrdersOpen = !liveCollapsed('prod_orders'); // minimize/expand ทั้ง board (ว่างก็กางไว้ — มีปุ่ม Scan/hint ในตัว)
+  // ว่างก็กางไว้ (มีปุ่ม Scan/hint ในตัว) · ใบเยอะเกินเพดาน = เริ่มแบบยุบ · ผู้ใช้กด = จำค่าที่เลือก
+  const prodOrdersAuto = prodOrders.length > AUTO_COLLAPSE_ROWS;
+  const prodOrdersOpen = !liveCollapsed('prod_orders', prodOrdersAuto);
   const [showClosedOrders, setShowClosedOrders] = useState(false); // แยกซ่อน/แสดง order ที่ปิดแล้ว/ยกเลิก
+
+  /* ── ลิสต์ยาว: default ยุบ + จำกัดแถวแรก + ปุ่มขยาย (2026-09-09 · feedback user
+     "พอข้อมูลเยอะๆ ต้อง default ยุบ และมีปุ่มให้ขยายดู") — ตาม UI-CONVENTIONS §"drill-down hierarchy"
+     กติกา: หัวข้อโชว์จำนวนเต็มเสมอ (ห้ามซ่อนเงียบ) · แถวแรก LIST_FIRST แถว · ที่เหลืออยู่หลังปุ่ม
+     ⚠️ `liveCollapsed(key, auto)` = ผู้ใช้เลือกเองชนะ auto เสมอ → กางเองไว้แล้วจะไม่ถูกยุบซ้ำ */
+  const [showAllRows, setShowAllRows] = useState({});
+  const limitRows = (key, rows) => (showAllRows[key] ? rows : rows.slice(0, LIST_FIRST));
+  /** ปุ่มท้ายลิสต์ — "แสดงอีก N (ทั้งหมด M)" / "ย่อกลับ" · คืน null เมื่อแถวไม่เกินเพดาน */
+  const moreRowsBtn = (key, total) => {
+    if (total <= LIST_FIRST) return null;
+    const open = !!showAllRows[key];
+    return (
+      <button onClick={() => setShowAllRows(v => ({ ...v, [key]: !open }))}
+        style={{ marginTop: 6, alignSelf: 'flex-start', background: 'var(--bg3)', border: '1px solid var(--border2)',
+          color: 'var(--text2)', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+        {open ? '▲ ย่อกลับ' : `▼ แสดงอีก ${total - LIST_FIRST} (ทั้งหมด ${total})`}
+      </button>
+    );
+  };
 
   // Scan Open modal
   const [showScanOpen, setShowScanOpen]   = useState(false);
@@ -542,35 +602,68 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
     // Fetch carry-over orders from previous sessions of same line (not yet imported)
     if (lineName) {
-      // ยอดยกถูกบันทึกถาวรตั้งแต่หัวหน้ากะ "ส่งขอปิดกะ" แล้ว (ไม่ต้องรอ SV อนุมัติ) — SV มีหน้าที่ตรวจ
-      // NG/Downtime/OEE เท่านั้น ไม่เกี่ยวกับยอดยก จึงรับ pending_close ด้วย ไม่ต้องรอ closed
+      /* ⚠️ ดึงกะก่อนหน้า **ทุกสถานะ** รวม `open` ด้วย แล้วค่อยแยกบทบาททีหลัง (แก้รอบ 2 · 2026-09-09):
+           - "กะที่หยิบยอดค้างมาได้" = `closed` / `pending_close` เท่านั้น (ยอดยกถูกบันทึกถาวรตั้งแต่
+             หัวหน้ากะ "ส่งขอปิดกะ" ไม่ต้องรอ SV — SV ตรวจแค่ NG/Downtime/OEE ไม่เกี่ยวกับยอดยก)
+           - "กะที่ใช้ตัดสินว่างานจบไปแล้ว" = **ทุกกะ** รวมกะที่ยัง `open`
+         feedback user: "ถ้ากะก่อนหน้ารับไปแล้ว และคอนเฟิมยอดแล้ว เหลือแค่ปิดกะ ก็ไม่ควรเด้งไปหากะถัดไป"
+         → กะที่รับไปแล้วแต่ยังไม่กดปิด สถานะยังเป็น `open` ⇒ ถ้าไม่ดึงมาด้วย จะมองไม่เห็นใบ confirmed ของมัน
+           แล้วใบเก่าที่ค้างในกะก่อนหน้านั้นจะกลายเป็น "ใบล่าสุด" แล้วถูกเสนอซ้ำ
+         ดึง 8 กะ (ไม่ใช่ 5) เพราะตอนนี้มีกะ `open` ปนอยู่ในโควตาด้วย */
       const { data: prevSessions } = await supabaseDR.from('production_sessions')
-        .select('id')
+        .select('id, status')
         .eq('line_name', lineName)
-        .in('status', ['closed', 'pending_close'])
         .neq('id', sessionId)
         .order('created_at', { ascending: false })
-        .limit(5);
+        .limit(8);
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
-        // Also pick up 'open' orders left in closed sessions (old-code sessions)
-        // 'imported' is excluded because it's not in the in() list
+        // กะที่ "ยอดค้างของมัน" หยิบมาได้จริง — กะที่ยังเปิดอยู่ห้ามหยิบ (เจ้าของกะยังทำงานอยู่)
+        const takeableSess = new Set(prevSessions.filter(sx => ['closed', 'pending_close'].includes(sx.status)).map(sx => sx.id));
+        /* ⚠️ ต้องดึง **ทุกสถานะ** ไม่ใช่แค่ carry_over/open (แก้ 2026-09-09 · feedback หน้างาน
+           "งานยกยอดที่กะเมื่อคืนเคลียร์จากกะเช้าเมื่อวานไปแล้ว ยังมาเด้งโชว์ต่อกะเช้าวันนี้")
+           เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
+           ถ้าดึงแค่ open/carry_over จะมองไม่เห็นใบ confirmed/imported ของกะที่ใหม่กว่า
+           → ใบที่ค้างอยู่ในกะเก่า (ซึ่ง `pending_close` ก็เข้าเงื่อนไข) ถูกเสนอซ้ำทุกกะไปเรื่อยๆ */
         const { data: carried } = await supabaseDR.from('prod_orders')
           .select('*')
           .in('session_id', prevIds)
-          .in('status', ['carry_over', 'open'])
           .order('opened_at', { ascending: false });
-        // Dedupe: order เดิมอาจถูกยกยอดต่อกันหลายกะ → เอาเฉพาะใบล่าสุดต่อ prod_no
-        // และตัดใบที่ถูกรับเข้ากะนี้แล้วออก
+        // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
+        const sessRank = {};
+        prevSessions.forEach((sx, i) => { sessRank[sx.id] = i; });
+        /* ใบล่าสุดจริงๆ ของแต่ละ prod_no = กะใหม่สุดก่อน ถ้ากะเดียวกันค่อยดู opened_at
+           (เรียงมาแล้ว desc → ตัวแรกที่เจอในกะ rank ต่ำสุดคือใบล่าสุด) */
+        /* ⭐ `imported` ห้ามเป็น "ใบล่าสุด" ที่ตัดสินว่างานจบ (2026-09-10 · feedback หน้างาน
+             "กะกลางคืนส่งยอดต่อกะ เข้านี้ 25 ตัว · ตอนเข้าเปิดกะมาไม่โชว์ขึ้น")
+           imported แปลว่า "ใบนี้ถูกกะอื่นรับไปแล้ว" = **มีใบต่อจากมันเสมอ** ไม่ใช่จุดจบของงาน
+           (ต่างจาก confirmed/cancelled ที่จบจริง) · เคสจริง 09/09 Assy LWR: กะดึกถูกเปิดซ้ำ 2 กะ
+           ใบ 25/35 ถูกรับเข้ากะซ้ำ ⇒ ต้นทางกลายเป็น imported อยู่ในกะที่ created_at ใหม่กว่า
+           ⇒ ชนะ rank แล้วถูกตีว่า "จบแล้ว" ทับใบ carry_over 10 ชิ้นตัวจริงที่อยู่ในกะซ้ำ
+           ⇒ กะเช้าวันถัดมาไม่เห็นยอดค้าง 10 ชิ้นเลย
+           แก้: เรียงด้วย (ไม่ใช่ imported ก่อน, แล้วค่อยดูความใหม่ของกะ) — ใบต่อของ imported
+           อยู่ในกะที่ใหม่กว่าเสมอหรือไม่ก็กะปัจจุบัน (ซึ่งถูกกรองด้วย currentProdNos อยู่แล้ว) */
+        const latest = {};
+        (carried || []).forEach(o => {
+          const cur = latest[o.prod_no];
+          const r = sessRank[o.session_id] ?? 99;
+          const sup = o.status === 'imported' ? 1 : 0;   // 0 = ใบที่ยังพูดแทนงานนี้ได้ · 1 = ถูกรับไปแล้ว
+          if (!cur || sup < cur.sup || (sup === cur.sup && r < cur.rank)) latest[o.prod_no] = { row: o, rank: r, sup };
+        });
         const currentProdNos = new Set((data || []).map(o => o.prod_no));
-        const seen = new Set();
-        const deduped = (carried || []).filter(o => {
-          if (currentProdNos.has(o.prod_no)) return false;
-          if (seen.has(o.prod_no)) return false;
+        const deduped = Object.values(latest).map(x => x.row).filter(o => {
+          if (currentProdNos.has(o.prod_no)) return false;      // รับเข้ากะนี้แล้ว
+          /* ⭐ ด่านใหม่: เสนอเฉพาะเมื่อ **ใบล่าสุด** ของ prod_no นั้นยังค้างจริง
+             ใบล่าสุดเป็น confirmed = กะหลังทำจนจบแล้ว · imported = ถูกรับไปแล้ว · cancelled = ยกเลิกแล้ว
+             → ทั้ง 3 กรณีงานจบไปแล้ว ห้ามปลุกใบเก่าที่ค้างในกะที่ยังไม่ปิดขึ้นมาเสนอซ้ำ
+             (ครอบถึงกะที่ "คอนเฟิมยอดแล้วแต่ยังไม่กดปิดกะ" ด้วย เพราะ prevSessions รวมกะ `open` แล้ว) */
+          if (!['carry_over', 'open'].includes(o.status)) return false;
+          /* ใบล่าสุดอยู่ในกะที่ยัง `open` = กะนั้นกำลังทำงานกับใบนี้อยู่ ห้ามแย่งมา
+             (ต่างจาก `pending_close` ที่หัวหน้ากะตัดสินใจยกยอดไปแล้ว) */
+          if (!takeableSess.has(o.session_id)) return false;
           // ออเดอร์ที่ผลิตครบเป้าแล้ว (qty_actual >= qty) ไม่ถือเป็นยอดค้าง — ถ้ายังยกมาจะกลายเป็น
           // "ผีค้าง 1 ชิ้น" ไปเรื่อยๆ ทุกกะเพราะโค้ดเก่าบังคับขั้นต่ำ 1 ชิ้นแม้ผลิตครบแล้ว
           if ((o.qty_actual || 0) >= o.qty) return false;
-          seen.add(o.prod_no);
           return true;
         });
         setCarryOrders(deduped);
@@ -632,6 +725,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
+    /* กดปุ่มซ้ำระหว่างรอ = เปิดกะซ้ำ — ด่าน `dup` ข้างล่างเป็น read-then-insert (TOCTOU)
+       กันไม่ได้ถ้าสองคำขอวิ่งพร้อมกัน · วัดจริง 10/09: Line 61 ได้ 2 กะ ห่างกัน 2.9 มิลลิวินาที
+       ด่านจริงที่กันได้แน่คือ unique index ฝั่ง DB (20260910_production_sessions_no_dup_open.sql) */
+    if (openingSession) return;
 
     // กันเปิดกะซ้ำ: ถ้าไลน์/กะ/วันที่นี้มี session ที่ยังไม่ปิดอยู่แล้ว ห้ามเปิดใหม่ทับ
     // (สาเหตุที่บอร์ด Heijunka/Dashboard มีแถว "Live" ค้างซ้ำกันจนล้น)
@@ -647,6 +744,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
 
+    setOpeningSession(true);
+    try {
     const { data: { user } } = await supabase.auth.getUser();
     const lineSection = lineMap[openForm.line_name]?.section || null;
     const { data, error } = await supabaseDR.from('production_sessions').insert({
@@ -660,7 +759,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       opened_by_uid:  user?.id,
       status:         'open',
     }).select('*, dr_products(name, cycle_time_sec, target_per_shift, process_type)').single();
-    if (error) { toast.error('เปิดกะไม่สำเร็จ: ' + error.message); return; }
+    if (error) {
+      // 23505 = ชน unique index กันกะซ้ำฝั่ง DB — แปลว่ามีคน/อีกแท็บเปิดกะนี้ไปแล้วเสี้ยววินาทีก่อน
+      toast.error(error.code === '23505'
+        ? `ไลน์นี้มีกะ${openForm.shift === 'day' ? 'เช้า' : 'ดึก'}เปิดอยู่แล้ว — กดรีเฟรชแล้วเลือกกะเดิมได้เลย`
+        : 'เปิดกะไม่สำเร็จ: ' + error.message);
+      return;
+    }
     toast.success('เปิดกะสำเร็จ');
 
     // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
@@ -704,6 +809,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setDtLogs([]);
     setProdOrders([]);
     loadDT(data.id);
+    } finally { setOpeningSession(false); }
   };
 
   // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
@@ -1846,10 +1952,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // "คนละ product จริงๆ" (ซึ่ง parallel ได้ถ้าวิ่งคนละเครื่อง/สถานี) · เกณฑ์ overlap ต้องมีนัยยะ:
     // > 15 นาที และ > 20% ของ window ที่สั้นกว่า — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
     // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT (product เดียวกันคนละลูกค้า) window ทับ 2 นาที → P ตกเหลือ 44%
-    const prodNameOf = (matNo) => (kanbanStds.find(s => s.mat_no === matNo)?.dr_products?.name || matNo || '').trim().toUpperCase();
+    // จับกลุ่มด้วย "ชื่อ product **หรือ** เลขพาร์ทแกนกลาง" (union) — ดู groupSameProductKeys ใน utils/oee.js
+    // เดิมใช้ชื่ออย่างเดียว → พาร์ทเดียวกันที่แตก MAT ตามลูกค้า/เรฟ (ชื่อสะกดต่างกัน) กลายเป็นคนละ product
+    // แล้วขึ้น parallel กันเอง ทำ %P เพี้ยน (Assy LWR 06/08 + 31/08 กะดึก · ทวนสอบกับ Excel 2026-09-09)
+    // ⚠️ ต้องหา p_no/ชื่อจาก kanban_standards **แล้วถอยไป dr_products** — MAT ที่ไม่มีในคัมบัง
+    // เดิมได้คีย์เป็น mat_no ตัวเอง = แตกกลุ่มทุกใบโดยอัตโนมัติ
+    const prodInfoOf = (matNo) =>
+      kanbanStds.find(s => s.mat_no === matNo)?.dr_products
+      || products.find(p => p.mat_no === matNo)
+      || null;
+    const groupKeyByMat = groupSameProductKeys(matPData.map(d => {
+      const info = prodInfoOf(d.matNo);
+      return { matNo: d.matNo, name: info?.name, pNo: info?.p_no };
+    }));
     const prodGroupMap = {};
     matPData.forEach(d => {
-      const k = prodNameOf(d.matNo);
+      const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
       const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
       g.stdSec += d.qty * d.ctSec;
       g.runMin += matRunMinMap[d.matNo] ?? 0;
@@ -2515,7 +2633,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
                       <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
                     </button>
-                    {staleOpen && <div style={{ marginTop: 4 }}>{renderGroups(staleSessions)}</div>}
+                    {staleOpen && (() => {
+                      /* กะค้างสะสมได้ถึงหลักสิบ (เจอจริง 27 กะ) — กางแล้ว sidebar ยาวจนหาไลน์อื่นไม่เจอ
+                         → โชว์แถวแรกตามเพดาน + ปุ่มแสดงอีก · **กะที่เลือกอยู่ต้องติดมาเสมอ** ไม่งั้นกดจาก banner แล้วหาไม่เจอ */
+                      const shown = showAllRows.stale ? staleSessions : staleSessions.slice(0, LIST_FIRST);
+                      const sel = staleSessions.find(x => x.id === selSession?.id);
+                      const list = (sel && !shown.some(x => x.id === sel.id)) ? [...shown, sel] : shown;
+                      return (
+                        <div style={{ marginTop: 4 }}>
+                          {renderGroups(list)}
+                          {moreRowsBtn('stale', staleSessions.length)}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </>
@@ -2743,8 +2873,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 // ใบสแกนที่ยังไม่กรอก qty_actual = null → บวก 0 เหมือนเดิม (พฤติกรรมเดิมไม่เปลี่ยน)
                 const confirmed = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
                   + orders.filter(o => o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
-                  // ใบที่ยกยอดออกไปกะถัดไป — ผลิตจริงส่วนหนึ่ง (qty_actual) นับเป็นผลิตได้ของกะนี้ (ที่เหลือไปทำต่อกะหน้า)
-                  + orders.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
+                  /* ใบที่ยกยอดออกไปกะถัดไป — ผลิตจริงส่วนหนึ่ง (qty_actual) นับเป็นผลิตได้ของกะนี้ (ที่เหลือไปทำต่อกะหน้า)
+                     ⭐ ต้องนับ `imported` ด้วย = ใบเดียวกันหลังกะถัดไป "กดรับยอดค้าง" แล้ว (2026-09-09)
+                        เดิมนับแค่ carry_over ⇒ **วินาทีที่กะหน้ากดรับ ยอดผลิตของกะนี้ลดลงเงียบๆ**
+                        (เคสจริง Assy LWR 08/09: ผลิตได้ 415 ทั้งที่ทำจริง 420 — หาย 5 ชิ้น)
+                        ไม่ double count เพราะใบของกะถัดไปถือแค่ "ยอดที่เหลือ" — ดู oee.js §6 */
+                  + orders.filter(o => ['carry_over', 'imported'].includes(o.status)).reduce((s, o) => s + (o.qty_actual || 0), 0);
                 const openCnt   = orders.filter(o => o.status === 'open').length;
                 const closedCnt = orders.filter(o => o.status === 'confirmed').length;
                 const ng  = defectLogs.filter(d => orderIds.has(d.prod_order_id)).reduce((s, d) => s + (d.qty_ng || 0) + (d.qty_suspect || 0), 0);
@@ -2769,7 +2903,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               const totalConfirmed = pt.produced
                 + nullMat.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
                 + nullMat.filter(o => o.status === 'open').reduce((s, o) => s + (o.qty_actual || 0), 0)
-                + nullMat.filter(o => o.status === 'carry_over').reduce((s, o) => s + (o.qty_actual || 0), 0);
+                + nullMat.filter(o => ['carry_over', 'imported'].includes(o.status)).reduce((s, o) => s + (o.qty_actual || 0), 0);
               const pct = totalTarget > 0 ? Math.min(100, Math.round((totalConfirmed / totalTarget) * 100)) : 0;
               const barClr = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#4d9fff';
 
@@ -2876,19 +3010,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 ไลน์ที่ไม่มีคิว + ไม่มีของค้าง component จะไม่ render อะไรเลย (ไม่รกจอไลน์ประกอบ) */}
             {/* 🔩 คิวสั่งผลิตจากสโตร์ (ไลน์ปั๊ม) · 📦 เรียกชิ้นส่วนจากสโตร์ (ไลน์ประกอบ)
                 2 แผงนี้เป็นคนละทิศของลูปเดียวกัน — ไลน์ไหนไม่เกี่ยวจะไม่ render อะไรเลย */}
-            <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
-            <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
+            {/* ⬇⬇ ภาพใหญ่ 3 คอลัมน์ — คอลัมน์ละเรื่อง, แต่ละคอลัมน์ stack เนื้อหาเองแนวตั้ง
+                (ดู PANEL_COLS/PANEL_STACK — ห้ามกลับไปเป็น grid แบนๆ ช่องดำจะกลับมา) ⬇⬇ */}
+            <div style={PANEL_COLS}>
 
-            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
-                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
-                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
-                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
-            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
-
+            {/* ── คอลัมน์ 1: 📦 ใบสั่งผลิต ── */}
+            <div style={PANEL_STACK}>
             {/* Prod Orders panel */}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prodOrdersOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
-                <div onClick={() => toggleLiveCollapse('prod_orders')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                <div onClick={() => toggleLiveCollapse('prod_orders', prodOrdersAuto)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', transform: prodOrdersOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
@@ -2935,11 +3066,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 return (
                   <div style={{ marginBottom: 10, padding: '8px 12px', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.35)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#60a5fa' }}>⚙️ ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
-                    <select value={openMachineNo} onChange={e => setOpenMachineNo(e.target.value)}
-                      style={{ width: 220, fontSize: 12, fontWeight: 600 }}>
-                      <option value="">— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) —</option>
-                      {lineMachines.map(m => <option key={m.machine_no} value={m.machine_no}>{m.machine_no}{m.machine_name ? ` · ${m.machine_name}` : ''}</option>)}
-                    </select>
+                    <MachineSelect value={openMachineNo || ''} machines={lineMachines} strict placeholder="— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา" style={{ width: 280 }}
+                      inputStyle={{ fontSize: 12, fontWeight: 600, padding: '6px 30px 6px 8px' }}
+                      onChange={({ machine_no }) => setOpenMachineNo(machine_no || '')} />
                     {lineMachines.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ยังไม่มีเครื่องในทะเบียน — เพิ่มที่ Machine Database)</span>}
                   </div>
                 );
@@ -3017,6 +3146,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 const renderOrderRow = (o) => {
                   const confirmed   = o.status === 'confirmed';
                   const carryOver   = o.status === 'carry_over';
+                  /* ⭐ imported = ใบที่ยกยอดออกไป **แล้วกะถัดไปกดรับไปแล้ว** (2026-09-09 · feedback หน้างาน
+                     "กะที่ส่งยอด อยากเห็นว่าผลิตไปเท่าไหร่ ส่งไปเท่าไหร่ ตอนนี้ต้องไปดูกะถัดไป")
+                     เดิมสถานะนี้ไม่มีกิ่งไหนรับ → ตกกิ่งสุดท้ายที่โชว์แค่ `qty` = "35 เป้า" + ป้าย "● ผลิต"
+                     ทั้งที่ qty_actual อยู่ในแถวนั้นแล้ว ⇒ ข้อมูล "ผลิตไป 5 ส่งไป 30" หายทันทีที่กะหน้ากดรับ */
+                  const handedOff   = o.status === 'imported';
+                  const carriedOut  = carryOver || handedOff;   // ยกยอดออกไป (ยังไม่ถูกรับ / ถูกรับแล้ว)
                   const cancelled   = o.status === 'cancelled';
                   const isCarried   = !!o.carry_over_from_session_id;
                   const isManual    = !!o.is_manual;
@@ -3029,10 +3164,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   // ใบ manual ที่ไม่ถูกอัพเดทยอดนาน (> 2 ชม.ครึ่ง = เลยรอบเบรคไปแล้ว) เตือนเหลืองนิ่ง
                   const lastUpd     = manualOpen ? new Date(o.qty_updated_at || o.opened_at) : null;
                   const manualStale = manualOpen && (Date.now() - lastUpd.getTime()) > 150 * 60000;
-                  const statusColor = confirmed ? '#22c55e' : carryOver ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
-                  const statusLabel = confirmed ? '✓ ปิดแล้ว' : carryOver ? '➡ ยกยอด' : cancelled ? '✕ ยกเลิก' : '● ผลิต';
+                  const statusColor = confirmed ? '#22c55e' : carriedOut ? '#a78bfa' : cancelled ? '#666' : '#f59e0b';
+                  // แยก 2 สถานะให้อ่านออกว่ากะถัดไป "รับไปแล้ว" หรือ "ยังไม่รับ" (คนละความหมายเวลาตามงาน)
+                  const statusLabel = confirmed ? '✓ ปิดแล้ว'
+                    : handedOff ? '➡ ส่งกะถัดไปแล้ว' : carryOver ? '➡ ยกยอด (รอกะถัดไปรับ)'
+                    : cancelled ? '✕ ยกเลิก' : '● ผลิต';
                   return (
-                    <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
+                    // minWidth:0 บังคับตาม §6.11 — การ์ดเป็นลูกของ grid ถ้าไม่ใส่ เนื้อหาที่ไม่ยอมหดจะดันคอลัมน์ล้น
+                    <div key={o.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0, padding: '9px 14px', background: 'var(--bg2)', borderRadius: 8,
                       border: `1px solid ${manualStale ? '#f59e0b' : `${statusColor}40`}`, borderLeft: `4px solid ${statusColor}`,
                       boxShadow: manualStale ? '0 0 8px 1px rgba(245,158,11,0.4)' : 'none',
                       opacity: cancelled ? 0.45 : 1 }}>
@@ -3085,14 +3224,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ทำได้/เป้า</div>
                           </>
-                        ) : carryOver ? (
+                        ) : carriedOut ? (
                           // ยกยอดออกไปกะถัดไป — ต้องโชว์ให้ชัดว่าผลิตจริงเท่าไหร่ ยกไปเท่าไหร่ (ไม่ใช่โชว์เป้าเฉยๆ = ดูเหมือนผลิตครบ)
+                          // ต้องครอบ `imported` ด้วย ไม่งั้นข้อมูลนี้หายทันทีที่กะถัดไปกดรับ (ดูหมายเหตุที่ carriedOut)
                           <>
                             <div style={{ fontSize: 18, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>
                               {o.qty_actual || 0}<span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>/{o.qty_target ?? o.qty}</span>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตจริง/เป้า</div>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>➡ ยกไป {Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0))} ชิ้น</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', marginTop: 2 }}>
+                              {handedOff ? '➡ ส่งกะถัดไป' : '➡ ยกไป'} {Math.max(0, (o.qty_target ?? o.qty) - (o.qty_actual || 0))} ชิ้น
+                            </div>
                           </>
                         ) : cancelled ? (
                           <>
@@ -3131,7 +3273,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {/* ออเดอร์ที่ confirmed ห้ามลบเด็ดขาด (เป็นยอดผลิตจริงที่ปิดแล้ว) — ส่วนออเดอร์ที่ยกยอด (carry_over)
                           ปกติ leader แก้ไม่ได้แล้วเพราะตัดสินใจไปแล้วตอนปิดกะ แต่ถ้าตกค้างผิดปกติ (เช่นกะเก่าปิดไม่สำเร็จ)
                           SV/Manager/Admin ต้องลบแก้ไขได้เพื่อเคลียร์ข้อมูลค้าง ไม่งั้นจะไม่มีทางแก้เลย */}
-                      {!confirmed && (canManage || (canEditRecords && !carryOver)) && (
+                      {!confirmed && (canManage || (canEditRecords && !carriedOut)) && (
                         <button className="tbtn" onClick={() => handleDeleteProdOrder(o.id)}
                           style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}>✕</button>
                       )}
@@ -3208,8 +3350,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 return (
                   <>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {activeOrders.map(renderOrderRow)}
+                    <div>
+                      <div style={ORDER_GRID}>{limitRows('orders_open', activeOrders).map(renderOrderRow)}</div>
+                      {moreRowsBtn('orders_open', activeOrders.length)}
                     </div>
 
                     {closedOrders.length > 0 && (
@@ -3220,8 +3363,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           ปิดแล้ว / ยกเลิก ({closedOrders.length} ใบ)
                         </div>
                         {showClosedOrders && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {closedOrders.map(renderOrderRow)}
+                          <div>
+                            <div style={ORDER_GRID}>{limitRows('orders_closed', closedOrders).map(renderOrderRow)}</div>
+                            {moreRowsBtn('orders_closed', closedOrders.length)}
                           </div>
                         )}
                       </div>
@@ -3231,14 +3375,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               })()}
               </>)}
             </div>
+            </div>{/* จบคอลัมน์ 1 */}
 
+            {/* ── คอลัมน์ 2: ⚠️ ปัญหาที่เกิดในกะ (ของเสีย + Downtime) ── */}
+            <div style={PANEL_STACK}>
             {/* Defect Logs panel */}
             {defectLogs.length > 0 && (() => {
-              const defOpen = !liveCollapsed('defects');
+              const defAuto = defectLogs.length > AUTO_COLLAPSE_ROWS;
+              const defOpen = !liveCollapsed('defects', defAuto);
               return (
               <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: defOpen ? 10 : 0 }}>
-                  <div onClick={() => toggleLiveCollapse('defects')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#ef4444', cursor: 'pointer', userSelect: 'none' }}>
+                  <div onClick={() => toggleLiveCollapse('defects', defAuto)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#ef4444', cursor: 'pointer', userSelect: 'none' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', transform: defOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                     🔴 บันทึกงานเสีย ({defectLogs.length} รายการ)
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>
@@ -3246,11 +3394,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </span>
                   </div>
                 </div>
-                {defOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {defOpen && (<>
+                <div style={DEFECT_GRID}>
                   {/* flexWrap ที่แถว: ปุ่ม action ท้ายแถว (🗑️/🛠/✎/✕) เป็น nowrap ทั้งหมด — จอมือถือแถวไม่ wrap = ปุ่มตกขอบจอกดไม่ได้
                       (feedback หน้างาน 2026-08-25: "เข้าแก้ไขเวลาเสร็จในดาวน์ไทม์ในมือถือไม่ได้") */}
-                  {defectLogs.map(d => (
+                  {limitRows('defects', defectLogs).map(d => (
                     <div key={d.id} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '8px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${d.dr_defect_types?.color || '#ef4444'}` }}>
                       {/* flex-basis 240: จอแคบให้ปุ่มตกบรรทัดใหม่แทนการบีบข้อความจนอ่านไม่ออก · จอกว้าง = แถวเดียวเหมือนเดิม */}
                       <div style={{ flex: '1 1 240px', minWidth: 0 }}>
@@ -3334,18 +3482,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   ))}
                 </div>
-                )}
+                  {moreRowsBtn('defects', defectLogs.length)}
+                </>)}
               </div>
               );
             })()}
 
             {/* Downtime list */}
             {(() => {
-              const dtOpen = !liveCollapsed('downtime', dtLogs.length === 0);
+              const dtAuto  = dtLogs.length === 0 || dtLogs.length > AUTO_COLLAPSE_ROWS;
+              const dtOpen = !liveCollapsed('downtime', dtAuto);
               return (
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: dtOpen ? 12 : 0, flexWrap: 'wrap', gap: 8 }}>
-                <div onClick={() => toggleLiveCollapse('downtime', dtLogs.length === 0)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
+                <div onClick={() => toggleLiveCollapse('downtime', dtAuto)} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: 'var(--text)', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', transform: dtOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   ⏱ Downtime ({dtLogs.length} รายการ)
                 </div>
@@ -3358,8 +3508,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
               {dtOpen && (<>
               {dtLogs.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี Downtime ในกะนี้</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {dtLogs.map(d => {
+              <div style={DT_GRID}>
+                {limitRows('downtime', dtLogs).map(d => {
                   const cat = CAT_META[d.dr_downtime_types?.category] || CAT_META.unplanned;
                   return (
                     <div key={d.id}>
@@ -3453,10 +3603,31 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   );
                 })}
               </div>
+                {moreRowsBtn('downtime', dtLogs.length)}
               </>)}
             </div>
               );
             })()}
+            </div>{/* จบคอลัมน์ 2 */}
+
+            {/* ── คอลัมน์ 3: 🔩 ชิ้นส่วนเข้าไลน์ (สโตร์สั่ง / ไลน์เรียก / WIP ค้าง) ──
+                user 2026-09-09: "เรียกชิ้นส่วนกับ WIP ในไลน์ อยู่ box เดียวกันดีมั้ย มันคือเรื่องเดียวกัน"
+                → รวมเป็น **กล่องเดียว** ด้วย .dr-partbox (index.css): ถอดกรอบ/มุม/ระยะของแผงลูก
+                  เหลือเส้นคั่นบางๆ คั่นแต่ละท่อน · สีเส้นคั่น = สีประจำแผงนั้นเอง (ม่วง/เทา/ฟ้า)
+                ⚠️ ทั้ง 3 แผง return null ได้เอง (ไลน์ที่ไม่เกี่ยว) — `.dr-partbox:empty { display:none }`
+                   ทำให้กล่องเปล่า **และคอลัมน์ทั้งคอลัมน์** หายไปเอง ไม่เหลือกรอบว่าง
+                   (จึงต้องให้ .dr-partbox เป็นลูกตรงๆ ของ grid ห้ามมี div ครอบอีกชั้น) */}
+            <div className="dr-partbox">
+            <StoreLotQueue lineName={selSession.line_name} lines={lines} role={role} />
+            <LinePartCallPanel lineName={selSession.line_name} lines={lines} role={role} fullName={fullName} />
+
+            {/* 📦 WIP ที่ไลน์ — สโตร์ส่งมาเท่าไหร่ · ตัดเป็น FG เท่าไหร่ · ค้างเท่าไหร่ (user 2026-09-01)
+                ⚠️ ค้าง = "คำนวณ" (รับเข้า − ผลิต×BOM) ไม่ใช่ qty_on_hand ในระบบ
+                   backflush ยังไม่ทำงาน ยอดในระบบจึงสูงกว่าความจริงเสมอ — ดู utils/lineWipLedger.js
+                ไลน์ที่ไม่มีทั้ง ledger และการใช้ของ component จะไม่ render อะไรเลย */}
+            <LineWipPanel lineName={selSession.line_name} workDate={selSession.work_date} lines={lines} />
+            </div>{/* จบคอลัมน์ 3 */}
+            </div>{/* ⬆⬆ จบ grid ภาพใหญ่ ⬆⬆ */}
           </>
         )}
 
@@ -3535,8 +3706,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
               <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
                 <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleOpenSession} disabled={!openForm.line_name}
-                  style={{ ...saveBtnStyle, opacity: !openForm.line_name ? 0.5 : 1 }}>เปิดกะ</button>
+                <button onClick={handleOpenSession} disabled={!openForm.line_name || openingSession}
+                  style={{ ...saveBtnStyle, opacity: (!openForm.line_name || openingSession) ? 0.5 : 1 }}>
+                  {openingSession ? '⏳ กำลังเปิดกะ...' : 'เปิดกะ'}</button>
               </div>
             </div>
           </div>
@@ -4684,29 +4856,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }
                   return (
                     <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
-                      <select
-                        id="open-mat-select"
-                        value={openProdForm.mat_no}
-                        onChange={e => handleOpenProdMatNoChange(e.target.value)}
-                        style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
-                      >
-                        <option value="">— เลือก MAT.NO —</option>
-                        {lineStds.map(s => {
-                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14:
-                             10105769 กับ 10105770 ชื่อเดียวกันทั้งคู่) → ต่อท้ายด้วยเลขพาร์ทลูกค้า
-                             ที่พอแยกออก + ติดธง ⚠ ให้เห็นว่าคู่ไหนกำกวม (แก้จริงต้องไปตั้งชื่อ
-                             ให้ต่างกันที่ Product Master — ระบบไม่เดาชื่อให้) */
+                      <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
+                        inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
+                        options={lineStds.map(s => {
+                          /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14) → ต่อท้ายเลขพาร์ทลูกค้า + ธง ⚠ */
                           const nm = s.dr_products?.name || s.part_name || '';
                           const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
-                          return (
-                            <option key={s.id} value={s.mat_no}>
-                              {s.mat_no}{nm ? ` · ${nm}` : ''}
-                              {dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}
-                              {dup ? ' ⚠ชื่อซ้ำ' : ''} ({s.qty_per_kanban} ชิ้น/ใบ)
-                            </option>
-                          );
+                          return {
+                            id: s.mat_no,
+                            label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
+                            sub: `${s.qty_per_kanban} ชิ้น/ใบ`, keywords: `${nm} ${s.dr_products?.p_no || ''}`,
+                          };
                         })}
-                      </select>
+                        onChange={({ id }) => handleOpenProdMatNoChange(id)} />
                       {(() => {
                         const names = lineStds.map(s => s.dr_products?.name || s.part_name || '').filter(Boolean);
                         const dupN = names.filter((n, i) => names.indexOf(n) !== i).length;
@@ -5079,16 +5241,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       const pts = sessionProcessTypesAll();
                       const filtered = dtTypes.filter(t => !t.process_type || t.process_type === 'common' || pts.has(t.process_type));
                       return (
-                        <select autoFocus value={dtForm.downtime_type_id} onChange={e => setDtForm(f => ({ ...f, downtime_type_id: e.target.value }))} style={inputStyle}>
-                          <option value="">เลือกประเภท...</option>
-                          {['unplanned', 'planned'].map(cat => (
-                            <optgroup key={cat} label={cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}>
-                              {filtered.filter(t => t.category === cat).map(t => (
-                                <option key={t.id} value={t.id}>{t.name_th}</option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
+                          options={['unplanned', 'planned'].flatMap(cat => filtered.filter(t => t.category === cat).map(t => ({ id: String(t.id), label: t.name_th, group: cat === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน' })))}
+                          onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
                     })()}
                   </Field>
@@ -5750,8 +5905,12 @@ function HistoryTab({ role }) {
                       {!minimized && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                         {orders.map(o => {
-                          const statusColor = o.status === 'confirmed' ? '#22c55e' : o.status === 'carry_over' ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
-                          const statusLabel = o.status === 'confirmed' ? '✓ ปิดแล้ว' : o.status === 'carry_over' ? '➡ ยกยอด' : o.status === 'cancelled' ? '✕ ยกเลิก' : '● ผลิต';
+                          // ป้ายต้องตรงกับจอกะสด (2026-09-09) — imported = ยกยอดที่กะถัดไปรับไปแล้ว ห้ามโชว์เป็น "● ผลิต"
+                          const carriedOut  = ['carry_over', 'imported'].includes(o.status);
+                          const statusColor = o.status === 'confirmed' ? '#22c55e' : carriedOut ? '#a78bfa' : o.status === 'cancelled' ? '#666' : '#f59e0b';
+                          const statusLabel = o.status === 'confirmed' ? '✓ ปิดแล้ว'
+                            : o.status === 'imported' ? '➡ ส่งกะถัดไปแล้ว' : o.status === 'carry_over' ? '➡ ยกยอด (รอกะถัดไปรับ)'
+                            : o.status === 'cancelled' ? '✕ ยกเลิก' : '● ผลิต';
                           return (
                             <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${statusColor}`, opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
                               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
@@ -5905,7 +6064,7 @@ function ExportTab() {
       'Customer': o.customer || '',
       'Qty แผน': o.qty || 0,
       'Qty OK': o.qty_ok ?? '',
-      'สถานะ': o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
+      'สถานะ': o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด (รอกะถัดไปรับ)' : o.status === 'imported' ? 'ส่งกะถัดไปแล้ว' : o.status === 'open' ? 'กำลังผลิต' : o.status,
       'ยิงย้อนหลัง': o.is_backfill ? 'ใช่' : '',
       'เปิดโดย': o.opened_by || '',
       'เวลาเปิด': o.opened_at ? fmtDateTimeFull(new Date(o.opened_at)) : '',
@@ -6170,7 +6329,7 @@ function ExportTab() {
         head: [['PROD.NO', 'MAT.NO', 'Part Name', 'Qty แผน', 'Qty OK', 'สถานะ']],
         body: orders.length ? orders.map(o => [
           o.prod_no || '-', o.mat_no || '-', o.part_name || '-', o.qty || 0, o.qty_ok ?? '-',
-          o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด' : o.status === 'open' ? 'กำลังผลิต' : o.status,
+          o.status === 'confirmed' ? 'ปิดแล้ว' : o.status === 'carry_over' ? 'ยกยอด (รอกะถัดไปรับ)' : o.status === 'imported' ? 'ส่งกะถัดไปแล้ว' : o.status === 'open' ? 'กำลังผลิต' : o.status,
         ]) : [['-', '-', 'ไม่มีรายการ', '-', '-', '-']],
         headStyles: { font: 'Sarabun', fillColor: [60,60,60], textColor: 255, fontStyle: 'bold', fontSize: 8 },
         margin: { left: MARGIN, right: MARGIN },

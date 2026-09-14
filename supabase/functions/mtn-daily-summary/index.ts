@@ -48,6 +48,42 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
     return { map, teamChats };
   } catch { return { map: {}, teamChats: {} }; }
 }
+/* ── 🔔 แจ้งเตือน "ในแอป" (กระดิ่ง + Web Push ผ่าน trigger trg_notify_push) ───────────────
+   เดิมฟังก์ชันนี้ส่ง **Telegram ทางเดียว** — ถอด Telegram ออกเมื่อไหร่ การแจ้งเตือนหายสนิท
+   (พบตอนสำรวจการย้ายระบบลง on-premise 2026-09-14 · ดู docs/LOCAL-SERVER-MIGRATION-SPEC.md §13)
+   ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
+      **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
+   ⚠️ ไม่ตั้ง `inapp_roles` ที่ /notification-config = ไม่แจ้งในแอป (opt-in)
+      ⇒ deploy แล้วพฤติกรรมเดิมเป๊ะ จนกว่า admin จะตั้งผู้รับ
+   คืนค่า: ส่งถึงใครจริงไหม (ผู้เรียกบางจุดใช้ตัดสินว่าจะ mark ว่าแจ้งแล้วหรือยัง) */
+async function notifyInApp(eventKey: string, htmlMessage: string, type = 'info'): Promise<boolean> {
+  const { data: rule, error: ruleErr } = await supabase
+    .from('notification_rules').select('label, inapp_roles').eq('event_key', eventKey).maybeSingle();
+  if (ruleErr) { console.error('mtn-daily-summary: load rule', ruleErr.message); return false; }
+  const roles = Array.isArray(rule?.inapp_roles) ? (rule!.inapp_roles as string[]) : [];
+  if (!roles.length) return false;                    // ยังไม่ตั้งผู้รับ = เงียบตามเดิม
+  let users: string[] = [];
+  const { data, error } = await supabase.rpc('notify_recipients', { p_event: eventKey, p_section: null });
+  if (error) {                                        // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    console.error('mtn-daily-summary: notify_recipients', error.message);
+    const { data: byRole } = await supabase.from('profiles').select('id').in('role', roles);
+    users = (byRole ?? []).map((p) => p.id as string);
+  } else {
+    users = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  }
+  const ids = [...new Set(users.filter(Boolean))];
+  if (!ids.length) return false;
+  const body = String(htmlMessage)
+    .replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  // supabase-js ไม่ throw — ต้องอ่าน error เอง ไม่งั้นแจ้งเตือนหายเงียบ (กฎเหล็กข้อ 1 ใน CLAUDE.md)
+  const { error: insErr } = await supabase.from('notifications').insert(
+    ids.map((uid) => ({ user_id: uid, title: rule?.label || eventKey, body, type })),
+  );
+  if (insErr) { console.error('mtn-daily-summary: insert notifications', insErr.message); return false; }
+  return true;
+}
+
 function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
   if (r && !r.enabled) return null;
@@ -91,19 +127,39 @@ async function loadTeamNames() {
 }
 const teamName = (v?: string | null): string => TEAM_NAME[teamKey(v)] || String(v || '');
 
-// ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
+/* ใบยังไม่ปิดค้างที่สถานะไหน → รอทำอะไรต่อ (แสดงเป็นกลุ่มในสรุป)
+   ⚠️ `checked` (ผ่านขั้น 4) **แตกเป็น 2 กลุ่มคนละคนต้องกด** ตาม `quality_related`:
+        QA ยังไม่ตัดสิน     → รอ QA ตรวจ (ขั้น 5)
+        QA ระบุว่าไม่เกี่ยว → รอฝ่ายที่แจ้งมารับมอบ (ขั้น 6)
+      กลุ่มรวม "รอยืนยันคุณภาพ / รับมอบ" ทำให้ทุกทีมอ่านว่ายังรอ QA แล้วใบกองค้าง
+      (วัดฐานจริง 2026-09-09: checked 76 + qa 64 = 140 ใบรอขั้น 6 โตวันละ ~20 ใบ เก่าสุด 25/08)
+   🔴 2026-09-14: ตัวแยกเปลี่ยนจาก `quality_related` (ผู้แจ้งเลือกเองที่ขั้น 4) เป็น `qa_skipped_at`
+      (ร่องรอยที่ QA กด) ตามกฎใหม่ "ไม่เกี่ยวกับคุณภาพ = คำตัดสินของ QA เท่านั้น"
+   source of truth ของเกณฑ์แยก = `moStatusLabel()`/`isWaitingQa()` ใน `src/utils/mtnStepPerm.js`
+   (edge import จาก src/ ไม่ได้ → เขียนซ้ำแบบย่อที่นี่ · แก้ที่นั่นแล้วต้องแก้ที่นี่ด้วย) */
 const WAIT_LABEL: Record<string, string> = {
-  pending:   'รอช่างรับงาน (ขั้น 2)',
-  assigned:  'รอดำเนินการซ่อม (ขั้น 3)',
-  repairing: 'รอตรวจสอบหลังซ่อม (ขั้น 4)',
-  repaired:  'รอตรวจสอบหลังซ่อม (ขั้น 4)',
-  checked:   'รอยืนยันคุณภาพ / รับมอบ (ขั้น 5-6)',
-  qa:        'รอรับมอบ (ขั้น 6)',
-  handover:  'รออนุมัติปิด (ขั้น 7)',
+  pending:           'รอช่างรับงาน (ขั้น 2)',
+  /* ⚠️ `returned` = ใบที่ทีมช่างตีกลับให้ผู้แจ้ง (แจ้งผิดแผนก) — เคยตกหล่นจาก WAIT_ORDER
+     ⇒ ใบถูกดึงมาแล้ว **หายจากทุกบล็อกในสรุปเช้า** ไม่มีใครเห็นว่าต้องไปแก้แผนกแล้วส่งใหม่
+     (บันทึกไว้เป็น known gap ตั้งแต่ 09/09 · เติมจริง 14/09) */
+  returned:          'ถูกตีกลับ — รอผู้แจ้งแก้แผนกแล้วส่งใหม่ (ขั้น 1)',
+  assigned:          'รอดำเนินการซ่อม (ขั้น 3)',
+  repairing:         'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+  repaired:          'รอตรวจสอบหลังซ่อม (ขั้น 4)',
+  checked_qa:        'รอ QA ตรวจคุณภาพ (ขั้น 5)',
+  checked_handover:  'รอฝ่ายที่แจ้งรับมอบ (ขั้น 6) — QA ระบุว่าไม่เกี่ยวกับคุณภาพ',
+  qa:                'รอรับมอบ (ขั้น 6)',
+  handover:          'รออนุมัติปิด (ขั้น 7)',
 };
-const WAIT_ORDER = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover'];
+const WAIT_ORDER = ['pending', 'returned', 'assigned', 'repairing', 'repaired', 'checked_qa', 'checked_handover', 'qa', 'handover'];
 
-type MO = { mo_no?: string; status: string; mtn_dept?: string; item_type?: string; machine_no?: string; line_name?: string; report_at?: string };
+type MO = { mo_no?: string; status: string; mtn_dept?: string; item_type?: string; machine_no?: string; line_name?: string; report_at?: string; qa_skipped_at?: string | null };
+
+/** คีย์กลุ่ม "รออะไรอยู่" — เท่ากับ status ยกเว้น checked ที่แตกตามคำตัดสินของ QA
+ *  🔴 2026-09-14: ใบผ่านขั้น 4 = รอ QA เสมอ · จะไป "รอรับมอบ" ได้ต่อเมื่อ **QA** กดว่าไม่เกี่ยว
+ *  (qa_skipped_at) — เดิมดู quality_related ที่ผู้แจ้งเลือกเองที่ขั้น 4 */
+const waitKey = (m: MO): string =>
+  m.status === 'checked' ? (m.qa_skipped_at ? 'checked_handover' : 'checked_qa') : m.status;
 
 function daysOpen(iso?: string): number {
   if (!iso) return 0;
@@ -113,7 +169,7 @@ function daysOpen(iso?: string): number {
 function buildTeamBlock(rows: MO[]): string {
   // จัดกลุ่มตามสถานะที่ค้าง เรียงตามลำดับขั้น
   const byStatus: Record<string, MO[]> = {};
-  for (const m of rows) (byStatus[m.status] ||= []).push(m);
+  for (const m of rows) (byStatus[waitKey(m)] ||= []).push(m);
   const lines: string[] = [];
   for (const st of WAIT_ORDER) {
     const list = byStatus[st];
@@ -141,7 +197,8 @@ Deno.serve(async (req) => {
     // ดึงใบที่ยังไม่ปิด/ไม่ถูกปฏิเสธ จาก DR project
     if (!DR_URL || !DR_KEY) return json({ error: 'missing DR env' }, 500);
     await loadTeamNames();   // ชื่อทีมล่าสุดจาก mtn_teams (best-effort)
-    const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at`
+    // qa_skipped_at = ตัวแยกกลุ่ม checked (รอ QA / รอรับมอบ) — ขาดคอลัมน์นี้ = สรุปบอกผิดว่าใครต้องกด
+    const q = `${DR_URL}/rest/v1/mtn_orders?select=mo_no,status,mtn_dept,item_type,machine_no,line_name,report_at,qa_skipped_at`
       + `&status=not.in.(closed,rejected)&order=report_at.asc`;
     const res = await fetch(q, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
     if (!res.ok) return json({ error: `DR fetch ${res.status}` }, 500);
@@ -168,6 +225,8 @@ Deno.serve(async (req) => {
       return `━━━ <b>${teamName(d)}</b> (${byDept[d].length} ใบ) ━━━\n${block}`;
     })].join('\n');
     await sendTelegram(overview, baseChat);
+    // กระดิ่งในแอป: ส่งเฉพาะภาพรวม 1 ครั้ง (ไม่ยิงซ้ำรายทีม — คนเดียวอยู่หลายทีมจะได้ข้อความเดิมหลายรอบ)
+    await notifyInApp('mtn_daily_summary', `${header} — เปิดหน้าแจ้งซ่อมเพื่อดูรายการ`);
 
     // แยกรายทีม → ห้องของทีม (ถ้ามีห้องแท็กทีมไว้)
     for (const d of depts) {

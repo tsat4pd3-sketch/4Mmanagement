@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import resizeImg from '../utils/resizeImage';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -18,6 +19,8 @@ import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectU
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import PeChangeRequests from '../components/PeChangeRequests';
 import { notifyEvent } from '../utils/notifyEvent';
+import SearchSelect from '../components/SearchSelect';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -149,6 +152,8 @@ export default function Improvements() {
   const [saving, setSaving] = useState(false);
   const [beforeFile, setBeforeFile] = useState(null);
   const [afterFile, setAfterFile] = useState(null);
+  const beforePreview = useObjectUrl(beforeFile);   // blob URL พรีวิว — สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
+  const afterPreview = useObjectUrl(afterFile);
   const [pareto, setPareto] = useState({ loading: false, rows: [] });
   const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
   const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
@@ -728,7 +733,7 @@ export default function Improvements() {
         if (!file) continue;
         const blob = await resizeImage(file);
         const path = `${row.id}/${field === 'image_before_url' ? 'before' : 'after'}-${Date.now()}.jpg`;
-        const { error: upErr } = await supabaseDR.storage.from('improvement-images').upload(path, blob, { upsert: true });
+        const { error: upErr } = await supabaseDR.storage.from('improvement-images').upload(path, blob, uploadOpts({ upsert: true }));
         if (upErr) throw upErr;
         imgPayload[field] = supabaseDR.storage.from('improvement-images').getPublicUrl(path).data.publicUrl;
       }
@@ -1353,71 +1358,27 @@ export default function Improvements() {
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
-                    <select value={modal.machine_no || ''} onChange={e => setModal({ ...modal, machine_no: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">— ทั้งไลน์ —</option>
-                      {/* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน (เช่นชื่อที่พิมพ์ในบันทึก downtime) ต้องยังแสดงได้ —
-                          ไม่งั้น select โชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ = โกหกคนอ่าน */}
-                      {modal.machine_no && !mcListed(modal.machine_no) && (
-                        <option value={modal.machine_no}>⚠ {modal.machine_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)</option>
-                      )}
-                      {/* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ = คำตอบที่คนกำลังหา */}
-                      {mcHit.length > 0 && (
-                        <optgroup label={`⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`}>
-                          {mcHit.map(m => (
-                            <option key={m.id} value={m.machine_no}>
-                              {m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''} — {Math.round(mcOfHit(m).value).toLocaleString()} {hitUnit} · {mcOfHit(m).count} ครั้ง
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {mcUnreg.length > 0 && (
-                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง">
-                          {mcUnreg.map(h => (
-                            <option key={`u-${h.machine_no}`} value={h.machine_no}>
-                              {h.machine_no} — {Math.round(h.value).toLocaleString()} {hitUnit} · {h.count} ครั้ง
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label={mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์'}>
-                        {mcRest.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
-                      </optgroup>
-                      {/* แม่พิมพ์แยกกลุ่มท้ายสุด — เดิมปนกลางลิสต์เครื่องจักร (ชื่อยาวเป็นชื่อพาร์ท) */}
-                      {mcDie.length > 0 && (
-                        <optgroup label="🔨 แม่พิมพ์">
-                          {mcDie.map(m => <option key={m.id} value={m.machine_no}>{m.machine_no} {m.machine_name ? `· ${m.machine_name}` : ''}</option>)}
-                        </optgroup>
-                      )}
-                    </select>
+                    <SearchSelect value={modal.machine_no || ''} placeholder="— ทั้งไลน์ — (พิมพ์ค้นหาเครื่อง)" style={{ marginTop: 4 }}
+                      options={[
+                        /* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน ต้องยังแสดงได้ — ไม่งั้นช่องโชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ */
+                        ...(modal.machine_no && !mcListed(modal.machine_no) ? [{ id: modal.machine_no, label: `⚠ ${modal.machine_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)' }] : []),
+                        /* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ */
+                        ...mcHit.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, badge: `${Math.round(mcOfHit(m).value).toLocaleString()} ${hitUnit} · ${mcOfHit(m).count} ครั้ง`, badgeColor: '#f59e0b', group: `⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`, keywords: m.machine_name || '' })),
+                        ...mcUnreg.map(h => ({ id: h.machine_no, label: h.machine_no, badge: `${Math.round(h.value).toLocaleString()} ${hitUnit} · ${h.count} ครั้ง`, badgeColor: '#f59e0b', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง' })),
+                        ...mcRest.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์', keywords: m.machine_name || '' })),
+                        ...mcDie.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: '🔨 แม่พิมพ์', keywords: m.machine_name || '' })),
+                      ]}
+                      onChange={({ id }) => setModal({ ...modal, machine_no: id })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
-                    <select value={modal.mat_no || ''} onChange={e => setModal({ ...modal, mat_no: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">— ทุกสินค้า —</option>
-                      {modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) && (
-                        <option value={modal.mat_no}>⚠ {modal.mat_no} · ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)</option>
-                      )}
-                      {prodHit.length > 0 && (
-                        <optgroup label={`⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`}>
-                          {prodHit.map(p => (
-                            <option key={p.id} value={p.mat_no}>
-                              {p.mat_no} · {p.name} — {Math.round(matOfHit(p).value).toLocaleString()} {hitUnit}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {prodUnreg.length > 0 && (
-                        <optgroup label="⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้">
-                          {prodUnreg.map(mat => (
-                            <option key={`um-${mat}`} value={mat}>
-                              {mat} — {Math.round(hitMat.get(mat).value).toLocaleString()} {hitUnit}
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      <optgroup label={prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์'}>
-                        {prodRest.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
-                      </optgroup>
-                    </select>
+                    <SearchSelect value={modal.mat_no || ''} placeholder="— ทุกสินค้า — (พิมพ์ค้นหา MAT / ชื่อ)" style={{ marginTop: 4 }}
+                      options={[
+                        ...(modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) ? [{ id: modal.mat_no, label: `⚠ ${modal.mat_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)' }] : []),
+                        ...prodHit.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, badge: `${Math.round(matOfHit(p).value).toLocaleString()} ${hitUnit}`, badgeColor: '#f59e0b', group: `⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`, keywords: p.name || '' })),
+                        ...prodUnreg.map(mat => ({ id: mat, label: mat, badge: `${Math.round(hitMat.get(mat).value).toLocaleString()} ${hitUnit}`, badgeColor: '#f59e0b', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้' })),
+                        ...prodRest.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, group: prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์', keywords: p.name || '' })),
+                      ]}
+                      onChange={({ id }) => setModal({ ...modal, mat_no: id })} />
                     {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
                     {prodAll.length === 0 && prodUnreg.length === 0 && (
                       <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
@@ -1468,14 +1429,15 @@ export default function Improvements() {
                   <textarea value={modal.action_taken || ''} onChange={e => setModal({ ...modal, action_taken: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {[['before', 'รูปก่อนแก้ไข', beforeFile, setBeforeFile, modal.image_before_url],
-                    ['after', 'รูปหลังแก้ไข', afterFile, setAfterFile, modal.image_after_url]].map(([key, label, file, setFile, existing]) => (
+                  {[['before', 'รูปก่อนแก้ไข', beforePreview, setBeforeFile, modal.image_before_url],
+                    ['after', 'รูปหลังแก้ไข', afterPreview, setAfterFile, modal.image_after_url]].map(([key, label, preview, setFile, existing]) => (
                     <div key={key}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-                      {(file || existing) && (
-                        <img src={file ? URL.createObjectURL(file) : existing} alt={label} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 4 }} />
+                      {(preview || existing) && (
+                        <img src={preview || existing} alt={label} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 4 }} />
                       )}
-                      <input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} style={{ fontSize: 11 }} />
+                      {/* reset value เสมอ — เลือกไฟล์เดิมซ้ำแล้ว change ไม่ยิง (เคสหน้างาน: ลองแนบรูปเดิมหลังล้มแล้วเงียบ) */}
+                      <input type="file" accept="image/*" onChange={e => { setFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11 }} />
                     </div>
                   ))}
                 </div>

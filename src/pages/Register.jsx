@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -11,6 +12,7 @@ import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
 import { lineOptions } from '../components/LineSelect';
+import { uploadOpts } from '../utils/storageUpload';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -27,6 +29,7 @@ export default function Register() {
   const [team,        setTeam]        = useState('');
   const [startDate,   setStartDate]   = useState('');
   const [photo,       setPhoto]       = useState(null);
+  const photoPreview = useObjectUrl(photo);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile,    setCropFile]    = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [lines,       setLines]       = useState([]);
@@ -93,7 +96,7 @@ export default function Register() {
       if (photo) {
         const fileExt = photo.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, photo);
+        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, photo, uploadOpts());
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
         photoUrl = pub.publicUrl;
@@ -270,7 +273,7 @@ export default function Register() {
           <div>
             <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {photo && <img src={URL.createObjectURL(photo)} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
+              {photoPreview && <img src={photoPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
               <input id="photo-upload" type="file" accept="image/*" onChange={e => {
                 const f = e.target.files?.[0];
                 e.target.value = '';
@@ -280,7 +283,7 @@ export default function Register() {
           </div>
           {cropFile && (
             <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
-              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
               onCancel={() => setCropFile(null)}
               onConfirm={f => { setPhoto(f); setCropFile(null); }} />
           )}

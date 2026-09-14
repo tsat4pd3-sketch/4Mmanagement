@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useContext, lazy, Suspense } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import useIsMobile from '../utils/useIsMobile';
 import { UserContext } from '../App';
@@ -10,6 +10,9 @@ import useTabParam from '../utils/useTabParam';
 import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
+const PullSignalUpload = lazy(() => import('../components/PullSignalUpload'));   // 📥 อัพโหลด e-SMART (ตัวอ่าน xlsx โหลดตอนเปิดเท่านั้น)
+const OrderIntakeLog = lazy(() => import('../components/OrderIntakeLog'));       // 📜 ประวัติ order เข้าระบบ (3 ทางเข้า)
+const PullRoundsPanel = lazy(() => import('../components/PullRoundsPanel'));
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกในใบส่ง — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 /* ─── DELIVERY — Shipping Time Chart + Ship-to Config (Logistic) ──────────
@@ -43,7 +46,7 @@ const SHIP_STATUS = {
   shipped:   { label: '✅ ส่งแล้ว',     color: '#22c55e', next: null,        nextLabel: null },
 };
 const SHIP_RANK = { pending: 0, confirmed: 1, prepared: 2, loaded: 3, shipped: 4 };
-function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
+function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shipToMap }) {
   // มือถือ ≤768px: ชาร์ต 24 ชม.เลื่อนแนวนอนได้ + ป้ายลูกค้า sticky ซ้าย (desktop เต็มจอเดียวเหมือนเดิม)
   const isMobile = useIsMobile();
   const chartLeftW = isMobile ? 96 : 130;
@@ -65,6 +68,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
   const [pastDue, setPastDue] = useState([]);              // ใบค้างส่งจากวันงานก่อนหน้า (ย้อน 14 วัน)
   // ➕ คีย์ order ด่วนทีละใบ (ลูกค้า add order นอกไฟล์ EDI เช่นโทรสั่ง) — ไม่ต้องรออัพโหลด 862 รอบถัดไป
   const [showAdd, setShowAdd] = useState(false);
+  const [showPull, setShowPull] = useState(false);   // 📥 modal อัพโหลด e-SMART (ยืนยัน order จากลูกค้า)
   const [addSaving, setAddSaving] = useState(false);
   const emptyAdd = { customer: '', mat_no: '', part_name: '', qty: '', due_date: workDateStr(), ship_time: '', order_no: '', dock_code: '' };
   const [addForm, setAddForm] = useState(emptyAdd);
@@ -95,7 +99,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
     if (addForm.customer && !(shipToCodes || []).includes(addForm.customer)
       && !window.confirm(`Ship-to ${addForm.customer} ไม่มีในทะเบียน — ชาร์ต/workflow ต่อลูกค้าจะไม่ครบจนกว่าจะตั้งค่าที่แท็บ ⚙️ Ship-to Config · ใช้ค่านี้ต่อหรือไม่?`)) return;
     setAddSaving(true);
-    const { error } = await supabaseDR.from('customer_shipping_orders').insert({
+    const rec = {
       customer: addForm.customer.trim() || null,
       mat_no: mat,
       part_name: addForm.part_name.trim() || prodNames[mat] || null,
@@ -105,7 +109,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
       order_no: addForm.order_no.trim() || null,
       dock_code: addForm.dock_code.trim() || null,
       source: 'manual',
-    });
+    };
+    // 📜 เก็บ "ใครคีย์" ให้แท็บประวัติ — ยังไม่ apply migration = บันทึกแบบเดิม + บอกบนจอ (ห้ามเงียบ)
+    let { error } = await supabaseDR.from('customer_shipping_orders').insert({ ...rec, created_by_name: fullName || null });
+    if (error?.code === '42703') {
+      ({ error } = await supabaseDR.from('customer_shipping_orders').insert(rec));
+      if (!error) toast.info('บันทึกแล้ว — แต่ยังไม่ได้เก็บชื่อผู้คีย์ (ยังไม่ apply migration)');
+    }
     setAddSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success(`➕ เพิ่ม order ${mat} × ${fmt(qty)} แล้ว`);
@@ -541,13 +551,36 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes }) {
           </button>
         )}
         {canAdd && (
+          /* 📥 e-SMART = ยอดยืนยันสุดท้ายก่อนส่งจากลูกค้า (ดู PullSignalUpload.jsx) — วางคู่ "เพิ่ม order ด่วน"
+             เพราะเป็นทางเข้าของ order เหมือนกัน ต่างกันแค่ "คนคีย์" กับ "ลูกค้ายืนยันมาเป็นไฟล์" */
+          <button onClick={() => setShowPull(true)}
+            title="ลูกค้าส่งไฟล์ยอดเรียกงานจริง (e-SMART) มาเป็นช่วงเวลา — อัพเข้าระบบเพื่อยืนยัน/แก้ยอดของรอบนั้น · พาร์ทที่ไม่อยู่ในไฟล์ถือว่าตรงกับ 862"
+            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid #0ea5e9', background: 'rgba(14,165,233,0.14)', color: '#0ea5e9', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
+            📥 อัพโหลด e-SMART
+          </button>
+        )}
+        {canAdd && (
           <button onClick={() => { setAddForm({ ...emptyAdd, due_date: day >= workDateStr() ? day : workDateStr() }); setShowAdd(true); }}
             title="ลูกค้าสั่งเพิ่มนอกไฟล์ EDI (สั่งด่วน/โทรสั่ง) — คีย์เข้าระบบได้ทันที ไม่ต้องรออัพโหลด 862"
-            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#08130a', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
+            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: '#08130a', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
             ➕ เพิ่ม order ด่วน
           </button>
         )}
       </div>
+
+      {/* อัพโหลดไฟล์ยืนยัน order จากลูกค้า — lazy chunk (โหลดตัวอ่าน xlsx เฉพาะตอนเปิด) */}
+      {showPull && (
+        <Suspense fallback={null}>
+          <PullSignalUpload
+            open={showPull} onClose={() => setShowPull(false)} fullName={fullName} shipToMap={shipToMap}
+            onApplied={({ workDate, shipTime }) => {
+              // เด้งไปวันงานที่เพิ่งอัพเดท แล้วโหลดใหม่ ให้เห็นผลบนชาร์ตทันที
+              if (workDate && workDate !== day) setDay(workDate);
+              else load();
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Modal คีย์ order ด่วน — ปิดได้จากปุ่มเท่านั้น (มีฟอร์ม ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) */}
       {showAdd && (
@@ -1099,7 +1132,7 @@ function WorkflowSection({ canEdit }) {
 }
 
 /* ─── Ship-to Plant Config Tab ────────────────────────────────────────────── */
-function ShipToTab({ canEdit, onChanged }) {
+function ShipToTab({ canEdit, onChanged, fullName }) {
   const [rows, setRows] = useState([]);
   const [draft, setDraft] = useState({});     // code → { customer_name, plant_name, note }
   const [newCode, setNewCode] = useState('');
@@ -1215,6 +1248,11 @@ function ShipToTab({ canEdit, onChanged }) {
         </div>
       )}
     </div>
+    {/* 🚚 ตารางรอบรับของลูกค้า — รอบส่งของ e-SMART มาจากตารางนี้ ไม่ใช่สูตร (2026-09-09) */}
+    <Suspense fallback={null}>
+      <PullRoundsPanel canEdit={canEdit} fullName={fullName}
+        shipToMap={Object.fromEntries((rows || []).map(r => [r.code, r]))} />
+    </Suspense>
     <WorkflowSection canEdit={canEdit} />
     </>
   );
@@ -1223,7 +1261,7 @@ function ShipToTab({ canEdit, onChanged }) {
 /* ─── Page ────────────────────────────────────────────────────────────────── */
 export default function CustomerDemand() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['shipping', 'shipto'], 'shipping');
+  const [tab, setTab] = useTabParam(['shipping', 'shipto', 'log'], 'shipping');
   const [refreshKey, setRefreshKey] = useState(0);
   // Ship-to config — สิทธิ์จากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canConfig = can('shipping', 'config', role);
@@ -1250,14 +1288,20 @@ export default function CustomerDemand() {
         sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
         tabs={[
           { key: 'shipping', label: '🕐 Shipping Chart' },
-          { key: 'shipto', label: '⚙️ Ship-to Config' },
+          { key: 'log', label: '📜 ประวัติ order เข้าระบบ' },
+          { key: 'shipto', label: '⚙️ Ship-to Config' },   // ⚠️ แท็บตั้งค่าอยู่ท้ายสุดเสมอ (UI-CONVENTIONS §6.8 ข้อ 4)
         ]}
         tab={tab} onTab={setTab}
       />
 
       {/* ship-to ที่เลือกได้ในฟอร์มคีย์ order = เฉพาะ active (ปิดใช้แล้วยังแสดงชื่อผ่าน custLabel ได้ตามเดิม) */}
-      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap).filter(c => shipToMap[c]?.is_active !== false).sort()} />}
-      {tab === 'shipto' && <ShipToTab canEdit={canConfig} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
+      {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap).filter(c => shipToMap[c]?.is_active !== false).sort()} shipToMap={shipToMap} />}
+      {tab === 'log' && (
+        <Suspense fallback={<div style={{ fontSize: 12, color: 'var(--text2)', padding: 16 }}>⏳ กำลังโหลด…</div>}>
+          <OrderIntakeLog shipToMap={shipToMap} custLabel={custLabel} />
+        </Suspense>
+      )}
+      {tab === 'shipto' && <ShipToTab canEdit={canConfig} fullName={fullName} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
     </div>
   );
 }

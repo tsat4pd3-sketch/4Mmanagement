@@ -14,6 +14,7 @@ import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
@@ -25,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { uploadOpts } from '../utils/storageUpload';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -110,7 +112,12 @@ export default function Operator() {
   const canEditSkillsFor = (emp) => canEditSkills
     && (editAllSections
         || (!!homeSection && inSectionScope([homeSection], emp?.section))
-        || (!emp?.section && MAINTENANCE_ROLES.includes(role)));
+        || (!emp?.section && MAINTENANCE_ROLES.includes(role))
+        /* 🤝 คนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ — คนที่เห็นเขาทำงานจริงวันนี้คือหัวหน้าไลน์ปลายทาง
+           จึงเป็นคนเดียวที่ให้คะแนนทักษะได้ตรงความจริง · จำกัดเวลาในตัวอยู่แล้ว (การยืมหมดอายุเมื่อจบกะ)
+           ⚠️ ขยายเฉพาะ "สกิล" เท่านั้น — ประวัติพนักงาน (canEditEmp: ชื่อ/ส่วนงาน/ไลน์/ตำแหน่ง)
+              ยังเป็นของต้นสังกัด ห้ามให้ไลน์ที่ยืมไปแก้ ไม่งั้นเปลี่ยน line_id แล้วคนหายจากไลน์เดิม */
+        || helperIds.has(emp?.id));
 
   // แท็บผูก ?tab= ด้วย "ชื่อ" (ลิงก์อ่านรู้เรื่อง) แล้วแปลงเป็น index ให้เนื้อหาเดิมที่อ้าง tab === n
   // ⚠️ ลำดับใน TAB_KEYS ต้องตรงกับ index เดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up)
@@ -160,7 +167,11 @@ export default function Operator() {
   const [filterGrade,   setFilterGrade]   = useState('');
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
+  const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)
   const [lines,           setLines]           = useState([]);
+  /* 🤝 id ของคนที่ถูก "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers) — เก็บแยกจาก employees
+     เพราะต้องใช้ตัดสินสิทธิ์/วาดป้ายหลังจากที่แถวถูกคัดลอกไปเป็น editingEmp แล้ว (spread ทิ้ง flag ได้) */
+  const [helperIds,       setHelperIds]       = useState(new Set());
   const [busRoutes,       setBusRoutes]       = useState([]);
   const [levelUpRequests, setLevelUpRequests] = useState([]);
   const [luDocFile,       setLuDocFile]       = useState(null);
@@ -250,6 +261,8 @@ export default function Operator() {
       toast.error('ระดับ 100 ต้องแนบเอกสารการอบรมก่อน'); return;
     }
     setIsReviewing(true);
+    // ทุกทางออก (return ก่อนเวลา / throw จาก resizeImage·upload) ต้องผ่าน finally — ปุ่มห้ามค้างหมุน
+    try {
     const { data: { user } } = await supabase.auth.getUser();
     let doc_url = req.doc_url || null;
 
@@ -258,17 +271,17 @@ export default function Operator() {
       // และตั้งนามสกุลตามชนิดไฟล์จริง — เดิม fix .jpg ทำให้ PDF ถูกเก็บผิดฟอร์แมต
       const isPdf = luDocFile.type === 'application/pdf';
       if (isPdf && luDocFile.size > 20 * 1024 * 1024) {
-        toast.error('ไฟล์ PDF ต้องไม่เกิน 20MB'); setIsReviewing(false); return;
+        toast.error('ไฟล์ PDF ต้องไม่เกิน 20MB'); return;
       }
       let fileToUpload = luDocFile;
       if (luDocFile.type.startsWith('image/')) {
-        // resizeImage โยน error เมื่อ decode ไม่ได้ — ต้องรับเอง ไม่งั้นปุ่มค้างหมุนแบบไม่มีข้อความ
+        // resizeImage โยน error เมื่อ decode ไม่ได้/ตัวแปลง HEIC ค้าง — รับไว้โชว์ข้อความ (busy flag reset ที่ finally)
         try { fileToUpload = await resizeImage(luDocFile); }
-        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsReviewing(false); return; }
+        catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
-      if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); setIsReviewing(false); return; }
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, uploadOpts({ upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' }));
+      if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       doc_url = urlData.publicUrl;
     }
@@ -279,18 +292,20 @@ export default function Operator() {
       employee_id: req.employee_id, skill_name: req.skill_name,
       score: req.to_level, pending_level: null,
     }, { onConflict: 'employee_id,skill_name' });
-    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); setIsReviewing(false); return; }
+    if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); return; }
 
     const { error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
     }).eq('id', req.id);
-    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); setIsReviewing(false); return; }
+    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); return; }
 
     toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
-    setIsReviewing(false);
     setLuDocFile(null); setLuDocPreview(null);
     fetchLevelUpRequests();
     fetchEmployees();
+    } finally {
+      setIsReviewing(false);
+    }
   };
 
   const handleRejectLevel = async () => {
@@ -327,14 +342,24 @@ export default function Operator() {
     setSkillDefs(data || []);
   };
 
+  /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4) — fetchEmployees ถูกเรียกจากหลายจุด (โหลดแรก/หลังบันทึก/
+     หลังอนุมัติ level-up) และตอนนี้มี await เพิ่มอีกจังหวะสำหรับคนยืมตัว */
+  const fetchReqRef = useRef(0);
   const fetchEmployees = async () => {
+    const myReq = ++fetchReqRef.current;
     // scope ของ leader = ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
     // ดึงไลน์เองตรงนี้ ไม่พึ่ง state `lines` เพราะโหลดขนานกัน อาจยังว่างตอน fetch รอบแรก
     let famIds = null;
+    // lines ของ scope — โหลดเองถ้า state ยังว่าง (fetch รอบแรกวิ่งขนานกับตัวโหลด lines)
+    // ต้องมี section ด้วย: mergeBorrowedEmployees ใช้หา section ของไลน์ปลายทางตอน scope เป็นส่วนงาน
+    let linesForScope = lines;
+    if (!linesForScope.length) {
+      const { data: ls } = await supabase.from('production_lines').select('id, name, section, parent_line_name');
+      linesForScope = ls || [];
+    }
     if (isLeader && userLineId) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
-      const s = getLineFamilyIds(ls || [], Number(userLineId));
-      famIds = s.size ? [...s] : null;
+      const s = getLineFamilyIds(linesForScope, Number(userLineId));
+      famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
       let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
@@ -346,10 +371,20 @@ export default function Operator() {
       makeBase().eq('is_active', true).order('employee_id_code'),
       makeBase().eq('is_active', false).order('employee_id_code'),
     ]);
+    /* 🤝 ต่อท้ายด้วยคนที่ถูกยืมมาช่วยไลน์ใน scope "กะนี้" — หัวหน้าไลน์ปลายทางเป็นคนเห็นเขาทำงานจริงวันนี้
+       ต้องดู/ให้คะแนนทักษะ + พิมพ์ใบประเมิน F-PRS-P1-119 ให้เขาได้ (ดู src/utils/lineHelpers.js)
+       เฉพาะคนที่ยัง active — คนพ้นสภาพไม่ควรถูกยืมอยู่แล้ว */
+    const withHelpers = await mergeBorrowedEmployees(active || [], {
+      lines: linesForScope, lineIds: famIds, scopeSecs,
+      columns: '*, employee_skills(skill_name, score, pending_level)',
+    });
+    const hIds = new Set(withHelpers.filter(e => e._isHelper).map(e => e.id));
+    if (myReq !== fetchReqRef.current) return;   // มีคำขอใหม่กว่าแล้ว — ทิ้งคำตอบนี้
     // startTransition defers the heavy table re-render so navigation stays responsive
     startTransition(() => {
-      setEmployees(active || []);
+      setEmployees(withHelpers);
       setInactiveEmployees(inactive || []);
+      setHelperIds(hIds);
     });
   };
 
@@ -417,7 +452,7 @@ export default function Operator() {
       if (editingEmp.newPhoto) {
         const fileExt = editingEmp.newPhoto.name.split('.').pop();
         const fileName = `emp_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto);
+        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto, uploadOpts());
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
         photoUrl = pub.publicUrl;
@@ -705,8 +740,15 @@ export default function Operator() {
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
-    .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, offOrgReasons, laborMap]);
+    .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
+    .filter(emp => !filterNoPhoto || !emp.image_url),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, offOrgReasons, laborMap]);
+
+  // worklist "ยังไม่มีรูป" — นับจากคนที่ยังทำงานอยู่เท่านั้น (คนลาออกไม่ต้องตามถ่าย)
+  // ที่มา 2026-09-11: ล้างรูปที่ใหญ่ผิดกติกาออก 18 ไฟล์ (GIF/รูปไม่ได้บีบ) หัวหน้าต้องไล่ถ่ายใหม่
+  // — ถ้าไม่มีจุดบนจอบอก จะไม่มีใครรู้ว่าเหลือใครบ้าง (กฎ: ข้อมูลไม่ครบต้องเห็นบนจอ ห้ามเงียบ)
+  const noPhotoCount = useMemo(
+    () => employees.filter(e => !e.image_url).length, [employees]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -893,6 +935,33 @@ export default function Operator() {
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
           </div>
 
+          {/* worklist "ยังไม่มีรูป" — โผล่เฉพาะตอนที่ยังมีคนค้าง (นับเฉพาะคนที่ยังทำงานอยู่)
+              เตือนแบบนิ่ง ไม่กระพริบ ตาม UI-CONVENTIONS (แดง/กระพริบสงวนไว้ให้ของที่ต้องวิ่งไปแก้เดี๋ยวนี้) */}
+          {!showInactive && noPhotoCount > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
+              padding: '9px 12px', borderRadius: 8,
+              background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.35)',
+            }}>
+              <span style={{ fontSize: 12.5, color: '#38bdf8', fontWeight: 700 }}>
+                📷 ยังไม่มีรูป {noPhotoCount} คน
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                เปิดแก้ไขรายคนแล้วอัปรูปได้เลย · <b>ใช้รูปนิ่ง JPG/PNG เท่านั้น (ไม่รับ GIF)</b> —
+                ระบบย่อ/บีบให้อัตโนมัติ ไม่ต้องย่อมาก่อน
+              </span>
+              <button onClick={() => setFilterNoPhoto(v => !v)}
+                style={{
+                  position: 'relative', marginLeft: 'auto',
+                  padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(56,189,248,0.5)', fontSize: 12, cursor: 'pointer',
+                  background: filterNoPhoto ? 'rgba(56,189,248,0.28)' : 'transparent', color: '#38bdf8', fontWeight: 700,
+                }}>
+                {filterNoPhoto ? '✅ กำลังดูเฉพาะคนที่ยังไม่มีรูป' : '🔎 ดูเฉพาะคนที่ยังไม่มีรูป'}
+                <ToggleDot on={filterNoPhoto} ring="var(--bg)" />
+              </button>
+            </div>
+          )}
+
           {/* worklist ข้อมูลไม่ตรงผังองค์กร — เตือนแบบนิ่ง (ไม่ใช่ alarm) กดกรองดูเฉพาะคนที่ต้องแก้ได้ */}
           {offOrgStat.total > 0 && (
             <div style={{
@@ -1033,6 +1102,15 @@ export default function Operator() {
                     </td>
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
                       <div style={{ fontWeight: 600 }}>{emp.name}</div>
+                      {/* 🤝 บอกให้ชัดว่าคนนี้ "ยืมมาช่วยกะนี้" ไม่ใช่ย้ายสังกัดมาแล้ว (employees.line_id ไม่ถูกแตะ) */}
+                      {emp._isHelper && (
+                        <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้ — ต้นสังกัดยังเป็นที่เดิม`}
+                          style={{ display: 'inline-block', marginTop: 2, fontSize: 11, fontWeight: 700,
+                            padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap',
+                            background: '#0ea5e918', color: '#0ea5e9', border: '1px solid #0ea5e944' }}>
+                          🤝 ยืมจาก {emp._helperFrom}
+                        </div>
+                      )}
                     </td>
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
@@ -1419,6 +1497,7 @@ export default function Operator() {
                             <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
                               onChange={e => {
                                 const f = e.target.files?.[0];
+                                e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
                                 if (!f) return;
                                 setLuDocFile(f);
                                 if (f.type.startsWith('image/')) {
@@ -1855,7 +1934,7 @@ export default function Operator() {
               </div>
               {empCropFile && (
                 <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
-                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
                   onCancel={() => setEmpCropFile(null)}
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}

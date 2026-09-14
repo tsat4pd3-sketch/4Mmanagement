@@ -11,6 +11,7 @@ import { TOOL_KIND, TOOL_STATUS, STEP_STATUS, LIGHT, toolingRollup, stepLight, g
 import { inp, card, btn, ghost, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
 import PersonSelect from './PersonSelect';
 import SearchSelect from './SearchSelect';
+import SupplierSelect from './SupplierSelect'; // ผู้ทำ tooling = ทะเบียน DR suppliers (แม่พิมพ์/จิ๊ก · ผลิตเอง ขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
@@ -173,7 +174,8 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
             <Field label="พาร์ท *"><select style={inp} value={planModal.part_id} onChange={e => setPlanModal({ ...planModal, part_id: e.target.value })}><option value="">—</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}</select></Field>
             <Field label="ชนิด"><select style={inp} value={planModal.tool_kind} onChange={e => setPlanModal({ ...planModal, tool_kind: e.target.value })}>{Object.entries(TOOL_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
             <Field label="ชื่อเครื่องมือ *" span={2}><input style={inp} value={planModal.tool_name} onChange={e => setPlanModal({ ...planModal, tool_name: e.target.value })} placeholder="OP10 DRAW DIE / CHECKING FIXTURE RH" /></Field>
-            <Field label="ผู้ทำ (maker)" hint="text ไปก่อน — supplier master เฟส 4"><input style={inp} value={planModal.maker_name} onChange={e => setPlanModal({ ...planModal, maker_name: e.target.value })} /></Field>
+            {/* 2026-09-08: maker_name เก็บชื่อ text เหมือนเดิม (npi_* อยู่ Main · suppliers อยู่ DR — คนละ project ผูก FK ไม่ได้) */}
+            <Field label="ผู้ทำ (maker)" hint="เลือกจากทะเบียน supplier (/products แท็บ 🏭) — พิมพ์เองได้พร้อมป้าย"><SupplierSelect value={planModal.maker_name || ''} kinds={['tooling', 'internal']} onChange={r => setPlanModal({ ...planModal, maker_name: r.supplier })} inputStyle={inp} /></Field>
             <Field label="ทำที่"><select style={inp} value={planModal.maker_kind} onChange={e => setPlanModal({ ...planModal, maker_kind: e.target.value })}><option value="external">ภายนอก</option><option value="internal">ภายใน (JIG/DIE shop)</option></select></Field>
             <Field label="P/O"><input style={inp} value={planModal.po_no} onChange={e => setPlanModal({ ...planModal, po_no: e.target.value })} /></Field>
             <Field label="สถานะ"><MetaSelect value={planModal.status} onChange={v => setPlanModal({ ...planModal, status: v })} meta={TOOL_STATUS} /></Field>

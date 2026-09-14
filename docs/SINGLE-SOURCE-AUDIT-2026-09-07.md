@@ -54,12 +54,18 @@
 **ไม่เปลี่ยน schema** — คอลัมน์ id ที่ไม่มี (mtn_orders.machine_id · jigs.mat_no · meeting_action_items.assignee_id · npi leader_uid/owner_uid · doc_form_revisions) ยังเก็บ text snapshot เหมือนเดิม · ถ้าอยากผูก FK จริงเป็นงานถัดไป (migration + picker คืน id ให้อยู่แล้ว)
 
 ---
-**สิ่งที่ตั้งใจ "ยังไม่ทำ" (ต้องมี master ใหม่ = product decision · schema):**
-- ตาราง `customers` (code/name/alias) — ระหว่างนี้ใช้ derived list จาก Product Master (`useCustomers.js` แก้จุดเดียวเมื่อมีตาราง)
-- ตาราง `suppliers` — NPI migration ระบุเป็นเฟส 4 · พิมพ์ซ้ำใน parts_master / container_types / part_routings.vendor / mtn_spare_parts / purchase_slips / npi_tooling.maker
-- กลุ่มเครื่องปั๊มของแม่พิมพ์ (`LINE A ( 800 Ton )`) ไม่อยู่ใน production_lines — DieRegistry ยังเลือกจากค่าที่มีอยู่ + ระบุใหม่ได้
-- `transport_carriers.employee_id` (ผูก FK คนขับกับ employees) · `cost_centers` master
-- `model` (MtnRepair / PMSetup / DieRegistry) ไม่มี owner table · `qa_instruments.inst_type` · `container_types.category`
+**master ใหม่ 4 ตาราง — ทำแล้ว 2026-09-08 (user สั่ง "ลุยเลย"):**
+
+| ตาราง | project | seed จริง | picker / แผงจัดการ | คอลัมน์ปลายทาง |
+|---|---|---|---|---|
+| `customers` (code · name · aliases[]) | DR | 22 (รวมค่าที่ดูไม่ใช่ลูกค้า เช่น "ASSY LWRBAR" — ให้ปิดใช้/รวมเอง ไม่ล้างเงียบ) | `CustomerSelect` (alias → สะกดหลัก) · /products 🏷️ ลูกค้า | customer text เหมือนเดิม |
+| `suppliers` (code · name · kind · contact · lead_time_days) | DR | 51 (kind เดาจากแหล่ง: TSAT* = internal) | `SupplierSelect` (kinds ขึ้นก่อน) · /products 🏭 Supplier | supplier / vendor_name / maker_name text |
+| `die_press_lines` (code · name · tonnage · ref_production_line) | DR | 6 (LINE A-D + HDF1/HDF2 → ref ไลน์ผลิต) | `SelectOrFree` จาก `useDiePressLines` · /die-registry ⚙️ | die_sets/machines line_name text |
+| `cost_centers` (code · name · section) | Main | 70 (ชื่อจากไลน์/ผัง 32 · ที่เหลือว่างให้บัญชีเติม) | `CostCenterSelect` · /org-setup 💰 (RLS `cost_rate:manage`) | cost_center code text |
+
+migrations `20260908_customers_master_dr.sql` · `20260908_suppliers_master_dr.sql` · `20260908_die_press_lines_dr.sql` · `20260908_cost_centers_main.sql` (**apply แล้ว 2026-09-08 ผ่าน MCP · audit trigger ผูกครบ**) · ไม่ผูก FK — ย้อนได้ด้วยการ drop ตาราง (โค้ด fallback เป็นพิมพ์เอง+ป้าย)
+
+**ยังไม่ทำ (ไม่มี owner ชัด):** `transport_carriers.employee_id` (ผูก FK คนขับ) · `model` (MtnRepair / PMSetup / DieRegistry) · `qa_instruments.inst_type` · `container_types.category`
 
 ## กฎที่ตกผลึก (บันทึกใน `docs/UI-CONVENTIONS.md` §5.1.2)
 1. ช่องที่รับ "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง" ต้องใช้ component กลางเท่านั้น ห้าม `<input>`/datalist เอง

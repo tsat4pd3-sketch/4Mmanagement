@@ -77,8 +77,22 @@ export function personOptions({
 
 const KIND_ICON = { machine: '⚙️', die: '🧱', jig: '🔧', facility: '🏭' };
 
+/** ข้อความที่ต้องส่งให้ <SearchSelect> ของ picker กลาง — **คืน `undefined` = ปล่อยให้ SearchSelect ถือคำค้นเอง**
+ *  ⚠️ กฎเหล็ก: picker ที่พาเรนต์เก็บแค่ **FK id** (valueKey='id') **ห้ามส่ง text เป็น ''** —
+ *  '' คือ controlled ว่าง → ทุกตัวอักษรที่พิมพ์ถูกล้างทันที และ q='' ตลอด = ค้นหาไม่ทำงานเลย
+ *  (เกิดจริง 2026-09-08: จอเพิ่มอุปกรณ์ PM พิมพ์หาจิ๊กไม่ได้ ต้องเลื่อนหาอย่างเดียว)
+ *  พาเรนต์ที่เก็บ "ค่า text" เอง (machine_no/mat_no/ชื่อคน) ส่งค่าที่เก็บไว้ได้ตามปกติ */
+export function pickerText({ selLabel, value, storesText = true }) {
+  if (selLabel != null) return selLabel;
+  return storesText ? (value || '') : undefined;
+}
+
 /** เครื่องจักร (DR machines) — prefer ด้วยครอบครัวไลน์ · กรอง kinds · ตัด is_active=false เว้นค่าที่เลือกอยู่ */
-export function machineOptions(machines, { lines, kinds, strict = false, includeInactive = false, current } = {}) {
+/*  `groupByLine` = จัดกลุ่มตาม 📍 ไลน์ (ใช้เมื่อยังไม่รู้ไลน์ปลายทาง จึง prefer ไม่ได้) — คนหน้างานไล่หา
+    ของตัวเองจาก "ไลน์" เป็นหลัก · ทะเบียนจริง 635 ตัว ในนั้นเป็นแม่พิมพ์ 262 ตัวที่ใช้ชื่อพาร์ทยาวๆ
+    เป็น machine_no → ลิสต์แบนเรียงตามรหัสอ่านไม่รู้เรื่อง (feedback หน้างาน 2026-09-08
+    "ปกติมันจะเป็นไลน์ผลิตค่ะ ตอนจะแอดอุปกรณ์ใหม่")  */
+export function machineOptions(machines, { lines, kinds, strict = false, includeInactive = false, current, groupByLine = false } = {}) {
   const pref = new Set((lines || []).map(up).filter(Boolean));
   const kindSet = kinds?.length ? new Set(kinds) : null;
   const cur = up(current);
@@ -95,8 +109,16 @@ export function machineOptions(machines, { lines, kinds, strict = false, include
     machine_no: m.machine_no, name: m.machine_name || null, line_name: m.line_name || null, equipment_kind: m.equipment_kind || 'machine',
     _pref: pref.size ? pref.has(up(m.line_name)) : false,
   }));
-  tagged.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, undefined, { numeric: true }));
-  return tagged.map(o => ({ ...o, group: pref.size ? (o._pref ? '🎯 ไลน์ที่เลือก' : '🏭 ไลน์อื่น') : undefined }));
+  // groupByLine: เรียงตามไลน์ก่อนแล้วค่อยรหัสเครื่อง — แถวของไลน์เดียวกันต้องอยู่ติดกัน
+  // ไม่งั้นหัวกลุ่มโผล่ซ้ำ (SearchSelect ขึ้นหัวกลุ่มเมื่อค่า group เปลี่ยนจากแถวก่อนหน้า)
+  tagged.sort((a, b) => (b._pref - a._pref)
+    || (groupByLine ? String(a.line_name || '\uFFFF').localeCompare(String(b.line_name || '\uFFFF'), 'th') : 0)
+    || a.label.localeCompare(b.label, undefined, { numeric: true }));
+  return tagged.map(o => ({
+    ...o,
+    group: pref.size ? (o._pref ? '🎯 ไลน์ที่เลือก' : '🏭 ไลน์อื่น')
+      : (groupByLine ? `📍 ${o.line_name || 'ไม่ระบุไลน์'}` : undefined),
+  }));
 }
 
 /** สินค้า (DR dr_products) — prefer ด้วยไลน์ · ตัด OP (is_operation) เป็น default · extraOptions = พาร์ทลูก BOM */

@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { LIGHT } from '../utils/npi';
+import { toDecodableImage, isHeicFile } from '../utils/heicToJpeg';
+import { uploadOpts } from '../utils/storageUpload';
 
 export const inp = {
   width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -91,6 +93,12 @@ const MAX_MB = 20;
 export async function uploadNpiFile(folder, file) {
   if (!file) return null;
   if (file.size > MAX_MB * 1024 * 1024) { toast.error(`ไฟล์ใหญ่เกิน ${MAX_MB}MB`); return null; }
+  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (กฎ storage-images.md: ทุกจุดรับรูปต้องผ่าน toDecodableImage)
+  // แปลงไม่ได้ = หยุดทั้งอัปโหลด + บอกวิธีแก้ — ห้ามส่งไฟล์ HEIC ดิบขึ้นไปเงียบๆ (ใครเปิดก็ดูไม่ได้)
+  if (isHeicFile(file)) {
+    try { file = await toDecodableImage(file); }
+    catch (e) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); return null; }
+  }
   let toUpload = file;
   let ext = (file.name.split('.').pop() || 'bin').toLowerCase();
   if (file.type.startsWith('image/') && file.type !== 'image/gif') {
@@ -102,7 +110,7 @@ export async function uploadNpiFile(folder, file) {
     } catch { /* บีบไม่ได้ — ส่งไฟล์เดิมภายใต้ cap */ }
   }
   const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-  const { error } = await supabase.storage.from('npi-files').upload(path, toUpload, { upsert: true });
+  const { error } = await supabase.storage.from('npi-files').upload(path, toUpload, uploadOpts({ upsert: true }));
   if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
   return supabase.storage.from('npi-files').getPublicUrl(path).data.publicUrl;
 }

@@ -532,3 +532,10 @@
 - **MtnRepair dropdown "มอบหมายช่าง" ดึงจาก employees ทีมช่าง** (`employees.mtn_team` ก่อน → ไม่มีค่อยเดาด้วย `teamForSection` ใน `mtnTeams.js` map **department ก่อน แล้ว section** →ทีม) + รวมกับ `mtn_technicians` เดิม (ช่างเฉพาะกิจนอกฐานพนักงาน — fallback ไม่ลบ) · **ช่างเดิมทั้ง 14 คน (JIG MTN 7 + MTN 7) ย้ายเข้า employees แล้ว 2026-07-22** (รหัสชั่วคราว TECH-JIG-xx/TECH-MTN-xx รอเติมรหัสจริง · mtn_technicians ทุกแถวถูกปิด is_active=false เหลือไว้เป็นประวัติ — migration `20260722_migrate_technicians_to_employees.sql`) · `assigned_to` ยังเก็บเป็น **ชื่อ (text)** เหมือนเดิม (backward-compatible) · ⚙️ MasterTab: ช่างจากฐานพนักงานแสดง read-only (แก้ที่หน้าพนักงาน) เพิ่มได้เฉพาะช่างเฉพาะกิจ · **MtnRepair อ่าน employees ผ่าน client `supabase` (Main, authenticated)** ไม่ใช่ supabaseDR
 
 ---
+
+## Cost Center = ทะเบียน `cost_centers` (Main) — 2026-09-08 · ทะเบียน
+
+รหัส cost center เคยพิมพ์เอง 3 ที่ (production_lines · org_nodes · cost_center_rates) join ด้วยสตริง · ตอนนี้ Main `cost_centers`
+(code · name · section · migration `20260908_cost_centers_main.sql` · seed 70 รหัส — ชื่อจากไลน์/ผัง 32 ที่เหลือว่างให้บัญชีเติม)
+· ช่อง Cost Center ที่ LineSetup / OrgSetup / แผง rate / หัวใบ OT = `<CostCenterSelect>` (allowFree ปิด — รหัสใหม่ต้องเพิ่มในทะเบียนก่อน · ค่าเดิมนอกทะเบียนยังเลือกได้ กลุ่ม 📜)
+· จัดการที่ `/org-setup` แผง 💰 ทะเบียน Cost Center (`<SimpleMasterPanel>` · สิทธิ์ `cost_rate:manage` = คีย์เดียวกับ RLS เขียน) · คอลัมน์ปลายทางยังเก็บ code text ไม่ผูก FK

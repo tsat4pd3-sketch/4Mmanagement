@@ -11,12 +11,14 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { supabaseDR } from '../supabaseClient';
 import { toDecodableImage } from '../utils/heicToJpeg';
+import { IMG_READ_ERROR } from '../utils/resizeImage';
 import { toast } from './Toast';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { loadSpareSections, sectionOptions, sectionKeyOf, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { stockState, computeSpareRank, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -30,16 +32,23 @@ async function compressPlan(file) {
   // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
   file = await toDecodableImage(file);
   if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
-  const img = await new Promise((res, rej) => {
-    const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file);
-  });
-  const MAX = 2560;
-  const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
-  const c = document.createElement('canvas');
-  c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
-  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-  URL.revokeObjectURL(img.src);
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const url = URL.createObjectURL(file);
+  let blob;
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error(IMG_READ_ERROR)); i.src = url;
+    });
+    const MAX = 2560;
+    const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  } finally {
+    URL.revokeObjectURL(url);   // revoke ทุกทาง (เดิม revoke เฉพาะตอนสำเร็จ = รั่วทุกครั้งที่พัง)
+  }
+  // toBlob คืน null ได้บนมือถือ (canvas ใหญ่/หน่วยความจำไม่พอ) — เดิมพังเป็น "Cannot read properties of null"
+  if (!blob) throw new Error('บีบรูปผังไม่สำเร็จ (เบราว์เซอร์คืนค่าว่าง — มักเกิดบนมือถือเมื่อหน่วยความจำไม่พอ) — รีเฟรชหน้าแล้วลองใหม่');
   if (blob.size > 2.5 * 1024 * 1024) throw new Error('รูปใหญ่เกินไป (เกิน 2.5MB หลังบีบ) — ลองถ่ายใหม่ให้เล็กลง');
   return blob;
 }
@@ -289,7 +298,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
     try {
       const blob = await compressPlan(file);
       const path = `rack/${rack.id}_${Date.now()}.jpg`;
-      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, { upsert: true, contentType: blob.type || 'image/jpeg' });
+      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type || 'image/jpeg' }));
       if (error) throw error;
       const url = supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl;
       const old = rack.image_url;

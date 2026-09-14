@@ -49,6 +49,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES, MO_STATUS_LABEL } from '../utils/dieStatus';
+import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายที่แยก "รอ QA" ออกจาก "รอรับมอบ" — ต้องมีตัวใบถึงจะแยกได้
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamsForUser, teamForEquipmentKind } from '../utils/mtnTeams';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import DowntimeSiren from './DowntimeSiren';
@@ -633,7 +634,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                           <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
                           </span>
-                          <span style={{ marginLeft: 'auto', flexShrink: 0, color: '#f59e0b', fontWeight: 700 }}>{MO_STATUS_LABEL[o.status] || o.status}</span>
+                          <span style={{ marginLeft: 'auto', flexShrink: 0, color: '#f59e0b', fontWeight: 700 }}>{moStatusLabel(o)}</span>
                         </div>
                       ))}
                       {zMo.length > 8 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {zMo.length - 8} ใบ</div>}

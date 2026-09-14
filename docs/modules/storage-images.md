@@ -3,6 +3,54 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+> ### 🔴🔴 กฎเหล็ก — ทุก `.upload()` ต้องส่ง options ผ่าน **`uploadOpts()`** (`src/utils/storageUpload.js`) · 2026-09-11
+> **เหตุการณ์จริงที่ทำให้ต้องมีกฎนี้:** เช้า 11 ก.ย. 2026 **ทั้งโรงงาน login ไม่ได้** —
+> Supabase ระงับบริการทั้ง organization ด้วย `exceed_egress_quota` (Free plan 5 GB/เดือน)
+> **ต้นเหตุ:** `storage.upload()` ที่ไม่ส่ง `cacheControl` ได้ค่า default **`max-age=3600` (1 ชม.)**
+> และตรวจแล้วพบว่า **25 จุดอัปโหลดทั้งระบบไม่มีสักจุดเดียวที่ตั้งค่านี้**
+> ⇒ เบราว์เซอร์/CDN ทิ้ง cache ทุกชั่วโมงแล้วโหลดรูปใหม่ทั้งชุด ทั้งที่**ไฟล์ไม่เคยเปลี่ยน**
+> วัดจริงวันที่ล็อก: `employee-photos` 229 รูป = **124 MB** (เฉลี่ย 643 KB/รูป) · หน้าเช็คชื่อ/Management
+> โชว์รูปทั้งไลน์ = จ่าย egress ซ้ำทุกชั่วโมงต่อเครื่องที่เปิด
+>
+> **หลักที่ใช้ตัดสิน — "URL นี้ถูกเขียนทับด้วยไฟล์ใหม่ได้ไหม" ไม่ใช่ "รูปเปลี่ยนบ่อยไหม":**
+> | แบบ | ลักษณะ path | ค่า | เหตุผล |
+> |---|---|---|---|
+> | **immutable** (default) | มี `Date.now()`/uuid → เปลี่ยนรูป = **URL ใหม่เสมอ** | 1 ปี | ของเก่าไม่มีใครเรียกอีก ไม่มีทางเห็นรูปค้าง |
+> | **mutable** (`uploadOpts({ mutable: true })`) | path คงที่ + `upsert: true` = **ทับไฟล์เดิมที่ URL เดิม** | 1 ชม. | cache ยาว = ผู้ใช้เห็นรูปเก่าค้างเป็นปี |
+>
+> · จุด mutable ในระบบมี **2 จุดเท่านั้น**: `PMSetup` (`jigs/<jigId>/frame-*` · `cp-*`) และ
+>   `MtnMachineLayout` (`facility/<areaId>`) — ทั้งคู่อยู่ bucket `jig-images`
+> · **มีเทสบังคับใน `npm run build` แล้ว** (`src/utils/__tests__/storageUpload.test.mjs`) —
+>   จุดอัปโหลดใหม่ที่ลืม `uploadOpts()` จะ **build ไม่ผ่าน** (กฎที่เขียนไว้แต่ในเอกสาร คนถัดไปลืมแน่นอน)
+> · **ไฟล์เก่า backfill แล้ว** — migration `20260911_storage_cache_control_backfill.sql` (Main) +
+>   `..._dr.sql` (DR) **apply แล้วทั้งคู่ 2026-09-11**: ตั้ง 1 ปีเฉพาะไฟล์ที่ชื่อมีเลข timestamp 10+ หลัก
+>   และข้าม bucket `jig-images` ทั้ง bucket · ผลหลังรัน: Main 366 ไฟล์ (174 MB) · DR 620 ไฟล์ (54 MB)
+> · **ห้ามตั้ง cache ยาวให้ path ที่ upsert ทับได้** และห้ามแก้ `CACHE_*` โดยไม่อ่านหลักด้านบน
+
+> ### 🚫 รูปพนักงานไม่รับ GIF + ทุกการปฏิเสธไฟล์ต้อง "เตือนให้เห็น" (2026-09-11 · คำสั่ง user)
+> **เหตุการณ์:** หลัง egress ทะลุโควต้า วัด bucket `employee-photos` พบ **GIF 20 ไฟล์กิน 84 MB จาก 124 MB**
+> (เฉลี่ย **4.3 MB/รูป** = ใหญ่กว่ารูปนิ่งที่บีบแล้ว ~60 เท่า) — GIF บีบไม่ได้ ระบบส่งต้นฉบับทั้งไฟล์
+> เพื่อคงการเคลื่อนไหว · user สั่ง "ห้าม GIF ในรูปพนักงาน" และให้ล้างของเก่าออก
+>
+> - **`ImageCropModal` มี prop `allowGif` (default `true`)** — จุดที่เรียกอยู่เดิม (สินค้า/อะไหล่/PM/ผัง/โปรไฟล์)
+>   ไม่เปลี่ยนพฤติกรรม · **รูปพนักงานส่ง `allowGif={false}`**: `operator.jsx` (แก้ไขพนักงาน) · `Register.jsx` (ลงทะเบียนใหม่)
+> - **ตัวตรวจชนิดไฟล์อยู่ที่ `src/utils/imageFileKind.js` จุดเดียว** (`looksLikeImage` · `isGifFile` · `extOf`
+>   · เทส `__tests__/imageFileKind.test.mjs` 6 เคส) — **ห้ามเขียนตัวเช็คนามสกุลซ้ำในหน้า**
+>   ⚠️ ต้องดู**นามสกุลด้วย ไม่ใช่ MIME อย่างเดียว** — Android ส่ง `type` ว่าง/`octet-stream` มากับรูปจริง
+>   (กับดักเดียวกับ `isHeicFile`) · และ GIF ที่ MIME ไม่บอก ต้องยังถูกจับได้ ไม่งั้นด่านห้าม GIF รั่ว
+> - **ทุกครั้งที่ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล + ทางแก้ ห้ามปิดโมดัลเงียบๆ** (คำสั่ง user: "ถ้านามสกุล
+>   ไม่ตรง ควร alarm แจ้งเตือน") — เดิมไฟล์ที่ไม่ใช่รูปไปตายที่ `img.onerror` ซึ่งขึ้นข้อความเรื่อง
+>   "ฟอร์แมตกล้อง/HEIF" = **ชี้ผิดทาง** ผู้ใช้ไปไล่ตั้งค่ากล้องทั้งที่เลือกไฟล์ PDF มา
+> - **ไม่แตะ `accept="image/*"` ของ `<input type=file>`** — เจาะจง MIME แล้ว Android บางรุ่นเลือกรูปจาก
+>   แกลเลอรีไม่ได้เลย · ให้ด่านใน modal + toast ทำหน้าที่แทน
+> - **ล้างของเก่าแล้ว** `20260911_purge_oversize_employee_photos.sql` (**apply แล้ว 2026-09-11**):
+>   ตัดการอ้างอิงรูป **18 ไฟล์ = 45 MB** (GIF 4 + ใหญ่เกิน 300 KB 14 · ที่เหลือหัวหน้าทยอยเปลี่ยนเองระหว่างวัน)
+>   → บันทึกไว้ใน `employee_photo_purge_log` = **รายการ "ต้องถ่ายรูปใหม่" 13 คน** (อีก 5 ลาออกแล้ว)
+>   · ⚠️ **ลบไฟล์ด้วย `delete from storage.objects` ไม่ได้** — trigger `storage.protect_delete()` โยน 42501
+>     ("Use the Storage API instead") **ห้าม disable** · ตัวไฟล์เก็บกวาดด้วย edge `cleanup-orphan-photos`
+> - **หน้า `/operator` มีแถบ 📷 "ยังไม่มีรูป N คน" + ปุ่มกรอง** (ตาม pattern `filterOffOrg` เดิม) —
+>   ข้อมูลไม่ครบต้องเห็นบนจอ ไม่งั้นไม่มีใครรู้ว่าเหลือใคร
+
 - **อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal`** — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
   - **ข้อยกเว้นที่ตั้งใจ (crop ไม่เหมาะ):** รูปที่ต้องเห็นทั้งใบ/คมชัด ให้**บีบก่อนอัปโหลดแทน** — รูป jig/checkpoint (PMSetup), รูปหลักฐาน 4M/QA/เอกสาร level-up (Management/Report/operator: helper `resizeImage` 1280px q0.85) · drawing ฝั่ง QA: **รูปบีบ 2560px/2.5MB/q0.9** (สเปคเดียวกับผัง — ต้องซูมอ่าน dimension ได้ · user ยืนยัน 2026-07-12 ว่าบีบได้), **PDF เท่านั้นที่ส่งดิบ** (≤20MB) · **ห้ามอัปโหลดรูปดิบโดยไม่บีบเลย**
   - **รูปผัง/layout (LineSetup, MtnMachineLayout) บีบเบากว่ารูปอื่น: 2560px / 2.5MB / q0.9** (2026-07-10) — layout มีจำนวนน้อยทั้งระบบ (≤20 รูป) แต่ต้องซูมอ่านรายละเอียดผังได้ **ห้ามลดกลับไป 1600px/0.5MB** เคยบีบแรงจนเบลอใช้งานไม่ได้ (รูปเดิมที่เบลอไปแล้วต้องอัปโหลดต้นฉบับซ้ำ ระบบไม่มีต้นฉบับเก็บไว้)
@@ -19,12 +67,23 @@
 > - **⚠️ ต้องเช็คนามสกุลไฟล์ด้วย ไม่ใช่ดูแต่ MIME** — Android/Chrome หลายรุ่นส่ง `type` เป็นค่าว่าง/`application/octet-stream` กับไฟล์ `.heic`
 > - **⚠️ แปลงให้เร็วที่สุดที่ต้น handler** — โค้ดที่ derive `ext`/ชนิดจากชื่อไฟล์ต่อจากนั้นจะได้ค่าถูกต้องตาม (ไฟล์ที่แปลงแล้วเป็น `.jpg`)
 >   แปลงทีหลังจะได้ไฟล์ JPEG แต่ตั้งชื่อบน storage เป็น `.heic`
-> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator)
+> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
 >   · `ImageCropModal` (รูปพนักงาน/โปรไฟล์/สินค้า/อะไหล่/PMSetup frames) · LineSetup ผังไลน์ · FactoryMap ผังโรงงาน
 >   · MtnMachineLayout โซน facility · PMSetup รูปจุดตรวจ · QAInspectionSetup drawing · DieLayout/RackMap `compressPlan`
 >   → **เพิ่มจุดรับไฟล์รูปใหม่ต้องเรียก `toDecodableImage()` ก่อนเสมอ**
 > - ข้อความบนจอห้ามพูดเรื่อง "ขนาด/ใหญ่เกินไป" กับปัญหา decode — ต้องชี้ "ฟอร์แมต + วิธีตั้งกล้องเป็น JPEG"
 >   (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")
+> #### ⚠️⚠️ กับดัก worker ของ heic2any — "รูปแรกลงได้ ลงหลายรูปแล้วลงไม่ได้อีกเลยจนรีเฟรช" (2026-09-08 · feedback Samsung/Android ทั้ง PWA + Chrome)
+> **ต้นเหตุ (อ่านจากซอร์ส `node_modules/heic2any/dist/heic2any.js` v0.0.4):** `window.__heic2any__worker` ถูกสร้าง**ตอน evaluate โมดูล ตัวเดียวทั้งหน้า** ไม่มี terminate/onerror/สร้างใหม่ · ทุกการแปลง `postMessage` + `addEventListener('message')` **เพิ่ม listener ไม่เคยถอด** · พอ worker ตาย (หน่วยความจำหมดหลังแปลงหลายรูป) `postMessage` **ไม่ throw ไม่ตอบ** → promise ค้างตลอดกาล → ปุ่มบันทึกหมุนไม่หยุด ทุกรูปหลังจากนั้นค้างเหมือนกัน (แม้รูปที่เคยลงได้) · ตัวเร่ง: `browserCanDecode()` เคย decode รูปเต็มใบเพื่อ "ลอง" ก่อนส่งให้ worker = peak memory ×2 · หลายหน้าเรียก `URL.createObjectURL(file)` ใน JSX ทุก re-render ไม่ revoke = ตรึงรูปหลาย MB ไว้ทุกตัวอักษรที่พิมพ์
+> **แก้ใน `src/utils/heicToJpeg.js` (เทส `__tests__/heicToJpeg.test.mjs` 13 เคส):**
+> - **timeout 45 วิ (`HEIC_TIMEOUT_MS`)** → โยน `HEIC_STUCK_MSG` ("รีเฟรชหน้า/ปิดแอปเปิดใหม่") · **`poisoned` flag ระดับโมดูล** — ค้างครั้งเดียว ทุกครั้งถัดไปโยนทันทีด้วยข้อความเดียวกัน (ไม่ให้รอ 45 วิ ซ้ำ) · **สร้าง worker ใหม่ในหน้าไม่ได้** เพราะซอร์ส worker อยู่ใน closure ของโมดูล + ES module cache — ทางเดียวคือโหลดหน้าใหม่ จึงต้องบอกผู้ใช้ตรงๆ · ตัวแปลง reject เอง (ไฟล์อ่านไม่ออก) = `HEIC_FAIL_MSG` ตามเดิม **ไม่ poison**
+> - **แปลงทีละไฟล์** (promise chain) · **MIME ยืนยัน HEIC บน Chrome/Android = ข้าม probe `createImageBitmap`** ไปแปลงเลย (คง probe เฉพาะเคสรู้จากนามสกุล/Safari)
+> - ผู้เรียกไม่ต้องแก้ signature (`isHeicFile`/`toDecodableImage`/`HEIC_FAIL_MSG` เหมือนเดิม) แต่ต้องรับ `HEIC_STUCK_MSG` ได้ = โชว์ `e.message` ตรงๆ ห้ามแทนด้วยข้อความคงที่
+> **3 กฎที่ตกผลึก (ใช้กับทุกจุดรับรูป — ไม่เฉพาะ HEIC):**
+> 1. **ทุก `await resizeImage(...)` / `toDecodableImage(...)` ต้อง reset busy flag (`saving`/`converting`/`isUploading`) ใน `finally`** — ห้ามพึ่ง `setX(false)` ที่โรยตามทาง return · rejection ที่หลุด = ปุ่มหมุนตลอดไป (ทำแล้ว: Management `handleSave4MLog` · operator `handleApproveLevel` · ImageCropModal `converting` ตั้ง sync ทุกครั้งที่ไฟล์เปลี่ยน · Report/PEDocs/Improvements/NpiUi มี finally อยู่แล้ว)
+> 2. **ห้าม `URL.createObjectURL(file)` ใน JSX/render** — ใช้ hook กลาง **`useObjectUrl(file)` (`src/utils/useObjectUrl.js`)** สร้างครั้งเดียวต่อไฟล์ + revoke เองตอนไฟล์เปลี่ยน/unmount · จุดที่ถือ URL ใน state เอง (Report ลายเซ็น multi-skill) ต้อง revoke ของเดิมก่อน set ใหม่ (ทำแล้ว: ProductMaster ×2 · PEDocs ×2 · Improvements · Register · Report)
+> 3. **`<input type="file">` ที่ซ่อนไว้ต้อง `e.target.value = ''` หลังอ่านไฟล์** — ไม่งั้นเลือก**ไฟล์เดิม**ซ้ำ `change` ไม่ยิง = ผู้ใช้ลองใหม่หลังล้มแล้ว "ไม่มีอะไรเกิดขึ้น" (ทำแล้ว: Management ×2 · Report ×2 · operator · Improvements · LineSetup (ใน `handleUploadImage` ครอบ 2 input) · SignatureModal)
+> - พ่วง: `NpiUi.uploadNpiFile` ผ่าน `toDecodableImage()` แล้ว (เคยหลุดเกต) · `RackMap`/`DieLayout` `compressPlan` กัน `toBlob` คืน null บนมือถือ (เดิมพัง `Cannot read properties of null`) + revoke blob URL ทุกทาง
 > - **ยังไม่ทำ:** ตัวบีบรูปสาย "ผัง/drawing" (2560px/q0.9) ยังกระจาย 7 จุด (`imageCompression` 5 จุด + `compressPlan` ที่ก๊อปกัน 2 ไฟล์)
 >   — ควรยุบเป็น util เดียวเมื่อไปแตะจุดนั้นครั้งหน้า (ตอนนี้เกต HEIC เข้าครบแล้วทุกจุด จึงไม่เร่ง)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
@@ -141,7 +200,20 @@
 > (prod_orders เปิดใบ 154 + แก้ยอด 82 · downtime 118 · sessions 18 · defect 2 · mtn 0 — เฉลี่ย 7 วัน)
 > × 15 จอ = ~10,500 msg/วัน · **โตตามจำนวนจอแบบเชิงเส้น** เพิ่มจอเยอะๆ ให้คำนวณใหม่
 >
-> **⚠️ ตัวที่ตึงที่สุดคือ Egress (24% ของงบ) — ก่อนเพิ่มจอ/หน้า/realtime channel ให้ประเมินตรงนี้ก่อนเสมอ**
+> #### 🔴 บทเรียนรอบที่ 2 — โควต้าหมดจริงจนระบบถูกล็อก (11 ก.ย. 2026) · งบข้างบน "ประเมินไม่ครบ"
+> งบปี ส.ค. คิดเฉพาะ **polling ของจอ** แล้วสรุปว่าเหลือ 24% — แต่ของจริงหมดก่อน เพราะมี 2 ทางที่ไม่เคยถูกนับ:
+> 1. **รูปบน Storage ไม่มี cache** (ตัวหลัก) — ทุก bucket อายุ 1 ชม. ⇒ รูปพนักงาน 124 MB ถูกโหลดซ้ำ
+>    ทุกชั่วโมงต่อเครื่อง · แก้แล้วด้วยกฎเหล็ก `uploadOpts()` ด้านบน (หัวข้อแรกของไฟล์นี้)
+> 2. **จำนวนคิวรี ไม่ใช่แค่ขนาด payload** — จาก log จริง 24 ชม.: `profiles` **6,760 req/วัน**
+>    ทั้งที่เป็นข้อมูลของ user คนเดียว (~188 ครั้ง/วัน/คน) เพราะ `fetchProfile` ยิง **3 คิวรีไปที่แถวเดียวกัน**
+>    (ชุดหลัก + `mtn_teams` + `avatar_url` แยกกัน) · รวมเป็นคิวรีเดียวแล้ว (App.jsx 2026-09-11) = ตัดไป ~4,500 req/วัน
+>    · **กฎที่ได้: คิวรีย่อยที่ยิงไปที่ "แถวเดียวกัน" ให้รวมเป็น select เดียวเสมอ** — คอลัมน์ที่แยกออกมาเพราะ
+>      "migration อาจยังไม่ apply" ให้ยุบกลับทันทีที่ apply แล้ว (กันลืม: ใช้ fallback 42703 ชั้นเดียวครอบ)
+> · **ยังไม่ได้แก้ (หนี้ที่มองเห็น):** รูปใน `employee-photos` เฉลี่ย **643 KB/รูป ใหญ่สุด 8.4 MB** (49 ไฟล์เกิน 300 KB)
+>   ทั้งที่กติกาบอกว่าทุกรูปต้องผ่าน `ImageCropModal` เหลือ ~100 KB — เป็นไฟล์เก่าที่อัปก่อนมี cap
+>   ตอนนี้ cache 1 ปีแล้วจึงไม่กิน egress ซ้ำ แต่ถ้าจะลดจริงต้องบีบไฟล์เก่า (ต้องมีคนตัดสินใจว่ารูปไหนอัปใหม่ได้)
+>
+> **⚠️ ตัวที่ตึงที่สุดคือ Egress — ก่อนเพิ่มจอ/หน้า/realtime channel/ทางอัปโหลดรูป ให้ประเมินตรงนี้ก่อนเสมอ**
 > **`/version.json` ไม่นับ** — 25 bytes เสิร์ฟจาก **Render static site** คนละถังกับ Supabase (Render free 100 GB)
 
 - **Quota Free plan (ต่อ project):** DB 500MB · Storage 1GB · Egress 5GB/เดือน — **ตรวจล่าสุด 2026-08-17: Main DB 34MB (~7%) · DR DB 51MB (~10%)** (2026-08-05: Main 27MB · DR 33MB · Storage Main ~165MB 17% · DR ~63MB 6%) → พนักงาน ≤300 คน + อัตราข้อมูลโตปัจจุบัน อยู่ได้อีกหลายปี ถ้าใกล้เต็มค่อยอัป Pro ($25/เดือน = DB 8GB + Storage 100GB) โดยไม่ต้องย้ายระบบ

@@ -23,6 +23,7 @@ import { RATE } from '../utils/refreshRates';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -794,21 +795,21 @@ export default function Management() {
     }
 
     setIsSaving4M(true);
+    // ทุกทางออก (return ก่อนเวลา / throw จาก resizeImage·upload·insert) ต้องผ่าน finally — ปุ่มห้ามค้างหมุน
+    try {
     const today = getWorkDate();
     const { data: { user } } = await supabase.auth.getUser();
 
     let request_image_url = null;
     if (reqImageFile) {
-      // ⚠️ resizeImage โยน error เมื่ออ่านไฟล์ไม่ได้ (.heic / in-app browser) — ต้องรับไว้เอง
-      //    ฟังก์ชันนี้ไม่มี try/catch ครอบ ถ้าปล่อยหลุดจะเป็น unhandled rejection
-      //    = ปุ่มบันทึกค้างหมุน (setIsSaving4M ไม่ถูก reset) และไม่มีข้อความบอกอะไรเลย
-      //    ข้อมูล 4M ที่พิมพ์ไว้ยังอยู่ในฟอร์ม (return ก่อนล้าง) เหมือน path อัปโหลดพลาดด้านล่าง
+      // ⚠️ resizeImage โยน error เมื่ออ่านไฟล์ไม่ได้ (.heic / in-app browser / ตัวแปลง HEIC ค้าง) — รับไว้โชว์ข้อความ
+      //    busy flag reset ที่ finally ด้านล่าง · ข้อมูล 4M ที่พิมพ์ไว้ยังอยู่ในฟอร์ม (return ก่อนล้าง)
       let resized;
       try { resized = await resizeImage(reqImageFile); }
-      catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); setIsSaving4M(false); return; }
+      catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
-      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); setIsSaving4M(false); return; }
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: false, contentType: 'image/jpeg' }));
+      if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       request_image_url = urlData.publicUrl;
     }
@@ -825,7 +826,6 @@ export default function Management() {
       ...(autoApprove ? { status: 'approved' } : {}),
     };
     const { error } = await supabase.from('four_m_logs').insert([logData]);
-    setIsSaving4M(false);
     if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
     setShow4MModal(null);
     setLog4MForm({ category: 'Man', description: '', moveType: 'same', skillOk: false, hasHistory: false, subtype: 'change' });
@@ -833,6 +833,9 @@ export default function Management() {
     fetchData();
     if (!autoApprove) {
       supabase.functions.invoke('send-notification', { body: { event: 'new_4m', log: logData } }).catch(() => {});
+    }
+    } finally {
+      setIsSaving4M(false);
     }
   };
 
@@ -2836,6 +2839,7 @@ export default function Management() {
               <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={e => {
                   const f = e.target.files?.[0];
+                  e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
                   if (f) { setDocImageFile(f); const r = new FileReader(); r.onload = ev => setDocImagePreview(ev.target.result); r.readAsDataURL(f); }
                 }}
               />
@@ -2848,7 +2852,7 @@ export default function Management() {
                   if (docImageFile) {
                     const resized = await resizeImage(docImageFile);
                     const path = `4m-requests/${Date.now()}.jpg`;
-                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: true });
+                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: true }));
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }
@@ -2984,6 +2988,7 @@ export default function Management() {
                       <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                         onChange={e => {
                           const f = e.target.files?.[0];
+                          e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
                           if (!f) return;
                           setReqImageFile(f);
                           const reader = new FileReader();

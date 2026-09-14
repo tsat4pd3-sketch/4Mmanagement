@@ -267,7 +267,10 @@ export default function MorningMeeting() {
      — แบบเดิม (qty_ok ?? qty_actual) พลาดใบ confirmed ที่สองช่องว่างทั้งคู่ (ใบเคยถอยใบ/แถวเก่า) */
   const pickActual = (o) => o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
   const sessActual = (s) => {
-    const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported'].includes(o.status));
+    /* ⭐ ห้ามกรอง `imported` ออกจาก "ยอดผลิตจริง" — มันคือใบยกยอดหลังกะถัดไปกดรับแล้ว
+       ยอดที่กะนี้ทำได้ยังอยู่ใน qty_actual ของมัน · กรองทิ้ง = ยอดกะนี้ลดลงเงียบๆ (oee.js §6 · 2026-09-09)
+       ไม่ double count เพราะใบของกะถัดไปถือแค่ยอดที่เหลือ · (เป้ายังกรอง imported ออกเหมือนเดิม — ดู sessTarget) */
+    const os = (ordersBySession[s.id] || []).filter(o => o.status !== 'cancelled');
     if (os.length) return orderTotal(os, pickActual, m => pairMat[m] || null, opInfoSync());
     if (s.qty_ok != null) return s.qty_ok;
     return s.actual_qty || 0;

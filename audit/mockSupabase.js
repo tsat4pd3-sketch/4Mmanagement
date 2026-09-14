@@ -9,14 +9,33 @@ const DEF_NAMES = ['รอยร้าว/แตก', 'เจาะรูไม�
   'รูไม่ตรงตำแหน่ง', 'ตัดไม่ขาด / ไม่จบ process', 'บุบบุ๋ง', 'รู NOGO / ขนาดรูไม่ได้', 'ทับเศษ SCRAP',
   'เสียรูป', 'ครีบเกิน', 'เชื่อมไม่ติด']
 
+/* ⚠️ **ลำดับชั้นไลน์แม่ → ไลน์ลูก ต้องมีใน mock เสมอ ห้ามถอด** (2026-09-08)
+   ของจริง `production_lines` มีไลน์ลูก 15+ ไลน์ (HYDROFORM มีลูก 8 ไลน์: HDF1/HDF2/LASER-345/…)
+   และมีโค้ดหลายสิบจุดคิดบนโครงนี้ — `utils/lineHierarchy.js` (family/leaf/ancestor/hierarchical
+   options) · `utils/stdManpower.js` · rollup พลังงานแม่-ลูก · FactoryMap `familyNames`/`stOf` ·
+   Management / Checkin / ProductionPlan / LineStock …
+   เดิม mock ตั้ง `parent_line_name: null` **ทุกแถว** ⇒ crashsweep ไม่เคยรันโค้ดสายนี้เลยสักหน้า
+   = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก · หา leaf ไม่เจอ · เดินขึ้นหา ancestor แล้ววน · indent ตามชั้น)
+   มองไม่เห็นจาก harness เลย (เจอตอนทำ rollup พลังงาน 2026-09-08)
+   โครงที่ใส่ = **3 ชั้น** เพื่อให้ตัวไล่ recursive ถูกเรียกจริง: 1 = แม่ · 2,3 = ลูก · 4 = หลาน (ใต้ 2)
+   เหลือแถว 5-14 เป็นไลน์เดี่ยว (ยังต้องมี ไม่งั้นเคส "ไม่มีลูก" หายไป) */
+const LINE_NAME = (i) => `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`
+const PARENT_OF = { 2: 1, 3: 1, 4: 2 }
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
-  id: `id-${i}`, name: `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`, code: `CODE-${i}`,
-  line_name: 'LINE APRON ASSY / HYDROFORM', parent_line_name: null, section: 'PD1', line_id: 1,
+  id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
+  line_name: 'LINE APRON ASSY / HYDROFORM',
+  parent_line_name: PARENT_OF[i] ? LINE_NAME(PARENT_OF[i]) : null, section: 'PD1', line_id: 1,
   mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: null,
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
   status: 'open', shift: 'day', work_date: '2026-08-04', session_id: `s-${i}`,
+  /* ⚡ energy_points / energy_monthly — ต้องมี ไม่งั้นหน้า /energy รวมทุกจุดไว้ชั้นเดียว
+     (meteredSet ว่าง) แล้ว **โค้ดสาย "แยกตารางตามชั้นมิเตอร์" ไม่เคยถูกรันใน harness เลย**
+     is_metered สลับ 1 ใน 3 โดยตั้งใจ → ได้เคส "ไลน์ลูกมีมิเตอร์ แต่ไลน์แม่อยู่คนละตาราง"
+     ซึ่งเป็นเคสที่หน้างานเจอจริง (HDF1/HDF2 มีมิเตอร์ · HYDROFORM ไม่มี) */
+  scope_kind: 'line', scope_name: LINE_NAME(i), is_metered: i % 3 === 0, month_key: '2026-08',
   qty: 120+i, qty_ng: i, qty_ok: 118+i, qty_suspect: 0, qty_actual: 118+i, qty_target: 130,
   duration_min: 12+i, cycle_time_sec: 58, oee: 82.5, oee_a: 91, oee_p: 93, oee_q: 98,
   employee_id: `emp-${i}`, employee_id_code: `6${1000+i}`, is_present: true, team: 'A',
@@ -53,12 +72,12 @@ const NULLISH = (i) => ({
 })
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
-const thenable = () => {
-  const res = { data: ROWS, error: null, count: ROWS.length }
+const thenable = (rows = ROWS) => {
+  const res = { data: rows, error: null, count: rows.length }
   const h = {
     get(t, p) {
       if (p === 'then') return (res2) => Promise.resolve(res).then(res2)
-      if (p === 'maybeSingle' || p === 'single') return () => Promise.resolve({ data: ROWS[0], error: null })
+      if (p === 'maybeSingle' || p === 'single') return () => Promise.resolve({ data: rows[0], error: null })
       if (p === 'catch' || p === 'finally') return () => proxy
       return () => proxy
     },
@@ -66,7 +85,45 @@ const thenable = () => {
   const proxy = new Proxy({}, h)
   return proxy
 }
-const q = () => thenable()
+/* ── แถวเฉพาะตาราง (2026-09-10) ────────────────────────────────────────────────────────
+   เดิม `from()` คืน ROWS ชุดเดียวกันทุกตารางโดยไม่สนใจชื่อตาราง ⇒ แผงที่ต้องมี **คีย์เชื่อม**
+   ถึงจะ render (source_line / lot_request_id / maker_line) คืน 0 แถวเสมอ
+   ⇒ **ทั้งคอลัมน์ "ชิ้นส่วนเข้าไลน์" ของ Daily Report ไม่เคยถูกรันใน crashsweep เลยสักครั้ง**
+      (StoreLotQueue · LinePartCallPanel · LineWipPanel — พบตอนแก้ดีไซน์ 10/09)
+   กติกาเดียวกับ NULLISH/PARENT_OF: mock ต้องพาโค้ดไปถึงสาขาที่ของจริงเดินทุกวัน
+   ⚠️ ตั้ง child_mat_no ให้ **ซ้ำกันหลายล็อต** โดยตั้งใจ (14 ล็อต → 3 พาร์ท) — เป็นรูปทรงจริงของฐาน
+      (Assy GOR = 37 ล็อตของ mat เดียว) ถ้าให้ทุกแถวเป็นคนละ mat โค้ดจัดกลุ่มจะไม่เคยถูกรัน
+   ⚠️ แถว NULLISH ต้องยัง null ต่อไป — เติมแค่คีย์เชื่อม ห้ามเติมตัวเลขให้                        */
+const FAM_LINE = 'LINE APRON ASSY / HYDROFORM'
+const isNullish = (r) => r.qty === null
+const TABLE_ROWS = {
+  child_lot_requests: (r, i) => ({
+    ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+    lot_qty: isNullish(r) ? null : 14,
+    status: i % 5 === 0 ? 'producing' : 'pending',
+    source_prod_no: isNullish(r) ? null : `MANUAL-2609${10 + i}-133957-BE`,
+  }),
+  /* raw_mat_no ต้องคละ 4 แบบ ให้โค้ดแยก routing ถูกรันครบทุกสาขา (2026-09-10):
+     · 1010100x = มีใน dr_products mock → routed (บางแถวเป็นไลน์อื่น = "ต่อจากไลน์อื่น")
+     · 2xxxxxxx = เบอร์ 2 แต่ไม่มีใน master → "routing ยังไม่ตั้ง" (เคสจริง 27 ใบกำพร้าในฐาน)
+     · 3xxx/5xxx = ของซื้อ/สิ้นเปลือง */
+  raw_withdrawal_requests: (r, i) => ({
+    ...r, lot_request_id: `id-${i}`, status: i % 3 ? 'pending' : 'issued',
+    raw_mat_no: [`1010${1000 + (i % 3)}`, '20058488', '30047587', '50027080'][i % 4],
+  }),
+  /* dr_products: 2 แถวแรกเป็น "ไลน์อื่น" โดยตั้งใจ — เดิมทุกแถว line_name เดียวกันหมด
+     ⇒ โค้ดที่ถามว่า "ของชิ้นนี้ไลน์อื่นทำหรือเปล่า" ไม่เคยได้คำตอบว่า "ใช่" เลยใน harness */
+  dr_products: (r, i) => (i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r),
+  v_demand_flow_blocks: (r, i) => ({
+    ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
+    block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,
+  }),
+}
+const rowsFor = (table) => {
+  const fn = TABLE_ROWS[table]
+  return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+}
+const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefined))
 const chan = () => { const c = { on: () => c, subscribe: () => c, unsubscribe: () => c, send: () => c }; return c }
 export const supabase = {
   from: q, rpc: q, channel: () => chan(),

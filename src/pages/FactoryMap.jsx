@@ -17,12 +17,13 @@ import { RATE } from '../utils/refreshRates';
 import { cachedMaster } from '../utils/masterCache';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -319,6 +320,19 @@ const boxHit = (a, b, pad = 0.35) =>
       (user ทัก 2026-08-06 "ตำแหน่งมั่ว เด้งไปไกลจากไลน์") · วัดแล้ว MAX_AWAY 9 หน่วยคือจุดคุ้ม:
       จอ 1800px ทับ 0 · 1250px ทับ 2 · ไกลสุด ~90px (มีเส้นโยงกำกับ) */
 const MAX_AWAY = 12;
+/* เพดานดันออกของ "การ์ด KPI" (⚡ พลังงาน / ⚙️ OEE) — แยกตัวแปรจากป้ายเพราะกติกาต่างกัน
+   (การ์ดห้ามทับกรอบใดๆ เลย ป้ายทับกรอบตัวเองได้) แม้ค่าปัจจุบันจะเท่ากับ MAX_AWAY ก็ตาม
+   คำสั่ง user 2026-09-08: "plate OEE สวย แต่ไม่อยากให้ทับกรอบ layout ทั้งของตัวเองและไลน์อื่น
+   · ใช้เส้นชี้ตำแหน่งแทน แบบสวยๆ"
+
+   วัดจริงกับ polygon 25 กรอบในฐาน (สคริปต์จำลองการวาง · เทียบก่อน-หลัง):
+     กติกาเดิม  1270px = การ์ด 15 ใบ **ทับกรอบไลน์ 11 ใบ** · 1800px = 20 ใบ ทับ 16 ใบ
+     กติกาใหม่  1270px = การ์ด 18 ใบ ทับ 0 · 1800px = **25/25 ใบ ทับ 0**
+       (การ์ด "เพิ่มขึ้น" ทั้งที่กติกาเข้มขึ้น เพราะพอออกมานอกกรอบแล้วไม่แย่งที่กันเองในกรอบแคบๆ)
+   เลือก 12 ไม่ใช่ 16: 16 ได้การ์ดเพิ่มแค่ 1 ใบ แต่ระยะไกลสุดพุ่ง 152px → 203px
+   ซึ่งเข้าเขตที่ user เคยทักไว้ตรงๆ (2026-08-06 ป้ายลอยห่างกรอบ 213px = "ตำแหน่งมั่ว")
+   ที่ 12: การ์ดส่วนใหญ่ยังนั่งห่างกรอบตัวเองแค่ ~10px มีแค่ 1-3 ใบที่ถูกดันไกลจริง */
+const KPI_AWAY = 12;
 const gapToBox = (b, bb) => {
   const dx = Math.max(bb.x0 - (b.x + b.w), b.x - bb.x1, 0);
   const dy = Math.max(bb.y0 - (b.y + b.h), b.y - bb.y1, 0);
@@ -330,22 +344,27 @@ const gapToBox = (b, bb) => {
           จำกัด MAX_AWAY + ลากเส้นโยงกลับกรอบ → จอแคบ: ไม่วาดแล้วนับบอก · จอกว้าง: กลับที่เดิมยอมทับ
    ⚠️ ห้ามเอา "กรอบไลน์อื่น" ออกจาก obstacles — เคยเช็คแค่ป้ายชนป้าย ผลคือป้าย Assy GOR/GOR
       ไปนั่งทับกรอบ Laser GOR/LWR BAR (user ทัก) */
-const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, isLast) => {
+const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, search, opt = {}) => {
+  /* maxAway          = ระยะดันออกสูงสุด (การ์ด KPI ได้ไกลกว่า — ดู KPI_AWAY)
+     noOverlapFallback = หาที่ไม่ได้ให้คืน null ไปเลย **ห้าม** ตกลงท่า "ยอมทับ"
+                         (การ์ด KPI ใช้ตัวนี้ — มันคือ level แรกของ chain ไม่ได้แล้วก็ย่อเป็นป้ายเล็กแทน
+                          ซึ่งเล็กพอจะนั่งในกรอบตัวเองได้ ไม่ต้องไปทับใคร) */
+  const { maxAway = MAX_AWAY, noOverlapFallback = false } = opt;
   const ok = (b) => b.x >= -0.5 && b.x + b.w <= 100.5 && b.y >= -0.5 && b.y + b.h <= maxY + 0.5
     && !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
   for (const c of cands) { const b = { x: c.x, y: c.y, w, h }; if (ok(b)) return b; }
-  if (!isLast) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งย้ายป้าย
+  if (!search) return null;                       // ยังย่อข้อความได้อีก → ลองระดับถัดไปก่อน อย่าเพิ่งย้ายป้าย
   const step = Math.max(h * 0.8, 1.2);            // ค้นหาที่ว่างรอบกรอบ เรียงจากใกล้สุด
   const near = [];
-  for (let x = Math.max(0, bb.x0 - MAX_AWAY - w); x <= Math.min(100 - w, bb.x1 + MAX_AWAY); x += step) {
-    for (let y = Math.max(0, bb.y0 - MAX_AWAY - h); y <= Math.min(maxY - h, bb.y1 + MAX_AWAY); y += step) {
+  for (let x = Math.max(0, bb.x0 - maxAway - w); x <= Math.min(100 - w, bb.x1 + maxAway); x += step) {
+    for (let y = Math.max(0, bb.y0 - maxAway - h); y <= Math.min(maxY - h, bb.y1 + maxAway); y += step) {
       const b = { x, y, w, h }, d = gapToBox(b, bb);
-      if (d <= MAX_AWAY) near.push({ b, d });
+      if (d <= maxAway) near.push({ b, d });
     }
   }
   near.sort((a, z) => a.d - z.d);
   for (const { b } of near) if (ok(b)) return b;
-  if (allowDrop) return null;                     // จอแคบ: ไม่วาด แล้วไปนับบอกบนจอ
+  if (allowDrop || noOverlapFallback) return null;  // จอแคบ / การ์ด KPI: ไม่วาด (KPI ไปย่อเป็นป้ายต่อ)
   return {                                        // จอกว้าง: กลับตำแหน่งธรรมชาติ ยอมทับดีกว่าไม่มีป้าย
     x: Math.min(Math.max(cands[0].x, 0.3), Math.max(0.3, 100 - w - 0.3)),
     y: Math.min(Math.max(cands[0].y, 0.3), Math.max(0.3, maxY - h - 0.3)),
@@ -821,8 +840,10 @@ export default function FactoryMap({ setupMode = false }) {
       if (r.scope_kind === 'plant') continue;
       if (r.month_key !== cur && r.month_key !== prev) continue;
       const o = (out[r.scope_name] ||= { qty: null, prev: null, cost: null, source: null, series: [] });
-      if (r.month_key === cur) { o.qty = Number(r.qty) || 0; o.cost = Number(r.cost) || 0; o.source = r.source; }
-      else if (r.month_key === prev) o.prev = Number(r.qty) || 0;
+      // ⚠️ null ต้องคงเป็น null — "ยังไม่กรอก" ≠ "กรอก 0" · ตั้งแต่เปิดกรอกรายไลน์ลูก (2026-09-08)
+      //    ค่านี้ยังเป็นตัวตัดสินว่าไลน์แม่ "มีค่าแล้ว" (= ลูกไม่ถูกบวกซ้ำ) ด้วย
+      if (r.month_key === cur) { o.qty = r.qty == null ? null : Number(r.qty); o.cost = r.cost == null ? null : Number(r.cost); o.source = r.source; }
+      else if (r.month_key === prev) o.prev = r.qty == null ? null : Number(r.qty);
     }
     // ชุดข้อมูลย้อนหลังสำหรับกราฟจิ๋วบนการ์ด (เรียงเก่า→ใหม่ · เดือนที่ไม่มีข้อมูล = ข้าม ไม่เติม 0)
     const seriesOf = {};
@@ -841,15 +862,6 @@ export default function FactoryMap({ setupMode = false }) {
     setEnergyEf(efFor('electric', cur, ef || []));
   }, []);
   useEffect(() => { loadEnergy(); }, [loadEnergy]);
-
-  /* จุดที่กรอกค่าไฟไว้แต่ **ยังไม่ได้ตีกรอบบนผัง** = ตัวเลขหายไปเฉยๆ ไม่มีใครเห็น
-     ห้ามเงียบ — ขึ้นชิปเตือนพร้อมรายชื่อ (หลักเดียวกับ "จอแคบ · ซ่อนป้าย N ไลน์") */
-  const energyNoRegion = useMemo(() => {
-    if (metric !== 'energy') return [];
-    const drawn = new Set(regions.map(r => r.line_name));
-    return Object.entries(energyStatus)
-      .filter(([n, v]) => v.qty != null && !drawn.has(n)).map(([n]) => n);
-  }, [metric, regions, energyStatus]);
 
   /* ── ⚙️ ประวัติ OEE 7 วันก่อนหน้า — sparkline + Δ บนการ์ด KPI ของ metric OEE (2026-08-25) ──
      โหลด "ครั้งเดียว" ตอนกดแท็บ OEE ครั้งแรก ไม่ poll (ค่า stamp ของกะปิดแล้วไม่เปลี่ยนระหว่างวัน — กฎ egress)
@@ -1415,6 +1427,27 @@ export default function FactoryMap({ setupMode = false }) {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  /* ⚡ จุดที่ "นับเข้ายอดรวมได้" — หน้ากรอกเปิดให้ลงรายไลน์ลูกได้แล้ว (2026-09-08 · มิเตอร์ MDB แยก HDF1/HDF2)
+     ⇒ ต้องใช้กฎกลาง `energyRollup`: **แม่มีค่า = ใช้ของแม่ · แม่ไม่มีค่า = รวมลูก**
+        ถ้าบวกดื้อๆ ทั้งครอบครัวเหมือนเดิม กลุ่มที่ลงทั้งแม่และลูกจะโชว์ไฟเกินจริงเท่าตัว
+     ⚠️ parentOf มาจาก production_lines — โซน facility ไม่มีแม่ จึงถูกนับเสมอ (ถูกแล้ว) */
+  const energyCounted = useMemo(() => {
+    const par = (k) => parentOf[k] || null;
+    const setOf = (pick) => new Set(
+      energyRollup(Object.entries(energyStatus).map(([name, v]) => ({ key: name, qty: pick(v) })), par)
+        .filter(r => r.counted).map(r => r.key));
+    return { cur: setOf(v => v.qty), prev: setOf(v => v.prev) };
+  }, [energyStatus, parentOf]);
+
+  /* จุดที่กรอกค่าไฟไว้แต่ **ยังไม่ได้ตีกรอบบนผัง** = ตัวเลขหายไปเฉยๆ ไม่มีใครเห็น
+     ห้ามเงียบ — ขึ้นชิปเตือนพร้อมรายชื่อ (หลักเดียวกับ "จอแคบ · ซ่อนป้าย N ไลน์") */
+  const energyNoRegion = useMemo(() => {
+    if (metric !== 'energy') return [];
+    const drawn = new Set(regions.map(r => r.line_name));
+    return Object.entries(energyStatus)
+      .filter(([n, v]) => v.qty != null && energyCounted.cur.has(n) && !drawn.has(n)).map(([n]) => n);
+  }, [metric, regions, energyStatus, energyCounted]);
+
   // ไล่ขึ้นบรรพบุรุษ (พ่อ→ปู่→...) กันลูปด้วย seen
   const ancestorNames = (name) => { const out = []; const seen = new Set([name]); let p = parentOf[name]; while (p && !seen.has(p)) { out.push(p); seen.add(p); p = parentOf[p]; } return out; };
   // คืนชื่อไลน์ที่จะ "เปิดผังพื้นพร้อมพนักงาน" ให้ — เลือกผังที่มีคนจริง
@@ -1472,10 +1505,16 @@ export default function FactoryMap({ setupMode = false }) {
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
                agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
                agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
-      // ⚡ พลังงาน — หน้ากรอกให้กรอกได้เฉพาะ "ไลน์บนสุด" เท่านั้น ไลน์ลูกจึงไม่มีแถว = บวกซ้ำไม่ได้
-      //    (ถ้าวันหน้าเปิดให้กรอกรายไลน์ลูกด้วย ต้องเปลี่ยนเป็น "แม่มีค่า = ใช้ของแม่" แบบ stdManpower)
+      /* ⚡ พลังงาน — กรอกได้ทุกชั้นแล้ว (ไลน์แม่ + ไลน์ลูก) จึง **ต้องกรองด้วย energyCounted ก่อนบวก**
+         ไม่งั้นกลุ่มที่ลงทั้งค่ารวมที่แม่และค่าแยกที่ลูก จะถูกบวกซ้ำเป็นสองเท่าบนผัง */
       const en = energyStatus[n];
-      if (en) { agg.kwh = (agg.kwh || 0) + (en.qty || 0); agg.kwhPrev = (agg.kwhPrev || 0) + (en.prev || 0); agg.kwhCost = (agg.kwhCost || 0) + (en.cost || 0); agg.kwhSrc = agg.kwhSrc || en.source; if (!agg.kwhSeries?.length) agg.kwhSeries = en.series || []; }
+      if (en) {
+        const useCur = en.qty != null && energyCounted.cur.has(n);
+        if (useCur) { agg.kwh = (agg.kwh || 0) + en.qty; agg.kwhSrc = agg.kwhSrc || en.source; if (!agg.kwhSeries?.length) agg.kwhSeries = en.series || []; }
+        if (en.prev != null && energyCounted.prev.has(n)) agg.kwhPrev = (agg.kwhPrev || 0) + en.prev;
+        // ค่าไฟ (บาท): จุดที่ลงเฉพาะค่าเงินไม่ลงหน่วย ต้องไม่หายไปจากผัง — แต่จุดที่ค่าถูกครอบด้วยแม่แล้วห้ามบวกซ้ำ
+        if (en.cost != null && (en.qty == null || useCur)) agg.kwhCost = (agg.kwhCost || 0) + en.cost;
+      }
     });
     // โซน facility เอง: Supply Route = เครื่องในโซนนี้ down (open MO) มั้ย (มุมมองต่างจากไลน์ผลิตที่เป็น "ถูกจ่าย")
     if (isFac(name)) {
@@ -1615,7 +1654,7 @@ export default function FactoryMap({ setupMode = false }) {
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);
+      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(path);
       const row = mapId
@@ -1691,8 +1730,9 @@ export default function FactoryMap({ setupMode = false }) {
     const sev = (name) => RANK[regCat(stOf(name))] ?? 0;
     /* ป้ายที่ขยับออกจากกรอบต้องมีเส้นโยงกลับ ไม่งั้นดูไม่ออกว่าเป็นของไลน์ไหน
        (พิกัดเส้นเป็นหน่วยผังจริง: x = % ความกว้าง, y = % ความสูง) */
-    const linkOf = (b, bb) => {
-      if (gapToBox(b, bb) < 0.6) return null;
+    const linkOf = (b, bb, always) => {
+      // การ์ด KPI อยู่นอกกรอบเสมอ (อาจห่างแค่ช่องไฟ) → ต้องมีเส้นชี้เสมอ ไม่งั้นอ่านไม่ออกว่าเป็นของไลน์ไหน
+      if (!always && gapToBox(b, bb) < 0.6) return null;
       const lx = Math.min(Math.max((bb.x0 + bb.x1) / 2, b.x), b.x + b.w);
       const ly = Math.min(Math.max((bb.y0 + bb.y1) / 2, b.y), b.y + b.h);
       return { x1: lx, y1: ly * aspect, x2: (bb.x0 + bb.x1) / 2, y2: (bb.y0 + bb.y1) / 2 * aspect };
@@ -1716,9 +1756,13 @@ export default function FactoryMap({ setupMode = false }) {
       const x0 = Math.min(...xs), x1 = Math.max(...xs);
       const y0 = Math.min(...ys) / aspect, y1 = Math.max(...ys) / aspect;
       const cyn = (y0 + y1) / 2, bb = { x0, x1, y0, y1 };
-      // ทับกรอบตัวเอง/ไลน์ในกลุ่มเดียวกันได้ (ป้ายเกาะกรอบตัวเองเป็นเรื่องปกติ) — ที่เหลือห้ามทับ
-      const obstacles = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
-      const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstacles.some(p => boxHit(b, p, 0));
+      // ป้ายข้อความ: ทับกรอบตัวเอง/ไลน์ในกลุ่มเดียวกันได้ (เกาะกรอบตัวเองเป็นเรื่องปกติ) — ที่เหลือห้ามทับ
+      const obstaclesOther = Object.entries(regionRect).filter(([n]) => !ownNames.has(n)).map(([, v]) => v);
+      /* การ์ด KPI: ห้ามทับกรอบ **ใดๆ เลย รวมกรอบตัวเอง** (คำสั่ง user 2026-09-08)
+         การ์ดทึบขนาด 152×82px คร่อมทับผังพื้นไลน์จนมองไม่เห็นว่าข้างในมีอะไร — ต่างจากป้ายข้อความล้วน
+         ที่เล็กและโปร่ง · ให้ออกไปอยู่ที่ว่างข้างๆ แล้วลากเส้นชี้กลับแทน */
+      const obstaclesAll = Object.values(regionRect);
+      const okIn = (b) => !placed.some(p => boxHit(b, p)) && !obstaclesOther.some(p => boxHit(b, p, 0));
       for (let lvl = 0; lvl < levels.length; lvl++) {
         /* kpi เป็นคุณสมบัติ "ราย level" (2026-08-26 · user ทัก "box ทับกันเละ") — เดิมเป็น flag ทั้ง call
            แล้วการ์ด KPI ถูกส่งมาระดับเดียว = มันคือ level สุดท้ายทันที → เข้าโหมด "ยอมทับ" ทั้งที่ยังย่อได้
@@ -1746,13 +1790,16 @@ export default function FactoryMap({ setupMode = false }) {
         }
         const { w: wpx, h: hpx } = est(levels[lvl].name, levels[lvl].txt, big, false, kpi);
         const w = kpi ? toN(wpx) : Math.min(toN(wpx), big ? 36 : 34), h = toN(hpx), bx = (x0 + x1) / 2 - w / 2;
-        const cands = big
-          ? [ // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
-              { x: bx, y: y1 + g }, { x: x0, y: y1 + g }, { x: x1 - w, y: y1 + g },
-              { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
-              { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
-              { x: x1 + g, y: y1 + g }, { x: x0 - w - g, y: y1 + g },
-              { x: x1 + g, y: y0 - h - g }, { x: x0 - w - g, y: y0 - h - g }]
+        // การ์ด KPI เว้นช่องไฟมากกว่าป้าย — ให้เห็นชัดว่า "ลอยข้างกรอบ" ไม่ใช่แปะติดขอบ และมีที่ให้เส้นชี้
+        const gk = kpi ? toN(10) : g;
+        const outside = [ // ทุกตัวเลือกอยู่ **นอก** กรอบตัวเอง (ใช้กับป้ายกลุ่ม + การ์ด KPI)
+          { x: bx, y: y1 + gk }, { x: x0, y: y1 + gk }, { x: x1 - w, y: y1 + gk },
+          { x: bx, y: y0 - h - gk }, { x: x0, y: y0 - h - gk }, { x: x1 - w, y: y0 - h - gk },
+          { x: x1 + gk, y: cyn - h / 2 }, { x: x0 - w - gk, y: cyn - h / 2 },
+          { x: x1 + gk, y: y1 + gk }, { x: x0 - w - gk, y: y1 + gk },
+          { x: x1 + gk, y: y0 - h - gk }, { x: x0 - w - gk, y: y0 - h - gk }];
+        const cands = (big || kpi)
+          ? outside   // ป้ายลูกเกาะขอบบนเป็นหลัก → ใต้กรอบกลุ่มว่างโดยธรรมชาติ ลองก่อน
           : [ // ทุกตัวเลือกติดกรอบของตัวเอง — มี "เลื่อนชิดซ้าย/ขวาตามขอบ" ให้หลบเพื่อนบ้านโดยไม่หนีออกจากกรอบ
               { x: bx, y: y0 + toN(2) }, { x: x0, y: y0 + toN(2) }, { x: x1 - w, y: y0 + toN(2) },
               { x: bx, y: y0 - h - g }, { x: x0, y: y0 - h - g }, { x: x1 - w, y: y0 - h - g },
@@ -1761,8 +1808,15 @@ export default function FactoryMap({ setupMode = false }) {
               { x: x1 + g, y: cyn - h / 2 }, { x: x0 - w - g, y: cyn - h / 2 },
               { x: bx, y: y0 + h + g }, { x: bx, y: cyn - h / 2 }];
         const last = lvl === levels.length - 1;
-        const box = placeBox(cands, w, h, placed, maxY, bb, obstacles, last && compactLbl, last);
-        if (box) { placed.push(box); return { ...box, lvl, kpi, link: linkOf(box, bb) }; }
+        /* การ์ด KPI: ค้นหาที่ว่างรอบๆ ได้เลยตั้งแต่ level แรก (ไม่ต้องรอเป็น level สุดท้าย)
+           เพราะกติกาใหม่ห้ามทับกรอบตัวเอง → ตัวเลือก "ติดกรอบ" ที่เหลือน้อยลงมาก
+           แต่ห้ามตกท่า "ยอมทับ" — หาไม่ได้ = สละการ์ด ไปย่อเป็นป้ายเล็กใน level ถัดไป */
+        const box = placeBox(
+          cands, w, h, placed, maxY, bb, kpi ? obstaclesAll : obstaclesOther,
+          last && compactLbl, last || kpi,
+          kpi ? { maxAway: KPI_AWAY, noOverlapFallback: true } : {},
+        );
+        if (box) { placed.push(box); return { ...box, lvl, kpi, link: linkOf(box, bb, kpi) }; }
       }
       return null;
     };
@@ -2129,10 +2183,21 @@ export default function FactoryMap({ setupMode = false }) {
               ].filter(([l]) => l).map(([l, color, key]) => (
                 // เส้นบาง + drop-shadow จางๆ พออ่านออกบนภาพถ่าย — ห้ามกลับไปใช้ halo ดำหนา (user: "พอเป็นสีดำดูอึดอัด")
                 <g key={key} pointerEvents="none" style={{ filter: 'drop-shadow(0 0 1.2px rgba(0,0,0,0.9))' }}>
+                  {/* เส้นแบบ "จุดไข่ปลา" (dash สั้น + linecap round) — อ่านออกบนภาพถ่ายผังแต่ไม่แย่งสายตาการ์ด
+                      เดิม dash 4 3 หนาทึบ พอการ์ดออกไปอยู่นอกกรอบทุกใบ (2026-09-08) เส้นเยอะขึ้นจนผังรก */}
                   <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                    stroke={color} strokeWidth="1.6" strokeDasharray="4 3" opacity={0.9} vectorEffect="non-scaling-stroke" />
+                    stroke={color} strokeWidth="1.5" strokeDasharray="1.2 3.4" strokeLinecap="round"
+                    opacity={0.92} vectorEffect="non-scaling-stroke" />
+                  {/* หมุดปลายฝั่งกรอบ = วงสีสถานะ + ไส้ขาว → ชี้ตำแหน่งได้ชัดโดยไม่ต้องใช้หัวลูกศร
+                      ⚠️ ใช้ line ยาว 0 + linecap round (วงกลมขนาด px คงที่) ห้ามใช้ <circle r="%">
+                         เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
                   <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
-                    stroke={color} strokeWidth="4.5" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                    stroke={color} strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                  <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
+                    stroke="#fff" strokeWidth="2.4" strokeLinecap="round" opacity={0.95} vectorEffect="non-scaling-stroke" />
+                  {/* จุดเล็กฝั่งการ์ด — ให้เส้นดู "ต่อ" กับการ์ด ไม่ใช่เส้นลอยมาหยุดกลางอากาศ */}
+                  <line x1={l.x1} y1={l.y1} x2={l.x1} y2={l.y1}
+                    stroke={color} strokeWidth="3" strokeLinecap="round" opacity={0.95} vectorEffect="non-scaling-stroke" />
                 </g>
               ))}
             </svg>

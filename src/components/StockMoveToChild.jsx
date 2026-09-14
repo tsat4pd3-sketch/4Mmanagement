@@ -101,7 +101,9 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     /* 🔴 เลือกปลายทางที่ยัง "ไม่ผ่านขั้นขึ้นรูป" ทั้งที่ของเป็นวัตถุดิบ/blank = ถามยืนยันอีกชั้น
        เตือนดัง ไม่บล็อก — บางไลน์ปั๊ม+ประกอบรวมกันจริง และ line_type อาจยังไม่ได้ตั้ง */
     const g = r.groups.find(x => x.lines.includes(to));
-    if (r.needsForming && (g?.key === 'bom' || g?.key === 'rest')
+    /* ⚠️ เช็คแบบ "กลุ่มที่ยกเว้น" ไม่ใช่ "กลุ่มที่ต้องเตือน" — กลุ่มใหม่ที่เพิ่มทีหลัง
+       (เช่น 🏢 ไลน์อื่นทั้งโรงงาน 2026-09-09) จะได้ตกมาเตือนเองโดยไม่ต้องไล่แก้ที่นี่ */
+    if (r.needsForming && !['forming', 'forming_out', 'made', 'made_out'].includes(g?.key)
       && !window.confirm(`🔴 ปลายทางนี้ไม่ใช่ไลน์ขึ้นรูป\n\n${r.mat_no} เป็นวัตถุดิบ/งาน blank — ตาม pattern ต้องขึ้นรูปก่อน แล้วค่อยส่งเข้าขั้นถัดไป\n\n→ ${to}\n\nยืนยันว่าถูกต้องจริง?`)) return;
     // ข้ามแผนก = ของอยู่ผิดแผนก ไม่ใช่แค่ผิดชั้น — ต้องยืนยันแยก
     const cross = !(childrenOf[r.line_name] || []).includes(to);

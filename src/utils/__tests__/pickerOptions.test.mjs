@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { personOptions, machineOptions, productOptions, sameName } from '../pickerOptions.js';
+import { personOptions, machineOptions, productOptions, sameName, pickerText } from '../pickerOptions.js';
 
 /* กฎที่ล็อกไว้ (2026-09-07 · single-source audit):
    1. ของที่ "เกี่ยวข้อง" ขึ้นก่อน แต่ **ไม่ตัดของอื่นทิ้ง** (หยิบข้ามทีม/ไลน์มีจริง) เว้นแต่ strict
@@ -63,6 +63,18 @@ test('machineOptions: ไลน์ที่เลือกขึ้นก่อ�
   assert.deepEqual(strict.map(x => x.machine_no), ['RB-10']);
 });
 
+test('machineOptions: groupByLine = จัดกลุ่มตามไลน์ (ไม่มีไลน์ = ท้ายสุด) — feedback หน้างาน 2026-09-08', () => {
+  const g = machineOptions(machines, { groupByLine: true });
+  // ทุกแถวต้องมีหัวกลุ่มเป็นไลน์ของตัวเอง — ไม่มีกลุ่ม = ลิสต์แบนอ่านไม่รู้เรื่อง (บั๊กที่หน้างานทัก)
+  assert.ok(g.every(o => String(o.group || '').startsWith('📍')), 'ทุกแถวต้องอยู่ในกลุ่ม 📍 ไลน์');
+  assert.ok(g.some(o => o.group === `📍 ${o.line_name}`), 'ชื่อกลุ่มต้องเป็นชื่อไลน์จริง');
+  // แถวของไลน์เดียวกันต้องอยู่ติดกัน (ไม่งั้นหัวกลุ่มโผล่ซ้ำ)
+  const seen = new Set(); let prev = null;
+  for (const o of g) { if (o.group !== prev) { assert.ok(!seen.has(o.group), `กลุ่ม ${o.group} ถูกแบ่งเป็นหลายท่อน`); seen.add(o.group); prev = o.group; } }
+  // ไม่ส่ง groupByLine = พฤติกรรมเดิม (ไม่มีกลุ่ม)
+  assert.ok(machineOptions(machines, {}).every(o => o.group === undefined));
+});
+
 const products = [
   { id: 'p1', mat_no: '10100384', name: 'REINF', p_no: 'MB3B-8C306', customer: 'FORD', line_name: 'ASSY1', is_active: true },
   { id: 'p2', mat_no: '10100385', name: 'REINF LH', p_no: 'MB3B-8C307', customer: 'FORD', line_name: 'ASSY2', is_active: true },
@@ -106,4 +118,16 @@ test('appendHistoryOptions: ค่าที่เคยบันทึก/ค่
   assert.ok(hist.every(x => x.group === HISTORY_GROUP && x.badge));
   assert.equal(hist[1].machine_no, 'LEGACY-1');
   assert.equal(appendHistoryOptions(base, {}), base, 'ไม่มีอะไรเติม = คืน array เดิม');
+});
+
+
+test('pickerText: picker ที่เก็บแค่ FK id ต้องไม่ล็อกช่องเป็น controlled ว่าง (พิมพ์ค้นไม่ได้) — 2026-09-08', () => {
+  // เก็บ id: ยังไม่เลือก → undefined = SearchSelect ถือคำค้นเอง (ถ้าเป็น '' ตัวอักษรที่พิมพ์จะถูกล้างทุกครั้ง)
+  assert.equal(pickerText({ selLabel: null, value: '', storesText: false }), undefined);
+  assert.equal(pickerText({ selLabel: null, value: 42, storesText: false }), undefined);
+  // เลือกแล้ว → โชว์ชื่อของค่าที่เลือก
+  assert.equal(pickerText({ selLabel: 'MC-01', value: 42, storesText: false }), 'MC-01');
+  // พาเรนต์เก็บค่า text เอง (machine_no/mat_no/ชื่อคน) → ส่งค่าที่เก็บไว้ตามเดิม
+  assert.equal(pickerText({ selLabel: null, value: 'MC-99', storesText: true }), 'MC-99');
+  assert.equal(pickerText({ selLabel: null, value: '', storesText: true }), '');
 });

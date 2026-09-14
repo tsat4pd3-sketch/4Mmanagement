@@ -14,13 +14,14 @@ import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
 import useIsMobile from './utils/useIsMobile';
 import ScrollHint from './components/ScrollHint';
-import { pushSupported, getPushState, subscribePush, unsubscribePush } from './utils/webpush';
+import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
+import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1017,25 +1018,61 @@ function NotificationBell({ userId, role }) {
   };
 
   // ── Web Push (เด้งเข้ามือถือแม้ปิดแอป) ──
-  const [pushState, setPushState] = useState('default'); // default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  // สถานะ: default|subscribed|unsubscribed|denied|unsupported|ios-need-install
+  //        |stale (เบราว์เซอร์มี subscription แต่ DB ไม่มีแถวของ user นี้ → ต้องกด "เปิด" ใหม่)
+  //        |check-failed (เช็ค DB ไม่ได้ — ห้ามตีความว่า "ยังไม่เปิด" ดู webpush.js)
+  // 🔴 'subscribed' ต้องผ่านการเทียบกับแถว push_subscriptions ของ user นี้เสมอ (2026-09-08 — เดิมดูแค่เบราว์เซอร์
+  //    จอเลยบอก "เปิดแล้ว" ทั้งที่แถวถูกลบไป/เป็นของคนอื่น = หัวหน้ากะไม่เคยได้ push MO)
+  const [pushState, setPushState] = useState('default');
   const [pushBusy,  setPushBusy]  = useState(false);
-  const refreshPush = useCallback(() => { getPushState().then(setPushState).catch(() => {}); }, []);
-  useEffect(() => { refreshPush(); }, [refreshPush]);
+  const refreshPush = useCallback(() => {
+    let alive = true; // กัน stale-response: เปลี่ยน user แล้วคำตอบเก่ากลับมาทีหลัง
+    getPushState(userId).then(st => { if (alive) setPushState(st); }).catch(() => { if (alive) setPushState('check-failed'); });
+    return () => { alive = false; };
+  }, [userId]);
+  useEffect(() => refreshPush(), [refreshPush]);
+
+  // SW หมุน subscription (pushsubscriptionchange) → ผูกใหม่ให้ถ้าแถวเดิมเป็นของ user นี้ ไม่งั้นโชว์ 'stale' ให้กดเอง
+  useEffect(() => {
+    if (!userId) return undefined;
+    return onPushResubscribeRequest(async (msg) => {
+      const r = await handlePushResubscribe(userId, msg);
+      if (r === 'rebound') toast.info('ระบบต่ออายุการแจ้งเตือนเข้ามือถือให้แล้ว 📲');
+      else if (r === 'error') toast.error('ต่ออายุการแจ้งเตือนเข้ามือถือไม่สำเร็จ — เปิดกระดิ่งแล้วกด "เปิด" ใหม่');
+      refreshPush();
+    });
+  }, [userId, refreshPush]);
 
   const enablePush = async () => {
     setPushBusy(true);
     try {
       const ok = await subscribePush(userId);
       if (!ok && Notification.permission === 'denied') toast.error('เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์');
-      else if (ok) toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲');
+      else if (!ok) toast.info('ยังไม่ได้อนุญาตการแจ้งเตือน — กด "อนุญาต" ในกล่องที่เบราว์เซอร์ถาม');
+      else toast.success('เปิดแจ้งเตือนเข้ามือถือแล้ว 📲 — กด "ทดสอบส่ง" เพื่อเช็คว่าเด้งถึงเครื่องนี้');
     } catch (e) { toast.error(e.message || 'เปิดไม่สำเร็จ'); }
     finally { setPushBusy(false); refreshPush(); }
   };
   const disablePush = async () => {
     setPushBusy(true);
-    await unsubscribePush();
+    const r = await unsubscribePush();
     setPushBusy(false); refreshPush();
-    toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+    if (!r.ok) toast.error(`ปิดแจ้งเตือนเข้ามือถือไม่สำเร็จ: ${r.error || 'ไม่ทราบสาเหตุ'}`);
+    else if (r.dbRows === 0) toast.info('ยกเลิกในเครื่องนี้แล้ว (ไม่พบการลงทะเบียนของคุณในระบบ — อาจเป็นของผู้ใช้อื่นบนเครื่องเดียวกัน)');
+    else toast.info('ปิดแจ้งเตือนเข้ามือถือแล้ว');
+  };
+  // ทดสอบส่ง: insert notifications ของตัวเอง (policy notifications_insert_authenticated) → trigger trg_notify_push ยิง send-push
+  // ให้หน้างานพิสูจน์ได้ทันทีว่า push ถึงเครื่องนี้ ไม่ต้องรอมี MO จริง
+  const testPush = async () => {
+    setPushBusy(true);
+    const now = new Date().toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const ok = checkWrite(await supabase.from('notifications').insert({
+      user_id: userId, type: 'info',
+      title: '🔔 ทดสอบแจ้งเตือน',
+      body:  `ส่งเมื่อ ${now} — ถ้าเห็นข้อความนี้เด้งบนมือถือ แปลว่าระบบส่งถึงเครื่องนี้ได้`,
+    }), 'ส่งทดสอบ');
+    setPushBusy(false);
+    if (ok) toast.success('ส่งทดสอบแล้ว — ปิดจอ/ย่อแอปแล้วรอเด้งภายในไม่กี่วินาที (ถ้าไม่เด้ง: เช็คสิทธิ์แจ้งเตือนของ Chrome + แบตเตอรี่ "ไม่จำกัด")');
   };
 
   // Close dropdown on outside click
@@ -1129,8 +1166,28 @@ function NotificationBell({ userId, role }) {
               {pushState === 'subscribed' ? (
                 <>
                   <span style={{ color: 'var(--accent)', fontWeight: 600 }}>📲 เปิดแจ้งเตือนเข้ามือถือแล้ว</span>
-                  <button onClick={disablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <button onClick={testPush} disabled={pushBusy} title="ส่งแจ้งเตือนทดสอบถึงตัวเอง เพื่อเช็คว่าเด้งถึงเครื่องนี้"
+                      style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'none', border: '1px solid var(--accent)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>
+                      {pushBusy ? '…' : 'ทดสอบส่ง'}
+                    </button>
+                    <button onClick={disablePush} disabled={pushBusy}
+                      style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ปิด</button>
+                  </div>
+                </>
+              ) : pushState === 'stale' ? (
+                <>
+                  <span style={{ color: 'var(--accent2)', fontWeight: 600 }}>⚠️ การลงทะเบียนหลุด — กดเปิดใหม่</span>
+                  <button onClick={enablePush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
+                  </button>
+                </>
+              ) : pushState === 'check-failed' ? (
+                <>
+                  <span style={{ color: 'var(--accent2)' }}>⚠️ ตรวจสถานะแจ้งเตือนเข้ามือถือไม่ได้ (เครือข่าย/ฐานข้อมูล)</span>
+                  <button onClick={refreshPush} disabled={pushBusy}
+                    style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>ลองใหม่</button>
                 </>
               ) : pushState === 'denied' ? (
                 <span style={{ color: 'var(--accent2)' }}>🔕 เบราว์เซอร์บล็อกการแจ้งเตือน — เปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ก่อน</span>
@@ -1250,7 +1307,8 @@ function shiftDeadlineFrom(loginTsMs) {
   return end.getTime() + SHIFT_GRACE_MS;
 }
 
-function useAutoLogout(isDisplay, onLogout, shiftCapped) {
+// disabled = ไม่ต้องเฝ้าเลย (role display หรือกำลังเปิดหน้าจอแขวน — ดู kioskRoutes.js)
+function useAutoLogout(disabled, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
@@ -1271,7 +1329,11 @@ function useAutoLogout(isDisplay, onLogout, shiftCapped) {
   }, [stopCountdown]);
 
   useEffect(() => {
-    if (isDisplay) return; // display users never get auto-logged out
+    if (disabled) return; // role display / หน้าจอแขวน — ไม่เตะออก
+
+    // เริ่ม/กลับมาเฝ้า = ตั้งนาฬิกา idle ใหม่ (เช่น เดินออกจากหน้าจอแขวนไปหน้าทำงาน)
+    // ไม่งั้นค่า lastActivity เก่าค้างอยู่ อาจขึ้นคำเตือนทันทีที่ออกจากหน้าจอแขวน
+    lastActivityRef.current = Date.now();
 
     const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
     let lastLsWrite = 0;
@@ -1348,7 +1410,7 @@ function useAutoLogout(isDisplay, onLogout, shiftCapped) {
       clearInterval(pollId);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [isDisplay, shiftCapped, dismissWarning]);
+  }, [disabled, shiftCapped, dismissWarning]);
 
   return { warnSecsLeft, dismissWarning };
 }
@@ -1431,12 +1493,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   };
 
   const isDisplay = userRole === 'display';
+  // 📺 จอแขวนห้อง (`/tv`) — อ่านอย่างเดียว 100% และไม่มีใครเดินไปแตะจอ ⇒ ไม่เตะออกไม่ว่า role ไหน
+  // เดิมยกเว้นแค่ role `display` แต่หน้างานเอา "บัญชีคน" ไปเปิดจอ (จอห้องช่าง PD3 = role supervisor)
+  // → จอนิ่งครบ 30 นาที = เด้ง login ทุก 35 นาทีตลอดกาล (feedback 2026-09-14)
+  // กฎก่อนเพิ่มหน้าในลิสต์ kiosk อยู่ที่ `src/utils/kioskRoutes.js`
+  const isKiosk = isKioskPath(location.pathname);
   // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
   // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
   // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
   // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
-  const shiftCapped = !viewAs && ['leader', 'supervisor'].includes(userRole);
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
+  // ⚠️ จอแขวนไม่โดนเพดานกะด้วย — ไม่งั้นยกเว้น idle ไปก็ยังโดนเตะทุกสิ้นกะอยู่ดี
+  const shiftCapped = !viewAs && !isKiosk && ['leader', 'supervisor'].includes(userRole);
+  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
 
   // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
   const [viewAsOpen, setViewAsOpen] = useState(false);
@@ -1891,9 +1959,18 @@ export default function App() {
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
     const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
-    let { data, error } = await supabase.from('profiles').select(COLS + ', employee_id').eq('id', user.id).single();
-    // คอลัมน์ employee_id ยังไม่ apply (42703) → ถอยไป select ชุดเดิม ห้ามให้ login พังทั้งระบบ
-    if (error?.code === '42703') ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
+    // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
+    //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
+    //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
+    //    คอลัมน์ mtn_teams (20260722) / avatar_url (20260714) apply ครบแล้วทั้งคู่ (ตรวจ 2026-09-11)
+    const COLS_FULL = COLS + ', employee_id, mtn_teams, avatar_url';
+    let { data, error } = await supabase.from('profiles').select(COLS_FULL).eq('id', user.id).single();
+    // คอลัมน์เสริมยังไม่ apply (42703) → ถอยไป select ชุดพื้นฐาน ห้ามให้ login พังทั้งระบบ
+    // (ค่าที่หายไปจะเป็น null → ทีมช่าง/รูปโปรไฟล์ไม่ขึ้น แต่เข้าใช้งานได้ตามปกติ)
+    if (error?.code === '42703') {
+      console.warn('[profile] คอลัมน์เสริมยังไม่ apply — ถอยไปชุดพื้นฐาน (mtn_teams/avatar_url/employee_id จะว่าง)');
+      ({ data, error } = await supabase.from('profiles').select(COLS).eq('id', user.id).single());
+    }
     // fail-visible: โหลดโปรไฟล์ไม่ได้ = แอปใช้งานไม่ได้อยู่ดี (role null → เมนูหาย, query ฝั่ง Main
     // ล้มหมด กลายเป็น "หน้าผี") — ห้ามปล่อย render ต่อแบบไม่มี role
     if (error || !data) {
@@ -1941,14 +2018,10 @@ export default function App() {
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
-    // mtn_teams แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260722) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('mtn_teams').eq('id', user.id).maybeSingle()
-      .then(({ data: mt }) => setUserMtnTeams(Array.isArray(mt?.mtn_teams) ? mt.mtn_teams : []))
-      .catch(() => setUserMtnTeams([]));
-    // avatar_url แยก query best-effort — คอลัมน์เพิ่งเพิ่ม (migration 20260714) ถ้ายังไม่ apply ห้ามทำ login พัง
-    supabase.from('profiles').select('avatar_url').eq('id', user.id).maybeSingle()
-      .then(({ data: av }) => setUserAvatarUrl(av?.avatar_url ?? null))
-      .catch(() => setUserAvatarUrl(null));
+    // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
+    // ถ้า fallback 42703 ทำงาน ค่าจะเป็น undefined → ได้ [] / null เหมือนพฤติกรรมเดิมของ catch
+    setUserMtnTeams(Array.isArray(data?.mtn_teams) ? data.mtn_teams : []);
+    setUserAvatarUrl(data?.avatar_url ?? null);
     // is_dept_admin อยู่ใน select หลักแล้ว (migration 20260803 apply แล้ว — ยืนยันคอลัมน์มีจริงใน prod)
     // ตั้ง sync ก่อน render แรก — เดิมแยก query async แล้วมี race: หน้า render ก่อน flag มา ปุ่มแก้ไขไม่โผล่
     {

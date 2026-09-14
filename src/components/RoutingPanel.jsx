@@ -17,6 +17,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
+import SupplierSelect from './SupplierSelect'; // ผู้รับจ้าง = ทะเบียน DR suppliers (จ้างนอก/บริการขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const BLANK = {
@@ -295,7 +296,9 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               {form.is_outsourced ? (
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={lbl}>ผู้รับจ้าง *</label>
-                  <input value={form.vendor_name} onChange={e => setForm(f => ({ ...f, vendor_name: e.target.value }))} placeholder="เช่น JAROONRAT" style={inp} />
+                  {/* 2026-09-08: <SupplierSelect> แทน input เปล่า — vendor_name ยังเก็บชื่อ text (VSM/OrderTrace อ่านค่าเดิมได้) · พิมพ์เองได้พร้อมป้าย */}
+                  <SupplierSelect value={form.vendor_name || ''} kinds={['service']} placeholder="เช่น JAROONRAT"
+                    onChange={r => setForm(f => ({ ...f, vendor_name: r.supplier }))} inputStyle={inp} />
                 </div>
               ) : (<>
                 <div>

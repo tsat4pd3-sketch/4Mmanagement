@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { useObjectUrl } from '../utils/useObjectUrl';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -18,12 +19,18 @@ import CustomerSelect from '../components/CustomerSelect';
 import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+// ทะเบียนลูกค้า/Supplier (DR customers · suppliers — 2026-09-08 single-source audit): แผง CRUD กลาง + picker กลาง
+import SimpleMasterPanel from '../components/SimpleMasterPanel';
+import SupplierSelect from '../components/SupplierSelect';
+import { invalidateCustomers } from '../utils/useCustomers';
+import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -204,7 +211,7 @@ export default function ProductMaster() {
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
-  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'export'], 'products');
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'customers', 'suppliers', 'export'], 'products');
 
   /* ── state ── */
   const [items,   setItems]   = useState([]);
@@ -221,6 +228,7 @@ export default function ProductMaster() {
   const [form,     setForm]     = useState(BLANK());
   const [saving,   setSaving]   = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const imagePreview = useObjectUrl(imageFile);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
 
@@ -341,7 +349,7 @@ export default function ProductMaster() {
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
@@ -682,7 +690,7 @@ export default function ProductMaster() {
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'export', label:'📤 Export' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -1172,8 +1180,8 @@ export default function ProductMaster() {
               </div>
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
-                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  {(imagePreview || form.image_url) && (
+                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -1257,6 +1265,35 @@ export default function ProductMaster() {
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'routing' && <RoutingPanel canEdit={can('routing','manage',role) || canEdit} lines={lines} />}
+      {/* ทะเบียนลูกค้า/Supplier (2026-09-08): คอลัมน์ปลายทาง (dr_products.customer · parts_master.supplier ฯลฯ) ยังเก็บ name เป็น text
+          — ทะเบียนนี้เป็นเจ้าของ "สะกดหลัก" ให้ picker กลาง (CustomerSelect/SupplierSelect) · code สร้างจากชื่อ normalize อัตโนมัติ */}
+      {mainTab === 'customers' && (
+        <SimpleMasterPanel client={supabaseDR} table="customers" keyCol="code" canManage={canEdit}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateCustomers}
+          title="🏷️ ทะเบียนลูกค้า"
+          help="คอลัมน์ customer ของสินค้า/เอกสารเก็บชื่อนี้เป็น text · alias ใช้แม็ปสะกดเก่าเข้าชื่อหลัก · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
+          keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
+          fields={[
+            { key: 'name', label: 'ชื่อลูกค้า (สะกดหลัก)', required: true },
+            { key: 'aliases', label: 'สะกดอื่นที่เคยใช้', type: 'tags', placeholder: 'คั่นด้วย , เช่น FVL, F.V.L.' },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      )}
+      {mainTab === 'suppliers' && (
+        <SimpleMasterPanel client={supabaseDR} table="suppliers" keyCol="code" canManage={canEdit}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateSuppliers}
+          title="🏭 ทะเบียน Supplier / ผู้รับจ้าง"
+          help="ใช้กับช่อง Supplier ใน Parts Master · Packaging · Routing (จ้างนอก) · คลังอะไหล่ · NPI Tooling — คอลัมน์ปลายทางเก็บชื่อเป็น text · ชนิด (kind) ช่วยจัดลำดับตัวเลือกให้ตรงงาน · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
+          keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
+          fields={[
+            { key: 'name', label: 'ชื่อ Supplier', required: true },
+            { key: 'kind', label: 'ชนิด', type: 'select', required: true, options: Object.entries(SUPPLIER_KINDS).map(([value, k]) => ({ value, label: `${k.icon} ${k.label}` })), width: 150 },
+            { key: 'contact', label: 'ผู้ติดต่อ' },
+            { key: 'phone', label: 'โทร', width: 120 },
+            { key: 'lead_time_days', label: 'Lead time (วัน)', type: 'number', width: 100 },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      )}
       {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
@@ -2052,6 +2089,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   const [form, setForm]           = useState(EMPTY_PART);
   const [saving, setSaving]       = useState(false);
   const [imageFile, setImageFile] = useState(null);
+  const imagePreview = useObjectUrl(imageFile);   // blob URL สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const [cropFile, setCropFile] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
@@ -2144,7 +2182,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
@@ -2355,8 +2393,8 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {(imageFile ? URL.createObjectURL(imageFile) : form.image_url) && (
-                    <img src={imageFile ? URL.createObjectURL(imageFile) : form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                  {(imagePreview || form.image_url) && (
+                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -2402,9 +2440,10 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Supplier</label>
-                <input style={inputSt}
-                  value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-                  placeholder="ชื่อ Supplier / ผู้ผลิต" />
+                {/* 2026-09-08: เลือกจากทะเบียน suppliers (วัตถุดิบ/ผลิตเองขึ้นก่อน) — พิมพ์เองได้พร้อมป้าย · ค่าที่เก็บยังเป็นชื่อ text */}
+                <SupplierSelect value={form.supplier || ''} kinds={['material', 'internal']}
+                  onChange={r => setForm(f => ({ ...f, supplier: r.supplier }))}
+                  placeholder="ชื่อ Supplier / ผู้ผลิต" inputStyle={inputSt} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
@@ -2497,7 +2536,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
   const saveMaster = async () => {
     if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
     setSaving(true);
-    const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, supplier: masterForm.supplier.trim() || null };
+    const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, supplier: (masterForm.supplier || '').trim() || null };
     const { error } = editMaster
       ? await supabaseDR.from('container_types').update(payload).eq('id', editMaster.id)
       : await supabaseDR.from('container_types').insert({ ...payload, is_active: true });
@@ -2625,7 +2664,10 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <datalist id="pkg-category-opts">
                     {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
                   </datalist></div>
-                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label><input style={inputSt} value={masterForm.supplier} onChange={e => setMasterForm(f => ({ ...f, supplier: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label>
+                  {/* 2026-09-08: ทะเบียน suppliers — ผู้ขายบรรจุภัณฑ์อยู่ชนิด "อื่นๆ"/ชิ้นส่วน · พิมพ์เองได้ */}
+                  <SupplierSelect value={masterForm.supplier || ''} kinds={['other', 'parts']}
+                    onChange={r => setMasterForm(f => ({ ...f, supplier: r.supplier }))} inputStyle={inputSt} /></div>
                 <button onClick={saveMaster} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>{editMaster ? '💾' : '+'}</button>
               </div>
             )}

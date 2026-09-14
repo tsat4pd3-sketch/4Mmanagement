@@ -15,6 +15,9 @@ import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน die_sets — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import SelectOrFree from '../components/SelectOrFree';
+import SimpleMasterPanel from '../components/SimpleMasterPanel';
+import CollapseCard from '../components/CollapseCard';
+import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -87,6 +90,8 @@ export default function DieRegistry() {
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
   const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry');
+  // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
+  const pressLines = useDiePressLines();
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
@@ -96,6 +101,7 @@ export default function DieRegistry() {
   const [areas, setAreas]     = useState([]);   // die_storage_areas — ผังจัดเก็บ
   const [openMos, setOpenMos] = useState([]);   // ใบซ่อม MO ที่ยังไม่ปิด (derive สถานะซ่อม)
   const [layoutReady, setLayoutReady] = useState(false); // migration 20260819 apply แล้วหรือยัง
+  const [dataWarn, setDataWarn] = useState('');          // คิวรีชุดไหนล้ม — ห้ามให้จอว่างแล้วอ่านว่า "ไม่มีข้อมูล"
   const [loading, setLoading] = useState(true);
   const [focusDieId, setFocusDieId] = useState(null);    // 📊 สถานะ กด 🗺️ → กระโดดมาแท็บผัง
   // 📜 MAT ที่เคยบันทึกใน die_sets (DR) — MAT เก่าที่ Product Master ยังไม่มี ยังเลือกซ้ำได้ ไม่ต้องพิมพ์ใหม่ (2026-09-07)
@@ -114,7 +120,10 @@ export default function DieRegistry() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: mc }, { data: st }, { data: ot }, { data: pd }, areaRes, moRes] = await Promise.all([
+    // ⚠️ ห้ามทำลาย error ด้วย `const { data } = await` — คิวรีล้มแล้วจอขึ้น "ไม่มีแม่พิมพ์"
+    //    เหมือนข้อมูลหาย (กฎเหล็กข้อ 1) → เก็บชื่อชุดที่ล้มไปโชว์เป็นแถบเตือน (audit 2026-09-08)
+    const warn = [];
+    const [lnRes, mcRes, stRes, otRes, pdRes, areaRes, moRes] = await Promise.all([
       supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
       // ตัวตนของแม่พิมพ์ยังอยู่ machines — embed ส่วนขยายมาด้วยในนัดเดียว
       supabaseDR.from('machines')
@@ -127,9 +136,15 @@ export default function DieRegistry() {
       supabaseDR.from('die_storage_areas').select('*').eq('is_active', true).order('sort_order').order('name'),
       // สถานะ "ซ่อมอยู่" derive จากใบ MO จริง — ห้ามให้คนตั้งซ้ำ (2 แหล่งจะ drift กัน)
       supabaseDR.from('mtn_orders')
-        .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at')
+        .select('id, mo_no, status, machine_no, mtn_dept, current_step, report_at, quality_related, qa_skipped_at')
         .in('status', OPEN_MO_STATUSES),
     ]);
+    const { data: ln } = lnRes, { data: mc } = mcRes, { data: st } = stRes, { data: ot } = otRes, { data: pd } = pdRes;
+    if (lnRes.error) warn.push('ไลน์');
+    if (mcRes.error) warn.push('ทะเบียนแม่พิมพ์');
+    if (stRes.error) warn.push('ชุดแม่พิมพ์');
+    if (otRes.error) warn.push('ชนิด OP');
+    if (pdRes.error) warn.push('สินค้า');
     setLines(ln || []);
     // equipment_die เป็น 1:1 (machine_id เป็นทั้ง PK และ FK) → PostgREST คืนเป็น "object"
     // แต่รับทั้ง 2 ทรงไว้ กันกรณี schema cache มองเป็น 1:N แล้วคืน array (ว่าง = ยังไม่มีแถวส่วนขยาย)
@@ -142,6 +157,7 @@ export default function DieRegistry() {
     setLayoutReady(!areaRes.error);
     if (moRes.error) toast.error('โหลดใบซ่อม MO ไม่สำเร็จ: ' + moRes.error.message);   // ห้ามเงียบ — สถานะซ่อมจะหายทั้งบอร์ด
     setOpenMos(moRes.data || []);
+    setDataWarn(warn.length ? `โหลดไม่สำเร็จ: ${warn.join(' · ')} — ข้อมูลบนจอไม่ครบ (ไม่ใช่ว่าไม่มีข้อมูล)` : '');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -183,6 +199,12 @@ export default function DieRegistry() {
     dies.forEach(d => { if (d.line_name && inScope(d.line_name)) s.add(d.line_name); });
     return [...s].sort((a, b) => a.localeCompare(b));
   }, [sets, dies, inScope]);
+  /* 2026-09-08: ตัวเลือกไลน์ในฟอร์มชุด = ทะเบียน die_press_lines ที่เปิดใช้ (ขึ้นก่อน) ∪ ชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว
+        (ค่าเก่าที่ยังไม่ลงทะเบียนต้องเลือกซ้ำได้ ห้ามหายเงียบ — SelectOrFree ตัดซ้ำให้เอง) */
+  const setLineOptions = useMemo(() => [
+    ...pressLines.filter(p => p.is_active !== false).map(p => p.name),
+    ...dieLineNames,
+  ], [pressLines, dieLineNames]);
 
   /* ── ประกอบชุด + สมาชิก + ตรวจ "ข้อมูลที่ยังไม่ครบ" ─────────────── */
   const diesBySet = useMemo(() => {
@@ -334,6 +356,13 @@ export default function DieRegistry() {
         ]}
         tab={tab} onTab={setTab}
       />
+
+      {dataWarn && (
+        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
+          ⚠️ {dataWarn}
+        </div>
+      )}
 
       {/* ⚠️ /die-registry เปิดให้ role `mtn` ด้วย — ถ้าวันหน้าถอด machines:edit ออกจาก mtn
           ปุ่มแก้จะหายทั้งหน้าโดยไม่มีคำอธิบาย (กับดักเดียวกับตารางกะ) */}
@@ -557,6 +586,21 @@ export default function DieRegistry() {
           </div>
         </div>
       ))}
+
+      {/* ⚙️ ทะเบียนกลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (DR die_press_lines · 2026-09-08) — พับไว้ท้ายแท็บ (ตั้งค่านานๆ ครั้ง)
+          code กรอกเอง (สั้น เช่น LINE-A) · ref_production_line = ชื่อไลน์ผลิตจริงเมื่อกลุ่มนั้นคือไลน์ (HDF1) ไว้ต่อ linkage OEE
+          SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
+      <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
+          help="ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
+          fields={[
+            { key: 'name', label: 'ชื่อกลุ่ม/ไลน์', required: true, placeholder: 'เช่น LINE A ( 800 Ton )' },
+            { key: 'tonnage', label: 'Tonnage', type: 'text', placeholder: 'เช่น 800 Ton', width: 120 },
+            { key: 'ref_production_line', label: 'ไลน์ผลิตอ้างอิง', placeholder: 'เช่น HDF1 (ถ้าเป็นไลน์ผลิตจริง)' },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      </CollapseCard>
       </>}
 
       {/* ── modal: ชุดแม่พิมพ์ ── */}
@@ -588,11 +632,11 @@ export default function DieRegistry() {
                 onChange={e => setEditSet(f => ({ ...f, model: e.target.value }))} />
             </Field>
             <Field label="ไลน์ / กลุ่มเครื่องปั๊ม">
-              {/* ⚠️ ยังไม่มี master ของ "กลุ่มเครื่องปั๊ม" (LINE A ( 800 Ton ) ฯลฯ ไม่อยู่ใน production_lines — audit #28)
-                  → เลือกจากชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว (self-referential) กันสะกดต่างจน inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์
-                  "✏️ ระบุใหม่" เฉพาะไลน์ที่ยังไม่มีในระบบ · ทางแก้ถาวร = ลงทะเบียนกลุ่มเครื่องปั๊มเป็น master แล้วใช้ <LineSelect> · 2026-09-07 */}
-              <SelectOrFree value={editSet.line_name || ''} options={dieLineNames} placeholder="— เลือกไลน์/กลุ่มเครื่องปั๊ม —"
-                freeLabel="✏️ ระบุใหม่ (ไลน์ที่ยังไม่มีในระบบ)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
+              {/* ทะเบียน = DR `die_press_lines` (แผง ⚙️ ท้ายแท็บทะเบียน · 2026-09-08 — ปิด audit #28) กลุ่มเครื่องปั๊ม (LINE A ( 800 Ton ) ฯลฯ)
+                  ตั้งใจแยกจาก production_lines · ชื่อเก่าที่ชุด/แม่พิมพ์ใช้อยู่แต่ยังไม่ลงทะเบียนยังเลือกซ้ำได้ (กันสะกดต่างจน
+                  inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์) · "✏️ ระบุใหม่" เฉพาะกรณีจริงที่ยังไม่มีในทะเบียน */}
+              <SelectOrFree value={editSet.line_name || ''} options={setLineOptions} placeholder="— เลือกจากทะเบียนกลุ่มเครื่องปั๊ม —"
+                freeLabel="✏️ ระบุใหม่ (ยังไม่มีในทะเบียน die_press_lines)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รูปแบบชุด">

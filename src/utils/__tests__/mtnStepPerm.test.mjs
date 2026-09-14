@@ -116,17 +116,24 @@ test('ทุกขั้นใน MTN_STEPS มี title/who ครบ — จ�
 /* ── ข้าม QA (ขั้น 5 → 6) เมื่องานไม่เกี่ยวกับคุณภาพ — 2026-09-03 ── */
 const WAITING_QA = { ...ORDER, status: 'checked', quality_related: 'เกี่ยวกับคุณภาพ' };
 
-test('isWaitingQa: ค้างรอ QA = status checked + ขั้น 4 ระบุเกี่ยวกับคุณภาพ เท่านั้น', () => {
+test('isWaitingQa: ผ่านขั้น 4 = รอ QA เสมอ · ออกได้ทางเดียวคือ QA กด (qa_skipped_at) — 2026-09-14', () => {
   assert.equal(isWaitingQa(WAITING_QA), true);
-  assert.equal(isWaitingQa({ ...WAITING_QA, quality_related: 'ไม่เกี่ยวกับคุณภาพ' }), false);
+  // 🔴 กฎใหม่: ค่า quality_related ที่ขั้น 4 ไม่มีผลต่อเส้นทางแล้ว (ผู้แจ้งข้ามเองไม่ได้)
+  assert.equal(isWaitingQa({ ...WAITING_QA, quality_related: 'ไม่เกี่ยวกับคุณภาพ' }), true);
+  assert.equal(isWaitingQa({ ...WAITING_QA, quality_related: null }), true);
+  // ออกจากคิว QA ได้ทางเดียว = QA กดว่าไม่เกี่ยว (มีร่องรอย qa_skipped_at)
+  assert.equal(isWaitingQa({ ...WAITING_QA, qa_skipped_at: '2026-09-14T02:00:00Z' }), false);
   assert.equal(isWaitingQa({ ...WAITING_QA, status: 'qa' }), false);       // QA ตรวจแล้ว
   assert.equal(isWaitingQa({ ...WAITING_QA, status: 'repaired' }), false); // ยังไม่ถึงขั้น 4
   assert.equal(isWaitingQa(null), false);
 });
 
-test('canSkipQa: ผู้เปิดใบข้ามได้ (แก้การตัดสินใจขั้น 4 ของตัวเอง) แม้ไม่มี role อะไรเลย', () => {
+test('🔴 canSkipQa: ผู้เปิดใบ/ฝ่ายที่แจ้ง ข้าม QA เองไม่ได้แล้ว — 2026-09-14 (คำสั่ง user)', () => {
+  // เดิมคืน step4:reporter ⇒ ฝ่ายที่ถูกตรวจเปิดด่านของตัวเองได้ · ตอนนี้เป็นสิทธิ์ QA ฝั่งเดียว
   const r = canSkipQa({ order: WAITING_QA, fullName: 'สมชาย ใจดี', ...perms([]) });
-  assert.equal(r.ok, true); assert.equal(r.code, 'step4:reporter');
+  assert.equal(r.ok, false); assert.equal(r.code, 'qa_only');
+  // ถือสิทธิ์ขั้น 4 (accept_work) ก็ยังข้ามไม่ได้
+  assert.equal(canSkipQa({ order: WAITING_QA, fullName: 'คนอื่น', ...perms(['accept_work']) }).ok, false);
 });
 
 test('canSkipQa: QA เองข้ามได้ (งานไม่ใช่ของ QA ไม่ต้องเซ็นรับรองสิ่งที่ไม่ได้ตรวจ)', () => {
@@ -139,7 +146,8 @@ test('canSkipQa: ช่างที่ซ่อม (service) ข้ามไม�
 });
 
 test('canSkipQa: ใบที่ไม่ได้ค้างรอ QA ข้ามไม่ได้ ต่อให้เป็น manage_master', () => {
-  assert.equal(canSkipQa({ order: { ...WAITING_QA, quality_related: 'ไม่เกี่ยวกับคุณภาพ' }, fullName: 'สมชาย ใจดี', ...perms(['manage_master']) }).code, 'not_waiting_qa');
+  // QA ตัดสินไปแล้ว (มีร่องรอย) = ไม่ได้อยู่ในคิว QA อีก
+  assert.equal(canSkipQa({ order: { ...WAITING_QA, qa_skipped_at: '2026-09-14T02:00:00Z' }, fullName: 'สมชาย ใจดี', ...perms(['manage_master']) }).code, 'not_waiting_qa');
   assert.equal(canSkipQa({ order: { ...WAITING_QA, status: 'qa' }, fullName: 'สมชาย ใจดี', ...perms(['manage_master']) }).code, 'not_waiting_qa');
 });
 
@@ -206,4 +214,98 @@ test('stepDenyHint แบบ out_of_scope บอกว่าใบเป็น�
   assert.ok(h.some(l => l.includes('GOR') && l.includes('PD4')));
   assert.ok(h.some(l => l.includes('/add-user')));
   assert.ok(!h.some(l => l.includes('mtn_repair:accept_work')), 'ไม่ใช่ปัญหา role ห้ามชี้ไป /permissions');
+});
+
+/* ── ↩️ ตีกลับใบ (Reject MO ขั้น 2) — 2026-09-08 feedback หน้างาน "Reject MO มันไม่ตีกลับ" ── */
+import { canBounceBack } from '../mtnStepPerm.js';
+
+test('canBounceBack: ใบที่ยังไม่เดินเลยขั้น 2 ตีกลับได้ (รวมใบที่รับงานไปแล้ว = เคสที่บั๊กเดิมไม่ตีกลับ)', () => {
+  assert.equal(canBounceBack({ status: 'pending', current_step: 1 }), true);
+  assert.equal(canBounceBack({ status: 'assigned', current_step: 2 }), true, 'รับงานแล้วแต่ยังไม่ซ่อม ต้องตีกลับได้');
+  assert.equal(canBounceBack({ status: 'repairing', current_step: 2 }), true);
+  assert.equal(canBounceBack({ status: 'returned', current_step: 1 }), true);
+  assert.equal(canBounceBack({}), true, 'ใบที่ยังไม่มี current_step = ถือว่าอยู่ขั้น 1');
+});
+
+test('canBounceBack: ซ่อมไปแล้ว/ปิดแล้ว ตีกลับไม่ได้ — ผลงานขั้น 3+ ต้องไม่หายจากใบ', () => {
+  assert.equal(canBounceBack({ status: 'repaired', current_step: 3 }), false);
+  assert.equal(canBounceBack({ status: 'checked', current_step: 4 }), false);
+  assert.equal(canBounceBack({ status: 'handover', current_step: 6 }), false);
+  assert.equal(canBounceBack({ status: 'closed', current_step: 7 }), false);
+  // ปิด/ยกเลิกแล้วห้ามตีกลับ แม้ current_step จะยังไม่เดิน (ใบถูกจบไปแล้ว)
+  assert.equal(canBounceBack({ status: 'closed', current_step: 2 }), false);
+  assert.equal(canBounceBack({ status: 'rejected', current_step: 1 }), false);
+});
+
+/* ── 🏷️ ป้ายสถานะ + สถานะขั้น 5 — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ เพราะป้ายเดียวใช้ 2 ความหมาย) ── */
+import {
+  MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
+  moQaState, moStatusLabel,
+} from '../mtnStepPerm.js';
+
+test('moStatusLabel: checked + QA กดว่าไม่เกี่ยวแล้ว = รอรับมอบ (ขั้น 6) — ห้ามเขียนว่ารอ QA', () => {
+  const o = { status: 'checked', current_step: 4, qa_skipped_at: '2026-09-14T02:00:00Z' };
+  assert.equal(moStatusLabel(o), MO_LABEL_WAIT_HANDOVER);
+  assert.ok(moStatusLabel(o).includes('รับมอบ') && !moStatusLabel(o).includes('คุณภาพ'));
+});
+
+test('🔴 moStatusLabel: checked ที่ QA ยังไม่ตัดสิน = รอตรวจคุณภาพ (ขั้น 5) ไม่ว่า quality_related เป็นอะไร', () => {
+  // 2026-09-14: ป้ายต้องไม่เชื่อค่าที่ผู้แจ้งเคยเลือกเองที่ขั้น 4 อีกต่อไป
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4, qa_skipped_at: null, quality_related: QA_RELATED }), MO_LABEL_WAIT_QA);
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4, qa_skipped_at: null, quality_related: QA_NOT_RELATED }), MO_LABEL_WAIT_QA);
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4, qa_skipped_at: null, quality_related: null }), MO_LABEL_WAIT_QA);
+});
+
+test('moStatusLabel: qa = รอรับมอบ · สถานะอื่นใช้ป้ายเดิม · status ที่ไม่รู้จักโชว์ค่าดิบ (ไม่กลบเงียบ)', () => {
+  assert.equal(moStatusLabel({ status: 'qa', current_step: 5 }), MO_STATUS_LABEL.qa);
+  assert.ok(MO_STATUS_LABEL.qa.includes('รับมอบ'));
+  assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending);
+  assert.equal(moStatusLabel({ status: 'handover', current_step: 6 }), MO_STATUS_LABEL.handover);
+  assert.equal(moStatusLabel({ status: 'weird_new_status' }), 'weird_new_status');
+});
+
+test('moStatusLabel: แถวที่ไม่ได้ select qa_skipped_at มา = ห้ามเดา ให้ใช้ป้ายรวมของ checked', () => {
+  // เคสจริง: บอร์ด Andon / ผังแม่พิมพ์ query เฉพาะบางคอลัมน์ → qa_skipped_at เป็น undefined
+  assert.equal(moStatusLabel({ status: 'checked', current_step: 4 }), MO_STATUS_LABEL.checked);
+  assert.ok(MO_STATUS_LABEL.checked.includes('คุณภาพ') && MO_STATUS_LABEL.checked.includes('รับมอบ'));
+});
+
+test('moQaState: ใบที่ข้าม QA ต้องรายงานว่า "skipped" ไม่ใช่ "done" — แม้ current_step จะเลย 5 ไปแล้ว', () => {
+  // กดปุ่ม ⏭ ข้าม QA (มี qa_skipped_at)
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_NOT_RELATED, qa_skipped_at: '2026-09-09T02:00:00Z' }), 'skipped');
+  /* 2026-09-14: ใบ `checked` ที่ยังไม่มีร่องรอยของ QA = **รอ QA** ไม่ใช่ skipped อีกต่อไป
+     (ใบเก่าที่ตัดสินด้วยกฎเดิมถูก stamp qa_skipped_at ให้แล้วใน migration 20260914) */
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_NOT_RELATED }), 'waiting');
+  // 🔴 หัวใจของบั๊กเดิม: รับมอบ/ปิดใบไปแล้ว current_step = 6-7 แต่ QA ไม่เคยตรวจ → ต้องไม่ใช่ 'done'
+  assert.equal(moQaState({ status: 'handover', current_step: 6, quality_related: QA_NOT_RELATED }), 'waiting');
+  assert.equal(moQaState({ status: 'closed', current_step: 7, quality_related: QA_NOT_RELATED, qa_skipped_at: '2026-09-01T00:00:00Z' }), 'skipped');
+});
+
+test('moQaState: ตรวจจริง = done · ยังรอ QA = waiting · ยังไม่ถึงขั้น 4 = none', () => {
+  assert.equal(moQaState({ status: 'qa', current_step: 5, quality_related: QA_RELATED, qa_at: '2026-09-08T05:00:00Z' }), 'done');
+  assert.equal(moQaState({ status: 'closed', current_step: 7, quality_related: QA_RELATED, qa_result: 'ผ่านคุณภาพ' }), 'done', 'ใบเก่าที่ไม่มี qa_at แต่มีผลคุณภาพ = ตรวจแล้ว');
+  assert.equal(moQaState({ status: 'checked', current_step: 4, quality_related: QA_RELATED }), 'waiting');
+  assert.equal(moQaState({ status: 'repaired', current_step: 3 }), 'none');
+  assert.equal(moQaState({ status: 'pending', current_step: 1 }), 'none');
+});
+
+/* ── ➡️ ส่งต่องานข้ามทีมช่าง — 2026-09-14 (คำสั่ง user: ช่างฝ่ายผลิตดูแล้วเกินมือ ส่งต่อได้ ไม่ต้องเปิดใบใหม่) ── */
+import { canHandoff } from '../mtnStepPerm.js';
+
+test('canHandoff: ส่งต่อได้ช่วงรับงานถึงซ่อมเสร็จ (ขั้น 2-3) เท่านั้น', () => {
+  assert.equal(canHandoff({ status: 'assigned', current_step: 2 }), true);
+  assert.equal(canHandoff({ status: 'repaired',  current_step: 3 }), true);
+  // ขั้น 1 = ยังไม่มีทีมไหนรับ ให้ผู้แจ้งแก้แผนกเองพอ (ไม่ต้องมีประวัติส่งต่อ)
+  assert.equal(canHandoff({ status: 'pending',   current_step: 1 }), false);
+  // เลยขั้น 4 = ฝ่ายที่แจ้งตรวจรับงานรอบนั้นไปแล้ว ปัญหาใหม่ให้เปิดใบใหม่/ใช้ผลติดตามขั้น 6
+  assert.equal(canHandoff({ status: 'checked',   current_step: 4 }), false);
+  assert.equal(canHandoff({ status: 'qa',        current_step: 5 }), false);
+});
+
+test('canHandoff: ใบที่จบแล้ว/ถูกตีกลับ ส่งต่อไม่ได้ (ไม่มีทีมไหนถืออยู่)', () => {
+  assert.equal(canHandoff({ status: 'closed',   current_step: 7 }), false);
+  assert.equal(canHandoff({ status: 'rejected', current_step: 2 }), false);
+  // returned = ใบอยู่ที่ผู้แจ้งแล้ว ให้ใช้ "แก้แผนก & ส่งใหม่" (resubmit) ไม่ใช่ส่งต่อ
+  assert.equal(canHandoff({ status: 'returned', current_step: 1 }), false);
+  assert.equal(canHandoff({}), false);
 });

@@ -27,7 +27,9 @@ export const normSearch = (s) => String(s ?? '').toLowerCase().replace(/[\s\-_./
 
 export default function SearchSelect({
   value = '',            // id ที่เลือกอยู่ ('' = ยังไม่ได้เลือกจากลิสต์)
-  text = '',             // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
+  text: textProp,        // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
+                         //   ⚠️ ไม่ส่ง = component ถือคำค้นเอง (uncontrolled · 2026-09-08) — ใช้ได้ทั้งใน render
+                         //   block/IIFE ที่ใส่ hook ไม่ได้ · ส่งเมื่อต้องการ allowFree แล้วเก็บชื่อที่พิมพ์เองเท่านั้น
   options = [],          // [{ id, label, sub, badge, badgeColor, group, keywords }]
   onChange,              // ({ id, text, opt }) => void
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
@@ -41,9 +43,17 @@ export default function SearchSelect({
   disabled = false,
   inputStyle,
   style,
+  inputId,               // id ของ <input> — ให้โค้ดเดิมที่ document.getElementById(...).focus() ยังใช้ได้
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const [innerText, setInnerText] = useState('');
+  const controlled = textProp !== undefined;
+  const text = controlled ? textProp : innerText;
+  /* เก็บคำค้นไว้เสมอ แม้โหมด controlled — เพราะ picker บางตัว (MachineSelect valueKey='id') สลับโหมดกลางคัน:
+     ตอน "เลือกอยู่" มันส่ง text=label (controlled) พอผู้ใช้พิมพ์ทับ ค่าที่เลือกถูกล้าง → กลายเป็น uncontrolled
+     ถ้าไม่ sync innerText ไว้ ตัวอักษรที่เพิ่งพิมพ์จะหายทันที = พิมพ์ค้นไม่ได้เลย (feedback หน้างาน 2026-09-08) */
+  const emit = (v) => { setInnerText(v.id ? '' : (v.text ?? '')); onChange?.(v); };
   const boxRef = useRef(null);
   const listRef = useRef(null);
   // ค่าล่าสุดสำหรับ handler ที่ผูกไว้ใน effect (away-click) — กัน closure ค้างค่าเก่า
@@ -85,8 +95,8 @@ export default function SearchSelect({
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('touchstart', away); };
   }, [open]);
 
-  const pick = (o) => { onChange?.({ id: o.id, text: o.label, opt: o }); setOpen(false); };
-  const clear = () => { onChange?.({ id: '', text: '', opt: null }); setOpen(true); };
+  const pick = (o) => { emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
+  const clear = () => { emit({ id: '', text: '', opt: null }); setOpen(true); };
 
   const onKey = (e) => {
     if (e.key === 'Escape') { closeList(); return; }
@@ -117,10 +127,11 @@ export default function SearchSelect({
     <div ref={boxRef} style={{ position: 'relative', ...style }}>
       <div style={{ position: 'relative' }}>
         <input
+          id={inputId}
           value={shown}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={e => { onChange?.({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
+          onChange={e => { emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKey}
           style={inp}
