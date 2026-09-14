@@ -12,6 +12,19 @@ const supabase = createClient(
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 
+// ── VAPID config cache (2026-09-14 · งานลด egress) ─────────────────────────────
+// ทำไม: trigger `fn_notify_push` ยิง function นี้ **1 ครั้งต่อ 1 แถวใน notifications**
+//   ⇒ แจ้งเตือน 1 เรื่องถึง 29 คน = เรียก 29 ครั้ง = อ่าน notification_settings 29 รอบ
+//   วัดจริงจาก log 14/09 (วันหยุด ไม่มีคนใช้ระบบเลย): **2,490 คิวรี/วัน** ทั้งที่ค่าไม่เคยเปลี่ยน
+//   = คิวรีที่แพงที่สุดของ Main project ทั้งที่ไม่ได้ให้ข้อมูลใหม่อะไรเลย
+// Deno instance อยู่ข้าม request (warm) → cache ในตัวแปรโมดูลตัดคิวรีนี้ทิ้งได้เกือบหมด
+// ⚠️ TTL 10 นาที **ห้ามทำเป็น cache ถาวร** — เปลี่ยน VAPID key ที่หน้าตั้งค่าแล้วต้องมีผลเอง
+//    ภายในเวลาที่คนรอไหว (ไม่งั้นต้องรอ instance ตายเองซึ่งไม่มีใครรู้ว่าเมื่อไหร่)
+type Vapid = { pub: string; priv: string; subject: string } | null;
+let vapidCache: Vapid = null;
+let vapidAt = 0;
+const VAPID_TTL_MS = 10 * 60_000;
+
 // map ที่มา → หน้าเปิดตอนกด notification
 // ⚠️ ต้อง mirror กับ NOTIF_ROUTE ใน src/App.jsx เสมอ (กระดิ่งกับ Web Push ต้องพาไปหน้าเดียวกัน)
 // 🔴 audit 2026-09-02 — เดิมรู้จักแค่ 4 ตาราง ทั้งที่ระบบเขียน ref_table จริง 11 ค่า
@@ -50,16 +63,25 @@ Deno.serve(async (req) => {
     const userId = body.user_id;
     if (!userId) return json({ ok: false, reason: 'missing user_id' }, 400);
 
-    // VAPID keys จาก notification_settings (service role อ่านได้)
-    const { data: cfg, error: cfgErr } = await supabase
-      .from('notification_settings')
-      .select('vapid_public_key, vapid_private_key, vapid_subject')
-      .eq('id', 1).maybeSingle();
-    // ⚠️ อ่าน config ไม่ได้ ≠ "ยังไม่ได้ตั้ง VAPID" — เดิมตอบ skipped:'no vapid keys' ซึ่งชี้ทางผิด
-    //    คนไล่ปัญหาจะไปหาที่การตั้งค่า ทั้งที่ปัญหาคือคิวรีล้ม
-    if (cfgErr) { console.error('send-push read config failed', cfgErr.message); return json({ ok: false, error: 'read config failed: ' + cfgErr.message }, 500); }
-    if (!cfg?.vapid_public_key || !cfg?.vapid_private_key) return json({ ok: true, skipped: 'no vapid keys' });
-    webpush.setVapidDetails(cfg.vapid_subject || 'mailto:admin@example.com', cfg.vapid_public_key, cfg.vapid_private_key);
+    // VAPID keys จาก notification_settings (service role อ่านได้) — ใช้ค่าที่ cache ไว้ถ้ายังไม่หมดอายุ
+    if (!vapidCache || Date.now() - vapidAt > VAPID_TTL_MS) {
+      const { data: cfg, error: cfgErr } = await supabase
+        .from('notification_settings')
+        .select('vapid_public_key, vapid_private_key, vapid_subject')
+        .eq('id', 1).maybeSingle();
+      // ⚠️ อ่าน config ไม่ได้ ≠ "ยังไม่ได้ตั้ง VAPID" — เดิมตอบ skipped:'no vapid keys' ซึ่งชี้ทางผิด
+      //    คนไล่ปัญหาจะไปหาที่การตั้งค่า ทั้งที่ปัญหาคือคิวรีล้ม
+      // ⚠️ คิวรีล้ม = **ห้ามใช้ค่าเก่าต่อเงียบๆ** (คีย์อาจถูกเปลี่ยน/ถอนไปแล้ว) → ตอบ error ตามเดิม
+      if (cfgErr) { console.error('send-push read config failed', cfgErr.message); return json({ ok: false, error: 'read config failed: ' + cfgErr.message }, 500); }
+      if (!cfg?.vapid_public_key || !cfg?.vapid_private_key) { vapidCache = null; return json({ ok: true, skipped: 'no vapid keys' }); }
+      vapidCache = {
+        pub: cfg.vapid_public_key,
+        priv: cfg.vapid_private_key,
+        subject: cfg.vapid_subject || 'mailto:admin@example.com',
+      };
+      vapidAt = Date.now();
+    }
+    webpush.setVapidDetails(vapidCache.subject, vapidCache.pub, vapidCache.priv);
 
     const { data: subs, error: subErr } = await supabase
       .from('push_subscriptions')
