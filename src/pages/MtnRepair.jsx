@@ -13,7 +13,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -126,7 +126,6 @@ const statusMetaOf = (o) => {
 };
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
-const QUALITY_OPTS = [QA_NOT_RELATED, QA_RELATED];   // ค่าที่เก็บลง quality_related — จุดเดียวที่ mtnStepPerm.js
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
 // ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
@@ -1024,6 +1023,67 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
     setResubBusy(false); toast.success(`ส่งใหม่ให้ทีม ${resubDept} แล้ว`); onReload && onReload(); onClose();
   };
 
+  /* ── ➡️ ส่งต่องานให้ทีมช่างที่เกี่ยวข้อง (2026-09-14 · คำสั่ง user) ──────────────
+     "ช่างฝ่ายผลิตเข้าไป action รอบแรกแล้วแก้ไม่ได้ → ส่งใบต่อให้ช่างเฉพาะทาง โดยเห็นรายละเอียด
+      ที่ช่างฝ่ายผลิตตรวจมาแล้ว" — เดิมไม่มีทางนี้ คนจึง**เปิดใบใหม่** ⇒ ประวัติขาดเป็นคนละใบ
+      + นาฬิกา KPI ของงานเดิมค้าง + ทีมใหม่ไม่เห็นว่าใครดูอะไรมาแล้ว
+     ต่างจาก "ตีกลับ" ตรงที่ **เก็บผลตรวจเบื้องต้นไว้** (snapshot ลง mtn_order_handoffs)
+     แล้วล้างช่องทำงานให้ทีมใหม่กรอกของตัวเอง — เกณฑ์ว่าส่งต่อได้ไหม = canHandoff() ที่ util */
+  const [handoffs, setHandoffs] = useState([]);
+  const [showHandoff, setShowHandoff] = useState(false);
+  const [hoDept, setHoDept] = useState('');
+  const [hoReason, setHoReason] = useState('');
+  const [hoBusy, setHoBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('mtn_order_handoffs').select('*').eq('order_id', o.id).order('seq')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        // ฐานยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ข้อผิดพลาดของใบ — เงียบได้
+        if (error && error.code !== '42P01') console.warn('[handoffs]', error.message);
+        setHandoffs(data || []);
+      });
+    return () => { alive = false; };
+  }, [o.id]);
+
+  const doHandoff = async () => {
+    if (!hoDept || sameTeam(hoDept, orderTeam)) return toast.error('เลือกทีมปลายทาง (ต้องไม่ใช่ทีมเดิม)');
+    if (!hoReason.trim()) return toast.error('ระบุเหตุผล — ทีมใหม่ต้องรู้ว่าทีมแรกติดตรงไหน');
+    setHoBusy(true);
+    const nowIso = new Date().toISOString();
+    // 1) เก็บ snapshot ผลตรวจเบื้องต้นก่อนล้างช่องทำงาน — ล้มตรงนี้ต้องหยุด ห้ามล้างข้อมูลทิ้ง
+    const ok = checkWrite(await supabaseDR.from('mtn_order_handoffs').insert({
+      order_id: o.id, seq: (o.handoff_count || 0) + 1,
+      from_dept: orderTeam || null, to_dept: teamKeyOf(hoDept),
+      reason: hoReason.trim(), handed_by: fullName || '', handed_at: nowIso,
+      found_root_cause: o.root_cause || null, found_solution: o.solution || null, found_after_img: o.after_img || null,
+      tech_main: o.tech_main || null, tech_secondary: o.tech_secondary || null,
+      accept_at: o.accept_at || null, repair_done_at: o.repair_done_at || null,
+    }), 'บันทึกการส่งต่องาน');
+    if (!ok) { setHoBusy(false); return; }
+    /* 2) ส่งใบให้ทีมใหม่ — กลับไปขั้น 1 ให้หัวหน้าช่างทีมใหม่กดรับงาน (ขั้น 2) ตามปกติ
+       · รีเซ็ต report_at = นาฬิกา KPI ของทีมใหม่เริ่มนับจากตอนรับส่งต่อ (หลักเดียวกับ resubmit
+         — ไม่โทษทีมที่เพิ่งได้ใบ) เก็บ first_report_at ไว้ดูเวลารวมของปัญหาจริง
+       · **ไม่ออกเลข MO ใหม่** — ใบเดียวกัน งานเดียวกัน (mtn_assign_mo_no เป็น idempotent)
+       · ล้างเฉพาะช่องทำงานของทีมเดิม — ของที่ผู้แจ้งกรอก (อาการ/รูปก่อนซ่อม/ไลน์) ต้องอยู่ครบ */
+    const upd = {
+      mtn_dept: teamKeyOf(hoDept), status: 'pending', current_step: 1,
+      handoff_count: (o.handoff_count || 0) + 1,
+      report_at: nowIso, first_report_at: o.first_report_at || o.report_at,
+      accept_at: null, accepted_by: null, assigned_to: null, assign_note: null, target_done_at: null,
+      repair_type: null, repair_done_at: null, root_cause: null, solution: null,
+      tech_main: null, tech_secondary: null, after_img: null,
+      updated_at: nowIso,
+    };
+    const okUpd = checkWrite(await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id), 'ส่งต่อใบให้ทีมใหม่');
+    setHoBusy(false);
+    if (!okUpd) return toast.error('บันทึกการส่งต่อไว้แล้ว แต่ย้ายใบไม่สำเร็จ — กดส่งต่อใหม่อีกครั้ง');
+    const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
+    notifyMtn(fresh, 'mtn_reported');   // ทีมใหม่ได้แจ้งเตือนเหมือนใบเปิดใหม่ (แต่เป็นใบเดิม)
+    toast.success(`ส่งต่อให้ทีม ${deptNameOf(hoDept)} แล้ว — ผลตรวจเบื้องต้นถูกแนบไปกับใบ`);
+    onReload && onReload(); onClose();
+  };
+
   const del = async () => {
     if (!confirm('ลบใบแจ้งซ่อมนี้?')) return;
     [o.before_img, o.after_img, o.qa_img, o.checker_sign, o.qa_sign, o.ho_sign, o.approve_sign].forEach(u => u && removeMtnImg(u));
@@ -1113,6 +1173,64 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
+      {/* 🔎 ผลตรวจเบื้องต้นจากทีมก่อนหน้า — หัวใจของการส่งต่อ (2026-09-14)
+          ทีมใหม่ต้องเห็นว่าช่างฝ่ายผลิตเข้าไปดูอะไรมาแล้ว ไม่ใช่เริ่มจากศูนย์เหมือนใบเปิดใหม่ */}
+      {handoffs.length > 0 && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(96,165,250,0.09)', border: '1px solid rgba(96,165,250,0.45)' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginBottom: 4 }}>
+            ➡️ ใบนี้ถูกส่งต่อมา {handoffs.length} ครั้ง — ผลตรวจเบื้องต้นของทีมก่อนหน้า
+          </div>
+          {handoffs.map(h => (
+            <div key={h.id} style={{ fontSize: 11.5, lineHeight: 1.65, paddingTop: 4, borderTop: '1px dashed var(--border)', marginTop: 4 }}>
+              <div style={{ color: 'var(--text2)' }}>
+                <b>{deptNameOf(h.from_dept) || '—'} → {deptNameOf(h.to_dept)}</b> · {h.handed_by || '—'} · {fmtDateTime(h.handed_at)}
+              </div>
+              <div style={{ color: 'var(--text)' }}>เหตุผลที่ส่งต่อ: {h.reason}</div>
+              {h.found_root_cause && <div style={{ color: 'var(--muted)' }}>สาเหตุที่ตรวจพบ: {h.found_root_cause}</div>}
+              {h.found_solution   && <div style={{ color: 'var(--muted)' }}>สิ่งที่ทำไปแล้ว: {h.found_solution}</div>}
+              {(h.tech_main || h.tech_secondary) && <div style={{ color: 'var(--muted)' }}>ช่างที่เข้าดู: {[h.tech_main, h.tech_secondary].filter(Boolean).join(' · ')}</div>}
+              {h.found_after_img && <img src={h.found_after_img} alt="" style={{ maxHeight: 110, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }} />}
+            </div>
+          ))}
+        </div>
+      )}
+      {/* ➡️ ปุ่มส่งต่อ — ทีมที่ถือใบอยู่ (ขั้น 2-3) เท่านั้น · เกณฑ์ = canHandoff() + สิทธิ์ขั้น 3 */}
+      {canHandoff(o) && canEditStep(3) && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {!showHandoff ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
+                ดูแล้วเกินมือทีมนี้? <b style={{ color: 'var(--text2)' }}>ส่งต่อให้ช่างเฉพาะทางได้เลย</b> — ไม่ต้องเปิดใบใหม่ ผลตรวจที่ทำมาแล้วจะติดไปกับใบ
+              </div>
+              <button onClick={() => { setHoDept(''); setHoReason(''); setShowHandoff(true); }} style={{ ...btnGhost, color: '#60a5fa', borderColor: '#60a5fa' }}>➡️ ส่งต่อทีมอื่น</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>➡️ ส่งต่อใบนี้ให้ทีมช่างที่เกี่ยวข้อง</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ทีมปลายทาง</div>
+                  <select value={hoDept} onChange={e => setHoDept(e.target.value)} style={{ ...inp, fontSize: 12.5 }}>
+                    <option value="">— เลือกทีม —</option>
+                    <TeamOpts list={(mtnDepts || []).filter(k => !sameTeam(k, orderTeam))} />
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ทีมนี้ติดตรงไหน / ทำอะไรไปแล้วบ้าง (ทีมใหม่จะเห็นข้อความนี้)</div>
+                <textarea value={hoReason} onChange={e => setHoReason(e.target.value)} placeholder="เช่น ตรวจแล้วเป็นที่บอร์ดคอนโทรล เกินขอบเขตช่างฝ่ายผลิต ต้องให้ MTN ถอดเช็ค" style={{ ...inp, fontSize: 12.5, minHeight: 58 }} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.6 }}>
+                ส่งต่อแล้วใบจะไปรอทีมใหม่กดรับงาน (ขั้น 2) · <b>เลข MO เดิมไม่เปลี่ยน</b> · เวลา KPI ของทีมใหม่เริ่มนับจากตอนนี้ (เวลาเปิดครั้งแรกยังเก็บไว้)
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => setShowHandoff(false)} style={btnGhost}>ยกเลิก</button>
+                <button onClick={doHandoff} disabled={hoBusy} style={{ ...btnPri, padding: '7px 14px' }}>{hoBusy ? 'กำลังส่งต่อ…' : '➡️ ยืนยันส่งต่อ'}</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {/* ผู้เปิดใบตรวจรับ (ขั้น 4) และรับมอบ (ขั้น 6) ของใบตัวเองได้เสมอ — บอกให้รู้ว่าทำไมกดได้ */}
       {isOrderReporter(o, fullName) && o.status !== 'closed' && (
         <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 11.5, color: '#22c55e' }}>
@@ -1148,7 +1266,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         </div>
         <div>
           <StepBox n={4} done={o.current_step >= 4}>
-            <Row k="ผล" v={o.check_result} /><Row k="เกี่ยวคุณภาพ?" v={o.quality_related} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
+            <Row k="ผล" v={o.check_result} /><Row k="ต้องให้ QA ตรวจ?" v={o.quality_related === QA_NOT_RELATED ? "ไม่ต้อง — QA ระบุว่าไม่เกี่ยวกับคุณภาพ" : o.quality_related ? "ต้องผ่าน QA" : ""} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
           {/* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */}
           <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
@@ -1184,7 +1302,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', orderLine: o.line_name, orderSection: o.dept_section }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
-              : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ ผู้เปิดใบ / ผู้ถือสิทธิ์ mtn_repair:accept_work / QA กดข้าม QA ไปขั้น 6 ได้</div>)}
+              : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ <b>ต้องให้ QA เป็นผู้กด</b> (ขั้น 5) — ฝ่ายที่แจ้ง/ผู้เปิดใบ ข้ามขั้น QA เองไม่ได้แล้ว ตั้งแต่ 14/09/2026</div>)}
             {/* 🔴 ขั้น 6 ต้องบอก "ใครคนนั้น" ไม่ใช่แค่ตำแหน่ง — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ)
                 ก่อนหน้านี้กล่องนี้บอกแค่ "หัวหน้าแผนกของฝ่ายที่แจ้ง" ลอยๆ คนเปิดดูจึงไม่รู้ว่าต้องไปตาม
                 ใคร แล้วใบก็ค้างต่อ · ชื่อผู้แจ้งมีอยู่ในใบแล้ว (reported_by_name — stamp ตอนเปิดใบ) */}
@@ -1214,7 +1332,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             printMoReport(o, dparts, logo);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="งานไม่เกี่ยวกับคุณภาพ — ไม่ต้องให้ QA ตรวจ ไปรับมอบ/ติดตามผลเลย">⏭ ไม่เกี่ยวกับคุณภาพ — ข้าม QA ไปขั้น 6</button>}
+          {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
           {next && canEditStep(next.step) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
         </div>
       </div>
@@ -1264,7 +1382,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
     root_cause: o.root_cause || '', solution: o.solution || '', tech_main: o.tech_main || '', tech_secondary: o.tech_secondary || '',
     labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
-    check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', quality_related: o.quality_related || QA_NOT_RELATED, checker_name: o.checker_name || fullName || '',
+    check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     qa_skip_reason: o.qa_skip_reason || '',
     follow_up: o.follow_up || 'ไม่เกิดปัญหาซ้ำ', ho_checker: o.ho_checker || fullName || '',
@@ -1425,27 +1543,25 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         }
       } else if (step === 4) {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
-        Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, quality_related: f.quality_related, checker_name: f.checker_name, checker_sign: s });
+        /* `quality_related` ไม่ใช่ "ช่องที่ผู้ตรวจรับเลือก" อีกต่อไป (2026-09-14) — ความหมายใหม่คือ
+           **"ใบนี้ยังต้องผ่าน QA ไหม"** ค่าเริ่มต้น = ต้องผ่าน · มีแต่ **QA** เท่านั้นที่พลิกเป็น
+           "ไม่เกี่ยวกับคุณภาพ" ได้ (ปุ่ม ⏭ ขั้น 5) ⇒ เป็น default-deny gate ไม่ใช่ความเห็นของผู้แจ้ง
+           ⚠️ เส้นทางจริงตัดสินด้วย `qa_skipped_at` (isWaitingQa) ไม่ใช่ช่องนี้ — ที่ยังเขียนไว้เพราะ
+              (ก) ใบพิมพ์/แผงรายละเอียดอ่านค่านี้ (ข) เป็นสะพานให้ edge `send-mtn-notification`
+              รุ่นที่ deploy อยู่ (อ่าน quality_related) บอก "ขั้นต่อไป" ถูกต้องระหว่างรอ deploy รุ่นใหม่ */
+        Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, checker_name: f.checker_name, checker_sign: s, quality_related: QA_RELATED });
         if (!editMode) { upd.status = 'checked'; upd.current_step = 4; upd.check_at = new Date().toISOString(); }
-        /* 🔴 เลือก "ไม่เกี่ยวกับคุณภาพ" ที่ขั้น 4 = **การข้าม QA แบบเดียวกับปุ่ม ⏭** — ต้องทิ้งร่องรอย
-           ชุดเดียวกัน (ใคร/เมื่อไหร่/เหตุผล) ไม่งั้นใบพิมพ์กับกล่องขั้น 5 แยกไม่ออกว่า "ข้าม" หรือ
-           "ยังไม่ตรวจ" (2026-09-09) · กลับไปเลือก "เกี่ยวกับคุณภาพ" = ล้างร่องรอยทิ้ง ไม่งั้นใบจะทั้ง
-           รอ QA และถูกมาร์คว่าข้ามพร้อมกัน · ค่าที่ stamp ไว้แล้วห้ามเขียนทับ (คนกดจริงต้องไม่หาย) */
-        const skipStamp = f.quality_related === QA_NOT_RELATED
-          ? { qa_skipped_by: o.qa_skipped_by || fullName || '', qa_skipped_at: o.qa_skipped_at || new Date().toISOString(), qa_skip_reason: o.qa_skip_reason || QA_SKIP_REASON_STEP4 }
-          : { qa_skipped_by: null, qa_skipped_at: null, qa_skip_reason: null };
+        /* ขั้น 4 ไม่ยุ่งกับ qa_skip_* อีกแล้ว (2026-09-14) — การข้าม QA เป็นของ QA ฝั่งเดียว
+           ⚠️ ห้าม "ล้าง" qa_skip_* ตอนแก้ไขขั้น 4 ย้อนหลังด้วย: ใบเก่าที่ QA (หรือกฎเดิม) ตัดสินไปแล้ว
+           จะถูกดึงกลับมารอ QA ใหม่ทั้งที่เดินไปขั้น 6-7 แล้ว */
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
-        { let { error: eUpdN } = await supabaseDR.from('mtn_orders').update({ ...upd, ...skipStamp }).eq('id', o.id);
-          if (eUpdN?.code === '42703') {
-            // deploy-safe: ฐาน DR ยังไม่มีคอลัมน์ qa_skip_* (migration 20260903_mtn_qa_skip) — ใบต้องเดินต่อได้
-            // แต่ห้ามเงียบ: ร่องรอยการข้าม QA ไม่ถูกเก็บ (ENGINEERING-PRINCIPLES §6 "tolerant ได้ แต่ห้ามเงียบ")
-            ({ error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id));
-            if (!eUpdN && f.quality_related === QA_NOT_RELATED) toast.error('บันทึกขั้น 4 แล้ว แต่ยังบันทึกร่องรอย "ไม่ต้องตรวจ QA" ไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_* (รัน migration 20260903_mtn_qa_skip)');
-          }
+        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
       } else if (step === 5) {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
-        Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s });
+        // QA ตรวจจริง = ยืนยันว่าใบนี้ "เกี่ยวกับคุณภาพ" (ช่องนี้เป็นคำตอบของ QA ตั้งแต่ 2026-09-14
+        // ไม่ใช่ตัวกำหนดเส้นทางอีกต่อไป — ใบพิมพ์/แผงรายละเอียดอ่านค่านี้)
+        Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s, quality_related: QA_RELATED });
         // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
         if (qaFile) {
           try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
@@ -1577,14 +1693,16 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         </>}
         {step === 4 && <>
           <Field label="ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
-          <Field label="งานนี้กระทบคุณภาพชิ้นงานไหม">
-            <select value={f.quality_related} onChange={e => set('quality_related', e.target.value)} style={inp}>{QUALITY_OPTS.map(r => <option key={r}>{r}</option>)}</select>
-            <div style={{ fontSize: 11.5, color: f.quality_related === QA_RELATED ? '#f59e0b' : 'var(--muted)', marginTop: 4 }}>
-              {f.quality_related === QA_RELATED
-                ? '→ ใบนี้จะถูกส่งให้ QA ตรวจ (ขั้น 5) ก่อนรับมอบ · ป้ายสถานะจะขึ้นว่า “รอตรวจคุณภาพ (ขั้น 5)”'
-                : '→ ไม่ต้องรอ QA เลย ใบไปที่ “รอรับมอบ (ขั้น 6)” ของฝ่ายที่แจ้งทันที (ระบบบันทึกชื่อคุณ/เวลาไว้เป็นร่องรอยการข้าม) — เลือกให้ตรงความจริง ช่องนี้เป็นตัวตัดสินว่า QA จะได้ตรวจหรือไม่'}
+          {/* 🔴 2026-09-14 (คำสั่ง user): ช่อง "กระทบคุณภาพไหม" ถูกถอดออกจากขั้น 4
+              เดิมผู้ตรวจรับ (= ฝ่ายที่แจ้ง) เลือกเองได้ว่าไม่ต้องให้ QA ตรวจ = ผู้ถูกตรวจเปิดด่านเอง
+              ตอนนี้ทุกใบจอดรอ QA และ **QA เท่านั้น** ที่ตัดสินว่าเกี่ยว/ไม่เกี่ยวกับคุณภาพ (ขั้น 5) */}
+          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.55 }}>
+            🧪 <b>ใบนี้จะถูกส่งให้ QA ตรวจรับ (ขั้น 5) ทุกใบ</b>
+            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+              ถ้างานไม่เกี่ยวกับคุณภาพชิ้นงาน <b style={{ color: 'var(--text2)' }}>QA จะเป็นผู้ระบุเองที่ขั้น 5</b> แล้วใบไปรับมอบต่อ —
+              ฝ่ายที่แจ้งข้ามขั้น QA เองไม่ได้ (เปลี่ยน 14/09/2026 ตามผังกระบวนการของโรงงาน ที่มี “หน่วยงานคุณภาพตรวจรับงานหลังซ่อม” อยู่ในเส้นทางหลักทุกสาย)
             </div>
-          </Field>
+          </div>
           <Field label="ระบุรายละเอียด (เช่น ยังเหลืออะไรต้องตามต่อ)"><input value={f.check_note} onChange={e => set('check_note', e.target.value)} style={inp} /></Field>
           {/* ผู้ตรวจรับ = คนของฝ่ายที่แจ้ง (ไลน์/แผนกของใบขึ้นก่อน) ผ่าน <PersonSelect> · 2026-09-07 */}
           <Field label="ชื่อผู้ตรวจรับงาน (ฝ่ายที่แจ้ง)"><PersonSelect value={f.checker_name} source="both" lines={orderFam} section={o.dept_section} history={checkerHist} onChange={res => set('checker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>

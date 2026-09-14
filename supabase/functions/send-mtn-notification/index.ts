@@ -296,10 +296,11 @@ Deno.serve(async (req) => {
        source of truth = `moStatusLabel()` / `isWaitingQa()` ใน `src/utils/mtnStepPerm.js`
        (edge import จาก src/ ไม่ได้ → เขียนซ้ำแบบย่อที่นี่ · แก้ที่นั่นแล้วต้องแก้ที่นี่ด้วย —
         convention เดียวกับที่ `src/utils/dieStatus.js` ใช้อยู่) */
-    const QA_RELATED = 'เกี่ยวกับคุณภาพ';
-    const nextAfterChecked = String(mo.quality_related || '').trim() === QA_RELATED
-      ? 'รอ QA ตรวจคุณภาพ (ขั้น 5)'
-      : 'รอฝ่ายที่แจ้งรับมอบ (ขั้น 6) — งานนี้ไม่เกี่ยวกับคุณภาพ ไม่ต้องรอ QA';
+    /* 🔴 2026-09-14 — ใบที่ผ่านขั้น 4 **รอ QA เสมอ** · "ไม่เกี่ยวกับคุณภาพ" เป็นคำตัดสินของ QA
+       เท่านั้น จึงดู `qa_skipped_at` (ร่องรอยที่ QA กด) ไม่ใช่ `quality_related` ที่ผู้แจ้งเคยเลือกเอง */
+    const nextAfterChecked = mo.qa_skipped_at
+      ? 'รอฝ่ายที่แจ้งรับมอบ (ขั้น 6) — QA ระบุว่าไม่เกี่ยวกับคุณภาพ'
+      : 'รอ QA ตรวจคุณภาพ (ขั้น 5)';
     const NEXT: Record<string, string> = {
       mtn_reported: 'รอช่างรับงาน (ขั้น 2)',
       mtn_assigned: 'รอดำเนินการซ่อม (ขั้น 3)',

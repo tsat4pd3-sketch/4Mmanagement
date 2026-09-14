@@ -145,6 +145,24 @@ export function canBounceBack(order = {}) {
 }
 
 /**
+ * ส่งต่อใบให้ทีมช่างอื่นได้ไหม — "ช่างฝ่ายผลิตดูแล้วเกินมือ ส่งต่อช่างเฉพาะทาง" (2026-09-14 · คำสั่ง user)
+ *
+ * ⚠️ คนละเรื่องกับ `canBounceBack` (ตีกลับ) — อย่ารวมสองอันนี้เข้าด้วยกัน:
+ *   ตีกลับ  = "แจ้งผิดแผนกตั้งแต่แรก" ⇒ ถอยใบไปขั้น 1 หาผู้แจ้ง · ล็อกไว้ที่ขั้น ≤2 เพราะถ้าถอยหลัง
+ *             จากขั้น 3 ผลงาน/ลายเซ็นที่ทำจริงจะหายจากใบ
+ *   ส่งต่อ  = "แจ้งถูกแล้ว ทีมแรกเข้าไปดูจริงแล้วแต่แก้ไม่ได้" ⇒ **เก็บผลตรวจเบื้องต้นไว้**
+ *             (snapshot ลง mtn_order_handoffs) แล้วส่งให้ทีมใหม่รับงานต่อ
+ *
+ * ทำได้ตั้งแต่รับงานแล้ว (ขั้น 2) จนถึงซ่อม/ตรวจหน้างานเสร็จ (ขั้น 3) — เลยขั้น 4 ไปแล้ว
+ * (ฝ่ายที่แจ้งตรวจรับงานแล้ว) ถือว่างานรอบนั้นจบ ถ้ายังมีปัญหาให้ใช้ผลติดตามขั้น 6 หรือเปิดใบใหม่
+ */
+export function canHandoff(order = {}) {
+  if (['closed', 'rejected', 'returned'].includes(String(order?.status || '').trim())) return false;
+  const step = Number(order?.current_step || 1);
+  return step >= 2 && step <= 3;
+}
+
+/**
  * ใบนี้อยู่ใน "ฝ่ายที่แจ้ง" ของผู้ใช้ไหม — ใช้กับขั้น 4/6/7 (reporterSide) เท่านั้น
  *
  * คืน true / false / **null = ตัดสินไม่ได้ → canDoStep ปล่อยผ่านตามเดิม** (หลัก "ไม่รู้ ≠ ไม่ใช่"
@@ -170,20 +188,32 @@ export function orderInReporterScope(order, { scopeLineNames = null, knownLineNa
   return null;
 }
 
-/* ═══ ขั้น 5 (QA) เป็นขั้น "เงื่อนไข" — เข้าเฉพาะใบที่ขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ ═══
+/* ═══ ขั้น 5 (QA) — ทุกใบต้องผ่าน QA · "ไม่เกี่ยวกับคุณภาพ" เป็นคำตัดสินของ QA เท่านั้น ═══
+   🔴 เปลี่ยน 2026-09-14 (คำสั่ง user): *"คนเลือกว่าเกี่ยวกับคุณภาพต้องเป็น QA เท่านั้น ไม่ใช่คนแจ้ง ·
+      คนจะปฏิเสธว่าไม่เกี่ยวต้องเป็น QA เท่านั้น"*
+   เดิมช่อง `quality_related` ถูกเลือกที่ **ขั้น 4 โดยผู้เปิดใบ/ฝ่ายที่แจ้ง** ⇒ ผู้แจ้งตัดสินเองได้ว่า
+   ใบของตัวเองไม่ต้องให้ QA ตรวจ (วัดจริง 14/09: 152 ใบเลือก "ไม่เกี่ยว" = 61% ของใบที่ผ่านขั้น 4)
+   = ด่านคุณภาพที่ผู้ถูกตรวจเป็นคนเปิดเอง · ผังกระบวนการทางการของโรงงานก็ไม่มีกล่อง "ข้าม QA" เลย
+   ทั้งสายช่าง PD และสาย MTN — "หน่วยงานคุณภาพตรวจรับงานหลังซ่อม (QA)" อยู่ในเส้นทางหลักทั้งคู่
+   ⇒ ใบที่ผ่านขั้น 4 **จอดรอ QA เสมอ** จนกว่า QA จะตรวจจริง หรือ QA กดว่าไม่เกี่ยวกับคุณภาพ
+
    ค่าที่เก็บใน mtn_orders.quality_related (ข้อความไทยตามฟอร์มกระดาษ — เปลี่ยนแล้วใบเก่าเพี้ยนทั้งฐาน)
+   ตอนนี้ **QA เป็นคนเขียนค่านี้ที่ขั้น 5** ไม่ใช่ผู้ตรวจรับที่ขั้น 4 อีกต่อไป
    ⚠️ nextStepFor / ปุ่มข้าม / StepBox ต้องเทียบผ่านตัวนี้ ห้ามพิมพ์ข้อความซ้ำในหน้า */
 export const QA_RELATED = 'เกี่ยวกับคุณภาพ';
 export const QA_NOT_RELATED = 'ไม่เกี่ยวกับคุณภาพ';
 
-/** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ */
+/** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และ QA ยังไม่ได้ตัดสินว่าไม่ต้องตรวจ
+ *  ⚠️ ไม่ดู `quality_related` แล้ว — ช่องนั้นเป็นคำตอบของ QA ไม่ใช่ตัวกำหนดว่าจะได้เจอ QA หรือเปล่า
+ *  (ใบเก่าที่ข้ามไปก่อนเปลี่ยนกฎถูก stamp `qa_skipped_at` ไว้ใน migration 20260914 จึงไม่ถูกดึงกลับ) */
 export const isWaitingQa = (order) =>
-  order?.status === 'checked' && String(order?.quality_related || '').trim() === QA_RELATED;
+  order?.status === 'checked' && !order?.qa_skipped_at;
 
 /** ใบนี้เคยถูก "ข้าม QA" (ไม่เกี่ยวกับคุณภาพ — แก้การตัดสินใจของขั้น 4 ทีหลัง) */
 export const isQaSkipped = (order) => !!order?.qa_skipped_at;
 
-/** เหตุผลมาตรฐานเมื่อ "ข้าม QA" เกิดจากการเลือกที่ขั้น 4 (ไม่ได้กดปุ่ม ⏭) — ข้อความเดียวทั้งระบบ */
+/** เหตุผลมาตรฐานของใบเก่าที่ "ข้าม QA" จากการเลือกที่ขั้น 4 — ข้อความเดียวทั้งระบบ
+ *  ⚠️ legacy ตั้งแต่ 2026-09-14: ขั้น 4 เลือกเองไม่ได้แล้ว (QA เท่านั้น) ค่านี้เหลือไว้แสดงใบเก่า */
 export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม่เกี่ยวกับคุณภาพ';
 
 /** ใบเดินผ่านขั้น 4 (ตรวจรับงานหลังซ่อม) ไปแล้วหรือยัง — ใช้ตัดสินว่า quality_related มีความหมายแล้ว */
@@ -209,7 +239,8 @@ export function moQaState(order) {
   if (order?.qa_at || order?.qa_result) return 'done';
   if (isQaSkipped(order)) return 'skipped';
   if (!passedStep4(order)) return 'none';
-  return String(order?.quality_related || '').trim() === QA_RELATED ? 'waiting' : 'skipped';
+  // ผ่านขั้น 4 แล้วและยังไม่มีคำตัดสินของ QA = รอ QA เสมอ (2026-09-14 · ไม่ดู quality_related อีกต่อไป)
+  return 'waiting';
 }
 
 /* ═══ ป้ายสถานะใบ MO — source of truth เดียวของ "ใบนี้รออะไรอยู่" (2026-09-09) ════════════
@@ -250,7 +281,8 @@ export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้�
 export function moStatusLabel(order) {
   const st = String(order?.status || '').trim();
   if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
-  if (order?.quality_related === undefined && !order?.qa_skipped_at) return MO_STATUS_LABEL.checked;
+  // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
+  if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
   return isWaitingQa(order) ? MO_LABEL_WAIT_QA : MO_LABEL_WAIT_HANDOVER;
 }
 
@@ -265,17 +297,16 @@ export function moStatusLabel(order) {
  * quality_related เป็น "ไม่เกี่ยว" + บันทึกเหตุผล/คน/เวลา (qa_skip_reason/qa_skipped_by/qa_skipped_at)
  * ⇒ nextStepFor พาไปขั้น 6 เอง ไม่ต้องเพิ่ม status ใหม่ (KPI/Andon/ใบพิมพ์ไม่กระทบ)
  *
- * ใครข้ามได้ = คนที่ตัดสินเรื่องนี้ได้ในขั้น 4 (ผู้เปิดใบ / accept_work) **หรือ** QA เอง (ขั้น 5)
- * — QA เห็นว่างานไม่ใช่ของตัวเองก็ปล่อยผ่านได้โดยไม่ต้องเซ็นรับรองคุณภาพที่ไม่ได้ตรวจ
- * ช่างที่ซ่อม (service) ข้ามไม่ได้ — เหตุผลเดียวกับที่ช่างตรวจรับงานตัวเองไม่ได้
+ * 🔴 ใครข้ามได้ = **ผู้มีสิทธิ์ขั้น 5 (QA) เท่านั้น** — เปลี่ยน 2026-09-14 ตามคำสั่ง user
+ *    เดิมยอมให้ผู้ถือสิทธิ์ขั้น 4 (ผู้เปิดใบ / ฝ่ายที่แจ้ง) กดข้ามได้ด้วย ⇒ ฝ่ายที่ถูกตรวจเป็นคน
+ *    ตัดสินเองว่าไม่ต้องถูกตรวจ · ตอนนี้ทั้ง "เกี่ยว" และ "ไม่เกี่ยว" เป็นคำตัดสินของ QA ฝั่งเดียว
+ *    (หัวหน้าผู้ถือ manage_master ยังผ่านได้ผ่าน canDoStep(5) ตามกฎเดิมของทั้งโมดูล)
  */
 export function canSkipQa(opts = {}) {
   if (!isWaitingQa(opts.order)) return { ok: false, code: 'not_waiting_qa' };
-  const v4 = canDoStep(4, opts);
-  if (v4.ok) return { ok: true, code: `step4:${v4.code}` };
   const v5 = canDoStep(5, opts);
   if (v5.ok) return { ok: true, code: `step5:${v5.code}` };
-  return { ok: false, code: 'denied' };
+  return { ok: false, code: 'qa_only' };
 }
 
 /**
