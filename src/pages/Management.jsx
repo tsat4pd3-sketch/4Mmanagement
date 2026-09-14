@@ -23,6 +23,7 @@ import { RATE } from '../utils/refreshRates';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -807,7 +808,7 @@ export default function Management() {
       try { resized = await resizeImage(reqImageFile); }
       catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: false, contentType: 'image/jpeg' }));
       if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       request_image_url = urlData.publicUrl;
@@ -2851,7 +2852,7 @@ export default function Management() {
                   if (docImageFile) {
                     const resized = await resizeImage(docImageFile);
                     const path = `4m-requests/${Date.now()}.jpg`;
-                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: true });
+                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: true }));
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }

@@ -48,6 +48,42 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
     return { map, teamChats };
   } catch { return { map: {}, teamChats: {} }; }
 }
+/* ── 🔔 แจ้งเตือน "ในแอป" (กระดิ่ง + Web Push ผ่าน trigger trg_notify_push) ───────────────
+   เดิมฟังก์ชันนี้ส่ง **Telegram ทางเดียว** — ถอด Telegram ออกเมื่อไหร่ การแจ้งเตือนหายสนิท
+   (พบตอนสำรวจการย้ายระบบลง on-premise 2026-09-14 · ดู docs/LOCAL-SERVER-MIGRATION-SPEC.md §13)
+   ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
+      **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
+   ⚠️ ไม่ตั้ง `inapp_roles` ที่ /notification-config = ไม่แจ้งในแอป (opt-in)
+      ⇒ deploy แล้วพฤติกรรมเดิมเป๊ะ จนกว่า admin จะตั้งผู้รับ
+   คืนค่า: ส่งถึงใครจริงไหม (ผู้เรียกบางจุดใช้ตัดสินว่าจะ mark ว่าแจ้งแล้วหรือยัง) */
+async function notifyInApp(eventKey: string, htmlMessage: string, type = 'info'): Promise<boolean> {
+  const { data: rule, error: ruleErr } = await supabase
+    .from('notification_rules').select('label, inapp_roles').eq('event_key', eventKey).maybeSingle();
+  if (ruleErr) { console.error('mtn-daily-summary: load rule', ruleErr.message); return false; }
+  const roles = Array.isArray(rule?.inapp_roles) ? (rule!.inapp_roles as string[]) : [];
+  if (!roles.length) return false;                    // ยังไม่ตั้งผู้รับ = เงียบตามเดิม
+  let users: string[] = [];
+  const { data, error } = await supabase.rpc('notify_recipients', { p_event: eventKey, p_section: null });
+  if (error) {                                        // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    console.error('mtn-daily-summary: notify_recipients', error.message);
+    const { data: byRole } = await supabase.from('profiles').select('id').in('role', roles);
+    users = (byRole ?? []).map((p) => p.id as string);
+  } else {
+    users = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  }
+  const ids = [...new Set(users.filter(Boolean))];
+  if (!ids.length) return false;
+  const body = String(htmlMessage)
+    .replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  // supabase-js ไม่ throw — ต้องอ่าน error เอง ไม่งั้นแจ้งเตือนหายเงียบ (กฎเหล็กข้อ 1 ใน CLAUDE.md)
+  const { error: insErr } = await supabase.from('notifications').insert(
+    ids.map((uid) => ({ user_id: uid, title: rule?.label || eventKey, body, type })),
+  );
+  if (insErr) { console.error('mtn-daily-summary: insert notifications', insErr.message); return false; }
+  return true;
+}
+
 function resolveEvent(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
   if (r && !r.enabled) return null;
@@ -189,6 +225,8 @@ Deno.serve(async (req) => {
       return `━━━ <b>${teamName(d)}</b> (${byDept[d].length} ใบ) ━━━\n${block}`;
     })].join('\n');
     await sendTelegram(overview, baseChat);
+    // กระดิ่งในแอป: ส่งเฉพาะภาพรวม 1 ครั้ง (ไม่ยิงซ้ำรายทีม — คนเดียวอยู่หลายทีมจะได้ข้อความเดิมหลายรอบ)
+    await notifyInApp('mtn_daily_summary', `${header} — เปิดหน้าแจ้งซ่อมเพื่อดูรายการ`);
 
     // แยกรายทีม → ห้องของทีม (ถ้ามีห้องแท็กทีมไว้)
     for (const d of depts) {

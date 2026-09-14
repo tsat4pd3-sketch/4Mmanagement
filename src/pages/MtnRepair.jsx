@@ -28,6 +28,7 @@ import { resolveMachine } from '../utils/qrCode';
 import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
+import MachineReliability from '../components/MachineReliability';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
@@ -43,6 +44,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าท�
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -66,7 +68,7 @@ const localDtNow = () => { const d = new Date(); const p = n => String(n).padSta
 const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
 const uploadMtnImg = async (blob, path) => {
-  const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, { upsert: true, contentType: blob.type });
+  const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
   if (error) throw error;
   return supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl;
 };
@@ -256,6 +258,7 @@ export default function MtnRepair() {
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
     { key: 'kpi', label: '📊 KPI' },
+    { key: 'equip', label: '⚙️ รายอุปกรณ์ (MTTR/MTBF)' },   // นับจาก downtime จริง — คำขอทีม MTN 2026-09-11
     { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
     { key: 'rack', label: '🗺️ ผังคลัง' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
@@ -430,6 +433,7 @@ export default function MtnRepair() {
       </>}
 
       {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
+      {tab === 'equip' && <MachineReliability machines={machines} lineObjs={scopedLineObjs} scopeLines={scopeLines} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}

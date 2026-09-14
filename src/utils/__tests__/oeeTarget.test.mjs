@@ -4,7 +4,7 @@
 */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_OEE_TARGET, targetOeeOf, normOeeTarget, weightedOeeOf, weekOfMonth } from '../oee.js';
+import { DEFAULT_OEE_TARGET, targetOeeOf, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth } from '../oee.js';
 
 test('เป้า OEE = A × P × Q เสมอ (ห้ามอ่าน target_oee ที่เป็นคอลัมน์ vestigial)', () => {
   assert.equal(targetOeeOf({ a: 90, p: 90, q: 99 }), 80.2);
@@ -89,4 +89,56 @@ test('weightedOeeOf + weekOfMonth: เฉลี่ยรายสัปดาห
   assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 1), 77.5);
   assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 4), 90);
   assert.equal(weightedOeeOf(rows, r => weekOfMonth(r.d) === 2), null, 'สัปดาห์ที่ไม่มีกะปิด = null ไม่ใช่ 0');
+});
+
+/* ── avgOeeTarget : เป้ารวมหลายกลุ่ม (section / ทั้งเด็ค) ──
+   ย้ายสูตรออกจาก OEEAnalytics.targetOf มาที่ utils/oee.js 2026-09-10 เพื่อให้จอ OEE
+   กับเด็ค .pptx รายเดือนใช้เลขชุดเดียวกัน — เทสล็อกกติกาที่พลาดง่าย 2 ข้อ */
+test('avgOeeTarget — ไม่มีกลุ่มไหนตั้งเป้าเลย = ค่ามาตรฐาน 90/90/99 → 80.2 + configured false', () => {
+  const t = avgOeeTarget([]);
+  assert.deepEqual([t.a, t.p, t.q, t.oee], [90, 90, 99, 80.2]);
+  assert.equal(t.configured, false);
+  assert.deepEqual(t.missing, ['a', 'p', 'q']);
+});
+
+test('avgOeeTarget — A/P/Q เฉลี่ยเฉพาะกลุ่มที่ตั้งค่านั้นจริง (ค่ามาตรฐานห้ามถ่วงค่าเฉลี่ย)', () => {
+  const t = avgOeeTarget([
+    { target_a: 85, target_p: 88, target_q: 99 },
+    { target_a: 95, target_p: null, target_q: 99 },   // P เว้นว่าง
+  ]);
+  assert.equal(t.a, 90);          // (85+95)/2
+  assert.equal(t.p, 88);          // เฉพาะกลุ่มที่ตั้ง P ไว้ ไม่เอา 90 มาเฉลี่ยด้วย
+  assert.equal(t.q, 99);
+  assert.deepEqual(t.missing, []);
+});
+
+test('avgOeeTarget — OEE = เฉลี่ยของ (A×P×Q ต่อกลุ่ม) ไม่ใช่ a*p*q ของค่าเฉลี่ย', () => {
+  const t = avgOeeTarget([
+    { target_a: 85, target_p: 88, target_q: 99 },     // 74.052
+    { target_a: 95, target_p: null, target_q: 99 },   // 95×90×99 = 84.645
+  ]);
+  assert.equal(t.oee, 79.3);                          // (74.052+84.645)/2 = 79.3485 → 79.3
+  assert.notEqual(t.oee, targetOeeOf(t));             // a*p*q ของค่าเฉลี่ย = 78.4 คนละค่า — ห้าม "แก้" ให้เท่ากัน
+});
+
+test('avgOeeTarget — ปัดเศษครั้งเดียวตอนท้าย (ห้ามปัด OEE รายกลุ่มก่อนเฉลี่ย)', () => {
+  // ปัดรายกลุ่มก่อนจะได้ 79.4 · ปัดครั้งเดียวได้ 79.3 — เลขบนจอ /oee-analytics คือ 79.3
+  const t = avgOeeTarget([
+    { target_a: 85, target_p: 88, target_q: 99 },
+    { target_a: 95, target_p: 90, target_q: 99 },
+  ]);
+  assert.equal(t.oee, 79.3);
+});
+
+test('avgOeeTarget — กลุ่มเดียวต้องได้เท่ากับ normOeeTarget ของกลุ่มนั้น', () => {
+  const row = { target_a: 85, target_p: null, target_q: 99 };
+  assert.equal(avgOeeTarget([row]).oee, normOeeTarget(row).oee);
+});
+
+test('avgOeeTarget — null/undefined ในลิสต์ = กลุ่มที่ยังไม่ตั้งเป้า ไม่ throw', () => {
+  const t = avgOeeTarget([null, { target_a: 95, target_p: 95, target_q: 100 }, undefined]);
+  assert.equal(t.configured, true);
+  assert.equal(t.a, 95);
+  // 3 กลุ่ม: 80.2 + 90.25 + 80.2 → เฉลี่ย 83.5
+  assert.equal(t.oee, 83.5);
 });

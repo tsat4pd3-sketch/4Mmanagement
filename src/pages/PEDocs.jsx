@@ -27,6 +27,7 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import useProducts from '../utils/useProducts';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -230,7 +231,7 @@ export default function PEDocs() {
     }
     const ext = file.type === 'image/gif' ? 'gif' : 'jpg';
     const full = `${path}-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('pe-images').upload(full, blob, { upsert: true, contentType: file.type === 'image/gif' ? 'image/gif' : 'image/jpeg' });
+    const { error } = await supabase.storage.from('pe-images').upload(full, blob, uploadOpts({ upsert: true, contentType: file.type === 'image/gif' ? 'image/gif' : 'image/jpeg' }));
     if (error) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('pe-images').getPublicUrl(full).data.publicUrl;
   };

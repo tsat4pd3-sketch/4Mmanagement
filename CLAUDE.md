@@ -497,6 +497,12 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
+  ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
+  ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` ที่ operator/Register) — GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป
+  (ใหญ่กว่ารูปนิ่ง 60 เท่า) · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)
+  · **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
 > 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
 
 ---
@@ -563,7 +569,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม) ·
                        #   FINANCIAL-GAP-ANALYSIS.md (ราคาขายต่อพาร์ท → สรุปยอดขาย/margin — gap 13 ข้อ
                        #     + คำถามที่ user ต้องตัดสิน 6 ข้อ · 📌 สำรวจแล้ว ยังไม่ลงมือ 2026-09-09
-                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง)
+                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
+                       #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
+                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
