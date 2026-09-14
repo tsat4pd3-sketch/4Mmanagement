@@ -263,3 +263,44 @@ test('viewMetrics / summarizeByKind: สลับโหมดแล้วต้�
   assert.equal(summarizeByKind([row], true)[0].dtMin, 30);
   assert.equal(summarizeByKind([row], true)[0].mtbfMin, 190, 'สรุปตามชนิดต้องเปลี่ยนตามโหมดด้วย');
 });
+
+/* ── เครื่องที่ไม่เคยเสีย ต้องนับเข้าตัวตั้งของ MTBF รวม (คำสั่ง user 2026-09-14 "นับด้วยสิ") ── */
+
+const IDLE_SETUP = {
+  machines: [
+    { machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' },
+    { machine_no: 'M2', equipment_kind: 'machine', line_name: 'L60' },   // ไม่เคยเสีย
+    { machine_no: 'D1', equipment_kind: 'die',     line_name: 'L60' },   // แม่พิมพ์ — ห้ามนับ
+    { machine_no: 'J1', equipment_kind: 'jig',     line_name: 'L60' },   // จิ๊ก — ห้ามนับ
+    { machine_no: 'M9', equipment_kind: 'machine', line_name: 'ไลน์ไม่มีกะ' },
+  ],
+  sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+  downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)],
+};
+
+test('เครื่องที่ไม่เคยเสีย: โผล่ในตาราง · MTBF รายตัว = null · ชั่วโมงเดินเข้าตัวตั้งของกลุ่ม', () => {
+  const { rows, summary } = machineReliability(IDLE_SETUP);
+  const byNo = Object.fromEntries(rows.map(r => [r.machineNo, r]));
+
+  assert.equal(summary.idleCount, 1, 'M2 ตัวเดียว (แม่พิมพ์/จิ๊กไม่นับ · M9 ไม่รู้ชั่วโมงเดิน)');
+  assert.ok(byNo.M2, 'เครื่องที่ไม่เคยเสียต้องโผล่');
+  assert.equal(byNo.M2.stops, 0);
+  assert.equal(byNo.M2.mtbfMin, null, 'เสีย 0 ครั้ง หารไม่ได้ — ห้ามใส่ตัวเลข');
+  assert.equal(byNo.M2.upMin, 600);
+  assert.equal(byNo.M2.availPct, 100);
+  assert.equal(byNo.M2.neverFailed, true);
+  assert.equal(byNo.D1, undefined, 'แม่พิมพ์ห้ามนับ — ชั่วโมงเดิน ≠ ชั่วโมงกะของไลน์');
+  assert.equal(byNo.J1, undefined, 'จิ๊กก็เหมือนกัน');
+  assert.equal(byNo.M9, undefined, 'ไม่รู้ชั่วโมงเดิน = ไม่นับ ห้ามเดา 0');
+
+  // MTBF ของกลุ่ม: M1 เดิน 540 + M2 เดิน 600 = 1,140 ÷ เสีย 1 ครั้ง
+  const mach = summarizeByKind(rows).find(k => k.kind === 'machine');
+  assert.equal(mach.mtbfMin, 1140);
+});
+
+test('เครื่องที่ไม่เคยเสีย: ปิดด้วย includeIdle=false แล้ว MTBF กลุ่มต้องต่ำลง (ยืนยันว่ามีผลจริง)', () => {
+  const { rows, summary } = machineReliability({ ...IDLE_SETUP, includeIdle: false });
+  assert.equal(summary.idleCount, 0);
+  assert.equal(rows.length, 1);
+  assert.equal(summarizeByKind(rows).find(k => k.kind === 'machine').mtbfMin, 540, 'นับแค่ตัวที่เสีย = ต่ำกว่าจริง');
+});
