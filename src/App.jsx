@@ -21,6 +21,7 @@ import { buildProfileMenu } from './utils/profileMenu';             // ราย
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
+import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
@@ -1306,7 +1307,8 @@ function shiftDeadlineFrom(loginTsMs) {
   return end.getTime() + SHIFT_GRACE_MS;
 }
 
-function useAutoLogout(isDisplay, onLogout, shiftCapped) {
+// disabled = ไม่ต้องเฝ้าเลย (role display หรือกำลังเปิดหน้าจอแขวน — ดู kioskRoutes.js)
+function useAutoLogout(disabled, onLogout, shiftCapped) {
   const [warnSecsLeft, setWarnSecsLeft] = useState(null); // null = not warning
   const lastActivityRef = useRef(Date.now());
   const warnActiveRef   = useRef(false);
@@ -1327,7 +1329,11 @@ function useAutoLogout(isDisplay, onLogout, shiftCapped) {
   }, [stopCountdown]);
 
   useEffect(() => {
-    if (isDisplay) return; // display users never get auto-logged out
+    if (disabled) return; // role display / หน้าจอแขวน — ไม่เตะออก
+
+    // เริ่ม/กลับมาเฝ้า = ตั้งนาฬิกา idle ใหม่ (เช่น เดินออกจากหน้าจอแขวนไปหน้าทำงาน)
+    // ไม่งั้นค่า lastActivity เก่าค้างอยู่ อาจขึ้นคำเตือนทันทีที่ออกจากหน้าจอแขวน
+    lastActivityRef.current = Date.now();
 
     const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
     let lastLsWrite = 0;
@@ -1404,7 +1410,7 @@ function useAutoLogout(isDisplay, onLogout, shiftCapped) {
       clearInterval(pollId);
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
-  }, [isDisplay, shiftCapped, dismissWarning]);
+  }, [disabled, shiftCapped, dismissWarning]);
 
   return { warnSecsLeft, dismissWarning };
 }
@@ -1487,12 +1493,18 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   };
 
   const isDisplay = userRole === 'display';
+  // 📺 จอแขวนห้อง (`/tv`) — อ่านอย่างเดียว 100% และไม่มีใครเดินไปแตะจอ ⇒ ไม่เตะออกไม่ว่า role ไหน
+  // เดิมยกเว้นแค่ role `display` แต่หน้างานเอา "บัญชีคน" ไปเปิดจอ (จอห้องช่าง PD3 = role supervisor)
+  // → จอนิ่งครบ 30 นาที = เด้ง login ทุก 35 นาทีตลอดกาล (feedback 2026-09-14)
+  // กฎก่อนเพิ่มหน้าในลิสต์ kiosk อยู่ที่ `src/utils/kioskRoutes.js`
+  const isKiosk = isKioskPath(location.pathname);
   // เพดานกะ (สิ้นกะ+60นาที เตะออก) ใช้กับ role หน้างานที่ทำงานสลับกะ + ใช้เครื่องเช็คชื่อร่วมกัน
   // = หัวหน้าไลน์ (leader) + หัวหน้าส่วน (supervisor) · admin/manager/office ทำงานเครื่องตัวเอง
   // ไม่ต้องโดนเตะรายกะ (มี idle-logout 30 นาทีคุมอยู่แล้ว) · แก้ขอบเขตที่ list นี้จุดเดียว
   // ⚠️ เพดานกะตัดสินจาก "role จริง" — admin ที่จำลองมุมมอง leader ต้องไม่โดนเตะออกท้ายกะ
-  const shiftCapped = !viewAs && ['leader', 'supervisor'].includes(userRole);
-  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay, handleLogout, shiftCapped);
+  // ⚠️ จอแขวนไม่โดนเพดานกะด้วย — ไม่งั้นยกเว้น idle ไปก็ยังโดนเตะทุกสิ้นกะอยู่ดี
+  const shiftCapped = !viewAs && !isKiosk && ['leader', 'supervisor'].includes(userRole);
+  const { warnSecsLeft, dismissWarning } = useAutoLogout(isDisplay || isKiosk, handleLogout, shiftCapped);
 
   // 🎭 โหมดจำลองมุมมอง role — modal เลือก role (admin จริงเท่านั้น) + ป้ายลอยบอกว่าอยู่ในโหมด
   const [viewAsOpen, setViewAsOpen] = useState(false);
