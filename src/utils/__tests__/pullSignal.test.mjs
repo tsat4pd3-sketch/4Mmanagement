@@ -218,10 +218,16 @@ test('🔴 parsePullFile — แถวที่อ่านไม่ออกต
   ];
   const r = parsePullFile(rows, P);
   assert.equal(r.rows.length, 7);                       // 3 แถวเสียถูกตัด
-  assert.equal(r.warnings.length, 3);
-  assert.ok(r.warnings.some(w => w.includes('เวลา')));
-  assert.ok(r.warnings.some(w => w.includes('จำนวน')));
-  assert.ok(r.warnings.some(w => w.includes('เลขพาร์ท')));
+  /* ⚠️ นับเฉพาะคำเตือน "ข้าม N แถว" — ห้ามนับ warnings ทั้งก้อน (แก้ 2026-09-14)
+     parsePullFile ยังเตือนเรื่อง "ไฟล์ห่างจากวันนี้ N วัน" ด้วย ซึ่งขึ้นกับ **วันที่รันเทส**
+     ⇒ เทสนี้ผ่านตอนเขียน (fixture ลงวันที่ 08/09) แล้วพังเองเมื่อเวลาผ่านไปเกินเกณฑ์
+     = ระเบิดเวลาใน build gate (npm run build รันเทสด้วย ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+     สิ่งที่เทสนี้ล็อกจริงๆ คือ "แถวที่อ่านไม่ออกต้องถูกรายงาน ห้ามข้ามเงียบ" ไม่ใช่จำนวน warning รวม */
+  const skipWarns = r.warnings.filter(w => w.includes('ข้าม'));
+  assert.equal(skipWarns.length, 3);
+  assert.ok(skipWarns.some(w => w.includes('เวลา')));
+  assert.ok(skipWarns.some(w => w.includes('จำนวน')));
+  assert.ok(skipWarns.some(w => w.includes('เลขพาร์ท')));
 });
 
 test('parsePullFile — ไฟล์ผิดฟอร์แมต/ไม่มีข้อมูล ต้องคืน error ไม่ throw', () => {
