@@ -272,7 +272,9 @@ export default function MtnRepair() {
 
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
-      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
+      // flow_mode + parallel_stations = จำนวนเครื่องขนาน (N) ของไลน์ — แท็บ ⚙️ รายอุปกรณ์ ใช้ถ่วง DT 1/N
+      //   ให้ตรงกับ %A ของ Daily Report (parallelUnitsOf · 2026-09-14) ห้ามถอดออก ไม่งั้นโหมด "มุมไลน์" ตาย
+      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center, flow_mode, parallel_stations`).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),

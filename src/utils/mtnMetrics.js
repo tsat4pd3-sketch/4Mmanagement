@@ -25,8 +25,22 @@
       ตัดหลัง "/" แล้วยุบรวมเป็นตัวเดียวหมด = ตัวเลขมั่วทันที
       → เก็บ prefix index เฉพาะคีย์ที่ map ไปเครื่องเดียว (ชน = ทิ้งทั้งคีย์)
 
+   ── ให้ตรงนิยามเดียวกับ %A ของ Daily Report (audit 2026-09-14) ────────────
+   ตรวจแล้วพบว่าเดิมไฟล์นี้นับต่างจาก `computeOEE` 2 จุด — แก้ทั้งคู่แล้ว:
+   1) **หักเวลาพักตามนโยบาย** (`break_policies`) ออกจากเวลาเดินเครื่อง
+      เดิมใช้ `shift_min` ดิบ → uptime เกินจริง ~100-150 นาที/กะ (กะเช้า 08:00-17:30 = 100 ·
+      เต็มกะ 12 ชม. = 150) ⇒ MTBF ยาวเกินจริง · ใช้ `policyBreakForShift` จาก `oee.js`
+      ตัวเดียวกับที่ Daily Report ใช้ **ห้ามเขียนสูตรพักเองซ้ำ** (เคยมี 3 ตัวให้ผลต่างกันมาแล้ว)
+   2) **ไลน์เครื่องขนาน (N>1)** — %A ของไลน์หัก DT ที่ผูกเครื่องแค่ 1/N (เครื่องเดียวหยุด
+      อีก N-1 ยังวิ่ง) แต่มุมมอง "รายเครื่อง" ต้องนับ**เต็มนาที** (เครื่องตัวนั้นหยุดจริงเท่านั้น)
+      ⇒ เก็บ **ทั้งสองชุด**: `dtMin/mttrMin/mtbfMin/availPct` (เต็ม) และ `*W` (ถ่วง 1/N)
+      ให้จอสลับดูได้ — ห้ามเลือกข้างแล้วทิ้งอีกชุด (เอาไปเทียบกับจอ OEE ไม่ได้ = เถียงกัน)
+      ไลน์ที่ N>1 ปัจจุบัน: LASER-345/789 (3) · LINE A 800 Ton (5) · LINE B 600 Ton (4) · SUB APRON (6)
+
    ⚠️ ทุกฟังก์ชันในไฟล์นี้ต้อง **pure** (ไม่ import supabase) — ผู้เรียกส่งข้อมูลมาให้
+      (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
+import { policyBreakForShift } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -99,16 +113,19 @@ const timeToMin = (t) => {
 };
 
 /**
- * ชั่วโมงเดินเครื่องของแต่ละไลน์ (นาที) จากกะที่เปิดจริง
+ * ชั่วโมงเดินเครื่องของแต่ละไลน์ (นาที) จากกะที่เปิดจริง — **หักเวลาพักแล้ว**
  *
  * ⚠️ **ยุบกะคู่ขนานก่อนบวก** — 1 ไลน์เปิดหลายใบในกะเดียวกันได้ (ผลิตหลายรุ่นพร้อมกัน)
  *    บวกตรงๆ = เวลาเดินเครื่องเกินจริงเป็นเท่าตัว → MTBF สวยเกิน
- *    ⇒ key = ไลน์+วัน+กะ แล้วเอา shift_min มากสุดของคีย์นั้น
+ *    ⇒ key = ไลน์+วัน+กะ แล้วเอาใบที่ shift_min มากสุดของคีย์นั้น
  * ⚠️ `shift_min` ว่าง/0 → ถอยไปคำนวณจาก start_time-end_time (ข้ามวันได้)
  *    ยังไม่ได้อีก = **ไม่นับกะนั้น** + นับใส่ `unknownShifts` ให้จอบอกว่าเวลาต่ำกว่าจริง
+ * ⚠️ **หักเวลาพักตามนโยบาย** ด้วย `policyBreakForShift` (ตัวเดียวกับ Daily Report)
+ *    ไม่ส่ง `breakPolicies` มา = ไม่หัก + `hasBreakPolicy:false` ให้จอเตือนว่าเทียบ %A ไม่ได้
+ *    processType ไม่ส่ง (null) = ใช้เฉพาะนโยบาย common — ปัจจุบันทุกแถวเป็น common อยู่แล้ว
  */
-export function operatingMinutesByLine(sessions = []) {
-  const best = new Map();      // "line|date|shift" → นาที
+export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {}) {
+  const best = new Map();      // "line|date|shift" → { line, min, s }
   let unknownShifts = 0;
   for (const s of sessions) {
     const line = String(s?.line_name ?? '').trim();
@@ -120,14 +137,22 @@ export function operatingMinutesByLine(sessions = []) {
     }
     if (!min || min <= 0) { unknownShifts++; continue; }
     const k = `${line}|${s?.work_date ?? ''}|${s?.shift ?? ''}`;
-    best.set(k, Math.max(best.get(k) ?? 0, min));
+    const cur = best.get(k);
+    if (!cur || min > cur.min) best.set(k, { line, min, s });
   }
   const byLine = new Map();
-  for (const [k, min] of best) {
-    const line = k.split('|')[0];
-    byLine.set(line, (byLine.get(line) ?? 0) + min);
+  let breakMin = 0;
+  for (const { line, min, s } of best.values()) {
+    const brk = breakPolicies.length
+      ? Math.min(min, policyBreakForShift({
+          policies: breakPolicies, shift: s?.shift, shiftMin: min,
+          workDate: s?.work_date, startTime: s?.start_time,
+        }) || 0)
+      : 0;
+    breakMin += brk;
+    byLine.set(line, (byLine.get(line) ?? 0) + Math.max(0, min - brk));
   }
-  return { byLine, unknownShifts };
+  return { byLine, unknownShifts, breakMin: Math.round(breakMin), hasBreakPolicy: breakPolicies.length > 0 };
 }
 
 /**
@@ -140,20 +165,28 @@ export function operatingMinutesByLine(sessions = []) {
  * @param {Function} [p.lineFamilyOf] (lineName) => string[] ชื่อไลน์ในครอบครัว (แม่+ลูก)
  *        ไม่ส่ง = ใช้ชื่อไลน์ตรงตัว · กะมักเปิดบนไลน์ลูก แต่เครื่องลงทะเบียนที่ไลน์แม่
  * @param {Function} [p.sessionLineOf] (sessionId) => lineName — ใช้เดาไลน์ให้เครื่องนอกทะเบียน
+ * @param {Array}  [p.breakPolicies] break_policies (DR) — หักเวลาพักออกจากเวลาเดินเครื่อง
+ *        ไม่ส่ง = ไม่หัก (uptime เกินจริง) · summary.hasBreakPolicy บอกจอให้เตือน
+ * @param {Function} [p.parallelOf] (lineName) => N เครื่องขนานของไลน์ (parallelUnitsOf)
+ *        ไม่ส่ง = 1 ทุกไลน์ (ชุด *W จะเท่ากับชุดเต็ม)
  *
  * @returns {{rows:Array, summary:object}}
  *   row: { key, machineNo, machineName, kind, kindKnown, lineName, inMaster, via,
  *          stops, openStops, closedStops, dtMin, mttrMin|null,
  *          opMin|null, upMin|null, mtbfMin|null, availPct|null,
- *          plannedStops, plannedMin, lastAt, topCause }
+ *          parallelN, dtMinW, mttrMinW|null, upMinW|null, mtbfMinW|null, availPctW|null,
+ *          plannedStops, plannedMin, plannedMinW, lastAt, topCause }
+ *   ชุดไม่มี W = **นาทีเต็ม** (มุมมองเครื่อง) · ชุด W = **ถ่วง 1/N** (ให้ตรงกับ %A ของไลน์)
  *   ⚠️ ค่าที่คำนวณไม่ได้ = **null เสมอ ห้ามเป็น 0** (0 = "ไม่เคยเสียเลย" คนละเรื่องกับ "ไม่รู้")
  */
 export function machineReliability({
   downtimes = [], machines = [], sessions = [],
   lineFamilyOf = null, sessionLineOf = null,
+  breakPolicies = [], parallelOf = null,
 } = {}) {
   const index = buildEquipIndex(machines);
-  const { byLine, unknownShifts } = operatingMinutesByLine(sessions);
+  const { byLine, unknownShifts, breakMin, hasBreakPolicy } =
+    operatingMinutesByLine(sessions, { breakPolicies });
 
   const acc = new Map();   // key → row ระหว่างสะสม
   let noMachineNo = 0;
@@ -213,6 +246,12 @@ export function machineReliability({
       if (hit) opMin = sum;
     }
     const upMin = opMin != null ? Math.max(0, opMin - r.dtMin - r.plannedMin) : null;
+    /* ชุดถ่วง 1/N — ทุกแถวในตารางนี้มี machine_no อยู่แล้ว (แถวไม่ระบุเครื่องถูกคัดออกตั้งแต่ต้น)
+       ⇒ น้ำหนักเท่ากันทั้งกลุ่ม หารทีเดียวตอนท้ายได้ ผลเท่ากับหารรายแถวแบบ dtW ใน computeOEE */
+    const pN = r.lineName && parallelOf ? Math.max(1, Number(parallelOf(r.lineName)) || 1) : 1;
+    const dtMinW = r.dtMin / pN;
+    const plannedMinW = r.plannedMin / pN;
+    const upMinW = opMin != null ? Math.max(0, opMin - dtMinW - plannedMinW) : null;
     rows.push({
       key: r.key, machineNo: r.machineNo, machineName: r.machineName,
       kind: r.kind, kindKnown: r.kindKnown, lineName: r.lineName,
@@ -227,7 +266,14 @@ export function machineReliability({
       // MTBF = เวลาที่เดินได้จริง ÷ จำนวนครั้งที่เสีย (รวมครั้งที่ยังเปิดค้าง — มันเสียไปแล้ว)
       mtbfMin: upMin != null && r.stops > 0 ? Math.round(upMin / r.stops) : null,
       availPct: opMin && opMin > 0 ? +(((upMin ?? 0) / opMin) * 100).toFixed(1) : null,
+      parallelN: pN,
+      dtMinW: Math.round(dtMinW),
+      mttrMinW: r.closedStops > 0 ? Math.round(dtMinW / r.closedStops) : null,
+      upMinW: upMinW != null ? Math.round(upMinW) : null,
+      mtbfMinW: upMinW != null && r.stops > 0 ? Math.round(upMinW / r.stops) : null,
+      availPctW: opMin && opMin > 0 ? +(((upMinW ?? 0) / opMin) * 100).toFixed(1) : null,
       plannedStops: r.plannedStops, plannedMin: Math.round(r.plannedMin),
+      plannedMinW: Math.round(plannedMinW),
       lastAt: r.lastAt,
       topCause: Object.entries(r._causes).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
     });
@@ -246,18 +292,30 @@ export function machineReliability({
       noMachineNo,                // downtime ที่ไม่ได้ระบุเครื่องเลย
       unknownShifts,              // กะที่หาชั่วโมงไม่ได้ → เวลาเดินเครื่องต่ำกว่าจริง
       prefixCollisions: index.collisions,
+      breakMin,                   // นาทีพักที่หักออกจากเวลาเดินเครื่องแล้ว
+      hasBreakPolicy,             // false = ไม่ได้หักพัก → เทียบ %A ตรงๆ ไม่ได้ (จอต้องเตือน)
+      parallelLines: rows.filter(r => r.parallelN > 1).length,
     },
   };
 }
 
+/** เลือกชุดตัวเลขตามโหมดที่จอเปิดอยู่ — `weighted=true` = ถ่วง 1/N (เทียบกับ %A ของไลน์ได้)
+ *  จอและตัวสรุปต้องอ่านผ่านตัวนี้ตัวเดียว ห้ามหยิบ field ตรงๆ (ไม่งั้นสลับโหมดแล้วตกหล่นบางช่อง) */
+export function viewMetrics(r = {}, weighted = false) {
+  return weighted
+    ? { dtMin: r.dtMinW, mttrMin: r.mttrMinW, upMin: r.upMinW, mtbfMin: r.mtbfMinW, availPct: r.availPctW, plannedMin: r.plannedMinW }
+    : { dtMin: r.dtMin, mttrMin: r.mttrMin, upMin: r.upMin, mtbfMin: r.mtbfMin, availPct: r.availPct, plannedMin: r.plannedMin };
+}
+
 /** สรุปรวมตามชนิดอุปกรณ์ (เครื่อง/จิ๊ก/แม่พิมพ์/facility) — MTTR ถ่วงน้ำหนักด้วยจำนวนครั้ง */
-export function summarizeByKind(rows = []) {
+export function summarizeByKind(rows = [], weighted = false) {
   const by = new Map();
   for (const r of rows) {
     const k = r.kindKnown ? (r.kind || 'machine') : '_unknown';
+    const v = viewMetrics(r, weighted);
     const e = by.get(k) || { kind: k, equip: 0, stops: 0, dtMin: 0, closedStops: 0, upMin: 0, hasUp: false };
-    e.equip++; e.stops += r.stops; e.dtMin += r.dtMin; e.closedStops += r.closedStops;
-    if (r.upMin != null) { e.upMin += r.upMin; e.hasUp = true; }
+    e.equip++; e.stops += r.stops; e.dtMin += v.dtMin; e.closedStops += r.closedStops;
+    if (v.upMin != null) { e.upMin += v.upMin; e.hasUp = true; }
     by.set(k, e);
   }
   return [...by.values()].map(e => ({
