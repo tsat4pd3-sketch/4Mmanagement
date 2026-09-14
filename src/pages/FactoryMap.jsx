@@ -555,11 +555,16 @@ export default function FactoryMap({ setupMode = false }) {
     });
     // ไลน์ไหน "คนโหลดเข้า-ออกเอง" — นับเครื่องผลิต manual เทียบ auto/semi ต่อไลน์ (query แยก + catch เอง
     // เพื่อไม่ให้ facilityZones พังถ้าคอลัมน์ automation_level ยังไม่ apply)
-    supabaseDR.from('machines').select('line_name, automation_level, equipment_category').eq('is_active', true)
+    supabaseDR.from('machines').select('line_name, automation_level, equipment_category, equipment_kind').eq('is_active', true)
       .then(({ data }) => {
         const cnt = {};
         (data || []).forEach(m => {
           if (!m.line_name || (m.equipment_category && m.equipment_category !== 'production')) return;
+          /* 🔴 นับเฉพาะ "เครื่องจักร" — แม่พิมพ์/จิ๊กไม่ใช่ของที่เดินเอง (2026-09-14 · user ทัก)
+             วัดจริง: แม่พิมพ์ 254 จาก 266 ตัวถูกติด automation_level='manual' ไว้ (ฟอร์มเคยให้ตั้งได้)
+             ⇒ LINE A/B/C ( ปั๊ม ) ถูกตีเป็น "ไลน์ที่คนโหลดเข้า-ออกเอง" ทั้งที่เครื่องจริง auto ล้วน
+             (A: manual 0 auto 12 · B: 0/10 · C: 0/4) แล้วกำลังคนไปจำกัดจำนวนเครื่องที่เดินได้บนผัง */
+          if (m.equipment_kind && m.equipment_kind !== 'machine') return;
           const c = cnt[m.line_name] || (cnt[m.line_name] = { man: 0, autoish: 0 });
           if (m.automation_level === 'manual') c.man++;
           else if (m.automation_level === 'auto' || m.automation_level === 'semi_auto') c.autoish++;
@@ -596,7 +601,7 @@ export default function FactoryMap({ setupMode = false }) {
       cachedMaster('dr_products:ct', async () =>
         (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
       cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)).data || []),
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
       cachedMaster('kanban_standards:ct', async () =>
         (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
@@ -629,6 +634,10 @@ export default function FactoryMap({ setupMode = false }) {
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
+        /* ⚠️ ต้องส่งนโยบายพัก + process ของกะ ไม่งั้น A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14)
+           process มาจาก mat ของใบที่เปิดในกะ — วิธีเดียวกับที่ "ควรผลิตได้ตอนนี้" ใช้อยู่ด้านล่าง */
+        breakPolicies: breaks || [],
+        processType: os.map(o => procMap[o.mat_no]).find(Boolean) || null,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
         /* เพดานเครื่องขนาน — เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine)
            ตัวหารจริงของ P วัดจาก order window ใน util (busyMinutes) ไม่ใช่จำนวนคน
