@@ -37,6 +37,7 @@ const ROW = (i) => ({
      ซึ่งเป็นเคสที่หน้างานเจอจริง (HDF1/HDF2 มีมิเตอร์ · HYDROFORM ไม่มี) */
   scope_kind: 'line', scope_name: LINE_NAME(i), is_metered: i % 3 === 0, month_key: '2026-08',
   qty: 120+i, qty_ng: i, qty_ok: 118+i, qty_suspect: 0, qty_actual: 118+i, qty_target: 130,
+  qty_per_kanban: 60,   // kanban_standards — ไม่มีแล้วโมดัล Scan ขึ้น "undefined ชิ้น/ใบ" (พบ 15/09)
   duration_min: 12+i, cycle_time_sec: 58, oee: 82.5, oee_a: 91, oee_p: 93, oee_q: 98,
   employee_id: `emp-${i}`, employee_id_code: `6${1000+i}`, is_present: true, team: 'A',
   description: 'ตัวกระบอกลมที่สลับ reed ไปครับ เป็นอีกแล้ว รบกวนช่างมาดูให้หน่อยครับ ขอบคุณครับ',
@@ -51,7 +52,11 @@ const ROW = (i) => ({
      ชื่อยกมาจากประเภทจริงในระบบ เพื่อให้ความยาวข้อความใกล้เคียงของจริงด้วย */
   dr_downtime_types: { name_th: DT_NAMES[i % DT_NAMES.length], category: 'unplanned' },
   dr_defect_types: { name_th: DEF_NAMES[i % DEF_NAMES.length] },
-  dr_products: { mat_no: `1010${1000+i}`, part_name: `ชิ้นงาน ${i}`, cycle_time_sec: 58 },
+  /* ⚠️ ต้องมี line_name ในตัว embed ด้วย (2026-09-15) — เดิมไม่มี ⇒ ทุกโค้ดที่ถามว่า
+     "พาร์ทใบนี้ผูกกับไลน์ไหน" ผ่าน kanban_standards.dr_products.line_name ได้ undefined
+     ⇒ ตัวเลือก MAT.NO ของโมดัล Scan เปิด Order ว่างเปล่าตลอดใน harness = ไม่เคยถูกตรวจตาเลย */
+  dr_products: { mat_no: `1010${1000+i}`, part_name: `ชิ้นงาน ${i}`, cycle_time_sec: 58,
+                 line_name: 'LINE APRON ASSY / HYDROFORM', p_no: 'MB3B 16E060 CH' },
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
 })
