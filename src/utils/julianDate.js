@@ -3,23 +3,31 @@
 
    ที่มา (คำขอ user): "ระบบสอบกลับ การค้นหา เพิ่มให้หาจาก julian date ด้วยได้มั้ย จะได้ง่ายขึ้น"
    หน้างานถือชิ้นงานที่มีป้าย/ตัวปั๊มเป็นเลข Julian อยู่ในมือ แล้วอยากรู้ว่า "ตัวนี้ผลิตใบไหน"
-   — เดิมต้องแปลงวันเองก่อนแล้วค่อยตั้งช่วงวันที่ในหน้า /order-trace
 
-   ⚠️ **ระบบไม่มีคอลัมน์ Julian ที่ไหนเลย** (ตรวจ DR ทั้งฐาน 2026-09-15: ไม่มี column ชื่อ julian/
-   date_code) → Julian ที่แสดง/ค้น ทั้งหมด **derive จาก `production_sessions.work_date`** (วันที่ผลิต)
-   ไม่ได้เก็บซ้ำ · ถ้าวันหลังมีการยิงเลข lot จริงลงชิ้นงาน (คนละตัวกับ work_date) ต้องเพิ่มคอลัมน์
-   แล้วให้ตัวค้นหาเทียบคอลัมน์นั้นก่อน ค่อยถอยมา work_date
+   ══ รูปแบบจริงของโรงงานนี้ (user ยืนยัน 2026-09-15) ══════════════════════
+     `24726A`  =  วันที่ **247** ของปี **26** (= 2026-09-04) · กะ **A**
+                  └┬─┘└┬┘└┬┘
+                 DDD   YY  กะ
+     · **`DDD` มาก่อน `YY`** — ห้ามสลับ
+     · **กะ A = กลางวัน · B = กลางคืน** (ตัวอักษรท้าย มีหรือไม่มีก็ได้)
+     · ย่อเหลือ `247` (วันอย่างเดียว ไม่บอกปี) ก็รับ — ระบบเดาปีให้แล้วโชว์ว่าเดาเป็นปีไหน
 
-   ⚠️ **รองรับ 3 รูปแบบพร้อมกัน — แยกด้วยจำนวนหลัก ไม่ต้องให้คนเลือกโหมด**
-   (โรงงานในกลุ่ม/ลูกค้าแต่ละรายใช้ไม่เหมือนกัน และ ณ วันที่เขียนยังไม่ยืนยันว่าที่นี่ใช้แบบไหน
-    → **ห้าม hardcode แบบเดียว** และ **ต้องโชว์ให้เห็นว่าระบบตีความเป็นวันไหน** ห้ามแปลงเงียบ)
-     3 หลัก  `258`    = วันที่ N ของปี — **ปีไม่ได้ระบุมา ต้องเดา** (ดู guessedYear)
-     4 หลัก  `6258`   = หลักแรก = เลขท้ายปี ค.ศ. (6 → 2026) + วันที่ 258   ← แบบที่ค่ายรถใช้บ่อย
-     5 หลัก  `26258`  = 2 หลักแรก = ปี ค.ศ. 2 ตัวท้าย (26 → 2026) + วันที่ 258
-   ทุกแบบคืน `digits` กลับไปด้วย เพื่อให้จอแสดงผลด้วยจำนวนหลักเดียวกับที่คนพิมพ์มา
+   ⚠️ **เคยเข้าใจผิดเป็น `YYDDD` (26258) ในรอบแรก แก้แล้ว 2026-09-15 วันเดียวกัน**
+      ถ้าอ่านสลับ เลขอย่าง `10026` (วัน 100 ปี 26) จะถูกอ่านเป็น "ปี 2010 วันที่ 26"
+      = **ได้วันที่ผิดแบบเงียบๆ** ซึ่งอันตรายกว่าอ่านไม่ออก → ตัวที่ตีความไม่ได้ให้คืน null เสมอ
+      **ห้ามเติมรูปแบบอื่นกลับเข้ามาโดยไม่มีคนยืนยันว่าโรงงานนั้นใช้จริง**
+      (โรงงานอื่นในกลุ่มใช้คนละแบบได้ — ถึงตอนนั้นค่อยทำเป็น master ตั้งค่าต่อโรงงาน ไม่ใช่เดาเพิ่ม)
+
+   ⚠️ **ระบบไม่มีคอลัมน์ Julian ที่ไหนเลย** (ตรวจ DR ทั้งฐาน 2026-09-15) → Julian ที่แสดง/ค้น
+   ทั้งหมด **derive จาก `production_sessions.work_date` + `.shift`** ไม่ได้เก็บซ้ำ
 
    ⚠️ ไฟล์นี้ต้อง pure — ห้าม import supabase/react (เทสตรงได้ · ดู __tests__/julianDate.test.mjs)
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/** ตัวอักษรกะบนชิ้นงาน ↔ ค่ากะในระบบ (`production_sessions.shift`) */
+export const SHIFT_LETTER = { day: 'A', night: 'B' };
+export const SHIFT_OF_LETTER = { A: 'day', B: 'night' };
+export const shiftLetterLabel = (L) => (L === 'A' ? 'กะกลางวัน' : L === 'B' ? 'กะกลางคืน' : '');
 
 /** ปีนี้เป็นปีอธิกสุรทินไหม (ค.ศ.) — 366 วันเฉพาะปีนี้เท่านั้น */
 export const isLeapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
@@ -28,6 +36,7 @@ export const isLeapYear = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0
 export const daysInYear = (y) => (isLeapYear(y) ? 366 : 365);
 
 const pad2 = (n) => String(n).padStart(2, '0');
+const pad3 = (n) => String(n).padStart(3, '0');
 
 /** 'YYYY-MM-DD' ของวันนี้แบบ local (ไม่ใช้ toISOString — UTC ทำวันเพี้ยน ดูกฎใน CLAUDE.md) */
 export const todayISO = (d = new Date()) =>
@@ -53,66 +62,70 @@ export function fromDayOfYear(year, doy) {
 }
 
 /**
- * วันที่ปฏิทิน → เลข Julian ตามจำนวนหลักที่ต้องการ (3/4/5)
- * ใช้โชว์คู่กับใบผลิต ให้หน้างานเทียบกับตัวปั๊มบนชิ้นงานได้ตรงๆ
+ * วันที่ปฏิทิน (+ กะ) → เลขแบบที่ปั๊มบนชิ้นงาน `DDDYY` หรือ `DDDYYA`
+ * ใช้โชว์คู่กับใบผลิต ให้หน้างานเทียบกับตัวปั๊มได้ตรงๆ
  */
-export function toJulian(iso, digits = 5) {
+export function toJulian(iso, shift) {
   const doy = dayOfYear(iso);
   if (doy == null) return '';
-  const year = Number(String(iso).slice(0, 4));
-  const ddd = String(doy).padStart(3, '0');
-  if (digits === 3) return ddd;
-  if (digits === 4) return `${year % 10}${ddd}`;
-  return `${pad2(year % 100)}${ddd}`;
+  const yy = pad2(Number(String(iso).slice(0, 4)) % 100);
+  return `${pad3(doy)}${yy}${SHIFT_LETTER[shift] || ''}`;
 }
 
 /**
- * คำที่พิมพ์ในช่องค้นหา → ตีความเป็น Julian date ได้ไหม
+ * คำที่พิมพ์ในช่องค้นหา → ตีความเป็นเลข Julian บนชิ้นงานได้ไหม
+ *
+ * รับ 2 แบบ (+ ตัวอักษรกะท้าย A/B จะมีหรือไม่มีก็ได้):
+ *   `24726` / `24726A`  → วัน 247 ปี 2026  (DDDYY — แบบที่โรงงานนี้ใช้จริง)
+ *   `247`   / `247A`    → วัน 247 **ปีไม่ได้บอกมา ต้องเดา** (ดู guessedYear/candidates)
  *
  * คืน null เมื่อไม่ใช่ · คืน object เมื่อใช่:
- *   { doy, year, date, digits, guessedYear, candidates }
- *   - `guessedYear = true` → ปีมาจากการเดา (แบบ 3 หลัก) หรือคลี่จากเลขหลักเดียว (แบบ 4 หลัก)
- *     **จอต้องโชว์วันที่ที่ตีความได้เสมอ + ให้เลือกปีอื่นได้** (หลัก "ไม่รู้ ≠ เดาแล้วเงียบ")
- *   - `candidates` = ปีอื่นที่เป็นไปได้ (ใหม่→เก่า) ให้จอทำปุ่มสลับปี
+ *   { doy, year, date, shift, shiftLetter, digits, guessedYear, candidates }
+ *   - `shift` = 'day' | 'night' | null (ไม่ได้ระบุตัวอักษรกะมา)
+ *   - `guessedYear = true` → ปีมาจากการเดา (แบบ 3 หลัก) ⇒ **จอต้องโชว์วันที่ที่ตีความได้ + ให้เลือกปีอื่น**
+ *   - `candidates` = ปีที่เป็นไปได้ (ใหม่→เก่า) ให้จอทำปุ่มสลับปี
  *
- * ⚠️ รับเฉพาะ "ตัวเลขล้วน 3-5 หลัก" เท่านั้น — กันชนกับการค้นด้วย MAT (เลข SAP 8 หลัก)
- *    และ prod_no (มีตัวอักษร/ขีด) · เว้นวรรค/ขีดหัวท้ายตัดทิ้งให้
+ * ⚠️ รับเฉพาะ "ตัวเลข 3 หรือ 5 หลัก (+A/B)" — กันชนกับการค้นด้วย MAT (เลข SAP 8 หลัก) และ
+ *    prod_no (มีตัวอักษร/ขีด) · **4 หลักถือว่าไม่ใช่ Julian** (ไม่มีรูปแบบไหนของที่นี่ยาว 4)
  */
 export function parseJulianTerm(term, today = todayISO()) {
-  const raw = String(term ?? '').trim().replace(/^[-\s]+|[-\s]+$/g, '');
-  if (!/^\d{3,5}$/.test(raw)) return null;
+  const raw = String(term ?? '').trim().replace(/^[-\s]+|[-\s]+$/g, '').toUpperCase();
+  const m = /^(\d{3})(\d{2})?([AB])?$/.exec(raw);
+  if (!m) return null;
+
+  const doy = Number(m[1]);
+  const yy = m[2];
+  const shiftLetter = m[3] || null;
+  if (doy < 1 || doy > 366) return null;
 
   const thisYear = Number(String(today).slice(0, 4));
   const todayDoy = dayOfYear(today) ?? 366;
-  const digits = raw.length;
-  const doy = Number(raw.slice(-3));
-  if (doy < 1 || doy > 366) return null;
 
-  let years = [];
-  let guessedYear = true;
-  if (digits === 3) {
+  let years; let guessedYear;
+  if (yy != null) {
+    years = [2000 + Number(yy)];      // ปีระบุชัด ไม่ต้องเดา
+    guessedYear = false;
+  } else {
     /* ปีไม่ได้บอกมา — เดา "ครั้งล่าสุดที่ผ่านมาแล้ว": วันที่ยังไม่ถึงในปีนี้ = ต้องเป็นปีก่อน
        (สอบกลับคือย้อนหลังเสมอ ไม่มีของที่ผลิตในอนาคต) */
     const base = doy <= todayDoy ? thisYear : thisYear - 1;
     years = [base, base - 1, base - 2];
-  } else if (digits === 4) {
-    // หลักแรก = เลขท้ายปี → คลี่เป็นปีจริงย้อนหลังไม่เกิน 10 ปี
-    const last = Number(raw[0]);
-    for (let y = thisYear; y > thisYear - 10; y--) if (y % 10 === last) years.push(y);
-    // เลขท้ายตรงกันได้ทุก 10 ปี → เสนอรอบก่อนหน้าไว้ด้วย
-    if (years.length) years.push(years[0] - 10);
-  } else {
-    // 5 หลัก = ปีระบุชัด ไม่ต้องเดา
-    years = [2000 + Number(raw.slice(0, 2))];
-    guessedYear = false;
+    guessedYear = true;
   }
 
   const candidates = years.map(y => ({ year: y, date: fromDayOfYear(y, doy) })).filter(c => c.date);
   if (!candidates.length) return null;   // เช่น 366 ของปีที่ไม่ใช่อธิกสุรทิน
 
-  return { doy, digits, guessedYear, year: candidates[0].year, date: candidates[0].date, candidates };
+  return {
+    doy, digits: raw.length, guessedYear, candidates,
+    year: candidates[0].year, date: candidates[0].date,
+    shiftLetter, shift: shiftLetter ? SHIFT_OF_LETTER[shiftLetter] : null,
+  };
 }
 
-/** ป้ายอ่านง่ายสำหรับจอ — 'Julian 6258 = วันที่ 258 ของปี 2026' */
-export const julianLabel = (j) =>
-  j ? `Julian ${String(j.digits === 3 ? j.doy : j.digits === 4 ? `${j.year % 10}${String(j.doy).padStart(3, '0')}` : `${pad2(j.year % 100)}${String(j.doy).padStart(3, '0')}`).padStart(j.digits, '0')} = วันที่ ${j.doy} ของปี ${j.year}` : '';
+/** ป้ายอ่านง่ายสำหรับจอ — 'Julian 24726A = วันที่ 247 ปี 2026 · กะกลางวัน' */
+export function julianLabel(j) {
+  if (!j) return '';
+  const code = `${pad3(j.doy)}${j.guessedYear ? '' : pad2(j.year % 100)}${j.shiftLetter || ''}`;
+  return `Julian ${code} = วันที่ ${j.doy} ปี ${j.year}${j.shiftLetter ? ` · ${shiftLetterLabel(j.shiftLetter)}` : ''}`;
+}

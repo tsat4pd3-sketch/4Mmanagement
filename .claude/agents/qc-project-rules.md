@@ -179,6 +179,10 @@ model: inherit
   ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
+  🔴 กล่องที่ถูก `ResizeObserver` วัด **ห้ามมี `padding`** (`clientHeight` รวม padding ⇒ แถวล่างถูก `overflow:clip` ตัดหายเงียบ) ·
+  🔴 โหมดเต็มจอต้องเป็น `position:fixed; inset:0` **ห้าม `height:100vh`** (หน้าอยู่ใน `<main>` ที่มี sidebar+padding ⇒ ล้นจอ) ·
+  ฟอนต์ที่สเกลตามขนาดต้องมีพื้น `Math.max(11, …)` · grep: `ResizeObserver`, `100vh`, `clientHeight`
 - **[F-LIST-2]** เปลี่ยน `<select>` ที่มี `<optgroup>` ไปเป็น `<SearchSelect>`/picker กลาง ต้องยกกลุ่มมาด้วย (`group` ของ option / `groupByLine`) และ `maxRows` ต้องคลุมทั้งลิสต์ — ตัดแถวทั้งที่จัดกลุ่ม = กลุ่มท้ายๆ ไม่มีวันโผล่ (UI-CONVENTIONS §5.1.1 · 2026-09-08)
 - **[F-LIST-1]** `<select>` ที่ option มาจาก master ใหญ่ (พนักงาน/โปรไฟล์/เครื่องจักร/สินค้า·MAT/อะไหล่/ประเภท downtime/OP ของ PE/แผน PM) ต้องเป็น `<SearchSelect>` (UI-CONVENTIONS §5.1.1 · audit 2026-09-08) · ไลน์ผลิต = `<LineSelect>` · ลิสต์สั้น (สถานะ/กะ/ทีม/ประเภท ≤30) ใช้ `<select>` ได้ · grep: `\.map\(.*<option` แล้วไล่ดูตัวแปรต้นทาง
 

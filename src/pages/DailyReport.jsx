@@ -36,6 +36,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
+import { scopeMatRows } from '../utils/matScope';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -1094,11 +1095,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ได้ 0 ใบ (ก่อนหน้านั้น 253 ใบ/สัปดาห์) แล้วหันไปใช้ "เปิดเป้า (ไม่มีบาร์โค้ด)" แทนทั้งหมด
      วัดผลก่อนแก้ (30 วัน): 6 ไลน์ได้ลิสต์ว่าง (HDF1/HDF2/LASER-345/BENDING E50/BENDING EXPORT/
         Laser GOR) · อีก 3 ไลน์ลิสต์แคบเกินจริง · แก้เป็น family แล้วไม่มีไลน์ไหนเสียตัวเลือกเดิม */
-  const scanMatStds = useMemo(() => {
-    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
-    if (!fam.size) return [];   // ไลน์ยังโหลดไม่เสร็จ = ยังตัดสินไม่ได้ (เฟรมถัดไปได้ครบเอง)
-    return kanbanStds.filter(s => fam.has((s.dr_products?.line_name || '').trim().toLowerCase()));
-  }, [kanbanStds, lines, selSession]);
+  /* 🔴 อัปเดต 2026-09-15 (feedback user หน้า LASER-345):
+        *"ไลน์ย่อยยังจะเห็นพาร์ทของไลน์ย่อยอื่นหรอ มันจะทำให้เกิด human error"*
+     ตรวจแล้ว **ไลน์พี่น้องไม่เคยโผล่** (getLineFamily ไล่ลงล่างจากตัวเอง ไม่ไล่จาก ancestors)
+     — 5 รายการที่ LASER-345 เห็น คือของ **HYDROFORM ไลน์แม่** เพราะ LASER-345 ไม่มีพาร์ท
+       ผูกกับตัวเองเลยสักตัว (วัด 15/09: มีแค่ 12 ไลน์ทั้งโรงงานที่มีพาร์ทผูกไว้)
+     แต่ความกังวลถูก: จอไม่เคยบอกว่าพาร์ทนั้น**ผูกอยู่กับไลน์ไหน** → แยกไม่ออกว่าของใคร
+     ⇒ เปลี่ยนจาก union แบนทั้งครอบครัว เป็น **ชั้นแข็ง own → parent → family**
+       (`src/utils/matScope.js` · มีเทส) + ติดป้ายเจ้าของทุกแถวที่ไม่ใช่ของไลน์ตัวเอง
+     ⇒ ไลน์ที่ตั้ง master ครบจะไม่เห็นของไลน์อื่นเลย · ไลน์ที่ยังไม่ครบก็ยังเปิดใบได้
+       (ไม่ย้อนกลับไปเป็นบั๊ก "ลิสต์ว่าง เปิดใบไม่ได้ทั้งกะ" ของ 17/08) */
+  const scanMat = useMemo(
+    () => scopeMatRows(kanbanStds, lines, selSession?.line_name || ''),
+    [kanbanStds, lines, selSession]);
+  const scanMatStds = scanMat.rows;
 
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
@@ -4914,7 +4924,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {(() => {
                   const lineName = selSession?.line_name;
-                  const lineStds = scanMatStds;   // ครอบครัวไลน์ ไม่ใช่ชื่อตรงเป๊ะ (ดูเหตุผลที่ scanMatStds)
+                  const lineStds = scanMatStds;   // ชั้นแข็ง own → parent → family (ดู scanMat / matScope.js)
                   if (lineStds.length === 0) {
                     return (
                       <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
@@ -4926,7 +4936,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     );
                   }
                   return (
-                    <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
+                    <Field label={`MAT.NO (${lineStds.length} รายการ · ${
+                      scanMat.scope === 'own' ? 'ของไลน์นี้'
+                      : scanMat.scope === 'parent' ? `ของไลน์แม่ ${scanMat.owners.join(', ')}`
+                      : `ของไลน์ย่อย ${scanMat.owners.join(', ')}`}) *`}>
+                      {/* ⚠️ ไลน์นี้ไม่มีพาร์ทผูกกับตัวเองเลย — บอกตรงๆ ว่ากำลังยืมของไลน์ไหนมาใช้
+                          ห้ามเงียบ: หน้างานต้องรู้ว่าไม่ใช่ของไลน์ตัวเอง + ที่ถูกควรไปตั้ง master ให้ครบ */}
+                      {scanMat.scope !== 'own' && (
+                        <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 7, padding: '6px 10px', marginBottom: 6, lineHeight: 1.6 }}>
+                          ⚠ <b>{lineName}</b> ยังไม่มีพาร์ทผูกกับไลน์ตัวเองเลย — รายการด้านล่างเป็นของ <b>{scanMat.owners.join(', ')}</b>
+                          <div style={{ opacity: 0.85 }}>ถ้าพาร์ทไหนเป็นของไลน์นี้จริง ให้ไปตั้งไลน์ให้ถูกที่ <b>Product Master</b> แล้วลิสต์นี้จะเหลือเฉพาะของไลน์นี้เอง</div>
+                        </div>
+                      )}
                       <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
                         inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                         options={lineStds.map(s => {
@@ -4936,7 +4957,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           return {
                             id: s.mat_no,
                             label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
-                            sub: `${s.qty_per_kanban} ชิ้น/ใบ`, keywords: `${nm} ${s.dr_products?.p_no || ''}`,
+                            /* 🏭 ป้ายเจ้าของ — แถวที่ไม่ได้ผูกกับไลน์ที่เปิดกะ ต้องเห็นว่าเป็นของใคร
+                               (user 2026-09-15 · กัน human error เลือกพาร์ทผิดไลน์) */
+                            sub: `${s.qty_per_kanban} ชิ้น/ใบ${s._foreign && s._owner ? ` · 🏭 ผูกกับไลน์ ${s._owner}` : ''}`,
+                            keywords: `${nm} ${s.dr_products?.p_no || ''} ${s._owner || ''}`,
                           };
                         })}
                         onChange={({ id }) => handleOpenProdMatNoChange(id)} />

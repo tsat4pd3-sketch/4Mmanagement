@@ -1,4 +1,4 @@
--- ═══ 🧪 NPI DEMO SEED — ข้อมูลตัวอย่างให้เห็นภาพ /npi ครบทุกแท็บ · Main project (ewhdfqwfwofivojtsizn) ═══
+-- ═══ 🧪 NPI DEMO SEED — ข้อมูลตัวอย่างให้เห็นภาพ /npi ครบทุกแท็บ · Main project (ewhdfqwfwofivojtsizn) ═══ — ✅ apply แล้ว 2026-09-15 (user รันผ่าน SQL Editor · ตรวจ tooling 5 แผน/ขั้นครบ)
 -- 2026-09-15 · คำขอ user: "seed ค่าที่ต้องกรอกทั้งหมดให้เห็นภาพตัวอย่างของโปรแกรมเมื่อมีข้อมูล — ลูกพี่จะขอดู"
 --
 -- ⚠️ เป็นข้อมูล DEMO ไม่ใช่ข้อมูลจริง — โปรเจคติดป้าย 🧪 DEMO ทั้งชื่อและรหัส (NPI-DEMO-001 / NPI-DEMO-002)

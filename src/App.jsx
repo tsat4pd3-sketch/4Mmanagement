@@ -74,6 +74,7 @@ const DailyChecker = lazy(() => import('./pages/DailyChecker'));
 const CommandPalette = lazy(() => import('./components/CommandPalette'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
+const Obeya = lazy(() => import('./pages/Obeya'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
@@ -108,6 +109,10 @@ export const NAV_ITEMS = [
   // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
   { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
+  /* 🏛️ OBEYA — บอร์ด SQDCM หน้าเดียว (กระดาษ A4 สิบแผ่นปูเต็มจอ) + ลูปปิด countermeasure
+     ต่างจากจอภาพรวมใบอื่น: ตัดตาม **แกน S-Q-D-C-M** ไม่ใช่ตามส่วนงาน และเป็นที่เดียวที่
+     "สิ่งที่ตกลงกันว่าจะแก้" ถูกบันทึก+ตามจนปิด (docs/OBEYA-DESIGN.md) */
+  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (SQDCM)',      group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -1795,6 +1800,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/morning-meeting" element={
                 <RoleRoute path="/morning-meeting" userRole={role}><MorningMeeting /></RoleRoute>
+              } />
+              <Route path="/obeya" element={
+                <RoleRoute path="/obeya" userRole={role}><Obeya /></RoleRoute>
               } />
               <Route path="/remote" element={
                 <RoleRoute path="/remote" userRole={role}><RemoteControl /></RoleRoute>

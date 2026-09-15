@@ -15,7 +15,12 @@ class EB extends React.Component {
   render(){ return this.state.e ? <div id="crash">CRASH: {String(this.state.e.message).slice(0,120)}</div> : this.props.children }
 }
 
-const CTX = { role:'manager', lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
+/* ?role=<role> — สลับ role ของ harness ได้ (2026-09-15)
+   เดิมล็อก 'manager' ตายตัว ⇒ ปุ่ม/โมดัลที่ยิงผ่าน can() ของ role อื่น (เช่น Scan เปิด Order
+   ที่ต้อง daily_report:record) **ไม่เคยถูก render ใน crashsweep เลย** — ตรวจตาไม่ได้ด้วย
+   default ยังเป็น 'manager' เหมือนเดิม (ไม่กระทบผลตรวจเดิม) */
+const ROLE = new URLSearchParams(location.search).get('role') || 'manager';
+const CTX = { role:ROLE, lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
   mtnTeams:[], isDeptAdmin:false, sidebarOpen:false }
 

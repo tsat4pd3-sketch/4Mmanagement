@@ -1146,7 +1146,8 @@ export default function ProductMaster() {
                 <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
                   lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
                   ช่องบนสุดตั้งเลข/ชื่อของขั้นเอง (ไม่ใช้เลข SAP)
-                  <br />ยอดรวมภาพใหญ่จะนับที่<b>พาร์ทจริง</b> ไม่บวกซ้ำ · ห้ามเอารายการ OP เข้า BOM/คัมบัง
+                  <br />ยอดรวมภาพใหญ่จะนับที่<b>พาร์ทจริง</b> ไม่บวกซ้ำ · ห้ามเอารายการ OP ไปเป็น<b>ลูก</b>ใน BOM ของใคร/คัมบัง
+                  <br />แต่ตัวขั้นเอง <b>ควรผูกสูตรว่า "กินอะไรเข้าไป"</b> ที่แท็บ BOM — ไม่งั้นของเสียที่หลุดขั้นนี้ตัดสต๊อก SAP ไม่ได้ (2026-09-15)
                 </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
@@ -1468,9 +1469,13 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     setSlocs(locs || []);
     // รหัสที่ถูกใช้ใน BOM จริง — เอาไว้เทียบว่ามีตัวไหน "ยังไม่ลงทะเบียน" (ห้ามซ่อน)
     setSlocUsed([...new Set((boms || []).map(b => slocLabel(b.storage_location)).filter(Boolean))].sort());
-    // 🔩 รายการขั้นตอน (OP งานขับนัท) ไม่ใช่พาร์ทจริง — ห้ามมี BOM ของตัวเอง จึงไม่โผล่ในลิสต์นี้
-    const list = (prods || []).filter(p => !opMap[p.mat_no]);
-    setProducts(list);
+    /* 🔩 รายการขั้นตอน (OP) อยู่ในลิสต์ด้วย — **เปลี่ยนกฎ 2026-09-15 (คำสั่ง user)**
+       เดิมกรองทิ้งเพราะ "OP ไม่ใช่พาร์ทจริง ห้ามมี BOM" แต่พอของเสียหลุดที่ขั้นนั้น ใบ scrap
+       พิมพ์เลขขั้นที่ SAP ไม่มี → สโตร์ตัดสต๊อกไม่ได้ และจะตัดตัวมันเองก็ไม่ได้ (ยังไม่เคยเข้าคลัง)
+       ⇒ ขั้นต้องบอกได้ว่า "กินอะไรเข้าไป" · ดู src/utils/scrapExplode.js + docs/modules/scrap-report.md
+       ⚠️ กฎที่ยังอยู่เหมือนเดิม: **ห้ามเอา OP ไปเป็น "ลูก" ในสูตรของใครอีกที** (picker ลูกอ่านจาก
+          parts_master ซึ่งไม่มีแถว OP อยู่แล้ว) — ขั้นก่อนหน้าใช้วิธีไล่สายจาก op_seq ไม่ใช่ผูกเป็นลูก */
+    setProducts((prods || []).map(p => (opMap[p.mat_no] ? { ...p, _op: opMap[p.mat_no] } : p)));
     setPartsMaster(parts || []);
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
@@ -1687,7 +1692,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             return (
               <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: '#0ea5e9', marginRight: 4 }}>🔩</span>}
+                    {p.name}
+                  </span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} พาร์ท` : 'ยังไม่มี'}</span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{[p.mat_no, p.line_name, p.customer].filter(Boolean).join(' · ')}</div>
@@ -1708,6 +1716,16 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
+                {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
+                {selProduct._op && (
+                  <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
+                    🔩 <b>รายการขั้นตอน (OP)</b>{selProduct._op.parent ? ` · เป็นขั้นของ ${selProduct._op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                    {selProduct._op.seq != null && ` · ลำดับขั้น ${selProduct._op.seq}`}
+                    <br />สูตรที่นี่ = <b>ของที่ "ขั้นนี้" ใส่เข้าไป (delta) เท่านั้น — ห้ามคีย์แบบสะสม</b>
+                    {' '}ขั้นก่อนหน้าในสายเดียวกัน (พาร์ทจริงเดียวกัน + ลำดับขั้นน้อยกว่า) ระบบไล่ให้เองตอนตัดของเสีย
+                    <br />ใช้ที่: ใบรายงานของเสีย <b>/scrap-report</b> → ปุ่ม 🧩 ระเบิดขั้นตอน (เลขขั้นไม่มีใน SAP ตัดสต๊อกไม่ได้)
+                  </div>
+                )}
               </div>
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
