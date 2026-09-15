@@ -44,6 +44,8 @@ import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
+import { LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 /* ── helpers ─────────────────────────────────────────────── */
@@ -373,8 +375,12 @@ export default function MtnRepair() {
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
-    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
-    return () => { supabaseDR.removeChannel(ch); };
+    /* 🔴 2026-09-15 — เดิมผูก loadOrders เข้า handler ตรงๆ **ไม่มีเพดานเลย**
+       loadOrders = `select('*').limit(1000)` ทั้งตาราง ⇒ ทุกครั้งที่ช่างคนไหนก็ตามขยับใบ
+       ทุกเครื่องที่เปิดหน้านี้ดึงใบซ่อมทั้งพันใบใหม่ · ดู src/utils/liveRefresh.js */
+    const bump = coalesce(loadOrders, LIVE.PAGE);
+    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, bump).subscribe();
+    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders]);
 
   const shown = useMemo(() => {

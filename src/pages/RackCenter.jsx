@@ -11,6 +11,8 @@ import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
 import { liveChannel } from '../utils/liveChannel';
+import { LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -118,10 +120,12 @@ export default function RackCenter() {
 
   // live refresh เมื่อมีไลน์/rack center อื่นกดเปลี่ยนสถานะ
   useEffect(() => {
+    // 🔴 2026-09-15 — เดิมไม่มีเพดาน (load ตรงๆ ต่อ event) ดู src/utils/liveRefresh.js
+    const bump = coalesce(load, LIVE.PAGE);
     const ch = liveChannel(supabaseDR, 'rack-requests-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rack_requests' }, bump)
       .subscribe();
-    return () => { supabaseDR.removeChannel(ch); };
+    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
   const filtered = useMemo(() => {

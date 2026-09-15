@@ -62,10 +62,18 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
 
   // ครอบครัวไลน์ — ⚠️ lines ยังโหลดไม่เสร็จ ห้ามได้ set ว่าง (จะกลายเป็น "ไม่มีคิว" ทั้งที่มี)
   //    ถอยไปใช้ชื่อไลน์ตัวเองแทน = แคบลงแต่ไม่โกหก
-  const famSet = useMemo(() => {
+  /* 🔴 2026-09-15 — ต้องผูกกับ "เนื้อของครอบครัวไลน์" ไม่ใช่ identity ของ array `lines`
+     เดิม deps เป็น [lines, lineName] ซึ่งดูถูกแต่พังเรื่อง egress:
+     พ่อ (DailyReport) เรียก `setLines(ln || [])` ทุกครั้งที่ realtime สั่งโหลดใหม่
+     ⇒ array ใบใหม่ (เนื้อเดิมเป๊ะ) ⇒ famSet ใหม่ ⇒ load ใหม่ ⇒ **ยิง 4 คิวรีซ้ำฟรีๆ**
+     วัดจริง 15/09: child_lot_requests / storage_locations / v_demand_flow_blocks
+     โดนตัวละ ~705 ครั้ง/วัน ทั้งที่ทะเบียนไลน์ไม่ได้เปลี่ยนเลยสักครั้ง
+     → แปลงเป็น string key ก่อน (เนื้อเหมือน = key เหมือน = ไม่โหลดซ้ำ)                */
+  const famKey = useMemo(() => {
     const names = getLineFamilyNames(lines, lineName);
-    return new Set((names.length ? names : [lineName]).map(norm).filter(Boolean));
+    return (names.length ? names : [lineName]).map(norm).filter(Boolean).sort().join('|');
   }, [lines, lineName]);
+  const famSet = useMemo(() => new Set(famKey ? famKey.split('|') : []), [famKey]);
 
   const load = useCallback(async () => {
     if (!lineName) return;
@@ -141,7 +149,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
       setErr(e?.message || String(e));
     }
     setLoading(false);
-  }, [lineName, famSet]);
+    // ⚠️ deps ต้องเป็น famKey (string) ไม่ใช่ famSet (object ใบใหม่ทุกครั้ง) — ดูคอมเมนต์ที่ famKey
+  }, [lineName, famKey]);   // eslint-disable-line react-hooks/exhaustive-deps -- famSet ผูกกับ famKey 1:1
 
   useEffect(() => { load(); }, [load]);
 

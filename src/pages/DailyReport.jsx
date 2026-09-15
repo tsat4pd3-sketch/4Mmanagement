@@ -41,6 +41,8 @@ import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
 import { liveChannel } from '../utils/liveChannel';
+import { LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { checkWrite } from '../utils/dbWrite';
 import MachineSelect from '../components/MachineSelect';
 
@@ -707,20 +709,55 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }
   }, [selSession, loadDT, loadProdOrders, loadDefectLogs]);
 
-  // Realtime — debounce 600ms to avoid burst fetches during rapid barcode scanning
+  /* ── Realtime ────────────────────────────────────────────────────────────────
+     🔴 2026-09-15 — แก้ 2 อย่างพร้อมกัน (งานลด egress · เตรียมรับจอ/แท็บเล็ต ~40 เครื่อง)
+
+     ① **กรองฝั่ง server ด้วย session_id** — เดิม subscribe ทั้งตารางแบบไม่มี filter
+        ⇒ ไลน์ไหนในโรงงานแตะใบผลิต/DT/ของเสีย **ทุกเครื่องที่เปิดหน้านี้โหลดใหม่หมด**
+        ~20 ไลน์เดินพร้อมกัน = เสียเปล่า ~95% ของทุกรอบ (วัดจริง 15/09: prod_orders 6,876 req/วัน)
+        ใส่ `filter: session_id=eq.<กะที่เลือก>` แล้ว **message ไม่ถูกส่งมาตั้งแต่ฝั่ง server**
+        (ประหยัดกว่ากรองฝั่ง client เพราะไม่กิน egress ของ realtime ด้วย)
+        · effect นี้มี `selSession` ใน deps อยู่แล้ว → สลับกะ = subscribe ใหม่ด้วย filter ใหม่ ถูกต้อง
+        · `production_sessions` **กรองไม่ได้** — หน้านี้แสดง "รายการกะทั้งวัน" ต้องรู้เมื่อมีกะใหม่
+          จึงคงไว้ทั้งตาราง แต่ผ่านเพดานของ ② เหมือนกัน
+        · ⚠️ **DELETE กรองด้วย session_id ไม่ได้** — ตารางเป็น REPLICA IDENTITY default (`d`)
+          แถว `old` ของ DELETE จึงมีแค่ primary key ⇒ filter จะตัด event ทิ้งทั้งหมด
+          (เคยพลาดง่ายมาก: ลบ DT แล้วจอคนอื่นไม่อัปเดต หาสาเหตุไม่เจอเพราะ insert/update ปกติดี)
+          → แยก subscribe DELETE แบบไม่กรอง (ลบเป็นงานที่เกิดนานๆ ครั้ง ไม่ใช่ตัวกิน egress)
+          ห้ามแก้ด้วยการตั้ง REPLICA IDENTITY FULL — จะทำให้ทุก UPDATE ส่งแถวเก่าเต็มใบใน WAL
+
+     ② **coalesce แทน debounce** — debounce 600ms ไม่ใช่เพดาน (แค่รอให้เงียบ)
+        วันทำงานจริงแทบไม่มีช่วงเงียบ ⇒ โหลดใหม่แทบทุก event · ดู src/utils/liveRefresh.js
+        LIVE.PAGE (15 วิ) เพราะหน้านี้คนกำลังกรอกงานอยู่ตรงหน้า — ต้องไวกว่าจอ TV
+        ⚠️ การบันทึกของ "ตัวเอง" ไม่ได้รอรอบนี้ (ฟังก์ชันบันทึกเรียก load เองหลังเซฟสำเร็จ)
+           รอบนี้มีไว้เห็นงานของ "คนอื่นในกะเดียวกัน" เท่านั้น จึงช้าได้ถึง 15 วิ            */
   useEffect(() => {
-    const timers = {};
-    const debounce = (key, fn, ms = 600) => {
-      clearTimeout(timers[key]);
-      timers[key] = setTimeout(fn, ms);
+    const sid = selSession?.id;
+    const bumpSess = coalesce(() => load(), LIVE.PAGE);
+    const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
+    const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
+    const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
+    const mine     = sid ? { filter: `session_id=eq.${sid}` } : null;
+
+    let ch = liveChannel(supabaseDR, 'live-dr')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bumpSess);
+    // ยังไม่ได้เลือกกะ = ไม่มีอะไรให้โหลดของกะนั้น → ไม่ต้อง subscribe 3 ตารางนี้เลย
+    if (mine) {
+      const ofSession = (table, bump) => {
+        ch = ch
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table, ...mine }, bump)
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table, ...mine }, bump)
+          .on('postgres_changes', { event: 'DELETE', schema: 'public', table }, bump);
+      };
+      ofSession('prod_orders',   bumpOrd);
+      ofSession('downtime_logs', bumpDt);
+      ofSession('defect_logs',   bumpDef);
+    }
+    ch.subscribe();
+    return () => {
+      bumpSess.cancel(); bumpOrd.cancel(); bumpDt.cancel(); bumpDef.cancel();
+      supabaseDR.removeChannel(ch);
     };
-    const ch = liveChannel(supabaseDR, 'live-dr')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => debounce('sess', () => load()))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => debounce('ord',  () => { if (selSession) loadProdOrders(selSession.id, selSession.line_name); }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => debounce('dt',   () => { if (selSession) loadDT(selSession.id); }))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => debounce('def',  () => { if (selSession) loadDefectLogs(selSession.id); }))
-      .subscribe();
-    return () => { Object.values(timers).forEach(clearTimeout); supabaseDR.removeChannel(ch); };
   }, [selSession, load, loadDT, loadProdOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {

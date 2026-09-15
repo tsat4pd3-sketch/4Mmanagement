@@ -12,7 +12,8 @@ import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <Li
 import { LINE_COLUMNS } from '../utils/useProductionLines'
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
-import { RATE } from '../utils/refreshRates'
+import { RATE, LIVE } from '../utils/refreshRates'
+import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
@@ -174,15 +175,19 @@ export default function DailyPM() {
   // สถานะต้องขยับเองแบบจอ TV: ตรวจเสร็จ (inspections) / เปิดใบผลิตใบแรก (prod_orders) /
   // เปิด-ปิดกะ (production_sessions) → refresh ทันที + interval 5 นาทีกัน event หลุด
   useEffect(() => {
-    let timer = null
-    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => load(), 1500) }
+    // 🔴 2026-09-15 — debounce 1.5 วิ → coalesce(LIVE.BOARD) ดู src/utils/liveRefresh.js
+    const g = makeIdleGate(LIVE.FLOOR)
+    const refresh = coalesce(() => { g.loaded(); return load() }, LIVE.BOARD)
+    const onEvent = () => { g.touch(); refresh() }
     const ch = liveChannel(supabaseDR, 'daily-pm')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' },         refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
-      .subscribe()
-    const stopPoll = visibleInterval(() => load(), RATE.BACKUP)   // realtime ด้านบนคือช่องทางหลัก อันนี้กันเหนียว
-    return () => { clearTimeout(timer); stopPoll(); supabaseDR.removeChannel(ch) }
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inspections' },         onEvent)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         onEvent)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onEvent)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch() })   // (re)connect = อาจพลาด event ระหว่างหลุด
+    /* 🔴 2026-09-15 — poll ตัวนี้เป็นแค่ "กันเหนียวเผื่อ realtime หลุด"
+       idleGate: tick ที่ไม่มีอะไรเปลี่ยน = ไม่มี network เลยสักไบต์ (ดู src/utils/liveRefresh.js) */
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) { g.loaded(); load() } }, RATE.BACKUP)
+    return () => { refresh.cancel(); stopPoll(); supabaseDR.removeChannel(ch) }
   }, [load])
 
   const jigsByLine = useMemo(() => {

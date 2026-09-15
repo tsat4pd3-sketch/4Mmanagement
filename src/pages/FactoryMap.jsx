@@ -13,7 +13,8 @@ import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { cachedMaster } from '../utils/masterCache';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -823,7 +824,12 @@ export default function FactoryMap({ setupMode = false }) {
     liveOeeRef.current = liveBySess;
     setLineStatus(out);
   }, []);
-  usePolling(loadStatus, RATE.ANDON);
+  /* 🔴 2026-09-15 — gate ของ poll "กันเหนียวเผื่อ realtime หลุด" (ดู src/utils/liveRefresh.js)
+     ⚠️ ตัว `usePolling` ที่ใช้ gate นี้อยู่ **ใต้ `loadDieZones`** ไม่ใช่ตรงนี้ —
+        deps ของมันอ้าง loadSupply/loadDieZones ซึ่งประกาศทีหลัง วางตรงนี้ = TDZ จอขาวทั้งหน้า
+        (เกิดจริงตอนเขียนรอบนี้ · build/lint ผ่านหมด จับได้จาก `node audit/crashsweep.mjs` เท่านั้น) */
+  const gate = useRef(null);
+  if (!gate.current) gate.current = makeIdleGate(LIVE.FLOOR);
 
   /* ── ⚡ พลังงานไฟฟ้ารายเดือน (DR · เฟส 1 กรอกมือที่ /energy) ──────────────────
      ทีมสรุปว่าอยากเห็น "ค่า kWh บริเวณ Line บนผัง" ก่อน
@@ -1103,7 +1109,6 @@ export default function FactoryMap({ setupMode = false }) {
     Object.values(fac).forEach(o => { o.feeds = [...o.feeds]; });
     setFacilitySupply(fac);
   }, []);
-  usePolling(loadSupply, RATE.ANDON);
 
   /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
      กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
@@ -1134,7 +1139,15 @@ export default function FactoryMap({ setupMode = false }) {
     });
     setDieZones(out);
   }, []);
-  usePolling(loadDieZones, RATE.ANALYTIC);
+  /* poll รวม 3 loader ที่มี realtime คู่อยู่ (status · supply · dieZones) — ผ่าน idleGate
+     ไม่มี event เข้ามา = ข้ามรอบ ไม่ยิง DB เลย · ครบ LIVE.FLOOR เมื่อไหร่ค่อยโหลดกันเหนียว 1 รอบ
+     (loadManpower/loadPM/loadStoreZones ยังไม่มี realtime จึงยัง poll ตรงๆ — ดู docs/POLLING-AUDIT-2026-09-15.md) */
+  usePolling(useCallback(() => {
+    if (!gate.current.shouldRun()) return;
+    gate.current.loaded();
+    loadStatus(); loadSupply(); loadDieZones();
+  }, [loadStatus, loadSupply, loadDieZones]), RATE.ANDON);
+
   const dieZoneOf = (name) => dieZones[String(name || '').trim().toLowerCase()] || null;
 
   /* ── 🏬 โซนคลังสินค้า (WMS เฟส 1 · 2026-08-25) — link ผังรวม ↔ ทะเบียนโซนใน /line-stock ──
@@ -1177,21 +1190,29 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
      เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
      ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
-     ⚠️ debounce 1.5 วิ กัน event รัวตอนสแกนปิดใบหลายใบติดกัน (pattern เดียวกับ Dashboard)
      ⚠️ ผังแดงเร็วกว่าเดิมด้วยซ้ำ — การ "แจ้งเตือน" จริง (Telegram/ไซเรน) เป็นคนละกลไก
-        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)  */
+        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)
+
+     🔴 2026-09-15 — เปลี่ยนจาก `debounce 1.5 วิ` เป็น `coalesce(LIVE.BOARD)`
+        debounce **ไม่ใช่เพดาน**: วันทำงานจริง 20 ไลน์บันทึกงานตลอด แทบไม่มีช่วงเงียบ 1.5 วิ
+        ⇒ ผังโหลดใหม่ (26 KB) แทบทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล = ~150 MB/วัน/จอ
+        ⇒ 10 จอ = 1.5 GB/วัน เกินโควต้า Free ทั้งเดือนใน 3 วัน (ดู src/utils/liveRefresh.js)
+        ตอนนี้: event แรกยังมาไวเท่าเดิม · รอบถัดไปในนาทีเดียวกันถูกยุบรวมเป็นรอบเดียว   */
   useEffect(() => {
-    let timer = null;
-    const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
+    const g = gate.current;
+    const bumpStatus = coalesce(() => { g.loaded(); return loadStatus(); }, LIVE.BOARD);
+    const bumpMtn    = coalesce(() => { g.loaded(); loadSupply(); loadDieZones(); }, LIVE.BOARD);
+    const onEvent = (bump) => () => { g.touch(); bump(); };
     const ch = liveChannel(supabaseDR, 'factory-map-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       onEvent(bumpStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         onEvent(bumpStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         onEvent(bumpStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onEvent(bumpStatus))
       // mtn_orders กระทบทั้ง supply route และโซนคลังแม่พิมพ์ (MO ค้างของแม่พิมพ์) — refresh คู่กัน
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(() => { loadSupply(); loadDieZones(); }))
-      .subscribe();
-    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          onEvent(bumpMtn))
+      // กลับมา SUBSCRIBED = เพิ่ง (re)connect — ระหว่างหลุดอาจพลาด event ⇒ ให้ poll รอบหน้ายิงจริง
+      .subscribe((status) => { if (status === 'SUBSCRIBED') g.touch(); });
+    return () => { bumpStatus.cancel(); bumpMtn.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadStatus, loadSupply, loadDieZones]);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
