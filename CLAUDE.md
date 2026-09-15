@@ -691,6 +691,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      — **ทั้งคู่ build ผ่าน lint ผ่าน เทสผ่าน**
      · mock มีแถว **`NULLISH`** (คอลัมน์ตัวเลข/ข้อความเป็น null) เป็นแถวสุดท้ายเสมอ **ห้ามถอด** —
      คอลัมน์ในฐานจริงส่วนใหญ่ nullable แถวเดียวที่ null ทำให้ทั้งหน้าพัง · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
+     · mock มี **แถวชั้น OP (`is_operation`)** เสมอ **ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
+     ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` · ปุ่ม 🧩 ระเบิดของเสียใน
+     `/scrap-report` · ตัวกรอง OP ของ picker) ไม่เคยถูกรันใน harness เลย = บั๊กทั้งคลาสมองไม่เห็น
+     (i=4 ผูก parent+seq ครบ · i=5 ยังไม่ผูก = เคส worklist เหลือง)
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
