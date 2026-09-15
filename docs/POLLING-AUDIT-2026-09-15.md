@@ -191,4 +191,49 @@ realtime message = ~200 bytes เฉพาะตอนมีของเปล�
 - `DailyReport` ยังใช้ `machines.select('*')` (368 KB → ~208 KB ถ้าตัดคอลัมน์ที่ไม่ใช้)
 
 ### 6.4 ไล่ต่อ
-- `dr_products` 1,486 req/วัน ทั้งที่มี `cachedMaster` แล้ว — หาว่าใครยังเรียกตรง
+- ✅ **แก้แล้ว** — `dr_products` 1,486 req/วัน มาจาก `DailyReport.load()` ที่ไม่เคย cache เลย (ดู §7)
+
+
+---
+
+## 7. 🔴 ตัวใหญ่ที่สุด — `DailyReport.load()` ดึง master 640 KB ใหม่ทุก realtime event (แก้แล้ว 2026-09-15)
+
+`load()` ดึง **master 7 ตาราง แบบ `select('*')` โดยไม่ cache เลยสักตัว**:
+
+| ตาราง | ขนาด | req/วัน (15/09) |
+|---|---:|---:|
+| `machines` | **368 KB** | 714 |
+| `kanban_standards` (+ join dr_products) | **164 KB** | 569 |
+| `dr_products` | **107 KB** | 1,486 |
+| `break_policies` · `dr_downtime_types` · `dr_defect_types` · `production_lines` ×2 | | 643 · 478 · 478 |
+
+**และ `load()` ถูกเรียกจาก realtime ของ `production_sessions`** ⇒ มีคนเปิด/ปิดกะที่ไลน์ไหนก็ตาม
+ทุกเครื่องที่เปิดหน้านี้ดึง master ใหม่ทั้งชุด ~640 KB ทั้งที่ทะเบียนพวกนี้เปลี่ยนเดือนละไม่กี่ครั้ง
+(หน้านี้คือหน้าที่คนเปิดมากที่สุดในระบบ และเป็นหน้าที่แท็บเล็ตหน้าไลน์ 10 เครื่องจะเปิดค้าง)
+
+### 7.1 ทำไมไม่เคยมีใครแก้ — บั๊กซ้อนที่เจอระหว่างทาง
+
+> 🔴 **`invalidateProducts()` · `invalidateMachines()` · `invalidateProductionLines()` ฯลฯ
+> ที่เขียนไว้ใน `src/utils/use*.js` — ไม่มีหน้าไหนเรียกเลยสักหน้า**
+
+เป็นบั๊กที่**มีอยู่แล้วในของจริง** ไม่ใช่ของใหม่: แก้ทะเบียนสินค้า/เครื่องจักรแล้ว picker ทั้งระบบ
+ยังเห็นของเก่าได้ถึง 4 ชม. · แปลว่า "cache master" ถูกหลีกเลี่ยงมาตลอดเพราะล้างไม่ได้จริง
+
+**ปัญหาโครงสร้างที่ทำให้มันเกิด:** 1 ตารางถูก cache ไว้**หลายคีย์** คนละหน้าคนละ shape
+(`dr_products` มี 8 คีย์: picker · ct · ct_pair · link · full · fx_products · pn_index · customers)
+⇒ เรียก `invalidateMaster('dr_products:picker')` ตัวเดียวก็ยังค้างอีก 7 คีย์ ⇒ ไม่มีใครกล้าใช้
+
+### 7.2 วิธีแก้
+
+1. **`src/utils/masterInvalidate.js` (ใหม่)** — ทะเบียน **"ตาราง → คีย์ cache ทั้งหมด"** ที่เดียว
+   `invalidateTable('dr_products')` ล้างครบทุกคีย์ในทีเดียว
+   · ตารางที่ไม่ได้ลงทะเบียน → `console.warn` **ห้ามเงียบ**
+2. **เทสในด่าน `npm run build`** — ไล่หา `cachedMaster('<คีย์>')` ทุกตัวใน `src/` แล้วเทียบกับทะเบียน
+   **คีย์ใหม่ที่ไม่ลงทะเบียน = build ไม่ผ่าน** (ไม่มีด่าน = ทะเบียนล้าสมัยภายในไม่กี่สัปดาห์ เหมือนที่ `invalidate*` เคยเป็น)
+3. **`DailyReport.load()` ผ่าน `cachedMaster` ครบทั้ง 8 คิวรี** (รวม `production_lines` รอบที่ 2 ที่ยิงซ้ำในรอบเดียวกัน)
+4. **หน้าที่แก้ทะเบียนเรียก `invalidateTable()`** — วางไว้ใน**ตัวโหลดของหน้า** (`load()`/`fetchLines()`)
+   ไม่ใช่ไล่แปะทีละปุ่ม: ทุก save/delete เรียกตัวโหลดต่อทันทีอยู่แล้ว ⇒ ครอบคลุมทุกปุ่มโดยไม่ตกหล่น
+   **การไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลย**
+   · ทำแล้วที่ `ProductMaster` · `MachineDatabase` · `LineSetup` · `DailyReport` (ตัวแก้ทะเบียนในหน้า)
+
+**ผล:** master 640 KB ถูกดึง **≤ 6 ครั้ง/วัน/เครื่อง** (TTL 4 ชม.) แทนที่จะทุก realtime event

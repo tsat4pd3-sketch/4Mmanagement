@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
@@ -104,6 +105,11 @@ export default function MachineDatabase() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    /* 🔴 2026-09-15 — หน้านี้เป็น "ตัวแก้ทะเบียน" โดยตรง: ทุก save/delete เรียก load() ต่อทันที
+       ⇒ ล้าง cache master ที่นี่จุดเดียว = ครอบคลุมทุกปุ่มบันทึกในหน้า ไม่ต้องไล่แปะทีละจุด
+       (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
+       ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
+    invalidateTable('machines');
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').order('line_name').order('sort_order'),
       supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'),
