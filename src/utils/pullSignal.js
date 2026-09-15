@@ -737,8 +737,16 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
     // ใบเดิมจับด้วยเลขลูกค้าก่อน (EDI เก็บ customer_part_no) แล้วค่อยลองเลข MAT ที่ map ได้
     const cand = [...(byPart.get(normKey(g.customer_part_no)) || []),
       ...(r.mat ? (byPart.get(normKey(r.mat)) || []) : [])];
+    /* 🔴 MAT ต้องตรง ถ้ารู้ทั้งสองฝั่ง (2026-09-15 · user ทัก "862 โดน e-SMART ทับ ทั้งที่คนละพาร์ท")
+       เลขพาร์ทลูกค้า 1 ตัว = **หลายเลข SAP** (ต่างลูกค้าปลายทาง) และ `normKey` ตัดขีด/ช่องว่างทิ้ง
+       ⇒ "RB3B 16E060 BA" กับ "RB3B-16E060-BA" ตกถังเดียวกัน
+       วัดจริง GRBNA 26/08: ถัง `RB3B16E060BA` ถังเดียวมี **10 ใบ ข้าม 2 MAT** (10100384/10100385)
+       ตัวจับคู่เลือกด้วย "เวลาใกล้สุด" อย่างเดียว ⇒ **ทับใบของอีก MAT ได้** แล้วยอด+เวลาของใบนั้นเพี้ยน
+       โดยไม่มีอะไรฟ้อง (ยังไม่เคยเกิดจริง — วัดแล้ว 0 ใบ — แต่พลาดแค่จังหวะเดียว)
+       ⚠️ ใบที่ยังไม่มี MAT ปล่อยผ่าน (จับด้วยเลขพาร์ทลูกค้าตามเดิม) · ไฟล์ที่จับ MAT ไม่ได้ไม่เขียนอยู่แล้ว */
+    const matOk = (o) => !r.mat || !o.mat_no || normKey(o.mat_no) === normKey(r.mat);
     const seen = new Set();
-    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(inWindow)
+    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(matOk).filter(inWindow)
       .sort(slot?.targetAt ? byNearest : byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
