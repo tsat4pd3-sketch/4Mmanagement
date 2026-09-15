@@ -437,6 +437,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
 หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม ใน NAV_GROUP_ORDER — ยุบจากหมวด “วิศวกรรม (PE)” เดิม 2026-08-27) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (A…
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql`
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---

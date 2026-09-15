@@ -28,6 +28,11 @@ import useProducts from '../utils/useProducts';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { uploadOpts } from '../utils/storageUpload';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import PeMasterLibrary from '../components/PeMasterLibrary';
+import PeMasterPullModal from '../components/PeMasterPullModal';
+import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
+import { compareToMaster, CMP_META, improvementProposals, newItemProposals, suggestMaster, setMasterSummary } from '../utils/peMaster';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -75,7 +80,7 @@ const btnPrim = { padding: '7px 16px', borderRadius: 8, border: 'none', backgrou
 const multiline = (t) => (t || '').split('\n').filter(Boolean).map((l, i) => <div key={i}>{l}</div>);
 
 export default function PEDocs() {
-  const { role, fullName } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: userSections } = useContext(UserContext);
   const canEdit = can('pe', 'edit', role);
   const canApprove = can('pe', 'approve', role);
   const canRouting = can('routing', 'manage', role);   // เขียน part_routings (ฝั่ง VSM) — คนละ key กับ pe:edit
@@ -103,7 +108,7 @@ export default function PEDocs() {
 
   const [sp, setSp] = useSearchParams();
   const setId = sp.get('set') || '';
-  const [tab, setTab] = useTabParam(['flow', 'fmea', 'cp', 'rev'], 'flow');
+  const [tab, setTab] = useTabParam(['flow', 'fmea', 'cp', 'rev', 'master'], 'flow');
   const [procFilter, setProcFilter] = useState('');   // process_id ที่โฟกัสในแท็บ FMEA/CP ('' = ทุก OP)
   const [rpnOnly, setRpnOnly] = useState(false);      // FMEA: เฉพาะ RPN ≥ 100
 
@@ -126,6 +131,13 @@ export default function PEDocs() {
   const procImgPreview = useObjectUrl(procImgFile);
   const [imgView, setImgView] = useState(null);          // lightbox ดูรูปเต็ม
   const [routingOpen, setRoutingOpen] = useState(false); // 🔀 เสนอ routing เข้า VSM จาก PFC
+  /* 📚 คลัง PFMEA กลาง (Foundation PFMEA · 2026-09-15 · utils/peMaster.js) — พาร์ทถือสำเนา ไม่ใช่ลิงก์สด */
+  const [masters, setMasters] = useState([]);
+  const [masterItems, setMasterItems] = useState([]);
+  const [proposals, setProposals] = useState([]);
+  const [masterUsage, setMasterUsage] = useState({});    // master_process_id -> { sets, ops, setIds }
+  const [pullOpen, setPullOpen] = useState(null);        // process_id ที่จะดึง master เข้า (null = ปิด · '' = ให้เลือกเอง)
+  const [fromMasterOpen, setFromMasterOpen] = useState(false);
 
   const loadSets = useCallback(async () => {
     setLoading(true);
@@ -139,6 +151,21 @@ export default function PEDocs() {
     setLoading(false);
   }, []);
   useEffect(() => { loadSets(); }, [loadSets]);
+
+  const loadMasters = useCallback(async () => {
+    const [m, mi, pr, us] = await Promise.all([
+      fetchAllRows(supabase, 'pe_master_processes', '*', q => q.order('name')),
+      fetchAllRows(supabase, 'pe_master_items', '*', q => q.order('seq')),
+      supabase.from('pe_master_proposals').select('*').order('created_at', { ascending: false }).limit(500),
+      fetchAllRows(supabase, 'pe_processes', 'id, set_id, master_process_id', q => q.not('master_process_id', 'is', null)),
+    ]);
+    // ยังไม่ apply migration 20260915_pe_fmea_master = ตารางไม่มี → คลังว่าง แท็บ 📚 บอกเอง ไม่พัง
+    setMasters(m.data || []); setMasterItems(mi.data || []); setProposals(pr.data || []);
+    const u = {};
+    (us.data || []).forEach(r => { const o = (u[r.master_process_id] ||= { ops: 0, setIds: new Set() }); o.ops += 1; o.setIds.add(r.set_id); });
+    setMasterUsage(Object.fromEntries(Object.entries(u).map(([k, v]) => [k, { ops: v.ops, sets: v.setIds.size, setIds: [...v.setIds] }])));
+  }, []);
+  useEffect(() => { loadMasters(); }, [loadMasters]);
 
   const loadDetail = useCallback(async (id) => {
     if (!id) { setProcs([]); setFmea([]); setCp([]); setRevs([]); return; }
@@ -259,6 +286,31 @@ export default function PEDocs() {
   }, [fmea, procFilter, rpnOnly, bySeqInOp]);
   const cpView = useMemo(() => (procFilter ? cp.filter(it => it.process_id === procFilter) : [...cp]).sort(bySeqInOp), [cp, procFilter, bySeqInOp]);
   const highRpn = useMemo(() => fmea.map(it => ({ ...it, rpn: rpnOf(it) })).filter(it => (it.rpn || 0) >= 100).length, [fmea]);
+  const masterById = useMemo(() => Object.fromEntries(masterItems.map(i => [i.id, i])), [masterItems]);
+  const pendingSrc = useMemo(() => new Set(proposals.filter(p => p.status === 'proposed' && p.source_item_id).map(p => p.source_item_id)), [proposals]);
+  const pendingCount = useMemo(() => proposals.filter(p => p.status === 'proposed').length, [proposals]);
+  const mSum = useMemo(() => setMasterSummary(fmea, masterById), [fmea, masterById]);
+  /* ข้อเสนอเข้า master — "ระบบเสนอ คนตัดสิน": insert เข้า pe_master_proposals เท่านั้น ไม่แตะ master ตรง */
+  const insertProposals = async (rows, label) => {
+    if (!rows.length) return 0;
+    const { error } = await supabase.from('pe_master_proposals').insert(rows);
+    if (error) { toast.error(`${label}ไม่สำเร็จ: ${error.message}`); return 0; }
+    loadMasters();
+    return rows.length;
+  };
+  const proposeOne = async (it) => {
+    const opts = { setId, by: fullName || null, pendingSourceIds: pendingSrc };
+    const rows = it.master_item_id ? improvementProposals([it], masterById, opts) : newItemProposals([it], procs, masterItems, opts);
+    if (!rows.length) { toast.error(it.master_item_id ? 'ยังไม่เข้าเกณฑ์เสนอ — ต้องมี Action taken + S/O/D ใหม่ครบ และ RPN ใหม่ต่ำกว่า master' : 'failure mode นี้มีใน master แล้ว หรือ OP ยังไม่ผูกกระบวนการมาตรฐาน'); return; }
+    if (await insertProposals(rows, 'เสนอเข้า master')) toast.success('ส่งข้อเสนอเข้าคลัง PFMEA แล้ว — PE ตัดสินที่แท็บ 📚');
+  };
+  /* ออก revision PFMEA แล้ว → กวาดทั้งชุดหาแถวที่ดีกว่า master / failure mode ใหม่ → เสนอ (ไม่อัพเดทเอง) */
+  const autoPropose = async (revisionId) => {
+    const opts = { setId, revisionId, by: fullName || null, pendingSourceIds: pendingSrc };
+    const rows = [...improvementProposals(fmea, masterById, opts), ...newItemProposals(fmea, procs, masterItems, opts)];
+    const n = await insertProposals(rows, 'เสนออัพเดท master อัตโนมัติ');
+    if (n) toast.info(`ระบบเสนออัพเดทคลัง PFMEA ${n} รายการจาก revision นี้ — PE ตัดสินที่แท็บ 📚`);
+  };
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
@@ -271,12 +323,15 @@ export default function PEDocs() {
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(97vw, 1600px)', margin: '0 auto' }}>
       <PageHeader icon="📐" title="PE Core Tools — Flow / PFMEA / Control Plan"
         sub="เอกสารวิศวกรรมกระบวนการ ยึดเลข Process (OP) ร่วมกันทั้ง 3 เอกสาร — ข้อมูลชุดเดียว 3 มุมมอง"
-        tabs={curSet ? [
-          { key: 'flow', label: `🗺️ Flow (${procs.length} OP)` },
-          { key: 'fmea', label: `⚠️ PFMEA (${fmea.length})${highRpn ? ` · 🔴${highRpn}` : ''}` },
-          { key: 'cp',   label: `✅ Control Plan (${cp.length})` },
-          { key: 'rev',  label: `🕘 Revisions (${revs.length})` },
-        ] : undefined}
+        tabs={[
+          ...(curSet ? [
+            { key: 'flow', label: `🗺️ Flow (${procs.length} OP)` },
+            { key: 'fmea', label: `⚠️ PFMEA (${fmea.length})${highRpn ? ` · 🔴${highRpn}` : ''}` },
+            { key: 'cp',   label: `✅ Control Plan (${cp.length})` },
+            { key: 'rev',  label: `🕘 Revisions (${revs.length})` },
+          ] : []),
+          { key: 'master', label: `📚 คลัง PFMEA (${masters.length})${pendingCount ? ` · 📬${pendingCount}` : ''}` },
+        ]}
         tab={tab} onTab={setTab} />
 
       <ReadOnlyNote show={!canEdit} role={role} what="แก้เอกสาร PE"
@@ -308,6 +363,7 @@ export default function PEDocs() {
         )}
         {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title="อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่">📥 นำเข้า Excel</button>}
         {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>✏️ แก้ข้อมูลชุด</button>}
+        {canEdit && <button style={btnSm} onClick={() => setFromMasterOpen(true)} title="เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที">📚 ชุดใหม่จาก master</button>}
         {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>➕ ชุดเอกสารใหม่</button>}
       </div>
 
@@ -322,7 +378,12 @@ export default function PEDocs() {
         </div>
       )}
 
-      {!curSet ? (
+      {tab === 'master' ? (
+        <PeMasterLibrary masters={masters} masterItems={masterItems} proposals={proposals} usage={masterUsage} sets={sets}
+          canEdit={canEdit} canApprove={canApprove} fullName={fullName}
+          onChanged={() => { loadMasters(); if (setId) loadDetail(setId); }}
+          onOpenSet={(id) => { pickSet(id); setTab('fmea'); }} />
+      ) : !curSet ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
           เลือกพาร์ทด้านบน{canEdit ? ' หรือกด "➕ ชุดเอกสารใหม่" เพื่อเริ่มพาร์ทแรก' : ''} — 1 ชุด = PFC + PFMEA + Control Plan ของพาร์ทนั้น
         </div>
@@ -364,6 +425,12 @@ export default function PEDocs() {
                   <input type="checkbox" checked={rpnOnly} onChange={e => setRpnOnly(e.target.checked)} />
                   เฉพาะ RPN ≥ 100
                 </label>
+              )}
+              {tab === 'fmea' && canEdit && <button style={btnSm} onClick={() => setPullOpen(procFilter || '')} title="ดึง failure mode มาตรฐานจากคลังเข้า OP ที่ผูกกระบวนการมาตรฐานไว้">📚 เติมจาก master</button>}
+              {tab === 'fmea' && fmea.length > 0 && (
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap' }} title="สถานะเทียบคลัง PFMEA กลาง">
+                  {['same', 'behind', 'better', 'diverged', 'unlinked'].filter(k => mSum[k]).map(k => <span key={k} style={{ color: CMP_META[k].color, fontWeight: 700 }}>{CMP_META[k].icon} {mSum[k]}</span>)}
+                </span>
               )}
             </div>
           )}
@@ -484,6 +551,19 @@ export default function PEDocs() {
                         <span title="S × O × D" style={{ fontSize: 13, fontWeight: 800, color: rpnColor(it.rpn) }}>
                           RPN {it.rpn ?? '—'}{it.rpnNew != null && <span style={{ color: rpnColor(it.rpnNew) }}> → {it.rpnNew}</span>}
                         </span>
+                        {/* 📚 เทียบกับคลัง PFMEA กลาง — โชว์เฉพาะแถวที่ผูก master หรืออยู่ใน OP ที่ผูก master */}
+                        {(() => {
+                          const mItem = it.master_item_id ? masterById[it.master_item_id] : null;
+                          const c = compareToMaster(it, mItem);
+                          if (c.state === 'unlinked' && !p?.master_process_id) return null;
+                          const meta = CMP_META[c.state];
+                          const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
+                          return <>
+                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, border: `1px solid ${meta.color}66`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
+                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>📬 เสนอแล้ว</span>
+                              : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? '⭐ เสนอเข้า master' : '➕ เสนอเป็นรายการใหม่'}</button>}
+                          </>;
+                        })()}
                         {canEdit && <>
                           <button style={btnSm} onClick={() => setFmeaModal({ ...it, target_date: it.target_date || '' })}>✏️</button>
                           <button style={btnSm} onClick={() => deleteRow('pe_fmea_items', it.id, 'แถว FMEA นี้', () => loadDetail(setId))}>🗑</button>
@@ -706,6 +786,17 @@ export default function PEDocs() {
             <label style={lbl}>เลข OP *<input value={procModal.op_no} onChange={e => setProcModal({ ...procModal, op_no: e.target.value })} placeholder="130 หรือ 100.8" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={lbl}>ลำดับ (เรียงผัง)<input type="number" step="any" value={procModal.seq} onChange={e => setProcModal({ ...procModal, seq: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>ชื่อกระบวนการ *<input value={procModal.name} onChange={e => setProcModal({ ...procModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" style={{ marginTop: 4 }} /></label>
+            <div style={{ ...lbl, gridColumn: '1 / -1' }}>📚 กระบวนการมาตรฐาน (คลัง PFMEA)
+              <select value={procModal.master_process_id || ''} onChange={e => setProcModal({ ...procModal, master_process_id: e.target.value })} style={{ marginTop: 4 }}>
+                <option value="">— ไม่ผูก —</option>
+                {masters.filter(m => m.is_active !== false).map(m => <option key={m.id} value={m.id}>{m.name}{m.confirmed_at ? '' : ' (รอยืนยัน)'}</option>)}
+              </select>
+              {!procModal.master_process_id && (() => {
+                const sg = suggestMaster(procModal.name, procModal.kind, masters);
+                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: '#4d9fff', marginTop: 3, cursor: 'pointer' }}>💡 ชื่อ{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
+              })()}
+              {procModal.master_process_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ผูกแล้วดึง failure mode มาตรฐานได้ที่แท็บ PFMEA → 📚 เติมจาก master</div>}
+            </div>
             <label style={lbl}>ชนิด
               <select value={procModal.kind} onChange={e => setProcModal({ ...procModal, kind: e.target.value })} style={{ marginTop: 4 }}>
                 {Object.entries(KIND_META).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
@@ -750,8 +841,10 @@ export default function PEDocs() {
                 line_name: procModal.line_name || null, child_parts: procModal.child_parts?.trim() || null,
                 connector: procModal.connector?.trim() || null, special_class: procModal.special_class || null,
                 sccaf_no: procModal.sccaf_no?.trim() || null, remark: procModal.remark?.trim() || null,
+                master_process_id: procModal.master_process_id || null,
               };
               const row = await saveRow('pe_processes', procModal, patch, null);
+              if (row) loadMasters();   // จำนวนพาร์ทที่ใช้ master เปลี่ยน
               if (row) {
                 await attachImage('pe_processes', row, procImgFile, `set/${row.set_id}/op-${row.op_no.replace(/[^\w.-]/g, '')}`);
                 loadDetail(setId);
@@ -925,10 +1018,21 @@ export default function PEDocs() {
                 issued_by: revModal.issued_by?.trim() || null, checked_by: revModal.checked_by?.trim() || null,
                 approved_by: revModal.approved_by?.trim() || null,
               };
-              if (await saveRow('pe_doc_revisions', revModal, patch, () => loadDetail(setId))) setRevModal(null);
+              const saved = await saveRow('pe_doc_revisions', revModal, patch, () => loadDetail(setId));
+              if (saved) { setRevModal(null); if (saved.doc_type === 'fmea' && !revModal.id) autoPropose(saved.id); }
             }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
           </div>
         </div></div>
+      )}
+
+      {/* ══ 📚 คลัง PFMEA: ดึงเข้า OP / สร้างชุดใหม่จาก master ══ */}
+      {pullOpen !== null && curSet && (
+        <PeMasterPullModal procs={procs} fmea={fmea} masters={masters} masterItems={masterItems} initialProcId={pullOpen}
+          onClose={() => setPullOpen(null)} onDone={() => loadDetail(setId)} />
+      )}
+      {fromMasterOpen && (
+        <PeSetFromMasterModal masters={masters} masterItems={masterItems} lines={lineOpts} role={role} lineId={userLineId} sections={userSections} fullName={fullName}
+          onClose={() => setFromMasterOpen(false)} onCreated={async (s) => { await loadSets(); loadMasters(); pickSet(s.id); }} />
       )}
 
       {/* ══ lightbox ดูรูปเต็ม (viewer ไม่ใช่ฟอร์ม — คลิกที่ไหนก็ปิดได้) ══ */}
