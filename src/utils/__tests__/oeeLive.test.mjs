@@ -6,7 +6,7 @@
    ห้ามแก้เทสนี้ให้ผ่านด้วยการกลับไปหาร elapsed ดิบ — นั่นคือบั๊กที่แก้ไปแล้ว */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeLiveOee, policyBreakOverlapMin } from '../oee.js';
+import { computeLiveOee, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks } from '../oee.js';
 
 const WD = '2026-09-01';
 const OPEN = new Date(`${WD}T08:00:00`).getTime();
@@ -72,10 +72,68 @@ test('ยังอยู่ในประชุมแถว/พักทั้�
 });
 
 test('downtime ที่ยังเปิดค้าง นับถึงตอนนี้ และแยก planned/unplanned ได้เหมือนกัน', () => {
+  // เปิดค้าง 17:00 → ตอนนี้ 17:30 = 30 นาที แต่ 17:10-17:30 เป็น 5ส. (พักตามนโยบาย)
+  // ⇒ หักจากฐานเวลาได้แค่ 10 นาที · อีก 20 ถูกกันออกไปแล้วตอนหักพัก (ห้ามหักซ้ำ · oee.js §3.1)
   const open = { machine_no: null, started_at: new Date(at(540)).toISOString(), ended_at: null, duration_min: null,
     dr_downtime_types: { category: 'unplanned' } };
   const r = live({ downtimes: [open] });
-  assert.equal(r.unplannedDtMin, 30, 'เปิดค้างตั้งแต่นาทีที่ 540 ถึงตอนนี้ (570) = 30 นาที');
+  assert.equal(r.unplannedDtMin, 10, 'เปิดค้าง 30 นาที − 20 นาทีที่ทับ 5ส. = 10');
+  // ไม่ทับพักเลย (10:20-10:50) ต้องนับเต็ม 30 เหมือนเดิม
+  const clear = { machine_no: null, started_at: new Date(at(140)).toISOString(), ended_at: null, duration_min: null,
+    dr_downtime_types: { category: 'unplanned' } };
+  assert.equal(live({ downtimes: [clear], nowMs: at(170) }).unplannedDtMin, 30);
+});
+
+/* ═══ 🔴 downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15 · user ถาม) ═══
+   พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว — บวก duration_min เต็มใบเข้าไปอีก = หักซ้ำ
+   วัดจริง 90 วัน: 664/1,298 กะโดน · %A ต่ำกว่าจริงเฉลี่ย 1.52 จุด (สูงสุด 41.1) · %P เฟ้อ
+   ห้ามแก้เทสกลุ่มนี้ให้ผ่านด้วยการกลับไปบวก duration_min ดิบ */
+test('DT คร่อมพักกลางวัน — หักเฉพาะนาทีนอกพัก', () => {
+  // เครื่องเสีย 11:30-13:00 (90 น.) · พักกลางวัน 11:50-12:40 (50 น.) ⇒ นับเป็น DT ได้ 40 น.
+  const d = { machine_no: null, started_at: new Date(at(210)).toISOString(),
+    ended_at: new Date(at(300)).toISOString(), duration_min: 90,
+    dr_downtime_types: { category: 'unplanned' } };
+  const r = live({ downtimes: [d] });
+  assert.equal(r.unplannedDtMin, 40, '90 − 50 (ทับพักกลางวัน) = 40');
+  assert.equal(r.netAvailMin, 470, '570 − 100 (พัก) — ไม่มีหยุดตามแผน');
+  assert.equal(r.runMin, 430, '470 − 40 · สูตรเก่าได้ 380 = หักซ้ำ 50 นาที');
+});
+
+test('DT อยู่ในช่วงพักทั้งก้อน — ไม่หักเลย (เวลานั้นไม่ได้ตั้งใจเดินเครื่องอยู่แล้ว)', () => {
+  const d = { machine_no: null, started_at: new Date(at(230)).toISOString(),   // 11:50
+    ended_at: new Date(at(260)).toISOString(), duration_min: 30,               // 12:20
+    dr_downtime_types: { category: 'unplanned' } };
+  assert.equal(live({ downtimes: [d] }).unplannedDtMin, 0);
+  assert.equal(live({ downtimes: [d] }).A, 100, 'เสียตอนพัก = ไม่กระทบ %A');
+});
+
+test('หยุดตามแผนคร่อมพัก — netAvail ต้องไม่ยุบ 2 รอบ', () => {
+  // นับสต๊อก 11:00-14:00 (180 น.) คร่อมพักกลางวัน 50 น. ⇒ หักจริง 130
+  const d = { machine_no: null, started_at: new Date(at(180)).toISOString(),
+    ended_at: new Date(at(360)).toISOString(), duration_min: 180,
+    dr_downtime_types: { category: 'planned' } };
+  const r = live({ downtimes: [d] });
+  assert.equal(r.plannedDtMin, 130);
+  assert.equal(r.netAvailMin, 340, '570 − 100 (พัก) − 130 · สูตรเก่าได้ 290 = ตัวหาร %P เล็กเกินจริง');
+});
+
+test('breakIntervalsIn: คืนช่วงเวลา + รวมช่วงที่ทับกัน (ห้ามนับพักซ้อน)', () => {
+  const iv = breakIntervalsIn({ policies: DAY_BREAKS, startMs: OPEN, endMs: at(570), workDate: WD, shift: 'day' });
+  assert.equal(iv.length, 5);
+  assert.equal(iv.reduce((a, [x, y]) => a + (y - x) / 60000, 0), 100);
+  // นโยบาย 2 แถวที่ทับกันเอง ต้องถูก union ไม่ใช่บวกซ้ำ
+  const dup = [
+    { shift: 'day', process_type: 'common', start_time: '10:00:00', duration_min: 30 },
+    { shift: 'day', process_type: 'common', start_time: '10:10:00', duration_min: 30 },
+  ];
+  const iv2 = breakIntervalsIn({ policies: dup, startMs: OPEN, endMs: at(570), workDate: WD, shift: 'day' });
+  assert.equal(iv2.length, 1);
+  assert.equal((iv2[0][1] - iv2[0][0]) / 60000, 40, '10:00-10:40 = 40 นาที ไม่ใช่ 60');
+});
+
+test('dtMinOutsideBreaks: แถวไม่มีเวลาเริ่ม ตัดไม่ได้ → คืนเต็มตามเดิม (ห้ามเดา)', () => {
+  const iv = breakIntervalsIn({ policies: DAY_BREAKS, startMs: OPEN, endMs: at(570), workDate: WD, shift: 'day' });
+  assert.equal(dtMinOutsideBreaks({ duration_min: 45, started_at: null }, iv), 45);
 });
 
 /* ── ot_scope: พักที่เกิด "อย่างใดอย่างหนึ่ง" ระหว่างวันทำโอ/ไม่ทำโอ (2026-09-14) ──

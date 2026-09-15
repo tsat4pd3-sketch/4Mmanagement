@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
-import { wavg, wLoad, sumDefectQty } from '../utils/oee';
+import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
@@ -211,7 +211,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       // 1) กะปิดแล้วทั้งปี (slim)
       const sessions = await pageAll(() => {
         let q = supabaseDR.from('production_sessions')
-          .select('id, line_name, work_date, shift_min, oee, actual_qty')
+          // start_time/shift ต้องมี — ใช้สร้างช่วงพักตามนโยบายเพื่อตัด DT ที่ทับพักออก (utils/oee §3.1)
+          .select('id, line_name, work_date, shift, start_time, shift_min, oee, actual_qty')
           .eq('status', 'closed').gte('work_date', `${year}-01-01`).lte('work_date', `${year}-12-31`)
           .order('id');
         if (targetLineNames.length) q = q.in('line_name', targetLineNames);
@@ -230,11 +231,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         .select('id, session_id, duration_min, dr_downtime_types(category)').in('session_id', c));
       if (dtRes.error) throw new Error(dtRes.error);
       if (dtRes.truncated) throw new Error('โหลด Downtime ไม่ครบ — ตัวเลข OEE/DT จะผิด ยังสร้างรายงานไม่ได้');
-      dtRes.rows.forEach(r => {
-        const m = Number(r.duration_min) || 0;
-        if (r.dr_downtime_types?.category === 'planned') dtPlanned[r.session_id] = (dtPlanned[r.session_id] || 0) + m;
-        else dtUnplanned[r.session_id] = (dtUnplanned[r.session_id] || 0) + m;
-      });
+      /* นาที downtime ที่ตกอยู่ในช่วงพักตามนโยบาย ถูกกันออกจากฐานเวลาไปแล้ว **ห้ามหักซ้ำ** (utils/oee §3.1)
+         ⇒ plannedMin (ตัวถ่วง wLoad) และนาทีนอกแผนที่เทียบกับเวลากะ ต้องเป็นชุดที่ตัดแล้ว
+         ให้ตรงกับ /oee-analytics · ไม่โหลดนโยบายพักได้ = ไม่ตัด (เท่าพฤติกรรมเดิม ไม่ใช่ล้มทั้งรายงาน) */
+      const { data: brkPols } = await supabaseDR.from('break_policies')
+        .select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true);
+      const dtEffBy = dtMinBySession(sessions, dtRes.rows, brkPols || []);
+      Object.entries(dtEffBy).forEach(([sid, v]) => { dtPlanned[sid] = v.planned; dtUnplanned[sid] = v.unplanned; });
       setProg(`โหลด Downtime ${dtRes.rows.length} แถว...`);
       // 3) ของเสีย (line-mode ต้องรู้ is_trial + excl_from_q + mat สำหรับคิดเงิน)
       const defRes = await fetchByIds(ids, (c) => supabaseDR.from('defect_logs')

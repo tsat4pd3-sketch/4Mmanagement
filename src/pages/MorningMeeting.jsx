@@ -15,7 +15,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
-import { wavg, wLoad } from '../utils/oee';
+import { wavg, wLoad, dtMinBySession } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
@@ -74,6 +74,7 @@ export default function MorningMeeting() {
   const [loading, setLoading]         = useState(true);
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
+  const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
   const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
@@ -157,7 +158,7 @@ export default function MorningMeeting() {
     try {
       const D = meetingDate;
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณยอด (cache · ครั้งแรกครั้งเดียว)
-      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }] = await Promise.all([
+      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }, { data: brkPols }] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
           .eq('work_date', D).in('line_name', lineNames).limit(500),
@@ -175,7 +176,11 @@ export default function MorningMeeting() {
           .order('meeting_date').limit(200),
         // ทะเบียนเครื่องต่อไลน์ — ใช้เป็นฐานเวลาเครื่องรวม (เครื่อง × นาทีกะที่เปิด) เทียบ % Downtime
         supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
+        // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
+        // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
+        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
       ]);
+      setBreakPols(brkPols || []);
       setSessions(sess || []);
       const mCnt = {};
       (mcs || []).forEach(m => { mCnt[m.line_name] = (mCnt[m.line_name] || 0) + 1; });
@@ -284,10 +289,12 @@ export default function MorningMeeting() {
     const closed = sessions.filter(s => s.status === 'closed' && s.oee != null);
     // เฉลี่ย OEE หลายกะต้องถ่วงด้วยเวลารับภาระ (util กลาง oeeAvg.js) — mean ธรรมดาทำให้กะสั้นถ่วงเท่ากะเต็ม
     // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
+    /* plannedMin = นาทีที่หักจากฐานเวลาได้จริง (ตัดส่วนที่ทับพักตามนโยบายออก · utils/oee §3.1)
+       ต้องเป็นชุดเดียวกับ /oee-analytics ไม่งั้น OEE เฉลี่ยในใบประชุม/Telegram คนละเลขกับจอ */
+    const dtEffBy = dtMinBySession(closed, downtimes, breakPols);
     const oeeRows = closed.map(s => ({
       oee: Number(s.oee), shift_min: s.shift_min,
-      plannedMin: downtimes.filter(d => d.session_id === s.id && d.dr_downtime_types?.category === 'planned')
-        .reduce((a, d) => a + (Number(d.duration_min) || 0), 0),
+      plannedMin: dtEffBy[s.id]?.planned || 0,
     }));
     const oeeAvgRaw = wavg(oeeRows, r => r.oee, wLoad);
     const oeeAvg = oeeAvgRaw != null ? Math.round(oeeAvgRaw) : null;
@@ -314,7 +321,7 @@ export default function MorningMeeting() {
       dtMin, dtCount, dtPlannedMin, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {

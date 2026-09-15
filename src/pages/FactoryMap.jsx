@@ -11,7 +11,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -723,18 +723,23 @@ export default function FactoryMap({ setupMode = false }) {
         let availMin = (Math.min(nowMs, capMs) - anchor) / 60000;
         // หักเวลาพักตามแผนที่ผ่านไปแล้ว — ใช้สูตรกลางจาก utils/oee.js (เดิมเขียน overlap ซ้ำที่นี่เป็นก๊อปที่ 4)
         const procOfSess = os.map(o => procMap[o.mat_no]).find(Boolean) || null;
-        availMin -= policyBreakOverlapMin({
+        const brkIvWin = breakIntervalsIn({
           policies: breaks, startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
         });
+        availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
         /* หักหยุดตามแผน — ⚠️ ต้อง clamp กับหน้าต่าง [anchor, min(now, capMs)] ก่อน
            เดิมหัก plannedDtMin ทั้งก้อน ซึ่งสะสมตั้งแต่ต้นกะ → หยุดตามแผนที่เกิด "ก่อนเปิดใบแรก"
            ถูกหักออกจากหน้าต่างที่ไม่ได้ครอบมันอยู่ → "ควรผลิตได้" ต่ำเกินจริงมาก
            (เคสหนัก: planned ≥ หน้าต่าง → availMin = 0 → guard คืน 100% คงที่ = ตัวชี้วัดตายทั้งไลน์)
            แถวที่ไม่มีเวลาเริ่ม = ไม่รู้ว่าตกช่วงไหน → ไม่หัก แต่ยังนับใน plannedDtMin สำหรับ wLoad */
         const winEndMs = Math.min(nowMs, capMs);
-        availMin -= plannedRows.reduce((a, r) =>
-          a + Math.max(0, (Math.min(r.pe, winEndMs) - Math.max(r.ps, anchor)) / 60000), 0);
+        /* ⚠️ หยุดตามแผนที่ทับ "ช่วงพัก" ถูกหักไปแล้วบรรทัดบน — หักซ้ำ = "ควรผลิตได้" ต่ำเกินจริง
+           (เช่นนับสต๊อก 08:00-15:00 คร่อมพักเที่ยง 50 นาที · utils/oee §3.1) */
+        availMin -= plannedRows.reduce((a, r) => {
+          const x = Math.max(r.ps, anchor), y = Math.min(r.pe, winEndMs);
+          return y > x ? a + Math.max(0, (y - x) / 60000 - overlapMinutesWith(x, y, brkIvWin)) : a;
+        }, 0);
         availMin = Math.max(0, availMin);
         // CT เฉลี่ยถ่วงตามสัดส่วนเป้าของแต่ละ mat ในกะนี้
         let ctW = 0, ctQ = 0;
@@ -771,7 +776,18 @@ export default function FactoryMap({ setupMode = false }) {
         runN = parallelN; capN = fullN;
       }
       // ปิดกะแล้ว → ใช้ oee ที่ stamp · ยังเปิด → คำนวณสด
-      const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+      /* น้ำหนัก wLoad = shift_min − plannedMin ⇒ ต้องเป็น "นาทีที่หักจากฐานเวลาได้จริง"
+         (ตัดส่วนที่ทับพักออก ไม่งั้นน้ำหนักของกะที่มี PM คร่อมพักเบาเกินจริง · utils/oee §3.1) */
+      const wLoadBrkIv = (s.start_time && Number(s.shift_min || 570) > 0)
+        ? breakIntervalsIn({
+            policies: breaks,
+            startMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime(),
+            endMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
+            workDate, shift: s.shift,
+          })
+        : [];
+      const plannedDtMinAll = dl.filter(d => d.dr_downtime_types?.category === 'planned')
+        .reduce((a, d) => a + dtMinOutsideBreaks(d, wLoadBrkIv), 0);
       const lr = s.oee != null ? null : liveOee(s, os, dl);
       const oeeVal = s.oee != null ? Number(s.oee) : (lr && lr.oee != null ? Math.round(lr.oee) : null);
       const isLive = s.oee == null && oeeVal != null;
