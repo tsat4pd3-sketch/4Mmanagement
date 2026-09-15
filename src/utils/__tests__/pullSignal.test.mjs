@@ -608,12 +608,19 @@ test('เลือก OT แล้วเวลารับต้องเปล�
   assert.equal(shipSlotOf(parseTs(`${D}T16:00:00`), 60, ot.round).ship_time, '17:00');
 });
 
-test('ช่วงที่มีเฉพาะ OT ต้องถูกเลือกให้เอง (ไม่ตกไป fallback สูตร)', () => {
+test('ช่วงที่ตรงเป๊ะแบบ OT ต้องเป็นค่า default (ไม่ตกไป fallback สูตร · ไม่ถูก normal ที่แค่คร่อมแย่ง)', () => {
+  /* 2026-09-15: หลังเพิ่มกฎ "ตารางคร่อมช่วงในไฟล์ก็ใช้ได้" แถว normal 16:00-22:00 (รับ 23:00)
+     กลายเป็นตัวเลือกของช่วง 16:00-18:00 ด้วย — ถูกต้องตามตารางลูกค้า จึงต้องมีให้เลือก
+     แต่ **ตัวที่ตรงเป๊ะต้องมาก่อนเสมอ** ไม่งั้น default เพี้ยนไป 4 ชม. */
   const withOtOnly = [...ROUNDS, R('B5', '16:00', '18:00', '19:00', 'ot_day')];
   const opts = pullRoundOptions(withOtOnly, {
     shipTo: 'GRBNA', dock: 'B5', windowStart: parseTs(`${D}T16:00:00`), windowEnd: parseTs(`${D}T18:00:00`) });
-  assert.deepEqual(opts.map(o => o.key), ['ot_day']);
+  assert.equal(opts[0].key, 'ot_day', 'ช่วงตรงเป๊ะต้องเป็น default');
+  assert.equal(opts[0].round.match, 'exact');
   assert.equal(shipSlotOf(parseTs(`${D}T18:00:00`), 60, opts[0].round).from, 'schedule');
+  assert.equal(shipSlotOf(parseTs(`${D}T18:00:00`), 60, opts[0].round).ship_time, '19:00');
+  const nor = opts.find(o => o.key === 'normal');
+  assert.equal(nor?.round.match, 'within', 'normal 16:00-22:00 คร่อมอยู่ → ยังเลือกได้ แต่ไม่ใช่ default');
 });
 
 test('ช่วงที่ไม่มีเลย = ลิสต์ว่าง → จอต้องตกไป fallback สูตรพร้อมคำเตือน', () => {

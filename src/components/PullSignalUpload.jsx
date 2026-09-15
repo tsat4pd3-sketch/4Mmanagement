@@ -149,7 +149,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         if (!times.length) return { data: [], error: null };
         const lo = new Date(Math.min(...times)), hi = new Date(Math.max(...times));
         return supabaseDR.from('customer_pull_signals')
-          .select('ship_to, supplier_ref, customer_part_no, pulled_at')
+          .select('ship_to, customer_part_no, pulled_at, dock_code')   // ต้องครบทุกคอลัมน์ของ signalKey
           .eq('source', SOURCE).eq('ship_to', shipTo)
           .gte('pulled_at', lo.toISOString()).lte('pulled_at', hi.toISOString());
       })(),
@@ -190,15 +190,16 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     if (!open || !parsed?.ok || !shipTo) { setDupUploads([]); return; }
     let alive = true;
     supabaseDR.from('customer_pull_batches')
-      .select('id, file_name, window_start, window_end, work_date, ship_time, uploaded_by, uploaded_at, orders_updated, orders_created')
+      .select('id, file_name, window_start, window_end, work_date, ship_time, dock_code, uploaded_by, uploaded_at, orders_updated, orders_created')
       .eq('source', SOURCE).eq('ship_to', shipTo)
       .order('uploaded_at', { ascending: false }).limit(50)
       .then(({ data, error }) => {
         if (!alive) return;
         // ตารางยังไม่ apply = ตรวจไม่ได้ แต่ไม่ใช่ "ไม่ซ้ำ" → ctxError บอกอยู่แล้วจากอีกจุด
-        if (error) { setDupUploads([]); return; }
+        if (error) { setDupUploads([]); return; }   // 42703 (ยังไม่ apply migration) = ตรวจไม่ได้ · ctxError บอกอยู่แล้ว
         setDupUploads(findDuplicateUploads(data, {
           fileName: file?.name, windowStart: parsed.windowStart, windowEnd: parsed.windowEnd,
+          dock: parsed.dock,
         }));
         setDupAck(false);
       });
@@ -246,7 +247,11 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   const slot = useMemo(() => ({
     windowStart: parsed?.windowStart || null,
     targetAt: workDate && shipTime ? orderShipAt(workDate, shipTime) : null,
-  }), [parsed, workDate, shipTime]);
+    /* ⭐ dock = ส่วนหนึ่งของ "เที่ยวรถ" (2026-09-15) — ใบของ dock อื่นห้ามถูกแตะ */
+    dock: parsed?.dock || null,
+    /* ไฟล์ชุดเดียวกันที่เคยอัพมาก่อน = เคลมใบเดิมซ้ำได้ (อัพใหม่ต้องแก้ของเดิม ไม่ใช่ชนกันเอง) */
+    ownBatchIds: dupUploads.map(d => d.batch?.id).filter(Boolean),
+  }), [parsed, workDate, shipTime, dupUploads]);
   const plan = useMemo(
     () => planOrderUpdates(groups, orders, (p) => resolveMatNo(p, pnIndex), slot),
     [groups, orders, pnIndex, slot]);
@@ -298,8 +303,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
       window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
       row_count: parsed.rows.length, new_signals: fresh.length, uploaded_by: fullName || null,
+      dock_code: parsed.dock || null,
     };
-    const bRes = await supabaseDR.from('customer_pull_batches').insert(batchRow).select('id').single();
+    let bRes = await supabaseDR.from('customer_pull_batches').insert(batchRow).select('id').single();
+    if (bRes.error?.code === '42703') {                    // ยังไม่ apply migration dock_code
+      // eslint-disable-next-line no-unused-vars
+      const { dock_code, ...slim } = batchRow;
+      bRes = await supabaseDR.from('customer_pull_batches').insert(slim).select('id').single();
+    }
     if (bRes.error) {
       // ตารางยังไม่ apply = เขียนใบส่งได้อยู่ แต่จะไม่มีร่องรอย → ถามก่อน ห้ามเงียบ
       const go = window.confirm(`บันทึกประวัติการนำเข้าไม่ได้ (${bRes.error.message})\nยังจะอัพเดทใบส่งต่อไหม? (จะไม่มีบันทึกว่ามาจากไฟล์ไหน)`);
@@ -316,7 +327,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         batch_id: batchId, source: SOURCE, ship_to: r.ship_to || shipTo,
         supplier_ref: r.supplier_ref, customer_part_no: r.customer_part_no, part_name: r.part_name,
         pulled_at: r.pulled_at.toISOString(), containers: r.containers,
-        qty_per_container: r.qty_per_container, qty: r.qty, dock_code: r.dock_code,
+        qty_per_container: r.qty_per_container, qty: r.qty, dock_code: r.dock_code || '',
         market_area: r.market_area, market_rack: r.market_rack, lsa: r.lsa, lp: r.lp,
         window_start: parsed.windowStart ? parsed.windowStart.toISOString() : null,
         window_end: parsed.windowEnd ? parsed.windowEnd.toISOString() : null,
@@ -325,10 +336,12 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       /* ⚠️ `onConflict` ต้องเป็น **คอลัมน์ล้วนที่ตรงกับ unique index จริง** —
          เดิม index ใช้ `coalesce(supplier_ref, customer_part_no)` แล้วส่ง `supplier_ref` มา
          ⇒ Postgres หา constraint ไม่เจอ (42P10) ⇒ **แถวหลักฐานไม่ถูกบันทึกเลย** และแท็บประวัติกางออกมาว่าง
-         (เกิดจริง 2026-09-09 · ตอนนี้ index เป็น `(source, ship_to, customer_part_no, pulled_at)` คอลัมน์ล้วน) */
+         (เกิดจริง 2026-09-09) · ตอนนี้ index = `(source, ship_to, customer_part_no, pulled_at, dock_code)` คอลัมน์ล้วน
+         ⚠️ `dock_code` เป็น NOT NULL DEFAULT '' **โดยเจตนา** — ถ้าทำเป็น `coalesce(dock_code,'')` ใน index
+            จะกลับไปเจอ 42P10 อีกรอบ (2026-09-15) */
       for (let i = 0; i < recs.length; i += 400) {
         const res = await supabaseDR.from('customer_pull_signals')
-          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,customer_part_no,pulled_at', ignoreDuplicates: true });
+          .upsert(recs.slice(i, i + 400), { onConflict: 'source,ship_to,customer_part_no,pulled_at,dock_code', ignoreDuplicates: true });
         if (res.error) { sigErr = res.error.message; checkWrite(res, 'บันทึกแถวสัญญาณดึง'); break; }
       }
     }
@@ -369,7 +382,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         const rec = {
           customer: shipTo, mat_no: x.mat, customer_part_no: x.group.customer_part_no,
           part_name: x.group.part_name || null, qty: x.group.qty, due_date: workDate,
-          ship_time: shipTime, dock_code: x.group.dock_code || null,
+          ship_time: shipTime, dock_code: x.group.dock_code || parsed.dock || null,
           source: SOURCE, status: 'confirmed', pull_batch_id: batchId,
           created_by_name: fullName || null,   // 📜 ให้แท็บประวัติตอบได้ว่าใบนี้เกิดจากใครอัพไฟล์
           ...stamp,
@@ -380,7 +393,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           const { pull_batch_id, confirm_source, confirmed_at, created_by_name, ...slim } = rec;
           res = await supabaseDR.from('customer_shipping_orders').insert(slim).select('id');
         }
-        if (res.error?.code === '23505') failed.push(`${x.group.customer_part_no}: มีใบของรอบนี้อยู่แล้ว (ด่านกันซ้ำที่ฐานข้อมูล) — กด ↻ แล้วลองใหม่`);
+        if (res.error?.code === '23505') failed.push(`${x.group.customer_part_no}: มีใบของรอบนี้อยู่แล้ว${parsed.dock ? ` (dock ${parsed.dock})` : ''} — กด ↻ แล้วลองใหม่ · ถ้าเป็นไฟล์คนละ dock แต่ยังชนกัน แปลว่ายังไม่ได้ apply migration dock`);
         else if (res.error) failed.push(`${x.group.customer_part_no}: ${res.error.message}`);
         else created++;
       }

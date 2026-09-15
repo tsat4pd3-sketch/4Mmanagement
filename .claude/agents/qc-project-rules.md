@@ -146,6 +146,23 @@ model: inherit
   ที่รับไฟล์จาก `<input type="file">` แล้ว**ไม่มี `toDecodableImage` นำหน้า** = ผิด · ห้ามเขียนตัวเช็ค/แปลง HEIC เองซ้ำ
   · `heic2any` ต้อง **dynamic import เท่านั้น** (static = bundle หลักบวม 1.35MB) · ข้อความ error เรื่อง decode
   ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
+- **[E-LIVE]** handler ของ `postgres_changes` **ห้าม**เรียกตัวโหลดตรงๆ · ห้าม `setTimeout(load, n)` ·
+  ห้าม debounce ที่เขียนเอง — ต้องผ่าน **`coalesce(fn, LIVE.x)`** (`src/utils/liveRefresh.js`) เสมอ
+  และ cleanup ต้องเรียก `.cancel()` · ระดับ `LIVE.ALARM/PAGE/BOARD` มาจาก `refreshRates.js` **ห้าม ms ดิบ**
+  เหตุผล: debounce = "รอให้เงียบ" ไม่ใช่เพดาน — วันทำงานจริงไม่มีช่วงเงียบ ⇒ โหลดใหม่ทุก event ทั้งโรงงาน
+  (วัดจริง 15/09: prod_orders 6,876 req/วัน · 10 จอ = 1.5 GB/วัน) ดู `docs/POLLING-AUDIT-2026-09-15.md`
+- **[E-FILTER]** `.on('postgres_changes', { table: 'x' }, …)` **ที่รู้ขอบเขตของหน้าแล้ว** (กะ/ไลน์/ใบ)
+  แต่ไม่ใส่ `filter:` = ผิด — ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ (20 ไลน์ = เสียเปล่า 95%)
+  · ⚠️ ถ้าใส่ filter ด้วยคอลัมน์ที่ไม่ใช่ pk ต้อง**แยก subscribe `event:'DELETE'` แบบไม่กรอง**
+  (REPLICA IDENTITY default → `old` ของ DELETE มีแค่ pk ⇒ filter ตัด event ทิ้งเงียบ)
+  · เจอ `REPLICA IDENTITY FULL` ในโค้ด/migration = 🔴 (ทุก UPDATE ส่งแถวเก่าเต็มใบใน WAL)
+- **[E-IDLE]** จอที่มี realtime แล้ว — `visibleInterval`/`usePolling` ที่ยิงตัวโหลด**ตรงๆ** โดยไม่ผ่าน `makeIdleGate` = 🟡
+  (poll ยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ · โรงงานหยุดก็ยังกินเท่าวันทำงาน)
+  ต้องมีครบ 3 ขา: handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => ... g.touch())`
+  · ⚠️ ใส่ gate ให้จอที่**ไม่มี** realtime = 🔴 (ไม่มีใคร touch = เหลือแต่ hard floor = จอค้าง)
+- **[E-DEPS]** `useCallback`/`useEffect` ที่**ยิง DB** แล้วมี object/array/`Set`/`Map` อยู่ใน deps = 🔴
+  พ่อ `setState(arr)` ใบใหม่เนื้อเดิม ⇒ ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง `StoreLotQueue` 4 คิวรี × 705 ครั้ง/วัน)
+  ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-LIST-2]** เปลี่ยน `<select>` ที่มี `<optgroup>` ไปเป็น `<SearchSelect>`/picker กลาง ต้องยกกลุ่มมาด้วย (`group` ของ option / `groupByLine`) และ `maxRows` ต้องคลุมทั้งลิสต์ — ตัดแถวทั้งที่จัดกลุ่ม = กลุ่มท้ายๆ ไม่มีวันโผล่ (UI-CONVENTIONS §5.1.1 · 2026-09-08)

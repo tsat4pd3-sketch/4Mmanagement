@@ -150,14 +150,17 @@ export function canBounceBack(order = {}) {
  * ⚠️ คนละเรื่องกับ `canBounceBack` (ตีกลับ) — อย่ารวมสองอันนี้เข้าด้วยกัน:
  *   ตีกลับ  = "แจ้งผิดแผนกตั้งแต่แรก" ⇒ ถอยใบไปขั้น 1 หาผู้แจ้ง · ล็อกไว้ที่ขั้น ≤2 เพราะถ้าถอยหลัง
  *             จากขั้น 3 ผลงาน/ลายเซ็นที่ทำจริงจะหายจากใบ
- *   ส่งต่อ  = "แจ้งถูกแล้ว ทีมแรกเข้าไปดูจริงแล้วแต่แก้ไม่ได้" ⇒ **เก็บผลตรวจเบื้องต้นไว้**
- *             (snapshot ลง mtn_order_handoffs) แล้วส่งให้ทีมใหม่รับงานต่อ
+ *   ส่งต่อ  = "แจ้งถูกแล้ว ทีมแรกเข้าไปดูจริงแล้วแต่แก้ไม่ได้" ⇒ **ปิดใบของทีมแรกเป็น `transferred`
+ *             (ผลตรวจอยู่ในใบครบ ไม่ถูกล้าง) แล้วเปิดใบใหม่ให้ทีมปลายทาง — ได้เลข MO ของทีมนั้นเอง**
+ *             ผูกกันด้วย `mtn_order_handoffs` (from_order_id → to_order_id)
+ *             ⇒ นับสถิติได้ว่า first-response ของช่างฝ่ายผลิต "แก้เองได้ / ส่งต่อ" กี่ครั้ง (คำสั่ง user รอบ 2)
  *
  * ทำได้ตั้งแต่รับงานแล้ว (ขั้น 2) จนถึงซ่อม/ตรวจหน้างานเสร็จ (ขั้น 3) — เลยขั้น 4 ไปแล้ว
  * (ฝ่ายที่แจ้งตรวจรับงานแล้ว) ถือว่างานรอบนั้นจบ ถ้ายังมีปัญหาให้ใช้ผลติดตามขั้น 6 หรือเปิดใบใหม่
  */
 export function canHandoff(order = {}) {
-  if (['closed', 'rejected', 'returned'].includes(String(order?.status || '').trim())) return false;
+  // ใบที่จบแล้ว (รวม transferred = ส่งต่อไปแล้ว) ส่งต่อซ้ำไม่ได้ · returned = ใบอยู่ที่ผู้แจ้ง ให้ใช้ resubmit
+  if (!isMoOpen(order) || String(order?.status || '').trim() === 'returned') return false;
   const step = Number(order?.current_step || 1);
   return step >= 2 && step <= 3;
 }
@@ -254,6 +257,15 @@ export function moQaState(order) {
       `nextStepFor()` ใน MtnRepair.jsx ทำอยู่แล้ว (ป้ายกับปุ่มขั้นถัดไปต้องพูดตรงกันเสมอ)
    ⚠️ ทุกจอที่โชว์ป้ายสถานะ MO ต้องเรียก `moStatusLabel(order)` — ห้ามอ่าน MO_STATUS_LABEL[status]
       ตรงๆ ถ้ามีตัวใบอยู่ในมือ (แผนที่นี้ไว้ใช้เฉพาะที่ไม่มีใบ เช่น dropdown ฟิลเตอร์/หัวกลุ่มสรุป) */
+/* สถานะที่ถือว่า "ใบนี้จบแล้ว ไม่อยู่ในคิวงานอีก" — source of truth เดียวของทั้งระบบ (2026-09-14)
+   🔴 เพิ่ม `transferred` (ส่งต่อให้ทีมอื่นแล้ว ทีมนี้แก้ไม่ได้) พร้อมกับโมเดลส่งต่องาน
+   ⚠️ ก่อนหน้านี้แต่ละหน้าเขียน `!['closed','rejected'].includes(status)` เองคนละที่ (4 จุด +
+      edge อีก 1) ⇒ เพิ่มสถานะจบใหม่ทีไร ใบจะไปโผล่ค้างในคิวของจอที่ลืมแก้ **ห้ามเขียนลิสต์ซ้ำอีก
+      ให้ import `isMoOpen` / `MO_DONE_STATUSES` จากที่นี่เสมอ**
+   · `OPEN_MO_STATUSES` ใน dieStatus.js เป็น allowlist (ตรงข้ามกัน) จึงกันสถานะใหม่ให้เองอยู่แล้ว */
+export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred'];
+export const isMoOpen = (order) => !MO_DONE_STATUSES.includes(String(order?.status || '').trim());
+
 export const MO_STATUS_LABEL = {
   pending:   '📣 รอรับงาน',
   assigned:  '🔧 รับงานแล้ว/รอซ่อม',
@@ -266,6 +278,9 @@ export const MO_STATUS_LABEL = {
   closed:    '✅ ปิด MO',
   returned:  '↩️ ตีกลับ (ผิดแผนก)',
   rejected:  '⛔ Reject MO',
+  // ทีมนี้เข้าไปดูแล้วแก้ไม่ได้ → ปิดใบของตัวเอง แล้วเปิดใบใหม่ให้ทีมที่รับผิดชอบ (2026-09-14)
+  // **ไม่ใช่ closed** (closed = ซ่อมเสร็จจริง นับเป็นผลงาน) และไม่ใช่ rejected (ใบไม่ถูกต้อง)
+  transferred: '➡️ ส่งต่อทีมอื่น (แก้เองไม่ได้)',
 };
 
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
