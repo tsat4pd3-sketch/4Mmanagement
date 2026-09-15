@@ -21,6 +21,7 @@ import PeChangeRequests from '../components/PeChangeRequests';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import { classifyAbc } from '../utils/pareto';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -155,6 +156,16 @@ export default function Improvements() {
   const beforePreview = useObjectUrl(beforeFile);   // blob URL พรีวิว — สร้างครั้งเดียวต่อไฟล์ + revoke เอง (ห้าม createObjectURL ใน render)
   const afterPreview = useObjectUrl(afterFile);
   const [pareto, setPareto] = useState({ loading: false, rows: [] });
+  /* "แก้ N อันแรก = กี่ % ของปัญหา" — สาระของกฎ 80/20 ที่คนต้องใช้ตอนเลือกเป้าโปรเจค
+     (ลิสต์นี้เป็น picker ในกล่องแคบ วาดเส้นสะสมเต็มรูปแบบไม่ไหว จึงสรุปเป็นประโยคเดียว) */
+  const paretoLead = useMemo(() => {
+    const rows = pareto.rows || [];
+    if (rows.length < 2) return '';
+    const ranked = classifyAbc(rows, r => r.value || 0);
+    const a = ranked.filter(r => r._cls === 'A');
+    if (!a.length || a.length === ranked.length) return '';
+    return `แก้ ${a.length} อันแรก = ${Math.round(a[a.length - 1]._cum)}% ของทั้งหมด`;
+  }, [pareto.rows]);
   const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
   const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
   const [peModal,    setPeModal]    = useState(null);  // imp — เสนอ/ดูคำขอแก้เอกสาร PE (PFMEA/CP) ของโปรเจคนี้
@@ -1445,9 +1456,16 @@ export default function Improvements() {
               {/* ขวา: Pareto ปัญหา Top — คลิกเลือกเป็นเป้า */}
               <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, alignSelf: 'start' }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
-                  🔝 พาเรโต้ {modal.problem_source === 'defect' ? 'ของเสีย' : modal.problem_source === 'mtn' ? 'ใบซ่อม MTN' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
+                  🔝 ปัญหาที่กระทบมากสุด · {modal.problem_source === 'defect' ? 'ของเสีย' : modal.problem_source === 'mtn' ? 'ใบซ่อม MTN' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค</div>
+                {/* ⚠️ เดิมหัวข้อเขียนว่า "พาเรโต้" แต่ของจริงเป็น **ลิสต์ตัวเลือก** (กดเพื่อตั้งเป็นเป้าโปรเจค)
+                    ไม่มีเส้นสะสม/เส้น 80% จึงไม่ใช่ Pareto chart — เรียกให้ตรงกับสิ่งที่มันเป็น แล้วเติม
+                    "แก้ N อันแรก = กี่ %" ซึ่งเป็นสิ่งที่คนอยากได้จาก Pareto จริงๆ ตอนเลือกเป้า (2026-09-15)
+                    กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-repair (ParetoAbcChart) */}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
+                  ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค
+                  {paretoLead && <> · <b style={{ color: 'var(--accent)' }}>{paretoLead}</b></>}
+                </div>
                 {pareto.loading ? (
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังโหลด...</div>
                 ) : pareto.rows.length === 0 ? (
