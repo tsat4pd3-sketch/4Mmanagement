@@ -43,6 +43,8 @@ import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } fr
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
+import { cachedMaster } from '../utils/masterCache';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite } from '../utils/dbWrite';
 import MachineSelect from '../components/MachineSelect';
 
@@ -444,16 +446,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
   const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
 
+  /* 🔴 2026-09-15 — master 7 ตารางนี้ **เคยดึงใหม่ทุกครั้งที่ `load()` ถูกเรียก** และ `load()`
+     ถูกเรียกจาก realtime ของ `production_sessions` ด้วย ⇒ มีคนเปิด/ปิดกะที่ไลน์ไหนก็ตาม
+     ทุกเครื่องที่เปิดหน้านี้ดึง master ใหม่ทั้งชุด **~640 KB** (machines 368 + kanban 164 + products 107)
+     วัดจริง 15/09: machines 714 · dr_products 1,486 · kanban_standards 569 · break_policies 643 ·
+     dr_downtime_types 478 · dr_defect_types 478 req/วัน — ทั้งที่ทะเบียนพวกนี้เปลี่ยนเดือนละไม่กี่ครั้ง
+     ⇒ ผ่าน `cachedMaster` (TTL 4 ชม. + อยู่ข้ามการเปิดแอปใน localStorage)
+     ⚠️ ทุกจุดที่บันทึกทะเบียนพวกนี้ **ต้องเรียก `invalidateTable()`** ไม่งั้นแก้แล้วไม่เห็นผลถึง 4 ชม.
+        (ทะเบียน "ตาราง → คีย์" อยู่ `src/utils/masterInvalidate.js` · มีเทสในด่าน build) */
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: ln }, { data: pr }, { data: dt }, { data: ks }, { data: bp }, { data: mc }, { data: dft }] = await Promise.all([
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
-      supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'),
-      supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'),
-      supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'),
-      supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'),
-      supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
+    const [ln, pr, dt, ks, bp, mc, dft] = await Promise.all([
+      cachedMaster('production_lines:dr', async () => (await supabase.from('production_lines').select(LINE_COLUMNS).order('name')).data || []),
+      cachedMaster('dr_products:full', async () => (await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name')).data || []),
+      cachedMaster('dr_downtime_types:active', async () => (await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order')).data || []),
+      cachedMaster('kanban_standards:full', async () => (await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no')).data || []),
+      cachedMaster('break_policies:active', async () => (await supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order')).data || []),
+      cachedMaster('machines:full', async () => (await supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order')).data || []),
+      cachedMaster('dr_defect_types:active', async () => (await supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order')).data || []),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
     ]);
 
@@ -470,7 +480,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setLineMap(lm);
     setParentChildrenMap(pcm);
     // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
-    supabase.from('production_lines').select('name, flow_mode, parallel_stations').then(({ data }) => {
+    // ⚠️ คิวรี production_lines รอบที่ 2 ของ load() เดียวกัน — cache ด้วย ไม่งั้นยิงซ้ำทุกรอบเช่นกัน
+    cachedMaster('production_lines:flow', async () =>
+      (await supabase.from('production_lines').select('name, flow_mode, parallel_stations')).data || []).then((data) => {
       if (!data) return;
       const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
       setLineFlow(fm);
@@ -6657,6 +6669,7 @@ function DefectTypeSetup({ role }) {
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_defect_types').insert(payload)
       : await supabaseDR.from('dr_defect_types').update(payload).eq('id', editing);
+    if (!error) invalidateTable('dr_defect_types');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -6668,6 +6681,7 @@ function DefectTypeSetup({ role }) {
     if (!window.confirm('ลบประเภทนี้?')) return;
     const { error } = await supabaseDR.from('dr_defect_types').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('dr_defect_types');
     load();
   };
 
@@ -6806,6 +6820,7 @@ function BreakPolicySetup({ role }) {
     const { error } = editing === 'new'
       ? await supabaseDR.from('break_policies').insert(payload)
       : await supabaseDR.from('break_policies').update(payload).eq('id', editing);
+    if (!error) invalidateTable('break_policies');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -6817,6 +6832,7 @@ function BreakPolicySetup({ role }) {
     if (!window.confirm('ลบนโยบายนี้?')) return;
     const { error } = await supabaseDR.from('break_policies').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('break_policies');
     load();
   };
 
@@ -7025,6 +7041,7 @@ function ProductSetup({ role }) {
     }
 
     setSaving(false);
+    invalidateTable('dr_products');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     toast.success(ecSource ? '🔄 Engineering Change บันทึกสำเร็จ' : 'บันทึกสำเร็จ');
     setEditing(null);
     setEcSource(null);
@@ -7035,6 +7052,7 @@ function ProductSetup({ role }) {
     if (!window.confirm('ลบสินค้านี้?')) return;
     const { error } = await supabaseDR.from('dr_products').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('dr_products');
     load();
   };
 
@@ -7065,6 +7083,7 @@ function ProductSetup({ role }) {
     const { error } = kanbanEditing === 'new'
       ? await supabaseDR.from('kanban_standards').insert(payload)
       : await supabaseDR.from('kanban_standards').update(payload).eq('id', kanbanEditing);
+    if (!error) invalidateTable('kanban_standards');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     setKanbanSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -7076,6 +7095,7 @@ function ProductSetup({ role }) {
     if (!window.confirm('ลบ Kanban Standard นี้?')) return;
     const { error } = await supabaseDR.from('kanban_standards').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('kanban_standards');
     load();
   };
 
@@ -7377,6 +7397,7 @@ function DowntimeTypeSetup({ role }) {
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
+    if (!error) invalidateTable('dr_downtime_types');   // ล้าง cache master ทุกคีย์ของตารางนี้ (2026-09-15)
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -7388,6 +7409,7 @@ function DowntimeTypeSetup({ role }) {
     if (!window.confirm('ลบประเภทนี้?')) return;
     const { error } = await supabaseDR.from('dr_downtime_types').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('dr_downtime_types');
     load();
   };
 
