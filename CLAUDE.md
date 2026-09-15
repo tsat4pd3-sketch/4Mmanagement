@@ -255,7 +255,17 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
 - ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า ขึ้น parallel กันเองไม่ได้ ระบบรวมเป็นสายเดียวก่อน (จั…
-> 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (12 หัวข้อย่อย)
+
+> ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
+> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
+> บวกเข้าไปอีก = หักซ้ำ (เครื่องเสีย 11:30-13:00 คร่อมพักเที่ยง 50 น. → หักไป 140 ทั้งที่จริง 90)
+> วัดจริง 90 วัน: **664/1,298 กะ (51%) %A ต่ำกว่าจริงเฉลี่ย 1.52 จุด (สูงสุด 41.1) + %P เฟ้อ**
+> · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
+>   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
+> · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
+> · backfill ประวัติแล้ว 425 กะ (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
+
+> 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
 
 ---
 
@@ -437,6 +447,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
 หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม ใน NAV_GROUP_ORDER — ยุบจากหมวด “วิศวกรรม (PE)” เดิม 2026-08-27) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (A…
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql`
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---

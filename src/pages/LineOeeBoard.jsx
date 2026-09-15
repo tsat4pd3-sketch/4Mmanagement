@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -172,7 +172,7 @@ export default function LineOeeBoard() {
     });
 
     setPartial(bad);
-    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null });
+    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
   }, [line, linesKey]);
 
@@ -191,16 +191,15 @@ export default function LineOeeBoard() {
   /* ── คำนวณทุกอย่างจากก้อนดิบ ── */
   const C = useMemo(() => {
     if (!data) return null;
-    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target } = data;
+    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target, breaks } = data;
     const kpiFrom = shiftDate(today, -(DAYS_KPI - 1));
 
     // planned/unplanned นาทีต่อกะ
+    // นาทีที่ทับช่วงพักตามนโยบายถูกตัดออกแล้ว — ต้องเป็นชุดเดียวกับ /oee-analytics (utils/oee §3.1)
+    // ไม่งั้นน้ำหนัก wLoad ของกะที่มีหยุดตามแผนคร่อมพัก เบากว่าจออื่น = ค่าเฉลี่ยคนละเลข
+    const dtEffBySess = dtMinBySession(sessions, dts, breaks || []);
     const plannedBy = {}, unplannedBy = {};
-    dts.forEach(d2 => {
-      const m = Number(d2.duration_min) || 0;
-      if (d2.dr_downtime_types?.category === 'planned') plannedBy[d2.session_id] = (plannedBy[d2.session_id] || 0) + m;
-      else unplannedBy[d2.session_id] = (unplannedBy[d2.session_id] || 0) + m;
-    });
+    Object.entries(dtEffBySess).forEach(([sid, v]) => { plannedBy[sid] = v.planned; unplannedBy[sid] = v.unplanned; });
 
     // แถวต่อกะสำหรับ wavg — ปิดแล้วใช้ stamp · เปิดใช้ค่าสด (null = ไม่นับ ไม่ใช่ 0)
     const rowOf = (s) => {
