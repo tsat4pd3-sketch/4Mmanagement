@@ -41,6 +41,9 @@ export const AUDIT_TABLE_LABELS = {
   pe_cp_items:             '📐 Control Plan',
   pe_doc_revisions:        '📐 Revision เอกสาร PE',
   pe_change_requests:      '📐 คำขอแก้เอกสาร PE',
+  pe_master_processes:     '📚 กระบวนการ master (PFMEA)',
+  pe_master_items:         '📚 แถว PFMEA master',
+  pe_master_proposals:     '📚 ข้อเสนอเข้า master',
   // ── NPI พาร์ทใหม่ APQP/PPAP (Main · 2026-09-07) ──
   npi_templates:           '🚀 NPI แม่แบบเฟส',
   npi_template_phases:     '🚀 NPI เฟสในแม่แบบ',
