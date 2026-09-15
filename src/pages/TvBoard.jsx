@@ -34,6 +34,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 
@@ -121,7 +122,7 @@ export default function TvBoard() {
       const [moRes, planRes, clsRes] = await Promise.all([
         needMo
           ? supabaseDR.from('mtn_orders')
-              .select('id, mo_no, machine_no, line_name, status, mtn_dept, report_at, problem_characteristic')
+              .select('id, mo_no, machine_no, line_name, status, mtn_dept, report_at, problem_characteristic, quality_related, qa_skipped_at')
               .in('status', OPEN_MO_STATUSES).order('report_at', { ascending: false }).limit(300)
           : Promise.resolve({ data: [] }),
         needPm
@@ -143,12 +144,11 @@ export default function TvBoard() {
     } catch (e) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); }
   }, [lines.length, dept]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    // ใบซ่อม/แผน PM เปลี่ยนช้า — poll ห่างได้ (downtime สดมี realtime ในบอร์ดอยู่แล้ว)
-    const stop = visibleInterval(load, RATE.ANALYTIC);
-    return () => stop();
-  }, [load]);
+  /* 🔴 2026-09-15 — เดิม **poll ล้วน ไม่มี realtime เลย** (ยิงเต็มทุก 20 นาที 24 ชม.
+     ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC });
 
   const secOpts = useMemo(
     () => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);

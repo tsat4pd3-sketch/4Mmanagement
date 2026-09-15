@@ -16,6 +16,7 @@ import { jigEquipTypeOf } from '../utils/equipmentKinds'
 import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -338,7 +339,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
       const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `facility/${areaId}.${ext}`
-      const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, { upsert: true })
+      const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, uploadOpts({ mutable: true, upsert: true }))
       if (upErr) throw upErr
       // ⚠️ เช็ค error ก่อนลบไฟล์เก่าเสมอ (supabase-js คืน { error } ไม่ throw) —
       // ไม่เช็คแล้วลบต่อ = update พลาด แต่ไฟล์ผังเดิมหายไปแล้ว ⇒ โซนนั้นรูปเสียถาวร

@@ -75,6 +75,42 @@ function chatsFor(routes: Record<string, Route>, key: string): string[] | null {
   if (r && r.chats.length) return r.chats;
   return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];      // ยังไม่ตั้งห้อง = ห้อง default
 }
+/* ── 🔔 แจ้งเตือน "ในแอป" (กระดิ่ง + Web Push ผ่าน trigger trg_notify_push) ───────────────
+   เดิมฟังก์ชันนี้ส่ง **Telegram ทางเดียว** — ถอด Telegram ออกเมื่อไหร่ การแจ้งเตือนหายสนิท
+   (พบตอนสำรวจการย้ายระบบลง on-premise 2026-09-14 · ดู docs/LOCAL-SERVER-MIGRATION-SPEC.md §13)
+   ⚠️ ผู้รับมาจาก RPC `notify_recipients` จุดเดียวของระบบ (role × ส่วนงาน × แผนก)
+      **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้** — Telegram กับในแอปต้องอ้างกติกาแถวเดียวกัน
+   ⚠️ ไม่ตั้ง `inapp_roles` ที่ /notification-config = ไม่แจ้งในแอป (opt-in)
+      ⇒ deploy แล้วพฤติกรรมเดิมเป๊ะ จนกว่า admin จะตั้งผู้รับ
+   คืนค่า: ส่งถึงใครจริงไหม (ผู้เรียกบางจุดใช้ตัดสินว่าจะ mark ว่าแจ้งแล้วหรือยัง) */
+async function notifyInApp(eventKey: string, htmlMessage: string, type = 'info'): Promise<boolean> {
+  const { data: rule, error: ruleErr } = await supabase
+    .from('notification_rules').select('label, inapp_roles').eq('event_key', eventKey).maybeSingle();
+  if (ruleErr) { console.error('qa-fme-scan: load rule', ruleErr.message); return false; }
+  const roles = Array.isArray(rule?.inapp_roles) ? (rule!.inapp_roles as string[]) : [];
+  if (!roles.length) return false;                    // ยังไม่ตั้งผู้รับ = เงียบตามเดิม
+  let users: string[] = [];
+  const { data, error } = await supabase.rpc('notify_recipients', { p_event: eventKey, p_section: null });
+  if (error) {                                        // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    console.error('qa-fme-scan: notify_recipients', error.message);
+    const { data: byRole } = await supabase.from('profiles').select('id').in('role', roles);
+    users = (byRole ?? []).map((p) => p.id as string);
+  } else {
+    users = (data ?? []).map((r: unknown) =>
+      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+  }
+  const ids = [...new Set(users.filter(Boolean))];
+  if (!ids.length) return false;
+  const body = String(htmlMessage)
+    .replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+  // supabase-js ไม่ throw — ต้องอ่าน error เอง ไม่งั้นแจ้งเตือนหายเงียบ (กฎเหล็กข้อ 1 ใน CLAUDE.md)
+  const { error: insErr } = await supabase.from('notifications').insert(
+    ids.map((uid) => ({ user_id: uid, title: rule?.label || eventKey, body, type })),
+  );
+  if (insErr) { console.error('qa-fme-scan: insert notifications', insErr.message); return false; }
+  return true;
+}
+
 /* ⚠️ ต้องคืนว่า "ส่งออกจริงไหม" — ผู้เรียกใช้ค่านี้ตัดสินว่าจะ mark alert_count หรือไม่
    ส่งพลาดแล้ว mark = งานตรวจก้อนนั้นเงียบถาวรทั้งที่ไม่มีใครเคยได้รับแจ้ง
    (กฎเดียวกับ shipping-phase-scan / store-daily-scan — ห้าม .catch(() => {}) เปล่าๆ) */
@@ -547,7 +583,9 @@ Deno.serve(async (req) => {
     const fresh = obs.filter(ob => ob.status === 'pending' && !ob.alert_count);
     /* ⚠️ นับว่า "เรียกแล้ว" เฉพาะเมื่อส่งออกจริง — ยังไม่ตั้งห้อง/ปิด rule ไว้ ต้องไม่กลืนการเรียก
        (ไม่งั้นพอไปเปิด rule ทีหลัง งานตรวจก้อนนั้นจะเงียบไปเลยทั้งที่ไม่มีใครเคยได้รับแจ้ง) */
-    if (fresh.length && callChats?.length) {
+    // `!== null` = เหตุการณ์ไม่ถูกปิดที่ /notification-config (ไม่ใช่ "มีห้อง Telegram")
+    // เดิมเช็ค callChats?.length ⇒ ไม่มีห้อง Telegram = ข้ามทั้งบล็อก กระดิ่งในแอปก็ไม่ได้ยิงด้วย
+    if (fresh.length && callChats !== null) {
       const byLine = new Map<string, typeof fresh>();
       for (const ob of fresh) {
         const k = `${ob.line_name}|${ob.shift}`;
@@ -568,11 +606,17 @@ Deno.serve(async (req) => {
         });
       const shown = blocks.slice(0, MAX_LINES);
       const more = blocks.length - shown.length;
-      const sent = await sendTelegram(
-        `🔔 <b>QA เรียกตรวจ ${fresh.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
+      const msg = `🔔 <b>QA เรียกตรวจ ${fresh.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
         shown.join('\n') + (more > 0 ? `\n\n…อีก ${more} ไลน์` : '') +
-        footer(fresh.filter(o => !o.part_id).length),
-        callChats);
+        footer(fresh.filter(o => !o.part_id).length);
+      /* "ส่งสำเร็จ" = ถึงผู้รับ **ช่องทางใดก็ได้** (Telegram หรือกระดิ่งในแอป)
+         ⚠️ ถ้านับแต่ Telegram: วันที่ถอด Telegram ออก → sent=false ตลอด → ไม่เคย mark alert_count
+            → เตือนซ้ำทุก 5 นาทีไม่จบ และ escalate ไม่เดินหน้า */
+      const [tgSent, appSent] = await Promise.all([
+        sendTelegram(msg, callChats),
+        notifyInApp('qa_fme_call', msg),
+      ]);
+      const sent = tgSent || appSent;
       if (sent) {
         calls = fresh.length;
         // ข้อความรวมแล้ว แต่ยัง mark รายแถว — ตัวนับ/เพดาน escalate เป็นของรายงานตรวจแต่ละใบ
@@ -590,18 +634,21 @@ Deno.serve(async (req) => {
       const since = ob.last_alerted_at ? (now.getTime() - new Date(ob.last_alerted_at).getTime()) / 60000 : 1e9;
       return since >= cfg.escalate_min;
     });
-    if (late.length && lateChats?.length) {
+    if (late.length && lateChats !== null) {
       const rows = [...late]
         .sort((a, b) => new Date(a.due_at).getTime() - new Date(b.due_at).getTime())
         .map(ob => `🏭 <b>${ob.line_name}</b> · ${ob.mat_no} · ${STAGE_LABEL[ob.stage] ?? ob.stage}` +
           ` — เลย <b>${Math.round((now.getTime() - new Date(ob.due_at).getTime()) / 60000)} นาที</b>`);
       const shown = rows.slice(0, MAX_LINES);
       const more = rows.length - shown.length;
-      const sent = await sendTelegram(
-        `🚨 <b>QA เกินเวลาตรวจ ${late.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
+      const msg = `🚨 <b>QA เกินเวลาตรวจ ${late.length} รายการ</b> (${hhmm(now.toISOString())})\n\n` +
         shown.join('\n') + (more > 0 ? `\n…อีก ${more} รายการ` : '') +
-        footer(late.filter(o => !o.part_id).length),
-        lateChats);
+        footer(late.filter(o => !o.part_id).length);
+      const [tgSent, appSent] = await Promise.all([
+        sendTelegram(msg, lateChats),
+        notifyInApp('qa_fme_overdue', msg, 'error'),
+      ]);
+      const sent = tgSent || appSent;
       if (sent) {
         escalations = late.length;
         for (const ob of late) {

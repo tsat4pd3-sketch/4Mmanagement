@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
@@ -104,6 +105,11 @@ export default function MachineDatabase() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    /* 🔴 2026-09-15 — หน้านี้เป็น "ตัวแก้ทะเบียน" โดยตรง: ทุก save/delete เรียก load() ต่อทันที
+       ⇒ ล้าง cache master ที่นี่จุดเดียว = ครอบคลุมทุกปุ่มบันทึกในหน้า ไม่ต้องไล่แปะทีละจุด
+       (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
+       ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
+    invalidateTable('machines');
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').order('line_name').order('sort_order'),
       supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'),
@@ -197,7 +203,9 @@ export default function MachineDatabase() {
   /* ── machine CRUD ── */
   const openEdit = (item = null) => {
     setEditing(item
-      ? { id: item.id, line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
+      /* ⚠️ ต้องคัดลอก equipment_kind มาด้วยเสมอ — ตกไปแล้ว kindOf(undefined)='machine'
+         ⇒ เปิดแก้แม่พิมพ์/จิ๊กแล้วกด save = ชนิดถูกเขียนทับเป็น "เครื่องจักร" เงียบๆ (audit 2026-09-08) */
+      ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -206,16 +214,23 @@ export default function MachineDatabase() {
     if (!editing.line_name)  { toast.error(isFac ? 'กรอกชื่อระบบ/พื้นที่ facility' : 'เลือกไลน์'); return; }
     if (!editing.machine_no.trim()) { toast.error('กรอกหมายเลขเครื่อง'); return; }
     setSaving(true);
+    /* "เครื่องที่เดินเอง" = ชนิด machine + อยู่ไลน์ผลิต — เกณฑ์เดียวที่ใช้ทั้งฟอร์มและตอนบันทึก */
+    const isRunningMachine = kindOf(editing.equipment_kind) === 'machine'
+      && (editing.equipment_category || 'production') === 'production';
     const payload = {
       line_name:        editing.line_name,
       machine_no:        editing.machine_no.trim().toUpperCase(),
       machine_name:      editing.machine_name || null,
-      machine_type_id:   editing.machine_type_id || null,
+      // แม่พิมพ์ไม่มี "ประเภทเครื่องจักร" (ประเภทของมันอยู่ที่ทะเบียนแม่พิมพ์ — ชุด/ลำดับ OP)
+      machine_type_id:   kindOf(editing.equipment_kind) === 'die' ? null : (editing.machine_type_id || null),
       equipment_category: editing.equipment_category || 'production',
       equipment_kind:    kindOf(editing.equipment_kind),   // ชนิดอุปกรณ์ (เครื่องจักร/แม่พิมพ์/จิ๊ก/facility)
-      // ลักษณะเครื่องจักร (data-driven) — เฉพาะเครื่องผลิต
-      automation_level:  (editing.equipment_category || 'production') === 'production' ? (editing.automation_level || null) : null,
-      operation_mode:    (editing.equipment_category || 'production') === 'production' ? (editing.operation_mode || null) : null,
+      /* ลักษณะเครื่องจักร (data-driven) — **เฉพาะ "เครื่องจักร" ที่อยู่ไลน์ผลิต** (2026-09-14 · user ทัก)
+         แม่พิมพ์/จิ๊กไม่ใช่ของที่ "เดินเอง" จะมีระดับอัตโนมัติ/โหมดทำงานไม่ได้ — เดิมกรองแค่หมวด
+         ⇒ แม่พิมพ์ 254 จาก 266 ตัวถูกติด manual/standalone ไว้ แล้ว FactoryMap เอาไปนับ
+         "ไลน์ที่คนโหลดเอง" จนไลน์ปั๊ม A/B/C ถูกตีเป็นไลน์มือทั้งที่เครื่องจริงเป็น auto ล้วน */
+      automation_level:  isRunningMachine ? (editing.automation_level || null) : null,
+      operation_mode:    isRunningMachine ? (editing.operation_mode || null) : null,
       gang_count:        editing.operation_mode === 'gang' && parseInt(editing.gang_count) > 0 ? parseInt(editing.gang_count) : null,
       sort_order:        parseInt(editing.sort_order) || 0,
       is_active:         editing.is_active,
@@ -490,6 +505,8 @@ export default function MachineDatabase() {
                   <input value={editing.machine_name} onChange={e => setEditing(f => ({ ...f, machine_name: e.target.value }))} placeholder="เช่น CO2 Welder" style={inputStyle} />
                 </Field>
               </div>
+              {/* แม่พิมพ์ไม่มีประเภทเครื่องจักร — ประเภท/ชุด/ลำดับ OP ของแม่พิมพ์อยู่ที่ทะเบียนแม่พิมพ์ (user 2026-09-14) */}
+              {kindOf(editing.equipment_kind) !== 'die' && (
               <Field label="ประเภทเครื่องจักร">
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={editing.machine_type_id} onChange={e => setEditing(f => ({ ...f, machine_type_id: e.target.value }))} style={inputStyle}>
@@ -502,8 +519,10 @@ export default function MachineDatabase() {
                   </button>
                 </div>
               </Field>
-              {/* ลักษณะเครื่องจักร (data-driven · คนละแกนกับประเภท/กระบวนการ) — เฉพาะเครื่องผลิต */}
-              {(editing.equipment_category || 'production') === 'production' && (() => {
+              )}
+              {/* ลักษณะเครื่องจักร (data-driven · คนละแกนกับประเภท/กระบวนการ)
+                  — เฉพาะ **เครื่องจักรที่เดินเอง** ในไลน์ผลิต · แม่พิมพ์/จิ๊กไม่มีแกนนี้ (2026-09-14) */}
+              {kindOf(editing.equipment_kind) === 'machine' && (editing.equipment_category || 'production') === 'production' && (() => {
                 void traitsVer; // อ้างถึงเพื่อ re-render เมื่อ traits โหลดเสร็จ
                 return (
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

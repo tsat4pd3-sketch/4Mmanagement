@@ -26,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { uploadOpts } from '../utils/storageUpload';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -166,6 +167,7 @@ export default function Operator() {
   const [filterGrade,   setFilterGrade]   = useState('');
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
+  const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)
   const [lines,           setLines]           = useState([]);
   /* 🤝 id ของคนที่ถูก "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers) — เก็บแยกจาก employees
      เพราะต้องใช้ตัดสินสิทธิ์/วาดป้ายหลังจากที่แถวถูกคัดลอกไปเป็น editingEmp แล้ว (spread ทิ้ง flag ได้) */
@@ -278,7 +280,7 @@ export default function Operator() {
         catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       }
       const path = `skill-docs/${req.employee_id}_${req.skill_name}_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, { upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, fileToUpload, uploadOpts({ upsert: false, contentType: isPdf ? 'application/pdf' : 'image/jpeg' }));
       if (upErr) { toast.error('อัปโหลดเอกสารไม่สำเร็จ'); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       doc_url = urlData.publicUrl;
@@ -450,7 +452,7 @@ export default function Operator() {
       if (editingEmp.newPhoto) {
         const fileExt = editingEmp.newPhoto.name.split('.').pop();
         const fileName = `emp_${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto);
+        const { error: uploadError } = await supabase.storage.from('employee-photos').upload(fileName, editingEmp.newPhoto, uploadOpts());
         if (uploadError) throw uploadError;
         const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(fileName);
         photoUrl = pub.publicUrl;
@@ -738,8 +740,15 @@ export default function Operator() {
     .filter(emp => !filterTeam    || emp.team       === filterTeam)
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
-    .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, offOrgReasons, laborMap]);
+    .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
+    .filter(emp => !filterNoPhoto || !emp.image_url),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, offOrgReasons, laborMap]);
+
+  // worklist "ยังไม่มีรูป" — นับจากคนที่ยังทำงานอยู่เท่านั้น (คนลาออกไม่ต้องตามถ่าย)
+  // ที่มา 2026-09-11: ล้างรูปที่ใหญ่ผิดกติกาออก 18 ไฟล์ (GIF/รูปไม่ได้บีบ) หัวหน้าต้องไล่ถ่ายใหม่
+  // — ถ้าไม่มีจุดบนจอบอก จะไม่มีใครรู้ว่าเหลือใครบ้าง (กฎ: ข้อมูลไม่ครบต้องเห็นบนจอ ห้ามเงียบ)
+  const noPhotoCount = useMemo(
+    () => employees.filter(e => !e.image_url).length, [employees]);
 
   // Only show skill columns where at least one displayed employee has score > 0
   // Must be useMemo — stable reference prevents ResizeObserver useEffect from looping
@@ -925,6 +934,33 @@ export default function Operator() {
             </button>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
           </div>
+
+          {/* worklist "ยังไม่มีรูป" — โผล่เฉพาะตอนที่ยังมีคนค้าง (นับเฉพาะคนที่ยังทำงานอยู่)
+              เตือนแบบนิ่ง ไม่กระพริบ ตาม UI-CONVENTIONS (แดง/กระพริบสงวนไว้ให้ของที่ต้องวิ่งไปแก้เดี๋ยวนี้) */}
+          {!showInactive && noPhotoCount > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
+              padding: '9px 12px', borderRadius: 8,
+              background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.35)',
+            }}>
+              <span style={{ fontSize: 12.5, color: '#38bdf8', fontWeight: 700 }}>
+                📷 ยังไม่มีรูป {noPhotoCount} คน
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                เปิดแก้ไขรายคนแล้วอัปรูปได้เลย · <b>ใช้รูปนิ่ง JPG/PNG เท่านั้น (ไม่รับ GIF)</b> —
+                ระบบย่อ/บีบให้อัตโนมัติ ไม่ต้องย่อมาก่อน
+              </span>
+              <button onClick={() => setFilterNoPhoto(v => !v)}
+                style={{
+                  position: 'relative', marginLeft: 'auto',
+                  padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(56,189,248,0.5)', fontSize: 12, cursor: 'pointer',
+                  background: filterNoPhoto ? 'rgba(56,189,248,0.28)' : 'transparent', color: '#38bdf8', fontWeight: 700,
+                }}>
+                {filterNoPhoto ? '✅ กำลังดูเฉพาะคนที่ยังไม่มีรูป' : '🔎 ดูเฉพาะคนที่ยังไม่มีรูป'}
+                <ToggleDot on={filterNoPhoto} ring="var(--bg)" />
+              </button>
+            </div>
+          )}
 
           {/* worklist ข้อมูลไม่ตรงผังองค์กร — เตือนแบบนิ่ง (ไม่ใช่ alarm) กดกรองดูเฉพาะคนที่ต้องแก้ได้ */}
           {offOrgStat.total > 0 && (
@@ -1898,7 +1934,7 @@ export default function Operator() {
               </div>
               {empCropFile && (
                 <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
-                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ"
+                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
                   onCancel={() => setEmpCropFile(null)}
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}

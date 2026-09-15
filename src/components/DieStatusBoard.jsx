@@ -10,8 +10,9 @@ import useProductionLines from '../utils/useProductionLines';
 import useDiePressLines from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 import {
   DIE_STATUSES, DIE_STATUS_UNSET, dieStatusMeta, buildOpenMoMap, openMosOf,
-  regrindOver, saveDieStatus, MO_STATUS_LABEL, MIGRATION_HINT,
+  regrindOver, saveDieStatus, MIGRATION_HINT,
 } from '../utils/dieStatus';
+import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายสถานะใบ MO (แยกรอ QA / รอรับมอบ)
 
 const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const warnBox = { background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' };
@@ -232,7 +233,7 @@ export default function DieStatusBoard({
                     <td style={tdStyle}>
                       {mos.length ? mos.map(o => (
                         <div key={o.id} style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          {o.mo_no || '(ยังไม่ออกเลข MO)'} <span style={{ fontWeight: 400 }}>· {MO_STATUS_LABEL[o.status] || o.status}</span>
+                          {o.mo_no || '(ยังไม่ออกเลข MO)'} <span style={{ fontWeight: 400 }}>· {moStatusLabel(o)}</span>
                         </div>
                       )) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>

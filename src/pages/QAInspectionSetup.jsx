@@ -27,6 +27,7 @@ import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
+import { uploadOpts } from '../utils/storageUpload';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -444,7 +445,7 @@ export default function QAInspectionSetup() {
       } catch { /* บีบไม่ได้ (ฟอร์แมตแปลก) — ส่งไฟล์เดิมภายใต้ cap 20MB */ }
     }
     const path = `parts/${sel.id}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('qa-drawings').upload(path, toUpload, { upsert: true });
+    const { error } = await supabase.storage.from('qa-drawings').upload(path, toUpload, uploadOpts({ upsert: true }));
     if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('qa-drawings').getPublicUrl(path).data.publicUrl;
   };

@@ -3,6 +3,7 @@ import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { LINE_TYPES, FLOW_MODES } from '../utils/lineTypes';
@@ -25,6 +26,7 @@ import CostCenterSelect from '../components/CostCenterSelect';
 import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
 // ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
@@ -238,6 +240,9 @@ export default function LineSetup({ embedded = false } = {}) {
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
 
   const fetchLines = async () => {
+    /* 🔴 2026-09-15 — หน้านี้แก้ทะเบียนไลน์โดยตรง: ทุก save เรียก fetchLines() ต่อทันที
+       ⇒ ล้าง cache master ที่นี่จุดเดียว = ครอบคลุมทุกปุ่มในหน้า (ดู src/utils/masterInvalidate.js) */
+    invalidateTable('production_lines');
     const BASE = 'id, name, section, std_day_shift, std_night_shift, cost_center, head_name, parent_line_name, is_active';
     let { data, error } = await supabase.from('production_lines').select(`${BASE}, line_type, flow_mode, parallel_stations`).order('name');
     if (error) {
@@ -608,7 +613,7 @@ export default function LineSetup({ embedded = false } = {}) {
       }
       // ผังไลน์มีจำนวนน้อยและต้องซูมอ่านรายละเอียด — บีบเบา (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอ
       const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
-      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob);
+      const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob, uploadOpts());
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
       // ⚠️ ต้องเช็ค error ก่อนลบไฟล์เก่าเสมอ — supabase-js **คืน { error } ไม่ throw**

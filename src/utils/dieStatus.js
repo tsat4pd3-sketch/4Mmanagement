@@ -38,13 +38,12 @@ export function dieStatusMeta(key) {
    returned (ตีกลับ) นับว่าค้าง: ใบยังไม่จบ ผู้แจ้งต้องส่งใหม่ */
 export const OPEN_MO_STATUSES = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover', 'returned'];
 
-/* ป้ายสถานะ MO แบบย่อ — mirror STATUS_META ใน MtnRepair.jsx (หน้าเพจเป็น lazy chunk
-   import ข้ามมาไม่ได้ จะลากทั้งหน้าแจ้งซ่อมเข้ามาใน chunk นี้) · เพิ่มสถานะใหม่ต้องอัพเดท 2 ที่ */
-export const MO_STATUS_LABEL = {
-  pending: '📣 รอรับงาน', assigned: '🔧 รับงานแล้ว/รอซ่อม', repairing: '🔧 กำลังซ่อม',
-  repaired: '🔎 รอตรวจหลังซ่อม', checked: '🧪 รอคุณภาพ/รับมอบ', qa: '🤝 รอรับมอบ',
-  handover: '✍️ รออนุมัติปิด', returned: '↩️ ตีกลับ (ผิดแผนก)',
-};
+/* ป้ายสถานะ MO — **ไม่ mirror อีกแล้ว** (2026-09-09): ย้ายไปอยู่ที่ `src/utils/mtnStepPerm.js`
+   ที่เดียวกับเกณฑ์ "ขั้นไหนใครทำ" แล้ว re-export ที่นี่เพื่อไม่ให้ import เดิมพัง
+   (mtnStepPerm เป็น pure util ตัวเล็ก — import ข้ามมาได้ ไม่ลากหน้า MtnRepair เข้า chunk นี้)
+   ⚠️ มีตัวใบอยู่ในมือ → ใช้ `moStatusLabel(order)` เสมอ ป้ายของ `checked` แยก 2 ทาง
+      (รอ QA ตรวจ / รอรับมอบ) ตาม quality_related · แผนที่ดิบไว้ใช้เฉพาะตอนไม่มีใบ */
+export { MO_STATUS_LABEL, moStatusLabel } from './mtnStepPerm';
 
 const normNo = (s) => String(s || '').trim().toUpperCase();
 

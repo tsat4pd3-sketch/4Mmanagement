@@ -21,3 +21,29 @@
 > ### ⭐ แผน PM "วิ่งตามผลตรวจ" แล้ว (2026-08-17 · feedback ทีมงาน "PM แผนยังไม่วิ่งหากัน")
 > เดิมบันทึกผลตรวจใน **PMCheckData ไม่เคย stamp `pm_plans`** (มีแค่ปิดแผนประสานงาน PmCoordination ที่ stamp) → ตรวจแล้วแผนไม่เลื่อน: PMSchedule มี fallback อ่าน inspections แต่ **PmForecast / MtnMachineLayout / DeptDashboard อ่าน `pm_plans` ตรง** เลยเห็นแผนค้างทั้งที่ตรวจไปแล้ว
 > **กติกาปัจจุบัน (`handleSave` ใน PMCheckData):** ตรวจ**ครบทุกจุด** (overall = pass/**fail ก็นับ** — PM ทำจริงแล้วแค่เจอของเสีย) → stamp `last_done_at` = วันนี้ (local date ห้าม toISOString) + แผน `plan_type !== 'usage'` ที่มี `interval_days` เลื่อน `next_due_date = วันทำ + interval` (สูตรเดียวกับ PmCoordination) · **`pending` (ตรวจไม่ครบ) ไม่นับว่าทำ PM จบ — ไม่เลื่อนรอบ** · วันเดียวกัน stamp ครั้งเดียว (AM ตรวจทุกกะไม่เขียนซ้ำ) · best-effort: พลาด = toast บอก ไม่ทำ save หลักพัง **ห้ามเงียบ**
+
+### 🗑️ ลบอุปกรณ์ทดสอบ "TEST1 - 99" ออกจากระบบ PM (2026-09-09 · คำสั่ง user)
+
+**เหตุ:** ยิง Telegram `🔴 ยังไม่ได้ทำ PM — เกินกำหนดมาแล้ว N วัน · TEST1 - 99 · ไลน์ test`
+ทุกสัปดาห์ตั้งแต่ 11 ก.ค. (ครบกำหนด 23 ก.ค. → เกิน 48 วัน) รวม **11 ครั้ง = 31% ของการเตือน PM
+ทั้งหมดในระบบ** — ของปลอมกลบของจริงจนคนเริ่มไม่อ่านข้อความเตือน
+(`stageFor()` ใน `pm-plan-reminder` แตก stage `overdue_w1..wN` เตือนซ้ำรายสัปดาห์ **ไม่มีที่สิ้นสุด** —
+ถูกต้องสำหรับของจริง แต่ไม่มีตัวกรองข้อมูลทดสอบ/แผนที่ตายแล้ว)
+
+**migration `20260909_purge_test1_99_pm_equipment.sql` (DR · apply แล้ว 2026-09-09)**
+วัดก่อนลบ ยืนยันว่าไม่มีของจริงอ้างถึง: `downtime_logs` 0 · `mtn_orders` 0 · `equipment_die` 0 ·
+`pm_daily_alerts` ไลน์ `test` 0 · `pm_plan_deferrals` 0 · แถว `machines`(`TEST1`) ปิด `is_active` อยู่แล้ว
+**ลบไป:** jigs 1 · checklists 1 · jig_checkpoints 4 · inspections 6 · inspection_results 24 ·
+pm_plans 1 · pm_plan_reminders 11 · jig_images 8 · pm_daily_line_targets 1
+**สำรองครบทุกแถวใน `*_bak_test1_20260909` 9 ตาราง** (ย้อนได้ · ลำดับ insert กลับอยู่ท้ายไฟล์ migration)
+· ไฟล์รูป 8 ไฟล์ใน bucket กลายเป็นกำพร้า → `cleanup-orphan-photos` เก็บกวาดเองตามรอบ
+· แถว `machines` `TEST1` ปล่อยไว้ (inactive · ไม่โผล่ dropdown ไหน ไม่ยิงเตือน)
+
+**ผลหลังลบ (วัดจริง):** คิว "รออนุมัติ" **14 → 8 ใบ** (6 ใบที่หายเป็นของ TEST1 ล้วน) ·
+แผน PM เกินกำหนด **3 → 2** เหลือของจริง `AUTOLOAD-03` (HDF1) กับ `BD-03` (HDF1)
+
+**บทเรียน:** ตัวเตือนอัตโนมัติที่ยิงซ้ำไม่มีเพดาน + ไม่มีด่านกรองข้อมูลทดสอบ = **notification fatigue**
+คนเลิกอ่านทั้งช่อง ของจริงก็เลยหลุดตาม (คลาสเดียวกับ 4M อัตโนมัติ 323 ใบค้างคิวจนกลบใบจริง 19 ใบ)
+· **ห้ามสร้างข้อมูลทดสอบบนไลน์/อุปกรณ์จริงในฐาน production** — ถ้าเลี่ยงไม่ได้ ต้องมีวันหมดอายุหรือ flag
+ให้ตัวเตือนข้ามเอง · `production_lines` ฝั่ง Main ยังมีไลน์ `test` / `test child` / `test child 2`
+(section `TEST`) อยู่ — ไม่มีอุปกรณ์ผูกแล้ว แต่ยังโผล่ใน dropdown เลือกไลน์ (ยังไม่ลบ รอ user ยืนยัน)

@@ -26,6 +26,7 @@ import { checkStockPlacement } from '../utils/moveTargets';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
@@ -1169,11 +1170,15 @@ function DeliveryTimeBoardTab() {
     setRounds(rds || []);
     setDeliveries(dlvs || []);
   }, []);
-  useEffect(() => {
-    load();
-    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
-    return () => stopPoll();
-  }, [load]);
+  /* 🔴 2026-09-15 — เดิม **poll ล้วน ไม่มี realtime เลย** (ยิงเต็มทุก 20 นาที 24 ชม.
+     ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, {
+    // `line_stock_summary` เป็น view → publish ไม่ได้ · ใช้ ledger ที่ป้อน view นั้นเป็นตัวปลุกแทน
+    tables: ['line_stock_transactions', 'child_lot_requests'],
+    topic: 'line-stock', rate: RATE.ANALYTIC,
+  });
 
   const dlvMap = useMemo(() => {
     const m = {};

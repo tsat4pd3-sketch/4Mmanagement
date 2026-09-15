@@ -19,7 +19,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect } from '../utils/oee';
+import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
@@ -53,14 +53,23 @@ const METRIC_COLOR_FN = { a: aColor, p: pColor, q: qColor };
 // หมายเหตุ: A/P/Q/OEE คำนวณและบันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
 // ตอนปิดกะจาก DailyReport.jsx ซึ่งคิดรวม break_policies และ CT ต่อ MAT.NO อย่างถูกต้องแล้ว
 // ห้ามคำนวณซ้ำด้วยสูตรอย่างง่ายที่นี่ เพราะจะได้ตัวเลขคนละชุดกับหน้า Daily Report
-function calcOEE(sessions, downtimes, defects) {
+/* breakPols: ต้องส่งมาเสมอ — `plannedMin`/`unplannedMin` ที่คืนไปคือ "นาทีที่หักจากฐานเวลาได้จริง"
+   นาที downtime ที่ตกอยู่ในช่วงพักตามนโยบายถูกกันออกจากฐานไปแล้วรอบหนึ่ง **ห้ามหักซ้ำ** (utils/oee §3.1)
+   ⚠️ คนละตัวกับนาทีในพาเรโต/มูลค่า (`dtRecords`) ที่ยังใช้ duration_min เต็ม = "เครื่องหยุดกี่นาที" */
+function calcOEE(sessions, downtimes, defects, breakPols = []) {
   const results = [];
   for (const s of sessions) {
     const sessionDT = downtimes.filter(d => d.session_id === s.id);
     const sessionDefects = defects.filter(d => d.session_id === s.id);
 
-    const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
-    const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+    const startMs = (s.work_date && s.start_time)
+      ? new Date(`${s.work_date}T${String(s.start_time).slice(0, 5)}:00`).getTime() : null;
+    const brkIv = (startMs && Number(s.shift_min) > 0 && breakPols.length)
+      ? breakIntervalsIn({ policies: breakPols, startMs, endMs: startMs + Number(s.shift_min) * 60000,
+          workDate: s.work_date, shift: s.shift })
+      : [];
+    const plannedMin   = sessionDT.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv), 0);
+    const unplannedMin = sessionDT.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((a, d) => a + dtMinOutsideBreaks(d, brkIv), 0);
 
     const ngQty = sessionDefects.reduce((a, d) => a + (d.qty_ng || 0), 0) + (s.qty_ng || 0);
     const totalQty = s.actual_qty || 0;
@@ -282,7 +291,7 @@ export default function OEEAnalytics() {
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
   const [breakPols, setBreakPols] = useState([]);
   useEffect(() => {
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)
       .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
   }, []);
   const canSetTarget = can('oee', 'set_target', role);
@@ -424,26 +433,12 @@ export default function OEEAnalytics() {
 
   // เฉลี่ย target ของหลายกรุ๊ป (กรุ๊ปที่ไม่ตั้งค่า metric นั้นใช้ค่ามาตรฐานแทน)
   // เป้า OEE ไม่ตั้งเอง — คำนวณจาก A×P×Q ของแต่ละกรุ๊ปเสมอ แล้วค่อยเฉลี่ยข้ามกรุ๊ป
-  const targetOf = useCallback((groupNames) => {
-    const effs = groupNames.map(g => {
-      const t = oeeTargets[g] || {};
-      return {
-        a: t.target_a != null ? Number(t.target_a) : null,
-        p: t.target_p != null ? Number(t.target_p) : null,
-        q: t.target_q != null ? Number(t.target_q) : null,
-      };
-    });
-    const out = { configured: effs.some(e => e.a != null || e.p != null || e.q != null) };
-    for (const k of ['a', 'p', 'q']) {
-      const vals = effs.map(e => e[k]).filter(v => v != null);
-      out[k] = vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10 : TARGET[k];
-    }
-    const oees = effs.length
-      ? effs.map(e => ((e.a ?? TARGET.a) * (e.p ?? TARGET.p) * (e.q ?? TARGET.q)) / 10000)
-      : [(TARGET.a * TARGET.p * TARGET.q) / 10000];
-    out.oee = Math.round(oees.reduce((s, v) => s + v, 0) / oees.length * 10) / 10;
-    return out;
-  }, [oeeTargets]);
+  // สูตรอยู่ที่ `avgOeeTarget` ใน src/utils/oee.js — **เด็ค .pptx รายเดือนใช้ตัวเดียวกัน**
+  // (ย้ายออกจากหน้านี้ 2026-09-10 · util OEE มีไฟล์เดียว ห้ามเขียนสูตรซ้ำในหน้า)
+  const targetOf = useCallback(
+    (groupNames) => avgOeeTarget(groupNames.map(g => oeeTargets[g] || null)),
+    [oeeTargets]
+  );
 
   // แท็บวันนี้: เลือกกรุ๊ป → เป้ากรุ๊ป · เลือกไลน์ → เป้ากรุ๊ปของไลน์ · เลือก section →
   // เฉลี่ยกรุ๊ปใน section · ทุกไลน์ → เฉลี่ยทุกกรุ๊ปใน scope (เช่น PD3 = เฉลี่ย APRON ASSY + HYDROFORM)
@@ -576,7 +571,7 @@ export default function OEEAnalytics() {
   const tdDowntimesScoped = useMemo(() => tdTeam ? tdDowntimes.filter(d => tdSessionIdSet.has(d.session_id)) : tdDowntimes, [tdDowntimes, tdTeam, tdSessionIdSet]);
   const tdDefectsScoped   = useMemo(() => tdTeam ? tdDefects.filter(d => tdSessionIdSet.has(d.session_id)) : tdDefects,   [tdDefects, tdTeam, tdSessionIdSet]);
 
-  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped]);
+  const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols]);
 
   const tdKpi = useMemo(() => {
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
@@ -712,8 +707,12 @@ export default function OEEAnalytics() {
       // เพดานเครื่องขนานสำหรับตัวหาร P (ต้องส่งเหมือน /factory-map ไม่งั้น 2 จอโชว์คนละเลข)
       parallelCap: flowModeOf(flowByLine[tdLiveSession.line_name]?.flow_mode) === 'parallel_machine'
         ? parallelUnitsOf(flowByLine[tdLiveSession.line_name]) : 1,
+      /* ⚠️ นโยบายพัก — ขาดไปแล้ว A/P สดของกะที่ยังไม่ปิด จะไม่ตรงกับค่าที่ stamp ตอนปิดกะ
+         (แถวเดียวกันบนจอนี้จะกระโดดตอนกะปิด) · 2026-09-14 */
+      breakPolicies: breakPols || [],
+      processType: tdLiveSession.dr_products?.process_type || null,
     });
-  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine]);
+  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine, breakPols]);
   const isLiveCalc = Boolean(tdLiveCalc);
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }
@@ -985,7 +984,7 @@ export default function OEEAnalytics() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Computed rows ──────────────────────────────────────────────
-  const rows = useMemo(() => calcOEE(sessions, downtimes, defects), [sessions, downtimes, defects]);
+  const rows = useMemo(() => calcOEE(sessions, downtimes, defects, breakPols), [sessions, downtimes, defects, breakPols]);
 
   /* ยอดผลิตจากใบงาน (pair-aware + op-aware) ของกลุ่ม session ใดๆ — ใช้ทั้ง KPI หัวแท็บ และตารางรายช่วง
      (QC audit 2026-08-20 · T3-12: เดิมตารางรายช่วงบวก actual_qty ดิบ → บวกกันแล้วไม่เท่า KPI หัวแท็บ
@@ -995,8 +994,10 @@ export default function OEEAnalytics() {
     if (!os.length) return null;   // ให้ผู้เรียกถอยไปใช้ค่า stamp เอง
     const perMat = {}; let nullSum = 0;
     os.forEach(o => {
+      // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23) · `imported` = ใบเดียวกันหลังกะถัดไปรับไปแล้ว
+      // ต้องนับเท่ากัน ไม่งั้นยอดผลิตของกะหายตอนกะหน้ากดรับ (oee.js §6 · 2026-09-09)
       const q = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
-        : o.status === 'carry_over' ? (o.qty_actual ?? 0) : 0;   // ยกยอด = ผลิตจริงส่วนที่ทำได้ (กฎ 2026-07-23)
+        : ['carry_over', 'imported'].includes(o.status) ? (o.qty_actual ?? 0) : 0;
       if (!q) return;
       if (!o.mat_no) { nullSum += q; return; }
       (perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, produced: 0 })).produced += q;

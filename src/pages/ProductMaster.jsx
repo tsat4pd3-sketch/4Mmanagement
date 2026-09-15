@@ -4,6 +4,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ data-driven
@@ -30,6 +31,7 @@ import BomTreeView from '../components/BomTreeView';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -253,6 +255,11 @@ export default function ProductMaster() {
 
   /* ── load ── */
   const load = useCallback(async () => {
+    /* 🔴 2026-09-15 — หน้านี้เป็น "ตัวแก้ทะเบียน" โดยตรง: ทุก save/delete เรียก load() ต่อทันที
+       ⇒ ล้าง cache master ที่นี่จุดเดียว = ครอบคลุมทุกปุ่มบันทึกในหน้า ไม่ต้องไล่แปะทีละจุด
+       (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
+       ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
+    invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
     const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
@@ -348,7 +355,7 @@ export default function ProductMaster() {
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);
@@ -515,6 +522,7 @@ export default function ProductMaster() {
     const { error } = kanbanEditing === 'new'
       ? await supabaseDR.from('kanban_standards').upsert(payload, { onConflict: 'mat_no' })
       : await supabaseDR.from('kanban_standards').update(payload).eq('id', kanbanEditing);
+    if (!error) invalidateTable('kanban_standards');   // ล้าง cache master (2026-09-15)
     setKanbanSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success('บันทึกสำเร็จ');
@@ -525,6 +533,7 @@ export default function ProductMaster() {
     if (!window.confirm('ลบ Kanban Standard นี้?')) return;
     const { error } = await supabaseDR.from('kanban_standards').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
+    if (!error) invalidateTable('kanban_standards');   // ล้าง cache master (2026-09-15)
     load();
   };
 
@@ -2181,7 +2190,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         setImageUploading(true);
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile);
+        const { error: uploadError } = await supabaseDR.storage.from('product-images').upload(fileName, imageFile, uploadOpts());
         setImageUploading(false);
         if (uploadError) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${uploadError.message}`); return; }
         const { data: pub } = supabaseDR.storage.from('product-images').getPublicUrl(fileName);

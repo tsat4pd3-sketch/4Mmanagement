@@ -41,10 +41,11 @@ const bySession = rows => {
  * @param defects   defect_logs ของ session พวกนั้น (session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q))
  * @param ctMap     จาก buildCtMap (utils/oee.js)
  * @param lines     production_lines (name, flow_mode, parallel_stations) — ใช้หา N เครื่องขนาน
+ * @param breakPolicies break_policies ที่ is_active — **ต้องส่ง** ไม่งั้น A/P สด ≠ ค่าที่ stamp ตอนปิดกะ (2026-09-14)
  */
 export function buildVsmLive({
   boxes = [], sessions = [], orders = [], downtimes = [], defects = [],
-  ctMap = {}, lines = [], nowMs = Date.now(),
+  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [],
 }) {
   const ordBy = bySession(orders);
   const dtBy = bySession(downtimes);
@@ -94,6 +95,7 @@ export function buildVsmLive({
       ngQty: sumDefectQty(dfBy[openSess.id] || [], 'line'),
       workDate: openSess.work_date,
       nowMs, parallelN, parallelCap,
+      breakPolicies,
     }) : null;
 
     // OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')

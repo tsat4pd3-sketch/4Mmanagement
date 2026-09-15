@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -11,6 +11,7 @@ import { cachedMaster } from '../utils/masterCache';
 import { fetchByIds } from '../utils/fetchByIds';
 import { usePolling } from '../utils/usePolling';
 import RATE from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -55,6 +56,8 @@ export default function LineOeeBoard() {
   const { role, lineId, sections } = useContext(UserContext);
   const [sp, setSp] = useSearchParams();
   const [lines, setLines] = useState([]);
+  // เนื้อของ lines เป็น string — ใช้เป็น deps ของตัวโหลดแทน array (ดูหมายเหตุที่ useLiveBoard)
+  const linesKey = useMemo(() => lines.map(l => l.name).join('|'), [lines]);
   const [data, setData] = useState(null);   // ก้อนข้อมูลดิบต่อรอบโหลด
   const [partial, setPartial] = useState(false); // query ลูกพลาดบางส่วน — ต้องบอก ห้ามเงียบ
   const [now, setNow] = useState(() => new Date());
@@ -117,7 +120,7 @@ export default function LineOeeBoard() {
     const sessions = sess || [];
     const ids = sessions.map(s => s.id);
 
-    const [dtR, defR, prods, kstds] = await Promise.all([
+    const [dtR, defR, prods, kstds, breaks] = await Promise.all([
       fetchByIds(ids, c => supabaseDR.from('downtime_logs')
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
@@ -129,6 +132,9 @@ export default function LineOeeBoard() {
         (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
       cachedMaster('kanban_standards:ct', async () =>
         (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      // นโยบายพัก — ต้องส่งเข้า computeLiveOee ไม่งั้น A/P สดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
+      cachedMaster('break_policies:active', async () =>
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
     ]);
     if (dtR.error || dtR.truncated || defR.error || defR.truncated) bad = true;
 
@@ -148,6 +154,7 @@ export default function LineOeeBoard() {
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
+    const procByMat = {}; (prods || []).forEach(p2 => { procByMat[p2.mat_no] = p2.process_type; });
     const dtBySess = {}; dtR.rows.forEach(d2 => (dtBySess[d2.session_id] ||= []).push(d2));
     const ngBySess = {}; defR.rows.forEach(d2 => { if (isTrialDefect(d2)) return; ngBySess[d2.session_id] = (ngBySess[d2.session_id] || 0) + defectQty(d2); });
     const lineCfg = Object.fromEntries(lines.map(l => [l.name, l]));
@@ -159,27 +166,40 @@ export default function LineOeeBoard() {
         workDate: today, nowMs: Date.now(), ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(lineCfg[s.line_name]),
         parallelCap: flowModeOf(lineCfg[s.line_name]?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(lineCfg[s.line_name]) : 1,
+        breakPolicies: breaks || [],
+        processType: (ordBySess[s.id] || []).map(o => procByMat[o.mat_no]).find(Boolean) || null,
       });
     });
 
     setPartial(bad);
-    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null });
-  }, [line, lines]);
-  usePolling(load, RATE.BOARD); // immediate=true + re-run เมื่อเปลี่ยนไลน์ (fn identity เปลี่ยน) — ไม่ต้อง useEffect ซ้ำ
+    setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
+  }, [line, linesKey]);
+
+  /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+     array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
+     (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
+  /* 🔴 2026-09-15 — จอนี้เดิม **poll ล้วน ไม่มี realtime เลย** ทั้งที่เป็นจอ TV หน้าไลน์
+     (จอที่จะติดเพิ่ม 10 จอ) ⇒ ยิงเต็มทุก 15 นาที 24 ชม. ไม่ว่ามีอะไรเปลี่ยนหรือไม่
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, {
+    tables: ['production_sessions', 'prod_orders', 'downtime_logs', 'defect_logs'],
+    topic: 'line-oee-board',
+  });
 
   /* ── คำนวณทุกอย่างจากก้อนดิบ ── */
   const C = useMemo(() => {
     if (!data) return null;
-    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target } = data;
+    const { today, sessions, dts, defs, ordBySess, dtBySess, ngBySess, liveBySess, target, breaks } = data;
     const kpiFrom = shiftDate(today, -(DAYS_KPI - 1));
 
     // planned/unplanned นาทีต่อกะ
+    // นาทีที่ทับช่วงพักตามนโยบายถูกตัดออกแล้ว — ต้องเป็นชุดเดียวกับ /oee-analytics (utils/oee §3.1)
+    // ไม่งั้นน้ำหนัก wLoad ของกะที่มีหยุดตามแผนคร่อมพัก เบากว่าจออื่น = ค่าเฉลี่ยคนละเลข
+    const dtEffBySess = dtMinBySession(sessions, dts, breaks || []);
     const plannedBy = {}, unplannedBy = {};
-    dts.forEach(d2 => {
-      const m = Number(d2.duration_min) || 0;
-      if (d2.dr_downtime_types?.category === 'planned') plannedBy[d2.session_id] = (plannedBy[d2.session_id] || 0) + m;
-      else unplannedBy[d2.session_id] = (unplannedBy[d2.session_id] || 0) + m;
-    });
+    Object.entries(dtEffBySess).forEach(([sid, v]) => { plannedBy[sid] = v.planned; unplannedBy[sid] = v.unplanned; });
 
     // แถวต่อกะสำหรับ wavg — ปิดแล้วใช้ stamp · เปิดใช้ค่าสด (null = ไม่นับ ไม่ใช่ 0)
     const rowOf = (s) => {

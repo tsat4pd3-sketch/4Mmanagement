@@ -34,6 +34,17 @@ model: inherit
   (ตัด 08:00 + local time) ไม่มี copy ไหนเพี้ยน
 - **A4** บอร์ดเวลา (Heijunka/Shipping/Rack/Store) ต้องใช้ `frameMin`/`frameMinFromIso`/`breaksToFrame`
   จาก `src/utils/timeFrame.js` — ห้ามเขียน wrap นาทีเอง
+- **A5** 🔴 **downtime ที่ทับเวลาพักตามนโยบาย ห้ามหักซ้ำ** (2026-09-15 · docs/modules/oee.md)
+  พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาแล้ว — โค้ดที่เอานาที downtime ไปหักจากฐานเวลา
+  (`netAvail` · `runMin` · `wLoad` = `shift_min − plannedMin` · `strictOee.plannedDtMin` · `upMin`/MTBF)
+  ต้องผ่าน `dtMinOutsideBreaks()` / `dtMinBySession()` จาก `src/utils/oee.js`
+  · grep หา pattern ต้องสงสัย: `category === 'planned'` หรือ `category !== 'planned'` ที่ตามด้วย
+    `.reduce(... duration_min ...)` **แล้วผลถูกเอาไปลบออกจากเวลากะ** — ถ้าเจอ = ขัดกฎ
+  · ยกเว้น (ถูกต้องแล้ว): จุดที่ตอบ "เครื่องหยุดกี่นาที" — พาเรโต · มูลค่าความเสียหาย · MTTR ·
+    ตารางรายการ DT · `groupLean` — พวกนี้ใช้ `duration_min` เต็ม **ห้ามไปตัด**
+- **A6** ห้ามสร้างช่วงเวลาพักเอง — `break_policies` → ช่วงเวลา ต้องผ่าน `breakIntervalsIn()` /
+  `policyBreakOverlapMin()` / `policyBreakForShift()` เท่านั้น (เคยมีสูตรซ้ำ 4 ชุด ให้ผลต่างกัน
+  · ชุดที่เขียนเองมักตก `process_type = null` และ `ot_scope` → นับพักเกิน 20 นาทีทุกกะเช้าที่ทำโอ)
 
 ### หมวด B — Supabase 2 projects (กฎเหล็ก)
 - **B1** ตารางฝั่ง DR (production_sessions, downtime_logs, defect_logs, machines, prod_orders,
@@ -130,11 +141,42 @@ model: inherit
   ทำแล้ว: operator, LineSetup (ห้ามลบผังยืมจากไลน์แม่), ProductMaster (guard รูปแชร์), QAInspectionSetup,
   PMSetup, SignatureModal — จุดอัปโหลดใหม่ที่ไม่ลบของเก่า = ไฟล์กำพร้าสะสม
 - **E3** GIF cap ≤ 2MB ต้องยังอยู่**ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) — ห้ามมีใครถอดออก
+- **[E-GIF]** จุดอัปรูป**พนักงาน** (operator / Register) ต้องส่ง **`allowGif={false}`** ให้ `ImageCropModal`
+  (GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป — เคยกิน 84 MB จาก bucket 124 MB) · ตัวเช็คชนิดไฟล์ต้องเรียกจาก
+  **`src/utils/imageFileKind.js`** เท่านั้น (`looksLikeImage`/`isGifFile`/`extOf`) — เขียน regex นามสกุล
+  หรือเช็ค `type === 'image/gif'` เองในหน้า = ผิด (Android ส่ง MIME ว่างมากับรูปจริง → ด่านรั่ว/ปฏิเสธรูปดีๆ)
+  · **ทุกทางที่ปฏิเสธไฟล์ต้องมี `toast.error` บอกเหตุผล + ทางแก้** — `onCancel()` เฉยๆ = ปิดเงียบ = ผิด
+- **[E-CACHE]** ทุก `.upload(` ต้องส่ง options ผ่าน **`uploadOpts()`** (`src/utils/storageUpload.js`) — ไม่ส่ง
+  = ได้ `cacheControl` default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง (เคยทำ egress ทะลุโควต้าจน Supabase
+  **ล็อกบริการทั้ง organization** 11 ก.ย. 2026) · และ path ที่เป็น**ชื่อคงที่ + `upsert: true`** (ทับไฟล์เดิม
+  ที่ URL เดิม) ต้องใส่ `mutable: true` ไม่งั้นผู้ใช้เห็นรูปเก่าค้างเป็นปี — ปัจจุบัน mutable มี 2 จุด:
+  PMSetup (`jigs/<id>/frame-*`·`cp-*`) · MtnMachineLayout (`facility/<id>`) · มีเทสในด่าน build แล้ว
+  (`__tests__/storageUpload.test.mjs`) — ถ้าเทสนั้นถูกลบ/ปิด = รายงานเป็น 🔴
 - **E4** ทุกจุดที่รับไฟล์รูปจากผู้ใช้ต้องผ่าน **`toDecodableImage()`** (`src/utils/heicToJpeg.js`) ก่อน decode/บีบ
   — กล้องมือถือถ่ายเป็น HEIC/HEIF ซึ่ง Chrome อ่านไม่ได้ · grep: `imageCompression(` / `new Image()` / `createImageBitmap(`
   ที่รับไฟล์จาก `<input type="file">` แล้ว**ไม่มี `toDecodableImage` นำหน้า** = ผิด · ห้ามเขียนตัวเช็ค/แปลง HEIC เองซ้ำ
   · `heic2any` ต้อง **dynamic import เท่านั้น** (static = bundle หลักบวม 1.35MB) · ข้อความ error เรื่อง decode
   ห้ามพูดว่า "ขนาด/ใหญ่เกินไป" (ทำให้ผู้ใช้ไปลดความละเอียดซึ่งไม่มีวันแก้ได้)
+- **[E-LIVE]** handler ของ `postgres_changes` **ห้าม**เรียกตัวโหลดตรงๆ · ห้าม `setTimeout(load, n)` ·
+  ห้าม debounce ที่เขียนเอง — ต้องผ่าน **`coalesce(fn, LIVE.x)`** (`src/utils/liveRefresh.js`) เสมอ
+  และ cleanup ต้องเรียก `.cancel()` · ระดับ `LIVE.ALARM/PAGE/BOARD` มาจาก `refreshRates.js` **ห้าม ms ดิบ**
+  เหตุผล: debounce = "รอให้เงียบ" ไม่ใช่เพดาน — วันทำงานจริงไม่มีช่วงเงียบ ⇒ โหลดใหม่ทุก event ทั้งโรงงาน
+  (วัดจริง 15/09: prod_orders 6,876 req/วัน · 10 จอ = 1.5 GB/วัน) ดู `docs/POLLING-AUDIT-2026-09-15.md`
+- **[E-FILTER]** `.on('postgres_changes', { table: 'x' }, …)` **ที่รู้ขอบเขตของหน้าแล้ว** (กะ/ไลน์/ใบ)
+  แต่ไม่ใส่ `filter:` = ผิด — ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ (20 ไลน์ = เสียเปล่า 95%)
+  · ⚠️ ถ้าใส่ filter ด้วยคอลัมน์ที่ไม่ใช่ pk ต้อง**แยก subscribe `event:'DELETE'` แบบไม่กรอง**
+  (REPLICA IDENTITY default → `old` ของ DELETE มีแค่ pk ⇒ filter ตัด event ทิ้งเงียบ)
+  · เจอ `REPLICA IDENTITY FULL` ในโค้ด/migration = 🔴 (ทุก UPDATE ส่งแถวเก่าเต็มใบใน WAL)
+- **[E-IDLE]** จอที่มี realtime แล้ว — `visibleInterval`/`usePolling` ที่ยิงตัวโหลด**ตรงๆ** โดยไม่ผ่าน `makeIdleGate` = 🟡
+  (poll ยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ · โรงงานหยุดก็ยังกินเท่าวันทำงาน)
+  ต้องมีครบ 3 ขา: handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => ... g.touch())`
+  · ⚠️ ใส่ gate ให้จอที่**ไม่มี** realtime = 🔴 (ไม่มีใคร touch = เหลือแต่ hard floor = จอค้าง)
+- **[E-BOARD]** จอ/บอร์ดที่ต้องสด ควรใช้ **`useLiveBoard(load, { tables, topic })`** ไม่ใช่ประกอบเอง
+  (realtime + `coalesce` + `makeIdleGate` ครบในตัว) · เจอ `usePolling`/`visibleInterval` ที่ยิงตัวโหลด
+  **โดยไม่มี realtime channel ในหน้าเดียวกัน** = 🟡 poll ล้วน — ยิงเต็ม 24 ชม. ไม่ว่ามีอะไรเปลี่ยนหรือไม่
+- **[E-DEPS]** `useCallback`/`useEffect` ที่**ยิง DB** แล้วมี object/array/`Set`/`Map` อยู่ใน deps = 🔴
+  พ่อ `setState(arr)` ใบใหม่เนื้อเดิม ⇒ ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง `StoreLotQueue` 4 คิวรี × 705 ครั้ง/วัน)
+  ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-LIST-2]** เปลี่ยน `<select>` ที่มี `<optgroup>` ไปเป็น `<SearchSelect>`/picker กลาง ต้องยกกลุ่มมาด้วย (`group` ของ option / `groupByLine`) และ `maxRows` ต้องคลุมทั้งลิสต์ — ตัดแถวทั้งที่จัดกลุ่ม = กลุ่มท้ายๆ ไม่มีวันโผล่ (UI-CONVENTIONS §5.1.1 · 2026-09-08)
@@ -153,6 +195,11 @@ model: inherit
   onChange/onClick/toggle/drag โดย**ไม่มี confirm หรือ draft+ปุ่มบันทึก** = ผิด · จับ: `<select>`/checkbox/
   toggle is_active/ปุ่มลบ ที่เขียน DB ทันที · ยืนยันเฉพาะ ลบ/ปิดใช้งาน/เปลี่ยน FK master/bulk/revoke สิทธิ์
   (เปิดใช้งาน/additive ไม่ต้อง) · grep: `onChange=.*\.(update|delete|upsert)` ในหน้าหมวดตั้งค่าฯ
+- **F4.2 พาเรโต (2026-09-15 · §"กราฟพาเรโต")** กราฟ/แผงที่เรียกตัวเองว่า "พาเรโต/Pareto" ต้อง
+  **ใช้ `ParetoAbcChart`** (ซึ่งมีเส้นสะสม % + เส้น 80% + แกน % ครบแล้ว) · จับของที่วาดเอง:
+  grep `พาเรโต|Pareto` ในไฟล์ที่ **ไม่ได้** import `ParetoAbcChart` แล้วมี `sort(...b - a)` + แท่ง `width: ...%`
+  = ranked bar chart ปลอมตัวเป็นพาเรโต → ต้องย้ายมาใช้ของกลาง **หรือเปลี่ยนชื่อให้ตรงกับสิ่งที่มันเป็น**
+  (ลิสต์ตัวเลือก/Top N ไม่ใช่พาเรโต) · สูตรทั้งหมดอยู่ `src/utils/pareto.js` เท่านั้น ห้ามคำนวณ % สะสม/ABC เองซ้ำ
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
