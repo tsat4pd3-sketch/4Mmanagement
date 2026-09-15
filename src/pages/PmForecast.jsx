@@ -8,6 +8,10 @@ import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { computePlanForecast } from '../lib/pmPredictive'
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar'
+import { sumUsage, dailyRate } from '../utils/pmUsage'
+import PageHeader from '../components/PageHeader'
+import useTabParam from '../utils/useTabParam'
+import PmUsageBoard from '../components/PmUsageBoard'
 
 // PM ล่วงหน้า (Planner) — เห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ
 //   sync ให้วางแผน/ผลิตเตรียมตัวก่อนเครื่องหยุดทำ PM (ดู CLAUDE.md "PM Predictive & Planner Sync")
@@ -37,6 +41,9 @@ export default function PmForecast() {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [onlyWindow, setOnlyWindow] = useState(false)
+  const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
+  const [lineObjs, setLineObjs] = useState([])
+  const [tab, setTab] = useTabParam(['due', 'usage'], 'due')
   const todayStr = todayBangkok()
 
   const load = async () => {
@@ -56,23 +63,26 @@ export default function PmForecast() {
       const { data: jigs } = eqIds.length ? await supabaseDR.from('jigs').select('id, name, line_name').in('id', eqIds) : { data: [] }
       const jigById = Object.fromEntries((jigs || []).map(j => [j.id, j]))
 
-      // ยอดผลิตจริง (confirmed) ย้อนหลัง 120 วัน — ใช้หา shot สะสม + fallback rate + mat ของไลน์
-      const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      const since = new Date(todayStr + 'T00:00:00'); since.setDate(since.getDate() - 120)
-      const sinceStr = ymd(since)  // ใช้วันที่ local ไม่ใช่ toISOString (UTC เพี้ยนถอยไป 1 วัน)
-      // ⚠️ prod_orders ไม่มีคอลัมน์ line_name/work_date — อยู่บน production_sessions (join ผ่าน session_id)
-      // เดิม select ตรงจาก prod_orders → PostgREST error 42703 แต่ถูกกลืน (ดึงแค่ data) → prodArr ว่างเสมอ
-      // → shot สะสม/rate/buffer เป็น 0 ทั้งหมดเงียบ ๆ (แก้ 2026-07-21)
-      const { data: prod, error: prodErr } = await supabaseDR.from('prod_orders')
-        .select('qty_ok, qty, mat_no, production_sessions!inner(line_name, work_date)')
-        .eq('status', 'confirmed')
-        .gte('production_sessions.work_date', sinceStr)
+      // ยอดผลิตจริง (confirmed) ย้อนหลัง 120 วัน — ใช้หายอดสะสมตั้งแต่ PM ล่าสุด + อัตรา/วัน
+      /* 🔴 2026-09-15 — เดิมดึง **ใบผลิตดิบ** 120 วันมาคำนวณเองในเบราว์เซอร์:
+             from('prod_orders').select(...).gte(work_date, -120d)
+         ช่วง 120 วันมีใบ confirmed **13,073 ใบ** ⇒ ชนเพดาน 1000 แถว/คิวรี **เงียบๆ ไม่มี error**
+         ได้ข้อมูลจริงแค่ ~7.6% ⇒ ยอดสะสม/อัตราต่อวัน/buffer ทั้งหน้าต่ำกว่าความจริงหลายเท่า
+         (กฎเหล็กข้อ 5 ใน CLAUDE.md) · แก้ด้วยการรวมยอดฝั่ง server: (ไลน์ × วัน) = 575 แถว
+         ⚠️ ห้ามกลับไปดึงใบดิบอีก — เพิ่ม limit ก็ยังชนอยู่ดีเมื่อข้อมูลโต */
+      const { data: prodDaily, error: prodErr } = await supabaseDR.rpc('pm_usage_daily', { p_days: 120 })
       if (prodErr) console.warn('[pm-forecast] โหลดยอดผลิตไม่สำเร็จ:', prodErr.message)
-      const prodArr = (prod || []).map(r => ({
-        qty_ok: r.qty_ok, qty: r.qty, mat_no: r.mat_no,
-        line_name: r.production_sessions?.line_name,
-        work_date: r.production_sessions?.work_date,
-      }))
+      const prodArr = prodDaily || []
+      setDaily(prodArr)
+      setLineObjs(lineArr)
+      /* mat ที่แต่ละไลน์ผลิต — อ่านจาก **ทะเบียนสินค้า** (dr_products) ไม่ใช่จากใบผลิตดิบ
+         (RPC คืนยอดรวมรายไลน์/วัน ไม่มี mat_no · และการดึงใบดิบคือต้นเหตุเพดาน 1000 แถว) */
+      const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, line_name')
+      const matsByLine = {}
+      for (const pr of prods || []) {
+        if (!pr.line_name || !pr.mat_no) continue
+        ;(matsByLine[pr.line_name] ||= new Set()).add(pr.mat_no)
+      }
       // forecast เดือนปัจจุบัน (อัตรา/วันจาก order ลูกค้า)
       const curMonth = todayStr.slice(0, 7)
       const { data: fc } = await supabaseDR.from('customer_forecasts').select('mat_no, qty, period_month').eq('period_month', curMonth)
@@ -85,25 +95,23 @@ export default function PmForecast() {
         const jig = cl ? jigById[cl.equipment_id] : null
         const line = plan.usage_source_line || jig?.line_name || null
         if (!line) continue
-        const fam = new Set(getLineFamilyNames(lineArr, line))
-        const famRows = prodArr.filter(r => r.line_name && fam.has(r.line_name))
-        // shot สะสมตั้งแต่ PM ครั้งก่อน — ใช้ > (exclusive) ให้ตรงกับ SQL pm_refresh_plan
-        // (confirmed_at > last_inspection) กันนับ production ของ "วัน PM" ก่อนทำ PM ซ้ำเข้ามา
-        // ⚠️ ถ้าเริ่มใช้แผน usage จริง: ให้ mirror pm_refresh_plan (qty field / line scope) เป็น source เดียว
+        const famNames = getLineFamilyNames(lineArr, line)
+        const fam = famNames?.length ? famNames : [line]
+        /* ยอดสะสมตั้งแต่ PM ครั้งก่อน — สูตรเดียวของทั้งระบบอยู่ที่ `src/utils/pmUsage.js` (pure · มีเทส)
+           ⚠️ ห้ามคิดเลขซ้ำที่นี่ · เดิมหน้านี้ใช้ `qty_ok ?? qty` + เทียบ work_date ส่วน SQL
+              pm_refresh_plan ใช้ `qty` + confirmed_at ⇒ เลขบนจอกับวันครบกำหนดที่ DB เขียนไม่ตรงกัน */
         const lastDone = plan.last_done_at ? plan.last_done_at.slice(0, 10) : null
-        const accumUsage = famRows.filter(r => !lastDone || r.work_date > lastDone).reduce((s, r) => s + Number(r.qty_ok ?? r.qty ?? 0), 0)
-        // อัตรา/วัน: forecast ของ mat ที่ไลน์นี้ผลิต ÷ วันทำงาน · ไม่มี forecast → เฉลี่ยจริง 30 วัน
-        const mats = [...new Set(famRows.map(r => r.mat_no).filter(Boolean))]
+        const accumUsage = sumUsage(prodArr, { lines: fam, since: lastDone, until: todayStr }).qty
+        // อัตรา/วัน: forecast ของ mat ที่ไลน์นี้ผลิต ÷ วันทำงาน · ไม่มี forecast → อัตราจริงจากวันที่เดินงาน
+        const mats = [...new Set(fam.flatMap(n => [...(matsByLine[n] || [])]))]
         const monthFc = mats.reduce((s, m) => s + (fcByMat[m] || 0), 0)
-        let dailyRate = monthFc > 0 ? monthFc / countWorkingDaysInMonth(todayStr.slice(0, 7), WORKING_DAYS_FALLBACK) : 0
+        let dailyRateVal = monthFc > 0 ? monthFc / countWorkingDaysInMonth(todayStr.slice(0, 7), WORKING_DAYS_FALLBACK) : 0
         let rateSource = 'forecast'
-        if (dailyRate <= 0) {
-          const d30 = new Date(todayStr + 'T00:00:00'); d30.setDate(d30.getDate() - 30)
-          const d30s = ymd(d30)
-          const act = famRows.filter(r => r.work_date >= d30s).reduce((s, r) => s + Number(r.qty_ok ?? r.qty ?? 0), 0)
-          dailyRate = act / 30; rateSource = 'actual'
+        if (dailyRateVal <= 0) {
+          dailyRateVal = dailyRate(prodArr, { lines: fam, days: 30, todayStr }).rate
+          rateSource = 'actual'
         }
-        const f = computePlanForecast(plan, { accumUsage, dailyRate, todayStr })
+        const f = computePlanForecast(plan, { accumUsage, dailyRate: dailyRateVal, todayStr })
         out.push({ plan, line, section: lineArr.find(l => l.name === line)?.section || null, eqName: jig?.name || cl?.name || '-', rateSource, ...f })
       }
       // scope: leader = family ไลน์ตัวเอง · role อื่นตาม sections
@@ -136,17 +144,25 @@ export default function PmForecast() {
 
   return (
     <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 }}>🔧 PM ที่จะครบกำหนด</h1>
-        <p style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว</p>
-      </div>
+      {/* หัวเพจมาตรฐาน + แท็บผูก URL (UI-CONVENTIONS §6.8 — ห้ามวาดหัวเรื่อง/แถบแท็บเอง) */}
+      <PageHeader
+        title="PM ล่วงหน้า (Planner)" icon="🔧"
+        sub={tab === 'due'
+          ? 'คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว'
+          : 'ยอดผลิตสะสมของอุปกรณ์แต่ละตัว — ฐานของ PM แบบนับยอดผลิต (condition-based) แทนรอบเวลา'}
+        tabs={[{ key: 'due', label: '🗓 PM ที่จะครบกำหนด' }, { key: 'usage', label: '📊 ยอดผลิตสะสมรายอุปกรณ์' }]}
+        tab={tab} onTab={setTab}
+        actions={<button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>🔄 รีเฟรช</button>}
+      />
 
+      {tab === 'usage' ? (
+        <PmUsageBoard daily={daily} lines={lineObjs} plans={rows} todayStr={todayStr} loading={loading} />
+      ) : (<>
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={onlyWindow} onChange={e => setOnlyWindow(e.target.checked)} />เฉพาะที่เข้า window แล้ว ({windowCount})
         </label>
         {totalBuffer > 0 && <span style={{ fontSize: 13, color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
-        <button onClick={load} style={{ marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>🔄 รีเฟรช</button>
       </div>
 
       {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
@@ -191,6 +207,7 @@ export default function PmForecast() {
         * ตาม shot: คาดวัน PM = วันนี้ + (เกณฑ์ − shot สะสม) ÷ อัตราผลิต/วัน (จาก forecast ลูกค้าเดือนนี้ ÷ วันทำงานจริงจากปฏิทินบริษัท · ไม่มี forecast ใช้เฉลี่ยจริง 30 วัน) ·
         buffer = อัตรา/วัน × (ระยะ PM ÷ 16 ชม.) × (1 + เผื่อ%) · แถวส้ม = เข้า window (ใกล้ถึงภายใน lead time) · แถวแดง = เลยกำหนด
       </p>
+      </>)}
     </div>
   )
 }
