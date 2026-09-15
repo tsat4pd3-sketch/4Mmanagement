@@ -3,6 +3,8 @@
 // แยกจาก send-notification (กันไฟล์ใหญ่พัง) แต่ route ผ่าน notification_rules + telegram_channels เดียวกัน
 //   → ปรับ/ปิด/เลือกห้อง/แก้ข้อความได้จาก /notification-config (category 'maintenance').
 // Events: mtn_reported/assigned/repaired/checked/qa/handover/closed (step 1..7)
+//   + mtn_approved = ขั้น 7 ของ "ใบทีม MTN" เท่านั้น (ผจก.แผนกที่แจ้งอนุมัติ ใบยังไม่ปิด)
+//     ⇒ ใบทีม MTN มี 8 ขั้น: ปิดจบที่ขั้น 8 โดย ผจก.ส่วนซ่อมบำรุง (mtn_closed)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -185,6 +187,8 @@ const MO_INAPP: Record<string, { t: (v: Record<string, string>) => string; type:
   mtn_qa:        { t: (v) => `🧪 ยืนยันคุณภาพแล้ว ${v.mo_no}`,                              type: 'info'    },
   mtn_qa_skipped:{ t: (v) => `⏭ ข้าม QA ${v.mo_no} — ไม่เกี่ยวกับคุณภาพ · รอรับมอบ`,        type: 'info'    },
   mtn_handover:  { t: (v) => `🤝 รับมอบงานซ่อม ${v.mo_no}`,                                type: 'info'    },
+  // ใบทีม MTN มี 8 ขั้น: ขั้น 7 ผจก.แผนกที่แจ้งอนุมัติ (ยังไม่ปิด) → ขั้น 8 ผจก.ซ่อมบำรุงปิดจบ (2026-09-15)
+  mtn_approved:  { t: (v) => `✍️ ผจก.แผนกที่แจ้งอนุมัติแล้ว ${v.mo_no} — รอ ผจก.ซ่อมบำรุงปิดใบ`, type: 'info' },
   mtn_closed:    { t: (v) => `✅ ปิดใบแจ้งซ่อม ${v.mo_no}`,                                 type: 'success' },
   mtn_returned:  { t: (v) => `↩️ ใบแจ้งซ่อมถูกตีกลับ — ${v.line_name} (แก้แผนกแล้วส่งใหม่)`, type: 'error'   },
 };
@@ -250,6 +254,7 @@ Deno.serve(async (req) => {
       qa_result: mo.qa_result || '-', qa_checker: mo.qa_checker || '-', follow_up: mo.follow_up || '-', ho_checker: mo.ho_checker || '-',
       qa_skip_reason: mo.qa_skip_reason || '-', qa_skipped_by: mo.qa_skipped_by || '-',
       approver: mo.approver_name || '-',
+      cost_mgr: mo.cost_mgr_name || '-', cost_owner_dept: mo.cost_owner_dept || '-',
     };
     const equip = `${v.item_type}${v.machine_no ? ` (${v.machine_no})` : ''}`;
     let builtin = ''; let photo: string | null = null;
@@ -279,6 +284,10 @@ Deno.serve(async (req) => {
       case 'mtn_handover':
         builtin = [`🤝 <b>รับมอบหลังซ่อม — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
           `ติดตามผล: ${v.follow_up}`, `ผู้รับมอบ: ${v.ho_checker}`].join('\n'); break;
+      case 'mtn_approved':
+        // ขั้น 7 ของใบ MTN — ผจก.ของแผนกที่แจ้งเซ็นอนุมัติ (ค่าใช้จ่าย/ผลงาน) แต่ใบยังไม่ปิด
+        builtin = [`✍️ <b>ผจก.แผนกที่แจ้งอนุมัติแล้ว — ${v.mo_no}</b>`, `${v.dept} · ${v.line_name} · ${equip}`,
+          `ผู้อนุมัติ: ${v.cost_mgr}`, v.cost_owner_dept !== '-' ? `ค่าใช้จ่ายของหน่วยงาน: ${v.cost_owner_dept}` : ''].filter(Boolean).join('\n'); break;
       case 'mtn_closed':
         builtin = [`✅ <b>อนุมัติปิดแจ้งซ่อม</b>`, `ไลน์การผลิต: ${v.line_name}`, `ชื่อรายการ: ${equip}`, `ปัญหา: ${v.problem}`, ``,
           `เลขแจ้งซ่อม: <b>${v.mo_no}</b>`, `ช่างซ่อม: ${v.tech_main}`, `วิธีแก้ไข: ${v.solution}`, `ผู้อนุมัติ: ${v.approver}`].join('\n');
@@ -308,7 +317,8 @@ Deno.serve(async (req) => {
       mtn_checked: nextAfterChecked,
       mtn_qa: 'รอรับมอบ (ขั้น 6)',
       mtn_qa_skipped: 'รอรับมอบ (ขั้น 6)',
-      mtn_handover: 'รออนุมัติปิด (ขั้น 7)',
+      mtn_handover: teamKey(dept) === 'maintenance' ? 'รอ ผจก.แผนกที่แจ้งอนุมัติ (ขั้น 7)' : 'รออนุมัติปิด (ขั้น 7)',
+      mtn_approved: 'รอ ผจก.ส่วนซ่อมบำรุงปิดจบ MO (ขั้น 8)',
     };
     if (NEXT[event]) builtin += `\n⏳ ขั้นต่อไป: ${NEXT[event]}`;
     const message = pick(routes, event, v, builtin);

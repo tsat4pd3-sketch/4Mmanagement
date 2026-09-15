@@ -66,18 +66,34 @@ export const MTN_STEPS = {
 /* ═══ ใบของทีม MTN (ฟอร์ม FM-MTN-006) เดินขั้นไม่เหมือน JIG/DIE — 2026-09-15 ════════════
    คำสั่ง user: *"MO MTN ขั้นตอนไม่เหมือนกับ MO JIG/DIE"* · ข้อ ③ "แยก 2 ขั้น" (ไม่ยุบรวม)
 
-   ฟอร์มกระดาษ MTN ปิดใบด้วย 2 ลายเซ็นคนละฝั่งกัน:
-     ขั้น 6 = **ฝั่งผู้แจ้ง** รับมอบงาน + ประเมินความพึงพอใจ + เจ้าของค่าใช้จ่าย  (เหมือนเดิม)
-     ขั้น 7 = **ฝั่งช่าง** ผจก.ส่วนซ่อมบำรุงรับรองงาน/ค่าใช้จ่ายแล้วปิดใบ      (ต่างจาก JIG/DIE)
-   ⇒ ขั้น 7 ของใบ MTN **ไม่ใช่ขั้นของฝ่ายที่แจ้ง** จึงห้ามเอาเกณฑ์ scope ฝ่ายที่แจ้ง (reporterSide)
-     มารัด ไม่งั้น ผจก.ซ่อมบำรุงที่ถูกตั้ง sections ไว้จะปิดใบของไลน์อื่นไม่ได้เลย */
+   🔴 แก้ 2026-09-15 (รอบ 2 · user: *"ของ MTN จะต้องมากกว่าขั้นนึง ตรง ผจก ของแผนกที่แจ้งเซ็นอนุมัติ
+      และปิดจบ MO ที่ ผจก MTN"*) — ใบ MTN มี **8 ขั้น** ไม่ใช่ 7 · ปิดใบด้วย 2 ลายเซ็นคนละฝั่ง:
+     ขั้น 6 = ฝั่งผู้แจ้ง รับมอบงาน + ประเมินความพึงพอใจ + ระบุเจ้าของค่าใช้จ่าย   (เหมือนทุกฟอร์ม)
+     ขั้น 7 = **ผจก.ของแผนกที่แจ้ง** เซ็นอนุมัติ (ช่อง "ผู้จัดการ" ท้ายใบ = `cost_mgr_*`) — ยังไม่ปิดใบ
+     ขั้น 8 = **ผจก.ส่วนซ่อมบำรุง** ปิดจบ MO (ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)" = `approver_*`)
+   ⇒ ขั้น 7 ยังเป็นขั้นของฝ่ายที่แจ้ง (reporterSide) เหมือน JIG/DIE · ขั้น 8 เป็นของฝั่งช่าง
+     จึงไม่รัดด้วย scope ฝ่ายที่แจ้ง (ไม่งั้น ผจก.ซ่อมบำรุงที่ถูกตั้ง sections จะปิดใบไลน์อื่นไม่ได้)
+     แต่รัดด้วย `teamSide` แทน = ถ้ารู้ว่าคนกดสังกัดทีมช่างอื่น (profiles.mtn_teams มีค่าและไม่ตรง)
+     ⇒ ปิดใบของทีม MTN ไม่ได้ · **ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน** (ไม่รู้ ≠ ไม่ใช่ — กันล็อกทั้งระบบ)
+   ⚠️ ขั้น 7 ของใบ MTN **ไม่เปลี่ยน status** (คง `handover`) — ห้ามเพิ่มค่า status ใหม่
+     (KPI/Andon/dieStatus/FactoryMap/edge อ่าน status ตรงๆ) · แยกด้วย `current_step` แทน:
+     `handover` + current_step ≥ 7 = รอ ผจก.ซ่อมบำรุงปิด (ขั้น 8) — ฟอร์มอื่นไปไม่ถึงสถานะนี้
+     เพราะขั้น 7 ของมันปิดใบเป็น `closed` ทันที */
 export const MTN_FORM_STEPS = {
   7: {
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false,
-    icon: '✅', title: 'รับรองงาน / ปิดใบ MO',
-    who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง — ตามฟอร์ม FM-MTN-006)', whoShort: 'ผจก.ซ่อมบำรุง',
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
+    icon: '✍️', title: 'ผจก.แผนกที่แจ้ง อนุมัติ',
+    who: 'ผู้จัดการของแผนกที่แจ้ง (เจ้าของค่าใช้จ่าย)', whoShort: 'ผจก.แผนกที่แจ้ง',
+  },
+  8: {
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    icon: '🏁', title: 'ปิดจบใบ MO',
+    who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง — ผู้ปิดใบ)', whoShort: 'ผจก.ซ่อมบำรุง',
   },
 };
+
+/** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลข 7 ในหน้าอีก) */
+export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 8 : 7);
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
 export const stepMeta = (step, { mtnForm = false } = {}) =>
@@ -121,7 +137,7 @@ export function isOrderReporter(order, fullName) {
  * คืน { ok, code } — `code` ไว้ให้จอบอกเหตุผล ห้ามคืนแค่ boolean
  */
 export function canDoStep(step, opts = {}) {
-  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, mtnForm = false, approvalBlocked = false } = opts;
+  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, hasTeams = false, mtnForm = false, approvalBlocked = false } = opts;
 
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
@@ -146,6 +162,10 @@ export function canDoStep(step, opts = {}) {
      inReporterScope: true = ใบอยู่ในขอบเขต · false = อยู่นอกขอบเขต (ล็อก) · null = ตัดสินไม่ได้
      (ผู้ใช้ไม่จำกัด scope / ใบไม่ระบุไลน์ / ไลน์ไม่อยู่ในทะเบียน) = ปล่อยผ่านตามเดิม
      ผู้เรียกคำนวณผ่าน orderInReporterScope() ด้านล่าง — util นี้ยัง pure ไม่แตะทะเบียนไลน์เอง */
+  /* ขั้นของฝั่งช่าง (ขั้น 8 ของใบ MTN) — คนที่ "รู้แน่ว่าสังกัดทีมช่างอื่น" ปิดใบทีมนี้ไม่ได้
+     hasTeams = ผู้ใช้มี profiles.mtn_teams ตั้งไว้ไหม (ผู้เรียกส่งมา) · ไม่ได้ตั้ง = ปล่อยผ่าน */
+  if (meta.teamSide && hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
+
   const outOfScope = !!meta.reporterSide && inReporterScope === false;
   if (can(meta.key)) return outOfScope ? { ok: false, code: 'out_of_scope' } : { ok: true, code: 'perm' };
 
@@ -344,6 +364,8 @@ export const MO_STATUS_LABEL = {
 /** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
+/** ใบ MTN ที่ ผจก.แผนกที่แจ้งอนุมัติแล้ว เหลือ ผจก.ซ่อมบำรุงปิดจบ (ขั้น 8 — มีเฉพาะฟอร์ม MTN) */
+export const MO_LABEL_WAIT_MTN_CLOSE = '🏁 รอ ผจก.ซ่อมบำรุง ปิดใบ (ขั้น 8)';
 export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้น 6)';
 
 /**
@@ -358,6 +380,9 @@ export function moStatusLabel(order) {
   /* ใบที่ติดด่านอนุมัติ ต้องไม่ขึ้น "📣 รอรับงาน" — ช่างเห็นแล้วกดรับไม่ได้ ก็จะกองค้างเงียบ (2026-09-15)
      ⚠️ ตัดสินเฉพาะแถวที่ select `dept_manager_at` มาด้วยจริง (undefined = ไม่รู้ ห้ามเดา) */
   if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
+  /* `handover` + เดินเลยขั้น 7 แล้ว = ใบ MTN ที่รอขั้น 8 เท่านั้น — ฟอร์มอื่นขั้น 7 ปิดใบเป็น
+     `closed` ทันที จึงมาถึงตรงนี้ไม่ได้ ⇒ ไม่ต้องรู้ว่าใบไหนเป็นฟอร์ม MTN (util นี้ยัง pure) */
+  if (st === 'handover' && Number(order?.current_step || 0) >= 7) return MO_LABEL_WAIT_MTN_CLOSE;
   if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
   // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
   if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
@@ -391,7 +416,7 @@ export function canSkipQa(opts = {}) {
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null } = {}) {
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null } = {}) {
   const meta = stepMeta(step, { mtnForm });
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
@@ -413,6 +438,11 @@ export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScop
     lines.push(`ใบนี้เป็นของ${where ? ` ${where}` : 'ฝ่ายอื่น'} — คุณทำขั้นนี้ได้เฉพาะใบของส่วนงานตัวเอง`);
     if (reporterName) lines.push(`ให้ผู้เปิดใบ “${reporterName}” หรือหัวหน้าของฝ่ายนั้นเป็นคนกด · ถ้าต้องดูแลข้ามส่วนงานจริง ให้ admin เพิ่มส่วนงานให้บัญชีนี้ที่ /add-user`);
     else lines.push('ให้หัวหน้าของฝ่ายนั้นเป็นคนกด · ถ้าต้องดูแลข้ามส่วนงานจริง ให้ admin เพิ่มส่วนงานให้บัญชีนี้ที่ /add-user');
+    return lines;
+  }
+  if (otherTeam) {
+    lines.push(`ใบนี้เป็นของทีม ${teamName || '—'} — ขั้นปิดใบเป็นของผู้จัดการฝั่งช่างทีมนั้น`);
+    lines.push('ถ้าคุณคือผู้จัดการของทีมนี้จริง ให้ admin ตั้ง “🔧 ทีมช่างซ่อม” ของบัญชีนี้ให้ตรงที่ /add-user');
     return lines;
   }
   if (meta.byReporter) {
