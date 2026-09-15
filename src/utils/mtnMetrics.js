@@ -106,6 +106,79 @@ export const isOpenDt = (d) => !d?.ended_at && d?.duration_min == null;
 /** หยุดตามแผน (PM/เปลี่ยนรุ่น) ≠ เครื่องเสีย — ไม่นับเป็น failure ของ MTBF */
 export const isPlannedDt = (d) => (d?.dr_downtime_types?.category ?? d?.dt_category) === 'planned';
 
+/* ═══ ช่วงย่อยของการหยุด 1 ครั้ง — รอช่าง / ซ่อมจริง / กลับมารัน (2026-09-14) ═══════════════
+   โจทย์ user: "MTTR นับจาก รับงาน-ซ่อมเสร็จ และน่าจะต้องมีอีกค่าคือ waiting time
+   การรอคอยช่าง นับตั้งแต่เบรคดาวน์ จนถึงรับงาน"
+
+       เครื่องหยุด ──① รอช่าง──> ช่างรับงาน ──② ซ่อมจริง──> ซ่อมเสร็จ ──③ กลับมารัน──> ไลน์เดินต่อ
+       started_at              call_mtn_ack_at          fix_at                      ended_at
+       └────────────────── Downtime รวม = MTTR (Restore) ที่จอโชว์อยู่เดิม ───────────────────┘
+
+   ① MTTA (Mean Time To Acknowledge) = คิว/ระยะทาง/การแจ้ง · ② MTTR จริง = ทักษะช่าง/อะไหล่
+   ③ ตรวจชิ้นแรก/warm-up · **เวลาเทียบกับโปรแกรมส่วนกลางต้องถามก่อนว่าเขาหมายถึงตัวไหน**
+   (คำว่า MTTR ใช้เรียกทั้ง ② และ ①+②+③ — สาเหตุอันดับ 1 ที่ 2 ระบบเถียงกันทั้งที่ไม่มีใครผิด)
+
+   ⚠️ ครบทั้ง 4 เวลาและเรียงถูกเท่านั้นถึงนับ — ขาดอันใดอันหนึ่ง = **null (วัดไม่ได้)** ห้ามเดา
+   ⚠️ `oneShot` = ซ่อมจริง < 2 นาที ⇒ เกือบแน่ว่า "กดทุกสเต็ปรวดเดียวตอนปิดงาน" ไม่ใช่เวลาจริง
+      (วัดจริง 90 วัน: มัธยฐาน accept→done = 1 นาที) — **แยกออกจากค่าเฉลี่ย แต่ต้องโชว์จำนวนบนจอ**
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+export const ONE_SHOT_MIN = 2;
+
+export function repairPhases(d) {
+  const t = (v) => (v ? new Date(v).getTime() : null);
+  const s = t(d?.started_at), ack = t(d?.call_mtn_ack_at), fix = t(d?.fix_at), end = t(d?.ended_at);
+  if (s == null || ack == null || fix == null || end == null) return null;
+  if (!(s <= ack && ack <= fix && fix <= end)) return null;   // เวลาไม่เรียง = ข้อมูลผิด ห้ามนับ
+  const m = (a, b) => (b - a) / 60000;
+  const repairMin = m(ack, fix);
+  return {
+    waitMin: m(s, ack), repairMin, restartMin: m(fix, end), totalMin: m(s, end),
+    oneShot: repairMin < ONE_SHOT_MIN,
+  };
+}
+
+/** เหตุผลที่แยกช่วงย่อยไม่ได้ — ให้จอบอกหน้างานได้ว่า "ต้องกดอะไรเพิ่ม" ไม่ใช่แค่ขึ้น "—"
+ *  null = วัดได้ · 'no_ack' ไม่ได้กดรับงาน · 'no_fix' ไม่ได้กดซ่อมเสร็จ · 'open' ยังไม่ปิดใบหยุด
+ *  'after_end' กดหลังเครื่องกลับมารันแล้ว (ใบ MO ถูกใช้เป็นเอกสารตามหลัง ไม่ใช่การจ่ายงานสด)
+ *  'out_of_order' เวลาสลับกัน (ซ่อมเสร็จก่อนรับงาน) */
+export function phaseIssue(d) {
+  if (!d?.started_at) return 'no_ack';
+  if (!d?.ended_at) return 'open';
+  if (!d?.call_mtn_ack_at) return 'no_ack';
+  if (!d?.fix_at) return 'no_fix';
+  const t = (v) => new Date(v).getTime();
+  const s0 = t(d.started_at), ack = t(d.call_mtn_ack_at), fix = t(d.fix_at), end = t(d.ended_at);
+  if (ack > end || fix > end) return 'after_end';
+  if (!(s0 <= ack && ack <= fix)) return 'out_of_order';
+  return null;
+}
+
+/** รวมช่วงย่อยจากหลายแถว (หรือหลายเครื่อง) — คืนค่าเฉลี่ยที่ "ไม่นับใบกดรวดเดียว"
+ *  n = จำนวนครั้งที่วัดได้จริง · oneShot = ครั้งที่ตัดออก (ต้องโชว์คู่กันเสมอ) */
+export function poolPhases(items = []) {
+  let n = 0, oneShot = 0, wait = 0, repair = 0, restart = 0, total = 0;
+  for (const it of items) {
+    if (!it) continue;
+    const ph = it.waitMin != null ? it : null;      // รับได้ทั้ง phases object และ row ที่สะสมไว้
+    if (!ph) continue;
+    if (ph.oneShot) { oneShot++; continue; }
+    n++; wait += ph.waitMin; repair += ph.repairMin; restart += ph.restartMin; total += ph.totalMin;
+  }
+  const avg = (v) => (n > 0 ? Math.round(v / n) : null);
+  return { n, oneShot, mttaMin: avg(wait), mttrPureMin: avg(repair), restartMin: avg(restart), totalMin: avg(total) };
+}
+
+/** รวมช่วงย่อยจากแถวอุปกรณ์ (ใช้ยอดสะสมในแถว ไม่ต้องกลับไปอ่าน downtime ดิบอีก) */
+export function poolRowPhases(rows = []) {
+  let n = 0, oneShot = 0, wait = 0, repair = 0, restart = 0, total = 0;
+  for (const r of rows) {
+    n += r?.phaseN || 0; oneShot += r?.phaseOneShot || 0;
+    wait += r?._waitSum || 0; repair += r?._repairSum || 0; restart += r?._restartSum || 0; total += r?._totalSum || 0;
+  }
+  const avg = (v) => (n > 0 ? Math.round(v / n) : null);
+  return { n, oneShot, mttaMin: avg(wait), mttrPureMin: avg(repair), restartMin: avg(restart), totalMin: avg(total) };
+}
+
 /** "HH:MM(:SS)" → นาทีจากเที่ยงคืน · คืน null ถ้าอ่านไม่ออก */
 const timeToMin = (t) => {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(t ?? ''));
@@ -192,6 +265,8 @@ export function machineReliability({
 
   const acc = new Map();   // key → row ระหว่างสะสม
   let noMachineNo = 0;
+  // เหตุผลที่แยก "รอช่าง/ซ่อมจริง" ไม่ได้ — ต้องโชว์บนจอ ไม่ใช่เงียบแล้วขึ้น "—"
+  const phaseGaps = { no_ack: 0, no_fix: 0, open: 0, after_end: 0, out_of_order: 0 };
 
   for (const d of downtimes) {
     const raw = String(d?.machine_no ?? '').trim();
@@ -215,6 +290,7 @@ export function machineReliability({
         inMaster: !!machine, via,
         stops: 0, openStops: 0, closedStops: 0, dtMin: 0,
         plannedStops: 0, plannedMin: 0,
+        phaseN: 0, phaseOneShot: 0, _waitSum: 0, _repairSum: 0, _restartSum: 0, _totalSum: 0,
         lastAt: null, _causes: {}, _rawNos: new Set(),
       };
       acc.set(key, r);
@@ -232,6 +308,14 @@ export function machineReliability({
     r._causes[cause] = (r._causes[cause] || 0) + 1;
     if (isOpenDt(d)) r.openStops++;
     else { r.closedStops++; r.dtMin += mins; }
+    // ช่วงย่อย (รอช่าง/ซ่อมจริง/กลับมารัน) — มีเฉพาะครั้งที่กดครบทุกจังหวะ
+    const issue = phaseIssue(d);
+    if (issue) phaseGaps[issue] = (phaseGaps[issue] || 0) + 1;
+    const ph = repairPhases(d);
+    if (ph) {
+      if (ph.oneShot) r.phaseOneShot++;
+      else { r.phaseN++; r._waitSum += ph.waitMin; r._repairSum += ph.repairMin; r._restartSum += ph.restartMin; r._totalSum += ph.totalMin; }
+    }
     const at = d?.started_at ? new Date(d.started_at).getTime() : null;
     if (at && (!r.lastAt || at > r.lastAt)) r.lastAt = at;
   }
@@ -278,6 +362,12 @@ export function machineReliability({
       availPctW: opMin && opMin > 0 ? +(((upMinW ?? 0) / opMin) * 100).toFixed(1) : null,
       plannedStops: r.plannedStops, plannedMin: Math.round(r.plannedMin),
       plannedMinW: Math.round(plannedMinW),
+      // ช่วงย่อย — null = ยังไม่มีครั้งไหนกดครบจังหวะ (ห้ามโชว์ 0)
+      phaseN: r.phaseN, phaseOneShot: r.phaseOneShot,
+      _waitSum: r._waitSum, _repairSum: r._repairSum, _restartSum: r._restartSum, _totalSum: r._totalSum,
+      mttaMin: r.phaseN > 0 ? Math.round(r._waitSum / r.phaseN) : null,
+      mttrPureMin: r.phaseN > 0 ? Math.round(r._repairSum / r.phaseN) : null,
+      restartMin: r.phaseN > 0 ? Math.round(r._restartSum / r.phaseN) : null,
       lastAt: r.lastAt,
       topCause: Object.entries(r._causes).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
     });
@@ -330,6 +420,8 @@ export function machineReliability({
       unknownShifts,              // กะที่หาชั่วโมงไม่ได้ → เวลาเดินเครื่องต่ำกว่าจริง
       prefixCollisions: index.collisions,
       idleCount,                  // เครื่องจักรที่ไม่เคยเสียในช่วงนี้ (เข้าตัวตั้งของ MTBF รวม)
+      phases: poolRowPhases(rows), // รอช่าง/ซ่อมจริง/กลับมารัน ของทั้งชุด (n = วัดได้กี่ครั้ง)
+      phaseGaps,                   // วัดไม่ได้เพราะอะไรบ้าง (no_ack/no_fix/open/after_end/out_of_order)
       breakMin,                   // นาทีพักที่หักออกจากเวลาเดินเครื่องแล้ว
       hasBreakPolicy,             // false = ไม่ได้หักพัก → เทียบ %A ตรงๆ ไม่ได้ (จอต้องเตือน)
       parallelLines: rows.filter(r => r.parallelN > 1).length,

@@ -1441,6 +1441,26 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     return null;
   };
 
+  /* ── เขียนเวลากลับไปที่ "ใบหยุดเครื่อง" ต้นทาง (downtime_logs) ─────────────────────────
+     ทำไม: แท็บ ⚙️ รายอุปกรณ์ วัด MTTR ได้แค่ก้อนเดียว (started_at → ended_at = รวมเวลารอช่าง)
+     แยก "รอช่าง (MTTA) vs ซ่อมจริง" ไม่ได้ เพราะ `call_mtn_ack_at` **ไม่เคยถูกเขียนเลยสักแถว**
+     (วัดจริง 8,429 แถว: call_mtn ใช้ 17 · ack 0 · fix_at 93) ทั้งที่ใบ MO มีเวลาครบอยู่แล้ว
+     (90 วัน: accept_at 304 · repair_done_at 298 · ผูก downtime 238 ใบ) — แค่ไม่เคยส่งกลับ
+     ⇒ ขั้นรับงาน/ซ่อมเสร็จ ส่งเวลากลับไปด้วย ไม่เพิ่มงานให้ใครเลย
+     ⚠️ best-effort: ใบ MO บันทึกสำเร็จไปแล้ว ถ้าตรงนี้ล้ม **ห้ามลากใบล้มตาม** แต่ต้องบอกดังๆ
+     ⚠️ `call_mtn_at` เติมเฉพาะตอนที่ยังว่าง (`.is(null)`) — ถ้าหน้างานกดปุ่ม "เรียกช่าง" ไว้แล้ว
+        เวลานั้นจริงกว่าเวลาที่ใบถูกเปิด ห้ามทับ */
+  const syncDowntimeTimes = async (order, patch, fillCallAt = null) => {
+    if (!order?.source_downtime_id) return;
+    const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
+    if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
+    if (fillCallAt) {
+      await supabaseDR.from('downtime_logs')
+        .update({ call_mtn: true, call_mtn_at: fillCallAt })
+        .eq('id', order.source_downtime_id).is('call_mtn_at', null);
+    }
+  };
+
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
     setSaving(true);
@@ -1505,6 +1525,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
+        // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
+        if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
       } else if (step === 3) {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
@@ -1525,6 +1547,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
            ก่อนถึงสต็อก · พอ error รูปถูก catch ไปต่อ ด่านนั้นก็หายไป */
         const { error: eUpd3 } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd3) { setSaving(false); return toast.error('บันทึกการซ่อมไม่สำเร็จ (ยังไม่ตัดสต็อกอะไหล่): ' + eUpd3.message); }
+        // เวลาซ่อมเสร็จ → ใบหยุดเครื่อง (แยก "ซ่อมจริง" ออกจาก "กลับมารัน" ได้)
+        if (upd.repair_done_at) await syncDowntimeTimes(o, { fix_at: upd.repair_done_at });
         if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {

@@ -6,6 +6,7 @@ import {
   normEquipKey, baseEquipKey, buildEquipIndex, resolveEquip,
   dtMinutes, isOpenDt, isPlannedDt, operatingMinutesByLine,
   machineReliability, summarizeByKind, viewMetrics, fmtDur,
+  repairPhases, poolPhases, poolRowPhases, phaseIssue,
 } from '../mtnMetrics.js';
 
 /* นโยบายพักกะเช้าชุดจริง (break_policies ฝั่ง DR — ทุกแถวเป็น process_type 'common') */
@@ -303,4 +304,98 @@ test('เครื่องที่ไม่เคยเสีย: ปิดด
   assert.equal(summary.idleCount, 0);
   assert.equal(rows.length, 1);
   assert.equal(summarizeByKind(rows).find(k => k.kind === 'machine').mtbfMin, 540, 'นับแค่ตัวที่เสีย = ต่ำกว่าจริง');
+});
+
+/* ── ช่วงย่อย: รอช่าง / ซ่อมจริง / กลับมารัน (2026-09-14 · โจทย์ MTTA ของ user) ── */
+
+const iso = (min) => new Date(Date.parse('2026-09-01T08:00:00Z') + min * 60000).toISOString();
+const dtPh = (startMin, ackMin, fixMin, endMin, extra = {}) => ({
+  machine_no: 'M1', started_at: iso(startMin),
+  call_mtn_ack_at: ackMin == null ? null : iso(ackMin),
+  fix_at: fixMin == null ? null : iso(fixMin),
+  ended_at: endMin == null ? null : iso(endMin),
+  duration_min: endMin == null ? null : endMin - startMin,
+  dr_downtime_types: brk, ...extra,
+});
+
+test('repairPhases: แยก 3 ท่อนได้เมื่อเวลาครบและเรียงถูก', () => {
+  const ph = repairPhases(dtPh(0, 20, 50, 60));
+  assert.deepEqual(
+    { w: ph.waitMin, r: ph.repairMin, s: ph.restartMin, t: ph.totalMin, one: ph.oneShot },
+    { w: 20, r: 30, s: 10, t: 60, one: false });
+});
+
+test('repairPhases: ขาดเวลาใดเวลาหนึ่ง หรือเวลาไม่เรียง = null (ห้ามเดา)', () => {
+  assert.equal(repairPhases(dtPh(0, null, 50, 60)), null, 'ไม่มีเวลารับงาน');
+  assert.equal(repairPhases(dtPh(0, 20, null, 60)), null, 'ไม่มีเวลาซ่อมเสร็จ');
+  assert.equal(repairPhases(dtPh(0, 20, 50, null)), null, 'ยังไม่ปิด downtime');
+  assert.equal(repairPhases(dtPh(0, 50, 20, 60)), null, 'ซ่อมเสร็จก่อนรับงาน = ข้อมูลผิด');
+});
+
+test('repairPhases: ซ่อมจริง < 2 นาที = ใบที่กดรวดเดียวตอนปิดงาน (ติดธง oneShot)', () => {
+  assert.equal(repairPhases(dtPh(0, 55, 56, 60)).oneShot, true);
+  assert.equal(repairPhases(dtPh(0, 30, 45, 60)).oneShot, false);
+});
+
+test('poolPhases: ใบกดรวดเดียวต้องไม่ถูกเอามาเฉลี่ย แต่ต้องนับให้เห็น', () => {
+  const p = poolPhases([
+    repairPhases(dtPh(0, 20, 50, 60)),     // w20 r30 s10
+    repairPhases(dtPh(0, 40, 80, 100)),    // w40 r40 s20
+    repairPhases(dtPh(0, 58, 59, 60)),     // กดรวดเดียว — ตัดออก
+  ]);
+  assert.equal(p.n, 2);
+  assert.equal(p.oneShot, 1);
+  assert.equal(p.mttaMin, 30);
+  assert.equal(p.mttrPureMin, 35);
+  assert.equal(p.restartMin, 15);
+});
+
+test('machineReliability: สรุปช่วงย่อยติดมากับ summary.phases และรายแถว', () => {
+  const machines = [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }];
+  const sessions = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const { rows, summary } = machineReliability({
+    machines, sessions, includeIdle: false,
+    downtimes: [dtPh(0, 20, 50, 60), dtPh(100, 140, 180, 200), dtPh(300, 358, 359, 360)],
+  });
+  assert.equal(summary.phases.n, 2);
+  assert.equal(summary.phases.oneShot, 1);
+  assert.equal(summary.phases.mttaMin, 30);
+  assert.equal(rows[0].mttaMin, 30);
+  assert.equal(rows[0].mttrPureMin, 35);
+  assert.equal(rows[0].phaseOneShot, 1);
+  // pool จากแถวต้องได้เท่ากับ pool จาก phases ดิบ
+  assert.deepEqual(poolRowPhases(rows), summary.phases);
+});
+
+test('machineReliability: ไม่มีใบไหนกดครบจังหวะ = ช่วงย่อยเป็น null ทั้งหมด ห้ามเป็น 0', () => {
+  const { rows, summary } = machineReliability({
+    machines: [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }],
+    sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+    downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)], includeIdle: false,
+  });
+  assert.equal(summary.phases.n, 0);
+  assert.equal(summary.phases.mttaMin, null);
+  assert.equal(rows[0].mttaMin, null);
+  assert.equal(rows[0].mttrMin, 60, 'MTTR รวม (Restore) ยังตอบได้ตามปกติ');
+});
+
+test('phaseIssue: บอกเหตุผลที่วัดไม่ได้ ไม่ใช่เงียบแล้วขึ้น "—"', () => {
+  assert.equal(phaseIssue(dtPh(0, 20, 50, 60)), null, 'ครบ = วัดได้');
+  assert.equal(phaseIssue(dtPh(0, null, 50, 60)), 'no_ack');
+  assert.equal(phaseIssue(dtPh(0, 20, null, 60)), 'no_fix');
+  assert.equal(phaseIssue(dtPh(0, 20, 50, null)), 'open');
+  assert.equal(phaseIssue(dtPh(0, 80, 90, 60)), 'after_end', 'รับงานหลังเครื่องกลับมารันแล้ว');
+  assert.equal(phaseIssue(dtPh(0, 50, 20, 60)), 'out_of_order');
+});
+
+test('machineReliability: summary.phaseGaps นับเหตุผลครบทุกครั้งที่วัดไม่ได้', () => {
+  const { summary } = machineReliability({
+    machines: [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }],
+    sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+    downtimes: [dtPh(0, 20, 50, 60), dtPh(100, null, null, 160), dtPh(200, 280, 290, 260)],
+    includeIdle: false,
+  });
+  assert.equal(summary.phases.n, 1);
+  assert.equal(summary.phaseGaps.no_ack, 1);
+  assert.equal(summary.phaseGaps.after_end, 1, 'เคสที่หน้างานเจอเยอะสุด — ใบ MO ตามหลังเครื่อง');
 });
