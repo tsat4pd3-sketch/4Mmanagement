@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { clusterNotes } from '../utils/textCluster';
+import { classifyAbc, PARETO_TICKS, PARETO_CUTOFF, vagueShare } from '../utils/pareto';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
    1) ABC: จัดกลุ่มตาม % สะสม (A ≤80% ตัวหลัก · B ≤95% · C หางยาว) — สีตามกลุ่ม ไม่ใช่สีรายประเภท
@@ -19,19 +20,8 @@ const ABC = {
 const OPA = { A: 1, B: 0.75, C: 0.45 };
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
-// จัดกลุ่ม ABC จาก % สะสม — รายการแรกเป็น A เสมอ (กันเคสรายการเดียวกินเกิน 80% แล้วไม่มี A)
-export function classifyAbc(items, valueOf) {
-  const sorted = [...items].sort((a, b) => valueOf(b) - valueOf(a));
-  const total = sorted.reduce((s, d) => s + (valueOf(d) || 0), 0);
-  let run = 0;
-  return sorted.map((d, i) => {
-    const v = valueOf(d) || 0;
-    const prevCum = total > 0 ? run / total * 100 : 0;
-    run += v;
-    return { ...d, _val: v, _pct: total > 0 ? v / total * 100 : 0, _cum: total > 0 ? run / total * 100 : 0,
-      _cls: i === 0 || prevCum < 80 ? 'A' : prevCum < 95 ? 'B' : 'C' };
-  });
-}
+// สูตร ABC + % สะสม ย้ายไป `utils/pareto.js` แล้ว (เทสได้ — ตัวรันเทสไม่รับ .jsx)
+export { classifyAbc };
 
 /* 💰 มูลค่าเป็นบาทต่อแถว (`r.baht`) — optional
    `baht == null` = **ตีมูลค่าไม่ได้** (ไลน์ไม่มี activity rate / พาร์ทไม่มีต้นทุน)
@@ -105,6 +95,12 @@ export default function ParetoAbcChart({
   const drillTotal = drillRecs.reduce((s, r) => s + (money ? (Number(r.baht) || 0) : (r.value || 0)), 0);
   const drillTotals = useMemo(() => sumBaht(drillRecs), [drillRecs]);
 
+  /* ── สุขภาพของข้อมูล: พาเรโตที่เต็มไปด้วย "อื่นๆ / ไม่ระบุ" ชี้เป้าไม่ได้ ต่อให้วาดถูกหลักทุกอย่าง ──
+     เคสจริง 2026-09-15 (user ส่งจอมา): KPI ใบซ่อม MTN มี "ไม่ระบุกลุ่ม" 224 + "อื่นๆ" 89 จาก 319 ใบ
+     = 98% ⇒ กราฟสวยแต่บอกไม่ได้ว่าต้องแก้อะไร · **ต้องขึ้นเตือนบนจอ ห้ามปล่อยให้คนอ่านเข้าใจผิดว่า
+     "ปัญหาหลักคือไม่ระบุกลุ่ม"** — ตัวเลขนี้แปลว่ากระบวนการเก็บข้อมูลพัง ไม่ใช่ผลวิเคราะห์ */
+  const vague = useMemo(() => vagueShare(rows), [rows]);
+
   // ประเภทที่ "ไม่บอกอะไร" (อื่นๆ/ไม่ระบุ) — ถ้าติดกลุ่ม A ต้องชวนให้ไปเจาะ ไม่ปล่อยเป็นอันดับ 1 ลอยๆ
   const noteDim = dims.find(d => d.cluster) || null;
   const vagueA = useMemo(() => (noteDim
@@ -159,6 +155,27 @@ export default function ParetoAbcChart({
   const BAR = { A: { h: 20, font: 12, name: true }, B: { h: 11, font: 11, name: true }, C: { h: 6, font: 10.5, name: false } };
   const maxVal = Math.max(1, ...rows.map(d => d._val));
 
+  /* คอลัมน์ค่าท้ายแถวกว้างคงที่ — แถวแกน % ด้านบนใช้ grid template เดียวกัน
+     ถ้าปล่อย `auto` ความกว้างจะขึ้นกับตัวเลขในแถวนั้น ⇒ ขีดแกนกับรางแท่งเลื่อนไม่ตรงกัน */
+  const VAL_W = 78;
+  const gridCols = (nameShown, compact) =>
+    (nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr ${VAL_W}px` : `1fr ${VAL_W}px`);
+
+  /* ── เส้นสะสม % + เส้น cut-off 80% (หัวใจของ Pareto — ก่อนหน้านี้ไม่เคยวาดลงกราฟเลย) ──
+     วาดเป็น SVG ทับ "ราง" ของแต่ละแถว: รางทุกแถวกว้างเท่ากัน = สเกล 0–100% เดียวกันทั้งกราฟ
+     segment ของแถว i ลากจาก (x=_cumPrev, บน) → (x=_cum, ล่าง) ⇒ ต่อกันเป็นเส้นไต่ลงมาทั้งกราฟ
+     (ไม่ต้องวัด DOM / ไม่ต้อง ResizeObserver — responsive เองเพราะเป็น % ล้วน)
+     ⚠️ `preserveAspectRatio="none"` ยืด viewBox เต็มราง ⇒ เส้นต้อง `vector-effect` ไม่งั้นความหนาเพี้ยน */
+  const cumOverlay = (d) => (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
+      <line x1={PARETO_CUTOFF} y1="0" x2={PARETO_CUTOFF} y2="100" stroke="var(--text2)" strokeWidth="1"
+        strokeDasharray="3 3" vectorEffect="non-scaling-stroke" opacity="0.5" />
+      <line x1={d._cumPrev} y1="0" x2={d._cum} y2="100" stroke="var(--text)" strokeWidth="1.6"
+        vectorEffect="non-scaling-stroke" opacity="0.9" strokeLinecap="round" />
+    </svg>
+  );
+
   const barRow = (d, i, { showName, compact }) => {
     const m = ABC[d._cls]; const cfg = BAR[d._cls];
     const nameShown = showName || cfg.name;
@@ -166,7 +183,7 @@ export default function ParetoAbcChart({
       <div key={i} onClick={() => dims.length && openDrill(d.name)}
         title={`${d.name} · ${fmt(d._val)} ${unitOf} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`
           + (hasMoney ? ` · ${money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}${d.unpriced ? ` · ตีมูลค่าไม่ได้ ${d.unpriced} รายการ` : ''}` : '')}
-        style={{ display: 'grid', gridTemplateColumns: nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr auto` : '1fr auto',
+        style={{ display: 'grid', gridTemplateColumns: gridCols(nameShown, compact),
           alignItems: 'center', gap: 8, cursor: dims.length ? 'pointer' : 'default',
           padding: d._cls === 'A' ? '3px 0' : '1.5px 0' }}>
         {nameShown && (
@@ -174,17 +191,57 @@ export default function ParetoAbcChart({
             color: d._cls === 'A' ? 'var(--text)' : 'var(--text2)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{d.name}</span>
         )}
-        <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: cfg.h }}>
-          <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, d._val / maxVal * 100)}%`,
-            background: m.color, opacity: OPA[d._cls], borderRadius: 3 }} />
+        {/* overflow ต้องเป็น visible ที่ชั้นนอก (ไม่งั้นเส้นสะสมโดนตัด) — มุมโค้งของแท่งย้ายไปชั้นใน */}
+        <span style={{ position: 'relative', display: 'block', height: cfg.h }}>
+          <span style={{ position: 'absolute', inset: 0, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
+            <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, d._val / maxVal * 100)}%`,
+              background: m.color, opacity: OPA[d._cls], borderRadius: 3 }} />
+          </span>
+          {cumOverlay(d)}
         </span>
         <span style={{ fontSize: d._cls === 'A' ? 11.5 : 10.5, fontWeight: d._cls === 'A' ? 800 : 600,
-          color: d._cls === 'A' ? m.color : 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+          color: d._cls === 'A' ? m.color : 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right',
+          fontVariantNumeric: 'tabular-nums' }}>
           {fmt(d._val)}{d._cls === 'A' ? ` (${d._pct.toFixed(0)}%)` : ''}
         </span>
       </div>
     );
   };
+
+  /* แถวแกน % สะสม — วางเหนือแท่ง ใช้ grid template เดียวกันเป๊ะ ขีดจึงตรงกับรางเสมอ
+     กฎ UI ข้อ "กราฟทุกตัวต้องมีแกน + ตัวเลข" (จอ TV ไม่มี hover → ไม่มีแกน = อ่านไม่ได้) */
+  const axisRow = (nameShown, compact) => (
+    <div style={{ display: 'grid', gridTemplateColumns: gridCols(nameShown, compact), gap: 8, marginBottom: 3 }}>
+      {nameShown && <span />}
+      <span style={{ position: 'relative', display: 'block', height: 13 }}>
+        {PARETO_TICKS.map(t => (
+          <span key={t} style={{ position: 'absolute', left: `${t}%`, top: 0,
+            transform: t === 0 ? 'none' : t === 100 ? 'translateX(-100%)' : 'translateX(-50%)',
+            fontSize: 9.5, lineHeight: '13px', color: t === PARETO_CUTOFF ? 'var(--text2)' : 'var(--muted)',
+            whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{t === 100 ? '100%' : t}</span>
+        ))}
+        <span style={{ position: 'absolute', left: `${PARETO_CUTOFF}%`, top: 0, transform: 'translateX(-50%)',
+          fontSize: 9.5, lineHeight: '13px', fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap' }}>80</span>
+      </span>
+      <span style={{ fontSize: 9.5, lineHeight: '13px', color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap',
+        overflow: 'hidden', textOverflow: 'ellipsis' }} title={`ตัวเลขท้ายแถว = ${unitOf} (และ % ของยอดรวม สำหรับกลุ่ม A)`}>{unitOf}</span>
+    </div>
+  );
+
+  /* legend บอกว่าเส้นกับแท่งคนละสเกล — Pareto มี 2 แกนเสมอ ถ้าไม่บอกคนจะอ่านเส้นเป็นค่า */
+  const axisLegend = (
+    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10, color: 'var(--muted)', marginTop: 5 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 14, height: 7, borderRadius: 2, background: ABC.A.color }} /> ความยาวแท่ง = {unitOf} (เทียบกับรายการสูงสุด)
+      </span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 14, height: 0, borderTop: '2px solid var(--text)' }} /> เส้นไต่ = % สะสม (อ่านกับแกนบน)
+      </span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ width: 14, height: 0, borderTop: '1px dashed var(--text2)' }} /> เส้น 80% = เกณฑ์ตัด vital few
+      </span>
+    </div>
+  );
 
   /* ── โหมดย่อ: แท่ง Top N · ที่เหลือยุบแถวเดียว (2026-09-02 · คำสั่ง user "default top10 พอมั้ย
         ที่เหลือยุบไว้ ไปโชว์ตอนกดขยาย") ──
@@ -203,23 +260,30 @@ export default function ParetoAbcChart({
     const rest = rows.slice(nShow);
     const rSum = rest.reduce((s2, d) => s2 + d._val, 0);
     const restA = rest.filter(d => d._cls === 'A').length;
+    // แถวยุบต้องพาเส้นสะสมไปจบที่ 100% ไม่งั้นเส้นขาดกลางคัน = อ่านเหมือนข้อมูลหาย
+    const restRow = { _cumPrev: rows[nShow - 1]?._cum ?? 0, _cum: 100 };
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {axisRow(true, true)}
         {rows.slice(0, nShow).map((d, i) => barRow(d, i, { compact: true }))}
         {rest.length > 0 && (
           <div onClick={() => setOpen(true)} title={`อีก ${rest.length} รายการ · รวม ${fmt(rSum)} ${unitOf} — กดดูครบทุกรายการ`}
-            style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 38%) 1fr auto', alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
+            style={{ display: 'grid', gridTemplateColumns: gridCols(true, true), alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
             <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>
               ⤢ อีก {rest.length} รายการ{restA > 0 ? ` (กลุ่ม A ${restA})` : ''}
             </span>
-            <span style={{ display: 'block', background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', height: 6 }}>
-              <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, rSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+            <span style={{ position: 'relative', display: 'block', height: 6 }}>
+              <span style={{ position: 'absolute', inset: 0, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
+                <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, rSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
+              </span>
+              {cumOverlay(restRow)}
             </span>
-            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' }}>
               {fmt(rSum)} ({(rSum / total * 100).toFixed(0)}%)
             </span>
           </div>
         )}
+        {axisLegend}
       </div>
     );
   };
@@ -227,7 +291,9 @@ export default function ParetoAbcChart({
   // โหมดขยาย: ทุกรายการมีชื่อ (C ก็เห็น) ความหนายังต่างกันตามกลุ่ม
   const chartFull = () => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+      {axisRow(true, false)}
       {rows.map((d, i) => barRow(d, i, { showName: true }))}
+      {axisLegend}
     </div>
   );
 
@@ -281,6 +347,16 @@ export default function ParetoAbcChart({
         </div>
       )}
       {strip}
+      {/* 🔴 ข้อมูลกำกวมเกินครึ่ง = กราฟนี้ยังชี้เป้าไม่ได้ — บอกตรงๆ ดีกว่าให้คนเชื่อผลผิด */}
+      {vague.pct >= 40 && (
+        <div style={{ background: '#ef444414', border: '1px solid #ef444455', borderRadius: 8,
+          padding: '7px 10px', marginBottom: 8, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
+          <b style={{ color: '#ef4444' }}>⚠ {vague.pct.toFixed(0)}% ของข้อมูลยังไม่บอกสาเหตุ</b>
+          {' '}({vague.names.join(' · ')} รวม {fmt(vague.vagueVal)} จาก {fmt(vague.total)} {unitOf})
+          {' — '}พาเรโตยัง<b>ชี้เป้าไม่ได้</b>จนกว่าจะระบุสาเหตุตอนบันทึก
+          {noteDim && <span> · กดแท่งนั้นเพื่อดูหมายเหตุที่พนักงานเขียนจริง</span>}
+        </div>
+      )}
       {/* "อื่นๆ / ไม่ระบุ" ติดกลุ่ม A = อันดับต้นๆ แต่บอกอะไรไม่ได้ → ชี้ทางไปดูหมายเหตุจริงทันที */}
       {vagueA.map((d, i) => (
         <div key={i} onClick={() => openDrill(d.name, noteDim.key)}
