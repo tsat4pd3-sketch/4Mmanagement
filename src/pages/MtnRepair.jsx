@@ -13,7 +13,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -43,6 +43,8 @@ import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
+import { LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 /* ── helpers ─────────────────────────────────────────────── */
@@ -368,14 +370,18 @@ export default function MtnRepair() {
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
     (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
-    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, () => loadOrders()).subscribe();
-    return () => { supabaseDR.removeChannel(ch); };
+    /* 🔴 2026-09-15 — เดิมผูก loadOrders เข้า handler ตรงๆ **ไม่มีเพดานเลย**
+       loadOrders = `select('*').limit(1000)` ทั้งตาราง ⇒ ทุกครั้งที่ช่างคนไหนก็ตามขยับใบ
+       ทุกเครื่องที่เปิดหน้านี้ดึงใบซ่อมทั้งพันใบใหม่ · ดู src/utils/liveRefresh.js */
+    const bump = coalesce(loadOrders, LIVE.PAGE);
+    const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, bump).subscribe();
+    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders]);
 
   const shown = useMemo(() => {
     let rows = orders;
     if (scopeLines) rows = rows.filter(o => !o.line_name || scopeLines.has(o.line_name));
-    if (fStatus === 'open') rows = rows.filter(o => !['closed', 'rejected'].includes(o.status));
+    if (fStatus === 'open') rows = rows.filter(isMoOpen);   // รวม transferred = จบแล้ว (utils/mtnStepPerm)
     else if (fStatus === 'closed') rows = rows.filter(o => o.status === 'closed');
     else if (fStatus !== 'all') rows = rows.filter(o => o.status === fStatus);
     if (fLine) {
@@ -389,7 +395,21 @@ export default function MtnRepair() {
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fText, lines]);
 
-  const openCount = useMemo(() => orders.filter(o => !['closed', 'rejected'].includes(o.status) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
+  const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
+
+  /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
+     (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
+     นับเฉพาะใบที่**ลงมือจริงแล้ว** (มี repair_done_at = ผ่านขั้น 3) — ใบที่ยังไม่มีใครแตะไม่ใช่ first-response
+     ตัวหารจึงไม่รวมใบที่กำลังทำอยู่ ⇒ % ไม่แกว่งตามงานค้าง */
+  const firstResp = useMemo(() => {
+    const rows = orders.filter(o => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) === 'production'
+      && (o.repair_done_at || o.status === 'transferred')
+      && (!scopeLines || !o.line_name || scopeLines.has(o.line_name)));
+    const passed = rows.filter(o => o.status !== 'transferred').length;   // ทำเองจนส่งมอบงานได้
+    const sent   = rows.filter(o => o.status === 'transferred').length;   // เกินมือ ส่งต่อ
+    const total  = passed + sent;
+    return { passed, sent, total, pct: total ? Math.round((passed / total) * 100) : null };
+  }, [orders, scopeLines]);
   // ⚠️ hook นี้ต้องอยู่ก่อน `if (loading) return` ด้านล่าง — ไม่งั้น hook count เปลี่ยนตอน loading→loaded = React #310 (จอ error)
   // ไลน์ในฟอร์มแจ้งซ่อม = เฉพาะที่อยู่ใน scope ของผู้แจ้ง (กันเห็นไลน์ข้ามส่วนงาน — pattern มาตรฐาน)
   const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
@@ -411,7 +431,9 @@ export default function MtnRepair() {
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
       <PageHeader
         title="แจ้งซ่อม MTN (MO)" icon="🛠️"
-        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ</>}
+        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ
+          {firstResp.total > 0 && <> · 🔧 ช่างฝ่ายผลิตแก้เองจบ <b style={{ color: firstResp.pct >= 60 ? '#22c55e' : '#f59e0b' }}>{firstResp.pct}%</b>
+            <span style={{ color: 'var(--muted)' }}> ({firstResp.passed} ใบ · ส่งต่อช่างเฉพาะทาง {firstResp.sent} ใบ)</span></>}</>}
         tabs={TAB_DEFS} tab={tab} onTab={setTab}
       />
 
@@ -1025,26 +1047,45 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
     setResubBusy(false); toast.success(`ส่งใหม่ให้ทีม ${resubDept} แล้ว`); onReload && onReload(); onClose();
   };
 
-  /* ── ➡️ ส่งต่องานให้ทีมช่างที่เกี่ยวข้อง (2026-09-14 · คำสั่ง user) ──────────────
-     "ช่างฝ่ายผลิตเข้าไป action รอบแรกแล้วแก้ไม่ได้ → ส่งใบต่อให้ช่างเฉพาะทาง โดยเห็นรายละเอียด
-      ที่ช่างฝ่ายผลิตตรวจมาแล้ว" — เดิมไม่มีทางนี้ คนจึง**เปิดใบใหม่** ⇒ ประวัติขาดเป็นคนละใบ
-      + นาฬิกา KPI ของงานเดิมค้าง + ทีมใหม่ไม่เห็นว่าใครดูอะไรมาแล้ว
-     ต่างจาก "ตีกลับ" ตรงที่ **เก็บผลตรวจเบื้องต้นไว้** (snapshot ลง mtn_order_handoffs)
-     แล้วล้างช่องทำงานให้ทีมใหม่กรอกของตัวเอง — เกณฑ์ว่าส่งต่อได้ไหม = canHandoff() ที่ util */
-  const [handoffs, setHandoffs] = useState([]);
+  /* ── ➡️ ส่งต่องานให้ทีมช่างที่เกี่ยวข้อง (2026-09-14 · คำสั่ง user — รอบ 2) ─────────────
+     "ผลิตเข้าไป take action ก่อนแล้วแก้ไม่ได้ ให้จบเลขของผลิต แล้วส่งต่อไปช่างเฉพาะทาง
+      ให้เปิดเลขใหม่ของส่วนงานนั้น แต่ relate กันได้ · เก็บประวัติว่าเข้าไป action กี่ครั้ง
+      ทำเองได้/ไม่ได้กี่ครั้ง"
+
+     โมเดล = **1 ปัญหา หลายใบ ผูกกันเป็นสาย** (ไม่ใช่ย้ายใบเดิมอย่างรอบแรก):
+       ใบเดิม → `status='transferred'` (จบที่ทีมนี้ · ผลตรวจอยู่ในใบครบ ไม่ล้างอะไรเลย)
+       ใบใหม่ → แถวใหม่ของทีมปลายทาง ได้ **เลข MO ของทีมนั้นเอง** ตอนหัวหน้าช่างกดรับงาน (ขั้น 2)
+       เชื่อมด้วย `mtn_order_handoffs` (from_order_id → to_order_id) + `transferred_from_mo` บนใบลูก
+     ⇒ นับสถิติ first-response ได้: ทีมผลิตแก้เองจบ (closed) กี่ใบ vs ส่งต่อ (transferred) กี่ใบ
+
+     ⚠️ ลำดับเขียนสำคัญ — "งานหายไปเลย" แย่กว่า "มีใบเกิน":
+        สร้างใบใหม่ก่อน → ผูกความสัมพันธ์ → ค่อยปิดใบเดิม
+        ถ้าปิดใบเดิมพลาด ใบเดิมยังเปิดอยู่ (กดซ้ำได้) และรอบถัดไปจะ **ไม่สร้างใบซ้ำ**
+        เพราะเช็ค handoff ที่มีอยู่แล้วก่อนเสมอ */
+  const [handoffOut, setHandoffOut] = useState([]);   // ใบนี้ส่งต่อไปใบไหน
+  const [handoffIn,  setHandoffIn]  = useState(null); // ใบนี้ถูกส่งต่อมาจากใบไหน (+ ใบต้นทางไว้โชว์ผลตรวจ)
   const [showHandoff, setShowHandoff] = useState(false);
   const [hoDept, setHoDept] = useState('');
   const [hoReason, setHoReason] = useState('');
   const [hoBusy, setHoBusy] = useState(false);
   useEffect(() => {
     let alive = true;
-    supabaseDR.from('mtn_order_handoffs').select('*').eq('order_id', o.id).order('seq')
-      .then(({ data, error }) => {
-        if (!alive) return;
-        // ฐานยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ข้อผิดพลาดของใบ — เงียบได้
-        if (error && error.code !== '42P01') console.warn('[handoffs]', error.message);
-        setHandoffs(data || []);
-      });
+    (async () => {
+      const { data, error } = await supabaseDR.from('mtn_order_handoffs')
+        .select('*').or(`from_order_id.eq.${o.id},to_order_id.eq.${o.id}`).order('handed_at');
+      if (!alive) return;
+      // ฐานยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ข้อผิดพลาดของใบ — เงียบได้
+      if (error) { if (error.code !== '42P01') console.warn('[handoffs]', error.message); return; }
+      const rows = data || [];
+      setHandoffOut(rows.filter(h => h.from_order_id === o.id));
+      const inRow = rows.find(h => h.to_order_id === o.id) || null;
+      if (!inRow) { setHandoffIn(null); return; }
+      // ดึงใบต้นทางมาโชว์ "ผลตรวจเบื้องต้น" — อ่านจากใบจริง ไม่ต้อง snapshot (ใบเดิมไม่ถูกล้าง)
+      const { data: src } = await supabaseDR.from('mtn_orders')
+        .select('id, mo_no, mtn_dept, root_cause, solution, after_img, tech_main, tech_secondary, accept_at, repair_done_at, repair_type')
+        .eq('id', inRow.from_order_id).maybeSingle();
+      if (alive) setHandoffIn({ ...inRow, src: src || null });
+    })();
     return () => { alive = false; };
   }, [o.id]);
 
@@ -1053,37 +1094,63 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
     if (!hoReason.trim()) return toast.error('ระบุเหตุผล — ทีมใหม่ต้องรู้ว่าทีมแรกติดตรงไหน');
     setHoBusy(true);
     const nowIso = new Date().toISOString();
-    // 1) เก็บ snapshot ผลตรวจเบื้องต้นก่อนล้างช่องทำงาน — ล้มตรงนี้ต้องหยุด ห้ามล้างข้อมูลทิ้ง
-    const ok = checkWrite(await supabaseDR.from('mtn_order_handoffs').insert({
-      order_id: o.id, seq: (o.handoff_count || 0) + 1,
-      from_dept: orderTeam || null, to_dept: teamKeyOf(hoDept),
-      reason: hoReason.trim(), handed_by: fullName || '', handed_at: nowIso,
-      found_root_cause: o.root_cause || null, found_solution: o.solution || null, found_after_img: o.after_img || null,
-      tech_main: o.tech_main || null, tech_secondary: o.tech_secondary || null,
-      accept_at: o.accept_at || null, repair_done_at: o.repair_done_at || null,
-    }), 'บันทึกการส่งต่องาน');
-    if (!ok) { setHoBusy(false); return; }
-    /* 2) ส่งใบให้ทีมใหม่ — กลับไปขั้น 1 ให้หัวหน้าช่างทีมใหม่กดรับงาน (ขั้น 2) ตามปกติ
-       · รีเซ็ต report_at = นาฬิกา KPI ของทีมใหม่เริ่มนับจากตอนรับส่งต่อ (หลักเดียวกับ resubmit
-         — ไม่โทษทีมที่เพิ่งได้ใบ) เก็บ first_report_at ไว้ดูเวลารวมของปัญหาจริง
-       · **ไม่ออกเลข MO ใหม่** — ใบเดียวกัน งานเดียวกัน (mtn_assign_mo_no เป็น idempotent)
-       · ล้างเฉพาะช่องทำงานของทีมเดิม — ของที่ผู้แจ้งกรอก (อาการ/รูปก่อนซ่อม/ไลน์) ต้องอยู่ครบ */
-    const upd = {
-      mtn_dept: teamKeyOf(hoDept), status: 'pending', current_step: 1,
-      handoff_count: (o.handoff_count || 0) + 1,
-      report_at: nowIso, first_report_at: o.first_report_at || o.report_at,
-      accept_at: null, accepted_by: null, assigned_to: null, assign_note: null, target_done_at: null,
-      repair_type: null, repair_done_at: null, root_cause: null, solution: null,
-      tech_main: null, tech_secondary: null, after_img: null,
-      updated_at: nowIso,
-    };
-    const okUpd = checkWrite(await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id), 'ส่งต่อใบให้ทีมใหม่');
-    setHoBusy(false);
-    if (!okUpd) return toast.error('บันทึกการส่งต่อไว้แล้ว แต่ย้ายใบไม่สำเร็จ — กดส่งต่อใหม่อีกครั้ง');
-    const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', o.id).single();
-    notifyMtn(fresh, 'mtn_reported');   // ทีมใหม่ได้แจ้งเตือนเหมือนใบเปิดใหม่ (แต่เป็นใบเดิม)
-    toast.success(`ส่งต่อให้ทีม ${deptNameOf(hoDept)} แล้ว — ผลตรวจเบื้องต้นถูกแนบไปกับใบ`);
-    onReload && onReload(); onClose();
+    const toDept = teamKeyOf(hoDept);
+    try {
+      /* 0) กันสร้างใบซ้ำตอนกดใหม่หลังปิดใบเดิมพลาด — ถ้าเคยสร้างไปแล้วใช้ใบเดิมนั้นต่อ */
+      const { data: prior, error: ePrior } = await supabaseDR.from('mtn_order_handoffs')
+        .select('id, to_order_id').eq('from_order_id', o.id).limit(1);
+      if (ePrior) { setHoBusy(false); return toast.error('ตรวจประวัติการส่งต่อไม่สำเร็จ: ' + ePrior.message); }
+      let childId = prior?.[0]?.to_order_id || null;
+
+      /* 1) เปิดใบใหม่ให้ทีมปลายทาง — คัดลอก "ตัวปัญหา" ที่ผู้แจ้งกรอกไว้ (ไม่ใช่ผลงานของทีมเดิม)
+            · ไม่ออกเลข MO ตรงนี้ — ออกตอนทีมใหม่กดรับงาน (ขั้น 2) จะได้ prefix ของทีมนั้นจริง
+            · report_at = ตอนนี้ (นาฬิกา KPI ของทีมใหม่) · first_report_at = เวลาที่ปัญหาเกิดครั้งแรก */
+      if (!childId) {
+        const { data: child, error: eChild } = await supabaseDR.from('mtn_orders').insert({
+          status: 'pending', current_step: 1, mtn_dept: toDept,
+          report_at: nowIso, first_report_at: o.first_report_at || o.report_at,
+          occurred_at: o.occurred_at || o.report_at,
+          transferred_from_mo: o.mo_no || null,
+          line_name: o.line_name, dept_section: o.dept_section, work_area: o.work_area,
+          item_type: o.item_type, machine_no: o.machine_no, model: o.model, customer: o.customer,
+          code: o.code, cost_center: o.cost_center, repair_scope: o.repair_scope, want_at: o.want_at,
+          problem_characteristic: o.problem_characteristic, problem_detail: o.problem_detail,
+          problem_group: o.problem_group, before_img: o.before_img, is_sample: o.is_sample,
+          reporter_prod: o.reporter_prod, reporter_qa: o.reporter_qa,
+          reported_by_name: o.reported_by_name, reported_by_uid: o.reported_by_uid,
+          source_downtime_id: o.source_downtime_id, source_inspection_id: o.source_inspection_id,
+          report_note: [o.report_note, `[ส่งต่อจาก ${o.mo_no || 'ใบก่อนหน้า'} · ${deptNameOf(orderTeam)}] ${hoReason.trim()}`].filter(Boolean).join('\n'),
+        }).select('id, mo_no').single();
+        if (eChild || !child) { setHoBusy(false); return toast.error('เปิดใบใหม่ให้ทีมปลายทางไม่สำเร็จ: ' + (eChild?.message || '')); }
+        childId = child.id;
+
+        /* 2) ผูกความสัมพันธ์ — ล้มตรงนี้ = มีใบใหม่แต่ไม่รู้ที่มา ต้องบอกดังๆ ห้ามเงียบ
+              (ใบเดิมยังไม่ปิด ⇒ กดซ่อมต่อ/กดส่งต่อใหม่ได้ และรอบหน้าจะไม่สร้างใบซ้ำ) */
+        const okLink = checkWrite(await supabaseDR.from('mtn_order_handoffs').insert({
+          from_order_id: o.id, to_order_id: childId,
+          from_dept: orderTeam || null, to_dept: toDept,
+          reason: hoReason.trim(), handed_by: fullName || '', handed_at: nowIso,
+        }), 'ผูกใบใหม่กับใบเดิม');
+        if (!okLink) { setHoBusy(false); return toast.error(`เปิดใบใหม่แล้วแต่ผูกกับใบเดิมไม่ได้ — แจ้งแอดมิน (ใบใหม่ id ${childId})`); }
+      }
+
+      /* 3) ปิดใบเดิม — จบที่ทีมนี้ "แก้ไม่ได้ ส่งต่อแล้ว" · ผลตรวจ/ช่าง/รูป ยังอยู่ในใบครบ
+            compare-and-swap กัน 2 คนกดพร้อมกันแล้วปิดซ้อน */
+      const { data: closed, error: eClose } = await supabaseDR.from('mtn_orders')
+        .update({ status: 'transferred', updated_at: nowIso })
+        .eq('id', o.id).eq('status', o.status).select('id');
+      setHoBusy(false);
+      if (eClose) return toast.error('ปิดใบเดิมไม่สำเร็จ: ' + eClose.message);
+      if (!closed?.length) return toast.error('ใบนี้ถูกคนอื่นเปลี่ยนสถานะไปแล้ว — รีเฟรชแล้วลองใหม่');
+
+      const { data: fresh } = await supabaseDR.from('mtn_orders').select('*').eq('id', childId).single();
+      if (fresh) notifyMtn(fresh, 'mtn_reported');   // ทีมใหม่ได้แจ้งเตือนเหมือนใบแจ้งซ่อมใหม่
+      toast.success(`ส่งต่อให้ทีม ${deptNameOf(hoDept)} แล้ว — เปิดใบใหม่ของทีมนั้น (ใบนี้ปิดเป็น "ส่งต่อทีมอื่น")`);
+      onReload && onReload(); onClose();
+    } catch (e) {
+      setHoBusy(false);
+      toast.error('ส่งต่อไม่สำเร็จ: ' + (e?.message || e));
+    }
   };
 
   const del = async () => {
@@ -1175,23 +1242,32 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
-      {/* 🔎 ผลตรวจเบื้องต้นจากทีมก่อนหน้า — หัวใจของการส่งต่อ (2026-09-14)
-          ทีมใหม่ต้องเห็นว่าช่างฝ่ายผลิตเข้าไปดูอะไรมาแล้ว ไม่ใช่เริ่มจากศูนย์เหมือนใบเปิดใหม่ */}
-      {handoffs.length > 0 && (
+      {/* 🔎 ใบนี้ถูกส่งต่อ**มา** — ทีมใหม่ต้องเห็นว่าทีมก่อนหน้าเข้าไปดูอะไรมาแล้ว
+          อ่านจากใบต้นทางโดยตรง (ใบเดิมไม่ถูกล้าง) ไม่ต้องพึ่ง snapshot — 2026-09-14 รอบ 2 */}
+      {handoffIn && (
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(96,165,250,0.09)', border: '1px solid rgba(96,165,250,0.45)' }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginBottom: 4 }}>
-            ➡️ ใบนี้ถูกส่งต่อมา {handoffs.length} ครั้ง — ผลตรวจเบื้องต้นของทีมก่อนหน้า
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginBottom: 3 }}>
+            ➡️ ส่งต่อมาจาก {handoffIn.src?.mo_no || o.transferred_from_mo || 'ใบก่อนหน้า'} · ทีม {deptNameOf(handoffIn.from_dept) || '—'}
           </div>
-          {handoffs.map(h => (
-            <div key={h.id} style={{ fontSize: 11.5, lineHeight: 1.65, paddingTop: 4, borderTop: '1px dashed var(--border)', marginTop: 4 }}>
-              <div style={{ color: 'var(--text2)' }}>
-                <b>{deptNameOf(h.from_dept) || '—'} → {deptNameOf(h.to_dept)}</b> · {h.handed_by || '—'} · {fmtDateTime(h.handed_at)}
-              </div>
-              <div style={{ color: 'var(--text)' }}>เหตุผลที่ส่งต่อ: {h.reason}</div>
-              {h.found_root_cause && <div style={{ color: 'var(--muted)' }}>สาเหตุที่ตรวจพบ: {h.found_root_cause}</div>}
-              {h.found_solution   && <div style={{ color: 'var(--muted)' }}>สิ่งที่ทำไปแล้ว: {h.found_solution}</div>}
-              {(h.tech_main || h.tech_secondary) && <div style={{ color: 'var(--muted)' }}>ช่างที่เข้าดู: {[h.tech_main, h.tech_secondary].filter(Boolean).join(' · ')}</div>}
-              {h.found_after_img && <img src={h.found_after_img} alt="" style={{ maxHeight: 110, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }} />}
+          <div style={{ fontSize: 11.5, lineHeight: 1.7 }}>
+            <div style={{ color: 'var(--text)' }}>เหตุผลที่ส่งต่อ: <b>{handoffIn.reason}</b></div>
+            <div style={{ color: 'var(--muted)' }}>ส่งโดย {handoffIn.handed_by || '—'} · {fmtDateTime(handoffIn.handed_at)}</div>
+            {handoffIn.src?.root_cause && <div style={{ color: 'var(--text2)' }}>🔎 สาเหตุที่ทีมก่อนหน้าตรวจพบ: {handoffIn.src.root_cause}</div>}
+            {handoffIn.src?.solution   && <div style={{ color: 'var(--text2)' }}>🛠 สิ่งที่ทำไปแล้ว: {handoffIn.src.solution}</div>}
+            {(handoffIn.src?.tech_main || handoffIn.src?.tech_secondary) && <div style={{ color: 'var(--muted)' }}>ช่างที่เข้าดู: {[handoffIn.src.tech_main, handoffIn.src.tech_secondary].filter(Boolean).join(' · ')}</div>}
+            {handoffIn.src?.repair_done_at && <div style={{ color: 'var(--muted)' }}>ทีมก่อนหน้าใช้เวลา {minutesBetween(handoffIn.src.accept_at, handoffIn.src.repair_done_at) ?? '—'} นาที ก่อนตัดสินใจส่งต่อ</div>}
+            {handoffIn.src?.after_img && <img src={handoffIn.src.after_img} alt="" style={{ maxHeight: 110, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }} />}
+          </div>
+        </div>
+      )}
+      {/* ใบนี้ส่งต่อ**ไป** แล้ว — ใบนี้จบที่ทีมนี้ ให้ตามงานต่อที่ใบใหม่ */}
+      {handoffOut.length > 0 && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {handoffOut.map(h => (
+            <div key={h.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: '#e0894a' }}>➡️ ใบนี้ส่งต่อให้ทีม {deptNameOf(h.to_dept)} แล้ว — จบที่ทีมนี้</div>
+              <div style={{ color: 'var(--text)' }}>เหตุผล: {h.reason}</div>
+              <div style={{ color: 'var(--muted)' }}>โดย {h.handed_by || '—'} · {fmtDateTime(h.handed_at)} · งานต่อจากนี้ตามที่ใบใหม่ของทีม {deptNameOf(h.to_dept)}</div>
             </div>
           ))}
         </div>
@@ -1202,7 +1278,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           {!showHandoff ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
-                ดูแล้วเกินมือทีมนี้? <b style={{ color: 'var(--text2)' }}>ส่งต่อให้ช่างเฉพาะทางได้เลย</b> — ไม่ต้องเปิดใบใหม่ ผลตรวจที่ทำมาแล้วจะติดไปกับใบ
+                ดูแล้วเกินมือทีมนี้? <b style={{ color: 'var(--text2)' }}>ส่งต่อให้ช่างเฉพาะทางได้เลย</b> — ระบบปิดใบนี้ให้ แล้วเปิดใบใหม่ของทีมนั้นพร้อมผลตรวจที่ทำมา
               </div>
               <button onClick={() => { setHoDept(''); setHoReason(''); setShowHandoff(true); }} style={{ ...btnGhost, color: '#60a5fa', borderColor: '#60a5fa' }}>➡️ ส่งต่อทีมอื่น</button>
             </div>
@@ -1223,7 +1299,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
                 <textarea value={hoReason} onChange={e => setHoReason(e.target.value)} placeholder="เช่น ตรวจแล้วเป็นที่บอร์ดคอนโทรล เกินขอบเขตช่างฝ่ายผลิต ต้องให้ MTN ถอดเช็ค" style={{ ...inp, fontSize: 12.5, minHeight: 58 }} />
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.6 }}>
-                ส่งต่อแล้วใบจะไปรอทีมใหม่กดรับงาน (ขั้น 2) · <b>เลข MO เดิมไม่เปลี่ยน</b> · เวลา KPI ของทีมใหม่เริ่มนับจากตอนนี้ (เวลาเปิดครั้งแรกยังเก็บไว้)
+                กดแล้ว: <b style={{ color: 'var(--text2)' }}>ใบนี้ปิดเป็น “ส่งต่อทีมอื่น”</b> (ผลตรวจ/ช่าง/รูป ยังอยู่ในใบครบ ไม่หาย)
+                · <b style={{ color: 'var(--text2)' }}>เปิดใบใหม่ให้ทีมปลายทาง ได้เลข MO ของทีมนั้นเอง</b> ตอนหัวหน้าช่างกดรับงาน
+                · 2 ใบผูกกันไว้ กดดูย้อนกันได้ · เวลา KPI ของทีมใหม่เริ่มนับจากตอนนี้ (เวลาที่ปัญหาเกิดครั้งแรกยังเก็บไว้)
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => setShowHandoff(false)} style={btnGhost}>ยกเลิก</button>
@@ -1441,6 +1519,26 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     return null;
   };
 
+  /* ── เขียนเวลากลับไปที่ "ใบหยุดเครื่อง" ต้นทาง (downtime_logs) ─────────────────────────
+     ทำไม: แท็บ ⚙️ รายอุปกรณ์ วัด MTTR ได้แค่ก้อนเดียว (started_at → ended_at = รวมเวลารอช่าง)
+     แยก "รอช่าง (MTTA) vs ซ่อมจริง" ไม่ได้ เพราะ `call_mtn_ack_at` **ไม่เคยถูกเขียนเลยสักแถว**
+     (วัดจริง 8,429 แถว: call_mtn ใช้ 17 · ack 0 · fix_at 93) ทั้งที่ใบ MO มีเวลาครบอยู่แล้ว
+     (90 วัน: accept_at 304 · repair_done_at 298 · ผูก downtime 238 ใบ) — แค่ไม่เคยส่งกลับ
+     ⇒ ขั้นรับงาน/ซ่อมเสร็จ ส่งเวลากลับไปด้วย ไม่เพิ่มงานให้ใครเลย
+     ⚠️ best-effort: ใบ MO บันทึกสำเร็จไปแล้ว ถ้าตรงนี้ล้ม **ห้ามลากใบล้มตาม** แต่ต้องบอกดังๆ
+     ⚠️ `call_mtn_at` เติมเฉพาะตอนที่ยังว่าง (`.is(null)`) — ถ้าหน้างานกดปุ่ม "เรียกช่าง" ไว้แล้ว
+        เวลานั้นจริงกว่าเวลาที่ใบถูกเปิด ห้ามทับ */
+  const syncDowntimeTimes = async (order, patch, fillCallAt = null) => {
+    if (!order?.source_downtime_id) return;
+    const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
+    if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
+    if (fillCallAt) {
+      await supabaseDR.from('downtime_logs')
+        .update({ call_mtn: true, call_mtn_at: fillCallAt })
+        .eq('id', order.source_downtime_id).is('call_mtn_at', null);
+    }
+  };
+
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
     setSaving(true);
@@ -1505,6 +1603,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
+        // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
+        if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
       } else if (step === 3) {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
@@ -1525,6 +1625,8 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
            ก่อนถึงสต็อก · พอ error รูปถูก catch ไปต่อ ด่านนั้นก็หายไป */
         const { error: eUpd3 } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd3) { setSaving(false); return toast.error('บันทึกการซ่อมไม่สำเร็จ (ยังไม่ตัดสต็อกอะไหล่): ' + eUpd3.message); }
+        // เวลาซ่อมเสร็จ → ใบหยุดเครื่อง (แยก "ซ่อมจริง" ออกจาก "กลับมารัน" ได้)
+        if (upd.repair_done_at) await syncDowntimeTimes(o, { fix_at: upd.repair_done_at });
         if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {

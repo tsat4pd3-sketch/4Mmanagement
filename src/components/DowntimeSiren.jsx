@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
-import { RATE } from '../utils/refreshRates'
+import { RATE, LIVE } from '../utils/refreshRates'
+import { coalesce } from '../utils/liveRefresh'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
 import { checkWrite } from '../utils/dbWrite';
@@ -80,12 +81,16 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
   useEffect(() => {
     fetchAlerts()
     const stopPoll = visibleInterval(fetchAlerts, RATE.BACKUP) // กันเหนียวเผื่อ realtime หลุด
+    // 🔴 2026-09-15 — เดิม `setTimeout(fetchAlerts, 400)` ต่อ event = ไม่ใช่ debounce
+    //    (N event = โหลด N รอบ) → coalesce(LIVE.ALARM) ไวพอสำหรับไซเรน แต่มีเพดาน
+    //    ⚠️ ไซเรน "ดัง" ไม่ได้พึ่งรอบนี้อย่างเดียว — เกณฑ์จริงคือ 15 นาที (dt_alert_config)
+    const bump = coalesce(fetchAlerts, LIVE.ALARM)
     const ch = liveChannel(supabaseDR, `dt-siren-${mode}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(fetchAlerts, 400))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, bump)
       .subscribe()
     // นาฬิกาอย่างเดียว ไม่ยิง DB — ให้รายการที่ "ครบเกณฑ์ระหว่างเปิดจออยู่" ดังเองภายใน 1 นาที
     const clk = setInterval(() => setTick(t => t + 1), 60000)
-    return () => { stopPoll(); supabaseDR.removeChannel(ch); clearInterval(clk) }
+    return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); clearInterval(clk) }
   }, [mode, fetchAlerts])
 
   /* เตรียม AudioContext ตั้งแต่ mount — ต้องรู้สถานะเสียง "ก่อน" มี alert (ดูกฎหัวไฟล์)
