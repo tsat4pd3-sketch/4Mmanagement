@@ -253,6 +253,9 @@ const hhmm = (v) => {
   return m ? `${String(+m[1]).padStart(2, '0')}:${m[2]}` : null;
 };
 
+/** รหัส dock แบบเทียบได้ — `null`/ว่าง = "ไม่ระบุ" (ใบ 862 เก่าไม่มี dock) ห้ามตีเป็นค่าเดียวกับ dock จริง */
+export const dockKey = (v) => String(v ?? '').trim().toUpperCase();
+
 /* รูปแบบวันทำงานที่ลูกค้าแยกตารางรับไว้คนละชุด (ใบลูกค้าแยก "Pattern normal" / "Pattern OT")
    ⚠️ เรียงตามลำดับที่ใช้เป็น default — ปกติมาก่อนเสมอ */
 export const PULL_PATTERNS = [
@@ -269,15 +272,50 @@ export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', window
   const pe = windowEnd instanceof Date ? timeStr(windowEnd) : hhmm(windowEnd);
   if (!ps || !pe) return null;
   const st = String(shipTo || '').trim().toUpperCase();
-  const dk = String(dock || '').trim().toUpperCase();
-  const hit = (rounds || []).filter(r =>
+  const dk = dockKey(dock);
+  const pool = (rounds || []).filter(r =>
     r.is_active !== false
     && String(r.ship_to || '').trim().toUpperCase() === st
     && String(r.pattern || 'normal') === pattern
-    && hhmm(r.period_start) === ps && hhmm(r.period_end) === pe);
-  return hit.find(r => dk && String(r.dock_code || '').trim().toUpperCase() === dk)
-      || hit.find(r => !String(r.dock_code || '').trim())
-      || null;
+    && hhmm(r.period_start) && hhmm(r.period_end));
+  /* ⓐ ช่วงตรงเป๊ะ — เคสปกติ (ตารางลูกค้าแบ่งช่วงเท่ากับที่พอร์ทัลออกไฟล์) */
+  const exact = pool.filter(r => hhmm(r.period_start) === ps && hhmm(r.period_end) === pe);
+  /* ⓑ ช่วงของตาราง **คร่อม** ช่วงในไฟล์ (2026-09-15)
+     🔴 ที่มา: dock B1 ของ GRBNA แบ่งหยาบ (06:00-10:00 → รับ 13:15) แต่ไฟล์ที่พอร์ทัลออก
+        เป็นช่วง 2 ชม. (06:00-08:00) ⇒ จับแบบตรงเป๊ะไม่มีวันเจอ ⇒ ตกไป fallback lead_min
+        = เดาเวลารถผิด ทั้งที่ทะเบียนมีข้อมูลถูกอยู่แล้ว
+     ⚠️ ใช้เป็น **ชั้นรอง** เท่านั้น — ตรงเป๊ะต้องชนะเสมอ (ช่วง 14:00-16:00 ของ B5 มีแถวตรง
+        อยู่แล้ว ห้ามให้แถวหยาบกว่ามาแย่ง) · แคบกว่าชนะกว้างกว่าเมื่อคร่อมทั้งคู่ */
+  const within = pool.filter(r =>
+      spanCovers(hhmm(r.period_start), hhmm(r.period_end), ps, pe)
+      && !(hhmm(r.period_start) === ps && hhmm(r.period_end) === pe))
+    .sort((a, b) => spanMin(hhmm(a.period_start), hhmm(a.period_end))
+                  - spanMin(hhmm(b.period_start), hhmm(b.period_end)));
+  /* dock ตรงชนะ dock ว่าง (fallback ของ ship-to) · ห้ามหยิบเวลาของ dock อื่นมาใช้เด็ดขาด */
+  const pick = (list) => list.find(r => dk && dockKey(r.dock_code) === dk)
+                      || list.find(r => !dockKey(r.dock_code))
+                      || null;
+  const e = pick(exact);
+  if (e) return { ...e, match: 'exact' };
+  const w = pick(within);
+  return w ? { ...w, match: 'within' } : null;
+}
+
+/** นาทีบนกรอบ 24 ชม. · ช่วงข้ามเที่ยงคืนบวก 1440 ให้ปลายช่วง */
+const minOf = (t) => { const m = /^(\d{2}):(\d{2})$/.exec(t || ''); return m ? +m[1] * 60 + +m[2] : null; };
+const spanMin = (a, b) => {
+  const s = minOf(a), e = minOf(b);
+  if (s === null || e === null) return Infinity;
+  return (e > s ? e : e + 1440) - s;
+};
+/** ช่วง [a1,a2) คร่อม [b1,b2) ไหม — เทียบบนแกนที่เริ่มนับจาก a1 (รองรับช่วงข้ามเที่ยงคืน) */
+function spanCovers(a1, a2, b1, b2) {
+  const s = minOf(a1), e = minOf(a2), x = minOf(b1), y = minOf(b2);
+  if ([s, e, x, y].some(v => v === null)) return false;
+  const rel = (v) => (v >= s ? v : v + 1440) - s;        // 0 = ต้นช่วงใหญ่
+  const len = (e > s ? e : e + 1440) - s;
+  const bs = rel(x), be = bs + ((y > x ? y : y + 1440) - x);
+  return bs >= 0 && be <= len;
 }
 
 /** ทุก pattern ที่ "มีรอบรับของช่วงเวลานี้" — เรียงตาม PULL_PATTERNS (ปกติมาก่อน)
@@ -291,9 +329,16 @@ export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', window
  *     ห้ามปล่อยให้ default ในโค้ดเป็นทางเดียวที่เข้าถึงได้ (= seed ไปแล้วใช้ไม่ได้)
  */
 export function pullRoundOptions(rounds, { shipTo, dock, windowStart, windowEnd } = {}) {
+  /* ⚠️ ตัวแรกในลิสต์ = **ค่า default บนจอ** ⇒ ลำดับสำคัญมาก
+     แถวที่ช่วงตรงเป๊ะ (เจาะจงกว่า) ต้องมาก่อนแถวที่แค่คร่อม — ไม่งั้นเคส 16:00-18:00
+     (ot_day ตรงเป๊ะ รับ 19:00 · normal 16:00-22:00 คร่อม รับ 23:00) จะ default ไปที่ normal
+     = ผิดไป 4 ชม. บนวัน OT · ภายในชั้นเดียวกันคงลำดับ PULL_PATTERNS (ปกติมาก่อน) */
   return PULL_PATTERNS
-    .map(p => ({ ...p, round: pickPullRound(rounds, { shipTo, dock, pattern: p.key, windowStart, windowEnd }) }))
-    .filter(x => x.round);
+    .map((p, i) => ({ ...p, i, round: pickPullRound(rounds, { shipTo, dock, pattern: p.key, windowStart, windowEnd }) }))
+    .filter(x => x.round)
+    .sort((a, b) => (a.round.match === 'exact' ? 0 : 1) - (b.round.match === 'exact' ? 0 : 1) || a.i - b.i)
+    // eslint-disable-next-line no-unused-vars
+    .map(({ i, ...x }) => x);
 }
 
 /** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
@@ -526,15 +571,21 @@ export function parsePullFile(matrix, profile, rounds = null, { now = new Date()
  * @param {Array} batches แถวจาก customer_pull_batches ของ ship-to นั้น (ใหม่→เก่า)
  * @returns {Array<{batch, reason:'same_file'|'same_window'}>} ใหม่สุดก่อน
  */
-export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd } = {}) {
+export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd, dock } = {}) {
   const name = String(fileName || '').trim().toLowerCase();
   const ws = windowStart instanceof Date ? windowStart.getTime() : null;
   const we = windowEnd instanceof Date ? windowEnd.getTime() : null;
+  const dk = dockKey(dock);
   const at = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? t : null; };
   return (batches || []).map(b => {
     if (name && String(b.file_name || '').trim().toLowerCase() === name) return { batch: b, reason: 'same_file' };
     // ช่วงเวลาต้องมีครบทั้ง 2 ฝั่งถึงเทียบได้ — ไฟล์ที่ไม่บอกช่วงเวลาห้ามถูกตีว่าซ้ำกันหมด
     if (ws !== null && we !== null && at(b.window_start) === ws && at(b.window_end) === we) {
+      /* 🔴 ช่วงเวลาเดียวกันแต่ **คนละ dock = คนละไฟล์ คนละเที่ยว ไม่ใช่ของซ้ำ** (2026-09-15)
+         เกิดจริง: logistic แยกไฟล์ต่อ dock แล้วอัพติดกัน ⇒ ไฟล์ที่ 2 ถูกตีว่า "อัพซ้ำ"
+         ⚠️ batch เก่าที่ยังไม่มี dock_code (ก่อน migration) = ไม่รู้ ⇒ ยังเตือนเหมือนเดิม ไม่เงียบ */
+      const bd = dockKey(b.dock_code);
+      if (dk && bd && bd !== dk) return null;
       return { batch: b, reason: 'same_window' };
     }
     return null;
@@ -542,10 +593,14 @@ export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd
     .sort((a, b) => new Date(b.batch.uploaded_at || 0) - new Date(a.batch.uploaded_at || 0));
 }
 
-/** คีย์กันนำเข้าซ้ำ — ตรงกับ unique index `customer_pull_signals_dedup_idx` ฝั่ง DB เป๊ะ */
+/** คีย์กันนำเข้าซ้ำ — **ต้องตรงกับ unique index `customer_pull_signals_dedup_idx` ฝั่ง DB เป๊ะ**
+ *  = (source, ship_to, customer_part_no, pulled_at, dock_code)
+ *  🔴 เดิมใช้ `supplier_ref || customer_part_no` ซึ่ง **ไม่ตรงกับ index** (index ใช้ customer_part_no)
+ *     ⇒ ฝั่งจอนับว่า "แถวใหม่" แต่ DB ทิ้งเป็นซ้ำเงียบๆ ผ่าน ignoreDuplicates — แก้ให้ตรงกัน 2026-09-15
+ *  🔴 dock อยู่ในคีย์ด้วย: พาร์ทเดียวกัน วินาทีเดียวกัน คนละ dock = คนละการดึงจริง */
 export const signalKey = (r, source = 'esmart') =>
-  `${source}|${r.ship_to || ''}|${r.supplier_ref || r.customer_part_no}|${
-    r.pulled_at instanceof Date ? r.pulled_at.toISOString() : String(r.pulled_at)}`;
+  `${source}|${r.ship_to || ''}|${r.customer_part_no || ''}|${
+    r.pulled_at instanceof Date ? r.pulled_at.toISOString() : String(r.pulled_at)}|${dockKey(r.dock_code)}`;
 
 /**
  * รวมยอดรายพาร์ท (ต่อ ship-to) — 1 กลุ่ม = 1 ใบส่งที่จะสร้าง/อัพเดท
@@ -554,7 +609,11 @@ export const signalKey = (r, source = 'esmart') =>
 export function aggregateSignals(rows) {
   const m = new Map();
   (rows || []).forEach(r => {
-    const k = `${r.ship_to || ''}|${r.customer_part_no}`;
+    /* 🔴 dock อยู่ในคีย์ (2026-09-15) — **1 พาร์ท × 1 dock = 1 ใบ**
+       ที่มา: ลูกค้าเปลี่ยนมาแยกไฟล์ต่อ dock · dock B1 กับ B5 คนละท่ารับ คนละเวลารถ
+       (B1 06:00-10:00 → รับ 13:15 · B5 06:00-08:00 → รับ 09:00) ⇒ รวมเป็นใบเดียว = ผิดทั้งยอดและเวลา
+       เดิมคีย์เป็น ship_to|part เท่านั้น ⇒ ไฟล์ที่มี 2 dock ถูกยุบเป็นใบเดียวเงียบๆ */
+    const k = `${r.ship_to || ''}|${dockKey(r.dock_code)}|${r.customer_part_no}`;
     let g = m.get(k);
     if (!g) {
       g = { ship_to: r.ship_to, customer_part_no: r.customer_part_no, supplier_ref: r.supplier_ref,
@@ -636,11 +695,29 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
     if (!at) return null;                                    // ไม่ระบุเวลา = วางในเที่ยวไหนไม่ได้ ห้ามเดา
     return at.getTime() - slot.targetAt.getTime();
   };
+  /* 🔴 dock ต้องเข้ากันได้ (2026-09-15) — **ใบของ dock อื่น ห้ามแตะเด็ดขาด**
+     ที่มา (เกิดจริง 09-15 08:15): logistic แยกไฟล์ต่อ dock แล้วอัพ 2 ไฟล์ติดกัน
+       ไฟล์ B1 → สร้าง 3 ใบสำเร็จ · ไฟล์ B5 (10 แถว 125 ชิ้น) → **สร้าง 0 อัพเดท 0**
+       เพราะ 2 ไฟล์ได้ ship_time เดียวกัน ⇒ กลุ่มของ B5 ไปชนใบของ B1 ที่เพิ่งสร้าง
+       ⇒ ตกไปทาง `create` ⇒ ชน unique index (customer, due_date, ship_time, mat_no)
+       ⇒ 23505 ทุกตัว ⇒ **ของ dock B5 หายทั้งชุด** ทั้งที่แถวหลักฐานเข้าครบ 10 แถว
+     กติกา: dock ตรงกันเท่านั้น · ใบที่ยังไม่มี dock (862 เก่า) ให้เคลมได้ (เป็นใบแผนกลางๆ)
+     ⚠️ ไม่รู้ dock ของไฟล์ = ไม่กรอง (พฤติกรรมเดิม — ไฟล์เก่า/ทะเบียนไม่ครบต้องไม่พัง) */
+  const slotDock = dockKey(slot?.dock);
+  const dockOk = (o) => {
+    if (!slotDock) return true;
+    const od = dockKey(o.dock_code);
+    return !od || od === slotDock;
+  };
+  /* ใบที่ e-SMART **รอบอื่น** เคลมไปแล้ว = ของเที่ยวนั้น ห้ามเอามานับซ้ำ
+     ⚠️ `ownBatchIds` = batch ของไฟล์ชุดเดียวกันที่เคยอัพมาก่อน (ship-to + dock + ช่วงเวลาเดียวกัน)
+        ต้องเคลมซ้ำได้ ไม่งั้น "อัพไฟล์เดิมใหม่" = สร้างใบไม่ได้ (23505) และแก้ใบเดิมก็ไม่ได้
+        เดิมโค้ดเทียบกับ `slot.batchId` ที่ **ไม่เคยถูกส่งมาเลย** ⇒ undefined ⇒ ใบที่เคยเคลมถูกตัดทิ้งเสมอ */
+  const ownBatch = new Set((slot?.ownBatchIds || []).filter(Boolean));
   const inWindow = (o) => {
     if (!slot?.targetAt) return true;
-    /* ใบที่ e-SMART รอบอื่นเคลมไปแล้ว = ของเที่ยวนั้น ห้ามเอามานับซ้ำ
-       (batch เดียวกัน = อัพไฟล์เดิมซ้ำ ยังแก้ใบเดิมได้ = idempotent) */
-    if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;
+    if (!dockOk(o)) return false;
+    if (o.pull_batch_id && o.pull_batch_id !== slot.batchId && !ownBatch.has(o.pull_batch_id)) return false;
     const gap = gapOf(o);
     if (gap === null) return false;
     return gap >= -MATCH_BACK_MS && gap <= MATCH_FWD_MS;
@@ -648,10 +725,11 @@ export function planOrderUpdates(groups, orders, resolve, slot) {
   /* ไม่ส่ง slot = พฤติกรรมเดิม: ผู้เรียกกรองรอบมาเองแล้ว เอาใบที่เวลาส่งช้าสุดก่อน */
   const byTimeDesc = (a, b) =>
     (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0) - (orderShipAt(a.due_date, a.ship_time)?.getTime() || 0);
-  /* ใกล้ที่สุดก่อน · ห่างเท่ากันเอาใบที่เวลาส่งมาก่อน (ของที่ถึงกำหนดก่อนขึ้นรถก่อน) */
+  /* dock ตรงมาก่อนใบที่ไม่ระบุ dock · แล้วค่อยใกล้ที่สุด · ห่างเท่ากันเอาใบที่เวลาส่งมาก่อน */
+  const dockRank = (o) => (slotDock && dockKey(o.dock_code) === slotDock ? 0 : 1);
   const byNearest = (a, b) => {
     const ga = gapOf(a), gb = gapOf(b);
-    return (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
+    return (dockRank(a) - dockRank(b)) || (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
   };
 
   return (groups || []).map(g => {

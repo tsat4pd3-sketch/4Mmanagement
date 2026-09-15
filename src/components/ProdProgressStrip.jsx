@@ -4,6 +4,7 @@ import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 
 /* ═══ 📤 สั่งผลิตไปไลน์ไหน · ผลิตได้ตามที่มอบหมายไหม (แถบสรุปสำหรับฝั่ง Store) ═══
    ที่มา (user 2026-08-24): "สโตร์ควรเห็นทั้ง มอนิเตอร์ kanban ของสต๊อกที่กำลังจะต้องสั่งผลิต
@@ -30,6 +31,7 @@ const OPEN_KEY = 'esm_prod_strip_open';
    ที่ยอดผลิตคือเนื้อหาหลักของจอ (ไม่ใช่ของแถมเหมือนบนหน้า Store)
    ⚠️ ห้ามบังคับเปิดตายตัว: คนกดพับแล้วต้องพับอยู่ (ค่าที่เก็บไว้ชนะเสมอ) */
 export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenLine, defaultOpen = false }) {
+  const scopeKey = (scopeNames || []).join('|');   // prop เป็น array — พ่อสร้างใบใหม่ทุก render
   const [d, setD] = useState(null);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState(() => {
@@ -83,10 +85,14 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
       setD({ lines, noShift: false });
       setErr('');
     } catch (e) { setErr(String(e.message || e)); }
-  }, [workDate, scopeNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey แทน scopeNames (array prop)
+  }, [workDate, scopeKey]);
 
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.BOARD);
+  /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+     array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
+     (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
+  /* 🔴 2026-09-15 — เดิม poll ล้วนไม่มี realtime · ดู src/utils/useLiveBoard.js */
+  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders'], topic: 'prod-progress-strip' });
 
   // ⚠️ โหลดไม่ได้ = บอก ห้ามโชว์ว่างเปล่าเหมือนไม่มีงาน
   if (err) return (
