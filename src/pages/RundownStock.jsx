@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
 import { fetchAllPages } from '../utils/fetchByIds';
 
@@ -55,11 +56,11 @@ export default function RundownStock() {
     (st || []).forEach(r => { m[r.code] = r; });
     setShipToMap(m);
   }, []);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
-    return () => stopPoll();
-  }, [load]);
+  /* 🔴 2026-09-15 — เดิม **poll ล้วน ไม่มี realtime เลย** (ยิงเต็มทุก 20 นาที 24 ชม.
+     ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, { tables: ['line_stock_transactions'], topic: 'rundown-stock', rate: RATE.ANALYTIC });
 
   const custLabel = useCallback((code) => {
     if (!code) return '— ไม่ระบุลูกค้า —';

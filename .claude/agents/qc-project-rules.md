@@ -160,6 +160,9 @@ model: inherit
   (poll ยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ · โรงงานหยุดก็ยังกินเท่าวันทำงาน)
   ต้องมีครบ 3 ขา: handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => ... g.touch())`
   · ⚠️ ใส่ gate ให้จอที่**ไม่มี** realtime = 🔴 (ไม่มีใคร touch = เหลือแต่ hard floor = จอค้าง)
+- **[E-BOARD]** จอ/บอร์ดที่ต้องสด ควรใช้ **`useLiveBoard(load, { tables, topic })`** ไม่ใช่ประกอบเอง
+  (realtime + `coalesce` + `makeIdleGate` ครบในตัว) · เจอ `usePolling`/`visibleInterval` ที่ยิงตัวโหลด
+  **โดยไม่มี realtime channel ในหน้าเดียวกัน** = 🟡 poll ล้วน — ยิงเต็ม 24 ชม. ไม่ว่ามีอะไรเปลี่ยนหรือไม่
 - **[E-DEPS]** `useCallback`/`useEffect` ที่**ยิง DB** แล้วมี object/array/`Set`/`Map` อยู่ใน deps = 🔴
   พ่อ `setState(arr)` ใบใหม่เนื้อเดิม ⇒ ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง `StoreLotQueue` 4 คิวรี × 705 ครั้ง/วัน)
   ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
@@ -181,6 +184,11 @@ model: inherit
   onChange/onClick/toggle/drag โดย**ไม่มี confirm หรือ draft+ปุ่มบันทึก** = ผิด · จับ: `<select>`/checkbox/
   toggle is_active/ปุ่มลบ ที่เขียน DB ทันที · ยืนยันเฉพาะ ลบ/ปิดใช้งาน/เปลี่ยน FK master/bulk/revoke สิทธิ์
   (เปิดใช้งาน/additive ไม่ต้อง) · grep: `onChange=.*\.(update|delete|upsert)` ในหน้าหมวดตั้งค่าฯ
+- **F4.2 พาเรโต (2026-09-15 · §"กราฟพาเรโต")** กราฟ/แผงที่เรียกตัวเองว่า "พาเรโต/Pareto" ต้อง
+  **ใช้ `ParetoAbcChart`** (ซึ่งมีเส้นสะสม % + เส้น 80% + แกน % ครบแล้ว) · จับของที่วาดเอง:
+  grep `พาเรโต|Pareto` ในไฟล์ที่ **ไม่ได้** import `ParetoAbcChart` แล้วมี `sort(...b - a)` + แท่ง `width: ...%`
+  = ranked bar chart ปลอมตัวเป็นพาเรโต → ต้องย้ายมาใช้ของกลาง **หรือเปลี่ยนชื่อให้ตรงกับสิ่งที่มันเป็น**
+  (ลิสต์ตัวเลือก/Top N ไม่ใช่พาเรโต) · สูตรทั้งหมดอยู่ `src/utils/pareto.js` เท่านั้น ห้ามคำนวณ % สะสม/ABC เองซ้ำ
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น

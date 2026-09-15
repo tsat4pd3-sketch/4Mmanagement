@@ -237,3 +237,69 @@ realtime message = ~200 bytes เฉพาะตอนมีของเปล�
    · ทำแล้วที่ `ProductMaster` · `MachineDatabase` · `LineSetup` · `DailyReport` (ตัวแก้ทะเบียนในหน้า)
 
 **ผล:** master 640 KB ถูกดึง **≤ 6 ครั้ง/วัน/เครื่อง** (TTL 4 ชม.) แทนที่จะทุก realtime event
+
+
+---
+
+## 8. 🔴 realtime publication ไม่ครบ — subscribe ไปก็ไม่มีอะไรวิ่งมา (แก้แล้ว 2026-09-15)
+
+ไล่เทียบ "ตารางที่โค้ด subscribe" กับ "ตารางที่อยู่ใน `supabase_realtime` publication" แล้วพบว่า**ไม่ตรงกันเลย**
+
+| project | ก่อนแก้ | โค้ด subscribe |
+|---|---|---|
+| **MAIN** | **`role_permissions` ตารางเดียว** | 15 ตาราง |
+| **Product DB (DR)** | 8 ตาราง | 11 ตาราง |
+
+### ผลที่ตามมา (บั๊กเงียบสนิท — ไม่มี error โค้ดดูถูกทุกบรรทัด)
+
+- 🔴 **กระดิ่งแจ้งเตือนไม่เคยเด้งเอง** — `App.jsx` subscribe `notifications` (filter `user_id`) และ**ไม่มี poll สำรอง**
+  ⇒ ต้องรีเฟรชหน้าถึงจะเห็นแจ้งเตือนใหม่ ตลอดมา
+- 🔴 `/rack-center` — คอมเมนต์เขียนว่า "live refresh เมื่อมีไลน์อื่นกดเปลี่ยนสถานะ" → **ไม่เคยทำงาน**
+- 🔴 `/daily-pm` — "ตรวจเสร็จ (inspections) refresh ทันที" → **ไม่เคยทันที**
+- NPI / QA (ncr·capa·claims·fme) / LPA / OJT / PE / feedback / wip_replenish — subscribe ไว้ทั้งหมด ไม่มีอะไรวิ่งมา
+
+### ทำไมเรื่องนี้สำคัญกับ egress
+
+วัดจาก Usage 15/09: **Egress 1.578 GB (Product DB 1.35 = 85%)** แต่
+**Realtime Messages ใช้ไป 22,314 จากโควต้า 5,000,000/เดือน = <1%**
+⇒ realtime แทบไม่มีต้นทุน · poll แพงมาก
+⇒ **ตารางที่ไม่ได้ publish = บังคับให้จอต้อง poll ทั้งก้อนอย่างเดียว**
+
+migration: `20260915_realtime_publication_main.sql` · `20260915_realtime_publication_dr.sql` (**apply แล้ว**)
+⚠️ `line_stock_summary` เป็น **view** → publish ไม่ได้ (`22023 not supported for views`)
+จอสโตร์จึงใช้ `line_stock_transactions` (ledger ที่ป้อน view นั้น) เป็นตัวปลุกแทน — ครอบคลุมเท่ากัน
+
+> 📌 **กฎที่ตกผลึก:** เพิ่ม `.on('postgres_changes', { table: 'x' })` ที่ไหนก็ตาม
+> **ต้องเช็คว่า `x` อยู่ใน publication แล้วหรือยัง** — ไม่อยู่ = subscribe เงียบ ไม่มี error ให้เห็น
+> `select tablename from pg_publication_tables where pubname='supabase_realtime';`
+
+---
+
+## 9. 🔴 deploy ระหว่างวัน = ล้าง cache ของทุกเครื่องทั้งโรงงาน (แก้แล้ว 2026-09-15)
+
+> คำถามจาก user ตรงเป๊ะ: *"หรือเพราะเราแก้ระหว่างวันบ่อยๆ ละพนักงานก็เปิดใช้กันหลายจอแล้ว เลยทำไห้รีเฟรชเรื่อยๆ"*
+
+**วัดแล้ว — ใช่ และเป็นตัวใหญ่:** นับคิวรี `profiles` (ยิง 1 ครั้งต่อ 1 การเปิดแอป) วันที่ 15/09
+
+| เวลา (ไทย) | แอป boot ใหม่ |
+|---|---:|
+| 07:00 | 120 |
+| 08:00 | 329 |
+| 09:00 | 332 |
+| 10:00 | **367** |
+| 11:00 | 344 |
+| 12:00 | 131 |
+
+**~340 ครั้ง/ชั่วโมง** ในเวลาทำงาน (1,372 ครั้งใน 4 ชม.)
+
+การ reload หลัง deploy **ถูกต้องแล้ว** — fix ต้องไปถึงจอ (version-guard + `vite:preloadError` ใน `main.jsx`
+มีไว้เพราะจอ TV เปิดค้างไม่มีใครกด F5 · ห้ามถอด)
+**ที่ผิดคือ "ทุก reload ต้องโหลด master ใหม่ทั้งชุด"** — `masterCache` ผูกคีย์ไว้กับ `VITE_BUILD_ID`
+⇒ deploy ทีเดียว = localStorage cache ของทุกเครื่องเป็นโมฆะ ⇒ boot ถัดไปดึง master ~640 KB ใหม่หมด
+⇒ deploy วันละหลายรอบ × เครื่องที่เปิดค้างทั้งโรงงาน × 340 boot/ชม.
+
+**แก้:** `BUILD_STAMP` → **`CACHE_EPOCH`** (ค่าคงที่ที่ **เปลี่ยนด้วยมือเท่านั้น**)
+- deploy เฉยๆ **ไม่ล้าง cache อีกต่อไป** — โค้ดใหม่ยังไปถึงจอเหมือนเดิม แต่ไม่ลากค่า egress ไปด้วย
+- ⚠️ **แก้ `select` ของ `cachedMaster` (เพิ่ม/ลบคอลัมน์) เมื่อไหร่ ต้องบวก `CACHE_EPOCH` ในคอมมิทเดียวกัน**
+  ไม่งั้นเครื่องที่มี cache เก่าอ่านโครงเก่าได้ถึง 4 ชม.
+- การแก้ **เนื้อข้อมูล** (แก้ทะเบียนสินค้า/เครื่อง) ไม่ต้องแตะ epoch — ใช้ `invalidateTable()` (§7)

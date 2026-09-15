@@ -5,6 +5,7 @@ import LineSelect from '../components/LineSelect';
 import { scopedLineNames } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 
@@ -71,11 +72,11 @@ export default function StoreMonitor() {
     })));
     setLoading(false);
   }, []);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
-    return () => stopPoll();
-  }, [load]);
+  /* 🔴 2026-09-15 — เดิม **poll ล้วน ไม่มี realtime เลย** (ยิงเต็มทุก 20 นาที 24 ชม.
+     ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, { tables: ['line_stock_transactions'], topic: 'store-monitor', rate: RATE.ANALYTIC });
 
 
   // mandatory scope filter — leader = family ไลน์ตัวเอง · role อื่นตาม sections (pattern มาตรฐาน CLAUDE.md)

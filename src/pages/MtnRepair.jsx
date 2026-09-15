@@ -11,10 +11,10 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { PURPOSES, CAUSE_CATS, needsPlantManager, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore } from '../utils/mtnMoForm';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, QA_SKIP_REASON_PURPOSE } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
+import { MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -30,6 +30,7 @@ import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
 import MachineReliability from '../components/MachineReliability';
+import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
@@ -157,6 +158,10 @@ const STEP_EVENT = { 1: 'mtn_reported', 2: 'mtn_assigned', 3: 'mtn_repaired', 4:
    ห้ามเอากลับมาเขียนที่นี่อีก · ผูก role ให้ util ผ่าน helper ตัวนี้ */
 const stepPerms = (role) => ({ can: (a) => can('mtn_repair', a, role), seeded: (a) => isActionSeeded('mtn_repair', a) });
 
+/* ใบนี้ใช้ฟอร์ม/ขั้นตอนของทีม MTN (FM-MTN-006) ไหม — JIG/DIE/PRODUCTION ใช้ FM-JIG-008 เหมือนเดิม
+   ⚠️ เกณฑ์นี้ถูกใช้ 5 ที่ (ฟอร์มแจ้ง · ขั้นตอน · ป้ายขั้น · ด่านอนุมัติ · ใบพิมพ์) — ห้ามเขียนซ้ำในหน้า */
+const isMtnFormOrder = (o) => teamKeyOf(o?.mtn_dept || deptForItem(o?.item_type)) === 'maintenance';
+
 const notifyMtn = (payload, event) => {
   // ⚠️ DB เก็บ mtn_dept เป็น "รหัสทีม" แต่ข้อความ Telegram ต้องอ่านออก → ส่งเป็น "ชื่อทีม" ไปใน payload
   //    ถูกต้องทั้งกับ edge เวอร์ชันที่ deploy อยู่ (แสดงค่าที่ส่งไปตรงๆ) และเวอร์ชันใหม่ (normalize ก่อนเสมอ)
@@ -264,13 +269,18 @@ export default function MtnRepair() {
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
-    { key: 'kpi', label: '📊 KPI' },
-    { key: 'equip', label: '⚙️ รายอุปกรณ์ (MTTR/MTBF)' },   // นับจาก downtime จริง — คำขอทีม MTN 2026-09-11
+    /* 📊 KPI ช่าง = ที่เดียวจบ (2026-09-15 · คำสั่ง user "KPI กับ MTTR/MTBF/MTTA ควรอยู่ tab เดียวกัน
+       เพราะมันคือ KPI ช่าง") — เดิมแยกเป็น 📊 KPI (จากใบซ่อม MO) กับ ⚙️ รายอุปกรณ์ (จาก downtime จริง)
+       ทำให้คนต้องสลับแท็บเพื่อตอบคำถามเดียวกัน · `?tab=equip` เก่าถูก redirect มาที่นี่ (ดู useEffect ล่าง) */
+    { key: 'kpi', label: '📊 KPI ช่าง' },
     { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
     { key: 'rack', label: '🗺️ ผังคลัง' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
   ];
-  const [tab, setTab] = useTabParam(TAB_DEFS.map(t => t.key), 'list');
+  // 'equip' = คีย์เก่าที่ยุบเข้า 'kpi' แล้ว — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
+  // แล้วเด้งไปแท็บ default (รายการ MO) = บุ๊กมาร์กของทีมช่างพาไปผิดที่เงียบๆ
+  const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'equip'], 'list');
+  useEffect(() => { if (tab === 'equip') setTab('kpi', { replace: true }); }, [tab, setTab]);
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -461,8 +471,8 @@ export default function MtnRepair() {
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
-      {tab === 'equip' && <MachineReliability machines={machines} lineObjs={scopedLineObjs} scopeLines={scopeLines} />}
+      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs}
+        machines={machines} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -650,14 +660,16 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
       // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น (เดิมหน้านี้ไม่เคยส่ง → ผู้แจ้งไม่ถูกแจ้งเลย มีแต่ใบที่เปิดจาก Daily Report)
       const { data: { user } = {} } = await supabase.auth.getUser();
       /* ช่องของฟอร์ม MTN — ทีมอื่นไม่ต้องเก็บ (ฟอร์ม FM-JIG-008 ไม่มีช่องพวกนี้)
-         ผู้จัดการต้นสังกัด/โรงงาน: กรอกชื่อ = ถือว่าเซ็นวันนี้ (ยังไม่ใช่ด่านอนุมัติในระบบ) */
+         🔴 2026-09-15: ชื่อผู้จัดการ = "ผู้ที่ต้องเซ็น" เท่านั้น **ห้าม stamp เวลาเซ็นตรงนี้**
+            เดิมกรอกชื่อแล้วระบบประทับ dept_manager_at ทันที ⇒ ด่านอนุมัติงานปรับปรุง/สร้าง
+            จะผ่านเองตั้งแต่ผู้แจ้งพิมพ์ชื่อ (= ลายเซ็นปลอมบนใบพิมพ์) · เวลาเซ็นจริงมาจากปุ่ม
+            "✍️ อนุมัติใบ MO" ในใบเท่านั้น (signApproval ใน DetailDrawer) */
       const nowIso2 = new Date().toISOString();
       const mtnForm = teamKeyOf(f.mtn_dept) === 'maintenance' ? {
         contact_phone: f.contact_phone || null, pr_no: f.pr_no || null, io_no: f.io_no || null,
         purpose: f.purpose || 'repair',
-        dept_manager_name: f.dept_manager_name || null, dept_manager_at: f.dept_manager_name ? nowIso2 : null,
+        dept_manager_name: f.dept_manager_name || null,
         plant_manager_name: needsPlantManager(f.purpose) ? (f.plant_manager_name || null) : null,
-        plant_manager_at: needsPlantManager(f.purpose) && f.plant_manager_name ? nowIso2 : null,
       } : {};
       const { contact_phone, pr_no, io_no, purpose, dept_manager_name, plant_manager_name, ...fRest } = f;  // eslint-disable-line no-unused-vars
       const payload = { ...fRest, ...mtnForm, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
@@ -666,7 +678,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
       if (error?.code === '42703') {
         const { problem_group, occurred_at, contact_phone: _cp, pr_no: _pr, io_no: _io, purpose: _pp,
-          dept_manager_name: _dm, dept_manager_at: _dma, plant_manager_name: _pm, plant_manager_at: _pma,
+          dept_manager_name: _dm, plant_manager_name: _pm,
           ...rest } = payload;   // eslint-disable-line no-unused-vars
         ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
@@ -787,11 +799,17 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
                     background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{pp.label}</button>
                 ); })}
               </div>
+              {/* จุดประสงค์ไม่ใช่แค่ช่องติ๊กบนใบ — มันเปลี่ยนเส้นทางของใบจริง ต้องบอกผลตั้งแต่ตอนเลือก */}
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.6 }}>
+                {needsApprovalFirst({ purpose: f.purpose || 'repair' })
+                  ? <>🔒 <b style={{ color: 'var(--accent2)' }}>งานปรับปรุง/สร้าง</b> — ช่างจะรับงานได้หลังผู้จัดการเซ็นอนุมัติในใบ{needsPlantManager(f.purpose) ? ' (งานสร้างต้องผ่าน ผจก.โรงงานด้วย)' : ''} · ไม่ต้องผ่านการตรวจคุณภาพ (QA) หลังงานเสร็จ</>
+                  : <>⚡ <b style={{ color: 'var(--accent)' }}>งานซ่อม/บริการ</b> — ช่างเริ่มงานได้ทันที ไม่ต้องรออนุมัติ (ผู้จัดการเซ็นรับทราบตามหลังได้) · งานเสร็จแล้วต้องผ่าน QA ตามปกติ</>}
+              </div>
             </Field>
           </div>
-          <Field label="ผู้จัดการต้นสังกัด (ผู้อนุมัติใบ)"><PersonSelect value={f.dept_manager_name} source="both" section={f.dept_section} onChange={res => set('dept_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+          <Field label="ผู้จัดการต้นสังกัด (ผู้ที่ต้องเซ็นอนุมัติ)"><PersonSelect value={f.dept_manager_name} source="both" section={f.dept_section} onChange={res => set('dept_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           {needsPlantManager(f.purpose) && (
-            <Field label="ผู้จัดการโรงงาน (งานสร้างต้องอนุมัติ)"><PersonSelect value={f.plant_manager_name} source="both" onChange={res => set('plant_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการโรงงาน" /></Field>
+            <Field label="ผู้จัดการโรงงาน (งานสร้างต้องเซ็นด้วย)"><PersonSelect value={f.plant_manager_name} source="both" onChange={res => set('plant_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการโรงงาน" /></Field>
           )}
         </>}
         {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
@@ -830,7 +848,8 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
 /* ขั้นถัดไปของใบ — ป้ายปุ่มมาจาก stepLabel() (mtnStepPerm.js) ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
    ⚠️ ไม่มี field `perm` แล้ว — สิทธิ์ตัดสินด้วย canDoStep() ซึ่งดูทั้งคีย์/ทีม/ผู้เปิดใบ */
 function nextStepFor(order) {
-  const S = (step) => ({ step, label: stepLabel(step) });
+  const mtnForm = isMtnFormOrder(order);
+  const S = (step) => ({ step, label: stepLabel(step, { mtnForm }) });
   switch (order.status) {
     case 'pending':   return S(2);
     case 'assigned':
@@ -966,8 +985,9 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
   const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   const done = o.status === 'closed' || o.current_step >= 3;
   const chk = (on) => (on ? '☑' : '☐');
-  /* จุดประสงค์: ใช้ค่าที่กรอก · ใบเก่าที่ยังไม่มี purpose ให้เดาจาก repair_type เหมือนเดิม */
-  const purpose = o.purpose || (/improve|ปรับปรุง/i.test(o.repair_type || '') ? 'improve' : 'repair');
+  /* จุดประสงค์: ใช้ค่าที่กรอก · ใบเก่าที่ยังไม่มี purpose ให้เดาจาก repair_type เหมือนเดิม
+     ⚠️ ตัวเดา (purposeOfPrint) ใช้ได้เฉพาะช่องติ๊กบนใบ — ด่านอนุมัติ/ด่าน QA ต้องดูค่าดิบเท่านั้น */
+  const purpose = purposeOfPrint(o);
   // ช่องกริด PR.No / I/O. — 11 ช่องตามฟอร์ม กระจายตัวอักษรทีละช่อง
   const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
   const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
@@ -1169,7 +1189,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
   const o = order;
   const m = statusMetaOf(o);
   const next = nextStepFor(o);
@@ -1193,12 +1213,38 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
   // 🔒 ขั้น 4/6/7 ทำได้เฉพาะใบของฝ่ายตัวเอง — null = ตัดสินไม่ได้ (ไม่จำกัด/ไลน์ไม่รู้จัก) = ผ่านตามเดิม
   const inReporterScope = orderInReporterScope(o, reporterScope || {});
-  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
+  /* 🔒 ใบ MTN: งานปรับปรุง/สร้างต้องมีลายเซ็นผู้จัดการก่อนช่างรับงาน · งานซ่อม/บริการเดินได้เลย
+     (คำสั่ง user 2026-09-15 — เกณฑ์อยู่ที่ mtnApprovalState() ใน mtnMoForm.js ที่เดียว) */
+  const mtnForm = isMtnFormOrder(o);
+  const appr = mtnForm ? mtnApprovalState(o) : null;
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, mtnForm, approvalBlocked: !!appr?.blocked, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
      ผู้เปิดใบ/ผู้ถือ accept_work หรือ QA เอง กดข้ามไปรับมอบ (ขั้น 6) ได้ — เกณฑ์อยู่ที่ canSkipQa() */
   const skipQa = canSkipQa(stepCtx);
+
+  /* ── ✍️ ผู้จัดการเซ็นใบ MO (ฟอร์ม MTN) ─────────────────────────────────  2026-09-15
+     งานปรับปรุง/สร้าง = ลายเซ็นนี้คือ "ด่านอนุมัติ" ช่างรับงานไม่ได้จนกว่าจะครบ
+     งานซ่อม/บริการ    = ลายเซ็นนี้คือ "รับทราบ" ตามหลังได้ ไม่บล็อกงาน (คำสั่ง user)
+     ⚠️ เขียนชื่อผู้กดจริงทับชื่อที่ผู้แจ้งระบุไว้ — ลายเซ็นต้องบอกว่า *ใครเซ็น* ไม่ใช่ใครถูกวางตัว */
+  const [signBusy, setSignBusy] = useState('');
+  const signApproval = async (kind) => {
+    const v = canSignMtnApproval(kind, stepCtx);
+    if (!v.ok) return toast.error(v.code === 'already_signed' ? 'ใบนี้เซ็นไปแล้ว' : 'เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
+    setSignBusy(kind);
+    const nowIso = new Date().toISOString();
+    const upd = kind === 'dept'
+      ? { dept_manager_name: fullName || o.dept_manager_name || null, dept_manager_sign: signatureUrl || null, dept_manager_at: nowIso }
+      : { plant_manager_name: fullName || o.plant_manager_name || null, plant_manager_sign: signatureUrl || null, plant_manager_at: nowIso };
+    // .select('id') + นับแถว — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็กข้อ 2)
+    const res = await supabaseDR.from('mtn_orders').update({ ...upd, updated_at: nowIso }).eq('id', o.id).is(kind === 'dept' ? 'dept_manager_at' : 'plant_manager_at', null).select('id');
+    setSignBusy('');
+    if (!checkWrite(res, 'เซ็นอนุมัติใบ MO')) return;
+    if (!res.data?.length) return toast.error('เซ็นไม่สำเร็จ — ใบนี้อาจถูกเซ็นไปแล้วจากอีกเครื่อง (ปิดแล้วเปิดใหม่)');
+    toast.success(kind === 'dept' ? 'เซ็นอนุมัติ (ผู้จัดการต้นสังกัด) แล้ว' : 'เซ็นอนุมัติ (ผู้จัดการโรงงาน) แล้ว');
+    onReload && onReload();
+  };
 
   // ── ตีกลับ (returned) → ผู้แจ้งแก้แผนกแล้วส่งใหม่ ──
   const [resubDept, setResubDept] = useState(dept);
@@ -1345,7 +1391,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   /* `skipped` = ขั้นนี้ "ไม่ต้องทำ" (ข้ามอย่างเป็นทางการ) — ต่างจาก done (ทำแล้ว) และจาก
      กล่องจางๆ (ยังไม่ได้ทำ) · ห้ามวาดเป็น ✅ เขียว เพราะแปลว่า "มีคนตรวจแล้ว" = โกหกผู้ตรวจสอบ */
   const StepBox = ({ n, done, skipped, note, children }) => {
-    const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : MTN_STEPS[n];
+    const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : stepMeta(n, { mtnForm });
     const mark = done ? '✅' : (skipped || note) ? '⏭' : '⬜';
     return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
@@ -1353,7 +1399,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : (skipped || note) ? '#f59e0b' : 'var(--muted)' }}>
           {mark} ขั้น {n}: {meta?.title}
           <span style={{ fontWeight: 600, color: 'var(--muted)', marginLeft: 6, fontSize: 11 }}>· {meta?.who}</span>
-          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ ข้าม (ไม่เกี่ยวกับคุณภาพ)</span>}
+          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ {qaAppliesTo(o) ? 'ข้าม (ไม่เกี่ยวกับคุณภาพ)' : 'ไม่ต้องตรวจ (งานปรับปรุง/สร้าง)'}</span>}
         </div>
         {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>✏️ แก้ไข</button>}
       </div>
@@ -1371,11 +1417,14 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const qa5 = moQaState(o);
   const qa5Note = qa5 === 'skipped' ? (
     <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-      ⏭ <b>ไม่ต้องตรวจ QA — งานนี้ไม่เกี่ยวกับคุณภาพ</b>
+      ⏭ <b>ไม่ต้องตรวจ QA — {qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
       <div style={{ color: 'var(--text2)' }}>
+        {/* 3 ที่มาของ "ข้าม" ต้องแยกให้ออก: QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน (2026-09-15) */}
         {isQaSkipped(o)
           ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
-          : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
+          : !qaAppliesTo(o)
+            ? <>{QA_SKIP_REASON_PURPOSE} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ถ้าอยากให้ตรวจจริง QA ยังบันทึกผลที่ขั้น 5 ได้)</>
+            : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
         {o.status === 'checked' && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
       </div>
     </div>
@@ -1487,6 +1536,27 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
           )}
         </div>
       )}
+      {/* ✍️ ลายเซ็นผู้จัดการของใบ MTN — "บล็อกงาน" กับ "รับทราบตามหลัง" ต้องหน้าตาต่างกันชัด
+             (งานซ่อมขึ้นกล่องแดงว่ารออนุมัติ = หน้างานจะหยุดรอทั้งที่ไม่ต้องรอ) */}
+      {mtnForm && appr && (appr.missing.length > 0 || o.dept_manager_at || o.plant_manager_at) && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: appr.blocked ? 'rgba(239,68,68,0.10)' : 'var(--bg2)', border: `1px solid ${appr.blocked ? '#ef4444' : 'var(--border)'}` }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: appr.blocked ? '#ef4444' : 'var(--text)' }}>
+            {appr.blocked
+              ? `🔒 งาน${PURPOSES.find(x => x.key === appr.purpose)?.label || ''} — ต้องอนุมัติก่อนช่างเริ่มงาน`
+              : appr.ackPending ? '✍️ รอผู้จัดการเซ็นรับทราบ (ไม่บล็อกงาน — ช่างทำงานต่อได้เลย)' : '✅ ลายเซ็นผู้จัดการครบแล้ว'}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
+            <div>ผู้จัดการต้นสังกัด: {o.dept_manager_at ? <b style={{ color: 'var(--accent)' }}>✔ {o.dept_manager_name || '—'} · {fmtDateTime(o.dept_manager_at)}</b> : <span style={{ color: 'var(--muted)' }}>ยังไม่เซ็น{o.dept_manager_name ? ` (ระบุไว้: ${o.dept_manager_name})` : ''}</span>}</div>
+            {appr.needPlant && <div>ผู้จัดการโรงงาน (งานสร้าง): {o.plant_manager_at ? <b style={{ color: 'var(--accent)' }}>✔ {o.plant_manager_name || '—'} · {fmtDateTime(o.plant_manager_at)}</b> : <span style={{ color: 'var(--muted)' }}>ยังไม่เซ็น{o.plant_manager_name ? ` (ระบุไว้: ${o.plant_manager_name})` : ''}</span>}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            {canSignMtnApproval('dept', stepCtx).ok && <button onClick={() => signApproval('dept')} disabled={signBusy === 'dept'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'dept' ? 'กำลังเซ็น…' : '✍️ อนุมัติใบ MO (ผู้จัดการต้นสังกัด)'}</button>}
+            {appr.needPlant && canSignMtnApproval('plant', stepCtx).ok && <button onClick={() => signApproval('plant')} disabled={signBusy === 'plant'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'plant' ? 'กำลังเซ็น…' : '✍️ อนุมัติใบ MO (ผจก.โรงงาน)'}</button>}
+            {appr.missing.length > 0 && !canSignMtnApproval(appr.missing[0], stepCtx).ok && <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>เซ็นได้เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ</span>}
+            {appr.missing.length > 0 && canSignMtnApproval(appr.missing[0], stepCtx).ok && !signatureUrl && <span style={{ fontSize: 11, color: 'var(--accent2)', alignSelf: 'center' }}>ยังไม่มีลายเซ็นในโปรไฟล์ — จะบันทึกเป็นชื่อ+เวลา (ตั้งลายเซ็นได้ที่มุมขวาบน)</span>}
+          </div>
+        </div>
+      )}
       {/* ผู้เปิดใบตรวจรับ (ขั้น 4) และรับมอบ (ขั้น 6) ของใบตัวเองได้เสมอ — บอกให้รู้ว่าทำไมกดได้ */}
       {isOrderReporter(o, fullName) && o.status !== 'closed' && (
         <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 11.5, color: '#22c55e' }}>
@@ -1555,7 +1625,8 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', orderLine: o.line_name, orderSection: o.dept_section }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
+              awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ <b>ต้องให้ QA เป็นผู้กด</b> (ขั้น 5) — ฝ่ายที่แจ้ง/ผู้เปิดใบ ข้ามขั้น QA เองไม่ได้แล้ว ตั้งแต่ 14/09/2026</div>)}
@@ -1633,7 +1704,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const hoCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'ho_checker');
   const approverHist = useColumnHistory(supabaseDR, 'mtn_orders', 'approver_name');
   const o = order;
-  const isMtnForm = teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) === 'maintenance';  // ใช้ฟอร์ม FM-MTN
+  const isMtnForm = isMtnFormOrder(o);   // ใช้ฟอร์ม/ขั้นตอน FM-MTN-006
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
@@ -1746,7 +1817,9 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const orderTeam = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
       const inOrderTeam = userTeams.some(t => sameTeam(t, orderTeam));
       const inReporterScope = orderInReporterScope(o, reporterScope || {});
-      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, ...stepPerms(role) };
+      // 🔒 ด่านอนุมัติของใบ MTN (งานปรับปรุง/สร้าง) — เกณฑ์เดียวกับตัวซ่อนปุ่มใน DetailDrawer
+      const approvalBlocked = isMtnForm && mtnApprovalState(o).blocked;
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, mtnForm: isMtnForm, approvalBlocked, ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -1756,8 +1829,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const verdict = skipQa ? { ok: true } : canDoStep(step, stepCtx);
       if (!verdict.ok) {
         setSaving(false);
-        const meta = MTN_STEPS[step];
+        const meta = stepMeta(step, { mtnForm: isMtnForm });
         // บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้หน้างานเดาว่าต้องไปขออะไรกับใคร
+        if (verdict.code === 'await_mgr_approval')
+          return toast.error('ใบนี้เป็นงานปรับปรุง/สร้าง — ต้องให้ผู้จัดการเซ็นอนุมัติก่อนช่างเริ่มงาน (ปุ่ม “✍️ อนุมัติใบ MO” ในใบ)');
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
           return toast.error(`ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} — คุณทำได้เฉพาะใบของทีมตัวเอง`);
         if (verdict.code === 'out_of_scope')
@@ -1949,7 +2024,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 
   // หัวโมดัล = stepLabel() ตัวเดียวกับปุ่มขั้นถัดไป — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่ (เคยมี map `titles` แล้ว drift)
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step)}`}`} onClose={onClose} dirty={dirty}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step, { mtnForm: isMtnForm })}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {skipQa && (
           <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
@@ -1957,10 +2032,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             กดยืนยันเพื่อข้ามการตรวจ QA แล้วไป <b>รับมอบ / ติดตามผล (ขั้น 6)</b> ทันที · ระบบบันทึกชื่อคุณและเหตุผลไว้ในใบ
           </div>
         )}
-        {MTN_STEPS[step] && !skipQa && (
+        {stepMeta(step, { mtnForm: isMtnForm }) && !skipQa && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-            👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{MTN_STEPS[step].who}</b>
-            {MTN_STEPS[step].byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
+            👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm }).who}</b>
+            {stepMeta(step, { mtnForm: isMtnForm }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
         {step === 2 && <>
@@ -2172,7 +2247,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 }
 
 /* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineObjs = [] }) {
+function KpiTab({ orders, scopeLines, lineObjs = [], machines = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => {
@@ -2182,31 +2257,41 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
     const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
     return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
   }, [orders, scopeLines, line, days, lineObjs]);
-  const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
-    const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
-    /* พาเรโต้ 2 ระดับ (feedback ทีมงาน 2026-08-11) — กลุ่มใหญ่ก่อน แล้วเจาะเข้าไปดูหัวข้อย่อย
-       ⚠️ ใบเก่าที่แจ้งก่อนมีกลุ่ม จะไม่มี problem_group → ตกกลุ่ม "ไม่ระบุกลุ่ม"
-          ห้ามยัดเข้ากลุ่มใดกลุ่มหนึ่งมั่ว (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
-    const byGroup = {};
-    rows.forEach(o => {
-      const g = (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม';
-      const c = o.problem_characteristic || 'อื่นๆ';
-      const e = (byGroup[g] ||= { n: 0, subs: {} });
-      e.n++; e.subs[c] = (e.subs[c] || 0) + 1;
-    });
-    const paretoGroup = Object.entries(byGroup).sort((a, b) => b[1].n - a[1].n)
-      .map(([g, e]) => ({ group: g, n: e.n, subs: Object.entries(e.subs).sort((a, b) => b[1] - a[1]) }));
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
     const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), paretoGroup, satOverall, satByDim, satN: rated.length };
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), satOverall, satByDim, satN: rated.length };
   }, [rows]);
-  const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
+
+  /* พาเรโตลักษณะปัญหา — ป้อน "แถวดิบ" ให้ `ParetoAbcChart` (component กลางตาม UI-CONVENTIONS §304)
+     1 ใบ = 1 แถว (value 1 = นับใบ) · กราฟจัด ABC + เส้นสะสม + เส้น 80% + เจาะลึกให้เอง
+     ⇒ แทนพาเรโต้ 2 ใบที่เคยวาดเอง (กลุ่มใหญ่ + Top 10 หัวข้อ) ซึ่งเป็นแค่แท่งเรียง ไม่มีเส้นสะสม
+        และ "Top 10" ยังตัดหางทิ้งจนคิด % สะสมไม่ได้ · การเจาะหัวข้อย่อยย้ายไปเป็นมิติ 🛑 หัวข้อย่อย
+     ⚠️ ใบเก่าที่แจ้งก่อนระบบมีการจัดกลุ่ม ไม่มี problem_group → 'ไม่ระบุกลุ่ม'
+        ห้ามเดากลุ่มย้อนหลังให้ (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
+  const paretoRecords = useMemo(() => rows.map(o => ({
+    cat: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
+    value: 1,
+    sub: o.problem_characteristic || 'อื่นๆ',
+    machine: o.machine_no || '(ไม่ระบุเครื่อง)',
+    line: o.line_name || '(ไม่ระบุไลน์)',
+    item: o.item_type || '(ไม่ระบุชนิด)',
+    note: o.report_note || '',
+  })), [rows]);
+  const PARETO_DIMS = [
+    { key: 'sub', label: '🛑 หัวข้อย่อย' },
+    { key: 'machine', label: '⚙️ เครื่อง/อุปกรณ์' },
+    { key: 'line', label: '🏭 ไลน์' },
+    { key: 'item', label: '🔧 ชนิดอุปกรณ์' },
+    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+  ];
+  // h = คำแปลของชื่อย่อสากล — ต้องอ่านได้บนจอเลย ห้ามซ่อนใน tooltip อย่างเดียว (จอ TV ไม่มี hover)
+  const Card = ({ t, v, c, h }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>{h && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}</div>;
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -2214,8 +2299,16 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
+        📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
+        · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
+        <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
+      </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} /><Card t="เข้าดำเนินการเฉลี่ย (Response)" v={fmtMin(stat.resp)} c="#3b82f6" /><Card t="เวลาซ่อมเฉลี่ย (TTR)" v={fmtMin(stat.ttr)} c="#f59e0b" /><Card t="Breakdown เฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" />
+        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} />
+        <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
+        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง)" />
+        <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />
         <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
       {stat.satN > 0 && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
@@ -2228,41 +2321,29 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
           </div>
         ); })}
       </div>}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา — ตามกลุ่มใหญ่</div>
-        {/* กลุ่มใหญ่ก่อน กดแตกดูหัวข้อย่อย — ดูภาพรวมได้ก่อนจมกับ 29 แท่งเตี้ยๆ */}
-        {stat.paretoGroup.map(g => {
-          const max = stat.paretoGroup[0].n;
-          const open = openGroup === g.group;
-          return (
-            <div key={g.group} style={{ marginBottom: 5 }}>
-              <div onClick={() => setOpenGroup(open ? null : g.group)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <div style={{ width: 190, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {open ? '▾' : '▸'} {g.group}
-                </div>
-                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: `${(g.n / max) * 100}%`, height: '100%', background: g.group === 'ไม่ระบุกลุ่ม' ? '#6b7280' : '#f59e0b' }} />
-                </div>
-                <div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{g.n}</div>
-              </div>
-              {open && g.subs.map(([c, n]) => (
-                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, paddingLeft: 16 }}>
-                  <div style={{ width: 174, fontSize: 11.5, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</div>
-                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${(n / g.n) * 100}%`, height: '100%', background: '#fbbf24' }} />
-                  </div>
-                  <div style={{ width: 34, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>{n}</div>
-                </div>))}
-            </div>);
-        })}
-        {stat.paretoGroup.some(g => g.group === 'ไม่ระบุกลุ่ม') && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
-            ⚪ "ไม่ระบุกลุ่ม" = ใบที่แจ้งก่อนระบบมีการจัดกลุ่ม (ระบบไม่เดากลุ่มย้อนหลังให้ — ใบเก่าเก็บเป็นข้อความ ไม่รู้กลุ่มจริง)
-          </div>)}
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '14px 0 8px' }}>รายหัวข้อ (Top 10 ทั้งหมด)</div>
-        {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}
-        {!stat.pareto.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลในช่วงนี้</div>}
+      {/* พาเรโตลักษณะปัญหา — component กลาง (ABC + เส้นสะสม % + เส้น 80% + เจาะลึก)
+          เดิมวาดเองเป็นแท่งเรียงเฉยๆ 2 ใบ · ตอนนี้เป็น Pareto ตามหลักสากลใบเดียว เจาะหัวข้อย่อยได้ */}
+      <ParetoAbcChart
+        title="พาเรโตลักษณะปัญหา (ใบซ่อมที่ปิดแล้ว)"
+        records={paretoRecords} dims={PARETO_DIMS} unit="ใบ"
+        emptyText="ไม่มีใบซ่อมที่ปิดแล้วในช่วงนี้"
+        sectionStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
+        titleStyle={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }} />
+
+      {/* ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — เดิมเป็นแท็บแยก ยุบเข้ามาที่นี่ (คำสั่ง user 2026-09-15)
+          🔴 คนละฐานกับการ์ดข้างบน: ข้างบนนับจาก "ใบซ่อม MO" · ข้างล่างนับจาก "downtime จริงของเครื่อง"
+             ⇒ MTTR 2 ตัวไม่เท่ากันเป็นเรื่องปกติ **ต้องมีป้ายกำกับที่มาเสมอ** ไม่งั้นกลายเป็น
+             "จอเดียวกันตอบคนละเลข" (บทเรียนเดิมของโมดูลนี้) */}
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border2)' }}>
+        {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
+            ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
+          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+          นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง
+        </div>
+        <MachineReliability machines={machines} lineObjs={lineObjs} scopeLines={scopeLines} />
       </div>
     </div>
   );

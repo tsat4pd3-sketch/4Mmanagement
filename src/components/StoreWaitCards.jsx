@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 
@@ -47,11 +48,11 @@ export default function StoreWaitCards({ inScope, navigate, big = 1, onLineWait 
     setRows(data || []);
   }, []);
 
-  useEffect(() => {
-    load();
-    const stop = visibleInterval(load, RATE.ANALYTIC);   // สต๊อก/รอบส่งไม่ได้เปลี่ยนทุกนาที
-    return () => stop();
-  }, [load]);
+  /* 🔴 2026-09-15 — เดิม **poll ล้วน ไม่มี realtime เลย** (ยิงเต็มทุก 20 นาที 24 ชม.
+     ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, { tables: ['line_stock_transactions'], topic: 'store-wait-cards', rate: RATE.ANALYTIC });
 
   /* ── ไลน์ที่รอของอยู่ (เคส C/D) ────────────────────────────────────────────
      รวมหลายรอบของไลน์เดียวเป็นแถวเดียว — จอ TV ต้องอ่าน "ไลน์ไหน" ไม่ใช่ไล่รายรอบ */

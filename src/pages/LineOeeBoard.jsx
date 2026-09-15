@@ -11,6 +11,7 @@ import { cachedMaster } from '../utils/masterCache';
 import { fetchByIds } from '../utils/fetchByIds';
 import { usePolling } from '../utils/usePolling';
 import RATE from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -55,6 +56,8 @@ export default function LineOeeBoard() {
   const { role, lineId, sections } = useContext(UserContext);
   const [sp, setSp] = useSearchParams();
   const [lines, setLines] = useState([]);
+  // เนื้อของ lines เป็น string — ใช้เป็น deps ของตัวโหลดแทน array (ดูหมายเหตุที่ useLiveBoard)
+  const linesKey = useMemo(() => lines.map(l => l.name).join('|'), [lines]);
   const [data, setData] = useState(null);   // ก้อนข้อมูลดิบต่อรอบโหลด
   const [partial, setPartial] = useState(false); // query ลูกพลาดบางส่วน — ต้องบอก ห้ามเงียบ
   const [now, setNow] = useState(() => new Date());
@@ -170,8 +173,20 @@ export default function LineOeeBoard() {
 
     setPartial(bad);
     setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null });
-  }, [line, lines]);
-  usePolling(load, RATE.BOARD); // immediate=true + re-run เมื่อเปลี่ยนไลน์ (fn identity เปลี่ยน) — ไม่ต้อง useEffect ซ้ำ
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
+  }, [line, linesKey]);
+
+  /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+     array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
+     (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
+  /* 🔴 2026-09-15 — จอนี้เดิม **poll ล้วน ไม่มี realtime เลย** ทั้งที่เป็นจอ TV หน้าไลน์
+     (จอที่จะติดเพิ่ม 10 จอ) ⇒ ยิงเต็มทุก 15 นาที 24 ชม. ไม่ว่ามีอะไรเปลี่ยนหรือไม่
+     useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
+     ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
+  useLiveBoard(load, {
+    tables: ['production_sessions', 'prod_orders', 'downtime_logs', 'defect_logs'],
+    topic: 'line-oee-board',
+  });
 
   /* ── คำนวณทุกอย่างจากก้อนดิบ ── */
   const C = useMemo(() => {
