@@ -109,7 +109,7 @@ catalog group 'คุณภาพ & วิศวกรรม' sort 755-757 · `p
 
 ## 9. ประวัติ
 
-- 2026-09-15 **🧪 demo seed** `20260915_npi_demo_seed_main.sql` (Main · คำขอ user "ลูกพี่จะขอดู"): โปรเจค `NPI-DEMO-001` (P703 · APQP · 3 พาร์ทจริง 060/061/306 ผูก pe_doc_sets ถ้ามี — เฟส/เอกสาร/แบบ/ECI 3 ใบ/tooling 5 แผน/งาน 6 รายการ ครบทุกสถานะ 🟢🟡🔴) + `NPI-DEMO-002` (Toyota SPTT · วางแผน) · วันที่อิงวันรัน · idempotent · **ลบทั้งก้อน:** `delete from npi_projects where project_code like 'NPI-DEMO-%'` · ⚠️ ชื่อคน/ผู้ทำ/ลิงก์ PLM ในนั้นเป็นตัวอย่างสมมติ ห้ามเอาไปอ้าง
+- 2026-09-15 **🧪 demo seed** `20260915_npi_demo_seed_main.sql` (Main · **apply แล้ว 2026-09-15** · คำขอ user "ลูกพี่จะขอดู"): โปรเจค `NPI-DEMO-001` (P703 · APQP · 3 พาร์ทจริง 060/061/306 ผูก pe_doc_sets ถ้ามี — เฟส/เอกสาร/แบบ/ECI 3 ใบ/tooling 5 แผน/งาน 6 รายการ ครบทุกสถานะ 🟢🟡🔴) + `NPI-DEMO-002` (Toyota SPTT · วางแผน) · วันที่อิงวันรัน · idempotent · **ลบทั้งก้อน:** `delete from npi_projects where project_code like 'NPI-DEMO-%'` · ⚠️ ชื่อคน/ผู้ทำ/ลิงก์ PLM ในนั้นเป็นตัวอย่างสมมติ ห้ามเอาไปอ้าง
 
 - 2026-09-07 เฟส 1-3 ครบ: migration + `/npi` 6 แท็บ + util/เทส + ใบ PPAP checklist · crash-sweep ผ่านทุกแท็บ 1500/390px · **migration apply แล้ว 2026-09-07** (user รันผ่าน SQL Editor Main — ตรวจ doc_forms `npi_ppap_checklist` มีแถวแล้ว)
 
