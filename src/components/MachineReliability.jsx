@@ -22,7 +22,7 @@ import fetchAllRows from '../utils/fetchAllRows';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
-import { machineReliability, summarizeByKind, viewMetrics, fmtDur } from '../utils/mtnMetrics';
+import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
 
 const inp = {
   padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -71,7 +71,9 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       const since = new Date(Date.now() - Number(days) * 86400000).toISOString();
       const [dtRes, sesRes] = await Promise.all([
         fetchAllRows(supabaseDR, 'downtime_logs',
-          'id, session_id, machine_no, started_at, ended_at, duration_min, description, dr_downtime_types(name_th, category)',
+          /* call_mtn_ack_at/fix_at = จังหวะ "ช่างรับงาน" และ "ซ่อมเสร็จ" — ใช้แยก MTTA ออกจากเวลาซ่อมจริง
+             (ใบ MO ส่งค่ากลับมาให้ตั้งแต่ 2026-09-14 + backfill ของเก่าแล้ว) */
+          'id, session_id, machine_no, started_at, ended_at, duration_min, description, call_mtn_ack_at, fix_at, dr_downtime_types(name_th, category)',
           qq => qq.gte('started_at', since).order('started_at').order('id')),
         fetchAllRows(supabaseDR, 'production_sessions',
           'id, line_name, work_date, shift, shift_min, start_time, end_time',
@@ -149,6 +151,8 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
   }, [rows, scopeLines, famOfSel, kind, q, weighted]);
 
   const kindRows = useMemo(() => summarizeByKind(shown, weighted), [shown, weighted]);
+  // ช่วงย่อย (รอช่าง/ซ่อมจริง/กลับมารัน) ของชุดที่กรองอยู่ — ไม่ถ่วง 1/N (เป็นเวลาของเหตุการณ์ ไม่ใช่เวลาที่ไลน์เสีย)
+  const ph = useMemo(() => poolRowPhases(shown), [shown]);
   const tot = useMemo(() => ({
     stops: shown.reduce((s, r) => s + r.stops, 0),
     dtMin: shown.reduce((s, r) => s + viewMetrics(r, weighted).dtMin, 0),
@@ -252,6 +256,45 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         </div>
       )}
 
+      {/* ── 🕐 แยกช่วงเวลา: รอช่าง / ซ่อมจริง / กลับมารัน (2026-09-15) ──────────────────
+          MTTR ที่โชว์ในตารางคือ "ไลน์หยุดนานเท่าไหร่" (รวมรอช่าง) · 3 ท่อนนี้ตอบว่าเสียเวลาไปกับอะไร
+          ⚠️ วัดได้เฉพาะครั้งที่กดครบจังหวะจริง — ต้องโชว์ตัวหารและเหตุผลที่วัดไม่ได้เสมอ ห้ามเฉลี่ยเงียบ */}
+      <div style={{ ...card, borderColor: ph.n > 0 ? 'var(--border)' : 'rgba(245,158,11,0.45)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>🕐 เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            วัดแยกช่วงได้ <b style={{ color: ph.n > 0 ? '#22c55e' : '#f59e0b' }}>{ph.n}</b> ครั้ง
+            {ph.oneShot > 0 && <> · ตัดใบที่กดรวดเดียว {ph.oneShot} ครั้ง</>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
+          {[
+            { k: 'mttaMin', icon: '⏳', label: 'รอช่าง (MTTA)', color: '#ef4444', tip: 'ตั้งแต่เครื่องหยุด จนช่างกดรับงาน — คิว/ระยะทาง/การแจ้ง' },
+            { k: 'mttrPureMin', icon: '🔧', label: 'ซ่อมจริง (MTTR)', color: '#f59e0b', tip: 'ตั้งแต่ช่างรับงาน จนกดซ่อมเสร็จ — ทักษะช่าง/อะไหล่' },
+            { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: '#3b82f6', tip: 'ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up' },
+            { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: 'ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์' },
+          ].map(c => (
+            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {c.label}</div>
+              <div style={{ fontSize: 19, fontWeight: 800, color: c.color }}>{fmtDur(ph[c.k])}</div>
+              {ph.n > 0 && ph.totalMin > 0 && c.k !== 'totalMin' && (
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{Math.round((ph[c.k] / ph.totalMin) * 100)}% ของเวลาที่หยุด</div>
+              )}
+            </div>
+          ))}
+        </div>
+        {/* บอกตรงๆ ว่าทำไมถึงวัดไม่ได้ — คนหน้างานจะได้รู้ว่าต้องกดอะไรเพิ่ม */}
+        {(summary.phaseGaps?.no_ack > 0 || summary.phaseGaps?.after_end > 0 || summary.phaseGaps?.no_fix > 0) && (
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.7 }}>
+            ทั้งช่วงที่ดู — ยังแยกช่วงไม่ได้เพราะ:
+            {summary.phaseGaps.no_ack > 0 && <> · <b>{summary.phaseGaps.no_ack}</b> ครั้งไม่ได้กด “รับงาน”</>}
+            {summary.phaseGaps.no_fix > 0 && <> · <b>{summary.phaseGaps.no_fix}</b> ครั้งไม่ได้กด “ซ่อมเสร็จ”</>}
+            {summary.phaseGaps.after_end > 0 && <> · <b style={{ color: '#f59e0b' }}>{summary.phaseGaps.after_end}</b> ครั้งเปิด/รับใบซ่อม<b>หลังเครื่องกลับมารันแล้ว</b> (ใบ MO ถูกใช้เป็นเอกสารตามหลัง ไม่ใช่การจ่ายงานสด)</>}
+            <div style={{ color: 'var(--muted)' }}>⇒ อยากได้ MTTA จริง ต้อง <b>กดรับงานตอนไปถึงหน้างาน</b> แล้วค่อยกดซ่อมเสร็จตอนซ่อมจบ</div>
+          </div>
+        )}
+      </div>
+
       {/* ── สรุปตามชนิดอุปกรณ์ ── */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <div style={{ ...card, flex: 1, minWidth: 150 }}>
@@ -329,7 +372,10 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     </td>
                     <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} ตามแผน)</span>}</td>
                     <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
-                    <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}>{fmtDur(v.mttrMin)}</td>
+                    <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}
+                        title={r.phaseN > 0 ? `แยกช่วง (${r.phaseN} ครั้ง): รอช่าง ${fmtDur(r.mttaMin)} · ซ่อมจริง ${fmtDur(r.mttrPureMin)} · กลับมารัน ${fmtDur(r.restartMin)}` : 'ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง'}>
+                      {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
+                    </td>
                     <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
                         title={v.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์ (หักเวลาพักแล้ว)'}>
                       {fmtDur(v.mtbfMin)}
