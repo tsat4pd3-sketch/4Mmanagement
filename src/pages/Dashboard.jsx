@@ -18,7 +18,8 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
@@ -610,20 +611,20 @@ export default function Dashboard() {
     return visibleInterval(() => fetchAll(selectedDate), RATE.ANALYTIC);
   }, [selectedDate, fetchAll]);
 
-  // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน
+  /* Realtime refresh เฉพาะข้อมูลผลิต
+     🔴 2026-09-15 — เดิม debounce 1.5s ซึ่ง **ไม่ใช่เพดาน** (รอให้เงียบ 1.5 วิเท่านั้น)
+        วันทำงานจริงไม่มีช่วงเงียบ ⇒ โหลดใหม่แทบทุก event ของทั้งโรงงาน
+        เปลี่ยนเป็น coalesce(LIVE.BOARD) = ยิงไวเหมือนเดิมครั้งแรก แต่มีเพดานจริง
+        (ดู src/utils/liveRefresh.js — เหตุผลเต็มและตัวเลขที่วัดได้) */
   useEffect(() => {
-    let timer = null;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => fetchProdStatus(), 1500);
-    };
+    const refresh = coalesce(fetchProdStatus, LIVE.BOARD);
     const ch = liveChannel(supabaseDR, 'dash-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
       .subscribe();
-    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+    return () => { refresh.cancel(); supabaseDR.removeChannel(ch); };
   }, [fetchProdStatus]);
 
   // Determine OT windows based on current time (for live "today" view)

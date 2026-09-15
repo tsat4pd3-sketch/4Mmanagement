@@ -19,7 +19,8 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
@@ -413,21 +414,22 @@ export default function Management() {
   const [dtAlarms, setDtAlarms] = useState({ byMachine: {}, byLine: {}, list: [] });
   useEffect(() => {
     if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
-    let debounceTimer = null;
     // ⚠️ คิวรีพลาด = **คงสัญญาณเดิมไว้ ห้ามล้างเป็นว่าง** — ล้างแล้วหมุดเครื่องที่กำลังหยุดจะเลิกกระพริบ
     //    ทั้งที่เครื่องยังหยุดอยู่จริง (Andon ดับเพราะเน็ตสะดุด = อันตรายกว่าไม่รีเฟรช)
     //    รอบถัดไป (realtime push หรือ interval) จะได้ของจริงมาทับเอง
     const refresh = () => fetchActiveDowntimes(viewLineNames)
       .then(r => { if (!r?.error) setDtAlarms(r); })
       .catch(() => {});
-    const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
+    // 🔴 2026-09-15 — debounce 1 วิ → coalesce(LIVE.ALARM 5 วิ): debounce ไม่ใช่เพดาน
+    //    หมุด Andon เป็นของด่วนจริง จึงใช้ระดับ ALARM (ไวสุด) ไม่ใช่ BOARD
+    const debounced = coalesce(refresh, LIVE.ALARM);
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
     const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
-    return () => { stopPoll(); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+    return () => { stopPoll(); debounced.cancel(); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
