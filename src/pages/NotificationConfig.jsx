@@ -52,6 +52,7 @@ const DEFAULT_TEMPLATES = {
   mtn_checked: '🔎 ตรวจสอบหลังซ่อม {mo_no}\n{dept} · {line_name} · {item_type}\nผลงานหลังซ่อม: {check_result}\nเกี่ยวคุณภาพ: {quality_related}\nผู้ตรวจ: {checker_name}',
   mtn_qa: '🧪 ยืนยันคุณภาพหลังซ่อม {mo_no}\n{dept} · {line_name} · {item_type}\nผลคุณภาพ: {qa_result}\nผู้ตรวจ QA: {qa_checker}',
   mtn_handover: '🤝 รับมอบหลังซ่อม {mo_no}\n{dept} · {line_name} · {item_type}\nติดตามผล: {follow_up}\nผู้รับมอบ: {ho_checker}',
+  mtn_approved: '✍️ ผจก.แผนกที่แจ้งอนุมัติแล้ว {mo_no}\n{dept} · {line_name} · {item_type}\nผู้อนุมัติ: {cost_mgr}\nค่าใช้จ่ายของหน่วยงาน: {cost_owner_dept}\n⏳ รอ ผจก.ส่วนซ่อมบำรุงปิดจบ MO (ขั้น 8)',
   mtn_closed: '✅ อนุมัติปิดแจ้งซ่อม\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nเลขแจ้งซ่อม: {mo_no}\nช่างซ่อม: {tech_main}\nวิธีแก้ไข: {solution}\nผู้อนุมัติ: {approver}',
   morning_meeting: '🌅 สรุปประชุมแถวเช้า — {work_date}\n🏭 {scope_label}\n📦 ผลิตรวม {total_actual}/{total_target} ({achieve_pct}%)\n📊 OEE {oee_avg}% · ⏱️ DT {dt_total_min} นาที ({dt_count} ครั้ง) · ❌ NG {ng_total}\n📉 หลุดแผน {missed_count} รายการ\n{missed_list}\n📌 Action ค้าง {action_open}\n👤 {actor}',
 }
@@ -80,6 +81,7 @@ const PLACEHOLDERS = {
   mtn_checked: ['dept', 'mo_no', 'line_name', 'item_type', 'problem', 'check_result', 'quality_related', 'checker_name'],
   mtn_qa: ['dept', 'mo_no', 'line_name', 'item_type', 'qa_result', 'qa_checker'],
   mtn_handover: ['dept', 'mo_no', 'line_name', 'item_type', 'follow_up', 'ho_checker'],
+  mtn_approved: ['dept', 'mo_no', 'line_name', 'item_type', 'cost_mgr', 'cost_owner_dept'],
   mtn_closed: ['dept', 'mo_no', 'line_name', 'item_type', 'machine_no', 'problem', 'tech_main', 'root_cause', 'solution', 'approver'],
 }
 // sample values for the live preview only (not sent anywhere)
@@ -90,6 +92,7 @@ const SAMPLE = {
   mat_no: 'PN-123', description: 'มอเตอร์ร้อนผิดปกติ', reported_by: 'สมหญิง', open_min: 22,
   title: '✅ ปิดกะสำเร็จ', total_qty: 1200, qty_ok: 1180, qty_ng: 20, qty_suspect: 0, qty_repair: 5,
   oee: 87, oee_a: 95, oee_p: 92, oee_q: 98, shift_min: 600, dt_count: 2, dt_total_min: 40,
+  cost_mgr: 'ผจก.สมศรี', cost_owner_dept: 'PD1',
   actor: 'สมชาย', requested_by: 'สมศักดิ์', category: 'Man', status_label: 'Approved ✅',
   creator: 'สมปอง', reject_reason: '-', checked: 8, missing: 'M-03, M-05', ng: 'M-02 — Press: น็อตหลวม',
   kind_label: '862 Shipping Schedule (รอบส่งงาน)', ship_tos: 'GRBNA, GBL9A', rows: 538, files: 6,
