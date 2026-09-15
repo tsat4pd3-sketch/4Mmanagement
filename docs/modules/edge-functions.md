@@ -3,6 +3,40 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+### 🔔 ช่องทางแจ้งเตือน — ปิดช่องว่าง "Telegram ทางเดียว" (2026-09-14)
+
+**ที่มา:** user ตัดสินใจว่าถ้าย้ายระบบลง server ของบริษัท **จะไม่เอา Telegram** (ดู `docs/LOCAL-SERVER-MIGRATION-SPEC.md` §5)
+→ ต้องมั่นใจก่อนว่าทุกเหตุการณ์ยังส่งถึงคนได้โดยไม่พึ่ง Telegram
+
+**ผลสำรวจ (14 ก.ย. 2026) — ต้องแยก 2 ชั้น อย่าสับสน:**
+
+| ชั้น | อาการ | จำนวน |
+|---|---|---|
+| **ก. ช่องว่างเชิงโค้ด** — ฟังก์ชันไม่มีโค้ดเขียน `notifications` เลย | ถอด Telegram = หายสนิท แก้ที่หน้าเว็บไม่ได้ | **3 ตัว** |
+| **ข. ช่องว่างเชิงตั้งค่า** — โค้ดรองรับแล้ว แต่ `notification_rules.inapp_roles` ว่าง | `notifyInApp()` return ทันที = ไม่แจ้งในแอป (opt-in by design) | **21 event** |
+
+**ชั้น ก. แก้แล้วทั้ง 3:** `daily-4m-summary` · `mtn-daily-summary` · `qa-fme-scan`
+- เพิ่ม helper `notifyInApp(eventKey, message, type)` ในแต่ละไฟล์ (edge function แชร์โค้ดข้ามกันไม่ได้ → เขียนซ้ำตาม pattern เดิมของ `send-*`)
+- **ผู้รับมาจาก RPC `notify_recipients` จุดเดียว ห้ามกรอง role เองในไฟล์** (กติกาเดียวกับ Telegram)
+- **opt-in:** `inapp_roles` ว่าง = ไม่แจ้งในแอป ⇒ deploy แล้วพฤติกรรมเดิมเป๊ะจนกว่าจะตั้งผู้รับ
+- `daily-4m-summary` เดิม**ไม่มี event_key ในทะเบียนเลย** (ยิง Telegram ผ่าน env `TELEGRAM_CHAT_ID` ตรงๆ → admin ปิด/เปลี่ยนห้องไม่ได้) — ลงทะเบียน `four_m_daily_summary` แล้ว
+- `daily-4m-summary` เด้งกระดิ่ง**เฉพาะวันที่มีงานค้าง** (pending/pending_qa/rejected > 0) — วันที่เคลียร์หมดไม่รบกวน 87 บัญชี
+- **⚠️ กับดักที่เจอใน `qa-fme-scan`:** เดิม `const sent = await sendTelegram(...)` แล้วใช้ `if (sent)` ตัดสินว่าจะ `mark alert_count` ไหม
+  ⇒ วันที่ถอด Telegram ออก `sent` เป็น false ตลอด → **ไม่เคย mark → เตือนซ้ำทุก 5 นาทีไม่จบ และ escalate ไม่เดินหน้า**
+  แก้เป็น `sent = tgSent || appSent` (ถึงผู้รับช่องทางใดก็ได้) · และเปลี่ยน guard `callChats?.length` → `callChats !== null`
+  (เดิม "ไม่มีห้อง Telegram" = ข้ามทั้งบล็อก กระดิ่งในแอปเลยไม่ได้ยิงตามไปด้วย)
+  **บทเรียนทั่วไป: ตัวแปรที่แปลว่า "ส่งสำเร็จ" ห้ามผูกกับช่องทางเดียว**
+- migration `20260914_notify_inapp_telegram_only_gaps.sql` (Main · **apply แล้ว**) — seed `four_m_daily_summary` + ตั้ง `inapp_roles` ให้ `mtn_daily_summary` / `qa_fme_call` / `qa_fme_overdue` เฉพาะแถวที่ยังว่าง (รันซ้ำได้)
+- **สถานะ deploy:** `daily-4m-summary` v11 ✅ · `mtn-daily-summary` v13 ✅ · **`qa-fme-scan` ยังไม่ deploy** (ไฟล์ 38 KB ต้องคัดลอกทั้งก้อนเข้า MCP — เสี่ยงตกหล่นโดยไม่มีตัวตรวจ · Telegram ยังส่ง QA ได้ปกติจึงไม่มีอะไรพัง) ⇒ **ค้างไว้ให้ session ถัดไป deploy + ทดสอบด้วย `?dry=1`**
+
+**ชั้น ข. ยังไม่แตะ** — 21 event ที่ `inapp_roles` ว่าง (เช่น `checkin_summary` · `prod_close` · `downtime` · `pm_daily_*` · `shipping_shipped` · `wip_*` · `mtn_closed` · `kanban_round_cutoff`)
+**ห้ามเปิดแบบเหมา** — `downtime` เกิดจริง **145 ครั้ง/วัน** (วัด 30 วัน, ก.ย. 2026) เปิดให้ manager/admin = กระดิ่ง+push ท่วมจนคนเลิกอ่าน
+(บทเรียนเดียวกับ 4M Man อัตโนมัติ 392 ใบ/10 วัน) → ต้องเลือกผู้รับให้แคบ ใช้ `inapp_match_section=true` แจ้งเฉพาะหัวหน้าส่วนงานที่เกิดเหตุ
+
+**หมายเหตุที่เคยเข้าใจผิด:** `four_m_status` (4M เปลี่ยนสถานะ) **ไม่ใช่** ช่องว่าง — มันเขียน `notifications` ด้วย logic ผู้รับตามสถานะ workflow ของตัวเอง (ไม่ได้ผ่าน `notifyInApp` จึงไม่ขึ้นตอน grep หา helper) · `downtime_call_mtn` / `downtime_open_15min` ก็เช่นกัน (ใช้ `insertNotifications` + `recipientsForDowntime`)
+
+---
+
 ### `send-notification`
 - **Endpoint:** `POST /functions/v1/send-notification`
 - **Payload:** `{ event: "status_change", log: { ...four_m_log } }`
@@ -101,3 +135,7 @@
 - **`mtn-daily-summary`**: `fetch(...).catch(() => null)` → Telegram ส่งไม่ออกทั้งวันไม่มีร่องรอย · ตอนนี้ log status/body เมื่อไม่ ok
 - **in-app `notifications` insert ใน 5 functions** (`send-notification` ×2 · `send-store-notification` · `send-mtn-notification` · `send-cqi15-notification` ×3): เดิม `try { await supabase.from('notifications').insert(...) } catch {}` — **supabase-js ไม่ throw** จึงไม่มีวันจับ · เปลี่ยนเป็นอ่าน `{ error }` แล้ว log
 - ✅ **deploy แล้ว 2026-09-07** ทั้ง 7 ตัว (ผ่าน MCP · verify_jwt=false เท่าเดิม): MAIN cleanup-orphan-photos v10 · mtn-daily-summary v11 · send-notification v47 · send-store-notification v4 · send-mtn-notification v17 · send-cqi15-notification v13 · DR downtime-open-scan v3 · secret `CLEANUP_TOKEN` ตั้งแล้ว (user ตั้งเองในจอ Secrets) — ทดสอบผ่าน pg_net: ไม่ใส่ token → 401 · token เก่าที่รั่ว → 401 (ไม่ใช่ 503) ✔ · ลืม token = ตั้งค่าใหม่ในจอ Secrets ได้ทุกเมื่อ ไม่มีอะไรพัง
+- ✅ **deploy 2026-09-09** (งาน "ใบกองที่ขั้น 6 รอรับมอบ" — ดู `docs/modules/mtn-work-order.md`): **send-mtn-notification v18** · **mtn-daily-summary v12**
+  ทั้งคู่แยกกลุ่ม `checked` ตาม `quality_related` (เกี่ยวกับคุณภาพ → รอ QA ขั้น 5 · ไม่เกี่ยว → รอฝ่ายที่แจ้งรับมอบ ขั้น 6)
+  **ตรรกะนี้ถูกเขียนซ้ำแบบย่อในทั้ง 2 ไฟล์** เพราะ edge import จาก `src/` ไม่ได้ — source of truth คือ `moStatusLabel()`/`isWaitingQa()` ใน `src/utils/mtnStepPerm.js` · **แก้ที่นั่นแล้วต้องตามมาแก้ 2 ไฟล์นี้เสมอ** (convention เดียวกับ `src/utils/dieStatus.js`)
+  smoke test หลัง deploy: `net.http_post` body `{}` → send-mtn-notification ตอบ `400 {"error":"missing mo"}` = บูตได้ ไม่มีผลข้างเคียง (mtn-daily-summary ทดสอบแบบนี้ไม่ได้ — ยิงแล้วมันส่งสรุปเข้ากลุ่มจริง)

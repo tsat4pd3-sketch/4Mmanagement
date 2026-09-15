@@ -140,6 +140,20 @@ export function readMeta(matrix, headerIdx, metaMap) {
 }
 
 /**
+ * ปี พ.ศ. → ค.ศ. — ไฟล์จริงที่โหลดจากพอร์ทัล (หรือเปิด/เซฟผ่าน Excel เครื่องที่ตั้ง locale ไทย)
+ * ออกมาเป็น **พ.ศ.** ได้ (เจอจริง 2026-09-09: `Start Time` = `2569-09-09T06:00:00`)
+ * เดิมระบบเก็บตรงตัว ⇒ `due_date = 2569-09-09` = ใบล่องหน 543 ปี ไม่มีวันโผล่บนชาร์ต
+ * **เกณฑ์ ≥ 2400 ปลอดภัยเพราะไม่มีข้อมูลจัดส่งปี ค.ศ. 2400+ และ พ.ศ. เริ่มที่ 2500+**
+ */
+const YEAR_BE_MIN = 2400;
+export const toCeYear = (y) => (Number(y) >= YEAR_BE_MIN ? Number(y) - 543 : Number(y));
+/** ข้อความนี้ใช้ปี พ.ศ. ไหม (ใช้เตือนบนจอ — ห้ามแปลงเงียบ) */
+export const looksBuddhist = (v) => {
+  const m = String(v ?? '').match(/(?:^|[^\d])(\d{4})(?:[^\d]|$)/);
+  return !!m && Number(m[1]) >= YEAR_BE_MIN;
+};
+
+/**
  * แปลงข้อความเวลาเป็น Date **เวลาท้องถิ่น** (ห้ามใช้ `new Date(str)` ตรงๆ)
  * เหตุผล: `09/08/2026` เอนจินต่างกันตีความ MDY/DMY ไม่เหมือนกัน และ ISO ที่ไม่มี offset
  * บางที่ถูกตีเป็น UTC → วันงานเพี้ยน (กฎเหล็ก Date/Time ของโปรเจค)
@@ -147,14 +161,57 @@ export function readMeta(matrix, headerIdx, metaMap) {
  * @param {'MDY'|'DMY'|'ISO'} fmt ลำดับวันของรูปแบบ `dd/mm/yyyy`
  * @returns {Date|null}
  */
+/* ═══ 🔴🔴 วันที่แบบ d/m/yyyy ต้อง "พิสูจน์จากไฟล์" ห้ามตั้งค่าตายตัว (2026-09-10) ═══════
+   เคสจริง: ไฟล์ 10 ก.ย. ส่งวันมาเป็น `10/09/2026` · โปรไฟล์ตั้ง `ts_format='MDY'` ไว้
+   ⇒ อ่านเป็น **9 ตุลาคม** ⇒ ใบส่งไปโผล่คนละเดือน (ชาร์ตวันนี้ว่างเปล่า) และ
+      **สต็อก FG ถูกตัดซ้ำ 115 ชิ้น** เพราะรอบ 08:00 จริงถูกยิงซ้ำอีกใบ
+   ⚠️ ไฟล์ก่อนหน้ารอด "โดยบังเอิญ" — 09/08, 09/09 อ่านทางไหนก็ได้วันที่สมเหตุสมผล
+      **10/09 คือวันแรกที่ MDY ≠ DMY จริงๆ** ⇒ ค่าตั้งตายตัวเป็นระเบิดเวลาที่รอวันตรงเงื่อนไข
+
+   ⇒ กติกา: ดูทั้งไฟล์ก่อน — เจอเลขไหน > 12 ในช่องใดช่องหนึ่ง = **พิสูจน์ได้** ว่าเรียงแบบไหน
+      พิสูจน์ไม่ได้ (ทุกวันที่ ≤ 12) → เลือกอันที่ **ใกล้เวลาปัจจุบันที่สุด**
+      (ไฟล์ pull ถูกโหลดห่างจากช่วงเวลาของมันไม่กี่ชั่วโมง — ห่างเป็นเดือน = อ่านกลับด้านแน่)
+      แล้ว **ขึ้นคำเตือนบนจอเสมอ** ว่าเดามา ห้ามเงียบ */
+const SLASH_DATE = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/;
+
+/** ⭐ เวลาที่โหลดไฟล์ — อ่านจาก **ชื่อไฟล์** ที่พอร์ทัลประทับมาเป็น ISO
+ *  `Detailed SMART - 2026-09-10T080411.100.csv` → 2026-09-10 08:04:11
+ *
+ *  user 2026-09-10: *"ใช่ time stamp ของการอัพ ทวนสอบได้มั้ย"* — ได้ และแม่นกว่าเวลาเครื่อง
+ *  เพราะเป็น **เวลาที่ลูกค้าออกรายงานจริง** (ไม่ขึ้นกับนาฬิกาเครื่องที่อัพ และไม่กำกวมเพราะเป็น ISO)
+ *  ⇒ ใช้เป็นไม้บรรทัดตัดสินวันที่ · ไม่มีในชื่อไฟล์ค่อยตกไปใช้เวลาปัจจุบัน */
+export function fileNameStamp(name) {
+  const m = String(name ?? '').match(/(\d{4})-(\d{2})-(\d{2})[T_ ](\d{2})[:.]?(\d{2})[:.]?(\d{2})?/);
+  if (!m) return null;
+  const d = new Date(toCeYear(m[1]), +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** พิสูจน์ลำดับวัน/เดือนจากตัวอย่างวันที่ทั้งไฟล์
+ *  @returns {{order: 'DMY'|'MDY'|null, reason: 'proof'|'conflict'|'ambiguous'|'none'}} */
+export function detectDateOrder(samples) {
+  let dmy = false, mdy = false, any = false;
+  for (const v of samples || []) {
+    const m = String(v ?? '').trim().match(SLASH_DATE);
+    if (!m) continue;
+    any = true;
+    if (+m[1] > 12) dmy = true;     // ช่องแรก > 12 = เป็นวันแน่ ⇒ วัน/เดือน
+    if (+m[2] > 12) mdy = true;     // ช่องสอง > 12 = เป็นวันแน่ ⇒ เดือน/วัน
+  }
+  if (dmy && mdy) return { order: null, reason: 'conflict' };   // ไฟล์ปนกัน = เชื่อไม่ได้ทั้งคู่
+  if (dmy) return { order: 'DMY', reason: 'proof' };
+  if (mdy) return { order: 'MDY', reason: 'proof' };
+  return { order: null, reason: any ? 'ambiguous' : 'none' };
+}
+
 export function parseTs(v, fmt = 'MDY') {
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
   const s = String(v ?? '').trim();
   if (!s) return null;
   // ISO: 2026-09-08T12:00:00 / 2026-09-08 12:00
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, mo, d] = s.split('-').map(Number); return new Date(y, mo - 1, d); }
+  if (m) return new Date(toCeYear(m[1]), +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y, mo, d] = s.split('-').map(Number); return new Date(toCeYear(y), mo - 1, d); }
   // slash: 09/08/2026 13:43:46
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?)?/i);
   if (m) {
@@ -164,7 +221,7 @@ export function parseTs(v, fmt = 'MDY') {
     const ap = (m[7] || '').toUpperCase();
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
-    return new Date(+m[3], mo - 1, d, h, +(m[5] || 0), +(m[6] || 0));
+    return new Date(toCeYear(m[3]), mo - 1, d, h, +(m[5] || 0), +(m[6] || 0));
   }
   return null;
 }
@@ -182,12 +239,81 @@ export const timeStr = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
  * @returns {{at: Date, ship_time: string, work_date: string}|null}
  *   work_date = กรอบวันงาน 08:00→08:00 (ก่อน 08:00 นับเป็นวันก่อนหน้า — กฎเดียวกับทั้งระบบ)
  */
-export function shipSlotOf(windowEnd, leadMin = 60) {
+/* ═══ ⭐ รอบที่รถลูกค้ามารับ = **ตารางที่ลูกค้ากำหนด** ไม่ใช่สูตร (user 2026-09-09) ═══════
+   user ส่งตาราง "E-SMART Pattern normal / OT" ของ AAT มา — ระยะจากปลายช่วงถึงเวลารับ
+   **ไม่คงที่**: 10:00-12:00 → รับ 14:00 (2 ชม.) · 14:00-16:00 → รับ 22:00 (6 ชม.) ·
+   16:00-22:00 → รับ 23:00 (1 ชม.) ⇒ สูตร `ปลายช่วง + lead_min` เดาผิดแน่นอน
+   (ของเดิมได้ 13:00 แทน 14:00 — เจอเพราะเทียบกับตารางจริง ไม่ใช่เพราะระบบฟ้อง)
+
+   ⇒ อ่านจากตาราง `customer_pull_rounds` (data-driven ต่อโรงงาน/ลูกค้า — user สั่ง
+      "ต้องทำเป็นระบบให้รองรับการแก้ไขได้ สำหรับโรงงานอื่น แต่ของเรา seed ไปเลย")
+   ⚠️ ไม่มีแถวที่ตรง = **fallback ไป lead_min พร้อมบอกบนจอว่าเดาเอา** ห้ามเงียบ */
+const hhmm = (v) => {
+  const m = String(v ?? '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? `${String(+m[1]).padStart(2, '0')}:${m[2]}` : null;
+};
+
+/* รูปแบบวันทำงานที่ลูกค้าแยกตารางรับไว้คนละชุด (ใบลูกค้าแยก "Pattern normal" / "Pattern OT")
+   ⚠️ เรียงตามลำดับที่ใช้เป็น default — ปกติมาก่อนเสมอ */
+export const PULL_PATTERNS = [
+  { key: 'normal',   label: 'ปกติ' },
+  { key: 'ot_day',   label: 'OT กลางวัน' },
+  { key: 'ot_night', label: 'OT กลางคืน' },
+];
+
+/** หาแถวรอบรับที่ตรงกับช่วงเวลาในไฟล์
+ *  จับด้วย **เวลา HH:MM ของช่วง** (ไม่ใช่ระยะเวลา) — ช่วงข้ามเที่ยงคืน (22:00-00:00) จึงจับได้
+ *  ลำดับความเจาะจง: dock ตรง > dock ว่าง (fallback ของ ship-to นั้น) */
+export function pickPullRound(rounds, { shipTo, dock, pattern = 'normal', windowStart, windowEnd } = {}) {
+  const ps = windowStart instanceof Date ? timeStr(windowStart) : hhmm(windowStart);
+  const pe = windowEnd instanceof Date ? timeStr(windowEnd) : hhmm(windowEnd);
+  if (!ps || !pe) return null;
+  const st = String(shipTo || '').trim().toUpperCase();
+  const dk = String(dock || '').trim().toUpperCase();
+  const hit = (rounds || []).filter(r =>
+    r.is_active !== false
+    && String(r.ship_to || '').trim().toUpperCase() === st
+    && String(r.pattern || 'normal') === pattern
+    && hhmm(r.period_start) === ps && hhmm(r.period_end) === pe);
+  return hit.find(r => dk && String(r.dock_code || '').trim().toUpperCase() === dk)
+      || hit.find(r => !String(r.dock_code || '').trim())
+      || null;
+}
+
+/** ทุก pattern ที่ "มีรอบรับของช่วงเวลานี้" — เรียงตาม PULL_PATTERNS (ปกติมาก่อน)
+ *
+ *  🔴 ที่มา (feedback หน้างาน 2026-09-09): *"ทางจัดส่งเค้าเพิ่มข้อมูลช่วงโอทีของลูกค้าแล้วข้อมูลไม่ขึ้น"*
+ *     ตอนแรก `pickPullRound` ตั้ง `pattern = 'normal'` เป็นค่า default แล้ว**ไม่มีใครส่งค่าอื่นมาเลย**
+ *     ⇒ แถว ot_day/ot_night ที่ seed ไว้ 10 แถว **เป็นข้อมูลตาย ไม่มีทางถูกใช้**
+ *     และเงียบด้วย: ช่วง 14:00-16:00 มีทั้ง normal (รับ 22:00) และ ot_day (รับ 17:00)
+ *     ระบบหยิบ normal มาใช้ในวัน OT = **ผิดไป 5 ชั่วโมงโดยไม่มีอะไรฟ้อง**
+ *  ⇒ กฎ: **ทะเบียนที่มี "ประเภท" หลายแบบ ต้องมีทางเลือกประเภทบนจอเสมอ**
+ *     ห้ามปล่อยให้ default ในโค้ดเป็นทางเดียวที่เข้าถึงได้ (= seed ไปแล้วใช้ไม่ได้)
+ */
+export function pullRoundOptions(rounds, { shipTo, dock, windowStart, windowEnd } = {}) {
+  return PULL_PATTERNS
+    .map(p => ({ ...p, round: pickPullRound(rounds, { shipTo, dock, pattern: p.key, windowStart, windowEnd }) }))
+    .filter(x => x.round);
+}
+
+/** รอบส่งของไฟล์นี้ — ใช้ตารางรอบรับก่อน ถ้าไม่มีค่อยใช้ lead_min
+ *  @returns {{at, ship_time, work_date, from: 'schedule'|'lead', round}}
+ *  ⚠️ `work_date` ตัดที่ 08:00 ตามกรอบวันงานไทย (ก่อน 08:00 = วันก่อนหน้า) */
+export function shipSlotOf(windowEnd, leadMin = 60, round = null) {
   if (!(windowEnd instanceof Date) || isNaN(windowEnd.getTime())) return null;
-  const at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  let at, from = 'lead';
+  const pk = round ? hhmm(round.pickup_time) : null;
+  if (pk) {
+    const [h, m] = pk.split(':').map(Number);
+    at = new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate(), h, m);
+    at.setDate(at.getDate() + (Number(round.pickup_day_offset) || 0));
+    from = 'schedule';
+  } else {
+    at = new Date(windowEnd.getTime() + (Number(leadMin) || 0) * 60000);
+  }
   const wd = new Date(at.getTime());
   if (wd.getHours() < 8) wd.setDate(wd.getDate() - 1);
-  return { at, ship_time: timeStr(at), work_date: dateStr(wd) };
+  return { at, ship_time: timeStr(at), work_date: dateStr(wd), from, round: round || null };
 }
 
 /** ประกอบเลขพาร์ทลูกค้า RB3B + 16E060 + BA → 'RB3B-16E060-BA' (ส่วนที่ว่างถูกข้าม) */
@@ -207,8 +333,10 @@ const num = (v) => {
  * @returns {{ok: boolean, error?: string, meta: object, rows: Array<object>, warnings: string[],
  *            windowStart: Date|null, windowEnd: Date|null, slot: object|null, shipTo: string|null}}
  */
-export function parsePullFile(matrix, profile) {
+export function parsePullFile(matrix, profile, rounds = null, { now = new Date(), fileName = null } = {}) {
   const p = profile || FALLBACK_PROFILE;
+  /* ไม้บรรทัดเวลา = เวลาที่พอร์ทัลออกไฟล์ (จากชื่อไฟล์) · ไม่มีค่อยใช้เวลาเครื่อง */
+  const ref = fileNameStamp(fileName) || now;
   const warnings = [];
   const headerIdx = findHeaderRow(matrix, p);
   if (headerIdx < 0) {
@@ -221,10 +349,99 @@ export function parsePullFile(matrix, profile) {
       meta: {}, rows: [], warnings, windowStart: null, windowEnd: null, slot: null, shipTo: null };
   }
   const meta = readMeta(matrix, headerIdx, p.meta_map);
-  const windowStart = parseTs(meta.window_start, p.ts_format);
-  const windowEnd = parseTs(meta.window_end, p.ts_format);
-  const slot = shipSlotOf(windowEnd, p.lead_min);
+
+  /* 🔴 หาลำดับวัน/เดือนจาก **ทั้งไฟล์** ก่อนแปลงอะไรทั้งนั้น (ดูเหตุผลที่ detectDateOrder) */
+  const rawAt = (row, f) => (idx[f] === undefined ? '' : row[idx[f]]);
+  const dateSamples = [meta.window_start, meta.window_end];
+  for (let i = headerIdx + 1; i < matrix.length; i++) dateSamples.push(rawAt(matrix[i] || [], 'pulled_at'));
+  const det = detectDateOrder(dateSamples);
+  let tsFmt = det.order || p.ts_format || 'MDY';
+
+  /* ช่วงเวลาหัวไฟล์เป็น ISO (`2026-09-10T06:00`) = ไม่กำกวมอยู่แล้ว — ใช้เป็น "ไม้บรรทัด" ตัดสินแถวได้ */
+  const isIso = (v) => /^\d{4}-\d{2}-\d{2}/.test(String(v ?? '').trim());
+  const isoWindow = isIso(meta.window_start) && isIso(meta.window_end);
+  const wsIso = parseTs(meta.window_start, tsFmt), weIso = parseTs(meta.window_end, tsFmt);
+
+  if (det.reason === 'ambiguous' || det.reason === 'conflict') {
+    const rawRows = dateSamples.slice(2);
+    const rowSamples = rawRows.filter(v => SLASH_DATE.test(String(v ?? '').trim()));
+    const rowIsoTimes = rawRows.filter(isIso).map(v => parseTs(v)).filter(Boolean);
+    if (!isoWindow && rowIsoTimes.length) {
+      /* ⭐ ทิศกลับกัน (เคสจริง 2026-09-10): **หัวไฟล์เป็น slash แต่แถวเป็น ISO**
+         ⇒ แถวคือไม้บรรทัด — เลือกการอ่านหัวไฟล์ที่ทำให้ช่วงเวลา "ครอบแถวได้" */
+      const cover = (f) => {
+        const ws = parseTs(meta.window_start, f), we = parseTs(meta.window_end, f);
+        if (!ws || !we) return -1;
+        return rowIsoTimes.reduce((n, d) => n + (d >= ws && d <= we ? 1 : 0), 0);
+      };
+      const cm = cover('MDY'), cd = cover('DMY');
+      if (cm !== cd) tsFmt = cd > cm ? 'DMY' : 'MDY';
+      else warnings.push(`⚠️ ช่วงเวลาหัวไฟล์อ่านได้ 2 ทาง (${String(meta.window_start ?? '').trim()}) และเทียบกับเวลาที่ดึงในแถวก็ยังชี้ขาดไม่ได้ — **ตรวจวันงาน/รอบส่งก่อนกดยืนยัน**`);
+    } else if (isoWindow && wsIso && weIso && rowSamples.length) {
+      /* ⭐ ตัดสินจากหลักฐานในไฟล์เอง: แถวที่ดึงต้องตกอยู่ในช่วงของไฟล์ — อ่านผิดด้านจะหลุดกรอบทันที
+         (แม่นกว่าเดาจากเวลาปัจจุบัน และไม่ต้องพึ่งค่าตั้งใน master) */
+      const inWin = (f) => rowSamples.reduce((n, v) => {
+        const d = parseTs(v, f);
+        return n + (d && d >= wsIso && d <= weIso ? 1 : 0);
+      }, 0);
+      const nm = inWin('MDY'), nd = inWin('DMY');
+      if (nm !== nd) tsFmt = nd > nm ? 'DMY' : 'MDY';
+    } else {
+      /* ไม่มีไม้บรรทัด → เลือกการอ่านที่ให้ช่วงเวลา "ใกล้ตอนนี้ที่สุด"
+         (ไฟล์ pull ถูกโหลดห่างจากช่วงของมันไม่กี่ ชม. · ห่างเป็นเดือน = อ่านกลับด้านแน่นอน) */
+      const refStr = (meta.window_end || meta.window_start);
+      const gap = (f) => { const d = parseTs(refStr, f); return d ? Math.abs(d.getTime() - ref.getTime()) : Infinity; };
+      const gm = gap('MDY'), gd = gap('DMY');
+      if (Number.isFinite(gm) || Number.isFinite(gd)) tsFmt = gd < gm ? 'DMY' : 'MDY';
+      warnings.push(
+        `⚠️ วันที่ในไฟล์อ่านได้ 2 ทาง (${String(refStr ?? '').trim()}) — ${det.reason === 'conflict' ? 'ไฟล์ใช้ลำดับปนกัน' : 'ทุกเลข ≤ 12 จึงพิสูจน์ไม่ได้'} · `
+        + `ระบบเลือกแบบ ${tsFmt === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} เพราะใกล้เวลาปัจจุบันที่สุด — **ตรวจวันงาน/รอบส่งก่อนกดยืนยัน**`);
+    }
+  } else if (det.order && p.ts_format && det.order !== p.ts_format) {
+    warnings.push(`ℹ️ ไฟล์นี้เรียงวันที่แบบ ${det.order === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} (ต่างจากที่ตั้งไว้ในโปรไฟล์ ${p.ts_format}) — ระบบใช้ตามไฟล์ ไม่ใช่ตามค่าที่ตั้ง`);
+  }
+
+  let windowStart = parseTs(meta.window_start, tsFmt);
+  let windowEnd = parseTs(meta.window_end, tsFmt);
+
+  /* ═══ 🚨 กฎเหล็กของ e-SMART: **ช่วงเวลาที่ดึงเป็นอนาคตไม่ได้** (user 2026-09-10) ═══════
+     *"e-SMART อัพวันนี้ มันคือวันนี้ไง เพราะเค้าจะอัพ real time · ยังของเมื่อเช้า
+       อัพวันนี้ มันเป็นของเดือน 10 ไม่ได้"*
+     ไฟล์คือ "รายงานสิ่งที่ลูกค้าดึงไป**แล้ว**" ⇒ ปลายช่วงต้องไม่เกินเวลาที่อัพ
+     ⇒ ใช้เป็น **ตัวตัดสินขั้นสุดท้าย** ที่ override ทุกวิธีข้างบน แล้วถ้ายังไม่ผ่าน = **ไม่ให้นำเข้า**
+     (บทเรียน: เตือนอย่างเดียวไม่พอ — คนกดยืนยันเร็วกว่าอ่าน แล้ววันที่ผิดลามถึงสต็อกทันที) */
+  const FUTURE_GRACE_MS = 2 * 3600e3;      // เผื่อนาฬิกาคลาด/โหลดก่อนปิดช่วงนิดหน่อย
+  const isFuture = (d) => d && d.getTime() > ref.getTime() + FUTURE_GRACE_MS;
+
+  if (isFuture(windowEnd)) {
+    // ลองอ่านอีกด้าน — เคสจริง 10/09 อ่านผิดด้านได้อนาคต อ่านถูกด้านได้วันนี้พอดี
+    const alt = tsFmt === 'MDY' ? 'DMY' : 'MDY';
+    const altEnd = parseTs(meta.window_end, alt);
+    if (altEnd && !isFuture(altEnd)) {
+      tsFmt = alt;
+      windowStart = parseTs(meta.window_start, alt);
+      windowEnd = altEnd;
+      warnings.push(`ℹ️ วันที่ในไฟล์อ่านแบบเดิมแล้วตกอยู่หลังเวลาที่ออกไฟล์ (${dateStr(ref)} ${timeStr(ref)}) — ระบบสลับเป็น ${alt === 'DMY' ? 'วัน/เดือน/ปี' : 'เดือน/วัน/ปี'} ให้ (ช่วงที่ดึงเป็นอนาคตไม่ได้)`);
+    }
+  }
+
+  if (isFuture(windowEnd)) {
+    /* 🔴 อ่านทางไหนก็ยังเป็นอนาคต = ไฟล์/นาฬิกาผิดจริง ⇒ **หยุด ไม่ให้นำเข้า** */
+    return { ok: false,
+      error: `ช่วงเวลาในไฟล์เป็นอนาคต (${dateStr(windowEnd)} ${timeStr(windowEnd)}) หลังเวลาที่ออกไฟล์ (${dateStr(ref)} ${timeStr(ref)}) — e-SMART คือรายงานสิ่งที่ลูกค้าดึงไปแล้ว จึงเป็นอนาคตไม่ได้`
+        + ` · ตรวจว่าโหลดไฟล์ถูกตัวไหม และวันที่บนเครื่องถูกต้องไหม`,
+      meta, rows: [], warnings, windowStart, windowEnd, slot: null, dock: null, patternOptions: [], shipTo: null };
+  }
+
+  /* เก่าเกินไปยังนำเข้าได้ (ตามเก็บย้อนหลัง) แต่ต้องเตือนให้เห็น */
+  if (windowEnd) {
+    const days = Math.round((ref.getTime() - windowEnd.getTime()) / 86400000);
+    if (days > 3) warnings.push(`🔴 ช่วงเวลาในไฟล์เก่ากว่าวันนี้ ${days} วัน (${dateStr(windowEnd)}) — ผิดปกติสำหรับไฟล์ที่เพิ่งโหลด **ตรวจวันงานให้แน่ก่อนยืนยัน**`);
+  }
+  let slot = shipSlotOf(windowEnd, p.lead_min);   // ค่าเริ่มจาก lead_min · จะทับด้วยตารางรอบรับหลังรู้ dock
+  let patternOptions = [];
   if (!windowEnd) warnings.push('ไฟล์ไม่ได้บอกช่วงเวลา (End Time) — ต้องเลือกวัน/รอบส่งเองบนจอ');
+  let beRows = 0;   // ⚠️ แปลง พ.ศ.→ค.ศ. ให้ แต่ต้องบอกบนจอเสมอ (คนต้องรู้ว่าไฟล์ผิดรูปแบบ)
 
   const at = (row, f) => (idx[f] === undefined ? '' : row[idx[f]]);
   const rows = [];
@@ -234,7 +451,8 @@ export function parsePullFile(matrix, profile) {
     if (r.every(c => String(c ?? '').trim() === '')) continue;
     const partNo = joinPartNo(at(r, 'part_prefix'), at(r, 'part_base'), at(r, 'part_suffix'), p.part_join);
     if (!partNo) { blank++; continue; }
-    const pulledAt = parseTs(at(r, 'pulled_at'), p.ts_format);
+    if (looksBuddhist(at(r, 'pulled_at'))) beRows++;
+    const pulledAt = parseTs(at(r, 'pulled_at'), tsFmt);
     if (!pulledAt) { badTs++; continue; }
     const per = num(at(r, 'qty'));
     const cont = idx.containers === undefined ? 1 : (num(at(r, 'containers')) ?? 1);
@@ -260,12 +478,68 @@ export function parsePullFile(matrix, profile) {
   if (badTs) warnings.push(`ข้าม ${badTs} แถว — อ่านเวลาที่ดึงไม่ออก`);
   if (badQty) warnings.push(`ข้าม ${badQty} แถว — อ่านจำนวนไม่ออก`);
   if (blank) warnings.push(`ข้าม ${blank} แถว — ไม่มีเลขพาร์ท`);
+  if (beRows || looksBuddhist(meta.window_start) || looksBuddhist(meta.window_end)) {
+    warnings.push(`ไฟล์ใช้ปี พ.ศ. — แปลงเป็น ค.ศ. ให้แล้ว (เช่น 2569 → 2026)${beRows ? ` · ${beRows} แถว` : ''}`);
+  }
 
   const shipTos = [...new Set(rows.map(r => r.ship_to).filter(Boolean))];
   if (shipTos.length > 1) warnings.push(`ไฟล์มีหลาย Plant Code: ${shipTos.join(', ')} — ระบบจะแยกใบตามแต่ละเจ้า`);
 
+  /* ⭐ dock ต้องรู้ก่อนถึงจะหารอบรับได้ (B1 กับ B5 คนละตาราง) — dock อยู่ในแถว ไม่ใช่ meta
+     ⇒ หา dock ที่พบมากที่สุดในไฟล์ · หลาย dock ในไฟล์เดียว = ต้องบอกคน ห้ามเลือกเงียบ */
+  const dockCnt = {};
+  rows.forEach(r => { if (r.dock_code) dockCnt[r.dock_code] = (dockCnt[r.dock_code] || 0) + 1; });
+  const docks = Object.keys(dockCnt).sort((a, b) => dockCnt[b] - dockCnt[a]);
+  if (docks.length > 1) warnings.push(`ไฟล์มีหลาย Dock: ${docks.join(', ')} — ใช้ตารางรอบรับของ ${docks[0]} (แก้รอบเองบนจอได้)`);
+  const dock = docks[0] || null;
+
+  /* ⭐ เลือกได้หลาย pattern (ปกติ / OT กลางวัน / OT กลางคืน) — คืนตัวเลือกทั้งหมดให้จอ
+     default = ตัวแรกที่มีรอบของช่วงนี้ (ปกติมาก่อน) · คนเปลี่ยนเองได้บนจอเมื่อวันนั้นเป็นวัน OT */
+  if (rounds && windowEnd) {
+    patternOptions = pullRoundOptions(rounds, { shipTo: shipTos[0], dock, windowStart, windowEnd });
+    if (patternOptions.length) slot = shipSlotOf(windowEnd, p.lead_min, patternOptions[0].round);
+    else warnings.push(`ไม่มีรอบรับของ ${shipTos[0] || '?'}${dock ? ` dock ${dock}` : ''} ช่วง ${windowStart ? timeStr(windowStart) : '?'}-${windowEnd ? timeStr(windowEnd) : '?'} ในทะเบียน — ใช้สูตร "ปลายช่วง +${p.lead_min ?? 60} นาที" เดาให้ ⚠️ ตรวจรอบก่อนยืนยัน แล้วไปเพิ่มแถวที่ ⚙️ Ship-to Config`);
+    if (patternOptions.length > 1) {
+      warnings.push(`ช่วงนี้มีรอบรับ ${patternOptions.length} แบบ (${patternOptions.map(o => o.label).join(' / ')}) — ระบบเลือก "${patternOptions[0].label}" ให้ ⚠️ ถ้าวันนั้นเป็นวัน OT ต้องเปลี่ยนเอง`);
+    }
+  }
+
   return { ok: rows.length > 0, error: rows.length ? undefined : 'ไม่พบแถวข้อมูลในไฟล์',
-    meta, rows, warnings, windowStart, windowEnd, slot, shipTo: shipTos[0] || null };
+    meta, rows, warnings, windowStart, windowEnd, slot, dock, patternOptions, shipTo: shipTos[0] || null };
+}
+
+/**
+ * 🚨 ไฟล์นี้เคยอัพไปแล้วหรือยัง — ตรวจ "ระดับไฟล์" ก่อนเขียนอะไรทั้งนั้น
+ *
+ * ที่มา (user 2026-09-09): *"ถ้าเป็นไฟล์เดียวกัน ให้ alarm ว่าอัพซ้ำ"*
+ * เคสจริงวันเดียวกัน: ไฟล์เดิมถูกอัพ 2 ครั้งห่างกัน 4 วินาที → ใบส่งซ้ำทั้งชุด
+ * (ตอนนั้นตัวกันซ้ำระดับ "แถว" ตายอยู่ ⇒ ต้องมีชั้นที่คนเห็นด้วยตา ไม่ใช่พึ่งกลไกเงียบๆ อย่างเดียว)
+ *
+ * เทียบ 2 ทาง เพราะชื่อไฟล์เชื่อ 100% ไม่ได้:
+ *   - `same_file`   ชื่อไฟล์ตรงกัน (เคสปกติ: กดอัพไฟล์เดิมซ้ำ)
+ *   - `same_window` **ช่วงเวลา + ลูกค้า ตรงกัน** ← ตัวจริงที่บอกว่า "ข้อมูลชุดเดียวกัน"
+ *     (โหลดซ้ำจากพอร์ทัลได้ชื่อใหม่ทุกครั้ง — ชื่อมี timestamp ตอนโหลด ไม่ใช่ตอนของข้อมูล)
+ *
+ * ⚠️ **เตือน ไม่บล็อก** — อัพซ้ำมีเหตุผลที่ถูกต้องจริง (รอบก่อนล้มกลางทาง/แก้ ship-to แล้วอัพใหม่)
+ *    หน้าที่ของฟังก์ชันนี้คือ "ทำให้คนเห็น" · จอบังคับให้ติ๊กรับทราบก่อนถึงกดยืนยันได้
+ *
+ * @param {Array} batches แถวจาก customer_pull_batches ของ ship-to นั้น (ใหม่→เก่า)
+ * @returns {Array<{batch, reason:'same_file'|'same_window'}>} ใหม่สุดก่อน
+ */
+export function findDuplicateUploads(batches, { fileName, windowStart, windowEnd } = {}) {
+  const name = String(fileName || '').trim().toLowerCase();
+  const ws = windowStart instanceof Date ? windowStart.getTime() : null;
+  const we = windowEnd instanceof Date ? windowEnd.getTime() : null;
+  const at = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? t : null; };
+  return (batches || []).map(b => {
+    if (name && String(b.file_name || '').trim().toLowerCase() === name) return { batch: b, reason: 'same_file' };
+    // ช่วงเวลาต้องมีครบทั้ง 2 ฝั่งถึงเทียบได้ — ไฟล์ที่ไม่บอกช่วงเวลาห้ามถูกตีว่าซ้ำกันหมด
+    if (ws !== null && we !== null && at(b.window_start) === ws && at(b.window_end) === we) {
+      return { batch: b, reason: 'same_window' };
+    }
+    return null;
+  }).filter(Boolean)
+    .sort((a, b) => new Date(b.batch.uploaded_at || 0) - new Date(a.batch.uploaded_at || 0));
 }
 
 /** คีย์กันนำเข้าซ้ำ — ตรงกับ unique index `customer_pull_signals_dedup_idx` ฝั่ง DB เป๊ะ */
@@ -299,8 +573,29 @@ export function aggregateSignals(rows) {
   return [...m.values()].sort((a, b) => a.customer_part_no.localeCompare(b.customer_part_no));
 }
 
+/**
+ * เวลาส่งจริงของใบ (absolute) — `ship_time` ก่อน 08:00 = กะดึกของวันงานนั้น ⇒ ตกวันถัดไปตามปฏิทิน
+ * ⚠️ ต้องเทียบเป็น Date จริง ห้ามเทียบ "นาทีบนกรอบ 08:00→08:00" — ช่วงเวลาในไฟล์ (เช่น 06:00–08:00)
+ * คร่อมขอบกรอบได้ แล้วเลขนาทีจะกลับด้าน (06:00 ดูเหมือน "หลัง" 09:00 ทั้งที่มาก่อน)
+ */
+export function orderShipAt(dueDate, shipTime) {
+  const d = String(dueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const t = String(shipTime || '').match(/^(\d{1,2}):(\d{2})/);
+  if (!d || !t) return null;
+  const at = new Date(+d[1], +d[2] - 1, +d[3], +t[1], +t[2]);
+  if (+t[1] < 8) at.setDate(at.getDate() + 1);   // กะดึกของวันงาน = วันถัดไปตามปฏิทิน
+  return at;
+}
+
 /** สถานะที่ "ทำไปแล้ว" — ห้ามแก้ยอด (สต็อกอาจถูกหักไปแล้ว · user เคาะ 2026-09-08: ไม่แตะ แต่รายงานส่วนต่าง) */
 export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
+
+/* ระยะที่ยอมให้ใบ 862 "นับเป็นเที่ยวเดียวกัน" กับรอบที่ e-SMART คำนวณได้
+   ถอยหลัง 2.5 ชม. = คลุมช่วงดึงเต็มช่วง (2 ชม.) + lead 1 ชม. โดยไม่ล้ำเที่ยวก่อนหน้า
+   เผื่อหน้า 45 นาที = กริด 862 ที่คลาดไปนิด (เคสจริง เที่ยว 15:00 ↔ ใบ 15:30)
+   ⚠️ อย่าขยายเผื่อหน้าเกิน ~1 ชม. — จะเริ่มกินใบของเที่ยวถัดไป */
+const MATCH_BACK_MS = 150 * 60000;
+const MATCH_FWD_MS  =  45 * 60000;
 
 /**
  * ตัดสินว่าแต่ละพาร์ทจะทำอะไรกับใบส่งที่มีอยู่ — **pure** (ไม่แตะ DB)
@@ -317,22 +612,61 @@ export const LOCKED_STATUSES = ['prepared', 'loaded', 'shipped'];
  * @returns {Array<{group, order, mat, matStatus, candidates, action, diff, reason}>}
  *   action: 'update' | 'create' | 'locked' | 'unresolved' | 'same'
  */
-export function planOrderUpdates(groups, orders, resolve) {
+export function planOrderUpdates(groups, orders, resolve, slot) {
   const byPart = new Map();
   (orders || []).forEach(o => {
     const k = normKey(o.customer_part_no || o.mat_no);
     if (!byPart.has(k)) byPart.set(k, []);
     byPart.get(k).push(o);
   });
+  /* ⭐ ใบที่ "รอบเดียวกัน" = ใบ 862 ที่เวลาส่ง **ใกล้เที่ยวรถนี้ที่สุด** (user เคาะ 2026-09-09)
+     862 กับ e-SMART เดินคนละกริดเวลา ทั้งที่เป็น milk-run เที่ยวเดียวกัน — วัดจริง 09/09:
+       เที่ยว 09:00 ↔ 862 08:00 · 11:00 ↔ 10:00 · 13:00 ↔ 13:00 · **15:00 ↔ 15:30**
+     จับแบบ ship_time ตรงเป๊ะ ⇒ สร้างรอบใหม่ทุกครั้ง ⇒ ยอดนับ 2 เท่า + ใบ 862 ค้างแดงตลอดกาล
+
+     🔴 ทำไมไม่ใช้ช่วงครึ่งเปิด `(windowStart, targetAt]` (ของเดิม 2026-09-09 เช้า — ผิด 2 ทาง):
+       ⓐ **กินใบของเที่ยวก่อนหน้า** — ช่วง 12:00-14:00 (เที่ยว 15:00) คลุมใบ 13:00 ที่เที่ยว 13:00
+          เคลมไปแล้ว ⇒ แย่งใบกันเอง
+       ⓑ **มองไม่เห็นใบที่อยู่ถัดไปนิดเดียว** — เที่ยว 15:00 คู่จริงคือใบ 15:30 (ห่าง 30 นาที)
+          แต่อยู่นอกช่วง ⇒ สร้างรอบใหม่ ⇒ 15:30 ค้างแดงทั้งที่ยอดตรงกันเป๊ะ (40/40/35)
+     ⇒ กติกา: **ใกล้ที่สุดชนะ · เท่ากันเอาใบที่มาก่อน · ใบที่ batch อื่นเคลมไปแล้วห้ามเคลมซ้ำ**
+     ⚠️ ไม่ส่ง `slot` = พฤติกรรมเดิม (จับคู่จากลิสต์ที่ผู้เรียกกรองมาแล้ว) */
+  const gapOf = (o) => {
+    const at = orderShipAt(o.due_date, o.ship_time);
+    if (!at) return null;                                    // ไม่ระบุเวลา = วางในเที่ยวไหนไม่ได้ ห้ามเดา
+    return at.getTime() - slot.targetAt.getTime();
+  };
+  const inWindow = (o) => {
+    if (!slot?.targetAt) return true;
+    /* ใบที่ e-SMART รอบอื่นเคลมไปแล้ว = ของเที่ยวนั้น ห้ามเอามานับซ้ำ
+       (batch เดียวกัน = อัพไฟล์เดิมซ้ำ ยังแก้ใบเดิมได้ = idempotent) */
+    if (o.pull_batch_id && o.pull_batch_id !== slot.batchId) return false;
+    const gap = gapOf(o);
+    if (gap === null) return false;
+    return gap >= -MATCH_BACK_MS && gap <= MATCH_FWD_MS;
+  };
+  /* ไม่ส่ง slot = พฤติกรรมเดิม: ผู้เรียกกรองรอบมาเองแล้ว เอาใบที่เวลาส่งช้าสุดก่อน */
+  const byTimeDesc = (a, b) =>
+    (orderShipAt(b.due_date, b.ship_time)?.getTime() || 0) - (orderShipAt(a.due_date, a.ship_time)?.getTime() || 0);
+  /* ใกล้ที่สุดก่อน · ห่างเท่ากันเอาใบที่เวลาส่งมาก่อน (ของที่ถึงกำหนดก่อนขึ้นรถก่อน) */
+  const byNearest = (a, b) => {
+    const ga = gapOf(a), gb = gapOf(b);
+    return (Math.abs(ga) - Math.abs(gb)) || (ga - gb);
+  };
+
   return (groups || []).map(g => {
     const r = resolve ? resolve(g.customer_part_no) : { mat: null, status: 'none', candidates: [] };
     // ใบเดิมจับด้วยเลขลูกค้าก่อน (EDI เก็บ customer_part_no) แล้วค่อยลองเลข MAT ที่ map ได้
     const cand = [...(byPart.get(normKey(g.customer_part_no)) || []),
       ...(r.mat ? (byPart.get(normKey(r.mat)) || []) : [])];
-    const seen = new Set(); const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id));
+    const seen = new Set();
+    const list = cand.filter(o => !seen.has(o.id) && seen.add(o.id)).filter(inWindow)
+      .sort(slot?.targetAt ? byNearest : byTimeDesc);
     const open = list.find(o => !LOCKED_STATUSES.includes(o.status));
     const locked = list.find(o => LOCKED_STATUSES.includes(o.status));
-    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [] };
+    // ใบอื่นในช่วงเดียวกันที่ไม่ได้ถูกเลือก — **ต้องรายงาน ห้ามแตะเอง** (คนตัดสินว่าจะยุบหรือปล่อย)
+    const extras = list.filter(o => o !== open && o !== locked && !LOCKED_STATUSES.includes(o.status));
+    const base = { group: g, mat: r.mat, matStatus: r.status, candidates: r.candidates || [], extras };
     if (open) {
       const diff = g.qty - Number(open.qty || 0);
       return { ...base, order: open, action: diff === 0 ? 'same' : 'update', diff,
@@ -346,7 +680,8 @@ export function planOrderUpdates(groups, orders, resolve) {
       return { ...base, order: null, action: 'unresolved', diff: g.qty,
         reason: matIssueOf(r) };
     }
-    return { ...base, order: null, action: 'create', diff: g.qty, reason: 'ไม่มีใบในรอบนี้ — สร้างใหม่จากยอดที่ลูกค้ายืนยัน' };
+    return { ...base, order: null, action: 'create', diff: g.qty,
+      reason: 'ไม่มีใบ 862 ในช่วงเวลานี้ — สร้างใบใหม่ตามยอดที่ลูกค้ายืนยัน' };
   });
 }
 

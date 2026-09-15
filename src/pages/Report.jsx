@@ -35,6 +35,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
+import { uploadOpts } from '../utils/storageUpload';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -1555,7 +1556,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         try { resized = await resizeImage(qaImageFile); }
         catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่สำเร็จ — ลองใช้ JPG/PNG'); return; }
         const path = `qa/${Date.now()}_${user.id}.jpg`;
-        const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+        const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: false, contentType: 'image/jpeg' }));
         if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
         qa_image_url = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
       }

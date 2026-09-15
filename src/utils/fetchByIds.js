@@ -19,6 +19,19 @@
  *    "ตัวเลขนี้ไม่ครบ" ไม่ใช่แสดง 0 เหมือนไม่มีข้อมูลจริง
  */
 
+/**
+ * ⚠️ **`orderBy` ดีฟอลต์เป็น `'id'` — ตาราง/วิวที่ไม่มีคอลัมน์ `id` ต้องส่ง orderBy เองเสมอ**
+ *    ไม่ส่ง = คิวรีล้มทั้งก้อนด้วย 42703 `column X.id does not exist`
+ *    ตัวที่รู้แล้วว่าไม่มี `id` (จาก `docs/sql/00_schema_snapshot_*.sql`):
+ *      Main — company_calendar · employee_home_positions · notification_rules · part_registry ·
+ *             permission_catalog · section_signers · skill_update_runs
+ *      DR   — child_demand_accumulator · internal_delivery_sla · line_stock_summary ·
+ *             lot_post_accumulations · ship_to_plants · shipping_phase_alerts
+ *    ให้เลือกคอลัมน์ที่ **unique และคงที่** เป็น orderBy (เดี่ยวหรือ composite) เช่น
+ *    `{ orderBy: 'employee_id' }` หรือ `{ orderBy: ['line_name', 'mat_no'] }`
+ *    — ไม่ใช่แค่ให้ผ่าน แต่เพราะ `range()` ที่ไม่มีลำดับคงที่ = แถวหลุด/ซ้ำระหว่างหน้า (ชั้นที่ 3 ด้านบน)
+ */
+
 /** id ต่อก้อน — 120 uuid ≈ 4,700 ตัวอักษรใน URL (ปลอดภัยกับ proxy/gateway ทุกตัว) */
 export const IN_CHUNK = 120;
 /** เพดานแถวต่อครั้งของ PostgREST */

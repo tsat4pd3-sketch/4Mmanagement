@@ -83,7 +83,7 @@
 | Table | คำอธิบาย | Fields สำคัญ |
 |-------|---------|-------------|
 | `employees` | ข้อมูลพนักงาน | id, employee_id_code, name, image_url, line_id, team (A/B/C), section, is_active, position |
-| `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift (**กำลังคน — อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น ดูกฎด้านล่าง**), **line_type** (ประเภทไลน์: stamping/hydroform/laser/welding_assembly/other — source of truth `src/utils/lineTypes.js` · ตั้งค่าที่ LineSetup แผง "ข้อมูลเฉพาะไลน์นี้" · **คนละตัวกับ `process_type`** ฝั่ง DR (dr_products/machines) ที่ใช้กรอง downtime/defect types · migration `20260722_production_lines_line_type.sql` **apply แล้ว 2026-08-05** — ค้างมา 2 สัปดาห์ ระหว่างนั้นช่องนี้เซฟไม่ติดเงียบๆ + ลาก flow_mode ปิดตามไปด้วย · `20260805_..._fix_laser.sql` แก้ backfill ที่ตีไลน์เลเซอร์ใต้กลุ่ม HYDROFORM เป็น hydroform ผิด — **กฎ: ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · ⚠️ ยังไม่มีหน้าไหนอ่าน line_type เลย เป็น master ที่ตั้งไว้รอใช้) |
+| `production_lines` | ไลน์ผลิต | id, name, section, parent_line_name, std_day_shift, std_night_shift (**กำลังคน — อ่านผ่าน `src/utils/stdManpower.js` เท่านั้น ดูกฎด้านล่าง**), **line_type** (ประเภทไลน์: stamping/hydroform/laser/welding_assembly/other — source of truth `src/utils/lineTypes.js` · ตั้งค่าที่ LineSetup แผง "ข้อมูลเฉพาะไลน์นี้" · **คนละตัวกับ `process_type`** ฝั่ง DR (dr_products/machines) ที่ใช้กรอง downtime/defect types · migration `20260722_production_lines_line_type.sql` **apply แล้ว 2026-08-05** — ค้างมา 2 สัปดาห์ ระหว่างนั้นช่องนี้เซฟไม่ติดเงียบๆ + ลาก flow_mode ปิดตามไปด้วย · `20260805_..._fix_laser.sql` แก้ backfill ที่ตีไลน์เลเซอร์ใต้กลุ่ม HYDROFORM เป็น hydroform ผิด — **กฎ: ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · **ใช้จริงแล้ว (2026-09-09): `moveTargets`/`checkStockPlacement`/`bomTree.checkIssueFlow` ใช้จัดลำดับปลายทางย้ายมินิสโตร์ + เตือนจ่ายวัตถุดิบผิดไลน์** — ⚠️ **ไลน์ที่ `line_type` ยังว่าง จะถูกจัดลำดับต่ำสุด (ไม่หายจาก dropdown)** ต้องมีตะกร้ารับท้ายลิสต์เสมอ ดู `docs/modules/demand-flow-tower.md` · PD1 ครบทั้ง 4 ไลน์แล้ว (`20260910_line_type_pd1_press_lines.sql`) ที่ยังว่าง: Rework-PD1 · BENDING E50/EXPORT · LINE GWM · LINE MAIN TSRA-1/2 · LINE SUB-STATIONARY) |
 | `oee_targets` | Target **A/P/Q รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — **เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ** · ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_a/p/q (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2) · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้ (แอปคำนวณเอง) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
 | `profiles` | User roles + scope · **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดว่ามี จนเป็นต้นเหตุให้ `fn_audit` อ่าน `coalesce(full_name, email)` แล้วพังเงียบ ไม่บันทึกผู้แก้เลยทั้งระบบ ดูหัวข้อ Traceability) · **ระบบไม่มีการส่งอีเมล** — `notify_email` เป็นคอลัมน์ที่ไม่เคยถูกใช้ส่งอะไร (ช่องกรอกใน `/add-user` ถอดออกแล้ว 2026-08-17) | id, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], **mtn_teams[]** (ทีมช่างซ่อมที่สังกัด — แยกคิวใบแจ้งซ่อม MO · แยกจาก sections ที่คุม scope ผลิต · ตั้งที่ /add-user เฉพาะ role งานซ่อม · migration `20260722_profiles_mtn_teams.sql` · 2026-07-22), notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
@@ -497,6 +497,12 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` — รูปนิ่งถูก crop + บีบเป็น JPEG 480px q0.85 (~100KB) อัตโนมัติ
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
+  ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
+  ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` ที่ operator/Register) — GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป
+  (ใหญ่กว่ารูปนิ่ง 60 เท่า) · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)
+  · **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
 > 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
 
 ---
@@ -560,7 +566,12 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
-                       #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม)
+                       #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม) ·
+                       #   FINANCIAL-GAP-ANALYSIS.md (ราคาขายต่อพาร์ท → สรุปยอดขาย/margin — gap 13 ข้อ
+                       #     + คำถามที่ user ต้องตัดสิน 6 ข้อ · 📌 สำรวจแล้ว ยังไม่ลงมือ 2026-09-09
+                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
+                       #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
+                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -631,7 +642,9 @@ getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / 
 4. **stale-response race** — จอที่ยิงคิวรีตาม state (เลือกกะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับมา ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report เขียนข้อมูลผิดกะ · รอบ 3) — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / เทียบ request id / เทียบ ref ปัจจุบัน) ก่อน set
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า ต้อง filter/paginate
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (กฎเหล็ก 7 ใน `docs/modules/demand-flow-tower.md`)
-7. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
+7. **realtime handler ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** (2026-09-15 · audit `docs/POLLING-AUDIT-2026-09-15.md`) — `debounce(reload, 1500)` = "รอให้เงียบ 1.5 วิ" ซึ่ง**วันทำงานจริงไม่มีช่วงเงียบ** ⇒ จอโหลดใหม่ทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล ไม่มีขีดจำกัดบน (วัดจริง 15/09: prod_orders 6,876 req/วัน ทั้งที่ poll ตั้ง 15 นาทีแล้ว · FactoryMap 1 รอบ = 26 KB ⇒ 10 จอ = 1.5 GB/วัน = โควต้า Free ทั้งเดือนใน 3 วัน) · **ใช้ `coalesce(fn, LIVE.x)` จาก `src/utils/liveRefresh.js` เท่านั้น ห้าม debounce/`setTimeout` เอง** (`setTimeout(load, 400)` ต่อ event ยิ่งแย่ — แต่ละ event ตั้งนาฬิกาของตัวเอง = N event N โหลด) · ระดับ `LIVE.ALARM/PAGE/BOARD` อยู่ใน `src/utils/refreshRates.js` ห้ามใส่ ms ดิบ · **subscribe แบบไม่มี `filter:` = ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ** (20 ไลน์ = เสียเปล่า 95%) ให้กรองฝั่ง server เสมอเมื่อรู้ขอบเขต — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default → `old` มีแค่ pk ⇒ event ถูกตัดทิ้งเงียบ) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
+8. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิง 4 คิวรี × 705 ครั้ง/วัน) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
+9. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
 
 ### Skill Fit Scoring
 ```js
@@ -659,6 +672,12 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      `__tests__/` ที่ไหนก็ได้ใต้ src/ แล้วมันถูกเก็บอัตโนมัติ ไม่ต้องแก้ script**
      · **ห้ามเปลี่ยนเป็น `node --test '<glob>'` ใน package.json** — node รองรับ glob ใน `--test` ตั้งแต่ v22
      แต่ Vite 8 รับ Node 20.19+ ได้ ถ้า Render ใช้ Node 20 อยู่จะ **deploy ล่มทั้งที่โค้ดไม่ผิด**
+     · **⏱️ `npm test` รันเทส 2 รอบ: รอบปกติ + รอบ "นาฬิกา +400 วัน" (2026-09-14)** — จับ
+     **เทสระเบิดเวลา** (ผ่านตอนเขียน แล้วตกเองวันหลังโดยไม่มีใครแตะโค้ด) · เกิดจริง: เทส
+     `pullSignal` นับจำนวน warning ของไฟล์ตัวอย่างลงวันที่ 08/09 พอโค้ดเพิ่มคำเตือน "ไฟล์เก่ากว่า
+     วันนี้เกิน 3 วัน" มันก็ตกเองตั้งแต่ 12/09 ⇒ **build ล่ม deploy ไม่ออก และหา commit ต้นเหตุไม่เจอ
+     เพราะไม่มี commit ไหนทำ** · **กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` เป็นพารามิเตอร์ได้
+     แล้วเทสตรึงค่า** — ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออกจาก `scripts/run-tests.mjs`**
    - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
      - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ (2026-08-26)**
      เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` (~3 นาที · ต้องเปิด vite audit ค้างไว้)

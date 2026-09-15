@@ -117,7 +117,7 @@ export default function LineOeeBoard() {
     const sessions = sess || [];
     const ids = sessions.map(s => s.id);
 
-    const [dtR, defR, prods, kstds] = await Promise.all([
+    const [dtR, defR, prods, kstds, breaks] = await Promise.all([
       fetchByIds(ids, c => supabaseDR.from('downtime_logs')
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
@@ -129,6 +129,9 @@ export default function LineOeeBoard() {
         (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
       cachedMaster('kanban_standards:ct', async () =>
         (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      // นโยบายพัก — ต้องส่งเข้า computeLiveOee ไม่งั้น A/P สดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
+      cachedMaster('break_policies:active', async () =>
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
     ]);
     if (dtR.error || dtR.truncated || defR.error || defR.truncated) bad = true;
 
@@ -148,6 +151,7 @@ export default function LineOeeBoard() {
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
+    const procByMat = {}; (prods || []).forEach(p2 => { procByMat[p2.mat_no] = p2.process_type; });
     const dtBySess = {}; dtR.rows.forEach(d2 => (dtBySess[d2.session_id] ||= []).push(d2));
     const ngBySess = {}; defR.rows.forEach(d2 => { if (isTrialDefect(d2)) return; ngBySess[d2.session_id] = (ngBySess[d2.session_id] || 0) + defectQty(d2); });
     const lineCfg = Object.fromEntries(lines.map(l => [l.name, l]));
@@ -159,6 +163,8 @@ export default function LineOeeBoard() {
         workDate: today, nowMs: Date.now(), ngQty: ngBySess[s.id] || 0,
         parallelN: parallelUnitsOf(lineCfg[s.line_name]),
         parallelCap: flowModeOf(lineCfg[s.line_name]?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(lineCfg[s.line_name]) : 1,
+        breakPolicies: breaks || [],
+        processType: (ordBySess[s.id] || []).map(o => procByMat[o.mat_no]).find(Boolean) || null,
       });
     });
 

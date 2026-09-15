@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, orderProducedQty } from '../utils/oee';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -18,7 +18,8 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
@@ -383,6 +384,9 @@ export default function Dashboard() {
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
+        /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
+        breakPolicies: breakPolicies || [],
+        processType: s.dr_products?.process_type || null,
       });
       if (!live) return null;   // เพิ่งเปิดกะ (< LIVE_MIN_ELAPSED นาที) / ไม่มี start_time = ยังประเมินไม่ได้
       const f = v => (v == null ? null : v / 100);
@@ -393,8 +397,17 @@ export default function Dashboard() {
     const ps = (sessions || []).map(s => {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
+      /* ⭐ `imported` = ใบยกยอดที่กะถัดไป "กดรับ" ไปแล้ว — ต้องแยก 2 ฝั่ง (2026-09-09 · oee.js §6):
+         - **เป้า** ห้ามนับ (เป้าถูกย้ายไปอยู่ใบของกะถัดไปแล้ว → นับ 2 รอบ 35+30=65)
+         - **ผลิตได้** ต้องนับ (ยอดที่กะนี้ทำได้จริงอยู่ใน qty_actual ของมัน · ไม่นับ = หายเงียบตอนกะหน้ากดรับ) */
+      const handed  = orders.filter(o => o.status === 'imported');
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
       const perMatD = {};
+      handed.forEach(o => {
+        if (!o.mat_no) return;
+        const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
+        e.produced += o.qty_actual ?? 0;   // เป้าไม่บวก — ดูหมายเหตุด้านบน
+      });
       active.forEach(o => {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
@@ -404,12 +417,15 @@ export default function Dashboard() {
            ⇒ ยอดที่หัวหน้ากรอกระหว่างกะ และยอดจริงของใบยกยอด **หายจากจอ TV ทั้งหมด**
               ขณะที่ /factory-map · /dept-dashboard · /line-oee · /flow-tower ใช้สูตรเต็ม
               = 2 จอบอกยอดคนละตัวในเวลาเดียวกัน */
-        e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
+        e.produced += orderProducedQty(o);
       });
       const nullD = active.filter(o => !o.mat_no);
       const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
       const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const actual  = ptotD.produced + nullD.reduce((sum, o) => sum + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
+      const actual  = ptotD.produced
+        + nullD.reduce((sum, o) => sum + orderProducedQty(o), 0)
+        // ใบยกยอดที่ถูกรับไปแล้วและไม่มี mat_no — ยอดที่ทำได้ก็ต้องไม่หายเหมือนกัน
+        + handed.filter(o => !o.mat_no).reduce((sum, o) => sum + (o.qty_actual ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
       const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
@@ -595,20 +611,20 @@ export default function Dashboard() {
     return visibleInterval(() => fetchAll(selectedDate), RATE.ANALYTIC);
   }, [selectedDate, fetchAll]);
 
-  // Realtime refresh เฉพาะข้อมูลผลิต — debounce 1.5s กัน event รัวๆ ตอนสแกนหลายใบติดกัน
+  /* Realtime refresh เฉพาะข้อมูลผลิต
+     🔴 2026-09-15 — เดิม debounce 1.5s ซึ่ง **ไม่ใช่เพดาน** (รอให้เงียบ 1.5 วิเท่านั้น)
+        วันทำงานจริงไม่มีช่วงเงียบ ⇒ โหลดใหม่แทบทุก event ของทั้งโรงงาน
+        เปลี่ยนเป็น coalesce(LIVE.BOARD) = ยิงไวเหมือนเดิมครั้งแรก แต่มีเพดานจริง
+        (ดู src/utils/liveRefresh.js — เหตุผลเต็มและตัวเลขที่วัดได้) */
   useEffect(() => {
-    let timer = null;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => fetchProdStatus(), 1500);
-    };
+    const refresh = coalesce(fetchProdStatus, LIVE.BOARD);
     const ch = liveChannel(supabaseDR, 'dash-dr')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, refresh)
       .subscribe();
-    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+    return () => { refresh.cancel(); supabaseDR.removeChannel(ch); };
   }, [fetchProdStatus]);
 
   // Determine OT windows based on current time (for live "today" view)

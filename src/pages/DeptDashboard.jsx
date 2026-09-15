@@ -8,6 +8,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
+import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 // แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
@@ -356,7 +357,7 @@ async function loadMaintenance(ctx) {
 
 function MaintenanceView({ d, ctx }) {
   const { workDate, navigate, isMobile, inScope } = ctx;
-  const openMo = d.mo.filter(o => !['closed', 'rejected'].includes(o.status));
+  const openMo = d.mo.filter(isMoOpen);   // รวม transferred = จบแล้ว (source: utils/mtnStepPerm)
   const scopedMo = openMo.filter(o => !o.line_name || inScope(o.line_name));
   const stale = scopedMo.filter(o => (daysSince(o.report_at) ?? 0) >= 3);
 

@@ -7,7 +7,8 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
 import { fetchAllPages } from '../utils/fetchByIds';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 
@@ -147,13 +148,17 @@ export default function FlowTower() {
   useEffect(() => { loadDivisions().then(setDivs); }, []);
   useEffect(() => { load(); }, [load]);
   usePolling(load, RATE.ANALYTIC);
-  // เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
+  /* เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
+     🔴 2026-09-15 — เดิมผูก `load` เข้า handler ตรงๆ **ไม่มี debounce/เพดานเลย**
+        ⇒ ทุกครั้งที่ใครแตะใบผลิตในโรงงาน จอนี้โหลดใหม่ทันที (วันทำงานยุ่ง = รัวไม่จำกัด)
+        ใส่ coalesce(LIVE.BOARD) ดู src/utils/liveRefresh.js */
   useEffect(() => {
+    const bump = coalesce(load, LIVE.BOARD);
     const ch = liveChannel(supabaseDR, 'flow-tower')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
       .subscribe();
-    return () => { supabaseDR.removeChannel(ch); };
+    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
   const setLot = async (row) => {

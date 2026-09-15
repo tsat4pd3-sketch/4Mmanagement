@@ -22,7 +22,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
-import { isTrialDefect, defectQty } from '../utils/oee';
+import { isTrialDefect, defectQty, orderProducedQty } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import LineSelect from '../components/LineSelect';
@@ -259,7 +259,7 @@ const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วั�
    🔴 เดิม `qty_ok ?? qty_actual ?? qty` ตกไปใช้ `qty` (= **เป้า**) กับใบที่ยังไม่ปิดและยังไม่กรอกยอด
       ⇒ ตัวหารพองเกินจริง → **PPM ต่ำกว่าความจริง / FTT สูงกว่าความจริง**
          ซึ่งเป็นตัวเลขที่อาจอ้างอิงกับลูกค้า และไหลไปโผล่บนฟอร์ม KPI ที่ปริ้นเซ็น */
-const prodQty = o => (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0));
+const prodQty = orderProducedQty;   // เจ้าของสูตรอยู่ที่ utils/oee.js §6 — ห้ามเขียนซ้ำที่นี่
 
 function QualityDashboard() {
   const { role, lineId, sections } = useContext(UserContext);
@@ -331,11 +331,14 @@ function QualityDashboard() {
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
       //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
       const [ooRes, ddRes] = await Promise.all([
-        /* ⚠️ ต้อง select `status` ด้วย ไม่งั้นใช้สูตรบังคับไม่ได้ · และกรอง cancelled/imported ออก
-           (`imported` = ตัวยกยอดที่กะถัดไปรับไปแล้ว — ไม่กรองจะนับซ้ำกับแถวใหม่ของกะถัดไป) */
+        /* ⚠️ ต้อง select `status` ด้วย ไม่งั้นใช้สูตรบังคับไม่ได้
+           ⭐ 2026-09-09: เลิกกรอง `imported` ออก — เดิมกรองเพราะกลัวนับซ้ำกับแถวใหม่ของกะถัดไป
+              แต่แถวของกะถัดไปถือแค่ "ยอดที่เหลือ" (qty − qty_actual) → บวกกันแล้วได้เป้าเดิมพอดี
+              ส่วน `prodQty` ให้ imported = qty_actual อยู่แล้ว ⇒ กรองทิ้ง = ยอดผลิตหายจริง (oee.js §6)
+              (ที่นี่ใช้ prodQty ล้วน ไม่ได้รวม o.qty ดิบ จึงไม่มีทางนับเป้าซ้ำ) */
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
           .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual, status')
-          .not('status', 'in', '("cancelled","imported")').in('session_id', c)),
+          .not('status', 'in', '("cancelled")').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', c)),
       ]);

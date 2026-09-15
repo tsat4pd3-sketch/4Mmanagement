@@ -122,3 +122,49 @@ test('checkStockPlacement: เตือนตอนจ่ายพาร์ท �
   assert.equal(checkStockPlacement('20065734', 'BRKT BLANK', 'welding_assembly')?.code, 'needs_forming_line');
   assert.equal(checkStockPlacement('127 (M6)', null, 'welding_assembly'), null, 'ไม่ใช่เลข SAP = ไม่ตัดสิน');
 });
+
+/* ═══ ไลน์ที่ยังไม่ได้ตั้ง line_type ต้องไม่หายจาก dropdown (2026-09-09) ═════════════════
+   user: "มันขึ้นไลน์ไม่ครบนะ LINE C (200 Ton), (110&300 Ton) ก็ไม่ขึ้น ทำไมล่ะ"
+   ของจริง: LINE C ( 200&250 Ton ) / LINE D ( 110&300 Ton ) มี line_type = null
+   ⇒ ตกกลุ่ม forming_out (ที่กรองด้วย isFormingLine) แล้วไม่มีกลุ่มไหนรับ = เลือกไม่ได้เลย */
+const NOTYPE = {
+  childrenOf,
+  typeOf,                                        // LINE C/D ไม่มีใน typeOf = null เหมือนของจริง
+  allLeaf: [...allLeaf, 'LINE C ( 200&250 Ton )', 'LINE D ( 110&300 Ton )'],
+};
+
+test('🔴 ไลน์ที่ line_type ยังว่าง ต้องยังเลือกได้ (ตะกร้า 🏢 ไลน์อื่นทั้งโรงงาน)', () => {
+  const r = moveTargets('20065734', {
+    ...NOTYPE, at: 'LINE APRON ASSY', partName: 'BRKT ENG ELETR GRD(MB3BE102D04BC)BLANK', usedAt: ['Line 60'],
+  });
+  ['LINE C ( 200&250 Ton )', 'LINE D ( 110&300 Ton )'].forEach(n =>
+    assert.ok(flat(r).includes(n), `${n} ต้องอยู่ในลิสต์`));
+  assert.equal(groupOf(r, 'LINE C ( 200&250 Ton )'), 'any', 'อยู่ตะกร้าท้าย ไม่ใช่กลุ่มแนะนำ');
+});
+
+test('ตั้ง line_type แล้วต้องเลื่อนขึ้นกลุ่มบน ไม่ค้างในตะกร้าท้าย', () => {
+  const r = moveTargets('20065734', {
+    ...NOTYPE,
+    typeOf: { ...typeOf, 'LINE C ( 200&250 Ton )': 'stamping' },
+    at: 'LINE APRON ASSY', partName: 'BRKT BLANK', usedAt: ['Line 60'],
+  });
+  assert.equal(groupOf(r, 'LINE C ( 200&250 Ton )'), 'forming_out');
+  assert.equal(groupOf(r, 'LINE D ( 110&300 Ton )'), 'any', 'ตัวที่ยังไม่ตั้งยังอยู่ท้าย');
+});
+
+test('ตะกร้าท้ายต้องไม่มีไลน์ที่ของค้างอยู่ และไม่ซ้ำกลุ่มอื่น', () => {
+  const r = moveTargets('50031601', { ...NOTYPE, at: 'HYDROFORM', usedAt: ['LASER-789'] });
+  const all = flat(r);
+  assert.ok(!all.includes('HYDROFORM'), 'ห้ามเสนอย้ายกลับที่เดิม');
+  assert.equal(all.length, new Set(all).size, 'ห้ามซ้ำข้ามกลุ่ม');
+  assert.ok(all.includes('LINE C ( 200&250 Ton )'));
+});
+
+test('ไลน์ลูกในแผนกยังอยู่กลุ่ม rest ไม่ถูกตะกร้าท้ายดูดไป', () => {
+  const r = moveTargets('20058626', {
+    ...NOTYPE, at: 'LINE APRON ASSY', partName: 'NUT WELD ASSY', usedAt: ['Line 61'],
+  });
+  assert.equal(groupOf(r, 'Line 60'), 'rest');
+  assert.equal(groupOf(r, 'Line 61'), 'bom');
+  assert.equal(r.sure, true, 'BOM ชี้ไลน์เดียว = ยังเลือกให้ได้เหมือนเดิม (ตะกร้าท้ายห้ามทำให้ไม่ชัวร์)');
+});

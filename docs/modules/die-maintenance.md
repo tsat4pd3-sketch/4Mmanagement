@@ -26,3 +26,20 @@
 · ช่องไลน์ในฟอร์มชุด = `<SelectOrFree>` จาก `useDiePressLines()` (ค่าเก่านอกทะเบียนยังเลือกได้) · จัดการที่ `/die-registry` แท็บทะเบียน แผง ⚙️ (สิทธิ์ `machines:edit`)
 · **ตั้งใจแยกจาก `production_lines`** — ถ้าเพิ่มเป็นไลน์ผลิตจะโผล่ใน dropdown ไลน์/scope/OEE/TV ทุกหน้า · `die_sets.line_name` / `machines.line_name` ยังเก็บ name text เหมือนเดิม
 · `ref_production_line` = ทางเชื่อมไป production_sessions/OEE ในอนาคต (HDF1/HDF2 ตั้งแล้ว · LINE A-D ยังไม่มีไลน์ผลิตคู่)
+
+### 🔴 กด save ที่ /machines แล้วแม่พิมพ์/จิ๊กกลายเป็น "เครื่องจักร" เงียบๆ (แก้แล้ว 2026-09-08)
+
+`MachineDatabase.openEdit()` คัดลอกฟิลด์จากแถวเดิม 11 ตัวแต่ **ตก `equipment_kind`** → `kindOf(undefined)`
+คืน `'machine'` (ค่า backward-compatible ใน `equipmentKinds.js`) → `handleSave` เขียนทับลง DB ทุกครั้งที่กดบันทึก
+· หัวข้อ modal + ปุ่มชนิดที่ไฮไลต์ก็อ่านจากตัวเดียวกัน จึงโชว์ "🏭 เครื่องจักร" ผิดตั้งแต่เปิด modal
+⇒ ช่างเข้าไปแก้แค่ชื่อ/ไลน์/ลำดับ แม่พิมพ์ก็หายจาก `/die-registry` ทันที **โดยไม่มีอะไรเตือน**
+**แก้:** เติม `equipment_kind: kindOf(item.equipment_kind)` ใน object ของ `openEdit`
+
+**วัดความเสียหายจริงแล้ว — ยังไม่พบเหยื่อที่ยืนยันได้ จึงไม่ backfill:**
+- 10 แถว active ที่ `equipment_kind='machine'` แต่ชื่อเป็นคำบรรยายพาร์ท (มี `(OP` หรือยาว >30) —
+  **ไม่มีตัวไหนมีแฝดชนิด die ชื่อเดียวกัน** และ **2 ตัวมี `downtime_logs` ผูกอยู่** (เคยถูกใช้เป็นเครื่องจริง)
+  ⇒ น่าจะเป็นการลงทะเบียนที่ใช้ชื่อพาร์ทเป็น `machine_no` ตั้งแต่แรก ไม่ใช่เหยื่อของบั๊ก
+- 16 `machine_no` ที่มีทั้ง die และ machine (32 แถว) — 14 คู่อยู่**คนละไลน์** (LINE C vs LINE D) = import ซ้ำ
+  ส่วน 2 คู่ที่ไลน์เดียวกัน (HDF2) **ฝั่ง machine ถูกปิด `is_active=false` ไปแล้ว** ไม่มีผลค้าง
+**กฎ:** จะแก้ชนิดคืนต้องให้ MTN ยืนยันรายตัวก่อน — `machine_no` เป็น join key ที่ `mtn_orders`/`downtime_logs`
+อ้างด้วยข้อความ การเปลี่ยนชนิดทำให้ตัวนั้นหายจาก dropdown เครื่องจักรของ Daily Report ทันที (ห้าม backfill เงียบ)

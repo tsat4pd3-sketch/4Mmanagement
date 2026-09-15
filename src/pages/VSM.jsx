@@ -32,7 +32,8 @@ import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -373,6 +374,8 @@ export default function VSM() {
     const lv = buildVsmLive({
       boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
       ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
+      // นโยบายพัก — ขาดไปแล้ว A/P สดในแท็บสดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
+      breakPolicies: liveRaw.raw?.breakPolicies || [],
     });
     setLiveModel(model);
     setLiveData({ ...lv, at: Date.now(), workDate: wd, partial });
@@ -380,19 +383,20 @@ export default function VSM() {
 
   usePolling(loadLive, RATE.BOARD, { enabled: tab === 'live' && !!liveRaw });
 
-  // realtime = ช่องทางหลัก (pattern เดียวกับ FactoryMap) · debounce 1.5 วิ กัน event รัวตอนสแกนรวบ
-  // loadLive อยู่ใน deps ตรงๆ (identity เปลี่ยนเมื่อ liveRaw/lines เปลี่ยน = resubscribe นานๆ ครั้ง)
+  /* realtime = ช่องทางหลัก (pattern เดียวกับ FactoryMap)
+     loadLive อยู่ใน deps ตรงๆ (identity เปลี่ยนเมื่อ liveRaw/lines เปลี่ยน = resubscribe นานๆ ครั้ง)
+     🔴 2026-09-15 — debounce 1.5 วิ → coalesce(LIVE.BOARD): debounce ไม่ใช่เพดาน
+        (วันทำงานจริงไม่มีช่วงเงียบ = โหลดแทบทุก event) ดู src/utils/liveRefresh.js */
   useEffect(() => {
     if (tab !== 'live' || !liveRaw) return;
-    let timer = null;
-    const bump = () => { clearTimeout(timer); timer = setTimeout(() => loadLive(), 1500); };
+    const bump = coalesce(loadLive, LIVE.BOARD);
     const ch = liveChannel(supabaseDR, 'vsm-live')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' }, bump)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
       .subscribe();
-    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [tab, liveRaw, loadLive]);
 
   /* ── บันทึก / โหลด / พิมพ์ ──────────────────────────────────────────────── */

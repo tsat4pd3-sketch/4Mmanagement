@@ -13,7 +13,8 @@ import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, policyBreakOverlapMin } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster } from '../utils/masterCache';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -23,6 +24,7 @@ import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -554,11 +556,16 @@ export default function FactoryMap({ setupMode = false }) {
     });
     // ไลน์ไหน "คนโหลดเข้า-ออกเอง" — นับเครื่องผลิต manual เทียบ auto/semi ต่อไลน์ (query แยก + catch เอง
     // เพื่อไม่ให้ facilityZones พังถ้าคอลัมน์ automation_level ยังไม่ apply)
-    supabaseDR.from('machines').select('line_name, automation_level, equipment_category').eq('is_active', true)
+    supabaseDR.from('machines').select('line_name, automation_level, equipment_category, equipment_kind').eq('is_active', true)
       .then(({ data }) => {
         const cnt = {};
         (data || []).forEach(m => {
           if (!m.line_name || (m.equipment_category && m.equipment_category !== 'production')) return;
+          /* 🔴 นับเฉพาะ "เครื่องจักร" — แม่พิมพ์/จิ๊กไม่ใช่ของที่เดินเอง (2026-09-14 · user ทัก)
+             วัดจริง: แม่พิมพ์ 254 จาก 266 ตัวถูกติด automation_level='manual' ไว้ (ฟอร์มเคยให้ตั้งได้)
+             ⇒ LINE A/B/C ( ปั๊ม ) ถูกตีเป็น "ไลน์ที่คนโหลดเข้า-ออกเอง" ทั้งที่เครื่องจริง auto ล้วน
+             (A: manual 0 auto 12 · B: 0/10 · C: 0/4) แล้วกำลังคนไปจำกัดจำนวนเครื่องที่เดินได้บนผัง */
+          if (m.equipment_kind && m.equipment_kind !== 'machine') return;
           const c = cnt[m.line_name] || (cnt[m.line_name] = { man: 0, autoish: 0 });
           if (m.automation_level === 'manual') c.man++;
           else if (m.automation_level === 'auto' || m.automation_level === 'semi_auto') c.autoish++;
@@ -595,7 +602,7 @@ export default function FactoryMap({ setupMode = false }) {
       cachedMaster('dr_products:ct', async () =>
         (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
       cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)).data || []),
+        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
       cachedMaster('kanban_standards:ct', async () =>
         (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
@@ -628,6 +635,10 @@ export default function FactoryMap({ setupMode = false }) {
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
+        /* ⚠️ ต้องส่งนโยบายพัก + process ของกะ ไม่งั้น A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14)
+           process มาจาก mat ของใบที่เปิดในกะ — วิธีเดียวกับที่ "ควรผลิตได้ตอนนี้" ใช้อยู่ด้านล่าง */
+        breakPolicies: breaks || [],
+        processType: os.map(o => procMap[o.mat_no]).find(Boolean) || null,
         parallelN: parallelUnitsOf(flowByLineRef.current[s.line_name]),
         /* เพดานเครื่องขนาน — เฉพาะไลน์ที่ CT เป็น "ต่อเครื่อง" (parallel_machine)
            ตัวหารจริงของ P วัดจาก order window ใน util (busyMinutes) ไม่ใช่จำนวนคน
@@ -1167,21 +1178,26 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── Realtime — ผังเปลี่ยนสี "ทันที" ที่หน้างานบันทึก ไม่ต้องรอรอบ poll (2026-08-19) ────
      เดิมหน้านี้เป็น polling ล้วน (0 channel) เลยต้องตั้ง 30 วิ เพื่อให้ Andon ทัน = กิน egress หนัก
      ตอนนี้ push มาก่อน · poll เหลือเป็นแค่ "กันเหนียวเผื่อ realtime หลุด" → ยืดเป็นหลักนาทีได้
-     ⚠️ debounce 1.5 วิ กัน event รัวตอนสแกนปิดใบหลายใบติดกัน (pattern เดียวกับ Dashboard)
      ⚠️ ผังแดงเร็วกว่าเดิมด้วยซ้ำ — การ "แจ้งเตือน" จริง (Telegram/ไซเรน) เป็นคนละกลไก
-        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)  */
+        (edge `downtime-open-scan` pg_cron ทุก 5 นาที ยิงเมื่อค้างเกิน `dt_alert_config.open_alert_min`)
+
+     🔴 2026-09-15 — เปลี่ยนจาก `debounce 1.5 วิ` เป็น `coalesce(LIVE.BOARD)`
+        debounce **ไม่ใช่เพดาน**: วันทำงานจริง 20 ไลน์บันทึกงานตลอด แทบไม่มีช่วงเงียบ 1.5 วิ
+        ⇒ ผังโหลดใหม่ (26 KB) แทบทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล = ~150 MB/วัน/จอ
+        ⇒ 10 จอ = 1.5 GB/วัน เกินโควต้า Free ทั้งเดือนใน 3 วัน (ดู src/utils/liveRefresh.js)
+        ตอนนี้: event แรกยังมาไวเท่าเดิม · รอบถัดไปในนาทีเดียวกันถูกยุบรวมเป็นรอบเดียว   */
   useEffect(() => {
-    let timer = null;
-    const bump = (fn) => { clearTimeout(timer); timer = setTimeout(fn, 1500); };
+    const bumpStatus = coalesce(loadStatus, LIVE.BOARD);
+    const bumpMtn    = coalesce(() => { loadSupply(); loadDieZones(); }, LIVE.BOARD);
     const ch = liveChannel(supabaseDR, 'factory-map-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         () => bump(loadStatus))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, () => bump(loadStatus))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       bumpStatus)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' },         bumpStatus)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'defect_logs' },         bumpStatus)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bumpStatus)
       // mtn_orders กระทบทั้ง supply route และโซนคลังแม่พิมพ์ (MO ค้างของแม่พิมพ์) — refresh คู่กัน
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          () => bump(() => { loadSupply(); loadDieZones(); }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' },          bumpMtn)
       .subscribe();
-    return () => { clearTimeout(timer); supabaseDR.removeChannel(ch); };
+    return () => { bumpStatus.cancel(); bumpMtn.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadStatus, loadSupply, loadDieZones]);
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
@@ -1653,7 +1669,7 @@ export default function FactoryMap({ setupMode = false }) {
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
       const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
       const path = `factory/map_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob);
+      const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from('employee-photos').getPublicUrl(path);
       const row = mapId

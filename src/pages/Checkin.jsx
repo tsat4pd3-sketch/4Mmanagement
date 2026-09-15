@@ -125,6 +125,7 @@ export default function Checkin() {
   const [borrowLineId,    setBorrowLineId]    = useState('');
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
   const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
+  const [openingShift,     setOpeningShift]     = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
 
   /* ── สถานะตั้งต้นตอนโหลด — ใช้เทียบว่าการกดบันทึกแต่ละครั้งเป็น "เช็คชื่อครั้งแรก" /
      "อัพเดทกำลังคน" / "จองรถ OT" เพื่อยิงแจ้งเตือน Telegram แยกประเภท (กันหัวหน้าแผนกงง
@@ -685,6 +686,28 @@ export default function Checkin() {
       // เตรียมข้อมูลสำหรับ Modal (ตรวจสอบก่อนว่า session เปิดอยู่แล้วหรือไม่)
       let anyOtNight = false;
       const linesToAsk = [];
+      /* กันเสนอไลน์เดียวกันซ้ำในรายการเดียว (2026-09-10 · feedback หน้างาน "กะกลางคืนมันมีเปิดกะ มา 2 อัน")
+         เคสจริง: เช็คชื่อรวมทั้งไลน์แม่ (LWR BAR / HYDROFORM) และไลน์ลูก (Assy LWR / LASER E50) พร้อมกัน
+         ⇒ ไลน์แม่ถูก expand เป็นลูก **แล้วไลน์ลูกที่ถูกเช็คเองก็ถูก push อีกรอบ** ⇒ ลูปเปิดกะ insert 2 แถว
+         ห่างกัน ~0.1-0.2 วิ (ไม่ใช่ผู้ใช้กดซ้ำ) — วัดจริง: LASER E50 ซ้ำเกือบทุกวันตั้งแต่ 13/08 */
+      const askedLineNames = new Set();
+      const pushLineToAsk = (item) => {
+        if (askedLineNames.has(item.line.name)) return;
+        askedLineNames.add(item.line.name);
+        linesToAsk.push(item);
+      };
+      /* ⚠️ ห้ามใช้ `.maybeSingle()` เช็คว่ามีกะอยู่แล้วหรือยัง — คืน error PGRST116 เมื่อเจอ >1 แถว
+         และโค้ดเดิมกลืน error ทิ้ง (`const { data: exist }`) ⇒ ไลน์ที่เผลอมีกะซ้ำอยู่แล้ว
+         จะถูกอ่านว่า "ยังไม่มีกะ" แล้วชวนเปิดซ้ำไปเรื่อยๆ (กฎเหล็กข้อ 1 · CLAUDE.md) */
+      const sessionExists = async (lineName) => {
+        const { data, error } = await supabaseDR
+          .from('production_sessions').select('id')
+          .eq('work_date', workDateStr).eq('line_name', lineName).eq('shift', shiftInfo.shift)
+          .limit(1);
+        // อ่านไม่ได้ = ถือว่ามีกะแล้ว (ไม่ชวนเปิด) ปลอดภัยกว่าเปิดซ้ำแล้วยอดผลิตแตกเป็น 2 กะ
+        if (error) { console.warn('[checkOpenShift]', error.message); return true; }
+        return (data || []).length > 0;
+      };
       for (const ln of checkedLines) {
         const lineHasOtNight = isNight && displayed.some(e =>
           e.line_id === ln.id && attendance[e.id]?.is_present && attendance[e.id]?.has_ot
@@ -696,22 +719,14 @@ export default function Checkin() {
         if (children?.length) {
           // Parent line (e.g. HYDROFORM) — expand to sub-machines, let leader pick
           for (const childName of children) {
-            const { data: exist } = await supabaseDR
-              .from('production_sessions').select('id')
-              .eq('work_date', workDateStr).eq('line_name', childName).eq('shift', shiftInfo.shift)
-              .maybeSingle();
-            if (!exist) {
-              const childLine = lines.find(l => l.name === childName);
-              if (childLine) linesToAsk.push({ line: childLine, startTime: lineStartTime, hasOtNight: lineHasOtNight, parentName: ln.name });
-            }
+            if (askedLineNames.has(childName)) continue;
+            if (await sessionExists(childName)) continue;
+            const childLine = lines.find(l => l.name === childName);
+            if (childLine) pushLineToAsk({ line: childLine, startTime: lineStartTime, hasOtNight: lineHasOtNight, parentName: ln.name });
           }
         } else {
-          const { data: exist } = await supabaseDR
-            .from('production_sessions').select('id')
-            .eq('work_date', workDateStr).eq('line_name', ln.name).eq('shift', shiftInfo.shift)
-            .maybeSingle();
-          if (!exist) {
-            linesToAsk.push({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
+          if (!askedLineNames.has(ln.name) && !(await sessionExists(ln.name))) {
+            pushLineToAsk({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
           }
         }
       }
@@ -816,9 +831,14 @@ export default function Checkin() {
 
   /* ── เปิดกะ Daily Report จาก Modal ยืนยัน ── */
   const handleConfirmOpenShift = async () => {
-    if (!openShiftModal) return;
-    const toOpen = openShiftModal.lines.filter(({ line }) => subLineSelections[line.name] !== false);
+    if (!openShiftModal || openingShift) return;   // กดปุ่มซ้ำระหว่างรอ = เปิดกะซ้ำ
+    // กันซ้ำอีกชั้นตรงจุด insert (เผื่อ modal ถูกสร้างจากโค้ดเส้นอื่นในอนาคต)
+    const seen = new Set();
+    const toOpen = openShiftModal.lines
+      .filter(({ line }) => subLineSelections[line.name] !== false)
+      .filter(({ line }) => (seen.has(line.name) ? false : (seen.add(line.name), true)));
     if (!toOpen.length) { toast.info('ไม่ได้เลือกไลน์ไหนเพื่อเปิดกะ'); setOpenShiftModal(null); setSubLineSelections({}); return; }
+    setOpeningShift(true);
     try {
       for (const { line, startTime, hasOtNight } of toOpen) {
         const { error: wErr790 } = await supabaseDR.from('production_sessions').insert({
@@ -834,8 +854,12 @@ export default function Checkin() {
       }
       toast.success(`เปิดกะ ${toOpen.map(l => l.line.name).join(', ')} สำเร็จ`);
     } catch (e) {
-      toast.error('เปิดกะไม่สำเร็จ: ' + e.message);
+      // 23505 = ชน unique index กันกะซ้ำฝั่ง DB (20260910_production_sessions_no_dup_open.sql)
+      toast.error(e.code === '23505'
+        ? 'ไลน์นี้มีกะเปิดอยู่แล้ว — เปิดซ้ำไม่ได้ (เปิดหน้า Daily Report เพื่อลงข้อมูลกะเดิมได้เลย)'
+        : 'เปิดกะไม่สำเร็จ: ' + e.message);
     } finally {
+      setOpeningShift(false);
       setOpenShiftModal(null);
       setSubLineSelections({});
     }
@@ -1211,9 +1235,9 @@ export default function Checkin() {
                 ข้าม
               </button>
               <button
-                onClick={handleConfirmOpenShift}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#000', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                เปิดกะ
+                onClick={handleConfirmOpenShift} disabled={openingShift}
+                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: openingShift ? 'var(--muted)' : 'var(--accent)', color: '#000', fontSize: 14, fontWeight: 700, cursor: openingShift ? 'not-allowed' : 'pointer' }}>
+                {openingShift ? '⏳ กำลังเปิดกะ...' : 'เปิดกะ'}
               </button>
             </div>
           </div>

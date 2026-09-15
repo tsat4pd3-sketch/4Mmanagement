@@ -19,10 +19,12 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce } from '../utils/liveRefresh';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -412,21 +414,22 @@ export default function Management() {
   const [dtAlarms, setDtAlarms] = useState({ byMachine: {}, byLine: {}, list: [] });
   useEffect(() => {
     if (!selectedLine) { setDtAlarms({ byMachine: {}, byLine: {}, list: [] }); return; }
-    let debounceTimer = null;
     // ⚠️ คิวรีพลาด = **คงสัญญาณเดิมไว้ ห้ามล้างเป็นว่าง** — ล้างแล้วหมุดเครื่องที่กำลังหยุดจะเลิกกระพริบ
     //    ทั้งที่เครื่องยังหยุดอยู่จริง (Andon ดับเพราะเน็ตสะดุด = อันตรายกว่าไม่รีเฟรช)
     //    รอบถัดไป (realtime push หรือ interval) จะได้ของจริงมาทับเอง
     const refresh = () => fetchActiveDowntimes(viewLineNames)
       .then(r => { if (!r?.error) setDtAlarms(r); })
       .catch(() => {});
-    const debounced = () => { clearTimeout(debounceTimer); debounceTimer = setTimeout(refresh, 1000); };
+    // 🔴 2026-09-15 — debounce 1 วิ → coalesce(LIVE.ALARM 5 วิ): debounce ไม่ใช่เพดาน
+    //    หมุด Andon เป็นของด่วนจริง จึงใช้ระดับ ALARM (ไวสุด) ไม่ใช่ BOARD
+    const debounced = coalesce(refresh, LIVE.ALARM);
     refresh();
     const stopPoll = visibleInterval(refresh, RATE.BACKUP);
     const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
       .subscribe();
-    return () => { stopPoll(); clearTimeout(debounceTimer); supabaseDR.removeChannel(ch); };
+    return () => { stopPoll(); debounced.cancel(); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
@@ -807,7 +810,7 @@ export default function Management() {
       try { resized = await resizeImage(reqImageFile); }
       catch (err) { toast.error(err?.message || 'อ่านไฟล์รูปไม่ได้'); return; }
       const path = `request/${Date.now()}_${user?.id ?? 'anon'}.jpg`;
-      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: false, contentType: 'image/jpeg' });
+      const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: false, contentType: 'image/jpeg' }));
       if (upErr) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + upErr.message); return; }
       const { data: urlData } = supabase.storage.from('four-m-images').getPublicUrl(path);
       request_image_url = urlData.publicUrl;
@@ -2851,7 +2854,7 @@ export default function Management() {
                   if (docImageFile) {
                     const resized = await resizeImage(docImageFile);
                     const path = `4m-requests/${Date.now()}.jpg`;
-                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, { upsert: true });
+                    const { error: upErr } = await supabase.storage.from('four-m-images').upload(path, resized, uploadOpts({ upsert: true }));
                     if (upErr) throw upErr;
                     publicUrl = supabase.storage.from('four-m-images').getPublicUrl(path).data.publicUrl;
                   }

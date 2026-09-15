@@ -72,12 +72,12 @@ const NULLISH = (i) => ({
 })
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
-const thenable = () => {
-  const res = { data: ROWS, error: null, count: ROWS.length }
+const thenable = (rows = ROWS) => {
+  const res = { data: rows, error: null, count: rows.length }
   const h = {
     get(t, p) {
       if (p === 'then') return (res2) => Promise.resolve(res).then(res2)
-      if (p === 'maybeSingle' || p === 'single') return () => Promise.resolve({ data: ROWS[0], error: null })
+      if (p === 'maybeSingle' || p === 'single') return () => Promise.resolve({ data: rows[0], error: null })
       if (p === 'catch' || p === 'finally') return () => proxy
       return () => proxy
     },
@@ -85,7 +85,45 @@ const thenable = () => {
   const proxy = new Proxy({}, h)
   return proxy
 }
-const q = () => thenable()
+/* ── แถวเฉพาะตาราง (2026-09-10) ────────────────────────────────────────────────────────
+   เดิม `from()` คืน ROWS ชุดเดียวกันทุกตารางโดยไม่สนใจชื่อตาราง ⇒ แผงที่ต้องมี **คีย์เชื่อม**
+   ถึงจะ render (source_line / lot_request_id / maker_line) คืน 0 แถวเสมอ
+   ⇒ **ทั้งคอลัมน์ "ชิ้นส่วนเข้าไลน์" ของ Daily Report ไม่เคยถูกรันใน crashsweep เลยสักครั้ง**
+      (StoreLotQueue · LinePartCallPanel · LineWipPanel — พบตอนแก้ดีไซน์ 10/09)
+   กติกาเดียวกับ NULLISH/PARENT_OF: mock ต้องพาโค้ดไปถึงสาขาที่ของจริงเดินทุกวัน
+   ⚠️ ตั้ง child_mat_no ให้ **ซ้ำกันหลายล็อต** โดยตั้งใจ (14 ล็อต → 3 พาร์ท) — เป็นรูปทรงจริงของฐาน
+      (Assy GOR = 37 ล็อตของ mat เดียว) ถ้าให้ทุกแถวเป็นคนละ mat โค้ดจัดกลุ่มจะไม่เคยถูกรัน
+   ⚠️ แถว NULLISH ต้องยัง null ต่อไป — เติมแค่คีย์เชื่อม ห้ามเติมตัวเลขให้                        */
+const FAM_LINE = 'LINE APRON ASSY / HYDROFORM'
+const isNullish = (r) => r.qty === null
+const TABLE_ROWS = {
+  child_lot_requests: (r, i) => ({
+    ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+    lot_qty: isNullish(r) ? null : 14,
+    status: i % 5 === 0 ? 'producing' : 'pending',
+    source_prod_no: isNullish(r) ? null : `MANUAL-2609${10 + i}-133957-BE`,
+  }),
+  /* raw_mat_no ต้องคละ 4 แบบ ให้โค้ดแยก routing ถูกรันครบทุกสาขา (2026-09-10):
+     · 1010100x = มีใน dr_products mock → routed (บางแถวเป็นไลน์อื่น = "ต่อจากไลน์อื่น")
+     · 2xxxxxxx = เบอร์ 2 แต่ไม่มีใน master → "routing ยังไม่ตั้ง" (เคสจริง 27 ใบกำพร้าในฐาน)
+     · 3xxx/5xxx = ของซื้อ/สิ้นเปลือง */
+  raw_withdrawal_requests: (r, i) => ({
+    ...r, lot_request_id: `id-${i}`, status: i % 3 ? 'pending' : 'issued',
+    raw_mat_no: [`1010${1000 + (i % 3)}`, '20058488', '30047587', '50027080'][i % 4],
+  }),
+  /* dr_products: 2 แถวแรกเป็น "ไลน์อื่น" โดยตั้งใจ — เดิมทุกแถว line_name เดียวกันหมด
+     ⇒ โค้ดที่ถามว่า "ของชิ้นนี้ไลน์อื่นทำหรือเปล่า" ไม่เคยได้คำตอบว่า "ใช่" เลยใน harness */
+  dr_products: (r, i) => (i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r),
+  v_demand_flow_blocks: (r, i) => ({
+    ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
+    block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,
+  }),
+}
+const rowsFor = (table) => {
+  const fn = TABLE_ROWS[table]
+  return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
+}
+const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefined))
 const chan = () => { const c = { on: () => c, subscribe: () => c, unsubscribe: () => c, send: () => c }; return c }
 export const supabase = {
   from: q, rpc: q, channel: () => chan(),
