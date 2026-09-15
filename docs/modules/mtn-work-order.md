@@ -21,11 +21,10 @@ feedback: *"loop ที่เกี่ยวกับคุณภาพมีป
 
 ⚠️ **ทำไมขั้น 4 ยังเขียน `quality_related` อยู่ ทั้งที่ไม่ใช่ตัวกำหนดเส้นทางแล้ว** — 2 เหตุผล:
 (ก) ใบพิมพ์/แผงรายละเอียดอ่านค่านี้ (ป้ายบนจอเปลี่ยนเป็น "ต้องให้ QA ตรวจ?" ให้ตรงความหมายใหม่)
-(ข) **เป็นสะพานให้ edge `send-mtn-notification` รุ่นที่ deploy อยู่ (v18 · อ่าน `quality_related`)
-บอก "⏳ ขั้นต่อไป" ถูกต้องระหว่างรอ deploy รุ่นใหม่** — ไม่งั้นทุกใบที่ผ่านขั้น 4 จะถูกประกาศใน
-Telegram ว่า "รอรับมอบ — ไม่เกี่ยวกับคุณภาพ" ซึ่งผิดและชี้ให้คนผิดคนไปกด
-· พอ deploy รุ่นใหม่แล้วทั้งสองทางให้คำตอบเดียวกัน (รุ่นใหม่อ่าน `qa_skipped_at`) — **ห้ามถอดบรรทัดนี้
-ออกก่อน deploy** · `mtn-daily-summary` deploy รุ่นใหม่แล้ว (v14 · อ่าน `qa_skipped_at`)
+(ข) ~~เป็นสะพานให้ edge รุ่น v18 ที่ยังอ่าน `quality_related`~~ — **หมดหน้าที่แล้ว: `send-mtn-notification`
+deploy **v19** (อ่าน `qa_skipped_at`) 2026-09-15 · `mtn-daily-summary` v14 อ่าน `qa_skipped_at` อยู่แล้ว
+⇒ ทั้ง 3 ที่ (client/edge แจ้งเตือน/edge สรุปเช้า) ตัดสินเส้นทางด้วยเกณฑ์เดียวกันแล้ว
+**ขั้น 4 ยังเขียน `quality_related` ต่อไปด้วยเหตุผล (ก) เท่านั้น** (ใบพิมพ์/แผงรายละเอียดอ่านค่านี้)
 
 **จุดที่ต้องแก้พร้อมกันเสมอ (เกณฑ์เดียวถูกเขียน 3 ที่ — edge import จาก src/ ไม่ได้):**
 `src/utils/mtnStepPerm.js` (`isWaitingQa`/`moQaState`/`moStatusLabel`/`canSkipQa`) ·
@@ -133,7 +132,12 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
   - `repair_type` ไม่ใช่คอลัมน์ใหม่ — เปิดให้**ผู้แจ้งเลือกได้ตั้งแต่ขั้น 1** (dropdown "ประเภทงานซ่อม (BM/PM)" กรองตามทีมที่แจ้งถึง · ว่างได้ = ให้หัวหน้าช่างระบุ) · ขั้น 2 ยังเป็นผู้ตัดสินสุดท้าย (ฟอร์มขั้น 2 เติมค่าที่ผู้แจ้งเลือกให้ + label บอกว่า "ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO") เพราะ `repair_type` เป็นตัวกำหนด prefix ในเลข MO (`mtn_assign_mo_no`)
   - ⚠️ ช่อง "ประเภทการซ่อม" เดิมในฟอร์มขั้น 1 คือ `repair_scope` (ซ่อมใน/นอกไลน์) — เปลี่ยน label เป็น **"ขอบเขตการซ่อม"** แล้ว กันสับสนกับ BM/PM
   - **`occurred_at` (คอลัมน์ใหม่ DR · migration `20260908_mtn_orders_occurred_at.sql` apply แล้ว 2026-09-08)** = "วันเวลาที่เกิดเหตุจริง" กรอกเฉพาะแจ้งย้อนหลัง (input datetime-local · ห้ามเป็นอนาคต) · **ไม่ทับ `report_at`** — `report_at` ยังเป็นเวลากดแจ้ง = นาฬิกา KPI (Response/TTR/Breakdown) + DDMMYY ในเลข MO + ลำดับรายการ · แสดงใน DetailDrawer ("เกิดเหตุจริง … (แจ้งย้อนหลัง)") และใบพิมพ์ FM-JIG-008 ("เกิดเหตุ:") · deploy-safe: 42703 → บันทึกใบโดยไม่เก็บ + toast เตือน · **สูตร KPI ห้ามเปลี่ยนไปใช้ occurred_at โดยไม่ผ่าน user** (ถ้าวันหนึ่งต้องการ "เวลาเครื่องหยุดจริง" ให้เพิ่มสูตรแยก ไม่แก้ตัวเดิม)
-  - ฟอร์มขั้น 1 ตอนนี้ส่ง **`reported_by_uid`** แล้ว (เดิมส่งแค่ `reported_by_name` → edge `send-mtn-notification` แจ้งกลับ "ผู้แจ้ง" ไม่ได้เลยสำหรับใบที่เปิดจาก `/mtn-repair` มีแต่ใบจาก Daily Report ที่ได้) — ใบที่เปิดจาก `DailyReport`/`PMCheckData` ไม่ต้องแก้ (ส่งอยู่แล้ว / ไม่มี occurred_at = null)
+  - ฟอร์มขั้น 1 ตอนนี้ส่ง **`reported_by_uid`** แล้ว (เดิมส่งแค่ `reported_by_name` → edge `send-mtn-notification` แจ้งกลับ "ผู้แจ้ง" ไม่ได้เลยสำหรับใบที่เปิดจาก `/mtn-repair` มีแต่ใบจาก Daily Report ที่ได้)
+    - ⚠️ **แก้ 2026-09-15 — เอกสารเดิมเขียนผิดว่า `PMCheckData` "ส่งอยู่แล้ว"**: ใบที่เปิดจากผลตรวจ PM/AM
+      (`PMCheckData.jsx` → `mtn_orders.insert`) **ไม่เคยส่ง `reported_by_uid` เลย** ⇒ ผู้แจ้งของใบกลุ่มนั้น
+      ไม่เคยถูกเด้งในแอปตอนใบถึงคิวตัวเอง (`notifyMoInApp` หา uid ไม่เจอ) — เติมให้แล้ว
+      · วัดฐาน 15/09: ใบเดือน ก.ย. 263 ใบ มี uid แค่ 53 ใบ · **ใบที่ค้างรอรับมอบเกิน 7 วัน 81 ใบ มี uid = 0**
+      ⇒ ฟีเจอร์ "เตือนคนที่ต้องกดรับมอบเป็นรายคน" ยังใช้กับก้อนค้างเดิมไม่ได้ ต้องเล็งด้วย role/ส่วนงานแทน
   - พรีวิวรูปก่อน/หลัง/QA ใช้ `useObjectUrl(file)` (`src/utils/useObjectUrl.js`) แทน `URL.createObjectURL` ใน render — ดูกฎใน `docs/modules/storage-images.md`
 - **ตาราง (DR):** `mtn_orders` (แถวเดียวต่อใบ เก็บครบ 7 ขั้น) · `mtn_order_parts` (log เบิกอะไหล่ต่อใบ + หัก stock) · master: `mtn_technicians` `mtn_spare_parts` `mtn_problem_types` (cascade ลักษณะปัญหา→รายละเอียด) `mtn_repair_types` `mtn_item_types` · `mtn_mo_counter` · migration `20260714_mtn_work_order.sql` (seed taxonomy 20 + ช่าง 8 + item/repair types)
 - **รูป/ลายเซ็น:** bucket **`mtn-images`** (DR, anon-open, cap 5MB) — รูปก่อน/หลังซ่อม/QA บีบ 1280px q0.85 ก่อนอัปโหลด (helper `resizeImage`) · ลายเซ็นต่อขั้น (step4/5/6/7) วาดใน `SignaturePad` (canvas→PNG) · ลบใบ = ลบไฟล์ที่ผูกทุกอัน (best-effort)
