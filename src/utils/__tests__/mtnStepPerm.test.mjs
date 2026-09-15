@@ -290,7 +290,18 @@ test('moQaState: ตรวจจริง = done · ยังรอ QA = waiting
 });
 
 /* ── ➡️ ส่งต่องานข้ามทีมช่าง — 2026-09-14 (คำสั่ง user: ช่างฝ่ายผลิตดูแล้วเกินมือ ส่งต่อได้ ไม่ต้องเปิดใบใหม่) ── */
-import { canHandoff } from '../mtnStepPerm.js';
+import { canHandoff, isMoOpen, MO_DONE_STATUSES } from '../mtnStepPerm.js';
+
+test('🔴 isMoOpen: `transferred` ต้องนับว่า "จบแล้ว" เท่ากับ closed/rejected — 2026-09-14', () => {
+  /* ใบที่ส่งต่อไปทีมอื่นแล้วมี "ใบใหม่" รับช่วงต่อ ⇒ ถ้ายังนับว่าเปิดอยู่ 1 ปัญหาจะโผล่เป็น 2 ใบค้าง
+     ทั้งใน /mtn-repair · dept dashboard · สรุปเช้า — เคยเขียนลิสต์ `['closed','rejected']` ซ้ำ 4 จุด */
+  assert.equal(isMoOpen({ status: 'transferred' }), false);
+  assert.equal(isMoOpen({ status: 'closed' }), false);
+  assert.equal(isMoOpen({ status: 'rejected' }), false);
+  assert.equal(isMoOpen({ status: 'repaired' }), true);
+  assert.equal(isMoOpen({ status: 'returned' }), true);   // ตีกลับ = ยังไม่จบ รอผู้แจ้งส่งใหม่
+  assert.ok(MO_DONE_STATUSES.includes('transferred'));
+});
 
 test('canHandoff: ส่งต่อได้ช่วงรับงานถึงซ่อมเสร็จ (ขั้น 2-3) เท่านั้น', () => {
   assert.equal(canHandoff({ status: 'assigned', current_step: 2 }), true);
@@ -305,6 +316,8 @@ test('canHandoff: ส่งต่อได้ช่วงรับงานถ�
 test('canHandoff: ใบที่จบแล้ว/ถูกตีกลับ ส่งต่อไม่ได้ (ไม่มีทีมไหนถืออยู่)', () => {
   assert.equal(canHandoff({ status: 'closed',   current_step: 7 }), false);
   assert.equal(canHandoff({ status: 'rejected', current_step: 2 }), false);
+  // ส่งต่อไปแล้ว = ใบนี้จบ งานอยู่ที่ใบใหม่ — กดส่งต่อซ้ำไม่ได้ (กันสร้างใบลูกซ้อน)
+  assert.equal(canHandoff({ status: 'transferred', current_step: 3 }), false);
   // returned = ใบอยู่ที่ผู้แจ้งแล้ว ให้ใช้ "แก้แผนก & ส่งใหม่" (resubmit) ไม่ใช่ส่งต่อ
   assert.equal(canHandoff({ status: 'returned', current_step: 1 }), false);
   assert.equal(canHandoff({}), false);
