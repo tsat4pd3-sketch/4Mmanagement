@@ -5,8 +5,19 @@ import assert from 'node:assert/strict';
 import {
   normEquipKey, baseEquipKey, buildEquipIndex, resolveEquip,
   dtMinutes, isOpenDt, isPlannedDt, operatingMinutesByLine,
-  machineReliability, summarizeByKind, fmtDur,
+  machineReliability, summarizeByKind, viewMetrics, fmtDur,
+  repairPhases, poolPhases, poolRowPhases, phaseIssue,
 } from '../mtnMetrics.js';
+
+/* นโยบายพักกะเช้าชุดจริง (break_policies ฝั่ง DR — ทุกแถวเป็น process_type 'common') */
+const DAY_BREAKS = [
+  { shift: 'day', process_type: 'common', start_time: '08:00:00', duration_min: 10 },  // ประชุมแถว
+  { shift: 'day', process_type: 'common', start_time: '10:00:00', duration_min: 10 },
+  { shift: 'day', process_type: 'common', start_time: '11:50:00', duration_min: 50 },  // พักกลางวัน
+  { shift: 'day', process_type: 'common', start_time: '15:00:00', duration_min: 10 },
+  { shift: 'day', process_type: 'common', start_time: '17:10:00', duration_min: 20 },  // 5ส.
+  { shift: 'day', process_type: 'common', start_time: '17:30:00', duration_min: 30 },  // เบรค OT (นอกกะ 08:00-17:30)
+];
 
 const planned = { category: 'planned', name_th: 'PM ตามแผน' };
 const brk = { category: 'unplanned', name_th: 'เครื่องเสีย' };
@@ -182,4 +193,209 @@ test('fmtDur: null = "—" ไม่ใช่ 0', () => {
   assert.equal(fmtDur(90), '1 ชม. 30 น.');
   assert.equal(fmtDur(120), '2 ชม.');
   assert.equal(fmtDur(1500), '1 วัน 1 ชม.');
+});
+
+/* ── ให้ตรงนิยาม %A ของ Daily Report (audit 2026-09-14) ─────────────────── */
+
+test('operatingMinutesByLine: ต้องหักเวลาพักตามนโยบาย ไม่งั้น uptime เกินจริง 100 นาที/กะ', () => {
+  const ses = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 570, start_time: '08:00:00' }];
+  const raw = operatingMinutesByLine(ses);
+  assert.equal(raw.byLine.get('L60'), 570, 'ไม่ส่งนโยบายมา = ไม่หัก (พฤติกรรมเดิม)');
+  assert.equal(raw.hasBreakPolicy, false, 'จอต้องรู้ว่ายังไม่ได้หักพัก');
+
+  const net = operatingMinutesByLine(ses, { breakPolicies: DAY_BREAKS });
+  // 10 + 10 + 50 + 10 + 20 = 100 · เบรค OT 17:30 เริ่มพอดีตอนกะจบ = ไม่ทับ
+  assert.equal(net.breakMin, 100);
+  assert.equal(net.byLine.get('L60'), 470, 'กะ 08:00-17:30 เดินจริง 470 นาที ไม่ใช่ 570');
+  assert.equal(net.hasBreakPolicy, true);
+});
+
+test('machineReliability: ไลน์เครื่องขนาน — เก็บทั้งนาทีเต็ม (มุมเครื่อง) และถ่วง 1/N (มุมไลน์)', () => {
+  const machines = [{ machine_no: 'LS-1', machine_name: 'เลเซอร์ 1', equipment_kind: 'machine', line_name: 'LASER-789' }];
+  const sessions = [{ line_name: 'LASER-789', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const downtimes = [
+    dt('LS-1', '2026-09-01T02:00:00Z', 30),
+    dt('LS-1', '2026-09-01T04:00:00Z', 30),
+    dt('LS-1', '2026-09-01T06:00:00Z', 30),
+  ];
+  const { rows, summary } = machineReliability({
+    downtimes, machines, sessions,
+    parallelOf: (ln) => (ln === 'LASER-789' ? 3 : 1),   // เลเซอร์ 3 ตัววิ่งขนาน
+  });
+  const r = rows[0];
+  assert.equal(r.parallelN, 3);
+  assert.equal(r.dtMin, 90, 'มุมเครื่อง: เครื่องตัวนี้หยุดจริง 90 นาที');
+  assert.equal(r.dtMinW, 30, 'มุมไลน์: อีก 2 ตัวยังวิ่ง → ไลน์เสียแค่ 1/3');
+  assert.equal(r.mttrMin, 30);
+  assert.equal(r.mttrMinW, 10);
+  assert.equal(r.upMin, 510);
+  assert.equal(r.upMinW, 570);
+  assert.equal(r.mtbfMin, 170);
+  assert.equal(r.mtbfMinW, 190);
+  assert.equal(r.availPct, 85);
+  assert.equal(r.availPctW, 95);
+  assert.equal(summary.parallelLines, 1, 'จอต้องรู้ว่ามีกี่ตัวที่ตัวเลข 2 ชุดไม่เท่ากัน');
+});
+
+test('machineReliability: ไลน์ปกติ (N=1) ตัวเลข 2 ชุดต้องเท่ากันเป๊ะ', () => {
+  const machines = [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }];
+  const sessions = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const { rows } = machineReliability({
+    downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)], machines, sessions,
+    parallelOf: () => 1,
+  });
+  const r = rows[0];
+  assert.equal(r.dtMinW, r.dtMin);
+  assert.equal(r.mtbfMinW, r.mtbfMin);
+  assert.equal(r.availPctW, r.availPct);
+});
+
+test('viewMetrics / summarizeByKind: สลับโหมดแล้วต้องหยิบชุดตัวเลขให้ครบทุกช่อง', () => {
+  const row = {
+    kindKnown: true, kind: 'machine', stops: 3, closedStops: 3,
+    dtMin: 90, mttrMin: 30, upMin: 510, mtbfMin: 170, availPct: 85, plannedMin: 60,
+    dtMinW: 30, mttrMinW: 10, upMinW: 570, mtbfMinW: 190, availPctW: 95, plannedMinW: 20,
+  };
+  assert.deepEqual(viewMetrics(row), { dtMin: 90, mttrMin: 30, upMin: 510, mtbfMin: 170, availPct: 85, plannedMin: 60 });
+  assert.deepEqual(viewMetrics(row, true), { dtMin: 30, mttrMin: 10, upMin: 570, mtbfMin: 190, availPct: 95, plannedMin: 20 });
+
+  assert.equal(summarizeByKind([row])[0].dtMin, 90);
+  assert.equal(summarizeByKind([row])[0].mtbfMin, 170);
+  assert.equal(summarizeByKind([row], true)[0].dtMin, 30);
+  assert.equal(summarizeByKind([row], true)[0].mtbfMin, 190, 'สรุปตามชนิดต้องเปลี่ยนตามโหมดด้วย');
+});
+
+/* ── เครื่องที่ไม่เคยเสีย ต้องนับเข้าตัวตั้งของ MTBF รวม (คำสั่ง user 2026-09-14 "นับด้วยสิ") ── */
+
+const IDLE_SETUP = {
+  machines: [
+    { machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' },
+    { machine_no: 'M2', equipment_kind: 'machine', line_name: 'L60' },   // ไม่เคยเสีย
+    { machine_no: 'D1', equipment_kind: 'die',     line_name: 'L60' },   // แม่พิมพ์ — ห้ามนับ
+    { machine_no: 'J1', equipment_kind: 'jig',     line_name: 'L60' },   // จิ๊ก — ห้ามนับ
+    { machine_no: 'M9', equipment_kind: 'machine', line_name: 'ไลน์ไม่มีกะ' },
+  ],
+  sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+  downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)],
+};
+
+test('เครื่องที่ไม่เคยเสีย: โผล่ในตาราง · MTBF รายตัว = null · ชั่วโมงเดินเข้าตัวตั้งของกลุ่ม', () => {
+  const { rows, summary } = machineReliability(IDLE_SETUP);
+  const byNo = Object.fromEntries(rows.map(r => [r.machineNo, r]));
+
+  assert.equal(summary.idleCount, 1, 'M2 ตัวเดียว (แม่พิมพ์/จิ๊กไม่นับ · M9 ไม่รู้ชั่วโมงเดิน)');
+  assert.ok(byNo.M2, 'เครื่องที่ไม่เคยเสียต้องโผล่');
+  assert.equal(byNo.M2.stops, 0);
+  assert.equal(byNo.M2.mtbfMin, null, 'เสีย 0 ครั้ง หารไม่ได้ — ห้ามใส่ตัวเลข');
+  assert.equal(byNo.M2.upMin, 600);
+  assert.equal(byNo.M2.availPct, 100);
+  assert.equal(byNo.M2.neverFailed, true);
+  assert.equal(byNo.D1, undefined, 'แม่พิมพ์ห้ามนับ — ชั่วโมงเดิน ≠ ชั่วโมงกะของไลน์');
+  assert.equal(byNo.J1, undefined, 'จิ๊กก็เหมือนกัน');
+  assert.equal(byNo.M9, undefined, 'ไม่รู้ชั่วโมงเดิน = ไม่นับ ห้ามเดา 0');
+
+  // MTBF ของกลุ่ม: M1 เดิน 540 + M2 เดิน 600 = 1,140 ÷ เสีย 1 ครั้ง
+  const mach = summarizeByKind(rows).find(k => k.kind === 'machine');
+  assert.equal(mach.mtbfMin, 1140);
+});
+
+test('เครื่องที่ไม่เคยเสีย: ปิดด้วย includeIdle=false แล้ว MTBF กลุ่มต้องต่ำลง (ยืนยันว่ามีผลจริง)', () => {
+  const { rows, summary } = machineReliability({ ...IDLE_SETUP, includeIdle: false });
+  assert.equal(summary.idleCount, 0);
+  assert.equal(rows.length, 1);
+  assert.equal(summarizeByKind(rows).find(k => k.kind === 'machine').mtbfMin, 540, 'นับแค่ตัวที่เสีย = ต่ำกว่าจริง');
+});
+
+/* ── ช่วงย่อย: รอช่าง / ซ่อมจริง / กลับมารัน (2026-09-14 · โจทย์ MTTA ของ user) ── */
+
+const iso = (min) => new Date(Date.parse('2026-09-01T08:00:00Z') + min * 60000).toISOString();
+const dtPh = (startMin, ackMin, fixMin, endMin, extra = {}) => ({
+  machine_no: 'M1', started_at: iso(startMin),
+  call_mtn_ack_at: ackMin == null ? null : iso(ackMin),
+  fix_at: fixMin == null ? null : iso(fixMin),
+  ended_at: endMin == null ? null : iso(endMin),
+  duration_min: endMin == null ? null : endMin - startMin,
+  dr_downtime_types: brk, ...extra,
+});
+
+test('repairPhases: แยก 3 ท่อนได้เมื่อเวลาครบและเรียงถูก', () => {
+  const ph = repairPhases(dtPh(0, 20, 50, 60));
+  assert.deepEqual(
+    { w: ph.waitMin, r: ph.repairMin, s: ph.restartMin, t: ph.totalMin, one: ph.oneShot },
+    { w: 20, r: 30, s: 10, t: 60, one: false });
+});
+
+test('repairPhases: ขาดเวลาใดเวลาหนึ่ง หรือเวลาไม่เรียง = null (ห้ามเดา)', () => {
+  assert.equal(repairPhases(dtPh(0, null, 50, 60)), null, 'ไม่มีเวลารับงาน');
+  assert.equal(repairPhases(dtPh(0, 20, null, 60)), null, 'ไม่มีเวลาซ่อมเสร็จ');
+  assert.equal(repairPhases(dtPh(0, 20, 50, null)), null, 'ยังไม่ปิด downtime');
+  assert.equal(repairPhases(dtPh(0, 50, 20, 60)), null, 'ซ่อมเสร็จก่อนรับงาน = ข้อมูลผิด');
+});
+
+test('repairPhases: ซ่อมจริง < 2 นาที = ใบที่กดรวดเดียวตอนปิดงาน (ติดธง oneShot)', () => {
+  assert.equal(repairPhases(dtPh(0, 55, 56, 60)).oneShot, true);
+  assert.equal(repairPhases(dtPh(0, 30, 45, 60)).oneShot, false);
+});
+
+test('poolPhases: ใบกดรวดเดียวต้องไม่ถูกเอามาเฉลี่ย แต่ต้องนับให้เห็น', () => {
+  const p = poolPhases([
+    repairPhases(dtPh(0, 20, 50, 60)),     // w20 r30 s10
+    repairPhases(dtPh(0, 40, 80, 100)),    // w40 r40 s20
+    repairPhases(dtPh(0, 58, 59, 60)),     // กดรวดเดียว — ตัดออก
+  ]);
+  assert.equal(p.n, 2);
+  assert.equal(p.oneShot, 1);
+  assert.equal(p.mttaMin, 30);
+  assert.equal(p.mttrPureMin, 35);
+  assert.equal(p.restartMin, 15);
+});
+
+test('machineReliability: สรุปช่วงย่อยติดมากับ summary.phases และรายแถว', () => {
+  const machines = [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }];
+  const sessions = [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }];
+  const { rows, summary } = machineReliability({
+    machines, sessions, includeIdle: false,
+    downtimes: [dtPh(0, 20, 50, 60), dtPh(100, 140, 180, 200), dtPh(300, 358, 359, 360)],
+  });
+  assert.equal(summary.phases.n, 2);
+  assert.equal(summary.phases.oneShot, 1);
+  assert.equal(summary.phases.mttaMin, 30);
+  assert.equal(rows[0].mttaMin, 30);
+  assert.equal(rows[0].mttrPureMin, 35);
+  assert.equal(rows[0].phaseOneShot, 1);
+  // pool จากแถวต้องได้เท่ากับ pool จาก phases ดิบ
+  assert.deepEqual(poolRowPhases(rows), summary.phases);
+});
+
+test('machineReliability: ไม่มีใบไหนกดครบจังหวะ = ช่วงย่อยเป็น null ทั้งหมด ห้ามเป็น 0', () => {
+  const { rows, summary } = machineReliability({
+    machines: [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }],
+    sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+    downtimes: [dt('M1', '2026-09-01T02:00:00Z', 60)], includeIdle: false,
+  });
+  assert.equal(summary.phases.n, 0);
+  assert.equal(summary.phases.mttaMin, null);
+  assert.equal(rows[0].mttaMin, null);
+  assert.equal(rows[0].mttrMin, 60, 'MTTR รวม (Restore) ยังตอบได้ตามปกติ');
+});
+
+test('phaseIssue: บอกเหตุผลที่วัดไม่ได้ ไม่ใช่เงียบแล้วขึ้น "—"', () => {
+  assert.equal(phaseIssue(dtPh(0, 20, 50, 60)), null, 'ครบ = วัดได้');
+  assert.equal(phaseIssue(dtPh(0, null, 50, 60)), 'no_ack');
+  assert.equal(phaseIssue(dtPh(0, 20, null, 60)), 'no_fix');
+  assert.equal(phaseIssue(dtPh(0, 20, 50, null)), 'open');
+  assert.equal(phaseIssue(dtPh(0, 80, 90, 60)), 'after_end', 'รับงานหลังเครื่องกลับมารันแล้ว');
+  assert.equal(phaseIssue(dtPh(0, 50, 20, 60)), 'out_of_order');
+});
+
+test('machineReliability: summary.phaseGaps นับเหตุผลครบทุกครั้งที่วัดไม่ได้', () => {
+  const { summary } = machineReliability({
+    machines: [{ machine_no: 'M1', equipment_kind: 'machine', line_name: 'L60' }],
+    sessions: [{ line_name: 'L60', work_date: '2026-09-01', shift: 'day', shift_min: 600, start_time: '08:00:00' }],
+    downtimes: [dtPh(0, 20, 50, 60), dtPh(100, null, null, 160), dtPh(200, 280, 290, 260)],
+    includeIdle: false,
+  });
+  assert.equal(summary.phases.n, 1);
+  assert.equal(summary.phaseGaps.no_ack, 1);
+  assert.equal(summary.phaseGaps.after_end, 1, 'เคสที่หน้างานเจอเยอะสุด — ใบ MO ตามหลังเครื่อง');
 });

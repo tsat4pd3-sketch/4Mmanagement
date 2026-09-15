@@ -46,7 +46,8 @@ import { UserContext } from '../App';
 import { isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed, isOverDtThreshold, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeRules';
 import { loadDtAlertMin } from '../utils/downtimeAlarm';
 import { visibleInterval } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES, MO_STATUS_LABEL } from '../utils/dieStatus';
 import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายที่แยก "รอ QA" ออกจาก "รอรับมอบ" — ต้องมีตัวใบถึงจะแยกได้
@@ -173,12 +174,19 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
 
   useEffect(() => {
     load();
-    const stopPoll = visibleInterval(load, RATE.ANDON);      // กันเหนียวเผื่อ realtime หลุด
+    /* 🔴 2026-09-15 — poll ตัวนี้เป็นแค่ "กันเหนียวเผื่อ realtime หลุด"
+       idleGate: tick ที่ไม่มีอะไรเปลี่ยน = ไม่มี network เลยสักไบต์ (ดู src/utils/liveRefresh.js) */
+    const g = makeIdleGate(LIVE.FLOOR);
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) { g.loaded(); load(); } }, RATE.ANDON);
+    // 🔴 2026-09-15 — เดิม `setTimeout(load, 400)` ต่อ event ซึ่ง **ไม่ใช่ debounce เลย**
+    //    (แต่ละ event ตั้งนาฬิกาของตัวเอง ⇒ 10 event = โหลด 10 รอบ ห่างกัน 400 ms)
+    //    → coalesce(LIVE.ALARM) ยังไวพอสำหรับ Andon แต่มีเพดานจริง
+    const bump = coalesce(() => { g.loaded(); return load(); }, LIVE.ALARM);
     const ch = liveChannel(supabaseDR, 'mtn-andon')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => setTimeout(load, 400))
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => { g.touch(); bump(); })
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
     const clk = setInterval(() => setTick(t => t + 1), 30000); // นาฬิกาอย่างเดียว ไม่ยิง DB
-    return () => { stopPoll(); supabaseDR.removeChannel(ch); clearInterval(clk); };
+    return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); clearInterval(clk); };
   }, [load]);
 
   // ทะเบียนเครื่อง (master — cache ตามกฎ egress) ใช้เดาว่าเครื่องนี้ปกติทีมไหนดูแล
@@ -380,8 +388,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
              (สูตรบังคับ `confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)` + งานคู่ RH/LH + ยุบชั้น OP
               อยู่ใน `orderTotal` แล้ว · เขียนเองเมื่อไหร่ = ตัวเลข 2 จอไม่ตรงกันทันที)
           พับเป็นค่าเริ่มต้นในตัว — ยอดรวม + "ตามหลัง N ไลน์" ยังเห็นตลอดแม้พับ จึงไม่กินความสูงจอ */}
+      {/* กางเป็นค่าเริ่มต้นทุกชิป (JIG/DIE/MTN ด้วย — user 2026-09-14 "เลือก mtn, jig, die ก็ยังโชว์")
+          ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
       <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
-        defaultOpen={cards === 'production'}
+        defaultOpen
         onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
 
       {/* ผังคือพระเอกของจอนี้ (user 2026-08-26 "เน้นแผนผังดีมั้ย") — แต่ **ห้ามแลกกับลิสต์ข้อความ**

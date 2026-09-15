@@ -25,6 +25,10 @@
       ผู้เรียกคำนวณ `can` / `seeded` / `inOrderTeam` มาให้แทน → เทสได้ตรงๆ
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
+   ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
+import { mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
+
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
   2: {
@@ -59,9 +63,29 @@ export const MTN_STEPS = {
   },
 };
 
+/* ═══ ใบของทีม MTN (ฟอร์ม FM-MTN-006) เดินขั้นไม่เหมือน JIG/DIE — 2026-09-15 ════════════
+   คำสั่ง user: *"MO MTN ขั้นตอนไม่เหมือนกับ MO JIG/DIE"* · ข้อ ③ "แยก 2 ขั้น" (ไม่ยุบรวม)
+
+   ฟอร์มกระดาษ MTN ปิดใบด้วย 2 ลายเซ็นคนละฝั่งกัน:
+     ขั้น 6 = **ฝั่งผู้แจ้ง** รับมอบงาน + ประเมินความพึงพอใจ + เจ้าของค่าใช้จ่าย  (เหมือนเดิม)
+     ขั้น 7 = **ฝั่งช่าง** ผจก.ส่วนซ่อมบำรุงรับรองงาน/ค่าใช้จ่ายแล้วปิดใบ      (ต่างจาก JIG/DIE)
+   ⇒ ขั้น 7 ของใบ MTN **ไม่ใช่ขั้นของฝ่ายที่แจ้ง** จึงห้ามเอาเกณฑ์ scope ฝ่ายที่แจ้ง (reporterSide)
+     มารัด ไม่งั้น ผจก.ซ่อมบำรุงที่ถูกตั้ง sections ไว้จะปิดใบของไลน์อื่นไม่ได้เลย */
+export const MTN_FORM_STEPS = {
+  7: {
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false,
+    icon: '✅', title: 'รับรองงาน / ปิดใบ MO',
+    who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง — ตามฟอร์ม FM-MTN-006)', whoShort: 'ผจก.ซ่อมบำรุง',
+  },
+};
+
+/** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
+export const stepMeta = (step, { mtnForm = false } = {}) =>
+  (mtnForm && MTN_FORM_STEPS[step]) || MTN_STEPS[step] || null;
+
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
-export const stepLabel = (step, { withWho = true } = {}) => {
-  const m = MTN_STEPS[step];
+export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
+  const m = stepMeta(step, { mtnForm });
   if (!m) return `ขั้น ${step}`;
   return `${m.icon} ${m.title} (ขั้น ${step}${withWho ? ` · ${m.whoShort}` : ''})`;
 };
@@ -97,16 +121,22 @@ export function isOrderReporter(order, fullName) {
  * คืน { ok, code } — `code` ไว้ให้จอบอกเหตุผล ห้ามคืนแค่ boolean
  */
 export function canDoStep(step, opts = {}) {
-  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null } = opts;
+  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, mtnForm = false, approvalBlocked = false } = opts;
 
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
 
-  const meta = MTN_STEPS[step];
+  const meta = stepMeta(step, { mtnForm });
   if (!meta) return { ok: false, code: 'unknown_step' };
 
   // หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
   if (can('manage_master')) return { ok: true, code: 'manage_master' };
+
+  /* 🔒 ใบ MTN "งานปรับปรุง/สร้าง" ต้องมีลายเซ็นผู้จัดการก่อน ช่างถึงจะรับงานได้ — 2026-09-15
+     ผู้เรียกคำนวณ `approvalBlocked` จาก mtnApprovalState(order).blocked (mtnMoForm.js)
+     ⚠️ **งานซ่อม/บริการไม่เข้าเงื่อนไขนี้เด็ดขาด** (คำสั่ง user: "ไม่งั้นไลน์จะหยุดรอการอนุมัติ")
+        — ใบพวกนั้นเดินงานได้ทันที แล้วค่อยไล่เซ็นรับทราบตามหลัง */
+  if (approvalBlocked && (Number(step) === 2 || Number(step) === 3)) return { ok: false, code: 'await_mgr_approval' };
 
   // ผู้เปิดใบตรวจรับงานของตัวเองได้เสมอ (ขั้น 4, 6) — ไม่ต้องรอ admin ติ๊ก role และไม่ติด scope
   // (เช็คก่อน perm: เจ้าของใบต้องไม่ถูกล็อกออกด้วยเกณฑ์ scope ไม่ว่ากรณีไหน)
@@ -145,6 +175,27 @@ export function canBounceBack(order = {}) {
 }
 
 /**
+ * ส่งต่อใบให้ทีมช่างอื่นได้ไหม — "ช่างฝ่ายผลิตดูแล้วเกินมือ ส่งต่อช่างเฉพาะทาง" (2026-09-14 · คำสั่ง user)
+ *
+ * ⚠️ คนละเรื่องกับ `canBounceBack` (ตีกลับ) — อย่ารวมสองอันนี้เข้าด้วยกัน:
+ *   ตีกลับ  = "แจ้งผิดแผนกตั้งแต่แรก" ⇒ ถอยใบไปขั้น 1 หาผู้แจ้ง · ล็อกไว้ที่ขั้น ≤2 เพราะถ้าถอยหลัง
+ *             จากขั้น 3 ผลงาน/ลายเซ็นที่ทำจริงจะหายจากใบ
+ *   ส่งต่อ  = "แจ้งถูกแล้ว ทีมแรกเข้าไปดูจริงแล้วแต่แก้ไม่ได้" ⇒ **ปิดใบของทีมแรกเป็น `transferred`
+ *             (ผลตรวจอยู่ในใบครบ ไม่ถูกล้าง) แล้วเปิดใบใหม่ให้ทีมปลายทาง — ได้เลข MO ของทีมนั้นเอง**
+ *             ผูกกันด้วย `mtn_order_handoffs` (from_order_id → to_order_id)
+ *             ⇒ นับสถิติได้ว่า first-response ของช่างฝ่ายผลิต "แก้เองได้ / ส่งต่อ" กี่ครั้ง (คำสั่ง user รอบ 2)
+ *
+ * ทำได้ตั้งแต่รับงานแล้ว (ขั้น 2) จนถึงซ่อม/ตรวจหน้างานเสร็จ (ขั้น 3) — เลยขั้น 4 ไปแล้ว
+ * (ฝ่ายที่แจ้งตรวจรับงานแล้ว) ถือว่างานรอบนั้นจบ ถ้ายังมีปัญหาให้ใช้ผลติดตามขั้น 6 หรือเปิดใบใหม่
+ */
+export function canHandoff(order = {}) {
+  // ใบที่จบแล้ว (รวม transferred = ส่งต่อไปแล้ว) ส่งต่อซ้ำไม่ได้ · returned = ใบอยู่ที่ผู้แจ้ง ให้ใช้ resubmit
+  if (!isMoOpen(order) || String(order?.status || '').trim() === 'returned') return false;
+  const step = Number(order?.current_step || 1);
+  return step >= 2 && step <= 3;
+}
+
+/**
  * ใบนี้อยู่ใน "ฝ่ายที่แจ้ง" ของผู้ใช้ไหม — ใช้กับขั้น 4/6/7 (reporterSide) เท่านั้น
  *
  * คืน true / false / **null = ตัดสินไม่ได้ → canDoStep ปล่อยผ่านตามเดิม** (หลัก "ไม่รู้ ≠ ไม่ใช่"
@@ -170,21 +221,59 @@ export function orderInReporterScope(order, { scopeLineNames = null, knownLineNa
   return null;
 }
 
-/* ═══ ขั้น 5 (QA) เป็นขั้น "เงื่อนไข" — เข้าเฉพาะใบที่ขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ ═══
+/* ═══ ขั้น 5 (QA) — ทุกใบต้องผ่าน QA · "ไม่เกี่ยวกับคุณภาพ" เป็นคำตัดสินของ QA เท่านั้น ═══
+   🔴 เปลี่ยน 2026-09-14 (คำสั่ง user): *"คนเลือกว่าเกี่ยวกับคุณภาพต้องเป็น QA เท่านั้น ไม่ใช่คนแจ้ง ·
+      คนจะปฏิเสธว่าไม่เกี่ยวต้องเป็น QA เท่านั้น"*
+   เดิมช่อง `quality_related` ถูกเลือกที่ **ขั้น 4 โดยผู้เปิดใบ/ฝ่ายที่แจ้ง** ⇒ ผู้แจ้งตัดสินเองได้ว่า
+   ใบของตัวเองไม่ต้องให้ QA ตรวจ (วัดจริง 14/09: 152 ใบเลือก "ไม่เกี่ยว" = 61% ของใบที่ผ่านขั้น 4)
+   = ด่านคุณภาพที่ผู้ถูกตรวจเป็นคนเปิดเอง · ผังกระบวนการทางการของโรงงานก็ไม่มีกล่อง "ข้าม QA" เลย
+   ทั้งสายช่าง PD และสาย MTN — "หน่วยงานคุณภาพตรวจรับงานหลังซ่อม (QA)" อยู่ในเส้นทางหลักทั้งคู่
+   ⇒ ใบที่ผ่านขั้น 4 **จอดรอ QA เสมอ** จนกว่า QA จะตรวจจริง หรือ QA กดว่าไม่เกี่ยวกับคุณภาพ
+
    ค่าที่เก็บใน mtn_orders.quality_related (ข้อความไทยตามฟอร์มกระดาษ — เปลี่ยนแล้วใบเก่าเพี้ยนทั้งฐาน)
+   ตอนนี้ **QA เป็นคนเขียนค่านี้ที่ขั้น 5** ไม่ใช่ผู้ตรวจรับที่ขั้น 4 อีกต่อไป
    ⚠️ nextStepFor / ปุ่มข้าม / StepBox ต้องเทียบผ่านตัวนี้ ห้ามพิมพ์ข้อความซ้ำในหน้า */
 export const QA_RELATED = 'เกี่ยวกับคุณภาพ';
 export const QA_NOT_RELATED = 'ไม่เกี่ยวกับคุณภาพ';
 
-/** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และขั้น 4 ระบุว่าเกี่ยวกับคุณภาพ */
+/** ใบนี้ค้างรอ QA อยู่ไหม = ผ่านขั้น 4 แล้ว (status checked) และ QA ยังไม่ได้ตัดสินว่าไม่ต้องตรวจ
+ *  ⚠️ ไม่ดู `quality_related` แล้ว — ช่องนั้นเป็นคำตอบของ QA ไม่ใช่ตัวกำหนดว่าจะได้เจอ QA หรือเปล่า
+ *  (ใบเก่าที่ข้ามไปก่อนเปลี่ยนกฎถูก stamp `qa_skipped_at` ไว้ใน migration 20260914 จึงไม่ถูกดึงกลับ) */
+/*  🔴 เพิ่ม 2026-09-15: `qaAppliesTo` — ใบ MTN ที่จุดประสงค์เป็น "ปรับปรุง/สร้าง" ไม่ต้องผ่าน QA
+ *  (คำสั่ง user: QA ตัดสินเหมือนเดิม "แต่เฉพาะงานซ่อม/บริการ") · ใบที่ purpose ว่าง = ต้องผ่าน QA
+ *  ตามเดิมทุกใบ ⇒ ใบเก่า/ทีม JIG/DIE/PRODUCTION ไม่กระทบ (ฐาน 15/09: purpose ว่างทั้ง 346 ใบ) */
 export const isWaitingQa = (order) =>
-  order?.status === 'checked' && String(order?.quality_related || '').trim() === QA_RELATED;
+  order?.status === 'checked' && !order?.qa_skipped_at && qaAppliesTo(order);
 
 /** ใบนี้เคยถูก "ข้าม QA" (ไม่เกี่ยวกับคุณภาพ — แก้การตัดสินใจของขั้น 4 ทีหลัง) */
 export const isQaSkipped = (order) => !!order?.qa_skipped_at;
 
-/** เหตุผลมาตรฐานเมื่อ "ข้าม QA" เกิดจากการเลือกที่ขั้น 4 (ไม่ได้กดปุ่ม ⏭) — ข้อความเดียวทั้งระบบ */
+/** เหตุผลมาตรฐานของใบเก่าที่ "ข้าม QA" จากการเลือกที่ขั้น 4 — ข้อความเดียวทั้งระบบ
+ *  ⚠️ legacy ตั้งแต่ 2026-09-14: ขั้น 4 เลือกเองไม่ได้แล้ว (QA เท่านั้น) ค่านี้เหลือไว้แสดงใบเก่า */
 export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม่เกี่ยวกับคุณภาพ';
+
+/**
+ * ผู้จัดการเซ็นอนุมัติ/รับทราบใบ MTN ได้ไหม (kind: 'dept' = ผู้จัดการต้นสังกัด · 'plant' = ผจก.โรงงาน)
+ *
+ * ไม่สร้างคีย์สิทธิ์ใหม่ (คีย์ใหม่ = ต้อง seed ก่อน ไม่งั้น fail-closed ทั้งระบบตอน deploy)
+ * ใช้ 3 ทางที่มีอยู่แล้ว:
+ *   ① คนที่ถูกระบุชื่อไว้ในใบเซ็นของตัวเองได้เลย (เกณฑ์เดียวกับ isOrderReporter — ยึดชื่อในใบ)
+ *   ② ผู้ถือ mtn_repair:approve = หัวหน้าแผนก/ส่วน/ผจก. (กลุ่มเดียวกับที่อนุมัติปิดใบขั้น 7)
+ *   ③ manage_master (หัวหน้าโมดูล) — ตามกฎเดิมของทั้งไฟล์
+ * เซ็นแล้วเซ็นซ้ำไม่ได้ (แก้ต้องผ่าน manage_master ที่ขั้นอื่น) — ลายเซ็นที่ทับได้ = หลักฐานที่เชื่อไม่ได้
+ */
+export function canSignMtnApproval(kind, opts = {}) {
+  const { order = {}, fullName = '', can = () => false } = opts;
+  if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
+  const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
+  if (signedAt) return { ok: false, code: 'already_signed' };
+  const named = kind === 'dept' ? order.dept_manager_name : order.plant_manager_name;
+  const me = norm(fullName);
+  if (me && norm(named) === me) return { ok: true, code: 'named' };
+  if (can('manage_master')) return { ok: true, code: 'manage_master' };
+  if (can('approve')) return { ok: true, code: 'approve' };
+  return { ok: false, code: 'denied' };
+}
 
 /** ใบเดินผ่านขั้น 4 (ตรวจรับงานหลังซ่อม) ไปแล้วหรือยัง — ใช้ตัดสินว่า quality_related มีความหมายแล้ว */
 const passedStep4 = (order) =>
@@ -209,7 +298,10 @@ export function moQaState(order) {
   if (order?.qa_at || order?.qa_result) return 'done';
   if (isQaSkipped(order)) return 'skipped';
   if (!passedStep4(order)) return 'none';
-  return String(order?.quality_related || '').trim() === QA_RELATED ? 'waiting' : 'skipped';
+  // งานปรับปรุง/สร้างของทีม MTN = ไม่ต้องตรวจคุณภาพตั้งแต่ต้น (ไม่ใช่ "มีคนกดข้าม") — 2026-09-15
+  if (!qaAppliesTo(order)) return 'skipped';
+  // ผ่านขั้น 4 แล้วและยังไม่มีคำตัดสินของ QA = รอ QA เสมอ (2026-09-14 · ไม่ดู quality_related อีกต่อไป)
+  return 'waiting';
 }
 
 /* ═══ ป้ายสถานะใบ MO — source of truth เดียวของ "ใบนี้รออะไรอยู่" (2026-09-09) ════════════
@@ -223,6 +315,15 @@ export function moQaState(order) {
       `nextStepFor()` ใน MtnRepair.jsx ทำอยู่แล้ว (ป้ายกับปุ่มขั้นถัดไปต้องพูดตรงกันเสมอ)
    ⚠️ ทุกจอที่โชว์ป้ายสถานะ MO ต้องเรียก `moStatusLabel(order)` — ห้ามอ่าน MO_STATUS_LABEL[status]
       ตรงๆ ถ้ามีตัวใบอยู่ในมือ (แผนที่นี้ไว้ใช้เฉพาะที่ไม่มีใบ เช่น dropdown ฟิลเตอร์/หัวกลุ่มสรุป) */
+/* สถานะที่ถือว่า "ใบนี้จบแล้ว ไม่อยู่ในคิวงานอีก" — source of truth เดียวของทั้งระบบ (2026-09-14)
+   🔴 เพิ่ม `transferred` (ส่งต่อให้ทีมอื่นแล้ว ทีมนี้แก้ไม่ได้) พร้อมกับโมเดลส่งต่องาน
+   ⚠️ ก่อนหน้านี้แต่ละหน้าเขียน `!['closed','rejected'].includes(status)` เองคนละที่ (4 จุด +
+      edge อีก 1) ⇒ เพิ่มสถานะจบใหม่ทีไร ใบจะไปโผล่ค้างในคิวของจอที่ลืมแก้ **ห้ามเขียนลิสต์ซ้ำอีก
+      ให้ import `isMoOpen` / `MO_DONE_STATUSES` จากที่นี่เสมอ**
+   · `OPEN_MO_STATUSES` ใน dieStatus.js เป็น allowlist (ตรงข้ามกัน) จึงกันสถานะใหม่ให้เองอยู่แล้ว */
+export const MO_DONE_STATUSES = ['closed', 'rejected', 'transferred'];
+export const isMoOpen = (order) => !MO_DONE_STATUSES.includes(String(order?.status || '').trim());
+
 export const MO_STATUS_LABEL = {
   pending:   '📣 รอรับงาน',
   assigned:  '🔧 รับงานแล้ว/รอซ่อม',
@@ -235,8 +336,13 @@ export const MO_STATUS_LABEL = {
   closed:    '✅ ปิด MO',
   returned:  '↩️ ตีกลับ (ผิดแผนก)',
   rejected:  '⛔ Reject MO',
+  // ทีมนี้เข้าไปดูแล้วแก้ไม่ได้ → ปิดใบของตัวเอง แล้วเปิดใบใหม่ให้ทีมที่รับผิดชอบ (2026-09-14)
+  // **ไม่ใช่ closed** (closed = ซ่อมเสร็จจริง นับเป็นผลงาน) และไม่ใช่ rejected (ใบไม่ถูกต้อง)
+  transferred: '➡️ ส่งต่อทีมอื่น (แก้เองไม่ได้)',
 };
 
+/** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
+export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
 export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้น 6)';
 
@@ -249,8 +355,12 @@ export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้�
  */
 export function moStatusLabel(order) {
   const st = String(order?.status || '').trim();
+  /* ใบที่ติดด่านอนุมัติ ต้องไม่ขึ้น "📣 รอรับงาน" — ช่างเห็นแล้วกดรับไม่ได้ ก็จะกองค้างเงียบ (2026-09-15)
+     ⚠️ ตัดสินเฉพาะแถวที่ select `dept_manager_at` มาด้วยจริง (undefined = ไม่รู้ ห้ามเดา) */
+  if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
   if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
-  if (order?.quality_related === undefined && !order?.qa_skipped_at) return MO_STATUS_LABEL.checked;
+  // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
+  if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
   return isWaitingQa(order) ? MO_LABEL_WAIT_QA : MO_LABEL_WAIT_HANDOVER;
 }
 
@@ -265,27 +375,38 @@ export function moStatusLabel(order) {
  * quality_related เป็น "ไม่เกี่ยว" + บันทึกเหตุผล/คน/เวลา (qa_skip_reason/qa_skipped_by/qa_skipped_at)
  * ⇒ nextStepFor พาไปขั้น 6 เอง ไม่ต้องเพิ่ม status ใหม่ (KPI/Andon/ใบพิมพ์ไม่กระทบ)
  *
- * ใครข้ามได้ = คนที่ตัดสินเรื่องนี้ได้ในขั้น 4 (ผู้เปิดใบ / accept_work) **หรือ** QA เอง (ขั้น 5)
- * — QA เห็นว่างานไม่ใช่ของตัวเองก็ปล่อยผ่านได้โดยไม่ต้องเซ็นรับรองคุณภาพที่ไม่ได้ตรวจ
- * ช่างที่ซ่อม (service) ข้ามไม่ได้ — เหตุผลเดียวกับที่ช่างตรวจรับงานตัวเองไม่ได้
+ * 🔴 ใครข้ามได้ = **ผู้มีสิทธิ์ขั้น 5 (QA) เท่านั้น** — เปลี่ยน 2026-09-14 ตามคำสั่ง user
+ *    เดิมยอมให้ผู้ถือสิทธิ์ขั้น 4 (ผู้เปิดใบ / ฝ่ายที่แจ้ง) กดข้ามได้ด้วย ⇒ ฝ่ายที่ถูกตรวจเป็นคน
+ *    ตัดสินเองว่าไม่ต้องถูกตรวจ · ตอนนี้ทั้ง "เกี่ยว" และ "ไม่เกี่ยว" เป็นคำตัดสินของ QA ฝั่งเดียว
+ *    (หัวหน้าผู้ถือ manage_master ยังผ่านได้ผ่าน canDoStep(5) ตามกฎเดิมของทั้งโมดูล)
  */
 export function canSkipQa(opts = {}) {
   if (!isWaitingQa(opts.order)) return { ok: false, code: 'not_waiting_qa' };
-  const v4 = canDoStep(4, opts);
-  if (v4.ok) return { ok: true, code: `step4:${v4.code}` };
   const v5 = canDoStep(5, opts);
   if (v5.ok) return { ok: true, code: `step5:${v5.code}` };
-  return { ok: false, code: 'denied' };
+  return { ok: false, code: 'qa_only' };
 }
 
 /**
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, orderLine = '', orderSection = '' } = {}) {
-  const meta = MTN_STEPS[step];
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null } = {}) {
+  const meta = stepMeta(step, { mtnForm });
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
+  /* ติดด่านอนุมัติ ไม่ใช่ติดสิทธิ์ — ต้องบอกให้ตรงเหตุ ไม่งั้นช่างจะไปขอ role เพิ่มทั้งที่ไม่ใช่เรื่อง role
+     awaitApproval = { missing: ['dept'|'plant'], deptName, plantName } (ผู้เรียกส่งมาจาก mtnApprovalState) */
+  if (awaitApproval) {
+    const need = [];
+    if (awaitApproval.missing?.includes('dept')) need.push(`ผู้จัดการต้นสังกัด${awaitApproval.deptName ? ` (${awaitApproval.deptName})` : ''}`);
+    if (awaitApproval.missing?.includes('plant')) need.push(`ผู้จัดการโรงงาน${awaitApproval.plantName ? ` (${awaitApproval.plantName})` : ''}`);
+    return [
+      'ใบนี้เป็น “งานปรับปรุง/สร้าง” — ตามฟอร์ม FM-MTN-006 ต้องอนุมัติก่อนช่างเริ่มงาน',
+      `รอลายเซ็น: ${need.join(' · ') || '—'}`,
+      'ให้ผู้จัดการเปิดใบนี้แล้วกดปุ่ม “✍️ อนุมัติใบ MO” ด้านบน (งานซ่อม/บริการไม่ต้องรอขั้นนี้ — เริ่มงานได้เลย)',
+    ];
+  }
   if (outOfScope) {
     // มีสิทธิ์ตามขั้น แต่ใบเป็นของฝ่ายอื่น — บอกให้ตรงเหตุ ไม่งั้นคนจะไปขอ role เพิ่มทั้งที่ไม่ใช่ปัญหา role
     const where = [orderLine, orderSection].filter(Boolean).join(' · ');

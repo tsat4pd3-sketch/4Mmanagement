@@ -282,7 +282,7 @@ export default function OEEAnalytics() {
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
   const [breakPols, setBreakPols] = useState([]);
   useEffect(() => {
-    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min').eq('is_active', true)
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)
       .then(r => setBreakPols(r.data || []), () => setBreakPols([]));
   }, []);
   const canSetTarget = can('oee', 'set_target', role);
@@ -698,8 +698,12 @@ export default function OEEAnalytics() {
       // เพดานเครื่องขนานสำหรับตัวหาร P (ต้องส่งเหมือน /factory-map ไม่งั้น 2 จอโชว์คนละเลข)
       parallelCap: flowModeOf(flowByLine[tdLiveSession.line_name]?.flow_mode) === 'parallel_machine'
         ? parallelUnitsOf(flowByLine[tdLiveSession.line_name]) : 1,
+      /* ⚠️ นโยบายพัก — ขาดไปแล้ว A/P สดของกะที่ยังไม่ปิด จะไม่ตรงกับค่าที่ stamp ตอนปิดกะ
+         (แถวเดียวกันบนจอนี้จะกระโดดตอนกะปิด) · 2026-09-14 */
+      breakPolicies: breakPols || [],
+      processType: tdLiveSession.dr_products?.process_type || null,
     });
-  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine]);
+  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdDate, lastUpdate, flowByLine, breakPols]);
   const isLiveCalc = Boolean(tdLiveCalc);
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }

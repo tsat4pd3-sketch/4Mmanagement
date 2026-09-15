@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useContext } from 'react';
+import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -10,6 +10,10 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';
+import {
+  summarizeOtMonth, otCoverage, daysOfMonth, prevMonthKey, projectTotal, monthDayStats,
+} from '../utils/otSummary';
+import { exportOtMonthlyExcel } from '../lib/otExportExcel';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, Tooltip, Legend, Cell,
@@ -25,6 +29,8 @@ import {
      📊 กำลังคนรายวัน   — daily_production_logs (เช็คชื่อ/PPE/ลา)
      🔀 เปลี่ยนจุดงาน    — station_assignment_logs (คนละแถวต่อการมอบหมาย 1 ครั้ง)
      📉 Turnover        — employees.is_active + audit_log (เมื่อไหร่คนออก) + start_date (เมื่อไหร่เข้า)
+     ⏱️ OT รายบุคคล    — daily_production_logs.has_ot + ot_night_bookings + company_calendar
+                          (คำขอ user 2026-09-14: HR ถามซ้ำทุกเดือนว่าใครทำ OT เกิน 20 วัน เพราะอะไร)
 
    ⚠️ กฎที่ยึดตาม CLAUDE.md/ENGINEERING-PRINCIPLES.md:
    - scope มาตรฐาน: leader = ครอบครัวไลน์ตัวเอง (employees.line_id) · role อื่น = ตาม sections
@@ -646,10 +652,341 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
   );
 }
 
+/* ══════════════════════════════ ⏱️ OT รายบุคคล (รายเดือน) ══════════════════════════════
+   โจทย์จริง (user 2026-09-14): ทุกเดือน HR ส่งเมลขอ "รายชื่อคนที่ทำ OT เกิน 20 วันของเดือนที่แล้ว
+   + เหตุผลรายคน" → หัวหน้าต้องนั่งนับจาก Excel เอง ทั้งที่ข้อมูลอยู่ในระบบครบแล้ว
+   แท็บนี้ = ตอบคำถามนั้นในคลิกเดียว + เห็นล่วงหน้าระหว่างเดือนว่าใครกำลังจะเกิน (ไม่ใช่รู้ตอนถูกถาม)
+
+   ⚠️ ตัวเลขบนจอนี้มาจาก "เช็คชื่อรายวัน (has_ot)" + "ใบจอง OT" เท่านั้น — ไม่ใช่ระบบเงินเดือน
+   วันที่ไม่มีใครเช็คชื่อเลย = ไม่รู้ (ไม่ใช่ 0) → แถบเตือน coverage ต้องอยู่บนจอเสมอ ห้ามถอด
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
+  const [month, setMonth] = useState(prevMonthKey(monthKey(getWorkDate())));
+  const [threshold, setThreshold] = useState(20);
+  const [useBookings, setUseBookings] = useState(true);
+  const [onlyOver, setOnlyOver] = useState(true);
+  const [logs, setLogs] = useState([]);
+  const [bookings, setBookings] = useState([]);
+  const [taskById, setTaskById] = useState(() => new Map());
+  const [dayTypeMap, setDayTypeMap] = useState(() => new Map());
+  const [loading, setLoading] = useState(false);
+  const [partial, setPartial] = useState(false);
+  const [openEmp, setOpenEmp] = useState(null);
+
+  const today = getWorkDate();
+  const isCurrentMonth = month === monthKey(today);
+
+  useEffect(() => {
+    let alive = true;                     // กัน stale-response: เปลี่ยนเดือนเร็วๆ คำตอบเก่าห้ามทับจอใหม่
+    (async () => {
+      setLoading(true);
+      const days = daysOfMonth(month);
+      const from = days[0], to = days[days.length - 1];
+      if (!from) { setLoading(false); return; }
+      const [lg, bk, cal, tt] = await Promise.all([
+        fetchAllPages(() => supabase.from('daily_production_logs')
+          .select('work_date, employee_id, has_ot').gte('work_date', from).lte('work_date', to),
+        { orderBy: ['work_date', 'id'] }),
+        fetchAllPages(() => supabase.from('ot_night_bookings')
+          .select('work_date, employee_id, task_type_id, ot_period').gte('work_date', from).lte('work_date', to),
+        { orderBy: ['work_date', 'id'] }),
+        supabase.from('company_calendar').select('work_date, day_type').gte('work_date', from).lte('work_date', to),
+        supabase.from('ot_task_types').select('id, name'),
+      ]);
+      if (!alive) return;
+      const bad = lg.error || bk.error || cal.error || tt.error;
+      if (bad) toast.error('โหลดข้อมูล OT ไม่ครบ: ' + (lg.error || bk.error || cal.error?.message || tt.error?.message));
+      setPartial(!!bad || lg.truncated || bk.truncated);
+      setLogs(lg.rows || []);
+      setBookings(bk.rows || []);
+      setDayTypeMap(new Map((cal.data || []).map(r => [r.work_date, r.day_type])));
+      setTaskById(new Map((tt.data || []).map(r => [r.id, r.name])));
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [month]);
+
+  const includeEmployee = useMemo(() => (id) => {
+    const e = empById[id];
+    if (!inScope(e)) return false;
+    return !secFilter || e?.section === secFilter;
+  }, [empById, inScope, secFilter]);
+
+  const rows = useMemo(() => summarizeOtMonth({
+    monthKey: month, logs, bookings, taskNameById: taskById, dayTypeMap,
+    includeEmployee, countBookingOnly: useBookings,
+  }).map(r => ({ ...r, emp: empById[r.employeeId] })), [month, logs, bookings, taskById, dayTypeMap, includeEmployee, useBookings]);
+
+  // คนที่มี OT แต่ไม่พบในทะเบียนพนักงาน — ตกหล่นจากตาราง ต้องบอก ห้ามหายเงียบ
+  const orphanCount = useMemo(() => {
+    const s = new Set();
+    logs.forEach(r => { if (r.has_ot && !empById[r.employee_id]) s.add(r.employee_id); });
+    bookings.forEach(r => { if (!empById[r.employee_id]) s.add(r.employee_id); });
+    return s.size;
+  }, [logs, bookings, empById]);
+
+  const coverage = useMemo(() => otCoverage({
+    monthKey: month, logs, bookings, dayTypeMap, today: isCurrentMonth ? today : null,
+  }), [month, logs, bookings, dayTypeMap, isCurrentMonth, today]);
+
+  const elapsed = isCurrentMonth ? monthDayStats(month, dayTypeMap, today).days : null;
+  const totalDaysInMonth = daysOfMonth(month).length;
+  const withProj = useMemo(() => rows.map(r => ({
+    ...r, projected: isCurrentMonth ? projectTotal(r.total, elapsed, totalDaysInMonth) : r.total,
+  })), [rows, isCurrentMonth, elapsed, totalDaysInMonth]);
+
+  const overRows = withProj.filter(r => r.total >= threshold);
+  const nearRows = withProj.filter(r => r.total < threshold && r.total >= threshold - 3);
+  const willExceed = isCurrentMonth ? withProj.filter(r => r.total < threshold && r.projected >= threshold) : [];
+  const shown = onlyOver ? overRows : withProj;
+
+  // เหตุผลรวมของเดือน (จากงานที่จองไว้ในใบ OT) — ตอบ "ทำไมเดือนนี้ OT เยอะ" ในภาพรวม
+  const topReasons = useMemo(() => {
+    const m = new Map();
+    rows.forEach(r => r.reasons.forEach(x => m.set(x.name, (m.get(x.name) || 0) + x.n)));
+    return [...m.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n).slice(0, 8);
+  }, [rows]);
+
+  const monthOpts = useMemo(() => {
+    const out = [];
+    const [y0, m0] = monthKey(today).split('-').map(Number);
+    for (let i = 0; i < 15; i++) {
+      const d = new Date(y0, m0 - 1 - i, 1);
+      out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    return out;
+  }, [today]);
+
+  const sourceNote = () => {
+    const parts = [
+      `ที่มา: ระบบ ESM — เช็คชื่อรายวัน (ติ๊ก OT)${useBookings ? ' + ใบจอง OT' : ''} · ปฏิทินบริษัทเป็นตัวตัดสินวันทำงาน/วันหยุด`,
+      `นับเป็น "วัน" ที่ทำ OT (ไม่ใช่ชั่วโมง) · ข้อมูล ณ ${today}`,
+    ];
+    if (coverage.missingDays.length) {
+      parts.push(`⚠ เดือนนี้มี ${coverage.missingDays.length} วันที่ไม่มีการเช็คชื่อในระบบเลย (เป็นวันหยุด ${coverage.missingHolidayDays} วัน) — ยอดจริงอาจสูงกว่านี้`);
+    }
+    if (orphanCount) parts.push(`⚠ มี ${orphanCount} รหัสพนักงานที่ไม่พบในทะเบียน จึงไม่อยู่ในตาราง`);
+    return parts.join('\n');
+  };
+
+  const exportRows = () => shown.map(r => ({
+    code: r.emp?.employee_id_code || '', name: r.emp?.name || '',
+    position: positionLabel(r.emp?.position), section: r.emp?.section || '', department: r.emp?.department || '',
+    working: r.working, holiday: r.holiday + r.shutdown, total: r.total, reason: r.reasonText,
+  }));
+
+  const doExcel = async () => {
+    if (!shown.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
+    try {
+      await exportOtMonthlyExcel({ monthKey: month, threshold, rows: exportRows(), note: sourceNote() });
+    } catch (e) { toast.error('สร้างไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e)); }
+  };
+  const doCSV = () => {
+    if (!shown.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
+    downloadCSV(`OT-รายบุคคล-${month}.csv`,
+      ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ตำแหน่ง', 'ส่วน', 'ฝ่าย', 'OT วันทำงาน', 'OT วันหยุด', 'Total (วัน)', 'หมายเหตุ'],
+      exportRows().map((r, i) => [i + 1, r.code, r.name, r.position, r.section, r.department, r.working, r.holiday, r.total, r.reason]));
+  };
+
+  const dayChipColor = (kind) => kind.type === 'shutdown75' ? 'var(--purple, #a78bfa)'
+    : kind.holiday ? 'var(--red)' : 'var(--accent)';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={month} onChange={e => setMonth(e.target.value)} style={selSt}>
+          {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
+        </select>
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
+          <option value="">ทุกส่วนงาน</option>
+          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+          เกณฑ์
+          <input type="number" min={1} max={31} value={threshold} style={{ ...selSt, width: 66 }}
+            onChange={e => setThreshold(Math.max(1, Math.min(31, Number(e.target.value) || 20)))} />
+          วันขึ้นไป
+        </label>
+        <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={onlyOver} onChange={e => setOnlyOver(e.target.checked)} />
+          แสดงเฉพาะที่ถึงเกณฑ์
+        </label>
+        <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
+          title="วันหยุดมักไม่มีการเช็คชื่อ แต่มีใบจอง OT อยู่ — ปิดตัวเลือกนี้ = นับเฉพาะวันที่มีการเช็คชื่อจริง">
+          <input type="checkbox" checked={useBookings} onChange={e => setUseBookings(e.target.checked)} />
+          นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
+        </label>
+        <div style={{ flex: 1 }} />
+        <button onClick={doExcel} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ Excel (ฟอร์ม HR)</button>
+        <button onClick={doCSV} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ CSV</button>
+      </div>
+
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}
+      {partial && (
+        <div className="card" style={{ padding: 12, marginBottom: 12, borderLeft: '4px solid var(--red)' }}>
+          <b style={{ fontSize: 13 }}>⚠ ข้อมูลอาจไม่ครบ</b>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>คิวรีบางส่วนล้มเหลว/ถูกตัด — อย่าใช้ตัวเลขนี้ส่ง HR จนกว่าจะโหลดใหม่แล้วไม่ขึ้นข้อความนี้</div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <Kpi label={`ถึงเกณฑ์ (≥ ${threshold} วัน)`} value={overRows.length} sub={`จากคนที่ทำ OT ${rows.length} คน`} color="var(--red)" />
+        <Kpi label={`ใกล้เกณฑ์ (${Math.max(1, threshold - 3)}–${threshold - 1} วัน)`} value={nearRows.length} sub="เฝ้าดูเดือนถัดไป" color="var(--accent2)" />
+        <Kpi label="สูงสุด" value={rows[0]?.total ?? '—'} sub={rows[0]?.emp?.name || ''} />
+        <Kpi label="รวมวัน OT ทั้งเดือน" value={rows.reduce((s, r) => s + r.total, 0).toLocaleString()} sub="วัน-คน" />
+        {isCurrentMonth && (
+          <Kpi label="คาดว่าจะเกินเกณฑ์" value={willExceed.length} sub={`ถ้าทำต่อในอัตราเดิมจนสิ้นเดือน (ผ่านมา ${elapsed}/${totalDaysInMonth} วัน)`} color="var(--accent2)" />
+        )}
+      </div>
+
+      {(coverage.missingDays.length > 0 || orphanCount > 0) && (
+        <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: '4px solid var(--accent2)' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>⚠ ช่องโหว่ข้อมูล — ตัวเลขนี้คือ "ขั้นต่ำ" ไม่ใช่ยอดเต็ม</div>
+          {coverage.missingDays.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+              {coverage.missingDays.length} วันในเดือนนี้ไม่มีการเช็คชื่อในระบบเลย (วันหยุด {coverage.missingHolidayDays} วัน · วันทำงาน {coverage.missingWorkingDays} วัน) —
+              คนที่มาทำ OT วันนั้นจะไม่ถูกนับ เว้นแต่มีใบจอง OT ไว้
+            </div>
+          )}
+          {coverage.missingDays.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: orphanCount ? 8 : 0 }}>
+              {coverage.missingDays.map(d => (
+                <span key={d.date} title={d.hasBooking ? 'ไม่มีเช็คชื่อ แต่มีใบจอง OT' : 'ไม่มีข้อมูลเลย'}
+                  style={{
+                    fontSize: 11, padding: '2px 7px', borderRadius: 6, background: 'var(--bg3)',
+                    color: d.kind.holiday ? 'var(--red)' : 'var(--text2)',
+                    border: d.hasBooking ? '1px dashed var(--accent2)' : '1px solid transparent',
+                  }}>
+                  {d.date.slice(8)}/{d.date.slice(5, 7)}{d.hasBooking ? ' 📋' : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {orphanCount > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+              มี {orphanCount} รหัสพนักงานที่มี OT แต่ไม่พบในทะเบียนพนักงาน (ลบ/ย้ายบริษัทแล้ว) — ไม่อยู่ในตารางด้านล่าง
+            </div>
+          )}
+        </div>
+      )}
+
+      {isCurrentMonth && willExceed.length > 0 && (
+        <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: '4px solid var(--accent2)' }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🔔 ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {willExceed.slice(0, 30).map(r => (
+              <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)' }}>
+                {r.emp?.name} <b style={{ color: 'var(--accent2)' }}>{r.total}→{r.projected}</b>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 14 }}>
+        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>
+          📋 {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
+          <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8, fontSize: 11.5 }}>คลิกแถวเพื่อดูรายวัน</span>
+        </div>
+        <table style={{ minWidth: 980 }}>
+          <thead>
+            <tr>
+              <th style={{ width: 40 }}>#</th><th>รหัส</th><th>ชื่อ - นามสกุล</th><th>ตำแหน่ง</th><th>ส่วน</th><th>ฝ่าย</th>
+              <th style={{ textAlign: 'center' }}>OT วันทำงาน</th><th style={{ textAlign: 'center' }}>OT วันหยุด</th>
+              <th style={{ textAlign: 'center' }}>รวม</th>
+              {isCurrentMonth && <th style={{ textAlign: 'center' }}>คาดสิ้นเดือน</th>}
+              <th>หมายเหตุ (เหตุผลจากงานที่จอง)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length === 0 ? (
+              <tr><td colSpan={isCurrentMonth ? 11 : 10} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>
+                {loading ? 'กำลังโหลด…' : 'ไม่มีคนถึงเกณฑ์ในเดือนนี้'}
+              </td></tr>
+            ) : shown.map((r, i) => {
+              const over = r.total >= threshold;
+              const open = openEmp === r.employeeId;
+              return (
+                <Fragment key={r.employeeId}>
+                  <tr onClick={() => setOpenEmp(open ? null : r.employeeId)} style={{ cursor: 'pointer', background: over ? 'var(--bg3)' : undefined }}>
+                    <td style={{ color: 'var(--muted)' }}>{i + 1}</td>
+                    <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.emp?.employee_id_code || '—'}</td>
+                    <td style={{ fontWeight: 600 }}>{r.emp?.name || '—'}</td>
+                    <td style={{ fontSize: 12 }}>{positionLabel(r.emp?.position)}</td>
+                    <td style={{ fontSize: 12 }}>{r.emp?.section || '—'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--muted)' }}>{r.emp?.department || '—'}</td>
+                    <td style={{ textAlign: 'center' }}>{r.working}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {r.holiday + r.shutdown}
+                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 900, color: over ? 'var(--red)' : 'var(--text)' }}>{r.total}</td>
+                    {isCurrentMonth && (
+                      <td style={{ textAlign: 'center', color: r.projected >= threshold ? 'var(--accent2)' : 'var(--muted)', fontWeight: 700 }}>{r.projected}</td>
+                    )}
+                    <td style={{ fontSize: 11.5, color: 'var(--text2)' }}>
+                      {r.reasonText || <span style={{ color: 'var(--muted)' }}>— ไม่ได้ระบุงานในใบจอง —</span>}
+                      {r.bookingOnly > 0 && <span style={{ color: 'var(--muted)' }}> · {r.bookingOnly} วันมาจากใบจอง (ไม่มีเช็คชื่อ)</span>}
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr>
+                      <td colSpan={isCurrentMonth ? 11 : 10} style={{ background: 'var(--bg2)', padding: '10px 14px' }}>
+                        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
+                          รายวัน — 🟢 วันทำงาน · 🔴 วันหยุด · 🟣 ม.75 · 📋 = มาจากใบจอง (ไม่มีเช็คชื่อ)
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {r.days.map(d => (
+                            <span key={d.date} title={d.tasks.join(' · ') || 'ไม่ระบุงาน'}
+                              style={{
+                                fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)',
+                                color: dayChipColor(d.kind), border: '1px solid var(--border)',
+                              }}>
+                              {d.date.slice(8)}/{d.date.slice(5, 7)}{!d.viaLog ? ' 📋' : ''}
+                              {d.tasks.length > 0 && <span style={{ color: 'var(--muted)' }}> · {d.tasks[0]}</span>}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {topReasons.length > 0 && (
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🔎 งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {topReasons.map(t => {
+              const pct = Math.round((t.n / topReasons[0].n) * 100);
+              return (
+                <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
+                  <span style={{ minWidth: 190 }}>{t.name}</span>
+                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 5, overflow: 'clip' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)' }} />
+                  </div>
+                  <span style={{ fontWeight: 700, minWidth: 56, textAlign: 'right' }}>{t.n} วัน-คน</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+            งานที่จองไว้ในใบ OT คือ "เหตุผล" ที่ระบบตอบ HR ได้เอง — ใบที่ไม่เลือกงานจะไม่มีเหตุผลให้ตอบ (ตั้งรายการงานได้ที่ Report → แท็บจองรถ OT)
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ══════════════════════════════ หน้าหลัก ══════════════════════════════ */
 export default function WorkforceInsight() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['manpower', 'moves', 'turnover'], 'manpower');
+  const [tab, setTab] = useTabParam(['manpower', 'moves', 'turnover', 'ot'], 'manpower');
   const [lines, setLines] = useState([]);
   const [employees, setEmployees] = useState([]);
   const orgSectionList = useOrgSections();
@@ -681,11 +1018,12 @@ export default function WorkforceInsight() {
     <div>
       <PageHeader
         title="กำลังคน & Turnover" icon="📈"
-        sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออกของพนักงาน — อ่านอย่างเดียว"
+        sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
         tabs={[
           { key: 'manpower', label: '📊 กำลังคนรายวัน' },
           { key: 'moves', label: '🔀 เปลี่ยนจุดงานรายวัน' },
           { key: 'turnover', label: '📉 Turnover' },
+          { key: 'ot', label: '⏱️ OT รายบุคคล' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -699,6 +1037,10 @@ export default function WorkforceInsight() {
       )}
       {tab === 'turnover' && (
         <TurnoverTab employees={employees} sectionsList={sectionsList}
+          secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
+      )}
+      {tab === 'ot' && (
+        <OtMonthlyTab empById={empById} sectionsList={sectionsList}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
     </div>

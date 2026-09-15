@@ -97,15 +97,29 @@ export function buildCtMap({ kanbanStds = [], products = [] } = {}) {
 */
 export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
   if (!startMs || !endMs || endMs <= startMs || !workDate) return 0;
-  return policies.reduce((sum, p) => {
-    if (!(p.shift === 'both' || p.shift === shift)) return sum;
-    const proc = p.process_type;
-    if (proc && proc !== 'common' && proc !== processType) return sum;
+  // นาทีที่นโยบายหนึ่งทับกรอบเวลาที่สนใจ
+  const overlapOf = (p) => {
     const [ph, pm] = String(p.start_time || '00:00').split(':').map(Number);
     let ps = new Date(`${workDate}T${String(ph).padStart(2, '0')}:${String(pm).padStart(2, '0')}:00`).getTime();
     let pe = ps + (Number(p.duration_min) || 0) * 60000;
     if (pe < startMs) { ps += 86400000; pe += 86400000; }  // พักกะดึกหลังเที่ยงคืน
-    return sum + Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
+    return Math.max(0, (Math.min(pe, endMs) - Math.max(ps, startMs)) / 60000);
+  };
+  const applicable = policies.filter(p => {
+    if (!(p.shift === 'both' || p.shift === shift)) return false;
+    const proc = p.process_type;
+    return !(proc && proc !== 'common' && proc !== processType);
+  });
+  /* ⚠️ นโยบายที่เกิด "เฉพาะตอนทำโอ / เฉพาะตอนไม่ทำโอ" (break_policies.ot_scope · 2026-09-14)
+     เคสจริงที่ user จับได้: 5ส. กะเช้ามี 2 แถว — 17:10 (ไม่ทำโอ) กับ 19:40 (ทำโอ) ซึ่งเป็น
+     "อย่างใดอย่างหนึ่ง" แต่กะ 08:00-20:00 กวาดทั้งคู่ ⇒ หักพักเกินจริง 20 นาที ทุกกะที่ทำโอ
+     (ควรต่างจากกะไม่ทำโอแค่ 30 นาที = เบรค OT แต่กลายเป็น 50)
+     กติกา: กรอบนี้ครอบนโยบาย 'ot' อยู่แล้ว = กะนี้ทำโอ ⇒ ทิ้ง 'no_ot' ทั้งหมด
+     — data-driven ล้วน ไม่ต้องรู้เวลาเลิกงานปกติของกะไหนเลย · แถวที่ไม่ตั้ง = 'always' = เหมือนเดิม */
+  const isOt = applicable.some(p => p.ot_scope === 'ot' && overlapOf(p) > 0);
+  return applicable.reduce((sum, p) => {
+    if (isOt && p.ot_scope === 'no_ot') return sum;
+    return sum + overlapOf(p);
   }, 0);
 }
 
@@ -176,7 +190,18 @@ export function busyMinutes(orders = [], startMs, endMs) {
   return total / 60000;
 }
 
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1 }) {
+/* ⚠️ **A สด ต้องเป็นสูตรเดียวกับตอนปิดกะเป๊ะ** (คำสั่ง user 2026-09-14: "%A มันควรสูตรเดียวกันหมด")
+   เดิมตัวนี้คิด A = (elapsed − DT ทุกชนิด) / elapsed คือ **ไม่แยกหยุดตามแผน และไม่หักเวลาพัก**
+   ⇒ กะเดียวกัน %A กระโดดขึ้นตอนปิดกะ (จอ TV/ผังรวม/Dashboard ต่ำกว่ารายงานตลอด) — bug ที่ค้างมานาน
+   สูตรที่ถูก (ตรงกับ computeOEE ใน DailyReport):
+     plannedDT = หยุดตามแผนที่ลง + เวลาพักตามนโยบายที่ผ่านไปแล้ว
+     netAvail  = elapsed − plannedDT          ← ตัวหารของ A (ไม่ใช่ elapsed ดิบ)
+     runMin    = netAvail − หยุดนอกแผน        ← ตัวหารของ P ด้วย (P = stdMin / runMin)
+   ⇒ ผู้เรียก **ต้องส่ง `breakPolicies` และ downtime ที่ join `dr_downtime_types(category)` มาเสมอ**
+     ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
+   ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
+     ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -188,11 +213,27 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
 
   // Downtime ที่ยังเปิดค้าง (ไม่มีเวลาจบ/นาที) นับถึงตอนนี้
   const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
-  const dtMin = downtimes.reduce((a, d) => {
-    if (d.ended_at || d.duration_min != null) return a + (Number(d.duration_min) || 0) * dtW(d);
-    return a + (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) * dtW(d) : 0);
-  }, 0);
-  const runMin = Math.max(1, elapsed - dtMin);
+  const dtOne = (d) => (d.ended_at || d.duration_min != null)
+    ? (Number(d.duration_min) || 0) * dtW(d)
+    : (d.started_at ? Math.max(0, (nowMs - new Date(d.started_at).getTime()) / 60000) * dtW(d) : 0);
+  /* แยกหยุดตามแผน (PM/เปลี่ยนรุ่น) ออกจากหยุดนอกแผน — ต้อง join dr_downtime_types(category) มา
+     ไม่ได้ join = ทุกแถวถูกนับเป็นนอกแผน (fail-safe ฝั่งเข้มงวด ไม่ใช่ปล่อยผ่าน) */
+  let plannedDtMin = 0, unplannedDtMin = 0;
+  downtimes.forEach(d => {
+    const m = dtOne(d);
+    if ((d?.dr_downtime_types?.category ?? d?.dt_category) === 'planned') plannedDtMin += m;
+    else unplannedDtMin += m;
+  });
+  // เวลาพักตามนโยบายที่ทับช่วง [เปิดกะ, ตอนนี้] — สูตรกลางตัวเดียวกับตอนปิดกะ
+  const breakMin = breakPolicies.length
+    ? policyBreakOverlapMin({
+        policies: breakPolicies, startMs: opened, endMs: opened + elapsed * 60000,
+        workDate: wd, shift: session.shift, processType,
+      })
+    : 0;
+  const netAvail = elapsed - plannedDtMin - breakMin;
+  if (!(netAvail > 0)) return null;                    // ยังอยู่ในพัก/หยุดตามแผนทั้งช่วง = ยังประเมินไม่ได้
+  const runMin = Math.max(1, netAvail - unplannedDtMin);
 
   let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
   const matsNoCt = new Set();
@@ -206,13 +247,20 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   });
   const ng = ngQty != null ? ngQty : ngFromOrders;
 
-  const A = Math.min(1, runMin / elapsed);
+  const A = Math.min(1, runMin / netAvail);
   const pct = v => Math.max(0, Math.min(100, Math.round(v * 1000) / 10));
+  /* ตัวเลขฐานที่ใช้ตรวจย้อนกลับได้ว่า A สดมาจากไหน (จอเอาไปโชว์ tooltip ได้ ไม่ต้องคำนวณเอง)
+     `noBreakPolicy` = ผู้เรียกลืมส่งนโยบายพัก ⇒ A จะไม่ตรงกับค่าที่ stamp ตอนปิดกะ */
+  const baseInfo = {
+    netAvailMin: Math.round(netAvail), breakMin: Math.round(breakMin),
+    plannedDtMin: Math.round(plannedDtMin), unplannedDtMin: Math.round(unplannedDtMin),
+    noBreakPolicy: !breakPolicies.length,
+  };
 
   // ยังไม่ผลิตชิ้นแรก (เพิ่งเปิดกะ/รอของ) → ประเมิน P/Q/OEE ไม่ได้ ต้องคืน null
   // ห้ามคืน P=0 → OEE 0% (เคยทำการ์ด "กำลังผลิต" ขึ้น 0% แดง ทั้งที่กะเพิ่งเปิด 19 นาที · 2026-08-05)
   if (produced <= 0) {
-    return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true };
+    return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true, ...baseInfo };
   }
 
   const Q = produced / (produced + ng);
@@ -223,7 +271,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
      A กับ Q ยังตอบได้ (ไม่ต้องใช้ CT) จึงคืนตามปกติ */
   if (stdMin <= 0) {
     return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
-      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt] };
+      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...baseInfo };
   }
 
   /* ไลน์เครื่องขนาน: ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์"
@@ -253,7 +301,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
     produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt],
     pOver: pRaw > 1.001, pRawPct: Math.round(pRaw * 1000) / 10,
-    machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap };
+    machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap, ...baseInfo };
 }
 
 /* ═══ 5) OEE จริง (strict) ═══ */

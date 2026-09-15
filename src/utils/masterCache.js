@@ -9,14 +9,62 @@
    ⚠️ อย่าเอามาใช้กับ "ข้อมูลการผลิตสด" (session/order/downtime/defect/mtn_orders)
       พวกนั้นต้องสดจริง — cache แล้วจอจะโกหก
 
-   ⚠️ แก้ master แล้วจอสดจะเห็นช้าได้ถึง TTL (ดีฟอลต์ = `MASTER_TTL` ใน refreshRates.js = 1 ชม.)
-      · refresh หน้าเว็บล้าง cache ทันที (cache อยู่ใน memory ของแท็บนั้น)
-      · หน้าที่แก้ master เองให้เรียก `invalidateMaster(key)` หลังบันทึกสำเร็จ เพื่อให้เห็นทันที   */
+   ── 🔴 รอบ 2: cache ข้ามการเปิดแอป (2026-09-14 · หลังโดนล็อกบริการทั้ง organization) ──────
+   cache เดิมอยู่ใน memory ของแท็บ ⇒ **เปิดแอปใหม่/กด F5 = โหลด master ใหม่ทั้งชุดทุกครั้ง**
+   วัดจาก log 14/09 (วันอาทิตย์ โรงงานหยุด): `machines` + `dr_products` + `kanban_standards`
+   ถูกดึงพร้อมกัน **329 ครั้ง/วัน** = จำนวนครั้งที่คนเปิดหน้า Daily Report
+     machines 368 KB + kanban_standards 164 KB + dr_products 107 KB ≈ 640 KB × 329
+     = **~200 MB/วัน ในวันที่ไม่มีใครทำงาน** ≈ 6 GB/เดือน > โควต้า Free ทั้งเดือน (5 GB)
+   ⇒ ย้าย cache ลง **localStorage** (อยู่ข้ามการเปิดแอป) — TTL เท่าเดิม
 
-import { MASTER_TTL } from './refreshRates';
+   **ทางล้าง cache (ต้องมีเสมอ ไม่งั้นข้อมูลค้างแล้วแก้ไม่ได้):**
+   1. `invalidateMaster(key)` — หน้าที่แก้ master เรียกหลังบันทึก (ล้างทั้ง memory + localStorage)
+   2. **deploy เวอร์ชันใหม่ = ล้างทิ้งทั้งหมดอัตโนมัติ** (เทียบ `BUILD_STAMP` ด้านล่าง)
+   3. TTL หมดอายุตามปกติ (`MASTER_TTL` = 4 ชม.)
+   ⚠️ สิ่งที่ **เปลี่ยนไปจากเดิม**: กด F5 แล้ว **ไม่ล้าง** cache อีกต่อไป (นั่นคือจุดประสงค์ทั้งหมด)
+      → แก้ master แล้วเครื่อง "คนอื่น" เห็นช้าได้ถึง 4 ชม. เท่าเดิม แต่เดิมบอกให้ "กด F5 สิ" ได้
+      ตอนนี้บอกไม่ได้แล้ว — ถ้าต้องให้เห็นทันทีทั้งโรงงาน ต้อง deploy หรือรอ TTL
+   ⚠️ localStorage อาจถูกปิด (private mode) / เต็ม → **ทุกจุดต้อง try/catch แล้วทำงานต่อได้**
+      (cache หายแค่ทำให้ยิง DB บ่อยขึ้น ไม่ใช่ error ที่ผู้ใช้ต้องเห็น)                        */
+
+// ใส่ `.js` ให้ครบ — เทส (node ESM) import ไฟล์นี้ตรงๆ และ node ต้องการนามสกุลเสมอ
+// (Vite ทำงานได้ทั้งสองแบบ · ไม่ใส่ = เทสโมดูลนี้รันไม่ได้เลย)
+import { MASTER_TTL } from './refreshRates.js';
 
 const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
+
+const LS_PREFIX = 'esm_mc_';
+// เปลี่ยนทุก deploy → cache ของเวอร์ชันเก่าถูกทิ้งเอง (กันโครงข้อมูลเปลี่ยนแล้วอ่านของเก่าค้าง)
+const BUILD_STAMP = import.meta.env?.VITE_BUILD_ID || import.meta.env?.MODE || 'dev';
+
+const lsKey = (key) => `${LS_PREFIX}${key}`;
+
+/** อ่านจาก localStorage — คืน null ถ้าไม่มี/หมดอายุ/คนละ build/อ่านไม่ได้ */
+function lsRead(key, ttl) {
+  try {
+    const raw = localStorage.getItem(lsKey(key));
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (o?.v !== BUILD_STAMP) { localStorage.removeItem(lsKey(key)); return null; }
+    if (!(Date.now() - o.at < ttl)) return null;
+    return o;
+  } catch { return null; }     // private mode / JSON เพี้ยน → ถือว่าไม่มี cache
+}
+
+function lsWrite(key, data) {
+  try {
+    localStorage.setItem(lsKey(key), JSON.stringify({ v: BUILD_STAMP, at: Date.now(), data }));
+  } catch {
+    // เต็ม/ปิดอยู่ → ทิ้ง cache เก่าของ master ทั้งหมดแล้วปล่อยผ่าน (ยิง DB บ่อยขึ้นแต่ไม่พัง)
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(LS_PREFIX)) localStorage.removeItem(k);
+      }
+    } catch { /* ปิดอยู่จริงๆ — ไม่ต้องทำอะไร */ }
+  }
+}
 
 /**
  * @param {string}   key    ชื่อเฉพาะของชุดข้อมูล (ใช้เป็นกุญแจ cache + ตัว invalidate)
@@ -28,10 +76,18 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
   if (hit && hit.data !== undefined && Date.now() - hit.at < ttl) return hit.data;
   if (hit?.inflight) return hit.inflight;   // หลายจุดเรียกพร้อมกัน = ยิงจริงครั้งเดียว
 
+  // memory ยังไม่มี (เพิ่งเปิดแอป) → ลองของที่ค้างใน localStorage ก่อนยิง DB
+  const stored = lsRead(key, ttl);
+  if (stored) {
+    cache.set(key, { at: stored.at, data: stored.data });
+    return stored.data;
+  }
+
   const p = (async () => {
     try {
       const data = await loader();
       cache.set(key, { at: Date.now(), data });
+      lsWrite(key, data);
       return data;
     } catch (e) {
       // โหลดพลาด → คืนของเก่าไปก่อน (ดีกว่าจอว่าง) และไม่ต่ออายุ cache ให้รอบหน้าลองใหม่
@@ -45,10 +101,21 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
   return p;
 }
 
-/** ล้าง cache — ไม่ส่ง key = ล้างทั้งหมด (เรียกหลังแก้ master สำเร็จ) */
+/** ล้าง cache — ไม่ส่ง key = ล้างทั้งหมด (เรียกหลังแก้ master สำเร็จ)
+ *  ⚠️ ต้องล้าง localStorage ด้วยเสมอ ไม่งั้นแก้ master แล้วเปิดแอปใหม่ยังเห็นของเก่า */
 export function invalidateMaster(key) {
-  if (key == null) cache.clear();
-  else cache.delete(key);
+  if (key == null) {
+    cache.clear();
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (k?.startsWith(LS_PREFIX)) localStorage.removeItem(k);
+      }
+    } catch { /* localStorage ปิดอยู่ */ }
+  } else {
+    cache.delete(key);
+    try { localStorage.removeItem(lsKey(key)); } catch { /* localStorage ปิดอยู่ */ }
+  }
 }
 
 export default cachedMaster;
