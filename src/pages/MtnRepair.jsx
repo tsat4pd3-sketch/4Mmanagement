@@ -1991,7 +1991,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>คนละช่องกับ “รับรองโดย” ท้ายใบ (ขั้น 7) — ฟอร์มกระดาษเซ็น 2 จุดคนละวัน</div>
               </Field>
             )}
-            {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ)</div>}
+            {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
           </>}
         </>}
         {step === 3 && <>
