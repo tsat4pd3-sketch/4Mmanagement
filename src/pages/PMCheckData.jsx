@@ -822,7 +822,9 @@ export default function PMCheckData() {
         machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
         problem_characteristic: 'อื่นๆ',
         report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
-        reporter_prod: fullName || null, reported_by_name: fullName || null,
+        // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น — เดิมหน้านี้ไม่เคยส่ง ⇒ ใบที่เปิดจากผลตรวจ PM/AM
+        //   ไม่มีใครถูกเด้งตอนใบถึงคิวตัวเอง (เหตุผลเดียวกับที่ MtnRepair แก้ไปแล้ว 2026-09-14)
+        reporter_prod: fullName || null, reported_by_name: fullName || null, reported_by_uid: userId || null,
         source_inspection_id: insp.id,
       }
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single()
