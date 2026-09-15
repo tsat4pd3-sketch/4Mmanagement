@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { supabaseDR } from '../supabaseClient'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
-import { coalesce } from '../utils/liveRefresh'
+import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
 import { checkWrite } from '../utils/dbWrite';
@@ -80,14 +80,17 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
 
   useEffect(() => {
     fetchAlerts()
-    const stopPoll = visibleInterval(fetchAlerts, RATE.BACKUP) // กันเหนียวเผื่อ realtime หลุด
+    /* 🔴 2026-09-15 — poll ตัวนี้เป็นแค่ "กันเหนียวเผื่อ realtime หลุด"
+       idleGate: tick ที่ไม่มีอะไรเปลี่ยน = ไม่มี network เลยสักไบต์ (ดู src/utils/liveRefresh.js) */
+    const g = makeIdleGate(LIVE.FLOOR)
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) { g.loaded(); fetchAlerts() } }, RATE.BACKUP)
     // 🔴 2026-09-15 — เดิม `setTimeout(fetchAlerts, 400)` ต่อ event = ไม่ใช่ debounce
     //    (N event = โหลด N รอบ) → coalesce(LIVE.ALARM) ไวพอสำหรับไซเรน แต่มีเพดาน
     //    ⚠️ ไซเรน "ดัง" ไม่ได้พึ่งรอบนี้อย่างเดียว — เกณฑ์จริงคือ 15 นาที (dt_alert_config)
-    const bump = coalesce(fetchAlerts, LIVE.ALARM)
+    const bump = coalesce(() => { g.loaded(); return fetchAlerts() }, LIVE.ALARM)
     const ch = liveChannel(supabaseDR, `dt-siren-${mode}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, bump)
-      .subscribe()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' }, () => { g.touch(); bump() })
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch() })
     // นาฬิกาอย่างเดียว ไม่ยิง DB — ให้รายการที่ "ครบเกณฑ์ระหว่างเปิดจออยู่" ดังเองภายใน 1 นาที
     const clk = setInterval(() => setTick(t => t + 1), 60000)
     return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); clearInterval(clk) }

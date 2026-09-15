@@ -9,7 +9,7 @@
       → ผ่านทั้งรอบปกติและรอบนาฬิกา +400 วัน (กฎเทสระเบิดเวลา ดู scripts/run-tests.mjs) */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coalesce, payloadField } from '../liveRefresh.js';
+import { coalesce, payloadField, makeIdleGate } from '../liveRefresh.js';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -76,6 +76,43 @@ test('fn โยน error ต้องไม่ทำให้ handler ของ 
   await sleep(80);
   assert.ok(n >= 2, 'error รอบแรกทำให้รอบถัดไปไม่เกิด');
   bump.cancel();
+});
+
+/* ── makeIdleGate — "ไม่มีอะไรเปลี่ยน ก็ไม่ต้องยิง poll" ───────────────────────────
+   พลาดทางไหนก็เจ็บ: ปล่อยผ่านหมด = ไม่ได้ประหยัดอะไร · กินหมด = จอค้างแสดงของเก่า */
+
+test('รอบแรกต้องโหลดเสมอ (เพิ่งเปิดหน้า ยังไม่มีข้อมูลอะไรเลย)', () => {
+  const g = makeIdleGate(10_000);
+  assert.equal(g.shouldRun(), true);
+});
+
+test('🔴 หัวใจ — โหลดแล้วและไม่มี event ตามมา = ข้ามรอบ poll (ไม่ยิง DB)', () => {
+  const g = makeIdleGate(10_000);
+  g.loaded();
+  assert.equal(g.shouldRun(), false, 'ยิงทั้งที่ไม่มีอะไรเปลี่ยน = โรงงานหยุดก็ยังกิน egress เท่าวันทำงาน');
+  assert.equal(g.shouldRun(), false, 'เช็คซ้ำต้องไม่เปลี่ยนคำตอบเอง');
+});
+
+test('🔴 มี realtime event เข้ามา = ต้องยิงจริง (ห้ามข้าม ไม่งั้นจอค้าง)', () => {
+  const g = makeIdleGate(10_000);
+  g.loaded();
+  g.touch();
+  assert.equal(g.shouldRun(), true);
+});
+
+test('โหลดสำเร็จแล้วธงต้องถูกล้าง — ไม่งั้น poll ยิงซ้ำทั้งที่ realtime โหลดไปแล้ว (จ่ายสองต่อ)', () => {
+  const g = makeIdleGate(10_000);
+  g.touch();
+  g.loaded();          // realtime เป็นคนโหลด
+  assert.equal(g.shouldRun(), false);
+});
+
+test('🔴 hard floor — ต่อให้ไม่มี event เลย ครบเวลาต้องโหลด 1 รอบ (กัน realtime ตายเงียบ)', async () => {
+  const g = makeIdleGate(40);
+  g.loaded();
+  assert.equal(g.shouldRun(), false);
+  await sleep(60);
+  assert.equal(g.shouldRun(), true, 'realtime ตายเงียบแล้วไม่มี floor = จอค้างตลอดกาล');
 });
 
 test('payloadField — อ่านได้ทั้ง INSERT/UPDATE (new) และ DELETE (old)', () => {

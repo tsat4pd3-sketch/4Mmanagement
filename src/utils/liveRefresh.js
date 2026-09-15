@@ -66,4 +66,41 @@ export function coalesce(fn, minGapMs, settleMs = 600) {
    (ถ้ากรองฝั่ง server ได้ด้วย `filter:` ให้ทำด้วย — ประหยัดกว่าเพราะ message ไม่ต้องส่งมาเลย) */
 export const payloadField = (p, field) => p?.new?.[field] ?? p?.old?.[field];
 
+/* ── idleGate — "ไม่มีอะไรเปลี่ยน ก็ไม่ต้องยิง poll" (2026-09-15) ─────────────────────
+   ═══ ปัญหาที่แก้ ═══════════════════════════════════════════════════════════════
+   `usePolling`/`visibleInterval` ยิง **ทุกรอบเท่ากันหมด** ไม่ว่าจะมีข้อมูลใหม่หรือไม่
+   คืนวันอาทิตย์ที่โรงงานหยุดสนิท จอก็ยังดึงเท่าวันทำงาน
+   40 เครื่อง × ~20 loop × 4 รอบ/ชม. × 24 ชม. = ยิงเปล่าล้วนๆ เกือบทั้งหมด
+
+   ═══ กุญแจ: จอพวกนี้ "รู้อยู่แล้ว" ว่ามีอะไรเปลี่ยน ═══════════════════════════════
+   บอร์ดที่มี realtime ได้ push ทุกครั้งที่แถวขยับอยู่แล้ว ⇒ **poll ไม่ใช่ตัวหาของใหม่
+   มันคือ "ตัวกันเหนียวเผื่อ realtime หลุด"** เท่านั้น (เขียนไว้ใน refreshRates.js มาตั้งแต่ ส.ค.
+   แต่โค้ดไม่เคยทำตาม — poll ยังยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ)
+
+   ⇒ ให้ poll ยิงจริงเฉพาะ 2 กรณี:
+     ① มี realtime event เข้ามาแล้วยังไม่ได้โหลด (กันกรณี coalesce ถูก cancel ตอน re-render)
+     ② ครบ **hard floor** — กันกรณีหายากที่ realtime ตายเงียบ (socket ยังอยู่แต่ไม่ส่งอะไร)
+   รอบที่ถูกข้าม **ไม่มี network เลยสักไบต์** (เช็คในเครื่องล้วน)
+
+   ⚠️ hard floor ยาวได้ เพราะการ "แจ้งเตือน" จริงไม่ได้พึ่งรอบโหลดของจอ:
+      downtime ค้าง → Telegram/ไซเรน/Web Push จาก edge `downtime-open-scan` (pg_cron 5 นาที)
+      จอทำแค่ "เปลี่ยนสี" — ช้าไป 1-2 ชม. ในเคสที่ realtime ตายเงียบ ไม่ทำให้ใครตัดสินใจผิด
+   ⚠️ **ห้ามใช้กับจอที่ไม่มี realtime** — ไม่มีใครมา `touch()` ให้ = เหลือแต่ hard floor = จอค้าง
+      จอที่ยังไม่มี realtime ให้ **เพิ่ม realtime ก่อน** (ถูกกว่า poll เป็นร้อยเท่าและเร็วกว่า)     */
+export function makeIdleGate(hardFloorMs) {
+  let dirty = false;
+  let lastLoad = 0;
+
+  return {
+    /** realtime บอกว่ามีของใหม่ — เรียกใน handler และตอน channel กลับมา SUBSCRIBED (reconnect) */
+    touch() { dirty = true; },
+
+    /** โหลดสำเร็จแล้ว (ไม่ว่าจะมาจาก realtime หรือ poll) — ล้างธงและเริ่มนับ hard floor ใหม่ */
+    loaded() { dirty = false; lastLoad = Date.now(); },
+
+    /** poll ควรยิงจริงไหม — เรียกทุก tick */
+    shouldRun() { return dirty || Date.now() - lastLoad >= hardFloorMs; },
+  };
+}
+
 export default coalesce;

@@ -20,7 +20,7 @@ import { markerScale } from '../utils/markerScale';
 import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
-import { coalesce } from '../utils/liveRefresh';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
@@ -420,15 +420,21 @@ export default function Management() {
     const refresh = () => fetchActiveDowntimes(viewLineNames)
       .then(r => { if (!r?.error) setDtAlarms(r); })
       .catch(() => {});
-    // 🔴 2026-09-15 — debounce 1 วิ → coalesce(LIVE.ALARM 5 วิ): debounce ไม่ใช่เพดาน
-    //    หมุด Andon เป็นของด่วนจริง จึงใช้ระดับ ALARM (ไวสุด) ไม่ใช่ BOARD
-    const debounced = coalesce(refresh, LIVE.ALARM);
+    /* 🔴 2026-09-15 — สองอย่าง (ดู src/utils/liveRefresh.js + docs/POLLING-AUDIT-2026-09-15.md)
+       ① debounce 1 วิ → coalesce(LIVE.ALARM 5 วิ): debounce ไม่ใช่เพดาน
+          หมุด Andon เป็นของด่วนจริง จึงใช้ระดับ ALARM (ไวสุด) ไม่ใช่ BOARD
+       ② poll ตัวนี้เป็นแค่ "กันเหนียวเผื่อ realtime หลุด" — idleGate ทำให้ tick ที่ไม่มีอะไร
+          เปลี่ยนไม่มี network เลยสักไบต์ (โรงงานหยุด = จอแทบไม่กิน egress) */
+    const g = makeIdleGate(LIVE.FLOOR);
+    const debounced = coalesce(() => { g.loaded(); return refresh(); }, LIVE.ALARM);
+    const onEvent = () => { g.touch(); debounced(); };
     refresh();
-    const stopPoll = visibleInterval(refresh, RATE.BACKUP);
+    g.loaded();
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) { g.loaded(); refresh(); } }, RATE.BACKUP);
     const ch = liveChannel(supabaseDR, 'mgmt-dt-alarm')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       debounced)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, debounced)
-      .subscribe();
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       onEvent)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onEvent)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
     return () => { stopPoll(); debounced.cancel(); supabaseDR.removeChannel(ch); };
   }, [selectedLine, viewKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
