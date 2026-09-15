@@ -19,7 +19,7 @@
 
    **ทางล้าง cache (ต้องมีเสมอ ไม่งั้นข้อมูลค้างแล้วแก้ไม่ได้):**
    1. `invalidateMaster(key)` — หน้าที่แก้ master เรียกหลังบันทึก (ล้างทั้ง memory + localStorage)
-   2. **deploy เวอร์ชันใหม่ = ล้างทิ้งทั้งหมดอัตโนมัติ** (เทียบ `BUILD_STAMP` ด้านล่าง)
+   2. บวก `CACHE_EPOCH` (ด้านล่าง) เมื่อ **โครงข้อมูลที่ cache ไว้เปลี่ยน** — ⚠️ deploy เฉยๆ ไม่ล้างแล้ว (แก้ 2026-09-15 · ดูเหตุผลที่ CACHE_EPOCH)
    3. TTL หมดอายุตามปกติ (`MASTER_TTL` = 4 ชม.)
    ⚠️ สิ่งที่ **เปลี่ยนไปจากเดิม**: กด F5 แล้ว **ไม่ล้าง** cache อีกต่อไป (นั่นคือจุดประสงค์ทั้งหมด)
       → แก้ master แล้วเครื่อง "คนอื่น" เห็นช้าได้ถึง 4 ชม. เท่าเดิม แต่เดิมบอกให้ "กด F5 สิ" ได้
@@ -35,8 +35,21 @@ const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
 
 const LS_PREFIX = 'esm_mc_';
-// เปลี่ยนทุก deploy → cache ของเวอร์ชันเก่าถูกทิ้งเอง (กันโครงข้อมูลเปลี่ยนแล้วอ่านของเก่าค้าง)
-const BUILD_STAMP = import.meta.env?.VITE_BUILD_ID || import.meta.env?.MODE || 'dev';
+
+/* ── 🔴 CACHE_EPOCH — "รุ่นของโครงข้อมูล" ไม่ใช่ "รุ่นของ build" (แก้ 2026-09-15) ──────────
+   เดิมใช้ `VITE_BUILD_ID` ⇒ **deploy ทีเดียว = ล้าง cache master ของทุกเครื่องทั้งโรงงาน**
+   วัดจริง 15/09 (คำถามจาก user ตรงเป๊ะ: "แก้ระหว่างวันบ่อยๆ + เปิดหลายจอ เลยรีเฟรชเรื่อยๆ ?"):
+     แอป boot ใหม่ **~340 ครั้ง/ชม.** ในเวลาทำงาน (1,372 ครั้งใน 4 ชม. วัดจากคิวรี `profiles`)
+   ทุก boot หลัง deploy = โหลด master ใหม่ทั้งชุด (~640 KB) เพราะ stamp ไม่ตรง
+   ⇒ deploy วันละหลายรอบ × เครื่องที่เปิดค้างทั้งโรงงาน = ค่า egress ที่จ่ายฟรีๆ
+   (ตัว reload เองถูกต้องแล้ว — fix ต้องไปถึงจอ · ที่ผิดคือ "ทุก reload ต้องโหลด master ใหม่")
+
+   ตอนนี้: เลขนี้ **เปลี่ยนด้วยมือเท่านั้น** เมื่อ "โครงข้อมูลของสิ่งที่ cache ไว้เปลี่ยนจริง"
+   (เพิ่ม/ลบคอลัมน์ใน select ของ cachedMaster · เปลี่ยนรูปแบบค่าที่เก็บ)
+   ⚠️ แก้ select ของ cachedMaster แล้วลืมบวกเลขนี้ = เครื่องที่มี cache เก่าอ่านโครงเก่าได้ถึง 4 ชม.
+      → **แก้ shape เมื่อไหร่ บวกเลขนี้ในคอมมิทเดียวกันเสมอ**
+   (การแก้ "เนื้อข้อมูล" ไม่ต้องแตะเลขนี้ — ใช้ `invalidateTable()` ดู masterInvalidate.js) */
+const CACHE_EPOCH = 'e1';
 
 const lsKey = (key) => `${LS_PREFIX}${key}`;
 
@@ -46,7 +59,7 @@ function lsRead(key, ttl) {
     const raw = localStorage.getItem(lsKey(key));
     if (!raw) return null;
     const o = JSON.parse(raw);
-    if (o?.v !== BUILD_STAMP) { localStorage.removeItem(lsKey(key)); return null; }
+    if (o?.v !== CACHE_EPOCH) { localStorage.removeItem(lsKey(key)); return null; }
     if (!(Date.now() - o.at < ttl)) return null;
     return o;
   } catch { return null; }     // private mode / JSON เพี้ยน → ถือว่าไม่มี cache
@@ -54,7 +67,7 @@ function lsRead(key, ttl) {
 
 function lsWrite(key, data) {
   try {
-    localStorage.setItem(lsKey(key), JSON.stringify({ v: BUILD_STAMP, at: Date.now(), data }));
+    localStorage.setItem(lsKey(key), JSON.stringify({ v: CACHE_EPOCH, at: Date.now(), data }));
   } catch {
     // เต็ม/ปิดอยู่ → ทิ้ง cache เก่าของ master ทั้งหมดแล้วปล่อยผ่าน (ยิง DB บ่อยขึ้นแต่ไม่พัง)
     try {
