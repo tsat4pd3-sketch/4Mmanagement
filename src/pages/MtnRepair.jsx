@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
 import { MO_STATUS_LABEL, MTN_STEPS, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel } from '../utils/mtnStepPerm';
@@ -64,6 +65,8 @@ const getWorkDate = () => {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 };
 // ค่า max ของ input datetime-local (เวลาเครื่อง ไม่ใช่ UTC — ห้ามใช้ toISOString ตัด)
+/** ISO → ค่าที่ <input type="datetime-local"> ใช้ได้ (เวลาท้องถิ่น) · ว่าง = '' */
+const localDt = (v) => { if (!v) return ''; const d = new Date(v); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
@@ -129,17 +132,19 @@ const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอ�
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
 const FOLLOW_OPTS = ['ไม่เกิดปัญหาซ้ำ', 'แจ้งเฝ้าระวัง', 'เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'];
 // ประเมินความพึงพอใจบริการซ่อม (step 6) — KPI ให้หน่วยงานซ่อม · 5 ด้าน × 3 ระดับ
+/* ⚠️ ป้าย+สเกลตรงกับฟอร์มกระดาษ FM-MTN (user 2026-09-15 "ใช้รูปแบบใบเดิมเหมือน 100%")
+   **คีย์ไม่เปลี่ยน** (quality/response/problem/politeness/readiness) ข้อมูลเก่าจึงยังอ่านได้ */
 const SAT_DIMS = [
-  { key: 'quality',    label: 'คุณภาพงานซ่อม' },
-  { key: 'response',   label: 'ความเร็วในการตอบสนอง' },
-  { key: 'problem',    label: 'ความสามารถในการแก้ไขปัญหา' },
-  { key: 'politeness', label: 'ความสุภาพ / PPE' },
-  { key: 'readiness',  label: 'ความพร้อมในการเข้าแก้ไขปัญหา' },
+  { key: 'quality',    label: 'คุณภาพงาน' },
+  { key: 'response',   label: 'ความรวดเร็วในการทำงาน' },
+  { key: 'problem',    label: 'ความสามารถในการแก้ปัญหา' },
+  { key: 'politeness', label: 'ความสุภาพ' },
+  { key: 'readiness',  label: 'ความกระตือรือร้น' },
 ];
 const SAT_LEVELS = [
-  { v: 1, t: 'เฉยๆ',    color: '#94a3b8' },
-  { v: 2, t: 'พอใจ',    color: '#f59e0b' },
-  { v: 3, t: 'พอใจมาก', color: '#22c55e' },
+  { v: 1, t: 'พอใช้',   color: '#94a3b8' },
+  { v: 2, t: 'ปานกลาง', color: '#f59e0b' },
+  { v: 3, t: 'ดี',      color: '#22c55e' },
 ];
 const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
 const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
@@ -493,6 +498,8 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
+    /* ── ช่องเฉพาะฟอร์มกระดาษของทีม MTN (FM-MTN · 2026-09-15) — ทีมอื่นไม่โชว์ ── */
+    contact_phone: '', pr_no: '', io_no: '', purpose: 'repair', dept_manager_name: '', plant_manager_name: '',
     report_note: '', is_sample: false, reporter_prod: fullName || '', reporter_qa: '',
     // 2026-09-08 (feedback admin): ผู้แจ้งเลือก BM/PM ได้ตั้งแต่ขั้น 1 (หัวหน้าช่างยังแก้ได้ที่ขั้น 2 ก่อนออกเลข MO)
     //   + occurred_at = "วันเวลาที่เกิดเหตุจริง" สำหรับแจ้งย้อนหลัง — แยกจาก report_at (เวลากดแจ้ง = นาฬิกา KPI/เลข MO) ไม่ทับกัน
@@ -636,12 +643,25 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
     try {
       // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น (เดิมหน้านี้ไม่เคยส่ง → ผู้แจ้งไม่ถูกแจ้งเลย มีแต่ใบที่เปิดจาก Daily Report)
       const { data: { user } = {} } = await supabase.auth.getUser();
-      const payload = { ...f, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
-        report_at: new Date().toISOString(), work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
+      /* ช่องของฟอร์ม MTN — ทีมอื่นไม่ต้องเก็บ (ฟอร์ม FM-JIG-008 ไม่มีช่องพวกนี้)
+         ผู้จัดการต้นสังกัด/โรงงาน: กรอกชื่อ = ถือว่าเซ็นวันนี้ (ยังไม่ใช่ด่านอนุมัติในระบบ) */
+      const nowIso2 = new Date().toISOString();
+      const mtnForm = teamKeyOf(f.mtn_dept) === 'maintenance' ? {
+        contact_phone: f.contact_phone || null, pr_no: f.pr_no || null, io_no: f.io_no || null,
+        purpose: f.purpose || 'repair',
+        dept_manager_name: f.dept_manager_name || null, dept_manager_at: f.dept_manager_name ? nowIso2 : null,
+        plant_manager_name: needsPlantManager(f.purpose) ? (f.plant_manager_name || null) : null,
+        plant_manager_at: needsPlantManager(f.purpose) && f.plant_manager_name ? nowIso2 : null,
+      } : {};
+      const { contact_phone, pr_no, io_no, purpose, dept_manager_name, plant_manager_name, ...fRest } = f;  // eslint-disable-line no-unused-vars
+      const payload = { ...fRest, ...mtnForm, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
+        report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
       if (error?.code === '42703') {
-        const { problem_group, occurred_at, ...rest } = payload;   // eslint-disable-line no-unused-vars
+        const { problem_group, occurred_at, contact_phone: _cp, pr_no: _pr, io_no: _io, purpose: _pp,
+          dept_manager_name: _dm, dept_manager_at: _dma, plant_manager_name: _pm, plant_manager_at: _pma,
+          ...rest } = payload;   // eslint-disable-line no-unused-vars
         ({ data, error } = await supabaseDR.from('mtn_orders').insert(rest).select().single());
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
@@ -743,6 +763,31 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
             </div>
           )}
         </div>
+        {/* ── ช่องที่มีเฉพาะบนฟอร์มกระดาษของทีม MTN (user 2026-09-15 "ใช้รูปแบบใบเดิม 100%") ──
+            โชว์เฉพาะเมื่อแจ้งถึงทีม MTN — ทีม JIG/DIE ใช้ FM-JIG-008 ที่ไม่มีช่องพวกนี้ */}
+        {teamKeyOf(f.mtn_dept) === 'maintenance' && <>
+          <Field label="เบอร์ติดต่อ (ผู้แจ้ง)"><input value={f.contact_phone} onChange={e => set('contact_phone', e.target.value)} style={inp} placeholder="เช่น 183" /></Field>
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
+            <Field label="I/O."><input value={f.io_no} onChange={e => set('io_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Field label="จุดประสงค์">
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {PURPOSES.map(pp => { const on = (f.purpose || 'repair') === pp.key; return (
+                  <button key={pp.key} type="button" onClick={() => set('purpose', pp.key)} style={{
+                    padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{pp.label}</button>
+                ); })}
+              </div>
+            </Field>
+          </div>
+          <Field label="ผู้จัดการต้นสังกัด (ผู้อนุมัติใบ)"><PersonSelect value={f.dept_manager_name} source="both" section={f.dept_section} onChange={res => set('dept_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+          {needsPlantManager(f.purpose) && (
+            <Field label="ผู้จัดการโรงงาน (งานสร้างต้องอนุมัติ)"><PersonSelect value={f.plant_manager_name} source="both" onChange={res => set('plant_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการโรงงาน" /></Field>
+          )}
+        </>}
         {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
         <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
@@ -797,10 +842,10 @@ function nextStepFor(order) {
 const qaSkippedPrint = (o) => moQaState(o) === 'skipped';
 
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
-function printMoReport(o, dparts = [], logo0) {
+function printMoReport(o, dparts = [], logo0, dlabor = []) {
   const teamKey = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
-  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0);
+  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
   const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
@@ -897,90 +942,219 @@ function printMoReport(o, dparts = [], logo0) {
   w.document.write(html); w.document.close();
 }
 
-/* ── พิมพ์ใบ MO — layout ตามฟอร์ม FM-MTN-006 (ทีม MTN / PRODUCTION) ── */
-function printMoReportMtn(o, dparts = [], logo0) {
-  const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls', sig_blocks: ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'] });
-  const moSig = df.sig_blocks || ['ผู้ตรวจสอบและรับรอง', 'ผู้อนุมัติ (ผู้จัดการ)'];
-  const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
-  const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${+g.year + 543}`; };
+/* ── พิมพ์ใบ MO ทีม MTN — ถอดจากฟอร์มกระดาษจริง 1:1 (2026-09-15) ────────────────────
+   คำสั่ง user: "ต้องทำทั้งหมด เพราะ MTN จะใช้รูปแบบใบเดิมเหมือน 100%"
+   ต้นฉบับ = ใบ "ใบสั่งงานซ่อมบำรุง M/O" ที่ user ถ่ายมา (MO.No. MTN.2026/06-59)
+   เรียงบล็อกตามกระดาษเป๊ะ: หัวใบ → ผู้แจ้ง+ผู้อนุมัติต้นสังกัด → ขั้นตอนดำเนินการ
+   → ค่าใช้จ่าย (ค่าแรงรายคน | อะไหล่รายรายการ) → ความพึงพอใจ + ลายเซ็นท้าย → ความคิดเห็น
+   ⚠️ รูปก่อน/หลังไม่มีในกระดาษ → ไปหน้า 2 และพิมพ์เฉพาะเมื่อมีรูปจริง (หน้าแรกต้องเหมือนต้นฉบับ)
+   ⚠️ สูตรรวมเงิน/คะแนนอ่านจาก `src/utils/mtnMoForm.js` ที่เดียว ห้ามคิดเลขซ้ำที่นี่ */
+function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
+  const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls' });
+  const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${(+g.year + 543) % 100} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
+  const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day} / ${+g.month} / ${(+g.year + 543) % 100}`; };
+  const beTime = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${g.hour === '24' ? '00' : g.hour}.${g.minute}`; };
   const esc = (s) => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-  const dept = deptNameOf(o.mtn_dept || deptForItem(o.item_type));   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
+  const money = (v) => (v == null ? '' : Number(v).toLocaleString('en-US'));
+  const dept = deptNameOf(o.mtn_dept || deptForItem(o.item_type));
   const logo = logo0 || (/^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo);
   const done = o.status === 'closed' || o.current_step >= 3;
-  const chk = (on) => on ? '☑' : '☐';
-  const cell = (k, v) => `<div class="f"><span class="k">${k}</span> <span class="v">${esc(v)}</span></div>`;
-  // ประเภทงาน (จาก repair_type) — เดาเช็คบ็อกซ์
-  const rt = (o.repair_type || '').toLowerCase();
-  const isImprove = rt.includes('improve') || (o.repair_type || '').includes('ปรับปรุง');
-  // อะไหล่ 5 แถว
-  const partRows = [];
-  for (let i = 0; i < 5; i++) { const p = dparts[i]; partRows.push(`<tr><td class="c">${i + 1}</td><td>${p ? esc(p.part_name) : ''}</td><td class="c">${p ? esc(`${p.qty}${p.unit || ''}`) : ''}</td><td>${p ? esc(o.tech_main || '') : ''}</td></tr>`); }
-  // ประเมินความพึงพอใจ
-  const satRow = (label, key) => { const v = Number((o.satisfaction || {})[key]); return `<tr><td>${esc(label)}</td><td class="c">${chk(v === 1)}</td><td class="c">${chk(v === 2)}</td><td class="c">${chk(v === 3)}</td></tr>`; };
-  const satAv = satAvg(o.satisfaction);
+  const chk = (on) => (on ? '☑' : '☐');
+  /* จุดประสงค์: ใช้ค่าที่กรอก · ใบเก่าที่ยังไม่มี purpose ให้เดาจาก repair_type เหมือนเดิม */
+  const purpose = o.purpose || (/improve|ปรับปรุง/i.test(o.repair_type || '') ? 'improve' : 'repair');
+  // ช่องกริด PR.No / I/O. — 11 ช่องตามฟอร์ม กระจายตัวอักษรทีละช่อง
+  const grid = (v, n = 11) => { const t = String(v || ''); let h = ''; for (let i = 0; i < n; i++) h += `<td class="gx">${esc(t[i] || '')}</td>`; return `<table class="gr"><tr>${h}</tr></table>`; };
+  const line = (label, v, w = '') => `<span class="lb">${label}</span><span class="dot" style="${w ? `min-width:${w}` : ''}">${esc(v ?? '')}</span>`;
+  // ลายเซ็น: รูปเซ็น (ถ้ามี) + ชื่อ + วันที่ __/__/__
+  const sg = (title, name, url, at, note = '') => `<div class="sgb"><div class="sgi">${url ? `<img src="${esc(url)}"/>` : ''}</div><div class="sgt">${esc(title)}</div><div class="sgn">${esc(name || '')}</div><div class="sgd">${at ? esc(beD(at)) : '....../....../......'}</div>${note ? `<div class="sgx">${esc(note)}</div>` : ''}</div>`;
+
+  /* ── ตารางค่าแรง 5 แถวตามฟอร์ม (เกิน 5 ต่อท้ายได้ ไม่ตัดข้อมูลทิ้ง) ── */
+  const laborList = (dlabor || []).filter(r => r && (r.worker_name || r.amount != null || r.rate_per_hour != null));
+  const laborRowsN = Math.max(5, laborList.length);
+  let laborHtml = '';
+  for (let i = 0; i < laborRowsN; i++) {
+    const r = laborList[i];
+    const amt = r ? laborAmount(r) : null;
+    laborHtml += `<tr><td class="c">${i + 1}</td><td>${esc(r?.worker_name || '')}</td><td class="c">${r && r.rate_per_hour != null ? `${money(r.rate_per_hour)} x ${r.hours ?? ''}` : ''}</td><td class="r">${money(amt)}</td></tr>`;
+  }
+  /* ── ตารางอะไหล่ 5 แถวตามฟอร์ม ── */
+  const partList = dparts || [];
+  const partRowsN = Math.max(5, partList.length);
+  let partHtml = '';
+  for (let i = 0; i < partRowsN; i++) {
+    const p = partList[i];
+    partHtml += `<tr><td class="c">${i + 1}</td><td>${esc(p?.part_name || '')}</td><td class="c">${p ? esc(`${p.qty ?? ''} ${p.unit || ''}`.trim()) : ''}</td><td class="r">${money(p ? partAmount(p) : null)}</td></tr>`;
+  }
+  const sumL = sumLabor(laborList) ?? (o.labor_cost != null ? Number(o.labor_cost) : null);
+  const sumP = sumParts(partList) ?? (o.parts_cost != null ? Number(o.parts_cost) : null);
+  const sumAll = grandTotal(laborList, partList, o.labor_cost, o.parts_cost);
+
+  /* ── ความพึงพอใจ: สเกล พอใช้(1) ปานกลาง(2) ดี(3) ตามกระดาษ ── */
+  const sat = o.satisfaction || {};
+  const satHtml = SAT_DIMS.map((d, i) => {
+    const v = Number(sat[d.key]);
+    return `<tr><td>${i + 1}. ${esc(d.label)}</td><td class="c">${v === 1 ? '✗' : '<span class="g">1</span>'}</td><td class="c">${v === 2 ? '✗' : '<span class="g">2</span>'}</td><td class="c">${v === 3 ? '✗' : '<span class="g">3</span>'}</td></tr>`;
+  }).join('');
+  const ss = satScore(sat, SAT_DIMS.map(d => d.key));
+
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>MO ${esc(o.mo_no || '')}</title><style>
-    *{box-sizing:border-box} body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;padding:8px;font-size:11px}
-    table{border-collapse:collapse;width:100%;table-layout:fixed} td{border:1px solid #000;vertical-align:top;padding:4px 6px}
-    .nob td{border:none;padding:1px 0}
-    .sech{background:#d4d4d4;text-align:center;font-weight:700;padding:3px}
-    .f{padding:1.5px 0;line-height:1.5} .k{font-weight:700} .c{text-align:center}
-    .ttl{text-align:center} .ttl .mo{font-size:26px;font-weight:800;letter-spacing:1px} .co{font-size:11px;font-weight:700}
-    .imgcell{height:150px;text-align:center;padding:3px} .imgcell img{max-width:100%;max-height:142px}
-    .tbl th{border:1px solid #000;background:#ececec;font-weight:700;padding:3px;font-size:10.5px}
-    .signs td{height:96px;text-align:center;padding:0;vertical-align:top}
-    .sgh{background:#d4d4d4;font-weight:700;padding:3px;border-bottom:1px solid #000}
-    .sgimg{height:48px;display:flex;align-items:center;justify-content:center} .sgimg img{max-height:44px;max-width:90%}
-    .sgn{border-top:1px solid #999;padding:2px;font-size:10.5px}
-    .ft{display:flex;justify-content:space-between;font-size:10px;margin-top:4px}
+    /* ── ถอดสัดส่วนจากฟอร์มกระดาษ (A4 แนวตั้ง 1 หน้า) ── */
+    @page{size:A4;margin:10mm 8mm}
+    *{box-sizing:border-box}
+    body{font-family:'Sarabun','Tahoma',sans-serif;color:#000;margin:0;font-size:10px;line-height:1.45}
+    table{border-collapse:collapse;width:100%;table-layout:fixed}
+    td{border:1px solid #000;vertical-align:top;padding:2px 4px}
+    .nob,.nob td,.gr,.gr td{border:none}
+    .nob td{padding:0}
+    .lb{font-weight:400}
+    .dot{display:inline-block;border-bottom:1px dotted #555;min-width:70px;padding:0 3px;font-weight:700}
+    .gr{width:auto;display:inline-table;margin-left:3px}
+    .gr td{border:1px solid #000;width:13px;height:13px;text-align:center;font-size:9px;padding:0}
+    .c{text-align:center} .r{text-align:right} .g{color:#bbb}
+    .sec{background:#fff;text-align:center;font-weight:700;padding:2px}
+    .hdco{font-size:11px;font-weight:700} .hden{font-size:9px}
+    .mono{font-weight:700;letter-spacing:.3px}
+    .tb th{border:1px solid #000;font-weight:700;padding:2px;font-size:9.5px;text-align:center}
+    .sgb{text-align:center;padding:1px 2px}
+    .sgi{height:26px;display:flex;align-items:flex-end;justify-content:center}
+    .sgi img{max-height:26px;max-width:95%}
+    .sgt{font-size:9px;border-top:1px dotted #555;padding-top:1px}
+    .sgn{font-size:9.5px;font-weight:700;min-height:12px}
+    .sgd{font-size:9px}
+    .sgx{font-size:8px;color:#333}
+    .note{min-height:34px}
+    .ft{display:flex;justify-content:space-between;font-size:8.5px;margin-top:3px}
+    .ph{page-break-before:always}
+    .phc{height:340px;text-align:center;padding:4px} .phc img{max-width:100%;max-height:334px}
     @media print{body{padding:0}}
   </style></head><body>
+
+  <!-- ══ หัวใบ ══ -->
   <table>
     <tr>
-      <td style="width:26%"><table class="nob"><tr><td style="width:48px"><img src="${esc(logo)}" style="width:42px"/></td><td class="co">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด (สาขา 1)<br><span style="font-weight:400;font-size:10px">Thai Summit Automotive Co.,Ltd (Branch 1)</span></td></tr></table></td>
-      <td class="ttl" style="width:32%"><div class="mo">M/O</div><div style="font-size:10px">ใบสั่งงานซ่อมบำรุง (MAINTENANCE ORDER)</div></td>
-      <td style="width:42%">${cell('MO NO:', o.mo_no || '-')}${cell('แจ้งถึงหน่วยงาน:', dept)}<div class="f"><span class="k">สถานะ:</span> ${chk(!done)} รอดำเนินการ &nbsp; ${chk(done)} ดำเนินการแล้ว</div></td>
+      <td style="width:62%;padding:3px 5px">
+        <table class="nob"><tr>
+          <td style="width:52px"><img src="${esc(logo)}" style="width:46px"/></td>
+          <td><div class="hdco">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div><div class="hden">Thai Summit  Automotive Co.,Ltd</div></td>
+        </tr></table>
+      </td>
+      <td style="width:38%;padding:3px 5px" class="mono">MO.No. <span class="dot" style="min-width:150px">${esc(o.mo_no || '')}</span></td>
     </tr>
   </table>
   <table>
-    <tr><td class="sech" colspan="2">ส่วนผู้แจ้ง (Requester)</td></tr>
     <tr>
-      <td style="width:50%"><table class="nob"><tr><td style="width:50%">${cell('จากแผนก/ส่วน:', o.dept_section || o.work_area)}</td><td>${cell('Cost Center:', o.cost_center)}</td></tr></table>
-        ${cell('ชื่อเครื่องจักร:', o.item_type)}${cell('เบอร์/Jig No:', o.machine_no)}${cell('ไลน์การผลิต:', o.line_name)}
-        <div class="f"><span class="k">ประเภทงาน:</span> ${chk(!isImprove)} ซ่อม &nbsp; ${chk(isImprove)} ปรับปรุง &nbsp; ☐ บริการ &nbsp; ☐ สร้าง</div>
-        ${cell('รายละเอียด (ผู้แจ้ง):', o.problem_characteristic)}${cell('อาการ/หมายเหตุ:', o.report_note || o.problem_detail)}
-        <table class="nob"><tr><td style="width:50%">${cell('เปิดงาน:', beDT(o.report_at))}</td><td>${cell('ต้องการเสร็จ:', beD(o.want_at))}</td></tr></table>
-        <table class="nob"><tr><td style="width:50%">${cell('PD ผู้แจ้ง:', o.reporter_prod)}</td><td>${cell('QA ผู้แจ้ง:', o.reporter_qa)}</td></tr></table>
-        ${cell('ผู้ออก M/O (รับรอง):', o.accepted_by)}${cell('วันที่รับรอง:', beD(o.accept_at))}</td>
-      <td style="width:50%"><div class="sech" style="margin:-4px -6px 4px;border-bottom:1px solid #000">รายละเอียดการดำเนินงาน (ซ่อมบำรุง)</div>
-        <table class="nob"><tr><td style="width:50%">${cell('ผู้รับแจ้ง:', o.accepted_by)}</td><td>${cell('ผู้รับผิดชอบ:', o.assigned_to)}</td></tr></table>
-        <table class="nob"><tr><td style="width:50%">${cell('เวลาเริ่ม:', beDT(o.accept_at))}</td><td>${cell('เวลาเสร็จ:', beDT(o.repair_done_at))}</td></tr></table>
-        <div class="f"><span class="k">ประเภท:</span> ${chk(!isImprove)} งานซ่อม &nbsp; ${chk(isImprove)} งานปรับปรุง &nbsp; ☐ อื่นๆ</div>
-        <table class="nob"><tr><td style="width:50%">${cell('ช่างหลัก:', o.tech_main)}</td><td>${cell('ช่างรอง:', o.tech_secondary)}</td></tr></table>
-        ${cell('สาเหตุปัญหา:', o.root_cause)}${cell('วิธีการแก้ไข:', o.solution)}
-        ${cell('ผู้ตรวจเช็ค:', o.checker_name)}${cell('ผลตรวจหลังซ่อม:', o.check_result)}</td>
+      <td style="width:78%;padding:3px 5px">
+        <div>เรียน &nbsp;ผู้จัดการส่วนซ่อมบำรุง</div>
+        <div style="margin-top:2px">${line('จากฝ่าย/ส่วน', o.work_area, '95px')} &nbsp;${line('แผนก', o.dept_section, '75px')} &nbsp;${line('เบอร์ติดต่อ', o.contact_phone, '45px')} &nbsp;${line('Cost Center', o.cost_center, '85px')}</div>
+        <div style="margin-top:3px">PR.No. ${grid(o.pr_no)} &nbsp;&nbsp; I/O. ${grid(o.io_no)}</div>
+        <div style="margin-top:3px">${line('ชื่อเครื่องจักร', o.item_type, '135px')} ${line('เบอร์', o.machine_no, '80px')}
+          จุดประสงค์ (${purpose === 'repair' ? '✓' : '&nbsp;'}) ซ่อม (${purpose === 'improve' ? '✓' : '&nbsp;'}) ปรับปรุง (${purpose === 'service' ? '✓' : '&nbsp;'}) บริการ (${purpose === 'build' ? '✓' : '&nbsp;'}) สร้าง</div>
+      </td>
+      <td style="width:22%;padding:3px 5px">
+        <div>${chk(!done)} รอดำเนินการ</div>
+        <div style="margin-top:4px">${chk(done)} ดำเนินการแล้ว</div>
+      </td>
     </tr>
   </table>
+
+  <!-- ══ ส่วนผู้แจ้ง + อนุมัติต้นสังกัด ══ -->
   <table>
-    <tr><td class="sech" style="width:50%">ภาพก่อนซ่อม/ปรับปรุง</td><td class="sech" style="width:50%">ภาพหลังซ่อม/ปรับปรุง</td></tr>
-    <tr><td class="imgcell">${o.before_img ? `<img src="${esc(o.before_img)}"/>` : ''}</td><td class="imgcell">${o.after_img ? `<img src="${esc(o.after_img)}"/>` : ''}</td></tr>
+    <tr>
+      <td style="width:62%;height:118px">
+        <div>รายละเอียด (ผู้แจ้งซ่อม) &nbsp;&nbsp;${line('เป้าหมาย', beD(o.want_at), '95px')} ${line('เวลา', beTime(o.want_at), '45px')}</div>
+        <div style="margin-top:4px;font-weight:700">${esc(o.problem_characteristic || '')}</div>
+        <div style="white-space:pre-wrap">${esc(o.report_note || o.problem_detail || '')}</div>
+      </td>
+      <td style="width:19%;padding:0">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
+      <td style="width:19%;padding:0">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
+    </tr>
+    <tr>
+      <td rowspan="2" style="border-top:none"></td>
+      <td colspan="2" style="padding:0">${sg('ผู้จัดการโรงงาน', o.plant_manager_name, o.plant_manager_sign, o.plant_manager_at, 'MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ')}</td>
+    </tr>
   </table>
+
+  <!-- ══ ขั้นตอนการดำเนินการและแก้ไข ══ -->
+  <table>
+    <tr><td class="sec" colspan="2">ขั้นตอนการดำเนินการและแก้ไข (ซ่อมบำรุง)</td></tr>
+    <tr>
+      <td style="width:62%">
+        <div>สาเหตุเกิดจาก
+          (${o.cause_category === 'man' ? '✓' : '&nbsp;'}) คน
+          (${o.cause_category === 'method' ? '✓' : '&nbsp;'}) วิธีการทำงาน
+          (${o.cause_category === 'part_life' ? '✓' : '&nbsp;'}) อายุอะไหล่
+          (${o.cause_category === 'other' ? '✓' : '&nbsp;'}) อื่นๆ <span class="dot" style="min-width:60px">${esc(o.cause_other || '')}</span></div>
+        <div style="margin-top:4px">${line('รายละเอียด', o.assign_note || o.problem_detail, '330px')}</div>
+        <div style="margin-top:4px">${line('สาเหตุ', o.root_cause, '355px')}</div>
+        <div style="margin-top:4px">${line('การแก้ไข', o.solution, '345px')}</div>
+        <div style="margin-top:4px">${line('วันที่เริ่ม', beD(o.repair_start_at), '75px')} ${line('เวลา', beTime(o.repair_start_at), '40px')}
+          ${line('วันที่เสร็จ', beD(o.repair_done_at), '75px')} ${line('เวลา', beTime(o.repair_done_at), '40px')}</div>
+      </td>
+      <td style="width:38%;padding:0">
+        <div style="padding:2px 4px;border-bottom:1px solid #000">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</div>
+        <table class="nob" style="table-layout:fixed"><tr>
+          <td style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, null, o.accept_at)}</td>
+          <td style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, o.mo_approve_sign, o.mo_approved_at)}</td>
+        </tr></table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ══ ค่าใช้จ่าย ══ -->
+  <table><tr><td class="sec">ค่าใช้จ่ายในการดำเนินการ</td></tr></table>
   <table style="table-layout:fixed"><tr>
-    <td style="width:56%;padding:0;border:none">
-      <table class="tbl"><tr><th style="width:36px">ลำดับ</th><th>รายการใช้อะไหล่และอุปกรณ์</th><th style="width:70px">จำนวน</th><th style="width:110px">คนเบิก</th></tr>${partRows.join('')}</table>
-      <table class="nob" style="margin-top:3px"><tr><td>${cell('(1) ค่าใช้จ่ายในการซ่อม (บาท):', o.labor_cost != null ? Number(o.labor_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('(2) ค่าอะไหล่และอุปกรณ์ (บาท):', o.parts_cost != null ? Number(o.parts_cost).toLocaleString() : '')}</td></tr><tr><td>${cell('รวมค่าใช้จ่ายทั้งหมด (1)+(2):', (o.labor_cost != null || o.parts_cost != null) ? ((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString() : '')}</td></tr></table>
+    <td style="width:50%;padding:0;border-right:none">
+      <table class="tb">
+        <tr><th colspan="4">ค่าแรงในการปฏิบัติงาน</th></tr>
+        <tr><th style="width:34px">ลำดับ</th><th>ชื่อผู้ปฏิบัติงาน</th><th style="width:74px">ค่าแรง/ชม.</th><th style="width:62px">ราคา</th></tr>
+        ${laborHtml}
+        <tr><td colspan="3" style="font-size:8.5px">ค่าแรง : วิศวกร = 200 บาท/ช.ม., ช่างเทคนิค = 100 บาท/ช.ม. &nbsp;<b>(1) รวมค่าแรง</b></td><td class="r"><b>${money(sumL)}</b></td></tr>
+      </table>
     </td>
-    <td style="width:44%;padding:0;border:none;padding-left:6px">
-      <table class="tbl"><tr><th colspan="4" style="text-align:center">การประเมินความพึงพอใจการให้บริการงานซ่อม${satAv != null ? ` — เฉลี่ย ${Math.round(satAv / 3 * 100)}%` : ''}</th></tr>
-        <tr><th style="text-align:left">หัวข้อประเมิน</th><th style="width:44px">เฉยๆ</th><th style="width:44px">พอใจ</th><th style="width:56px">พอใจมาก</th></tr>
-        ${satRow('1. คุณภาพงานซ่อม', 'quality')}${satRow('2. ความเร็วในการตอบสนอง', 'response')}${satRow('3. ความสามารถในการแก้ไขปัญหา', 'problem')}${satRow('4. ความสุภาพ / PPE', 'politeness')}${satRow('5. ความพร้อมในการเข้าแก้ไขปัญหา', 'readiness')}
+    <td style="width:50%;padding:0">
+      <table class="tb">
+        <tr><th colspan="4">ค่าอะไหล่และอุปกรณ์</th></tr>
+        <tr><th style="width:34px">ลำดับ</th><th>รายการ</th><th style="width:74px">จำนวน/หน่วย</th><th style="width:62px">ราคา</th></tr>
+        ${partHtml}
+        <tr><td colspan="3"><b>(2) รวมค่าอะไหล่และอุปกรณ์</b></td><td class="r"><b>${money(sumP)}</b></td></tr>
       </table>
     </td>
   </tr></table>
-  <table class="signs"><tr>
-    <td style="width:50%"><div class="sgh">${esc(moSig[0] || 'ผู้ตรวจสอบและรับรอง')}</div><div class="sgimg">${o.ho_sign ? `<img src="${esc(o.ho_sign)}"/>` : ''}</div><div class="sgn">${esc(o.ho_checker || '')} ${o.ho_at ? '· ' + beD(o.ho_at) : ''}</div></td>
-    <td style="width:50%"><div class="sgh">${esc(moSig[1] || 'ผู้อนุมัติ (ผู้จัดการ)')}</div><div class="sgimg">${o.approve_sign ? `<img src="${esc(o.approve_sign)}"/>` : ''}</div><div class="sgn">${esc(o.approver_name || '')} ${o.approve_at ? '· ' + beD(o.approve_at) : ''}</div></td>
+  <table><tr><td style="text-align:right;padding:2px 6px"><b>รวมค่าแรงและค่าอะไหล่ &nbsp;(1) + (2) &nbsp;=&nbsp; <span class="dot" style="min-width:90px">${money(sumAll)}</span></b></td></tr></table>
+
+  <!-- ══ ความพึงพอใจ + ลายเซ็นท้ายใบ ══ -->
+  <table style="table-layout:fixed"><tr>
+    <td style="width:50%">
+      <div style="font-weight:700">แบบสำรวจความพึงพอใจหลังการปฏิบัติงานของหน่วยงานซ่อมบำรุง</div>
+      <div style="font-size:9px">กรุณาใส่เครื่องหมาย x ลงในช่องคะแนน</div>
+      <table class="tb" style="margin-top:2px">
+        <tr><th style="text-align:left">ความพึงพอใจ</th><th style="width:46px">พอใช้</th><th style="width:52px">ปานกลาง</th><th style="width:40px">ดี</th></tr>
+        ${satHtml}
+      </table>
+      <div style="margin-top:3px">${line('คะแนนรวม', ss.sum == null ? '' : `${ss.sum}/${ss.max}`, '60px')} ${line('คิดเป็น', ss.pct == null ? '' : `${ss.pct} %`, '55px')} ${line('ลงชื่อผู้ประเมิน', o.satisfaction_by, '85px')}</div>
+    </td>
+    <td style="width:50%;padding:0">
+      <table class="nob" style="table-layout:fixed"><tr>
+        <td style="width:50%;border-right:1px solid #000;border-bottom:1px solid #000">${sg('ผู้ตรวจสอบ (หัวหน้าช่าง)', o.checker_name, o.checker_sign, o.check_at)}</td>
+        <td style="width:50%;border-bottom:1px solid #000">${sg('รับรองโดย (ผจก.ส่วนซ่อมบำรุง)', o.approver_name, o.approve_sign, o.approve_at)}</td>
+      </tr></table>
+      <div style="padding:3px 5px">
+        <div>${line('ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน', o.cost_owner_dept, '110px')}</div>
+        <div style="margin-top:2px">และได้รับมอบงานเรียบร้อยแล้ว</div>
+      </div>
+      <div style="padding:0">${sg('ผู้จัดการ', o.cost_mgr_name, o.cost_mgr_sign, o.cost_mgr_at)}</div>
+    </td>
   </tr></table>
-  <div class="ft"><span>${[df.form_code, df.rev].filter(Boolean).join('-')}</span><span>${df.footer_note || ''}</span><span>${df.effective_date ? 'Effective : ' + df.effective_date : 'Issue Date : ..........'}</span></div>
+
+  <table><tr><td class="note">${line('ความคิดเห็นเพิ่มเติม', '', '0')}<span style="white-space:pre-wrap">${esc(o.extra_comment || '')}</span></td></tr></table>
+  <div class="ft"><span>${[df.form_code, df.rev].filter(Boolean).join('-')}</span><span>${df.footer_note || ''}</span><span>${df.effective_date ? 'Effective : ' + df.effective_date : ''}</span></div>
+
+  ${(o.before_img || o.after_img) ? `<div class="ph"><table>
+    <tr><td class="sec" style="width:50%">ภาพก่อนซ่อม/ปรับปรุง</td><td class="sec" style="width:50%">ภาพหลังซ่อม/ปรับปรุง</td></tr>
+    <tr><td class="phc">${o.before_img ? `<img src="${esc(o.before_img)}"/>` : ''}</td><td class="phc">${o.after_img ? `<img src="${esc(o.after_img)}"/>` : ''}</td></tr>
+    <tr><td colspan="2" style="font-size:9px">แนบท้ายใบ MO ${esc(o.mo_no || '')} — ${esc(dept)}</td></tr>
+  </table></div>` : ''}
+
   <script>window.onload=function(){setTimeout(function(){window.print()},500)}</script>
   </body></html>`;
   const w = window.open('', '_blank');
@@ -999,7 +1173,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
   const repeatIssue = ['เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'].includes(o.follow_up);
   const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
+  const [dlabor, setDlabor] = useState([]);   // ค่าแรงรายคน (ตาราง 5 แถวบนฟอร์ม MTN)
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
+  useEffect(() => { supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq').then(({ data }) => setDlabor(data || [])); }, [o.id]);
   /* 🔧 ช่างของทีมนี้ทำขั้น 2-3 ของ "ใบทีมตัวเอง" ได้ (feedback หน้างาน 2026-08-21)
      ที่มา: ช่างฝ่ายผลิตอยู่ระหว่างระดับส่วนกับระดับกลุ่ม — role ที่มีอยู่ไม่มีตัวไหนพอดี
      แทนที่จะเพิ่ม role ใหม่ (กฎเหล็ก: เจอแกนใหม่ให้เพิ่ม attribute) ใช้ 2 ชั้นคู่กัน:
@@ -1403,7 +1579,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, improvement
             const dept = o.mtn_dept || deptForItem(o.item_type);
             const key = teamKeyOf(dept) === 'maintenance' ? 'mo_report_mtn' : 'mo_report';
             const logo = await logoDataUrl(docFormSync(key).logo_url);
-            printMoReport(o, dparts, logo);
+            printMoReport(o, dparts, logo, dlabor);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
@@ -1451,11 +1627,18 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const hoCheckerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'ho_checker');
   const approverHist = useColumnHistory(supabaseDR, 'mtn_orders', 'approver_name');
   const o = order;
+  const isMtnForm = teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) === 'maintenance';  // ใช้ฟอร์ม FM-MTN
   const [f, setF] = useState(() => ({
     accepted_by: o.accepted_by || fullName || '', repair_type: o.repair_type || 'Breakdown Maintenance', assign_note: o.assign_note || '',
     target_done_at: o.target_done_at ? String(o.target_done_at).slice(0, 10) : '', assigned_to: o.assigned_to || '', reject_reason: o.reject_reason || '',
     root_cause: o.root_cause || '', solution: o.solution || '', tech_main: o.tech_main || '', tech_secondary: o.tech_secondary || '',
     labor_cost: o.labor_cost ?? '', parts_cost: o.parts_cost ?? '',
+    /* ── ช่องฟอร์มกระดาษทีม MTN (2026-09-15) ── */
+    mo_approved_by: o.mo_approved_by || '',
+    repair_start_at: o.repair_start_at ? localDt(o.repair_start_at) : '',
+    cause_category: o.cause_category || '', cause_other: o.cause_other || '',
+    satisfaction_by: o.satisfaction_by || '', cost_owner_dept: o.cost_owner_dept || '',
+    cost_mgr_name: o.cost_mgr_name || '', extra_comment: o.extra_comment || '',
     check_result: o.check_result || 'ตรวจสอบผ่าน', check_note: o.check_note || '', checker_name: o.checker_name || fullName || '',
     qa_result: o.qa_result || 'ผ่านคุณภาพ', qa_note: o.qa_note || '', qa_checker: o.qa_checker || fullName || '',
     qa_skip_reason: o.qa_skip_reason || '',
@@ -1468,6 +1651,18 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const afterUrl = useObjectUrl(afterFile), qaUrl = useObjectUrl(qaFile);
   const [sig, setSig] = useState({ mode: signatureUrl ? 'profile' : 'draw', url: signatureUrl, blob: null });
   const [usedParts, setUsedParts] = useState([]);
+  /* ตารางค่าแรงรายคนของฟอร์ม MTN (ชื่อ × ค่าแรง/ชม. × ชม.) — เดิมมีแค่ยอดรวมก้อนเดียว
+     เปิดแก้ไขขั้น 3 ให้โหลดของเดิมมาแสดง (ไม่งั้นบันทึกซ้ำแล้วค่าแรงหาย) */
+  const [laborRows, setLaborRows] = useState([]);
+  useEffect(() => {
+    if (step !== 3 || !isMtnForm) return;
+    let alive = true;
+    supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq')
+      .then(({ data }) => { if (alive && data?.length) setLaborRows(data.map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }))); });
+    return () => { alive = false; };
+  }, [step, isMtnForm, o.id]);
+  const addLabor = () => { touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
+  const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
   const [dirty, setDirty] = useState(false);
@@ -1477,13 +1672,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const isReject = step === 2 && f.repair_type === 'Reject MO';
   const needSign = [4, 5, 6, 7].includes(step) && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
 
-  const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '' }]); };
+  const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '', unit_price: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
   /* เลือกอะไหล่ผ่าน <SearchSelect> — คืน { id, text, opt }
      เลือกจากทะเบียน = ได้ part_id (หักสต็อกอัตโนมัติ) · พิมพ์เอง = part_id ว่าง เก็บแค่ชื่อ (ไม่หักสต็อก) */
   const pickPart = (i, { id, text, opt }) => {
     touch();
-    setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id || '', name: text || '', unit: opt?._unit ?? (id ? x.unit : '') } : x));
+    setUsedParts(p => p.map((x, j) => j === i ? { ...x, part_id: id || '', name: text || '', unit: opt?._unit ?? (id ? x.unit : ''),
+      // ราคา default จากทะเบียน (พิมพ์ทับได้) — ฟอร์ม MTN มีคอลัมน์ราคาต่อรายการ
+      unit_price: x.unit_price !== '' && x.unit_price != null ? x.unit_price : (parts.find(z => z.id === id)?.unit_price ?? '') } : x));
   };
   /* 🔩 ตัวเลือกอะไหล่ที่ "ค้นได้" (feedback หน้างาน 2026-08-24: อะไหล่หลักพัน <select> เลื่อนหาไม่เจอ)
      จัดกลุ่ม "ทีมของใบนี้" ขึ้นก่อน แต่ **ไม่ตัดทีมอื่นทิ้ง** — หลักเดียวกับลิสต์มอบหมายช่าง
@@ -1597,12 +1794,27 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
+        /* ฟอร์ม MTN มีลายเซ็น ผจก.ส่วนซ่อมบำรุง กลางใบ (อนุมัติให้เดินงาน) คนละจุดกับ "รับรองโดย" ท้ายใบ */
+        if (isMtnForm && f.mo_approved_by && !isReject) {
+          checkWrite(await supabaseDR.from('mtn_orders')
+            .update({ mo_approved_by: f.mo_approved_by, mo_approved_at: o.mo_approved_at || new Date().toISOString() }).eq('id', o.id),
+            'บันทึกผู้อนุมัติ MO (ช่องกลางใบพิมพ์จะว่าง)');
+        }
         // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
         if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
       } else if (step === 3) {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
+        /* ฟอร์ม MTN: วันที่เริ่ม/เสร็จ เป็นคนละจังหวะกับ "รับงาน" — ไม่กรอก = ถือว่าเริ่มตอนรับงาน
+           (ค่านี้คือ "ช่างลงมือจริง" ใช้แยก MTTA/MTTR ในแท็บ ⚙️ รายอุปกรณ์ ด้วย) */
+        if (isMtnForm) {
+          Object.assign(upd, {
+            repair_start_at: f.repair_start_at ? new Date(f.repair_start_at).toISOString() : (o.repair_start_at || o.accept_at || null),
+            cause_category: f.cause_category || null,
+            cause_other: f.cause_category === 'other' ? (f.cause_other || null) : null,
+          });
+        }
         // ⚠️ รูปพังห้ามลากบันทึกทั้งใบล้ม (feedback 2026-08-21: อ่านไฟล์รูปไม่ได้ →
         //    วิธีการแก้ไข/ช่างหลัก/ช่างรอง ที่พิมพ์มาหายหมด ช่างกดบันทึกซ้ำ 13 ครั้ง)
         //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
@@ -1624,7 +1836,31 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (imgWarn) toast.error(imgWarn);
         const usable = usedParts.filter(x => x.name && Number(x.qty) > 0);
         for (const p of usable) {
-          checkWrite(await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName }), 'บันทึกอะไหล่ที่ใช้ (ยอดตัดสต็อกจะไม่ตรงใบ)');
+          /* ราคาต่อหน่วย: ใช้ที่กรอก → ไม่กรอกก็ดึงจากทะเบียนอะไหล่ (mtn_spare_parts.unit_price)
+             ฟอร์มกระดาษมีคอลัมน์ "ราคา" ต่อแถว — เดิมเก็บแค่ยอดรวมที่พิมพ์มือ */
+          const up = p.unit_price !== '' && p.unit_price != null ? Number(p.unit_price)
+            : (parts.find(x => x.id === p.part_id)?.unit_price ?? null);
+          checkWrite(await supabaseDR.from('mtn_order_parts').insert({ order_id: o.id, part_id: p.part_id || null, part_name: p.name, qty: Number(p.qty), unit: p.unit, tech: f.tech_main, logged_by: fullName, unit_price: up, amount: up != null ? up * Number(p.qty) : null }), 'บันทึกอะไหล่ที่ใช้ (ยอดตัดสต็อกจะไม่ตรงใบ)');
+        }
+        /* ตารางค่าแรงรายคน (ฟอร์ม MTN) — ลบของเดิมก่อนแล้วเขียนใหม่ทั้งชุด
+           🔴 delete ล้ม = ห้าม insert ต่อ (ไม่งั้นค่าแรงซ้อนกัน 2 ชุด ยอดรวมเบิ้ล) */
+        if (isMtnForm) {
+          const rows = laborRows.filter(r => r.worker_name && (Number(r.rate_per_hour) > 0 || Number(r.hours) > 0));
+          const delOk = checkWrite(await supabaseDR.from('mtn_order_labor').delete().eq('order_id', o.id), 'ล้างค่าแรงเดิมของใบนี้');
+          if (delOk) {
+            for (let i = 0; i < rows.length; i++) {
+              const r = rows[i];
+              checkWrite(await supabaseDR.from('mtn_order_labor').insert({
+                order_id: o.id, seq: i + 1, worker_name: r.worker_name,
+                rate_per_hour: r.rate_per_hour === '' ? null : Number(r.rate_per_hour),
+                hours: r.hours === '' ? null : Number(r.hours),
+                amount: laborAmount({ rate_per_hour: r.rate_per_hour, hours: r.hours }),
+                logged_by: fullName,
+              }), 'บันทึกค่าแรงรายคน (ใบพิมพ์จะไม่มีตารางค่าแรง)');
+            }
+            const tot = sumLabor(rows);
+            if (tot != null) checkWrite(await supabaseDR.from('mtn_orders').update({ labor_cost: tot }).eq('id', o.id), 'อัปเดตยอดรวมค่าแรง');
+          }
         }
         // ตัดสต็อก: รวมยอดต่ออะไหล่ก่อน (กันนับซ้ำเมื่อใส่อะไหล่ตัวเดียวกัน 2 แถวในใบเดียว)
         // แล้วตัดผ่าน RPC `mtn_stock_move` — ล็อกแถว + กันติดลบ + ลง ledger ในทรานแซกชันเดียวฝั่ง DB
@@ -1672,7 +1908,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       } else if (step === 6) {
         const s = await resolveSign('ho_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น'); }
         { const sat = {}; SAT_DIMS.forEach(d => { const v = Number(f.satisfaction?.[d.key]); if (v >= 1 && v <= 3) sat[d.key] = v; });
-          Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null }); }
+          Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null });
+          if (isMtnForm) Object.assign(upd, {
+            satisfaction_by: f.satisfaction_by || null,
+            cost_owner_dept: f.cost_owner_dept || null,
+            cost_mgr_name: f.cost_mgr_name || null,
+            cost_mgr_at: f.cost_mgr_name ? (o.cost_mgr_at || new Date().toISOString()) : null,
+          }); }
         if (!editMode) { upd.status = 'handover'; upd.current_step = 6; upd.ho_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
@@ -1680,6 +1922,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       } else if (step === 7) {
         const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้อนุมัติ'); }
         Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
+        if (isMtnForm) upd.extra_comment = f.extra_comment || null;
         if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
@@ -1736,10 +1979,38 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             </Field>
             <DateField label="กำหนดเสร็จ" value={f.target_done_at} onChange={v => set('target_done_at', v)} />
             <Field label="ระบุรายละเอียด"><input value={f.assign_note} onChange={e => set('assign_note', e.target.value)} style={inp} /></Field>
+            {isMtnForm && (
+              <Field label="ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง) — ช่องกลางใบ">
+                <PersonSelect value={f.mo_approved_by} source="profiles" roles={DEPT_HEAD_ROLES} onChange={res => set('mo_approved_by', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อ ผจก.ส่วนซ่อมบำรุง" />
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>คนละช่องกับ “รับรองโดย” ท้ายใบ (ขั้น 7) — ฟอร์มกระดาษเซ็น 2 จุดคนละวัน</div>
+              </Field>
+            )}
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ)</div>}
           </>}
         </>}
         {step === 3 && <>
+          {isMtnForm && <>
+            <Field label="วันเวลาที่เริ่มลงมือซ่อม">
+              <input type="datetime-local" value={f.repair_start_at} onChange={e => set('repair_start_at', e.target.value)} max={localDtNow()} style={inp} />
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                ว่าง = ถือว่าเริ่มตอนรับงาน · ฟอร์มกระดาษแยก “วันที่รับแจ้ง / รับ MO / เริ่มซ่อม” คนละช่อง
+                — ค่านี้ทำให้แยก <b>เวลารอช่าง</b> ออกจาก <b>เวลาซ่อมจริง</b> ได้
+              </div>
+            </Field>
+            <Field label="สาเหตุเกิดจาก">
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {CAUSE_CATS.map(c => { const on = f.cause_category === c.key; return (
+                  <button key={c.key} type="button" onClick={() => set('cause_category', on ? '' : c.key)} style={{
+                    padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{c.label}</button>
+                ); })}
+              </div>
+              {f.cause_category === 'other' && (
+                <input value={f.cause_other} onChange={e => set('cause_other', e.target.value)} style={{ ...inp, marginTop: 6 }} placeholder="ระบุสาเหตุอื่นๆ เช่น ปรับปรุง" />
+              )}
+            </Field>
+          </>}
           <Field label="สาเหตุปัญหาที่เกิด"><textarea value={f.root_cause} onChange={e => set('root_cause', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <Field label="วิธีการแก้ไข"><textarea value={f.solution} onChange={e => set('solution', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1747,6 +2018,28 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             <Field label="ช่างซ่อมรอง"><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
           </div>
           <ImgField label="รูปหลังซ่อม" value={afterUrl || (editMode ? o.after_img : null)} onPick={f2 => { touch(); setAfterFile(f2); }} />
+          {isMtnForm && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={lbl}>ค่าแรงในการปฏิบัติงาน (รายคน) · วิศวกร 200 บาท/ชม. · ช่างเทคนิค 100 บาท/ชม.</label>
+                <button type="button" onClick={addLabor} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่มคน</button>
+              </div>
+              {laborRows.map((r, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PersonSelect value={r.worker_name} source="both" onChange={res => setLabor(i, 'worker_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ชื่อผู้ปฏิบัติงาน" />
+                  </div>
+                  <input type="number" min="0" value={r.rate_per_hour} onChange={e => setLabor(i, 'rate_per_hour', e.target.value)} style={{ ...inp, width: 90, flexShrink: 0 }} placeholder="บาท/ชม." />
+                  <span style={{ color: 'var(--muted)' }}>×</span>
+                  <input type="number" min="0" step="0.5" value={r.hours} onChange={e => setLabor(i, 'hours', e.target.value)} style={{ ...inp, width: 70, flexShrink: 0 }} placeholder="ชม." />
+                  <span style={{ width: 70, textAlign: 'right', fontWeight: 700, flexShrink: 0 }}>{laborAmount(r) == null ? '—' : laborAmount(r).toLocaleString()}</span>
+                  <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
+                </div>
+              ))}
+              {!laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
+              {sumLabor(laborRows) != null && <div style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 800, marginTop: 2 }}>(1) รวมค่าแรง {sumLabor(laborRows).toLocaleString()} บาท</div>}
+            </div>
+          )}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><label style={lbl}>อะไหล่ที่ใช้ · เลือกจากทะเบียน = หักสต็อกให้ · พิมพ์ชื่อเองได้ถ้าไม่มีในคลัง</label><button type="button" onClick={addPart} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่ม</button></div>
             {usedParts.map((p, i) => {
@@ -1764,6 +2057,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                       onChange={(v) => pickPart(i, v)}
                     />
                     <input type="number" min="0" value={p.qty} onChange={e => setPart(i, 'qty', e.target.value)} style={{ ...inp, width: 64, flexShrink: 0 }} />
+                    {isMtnForm && (
+                      <input type="number" min="0" value={p.unit_price ?? ''} onChange={e => setPart(i, 'unit_price', e.target.value)}
+                             style={{ ...inp, width: 86, flexShrink: 0 }} placeholder="ราคา/หน่วย"
+                             title="ว่าง = ดึงราคาจากทะเบียนอะไหล่ให้อัตโนมัติ" />
+                    )}
                     <span style={{ fontSize: 11, color: 'var(--muted)', width: 34, flexShrink: 0, paddingTop: 9, overflow: 'hidden' }}>{p.unit || ''}</span>
                     <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                   </div>
@@ -1836,9 +2134,22 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                 </div>
               ))}
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ให้คะแนนโดยหน่วยงานผู้แจ้ง — ไม่บังคับ ข้ามได้ (เว้นว่าง = ไม่ประเมิน)</div>
+              {(() => { const ss = satScore(f.satisfaction, SAT_DIMS.map(d => d.key));
+                return ss.sum == null ? null : (
+                  <div style={{ fontSize: 12.5, fontWeight: 800 }}>คะแนนรวม {ss.sum}/{ss.max} · คิดเป็น {ss.pct}%</div>
+                ); })()}
             </div>
           </Field>
+          {/* ── ท้ายใบฟอร์ม MTN: ผู้ประเมิน + เจ้าของค่าใช้จ่าย + ผู้จัดการรับมอบ ── */}
+          {isMtnForm && <>
+            <Field label="ลงชื่อผู้ประเมินความพึงพอใจ"><PersonSelect value={f.satisfaction_by} source="both" section={o.dept_section} onChange={res => set('satisfaction_by', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้ประเมิน" /></Field>
+            <Field label="ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน"><input value={f.cost_owner_dept} onChange={e => set('cost_owner_dept', e.target.value)} style={inp} placeholder={o.work_area || o.dept_section || 'ระบุหน่วยงานที่รับผิดชอบค่าใช้จ่าย'} /></Field>
+            <Field label="ผู้จัดการ (รับมอบงาน — ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+          </>}
         </>}
+        {step === 7 && isMtnForm && (
+          <Field label="ความคิดเห็นเพิ่มเติม (ท้ายใบ)"><textarea value={f.extra_comment} onChange={e => set('extra_comment', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
+        )}
         {step === 7 && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>

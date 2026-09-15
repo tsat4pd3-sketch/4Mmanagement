@@ -274,6 +274,38 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
   - **ยังไม่ทำ:**
  export ไฟล์ไปเทียบกับระบบส่วนกลาง (ทำเมื่อไหร่ต้อง register `/doc-forms` ตามกฎเอกสาร) · กราฟแนวโน้มรายเดือน · ยังไม่มี "ทะเบียนชื่อเล่นเครื่อง" (alias) ให้ map ชื่อที่คนพิมพ์เข้ากับเลขจริง
 
+- **🧾 ใบพิมพ์ทีม MTN = ฟอร์มกระดาษ 1:1 (2026-09-15 · user "MTN จะใช้รูปแบบใบเดิมเหมือน 100%")**
+  ต้นฉบับ = ใบ "ใบสั่งงานซ่อมบำรุง M/O" ที่ user ถ่ายมา (MO.No. MTN.2026/06-59) · `printMoReportMtn` ใน `MtnRepair.jsx`
+  · **ทีม JIG/DIE/PRODUCTION ยังใช้ FM-JIG-008 เดิม ไม่กระทบ** (คนละฟังก์ชัน แยกด้วย `teamKeyOf(...) === 'maintenance'`)
+  · ช่องกรอกใหม่ทั้งหมด **โชว์เฉพาะใบที่แจ้งถึงทีม MTN** — ทีมอื่นฟอร์มเดิมเป๊ะ
+  - **3 จุดที่เคยแม็พผิดความหมาย (แก้แล้ว):**
+    | ช่องบนกระดาษ | เคยดึงมาจาก | แก้เป็น |
+    |---|---|---|
+    | ผู้ออก M/O (ตัวบรรจง) | `accepted_by`/`accept_at` (ฝั่งช่าง) | `reported_by_name`/`report_at` |
+    | วันที่เริ่ม → วันที่เสร็จ | `accept_at` → `repair_done_at` | **`repair_start_at`** → `repair_done_at` |
+    | ช่องเซ็น "ผู้ตรวจสอบ (หัวหน้าช่าง)" | `ho_sign` (ผู้รับมอบ) | `checker_name`/`checker_sign` |
+    🔴 ข้อ 2 สำคัญกับ MTTA/MTTR: ใบตัวอย่างจริง **รับแจ้ง 17/6 · รับ MO 22/6 · เริ่มซ่อม 21/7 13:00 · เสร็จ 14:00**
+    = รอ 34 วัน ซ่อมจริง 1 ชั่วโมง · เอา `accept_at` ไปเป็น "เวลาเริ่ม" จะได้ MTTR 29 วัน ทั้งที่ช่างลงมือชั่วโมงเดียว
+  - **คอลัมน์ใหม่ (migration `20260915_mtn_form_parity_fm_mtn.sql` — apply แล้ว 15/09):**
+    `contact_phone` · `pr_no` · `io_no` · `purpose` (repair/improve/service/build — เดิมเดาจาก repair_type ได้แค่ 2 แบบ)
+    · `repair_start_at` · `cause_category` (man/method/part_life/other) + `cause_other`
+    · `dept_manager_*` (ผู้จัดการต้นสังกัด) · `plant_manager_*` (ผจก.โรงงาน — เฉพาะงาน "สร้าง" ตามข้อความบนฟอร์ม)
+    · `mo_approved_*` (ผจก.ส่วนซ่อมบำรุงกลางใบ — **คนละจุดกับ `approve_*` ท้ายใบ** ใบจริงเซ็น 2 จุดคนละวัน 22/6 กับ 17/8)
+    · `cost_owner_dept` + `cost_mgr_*` (ค่าใช้จ่ายเป็นของหน่วยงาน + ผู้จัดการรับมอบ) · `extra_comment` · `satisfaction_by`
+    · `mtn_order_parts.unit_price/amount` (ฟอร์มมีคอลัมน์ราคาต่อแถว) · ตารางใหม่ **`mtn_order_labor`** (ค่าแรงรายคน: ชื่อ × บาท/ชม. × ชม.)
+    · ทุกคอลัมน์ nullable ไม่มี default ⇒ ใบเก่าพิมพ์ออกมาช่องว่างเหมือนเดิม · `mtn_order_labor` RLS anon-open ชุดเดียวกับ `mtn_order_parts`
+  - **สูตรเงิน/คะแนนอยู่ `src/utils/mtnMoForm.js` ที่เดียว (pure · เทส 7 เคส) ห้ามคิดเลขซ้ำในหน้า/ใบพิมพ์**
+    `laborAmount` = amount ที่กรอกเอง → ไม่มีก็ rate×hours · `partAmount` = amount → qty×unit_price
+    · `grandTotal(labor, parts, fallbackLabor, fallbackParts)` — **ใบเก่าที่ยังไม่มีตารางรายคน ถอยไปใช้ `labor_cost`/`parts_cost` เดิม**
+    · ไม่มีใครกรอกเงินเลย = **null (ช่องบนใบว่าง) ห้ามเป็น 0**
+  - **ความพึงพอใจปรับให้ตรงกระดาษ** — ป้ายหัวข้อ (คุณภาพงาน · ความรวดเร็วในการทำงาน · ความสามารถในการแก้ปัญหา · ความสุภาพ · **ความกระตือรือร้น**)
+    + สเกล **พอใช้(1) / ปานกลาง(2) / ดี(3)** + คะแนนรวม + % + ลงชื่อผู้ประเมิน
+    · **คีย์ใน jsonb ไม่เปลี่ยน** (`quality/response/problem/politeness/readiness`) ข้อมูลเก่าจึงยังอ่านได้ทั้งหมด
+    · % คิดจากคะแนนเต็มของ**ข้อที่ให้คะแนนมาจริง** (ข้อที่เว้นว่างไม่ถูกนับเป็น 0)
+  - **รูปก่อน/หลังไม่มีบนกระดาษ** → ย้ายไป **หน้า 2** และพิมพ์เฉพาะเมื่อมีรูปจริง (หน้าแรกต้องเหมือนต้นฉบับ)
+  - **ยังไม่เปลี่ยน:** รูปแบบเลข MO — ระบบออก `PRO-BM-150926-0343` (ทีม-ชนิดงาน-วันที่-running จาก RPC `mtn_assign_mo_no`)
+    ส่วนกระดาษเขียน `MTN.2026/06-59` (ปี/เดือน-running) · เปลี่ยนเมื่อไหร่กระทบเลขอ้างอิงทุกใบที่ออกไปแล้ว — **ต้องให้ user สั่งก่อน**
+
 - **สิทธิ์ (role_permissions):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · ที่เหลือดูตารางในกฎเหล็กด้านบน · ปุ่ม action แต่ละขั้นเช็คผ่าน `canDoStep()` (ไม่ hardcode role array)
 - **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
 - **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`
