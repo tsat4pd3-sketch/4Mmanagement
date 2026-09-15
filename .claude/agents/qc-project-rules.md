@@ -34,6 +34,17 @@ model: inherit
   (ตัด 08:00 + local time) ไม่มี copy ไหนเพี้ยน
 - **A4** บอร์ดเวลา (Heijunka/Shipping/Rack/Store) ต้องใช้ `frameMin`/`frameMinFromIso`/`breaksToFrame`
   จาก `src/utils/timeFrame.js` — ห้ามเขียน wrap นาทีเอง
+- **A5** 🔴 **downtime ที่ทับเวลาพักตามนโยบาย ห้ามหักซ้ำ** (2026-09-15 · docs/modules/oee.md)
+  พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาแล้ว — โค้ดที่เอานาที downtime ไปหักจากฐานเวลา
+  (`netAvail` · `runMin` · `wLoad` = `shift_min − plannedMin` · `strictOee.plannedDtMin` · `upMin`/MTBF)
+  ต้องผ่าน `dtMinOutsideBreaks()` / `dtMinBySession()` จาก `src/utils/oee.js`
+  · grep หา pattern ต้องสงสัย: `category === 'planned'` หรือ `category !== 'planned'` ที่ตามด้วย
+    `.reduce(... duration_min ...)` **แล้วผลถูกเอาไปลบออกจากเวลากะ** — ถ้าเจอ = ขัดกฎ
+  · ยกเว้น (ถูกต้องแล้ว): จุดที่ตอบ "เครื่องหยุดกี่นาที" — พาเรโต · มูลค่าความเสียหาย · MTTR ·
+    ตารางรายการ DT · `groupLean` — พวกนี้ใช้ `duration_min` เต็ม **ห้ามไปตัด**
+- **A6** ห้ามสร้างช่วงเวลาพักเอง — `break_policies` → ช่วงเวลา ต้องผ่าน `breakIntervalsIn()` /
+  `policyBreakOverlapMin()` / `policyBreakForShift()` เท่านั้น (เคยมีสูตรซ้ำ 4 ชุด ให้ผลต่างกัน
+  · ชุดที่เขียนเองมักตก `process_type = null` และ `ot_scope` → นับพักเกิน 20 นาทีทุกกะเช้าที่ทำโอ)
 
 ### หมวด B — Supabase 2 projects (กฎเหล็ก)
 - **B1** ตารางฝั่ง DR (production_sessions, downtime_logs, defect_logs, machines, prod_orders,
