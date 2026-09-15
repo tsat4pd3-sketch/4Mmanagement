@@ -25,6 +25,7 @@ import { modelRuns, forecastEnd } from '../utils/qaFmeForecast';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { cachedMaster } from '../utils/masterCache';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { visibleInterval } from '../utils/usePolling';
 
 const STAGE = {
@@ -46,6 +47,7 @@ const getWorkDate = () => {
 };
 
 export default function QaFmeBoard({ scopedLineNames, onOpen }) {
+  const scopeKey = (scopedLineNames || []).join('|');   // prop เป็น array — พ่อสร้างใบใหม่ทุก render
   // วันงานต้องกลิ้งตามเวลาจริง — จอ QA เปิดค้างข้าม 08:00 ได้ ถ้าล็อกไว้ตอน mount บอร์ดจะค้างวันเก่าเงียบๆ
   const [wd, setWd] = useState(() => getWorkDate());
   const [obs, setObs] = useState([]);
@@ -116,10 +118,16 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
       console.warn('QaFmeBoard forecast:', e?.message || e);
       setRuns([]);
     }
-  }, [wd, scopedLineNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey แทน scopedLineNames (array prop)
+  }, [wd, scopeKey]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => visibleInterval(() => { setNow(Date.now()); setWd(getWorkDate()); load(); }, RATE.BOARD), [load]);
+  /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+     array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
+     (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
+  /* 🔴 2026-09-15 — เดิม poll ล้วนไม่มี realtime · ดู src/utils/useLiveBoard.js
+     นาฬิกา/วันงานยังเดินตามเดิมด้วย visibleInterval (ไม่ยิง DB) */
+  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders', 'qa_fme_obligations'], topic: 'qa-fme-board' });
+  useEffect(() => visibleInterval(() => { setNow(Date.now()); setWd(getWorkDate()); }, RATE.BOARD), []);
 
   const nowMin = useMemo(() => {
     if (wd !== getWorkDate()) return null;      // ไม่ใช่วันงานปัจจุบัน = ไม่วาด playhead
