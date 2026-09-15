@@ -29,6 +29,7 @@ import { isDie } from '../utils/equipmentKinds';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
 import MachineReliability from '../components/MachineReliability';
+import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 
@@ -258,13 +259,18 @@ export default function MtnRepair() {
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
-    { key: 'kpi', label: '📊 KPI' },
-    { key: 'equip', label: '⚙️ รายอุปกรณ์ (MTTR/MTBF)' },   // นับจาก downtime จริง — คำขอทีม MTN 2026-09-11
+    /* 📊 KPI ช่าง = ที่เดียวจบ (2026-09-15 · คำสั่ง user "KPI กับ MTTR/MTBF/MTTA ควรอยู่ tab เดียวกัน
+       เพราะมันคือ KPI ช่าง") — เดิมแยกเป็น 📊 KPI (จากใบซ่อม MO) กับ ⚙️ รายอุปกรณ์ (จาก downtime จริง)
+       ทำให้คนต้องสลับแท็บเพื่อตอบคำถามเดียวกัน · `?tab=equip` เก่าถูก redirect มาที่นี่ (ดู useEffect ล่าง) */
+    { key: 'kpi', label: '📊 KPI ช่าง' },
     { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
     { key: 'rack', label: '🗺️ ผังคลัง' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
   ];
-  const [tab, setTab] = useTabParam(TAB_DEFS.map(t => t.key), 'list');
+  // 'equip' = คีย์เก่าที่ยุบเข้า 'kpi' แล้ว — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
+  // แล้วเด้งไปแท็บ default (รายการ MO) = บุ๊กมาร์กของทีมช่างพาไปผิดที่เงียบๆ
+  const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'equip'], 'list');
+  useEffect(() => { if (tab === 'equip') setTab('kpi', { replace: true }); }, [tab, setTab]);
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -433,8 +439,8 @@ export default function MtnRepair() {
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs} />}
-      {tab === 'equip' && <MachineReliability machines={machines} lineObjs={scopedLineObjs} scopeLines={scopeLines} />}
+      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs}
+        machines={machines} />}
       {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
       {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
@@ -1639,7 +1645,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 }
 
 /* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineObjs = [] }) {
+function KpiTab({ orders, scopeLines, lineObjs = [], machines = [] }) {
   const [line, setLine] = useState('');
   const [days, setDays] = useState(30);
   const rows = useMemo(() => {
@@ -1649,31 +1655,41 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
     const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
     return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
   }, [orders, scopeLines, line, days, lineObjs]);
-  const [openGroup, setOpenGroup] = useState(null);   // กลุ่มที่กางดูหัวข้อย่อยในพาเรโต้
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
     for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
-    const byChar = {}; rows.forEach(o => { const k = o.problem_characteristic || 'อื่นๆ'; byChar[k] = (byChar[k] || 0) + 1; });
-    /* พาเรโต้ 2 ระดับ (feedback ทีมงาน 2026-08-11) — กลุ่มใหญ่ก่อน แล้วเจาะเข้าไปดูหัวข้อย่อย
-       ⚠️ ใบเก่าที่แจ้งก่อนมีกลุ่ม จะไม่มี problem_group → ตกกลุ่ม "ไม่ระบุกลุ่ม"
-          ห้ามยัดเข้ากลุ่มใดกลุ่มหนึ่งมั่ว (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
-    const byGroup = {};
-    rows.forEach(o => {
-      const g = (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม';
-      const c = o.problem_characteristic || 'อื่นๆ';
-      const e = (byGroup[g] ||= { n: 0, subs: {} });
-      e.n++; e.subs[c] = (e.subs[c] || 0) + 1;
-    });
-    const paretoGroup = Object.entries(byGroup).sort((a, b) => b[1].n - a[1].n)
-      .map(([g, e]) => ({ group: g, n: e.n, subs: Object.entries(e.subs).sort((a, b) => b[1] - a[1]) }));
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
     const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), pareto: Object.entries(byChar).sort((a, b) => b[1] - a[1]).slice(0, 10), paretoGroup, satOverall, satByDim, satN: rated.length };
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), satOverall, satByDim, satN: rated.length };
   }, [rows]);
-  const Card = ({ t, v, c }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 160 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div></div>;
+
+  /* พาเรโตลักษณะปัญหา — ป้อน "แถวดิบ" ให้ `ParetoAbcChart` (component กลางตาม UI-CONVENTIONS §304)
+     1 ใบ = 1 แถว (value 1 = นับใบ) · กราฟจัด ABC + เส้นสะสม + เส้น 80% + เจาะลึกให้เอง
+     ⇒ แทนพาเรโต้ 2 ใบที่เคยวาดเอง (กลุ่มใหญ่ + Top 10 หัวข้อ) ซึ่งเป็นแค่แท่งเรียง ไม่มีเส้นสะสม
+        และ "Top 10" ยังตัดหางทิ้งจนคิด % สะสมไม่ได้ · การเจาะหัวข้อย่อยย้ายไปเป็นมิติ 🛑 หัวข้อย่อย
+     ⚠️ ใบเก่าที่แจ้งก่อนระบบมีการจัดกลุ่ม ไม่มี problem_group → 'ไม่ระบุกลุ่ม'
+        ห้ามเดากลุ่มย้อนหลังให้ (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
+  const paretoRecords = useMemo(() => rows.map(o => ({
+    cat: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
+    value: 1,
+    sub: o.problem_characteristic || 'อื่นๆ',
+    machine: o.machine_no || '(ไม่ระบุเครื่อง)',
+    line: o.line_name || '(ไม่ระบุไลน์)',
+    item: o.item_type || '(ไม่ระบุชนิด)',
+    note: o.report_note || '',
+  })), [rows]);
+  const PARETO_DIMS = [
+    { key: 'sub', label: '🛑 หัวข้อย่อย' },
+    { key: 'machine', label: '⚙️ เครื่อง/อุปกรณ์' },
+    { key: 'line', label: '🏭 ไลน์' },
+    { key: 'item', label: '🔧 ชนิดอุปกรณ์' },
+    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+  ];
+  // h = คำแปลของชื่อย่อสากล — ต้องอ่านได้บนจอเลย ห้ามซ่อนใน tooltip อย่างเดียว (จอ TV ไม่มี hover)
+  const Card = ({ t, v, c, h }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>{h && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}</div>;
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -1681,8 +1697,16 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
         <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
       </div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
+        📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
+        · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
+        <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
+      </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} /><Card t="เข้าดำเนินการเฉลี่ย (Response)" v={fmtMin(stat.resp)} c="#3b82f6" /><Card t="เวลาซ่อมเฉลี่ย (TTR)" v={fmtMin(stat.ttr)} c="#f59e0b" /><Card t="Breakdown เฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" />
+        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} />
+        <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
+        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง)" />
+        <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />
         <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
       {stat.satN > 0 && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
@@ -1695,41 +1719,29 @@ function KpiTab({ orders, scopeLines, lineObjs = [] }) {
           </div>
         ); })}
       </div>}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>พาเรโต้ ลักษณะปัญหา — ตามกลุ่มใหญ่</div>
-        {/* กลุ่มใหญ่ก่อน กดแตกดูหัวข้อย่อย — ดูภาพรวมได้ก่อนจมกับ 29 แท่งเตี้ยๆ */}
-        {stat.paretoGroup.map(g => {
-          const max = stat.paretoGroup[0].n;
-          const open = openGroup === g.group;
-          return (
-            <div key={g.group} style={{ marginBottom: 5 }}>
-              <div onClick={() => setOpenGroup(open ? null : g.group)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <div style={{ width: 190, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {open ? '▾' : '▸'} {g.group}
-                </div>
-                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
-                  <div style={{ width: `${(g.n / max) * 100}%`, height: '100%', background: g.group === 'ไม่ระบุกลุ่ม' ? '#6b7280' : '#f59e0b' }} />
-                </div>
-                <div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{g.n}</div>
-              </div>
-              {open && g.subs.map(([c, n]) => (
-                <div key={c} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, paddingLeft: 16 }}>
-                  <div style={{ width: 174, fontSize: 11.5, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c}</div>
-                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${(n / g.n) * 100}%`, height: '100%', background: '#fbbf24' }} />
-                  </div>
-                  <div style={{ width: 34, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>{n}</div>
-                </div>))}
-            </div>);
-        })}
-        {stat.paretoGroup.some(g => g.group === 'ไม่ระบุกลุ่ม') && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
-            ⚪ "ไม่ระบุกลุ่ม" = ใบที่แจ้งก่อนระบบมีการจัดกลุ่ม (ระบบไม่เดากลุ่มย้อนหลังให้ — ใบเก่าเก็บเป็นข้อความ ไม่รู้กลุ่มจริง)
-          </div>)}
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '14px 0 8px' }}>รายหัวข้อ (Top 10 ทั้งหมด)</div>
-        {stat.pareto.map(([k, n]) => { const max = stat.pareto[0][1]; return <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}><div style={{ width: 190, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k}</div><div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${(n / max) * 100}%`, height: '100%', background: '#f59e0b' }} /></div><div style={{ width: 34, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{n}</div></div>; })}
-        {!stat.pareto.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูลในช่วงนี้</div>}
+      {/* พาเรโตลักษณะปัญหา — component กลาง (ABC + เส้นสะสม % + เส้น 80% + เจาะลึก)
+          เดิมวาดเองเป็นแท่งเรียงเฉยๆ 2 ใบ · ตอนนี้เป็น Pareto ตามหลักสากลใบเดียว เจาะหัวข้อย่อยได้ */}
+      <ParetoAbcChart
+        title="พาเรโตลักษณะปัญหา (ใบซ่อมที่ปิดแล้ว)"
+        records={paretoRecords} dims={PARETO_DIMS} unit="ใบ"
+        emptyText="ไม่มีใบซ่อมที่ปิดแล้วในช่วงนี้"
+        sectionStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
+        titleStyle={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }} />
+
+      {/* ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — เดิมเป็นแท็บแยก ยุบเข้ามาที่นี่ (คำสั่ง user 2026-09-15)
+          🔴 คนละฐานกับการ์ดข้างบน: ข้างบนนับจาก "ใบซ่อม MO" · ข้างล่างนับจาก "downtime จริงของเครื่อง"
+             ⇒ MTTR 2 ตัวไม่เท่ากันเป็นเรื่องปกติ **ต้องมีป้ายกำกับที่มาเสมอ** ไม่งั้นกลายเป็น
+             "จอเดียวกันตอบคนละเลข" (บทเรียนเดิมของโมดูลนี้) */}
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border2)' }}>
+        {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
+            ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
+          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
+          นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง
+        </div>
+        <MachineReliability machines={machines} lineObjs={lineObjs} scopeLines={scopeLines} />
       </div>
     </div>
   );
