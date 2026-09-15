@@ -131,3 +131,28 @@ test('ชื่อไฟล์เดียวกัน = ซ้ำเสมอ �
     window_start: at(6).toISOString(), window_end: at(8).toISOString(), uploaded_at: at(8).toISOString() }];
   assert.equal(findDuplicateUploads(batches, { fileName: 'same.xlsx', windowStart: at(1), windowEnd: at(3), dock: 'B5' })[0].reason, 'same_file');
 });
+
+/* ── MAT ต้องตรง — เลขพาร์ทลูกค้าตัวเดียวมีหลาย MAT (2026-09-15) ─────────────── */
+test('🔴 ห้ามทับใบของ MAT อื่น ที่บังเอิญ normalize เลขพาร์ทลูกค้าแล้วเหมือนกัน', () => {
+  const groups = aggregateSignals([sig('RB3B-16E060-BA', 'B5', 6, 4, 40)]);
+  const orders = [
+    // ใบของอีก MAT (10100384) เวลาใกล้กว่า — เดิมจะถูกเลือกแล้วทับ
+    { id: 'wrong', customer_part_no: 'RB3B 16E060 BA', mat_no: '10100384', qty: 50,
+      due_date: '2026-09-15', ship_time: '09:00', status: 'pending', dock_code: null, pull_batch_id: null },
+    { id: 'right', customer_part_no: 'RB3B 16E060 BA', mat_no: '10100385', qty: 50,
+      due_date: '2026-09-15', ship_time: '09:30', status: 'pending', dock_code: null, pull_batch_id: null },
+  ];
+  const plan = planOrderUpdates(groups, orders, () => ({ mat: '10100385', status: 'ok', candidates: [] }),
+    { windowStart: at(6), targetAt: at(9), dock: 'B5', ownBatchIds: [] });
+  assert.equal(plan[0].action, 'update');
+  assert.equal(plan[0].order.id, 'right', 'ต้องเลือกใบที่ MAT ตรง ไม่ใช่ใบที่เวลาใกล้กว่า');
+});
+
+test('ใบที่ยังไม่มี MAT ยังจับด้วยเลขพาร์ทลูกค้าได้ตามเดิม', () => {
+  const groups = aggregateSignals([sig('RB3B-16E060-BA', 'B5', 6, 4, 40)]);
+  const orders = [{ id: 'nomat', customer_part_no: 'RB3B 16E060 BA', mat_no: null, qty: 50,
+    due_date: '2026-09-15', ship_time: '09:00', status: 'pending', dock_code: null, pull_batch_id: null }];
+  const plan = planOrderUpdates(groups, orders, () => ({ mat: '10100385', status: 'ok', candidates: [] }),
+    { windowStart: at(6), targetAt: at(9), dock: 'B5', ownBatchIds: [] });
+  assert.equal(plan[0].action, 'update');
+});

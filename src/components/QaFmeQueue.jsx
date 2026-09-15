@@ -22,6 +22,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { cachedMaster } from '../utils/masterCache';
 import { assessFmeReadiness } from '../utils/qaFmeReadiness';
 import QaFmeBoard from './QaFmeBoard';
@@ -77,12 +78,12 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
     setRows((obs || []).filter(o => !ok || ok.has(o.line_name)));
   }, [scopedLineNames]);
 
-  useEffect(() => { load(); }, [load]);
-  /* ⚠️ ยิง DB ต้องผ่าน usePolling — แท็บซ่อน/ล็อกจอแล้วต้องหยุดยิง (กฎ egress)
-     และตัวสร้างงานคือ cron ฝั่ง server ทุก 5 นาที → poll ถี่กว่านั้นไม่ทำให้ QA รู้เร็วขึ้นเลย
-     (เดิม setInterval 60 วิ = ถี่กว่าทุก RATE ในระบบ 5-10 เท่า และยิงต่อแม้ไม่มีคนดู)
+  /* 🔴 2026-09-15 — ตัวสร้างงานคือ cron ฝั่ง server ทุก 5 นาที ⇒ poll ถี่ไม่ทำให้ QA รู้เร็วขึ้น
+     ตอนนี้ `qa_fme_obligations` อยู่ใน realtime publication แล้ว (migration รอบนี้)
+     ⇒ cron สร้างงาน = จอรู้ทันที · ไม่มีงานใหม่ = ไม่ยิง DB เลย · ดู src/utils/useLiveBoard.js
+     ⚠️ ตารางนี้อยู่ **Main project** ต้องส่ง client มาด้วย (default ของ hook คือ supabaseDR)
      นาฬิกาแยกไว้ต่างหาก — ไม่ยิง DB จึงเดินได้ตามปกติให้ตัวนับเวลาบนจอไม่ค้าง */
-  usePolling(load, RATE.ANALYTIC);
+  useLiveBoard(load, { tables: ['qa_fme_obligations'], topic: 'qa-fme-queue', client: supabase, rate: RATE.ANALYTIC });
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(t);
