@@ -74,6 +74,7 @@ const DailyChecker = lazy(() => import('./pages/DailyChecker'));
 const CommandPalette = lazy(() => import('./components/CommandPalette'));
 const DocFormsRegistry = lazy(() => import('./pages/DocFormsRegistry'));
 const MorningMeeting = lazy(() => import('./pages/MorningMeeting'));
+// 🏛️ OBEYA — หน้าเดียว 2 แท็บ: บอร์ด KPI ส่วนงาน (กระดาษผนัง) + จอมอนิเตอร์ SQDCM
 const Obeya = lazy(() => import('./pages/Obeya'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
@@ -109,10 +110,12 @@ export const NAV_ITEMS = [
   // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
   { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
-  /* 🏛️ OBEYA — บอร์ด SQDCM หน้าเดียว (กระดาษ A4 สิบแผ่นปูเต็มจอ) + ลูปปิด countermeasure
-     ต่างจากจอภาพรวมใบอื่น: ตัดตาม **แกน S-Q-D-C-M** ไม่ใช่ตามส่วนงาน และเป็นที่เดียวที่
-     "สิ่งที่ตกลงกันว่าจะแก้" ถูกบันทึก+ตามจนปิด (docs/OBEYA-DESIGN.md) */
-  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (SQDCM)',      group: 'ภาพรวม' },
+  /* 🏛️ OBEYA — 2 แท็บในหน้าเดียว (รวมงาน 2 session · 2026-09-15 ดูหัวไฟล์ pages/Obeya.jsx)
+       ?tab=kpi   บอร์ด KPI ส่วนงาน — ยุบกระดาษ "OBEYA KPI monitoring" ที่แปะผนัง (เดือน × กลุ่มไลน์ × 8 หัวข้อ)
+       ?tab=sqdcm จอมอนิเตอร์ SQDCM — กระดาษ A4 สิบแผ่นปูเต็มจอ TV + ACTION BOARD ปิดลูป
+     อยู่หมวด "ภาพรวม" ไม่ใช่ "จอแสดงผล" เพราะหน้านี้ **เขียนข้อมูลได้** (บันทึกเหตุความปลอดภัย /
+     ตั้ง-ปิด Action) ไม่ใช่จอที่แขวนทิ้งไว้เฉยๆ · deep-link ต่อจอ: ?section=PD3 · ?tab=sqdcm */
+  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI ส่วนงาน + SQDCM)', group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)

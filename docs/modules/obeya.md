@@ -1,7 +1,22 @@
 # 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya`)
 
-> หน้า `src/pages/Obeya.jsx` · KPI `src/utils/obeyaKpi.js` · migration `20260915_obeya_action_loop.sql` (Main — **apply แล้ว 2026-09-15**)
+> หน้า **`src/components/ObeyaSqdcmBoard.jsx`** (แท็บ `?tab=sqdcm` ของ `/obeya` — ดูกล่องด้านล่าง) · KPI `src/utils/obeyaKpi.js` · migration `20260915_obeya_action_loop.sql` (Main — **apply แล้ว 2026-09-15**)
 > ออกแบบ/สำรวจก่อนลงมือ: `docs/OBEYA-DESIGN.md` — **อ่านก่อนแก้หน้านี้เสมอ** (มีเหตุผลว่าทำไมหน้านี้ถึงไม่ใช่ dashboard ใบที่ 10)
+
+---
+
+> ## 🔀 2026-09-15 — `/obeya` เป็น **หน้าเดียว 2 แท็บ** (รวมงาน 2 session)
+> สอง session ทำ `/obeya` คนละมุมพร้อมกันโดยไม่รู้ว่าอีกฝั่งทำอยู่ (`claude/obeya-kpi-dashboard-85xbgm`
+> กับ `claude/oee-report-ppt-export-tjojy0`) — ทั้งคู่มาจากคำสั่ง user คนละครั้งและ**ไม่ทับกัน** จึงรวมเป็นแท็บ:
+>
+> | แท็บ | คือ | ไฟล์ | เอกสาร |
+> |---|---|---|---|
+> | `?tab=kpi` (default) | 📋 บอร์ด KPI ส่วนงาน — ราย**เดือน** × กลุ่มไลน์ × 8 หัวข้อ (กระดาษที่แปะผนัง) | `src/components/ObeyaKpiBoard.jsx` | `docs/modules/obeya-kpi-board.md` |
+> | `?tab=sqdcm` | 🖥️ จอมอนิเตอร์ SQDCM — ราย**วัน/สัปดาห์/เดือน** × แกน SQDCM + ACTION BOARD | `src/components/ObeyaSqdcmBoard.jsx` | `docs/modules/obeya.md` |
+>
+> `src/pages/Obeya.jsx` เหลือเป็น**เปลือกสลับแท็บ** (`useTabParam`) เท่านั้น
+> **🔴 ห้ามยุบ 2 แท็บเป็นบอร์ดเดียว** — คนละหน่วยเวลา (เดือน vs วัน) · คนละแกนตัด (กลุ่มไลน์ vs แกน SQDCM)
+> · คนละเจ้าของตัวเลข (บัญชี/ลูกค้ากรอกมือ vs ระบบคำนวณสด) · ยุบรวม = ไม่ตรงกระดาษและไม่ตรงหน้างานพร้อมกันทั้งคู่
 
 ---
 
