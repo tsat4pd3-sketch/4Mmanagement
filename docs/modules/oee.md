@@ -280,7 +280,23 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 > - **ยอดรวม "ภาพใหญ่" ยุบขั้นเข้าพาร์ทจริงผ่าน `collapseOps(perMat, opMap)` / `orderTotal(orders, pick, pairOf, opMap)` ใน `src/utils/pairTotals.js`** — กติกา: พาร์ทจริงอยู่ในชุดข้อมูล = ตัวจริงถือยอด ขั้นถูกตัดทิ้ง · พาร์ทจริงไม่อยู่ = ใช้ max ของขั้นพี่น้อง · **OP ที่ parent=null = นับแบบเดิม + ขึ้น worklist เหลืองใน `/products`** (ห้ามซ่อน — ให้คนไปผูก)
 > - **opMap โหลดผ่าน `loadOpInfo()` / อ่านด้วย `opInfoSync()` (`src/utils/opItems.js`)** — best-effort: migration ยังไม่ apply = `{}` = พฤติกรรมเดิมเป๊ะ · จุดที่ collapse แล้ว: DailyReport (สรุปทั้งกะ) · FactoryMap (live+review+story modal) · Dashboard · DeptDashboard · MorningMeeting · OEEAnalytics (tdKpi+trend) · GroupOverview · monthlyReviewPptx — **จอสรุปใหม่ที่รวมยอดข้ามพาร์ท ต้องส่ง opMap เข้า collapseOps/orderTotal เสมอ**
 > - **📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18)** — แท็บ 🔩 ใน `/line-stock` (`src/components/WipBetweenSteps.jsx` + สูตร pure ที่ `src/utils/wipChain.js`): ยอดค้างทุก buffer ของสาย OP **คำนวณจากใบผลิต ไม่ต้องคีย์รับ-จ่าย** — `in-flight = Σสะสมผ่านขั้น − Σสะสมปลายทาง` (ทุกชิ้น 1:1 กับ FG) · **mat เดียวหลายสถานี** (90031601 = HDF1+HDF2+LS345) แยกยอดต่อ (mat,line) จาก session แล้ว**เรียงยอดสะสมมาก→น้อย = ลำดับการไหล** (ต้นทางย่อมสะสม ≥ ปลายน้ำ) → ได้ "ค้างระหว่างสถานี" + ยอดผ่านขั้น = สถานีปลายน้ำสุด · **ติดลบ = โชว์ ⚠ ห้ามซ่อนเป็น 0** (สัญญาณว่า baseline/ของเสียยังไม่ปรับ) · baseline "📋 นับจริง" เก็บประวัติที่ `wip_adjustments` (DR · migration `20260818_wip_adjustments_dr.sql` **apply แล้ว 2026-08-18** — user รันผ่าน SQL Editor) ระบบนับต่อจากเวลานับ (`counted_qty + Σหลังเวลานับ`) · สิทธิ์กดนับจริง = `wip:adjust` (migration `20260818_wip_adjust_permission_main.sql` **apply แล้ว 2026-08-18** — catalog + seed admin/mgr/sv/leader) · โค้ด best-effort อยู่แล้วเผื่อ rollback · **เป็นบัญชีภายในแผนกไว้ดูจังหวะงาน ไม่เกี่ยว line_stock_transactions/SAP** · **เฟส 2 (ทำแล้ว 2026-08-18): net requirement** — ช่อง 📥 ความต้องการต่อสาย (default = Σ order ค้างส่งของเลขนั้นจาก `customer_shipping_orders` ≠ shipped · แก้ทับได้) − สต็อก FG (`line_stock_summary`) = ต้องผลิต FG เพิ่ม → คอลัมน์ "ต้องทำเพิ่ม" ต่อขั้น = `max(0, FGที่ต้องผลิต − inFlight)` (`netRequirement` ใน wipChain.js — inFlight ติดลบนับเป็น 0 ไม่เพิ่ม requirement เกินจริง) · demand เลขลูกค้าที่ยังไม่ resolve เป็น SAP จะไม่ถูกรวมใน default (กรอกมือได้)
-> - **ห้ามเอารายการ OP เข้า BOM / kanban / ทะเบียน parts_master** (BOM picker กรองออกแล้ว) · ตั้งค่า OP ที่ฟอร์มสินค้าใน `/products` (กล่อง 🔩 รายการขั้นตอน)
+> - **ห้ามเอารายการ OP ไปเป็น "ลูก" ใน BOM ของใคร / kanban / ทะเบียน parts_master** (picker ลูกอ่านจาก `parts_master` ซึ่งไม่มีแถว OP) · ตั้งค่า OP ที่ฟอร์มสินค้าใน `/products` (กล่อง 🔩 รายการขั้นตอน)
+>   - **🔄 แก้กฎ 2026-09-15 (คำสั่ง user): ตัว OP เองเป็น "เจ้าของสูตร" ได้แล้ว — `bom_items.product_id` ชี้แถว OP = "ขั้นนี้กินอะไรเข้าไป"**
+>     เดิมแท็บ BOM กรอง OP ออกจากลิสต์ทั้งหมด (`ProductMaster.jsx` loadAll) ⇒ พอของเสียหลุดที่ขั้นนั้น
+>     ใบ FM-PD2-002 พิมพ์เลขขั้นที่ SAP ไม่มี **สโตร์ตัดสต๊อกไม่ได้** และจะตัด "ตัวมันเอง" ก็ไม่ได้
+>     เพราะขั้น OP ไม่เคยเข้าคลังอยู่แล้ว (`fn_post_confirmed_output` return null เมื่อ is_operation)
+>     · user 15/09: *"มันต้องดึง BOM ที่มันประกอบมาตัด ไม่ใช่ตัดตัวมันเอง เพราะตัวมันเองยังไม่สมบูรณ์"*
+>     · **ไม่กระทบตัวระเบิดความต้องการ** — `fn_explode_child_demand` `return null` ตั้งแต่ต้นเมื่อใบเป็น OP
+>       (ตรวจ 15/09) ⇒ สูตรใต้ OP เป็นข้อมูลนิ่งสำหรับ "ตัดของเสีย" อย่างเดียว ไม่ปล่อยใบลูก/ไม่ตัดมินิสโตร์
+>     · **กติกาการคีย์: ผูกเฉพาะของที่ "ขั้นนั้น" ใส่เข้าไป (delta) ห้ามคีย์สะสม** — ขั้นก่อนหน้าในสายเดียวกัน
+>       (`op_parent_mat` เดียวกัน + `op_seq` น้อยกว่า) ระบบไล่ให้เองตอนระเบิด (`src/utils/scrapExplode.js`)
+>     · `op_seq` ว่าง = ขั้นเดี่ยว ใช้สูตรตัวเองอย่างเดียว **ห้ามเดาลำดับจากชื่อ/วันที่สร้าง**
+>     · **⚠️ ผูกสูตรให้ขั้น = จอสโตร์เปลี่ยนด้วย** — `HeijunkaKanban` (part-call) / `LineWipPanel`
+>       อ่าน `bom_items` ตาม `product_id` ของใบผลิตโดย**ไม่กรอง `is_operation`** ⇒ ใบของขั้นจะเริ่มมี
+>       "ของที่ต้องส่งเข้าไลน์" ทันที · **จึงยังไม่ seed สูตรให้ขั้นไหนเลยในรอบนี้ (รอ user เคาะ)**
+>       migration `20260915_scrap_op_bom_deduct.sql` (**apply แล้ว 15/09 — เฉพาะคอลัมน์ `src_op_mat`**)
+>       เตรียม SQL ของ `90031601`/`90031602` ไว้ในคอมเมนต์ท้ายไฟล์แล้ว · ขั้นอื่นห้ามเดา (นัตกี่ตัวต้องถามหน้างาน)
+>     · รายละเอียดการใช้งาน → `docs/modules/scrap-report.md` หัวข้อ 🧩 ระเบิดของเสียของขั้นตอน
 > - **🔴 "OP ไม่เข้าคลังอยู่แล้วเพราะ mat text ไม่ตรง prefix rules" — สมมติฐานนี้ผิด แก้แล้ว 2026-08-20 (user ทัก "งาน m6 m8 มีเกลียว/ไม่มีเกลียว พวกนี้ผิดใช่มั้ย ล้างได้มั้ย")**
 >   `fn_post_confirmed_output` เทียบ prefix ด้วย **ตัวอักษรตัวแรกของ mat_no** → OP ที่ตั้งชื่อขึ้นต้นด้วยเลข
 >   (`127 (M6 มีเกลียว)` `173 M8(ไม่มีเกลียว)` `290/291 (M6 มีเกลียว)`) **เข้าเกณฑ์ prefix `1`/`2` เต็มๆ**
