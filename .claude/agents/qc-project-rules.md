@@ -156,6 +156,10 @@ model: inherit
   · ⚠️ ถ้าใส่ filter ด้วยคอลัมน์ที่ไม่ใช่ pk ต้อง**แยก subscribe `event:'DELETE'` แบบไม่กรอง**
   (REPLICA IDENTITY default → `old` ของ DELETE มีแค่ pk ⇒ filter ตัด event ทิ้งเงียบ)
   · เจอ `REPLICA IDENTITY FULL` ในโค้ด/migration = 🔴 (ทุก UPDATE ส่งแถวเก่าเต็มใบใน WAL)
+- **[E-IDLE]** จอที่มี realtime แล้ว — `visibleInterval`/`usePolling` ที่ยิงตัวโหลด**ตรงๆ** โดยไม่ผ่าน `makeIdleGate` = 🟡
+  (poll ยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ · โรงงานหยุดก็ยังกินเท่าวันทำงาน)
+  ต้องมีครบ 3 ขา: handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => ... g.touch())`
+  · ⚠️ ใส่ gate ให้จอที่**ไม่มี** realtime = 🔴 (ไม่มีใคร touch = เหลือแต่ hard floor = จอค้าง)
 - **[E-DEPS]** `useCallback`/`useEffect` ที่**ยิง DB** แล้วมี object/array/`Set`/`Map` อยู่ใน deps = 🔴
   พ่อ `setState(arr)` ใบใหม่เนื้อเดิม ⇒ ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง `StoreLotQueue` 4 คิวรี × 705 ครั้ง/วัน)
   ให้แปลงเป็น string/primitive ก่อนใส่ deps · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**

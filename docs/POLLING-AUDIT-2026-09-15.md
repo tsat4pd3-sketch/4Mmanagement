@@ -109,7 +109,7 @@ FactoryMap 1 รอบ = 26 KB ⇒ จอเดียว ~150 MB/วัน ⇒ *
 | 1 | จอโหลดใหม่เพราะ **ไลน์อื่น** ขยับข้อมูล (DailyReport ไม่เคยกรอง session) | ✅ แก้แล้ว — กรองฝั่ง server ด้วย `session_id` |
 | 2 | จอโหลดใหม่ **หลายรอบในนาทีเดียว** เพราะ event รัว | ✅ แก้แล้ว — `coalesce()` ใส่เพดานจริง |
 | 3 | `StoreLotQueue` ยิง 4 คิวรีซ้ำทุกครั้งที่พ่อ re-render | ✅ แก้แล้ว (§4) |
-| 4 | **timer poll ยิงทั้งที่ไม่มีอะไรเปลี่ยนเลย** (คืน/เสาร์อาทิตย์/ช่วงพัก) | 🔜 เฟสถัดไป — ต้องมี "ตัวบอกว่ามีอะไรเปลี่ยนไหม" ก่อนยิงของหนัก |
+| 4 | **timer poll ยิงทั้งที่ไม่มีอะไรเปลี่ยนเลย** (คืน/เสาร์อาทิตย์/ช่วงพัก) | ✅ แก้แล้วบนจอที่มี realtime — `makeIdleGate` (§5.6) · จอที่ยังไม่มี realtime ดู §6 |
 | 5 | `dr_products` 1,486 req/วัน ทั้งที่ cache แล้ว | 🔎 ต้องไล่ว่าใครยังไม่ผ่าน `cachedMaster` |
 
 ---
@@ -145,18 +145,38 @@ FactoryMap 1 รอบ = 26 KB ⇒ จอเดียว ~150 MB/วัน ⇒ *
    ⚠️ DELETE กรองไม่ได้ (REPLICA IDENTITY default → `old` มีแค่ pk) จึงแยก subscribe ไม่กรอง
    **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** — ทุก UPDATE จะส่งแถวเก่าเต็มใบใน WAL
 5. **`StoreLotQueue` famKey** (§4)
+6. **`makeIdleGate(LIVE.FLOOR)` — poll ข้ามรอบเมื่อไม่มีอะไรเปลี่ยน**
+   เอกสาร `refreshRates.js` เขียนมาตั้งแต่ ส.ค. ว่า *"realtime มาก่อน · poll เป็นตัวกันเหนียว"*
+   แต่**โค้ดไม่เคยทำตาม** — poll ยังยิงเต็มทุกรอบคู่ไปกับ realtime = จ่ายสองต่อ
+   ตอนนี้ tick ที่ไม่มี event เข้ามาเลย = **ไม่มี network สักไบต์** (เช็คในเครื่องล้วน)
+   · ยิงจริงเมื่อ: มี realtime event ค้างยังไม่ได้โหลด **หรือ** ครบ `LIVE.FLOOR` (2 ชม.)
+   · channel กลับมา `SUBSCRIBED` (reconnect) → `touch()` ทันที เพราะอาจพลาด event ระหว่างหลุด
+   · ใช้แล้วที่: `FactoryMap` (loadStatus+loadSupply+loadDieZones) · `DailyPM` ·
+     `Management` (DT alarm) · `MtnAndonBoard` · `DowntimeSiren`
+   ⚠️ **ห้ามใช้กับจอที่ไม่มี realtime** — ไม่มีใครมา `touch()` = เหลือแต่ floor = จอค้าง
 
-**ผลที่คาด:** ตัดรอบโหลดที่เสียเปล่าออก ~90% ในวันทำงาน
+**ผลที่คาด:** ตัดรอบโหลดที่เสียเปล่าออกเกือบหมดทั้งวันทำงานและวันหยุด
 (ตัวเลขจริงต้องดู log 16/09 เทียบกับ 15/09 — **ยังไม่ได้วัด อย่าเพิ่งเชื่อตัวเลขนี้**)
+
+> 🧪 **บทเรียนจากรอบนี้ — `node audit/crashsweep.mjs` จับของจริงอีกครั้ง**
+> ตอนย้าย `usePolling` รวม 3 loader ขึ้นไปไว้ใต้ `loadStatus` → deps อ้าง `loadSupply`/`loadDieZones`
+> ที่ประกาศทีหลัง = **TDZ `Cannot access 'loadSupply' before initialization` = FactoryMap จอขาวทั้งหน้า**
+> `npm run build` ผ่าน · lint ผ่าน · เทส 669 เคสผ่านหมด — เห็นจาก crashsweep อย่างเดียว
 
 ---
 
-## 6. เฟสถัดไป (ยังไม่ทำ) — ปิดช่อง "poll ยิงทั้งที่ไม่มีอะไรเปลี่ยน"
+## 6. ยังเหลือ (เรียงตามผลตอบแทน)
 
-หลังแก้ §5 แล้ว ตัวที่เหลือคือ timer poll ของกลุ่ม B: **40 เครื่อง × ~20 loop × 4 รอบ/ชม. × 24 ชม.**
-ยิงเหมือนกันหมดไม่ว่าจะมีข้อมูลใหม่หรือไม่ — คืนวันอาทิตย์ก็ยิงเท่าวันทำงาน
+### 6.1 จอที่ยัง poll ล้วน (ไม่มี realtime) — ใส่ realtime ก่อน แล้วค่อยใส่ idleGate
+`LineOeeBoard` (จอ TV ที่จะติดเพิ่ม!) · `QaFmeBoard` · `QaFmeQueue` · `ProdProgressStrip` ·
+`StoreWaitCards` · `DeptHub` · `TvBoard` · `LineStock` · `StoreMonitor` · `Transport` ·
+`RundownStock` · `OEEAnalytics` · `FactoryMap.loadManpower/loadPM/loadStoreZones`
 
-**แนวที่เสนอ:** ตาราง `live_pulse(scope, rev)` ฝั่ง DR + statement-level trigger บนตารางร้อน
+realtime message = ~200 bytes เฉพาะตอนมีของเปลี่ยนจริง · poll = ทั้งก้อนทุกรอบตลอด 24 ชม.
+⇒ **ใส่ realtime ถูกกว่า poll เป็นร้อยเท่าและเร็วกว่าด้วย** (กฎนี้อยู่ใน refreshRates.js แล้ว)
+
+### 6.2 `live_pulse` — ทางสำรองสำหรับจอที่ทำ realtime ไม่ไหว
+ตาราง `live_pulse(scope, rev)` ฝั่ง DR + statement-level trigger บนตารางร้อน
 → จอ poll "เลข rev" (~200 bytes) ก่อน ถ้าไม่เปลี่ยนก็**ไม่ต้องดึงของหนัก 26 KB เลย**
 
 ข้อบังคับถ้าทำ:
@@ -165,8 +185,10 @@ FactoryMap 1 รอบ = 26 KB ⇒ จอเดียว ~150 MB/วัน ⇒ *
 - ฝั่ง client อ่าน pulse ไม่ได้/ไม่ครบ = **ยิงของจริงตามปกติ** (fail-open — ห้ามโกหกว่า "ไม่มีอะไรเปลี่ยน")
 - รอบแรกหลังเปิดหน้าต้องโหลดจริงเสมอ ไม่ผ่าน gate
 
-**ยังต้องไล่ต่ออีก:**
-- `dr_products` 1,486 req/วัน ทั้งที่มี `cachedMaster` แล้ว — หาว่าใครยังเรียกตรง
-- `LineOeeBoard` ไม่มี realtime เลย (poll ล้วน) — เป็นจอ TV ที่จะติดเพิ่ม ควรใส่ realtime + coalesce
+### 6.3 ลด payload ต่อรอบ
 - `prod_orders` 17 KB/รอบใน `loadStatus` = 65% ของก้อน — ทำ view/RPC สรุปต่อ session
   ⚠️ **ห้ามย้ายสูตร OEE ไป SQL** — `src/utils/oee.js` เป็นเจ้าของสูตรจุดเดียวเสมอ (กฎ SCADA)
+- `DailyReport` ยังใช้ `machines.select('*')` (368 KB → ~208 KB ถ้าตัดคอลัมน์ที่ไม่ใช้)
+
+### 6.4 ไล่ต่อ
+- `dr_products` 1,486 req/วัน ทั้งที่มี `cachedMaster` แล้ว — หาว่าใครยังเรียกตรง
