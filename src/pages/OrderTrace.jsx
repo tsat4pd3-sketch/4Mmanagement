@@ -163,6 +163,8 @@ export default function OrderTrace() {
       let query = supabaseDR.from('prod_orders').select(ORDER_COLS)
         .eq('production_sessions.work_date', j.date)
         .order('opened_at', { ascending: false }).limit(300);
+      // ตัวอักษรท้ายเลข = กะ (A กลางวัน / B กลางคืน) — ระบุมาก็แคบให้ตรงกะเลย
+      if (j.shift) query = query.eq('production_sessions.shift', j.shift);
       if (!allowOpen) query = query.neq('status', 'open');
       const { data, error } = await query;
       if (error) throw error;
@@ -971,7 +973,7 @@ export default function OrderTrace() {
       <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <input type="text" value={search} onChange={e => { setSearch(e.target.value); setJulYear(null); }}
           onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
-          placeholder="🔍 สแกน PROD.NO / MAT.NO / ชื่อชิ้นงาน / เลข Julian บนชิ้นงาน"
+          placeholder="🔍 สแกน PROD.NO / MAT.NO / ชื่อชิ้นงาน / เลข Julian (เช่น 24726A)"
           style={{ width: 340, fontSize: 14 }} autoFocus />
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>ช่วงวันงาน</span>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140 }} />
@@ -1000,13 +1002,13 @@ export default function OrderTrace() {
           </div>
           <div style={{ color: 'var(--text2)' }}>
             ขา Julian ค้น<b>ทั้งฐาน ไม่สนช่วงวันงานด้านบน</b> (เลขบนชิ้นงานมักเก่ากว่าช่วง 30 วัน) — ใบของวันนั้นถูกยกขึ้นก่อนในตารางผลค้นหา
-            {jul.candidates.length > 1 && (
-              <> · รับได้ทั้ง 3 หลัก (<code>258</code>) / 4 หลัก (<code>6258</code>) / 5 หลัก (<code>26258</code>)</>
-            )}
+            {jul.shift
+              ? <> · แคบเฉพาะ<b>{jul.shiftLetter === 'A' ? 'กะกลางวัน' : 'กะกลางคืน'}</b>ตามตัวอักษร <code>{jul.shiftLetter}</code> ท้ายเลข</>
+              : <> · พิมพ์ <code>A</code>/<code>B</code> ต่อท้าย (เช่น <code>{`${String(jul.doy).padStart(3, '0')}${String(jul.year % 100).padStart(2, '0')}A`}</code>) เพื่อแคบเฉพาะกะกลางวัน/กลางคืน</>}
           </div>
           {jul.guessedYear && jul.candidates.length > 1 && (
             <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              <span style={{ color: 'var(--muted)' }}>⚠️ เลขนี้ไม่ได้บอกปีเต็ม ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:</span>
+              <span style={{ color: 'var(--muted)' }}>⚠️ เลขนี้มีแต่วัน (ไม่มี 2 หลักปีต่อท้าย) ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:</span>
               {jul.candidates.map(c => (
                 <button key={c.year} onClick={() => { setJulYear(c.year); doSearch(undefined, {}); }}
                   style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
@@ -1090,8 +1092,8 @@ export default function OrderTrace() {
                         {fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}
                         {/* Julian ของวันผลิต — หน้างานเอาไปเทียบกับเลขที่ปั๊มบนชิ้นงานได้ทันที (ไม่ได้เก็บใน DB · คำนวณสด) */}
                         {s.work_date && <div style={{ fontSize: 10, color: jul && s.work_date === jul.date ? '#f59e0b' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
-                          title={`เลข Julian ของวันผลิต — 3 หลัก ${toJulian(s.work_date, 3)} · 4 หลัก ${toJulian(s.work_date, 4)} · 5 หลัก ${toJulian(s.work_date, 5)}`}>
-                          🗓 {toJulian(s.work_date, jul?.digits || 5)}
+                          title="เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)">
+                          🗓 {toJulian(s.work_date, s.shift)}
                         </div>}
                       </td>
                       <td style={{ whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text2)' }}>{fmtTime(o.opened_at)} → {o.confirmed_at ? fmtTime(o.confirmed_at) : '—'}</td>
