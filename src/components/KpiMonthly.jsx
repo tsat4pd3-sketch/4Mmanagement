@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty } from '../utils/oee';
@@ -8,6 +8,7 @@ import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docFor
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
 import PersonSelect from './PersonSelect';
+import SearchSelect, { normSearch } from './SearchSelect';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -29,8 +30,8 @@ import {
    กติกาที่ยึด (ห้ามละเมิด):
    - OEE เดือน = wavg(oee ที่ stamp, ถ่วง wLoad = shift_min − plannedMin) — ห้าม mean-of-percentages
    - NG ยึด defect_logs (qty_ng + qty_suspect) แบบ line-mode (ไม่รวมงานทดลอง — มาตรฐานเดียวกับ %Q/FTT/PPM ทุกจอ)
-   - PPM = NG ÷ (ยอดผลิต + NG) × 1e6 — ยอดสแกน = ของดีล้วน (ต่างจากสูตรใบเดิม NG÷ยอดผลิต ~0.03% ที่ระดับ PPM ต่ำ
-     เทียบใบเก่าได้ต่อเนื่อง — เขียนกำกับสูตรบนจอ/ใบพิมพ์แล้ว)
+   - PPM = NG ÷ ยอดที่ผลิตทั้งหมด × 1e6 — "ยอดที่ผลิตทั้งหมด" = ยอดสแกน (ของดีล้วน) + NG
+     (user ยืนยัน 2026-09-07 "งานเสีย ÷ ยอดที่ผลิต" — ตรงกับสูตรนี้ ไม่ใช่ NG÷ยอดสแกน · เขียนกำกับบนจอ/ใบพิมพ์ให้ชัดว่าตัวหารรวมของเสีย)
    - ยอดผลิต = Σ actual_qty ของกะปิดแล้ว "รายชิ้น" (LH/RH แยกชิ้น — ตรงกับใบเดิมที่นับต่อไลน์ต่อชิ้น
      · PPM ต้องหารด้วยชิ้นอยู่แล้ว จึงไม่ใช้ pairAwareTotal ที่นับคู่สำหรับยอดภาพใหญ่)
    - Cost of defect ผ่าน defectUnitCost (standard ชนะ → material) · ตีมูลค่าไม่ได้ = รายงานจำนวน ห้ามเดา
@@ -48,6 +49,12 @@ const CATS = [
   { key: 'learning', label: '📚 Learning & Growth' },
 ];
 const catLabel = k => CATS.find(c => c.key === k)?.label || k;
+
+/* ⚠️ ชื่อ KPI ที่แสดง/พิมพ์/export ต้องผ่านตัวนี้เสมอ — ห้ามอ่าน `d.name` ตรงๆ
+   ทะเบียน (`kpi_catalog`) เป็นเจ้าของชื่อ · `definitions.name` เป็นแค่ fallback ของแถวเก่า
+   ที่ยังไม่ผูกทะเบียน ⇒ แก้ชื่อในทะเบียนแล้วเปลี่ยนทุกปีทุกส่วนงานพร้อมกัน (ไม่มีทาง drift) */
+const defName = d => d?.kpi_catalog?.name || d?.name || '(ไม่มีชื่อ)';
+const defUnit = d => d?.kpi_catalog?.unit || '';
 
 /* ดึงทุกแถวแบบแบ่งหน้า — กับดัก Supabase ตัด 1000 แถว/query */
 async function pageAll(buildQuery, onProg) {
@@ -163,7 +170,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const { can, role } = usePerms();
   const canManage = can('kpi', 'manage');
   const [year, setYear] = useState(nowYear);
-  const [section, setSection] = useState('');
+  /* ⚠️ รับ ?section= จาก URL — /obeya ส่งมาตอนกดเซลล์บนบอร์ด (กฎ "ลิงก์ต้องพาไปถึงตัวงานนั้น")
+     ไม่งั้นกดจากบอร์ด PD3 แล้วเปิดมาเจอส่วนงานอื่น ต้องไปเลือกเองซ้ำ */
+  const [section, setSection] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('section') || ''; } catch { return ''; }
+  });
   const [group, setGroup] = useState(''); // drill-down กลุ่มไลน์ (top-level)
   const [orgSections, setOrgSections] = useState(null); // null = ยังโหลด · [] = ผังว่าง → fallback
   const [loading, setLoading] = useState(false);
@@ -171,10 +182,16 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [err, setErr] = useState(null);
   const [data, setData] = useState(null); // { key, sessions, dtBySession, dtUnpBySession, defects, partCost, targets }
   // ── KPI กรอกมือ (เฟส 2) ──
-  const [defs, setDefs] = useState(null);          // null = ยังโหลด
+  const [allDefs, setAllDefs] = useState(null);          // null = ยังโหลด
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   const [kpiMissing, setKpiMissing] = useState(false); // ตารางยังไม่ apply migration
   const [editDef, setEditDef] = useState(null);    // null | {} (ใหม่) | def (แก้)
+  const [catalog, setCatalog] = useState([]);      // ทะเบียนชื่อ KPI (kpi_catalog)
+  const [catMissing, setCatMissing] = useState(false);
+  const [showCat, setShowCat] = useState(false);   // โมดัลจัดการทะเบียนชื่อ
+  const [autoTgt, setAutoTgt] = useState(null);   // โมดัลตั้งเป้าให้แถวที่ระบบคำนวณเอง
+  const [copying, setCopying] = useState(false);   // กำลังคัดลอกชุด KPI จากปีอื่น
+  const reqRef = useRef(0);                        // ลำดับคำขอโหลด — กันผลเก่าทับผลใหม่
 
   /* ตัวเลือกส่วนงานยึด org_nodes (kind='section') ตามกฎ — fallback เดาจาก production_lines เมื่อผังว่าง */
   useEffect(() => {
@@ -186,6 +203,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const fromOrg = (orgSections || []).map(s => s.code || s.name).filter(s => inScopeSecs.has(s));
     return fromOrg.length ? fromOrg : [...inScopeSecs].sort();
   }, [orgSections, lines, scopeSet]);
+
+  /* ⚠️ ส่วนงานจาก URL ที่ไม่อยู่ในขอบเขตของ user = ตกกลับ "ทุกส่วนงาน"
+     (กฎ useTabParam: ค่าที่ไม่รู้จักห้ามทำให้จอว่าง · และ select จะโชว์ค่าว่างถ้า value ไม่มีใน options) */
+  useEffect(() => {
+    if (section && sectionOpts.length && !sectionOpts.includes(section)) { setSection(''); setGroup(''); }
+  }, [section, sectionOpts]);
 
   /* กลุ่มไลน์บนสุด (parent หรือไลน์เดี่ยว) ในขอบเขต+ส่วนที่เลือก */
   const groupOpts = useMemo(() => {
@@ -206,6 +229,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const load = useCallback(async () => {
     if (!lines.length) return;
     const key = `${year}|${section}|${group}|${targetLineNames.length}`;
+    const seq = ++reqRef.current;      // กันผลโหลดเก่าทับผลใหม่ (เปลี่ยนปี/ส่วนงานรัวๆ)
     setLoading(true); setErr(null); setProg('');
     try {
       // 1) กะปิดแล้วทั้งปี (slim)
@@ -251,27 +275,43 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (e4) throw e4;
       if (e5) throw e5;
       const partCost = Object.fromEntries((parts || []).map(p => [p.mat_no, p]));
+      if (seq !== reqRef.current) return;               // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({ key, sessions, dtPlanned, dtUnplanned, defects, partCost, targets: targets || [] });
     } catch (e) {
+      if (seq !== reqRef.current) return;
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
-    } finally { setLoading(false); setProg(''); }
+    } finally { if (seq === reqRef.current) { setLoading(false); setProg(''); } }
   }, [lines.length, year, section, group, targetLineNames]);
   useEffect(() => { load(); }, [load]);
 
   /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
+  /* ทะเบียนชื่อ KPI — โหลดครั้งเดียว ไม่ผูกปี/ส่วนงาน (ตัวตนเดียวใช้ข้ามปี) */
+  const loadCatalog = useCallback(async () => {
+    const { data, error } = await supabase.from('kpi_catalog').select('*')
+      .eq('is_active', true).order('sort_order').order('name');
+    if (error) { setCatMissing((error.code || '') === '42P01'); setCatalog([]); return; }
+    setCatMissing(false); setCatalog(data || []);
+  }, []);
+  useEffect(() => { loadCatalog(); }, [loadCatalog]);
+
   const loadDefs = useCallback(async () => {
-    const { data: d, error } = await supabase.from('kpi_definitions').select('*')
+    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals)';
+    const run = (cols) => supabase.from('kpi_definitions').select(cols)
       .eq('year', year).eq('is_active', true)
       .order('category').order('seq').order('created_at');
+    /* ยังไม่ apply migration kpi_catalog → embed พัง 42703/PGRST200 → ถอยไป select เดิม
+       (พฤติกรรมเดิมเป๊ะ ไม่ทำให้ทั้งแท็บล่ม) */
+    let { data: d, error } = await run(CAT_EMBED);
+    if (error && (error.code || '') !== '42P01') ({ data: d, error } = await run('*'));
     if (error) {
       setKpiMissing((error.code || '') === '42P01');
-      setDefs([]); setEntries({});
+      setAllDefs([]); setEntries({});
       return;
     }
     setKpiMissing(false);
     // section null = ทุกส่วนงาน · เลือกส่วนแล้วเห็น common + ของส่วนนั้น · ไม่เลือก = เห็นทั้งหมด (ติดป้ายส่วน)
     const rows = (d || []).filter(x => !section || !x.section || x.section === section);
-    setDefs(rows);
+    setAllDefs(rows);
     if (!rows.length) { setEntries({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
@@ -326,7 +366,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (!data) return null;
     const defBySession = {};
     data.defects.forEach(d => (defBySession[d.session_id] = defBySession[d.session_id] || []).push(d));
-    const out = Array.from({ length: 12 }, () => ({ produce: 0, ng: 0, cost: 0, costMissQty: 0, dtMin: 0, sess: [], n: 0 }));
+    const out = Array.from({ length: 12 }, () => ({ produce: 0, ng: 0, cost: 0, costQty: 0, costMissQty: 0, dtMin: 0, sess: [], n: 0 }));
     data.sessions.forEach(s => {
       const mi = Number(s.work_date?.slice(5, 7)) - 1;
       if (mi < 0 || mi > 11) return;
@@ -344,46 +384,96 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         const mat = d.prod_orders?.mat_no || null;
         const { unit } = defectUnitCost(mat ? data.partCost[mat] : null);
         if (unit == null) m.costMissQty += qty;
-        else m.cost += qty * unit;
+        else { m.cost += qty * unit; m.costQty += qty; }
       });
     });
     out.forEach(m => {
       m.oee = m.sess.length ? wavg(m.sess, x => x.oee, wLoad) : null;
       m.ppm = (m.produce + m.ng) > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
+      /* ⚠️ "ตีมูลค่าไม่ได้" ≠ "ไม่มีต้นทุน" — ของเสียมีจริงแต่ไม่มีพาร์ทไหนตีมูลค่าได้เลย
+         ต้องเป็น "—" ห้ามเป็น 0 (กฎเดียวกับ OEE: ประเมินไม่ได้ = null ห้ามแปลงเป็นศูนย์)
+         ไม่มีของเสียเลย → 0 ถูกต้อง                                                     */
+      m.costKnown = m.costQty > 0 || m.costMissQty === 0;
     });
     const allSess = out.flatMap(m => m.sess);
     const tot = {
       produce: out.reduce((s, m) => s + m.produce, 0),
       ng: out.reduce((s, m) => s + m.ng, 0),
       cost: out.reduce((s, m) => s + m.cost, 0),
+      costQty: out.reduce((s, m) => s + m.costQty, 0),
       costMissQty: out.reduce((s, m) => s + m.costMissQty, 0),
       dtMin: out.reduce((s, m) => s + m.dtMin, 0),
       n: out.reduce((s, m) => s + m.n, 0),
       oee: allSess.length ? wavg(allSess, x => x.oee, wLoad) : null,
     };
     tot.ppm = (tot.produce + tot.ng) > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
+    tot.costKnown = tot.costQty > 0 || tot.costMissQty === 0;
     return { out, tot };
   }, [data]);
 
   const curMonthIdx = year === nowYear ? new Date().getMonth() : -1;
   const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 }));
 
+  /* ตาราง "กรอกมือ" ต้องไม่มีแถวนิยามของ KPI อัตโนมัติปน (ช่องกรอกจะว่างตลอด + ซ้ำกับตารางบน)
+     และ scope ตามกลุ่มไลน์ที่เลือก — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน (line_group null) */
+  const defs = useMemo(() => (allDefs || []).filter(d =>
+    !d.source && (d.line_group || '') === (group || '')), [allDefs, group]);
+
+  /* นิยามของแถวอัตโนมัติ — เก็บ "เป้า/ทิศทาง/commitment" ไว้ที่ kpi_definitions (source='auto:<key>')
+     ⚠️ ค่าไม่ได้มาจากที่นี่ (ระบบคำนวณเอง) แถวนิยามเก็บแค่เกณฑ์ตัดสิน                       */
+  const autoDefBy = useMemo(() => {
+    const m = {};
+    (allDefs || []).forEach(d => {
+      if (!d.source?.startsWith('auto:')) return;
+      if ((d.line_group || '') !== (group || '')) return;   // เป้าผูกกับกลุ่มไลน์ที่กำลังดู
+      m[d.source.slice(5)] = d;
+    });
+    return m;
+  }, [allDefs, group]);
+
   /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้
-     kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้) */
-  const ROWS = useMemo(() => [
-    { key: 'produce', label: 'ยอดผลิต (ชิ้น)', get: m => nf(m.produce), val: m => (m.n ? m.produce : null), kind: 'bar' },
-    { key: 'ng',      label: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', get: m => nf(m.ng), warnPos: true, val: m => (m.n ? m.ng : null), kind: 'bar' },
-    { key: 'ppm',     label: 'Internal defect (PPM)', get: m => nf(m.ppm), warnPos: true, val: m => (m.n ? m.ppm : null), kind: 'line', dec: 0 },
-    { key: 'cost',    label: 'Cost of defect (บาท)', get: m => nf(m.cost), warnPos: true, val: m => (m.n ? m.cost : null), kind: 'bar' },
-    { key: 'oee',     label: `OEE (%)${targetOee != null ? ` · เป้า ≥ ${targetOee.toFixed(1)}` : ''}`, get: m => nf(m.oee, 1),
-      yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee),
-      val: m => (m.n ? m.oee : null), kind: 'line', target: targetOee, dir: 'up', dec: 1 },
-    { key: 'dt',      label: 'Downtime นอกแผน (นาที)', get: m => nf(m.dtMin), warnPos: true, val: m => (m.n ? m.dtMin : null), kind: 'bar' },
-  ], [targetOee]);
+     kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้)
+     defDir = ทิศทางตั้งต้นที่ระบบ "เสนอ" (คนแก้ได้ตอนตั้งเป้า — ระบบเสนอ คนตัดสิน) */
+  const ROWS = useMemo(() => {
+    /* เป้าของแถวอัตโนมัติ: อ่านจากนิยาม · ⚠️ OEE ข้ามเพราะเป้ามีแหล่งเดียวคือ oee_targets */
+    const tOf = k => (k === 'oee' ? targetOee
+      : autoDefBy[k]?.target_value == null ? null : Number(autoDefBy[k].target_value));
+    const dOf = (k, fb) => (k === 'oee' ? 'up' : (autoDefBy[k]?.direction || (tOf(k) == null ? null : fb)));
+    /* Y/N ตัดสินได้ต่อเมื่อมีทั้งเป้าและทิศทาง (กฎ "ไม่มีเป้า ≠ ผ่าน") */
+    const mk = (k, fb) => {
+      const t = tOf(k), d = dOf(k, fb);
+      return (v) => (v == null || t == null || !d ? null : (d === 'up' ? v >= t : v <= t));
+    };
+    const lbl = (k, base) => {
+      const t = tOf(k), d = dOf(k, null);
+      return t == null || !d ? base : `${base} · เป้า ${d === 'up' ? '≥' : '≤'} ${nf(t, 2)}`;
+    };
+    return [
+      { key: 'produce', label: lbl('produce', 'ยอดผลิต (ชิ้น)'), get: m => nf(m.produce), val: m => (m.n ? m.produce : null), kind: 'bar',
+        src: 'produce', defDir: 'up', target: tOf('produce'), dir: dOf('produce', 'up'),
+        yn: (() => { const f = mk('produce', 'up'); return m => (m.n ? f(m.produce) : null); })() },
+      { key: 'ng',      label: lbl('ng', 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)'), get: m => nf(m.ng), warnPos: true, val: m => (m.n ? m.ng : null), kind: 'bar',
+        src: 'ng', defDir: 'down', target: tOf('ng'), dir: dOf('ng', 'down'),
+        yn: (() => { const f = mk('ng', 'down'); return m => (m.n ? f(m.ng) : null); })() },
+      { key: 'ppm',     label: lbl('ppm', 'Internal defect (PPM)'), get: m => nf(m.ppm), warnPos: true, val: m => (m.n ? m.ppm : null), kind: 'line', dec: 0,
+        src: 'ppm', defDir: 'down', target: tOf('ppm'), dir: dOf('ppm', 'down'),
+        yn: (() => { const f = mk('ppm', 'down'); return m => f(m.ppm); })() },
+      { key: 'cost',    label: lbl('cost', 'Cost of defect (บาท)'), get: m => (m.costKnown ? nf(m.cost) : '—'), warnPos: true,
+        val: m => (m.n && m.costKnown ? m.cost : null), kind: 'bar',
+        src: 'cost', defDir: 'down', target: tOf('cost'), dir: dOf('cost', 'down'),
+        yn: (() => { const f = mk('cost', 'down'); return m => (m.costKnown ? f(m.cost) : null); })() },
+      { key: 'oee',     label: `OEE (%)${targetOee != null ? ` · เป้า ≥ ${targetOee.toFixed(1)}` : ''}`, get: m => nf(m.oee, 1),
+        yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee),
+        val: m => (m.n ? m.oee : null), kind: 'line', target: targetOee, dir: 'up', dec: 1, src: 'oee' },
+      { key: 'dt',      label: lbl('dt', 'Downtime นอกแผน (นาที)'), get: m => nf(m.dtMin), warnPos: true, val: m => (m.n ? m.dtMin : null), kind: 'bar',
+        src: 'dt', defDir: 'down', target: tOf('dt'), dir: dOf('dt', 'down'),
+        yn: (() => { const f = mk('dt', 'down'); return m => (m.n ? f(m.dtMin) : null); })() },
+    ];
+  }, [targetOee, autoDefBy]);
   const [chart, setChart] = useState(null); // payload กราฟใหญ่ { title, vals, kind, target, dir, dec }
   const openRowChart = r => setChart({ title: r.label, vals: months.out.map(r.val), kind: r.kind, target: r.target ?? null, dir: r.dir ?? null, dec: r.dec });
   const openDefChart = d2 => setChart({
-    title: d2.name + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
+    title: defName(d2) + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
     vals: Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null),
     target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
   });
@@ -407,13 +497,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         return `<td style="${td}">${v == null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>`;
       }).join('');
       const avg = manualAvg(d2);
-      return `<tr><td style="${td};text-align:left">${d2.name}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
+      return `<tr><td style="${td};text-align:left">${defName(d2)}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
     }).join('');
     const html = `
       <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
       <div style="font-size:11px;color:#555;margin-bottom:8px">
         จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · OEE ถ่วงน้ำหนักเวลารับภาระ ·
-        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
+        PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
       </div>
       <table style="border-collapse:collapse;width:100%">
         <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">รวม/เฉลี่ย</th></tr>
@@ -437,8 +527,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const autoRows = [
         { key: 'produce', name: 'ยอดผลิต (ชิ้น)', formula: 'Σ ยอดผลิตจริงของกะที่ปิดแล้ว', val: m => (m.n ? m.produce : null), sum: months.tot.produce },
         { key: 'ng', name: 'ของเสีย (ชิ้น · ไม่รวมงานทดลอง)', formula: 'Σ defect_logs (qty_ng + qty_suspect)', val: m => (m.n ? m.ng : null), sum: months.tot.ng },
-        { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
-        { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)', val: m => (m.n ? m.cost : null), sum: months.tot.cost },
+        { key: 'ppm', name: 'Internal defect (PPM)', formula: 'ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶', val: m => (m.n ? m.ppm : null), sum: months.tot.ppm },
+        { key: 'cost', name: 'Cost of defect (บาท)', formula: 'Σ ของเสีย × ต้นทุน/ชิ้น (standard → material)',
+          val: m => (m.n && m.costKnown ? m.cost : null), sum: months.tot.costKnown ? months.tot.cost : null },
         { key: 'oee', name: 'OEE (%)', formula: 'OEE stamp ถ่วงน้ำหนักเวลารับภาระ',
           commitment: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '', target: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '',
           val: m => (m.n ? m.oee : null), sum: months.tot.oee,
@@ -456,7 +547,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         const monthVals = Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null);
         const avg = manualAvg(d2);
         return {
-          category: d2.category, name: d2.name, formula: d2.formula_text || '', scope: d2.scope_text || '',
+          category: d2.category, name: defName(d2), formula: d2.formula_text || d2.kpi_catalog?.formula_text || '',
+          scope: d2.scope_text || d2.kpi_catalog?.scope_text || '',
           commitment: d2.commitment || '', target: d2.target || '',
           monthVals, summary: avg,
           ynVals: monthVals.map(v => manualYn(d2, v)), ynTotal: manualYn(d2, avg),
@@ -468,7 +560,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       await exportKpiExcel({
         year, sectionLabel: scopeLabel, rows: [...manualRows, ...autoRows],
         formCode: fullCode(df || {}),
-        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ (ยอดผลิต+ของเสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
+        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
       });
     } catch (e) {
       toast.error('export Excel ไม่สำเร็จ: ' + (e?.message || e));
@@ -477,9 +569,44 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
   /* บันทึกนิยาม KPI (insert/update — update ต้องนับแถว กฎ RLS-เงียบ) */
   const saveDef = async form => {
+    /* ชื่อ KPI มาจากทะเบียน — เลือกตัวเดิม หรือ "ตั้งชื่อใหม่เข้าทะเบียน" (ตั้งใจเท่านั้น)
+       เก็บ `name` เป็น snapshot ด้วย เพื่อให้แถวยังอ่านออกถ้าทะเบียนถูกลบ (FK = set null) */
+    let catalogId = form.catalog_id || null;
+    const typed = (form.name || '').trim();
+    if (!catalogId && typed) {
+      const hit = catalog.find(c => normSearch(c.name) === normSearch(typed));
+      if (hit) catalogId = hit.id;
+      else {
+        const { data: nc, error: ce } = await supabase.from('kpi_catalog').insert({
+          name: typed, category: form.category || 'internal', unit: form.unit || null,
+          formula_text: form.formula_text || null, scope_text: form.scope_text || null,
+          direction: form.direction || null,
+        }).select('id').single();
+        if (ce) {
+          toast.error(ce.code === '23505' ? 'ชื่อนี้มีในทะเบียนแล้ว — เลือกจากลิสต์แทน'
+            : ce.code === '42P01' ? 'ยังไม่ได้ apply migration kpi_catalog — แจ้ง admin'
+              : 'เพิ่มชื่อเข้าทะเบียนไม่สำเร็จ: ' + ce.message);
+          return false;
+        }
+        catalogId = nc?.id || null;
+        loadCatalog();
+      }
+    }
+    /* หน่วยอยู่ที่ "ทะเบียน" (ใช้ทุกปี) ไม่ใช่ที่นิยามรายปี — แก้ในโมดัลแล้วต้องเขียนกลับทะเบียน
+       best-effort: พลาดแล้วบอก แต่ไม่ทำให้บันทึกนิยามล้ม (กฎ RLS-เงียบ: นับแถวที่เขียนจริง) */
+    if (catalogId && form.unit !== undefined) {
+      const cur = catalog.find(c => c.id === catalogId);
+      const u = (form.unit || '').trim() || null;
+      if (cur && (cur.unit || null) !== u) {
+        const { data: cu, error: ue } = await supabase.from('kpi_catalog').update({ unit: u }).eq('id', catalogId).select('id');
+        if (ue || !cu?.length) toast.error('บันทึกนิยามแล้ว แต่แก้ "หน่วย" ในทะเบียนไม่สำเร็จ' + (ue ? ': ' + ue.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
+        else loadCatalog();
+      }
+    }
     const payload = {
       year, section: form.section || null, category: form.category || 'internal',
-      seq: Number(form.seq) || 0, name: (form.name || '').trim(),
+      catalog_id: catalogId,
+      seq: Number(form.seq) || 0, name: typed,
       formula_text: form.formula_text || null, scope_text: form.scope_text || null,
       commitment: form.commitment || null, target: form.target || null,
       target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
@@ -493,14 +620,90 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
     } else {
       const { error } = await supabase.from('kpi_definitions').insert(payload);
-      if (error) { toast.error('เพิ่มไม่สำเร็จ: ' + error.message); return false; }
+      if (error) {
+        toast.error(error.code === '23505'
+          ? `KPI นี้ถูกตั้งไว้ในปี ${year + 543}${form.section ? ` ส่วน ${form.section}` : ' (ส่วนกลาง)'} แล้ว — แก้ที่แถวเดิมแทน`
+          : 'เพิ่มไม่สำเร็จ: ' + error.message);
+        return false;
+      }
     }
     toast.success('บันทึก KPI แล้ว');
     loadDefs();
     return true;
   };
+  /* คัดลอกชุด KPI จากปีอื่นมาปีนี้ — ลงข้อมูลย้อนหลังโดยไม่ต้องพิมพ์ชื่อใหม่ (ต้นตอของการพิมพ์ผิด)
+     ⚠️ คัดลอกเฉพาะ "นิยาม" ไม่คัดลอกค่ารายเดือน (ค่าคือข้อเท็จจริงของปีนั้น ห้ามลอก) */
+  const copyFromYear = async () => {
+    const raw = window.prompt(`คัดลอกชุด KPI จากปีไหนมาปี ${year + 543}?\n(ใส่ปี พ.ศ. เช่น ${year + 542})`, String(year + 542));
+    if (raw == null) return;
+    const be = Number(String(raw).trim());
+    if (!Number.isFinite(be) || be < 2500 || be > 2700) { toast.error('ใส่ปี พ.ศ. 4 หลัก'); return; }
+    const src = be - 543;
+    if (src === year) { toast.error('เป็นปีเดียวกับที่เปิดอยู่'); return; }
+    setCopying(true);
+    try {
+      let q = supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
+      if (section) q = q.or(`section.eq.${section},section.is.null`);
+      const { data: srcRows, error } = await q;
+      if (error) { toast.error('อ่านชุดปี ' + be + ' ไม่สำเร็จ: ' + error.message); return; }
+      if (!srcRows?.length) { toast.error(`ปี ${be} ไม่มีชุด KPI${section ? ` ของส่วน ${section}` : ''}`); return; }
+      // ตัดตัวที่ปีนี้มีแล้ว (เทียบด้วย catalog_id ก่อน — ตกมาที่ชื่อเมื่อแถวเก่าไม่ผูกทะเบียน)
+      const haveCat = new Set(defs.map(d2 => d2.catalog_id).filter(Boolean));
+      const haveName = new Set(defs.map(d2 => normSearch(defName(d2))));
+      const todo = srcRows.filter(r => !(r.catalog_id ? haveCat.has(r.catalog_id) : haveName.has(normSearch(r.name || ''))));
+      const skipped = srcRows.length - todo.length;
+      if (!todo.length) { toast.info(`ปี ${year + 543} มีครบแล้วทั้ง ${srcRows.length} รายการ`); return; }
+      if (!window.confirm(
+        `คัดลอก ${todo.length} รายการจากปี ${be} มาปี ${year + 543}` +
+        (skipped ? `\n(ข้าม ${skipped} รายการที่ปีนี้มีอยู่แล้ว)` : '') +
+        '\n\nคัดลอกเฉพาะ "นิยาม" (ชื่อ/เป้า/สูตร/น้ำหนัก) — ค่ารายเดือนไม่ถูกคัดลอก')) return;
+      const payload = todo.map(r => ({
+        year, section: r.section, category: r.category, catalog_id: r.catalog_id || null,
+        seq: r.seq, name: r.name, formula_text: r.formula_text, scope_text: r.scope_text,
+        commitment: r.commitment, target: r.target, target_value: r.target_value,
+        direction: r.direction, weight: r.weight, action_plan: r.action_plan, action_owner: r.action_owner,
+      }));
+      const { data: ins, error: ie } = await supabase.from('kpi_definitions').insert(payload).select('id');
+      if (ie || !ins?.length) { toast.error('คัดลอกไม่สำเร็จ' + (ie ? ': ' + ie.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return; }
+      toast.success(`คัดลอก ${ins.length} รายการมาปี ${year + 543} แล้ว — กรอกค่ารายเดือนต่อได้เลย`);
+      loadDefs();
+    } finally { setCopying(false); }
+  };
+
+  /* ตั้งเป้า/ทิศทาง/commitment ให้แถวที่ระบบคำนวณเอง — ค่าไม่ได้มาจากที่นี่ เก็บแค่เกณฑ์
+     ⚠️ upsert ด้วย source ไม่ใช่ catalog_id (แถวอัตโนมัติไม่จำเป็นต้องผูกทะเบียนชื่อ) */
+  const saveAutoTarget = async f => {
+    const src = `auto:${f.src}`;
+    const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
+    if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    const payload = {
+      year, section: section || null, line_group: group || null, source: src,
+      category: 'internal', name: f.name, seq: f.seq ?? 0,
+      target_value: tv, direction: f.direction || null,
+      commitment: f.commitment || null, target: f.target_text || null,
+      weight: f.weight === '' || f.weight == null ? null : Number(f.weight),
+      action_plan: f.action_plan || null, action_owner: f.action_owner || null,
+    };
+    const cur = autoDefBy[f.src];
+    if (cur) {
+      const { data: d, error } = await supabase.from('kpi_definitions').update(payload).eq('id', cur.id).select('id');
+      if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
+    } else {
+      const { error } = await supabase.from('kpi_definitions').insert(payload);
+      if (error) {
+        toast.error(error.code === '42703'
+          ? 'ยังไม่ได้ apply migration 20260901_kpi_auto_target.sql (Main) — แจ้ง admin'
+          : 'บันทึกไม่สำเร็จ: ' + error.message);
+        return false;
+      }
+    }
+    toast.success('บันทึกเป้าแล้ว');
+    loadDefs();
+    return true;
+  };
+
   const removeDef = async d2 => {
-    if (!window.confirm(`ปิดใช้งาน KPI "${d2.name}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
+    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     loadDefs();
@@ -518,7 +721,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>📑 KPI รายเดือน</span>
         {/* width กัน index.css input/select width:100% */}
         <select value={year} onChange={e => setYear(+e.target.value)} style={selSt(110)}>
-          {[nowYear, nowYear - 1, nowYear - 2].map(y => <option key={y} value={y}>{y + 543}</option>)}
+          {[nowYear + 1, nowYear, nowYear - 1, nowYear - 2, nowYear - 3, nowYear - 4].map(y => <option key={y} value={y}>{y + 543}</option>)}
         </select>
         <select value={section} onChange={e => { setSection(e.target.value); setGroup(''); }} style={selSt(190)}>
           <option value="">ทุกส่วนงานในขอบเขต</option>
@@ -538,7 +741,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         นับเฉพาะ<b>กะที่ปิดแล้ว</b> — กะที่เปิดค้างยังไม่ถูกนับ · OEE = ค่า stamp ถ่วงน้ำหนักเวลารับภาระ ·
-        PPM = ของเสีย ÷ (ยอดผลิต + ของเสีย) × 10⁶ ไม่รวมงานทดลอง (ต่างจากสูตรใบเดิม ของเสีย ÷ ยอดผลิต ~0.03% ที่ระดับ PPM ปัจจุบัน) ·
+        PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง (สูตรเดียวกับใบ KPI ของบริษัท — ยืนยัน 2026-09-07) ·
         Excel export ตามโครง 3 ชีทของฟอร์ม FM-HRM-6-022/024/025
       </div>
 
@@ -561,6 +764,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 ))}
                 <th style={{ ...thSt, color: 'var(--text)' }}>รวม/เฉลี่ย</th>
                 <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์ (คลิกดูใหญ่)</th>
+                {canManage && <th style={{ ...thSt, textAlign: 'center' }}>เป้า</th>}
               </tr>
             </thead>
             <tbody>
@@ -584,6 +788,20 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                     onClick={() => openRowChart(r)}>
                     <MiniChart vals={months.out.map(r.val)} kind={r.kind} target={r.target ?? null} dir={r.dir ?? null} curIdx={curMonthIdx} />
                   </td>
+                  {canManage && (
+                    <td style={{ ...tdSt, whiteSpace: 'nowrap', textAlign: 'center' }}>
+                      {r.key === 'oee' ? (
+                        /* ⚠️ เป้า OEE มีแหล่งเดียวคือ `oee_targets` — ตั้งซ้ำที่นี่ = เป้า 2 ชุด drift */
+                        <span title="เป้า OEE ใช้ร่วมทั้งระบบ (จอผัง · OEE Analytics · OBEYA) ตั้งที่ปุ่ม 🎯 ในหน้า OEE Analytics"
+                          style={{ fontSize: 10.5, color: 'var(--muted)' }}>🔒 ทะเบียนเป้า OEE</span>
+                      ) : (
+                        <button onClick={() => setAutoTgt(r)} title="ตั้งเป้า / ทิศทาง / commitment ของ KPI ตัวนี้"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>
+                          {r.target != null ? '🎯' : '＋🎯'}
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -604,7 +822,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           ⚠ KPI กรอกมือยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260824_kpi_definitions_main.sql</code> (Main) · แจ้ง admin
         </div>
       )}
-      {!kpiMissing && defs && (
+      {/* allDefs === null = ยังโหลดอยู่ (defs เป็น array เสมอหลัง filter จึงเช็คไม่ได้) */}
+      {!kpiMissing && allDefs && (
         <div style={{ ...card, overflowX: 'auto' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
@@ -613,11 +832,27 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             {canManage && (
               <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>＋ เพิ่ม KPI</button>
             )}
+            {canManage && !catMissing && (
+              <>
+                <button onClick={copyFromYear} disabled={copying}
+                  title="คัดลอกรายการ KPI (ชื่อ/เป้า/สูตร) จากปีอื่นมาตั้งเป็นชุดของปีนี้ — ค่ารายเดือนไม่ถูกคัดลอก"
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12, opacity: copying ? 0.6 : 1 }}>
+                  {copying ? '⏳ กำลังคัดลอก…' : '📋 คัดลอกชุด KPI จากปีอื่น'}
+                </button>
+                <button onClick={() => setShowCat(true)} title="ดู/แก้ชื่อ KPI ในทะเบียน — แก้ชื่อแล้วเปลี่ยนพร้อมกันทุกปีทุกส่วนงาน"
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>🗂 ทะเบียนชื่อ KPI ({catalog.length})</button>
+              </>
+            )}
             {group && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
-                ⚠ KPI กรอกมือผูกกับ "ส่วนงาน" — ไม่กรองตามกลุ่มไลน์ที่เลือก
+                📍 แสดง KPI ของกลุ่มไลน์ <b>{group}</b> — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน
               </span>
             )}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
+            ⏪ <b>ลงย้อนหลังได้</b> — เลือกปีที่หัวเพจแล้วกรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
+            ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
+            {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
           </div>
           <ReadOnlyNote show={!canManage} role={role} compact
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
@@ -649,7 +884,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       return (
                         <tr key={d2.id}>
                           <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
-                            <b style={{ color: 'var(--text)' }}>{d2.name}</b>
+                            <b style={{ color: 'var(--text)' }}>{defName(d2)}</b>
+                            {defUnit(d2) && <span style={{ marginLeft: 4, fontSize: 10.5, color: 'var(--muted)' }}>({defUnit(d2)})</span>}
+                            {!d2.catalog_id && !catMissing && (
+                              <span title="ยังไม่ได้ผูกกับทะเบียนชื่อ KPI — เปิดแก้ไขแล้วเลือกชื่อจากทะเบียนเพื่อให้เทียบข้ามปีได้"
+                                style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
+                            )}
                             {!section && d2.section && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--muted)' }}>({d2.section})</span>}
                             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                               {[d2.commitment && `เป้า ${d2.commitment}`, d2.scope_text].filter(Boolean).join(' · ')}
@@ -697,9 +937,26 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {chart && <ChartModal c={chart} curIdx={curMonthIdx} onClose={() => setChart(null)} />}
 
+      {autoTgt && (
+        <AutoTargetModal
+          row={autoTgt} def={autoDefBy[autoTgt.src]} year={year} section={section} group={group}
+          onClose={() => setAutoTgt(null)}
+          onSave={async f => { if (await saveAutoTarget(f)) setAutoTgt(null); }}
+        />
+      )}
+
+      {showCat && (
+        <CatalogModal
+          rows={catalog} canManage={canManage} usedNames={defs.map(d2 => d2.catalog_id).filter(Boolean)}
+          onClose={() => setShowCat(false)}
+          onChanged={() => { loadCatalog(); loadDefs(); }}
+        />
+      )}
+
       {editDef && (
         <DefModal
           init={editDef} year={year} section={section} sectionOpts={sectionOpts}
+          catalog={catalog} catMissing={catMissing} usedIds={defs.map(d2 => d2.catalog_id).filter(Boolean)}
           onClose={() => setEditDef(null)}
           onSave={async f => { if (await saveDef(f)) setEditDef(null); }}
         />
@@ -708,14 +965,191 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   );
 }
 
-/* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ── */
-function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
+/* ── โมดัลตั้งเป้าของ KPI ที่ระบบคำนวณเอง ────────────────────────────────────
+   ⚠️ ไม่มีช่องกรอก "ค่า" โดยตั้งใจ — ค่ามาจากระบบ แถวนี้เก็บแค่เกณฑ์ตัดสิน
+   ⚠️ ทิศทางระบบ "เสนอ" ค่าตั้งต้นให้ (ยอดผลิต=มากดี · ของเสีย/PPM/ต้นทุน/Downtime=น้อยดี)
+      แต่คนเปลี่ยนได้ — เช่นบางที่คุมยอดผลิตเป็น "ไม่ให้ผลิตเกินแผน" (overproduction = ความสูญเปล่า) */
+function AutoTargetModal({ row, def, year, section, group, onClose, onSave }) {
+  const [f, setF] = useState(() => ({
+    src: row.src,
+    name: def?.name || row.label.split(' · เป้า')[0],
+    target_value: def?.target_value ?? '',
+    direction: def?.direction || row.defDir || '',
+    commitment: def?.commitment || '',
+    target_text: def?.target || '',
+    weight: def?.weight ?? '',
+    seq: def?.seq ?? 0,
+    action_plan: def?.action_plan || '',
+    action_owner: def?.action_owner || '',
+  }));
+  const [dirty, setDirty] = useState(false);
+  const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
+  /* ⚠️ ฟอร์มห้ามปิดจากการคลิกนอกกรอบ (UI-CONVENTIONS §5) — กรอกไปแล้วหายทั้งใบ */
+  const close = () => {
+    if (dirty && !window.confirm('ยังไม่ได้บันทึก — ปิดแล้วค่าที่กรอกจะหาย ปิดเลยไหม?')) return;
+    onClose();
+  };
+  const inp = { width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
+  const lbl = { fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 };
+  const scope = `ปี ${year + 543}${section ? ` · ${section}` : ' · ทุกส่วนงาน'}${group ? ` · ${group}` : ' · ทุกกลุ่มไลน์'}`;
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(560px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้งเป้า — {f.name}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, marginBottom: 12, lineHeight: 1.6 }}>
+          {scope}<br />
+          <b style={{ color: 'var(--accent)' }}>⚡ ค่ารายเดือนระบบคำนวณให้เอง</b> — ที่ตั้งตรงนี้คือ "เกณฑ์ตัดสิน Y/N" เท่านั้น
+          {group ? '' : ' · เลือกกลุ่มไลน์ที่หัวเพจก่อน ถ้าอยากตั้งเป้าแยกรายกลุ่มไลน์'}
+        </div>
+        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
+          <div>
+            <div style={lbl}>เป้าตัวเลข</div>
+            <input style={inp} type="number" step="any" value={f.target_value}
+              onChange={e => set('target_value', e.target.value)} placeholder="เว้นว่าง = ไม่ตัดสิน Y/N" />
+          </div>
+          <div>
+            <div style={lbl}>ทิศทาง *</div>
+            <select style={inp} value={f.direction} onChange={e => set('direction', e.target.value)}>
+              <option value="">— เลือก —</option>
+              <option value="up">มากกว่าดี (≥ เป้า = Y)</option>
+              <option value="down">น้อยกว่าดี (≤ เป้า = Y)</option>
+            </select>
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={lbl}>Commitment (ข้อความบนใบ Appraisal เช่น "≤ 1.452%")</div>
+            <input style={inp} value={f.commitment} onChange={e => set('commitment', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>Target (ข้อความ)</div>
+            <input style={inp} value={f.target_text} onChange={e => set('target_text', e.target.value)} />
+          </div>
+          <div>
+            <div style={lbl}>Weight (ใบ Appraisal)</div>
+            <input style={inp} type="number" step="any" value={f.weight} onChange={e => set('weight', e.target.value)} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={lbl}>IMPROVEMENT ACTIVITY (ชีท Action FM-HRM-6-025)</div>
+            <textarea style={{ ...inp, minHeight: 50, resize: 'vertical' }} value={f.action_plan} onChange={e => set('action_plan', e.target.value)} />
+          </div>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={lbl}>RESPONSIBILITY</div>
+            <input style={inp} value={f.action_owner} onChange={e => set('action_owner', e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button onClick={close} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── โมดัลทะเบียนชื่อ KPI ──
+   แก้ชื่อที่นี่ = เปลี่ยนพร้อมกันทุกปี/ทุกส่วนงาน (แถวอ้าง catalog_id ไม่ได้ก๊อปชื่อไป)
+   ⚠️ ปิดใช้งาน (soft delete) ไม่ลบจริง — นิยามปีเก่ายังอ้างอยู่ ต้องอ่านออกเสมอ */
+function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  const used = useMemo(() => new Set(usedNames), [usedNames]);
+  const shown = useMemo(() => {
+    const nq = normSearch(q);
+    return nq ? rows.filter(r => normSearch(`${r.name} ${r.unit || ''} ${r.scope_text || ''}`).includes(nq)) : rows;
+  }, [rows, q]);
+
+  const rename = async (r) => {
+    const nv = window.prompt(`เปลี่ยนชื่อ KPI\n\n⚠️ มีผลกับทุกปีและทุกส่วนงานที่ใช้ชื่อนี้`, r.name);
+    if (nv == null) return;
+    const name = nv.trim();
+    if (!name || name === r.name) return;
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabase.from('kpi_catalog').update({ name }).eq('id', r.id).select('id');
+      if (error || !data?.length) {
+        toast.error(error?.code === '23505' ? 'ชื่อนี้มีอยู่แล้วในทะเบียน'
+          : 'เปลี่ยนชื่อไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
+        return;
+      }
+      toast.success('เปลี่ยนชื่อแล้ว — มีผลทุกปีที่ใช้ชื่อนี้');
+      onChanged?.();
+    } finally { setBusy(''); }
+  };
+  const toggle = async (r) => {
+    if (r.is_active && used.has(r.id) &&
+      !window.confirm(`"${r.name}" ถูกใช้ในชุด KPI ของปีที่เปิดอยู่\nปิดใช้งานแล้วจะไม่โผล่ให้เลือกใหม่ (แถวเดิมยังอยู่)\n\nปิดใช้งาน?`)) return;
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabase.from('kpi_catalog').update({ is_active: !r.is_active }).eq('id', r.id).select('id');
+      if (error || !data?.length) { toast.error('ทำไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
+      onChanged?.();
+    } finally { setBusy(''); }
+  };
+
+  const inp = { padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 260 };
+  const td = { padding: '5px 8px', fontSize: 12, color: 'var(--text2)', borderBottom: '1px solid var(--border)' };
+  return (
+    /* ⚠️ ไม่ใช่ฟอร์มที่กรอกค้าง — ปิดจาก backdrop ได้ (UI-CONVENTIONS §5) */
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(760px, 96vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🗂 ทะเบียนชื่อ KPI</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
+          ชื่อชุดเดียวใช้ทุกปีทุกส่วนงาน — <b>แก้ชื่อที่นี่แล้วเปลี่ยนพร้อมกันทั้งระบบ</b> (ใบ Monitoring เทียบปีต่อปีได้)
+          · เพิ่มชื่อใหม่ทำตอนกด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อที่ยังไม่มี
+        </div>
+        <input style={inp} value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ KPI…" />
+        <div style={{ overflowY: 'auto', marginTop: 10, flex: 1 }}>
+          {!shown.length ? (
+            <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '14px 4px' }}>
+              {rows.length ? 'ไม่พบชื่อที่ค้นหา' : 'ยังไม่มีชื่อ KPI ในทะเบียน — กด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อ ระบบจะเพิ่มเข้าทะเบียนให้'}
+            </div>
+          ) : (
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <tbody>
+                {shown.map(r => (
+                  <tr key={r.id} style={{ opacity: r.is_active ? 1 : 0.5 }}>
+                    <td style={{ ...td, width: '100%' }}>
+                      <b style={{ color: 'var(--text)' }}>{r.name}</b>
+                      {r.unit && <span style={{ marginLeft: 4, fontSize: 10.5, color: 'var(--muted)' }}>({r.unit})</span>}
+                      {!r.is_active && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#f59e0b' }}>ปิดใช้งาน</span>}
+                      {used.has(r.id) && <span style={{ marginLeft: 6, fontSize: 10.5, color: '#22c55e' }}>ใช้ในปีที่เปิดอยู่</span>}
+                      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                        {[CATS.find(c => c.key === r.category)?.label, r.formula_text, r.scope_text].filter(Boolean).join(' · ')}
+                      </div>
+                    </td>
+                    {canManage && (
+                      <td style={{ ...td, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        <button disabled={busy === r.id} onClick={() => rename(r)} title="เปลี่ยนชื่อ (มีผลทุกปี)"
+                          style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
+                        <button disabled={busy === r.id} onClick={() => toggle(r)} title={r.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งานคืน'}
+                          style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>{r.is_active ? '🗑' : '♻️'}</button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ปิด</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ──
+   ⚠️ ชื่อ KPI เลือกจากทะเบียน (kpi_catalog) เป็นหลัก — พิมพ์เองได้แต่ต้องเห็นว่า
+   "กำลังสร้างชื่อใหม่" และถ้าคล้ายชื่อที่มีอยู่ต้องเตือนก่อน (ต้นตอของ KPI แตกหัวข้อ) */
+function DefModal({ init, year, section, sectionOpts, catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
   const [f, setF] = useState(() => ({
     id: init.id || null,
+    catalog_id: init.catalog_id || '',
     section: init.id ? (init.section || '') : (section || ''),
     category: init.category || 'internal',
     seq: init.seq ?? 0,
-    name: init.name || '',
+    name: init.kpi_catalog?.name || init.name || '',
+    unit: init.kpi_catalog?.unit || '',
     formula_text: init.formula_text || '',
     scope_text: init.scope_text || '',
     commitment: init.commitment || '',
@@ -727,6 +1161,34 @@ function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
     action_owner: init.action_owner || '',
   }));
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const usedSet = useMemo(() => new Set(usedIds.filter(x => x !== init.catalog_id)), [usedIds, init.catalog_id]);
+  const catOpts = useMemo(() => catalog.map(c => ({
+    id: c.id, label: c.name, raw: c,
+    keywords: [c.unit, c.formula_text, c.scope_text].filter(Boolean).join(' '),
+    sub: [CATS.find(x => x.key === c.category)?.label, c.unit && `หน่วย ${c.unit}`, c.scope_text].filter(Boolean).join(' · '),
+    // KPI ที่ตั้งไว้ในปี+ส่วนงานนี้แล้ว — ยังเลือกได้ แต่ต้องเห็นว่าจะซ้ำ (DB มี unique index กันอยู่)
+    badge: usedSet.has(c.id) ? 'ตั้งไว้แล้วปีนี้' : '',
+    badgeColor: '#f59e0b',
+  })), [catalog, usedSet]);
+
+  /* คำอธิบายใต้ช่องชื่อ — เลือกแล้ว / จะสร้างใหม่ / คล้ายของเดิม (ต้นตอที่ทำให้ KPI แตกหัวข้อ) */
+  const nameNote = useMemo(() => {
+    const typed = (f.name || '').trim();
+    if (f.catalog_id) {
+      return usedSet.has(f.catalog_id)
+        ? { color: '#f59e0b', text: '⚠ KPI นี้ถูกตั้งไว้ในปี/ส่วนงานนี้แล้ว — บันทึกจะไม่ผ่าน ให้ไปแก้ที่แถวเดิมแทน' }
+        : { color: '#22c55e', text: '✓ ใช้ชื่อจากทะเบียน — แก้ชื่อที่ทะเบียนแล้วเปลี่ยนพร้อมกันทุกปี' };
+    }
+    if (!typed) return null;
+    const nq = normSearch(typed);
+    const exact = catalog.find(c => normSearch(c.name) === nq);
+    if (exact) return { color: '#22c55e', text: `✓ ตรงกับ “${exact.name}” ในทะเบียน — จะผูกให้อัตโนมัติ` };
+    const near = catalog.find(c => { const n = normSearch(c.name); return n.includes(nq) || nq.includes(n); });
+    if (near) return { color: '#f59e0b', text: `⚠ คล้ายกับ “${near.name}” ที่มีอยู่แล้ว — ถ้าเป็นตัวเดียวกันให้ใช้ชื่อเดิม ไม่งั้นจะแตกเป็นคนละหัวข้อ`, pick: near };
+    return { color: 'var(--muted)', text: `จะเพิ่ม “${typed}” เข้าทะเบียนชื่อ KPI (ใช้ต่อได้ทุกปี)` };
+  }, [f.catalog_id, f.name, catalog, usedSet]);
+
   const inp = { width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
   const lbl = { fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 };
   return (
@@ -737,9 +1199,54 @@ function DefModal({ init, year, section, sectionOpts, onClose, onSave }) {
         </div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>ชื่อ KPI *</div>
-            <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+            <div style={lbl}>ชื่อ KPI * {!catMissing && <span style={{ fontWeight: 500 }}>(เลือกจากทะเบียน — พิมพ์ใหม่ได้ถ้ายังไม่มี)</span>}</div>
+            {catMissing ? (
+              <>
+                <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                  ⚠ ยังไม่ได้ apply migration ทะเบียนชื่อ KPI — พิมพ์ชื่อเองไปก่อน (เสี่ยงพิมพ์ต่างกันแล้วแตกเป็นคนละหัวข้อ)
+                </div>
+              </>
+            ) : (
+              <>
+                <SearchSelect
+                  value={f.catalog_id} text={f.name} options={catOpts} allowFree
+                  placeholder="พิมพ์เพื่อค้นชื่อ KPI ในทะเบียน…"
+                  emptyText="ยังไม่มีชื่อนี้ในทะเบียน — พิมพ์ต่อได้ ระบบจะเพิ่มให้ตอนบันทึก"
+                  freeHint="เป็นชื่อใหม่ (จะถูกเพิ่มเข้าทะเบียน)"
+                  inputStyle={inp}
+                  onChange={({ id, text, opt }) => setF(p => ({
+                    ...p, catalog_id: id || '', name: text,
+                    // เลือกจากทะเบียน = เติมค่าตั้งต้นให้ (ทับเฉพาะช่องที่ยังว่าง — ค่าที่คนกรอกเองต้องไม่หาย)
+                    ...(opt ? {
+                      category: opt.raw.category || p.category,
+                      unit: p.unit || opt.raw.unit || '',
+                      formula_text: p.formula_text || opt.raw.formula_text || '',
+                      scope_text: p.scope_text || opt.raw.scope_text || '',
+                      direction: p.direction || opt.raw.direction || '',
+                    } : {}),
+                  }))}
+                />
+                {nameNote && (
+                  <div style={{ fontSize: 11.5, marginTop: 5, color: nameNote.color, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span>{nameNote.text}</span>
+                    {nameNote.pick && (
+                      <button type="button" onClick={() => setF(p => ({ ...p, catalog_id: nameNote.pick.id, name: nameNote.pick.name }))}
+                        style={{ padding: '2px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>
+                        ใช้ชื่อนี้แทน
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </div>
+          {!catMissing && (
+            <div>
+              <div style={lbl}>หน่วย (เก็บที่ทะเบียน ใช้ทุกปี)</div>
+              <input style={inp} value={f.unit} onChange={e => set('unit', e.target.value)} placeholder="เช่น % · บาท · ครั้ง" />
+            </div>
+          )}
           <div>
             <div style={lbl}>หมวด (ตามใบ Appraisal)</div>
             <select style={inp} value={f.category} onChange={e => set('category', e.target.value)}>
