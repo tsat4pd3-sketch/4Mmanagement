@@ -136,7 +136,7 @@
 |-------|---------|-------------|
 | `four_m_logs` | บันทึกการเปลี่ยนแปลง 4M | work_date, line_name, category (Man/Machine/Material/Method), description, status, created_by, sv_approved_by, approved_by, reject_reason, requires_qa |
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
-| `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
+| `meeting_action_items` | Action item จากประชุมแถวเช้า **+ ห้อง OBEYA** (ติดตามข้ามวันจนปิด) · **ตารางเดียวใช้ร่วมกัน ห้ามสร้างใหม่** · RLS = `has_perm('morning_meeting:record') or has_perm('obeya:record')` ครบ 4 cmd (2026-09-15) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled), **source** (morning/obeya), **kpi_key** (แกน SQDCM/OEE ที่ใบนี้ไปแก้ — ไม่มี check constraint ตั้งใจ), **target_value/result_value** |
 | `event_comments` (**DR**) | 💬 คอมเมนต์+🔔mention ใต้เหตุการณ์ (นำร่อง: ใบซ่อม MO + downtime — ก้าวแรกของสื่อสารในระบบแทน chat แยก, 2026-07-16) | ref_kind (mtn_order/downtime), ref_id (text), author_id/author_name (snapshot — profiles อยู่คนละ project), body, mentions jsonb · component กลาง `src/components/EventComments.jsx` (embed ใน MtnRepair DetailDrawer + แถว DT ใน DailyReport) · mention → client insert `notifications` ตรง (policy `notifications_insert_authenticated`) + รายชื่อจาก RPC `list_mention_users` (SECURITY DEFINER, guard auth.uid, revoke anon) — migrations `20260716_event_comments.sql` (DR) + `20260716_mention_notify.sql` (Main) · จุดใหม่ที่อยากมีคอมเมนต์ให้ reuse component นี้ + เพิ่มค่า ref_kind ใน check constraint |
 
 ### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
@@ -452,6 +452,19 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2026-09-15)
+
+หน้า `Obeya.jsx` (กลุ่มภาพรวม) — บอร์ด **SQDCM หน้าเดียว** ที่ตัดตาม*แกน* (ไม่ใช่ตามส่วนงานแบบจออื่น)
+· **ผัง "กระดาษ A4 ปูเต็มจอ" 5×2** (คำสั่ง user) — ทุกแผ่นเป็นกราฟ + เป้า + Δ เทียบงวดก่อน · มีโหมด 📺 จอ TV เต็มจอ
+· KPI ทั้งหมดอยู่ `src/utils/obeyaKpi.js` (pure · มีเทส) **ห้ามคำนวณซ้ำในหน้า** · OEE ยังมาจาก `oee.js` เท่านั้น
+· **🔴 กฎความซื่อสัตย์ของจอ:** แกนที่ข้อมูลไม่พอ (S ไม่มีทะเบียนอุบัติเหตุ · Q บันทึกของเสียไม่ครบ) **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง** — `axisXxx()` คืน `state: 'ok'|'thin'|'none'` + `note` เสมอ
+· **ACTION BOARD** = ที่เดียวของหน้าที่เขียนข้อมูลได้ · ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกที่มาด้วย `source` · migration `20260915_obeya_action_loop.sql` (**apply แล้ว** — เพิ่ม `source`/`kpi_key`/`target_value`/`result_value` + **แก้ RLS จาก `using(true)` เป็น `has_perm()` ครบ 4 cmd**)
+· สิทธิ์: `page:/obeya` (ทุก role) · `obeya:record` (leader ขึ้นไป)
+· ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** — โหลด 400 KB/รอบ ทุกใบงานที่ปิดจะลากจอโหลดใหม่ทั้งก้อน
+> 📄 รายละเอียดเต็ม → `docs/modules/obeya.md` (8 หัวข้อย่อย) · เหตุผลของดีไซน์ → `docs/OBEYA-DESIGN.md`
+
+---
+
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
 เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · ตาราง master/editable ใหม่ทุกตัวต้องผูก audit (เพิ่มชื่อตารางใน…
@@ -572,10 +585,10 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
                        #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
-                       #   OBEYA-DESIGN.md (ห้องบัญชาการ SQDCM + ลูปปิด countermeasure — 📌 สำรวจ+ออกแบบแล้ว
-                       #     ยังไม่ลงมือ 2026-09-15 · รอ user เคาะ 3 ข้อใน §7 · ⚠️ ข้อค้นพบชี้ขาด:
+                       #   OBEYA-DESIGN.md (บันทึกการสำรวจ + เหตุผลของดีไซน์ Obeya — ✅ ลงมือแล้ว 2026-09-15
+                       #     ของที่ทำจริงอยู่ `docs/modules/obeya.md` · ⚠️ ข้อค้นพบชี้ขาดที่ยังจริงอยู่:
                        #     `meeting_action_items` = 0 แถวตั้งแต่สร้าง 13/07 = "ลูปติดตามมีโค้ดแต่ไม่มีใครใช้"
-                       #     ⇒ Obeya ที่ไม่แก้เรื่องนี้ = จอภาพรวมใบที่ 10 ที่จะไม่มีคนเปิด)
+                       #     ⇒ จอสวยไม่ช่วย ถ้าไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
