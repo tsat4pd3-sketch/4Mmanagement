@@ -2,7 +2,7 @@
 // pure module (ไม่ import supabase) → import ตรงได้เลย ไม่ต้อง bundle
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { canDoStep, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint } from '../mtnStepPerm.js';
+import { canDoStep, canSignMtnApproval, canSkipQa, isOrderReporter, isQaSkipped, isWaitingQa, MTN_STEPS, stepDenyHint, stepLabel, stepMeta } from '../mtnStepPerm.js';
 
 // ผูก role เป็นชุดสิทธิ์ง่ายๆ: keys = คีย์ที่ role นั้นถือ
 const perms = (keys, seededKeys = null) => ({
@@ -239,7 +239,7 @@ test('canBounceBack: ซ่อมไปแล้ว/ปิดแล้ว ตี
 
 /* ── 🏷️ ป้ายสถานะ + สถานะขั้น 5 — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ เพราะป้ายเดียวใช้ 2 ความหมาย) ── */
 import {
-  MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
+  MO_LABEL_WAIT_APPROVAL, MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
   moQaState, moStatusLabel,
 } from '../mtnStepPerm.js';
 
@@ -321,4 +321,86 @@ test('canHandoff: ใบที่จบแล้ว/ถูกตีกลับ 
   // returned = ใบอยู่ที่ผู้แจ้งแล้ว ให้ใช้ "แก้แผนก & ส่งใหม่" (resubmit) ไม่ใช่ส่งต่อ
   assert.equal(canHandoff({ status: 'returned', current_step: 1 }), false);
   assert.equal(canHandoff({}), false);
+});
+
+/* ═══ ใบของทีม MTN เดินขั้นต่างจาก JIG/DIE (2026-09-15 · คำสั่ง user) ═══════════════ */
+
+test('ด่านอนุมัติ: งานปรับปรุง/สร้างที่ยังไม่เซ็น ช่างกดรับงาน (ขั้น 2-3) ไม่ได้', () => {
+  const head = { order: ORDER, fullName: 'หัวหน้าช่าง', ...perms(['assign', 'service']), approvalBlocked: true };
+  assert.deepEqual(canDoStep(2, head), { ok: false, code: 'await_mgr_approval' });
+  assert.deepEqual(canDoStep(3, head), { ok: false, code: 'await_mgr_approval' });
+  // ขั้นอื่นไม่เกี่ยว — ด่านนี้กันแค่ "เริ่มงาน"
+  assert.equal(canDoStep(4, { ...head, fullName: 'สมชาย ใจดี' }).ok, true);
+});
+
+test('ด่านอนุมัติ: งานซ่อม/บริการ (approvalBlocked=false) ต้องเริ่มงานได้ทันที — ไลน์ห้ามหยุดรออนุมัติ', () => {
+  const head = { order: ORDER, fullName: 'หัวหน้าช่าง', ...perms(['assign', 'service']) };
+  assert.deepEqual(canDoStep(2, head), { ok: true, code: 'perm' });
+  assert.deepEqual(canDoStep(3, head), { ok: true, code: 'perm' });
+});
+
+test('ด่านอนุมัติ: manage_master ยังผ่านได้ (กฎเดิมของทั้งโมดูล — หัวหน้าปลดล็อกเองได้)', () => {
+  const boss = { order: ORDER, fullName: 'ผจก.', ...perms(['manage_master']), approvalBlocked: true };
+  assert.deepEqual(canDoStep(2, boss), { ok: true, code: 'manage_master' });
+});
+
+test('ขั้น 7 ของใบ MTN = ฝั่งช่าง (ผจก.ซ่อมบำรุง) — ไม่ติด scope ฝ่ายที่แจ้ง', () => {
+  const mgr = { order: ORDER, fullName: 'ผจก.ซ่อมบำรุง', ...perms(['approve']), inReporterScope: false };
+  assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: false }), { ok: false, code: 'out_of_scope' }, 'JIG/DIE เหมือนเดิม');
+  assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' });
+  // ขั้น 6 (รับมอบ) ยังเป็นของฝ่ายที่แจ้งทั้ง 2 ฟอร์ม — "แยก 2 ขั้น" ไม่ใช่ย้ายทั้งคู่ไปฝั่งช่าง
+  assert.deepEqual(canDoStep(6, { ...mgr, ...perms(['handover']), mtnForm: true }), { ok: false, code: 'out_of_scope' });
+});
+
+test('stepLabel/stepMeta: ขั้น 7 เปลี่ยนชื่อเฉพาะใบ MTN', () => {
+  assert.equal(stepMeta(7, { mtnForm: true }).whoShort, 'ผจก.ซ่อมบำรุง');
+  assert.equal(stepMeta(7).whoShort, MTN_STEPS[7].whoShort);
+  assert.match(stepLabel(7, { mtnForm: true }), /ผจก\.ซ่อมบำรุง/);
+  assert.match(stepLabel(7), /ผจก\./);
+  for (const s of [2, 3, 4, 5, 6]) assert.equal(stepMeta(s, { mtnForm: true }), MTN_STEPS[s], `ขั้น ${s} ต้องเหมือนกันทั้ง 2 ฟอร์ม`);
+});
+
+test('QA: งานปรับปรุง/สร้างไม่ต้องผ่าน QA · งานซ่อม/บริการและใบเก่ายังต้องผ่านเหมือนเดิม', () => {
+  const checked = { status: 'checked', current_step: 4 };
+  assert.equal(isWaitingQa({ ...checked, purpose: 'repair' }), true);
+  assert.equal(isWaitingQa({ ...checked, purpose: 'service' }), true);
+  assert.equal(isWaitingQa(checked), true, 'ใบเก่า/ทีมอื่นที่ไม่มี purpose = ต้องผ่าน QA ตามเดิม');
+  assert.equal(isWaitingQa({ ...checked, purpose: 'improve' }), false);
+  assert.equal(isWaitingQa({ ...checked, purpose: 'build' }), false);
+
+  assert.equal(moQaState({ ...checked, purpose: 'improve' }), 'skipped', 'ต้องขึ้น ⏭ ไม่ใช่ ✅ (ไม่มีใครตรวจจริง)');
+  assert.equal(moQaState({ status: 'repaired', current_step: 3, purpose: 'improve' }), 'none', 'ยังไม่ถึงขั้น 4');
+  assert.equal(moQaState({ ...checked, purpose: 'improve', qa_at: '2026-09-15T02:00:00Z' }), 'done', 'QA ตรวจให้ก็ยังบันทึกว่าตรวจแล้ว');
+
+  // ปุ่ม ⏭ ข้าม QA ต้องไม่โผล่ — ไม่มีอะไรให้ข้าม
+  assert.deepEqual(canSkipQa({ order: { ...checked, purpose: 'build' }, fullName: 'QA', ...perms(['qa']) }),
+    { ok: false, code: 'not_waiting_qa' });
+});
+
+test('canSignMtnApproval: คนที่ถูกระบุชื่อ / ผู้ถือ approve / manage_master เซ็นได้ · เซ็นแล้วซ้ำไม่ได้', () => {
+  const o = { purpose: 'improve', dept_manager_name: 'ผจก.สมศรี', plant_manager_name: 'ผจก.โรงงาน' };
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ผจก.สมศรี', ...perms([]) }), { ok: true, code: 'named' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['approve']) }), { ok: true, code: 'approve' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'คนอื่น', ...perms(['manage_master']) }), { ok: true, code: 'manage_master' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: o, fullName: 'ช่างเอก', ...perms(['service']) }), { ok: false, code: 'denied' });
+  assert.deepEqual(canSignMtnApproval('dept', { order: { ...o, dept_manager_at: 'x' }, fullName: 'ผจก.สมศรี', ...perms(['approve']) }),
+    { ok: false, code: 'already_signed' });
+  assert.deepEqual(canSignMtnApproval('plant', { order: o, fullName: 'ผจก.โรงงาน', ...perms([]) }), { ok: true, code: 'named' });
+  assert.equal(canSignMtnApproval('อื่นๆ', { order: o, ...perms(['manage_master']) }).ok, false);
+});
+
+test('stepDenyHint: ติดด่านอนุมัติ ต้องบอกว่ารอใครเซ็น ไม่ใช่บอกให้ไปขอ role', () => {
+  const lines = stepDenyHint(2, { mtnForm: true, awaitApproval: { missing: ['dept', 'plant'], deptName: 'ผจก.สมศรี', plantName: 'ผจก.โรงงาน' } });
+  assert.ok(lines.some(t => t.includes('ผจก.สมศรี')), 'ต้องบอกชื่อผู้จัดการต้นสังกัด');
+  assert.ok(lines.some(t => t.includes('ผจก.โรงงาน')));
+  assert.ok(!lines.some(t => t.includes('/permissions')), 'ห้ามชี้ไปที่เรื่องสิทธิ์ — เหตุคนละเรื่อง');
+});
+
+test('ป้ายสถานะ: ใบรออนุมัติต้องไม่ขึ้น "รอรับงาน" · แถวที่ไม่ได้ select คอลัมน์ลายเซ็นห้ามเดา', () => {
+  const base = { status: 'pending', purpose: 'improve' };
+  assert.equal(moStatusLabel({ ...base, dept_manager_at: null }), MO_LABEL_WAIT_APPROVAL);
+  assert.equal(moStatusLabel({ ...base, dept_manager_at: '2026-09-15T02:00:00Z' }), MO_STATUS_LABEL.pending);
+  assert.equal(moStatusLabel(base), MO_STATUS_LABEL.pending, 'ไม่ได้ select dept_manager_at = ใช้ป้ายเดิม');
+  assert.equal(moStatusLabel({ status: 'pending', purpose: 'repair', dept_manager_at: null }), MO_STATUS_LABEL.pending, 'งานซ่อมไม่เคยติดด่าน');
+  assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending, 'ใบทีมอื่น/ใบเก่าเหมือนเดิม');
 });
