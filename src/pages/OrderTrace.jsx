@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
@@ -64,7 +65,8 @@ export default function OrderTrace() {
   // 2 ทางเข้าของการสอบกลับ: รู้เลขใบ (order) ↔ รู้แต่อาการ (symptom)
   const [tab, setTab] = useTabParam(['order', 'symptom'], 'order');
   const scopeSecs = sections || [];
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const setParams = useMergeParams();
 
   const [lines, setLines] = useState([]);
   const [search, setSearch] = useState('');
@@ -200,7 +202,7 @@ export default function OrderTrace() {
       const hit = rows.find(o => o.prod_no === p) || rows[0];
       if (hit) setSel(hit);
     });
-    setSearchParams({}, { replace: true });
+    setParams({ prod: null }, { replace: true });   // ล้างเฉพาะ ?prod= — ล้างทั้งก้อนจะพา ?tab= ของหน้านี้หายไปด้วย
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines.length]);
 
