@@ -4,7 +4,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, orderProducedQty } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit } from '../utils/oee';
+import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -1424,6 +1425,23 @@ export default function Dashboard() {
                           ⚠️ ดีเลย์ {totalDelayed} ใบ
                         </span>
                       )}
+                      {/* ⬜ นาทีที่ยังไม่มีคำอธิบาย รวมทั้งกลุ่มไลน์ — "ต้อง recover กี่นาที" ตอบด้วยเลขนี้
+                          ⚠️ ตั้งใจไม่ทำเป็นไฟแดง: ค่ากลางทั้งโรงงานอยู่ที่ ~20% ของกะ ถ้าตีแดงคือแดงทุกไลน์
+                             ทุกกะ แล้วไม่มีใครเชื่อจออีก — ตั้งเกณฑ์เตือนหลังจากดูค่าจริงบนจอสักพักก่อน */}
+                      {(() => {
+                        const parts = sessions.filter(s => s.status === 'open').map(s => liveTimeSplit(s.oeeData)).filter(Boolean);
+                        if (!parts.length) return null;
+                        const unknown = Math.round(parts.reduce((a, p) => a + p.unknownMin, 0));
+                        const cap     = Math.round(parts.reduce((a, p) => a + p.capacityMin, 0));
+                        if (!(unknown > 0) || !(cap > 0)) return null;
+                        const shaky = parts.some(p => p.state !== 'ok');
+                        return (
+                          <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
+                            style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(156,163,175,0.15)', color: 'var(--text2)' }}>
+                            ⬜ ไม่รู้ {unknown} น. ({Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {/* hierarchy: ยุบป้ายกะเป็น 1 ชิปต่อไลน์ย่อย (☀️/🌙 อยู่ในชิปเดียวกัน) แทนป้ายต่อ session ที่รกเมื่อมีหลายไลน์ลูก */}
@@ -2155,6 +2173,9 @@ export default function Dashboard() {
                               })}
                             </div>
                           )}
+                          {/* นาทีที่หายไปของกะ — %P บอกว่าเดินได้กี่ % แต่ไม่มีใครอ่านแล้วรู้ว่า
+                              "ต้อง recover กี่นาที" · ตัวเลขชุดเดียวกันเป๊ะ แค่เปลี่ยนหน่วย (2026-09-16) */}
+                          {s.status === 'open' && <ShiftTimeSplit split={liveTimeSplit(s.oeeData)} compact />}
                         </div>
                       );
                           })}
