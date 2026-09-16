@@ -16,7 +16,7 @@
  * ⚠️ ชั้นนี้เป็น "มุมมองสด" เท่านั้น — ห้ามเอาไป stamp/บันทึกทับ snapshot ของใบ VSM
  */
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
-import { computeLiveOee, wavg, wLoad, sumDefectQty } from '../utils/oee.js';
+import { computeLiveOee, wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
@@ -98,14 +98,15 @@ export function buildVsmLive({
       breakPolicies,
     }) : null;
 
-    // OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')
+    /* OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')
+       🔴 ต้องผ่าน `dtMinBySession` เท่านั้น — รวม `duration_min` เองจะหักนาทีที่ทับเวลาพัก
+          ซ้ำกับที่ถูกกันออกจากฐานเวลาไปแล้ว (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
+          เคยเป็นแบบนั้นจนถึง 16/09 ⇒ เวลารับภาระต่ำกว่าจริง OEE เฉลี่ยของ /vsm
+          ไม่ตรงกับ /oee-analytics ทั้งที่เป็นกะชุดเดียวกัน */
     let closedOee = null;
     if (closed.length) {
-      const withLoad = closed.map(s => ({
-        ...s,
-        plannedMin: (dtBy[s.id] || []).reduce((a, d) =>
-          a + (isPlannedDT(d) ? (num(d.duration_min) || 0) : 0), 0),
-      }));
+      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies);
+      const withLoad = closed.map(s => ({ ...s, plannedMin: dtEffBy[s.id]?.planned || 0 }));
       const v = wavg(withLoad, s => num(s.oee), wLoad);
       closedOee = v == null ? null : Math.round(v * 10) / 10;
     }
