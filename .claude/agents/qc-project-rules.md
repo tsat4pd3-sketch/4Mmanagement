@@ -189,6 +189,12 @@ model: inherit
   grep `พาเรโต|Pareto` ในไฟล์ที่ **ไม่ได้** import `ParetoAbcChart` แล้วมี `sort(...b - a)` + แท่ง `width: ...%`
   = ranked bar chart ปลอมตัวเป็นพาเรโต → ต้องย้ายมาใช้ของกลาง **หรือเปลี่ยนชื่อให้ตรงกับสิ่งที่มันเป็น**
   (ลิสต์ตัวเลือก/Top N ไม่ใช่พาเรโต) · สูตรทั้งหมดอยู่ `src/utils/pareto.js` เท่านั้น ห้ามคำนวณ % สะสม/ABC เองซ้ำ
+- **F4.3 มือถือ (2026-09-16 · §มือถือ)** จับ 3 อาการที่ด่านอื่นมองไม่เห็น — วัดจริงด้วย
+  `node audit/mobilesweep.mjs` (แม่นกว่า grep) · grep ช่วยชี้จุดต้องสงสัย:
+  (ก) `gridTemplateColumns: isMobile ?` ในไฟล์เดียวกับ `position: 'sticky'` → sidebar ที่ลืมถอด sticky
+  บนมือถือ = ค้างทับเนื้อหา · (ข) `whiteSpace: 'nowrap'` ที่อยู่แถว flex เดียวกับข้อความยาว
+  (`.description` / `.problem` / `.note`) โดยข้อความไม่มี `minWidth: 0` → ถูกบีบเหลือ 0 หายทั้งบรรทัด
+  · (ค) `minWidth: <เลขตายตัว>` คู่กับ `overflowX: 'auto'` → เลขมักน้อยกว่าเนื้อหาจริง ของท้ายสุดโดนตัด
 - **F5** input ใน flex row/toolbar ต้องกำหนด width เอง (index.css default width:100%)
 - **F6** hover card เฉพาะ `matchMedia('(hover: hover)')` · popup ทุกอันมีทางปิด
 - **F7** playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip` — ห้ามวาดเส้นเวลาปัจจุบันเองสีอื่น
