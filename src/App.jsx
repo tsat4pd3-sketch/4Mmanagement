@@ -2,7 +2,8 @@ import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { supabase, setDrActorName } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { setActor } from './utils/actorStamp';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -1494,7 +1495,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
     // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
-    setDrActorName(null);
+    setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
@@ -2021,7 +2022,9 @@ export default function App() {
     setUserRole(data?.role ?? null);
     setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
-    setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
+    // traceability: ฝั่ง DR เป็น anon ต้อง stamp "ใครทำ" มาเองทั้งชื่อและ uid (ดู src/utils/actorStamp.js)
+    //   ชื่อ = snapshot ให้คนอ่าน · uid = คีย์ที่นับ/join ได้ (ชื่อสะกดต่างไม่ทำให้กลายเป็นคนละคน)
+    setActor(user.id, data?.full_name ?? null);
     setUserTeam(ident.team);
     setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
