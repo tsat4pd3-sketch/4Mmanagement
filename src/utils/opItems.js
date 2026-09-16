@@ -11,18 +11,28 @@ import { supabaseDR } from '../supabaseClient'
 
 let _cache = null
 
-/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } } — cache ครั้งเดียวต่อ session */
+/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq, kind } } — cache ครั้งเดียวต่อ session
+ *  kind = 'sequence' | 'assembly' | null (ดู src/utils/opKind.js — assembly ไม่มี parent โดยตั้งใจ) */
 export async function loadOpInfo(force = false) {
   if (_cache && !force) return _cache
   try {
-    const { data, error } = await supabaseDR
+    /* ⚠️ `op_kind` เป็นคอลัมน์ใหม่ (20260916) — ถ้า env ไหนยังไม่ apply แล้วปล่อยให้ throw
+       ทั้งก้อน จะได้ {} = **ปิด collapseOps ทั้งระบบ** ⇒ ยอดงานขับนัทนับซ้ำทุกจอเงียบๆ
+       ⇒ ต้องถอยไปชุดคอลัมน์เดิมเมื่อเจอ 42703 ห้ามยอมให้ fallback กลายเป็น "ไม่มีข้อมูลเลย" */
+    let { data, error } = await supabaseDR
       .from('dr_products')
-      .select('mat_no, op_parent_mat, op_seq')
+      .select('mat_no, op_parent_mat, op_seq, op_kind')
       .eq('is_operation', true)
+    if (error?.code === '42703') {
+      ;({ data, error } = await supabaseDR
+        .from('dr_products')
+        .select('mat_no, op_parent_mat, op_seq')
+        .eq('is_operation', true))
+    }
     if (error) throw error
     const m = {}
     ;(data || []).forEach(r => {
-      if (r.mat_no) m[r.mat_no] = { parent: r.op_parent_mat || null, seq: r.op_seq ?? null }
+      if (r.mat_no) m[r.mat_no] = { parent: r.op_parent_mat || null, seq: r.op_seq ?? null, kind: r.op_kind || null }
     })
     _cache = m
   } catch (e) {
