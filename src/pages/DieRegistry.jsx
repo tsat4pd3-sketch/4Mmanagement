@@ -131,6 +131,9 @@ export default function DieRegistry() {
         .eq('equipment_kind', 'die').order('line_name').order('machine_no'),
       supabaseDR.from('die_sets').select('*').order('line_name').order('part_name'),
       supabaseDR.from('die_op_types').select('*').eq('is_active', true).order('sort_order'),
+      /* ⚠️ ตั้งใจ **ไม่** ผ่าน cachedMaster (2026-09-16) — หน้านี้อ่าน `pdRes.error` เพื่อขึ้นแถบเตือน
+         "โหลดสินค้าไม่สำเร็จ" · cachedMaster กลืน error แล้วคืน [] ⇒ จะกลายเป็น "ไม่มีสินค้า" เงียบๆ
+         (กฎ ENGINEERING-PRINCIPLES: ห้ามล้มเหลวเงียบ · หน้านี้เปิดไม่บ่อย ไม่ใช่ตัวกิน egress) */
       supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).order('mat_no'),
       // ยังไม่ apply migration 20260819 → 42P01 — จับเป็น flag ไปบอกบนจอ ห้ามพังทั้งหน้า
       supabaseDR.from('die_storage_areas').select('*').eq('is_active', true).order('sort_order').order('name'),

@@ -3,6 +3,7 @@ import { toDecodableImage } from '../utils/heicToJpeg';
 import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { cachedMaster } from '../utils/masterCache';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -324,10 +325,12 @@ export default function LineSetup({ embedded = false } = {}) {
         (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
             (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
        → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
-    const [{ data: pmRows }, { data: drPd }, { data: flRows }, opMap] = await Promise.all([
+   // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
+    const [{ data: pmRows }, drPd, { data: flRows }, opMap] = await Promise.all([
       supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
       // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
-      supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
+      /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
+      cachedMaster('dr_products:matname', async () => (await supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).order('mat_no')).data || []).then(r => r.filter(p => p.mat_no)),
       supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
       // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
       loadOpInfo(),
