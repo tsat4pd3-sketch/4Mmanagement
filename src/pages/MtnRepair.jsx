@@ -14,7 +14,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, QA_SKIP_REASON_PURPOSE } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, moStatusMeta, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -105,31 +105,11 @@ const NAME_CASCADE = {
   mtn_repair_types:  { name: 'repair_type' },
 };
 
-/* สี/ลำดับขั้นของแต่ละสถานะ — **ป้าย (label) ไม่ได้เขียนที่นี่**: มาจาก MO_STATUS_LABEL
-   ใน `src/utils/mtnStepPerm.js` ที่เดียว (จอซ่อม/บอร์ด Andon/ผังแม่พิมพ์/สรุป Telegram ต้องพูดตรงกัน) */
-const STATUS_META = {
-  pending:   { label: MO_STATUS_LABEL.pending,   step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
-  assigned:  { label: MO_STATUS_LABEL.assigned,  step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repairing: { label: MO_STATUS_LABEL.repairing, step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repaired:  { label: MO_STATUS_LABEL.repaired,  step: 3, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  checked:   { label: MO_STATUS_LABEL.checked,   step: 4, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  qa:        { label: MO_STATUS_LABEL.qa,        step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  handover:  { label: MO_STATUS_LABEL.handover,  step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
-  closed:    { label: MO_STATUS_LABEL.closed,    step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
-  returned:  { label: MO_STATUS_LABEL.returned,  step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
-  rejected:  { label: MO_STATUS_LABEL.rejected,  step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
-};
-/* 🔴 ป้ายสถานะต้องบอก "ใครต้องทำต่อ" ให้ตรง — 2026-09-08 → เข้มขึ้น 2026-09-09 (ใบค้างขั้น 6 = 140 ใบ)
-   `checked` (ผ่านขั้น 4 แล้ว) เคยใช้ป้ายเดียว "🧪 รอคุณภาพ/รับมอบ" ทั้งที่แยกเป็น 2 ทางคนละคนกด:
-     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → "🧪 รอตรวจคุณภาพ (ขั้น 5)"  = รอ QA จริง (มีปุ่ม ⏭ ข้าม QA)
-     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → "🤝 รอรับมอบ (ขั้น 6)"      = ไม่ต้องรอ QA เลย รอฝ่ายที่แจ้ง
-   ป้ายรวมทำให้หน้างานอ่านว่า "ยังรอ QA" แล้วไม่มีใครกดขั้น 6 → ใบกองค้าง
-   ⚠️ เกณฑ์แยกอยู่ที่ `moStatusLabel()` (mtnStepPerm.js) ที่เดียว **ห้ามอ่าน STATUS_META[o.status].label
-      ตรงๆ** และ **ห้ามเพิ่มค่า status ใหม่** เพื่อแยก 2 เคสนี้ (KPI/Andon/ใบพิมพ์/edge อ่าน status ดิบ) */
-const statusMetaOf = (o) => {
-  const m = STATUS_META[o?.status] || STATUS_META.pending;
-  return { ...m, label: moStatusLabel(o) };   // ป้ายมาจาก moStatusLabel() เท่านั้น — สี/ขั้นคงเดิม
-};
+/* สี/ขั้น/ป้ายของแต่ละสถานะ MO ย้ายไป `MO_STATUS_META` ใน src/utils/mtnStepPerm.js แล้ว (2026-09-16)
+   — เดิมตารางสีอยู่ที่นี่ ส่วนป้าย/ลิสต์สถานะจบอยู่ที่ util ⇒ เพิ่มสถานะใหม่แล้วลืมแก้ที่นี่ได้เงียบๆ
+   (`transferred` หลุดมาจริง: ไม่มีตัวเลือกใน dropdown ฟิลเตอร์ + การ์ดขึ้นสีแดงขั้น 1)
+   **ห้ามเขียนตารางสถานะกลับมาที่นี่อีก** · dropdown ฟิลเตอร์สร้างจาก STATUS_META ที่ import มา */
+const statusMetaOf = moStatusMeta;   // สี/ขั้นจากตาราง + ป้ายจาก moStatusLabel() เสมอ
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
@@ -2717,4 +2697,3 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   );
 }
 
-export { STATUS_META };

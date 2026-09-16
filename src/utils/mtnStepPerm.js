@@ -361,6 +361,49 @@ export const MO_STATUS_LABEL = {
   transferred: '➡️ ส่งต่อทีมอื่น (แก้เองไม่ได้)',
 };
 
+/* สี + ลำดับขั้นของแต่ละสถานะ (การ์ด/ชิป/dropdown ฟิลเตอร์) — ย้ายมาจาก MtnRepair.jsx 2026-09-16
+   🔴 ที่ย้ายมา: เดิมตารางสีอยู่ในหน้า ส่วนป้ายอยู่ที่นี่ ⇒ เพิ่มสถานะใหม่แล้วลืมแก้อีกฝั่งได้เงียบๆ
+      เกิดจริง: `transferred` (2026-09-14) เข้า MO_STATUS_LABEL/MO_DONE_STATUSES แต่ไม่เข้าตารางสี
+      ⇒ (1) dropdown ฟิลเตอร์สร้างจากตารางสี จึง **ไม่มีตัวเลือก "➡️ ส่งต่อทีมอื่น"** หาใบไม่เจอ
+             นอกจากพิมพ์เลข MO ในช่องค้นหา (feedback user 2026-09-16 "เคสนี้ ไม่มีตัวกรองหาหรอ")
+         (2) `STATUS_META[status] || STATUS_META.pending` ⇒ ใบที่ส่งต่อแล้วขึ้น **สีแดง ขั้น 1**
+      ตอนนี้ MO_STATUS_META ปั้นจาก MO_STATUS_LABEL ⇒ คีย์ตรงกันเสมอ + มีเทสกันหลุด
+      (`mtnStepPerm.test.mjs` — ทุกคีย์ต้องมีสไตล์ที่ตั้งใจ ไม่ใช่ค่าถอย)
+   ⚠️ `label` ที่นี่ = ป้ายรวม ใช้ได้เฉพาะที่ไม่มีตัวใบ (dropdown/หัวกลุ่ม) — มีใบในมือต้อง `moStatusLabel(order)` */
+const MO_STATUS_STYLE = {
+  pending:     { step: 1, color: '#ef4444' },
+  assigned:    { step: 2, color: '#f59e0b' },
+  repairing:   { step: 2, color: '#f59e0b' },
+  repaired:    { step: 3, color: '#f59e0b' },
+  checked:     { step: 4, color: '#f59e0b' },
+  qa:          { step: 5, color: '#f59e0b' },
+  handover:    { step: 6, color: '#3b82f6' },
+  closed:      { step: 7, color: '#22c55e' },
+  returned:    { step: 1, color: '#e0894a' },
+  rejected:    { step: 0, color: '#8b8b96' },
+  transferred: { step: 0, color: '#a855f7' },   // ม่วง = จบแล้วแต่ไม่ใช่ผลงานซ่อม (คนละกลุ่มกับเขียว closed)
+};
+/* สถานะที่ยังไม่ได้ตั้งสี = เทา ขั้น 0 — **ไม่ throw** (throw ตอน import = จอขาวทั้งหน้า)
+   เทสเป็นด่านแทน: คีย์ใหม่ที่ลืมตั้งสีจะ build ไม่ผ่านตั้งแต่บนเครื่อง */
+const MO_STATUS_FALLBACK = { step: 0, color: '#8b8b96' };
+/** '#ef4444' → 'rgba(239,68,68,0.14)' — พื้นชิป · ห้ามใช้ color-mix() (Chromium 94 บนจอ TV ทิ้งทั้งบรรทัด) */
+const rgba14 = (hex) => {
+  const h = String(hex || '').replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return Number.isFinite(n) ? `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},0.14)` : 'transparent';
+};
+export const MO_STATUS_META = Object.fromEntries(
+  Object.entries(MO_STATUS_LABEL).map(([k, label]) => {
+    const st = MO_STATUS_STYLE[k] || MO_STATUS_FALLBACK;
+    return [k, { label, step: st.step, color: st.color, bg: rgba14(st.color) }];
+  })
+);
+/** meta ของใบ (สี/ขั้นจากตาราง + ป้ายจาก moStatusLabel เสมอ) — จอที่โชว์ชิปสถานะ MO ใช้ตัวนี้ */
+export const moStatusMeta = (order) => {
+  const m = MO_STATUS_META[String(order?.status || '').trim()] || MO_STATUS_META.pending;
+  return { ...m, label: moStatusLabel(order) };
+};
+
 /** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
