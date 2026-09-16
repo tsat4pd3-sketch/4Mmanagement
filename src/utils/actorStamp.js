@@ -97,6 +97,37 @@ export function samePerson(a, b) {
 }
 
 /**
+ * เติม uid ให้คอลัมน์ "ผู้ทำงานแต่ละขั้น" ในค่าที่กำลังจะเขียนลง DB (pure)
+ *
+ *   pairs  = [[คอลัมน์ชื่อ, คอลัมน์ uid], ...]  เช่น [['opened_by_name','opened_by_uid']]
+ *   values = payload ที่กำลังจะส่ง supabase
+ *   actor  = { uid, name } ของคนที่กำลังกด
+ *
+ * 🔴 กฎความถูกต้องที่ห้ามพลาด — "เขียนชื่อเมื่อไหร่ ต้องเขียน uid ทับด้วยเสมอ"
+ *    ถ้าเขียนชื่อใหม่แล้วปล่อย uid เดิมไว้ จะได้ **แถวที่ชื่อเป็นคนหนึ่ง แต่ uid เป็นอีกคน**
+ *    (เช่น ช่างซ่อมเปลี่ยนจาก A เป็น B แต่ uid ยังชี้ A ⇒ รายงานนับงานให้ A ทั้งที่ B ทำ)
+ *    ซึ่ง **แย่กว่าไม่มี uid เลย** เพราะมันดูน่าเชื่อถือแต่ผิด
+ *    ⇒ ชื่อที่ resolve เป็นตัวเราไม่ได้ → เขียน uid = null (แปลว่า "ไม่รู้" ซึ่งซื่อสัตย์)
+ *
+ * เคารพค่าที่หน้าส่งมาเอง: ถ้า payload มีคอลัมน์ uid อยู่แล้ว (มาจาก PersonSelect ที่คืน uid
+ * ของคนที่ถูกเลือก) จะไม่ไปแตะ — หน้ารู้ดีกว่าเสมอ
+ */
+export function applyStepActors(pairs, values, actor) {
+  if (!pairs?.length || !values || typeof values !== 'object' || Array.isArray(values)) return values
+  const out = { ...values }
+  let touched = false
+  for (const [nameCol, uidCol] of pairs) {
+    if (!(nameCol in out)) continue     // รอบนี้ไม่ได้เขียนคอลัมน์นี้ → ไม่ยุ่ง
+    if (uidCol in out) continue         // หน้าส่ง uid มาเอง → เคารพ
+    const v = out[nameCol]
+    const isMe = !!actor?.uid && !!v && samePerson({ name: v }, { name: actor?.name })
+    out[uidCol] = isMe ? actor.uid : null
+    touched = true
+  }
+  return touched ? out : values
+}
+
+/**
  * นับ "คนทำจริงกี่คน" จากรายการงาน + บอกว่าเชื่อถือได้แค่ไหน
  * คืน { people, byUid, byName } — byName > 0 แปลว่ายังมีรายการที่ผูก uid ไม่ได้
  * ⇒ หน้าจอต้องเขียนกำกับว่าตัวเลขนี้เป็นค่าประมาณ (ห้ามโชว์เฉยๆ เหมือนเป็นค่าจริง)

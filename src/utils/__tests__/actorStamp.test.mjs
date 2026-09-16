@@ -4,7 +4,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   setActor, getActor, actorFields,
-  normPersonName, personKey, samePerson, countPeople,
+  normPersonName, personKey, samePerson, countPeople, applyStepActors,
 } from '../actorStamp.js'
 
 test('normPersonName — ยุบช่องว่างซ้ำ (เคสจริง: employees เก็บ "ฉัตรชัย  ใจรักเรียน" 2 ช่อง)', () => {
@@ -100,4 +100,54 @@ test('getActor คืน object ใหม่ทุกครั้ง — แก�
   const a = getActor(); a.uid = 'HACKED'
   assert.equal(getActor().uid, 'uid-3')
   setActor(null, null)
+})
+
+// ── applyStepActors — คอลัมน์ "ผู้ทำงานแต่ละขั้น" ────────────────────────────────────────
+const PAIRS = [['tech_main', 'tech_main_uid'], ['checker_name', 'checker_uid']]
+const ME = { uid: 'uid-me', name: 'สมชาย ใจดี' }
+
+test('applyStepActors — ชื่อที่เขียนคือตัวเราเอง → เติม uid ให้', () => {
+  const out = applyStepActors(PAIRS, { tech_main: 'สมชาย ใจดี' }, ME)
+  assert.equal(out.tech_main_uid, 'uid-me')
+  assert.equal(out.tech_main, 'สมชาย ใจดี')   // ชื่อเดิมต้องไม่ถูกแตะ
+})
+
+test('applyStepActors — จับคู่ได้แม้ชื่อต่างเชิงกลไก (คำนำหน้า/ช่องว่างซ้ำ)', () => {
+  assert.equal(applyStepActors(PAIRS, { tech_main: 'นายสมชาย  ใจดี' }, ME).tech_main_uid, 'uid-me')
+})
+
+test('🔴 applyStepActors — เขียนชื่อคนอื่นทับ ต้องล้าง uid เก่าเป็น null ห้ามปล่อยค้าง', () => {
+  // เคสจริงที่ต้องกัน: ช่างเปลี่ยนจากเราเป็นคนอื่น ถ้า uid เดิมค้าง = รายงานนับงานให้ผิดคน
+  const out = applyStepActors(PAIRS, { tech_main: 'สมหญิง รักงาน' }, ME)
+  assert.equal(out.tech_main_uid, null)
+})
+
+test('🔴 applyStepActors — ล้างชื่อ (null/ว่าง) ต้องล้าง uid ด้วย', () => {
+  assert.equal(applyStepActors(PAIRS, { tech_main: null }, ME).tech_main_uid, null)
+  assert.equal(applyStepActors(PAIRS, { tech_main: '' }, ME).tech_main_uid, null)
+})
+
+test('applyStepActors — หน้าส่ง uid มาเอง (จาก PersonSelect) ต้องเคารพ ห้ามทับ', () => {
+  const out = applyStepActors(PAIRS, { tech_main: 'สมหญิง รักงาน', tech_main_uid: 'uid-her' }, ME)
+  assert.equal(out.tech_main_uid, 'uid-her')
+})
+
+test('applyStepActors — คอลัมน์ที่ไม่ได้เขียนรอบนี้ ต้องไม่ถูกแตะเลย', () => {
+  const out = applyStepActors(PAIRS, { tech_main: 'สมชาย ใจดี' }, ME)
+  assert.equal('checker_uid' in out, false)   // ไม่มี checker_name ในรอบนี้ → ห้ามโผล่ checker_uid
+})
+
+test('applyStepActors — ยังไม่ login (ไม่มี uid) → ชื่อที่เขียนยังต้องล้าง uid เป็น null', () => {
+  const out = applyStepActors(PAIRS, { tech_main: 'ใครสักคน' }, { uid: null, name: null })
+  assert.equal(out.tech_main_uid, null)
+})
+
+test('applyStepActors — ไม่มีคอลัมน์ actor ในรอบนี้ → คืน object เดิมตัวเดิม (ไม่ copy ทิ้ง)', () => {
+  const v = { qty: 5 }
+  assert.equal(applyStepActors(PAIRS, v, ME), v)
+})
+
+test('applyStepActors — รับค่าที่ไม่ใช่ object ได้ ไม่ throw', () => {
+  assert.equal(applyStepActors(PAIRS, null, ME), null)
+  assert.equal(applyStepActors([], { a: 1 }, ME).a, 1)
 })
