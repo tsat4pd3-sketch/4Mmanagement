@@ -26,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, buildCtMap, ctForMat, groupSameProductKeys, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -36,6 +36,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
+import { scopeMatRows } from '../utils/matScope';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -918,7 +919,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const noProduction = totalProduced === 0 && P == null;
       const update = {
         shift_min: shiftMin,
-        oee_a: noProduction ? null : parseFloat((A * 100).toFixed(2)),
+        oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
         oee_q: noProduction ? null : parseFloat((Q * 100).toFixed(2)),
         oee:   oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
@@ -1094,11 +1095,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ได้ 0 ใบ (ก่อนหน้านั้น 253 ใบ/สัปดาห์) แล้วหันไปใช้ "เปิดเป้า (ไม่มีบาร์โค้ด)" แทนทั้งหมด
      วัดผลก่อนแก้ (30 วัน): 6 ไลน์ได้ลิสต์ว่าง (HDF1/HDF2/LASER-345/BENDING E50/BENDING EXPORT/
         Laser GOR) · อีก 3 ไลน์ลิสต์แคบเกินจริง · แก้เป็น family แล้วไม่มีไลน์ไหนเสียตัวเลือกเดิม */
-  const scanMatStds = useMemo(() => {
-    const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
-    if (!fam.size) return [];   // ไลน์ยังโหลดไม่เสร็จ = ยังตัดสินไม่ได้ (เฟรมถัดไปได้ครบเอง)
-    return kanbanStds.filter(s => fam.has((s.dr_products?.line_name || '').trim().toLowerCase()));
-  }, [kanbanStds, lines, selSession]);
+  /* 🔴 อัปเดต 2026-09-15 (feedback user หน้า LASER-345):
+        *"ไลน์ย่อยยังจะเห็นพาร์ทของไลน์ย่อยอื่นหรอ มันจะทำให้เกิด human error"*
+     ตรวจแล้ว **ไลน์พี่น้องไม่เคยโผล่** (getLineFamily ไล่ลงล่างจากตัวเอง ไม่ไล่จาก ancestors)
+     — 5 รายการที่ LASER-345 เห็น คือของ **HYDROFORM ไลน์แม่** เพราะ LASER-345 ไม่มีพาร์ท
+       ผูกกับตัวเองเลยสักตัว (วัด 15/09: มีแค่ 12 ไลน์ทั้งโรงงานที่มีพาร์ทผูกไว้)
+     แต่ความกังวลถูก: จอไม่เคยบอกว่าพาร์ทนั้น**ผูกอยู่กับไลน์ไหน** → แยกไม่ออกว่าของใคร
+     ⇒ เปลี่ยนจาก union แบนทั้งครอบครัว เป็น **ชั้นแข็ง own → parent → family**
+       (`src/utils/matScope.js` · มีเทส) + ติดป้ายเจ้าของทุกแถวที่ไม่ใช่ของไลน์ตัวเอง
+     ⇒ ไลน์ที่ตั้ง master ครบจะไม่เห็นของไลน์อื่นเลย · ไลน์ที่ยังไม่ครบก็ยังเปิดใบได้
+       (ไม่ย้อนกลับไปเป็นบั๊ก "ลิสต์ว่าง เปิดใบไม่ได้ทั้งกะ" ของ 17/08) */
+  const scanMat = useMemo(
+    () => scopeMatRows(kanbanStds, lines, selSession?.line_name || ''),
+    [kanbanStds, lines, selSession]);
+  const scanMatStds = scanMat.rows;
 
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
@@ -1116,14 +1126,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // นาที Downtime ที่ทับซ้อนกับช่วงเวลา [startMs, endMs] — ใช้หักจาก "เวลาที่ MAT.NO นี้วิ่งจริง" ก่อนเทียบ %P
   // เทียบด้วยช่วงเวลาจริง (started_at/ended_at) ไม่ใช่แค่ d.mat_no ตรงกัน เพราะ Downtime ของไลน์ร่วม (ไม่ระบุ MAT.NO)
   // ก็กระทบ MAT.NO ที่วิ่งซ้อนอยู่ในช่วงนั้นด้วย — ถ้าไม่หัก จะนับเวลาผลิตจริงเกิน ทำให้ %P เพี้ยน (เช่นเกิน 100%)
-  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs, weightFn = () => 1) => {
+  // breakIv: ช่วงพักตามนโยบาย — นาที DT ที่ตกในช่วงพัก **ต้องไม่ถูกหักซ้ำ** (utils/oee §3.1)
+  const dtOverlapMin = (startMs, endMs, pred = () => true, logs = dtLogs, weightFn = () => 1, breakIv = []) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
     return logs.filter(pred).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const s0 = new Date(d.started_at).getTime();
       const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
       const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
-      return e > s ? sum + ((e - s) / 60000) * weightFn(d) : sum;
+      if (!(e > s)) return sum;
+      const min = (e - s) / 60000 - overlapMinutesWith(s, e, breakIv);
+      return min > 0 ? sum + min * weightFn(d) : sum;
     }, 0);
   };
 
@@ -1231,26 +1244,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     return set;
   };
 
-  // คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค
+  /* คำนวณ net available time ของกะ (นาที) หลังหักพักเบรค — ใช้เตือน "งานเกินความจุกะ" ตอนเปิดใบ
+     ⚠️ เดิมฟังก์ชันนี้เขียนสูตรพักเองเป็นชุดที่ 4 ของโปรเจค (QC 2026-09-15) แล้วเพี้ยน 3 จุด:
+       · ทิ้งนโยบายที่ process_type = null (util กลางนับ = ใช้ทุกกระบวนการ)
+       · **ไม่รู้จัก ot_scope** → หักพักเกิน 20 นาทีทุกกะเช้าที่ทำโอ (บั๊กเดียวกับที่แก้ไป 14/09)
+       · เลื่อนวันจาก "เวลาเริ่มพัก" ไม่ใช่ "เวลาจบพัก" → พักที่คร่อมหัวกะหลุดทั้งก้อน
+     ⇒ เรียก policyBreakOverlapMin ตัวกลางเท่านั้น **ห้ามเขียนสูตรพักซ้ำในหน้าอีก** */
   const calcNetAvailMin = () => {
     if (!selSession?.start_time) return null;
-    const SHIFT_MIN = 720; // 12 ชั่วโมงต่อกะ (default)
-    const wDate = selSession.work_date;
+    const SHIFT_MIN = 720; // 12 ชั่วโมงต่อกะ (default — ความจุเต็มกะ ไม่ใช่เวลาที่ผ่านไปแล้ว)
     const [sh, sm] = selSession.start_time.split(':').map(Number);
-    const shiftStartMs = new Date(`${wDate}T${String(sh).padStart(2,'0')}:${String(sm).padStart(2,'0')}:00`).getTime();
-    const breakMin = breakPolicies
-      .filter(p => p.shift === 'both' || p.shift === selSession.shift)
-      .filter(p => p.process_type === 'common' || p.process_type === sessionProcessType())
-      .reduce((sum, p) => {
-        const [ph, pm] = (p.start_time || '00:00').split(':').map(Number);
-        let pStartMs = new Date(`${wDate}T${String(ph).padStart(2,'0')}:${String(pm).padStart(2,'0')}:00`).getTime();
-        // ถ้าพักก่อนกะเริ่ม (กะดึกข้ามวัน) เลื่อนวันถัดไป
-        if (pStartMs < shiftStartMs) pStartMs += 86400000;
-        const pEndMs = pStartMs + p.duration_min * 60000;
-        const shiftEndMs = shiftStartMs + SHIFT_MIN * 60000;
-        return sum + Math.max(0, (Math.min(pEndMs, shiftEndMs) - Math.max(pStartMs, shiftStartMs)) / 60000);
-      }, 0);
-    return SHIFT_MIN - breakMin;
+    const startMs = new Date(`${selSession.work_date}T${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`).getTime();
+    return SHIFT_MIN - policyBreakOverlapMin({
+      policies: breakPolicies, startMs, endMs: startMs + SHIFT_MIN * 60000,
+      workDate: selSession.work_date, shift: selSession.shift, processType: sessionProcessType(),
+    });
   };
 
   // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled/carry_over — ใช้ CT ของแต่ละ MAT.NO
@@ -1842,8 +1850,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      ⚠️ ต่างจากของเดิม 1 จุดโดยตั้งใจ: policy ที่ process_type = null/'' นับด้วย
      (null = ไม่ระบุ = ใช้ทุกกระบวนการ — มาตรฐานเดียวกับแท็บประวัติ/OEE Analytics/FactoryMap
      ของเดิมตัด null ทิ้ง = ไฟล์เดียวกันตอบเวลาพักไม่เท่ากันระหว่างจอปิดกะกับจอประวัติ) */
-  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) =>
-    policyBreakOverlapMin({
+  const computeBreakIv = (openedAt, closedAt, sessionShift, processType) =>
+    breakIntervalsIn({
       policies: breakPolicies,
       startMs: openedAt ? openedAt.getTime() : 0,
       endMs: closedAt ? closedAt.getTime() : 0,
@@ -1851,6 +1859,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       shift: sessionShift,
       processType,
     });
+  const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
+  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) =>
+    ivMin(computeBreakIv(openedAt, closedAt, sessionShift, processType));
 
   // dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างไปใน call เดียวกัน — state dtLogs ยังเป็นค่าเก่า
   const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {
@@ -1890,11 +1901,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const parallelN = parallelUnitsOf(lf,
       new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false).map(m => m.machine_no)).size);
     const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
-    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
-    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     const sessionShift  = selSession?.shift || 'day';
     const processType   = sessionProcessType();
-    const policyBreakMin = computePolicyBreakMin(openedAt, closedAt, sessionShift, processType);
+    /* 🔴 ช่วงพักตามนโยบายต้องรู้เป็น "ช่วงเวลา" ไม่ใช่แค่ยอดรวม — นาที downtime ที่ตกอยู่ในช่วงพัก
+       ถูกกันออกจากฐานเวลาไปแล้วรอบหนึ่ง หักซ้ำอีก = %A ต่ำกว่าจริง + %P เฟ้อ (utils/oee §3.1) */
+    const breakIv = computeBreakIv(openedAt, closedAt, sessionShift, processType);
+    const policyBreakMin = ivMin(breakIv);
+    const dtEff = d => dtMinOutsideBreaks(d, breakIv) * dtW(d);
+    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + dtEff(d), 0);
+    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + dtEff(d), 0);
+    // นาที DT ที่ถูกตัดทิ้งเพราะไปทับช่วงพัก — โชว์บนจอปิดกะ ห้ามตัดเงียบ (กฎ "ห้ามล้มเหลวเงียบ")
+    const dtBreakOverlapMin = dtl.reduce((s, d) => s + Math.max(0, ((Number(d.duration_min) || 0) - dtMinOutsideBreaks(d, breakIv)) * dtW(d)), 0);
     // Net available = shift - policy breaks - logged planned; run = net available - unplanned
     const plannedDT   = loggedPlannedDT + policyBreakMin;
     const netAvail    = Math.max(0, shiftMin - plannedDT);
@@ -1937,9 +1954,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
-      const matPolicyBreakMin = computePolicyBreakMin(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
-      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl, dtW);
-      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl, dtW);
+      const matBreakIv = computeBreakIv(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
+      const matPolicyBreakMin = ivMin(matBreakIv);
+      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl, dtW, matBreakIv);
+      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl, dtW, matBreakIv);
       const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
       const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
       totalNetAvailByMat += matNetAvail;
@@ -1955,8 +1973,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned);
     }
     // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
+    /* ⚠️ netAvail ≤ 0 (พัก+หยุดตามแผนกินทั้งกะ) = **ประเมินไม่ได้ → null ห้ามคืน 0**
+       กฎเดียวกับ computeLiveOee/noOutput/noCt — 0 แปลว่า "แย่มาก" คนละเรื่องกับ "ยังไม่รู้"
+       (เดิมคืน 0 แล้ว stamp ลง oee_a → กะที่ไม่มีเวลารับภาระเลยถูกนับเป็น A=0 ถ่วงค่าเฉลี่ยทั้งไลน์) */
     const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
-      : (netAvail > 0 ? Math.min(1, runMin / netAvail) : 0);
+      : (netAvail > 0 ? Math.min(1, runMin / netAvail) : null);
 
     // Performance: วัดประสิทธิภาพของไลน์ผลิต ไม่ใช่ของแต่ละ order
     // สูตร OEE มาตรฐาน: P = standard_time_produced / run_time
@@ -2067,12 +2088,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // ห้ามใช้ (ดี−NG)/ดี ที่หักซ้ำ → เคยทำ %Q ต่ำเกินจริง (เช่น ดี10 NG1 ได้ 90% ที่ถูกคือ 10/11=90.9%,
     // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
     const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
-    const oee = P != null ? A * P * Q : null;
+    const oee = (A != null && P != null) ? A * P * Q : null;
     /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
        แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
        ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
        แทนที่จะปล่อยจน OEE ของทั้งไลน์อ่านไม่ได้ 14 กะโดยไม่มีใครรู้ (2026-08-13) */
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty,
+      loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
       pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10 };
   };
   // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
@@ -2245,7 +2267,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // ต้อง stamp oee_a/oee_q เป็น null ด้วย ไม่งั้นเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์
     // (สอดคล้อง cleanup migration 20260715_oee_null_noproduction_cleanup.sql — กันไม่ให้ค้างตั้งแต่ปิดกะ)
     const noProduction = totalProducedFinal === 0 && P == null;
-    const oeeA = noProduction ? null : parseFloat((A * 100).toFixed(2));
+    const oeeA = (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2));
     const oeeP = P != null ? parseFloat((P * 100).toFixed(2)) : null;
     const oeeQ = noProduction ? null : parseFloat((Q * 100).toFixed(2));
     const oeeV = oee != null ? parseFloat((oee * 100).toFixed(2)) : null;
@@ -2331,9 +2353,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       shift_min:    shiftMin,
       qty_repair:   totalQtyRepair,
       total_qty:    totalProducedFinal,
-      oee_a:        parseFloat((A * 100).toFixed(1)),
+      oee_a:        A != null ? parseFloat((A * 100).toFixed(1)) : null,
       oee_p:        P != null ? parseFloat((P * 100).toFixed(1)) : null,
-      oee_q:        parseFloat((Q * 100).toFixed(1)),
+      oee_q:        Q != null ? parseFloat((Q * 100).toFixed(1)) : null,
       parts: summarizeParts([
         ...confirmed.map(o => ({ mat_no: o.mat_no, part_name: o.part_name, qty: o.qty })),
         ...openOrders.map(o => carryOverDecisions[o.id] === 'confirm'
@@ -3952,9 +3974,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ + "พักตามนโยบาย" ออกก่อน — ให้ฐานเวลา
                     // ตรงกับ P รวมใน computeOEE() ที่หักทั้งคู่ (เคยหักแค่ DT → "ควรได้" เกินจริง %P พาร์ทต่ำกว่า
                     // P รวมทั้งที่รันงานตัวเดียว เช่นกะดึกพักรวม 120 นาที ทำให้เพี้ยน ~15% — user ชี้ 2026-07-14)
+                    // ⚠️ DT ที่ทับช่วงพักต้องหักครั้งเดียว — ส่ง breakIv เข้า dtOverlapMin (utils/oee §3.1)
+                    const winBrkIv = (actualStart && winEndMs)
+                      ? computeBreakIv(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType()) : [];
                     const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000
-                      - dtOverlapMin(actualStart.getTime(), winEndMs)
-                      - computePolicyBreakMin(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType())) : null;
+                      - dtOverlapMin(actualStart.getTime(), winEndMs, () => true, dtLogs, () => 1, winBrkIv)
+                      - ivMin(winBrkIv)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
                     // ย้อนคำนวณ CT จริงที่สังเกตได้จากกะนี้ไว้เตือน ไม่ใช่ปล่อยให้ %P ติดเพดาน 100% เฉยๆ
@@ -4157,7 +4182,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             if (endMs < startMs) endMs += 86400000;
             return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
           });
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct,
+            loggedPlannedDT: prevPlannedDT, loggedUnplannedDT: prevUnplannedDT, dtBreakOverlapMin: prevDtBrkOv } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
           const twoCol = wide1100;
@@ -4259,8 +4285,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* Summary stats — แยกหยุดในแผน(เพิ่มเติมจากนโยบาย)/นอกแผนออกจากกัน ให้บวกกันแล้วเท่ากับเวลากะเป๊ะๆ
                     (เวลากะ = หยุดนโยบาย + หยุดในแผน + หยุดนอกแผน + Run Time) ไม่งั้นจะดูเหมือนเวลารวมเกิน 12 ชม. */}
                 {(() => {
-                  const loggedPlannedDT   = previewDtLogs.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0), 0);
-                  const loggedUnplannedDT = previewDtLogs.reduce((s, d) => s + (d.duration_min || 0), 0) - loggedPlannedDT;
+                  /* ใช้ตัวเลขที่ computeOEE หักจริง (ตัดนาทีที่ทับพักออกแล้ว + ถ่วง 1/N ของไลน์เครื่องขนาน)
+                     ไม่ใช่ผลรวม duration_min ดิบ — ไม่งั้น 4 ก้อนบวกกันแล้ว "เกินเวลากะ" ทั้งที่เวลาไม่ได้หายไปไหน */
+                  const loggedPlannedDT   = prevPlannedDT;
+                  const loggedUnplannedDT = prevUnplannedDT;
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(90px,1fr))', gap: 10, marginBottom: 16 }}>
                       {[
@@ -4272,6 +4300,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         { label: 'Order ที่ปิด', value: `${prodOrders.filter(o => o.status === 'confirmed').length} ใบ`, color: '#22c55e' },
                         { label: 'ผลิตได้',     value: `${totalProduced} ชิ้น`, color: '#22c55e' },
                         { label: 'NG',           value: `${ng} ชิ้น`,        color: '#f97316' },
+                        ...(prevDtBrkOv >= 1 ? [{ label: 'DT ทับพัก (ไม่หักซ้ำ)', value: fmtMin(Math.round(prevDtBrkOv)), color: 'var(--muted)' }] : []),
                       ].map(k => (
                         <div key={k.label} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
                           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{k.label}</div>
@@ -4360,9 +4389,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ + "พักตามนโยบาย" ออกก่อน — ให้ฐานเวลา
                     // ตรงกับ P รวมใน computeOEE() ที่หักทั้งคู่ (เคยหักแค่ DT → "ควรได้" เกินจริง %P พาร์ทต่ำกว่า
                     // P รวมทั้งที่รันงานตัวเดียว เช่นกะดึกพักรวม 120 นาที ทำให้เพี้ยน ~15% — user ชี้ 2026-07-14)
+                    // ⚠️ DT ที่ทับช่วงพักต้องหักครั้งเดียว — ส่ง breakIv เข้า dtOverlapMin (utils/oee §3.1)
+                    const winBrkIv = (actualStart && winEndMs)
+                      ? computeBreakIv(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType()) : [];
                     const winMin = (actualStart && winEndMs) ? Math.max(0, (winEndMs - actualStart.getTime()) / 60000
-                      - dtOverlapMin(actualStart.getTime(), winEndMs)
-                      - computePolicyBreakMin(actualStart, new Date(winEndMs), selSession?.shift || 'day', sessionProcessType())) : null;
+                      - dtOverlapMin(actualStart.getTime(), winEndMs, () => true, dtLogs, () => 1, winBrkIv)
+                      - ivMin(winBrkIv)) : null;
                     const achievable = (ctSec > 0 && winMin != null) ? Math.floor(winMin * 60 / ctSec) : null;
                     const qty = confirmedQty + openQty;
                     // ผลิตได้จริง > ควรได้ (ตาม CT ที่ตั้งไว้) แปลว่า CT ใน Product Master ตั้งไว้ช้ากว่าความเป็นจริง
@@ -4642,7 +4674,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                     <div style={{ display: 'flex', gap: 16 }}>
                       {[
-                        { label: 'A (Avail.)', value: `${(A * 100).toFixed(1)}%` },
+                        { label: 'A (Avail.)', value: A != null ? `${(A * 100).toFixed(1)}%` : 'N/A' },
                         { label: 'P (Perf.)',  value: P != null ? `${(P * 100).toFixed(1)}%` : 'N/A' },
                         { label: 'Q (Qual.)',  value: `${(Q * 100).toFixed(1)}%` },
                       ].map(k => (
@@ -4903,7 +4935,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {(() => {
                   const lineName = selSession?.line_name;
-                  const lineStds = scanMatStds;   // ครอบครัวไลน์ ไม่ใช่ชื่อตรงเป๊ะ (ดูเหตุผลที่ scanMatStds)
+                  const lineStds = scanMatStds;   // ชั้นแข็ง own → parent → family (ดู scanMat / matScope.js)
                   if (lineStds.length === 0) {
                     return (
                       <div style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
@@ -4915,7 +4947,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     );
                   }
                   return (
-                    <Field label={`MAT.NO (${lineStds.length} รายการของครอบครัวไลน์นี้) *`}>
+                    <Field label={`MAT.NO (${lineStds.length} รายการ · ${
+                      scanMat.scope === 'own' ? 'ของไลน์นี้'
+                      : scanMat.scope === 'parent' ? `ของไลน์แม่ ${scanMat.owners.join(', ')}`
+                      : `ของไลน์ย่อย ${scanMat.owners.join(', ')}`}) *`}>
+                      {/* ⚠️ ไลน์นี้ไม่มีพาร์ทผูกกับตัวเองเลย — บอกตรงๆ ว่ากำลังยืมของไลน์ไหนมาใช้
+                          ห้ามเงียบ: หน้างานต้องรู้ว่าไม่ใช่ของไลน์ตัวเอง + ที่ถูกควรไปตั้ง master ให้ครบ */}
+                      {scanMat.scope !== 'own' && (
+                        <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 7, padding: '6px 10px', marginBottom: 6, lineHeight: 1.6 }}>
+                          ⚠ <b>{lineName}</b> ยังไม่มีพาร์ทผูกกับไลน์ตัวเองเลย — รายการด้านล่างเป็นของ <b>{scanMat.owners.join(', ')}</b>
+                          <div style={{ opacity: 0.85 }}>ถ้าพาร์ทไหนเป็นของไลน์นี้จริง ให้ไปตั้งไลน์ให้ถูกที่ <b>Product Master</b> แล้วลิสต์นี้จะเหลือเฉพาะของไลน์นี้เอง</div>
+                        </div>
+                      )}
                       <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
                         inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                         options={lineStds.map(s => {
@@ -4925,7 +4968,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           return {
                             id: s.mat_no,
                             label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
-                            sub: `${s.qty_per_kanban} ชิ้น/ใบ`, keywords: `${nm} ${s.dr_products?.p_no || ''}`,
+                            /* 🏭 ป้ายเจ้าของ — แถวที่ไม่ได้ผูกกับไลน์ที่เปิดกะ ต้องเห็นว่าเป็นของใคร
+                               (user 2026-09-15 · กัน human error เลือกพาร์ทผิดไลน์) */
+                            sub: `${s.qty_per_kanban} ชิ้น/ใบ${s._foreign && s._owner ? ` · 🏭 ผูกกับไลน์ ${s._owner}` : ''}`,
+                            keywords: `${nm} ${s.dr_products?.p_no || ''} ${s._owner || ''}`,
                           };
                         })}
                         onChange={({ id }) => handleOpenProdMatNoChange(id)} />
@@ -5657,21 +5703,26 @@ function HistoryTab({ role }) {
   const canDeleteSession = can('daily_report', 'delete_session', role);
 
   // ── %P รายชิ้นในประวัติ — สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ (หัก DT + พักนโยบายจาก window) ──
-  const histDtOverlapMin = (startMs, endMs, logs) => {
+  // breakIv: ช่วงพักในหน้าต่างเดียวกัน — นาที DT ที่ตกในช่วงพักถูกหักไปแล้วรอบหนึ่ง ห้ามหักซ้ำ (utils/oee §3.1)
+  const histDtOverlapMin = (startMs, endMs, logs, breakIv = []) => {
     if (!startMs || !endMs || endMs <= startMs) return 0;
     return (logs || []).reduce((sum, d) => {
       if (!d.started_at) return sum;
       const ds = new Date(d.started_at).getTime();
       const de = d.ended_at ? new Date(d.ended_at).getTime() : (d.duration_min != null ? ds + d.duration_min * 60000 : null);
       if (de == null) return sum;
-      return sum + Math.max(0, (Math.min(de, endMs) - Math.max(ds, startMs)) / 60000);
+      const a = Math.max(ds, startMs), b = Math.min(de, endMs);
+      if (!(b > a)) return sum;
+      return sum + Math.max(0, (b - a) / 60000 - overlapMinutesWith(a, b, breakIv));
     }, 0);
   };
   // เวลาพักตามนโยบายในช่วงที่สนใจ — ใช้ util กลาง (src/utils/oee.js) ตัวเดียวกับตอนปิดกะ/OEE Analytics
   // เดิมสูตรนี้ไม่กรอง process_type (query ก็ไม่ได้ select มา) → นับพักเกินจริงในไลน์ที่มีนโยบายเฉพาะ process
   // ทำให้ %P รายชิ้น + OEE จริง ในแท็บประวัติ ไม่ตรงกับหน้าอื่น (รวมเป็นตัวเดียว 2026-08-05)
+  const histBreakIv = (startMs, endMs, workDateStr, shift, processType = null) =>
+    breakIntervalsIn({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType });
   const histBreakOverlapMin = (startMs, endMs, workDateStr, shift, processType = null) =>
-    policyBreakOverlapMin({ policies: histBreaks, startMs, endMs, workDate: workDateStr, shift, processType });
+    histBreakIv(startMs, endMs, workDateStr, shift, processType).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
 
 
   const handleDelete = async (s) => {
@@ -5854,8 +5905,11 @@ function HistoryTab({ role }) {
                     const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
-                    const breakMin = shiftStartMs && shiftEndMs ? histBreakOverlapMin(shiftStartMs, shiftEndMs, s.work_date, s.shift) : 0;
-                    const plannedDtMin = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
+                    const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift) : [];
+                    const breakMin = brkIvS.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
+                    // หยุดในแผนที่ทับช่วงพัก ถูกกันออกจากฐานไปแล้วรอบหนึ่ง — ห้ามหักซ้ำ (utils/oee §3.1)
+                    const plannedDtMin = dts.filter(d => d.dr_downtime_types?.category === 'planned')
+                      .reduce((a, d) => a + dtMinOutsideBreaks(d, brkIvS), 0);
                     const st = strictOee({ shiftMin: s.shift_min, breakMin, plannedDtMin, a: s.oee_a, p: s.oee_p, q: s.oee_q });
                     if (!st || st.oee == null) return null;
                     const gap = strictGap(s.oee, st.oee);
@@ -5914,9 +5968,10 @@ function HistoryTab({ role }) {
                         const fmtT = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
                         winLabel = `${fmtT(winStart)}–${fmtT(winEnd)}`;
                         if (ctSec > 0) {
+                          const brkIvP = histBreakIv(winStart, winEnd, s.work_date, s.shift);
                           const runMin = Math.max(0, (winEnd - winStart) / 60000
-                            - histDtOverlapMin(winStart, winEnd, dts)
-                            - histBreakOverlapMin(winStart, winEnd, s.work_date, s.shift));
+                            - histDtOverlapMin(winStart, winEnd, dts, brkIvP)
+                            - brkIvP.reduce((a2, [x, y]) => a2 + (y - x) / 60000, 0));
                           achievable = Math.floor(runMin * 60 / ctSec);
                           if (achievable > 0) pPct = Math.min(100, Math.round(qty / achievable * 100));
                         }

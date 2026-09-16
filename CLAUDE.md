@@ -136,7 +136,7 @@
 |-------|---------|-------------|
 | `four_m_logs` | บันทึกการเปลี่ยนแปลง 4M | work_date, line_name, category (Man/Machine/Material/Method), description, status, created_by, sv_approved_by, approved_by, reject_reason, requires_qa |
 | `notifications` | In-app notifications | user_id, title, body, type (success/error/info), is_read, ref_table, ref_id |
-| `meeting_action_items` | Action item จากประชุมแถวเช้า (ติดตามข้ามวันจนปิด) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled) |
+| `meeting_action_items` | Action item จากประชุมแถวเช้า **+ ห้อง OBEYA** (ติดตามข้ามวันจนปิด) · **ตารางเดียวใช้ร่วมกัน ห้ามสร้างใหม่** · RLS = `has_perm('morning_meeting:record') or has_perm('obeya:record')` ครบ 4 cmd (2026-09-15) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled), **source** (morning/obeya), **kpi_key** (แกน SQDCM/OEE ที่ใบนี้ไปแก้ — ไม่มี check constraint ตั้งใจ), **target_value/result_value** |
 | `event_comments` (**DR**) | 💬 คอมเมนต์+🔔mention ใต้เหตุการณ์ (นำร่อง: ใบซ่อม MO + downtime — ก้าวแรกของสื่อสารในระบบแทน chat แยก, 2026-07-16) | ref_kind (mtn_order/downtime), ref_id (text), author_id/author_name (snapshot — profiles อยู่คนละ project), body, mentions jsonb · component กลาง `src/components/EventComments.jsx` (embed ใน MtnRepair DetailDrawer + แถว DT ใน DailyReport) · mention → client insert `notifications` ตรง (policy `notifications_insert_authenticated`) + รายชื่อจาก RPC `list_mention_users` (SECURITY DEFINER, guard auth.uid, revoke anon) — migrations `20260716_event_comments.sql` (DR) + `20260716_mention_notify.sql` (Main) · จุดใหม่ที่อยากมีคอมเมนต์ให้ reuse component นี้ + เพิ่มค่า ref_kind ใน check constraint |
 
 ### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
@@ -255,7 +255,17 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
 - ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า ขึ้น parallel กันเองไม่ได้ ระบบรวมเป็นสายเดียวก่อน (จั…
-> 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (12 หัวข้อย่อย)
+
+> ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
+> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
+> บวกเข้าไปอีก = หักซ้ำ (เครื่องเสีย 11:30-13:00 คร่อมพักเที่ยง 50 น. → หักไป 140 ทั้งที่จริง 90)
+> วัดจริง 90 วัน: **664/1,298 กะ (51%) %A ต่ำกว่าจริงเฉลี่ย 1.52 จุด (สูงสุด 41.1) + %P เฟ้อ**
+> · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
+>   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
+> · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
+> · backfill ประวัติแล้ว 425 กะ (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
+
+> 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
 
 ---
 
@@ -437,6 +447,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
 หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม ใน NAV_GROUP_ORDER — ยุบจากหมวด “วิศวกรรม (PE)” เดิม 2026-08-27) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (A…
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql`
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---
@@ -449,6 +460,39 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
 · migration `20260907_npi_apqp_main.sql` (**apply แล้ว 2026-09-07**) · supplier portal = เฟส 4 ยังไม่ทำ
 > 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md` (9 หัวข้อย่อย)
+
+---
+
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2 แท็บ · 2026-08-27 + 2026-09-15)
+
+`Obeya.jsx` = **เปลือกสลับแท็บ** (งาน 2 session ที่ทำคนละมุมโดยไม่รู้กัน · รวมเข้าด้วยกัน 15/09)
+· **`?tab=kpi` (default)** = 📋 บอร์ด KPI ส่วนงาน — ยุบกระดาษ *"OBEYA KPI monitoring"* ที่แปะผนัง
+  (ราย**เดือน** × กลุ่มไลน์ × หัวข้อ) · `components/ObeyaKpiBoard.jsx` · สูตร/สถานะอยู่ `src/utils/obeya.js`
+· **`?tab=sqdcm`** = 🖥️ จอมอนิเตอร์ SQDCM ราย**วัน/สัปดาห์/เดือน** ผัง "กระดาษ A4 ปูเต็มจอ 5×2" + โหมดจอ TV
+  · `components/ObeyaSqdcmBoard.jsx` · KPI อยู่ `src/utils/obeyaKpi.js` (OEE ยังมาจาก `oee.js` เท่านั้น)
+· **🔴 ห้ามยุบ 2 แท็บเป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
+· **🔴 กฎความซื่อสัตย์ของจอ:** แกน/ช่องที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง**
+  · "ไม่มีเป้า" = เทา ไม่ใช่เขียว · ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง
+· **🔴 กลุ่มมีระบบ KPI ทางการอยู่แล้ว (KPI Online)** — ESM = "ที่ผลิตตัวเลข Actual" **ห้ามทำแข่งเป็นระบบทะเบียน**
+  เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
+· **ACTION BOARD** ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกด้วย `source`
+· สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
+· **🧱 ตั้งค่า KPI เป็น data-driven แล้ว (16/09):** ขอบเขต 6 ระดับ (`scope_kind`+`scope_value` — **`cost_center` คนละแกนกับไลน์**)
+  · Commitment/Target เป็นคนละบาร์ · `provider` = 🔗 ลิ้ง data (auto/formula/manual) · `kpi_month_plans` แผน 12 เดือน
+  · `kpi_base_inputs` ตัวแปรฐานจากบัญชี/SAP → สูตรการเงินคำนวณเอง · **ทะเบียน+เกณฑ์อยู่ `src/utils/kpiSetup.js` เท่านั้น**
+  · migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) — แต่ละแผนกใช้ KPI คนละชุดจริง (JIG MTN ไม่มี OEE/PPM/Inventory)
+> 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
+> 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
+
+---
+
+## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
+
+> **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
+> (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
+> ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
+> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
+> 📄 `docs/modules/bom-levels.md` (ทำไมเดิม ~90% ตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
 
 ---
 
@@ -571,7 +615,10 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     + คำถามที่ user ต้องตัดสิน 6 ข้อ · 📌 สำรวจแล้ว ยังไม่ลงมือ 2026-09-09
                        #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
-                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย)
+                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
+                       #   OBEYA-DESIGN.md (เหตุผลของดีไซน์ Obeya · ของที่ทำจริง → docs/modules/obeya*.md) ·
+                       #   OBEYA-KPI-SOURCES.md (**ที่มาตัวเลข KPI ทุกใบ + คู่มือ KPI Online ของกลุ่ม
+                       #     + ใบจริง PD3/PD4/JIG 2026 §8-12 — อ่านก่อนแตะอะไรที่เกี่ยวกับ KPI**)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -679,6 +726,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      วันนี้เกิน 3 วัน" มันก็ตกเองตั้งแต่ 12/09 ⇒ **build ล่ม deploy ไม่ออก และหา commit ต้นเหตุไม่เจอ
      เพราะไม่มี commit ไหนทำ** · **กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` เป็นพารามิเตอร์ได้
      แล้วเทสตรึงค่า** — ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออกจาก `scripts/run-tests.mjs`**
+   - **🛡️ ด่าน "บั๊กเก่าห้ามกลับมา" = `src/utils/__tests__/regressionGuards.test.mjs`** (2026-09-16 · คำสั่ง user
+     *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — สแกนทั้งรีโปบังคับกฎที่**เคยพังจริง** (ตกด่าน = build ล่ม
+     พร้อมบอกบรรทัด + บั๊กที่เคยเกิด + วิธีแก้) · **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
+     ในคอมมิทเดียวกับที่แก้บั๊ก** (กติกา/ทะเบียนกฎอยู่หัวไฟล์ — ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
    - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
      - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ (2026-08-26)**
      เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` (~3 นาที · ต้องเปิด vite audit ค้างไว้)
@@ -687,6 +738,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      — **ทั้งคู่ build ผ่าน lint ผ่าน เทสผ่าน**
      · mock มีแถว **`NULLISH`** (คอลัมน์ตัวเลข/ข้อความเป็น null) เป็นแถวสุดท้ายเสมอ **ห้ามถอด** —
      คอลัมน์ในฐานจริงส่วนใหญ่ nullable แถวเดียวที่ null ทำให้ทั้งหน้าพัง · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
+     · mock มี **แถวชั้น OP (`is_operation`)** เสมอ **ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
+     ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` · ปุ่ม 🧩 ระเบิดของเสียใน
+     `/scrap-report` · ตัวกรอง OP ของ picker) ไม่เคยถูกรันใน harness เลย = บั๊กทั้งคลาสมองไม่เห็น
+     (i=4 ผูก parent+seq ครบ · i=5 ยังไม่ผูก = เคส worklist เหลือง)
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
@@ -838,17 +893,7 @@ Platform:    Render.com (Static Site)
 
 ## Reusable สำหรับโปรเจคถัดไป (PM Checker)
 
-| สิ่งที่มี | นำไปใช้ได้เลย |
-|---------|-------------|
-| Supabase Auth + Profiles + Roles | ✅ ใช้ระบบ Auth เดิม |
-| Toast.jsx | ✅ Copy ไปใช้ |
-| Telegram Bot notification | ✅ Copy Edge Function + ตั้ง Secrets ใหม่ |
-| In-app notification bell | ✅ ใช้กับ notifications table เดิม |
-| 4M Approval workflow | ✅ ดัดแปลงเป็น PM approval flow |
-| SignatureModal.jsx | ✅ ลายเซ็นยืนยันงาน PM |
-| CSV export | ✅ Report ประวัติ PM |
-| Dark/Light theme | ✅ Copy index.css variables |
-| Recharts | ✅ แสดงสถิติ PM |
+> 📄 ตารางของที่ยกไปใช้ต่อได้เลย (Auth/Toast/Telegram/4M workflow/SignatureModal ฯลฯ) → `docs/modules/reusable-pm-checker.md`
 
 ---
 

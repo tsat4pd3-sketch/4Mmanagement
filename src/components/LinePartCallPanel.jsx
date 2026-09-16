@@ -81,6 +81,14 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const kidNames = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
   /* สายบน — ไว้ตรวจว่ามีของค้างที่ไลน์แม่ไหม (ไม่เอามานับรวม แต่ต้องบอกให้เห็น ห้ามเงียบ) */
   const upNames  = useMemo(() => getAncestorNames(lines, lineName), [lines, lineName]);
+  /* 🔴 2026-09-16 — deps ของตัวโหลดต้องผูกกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
+     พ่อ (DailyReport) ส่ง prop `lines` ใบใหม่ทุกครั้งที่ setLines ⇒ upNames ใบใหม่ ⇒ load ใบใหม่
+     ⇒ effect ยิงซ้ำ **8 คิวรีฟรีๆ** (line_part_levels · line_stock_summary · wip_replenish_requests ·
+     line_delivery_points · storage_locations · dr_products · bom_items)
+     วัดจริง 16/09: line_delivery_points 210 · line_part_levels 210 · storage_locations 195 req
+     ในช่วง 2 ชม. — เลขเท่ากันเป๊ะ = มาจาก load() ตัวเดียว (บั๊กคลาสเดียวกับ StoreLotQueue)
+     กฎเหล็กข้อ 9 ใน CLAUDE.md */
+  const upKey    = upNames.join('|');
 
   const load = useCallback(async () => {
     if (!lineName) return;
@@ -108,7 +116,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setLevels(lv.data || []);
     setStock(st.data || []);
     setReqs(rq.data || []);
-  }, [lineName, upNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- upKey แทน upNames (ดูหมายเหตุที่ upKey)
+  }, [lineName, upKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -524,6 +533,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
   /* 2026-09-07 "เพิ่มพาร์ทเอง" ต้องเลือกจากทะเบียน (Product Master ∪ พาร์ทลูก BOM ของครอบครัวไลน์) — ไม่ allowFree
      mat_no ที่พิมพ์ผิดจะกลายเป็นจุดเฝ้าที่ไม่ match สต็อกแถวไหนเลย → min alert ไม่เคยดังโดยไม่มีใครรู้ */
   const famNames = useMemo(() => [...new Set([lineName, ...getAncestorNames(lines, lineName), ...getChildLineNames(lines, lineName)])].filter(Boolean), [lines, lineName]);
+  const famKey   = famNames.join('|');   // เหตุผลเดียวกับ upKey ด้านบน — array ใน deps = ยิงซ้ำทุก render
   const [bomExtra, setBomExtra] = useState([]);
   useEffect(() => {
     let alive = true;
@@ -537,7 +547,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
         .map(b => ({ mat_no: b.mat_no, name: b.part_name, p_no: b.part_no, sub: [b.part_no, b.part_name].filter(Boolean).join(' · '), group: '🧩 พาร์ทลูก BOM ของไลน์นี้' })));
     })();
     return () => { alive = false; };
-  }, [famNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- famKey แทน famNames (array)
+  }, [famKey]);
 
   const addMat = () => {
     const m = newMat.trim();

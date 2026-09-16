@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useMergeParams } from '../utils/useTabParam'
 import { supabaseDR } from '../supabaseClient'
 import { FREQ_LABEL, DEPT_LABEL, dueStatus, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import useIsMobile from '../utils/useIsMobile'
@@ -83,7 +84,8 @@ function statusDot(status) {
 }
 
 export default function PMSchedule() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const setParams = useMergeParams()
   const navigate = useNavigate()
   const department = searchParams.get('dept') || 'maintenance'
 
@@ -98,7 +100,8 @@ export default function PMSchedule() {
   const { role, fullName, uid } = useContext(UserContext)
   const canDefer = can('pm', 'setup', role)
 
-  const setDept = (d) => setSearchParams({ dept: d })
+  // ⚠️ merge เสมอ — ไม่งั้น ?tab= ของ PmHub หาย แล้วเด้งไปแท็บแรก (บั๊ก 2026-09-16)
+  const setDept = (d) => setParams({ dept: d })
 
   // ยกเลิกการเลื่อน (กลับไปใช้วันครบกำหนดเดิม)
   const cancelDefer = async (r) => {

@@ -53,3 +53,39 @@
 - **เฟสถัดไป (ยังไม่ทำ):** (1) ปุ่ม "🔍 ชน FMEA" จากแถวของเสีย/Downtime/NCR/ใบ MO — จับคู่ เครื่อง+ไลน์+ประเภทปัญหา → โชว์ failure mode + controls ที่เกี่ยว + เช็คว่า control ถูกทำจริงไหม (poka-yoke check/PM/ใบตรวจ) → ไม่เจอคู่ = เพิ่มเข้า FMEA + ออก rev (2) ~~UI import Excel~~ **ทำแล้ว 2026-08-14** (ดูหัวข้อ 📥 นำเข้าจากไฟล์ Excel) (3) เทียบ RPN ที่ประเมิน vs ความถี่เกิดจริงจาก defect_logs (4) พิมพ์ฟอร์ม FM-PE1-018/019 ผ่านทะเบียน doc_forms
 
 ---
+
+---
+
+## 📚 คลัง PFMEA กลาง (Foundation / Family FMEA master · 2026-09-15 · คำสั่ง user)
+
+โจทย์: "ทำ master data ของ PFMEA เป็น reference — โปรเจคใหม่ดึงไปใช้ได้เลย · โปรเจคไหนปรับปรุงแล้ว RPN ดีกว่า master ก็อัพเดท" → ทำครบ 3 บล็อกตามที่เสนอ ("เอาตามที่เสนอเลย")
+
+- **ตาราง (Main · migration `20260915_pe_fmea_master_main.sql` — ⏳ รอ user apply):** `pe_master_processes` (กระบวนการมาตรฐาน 1 แถว = 1 กระบวนการ เช่น SPOT WELDING · `key` = ชื่อ normalize · `confirmed_at` null = "รอยืนยัน" จาก seed) · `pe_master_items` (แถว FMEA ของ master + `best_practice` + `version`) · `pe_master_proposals` (ข้อเสนอจากพาร์ท: `improve` = RPN ดีกว่า / `new_item` = failure mode ที่ master ยังไม่มี · status proposed/accepted/rejected · reject ต้องมีเหตุผล — check constraint) · เพิ่ม `pe_processes.master_process_id` + `pe_fmea_items.master_item_id/master_version` (nullable ทั้งหมด — พาร์ทเดิมไม่กระทบ)
+- **seed ใน migration:** จัดกลุ่ม OP ที่มีอยู่ตามชื่อ normalize (`pe_master_norm()`) → สร้าง master ต่อกลุ่ม (`confirmed_at` null) ก๊อปแถวจาก OP ที่มีแถวมากสุด แล้วผูก OP อื่นในกลุ่มด้วย failure_mode ที่ตรงกัน — **ไม่ apply = หน้ายังใช้ได้ แค่แท็บ 📚 ว่างและปุ่ม master ไม่มีผล**
+- **กฎ 7 ข้อ (ตกลงกับ user แล้ว):**
+  1. **พาร์ทถือ "สำเนา" ไม่ใช่ pointer** — เอกสารควบคุมของพาร์ทต้องนิ่ง แก้ master แล้วพาร์ทเก่า**ไม่**เปลี่ยนเอง (จำ `master_version` ไว้เทียบ)
+  2. **ไหลกลับ = ระบบเสนอ คนตัดสิน** — ห้าม auto-update master จากพาร์ท · ข้อเสนอเข้ากล่อง 📥 ให้ `pe:approve` accept/reject (reject ต้องมีเหตุผล) — หลักเดียวกับ `pe_change_requests`
+  3. **RPN คำนวณในแอปเท่านั้น** (`rpnOf`/`effectiveRpn` ใน `src/utils/peMaster.js` — ใช้ค่าหลัง action ถ้ามี) ห้ามเก็บ RPN ลง DB
+  4. **เทียบพาร์ท vs master 5 สถานะ** (`compareToMaster`): unlinked · same · behind (master ใหม่กว่า) · better (พาร์ท RPN ต่ำกว่า → เสนอได้) · diverged (แก้ทั้งคู่ — คนดูเอง)
+  5. **accept = master version+1** (ทั้งแถวและกระบวนการ) พาร์ทอื่นที่ผูกอยู่จะขึ้น "behind" ให้ PE ตัดสินว่าจะเติมตามไหม — นี่คือ yokoten แบบ pull ไม่ push
+  6. **master จาก seed ต้องถูก "ยืนยัน" (`pe:approve`) ก่อน** ถึงจะขึ้นเป็นตัวเลือกใน `/npi` — กัน master ที่จัดกลุ่มผิดจากชื่อ OP สะกดต่างกันหลุดไปเป็นแม่แบบ
+  7. **ชุดใหม่จาก master ต้องสร้างครบหรือไม่สร้างเลย** (`PeSetFromMasterModal` — insert ลูกล้ม → ลบ set ที่เพิ่งสร้าง) ห้ามทิ้งชุดเปล่าไว้
+- **การใช้งาน:** `/pe-docs` แท็บ **📚 คลัง PFMEA** (`src/components/PeMasterLibrary.jsx` — รายการ master · ยืนยัน · แก้แถว · กล่องข้อเสนอ) · แท็บ FMEA ปุ่ม **📚 เติมจาก master** (`PeMasterPullModal` — เลือกแถวก๊อปลง OP ที่ผูก master · ข้ามแถวที่มีอยู่แล้ว) + ป้ายเทียบรายแถว + **⭐ เสนอเข้า master / ➕ เสนอเป็นรายการใหม่** · modal OP มีช่องผูก master + คำแนะนำจากชื่อ (`suggestMaster`) · ออก revision FMEA → `autoPropose()` กวาดแถวที่ดีกว่า master เสนอให้อัตโนมัติ (ไม่ซ้ำแถวที่มีข้อเสนอค้าง) · หัวเพจ **📚 ชุดใหม่จาก master** + ใน `/npi` modal พาร์ท ช่อง PE set มีปุ่มเดียวกัน (`PeSetFromMasterModal` — เลือก master หลายตัวเรียงเป็น OP 10,20,…)
+- **ยังไม่ทำ:** แจ้งเตือน yokoten อัตโนมัติเมื่อ master เปลี่ยน (ตอนนี้เห็นจากป้าย behind ในพาร์ท) · master ของ Control Plan · รวม master ซ้ำ (merge) · ประวัติ version รายแถว (มีแค่เลข version + audit_log)
+
+
+## ⚠️ คลัง PFMEA กลาง — migration ยังไม่ได้ apply (พบ 2026-09-16)
+
+`20260915_pe_fmea_master_main.sql` **ยังไม่ถูก apply บน Main** — ตรวจ `pg_class` แล้วไม่มีตาราง
+`pe_master_processes` / `pe_master_items` / `pe_master_proposals` เลยสักตัว (0 แถวใน `pg_policies` ด้วย)
+ทั้งที่ CLAUDE.md เขียนถึงฟีเจอร์นี้เหมือนใช้งานได้แล้ว
+
+- **ผลตอนนี้:** แท็บ 📚 ในหน้า `/pe-docs` ขึ้น "คลังว่าง" — **ไม่พัง** เพราะ `loadMasters()` ใช้
+  `(m.data || [])` รองรับ 42P01 ไว้แล้ว (มีคอมเมนต์กำกับที่ `PEDocs.jsx:162`) · ลูป "ระบบเสนอ คนตัดสิน"
+  จึงยังไม่ทำงานจริง
+- **ยังไม่ apply ให้ เพราะเป็น product decision** (= เปิดฟีเจอร์ใหม่) ต้องให้ user สั่ง
+- **แต่แก้ RLS ในไฟล์ให้ถูกไว้แล้ว (2026-09-16)** — เดิมบล็อกนั้นเป็น `for all to authenticated
+  using (true)` = ใครที่ login ก็แก้ master PFMEA กลางได้ตรงๆ โดยไม่ผ่านลูปข้อเสนอ (ขัดกฎที่ออกแบบไว้เอง)
+  ตอนนี้เป็น: `pe_master_processes`/`pe_master_items` → `has_perm('pe:approve')` ·
+  `pe_master_proposals` → INSERT `pe:edit` / UPDATE-DELETE `pe:approve`
+  ⇒ วันไหนกด apply ก็ได้สิทธิ์ที่ถูกต้องตั้งแต่แรก ไม่ต้องตามแก้ทีหลัง

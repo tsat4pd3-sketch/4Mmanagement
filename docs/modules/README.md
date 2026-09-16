@@ -25,6 +25,8 @@
 | 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21) | `docs/modules/bbs-safety.md` | 10 KB |
 | Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16) | `docs/modules/factory-master-map.md` | 62 KB |
 | Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06) | `docs/modules/dept-dashboard-tv.md` | 48 KB |
+| OBEYA แท็บ 📋 บอร์ด KPI ส่วนงาน `/obeya?tab=kpi` (2026-08-27) | `docs/modules/obeya-kpi-board.md` | 21 KB |
+| OBEYA แท็บ 🖥️ จอมอนิเตอร์ SQDCM `/obeya?tab=sqdcm` (2026-09-15) | `docs/modules/obeya.md` | 17 KB |
 | Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13) | `docs/modules/adoption-outlook.md` | 25 KB |
 | Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05) | `docs/modules/group-overview.md` | 14 KB |
 | Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13) | `docs/modules/vsm.md` | 19 KB |

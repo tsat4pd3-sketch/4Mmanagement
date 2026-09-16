@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
@@ -15,6 +16,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import SymptomSearch from '../components/SymptomSearch';
 import { inspMeta } from '../utils/inspectionStatus';
+import { julianLabel, parseJulianTerm, toJulian } from '../utils/julianDate';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -63,12 +65,27 @@ export default function OrderTrace() {
   // 2 ทางเข้าของการสอบกลับ: รู้เลขใบ (order) ↔ รู้แต่อาการ (symptom)
   const [tab, setTab] = useTabParam(['order', 'symptom'], 'order');
   const scopeSecs = sections || [];
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const setParams = useMergeParams();
 
   const [lines, setLines] = useState([]);
   const [search, setSearch] = useState('');
   const [from, setFrom] = useState(() => addDays(todayStr(), -30));
   const [to, setTo] = useState(todayStr);
+
+  /* 🗓 ค้นด้วย Julian date (คำขอ user 2026-09-15: "เพิ่มให้หาจาก julian date ด้วยได้มั้ย จะได้ง่ายขึ้น")
+     หน้างานถือชิ้นงานที่มีเลข Julian ปั๊มอยู่ → พิมพ์เลขนั้นลงช่องค้นหาตรงๆ ได้เลย
+     · เกณฑ์ตีความอยู่ที่ `src/utils/julianDate.js` ที่เดียว (3/4/5 หลัก · มีเทส) ห้ามแปลงเองในหน้า
+     · `julYear` = ปีที่คนเลือกเองเมื่อระบบ "เดา" ปีให้ (แบบ 3-4 หลักไม่มีปีเต็ม) — ล้างเมื่อเปลี่ยนคำค้น */
+  const [julYear, setJulYear] = useState(null);
+  const [julHits, setJulHits] = useState(null);   // จำนวนใบที่ได้จากขา Julian (null = ยังไม่ได้ค้น)
+  const julOf = useCallback((term) => {
+    const j = parseJulianTerm(term, todayStr());
+    if (!j) return null;
+    const pick = (julYear && j.candidates.find(c => c.year === julYear)) || j.candidates[0];
+    return { ...j, year: pick.year, date: pick.date };
+  }, [julYear]);
+  const jul = useMemo(() => julOf(search), [julOf, search]);
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
   const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
@@ -128,6 +145,11 @@ export default function OrderTrace() {
     const q = (term ?? search).trim();
     const withOpen = opts.includeOpen ?? includeOpen;
     setSearching(true);
+    /* คำค้นเป็นเลข Julian ไหม (3-5 หลักล้วน) — ถ้าใช่ ค้น "ใบผลิตของวันนั้น" เพิ่มอีกขาหนึ่ง
+       ⚠️ ขา Julian **ไม่ผูกกับช่วงวันงานด้านบน** ตั้งใจให้เป็นแบบนั้น: เลขที่ปั๊มบนชิ้นงานมักเก่ากว่า
+          ช่วง default 30 วัน ถ้ากรองตามช่วงจะได้ 0 ใบแบบเงียบๆ แล้วคนอ่านว่า "ค้นไม่เจอ"
+          (แถบใต้ช่องค้นหาบอกไว้แล้วว่าไม่สนช่วงวัน) */
+    const j = julOf(q);
     const run = async (allowOpen) => {
       let query = supabaseDR.from('prod_orders').select(ORDER_COLS)
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
@@ -138,19 +160,38 @@ export default function OrderTrace() {
       if (error) throw error;
       return (data || []).filter(o => inScope(o.production_sessions?.line_name));
     };
+    const runJulian = async (allowOpen) => {
+      if (!j) return [];
+      let query = supabaseDR.from('prod_orders').select(ORDER_COLS)
+        .eq('production_sessions.work_date', j.date)
+        .order('opened_at', { ascending: false }).limit(300);
+      // ตัวอักษรท้ายเลข = กะ (A กลางวัน / B กลางคืน) — ระบุมาก็แคบให้ตรงกะเลย
+      if (j.shift) query = query.eq('production_sessions.shift', j.shift);
+      if (!allowOpen) query = query.neq('status', 'open');
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data || []).filter(o => inScope(o.production_sessions?.line_name));
+    };
+    // ใบของวัน Julian ขึ้นก่อน (คนพิมพ์เลขนั้นมาเพราะอยากได้วันนั้น) แล้วค่อยต่อด้วยใบที่ชื่อ/เลขตรงคำค้น
+    const both = async (allowOpen) => {
+      const [jr, tr] = await Promise.all([runJulian(allowOpen), run(allowOpen)]);
+      const seen = new Set(jr.map(r => r.id));
+      return { rows: [...jr, ...tr.filter(r => !seen.has(r.id))], jHits: j ? jr.length : null };
+    };
     try {
-      let rows = await run(withOpen);
+      let { rows, jHits } = await both(withOpen);
       // สแกนมาแล้วไม่เจอเพราะใบยังผลิตอยู่ → หาให้ใหม่ (ไม่ปล่อยให้สแกนแล้วเงียบ)
       if (!rows.length && q && !withOpen) {
-        rows = await run(true);
+        ({ rows, jHits } = await both(true));
         if (rows.length) toast.info('ใบนี้ยังผลิตไม่จบ — แสดงให้ (สอบกลับปกติดูเฉพาะใบที่ปิดแล้ว)');
       }
+      setJulHits(jHits);
       setResults(rows);
       if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);   // สแกนตรงเป๊ะใบเดียว → เปิดเลย
       return rows;
-    } catch { setResults([]); return []; }
+    } catch { setResults([]); setJulHits(null); return []; }
     finally { setSearching(false); }
-  }, [search, from, to, inScope, includeOpen]);
+  }, [search, from, to, inScope, includeOpen, julOf]);
 
   // deep-link ?prod= — รอ lines โหลด (scope) ก่อน
   useEffect(() => {
@@ -161,7 +202,7 @@ export default function OrderTrace() {
       const hit = rows.find(o => o.prod_no === p) || rows[0];
       if (hit) setSel(hit);
     });
-    setSearchParams({}, { replace: true });
+    setParams({ prod: null }, { replace: true });   // ล้างเฉพาะ ?prod= — ล้างทั้งก้อนจะพา ?tab= ของหน้านี้หายไปด้วย
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines.length]);
 
@@ -932,10 +973,10 @@ export default function OrderTrace() {
       {tab === 'order' && (<>
       {/* ── ค้นหา ── */}
       <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+        <input type="text" value={search} onChange={e => { setSearch(e.target.value); setJulYear(null); }}
           onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
-          placeholder="🔍 สแกน PROD.NO / พิมพ์ MAT.NO / ชื่อชิ้นงาน"
-          style={{ width: 320, fontSize: 14 }} autoFocus />
+          placeholder="🔍 สแกน PROD.NO / MAT.NO / ชื่อชิ้นงาน / เลข Julian (เช่น 24726A)"
+          style={{ width: 340, fontSize: 14 }} autoFocus />
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>ช่วงวันงาน</span>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140 }} />
         <span style={{ color: 'var(--muted)' }}>—</span>
@@ -952,6 +993,37 @@ export default function OrderTrace() {
         </label>
         {sel && <button onClick={() => { setSel(null); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>}
       </div>
+
+      {/* 🗓 ตีความเลข Julian ให้เห็นเสมอ — ห้ามแปลงเงียบ
+             ระบบเดาปีให้ได้ (3-4 หลักไม่มีปีเต็ม) ⇒ ต้องโชว์วันที่ที่ได้ + ให้กดเปลี่ยนปีเองได้ */}
+      {jul && (
+        <div style={{ ...card, marginBottom: 16, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.08)', fontSize: 12.5, lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 800, color: '#f59e0b' }}>
+            🗓 {julianLabel(jul)} → <span style={{ color: 'var(--text)' }}>{fmtDate(jul.date)}</span>
+            {julHits != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · เจอใบผลิตของวันนั้น {julHits.toLocaleString()} ใบ</span>}
+          </div>
+          <div style={{ color: 'var(--text2)' }}>
+            ขา Julian ค้น<b>ทั้งฐาน ไม่สนช่วงวันงานด้านบน</b> (เลขบนชิ้นงานมักเก่ากว่าช่วง 30 วัน) — ใบของวันนั้นถูกยกขึ้นก่อนในตารางผลค้นหา
+            {jul.shift
+              ? <> · แคบเฉพาะ<b>{jul.shiftLetter === 'A' ? 'กะกลางวัน' : 'กะกลางคืน'}</b>ตามตัวอักษร <code>{jul.shiftLetter}</code> ท้ายเลข</>
+              : <> · พิมพ์ <code>A</code>/<code>B</code> ต่อท้าย (เช่น <code>{`${String(jul.doy).padStart(3, '0')}${String(jul.year % 100).padStart(2, '0')}A`}</code>) เพื่อแคบเฉพาะกะกลางวัน/กลางคืน</>}
+          </div>
+          {jul.guessedYear && jul.candidates.length > 1 && (
+            <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+              <span style={{ color: 'var(--muted)' }}>⚠️ เลขนี้มีแต่วัน (ไม่มี 2 หลักปีต่อท้าย) ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:</span>
+              {jul.candidates.map(c => (
+                <button key={c.year} onClick={() => { setJulYear(c.year); doSearch(undefined, {}); }}
+                  style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
+                    border: `1px solid ${c.year === jul.year ? '#f59e0b' : 'var(--border)'}`,
+                    background: c.year === jul.year ? 'rgba(245,158,11,0.18)' : 'none',
+                    color: c.year === jul.year ? '#f59e0b' : 'var(--text2)' }}>
+                  {c.year} · {fmtDate(c.date)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── ผลค้นหา: สรุปภาพรวมก่อน แล้วตารางเต็มพื้นที่ (เห็นข้อมูลก่อนคลิกเลือกใบ) ── */}
       {!sel && results.length > 0 && (
@@ -1018,7 +1090,14 @@ export default function OrderTrace() {
                         <div>{s.line_name || '—'}</div>
                         {o.machine_no && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}
+                        {/* Julian ของวันผลิต — หน้างานเอาไปเทียบกับเลขที่ปั๊มบนชิ้นงานได้ทันที (ไม่ได้เก็บใน DB · คำนวณสด) */}
+                        {s.work_date && <div style={{ fontSize: 10, color: jul && s.work_date === jul.date ? '#f59e0b' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
+                          title="เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)">
+                          🗓 {toJulian(s.work_date, s.shift)}
+                        </div>}
+                      </td>
                       <td style={{ whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text2)' }}>{fmtTime(o.opened_at)} → {o.confirmed_at ? fmtTime(o.confirmed_at) : '—'}</td>
                       <td style={{ textAlign: 'right' }}>{tgt.toLocaleString()}</td>
                       <td style={{ textAlign: 'right', fontWeight: 700 }}>{made ? made.toLocaleString() : '—'}</td>

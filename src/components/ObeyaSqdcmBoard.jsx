@@ -1,0 +1,844 @@
+/* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
+   ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
+
+   โจทย์จาก user (2026-09-15) — 3 ข้อ ที่เป็นตัวกำหนดหน้าตาทั้งหน้า:
+     ① "prototype ทดลองการใช้งานและสอนพนักงานได้"  → ต้องใช้งานได้จริง ไม่ใช่ภาพนิ่ง
+     ② "หน้ารวมใน 1 หน้าที่มอนิเตอร์ทุกด้าน ลักษณะกราฟ" → ทุกแกนอยู่จอเดียว ทุกแผงเป็นกราฟ
+     ③ "เปิดจอทีวี 70 นิ้ว ให้เหมือนมีกระดาษ A4 ติดเต็มหน้าจอ" → แผงละ 1 แผ่น สัดส่วน A4 จริง
+
+   ── ③ ทำยังไง (คณิตของผัง) ────────────────────────────────────────────────────────
+   A4 แนวตั้ง = 210×297 ⇒ อัตราส่วน กว้าง/สูง = 0.7071
+   จอ 16:9 สูง 1 หน่วย แบ่ง 2 แถว ⇒ แผ่นสูง 0.5 ⇒ กว้าง 0.354 ⇒ 1.778 ÷ 0.354 = **5.03 คอลัมน์**
+   ⇒ **5 คอลัมน์ × 2 แถว = กระดาษ A4 สิบแผ่นปูเต็มจอ 16:9 พอดีเป๊ะ** (เศษ 0.03 = ช่องไฟ)
+     · แผ่นแนวนอน (A4 landscape) = 2 ช่องติดกัน → ใช้กับ OEE และ ACTION BOARD
+   ขนาดแผ่นวัดจาก container จริงด้วย ResizeObserver **ไม่ใช่ media query** — จอ TV/โปรเจคเตอร์
+   มี devicePixelRatio และ overscan ไม่เท่ากัน ถ้า hardcode ไว้จะล้นจอบางเครื่องแล้วมี scrollbar
+   ⚠️ ห้ามใช้ `dvh/svh` (Chromium 108) / `@container` (105) / `color-mix()` (111) — เพดานจอ TV = Cr 94
+
+   ── สิ่งที่หน้านี้ "ห้าม" ทำ (กฎจาก OBEYA-DESIGN §4) ─────────────────────────────────
+   · อ่านอย่างเดียวทั้งหน้า **ยกเว้น ACTION BOARD** — ตัวเลขทุกตัวลิงก์กลับหน้าที่ทำงานจริง
+   · แกนที่ข้อมูลยังไม่พร้อม (S กับ Q) **ต้องเขียนบนจอว่าไม่พร้อม ห้ามโชว์ 0 ห้ามซ่อนแผง**
+     — จอที่ยืนยันสิ่งที่ไม่จริง แย่กว่าจอที่ว่าง
+   · ห้ามคำนวณ OEE/A/P/Q เอง (oee.js เป็นเจ้าของสูตรจุดเดียว — กฎ SCADA ใน CLAUDE.md)
+
+   ── งบ egress ──────────────────────────────────────────────────────────────────────
+   จอนี้ = **จอห้องประชุม 1-2 จอ ไม่ใช่บอร์ดหน้าไลน์ 10 จอ** · โหมดเดือนโหลด ~400 KB/รอบ
+   ⇒ subscribe realtime แค่ `production_sessions` (เหตุการณ์เดียวที่เปลี่ยนตัวเลขบนจอนี้จริง)
+     + `meeting_action_items` (ต้องสดตอนประชุม) · poll กันเหนียวที่ RATE.ANALYTIC
+   ⚠️ อย่าเพิ่ม subscribe `prod_orders`/`downtime_logs` — ทุกใบงานที่ปิดในโรงงานจะลากจอโหลดใหม่ทั้งก้อน */
+import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import {
+  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine, Cell,
+} from 'recharts';
+import { supabase, supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
+import PageHeader from './PageHeader';
+import LineSelect from './LineSelect';
+import PersonSelect from './PersonSelect';
+import { toast } from './Toast';
+import { can } from '../utils/permissions';
+import { checkWrite } from '../utils/dbWrite';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { inSectionScope } from '../utils/sectionScope';
+import { useOrgSections } from '../utils/useOrgSections';
+import useColumnHistory from '../utils/useColumnHistory';
+import { useLiveBoard } from '../utils/useLiveBoard';
+import { LIVE, RATE } from '../utils/refreshRates';
+import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { avgOeeTarget, sumDefectQty } from '../utils/oee';
+import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
+import { notifyEvent } from '../utils/notifyEvent';
+import {
+  OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, gapToTarget,
+  axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, fillDays, round1,
+} from '../utils/obeyaKpi';
+
+/* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
+   ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md) */
+const getWorkDate = () => {
+  const d = new Date();
+  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+const dayLabel = (k) => { const [, m, d] = String(k).split('-'); return `${+d}/${+m}`; };
+const A4 = 1 / Math.SQRT2;          // 0.7071 — กว้าง ÷ สูง ของกระดาษ A4 แนวตั้ง
+const GAP = 10;                     // ช่องไฟระหว่างแผ่น (px) — เหมือนเว้นขอบกระดาษที่ติดบอร์ด
+
+/* ── ผังกระดาษ: วัดกล่องจริงแล้วเลือกจำนวนคอลัมน์ที่ "เต็มจอพอดีโดยไม่ต้องเลื่อน" ──────
+   จอกว้าง (TV/PC) → 5×2 ตามคณิตข้างบน · จอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) → ยอมให้เลื่อน
+   เพราะกระดาษ A4 สิบแผ่นบนจอ 6 นิ้วอ่านไม่ออกอยู่ดี (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI) */
+function useSheetGrid(ref, sheets = 10) {
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const apply = () => setBox({ w: el.clientWidth, h: el.clientHeight });
+    apply();
+    if (typeof ResizeObserver === 'undefined') {      // เบราว์เซอร์เก่า = ยังต้องได้ขนาด ห้ามจอว่าง
+      window.addEventListener('resize', apply);
+      return () => window.removeEventListener('resize', apply);
+    }
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+
+  return useMemo(() => {
+    const { w, h } = box;
+    if (!w || !h) return { cols: 5, rows: 2, cw: 0, ch: 0, fit: true, k: 1 };
+    const wide = w / h >= 1.25;                        // 16:9, 16:10, 4:3 แนวนอน = จอบอร์ด
+    if (wide) {
+      // ลองผังที่เป็นไปได้ แล้วเลือกอันที่ "แผ่นใหญ่สุดและยังอยู่ในกรอบ"
+      let best = null;
+      [[5, 2], [4, 3], [3, 4]].forEach(([cols, rows]) => {
+        if (cols * rows < sheets) return;
+        const ch = (h - GAP * (rows - 1)) / rows;
+        let cw = ch * A4;
+        if (cols * cw + GAP * (cols - 1) > w) {        // กว้างไม่พอ → ย่อตามกว้างแทน
+          cw = (w - GAP * (cols - 1)) / cols;
+        }
+        const area = cw * Math.min(ch, cw / A4);
+        if (!best || area > best.area) best = { cols, rows, cw, ch: Math.min(ch, cw / A4), area, fit: true };
+      });
+      return { ...best, k: clamp(best.cw / 330, 0.72, 2.4) };
+    }
+    const cols = w >= 700 ? 2 : 1;                      // แนวตั้ง = เลื่อนได้ (อ่านออกสำคัญกว่าเต็มจอ)
+    const cw = (w - GAP * (cols - 1)) / cols;
+    return { cols, rows: Math.ceil(sheets / cols), cw, ch: cw / A4, fit: false, k: clamp(cw / 330, 0.72, 2.4) };
+  }, [box, sheets]);
+}
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+/* ── แผ่นกระดาษ 1 ใบ ──────────────────────────────────────────────────────────────
+   หัวแผ่น = ชื่อแกน + ตัวเลขใหญ่ + Δ เทียบเป้า · กลาง = กราฟ · ท้าย = หมายเหตุ/ลิงก์
+   ⚠️ ฟอนต์ต่ำสุด 11px เสมอแม้แผ่นเล็ก (กติกาจอ TV) — ถ้าเล็กกว่านั้นให้ลดจำนวนคอลัมน์แทน */
+function Sheet({ k, span = 1, accent, icon, title, sub, big, unit, delta, status, foot, link, onLink, children }) {
+  const fs = (n) => Math.max(11, Math.round(n * k));
+  return (
+    <div style={{
+      gridColumn: `span ${span}`,
+      background: 'var(--card)', border: '1px solid var(--border)', borderTop: `4px solid ${accent}`,
+      borderRadius: 6, boxShadow: '0 2px 10px rgba(0,0,0,.28)',
+      display: 'flex', flexDirection: 'column', overflow: 'clip', minWidth: 0, minHeight: 0,
+    }}>
+      <div style={{ padding: `${Math.round(8 * k)}px ${Math.round(10 * k)}px 0`, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, justifyContent: 'space-between' }}>
+          <div style={{ fontSize: fs(13), fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'clip' }}>
+            {icon} {title}
+          </div>
+          {delta != null && (
+            <div style={{ fontSize: fs(11.5), fontWeight: 800, color: delta >= 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
+              {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}
+            </div>
+          )}
+        </div>
+        {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
+        {big !== undefined && (
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: Math.round(3 * k) }}>
+            <div style={{ fontSize: fs(34), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
+              {big}
+            </div>
+            {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
+          </div>
+        )}
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{children}</div>
+      {(foot || link) && (
+        <div style={{ padding: `${Math.round(5 * k)}px ${Math.round(9 * k)}px ${Math.round(7 * k)}px`, flexShrink: 0 }}>
+          {foot && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{foot}</div>}
+          {link && (
+            <button onClick={onLink} style={{
+              marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+              background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
+            }}>{link} ↗</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* หมายเหตุ "ข้อมูลยังไม่พร้อม" — ต้องเห็นชัดบนแผ่น ไม่ใช่ตัวจิ๋วมุมล่าง (กฎความซื่อสัตย์ของจอ) */
+const WarnNote = ({ k, text, tone = '#f59e0b' }) => (
+  <div style={{
+    fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: tone, fontWeight: 600,
+    background: 'var(--bg3)', backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
+    border: `1px solid ${tone}55`, borderRadius: 4, padding: '3px 6px',
+  }}>⚠️ {text}</div>
+);
+
+const EmptyChart = ({ k, text }) => (
+  <div style={{
+    height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+    fontSize: Math.max(11, Math.round(11.5 * k)), color: 'var(--muted)', padding: 10,
+  }}>{text}</div>
+);
+
+export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
+  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const canRecord = can('obeya', 'record', role) || can('morning_meeting', 'record', role);
+  const today = getWorkDate();
+
+  const [period, setPeriod] = useState('week');
+  const [secFilter, setSecFilter] = useState('');
+  const orgSections = useOrgSections();   // คืน array ตรงๆ (ไม่ใช่ object)
+
+  const { from, to } = useMemo(() => periodRange(period, today), [period, today]);
+  const prev = useMemo(() => prevRange(period, today), [period, today]);
+
+  // ── master (โหลดครั้งเดียว) ────────────────────────────────────────────────────
+  const [lines, setLines] = useState([]);
+  const [targets, setTargets] = useState({});
+  const [ccRates, setCcRates] = useState([]);
+  useEffect(() => {
+    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name')
+      .then(({ data, error }) => { if (!error) setLines(data || []); });
+    supabase.from('oee_targets').select('*')
+      .then(({ data, error }) => { if (!error) setTargets(Object.fromEntries((data || []).map(t => [t.group_name, t]))); });
+    supabase.from('cost_center_rates').select('*')
+      .then(({ data, error }) => { if (!error) setCcRates(data || []); });
+  }, []);
+
+  // ── ข้อมูลช่วงเวลา ─────────────────────────────────────────────────────────────
+  const [sess, setSess] = useState([]);
+  const [prevSess, setPrevSess] = useState([]);
+  const [dts, setDts] = useState([]);
+  const [defs, setDefs] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [attend, setAttend] = useState([]);
+  const [partCost, setPartCost] = useState({});
+  const [loadWarn, setLoadWarn] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  /* ⚠️ deps ต้องเป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) — ห้ามใส่ array/object
+     scope ส่วนงานกรองทีหลังใน useMemo ไม่ใช่ในคิวรี เพื่อไม่ให้สลับส่วนงาน = ยิง DB ใหม่ทุกครั้ง */
+  const loadBoard = useCallback(async () => {
+    setLoading(true);
+    try {
+      const sRes = await fetchAllPages(() => supabaseDR.from('production_sessions')
+        .select('id, work_date, shift, line_name, oee, oee_a, oee_p, oee_q, actual_qty, qty_ok, qty_ng, shift_min, start_time')
+        .eq('status', 'closed').gte('work_date', from).lte('work_date', to), { orderBy: ['work_date', 'id'] });
+      const ids = sRes.rows.map(s => s.id);
+
+      // ⚠️ ห้าม .in(ids) ตรงๆ — ช่วงเดือนมี 400+ กะ URL ยาวเกินเพดาน proxy แล้วคืนค่าว่างเงียบ
+      const [dtRes, dfRes, ordRes, pRes, atRes] = await Promise.all([
+        fetchByIds(ids, c => supabaseDR.from('downtime_logs')
+          .select('session_id, duration_min, reason, dr_downtime_types(name_th, category)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('defect_logs')
+          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
+        fetchByIds(ids, c => supabaseDR.from('prod_orders')
+          .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c)),
+        fetchAllPages(() => supabaseDR.from('production_sessions')
+          .select('id, work_date, line_name, oee, oee_a, oee_p, oee_q, actual_qty, qty_ng, shift_min')
+          .eq('status', 'closed').gte('work_date', prev.from).lte('work_date', prev.to), { orderBy: ['work_date', 'id'] }),
+        fetchAllPages(() => supabase.from('daily_production_logs')
+          .select('work_date, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, assigned_line')
+          .gte('work_date', from).lte('work_date', to), { orderBy: ['work_date'] }),
+      ]);
+
+      setSess(sRes.rows); setPrevSess(pRes.rows);
+      setDts(dtRes.rows); setDefs(dfRes.rows); setOrders(ordRes.rows); setAttend(atRes.rows);
+      // โหลดไม่ครบ = ตัวเลขต่ำกว่าจริง **ต้องบอกบนจอ** ห้ามเงียบ (บทเรียนแท็บแนวโน้ม /oee-analytics)
+      const bad = [sRes, dtRes, dfRes, ordRes, pRes, atRes].find(r => r.error || r.truncated);
+      setLoadWarn(bad ? (bad.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน) — ตัวเลขอาจต่ำกว่าจริง') : null);
+
+      const mats = [...new Set(dfRes.rows.map(d => d.prod_orders?.mat_no).filter(Boolean))];
+      if (mats.length) {
+        const { data: pm } = await supabaseDR.from('parts_master')
+          .select('mat_no, material_cost, standard_cost').in('mat_no', mats.slice(0, 300));
+        setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
+      } else setPartCost({});
+    } finally { setLoading(false); }
+  }, [from, to, prev.from, prev.to]);
+
+  useLiveBoard(loadBoard, {
+    tables: ['production_sessions'], topic: 'obeya-board', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
+  });
+
+  // ── Action items (Main project — คนละ client จึงแยก board) ──────────────────────
+  const [actions, setActions] = useState([]);
+  const loadActions = useCallback(async () => {
+    const { data, error } = await supabase.from('meeting_action_items').select('*')
+      .or(`status.in.(open,doing),meeting_date.gte.${from}`)
+      .order('due_date', { nullsFirst: false }).limit(300);
+    if (!error) setActions(data || []);
+  }, [from]);
+  useLiveBoard(loadActions, {
+    tables: ['meeting_action_items'], topic: 'obeya-actions', tier: LIVE.PAGE,
+    rate: RATE.BACKUP, client: supabase,
+  });
+
+  // ── scope ส่วนงาน ──────────────────────────────────────────────────────────────
+  const secOfLine = useMemo(
+    () => Object.fromEntries(lines.map(l => [l.name, l.section])), [lines],
+  );
+  const lineOk = useCallback((name) => {
+    const sec = secOfLine[name];
+    if (!inSectionScope(sections, sec)) return false;           // scope ของ user
+    if (secFilter && sec !== secFilter) return false;           // ตัวกรองบนจอ
+    return true;
+  }, [secOfLine, sections, secFilter]);
+
+  const fSess = useMemo(() => sess.filter(s => lineOk(s.line_name)), [sess, lineOk]);
+  const fPrev = useMemo(() => prevSess.filter(s => lineOk(s.line_name)), [prevSess, lineOk]);
+  const sessIds = useMemo(() => new Set(fSess.map(s => s.id)), [fSess]);
+  const fDts = useMemo(() => dts.filter(d => sessIds.has(d.session_id)), [dts, sessIds]);
+  const fDefs = useMemo(() => defs.filter(d => sessIds.has(d.session_id)), [defs, sessIds]);
+  const fOrders = useMemo(() => orders.filter(o => sessIds.has(o.session_id)), [orders, sessIds]);
+  const fAttend = useMemo(
+    () => attend.filter(a => !a.assigned_line || lineOk(a.assigned_line)),
+    [attend, lineOk],
+  );
+
+  // ── เป้า OEE ของขอบเขตที่เลือก (เฉลี่ยรายกรุ๊ป — ไม่เก็บระดับ section ใน DB) ──────
+  const target = useMemo(() => {
+    const groups = [...new Set(fSess.map(s => {
+      const l = lines.find(x => x.name === s.line_name);
+      return l?.parent_line_name || s.line_name;
+    }).filter(Boolean))];
+    return avgOeeTarget(groups.map(g => targets[g] || null));
+  }, [fSess, lines, targets]);
+
+  // ── KPI รายแกน (คำนวณใน obeyaKpi.js ทั้งหมด) ────────────────────────────────────
+  const kOee = useMemo(() => axisOee({ sessions: fSess, target }), [fSess, target]);
+  const kOeePrev = useMemo(() => axisOee({ sessions: fPrev, target }), [fPrev, target]);
+  const kS = useMemo(() => axisSafety({ logs: fAttend }), [fAttend]);
+  const kQ = useMemo(() => axisQuality({ sessions: fSess, defects: fDefs, target }), [fSess, fDefs, target]);
+  const kM = useMemo(() => axisMan({ logs: fAttend }), [fAttend]);
+
+  const kD = useMemo(() => {
+    let plan = 0, made = 0;
+    const byDay = {};
+    const dayOf = Object.fromEntries(fSess.map(s => [s.id, s.work_date]));
+    fOrders.forEach((o) => {
+      const t = Number(o.qty) || 0;
+      const p = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
+        : ['carry_over', 'imported'].includes(o.status) ? (o.qty_actual ?? 0) : 0;
+      plan += t; made += Number(p) || 0;
+      const d = dayOf[o.session_id];
+      if (!d) return;
+      (byDay[d] || (byDay[d] = { k: d, plan: 0, made: 0 })).plan += t;
+      byDay[d].made += Number(p) || 0;
+    });
+    const series = Object.values(byDay).sort((a, b) => a.k.localeCompare(b.k))
+      .map(b => ({ ...b, v: b.plan ? round1((b.made / b.plan) * 100) : null }));
+    return axisDelivery({ target: plan, produced: made, series });
+  }, [fOrders, fSess]);
+
+  const kC = useMemo(() => {
+    const comps = RATE_COMPONENTS.map(c => c.key);
+    const dayOf = Object.fromEntries(fSess.map(s => [s.id, s.work_date]));
+    const lineOf = Object.fromEntries(fSess.map(s => [s.id, s.line_name]));
+    const byDay = {};
+    let dtBaht = 0, ngBaht = 0;
+    const noRate = new Set(); const noCost = new Set();
+    fDts.forEach((d) => {
+      if (d.dr_downtime_types?.category === 'planned') return;      // C = ความสูญเสีย ⇒ นับเฉพาะนอกแผน
+      const ln = lineOf[d.session_id]; const wd = dayOf[d.session_id];
+      const cc = ln ? lineCostCenter(lines, ln) : null;
+      const rate = cc ? rateFor(ccRates, cc, wd) : null;
+      const perHr = ratePerHour(rate, comps);
+      if (!perHr) { if (ln) noRate.add(ln); return; }
+      const v = ((Number(d.duration_min) || 0) / 60) * perHr;
+      dtBaht += v;
+      (byDay[wd] || (byDay[wd] = { k: wd, dt: 0, ng: 0 })).dt += v;
+    });
+    fDefs.forEach((d) => {
+      const mat = d.prod_orders?.mat_no;
+      const { unit } = defectUnitCost(mat ? partCost[mat] : null);
+      if (!unit) { if (mat) noCost.add(mat); return; }
+      const wd = dayOf[d.session_id];
+      const v = ((Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0)) * unit;
+      ngBaht += v;
+      (byDay[wd] || (byDay[wd] = { k: wd, dt: 0, ng: 0 })).ng += v;
+    });
+    const series = Object.values(byDay).sort((a, b) => a.k.localeCompare(b.k))
+      .map(b => ({ ...b, v: Math.round(b.dt + b.ng) }));
+    return axisCost({ dtBaht, ngBaht, series, missingRate: noRate.size, missingCost: noCost.size });
+  }, [fDts, fDefs, fSess, lines, ccRates, partCost]);
+
+  // ── "ทำไมหลุดเป้า" — Pareto เวลาเครื่องหยุดนอกแผน (สาเหตุอันดับต้น) ───────────────
+  const pareto = useMemo(() => {
+    const g = {};
+    fDts.forEach((d) => {
+      if (d.dr_downtime_types?.category === 'planned') return;
+      const name = d.dr_downtime_types?.name_th || d.reason || 'ไม่ระบุสาเหตุ';
+      g[name] = (g[name] || 0) + (Number(d.duration_min) || 0);
+    });
+    const rows = Object.entries(g).map(([name, min]) => ({ name, min: Math.round(min) }))
+      .sort((a, b) => b.min - a.min);
+    const total = rows.reduce((a, r) => a + r.min, 0);
+    return { rows: rows.slice(0, 6), total };
+  }, [fDts]);
+
+  const health = useMemo(() => actionHealth(actions, today), [actions, today]);
+  const ngTotal = useMemo(() => sumDefectQty(fDefs, 'line'), [fDefs]);
+
+  // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
+  const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
+  const wrapRef = useRef(null);
+  const grid = useSheetGrid(wrapRef, 10);
+  const { cols, cw, ch, fit, k } = grid;
+  const fs = (n) => Math.max(11, Math.round(n * k));
+
+  // ── modal ตั้ง action ──────────────────────────────────────────────────────────
+  const [modal, setModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const assigneeHist = useColumnHistory(supabase, 'meeting_action_items', 'assignee');
+  const openModal = (pre = {}) => setModal({
+    problem: '', root_cause: '', line_name: '', assignee: '', kpi_key: '',
+    due_date: '', target_value: '', ...pre,
+  });
+  const saveAction = async () => {
+    if (!modal.problem.trim()) return toast.error('ระบุปัญหา/สิ่งที่ต้องทำก่อน');
+    setSaving(true);
+    try {
+      const { data: { user } = {} } = await supabase.auth.getUser();
+      const sec = modal.line_name ? (secOfLine[modal.line_name] || secFilter || null) : (secFilter || null);
+      const ok = checkWrite(await supabase.from('meeting_action_items').insert({
+        meeting_date: today, section: sec, line_name: modal.line_name || null,
+        problem: modal.problem.trim(), root_cause: modal.root_cause?.trim() || null,
+        assignee: modal.assignee?.trim() || null, due_date: modal.due_date || null,
+        source: 'obeya', kpi_key: modal.kpi_key || null,
+        target_value: modal.target_value === '' ? null : Number(modal.target_value),
+        created_by: user?.id || null, created_by_name: fullName || null,
+      }).select('id'), 'ตั้ง Action Item');
+      if (!ok) return;
+      notifyEvent({
+        event: 'meeting_action_assigned', type: 'info', ref_table: 'meeting_action_items',
+        line_name: modal.line_name || null, section: sec, actor: fullName,
+        lines: [
+          `🏛️ OBEYA ${today} · แกน ${modal.kpi_key || '—'}`,
+          `📌 ${modal.problem.trim()}`,
+          `🙋 ${modal.assignee?.trim() || '(ยังไม่ระบุผู้รับผิดชอบ)'}`,
+          modal.due_date ? `⏰ กำหนดเสร็จ ${modal.due_date}` : '',
+        ],
+      });
+      toast.success('ตั้ง Action Item แล้ว');
+      setModal(null);
+      loadActions();
+    } finally { setSaving(false); }
+  };
+  const setStatus = async (a, status) => {
+    const patch = { status, updated_at: new Date().toISOString() };
+    if (status === 'done') patch.done_at = new Date().toISOString();
+    // ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถวจริง ห้ามเชื่อ !error
+    const res = await supabase.from('meeting_action_items').update(patch).eq('id', a.id).select('id');
+    if (!checkWrite(res, 'อัพเดท Action')) return;
+    if (!res.data?.length) return toast.error('ไม่มีสิทธิ์อัพเดทใบนี้ (ติดต่อผู้ดูแลระบบ)');
+    setActions(prev => prev.map(x => (x.id === a.id ? { ...x, ...patch } : x)));
+  };
+
+  // ── ตัวช่วยวาดกราฟ (หน้าตาเดียวกันทุกแผ่น — ห้ามแต่ละแผ่นตั้งเอง) ────────────────
+  const axisTick = { fontSize: fs(10), fill: 'var(--muted)' };
+  const chartTip = {
+    contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
+    labelStyle: { color: 'var(--text2)' },
+  };
+  const daySeries = (s) => fillDays(s, from, to).map(p => ({ ...p, label: dayLabel(p.k) }));
+
+  const sheetsBox = {
+    display: 'grid', gap: GAP, alignContent: 'start', justifyContent: 'center',
+    gridTemplateColumns: cw ? `repeat(${cols}, ${cw}px)` : `repeat(${cols}, 1fr)`,
+    gridAutoRows: ch ? `${ch}px` : 'auto',
+  };
+
+  const axisSheet = (key) => OBEYA_AXES.find(a => a.key === key);
+
+  /* โหมดจอ TV = คลุมทั้งจอจริงด้วย position:fixed — ห้ามใช้ `height: 100vh` เฉยๆ
+     เพราะหน้านี้อยู่ใน <main> ที่มี sidebar + padding ⇒ 100vh จะล้นจอแล้วแถวล่างโดนตัดเงียบ
+     (วัดจริงด้วย Playwright 15/09: แถวที่ 2 ถูกตัด 37px ทั้งแถว) */
+  const shell = board
+    ? { position: 'fixed', inset: 0, zIndex: 800, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    : { display: 'flex', flexDirection: 'column' };
+  const goBoard = (on) => {
+    setBoard(on);
+    // ขอเต็มจอจากเบราว์เซอร์ด้วย (best-effort) — จอ TV มักมีแถบ URL กินที่ · ปฏิเสธได้ ไม่ใช่ error
+    try {
+      if (on) document.documentElement.requestFullscreen?.().catch(() => {});
+      else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    } catch { /* เบราว์เซอร์ TV บางรุ่นไม่มี API นี้ — ไม่เป็นไร โหมด fixed ก็เต็มจออยู่แล้ว */ }
+  };
+
+  return (
+    <div style={shell}>
+      {!board && (
+        <PageHeader
+          tabs={tabs} tab={tab} onTab={onTab}
+          title="OBEYA — ห้องบัญชาการโรงงาน" icon="🏛️"
+          sub={`${period === 'day' ? 'วันนี้' : period === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'} · ${from} → ${to} · ${fSess.length} กะที่ปิดแล้ว`}
+          actions={(
+            <>
+              <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 150, fontSize: 13 }}>
+                <option value="">ทุกส่วนงาน</option>
+                {orgSections.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {PERIODS.map(p => (
+                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: period === p.key ? 'var(--accent)' : 'var(--bg3)',
+                  color: period === p.key ? '#08120a' : 'var(--text)',
+                  border: `1px solid ${period === p.key ? 'var(--accent)' : 'var(--border2)'}`,
+                }}>{p.label}</button>
+              ))}
+              {canRecord && (
+                <button onClick={() => openModal()} style={{
+                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: 'var(--accent2)', color: '#1a1206', border: 'none',
+                }}>➕ ตั้ง Action</button>
+              )}
+              <button onClick={() => goBoard(true)} style={{
+                fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+              }}>📺 โหมดจอ TV</button>
+            </>
+          )}
+        />
+      )}
+
+      {board && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', flexShrink: 0,
+          borderBottom: '1px solid var(--border)',
+        }}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>🏛️ OBEYA</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {secFilter || 'ทุกส่วนงาน'} · {from} → {to} · {fSess.length} กะ
+          </div>
+          <div style={{ flex: 1 }} />
+          <button onClick={() => goBoard(false)} style={{
+            fontSize: 12, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+            background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+          }}>ออกจากโหมดจอ</button>
+        </div>
+      )}
+
+      {loadWarn && (
+        <div style={{ margin: '0 0 8px', fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
+          ⚠️ {loadWarn}
+        </div>
+      )}
+
+      {/* ⚠️ กล่องนอก = ที่ใส่ padding · กล่องใน (wrapRef) = ที่ถูกวัด **ห้ามมี padding**
+          `clientHeight` รวม padding เสมอ ⇒ ถ้าวัดกล่องที่มี padding แผ่นจะสูงเกินไป
+          แล้วแถวล่างถูก `overflow: clip` ตัดหายเงียบๆ (เจอจริงตอนวัดด้วย Playwright) */}
+      <div style={{
+        display: 'flex', minHeight: 0,
+        flex: board ? 1 : 'none', height: board ? undefined : '78vh', padding: board ? 8 : 0,
+      }}>
+      <div ref={wrapRef} style={{
+        flex: 1, minWidth: 0, minHeight: 0,
+        overflowY: fit ? 'clip' : 'auto', overflowX: 'clip',
+      }}>
+        {loading && !fSess.length ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
+        ) : (
+        <div style={sheetsBox}>
+
+          {/* ═══ S — ความปลอดภัย ═══ */}
+          <Sheet k={k} accent={axisSheet('S').color} icon={axisSheet('S').icon} title="S ความปลอดภัย"
+            sub="ใส่ PPE ครบตอนเช็คชื่อ (leading)" big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
+            status={statusOf(kS.value, kS.target, 'up')}
+            foot={<WarnNote k={k} text={kS.note} tone="#ef4444" />}
+            link="ไปหน้าเช็คชื่อ/PPE" onLink={() => { window.location.href = '/daily-checker'; }}>
+            {kS.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={daySeries(kS.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <Tooltip {...chartTip} formatter={v => [`${v}%`, 'PPE ครบ']} />
+                  <ReferenceLine y={kS.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                    {daySeries(kS.series).map((p, i) => (
+                      <Cell key={i} fill={statusColor(statusOf(p.v, kS.target, 'up'))} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในช่วงนี้" />}
+          </Sheet>
+
+          {/* ═══ Q — คุณภาพ ═══ */}
+          <Sheet k={k} accent={axisSheet('Q').color} icon={axisSheet('Q').icon} title="Q คุณภาพ"
+            sub={`%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
+            big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
+            delta={gapToTarget(kQ.value, kQ.target, 'up')} status={statusOf(kQ.value, kQ.target, 'up')}
+            foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
+            link="ดูของเสียละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            {kQ.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis domain={[dataMin => Math.min(95, Math.floor(dataMin)), 100]} tick={axisTick} width={34} />
+                  <Tooltip {...chartTip} formatter={v => [`${v}%`, 'Q']} />
+                  <ReferenceLine y={kQ.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <Line type="monotone" dataKey="v" stroke={axisSheet('Q').color} strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในช่วงนี้" />}
+          </Sheet>
+
+          {/* ═══ D — ส่งมอบ ═══ */}
+          <Sheet k={k} accent={axisSheet('D').color} icon={axisSheet('D').icon} title="D ส่งมอบ"
+            sub="ผลิตได้ตามแผนในใบงาน" big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
+            delta={gapToTarget(kD.value, kD.target, 'up')} status={statusOf(kD.value, kD.target, 'up')}
+            foot={kD.note ? <WarnNote k={k} text={kD.note} />
+              : `แผน ${kD.plan.toLocaleString()} · ทำได้ ${kD.produced.toLocaleString()} ชิ้น`}
+            link="ดูแผน/ใบงาน" onLink={() => { window.location.href = '/production-plan'; }}>
+            {kD.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={daySeries(kD.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis tick={axisTick} width={34} />
+                  <Tooltip {...chartTip} formatter={v => [`${v}%`, 'ทำได้ตามแผน']} />
+                  <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="4 3" />
+                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                    {daySeries(kD.series).map((p, i) => (
+                      <Cell key={i} fill={statusColor(statusOf(p.v, 100, 'up'))} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีใบงานที่มีเป้าในช่วงนี้" />}
+          </Sheet>
+
+          {/* ═══ C — ต้นทุน ═══ */}
+          <Sheet k={k} accent={axisSheet('C').color} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
+            sub="เครื่องหยุดนอกแผน + ของเสีย"
+            big={kC.value != null ? fmtBaht(kC.value) : '—'}
+            status={kC.value != null && kC.value > 0 ? 'bad' : 'none'}
+            foot={kC.note ? <WarnNote k={k} text={kC.note} />
+              : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
+            link="ดู LOSS ละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            {kC.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: -8, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis tick={axisTick} width={46} tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+                  <Tooltip {...chartTip} formatter={(v, n) => [fmtBaht(v), n === 'dt' ? 'เครื่องหยุด' : 'ของเสีย']} />
+                  <Bar dataKey="dt" stackId="c" fill="#f59e0b" />
+                  <Bar dataKey="ng" stackId="c" fill="#a78bfa" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />}
+          </Sheet>
+
+          {/* ═══ M — กำลังคน ═══ */}
+          <Sheet k={k} accent={axisSheet('M').color} icon={axisSheet('M').icon} title="M กำลังคน"
+            sub={`มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
+            big={kM.value ?? '—'} unit={kM.value != null ? '%' : ''}
+            delta={gapToTarget(kM.value, kM.target, 'up')} status={statusOf(kM.value, kM.target, 'up')}
+            foot={kM.note ? <WarnNote k={k} text={kM.note} />
+              : 'อัตรามาทำงานจากการเช็คชื่อรายวัน (ยังไม่มีข้อมูลขวัญกำลังใจ)'}
+            link="ดูกำลังคนย้อนหลัง" onLink={() => { window.location.href = '/workforce-insight'; }}>
+            {kM.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={daySeries(kM.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <Tooltip {...chartTip} formatter={(v, n) => (n === 'v' ? [`${v}%`, 'มาทำงาน'] : [v, 'คน'])} />
+                  <ReferenceLine y={kM.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <Bar dataKey="v" fill={axisSheet('M').color} radius={[2, 2, 0, 0]} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในช่วงนี้" />}
+          </Sheet>
+
+          {/* ═══ OEE — แผ่นแนวนอน (2 ช่อง) ═══ */}
+          <Sheet k={k} span={2} accent="#22c55e" icon="⚙️" title="OEE เทียบเป้า"
+            sub={`A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
+            big={kOee.value ?? '—'} unit={kOee.value != null ? '%' : ''}
+            delta={gapToTarget(kOee.value, kOee.target, 'up')}
+            status={statusOf(kOee.value, kOee.target, 'up')}
+            foot={kOee.value != null && kOeePrev.value != null
+              ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
+              : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
+            link="เจาะ OEE" onLink={() => { window.location.href = '/oee-analytics'; }}>
+            {kOee.series.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
+                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <Tooltip {...chartTip} formatter={v => [`${v}%`, 'OEE']} />
+                  <ReferenceLine y={kOee.target} stroke="#ef4444" strokeDasharray="5 3"
+                    label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: '#ef4444', fontSize: fs(10) }} />
+                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                    {daySeries(kOee.series).map((p, i) => (
+                      <Cell key={i} fill={statusColor(statusOf(p.v, kOee.target, 'up'))} />
+                    ))}
+                  </Bar>
+                </ComposedChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในช่วงนี้" />}
+          </Sheet>
+
+          {/* ═══ ทำไมหลุดเป้า — Pareto ═══ */}
+          <Sheet k={k} accent="#fb923c" icon="🔎" title="ทำไมถึงหลุดเป้า"
+            sub="เวลาเครื่องหยุดนอกแผน (นาที)"
+            big={pareto.total ? pareto.total.toLocaleString() : '—'} unit={pareto.total ? 'นาที' : ''}
+            foot={pareto.rows.length
+              ? `อันดับ 1 "${pareto.rows[0].name}" = ${Math.round((pareto.rows[0].min / pareto.total) * 100)}% ของเวลาที่เสีย`
+              : 'ไม่มีเวลาเครื่องหยุดนอกแผนในช่วงนี้'}
+            link="ดู Pareto เต็ม" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            {pareto.rows.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={pareto.rows} layout="vertical" margin={{ top: 2, right: 10, left: 2, bottom: 2 }}>
+                  <XAxis type="number" tick={axisTick} hide />
+                  <YAxis type="category" dataKey="name" tick={{ ...axisTick, fontSize: fs(9.5) }} width={Math.round(cw * 0.42)} />
+                  <Tooltip {...chartTip} formatter={v => [`${v} นาที`, 'เวลาที่เสีย']} />
+                  <Bar dataKey="min" fill="#fb923c" radius={[0, 3, 3, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <EmptyChart k={k} text="ไม่มีเวลาเครื่องหยุดนอกแผน" />}
+          </Sheet>
+
+          {/* ═══ ACTION BOARD — แผ่นแนวนอน (2 ช่อง) · ที่เดียวของหน้าที่เขียนข้อมูลได้ ═══ */}
+          <Sheet k={k} span={2} accent="#38bdf8" icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
+            sub={health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}
+            big={health.overdue.length || (health.empty ? '0' : health.liveCount)}
+            unit={health.overdue.length ? 'ใบเกินกำหนด' : 'ใบค้าง'}
+            status={health.overdue.length ? 'bad' : health.empty ? 'none' : 'good'}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 4, padding: '0 6px 2px', minHeight: 0 }}>
+              {health.empty ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+                  <WarnNote k={k} tone="#ef4444"
+                    text="ตารางติดตามงานนี้ว่างเปล่าตั้งแต่สร้าง (13/07) ทั้งที่มีบันทึกเครื่องหยุด 8,000+ ครั้ง — แปลว่า 'สิ่งที่ตกลงกันว่าจะแก้' ยังอยู่นอกระบบ ตามงานไม่ได้" />
+                  <div style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
+                    นี่คือเหตุผลหลักที่ทำหน้านี้ — ไม่ใช่เพื่อโชว์ตัวเลขสวยๆ แต่เพื่อปิดลูป:
+                    ตัวเลขหลุดเป้า → ใครรับ → ทำอะไร → ภายในเมื่อไหร่ → ดีขึ้นจริงไหม
+                  </div>
+                  {canRecord && (
+                    <button onClick={() => openModal()} style={{
+                      alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
+                      borderRadius: 999, background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
+                    }}>➕ ตั้งใบแรก</button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', flexShrink: 0 }}>
+                    {[['เกินกำหนด', health.overdue.length, '#ef4444'], ['ใกล้ครบ', health.dueSoon.length, '#f59e0b'],
+                      ['กำลังทำ', health.open.length, '#38bdf8'], ['ปิดแล้ว', health.done.length, '#22c55e']].map(([l, n, c]) => (
+                      <span key={l} style={{
+                        fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999, color: c,
+                        background: 'var(--bg3)', backgroundImage: `linear-gradient(${c}1f, ${c}1f)`, border: `1px solid ${c}55`,
+                      }}>{l} {n}</span>
+                    ))}
+                    {canRecord && (
+                      <button onClick={() => openModal()} style={{
+                        fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 999, marginLeft: 'auto',
+                        background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
+                      }}>➕ ตั้ง Action</button>
+                    )}
+                  </div>
+                  <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {[...health.overdue, ...health.dueSoon, ...health.open].slice(0, 20).map((a) => {
+                      const late = health.overdue.includes(a);
+                      return (
+                        <div key={a.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4,
+                          background: 'var(--bg3)', borderLeft: `3px solid ${late ? '#ef4444' : '#38bdf8'}`,
+                        }}>
+                          {a.kpi_key && (
+                            <span style={{ fontSize: fs(10), fontWeight: 900, color: axisSheet(a.kpi_key)?.color || 'var(--muted)' }}>
+                              {a.kpi_key}
+                            </span>
+                          )}
+                          <span title={a.problem} style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {a.problem}
+                          </span>
+                          <span style={{ fontSize: fs(10), color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                            {a.line_name || '—'} · {a.assignee || 'ยังไม่ระบุ'} · {a.due_date || 'ไม่มีกำหนด'}
+                          </span>
+                          {canRecord && (
+                            <button onClick={() => setStatus(a, 'done')} style={{
+                              fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
+                              background: 'var(--bg2)', color: '#22c55e', border: '1px solid #22c55e55',
+                            }}>ปิด</button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </Sheet>
+
+        </div>
+        )}
+      </div>
+      </div>
+
+      {/* ── modal ตั้ง action ─────────────────────────────────────────────────── */}
+      {modal && (
+        <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */ style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10,
+            padding: 16, width: 'min(520px, 100%)', maxHeight: '90%', overflowY: 'auto',
+          }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>➕ ตั้ง Action Item (OBEYA {today})</h3>
+            <div style={{ display: 'grid', gap: 9 }}>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>แกนที่จะไปแก้
+                <select value={modal.kpi_key} onChange={e => setModal({ ...modal, kpi_key: e.target.value })}
+                  style={{ marginTop: 3, fontSize: 13.5 }}>
+                  <option value="">— ไม่ระบุแกน —</option>
+                  {OBEYA_AXES.map(a => <option key={a.key} value={a.key}>{a.icon} {a.key} · {a.label}</option>)}
+                  <option value="OEE">⚙️ OEE</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ปัญหา / สิ่งที่ต้องทำ *
+                <textarea value={modal.problem} rows={2} onChange={e => setModal({ ...modal, problem: e.target.value })}
+                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น ลดเวลาเปลี่ยนแม่พิมพ์ไลน์ 060 จาก 25 นาที เหลือ 15 นาที" />
+              </label>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>สาเหตุ (ถ้ารู้แล้ว)
+                <textarea value={modal.root_cause} rows={2} onChange={e => setModal({ ...modal, root_cause: e.target.value })}
+                  style={{ marginTop: 3, fontSize: 13.5 }} />
+              </label>
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไลน์
+                <LineSelect lines={lines} value={modal.line_name} onChange={v => setModal({ ...modal, line_name: v })}
+                  role={role} lineId={lineId} sections={sections} style={{ marginTop: 3, fontSize: 13.5 }} />
+              </label>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ผู้รับผิดชอบ
+                <PersonSelect value={modal.assignee || ''} source="both" history={assigneeHist}
+                  placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 3 }}
+                  onChange={v => setModal({ ...modal, assignee: v })} />
+              </div>
+              <div style={{ display: 'flex', gap: 9 }}>
+                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>กำหนดเสร็จ
+                  <input type="date" value={modal.due_date} onChange={e => setModal({ ...modal, due_date: e.target.value })}
+                    style={{ marginTop: 3, fontSize: 13.5, width: '100%' }} />
+                </label>
+                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>เป้าที่ตกลงกัน
+                  <input type="number" step="0.1" value={modal.target_value} placeholder="เช่น 82"
+                    onChange={e => setModal({ ...modal, target_value: e.target.value })}
+                    style={{ marginTop: 3, fontSize: 13.5, width: '100%' }} />
+                </label>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button onClick={() => setModal(null)} disabled={saving} style={{
+                fontSize: 13.5, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+              }}>ยกเลิก</button>
+              <button onClick={saveAction} disabled={saving} style={{
+                fontSize: 13.5, fontWeight: 800, padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--accent)', color: '#08120a', border: 'none',
+              }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

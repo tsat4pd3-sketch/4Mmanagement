@@ -26,6 +26,7 @@ import NpiDrawingsEci from '../components/NpiDrawingsEci';
 import NpiTooling from '../components/NpiTooling';
 import NpiTasks from '../components/NpiTasks';
 import NpiTemplates from '../components/NpiTemplates';
+import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    🚀 NPI — พาร์ทใหม่: APQP / PPAP / Drawing Rev / ECI / Tooling Plan — /npi
@@ -99,6 +100,9 @@ export default function NPI() {
   const [users, setUsers] = useState([]);
   const [stepTemplates, setStepTemplates] = useState([]);
   const [dieSets, setDieSets] = useState([]);
+  const [peMasters, setPeMasters] = useState([]);          // 📚 คลัง PFMEA — สร้างชุด PE ให้พาร์ทใหม่จาก master
+  const [peMasterItems, setPeMasterItems] = useState([]);
+  const [fromMasterOpen, setFromMasterOpen] = useState(false);
   // ── ข้อมูลของโปรเจคที่เลือก ──
   const [parts, setParts] = useState([]);
   const [phases, setPhases] = useState([]);
@@ -129,7 +133,7 @@ export default function NPI() {
   const loadMaster = useCallback(async () => {
     setLoading(true);
     const w = [];
-    const [t, tp, td, pj, ps, qp, ln, us, st, ds, ap, aph, adv] = await Promise.all([
+    const [t, tp, td, pj, ps, qp, ln, us, st, ds, ap, aph, adv, pm, pmi] = await Promise.all([
       supabase.from('npi_templates').select('*').order('sort'),
       supabase.from('npi_template_phases').select('*').order('seq'),
       supabase.from('npi_template_deliverables').select('*').order('seq'),
@@ -143,6 +147,8 @@ export default function NPI() {
       fetchAll('npi_parts', '*'),
       fetchAll('npi_part_phases', '*'),
       fetchAll('npi_deliverables', 'id, part_id, phase_code, status, due_date, ppap_element'),
+      fetchAll('pe_master_processes', '*'),
+      fetchAll('pe_master_items', '*'),
     ]);
     if (t.error || pj.error || adv.error) w.push(`โหลดทะเบียน NPI ไม่ได้ (${(t.error || pj.error || adv.error).message}) — ยังไม่ apply migration 20260907_npi_apqp_main (Main) ?`);
     if (ps.error) w.push('โหลดชุดเอกสาร PE ไม่ได้');
@@ -162,6 +168,7 @@ export default function NPI() {
     setAllParts(ap.data || []);
     setAllPhases(aph.data || []);
     setAllDelivs(adv.data || []);
+    setPeMasters(pm.data || []); setPeMasterItems(pmi.data || []);   // ยังไม่ apply migration = ว่าง ปุ่มบอกเอง
     setWarn(w.join(' · '));
     setLoading(false);
   }, []);
@@ -409,11 +416,14 @@ export default function NPI() {
             <button style={btn()} disabled={saving} onClick={savePart}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ชุด PFC/FMEA/CP ที่มีอยู่" hint="เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = เว้นว่าง" span={2}>
+            <Field label="ชุด PFC/FMEA/CP ที่มีอยู่" hint="เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = สร้างจากคลัง PFMEA ได้เลย" span={2}>
+              <div style={{ display: 'flex', gap: 6 }}>
               <select style={inp} value={partModal.pe_set_id} onChange={e => pickPeSet(e.target.value)}>
                 <option value="">— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —</option>
                 {peSets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || '—'} · {s.model || ''} {s.line_name ? `· ${s.line_name}` : ''}</option>)}
               </select>
+                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>📚 สร้างจาก master</button>
+              </div>
             </Field>
             <Field label="Part No. (ลูกค้า) *"><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
             <Field label="ชื่อพาร์ท"><input style={inp} value={partModal.part_name || ''} onChange={e => setPartModal({ ...partModal, part_name: e.target.value })} /></Field>
@@ -446,6 +456,12 @@ export default function NPI() {
             </div>
           )}
         </Modal>
+      )}
+      {fromMasterOpen && (
+        <PeSetFromMasterModal masters={peMasters} masterItems={peMasterItems} lines={lines} role={role} lineId={lineId} sections={sections} fullName={fullName}
+          initial={{ part_no: partModal?.part_no || '', part_name: partModal?.part_name || '', model: project?.model || '', customer: project?.customer || '', line_name: partModal?.line_name || '' }}
+          onClose={() => setFromMasterOpen(false)}
+          onCreated={(s) => { setPeSets(list => [...list, s].sort((a, b) => String(a.part_no).localeCompare(String(b.part_no)))); setPartModal(m => m ? { ...m, pe_set_id: s.id, part_no: m.part_no || s.part_no, part_name: m.part_name || s.part_name || '', line_name: m.line_name || s.line_name || '' } : m); }} />
       )}
     </div>
   );

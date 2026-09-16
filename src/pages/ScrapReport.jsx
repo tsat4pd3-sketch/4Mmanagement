@@ -30,6 +30,8 @@ import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
+import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
+import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
@@ -61,6 +63,8 @@ const EMPTY_ITEM = () => ({
   src_defect_from_logs: false,
   // ผูกกลับไปที่รายการในใบเบิก QA (null = กรอกเอง/ดึงจาก Daily Report) — สืบย้อนได้ว่าชิ้นนี้เบิกด้วยใบไหน
   src_request_item_id: null,
+  // 🧩 แถวนี้เกิดจากการระเบิดของเสียของ "ขั้นตอน (OP)" ตัวไหน (null = ของเสียของพาร์ทตรงๆ) — 2026-09-15
+  src_op_mat: null,
 });
 
 function Modal({ title, onClose, children, width = 560 }) {
@@ -124,6 +128,11 @@ export default function ScrapReport() {
   const orgSections = useOrgSections();
   const deptsOf     = useOrgDepts();
   const [reqPicker, setReqPicker] = useState(null); // ใบเบิก QA ที่ดึงเข้าใบนี้ได้ | null
+  /* 🧩 บริบทระเบิดของเสียชั้น OP → เลข SAP จริง (utils/scrapExplode · 2026-09-15)
+     opRows = แถว OP ทั้งหมด (ไล่ขั้นก่อนหน้าในสายเดียวกัน) · bomOf = สูตรของแต่ละขั้น/พาร์ท
+     โหลดพร้อมกับ sapOptions ก้อนเดียว (คิวรีชุดเดิม เพิ่มคอลัมน์) — ไม่ยิงรอบใหม่ */
+  const [opRows, setOpRows] = useState([]);
+  const [bomByMat, setBomByMat] = useState({});
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
   const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
@@ -152,12 +161,29 @@ export default function ScrapReport() {
     let alive = true;
     (async () => {
       const [{ data: prods }, { data: boms }, { data: macs }, pmRes] = await Promise.all([
-        supabaseDR.from('dr_products').select('mat_no, p_no, name, code, line_name').eq('is_active', true).order('name'),
-        supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id').eq('is_active', true).order('part_name'),
+        // id/ชั้น OP/qty_per_unit เพิ่มมาเพื่อ "ระเบิดของเสียของขั้นตอน" — คิวรีชุดเดิม ไม่ได้ยิงเพิ่ม
+        supabaseDR.from('dr_products').select('id, mat_no, p_no, name, code, line_name, is_operation, op_parent_mat, op_seq').eq('is_active', true).order('name'),
+        // parent_mat = ชั้นที่ตั้งเองได้ (migration 20260916) — ยังไม่ apply = ถอยไปชุดเดิม ห้ามให้ทั้งหน้าพัง
+        supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id, qty_per_unit, uom, parent_mat').eq('is_active', true).order('part_name')
+          .then(r => r.error?.code === '42703'
+            ? supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id, qty_per_unit, uom').eq('is_active', true).order('part_name')
+            : r),
         supabaseDR.from('machines').select('machine_no'),   // ไว้จับ p_no ที่กรอกเป็นหมายเลขเครื่อง (master ผิด)
         supabaseDR.from('parts_master').select('mat_no, part_no, part_name').eq('is_active', true).order('part_name').then(r => r, () => ({ data: [] })),
       ]);
       if (!alive) return;
+      /* ── สูตร "ขั้นนี้กินอะไรเข้าไป" (bom_items ที่ product_id ชี้แถว OP) ───────────────
+         ⚠️ ทั้ง opRows และ opMap ถอดจาก `prods` ก้อนเดียวกันโดยตั้งใจ (ไม่ใช้ opInfoSync ที่
+         cache ระดับ module) — สองแหล่งอาจไม่ตรงกันเมื่อมีคนเพิ่ม OP ระหว่าง session
+         แล้วใบของเสียจะระเบิดผิด/ไม่ระเบิด โดยไม่มีใครรู้ */
+      /* ⚠️ ต้นไม้ BOM ผ่าน `buildBomIndex` เท่านั้น (utils/bomTree) — `parent_mat` ชนะ `product_id`
+         ⇒ ขั้นที่ถูกย้ายไปอยู่ชั้นลึก ก็ยังระเบิดของเสียได้ถูก · ห้ามประกอบเองซ้ำที่นี่ */
+      const matOfProd = {}; (prods || []).forEach(p => { if (p.id) matOfProd[p.id] = p.mat_no; });
+      const ix = buildBomIndex(boms || [], matOfProd);
+      const bomMap = {};
+      (boms || []).forEach(b => { const m = ix.parentOf(b); if (m) (bomMap[m] = bomMap[m] || []).push(b); });
+      setBomByMat(bomMap);
+      setOpRows((prods || []).filter(p => p.is_operation));
       // ⚠️ dr_products.p_no บางไลน์ถูกกรอกเป็น "หมายเลขเครื่อง" (เจอจริง SUB APRON: SP-72/74/83/88)
       //    ซึ่งไม่ใช่เลขพาร์ทลูกค้า → ใบรายงานของเสียพิมพ์ออกมาผิด · ไม่แก้ข้อมูลให้เงียบๆ แต่ทำ 2 อย่าง:
       //    (1) ไม่เอาค่านั้นมาเป็น part_no (ปล่อยว่างให้กรอกเอง) (2) ติดธง badMaster ให้ UI เตือนไปแก้ที่ Product Master
@@ -196,6 +222,61 @@ export default function ScrapReport() {
     if (!sapOptions || q.length < 2) return [];
     return sapOptions.filter(o => [o.mat_no, o.part_no, o.part_name].some(v => (v || '').toLowerCase().includes(q))).slice(0, 12);
   }, [sapOptions, sapSearch]);
+
+  /* ══ 🧩 ระเบิดของเสียของ "ขั้นตอน (OP)" → เลขที่สโตร์ตัด SAP ได้จริง (user 2026-09-15) ══
+     ชั้น OP ไม่มีตัวตนใน SAP และ "ตัวมันเองยังไม่สมบูรณ์" (ไม่เคยเข้าคลัง — fn_post_confirmed_output
+     ข้าม is_operation) ⇒ ของที่หายจริงคือวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น
+     กติกา/การไล่ขั้นก่อนหน้าอยู่ที่ src/utils/scrapExplode.js (pure + มีเทส) ห้ามคิดสูตรซ้ำที่นี่ */
+  const explodeCtx = useMemo(() => ({
+    opMap: Object.fromEntries(opRows.map(o => [o.mat_no, { parent: o.op_parent_mat, seq: o.op_seq }])),
+    opRows,
+    bomOf: (mat) => bomByMat[mat] || [],
+  }), [opRows, bomByMat]);
+
+  // สแกนทั้งใบ: แถวไหนเป็นขั้น OP · ระเบิดได้แล้ว / ยังไม่มีสูตร (ใช้ทั้งแถบเตือนและปุ่ม)
+  const opScan = useMemo(() => scanScrapItems(editor?.items || [], explodeCtx), [editor, explodeCtx]);
+  // หน่วยของแต่ละ mat จาก BOM (KG/PC) — โชว์บนจอเท่านั้น ใบฟอร์มไม่มีคอลัมน์หน่วย (SAP รู้หน่วยฐานเอง)
+  const uomByMat = useMemo(() => {
+    const m = {};
+    Object.values(bomByMat).forEach(rows => rows.forEach(b => { if (b.mat_no && b.uom && !m[b.mat_no]) m[b.mat_no] = b.uom; }));
+    return m;
+  }, [bomByMat]);
+
+  /** แทนแถวขั้น OP ด้วยรายการวัตถุดิบ/พาร์ทที่ถูกใส่เข้าไปจนถึงขั้นนั้น
+   *  ⚠️ คำนวณจาก `items` ที่ส่งเข้ามา **นอก** setEditor เสมอ — ถ้าไปนับใน updater
+   *     ตัวเลขที่เอาไป toast จะเป็นค่าเก่า (updater ทำงานทีหลัง) = บอกผลผิดให้คนหน้างาน
+   *  @param items   แถวปัจจุบัน (ส่ง array ที่เพิ่งสร้างได้ เช่นตอนดึงจาก Daily Report)
+   *  @param onlyKey ระเบิดเฉพาะแถวนั้น (null = ทั้งใบ)
+   *  @param quiet   true = ไม่ต้องบอกเมื่อไม่มีอะไรให้ระเบิด (ใช้ตอนดึงอัตโนมัติ) */
+  const explodeOpItems = (items, onlyKey = null, quiet = false) => {
+    const out = [];
+    let done = 0; const blocked = []; const dup = new Set();
+    (items || []).forEach(it => {
+      if (onlyKey && it._key !== onlyKey) { out.push(it); return; }
+      const r = explodeScrapRow(it, explodeCtx);
+      if (r.status === 'not_op') { out.push(it); return; }
+      if (r.status === 'no_bom') { blocked.push(it.mat_no); out.push(it); return; }
+      r.dupMats.forEach(m => dup.add(m));
+      done++;
+      r.lines.forEach(l => out.push({
+        ...EMPTY_ITEM(), source: 'sub',
+        mat_no: l.mat_no, part_no: l.part_no || '', part_name: l.part_name || '',
+        qty: l.qty, confirm_qty: l.qty,
+        // ยกบริบทของเสียจากแถวต้นทางมาทั้งชุด (สาเหตุ/ช่วง/รหัสงานเสีย/รุ่น) — คนกรอกไม่ต้องคีย์ใหม่
+        model: it.model, code: it.code || 'C', m_cause: it.m_cause, stage: it.stage,
+        defect_codes: it.defect_codes,
+        bom_ref: it.mat_no,                       // คอลัมน์ BOM บนฟอร์ม = ขั้นที่ของเสียหลุด
+        src_op_mat: it.mat_no,                    // สืบย้อนได้ว่าแถวนี้มาจากขั้นไหน
+        src_defect_from_logs: !!it.src_defect_from_logs,
+      }));
+    });
+    if (done) setEditor(e => (e ? { ...e, items: out } : e));
+    if (done) toast.success(`ระเบิดขั้นตอน ${done} รายการเป็นเลข SAP ที่ตัดสต๊อกได้แล้ว ✓`);
+    else if (!quiet && !blocked.length) toast.info('ไม่มีแถวที่เป็นขั้นตอน (OP) ให้ระเบิด');
+    if (blocked.length) toast.error(`ยังไม่ได้ผูกสูตรของขั้น: ${[...new Set(blocked)].join(', ')} — ไปตั้งที่ /products แท็บ BOM (เลือกแถว 🔩 ขั้นตอน) แล้วกดระเบิดอีกครั้ง`);
+    if (dup.size) toast.info(`⚠ ${[...dup].join(', ')} ถูกผูกไว้หลายขั้น ระบบรวมยอดให้ — เช็คว่าคีย์สูตรแบบสะสมหรือเปล่า`);
+    return { items: out, done, blocked };
+  };
 
   /* ── สร้างเลขเอกสาร running รายเดือน ── */
   const nextDocNo = async (date) => {
@@ -301,12 +382,16 @@ export default function ScrapReport() {
     const pulled = [...byMat.values()].filter(v => v.qty > 0);
     if (!pulled.length) { toast.info('ไม่มีของเสียบันทึกไว้ในวันนี้'); return; }
     // รวมกับรายการเดิม: mat ที่ดึงมาแล้ว (from_logs) อัปเดตยอด, อื่นคงไว้
-    setEditor(e => {
-      const manual = e.items.filter(it => !it.src_defect_from_logs);
-      const auto = pulled.map(v => ({ ...EMPTY_ITEM(), source: 'main', mat_no: v.mat_no, part_name: v.part_name, qty: v.qty, confirm_qty: v.qty, src_defect_from_logs: true }));
-      return { ...e, items: [...auto, ...manual] };
-    });
+    const manual = editor.items.filter(it => !it.src_defect_from_logs);
+    const auto = pulled.map(v => ({ ...EMPTY_ITEM(), source: 'main', mat_no: v.mat_no, part_name: v.part_name, qty: v.qty, confirm_qty: v.qty, src_defect_from_logs: true }));
+    const next = [...auto, ...manual];
+    setEditor(e => (e ? { ...e, items: next } : e));
     toast.success(`ดึงของเสีย ${pulled.length} ชิ้นงานจาก Daily Report ✓`);
+    /* 🧩 ของเสียที่หลุดที่ "ขั้นตอน (OP)" ถูกดึงมาด้วยเลขของขั้น ซึ่ง SAP ไม่มี ⇒ ระเบิดเป็นวัตถุดิบจริงทันที
+       (user 2026-09-15: "มันต้องดึง BOM ที่มันประกอบมาตัด ไม่ใช่ตัดตัวมันเอง")
+       quiet = ไม่ต้องบอกว่า "ไม่มีอะไรให้ระเบิด" — ไลน์ส่วนใหญ่ไม่มีชั้น OP อยู่แล้ว
+       แต่แถวที่ระเบิดไม่ได้ (ยังไม่ผูกสูตร) **ยังเตือนเสมอ** ไม่ปล่อยใบที่ตัดสต๊อกไม่ได้ออกไปเงียบๆ */
+    explodeOpItems(next, null, true);
   };
 
   const setRep = (patch) => setEditor(e => ({ ...e, report: { ...e.report, ...patch } }));
@@ -334,6 +419,12 @@ export default function ScrapReport() {
     const { report, items } = editor;
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
     if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
+    /* 🔩 ส่งอนุมัติ/อนุมัติทั้งที่ยังมีเลขขั้นตอน (OP) ค้างอยู่ = ใบนี้สโตร์เอาไปตัด SAP ไม่ได้
+       ไม่บล็อก (บางใบอาจตั้งใจบันทึกไว้ก่อน) แต่ต้องถามให้คนกดรู้ตัว — ห้ามผ่านเงียบ (2026-09-15) */
+    if (report.status !== 'draft' && opScan.opRowsCount > 0) {
+      const mats = [...new Set([...opScan.ready, ...opScan.blocked].map(x => x.item.mat_no))].join(', ');
+      if (!window.confirm(`ใบนี้ยังมี ${opScan.opRowsCount} รายการที่เป็นเลขขั้นตอน (OP): ${mats}\n\nเลขพวกนี้ไม่มีใน SAP — สโตร์ตัดสต๊อกไม่ได้\nกด "🧩 ระเบิดขั้นตอน" ก่อนจะตรงกว่า\n\nยืนยันบันทึกทั้งที่ยังไม่ระเบิด?`)) return;
+    }
     let doc_no = report.doc_no;
     if (!doc_no) doc_no = await nextDocNo(report.report_date);
     const payload = {
@@ -366,8 +457,14 @@ export default function ScrapReport() {
         confirm_qty: it.confirm_qty === '' || it.confirm_qty == null ? null : Number(it.confirm_qty),
         defect_codes: it.defect_codes || null, src_defect_from_logs: !!it.src_defect_from_logs,
         src_request_item_id: it.src_request_item_id || null,
+        src_op_mat: it.src_op_mat || null,
       }));
-      const { error } = await supabaseDR.from('scrap_report_items').insert(rows);
+      // 42703 = ยังไม่ apply migration ของคอลัมน์ src_op_mat → ถอยไปชุดเดิม (ห้ามให้ทั้งใบบันทึกไม่ได้)
+      let { error } = await supabaseDR.from('scrap_report_items').insert(rows);
+      if (error?.code === '42703') {
+        ({ error } = await supabaseDR.from('scrap_report_items')
+          .insert(rows.map(({ src_op_mat, ...r }) => r)));   // eslint-disable-line no-unused-vars
+      }
       if (error) { toast.error(error.message); return; }
     }
     if (report.status === 'submitted') notifyEvent({
@@ -510,9 +607,36 @@ export default function ScrapReport() {
             <button style={btnSt('#4d9fff')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
             {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
             <button style={btnSt('#a855f7')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
+            {opScan.opRowsCount > 0 && (
+              <button style={btnSt('#f97316')} onClick={() => explodeOpItems(editor.items)}
+                title="แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง">
+                🧩 ระเบิดขั้นตอน ({opScan.opRowsCount})
+              </button>
+            )}
             <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>🔍 เพิ่มจาก SAP/BOM</button>
             <button style={ghostBtn} onClick={() => addItem('sub')}>+ พาร์ทย่อย (กรอกเอง)</button>
           </div>
+
+          {/* ⚠️ แถบเตือน "เลขนี้ SAP ตัดไม่ได้" — ห้ามซ่อน (ใบของเสียที่ตัดสต๊อกไม่ได้ = งานค้างของสโตร์)
+              pattern เดียวกับแถบ 🔩 worklist ใน /products */}
+          {opScan.opRowsCount > 0 && (
+            <div style={{
+              marginBottom: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
+              background: opScan.blocked.length ? 'rgba(239,68,68,0.10)' : 'rgba(249,115,22,0.10)',
+              border: `1px solid ${opScan.blocked.length ? 'rgba(239,68,68,0.45)' : 'rgba(249,115,22,0.45)'}`,
+              color: opScan.blocked.length ? '#ef4444' : '#f97316',
+            }}>
+              <b>🔩 {opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
+              จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
+              {opScan.ready.length > 0 && <> · กด <b>🧩 ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
+              {opScan.blocked.length > 0 && (
+                <div style={{ marginTop: 4 }}>
+                  ⛔ ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
+                  {' '}— ไปตั้งที่ <a href="/products?tab=bom" style={{ color: 'inherit', fontWeight: 800 }}>/products → แท็บ BOM</a> (เลือกแถวที่ติดป้าย 🔩 ขั้นตอน) แล้วกลับมากดระเบิด
+                </div>
+              )}
+            </div>
+          )}
 
           <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
@@ -527,7 +651,9 @@ export default function ScrapReport() {
                   <tr key={it._key}>
                     <td style={tdSt}>{i + 1}
                       {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
-                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}</td>
+                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
+                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
+                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
@@ -545,6 +671,11 @@ export default function ScrapReport() {
                               style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 7px', fontSize: 12 }}
                               onChange={r => pickSapForItem(it._key, r)} />
                             <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
+                            {opInfoOf(it.mat_no, explodeCtx.opMap) && (
+                              <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'rgba(249,115,22,0.6)', color: '#f97316' }}
+                                title="ระเบิดขั้นนี้เป็นวัตถุดิบ/พาร์ทที่ใส่เข้าไป (เลขที่ตัด SAP ได้)"
+                                onClick={() => explodeOpItems(editor.items, it._key)}>🧩</button>
+                            )}
                           </div>
                         </td>
                       </>);
@@ -556,7 +687,14 @@ export default function ScrapReport() {
                       </select>
                     </td>
                     <td style={tdSt}><input style={{ ...inputSt, width: 60, padding: '5px 7px' }} value={it.bom_ref} onChange={e => setItem(it._key, { bom_ref: e.target.value })} /></td>
-                    <td style={tdSt}><input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} /></td>
+                    <td style={tdSt}>
+                      {/* หน่วยจาก BOM (KG/PC) — จอเท่านั้น ฟอร์มกระดาษไม่มีคอลัมน์หน่วย (SAP รู้หน่วยฐานของ mat เอง)
+                          ⚠️ coil เป็น KG ทศนิยม ห้ามปัดเป็นจำนวนเต็ม */}
+                      <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                        <input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} />
+                        {uomByMat[it.mat_no] && <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{uomByMat[it.mat_no]}</span>}
+                      </div>
+                    </td>
                     <td style={tdSt}>
                       <select style={{ ...inputSt, width: 90, padding: '5px 4px' }} value={it.m_cause} onChange={e => setItem(it._key, { m_cause: e.target.value })}>
                         <option value="">—</option>{M_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}

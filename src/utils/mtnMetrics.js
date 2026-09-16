@@ -40,7 +40,7 @@
    ⚠️ ทุกฟังก์ชันในไฟล์นี้ต้อง **pure** (ไม่ import supabase) — ผู้เรียกส่งข้อมูลมาให้
       (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
-import { policyBreakForShift } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -263,6 +263,31 @@ export function machineReliability({
   const { byLine, unknownShifts, breakMin, hasBreakPolicy } =
     operatingMinutesByLine(sessions, { breakPolicies });
 
+  /* ⚠️ opMin หักเวลาพักไปแล้ว ⇒ นาที downtime ที่ตกอยู่ "ในช่วงพัก" ห้ามหักซ้ำจาก upMin
+     (ไม่งั้น MTBF สั้นเกินจริง / %Availability ต่ำเกินจริง · utils/oee §3.1)
+     เก็บ 2 ชุด: `dtMin/plannedMin` = นาทีเต็ม (เครื่องหยุดจริงเท่านี้ — โชว์บนตาราง/พาเรโต)
+                 `dtMinOp/plannedMinOp` = นาทีที่อยู่ในเวลาเดินเครื่อง (ใช้คิด upMin/MTBF/%A เท่านั้น) */
+  const brkIvBy = new Map();
+  if (breakPolicies.length) {
+    for (const ss of sessions) {
+      const wd = ss?.work_date, st = ss?.start_time, sm = Number(ss?.shift_min) || 0;
+      if (!ss?.id || !wd || !st || sm <= 0) continue;
+      const startMs = new Date(`${wd}T${String(st).slice(0, 5)}:00`).getTime();
+      brkIvBy.set(ss.id, breakIntervalsIn({
+        policies: breakPolicies, startMs, endMs: startMs + sm * 60000, workDate: wd, shift: ss.shift,
+      }));
+    }
+  }
+  /** นาทีของ downtime แถวนี้ที่อยู่ "นอกช่วงพัก" — ตัดไม่ได้ (ไม่มีเวลาเริ่ม/ไม่รู้กะ) = คืนเต็ม */
+  const dtOpMinutes = (d) => {
+    const raw = dtMinutes(d);
+    const iv = brkIvBy.get(d?.session_id);
+    if (!(raw > 0) || !iv || !iv.length || !d?.started_at) return raw;
+    const s0 = new Date(d.started_at).getTime();
+    const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + raw * 60000;
+    return Math.max(0, raw - overlapMinutesWith(s0, e0, iv));
+  };
+
   const acc = new Map();   // key → row ระหว่างสะสม
   let noMachineNo = 0;
   // เหตุผลที่แยก "รอช่าง/ซ่อมจริง" ไม่ได้ — ต้องโชว์บนจอ ไม่ใช่เงียบแล้วขึ้น "—"
@@ -288,8 +313,8 @@ export function machineReliability({
         kindKnown: !!machine,
         lineName: machine?.line_name || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : ''),
         inMaster: !!machine, via,
-        stops: 0, openStops: 0, closedStops: 0, dtMin: 0,
-        plannedStops: 0, plannedMin: 0,
+        stops: 0, openStops: 0, closedStops: 0, dtMin: 0, dtMinOp: 0,
+        plannedStops: 0, plannedMin: 0, plannedMinOp: 0,
         phaseN: 0, phaseOneShot: 0, _waitSum: 0, _repairSum: 0, _restartSum: 0, _totalSum: 0,
         lastAt: null, _causes: {}, _rawNos: new Set(),
       };
@@ -299,15 +324,16 @@ export function machineReliability({
     if (!r.lineName && sessionLineOf) r.lineName = sessionLineOf(d?.session_id) || '';
 
     const mins = dtMinutes(d);
+    const minsOp = dtOpMinutes(d);                  // ตัดนาทีที่ทับพักออก — ใช้กับ upMin เท่านั้น
     const cause = d?.dr_downtime_types?.name_th || d?.dt_name || 'ไม่ระบุประเภท';
     if (isPlannedDt(d)) {
-      r.plannedStops++; r.plannedMin += mins;
+      r.plannedStops++; r.plannedMin += mins; r.plannedMinOp += minsOp;
       continue;                                     // หยุดตามแผนไม่ใช่ "เครื่องเสีย"
     }
     r.stops++;
     r._causes[cause] = (r._causes[cause] || 0) + 1;
     if (isOpenDt(d)) r.openStops++;
-    else { r.closedStops++; r.dtMin += mins; }
+    else { r.closedStops++; r.dtMin += mins; r.dtMinOp += minsOp; }
     // ช่วงย่อย (รอช่าง/ซ่อมจริง/กลับมารัน) — มีเฉพาะครั้งที่กดครบทุกจังหวะ
     const issue = phaseIssue(d);
     if (issue) phaseGaps[issue] = (phaseGaps[issue] || 0) + 1;
@@ -333,13 +359,14 @@ export function machineReliability({
   const rows = [];
   for (const r of acc.values()) {
     const opMin = opMinOf(r.lineName);
-    const upMin = opMin != null ? Math.max(0, opMin - r.dtMin - r.plannedMin) : null;
+    const upMin = opMin != null ? Math.max(0, opMin - r.dtMinOp - r.plannedMinOp) : null;
     /* ชุดถ่วง 1/N — ทุกแถวในตารางนี้มี machine_no อยู่แล้ว (แถวไม่ระบุเครื่องถูกคัดออกตั้งแต่ต้น)
        ⇒ น้ำหนักเท่ากันทั้งกลุ่ม หารทีเดียวตอนท้ายได้ ผลเท่ากับหารรายแถวแบบ dtW ใน computeOEE */
     const pN = r.lineName && parallelOf ? Math.max(1, Number(parallelOf(r.lineName)) || 1) : 1;
     const dtMinW = r.dtMin / pN;
+    const dtMinOpW = r.dtMinOp / pN;
     const plannedMinW = r.plannedMin / pN;
-    const upMinW = opMin != null ? Math.max(0, opMin - dtMinW - plannedMinW) : null;
+    const upMinW = opMin != null ? Math.max(0, opMin - dtMinOpW - (r.plannedMinOp / pN)) : null;
     rows.push({
       key: r.key, machineNo: r.machineNo, machineName: r.machineName,
       kind: r.kind, kindKnown: r.kindKnown, lineName: r.lineName,

@@ -76,8 +76,8 @@ test('ค่าใน localStorage ที่พัง (JSON เพี้ยน) 
   assert.equal(hits, 1);
 });
 
-test('cache ของ build เก่าต้องถูกทิ้ง (โครงข้อมูลอาจเปลี่ยนระหว่างเวอร์ชัน)', async () => {
-  store.set('esm_mc_machines', JSON.stringify({ v: 'build-เก่า', at: Date.now(), data: [{ id: 9 }] }));
+test('cache ของ CACHE_EPOCH เก่าต้องถูกทิ้ง (โครงข้อมูลเปลี่ยน = อ่านของเก่าไม่ได้)', async () => {
+  store.set('esm_mc_machines', JSON.stringify({ v: 'epoch-เก่า', at: Date.now(), data: [{ id: 9 }] }));
   const data = await cachedMaster('machines', loader);
   assert.deepEqual(data, [{ id: 1, name: 'เครื่อง A' }], 'ยังใช้ cache ของ build เก่าอยู่');
 });
