@@ -401,7 +401,8 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   // ยังไม่ผลิตชิ้นแรก (เพิ่งเปิดกะ/รอของ) → ประเมิน P/Q/OEE ไม่ได้ ต้องคืน null
   // ห้ามคืน P=0 → OEE 0% (เคยทำการ์ด "กำลังผลิต" ขึ้น 0% แดง ทั้งที่กะเพิ่งเปิด 19 นาที · 2026-08-05)
   if (produced <= 0) {
-    return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true, ...baseInfo };
+    return { A: pct(A), P: null, Q: null, oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+      stdMin: 0, denomMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true, ...baseInfo };
   }
 
   const Q = produced / (produced + ng);
@@ -412,6 +413,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
      A กับ Q ยังตอบได้ (ไม่ต้องใช้ CT) จึงคืนตามปกติ */
   if (stdMin <= 0) {
     return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+      stdMin: 0, denomMin: Math.round(runMin),
       produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...baseInfo };
   }
 
@@ -440,9 +442,62 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
      ถ้ามี guard นี้ตั้งแต่แรกจะจับได้ตั้งแต่กะแรก แทนที่จะปล่อยจน OEE อ่านไม่ได้ทั้งไลน์ 14 กะ */
   // qtyNoCt > 0 = ตั้ง CT ไม่ครบทุกชิ้นงาน → stdMin ขาด → %P ต่ำกว่าจริง (จอควรติดป้ายเตือน)
   return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
+    stdMin: Math.round(stdMin), denomMin: Math.round(denomMin),
     produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt],
     pOver: pRaw > 1.001, pRawPct: Math.round(pRaw * 1000) / 10,
     machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap, ...baseInfo };
+}
+
+/* ── นาทีที่หายไปของกะ — "แปล" computeLiveOee เป็นหน่วยที่หน้างานสั่งงานได้ (2026-09-16) ──
+   ที่มา (user): "จะรู้ได้ยังไงว่าตอนนี้ดีเลย์ไปแล้วกี่ใบ และต้อง recover ยังไง"
+   คำตอบคือ **นาที ไม่ใช่ใบ** — 1 ใบของคนละพาร์ท CT ต่างกัน และใบที่ช้า 2 นาทีกับ 3 ชม.
+   ก็นับเป็น 1 เท่ากัน · ที่สำคัญกว่านั้น ใบ backfill (35% ของใบทั้งระบบ) ถูกยกเว้นจากการตีดีเลย์
+   รายใบ ⇒ นับ "ใบ" เท่าไหร่ก็ต่ำกว่าจริงตลอด · นับ "นาที" จากยอดที่ผลิตได้จริงไม่มีปัญหานี้
+
+   🔴 ฟังก์ชันนี้ **ไม่คำนวณอะไรใหม่เลย** — แค่จัดนาทีที่ `computeLiveOee` คิดไว้แล้วเป็นก้อน
+   ห้ามคำนวณหนี้เวลาเองในหน้า และห้ามสร้างสูตรคู่ขนาน (กฎเดียวกับ OEE: สูตรอยู่ไฟล์นี้ที่เดียว)
+   ผลพลอยได้คือตัวเลขนาทีตรงกับ %A/%P/%Q ที่จอโชว์อยู่แล้วเป๊ะ เพราะเป็นตัวเดียวกัน
+
+       elapsedMin
+       ├─ breakMin      ⬛ พักตามนโยบาย        ← กันออกจากฐานแล้ว ไม่ใช่เวลาที่เสีย
+       ├─ plannedMin    🟦 หยุดตามแผน (PM/เปลี่ยนรุ่น)
+       └─ netAvailMin
+          ├─ dtMin      🟧 หยุดนอกแผน          ← เสียจริง แต่ **อธิบายได้แล้ว**
+          └─ runMin
+             ├─ workMin 🟩 งานที่ทำได้ (Σ ยอด×CT)
+             └─ unknownMin ⬜ **อธิบายไม่ได้**  ← ก้อนเดียวที่ต้องตามหาคำตอบ
+
+   ⚠️ ไลน์เครื่องขนาน (parallelCap > 1): ฐานของ 2 ก้อนล่างเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์"
+      → คืน `unit: 'machine'` ให้จอเขียนกำกับ **ห้ามเอาไปวาดรวมแถบเดียวกับก้อนบนเงียบๆ**
+   ⚠️ `state` ต้องถูกแสดงบนจอเสมอ ห้ามกลืน (กฎ "ไม่รู้ ≠ ไม่มี" · ห้ามล้มเหลวเงียบ):
+      'over'   = งานมาตรฐาน > เวลาที่มี ⇒ ข้อมูลผิด (CT/ยอด/เวลาเปิด-ปิดใบ) **ห้ามบอกว่าหนี้ = 0**
+      'no_ct'  = บางพาร์ทไม่ได้ตั้ง CT ⇒ workMin ขาด ⇒ ⬜ สูงเกินจริง
+      'no_output' = ยังไม่ผลิตชิ้นแรก ⇒ ⬜ = runMin เต็ม (จริง แต่ต้องบอกว่าเพราะยังไม่เริ่ม) */
+export function liveTimeSplit(live) {
+  if (!live) return null;
+  const cap        = Math.max(1, Number(live.parallelCap) || 1);
+  const runMin     = Math.max(0, Number(live.runMin) || 0);
+  const denomMin   = Math.max(0, Number(live.denomMin ?? runMin) || 0);
+  const workMin    = Math.max(0, Number(live.stdMin) || 0);
+  const rawUnknown = denomMin - workMin;
+  return {
+    elapsedMin:  Math.max(0, Number(live.elapsedMin)  || 0),
+    breakMin:    Math.max(0, Number(live.breakMin)    || 0),
+    plannedMin:  Math.max(0, Number(live.plannedDtMin)|| 0),
+    dtMin:       Math.max(0, Number(live.unplannedDtMin) || 0),
+    netAvailMin: Math.max(0, Number(live.netAvailMin) || 0),
+    runMin, capacityMin: denomMin, workMin,
+    unknownMin:  Math.max(0, rawUnknown),
+    unit: cap > 1 ? 'machine' : 'line',
+    parallelCap: cap,
+    over: rawUnknown < 0 || !!live.pOver,
+    state: live.pOver || rawUnknown < 0 ? 'over'
+         : live.noCt                    ? 'no_ct'
+         : live.noOutput                ? 'no_output'
+         : 'ok',
+    noBreakPolicy: !!live.noBreakPolicy,
+    qtyNoCt: Number(live.qtyNoCt) || 0,
+  };
 }
 
 /* ═══ 5) OEE จริง (strict) ═══ */
