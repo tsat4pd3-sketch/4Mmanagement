@@ -36,3 +36,26 @@ export default function useTabParam(keys, defaultKey, param = 'tab') {
 
   return [tab, setTab];
 }
+
+/* ══ useMergeParams — setter ที่ "รวม" param ใหม่เข้ากับของเดิมเสมอ ═══════════════════════
+   🔴 ที่มา (บั๊กจริง 2026-09-16 · user ส่งคลิปมา): กดแท็บ "ส่วนงาน" ใน ⚙️ ตั้งค่าจุดตรวจ แล้วจอ
+      เด้งไปแท็บ "✅ ตรวจอุปกรณ์" เอง — เพราะหน้าลูกเขียน `setSearchParams({ dept: d })`
+      ซึ่ง**ล้าง param อื่นทั้งหมดทิ้ง** รวมทั้ง `?tab=setup` ของหน้าแม่ (PmHub)
+      ⇒ หน้าแม่หา tab ไม่เจอ เลยตกกลับแท็บแรก · เจอซ้ำ 3 หน้า (PMSetup · PMSchedule · PMCheckData)
+
+   **ห้ามเรียก `setSearchParams({...})` ตรงๆ เมื่อหน้านั้นอยู่ใต้หน้าแม่ที่มีแท็บ** — ใช้ตัวนี้แทน
+   (ล้าง param ตั้งใจได้ด้วยการส่งค่า null/'' เช่น `setParams({ equip: null })`)
+   ═════════════════════════════════════════════════════════════════════════════════════════ */
+export function mergeParams(prev, patch) {
+  const next = new URLSearchParams(prev);
+  for (const [k, v] of Object.entries(patch || {})) {
+    if (v === null || v === undefined || v === '') next.delete(k);
+    else next.set(k, String(v));
+  }
+  return next;
+}
+
+export function useMergeParams() {
+  const [, setSp] = useSearchParams();
+  return useCallback((patch, opts) => setSp(prev => mergeParams(prev, patch), opts), [setSp]);
+}

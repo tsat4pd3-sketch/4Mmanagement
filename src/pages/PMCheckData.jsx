@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { can } from '../utils/permissions'
@@ -638,7 +639,8 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
 
 // ─── PMCheckData (main) ───────────────────────────────────────────────────────
 export default function PMCheckData() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const setParams = useMergeParams()
   const department = searchParams.get('dept') || 'maintenance'
   const equipParam = searchParams.get('equip')
 
@@ -768,9 +770,11 @@ export default function PMCheckData() {
 
   // คง line filter (?line=) ไว้ตอนเลือกเครื่อง — มาจากปุ่ม "ไปหน้าตรวจ" ของ Daily PM รายไลน์
   const lineFilter = searchParams.get('line')
-  const selectJig = (jig) => setSearchParams({ dept: department, equip: jig.id, ...(lineFilter ? { line: lineFilter } : {}) })
-  const clearJig = () => setSearchParams({ dept: department, ...(lineFilter ? { line: lineFilter } : {}) }) // กลับไปลิสต์ (จอแคบ)
-  const setDept = (d) => setSearchParams({ dept: d, ...(equipParam ? { equip: equipParam } : {}) })
+  /* ⚠️ ทุกตัวต้อง merge param เดิม — เขียน setSearchParams({...}) ตรงๆ จะล้าง ?tab= ของ PmHub
+     แล้วจอเด้งออกจากแท็บที่ใช้อยู่ (บั๊กจริง 2026-09-16) · ล้าง param ตั้งใจด้วยค่า null */
+  const selectJig = (jig) => setParams({ equip: jig.id })
+  const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
+  const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
   const fetchHistory = async (jigId) => {
     const { data } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
@@ -1128,7 +1132,7 @@ export default function PMCheckData() {
             return (<>
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
-                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setSearchParams({ dept: department, ...(equipParam ? { equip: equipParam } : {}) })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
+                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
                 </div>
               )}
               {lineNames.map(ln => (
