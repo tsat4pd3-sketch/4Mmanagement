@@ -347,7 +347,27 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   const wd = workDate || session.work_date;
   if (!wd) return null;
 
-  const opened = new Date(`${wd}T${session.start_time.slice(0, 5)}:00`).getTime();
+  /* ── หมุดเริ่มกะ (t0) ต้องอยู่ใน "กรอบกะ" เสมอ (2026-09-16) ─────────────────────────
+     เดิมต่อ `work_date + start_time` ตรงๆ ⇒ พังเงียบ 2 เคส:
+       (ก) ค่าหลุดกรอบ — มีจริงในฐาน 4 แถว เช่น `shift='night'` แต่ `start_time='08:00'`
+           (Laser GOR 01/08 · Line 61 06/07) และ `shift='day'` ที่ `start_time='22:30'`
+           ⇒ t0 เพี้ยนไป 12 ชม. → elapsed พุ่งจน cap ที่ shift_min ⇒ %A/%P อ่านเหมือนกะจบแล้ว
+           ตั้งแต่นาทีแรก → clamp กลับต้นกะ + ตั้งธง `startTimeOutOfFrame` ให้จอบอกว่าข้อมูลผิด
+       (ข) กะดึกที่บันทึกเวลาเริ่มเป็น 00:00–07:59 = **เช้าของวันถัดไป** ต้อง +1 วัน
+           (กติกาเดียวกับ `carryImportOpenedAt` ใน DailyReport) ไม่งั้น t0 เร็วไป ~20 ชม.
+     ⚠️ กะดึกเข้างานปกติ 22:30 (121 กะในฐาน) อยู่ในกรอบ ห้ามถูก clamp */
+  const startHm = session.start_time.slice(0, 5);
+  const startH = Number(startHm.slice(0, 2));
+  const inDayWindow = startH >= 8 && startH < 20;          // กะเช้า 08:00–19:59 · กะดึก 20:00–07:59
+  const isNight = session.shift === 'night';
+  const startTimeOutOfFrame = isNight ? inDayWindow : (session.shift === 'day' && !inDayWindow);
+  let openedDate = wd, openedHm = startHm;
+  if (startTimeOutOfFrame) openedHm = isNight ? '20:00' : '08:00';
+  else if (isNight && startH < 8) {                        // กะดึกข้ามคืน — เวลาเริ่มอยู่เช้าวันถัดไป
+    const d = new Date(`${wd}T12:00:00`); d.setDate(d.getDate() + 1);
+    openedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const opened = new Date(`${openedDate}T${openedHm}:00`).getTime();
   let elapsed = (nowMs - opened) / 60000;
   if (session.shift_min) elapsed = Math.min(elapsed, session.shift_min);
   if (!(elapsed >= LIVE_MIN_ELAPSED)) return null;
@@ -395,7 +415,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   const baseInfo = {
     netAvailMin: Math.round(netAvail), breakMin: Math.round(breakMin),
     plannedDtMin: Math.round(plannedDtMin), unplannedDtMin: Math.round(unplannedDtMin),
-    noBreakPolicy: !breakPolicies.length,
+    noBreakPolicy: !breakPolicies.length, startTimeOutOfFrame,
   };
 
   // ยังไม่ผลิตชิ้นแรก (เพิ่งเปิดกะ/รอของ) → ประเมิน P/Q/OEE ไม่ได้ ต้องคืน null
@@ -496,6 +516,7 @@ export function liveTimeSplit(live) {
          : live.noOutput                ? 'no_output'
          : 'ok',
     noBreakPolicy: !!live.noBreakPolicy,
+    startTimeOutOfFrame: !!live.startTimeOutOfFrame,
     qtyNoCt: Number(live.qtyNoCt) || 0,
   };
 }
