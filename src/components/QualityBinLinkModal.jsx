@@ -95,7 +95,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   const repaired = num(defect?.qty_repair);
 
   return (
-    <div className="overlay" style={{ zIndex: 2200 }} onClick={onClose}>
+    <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
         background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14,
         padding: 20, width: 'min(96vw, 640px)', maxHeight: '90vh', overflowY: 'auto' }}>

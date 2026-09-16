@@ -779,8 +779,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
       {/* ── modal ตั้ง action ─────────────────────────────────────────────────── */}
       {modal && (
-        <div onClick={() => !saving && setModal(null)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 900,
+        <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */ style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 2000,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
         }}>
           <div onClick={e => e.stopPropagation()} style={{
