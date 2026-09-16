@@ -27,7 +27,15 @@
   (เดิม "ไม่มีห้อง Telegram" = ข้ามทั้งบล็อก กระดิ่งในแอปเลยไม่ได้ยิงตามไปด้วย)
   **บทเรียนทั่วไป: ตัวแปรที่แปลว่า "ส่งสำเร็จ" ห้ามผูกกับช่องทางเดียว**
 - migration `20260914_notify_inapp_telegram_only_gaps.sql` (Main · **apply แล้ว**) — seed `four_m_daily_summary` + ตั้ง `inapp_roles` ให้ `mtn_daily_summary` / `qa_fme_call` / `qa_fme_overdue` เฉพาะแถวที่ยังว่าง (รันซ้ำได้)
-- **สถานะ deploy:** `daily-4m-summary` v11 ✅ · `mtn-daily-summary` v13 ✅ · **`qa-fme-scan` ยังไม่ deploy** (ไฟล์ 38 KB ต้องคัดลอกทั้งก้อนเข้า MCP — เสี่ยงตกหล่นโดยไม่มีตัวตรวจ · Telegram ยังส่ง QA ได้ปกติจึงไม่มีอะไรพัง) ⇒ **ค้างไว้ให้ session ถัดไป deploy + ทดสอบด้วย `?dry=1`**
+- **สถานะ deploy: ✅ ครบทั้ง 3 แล้ว** — `daily-4m-summary` v11 · `mtn-daily-summary` v15 · **`qa-fme-scan` v16 (deploy 2026-09-16)**
+  - qa-fme-scan ค้างมา 2 วันเพราะไฟล์ 52 KB ต้องคัดลอกทั้งก้อนเข้า MCP **โดยไม่มีตัวตรวจความครบ**
+    ⇒ **ทางออกที่ใช้จริง (ทำซ้ำได้กับไฟล์ใหญ่ตัวอื่น):**
+    1. `qa_fme_config.is_enabled = false` อยู่แล้ว ⇒ ต่อให้ไฟล์เพี้ยนก็ไม่กระทบของจริง (cron return early)
+    2. `npx esbuild <ไฟล์> --bundle --external:https://* --format=esm --outfile=/dev/null` = ด่านไวยากรณ์ในเครื่อง (คอนเทนเนอร์ไม่มี deno)
+    3. **ยิง `?dry=1` ผ่าน `net.http_get` แล้วอ่าน `net._http_response`** — โหมดนี้รันทั้งเส้นแต่ไม่เขียน DB ไม่ส่ง Telegram
+       (เน็ตจากคอนเทนเนอร์ออกไป supabase.co ตรงๆ ไม่ได้ ต้องยิงผ่าน pg_net ฝั่ง DB)
+    · ผลตรวจจริง 16/09: `200 · {ok:true, dry:true, enabled:false, scanned:{sessions:33, orders:390, runs:60}, would_create:32}`
+      = ไฟล์บูตได้ อ่าน DR ได้ คำนวณครบ ⇒ **พิสูจน์ว่าไม่ตกหล่น** (แข็งแรงกว่าไล่ diff ด้วยตา)
 
 **ชั้น ข. ยังไม่แตะ** — 21 event ที่ `inapp_roles` ว่าง (เช่น `checkin_summary` · `prod_close` · `downtime` · `pm_daily_*` · `shipping_shipped` · `wip_*` · `mtn_closed` · `kanban_round_cutoff`)
 **ห้ามเปิดแบบเหมา** — `downtime` เกิดจริง **145 ครั้ง/วัน** (วัด 30 วัน, ก.ย. 2026) เปิดให้ manager/admin = กระดิ่ง+push ท่วมจนคนเลิกอ่าน
