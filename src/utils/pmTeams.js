@@ -36,6 +36,13 @@ export function teamKindOf(key) {
   return key === 'production' ? 'am' : 'pm'      // backward-compat: ยังไม่ apply migration / ยังไม่ตั้งค่า
 }
 export const isAmTeam = (key) => teamKindOf(key) === 'am'
+
+/** ชนิดอุปกรณ์ที่ทีมนี้ดูแล (mtn_teams.equip_type — data-driven) · null = ไม่จำกัดชนิด (เช่น AM ผลิต)
+ *  ใช้ตั้งค่าเริ่มต้นของตัวกรองลิสต์อุปกรณ์ตอนเพิ่มจุดตรวจ — DIE MTN ต้องเห็นแม่พิมพ์ ไม่ใช่เครื่องจักรปนมา */
+export function teamEquipTypeOf(key) {
+  const t = (pmTeamsSync() || []).find(x => x.key === key)?.equip_type
+  return t || null
+}
 export function teamKind(key) { return teamKindOf(key) === 'am' ? AM_KIND : PM_KIND }
 
 /** สิทธิ์ที่ต้องมีเพื่อ "บันทึกผลตรวจ" ของทีมนี้ — AM กับ PM แยกแกนกัน (migration 20260806_am_pm_permission_axis)
