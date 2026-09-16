@@ -2,6 +2,8 @@
 //   → รวมใบที่ยังไม่ปิด (status ไม่ใช่ closed/rejected) นับตามทีม + ขั้นที่ค้าง
 //   → ส่งภาพรวมเข้าห้อง "smart maintenance" (route ของ event mtn_daily_summary)
 //     + แยกรายทีมเข้าห้องที่แท็กทีมไว้ (telegram_channels.team) ถ้ามี
+//   → 📥 บล็อก "ใบที่รอฝ่ายผู้แจ้งดำเนินการ" (ขั้น 4/6/7) แยกรายส่วนงาน → ห้องฝั่งผลิต
+//     + กระดิ่งในแอปถึงคนในส่วนงานนั้น (event mtn_pickup_pending · 2026-09-16)
 // อ่าน mtn_orders จาก DR project (DR_URL/DR_ANON_KEY) · routing/bot token จาก Main
 // ปิด/แก้ห้อง/แก้ข้อความได้จาก /notification-config (category 'maintenance')
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -56,14 +58,17 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
    ⚠️ ไม่ตั้ง `inapp_roles` ที่ /notification-config = ไม่แจ้งในแอป (opt-in)
       ⇒ deploy แล้วพฤติกรรมเดิมเป๊ะ จนกว่า admin จะตั้งผู้รับ
    คืนค่า: ส่งถึงใครจริงไหม (ผู้เรียกบางจุดใช้ตัดสินว่าจะ mark ว่าแจ้งแล้วหรือยัง) */
-async function notifyInApp(eventKey: string, htmlMessage: string, type = 'info'): Promise<boolean> {
+async function notifyInApp(eventKey: string, htmlMessage: string, type = 'info',
+                           section: string | null = null): Promise<boolean> {
   const { data: rule, error: ruleErr } = await supabase
     .from('notification_rules').select('label, inapp_roles').eq('event_key', eventKey).maybeSingle();
   if (ruleErr) { console.error('mtn-daily-summary: load rule', ruleErr.message); return false; }
   const roles = Array.isArray(rule?.inapp_roles) ? (rule!.inapp_roles as string[]) : [];
   if (!roles.length) return false;                    // ยังไม่ตั้งผู้รับ = เงียบตามเดิม
   let users: string[] = [];
-  const { data, error } = await supabase.rpc('notify_recipients', { p_event: eventKey, p_section: null });
+  // ส่ง section ต่อให้ RPC — บล็อก "รอฝ่ายผู้แจ้ง" ยิงถึงคนในส่วนงานนั้นเท่านั้น
+  // (กติกากรองอยู่ใน notify_recipients ที่เดียว · inapp_match_section=false = ได้ทุกคนตามเดิม)
+  const { data, error } = await supabase.rpc('notify_recipients', { p_event: eventKey, p_section: section });
   if (error) {                                        // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
     console.error('mtn-daily-summary: notify_recipients', error.message);
     const { data: byRole } = await supabase.from('profiles').select('id').in('role', roles);
@@ -99,6 +104,18 @@ async function sendTelegram(message: string, chats: string[]) {
       body: JSON.stringify({ chat_id: chat, text: message, parse_mode: 'HTML' }),
     }).then(async (r) => { if (!r.ok) console.error('mtn-daily-summary: telegram', chat, r.status, await r.text().catch(() => '')); })
       .catch((e) => console.error('mtn-daily-summary: telegram', chat, String(e)))));
+}
+
+/** ส่งข้อความยาวเป็นหลายก้อน — Telegram ตัดที่ 4096 ตัวอักษร **แล้วคืน 400 ทั้งข้อความ**
+ *  (ไม่ใช่ตัดท้ายให้) ⇒ ส่วนงาน/ใบเยอะขึ้นเมื่อไหร่ สรุปจะหายทั้งก้อนเงียบๆ
+ *  head = บรรทัดหัวที่ต้องติดไปทุกก้อน · parts = บล็อกที่แบ่งได้ (ไม่ตัดกลางบล็อก) */
+async function sendChunked(head: string, parts: string[], chats: string[], limit = 3600) {
+  let buf = head;
+  for (const part of parts) {
+    if (buf.length + part.length + 2 > limit && buf !== head) { await sendTelegram(buf, chats); buf = head; }
+    buf += `\n\n${part}`;
+  }
+  if (buf !== head || !parts.length) await sendTelegram(buf, chats);
 }
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
@@ -166,6 +183,60 @@ function daysOpen(iso?: string): number {
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
 }
 
+/* ═══ บล็อก "ใบที่รอฝ่ายคุณรับมอบ" — ส่งถึง**ฝ่ายผู้แจ้ง** ไม่ใช่ทีมช่าง (2026-09-16) ═══
+   ที่มา: ใบค้างเกิน 7 วันพุ่ง 53 (11/09) → 69 (15/09) → 90 (16/09)
+   วัดฐานจริง 16/09 (เปิดอยู่ 196 ใบ · ค้างเกิน 7 วัน 100 ใบ):
+     **129 ใบ (66%) รออยู่ที่ฝั่งผู้แจ้ง ไม่ใช่ที่ช่าง** — และในใบที่ค้างเกิน 7 วัน
+     **83 จาก 100 ใบ (83%) เป็นของฝั่งผู้แจ้งล้วนๆ** (qa 56 · repaired 22 · checked_handover 4 · handover 1)
+   ⇒ สรุปเช้าเดิมส่งเข้าห้องช่างอย่างเดียว = เตือนผิดคนมาตลอด ใบเลยไม่มีวันถูกเคลียร์
+   ⚠️ `checked_qa` (ผ่านขั้น 4 · QA ยังไม่ตัดสิน) **ไม่อยู่ในบล็อกนี้** — รอ QA ไม่ใช่รอผู้แจ้ง
+   ขั้นที่รอฝั่งผู้แจ้ง (source of truth = `MTN_STEPS[].reporterSide` ใน src/utils/mtnStepPerm.js):
+     4 ตรวจรับงานหลังซ่อม (ผู้เปิดใบ) · 6 รับมอบ (หัวหน้าแผนกผู้แจ้ง) · 7 อนุมัติปิด (ผจก.ผู้แจ้ง)
+   ⚠️ จัดกลุ่มด้วย **ส่วนงานที่ถอดจาก `line_name`** ห้ามใช้ `dept_section`
+      (วัดจริง 16/09: dept_section ว่าง 41/62 ใบสถานะ qa แต่ line_name มีครบ 100%) */
+const REPORTER_WAIT = ['repairing', 'repaired', 'checked_handover', 'qa', 'handover'];
+const STUCK_DAYS = 7;
+
+/** ชื่อไลน์ → ส่วนงาน (ไลน์ลูกไม่ตั้ง section = ใช้ของไลน์แม่ · กฎเดียวกับ sectionOfLine ใน send-mtn-notification)
+ *  production_lines อยู่ Main project (34 แถว) — ดึงทีเดียวแล้ว map ในหน่วยความจำ ไม่ยิงรายใบ */
+async function loadLineSections(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const { data, error } = await supabase.from('production_lines').select('name, section, parent_line_name');
+  if (error) { console.error('mtn-daily-summary: production_lines', error.message); return out; }
+  const byName = new Map((data ?? []).map((l) => [String(l.name), l as Record<string, string | null>]));
+  for (const [name, l] of byName) {
+    let sec = l.section ? String(l.section).trim() : '';
+    if (!sec && l.parent_line_name) sec = String(byName.get(String(l.parent_line_name))?.section || '').trim();
+    if (sec) out.set(name, sec);
+  }
+  return out;
+}
+const NO_SECTION = '(ไม่ระบุส่วนงาน)';
+
+/** ป้ายอุปกรณ์ในบรรทัดรายการ — ใบส่วนใหญ่ไม่กรอก `item_type` (วัดจริง 16/09: 129 ใบ กรอกแค่ 26)
+ *  เดิมต่อสตริงตรงๆ ได้ "- (RB-141)" ⇒ ใช้เท่าที่มี ไม่มีเลยค่อยเป็น '-' */
+const equipLabel = (m: MO): string =>
+  [String(m.item_type || '').trim(), String(m.machine_no || '').trim()].filter(Boolean).join(' · ') || '-';
+
+/** รายการใบของ 1 ส่วนงาน — แยกตามขั้นที่รอ เรียงใบเก่าสุดขึ้นก่อน (rows เรียง report_at asc มาแล้ว) */
+function buildPickupBlock(rows: MO[]): string {
+  const byStatus: Record<string, MO[]> = {};
+  for (const m of rows) (byStatus[waitKey(m)] ||= []).push(m);
+  const lines: string[] = [];
+  for (const st of WAIT_ORDER) {
+    const list = byStatus[st];
+    if (!list || !list.length) continue;
+    const stuck = list.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+    lines.push(`• <b>${WAIT_LABEL[st] || st}</b> — ${list.length} ใบ${stuck ? ` (ค้างเกิน ${STUCK_DAYS} วัน ${stuck} ใบ)` : ''}`);
+    for (const m of list.slice(0, 5)) {
+      const d = daysOpen(m.report_at);
+      lines.push(`   ${d >= STUCK_DAYS ? '🔴' : '·'} ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${d > 0 ? ` · ค้าง ${d} วัน` : ''}`);
+    }
+    if (list.length > 5) lines.push(`   … และอีก ${list.length - 5} ใบ (ดูทั้งหมดในหน้าแจ้งซ่อม)`);
+  }
+  return lines.join('\n');
+}
+
 function buildTeamBlock(rows: MO[]): string {
   // จัดกลุ่มตามสถานะที่ค้าง เรียงตามลำดับขั้น
   const byStatus: Record<string, MO[]> = {};
@@ -176,10 +247,9 @@ function buildTeamBlock(rows: MO[]): string {
     if (!list || !list.length) continue;
     lines.push(`• <b>${WAIT_LABEL[st] || st}</b> — ${list.length} ใบ`);
     for (const m of list.slice(0, 8)) {
-      const equip = `${m.item_type || '-'}${m.machine_no ? ` (${m.machine_no})` : ''}`;
       const d = daysOpen(m.report_at);
       const age = d > 0 ? ` · ค้าง ${d} วัน` : '';
-      lines.push(`   ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equip}${age}`);
+      lines.push(`   ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${age}`);
     }
     if (list.length > 8) lines.push(`   … และอีก ${list.length - 8} ใบ`);
   }
@@ -239,7 +309,40 @@ Deno.serve(async (req) => {
       await sendTelegram(msg, room);
     }
 
-    return json({ ok: true, total: rows.length, teams: depts.length });
+    /* ── 📥 บล็อก "ใบที่รอฝ่ายคุณรับมอบ" → ฝั่งผู้แจ้ง (ขั้น 4/6/7) ──────────────────
+       Telegram: ห้อง mtn_pickup_pending ถ้าตั้งไว้ · ไม่ตั้ง = ห้องหลักเดียวกับภาพรวม
+         (telegram_channels แท็กได้แค่ "ทีมช่าง" ยังไม่มีช่องแท็กส่วนงานผลิต → แยกห้องรายส่วนงานยังทำไม่ได้)
+       กระดิ่งในแอป: ยิง **รายส่วนงาน** ผ่าน notify_recipients(p_section) = ถึงหัวหน้าไลน์/ผจก.
+         ของส่วนงานนั้นโดยตรง ← นี่คือช่องที่ "ถึงตัวคนที่ต้องกด" จริงๆ
+       ปิดทั้งบล็อกได้จาก /notification-config (ปิด event mtn_pickup_pending) */
+    let pickupSections = 0;
+    const pickupChat = resolveEvent(routes, 'mtn_pickup_pending');
+    const pickup = rows.filter((m) => REPORTER_WAIT.includes(waitKey(m)));
+    if (pickup.length && pickupChat !== null) {
+      const secOfLine = await loadLineSections();
+      const bySec: Record<string, MO[]> = {};
+      for (const m of pickup) (bySec[secOfLine.get(String(m.line_name || '')) || NO_SECTION] ||= []).push(m);
+      const secs = Object.keys(bySec).sort();
+      pickupSections = secs.length;
+      const stuckAll = pickup.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+      const head = `📥 <b>ใบซ่อมที่รอ "ฝ่ายผู้แจ้ง" ดำเนินการ</b>\n`
+        + `<b>${pickup.length}</b> ใบรออยู่ที่ฝั่งผู้แจ้ง (ไม่ใช่ที่ช่าง)`
+        + `${stuckAll ? ` · ค้างเกิน ${STUCK_DAYS} วัน <b>${stuckAll}</b> ใบ` : ''}\n`
+        + `<i>ตรวจรับงานหลังซ่อม (ขั้น 4) / รับมอบ (ขั้น 6) / อนุมัติปิด (ขั้น 7) — กดในหน้าแจ้งซ่อม</i>`;
+      await sendChunked(head, secs.map((sec) =>
+        `━━━ <b>${sec}</b> (${bySec[sec].length} ใบ) ━━━\n${buildPickupBlock(bySec[sec])}`), pickupChat);
+      for (const sec of secs) {
+        const list = bySec[sec];
+        const stuck = list.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+        await notifyInApp('mtn_pickup_pending',
+          `📥 ใบซ่อม ${list.length} ใบรอฝ่ายคุณดำเนินการ (${sec})`
+          + `${stuck ? ` · ค้างเกิน ${STUCK_DAYS} วัน ${stuck} ใบ` : ''}`
+          + ' — ตรวจรับงาน/รับมอบ/อนุมัติปิด ในหน้าแจ้งซ่อม',
+          stuck ? 'error' : 'info', sec === NO_SECTION ? null : sec);
+      }
+    }
+
+    return json({ ok: true, total: rows.length, teams: depts.length, pickup: pickup.length, pickupSections });
   } catch (err) {
     console.error(err);
     return json({ error: String(err) }, 500);
