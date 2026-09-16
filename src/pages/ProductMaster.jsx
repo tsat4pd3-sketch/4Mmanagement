@@ -1509,13 +1509,19 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      ใช้ mat_no เป็นคีย์ (ไม่ใช่ id) เพราะ mat คือสิ่งที่คนเห็นบนใบของเสีย/หน้าจออื่น */
   const [sp, setSp] = useSearchParams();
   const focusMat = sp.get('mat');
+  /* 🔩 แยกชั้นขั้นตอน (OP) ออกจากลิสต์พาร์ท (user 2026-09-16: "ยังปนอยู่ใน BOM เลย")
+     default = 'part' เพราะคนส่วนใหญ่มาแก้ BOM ของพาร์ทจริง · OP ยังเข้าถึงได้จากชิป 🔩
+     ⚠️ ห้ามกรอง OP ทิ้งถาวร — ขั้นตอนต้องมีสูตรของตัวเอง ไม่งั้นตัดของเสียเป็นเลข SAP ไม่ได้
+        (ดู src/utils/scrapExplode.js) · worklist/ลิงก์ ?mat= ที่ชี้ OP จะสลับชิปให้เอง */
+  const [kind, setKind] = useState('part');
 
   const loadAll = useCallback(async () => {
     /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
        (ลูกที่เป็น product เองมี BOM ของตัวเอง = ชั้นถัดไป)
        item_no/storage_location เป็นคอลัมน์ใหม่ → ยังไม่ apply migration ต้องถอยไปชุดเดิม ห้ามให้ทั้งแท็บพัง */
-    const BOM_FULL = 'product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
-    const BOM_SLIM = 'product_id, mat_no, part_name, qty_per_unit, uom';
+    // ⚠️ ต้องมี `id` — ปุ่มลบ "แถวนับซ้ำ" ในจอต้นไม้ลบด้วย id ของบรรทัด (ไม่มี id = ปุ่มหายเงียบ)
+    const BOM_FULL = 'id, product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
+    const BOM_SLIM = 'id, product_id, mat_no, part_name, qty_per_unit, uom';
     const fetchBom = async () => {
       const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
       return r.error?.code === '42703'
@@ -1575,7 +1581,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (!focusMat || !products.length) return;
     const k = focusMat.trim().toUpperCase();
     const hit = products.find(p => (p.mat_no || '').trim().toUpperCase() === k);
-    if (hit) { setSelProduct(hit); setSearch(focusMat); }
+    // ลิงก์จาก worklist ชี้ขั้นตอน (OP) — ชิป 'พาร์ท' จะซ่อนมันไว้ ต้องสลับให้ ไม่งั้นกดแล้ว "หาย"
+    if (hit) { setSelProduct(hit); setSearch(focusMat); if (hit._op) setKind('op'); }
     else toast.error(`ไม่พบ "${focusMat}" ในลิสต์ BOM — อาจถูกปิดใช้งาน (is_active=false) อยู่`);
     const next = new URLSearchParams(sp);
     next.delete('mat');
@@ -1739,6 +1746,32 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     loadAll();
   };
 
+  /* 🧹 ลบ "แถวชั้น 1 ที่นับซ้ำ" จากจอต้นไม้ (user 2026-09-16: "ใช้ตัวเดียวได้ไม่งง เราไม่รู้จะลบยังไง")
+     เคสต้นแบบ 10100381: คอยล์ 50027085 ถูกเขียนไว้ 3 ที่ — 0.642 ที่ชั้น 1 + 0.3205 ใต้ 20058490
+     + 0.3205 ใต้ 20058491 (แผ่นเดียวปั๊มได้ RH+LH จึงหารครึ่ง) ⇒ กางแล้วได้ 1.283 KG ทั้งที่จริง 0.642
+     ลบแถวชั้น 1 ทิ้ง = เหลือเส้นทางเดียว ยอดตรงของจริงทันที
+
+     ⚠️ ปิด is_active ไม่ลบจริง — ถอยได้ (ต่างจากปุ่ม 🗑 รายแถวในตารางที่ลบจริงมาแต่เดิม)
+        เป็นการลบแบบ "ทีละหลายแถว" ถ้าพลาดแล้วกู้ไม่ได้ = ความต้องการวัตถุดิบหายเงียบ
+     ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error (กฎเหล็กข้อ 2) ⇒ ต้อง .select('id') แล้วนับ */
+  const handleDeleteDupes = async (rows) => {
+    const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
+    if (!ids.length) return;
+    const list = rows.map(r => `• ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''} — ${r.part_name || ''}`).join('\n');
+    if (!window.confirm(
+      `ลบแถวชั้น 1 ที่นับซ้ำ ${ids.length} รายการ ออกจาก BOM ของ ${selProduct?.mat_no}?\n\n${list}\n\n` +
+      `ของพวกนี้ยังอยู่ในชั้นลึก — ยอด "ต่อ 1 FG" จะไม่หาย แค่เลิกนับซ้ำ\n(ปิดใช้งานเท่านั้น ไม่ลบทิ้งถาวร)`
+    )) return;
+    const { data, error } = await supabaseDR.from('bom_items')
+      .update({ is_active: false }).in('id', ids).select('id');
+    if (error) { toast.error(`ลบไม่สำเร็จ: ${error.message}`); return; }
+    if (!data?.length) { toast.error('ลบไม่สำเร็จ — ไม่มีแถวไหนถูกแก้ (สิทธิ์ไม่พอ/แถวถูกลบไปแล้ว)'); return; }
+    if (data.length < ids.length) toast.info(`ลบได้ ${data.length} จาก ${ids.length} แถว — ที่เหลือแก้ไม่ได้`);
+    else toast.success(`ลบแถวนับซ้ำแล้ว ${data.length} รายการ`);
+    loadItems(selProduct.id);
+    loadAll();
+  };
+
   const handleCopyBom = async () => {
     if (!copySource) { toast.error('เลือก product ต้นฉบับก่อน'); return; }
     setCopying(true);
@@ -1770,19 +1803,35 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(p =>
+    const byKind = kind === 'all' ? products
+      : products.filter(p => (kind === 'op' ? !!p._op : !p._op));
+    if (!q) return byKind;
+    return byKind.filter(p =>
       (p.name || '').toLowerCase().includes(q) ||
       (p.mat_no || '').toLowerCase().includes(q) ||
       (p.customer || '').toLowerCase().includes(q) ||
       (p.line_name || '').toLowerCase().includes(q));
-  }, [products, search]);
+  }, [products, search, kind]);
+  const opCount = useMemo(() => products.filter(p => p._op).length, [products]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
+        <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+          {[['part', `พาร์ท (${products.length - opCount})`], ['op', `🔩 ขั้นตอน (${opCount})`], ['all', 'ทั้งหมด']].map(([k, label]) => (
+            <button key={k} onClick={() => setKind(k)}
+              style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 12, cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                background: kind === k ? 'rgba(61,214,92,0.15)' : 'var(--bg2)',
+                color: kind === k ? 'var(--accent)' : 'var(--muted)',
+                border: `1px solid ${kind === k ? 'rgba(61,214,92,0.45)' : 'var(--border)'}` }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div style={{ marginTop: 10, maxHeight: '65vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {filtered.map(p => {
             const active = selProduct?.id === p.id;
@@ -1844,7 +1893,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 {showTree && (
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
-                      bomOf={(m) => bomByMat[m] || []} />
+                      bomOf={(m) => bomByMat[m] || []}
+                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
                   </div>
                 )}
               </div>
