@@ -477,6 +477,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
 · **ACTION BOARD** ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกด้วย `source`
 · สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
+· **🧱 ตั้งค่า KPI เป็น data-driven แล้ว (16/09):** ขอบเขต 6 ระดับ (`scope_kind`+`scope_value` — **`cost_center` คนละแกนกับไลน์**)
+  · Commitment/Target เป็นคนละบาร์ · `provider` = 🔗 ลิ้ง data (auto/formula/manual) · `kpi_month_plans` แผน 12 เดือน
+  · `kpi_base_inputs` ตัวแปรฐานจากบัญชี/SAP → สูตรการเงินคำนวณเอง · **ทะเบียน+เกณฑ์อยู่ `src/utils/kpiSetup.js` เท่านั้น**
+  · migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) — แต่ละแผนกใช้ KPI คนละชุดจริง (JIG MTN ไม่มี OEE/PPM/Inventory)
 > 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
 > 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
 
@@ -612,10 +616,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
                        #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
-                       #   OBEYA-DESIGN.md (บันทึกการสำรวจ + เหตุผลของดีไซน์ Obeya — ✅ ลงมือแล้ว 2026-09-15
-                       #     ของที่ทำจริงอยู่ `docs/modules/obeya.md` · ⚠️ ข้อค้นพบชี้ขาดที่ยังจริงอยู่:
-                       #     `meeting_action_items` = 0 แถวตั้งแต่สร้าง 13/07 = "ลูปติดตามมีโค้ดแต่ไม่มีใครใช้"
-                       #     ⇒ จอสวยไม่ช่วย ถ้าไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้)
+                       #   OBEYA-DESIGN.md (เหตุผลของดีไซน์ Obeya · ของที่ทำจริง → docs/modules/obeya*.md) ·
+                       #   OBEYA-KPI-SOURCES.md (**ที่มาตัวเลข KPI ทุกใบ + คู่มือ KPI Online ของกลุ่ม
+                       #     + ใบจริง PD3/PD4/JIG 2026 §8-12 — อ่านก่อนแตะอะไรที่เกี่ยวกับ KPI**)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
