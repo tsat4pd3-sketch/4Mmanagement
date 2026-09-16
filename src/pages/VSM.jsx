@@ -19,7 +19,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
-import { buildCtMap } from '../utils/oee';
+import { buildCtMap, dtMinBySession } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmGaps } from '../lib/vsmGaps';
@@ -188,7 +188,7 @@ export default function VSM() {
         supabaseDR.from('parts_master').select('mat_no, part_name, part_no, uom, qty_per_pkg, supplier').in('mat_no', allMats),
         lineScope.length
           ? supabaseDR.from('production_sessions')
-              .select('id, line_name, work_date, shift, shift_min, oee, oee_a, oee_p, oee_q, actual_qty, qty_ng, status')
+              .select('id, line_name, work_date, shift, shift_min, start_time, oee, oee_a, oee_p, oee_q, actual_qty, qty_ng, status')
               .in('line_name', lineScope).eq('status', 'closed')
               .gte('work_date', from).lte('work_date', to)
           : Promise.resolve({ data: [] }),
@@ -209,7 +209,7 @@ export default function VSM() {
       //    + `const { data }` กลืน error ⇒ C/O (setup) กับเวลาหยุดตามแผน ต่ำกว่าจริง/เป็น 0
       //    แล้ว **ค้างอยู่ใน snapshot ที่พิมพ์ออกไปแล้ว** (VSM เก็บถาวร แก้ย้อนหลังไม่ได้)
       const dtRes = await fetchByIds(sessionIds, (c) => supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, dr_downtime_types(category, six_big_loss)')
+        .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category, six_big_loss)')
         .in('session_id', c));
       const dtRaw = dtRes.rows;
       if (dtRes.error || dtRes.truncated) setLoadWarn('โหลด downtime ไม่ครบ — ค่า C/O และเวลาหยุดตามแผนอาจต่ำกว่าจริง (อย่าเพิ่งบันทึกเป็นเอกสาร)');
@@ -220,13 +220,12 @@ export default function VSM() {
         category: d.dr_downtime_types?.category || null,
         six_big_loss: d.dr_downtime_types?.six_big_loss || null,
       }));
-      // เวลารับภาระต่อกะ (ตัวถ่วงน้ำหนัก OEE ตามกฎ CLAUDE.md) = shift_min − planned downtime
-      const plannedBySess = {};
-      dtRaw.forEach(d => {
-        if (d.dr_downtime_types?.category === 'planned')
-          plannedBySess[d.session_id] = (plannedBySess[d.session_id] || 0) + (Number(d.duration_min) || 0);
-      });
-      sessions.forEach(s => { s.plannedMin = plannedBySess[s.id] || 0; });
+      /* เวลารับภาระต่อกะ (ตัวถ่วงน้ำหนัก OEE ตามกฎ CLAUDE.md) = shift_min − planned downtime
+         🔴 planned ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
+            รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก §OEE 2026-09-15 · แก้ 2026-09-16)
+         ⚠️ VSM เก็บ snapshot ถาวรและพิมพ์เป็นเอกสาร — ตัวเลขผิดที่บันทึกไปแล้วแก้ย้อนหลังไม่ได้ */
+      const dtEffBy = dtMinBySession(sessions, dtRaw, bp.data || []);
+      sessions.forEach(s => { s.plannedMin = dtEffBy[s.id]?.planned || 0; });
 
       const stockByMat = {};
       (stock.data || []).forEach(r => { stockByMat[r.mat_no] = (stockByMat[r.mat_no] || 0) + (Number(r.qty_on_hand) || 0); });
