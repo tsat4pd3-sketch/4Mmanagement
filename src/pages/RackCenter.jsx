@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
+import { useMergeParams } from '../utils/useTabParam';
+
+// ล้างเฉพาะ param ของการสแกน — ล้างทั้งก้อน (`setSearchParams({})`) จะพา param อื่นของหน้า/หน้าแม่หายด้วย
+const SCAN_PARAMS_CLEAR = { line: null, ctype: null, qty: null };
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
@@ -79,7 +83,8 @@ export default function RackCenter() {
   const [breakPolicies,  setBreakPolicies]  = useState([]);        // เงาเวลาพักบนบอร์ดเวลา
   const [scanOpen,       setScanOpen]       = useState(false);     // 📷 สแกน QR เรียกภาชนะ
   const [qrOpen,         setQrOpen]         = useState(false);     // 🏷️ พิมพ์ป้าย QR
-  const [searchParams,   setSearchParams]   = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const setParams = useMergeParams();
 
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
@@ -162,11 +167,11 @@ export default function RackCenter() {
     if (!line || !ctype || !lines.length || !containerTypes.length) return;
     if (!canOperate) {
       toast.error('บัญชีนี้ไม่มีสิทธิ์เรียกภาชนะ (rack_center:operate) — ให้ผู้มีสิทธิ์เป็นคนสแกน');
-      setSearchParams({}, { replace: true });
+      setParams(SCAN_PARAMS_CLEAR, { replace: true });
       return;
     }
     applyScan({ line, ctype, qty: searchParams.get('qty') || '1' });
-    setSearchParams({}, { replace: true });   // ล้าง param กันเปิดซ้ำตอน refresh
+    setParams(SCAN_PARAMS_CLEAR, { replace: true });   // ล้าง param ของการสแกน กันเปิดซ้ำตอน refresh
   }, [lines, containerTypes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 🏷️ พิมพ์แผ่นป้าย QR (ไลน์ × ชนิดภาชนะ) — แปะหน้างานให้สแกนแทนพิมพ์

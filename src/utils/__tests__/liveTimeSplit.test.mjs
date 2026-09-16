@@ -131,3 +131,56 @@ test('ประเมินไม่ได้ (เพิ่งเปิดกะ
   assert.equal(liveTimeSplit(null), null);
   assert.equal(split({ nowMs: at(5) }), null, 'กะเพิ่งเปิด 5 นาที ยังตอบไม่ได้');
 });
+
+/* ── หมุดเริ่มกะ (t0) ต้องอยู่ในกรอบกะ — บั๊กที่เจอจากข้อมูลจริง 4 แถว (2026-09-16) ──────── */
+
+test('กะดึกที่ start_time หลุดไปเป็นเวลากลางวัน → clamp เป็น 20:00 + ตั้งธงบอกว่าข้อมูลผิด', () => {
+  // มีจริงในฐาน: Laser GOR 01/08 และ Line 61 06/07 — shift='night' แต่ start_time='08:00'
+  const bad = { start_time: '08:00:00', shift_min: 570, shift: 'night', work_date: WD };
+  const r = computeLiveOee({
+    session: bad, orders: [ord(100)], downtimes: [], ctMap: { M1: 60 },
+    workDate: WD, nowMs: new Date(`${WD}T21:00:00`).getTime(),
+  });
+  assert.equal(r.startTimeOutOfFrame, true, 'ต้องบอกจอว่าเวลาเริ่มกะผิด ห้ามกลืนเงียบ');
+  assert.equal(r.elapsedMin, 60, 'นับจาก 20:00 → 21:00 = 60 นาที (ไม่ใช่ 570 ที่ถูก cap จากหมุด 08:00)');
+});
+
+test('กะเช้าที่ start_time เป็น 22:30 → clamp เป็น 08:00 + ตั้งธง', () => {
+  // มีจริงในฐาน: LINE APRON ASSY 29/06 — shift='day' แต่ start_time='22:30'
+  const bad = { start_time: '22:30:00', shift_min: 570, shift: 'day', work_date: WD };
+  const r = computeLiveOee({
+    session: bad, orders: [ord(100)], downtimes: [], ctMap: { M1: 60 },
+    workDate: WD, nowMs: new Date(`${WD}T10:00:00`).getTime(),
+  });
+  assert.equal(r.startTimeOutOfFrame, true);
+  assert.equal(r.elapsedMin, 120, 'นับจาก 08:00 → 10:00');
+});
+
+test('🔴 กะดึกเข้างานปกติ 22:30 อยู่ในกรอบ ห้ามถูก clamp (121 กะในฐานเป็นแบบนี้)', () => {
+  const ok = { start_time: '22:30:00', shift_min: 570, shift: 'night', work_date: WD };
+  const r = computeLiveOee({
+    session: ok, orders: [ord(100)], downtimes: [], ctMap: { M1: 60 },
+    workDate: WD, nowMs: new Date(`${WD}T23:30:00`).getTime(),
+  });
+  assert.equal(r.startTimeOutOfFrame, false);
+  assert.equal(r.elapsedMin, 60, 'หมุดต้องอยู่ที่ 22:30 ตามที่บันทึกจริง');
+});
+
+test('กะดึกที่บันทึกเวลาเริ่มเป็น 00:30 = เช้าวันถัดไป (ข้ามคืน) ไม่ใช่ผิดกรอบ', () => {
+  const ses = { start_time: '00:30:00', shift_min: 570, shift: 'night', work_date: WD };
+  const r = computeLiveOee({
+    session: ses, orders: [ord(100)], downtimes: [], ctMap: { M1: 60 },
+    workDate: WD, nowMs: new Date(`${WD}T00:30:00`).getTime() + 90 * 60000 + 86400000,
+  });
+  assert.equal(r.startTimeOutOfFrame, false);
+  assert.equal(r.elapsedMin, 90, 't0 = วันถัดไป 00:30 — ไม่ใช่ 00:30 ของ work_date (เร็วไป 24 ชม.)');
+});
+
+test('กะเช้า 08:00 ปกติ ต้องไม่ติดธงและหมุดไม่ขยับ (พฤติกรรมเดิมเป๊ะ)', () => {
+  const r = computeLiveOee({
+    session: SESSION, orders: [ord(300)], downtimes: [], ctMap: { M1: 60 },
+    workDate: WD, nowMs: at(570), breakPolicies: DAY_BREAKS,
+  });
+  assert.equal(r.startTimeOutOfFrame, false);
+  assert.equal(r.elapsedMin, 570);
+});
