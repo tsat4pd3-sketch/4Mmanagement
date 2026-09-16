@@ -482,6 +482,16 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
+## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
+
+> **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
+> (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
+> ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
+> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
+> 📄 `docs/modules/bom-levels.md` (ทำไมเดิม ~90% ตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
+
+---
+
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
 เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · ตาราง master/editable ใหม่ทุกตัวต้องผูก audit (เพิ่มชื่อตารางใน…
@@ -874,17 +884,7 @@ Platform:    Render.com (Static Site)
 
 ## Reusable สำหรับโปรเจคถัดไป (PM Checker)
 
-| สิ่งที่มี | นำไปใช้ได้เลย |
-|---------|-------------|
-| Supabase Auth + Profiles + Roles | ✅ ใช้ระบบ Auth เดิม |
-| Toast.jsx | ✅ Copy ไปใช้ |
-| Telegram Bot notification | ✅ Copy Edge Function + ตั้ง Secrets ใหม่ |
-| In-app notification bell | ✅ ใช้กับ notifications table เดิม |
-| 4M Approval workflow | ✅ ดัดแปลงเป็น PM approval flow |
-| SignatureModal.jsx | ✅ ลายเซ็นยืนยันงาน PM |
-| CSV export | ✅ Report ประวัติ PM |
-| Dark/Light theme | ✅ Copy index.css variables |
-| Recharts | ✅ แสดงสถิติ PM |
+> 📄 ตารางของที่ยกไปใช้ต่อได้เลย (Auth/Toast/Telegram/4M workflow/SignatureModal ฯลฯ) → `docs/modules/reusable-pm-checker.md`
 
 ---
 
