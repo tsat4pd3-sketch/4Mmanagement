@@ -122,8 +122,18 @@ const TABLE_ROWS = {
     raw_mat_no: [`1010${1000 + (i % 3)}`, '20058488', '30047587', '50027080'][i % 4],
   }),
   /* dr_products: 2 แถวแรกเป็น "ไลน์อื่น" โดยตั้งใจ — เดิมทุกแถว line_name เดียวกันหมด
-     ⇒ โค้ดที่ถามว่า "ของชิ้นนี้ไลน์อื่นทำหรือเปล่า" ไม่เคยได้คำตอบว่า "ใช่" เลยใน harness */
-  dr_products: (r, i) => (i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r),
+     ⇒ โค้ดที่ถามว่า "ของชิ้นนี้ไลน์อื่นทำหรือเปล่า" ไม่เคยได้คำตอบว่า "ใช่" เลยใน harness
+     🔩 **ต้องมีแถวชั้น OP (`is_operation`) เสมอ ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
+     ⇒ โค้ดสายชั้นขั้นตอน (collapseOps · worklist OP ใน /products · ปุ่มระเบิดของเสียใน
+        /scrap-report · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย** = บั๊กทั้งคลาสมองไม่เห็น
+     · i=4 → OP ที่ผูกพาร์ทจริง + ลำดับขั้นครบ (เคสปกติ)
+     · i=5 → OP ที่ยังไม่ผูก parent/seq (เคส worklist เหลือง + กฎ "ขั้นเดี่ยว ห้ามเดาสาย") */
+  dr_products: (r, i) => {
+    const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
+    if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
+    if (i === 5) return { ...base, is_operation: true, op_parent_mat: null, op_seq: null };
+    return { ...base, is_operation: false, op_parent_mat: null, op_seq: null };
+  },
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,

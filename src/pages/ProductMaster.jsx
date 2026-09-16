@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import ReadOnlyNote from '../components/ReadOnlyNote';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
@@ -213,6 +213,15 @@ export default function ProductMaster() {
   const canDelete = can('products', 'delete', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
   const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'customers', 'suppliers', 'export'], 'products');
+  /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
+     บอกให้ "ไปหาเอง" = คนไม่ไป (บทเรียนเดียวกับ worklist ที่ต้องกดได้ ไม่ใช่แค่บอกว่ามีปัญหา) */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openBomFor = (mat) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'bom');
+    if (mat) next.set('mat', mat); else next.delete('mat');
+    setSearchParams(next);
+  };
 
   /* ── state ── */
   const [items,   setItems]   = useState([]);
@@ -781,6 +790,34 @@ export default function ProductMaster() {
         );
       })()}
 
+      {/* 🧩 worklist — ขั้นตอน (OP) ที่ยังไม่ผูก component = ใบของเสียของขั้นนั้นตัดสต๊อก SAP ไม่ได้ (2026-09-15)
+          pattern เดียวกับแถบ 🔩 ด้านบน · ห้ามซ่อน (UI-CONVENTIONS §5.5 ข้อ 3 — ข้อมูลผิดที่ต้องมีคนไปแก้) */}
+      {(() => {
+        const opNoBom = items.filter(i => i.is_active && i.is_operation && !(bomCounts[i.id] > 0));
+        if (!opNoBom.length) return null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 10 }}>
+            <span style={{ fontSize: 13, color: '#f97316', fontWeight: 700 }}>
+              🧩 ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              เลขของขั้นไม่มีใน SAP ⇒ ของเสียที่หลุดขั้นนี้ <b>ตัดสต๊อกไม่ได้</b> จนกว่าจะบอกว่า "ขั้นนี้กินอะไรเข้าไป"
+              {' '}· ผูกเฉพาะของที่<b>ขั้นนั้น</b>ใส่เข้าไป (ขั้นก่อนหน้าระบบไล่ให้เอง)
+            </span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {opNoBom.map(i => (
+                <button key={i.id} onClick={() => openBomFor(i.mat_no)}
+                  title={`ตั้ง component ของ ${i.mat_no}${i.line_name ? ` · ${i.line_name}` : ''}`}
+                  style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, cursor: 'pointer',
+                    background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316' }}>
+                  {i.mat_no} →
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Name Groups → Family cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {visibleGroups.length === 0 && (
@@ -1180,6 +1217,29 @@ export default function ProductMaster() {
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
                     </Field>
+                    {/* 🧩 component ของขั้นเก็บใน BOM (ไม่ได้อยู่ในฟอร์มนี้) — ไม่มีปุ่มลัด คนหาไม่เจอ
+                        ปุ่มโผล่เฉพาะตอนแก้ของที่บันทึกแล้ว (ของใหม่ยังไม่มีแถวให้ผูก) */}
+                    {editing !== 'new' && form.mat_no && (() => {
+                      const cur = items.find(i => i.id === editing);
+                      const n = cur ? (bomCounts[cur.id] || 0) : 0;
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 2 }}>
+                          <button type="button" onClick={() => { setEditing(null); setEcSource(null); openBomFor(form.mat_no); }}
+                            style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+                              background: n > 0 ? 'var(--bg3)' : 'rgba(249,115,22,0.14)',
+                              border: `1px solid ${n > 0 ? 'var(--border2)' : 'rgba(249,115,22,0.45)'}`,
+                              color: n > 0 ? 'var(--text2)' : '#f97316' }}>
+                            🧩 {n > 0 ? `component ของขั้นนี้ (${n} รายการ)` : 'ตั้ง component ของขั้นนี้'} →
+                          </button>
+                          <span style={{ fontSize: 11, color: n > 0 ? 'var(--muted)' : '#f97316' }}>
+                            {n > 0
+                              ? 'ขั้นนี้บอกได้แล้วว่ากินอะไร — ใบของเสียระเบิดเป็นเลข SAP ได้'
+                              : 'ยังไม่ผูก = ของเสียที่หลุดขั้นนี้ตัดสต๊อก SAP ไม่ได้'}
+                            {' '}(ปิดฟอร์มนี้แล้วไปแท็บ BOM · <b>บันทึกก่อนกด</b> ถ้าเพิ่งแก้ค่าอื่น)
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -1445,6 +1505,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [showCopyBom, setShowCopyBom] = useState(false);
   const [copySource, setCopySource]   = useState('');
   const [copying, setCopying]         = useState(false);
+  /* 🧩 มาจากปุ่มลัด/worklist ฝั่งแท็บสินค้า (?tab=bom&mat=…) — เลือกแถวให้เลย ไม่ต้องไล่หาในลิสต์ 100+ แถว
+     ใช้ mat_no เป็นคีย์ (ไม่ใช่ id) เพราะ mat คือสิ่งที่คนเห็นบนใบของเสีย/หน้าจออื่น */
+  const [sp, setSp] = useSearchParams();
+  const focusMat = sp.get('mat');
 
   const loadAll = useCallback(async () => {
     /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
@@ -1505,6 +1569,19 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   useEffect(() => { loadAll(); }, [loadAll]);
   useEffect(() => { loadItems(selProduct?.id); }, [selProduct, loadItems]);
+  /* เลือกแถวตาม ?mat= แล้วล้าง param ทิ้ง (กันค้าง — กดแถวอื่นแล้ว refresh จะเด้งกลับตัวเก่า)
+     ⚠️ หาไม่เจอต้องบอก ห้ามเงียบ: mat ที่ปิด is_active อยู่จะไม่อยู่ในลิสต์นี้ (loadAll กรอง is_active) */
+  useEffect(() => {
+    if (!focusMat || !products.length) return;
+    const k = focusMat.trim().toUpperCase();
+    const hit = products.find(p => (p.mat_no || '').trim().toUpperCase() === k);
+    if (hit) { setSelProduct(hit); setSearch(focusMat); }
+    else toast.error(`ไม่พบ "${focusMat}" ในลิสต์ BOM — อาจถูกปิดใช้งาน (is_active=false) อยู่`);
+    const next = new URLSearchParams(sp);
+    next.delete('mat');
+    setSp(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMat, products.length]);
 
   // picker: filter parts_master
   const pickerFiltered = useMemo(() => {

@@ -463,16 +463,24 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2026-09-15)
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2 แท็บ · 2026-08-27 + 2026-09-15)
 
-หน้า `Obeya.jsx` (กลุ่มภาพรวม) — บอร์ด **SQDCM หน้าเดียว** ที่ตัดตาม*แกน* (ไม่ใช่ตามส่วนงานแบบจออื่น)
+หน้า `Obeya.jsx` (กลุ่มภาพรวม) = **เปลือกบางๆ ที่สลับ 2 บอร์ด** — สองงานคนละ session ที่ทำ `/obeya` คนละมุม
+โดยไม่รู้ว่าอีกฝั่งทำอยู่ รวมเข้าด้วยกัน 2026-09-15 · **ห้ามยุบสองแท็บเป็นบอร์ดเดียว** (คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข)
+· **`?tab=kpi` (default) — 📋 บอร์ด KPI ส่วนงาน** (`components/ObeyaKpiBoard.jsx` · 2026-08-27 คำสั่งนายใหญ่ผ่าน user
+  *"กระดาษหน้างานที่เป็น OBEYA KPI monitoring จะต้องถูกยุบเข้ามาในโปรแกรมนี้ให้ได้"*) — **ราย*เดือน* × กลุ่มไลน์ (คอลัมน์) × 8 หัวข้อ**
+  ตามบอร์ดจริงที่ user ถ่ายรูปมา + ป้าย G/Y/R · ⚡ auto 3 ตัว (OEE·PPM·Safety) ✍️ กรอกมือ 5 ตัวที่ `/dept-dashboard?view=kpi`
+  · **ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง** (`ประเมินได้ N/M ช่อง`) · **"ไม่มีเป้า" = เทา ไม่ใช่เขียว**
+  · สูตร/สถานะอยู่ `src/utils/obeya.js` (pure · มีเทส) · ตาราง `safety_events` + `kpi_catalog`/`kpi_definitions.line_group` (Main)
+· **`?tab=sqdcm` — 🖥️ จอมอนิเตอร์ SQDCM** (`components/ObeyaSqdcmBoard.jsx` · 2026-09-15) — บอร์ด **ราย*วัน/สัปดาห์/เดือน*** ที่ตัดตาม*แกน*
 · **ผัง "กระดาษ A4 ปูเต็มจอ" 5×2** (คำสั่ง user) — ทุกแผ่นเป็นกราฟ + เป้า + Δ เทียบงวดก่อน · มีโหมด 📺 จอ TV เต็มจอ
 · KPI ทั้งหมดอยู่ `src/utils/obeyaKpi.js` (pure · มีเทส) **ห้ามคำนวณซ้ำในหน้า** · OEE ยังมาจาก `oee.js` เท่านั้น
 · **🔴 กฎความซื่อสัตย์ของจอ:** แกนที่ข้อมูลไม่พอ (S ไม่มีทะเบียนอุบัติเหตุ · Q บันทึกของเสียไม่ครบ) **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง** — `axisXxx()` คืน `state: 'ok'|'thin'|'none'` + `note` เสมอ
 · **ACTION BOARD** = ที่เดียวของหน้าที่เขียนข้อมูลได้ · ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกที่มาด้วย `source` · migration `20260915_obeya_action_loop.sql` (**apply แล้ว** — เพิ่ม `source`/`kpi_key`/`target_value`/`result_value` + **แก้ RLS จาก `using(true)` เป็น `has_perm()` ครบ 4 cmd**)
 · สิทธิ์: `page:/obeya` (ทุก role) · `obeya:record` (leader ขึ้นไป)
 · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** — โหลด 400 KB/รอบ ทุกใบงานที่ปิดจะลากจอโหลดใหม่ทั้งก้อน
-> 📄 รายละเอียดเต็ม → `docs/modules/obeya.md` (8 หัวข้อย่อย) · เหตุผลของดีไซน์ → `docs/OBEYA-DESIGN.md`
+> 📄 รายละเอียดเต็ม → แท็บ KPI: `docs/modules/obeya-kpi-board.md` (โครงบอร์ดจริง · กฎ Safety ⚪ ไม่รู้ ≠ เขียว · ทะเบียนไฟล์ KPI จริง `docs/OBEYA-KPI-SOURCES.md`)
+> · แท็บ SQDCM: `docs/modules/obeya.md` (8 หัวข้อย่อย) · เหตุผลของดีไซน์ → `docs/OBEYA-DESIGN.md`
 
 ---
 
@@ -715,6 +723,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      — **ทั้งคู่ build ผ่าน lint ผ่าน เทสผ่าน**
      · mock มีแถว **`NULLISH`** (คอลัมน์ตัวเลข/ข้อความเป็น null) เป็นแถวสุดท้ายเสมอ **ห้ามถอด** —
      คอลัมน์ในฐานจริงส่วนใหญ่ nullable แถวเดียวที่ null ทำให้ทั้งหน้าพัง · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
+     · mock มี **แถวชั้น OP (`is_operation`)** เสมอ **ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
+     ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` · ปุ่ม 🧩 ระเบิดของเสียใน
+     `/scrap-report` · ตัวกรอง OP ของ picker) ไม่เคยถูกรันใน harness เลย = บั๊กทั้งคลาสมองไม่เห็น
+     (i=4 ผูก parent+seq ครบ · i=5 ยังไม่ผูก = เคส worklist เหลือง)
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
