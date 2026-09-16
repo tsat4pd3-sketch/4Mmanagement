@@ -28,7 +28,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
-import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
+import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -1471,7 +1471,7 @@ export default function ProductMaster() {
    Add mode: picker จาก parts_master → กรอกแค่ qty_per_unit
    Edit mode: แก้ qty_per_unit / qty_per_pkg ของ bom row
 ═══════════════════════════════════════════════════════════════ */
-const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '' };
+const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '', op_no: '' };
 
 const TH = ({ children, w }) => (
   <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
@@ -1514,7 +1514,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
        (ลูกที่เป็น product เองมี BOM ของตัวเอง = ชั้นถัดไป)
        item_no/storage_location เป็นคอลัมน์ใหม่ → ยังไม่ apply migration ต้องถอยไปชุดเดิม ห้ามให้ทั้งแท็บพัง */
-    const BOM_FULL = 'product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location';
+    const BOM_FULL = 'product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
     const BOM_SLIM = 'product_id, mat_no, part_name, qty_per_unit, uom';
     const fetchBom = async () => {
       const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
@@ -1544,13 +1544,13 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
-    // mat_no → ลูกชั้นถัดไป (ใช้กับ BomTreeView) — ไล่ผ่าน product ทุกตัว ไม่ใช่เฉพาะ FG
+    /* mat_no → ลูกชั้นถัดไป — **ผ่าน buildBomIndex เท่านั้น** (utils/bomTree · 2026-09-16)
+       `parent_mat` ชนะ `product_id` เมื่อตั้งไว้ ⇒ ตัวแม่ไม่ต้องเป็น dr_products อีกต่อไป
+       ห้ามประกอบต้นไม้เองในหน้า — เขียนซ้ำเมื่อไหร่ ชั้นเพี้ยนคนละจอทันที */
     const matOf = {}; (prods || []).forEach(p => { matOf[p.id] = p.mat_no; });
+    const ix = buildBomIndex(boms || [], matOf);
     const tree = {};
-    (boms || []).forEach(b => {
-      const m = matOf[b.product_id];
-      if (m) (tree[m] = tree[m] || []).push(b);
-    });
+    (boms || []).forEach(b => { const m = ix.parentOf(b); if (m) (tree[m] = tree[m] || []).push(b); });
     setBomByMat(tree);
   }, []);
 
@@ -1618,11 +1618,31 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
   const openEdit_  = (it) => {
     setEditItem(it);
-    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '' });
+    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
     // รหัสเดิมที่ไม่มีในลิสต์ (ทะเบียน+ที่เคยใช้) = เปิดโหมดพิมพ์เอง ไม่งั้น select จะแสดงว่าง = ค่าหายเงียบ
     const c = slocLabel(it.storage_location);
     setSlocFree(!!c && !slocChoices.some(s => s.code === c));
     setShowEdit(true);
+  };
+
+  /* ⤵ ย้ายบรรทัดไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน = "เลเวลควบคุม" แบบ SAP (2026-09-16 · คำสั่ง user)
+     กฎกันต้นไม้พัง (ย้ายใต้ตัวเอง/ใต้ลูกหลานตัวเอง) อยู่ใน moveBomLine (utils/bomTree · มีเทส)
+     ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับแถว (กฎเหล็กข้อ 2) */
+  const doMoveLine = async (it, toMat) => {
+    const ix = buildBomIndex(items, { [selProduct?.id]: selProduct?.mat_no });
+    const r = moveBomLine(it, toMat, ix.bomOf);
+    if (!r.ok) { toast.error(r.reason); return; }
+    const { data, error } = await supabaseDR.from('bom_items')
+      .update({ ...r.patch, updated_at: new Date().toISOString() }).eq('id', it.id).select('id');
+    if (error) {
+      toast.error(error.code === '42703'
+        ? 'ยังเก็บชั้นไม่ได้ — ยังไม่ได้ apply migration 20260916_bom_level_parent_mat (แจ้งผู้ดูแลระบบ)'
+        : error.message);
+      return;
+    }
+    if (!data?.length) { toast.error('ย้ายไม่สำเร็จ — สิทธิ์ไม่พอ (0 แถวถูกแก้)'); return; }
+    toast.success(toMat ? `ย้าย ${it.mat_no} ไปอยู่ใต้ ${toMat} แล้ว ✓` : `คืน ${it.mat_no} กลับชั้น 1 แล้ว ✓`);
+    loadItems(selProduct.id); loadAll();
   };
 
   const handlePickerSave = async () => {
@@ -1690,11 +1710,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       ...base,
       item_no:          itemNo,
       storage_location: slocLabel(form.storage_location) || null,
+      op_no:            form.op_no.trim() || null,   // ขั้นตอนที่ชิ้นนี้ถูกใส่เข้าไป (PFC)
     }).eq('id', editItem.id);
     // ยังไม่ apply migration = แก้ qty/note ได้เหมือนเดิม แต่ต้องบอกว่าอะไรไม่ถูกบันทึก **ห้ามเงียบ**
     if (error?.code === '42703') {
       ({ error } = await supabaseDR.from('bom_items').update(base).eq('id', editItem.id));
-      if (!error) toast.info('บันทึกแล้ว — แต่เลขรายการ/คลัง ยังเก็บไม่ได้ (ยังไม่ได้ apply migration)');
+      if (!error) toast.info('บันทึกแล้ว — แต่เลขรายการ/คลัง/ขั้นตอน ยังเก็บไม่ได้ (ยังไม่ได้ apply migration)');
     }
     setSaving(false);
     if (error) {
@@ -1840,7 +1861,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
-                      <TH w={62}>Item</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
+                      <TH w={62}>Item</TH><TH w={150}>ชั้น / ขั้นตอน</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
                       {(canEdit || canDelete) && <TH w={90}> </TH>}
                     </tr>
                   </thead>
@@ -1851,6 +1872,30 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                             ยังไม่ตั้ง = "—" ห้ามโชว์ 0000 (ไม่ใช่รายการแรก แต่คือยังไม่ระบุ) */}
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: it.item_no ? 'var(--text2)' : 'var(--muted)' }}>
                           {itemNoLabel(it.item_no) || '—'}
+                        </TD>
+                        {/* 🌳 ชั้นของบรรทัดนี้ + ขั้นตอนที่ใส่เข้าไป (2026-09-16)
+                            เดิมทุกบรรทัดถูกตรึงชั้น 1 เพราะตัวแม่ต้องเป็น dr_products — ตอนนี้เลือกได้
+                            ⚠️ ตัวเลือกคือ "บรรทัดอื่นในใบนี้" เท่านั้น (ข้ามใบ = คนละ BOM ห้ามย้าย) */}
+                        <TD>
+                          {canEdit ? (
+                            <select value={it.parent_mat || ''} onChange={e => doMoveLine(it, e.target.value)}
+                              title="ย้ายบรรทัดนี้ไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน"
+                              style={{ ...inputSt, width: 140, padding: '4px 6px', fontSize: 11.5 }}>
+                              <option value="">— ชั้น 1 (ใต้ {selProduct.mat_no || 'FG'}) —</option>
+                              {items.filter(o => o.id !== it.id && o.mat_no).map(o => (
+                                <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span style={{ fontSize: 11.5, color: it.parent_mat ? '#0ea5e9' : 'var(--muted)' }}>
+                              {it.parent_mat ? `↳ ใต้ ${it.parent_mat}` : 'ชั้น 1'}
+                            </span>
+                          )}
+                          {it.op_no && (
+                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.14)', color: '#a855f7', whiteSpace: 'nowrap' }}>
+                              OP {it.op_no}
+                            </span>
+                          )}
                         </TD>
                         <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
@@ -1996,6 +2041,21 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
                 <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
+              </div>
+              {/* 🏭 ขั้นตอนที่ชิ้นนี้ถูกใส่เข้าไป (PFC) — จุดที่ **เหนือ SAP** (2026-09-16 · คำสั่ง user
+                  "ถ้าทำเลเวล bom ได้แบบ pfc … เหนือกว่า sap ตรงที่เรามี OP")
+                  SAP แยก BOM (ต้นไม้วัสดุ) กับ Routing (ขั้นตอน) แล้วการผูก component→operation
+                  เป็น optional ที่แทบไม่มีใคร maintain · ของเราบรรทัดเดียวตอบทั้งสองคำถาม */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                  ขั้นตอนที่ใส่เข้าไป (เลข OP ตาม PFC)
+                </label>
+                <input style={{ ...inputSt, fontFamily: 'monospace' }} maxLength={20}
+                  value={form.op_no} onChange={e => setForm(f => ({ ...f, op_no: e.target.value }))}
+                  placeholder="เช่น 190 — ไม่รู้ปล่อยว่าง ห้ามเดา" />
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                  ใช้ตอบ "ของเสียหลุดขั้นไหน ตัดอะไร" · "สโตร์ต้องส่งของนี้ไปขั้นไหน" — ว่าง = ยังไม่ระบุ (ไม่ใช่ error)
+                </div>
               </div>
               {/* 📍 2 ช่องนี้เทียบกับ SAP โดยตรง (user ทัก 2026-09-02 ว่าเรายังไม่มี) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -2394,7 +2454,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 12 : 11} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}
