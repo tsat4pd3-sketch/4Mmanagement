@@ -772,6 +772,8 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
    ```
    · ตัวรวมเป็น pure function `mergeParams(prev, patch)` **มีเทส** (`src/utils/__tests__/mergeParams.test.mjs`)
    · กฎนี้ใช้กับ**ทุกหน้าที่อยู่ใต้หน้าแม่ที่มีแท็บ** ไม่ใช่แค่ PM
+   · 🛡️ **บังคับด้วยด่าน build แล้ว** (`src/utils/__tests__/regressionGuards.test.mjs` กฎ `no-setSearchParams-object`)
+     — เขียนแบบเก่าแล้ว build ล่มทันที ไม่ต้องรอคนมาเจอบนหน้างาน
 
 3. **แท็บ ≤ 7 ตัว** เกินกว่านั้นให้ยุบกลุ่มหรือแยกหน้า
 4. **แท็บ "ตั้งค่า/ข้อมูลหลัก" อยู่ท้ายสุดเสมอ** และ gate ด้วย `can()` (งานประจำวันมาก่อน setup)
