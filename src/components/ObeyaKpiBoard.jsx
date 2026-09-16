@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
-import { wavg, wLoad, sumDefectQty } from '../utils/oee';
+import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -325,16 +325,21 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         return;
       }
       // 1) กะของไลน์ในส่วนงาน (ปิดแล้ว = มีตัวเลขจริง · เปิดค้าง = นับแยกไว้บอกว่ายังไม่ครบ)
+      /* ⚠️ `start_time` จำเป็น — `dtMinBySession` หากรอบกะผ่าน `sessionWindow()` ซึ่งคืน null
+         เมื่อไม่มี start_time ⇒ ช่วงพักว่าง ⇒ **ตัวตัด DT ที่ทับพักกลายเป็น no-op เงียบ**
+         (ถอดคอลัมน์นี้เมื่อไหร่ ตัวเลขจะกลับไปหักซ้ำโดยไม่มีอะไรฟ้อง) */
       const sess = await fetchAllPages(() => supabaseDR.from('production_sessions')
-        .select('id, line_name, work_date, shift, status, shift_min, oee, actual_qty')
+        .select('id, line_name, work_date, shift, status, shift_min, start_time, oee, actual_qty')
         .gte('work_date', from).lte('work_date', date).in('line_name', lineNames));
       if (sess.error) warn.push('กะการผลิต');
       const closed = sess.rows.filter(s => s.status === 'closed');
       const ids = closed.map(s => s.id);
 
       // 2) downtime → planned (ตัวถ่วง wLoad) + นอกแผน (แกน C)
+      /* ⚠️ `started_at`/`ended_at` จำเป็นเช่นกัน — `dtMinOutsideBreaks` คืนค่าดิบทันทีเมื่อไม่มี
+         `started_at` (ตัดไม่ได้) ⇒ ขาดคอลัมน์นี้ = หักซ้ำเหมือนเดิมแบบไม่มีใครรู้ */
       const dt = await fetchByIds(ids, part => supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', part));
+        .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', part));
       if (dt.error) warn.push('Downtime');
 
       // 3) ของเสีย (line-mode — ต้อง select excl_from_q ไม่งั้นตกหล่นเงียบ)
@@ -347,13 +352,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         .select('session_id, mat_no, qty, qty_target, qty_ok, qty_actual, status').in('session_id', part));
       if (po.error) warn.push('ใบผลิต');
 
-      // 5) เป้า OEE + คู่ RH/LH
-      const [tg, pr] = await Promise.all([
+      // 5) เป้า OEE + คู่ RH/LH + นโยบายเวลาพัก (ตัว "กันหักซ้ำ" ของ plannedMin)
+      const [tg, pr, bp] = await Promise.all([
         supabase.from('oee_targets').select('group_name, target_a, target_p, target_q'),
         supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
       ]);
       if (tg.error) warn.push('เป้า OEE');
       if (pr.error) warn.push('คู่ RH/LH');
+      /* โหลดนโยบายพักไม่ได้ = ตัวเลขจะกลับไปหักซ้ำ — ต้องขึ้นแถบเตือนบนบอร์ด ห้ามเงียบ */
+      if (bp.error) warn.push('นโยบายเวลาพัก (OEE อาจต่ำกว่าจริง)');
 
       // 6) ความปลอดภัย — ดึงทั้งหมดของส่วนงาน (streak ต้องมองย้อนไกลกว่าหน้าต่างเทรนด์)
       const sf = await supabase.from('safety_events')
@@ -411,7 +419,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       setData({
         actions, actsMissing, kdefs, kentries, kpiMissing, year,
         sessions: sess.rows, closed, dt: dt.rows, df: df.rows, po: po.rows,
-        targets: tg.data || [], pairs: pr.data || [], safety, safetyMissing,
+        targets: tg.data || [], pairs: pr.data || [], breakPols: bp.data || [], safety, safetyMissing,
         att: att.rows, headcount: empIds.length, warn,
         openSess: sess.rows.filter(s => s.status !== 'closed' && s.work_date === date).length,
       });
@@ -428,16 +436,21 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── คำนวณ 6 แกน ───────────────────────────────────────────────────────────── */
   const axes = useMemo(() => {
     if (!data || data.empty) return null;
-    const { closed, dt, df, po, targets, pairs, safety, att } = data;
+    const { closed, dt, df, po, targets, pairs, breakPols, safety, att } = data;
     const opMap = opInfoSync();
     const pairOf = (() => { const m = Object.fromEntries((pairs || []).map(p => [p.mat_no, p.pair_mat_no])); return x => m[x] || null; })();
 
     // จัดกลุ่มรายกะ
-    const plannedBy = {}, unplannedBy = {};
+    /* 🔴 plannedMin = นาทีที่ "หักจากฐานเวลาได้จริง" ⇒ ต้องตัดส่วนที่ทับเวลาพักออกก่อน
+       ไม่งั้นหักซ้ำกับที่ถูกกันออกจากฐานไปแล้ว (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
+       ⚠️ `unplannedBy` ยังใช้ `duration_min` เต็ม **โดยตั้งใจ** — มันตอบ "เครื่องหยุดกี่นาที"
+          ซึ่งเป็นคนละชุดกับตัวหักฐานเวลา **ห้ามสลับ 2 ชุดนี้** */
+    const dtEffBy = dtMinBySession(closed, dt || [], breakPols || []);
+    const plannedBy = Object.fromEntries(Object.entries(dtEffBy).map(([k, v]) => [k, v.planned]));
+    const unplannedBy = {};
     (dt || []).forEach(r => {
-      const m = Number(r.duration_min) || 0;
-      const t = r.dr_downtime_types?.category === 'planned' ? plannedBy : unplannedBy;
-      t[r.session_id] = (t[r.session_id] || 0) + m;
+      if (r.dr_downtime_types?.category === 'planned') return;
+      unplannedBy[r.session_id] = (unplannedBy[r.session_id] || 0) + (Number(r.duration_min) || 0);
     });
     const defBy = {};
     (df || []).forEach(r => (defBy[r.session_id] = defBy[r.session_id] || []).push(r));
@@ -603,7 +616,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ⚠️ ไม่มีเป้า ≠ ผ่าน → สถานะเทา "ยังไม่ตั้งเป้า" (Safety เป็นข้อยกเว้น เป้า = 0 เสมอ)  */
   const board = useMemo(() => {
     if (!data || data.empty) return null;
-    const { closed, dt, df, safety, kdefs, kentries, targets } = data;
+    const { closed, dt, df, breakPols, safety, kdefs, kentries, targets } = data;
     const month = date.slice(0, 7);
     const monthNo = Number(date.slice(5, 7));
     /* ⚠️ แถวที่วันที่หาย (query ถอย select / ข้อมูลเพี้ยน) ต้อง "ไม่ถูกนับ" ไม่ใช่ "ทำบอร์ดพัง"
@@ -615,12 +628,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       .filter(l => (l.section || '') === section && !l.parent_line_name && (!scopeSet || scopeSet.has(l.name)))
       .map(l => l.name).sort();
 
-    const plannedBy = {}, unplannedBy = {};
-    (dt || []).forEach(r => {
-      const m = Number(r.duration_min) || 0;
-      const t = r.dr_downtime_types?.category === 'planned' ? plannedBy : unplannedBy;
-      t[r.session_id] = (t[r.session_id] || 0) + m;
-    });
+    /* 🔴 plannedMin = นาทีที่ "หักจากฐานเวลาได้จริง" ⇒ ต้องตัดส่วนที่ทับเวลาพักออกก่อน
+       ไม่งั้นหักซ้ำกับที่ถูกกันออกจากฐานไปแล้ว (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
+       ⚠️ `unplannedBy` ยังใช้ `duration_min` เต็ม **โดยตั้งใจ** — มันตอบ "เครื่องหยุดกี่นาที"
+          ซึ่งเป็นคนละชุดกับตัวหักฐานเวลา **ห้ามสลับ 2 ชุดนี้** */
+    const dtEffBy = dtMinBySession(closed, dt || [], breakPols || []);
+    const plannedBy = Object.fromEntries(Object.entries(dtEffBy).map(([k, v]) => [k, v.planned]));
     const defBy = {};
     (df || []).forEach(r => (defBy[r.session_id] = defBy[r.session_id] || []).push(r));
 

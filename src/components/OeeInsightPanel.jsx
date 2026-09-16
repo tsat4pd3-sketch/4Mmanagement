@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
-import { wavg, wLoad, buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
@@ -58,7 +58,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       if (!lineNames.length) { setInsights([]); setLoading(false); return; }
 
       const { data: sessions } = await supabaseDR.from('production_sessions')
-        .select('id, line_name, work_date, shift, shift_min, target_qty, actual_qty, qty_ok, qty_ng, qty_suspect, oee, oee_a, oee_p, oee_q, status')
+        .select('id, line_name, work_date, shift, shift_min, start_time, target_qty, actual_qty, qty_ok, qty_ng, qty_suspect, oee, oee_a, oee_p, oee_q, status')
         .in('line_name', lineNames).gte('work_date', from).lte('work_date', to)
         .in('status', ['closed', 'pending_close']);
       const sess = (sessions || []).filter(s => s.oee != null);
@@ -69,15 +69,17 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — ช่วง 90 วันมี 800+ กะ → URL ยาวเกิน คิวรีล้มเหลวเงียบ
       //    แล้วแผงนี้จะสรุปว่า "ไม่มี Downtime เรื้อรัง / ไม่มีของเสียกระจุก" ทั้งที่มี (บั๊กชนิดเดียว
       //    กับที่เจอในตารางสรุป OEE 2026-08-20) — วิเคราะห์สาเหตุที่บอกว่า "ไม่มีปัญหา" อันตรายที่สุด
-      const [dtRes, defRes, ordRes, { data: kstd }, { data: prodCt }] = await Promise.all([
+      const [dtRes, defRes, ordRes, { data: kstd }, { data: prodCt }, { data: breakPols }] = await Promise.all([
         fetchByIds(ids, c => supabaseDR.from('downtime_logs')
-          .select('session_id, machine_no, duration_min, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', c)),
+          .select('session_id, machine_no, duration_min, started_at, ended_at, description, dr_downtime_types(name_th, category, six_big_loss, waste_type)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, qty_ng, qty_suspect, dr_defect_types(name_th, six_big_loss, waste_type)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, qty, qty_ok, status').in('session_id', c).in('status', ['confirmed', 'carry_over', 'imported'])),
         supabaseDR.from('kanban_standards').select('mat_no, dr_products(name, cycle_time_sec)').eq('is_active', true),
         supabaseDR.from('dr_products').select('mat_no, cycle_time_sec'),
+        // นโยบายเวลาพัก — ตัวกัน "หัก DT ที่ทับพักซ้ำ" ตอนถ่วงน้ำหนัก (กฎเหล็ก §OEE 2026-09-15)
+        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
       ]);
       const dts = dtRes.rows, defs = defRes.rows, orders = ordRes.rows;
       const loadErr = [dtRes, defRes, ordRes].find(r => r.error)?.error || null;
@@ -122,10 +124,13 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       });
       const ctSess = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
 
-      // นาที DT "ในแผน" ต่อกะ — ใช้เป็นน้ำหนัก (เวลารับภาระ = shift_min − planned)
-      const plannedMinOf = (sid) => (dts || [])
-        .filter(d => d.session_id === sid && d.dr_downtime_types?.category === 'planned')
-        .reduce((a, d) => a + (Number(d.duration_min) || 0), 0);
+      /* นาที DT "ในแผน" ต่อกะ — ใช้เป็นน้ำหนัก (เวลารับภาระ = shift_min − planned)
+         🔴 ต้องผ่าน `dtMinBySession` เท่านั้น: นาทีที่ทับเวลาพักถูกกันออกจากฐานเวลาไปแล้ว
+            รวม `duration_min` เองที่นี่ = หักซ้ำ ⇒ เวลารับภาระต่ำกว่าจริง แล้ว insight
+            "กะเช้า vs กะดึก / วันไหนแย่สุด" จะอ้างตัวเลขที่ไม่ตรงกับ /oee-analytics
+            (กฎเหล็ก CLAUDE.md §OEE 2026-09-15 · แก้ 2026-09-16) */
+      const dtEffBy = dtMinBySession(sess, dts || [], breakPols || []);
+      const plannedMinOf = (sid) => dtEffBy[sid]?.planned || 0;
 
       const out = [];
 
