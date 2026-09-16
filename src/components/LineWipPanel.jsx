@@ -67,6 +67,10 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
   const kidNames = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
   /* สายบน — ไว้ตรวจว่ามีของค้างที่ไลน์แม่ไหม (ไม่นับรวม แต่ต้องบอกให้เห็น ห้ามเงียบ) */
   const upNames  = useMemo(() => getAncestorNames(lines, lineName), [lines, lineName]);
+  /* 🔴 2026-09-16 — deps ของตัวโหลดต้องเป็น "เนื้อ" (string) ไม่ใช่ identity ของ array
+     แผงนี้เป็นลูกของ DailyReport ที่รับ prop `lines` ⇒ พ่อ setLines ทีไร upNames ใบใหม่
+     ⇒ load ใบใหม่ ⇒ ยิงคิวรีซ้ำฟรีๆ ทุกรอบ realtime (กฎเหล็กข้อ 9 · เหมือน StoreLotQueue/LinePartCallPanel) */
+  const upKey    = upNames.join('|');
 
   const load = useCallback(async () => {
     if (!lineName || !workDate) return;
@@ -149,7 +153,8 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
     } catch (e) {
       setErr(e.message || String(e));
     } finally { setLoading(false); }
-  }, [lineName, workDate, upNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- upKey แทน upNames (ดูหมายเหตุที่ upKey)
+  }, [lineName, workDate, upKey]);
 
   useEffect(() => { load(); }, [load]);
 
