@@ -74,6 +74,11 @@ export default function ShiftTimeSplit({ split, compact = false }) {
       {note && (
         <div style={{ fontSize: fs, color: note.c, fontWeight: 700, marginTop: 3 }}>⚠️ {note.t}</div>
       )}
+      {split.startTimeOutOfFrame && (
+        <div style={{ fontSize: fs, color: '#ef4444', fontWeight: 700, marginTop: 2 }}>
+          ⚠️ เวลาเริ่มกะที่บันทึกไว้อยู่นอกกรอบกะนี้ — ระบบใช้ต้นกะแทนให้ชั่วคราว ให้แก้เวลาเริ่มกะที่ Daily Report
+        </div>
+      )}
       {split.noBreakPolicy && (
         <div style={{ fontSize: fs, color: 'var(--muted)', marginTop: 2 }}>· ยังไม่ได้ตั้งนโยบายเวลาพักของกะนี้ — เทียบกับค่าที่บันทึกตอนปิดกะไม่ได้</div>
       )}

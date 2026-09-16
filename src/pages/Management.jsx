@@ -21,7 +21,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -1513,11 +1513,6 @@ export default function Management() {
           const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
           const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
 
-          // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
-          // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
-          const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
-            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
-          });
 
           // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
           const pctForHalf = (item, half) => {
@@ -1599,48 +1594,20 @@ export default function Management() {
           });
           const productRows = Object.values(groups).sort((a, b) => a.label.localeCompare(b.label) || String(a.line || '').localeCompare(String(b.line || '')));
 
-          // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบคนละพาร์ทของไลน์เดียวกันต้องต่อคิวกัน ──
-          // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
-          // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (คนละเครื่องจริง วิ่งขนานได้)
-          const positionedByOrder = new Map();
-          {
-            // งานคู่ RH/LH (pair_mat_no ใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
-            // → คู่ที่มีทั้งสองพาร์ทในไลน์เดียวกันแยกเป็นเลนของตัวเอง คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
-            // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกัน — 1 ไลน์ทีละใบ · 2026-07-21)
-            const matsInLine = {};
-            productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
-            // ไลน์เครื่องขนาน (flow_mode='parallel_machine') — แตกหลายเลน: ผูกเครื่อง (machine_no)=เลนเครื่องนั้น,
-            // ยังไม่ผูก=กระจาย round-robin N เลน (N = parallel_stations หรือจำนวนเครื่องจาก machine_points) · ดู lineTypes.js
-            const flowByLine = {}; (allLines || []).forEach(l => { flowByLine[l.name] = l; });
-            const machineCountByLine = {};
-            (machinePoints || []).forEach(p => { (machineCountByLine[p.line_name] ||= new Set()).add(p.machine_no); });
-            const stationsOf = (line) => {
-              const l = flowByLine[line];
-              return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
-            };
-            const byLane = {};
-            const rr = {};
-            productRows.forEach(r => r.cards.forEach(c => {
-              const line = c.line_name || '';
-              let key;
-              if (flowByLine[line]?.flow_mode === 'parallel_machine') {
-                if (c.machine_no) key = `${line}||M:${c.machine_no}`;
-                else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
-              } else {
-                const pm = pairMatByMat[c.mat_no];
-                key = (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
-              }
-              (byLane[key] ||= []).push(c);
-            }));
-            Object.values(byLane).forEach(cs => {
-              computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
-            });
-          }
-          const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(c.id ?? c.prod_no)).filter(Boolean)
+          /* ── คิวการ์ดของทั้งกลุ่มไลน์ — util กลาง `positionAllCards` (2026-09-16) ──
+             เดิมโค้ดแบ่งเลน (งานคู่ RH/LH · ไลน์เครื่องขนาน) ถูก copy ไว้ทั้งหน้านี้และ Dashboard
+             **เหมือนกันทุกบรรทัด** แล้วก็ยัง drift กันที่ตัวนับดีเลย์อยู่ดี — ห้าม copy กลับมาอีก */
+          const linesByName = {}; (allLines || []).forEach(l => { linesByName[l.name] = l; });
+          const machineCountByLine = {};
+          (machinePoints || []).forEach(pt => { (machineCountByLine[pt.line_name] ||= new Set()).add(pt.machine_no); });
+          const positionedByOrder = positionAllCards(allCards, {
+            breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+            flowByLine: linesByName, machineCountByLine, pairMatByMat,
+          });
+          const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
             .sort((a, b) => a.startMs - b.startMs);
 
-          const totalDelayed = productRows.reduce((sum, row) =>
-            sum + positionedForCards(row.cards).filter(p => p.isDelayed).length, 0);
+          const totalDelayed = delayedCountOf(positionedByOrder);
           const hasOpen = sessions.some(s => s.status === 'open');
 
           const openByMatNo = {};

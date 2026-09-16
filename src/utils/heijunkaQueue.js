@@ -127,3 +127,64 @@ export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs,
     return item;
   });
 }
+
+/* ── แบ่ง "เลน" ก่อนต่อคิว — 1 เลน = 1 เครื่องจริงที่ผลิตได้ทีละใบ ─────────────────────
+   ⚠️ เดิม copy-paste ไว้ทั้ง Dashboard.jsx และ Management.jsx **เหมือนกันทุกบรรทัด**
+      (diff 2026-09-16: ต่างแค่คอมเมนต์กับชื่อตัวแปร) แล้ว `totalDelayed` ของ 2 หน้าก็ยัง
+      คำนวณคนละสูตรอยู่ดี ⇒ **บอร์ดเดียวกัน 2 จอ ขึ้น "ดีเลย์ N ใบ" คนละเลข**
+      → ย้ายมาที่นี่ทั้งก้อน · **ห้าม copy กลับไปไว้ในหน้าอีก**
+
+   กติกาแบ่งเลน (เรียงตามลำดับที่เช็ค):
+     1. ไลน์ `flow_mode = 'parallel_machine'` (เครื่อง stand-alone ต่างคนต่างรัน)
+        · ใบผูกเครื่องแล้ว (machine_no) → เลนของเครื่องนั้น
+        · ยังไม่ผูก → กระจาย round-robin N เลน (N = parallel_stations หรือจำนวนเครื่องในทะเบียน)
+     2. งานคู่ RH/LH (`pair_mat_no`) ที่มี**ทั้งสองพาร์ทอยู่ในไลน์เดียวกัน** = แม่พิมพ์คู่ ปั๊มพร้อมกัน
+        → เลนของตัวเอง เริ่มพร้อมกัน แถบบนจอจึงตรงกัน (2026-07-21)
+     3. นอกนั้น = 1 ไลน์ 1 เลน เรียงต่อคิวกัน
+        (เคยพัง 2026-07-14: คำนวณคิวแยกต่อ "แถวพาร์ท" → พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนพาร์ทแรก
+         ทั้งที่ไลน์ไม่ parallel) */
+export function buildLanes(cards = [], { flowByLine = {}, machineCountByLine = {}, pairMatByMat = {} } = {}) {
+  const matsInLine = {};                       // line → Set(mat_no) ที่มีการ์ดจริง
+  cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); });
+  const stationsOf = (line) => {
+    const l = flowByLine[line];
+    return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
+  };
+  const lanes = {};
+  const rr = {};                               // round-robin ต่อไลน์ สำหรับใบที่ยังไม่ผูกเครื่อง
+  cards.forEach(c => {
+    const line = c.line_name || '';
+    let key;
+    if (flowByLine[line]?.flow_mode === 'parallel_machine') {
+      if (c.machine_no) key = `${line}||M:${c.machine_no}`;
+      else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
+    } else {
+      const pm = pairMatByMat[c.mat_no];
+      key = (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+    }
+    (lanes[key] ||= []).push(c);
+  });
+  return lanes;
+}
+
+/* คิวการ์ดทั้งบอร์ดของ 1 กลุ่มไลน์ — แบ่งเลนแล้วต่อคิวในแต่ละเลน คืน Map(คีย์ใบ → ตำแหน่ง)
+   คีย์ใบ = `id ?? prod_no` (ต้องตรงกับที่หน้าใช้ค้น) */
+export const orderKeyOf = (o) => o?.id ?? o?.prod_no;
+
+export function positionAllCards(cards = [], opts = {}) {
+  const { flowByLine, machineCountByLine, pairMatByMat, ...queueOpts } = opts;
+  const out = new Map();
+  Object.values(buildLanes(cards, { flowByLine, machineCountByLine, pairMatByMat })).forEach(laneCards => {
+    computeQueuedPositionsFull(laneCards, queueOpts).forEach(item => out.set(orderKeyOf(item.o), item));
+  });
+  return out;
+}
+
+/* จำนวนใบที่ "ดีเลย์อยู่ตอนนี้" — ⚠️ อ่านว่า *ตอนนี้ค้างกี่ใบ* ไม่ใช่ *วันนี้ดีเลย์ไปแล้วกี่ใบ*
+   (ใบที่ช้าแล้วปิดไปแล้ว = isLateDone ไม่ถูกนับ · ใบ backfill ถูกยกเว้นตั้งแต่ใน isDelayed)
+   👉 ตัวเลขที่ตอบ "ต้อง recover เท่าไหร่" คือ `liveTimeSplit` ใน utils/oee.js (หน่วยนาที) */
+export function delayedCountOf(positioned) {
+  let n = 0;
+  positioned.forEach(item => { if (item.isDelayed) n++; });
+  return n;
+}
