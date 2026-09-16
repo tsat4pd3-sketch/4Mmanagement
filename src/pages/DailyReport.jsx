@@ -254,7 +254,7 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
+  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
   const [lines, setLines]           = useState([]);
@@ -2580,8 +2580,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
-        // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
+        /* §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
+           🔴 **sticky ต้องถอดบนมือถือ** (feedback หน้างาน 2026-09-16 · วิดีโอจากมือถือ):
+              grid ข้างบนยุบเป็น 1 คอลัมน์เมื่อ isMobile แต่เดิม style นี้ยัง `position: sticky; top: 12`
+              + `maxHeight: 100vh` อยู่ ⇒ แผงเลือกกะ (วัดจริง 350×651px บนจอ 390×844 = **77% ของจอ**)
+              ค้างนิ่งอยู่กับที่แล้ว **เนื้อหาที่เลื่อนอยู่ข้างหลังทะลุขึ้นมาทับซ้อนกัน อ่านไม่ออกทั้งคู่**
+              (คอมเมนต์เดิมที่ `useIsMobile()` เขียนว่า "ยุบมาซ้อนบนเนื้อหา" — ของจริงคือค้างทับ ไม่ได้ยุบ)
+           · มือถือ = แถวปกติที่เลื่อนไปกับหน้า แต่จำกัดสูง 45vh ให้ลิสต์เลื่อนในตัวเอง
+             (inner scroller `flex:1 · minHeight:0 · overflowY:auto` ด้านล่างทำงานเหมือนเดิม)
+             ไม่งั้นกะ 28 ใบดันเนื้อหาตกจอ ต้องปัดยาวกว่าจะถึงของจริง */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
+          ...(isMobile
+            ? { maxHeight: '45vh' }
+            : { position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }) }}>
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
