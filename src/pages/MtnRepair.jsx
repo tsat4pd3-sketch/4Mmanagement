@@ -1976,8 +1976,9 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
            **"ใบนี้ยังต้องผ่าน QA ไหม"** ค่าเริ่มต้น = ต้องผ่าน · มีแต่ **QA** เท่านั้นที่พลิกเป็น
            "ไม่เกี่ยวกับคุณภาพ" ได้ (ปุ่ม ⏭ ขั้น 5) ⇒ เป็น default-deny gate ไม่ใช่ความเห็นของผู้แจ้ง
            ⚠️ เส้นทางจริงตัดสินด้วย `qa_skipped_at` (isWaitingQa) ไม่ใช่ช่องนี้ — ที่ยังเขียนไว้เพราะ
-              (ก) ใบพิมพ์/แผงรายละเอียดอ่านค่านี้ (ข) เป็นสะพานให้ edge `send-mtn-notification`
-              รุ่นที่ deploy อยู่ (อ่าน quality_related) บอก "ขั้นต่อไป" ถูกต้องระหว่างรอ deploy รุ่นใหม่ */
+              **ใบพิมพ์/แผงรายละเอียดอ่านค่านี้** (แถว "ต้องให้ QA ตรวจ?") ⇒ หยุดเขียน = แถวนั้นว่างในใบใหม่
+              (เดิมมีเหตุผลข้อ 2 "เป็นสะพานให้ edge รุ่นเก่าที่อ่าน quality_related" — หมดอายุแล้ว
+               `send-mtn-notification` v19+ อ่าน `qa_skipped_at` เอง · deploy 2026-09-15) */
         Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, checker_name: f.checker_name, checker_sign: s, quality_related: QA_RELATED });
         if (!editMode) { upd.status = 'checked'; upd.current_step = 4; upd.check_at = new Date().toISOString(); }
         /* ขั้น 4 ไม่ยุ่งกับ qa_skip_* อีกแล้ว (2026-09-14) — การข้าม QA เป็นของ QA ฝั่งเดียว
