@@ -672,7 +672,7 @@ export default function FixtureRegistry() {
       {/* ── modal แก้ไขจุด ── */}
       {/* ฟอร์มสร้างจุดจากแม่แบบ — ชนิดจุดเลือกจาก fixture_point_kinds (แทน window.prompt ที่ต้องพิมพ์รหัสเอง) · 2026-09-07 */}
       {tpl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
+        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
                         padding: 18, width: 'min(420px,100%)' }}>

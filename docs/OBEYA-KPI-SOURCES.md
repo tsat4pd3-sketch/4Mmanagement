@@ -358,9 +358,13 @@ TS Academy ≥75/≥85% · Engagement Survey ≥80/≥85% · Engineering Day ≥
 
 ### 9.0 🔴 2 เรื่องที่ **ขัดกับที่บันทึกไว้** — ต้องเคลียร์ก่อนทำต่อ
 
-| # | เราเชื่อว่า | ใบ PD3 2026 จริงบอกว่า |
+> ### ⛔ ข้อ 1 ด้านล่าง **ผิด — แก้แล้วใน §12.1** (2026-09-16)
+> ได้ไฟล์ `Form for manager PD3` ตัวจริง (หัวว่า `Master plan Y2026`) แล้ว — **มี `Raw Material Control` และ `DL&OH` จริง**
+> รูปที่ถ่ายจากบอร์ดเป็น**แผ่นปีก่อน** (ซองมีแท็บ ปี 2026 / ปี 2025 ซ้อนกัน) · `boardRowsFor(year)` **ใช้ได้ ไม่ต้องถอด**
+
+| # | เราเชื่อว่า | ใบที่ถ่ายจากบอร์ด (= แผ่นปีก่อน) บอกว่า |
 |---|---|---|
-| 1 | ปี 2026 หมวด Financial = **`%RM` ข้อ 1 + `DL+OH` รวมเป็นข้อเดียว** (§7) | **ไม่มี %RM · ไม่มี DL+OH รวม** — ยังเป็น **`Direct Labour` แยก + `Overhead` แยก** เหมือนโครงเดิม และ**แตกเป็น 3 ระดับตาม cost center** |
+| 1 | ~~ปี 2026 หมวด Financial = **`%RM` ข้อ 1 + `DL+OH` รวมเป็นข้อเดียว** (§7)~~ **← ข้อนี้ถูก ดู §12.1** | ~~ไม่มี %RM · ไม่มี DL+OH รวม~~ — เป็นโครง **`Direct Labour` แยก + `Overhead` แยก แตก 3 ระดับตาม cost center** ของ**ปีก่อน** |
 | 2 | `Inventory Balance` = **มูลค่าสต็อก (บาท)** (§6 ข้อ 5) | **`Inventory turnover` หน่วย "Day"** (≤0.499 / ≤0.45 / ≤0.049 วัน) — ที่มา *Report Monthly FS Sheet 8.1 : Inventory by Store* |
 
 ⇒ **ต้องถาม user:** `%RM` / `DL+OH` ที่เคยบอกเป็นโครงของ *ระดับบริษัท/Plant (KPI Online)* ใช่ไหม
@@ -484,7 +488,7 @@ TS Academy ≥75/≥85% · Engagement Survey ≥80/≥85% · Engineering Day ≥
 
 ### 9.5 ผลต่อบอร์ด `/obeya?tab=kpi` (คิวงาน — ยังไม่ลงมือ)
 
-1. 🔴 **ถอด/จำกัดชุดแถวปี 2026 (`%RM` + `DL+OH`)** — ใบ PD3 ไม่ได้ใช้ ต้องรู้ก่อนว่าโครงนั้นเป็นของระดับไหน
+1. ~~🔴 ถอด/จำกัดชุดแถวปี 2026 (`%RM` + `DL+OH`)~~ **ยกเลิก — §12.1 ยืนยันว่าใบ 2026 ใช้ชุดนี้จริง** · สิ่งที่ต้องเพิ่มคือ **ข้อย่อย `1.2a/1.2b` (DL/OH แยก) ใต้ DL&OH**
 2. **เป้าต้องตั้งได้ราย `line_group`** (PPM 150/100/200/0 · OEE 85/88/91/80 ในใบเดียวกัน) — โครง `kpi_definitions.line_group` รองรับแล้ว **แต่ต้องมีคนไปตั้ง**
 3. **แผนรายเดือน (12 ค่า) ต่อ KPI** — ของเรามีเป้าเดียวทั้งปี ⇒ งาน (b) ใน §5.6 กลายเป็น**จำเป็น** ไม่ใช่ nice-to-have
 4. **ช่อง Champion (ผู้รับผิดชอบ) รายแถว** — ใบมี ระบบไม่มี
@@ -615,3 +619,175 @@ Target safety (0)
 | 11 | **Inventory Day** ตามสูตร §10.1 | ❌ ติดที่ **ต้นทุนต่อชิ้น** (`parts_master` ว่างทั้งตาราง) + COGS |
 | 12 | **เป้าลดเวลาสูญเสียรายสาเหตุ** (HDF Alarm 0.84% · Tooling 1.20% · Conveyor 3.37%) | 🟡 `downtime_logs` มีสาเหตุแล้ว · ยังไม่มีที่เก็บ "เป้าลดของแต่ละสาเหตุ" — ใกล้กับ `improvements` |
 | 13 | ทุกแผ่นต้องมี **ปุ่ม STATUS G/Y/R ของตัวเอง + แท็บปี** (2025/2026 ซ้อนกัน) | 🟡 บอร์ดมีไฟรายช่องแล้ว · ยังไม่มีสลับดูปีเก่าแบบพลิกแผ่น |
+
+---
+
+## 11. แผ่น **TS ACADEMY (TRIANNING)** + 🔴 ข้อกำหนด "เจาะตามระดับองค์กร" (user 2026-09-16)
+
+### 11.1 แผ่น TRIANNING — *แผนอบรม TS ACADEMY ส่วนงาน HYDROFORM*
+
+**รายครึ่งเดือน (W2 / W4)** — ละเอียดกว่าทุกแผ่นที่เคยเห็น (แผ่นอื่นรายเดือน)
+เส้นบนกราฟ: `Plan 26` (แท่ง) · `% Plan สะสม` (จุดไข่ปลา) · `% Act สะสม` (เส้นแดง)
+
+| ระดับพนักงาน | จำนวนคน | ต้องอบรมสะสมปี 2025 | KPI 26 | ตั้ง 26 |
+|---|---|---|---|---|
+| หัวหน้างาน | 4 | 4 | 4 | 0 |
+| ช่างเทคนิค | 4 | 2 | 2 | 2 |
+| พนักงาน | 17 | 8 | 9 | 9 |
+| **SUM** | **29** | **20** | — | **11** |
+
+- ทุกระดับมีคู่แถว **P / A (Plan / Actual)**
+- แถวล่าง: `จำนวนคนสะสม` · `% Plan สะสม` · `% Act สะสม` (0% → 36% → 100%)
+- ⇒ **ยืนยันสูตร TS Academy = (คนที่อบรมแล้วสะสม ÷ คนทั้งหมด) × 100** ตรงกับ §8.5 · **แตกตามระดับพนักงาน**
+- ESM มีของครบพอทำ: `employees` (ระดับ/ตำแหน่ง) + `ojt_trainings` + `ojt_training_attendees` (`post_score`)
+  · ขาดอย่างเดียว = **เกณฑ์ "ผ่าน" คือ post_score เท่าไหร่** (§8.11 ข้อ 4)
+
+### 11.2 🔴 ข้อกำหนดจาก user — **บอร์ดต้องเจาะได้ตามระดับองค์กร**
+
+> *"บอร์ด Obeya ของแต่ละส่วนงานจะเห็นแบบนี้ เจาะได้ตามระดับองค์กร ส่วน · แผนก · กลุ่ม หรือไลน์ลูก (ถ้าข้อมูลถึง)"*
+
+**4 ระดับที่ต้องรองรับ:** `ส่วนงาน → แผนก → กลุ่ม(ไลน์แม่) → ไลน์ลูก`
+วงเล็บ *"ถ้าข้อมูลถึง"* = **ระดับที่ข้อมูลไปไม่ถึง ต้องบอกว่าไปไม่ถึง ห้ามเดา** (กฎความซื่อสัตย์ของจอ)
+
+**สภาพจริงของโครงสร้างที่มี (วัดจาก DB 16/09):**
+`org_nodes` — section 6 · department 13 · line 17 · team 12 · `production_lines` — PD3 แม่ 2/ลูก 11 · PD4 แม่ 3/ลูก 4 · PD2 แม่ 2/ลูก 4 · PD1 แม่ 5/ลูก 0
+
+| KPI | ส่วนงาน | แผนก | กลุ่ม | ไลน์ลูก | ตัวขวาง |
+|---|---|---|---|---|---|
+| **OEE** | ✅ | ✅ | ✅ | ✅ | — `production_sessions.line_name` ถึงไลน์ลูก |
+| **PPM / ของเสีย** | ✅ | ✅ | ✅ | ✅ | — `defect_logs` ถึงไลน์ (+เครื่อง) |
+| **Downtime / MTBF / MTTR** | ✅ | ✅ | ✅ | ✅ | — `downtime_logs` + `mtn_orders` |
+| **กำลังคน / PPE** | ✅ | ✅ | ✅ | ✅ | — `daily_production_logs.assigned_line` |
+| **Safety** | ✅ | 🟡 | 🟡 | 🟡 | `safety_events.line_name` เป็น optional |
+| **TS Academy** | ✅ | 🟡 | ❌ | ❌ | `ojt_*` ผูก dept/section ไม่ผูกไลน์ |
+| **DL / OH / %RM / Inventory / Sales** | 🟡 | 🟡 | ❌ | ❌ | **ผูก cost center** ไม่ใช่ไลน์ · ตัวเลขมาจากบัญชี/SAP |
+
+> **🔴 กับดักที่ต้องออกแบบให้ถูกตั้งแต่แรก:** KPI การเงินตัดด้วย **cost center** (2140662101 …)
+> ส่วน KPI ผลิตตัดด้วย **ไลน์** — **ไม่ใช่แกนเดียวกัน** · 1 กลุ่มไลน์ครอบหลาย cc และหลายไลน์ใช้ cc เดียวกัน
+> ⇒ ตารางนิยาม KPI ต้องเก็บ **ขอบเขตแบบ (ระดับ, ค่า)** ไม่ใช่คอลัมน์ `section`+`line_group` ตายตัวแบบตอนนี้
+
+---
+
+## 12. 📂 **KPI Evaluation breakdown 2026 + Management Review H1 FY2026** (ได้ไฟล์ 2026-09-16)
+
+> ไฟล์: `Key Performance Index Evaluation breakdown 2026 CODEX RPA updated.xlsx` (10 ชีท) ·
+> `KPI Management Review H1 FY2026 v11.pptx` (15 สไลด์ · ผู้เสนอ Mr. Dulyatrust Laptanasarnsombut, Manager · TSAT Branch 1 (Plant 4))
+> **ทบทวน 3 แผนก: PD3–HDF · PD4–Assy2 · PD4–JIG Maintenance**
+
+### 12.1 🔴🔴 แก้ข้อสรุปผิดใน §9.0 — **ใบ 2026 มี `Raw Material Control` และ `DL&OH` จริง**
+
+ชีท `Form for manager PD3` หัวว่า **`Master plan Y2026`**:
+```
+1.1  Raw Material Control     Data form Acc   Commit -         Target ≤68.40%
+1.2  DL&OH 2140462100         Data form SAP   Commit ≤2.6148%  Target ≤2.5364%
+1.2a Direct Labour 2140462100 Data form SAP   Commit ≤1.5689%  Target ≤1.5218%
+1.2b Overhead 2140462100      Data form SAP   Commit ≤1.0459%  Target ≤1.0146%
+```
+⇒ **ที่ §7 บันทึกไว้ (ปี 2026 = %RM ข้อ 1 + DL+OH รวม) ถูกต้อง** · ที่ §9.0 สรุปว่า "ขัดกัน" **ผิด**
+เพราะ**ใบที่ถ่ายจากบอร์ดคือแผ่นปีก่อน** (ซองมีแท็บ `ปี 2026` ม่วง / `ปี 2025` แดง ซ้อนกัน — ถ่ายติดแผ่นแดง)
+· `boardRowsFor(year)` ที่ทำไว้ **ใช้ได้ ไม่ต้องถอด** · สิ่งที่เพิ่มคือ **DL/OH ยังคงอยู่เป็นข้อย่อย `1.2a/1.2b` ใต้ DL&OH**
+
+### 12.2 💎 สูตรจริงทุกตัว (อ่านจากเซลล์ ไม่ใช่เดา)
+
+```
+Direct Labour      = Actual DL            ÷ ACTUAL PRODUCT SALE
+Overhead           = Actual OH            ÷ ACTUAL PRODUCT SALE
+DL&OH              = Direct Labour + Overhead
+Plan DL รายเดือน    = (เป้าทั้งปีเป็นบาท) ÷ 12          ← แผนแบ่งเท่ากันทุกเดือน
+100P (Fact)        = Actual 100P+CR PLANT ÷ ACTUAL PRODUCT SALE
+100P (division)    = Actual 100P DIVISION ÷ ACTUAL PRODUCT SALE
+Inventory Balance  = Inventory (บาท) ÷ (SALE Product ÷ 30)        ← **หาร 30 คงที่**
+Annual Sales/Head  = (ACTUAL TOTAL SALE ÷ ACTUAL Man Fac ÷ 1e6) + ค่าสะสมเดือนก่อน
+PPM (Progress)     = (Σ defect ทั้งปี ÷ Σ produce ทั้งปี) × 1,000,000
+```
+**Progress (สรุปทั้งปี) ไม่ได้ใช้วิธีเดียวกันทุกตัว:**
+`AVERAGE` (ส่วนใหญ่) · `SUM` (Serious Accidents) · `MAX` (Annual Sales/Head · TS Academy — เพราะสะสม) ·
+`คำนวณจากยอดรวมทั้งปี` (PPM) — ตรงกับคอลัมน์ `Summary` ของ KPI Online §8.2
+
+> ⚠️ **2 จุดที่ต้องถามให้ชัด**
+> 1. **Inventory หาร 30 คงที่** ในไฟล์นี้ แต่**แผ่นบนบอร์ด (§10.1) เขียนว่าใช้ "วันทำงานจริงในแต่ละเดือน"** — คนละตัว
+> 2. **Annual Sales per Head ใช้ `ACTUAL Man Fac` (ทั้งโรงงาน 379 คน)** ทั้งที่มีแถว `ACTUAL Man PD3` (72 คน) อยู่ข้างๆ
+>    · แต่ชีท tracking มี `Sales per Head PD3/PD4/JIG` แยกต่างหาก เป้า ≥10 / ≥5.5 / ≥0.3 MB (`Acc+Self cal`)
+>
+> `Actual DL/OH` ลิงก์ไป **ไฟล์ Excel ภายนอก** (`'[2]Overall PD3 2025'!$C$5`) = ดึงจากไฟล์บัญชี **ไม่ใช่ระบบ**
+
+### 12.3 🎯 **แต่ละแผนก KPI ไม่เหมือนกัน — ยืนยันจากไฟล์จริง**
+
+| หัวข้อ | PD3 (2140462100) | PD4 (2140471000) | JIG MTN (2140562300) |
+|---|---|---|---|
+| Raw Material Control | ✅ ≤68.40% | ✅ ≤68.40% | ❌ **ไม่มี** |
+| DL&OH | ≤2.6148 / ≤2.5364% | ≤1.3445 / ≤1.3042% | ≤0.2148 / ≤0.2084% |
+| Customer Satisfaction | ≥95% / 100% | ≥95% / 100% | **Internal Satisfaction** + **MO Closed on target** ≥95/≥99% |
+| 100P (Fact + division) | ≥0.28 / ≥0.305% | ≥0.088 / ≥0.093% | ≥0.029 / ≥0.031% |
+| Inventory Balance | ≤0.537 / ≤0.499 | ≤0.07 / ≤0.065 | ❌ **ไม่มี** |
+| Internal defect (PPM) | ≤600 / ≤300 | ≤250 / ≤200 | ❌ **ไม่มี** |
+| OEE | ≥76 / ≥79% | ≥79 / ≥82% | ❌ **ไม่มี** |
+| **MTBF** | ❌ | ❌ | ✅ ≥9,000 / ≥10,000 **min** |
+| **MTTR** | ❌ | ❌ | ✅ ≤19 / ≤14 **min** |
+| **PM JIG** | ❌ | ❌ | ✅ ≥95 / ≥100% |
+| Serious Accidents · Annual Sales/Head · TS Academy · Core Activity LEAN | ✅ ทุกแผนก (LEAN: TSG Score ≥700/≥780) | ✅ | ✅ |
+
+**Sales per Head เป้าต่างกันคนละโลก:** PD3 ≥10/≥10.50 MB · PD4 ≥5.5/≥5.7 MB · JIG ≥0.3/≥0.36 MB
+**Champion รายแถว:** `K.Dulyatrust` (PD3) · `K.Bunchu` (PD4) · `K.Narongsak` (JIG) · `K.Phiriya` (defect) · `ALL`
+**กำลังคนฐาน:** Man PD3 77→72 · Man PD4 59→51 · Man JIG 10 · Man Fac 390→371
+
+⇒ **JIG MTN คือแผนกที่ ESM ครอบคลุม KPI ได้มากที่สุดทันที** — `MTBF · MTTR · PM · MO closed on target · Machine Break Down`
+มีครบใน `mtn_orders` + โมดูล PM + `src/utils/oee.js` (MTBF/MTTR) + `src/utils/mtnMetrics.js`
+
+### 12.4 เด็คทบทวนครึ่งปี — โครงที่เอามาทำเป็นหน้าจอได้เลย
+
+แต่ละแผนกมี 3 สไลด์: **KPI Scorecard** → **Internal Process Trend** → **Key Problems**
+สกอร์การ์ด 7 คอลัมน์: `No · KPI Description · Commitment · Target · FY2025 Baseline · FY2026 Result · Assessment`
+**Assessment 5 ค่า:** `✔ Achieved` · `◐ Partial (0.5)` · `◐ In progress` · `✘ Below` · `— Pending —`
+⇒ **มีค่า "Pending" แยกจาก "ไม่ผ่าน" ชัดเจน** = ตรงกับกฎเรา "ไม่มีข้อมูล ≠ ไม่ผ่าน" 💯
+
+**ผล H1 FY2026 (เทียบ FY2025 baseline):**
+| | PD3 HDF | PD4 Assy2 | JIG MTN |
+|---|---|---|---|
+| Customer Satisfaction | 94.6% (86.4%) ✘ | 94.6% (82.4%) ✘ | — Pending |
+| 100P | 0.46% (2.15%) ◐ | 0.46% (2.10%) ◐ | Machine Break Down 0.44% ✔ |
+| DSI | 0.472 (0.448) ✘ | 0.161 (0.059) ✘ | — |
+| Internal Quality Rate | 276 PPM (227.6) ✔ | 376 PPM (311) ◐ | — |
+| OEE | 83.8% (82.8%) ◐ | 87.9% (84.4%) ✔ | — |
+| MTBF / MTTR | — | — | **341 Hr (236.9) ✔ / 0.166 Hr (0.17) ✔** |
+| Scrap Cost (COPQ) | ฿1,628K vs เป้า ฿631K ✘ | ฿501K vs ฿229K ✘ | Cost Reduction ฿92K vs ฿953K ✘ |
+| DL&OH | 2.26% (2.66%) ✔ | — Pending | 0.227% (0.223%) ✘ |
+
+**KPI ในเด็คที่ไม่มีในไฟล์ Excel:** `Non NC Major (ISO External Audit)` · `Defect/Scrap Cost (COPQ)` ·
+`Cost Reduction (additional)` · `QCC ≥30%/plant` · `Engineering Day 1 Team/Plant` · `MO Closed on target` · `Machine Break Down`
+**เป้าในเด็ค ≠ เป้าในไฟล์** หลายตัว (เช่น PD3 OEE เด็ค ≥85%/≥83% · ไฟล์ ≥79%/≥76% · DSI เด็ค ≤0.324 · ไฟล์ ≤0.499
+· MTBF เด็ค **Hr** ไฟล์ **min**) ⇒ **ห้าม hardcode เป้าจากที่ใดที่หนึ่ง** ต้องเป็นค่าที่ตั้งได้ต่อ (KPI × แผนก × ปี)
+
+**Key Problems เชื่อมกับข้อมูลที่ ESM มีอยู่แล้วทั้งหมด:**
+`Apron 061 Stud Alarm — DT 1,816 min · OEE 74.7%` · `Hydroform 2 crack/neck + BD-06 — DT 1,571 min · OEE 80.9%` ·
+`Laser 1-3 PPM 812` · `GOR Robot RB-95/96/99 — 713 min` · `LWRBAR Robot 104 — 423 min` · `GOR weld blade RB-101,102 — 348 min`
+⇒ **นี่คือพาเรโต downtime + PPM รายไลน์/รายเครื่อง ที่ `/oee-analytics` กับ `/obeya` คำนวณได้อยู่แล้ว**
+สไลด์นี้จึงเป็น **"รายงานที่ระบบ generate ให้ได้"** ไม่ใช่งานมือ — คิวงานที่คุ้มที่สุดต่อจากนี้
+
+### 12.5 🔴 คำตอบเรื่อง "setup KPI ต้องเป็น dropdown + ลิ้ง data ได้" — โครงที่ต้องมี
+
+ไฟล์ชุดนี้พิสูจน์ว่า **hardcode 8 หัวข้อไม่มีทางพอ** (3 แผนกใช้คนละชุด · เป้าคนละค่า · หน่วยคนละหน่วย)
+ตอนตั้ง KPI 1 บรรทัด ต้องเลือกได้ครบ 5 อย่าง:
+
+| # | เลือกอะไร | ที่มาของตัวเลือก | สถานะใน ESM |
+|---|---|---|---|
+| 1 | **ชื่อ KPI** (dropdown + เพิ่มเองได้) | `kpi_catalog` | ✅ มีแล้ว |
+| 2 | **ขอบเขต** = ระดับ (ส่วนงาน/แผนก/กลุ่ม/ไลน์/cost center) + ค่า | `org_nodes` · `production_lines` · `cost_centers` | ⚠️ มีแค่ `section` + `line_group` — **ต้องเปลี่ยนเป็น (scope_kind, scope_value)** |
+| 3 | **🔗 ลิ้ง data** = ตัวเลขมาจากไหน | **ยังไม่มี** — ต้องทำทะเบียน `provider` | ❌ **ของใหม่ที่ต้องทำ** |
+| 4 | **Commitment + Target** (เครื่องหมาย + ค่า + หน่วย) + **Weight** | — | ⚠️ มี `commitment/target` เป็น text · ไม่มี compare/unit/weight แยก |
+| 5 | **แผน 12 เดือน** (Plan รายเดือน) | — | ❌ มีเป้าเดียวทั้งปี |
+
+**ชั้น "ลิ้ง data" (ข้อ 3) ควรมี 3 แบบ — ตรงกับที่ใบจริงใช้:**
+```
+A) ระบบคำนวณให้   provider = oee | ppm | downtime_min | mtbf | mttr | pm_percent |
+                              safety_case | produced_qty | manpower | defect_cost | ot_hours …
+                   (+ ขอบเขตจากข้อ 2 · ระบบรู้เองว่าต้องกรองไลน์ไหน)
+B) สูตรจากตัวแปรฐาน  เช่น DL = [Actual DL] ÷ [Actual Product Sale]
+                   ⇒ ต้องมีตาราง "ตัวแปรฐานรายเดือน" (Actual DL · Actual OH · Sale Product ·
+                     Inventory · Man · 100P · Raw Material) ที่บัญชี/SAP กรอกเดือนละครั้ง
+                   — นี่คือสิ่งที่แถว 48-67 ในไฟล์ Excel ทำอยู่ และเป็น**หัวใจ** ที่ทำให้ KPI การเงินอัตโนมัติได้
+C) กรอกมือ        ระบุเจ้าของ (Acc · SAP · QSM · HRM · 100P LEADER · TSG Score · TPA)
+```
+⇒ **ข้อ B คือคานงัด** — ถ้ามีตารางตัวแปรฐาน 8-10 ตัว/เดือน/cost center ระบบจะคำนวณ
+DL · OH · DL&OH · %RM · 100P · Inventory Day · Sales per Head **ให้เองทั้งหมด** โดยบัญชีกรอกแค่ตัวเลขดิบ
+(แทนที่จะให้แต่ละแผนกคำนวณเองในไฟล์ Excel ที่ลิงก์ข้ามไฟล์กันจนสอบกลับไม่ได้)

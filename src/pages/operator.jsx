@@ -294,10 +294,19 @@ export default function Operator() {
     }, { onConflict: 'employee_id,skill_name' });
     if (sErr) { toast.error('บันทึกคะแนนไม่สำเร็จ: ' + sErr.message); return; }
 
-    const { error: rErr } = await supabase.from('skill_level_up_requests').update({
+    /* ⚠️ นับแถวที่เขียนจริง ไม่ใช่ดูแค่ error — `skill_level_up_requests` เป็น RLS
+       has_perm('skills:approve_levelup'/'_100') แล้ว (20260916) และ **UPDATE ที่ RLS ปฏิเสธ
+       คืน 0 แถว ไม่มี error** ⇒ ถ้าดูแค่ error จะได้ "อนุมัติสำเร็จ" ทั้งที่คำขอยังค้าง pending
+       ตลอดกาล (คะแนนขึ้นไปแล้วจากบรรทัดบน = สองฝั่งไม่ตรงกันโดยไม่มีใครรู้) */
+    const { data: closed, error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'approved', reviewed_by: user.id, reviewed_at: new Date().toISOString(), doc_url,
-    }).eq('id', req.id);
-    if (rErr) { toast.error('ผิดพลาด: ' + rErr.message); return; }
+    }).eq('id', req.id).select('id');
+    if (rErr || !closed?.length) {
+      toast.error(rErr ? 'ผิดพลาด: ' + rErr.message
+        : `บันทึกคะแนนแล้ว แต่ปิดคำขอไม่สำเร็จ — ไม่มีสิทธิ์ ${req.to_level >= 100 ? 'skills:approve_levelup_100' : 'skills:approve_levelup'} (คำขอยังค้างอยู่ในคิว)`);
+      fetchLevelUpRequests(); fetchEmployees();
+      return;
+    }
 
     toast.success(`อนุมัติ Level ${req.to_level} สำเร็จ`);
     setLuDocFile(null); setLuDocPreview(null);
@@ -326,11 +335,16 @@ export default function Operator() {
                        : 'เคลียร์สถานะรออนุมัติไม่สำเร็จ (ไม่มีสิทธิ์ skills:edit หรือไม่พบแถวสกิลนี้) — ยังไม่ปิดคำขอ');
       return;
     }
-    const { error: rErr } = await supabase.from('skill_level_up_requests').update({
+    // นับแถวด้วยเหตุผลเดียวกับขาอนุมัติ — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+    const { data: rejected, error: rErr } = await supabase.from('skill_level_up_requests').update({
       status: 'rejected', reviewed_by: user.id, reviewed_at: new Date().toISOString(),
       reject_reason: rejectLuReason.trim(),
-    }).eq('id', rejectLuModal.id);
-    if (rErr) { toast.error('ปิดคำขอไม่สำเร็จ: ' + rErr.message); return; }
+    }).eq('id', rejectLuModal.id).select('id');
+    if (rErr || !rejected?.length) {
+      toast.error(rErr ? 'ปิดคำขอไม่สำเร็จ: ' + rErr.message
+        : `ปิดคำขอไม่สำเร็จ — ไม่มีสิทธิ์ ${rejectLuModal.to_level >= 100 ? 'skills:approve_levelup_100' : 'skills:approve_levelup'}`);
+      return;
+    }
     toast.info('Rejected — พนักงานสามารถ farm ต่อได้');
     setRejectLuModal(null); setRejectLuReason('');
     fetchLevelUpRequests();
@@ -1999,8 +2013,13 @@ function SkillSubItemsModal({ skill, onClose }) {
 
   const delItem = async (id) => {
     if (!window.confirm('ลบหัวข้อนี้?')) return;
-    const { error } = await supabase.from('skill_sub_items').delete().eq('id', id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
+    // นับแถว — RLS (skills:edit/skills:delete) ปฏิเสธ DELETE = 0 แถว ไม่มี error ⇒ จอจะเงียบ
+    // แล้วหัวข้อยังอยู่ · ฟังก์ชัน move() ใต้บรรทัดนี้นับแถวถูกอยู่แล้ว — ให้ตรงกันทั้งไฟล์
+    const { data: gone, error } = await supabase.from('skill_sub_items').delete().eq('id', id).select('id');
+    if (error || !gone?.length) {
+      toast.error(error ? 'ลบไม่สำเร็จ: ' + error.message : 'ลบไม่สำเร็จ — ไม่มีสิทธิ์ skills:edit / skills:delete');
+      return;
+    }
     load();
   };
 

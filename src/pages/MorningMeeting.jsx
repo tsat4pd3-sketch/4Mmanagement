@@ -470,8 +470,15 @@ export default function MorningMeeting() {
   const setActStatus = async (a, status) => {
     const patch = { status, updated_at: new Date().toISOString() };
     if (status === 'done') patch.done_at = new Date().toISOString();
-    const { error } = await supabase.from('meeting_action_items').update(patch).eq('id', a.id);
+    /* ⚠️ นับแถวก่อนอัพเดทจอ — RLS ของตารางนี้เปลี่ยนเป็น
+       has_perm('morning_meeting:record') or has_perm('obeya:record') เมื่อ 2026-09-15
+       แต่แก้ call site ไปแค่ฝั่ง Obeya (ObeyaSqdcmBoard:427) ตกหน้านี้ไว้
+       ⇒ คนไม่มีสิทธิ์กดแล้ว optimistic update ทาสีจอว่า "done" ทั้งที่ DB ไม่เปลี่ยน
+         พอรีเฟรชงานกลับมา open = คนเชื่อว่าปิดไปแล้วทั้งที่ยังค้าง (กฎ RLS-เงียบ) */
+    const { data: saved, error } = await supabase.from('meeting_action_items')
+      .update(patch).eq('id', a.id).select('id');
     if (error) return toast.error(error.message);
+    if (!saved?.length) return toast.error('เปลี่ยนสถานะไม่สำเร็จ — ไม่มีสิทธิ์ morning_meeting:record');
     setActions(prev => prev.map(x => (x.id === a.id ? { ...x, ...patch } : x)));
   };
 
