@@ -107,6 +107,17 @@ const mergeIv = (iv) => {
   return out;
 };
 
+/** union ช่วงเวลาหลายชุดที่ยังไม่เรียง → [[s, e], ...] เรียง + รวมช่วงที่ทับกัน
+ *  ⚠️ `mergeIv` ข้างบนต้องการ input ที่เรียงมาแล้ว — ตัวนี้เรียงให้ก่อน ใช้กับชุดที่ผสมมาจากหลายที่
+ *  (เช่น "ช่วงที่พาร์ทวิ่ง" ∪ "ช่วงพักตามนโยบาย" ตอนหา downtime ที่ตกนอกงานทั้งหมด — §7) */
+export function unionIv(intervals = []) {
+  const clean = intervals
+    .filter(iv => Array.isArray(iv) && iv[0] != null && iv[1] != null && iv[1] > iv[0])
+    .map(iv => [Number(iv[0]), Number(iv[1])])
+    .sort((a, b) => a[0] - b[0]);
+  return mergeIv(clean);
+}
+
 /** **ช่วงเวลา**พักตามนโยบายที่ทับกรอบ [startMs, endMs] → [[s, e], ...] (epoch ms) เรียง + รวมช่วงที่ทับกัน
  *  กติกาทั้งหมดของ "พักนโยบาย" อยู่ที่ฟังก์ชันนี้ที่เดียว: กรองกะ → กรองกระบวนการ → ot_scope → กะดึกข้ามวัน
  *  · `policyBreakOverlapMin` = ผลรวมนาทีของช่วงที่ได้จากตัวนี้
@@ -863,4 +874,20 @@ export function clampWinToShift(startMs, endMs, frame) {
   if (e != null && hi != null) e = Math.min(e, hi);
   if (s != null && e != null && e <= s) return { startMs: null, endMs: null };
   return { startMs: s, endMs: e };
+}
+
+/** นาที downtime ของ 1 แถวที่ **อยู่ในกรอบกะ แต่ตกนอกทุกช่วงใน `coveredIv`**
+ *  ใช้จับ "เครื่องเสียตอนที่ไม่มีพาร์ทไหนวิ่ง" ซึ่ง %A แบบแยกตาม MAT.NO มองไม่เห็น (บั๊ก 2026-09-17)
+ *    coveredIv = union ของ (ช่วงที่พาร์ทวิ่ง) ∪ (ช่วงพักตามนโยบาย) — ผ่าน `unionIv()`
+ *    ต้องรวมช่วงพักด้วยเสมอ ไม่งั้นนาทีที่ทับพักถูกหักซ้ำ (กฎเหล็ก §3.1)
+ *  แถวที่ไม่มี `started_at` คืน 0 — ตะกร้า untimed มีตัวรับแยกอยู่แล้ว (นับ 2 รอบไม่ได้) */
+export function dtMinOutsideWork(d, coveredIv = [], frame = null) {
+  if (!d?.started_at || !frame) return 0;
+  const raw = Number(d.duration_min) || 0;
+  if (!(raw > 0)) return 0;
+  const s0 = new Date(d.started_at).getTime();
+  const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + raw * 60000;
+  const a = Math.max(s0, frame.startMs), b = Math.min(e0, frame.endMs);
+  if (!(b > a)) return 0;                       // นอกกรอบกะ = ไม่ใช่เรื่องของกะนี้
+  return Math.max(0, (b - a) / 60000 - overlapMinutesWith(a, b, coveredIv));
 }

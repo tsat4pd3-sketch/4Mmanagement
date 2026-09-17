@@ -26,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -1946,6 +1946,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     };
     let totalNetAvailByMat = 0, totalRunMinByMat = 0;
     const matRunMinMap = {};
+    const matWins = [];   // ช่วงที่ "มีพาร์ทวิ่งอยู่จริง" — ใช้หา DT ที่ตกนอกทุกช่วง (ดูหมายเหตุใต้ลูป)
     const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
     matNosForA.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
@@ -1976,14 +1977,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       totalNetAvailByMat += matNetAvail;
       totalRunMinByMat   += matRunMin;
       matRunMinMap[matNo] = matRunMin; // เก็บ run ต่อ MAT.NO — ใช้เป็น denominator ของ P ตอน parallel
+      matWins.push([matStartMs, matEndMs]);
     });
     // DT ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — dtOverlapMin จับไม่ได้ → เคยหายเงียบจาก %A แบบแยกตาม MAT
     // (เคสจริง 2026-07-24: หยุดนอกแผน 20 นาทีแต่ %A = 100) — หักที่ยอดรวมแทน (รวมก่อนหาร ไม่ต้องรู้ตกช่วง MAT ไหน)
     const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
-    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned)) {
-      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned);
-      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned);
+    /* 🔴 DT ที่ "มีเวลาครบ แต่ตกนอกช่วงที่พาร์ทไหนวิ่งเลย" ก็เคยหายเงียบเหมือนกัน (2026-09-17)
+       %A แยกตาม MAT.NO หัก DT ผ่าน dtOverlapMin ซึ่งนับเฉพาะนาทีที่ **ทับ window ของพาร์ท**
+       ⇒ เครื่องเสียก่อนเปิดใบแรก / หลังปิดใบสุดท้าย / ช่วงสลับงาน = ไม่ถูกหักเลยสักนาที
+       เคสจริง HDF1 20/07 กะดึก: เครื่อง HDF-01 เสีย 20:10–21:20 (70 นาที นอกแผนเต็มๆ)
+       ใบผลิตใบเดียวของกะเปิด 22:38 ⇒ DT อยู่ก่อนใบเปิด ⇒ **%A = 100.00 ทั้งที่เครื่องเสีย 70 นาที**
+       วัดจริงทั้งฐาน: 20 กะ %A=100 ทั้งที่มี DT นอกแผน เฉลี่ย 37 นาที/กะ
+       ⇒ หักที่ยอดรวมแบบเดียวกับ DT ที่ไม่มีเวลาเริ่ม (คนละตะกร้ากัน ไม่ซ้ำกันแน่นอน เพราะแยกด้วย started_at)
+       ⚠️ ต้องตัดทั้งช่วงที่ทับ window พาร์ท **และ** ช่วงพักตามนโยบาย ออกก่อน ไม่งั้นหักซ้ำ (§3.1) */
+    const coveredIv = unionIv([...matWins, ...breakIv]);
+    const outsidePlanned   = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+    const outsideUnplanned = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned || outsidePlanned || outsideUnplanned)) {
+      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned - outsidePlanned);
+      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned - outsidePlanned - outsideUnplanned);
     }
     // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
     /* ⚠️ netAvail ≤ 0 (พัก+หยุดตามแผนกินทั้งกะ) = **ประเมินไม่ได้ → null ห้ามคืน 0**
