@@ -14,6 +14,14 @@
 | 5 | `norm_person_name(text)` | DR + Main | `drop function` ได้ ถ้าไม่มีอะไรเรียก |
 | 6 | Backfill uid จากชื่อที่จับคู่ได้ไม่กำกวม | DR | `update ... set <col> = null` (ดูข้อควรระวัง) |
 | 7 | โค้ด: `actorStamp.js` · wrapper ใน `supabaseClient.js` · `App.jsx` | repo | `git revert` |
+| 8 | เฟส 4 (17/09): ทะเบียน ชื่อ→uid · wrapper ครอบ Main ด้วย | repo | `git revert` (โค้ดล้วน ไม่มี schema) |
+
+> ### เฟส 4 (2026-09-17) — ถอยด้วย `git revert` อย่างเดียว ไม่มี schema ใหม่
+> เฟส 4 เพิ่มแค่ (ก) ทะเบียน "ชื่อ → uid" ใน `actorStamp.js` (หน่วยความจำใน memory)
+> และ (ข) ขยาย wrapper ไปครอบ `supabase` (Main) ด้วย — **ไม่ได้เพิ่ม/แก้คอลัมน์หรือข้อมูลเดิม**
+> ⇒ revert โค้ด = กลับไปสภาพเฟส 3 ทันที แถวที่ uid ถูกเติมไปแล้วยังอยู่ (ถูกต้อง ไม่ต้องล้าง)
+> ⚠️ จุดที่ต้องระวังถ้าจะ revert **เฉพาะเฟส 4**: `MAIN_STEP_ACTORS`/`MAIN_AUDIT_TABLES` ต้องหายพร้อม `withActorStamp(supabase, ...)`
+> ไม่งั้น build ล่ม (ตัวแปรไม่ถูกใช้)
 
 ## ลำดับการถอยที่ปลอดภัย
 

@@ -4,6 +4,7 @@ import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
+import { loadProfilesPeople } from './utils/usePeople';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -2036,6 +2037,11 @@ export default function App() {
     setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
+    /* อุ่นทะเบียน "ชื่อ → uid" ไว้ตั้งแต่ login (2026-09-17)
+       wrapper เติม uid ให้ชื่อคนอื่นได้ก็ต่อเมื่อทะเบียนโหลดแล้ว — หน้าที่ไม่มี <PersonSelect>
+       (เช่น Daily Report ที่เขียน fix_by/followup_by) จะไม่มีใครโหลดให้เลย
+       ใช้ cache ร่วมกับ picker → ไม่ได้ยิงคิวรีเพิ่ม · ล้มก็ไม่กระทบ (resolve ไม่ได้ = uid null เหมือนเดิม) */
+    loadProfilesPeople().catch(() => {});
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
