@@ -28,7 +28,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
-import { OP_KIND, OP_KIND_META, kindNeedsParent, opNeedsParentPick, opKindIssues } from '../utils/opKind';
+import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
@@ -79,7 +79,7 @@ const btnSecondary = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 
-const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '', is_operation: false, op_kind: '', op_parent_mat: '', op_seq: '' });
+const BLANK = () => ({ name: '', code: '', mat_no: '', p_no: '', customer: '', line_name: '', cycle_time_sec: '', target_per_shift: '', process_type: 'welding_assembly', posting_mode: 'immediate', lot_accumulate_threshold: '', is_active: true, effective_from: '', image_url: '', pair_mat_no: '', is_operation: false, op_parent_mat: '', op_seq: '' });
 
 /* ── ช่องเลือก MAT แบบพิมพ์ค้นหา (แทน <select> ยาวเป็นร้อยตัวที่ user ทัก "ตาลาย" 2026-08-17) ──
    พิมพ์เลข/ชื่อบางส่วน → กรองลิสต์ให้ · คลิกเลือก · ล้างช่อง = ไม่เลือก
@@ -332,7 +332,7 @@ export default function ProductMaster() {
       posting_mode: item.posting_mode || 'immediate', lot_accumulate_threshold: item.lot_accumulate_threshold || '',
       is_active: item.is_active, effective_from: item.effective_from || '',
       image_url: item.image_url || sharedImage || '', pair_mat_no: item.pair_mat_no || '',
-      is_operation: !!item.is_operation, op_kind: item.op_kind || '', op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
+      is_operation: !!item.is_operation, op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
     } : BLANK());
   };
 
@@ -349,7 +349,7 @@ export default function ProductMaster() {
       is_active: true,
       effective_from: localDateStr(),
       image_url: item.image_url || '',
-      is_operation: !!item.is_operation, op_kind: item.op_kind || '', op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
+      is_operation: !!item.is_operation, op_parent_mat: item.op_parent_mat || '', op_seq: item.op_seq ?? '',
     });
   };
 
@@ -455,13 +455,8 @@ export default function ProductMaster() {
       if (form.is_operation || wasOp) {
         const { error: opErr } = await supabaseDR.from('dr_products').update({
           is_operation: !!form.is_operation,
-          op_kind: form.is_operation ? (form.op_kind || null) : null,
-          /* 🧩 ขั้นประกอบ = ของที่ออกมาไม่ใช่ตัวไหนในขาเข้า ⇒ parent/ลำดับขั้นต้องว่างเสมอ
-             (ปล่อยค่าเก่าค้าง = collapseOps ยุบยอดขั้นนี้หายเข้าพาร์ทนั้นทันทีที่มันมีใบผลิต) */
-          op_parent_mat: form.is_operation && form.op_kind !== OP_KIND.ASM
-            ? ((form.op_parent_mat || '').trim().toUpperCase() || null) : null,
-          op_seq: form.is_operation && form.op_kind !== OP_KIND.ASM && form.op_seq !== '' && form.op_seq != null
-            ? parseInt(form.op_seq) : null,
+          op_parent_mat: form.is_operation ? ((form.op_parent_mat || '').trim().toUpperCase() || null) : null,
+          op_seq: form.is_operation && form.op_seq !== '' && form.op_seq != null ? parseInt(form.op_seq) : null,
         }).eq('id', savedId);
         if (opErr) toast.error('บันทึกสินค้าสำเร็จ แต่ฟิลด์ "รายการขั้นตอน (OP)" ยังไม่ถูกบันทึก — ยังไม่ได้ apply migration 20260817_operation_items_dr (แจ้ง admin)');
       }
@@ -778,20 +773,32 @@ export default function ProductMaster() {
         {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
       </div>
 
-      {/* 🔩 worklist — รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง = ยอดรวมยังนับซ้ำได้ (ห้ามซ่อน — pattern แถบ ⚠️ ข้อมูลไม่ตรงผัง) */}
+      {/* 🔩 worklist — ขั้นตอน (OP) ที่ "เสี่ยงนับซ้ำจริง" (2026-09-16 · เปลี่ยนเกณฑ์ตามคำสั่ง user)
+          เดิมเตือนทุกขั้นที่ช่อง parent ว่าง ⇒ ขั้นที่ประกอบจากหลายชิ้น (291+088) ถูกไล่ให้หาอะไรมาใส่
+          จนได้ค่าผิด · ตอนนี้เตือนเฉพาะเมื่อ **ในสูตรของขั้นมีของที่มีใบผลิตของตัวเอง**
+          = ชิ้นเดียวกันถูกนับ 2 รอบจริง · ไม่เข้าข่าย = เงียบ (ห้ามซ่อน แต่ก็ห้ามเตือนพร่ำเพรื่อ —
+          แถบที่ไม่มีวันหาย = คนเลิกอ่านแถบเตือนทั้งหมด) */}
       {(() => {
-        const opNoParent = items.filter(i => i.is_active && opNeedsParentPick(i));
-        if (!opNoParent.length) return null;
+        const key = (m) => (m || '').trim().toUpperCase();
+        const counted = new Set(items.filter(i => i.is_active && !i.is_operation && i.mat_no).map(i => key(i.mat_no)));
+        const risky = items.filter(i => i.is_active).map(i => {
+          const own = bomRows.filter(b => b.product_id === i.id).map(b => b.mat_no);
+          const r = opDoubleCountRisk(i, own, (m) => counted.has(key(m)));
+          return r ? { item: i, ...r } : null;
+        }).filter(Boolean);
+        if (!risky.length) return null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
-              🔩 รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง {opNoParent.length} รายการ
+              🔩 ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              ยอดผลิตของรายการเหล่านี้ยังถูกนับซ้ำในยอดรวมได้ — กด "แก้ไข" แล้วเลือก<b>ชนิดของขั้น</b> (🔁 ต่อเนื่องบนพาร์ทเดิม = ต้องชี้ MAT · 🧩 ประกอบเป็นของใหม่ = ไม่ต้องชี้)
-              {' '}(พาร์ทจริงยังไม่มีในระบบ = ไปเพิ่มพาร์ท 2xxx ก่อน)
+              ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
+              กด "แก้ไข" แล้วใส่ช่อง <b>"ทำต่อจากของชิ้นไหน"</b>
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>({opNoParent.map(i => i.mat_no).join(' · ')})</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              ({risky.map(r => `${r.item.mat_no} → ${r.candidates.join('/')}`).join(' · ')})
+            </span>
           </div>
         );
       })()}
@@ -1194,42 +1201,10 @@ export default function ProductMaster() {
                 </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                    {/* 🔩 ชนิดของขั้น — ต้องเลือกก่อน เพราะมันตัดสินว่าต้องมีพาร์ทแม่ไหม
-                        (user 2026-09-16 วาดรูปอธิบาย: Part A + nut → ยังเป็น A · B + C → ของใหม่)
-                        เดิมบังคับกรอกพาร์ทแม่ทุกขั้น ⇒ ขั้นประกอบถูกไล่ให้ใส่วัตถุดิบของตัวเอง */}
-                    <Field label="ชนิดของขั้น *">
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                        {[OP_KIND.SEQ, OP_KIND.ASM].map(k => {
-                          const meta = OP_KIND_META[k], on = form.op_kind === k;
-                          return (
-                            <label key={k} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer',
-                              padding: '7px 10px', borderRadius: 8,
-                              background: on ? 'rgba(14,165,233,0.12)' : 'var(--bg2)',
-                              border: `1px solid ${on ? 'rgba(14,165,233,0.5)' : 'var(--border)'}` }}>
-                              <input type="radio" name="op_kind" checked={on} style={{ width: 'auto', marginTop: 2 }}
-                                onChange={() => setForm(f => ({ ...f,
-                                  op_kind: k,
-                                  // สลับมาเป็นขั้นประกอบ = ล้างพาร์ทแม่ทิ้ง ห้ามปล่อยค้าง
-                                  op_parent_mat: k === OP_KIND.ASM ? '' : f.op_parent_mat,
-                                  op_seq: k === OP_KIND.ASM ? '' : f.op_seq }))} />
-                              <span style={{ minWidth: 0 }}>
-                                <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? '#0ea5e9' : 'var(--text)' }}>
-                                  {meta.icon} {meta.label}
-                                </span>
-                                <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>{meta.hint}</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                      {!form.op_kind && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
-                          ⚠ ยังไม่เลือกชนิด — ระบบจะยังตามเตือนในแถบ 🔩 จนกว่าจะเลือก
-                        </div>
-                      )}
-                    </Field>
-                    {kindNeedsParent(form.op_kind) && (<>
-                    <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
+                    {/* 🔩 คำถามเดียวที่ระบบต้องการคำตอบ: "ยอดของขั้นนี้ไปซ้ำกับใบผลิตของใคร"
+                        **ไม่บังคับ** — user 2026-09-16 "ทุกขั้นก็มองเป็นพาร์ทตัวใหม่ได้ ไม่อยากให้มีหลายแบบ"
+                        (เคยแยก op_kind sequence/assembly แล้วถอดออกวันเดียวกัน — ถามคำถามผิด) */}
+                    <Field label="ทำต่อจากของชิ้นไหน (ว่างได้)">
                       {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
                           เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
@@ -1252,18 +1227,18 @@ export default function ProductMaster() {
                               tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
                           return [...real, ...bought];
                         })()}
-                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
-                        hint="เรียงตามความเกี่ยวข้อง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ · รายการ OP ด้วยกัน + ของที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ" />
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ของที่ประกอบมาไม่มีใบผลิตของตัวเอง)"
+                        hint="ใส่เมื่อของที่ขั้นนี้รับมา **มีใบผลิตของตัวเอง** (ไม่งั้นชิ้นเดียวกันถูกนับ 2 รอบ) · ประกอบจากหลายชิ้นที่ไม่มีใบผลิตของตัวเอง = ปล่อยว่าง · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
                     </Field>
-                    </>)}
-                    {/* 🔴 ความขัดแย้งที่ต้องบอก ห้ามเงียบ — ชี้ parent ผิด = ยอดขั้นนี้ถูกยุบหายทั้งก้อน */}
+                    {/* ⚠️ บอกเมื่อค่าไม่สอดคล้องกับสูตรจริง ห้ามเงียบ
+                        (แต่ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — นั่นคือเรื่องปกติ) */}
                     {(() => {
                       const cur = editing !== 'new' ? items.find(i => i.id === editing) : null;
                       const own = cur ? bomRows.filter(b => b.product_id === cur.id).map(b => b.mat_no) : [];
-                      const issues = opKindIssues({ ...form, is_operation: true }, own);
+                      const issues = opLinkIssues({ ...form, is_operation: true }, own);
                       if (!issues.length) return null;
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
