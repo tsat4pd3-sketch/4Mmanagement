@@ -75,3 +75,64 @@ test('ไม่มี end_time ⇒ รัดแค่ขอบล่าง', () 
   assert.equal(w.startMs, ms('2026-09-15T08:00:00'));
   assert.equal(w.endMs, ms('2026-09-17T06:00:00'));
 });
+
+/* ── DT ที่ตกนอกช่วงที่พาร์ทวิ่ง ต้องไม่หายจาก %A (utils/oee §7 · บั๊ก 2026-09-17) ──
+   เคสจริง HDF1 20/07 กะดึก: เครื่องเสีย 20:10–21:20 (70 นาที นอกแผน) แต่ใบผลิตใบเดียว
+   ของกะเปิด 22:38 ⇒ DT อยู่ก่อนใบเปิด ⇒ dtOverlapMin จับไม่ได้ ⇒ %A = 100 ทั้งที่เครื่องเสีย
+   วัดจริงทั้งฐาน: 20 กะ %A=100 ทั้งที่มี DT นอกแผน เฉลี่ย 37 นาที/กะ */
+import { unionIv, dtMinOutsideWork } from '../oee.js';
+
+const dt = (a, b, min, cat = 'unplanned') =>
+  ({ started_at: a, ended_at: b, duration_min: min, dr_downtime_types: { category: cat } });
+const NIGHT_FRAME = { startMs: ms('2026-07-20T20:00:00'), endMs: ms('2026-07-21T08:00:00') };
+
+test('unionIv — เรียงให้เอง + รวมช่วงที่ทับกัน (input ไม่เรียงก็ต้องถูก)', () => {
+  const u = unionIv([[30, 40], [0, 10], [8, 20]]);
+  assert.deepEqual(u, [[0, 20], [30, 40]]);
+});
+
+test('unionIv — ทิ้งช่วงพัง (null / ยาว 0 / ติดลบ) ไม่ระเบิด', () => {
+  assert.deepEqual(unionIv([null, [5, 5], [9, 3], [1, 2]]), [[1, 2]]);
+  assert.deepEqual(unionIv([]), []);
+});
+
+test('🔴 เครื่องเสียก่อนใบผลิตใบแรกเปิด ต้องถูกนับ ไม่ใช่หายไป', () => {
+  const matWin = [ms('2026-07-20T22:38:00'), ms('2026-07-21T07:45:00')];
+  const covered = unionIv([matWin]);
+  const d = dt('2026-07-20T20:10:00', '2026-07-20T21:20:00', 70);
+  assert.equal(dtMinOutsideWork(d, covered, NIGHT_FRAME), 70);
+});
+
+test('เครื่องเสียระหว่างที่พาร์ทวิ่งอยู่ ต้องไม่ถูกนับซ้ำตรงนี้ (สาย MAT หักไปแล้ว)', () => {
+  const matWin = [ms('2026-07-20T22:00:00'), ms('2026-07-21T07:00:00')];
+  const covered = unionIv([matWin]);
+  const d = dt('2026-07-21T01:00:00', '2026-07-21T02:00:00', 60);
+  assert.equal(dtMinOutsideWork(d, covered, NIGHT_FRAME), 0);
+});
+
+test('คร่อมขอบ window — นับเฉพาะครึ่งที่อยู่นอก', () => {
+  const matWin = [ms('2026-07-20T22:00:00'), ms('2026-07-21T07:00:00')];
+  const d = dt('2026-07-20T21:30:00', '2026-07-20T22:30:00', 60);   // 30 นอก + 30 ใน
+  assert.equal(dtMinOutsideWork(d, unionIv([matWin]), NIGHT_FRAME), 30);
+});
+
+test('🔴 นาทีที่ทับเวลาพัก ห้ามหักซ้ำ — ต้องรวม breakIv เข้า coveredIv เสมอ (§3.1)', () => {
+  const matWin = [ms('2026-07-21T00:00:00'), ms('2026-07-21T07:00:00')];
+  const brk    = [ms('2026-07-20T21:00:00'), ms('2026-07-20T21:30:00')];   // พัก 30 นาที
+  const d = dt('2026-07-20T20:45:00', '2026-07-20T21:45:00', 60);          // คร่อมพักเต็มๆ
+  assert.equal(dtMinOutsideWork(d, unionIv([matWin, brk]), NIGHT_FRAME), 30,
+    'ต้องเหลือ 30 (60 − 30 ที่ทับพัก) ไม่ใช่ 60');
+});
+
+test('DT ที่ล้นออกนอกกรอบกะ ต้องตัดที่ขอบกะ ไม่ใช่ของกะนี้ทั้งก้อน', () => {
+  const d = dt('2026-07-21T07:30:00', '2026-07-21T09:30:00', 120);   // กะจบ 08:00
+  assert.equal(dtMinOutsideWork(d, [], NIGHT_FRAME), 30);
+});
+
+test('DT ที่ไม่มีเวลาเริ่ม คืน 0 เสมอ — ตะกร้า untimed มีตัวรับแยก ห้ามนับ 2 รอบ', () => {
+  assert.equal(dtMinOutsideWork({ duration_min: 45, dr_downtime_types:{category:'unplanned'} }, [], NIGHT_FRAME), 0);
+});
+
+test('ไม่รู้กรอบกะ (frame = null) คืน 0 — ไม่เดา', () => {
+  assert.equal(dtMinOutsideWork(dt('2026-07-20T20:10:00','2026-07-20T21:20:00',70), [], null), 0);
+});
