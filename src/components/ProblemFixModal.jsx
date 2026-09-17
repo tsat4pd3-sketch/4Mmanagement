@@ -100,7 +100,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                 background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 };
 
   return (
-    <div className="overlay" style={{ zIndex: 2200 }} onClick={onClose}>
+    <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
         background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14,
         padding: 20, width: 'min(96vw, 620px)', maxHeight: '90vh', overflowY: 'auto',

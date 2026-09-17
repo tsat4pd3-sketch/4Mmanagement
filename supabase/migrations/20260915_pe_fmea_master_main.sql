@@ -101,10 +101,28 @@ declare t text;
 begin
   foreach t in array array['pe_master_processes','pe_master_items','pe_master_proposals'] loop
     execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists %I on public.%I', t || '_ins', t);
+    execute format('drop policy if exists %I on public.%I', t || '_upd', t);
+    execute format('drop policy if exists %I on public.%I', t || '_del', t);
     execute format('drop policy if exists %I on public.%I', t || '_select', t);
     execute format('create policy %I on public.%I for select to authenticated using (true)', t || '_select', t);
+    /* 🔒 เขียนต้องผ่าน has_perm('<คีย์เดียวกับปุ่มบนจอ>') ห้าม using(true)
+       (แก้ 2026-09-16 จาก QC audit — ไฟล์นี้ยังไม่ถูก apply จึงแก้ต้นทางได้เลย)
+       · pe_master_processes / pe_master_items = "คลังกลาง" → PeMasterLibrary.jsx ซ่อนปุ่มทุกตัว
+         ด้วย canApprove ⇒ policy ต้องเป็น pe:approve ให้ตรงกัน
+       · pe_master_proposals แยก 2 ขาตามกฎ "ระบบเสนอ คนตัดสิน" (CLAUDE.md §PE Core Tools):
+           INSERT = pe:edit    (PEDocs proposeOne / autoPropose — คนทำเอกสารเสนอเข้ามาได้)
+           UPDATE/DELETE = pe:approve (รับ/ปฏิเสธข้อเสนอ = PeMasterLibrary)
+         using(true) แปลว่าใครที่ login ก็แก้ master PFMEA กลางได้ตรงๆ โดยไม่ผ่านลูปข้อเสนอ
+         = ขัดกฎที่ออกแบบไว้เอง */
     execute format('drop policy if exists %I on public.%I', t || '_write', t);
-    execute format('create policy %I on public.%I for all to authenticated using (true) with check (true)', t || '_write', t);
+    if t = 'pe_master_proposals' then
+      execute format('create policy %I on public.%I for insert to authenticated with check ((select public.has_perm(''pe:edit'')))', t || '_ins', t);
+      execute format('create policy %I on public.%I for update to authenticated using ((select public.has_perm(''pe:approve''))) with check ((select public.has_perm(''pe:approve'')))', t || '_upd', t);
+      execute format('create policy %I on public.%I for delete to authenticated using ((select public.has_perm(''pe:approve'')))', t || '_del', t);
+    else
+      execute format('create policy %I on public.%I for all to authenticated using ((select public.has_perm(''pe:approve''))) with check ((select public.has_perm(''pe:approve'')))', t || '_write', t);
+    end if;
     if exists (select 1 from pg_proc where proname = 'fn_set_updated_at') then
       execute format('drop trigger if exists trg_set_updated_at on public.%I', t);
       execute format('create trigger trg_set_updated_at before update on public.%I for each row execute function public.fn_set_updated_at()', t);

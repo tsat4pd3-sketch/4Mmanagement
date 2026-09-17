@@ -22,6 +22,28 @@ async function loadMentionUsers() {
   } catch { return []; }
 }
 
+/* 🔗 กดแจ้งเตือน mention แล้วต้องเปิด "เหตุการณ์นั้น" ได้ — 2026-09-16
+   เดิมแถว notifications ของ mention ไม่มี ref_table/link เลย ⇒ กระดิ่งขึ้นว่า "กล่าวถึงคุณใน ใบซ่อม XXX"
+   แต่กดแล้วไม่ไปไหน (feedback ทีมงาน "บางอันกดเข้าไปที่ปัญหาได้ บางอันไม่ได้")
+   ⚠️ `notifications.ref_id` เป็น uuid — id ของ event_comments ฝั่ง DR อาจไม่ใช่ uuid จึงส่งเฉพาะ
+      id ที่เป็น uuid จริง ส่วนการพาไปให้ `link` รับผิดชอบ (ดู src/utils/notifLink.js)
+   เพิ่ม refKind ใหม่ ต้องเติมที่นี่ด้วย ไม่งั้น mention ของจุดนั้นกลับไปกดไม่ได้เหมือนเดิม */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REF_TARGET = {
+  mtn_order: { table: 'mtn_orders',    link: (id) => `/mtn-repair?mo=${encodeURIComponent(id)}` },
+  downtime:  { table: 'downtime_logs', link: () => '/daily-report' },
+};
+function refTarget(refKind, refId) {
+  const t = REF_TARGET[refKind];
+  if (!t) return {};
+  const id = String(refId ?? '');
+  return {
+    ref_table: t.table,
+    ref_id: UUID_RE.test(id) ? id : null,
+    link: t.link(id),
+  };
+}
+
 export default function EventComments({ refKind, refId, contextLabel = 'รายการงาน' }) {
   const { fullName } = useContext(UserContext);
   const [items, setItems]     = useState(null); // null = กำลังโหลด
@@ -64,6 +86,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
           user_id: m.id, type: 'info',
           title: `💬 ${fullName || 'เพื่อนร่วมงาน'} กล่าวถึงคุณใน ${contextLabel}`,
           body: text.slice(0, 160),
+          ...refTarget(refKind, refId),
         }))).then(({ error: nErr }) => { if (nErr) console.warn('mention notify:', nErr.message); });
       }
       setBody(''); setMentions([]); setPickOpen(false);

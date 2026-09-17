@@ -1565,7 +1565,7 @@ export default function Improvements() {
           reuse PeChangeRequests mode="source" ตัวเดียวกับโมดัล 8D · ref_kind='improvement'
           (vocabulary ขยายแล้ว — migration 20260819_pe_ref_kind_improvement_main) */}
       {peModal && (
-        <div className="overlay" onClick={() => setPeModal(null)}>
+        <div className="overlay" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, maxHeight: '86vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📐 เอกสาร PE — "{peModal.title}"</h3>

@@ -52,8 +52,16 @@ const ROUTES: Record<string, string> = {
   quality_bin_records: '/qa?tab=bins',
   material_requests: '/qa?tab=matreq',
 };
-function routeFor(refTable?: string): string {
-  return (refTable && ROUTES[refTable]) || '/';
+/* `link` ของใบนั้นชนะ ROUTES เสมอ (deep-link ถึงตัวปัญหา) — 2026-09-16
+   ⚠️ กรองเหมือนฝั่งจอ (src/utils/notifLink.js): path ภายในเท่านั้น ห้าม '//' ห้าม scheme ห้าม backslash
+      — url นี้ถูกเปิดโดย service worker ตอนแตะ push การปล่อยค่าดิบจาก DB = เปิดเว็บนอกได้ */
+function safeInternalPath(link?: string | null): string | null {
+  const s = String(link ?? '').trim();
+  if (!s || s[0] !== '/' || s[1] === '/' || s.includes('\\')) return null;
+  return s.split(/[?#]/)[0].includes(':') ? null : s;
+}
+function routeFor(refTable?: string, link?: string | null): string {
+  return safeInternalPath(link) || (refTable && ROUTES[refTable]) || '/';
 }
 
 Deno.serve(async (req) => {
@@ -95,7 +103,7 @@ Deno.serve(async (req) => {
     const payload = JSON.stringify({
       title: body.title || 'ESM แจ้งเตือน',
       body:  body.body || '',
-      url:   routeFor(body.ref_table),
+      url:   routeFor(body.ref_table, body.link),
       tag:   body.ref_table && body.ref_id ? `${body.ref_table}:${body.ref_id}` : undefined,
     });
 

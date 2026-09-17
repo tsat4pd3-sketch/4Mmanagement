@@ -139,20 +139,11 @@
 | `meeting_action_items` | Action item จากประชุมแถวเช้า **+ ห้อง OBEYA** (ติดตามข้ามวันจนปิด) · **ตารางเดียวใช้ร่วมกัน ห้ามสร้างใหม่** · RLS = `has_perm('morning_meeting:record') or has_perm('obeya:record')` ครบ 4 cmd (2026-09-15) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled), **source** (morning/obeya), **kpi_key** (แกน SQDCM/OEE ที่ใบนี้ไปแก้ — ไม่มี check constraint ตั้งใจ), **target_value/result_value** |
 | `event_comments` (**DR**) | 💬 คอมเมนต์+🔔mention ใต้เหตุการณ์ (นำร่อง: ใบซ่อม MO + downtime — ก้าวแรกของสื่อสารในระบบแทน chat แยก, 2026-07-16) | ref_kind (mtn_order/downtime), ref_id (text), author_id/author_name (snapshot — profiles อยู่คนละ project), body, mentions jsonb · component กลาง `src/components/EventComments.jsx` (embed ใน MtnRepair DetailDrawer + แถว DT ใน DailyReport) · mention → client insert `notifications` ตรง (policy `notifications_insert_authenticated`) + รายชื่อจาก RPC `list_mention_users` (SECURITY DEFINER, guard auth.uid, revoke anon) — migrations `20260716_event_comments.sql` (DR) + `20260716_mention_notify.sql` (Main) · จุดใหม่ที่อยากมีคอมเมนต์ให้ reuse component นี้ + เพิ่มค่า ref_kind ใน check constraint |
 
-### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — **โมเดลรายไลน์ (2026-07-23):** `line_name` null = **common ฐาน backfall ทุกไลน์** · `line_name`=ไลน์ = ข้อเฉพาะไลน์นั้น · **`hidden_for_lines[]`** = ไลน์ที่ "ไม่ใช้" ข้อ common นั้น (ซ่อนรายไลน์) → แต่ละไลน์ = common − ข้อที่ซ่อน + ข้อเฉพาะไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end | category (safety/quality/systemic/visual/special), seq, question, line_name, **hidden_for_lines[]**, issue_start/end, is_active |
-| `lpa_plans` | แผนตรวจรายเดือน (unique ไลน์+กะ+เดือน) | line_name, shift (day/night), month_key 'YYYY-MM', leader/supervisor/manager/gm_name, stations (list ใช้เติมแผนอัตโนมัติ) |
-| `lpa_plan_days` | รายวันของแผน: สถานีตรวจ + ชั้นที่วางแผน | plan_id (FK cascade), day 1-31, station, plan_leader/supervisor/manager/gm |
-| `lpa_audits` | ผลตรวจ 1 ครั้ง (unique ไลน์+กะ+วัน+ชั้น) | audit_date, layer (leader/supervisor/manager/gm), station, auditor_name/sig_url |
-| `lpa_audit_answers` | คำตอบรายข้อ (snapshot question_text) | audit_id (FK cascade), question_id, answer (Y/N/T/NA), note (บังคับเมื่อ N/T) |
+### Layer Process Audit — LPA (FM-QMR-008 · paperless)
+> 📄 โครงตาราง `lpa_questions` · `lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers` → `docs/modules/lpa-audit.md`
 
-### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `ojt_trainings` | หัวใบอบรม OJT (หน้า `/ojt-training` · migration `20260714_ojt_training.sql`) | train_date, time_from/to, location, dept/section/department, for_new/for_review/for_method_change, topic, scope, trainer_name, duration_min, maker/approver/hr (name+sig_url — เลือกจาก profiles ที่มี signature_url), status (open/completed) |
-| `ojt_training_attendees` | ผู้เข้าอบรมต่อใบ (snapshot ชื่อ/รหัส กัน master เปลี่ยน) | training_id (FK cascade), employee_id, emp_code/emp_name, pre_score/post_score (0-4), sign_url (เซ็นบนจอ → bucket `signatures` path ของ user ที่บันทึก), eval_agree, evaluator_name, sort_order |
+### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 · paperless)
+> 📄 โครงตาราง `ojt_trainings` · `ojt_training_attendees` + กฎของโมดูล → `docs/modules/ojt-training.md`
 
 ---
 
@@ -477,6 +468,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
 · **ACTION BOARD** ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกด้วย `source`
 · สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
+· **🧱 ตั้งค่า KPI เป็น data-driven แล้ว (16/09):** ขอบเขต 6 ระดับ (`scope_kind`+`scope_value` — **`cost_center` คนละแกนกับไลน์**)
+  · Commitment/Target เป็นคนละบาร์ · `provider` = 🔗 ลิ้ง data (auto/formula/manual) · `kpi_month_plans` แผน 12 เดือน
+  · `kpi_base_inputs` ตัวแปรฐานจากบัญชี/SAP → สูตรการเงินคำนวณเอง · **ทะเบียน+เกณฑ์อยู่ `src/utils/kpiSetup.js` เท่านั้น**
+  · migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) — แต่ละแผนกใช้ KPI คนละชุดจริง (JIG MTN ไม่มี OEE/PPM/Inventory)
 > 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
 > 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
 
@@ -603,6 +598,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
                        #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
                        #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
+                       #   ADAPTIVE-CT-DESIGN.md (CT ตั้งช้าจน %P ชนเพดาน 28% ของกะ — ทางเลือก A/B/C
+                       #     + กับดัก 3 ข้อ + คำถามที่ user ต้องตัดสิน 5 ข้อ · 📌 user สั่ง "คุยออกแบบก่อน
+                       #     ยังไม่ลงมือ" 2026-09-17 · ห้ามหยิบไปทำเองจนกว่า user จะสั่ง) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
@@ -612,10 +610,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
                        #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
-                       #   OBEYA-DESIGN.md (บันทึกการสำรวจ + เหตุผลของดีไซน์ Obeya — ✅ ลงมือแล้ว 2026-09-15
-                       #     ของที่ทำจริงอยู่ `docs/modules/obeya.md` · ⚠️ ข้อค้นพบชี้ขาดที่ยังจริงอยู่:
-                       #     `meeting_action_items` = 0 แถวตั้งแต่สร้าง 13/07 = "ลูปติดตามมีโค้ดแต่ไม่มีใครใช้"
-                       #     ⇒ จอสวยไม่ช่วย ถ้าไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้)
+                       #   OBEYA-DESIGN.md (เหตุผลของดีไซน์ Obeya · ของที่ทำจริง → docs/modules/obeya*.md) ·
+                       #   OBEYA-KPI-SOURCES.md (**ที่มาตัวเลข KPI ทุกใบ + คู่มือ KPI Online ของกลุ่ม
+                       #     + ใบจริง PD3/PD4/JIG 2026 §8-12 — อ่านก่อนแตะอะไรที่เกี่ยวกับ KPI**)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -742,6 +739,12 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
+     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px จับของที่ "ไม่พังแต่ใช้ไม่ได้" (2026-09-16)**
+     crashsweep จับแค่ "หน้าพัง" · อันนี้จับ **sticky ค้างทับเนื้อหา** (layout ยุบเหลือคอลัมน์เดียวแล้วลืมถอด
+     sticky ของ sidebar) · **ของล้นแล้วปัดดูไม่ได้** · **ข้อความถูกบีบเหลือกว้าง 0 หายทั้งบรรทัด**
+     (`whiteSpace:nowrap` ข้างๆ ไม่ยอมหด) — ทั้ง 3 อย่างนี้ **build/lint/เทส/crashsweep ผ่านหมด**
+     แต่หน้างานเปิดมือถือแล้วอ่านไม่ออก (เคสจริงจากคลิป user) · กติกาเต็ม → `docs/UI-CONVENTIONS.md` §มือถือ
+     · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
    - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
 
 ### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)

@@ -428,3 +428,47 @@ test('ป้ายสถานะ: ใบ MTN ที่ ผจก.แผนก�
   // ฟอร์ม JIG/DIE ไปไม่ถึงสถานะนี้ (ขั้น 7 ปิดใบเป็น closed ทันที) — ไม่ต้องรู้ว่าใบไหนเป็นฟอร์ม MTN
   assert.equal(moStatusLabel({ status: 'closed', current_step: 7 }), MO_STATUS_LABEL.closed);
 });
+
+/* ── 🛡️ ตาราง "สี/ขั้น" ของสถานะ MO ต้องไม่หลุดจากลิสต์ป้าย — 2026-09-16 ──
+   บั๊กที่เคยเกิด: `transferred` ถูกเพิ่มใน MO_STATUS_LABEL/MO_DONE_STATUSES (14/09) แต่ตารางสี
+   (ตอนนั้นชื่อ STATUS_META อยู่ใน MtnRepair.jsx) ไม่ได้เพิ่มตาม ⇒
+     · dropdown ฟิลเตอร์สถานะสร้างจากตารางสี → **ไม่มีตัวเลือก "ส่งต่อทีมอื่น"** หาใบไม่เจอ
+       (user 2026-09-16: "เคสนี้ ไม่มีตัวกรองหาหรอ" — ต้องพิมพ์เลข MO ในช่องค้นหาถึงจะเจอ)
+     · การ์ดใบที่ส่งต่อแล้วขึ้น **สีแดง ขั้น 1** เพราะ fallback เป็น pending
+   ตอนนี้ MO_STATUS_META ปั้นจาก MO_STATUS_LABEL (คีย์ตรงกันอัตโนมัติ) — เทสนี้กันอีกชั้น
+   ว่าคีย์ใหม่ต้อง "ตั้งสีจริง" ไม่ใช่ตกไปใช้ค่าถอย (เทาขั้น 0) โดยไม่มีใครรู้ */
+import { MO_STATUS_META, moStatusMeta } from '../mtnStepPerm.js';
+
+test('🔴 MO_STATUS_META: ทุกสถานะใน MO_STATUS_LABEL ต้องมีสี/ขั้นของตัวเอง', () => {
+  const FALLBACK = '#8b8b96';
+  for (const [k, label] of Object.entries(MO_STATUS_LABEL)) {
+    const m = MO_STATUS_META[k];
+    assert.ok(m, `สถานะ "${k}" ไม่มีใน MO_STATUS_META — เพิ่มใน MO_STATUS_STYLE (mtnStepPerm.js) ด้วย`);
+    assert.equal(m.label, label, `ป้ายของ "${k}" ต้องมาจาก MO_STATUS_LABEL ที่เดียว`);
+    assert.ok(/^#[0-9a-f]{6}$/i.test(m.color), `สี "${k}" ต้องเป็น hex 6 หลัก (ได้ ${m.color})`);
+    assert.ok(/^rgba\(\d+,\d+,\d+,0\.14\)$/.test(m.bg), `พื้นชิป "${k}" เพี้ยน (ได้ ${m.bg})`);
+    assert.equal(typeof m.step, 'number');
+    if (k !== 'rejected') {
+      assert.notEqual(m.color, FALLBACK,
+        `สถานะ "${k}" ยังใช้สีถอย = ลืมตั้งใน MO_STATUS_STYLE ⇒ dropdown/การ์ดจะสื่อผิด`);
+    }
+  }
+  // ไม่มีคีย์เกินมาจากไหน (ตารางสีตั้งเองไม่ได้ ต้องมาจากลิสต์ป้าย)
+  assert.deepEqual(Object.keys(MO_STATUS_META), Object.keys(MO_STATUS_LABEL));
+});
+
+test('🔴 transferred ต้องอยู่ในตัวกรองสถานะ + ไม่ใช่สีของ pending', () => {
+  assert.ok(MO_STATUS_META.transferred, 'ไม่มี transferred = dropdown ฟิลเตอร์ไม่มีตัวเลือกนี้');
+  assert.notEqual(MO_STATUS_META.transferred.color, MO_STATUS_META.pending.color);
+  assert.notEqual(MO_STATUS_META.transferred.color, MO_STATUS_META.closed.color);  // ไม่ใช่ผลงานซ่อม
+  assert.equal(moStatusMeta({ status: 'transferred' }).label, MO_STATUS_LABEL.transferred);
+  assert.equal(moStatusMeta({ status: 'transferred' }).color, MO_STATUS_META.transferred.color);
+});
+
+test('moStatusMeta: สถานะแปลกปลอม/ว่าง ถอยไป pending ได้ไม่พัง', () => {
+  assert.equal(moStatusMeta({ status: 'ไม่รู้จัก' }).color, MO_STATUS_META.pending.color);
+  assert.equal(moStatusMeta(null).color, MO_STATUS_META.pending.color);
+  // ป้ายยังมาจาก moStatusLabel() เสมอ (ใบที่ติดด่านอนุมัติต้องไม่ขึ้น "รอรับงาน")
+  const blocked = { status: 'pending', purpose: 'improve', dept_manager_at: null, current_step: 1 };
+  assert.equal(moStatusMeta(blocked).label, MO_LABEL_WAIT_APPROVAL);
+});
