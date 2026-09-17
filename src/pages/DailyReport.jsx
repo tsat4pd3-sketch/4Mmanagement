@@ -921,7 +921,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         shift_min: shiftMin,
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
-        oee_q: noProduction ? null : parseFloat((Q * 100).toFixed(2)),
+        oee_q: (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2)),
         oee:   oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
         ...(startChanged ? { start_time: closeStartTime } : {}),
         ...(endChanged   ? { end_time:   closeEndTime   } : {}),
@@ -2115,8 +2115,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // แล้วลง NG แยก · user ยืนยัน 2026-08-02) ดังนั้น totalProduced = ของดี, ผลิตจริงทั้งหมด = ของดี + NG
     // ห้ามใช้ (ดี−NG)/ดี ที่หักซ้ำ → เคยทำ %Q ต่ำเกินจริง (เช่น ดี10 NG1 ได้ 90% ที่ถูกคือ 10/11=90.9%,
     // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
-    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
-    const oee = (A != null && P != null) ? A * P * Q : null;
+    /* 🔴 ผลิตได้ 0 ชิ้น ห้ามคืน Q = 1 (2026-09-17 · เจอจาก audit ทั้งฐาน)
+       ของเดิมเขียน `: 1` ⇒ กะที่**ทำออกมาเสียล้วน ไม่มีของดีเลย** ได้ %Q = 100.00 (กลับหัว)
+       วัดจริง: 16 กะเป็นแบบนี้ (เช่น LASER EXPORT 08/07 กะดึก ของดี 0 เสีย 32 ⇒ stamp Q = 100)
+       แยก 2 กรณีให้ชัด ตามกฎเดียวกับ A/P — "0" กับ "ยังไม่รู้" คนละเรื่อง:
+         ของดี 0 + ของเสีย > 0 → **Q = 0** (วัดได้จริง: ที่ทำออกมาเสียหมด)
+         ของดี 0 + ของเสีย 0   → **null** (ไม่มีอะไรให้ประเมิน ห้ามให้เลขไปถ่วงค่าเฉลี่ย) */
+    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
+            : (ngQty > 0 ? 0 : null);
+    const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
     /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
        แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
        ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
@@ -2301,7 +2308,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const noProduction = totalProducedFinal === 0 && P == null;
     const oeeA = (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2));
     const oeeP = P != null ? parseFloat((P * 100).toFixed(2)) : null;
-    const oeeQ = noProduction ? null : parseFloat((Q * 100).toFixed(2));
+    const oeeQ = (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2));
     const oeeV = oee != null ? parseFloat((oee * 100).toFixed(2)) : null;
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
