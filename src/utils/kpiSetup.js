@@ -96,8 +96,16 @@ export const KPI_BASE_VARS = [
 export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null;
 
 /* สูตรสำเร็จรูปที่ถอดมาจากเซลล์จริง (§12.2) — provider_config.formula เก็บแค่ `key`
-   ⚠️ `inventory_day` ใบ Excel หาร 30 คงที่ แต่แผ่นบนบอร์ดเขียนว่าใช้ "วันทำงานจริง" — ยังไม่ได้ข้อยุติ
-      จึงให้ตัวหารมาจากตัวแปรฐาน `days_in_month` (ตั้งเป็น 30 ก็ได้ ตั้งเป็นวันทำงานจริงก็ได้) */
+   ✅ verify กับ **ใบ Monitoring ในระบบ KPI Online ของจริง** แล้ว 17/09 (§13.1) — ตรงเป๊ะ 3 ตัว:
+      rm_pct = (Raw Material/Sales from product)×100 · dloh_pct = [(DL+OH)/Sale from product]×100
+      · p100_pct = (Actual 100P/Sale from product)×100
+   🔴 `inventory_day` — **อย่าเพิ่ง "แก้ให้ถูก" ตามใบใดใบหนึ่ง ยังไม่ได้ข้อยุติ 3 ทาง (§13.3)**
+      · ใบระบบจริง (P4): (Stock value end of month ÷ **COGS**) × Day   ← ตัวหาร = ต้นทุนขาย
+      · แผ่นบอร์ด PD3 + ไฟล์ Excel: หารด้วย **ยอดขาย** (เทสล็อกค่า 0.3817 จากใบ PD3 ม.ค. ไว้แล้ว)
+      · ใบ Excel หารวัน 30 คงที่ · แผ่นบอร์ดเขียนว่าใช้วันทำงานจริง
+      ⇒ ตอนนี้ใช้ยอดขาย + ตัวหารวันจากตัวแปรฐาน `days_in_month` (ตั้ง 30 หรือวันทำงานจริงก็ได้)
+        ถ้า KPI Audit ตอบว่าใช้ COGS ⇒ ต้องเพิ่มตัวแปรฐาน `cogs` ไม่ใช่สลับความหมาย `sale_product`
+   ℹ️ `sale_per_head` ใบทางการเขียน "Total Sales / **Average** manpower" — `manpower` ต้องเป็นค่าเฉลี่ยของช่วง */
 export const KPI_FORMULAS = [
   { key: 'dl_pct',        label: 'DL %',        expr: 'dl ÷ sale_product × 100',                  vars: ['dl', 'sale_product'],             unit: '%' },
   { key: 'oh_pct',        label: 'OH %',        expr: 'oh ÷ sale_product × 100',                  vars: ['oh', 'sale_product'],             unit: '%' },

@@ -90,6 +90,21 @@ test('summarizeMonths: average ข้ามเดือนที่ยังไ�
   assert.equal(summarizeMonths([null, null], 'average'), null);
 });
 
+test('🔴 เดือนที่ยังไม่มีผล ใบทางการก็ไม่นับเป็น 0 — ล็อกด้วยเลขจากใบ KPI Online จริง (§13.2)', () => {
+  // ใบ KPI_Monitoring.pdf (P4 Assembly) แถว Customer Satisfaction (Q&D):
+  // กรอก ม.ค.-ก.ค. · ส.ค.-ธ.ค. ใบ "พิมพ์ 0.00" แต่ช่อง Average ของใบเอง = 94.35
+  const filled = [100.00, 91.67, 87.50, 100.00, 93.75, 100.00, 87.50];
+  const asPrinted = [...filled, 0, 0, 0, 0, 0];          // อย่างที่ตาเห็นบนใบ
+  const asMeant   = [...filled, null, null, null, null, null]; // ความหมายจริง
+
+  const avg = summarizeMonths(asMeant, 'average');
+  assert.ok(Math.abs(avg - 94.35) < 0.01, `ได้ ${avg} ใบทางการเขียน 94.35`);
+
+  const naive = summarizeMonths(asPrinted, 'average');
+  assert.ok(Math.abs(naive - 55.03) < 0.01, 'นับ 0.00 ที่พิมพ์บนใบ = ได้ 55.03');
+  assert.ok(avg - naive > 39, 'ต่างกันเกือบ 40 จุด — กับดักนี้ต้องไม่หลุดกลับมา');
+});
+
 test('summarizeMonths: sum / max / as_of', () => {
   assert.equal(summarizeMonths([0, 1, 0], 'sum'), 1);
   assert.equal(summarizeMonths([0.83, 1.92, 3.47], 'max'), 3.47);

@@ -341,10 +341,12 @@ TS Academy ≥75/≥85% · Engagement Survey ≥80/≥85% · Engineering Day ≥
 ### 8.11 คำถามที่ต้องถาม (KPI Audit หรือ QSM ประจำ Plant)
 
 1. ใบ **PD ปี 2026** ใช้ `Inventory Balance (บาท)` หรือ `DSI (วัน)` — คู่มือระดับ Plant ใช้ DSI
-2. สูตรทางการของ **%RM** (ตอนนี้เราเดาว่า `ต้นทุนวัตถุดิบ ÷ Sale from product × 100`)
+   · 🔺 **บานปลาย 17/09 (§13.3):** ใบระบบจริงเขียน DSI = `(Stock ÷ **COGS**) × Day` แต่โค้ดเรา/แผ่นบอร์ด PD3
+   หารด้วย **ยอดขาย** ⇒ ต้องถามด้วยว่าตัวหารคืออะไร และ "× Day" = 30 คงที่ หรือวันทำงานจริง
+2. ~~สูตรทางการของ **%RM**~~ ✅ **ปิดแล้ว 17/09 (§13.2)** = `(Raw Material ÷ Sales from product) × 100` · ที่มา = P&L บรรทัด 2
 3. **Safety**: ค่าที่กรอกคือ "จำนวนเคส" (ตามคู่มือ) หรือ "คะแนนจากหน่วยงานความปลอดภัย" (ตามที่เคยได้ยิน) — และกรณี `Commit 0 / Target 1` ตัดสินคะแนนยังไง
 4. เกณฑ์ "**ผ่าน**อบรม" ของ TS Academy (คะแนน post-test เท่าไหร่ถือว่าผ่าน)
-5. **OEE เป้า 87%** เป็นเป้ากลางทั้งกลุ่ม หรือแต่ละ Plant/สายงานตั้งเอง (ของเราตั้งราย parent line)
+5. ~~**OEE เป้า 87%** เป็นเป้ากลางทั้งกลุ่มไหม~~ ✅ **ปิดแล้ว 17/09 (§13.2) = ไม่ใช่** — P4 ใช้ ≥80/≥85 · PD3 ≥85/≥83 · ไฟล์ Excel ≥79/≥76 ⇒ ตั้งต่อ (KPI × แผนก × ปี) เท่านั้น · สูตรทางการ = `A × P × Q`
 6. ESM export ให้ตรงช่อง KPI Online ได้ไหม / มี API หรือ import ไฟล์หรือไม่ (ถาม IT: Ampon.Tan · Rujirott.Som)
 
 ---
@@ -797,3 +799,112 @@ C) กรอกมือ        ระบุเจ้าของ (Acc · SAP ·
 ⇒ **ข้อ B คือคานงัด** — ถ้ามีตารางตัวแปรฐาน 8-10 ตัว/เดือน/cost center ระบบจะคำนวณ
 DL · OH · DL&OH · %RM · 100P · Inventory Day · Sales per Head **ให้เองทั้งหมด** โดยบัญชีกรอกแค่ตัวเลขดิบ
 (แทนที่จะให้แต่ละแผนกคำนวณเองในไฟล์ Excel ที่ลิงก์ข้ามไฟล์กันจนสอบกลับไม่ได้)
+
+---
+
+## 13. 🖥️ **หน้าจอระบบ KPI Online ของจริง** (แกะจากวิดีโอ screen-record · ได้ไฟล์ 2026-09-17)
+
+**ที่มา:** user อัดวิดีโอหน้าจอเว็บ `tsg-hrprd01/KPI_Online/` (79 วิ · 1920×1030) แล้วให้ session Cowork
+แกะเป็นแพ็กเกจ `kpi-online-handoff.zip` (สเปกเลย์เอาต์ + 6 สกรีนช็อต + สแกฟโฟลด์ Next.js)
+**ชี้ขาดกว่าทุกไฟล์ก่อนหน้า** เพราะเป็น *ตัวระบบจริงที่กำลังใช้งานอยู่* ไม่ใช่ใบสรุปหรือคู่มือ
+
+> **⚠️ สกรีนช็อตไม่ถูก commit เข้ารีโปโดยตั้งใจ** — ใบ Appraisal (frame 05) มี **ชื่อ-สกุลจริง รหัสพนักงาน
+> และรูปลายเซ็น** ของผู้บริหารท่านหนึ่ง · รีโปนี้อยู่บน GitHub ⇒ commit = เผยแพร่ข้อมูลส่วนบุคคล
+> ข้อเท็จจริงทั้งหมดถูกถอดเป็นข้อความไว้ที่นี่แทน (ไฟล์ zip อยู่กับ user)
+>
+> **⚠️ สแกฟโฟลด์ `scaffold/` (Next.js 14 + Tailwind) ห้ามเอาเข้าโปรเจค** — ESM = React 19 + Vite
+> และ **CLAUDE.md ห้าม ESM ทำแข่งกับ KPI Online เป็นระบบทะเบียน** · แพ็กเกจนั้นเสนอให้ "สร้างแอปหน้าตา
+> เหมือนกัน" ซึ่ง**ไม่ใช่โจทย์ของเรา** — ของที่มีค่าคือ **data model + สูตร + ที่มาของตัวเลข** เท่านั้น
+
+### 13.1 รายการ KPI ทางการเต็มชุด (ใบ `KPI_Monitoring.pdf` — TSAT **P4 Assembly** ปี 2026)
+
+คอลัมน์ใบจริง: `No · Perspective · Topic · Formula · Scope · Commitment · Target · [Jan…Dec] · Average/Total · Status Point`
+
+| No | Perspective | Topic | Formula | **Scope (ตัวเลขมาจากไหน)** | Commit | Target | หน่วย |
+|---|---|---|---|---|---|---|---|
+| 1 | Financial | Raw Material Control | (Raw Material / Sales from product) × 100 | **Data from P&L line 2** | — | ≤ 68.40 | % |
+| 2 | Financial | Direct Labour & Overhead Expenses | [(DL+OH) / Sale from product] × 100 | **Data from SAP deducts depreciation** | ≤ 1.34 | ≤ 1.30 | % |
+| 3 | Customer | Customer Satisfaction (Q&D) | (Actual Score / Total Score) × 100 | % Satisfaction (Q&D) | ≥ 95.00 | 100.00 | % |
+| 4 | Internal process | **Safety** (แม่ของ 4.1-4.5) | — | — | — | 0 | Case |
+| 4.1 | | Serious Accidents | 0 Case | Actual accident | — | 0 | Case |
+| 4.2 | | Absent Accidents > 3 Days | 0 Case | Actual accident | — | 0 | Case |
+| 4.3 | | Absent Accidents < 3 Days | ถ้าปี 2025 ถึงเป้า → ลด 50% จาก actual 2025 | Actual accident | — | 0 | Case |
+| 4.4 | | Minor Injury / Non Absent Accident | ถ้าปี 2025 ไม่ถึงเป้า → คงเท่าปี 2025 | Actual accident | — | 0 | Case |
+| 4.5 | | Fire Accident / Injury, Absent Accident | 0 Case | Actual accident | — | 0 | Case |
+| 5 | Internal process | Non NC Major (ISO External Audit) | 0 NC Major | External Audit | — | 0 | Major NC |
+| 6 | Internal process | Overall Cost Improvement (100P) | (Actual 100P / Sale from product) × 100 | Value cost improvement | ≥ 0.95 | ≥ 1.00 | % |
+| 8 | Internal process | **Day Sales of Inventory (DSI)** | (Stock value end of month / **COGS**) × Day | Stock end of month | ≤ 0 | ≤ 0 | Days |
+| 9 | Internal process | Internal Quality Rate | **(Defect / Total Production) × 1,000,000** | ยอด scrap+rework จากโปรแกรมภายใน | ≤ 350 | ≤ 300 | PPM |
+| 10 | Internal process | **OEE** | **% OEE = A × P × Q** | ประสิทธิภาพเครื่องจักรรวมกระบวนการผลิต จากโปรแกรมภายใน | ≥ 80.00 | ≥ 85.00 | % |
+| 11 | Learning & Growth | Annual Sale Per Head | Total Sales / **Average** manpower | Annual sales per head | ≥ 5.49 | ≥ 5.65 | MB |
+| 12 | Learning & Growth | TS Academy | (Passed training employee / Total Employee) × 100 | Passed Training | ≥ 80.00 | ≥ 90.00 | % |
+| 13.1 | Learning & Growth | Engineering Day | ผ่านรอบชิงและได้รางวัล | เดียวกัน | — | 1 | Team |
+| 13.1 | Learning & Growth | Engineering Day | จำนวนประเภทที่ลงทะเบียน | Register in types of activities | — | 3 | Types |
+| 13.2 | Learning & Growth | QCC | (พนง.ที่ผ่านอบรม / พนง.ทั้งหมด) × 100 | สัดส่วนคนที่ผ่าน QC Story + QC 7 Tools (By QCC Expert) | ≥ 30.00 | — | % |
+
+**ใบ `KPI_Appraisal.pdf` (APPRAISAL FORM 2026 · เลขฟอร์ม `FM-HRM-6-022(01)` · PM CODE 10100 · REV 0):**
+คอลัมน์ `No · Function · KPI's Description · Commitment · Target · Result · Weight · Appraisal Result (0 / 0.5 / 1) · Point(s)`
+· หัวใบ: Company / Name+Code / Position+Working Year / Department+Age / **Cost Center** / Part+Rev
+· ลายเซ็นหัวใบ 3 ช่อง `Self Assessment By · Reviewed By · Approved By`
+· ท้ายใบ 4 ช่อง `Responsibility (Manager) · Supervisor 1 (General Manager) · Supervisor 2 · Verify By QSM (For Manager Only)`
+· **ท้ายตาราง `Total Weight = 50.00` / `Total Point`** ⇒ ยืนยัน Total Weight 50 อีกครั้ง
+
+### 13.2 ✅ สิ่งที่ใบนี้ **ปิดคำถามค้าง** ได้ (แก้สถานะใน §8.11 / §12.2)
+
+1. **สูตร %RM ทางการ = `(Raw Material / Sales from product) × 100`** — ตรงกับ `rm_pct` ใน `kpiSetup.js` เป๊ะ
+   ⇒ **ปิดคำถาม "สูตร %RM ทางการคืออะไร"** · ที่มาตัวเลข = **P&L บรรทัดที่ 2**
+2. **PPM = `(Defect / Total Production) × 1,000,000`** — **verify ครั้งที่ 4** (ปาก user → คู่มือ → เลขดิบบนบอร์ด → ใบระบบจริง)
+   เป้าทางการ P4: commit ≤350 / target ≤300 PPM ⇒ **ห้ามใครมาแก้สูตรนี้อีก** (ย้ำจาก §10.3)
+3. **OEE เป้าไม่ได้เป็นค่าเดียวทั้งกลุ่ม** — P4 Assembly ใช้ commit ≥80% / target ≥85%
+   (เด็ค H1 บอก PD3 ≥85/≥83 · ไฟล์ Excel บอก ≥79/≥76) ⇒ **ปิดคำถาม "OEE ≥87% เป็นเป้าทั้งกลุ่มไหม" = ไม่ใช่**
+   ต้องตั้งได้ต่อ (KPI × แผนก × ปี) ตามที่ทำไว้แล้ว · และสูตรทางการเขียนตรงๆ ว่า **A × P × Q** ตรงกับ `oee.js`
+4. **🔴 "ค่าเฉลี่ยข้ามเดือนที่ยังไม่มีผล" = ถูกต้องตามใบทางการ** — แถว Customer Satisfaction กรอก ม.ค.-ก.ค.
+   (100.00 · 91.67 · 87.50 · 100.00 · 93.75 · 100.00 · 87.50) เดือน ส.ค.-ธ.ค. **พิมพ์ 0.00**
+   แต่ช่อง Average = **94.35** = ผลรวม 660.42 **÷ 7 ไม่ใช่ ÷ 12**
+   ⇒ **ใบทางการเองก็ไม่นับเดือนว่างเป็นศูนย์** — ยืนยัน `summarizeMonths(..., 'average')` ของเราถูก
+   · **กับดัก: จอแสดง 0.00 ≠ ค่าเป็น 0** ใครอ่านใบนี้แล้วก๊อป 0.00 ไปคิดเฉลี่ยจะได้ 55.03 (ผิด 39 จุด)
+5. **ที่มาตัวเลขการเงินระบุชัดในใบ** — RM = P&L บรรทัด 2 · DL&OH = **SAP หักค่าเสื่อม** ⇒ ตอบว่าตาราง
+   `kpi_base_inputs` ต้องรับค่าจากใคร (บัญชี = P&L · SAP = DL/OH **ที่หักค่าเสื่อมแล้ว**)
+
+### 13.3 ⚠️ สิ่งที่ **ขัดกับโค้ดเราตอนนี้** — ต้องให้ user/KPI Audit ชี้ขาดก่อนแก้
+
+| จุด | ของเรา (`kpiSetup.js`) | ใบทางการ | ผล |
+|---|---|---|---|
+| **DSI / Inventory** | `inventory_baht ÷ (sale_product ÷ days)` | `(Stock value end of month ÷ **COGS**) × Day` | **ตัวหารคนละตัว** — ของเราใช้ยอดขาย ทางการใช้ **ต้นทุนขาย (COGS)** · แผ่นบอร์ด PD3 ที่เทสล็อกไว้ (0.3817) คำนวณจากยอดขาย ⇒ อาจเป็นคนละนิยามระหว่างแผนก **ห้ามแก้เงียบๆ** ต้องถามก่อน + ถ้าแก้ต้องเพิ่มตัวแปรฐาน `cogs` |
+| **Annual Sale Per Head** | `sale_total ÷ manpower` | `Total Sales ÷ **Average** manpower` | ทางการระบุ "ค่าเฉลี่ยกำลังคน" ไม่ใช่กำลังคน ณ จุดใดจุดหนึ่ง ⇒ ควรนิยาม `manpower` ให้ชัดว่าเป็นค่าเฉลี่ยของช่วง |
+| **วิธีรวม (Summary)** | `average · sum · max · as_of · rate` | `Manual · Sum · Average · Calculate · As of · Actual · Actual+Plan` | ตรงกัน 3 (`sum`/`average`/`as_of`) · **เราขาด 4** (Manual · Calculate · Actual · Actual+Plan) · **เราคิดเอง 2** (`max`, `rate`) — `rate` ใช้กับ PPM ซึ่งถูกทางคณิตศาสตร์ แต่**ไม่ใช่ชื่อ/โหมดของบริษัท** ⇒ ถ้าจะ export เข้าใบทางการต้อง map ให้ได้ |
+
+### 13.4 🧩 สิ่งที่โมเดลเรา **ยังไม่มี** (พบจากหน้าจอจริง)
+
+1. **`Perspective` / `Function` = BSC 4 มุมมอง** (`Financial · Customer · Internal process · Learning & Growth`)
+   — เป็น**แกนจัดกลุ่มแถว**ทั้งในเว็บและใน PDF ทั้ง 2 ใบ · `kpi_definitions` **ไม่มีคอลัมน์นี้เลย**
+   ⇒ ถ้าจะให้บอร์ด ESM เรียงเหมือนใบทางการ หรือ export เข้าฟอร์มได้ **ต้องเพิ่ม** (ค่าคงที่ 4 ค่า)
+2. **`Creator` = `Center` | `User`** — ใครเป็นคนใส่/คำนวณผล · ตรงแนวคิดกับ `provider` ของเรา
+   แต่ทางการมีแค่ **2 ค่า** (ศูนย์กลางคำนวณให้ / เจ้าของ KPI กรอกเอง) ⇒ `provider` ของเราควร derive ค่านี้ได้
+3. **🔴 กับดักชื่อ: `Scope` ในใบทางการ = "ตัวเลขมาจากไหน" (ข้อความอิสระ) ไม่ใช่ระดับองค์กร**
+   ขณะที่ `scope_kind`/`scope_value` ของเรา = **ระดับองค์กร** · คนละความหมายคนละเรื่องแต่ชื่อเดียวกัน
+   ⇒ สิ่งที่ตรงกับ `Scope` ทางการจริงๆ คือ `provider` + `provider_config` **ไม่ใช่ `scope_*`**
+   · เวลาคุยกับ KPI Audit / เขียนตัว export ต้องแปลงชื่อ ไม่งั้นเข้าใจผิดกันทั้งสองฝั่ง
+4. **แถวแม่ถือ weight — ลูกเป็นองค์ประกอบ** — Safety (ข้อ 4) มี `weight 4` + `Summary = Sum`
+   ส่วน 4.1-4.5 **ไม่มี weight** ⇒ `parent_id` ที่ทำไว้ถูกทาง แต่กติกาคือ **คะแนนคิดที่แม่ ลูกแค่ป้อนยอดรวม**
+5. **หน่วยของ KPI ต้องเก็บ** — ใบมีคอลัมน์หน่วยจริง (`% · Case · Days · PPM · MB · Major NC · Team · Types`)
+   ⇒ `unit` ที่ทำไว้ 16/09 ตรงความต้องการแล้ว
+6. **โครงสร้างระบบเขา = "KPI ของ *คน* 1 ชุด/ปี" ไม่ใช่ "KPI ของหน่วยงาน"**
+   รหัสการ์ด = `TSAT-P4-Assembly-Automotive Metal Forming-Assembly-<รหัสพนักงาน>`
+   (Company-Plant-Department-Division-SubDivision-**EmployeeCode** · Cost Center เป็นอีกช่องหนึ่งต่างหาก)
+   + มี flow อนุมัติ `Waiting for Owner Submission → Send KPI → Approve` และหน้า `ApproveKPI`
+   ⇒ **ESM ผูก KPI กับหน่วยงาน (ถูกแล้วสำหรับบอร์ดโรงงาน) แต่ต้องรู้ว่าไม่ใช่ unit เดียวกับระบบทางการ**
+   · ลำดับชั้นของเขา 6 ชั้น `Company · Plant · Department · Division · Sub Division · Sub Group`
+   **ไม่ตรง** `scope_kind` ของเรา (`plant/section/department/line_group/line/cost_center`) — ต้อง map ถ้าจะส่งข้อมูลข้ามระบบ
+
+### 13.5 สรุปทิศทาง (ไม่เปลี่ยนจากเดิม — แค่มีหลักฐานหนักขึ้น)
+
+**ESM = ที่ผลิตตัวเลข Actual · KPI Online = ทะเบียน+อนุมัติ+เก็บคะแนน** — ใบ Monitoring บอกเองว่า
+OEE/PPM "มาจากโปรแกรมภายใน" ⇒ **ช่องที่ ESM ควรเติมให้เขาคือช่องรายเดือน 12 ช่องนั้น** ไม่ใช่การสร้างหน้าจอแข่ง
+งานที่คุ้มที่สุด = ทำให้ ESM ตอบ **แถว 9 (PPM) · 10 (OEE) · 6 (100P) · 4.x (Safety)** ต่อ cost center ต่อเดือน
+ได้แบบก๊อปไปวางในใบได้เลย — ของพวกนี้ ESM คำนวณได้อยู่แล้ว ขาดแค่ "สรุปรายเดือนต่อ cost center"
+
+**คำถามที่ยังต้องถาม KPI Audit / IT (เพิ่มจาก §8.11):**
+- DSI หารด้วย **COGS** หรือ **ยอดขาย** · "× Day" ใช้ 30 คงที่หรือวันทำงานจริง (ขัดกัน 3 ที่แล้ว)
+- โหมด `Calculate` · `Actual` · `Actual+Plan` ในคอลัมน์ Summary นิยามยังไงกันแน่
+- ESM ส่งตัวเลขเข้า KPI Online อัตโนมัติได้ไหม (มี API/import ไหม) — ผู้ติดต่อ: Ampon.Tan · Rujirott.Som
