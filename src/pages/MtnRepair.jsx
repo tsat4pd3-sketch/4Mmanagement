@@ -7,14 +7,14 @@
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import resizeImg from '../utils/resizeImage';
 import { useObjectUrl } from '../utils/useObjectUrl';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, QA_SKIP_REASON_PURPOSE } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, moQaState, moStatusLabel, moStatusMeta, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -32,7 +32,7 @@ import RackMap from '../components/RackMap';
 import MachineReliability from '../components/MachineReliability';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
-import useTabParam from '../utils/useTabParam';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
 import SearchSelect from '../components/SearchSelect';
@@ -105,31 +105,11 @@ const NAME_CASCADE = {
   mtn_repair_types:  { name: 'repair_type' },
 };
 
-/* สี/ลำดับขั้นของแต่ละสถานะ — **ป้าย (label) ไม่ได้เขียนที่นี่**: มาจาก MO_STATUS_LABEL
-   ใน `src/utils/mtnStepPerm.js` ที่เดียว (จอซ่อม/บอร์ด Andon/ผังแม่พิมพ์/สรุป Telegram ต้องพูดตรงกัน) */
-const STATUS_META = {
-  pending:   { label: MO_STATUS_LABEL.pending,   step: 1, color: '#ef4444', bg: 'rgba(239,68,68,0.14)' },
-  assigned:  { label: MO_STATUS_LABEL.assigned,  step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repairing: { label: MO_STATUS_LABEL.repairing, step: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  repaired:  { label: MO_STATUS_LABEL.repaired,  step: 3, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  checked:   { label: MO_STATUS_LABEL.checked,   step: 4, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  qa:        { label: MO_STATUS_LABEL.qa,        step: 5, color: '#f59e0b', bg: 'rgba(245,158,11,0.14)' },
-  handover:  { label: MO_STATUS_LABEL.handover,  step: 6, color: '#3b82f6', bg: 'rgba(59,130,246,0.14)' },
-  closed:    { label: MO_STATUS_LABEL.closed,    step: 7, color: '#22c55e', bg: 'rgba(34,197,94,0.14)' },
-  returned:  { label: MO_STATUS_LABEL.returned,  step: 1, color: '#e0894a', bg: 'rgba(224,137,74,0.14)' },
-  rejected:  { label: MO_STATUS_LABEL.rejected,  step: 0, color: '#8b8b96', bg: 'rgba(139,139,150,0.14)' },
-};
-/* 🔴 ป้ายสถานะต้องบอก "ใครต้องทำต่อ" ให้ตรง — 2026-09-08 → เข้มขึ้น 2026-09-09 (ใบค้างขั้น 6 = 140 ใบ)
-   `checked` (ผ่านขั้น 4 แล้ว) เคยใช้ป้ายเดียว "🧪 รอคุณภาพ/รับมอบ" ทั้งที่แยกเป็น 2 ทางคนละคนกด:
-     · ขั้น 4 ระบุ "เกี่ยวกับคุณภาพ"    → "🧪 รอตรวจคุณภาพ (ขั้น 5)"  = รอ QA จริง (มีปุ่ม ⏭ ข้าม QA)
-     · ขั้น 4 ระบุ "ไม่เกี่ยวกับคุณภาพ" → "🤝 รอรับมอบ (ขั้น 6)"      = ไม่ต้องรอ QA เลย รอฝ่ายที่แจ้ง
-   ป้ายรวมทำให้หน้างานอ่านว่า "ยังรอ QA" แล้วไม่มีใครกดขั้น 6 → ใบกองค้าง
-   ⚠️ เกณฑ์แยกอยู่ที่ `moStatusLabel()` (mtnStepPerm.js) ที่เดียว **ห้ามอ่าน STATUS_META[o.status].label
-      ตรงๆ** และ **ห้ามเพิ่มค่า status ใหม่** เพื่อแยก 2 เคสนี้ (KPI/Andon/ใบพิมพ์/edge อ่าน status ดิบ) */
-const statusMetaOf = (o) => {
-  const m = STATUS_META[o?.status] || STATUS_META.pending;
-  return { ...m, label: moStatusLabel(o) };   // ป้ายมาจาก moStatusLabel() เท่านั้น — สี/ขั้นคงเดิม
-};
+/* สี/ขั้น/ป้ายของแต่ละสถานะ MO ย้ายไป `MO_STATUS_META` ใน src/utils/mtnStepPerm.js แล้ว (2026-09-16)
+   — เดิมตารางสีอยู่ที่นี่ ส่วนป้าย/ลิสต์สถานะจบอยู่ที่ util ⇒ เพิ่มสถานะใหม่แล้วลืมแก้ที่นี่ได้เงียบๆ
+   (`transferred` หลุดมาจริง: ไม่มีตัวเลือกใน dropdown ฟิลเตอร์ + การ์ดขึ้นสีแดงขั้น 1)
+   **ห้ามเขียนตารางสถานะกลับมาที่นี่อีก** · dropdown ฟิลเตอร์สร้างจาก STATUS_META ที่ import มา */
+const statusMetaOf = moStatusMeta;   // สี/ขั้นจากตาราง + ป้ายจาก moStatusLabel() เสมอ
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
@@ -282,6 +262,8 @@ export default function MtnRepair() {
   ];
   // 'equip' = คีย์เก่าที่ยุบเข้า 'kpi' แล้ว — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
   // แล้วเด้งไปแท็บ default (รายการ MO) = บุ๊กมาร์กของทีมช่างพาไปผิดที่เงียบๆ
+  const [sp] = useSearchParams();
+  const mergeSp = useMergeParams();
   const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'equip'], 'list');
   useEffect(() => { if (tab === 'equip') setTab('kpi', { replace: true }); }, [tab, setTab]);
   const [orders, setOrders] = useState([]);
@@ -306,6 +288,21 @@ export default function MtnRepair() {
   const [showReport, setShowReport] = useState(false);
   const [detail, setDetail] = useState(null);
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
+
+  /* 🔗 `?mo=<id | เลข MO>` — เปิดใบนั้นให้เลย (2026-09-16 · feedback ทีมงานเรื่องกระดิ่ง
+     "บางอันกดเข้าไปในจุดที่แจ้งเตือนได้ บางอันไม่ได้") ปลายทางของแจ้งเตือน MO/mention ชี้มาที่นี่
+     · รับทั้ง id และ mo_no — ใบที่ยังไม่ออกเลข MO (ขั้น 1) ก็ต้องเปิดได้ ไม่งั้นแจ้งเตือน "ใบใหม่" กดไม่ได้
+     · ล้าง param ทิ้งหลังเปิด (replace) เพื่อไม่ให้ปิด drawer แล้วมันเด้งกลับมาเปิดเองทุกครั้ง
+     · ใบไม่อยู่ในสิทธิ์/ถูกลบ = ไม่เด้งอะไร (แต่ยังล้าง param) ห้ามค้าง loop */
+  const moParam = sp.get('mo');
+  useEffect(() => {
+    if (!moParam || !orders.length) return;
+    const key = String(moParam).trim().toLowerCase();
+    const hit = orders.find(o => String(o.id) === moParam || String(o.mo_no || '').trim().toLowerCase() === key);
+    if (hit) { setTab('list', { replace: true }); setDetail(hit); }
+    else toast.info(`ไม่พบใบ MO "${moParam}" ในรายการที่คุณเห็น (อาจถูกปิด/อยู่นอกขอบเขตของคุณ)`);
+    mergeSp({ mo: null }, { replace: true });
+  }, [moParam, orders, setTab, mergeSp]);
 
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
@@ -2717,4 +2714,3 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
   );
 }
 
-export { STATUS_META };

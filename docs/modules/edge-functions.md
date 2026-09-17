@@ -3,6 +3,58 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+### 🔗 "กดกระดิ่งแล้วไปที่ปัญหานั้นเลย" — `notifications.link` (2026-09-16)
+
+**ที่มา (feedback ทีมงานผ่าน user):** *"ระบบกระดิ่งแจ้งเตือนในเว็ป มีบางอันที่สามารถคลิกเข้าไปในจุดที่แจ้งเตือนหรือปัญหานั้นๆได้ แต่บางอันก็ไม่ได้"*
+
+**วัดจากฐานจริง 16/09 (notifications 61,339 แถว):**
+
+| กลุ่ม | จำนวน | กดได้ไหม (ก่อนแก้) |
+|---|---|---|
+| `ref_table` มีค่า (MO/downtime/4M/…) | 54,410 | ✅ ไปหน้ารวมของเรื่องนั้น (ผ่าน `NOTIF_ROUTE`) |
+| **`ref_table` = null** | **6,873** | ❌ **ไม่มีลูกศร › กดแล้วแค่ mark อ่าน** |
+
+ก้อน null ทั้งหมดออกจาก `notifyInApp()` ใน edge (send-notification · send-store-notification ·
+mtn-daily-summary · daily-4m-summary · qa-fme-scan) ซึ่ง **ไม่เคยส่ง `ref_table` เลยสักตัว**:
+หลุดเฟสงานส่ง 5,489 · เตือนรอบ PM 379 · ส่งงานลูกค้า 338 · เฝ้าระวังสโตร์ 326 · EDI 156 ·
+แผนประสานงาน PM 131 · 💬 mention ใต้ใบซ่อม ~70 ⇒ ผู้ใช้เห็นพฤติกรรม "บางอันได้ บางอันไม่ได้" ตรงตามที่แจ้ง
+
+**โมเดลปลายทาง 2 ชั้น (ห้ามสลับลำดับ):**
+1. **`notifications.link`** (คอลัมน์ใหม่) = path ตรงๆ → **deep-link ได้** เช่น `/mtn-repair?mo=<id>`
+2. `ref_table` → `NOTIF_ROUTE` (หน้ารวม) = ของเดิม ยังใช้กับใบเก่าทุกใบ
+
+**ทำไมไม่ยัด `ref_table` ให้ครบแทน:** แจ้งเตือนสรุป **ไม่ได้ผูกกับแถวเดียว** (เฝ้าระวังสโตร์ = 100 รายการ)
+⇒ ใส่ไปก็เป็นคำโกหก + `send-push` ใช้ `(ref_table, ref_id)` เป็น `tag` ของ push ด้วย · และ
+**`ref_id` เป็น `uuid`** ⇒ ตารางที่ pk เป็น bigint เก็บ id ไม่ได้อยู่แล้ว
+
+**ทำไมแก้ที่ DB ไม่ใช่ในโค้ด edge:** `send-notification` = 59 KB · `qa-fme-scan` = 53 KB —
+กติกาในไฟล์นี้ (§audit รอบ 11) ห้าม deploy ไฟล์ขนาดนี้ผ่าน MCP และ user ไม่มี CLI ⇒
+**ไม่มีทางแก้ในไฟล์นั้นอย่างปลอดภัย** · trigger ตัวเดียวครอบทุกตัวส่ง + แก้ปลายทางได้ทีหลังโดยไม่ต้อง deploy
+
+**ของที่ทำ (migration `20260916_notifications_link.sql` + `20260916_notification_rules_link.sql` — apply แล้วทั้งคู่):**
+- `notifications.link text` + `fn_notify_push` ส่ง `link` ต่อให้ Web Push ด้วย
+- `notification_rules.link text` (data-driven · seed 25 event) + trigger `trg_notification_fill_link`
+  (BEFORE INSERT) เติมให้เมื่อผู้ส่งไม่ได้ระบุ — จับคู่ด้วย `label = title` (ทุกตัวส่งตั้ง title จาก label อยู่แล้ว)
+- **deep-link ใบ MO:** `ref_table='mtn_orders'` + `ref_id` → `/mtn-repair?mo=<id>` (ทำใน trigger
+  แทนแก้ `send-mtn-notification` 30 KB) · `MtnRepair.jsx` รับ `?mo=` ทั้ง **id และเลข MO** — **ห้ามถอด**
+- backfill ใบเก่า (backup ที่ `bk_notifications_link_20260916`)
+- ฝั่งจอ: `src/utils/notifLink.js` = ตัวตัดสินจุดเดียว (`link` ก่อน → `ref_table` · กรอง path ภายใน ·
+  ผ่าน `canAccessPage` เสมอ) — **ห้ามอ่าน `n.link` ตรงๆ ที่อื่น** (มาจาก DB = ข้อมูล ไม่ใช่โค้ด)
+- `send-push` v13 + `send-event-notification` v3 (deploy + ดึงกลับเทียบกับ repo แล้ว ตรงกันทั้งคู่ ·
+  `verify_jwt=false` ทั้งคู่เหมือนเดิม) · **`send-event-notification` กัน `ref_id` ที่ไม่ใช่ uuid** —
+  เดิมส่งเลขเข้าไป = insert ทั้งก้อนล้ม 22P02 ⇒ **ทุกคนไม่ได้แจ้งเตือนใบนั้นเลย แบบเงียบ**
+
+**ผลวัดหลังแก้:** กดได้ 52,194 ใบผ่าน `link` (deep-link ถึงใบ MO 45,015) + 12,225 ใบผ่าน `ref_table`
+· เหลือกดไม่ได้ **37 ใบ** = ข้อความทดสอบ + `user_feedback` (ตั้งใจไม่มีหน้า)
+
+**ด่านกันหลุดซ้ำ:** `src/utils/__tests__/notifRoute.test.mjs` — ทุก path ใน `notification_rules.link`
+(อ่านจากไฟล์ migration) และใน `NOTIF_ROUTE` ต้องเป็น `<Route>` ที่มีจริงใน App.jsx · ทุก event ที่ยิง
+`notifyInApp` ต้องมีปลายทาง · `notifLink.test.mjs` ล็อกกติกาความปลอดภัยของ `link`
+
+**เพิ่ม event ใหม่ที่ยิง `notifyInApp`** → ต้อง seed `notification_rules.link` ด้วย ไม่งั้นกระดิ่งกดไม่ได้ (เทสจะตก)
+
+---
+
 ### 🔔 ช่องทางแจ้งเตือน — ปิดช่องว่าง "Telegram ทางเดียว" (2026-09-14)
 
 **ที่มา:** user ตัดสินใจว่าถ้าย้ายระบบลง server ของบริษัท **จะไม่เอา Telegram** (ดู `docs/LOCAL-SERVER-MIGRATION-SPEC.md` §5)

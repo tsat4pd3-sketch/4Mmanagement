@@ -21,6 +21,7 @@ import { buildProfileMenu } from './utils/profileMenu';             // ราย
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
+import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
@@ -987,18 +988,22 @@ function NotificationBell({ userId, role }) {
     if (!userId) return;
     const { data } = await supabase
       .from('notifications')
-      .select('id, title, body, type, is_read, created_at, ref_table, ref_id')
+      .select('id, title, body, type, is_read, created_at, ref_table, ref_id, link')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
     setNotifs(data || []);
   }, [userId]);
 
-  // ปลายทางต้องผ่าน canAccessPage ก่อนเสมอ (กฎเดียวกับ telemetry บนหน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน ไม่พาไปแล้วโดนเด้ง
-  const notifTarget = useCallback((n) => {
-    const path = NOTIF_ROUTE[n?.ref_table];
-    return path && canAccessPage(path, role) ? path : null;
-  }, [role]);
+  /* ปลายทาง = `link` ของใบนั้นก่อน (deep-link ถึงตัวปัญหา) ไม่มีค่อยถอยไป NOTIF_ROUTE[ref_table] (หน้ารวม)
+     · ตัวตัดสินอยู่ที่ `src/utils/notifLink.js` ที่เดียว — ห้ามอ่าน n.link ตรงๆ ที่อื่น (มันมาจาก DB
+       = ข้อมูล ต้องกรอง path ภายใน/scheme ก่อนเสมอ)
+     · ต้องผ่าน canAccessPage เสมอ (กฎเดียวกับ telemetry หน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน
+       ห้ามพาไปแล้วปล่อยให้โดนเด้ง (อ่านเหมือนแอปพัง) */
+  const notifTarget = useCallback(
+    (n) => notifTargetPath(n, NOTIF_ROUTE, (p) => canAccessPage(p, role)),
+    [role],
+  );
 
   // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
   useEffect(() => {

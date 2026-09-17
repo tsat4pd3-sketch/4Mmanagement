@@ -12,7 +12,7 @@
 //   - ผู้รับในแอปเรียกผ่าน RPC `notify_recipients()` **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้**
 //
 // payload:
-//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, type?, actor?, vars? }
+//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, vars? }
 //   - `lines`      = เนื้อความ (บรรทัดละรายการ) — ใช้ทั้ง Telegram และ body ในแอป
 //   - `section`    = ส่วนงานของเหตุการณ์ (ใช้กับ inapp_match_section) · ไม่ส่งมาแต่ส่ง line_name = หาให้เอง
 //   - `vars`       = ตัวแปรสำหรับ template ที่ admin เขียนเองที่ /notification-config
@@ -59,6 +59,15 @@ async function sendTelegram(token: string | undefined, message: string, chats: s
     }).then((r) => r.ok).catch(() => false)));
   return res.some(Boolean);
 }
+
+/* path ปลายทางที่กระดิ่ง/Web Push จะพาไป — ต้องเป็น path ภายในเท่านั้น (กติกาเดียวกับ src/utils/notifLink.js)
+   ⚠️ ค่านี้มาจาก client ⇒ ห้ามปล่อย URL ภายนอก/scheme แปลกปลอมลงฐาน */
+function safeInternalPath(link?: string | null): string | null {
+  const t = String(link ?? '').trim();
+  if (!t || t[0] !== '/' || t[1] === '/' || t.includes('\\')) return null;
+  return t.split(/[?#]/)[0].includes(':') ? null : t;
+}
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
@@ -130,7 +139,11 @@ Deno.serve(async (req) => {
           user_id: uid, title, body: plain,
           type: ['success', 'error', 'info'].includes(body.type) ? body.type : 'info',
           ref_table: body.ref_table ?? null,
-          ref_id: body.ref_id != null ? String(body.ref_id) : null,
+          /* ⚠️ `notifications.ref_id` เป็น **uuid** — ส่งเลข/ข้อความอื่นเข้าไป = insert ทั้งก้อนล้ม 22P02
+             ⇒ ทุกคนไม่ได้แจ้งเตือนใบนั้นเลย (ล้มเงียบ ไม่มีใครรู้) · ตารางที่ pk เป็น bigint มีจริงในระบบ
+             ⇒ ไม่ใช่ uuid ก็ปล่อยว่าง แล้วให้ `link` เป็นตัวพาไปแทน (ดู notifications.link 2026-09-16) */
+          ref_id: UUID_RE.test(String(body.ref_id ?? '')) ? String(body.ref_id) : null,
+          link: safeInternalPath(body.link),
         })));
         if (insErr) throw insErr;
         inapp = users.length;
