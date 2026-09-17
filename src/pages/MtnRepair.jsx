@@ -110,6 +110,23 @@ const NAME_CASCADE = {
    (`transferred` หลุดมาจริง: ไม่มีตัวเลือกใน dropdown ฟิลเตอร์ + การ์ดขึ้นสีแดงขั้น 1)
    **ห้ามเขียนตารางสถานะกลับมาที่นี่อีก** · dropdown ฟิลเตอร์สร้างจาก STATUS_META ที่ import มา */
 const statusMetaOf = moStatusMeta;   // สี/ขั้นจากตาราง + ป้ายจาก moStatusLabel() เสมอ
+
+/* 🔴🔴 คอลัมน์ที่ "จอรายการ" ใช้จริง — ห้ามกลับไปเป็น `select('*')` (2026-09-17 · งานลด egress)
+   `mtn_orders` มี **116 คอลัมน์** · วัดจริง 16/09: `select('*')&limit=1000` = **1.59 MB/ครั้ง**
+   (บีบแล้ว ~452 KB) ยิงวันละ **1,389 ครั้ง** ⇒ **~628 MB/วัน = เกือบครึ่งของ egress ฝั่ง DR ทั้งหมด
+   จากคิวรีเดียว** — ตอนนั้นเพดาน Supabase Free 5 GB/เดือน คือ 8 วันหมดโควต้าเพราะคิวรีนี้ตัวเดียว
+   ชุดนี้ = 209 KB (บีบแล้ว 48 KB) ⇒ **−89%** โดยจอไม่เปลี่ยนสักพิกเซล
+   **รายละเอียดใบเต็ม (116 คอลัมน์) โหลดตอนเปิดใบเท่านั้น** ผ่าน `fetchFullOrder()` ด้านล่าง
+   ⇒ เพิ่มฟิลด์ใหม่ที่ "การ์ด/ฟิลเตอร์/สถิติ/แท็บ KPI" ต้องใช้ → เติมในลิสต์นี้
+     เพิ่มฟิลด์ที่ "ใบรายละเอียด" ใช้ → ไม่ต้องแตะอะไร (มันมากับ select('*') ตอนเปิดใบอยู่แล้ว) */
+const MO_LIST_COLS = [
+  'id', 'mo_no', 'status', 'current_step',            // การ์ด + แถบสถานะ
+  'mtn_dept', 'item_type', 'line_name', 'machine_no', // ฟิลเตอร์ทีม/ไลน์ + การ์ด
+  'problem_characteristic', 'problem_group', 'report_note', 'report_at',
+  'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
+  'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
+  'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
+].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
 const QA_RESULTS = ['ผ่านคุณภาพ', 'ไม่ผ่านคุณภาพ'];
@@ -299,9 +316,13 @@ export default function MtnRepair() {
     if (!moParam || !orders.length) return;
     const key = String(moParam).trim().toLowerCase();
     const hit = orders.find(o => String(o.id) === moParam || String(o.mo_no || '').trim().toLowerCase() === key);
-    if (hit) { setTab('list', { replace: true }); setDetail(hit); }
+    if (hit) { setTab('list', { replace: true }); openDetail(hit); }
     else toast.info(`ไม่พบใบ MO "${moParam}" ในรายการที่คุณเห็น (อาจถูกปิด/อยู่นอกขอบเขตของคุณ)`);
     mergeSp({ mo: null }, { replace: true });
+    /* ⚠️ ห้ามใส่ `openDetail` ใน deps — มันประกาศ (const) อยู่ **ใต้** effect นี้ และ deps array
+       ถูก evaluate ตอน render (ก่อนถึงบรรทัดประกาศ) ⇒ TDZ "Cannot access before initialization"
+       = จอขาวทั้งหน้า (บทเรียนเดียวกับ FactoryMap 2026-09-15) · ตัว body ของ effect เรียกได้ปกติ
+       เพราะทำงานหลัง render และ openDetail เป็น callback คงที่ (deps ว่าง) อยู่แล้ว */
   }, [moParam, orders, setTab, mergeSp]);
 
   const loadMasters = useCallback(async () => {
@@ -378,9 +399,36 @@ export default function MtnRepair() {
   }, [userTeams, role, lines.length]);
 
   const loadOrders = useCallback(async () => {
-    const { data } = await supabaseDR.from('mtn_orders').select('*').order('report_at', { ascending: false }).limit(1000);
+    // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
+    const { data } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(1000);
     setOrders(data || []);
   }, []);
+
+  /* ใบเต็ม 116 คอลัมน์ — โหลดเฉพาะใบที่เปิดดูจริง (ไม่ใช่ทั้งพันใบทุกรอบ) */
+  const fetchFullOrder = useCallback(async (id) => {
+    const { data, error } = await supabaseDR.from('mtn_orders').select('*').eq('id', id).maybeSingle();
+    if (error) { toast.error('โหลดรายละเอียดใบ MO ไม่สำเร็จ: ' + error.message); return null; }
+    return data;
+  }, []);
+
+  // เปิดใบ: โชว์ข้อมูลย่อทันที (ไม่ต้องรอเน็ต) แล้วเติมใบเต็มทับเมื่อมาถึง — กัน drawer เปิดมาว่าง
+  const openDetail = useCallback(async (o) => {
+    setDetail(o);
+    const full = await fetchFullOrder(o.id);
+    if (full) setDetail(cur => (cur && cur.id === full.id ? full : cur));   // ผู้ใช้ปิด/สลับใบไปแล้ว = ไม่เขียนทับ
+  }, [fetchFullOrder]);
+
+  /* โหลดใหม่หลังบันทึก/มี realtime — ต้องรีเฟรช "ใบที่เปิดค้างอยู่" ด้วย
+     (เดิม drawer อ่านแถวจาก `orders` ตรงๆ จึงสดเอง · ตอนนี้ orders เป็นคอลัมน์ย่อแล้ว) */
+  const detailIdRef = useRef(null);
+  useEffect(() => { detailIdRef.current = detail?.id || null; }, [detail]);
+  const reloadAll = useCallback(async () => {
+    await loadOrders();
+    const id = detailIdRef.current;
+    if (!id) return;
+    const full = await fetchFullOrder(id);
+    if (full) setDetail(cur => (cur && cur.id === full.id ? full : cur));
+  }, [loadOrders, fetchFullOrder]);
 
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
@@ -388,10 +436,10 @@ export default function MtnRepair() {
     /* 🔴 2026-09-15 — เดิมผูก loadOrders เข้า handler ตรงๆ **ไม่มีเพดานเลย**
        loadOrders = `select('*').limit(1000)` ทั้งตาราง ⇒ ทุกครั้งที่ช่างคนไหนก็ตามขยับใบ
        ทุกเครื่องที่เปิดหน้านี้ดึงใบซ่อมทั้งพันใบใหม่ · ดู src/utils/liveRefresh.js */
-    const bump = coalesce(loadOrders, LIVE.PAGE);
+    const bump = coalesce(reloadAll, LIVE.PAGE);
     const ch = liveChannel(supabaseDR, 'mtn-orders-rt').on('postgres_changes', { event: '*', schema: 'public', table: 'mtn_orders' }, bump).subscribe();
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
-  }, [loadMasters, loadOrders]);
+  }, [loadMasters, loadOrders, reloadAll]);
 
   const shown = useMemo(() => {
     let rows = orders;
@@ -440,7 +488,7 @@ export default function MtnRepair() {
 
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: loadOrders, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
     <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
@@ -466,7 +514,7 @@ export default function MtnRepair() {
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
         </div>
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
-          {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => setDetail(o)} />)}
+          {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
           {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีรายการ</div>}
         </div>
       </>}
@@ -478,10 +526,12 @@ export default function MtnRepair() {
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
-      {detail && <DetailDrawer order={orders.find(x => x.id === detail.id) || detail} {...cp}
-        onClose={() => setDetail(null)} onStep={(step, editMode, extra) => setStepModal({ step, editMode, ...(extra || {}), order: orders.find(x => x.id === detail.id) || detail })} />}
+      {/* `detail` = ใบเต็ม (fetchFullOrder) และถูกรีเฟรชโดย reloadAll — เดิมหยิบแถวจาก `orders`
+          ซึ่งตอนนี้เป็นคอลัมน์ย่อแล้ว ห้ามกลับไป `orders.find(...)` */}
+      {detail && <DetailDrawer order={detail} {...cp}
+        onClose={() => setDetail(null)} onStep={(step, editMode, extra) => setStepModal({ step, editMode, ...(extra || {}), order: detail })} />}
       {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode} skipQa={!!stepModal.skipQa}
-        onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); loadOrders(); }} />}
+        onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); reloadAll(); }} />}
     </div>
   );
 }
