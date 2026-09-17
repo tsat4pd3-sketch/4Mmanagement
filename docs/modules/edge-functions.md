@@ -3,6 +3,51 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+### 📣 ย้ายแจ้งเตือน Telegram เข้าระบบให้ครบ — ผู้รับในแอปอ้างอิงจากห้อง Telegram (2026-09-17)
+
+**คำสั่ง user:** *"จากการแจ้งเตือน telegram ให้ย้ายเข้าระบบเราทั้งหมด สิทธิ์หรือช่องทางก็ไปอ้างอิงจาก telegram"*
+(ต่อจากคำถาม "ถ้าระบบแจ้งเตือนโอเค เราไม่ต้องใช้ telegram แล้วสิ")
+
+**ก่อนแก้:** 14/61 เรื่องที่เปิดอยู่มี Telegram แต่ `inapp_roles` ว่าง ⇒ ปิด Telegram เมื่อไหร่หายเงียบทันที
+(รวมเรื่องด่วนที่สุด: Downtime · เรียกช่าง MTN · Daily PM แดง · สโตร์หยิบผิดพาร์ท)
+**หลังแก้: เหลือ 0** · migration `20260917_inapp_recipients_from_telegram.sql` (+ `20260917_downtime_inapp_drop_mtn`)
+
+**วิธีถอด "ผู้ฟังประจำห้อง" จาก Telegram** (ไม่ได้เดา — ถอดจากกฎที่ตั้งครบ 2 ขาอยู่แล้ว
+เอา role ที่ห้องนั้นใช้ **≥50% ของกฎในห้อง** + `admin` ทุกห้อง):
+
+| ห้อง | role ที่ได้ |
+|---|---|
+| 🔧 Smart Maintenance | admin · manager · supervisor · mtn |
+| 🚚 Smart Logistic | admin · manager · planner_store · sale |
+| 🔍 Smart Quality | admin · manager · qa |
+| 🏭 Smart Production / 📝 Report Technician PD3 | admin · manager · supervisor · leader |
+| 🧑‍🏭 Smart Manpower | admin · manager · supervisor |
+
+> **⚠️ นี่คือ "เพิ่มช่องทาง" ไม่ใช่ "ย้าย"** — Telegram ยังส่งครบทุกเรื่องเหมือนเดิม ตั้งใจให้รันขนาน 2 ขา
+> แล้วค่อยปิด Telegram **ทีละเรื่อง** ที่ `/notification-config`
+
+#### 🔴 2 กับดักที่เจอตอนทำ — จำไว้ก่อนตั้งผู้รับในแอปครั้งต่อไป
+
+1. **ห้องแชทกับกระดิ่งส่วนตัวรับปริมาณไม่เท่ากัน** — `downtime` ยิง **149 ครั้ง/วัน** (วัดจริง 30 วัน)
+   ห้อง Telegram รับไหว แต่กระดิ่ง+เสียง+push ส่วนตัว × 61 คน = **9,100 แถว/วัน**
+   (ฐาน `notifications` ทั้งระบบตอนนี้ 64,456 แถว = **โตเท่าตัวใน 7 วัน**) + เสี่ยง egress
+   (เคยโดน Supabase ล็อกทั้ง org มาแล้ว) ⇒ **เรื่องที่ยิงถี่ต้องแคบกว่าที่ Telegram ตั้งไว้เสมอ**
+   · `downtime`/`downtime_recovered` → `supervisor + leader` + `match_section` = 4-9 คน/ใบ (PD3 = 24) ≈ 1,500/วัน
+2. **`notify_recipients()` มี 2 ทางรั่วที่ทำให้ `inapp_match_section` ไม่ช่วยอะไร:**
+   - **`admin`/`manager` ถูกยกเว้นจากการกรองส่วนงานเสมอ** → ใส่ในเรื่องที่ยิงถี่ = ได้ทุกใบทั้งโรงงาน
+   - **คนที่ไม่มี `section`/`sections`/`employees.section` เลย ถูกปล่อยผ่านทุกส่วนงาน** →
+     **ช่างซ่อม 13/13 คนไม่มี section** (ใช้ `mtn_teams[]` แทนตามดีไซน์ของ role งานซ่อม)
+     ⇒ ใส่ role `mtn` ในกฎที่กรองด้วย section **กรองไม่ได้เลยสักคน**
+     · ช่างจึงรับ downtime ผ่าน `downtime_call_mtn` + `downtime_open_15min` (เรื่องที่ต้องลงมือ) แทน
+   · **กฎ: ก่อนพึ่ง `inapp_match_section` ให้เช็คก่อนว่า role ปลายทาง "มี section จริงกี่คน"**
+
+**ย้อนได้:** ค่าเดิมของ 14 เรื่องอยู่ที่ `bk_notification_rules_inapp_20260917` (event_key + inapp_roles + inapp_match_section)
+
+**ยังเหลือก่อนปิด Telegram ได้จริง:** Web Push 22/94 คน (iPhone ต้อง "เพิ่มลงหน้าจอโฮม" ก่อน) ·
+ขา "รับ" (`telegram-webhook`) ยังไม่ deploy · คอมเมนต์ในระบบยังมีแค่ MO/downtime
+
+---
+
 ### 🔗 "กดกระดิ่งแล้วไปที่ปัญหานั้นเลย" — `notifications.link` (2026-09-16)
 
 **ที่มา (feedback ทีมงานผ่าน user):** *"ระบบกระดิ่งแจ้งเตือนในเว็ป มีบางอันที่สามารถคลิกเข้าไปในจุดที่แจ้งเตือนหรือปัญหานั้นๆได้ แต่บางอันก็ไม่ได้"*
