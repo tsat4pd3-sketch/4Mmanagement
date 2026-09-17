@@ -172,7 +172,7 @@ function SectionPanel({ section, rows, onOpenKpi }) {
       {!rows.length ? (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
           ยังไม่ได้ตั้ง KPI ระดับส่วนงาน<br />
-          <span style={{ color: '#f59e0b' }}>ตั้งที่ 📑 KPI รายเดือน โดยเว้นช่อง "กลุ่มไลน์" ไว้</span>
+          <span style={{ color: '#f59e0b' }}>ตั้งที่แท็บ 📑 KPI รายเดือน โดยเว้นช่อง "กลุ่มไลน์" ไว้</span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -735,8 +735,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           why = `เทียบเป้า ${nf(target, 2)}${unit ? ' ' + unit : ''}`;
         } else {
           why = r.auto
-            ? 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
-            : 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
+            ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
+            : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
         }
         if (fromDept) why = `${note}${why ? ' · ' + why : ''}`;
         cells.push(st);
@@ -902,10 +902,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <b style={{ fontSize: 13, color: 'var(--text)' }}>📋 บอร์ด {section} — {board.cols.length} กลุ่มไลน์</b>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              ตัวเลข = สะสมเดือน {date.slice(0, 7)} · ⚡ ระบบคำนวณให้ · ✍️ ต้องกรอกที่ 📑 KPI รายเดือน
+              ตัวเลข = สะสมเดือน {date.slice(0, 7)} · ⚡ ระบบคำนวณให้ · ✍️ ต้องกรอกที่แท็บ 📑 KPI รายเดือน
             </span>
-            {canAccessPage('/dept-dashboard', role) && (
-              <button onClick={() => navigate(`/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`)}
+            {/* ไปแท็บพี่น้องในหน้าเดียวกัน (17/09 ย้ายมาจาก /dept-dashboard) — ไม่ต้องเช็คสิทธิ์หน้าอื่น
+                เพราะเป็นแท็บของ /obeya ซึ่งคนดูอยู่แล้วก็เข้าถึงได้ */}
+            {onTab && (
+              <button onClick={() => onTab('table')}
                 style={{ ...btn, marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }}>
                 📑 KPI รายเดือน / ตั้งเป้า
               </button>
@@ -916,20 +918,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             gridTemplateColumns: isMobile ? '1fr' : `repeat(auto-fit, minmax(260px, 1fr))`,
           }}>
             <SectionPanel section={section} rows={board.secRows}
-              onOpenKpi={() => {
-                const to = '/dept-dashboard';
-                if (canAccessPage(to, role)) navigate(`${to}?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`);
-              }} />
+              onOpenKpi={() => onTab?.('table')} />
             {board.cols.map(c => (
               <BoardColumn key={c.group} col={c}
                 onOpenGroup={canAccessPage('/dashboard', role) ? () => navigate(`/dashboard?line=${encodeURIComponent(c.group)}`) : undefined}
                 onOpenKpi={(col, r) => {
                   /* ⚠️ ปลายทางต้องผ่าน canAccessPage เสมอ — ไม่มีสิทธิ์ = ไม่พาไปแล้วโดนเด้ง */
-                  const to = r.auto === 'safety' ? null
-                    : r.auto ? '/oee-analytics'
-                      : `/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`;
-                  if (r.auto === 'safety' && canRecord) { setShowSafety({ section, line_name: col.group }); return; }
-                  if (to && canAccessPage(to.split('?')[0], role)) navigate(to);
+                  if (r.auto === 'safety') { if (canRecord) setShowSafety({ section, line_name: col.group }); return; }
+                  /* แถวกรอกมือ → แท็บตารางในหน้าเดียวกัน · แถวที่ระบบคำนวณ → หน้าวิเคราะห์ตัวจริง */
+                  if (!r.auto) { onTab?.('table'); return; }
+                  if (canAccessPage('/oee-analytics', role)) navigate('/oee-analytics');
                 }} />
             ))}
           </div>
