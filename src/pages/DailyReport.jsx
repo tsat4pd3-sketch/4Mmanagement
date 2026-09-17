@@ -2093,6 +2093,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        (เช็คแล้ว หารจำนวนเครื่องจะทำ P ร่วงจาก 63-98% เหลือ 21-33%) */
     const perMachineCt = flowModeOf(lf.flow_mode) === 'parallel_machine';
     let P = null, pRawRatio = null;   // pRawRatio = ค่าก่อน cap 100% — ใช้เตือนเมื่องาน > เวลาเครื่องที่มี
+    let dtOverstateMin = null;        // ดูหมายเหตุใต้บล็อกนี้
     if (runSec > 0 && matPData.length > 0) {
       const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
       if (isParallel || perMachineCt) {
@@ -2111,6 +2112,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)
         pRawRatio = totalStdSec / runSec;
         P = Math.min(1, pRawRatio);
+        /* 🔎 %P ทะลุ 100 = "งานที่บันทึกใช้เวลามากกว่าเวลาที่เครื่องเดินจริง" ซึ่ง **เป็นไปไม่ได้ทางฟิสิกส์**
+           แปลว่ามีตัวใดตัวหนึ่งผิด: CT / ยอดที่กรอก / เวลาเปิด-ปิดกะ / **Downtime ที่ลงไว้**
+           user ยืนยัน 17/09 ว่าเคสที่เจอบ่อยที่สุดคือ **ลง downtime เกินจริง** — ซึ่งทำ runMin หดผิด
+           ⇒ %A ตกลง (ดูเหมือนความผิดเครื่อง) แล้ว %P ดีดขึ้นชนเพดานพอดี (ย้ายความผิดออกจากไลน์)
+           ตรงนี้คำนวณ "ถ้า CT กับยอดถูก แล้ว downtime เกินไปกี่นาที" ให้หน้างานเห็นตอนที่ยังแก้ทัน
+           ⚠️ คิดเฉพาะสาย sequential — สาย parallel ตัวหารเป็น "เวลาเครื่องรวม" ไม่ใช่นาทีของไลน์
+              เอามาบอกเป็นนาที downtime ตรงๆ ไม่ได้ (จะได้เลขที่ชวนเข้าใจผิด) */
+        if (pRawRatio > 1.001) dtOverstateMin = Math.round(totalStdSec / 60 - runMin);
       }
     }
     // Q = ของดี / ผลิตจริง(ดี+เสีย) — การ์ดที่สแกนปิด = "ของดีล้วน" (ผลิตครบเป้าของดี · ของเสียผลิตเพิ่มต่างหาก
@@ -2138,7 +2147,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
     return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty, ctUsed,
       loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
-      pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10 };
+      pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,
+      dtOverstateMin, loggedDtMin: Math.round(loggedPlannedDT + loggedUnplannedDT) };
   };
   // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
   // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
@@ -4241,7 +4251,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             if (endMs < startMs) endMs += 86400000;
             return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
           });
-          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct,
+          const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct, dtOverstateMin, loggedDtMin,
             loggedPlannedDT: prevPlannedDT, loggedUnplannedDT: prevUnplannedDT, dtBreakOverlapMin: prevDtBrkOv } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeColor = oee == null ? 'var(--muted)' : oee >= 0.85 ? '#22c55e' : oee >= 0.65 ? '#f59e0b' : '#ef4444';
           // จอ landscape กว้าง → แผ่เนื้อหาเป็น 2 คอลัมน์แทนการยืดสูงจน scroll (layout อย่างเดียว ไม่แตะ logic/การคำนวณ)
@@ -4266,9 +4276,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     ห้าม cap เงียบแล้วปล่อยผ่าน (เตือนอย่างเดียว ไม่บล็อกการปิดกะ — หน้างานต้องเดินต่อได้) */}
                 {pOver && (
                   <div style={{ fontSize: 12, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 8, padding: '8px 12px', marginBottom: 14, color: '#f59e0b', fontWeight: 600 }}>
-                    ⚠ %P คำนวณได้ {pRawPct}% (เกิน 100% เลยถูกตัดเหลือ 100%) — งานตามมาตรฐานมากกว่าเวลาเครื่องที่มีในกะนี้
+                    ⚠ %P คำนวณได้ {pRawPct}% (เกิน 100% เลยถูกตัดเหลือ 100%) — งานตามมาตรฐานมากกว่าเวลาเครื่องที่มีในกะนี้ ซึ่งเป็นไปไม่ได้
+                    {dtOverstateMin > 0 && (
+                      <div style={{ fontWeight: 700, color: '#f59e0b', marginTop: 5 }}>
+                        ⏱ ถ้า CT กับยอดผลิตถูกต้อง ⇒ <u>Downtime ที่ลงไว้ {loggedDtMin} นาที เกินจริงอย่างน้อย {dtOverstateMin} นาที</u>
+                        <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+                          ยอดที่ผลิตได้ต้องใช้เวลาเดินเครื่องมากกว่าที่เหลือหลังหัก Downtime — กรุณาทวนรายการ Downtime ด้านล่างก่อนปิดกะ
+                        </div>
+                      </div>
+                    )}
                     <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 3 }}>
-                      ปิดกะได้ตามปกติ แต่ควรตรวจ: CT ของชิ้นงาน (Product Master) · ยอดที่กรอก · เวลาเปิด-ปิดใบ · จำนวนเครื่องขนานของไลน์ (LineSetup)
+                      ปิดกะได้ตามปกติ แต่ควรตรวจ: <b>Downtime ที่ลงไว้</b> · CT ของชิ้นงาน (Product Master) · ยอดที่กรอก · เวลาเปิด-ปิดใบ · จำนวนเครื่องขนานของไลน์ (LineSetup)
                     </div>
                   </div>
                 )}
