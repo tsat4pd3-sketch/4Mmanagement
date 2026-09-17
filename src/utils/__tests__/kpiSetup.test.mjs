@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
-  providerReaches, scopeLabel, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
+  providerReaches, scopeLabel, inferCompare, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -37,12 +37,23 @@ test('🔴 ยังไม่มีผล / ยังไม่ตั้งเป
   assert.equal(noTarget.level, null, '"ไม่มีเป้า" ต้องเป็นเทา ไม่ใช่เขียว');
 });
 
-test('🔴 ห้ามสมมติว่า Target ยากกว่า Commitment เสมอ — Safety commit 0 / target 1 Case', () => {
-  // ใบจริงหน้า 33 ของคู่มือ: Commitment 0 Case · Target 1 Case (กลับด้านกับแถวอื่น)
-  const def = { commit_compare: '<=', commit_value: 0, target_compare: '<=', target_value: 1, weight: 4 };
-  assert.equal(scoreKpi(0, def).point, 4,   '0 เคส = ผ่านบาร์ที่เข้มกว่า (0) ⇒ เต็ม');
-  assert.equal(scoreKpi(1, def).point, 2,   '1 เคส = ผ่านแค่บาร์หลวม (1) ⇒ ครึ่ง');
-  assert.equal(scoreKpi(2, def).point, 0,   '2 เคส = ไม่ถึงทั้งคู่');
+test('🔴 เกณฑ์อ่านจาก "ป้ายของบาร์" — ถึง Target = 1 · ถึงแค่ Commitment = 0.5 (ประกาศ QSM-R2 001/2569)', () => {
+  // แถวปกติ: ใบ PD3 HDF FY2026 ข้อ 3.5 OEE — commit ≥83% · target ≥85% · weight 6
+  const oee = { commit_compare: '>=', commit_value: 83, target_compare: '>=', target_value: 85, weight: 6 };
+  assert.equal(scoreKpi(86, oee).point, 6, '≥85 = ถึง Target ⇒ เต็ม');
+  assert.equal(scoreKpi(84, oee).point, 3, 'ถึงแค่ Commitment ⇒ ครึ่ง');
+  assert.equal(scoreKpi(80, oee).point, 0, 'ไม่ถึงทั้งคู่ ⇒ 0');
+
+  // แถวที่ commit "เข้มกว่า" target (คนกรอกสลับ) — ใบ JIG MTN ข้อ 3.4 MTTR commit ≤0.2 · target ≤0.3
+  // กติกาตามป้าย: ≤0.3 คือ Target ⇒ 0.25 ได้เต็ม · ห้ามกลับไปตัดสินจาก "บาร์ไหนเข้มกว่า" (เคยเขียนผิด)
+  const mttr = { commit_compare: '<=', commit_value: 0.2, target_compare: '<=', target_value: 0.3, weight: 4 };
+  assert.equal(scoreKpi(0.25, mttr).point, 4, 'ถึง Target = เต็ม ไม่ว่า commit จะเข้มกว่าหรือไม่');
+  assert.equal(scoreKpi(0.35, mttr).point, 0);
+
+  // มีแต่ Target ไม่มี Commitment (เช่น QCC ≥30%/plant) — ไม่ถึง = 0 ไม่ใช่ครึ่ง
+  const qcc = { target_compare: '>=', target_value: 30, weight: 2 };
+  assert.equal(scoreKpi(31, qcc).point, 2);
+  assert.equal(scoreKpi(29, qcc).point, 0);
 });
 
 test('totalPoints บอก coverage เสมอ (ไฟรวมต้องรู้ว่าตัดสินจากกี่ช่อง)', () => {
@@ -68,10 +79,20 @@ test('DL / OH / DL&OH = ตัวเลข ÷ ยอดขายจากสิ�
   assert.ok(Math.abs(both - (dl + oh)) < 1e-9, 'DL&OH ต้องเท่ากับ DL + OH เป๊ะ');
 });
 
-test('Inventory (วัน) = มูลค่าสต็อก ÷ (ยอดขาย ÷ ตัวหารวัน) — ใบใช้ 30 คงที่', () => {
-  const v = evalFormula('inventory_day',
-    { inventory_baht: 2000000, sale_product: 157193320.06, days_in_month: 30 }).value;
-  assert.ok(Math.abs(v - 0.3817) < 0.001, `ได้ ${v} ควรใกล้ 0.3817 (ตรงกับใบ PD3 ม.ค.)`);
+test('DSI = (มูลค่าสต็อกสิ้นเดือน ÷ COGS) × วัน — สูตรทางการ (ประกาศ + แม่แบบ Corporate + ใบ Monitoring)', () => {
+  const v = evalFormula('inventory_day', { inventory_baht: 12_000_000, cogs: 1_000_000_000, days_in_month: 30 }).value;
+  assert.ok(Math.abs(v - 0.36) < 1e-9, `ได้ ${v}`);
+  // ตัวหารคือ COGS — ส่ง sale_product มาแทนไม่ได้ ต้องฟ้องว่าขาด
+  assert.deepEqual(evalFormula('inventory_day', { inventory_baht: 1, sale_product: 2, days_in_month: 30 }).missing, ['cogs']);
+});
+
+test('🔴 DSI ของแต่ละแผนกบวกกัน = DSI ของทั้งโรงงาน (ตัวหาร COGS เป็นของโรงงานตัวเดียว)', () => {
+  // เลขจากใบ APPRAISAL FORM 2026 ที่เซ็นแล้วทั้ง 7 ใบ (§14.3)
+  const target = { pd1: 0.318, pd2: 0.196, pd3: 0.324, pd4: 0.049, logIn: 3.799, whOut: 7.301 };
+  const commit = { pd1: 0.345, pd2: 0.212, pd3: 0.351, pd4: 0.053, logIn: 4.115, whOut: 7.910 };
+  const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum(target) - 12) < 0.05, `รวม target ได้ ${sum(target)} ใบ GM เขียน ≤12 Days`);
+  assert.ok(Math.abs(sum(commit) - 13) < 0.05, `รวม commit ได้ ${sum(commit)} ใบ GM เขียน ≤13 Days`);
 });
 
 test('🔴 ขาดตัวแปร / ตัวหารเป็นศูนย์ = null + บอกว่าขาดอะไร ห้ามคืน 0', () => {
@@ -147,6 +168,28 @@ test('parseBar / fmtBar ไป-กลับได้ (ใบเก่าเก�
   assert.deepEqual(parseBar(null), { compare: null, value: null });
   assert.equal(fmtBar('<=', 300, 'PPM'), '≤ 300 PPM');
   assert.equal(fmtBar(null, null), '—');
+});
+
+test('🔴 เป้าที่เขียนไม่มีเครื่องหมาย ต้องเดาทิศได้ ไม่ใช่กลายเป็นเทาตลอดกาล (เลขจากใบจริงทั้ง 12 ใบ)', () => {
+  // 2) ยืมทิศจาก Commitment
+  assert.equal(inferCompare('100%', '>='), '>=', 'Customer Satisfaction: commit ≥95% ⇒ เป้า 100% คือ ≥');
+  assert.equal(inferCompare('730 Hr.', '>='), '>=', 'MTN MTBF: commit ≥729.5 Hr.');
+  assert.equal(inferCompare('0 Hr.', '<='), '<=', 'MTN MTTR: commit ≤2 Hr.');
+  assert.equal(inferCompare('0%', '<='), '<=', 'Machine Break Down: commit ≤0.28%');
+  // 3) ไม่มี Commitment ให้ยืม
+  assert.equal(inferCompare('0 Case', null), '<=', 'Safety ไม่มี commit');
+  assert.equal(inferCompare('0', null), '<=', 'Premium Freight ไม่มี commit');
+  assert.equal(inferCompare('100%', null), '>=', 'WH TS Academy ไม่มี commit');
+  // 1) มีเครื่องหมายชนะเสมอ
+  assert.equal(inferCompare('≤ 300 PPM', '>='), '<=', 'เครื่องหมายในข้อความต้องชนะการยืมทิศ');
+  // 4) เดาไม่ได้ = null (จอต้องบอกว่ายังไม่ระบุทิศทาง ห้ามเดามั่ว)
+  assert.equal(inferCompare('3 Types', null), null);
+
+  // ผลลัพธ์ปลายทาง: เป้า "100%" ต้องให้คะแนนได้จริง ไม่ใช่ pending
+  const t = parseBar('100%', '>=');
+  const sc = scoreKpi(100, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 });
+  assert.equal(sc.point, 5);
+  assert.equal(scoreKpi(96, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 }).point, 2.5);
 });
 
 test('ทะเบียนไม่มีคีย์ซ้ำ และสูตรอ้างตัวแปรที่มีจริงทุกตัว', () => {

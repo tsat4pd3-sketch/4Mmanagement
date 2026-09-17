@@ -87,7 +87,8 @@ export const KPI_BASE_VARS = [
   { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',         unit: 'บาท' },
   { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                 unit: 'บาท' },
   { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',        unit: 'บาท' },
-  { key: 'inventory_baht', label: 'มูลค่าสต็อกในพื้นที่ผลิต',              unit: 'บาท' },
+  { key: 'cogs',           label: 'ต้นทุนขาย COGS (ตัวหารของ DSI)',        unit: 'บาท' },
+  { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท' },
   { key: 'manpower',       label: 'กำลังคน (หัว)',                        unit: 'คน' },
   { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',           unit: 'บาท' },
   { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',        unit: 'วัน' },
@@ -99,12 +100,15 @@ export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null
    ✅ verify กับ **ใบ Monitoring ในระบบ KPI Online ของจริง** แล้ว 17/09 (§13.1) — ตรงเป๊ะ 3 ตัว:
       rm_pct = (Raw Material/Sales from product)×100 · dloh_pct = [(DL+OH)/Sale from product]×100
       · p100_pct = (Actual 100P/Sale from product)×100
-   🔴 `inventory_day` — **อย่าเพิ่ง "แก้ให้ถูก" ตามใบใดใบหนึ่ง ยังไม่ได้ข้อยุติ 3 ทาง (§13.3)**
-      · ใบระบบจริง (P4): (Stock value end of month ÷ **COGS**) × Day   ← ตัวหาร = ต้นทุนขาย
-      · แผ่นบอร์ด PD3 + ไฟล์ Excel: หารด้วย **ยอดขาย** (เทสล็อกค่า 0.3817 จากใบ PD3 ม.ค. ไว้แล้ว)
-      · ใบ Excel หารวัน 30 คงที่ · แผ่นบอร์ดเขียนว่าใช้วันทำงานจริง
-      ⇒ ตอนนี้ใช้ยอดขาย + ตัวหารวันจากตัวแปรฐาน `days_in_month` (ตั้ง 30 หรือวันทำงานจริงก็ได้)
-        ถ้า KPI Audit ตอบว่าใช้ COGS ⇒ ต้องเพิ่มตัวแปรฐาน `cogs` ไม่ใช่สลับความหมาย `sale_product`
+   ✅ `inventory_day` (DSI) = `(มูลค่าสต็อกสิ้นเดือน ÷ COGS) × Days` — **ปิดข้อยุติแล้ว 17/09 (§14.2)**
+      ยืนยันตรงกัน 3 แหล่งอิสระ: ประกาศบริษัท QSM-R2 001/2569 · แม่แบบ Corporate KPI Guideline 2026
+      · ใบ Monitoring ในระบบ KPI Online  ⇒ **ตัวหารคือ COGS ไม่ใช่ยอดขาย** (เคยเขียนผิดเป็น sale_product)
+      · ตัวหารวัน (`days_in_month`) ยังไม่ชี้ขาดว่า 30 คงที่หรือวันทำงานจริง — จึงยังเป็นตัวแปรฐาน
+      · DSI มี **2 หน่วยทางการ**: `วัน` (สูตรนี้) หรือ `MB` (มูลค่าสต็อกดิบๆ) — แม่แบบ Corporate ให้เลือกได้
+        ⇒ แถว "Inventory Balance - …" ใต้ DSI ในใบแผนก = ตัวเดียวกันแต่รายงานเป็น MB
+      · **ตัวตั้งมาจาก storage location เฉพาะของแผนกนั้น** (PD1 P401/405/406/407/408 · PD2 P402/403/404/413
+        · PD3 P409+P411 · PD4 P410+412 · LOG ขาเข้า MAT 5xxxxx,3xxxxx + 2xxxxx · WH ขาออก FG 1xxxxx)
+        และ **ตัวหาร COGS เป็นของทั้งโรงงาน** ⇒ DSI รายแผนกบวกกันได้ = DSI ของโรงงาน (พิสูจน์แล้ว §14.3)
    ℹ️ `sale_per_head` ใบทางการเขียน "Total Sales / **Average** manpower" — `manpower` ต้องเป็นค่าเฉลี่ยของช่วง */
 export const KPI_FORMULAS = [
   { key: 'dl_pct',        label: 'DL %',        expr: 'dl ÷ sale_product × 100',                  vars: ['dl', 'sale_product'],             unit: '%' },
@@ -112,7 +116,7 @@ export const KPI_FORMULAS = [
   { key: 'dloh_pct',      label: 'DL&OH %',     expr: '(dl + oh) ÷ sale_product × 100',           vars: ['dl', 'oh', 'sale_product'],       unit: '%' },
   { key: 'rm_pct',        label: '%RM',         expr: 'raw_material ÷ sale_product × 100',        vars: ['raw_material', 'sale_product'],   unit: '%' },
   { key: 'p100_pct',      label: '100P %',      expr: 'cost_100p ÷ sale_product × 100',           vars: ['cost_100p', 'sale_product'],      unit: '%' },
-  { key: 'inventory_day', label: 'Inventory (วัน)', expr: 'inventory_baht ÷ (sale_product ÷ days_in_month)', vars: ['inventory_baht', 'sale_product', 'days_in_month'], unit: 'วัน' },
+  { key: 'inventory_day', label: 'DSI (วัน)',   expr: '(inventory_baht ÷ cogs) × days_in_month',      vars: ['inventory_baht', 'cogs', 'days_in_month'], unit: 'วัน' },
   { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'sale_total ÷ manpower ÷ 1,000,000',    vars: ['sale_total', 'manpower'],         unit: 'MB' },
 ];
 
@@ -135,7 +139,7 @@ export function evalFormula(formulaKey, vars = {}) {
     case 'dloh_pct':      value = div(v.dl + v.oh, v.sale_product); break;
     case 'rm_pct':        value = div(v.raw_material, v.sale_product); break;
     case 'p100_pct':      value = div(v.cost_100p, v.sale_product); break;
-    case 'inventory_day': { const per = div(v.sale_product, v.days_in_month); value = per == null ? null : div(v.inventory_baht, per); break; }
+    case 'inventory_day': { const r = div(v.inventory_baht, v.cogs); value = r == null ? null : r * Number(v.days_in_month); break; }
     case 'sale_per_head': { const per = div(v.sale_total, v.manpower); return { value: per == null ? null : per / 1e6, missing: [], error: null }; }
     default: return { value: null, missing: [], error: 'ยังไม่ได้ทำสูตรนี้' };
   }
@@ -191,27 +195,23 @@ export function scoreKpi(value, def = {}) {
     return { ...KPI_PENDING, point: null, reason: 'ยังไม่ได้ตั้งเป้า' };   // ไม่มีเป้า = เทา ไม่ใช่เขียว
   }
 
-  // บาร์ไหน "เข้มกว่า" — เทียบเมื่อมีทั้งคู่และทิศเดียวกัน
-  let strictIsTarget = true;
-  const tv = def.target_value == null ? null : Number(def.target_value);
-  const cv = def.commit_value == null ? null : Number(def.commit_value);
-  if (tv != null && cv != null && def.target_compare && def.commit_compare) {
-    const down = String(def.target_compare).startsWith('<');
-    strictIsTarget = down ? tv <= cv : tv >= cv;
-  }
-  const strictOk = strictIsTarget ? okT : okC;
-  const looseOk  = strictIsTarget ? okC : okT;
-
+  /* 🔴 เกณฑ์ตัดสินอ่านจาก "ป้ายของบาร์" ไม่ใช่ "บาร์ไหนเข้มกว่า"
+     หลักฐานชี้ขาด: ประกาศบริษัท QSM-R2 001/2569 Rev.0 (16/03/2026) หัวคอลัมน์เขียนตรงๆ ว่า
+     `Commitment Score = 0.5` · `Target Score = 1` (ดู docs/OBEYA-KPI-SOURCES.md §14.2)
+     ⇒ ถึง Target = 1 · ไม่ถึง Target แต่ถึง Commitment = 0.5 · ไม่ถึงทั้งคู่ = 0
+     เคยเขียนเป็น "บาร์ที่เข้มกว่า = 1" (เดาเอง) แล้วผิดกับแถวที่ commit เข้มกว่า target
+     — ซึ่งในใบจริงเป็น **คำผิดของคนกรอก** ไม่ใช่กติกาอีกแบบ (เช่น Total Sales ในประกาศพิมพ์
+     2,117.82 MB แต่ใบ GM เขียน 2,177.82 MB) ⇒ ห้ามเปลี่ยนกลับไปเดาจากความเข้ม */
   let level;
-  if (strictOk) level = 1;
-  else if (looseOk) level = 0.5;
+  if (okT) level = 1;
+  else if (okC) level = 0.5;
   else level = 0;
 
   const meta = KPI_LEVELS[level];
   return {
     ...meta,
     point: weight == null ? null : Math.round(weight * level * 100) / 100,
-    reason: level === 1 ? 'ถึงบาร์ที่เข้มกว่า' : level === 0.5 ? 'ถึงบาร์ที่หลวมกว่า' : 'ไม่ถึงทั้งสองบาร์',
+    reason: level === 1 ? 'ถึง Target' : level === 0.5 ? 'ถึง Commitment' : 'ไม่ถึงทั้ง Commitment และ Target',
   };
 }
 
@@ -272,12 +272,32 @@ export function summarizeMonths(months = [], mode = 'average', rate = null) {
 export const COMPARES = ['<=', '>=', '<', '>', '='];
 
 /** แกะ "≤ 2.5364%" / "<=300PPM" → { compare, value } — ใช้ตอนนำเข้าจากใบเก่าที่เก็บเป็นข้อความ */
-export function parseBar(txt) {
-  if (txt == null) return { compare: null, value: null };
-  const s = String(txt);
-  const compare = /(≤|<=)/.test(s) ? '<=' : /(≥|>=)/.test(s) ? '>=' : /</.test(s) ? '<' : />/.test(s) ? '>' : null;
+/* ใบจริงเขียนเป้าแบบ "ไม่มีเครื่องหมาย" เป็นเรื่องปกติ — ต้องเดาทิศทางให้ถูก ไม่งั้นข้อนั้นเทาตลอดกาล
+   (Customer Satisfaction เป้า "100%" โผล่ครบทั้ง 12 ใบ น้ำหนัก 5 · MTN MTBF "730 Hr." · MTTR "0 Hr."
+    · Machine Break Down "0%" · Safety "0 Case" · Premium Freight "0" · WH TS Academy "100%")
+   ลำดับการเดา — คงที่ ห้ามสลับ:
+     1) มีเครื่องหมายในข้อความ → ใช้ตามนั้น
+     2) ไม่มี แต่บาร์อีกฝั่ง (Commitment) มีเครื่องหมาย → ใช้ทิศเดียวกัน   ← ครอบคลุมเคสส่วนใหญ่
+     3) ยังไม่รู้ → ค่า 0 = `<=` (นับเคส/ของเสีย ติดลบไม่ได้) · ค่า 100 = `>=` (เปอร์เซ็นต์เต็ม)
+     4) เดาไม่ได้ → คืน null แล้วให้จอบอกว่า "เป้าข้อนี้ยังไม่ระบุทิศทาง" ห้ามเดามั่ว */
+export function inferCompare(txt, otherCompare = null) {
+  const s = txt == null ? '' : String(txt);
+  if (/(≤|<=)/.test(s)) return '<=';
+  if (/(≥|>=)/.test(s)) return '>=';
+  if (/</.test(s)) return '<';
+  if (/>/.test(s)) return '>';
+  if (otherCompare) return String(otherCompare).startsWith('<') ? '<=' : '>=';
   const m = s.replace(/,/g, '').match(/(-?\d+(\.\d+)?)/);
-  return { compare, value: m ? Number(m[1]) : null };
+  const n = m ? Number(m[1]) : null;
+  if (n === 0) return '<=';
+  if (n === 100) return '>=';
+  return null;
+}
+
+export function parseBar(txt, otherCompare = null) {
+  if (txt == null) return { compare: null, value: null };
+  const m = String(txt).replace(/,/g, '').match(/(-?\d+(\.\d+)?)/);
+  return { compare: inferCompare(txt, otherCompare), value: m ? Number(m[1]) : null };
 }
 
 /** ประกอบกลับเป็นข้อความบนใบ เช่น `≤ 2.5364 %` */
