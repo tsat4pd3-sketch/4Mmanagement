@@ -1871,8 +1871,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        แต่ตอน "✏️ แก้เวลากะ" (กะปิดไปแล้ว) ใบกลายเป็น carry_over/cancelled และ state ว่าง
        → ต้อง fallback ไป o.qty_actual ไม่งั้นยอดที่ยกยอดหายจากการคำนวณทั้งก้อน
        เคสหนัก: กะที่ผลิตไม่จบสักใบ → totalProduced = 0 → noProduction → stamp A/Q/OEE เป็น null ทั้งกะ */
+    /* 🔴 ต้องมี `imported` ด้วย (2026-09-16 · หัวหน้ากลุ่ม Assy2 จับได้ว่า OEE ผิด)
+       `imported` = ใบยกยอดที่ **กะถัดไปกดรับไปแล้ว** — ยอดที่ทำได้ในกะนี้ยังอยู่ที่ `qty_actual` ของใบเดิม
+       ใบสืบทอดฝั่งกะถัดไปถือแค่ "ส่วนที่เหลือ" (remainQty) ⇒ นับตรงนี้ไม่ซ้ำซ้อน (oee.js §6)
+       เคสจริง Assy LWR 15/09 กะเช้า: ตอน "ขอปิดกะ" ใบยังเป็น carry_over ⇒ นับ 384 ชิ้น
+       พอ SV มาอนุมัติ/แก้เวลาเช้าวันถัดไป กะดึกรับยอดไปแล้ว ใบกลายเป็น `imported`
+       ⇒ 32 ชิ้นหายจากสูตร ⇒ %P ร่วง 86.18 → 79.00 · OEE 72.00 → 66.00
+         **ทั้งที่ actual_qty ในแถวเดียวกันยังเป็น 384** (แถวขัดแย้งกันเอง) */
     const carryActualQty = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
       .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
     // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
@@ -1994,7 +2001,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
       // ต้องนับใบที่ไม่ปิดเหมือนกับ totalProduced ข้างบน (ไม่งั้น %P ของ MAT นั้นหายตอนแก้เวลากะ)
       const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + orders.filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+                + orders.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
                         .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
       if (!qty) return;
       const ctSec = ctForMatNo(matNo);
@@ -2252,7 +2259,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
     const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
     const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
-    const carryActual     = openOrders.reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+    /* 🔴 ยอดที่ stamp ต้องนับใบ `carry_over`/`imported` ด้วย ให้ตรงกับ totalProduced ใน computeOEE
+       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09) */
+    const carryActual     = prodOrders
+      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
