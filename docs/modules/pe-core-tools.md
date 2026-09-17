@@ -72,3 +72,20 @@
   7. **ชุดใหม่จาก master ต้องสร้างครบหรือไม่สร้างเลย** (`PeSetFromMasterModal` — insert ลูกล้ม → ลบ set ที่เพิ่งสร้าง) ห้ามทิ้งชุดเปล่าไว้
 - **การใช้งาน:** `/pe-docs` แท็บ **📚 คลัง PFMEA** (`src/components/PeMasterLibrary.jsx` — รายการ master · ยืนยัน · แก้แถว · กล่องข้อเสนอ) · แท็บ FMEA ปุ่ม **📚 เติมจาก master** (`PeMasterPullModal` — เลือกแถวก๊อปลง OP ที่ผูก master · ข้ามแถวที่มีอยู่แล้ว) + ป้ายเทียบรายแถว + **⭐ เสนอเข้า master / ➕ เสนอเป็นรายการใหม่** · modal OP มีช่องผูก master + คำแนะนำจากชื่อ (`suggestMaster`) · ออก revision FMEA → `autoPropose()` กวาดแถวที่ดีกว่า master เสนอให้อัตโนมัติ (ไม่ซ้ำแถวที่มีข้อเสนอค้าง) · หัวเพจ **📚 ชุดใหม่จาก master** + ใน `/npi` modal พาร์ท ช่อง PE set มีปุ่มเดียวกัน (`PeSetFromMasterModal` — เลือก master หลายตัวเรียงเป็น OP 10,20,…)
 - **ยังไม่ทำ:** แจ้งเตือน yokoten อัตโนมัติเมื่อ master เปลี่ยน (ตอนนี้เห็นจากป้าย behind ในพาร์ท) · master ของ Control Plan · รวม master ซ้ำ (merge) · ประวัติ version รายแถว (มีแค่เลข version + audit_log)
+
+
+## ⚠️ คลัง PFMEA กลาง — migration ยังไม่ได้ apply (พบ 2026-09-16)
+
+`20260915_pe_fmea_master_main.sql` **ยังไม่ถูก apply บน Main** — ตรวจ `pg_class` แล้วไม่มีตาราง
+`pe_master_processes` / `pe_master_items` / `pe_master_proposals` เลยสักตัว (0 แถวใน `pg_policies` ด้วย)
+ทั้งที่ CLAUDE.md เขียนถึงฟีเจอร์นี้เหมือนใช้งานได้แล้ว
+
+- **ผลตอนนี้:** แท็บ 📚 ในหน้า `/pe-docs` ขึ้น "คลังว่าง" — **ไม่พัง** เพราะ `loadMasters()` ใช้
+  `(m.data || [])` รองรับ 42P01 ไว้แล้ว (มีคอมเมนต์กำกับที่ `PEDocs.jsx:162`) · ลูป "ระบบเสนอ คนตัดสิน"
+  จึงยังไม่ทำงานจริง
+- **ยังไม่ apply ให้ เพราะเป็น product decision** (= เปิดฟีเจอร์ใหม่) ต้องให้ user สั่ง
+- **แต่แก้ RLS ในไฟล์ให้ถูกไว้แล้ว (2026-09-16)** — เดิมบล็อกนั้นเป็น `for all to authenticated
+  using (true)` = ใครที่ login ก็แก้ master PFMEA กลางได้ตรงๆ โดยไม่ผ่านลูปข้อเสนอ (ขัดกฎที่ออกแบบไว้เอง)
+  ตอนนี้เป็น: `pe_master_processes`/`pe_master_items` → `has_perm('pe:approve')` ·
+  `pe_master_proposals` → INSERT `pe:edit` / UPDATE-DELETE `pe:approve`
+  ⇒ วันไหนกด apply ก็ได้สิทธิ์ที่ถูกต้องตั้งแต่แรก ไม่ต้องตามแก้ทีหลัง

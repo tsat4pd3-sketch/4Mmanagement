@@ -139,20 +139,11 @@
 | `meeting_action_items` | Action item จากประชุมแถวเช้า **+ ห้อง OBEYA** (ติดตามข้ามวันจนปิด) · **ตารางเดียวใช้ร่วมกัน ห้ามสร้างใหม่** · RLS = `has_perm('morning_meeting:record') or has_perm('obeya:record')` ครบ 4 cmd (2026-09-15) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled), **source** (morning/obeya), **kpi_key** (แกน SQDCM/OEE ที่ใบนี้ไปแก้ — ไม่มี check constraint ตั้งใจ), **target_value/result_value** |
 | `event_comments` (**DR**) | 💬 คอมเมนต์+🔔mention ใต้เหตุการณ์ (นำร่อง: ใบซ่อม MO + downtime — ก้าวแรกของสื่อสารในระบบแทน chat แยก, 2026-07-16) | ref_kind (mtn_order/downtime), ref_id (text), author_id/author_name (snapshot — profiles อยู่คนละ project), body, mentions jsonb · component กลาง `src/components/EventComments.jsx` (embed ใน MtnRepair DetailDrawer + แถว DT ใน DailyReport) · mention → client insert `notifications` ตรง (policy `notifications_insert_authenticated`) + รายชื่อจาก RPC `list_mention_users` (SECURITY DEFINER, guard auth.uid, revoke anon) — migrations `20260716_event_comments.sql` (DR) + `20260716_mention_notify.sql` (Main) · จุดใหม่ที่อยากมีคอมเมนต์ให้ reuse component นี้ + เพิ่มค่า ref_kind ใน check constraint |
 
-### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — **โมเดลรายไลน์ (2026-07-23):** `line_name` null = **common ฐาน backfall ทุกไลน์** · `line_name`=ไลน์ = ข้อเฉพาะไลน์นั้น · **`hidden_for_lines[]`** = ไลน์ที่ "ไม่ใช้" ข้อ common นั้น (ซ่อนรายไลน์) → แต่ละไลน์ = common − ข้อที่ซ่อน + ข้อเฉพาะไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end | category (safety/quality/systemic/visual/special), seq, question, line_name, **hidden_for_lines[]**, issue_start/end, is_active |
-| `lpa_plans` | แผนตรวจรายเดือน (unique ไลน์+กะ+เดือน) | line_name, shift (day/night), month_key 'YYYY-MM', leader/supervisor/manager/gm_name, stations (list ใช้เติมแผนอัตโนมัติ) |
-| `lpa_plan_days` | รายวันของแผน: สถานีตรวจ + ชั้นที่วางแผน | plan_id (FK cascade), day 1-31, station, plan_leader/supervisor/manager/gm |
-| `lpa_audits` | ผลตรวจ 1 ครั้ง (unique ไลน์+กะ+วัน+ชั้น) | audit_date, layer (leader/supervisor/manager/gm), station, auditor_name/sig_url |
-| `lpa_audit_answers` | คำตอบรายข้อ (snapshot question_text) | audit_id (FK cascade), question_id, answer (Y/N/T/NA), note (บังคับเมื่อ N/T) |
+### Layer Process Audit — LPA (FM-QMR-008 · paperless)
+> 📄 โครงตาราง `lpa_questions` · `lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers` → `docs/modules/lpa-audit.md`
 
-### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `ojt_trainings` | หัวใบอบรม OJT (หน้า `/ojt-training` · migration `20260714_ojt_training.sql`) | train_date, time_from/to, location, dept/section/department, for_new/for_review/for_method_change, topic, scope, trainer_name, duration_min, maker/approver/hr (name+sig_url — เลือกจาก profiles ที่มี signature_url), status (open/completed) |
-| `ojt_training_attendees` | ผู้เข้าอบรมต่อใบ (snapshot ชื่อ/รหัส กัน master เปลี่ยน) | training_id (FK cascade), employee_id, emp_code/emp_name, pre_score/post_score (0-4), sign_url (เซ็นบนจอ → bucket `signatures` path ของ user ที่บันทึก), eval_agree, evaluator_name, sort_order |
+### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 · paperless)
+> 📄 โครงตาราง `ojt_trainings` · `ojt_training_attendees` + กฎของโมดูล → `docs/modules/ojt-training.md`
 
 ---
 
@@ -465,22 +456,34 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2 แท็บ · 2026-08-27 + 2026-09-15)
 
-หน้า `Obeya.jsx` (กลุ่มภาพรวม) = **เปลือกบางๆ ที่สลับ 2 บอร์ด** — สองงานคนละ session ที่ทำ `/obeya` คนละมุม
-โดยไม่รู้ว่าอีกฝั่งทำอยู่ รวมเข้าด้วยกัน 2026-09-15 · **ห้ามยุบสองแท็บเป็นบอร์ดเดียว** (คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข)
-· **`?tab=kpi` (default) — 📋 บอร์ด KPI ส่วนงาน** (`components/ObeyaKpiBoard.jsx` · 2026-08-27 คำสั่งนายใหญ่ผ่าน user
-  *"กระดาษหน้างานที่เป็น OBEYA KPI monitoring จะต้องถูกยุบเข้ามาในโปรแกรมนี้ให้ได้"*) — **ราย*เดือน* × กลุ่มไลน์ (คอลัมน์) × 8 หัวข้อ**
-  ตามบอร์ดจริงที่ user ถ่ายรูปมา + ป้าย G/Y/R · ⚡ auto 3 ตัว (OEE·PPM·Safety) ✍️ กรอกมือ 5 ตัวที่ `/dept-dashboard?view=kpi`
-  · **ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง** (`ประเมินได้ N/M ช่อง`) · **"ไม่มีเป้า" = เทา ไม่ใช่เขียว**
-  · สูตร/สถานะอยู่ `src/utils/obeya.js` (pure · มีเทส) · ตาราง `safety_events` + `kpi_catalog`/`kpi_definitions.line_group` (Main)
-· **`?tab=sqdcm` — 🖥️ จอมอนิเตอร์ SQDCM** (`components/ObeyaSqdcmBoard.jsx` · 2026-09-15) — บอร์ด **ราย*วัน/สัปดาห์/เดือน*** ที่ตัดตาม*แกน*
-· **ผัง "กระดาษ A4 ปูเต็มจอ" 5×2** (คำสั่ง user) — ทุกแผ่นเป็นกราฟ + เป้า + Δ เทียบงวดก่อน · มีโหมด 📺 จอ TV เต็มจอ
-· KPI ทั้งหมดอยู่ `src/utils/obeyaKpi.js` (pure · มีเทส) **ห้ามคำนวณซ้ำในหน้า** · OEE ยังมาจาก `oee.js` เท่านั้น
-· **🔴 กฎความซื่อสัตย์ของจอ:** แกนที่ข้อมูลไม่พอ (S ไม่มีทะเบียนอุบัติเหตุ · Q บันทึกของเสียไม่ครบ) **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง** — `axisXxx()` คืน `state: 'ok'|'thin'|'none'` + `note` เสมอ
-· **ACTION BOARD** = ที่เดียวของหน้าที่เขียนข้อมูลได้ · ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกที่มาด้วย `source` · migration `20260915_obeya_action_loop.sql` (**apply แล้ว** — เพิ่ม `source`/`kpi_key`/`target_value`/`result_value` + **แก้ RLS จาก `using(true)` เป็น `has_perm()` ครบ 4 cmd**)
-· สิทธิ์: `page:/obeya` (ทุก role) · `obeya:record` (leader ขึ้นไป)
-· ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** — โหลด 400 KB/รอบ ทุกใบงานที่ปิดจะลากจอโหลดใหม่ทั้งก้อน
-> 📄 รายละเอียดเต็ม → แท็บ KPI: `docs/modules/obeya-kpi-board.md` (โครงบอร์ดจริง · กฎ Safety ⚪ ไม่รู้ ≠ เขียว · ทะเบียนไฟล์ KPI จริง `docs/OBEYA-KPI-SOURCES.md`)
-> · แท็บ SQDCM: `docs/modules/obeya.md` (8 หัวข้อย่อย) · เหตุผลของดีไซน์ → `docs/OBEYA-DESIGN.md`
+`Obeya.jsx` = **เปลือกสลับแท็บ** (งาน 2 session ที่ทำคนละมุมโดยไม่รู้กัน · รวมเข้าด้วยกัน 15/09)
+· **`?tab=kpi` (default)** = 📋 บอร์ด KPI ส่วนงาน — ยุบกระดาษ *"OBEYA KPI monitoring"* ที่แปะผนัง
+  (ราย**เดือน** × กลุ่มไลน์ × หัวข้อ) · `components/ObeyaKpiBoard.jsx` · สูตร/สถานะอยู่ `src/utils/obeya.js`
+· **`?tab=sqdcm`** = 🖥️ จอมอนิเตอร์ SQDCM ราย**วัน/สัปดาห์/เดือน** ผัง "กระดาษ A4 ปูเต็มจอ 5×2" + โหมดจอ TV
+  · `components/ObeyaSqdcmBoard.jsx` · KPI อยู่ `src/utils/obeyaKpi.js` (OEE ยังมาจาก `oee.js` เท่านั้น)
+· **🔴 ห้ามยุบ 2 แท็บเป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
+· **🔴 กฎความซื่อสัตย์ของจอ:** แกน/ช่องที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง**
+  · "ไม่มีเป้า" = เทา ไม่ใช่เขียว · ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง
+· **🔴 กลุ่มมีระบบ KPI ทางการอยู่แล้ว (KPI Online)** — ESM = "ที่ผลิตตัวเลข Actual" **ห้ามทำแข่งเป็นระบบทะเบียน**
+  เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
+· **ACTION BOARD** ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกด้วย `source`
+· สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
+· **🧱 ตั้งค่า KPI เป็น data-driven แล้ว (16/09):** ขอบเขต 6 ระดับ (`scope_kind`+`scope_value` — **`cost_center` คนละแกนกับไลน์**)
+  · Commitment/Target เป็นคนละบาร์ · `provider` = 🔗 ลิ้ง data (auto/formula/manual) · `kpi_month_plans` แผน 12 เดือน
+  · `kpi_base_inputs` ตัวแปรฐานจากบัญชี/SAP → สูตรการเงินคำนวณเอง · **ทะเบียน+เกณฑ์อยู่ `src/utils/kpiSetup.js` เท่านั้น**
+  · migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) — แต่ละแผนกใช้ KPI คนละชุดจริง (JIG MTN ไม่มี OEE/PPM/Inventory)
+> 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
+> 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
+
+---
+
+## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
+
+> **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
+> (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
+> ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
+> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
+> 📄 `docs/modules/bom-levels.md` (ทำไมเดิม ~90% ตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
 
 ---
 
@@ -604,10 +607,9 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
                        #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
-                       #   OBEYA-DESIGN.md (บันทึกการสำรวจ + เหตุผลของดีไซน์ Obeya — ✅ ลงมือแล้ว 2026-09-15
-                       #     ของที่ทำจริงอยู่ `docs/modules/obeya.md` · ⚠️ ข้อค้นพบชี้ขาดที่ยังจริงอยู่:
-                       #     `meeting_action_items` = 0 แถวตั้งแต่สร้าง 13/07 = "ลูปติดตามมีโค้ดแต่ไม่มีใครใช้"
-                       #     ⇒ จอสวยไม่ช่วย ถ้าไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้)
+                       #   OBEYA-DESIGN.md (เหตุผลของดีไซน์ Obeya · ของที่ทำจริง → docs/modules/obeya*.md) ·
+                       #   OBEYA-KPI-SOURCES.md (**ที่มาตัวเลข KPI ทุกใบ + คู่มือ KPI Online ของกลุ่ม
+                       #     + ใบจริง PD3/PD4/JIG 2026 §8-12 — อ่านก่อนแตะอะไรที่เกี่ยวกับ KPI**)
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
@@ -734,6 +736,12 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
+     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px จับของที่ "ไม่พังแต่ใช้ไม่ได้" (2026-09-16)**
+     crashsweep จับแค่ "หน้าพัง" · อันนี้จับ **sticky ค้างทับเนื้อหา** (layout ยุบเหลือคอลัมน์เดียวแล้วลืมถอด
+     sticky ของ sidebar) · **ของล้นแล้วปัดดูไม่ได้** · **ข้อความถูกบีบเหลือกว้าง 0 หายทั้งบรรทัด**
+     (`whiteSpace:nowrap` ข้างๆ ไม่ยอมหด) — ทั้ง 3 อย่างนี้ **build/lint/เทส/crashsweep ผ่านหมด**
+     แต่หน้างานเปิดมือถือแล้วอ่านไม่ออก (เคสจริงจากคลิป user) · กติกาเต็ม → `docs/UI-CONVENTIONS.md` §มือถือ
+     · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
    - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
 
 ### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
@@ -876,17 +884,7 @@ Platform:    Render.com (Static Site)
 
 ## Reusable สำหรับโปรเจคถัดไป (PM Checker)
 
-| สิ่งที่มี | นำไปใช้ได้เลย |
-|---------|-------------|
-| Supabase Auth + Profiles + Roles | ✅ ใช้ระบบ Auth เดิม |
-| Toast.jsx | ✅ Copy ไปใช้ |
-| Telegram Bot notification | ✅ Copy Edge Function + ตั้ง Secrets ใหม่ |
-| In-app notification bell | ✅ ใช้กับ notifications table เดิม |
-| 4M Approval workflow | ✅ ดัดแปลงเป็น PM approval flow |
-| SignatureModal.jsx | ✅ ลายเซ็นยืนยันงาน PM |
-| CSV export | ✅ Report ประวัติ PM |
-| Dark/Light theme | ✅ Copy index.css variables |
-| Recharts | ✅ แสดงสถิติ PM |
+> 📄 ตารางของที่ยกไปใช้ต่อได้เลย (Auth/Toast/Telegram/4M workflow/SignatureModal ฯลฯ) → `docs/modules/reusable-pm-checker.md`
 
 ---
 

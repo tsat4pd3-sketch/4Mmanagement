@@ -1,0 +1,280 @@
+/* ══ 🎯 kpiSetup — ทะเบียนกลางของ "การตั้งค่า KPI" (pure · ห้าม import supabase/DOM) ══════════
+   2026-09-16 · ถอดจากใบจริง 3 แผนก (PD3 · PD4 · JIG MTN) + คู่มือ KPI Online ของกลุ่ม
+   ที่มา/หลักฐานทุกตัวเลขในนี้ → docs/OBEYA-KPI-SOURCES.md §8-12  **อ่านก่อนแก้ไฟล์นี้เสมอ**
+
+   ทำไมต้องมีไฟล์นี้:
+   ใบจริงพิสูจน์แล้วว่า **hardcode ชุด KPI ไม่มีทางพอ** — JIG MTN ไม่มี Inventory/PPM/OEE เลย
+   แต่มี MTBF/MTTR/PM JIG · เป้ากับหน่วยต่างกันทุกแผนก · แม้แต่เด็คทบทวนกับไฟล์ Excel
+   ยังตั้งเป้าไม่ตรงกัน (PD3 OEE เด็ค ≥85% ไฟล์ ≥79%) ⇒ ทุกอย่างต้องตั้งจากจอ ไม่ใช่จากโค้ด
+
+   สิ่งที่ไฟล์นี้เป็นเจ้าของ (ห้ามเขียนซ้ำในหน้า):
+     1) ระดับขอบเขต (KPI_SCOPE_LEVELS)     — ส่วนงาน → แผนก → กลุ่ม → ไลน์ · + cost center
+     2) ที่มาข้อมูล (KPI_PROVIDERS)         — 🔗 "ลิ้ง data" ที่ user ขอ
+     3) ตัวแปรฐาน (KPI_BASE_VARS)           — ตัวเลขดิบจากบัญชี/SAP ที่สูตรการเงินใช้
+     4) เกณฑ์คะแนน (scoreKpi)               — ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0
+     5) วิธีรวม 12 เดือน (summarizeMonths)  — average / sum / max / as_of / rate
+   ════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1) ระดับขอบเขต ───────────────────────────────────────────────────────────────────────
+   user 16/09: "เจาะได้ตามระดับองค์กร ส่วน · แผนก · กลุ่ม หรือไลน์ลูก (ถ้าข้อมูลถึง)"
+   ⚠️ `cost_center` **ไม่ได้อยู่ในสายเดียวกับไลน์** — KPI การเงินตัดด้วย cc (1 กลุ่มไลน์ครอบหลาย cc
+      และหลายไลน์ใช้ cc เดียวกัน) จึงมี `depth: null` = เทียบความลึกกับสายไลน์ไม่ได้ ห้ามเอาไป sort ปน */
+export const KPI_SCOPE_LEVELS = [
+  { key: 'plant',       label: 'ทั้งโรงงาน',       short: 'โรงงาน',  depth: 0, source: null },
+  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 1, source: 'org_nodes:section' },
+  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 2, source: 'org_nodes:department' },
+  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 3, source: 'production_lines:parent' },
+  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 4, source: 'production_lines:leaf' },
+  { key: 'cost_center', label: 'Cost Center',     short: 'CC',      depth: null, source: 'cost_centers' },
+];
+
+export const scopeLevel = (kind) => KPI_SCOPE_LEVELS.find(l => l.key === kind) || null;
+
+/** ป้ายขอบเขตที่คนอ่านรู้เรื่อง — `plant` ไม่มีค่า จึงคืนแค่ชื่อระดับ */
+export function scopeLabel(kind, value) {
+  const lv = scopeLevel(kind);
+  if (!lv) return value || '—';
+  if (lv.key === 'plant') return lv.label;
+  return value ? `${lv.short}: ${value}` : lv.label;
+}
+
+/* ── 2) 🔗 ที่มาข้อมูล (ลิ้ง data) ─────────────────────────────────────────────────────────
+   3 แบบตามที่ใบจริงใช้:
+     auto    = ระบบคำนวณเองจากข้อมูลที่มีอยู่ (กรองตามขอบเขตของ KPI แถวนั้น)
+     formula = คำนวณจาก "ตัวแปรฐาน" ที่บัญชี/SAP กรอกรายเดือน (ดู KPI_BASE_VARS)
+     manual  = คนกรอกผลลัพธ์เอง (ระบุเจ้าของตัวเลข เช่น Acc · SAP · QSM · HRM)
+
+   ⚠️ `deepest` = ระดับลึกสุดที่ข้อมูลไปถึงจริง **วัดจาก DB ไม่ใช่ความหวัง** — ตั้ง KPI ลึกกว่านี้
+      จอต้องเขียนว่า "ข้อมูลไปไม่ถึงระดับนี้" ไม่ใช่โชว์ค่าว่างหรือ 0 (กฎความซื่อสัตย์ของจอ) */
+export const KPI_PROVIDERS = [
+  { key: 'manual',       kind: 'manual',  label: '✍️ กรอกมือ',              deepest: 'line',        unit: null,   note: 'ระบุเจ้าของตัวเลขที่ช่อง "ที่มา"' },
+  { key: 'formula',      kind: 'formula', label: '🧮 สูตรจากตัวแปรฐาน',     deepest: 'cost_center', unit: null,   note: 'เลือกสูตรใน provider_config.formula' },
+  { key: 'oee',          kind: 'auto',    label: '⚙️ OEE (A×P×Q)',          deepest: 'line',        unit: '%',    note: 'production_sessions · ผ่าน src/utils/oee.js เท่านั้น' },
+  { key: 'ppm',          kind: 'auto',    label: '🎯 PPM ของเสียภายใน',      deepest: 'line',        unit: 'PPM',  note: '(ของเสีย ÷ ยอดผลิต) × 1e6 — ยืนยัน 3 แหล่ง §10.3' },
+  { key: 'defect_cost',  kind: 'auto',    label: '💸 มูลค่าของเสีย',          deepest: 'line',        unit: 'บาท',  note: 'defect_logs × defectUnitCost' },
+  { key: 'downtime_min', kind: 'auto',    label: '⏱️ นาทีเครื่องหยุด',        deepest: 'line',        unit: 'นาที', note: 'downtime_logs (duration_min เต็ม ไม่ใช่ตัวหักฐานเวลา)' },
+  { key: 'mtbf',         kind: 'auto',    label: '🔧 MTBF',                  deepest: 'line',        unit: 'ชม.',  note: 'ผ่าน src/utils/oee.js · ⚠️ ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." — ตั้งหน่วยให้ตรงใบ' },
+  { key: 'mttr',         kind: 'auto',    label: '🔧 MTTR',                  deepest: 'line',        unit: 'ชม.',  note: 'เหมือน MTBF' },
+  { key: 'pm_percent',   kind: 'auto',    label: '🛠️ PM ตามแผน',            deepest: 'line',        unit: '%',    note: 'โมดูล PM' },
+  { key: 'mo_on_target', kind: 'auto',    label: '📋 ใบ MO ปิดตามเป้า',       deepest: 'department',  unit: '%',    note: 'mtn_orders (JIG: 455/456)' },
+  { key: 'safety_case',  kind: 'auto',    label: '🦺 เหตุความปลอดภัย',        deepest: 'section',     unit: 'Case', note: 'safety_events · line_name เป็น optional ⇒ ลึกกว่าส่วนงานอาจไม่ครบ' },
+  { key: 'produced_qty', kind: 'auto',    label: '📦 ยอดผลิต',               deepest: 'line',        unit: 'ชิ้น', note: 'prod_orders ผ่าน orderTotal' },
+  { key: 'manpower',     kind: 'auto',    label: '🧑‍🏭 กำลังคนเฉลี่ย',        deepest: 'line',        unit: 'คน',   note: 'daily_production_logs.assigned_line' },
+  { key: 'training_pct', kind: 'auto',    label: '🎓 TS Academy (% อบรม)',   deepest: 'department',  unit: '%',    note: 'ojt_training_attendees ÷ employees · ⚠️ ต้องตกลงเกณฑ์ "ผ่าน" ก่อน' },
+];
+
+export const providerOf = (key) => KPI_PROVIDERS.find(p => p.key === key) || null;
+
+/** provider นี้ไปถึงระดับที่ตั้งไว้ไหม — คืน `null` เมื่อเทียบไม่ได้ (cost_center อยู่คนละสาย) */
+export function providerReaches(providerKey, scopeKind) {
+  const p = providerOf(providerKey); const want = scopeLevel(scopeKind);
+  if (!p || !want) return null;
+  if (p.kind === 'manual') return true;                 // คนกรอกเอง ลึกแค่ไหนก็ได้
+  const deep = scopeLevel(p.deepest);
+  if (!deep) return null;
+  if (want.key === 'cost_center') return p.deepest === 'cost_center';
+  if (want.depth == null || deep.depth == null) return null;
+  return want.depth <= deep.depth;
+}
+
+/* ── 3) ตัวแปรฐาน — ตัวเลขดิบที่บัญชี/SAP กรอกเดือนละครั้ง ───────────────────────────────
+   ในไฟล์ Excel ของจริงคือแถว 48-67 ที่ลิงก์ข้ามไฟล์จนสอบกลับไม่ได้ (`'[2]Overall PD3 2025'!$C$5`)
+   ⚠️ ตาราง `kpi_base_inputs.var_key` **ไม่มี check constraint โดยตั้งใจ** — เพิ่มตัวแปรใหม่
+      แก้ที่ลิสต์นี้พอ ไม่ต้องทำ migration (กติกาเดียวกับ `meeting_action_items.kpi_key`) */
+export const KPI_BASE_VARS = [
+  { key: 'sale_product',   label: 'ยอดขายจากสินค้า (Sale from product)', unit: 'บาท' },
+  { key: 'sale_total',     label: 'ยอดขายรวม (Total Sale)',              unit: 'บาท' },
+  { key: 'dl',             label: 'ค่าแรงทางตรง (Direct Labour)',         unit: 'บาท' },
+  { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                 unit: 'บาท' },
+  { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',        unit: 'บาท' },
+  { key: 'inventory_baht', label: 'มูลค่าสต็อกในพื้นที่ผลิต',              unit: 'บาท' },
+  { key: 'manpower',       label: 'กำลังคน (หัว)',                        unit: 'คน' },
+  { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',           unit: 'บาท' },
+  { key: 'days_in_month',  label: 'ตัวหารวัน (ใบจริงใช้ 30 คงที่)',        unit: 'วัน' },
+];
+
+export const baseVarOf = (key) => KPI_BASE_VARS.find(v => v.key === key) || null;
+
+/* สูตรสำเร็จรูปที่ถอดมาจากเซลล์จริง (§12.2) — provider_config.formula เก็บแค่ `key`
+   ⚠️ `inventory_day` ใบ Excel หาร 30 คงที่ แต่แผ่นบนบอร์ดเขียนว่าใช้ "วันทำงานจริง" — ยังไม่ได้ข้อยุติ
+      จึงให้ตัวหารมาจากตัวแปรฐาน `days_in_month` (ตั้งเป็น 30 ก็ได้ ตั้งเป็นวันทำงานจริงก็ได้) */
+export const KPI_FORMULAS = [
+  { key: 'dl_pct',        label: 'DL %',        expr: 'dl ÷ sale_product × 100',                  vars: ['dl', 'sale_product'],             unit: '%' },
+  { key: 'oh_pct',        label: 'OH %',        expr: 'oh ÷ sale_product × 100',                  vars: ['oh', 'sale_product'],             unit: '%' },
+  { key: 'dloh_pct',      label: 'DL&OH %',     expr: '(dl + oh) ÷ sale_product × 100',           vars: ['dl', 'oh', 'sale_product'],       unit: '%' },
+  { key: 'rm_pct',        label: '%RM',         expr: 'raw_material ÷ sale_product × 100',        vars: ['raw_material', 'sale_product'],   unit: '%' },
+  { key: 'p100_pct',      label: '100P %',      expr: 'cost_100p ÷ sale_product × 100',           vars: ['cost_100p', 'sale_product'],      unit: '%' },
+  { key: 'inventory_day', label: 'Inventory (วัน)', expr: 'inventory_baht ÷ (sale_product ÷ days_in_month)', vars: ['inventory_baht', 'sale_product', 'days_in_month'], unit: 'วัน' },
+  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'sale_total ÷ manpower ÷ 1,000,000',    vars: ['sale_total', 'manpower'],         unit: 'MB' },
+];
+
+export const formulaOf = (key) => KPI_FORMULAS.find(f => f.key === key) || null;
+
+/** คำนวณสูตรจากตัวแปรฐาน 1 เดือน — ขาดตัวแปรไหนคืน `{ value: null, missing: [...] }` **ห้ามคืน 0** */
+export function evalFormula(formulaKey, vars = {}) {
+  const f = formulaOf(formulaKey);
+  if (!f) return { value: null, missing: [], error: 'ไม่รู้จักสูตรนี้' };
+  const num = (k) => { const v = vars[k]; return v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v); };
+  const missing = f.vars.filter(k => num(k) == null);
+  if (missing.length) return { value: null, missing, error: null };
+
+  const v = Object.fromEntries(f.vars.map(k => [k, num(k)]));
+  const div = (a, b) => (b === 0 ? null : a / b);   // หารศูนย์ = ไม่รู้ ไม่ใช่ 0
+  let value = null;
+  switch (f.key) {
+    case 'dl_pct':        value = div(v.dl, v.sale_product); break;
+    case 'oh_pct':        value = div(v.oh, v.sale_product); break;
+    case 'dloh_pct':      value = div(v.dl + v.oh, v.sale_product); break;
+    case 'rm_pct':        value = div(v.raw_material, v.sale_product); break;
+    case 'p100_pct':      value = div(v.cost_100p, v.sale_product); break;
+    case 'inventory_day': { const per = div(v.sale_product, v.days_in_month); value = per == null ? null : div(v.inventory_baht, per); break; }
+    case 'sale_per_head': { const per = div(v.sale_total, v.manpower); return { value: per == null ? null : per / 1e6, missing: [], error: null }; }
+    default: return { value: null, missing: [], error: 'ยังไม่ได้ทำสูตรนี้' };
+  }
+  if (value == null) return { value: null, missing: [], error: 'ตัวหารเป็นศูนย์' };
+  if (f.unit === '%') value *= 100;
+  return { value, missing: [], error: null };
+}
+
+/* ── 4) เกณฑ์คะแนน — ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 ─────────────────────
+   ยืนยันกับตัวเลขจริงในคู่มือ KPI Online 6 แถว (§8.3) + Symbol EVA บนกระดาษหน้างาน
+   (○ Achieve · △ Improvement · ✗ Miss goal) ที่พิมพ์ท้ายทุกแผ่น (§9.1)
+   **ห้ามคิดเกณฑ์สี/band เองอีก** — ของจริงมีเอกสารแล้ว                                     */
+export const KPI_LEVELS = {
+  1:   { level: 1,   symbol: '○', label: 'ผ่านเป้า',        color: '#22c55e' },
+  0.5: { level: 0.5, symbol: '△', label: 'ถึง Commitment', color: '#f59e0b' },
+  0:   { level: 0,   symbol: '✗', label: 'ไม่ถึง',          color: '#ef4444' },
+};
+/** ยังไม่มีข้อมูล ≠ ไม่ผ่าน — เด็คทบทวนของจริงก็แยก `— Pending —` ออกจาก `✘ Below` (§12.4) */
+export const KPI_PENDING = { level: null, symbol: '—', label: 'ยังไม่มีข้อมูล', color: '#64748b' };
+
+const passes = (value, compare, bar) => {
+  if (bar == null || compare == null) return null;
+  switch (compare) {
+    case '<=': return value <= bar;
+    case '<':  return value < bar;
+    case '>=': return value >= bar;
+    case '>':  return value > bar;
+    case '=':  return value === bar;
+    default:   return null;
+  }
+};
+
+/**
+ * ให้คะแนน 1 แถว KPI
+ * @param value  ผลจริง (null = ยังไม่มีข้อมูล)
+ * @param def    { commit_compare, commit_value, target_compare, target_value, weight }
+ * @returns { level, point, symbol, label, color, reason }  — level null = pending
+ *
+ * ⚠️ ไม่สมมติว่า "Target ยากกว่า Commitment เสมอ" — ใบจริงมีแถวที่กลับด้าน (Safety commit 0 / target 1)
+ *    ⇒ ผ่านบาร์ไหนก็ตามที่**เข้มกว่า** = 1 · ผ่านแค่บาร์ที่หลวมกว่า = 0.5   (§8.3 ข้อควรถาม)
+ */
+export function scoreKpi(value, def = {}) {
+  const w = Number(def.weight);
+  const weight = Number.isFinite(w) ? w : null;
+  if (value == null || value === '' || Number.isNaN(Number(value))) {
+    return { ...KPI_PENDING, point: null, reason: 'ยังไม่มีผลจริง' };
+  }
+  const v = Number(value);
+  const okT = passes(v, def.target_compare, def.target_value == null ? null : Number(def.target_value));
+  const okC = passes(v, def.commit_compare, def.commit_value == null ? null : Number(def.commit_value));
+
+  if (okT == null && okC == null) {
+    return { ...KPI_PENDING, point: null, reason: 'ยังไม่ได้ตั้งเป้า' };   // ไม่มีเป้า = เทา ไม่ใช่เขียว
+  }
+
+  // บาร์ไหน "เข้มกว่า" — เทียบเมื่อมีทั้งคู่และทิศเดียวกัน
+  let strictIsTarget = true;
+  const tv = def.target_value == null ? null : Number(def.target_value);
+  const cv = def.commit_value == null ? null : Number(def.commit_value);
+  if (tv != null && cv != null && def.target_compare && def.commit_compare) {
+    const down = String(def.target_compare).startsWith('<');
+    strictIsTarget = down ? tv <= cv : tv >= cv;
+  }
+  const strictOk = strictIsTarget ? okT : okC;
+  const looseOk  = strictIsTarget ? okC : okT;
+
+  let level;
+  if (strictOk) level = 1;
+  else if (looseOk) level = 0.5;
+  else level = 0;
+
+  const meta = KPI_LEVELS[level];
+  return {
+    ...meta,
+    point: weight == null ? null : Math.round(weight * level * 100) / 100,
+    reason: level === 1 ? 'ถึงบาร์ที่เข้มกว่า' : level === 0.5 ? 'ถึงบาร์ที่หลวมกว่า' : 'ไม่ถึงทั้งสองบาร์',
+  };
+}
+
+/** รวมคะแนนทั้งใบ — คืน coverage ด้วยเสมอ (กฎ: ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง) */
+export function totalPoints(rows = []) {
+  let weight = 0, point = 0, scored = 0, pending = 0;
+  for (const r of rows) {
+    const w = Number(r?.weight);
+    if (Number.isFinite(w)) weight += w;
+    const s = r?.score;
+    if (!s || s.level == null) { pending += 1; continue; }
+    scored += 1;
+    if (Number.isFinite(s.point)) point += s.point;
+  }
+  return {
+    weight: Math.round(weight * 100) / 100,
+    point: Math.round(point * 100) / 100,
+    scored, pending, total: rows.length,
+  };
+}
+
+/* ── 5) วิธีรวม 12 เดือน — ใบจริงใช้คนละวิธีต่อ KPI (§12.2) ──────────────────────────────
+   average = ส่วนใหญ่ · sum = จำนวนเคส · max = ตัวสะสม (Sales/Head · TS Academy) ·
+   as_of = เอาเดือนล่าสุดที่กรอก (DSI) · rate = คำนวณจากยอดรวมทั้งปี ไม่ใช่เฉลี่ยรายเดือน (PPM) */
+export const KPI_SUMMARY_MODES = [
+  { key: 'average', label: 'ค่าเฉลี่ยรายเดือน' },
+  { key: 'sum',     label: 'ผลรวมทั้งปี' },
+  { key: 'max',     label: 'ค่าสูงสุด (ตัวสะสม)' },
+  { key: 'as_of',   label: 'เดือนล่าสุดที่มีค่า' },
+  { key: 'rate',    label: 'คำนวณจากยอดรวมทั้งปี (เช่น PPM)' },
+];
+
+/**
+ * @param months  array ของค่ารายเดือน (null = ยังไม่กรอก — ถูกข้าม ไม่ใช่นับเป็น 0)
+ * @param mode    ดู KPI_SUMMARY_MODES
+ * @param rate    สำหรับ mode 'rate': { num: [], den: [], scale: 1e6 }
+ */
+export function summarizeMonths(months = [], mode = 'average', rate = null) {
+  const nums = months.map(m => (m == null || m === '' || Number.isNaN(Number(m)) ? null : Number(m)));
+  const have = nums.filter(n => n != null);
+  if (mode === 'rate') {
+    const sum = (a = []) => a.reduce((s, x) => s + (Number(x) || 0), 0);
+    const den = sum(rate?.den);
+    if (!den) return null;
+    return (sum(rate?.num) / den) * (rate?.scale ?? 1);
+  }
+  if (!have.length) return null;
+  switch (mode) {
+    case 'sum':   return have.reduce((s, n) => s + n, 0);
+    case 'max':   return Math.max(...have);
+    case 'as_of': { for (let i = nums.length - 1; i >= 0; i--) if (nums[i] != null) return nums[i]; return null; }
+    case 'average':
+    default:      return have.reduce((s, n) => s + n, 0) / have.length;
+  }
+}
+
+/* ── ตัวช่วยเล็กๆ ─────────────────────────────────────────────────────────────────────── */
+export const COMPARES = ['<=', '>=', '<', '>', '='];
+
+/** แกะ "≤ 2.5364%" / "<=300PPM" → { compare, value } — ใช้ตอนนำเข้าจากใบเก่าที่เก็บเป็นข้อความ */
+export function parseBar(txt) {
+  if (txt == null) return { compare: null, value: null };
+  const s = String(txt);
+  const compare = /(≤|<=)/.test(s) ? '<=' : /(≥|>=)/.test(s) ? '>=' : /</.test(s) ? '<' : />/.test(s) ? '>' : null;
+  const m = s.replace(/,/g, '').match(/(-?\d+(\.\d+)?)/);
+  return { compare, value: m ? Number(m[1]) : null };
+}
+
+/** ประกอบกลับเป็นข้อความบนใบ เช่น `≤ 2.5364 %` */
+export function fmtBar(compare, value, unit) {
+  if (value == null) return '—';
+  const sym = compare === '<=' ? '≤' : compare === '>=' ? '≥' : (compare || '');
+  return `${sym ? sym + ' ' : ''}${value}${unit ? ' ' + unit : ''}`.trim();
+}

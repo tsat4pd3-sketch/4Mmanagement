@@ -254,7 +254,7 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะยุบมาซ้อนบนเนื้อหา (desktop ไม่เปลี่ยน)
+  const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
   const [lines, setLines]           = useState([]);
@@ -1871,8 +1871,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        แต่ตอน "✏️ แก้เวลากะ" (กะปิดไปแล้ว) ใบกลายเป็น carry_over/cancelled และ state ว่าง
        → ต้อง fallback ไป o.qty_actual ไม่งั้นยอดที่ยกยอดหายจากการคำนวณทั้งก้อน
        เคสหนัก: กะที่ผลิตไม่จบสักใบ → totalProduced = 0 → noProduction → stamp A/Q/OEE เป็น null ทั้งกะ */
+    /* 🔴 ต้องมี `imported` ด้วย (2026-09-16 · หัวหน้ากลุ่ม Assy2 จับได้ว่า OEE ผิด)
+       `imported` = ใบยกยอดที่ **กะถัดไปกดรับไปแล้ว** — ยอดที่ทำได้ในกะนี้ยังอยู่ที่ `qty_actual` ของใบเดิม
+       ใบสืบทอดฝั่งกะถัดไปถือแค่ "ส่วนที่เหลือ" (remainQty) ⇒ นับตรงนี้ไม่ซ้ำซ้อน (oee.js §6)
+       เคสจริง Assy LWR 15/09 กะเช้า: ตอน "ขอปิดกะ" ใบยังเป็น carry_over ⇒ นับ 384 ชิ้น
+       พอ SV มาอนุมัติ/แก้เวลาเช้าวันถัดไป กะดึกรับยอดไปแล้ว ใบกลายเป็น `imported`
+       ⇒ 32 ชิ้นหายจากสูตร ⇒ %P ร่วง 86.18 → 79.00 · OEE 72.00 → 66.00
+         **ทั้งที่ actual_qty ในแถวเดียวกันยังเป็น 384** (แถวขัดแย้งกันเอง) */
     const carryActualQty = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
       .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
     const totalProduced  = confirmedQty + carryActualQty;
     // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
@@ -1994,7 +2001,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
       // ต้องนับใบที่ไม่ปิดเหมือนกับ totalProduced ข้างบน (ไม่งั้น %P ของ MAT นั้นหายตอนแก้เวลากะ)
       const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + orders.filter(o => ['open', 'carry_over', 'cancelled'].includes(o.status))
+                + orders.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
                         .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
       if (!qty) return;
       const ctSec = ctForMatNo(matNo);
@@ -2252,7 +2259,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const totalQtySuspect = defectLogs.reduce((s, d) => s + (d.qty_suspect || 0), 0);
     const totalQtyRepair  = defectLogs.reduce((s, d) => s + (d.qty_repair  || 0), 0);
     const confirmed       = prodOrders.filter(o => o.status === 'confirmed');
-    const carryActual     = openOrders.reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || 0), 0);
+    /* 🔴 ยอดที่ stamp ต้องนับใบ `carry_over`/`imported` ด้วย ให้ตรงกับ totalProduced ใน computeOEE
+       ไม่งั้นแถวเดียวกันขัดแย้งกันเอง — actual_qty นับ 384 แต่ %P คิดจาก 352 (เคส Assy LWR 15/09) */
+    const carryActual     = prodOrders
+      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
     const totalProducedFinal = confirmed.reduce((s, o) => s + o.qty, 0) + carryActual;
     // ยอดดี = ยอดผลิต (การ์ดที่สแกน = ของดีล้วน · NG/suspect/repair คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ · 2026-08-02)
     const totalQtyOk      = totalProducedFinal;
@@ -2580,8 +2591,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: (sessions.length > 1 && !isMobile) ? '220px 1fr' : 'minmax(0, 1fr)', gap: 16 }}>
       {sessions.length > 1 && (
-        // §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', minWidth: 0 }}>
+        /* §137: sidebar sticky ค้างในจอ + list เลื่อนในตัว — ขอบล่างชิดขอบจอเสมอ (ไม่ตัดกลางอากาศตอนเลื่อนหน้า)
+           🔴 **sticky ต้องถอดบนมือถือ** (feedback หน้างาน 2026-09-16 · วิดีโอจากมือถือ):
+              grid ข้างบนยุบเป็น 1 คอลัมน์เมื่อ isMobile แต่เดิม style นี้ยัง `position: sticky; top: 12`
+              + `maxHeight: 100vh` อยู่ ⇒ แผงเลือกกะ (วัดจริง 350×651px บนจอ 390×844 = **77% ของจอ**)
+              ค้างนิ่งอยู่กับที่แล้ว **เนื้อหาที่เลื่อนอยู่ข้างหลังทะลุขึ้นมาทับซ้อนกัน อ่านไม่ออกทั้งคู่**
+              (คอมเมนต์เดิมที่ `useIsMobile()` เขียนว่า "ยุบมาซ้อนบนเนื้อหา" — ของจริงคือค้างทับ ไม่ได้ยุบ)
+           · มือถือ = แถวปกติที่เลื่อนไปกับหน้า แต่จำกัดสูง 45vh ให้ลิสต์เลื่อนในตัวเอง
+             (inner scroller `flex:1 · minHeight:0 · overflowY:auto` ด้านล่างทำงานเหมือนเดิม)
+             ไม่งั้นกะ 28 ใบดันเนื้อหาตกจอ ต้องปัดยาวกว่าจะถึงของจริง */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0,
+          ...(isMobile
+            ? { maxHeight: '45vh' }
+            : { position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)' }) }}>
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
             const allCollapsed = groupNames.length > 0 && groupNames.every(n => sessGroupCollapsed.has(n));
