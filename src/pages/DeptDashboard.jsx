@@ -332,7 +332,10 @@ async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
   const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
-    supabaseDR.from('mtn_orders').select('*').order('report_at', { ascending: false }).limit(500),
+    /* ⚠️ คอลัมน์ย่อเท่านั้น — `mtn_orders` มี 116 คอลัมน์ · `select('*')&limit=500` ≈ 800 KB/รอบ
+       จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
+    supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
+      .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days').eq('is_active', true),
     supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
   ]);
