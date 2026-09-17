@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
+import { recompressLayouts } from '../utils/recompressLayouts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -70,6 +71,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [editingLineName, setEditingLineName] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
   const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
+  const [squeeze, setSqueeze] = useState('');   // 🗜️ ข้อความสถานะตอนบีบรูปผังเดิม ('' = ไม่ได้ทำอยู่)
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
@@ -594,6 +596,26 @@ export default function LineSetup({ embedded = false } = {}) {
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
     await fetchLines();
+  };
+
+  /* 🗜️ บีบรูปผังเดิม (ผังไลน์ + ผังโรงงาน + ผังเครื่องจักร) — งานครั้งเดียว กดจากที่นี่ที่เดียว
+     รูปที่อัปหลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว (compressLayoutImage) · ดู src/utils/recompressLayouts.js */
+  const handleRecompress = async () => {
+    if (squeeze) return;
+    if (!window.confirm('บีบรูปผังทั้งหมดที่อัปไว้แล้วให้เล็กลง?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก — ทำครั้งเดียวพอ\nระหว่างนี้อย่าปิดหน้านี้')) return;
+    setSqueeze('กำลังเริ่ม…');
+    try {
+      const r = await recompressLayouts({
+        supabase, supabaseDR,
+        onProgress: (text, i, n) => setSqueeze(`${text} (${i}/${n})`),
+      });
+      const mb = (r.savedBytes / 1048576).toFixed(1);
+      if (r.error) toast.error(`บีบเสร็จ ${r.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${r.skip} · ไม่สำเร็จ ${r.error}: ${r.errors[0]}`);
+      else toast.success(`บีบรูปผังเสร็จ ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip} ใบ (เล็กอยู่แล้ว)`);
+      await fetchLineData();   // URL ผังของไลน์นี้เปลี่ยนไปแล้ว ต้องโหลดใหม่ ไม่งั้นจอค้างรูปที่ถูกลบ
+    } catch (err) {
+      toast.error('บีบรูปผังไม่สำเร็จ: ' + (err?.message || err));
+    } finally { setSqueeze(''); }
   };
 
   const handleUploadImage = async (e) => {
@@ -1513,6 +1535,12 @@ export default function LineSetup({ embedded = false } = {}) {
                 {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
                 <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
               </label>
+              {/* 🗜️ งานครั้งเดียว — ดูเหตุผล (egress) ที่ src/utils/recompressLayouts.js */}
+              <button onClick={handleRecompress} disabled={!!squeeze}
+                title="แปลงรูปผังเดิมที่เป็น PNG ก้อนใหญ่ให้เป็น WebP ขนาดเล็ก — ความละเอียดเท่าเดิม"
+                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: squeeze ? 'default' : 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                {squeeze || '🗜️ บีบรูปผังเดิมให้เล็กลง'}
+              </button>
             </div>
           )}
           {activeTab === 'stations' && <>
