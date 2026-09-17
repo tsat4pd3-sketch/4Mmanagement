@@ -26,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -921,7 +921,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         shift_min: shiftMin,
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
-        oee_q: noProduction ? null : parseFloat((Q * 100).toFixed(2)),
+        oee_q: (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2)),
         oee:   oee != null ? parseFloat((oee * 100).toFixed(2)) : null,
         ...(startChanged ? { start_time: closeStartTime } : {}),
         ...(endChanged   ? { end_time:   closeEndTime   } : {}),
@@ -1946,6 +1946,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     };
     let totalNetAvailByMat = 0, totalRunMinByMat = 0;
     const matRunMinMap = {};
+    const matWins = [];   // ช่วงที่ "มีพาร์ทวิ่งอยู่จริง" — ใช้หา DT ที่ตกนอกทุกช่วง (ดูหมายเหตุใต้ลูป)
     const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
     matNosForA.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
@@ -1976,14 +1977,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       totalNetAvailByMat += matNetAvail;
       totalRunMinByMat   += matRunMin;
       matRunMinMap[matNo] = matRunMin; // เก็บ run ต่อ MAT.NO — ใช้เป็น denominator ของ P ตอน parallel
+      matWins.push([matStartMs, matEndMs]);
     });
     // DT ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — dtOverlapMin จับไม่ได้ → เคยหายเงียบจาก %A แบบแยกตาม MAT
     // (เคสจริง 2026-07-24: หยุดนอกแผน 20 นาทีแต่ %A = 100) — หักที่ยอดรวมแทน (รวมก่อนหาร ไม่ต้องรู้ตกช่วง MAT ไหน)
     const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
     const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
-    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned)) {
-      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned);
-      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned);
+    /* 🔴 DT ที่ "มีเวลาครบ แต่ตกนอกช่วงที่พาร์ทไหนวิ่งเลย" ก็เคยหายเงียบเหมือนกัน (2026-09-17)
+       %A แยกตาม MAT.NO หัก DT ผ่าน dtOverlapMin ซึ่งนับเฉพาะนาทีที่ **ทับ window ของพาร์ท**
+       ⇒ เครื่องเสียก่อนเปิดใบแรก / หลังปิดใบสุดท้าย / ช่วงสลับงาน = ไม่ถูกหักเลยสักนาที
+       เคสจริง HDF1 20/07 กะดึก: เครื่อง HDF-01 เสีย 20:10–21:20 (70 นาที นอกแผนเต็มๆ)
+       ใบผลิตใบเดียวของกะเปิด 22:38 ⇒ DT อยู่ก่อนใบเปิด ⇒ **%A = 100.00 ทั้งที่เครื่องเสีย 70 นาที**
+       วัดจริงทั้งฐาน: 20 กะ %A=100 ทั้งที่มี DT นอกแผน เฉลี่ย 37 นาที/กะ
+       ⇒ หักที่ยอดรวมแบบเดียวกับ DT ที่ไม่มีเวลาเริ่ม (คนละตะกร้ากัน ไม่ซ้ำกันแน่นอน เพราะแยกด้วย started_at)
+       ⚠️ ต้องตัดทั้งช่วงที่ทับ window พาร์ท **และ** ช่วงพักตามนโยบาย ออกก่อน ไม่งั้นหักซ้ำ (§3.1) */
+    const coveredIv = unionIv([...matWins, ...breakIv]);
+    const outsidePlanned   = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+    const outsideUnplanned = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned || outsidePlanned || outsideUnplanned)) {
+      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned - outsidePlanned);
+      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned - outsidePlanned - outsideUnplanned);
     }
     // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
     /* ⚠️ netAvail ≤ 0 (พัก+หยุดตามแผนกินทั้งกะ) = **ประเมินไม่ได้ → null ห้ามคืน 0**
@@ -2102,8 +2115,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // แล้วลง NG แยก · user ยืนยัน 2026-08-02) ดังนั้น totalProduced = ของดี, ผลิตจริงทั้งหมด = ของดี + NG
     // ห้ามใช้ (ดี−NG)/ดี ที่หักซ้ำ → เคยทำ %Q ต่ำเกินจริง (เช่น ดี10 NG1 ได้ 90% ที่ถูกคือ 10/11=90.9%,
     // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
-    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty) : 1;
-    const oee = (A != null && P != null) ? A * P * Q : null;
+    /* 🔴 ผลิตได้ 0 ชิ้น ห้ามคืน Q = 1 (2026-09-17 · เจอจาก audit ทั้งฐาน)
+       ของเดิมเขียน `: 1` ⇒ กะที่**ทำออกมาเสียล้วน ไม่มีของดีเลย** ได้ %Q = 100.00 (กลับหัว)
+       วัดจริง: 16 กะเป็นแบบนี้ (เช่น LASER EXPORT 08/07 กะดึก ของดี 0 เสีย 32 ⇒ stamp Q = 100)
+       แยก 2 กรณีให้ชัด ตามกฎเดียวกับ A/P — "0" กับ "ยังไม่รู้" คนละเรื่อง:
+         ของดี 0 + ของเสีย > 0 → **Q = 0** (วัดได้จริง: ที่ทำออกมาเสียหมด)
+         ของดี 0 + ของเสีย 0   → **null** (ไม่มีอะไรให้ประเมิน ห้ามให้เลขไปถ่วงค่าเฉลี่ย) */
+    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
+            : (ngQty > 0 ? 0 : null);
+    const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
     /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
        แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
        ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
@@ -2288,7 +2308,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const noProduction = totalProducedFinal === 0 && P == null;
     const oeeA = (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2));
     const oeeP = P != null ? parseFloat((P * 100).toFixed(2)) : null;
-    const oeeQ = noProduction ? null : parseFloat((Q * 100).toFixed(2));
+    const oeeQ = (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2));
     const oeeV = oee != null ? parseFloat((oee * 100).toFixed(2)) : null;
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
     // Leader → request close (pending_close), SV+ → close directly
