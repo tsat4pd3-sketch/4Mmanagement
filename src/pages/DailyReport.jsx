@@ -26,7 +26,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -1158,6 +1158,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         .limit(8);
       if (cancelled || !prevSessions?.length) { if (!cancelled) setCtOverage({}); return; }
       const prevIds = prevSessions.map(s => s.id);
+      const prevFrame = {}; prevSessions.forEach(s => { prevFrame[s.id] = shiftFrameOf(s); });
       const [{ data: histOrders }, { data: histDt }] = await Promise.all([
         supabaseDR.from('prod_orders').select('*').in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
         supabaseDR.from('downtime_logs').select('session_id, started_at, ended_at, duration_min').in('session_id', prevIds),
@@ -1176,8 +1177,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
           const closedTimes = orders.filter(o => o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
           if (!openedTimes.length || !closedTimes.length) return;
-          const startMs = Math.min(...openedTimes), endMs = Math.max(...closedTimes);
-          if (endMs <= startMs) return;
+          // 🔴 ใบที่ยืนยันย้อนหลังข้ามวันทำให้ window ยาวเกินจริง → CT ที่สังเกตได้ช้ากว่าความจริง (utils/oee §7)
+          const { startMs, endMs } = clampWinToShift(Math.min(...openedTimes), Math.max(...closedTimes), prevFrame[sid]);
+          if (startMs == null || endMs == null || endMs <= startMs) return;
           const dtOverlap = (histDt || []).filter(d => d.session_id === sid).reduce((sum, d) => {
             if (!d.started_at) return sum;
             const s0 = new Date(d.started_at).getTime();
@@ -1897,6 +1899,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
     }
     const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
+    // กรอบเวลาของกะนี้ (ใช้เวลาที่แก้ในฟอร์มปิดกะถ้ามี) — ใช้รัดช่วงเวลารายพาร์ททุกจุด (utils/oee §7)
+    const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
     // ไลน์เครื่องขนาน (เช่น LASER-345/789 เลเซอร์ 3 ตัว): DT ที่ผูกเครื่อง = เครื่องเดียวหยุด
     // อีก N-1 ตัวยังวิ่ง → หักเวลาไลน์แค่ 1/N ของนาทีที่ลง · DT ไม่ระบุเครื่อง (ไฟดับ/รอวัตถุดิบ
     // ทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม — เคสจริง 2026-08-04: DT รายเครื่อง 3 ตัวถูกบวกรวม
@@ -1959,6 +1963,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       let matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
       let matEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
       ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
+      // 🔴 ช่วงของพาร์ทต้องอยู่ในกะเสมอ — ใบที่ถูกยืนยันย้อนหลังข้ามวันลากฐานเวลายาวเกินจริง (utils/oee §7)
+      ({ startMs: matStartMs, endMs: matEndMs } = clampWinToShift(matStartMs, matEndMs, shiftFrame));
       if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
       const windowMin = (matEndMs - matStartMs) / 60000;
       const matBreakIv = computeBreakIv(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
@@ -2016,9 +2022,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
         return ms;
       }).filter(Boolean);
-      const winStart = openedTimes.length ? Math.min(...openedTimes) : null;
-      const allEnd   = [...closedTimes, ...stopTimes];
-      const winEnd   = allEnd.length ? Math.max(...allEnd) : null;
+      // 🔴 รัดให้อยู่ในกะเหมือนสาย %A — window นี้ใช้ตรวจ parallel + เป็นตัวหารฝั่ง parallel (utils/oee §7)
+      const { startMs: winStart, endMs: winEnd } = clampWinToShift(
+        openedTimes.length ? Math.min(...openedTimes) : null,
+        [...closedTimes, ...stopTimes].length ? Math.max(...closedTimes, ...stopTimes) : null,
+        shiftFrame);
       matPData.push({ matNo, qty, ctSec, winStart, winEnd });
     });
     const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
@@ -2983,8 +2991,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 // เช่น คนเข้า OT มาช่วยพาร์ทหนึ่งตั้งแต่ 20:00 แต่อีกพาร์ทเริ่มตามกำลังคนปกติ 22:30
                 const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
                 const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-                const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
-                const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                // รัดให้อยู่ในกะเหมือนทุกจอ ไม่งั้นชิป 🕐 โชว์เวลาของวันถัดไป (utils/oee §7)
+                const winD = clampWinToShift(
+                  openedTimes.length ? Math.min(...openedTimes) : null,
+                  closedTimes.length ? Math.max(...closedTimes) : null,
+                  shiftFrameOf(selSession));
+                const actualStart = winD.startMs != null ? new Date(winD.startMs) : null;
+                const actualEnd   = winD.endMs   != null ? new Date(winD.endMs)   : null;
                 return { matNo, name, target, confirmed, openCnt, closedCnt, ng, dt, ct, rowPct, actualStart, actualEnd };
               }).sort((a, b) => b.target - a.target);
 
@@ -3974,14 +3987,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     // เวลาปิดของ order — confirmed ใช้ confirmed_at, ยกยอด/ยกเลิกใช้ stopped_at ที่กรอกไว้ตอนปิดกะ (แยกตามพาร์ทได้)
                     const closedTimes = orders.filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
                       .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
-                    const actualStart = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
-                    const actualEnd   = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                    // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ — ใบที่ยืนยันย้อนหลังข้ามวันเคยลาก "ควรได้" เป็นพันชิ้น (utils/oee §7)
+                    const frameA = shiftFrameOf(selSession);
+                    const winA = clampWinToShift(
+                      openedTimes.length ? Math.min(...openedTimes) : null,
+                      closedTimes.length ? Math.max(...closedTimes) : (frameA?.endMs ?? null),
+                      frameA);
+                    const actualStart = winA.startMs != null ? new Date(winA.startMs) : null;
+                    const actualEnd   = winA.endMs   != null ? new Date(winA.endMs)   : null;
                     const ctSec = ctForMatNo(matNo);
-                    const winEndMs = actualEnd ? actualEnd.getTime() : (selSession.end_time && selSession?.work_date ? (() => {
-                      let e = new Date(`${selSession.work_date}T${selSession.end_time.slice(0,5)}:00`).getTime();
-                      if (actualStart && e < actualStart.getTime()) e += 86400000;
-                      return e;
-                    })() : null);
+                    const winEndMs = winA.endMs;
                     // หักเวลา Downtime ที่ทับซ้อนช่วงวิ่งของ MAT.NO นี้ + "พักตามนโยบาย" ออกก่อน — ให้ฐานเวลา
                     // ตรงกับ P รวมใน computeOEE() ที่หักทั้งคู่ (เคยหักแค่ DT → "ควรได้" เกินจริง %P พาร์ทต่ำกว่า
                     // P รวมทั้งที่รันงานตัวเดียว เช่นกะดึกพักรวม 120 นาที ทำให้เพี้ยน ~15% — user ชี้ 2026-07-14)
@@ -4387,8 +4402,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       if (refStart != null && ms < refStart) ms += 86400000;
                       return ms;
                     })() : null;
-                    const actualStart = overrideStartMs != null ? new Date(overrideStartMs) : (baseStartMs != null ? new Date(baseStartMs) : null);
-                    const actualEnd   = overrideEndMs != null ? new Date(overrideEndMs) : (baseEndMs != null ? new Date(baseEndMs) : null);
+                    // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ (รวมเวลาที่หัวหน้าแก้เอง) — utils/oee §7
+                    const frameC = shiftFrameOf(selSession, { startTime: closeStartTime, endTime: closeEndTime });
+                    const winC = clampWinToShift(
+                      overrideStartMs != null ? overrideStartMs : baseStartMs,
+                      overrideEndMs   != null ? overrideEndMs   : baseEndMs,
+                      frameC);
+                    const actualStart = winC.startMs != null ? new Date(winC.startMs) : null;
+                    const actualEnd   = winC.endMs   != null ? new Date(winC.endMs)   : null;
                     // ควรผลิตได้ "ถ้าวิ่งเต็มเวลา" จาก opened_at ถึง confirmed_at จริง (ไม่หัก downtime) — ใช้เทียบ %P
                     // ไม่ใช่เวลากะทั้งหมด เพราะพาร์ทนี้อาจเริ่ม/เลิกไม่ตรงกับเวลากะ (เช่น OT บางส่วนของไลน์)
                     const ctSec = ctForMatNo(matNo);
@@ -4772,8 +4793,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         const closedTimes  = orders
                           .filter(o => (o.status === 'confirmed' && o.confirmed_at) || ((o.status === 'carry_over' || o.status === 'cancelled') && o.stopped_at))
                           .map(o => new Date(o.confirmed_at || o.stopped_at).getTime());
-                        const actualStart  = openedTimes.length ? new Date(Math.min(...openedTimes)) : null;
-                        const actualEnd    = closedTimes.length ? new Date(Math.max(...closedTimes)) : null;
+                        const winE = clampWinToShift(
+                          openedTimes.length ? Math.min(...openedTimes) : null,
+                          closedTimes.length ? Math.max(...closedTimes) : null,
+                          shiftFrameOf(selSession, { startTime: closeStartTime, endTime: closeEndTime }));
+                        const actualStart  = winE.startMs != null ? new Date(winE.startMs) : null;
+                        const actualEnd    = winE.endMs   != null ? new Date(winE.endMs)   : null;
                         const partName     = prodOrders.find(o => o.mat_no === matNo)?.part_name || '';
                         return (
                           <div key={matNo} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px' }}>
@@ -5971,8 +5996,11 @@ function HistoryTab({ role }) {
                       // %P รายชิ้น (สูตรเดียวกับ modal ตรวจสอบคำขอปิดกะ): window ของพาร์ท − DT ทับซ้อน − พักนโยบาย
                       const openedTimes = matOrders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
                       const closedTimes = matOrders.map(o => o.confirmed_at || o.stopped_at).filter(Boolean).map(t => new Date(t).getTime());
-                      const winStart = openedTimes.length ? Math.min(...openedTimes) : null;
-                      const winEnd   = closedTimes.length ? Math.max(...closedTimes) : null;
+                      // 🔴 รัดช่วงของพาร์ทให้อยู่ในกะ — ใบที่ยืนยันย้อนหลังข้ามวันเคยทำ "ควรได้" พองเป็นพัน (utils/oee §7)
+                      const { startMs: winStart, endMs: winEnd } = clampWinToShift(
+                        openedTimes.length ? Math.min(...openedTimes) : null,
+                        closedTimes.length ? Math.max(...closedTimes) : null,
+                        shiftFrameOf(s));
                       const ctSec = ctByMat[matNo] || 0;
                       let achievable = null, pPct = null, winLabel = null;
                       if (winStart && winEnd && winEnd > winStart) {
