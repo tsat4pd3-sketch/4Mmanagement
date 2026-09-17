@@ -306,3 +306,41 @@ export function fmtBar(compare, value, unit) {
   const sym = compare === '<=' ? '≤' : compare === '>=' ? '≥' : (compare || '');
   return `${sym ? sym + ' ' : ''}${value}${unit ? ' ' + unit : ''}`.trim();
 }
+
+/* ══ 🔗 ตัวเชื่อมกับแถว `kpi_definitions` จริง — จอทุกจอต้องตัดสินผ่านตัวนี้ตัวเดียว ════════
+   (2026-09-17 · คำสั่ง user "สองหน้าซ้ำซ้อนกัน" แล้วตรวจเจอว่า 3 จอตัดสินคนละสูตร:
+    KpiMonthly = Y/N ล้วน · ObeyaKpiBoard = แถบ ±5% ที่คิดเอง · kpiSetup = 1/0.5/0 แต่ไม่มีใครเรียก)
+
+   แถวในฐานมี 2 ยุคปนกัน — ตัวนี้อ่านได้ทั้งคู่ **ห้ามให้จอไหนแกะเอง**:
+     ยุคใหม่ (migration 20260916): `target_compare` + `target_value` · `commit_compare` + `commit_value`
+     ยุคเก่า:                      `direction` ('up'/'down') + `target_value` · `commitment`/`target` เป็น**ข้อความ**
+   ⚠️ ของเดิม `commitment` ถูกเก็บเป็นข้อความแล้ว**ไม่เคยถูกเอามาตัดสินเลย** ⇒ ขั้น 0.5 หายไปทั้งระบบ
+      ตัวนี้ parse ข้อความนั้นกลับมาเป็นบาร์ ⇒ ใบที่กรอก "≤ 1.452%" ไว้ ได้ขั้น 0.5 คืนทันทีโดยไม่ต้องกรอกใหม่ */
+export function defBars(def = {}) {
+  const dirCmp = def.direction === 'up' ? '>=' : def.direction === 'down' ? '<=' : null;
+  const tNum = def.target_value == null || def.target_value === '' ? null : Number(def.target_value);
+  const tText = parseBar(def.target, dirCmp);
+  const target_compare = def.target_compare || dirCmp || tText.compare;
+  const target_value = tNum != null ? tNum : tText.value;
+
+  const cNum = def.commit_value == null || def.commit_value === '' ? null : Number(def.commit_value);
+  const cText = parseBar(def.commitment, target_compare);
+  const commit_compare = def.commit_compare || (cNum != null ? target_compare : cText.compare);
+  const commit_value = cNum != null ? cNum : cText.value;
+
+  const w = Number(def.weight);
+  return {
+    target_compare, target_value, commit_compare, commit_value,
+    weight: Number.isFinite(w) ? w : null,
+  };
+}
+
+/** ให้คะแนนแถว KPI จาก "แถวในฐาน" โดยตรง — คืน `status` ('good'/'warn'/'bad'/'unknown') ให้จอใช้ทำไฟด้วย */
+export function scoreDef(value, def = {}) {
+  const bars = defBars(def);
+  const s = scoreKpi(value, bars);
+  return {
+    ...s, bars,
+    status: s.level === 1 ? 'good' : s.level === 0.5 ? 'warn' : s.level === 0 ? 'bad' : 'unknown',
+  };
+}

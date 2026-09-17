@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
-  providerReaches, scopeLabel, inferCompare, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
+  providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -190,6 +190,29 @@ test('🔴 เป้าที่เขียนไม่มีเครื่อ
   const sc = scoreKpi(100, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 });
   assert.equal(sc.point, 5);
   assert.equal(scoreKpi(96, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 }).point, 2.5);
+});
+
+test('🔴 scoreDef อ่านแถวยุคเก่าได้ — commitment ที่เป็น "ข้อความ" ต้องกลายเป็นบาร์ 0.5', () => {
+  // แถวแบบที่ KpiMonthly เขียนมาแต่เดิม: direction + target_value ตัวเลข · commitment เป็นข้อความเฉยๆ
+  const legacy = { direction: 'down', target_value: 1.3042, commitment: '≤ 1.3445%', weight: 6 };
+  assert.equal(scoreDef(1.30, legacy).point, 6,   'ถึง Target');
+  assert.equal(scoreDef(1.34, legacy).point, 3,   'ถึงแค่ Commitment ⇒ ครึ่ง (เดิมตกเป็น N ทันที)');
+  assert.equal(scoreDef(1.40, legacy).point, 0,   'ไม่ถึงทั้งคู่');
+  assert.equal(scoreDef(1.34, legacy).status, 'warn');
+  assert.equal(scoreDef(null, legacy).status, 'unknown', 'ยังไม่กรอก = เทา ห้ามเป็นแดง');
+
+  // คอลัมน์ยุคใหม่ต้องชนะของเก่าเสมอ
+  const mixed = { direction: 'up', target_value: 10, target_compare: '<=', commit_compare: '<=', commit_value: 20 };
+  const b = defBars(mixed);
+  assert.equal(b.target_compare, '<=', 'target_compare ต้องชนะ direction');
+  assert.equal(b.commit_value, 20);
+});
+
+test('🔴 แถวที่มีแต่ Target ไม่มี Commitment — ไม่ถึงต้องเป็น 0 ไม่ใช่ครึ่ง', () => {
+  const d = { direction: 'up', target_value: 85, weight: 6 };   // OEE ที่เป้ามาจาก oee_targets
+  assert.equal(scoreDef(86, d).point, 6);
+  assert.equal(scoreDef(84, d).point, 0);
+  assert.equal(defBars(d).commit_value, null);
 });
 
 test('ทะเบียนไม่มีคีย์ซ้ำ และสูตรอ้างตัวแปรที่มีจริงทุกตัว', () => {
