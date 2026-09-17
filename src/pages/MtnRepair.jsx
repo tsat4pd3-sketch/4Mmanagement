@@ -7,7 +7,7 @@
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import resizeImg from '../utils/resizeImage';
 import { useObjectUrl } from '../utils/useObjectUrl';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -32,7 +32,7 @@ import RackMap from '../components/RackMap';
 import MachineReliability from '../components/MachineReliability';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
-import useTabParam from '../utils/useTabParam';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
 import SearchSelect from '../components/SearchSelect';
@@ -262,6 +262,8 @@ export default function MtnRepair() {
   ];
   // 'equip' = คีย์เก่าที่ยุบเข้า 'kpi' แล้ว — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
   // แล้วเด้งไปแท็บ default (รายการ MO) = บุ๊กมาร์กของทีมช่างพาไปผิดที่เงียบๆ
+  const [sp] = useSearchParams();
+  const mergeSp = useMergeParams();
   const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'equip'], 'list');
   useEffect(() => { if (tab === 'equip') setTab('kpi', { replace: true }); }, [tab, setTab]);
   const [orders, setOrders] = useState([]);
@@ -286,6 +288,21 @@ export default function MtnRepair() {
   const [showReport, setShowReport] = useState(false);
   const [detail, setDetail] = useState(null);
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
+
+  /* 🔗 `?mo=<id | เลข MO>` — เปิดใบนั้นให้เลย (2026-09-16 · feedback ทีมงานเรื่องกระดิ่ง
+     "บางอันกดเข้าไปในจุดที่แจ้งเตือนได้ บางอันไม่ได้") ปลายทางของแจ้งเตือน MO/mention ชี้มาที่นี่
+     · รับทั้ง id และ mo_no — ใบที่ยังไม่ออกเลข MO (ขั้น 1) ก็ต้องเปิดได้ ไม่งั้นแจ้งเตือน "ใบใหม่" กดไม่ได้
+     · ล้าง param ทิ้งหลังเปิด (replace) เพื่อไม่ให้ปิด drawer แล้วมันเด้งกลับมาเปิดเองทุกครั้ง
+     · ใบไม่อยู่ในสิทธิ์/ถูกลบ = ไม่เด้งอะไร (แต่ยังล้าง param) ห้ามค้าง loop */
+  const moParam = sp.get('mo');
+  useEffect(() => {
+    if (!moParam || !orders.length) return;
+    const key = String(moParam).trim().toLowerCase();
+    const hit = orders.find(o => String(o.id) === moParam || String(o.mo_no || '').trim().toLowerCase() === key);
+    if (hit) { setTab('list', { replace: true }); setDetail(hit); }
+    else toast.info(`ไม่พบใบ MO "${moParam}" ในรายการที่คุณเห็น (อาจถูกปิด/อยู่นอกขอบเขตของคุณ)`);
+    mergeSp({ mo: null }, { replace: true });
+  }, [moParam, orders, setTab, mergeSp]);
 
   const loadMasters = useCallback(async () => {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
