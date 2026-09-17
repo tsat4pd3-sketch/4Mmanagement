@@ -65,6 +65,19 @@ const RULES = [
     allow: { 'src/supabaseClient.js': 'ตัว shim backward-compat เอง (ส่งต่อให้ setActor)' },
   },
   {
+    id: 'people-index-single-owner',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    re: /setPeopleIndex\s*\(/g,
+    why: 'ทะเบียน "ชื่อ → uid" มีเจ้าของได้คนเดียว — ป้อนจากหลายที่ = ทะเบียนทับกันเอง '
+       + 'แล้ว uid ที่ stamp ลงแถวจะต่างกันตามลำดับการโหลดของแต่ละหน้า (บทเรียนเดียวกับตัวตนผู้ใช้ที่เคยมี 2 เจ้าของ)',
+    fix: 'ป้อนที่ loadProfilesPeople() ใน src/utils/usePeople.js ที่เดียว — มันคือฟังก์ชันเดียวที่ผลิตรายชื่อ profiles ทั้งแอป',
+    allow: {
+      'src/utils/usePeople.js': 'เจ้าของที่ตั้งใจให้ป้อน',
+      'src/utils/actorStamp.js': 'ตัวฟังก์ชันเอง',
+      'src/utils/__tests__/actorStamp.test.mjs': 'เทส',
+    },
+  },
+  {
     id: 'bom-tree-via-buildBomIndex',
     scan: ['src'], ext: ['.jsx', '.js'],
     // จับ pattern "หาตัวแม่ของบรรทัด BOM เอง" = matOf[b.product_id] / matOfProd[x.product_id] ฯลฯ

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import {
   setActor, getActor, actorFields,
   normPersonName, personKey, samePerson, countPeople, applyStepActors,
+  setPeopleIndex, resolveUid, peopleIndexSize,
 } from '../actorStamp.js'
 
 test('normPersonName — ยุบช่องว่างซ้ำ (เคสจริง: employees เก็บ "ฉัตรชัย  ใจรักเรียน" 2 ช่อง)', () => {
@@ -150,4 +151,77 @@ test('applyStepActors — ไม่มีคอลัมน์ actor ในร�
 test('applyStepActors — รับค่าที่ไม่ใช่ object ได้ ไม่ throw', () => {
   assert.equal(applyStepActors(PAIRS, null, ME), null)
   assert.equal(applyStepActors([], { a: 1 }, ME).a, 1)
+})
+
+// ── ทะเบียน "ชื่อ → uid" (เฟส 4 · 2026-09-17) ──────────────────────────
+// เคสจริง: profiles 91 คน → ชื่อ norm ไม่ซ้ำ 90 · "ธวัช พิมพ์วงศ์" มี 2 บัญชี
+const PEOPLE = [
+  { id: 'uid-somchai', full_name: 'สมชาย ใจดี' },
+  { id: 'uid-somying', full_name: 'สมหญิง รักงาน' },
+  { id: 'uid-tawat-a', full_name: 'ธวัช พิมพ์วงศ์' },
+  { id: 'uid-tawat-b', full_name: 'ธวัช  พิมพ์วงศ์' },   // ชื่อ norm ตรงกัน คนละบัญชี
+]
+
+test('resolveUid — ชื่อที่ไม่กำกวม → ได้ uid (ต่อให้สะกดต่างเชิงกลไก)', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(peopleIndexSize(), 3)   // ธวัช 2 บัญชียุบเป็น key เดียว
+  assert.equal(resolveUid('สมชาย ใจดี'), 'uid-somchai')
+  assert.equal(resolveUid('นายสมชาย  ใจดี'), 'uid-somchai')
+})
+
+test('🔴 resolveUid — ชื่อซ้ำหลายบัญชี ต้องคืน null ห้ามเดา', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(resolveUid('ธวัช พิมพ์วงศ์'), null)
+})
+
+test('resolveUid — ไม่รู้จัก / ค่าว่าง / ยังไม่โหลดทะเบียน → null', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(resolveUid('คนนอกระบบ'), null)
+  assert.equal(resolveUid(''), null)
+  assert.equal(resolveUid(null), null)
+  setPeopleIndex([])
+  assert.equal(resolveUid('สมชาย ใจดี'), null)
+})
+
+test('setPeopleIndex — แถวที่ไม่มีชื่อ/ไม่มี id ต้องข้าม ไม่ throw', () => {
+  setPeopleIndex([{ id: 'x' }, { full_name: 'ไร้ id' }, null, undefined, { id: 'y', full_name: '  ' }])
+  assert.equal(peopleIndexSize(), 0)
+  setPeopleIndex(null)
+  assert.equal(peopleIndexSize(), 0)
+})
+
+test('🔴 applyStepActors — ชื่อคนอื่นที่อยู่ในทะเบียน → ต้องได้ uid ของเขา', () => {
+  // นี่คือหัวใจของเฟส 4 — คอลัมน์ส่วนใหญ่เก็บ "ชื่อคนอื่น" ไม่ใช่ตัวคนกด
+  setPeopleIndex(PEOPLE)
+  const out = applyStepActors(PAIRS, { tech_main: 'สมหญิง รักงาน' }, ME)
+  assert.equal(out.tech_main_uid, 'uid-somying')
+  assert.equal(out.tech_main, 'สมหญิง รักงาน')   // ชื่อ snapshot ต้องไม่ถูกแตะ
+})
+
+test('🔴 applyStepActors — ชื่อกำกวม (2 บัญชี) → uid = null ห้ามเดาว่าเป็นคนไหน', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(applyStepActors(PAIRS, { tech_main: 'ธวัช พิมพ์วงศ์' }, ME).tech_main_uid, null)
+})
+
+test('applyStepActors — คนนอกทะเบียน (พิมพ์ชื่อเอง) → uid = null ไม่ใช่ error', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(applyStepActors(PAIRS, { tech_main: 'ช่างรับเหมาภายนอก' }, ME).tech_main_uid, null)
+})
+
+test('applyStepActors — หน้าส่ง uid มาเอง ยังชนะทะเบียนเสมอ', () => {
+  setPeopleIndex(PEOPLE)
+  const out = applyStepActors(PAIRS, { tech_main: 'สมหญิง รักงาน', tech_main_uid: 'uid-จากหน้า' }, ME)
+  assert.equal(out.tech_main_uid, 'uid-จากหน้า')
+})
+
+test('applyStepActors — ล้างชื่อ ยังต้องล้าง uid แม้มีทะเบียนแล้ว', () => {
+  setPeopleIndex(PEOPLE)
+  assert.equal(applyStepActors(PAIRS, { tech_main: null }, ME).tech_main_uid, null)
+  assert.equal(applyStepActors(PAIRS, { tech_main: '' }, ME).tech_main_uid, null)
+})
+
+test('ตัวเราเองชนะทะเบียน (actor.uid มาก่อน resolveUid)', () => {
+  setPeopleIndex([{ id: 'uid-คนละตัว', full_name: 'สมชาย ใจดี' }])
+  assert.equal(applyStepActors(PAIRS, { tech_main: 'สมชาย ใจดี' }, ME).tech_main_uid, 'uid-me')
+  setPeopleIndex([])
 })

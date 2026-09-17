@@ -96,6 +96,53 @@ export function samePerson(a, b) {
   return !!ka && ka === kb
 }
 
+// ── ทะเบียน "ชื่อ → uid" สำหรับชื่อคนอื่น (เฟส 4 · 2026-09-17) ──────────────
+//
+// ทำไมต้องมี: wrapper เติม uid ได้เฉพาะ "ชื่อที่เขียน = คนที่กำลังกด"
+// แต่คอลัมน์ส่วนใหญ่เก็บ "ชื่อคนอื่น" (ช่างที่มอบหมาย / ผู้อนุมัติ / ผู้ตรวจรับ)
+// ⇒ ถ้าไม่ resolve เลย uid เป็น null เกือบทั้งระบบ = งานเฟส 1-3 แทบไม่มีผลกับรายงานจริง
+//
+// ทำไมไม่ไล่แก้ 91 จุดที่เรียก <PersonSelect> ให้ส่ง res.uid มาเอง:
+//   แต่ละจุดต้องแก้ 2 ที่ (onChange + จุดที่ประกอบ payload ส่ง DB) = ~180 จุดแก้มือ
+//   บนหน้าที่เป็น workflow หลายขั้น · ตกหล่นที่เดียว = แถวที่ชื่อกับ uid เป็นคนละคน (แย่กว่าไม่มี uid)
+//   และจุดที่คน "พิมพ์ชื่อเอง" (allowFree) ก็ยังไม่ได้ uid อยู่ดี
+// ⇒ ใช้เกณฑ์เดียวกับ backfill เฟส 3: **จับคู่ชื่อได้ไม่กำกวมเท่านั้นถึงเติม uid**
+//   (วัดจริง 17/09: profiles 91 คน → ชื่อ norm ไม่ซ้ำ 90 · ซ้ำ 1 ชื่อ = "ธวัช พิมพ์วงศ์" 2 บัญชี)
+//
+// 🔴 ชื่อที่ซ้ำ (หลาย uid) → คืน null เสมอ ห้ามเดา — "ไม่รู้" ซื่อสัตย์กว่า "เดาผิด"
+// 🔴 ทะเบียนนี้มาจาก `profiles` เท่านั้น — `employees` ที่ไม่มี user ไม่มี uid ให้ผูก (ถูกแล้ว)
+// 🔴 ยังไม่โหลด = resolve ไม่ได้ = uid null (พฤติกรรมเดิม) — ห้ามทำให้การเขียนล้ม
+const AMBIGUOUS = Symbol('ambiguous')
+let _people = new Map()
+
+/**
+ * ตั้งทะเบียนคน — เรียกจาก loadProfilesPeople() ทุกครั้งที่โหลด profiles (จุดเดียว)
+ * รับ array ของ { id, full_name } · ชื่อซ้ำ → มาร์กกำกวม (resolve ไม่ได้)
+ */
+export function setPeopleIndex(people) {
+  const m = new Map()
+  for (const p of people || []) {
+    const n = normPersonName(p?.full_name ?? p?.name)
+    const uid = p?.id || p?.uid
+    if (!n || !uid) continue
+    const cur = m.get(n)
+    if (cur === undefined) m.set(n, uid)
+    else if (cur !== uid) m.set(n, AMBIGUOUS)   // ชื่อซ้ำคนละ uid → ตอบไม่ได้ว่าคนไหน
+  }
+  _people = m
+}
+
+/** ชื่อ → uid · ไม่รู้จัก/ซ้ำ/ยังไม่โหลดทะเบียน → null */
+export function resolveUid(name) {
+  const n = normPersonName(name)
+  if (!n) return null
+  const v = _people.get(n)
+  return (v === undefined || v === AMBIGUOUS) ? null : v
+}
+
+/** ขนาดทะเบียนที่โหลดอยู่ — ไว้เทส/ดีบัก (0 = ยังไม่โหลด) */
+export const peopleIndexSize = () => _people.size
+
 /**
  * เติม uid ให้คอลัมน์ "ผู้ทำงานแต่ละขั้น" ในค่าที่กำลังจะเขียนลง DB (pure)
  *
@@ -107,7 +154,9 @@ export function samePerson(a, b) {
  *    ถ้าเขียนชื่อใหม่แล้วปล่อย uid เดิมไว้ จะได้ **แถวที่ชื่อเป็นคนหนึ่ง แต่ uid เป็นอีกคน**
  *    (เช่น ช่างซ่อมเปลี่ยนจาก A เป็น B แต่ uid ยังชี้ A ⇒ รายงานนับงานให้ A ทั้งที่ B ทำ)
  *    ซึ่ง **แย่กว่าไม่มี uid เลย** เพราะมันดูน่าเชื่อถือแต่ผิด
- *    ⇒ ชื่อที่ resolve เป็นตัวเราไม่ได้ → เขียน uid = null (แปลว่า "ไม่รู้" ซึ่งซื่อสัตย์)
+ *    ⇒ ชื่อที่ resolve ไม่ได้ → เขียน uid = null (แปลว่า "ไม่รู้" ซึ่งซื่อสัตย์)
+ *
+ * ลำดับการ resolve (2026-09-17): ตัวเราเอง → ทะเบียนชื่อแบบไม่กำกวม → null
  *
  * เคารพค่าที่หน้าส่งมาเอง: ถ้า payload มีคอลัมน์ uid อยู่แล้ว (มาจาก PersonSelect ที่คืน uid
  * ของคนที่ถูกเลือก) จะไม่ไปแตะ — หน้ารู้ดีกว่าเสมอ
@@ -121,7 +170,8 @@ export function applyStepActors(pairs, values, actor) {
     if (uidCol in out) continue         // หน้าส่ง uid มาเอง → เคารพ
     const v = out[nameCol]
     const isMe = !!actor?.uid && !!v && samePerson({ name: v }, { name: actor?.name })
-    out[uidCol] = isMe ? actor.uid : null
+    // ลำดับ: ตัวเราเอง → ทะเบียนชื่อ (ไม่กำกวม) → null (ไม่รู้)
+    out[uidCol] = isMe ? actor.uid : resolveUid(v)
     touched = true
   }
   return touched ? out : values
