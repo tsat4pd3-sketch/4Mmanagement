@@ -22,6 +22,8 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import { classifyAbc } from '../utils/pareto';
+import { MIN_AFTER_DAYS, A3_FRAMEWORKS, a3Data, a3Sections, normFramework, resultMode } from '../utils/improvementA3';
+import { printImprovementA3 } from '../lib/improvementA3Print';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -29,8 +31,9 @@ import { classifyAbc } from '../utils/pareto';
    · check = จุดที่ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ดคือขั้น C ของโปรเจค)
    · จังหวะ "เริ่มลงมือแก้จริง" ของโปรเจคผูกกับการติ๊กเริ่มขั้น phase='do' (ดู cycleMilestone) */
 /* หลังแก้ต้องมี "วันผลิตจริง" อย่างน้อยเท่านี้ ถึงสรุป "ประหยัดจริง" ได้ (เกณฑ์เดียวกับ capaEffect.js)
-   — หลังแก้ 0-1 วันแล้วลด 100% คือคำกล่าวอ้างที่ยังพิสูจน์ไม่ได้ ระหว่างรอให้โชว์ "เพดานประหยัด" จาก baseline แทน */
-const MIN_AFTER_DAYS = 5;
+   — หลังแก้ 0-1 วันแล้วลด 100% คือคำกล่าวอ้างที่ยังพิสูจน์ไม่ได้ ระหว่างรอให้โชว์ "เพดานประหยัด" จาก baseline แทน
+   ⚠️ นิยามย้ายไป `src/utils/improvementA3.js` แล้ว (2026-09-17) — ใบ A3 ต้องใช้เกณฑ์เดียวกับการ์ดเป๊ะ
+      ถ้าเลขนี้อยู่ 2 ที่ วันหนึ่งใบพิมพ์จะบอกว่า "ประหยัดแล้ว" ขณะที่จอบอกว่า "รอผล" */
 
 const PHASES = {
   plan:  { s: 'P', label: 'Plan — วิเคราะห์สาเหตุ/วางแผน', c: '#4d9fff' },
@@ -169,6 +172,9 @@ export default function Improvements() {
   const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
   const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
   const [peModal,    setPeModal]    = useState(null);  // imp — เสนอ/ดูคำขอแก้เอกสาร PE (PFMEA/CP) ของโปรเจคนี้
+  /* 📋 ใบ A3 Report (PDCA/DMAIC) — { imp, data, peReqs, loadingPe, peErr, saving }
+     data = เนื้อหาที่คนเขียนเอง (improvements.a3 jsonb) ส่วนตัวเลขทั้งใบมาจากที่หน้านี้คำนวณแล้ว */
+  const [a3Modal,    setA3Modal]    = useState(null);
   // milestone/Gantt ต่อโปรเจค (คำสั่ง user 2026-07-14: ตามงานโปรเจคทีมแบบ gantt ไม่ใช่ฟอร์มทีเดียวจบ)
   const [msByImp, setMsByImp] = useState({});          // improvement_id -> [milestones]
   const [ganttOpen, setGanttOpen] = useState({});      // improvement_id -> bool
@@ -796,6 +802,67 @@ export default function Improvements() {
     toast.success(status === 'done' ? 'ปิดโปรเจค — สำเร็จ 🎉' : status === 'cancelled' ? 'ยกเลิกโปรเจคแล้ว' : 'กลับมาติดตามผลต่อ');
   };
 
+  /* ── 📋 ใบ A3 Report (PDCA / DMAIC) ────────────────────────────────────────
+     ระบบเติมให้เองทุกช่องที่ "รู้จากข้อมูลจริง" (ปัญหา/baseline/เป้า/แผนงาน/ผล/เงิน/คำขอ PE)
+     เหลือเฉพาะช่องที่ระบบไม่มีทางรู้ให้คนกรอก: ความเป็นมา · สาเหตุราก · รายละเอียดมาตรการ · มาตรฐาน/ขยายผล
+     ⚠️ ห้ามให้ช่องที่คนไม่กรอกกลายเป็นช่องว่างเปล่าในใบ — ตัวพิมพ์เขียนกำกับว่าต้องไปกรอกที่ไหน */
+  const openA3 = async (imp) => {
+    setA3Modal({ imp, data: a3Data(imp), peReqs: [], loadingPe: true, peErr: null, saving: false });
+    const { data, error } = await supabase.from('pe_change_requests')
+      .select('doc_type, proposal, status, created_at')
+      .eq('ref_kind', 'improvement').eq('ref_id', imp.id)
+      .order('created_at', { ascending: false });
+    // ⚠️ guard stale-response — ผู้ใช้อาจปิด/เปิดใบอื่นก่อนคำตอบกลับมา (กฎเหล็กข้อ 4 ใน CLAUDE.md)
+    setA3Modal(prev => (prev && prev.imp.id === imp.id
+      ? { ...prev, peReqs: data || [], loadingPe: false, peErr: error?.message || null }
+      : prev));
+  };
+
+  /** บันทึกเนื้อหา A3 — คืน true เมื่อเก็บลงฐานจริง (นับแถวที่เขียนได้ ไม่ดูแค่ error) */
+  const saveA3 = async () => {
+    const { imp, data } = a3Modal;
+    setA3Modal(p => (p ? { ...p, saving: true } : p));
+    const { data: rows, error } = await supabaseDR.from('improvements')
+      .update({ a3: data, updated_at: new Date().toISOString() }).eq('id', imp.id).select('id');
+    setA3Modal(p => (p ? { ...p, saving: false } : p));
+    if (error) {
+      // ยังไม่ apply migration = พิมพ์ใบได้ตามปกติ แต่ข้อความไม่ถูกเก็บ — ต้องบอก ห้ามเงียบ
+      toast.error(error.code === '42703'
+        ? 'พิมพ์ใบ A3 ได้ แต่ยังบันทึกข้อความไม่ได้ — ยังไม่ได้ apply migration 20260917_improvement_a3_dr (แจ้ง admin)'
+        : error.message);
+      return false;
+    }
+    if (!rows?.length) { toast.error('ไม่มีแถวถูกบันทึก — โปรเจคอาจถูกลบไปแล้ว หรือไม่มีสิทธิ์แก้'); return false; }
+    setItems(prev => prev.map(i => (i.id === imp.id ? { ...i, a3: data } : i)));
+    setA3Modal(p => (p ? { ...p, imp: { ...p.imp, a3: data } } : p));
+    toast.success('บันทึกเนื้อหา A3 แล้ว');
+    return true;
+  };
+
+  const printA3 = async () => {
+    const { imp, data, peReqs } = a3Modal;
+    const r = results[imp.id];
+    // ⚠️ ผลยังคำนวณไม่เสร็จ (async) — พิมพ์ตอนนี้ใบจะเขียนว่า "ไม่มีข้อมูล" ทั้งที่แค่ยังไม่เสร็จ = โกหกบนกระดาษ
+    if (!r) { toast.info('ระบบกำลังคำนวณผลก่อน/หลังของโปรเจคนี้ — รอสักครู่แล้วกดพิมพ์ใหม่'); return; }
+    const started = doStarted(imp);
+    const mode = resultMode(r, started);
+    let ok = false;
+    try {
+      ok = await printImprovementA3({
+        imp: { ...imp, a3: data },
+        result: r,
+        // โหมดเดียวกับการ์ดเป๊ะ: ยังไม่ยืนยันลงมือ / หลังแก้ยังไม่ถึงเกณฑ์ = ตัวเงินเป็น "เพดานจาก baseline"
+        cost: costSavingOf(imp, r, mode !== 'confirmed'),
+        target: targetSavingOf(imp, r),
+        milestones: msByImp[imp.id] || [],
+        started, peReqs, framework: data.framework,
+        workDaysMonth, today: todayStr(), issuedBy: fullName,
+        section: lines.find(l => l.name === imp.line_name)?.section || null,
+      });
+    } catch (e) { toast.error(`พิมพ์ไม่สำเร็จ: ${e.message}`); return; }
+    if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up ของเว็บนี้แล้วกดใหม่');
+  };
+
   /* ── render ── */
   if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
 
@@ -1315,6 +1382,8 @@ export default function Improvements() {
                   )}
                   {/* 📐 คำขอแก้เอกสาร PE — เข้าได้ทุกเมื่อ (ดูสถานะคำขอ/เสนอเพิ่ม) ไม่ใช่ one-shot ตอนปิดจ๊อบ */}
                   <button onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>📐 PE</button>
+                  {/* 📋 ใบ A3 — พิมพ์ได้ทุก role (อ่านอย่างเดียวก็ต้องเอาใบไปประชุมได้) แก้เนื้อหาเฉพาะคนมีสิทธิ์ */}
+                  <button onClick={() => openA3(imp)} title="ออกใบ A3 Report (PDCA / DMAIC) จากข้อมูลจริงของโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(77,159,255,0.5)', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>📋 A3</button>
                   {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✏️ แก้ไข</button>}
                   {canDel && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
                 </div>
@@ -1587,6 +1656,96 @@ export default function Improvements() {
           </div>
         </div>
       )}
+
+      {/* ── 📋 modal ใบ A3 Report (PDCA / DMAIC) ──────────────────────────────
+          ระบบเติมช่องที่รู้จากข้อมูลจริงให้เอง — ในนี้กรอกเฉพาะส่วนที่ระบบไม่มีทางรู้
+          (ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5 — เป็นฟอร์มที่พิมพ์ข้อความยาว) */}
+      {a3Modal && (() => {
+        const fw = normFramework(a3Modal.data.framework);
+        const secs = a3Sections(fw);
+        const setD = (patch) => setA3Modal(p => (p ? { ...p, data: { ...p.data, ...patch } } : p));
+        const r = results[a3Modal.imp.id];
+        const mode = resultMode(r, doStarted(a3Modal.imp));
+        const MODE_NOTE = {
+          nodata:   { c: '#8b8b96', t: 'ยังไม่มีกะที่ปิดแล้วในช่วงเทียบ — ช่องผลลัพธ์ในใบจะเขียนว่า "วัดไม่ได้" ไม่ใช่เลข 0' },
+          baseline: { c: '#f59e0b', t: 'ยังไม่ยืนยัน "เริ่มลงมือแก้จริง" — ใบจะออกเป็น A3 ช่วงวางแผน (ระดับปัจจุบัน + เป้าหมาย) ยังไม่มีคำว่าประหยัดแล้ว' },
+          waiting:  { c: '#f59e0b', t: `หลังแก้มีข้อมูล ${r?.afterDays || 0}/${MIN_AFTER_DAYS} วันผลิต — ใบจะเขียนว่ารอผล และตัวเงินเป็น "มูลค่าปัญหาก่อนแก้"` },
+          confirmed:{ c: '#22c55e', t: 'ผลจริงยืนยันแล้ว — ใบจะออก % ที่ลดได้ + เงินที่ประหยัดจริง' },
+        }[mode];
+        const field = (key, label, ph, rows = 3) => (
+          <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block' }}>{label}
+            <textarea rows={rows} value={a3Modal.data[key] || ''} readOnly={!canManage}
+              onChange={e => setD({ [key]: e.target.value })} placeholder={ph}
+              style={{ marginTop: 4, opacity: canManage ? 1 : 0.7 }} />
+          </label>
+        );
+        return (
+          <div className="overlay">
+            <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(900px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📋 ใบ A3 Report — "{a3Modal.imp.title}"</h3>
+                <button onClick={() => setA3Modal(null)} style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
+              </div>
+              <ReadOnlyNote show={!canManage} role={role} what="แก้เนื้อหาใบ A3" permKey="improvements:manage" compact
+                hint="ดูและพิมพ์ใบได้ตามปกติ" />
+
+
+              {/* กรอบการเล่าเรื่อง — ข้อมูลชุดเดียวกัน เปลี่ยนแค่ป้ายขั้น (ไม่ใช่ใบคนละชุด) */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>กรอบการเล่าเรื่อง:</span>
+                {Object.values(A3_FRAMEWORKS).map(f => (
+                  <button key={f.key} onClick={() => canManage && setD({ framework: f.key })} disabled={!canManage}
+                    style={{ padding: '4px 12px', borderRadius: 14, fontSize: 12, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
+                      border: `1px solid ${fw === f.key ? 'var(--accent)' : 'var(--border)'}`,
+                      background: fw === f.key ? 'var(--accent-dim)' : 'var(--bg3)',
+                      color: fw === f.key ? 'var(--accent)' : 'var(--muted)' }}>{f.label}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
+                ใบพิมพ์ 8 ช่อง (A3 แนวนอน จบใน 1 หน้า): {secs.map(s => (
+                  <span key={s.key} style={{ marginRight: 6, whiteSpace: 'nowrap' }}>
+                    <b style={{ color: s.meta.color }}>{s.no}. {s.title}</b> <span style={{ opacity: 0.7 }}>({s.meta.label})</span>
+                  </span>
+                ))}
+                <br />ช่อง {secs.find(s => s.key === 'current').no} · {secs.find(s => s.key === 'target').no} · {secs.find(s => s.key === 'plan').no} · {secs.find(s => s.key === 'result').no} ระบบเติมจากข้อมูลจริงให้เอง — ด้านล่างกรอกเฉพาะส่วนที่ระบบไม่รู้
+                {' '}· แผนงานเก็บเป็น PDCA เสมอ โหมด DMAIC เป็นการแสดงเทียบ (ขั้น Plan = Define–Measure–Analyze)
+              </div>
+
+              {/* ใบนี้จะพูดได้แค่ไหน — บอกก่อนพิมพ์ ไม่ใช่ให้ไปเซอร์ไพรส์บนกระดาษ */}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: MODE_NOTE.c, background: 'var(--bg3)', border: `1px solid ${MODE_NOTE.c}55`, borderRadius: 8, padding: '7px 10px', marginBottom: 12, lineHeight: 1.55 }}>
+                {r ? `สถานะข้อมูลของใบนี้: ${MODE_NOTE.t}` : 'กำลังคำนวณผลก่อน/หลังของโปรเจคนี้ — รอสักครู่ก่อนกดพิมพ์'}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 12, alignContent: 'start' }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  {field('background', `${secs.find(s => s.key === 'background').no}. ความเป็นมา / ทำไมต้องทำเรื่องนี้`, 'กระทบใคร · เกี่ยวกับนโยบาย/เป้าฝ่ายอะไร · ที่ผ่านมาเคยแก้อะไรไปแล้วบ้าง')}
+                </div>
+                {field('root_cause', `${secs.find(s => s.key === 'rootCause').no}. วิเคราะห์สาเหตุราก (5 Why / ก้างปลา)`, 'ทำไม → ทำไม → ทำไม … (ระบบไม่เดาสาเหตุให้ — รู้แค่ว่าเกิดอะไร ไม่รู้ว่าทำไม)', 4)}
+                {field('countermeasures', `${secs.find(s => s.key === 'countermeasure').no}. รายละเอียดมาตรการแก้ไข (เพิ่มจากช่อง "การแก้ไข")`, 'แก้ที่จุดไหน ด้วยวิธีอะไร ใครทำ ใช้อะไรบ้าง', 4)}
+                {field('standardize', `${secs.find(s => s.key === 'standardize').no}. มาตรฐาน & ขยายผล (Yokoten)`, 'แก้ WI/OPL ตัวไหน · อบรมใคร · ขยายไปไลน์/เครื่อง/พาร์ทไหนบ้าง (ไม่ทำเป็นมาตรฐาน = มีโอกาสกลับมาเกิดซ้ำ)', 3)}
+                {field('team', 'ทีมงาน (แสดงหัวใบ)', 'ชื่อทีม/สมาชิกที่ร่วมโปรเจค', 2)}
+              </div>
+
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+                {a3Modal.loadingPe ? 'กำลังดึงคำขอแก้เอกสาร PE ของโปรเจคนี้…'
+                  : a3Modal.peErr ? `⚠ ดึงคำขอแก้เอกสาร PE ไม่ได้ (${a3Modal.peErr}) — ใบจะพิมพ์ได้แต่ช่องมาตรฐานจะไม่มีรายการ PE`
+                  : `📐 คำขอแก้เอกสาร PE ที่จะพิมพ์ลงใบ: ${a3Modal.peReqs.length} รายการ`}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                <button onClick={() => setA3Modal(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>ปิด</button>
+                <button onClick={printA3} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>🖨 พิมพ์อย่างเดียว</button>
+                {canManage && (
+                  <button onClick={async () => { await saveA3(); await printA3(); }} disabled={a3Modal.saving}
+                    style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08131f', fontWeight: 800, fontSize: 12.5, cursor: a3Modal.saving ? 'default' : 'pointer', opacity: a3Modal.saving ? 0.6 : 1 }}>
+                    {a3Modal.saving ? 'กำลังบันทึก…' : '💾 บันทึก & พิมพ์ A3'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── modal ปิดจ๊อบ + สรุปผล ── */}
       {closeModal && (
