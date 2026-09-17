@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -606,7 +606,6 @@ export default function LineSetup({ embedded = false } = {}) {
       file = await toDecodableImage(file);
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
       // บีบรูปผังก่อนอัปโหลด — ผังไลน์บีบเบา 2560px/2.5MB q0.9 (ดู CLAUDE.md "Storage & รูปภาพ") · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
       const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
       if (isGif && file.size > 2 * 1024 * 1024) {
@@ -614,8 +613,10 @@ export default function LineSetup({ embedded = false } = {}) {
         setIsUploading(false);
         return;
       }
-      // ผังไลน์มีจำนวนน้อยและต้องซูมอ่านรายละเอียด — บีบเบา (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอ
-      const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* ผังไลน์ต้องซูมอ่านรายละเอียด — **คงความละเอียด 2560px เท่าเดิม ห้ามลดกลับไป 1600px/0.5MB เคยเบลอ**
+         แต่แปลงเป็น WebP เพื่อตัดขนาดไฟล์ (PNG 8.4 MB → ~0.5 MB) · เหตุผลเต็ม → src/utils/layoutImage.js */
+      const { blob: uploadBlob, ext: outExt } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
+      const fileName = `layout_${safeLineName}_${Date.now()}.${outExt}`;
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob, uploadOpts());
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useContext } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
-import imageCompression from 'browser-image-compression'
+import { compressLayoutImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -334,10 +334,10 @@ export default function MtnMachineLayout({ setupMode = false }) {
     try {
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ext ด้านล่าง derive จากชื่อไฟล์ จึงต้องแปลงก่อน)
       file = await toDecodableImage(file)
-      // รูปผัง/layout มีจำนวนน้อย (ไม่เกิน ~20 รูปทั้งระบบ) แต่ต้องซูมอ่านรายละเอียดได้ —
-      // บีบเบากว่ารูปพนักงานมาก (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้
-      const compressed = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 })
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+      /* รูปผังต้องซูมอ่านรายละเอียดได้ — **คงความละเอียด 2560px ห้ามลดกลับไป 1600px/0.5MB เคยเบลอจนใช้งานไม่ได้**
+         แปลงเป็น WebP แทนเพื่อตัดขนาดไฟล์ (ผังโซนเดิมเป็น PNG 1.1 MB) · ดู src/utils/layoutImage.js
+         ⚠️ นามสกุลต้องมาจากชนิดไฟล์จริงที่ได้ ไม่ใช่ชื่อไฟล์ต้นทาง (Safari เก่าเขียน webp ไม่ได้) */
+      const { blob: compressed, ext } = await compressLayoutImage(file)
       const path = `facility/${areaId}.${ext}`
       const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, compressed, uploadOpts({ mutable: true, upsert: true }))
       if (upErr) throw upErr

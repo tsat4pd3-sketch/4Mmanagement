@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -1695,10 +1695,12 @@ export default function FactoryMap({ setupMode = false }) {
       setUploading(true);
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
       file = await toDecodableImage(file);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const isGif = file.type === 'image/gif' || ext === 'gif';
+      const srcExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || srcExt === 'gif';
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
-      const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* คงความละเอียด 2560px (ผังโรงงานต้องซูมอ่านชื่อไลน์ได้) แต่แปลงเป็น WebP —
+         ผังเดิมเป็น PNG 2.4 MB และจอ TV ทุกเครื่องโหลดทั้งก้อน · ดู src/utils/layoutImage.js */
+      const { blob, ext } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;
