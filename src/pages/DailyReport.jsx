@@ -912,13 +912,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       }
       // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
       // NG เข้าสูตร Q ต้องไม่รวมงานทดลอง (เหมือน handleCloseSession)
-      const { A, P, Q, oee, shiftMin, totalProduced } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
+      const { A, P, Q, oee, shiftMin, totalProduced, ctUsed } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
       const startChanged = closeStartTime && closeStartTime !== selSession.start_time;
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
       const noProduction = totalProduced === 0 && P == null;
       const update = {
         shift_min: shiftMin,
+        // CT ที่ใช้คิด %P รอบนี้ — ต้อง re-stamp ด้วย เพราะ %P ถูกคำนวณใหม่ทั้งก้อน (เฟส 0 Adaptive CT)
+        ...(Object.keys(ctUsed || {}).length ? { ct_snapshot: ctUsed } : {}),
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
         oee_q: (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2)),
@@ -2128,7 +2130,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
        ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
        แทนที่จะปล่อยจน OEE ของทั้งไลน์อ่านไม่ได้ 14 กะโดยไม่มีใครรู้ (2026-08-13) */
-    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty,
+    /* CT ที่ "ใช้จริง" ในการคิด %P ของกะนี้ — เก็บลง production_sessions.ct_snapshot ตอน stamp
+       เพื่อให้คำนวณ %P ย้อนหลังซ้ำได้แม้ CT ใน master จะถูกแก้ไปแล้ว (เฟส 0 ของ Adaptive CT)
+       บทเรียน 17/09: CT ตระกูล Assy LWR ถูกแก้ 58 → 54 เมื่อ 09/09 ⇒ กะก่อนหน้านั้นคำนวณใหม่ไม่ตรง
+       จนต้อง backfill ด้วย "อัตราส่วน" แทนการคำนวณใหม่ · มี snapshot แล้วจะไม่เจอปัญหานี้อีก */
+    const ctUsed = {};
+    matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
+    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty, ctUsed,
       loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
       pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10 };
   };
@@ -2301,7 +2309,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        ไม่เคยมีผลกับค่าที่ stamp เลย ขณะที่จอสด (FactoryMap/Dashboard) กรองถูก = Q คนละตัวระหว่าง 2 จอ
        ส่วน qty_ng/qty_suspect ที่เขียนลง production_sessions ยังเป็น "ผลรวมดิบ" ตามเดิม
        (เป็นยอดรายงานของเสียทั้งหมด ไม่ใช่ตัวคิด Q — ห้ามกรอง ตามกฎ oee.js §7) */
-    const { A, P, Q, oee, shiftMin } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, updatedDtLogs);
+    const { A, P, Q, oee, shiftMin, ctUsed } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, updatedDtLogs);
     // กะที่ไม่มีผลผลิตเลย (เปิดผิด/นับสต๊อก) — A/Q ไม่มีความหมายกับ OEE (P/OEE เป็น null อยู่แล้ว)
     // ต้อง stamp oee_a/oee_q เป็น null ด้วย ไม่งั้นเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์
     // (สอดคล้อง cleanup migration 20260715_oee_null_noproduction_cleanup.sql — กันไม่ให้ค้างตั้งแต่ปิดกะ)
@@ -2311,6 +2319,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const oeeQ = (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2));
     const oeeV = oee != null ? parseFloat((oee * 100).toFixed(2)) : null;
     const startTimeChanged = closeStartTime && closeStartTime !== selSession.start_time;
+    /* CT ที่ใช้คิด %P ของกะนี้ — เก็บไว้ให้คำนวณย้อนหลังซ้ำได้แม้ CT ใน master ถูกแก้ทีหลัง
+       (เฟส 0 Adaptive CT · null เมื่อไม่มี MAT ไหนมี CT เลย ไม่เขียนออบเจกต์ว่างให้รก) */
+    const ctSnap = Object.keys(ctUsed || {}).length ? ctUsed : null;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = role === 'leader';
     const payload = isLeaderRequest ? {
@@ -2327,6 +2338,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_suspect:             totalQtySuspect,
       qty_repair:              totalQtyRepair,
       shift_min:               shiftMin,
+      ct_snapshot:             ctSnap,
       oee_a:                   oeeA,
       oee_p:                   oeeP,
       oee_q:                   oeeQ,
@@ -2345,6 +2357,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_suspect:     totalQtySuspect,
       qty_repair:      totalQtyRepair,
       shift_min:       shiftMin,
+      ct_snapshot:     ctSnap,
       oee_a:           oeeA,
       oee_p:           oeeP,
       oee_q:           oeeQ,
