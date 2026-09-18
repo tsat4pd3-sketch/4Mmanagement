@@ -61,3 +61,35 @@ test('dateSpanDays อ่านได้ทั้ง Date และข้อค�
   assert.equal(dateSpanDays([[0, 0, 'ไม่ใช่วันที่']], 2), null);
   assert.equal(dateSpanDays([], -1), null);
 });
+
+/* ── ไฟล์จริง: 1 เล่ม หลายชีต ชีตละ ship-to (862_15.09.26.xlsm · 2026-09-17) ───────
+   เคสจริงที่ทำให้ออเดอร์ AAT หายทั้งลูกค้า — โค้ดเดิมอ่านชีตแรกชีตเดียวแล้ว return */
+test('🔴 หาชีต EDI ต้องได้ครบทุกชีต ไม่ใช่ชีตแรกชีตเดียว', () => {
+  const H = ['Part Num', 'Forecast Net Qty', 'Forecast Date', 'Forecast Time', 'Ship To GSDB Code'];
+  const book = {
+    Summary: [['Audit Report Summary'], ['Audit Date & Time: 2026-09-15']],
+    GBL9A: [['862', 'Shipping Schedule'], H, ['P1', 10, 20260915, 0.375, 'GBL9A']],
+    GRBNA: [['862', 'Shipping Schedule'], H, ['P2', 20, 20260915, 0.375, 'GRBNA']],
+    HPUDA: [['862', 'Shipping Schedule'], H, ['P3', 30, 20260915, 0.5, 'HPUDA']],
+    Database: [['Part Num', 'Purchase Order Num', 'Dock Code', 'Customer']],
+  };
+  const hits = [];
+  for (const [name, m] of Object.entries(book)) {
+    for (let i = 0; i < Math.min(m.length, 20); i++) {
+      if (isEdiHeaderRow(m[i].map(c => String(c).trim()))) { hits.push(name); break; }
+    }
+  }
+  assert.deepEqual(hits, ['GBL9A', 'GRBNA', 'HPUDA'], 'ต้องเจอ 3 ชีต และไม่กินชีต Summary/Database');
+});
+
+test('ชีตที่คอลัมน์เวลาว่างทุกแถว = ไม่ชัด — แต่ชีตที่ชัดในเล่มเดียวกันต้องชนะ', () => {
+  const H = ['Part Num', 'Forecast Net Qty', 'Forecast Date', 'Forecast Time'];
+  const blank = detectEdiKind(H, [['P1', 10, 20260915, '']]);
+  const real = detectEdiKind(H, [['P2', 20, 20260915, 0.375]]);
+  assert.equal(blank.sure, false);
+  assert.equal(real.sure, true);
+  // กติกาที่หน้าจอใช้: หยิบชีตแรกที่ sure แล้วใช้ชนิดนั้นทั้งไฟล์
+  const sheets = [{ kind: blank, is862: blank.is862 }, { kind: real, is862: real.is862 }];
+  const sureOne = sheets.find(f => f.kind.sure);
+  assert.equal(sureOne.is862, true);
+});
