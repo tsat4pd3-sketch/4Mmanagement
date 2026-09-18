@@ -52,3 +52,45 @@ test('ปลายทางต้องขึ้นต้นด้วย / แ�
     assert.notEqual(v, '/', `${k} ชี้หน้าแรก = เท่ากับไม่มี route`);
   }
 });
+
+/* ══ ปลายทางของแจ้งเตือน "สรุป" (notification_rules.link) — 2026-09-16 ═══════════════════════
+ * feedback ทีมงานผ่าน user: "กระดิ่งบางอันกดเข้าไปในจุดที่แจ้งเตือนได้ แต่บางอันไม่ได้"
+ * วัดจากฐาน 16/09: ref_table = null **6,873 แถว และยังเกิดใหม่ทุกวัน** (หลุดเฟสงานส่ง 5,489 ·
+ * เตือนรอบ PM 379 · ส่งงานลูกค้า 338 · เฝ้าระวังสโตร์ 326 · EDI 156 · แผนประสานงาน PM 131)
+ * — ทุกก้อนออกจาก notifyInApp() ใน edge ซึ่งไม่เคยส่ง ref_table/link เลย ⇒ กดแล้วไม่ไปไหน
+ *
+ * ⚠️ ปลายทางพวกนี้ **ไม่ได้อยู่ในโค้ด edge** — อยู่ที่ `notification_rules.link` (data-driven)
+ *    แล้ว trigger `trg_notification_fill_link` เติมให้ตอน insert
+ *    เหตุผล: `send-notification/index.ts` = 59 KB · `qa-fme-scan` = 53 KB ซึ่ง
+ *    `docs/modules/edge-functions.md` ห้าม deploy ผ่าน MCP (ต้องพิมพ์ทั้งไฟล์ซ้ำ) และ user ไม่มี CLI
+ * เทสนี้อ่าน **ไฟล์ migration** (= สิ่งที่ apply ลงฐานจริง) กันปลายทางพิมพ์ผิด/ชี้หน้าที่ถูกลบ
+ */
+const APP_ROUTES = new Set([...app.matchAll(/<Route path="([^"]+)"/g)].map(m => m[1]));
+const ruleLinkSql = readFileSync(
+  new URL('../../../supabase/migrations/20260916_notification_rules_link.sql', import.meta.url), 'utf8');
+/** คู่ ('event_key', '/path') ในบล็อก values(...) ของ migration */
+const RULE_LINKS = [...ruleLinkSql.matchAll(/\(\s*'([a-z_0-9]+)',\s*'(\/[^']*)'\)/g)].map(m => [m[1], m[2]]);
+
+test('🔴 notification_rules.link ทุกค่าต้องชี้ route ที่มีจริงใน App.jsx', () => {
+  assert.ok(RULE_LINKS.length >= 20, `seed link เหลือ ${RULE_LINKS.length} รายการ — น้อยผิดปกติ (เดิม 25)`);
+  for (const [key, path] of RULE_LINKS) {
+    assert.ok(APP_ROUTES.has(path.split('?')[0]),
+      `notification_rules.link ของ "${key}" → "${path}" ไม่มีใน <Route> ของ App.jsx (พิมพ์ผิด/หน้าถูกลบ?)`);
+  }
+});
+
+test('🔴 ทุก event ที่ยิง notifyInApp ใน send-notification ต้องมีปลายทางใน seed', () => {
+  const src = readFileSync(new URL('../../../supabase/functions/send-notification/index.ts', import.meta.url), 'utf8');
+  const links = new Map(RULE_LINKS);
+  const called = [...src.matchAll(/notifyInApp\(routes,\s*'([a-z_0-9]+)'/g)].map(m => m[1]);
+  assert.ok(called.length >= 14, `เจอ call notifyInApp แค่ ${called.length} จุด — regex เพี้ยนหรือโครงเปลี่ยน`);
+  for (const ev of new Set(called)) {
+    assert.ok(links.has(ev), `event "${ev}" ยิงแจ้งเตือนในแอปแต่ไม่มีปลายทางใน notification_rules.link ⇒ กระดิ่งกดไม่ได้`);
+  }
+});
+
+test('ปลายทางใน NOTIF_ROUTE ต้องเป็น route ที่มีจริงเช่นกัน', () => {
+  for (const [k, v] of Object.entries(bell)) {
+    assert.ok(APP_ROUTES.has(v.split('?')[0]), `NOTIF_ROUTE.${k} → "${v}" ไม่มีใน <Route> ของ App.jsx`);
+  }
+});

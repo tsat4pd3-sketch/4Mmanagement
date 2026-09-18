@@ -107,6 +107,17 @@ const mergeIv = (iv) => {
   return out;
 };
 
+/** union ช่วงเวลาหลายชุดที่ยังไม่เรียง → [[s, e], ...] เรียง + รวมช่วงที่ทับกัน
+ *  ⚠️ `mergeIv` ข้างบนต้องการ input ที่เรียงมาแล้ว — ตัวนี้เรียงให้ก่อน ใช้กับชุดที่ผสมมาจากหลายที่
+ *  (เช่น "ช่วงที่พาร์ทวิ่ง" ∪ "ช่วงพักตามนโยบาย" ตอนหา downtime ที่ตกนอกงานทั้งหมด — §7) */
+export function unionIv(intervals = []) {
+  const clean = intervals
+    .filter(iv => Array.isArray(iv) && iv[0] != null && iv[1] != null && iv[1] > iv[0])
+    .map(iv => [Number(iv[0]), Number(iv[1])])
+    .sort((a, b) => a[0] - b[0]);
+  return mergeIv(clean);
+}
+
 /** **ช่วงเวลา**พักตามนโยบายที่ทับกรอบ [startMs, endMs] → [[s, e], ...] (epoch ms) เรียง + รวมช่วงที่ทับกัน
  *  กติกาทั้งหมดของ "พักนโยบาย" อยู่ที่ฟังก์ชันนี้ที่เดียว: กรองกะ → กรองกระบวนการ → ot_scope → กะดึกข้ามวัน
  *  · `policyBreakOverlapMin` = ผลรวมนาทีของช่วงที่ได้จากตัวนี้
@@ -816,4 +827,67 @@ export function groupSameProductKeys(rows = []) {
   const out = {};
   rows.forEach(r => { out[r.matNo] = find(`MAT:${r.matNo}`); });
   return out;
+}
+
+
+/* ═══ 7) 🔴 กรอบเวลาของกะ — ช่วงเวลาของพาร์ทต้องอยู่ในกะเสมอ (2026-09-17 · user จับได้) ═══
+   ใบผลิตถูก "ยืนยันย้อนหลัง" ได้ (หัวหน้ามาปิดการ์ดเช้าวันรุ่งขึ้น / SV อนุมัติทีหลัง)
+   ⇒ `confirmed_at` / `stopped_at` ของใบ ตกนอกเวลาเปิด-ปิดกะของตัวเองได้จริง
+   วัดจริง 17/09 (ฐาน DR · กะที่ปิดแล้ว): **251 ใบ ใน 64 กะ มีเวลาปิดหลังกะจบ เฉลี่ยเกิน 715 นาที
+   (~12 ชม.) สูงสุด 13,314 นาที (9.2 วัน)**
+
+   เอาเวลานั้นไปสร้าง "ช่วงที่พาร์ทวิ่ง" ตรงๆ ⇒ ฐานเวลาของพาร์ทยาวเกินจริงหลายเท่า:
+     เคสจริง Assy LWR 15/09 กะเช้า — MAT 10105769 มีใบหนึ่ง confirmed_at = 08:30 ของ *วันถัดไป*
+     ⇒ window 08:00→08:30+1d = 24.5 ชม. ⇒ "ควรได้" 1,278 ชิ้นในกะเดียว (จอโชว์ช่วงเป็น "08:00–08:30"
+     เพราะตัดเหลือ HH:MM เลยดูเหมือนครึ่งชั่วโมง) ⇒ %P รายชิ้นเหลือ 6% ทั้งที่งานตัวเดียวกัน
+     คนละลูกค้า (10105770) ได้ 70%
+
+   ⇒ **ทุกจุดที่ประกอบ "ช่วงเวลาที่ MAT.NO วิ่ง" ต้องรัดด้วย `clampWinToShift()` เสมอ**
+      (ทั้ง %A แยกตาม MAT · ตัวหาร %P · "ควรได้" บนจอ) — พาร์ทวิ่งนอกกะของตัวเองไม่ได้
+   ⚠️ ห้ามแก้ด้วยการทิ้งใบที่เวลาเกินไปเฉยๆ — ยอดผลิตของใบนั้นเป็นของกะนี้จริง หายไม่ได้ */
+
+/** กรอบเวลาของกะเป็น ms — คืน null ถ้าข้อมูลเวลาไม่พอ · กะดึกข้ามวันบวก 1 วันให้เอง
+ *  overrides: เวลาที่หัวหน้าแก้ในฟอร์มปิดกะ (มาก่อนค่าที่เก็บไว้ใน session) */
+export function shiftFrameOf(session, { startTime = null, endTime = null } = {}) {
+  const wd = session?.work_date;
+  const st = startTime || session?.start_time;
+  const et = endTime   || session?.end_time;
+  if (!wd || !st) return null;
+  const startMs = new Date(`${wd}T${String(st).slice(0, 5)}:00`).getTime();
+  if (!Number.isFinite(startMs)) return null;
+  if (!et) return { startMs, endMs: null };
+  let endMs = new Date(`${wd}T${String(et).slice(0, 5)}:00`).getTime();
+  if (!Number.isFinite(endMs)) return { startMs, endMs: null };
+  if (endMs <= startMs) endMs += 86400000;   // กะดึกข้ามเที่ยงคืน
+  return { startMs, endMs };
+}
+
+/** รัด [startMs, endMs] ให้อยู่ในกรอบกะ — คืน { startMs: null, endMs: null } เมื่อไม่เหลือช่วง
+ *  frame = null (ไม่รู้เวลากะ) → คืนค่าเดิม ไม่รัด */
+export function clampWinToShift(startMs, endMs, frame) {
+  if (!frame) return { startMs, endMs };
+  const lo = frame.startMs, hi = frame.endMs;
+  let s = startMs, e = endMs;
+  if (s != null && lo != null) s = Math.max(s, lo);
+  if (s != null && hi != null) s = Math.min(s, hi);
+  if (e != null && lo != null) e = Math.max(e, lo);
+  if (e != null && hi != null) e = Math.min(e, hi);
+  if (s != null && e != null && e <= s) return { startMs: null, endMs: null };
+  return { startMs: s, endMs: e };
+}
+
+/** นาที downtime ของ 1 แถวที่ **อยู่ในกรอบกะ แต่ตกนอกทุกช่วงใน `coveredIv`**
+ *  ใช้จับ "เครื่องเสียตอนที่ไม่มีพาร์ทไหนวิ่ง" ซึ่ง %A แบบแยกตาม MAT.NO มองไม่เห็น (บั๊ก 2026-09-17)
+ *    coveredIv = union ของ (ช่วงที่พาร์ทวิ่ง) ∪ (ช่วงพักตามนโยบาย) — ผ่าน `unionIv()`
+ *    ต้องรวมช่วงพักด้วยเสมอ ไม่งั้นนาทีที่ทับพักถูกหักซ้ำ (กฎเหล็ก §3.1)
+ *  แถวที่ไม่มี `started_at` คืน 0 — ตะกร้า untimed มีตัวรับแยกอยู่แล้ว (นับ 2 รอบไม่ได้) */
+export function dtMinOutsideWork(d, coveredIv = [], frame = null) {
+  if (!d?.started_at || !frame) return 0;
+  const raw = Number(d.duration_min) || 0;
+  if (!(raw > 0)) return 0;
+  const s0 = new Date(d.started_at).getTime();
+  const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + raw * 60000;
+  const a = Math.max(s0, frame.startMs), b = Math.min(e0, frame.endMs);
+  if (!(b > a)) return 0;                       // นอกกรอบกะ = ไม่ใช่เรื่องของกะนี้
+  return Math.max(0, (b - a) / 60000 - overlapMinutesWith(a, b, coveredIv));
 }

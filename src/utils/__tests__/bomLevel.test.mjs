@@ -63,3 +63,45 @@ test('เทียบตัวพิมพ์/ช่องว่างแบบ�
   assert.equal(ix.bomOf('20067039').length, 1)
   assert.equal(moveBomLine({ mat_no: '20067039' }, '20067039 ', ix.bomOf).ok, false)
 })
+
+/* ── 🧹 ลบ "แถวนับซ้ำ" จากจอต้นไม้ได้ (user 2026-09-16) ──────────────────────────────
+   เคสจริง 10100381: คอยล์ 50027085 ถูกเขียน 3 ที่ — 0.642 ที่ชั้น 1 (แถวแบนจาก SAP)
+   + 0.3205 ใต้ 20058490 (RH) + 0.3205 ใต้ 20058491 (LH)
+   เพราะแผ่นเดียวปั๊มได้ทั้งซ้าย-ขวา ⇒ ครึ่งแผ่นต่อชิ้น (0.642 ÷ 2 = 0.3205) = ความจริง
+   กางแล้วได้ 1.283 KG ทั้งที่ของจริงกิน 0.642 ⇒ แถวชั้น 1 ต้องถูกชี้ว่าลบได้ พร้อม id */
+const CO = '10100381'
+const CO_MAT = { 'p-381': CO, 'p-490': '20058490', 'p-491': '20058491' }
+const CO_ROWS = [
+  { id: 'r490', product_id: 'p-381', mat_no: '20058490', qty_per_unit: 1, uom: 'PC' },
+  { id: 'r491', product_id: 'p-381', mat_no: '20058491', qty_per_unit: 1, uom: 'PC' },
+  { id: 'rFlat', product_id: 'p-381', mat_no: '50027085', qty_per_unit: 0.642, uom: 'KG' },
+  { id: 'rRH', product_id: 'p-490', mat_no: '50027085', qty_per_unit: 0.3205, uom: 'KG' },
+  { id: 'rLH', product_id: 'p-491', mat_no: '50027085', qty_per_unit: 0.3205, uom: 'KG' },
+]
+
+test('🔑 งานปั๊มคู่ RH/LH — แถวคอยล์ชั้น 1 ต้องติดธงนับซ้ำ และ "มี id" ให้กดลบได้', () => {
+  const ix = buildBomIndex(CO_ROWS, CO_MAT)
+  const t = explodeBom(CO, ix.bomOf)
+  const dup = t.rows.filter(r => r.isDupeRow)
+  assert.equal(dup.length, 1)
+  assert.equal(dup[0].mat_no, '50027085')
+  // ไม่มี id = ปุ่มลบหายเงียบ แล้ว user กลับไปติดปัญหาเดิม "ไม่รู้จะลบยังไง"
+  assert.equal(dup[0].id, 'rFlat')
+  // แถวชั้นลึกต้องไม่ถูกชี้ให้ลบ (ของจริงอยู่ตรงนั้น)
+  assert.deepEqual(t.rows.filter(r => r.flatDupe && !r.isDupeRow).map(r => r.id).sort(), ['rLH', 'rRH'])
+})
+
+/* ⚠️ ข้อมูลจริงตัวนี้ครึ่งแผ่นถูกคีย์ 0.3205 ⇒ ซ้าย+ขวา = 0.641 **ไม่ใช่ 0.642**
+   (0.642 ÷ 2 = 0.321 พอดี — ฝั่ง PE คีย์ 0.321 ใน 10105769/70 แล้ว ต่างกัน 0.5 กรัม/ชิ้น = 0.16%)
+   เทสตรึงเลขจริงไว้ ไม่ปัดให้สวย — ถ้าวันหนึ่งมีคนแก้ครึ่งแผ่นเป็น 0.321 เทสนี้จะตกและต้องแก้ตาม
+   ⇒ นั่นคือจุดที่ควรรู้ตัว ไม่ใช่ปล่อยให้ยอดขยับเงียบๆ */
+test('ลบแถวชั้น 1 แล้วยอดคอยล์ต่อ 1 FG = ครึ่งแผ่น × ซ้าย+ขวา (ไม่ใช่ 1.283)', () => {
+  const ix = buildBomIndex(CO_ROWS, CO_MAT)
+  const before = explodeBom(CO, ix.bomOf).rows
+    .filter(r => r.mat_no === '50027085').reduce((s, r) => s + r.qtyPerRoot, 0)
+  assert.equal(Math.round(before * 10000) / 10000, 1.283)
+  const ix2 = buildBomIndex(CO_ROWS.filter(r => r.id !== 'rFlat'), CO_MAT)
+  const after = explodeBom(CO, ix2.bomOf).rows
+    .filter(r => r.mat_no === '50027085').reduce((s, r) => s + r.qtyPerRoot, 0)
+  assert.equal(Math.round(after * 10000) / 10000, 0.641)
+})

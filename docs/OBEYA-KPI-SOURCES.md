@@ -772,10 +772,16 @@ PPM (Progress)     = (Σ defect ทั้งปี ÷ Σ produce ทั้งป
 | # | เลือกอะไร | ที่มาของตัวเลือก | สถานะใน ESM |
 |---|---|---|---|
 | 1 | **ชื่อ KPI** (dropdown + เพิ่มเองได้) | `kpi_catalog` | ✅ มีแล้ว |
-| 2 | **ขอบเขต** = ระดับ (ส่วนงาน/แผนก/กลุ่ม/ไลน์/cost center) + ค่า | `org_nodes` · `production_lines` · `cost_centers` | ⚠️ มีแค่ `section` + `line_group` — **ต้องเปลี่ยนเป็น (scope_kind, scope_value)** |
-| 3 | **🔗 ลิ้ง data** = ตัวเลขมาจากไหน | **ยังไม่มี** — ต้องทำทะเบียน `provider` | ❌ **ของใหม่ที่ต้องทำ** |
-| 4 | **Commitment + Target** (เครื่องหมาย + ค่า + หน่วย) + **Weight** | — | ⚠️ มี `commitment/target` เป็น text · ไม่มี compare/unit/weight แยก |
-| 5 | **แผน 12 เดือน** (Plan รายเดือน) | — | ❌ มีเป้าเดียวทั้งปี |
+| 2 | **ขอบเขต** = ระดับ (ส่วนงาน/แผนก/กลุ่ม/ไลน์/cost center) + ค่า | `org_nodes` · `production_lines` · `cost_centers` | ✅ **ทำแล้ว 16/09** — `scope_kind` + `scope_value` |
+| 3 | **🔗 ลิ้ง data** = ตัวเลขมาจากไหน | `KPI_PROVIDERS` + `kpi_base_inputs` | ✅ **ทำแล้ว 16/09** — `provider` + `provider_config` |
+| 4 | **Commitment + Target** (เครื่องหมาย + ค่า + หน่วย) + **Weight** | — | ✅ **ทำแล้ว 16/09** — แยกช่องครบ (`weight` มีอยู่เดิม) |
+| 5 | **แผน 12 เดือน** (Plan รายเดือน) | — | ✅ **ทำแล้ว 16/09** — ตาราง `kpi_month_plans` |
+
+> ### ✅ ลงมือแล้ว 2026-09-16 — ชั้น DB + ชั้นสูตร
+> migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) + `src/utils/kpiSetup.js` (pure · เทส 15 เคส)
+> เกณฑ์ 1/0.5/0 · สูตรจากตัวแปรฐาน · วิธีรวม 12 เดือน · `providerReaches()` (ระดับที่ข้อมูลไปไม่ถึงต้องบอก)
+> **ยังไม่ได้ทำ:** หน้า setup (dropdown) · จอกรอกตัวแปรฐาน · ต่อ provider `auto` เข้าตัวคำนวณจริง ·
+> บอร์ดอ่านจากโครงใหม่ — ดู `docs/modules/obeya-kpi-board.md` ท้ายไฟล์
 
 **ชั้น "ลิ้ง data" (ข้อ 3) ควรมี 3 แบบ — ตรงกับที่ใบจริงใช้:**
 ```

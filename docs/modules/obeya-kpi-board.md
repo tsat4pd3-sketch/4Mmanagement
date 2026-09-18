@@ -156,3 +156,56 @@ user เคาะ 3 ข้อ: **① แยกรายส่วนงาน ②
     HYDROFORM เป็นคอลัมน์เดียว — ถ้าหน้างานอยากแยกตามกระดาษเป๊ะ ต้องมี config "จัดกลุ่มคอลัมน์" เพิ่ม
     (**ไม่เดาให้** — การแบ่งแผงเป็นการตัดสินใจของหน่วยงาน)
 
+
+---
+
+## 🧱 ชั้นตั้งค่า KPI แบบ data-driven (2026-09-16) — `kpiSetup.js` + migration `20260916_kpi_scope_provider_plan.sql`
+
+> **ทำไม:** ใบจริง 3 แผนก (PD3 · PD4 · JIG MTN) พิสูจน์ว่า **hardcode ชุด KPI ไม่มีทางพอ** —
+> JIG MTN ไม่มี Inventory/PPM/OEE เลย แต่มี MTBF/MTTR/PM JIG · เป้าและหน่วยต่างกันทุกแผนก
+> · แม้แต่เด็คทบทวนกับไฟล์ Excel ยังตั้งเป้าไม่ตรงกัน ⇒ ทุกอย่างต้องตั้งจากจอ
+> หลักฐานทั้งหมด → `docs/OBEYA-KPI-SOURCES.md` §8-12
+
+### สิ่งที่เพิ่มใน DB (Main · **apply แล้ว 2026-09-16** · ตอนรัน `kpi_definitions` = 0 แถว ⇒ blast radius ศูนย์)
+
+| ของใหม่ | ใช้ทำอะไร |
+|---|---|
+| `kpi_definitions.scope_kind` + `scope_value` | **ขอบเขต 6 ระดับ** `plant · section · department · line_group · line · cost_center` |
+| `commit_compare` · `commit_value` · `target_compare` (+ `target_value` เดิม) | Commitment กับ Target เป็น **คนละบาร์** เก็บเครื่องหมาย+ตัวเลขแยก |
+| `unit` · `champion` · `seq_label` · `parent_id` | หน่วยต่อแถว (ใบต่างแผนกใช้คนละหน่วย) · ผู้รับผิดชอบ · เลขข้อที่โชว์ (`1.2a`) · ข้อย่อยใต้ข้อแม่ |
+| `provider` + `provider_config` | 🔗 **ลิ้ง data** — ตัวเลขมาจากไหน |
+| ตาราง `kpi_month_plans` | **แผนรายเดือน 12 ค่า** (ใบจริง DL/OH/TS Academy แผนไม่เท่ากันทุกเดือน) |
+| ตาราง `kpi_base_inputs` | **ตัวแปรฐาน** ที่บัญชี/SAP กรอกเดือนละครั้ง → สูตรการเงินคำนวณเอง |
+
+> **🔴 กับดักที่ migration นี้แก้:** unique index เดิมคีย์ด้วย `(year, section, line_group, catalog_id)`
+> ⇒ KPI ตัวเดียวกันคนละไลน์/คนละ cost center ใน**ส่วนงานเดียวกัน** จะชนกันเอง (เพราะ `line_group` เป็น null ทั้งคู่)
+> เปลี่ยนเป็นคีย์ด้วย `scope_kind + scope_value` แล้ว
+>
+> **🔴 backward-compatible ด้วย trigger 2 ทาง `fn_kpi_def_scope_sync()`** — โค้ดเดิมที่รู้จักแค่
+> `section`/`line_group` ยัง insert ได้เหมือนเดิม (trigger เดาขอบเขตให้) · และขอบเขตระดับใหม่
+> (`department`/`line`/`cost_center`) **ห้าม mirror ลง `line_group`** เพราะจอเก่าจะอ่านว่าเป็นกลุ่มไลน์แล้วกรองผิด
+
+### `src/utils/kpiSetup.js` — pure · มีเทส 15 เคส · **ห้ามเขียนเกณฑ์ซ้ำในหน้า**
+
+- `KPI_SCOPE_LEVELS` — 6 ระดับ · **`cost_center` มี `depth: null` โดยตั้งใจ** (KPI การเงินตัดด้วย cc
+  · KPI ผลิตตัดด้วยไลน์ = คนละแกน 1 กลุ่มครอบหลาย cc และหลายไลน์ใช้ cc เดียวกัน ⇒ **ห้ามเอาไป sort ปนกัน**)
+- `KPI_PROVIDERS` — 14 ตัว (manual / formula / auto 12) · แต่ละตัวมี **`deepest`** = ระดับลึกสุดที่ข้อมูลไปถึงจริง
+  `providerReaches(provider, scope)` → ตั้งลึกเกินนั้น **จอต้องเขียนว่า "ข้อมูลไปไม่ถึงระดับนี้"** ห้ามโชว์ค่าว่าง/0
+- `KPI_BASE_VARS` (9 ตัว) + `KPI_FORMULAS` (7 สูตร) + `evalFormula()` — สูตรถอดจาก**เซลล์จริง**:
+  `DL = dl ÷ sale_product × 100` · `Inventory(วัน) = inventory_baht ÷ (sale_product ÷ days_in_month)` ฯลฯ
+  · **ขาดตัวแปร/หารศูนย์ = คืน `null` + บอกว่าขาดอะไร ห้ามคืน 0**
+  · ⚠️ `var_key` **ไม่มี check constraint ใน DB โดยตั้งใจ** — เพิ่มตัวแปรใหม่แก้ที่ลิสต์นี้พอ ไม่ต้องทำ migration
+- `scoreKpi()` — **ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0** (เทสตรวจกับ 6 แถวจริงในคู่มือ)
+  · **ไม่สมมติว่า Target ยากกว่าเสมอ** — ใบจริงมีแถวกลับด้าน (Safety commit 0 / target 1 Case)
+    ⇒ ผ่านบาร์ที่**เข้มกว่า** = 1 · ผ่านแค่บาร์ที่หลวมกว่า = 0.5
+  · **ยังไม่มีผล / ยังไม่ตั้งเป้า = `level: null` (pending) ห้ามกลายเป็น 0 หรือเขียว**
+    (เด็คทบทวนของบริษัทเองก็แยก `— Pending —` ออกจาก `✘ Below`)
+- `totalPoints()` — คืน `scored`/`pending`/`total` เสมอ (กฎ: ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง)
+- `summarizeMonths(months, mode)` — `average · sum · max · as_of · rate`
+  · **`rate` = PPM ทั้งปีคิดจากยอดรวม ไม่ใช่เฉลี่ยของ PPM รายเดือน** (ใบจริงใช้แบบนี้ · มีเทสยืนยันว่าได้คนละค่า)
+
+### ยังไม่ได้ทำ (เฟสถัดไป)
+1. **หน้า setup** — dropdown เลือก ชื่อ → ขอบเขต → provider → commit/target/หน่วย/weight → แผน 12 เดือน
+2. **จอกรอกตัวแปรฐาน** (บัญชี/SAP กรอกเดือนละครั้งต่อ cost center)
+3. ต่อ provider `auto` เข้ากับตัวคำนวณจริง (OEE/PPM/MTBF/… ที่มีอยู่แล้วใน `oee.js` · `mtnMetrics.js`)
+4. บอร์ด `/obeya?tab=kpi` อ่านจากโครงใหม่ (ตอนนี้ยังอ่าน `section` + `line_group` แบบเดิม — ยังทำงานได้ปกติเพราะ trigger sync)

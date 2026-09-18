@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
+import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, EDI_SIG, TIME_HDRS, DOCK_HDRS } from '../utils/ediDetect';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -133,37 +134,64 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   /* ── EDI (Ford/AAT · 830 = Planning Forecast · 862 = Shipping Schedule) ──
      ไฟล์จากระบบ EDI มี sheet ดิบที่หัวตารางคงที่ — ตรวจจับแล้ว parse อัตโนมัติ ไม่ต้อง map มือ */
-  const EDI_SIG = ['Part Num', 'Forecast Net Qty', 'Forecast Date'];
-  const findEdiSheet = (XLSX, wb) => {
+  /* ⚠️ เทียบหัวคอลัมน์แบบ normalize (ตัดช่องว่าง/ขีด/ตัวพิมพ์) + สแกนลึก 20 แถว
+     เดิมเทียบตรงตัว 5 แถวแรก ⇒ พอร์ทัลเพิ่มแถวหัวเรื่อง/เปลี่ยนชื่อคอลัมน์นิดเดียว =
+     **หาไม่เจอแล้วตกไปทางไฟล์ manual เงียบๆ** (ดู src/utils/ediDetect.js) */
+  /* 🔴 ต้องคืน **ทุกชีต** ที่เป็นตาราง EDI ไม่ใช่ชีตแรกชีตเดียว (2026-09-17)
+     ที่มา: ไฟล์ 862 ของจริง `862_15.09.26.xlsm` = **1 ไฟล์ 6 ชีต ชีตละ ship-to**
+       (GBL9A · GRBNA · GBJWA · GBJWE · GBJWC · HPUDA) รวม 1,155 แถว
+     เดิม `return` ทันทีที่เจอชีตแรก ⇒ อ่านแค่ GBL9A (179 รายการ) **ทิ้ง 945 แถวเงียบๆ
+     รวม AAT/GRBNA ทั้ง 278 รายการ** — บนจอขึ้นว่า "Ship-to: FTM (GBL9A)" เฉยๆ ไม่มีคำเตือน
+     ⇒ ตรงกับอาการ "ออเดอร์ AAT หายไปหมดเลย ทุกรายการ" (11/09 → 17/09)
+     ก่อนหน้านี้รอดเพราะทีมส่งมาเป็น **6 ไฟล์แยก** (ดู demand_upload_batches 28/08) */
+  const findEdiSheets = (XLSX, wb) => {
+    const found = [];
+    let near = null;                      // "เกือบใช่" — เอาไว้บอกคนว่าขาดคอลัมน์ไหน
     for (const name of wb.SheetNames) {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
-      for (let i = 0; i < Math.min(m.length, 5); i++) {
+      for (let i = 0; i < Math.min(m.length, HEADER_SCAN_ROWS); i++) {
         const hd = m[i].map(c => String(c).trim());
-        if (EDI_SIG.every(k => hd.includes(k))) return { matrix: m, hIdx: i, headers: hd };
+        if (isEdiHeaderRow(hd)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
+        const hit = EDI_SIG.filter(g => colIdx(hd, g) >= 0).length;
+        if (hit >= 2 && (!near || hit > near.hit)) {
+          near = { hit, sheet: name, headers: hd, missing: EDI_SIG.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
+        }
       }
     }
-    return null;
+    findEdiSheets.near = found.length ? null : near;
+    return found;
   };
   const parseEdiFile = (sheet, fName) => {
     const { matrix, hIdx, headers } = sheet;
-    const col = (n) => headers.indexOf(n);
-    const is862 = col('Forecast Time') >= 0;
+    const body = matrix.slice(hIdx + 1);
+    const col = (aliases) => colIdx(headers, aliases);
+    /* ⭐ ตัดสิน 830/862 จากหลายสัญญาณ + คืนเหตุผลให้ขึ้นจอ (ห้ามเดาเงียบ) */
+    const kind = detectEdiKind(headers, body);
+    const is862 = kind.is862;
+    const iPart = col(EDI_SIG[0]), iQty = col(EDI_SIG[1]), iDate = col(EDI_SIG[2]);
+    const iTime = col(TIME_HDRS), iDock = col(DOCK_HDRS);
+    const iShip = col(['Ship To GSDB Code', 'Ship To', 'GSDB', 'Ship To Code']);
+    const iPo = col(['Purchase Order Num', 'Purchase Order', 'PO Num', 'PO']);
     const out = [];
-    matrix.slice(hIdx + 1).forEach(r => {
-      const part = String(r[col('Part Num')] ?? '').trim();
+    let skipped = 0;
+    body.forEach(r => {
+      const part = String(r[iPart] ?? '').trim();
       if (!part) return;
-      const qty = numCell(r[col('Forecast Net Qty')]);
-      const d = parseDateCell(r[col('Forecast Date')]);
-      if (qty <= 0 || !d) return;
+      const qty = numCell(r[iQty]);
+      const d = parseDateCell(r[iDate]);
+      if (qty <= 0 || !d) { skipped++; return; }
       out.push({
         part, qty, date: dateStr(d),
-        shipTo: String(r[col('Ship To GSDB Code')] ?? '').trim() || 'EDI',
-        po: String(r[col('Purchase Order Num')] ?? '').trim(),
-        time: is862 ? parseTimeCell(r[col('Forecast Time')]) : null,
-        dock: is862 && col('Dock Code') >= 0 ? String(r[col('Dock Code')] ?? '').trim() : null,
+        shipTo: String(r[iShip] ?? '').trim() || 'EDI',
+        po: String(r[iPo] ?? '').trim(),
+        /* ⚠️ อ่านเวลา/ท่าไว้เสมอ ไม่ผูกกับผลการเดาชนิด — คนกดสลับ 830⇄862 บนจอได้
+           โดยไม่ต้องอ่านไฟล์ใหม่ (เดิมผูกไว้ ⇒ เดาผิดรอบแรก = เวลาหายถาวร) */
+        time: iTime >= 0 ? parseTimeCell(r[iTime]) : null,
+        dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null,
       });
     });
-    return { is862, rows: out, fName };
+    return { is862, kind, rows: out, fName, skipped, sheet: sheet.sheet || null,
+      shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
   const handleFiles = async (fileList, kindNow) => {
@@ -175,16 +203,31 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       let manual = null;
       for (const file of files) {
         const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-        const ediSheet = findEdiSheet(XLSX, wb);
-        if (ediSheet) { ediFiles.push(parseEdiFile(ediSheet, file.name)); continue; }
+        const sheets = findEdiSheets(XLSX, wb);
+        if (sheets.length) {
+          /* ไฟล์เดียวมีหลายชีต = หลาย ship-to → นับเป็นหลาย "ก้อน" ต้องรวมให้ครบทุกชีต */
+          sheets.forEach(sh => ediFiles.push(parseEdiFile(sh, sheets.length > 1 ? `${file.name} [${sh.sheet}]` : file.name)));
+          continue;
+        }
         if (!manual) manual = { wb, name: file.name };
       }
       if (ediFiles.length) {
-        if (ediFiles.some(f => f.is862) && ediFiles.some(f => !f.is862)) {
+        /* ⚠️ เทียบเฉพาะ "ชีตที่ตัดสินได้ชัด" — ชีตที่ไม่ชัดไม่ใช่หลักฐานว่าปนชนิด
+           (ไฟล์เล่มเดียวกันย่อมเป็นชนิดเดียวกัน · ชีตที่ไม่มีค่าเวลา = ship-to นั้นไม่ใช้เวลาเท่านั้น) */
+        const sureKinds = new Set(ediFiles.filter(f => f.kind?.sure).map(f => f.is862));
+        if (sureKinds.size > 1) {
           toast.error('อย่าเลือกไฟล์ 830 (Forecast) ปนกับ 862 (Shipping) ในครั้งเดียว — แยกนำเข้าทีละชนิด');
           return;
         }
-        const is862 = ediFiles[0].is862;
+        /* 🔴 รวมผลการเดาระดับ "ไฟล์" ห้ามใช้แค่ชีตแรก (2026-09-17)
+           ไฟล์จริงมี 6 ชีต · 3 ชีต (GBJWA/GBJWE/GBJWC) คอลัมน์ `Forecast Time` ว่างทุกแถว
+           ⇒ ชีตพวกนั้นให้ผล "ไม่ชัด" · ถ้าบังเอิญเรียงมาเป็นชีตแรก จะไปบล็อกการนำเข้าทั้งไฟล์
+           ทั้งที่ชีตอื่นในเล่มเดียวกันยืนยันชัดว่าเป็น 862 ⇒ **ชีตที่ชัดชนะ** */
+        const sureOne = ediFiles.find(f => f.kind?.sure);
+        const is862 = sureOne ? sureOne.is862 : ediFiles[0].is862;
+        const kindGuess = sureOne
+          ? { ...sureOne.kind, reason: `${sureOne.kind.reason}${ediFiles.length > 1 ? ` (ชีต ${sureOne.sheet})` : ''}` }
+          : (ediFiles[0].kind || { is862, reason: '', sure: true });
         // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
         // ⚠️ key ต้องรวม PO — 2 release ต่าง Purchase Order ที่ part/วัน/เวลาเดียวกันเป็นคนละใบจริง
         //    (เดิมตัวหลังทับ = demand หายเงียบ · QC flow-audit D1) — บรรทัดซ้ำแท้ (ทุกช่องเท่ากัน) ยังถูก dedupe เหมือนเดิม
@@ -260,6 +303,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         });
         setEdi({
           kind: is862 ? 'orders' : 'forecast',
+          kindGuess, kindForced: null,          // kindForced = คนกดเลือกเอง (ชนะการเดาเสมอ)
+          skipped: ediFiles.reduce((a, f) => a + (f.skipped || 0), 0),
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
           ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
@@ -269,10 +314,18 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
         });
         setHeaders([]); setRows([]); setFileName('');
-        toast.success(`📡 ตรวจพบ EDI ${is862 ? '862 (Shipping Schedule)' : '830 (Forecast)'} — ${records.length} รายการจาก ${ediFiles.length} ไฟล์`);
+        toast[kindGuess.sure ? 'success' : 'info'](
+          `📡 ตรวจพบ EDI ${is862 ? '862 (Shipping Schedule)' : '830 (Forecast)'} — ${records.length} รายการจาก ${ediFiles.length} ไฟล์`
+          + (kindGuess.sure ? '' : ' ⚠️ ไม่ชัด โปรดยืนยันชนิดก่อนนำเข้า'));
         return;
       }
       if (!manual) { toast.error('อ่านไฟล์ไม่สำเร็จ'); return; }
+      /* 🔴 ไฟล์ EDI ที่หัวตารางเพี้ยน เคย**ตกมาทางนี้เงียบๆ** (ขึ้นจอ map มือ ไม่มีคำว่า EDI)
+         = ต้นเหตุ "ออเดอร์ AAT หายทั้งลูกค้า" 2026-09-17 → ต้องบอกว่าขาดคอลัมน์ไหน */
+      if (findEdiSheets.near) {
+        const n = findEdiSheets.near;
+        toast.error(`ไฟล์นี้เหมือนเป็น EDI แต่หัวตารางไม่ครบ — ชีต "${n.sheet}" ขาดคอลัมน์: ${n.missing.join(', ')} · ถ้าลูกค้าเปลี่ยนชื่อคอลัมน์ ให้แจ้งทีมระบบ (ตอนนี้จะให้ map เองก่อน)`);
+      }
       setEdi(null);
       parseManual(XLSX, manual.wb, manual.name, kindNow);
     } catch (err) { toast.error('อ่านไฟล์ไม่สำเร็จ: ' + err.message); }
@@ -378,18 +431,25 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   };
 
   // นำเข้า EDI: ฉบับล่าสุดแทนที่ฉบับเดิมของ ship-to เดียวกัน (sale อัพโหลดใหม่ทุกวัน ไม่ให้ยอดทบซ้ำ)
+  /** ชนิดที่จะใช้จริง — คนเลือกเองชนะการเดาเสมอ */
+  const ediKind = edi ? (edi.kindForced || edi.kind) : null;
+
   const doImportEdi = async () => {
     if (!edi) return;
+    if (!edi.kindGuess?.sure && !edi.kindForced) {
+      toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
+      return;
+    }
     setSaving(true);
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
-        .insert({ kind: edi.kind, file_name: `EDI ${edi.kind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
+        .insert({ kind: ediKind, file_name: `EDI ${ediKind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
       // code ปลายทางใหม่ที่ยังไม่อยู่ใน config → เพิ่มให้อัตโนมัติ (ชื่อตั้งต้น = code รอทีมตั้งชื่อลูกค้า)
       await supabaseDR.from('ship_to_plants')
         .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
-      if (edi.kind === 'forecast') {
+      if (ediKind === 'forecast') {
         // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
         // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
         const months = edi.records.map(r => r.date).filter(Boolean);
@@ -456,7 +516,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
       supabase.functions.invoke('send-notification', {
         body: { event: 'edi_import', edi: {
-          kind: edi.kind, ship_tos: edi.shipTos.join(', '), rows: edi.records.length, files: edi.files.length,
+          kind: ediKind, ship_tos: edi.shipTos.join(', '), rows: edi.records.length, files: edi.files.length,
           date_from: edi.dateFrom, date_to: edi.dateTo, unmatched: edi.unmatched.length, uploaded_by: fullName || 'Sales',
         } },
       }).catch(() => {});
@@ -514,7 +574,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
-              <input type="file" accept=".xlsx,.xls,.csv" multiple style={{ display: 'none' }}
+              <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
                 onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
@@ -523,8 +583,44 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           {edi && (
             <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff', marginBottom: 8 }}>
-                📡 EDI {edi.kind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
+                📡 EDI {ediKind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
               </div>
+
+              {/* 🔴 ผลการเดาชนิดต้องขึ้นจอ + แก้ได้ (2026-09-17)
+                  ที่มา: ไฟล์ 862 ของ AAT ถูกตีเป็น 830 เงียบๆ ⇒ แถวลงตาราง forecast
+                  **ไม่เคยกลายเป็นใบส่ง** ⇒ หน้าจัดส่งว่างทั้งลูกค้าเป็นสัปดาห์
+                  กฎ: ตัวตัดสินที่เปลี่ยนปลายทางของข้อมูล ห้ามซ่อน — ต้องเห็นเหตุผล + กดแก้ได้ */}
+              <div style={{
+                display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10,
+                padding: '8px 10px', borderRadius: 8, fontSize: 12,
+                background: edi.kindGuess?.sure ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.12)',
+                border: `1px solid ${edi.kindGuess?.sure ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.5)'}`,
+              }}>
+                <span style={{ color: edi.kindGuess?.sure ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
+                  {edi.kindGuess?.sure ? '✓ ระบบอ่านชนิดได้' : '⚠️ ระบบแยกชนิดไม่ชัด'}
+                </span>
+                <span style={{ color: 'var(--text2)' }}>{edi.kindGuess?.reason}</span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: 'var(--muted)' }}>ไม่ใช่? เลือกเอง:</span>
+                  {[['orders', '862 ใบส่ง'], ['forecast', '830 forecast']].map(([k, label]) => (
+                    <button key={k} type="button"
+                      onClick={() => setEdi(e => ({ ...e, kindForced: k }))}
+                      style={{
+                        padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        border: `1px solid ${ediKind === k ? '#4d9fff' : 'var(--border)'}`,
+                        background: ediKind === k ? 'rgba(77,159,255,0.18)' : 'transparent',
+                        color: ediKind === k ? '#4d9fff' : 'var(--text2)',
+                        fontWeight: ediKind === k ? 800 : 500,
+                      }}>{label}</button>
+                  ))}
+                </span>
+              </div>
+              {edi.skipped > 0 && (
+                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                  ℹ️ ข้าม {edi.skipped} แถว — ส่วนใหญ่คือบรรทัดที่ลูกค้าส่งยอด 0 (ปกติของ EDI) · จะผิดก็ต่อเมื่อ
+                  “จับคู่พาร์ทได้” ด้านบนต่ำผิดปกติด้วย
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
                 <span>📄 {edi.files.length} ไฟล์</span>
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
@@ -585,7 +681,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                 การนำเข้าจะ<strong>แทนที่</strong>ข้อมูล EDI ฉบับเดิมของ ship-to เดียวกัน (อัพใหม่ทุกวันได้ ยอดไม่ทบซ้ำ)
-                {edi.kind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
+                {ediKind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
