@@ -3,6 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, EDI_SIG, TIME_HDRS, DOCK_HDRS } from '../utils/ediDetect';
+import { splitAlreadyDone, DONE_STATUSES } from '../utils/ediMerge';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -436,6 +437,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   const doImportEdi = async () => {
     if (!edi) return;
+    let coveredCount = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -482,10 +484,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            (ซึ่งถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง) */
         const wd = workDateStr();
         const delFrom = edi.dateFrom > wd ? edi.dateFrom : wd;
-        const { data: keepRows } = await supabaseDR.from('customer_shipping_orders')
-          .select('customer, customer_part_no, mat_no, due_date, ship_time, status')
-          .in('customer', edi.shipTos).gte('due_date', delFrom).neq('status', 'pending');
-        const keepKeys = new Set((keepRows || []).map(k => `${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+        /* 🔴 ใบที่ "ทำไปแล้ว" = ความจริงของเที่ยวนั้น — 862 ห้ามสร้างซ้ำ (2026-09-18)
+           เดิมเทียบ `customer|part|date|time` **ตรงตัว** ⇒ ไม่เคย match กับใบ e-SMART เพราะ
+           เลขพาร์ทสะกดคนละแบบ (`RB3B-16E060-BA` vs `RB3B 16E060 BA`) และเวลาคนละกริด
+           (862 08:00 = เที่ยวเดียวกับ e-SMART 09:00) ⇒ สร้างใบซ้ำ + หักสต็อกซ้ำ
+           ดู `src/utils/ediMerge.js` (เทียบด้วย MAT + dock + เที่ยวที่ใกล้กัน) */
+        const { data: keepRows, error: eKeep } = await supabaseDR.from('customer_shipping_orders')
+          .select('id, customer, customer_part_no, mat_no, due_date, ship_time, status, dock_code, qty, source')
+          .in('customer', edi.shipTos).gte('due_date', delFrom).in('status', DONE_STATUSES);
+        if (eKeep) throw eKeep;      // อ่านใบเดิมไม่ได้ = ห้ามเดาว่า "ไม่มี" แล้วสร้างทับ
         /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
            จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
         const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
@@ -500,9 +507,12 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom);
           (pastRows || []).forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         }
-        const recs = edi.records
-          .filter(r => !keepKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)
-            && !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`))
+        /* กันซ้ำ 2 ชั้น: ① ใบที่ทำไปแล้ว (เทียบเที่ยว) ② รายการวันเก่าที่ยังอยู่ (เทียบตรงตัวตามเดิม) */
+        const { insert: fresh862, covered } = splitAlreadyDone(
+          edi.records.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
+          keepRows || []);
+        coveredCount = covered.length;
+        const recs = fresh862
           .map(r => ({
             batch_id: batch.id, order_no: r.po || null, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
             customer_part_no: r.part, qty: r.qty, due_date: r.date, ship_time: r.time, dock_code: r.dock || null, source: 'edi_862',
@@ -512,7 +522,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (error) throw error;
         }
       }
-      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`);
+      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`
+        + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : ''));
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
       supabase.functions.invoke('send-notification', {
         body: { event: 'edi_import', edi: {
