@@ -30,12 +30,23 @@ const ROW = (i) => ({
   mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: null,
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
-  status: 'open', shift: 'day', work_date: '2026-08-04', session_id: `s-${i}`,
+  /* ⚠️ session_id ต้องชี้ไปที่ id ของแถวจริง (2026-09-18) — เดิมเป็น `s-${i}` ซึ่ง
+     **ไม่ตรงกับ `id-${i}` เลยสักแถว** ⇒ ทุกโค้ดที่ join ใบผลิต/downtime กลับไปหากะ
+     ได้ 0 แถวเสมอ = สาย "ข้อมูลของกะนี้" ไม่เคยถูกรันใน harness */
+  status: 'open', shift: 'day', work_date: '2026-08-04', session_id: `id-${i}`,
   /* ⏱️ start_time / shift_min — ต้องมี (2026-09-16) · `computeLiveOee` คืน null ทันทีถ้าไม่มี
      `start_time` ⇒ เดิม **ทั้งสาย OEE สด (A/P/Q สด · แถบนาทีที่หายไป · ไฟ Andon ที่อิง OEE)
      ไม่เคยถูกเรนเดอร์ใน harness เลยสักหน้า** = บั๊กทั้งคลาสมองไม่เห็น
      · elapsed ถูก cap ด้วย shift_min เสมอ ⇒ ค่าคงที่ ไม่แกว่งตามวันที่รันเทส */
-  start_time: '08:00:00', shift_min: 570,
+  start_time: '08:00:00', end_time: '20:00:00', shift_min: 570,
+  /* ⏳ opened_at / confirmed_at — ต้องมี (2026-09-18) · เดิม **ไม่มีเลย** ⇒ ทุกโค้ดที่ถามว่า
+     "ใบนี้เปิด-ปิดตอนไหน" ได้ undefined ⇒ สาย "ช่วงเวลาที่พาร์ทวิ่ง" ไม่เคยถูกรันใน harness:
+     %A แยกตาม MAT.NO · ตัวหาร %P ฝั่ง parallel · แผงสรุปรายชิ้น ("ควรได้") · ทบทวน CT
+     — ทั้งหมดนี้คือจุดที่เกิดบั๊กจริงมาแล้ว 2 ตัวในสัปดาห์เดียว (17/09)
+     ตั้งห่างกัน 60 นาที ⇒ ค่าคงที่ คำนวณย้อนได้ ไม่แกว่งตามวันที่รันเทส
+     ⚠️ ต้องอยู่**ในกรอบกะ** (start_time 08:00 – end_time 20:00) — นอกกรอบจะถูกรัดเหลือ 0
+        แล้วทุกใบถูกตัดทิ้ง (เจอจริงตอนทำ 18/09: ตั้งไว้ 01:00 ⇒ ตารางทบทวน CT ว่างทั้งหน้า) */
+  opened_at: '2026-08-04T09:00:00+07:00', confirmed_at: '2026-08-04T10:00:00+07:00',
   /* ⚡ energy_points / energy_monthly — ต้องมี ไม่งั้นหน้า /energy รวมทุกจุดไว้ชั้นเดียว
      (meteredSet ว่าง) แล้ว **โค้ดสาย "แยกตารางตามชั้นมิเตอร์" ไม่เคยถูกรันใน harness เลย**
      is_metered สลับ 1 ใน 3 โดยตั้งใจ → ได้เคส "ไลน์ลูกมีมิเตอร์ แต่ไลน์แม่อยู่คนละตาราง"
@@ -78,6 +89,7 @@ const NULLISH = (i) => ({
   qty_per_pkg: null, qty_per_kanban: null, min_qty: null, max_qty: null, lot_size: null,
   section: null, parent_line_name: null, machine_no: null, description: null, note: null, remark: null,
   image_url: null, started_at: null, ended_at: null, position: null, customer: null, model: null,
+  opened_at: null, confirmed_at: null, end_time: null,
   material_cost: null, standard_cost: null, capacity_pkg: null, mat_nos: null,
 })
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
@@ -134,6 +146,30 @@ const TABLE_ROWS = {
     if (i === 5) return { ...base, is_operation: true, op_parent_mat: null, op_seq: null };
     return { ...base, is_operation: false, op_parent_mat: null, op_seq: null };
   },
+  /* ⏱ ct_proposals — คิวข้อเสนอปรับ CT (2026-09-18)
+     ไม่มี mock = แผงคิว + ปุ่ม "อนุมัติ/ปฏิเสธ" ไม่เคยถูกเรนเดอร์เลย ทั้งที่เป็นปุ่มที่
+     **เขียนทับ CT มาตรฐาน** (กระทบ %P ของทั้งไลน์) — ต้องให้ crashsweep เห็น
+     · i=1 → ยังไม่เคยตั้ง CT มาตรฐาน (ct_standard null = เคสที่ต้องไม่พังตอน toLocaleString)
+     · i=2 → ไม่มี p25/p75 (ข้อเสนอเก่าก่อนมีคอลัมน์นี้) */
+  ct_proposals: (r, i) => ({
+    ...r, status: 'proposed',
+    /* ⚠️ ใช้ MAT คนละชุดกับ prod_orders โดยตั้งใจ — ถ้าชนกัน ตารางผลคำนวณจะขึ้น
+       "อยู่ในคิวแล้ว" ทุกแถว แล้ว**ปุ่ม "เสนอปรับ" ไม่เคยถูกเรนเดอร์เลย** */
+    mat_no: `9010${1000 + i}`,
+    ct_standard: i === 1 ? null : 58,
+    ct_observed: 44 + (i % 5),
+    sample_orders: 10 + i, dropped_orders: i % 3,
+    p25: i === 2 ? null : 41, p75: i === 2 ? null : 49,
+    flags: i % 2 ? ['big_gap'] : [],
+    product_name: `ชิ้นงาน ${i}`, created_by_name: `ผู้เสนอ ${i}`,
+  }),
+  /* prod_orders: ใบผลิตต้อง **ซ้ำ mat_no กันหลายใบ** (2026-09-18) — เดิมทุกใบคนละ MAT
+     ซึ่งไม่ใช่รูปทรงจริง (กะหนึ่งวิ่ง 1-2 MAT · ไลน์หนึ่งวิ่ง MAT เดิมทุกวัน)
+     ⇒ โค้ดที่ "รวมหลายใบของ MAT เดียวกัน" (ทบทวน CT · %P ต่อ MAT · parallel detection)
+        ได้กลุ่มละ 1 ใบเสมอ = ไม่เคยถึงเกณฑ์ตัวอย่างขั้นต่ำเลยสักครั้ง
+     · 10 ใบ + 4 ใบ ⇒ ได้ **ทั้งสองสาขา**: กลุ่มแรกถึงเกณฑ์ (ปุ่ม "เสนอปรับ" โผล่)
+       กลุ่มหลังไม่ถึง (ป้าย "ตัวอย่างไม่พอ") — ถ้าทุกกลุ่มถึงเกณฑ์หมด สาขาที่สองจะไม่เคยถูกรัน */
+  prod_orders: (r, i) => ({ ...r, mat_no: i <= 10 ? '10101001' : '10101002', status: 'confirmed' }),
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,

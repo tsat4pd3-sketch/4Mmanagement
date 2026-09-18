@@ -16,14 +16,16 @@
 import { chromium } from 'playwright';
 
 const VIEW = { width: 390, height: 844 };   // iPhone 14/15 — เล็กที่สุดที่หน้างานใช้จริง
+// 🕐 timezone ไทยเหมือน crashsweep — ไม่งั้นโค้ดสายเวลาถูกข้ามทั้งคลาส (ดูคอมเมนต์ใน crashsweep.mjs)
+const TZ = { timezoneId: 'Asia/Bangkok' };
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-const p0 = await b.newPage();
+const p0 = await b.newPage({ ...TZ });
 await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200);
 const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close();
 
 const bad = [];
 for (const name of PAGES) {
-  const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true });
+  const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true, ...TZ });
   try {
     await p.goto(`http://localhost:5199/audit/index.html?p=${name}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.waitForTimeout(1300);
