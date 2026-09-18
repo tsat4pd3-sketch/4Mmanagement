@@ -17,6 +17,9 @@
     6) orderProducedQty             — "ใบผลิตใบนี้ผลิตได้กี่ชิ้น" (สูตรบังคับของโปรเจค)
 */
 
+// งานคู่ gang die / RH-LH — ยุบเป็น "1 shot" ก่อนคิดเวลามาตรฐานของ %P (ดูกติกา ชิ้น≠shot ในไฟล์นั้น)
+import { collapsePairShots } from './pairTotals.js';
+
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
    สูตรบังคับของโปรเจค: confirmed → `qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0`
 
@@ -353,7 +356,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -407,16 +410,28 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (!(netAvail > 0)) return null;                    // ยังอยู่ในพัก/หยุดตามแผนทั้งช่วง = ยังประเมินไม่ได้
   const runMin = Math.max(1, netAvail - unplannedDtMin);
 
-  let stdMin = 0, produced = 0, ngFromOrders = 0, qtyNoCt = 0;
+  /* ⚠️ **ชิ้น ≠ shot** — `produced`/`ng` นับ "ชิ้น" (ใช้กับ %Q) · เวลามาตรฐานนับ "shot" (ใช้กับ %P)
+     งานคู่ gang die / RH-LH: 1 จังหวะเครื่องได้ 2 ชิ้น แต่ CT ที่ตั้งไว้คือเวลาต่อ **1 จังหวะ**
+     ⇒ บวก qty×CT ทั้งสองข้าง = ตัวเศษ 2 เท่า → %P ทะลุ 100 แล้วโดน cap เงียบ
+     (วัดจริง 18/09: HDF1 159% · LASER-345 160% — ดู utils/pairTotals.js `collapsePairShots`)
+     `pairMap` ไม่ส่ง = ไม่ยุบอะไรเลย = พฤติกรรมเดิมเป๊ะ */
+  let produced = 0, ngFromOrders = 0, qtyNoCt = 0;
   const matsNoCt = new Set();
+  const stdRows = new Map();                       // mat_no → { mat_no, qty, ct } สำหรับคิดเวลามาตรฐาน
   orders.forEach(o => {
     const q = orderProducedQty(o);
     produced += q;
-    const ct = Number(ctMap[o.mat_no]) || 0;
-    if (ct > 0) stdMin += q * ct / 60;
-    else if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); }
     ngFromOrders += o.qty_ng || 0;
+    const ct = Number(ctMap[o.mat_no]) || 0;
+    if (!(ct > 0)) { if (q > 0) { qtyNoCt += q; if (o.mat_no) matsNoCt.add(o.mat_no); } return }
+    const key = o.mat_no ?? '__nomat__';
+    const row = stdRows.get(key) || { mat_no: o.mat_no ?? null, qty: 0, ct };
+    row.qty += q; row.ct = Math.max(row.ct, ct);
+    stdRows.set(key, row);
   });
+  const pairOf = pairMap ? (m => pairMap[m] ?? null) : undefined;
+  const stdMin = collapsePairShots([...stdRows.values()], pairOf)
+    .reduce((s, r) => s + r.qty * r.ct / 60, 0);
   const ng = ngQty != null ? ngQty : ngFromOrders;
 
   const A = Math.min(1, runMin / netAvail);

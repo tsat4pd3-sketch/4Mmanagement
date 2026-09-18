@@ -1111,3 +1111,23 @@ npx vite --config audit/vite.audit.mjs &        # เปิดค้างที
 1. แก้โค้ดให้สอดคล้องกับ convention เดิม — ถ้าจำเป็นต้องเปลี่ยน convention ให้แก้**ทุกหน้า**ที่ใช้ pattern นั้นด้วย
 2. อัพเดท section ที่เกี่ยวข้องในไฟล์นี้ + วันที่ "อัพเดทล่าสุด" ในคอมมิทเดียวกัน
 3. ถ้าเพิ่ม pattern ใหม่ ให้เพิ่ม section ใหม่พร้อมระบุหน้าอ้างอิง (ต้นแบบ)
+
+
+## 📺 เพดานเบราว์เซอร์ — ตารางที่วัดจากบันเดิลจริง (ย้ายมาจาก CLAUDE.md 2026-09-18 · เพดาน 120 KB)
+
+> กฎ (ห้ามใช้ `color-mix()` และ CSS ที่ต้องการ Chromium > 94) ยังอยู่ใน CLAUDE.md §Design System
+> — ที่นี่เก็บเฉพาะ**ผลวัด** ไว้อ้างอิงตอนจะใช้ฟีเจอร์ใหม่
+
+จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 / 8.4.0 = Chromium 94** (user ยืนยัน "ส่วนใหญ่รุ่นนี้หรือใหม่กว่า")
+· เทียบรุ่น: webOS 22 = Chromium 87 · webOS 23 = **94** · webOS 24 = 108 · webOS 25 = 120
+
+**พื้นจริงของโค้ดตอนนี้ (grep จาก `dist/assets/` หลัง build):**
+
+| ฟีเจอร์ | ต้องการ | อยู่ในชิ้นไหน | ผลถ้าไม่รองรับ |
+|---|---|---|---|
+| `??=` `\|\|=` `&&=` | Cr 85 | **ทุกชิ้นรวม `index-*.js`** | **จอขาว** (parse error ทั้งไฟล์) |
+| `crypto.randomUUID` | Cr 92 | 5 หน้า (OjtTraining · PMSetup · QualityControl · ScrapReport · operator) | หน้านั้นพัง |
+| `Object.hasOwn` | Cr 93 | Recharts (`CategoricalChart`/`Tooltip`) · exceljs · jspdf | **หน้าที่มีกราฟพัง** |
+| `structuredClone` | Cr 98 | Recharts `Tooltip` — เฉพาะ branch `instanceof Error` | ไม่เกิดจริง (ข้อมูลกราฟไม่มี Error) |
+
+⇒ **webOS 23 (Cr 94) ผ่านทุกหน้า** · webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่า webOS 22 = จอขาว
