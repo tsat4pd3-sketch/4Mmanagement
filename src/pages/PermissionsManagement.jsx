@@ -47,7 +47,8 @@ const PAGE_GROUPS = [
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
       { key: 'page:/daily-report', label: 'Daily Report' },
-      { key: 'page:/production-plan', label: 'วางแผนการผลิต' },
+      // คาบ 2 หมวด (sidebar โชว์ทั้งฝ่ายผลิตและ Logistic-แผนงาน ผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
+      { key: 'page:/production-plan', label: 'วางแผนการผลิต · คาบ 2 หมวด' },
       { key: 'page:/daily-checker', label: 'Daily Checker (ศูนย์รวมเช็ค — เข้าได้ถ้ามีสิทธิ์แท็บใดแท็บหนึ่ง)' },
       { key: 'page:/daily-pm',     label: '— แท็บ Autonomous Maintenance (AM) (ใน Daily Checker)' },
       { key: 'page:/pokayoke',     label: '— แท็บ Poka-Yoke Check (ใน Daily Checker)' },

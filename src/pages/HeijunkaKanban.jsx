@@ -3,6 +3,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { cachedMaster } from '../utils/masterCache';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
@@ -1821,12 +1822,14 @@ export default function HeijunkaKanban() {
       const sessIds = sess.map(s => s.id);
 
       // 2) แผนผลิต: prod_orders + kanban_targets ของ sessions เหล่านี้
-      const [{ data: orders }, { data: targets }, { data: products }] = await Promise.all([
+   // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
+      const [{ data: orders }, { data: targets }, products] = await Promise.all([
         // qty_ok/qty_actual/confirmed_at → ใช้หัก WIP ด้วยของที่ผลิตไปแล้ว (forecast runout · utils/wipRunout.js)
         supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, qty_ok, qty_actual, status, opened_at, confirmed_at').in('session_id', sessIds),
         supabaseDR.from('kanban_targets').select('session_id, mat_no, part_name, qty_target').in('session_id', sessIds),
         // cycle_time_sec → ใช้แปลง "ยอดที่เหลือ" เป็น "เวลา" บนไทม์ไลน์
-        supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true),
+        /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
+        cachedMaster('dr_products:heijunka', async () => (await supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true)).data || []),
       ]);
       const prodByMat = {};
       (products || []).forEach(p => { if (p.mat_no) prodByMat[p.mat_no] = p; });

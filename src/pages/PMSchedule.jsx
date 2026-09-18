@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useMergeParams } from '../utils/useTabParam'
 import { supabaseDR } from '../supabaseClient'
 import { FREQ_LABEL, DEPT_LABEL, dueStatus, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
 import useIsMobile from '../utils/useIsMobile'
@@ -83,7 +84,8 @@ function statusDot(status) {
 }
 
 export default function PMSchedule() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const setParams = useMergeParams()
   const navigate = useNavigate()
   const department = searchParams.get('dept') || 'maintenance'
 
@@ -98,7 +100,8 @@ export default function PMSchedule() {
   const { role, fullName, uid } = useContext(UserContext)
   const canDefer = can('pm', 'setup', role)
 
-  const setDept = (d) => setSearchParams({ dept: d })
+  // ⚠️ merge เสมอ — ไม่งั้น ?tab= ของ PmHub หาย แล้วเด้งไปแท็บแรก (บั๊ก 2026-09-16)
+  const setDept = (d) => setParams({ dept: d })
 
   // ยกเลิกการเลื่อน (กลับไปใช้วันครบกำหนดเดิม)
   const cancelDefer = async (r) => {
@@ -426,7 +429,12 @@ function TimelineView({ rows, today, onCheck }) {
         <div style={{ width: 200, flexShrink: 0, padding: '8px 12px', fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>อุปกรณ์ / ไลน์</div>
         <div style={{ flex: 1, position: 'relative', height: 34, minWidth: 320 }}>
           {marks.map(m => (
-            <div key={m} style={{ position: 'absolute', left: `${(m / RANGE) * 100}%`, top: 0, bottom: 0, borderLeft: '1px dashed var(--border2)', paddingLeft: 4, display: 'flex', alignItems: 'center' }}>
+            /* ป้ายขีดสุดท้าย (+90) อยู่ที่ left:100% = เริ่มที่ขอบขวาพอดีแล้วยื่นออกไปอีก ~55px
+               ⇒ ล้นกรอบ scroller ที่ตั้ง minWidth ตายตัวไว้ → **อ่านคอลัมน์สุดท้ายไม่ได้บนมือถือ**
+               (วัดจริง 2026-09-16 @390px: กล่องกว้าง 540 เนื้อหาจริง 580) · แก้ให้ป้ายสุดท้าย
+               พับกลับเข้าใน แทนการไล่เพิ่มตัวเลข minWidth ให้ถูกทุกครั้งที่ layout ขยับ */
+            <div key={m} style={{ position: 'absolute', left: `${(m / RANGE) * 100}%`, top: 0, bottom: 0, borderLeft: '1px dashed var(--border2)', display: 'flex', alignItems: 'center',
+              ...(m === RANGE ? { paddingRight: 4, transform: 'translateX(-100%)' } : { paddingLeft: 4 }) }}>
               <span style={{ fontSize: 11, color: m === 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: m === 0 ? 700 : 400, whiteSpace: 'nowrap' }}>{m === 0 ? '📍 วันนี้' : `+${m} วัน`}</span>
             </div>
           ))}

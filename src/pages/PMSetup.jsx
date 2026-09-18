@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useContext, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
@@ -8,7 +9,7 @@ import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
 import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
-import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, clearPmTeamsCache } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache } from '../utils/pmTeams'
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
@@ -469,7 +470,12 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [partNo, setPartNo] = useState(editJig?.part_no ?? '')
   const [lineName, setLineName] = useState(editJig?.line_name ?? '')
   const [machineNo, setMachineNo] = useState(editJig?.machine_no ?? '')
-  const [equipType, setEquipType] = useState(editJig?.equipment_type ?? 'machine')
+  /* ค่าเริ่มต้น = ชนิดที่ "แผนกที่เปิดอยู่" ดูแล (mtn_teams.equip_type) ไม่ใช่ 'machine' ตายตัว
+     — DIE MTN เปิดมาต้องเป็น Die · JIG MTN เป็น JIG (feedback หน้างาน 2026-09-16) */
+  const [equipType, setEquipType] = useState(editJig?.equipment_type ?? teamEquipTypeOf(department) ?? 'machine')
+  /* ตัวกรองลิสต์เครื่อง (โหมด Floor Map) — แยกจาก equipType ที่จะบันทึกจริง เพราะพอเลือกเครื่องแล้ว
+     ชนิดที่บันทึกมาจาก `machines.equipment_kind` ของเครื่องนั้นเสมอ (equipTypeOfMachine) */
+  const [kindFilter, setKindFilter] = useState(editJig?.equipment_type ?? teamEquipTypeOf(department) ?? 'all')
   const [equipCategory, setEquipCategory] = useState(editJig?.equipment_category ?? 'production')
 
   const [frequency, setFrequency] = useState('periodic')
@@ -606,6 +612,24 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   useEffect(() => {
     if (!isEdit) setCheckpoints([newCheckpoint()])
   }, [isEdit])
+
+  /* 🔴 ลิสต์ต้องกรองตามชนิดที่เลือก — เดิมโชว์ทั้งทะเบียน 713 ตัวรวดเดียว (แม่พิมพ์ 266 · เครื่อง 252 ·
+     จิ๊ก 157 · facility 38) ⇒ เลือก "Die" แล้วยังมีเครื่องจักรปนเต็มลิสต์ หาแม่พิมพ์ของตัวเองไม่เจอ
+     (feedback หน้างาน 2026-09-16) · ของที่ปลดระวาง (is_active=false) ไม่ต้องเอามาให้เลือกใหม่ */
+  const machineOptionsShown = useMemo(() => {
+    const act = machineOptions.filter(m => m.is_active !== false)
+    return kindFilter === 'all' ? act : act.filter(m => equipTypeOfMachine(m) === kindFilter)
+  }, [machineOptions, kindFilter])
+  const kindCounts = useMemo(() => {
+    const c = { all: 0 }
+    for (const m of machineOptions) {
+      if (m.is_active === false) continue
+      c.all += 1
+      const k = equipTypeOfMachine(m)
+      c[k] = (c[k] || 0) + 1
+    }
+    return c
+  }, [machineOptions])
 
   const machinesByLine = machineOptions.reduce((acc, m) => {
     const line = m.line_name ?? 'ไม่ระบุไลน์'
@@ -1017,14 +1041,32 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
           {addMode === 'workstation' && !isEdit && (
             <div>
-              <label style={S.label}>เลือกเครื่องจักร ({machineOptions.length} ตัว)</label>
+              {/* 🔴 ตัวกรองชนิด — ต้องอยู่ "ก่อน" ช่องเลือก ไม่งั้นคนกดเลือกจากลิสต์ 713 ตัวที่ปนกันหมดก่อน
+                  แล้วค่อยเห็นปุ่มชนิดข้างล่าง (ซึ่งเดิมไม่ได้กรองอะไรเลย) — feedback หน้างาน 2026-09-16 */}
+              <label style={S.label}>ชนิดอุปกรณ์ที่จะเลือก</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                {[...Object.entries(EQUIP_TYPE_LABEL), ['all', 'ทั้งหมด']].map(([k, v]) => (
+                  <button key={k} onClick={() => {
+                    setKindFilter(k); if (k !== 'all') setEquipType(k)
+                    // เครื่องที่เลือกค้างไว้เป็นคนละชนิด = หลุดจากลิสต์ที่เห็น ⇒ ล้างทิ้ง ไม่ให้บันทึกของที่มองไม่เห็น
+                    const cur = machineOptions.find(x => x.id === machineId)
+                    if (cur && k !== 'all' && equipTypeOfMachine(cur) !== k) handleMachineSelect(null)
+                  }} style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `1.5px solid ${kindFilter === k ? deptColor + '60' : 'var(--border2)'}`,
+                    background: kindFilter === k ? deptColor + '18' : 'var(--bg3)',
+                    color: kindFilter === k ? deptColor : 'var(--muted)',
+                  }}>{v} <span style={{ opacity: 0.7, fontWeight: 500 }}>({kindCounts[k] ?? 0})</span></button>
+                ))}
+              </div>
+              <label style={S.label}>เลือกเครื่องจักร ({machineOptionsShown.length} ตัว)</label>
               {/* 🔴 ต้อง groupByLine — feedback หน้างาน 2026-09-08 "ปกติมันจะเป็นไลน์ผลิตค่ะ ตอนจะแอดอุปกรณ์ใหม่":
                   ทะเบียนมี 635 ตัว (แม่พิมพ์ 262 · เครื่อง 189 · จิ๊ก 148 · facility 36) และ 272 ตัวใช้ชื่อพาร์ทยาวๆ
                   เป็น machine_no → ลิสต์แบนเรียงตามรหัสขึ้น "4B-01 / 4X4 BRACKET…" ปนกัน ไล่หาไลน์ตัวเองไม่ได้
                   (ของเดิมเป็น <select> ที่ optgroup ตามไลน์อยู่แล้ว — ตอนเปลี่ยนเป็นช่องค้นหาแล้วกลุ่มหายไป)
                   maxRows สูง เพราะจอนี้คน "ไล่ดูตามไลน์" ไม่ได้พิมพ์ค้นอย่างเดียว */}
-              <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptions} groupByLine maxRows={999}
-                placeholder="— ค้นหา / เลือกเครื่องจักร (รหัส · ชื่อ · ไลน์) —"
+              <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptionsShown} groupByLine maxRows={999}
+                placeholder={kindFilter === 'all' ? '— ค้นหา / เลือกอุปกรณ์ (รหัส · ชื่อ · ไลน์) —' : `— ค้นหา / เลือก${EQUIP_TYPE_LABEL[kindFilter] ?? ''} (รหัส · ชื่อ · ไลน์) —`}
                 onChange={({ id }) => { const v = id || null; if (v !== (machineId ?? null)) handleMachineSelect(v) }} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
@@ -1042,19 +1084,23 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
           )}
 
-          <div>
-            <label style={S.label}>ประเภทอุปกรณ์</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {Object.entries(EQUIP_TYPE_LABEL).map(([k, v]) => (
-                <button key={k} onClick={() => setEquipType(k)} style={{
-                  padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                  border: `1.5px solid ${equipType === k ? deptColor + '60' : 'var(--border2)'}`,
-                  background: equipType === k ? deptColor + '18' : 'var(--bg3)',
-                  color: equipType === k ? deptColor : 'var(--muted)',
-                }}>{v}</button>
-              ))}
+          {/* โหมด Floor Map: ชนิดที่บันทึกมาจากทะเบียนเครื่องเสมอ → ปุ่มชนิดอยู่ข้างบนในฐานะ "ตัวกรอง"
+              โหมด Facility/อื่นๆ: ไม่มีลิสต์เครื่อง → ปุ่มชนิดคือค่าที่จะบันทึกจริง */}
+          {(addMode === 'manual' || isEdit) && (
+            <div>
+              <label style={S.label}>ประเภทอุปกรณ์</label>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {Object.entries(EQUIP_TYPE_LABEL).map(([k, v]) => (
+                  <button key={k} onClick={() => setEquipType(k)} style={{
+                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    border: `1.5px solid ${equipType === k ? deptColor + '60' : 'var(--border2)'}`,
+                    background: equipType === k ? deptColor + '18' : 'var(--bg3)',
+                    color: equipType === k ? deptColor : 'var(--muted)',
+                  }}>{v}</button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {addMode === 'manual' && (
             <div>
@@ -1305,7 +1351,8 @@ export default function PMSetup() {
   const canSetup = can('pm', 'setup', role)
   // ทีมช่างของ user — ใช้ล็อกไม่ให้แก้ master ของทีมอื่น (ดู CLAUDE.md "ใครเป็นเจ้าของ คนนั้นแก้")
   const pmUserTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs])
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
+  const setParams = useMergeParams()
   const department = searchParams.get('dept') || 'maintenance'
   const [jigs, setJigs] = useState([])
   const [cpCounts, setCpCounts] = useState({})
@@ -1343,7 +1390,8 @@ export default function PMSetup() {
   }
   useEffect(() => { loadTaxonomy() }, [])
 
-  const setDept = (d) => setSearchParams({ dept: d })
+  // ⚠️ ต้อง merge — เขียน setSearchParams({dept}) ตรงๆ จะล้าง ?tab= ของ PmHub แล้วจอเด้งไปแท็บแรก
+  const setDept = (d) => setParams({ dept: d })
 
   const fetchData = async () => {
     setLoading(true)

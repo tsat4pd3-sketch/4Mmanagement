@@ -17,7 +17,8 @@
 | OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14) | `docs/modules/oee.md` | 115 KB |
 | Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12) | `docs/modules/improvements-kaizen.md` | 35 KB |
 | Morning Meeting — ประชุมแถวเช้า (2026-07-13) | `docs/modules/morning-meeting.md` | 8 KB |
-| Layer Process Audit — LPA paperless (2026-07-20) | `docs/modules/lpa-audit.md` | 7 KB |
+| Layer Process Audit — LPA paperless (2026-07-20) | `docs/modules/lpa-audit.md` | 9 KB |
+| OJT — ใบแจ้งการอบรมสอนงาน FM-HRM-004 (2026-07-20) | `docs/modules/ojt-training.md` | 1 KB |
 | Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16) | `docs/modules/scrap-report.md` | 8 KB |
 | 📦 ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 Rev.01 (paperless · 2026-08-24) | `docs/modules/store-requisition-form.md` | 5 KB |
 | ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน) | `docs/modules/production-problem-report-bins.md` | 18 KB |

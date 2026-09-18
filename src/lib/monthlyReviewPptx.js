@@ -51,7 +51,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth,
-         buildCtMap, groupLean, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
+         buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fitOneLine, layoutTable, textHeightIn, lineHeightIn } from './pptxFit';
@@ -355,7 +355,7 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
   try {
     const sessions = await fetchAll(
       supabaseDR.from('production_sessions')
-        .select('id, line_name, work_date, shift, oee, oee_a, oee_p, oee_q, shift_min, actual_qty')
+        .select('id, line_name, work_date, shift, oee, oee_a, oee_p, oee_q, shift_min, start_time, actual_qty')
         .gte('work_date', from).lte('work_date', to)
         .in('line_name', allLineNames).in('status', ['closed'])
         .order('work_date').order('id'),
@@ -364,13 +364,14 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
     if (!sessions.length) return { series: {}, byLine: null, warn: null };
     if (sessions.truncated) return { series: {}, byLine: null, warn: 'กะย้อนหลังเกินเพดานที่ดึงได้ — ลดช่วงเดือนหรือลดจำนวนไลน์' };
     const ids = sessions.map(x => x.id);
-    const [dtR, defR, ordR] = await Promise.all([
-      fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('session_id, duration_min, dr_downtime_types(name_th, category)').in('session_id', c)),
+    const [dtR, defR, ordR, brkR] = await Promise.all([
+      fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(name_th, category)').in('session_id', c)),
       fetchByIdsTolerant(ids,
         (sel, c) => supabaseDR.from('defect_logs').select(sel).in('session_id', c),
         'session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)',
         'session_id, qty_ng, qty_suspect'),
       fetchByIds(ids, c => supabaseDR.from('prod_orders').select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
+      supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
     ]);
     const err = [dtR, defR, ordR].find(r => r.error)?.error;
     if (err) return { series: {}, byLine: null, warn: 'โหลดข้อมูลย้อนหลังไม่ครบ' };
@@ -386,11 +387,11 @@ async function buildTrendMonths({ monthKeys, sections, allLineNames, perLine = f
       if (error) { pairWarn = 'โหลดคู่ MAT (pair) ย้อนหลังไม่ครบ — ยอด Output เดือนก่อนอาจสูงกว่าจริง'; break; }
       (data || []).forEach(pr => { if (pr.pair_mat_no) pairMap[pr.mat_no] = pr.pair_mat_no; });
     }
-    const plannedBySess = {};
-    downtimes.forEach(d => {
-      if (d.dr_downtime_types?.category !== 'planned') return;
-      plannedBySess[d.session_id] = (plannedBySess[d.session_id] || 0) + (Number(d.duration_min) || 0);
-    });
+    /* 🔴 plannedMin ต้องตัดนาทีที่ทับเวลาพักออกก่อน — มันถูกกันออกจากฐานเวลาไปแล้ว
+       รวม `duration_min` เองที่นี่ = หักซ้ำ (กฎเหล็ก CLAUDE.md §OEE 2026-09-15)
+       กระทบ "ชั่วโมงรับภาระ" + OEE เฉลี่ยในเด็ค PPTX ที่ส่งผู้บริหาร ⇒ ไม่ตรงกับ /oee-analytics */
+    const dtEffTrend = dtMinBySession(sessions, downtimes, brkR.data || []);
+    const plannedBySess = Object.fromEntries(Object.entries(dtEffTrend).map(([k, v]) => [k, v.planned]));
     const ngBySess = {};
     defects.forEach(d => {
       if (isTrialDefect(d)) return;
@@ -540,7 +541,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // กะที่ปิดแล้วของเดือน (ค่า OEE stamp ตอนปิดกะ — ห้ามคำนวณซ้ำ)
   const sessions = await fetchAll(
     supabaseDR.from('production_sessions')
-      .select('id, line_name, work_date, shift, oee, oee_a, oee_p, oee_q, shift_min, actual_qty, qty_ok')
+      .select('id, line_name, work_date, shift, oee, oee_a, oee_p, oee_q, shift_min, start_time, actual_qty, qty_ok')
       .gte('work_date', from).lte('work_date', to)
       .in('line_name', allLineNames)
       .in('status', ['closed'])
@@ -552,15 +553,18 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   // downtime / defect / orders — fetchByIds (แบ่งก้อน id + แบ่งหน้า + เช็ค error)
   // ⚠️ dr_downtime_types/dr_defect_types คอลัมน์ชื่อ **name_th** ไม่ใช่ name
   //    (เคยเขียน name → query ล้มเงียบทั้งเด็ค DT=0h — ต้นเหตุรายงาน JULY 2026 ว่าง)
-  const DT_FULL = 'id, session_id, machine_no, description, duration_min, fix_action, fix_by, followup_result, followup_by, dr_downtime_types(name_th, category, six_big_loss, waste_type)';
-  const DT_SLIM = 'id, session_id, machine_no, description, duration_min, dr_downtime_types(name_th, category)';
+  /* ⚠️ `started_at`/`ended_at` ต้องอยู่ทั้ง FULL และ SLIM — `dtMinOutsideBreaks` ตัดช่วงพักไม่ได้
+     ถ้าไม่มี `started_at` แล้วคืนค่าดิบเงียบๆ ⇒ ตกลงมา SLIM เมื่อไหร่ ตัวเลขจะหักซ้ำโดยไม่มีใครรู้ */
+  const DT_FULL = 'id, session_id, machine_no, description, duration_min, started_at, ended_at, fix_action, fix_by, followup_result, followup_by, dr_downtime_types(name_th, category, six_big_loss, waste_type)';
+  const DT_SLIM = 'id, session_id, machine_no, description, duration_min, started_at, ended_at, dr_downtime_types(name_th, category)';
   const DEF_FULL = 'session_id, qty_ng, qty_suspect, description, is_trial, fix_action, fix_by, followup_result, dr_defect_types(name_th, excl_from_q, six_big_loss, waste_type)';
   const DEF_SLIM = 'session_id, qty_ng, qty_suspect, description, dr_defect_types(name_th)';
-  const [dtRes, defRes, ordRes] = await Promise.all([
+  const [dtRes, defRes, ordRes, brkRes] = await Promise.all([
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('downtime_logs').select(sel).in('session_id', c), DT_FULL, DT_SLIM),
     fetchByIdsTolerant(sessIds, (sel, c) => supabaseDR.from('defect_logs').select(sel).in('session_id', c), DEF_FULL, DEF_SLIM),
     fetchByIds(sessIds, c => supabaseDR.from('prod_orders')
       .select('session_id, mat_no, qty, qty_ok, qty_actual, status').in('session_id', c)),
+    supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
   ]);
   const downtimes = dtRes.rows, defects = defRes.rows, orders = ordRes.rows;
   const fixSlim = dtRes.slim || defRes.slim; // คอลัมน์วิธีแก้ยังไม่ apply — บอกบนสไลด์
@@ -661,12 +665,9 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   /* ── aggregate ต่อกลุ่มไลน์ ── */
   // เฉลี่ยถ่วงน้ำหนักตามกฎ OEE (util กลาง oee.js): A/OEE ถ่วงเวลารับภาระ · P ถ่วงเวลาเดินเครื่อง · Q ถ่วงจำนวนผลิต
   // สแกน downtimes ครั้งเดียวแล้วเก็บเป็น map (เดิมวนทั้งก้อนต่อ session — ยิ่งเลือกไลน์เยอะยิ่งช้าทวีคูณ)
-  const plannedBySessMain = {};
-  downtimes.forEach(d => {
-    if (d.dr_downtime_types?.category !== 'planned') return;
-    plannedBySessMain[d.session_id] = (plannedBySessMain[d.session_id] || 0) + (Number(d.duration_min) || 0);
-  });
-  const plannedMinOf = (sid) => plannedBySessMain[sid] || 0;
+  /* 🔴 ตัดนาทีที่ทับเวลาพักก่อนเสมอ (กฎเหล็ก §OEE 2026-09-15) — ดูเหตุผลที่ชุด trend ด้านบน */
+  const dtEffMain = dtMinBySession(sessions, downtimes, brkRes.data || []);
+  const plannedMinOf = (sid) => dtEffMain[sid]?.planned || 0;
   // ทั้ง 4 ตัวนี้เรียกสูตรกลาง (§0) — เดือนย้อนหลังใน trend ใช้สูตรเดียวกันเป๊ะ
   const ordersIdx = indexBySession(orders), dtIdx = indexBySession(downtimes), defIdx = indexBySession(defects);
   const aggSessions = (ss) => aggregateSessions(ss, plannedMinOf, (id) => ngBySession[id] || 0);

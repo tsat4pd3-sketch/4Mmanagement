@@ -31,6 +31,11 @@ const ROW = (i) => ({
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
   status: 'open', shift: 'day', work_date: '2026-08-04', session_id: `s-${i}`,
+  /* ⏱️ start_time / shift_min — ต้องมี (2026-09-16) · `computeLiveOee` คืน null ทันทีถ้าไม่มี
+     `start_time` ⇒ เดิม **ทั้งสาย OEE สด (A/P/Q สด · แถบนาทีที่หายไป · ไฟ Andon ที่อิง OEE)
+     ไม่เคยถูกเรนเดอร์ใน harness เลยสักหน้า** = บั๊กทั้งคลาสมองไม่เห็น
+     · elapsed ถูก cap ด้วย shift_min เสมอ ⇒ ค่าคงที่ ไม่แกว่งตามวันที่รันเทส */
+  start_time: '08:00:00', shift_min: 570,
   /* ⚡ energy_points / energy_monthly — ต้องมี ไม่งั้นหน้า /energy รวมทุกจุดไว้ชั้นเดียว
      (meteredSet ว่าง) แล้ว **โค้ดสาย "แยกตารางตามชั้นมิเตอร์" ไม่เคยถูกรันใน harness เลย**
      is_metered สลับ 1 ใน 3 โดยตั้งใจ → ได้เคส "ไลน์ลูกมีมิเตอร์ แต่ไลน์แม่อยู่คนละตาราง"

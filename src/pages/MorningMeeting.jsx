@@ -470,8 +470,15 @@ export default function MorningMeeting() {
   const setActStatus = async (a, status) => {
     const patch = { status, updated_at: new Date().toISOString() };
     if (status === 'done') patch.done_at = new Date().toISOString();
-    const { error } = await supabase.from('meeting_action_items').update(patch).eq('id', a.id);
+    /* ⚠️ นับแถวก่อนอัพเดทจอ — RLS ของตารางนี้เปลี่ยนเป็น
+       has_perm('morning_meeting:record') or has_perm('obeya:record') เมื่อ 2026-09-15
+       แต่แก้ call site ไปแค่ฝั่ง Obeya (ObeyaSqdcmBoard:427) ตกหน้านี้ไว้
+       ⇒ คนไม่มีสิทธิ์กดแล้ว optimistic update ทาสีจอว่า "done" ทั้งที่ DB ไม่เปลี่ยน
+         พอรีเฟรชงานกลับมา open = คนเชื่อว่าปิดไปแล้วทั้งที่ยังค้าง (กฎ RLS-เงียบ) */
+    const { data: saved, error } = await supabase.from('meeting_action_items')
+      .update(patch).eq('id', a.id).select('id');
     if (error) return toast.error(error.message);
+    if (!saved?.length) return toast.error('เปลี่ยนสถานะไม่สำเร็จ — ไม่มีสิทธิ์ morning_meeting:record');
     setActions(prev => prev.map(x => (x.id === a.id ? { ...x, ...patch } : x)));
   };
 
@@ -804,11 +811,14 @@ export default function MorningMeeting() {
             {notable.map(m => {
               const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
               return (
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}` }}>
+                /* 🔴 ปัญหาเดียวกับแถว action item (2026-09-16 · วัดจริง @390px): ชิป 2 ใบ + ชื่อไลน์
+                   `nowrap` กินไป 316 จาก 328px ⇒ **รายละเอียด 4M ถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด**
+                   บนมือถือให้พับบรรทัดได้ · ชื่อไลน์ยังไม่ตัดกลางคำ แต่ต้องหดแบบ ellipsis */
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <span style={chip(st.color)}>{st.label}</span>
-                  <span style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{m.line_name}</span>
+                  <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</span>
                   <span style={chip('#94a3b8')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
-                  <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{m.description}</span>
+                  <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{m.description}</span>
                 </div>
               );
             })}
@@ -902,10 +912,13 @@ export default function MorningMeeting() {
             const overdue = ['open', 'doing'].includes(a.status) && a.due_date && a.due_date < getWorkDate();
             return (
               <div key={a.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 8, fontSize: 12, padding: '7px 10px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${overdue ? '#ef4444' : st.color}`, flexDirection: isMobile ? 'column' : 'row' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                {/* 🔴 มือถือต้อง wrap (2026-09-16 · วัดจริง @390px): ชื่อไลน์ `nowrap` ยาว 198px จาก 328px
+                    ทำให้ **ข้อความปัญหาถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด** — ตัวที่ต้องอ่านที่สุดหายไป
+                    ส่วนชื่อไลน์ยังห้าม wrap กลางคำ แต่ต้องหดได้ + ellipsis ไม่ใช่ดันของอื่นตกจอ */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   {a._carry && <span style={chip('#f59e0b')} title={`จากประชุมวันที่ ${fmtDate(a.meeting_date)}`}>⏮ {fmtDate(a.meeting_date)}</span>}
-                  {a.line_name && <b style={{ whiteSpace: 'nowrap' }}>{a.line_name}</b>}
-                  <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.problem}</span>
+                  {a.line_name && <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{a.line_name}</b>}
+                  <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1 1 auto', minWidth: 0 }}>{a.problem}</span>
                   {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>สาเหตุ: {a.root_cause}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>

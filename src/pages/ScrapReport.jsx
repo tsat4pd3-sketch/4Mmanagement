@@ -31,6 +31,7 @@ import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
 import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
+import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
@@ -162,7 +163,11 @@ export default function ScrapReport() {
       const [{ data: prods }, { data: boms }, { data: macs }, pmRes] = await Promise.all([
         // id/ชั้น OP/qty_per_unit เพิ่มมาเพื่อ "ระเบิดของเสียของขั้นตอน" — คิวรีชุดเดิม ไม่ได้ยิงเพิ่ม
         supabaseDR.from('dr_products').select('id, mat_no, p_no, name, code, line_name, is_operation, op_parent_mat, op_seq').eq('is_active', true).order('name'),
-        supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id, qty_per_unit, uom').eq('is_active', true).order('part_name'),
+        // parent_mat = ชั้นที่ตั้งเองได้ (migration 20260916) — ยังไม่ apply = ถอยไปชุดเดิม ห้ามให้ทั้งหน้าพัง
+        supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id, qty_per_unit, uom, parent_mat').eq('is_active', true).order('part_name')
+          .then(r => r.error?.code === '42703'
+            ? supabaseDR.from('bom_items').select('mat_no, part_no, part_name, product_id, qty_per_unit, uom').eq('is_active', true).order('part_name')
+            : r),
         supabaseDR.from('machines').select('machine_no'),   // ไว้จับ p_no ที่กรอกเป็นหมายเลขเครื่อง (master ผิด)
         supabaseDR.from('parts_master').select('mat_no, part_no, part_name').eq('is_active', true).order('part_name').then(r => r, () => ({ data: [] })),
       ]);
@@ -171,9 +176,12 @@ export default function ScrapReport() {
          ⚠️ ทั้ง opRows และ opMap ถอดจาก `prods` ก้อนเดียวกันโดยตั้งใจ (ไม่ใช้ opInfoSync ที่
          cache ระดับ module) — สองแหล่งอาจไม่ตรงกันเมื่อมีคนเพิ่ม OP ระหว่าง session
          แล้วใบของเสียจะระเบิดผิด/ไม่ระเบิด โดยไม่มีใครรู้ */
+      /* ⚠️ ต้นไม้ BOM ผ่าน `buildBomIndex` เท่านั้น (utils/bomTree) — `parent_mat` ชนะ `product_id`
+         ⇒ ขั้นที่ถูกย้ายไปอยู่ชั้นลึก ก็ยังระเบิดของเสียได้ถูก · ห้ามประกอบเองซ้ำที่นี่ */
       const matOfProd = {}; (prods || []).forEach(p => { if (p.id) matOfProd[p.id] = p.mat_no; });
+      const ix = buildBomIndex(boms || [], matOfProd);
       const bomMap = {};
-      (boms || []).forEach(b => { const m = matOfProd[b.product_id]; if (m) (bomMap[m] = bomMap[m] || []).push(b); });
+      (boms || []).forEach(b => { const m = ix.parentOf(b); if (m) (bomMap[m] = bomMap[m] || []).push(b); });
       setBomByMat(bomMap);
       setOpRows((prods || []).filter(p => p.is_operation));
       // ⚠️ dr_products.p_no บางไลน์ถูกกรอกเป็น "หมายเลขเครื่อง" (เจอจริง SUB APRON: SP-72/74/83/88)

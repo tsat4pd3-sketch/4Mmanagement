@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
+import { recompressLayouts } from '../utils/recompressLayouts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { cachedMaster } from '../utils/masterCache';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -69,6 +71,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [editingLineName, setEditingLineName] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
   const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
+  const [squeeze, setSqueeze] = useState('');   // 🗜️ ข้อความสถานะตอนบีบรูปผังเดิม ('' = ไม่ได้ทำอยู่)
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
@@ -324,10 +327,12 @@ export default function LineSetup({ embedded = false } = {}) {
         (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
             (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
        → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
-    const [{ data: pmRows }, { data: drPd }, { data: flRows }, opMap] = await Promise.all([
+   // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
+    const [{ data: pmRows }, drPd, { data: flRows }, opMap] = await Promise.all([
       supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
       // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
-      supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).not('mat_no', 'is', null),
+      /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
+      cachedMaster('dr_products:matname', async () => (await supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).order('mat_no')).data || []).then(r => r.filter(p => p.mat_no)),
       supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
       // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
       loadOpInfo(),
@@ -593,6 +598,26 @@ export default function LineSetup({ embedded = false } = {}) {
     await fetchLines();
   };
 
+  /* 🗜️ บีบรูปผังเดิม (ผังไลน์ + ผังโรงงาน + ผังเครื่องจักร) — งานครั้งเดียว กดจากที่นี่ที่เดียว
+     รูปที่อัปหลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว (compressLayoutImage) · ดู src/utils/recompressLayouts.js */
+  const handleRecompress = async () => {
+    if (squeeze) return;
+    if (!window.confirm('บีบรูปผังทั้งหมดที่อัปไว้แล้วให้เล็กลง?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก — ทำครั้งเดียวพอ\nระหว่างนี้อย่าปิดหน้านี้')) return;
+    setSqueeze('กำลังเริ่ม…');
+    try {
+      const r = await recompressLayouts({
+        supabase, supabaseDR,
+        onProgress: (text, i, n) => setSqueeze(`${text} (${i}/${n})`),
+      });
+      const mb = (r.savedBytes / 1048576).toFixed(1);
+      if (r.error) toast.error(`บีบเสร็จ ${r.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${r.skip} · ไม่สำเร็จ ${r.error}: ${r.errors[0]}`);
+      else toast.success(`บีบรูปผังเสร็จ ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip} ใบ (เล็กอยู่แล้ว)`);
+      await fetchLineData();   // URL ผังของไลน์นี้เปลี่ยนไปแล้ว ต้องโหลดใหม่ ไม่งั้นจอค้างรูปที่ถูกลบ
+    } catch (err) {
+      toast.error('บีบรูปผังไม่สำเร็จ: ' + (err?.message || err));
+    } finally { setSqueeze(''); }
+  };
+
   const handleUploadImage = async (e) => {
     let file = e.target.files[0];
     e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังอัปโหลดล้มแล้วลองรูปเดิม)
@@ -603,7 +628,6 @@ export default function LineSetup({ embedded = false } = {}) {
       file = await toDecodableImage(file);
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
       // บีบรูปผังก่อนอัปโหลด — ผังไลน์บีบเบา 2560px/2.5MB q0.9 (ดู CLAUDE.md "Storage & รูปภาพ") · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
       const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
       if (isGif && file.size > 2 * 1024 * 1024) {
@@ -611,8 +635,10 @@ export default function LineSetup({ embedded = false } = {}) {
         setIsUploading(false);
         return;
       }
-      // ผังไลน์มีจำนวนน้อยและต้องซูมอ่านรายละเอียด — บีบเบา (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอ
-      const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* ผังไลน์ต้องซูมอ่านรายละเอียด — **คงความละเอียด 2560px เท่าเดิม ห้ามลดกลับไป 1600px/0.5MB เคยเบลอ**
+         แต่แปลงเป็น WebP เพื่อตัดขนาดไฟล์ (PNG 8.4 MB → ~0.5 MB) · เหตุผลเต็ม → src/utils/layoutImage.js */
+      const { blob: uploadBlob, ext: outExt } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
+      const fileName = `layout_${safeLineName}_${Date.now()}.${outExt}`;
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob, uploadOpts());
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
@@ -1509,6 +1535,12 @@ export default function LineSetup({ embedded = false } = {}) {
                 {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
                 <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
               </label>
+              {/* 🗜️ งานครั้งเดียว — ดูเหตุผล (egress) ที่ src/utils/recompressLayouts.js */}
+              <button onClick={handleRecompress} disabled={!!squeeze}
+                title="แปลงรูปผังเดิมที่เป็น PNG ก้อนใหญ่ให้เป็น WebP ขนาดเล็ก — ความละเอียดเท่าเดิม"
+                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: squeeze ? 'default' : 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                {squeeze || '🗜️ บีบรูปผังเดิมให้เล็กลง'}
+              </button>
             </div>
           )}
           {activeTab === 'stations' && <>

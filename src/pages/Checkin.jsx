@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -112,7 +112,6 @@ export default function Checkin() {
   const [exporting,      setExporting]      = useState(false);
   const [previewNight,   setPreviewNight]   = useState(false);
   const [calLoaded,      setCalLoaded]      = useState(false);
-  const [openShiftModal, setOpenShiftModal] = useState(null); // { lines, workDateStr, shift, shiftLabel }
 
   /* ── 🤝 ยืมพนักงานข้ามไลน์รายกะ (line_helpers — migration 20260819_line_helpers_main) ──
      หัวหน้าดึงคนไลน์อื่นมาช่วยกะนี้ → โผล่ในรายชื่อเช็คชื่อของไลน์ปลายทาง + ผังจัดกำลังคน
@@ -123,9 +122,6 @@ export default function Checkin() {
   const [borrowResults,   setBorrowResults]   = useState([]);
   const [borrowLoading,   setBorrowLoading]   = useState(false);
   const [borrowLineId,    setBorrowLineId]    = useState('');
-  const [parentChildrenMap, setParentChildrenMap] = useState({}); // { 'HYDROFORM': ['HDF1','HDF2',...] }
-  const [subLineSelections, setSubLineSelections] = useState({}); // { lineName: bool } — modal checkboxes
-  const [openingShift,     setOpeningShift]     = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
 
   /* ── สถานะตั้งต้นตอนโหลด — ใช้เทียบว่าการกดบันทึกแต่ละครั้งเป็น "เช็คชื่อครั้งแรก" /
      "อัพเดทกำลังคน" / "จองรถ OT" เพื่อยิงแจ้งเตือน Telegram แยกประเภท (กันหัวหน้าแผนกงง
@@ -257,14 +253,6 @@ export default function Checkin() {
         ? supabase.from('ot_night_bookings').select('employee_id, work_date, task_type_id, ot_period').in('work_date', extraAdvanceDates).eq('shift', shiftInfo.shift)
         : Promise.resolve({ data: [] }),
     ]);
-    const pcm = {};
-    (lineData || []).forEach(l => {
-      if (l.parent_line_name) {
-        if (!pcm[l.parent_line_name]) pcm[l.parent_line_name] = [];
-        pcm[l.parent_line_name].push(l.name);
-      }
-    });
-    setParentChildrenMap(pcm);
     setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
     setTaskTypes(taskTypeData || []);
 
@@ -671,76 +659,31 @@ export default function Checkin() {
        ห้ามคืนการเขียน employee_skills จาก client ตรงนี้ (เคยเป็นช่อง farm: กดบันทึกซ้ำ = +1 ซ้ำไม่จำกัด
        และเหมาทุกไลน์ทั้งโรงงาน) — ดู CLAUDE.md ส่วน "Employee Skills & EXP Farming" */
 
-    toast.success('บันทึกข้อมูลสำเร็จ!');
+    // เช็คชื่อเสร็จแล้วไม่มีอะไรเด้งต่อ (ถอดออโต้เปิดกะออก 16/09) — บอกทางไปต่อให้ชัด ไม่ปล่อยเงียบ
+    toast.success('บันทึกเช็คชื่อสำเร็จ! · ไลน์ที่ต้องลงข้อมูลผลิต ไปกด “เปิดกะ” ที่หน้า Daily Report');
 
-    /* ── ขึ้น Modal ให้ยืนยันเปิดกะ Daily Report + Telegram notification ── */
+    /* ── สรุปเช็คชื่อเข้า Telegram ──
+       ⚠️ ไม่มีการชวน "เปิดกะ Daily Report" ตรงนี้แล้ว (2026-09-16 · คำสั่ง user "ให้เค้าเปิดกันเองดีกว่า")
+       เดิมบันทึกเช็คชื่อเสร็จจะเด้ง modal เสนอเปิดกะ **โดยติ๊กไลน์ไว้ให้ครบทุกไลน์** กด "เปิดกะ" ทีเดียว
+       = เปิดกะทุกไลน์ที่เช็คชื่อ ⇒ ไลน์ที่ใช้ระบบเช็คชื่อแต่ยังไม่ลงข้อมูลผลิต (PD1: LINE GWM ·
+       LINE MAIN TSRA-1/2 · LINE SUB-STATIONARY) ได้กะเปล่าวันละ 1-2 ใบ ค้าง `open` ไม่มีใครปิด
+       — วัดจริง 16/09: 4 ไลน์นี้ 32 กะ **เปล่าทั้งหมด** สร้างห่างกัน 0.35 วิ (ลายเซ็นของ modal ไม่ใช่คนกด)
+       และรวมทั้งระบบมีกะเปล่า 214/1,382 ใบ (16%) กวาดฐานข้อมูล + โผล่บนจอว่า "🟢 เปิดกะอยู่"
+       **การเปิดกะเป็นการตัดสินใจของไลน์ ต้องไปกดเองที่ Daily Report** (ENGINEERING-PRINCIPLES §2:
+       ห้ามให้ระบบเดาแล้วเขียนข้อมูลแทนคน) · ล้างของเก่า: `20260916_delete_empty_sessions_dr.sql` ── */
     try {
       const isNight = shiftInfo.shift === 'night';
 
       // ไลน์ที่ถูกเช็คจริง (อาจมีหลายไลน์ถ้าเลือกทั้ง section)
-      // 🤝 คนยืมตัวนับเป็นไลน์ปลายทาง — ไลน์เดิมของเขาไม่เกี่ยวกับการเปิดกะของเรา
+      // 🤝 คนยืมตัวนับเป็นไลน์ปลายทาง
       const checkedLineIds = [...new Set(displayed.map(emp => emp._helperToLineId || emp.line_id).filter(Boolean))];
       const checkedLines = lines.filter(l => checkedLineIds.includes(l.id));
       const lineNamesText = checkedLines.map(l => l.name).join(', ') || (selSection ? `Section: ${selSection}` : 'ทุกไลน์');
 
-      // เตรียมข้อมูลสำหรับ Modal (ตรวจสอบก่อนว่า session เปิดอยู่แล้วหรือไม่)
-      let anyOtNight = false;
-      const linesToAsk = [];
-      /* กันเสนอไลน์เดียวกันซ้ำในรายการเดียว (2026-09-10 · feedback หน้างาน "กะกลางคืนมันมีเปิดกะ มา 2 อัน")
-         เคสจริง: เช็คชื่อรวมทั้งไลน์แม่ (LWR BAR / HYDROFORM) และไลน์ลูก (Assy LWR / LASER E50) พร้อมกัน
-         ⇒ ไลน์แม่ถูก expand เป็นลูก **แล้วไลน์ลูกที่ถูกเช็คเองก็ถูก push อีกรอบ** ⇒ ลูปเปิดกะ insert 2 แถว
-         ห่างกัน ~0.1-0.2 วิ (ไม่ใช่ผู้ใช้กดซ้ำ) — วัดจริง: LASER E50 ซ้ำเกือบทุกวันตั้งแต่ 13/08 */
-      const askedLineNames = new Set();
-      const pushLineToAsk = (item) => {
-        if (askedLineNames.has(item.line.name)) return;
-        askedLineNames.add(item.line.name);
-        linesToAsk.push(item);
-      };
-      /* ⚠️ ห้ามใช้ `.maybeSingle()` เช็คว่ามีกะอยู่แล้วหรือยัง — คืน error PGRST116 เมื่อเจอ >1 แถว
-         และโค้ดเดิมกลืน error ทิ้ง (`const { data: exist }`) ⇒ ไลน์ที่เผลอมีกะซ้ำอยู่แล้ว
-         จะถูกอ่านว่า "ยังไม่มีกะ" แล้วชวนเปิดซ้ำไปเรื่อยๆ (กฎเหล็กข้อ 1 · CLAUDE.md) */
-      const sessionExists = async (lineName) => {
-        const { data, error } = await supabaseDR
-          .from('production_sessions').select('id')
-          .eq('work_date', workDateStr).eq('line_name', lineName).eq('shift', shiftInfo.shift)
-          .limit(1);
-        // อ่านไม่ได้ = ถือว่ามีกะแล้ว (ไม่ชวนเปิด) ปลอดภัยกว่าเปิดซ้ำแล้วยอดผลิตแตกเป็น 2 กะ
-        if (error) { console.warn('[checkOpenShift]', error.message); return true; }
-        return (data || []).length > 0;
-      };
-      for (const ln of checkedLines) {
-        const lineHasOtNight = isNight && displayed.some(e =>
-          e.line_id === ln.id && attendance[e.id]?.is_present && attendance[e.id]?.has_ot
-        );
-        const lineStartTime = !isNight ? '08:00' : (lineHasOtNight ? '20:00' : '22:30');
-        if (lineHasOtNight) anyOtNight = true;
-
-        const children = parentChildrenMap[ln.name];
-        if (children?.length) {
-          // Parent line (e.g. HYDROFORM) — expand to sub-machines, let leader pick
-          for (const childName of children) {
-            if (askedLineNames.has(childName)) continue;
-            if (await sessionExists(childName)) continue;
-            const childLine = lines.find(l => l.name === childName);
-            if (childLine) pushLineToAsk({ line: childLine, startTime: lineStartTime, hasOtNight: lineHasOtNight, parentName: ln.name });
-          }
-        } else {
-          if (!askedLineNames.has(ln.name) && !(await sessionExists(ln.name))) {
-            pushLineToAsk({ line: ln, startTime: lineStartTime, hasOtNight: lineHasOtNight });
-          }
-        }
-      }
-
-      // ถ้ามีไลน์ที่ยังไม่เปิดกะ → ขึ้น Modal ถาม
-      if (linesToAsk.length > 0) {
-        setSubLineSelections(Object.fromEntries(linesToAsk.map(({ line }) => [line.name, true])));
-        setOpenShiftModal({
-          lines: linesToAsk,
-          workDateStr,
-          shift: shiftInfo.shift,
-          shiftLabel: shiftInfo.label,
-        });
-      }
+      // มีคนจอง OT กะดึกไหม — ใช้บอกเวลาเริ่มงานในสรุป Telegram (เทียบด้วย line_id ดิบเหมือนเดิม)
+      const anyOtNight = isNight && displayed.some(e =>
+        checkedLineIds.includes(e.line_id) && attendance[e.id]?.is_present && attendance[e.id]?.has_ot
+      );
 
       const hasOtNight = anyOtNight;
       const startTime  = !isNight ? '08:00' : (hasOtNight ? '20:00' : '22:30');
@@ -827,42 +770,6 @@ export default function Checkin() {
     } catch (_) { /* non-critical */ }
 
     setIsSaving(false);
-  };
-
-  /* ── เปิดกะ Daily Report จาก Modal ยืนยัน ── */
-  const handleConfirmOpenShift = async () => {
-    if (!openShiftModal || openingShift) return;   // กดปุ่มซ้ำระหว่างรอ = เปิดกะซ้ำ
-    // กันซ้ำอีกชั้นตรงจุด insert (เผื่อ modal ถูกสร้างจากโค้ดเส้นอื่นในอนาคต)
-    const seen = new Set();
-    const toOpen = openShiftModal.lines
-      .filter(({ line }) => subLineSelections[line.name] !== false)
-      .filter(({ line }) => (seen.has(line.name) ? false : (seen.add(line.name), true)));
-    if (!toOpen.length) { toast.info('ไม่ได้เลือกไลน์ไหนเพื่อเปิดกะ'); setOpenShiftModal(null); setSubLineSelections({}); return; }
-    setOpeningShift(true);
-    try {
-      for (const { line, startTime, hasOtNight } of toOpen) {
-        const { error: wErr790 } = await supabaseDR.from('production_sessions').insert({
-          work_date:       openShiftModal.workDateStr,
-          line_name:       line.name,
-          shift:           openShiftModal.shift,
-          start_time:      startTime,
-          status:          'open',
-          opened_by_name:  fullName || 'SV',
-          notes:           hasOtNight ? 'OT กะดึก (เปิดจากเช็คชื่อ)' : null,
-        });
-        if (wErr790) throw wErr790;   // เปิดกะ — supabase-js ไม่ throw ต้องโยนเองให้ catch เดิมเห็น
-      }
-      toast.success(`เปิดกะ ${toOpen.map(l => l.line.name).join(', ')} สำเร็จ`);
-    } catch (e) {
-      // 23505 = ชน unique index กันกะซ้ำฝั่ง DB (20260910_production_sessions_no_dup_open.sql)
-      toast.error(e.code === '23505'
-        ? 'ไลน์นี้มีกะเปิดอยู่แล้ว — เปิดซ้ำไม่ได้ (เปิดหน้า Daily Report เพื่อลงข้อมูลกะเดิมได้เลย)'
-        : 'เปิดกะไม่สำเร็จ: ' + e.message);
-    } finally {
-      setOpeningShift(false);
-      setOpenShiftModal(null);
-      setSubLineSelections({});
-    }
   };
 
   /* ── จองรถ OT แบบอิสระ: เลือกวันที่/กะ/ไลน์/ทีมเองได้ ไม่ผูกกับกะที่กำลังเช็คชื่ออยู่
@@ -1190,60 +1097,6 @@ export default function Checkin() {
 
   return (
     <div className="page-content">
-      {/* Modal ยืนยันเปิดกะ Daily Report */}
-      {openShiftModal && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}>
-            <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', marginBottom: 6 }}>📊 เปิดกะ Daily Report?</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 18 }}>
-              บันทึกเช็คชื่อสำเร็จแล้ว — ต้องการเปิดกะเพื่อลงข้อมูลการผลิตด้วยหรือไม่?
-            </div>
-            <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, maxHeight: 260, overflowY: 'auto' }}>
-              {(() => {
-                const groups = {};
-                openShiftModal.lines.forEach(item => {
-                  const gKey = item.parentName || item.line.name;
-                  if (!groups[gKey]) groups[gKey] = { parentName: item.parentName, items: [] };
-                  groups[gKey].items.push(item);
-                });
-                return Object.entries(groups).map(([gKey, { parentName, items }]) => (
-                  <div key={gKey} style={{ marginBottom: 6 }}>
-                    {parentName && (
-                      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', paddingBottom: 4, letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                        {parentName}
-                      </div>
-                    )}
-                    {items.map(({ line, startTime }) => (
-                      <div key={line.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--border)', paddingLeft: parentName ? 8 : 0 }}>
-                        <input type="checkbox" checked={subLineSelections[line.name] !== false}
-                          onChange={e => setSubLineSelections(prev => ({ ...prev, [line.name]: e.target.checked }))}
-                          style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: 'pointer', flexShrink: 0 }} />
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{line.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{openShiftModal.shiftLabel} · เริ่ม {startTime}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ));
-              })()}
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={() => { setOpenShiftModal(null); setSubLineSelections({}); }}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                ข้าม
-              </button>
-              <button
-                onClick={handleConfirmOpenShift} disabled={openingShift}
-                style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: 'none', background: openingShift ? 'var(--muted)' : 'var(--accent)', color: '#000', fontSize: 14, fontWeight: 700, cursor: openingShift ? 'not-allowed' : 'pointer' }}>
-                {openingShift ? '⏳ กำลังเปิดกะ...' : 'เปิดกะ'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 🤝 Modal ยืมพนักงานข้ามไลน์ */}
       {showBorrowModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -1914,6 +1767,21 @@ export default function Checkin() {
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
               {roleLabel(role)} · {myScopeLabel}<br />
               ระบบจะลงว่าคนนี้เป็นผู้เช็คชื่อ — ถ้าไม่ใช่ตัวคุณ ให้สลับผู้ใช้ก่อน
+            </div>
+            {/* 🔎 เขียนให้ชัดว่าเช็คชื่อ ≠ เปิดกะ (2026-09-17 · คำสั่ง user)
+                เดิมบันทึกเสร็จระบบเด้ง modal เปิดกะให้เองทุกไลน์ → ถอดออก 16/09 เพราะสร้างกะเปล่า
+                214/1,382 ใบ · หน้างานเลยรู้สึกว่า "เปิดกะจากหน้าเช็คชื่อไม่ติด" ทั้งที่ตั้งใจเอาออก
+                ⇒ ไม่เอาออโต้กลับมา แต่ต้องบอกให้ชัดว่าต้องไปกดเองที่ไหน และกดเพื่ออะไร */}
+            <div style={{
+              textAlign: 'left', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text2)',
+              background: 'var(--bg2)', border: '1px solid var(--border)',
+              borderRadius: 9, padding: '9px 11px', marginBottom: 14,
+            }}>
+              <b style={{ color: 'var(--accent2)' }}>ℹ️ เช็คชื่อไม่ใช่การเปิดกะ</b><br />
+              ระบบ<b>ไม่เปิดกะให้อัตโนมัติ</b> — <b>เปิดกะ = สำหรับไลน์ที่จะลงข้อมูลการผลิตเท่านั้น</b>
+              (ยอดผลิต · Downtime · ของเสีย · OEE)<br />
+              ไลน์ที่ต้องลงข้อมูลผลิต ให้ไปกด <b>“เปิดกะ” ที่หน้า Daily Report</b> ของไลน์ตัวเอง ·
+              ไลน์ที่ใช้แค่เช็คชื่อ <b>ไม่ต้องเปิดกะ</b>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button

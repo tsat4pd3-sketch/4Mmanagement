@@ -16,6 +16,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from './masterCache';
 import { fetchAllRows } from './fetchAllRows';
+import { setPeopleIndex } from './actorStamp';
 
 const KEY_PROFILES = 'people:profiles';
 const KEY_EMPLOYEES = 'people:employees';
@@ -29,7 +30,12 @@ export async function loadProfilesPeople() {
     // tolerant: ยังไม่ apply migration บางตัว (42703) → ถอยไปชุดคอลัมน์ขั้นต่ำ ไม่ให้ picker ว่างทั้งแอป
     if (r.error) r = await supabase.from('profiles').select('id, full_name, role, section, line_id, signature_url').order('full_name');
     if (r.error) throw r.error;
-    return (r.data || []).filter(p => p.full_name && String(p.role) !== 'display');
+    const people = (r.data || []).filter(p => p.full_name && String(p.role) !== 'display');
+    /* ป้อนทะเบียน "ชื่อ → uid" ให้ actorStamp ที่นี่จุดเดียว (2026-09-17)
+       ทำไมตรงนี้: นี่คือฟังก์ชันเดียวที่ผลิตรายชื่อ profiles ทั้งแอป (มี cache ร่วม)
+       ⇒ ทะเบียนสดเสมอ ไม่มีทาง drift กับลิสต์ที่ picker ใช้ · ห้ามไป setPeopleIndex ที่อื่น */
+    setPeopleIndex(people);
+    return people;
   });
 }
 

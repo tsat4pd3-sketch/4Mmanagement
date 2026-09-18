@@ -28,7 +28,8 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
-import { uomLabel, itemNoLabel, nextItemNo, byItemNo } from '../utils/bomTree';
+import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
+import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -772,20 +773,32 @@ export default function ProductMaster() {
         {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
       </div>
 
-      {/* 🔩 worklist — รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง = ยอดรวมยังนับซ้ำได้ (ห้ามซ่อน — pattern แถบ ⚠️ ข้อมูลไม่ตรงผัง) */}
+      {/* 🔩 worklist — ขั้นตอน (OP) ที่ "เสี่ยงนับซ้ำจริง" (2026-09-16 · เปลี่ยนเกณฑ์ตามคำสั่ง user)
+          เดิมเตือนทุกขั้นที่ช่อง parent ว่าง ⇒ ขั้นที่ประกอบจากหลายชิ้น (291+088) ถูกไล่ให้หาอะไรมาใส่
+          จนได้ค่าผิด · ตอนนี้เตือนเฉพาะเมื่อ **ในสูตรของขั้นมีของที่มีใบผลิตของตัวเอง**
+          = ชิ้นเดียวกันถูกนับ 2 รอบจริง · ไม่เข้าข่าย = เงียบ (ห้ามซ่อน แต่ก็ห้ามเตือนพร่ำเพรื่อ —
+          แถบที่ไม่มีวันหาย = คนเลิกอ่านแถบเตือนทั้งหมด) */}
       {(() => {
-        const opNoParent = items.filter(i => i.is_active && i.is_operation && !i.op_parent_mat);
-        if (!opNoParent.length) return null;
+        const key = (m) => (m || '').trim().toUpperCase();
+        const counted = new Set(items.filter(i => i.is_active && !i.is_operation && i.mat_no).map(i => key(i.mat_no)));
+        const risky = items.filter(i => i.is_active).map(i => {
+          const own = bomRows.filter(b => b.product_id === i.id).map(b => b.mat_no);
+          const r = opDoubleCountRisk(i, own, (m) => counted.has(key(m)));
+          return r ? { item: i, ...r } : null;
+        }).filter(Boolean);
+        if (!risky.length) return null;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
-              🔩 รายการขั้นตอน (OP) ที่ยังไม่ผูกพาร์ทจริง {opNoParent.length} รายการ
+              🔩 ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              ยอดผลิตของรายการเหล่านี้ยังถูกนับซ้ำในยอดรวมได้ — กด "แก้ไข" ที่รายการแล้วเลือก "เป็นขั้นของพาร์ทจริง (MAT)"
-              {' '}(พาร์ทจริงยังไม่มีในระบบ = ไปเพิ่มพาร์ท 2xxx ก่อน)
+              ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
+              กด "แก้ไข" แล้วใส่ช่อง <b>"ทำต่อจากของชิ้นไหน"</b>
             </span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>({opNoParent.map(i => i.mat_no).join(' · ')})</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
+              ({risky.map(r => `${r.item.mat_no} → ${r.candidates.join('/')}`).join(' · ')})
+            </span>
           </div>
         );
       })()}
@@ -1188,7 +1201,10 @@ export default function ProductMaster() {
                 </InfoMore>
                 {form.is_operation && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
-                    <Field label="เป็นขั้นของพาร์ทจริง (MAT) *">
+                    {/* 🔩 คำถามเดียวที่ระบบต้องการคำตอบ: "ยอดของขั้นนี้ไปซ้ำกับใบผลิตของใคร"
+                        **ไม่บังคับ** — user 2026-09-16 "ทุกขั้นก็มองเป็นพาร์ทตัวใหม่ได้ ไม่อยากให้มีหลายแบบ"
+                        (เคยแยก op_kind sequence/assembly แล้วถอดออกวันเดียวกัน — ถามคำถามผิด) */}
+                    <Field label="ทำต่อจากของชิ้นไหน (ว่างได้)">
                       {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
                           เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
@@ -1211,12 +1227,29 @@ export default function ProductMaster() {
                               tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
                           return [...real, ...bought];
                         })()}
-                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ยังไม่ผูก ยอดนับซ้ำ)"
-                        hint="เรียงตามความเกี่ยวข้อง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ · รายการ OP ด้วยกัน + ของที่ปิดใช้งาน ไม่อยู่ในลิสต์โดยตั้งใจ" />
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ของที่ประกอบมาไม่มีใบผลิตของตัวเอง)"
+                        hint="ใส่เมื่อของที่ขั้นนี้รับมา **มีใบผลิตของตัวเอง** (ไม่งั้นชิ้นเดียวกันถูกนับ 2 รอบ) · ประกอบจากหลายชิ้นที่ไม่มีใบผลิตของตัวเอง = ปล่อยว่าง · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
                     </Field>
+                    {/* ⚠️ บอกเมื่อค่าไม่สอดคล้องกับสูตรจริง ห้ามเงียบ
+                        (แต่ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — นั่นคือเรื่องปกติ) */}
+                    {(() => {
+                      const cur = editing !== 'new' ? items.find(i => i.id === editing) : null;
+                      const own = cur ? bomRows.filter(b => b.product_id === cur.id).map(b => b.mat_no) : [];
+                      const issues = opLinkIssues({ ...form, is_operation: true }, own);
+                      if (!issues.length) return null;
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {issues.map((w, i) => (
+                            <div key={i} style={{ fontSize: 11, lineHeight: 1.5, color: w.level === 'crit' ? '#ef4444' : '#f59e0b' }}>
+                              {w.level === 'crit' ? '🔴' : '⚠️'} {w.text}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                     {/* 🧩 component ของขั้นเก็บใน BOM (ไม่ได้อยู่ในฟอร์มนี้) — ไม่มีปุ่มลัด คนหาไม่เจอ
                         ปุ่มโผล่เฉพาะตอนแก้ของที่บันทึกแล้ว (ของใหม่ยังไม่มีแถวให้ผูก) */}
                     {editing !== 'new' && form.mat_no && (() => {
@@ -1471,7 +1504,7 @@ export default function ProductMaster() {
    Add mode: picker จาก parts_master → กรอกแค่ qty_per_unit
    Edit mode: แก้ qty_per_unit / qty_per_pkg ของ bom row
 ═══════════════════════════════════════════════════════════════ */
-const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '' };
+const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '', op_no: '' };
 
 const TH = ({ children, w }) => (
   <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
@@ -1509,13 +1542,19 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      ใช้ mat_no เป็นคีย์ (ไม่ใช่ id) เพราะ mat คือสิ่งที่คนเห็นบนใบของเสีย/หน้าจออื่น */
   const [sp, setSp] = useSearchParams();
   const focusMat = sp.get('mat');
+  /* 🔩 แยกชั้นขั้นตอน (OP) ออกจากลิสต์พาร์ท (user 2026-09-16: "ยังปนอยู่ใน BOM เลย")
+     default = 'part' เพราะคนส่วนใหญ่มาแก้ BOM ของพาร์ทจริง · OP ยังเข้าถึงได้จากชิป 🔩
+     ⚠️ ห้ามกรอง OP ทิ้งถาวร — ขั้นตอนต้องมีสูตรของตัวเอง ไม่งั้นตัดของเสียเป็นเลข SAP ไม่ได้
+        (ดู src/utils/scrapExplode.js) · worklist/ลิงก์ ?mat= ที่ชี้ OP จะสลับชิปให้เอง */
+  const [kind, setKind] = useState('part');
 
   const loadAll = useCallback(async () => {
     /* ดึง BOM ทั้งฐาน (459 แถว) ไม่ใช่แค่ product ที่เลือก — ต้องใช้ไล่โครงหลายชั้น
        (ลูกที่เป็น product เองมี BOM ของตัวเอง = ชั้นถัดไป)
        item_no/storage_location เป็นคอลัมน์ใหม่ → ยังไม่ apply migration ต้องถอยไปชุดเดิม ห้ามให้ทั้งแท็บพัง */
-    const BOM_FULL = 'product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location';
-    const BOM_SLIM = 'product_id, mat_no, part_name, qty_per_unit, uom';
+    // ⚠️ ต้องมี `id` — ปุ่มลบ "แถวนับซ้ำ" ในจอต้นไม้ลบด้วย id ของบรรทัด (ไม่มี id = ปุ่มหายเงียบ)
+    const BOM_FULL = 'id, product_id, mat_no, part_name, qty_per_unit, uom, item_no, storage_location, parent_mat, op_no';
+    const BOM_SLIM = 'id, product_id, mat_no, part_name, qty_per_unit, uom';
     const fetchBom = async () => {
       const r = await supabaseDR.from('bom_items').select(BOM_FULL).eq('is_active', true);
       return r.error?.code === '42703'
@@ -1544,13 +1583,13 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
-    // mat_no → ลูกชั้นถัดไป (ใช้กับ BomTreeView) — ไล่ผ่าน product ทุกตัว ไม่ใช่เฉพาะ FG
+    /* mat_no → ลูกชั้นถัดไป — **ผ่าน buildBomIndex เท่านั้น** (utils/bomTree · 2026-09-16)
+       `parent_mat` ชนะ `product_id` เมื่อตั้งไว้ ⇒ ตัวแม่ไม่ต้องเป็น dr_products อีกต่อไป
+       ห้ามประกอบต้นไม้เองในหน้า — เขียนซ้ำเมื่อไหร่ ชั้นเพี้ยนคนละจอทันที */
     const matOf = {}; (prods || []).forEach(p => { matOf[p.id] = p.mat_no; });
+    const ix = buildBomIndex(boms || [], matOf);
     const tree = {};
-    (boms || []).forEach(b => {
-      const m = matOf[b.product_id];
-      if (m) (tree[m] = tree[m] || []).push(b);
-    });
+    (boms || []).forEach(b => { const m = ix.parentOf(b); if (m) (tree[m] = tree[m] || []).push(b); });
     setBomByMat(tree);
   }, []);
 
@@ -1575,7 +1614,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (!focusMat || !products.length) return;
     const k = focusMat.trim().toUpperCase();
     const hit = products.find(p => (p.mat_no || '').trim().toUpperCase() === k);
-    if (hit) { setSelProduct(hit); setSearch(focusMat); }
+    // ลิงก์จาก worklist ชี้ขั้นตอน (OP) — ชิป 'พาร์ท' จะซ่อนมันไว้ ต้องสลับให้ ไม่งั้นกดแล้ว "หาย"
+    if (hit) { setSelProduct(hit); setSearch(focusMat); if (hit._op) setKind('op'); }
     else toast.error(`ไม่พบ "${focusMat}" ในลิสต์ BOM — อาจถูกปิดใช้งาน (is_active=false) อยู่`);
     const next = new URLSearchParams(sp);
     next.delete('mat');
@@ -1618,11 +1658,31 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
   const openEdit_  = (it) => {
     setEditItem(it);
-    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '' });
+    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
     // รหัสเดิมที่ไม่มีในลิสต์ (ทะเบียน+ที่เคยใช้) = เปิดโหมดพิมพ์เอง ไม่งั้น select จะแสดงว่าง = ค่าหายเงียบ
     const c = slocLabel(it.storage_location);
     setSlocFree(!!c && !slocChoices.some(s => s.code === c));
     setShowEdit(true);
+  };
+
+  /* ⤵ ย้ายบรรทัดไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน = "เลเวลควบคุม" แบบ SAP (2026-09-16 · คำสั่ง user)
+     กฎกันต้นไม้พัง (ย้ายใต้ตัวเอง/ใต้ลูกหลานตัวเอง) อยู่ใน moveBomLine (utils/bomTree · มีเทส)
+     ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับแถว (กฎเหล็กข้อ 2) */
+  const doMoveLine = async (it, toMat) => {
+    const ix = buildBomIndex(items, { [selProduct?.id]: selProduct?.mat_no });
+    const r = moveBomLine(it, toMat, ix.bomOf);
+    if (!r.ok) { toast.error(r.reason); return; }
+    const { data, error } = await supabaseDR.from('bom_items')
+      .update({ ...r.patch, updated_at: new Date().toISOString() }).eq('id', it.id).select('id');
+    if (error) {
+      toast.error(error.code === '42703'
+        ? 'ยังเก็บชั้นไม่ได้ — ยังไม่ได้ apply migration 20260916_bom_level_parent_mat (แจ้งผู้ดูแลระบบ)'
+        : error.message);
+      return;
+    }
+    if (!data?.length) { toast.error('ย้ายไม่สำเร็จ — สิทธิ์ไม่พอ (0 แถวถูกแก้)'); return; }
+    toast.success(toMat ? `ย้าย ${it.mat_no} ไปอยู่ใต้ ${toMat} แล้ว ✓` : `คืน ${it.mat_no} กลับชั้น 1 แล้ว ✓`);
+    loadItems(selProduct.id); loadAll();
   };
 
   const handlePickerSave = async () => {
@@ -1690,11 +1750,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       ...base,
       item_no:          itemNo,
       storage_location: slocLabel(form.storage_location) || null,
+      op_no:            form.op_no.trim() || null,   // ขั้นตอนที่ชิ้นนี้ถูกใส่เข้าไป (PFC)
     }).eq('id', editItem.id);
     // ยังไม่ apply migration = แก้ qty/note ได้เหมือนเดิม แต่ต้องบอกว่าอะไรไม่ถูกบันทึก **ห้ามเงียบ**
     if (error?.code === '42703') {
       ({ error } = await supabaseDR.from('bom_items').update(base).eq('id', editItem.id));
-      if (!error) toast.info('บันทึกแล้ว — แต่เลขรายการ/คลัง ยังเก็บไม่ได้ (ยังไม่ได้ apply migration)');
+      if (!error) toast.info('บันทึกแล้ว — แต่เลขรายการ/คลัง/ขั้นตอน ยังเก็บไม่ได้ (ยังไม่ได้ apply migration)');
     }
     setSaving(false);
     if (error) {
@@ -1714,6 +1775,32 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const { error } = await supabaseDR.from('bom_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบพาร์ทแล้ว');
+    loadItems(selProduct.id);
+    loadAll();
+  };
+
+  /* 🧹 ลบ "แถวชั้น 1 ที่นับซ้ำ" จากจอต้นไม้ (user 2026-09-16: "ใช้ตัวเดียวได้ไม่งง เราไม่รู้จะลบยังไง")
+     เคสต้นแบบ 10100381: คอยล์ 50027085 ถูกเขียนไว้ 3 ที่ — 0.642 ที่ชั้น 1 + 0.3205 ใต้ 20058490
+     + 0.3205 ใต้ 20058491 (แผ่นเดียวปั๊มได้ RH+LH จึงหารครึ่ง) ⇒ กางแล้วได้ 1.283 KG ทั้งที่จริง 0.642
+     ลบแถวชั้น 1 ทิ้ง = เหลือเส้นทางเดียว ยอดตรงของจริงทันที
+
+     ⚠️ ปิด is_active ไม่ลบจริง — ถอยได้ (ต่างจากปุ่ม 🗑 รายแถวในตารางที่ลบจริงมาแต่เดิม)
+        เป็นการลบแบบ "ทีละหลายแถว" ถ้าพลาดแล้วกู้ไม่ได้ = ความต้องการวัตถุดิบหายเงียบ
+     ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error (กฎเหล็กข้อ 2) ⇒ ต้อง .select('id') แล้วนับ */
+  const handleDeleteDupes = async (rows) => {
+    const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
+    if (!ids.length) return;
+    const list = rows.map(r => `• ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''} — ${r.part_name || ''}`).join('\n');
+    if (!window.confirm(
+      `ลบแถวชั้น 1 ที่นับซ้ำ ${ids.length} รายการ ออกจาก BOM ของ ${selProduct?.mat_no}?\n\n${list}\n\n` +
+      `ของพวกนี้ยังอยู่ในชั้นลึก — ยอด "ต่อ 1 FG" จะไม่หาย แค่เลิกนับซ้ำ\n(ปิดใช้งานเท่านั้น ไม่ลบทิ้งถาวร)`
+    )) return;
+    const { data, error } = await supabaseDR.from('bom_items')
+      .update({ is_active: false }).in('id', ids).select('id');
+    if (error) { toast.error(`ลบไม่สำเร็จ: ${error.message}`); return; }
+    if (!data?.length) { toast.error('ลบไม่สำเร็จ — ไม่มีแถวไหนถูกแก้ (สิทธิ์ไม่พอ/แถวถูกลบไปแล้ว)'); return; }
+    if (data.length < ids.length) toast.info(`ลบได้ ${data.length} จาก ${ids.length} แถว — ที่เหลือแก้ไม่ได้`);
+    else toast.success(`ลบแถวนับซ้ำแล้ว ${data.length} รายการ`);
     loadItems(selProduct.id);
     loadAll();
   };
@@ -1749,19 +1836,35 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products;
-    return products.filter(p =>
+    const byKind = kind === 'all' ? products
+      : products.filter(p => (kind === 'op' ? !!p._op : !p._op));
+    if (!q) return byKind;
+    return byKind.filter(p =>
       (p.name || '').toLowerCase().includes(q) ||
       (p.mat_no || '').toLowerCase().includes(q) ||
       (p.customer || '').toLowerCase().includes(q) ||
       (p.line_name || '').toLowerCase().includes(q));
-  }, [products, search]);
+  }, [products, search, kind]);
+  const opCount = useMemo(() => products.filter(p => p._op).length, [products]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
+        <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
+          {[['part', `พาร์ท (${products.length - opCount})`], ['op', `🔩 ขั้นตอน (${opCount})`], ['all', 'ทั้งหมด']].map(([k, label]) => (
+            <button key={k} onClick={() => setKind(k)}
+              style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 12, cursor: 'pointer',
+                fontFamily: 'var(--font-body)',
+                background: kind === k ? 'rgba(61,214,92,0.15)' : 'var(--bg2)',
+                color: kind === k ? 'var(--accent)' : 'var(--muted)',
+                border: `1px solid ${kind === k ? 'rgba(61,214,92,0.45)' : 'var(--border)'}` }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div style={{ marginTop: 10, maxHeight: '65vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {filtered.map(p => {
             const active = selProduct?.id === p.id;
@@ -1823,7 +1926,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 {showTree && (
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
-                      bomOf={(m) => bomByMat[m] || []} />
+                      bomOf={(m) => bomByMat[m] || []}
+                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
                   </div>
                 )}
               </div>
@@ -1840,7 +1944,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg2)' }}>
-                      <TH w={62}>Item</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
+                      <TH w={62}>Item</TH><TH w={150}>ชั้น / ขั้นตอน</TH><TH>Part Name</TH><TH>Part No.</TH><TH>Mat SAP</TH><TH w={90}>ใช้/ชิ้น</TH><TH w={90}>Qty/Pkg</TH><TH w={60}>หน่วย</TH><TH w={70}>คลัง</TH><TH>ผลิตที่ไลน์</TH><TH>Supplier</TH>
                       {(canEdit || canDelete) && <TH w={90}> </TH>}
                     </tr>
                   </thead>
@@ -1851,6 +1955,30 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                             ยังไม่ตั้ง = "—" ห้ามโชว์ 0000 (ไม่ใช่รายการแรก แต่คือยังไม่ระบุ) */}
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: it.item_no ? 'var(--text2)' : 'var(--muted)' }}>
                           {itemNoLabel(it.item_no) || '—'}
+                        </TD>
+                        {/* 🌳 ชั้นของบรรทัดนี้ + ขั้นตอนที่ใส่เข้าไป (2026-09-16)
+                            เดิมทุกบรรทัดถูกตรึงชั้น 1 เพราะตัวแม่ต้องเป็น dr_products — ตอนนี้เลือกได้
+                            ⚠️ ตัวเลือกคือ "บรรทัดอื่นในใบนี้" เท่านั้น (ข้ามใบ = คนละ BOM ห้ามย้าย) */}
+                        <TD>
+                          {canEdit ? (
+                            <select value={it.parent_mat || ''} onChange={e => doMoveLine(it, e.target.value)}
+                              title="ย้ายบรรทัดนี้ไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน"
+                              style={{ ...inputSt, width: 140, padding: '4px 6px', fontSize: 11.5 }}>
+                              <option value="">— ชั้น 1 (ใต้ {selProduct.mat_no || 'FG'}) —</option>
+                              {items.filter(o => o.id !== it.id && o.mat_no).map(o => (
+                                <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span style={{ fontSize: 11.5, color: it.parent_mat ? '#0ea5e9' : 'var(--muted)' }}>
+                              {it.parent_mat ? `↳ ใต้ ${it.parent_mat}` : 'ชั้น 1'}
+                            </span>
+                          )}
+                          {it.op_no && (
+                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.14)', color: '#a855f7', whiteSpace: 'nowrap' }}>
+                              OP {it.op_no}
+                            </span>
+                          )}
                         </TD>
                         <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
@@ -1996,6 +2124,21 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
                 <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
+              </div>
+              {/* 🏭 ขั้นตอนที่ชิ้นนี้ถูกใส่เข้าไป (PFC) — จุดที่ **เหนือ SAP** (2026-09-16 · คำสั่ง user
+                  "ถ้าทำเลเวล bom ได้แบบ pfc … เหนือกว่า sap ตรงที่เรามี OP")
+                  SAP แยก BOM (ต้นไม้วัสดุ) กับ Routing (ขั้นตอน) แล้วการผูก component→operation
+                  เป็น optional ที่แทบไม่มีใคร maintain · ของเราบรรทัดเดียวตอบทั้งสองคำถาม */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
+                  ขั้นตอนที่ใส่เข้าไป (เลข OP ตาม PFC)
+                </label>
+                <input style={{ ...inputSt, fontFamily: 'monospace' }} maxLength={20}
+                  value={form.op_no} onChange={e => setForm(f => ({ ...f, op_no: e.target.value }))}
+                  placeholder="เช่น 190 — ไม่รู้ปล่อยว่าง ห้ามเดา" />
+                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                  ใช้ตอบ "ของเสียหลุดขั้นไหน ตัดอะไร" · "สโตร์ต้องส่งของนี้ไปขั้นไหน" — ว่าง = ยังไม่ระบุ (ไม่ใช่ error)
+                </div>
               </div>
               {/* 📍 2 ช่องนี้เทียบกับ SAP โดยตรง (user ทัก 2026-09-02 ว่าเรายังไม่มี) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -2394,7 +2537,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 12 : 11} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}

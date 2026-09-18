@@ -7,6 +7,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { normMat, baseOfPart } from '../utils/matResolve';
 import { fetchByIds } from '../utils/fetchByIds';
+import { todayLocal } from '../utils/dateFormat';
 import cachedMaster from '../utils/masterCache';
 import PageHeader from '../components/PageHeader';
 import ReadOnlyNote from '../components/ReadOnlyNote';
@@ -278,7 +279,7 @@ export default function FixtureRegistry() {
       updated_by_name: fullName || null,
     };
     if (!editing.id && payload.baseline_shim_mm != null && !payload.baseline_at) {
-      payload.baseline_at = new Date().toISOString().slice(0, 10);
+      payload.baseline_at = todayLocal();   // ⚠️ ห้าม toISOString().slice(0,10) — UTC ทำให้ 00:00-06:59 ไทยได้วันก่อนหน้า
       payload.baseline_by = fullName || null;
       payload.current_shim_mm = payload.baseline_shim_mm;   // เริ่มต้น = baseline
     }
@@ -671,7 +672,7 @@ export default function FixtureRegistry() {
       {/* ── modal แก้ไขจุด ── */}
       {/* ฟอร์มสร้างจุดจากแม่แบบ — ชนิดจุดเลือกจาก fixture_point_kinds (แทน window.prompt ที่ต้องพิมพ์รหัสเอง) · 2026-09-07 */}
       {tpl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
+        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
                         padding: 18, width: 'min(420px,100%)' }}>

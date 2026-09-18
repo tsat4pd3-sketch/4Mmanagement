@@ -21,6 +21,7 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 const norm = (s) => (s ?? '').toString().trim();
+const key = (s) => norm(s).toUpperCase();
 
 /** หน่วยมาตรฐานสำหรับ "แสดงผล" — ฐานมี PC / EA / pcs ปนกัน (ของเดียวกัน 3 สะกด · SAP ใช้ PC)
  *  ⚠️ แปลงเฉพาะตอนแสดง **ไม่แก้ค่าใน DB** (การจัดข้อมูลให้ตรงเป็นงานแยก)
@@ -87,6 +88,7 @@ export { slocLabel } from './storageLoc.js';
  * }}
  *
  * rows[i] = {
+ *   id,               // id ของบรรทัด bom_items (null = ตัวเรียกไม่ได้ส่ง id มา — ห้ามลบ)
  *   level,            // 1, 2, 3…
  *   tag,              // ".1" / "..2"
  *   mat_no, part_name, uom, supplier,
@@ -121,6 +123,9 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
       const kidsOf = isCycle ? [] : (bom(m) || []);
       const row = {
         level, tag: levelTag(level),
+        // 🔑 id ของบรรทัด bom_items จริง — ต้องมี ไม่งั้นลบ "แถวนับซ้ำ" จากจอต้นไม้ไม่ได้
+        //    (null = ตัวเรียก bomOf ไม่ได้ส่ง id มา ⇒ จอต้องซ่อนปุ่มลบ ห้ามเดา id)
+        id: k.id ?? null,
         mat_no: m,
         part_name: k.part_name || '',
         uom: k.uom || '',
@@ -314,4 +319,67 @@ export function flatRequirements(root, bomOf) {
     .filter(b => norm(b?.mat_no))
     .map(b => ({ mat_no: norm(b.mat_no), qty: Number(b.qty_per_unit) || 0 }))
     .sort((a, b) => a.mat_no.localeCompare(b.mat_no));
+}
+
+/* ═══ 🧱 buildBomIndex — "ใครเป็นลูกของใคร" จุดเดียวของทั้งระบบ (2026-09-16) ═══════════════
+   ที่มา (user 2026-09-16): *"เรื่อง bom level ตอนนี้ เหมือนปรับแก้อะไรไม่ได้ เหมือน SAP เพราะ SAP
+   จะมีเลเวลควบคุม หรือเราตกเรื่องนี้ไป"* + *"ถ้าทำเลเวล bom ได้แบบ pfc … เหนือกว่า sap ตรงที่เรามี OP"*
+
+   ── ข้อจำกัดเดิมที่ทำให้ "แก้ชั้นไม่ได้" (วัดจริง 16/09) ──────────────────────────────────
+   ทุกหน้าสร้างต้นไม้เองด้วยสูตรเดียวกัน: `matOf[row.product_id]` → ตัวแม่
+   ⇒ **ตัวแม่ต้องเป็นแถวใน `dr_products` เท่านั้น** · ของที่อยู่แค่ `parts_master` = ใบไม้ตลอดกาล
+   เคสจริง `10100817`: ลูก 5 ตัว เป็น product แค่ 1 ⇒ ต่อชั้นไม่ได้ทั้งที่ของจริงมีชั้น
+   ทั้งฐาน 506 แถว/98 สินค้า — มีแค่ **57 แถว (11%)** ที่ลูกมี BOM ต่อ ⇒ ~90% ตรึงชั้นเดียว
+
+   ── กติกา ────────────────────────────────────────────────────────────────────────────
+   1. **`parent_mat` ชนะเสมอเมื่อตั้งค่าไว้** · ว่าง = ตัวแม่คือ product ของ `product_id` (พฤติกรรมเดิมเป๊ะ)
+      ⇒ แถวเก่า 506 แถวที่ `parent_mat` เป็น null ให้ผลเท่าเดิมทุกจอ **ไม่ต้องแก้พร้อมกัน**
+   2. **`product_id` ยังเป็น "บรรทัดนี้อยู่ในใบ BOM ของ FG ตัวไหน" เสมอ** — ห้ามถอด แม้ตั้ง parent_mat แล้ว
+      (ไม่งั้นลบ FG แล้วบรรทัดลอย + คิวรีเดิมที่ filter ด้วย product_id จะหาไม่เจอ)
+   3. **ห้ามให้หน้าไหนคำนวณตัวแม่เอง** — เขียนซ้ำเมื่อไหร่ ชั้นจะเพี้ยนคนละจอทันที
+      (บทเรียนเดียวกับ collapseOps/oee ที่ต้องมี util กลางตัวเดียว)
+   pure — ไม่แตะ supabase/react (เทส `__tests__/bomLevel.test.mjs`)
+   ═══════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @param {Array}  rows        แถว bom_items (ต้องมี product_id, mat_no, qty_per_unit · parent_mat/op_no ถ้ามี)
+ * @param {object} matOfProduct  { [product_id]: mat_no } ของ dr_products
+ * @returns {{ bomOf: (mat:string)=>Array, parentOf: (row:object)=>string, orphans: Array }}
+ *   orphans = แถวที่หาตัวแม่ไม่ได้เลย (product_id ไม่รู้จัก + ไม่ได้ตั้ง parent_mat)
+ *             ⚠️ ต้องเอาไปโชว์ ห้ามกลืน — แปลว่าบรรทัดนั้นหายไปจากต้นไม้เงียบๆ
+ */
+export function buildBomIndex(rows = [], matOfProduct = {}) {
+  const parentOf = (r) => norm(r?.parent_mat) || norm(matOfProduct[r?.product_id]);
+  const tree = {};
+  const orphans = [];
+  (rows || []).forEach(r => {
+    const p = parentOf(r);
+    if (!p) { orphans.push(r); return; }
+    (tree[p] = tree[p] || []).push(r);
+  });
+  return { bomOf: (mat) => tree[norm(mat)] || [], parentOf, orphans };
+}
+
+/** ย้ายบรรทัดไปเป็นลูกของ mat อื่น — คืน patch ที่จะเขียนลง DB (null = ย้ายไม่ได้ + เหตุผล)
+ *  กันเคสที่ทำให้ต้นไม้พัง: ย้ายไปใต้ตัวเอง · ย้ายไปใต้ลูกหลานของตัวเอง (วนลูป) */
+export function moveBomLine(row, toMat, bomOf) {
+  const child = norm(row?.mat_no);
+  const to = norm(toMat);
+  if (!child) return { ok: false, reason: 'บรรทัดนี้ไม่มี MAT' };
+  if (!to) return { ok: true, patch: { parent_mat: null } };          // คืนไปชั้น 1 ของใบ
+  if (key(to) === key(child)) return { ok: false, reason: 'ย้ายไปใต้ตัวเองไม่ได้' };
+  // ไล่ลูกหลานของ child — ถ้า to อยู่ในนั้น = วนลูป
+  const seen = new Set([key(child)]);
+  const stack = [child];
+  while (stack.length) {
+    const cur = stack.pop();
+    for (const k of (bomOf?.(cur) || [])) {
+      const m = norm(k?.mat_no);
+      if (!m || seen.has(key(m))) continue;
+      if (key(m) === key(to)) return { ok: false, reason: `ย้ายไม่ได้ — ${to} อยู่ใต้ ${child} อยู่แล้ว (จะวนลูป)` };
+      seen.add(key(m));
+      stack.push(m);
+    }
+  }
+  return { ok: true, patch: { parent_mat: to } };
 }

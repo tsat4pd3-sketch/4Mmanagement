@@ -4,7 +4,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, orderProducedQty } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit } from '../utils/oee';
+import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -21,7 +22,7 @@ import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
-import { computeQueuedPositionsFull as queuePositions } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
@@ -1303,6 +1304,39 @@ export default function Dashboard() {
           return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
         };
 
+        /* ── ตัวช่วยระดับ "กริดเวลา" — ไม่ขึ้นกับไลน์ จึงคำนวณครั้งเดียวตรงนี้ (2026-09-16) ──
+           เดิมอยู่ใน IIFE ของบอร์ด ⇒ หัวการ์ดไลน์ (ที่อยู่ก่อนบอร์ด) เอาไปใช้ไม่ได้
+           เลยต้องมีสูตรนับดีเลย์ของตัวเองแบบ naive → เลขไม่ตรงกับบนบอร์ดและไม่ตรงกับ /management */
+        const pctPerMs = 100 / (12 * 3600000);
+        const HALVES = [
+          { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
+          { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
+        ];
+        // ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
+        const getBreakIntervals = (half) => breakPolicies
+          .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
+          .map(p => {
+            const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
+            if (idx < 0) return null;
+            const mins = Number(String(p.start_time).slice(3,5)) || 0;
+            const st = half.startMs + idx * 3600000 + mins * 60000;
+            return [st, st + (p.duration_min || 0) * 60000];
+          })
+          .filter(Boolean)
+          .sort((a, b) => a[0] - b[0]);
+        // รวมเวลาพักทั้งวัน (เช้า+ดึก) — คิวต้องต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
+        const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
+        /* จัดการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง — จำกัดผลของดีเลย์ให้อยู่ในรอบตัวเอง
+           ไม่ลากคิวยาวทั้งกะ (พนักงานสแกนปิดไม่เรียงเลขใบ แต่จะอยู่ในรอบเดียวกันเสมอ) */
+        const ROUND_MS = 2 * 3600000;
+        const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
+        const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
+        const MIN_W_PCT = 1.5;
+        // ทะเบียนไลน์/เครื่อง สำหรับแบ่งเลนคิว (buildLanes) — ไม่ขึ้นกับกลุ่มไลน์ สร้างครั้งเดียว
+        const linesByName = {}; lines.forEach(l => { linesByName[l.name] = l; });
+        const machineCountByLine = {};
+        (machinePoints || []).forEach(pt => { (machineCountByLine[pt.line_name] ||= new Set()).add(pt.machine_no); });
+
         // group sessions by line — sub-lines fold under parent
         const childParentMap = {};
         lines.forEach(l => { if (l.parent_line_name) childParentMap[l.name] = l.parent_line_name; });
@@ -1393,18 +1427,60 @@ export default function Dashboard() {
               .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
               .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');
-              const totalDelayed = sessions.reduce((acc, s) => {
-                const ctSec = s.dr_products?.cycle_time_sec || 0;
-                if (!ctSec || s.status !== 'open') return acc;
-                const startMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                if (!startMs) return acc;
-                let cum = 0;
-                s.orders.forEach(o => {
-                  cum += (o.qty || 0) * ctSec;
-                  if (o.status === 'open' && nowMs > startMs + cum * 1000) acc++;
+
+              // flatten ทุกออเดอร์ของทุก session ในไลน์ พร้อม timing + product key
+              const buildCards = (sessList) => {
+                const cards = [];
+                sessList.forEach(s => {
+                  const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
+                  const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
+                  // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
+                  // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้ำกัน
+                  // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
+                  const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
+                  let cumSec = 0;
+                  sorted.forEach(o => {
+                    // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
+                    // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
+                    const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
+                    // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
+                    const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
+                    const startSec = cumSec;
+                    cumSec += (o.qty || 0) * ctSec;
+                    let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
+                    let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
+                    if (orderStartMs && !orderEndMs) {
+                      // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
+                      orderEndMs = orderStartMs + 5 * 60000;
+                    }
+                    const isDone    = o.status === 'confirmed';
+                    const isCarry   = o.status === 'carry_over';
+                    /* ⚠️ ตัด `is_backfill` เหมือน Management + heijunkaQueue (2026-09-16) — ใบเปิดย้อนหลัง
+                             คนกรอกเวลาเอง เวลาเปิดไม่ใช่เวลาเริ่มผลิตจริง ตัดสินดีเลย์จากมันไม่ได้ */
+                          const isDelayed = !isDone && !isCarry && !o.is_backfill && !!orderEndMs && nowMs > orderEndMs;
+                    const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
+                    const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
+                    const productImg = imgByMatNo[o.mat_no] || '';
+                    cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
+                  });
                 });
-                return acc;
-              }, 0);
+                return cards;
+              };
+
+              const allCards = buildCards(sessions);
+
+              /* ── คิวการ์ดของทั้งกลุ่มไลน์ — คำนวณ "ครั้งเดียว" ตรงนี้ แล้วใช้ร่วมกันทั้งหัวการ์ดและบอร์ด ──
+                 🔴 บั๊กที่แก้ (2026-09-16): เดิมหัวการ์ดนับดีเลย์ด้วยสูตรของตัวเอง (สะสม CT ระดับ session
+                    จาก `created_at` · ไม่ตัด backfill · ไม่ดูคิวจริง) ส่วนบอร์ดใช้ `heijunkaQueue`
+                    ⇒ **บอร์ดเดียวกัน /dashboard กับ /management ขึ้น "ดีเลย์ N ใบ" คนละเลข**
+                    ตอนนี้ทั้ง 2 หน้าเรียก `positionAllCards` ตัวเดียวกัน — ห้ามเขียนสูตรนับเองอีก */
+              const positionedByOrder = positionAllCards(allCards, {
+                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+                flowByLine: linesByName, machineCountByLine: machineCountByLine, pairMatByMat,
+              });
+              const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
+                .sort((a, b) => a.startMs - b.startMs);
+              const totalDelayed = delayedCountOf(positionedByOrder);
 
               return (
                 <div key={lineName} style={{
@@ -1424,6 +1500,23 @@ export default function Dashboard() {
                           ⚠️ ดีเลย์ {totalDelayed} ใบ
                         </span>
                       )}
+                      {/* ⬜ นาทีที่ยังไม่มีคำอธิบาย รวมทั้งกลุ่มไลน์ — "ต้อง recover กี่นาที" ตอบด้วยเลขนี้
+                          ⚠️ ตั้งใจไม่ทำเป็นไฟแดง: ค่ากลางทั้งโรงงานอยู่ที่ ~20% ของกะ ถ้าตีแดงคือแดงทุกไลน์
+                             ทุกกะ แล้วไม่มีใครเชื่อจออีก — ตั้งเกณฑ์เตือนหลังจากดูค่าจริงบนจอสักพักก่อน */}
+                      {(() => {
+                        const parts = sessions.filter(s => s.status === 'open').map(s => liveTimeSplit(s.oeeData)).filter(Boolean);
+                        if (!parts.length) return null;
+                        const unknown = Math.round(parts.reduce((a, p) => a + p.unknownMin, 0));
+                        const cap     = Math.round(parts.reduce((a, p) => a + p.capacityMin, 0));
+                        if (!(unknown > 0) || !(cap > 0)) return null;
+                        const shaky = parts.some(p => p.state !== 'ok');
+                        return (
+                          <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
+                            style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(156,163,175,0.15)', color: 'var(--text2)' }}>
+                            ⬜ ไม่รู้ {unknown} น. ({Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {/* hierarchy: ยุบป้ายกะเป็น 1 ชิปต่อไลน์ย่อย (☀️/🌙 อยู่ในชิปเดียวกัน) แทนป้ายต่อ session ที่รกเมื่อมีหลายไลน์ลูก */}
@@ -1451,50 +1544,6 @@ export default function Dashboard() {
 
                   {/* ── Timeline grid: split 24h → 2 rows × 12h, แยกแถวตาม product ── */}
                   {(() => {
-                    const pctPerMs = 100 / (12 * 3600000);
-                    const HALVES = [
-                      { key: 'am', hours: HOURS.slice(0, 12), startMs: gridStartMs },
-                      { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
-                    ];
-
-                    // flatten ทุกออเดอร์ของทุก session ในไลน์ พร้อม timing + product key
-                    const buildCards = (sessList) => {
-                      const cards = [];
-                      sessList.forEach(s => {
-                        const sessionCtSec = s.dr_products?.cycle_time_sec || 0;
-                        const sessionStartMs = s.created_at ? new Date(s.created_at).getTime() : null;
-                        // ใบที่ status = carry_over คือใบเดิมที่ถูกยกยอดไปต่อในกะถัดไปแล้ว (มีใบใหม่ status='open'
-                        // พร้อม carry_over_from_session_id ชี้กลับมา) — ถ้าแสดงทั้งสองใบจะเห็นเป็นกัมบังซ้ำกัน
-                        // ข้ามกะเช้า/กะดึก ทั้งที่เป็นงานเดียวกัน จึงตัดใบเดิม (carry_over) ออกจาก timeline
-                        const sorted = [...s.orders].filter(o => o.status !== 'carry_over').sort((a, b) => new Date(a.opened_at || 0) - new Date(b.opened_at || 0));
-                        let cumSec = 0;
-                        sorted.forEach(o => {
-                          // session.dr_products มาจาก product_id ที่อาจไม่ถูกตั้งค่า (กะนึงมีได้หลาย mat_no)
-                          // จึง fallback ไปหา cycle_time_sec ตรงจาก mat_no ของออเดอร์เอง
-                          const ctSec = ctByMatNo[o.mat_no] || sessionCtSec || 0;
-                          // ถ้ามี opened_at ใช้เวลาจริงเป็น start แทนการสะสมจาก session start
-                          const openedMs = o.opened_at ? new Date(o.opened_at).getTime() : null;
-                          const startSec = cumSec;
-                          cumSec += (o.qty || 0) * ctSec;
-                          let orderStartMs = openedMs || (sessionStartMs && ctSec > 0 ? sessionStartMs + startSec * 1000 : null);
-                          let orderEndMs   = orderStartMs && ctSec > 0 ? orderStartMs + (o.qty || 0) * ctSec * 1000 : null;
-                          if (orderStartMs && !orderEndMs) {
-                            // ไม่รู้ cycle time จริง ๆ — ให้แสดงเป็นแท่งบาง ๆ แทนการซ่อนไปเลย
-                            orderEndMs = orderStartMs + 5 * 60000;
-                          }
-                          const isDone    = o.status === 'confirmed';
-                          const isCarry   = o.status === 'carry_over';
-                          const isDelayed = !isDone && !isCarry && !!orderEndMs && nowMs > orderEndMs;
-                          const productKey = (nameByMatNo[o.mat_no] || s.dr_products?.name || '').trim().toUpperCase() || o.mat_no || 'unknown';
-                          const productLabel = nameByMatNo[o.mat_no] || s.dr_products?.name || o.mat_no || 'ไม่ทราบ P/N';
-                          const productImg = imgByMatNo[o.mat_no] || '';
-                          cards.push({ ...o, orderStartMs, orderEndMs, isDone, isCarry, isDelayed, productKey, productLabel, productImg, shift: s.shift, sessionOpen: s.status === 'open', line_name: s.line_name });
-                        });
-                      });
-                      return cards;
-                    };
-
-                    const allCards = buildCards(sessions);
 
                     // ── Downtime ของไลน์นี้ (จาก downtime_logs ทุก session ของวันนั้น) ──
                     // ใช้วาดแถบ ⛔ บนไทม์ไลน์ และผูกเข้า tooltip ของใบที่ดีเลย์/ปิดช้า เพื่อบอก "สาเหตุ" ของการหลุดแผน
@@ -1553,83 +1602,9 @@ export default function Dashboard() {
                     const manualRows = qRows.filter(isManualRow);
                     const visRows = showManualRows ? qRows : qRows.filter(r => !isManualRow(r));
 
-                    // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
-                    const getBreakIntervals = (half) => breakPolicies
-                      .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-                      .map(p => {
-                        const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-                        if (idx < 0) return null;
-                        const mins = Number(String(p.start_time).slice(3,5)) || 0;
-                        const s = half.startMs + idx * 3600000 + mins * 60000;
-                        const e = s + (p.duration_min || 0) * 60000;
-                        return [s, e];
-                      })
-                      .filter(Boolean)
-                      .sort((a, b) => a[0] - b[0]);
 
-                    // ต่อคิวในแถวเดียวกัน + หลบเวลาพัก แล้วคืนตำแหน่งจริงพร้อม isDelayed ที่คำนวณจากเวลาจบ "จริง" หลังต่อคิว
-                    // (ไม่ใช้ o.isDelayed ที่คำนวณแบบ naive จาก opened_at + cycle time เพราะการ์ดที่ถูกต่อคิวหรือเลื่อนหลบเบรค
-                    //  จะมี orderEndMs เดิมที่ผ่านไปแล้วทั้งที่ยังไม่ถึงคิวจริง ทำให้ขึ้นแดงทั้งที่ยังไม่ถึงเวลา)
-                    // จัดกลุ่มการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง (ตายตัวทั้งกะเช้า/กะดึก) ต่อเนื่องตลอด 24 ชม.
-                    // เพื่อจำกัดผลของดีเลย์ให้อยู่แค่ในรอบของตัวเอง ไม่ลากคิวยาวไปทั้งกะ
-                    // (พนักงานสแกนปิดไม่เรียงเลขใบ แต่จะอยู่ในรอบเดียวกันเสมอ — ตัด FIFO ข้ามรอบออก)
-                    const ROUND_MS = 2 * 3600000;
-                    const roundIndexOf = (ms) => Math.floor((ms - gridStartMs) / ROUND_MS);
-                    const roundStartOf = (idx) => gridStartMs + idx * ROUND_MS;
-                    const MIN_W_PCT = 1.5;
 
-                    // รวมเวลาพักทั้งวัน (กะเช้า+กะดึก) เพื่อให้คิวต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
-                    const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
 
-                    // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
-                    // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ
-                    // คิวการ์ดบนบอร์ด = util กลาง `utils/heijunkaQueue` — เดิม copy ไว้ทั้ง Dashboard และ
-                    // Management แล้ว drift กัน (ใบ backfill ขึ้นแดงคนละแบบ) ห้าม copy กลับมาไว้ในหน้าอีก
-                    const computeQueuedPositionsFull = (cards) => queuePositions(cards, {
-                      breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
-                    });
-
-                    // ── คิวจริงระดับ sub-line: 1 ไลน์ผลิตได้ทีละใบ ใบ "คนละพาร์ท" ของไลน์เดียวกันต้องต่อคิวกัน ──
-                    // ห้ามคำนวณคิวแยกต่อแถวพาร์ท (เคยพัง 2026-07-14: พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนกับพาร์ทแรก
-                    // ทั้งที่ไลน์ไม่ parallel) · แยกคิวเฉพาะคนละ sub-line (line_name ต่างกัน = คนละเครื่อง วิ่งขนานได้จริง)
-                    const positionedByOrder = new Map();
-                    {
-                      // งานคู่ RH/LH (pair_mat_no ตั้งใน Product Master) ปั๊มด้วยแม่พิมพ์คู่ = ทำพร้อมกัน (parallel)
-                      // → แยกคู่ที่มีทั้งสองพาร์ทอยู่ในไลน์เดียวกันเป็น "เลนของตัวเอง" คนละคิว เริ่มพร้อมกัน แถบจึงตรงกัน
-                      // (พาร์ทไม่มีคู่ยังรวมคิวไลน์เดียวเรียงต่อกันเหมือนเดิม — 1 ไลน์ทีละใบ · 2026-07-21)
-                      const matsInLine = {}; // line → Set(mat_no) ที่มีการ์ดจริง
-                      productRows.forEach(r => r.cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); }));
-                      // ไลน์เครื่องขนาน (flow_mode='parallel_machine') — เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ
-                      // แตกเป็นหลายเลน: ใบที่ผูกเครื่อง (machine_no) = เลนของเครื่องนั้น · ใบที่ยังไม่ผูก = กระจาย round-robin N เลน
-                      // (N = parallel_stations ที่ตั้งไว้ หรือจำนวนเครื่องจากทะเบียน machine_points) — ดู lineTypes.js/CLAUDE.md
-                      const flowByLine = {}; lines.forEach(l => { flowByLine[l.name] = l; });
-                      const machineCountByLine = {};
-                      (machinePoints || []).forEach(p => { (machineCountByLine[p.line_name] ||= new Set()).add(p.machine_no); });
-                      const stationsOf = (line) => {
-                        const l = flowByLine[line];
-                        return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
-                      };
-                      const byLane = {};
-                      const rr = {}; // round-robin ต่อไลน์ สำหรับใบที่ยังไม่ผูกเครื่อง
-                      productRows.forEach(r => r.cards.forEach(c => {
-                        const line = c.line_name || '';
-                        let key;
-                        if (flowByLine[line]?.flow_mode === 'parallel_machine') {
-                          if (c.machine_no) key = `${line}||M:${c.machine_no}`;
-                          else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
-                        } else {
-                          const pm = pairMatByMat[c.mat_no];
-                          const paired = pm && matsInLine[line]?.has(pm); // งานคู่ RH/LH — เลนของตัวเอง เริ่มพร้อมกัน
-                          key = paired ? `${line}||${c.mat_no}` : line;
-                        }
-                        (byLane[key] ||= []).push(c);
-                      }));
-                      Object.values(byLane).forEach(cs => {
-                        computeQueuedPositionsFull(cs).forEach(item => positionedByOrder.set(item.o.id ?? item.o.prod_no, item));
-                      });
-                    }
-                    const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(c.id ?? c.prod_no)).filter(Boolean)
-                      .sort((a, b) => a.startMs - b.startMs);
 
                     // ตัดผลคิวทั้งวัน (ms จริง) มาเป็น % สำหรับ "กะ" หนึ่ง ๆ — การ์ดเดียวกันแสดงต่อกันได้ทั้ง 2 กะ
                     // ถ้าดีเลย์ล้นข้ามขอบกะ (เช่น ผลิตเลย 20:00) แทนที่จะถูกตัดทิ้งที่ขอบ
@@ -2155,6 +2130,9 @@ export default function Dashboard() {
                               })}
                             </div>
                           )}
+                          {/* นาทีที่หายไปของกะ — %P บอกว่าเดินได้กี่ % แต่ไม่มีใครอ่านแล้วรู้ว่า
+                              "ต้อง recover กี่นาที" · ตัวเลขชุดเดียวกันเป๊ะ แค่เปลี่ยนหน่วย (2026-09-16) */}
+                          {s.status === 'open' && <ShiftTimeSplit split={liveTimeSplit(s.oeeData)} compact />}
                         </div>
                       );
                           })}
