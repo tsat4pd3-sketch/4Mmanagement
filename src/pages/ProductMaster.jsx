@@ -13,6 +13,7 @@ import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
+import CtReview from '../components/CtReview';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
 import { loadOpInfo } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
@@ -213,7 +214,7 @@ export default function ProductMaster() {
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
-  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'customers', 'suppliers', 'export'], 'products');
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
   /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
      บอกให้ "ไปหาเอง" = คนไม่ไป (บทเรียนเดียวกับ worklist ที่ต้องกดได้ ไม่ใช่แค่บอกว่ามีปัญหา) */
   const [searchParams, setSearchParams] = useSearchParams();
@@ -708,7 +709,7 @@ export default function ProductMaster() {
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'export', label:'📤 Export' }].map(t => (
+        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -1367,6 +1368,8 @@ export default function ProductMaster() {
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
       {mainTab === 'routing' && <RoutingPanel canEdit={can('routing','manage',role) || canEdit} lines={lines} />}
+      {/* ⏱ ทบทวน CT — ระบบเสนอจาก actual วิศวกรตัดสิน · %P ยังหารด้วย CT มาตรฐานเสมอ (2026-09-18) */}
+      {mainTab === 'ct' && <CtReview lines={lines} />}
       {/* ทะเบียนลูกค้า/Supplier (2026-09-08): คอลัมน์ปลายทาง (dr_products.customer · parts_master.supplier ฯลฯ) ยังเก็บ name เป็น text
           — ทะเบียนนี้เป็นเจ้าของ "สะกดหลัก" ให้ picker กลาง (CustomerSelect/SupplierSelect) · code สร้างจากชื่อ normalize อัตโนมัติ */}
       {mainTab === 'customers' && (

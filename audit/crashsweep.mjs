@@ -1,13 +1,19 @@
 /* crash-sweep — เปิดทุกหน้าที่ desktop + กดแท็บ/ปุ่มสลับมุมมอง แล้วดูว่า render พังไหม
    ใช้ตอน merge งานหลาย session ชนกัน (build/lint จับ runtime crash ไม่ได้) */
 import { chromium } from 'playwright'
+/* 🕐 ต้องตั้ง timezone เป็น Asia/Bangkok (2026-09-18) — เดิมเบราว์เซอร์ใน harness เป็น UTC
+   ⇒ โค้ดที่ประกอบเวลาจากสตริงไม่มีโซน (`new Date('2026-08-04T08:00:00')` เช่นกรอบเวลากะ)
+      ได้คนละเวลากับ timestamp ที่มี +07:00 ⇒ **ช่วงเวลาไม่ทับกันเลย** ⇒ สาย "ช่วงเวลาที่พาร์ทวิ่ง"
+      คืนค่าว่างทุกครั้งใน harness ทั้งที่ของจริง (เบราว์เซอร์หน้างาน = ไทย) ทำงานปกติ
+   กับดักเดียวกับที่ทำให้สคริปต์ตรวจ OEE ต้องรันด้วย TZ=Asia/Bangkok (ดู docs/modules/oee.md) */
+const TZ = { timezoneId: 'Asia/Bangkok' }
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
-const p0 = await b.newPage(); await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200)
+const p0 = await b.newPage({ ...TZ }); await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200)
 const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close()
 
 const bad = []
 for (const name of PAGES) {
-  const p = await b.newPage({ viewport: { width: 1500, height: 900 } })
+  const p = await b.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
   const errs = []
   p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 150)))
   try {

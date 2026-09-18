@@ -598,10 +598,10 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
                        #   📌 = ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:
                        #     IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 · 14/08) ·
-                       #     ADAPTIVE-CT-DESIGN.md (CT ช้าจน %P ชนเพดาน 28% ของกะ · A/B/C + 5 คำถาม · 17/09) ·
                        #     IDENTITY-NOTIFY-DESIGN.md (ตัวตน/ผู้รับแจ้งเตือน — 48% ของบัญชีถูกดีดเป็น
                        #       'shared' · 78% ตัวกรองแผนกไม่มีผล · QA ไม่ได้ NCR นอก PD3 · 18/09
                        #       · แกนสิทธิ์อยู่ PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) ·
+                       #   ADAPTIVE-CT-DESIGN.md (เหตุผลที่เลือกทางนี้ · ของจริง → modules/ct-review.md) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
