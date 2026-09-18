@@ -137,21 +137,29 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   /* ⚠️ เทียบหัวคอลัมน์แบบ normalize (ตัดช่องว่าง/ขีด/ตัวพิมพ์) + สแกนลึก 20 แถว
      เดิมเทียบตรงตัว 5 แถวแรก ⇒ พอร์ทัลเพิ่มแถวหัวเรื่อง/เปลี่ยนชื่อคอลัมน์นิดเดียว =
      **หาไม่เจอแล้วตกไปทางไฟล์ manual เงียบๆ** (ดู src/utils/ediDetect.js) */
-  const findEdiSheet = (XLSX, wb) => {
+  /* 🔴 ต้องคืน **ทุกชีต** ที่เป็นตาราง EDI ไม่ใช่ชีตแรกชีตเดียว (2026-09-17)
+     ที่มา: ไฟล์ 862 ของจริง `862_15.09.26.xlsm` = **1 ไฟล์ 6 ชีต ชีตละ ship-to**
+       (GBL9A · GRBNA · GBJWA · GBJWE · GBJWC · HPUDA) รวม 1,155 แถว
+     เดิม `return` ทันทีที่เจอชีตแรก ⇒ อ่านแค่ GBL9A (179 รายการ) **ทิ้ง 945 แถวเงียบๆ
+     รวม AAT/GRBNA ทั้ง 278 รายการ** — บนจอขึ้นว่า "Ship-to: FTM (GBL9A)" เฉยๆ ไม่มีคำเตือน
+     ⇒ ตรงกับอาการ "ออเดอร์ AAT หายไปหมดเลย ทุกรายการ" (11/09 → 17/09)
+     ก่อนหน้านี้รอดเพราะทีมส่งมาเป็น **6 ไฟล์แยก** (ดู demand_upload_batches 28/08) */
+  const findEdiSheets = (XLSX, wb) => {
+    const found = [];
     let near = null;                      // "เกือบใช่" — เอาไว้บอกคนว่าขาดคอลัมน์ไหน
     for (const name of wb.SheetNames) {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
       for (let i = 0; i < Math.min(m.length, HEADER_SCAN_ROWS); i++) {
         const hd = m[i].map(c => String(c).trim());
-        if (isEdiHeaderRow(hd)) return { matrix: m, hIdx: i, headers: hd, sheet: name };
+        if (isEdiHeaderRow(hd)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
         const hit = EDI_SIG.filter(g => colIdx(hd, g) >= 0).length;
         if (hit >= 2 && (!near || hit > near.hit)) {
           near = { hit, sheet: name, headers: hd, missing: EDI_SIG.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
         }
       }
     }
-    if (near) findEdiSheet.near = near; else delete findEdiSheet.near;
-    return null;
+    findEdiSheets.near = found.length ? null : near;
+    return found;
   };
   const parseEdiFile = (sheet, fName) => {
     const { matrix, hIdx, headers } = sheet;
@@ -182,7 +190,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null,
       });
     });
-    return { is862, kind, rows: out, fName, skipped, sheet: sheet.sheet || null };
+    return { is862, kind, rows: out, fName, skipped, sheet: sheet.sheet || null,
+      shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
   const handleFiles = async (fileList, kindNow) => {
@@ -194,18 +203,31 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       let manual = null;
       for (const file of files) {
         const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-        const ediSheet = findEdiSheet(XLSX, wb);
-        if (ediSheet) { ediFiles.push(parseEdiFile(ediSheet, file.name)); continue; }
+        const sheets = findEdiSheets(XLSX, wb);
+        if (sheets.length) {
+          /* ไฟล์เดียวมีหลายชีต = หลาย ship-to → นับเป็นหลาย "ก้อน" ต้องรวมให้ครบทุกชีต */
+          sheets.forEach(sh => ediFiles.push(parseEdiFile(sh, sheets.length > 1 ? `${file.name} [${sh.sheet}]` : file.name)));
+          continue;
+        }
         if (!manual) manual = { wb, name: file.name };
       }
       if (ediFiles.length) {
-        if (ediFiles.some(f => f.is862) && ediFiles.some(f => !f.is862)) {
+        /* ⚠️ เทียบเฉพาะ "ชีตที่ตัดสินได้ชัด" — ชีตที่ไม่ชัดไม่ใช่หลักฐานว่าปนชนิด
+           (ไฟล์เล่มเดียวกันย่อมเป็นชนิดเดียวกัน · ชีตที่ไม่มีค่าเวลา = ship-to นั้นไม่ใช้เวลาเท่านั้น) */
+        const sureKinds = new Set(ediFiles.filter(f => f.kind?.sure).map(f => f.is862));
+        if (sureKinds.size > 1) {
           toast.error('อย่าเลือกไฟล์ 830 (Forecast) ปนกับ 862 (Shipping) ในครั้งเดียว — แยกนำเข้าทีละชนิด');
           return;
         }
-        const is862 = ediFiles[0].is862;
-        /* ผลการเดาต้องขึ้นจอเสมอ — ถ้า `sure=false` จอจะบังคับให้ยืนยันชนิดก่อนนำเข้า */
-        const kindGuess = ediFiles[0].kind || { is862, reason: '', sure: true };
+        /* 🔴 รวมผลการเดาระดับ "ไฟล์" ห้ามใช้แค่ชีตแรก (2026-09-17)
+           ไฟล์จริงมี 6 ชีต · 3 ชีต (GBJWA/GBJWE/GBJWC) คอลัมน์ `Forecast Time` ว่างทุกแถว
+           ⇒ ชีตพวกนั้นให้ผล "ไม่ชัด" · ถ้าบังเอิญเรียงมาเป็นชีตแรก จะไปบล็อกการนำเข้าทั้งไฟล์
+           ทั้งที่ชีตอื่นในเล่มเดียวกันยืนยันชัดว่าเป็น 862 ⇒ **ชีตที่ชัดชนะ** */
+        const sureOne = ediFiles.find(f => f.kind?.sure);
+        const is862 = sureOne ? sureOne.is862 : ediFiles[0].is862;
+        const kindGuess = sureOne
+          ? { ...sureOne.kind, reason: `${sureOne.kind.reason}${ediFiles.length > 1 ? ` (ชีต ${sureOne.sheet})` : ''}` }
+          : (ediFiles[0].kind || { is862, reason: '', sure: true });
         // dedupe: EDI ออกบรรทัดซ้ำ key เดิมได้ — ใช้ตัวหลังสุด ไม่บวกทบ
         // ⚠️ key ต้องรวม PO — 2 release ต่าง Purchase Order ที่ part/วัน/เวลาเดียวกันเป็นคนละใบจริง
         //    (เดิมตัวหลังทับ = demand หายเงียบ · QC flow-audit D1) — บรรทัดซ้ำแท้ (ทุกช่องเท่ากัน) ยังถูก dedupe เหมือนเดิม
@@ -300,8 +322,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       if (!manual) { toast.error('อ่านไฟล์ไม่สำเร็จ'); return; }
       /* 🔴 ไฟล์ EDI ที่หัวตารางเพี้ยน เคย**ตกมาทางนี้เงียบๆ** (ขึ้นจอ map มือ ไม่มีคำว่า EDI)
          = ต้นเหตุ "ออเดอร์ AAT หายทั้งลูกค้า" 2026-09-17 → ต้องบอกว่าขาดคอลัมน์ไหน */
-      if (findEdiSheet.near) {
-        const n = findEdiSheet.near;
+      if (findEdiSheets.near) {
+        const n = findEdiSheets.near;
         toast.error(`ไฟล์นี้เหมือนเป็น EDI แต่หัวตารางไม่ครบ — ชีต "${n.sheet}" ขาดคอลัมน์: ${n.missing.join(', ')} · ถ้าลูกค้าเปลี่ยนชื่อคอลัมน์ ให้แจ้งทีมระบบ (ตอนนี้จะให้ map เองก่อน)`);
       }
       setEdi(null);
@@ -552,7 +574,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
-              <input type="file" accept=".xlsx,.xls,.csv" multiple style={{ display: 'none' }}
+              <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
                 onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
@@ -595,7 +617,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               {edi.skipped > 0 && (
                 <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
-                  ⚠️ ข้าม {edi.skipped} แถว (จำนวน ≤ 0 หรืออ่านวันที่ไม่ได้) — ถ้าเยอะผิดปกติแปลว่าอ่านคอลัมน์ผิด
+                  ℹ️ ข้าม {edi.skipped} แถว — ส่วนใหญ่คือบรรทัดที่ลูกค้าส่งยอด 0 (ปกติของ EDI) · จะผิดก็ต่อเมื่อ
+                  “จับคู่พาร์ทได้” ด้านบนต่ำผิดปกติด้วย
                 </div>
               )}
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
