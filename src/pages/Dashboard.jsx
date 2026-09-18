@@ -385,6 +385,8 @@ export default function Dashboard() {
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap: pairMatByMat,
         /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
         breakPolicies: breakPolicies || [],
         processType: s.dr_products?.process_type || null,

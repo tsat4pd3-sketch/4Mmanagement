@@ -16,7 +16,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
-import { pairAwareOpTotal, orderTotal } from '../utils/pairTotals';
+import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
@@ -2016,7 +2016,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     //   → ใช้ order time window เพื่อ detect parallel เท่านั้น ไม่ใช่เป็น denominator
     const runSec = runMin * 60;
     const matNosForP = Array.from(new Set(prodOrders.map(o => o.mat_no)));
-    const matPData = []; // { matNo, qty, ctSec, winStart, winEnd }
+    const matPDataRaw = []; // { matNo, qty, ctSec, winStart, winEnd }
     let unknownQty = 0;
     matNosForP.forEach(matNo => {
       const orders = prodOrders.filter(o => o.mat_no === matNo);
@@ -2042,9 +2042,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         openedTimes.length ? Math.min(...openedTimes) : null,
         [...closedTimes, ...stopTimes].length ? Math.max(...closedTimes, ...stopTimes) : null,
         shiftFrame);
-      matPData.push({ matNo, qty, ctSec, winStart, winEnd });
+      matPDataRaw.push({ matNo, qty, ctSec, winStart, winEnd });
     });
-    const knownQty = matPData.reduce((s, d) => s + d.qty, 0);
+    // 🔴 knownQty นับ "ชิ้น" — ต้องคิดจากแถวดิบก่อนยุบคู่ (ต้องตรงกับ totalProduced ที่นับชิ้นเหมือนกัน)
+    const knownQty = matPDataRaw.reduce((s, d) => s + d.qty, 0);
+    /* 🔴 ตั้งแต่ตรงนี้ลงไปคือสาย **เวลามาตรฐาน (%P)** → ต้องนับเป็น "shot" ไม่ใช่ "ชิ้น"
+       งานคู่ gang die / RH-LH: 1 จังหวะเครื่องได้ 2 ชิ้น แต่ CT ที่ตั้งไว้คือเวลาต่อ 1 จังหวะ
+       ⇒ ไม่ยุบ = ตัวเศษ 2 เท่า → %P ทะลุ 100 แล้วโดน cap เงียบ (user ยืนยันนิยาม 2026-09-18)
+       วัดจริง 45 วัน: LASER-345 1.80→1.04 · HDF2 1.15→0.72 · HDF1 1.14→0.66 · ไลน์ไม่มีคู่ไม่ขยับ
+       ยุบที่นี่ที่เดียวทำให้ทุกสายข้างล่างถูกหมด (totalStdSec · prodGroups · ตรวจ parallel)
+       เพราะคู่ที่ปั๊มพร้อมกัน = **สายเดียว** ไม่ใช่ 2 สายวิ่งขนาน */
+    const matPData = collapsePairShots(
+      matPDataRaw.map(d => ({ mat_no: d.matNo, qty: d.qty, ct: d.ctSec, winStart: d.winStart, winEnd: d.winEnd })),
+      pairOf,
+    ).map(r => ({ matNo: r.mat_no, qty: r.qty, ctSec: r.ct, winStart: r.winStart, winEnd: r.winEnd }));
 
     // ── ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO (user ชี้ 2026-07-14) ──
     // MAT ที่เป็น product เดียวกันแตกตามลูกค้า (เช่น FVL/FTM/AAT — ชื่อชิ้นงานเดียวกัน) คืองานตัวเดียวกัน
