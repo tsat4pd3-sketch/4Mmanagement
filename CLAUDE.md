@@ -596,11 +596,12 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
                        #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
                        #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
-                       #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
-                       #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
-                       #   ADAPTIVE-CT-DESIGN.md (CT ตั้งช้าจน %P ชนเพดาน 28% ของกะ — ทางเลือก A/B/C
-                       #     + กับดัก 3 ข้อ + คำถามที่ user ต้องตัดสิน 5 ข้อ · 📌 user สั่ง "คุยออกแบบก่อน
-                       #     ยังไม่ลงมือ" 2026-09-17 · ห้ามหยิบไปทำเองจนกว่า user จะสั่ง) ·
+                       #   📌 = ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:
+                       #     IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 · 14/08) ·
+                       #     ADAPTIVE-CT-DESIGN.md (CT ช้าจน %P ชนเพดาน 28% ของกะ · A/B/C + 5 คำถาม · 17/09) ·
+                       #     IDENTITY-NOTIFY-DESIGN.md (ตัวตน/ผู้รับแจ้งเตือน — 48% ของบัญชีถูกดีดเป็น
+                       #       'shared' · 78% ตัวกรองแผนกไม่มีผล · QA ไม่ได้ NCR นอก PD3 · 18/09
+                       #       · แกนสิทธิ์อยู่ PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
