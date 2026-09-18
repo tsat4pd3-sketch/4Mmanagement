@@ -12,7 +12,7 @@
 >
 > **ตัวเลือก "ตำแหน่งงาน" (position) รวมศูนย์ที่ `src/utils/positions.js` จุดเดียว (2026-07-22)** — master list ไทยชุดเดียวใช้ร่วมทั้ง **พนักงาน (`employees.position` — Register/operator)** และ **user (`profiles.position` — AddUser)** · `positionOptionsWith(current)` เติมค่าเก่านอกลิสต์ (เช่น Operator/Leader/Technician/Engineer) ไว้หัวลิสต์ให้ยังเลือก/แสดงได้ไม่หาย · AddUser ยังมี "อื่นๆ (พิมพ์เอง)" · **ห้าม hardcode ลิสต์ position ซ้ำในหน้าใดๆ** เพิ่ม/แก้ตำแหน่งแก้ที่ไฟล์นี้ที่เดียว (เดิมกระจาย 3 หน้า ลิสต์ไม่ตรงกัน — operator/Register เป็นอังกฤษ, AddUser เป็นไทย)
 
-11 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, planner_store, display`
+12 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, engineer_nm, planner_store, display`
 
 > **ชื่อแสดงผลของ role ไม่ใช้คำตำแหน่งบริษัทแล้ว (2026-07-13)** — เพื่อไม่ให้ชนกับ `profiles.position`
 > ชื่อ/ไอคอน/สี/คำอธิบายทั้งหมดอยู่ที่ **`src/utils/roleMeta.js` จุดเดียว** (`ROLE_META`, `ROLE_OPTIONS`, `roleLabel()`)
@@ -30,6 +30,7 @@
 | `sale` | 🚚 ขาย-จัดส่ง (Sales & Delivery) | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
+| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่ 2 หน้า: `/npi` + `/pe-docs`** (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 

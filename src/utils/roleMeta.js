@@ -12,6 +12,7 @@ export const ROLE_META = {
   sale:             { icon: '🚚', label: 'ขาย-จัดส่ง',       en: 'Sales & Delivery', color: '#38bdf8', desc: 'Forecast, Delivery, Kanban', axis: 'unit' },
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
+  engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
   planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#a3e635', desc: 'Store, Kanban, Rack, Rundown + อัพโหลด Forecast', axis: 'unit' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)', axis: 'device' },
   // ⚠️ 'dept_admin' ไม่ใช่ base role — เป็น "bucket สิทธิ์" ของ flag แอดมินหน่วยงาน (profiles.is_dept_admin)
