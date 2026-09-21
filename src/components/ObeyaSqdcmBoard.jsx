@@ -50,7 +50,7 @@ import { avgOeeTarget, sumDefectQty } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
 import {
-  OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, gapToTarget,
+  OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
   axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, fillDays, round1,
 } from '../utils/obeyaKpi';
 
@@ -113,35 +113,90 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 /* ── แผ่นกระดาษ 1 ใบ ──────────────────────────────────────────────────────────────
    หัวแผ่น = ชื่อแกน + ตัวเลขใหญ่ + Δ เทียบเป้า · กลาง = กราฟ · ท้าย = หมายเหตุ/ลิงก์
    ⚠️ ฟอนต์ต่ำสุด 11px เสมอแม้แผ่นเล็ก (กติกาจอ TV) — ถ้าเล็กกว่านั้นให้ลดจำนวนคอลัมน์แทน */
-function Sheet({ k, span = 1, accent, icon, title, sub, big, unit, delta, status, foot, link, onLink, children }) {
+/* ── 🚦 ไฟสถานะบนหัวแผ่น — "เห็นสี แล้วกดเข้าไปดูได้เลย" (2026-09-21 · คำขอ user) ────────
+   **วงกลม + ข้อความ** ไม่ใช่วงกลมเปล่า: จอ TV ระยะ 3-4 ม. จุดสีล้วนอ่านไม่ออกว่าหมายถึงอะไร
+   และ "เทา" ต้องบอกให้ได้ว่าเทาเพราะ *ยังไม่มีข้อมูล* หรือ *ไม่มีเป้า* (กฎความซื่อสัตย์ของจอ)
+   **ไม่กระพริบแม้สีแดง** — Andon §2 สงวนการกระพริบให้ "เหตุที่ยังค้างอยู่ตอนนี้" (เครื่องหยุดจริง)
+   KPI หลุดเป้าเป็นสภาพของทั้งงวด ไม่ใช่เหตุการณ์สด · 5-9 ดวงกระพริบพร้อมกันทั้งวันบนจอ TV
+   = คนเลิกมอง + รีเพนต์หนักตาม §6 ⇒ แดงใช้ "นิ่ง + เรืองแสง" แทน */
+function StatusLamp({ k, w, stat, onGo }) {
+  if (!stat) return null;
   const fs = (n) => Math.max(11, Math.round(n * k));
+  const c = statusColor(stat.status);
+  const red = stat.status === 'bad';
+  const go = typeof onGo === 'function' ? onGo : null;
+  /* แผ่นแคบมาก → เหลือดวงไฟอย่างเดียว (tooltip ยังบอกเหตุผลครบ + WarnNote ใต้แผ่นก็บอกอยู่แล้ว)
+     วัดจริง 21/09: ป้ายเต็มกินที่จน **ตัวเลขใหญ่** ถูก clip (98.4% เหลือ 34px) — พาดหัวห้ามโดนตัด
+     ⚠️ ตัดสินด้วย **ความกว้างจริงของแผ่น** ห้ามใช้ `k` — `k` ถูก clamp ที่ 0.72
+        ⇒ แผ่น 172px กับ 217px ได้ k เท่ากัน แยกไม่ออก (เคยเขียนผิดมาแล้วในรอบเดียวกันนี้) */
+  const compact = w > 0 && w < 200;
+  return (
+    <button
+      type="button" onClick={go || undefined} disabled={!go}
+      title={`${stat.label} — ${stat.why}${go ? ' · กดเพื่อเจาะดู' : ''}`}
+      style={{
+        display: 'flex', alignItems: 'center', gap: Math.max(4, Math.round(5 * k)),
+        padding: `${Math.max(2, Math.round(2.5 * k))}px ${Math.max(6, Math.round(8 * k))}px`,
+        borderRadius: 999, flexShrink: 0, whiteSpace: 'nowrap',
+        background: 'var(--bg3)', backgroundImage: `linear-gradient(${c}1f, ${c}1f)`,
+        border: `1px solid ${c}${red ? 'cc' : '66'}`,
+        boxShadow: red ? `0 0 9px 1px ${c}66` : 'none',
+        cursor: go ? 'pointer' : 'default',
+      }}>
+      <span style={{
+        width: Math.max(9, Math.round(9 * k)), height: Math.max(9, Math.round(9 * k)),
+        borderRadius: '50%', background: c, flexShrink: 0,
+        boxShadow: `0 0 ${Math.round(5 * k)}px ${c}`,
+      }} />
+      {!compact && <span style={{ fontSize: fs(11), fontWeight: 800, color: c }}>{stat.label}</span>}
+      {go && <span style={{ fontSize: fs(10.5), fontWeight: 700, color: 'var(--muted)' }}>↗</span>}
+    </button>
+  );
+}
+
+function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, delta, stat, foot, link, onLink, children }) {
+  const fs = (n) => Math.max(11, Math.round(n * k));
+  const status = stat?.status;
+  const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
   return (
     <div style={{
       gridColumn: `span ${span}`,
-      background: 'var(--card)', border: '1px solid var(--border)', borderTop: `4px solid ${accent}`,
+      /* ❌ ไม่มีแถบสีบนหัวแผ่นอีกแล้ว (คำสั่ง user 21/09 "สีสันของเส้นแต่ละ box ไม่เอา")
+         สีบนแผ่นเหลือความหมายเดียว = **สถานะ** (ไฟดวงบนหัว + สีแท่งกราฟ) ไม่ใช่ "สีประจำแกน"
+         — แถบสีประจำแกนแย่งความสนใจกับไฟสถานะ ทำให้แผ่นที่ปกติกับแผ่นที่มีปัญหาดูเด่นเท่ากัน */
+      background: 'var(--card)', border: '1px solid var(--border)',
       borderRadius: 6, boxShadow: '0 2px 10px rgba(0,0,0,.28)',
       display: 'flex', flexDirection: 'column', overflow: 'clip', minWidth: 0, minHeight: 0,
     }}>
       <div style={{ padding: `${Math.round(8 * k)}px ${Math.round(10 * k)}px 0`, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, justifyContent: 'space-between' }}>
-          <div style={{ fontSize: fs(13), fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'clip' }}>
-            {icon} {title}
-          </div>
-          {delta != null && (
-            <div style={{ fontSize: fs(11.5), fontWeight: 800, color: delta >= 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
-              {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}
-            </div>
-          )}
+        {/* ⚠️ ไฟสถานะ **ห้ามอยู่แถวเดียวกับชื่อแผ่น** — วัดจริง 21/09 ที่ 900px: ป้ายไฟกินที่
+            จนชื่อ "S ความปลอดภัย" ถูก clip เหลือ 72px (แผ่นไม่รู้ว่าตัวเองเป็นแกนอะไร)
+            ⇒ วางไว้ท้ายแถวตัวเลขใหญ่แทน — แถวนั้นที่ว่างเยอะ และไฟอยู่ติดกับเลขที่มันตัดสินพอดี */}
+        <div style={{ fontSize: fs(13), fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'clip' }}>
+          {icon} {title}
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
-        {big !== undefined && (
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: Math.round(3 * k) }}>
-            <div style={{ fontSize: fs(34), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
-              {big}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between',
+          marginTop: Math.round(3 * k), minHeight: Math.round(22 * k),
+        }}>
+          {big !== undefined ? (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0 }}>
+              <div style={{ fontSize: fs(34), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
+                {big}
+              </div>
+              {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
             </div>
-            {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
+          ) : <span />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+            {delta != null && (
+              <div style={{ fontSize: fs(11.5), fontWeight: 800, color: delta >= 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
+                {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}
+              </div>
+            )}
+            <StatusLamp k={k} w={sheetW} stat={stat} onGo={onLink} />
           </div>
-        )}
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{children}</div>
       {(foot || link) && (
@@ -375,6 +430,29 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const health = useMemo(() => actionHealth(actions, today), [actions, today]);
   const ngTotal = useMemo(() => sumDefectQty(fDefs, 'line'), [fDefs]);
 
+  /* ── ไฟสถานะของ 3 แผ่นที่ "ไม่มีเป้าให้เทียบ" — ต้องเขียนเองแทน statusWhy() ────────────
+     กฎความซื่อสัตย์ของจอ: ห้ามแต่งเป้าขึ้นมาเองเพื่อให้ไฟติดสวย และห้ามปล่อยเทาเฉยๆ
+     โดยไม่บอกว่าเทาเพราะอะไร — ทุกดวงต้องตอบได้ว่า "สีนี้เพราะอะไร" ใน tooltip */
+  const costStat = useMemo(() => {
+    if (kC.value == null) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีความสูญเสียที่คิดเป็นเงินได้' };
+    if (kC.value <= 0) return { status: 'good', label: 'ไม่มีความสูญเสีย', why: 'ช่วงนี้ไม่มีเครื่องหยุดนอกแผน/ของเสียที่คิดเป็นเงินได้' };
+    // ⚠️ แดงนี้ = "มีเงินหายไป" ไม่ใช่ "เกินเป้า" — ยังไม่มีใครตั้งเพดานค่าความสูญเสียไว้
+    return { status: 'bad', label: 'มีความสูญเสีย', why: `เสียไป ${fmtBaht(kC.value)} (ยังไม่ได้ตั้งเพดานค่าความสูญเสีย — แดงนี้แปลว่า "มีเงินหายไป" ไม่ใช่ "เกินเป้า")` };
+  }, [kC.value]);
+
+  const paretoStat = useMemo(() => {
+    if (!pareto.total) return { status: 'good', label: 'ไม่มีเครื่องหยุด', why: 'ช่วงนี้ไม่มีเวลาเครื่องหยุดนอกแผนเลย' };
+    // แผ่นนี้ตอบ "ทำไม" ไม่ใช่ KPI ของตัวเอง ⇒ ไม่มีเป้าของ "นาทีที่หยุด" ให้ตัดสิน = เทาเสมอ
+    const top = pareto.rows[0];
+    return { status: 'none', label: 'ไม่มีเป้า', why: `หยุดรวม ${pareto.total.toLocaleString()} นาที · อันดับ 1 "${top.name}" ${top.min.toLocaleString()} นาที — ยังไม่ได้ตั้งเป้าเวลาหยุด จึงตัดสินผ่าน/ไม่ผ่านไม่ได้` };
+  }, [pareto]);
+
+  const actionStat = useMemo(() => {
+    if (health.empty) return { status: 'none', label: 'ยังไม่มีใบ', why: 'ยังไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้สักใบ — ตามงานไม่ได้' };
+    if (health.overdue.length) return { status: 'bad', label: `เกินกำหนด ${health.overdue.length}`, why: `มี ${health.overdue.length} ใบที่เลยวันครบกำหนดแล้วยังไม่ปิด` };
+    return { status: 'good', label: 'ตามกำหนด', why: `ค้างอยู่ ${health.liveCount} ใบ ยังไม่มีใบไหนเลยกำหนด` };
+  }, [health]);
+
   // ── ผังกระดาษ ──────────────────────────────────────────────────────────────────
   const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
   const wrapRef = useRef(null);
@@ -537,9 +615,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         <div style={sheetsBox}>
 
           {/* ═══ S — ความปลอดภัย ═══ */}
-          <Sheet k={k} accent={axisSheet('S').color} icon={axisSheet('S').icon} title="S ความปลอดภัย"
+          <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title="S ความปลอดภัย"
             sub="ใส่ PPE ครบตอนเช็คชื่อ (leading)" big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
-            status={statusOf(kS.value, kS.target, 'up')}
+            stat={statusWhy(kS.value, kS.target, 'up', '%')}
             foot={<WarnNote k={k} text={kS.note} tone="#ef4444" />}
             link="ไปหน้าเช็คชื่อ/PPE" onLink={() => { window.location.href = '/daily-checker'; }}>
             {kS.series.length ? (
@@ -561,10 +639,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ Q — คุณภาพ ═══ */}
-          <Sheet k={k} accent={axisSheet('Q').color} icon={axisSheet('Q').icon} title="Q คุณภาพ"
+          <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title="Q คุณภาพ"
             sub={`%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
-            delta={gapToTarget(kQ.value, kQ.target, 'up')} status={statusOf(kQ.value, kQ.target, 'up')}
+            delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
             link="ดูของเสียละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
             {kQ.series.length ? (
@@ -582,9 +660,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ D — ส่งมอบ ═══ */}
-          <Sheet k={k} accent={axisSheet('D').color} icon={axisSheet('D').icon} title="D ส่งมอบ"
+          <Sheet k={k} cw={cw} icon={axisSheet('D').icon} title="D ส่งมอบ"
             sub="ผลิตได้ตามแผนในใบงาน" big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
-            delta={gapToTarget(kD.value, kD.target, 'up')} status={statusOf(kD.value, kD.target, 'up')}
+            delta={gapToTarget(kD.value, kD.target, 'up')} stat={statusWhy(kD.value, kD.target, 'up', '%')}
             foot={kD.note ? <WarnNote k={k} text={kD.note} />
               : `แผน ${kD.plan.toLocaleString()} · ทำได้ ${kD.produced.toLocaleString()} ชิ้น`}
             link="ดูแผน/ใบงาน" onLink={() => { window.location.href = '/production-plan'; }}>
@@ -607,10 +685,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ C — ต้นทุน ═══ */}
-          <Sheet k={k} accent={axisSheet('C').color} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
+          <Sheet k={k} cw={cw} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
             sub="เครื่องหยุดนอกแผน + ของเสีย"
             big={kC.value != null ? fmtBaht(kC.value) : '—'}
-            status={kC.value != null && kC.value > 0 ? 'bad' : 'none'}
+            stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
             link="ดู LOSS ละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
@@ -629,10 +707,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ M — กำลังคน ═══ */}
-          <Sheet k={k} accent={axisSheet('M').color} icon={axisSheet('M').icon} title="M กำลังคน"
+          <Sheet k={k} cw={cw} icon={axisSheet('M').icon} title="M กำลังคน"
             sub={`มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
             big={kM.value ?? '—'} unit={kM.value != null ? '%' : ''}
-            delta={gapToTarget(kM.value, kM.target, 'up')} status={statusOf(kM.value, kM.target, 'up')}
+            delta={gapToTarget(kM.value, kM.target, 'up')} stat={statusWhy(kM.value, kM.target, 'up', '%')}
             foot={kM.note ? <WarnNote k={k} text={kM.note} />
               : 'อัตรามาทำงานจากการเช็คชื่อรายวัน (ยังไม่มีข้อมูลขวัญกำลังใจ)'}
             link="ดูกำลังคนย้อนหลัง" onLink={() => { window.location.href = '/workforce-insight'; }}>
@@ -651,11 +729,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ OEE — แผ่นแนวนอน (2 ช่อง) ═══ */}
-          <Sheet k={k} span={2} accent="#22c55e" icon="⚙️" title="OEE เทียบเป้า"
+          <Sheet k={k} cw={cw} span={2} icon="⚙️" title="OEE เทียบเป้า"
             sub={`A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
             big={kOee.value ?? '—'} unit={kOee.value != null ? '%' : ''}
             delta={gapToTarget(kOee.value, kOee.target, 'up')}
-            status={statusOf(kOee.value, kOee.target, 'up')}
+            stat={statusWhy(kOee.value, kOee.target, 'up', '%')}
             foot={kOee.value != null && kOeePrev.value != null
               ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
               : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
@@ -680,9 +758,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ ทำไมหลุดเป้า — Pareto ═══ */}
-          <Sheet k={k} accent="#fb923c" icon="🔎" title="ทำไมถึงหลุดเป้า"
+          <Sheet k={k} cw={cw} icon="🔎" title="ทำไมถึงหลุดเป้า"
             sub="เวลาเครื่องหยุดนอกแผน (นาที)"
             big={pareto.total ? pareto.total.toLocaleString() : '—'} unit={pareto.total ? 'นาที' : ''}
+            stat={paretoStat}
             foot={pareto.rows.length
               ? `อันดับ 1 "${pareto.rows[0].name}" = ${Math.round((pareto.rows[0].min / pareto.total) * 100)}% ของเวลาที่เสีย`
               : 'ไม่มีเวลาเครื่องหยุดนอกแผนในช่วงนี้'}
@@ -700,11 +779,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
 
           {/* ═══ ACTION BOARD — แผ่นแนวนอน (2 ช่อง) · ที่เดียวของหน้าที่เขียนข้อมูลได้ ═══ */}
-          <Sheet k={k} span={2} accent="#38bdf8" icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
+          <Sheet k={k} cw={cw} span={2} icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
             sub={health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}
             big={health.overdue.length || (health.empty ? '0' : health.liveCount)}
             unit={health.overdue.length ? 'ใบเกินกำหนด' : 'ใบค้าง'}
-            status={health.overdue.length ? 'bad' : health.empty ? 'none' : 'good'}>
+            stat={actionStat}>
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 4, padding: '0 6px 2px', minHeight: 0 }}>
               {health.empty ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
