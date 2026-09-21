@@ -18,6 +18,7 @@ import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REAS
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
+import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, vendorHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { loadDocForms, docFormSync } from '../utils/docForms';
 loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sync) อ่านผ่าน docFormSync
@@ -41,6 +42,8 @@ import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import SupplierSelect from '../components/SupplierSelect';
+import { notifyEvent } from '../utils/notifyEvent';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { LINE_COLUMNS } from '../utils/useProductionLines';
@@ -1250,7 +1253,12 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
   const openImps = (improvements || []).filter(i => i.line_name === o.line_name && (!i.machine_no || i.machine_no === o.machine_no));
   const affectedLines = (o.machine_no && supplyByMachineNo?.[o.machine_no]) || []; // utility/facility นี้จ่ายไลน์ไหน — ผลกระทบเวลาซ่อม/ตัดไฟ
   const repeatIssue = ['เกิดปัญหาซ้ำ', 'แก้ไขไม่ได้'].includes(o.follow_up);
-  const resp = minutesBetween(o.report_at, o.accept_at), ttr = minutesBetween(o.accept_at, o.repair_done_at), bd = minutesBetween(o.report_at, o.repair_done_at);
+  /* 🔴 TTR = เวลาของ "ช่าง" ⇒ ต้องหักช่วงที่ของอยู่กับ supplier ออก (2026-09-21)
+        ส่วน Breakdown (หยุดรวม) **ไม่หัก** — ไลน์หยุดจริงตลอดช่วงนั้น
+        สูตรอยู่ `src/utils/mtnVendor.js` ที่เดียว ห้ามลบเองในหน้า */
+  const resp = minutesBetween(o.report_at, o.accept_at);
+  const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = vendorHoldMin(o);
+  const bd = minutesBetween(o.report_at, o.repair_done_at);
   const [dparts, setDparts] = useState([]);
   const [dlabor, setDlabor] = useState([]);   // ค่าแรงรายคน (ตาราง 5 แถวบนฟอร์ม MTN)
   useEffect(() => { supabaseDR.from('mtn_order_parts').select('*').eq('order_id', o.id).then(({ data }) => setDparts(data || [])); }, [o.id]);
@@ -1363,6 +1371,71 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
     })();
     return () => { alive = false; };
   }, [o.id]);
+
+  /* ── 📤 ส่งซ่อมภายนอก (supplier) ────────────────────────────────────────────
+     คำถามทีมหน้างาน 21/09: "ซ่อมเองไม่ได้ ต้องเรียก supplier มาแก้ นับเวลายังไง"
+     user เคาะ: หัก MTTR ของช่าง · เป็นสถานะของตัวเอง (ผู้แจ้งต้องเห็น ไม่ใช่ดองเงียบ) ·
+                ค่าใช้จ่ายลงช่องเดิม (ค่าแรง/ค่าอะไหล่)
+     🔴 **ไม่ใช่การส่งต่อ (handoff)** — supplier ไม่ใช่ทีมใน mtn_teams และใบยังเป็นของ
+        ทีมในบ้าน (ต้องตามงาน/รับของ/ตรวจรับเอง) ถ้าโยนออกไปจะไม่มีเจ้าของ
+     🔴 downtime ของไลน์ **ไม่หยุดนับ** — ที่หักคือ MTTR ของช่างเท่านั้น (mtnVendor.js) */
+  const [showVendor, setShowVendor] = useState(false);
+  const [venSup, setVenSup] = useState('');
+  const [venNote, setVenNote] = useState('');
+  const [venBusy, setVenBusy] = useState(false);
+
+  // แจ้งผู้แจ้ง + หัวหน้าส่วนงานที่ไลน์หยุด — ผู้เปิดใบส่งผ่าน extra_user_ids กันตกหล่น
+  const notifyVendor = (event, fresh, lines) => notifyEvent({
+    event, team: orderTeam, line_name: o.line_name, section: o.dept_section || null,
+    type: event === 'mtn_vendor_sent' ? 'error' : 'info', actor: fullName,
+    ref_table: 'mtn_orders', ref_id: o.id, link: `/mtn-repair?mo=${encodeURIComponent(o.id)}`,
+    extra_user_ids: o.reported_by_uid ? [o.reported_by_uid] : [],
+    lines, vars: { mo_no: o.mo_no || '(ยังไม่ออกเลข)', line_name: o.line_name || '-',
+      machine_no: o.machine_no || '-', supplier: fresh.supplier || '-', dept: deptNameOf(orderTeam) },
+  });
+
+  const doVendorSend = async () => {
+    if (!venSup.trim()) return toast.error('ระบุผู้รับจ้าง (supplier) — ผู้แจ้งต้องรู้ว่าของไปอยู่ที่ไหน');
+    setVenBusy(true);
+    const nowIso = new Date().toISOString();
+    // compare-and-swap กัน 2 คนกดพร้อมกัน — ใบที่ถูกเปลี่ยนสถานะไปแล้วต้องไม่ถูกทับ
+    const { data, error } = await supabaseDR.from('mtn_orders').update({
+      status: VENDOR_STATUS, supplier: venSup.trim(), vendor_sent_at: nowIso,
+      vendor_back_at: null, vendor_note: venNote.trim() || null, vendor_sent_by: fullName || '',
+      updated_at: nowIso,
+    }).eq('id', o.id).eq('status', o.status).select('id, supplier');
+    setVenBusy(false);
+    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
+    if (!data?.length) return toast.error('ใบนี้ถูกคนอื่นเปลี่ยนสถานะไปแล้ว — รีเฟรชแล้วลองใหม่');
+    notifyVendor('mtn_vendor_sent', data[0], [
+      `🔧 ใบ ${o.mo_no || '(ยังไม่ออกเลข)'} · ${o.line_name || '-'}${o.machine_no ? ` · ${o.machine_no}` : ''}`,
+      `📤 ส่งซ่อมภายนอก: ${venSup.trim()}`,
+      venNote.trim() ? `📝 ${venNote.trim()}` : '',
+      `⏳ เวลาช่วงนี้ไม่นับเป็นเวลาซ่อมของช่าง แต่ไลน์ยังนับหยุดอยู่`,
+    ]);
+    setShowVendor(false); setVenSup(''); setVenNote('');
+    toast.success(`📤 บันทึกส่งซ่อมภายนอก (${venSup.trim()}) — แจ้งผู้เปิดใบและหัวหน้าส่วนงานแล้ว`);
+    onReload && onReload(); onClose();
+  };
+
+  const doVendorBack = async () => {
+    setVenBusy(true);
+    const nowIso = new Date().toISOString();
+    // กลับมาอยู่ในมือช่าง = 'repairing' (ขั้น 3 เดิม) ให้กดซ่อมเสร็จต่อได้ตามปกติ
+    const { data, error } = await supabaseDR.from('mtn_orders').update({
+      status: 'repairing', vendor_back_at: nowIso, vendor_back_by: fullName || '', updated_at: nowIso,
+    }).eq('id', o.id).eq('status', VENDOR_STATUS).select('id, supplier, vendor_sent_at, vendor_back_at');
+    setVenBusy(false);
+    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
+    if (!data?.length) return toast.error('ใบนี้ถูกคนอื่นเปลี่ยนสถานะไปแล้ว — รีเฟรชแล้วลองใหม่');
+    notifyVendor('mtn_vendor_back', data[0], [
+      `🔧 ใบ ${o.mo_no || '(ยังไม่ออกเลข)'} · ${o.line_name || '-'}${o.machine_no ? ` · ${o.machine_no}` : ''}`,
+      `📥 ของกลับจาก ${data[0].supplier || 'supplier'} แล้ว — รวมอยู่ข้างนอก ${vendorHoldLabel(data[0])}`,
+      `🔧 ช่างดำเนินการต่อ`,
+    ]);
+    toast.success(`📥 บันทึกของกลับแล้ว — อยู่ข้างนอกรวม ${vendorHoldLabel(data[0])}`);
+    onReload && onReload(); onClose();
+  };
 
   const doHandoff = async () => {
     if (!hoDept || sameTeam(hoDept, orderTeam)) return toast.error('เลือกทีมปลายทาง (ต้องไม่ใช่ทีมเดิม)');
@@ -1550,6 +1623,64 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           ))}
         </div>
       )}
+      {/* 📤 ส่งซ่อมภายนอก — ของอยู่กับ supplier · ใบยังเปิด ผู้แจ้งเห็นสถานะชัด (2026-09-21) */}
+      {o.status === VENDOR_STATUS && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
+          background: 'rgba(14,165,233,0.10)', border: '1px solid #0ea5e9' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0ea5e9' }}>
+            📤 ส่งซ่อมภายนอก — อยู่กับ {o.supplier || 'supplier'} มาแล้ว {vendorHoldLabel(o)}
+          </div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+            ส่งเมื่อ {fmtDateTime(o.vendor_sent_at)}{o.vendor_sent_by ? ` โดย ${o.vendor_sent_by}` : ''}
+            {o.vendor_note ? <> · 📝 {o.vendor_note}</> : null}
+            <br />⏳ ช่วงนี้ <b style={{ color: 'var(--text2)' }}>ไม่นับเป็นเวลาซ่อมของช่าง</b> แต่ <b style={{ color: 'var(--text2)' }}>ไลน์ยังนับหยุดอยู่</b>
+          </div>
+          {canReceiveVendor(o) && canEditStep(3) && (
+            <button onClick={doVendorBack} disabled={venBusy}
+              style={{ ...btnPri, marginTop: 8, padding: '7px 14px', background: '#0ea5e9' }}>
+              {venBusy ? 'กำลังบันทึก…' : '📥 ของกลับแล้ว — ช่างทำต่อ'}
+            </button>
+          )}
+        </div>
+      )}
+      {canSendVendor(o) && canEditStep(3) && (
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          {!showVendor ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
+                ต้องให้ <b style={{ color: 'var(--text2)' }}>ผู้รับจ้างภายนอกมาแก้?</b> — บันทึกไว้ ใบยังเป็นของทีมนี้
+                แต่เวลาที่รอของจะ<b style={{ color: 'var(--text2)' }}>ไม่ถูกนับเป็นเวลาซ่อมของช่าง</b>
+              </div>
+              <button onClick={() => { setVenSup(o.supplier || ''); setVenNote(''); setShowVendor(true); }}
+                style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>📤 ส่งซ่อมภายนอก</button>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>📤 ส่งซ่อมภายนอก — ส่งให้ใคร?</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ผู้รับจ้าง (supplier)</div>
+              <SupplierSelect value={venSup} kinds={['service']} onChange={res => setVenSup(res.supplier || '')}
+                placeholder="ค้นชื่อผู้รับจ้าง — พิมพ์เองได้ถ้ายังไม่มีในทะเบียน" inputStyle={{ background: 'var(--bg)' }} />
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ส่งอะไรไป / คาดว่ากลับเมื่อไหร่ (ผู้แจ้งจะเห็นข้อความนี้)</div>
+                <textarea value={venNote} onChange={e => setVenNote(e.target.value)}
+                  placeholder="เช่น ถอดมอเตอร์ส่งพันขดลวด นัดรับ 3 วัน" style={{ ...inp, fontSize: 12.5, minHeight: 52 }} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.6 }}>
+                กดแล้ว: ใบเปลี่ยนเป็น <b style={{ color: '#0ea5e9' }}>“📤 ส่งซ่อมภายนอก (รอ supplier)”</b> (ยังไม่ปิด)
+                · <b style={{ color: 'var(--text2)' }}>แจ้งผู้เปิดใบ + หัวหน้าส่วนงาน</b> ทันที
+                · ค่าใช้จ่ายลงช่องเดิมตอนซ่อมเสร็จ (ค่าแรง / ค่าอะไหล่)
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => setShowVendor(false)} style={btnGhost}>ยกเลิก</button>
+                <button onClick={doVendorSend} disabled={venBusy}
+                  style={{ ...btnPri, padding: '7px 14px', background: '#0ea5e9' }}>
+                  {venBusy ? 'กำลังบันทึก…' : '📤 ยืนยันส่งซ่อมภายนอก'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       {/* ➡️ ปุ่มส่งต่อ — ทีมที่ถือใบอยู่ (ขั้น 2-3) เท่านั้น · เกณฑ์ = canHandoff() + สิทธิ์ขั้น 3 */}
       {canHandoff(o) && canEditStep(3) && (
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
@@ -1676,7 +1807,9 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           )}
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏱ KPI</div>
-            <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={fmtMin(ttr)} /><Row k="หยุดรวม (Breakdown)" v={fmtMin(bd)} />
+            <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
+              ? `${fmtMin(ttr)} (รวมรอ supplier ${fmtMin(ttrGross)})`
+              : fmtMin(ttr)} /><Row k="หยุดรวม (Breakdown)" v={fmtMin(bd)} />
           </div>
         </div>
       </div>
@@ -2345,7 +2478,9 @@ function KpiTab({ orders, scopeLines, lineObjs = [], machines = [] }) {
   }, [orders, scopeLines, line, days, lineObjs]);
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
-    for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r); const t = minutesBetween(o.accept_at, o.repair_done_at); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
+    for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r);
+      // MTTR หักช่วงอยู่กับ supplier · Breakdown ไม่หัก (ไลน์หยุดจริง) — ดู mtnVendor.js
+      const t = techRepairMin(o); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
     const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
@@ -2393,7 +2528,7 @@ function KpiTab({ orders, scopeLines, lineObjs = [], machines = [] }) {
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         <Card t="งานที่ปิด (ในช่วง)" v={stat.n} />
         <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
-        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง)" />
+        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง และหักช่วงที่ส่งซ่อมภายนอกออกแล้ว)" />
         <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />
         <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>

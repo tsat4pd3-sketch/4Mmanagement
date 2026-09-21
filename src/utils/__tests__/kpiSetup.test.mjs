@@ -4,7 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
-  providerReaches, scopeLabel, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
+  providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
+  KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
+  isStdFixed, isStdParent, checkStdSelection,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -37,12 +39,23 @@ test('🔴 ยังไม่มีผล / ยังไม่ตั้งเป
   assert.equal(noTarget.level, null, '"ไม่มีเป้า" ต้องเป็นเทา ไม่ใช่เขียว');
 });
 
-test('🔴 ห้ามสมมติว่า Target ยากกว่า Commitment เสมอ — Safety commit 0 / target 1 Case', () => {
-  // ใบจริงหน้า 33 ของคู่มือ: Commitment 0 Case · Target 1 Case (กลับด้านกับแถวอื่น)
-  const def = { commit_compare: '<=', commit_value: 0, target_compare: '<=', target_value: 1, weight: 4 };
-  assert.equal(scoreKpi(0, def).point, 4,   '0 เคส = ผ่านบาร์ที่เข้มกว่า (0) ⇒ เต็ม');
-  assert.equal(scoreKpi(1, def).point, 2,   '1 เคส = ผ่านแค่บาร์หลวม (1) ⇒ ครึ่ง');
-  assert.equal(scoreKpi(2, def).point, 0,   '2 เคส = ไม่ถึงทั้งคู่');
+test('🔴 เกณฑ์อ่านจาก "ป้ายของบาร์" — ถึง Target = 1 · ถึงแค่ Commitment = 0.5 (ประกาศ QSM-R2 001/2569)', () => {
+  // แถวปกติ: ใบ PD3 HDF FY2026 ข้อ 3.5 OEE — commit ≥83% · target ≥85% · weight 6
+  const oee = { commit_compare: '>=', commit_value: 83, target_compare: '>=', target_value: 85, weight: 6 };
+  assert.equal(scoreKpi(86, oee).point, 6, '≥85 = ถึง Target ⇒ เต็ม');
+  assert.equal(scoreKpi(84, oee).point, 3, 'ถึงแค่ Commitment ⇒ ครึ่ง');
+  assert.equal(scoreKpi(80, oee).point, 0, 'ไม่ถึงทั้งคู่ ⇒ 0');
+
+  // แถวที่ commit "เข้มกว่า" target (คนกรอกสลับ) — ใบ JIG MTN ข้อ 3.4 MTTR commit ≤0.2 · target ≤0.3
+  // กติกาตามป้าย: ≤0.3 คือ Target ⇒ 0.25 ได้เต็ม · ห้ามกลับไปตัดสินจาก "บาร์ไหนเข้มกว่า" (เคยเขียนผิด)
+  const mttr = { commit_compare: '<=', commit_value: 0.2, target_compare: '<=', target_value: 0.3, weight: 4 };
+  assert.equal(scoreKpi(0.25, mttr).point, 4, 'ถึง Target = เต็ม ไม่ว่า commit จะเข้มกว่าหรือไม่');
+  assert.equal(scoreKpi(0.35, mttr).point, 0);
+
+  // มีแต่ Target ไม่มี Commitment (เช่น QCC ≥30%/plant) — ไม่ถึง = 0 ไม่ใช่ครึ่ง
+  const qcc = { target_compare: '>=', target_value: 30, weight: 2 };
+  assert.equal(scoreKpi(31, qcc).point, 2);
+  assert.equal(scoreKpi(29, qcc).point, 0);
 });
 
 test('totalPoints บอก coverage เสมอ (ไฟรวมต้องรู้ว่าตัดสินจากกี่ช่อง)', () => {
@@ -68,10 +81,20 @@ test('DL / OH / DL&OH = ตัวเลข ÷ ยอดขายจากสิ�
   assert.ok(Math.abs(both - (dl + oh)) < 1e-9, 'DL&OH ต้องเท่ากับ DL + OH เป๊ะ');
 });
 
-test('Inventory (วัน) = มูลค่าสต็อก ÷ (ยอดขาย ÷ ตัวหารวัน) — ใบใช้ 30 คงที่', () => {
-  const v = evalFormula('inventory_day',
-    { inventory_baht: 2000000, sale_product: 157193320.06, days_in_month: 30 }).value;
-  assert.ok(Math.abs(v - 0.3817) < 0.001, `ได้ ${v} ควรใกล้ 0.3817 (ตรงกับใบ PD3 ม.ค.)`);
+test('DSI = (มูลค่าสต็อกสิ้นเดือน ÷ COGS) × วัน — สูตรทางการ (ประกาศ + แม่แบบ Corporate + ใบ Monitoring)', () => {
+  const v = evalFormula('inventory_day', { inventory_baht: 12_000_000, cogs: 1_000_000_000, days_in_month: 30 }).value;
+  assert.ok(Math.abs(v - 0.36) < 1e-9, `ได้ ${v}`);
+  // ตัวหารคือ COGS — ส่ง sale_product มาแทนไม่ได้ ต้องฟ้องว่าขาด
+  assert.deepEqual(evalFormula('inventory_day', { inventory_baht: 1, sale_product: 2, days_in_month: 30 }).missing, ['cogs']);
+});
+
+test('🔴 DSI ของแต่ละแผนกบวกกัน = DSI ของทั้งโรงงาน (ตัวหาร COGS เป็นของโรงงานตัวเดียว)', () => {
+  // เลขจากใบ APPRAISAL FORM 2026 ที่เซ็นแล้วทั้ง 7 ใบ (§14.3)
+  const target = { pd1: 0.318, pd2: 0.196, pd3: 0.324, pd4: 0.049, logIn: 3.799, whOut: 7.301 };
+  const commit = { pd1: 0.345, pd2: 0.212, pd3: 0.351, pd4: 0.053, logIn: 4.115, whOut: 7.910 };
+  const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum(target) - 12) < 0.05, `รวม target ได้ ${sum(target)} ใบ GM เขียน ≤12 Days`);
+  assert.ok(Math.abs(sum(commit) - 13) < 0.05, `รวม commit ได้ ${sum(commit)} ใบ GM เขียน ≤13 Days`);
 });
 
 test('🔴 ขาดตัวแปร / ตัวหารเป็นศูนย์ = null + บอกว่าขาดอะไร ห้ามคืน 0', () => {
@@ -88,6 +111,21 @@ test('🔴 ขาดตัวแปร / ตัวหารเป็นศูน
 test('summarizeMonths: average ข้ามเดือนที่ยังไม่กรอก (ไม่นับเป็น 0)', () => {
   assert.equal(summarizeMonths([80, null, 100], 'average'), 90);
   assert.equal(summarizeMonths([null, null], 'average'), null);
+});
+
+test('🔴 เดือนที่ยังไม่มีผล ใบทางการก็ไม่นับเป็น 0 — ล็อกด้วยเลขจากใบ KPI Online จริง (§13.2)', () => {
+  // ใบ KPI_Monitoring.pdf (P4 Assembly) แถว Customer Satisfaction (Q&D):
+  // กรอก ม.ค.-ก.ค. · ส.ค.-ธ.ค. ใบ "พิมพ์ 0.00" แต่ช่อง Average ของใบเอง = 94.35
+  const filled = [100.00, 91.67, 87.50, 100.00, 93.75, 100.00, 87.50];
+  const asPrinted = [...filled, 0, 0, 0, 0, 0];          // อย่างที่ตาเห็นบนใบ
+  const asMeant   = [...filled, null, null, null, null, null]; // ความหมายจริง
+
+  const avg = summarizeMonths(asMeant, 'average');
+  assert.ok(Math.abs(avg - 94.35) < 0.01, `ได้ ${avg} ใบทางการเขียน 94.35`);
+
+  const naive = summarizeMonths(asPrinted, 'average');
+  assert.ok(Math.abs(naive - 55.03) < 0.01, 'นับ 0.00 ที่พิมพ์บนใบ = ได้ 55.03');
+  assert.ok(avg - naive > 39, 'ต่างกันเกือบ 40 จุด — กับดักนี้ต้องไม่หลุดกลับมา');
 });
 
 test('summarizeMonths: sum / max / as_of', () => {
@@ -134,6 +172,51 @@ test('parseBar / fmtBar ไป-กลับได้ (ใบเก่าเก�
   assert.equal(fmtBar(null, null), '—');
 });
 
+test('🔴 เป้าที่เขียนไม่มีเครื่องหมาย ต้องเดาทิศได้ ไม่ใช่กลายเป็นเทาตลอดกาล (เลขจากใบจริงทั้ง 12 ใบ)', () => {
+  // 2) ยืมทิศจาก Commitment
+  assert.equal(inferCompare('100%', '>='), '>=', 'Customer Satisfaction: commit ≥95% ⇒ เป้า 100% คือ ≥');
+  assert.equal(inferCompare('730 Hr.', '>='), '>=', 'MTN MTBF: commit ≥729.5 Hr.');
+  assert.equal(inferCompare('0 Hr.', '<='), '<=', 'MTN MTTR: commit ≤2 Hr.');
+  assert.equal(inferCompare('0%', '<='), '<=', 'Machine Break Down: commit ≤0.28%');
+  // 3) ไม่มี Commitment ให้ยืม
+  assert.equal(inferCompare('0 Case', null), '<=', 'Safety ไม่มี commit');
+  assert.equal(inferCompare('0', null), '<=', 'Premium Freight ไม่มี commit');
+  assert.equal(inferCompare('100%', null), '>=', 'WH TS Academy ไม่มี commit');
+  // 1) มีเครื่องหมายชนะเสมอ
+  assert.equal(inferCompare('≤ 300 PPM', '>='), '<=', 'เครื่องหมายในข้อความต้องชนะการยืมทิศ');
+  // 4) เดาไม่ได้ = null (จอต้องบอกว่ายังไม่ระบุทิศทาง ห้ามเดามั่ว)
+  assert.equal(inferCompare('3 Types', null), null);
+
+  // ผลลัพธ์ปลายทาง: เป้า "100%" ต้องให้คะแนนได้จริง ไม่ใช่ pending
+  const t = parseBar('100%', '>=');
+  const sc = scoreKpi(100, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 });
+  assert.equal(sc.point, 5);
+  assert.equal(scoreKpi(96, { commit_compare: '>=', commit_value: 95, target_compare: t.compare, target_value: t.value, weight: 5 }).point, 2.5);
+});
+
+test('🔴 scoreDef อ่านแถวยุคเก่าได้ — commitment ที่เป็น "ข้อความ" ต้องกลายเป็นบาร์ 0.5', () => {
+  // แถวแบบที่ KpiMonthly เขียนมาแต่เดิม: direction + target_value ตัวเลข · commitment เป็นข้อความเฉยๆ
+  const legacy = { direction: 'down', target_value: 1.3042, commitment: '≤ 1.3445%', weight: 6 };
+  assert.equal(scoreDef(1.30, legacy).point, 6,   'ถึง Target');
+  assert.equal(scoreDef(1.34, legacy).point, 3,   'ถึงแค่ Commitment ⇒ ครึ่ง (เดิมตกเป็น N ทันที)');
+  assert.equal(scoreDef(1.40, legacy).point, 0,   'ไม่ถึงทั้งคู่');
+  assert.equal(scoreDef(1.34, legacy).status, 'warn');
+  assert.equal(scoreDef(null, legacy).status, 'unknown', 'ยังไม่กรอก = เทา ห้ามเป็นแดง');
+
+  // คอลัมน์ยุคใหม่ต้องชนะของเก่าเสมอ
+  const mixed = { direction: 'up', target_value: 10, target_compare: '<=', commit_compare: '<=', commit_value: 20 };
+  const b = defBars(mixed);
+  assert.equal(b.target_compare, '<=', 'target_compare ต้องชนะ direction');
+  assert.equal(b.commit_value, 20);
+});
+
+test('🔴 แถวที่มีแต่ Target ไม่มี Commitment — ไม่ถึงต้องเป็น 0 ไม่ใช่ครึ่ง', () => {
+  const d = { direction: 'up', target_value: 85, weight: 6 };   // OEE ที่เป้ามาจาก oee_targets
+  assert.equal(scoreDef(86, d).point, 6);
+  assert.equal(scoreDef(84, d).point, 0);
+  assert.equal(defBars(d).commit_value, null);
+});
+
 test('ทะเบียนไม่มีคีย์ซ้ำ และสูตรอ้างตัวแปรที่มีจริงทุกตัว', () => {
   const dup = (arr) => arr.length !== new Set(arr).size;
   assert.ok(!dup(KPI_PROVIDERS.map(p => p.key)), 'provider key ซ้ำ');
@@ -143,4 +226,76 @@ test('ทะเบียนไม่มีคีย์ซ้ำ และสู�
   for (const f of KPI_FORMULAS) {
     for (const v of f.vars) assert.ok(varKeys.has(v), `สูตร ${f.key} อ้างตัวแปร ${v} ที่ไม่มีในทะเบียน`);
   }
+});
+
+/* ── KPI Standard 2026 — กติกาเลือก KPI ที่เป็นของกลุ่ม (ที่มา §15) ────────────────────── */
+
+test('ทะเบียนหน่วยงานมาตรฐาน 24 หน่วย — ชื่อต้องตรงคอลัมน์ std_unit เป๊ะ (เป็นคีย์เชื่อมฐาน)', () => {
+  assert.equal(KPI_STD_UNITS.length, 24, 'คู่มือ KPI Guideline 2026 หน้า 7-18 มี 24 หน่วยงาน');
+  const units = KPI_STD_UNITS.map(u => u.unit);
+  assert.equal(units.length, new Set(units).size, 'ชื่อหน่วยงานซ้ำ');
+  // 20 หน่วยที่ seed แล้ว (migration 20260921) · 4 หน่วย TSA ตั้งใจยังไม่ใส่ ดีกว่าใส่ผิด
+  assert.equal(KPI_STD_UNITS.filter(u => u.seeded).length, 20);
+  assert.deepEqual(
+    KPI_STD_UNITS.filter(u => !u.seeded).map(u => u.unit),
+    ['Accounting-TSA', 'HRM-TSA', 'Internal Audit-TSA', 'AOBM-TSA'],
+  );
+  // หน่วยที่ ESM ผลิตตัวเลขให้จริงต้องอยู่ในทะเบียนและ seed แล้ว
+  for (const u of ['Production', 'Maintenance', 'Die Maintenance', 'QA', 'Logistic & Sales']) {
+    assert.equal(stdUnitOf(u)?.seeded, true, `${u} ต้องมีในทะเบียนและ seed แล้ว`);
+  }
+  assert.equal(stdUnitOf('ไม่มีหน่วยนี้'), null);
+});
+
+test('ป้ายหน่วยงาน — ไม่มีคำแปลไทยที่มั่นใจ ให้ใช้ชื่ออังกฤษตามเอกสาร ห้ามเดาคำแปล', () => {
+  assert.equal(stdUnitLabel('Production'), 'Production — ฝ่ายผลิต');
+  assert.equal(stdUnitLabel('QSM'), 'QSM', 'ตัวย่อที่เอกสารไม่ได้ขยายความ ห้ามแปลเอง');
+  assert.equal(stdUnitLabel('CIC'), 'CIC');
+  assert.equal(stdUnitLabel(null), '');
+});
+
+test('ป้ายบังคับ fixed/choice — แถวที่ไม่มี requirement คือ "หัวข้อแม่" ไม่ใช่ KPI', () => {
+  assert.deepEqual(KPI_REQUIREMENTS.map(r => r.key), ['fixed', 'choice']);
+  const parent = { topic: 'Activity', requirement: null };   // แถวแม่ที่มี QCC/Kaizen อยู่ใต้มัน
+  assert.ok(isStdParent(parent));
+  assert.ok(!isStdFixed(parent), 'แถวแม่ห้ามถูกนับเป็นข้อบังคับ ไม่งั้นเตือน "ขาดข้อบังคับ" ผิดทุกใบ');
+  assert.ok(isStdFixed({ topic: 'OEE', requirement: 'fixed' }));
+  assert.ok(!isStdFixed({ topic: 'Cost Reduction', requirement: 'choice' }));
+});
+
+test('🔴 ผลรวม weight ต้องเป็น 50 เสมอ (ประกาศ QSM-R2 001/2569) — และต้องมีข้อบังคับครบ', () => {
+  assert.equal(KPI_TOTAL_WEIGHT, 50);
+  // ใบจริงของ PD3: 9 ข้อ รวม 50 พอดี
+  const ok = [6, 6, 7, 6, 5, 5, 5, 6, 4].map(w => ({ weight: w }));
+  assert.equal(checkStdSelection(ok).weight, 50);
+  assert.equal(checkStdSelection(ok).diff, 0);
+  assert.equal(checkStdSelection(ok).ok, true);
+
+  const over = [...ok, { weight: 3 }];
+  assert.equal(checkStdSelection(over).diff, 3, 'เกิน 50 ต้องบอกว่าเกินเท่าไหร่');
+  assert.equal(checkStdSelection(over).ok, false);
+  assert.equal(checkStdSelection([{ weight: 20 }]).diff, -30, 'ขาดต้องเป็นค่าติดลบ');
+  // แถวที่ยังไม่ใส่น้ำหนัก ต้องไม่ถูกนับเป็น 0 เงียบๆ แล้วหลอกว่าใบครบ
+  assert.equal(checkStdSelection([{ weight: 50 }, { weight: null }]).diff, 0);
+});
+
+test('เตือน "ขาดข้อบังคับ" — จับคู่ได้ทั้งทาง std_item_id และชื่อหัวข้อ', () => {
+  const std = [
+    { id: 'a', topic: 'Safety',  requirement: 'fixed' },
+    { id: 'b', topic: 'OEE',     requirement: 'fixed' },
+    { id: 'c', topic: 'Cost Reduction', requirement: 'choice' },
+    { id: 'd', topic: 'Activity', requirement: null },
+  ];
+  const rows = [{ weight: 25, std_item_id: 'a' }, { weight: 25, topic: ' oee ' }];
+  const r = checkStdSelection(rows, std);
+  assert.equal(r.weight, 50);
+  assert.deepEqual(r.missingFixed, [], 'จับคู่ด้วยชื่อหัวข้อ (ตัดช่องว่าง/ตัวพิมพ์) ต้องได้');
+  assert.equal(r.ok, true);
+
+  const r2 = checkStdSelection([{ weight: 50, std_item_id: 'a' }], std);
+  assert.deepEqual(r2.missingFixed.map(x => x.topic), ['OEE']);
+  assert.equal(r2.ok, false, 'น้ำหนักครบ 50 แต่ขาดข้อบังคับ = ยังไม่ผ่าน');
+
+  // ไม่ส่งทะเบียนมา = ตรวจแค่น้ำหนัก ห้ามเดาว่าขาดข้อบังคับ
+  assert.deepEqual(checkStdSelection([{ weight: 50 }]).missingFixed, []);
 });

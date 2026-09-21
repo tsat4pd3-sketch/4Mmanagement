@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -12,7 +13,7 @@ import LineSelect from '../components/LineSelect';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildScheduleMaps, resolveAssignedShift, seesAllTeams } from '../utils/shiftAssign';
+import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
@@ -165,9 +166,9 @@ export default function Checkin() {
     if (q.length < 2) { setBorrowResults([]); return; }
     const t = setTimeout(async () => {
       setBorrowLoading(true);
-      const { data } = await supabase.from('employees')
+      const { data } = await onlyDirectStaff(supabase.from('employees')
         .select('id, employee_id_code, name, image_url, line_id, section, team')
-        .eq('is_active', true)
+        .eq('is_active', true))
         .or(`name.ilike.%${q}%,employee_id_code.ilike.%${q}%`)
         .order('employee_id_code').limit(30);
       setBorrowResults(data || []);
@@ -212,7 +213,7 @@ export default function Checkin() {
       .select(LINE_COLUMNS).order('section').order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
     setLines(lineData || []);
 
-    let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    let empQ = onlyDirectStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
     if (role === 'leader') {
       if (lineId) {
         const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
@@ -220,7 +221,11 @@ export default function Checkin() {
       }
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
+      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+      const teamsSeen = teamsVisibleToLeader(team);
+      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
     } else if (scopeSecs.length) {
       // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       empQ = empQ.in('section', scopeSecs);
@@ -865,7 +870,7 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
+      let empQ = onlyDirectStaff(supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true)).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
         if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
@@ -874,7 +879,11 @@ export default function Checkin() {
         }
         // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
+      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+      const teamsSeen = teamsVisibleToLeader(team);
+      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
       }

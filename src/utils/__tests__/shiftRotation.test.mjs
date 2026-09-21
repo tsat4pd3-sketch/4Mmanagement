@@ -109,3 +109,29 @@ test('projectWeeks กับ rotation ที่ ok:false = ไม่ได้อ
   });
   assert.deepEqual(weeks, []);
 });
+
+/* ─── ทีมที่หัวหน้าต้องเห็นในใบเช็คชื่อ (teamsVisibleToLeader · 2026-09-21) ───────────
+   feedback หน้างาน: "พนักงานบางคนมีปัญหาด้านสุขภาพ เค้าลงทีม C เพราะไม่ได้สลับกะ
+   แต่หัวหน้าจะไม่เห็นเค้าในการเช็คชื่อ" — วัดจริง: ทีม C 23 คน (operator 7)
+   2 คนไม่เคยถูกเช็คชื่อเลยสักครั้ง                                                   */
+import { teamsVisibleToLeader, seesAllTeams, shiftFromTeam } from '../shiftAssign.js';
+
+test('หัวหน้าทีม A/B ต้องเห็นทีมตัวเอง + ทีมที่ไม่หมุนกะ (C)', () => {
+  assert.deepEqual(teamsVisibleToLeader('A'), ['A', 'C']);
+  assert.deepEqual(teamsVisibleToLeader('B'), ['B', 'C']);
+  assert.deepEqual(teamsVisibleToLeader('a'), ['A', 'C']);   // เคส/ช่องว่างเพี้ยนได้ (text อิสระ)
+  assert.deepEqual(teamsVisibleToLeader(' b '), ['B', 'C']);
+});
+
+test('หัวหน้าทีม C / ไม่มีทีม = ไม่จำกัดทีม (คืน null) — กฎเดิม 21/08 ห้าม regress', () => {
+  assert.equal(teamsVisibleToLeader('C'), null);
+  assert.equal(teamsVisibleToLeader(''), null);
+  assert.equal(teamsVisibleToLeader(null), null);
+  assert.equal(seesAllTeams('C'), true);
+});
+
+test('ทีม C ไม่รกกะดึก — ระบบยังตีว่าเข้ากะเช้าเสมอ จอกรอง "เฉพาะกะนี้" จัดการต่อ', () => {
+  assert.equal(shiftFromTeam('A', 'C'), 'day');
+  assert.equal(shiftFromTeam('B', 'C'), 'day');
+  assert.equal(shiftFromTeam('A', 'B'), 'night');   // ทีมที่หมุนกะยังเป็นเหมือนเดิม
+});

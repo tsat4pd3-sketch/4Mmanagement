@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
+import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
@@ -995,8 +996,9 @@ export default function WorkforceInsight() {
   useEffect(() => {
     supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, std_day_shift, std_night_shift')
       .then(({ data }) => setLines(data || []));
-    supabase.from('employees')
-      .select('id, name, employee_id_code, section, department, team, line_id, is_active, start_date, position')
+    // 👥 กำลังคน/turnover นับเฉพาะพนักงานหน้าไลน์ — คนทางอ้อม (QA/PE/ธุรการ) ไม่เข้าสูตร
+    onlyDirectStaff(supabase.from('employees')
+      .select('id, name, employee_id_code, section, department, team, line_id, is_active, start_date, position'))
       .then(({ data }) => setEmployees(data || []));
     loadPositions();
   }, []);

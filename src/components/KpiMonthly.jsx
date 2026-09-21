@@ -4,6 +4,7 @@ import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
+import { scoreDef, KPI_LEVELS } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -342,10 +343,19 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     setEntries(p => ({ ...p, [kpiId]: { ...(p[kpiId] || {}), [month]: value } }));
   };
 
-  const manualYn = (def, v) => {
-    if (v == null || def.target_value == null || !def.direction) return null;
-    return def.direction === 'up' ? v >= Number(def.target_value) : v <= Number(def.target_value);
-  };
+  /* 🔴 เกณฑ์ทางการ 1 / 0.5 / 0 ผ่าน `scoreDef()` เท่านั้น (17/09 · ประกาศ QSM-R2 001/2569)
+     เดิมเป็น Y/N ล้วน — ไม่มีขั้น 0.5 และ `commitment` ที่กรอกไว้เป็นข้อความไม่เคยถูกเอามาตัดสินเลย
+     ตอนนี้ `scoreDef` parse ข้อความนั้นกลับเป็นบาร์ ⇒ ใบที่กรอก "≤ 1.452%" ไว้ได้ขั้น 0.5 คืนเอง */
+  /* สัญลักษณ์ตรงกับใบจริง: ○ Achieve (1) · △ Improvement (0.5) · ✗ Miss goal (0) */
+  const LvMark = ({ lv, small }) => (lv == null ? null : (
+    <b title={`${KPI_LEVELS[lv]?.label || ''} (${lv} คะแนน)`}
+      style={{ marginLeft: small ? 2 : 4, fontSize: small ? 10 : undefined,
+        color: lv === 1 ? '#22c55e' : lv === 0.5 ? '#f59e0b' : '#ef4444' }}>
+      {lv === 1 ? '○' : lv === 0.5 ? '△' : '✗'}
+    </b>
+  ));
+
+  const manualLv = (def, v) => (v == null ? null : scoreDef(v, def).level);
   const manualAvg = def => {
     const vs = Array.from({ length: 12 }, (_, i) => entries[def.id]?.[i + 1]).filter(v => v != null);
     return vs.length ? vs.reduce((s, v) => s + v, 0) / vs.length : null;
@@ -442,10 +452,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const tOf = k => (k === 'oee' ? targetOee
       : autoDefBy[k]?.target_value == null ? null : Number(autoDefBy[k].target_value));
     const dOf = (k, fb) => (k === 'oee' ? 'up' : (autoDefBy[k]?.direction || (tOf(k) == null ? null : fb)));
-    /* Y/N ตัดสินได้ต่อเมื่อมีทั้งเป้าและทิศทาง (กฎ "ไม่มีเป้า ≠ ผ่าน") */
+    /* ตัดสินได้ต่อเมื่อมีเป้า (กฎ "ไม่มีเป้า ≠ ผ่าน") — คืน **ระดับ** 1/0.5/0 ไม่ใช่ boolean */
     const mk = (k, fb) => {
-      const t = tOf(k), d = dOf(k, fb);
-      return (v) => (v == null || t == null || !d ? null : (d === 'up' ? v >= t : v <= t));
+      const t = tOf(k), d = dOf(k, fb), def = autoDefBy[k] || {};
+      return (v) => (v == null || t == null || !d ? null
+        : scoreDef(v, { ...def, target_value: t, direction: d }).level);
     };
     const lbl = (k, base) => {
       const t = tOf(k), d = dOf(k, null);
@@ -466,7 +477,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         src: 'cost', defDir: 'down', target: tOf('cost'), dir: dOf('cost', 'down'),
         yn: (() => { const f = mk('cost', 'down'); return m => (m.costKnown ? f(m.cost) : null); })() },
       { key: 'oee',     label: `OEE (%)${targetOee != null ? ` · เป้า ≥ ${targetOee.toFixed(1)}` : ''}`, get: m => nf(m.oee, 1),
-        yn: m => (m.oee == null || targetOee == null ? null : m.oee >= targetOee),
+        yn: m => (m.oee == null || targetOee == null ? null : scoreDef(m.oee, { target_compare: '>=', target_value: targetOee }).level),
         val: m => (m.n ? m.oee : null), kind: 'line', target: targetOee, dir: 'up', dec: 1, src: 'oee' },
       { key: 'dt',      label: lbl('dt', 'Downtime นอกแผน (นาที)'), get: m => nf(m.dtMin), warnPos: true, val: m => (m.n ? m.dtMin : null), kind: 'bar',
         src: 'dt', defDir: 'down', target: tOf('dt'), dir: dOf('dt', 'down'),
@@ -492,7 +503,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const th = 'border:1px solid #999;padding:4px 6px;font-size:11px;background:#eee;text-align:center';
     const td = 'border:1px solid #999;padding:4px 6px;font-size:11px;text-align:right';
     const rows = ROWS.map(r => `<tr><td style="${td};text-align:left;font-weight:bold">${r.label}</td>${
-      months.out.map((m, i) => `<td style="${td}">${m.n ? r.get(m) : ''}${r.yn && m.n && r.yn(m) != null ? ` <b>${r.yn(m) ? '✓' : '✗'}</b>` : ''}${i === curMonthIdx ? '<div style="font-size:8px;color:#b45309">ยังไม่จบ</div>' : ''}</td>`).join('')
+      months.out.map((m, i) => `<td style="${td}">${m.n ? r.get(m) : ''}${r.yn && m.n && r.yn(m) != null ? ` <b>${r.yn(m) === 1 ? '○' : r.yn(m) === 0.5 ? '△' : '✗'}</b>` : ''}${i === curMonthIdx ? '<div style="font-size:8px;color:#b45309">ยังไม่จบ</div>' : ''}</td>`).join('')
     }<td style="${td};font-weight:bold">${r.get(months.tot)}</td></tr>`).join('');
     const manRows = (defs || []).map(d2 => {
       const cells = Array.from({ length: 12 }, (_, i) => {
@@ -536,7 +547,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         { key: 'oee', name: 'OEE (%)', formula: 'OEE stamp ถ่วงน้ำหนักเวลารับภาระ',
           commitment: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '', target: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '',
           val: m => (m.n ? m.oee : null), sum: months.tot.oee,
-          yn: m => (m.n && m.oee != null && targetOee != null ? m.oee >= targetOee : null),
+          yn: m => (m.n && m.oee != null && targetOee != null ? scoreDef(m.oee, { target_compare: '>=', target_value: targetOee }).level : null),
           ynTotal: months.tot.oee != null && targetOee != null ? months.tot.oee >= targetOee : null },
         { key: 'dt', name: 'Downtime นอกแผน (นาที)', formula: 'Σ downtime นอกแผนของกะที่ปิดแล้ว', val: m => (m.n ? m.dtMin : null), sum: months.tot.dtMin },
       ].map(r => ({
@@ -554,7 +565,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           scope: d2.scope_text || d2.kpi_catalog?.scope_text || '',
           commitment: d2.commitment || '', target: d2.target || '',
           monthVals, summary: avg,
-          ynVals: monthVals.map(v => manualYn(d2, v)), ynTotal: manualYn(d2, avg),
+          ynVals: monthVals.map(v => manualLv(d2, v)), ynTotal: manualLv(d2, avg),
           weight: d2.weight, actionPlan: d2.action_plan || '', actionOwner: d2.action_owner || '',
           sectionTag: !section && d2.section ? d2.section : '',
         };
@@ -779,13 +790,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                     return (
                       <td key={i} style={{ ...tdSt, opacity: m.n ? 1 : 0.35 }}>
                         {m.n ? r.get(m) : '·'}
-                        {yn != null && <b style={{ marginLeft: 4, color: yn ? '#22c55e' : '#ef4444' }}>{yn ? 'Y' : 'N'}</b>}
+                        <LvMark lv={yn} />
                       </td>
                     );
                   })}
                   <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
                     {r.get(months.tot)}
-                    {r.yn && months.tot.n ? (() => { const yn = r.yn(months.tot); return yn == null ? null : <b style={{ marginLeft: 4, color: yn ? '#22c55e' : '#ef4444' }}>{yn ? 'Y' : 'N'}</b>; })() : null}
+                    {r.yn && months.tot.n ? <LvMark lv={r.yn(months.tot)} /> : null}
                   </td>
                   <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
                     onClick={() => openRowChart(r)}>
@@ -883,7 +894,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                     </tr>,
                     ...defs.filter(d2 => d2.category === c.key).map(d2 => {
                       const avg = manualAvg(d2);
-                      const ynT = manualYn(d2, avg);
+                      const ynT = manualLv(d2, avg);
                       return (
                         <tr key={d2.id}>
                           <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
@@ -900,17 +911,17 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           </td>
                           {Array.from({ length: 12 }, (_, i) => {
                             const v = entries[d2.id]?.[i + 1] ?? null;
-                            const yn = manualYn(d2, v);
+                            const yn = manualLv(d2, v);
                             return (
                               <td key={i} style={{ ...tdSt, padding: '3px 4px' }}>
                                 <CellInput value={v} disabled={!canManage} onCommit={raw => saveCell(d2.id, i + 1, raw)} />
-                                {yn != null && <b style={{ marginLeft: 2, color: yn ? '#22c55e' : '#ef4444', fontSize: 10 }}>{yn ? 'Y' : 'N'}</b>}
+                                <LvMark lv={yn} small />
                               </td>
                             );
                           })}
                           <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
                             {avg == null ? '—' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            {ynT != null && <b style={{ marginLeft: 4, color: ynT ? '#22c55e' : '#ef4444' }}>{ynT ? 'Y' : 'N'}</b>}
+                            <LvMark lv={ynT} />
                           </td>
                           <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
                             onClick={() => openDefChart(d2)}>

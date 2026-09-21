@@ -1533,6 +1533,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [showPicker, setShowPicker] = useState(false);  // modal เลือกพาร์ท
   const [pickerQ, setPickerQ]       = useState('');     // ค้นหาใน picker
   const [pickerSel, setPickerSel]   = useState([]);     // รายการที่เลือก [{part, qty_per_unit}]
+  /* 🌳 เพิ่มเข้าไป "ใต้ตัวไหน" ('' = ชั้น 1) — จำเป็นตั้งแต่ BOM มีชั้น (2026-09-21)
+     เคสจริงที่หน้างานแจ้ง: คอยล์ 50027085 ต้องอยู่ใต้ทั้ง 20058490 (RH) และ 20058491 (LH)
+     ข้างละ 0.321 KG ตาม SAP — ถ้าไม่เลือกแม่ได้ ก็เพิ่มตัวที่ 2 ไม่ได้เลย */
+  const [pickerParent, setPickerParent] = useState('');
   const [showEdit, setShowEdit]     = useState(false);  // modal แก้ไข bom row
   const [slocFree, setSlocFree]     = useState(false);  // true = พิมพ์รหัสคลังเอง (ไม่เลือกจากทะเบียน)
   const [editItem, setEditItem]     = useState(null);
@@ -1629,15 +1633,18 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   // picker: filter parts_master
   const pickerFiltered = useMemo(() => {
     const q = pickerQ.trim().toLowerCase();
-    const usedMats = new Set(items.map(i => i.mat_no));
-    const base = partsMaster.filter(p => !usedMats.has(p.mat_no));   // ซ่อนที่มีใน BOM แล้ว
+    /* ซ่อนเฉพาะที่มีอยู่ "ใต้ตัวแม่เดียวกัน" แล้ว — ตัวเดียวกันใต้แม่คนละตัวเพิ่มได้ (ตรงกับ SAP)
+       ⚠️ เดิมซ่อนทั้งใบ ⇒ หน้างานแจ้ง "เพิ่ม 50027085 ใต้ 20058491 ไม่ได้ เลข Mat ซ้ำ" */
+    const pk = (m) => (m || '').trim().toUpperCase();
+    const usedMats = new Set(items.filter(i => pk(i.parent_mat) === pk(pickerParent)).map(i => pk(i.mat_no)));
+    const base = partsMaster.filter(p => !usedMats.has(pk(p.mat_no)));
     if (!q) return base;
     return base.filter(p =>
       p.mat_no.toLowerCase().includes(q) ||
       p.part_name.toLowerCase().includes(q) ||
       (p.part_no || '').toLowerCase().includes(q) ||
       (p.supplier || '').toLowerCase().includes(q));
-  }, [partsMaster, pickerQ, items]);
+  }, [partsMaster, pickerQ, items, pickerParent]);
 
   const togglePick = (part) => setPickerSel(prev => {
     const has = prev.find(x => x.part.id === part.id);
@@ -1658,7 +1665,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const slocRegistered = slocs.some(s => slocLabel(s.code) === slocCode);
   const slocUnregistered = slocCode !== '' && !slocRegistered;
 
-  const openPicker = () => { setPickerQ(''); setPickerSel([]); setShowPicker(true); };
+  const openPicker = (parentMat = '') => { setPickerQ(''); setPickerSel([]); setPickerParent(parentMat); setShowPicker(true); };
   const openEdit_  = (it) => {
     setEditItem(it);
     setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
@@ -1680,7 +1687,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (error) {
       toast.error(error.code === '42703'
         ? 'ยังเก็บชั้นไม่ได้ — ยังไม่ได้ apply migration 20260916_bom_level_parent_mat (แจ้งผู้ดูแลระบบ)'
-        : error.message);
+        // ซ้ำระดับ "ใต้ตัวแม่เดียวกัน" (unique index 20260921) — บอกให้รู้ว่าต้องรวม qty ไม่ใช่ย้ายมาซ้อน
+        : error.code === '23505'
+          ? `ย้ายไม่ได้ — ใต้ ${toMat || selProduct?.mat_no} มี ${it.mat_no} อยู่แล้ว (รวม QTY ที่บรรทัดนั้นแทน)`
+          : error.message);
       return;
     }
     if (!data?.length) { toast.error('ย้ายไม่สำเร็จ — สิทธิ์ไม่พอ (0 แถวถูกแก้)'); return; }
@@ -1694,16 +1704,24 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (invalid) { toast.error(`QTY ของ ${invalid.part.part_name} ต้องมากกว่า 0`); return; }
     setSaving(true);
     // re-fetch existing mat_nos to avoid stale state duplicates
-    const { data: existing } = await supabaseDR.from('bom_items')
-      .select('mat_no, item_no').eq('product_id', selProduct.id);
-    const usedMats = new Set((existing || []).map(r => r.mat_no));
+    let { data: existing, error: exErr } = await supabaseDR.from('bom_items')
+      .select('mat_no, item_no, parent_mat').eq('product_id', selProduct.id);
+    if (exErr?.code === '42703') {                       // ยังไม่ apply migration parent_mat
+      ({ data: existing } = await supabaseDR.from('bom_items')
+        .select('mat_no, item_no').eq('product_id', selProduct.id));
+    }
+    const pkey = (m) => (m || '').trim().toUpperCase();
+    // กันซ้ำระดับ "ใต้ตัวแม่เดียวกัน" ให้ตรงกับ unique index ใหม่ (20260921_bom_items_unique_per_parent)
+    const usedMats = new Set((existing || [])
+      .filter(r => pkey(r.parent_mat) === pkey(pickerParent)).map(r => pkey(r.mat_no)));
     /* 📍 ตั้งเลขรายการต่อจากของเดิม เว้นทีละ 10 แบบ SAP (0010/0020/…) เพื่อให้แทรกกลางได้
        เลขนี้เป็น "ลำดับในใบ" ไม่ใช่ข้อมูลธุรกิจ → เติมให้เลยได้ · แก้ทีหลังที่ปุ่ม ✏️ */
     let seq = nextItemNo(existing || []);
     const rows = pickerSel
-      .filter(x => !usedMats.has(x.part.mat_no))
+      .filter(x => !usedMats.has(pkey(x.part.mat_no)))
       .map(x => ({
         product_id:   selProduct.id,
+        parent_mat:   pickerParent || null,
         mat_no:       x.part.mat_no,
         part_name:    x.part.part_name,
         part_no:      x.part.part_no || null,
@@ -1721,12 +1739,14 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     // ยังไม่ apply migration (42703) = เพิ่มพาร์ทได้ปกติ แค่ไม่มีเลขรายการ **ห้ามให้ทั้งใบพัง**
     if (error?.code === '42703') {
       ({ error } = await supabaseDR.from('bom_items')
-        .insert(rows.map(({ item_no, ...r }) => r)));
-      if (!error) toast.info('เพิ่มพาร์ทแล้ว — แต่ยังตั้งเลขรายการไม่ได้ (ยังไม่ได้ apply migration)');
+        .insert(rows.map(({ item_no, parent_mat, ...r }) => r)));
+      if (!error) toast.info('เพิ่มพาร์ทแล้ว — แต่ยังตั้งเลขรายการ/ชั้นไม่ได้ (ยังไม่ได้ apply migration)');
     }
     setSaving(false);
-    if (error) { toast.error(error.code === '23505' ? 'เลขรายการซ้ำ — มีคนแก้ BOM นี้พร้อมกัน กดโหลดใหม่แล้วลองอีกครั้ง' : error.message); return; }
-    toast.success(`เพิ่ม ${rows.length} พาร์ทใน BOM แล้ว`);
+    if (error) { toast.error(error.code === '23505'
+      ? 'ซ้ำ — พาร์ทนี้มีอยู่ใต้ตัวแม่เดียวกันแล้ว หรือมีคนแก้ BOM นี้พร้อมกัน กดโหลดใหม่แล้วลองอีกครั้ง'
+      : error.message); return; }
+    toast.success(`เพิ่ม ${rows.length} พาร์ท${pickerParent ? ` ใต้ ${pickerParent}` : ''} ใน BOM แล้ว`);
     setShowPicker(false);
     loadItems(selProduct.id);
     loadAll();
@@ -2046,6 +2066,23 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>➕ เพิ่มพาร์ทย่อยใน BOM</div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>{selProduct?.name} · เลือกหลายรายการได้ แล้วกรอก QTY ก่อนกด "เพิ่ม"</div>
+              {/* 🌳 เลือกชั้นที่จะเพิ่มเข้าไป — mat เดียวกันอยู่ใต้ตัวแม่คนละตัวได้ (ตรงกับ SAP)
+                  เคสจริง 21/09: คอยล์ 50027085 อยู่ใต้ทั้ง 20058490 (RH) และ 20058491 (LH) ข้างละ 0.321 KG */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>เพิ่มเข้าไปใต้:</span>
+                <select value={pickerParent} onChange={e => { setPickerParent(e.target.value); setPickerSel([]); }}
+                  style={{ ...inputSt, width: 260, padding: '5px 8px', fontSize: 12, background: 'var(--bg2)' }}>
+                  <option value="">— ชั้น 1 (ใต้ {selProduct?.mat_no || 'FG'}) —</option>
+                  {[...new Map(items.filter(o => o.mat_no).map(o => [o.mat_no, o])).values()].map(o => (
+                    <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no} · {o.part_name || ''}</option>
+                  ))}
+                </select>
+                {pickerParent && (
+                  <span style={{ fontSize: 11, color: '#0ea5e9' }}>
+                    พาร์ทที่มีอยู่ใต้ตัวอื่นแล้ว ยังเลือกซ้ำมาใส่ตรงนี้ได้ (คนละชั้น = คนละบรรทัด)
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* search */}

@@ -73,7 +73,12 @@ const ROW = (i) => ({
      ⇒ ตัวเลือก MAT.NO ของโมดัล Scan เปิด Order ว่างเปล่าตลอดใน harness = ไม่เคยถูกตรวจตาเลย */
   dr_products: { mat_no: `1010${1000+i}`, part_name: `ชิ้นงาน ${i}`, cycle_time_sec: 58,
                  line_name: 'LINE APRON ASSY / HYDROFORM', p_no: 'MB3B 16E060 CH' },
-  employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A' },
+  /* ⚠️ ต้องมี staff_kind เสมอ (2026-09-21) — `employees` เป็นทะเบียนคนของทั้งบริษัทแล้ว
+     (มีทั้งคนหน้าไลน์และสายสนับสนุน) · ให้ 1 ใน 4 แถวเป็น `indirect` เพื่อให้โค้ดสายตัวกรอง
+     พนักงานทางอ้อม (src/utils/staffKind.js → เช็คชื่อ/สกิล/กำลังคน) ถูกรันใน harness จริง
+     ถ้าทุกแถวเป็น direct เหมือนกันหมด ตัวกรองจะไม่เคยถูกทดสอบเลยสักหน้า */
+  employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A',
+               staff_kind: i % 4 === 3 ? 'indirect' : 'direct' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
 })
 /* ⚠️ แถวสุดท้ายเป็น "แถวข้อมูลไม่ครบ" โดยตั้งใจ (2026-08-26)

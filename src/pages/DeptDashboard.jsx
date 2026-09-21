@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -11,8 +11,6 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
-// แท็บ KPI รายเดือน — lazy: โหลดข้อมูลทั้งปีเฉพาะตอนถูกเปิด ไม่ถ่วงหน้า "วันนี้"
-const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -785,7 +783,7 @@ export default function DeptDashboard() {
      **redirect ไม่ใช่ลบทิ้ง** — จอ TV ที่บุ๊กมาร์กลิงก์เดิมไว้ต้องเปิดได้ต่อ (ห้ามพังของที่แขวนอยู่)
      พา `?team=`/`?sound=` ไปด้วย เพราะเป็นค่าตั้งประจำห้องที่จอนั้นตั้งไว้แล้ว */
   const rawView = sp.get('view');
-  const view = rawView === 'kpi' ? 'kpi' : 'now';
+  const view = 'now';   // เหลือมุมมองเดียว — `?view=kpi` ย้ายไป /obeya?tab=table แล้ว (redirect ด้านล่าง)
   const setView = (v) => { const n = new URLSearchParams(sp); if (v === 'now') n.delete('view'); else n.set('view', v); setSp(n); };
   const cfg = DEPTS.find(x => x.key === dept);
 
@@ -798,6 +796,17 @@ export default function DeptDashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const workDate = getWorkDate();
+
+  /* ลิงก์เก่า `?view=kpi` → `/obeya?tab=table` (17/09 ย้ายตาราง KPI รายเดือนไปอยู่กับบอร์ด KPI)
+     **redirect ไม่ใช่ลบทิ้ง** — คนที่บุ๊กมาร์กแท็บนี้ไว้ต้องยังเข้าถึงงานเดิมได้ (กฎเดียวกับ ?view=andon)
+     พา `?section=` ไปด้วยถ้ามี เพื่อให้เปิดมาอยู่ส่วนงานเดิม */
+  useEffect(() => {
+    if (rawView !== 'kpi') return;
+    const n = new URLSearchParams();
+    n.set('tab', 'table');
+    if (sp.get('section')) n.set('section', sp.get('section'));
+    navigate(`/obeya?${n}`, { replace: true });
+  }, [rawView, sp, navigate]);
 
   /* ลิงก์เก่า `?view=andon` → หน้า `/tv` (จอเฝ้าระวังตัวจริง) — คงค่าประจำห้องไปด้วย
      ต้องเป็น `replace` ไม่งั้นกดย้อนกลับแล้วเด้งวนกลับมาที่นี่อีก */
@@ -849,14 +858,13 @@ export default function DeptDashboard() {
           title="Dashboard ส่วนงาน" icon="📊"
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
-          tabs={[
-            { key: 'now', label: '⚡ งานวันนี้' },
-            { key: 'kpi', label: '📑 KPI รายเดือน' },
-          ]}
+          /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
+             เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
+             = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
+             เหลือแท็บเดียวจึงไม่ต้องมีแถบแท็บ — `?view=kpi` redirect ไป /obeya ให้อัตโนมัติ */
           tab={view} onTab={setView}
         >
-          {/* เลือกส่วนงาน = "ตัวกรอง" คนละแกนกับแท็บมุมมอง — ติดป้ายกำกับไว้ไม่ให้อ่านเป็นแท็บชั้นที่ 2
-              (KPI รายเดือนมี section picker ของตัวเองที่ยึด org_nodes จึงไม่ต้องมีแถวนี้) */}
+          {/* เลือกส่วนงาน = "ตัวกรอง" ของหน้านี้ — แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 */}
           {view === 'now' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
@@ -878,12 +886,6 @@ export default function DeptDashboard() {
             </div>
           )}
         </PageHeader>
-
-      {view === 'kpi' && (
-        <Suspense fallback={<div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
-          <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
-        </Suspense>
-      )}
 
       {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}

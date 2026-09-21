@@ -14,6 +14,12 @@
  *          summary, summaryLabel, ynVals[12]|null, weight, actionPlan, actionOwner, sectionTag }]
  */
 
+/* ระดับคะแนนทางการ → สัญลักษณ์/สีบนใบ (1 = ○ Achieve · 0.5 = △ Improvement · 0 = ✗ Miss goal)
+   ⚠️ **0.5 เป็นค่า truthy** — เทียบด้วย `=== 1` เสมอ ห้ามเขียน `lv ? 'Y' : 'N'` (เคยเป็นแบบนั้น
+   ตอนที่ระบบยังเป็น Y/N ล้วน · 17/09 เปลี่ยนเป็น 3 ระดับตามประกาศ QSM-R2 001/2569) */
+const LV_SYM  = (lv) => (lv == null ? '' : lv === 1 ? '○' : lv === 0.5 ? '△' : '✗');
+const LV_ARGB = (lv) => (lv === 1 ? 'FF15803D' : lv === 0.5 ? 'FFB45309' : 'FFB91C1C');
+
 const CAT_ORDER = ['financial', 'customer', 'internal', 'learning'];
 const CAT_LABEL = {
   financial: 'Financial Perspective',
@@ -92,14 +98,15 @@ export async function exportKpiExcel({ year, sectionLabel, rows, formCode, note 
       cr.eachCell({ includeEmpty: true }, c => { c.border = BORDER; c.fill = CAT_FILL; c.font = { bold: true, size: 10 }; });
       g.items.forEach(r => {
         no += 1;
-        const ynTot = r.ynTotal == null ? '' : (r.ynTotal ? 'Y' : 'N');
+        /* 🔴 ระดับทางการ 1/0.5/0 (ไม่ใช่ Y/N) — สัญลักษณ์ตรงกับใบกระดาษ */
+        const ynTot = LV_SYM(r.ynTotal);
         const rr = ws.addRow([no, r.name + (r.sectionTag ? ` (${r.sectionTag})` : ''), r.formula || '', r.scope || '',
           r.commitment || '', r.target || '', ...r.monthVals.map(num), num(r.summary), ynTot]);
         styleBody(rr, { numFrom: 7 });
         if (r.ynVals) r.ynVals.forEach((y, i) => {
           if (y == null) return;
           const c = rr.getCell(7 + i);
-          c.font = { size: 10, color: { argb: y ? 'FF15803D' : 'FFB91C1C' } };
+          c.font = { size: 10, color: { argb: LV_ARGB(y) } };
         });
       });
     });

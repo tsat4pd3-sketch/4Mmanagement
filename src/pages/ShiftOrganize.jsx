@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
+import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -105,9 +106,9 @@ export default function ShiftOrganize() {
   };
 
   const fetchEmployees = async () => {
-    let q = supabase.from('employees')
+    let q = onlyDirectStaff(supabase.from('employees')
       .select('id, name, employee_id_code, line_id, team, section, department, production_lines(section)')
-      .eq('is_active', true);
+      .eq('is_active', true));
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
