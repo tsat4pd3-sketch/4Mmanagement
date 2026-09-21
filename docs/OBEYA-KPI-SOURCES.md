@@ -1032,7 +1032,15 @@ OEE/PPM "มาจากโปรแกรมภายใน" ⇒ **ช่อง
 > **คิวที่คุ้มที่สุด (ไม่เปลี่ยนจาก §13.5 แต่ชัดขึ้น):** ทำ **"สรุปรายเดือนต่อ cost center"** ของกลุ่ม ✅
 > ให้ก๊อปไปวางในช่อง Jan–Dec ของใบ Monitoring ได้ตรงๆ — ครอบคลุม **9 จาก 13 รายการ** ของแผนกผลิตและซ่อมบำรุง
 
-### 14.7 ❓ "แต่ละส่วนงานเลือก KPI ยังไง" — **guideline ไม่ได้เขียนไว้** (ตรวจครบทั้งไฟล์ 17/09)
+### 14.7 ❓ "แต่ละส่วนงานเลือก KPI ยังไง" — ~~guideline ไม่ได้เขียนไว้~~ **⛔ ข้อสรุปนี้ผิด ดู §15**
+
+> **⛔ แก้ 2026-09-21:** ข้อสรุปข้างล่างนี้มาจากการอ่าน **`Corporate KPI Guideline 2026.pptx` (as of 11.03.2026)**
+> ซึ่งเป็น **ฉบับย่อที่มีแค่ส่วนที่ 1** · ตัวเต็ม **`KPI Guideline 2026 (as of 29.01.2026)` 19 หน้า**
+> มี **ส่วนที่ 2 = "KPI Standard 2026" ทะเบียน KPI มาตรฐาน 24 หน่วยงาน พร้อมคอลัมน์ `Fixed`/`Choice`**
+> = **กติกาการเลือกที่เป็นทางการ เขียนไว้ชัดเจน** ⇒ อ่าน **§15** แทน · ส่วนที่ยังถูกอยู่ของ §14.7 คือ
+> การเทียบน้ำหนัก 50 ระหว่างแม่แบบกับประกาศ TSAT (ตารางด้านล่าง) ซึ่ง §15 ไม่ได้ครอบคลุม
+
+#### (ต่อไปนี้คือข้อความเดิม — เก็บไว้เพราะตารางเทียบน้ำหนักยังใช้ได้)
 
 คำถาม user: *"เรื่องเลือก KPI ของแต่ละส่วนงาน ใน guideline เห็นมั้ย"*
 **ตอบ: ไม่มี** — `Corporate KPI Guideline 2026.pptx` ทั้งไฟล์มี 4 สไลด์ · เนื้อหาจริงคือ **ตาราง 2 ตัวเท่านั้น**
@@ -1075,3 +1083,98 @@ OEE/PPM "มาจากโปรแกรมภายใน" ⇒ **ช่อง
 >    ⚠️ **แต่ห้ามบล็อกการบันทึก** — ระหว่างตั้งค่ายังไม่ครบ 50 เป็นเรื่องปกติ (เตือน ≠ ห้าม)
 > 4. **รายการที่เลือกหน่วยได้** (`Cost Reduction` %/บาท · `DSI` วัน/MB) ต้องให้เลือกหน่วยตอนตั้ง
 > 5. **`(If any)`** — รองรับ KPI ที่บางหน่วยงานเท่านั้นที่มี (ทำได้อยู่แล้วเพราะ definition เป็นรายขอบเขต)
+
+---
+
+## 15. 🎯 **KPI Guideline 2026 ตัวเต็ม (as of 29.01.2026 · 19 หน้า)** — เจอกติกาการเลือกแล้ว (2026-09-21)
+
+**นี่คือเอกสารที่ตอบคำถาม "แต่ละส่วนงานเลือก KPI ยังไง" โดยตรง** · ผู้จัดทำคนเดียวกับฉบับย่อ
+(Ms. Sasiwimol Aryupantewan · Internal Audit & Analysis Manager) แต่ **ลงวันที่ก่อน 29/01 vs 11/03**
+
+> **⚠️ บทเรียน: ฉบับ `.pptx (11.03.2026)` ที่เคยได้มา = ฉบับย่อที่มีแค่ "ส่วนที่ 1"**
+> ตัวเต็มมี **2 ส่วน** ตาม Agenda หน้า 2: **1) Corporate KPI Guideline 2026** (= ทั้งหมดของฉบับ pptx)
+> **2) KPI Standard 2026** ← **หายไปทั้งส่วนในฉบับ pptx** · เคยสรุปผิดไปแล้วว่า "guideline ไม่ได้เขียนกติกาไว้"
+> **กฎที่ตกผลึก: ก่อนสรุปว่า "เอกสารไม่มีเรื่องนี้" ต้องเช็ค Agenda/สารบัญก่อนว่าไฟล์ที่ถืออยู่ครบไหม**
+
+### 15.1 🔴 กติกาการเลือก = คอลัมน์ **`Fixed` / `Choice`** (ทางการ ไม่ต้องเดา)
+
+หน้า 7-18 = ตาราง **"KPI Standard 2026"** แยก **24 หน่วยงาน** (หน้าละ 2 หน่วย) ทุกแถวมีคอลัมน์ท้ายสุดว่า
+
+| ค่า | ความหมาย | จำนวนในเอกสาร |
+|---|---|---|
+| **`Fixed`** | **KPI บังคับของหน่วยงานนั้น — ต้องมี** | 239 แถว |
+| **`Choice`** | **เลือกได้ — จะเอาหรือไม่เอาก็ได้** | 108 แถว |
+
+⇒ **โครงคือ "เมนูมาตรฐานต่อหน่วยงาน" ไม่ใช่ให้คิดเอง** · แต่ละหน่วยงานหยิบ `Fixed` ทั้งหมด **+ เลือก `Choice` เท่าที่ต้องการ** แล้วถ่วงน้ำหนักให้รวม 50
+
+**24 หน่วยงานในทะเบียน:** `Head of SPG` · `GM Plant` · `GM Plant (Tooling)` · **`Production`** · `Engineering`
+· **`QA`** · **`Logistic & Sales`** · **`Maintenance`** · **`Die Maintenance`** · `Tooling` · `Marketing` · `RDPP`
+· `CSC` · `Accounting` · `Purchase` · `HRM` · `CIC` · `QSM` · `Accounting-TSA` · `HRM-TSA`
+· `Internal Audit-TSA` · `IT-TSA` · `AOBM-TSA` · `Purchase-TSA`
+(ตัวหนา = หน่วยงานที่ ESM มีข้อมูลป้อนให้ได้)
+
+### 15.2 ทะเบียนมาตรฐานของหน่วยงานที่ ESM เกี่ยวข้อง (คัดจากหน้า 8-11)
+
+**`Production`** — Fixed: `Raw Material Control` · `DL&OH` · `Customer Satisfaction (Q&D)` · `Safety`
+· `DSI` · **`Internal Quality Rate` = (Defect/Total Production) × 1,000,000** · **`OEE` = A × P × Q**
+· `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `100P` · `Cost Reduction`
+
+**`Maintenance`** — Fixed: `DL&OH` · **`Internal Satisfaction`** · **`MO Closed on target` = (MO Closed on target/Total MO)×100**
+· `Safety` · **`Machine Break Down` = (ชม.ที่เครื่องหยุด / ชม.ที่เครื่องทำงานได้ปกติ)×100**
+· **`MTBF` = [(730 × จำนวนเครื่อง) − เวลาเสียรวม] / จำนวนเครื่อง** · **`MTTR` = ชม.เสียรวม / จำนวนครั้ง**
+· **`Cost Reduction (MTN)` = CR value from improvement project** · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice:** `Engineering Day`
+
+**`QA`** — Fixed: `DL&OH` · `Customer Satisfaction` · **`Customer Claim` = (Total Defect/Total Delivery)×1,000,000**
+· `Safety` · **`Incoming Quality Rate` = (Total Defect From Production or WH / Total Purchase Quantity)×1,000,000**
+· **`Warranty claim` = 0 Case** · `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `100P` · `Cost Reduction` · `New Model Quality Rate`
+
+**`Logistic & Sales`** — Fixed มีแค่ 4: `Customer Satisfaction` · `Safety` · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice 12 ตัว** (เยอะสุดในเอกสาร): `DL&OH` · `DL&SG&A (หมวด 7)` · `Control Cancelled Bill` · `Cost Reduction`
+· `Import Forecast & Order data into SAP` · `Premium Freight` · **`Stock Accuracy` = (Stock actual count/SAP stock)×100**
+· `DSI` · `Control supply production no stop` · **`Control Long&Dead Stock` = [(Long+Dead stock สิ้นเดือน)/COGS]×Day**
+· `Delivery on time` · `Supplier delivery on time` · `Miss delivery control` · `Control problems rack FG`
+
+**`Engineering`** — Fixed: `DL&OH` · `Customer Satisfaction` · `Safety`
+· **`BOM and Routing on time as ECN` = (Actual correct BOM item/All BOM items)×100** · **`BOM and Routing accuracy`** (สูตรเดียวกัน)
+· `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `Tooling payment on time` · `Project Development on time` · `100P` · `Cost Reduction` · `Run@rate on target`
+
+**`Die Maintenance`** — Fixed: `DL&OH` · `Customer Satisfaction` · `Safety` · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice:** `Manage project to achieve & on time delivery` · `Reduce interuption from mold problems`
+· `Keep inventory no more than` · `Part quality concern from Dies & Jig MTN` · `Reduce part rework from DIE & JIG tooling` · `Engineering Day`
+
+### 15.3 ✅ สิ่งที่ยืนยัน / ❗ สิ่งที่ขัดกับที่เคยสรุป
+
+| | ผล |
+|---|---|
+| ✅ **PPM = `(Defect/Total Production) × 1,000,000`** | **verify ครั้งที่ 5** — คราวนี้จากทะเบียนมาตรฐานของกลุ่มเอง |
+| ✅ **OEE = `A × P × Q`** | ตรงกับ `oee.js` |
+| ✅ **DSI หารด้วย COGS** | `(Stock value end of month/COGS) × Day` — **ยืนยันครั้งที่ 4** |
+| ✅ **%RM · DL&OH · Sales/Head · TS Academy** | สูตรตรงกับ `kpiSetup.js` ทุกตัว |
+| ✅ **"Customer" ของหน่วยสนับสนุน = `Internal Satisfaction`** | เขียนไว้ในทะเบียนตรงๆ (Maintenance · RDPP · CSC · Accounting · Purchase · QSM) |
+| ❗ **`Non NC Major` ไม่มีในทะเบียนมาตรฐานเลยสักหน่วยงาน** (grep = 0) | แต่โผล่ใน**ใบ Appraisal ที่เซ็นแล้วทุกใบ** ⇒ **TSAT เพิ่มเองระดับโรงงาน** — ยืนยันว่า "เพิ่มนอกเมนูได้" |
+| ❗ **`MTBF` มีสูตรทางการแล้ว** = `[(730 × จำนวนเครื่อง) − เวลาเสียรวม] / จำนวนเครื่อง` | เลข **730 = ชม./เดือน** (คงที่) ⇒ **ไม่ใช่ชั่วโมงเดินเครื่องจริง** · ต่างจากที่ `mtnMetrics` คำนวณ — **ต้องตรวจก่อนเอาไปใช้** |
+| ❗ **`Machine Break Down`** = (ชม.เครื่องหยุด / ชม.ที่เครื่องทำงานได้ปกติ) × 100 | ตัวหารคือ "เวลาที่เครื่องทำงานได้ปกติ" **ไม่ใช่เวลาเปิดกะ** — ต้องนิยามให้ตรงก่อนคำนวณ |
+
+### 15.4 📎 เอกสารที่ guideline อ้างต่อ แต่**เรายังไม่มี**
+
+ทะเบียนไม่ได้เขียนรายละเอียด 2 เรื่อง แต่ชี้ไปเอกสารอื่น:
+· **`*Refer to safety announcement`** — โผล่ **24 ครั้ง (ทุกหน่วยงาน)** = นิยาม/เกณฑ์ Safety อยู่ในประกาศแยก
+· **`*Refer to activity announcement`** — โผล่ **66 ครั้ง** = เกณฑ์ QCC · Engineering Day · Kaizen · Environment
+  · Energy Saving อยู่ในประกาศแยกเช่นกัน
+⇒ **ถ้าจะทำ Safety/QCC/Engineering Day ให้ถูกต้อง ต้องขอ 2 ประกาศนี้เพิ่ม** (ปิดคำถามค้าง §8.11 ข้อ 3-4 ไม่ได้ด้วยไฟล์นี้)
+
+### 15.5 🔴 ผลต่อหน้า setup ที่จะทำ — **เปลี่ยนจากเดิม**
+
+เดิมออกแบบไว้ว่า "เลือกจากแม่แบบกลางชุดเดียว 13 รายการ" · **ตอนนี้ต้องเป็น "เมนูรายหน่วยงาน 24 ชุด"**
+
+1. **`kpi_catalog` ต้องมีชั้น "หน่วยงานมาตรฐาน" (`std_unit`) + ธง `Fixed`/`Choice`**
+   ⇒ ตอนตั้ง KPI ให้แผนก เลือก "หน่วยงานมาตรฐาน" ก่อน → ระบบเติมแถว `Fixed` ให้ครบอัตโนมัติ
+   → เหลือให้ติ๊กเฉพาะ `Choice` → แล้วค่อยถ่วงน้ำหนักให้รวม 50
+2. **ต้องเพิ่มของนอกเมนูได้** (TSAT เพิ่ม `Non NC Major` เองจริง) — แต่ควร**ทำเครื่องหมายว่า "นอกมาตรฐาน"**
+3. **`Fixed` ห้ามลบ** (เตือนอย่างน้อย) · **`Choice` ลบได้อิสระ**
+4. หน่วยงานเดียวกันใช้ชื่อ KPI เดียวกันแต่**สูตรอาจต่างจากหน่วยอื่น** — เช่น PPM มี 3 ตัว
+   (`Internal Quality Rate` ผลิต · `Customer Claim` QA · `Incoming Quality Rate` QA) ⇒ **catalog ต้องคีย์ด้วย (ชื่อ + หน่วยงาน) ไม่ใช่ชื่อเดี่ยว**
