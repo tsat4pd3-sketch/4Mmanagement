@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -165,9 +166,9 @@ export default function Checkin() {
     if (q.length < 2) { setBorrowResults([]); return; }
     const t = setTimeout(async () => {
       setBorrowLoading(true);
-      const { data } = await supabase.from('employees')
+      const { data } = await onlyDirectStaff(supabase.from('employees')
         .select('id, employee_id_code, name, image_url, line_id, section, team')
-        .eq('is_active', true)
+        .eq('is_active', true))
         .or(`name.ilike.%${q}%,employee_id_code.ilike.%${q}%`)
         .order('employee_id_code').limit(30);
       setBorrowResults(data || []);
@@ -212,7 +213,7 @@ export default function Checkin() {
       .select(LINE_COLUMNS).order('section').order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
     setLines(lineData || []);
 
-    let empQ = supabase.from('employees').select('*').eq('is_active', true).order('employee_id_code');
+    let empQ = onlyDirectStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
     if (role === 'leader') {
       if (lineId) {
         const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
@@ -865,7 +866,7 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true).order('employee_id_code');
+      let empQ = onlyDirectStaff(supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true)).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
         if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
