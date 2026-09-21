@@ -49,6 +49,31 @@ export function gapToTarget(value, target, better = 'up') {
   return +(better === 'down' ? -d : d).toFixed(1);
 }
 
+/* ── ป้ายไฟสถานะบนจอมอนิเตอร์ (2026-09-21 · คำขอ user "อยากได้สเตตัสสี กดเข้าไปดูได้") ──
+   ข้อความบนไฟต้องเป็นชุดเดียวกันทุกบอร์ด — ห้ามให้แต่ละหน้าคิดคำเอง ไม่งั้นจอเดียวกัน
+   คนละแผงจะเรียกสถานะเดียวกันคนละชื่อ (บทเรียนเดิม: KPI แถวเดียวกันได้ 3 คำตอบจาก 3 จอ)
+
+   🔴 **`none` (เทา) มี 2 ความหมายที่ต้องแยกให้คนหน้าจออ่านออก** — กฎความซื่อสัตย์ของจอ:
+      "ยังไม่มีข้อมูล" (ยังไม่เกิดงาน) ≠ "ไม่มีเป้า" (มีตัวเลขแล้ว แต่ไม่มีใครตั้งเป้าให้เทียบ)
+      ทั้งคู่ห้ามถูกนับเป็นเขียว และห้ามโชว์เป็น 0 */
+export const STATUS_LABEL = { good: 'ตามเป้า', warn: 'เฉียดเป้า', bad: 'หลุดเป้า', none: 'ตัดสินไม่ได้' };
+export const statusLabel = (s) => STATUS_LABEL[s] || STATUS_LABEL.none;
+
+/**
+ * ไฟสถานะ 1 ดวง + เหตุผลที่เป็นสีนั้น (ใช้เป็นทั้งป้ายบนจอและ tooltip)
+ * @returns {{ status:'good'|'warn'|'bad'|'none', label:string, why:string }}
+ */
+export function statusWhy(value, target, better = 'up', unit = '') {
+  const num = (x) => x != null && x !== '' && !Number.isNaN(Number(x));
+  const u = unit ? ` ${unit}` : '';
+  if (!num(value)) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีข้อมูลให้คำนวณ — ไม่ใช่ว่าผลเป็นศูนย์' };
+  if (!num(target)) return { status: 'none', label: 'ไม่มีเป้า', why: `มีค่า ${value}${u} แต่ยังไม่ได้ตั้งเป้าไว้ จึงตัดสินว่าผ่าน/ไม่ผ่านไม่ได้` };
+  const s = statusOf(value, target, better);
+  const gap = gapToTarget(value, target, better);
+  const dir = gap >= 0 ? `ดีกว่าเป้า ${Math.abs(gap)}` : `ห่างเป้าอีก ${Math.abs(gap)}`;
+  return { status: s, label: STATUS_LABEL[s], why: `${value}${u} · เป้า ${target}${u} — ${dir}` };
+}
+
 /* ── ตัวช่วยรวมข้อมูลเป็นอนุกรมเวลา ────────────────────────────────────────────────
    แผงทุกใบบนจอ Obeya เป็น "กราฟ" (คำสั่ง user 2026-09-15) ⇒ ทุก axis ต้องมี `series`
    bucketBy รวมแถวดิบเป็นจุดต่อวัน/สัปดาห์/เดือน แล้วให้ผู้เรียกแปลงเป็นค่าที่ต้องการเอง */
