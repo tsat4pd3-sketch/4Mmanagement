@@ -213,6 +213,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
               const active = c.id === activeCpId
               return (
                 <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                  offX={c.label_dx} offY={c.label_dy}
                   label={cpIndex[c.id] + 1} color={col} selected={active}
                   badge={c.image_path ? '🔍' : null}
                   title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}

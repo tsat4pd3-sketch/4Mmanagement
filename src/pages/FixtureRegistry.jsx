@@ -561,7 +561,9 @@ export default function FixtureRegistry() {
                   arming={!!armPoint}
                   pins={points.map(p => ({ p, pin: pointPin(p, cpById) }))
                     .filter(({ pin }) => pin && (pin.imageId ?? frames[0]?._key) === frames[frameIdx]?._key)
-                    .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no, color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
+                    .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no,
+                      label_dx: p.label_dx, label_dy: p.label_dy,
+                      color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
                   onPlace={canManage ? placePin : undefined}
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
               </div>

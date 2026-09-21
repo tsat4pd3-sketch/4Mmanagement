@@ -175,7 +175,7 @@ const S = {
 const calcAnnoViewH = () => Math.round(Math.min(620, Math.max(260, (typeof window === 'undefined' ? 900 : window.innerHeight) * 0.46)))
 
 // ─── ImageAnnotator (upload + click-to-pin) ────────────────────────────────────
-function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove }) {
+function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageClick, onPinRemove, onPinLabelMove }) {
   const layerRef = useRef(null)
   // pin สเกล/clamp/วางตำแหน่ง อิง "กล่องรูปจริง" หัก letterbox ของ objectFit:contain
   // (docs/UI-CONVENTIONS.md §5.1 — pattern เดียวกับ MachineFloorMap)
@@ -272,8 +272,10 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
                 const col = isActive ? 'var(--accent)' : categoryColor(cp.category)
                 return (
                   <CalloutPin key={cp._key} xPct={cp.x_pos * 100} yPct={cp.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                    offX={cp.label_dx} offY={cp.label_dy}
                     label={labels?.[i] ?? i + 1} color={col} selected={isActive}
-                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ`}
+                    title={`${cp.name || `จุด ${i + 1}`} — คลิกเพื่อลบ${onPinLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}`}
+                    onLabelMove={onPinLabelMove ? ((dx, dy) => onPinLabelMove(cp._key, dx, dy)) : undefined}
                     onClick={e => { e.stopPropagation(); onPinRemove(cp._key) }} />
                 )
               })}
@@ -876,6 +878,9 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             ucl: c.ucl !== '' && c.ucl != null ? Number(c.ucl) : null,
             x_pos: layoutType === 'list' ? null : (c.x_pos ?? null),
             y_pos: layoutType === 'list' ? null : (c.y_pos ?? null),
+            // 🏷️ ตำแหน่งป้ายเลขที่คนลากเอง (% ของกล่องรูป) — null = ทิศอัตโนมัติ (2026-09-21)
+            label_dx: layoutType === 'list' ? null : (c.label_dx ?? null),
+            label_dy: layoutType === 'list' ? null : (c.label_dy ?? null),
             image_id: layoutType === 'list' ? null : (frameIdByKey[c._frameKey] ?? frameIdByKey[resolvedFrames[0]?.key] ?? null),
             sort_order: i,
             group_name: (c.group_name || '').trim() || null,
@@ -1248,9 +1253,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                 pins={grouped.ordered
                   .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
                   .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
+                    label_dx: c.label_dx, label_dy: c.label_dy,
                     color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
                 onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
                 onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
+                onLabelMove={(key, dx, dy) => updateCp(key, { label_dx: dx, label_dy: dy })}
                 onAddFrames={addFrames} onRemoveFrame={removeFrame}
                 pinHasDetail={Object.fromEntries(checkpoints.map(c => [c._key, !!(c._imgPreview || c.image_path)]))} />
               {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}

@@ -1523,7 +1523,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [selProduct, setSelProduct] = useState(null);
   const [items, setItems]           = useState([]);
   const [counts, setCounts]         = useState({});
-  const [bomByMat, setBomByMat]     = useState({});     // mat_no → ลูกชั้นถัดไป (ไล่โครงหลายชั้น)
+  /* 🌳 index ของต้นไม้ BOM ทั้งฐาน (จาก buildBomIndex) — เก็บทั้งก้อน ไม่แบนเป็น map เอง
+     เพราะ `parent_mat` ต้องรู้ "ใบไหน" ด้วย (sheetFor) ไม่งั้นข้ามใบแล้วต้นไม้ระเบิด (21/09) */
+  const [bomIx, setBomIx] = useState(() => buildBomIndex([], {}));
   const [slocs, setSlocs]           = useState([]);     // ทะเบียนรหัสคลัง (storage_locations)
   const [slocUsed, setSlocUsed]     = useState([]);     // รหัสที่ถูกใช้ใน BOM จริง (เผื่อมีที่ยังไม่ลงทะเบียน)
   const [showTree, setShowTree]     = useState(true);   // 🌳 กางโครงแบบ SAP
@@ -1590,14 +1592,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const c = {};
     (boms || []).forEach(b => { c[b.product_id] = (c[b.product_id] || 0) + 1; });
     setCounts(c);
-    /* mat_no → ลูกชั้นถัดไป — **ผ่าน buildBomIndex เท่านั้น** (utils/bomTree · 2026-09-16)
-       `parent_mat` ชนะ `product_id` เมื่อตั้งไว้ ⇒ ตัวแม่ไม่ต้องเป็น dr_products อีกต่อไป
-       ห้ามประกอบต้นไม้เองในหน้า — เขียนซ้ำเมื่อไหร่ ชั้นเพี้ยนคนละจอทันที */
+    /* ต้นไม้ BOM — **ผ่าน buildBomIndex เท่านั้น** (utils/bomTree · 2026-09-16)
+       ห้ามประกอบต้นไม้เองในหน้า และห้ามแบน index เป็น map ธรรมดา (ทิ้งขอบเขต "ใบ" = ระเบิด) */
     const matOf = {}; (prods || []).forEach(p => { matOf[p.id] = p.mat_no; });
-    const ix = buildBomIndex(boms || [], matOf);
-    const tree = {};
-    (boms || []).forEach(b => { const m = ix.parentOf(b); if (m) (tree[m] = tree[m] || []).push(b); });
-    setBomByMat(tree);
+    setBomIx(buildBomIndex(boms || [], matOf));
   }, []);
 
   const loadItems = useCallback(async (productId) => {
@@ -1949,7 +1947,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 {showTree && (
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
-                      bomOf={(m) => bomByMat[m] || []}
+                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor}
                       onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
                   </div>
                 )}

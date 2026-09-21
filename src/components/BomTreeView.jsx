@@ -35,23 +35,25 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
  * @param {string}   rootName
  * @param {Function} bomOf    (mat) => [{ mat_no, part_name, qty_per_unit, uom }]
  */
-export default function BomTreeView({ rootMat, rootName, bomOf, onDeleteDupes }) {
+export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDeleteDupes }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const { rows, flatDupes, cycles, truncated, maxLevel, flowWarn } = useMemo(() => {
-    const r = explodeBom(rootMat, bomOf);
+    /* ⚠️ ต้องส่ง sheetFor เสมอ — ไม่งั้น `parent_mat` ข้ามใบ ต้นไม้ระเบิด (บั๊กจริง 21/09:
+       10101158 กางได้ 1,276 แถว ลึก 5 ชั้น ทั้งที่มี 22 พาร์ท) ดู buildBomIndex */
+    const r = explodeBom(rootMat, bomOf, { sheetFor });
     /* คำเตือน pattern การไหล — ตรวจ "ทั้งชุดพี่น้อง" ของแต่ละแม่ ไม่ใช่รายคู่
        (งานปั๊มแล้วขายเลยมีลูก 5xx ตัวเดียว = ถูกต้อง ห้ามเตือน) */
     const fw = new Map();
     const parents = new Set([rootMat, ...r.rows.filter(x => x.hasChildren).map(x => x.mat_no)]);
     parents.forEach(p => {
-      checkBomFlow(p, bomOf(p) || [], bomOf).forEach((w, mat) => {
+      checkBomFlow(p, bomOf(p) || [], bomOf).forEach((w, mat) => {   // ใบของ p เอง (ไม่ส่ง sheet)
         fw.set(`${p}|${mat}`, w);   // ผูกกับ "แม่|ลูก" — mat เดียวอาจอยู่หลายแม่ สถานะต่างกันได้
       });
     });
     return { ...r, flowWarn: fw };
-  }, [rootMat, bomOf]);
+  }, [rootMat, bomOf, sheetFor]);
 
   if (!rows.length) {
     return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี BOM ของ {rootMat}</div>;
