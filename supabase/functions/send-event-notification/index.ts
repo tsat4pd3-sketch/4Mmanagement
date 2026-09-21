@@ -12,10 +12,14 @@
 //   - ผู้รับในแอปเรียกผ่าน RPC `notify_recipients()` **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้**
 //
 // payload:
-//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, vars? }
+//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, vars?, team? }
 //   - `lines`      = เนื้อความ (บรรทัดละรายการ) — ใช้ทั้ง Telegram และ body ในแอป
 //   - `section`    = ส่วนงานของเหตุการณ์ (ใช้กับ inapp_match_section) · ไม่ส่งมาแต่ส่ง line_name = หาให้เอง
 //   - `vars`       = ตัวแปรสำหรับ template ที่ admin เขียนเองที่ /notification-config
+//   - `team`       = **ทีมช่างของเหตุการณ์นี้** (mtn_teams.key) — ส่งต่อเป็น p_team ให้ RPC
+//     ⇒ ช่างที่สังกัดทีมอื่นไม่ถูกเด้ง (คนที่ไม่มี mtn_teams เช่นหัวหน้าไลน์ ไม่ถูกกรอง)
+//     ไม่ส่ง = ไม่กรองด้วยทีม (พฤติกรรมเดิมของทุกเรื่องที่มีอยู่)
+//     ที่มาของแกนนี้: docs/IDENTITY-NOTIFY-DESIGN.md §6.1 + migration 20260921_notify_recipients_mtn_team.sql
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -128,7 +132,9 @@ Deno.serve(async (req) => {
     // ผู้รับมาจาก RPC เดียวของระบบ — role × ส่วนงาน × แผนก ที่ตั้งไว้ในทะเบียน
     let inapp = 0;
     try {
-      const { data: ids, error } = await supabase.rpc('notify_recipients', { p_event: event, p_section: section });
+      // ⚠️ p_team: ส่ง null เมื่อไม่ระบุ — ห้ามส่ง '' (สตริงว่าง ≠ null ใน SQL ⇒ กรองจนไม่เหลือใคร)
+      const team = typeof body.team === 'string' && body.team.trim() ? body.team.trim() : null;
+      const { data: ids, error } = await supabase.rpc('notify_recipients', { p_event: event, p_section: section, p_team: team });
       if (error) throw error;
       const users = [...new Set((ids ?? []).map((r: unknown) =>
         typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients))].filter(Boolean) as string[];

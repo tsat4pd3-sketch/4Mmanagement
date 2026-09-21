@@ -484,3 +484,59 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
 - **ข้อมูลเก่า 677 ใบจาก Google Sheet ยังไม่ย้าย** (user เลือก "ย้ายทีหลัง") — ระบบเริ่มนับ MO ใหม่จาก 0
 
 ---
+
+---
+
+## 📞 เรียกช่างจาก Daily Report — ต้องระบุทีม (2026-09-21 · feedback หน้างาน)
+
+> **ที่หน้างานแจ้ง:** *"การกดแจ้งช่างจาก daily report ไม่แยกช่างให้ เรียกทุกช่างที่เกี่ยวข้อง"*
+
+**ต้นเหตุ (วัดจริง 21/09):** `handleCallMtn()` ใน `DailyReport.jsx` ไม่เคยส่ง "ทีม" ไปเลย
+ปลายทางคือ branch `downtime_call_mtn` ใน edge `send-notification` ที่ใช้
+`recipientsForDowntime()` = **`usersByRole(['mtn'])` ฮาร์ดโค้ด** ⇒ ช่างทั้ง 13 คนทุกทีมโดนเด้ง
+(JIG MTN ถูกเรียกไปงาน DIE) — **278 ครั้ง/30 วัน**
+
+**เจอของแถม:** แถว `notification_rules.downtime_call_mtn` ตั้ง `inapp_roles = '{}'` ไว้
+(= "ไม่แจ้งในแอป") แต่ของจริงแจ้งอยู่ เพราะโค้ดข้ามทะเบียนไปเลย ⇒ **ตั้งค่าที่
+`/notification-config` ยังไงก็ไม่มีผล** และป้ายราคาผู้รับ (`notifReach.js`) ก็โกหกตามไปด้วย
+
+**ที่แก้:**
+| ชั้น | ของ |
+|---|---|
+| DB (MAIN) | `notify_recipients(p_event, p_section, **p_team**)` — migration `20260921_notify_recipients_mtn_team.sql` · **แกนทีมช่างตาม `docs/IDENTITY-NOTIFY-DESIGN.md` §6.1** (ไม่ใช่ของใหม่ซ้อน) |
+| DB (DR) | `downtime_logs.call_mtn_team` — `20260921_downtime_call_mtn_team_dr.sql` (สอบกลับได้ว่าเรียกทีมไหน) |
+| edge | `send-event-notification` **v4** — รับ `team` ใน payload → ส่งเป็น `p_team` |
+| จอ | ปุ่ม 📞 เปิด picker ทีม (ใช้ modal ตัวเดียวกับ 📝 เปิดใบซ่อม · `mode: 'call'/'mo'`) · ค่าตั้งต้นจาก `teamForMachine()` |
+| ทะเบียน | `downtime_call_mtn` → `inapp_roles = [mtn, supervisor, leader]` + `inapp_match_section = true` (ให้ทะเบียนพูดความจริง) |
+
+**กติกาของ `p_team` (ห้ามเปลี่ยนโดยไม่อ่าน):**
+- ไม่ส่ง `p_team` = **ไม่กรอง** (ตัวส่งเดิมทุกตัวได้ผลเท่าเดิมเป๊ะ — backward-compatible)
+- คนที่ **ไม่มี** `profiles.mtn_teams` (หัวหน้าไลน์ · ผจก. · QA) **ไม่ถูกแกนนี้กรอง**
+  🔴 ห้ามเปลี่ยนเป็น "ไม่มีทีม = ไม่ได้รับ" — หัวหน้าไลน์จะเงียบทั้งระบบ (กฎ: ห้ามล้มเหลวเงียบ)
+- ส่ง **key** เท่านั้น (`teamKeyOf()`) ห้ามส่งชื่อทีม — `profiles.mtn_teams` เก็บ key
+  (unify encoding 2026-08-06) · ส่งชื่อ = ไม่ match ใครเลย = **ทั้งทีมเงียบ**
+- `''` ≠ `null` ใน SQL — ตัวส่งต้อง normalize สตริงว่างเป็น `null` ก่อนเสมอ
+
+**ผลวัดจริงหลังแก้ (`downtime_call_mtn` · PD3):** 32 คน → **JIG 22 · DIE 20 · MTN 20**
+(ผู้รับทีม JIG = `leader` ทุกคน + `supervisor` ทุกคน + `mtn` เฉพาะคนที่อยู่ `jig_maintenance`)
+
+**ยังไม่ได้ทำ — ตระกูล `mtn_*` (74% ของแจ้งเตือนทั้งระบบ):**
+`send-mtn-notification` ยังไม่ส่ง `p_team` เพราะไฟล์ **30 KB** (กฎขนาดไฟล์ใน
+`docs/modules/edge-functions.md`) · วันนี้มันกรองทีมผ่าน `usersInTeam(dept)` ที่ **union**
+กับ `usersByRule()` ⇒ role `mtn` ในทะเบียนยังดึงช่างทุกทีมเข้ามาอยู่
+· **2 ทางที่ทำได้** (ยังไม่เลือก): (ก) ถอด `mtn` ออกจาก `inapp_roles` ของกฎ `mtn_*` — ไม่ต้อง
+deploy อะไรเลย แต่เปราะ (แอดมินติ๊กกลับที่ `/notification-config` = บั๊กกลับมาเงียบๆ)
+(ข) แตกไฟล์ `send-mtn-notification` แล้วส่ง `p_team` เหมือนตัวอื่น — ยั่งยืนกว่า
+
+**ด่านกันหลุดซ้ำ:** `src/utils/__tests__/notifyTeamAxis.test.mjs` (5 เคส) —
+`teamForMachine()` ห้ามคืนค่าว่าง · ตัวส่งต้องใช้ `teamKeyOf()` · ห้ามกลับไปยิง
+`notifyDowntime(..., 'downtime_call_mtn')` · edge ต้องส่ง `p_team`
+· ตรรกะเดาทีมย้ายไป `src/utils/mtnTeamGuess.js` (pure ไม่ import supabase ⇒ เทสเรียกได้ —
+`mtnTeams.js` import `pmTeams` → `supabaseClient` จึงเทสตรงๆ ไม่ได้)
+
+### ➡️ ส่งต่องานข้ามทีม — **ช่างเฉพาะทางทำได้อยู่แล้ว** (ตอบคำถาม user 21/09)
+ปุ่ม `➡️ ส่งต่อทีมอื่น` ใน DetailDrawer มีเงื่อนไข `canHandoff(o) && canEditStep(3)` เท่านั้น
+**ไม่มีตรงไหนจำกัดว่าต้องเป็นทีมผลิต** · dropdown ปลายทาง = ทุกทีมยกเว้นทีมตัวเอง
+⇒ JIG เข้าไปดูแล้วพบว่าเป็นงานไฟฟ้า ส่งต่อ MTN ได้เลย (ขั้น 2-3)
+· **แต่ของจริงใช้ไป 2 ครั้งจาก 451 ใบ** (ทั้งคู่ ผลิต→เฉพาะทาง) = ปัญหา discoverability ไม่ใช่สิทธิ์
+· ข้อจำกัดจริงข้อเดียว: ส่งต่อได้แค่**ขั้น 2-3** — เลยขั้น 4 (ผู้แจ้งตรวจรับแล้ว) ต้องเปิดใบใหม่

@@ -13,7 +13,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
-import { MTN_TEAMS, teamForItem, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
+import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
@@ -317,7 +317,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
 
   const [showDT, setShowDT]   = useState(false);
-  const [moDtPick, setMoDtPick] = useState(null); // { d, team } — เลือกทีมช่างก่อนเปิดใบซ่อมจาก downtime
+  // { d, team, mode } — เลือกทีมช่างก่อน · mode 'mo' = เปิดใบซ่อม · 'call' = เรียกช่างด่วน (2026-09-21)
+  //   ใช้ modal ตัวเดียวกันทั้ง 2 ทาง — ทีมปลายทางคือคำถามเดียวกัน ห้ามแตกเป็น 2 จอให้เพี้ยนกัน
+  const [moDtPick, setMoDtPick] = useState(null);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
@@ -2598,22 +2600,51 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   // เรียกช่าง MTN เข้าหน้างาน — แจ้ง Telegram ทันที + เสียงไซเรนดังหน้า Maintenance (ผ่าน realtime call_mtn)
-  const handleCallMtn = async (d) => {
+  /* ── 📞 เรียกช่าง — ต้องระบุ "ทีมช่าง" เสมอ (2026-09-21 · feedback หน้างาน) ───────────
+     เดิมปุ่มนี้ไม่ส่งทีมไปเลย แล้วปลายทาง (edge send-notification) ใช้ `usersByRole(['mtn'])`
+     ฮาร์ดโค้ด ⇒ **ช่างทั้ง 13 คนทุกทีมโดนเด้งทุกครั้ง** (JIG โดนเรียกงาน DIE) — 278 ครั้ง/30 วัน
+     · แถมยัง **ข้ามทะเบียน `/notification-config` ทั้งก้อน** (แถวนี้ตั้ง inapp_roles ว่างไว้
+       แปลว่า "ไม่แจ้งในแอป" แต่ของจริงแจ้งอยู่) ⇒ ตั้งค่ายังไงก็ไม่มีผล
+     แก้: ยิงผ่าน `notifyEvent()` → edge `send-event-notification` ที่อ่านผู้รับจาก RPC
+     `notify_recipients(event, section, **team**)` จุดเดียวของระบบ (แกนทีมช่าง §6.1)
+     ⚠️ ห้ามกลับไปยิง `notifyDowntime(..., 'downtime_call_mtn')` — branch นั้นใน send-notification
+        ไม่มีทางรู้จักทีม และไฟล์ 57 KB แก้ผ่าน MCP ไม่ได้ (กฎใน docs/modules/edge-functions.md) */
+  const handleCallMtn = async (d, team) => {
     if (d.call_mtn) return;
-    const { error } = await supabaseDR.from('downtime_logs')
-      .update({ call_mtn: true, call_mtn_at: new Date().toISOString(), call_mtn_by: fullName }).eq('id', d.id);
-    if (error) { toast.error(error.message); return; }
+    const teamKey = teamKeyOf(team) || 'maintenance';   // ว่าง = ไม่กรองทีม → กลับไปเด้งทั้งโรงงาน ห้ามปล่อย
+    const ok = checkWrite(await supabaseDR.from('downtime_logs').update({
+      call_mtn: true, call_mtn_at: new Date().toISOString(), call_mtn_by: fullName, call_mtn_team: teamKey,
+    }).eq('id', d.id), 'เรียกช่าง');
+    if (!ok) return;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     const mcName = machines.find(m => m.machine_no === d.machine_no)?.machine_name || '';
-    notifyDowntime({
-      id: d.id, // ให้ send-notification จำ message_id ผูกรายการนี้ — reply ใน Telegram = คอมเมนต์
-      line_name: selSession.line_name, shift: selSession.shift, work_date: selSession.work_date,
-      machine_no: d.machine_no, machine_name: mcName,
-      type_name: dtType?.name_th || '', category: dtType?.category || '',
-      start_time: d.started_at ? fmtTime(new Date(d.started_at)) : null,
-      description: d.description || null, reported_by: fullName,
-    }, 'downtime_call_mtn');
-    toast.success('📞 เรียกช่าง MTN แล้ว — แจ้งเตือนทันที');
+    const shiftLabel = selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก';
+    const startTime = d.started_at ? fmtTime(new Date(d.started_at)) : '';
+    notifyEvent({
+      event: 'downtime_call_mtn',
+      team: teamKey,                       // ⇐ แกนที่ทำให้ช่างทีมอื่นไม่โดนเด้ง
+      line_name: selSession.line_name,
+      type: 'error',
+      actor: fullName,
+      ref_table: 'downtime_logs', ref_id: d.id, link: '/daily-report',
+      lines: [
+        `⚙️ เครื่องจักร: ${d.machine_no || '-'}${mcName ? ` (${mcName})` : ''}`,
+        `🏭 ไลน์: ${selSession.line_name} · ${shiftLabel} · 📅 ${selSession.work_date}`,
+        `🔧 ทีมที่ถูกเรียก: ${deptNameOf(teamKey)}`,
+        `🛑 อาการ: ${dtType?.name_th || '-'}`,
+        startTime ? `🕐 เริ่มหยุด: ${startTime}` : '',
+        d.description ? `📝 รายละเอียด: ${d.description}` : '',
+        `— โปรดเข้าหน้างานทันที`,
+      ],
+      vars: {
+        machine_no: d.machine_no || '-', machine_name: mcName, line_name: selSession.line_name,
+        shift_label: shiftLabel, work_date: selSession.work_date, type_name: dtType?.name_th || '-',
+        description: d.description || '', reported_by: fullName, start_time: startTime,
+        team_name: deptNameOf(teamKey),
+      },
+    });
+    setMoDtPick(null);
+    toast.success(`📞 เรียกทีม ${deptNameOf(teamKey)} แล้ว — แจ้งเฉพาะช่างทีมนี้ + หัวหน้าส่วนงาน`);
     loadDT(selSession.id);
   };
 
@@ -2622,7 +2653,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const openMoPicker = async (d) => {
     const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
     if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
-    setMoDtPick({ d, team: teamForItem(d.machine_no) });
+    setMoDtPick({ d, team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no), mode: 'mo' });
   };
 
   const handleCreateMoFromDt = async (d, team) => {
@@ -3699,7 +3730,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {canScan && d.duration_min == null && !d.ended_at && d.dr_downtime_types?.category !== 'planned' && (
                         d.call_mtn
                           ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
-                          : <button onClick={() => handleCallMtn(d)} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#e05c4a', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
+                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: '#e05c4a', border: 'none', borderRadius: 20, padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>📞 เรียกช่าง</button>
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
@@ -3815,30 +3846,40 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
-        {moDtPick && (
+        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0'; return (
           <div className="overlay" style={{ zIndex: 2100 }} onClick={() => setMoDtPick(null)}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(95vw,420px)' }}>
-              <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>📝 เปิดใบแจ้งซ่อม — แจ้งถึงทีมช่างไหน?</div>
+              <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>
+                {moDtPick.mode === 'call' ? '📞 เรียกช่างด่วน — เรียกทีมไหน?' : '📝 เปิดใบแจ้งซ่อม — แจ้งถึงทีมช่างไหน?'}
+              </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
-                🏭 {selSession?.line_name} · {moDtPick.d.machine_no || 'ไม่ระบุเครื่อง'} — ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือน Telegram ของทีมที่เลือก
+                🏭 {selSession?.line_name} · {moDtPick.d.machine_no || 'ไม่ระบุเครื่อง'} —{' '}
+                {moDtPick.mode === 'call'
+                  ? 'แจ้งเฉพาะช่างทีมที่เลือก + หัวหน้า/ผจก.ของส่วนงานนี้ (ทีมอื่นไม่ถูกรบกวน)'
+                  : 'ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือนของทีมที่เลือก'}
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
                     padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                    border: `2px solid ${moDtPick.team === t ? '#7c6cf0' : 'var(--border)'}`,
-                    background: moDtPick.team === t ? 'rgba(124,108,240,0.14)' : 'var(--card)',
-                    color: moDtPick.team === t ? '#7c6cf0' : 'var(--text2)',
+                    border: `2px solid ${moDtPick.team === t ? pickColor : 'var(--border)'}`,
+                    background: moDtPick.team === t ? `${pickColor}24` : 'var(--card)',
+                    color: moDtPick.team === t ? pickColor : 'var(--text2)',
                   }}>{deptNameOf(t)}</button>
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={() => handleCreateMoFromDt(moDtPick.d, moDtPick.team)} style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: '#7c6cf0', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>📝 เปิดใบซ่อม → {moDtPick.team}</button>
+                <button onClick={() => (moDtPick.mode === 'call'
+                    ? handleCallMtn(moDtPick.d, moDtPick.team)
+                    : handleCreateMoFromDt(moDtPick.d, moDtPick.team))}
+                  style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                  {moDtPick.mode === 'call' ? '📞 เรียก' : '📝 เปิดใบซ่อม →'} {deptNameOf(moDtPick.team)}
+                </button>
               </div>
             </div>
           </div>
-        )}
+        ); })()}
         {showOpen && (
           <div className="overlay" style={{ zIndex: 2000 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,480px)' }}>
