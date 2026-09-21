@@ -3,7 +3,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, EDI_SIG, TIME_HDRS, DOCK_HDRS } from '../utils/ediDetect';
-import { splitAlreadyDone, DONE_STATUSES } from '../utils/ediMerge';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS } from '../utils/ediMerge';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -437,7 +437,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   const doImportEdi = async () => {
     if (!edi) return;
-    let coveredCount = 0;
+    let coveredCount = 0, fcCount = 0, fcSkipped = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -484,6 +484,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            (ซึ่งถูกแล้ว: ของที่ยังไม่ส่งและลูกค้าไม่ได้ยกเลิก คือคำถามที่ยังค้างอยู่จริง) */
         const wd = workDateStr();
         const delFrom = edi.dateFrom > wd ? edi.dateFrom : wd;
+        /* 🔴 862 ไม่ใช่ "ใบส่งของ" ทุกแถว (2026-09-21) — ชีตที่ช่อง Forecast Time ว่าง
+           ทอดยาวถึงปีหน้า = **แผนระยะยาว** ถ้าลงเป็นใบส่งของจะไม่มีวันมีใครกดส่ง
+           แล้วทยอยกลายเป็นสีแดงวันต่อวัน (เกิดจริง 1,361 ใบ / 2.0 ล้านชิ้น)
+           → ไม่มีเวลา + เกิน +14 วัน ⇒ ลง `customer_forecasts` แทน (ดู ediMerge.js)
+           หมายเหตุ: 830 ชนะเสมอใน `dedupeForecastRows` ⇒ ไม่นับซ้ำ · ที่ไม่มี 830 แผนไม่หาย */
+        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(edi.records, wd);
+        fcCount = fcRecs.length;
         /* 🔴 ใบที่ "ทำไปแล้ว" = ความจริงของเที่ยวนั้น — 862 ห้ามสร้างซ้ำ (2026-09-18)
            เดิมเทียบ `customer|part|date|time` **ตรงตัว** ⇒ ไม่เคย match กับใบ e-SMART เพราะ
            เลขพาร์ทสะกดคนละแบบ (`RB3B-16E060-BA` vs `RB3B 16E060 BA`) และเวลาคนละกริด
@@ -509,7 +516,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         }
         /* กันซ้ำ 2 ชั้น: ① ใบที่ทำไปแล้ว (เทียบเที่ยว) ② รายการวันเก่าที่ยังอยู่ (เทียบตรงตัวตามเดิม) */
         const { insert: fresh862, covered } = splitAlreadyDone(
-          edi.records.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
+          firmRecs.filter(r => !pastKeys.has(`${r.shipTo}|${r.part}|${r.date}|${r.time || ''}`)),
           keepRows || []);
         coveredCount = covered.length;
         const recs = fresh862
@@ -521,9 +528,36 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           const { error } = await supabaseDR.from('customer_shipping_orders').insert(recs.slice(i, i + 500));
           if (error) throw error;
         }
+        /* แถวแผนระยะยาวของ 862 → customer_forecasts (source แยกจาก 830 เพื่อไม่ชนกัน)
+           ลบของเดิม **แบบมีขอบเขต** เหมือน path 830: เฉพาะ source เดียวกัน · ship-to เดียวกัน ·
+           ในช่วงวันที่ไฟล์นี้ครอบคลุม — ไม่งั้นไฟล์ horizon สั้นจะลบแผนที่เลยช่วงทิ้งถาวร
+           ⚠️ mat_no เป็น NOT NULL ในตารางนี้ ⇒ แถวที่จับคู่ MAT ไม่ได้ลงไม่ได้ (นับไว้บอกบนจอ) */
+        const fcOk = fcRecs.filter(r => r.mat_no);
+        fcSkipped = fcRecs.length - fcOk.length;
+        const fcDates = fcRecs.map(r => r.date).filter(Boolean);
+        if (fcDates.length) {
+          let fcDel = supabaseDR.from('customer_forecasts').delete()
+            .eq('source', 'edi_862').in('customer', edi.shipTos)
+            .gte('period_month', fcDates.reduce((a, b) => (a < b ? a : b)))
+            .lte('period_month', fcDates.reduce((a, b) => (a > b ? a : b)));
+          const { error: eFcDel } = await fcDel;
+          if (eFcDel) throw eFcDel;
+        }
+        const fcIns = fcOk.map(r => ({
+          batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
+          customer_part_no: r.part, period_month: r.date, qty: r.qty, source: 'edi_862',
+          note: 'แผนระยะยาวจากไฟล์ 862 (ไม่มีเวลาส่ง)',
+        }));
+        for (let i = 0; i < fcIns.length; i += 500) {
+          const { error } = await supabaseDR.from('customer_forecasts').insert(fcIns.slice(i, i + 500));
+          if (error) throw error;
+        }
       }
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`
-        + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : ''));
+        + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
+        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : ''));
+      // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
+      if (fcSkipped) toast.error(`⚠️ แผนระยะยาว ${fcSkipped} รายการยังจับคู่ MAT ไม่ได้ จึงไม่ได้บันทึก — ผูก MAT ที่ตาราง "จับคู่พาร์ท" แล้วอัพไฟล์ซ้ำ`);
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
       supabase.functions.invoke('send-notification', {
         body: { event: 'edi_import', edi: {
