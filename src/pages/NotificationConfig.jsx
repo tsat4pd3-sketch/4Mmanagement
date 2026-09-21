@@ -17,6 +17,7 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 const targetSummary = (rule) => {
   const parts = []
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
+  if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
   if (rule.inapp_depts?.length) parts.push(`แผนก: ${rule.inapp_depts.join(', ')}`)
   return parts.length ? `● ${parts.join(' · ')}` : '○ ทุกส่วนงาน/ทุกแผนก'
@@ -510,8 +511,26 @@ export default function NotificationConfig() {
                                 <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
                                   เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
-                                  ผู้บริหาร (ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย) และคนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
+                                  คนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
                                   เหตุการณ์ที่ไม่รู้ส่วนงาน = แจ้งทุกคนตาม role (ไม่เงียบ)
+                                </div>
+                              </span>
+                            </label>
+
+                            {/* 🔑 2026-09-21 — เดิม admin/ผจก. ถูกยกเว้นจากตัวกรองส่วนงาน "เสมอ" (hardcode ใน SQL)
+                                วัดจริง: ผจก. 4 คนได้ 50 แถว/วัน อ่านรวมกัน 2 จาก 2,920 (0.07%)
+                                ธงนี้ปิดข้อยกเว้นเป็นรายเรื่อง — ให้เลือกได้ว่าเรื่องไหนผู้บริหารควรเห็นทั้งโรงงาน */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12,
+                              cursor: rule.inapp_match_section ? 'pointer' : 'not-allowed',
+                              opacity: rule.inapp_match_section ? 1 : 0.5, paddingLeft: 22 }}>
+                              <input type="checkbox" checked={!!rule.inapp_scope_strict} disabled={!rule.inapp_match_section}
+                                onChange={e => updateRule(rule.event_key, { inapp_scope_strict: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>ผู้บริหารก็ถูกกรองตามส่วนงานด้วย</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>ทุกส่วนงาน</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>เรื่องที่ยิงถี่</b> ·
+                                  ⚠️ คนที่ยังไม่ได้ตั้งส่วนงานยังได้รับทุกส่วนงานอยู่ (ตั้งได้ที่หน้าจัดการผู้ใช้งาน)
                                 </div>
                               </span>
                             </label>

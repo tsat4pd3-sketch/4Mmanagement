@@ -44,6 +44,9 @@ export function reachOf(rule, raw) {
   const pinned   = (rule?.inapp_sections?.length || 0) + (rule?.inapp_depts?.length || 0) > 0;
   const matchSec = !!rule?.inapp_match_section;
   const scoped   = pinned || matchSec;
+  /* `inapp_scope_strict` (2026-09-21) = กฎนี้ไม่ยกเว้น admin/ผจก. จากการกรองส่วนงาน
+     ⇒ กลุ่มที่ "ผ่านตัวกรองเสมอ" เหลือแค่คนที่ยังไม่ได้ตั้งส่วนงาน */
+  const strict   = !!rule?.inapp_scope_strict;
 
   /* ผู้รับต่อ 1 เหตุการณ์:
      ไม่กรอง            → ทุกคนที่ role ตรง
@@ -51,7 +54,7 @@ export function reachOf(rule, raw) {
        · admin/manager  `notify_recipients()` ยกเว้นจากการกรองเสมอ
        · คนที่ไม่มี section เลย ถูกปล่อยผ่านทุกส่วนงาน (ช่างซ่อมเป็นแบบนี้ทั้ง 13 คน)
      `inapp_sections`/`inapp_depts` ระบุเอง = ประมาณไม่ได้จากตัวเลขชุดนี้ → คืน null (ไม่เดา) */
-  const alwaysThrough = Math.min(peopleAll, adminMgr + noSection);
+  const alwaysThrough = Math.min(peopleAll, (strict ? 0 : adminMgr) + noSection);
   let perEvent = peopleAll;
   if (pinned) perEvent = null;                       // ระบุส่วนงาน/แผนกเอง = ประมาณไม่ได้ ห้ามเดา
   else if (matchSec) {
@@ -65,7 +68,7 @@ export function reachOf(rule, raw) {
   const readPct = rows >= MIN_ROWS_FOR_READ ? Math.round((read / rows) * 100) : null;
 
   return {
-    roles, peopleAll, perEvent, scoped, pinned, matchSec,
+    roles, peopleAll, perEvent, scoped, pinned, matchSec, strict,
     alwaysThrough,
     noSection, adminMgr, nSections,
     eventsPerDay, rowsPerDay, estRowsPerDay, readPct,
@@ -93,7 +96,7 @@ export function reachWarnings(rule, raw) {
 
   if (r.matchSec && r.alwaysThrough > 0) {
     const bits = [];
-    if (r.adminMgr > 0)  bits.push(`admin/ผจก. ${r.adminMgr} คน (ระบบยกเว้นให้เสมอ)`);
+    if (!r.strict && r.adminMgr > 0) bits.push(`admin/ผจก. ${r.adminMgr} คน (ระบบยกเว้นให้เสมอ)`);
     if (r.noSection > 0) bits.push(`คนที่ยังไม่ได้ตั้งส่วนงาน ${r.noSection} คน`);
     out.push({ level: 'amber',
       text: `ตัวกรองส่วนงานไม่มีผลกับ ${bits.join(' · ')} — กลุ่มนี้ได้รับทุกส่วนงาน` });
