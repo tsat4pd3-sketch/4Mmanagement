@@ -29,6 +29,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
+import { checkWrite } from '../utils/dbWrite';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -611,6 +612,26 @@ export default function QAInspectionSetup() {
     }
   };
 
+  /* 🏷️ ลากป้ายเลข balloon ให้หลบกัน (2026-09-21 · feedback หน้างาน "ลูกศรทับกัน")
+     เก็บเป็น % ของกล่องรูป ⇒ ซูม/ย่อแล้วยังอยู่ทิศเดิม · null ทั้งคู่ = กลับไปทิศอัตโนมัติ
+     ⚠️ อัปเดตแถวในมือทันที (optimistic) ไม่ต้อง reload ทั้งชุด — ลากทีละจุดหลายรอบ
+        ถ้า refetch ทุกครั้งจะกระตุกจนเล็งไม่ได้ · ล้มเหลวค่อยดึงของจริงกลับมาทับ */
+  const saveLabelOffset = async (id, dx, dy) => {
+    setItems(prev => prev.map(it => (it.id === id ? { ...it, label_dx: dx, label_dy: dy } : it)));
+    const ok = checkWrite(await supabase.from('qa_inspection_items')
+      .update({ label_dx: dx, label_dy: dy }).eq('id', id), 'ตำแหน่งป้าย balloon');
+    if (!ok) loadItems(sel?.id);
+  };
+  /** คืนป้ายทุกตัวของแผ่นนี้กลับเป็นทิศอัตโนมัติ — ทางออกเมื่อลากจนมั่ว */
+  const resetLabelOffsets = async () => {
+    const ids = items.filter(i => i.label_dx != null && i.drawing_id === activeDwg?.id).map(i => i.id);
+    if (!ids.length) return;
+    if (!confirm(`คืนตำแหน่งป้ายอัตโนมัติ ${ids.length} จุดบนแผ่นนี้?`)) return;
+    const ok = checkWrite(await supabase.from('qa_inspection_items')
+      .update({ label_dx: null, label_dy: null }).in('id', ids), 'คืนตำแหน่งป้ายอัตโนมัติ');
+    if (ok) { toast.success(`คืนอัตโนมัติ ${ids.length} จุดแล้ว ✓`); loadItems(sel?.id); }
+  };
+
   const openEditItem = (it) => setItemModal({
     ...EMPTY_ITEM, ...it,
     balloon_no: it.balloon_no ?? '', nominal: it.nominal ?? '', usl: it.usl ?? '', lsl: it.lsl ?? '',
@@ -767,6 +788,11 @@ export default function QAInspectionSetup() {
                     <span style={{ fontSize: 12.5, fontWeight: 800, minWidth: 52, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
                     <button style={ghostBtn} onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(2)))} disabled={zoom >= 4} title="ซูมเข้า">➕</button>
                     {zoom > 1 && <button style={ghostBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+                    {/* 🏷️ ทางกลับเมื่อลากป้ายจนมั่ว — โผล่เฉพาะเมื่อมีจุดที่ตั้งตำแหน่งเองบนแผ่นนี้ */}
+                    {canManage && items.some(i => i.label_dx != null && i.drawing_id === activeDwg?.id) && (
+                      <button style={ghostBtn} onClick={resetLabelOffsets}
+                        title="คืนป้ายเลขทุกจุดบนแผ่นนี้กลับเป็นทิศอัตโนมัติ">↺ คืนป้ายอัตโนมัติ</button>
+                    )}
                     <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{zoom > 1 ? 'เลื่อนดูส่วนอื่นของแบบได้ในกรอบ' : 'เห็นแบบเต็มใบพอดีกรอบ — ซูมเข้าเพื่อวางจุดละเอียดขึ้น'}</span>
                   </div>
                   {/* div นอก = ตัววัดความกว้างที่ใช้ได้ (ไม่ scroll) · div ใน = กรอบดู สูงไม่เกิน viewH
@@ -803,7 +829,9 @@ export default function QAInspectionSetup() {
                           <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={dwgSize.w} layerH={dwgSize.h} size={BK}
                             label={i.balloon_no} color={i.id === placingId ? '#f59e0b' : (i.rank ? RANK[i.rank]?.color : '#4d9fff')}
                             selected={i.id === placingId} opacity={i.is_active ? 1 : 0.45}
-                            title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}`}
+                            offX={i.label_dx} offY={i.label_dy}
+                            title={`#${i.balloon_no} ${i.characteristic}${i.spec_text ? ` · ${i.spec_text}` : ''}${canManage ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}`}
+                            onLabelMove={canManage ? ((dx, dy) => saveLabelOffset(i.id, dx, dy)) : undefined}
                             onClick={e => { e.stopPropagation(); if (canManage) openEditItem(i); }} />
                         ))}
                       </div>
