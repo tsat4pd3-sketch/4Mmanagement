@@ -327,8 +327,9 @@ user เคาะ 3 ข้อ: **① แยกรายส่วนงาน ②
 
 **🔴 กระทบดีไซน์หน้า setup ที่ยังไม่ได้ทำ — เปลี่ยนจากที่เคยวางไว้:**
 เดิมคิดว่า "แม่แบบกลางชุดเดียว 13 รายการ" · **จริงคือ "เมนูรายหน่วยงาน 24 ชุด"**
-1. `kpi_catalog` ต้องมีชั้น **หน่วยงานมาตรฐาน (`std_unit`) + ธง `Fixed`/`Choice`**
+1. ต้องมีชั้น **หน่วยงานมาตรฐาน (`std_unit`) + ธง `Fixed`/`Choice`**
    → เลือกหน่วยงาน → ระบบเติมแถว `Fixed` ให้ครบเอง → ติ๊กเฉพาะ `Choice` → ถ่วงน้ำหนักรวม 50
+   **✅ ทำแล้ว 21/09 → ตาราง `kpi_standard_items` (ดูด้านล่าง)**
 2. **เพิ่มของนอกเมนูได้** (TSAT เพิ่ม `Non NC Major` เองจริง — ไม่มีในทะเบียนสักหน่วยงาน) แต่ควรมาร์คว่า "นอกมาตรฐาน"
 3. **`Fixed` ห้ามลบ (เตือนอย่างน้อย)** · `Choice` ลบได้อิสระ
 4. **`kpi_catalog` ต้องคีย์ด้วย (ชื่อ + หน่วยงาน) ไม่ใช่ชื่อเดี่ยว** — "PPM" มี 3 ตัวคนละสูตร
@@ -339,3 +340,34 @@ user เคาะ 3 ข้อ: **① แยกรายส่วนงาน ②
 · `Machine Break Down` = `(ชม.เครื่องหยุด / ชม.ที่เครื่องทำงานได้ปกติ) × 100` — ตัวหารไม่ใช่เวลาเปิดกะ
 
 📄 รายละเอียดเต็ม + ทะเบียนรายหน่วยงาน → `docs/OBEYA-KPI-SOURCES.md` §15
+
+---
+
+## ✅ ทะเบียน KPI Standard 2026 ลงฐานแล้ว — `kpi_standard_items` (Main · 2026-09-21)
+
+migration `20260921_kpi_standard_2026_main.sql` (**apply แล้ว**) · **318 แถว · fixed 189 · choice 90 · แถวแม่ 39 · 20 หน่วยงาน**
+
+**🔴 แยกตาราง ไม่ยัดใน `kpi_catalog` — อย่าไปยุบรวมทีหลัง**
+`TS Academy training` โผล่ครบทั้ง 24 หน่วยงาน ⇒ ยัดเข้า catalog = แถวซ้ำ 24 แถวและ `catalog_id` กำกวม
+· `kpi_standard_items` = **เมนูตามเอกสารกลุ่ม** (อ่านอย่างเดียว เปลี่ยนตามปีเอกสาร)
+· `kpi_catalog` = **ของที่โรงงานเราใช้จริง** · เชื่อกันด้วย `catalog_id` (nullable)
+
+**กับดักของข้อมูลชุดนี้ (เจอจริงตอนถอด PDF):**
+- **`seq` ใช้เรียงไม่ได้** — ต้นฉบับ `Production` พิมพ์เลข `6` ซ้ำ 2 แถว ⇒ เรียงด้วย `sort_order` เท่านั้น
+  (`seq` มีไว้โชว์ให้ตรงกระดาษ)
+- **`requirement = null` ≠ "ลืมกรอก"** = **แถวหัวข้อแม่** (เช่น `Activity` ที่มี QCC/Kaizen/Environment อยู่ใต้)
+  ⇒ เช็ค "ขาดข้อบังคับ" ต้องข้ามแถวแม่ ไม่งั้นเตือนผิดทุกใบ (`isStdParent` ใน `kpiSetup.js`)
+- **`std_unit` เป็นข้อความตรงกับ PDF เป๊ะ** (`Logistic & Sales` มี `&` · `GM Plant (Tooling)` มีวงเล็บ) — เป็นคีย์ ห้ามแก้สะกด
+- **4 หน่วยงาน TSA ยังไม่ seed** (`Accounting-TSA` · `HRM-TSA` · `Internal Audit-TSA` · `AOBM-TSA`)
+  ตารางต้นฉบับหน้า 16-18 ซ้อนข้อย่อยหลายชั้นจนนับ Fixed/Choice ไม่ตรง PDF ⇒ **ตั้งใจไม่ใส่ ดีกว่าใส่ผิด**
+- **Safety / QCC / Engineering Day / Kaizen / Environment / Energy Saving = ยังไม่มีเกณฑ์**
+  เอกสารเขียนแค่ `*Refer to safety/activity announcement` · user 21/09: *"แล้วแต่ประธานกิจจะแจ้ง ค่อยใส่ทีหลัง"*
+  ⇒ seed หัวข้อไว้ **เว้นเกณฑ์ ห้ามเดา**
+
+**ชั้นโค้ด — `src/utils/kpiSetup.js` §6** (pure · 5 เทส): `KPI_STD_UNITS` (24 หน่วย + ธง `seeded`) ·
+`stdUnitOf`/`stdUnitLabel` · `KPI_REQUIREMENTS` · `isStdFixed`/`isStdParent` · `KPI_TOTAL_WEIGHT = 50` ·
+`checkStdSelection(rows, stdItems)` → `{ weight, diff, ok, missingFixed }`
+> **`checkStdSelection` = เตือนเท่านั้น ห้ามบล็อกการบันทึก** — ใบจริงของ TSAT เพิ่ม `Non NC Major` เองซึ่งไม่มีในทะเบียน
+> **`stdUnitLabel` ไม่แปลตัวย่อที่เอกสารไม่ได้ขยายความ** (`QSM`·`CIC`·`CSC`·`RDPP`·`Tooling`·`Head of SPG`) — ห้ามเดาคำแปล
+
+📄 ที่มา/ทะเบียนรายหน่วยงานเต็ม → `docs/OBEYA-KPI-SOURCES.md` §15 (§15.6 = ที่ทำจริง)

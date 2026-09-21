@@ -5,6 +5,8 @@ import assert from 'node:assert/strict';
 import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
   providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
+  KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
+  isStdFixed, isStdParent, checkStdSelection,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -224,4 +226,76 @@ test('ทะเบียนไม่มีคีย์ซ้ำ และสู�
   for (const f of KPI_FORMULAS) {
     for (const v of f.vars) assert.ok(varKeys.has(v), `สูตร ${f.key} อ้างตัวแปร ${v} ที่ไม่มีในทะเบียน`);
   }
+});
+
+/* ── KPI Standard 2026 — กติกาเลือก KPI ที่เป็นของกลุ่ม (ที่มา §15) ────────────────────── */
+
+test('ทะเบียนหน่วยงานมาตรฐาน 24 หน่วย — ชื่อต้องตรงคอลัมน์ std_unit เป๊ะ (เป็นคีย์เชื่อมฐาน)', () => {
+  assert.equal(KPI_STD_UNITS.length, 24, 'คู่มือ KPI Guideline 2026 หน้า 7-18 มี 24 หน่วยงาน');
+  const units = KPI_STD_UNITS.map(u => u.unit);
+  assert.equal(units.length, new Set(units).size, 'ชื่อหน่วยงานซ้ำ');
+  // 20 หน่วยที่ seed แล้ว (migration 20260921) · 4 หน่วย TSA ตั้งใจยังไม่ใส่ ดีกว่าใส่ผิด
+  assert.equal(KPI_STD_UNITS.filter(u => u.seeded).length, 20);
+  assert.deepEqual(
+    KPI_STD_UNITS.filter(u => !u.seeded).map(u => u.unit),
+    ['Accounting-TSA', 'HRM-TSA', 'Internal Audit-TSA', 'AOBM-TSA'],
+  );
+  // หน่วยที่ ESM ผลิตตัวเลขให้จริงต้องอยู่ในทะเบียนและ seed แล้ว
+  for (const u of ['Production', 'Maintenance', 'Die Maintenance', 'QA', 'Logistic & Sales']) {
+    assert.equal(stdUnitOf(u)?.seeded, true, `${u} ต้องมีในทะเบียนและ seed แล้ว`);
+  }
+  assert.equal(stdUnitOf('ไม่มีหน่วยนี้'), null);
+});
+
+test('ป้ายหน่วยงาน — ไม่มีคำแปลไทยที่มั่นใจ ให้ใช้ชื่ออังกฤษตามเอกสาร ห้ามเดาคำแปล', () => {
+  assert.equal(stdUnitLabel('Production'), 'Production — ฝ่ายผลิต');
+  assert.equal(stdUnitLabel('QSM'), 'QSM', 'ตัวย่อที่เอกสารไม่ได้ขยายความ ห้ามแปลเอง');
+  assert.equal(stdUnitLabel('CIC'), 'CIC');
+  assert.equal(stdUnitLabel(null), '');
+});
+
+test('ป้ายบังคับ fixed/choice — แถวที่ไม่มี requirement คือ "หัวข้อแม่" ไม่ใช่ KPI', () => {
+  assert.deepEqual(KPI_REQUIREMENTS.map(r => r.key), ['fixed', 'choice']);
+  const parent = { topic: 'Activity', requirement: null };   // แถวแม่ที่มี QCC/Kaizen อยู่ใต้มัน
+  assert.ok(isStdParent(parent));
+  assert.ok(!isStdFixed(parent), 'แถวแม่ห้ามถูกนับเป็นข้อบังคับ ไม่งั้นเตือน "ขาดข้อบังคับ" ผิดทุกใบ');
+  assert.ok(isStdFixed({ topic: 'OEE', requirement: 'fixed' }));
+  assert.ok(!isStdFixed({ topic: 'Cost Reduction', requirement: 'choice' }));
+});
+
+test('🔴 ผลรวม weight ต้องเป็น 50 เสมอ (ประกาศ QSM-R2 001/2569) — และต้องมีข้อบังคับครบ', () => {
+  assert.equal(KPI_TOTAL_WEIGHT, 50);
+  // ใบจริงของ PD3: 9 ข้อ รวม 50 พอดี
+  const ok = [6, 6, 7, 6, 5, 5, 5, 6, 4].map(w => ({ weight: w }));
+  assert.equal(checkStdSelection(ok).weight, 50);
+  assert.equal(checkStdSelection(ok).diff, 0);
+  assert.equal(checkStdSelection(ok).ok, true);
+
+  const over = [...ok, { weight: 3 }];
+  assert.equal(checkStdSelection(over).diff, 3, 'เกิน 50 ต้องบอกว่าเกินเท่าไหร่');
+  assert.equal(checkStdSelection(over).ok, false);
+  assert.equal(checkStdSelection([{ weight: 20 }]).diff, -30, 'ขาดต้องเป็นค่าติดลบ');
+  // แถวที่ยังไม่ใส่น้ำหนัก ต้องไม่ถูกนับเป็น 0 เงียบๆ แล้วหลอกว่าใบครบ
+  assert.equal(checkStdSelection([{ weight: 50 }, { weight: null }]).diff, 0);
+});
+
+test('เตือน "ขาดข้อบังคับ" — จับคู่ได้ทั้งทาง std_item_id และชื่อหัวข้อ', () => {
+  const std = [
+    { id: 'a', topic: 'Safety',  requirement: 'fixed' },
+    { id: 'b', topic: 'OEE',     requirement: 'fixed' },
+    { id: 'c', topic: 'Cost Reduction', requirement: 'choice' },
+    { id: 'd', topic: 'Activity', requirement: null },
+  ];
+  const rows = [{ weight: 25, std_item_id: 'a' }, { weight: 25, topic: ' oee ' }];
+  const r = checkStdSelection(rows, std);
+  assert.equal(r.weight, 50);
+  assert.deepEqual(r.missingFixed, [], 'จับคู่ด้วยชื่อหัวข้อ (ตัดช่องว่าง/ตัวพิมพ์) ต้องได้');
+  assert.equal(r.ok, true);
+
+  const r2 = checkStdSelection([{ weight: 50, std_item_id: 'a' }], std);
+  assert.deepEqual(r2.missingFixed.map(x => x.topic), ['OEE']);
+  assert.equal(r2.ok, false, 'น้ำหนักครบ 50 แต่ขาดข้อบังคับ = ยังไม่ผ่าน');
+
+  // ไม่ส่งทะเบียนมา = ตรวจแค่น้ำหนัก ห้ามเดาว่าขาดข้อบังคับ
+  assert.deepEqual(checkStdSelection([{ weight: 50 }]).missingFixed, []);
 });

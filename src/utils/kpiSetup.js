@@ -344,3 +344,89 @@ export function scoreDef(value, def = {}) {
     status: s.level === 1 ? 'good' : s.level === 0.5 ? 'warn' : s.level === 0 ? 'bad' : 'unknown',
   };
 }
+
+/* ── 6) KPI Standard 2026 — ทะเบียนมาตรฐานของกลุ่ม (ที่มา: KPI Guideline 2026 as of 29.01.2026 หน้า 7-18)
+   🔴 **กติกาการเลือก KPI ของแต่ละส่วนงาน "มีอยู่แล้ว" ในเอกสารกลุ่ม — ห้ามคิดเกณฑ์เอง** (§15)
+      ทุกแถวในทะเบียนติดป้ายบังคับ 2 แบบ:
+        `fixed`  = **ต้องมีในใบ** ตัดทิ้งไม่ได้ (ในไฟล์ PDF นับได้ 239 คำ)
+        `choice` = เลือกได้ตามภาระงานจริงของหน่วยงานนั้น (108 คำ)
+      แถวที่ `requirement = null` = **แถวหัวข้อแม่** (เช่น `Activity`) ที่มีข้อย่อยอยู่ใต้มัน — ไม่ใช่ KPI เอง
+   ⚠️ หน่วยงานปรับ/เพิ่มข้อ + ถ่วงน้ำหนักเองได้ **แต่ผลรวม weight ต้องเป็น 50 เสมอ** (ประกาศ QSM-R2 001/2569)
+   ⚠️ ข้อมูลจริงอยู่ในตาราง `kpi_standard_items` (Main · migration 20260921) — ไฟล์นี้เก็บแค่
+      "รายชื่อหน่วยงาน + กติกา" ที่ pure เทสได้ **ห้าม hardcode ตัว KPI ซ้ำในนี้** */
+
+export const KPI_TOTAL_WEIGHT = 50;
+
+export const KPI_REQUIREMENTS = [
+  { key: 'fixed',  label: 'บังคับ',  short: 'F', color: '#ef4444', hint: 'ต้องมีในใบ ตัดทิ้งไม่ได้' },
+  { key: 'choice', label: 'เลือกได้', short: 'C', color: '#3b82f6', hint: 'เลือกตามภาระงานจริงของหน่วยงาน' },
+];
+export const requirementOf = (key) => KPI_REQUIREMENTS.find(r => r.key === key) || null;
+
+/** แถวหัวข้อแม่ (มีข้อย่อย) ไม่ใช่ KPI ที่ให้คะแนนเอง — `requirement` ว่าง */
+export const isStdParent = (item) => !item?.requirement;
+export const isStdFixed  = (item) => item?.requirement === 'fixed';
+
+/* 24 หน่วยงานมาตรฐาน — `unit` ต้องตรงกับคอลัมน์ `std_unit` เป๊ะ (คีย์เชื่อมทะเบียน)
+   `seeded:false` = ตารางต้นฉบับหน้า 16-18 ถอดออกมาแล้วนับ Fixed/Choice ไม่ตรง PDF ⇒ **ตั้งใจยังไม่ใส่**
+   จอที่ให้เลือกหน่วยงานต้องบอกตรงๆ ว่ายังไม่มีในทะเบียน ห้ามโชว์เป็นช่องว่างเฉยๆ (กฎความซื่อสัตย์ของจอ) */
+export const KPI_STD_UNITS = [
+  { unit: 'Head of SPG',       th: null,                 seeded: true },
+  { unit: 'GM Plant',          th: 'ผู้จัดการโรงงาน',      seeded: true },
+  { unit: 'GM Plant (Tooling)', th: 'ผู้จัดการโรงงาน (Tooling)', seeded: true },
+  { unit: 'Production',        th: 'ฝ่ายผลิต',            seeded: true },
+  { unit: 'Engineering',       th: 'วิศวกรรม',            seeded: true },
+  { unit: 'QA',                th: 'ประกันคุณภาพ',         seeded: true },
+  { unit: 'QSM',               th: null,                 seeded: true },
+  { unit: 'Logistic & Sales',  th: 'โลจิสติกส์ & ขาย',     seeded: true },
+  { unit: 'Maintenance',       th: 'ซ่อมบำรุง',           seeded: true },
+  { unit: 'Die Maintenance',   th: 'ซ่อมบำรุงแม่พิมพ์',     seeded: true },
+  { unit: 'Tooling',           th: null,                 seeded: true },
+  { unit: 'Marketing',         th: 'การตลาด',             seeded: true },
+  { unit: 'RDPP',              th: null,                 seeded: true },
+  { unit: 'CSC',               th: null,                 seeded: true },
+  { unit: 'CIC',               th: null,                 seeded: true },
+  { unit: 'Accounting',        th: 'บัญชี',               seeded: true },
+  { unit: 'Purchase',          th: 'จัดซื้อ',             seeded: true },
+  { unit: 'HRM',               th: 'ทรัพยากรบุคคล',       seeded: true },
+  { unit: 'Purchase-TSA',      th: 'จัดซื้อ (TSA)',        seeded: true },
+  { unit: 'IT-TSA',            th: 'ไอที (TSA)',           seeded: true },
+  { unit: 'Accounting-TSA',    th: 'บัญชี (TSA)',          seeded: false },
+  { unit: 'HRM-TSA',           th: 'ทรัพยากรบุคคล (TSA)',  seeded: false },
+  { unit: 'Internal Audit-TSA', th: 'ตรวจสอบภายใน (TSA)',  seeded: false },
+  { unit: 'AOBM-TSA',          th: null,                 seeded: false },
+];
+export const stdUnitOf = (unit) => KPI_STD_UNITS.find(u => u.unit === unit) || null;
+/** ป้ายที่เอาไปขึ้นจอ — ไม่มีคำแปลไทยที่มั่นใจ ก็ใช้ชื่ออังกฤษตามเอกสาร ห้ามเดาคำแปล */
+export const stdUnitLabel = (unit) => {
+  const u = stdUnitOf(unit);
+  return u ? (u.th ? `${u.unit} — ${u.th}` : u.unit) : (unit || '');
+};
+
+/**
+ * ตรวจใบ KPI ของหน่วยงาน 1 ใบว่าถูกกติกากลุ่มไหม
+ * @param rows      แถวในใบ (ต้องมี `weight` · `std_item_id` หรือ `topic` ไว้จับคู่กับทะเบียน)
+ * @param stdItems  แถวทะเบียนของหน่วยงานนั้น (จาก `kpi_standard_items`) — ไม่ส่ง = ตรวจแค่น้ำหนัก
+ * คืน `{ weight, ok, diff, missingFixed }` — **ห้ามบล็อกการบันทึกด้วยผลนี้** (ใบจริงบางใบก็ไม่ตรง)
+ * ให้เตือนบนจอเท่านั้น (กฎความซื่อสัตย์: บอกว่าไม่ตรง ดีกว่าแอบแก้ให้หรือเงียบ)
+ */
+export function checkStdSelection(rows = [], stdItems = null) {
+  let weight = 0;
+  for (const r of rows) {
+    const w = Number(r?.weight);
+    if (Number.isFinite(w)) weight += w;
+  }
+  weight = Math.round(weight * 100) / 100;
+  const diff = Math.round((weight - KPI_TOTAL_WEIGHT) * 100) / 100;
+
+  let missingFixed = [];
+  if (Array.isArray(stdItems)) {
+    const pickedIds = new Set(rows.map(r => r?.std_item_id).filter(Boolean));
+    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+    const pickedTopics = new Set(rows.map(r => norm(r?.topic)).filter(Boolean));
+    missingFixed = stdItems
+      .filter(isStdFixed)
+      .filter(it => !pickedIds.has(it.id) && !pickedTopics.has(norm(it.topic)));
+  }
+  return { weight, diff, ok: diff === 0 && missingFixed.length === 0, missingFixed };
+}
