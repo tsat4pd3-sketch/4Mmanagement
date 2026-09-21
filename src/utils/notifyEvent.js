@@ -29,6 +29,10 @@ const FN_URL = 'https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-event
  * @param {string}  [p.ref_table] ตารางต้นทาง (ให้กระดิ่งลิงก์กลับได้ในอนาคต)
  * @param {string|number} [p.ref_id]
  * @param {object}  [p.vars]      ตัวแปรเสริมสำหรับ template ที่ admin เขียนเอง
+ * @param {string}  [p.team]      **ทีมช่างของเหตุการณ์นี้** (mtn_teams.key) — ส่งแล้วช่างทีมอื่นไม่ถูกเด้ง
+ *   (คนที่ไม่ได้สังกัดทีมช่าง เช่นหัวหน้าไลน์/ผจก. ไม่ถูกแกนนี้กรอง · ไม่ส่ง = ไม่กรองด้วยทีม)
+ *   ⚠️ ส่ง **key** เท่านั้น (ผ่าน `teamKeyOf()`) ห้ามส่งชื่อทีม — RPC เทียบกับ `profiles.mtn_teams`
+ *   ที่เก็บเป็น key ตามกฎ unify encoding 2026-08-06 · ส่งชื่อ = ไม่ match ใครเลย = เงียบทั้งทีม
  */
 export function notifyEvent(p) {
   if (!p?.event) return;
