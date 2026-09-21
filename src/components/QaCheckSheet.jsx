@@ -683,6 +683,7 @@ export default function QaCheckSheet({ canRecord }) {
                           {pinItems.map(i => (
                             <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={imgBox.w} layerH={imgBox.h}
                               size={BK} label={i.balloon_no} color={pinColor(i)} selected={selItemId === i.id}
+                              offX={i.label_dx} offY={i.label_dy}
                               title={`#${i.balloon_no} ${i.characteristic}`}
                               onClick={() => focusItem(i.id)} />
                           ))}

@@ -1535,6 +1535,35 @@ export default function LineSetup({ embedded = false } = {}) {
           )}
         </div>
 
+        {/* 🗜️ บีบรูปทั้งระบบ — **งานระดับระบบ ไม่ผูกกับไลน์ที่เลือก** จึงต้องเห็นเสมอเมื่อมีสิทธิ์แก้
+            (เดิมซ่อนอยู่ใต้เงื่อนไข `layoutImage` = โผล่เฉพาะไลน์ที่มีรูปผัง → user หาไม่เจอ)
+            ครอบคลุม: ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM · รูปซ่อม MO
+            เหตุผล/กติกาความปลอดภัย → src/utils/recompressLayouts.js */}
+        {canEdit && (
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between',
+            background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 10,
+            padding: '10px 12px', marginBottom: 14,
+          }}>
+            <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.5 }}>
+              <b style={{ color: 'var(--text)' }}>🗜️ บีบรูปทั้งระบบให้เล็กลง</b>{' '}
+              <span style={{ color: 'var(--muted)' }}>
+                ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM · รูปซ่อม —
+                ความละเอียดเท่าเดิม (ไม่เบลอ) แปลงเป็น WebP เพื่อลดค่าเน็ต · ทำครั้งเดียวพอ
+              </span>
+            </div>
+            <button onClick={handleRecompress} disabled={!!squeeze}
+              style={{
+                padding: '8px 14px', borderRadius: 8, border: 'none', flexShrink: 0,
+                background: squeeze ? 'var(--bg3)' : 'var(--accent)', color: squeeze ? 'var(--text2)' : '#fff',
+                fontWeight: 700, fontSize: 12.5, cursor: squeeze ? 'default' : 'pointer',
+                fontFamily: 'var(--font-body)',
+              }}>
+              {squeeze || '🗜️ เริ่มบีบรูป'}
+            </button>
+          </div>
+        )}
+
         {selectedLine && <>
           {canEdit && layoutImage && (
             <div style={{ display: 'flex', gap: 14, justifyContent: 'flex-end', alignItems: 'center', marginBottom: 14 }}>
@@ -1549,12 +1578,6 @@ export default function LineSetup({ embedded = false } = {}) {
                 {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
                 <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
               </label>
-              {/* 🗜️ งานครั้งเดียว — ดูเหตุผล (egress) ที่ src/utils/recompressLayouts.js */}
-              <button onClick={handleRecompress} disabled={!!squeeze}
-                title="แปลงรูปผังเดิมที่เป็น PNG ก้อนใหญ่ให้เป็น WebP ขนาดเล็ก — ความละเอียดเท่าเดิม"
-                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: squeeze ? 'default' : 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
-                {squeeze || '🗜️ บีบรูปผังเดิมให้เล็กลง'}
-              </button>
             </div>
           )}
           {activeTab === 'stations' && <>

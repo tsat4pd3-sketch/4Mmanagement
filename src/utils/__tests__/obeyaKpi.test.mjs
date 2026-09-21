@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  statusOf, gapToTarget, axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan,
+  statusOf, statusWhy, statusLabel, gapToTarget, axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan,
   actionBuckets, actionHealth, periodRange, prevRange, addDays, fillDays, bucketBy,
 } from '../obeyaKpi.js';
 
@@ -169,4 +169,42 @@ test('bucketBy: ทิ้งคีย์ว่าง + เรียงตาม�
   );
   assert.deepEqual(b.map(x => x.k), ['2026-09-01', '2026-09-02']);
   assert.equal(b[0].sum, 2);
+});
+
+/* ── ไฟสถานะบนจอมอนิเตอร์ (2026-09-21) ────────────────────────────────────────────
+   สิ่งที่ล็อก: **เทาต้องแยกได้ว่า "ยังไม่มีข้อมูล" หรือ "ไม่มีเป้า"**
+   ถ้าใครมาย่อให้เหลือคำเดียว จอจะบอกไม่ได้ว่าที่ไม่ตัดสินเพราะงานยังไม่เกิด หรือเพราะไม่มีใครตั้งเป้า
+   — ซึ่งเป็นคนละเรื่องกันสิ้นเชิงเวลายืนดูหน้าบอร์ด (อันแรกรอ อันหลังต้องไปตั้งเป้า) */
+test('statusWhy: เทา 2 แบบต้องพูดคนละอย่าง + ต้องไม่เผลอเป็นเขียว', () => {
+  const noData = statusWhy(null, 95, 'up', '%');
+  assert.equal(noData.status, 'none');
+  assert.match(noData.label, /ยังไม่มีข้อมูล/);
+
+  const noTarget = statusWhy(83.3, null, 'up', '%');
+  assert.equal(noTarget.status, 'none');
+  assert.match(noTarget.label, /ไม่มีเป้า/);
+  assert.notEqual(noTarget.label, noData.label, 'เทา 2 แบบห้ามใช้คำเดียวกัน');
+  assert.match(noTarget.why, /83\.3 %/, 'มีค่าแล้วแต่ไม่มีเป้า — ต้องบอกค่าที่มีด้วย');
+
+  // ค่าเป็น 0 คือ "มีข้อมูลและเป็นศูนย์" ไม่ใช่ "ยังไม่มีข้อมูล" (0 เป็น falsy — เคยพลาดคลาสนี้ประจำ)
+  assert.equal(statusWhy(0, 0, 'down').status, 'good');
+  assert.equal(statusWhy(0, 95, 'up').status, 'bad');
+});
+
+test('statusWhy: สีตรงกับ statusOf เสมอ และบอกระยะห่างเป้าถูกทิศ', () => {
+  for (const [v, t, dir] of [[86, 85, 'up'], [84, 85, 'up'], [50, 85, 'up'], [3, 5, 'down'], [8, 5, 'down']]) {
+    assert.equal(statusWhy(v, t, dir).status, statusOf(v, t, dir), `${v}/${t}/${dir}`);
+  }
+  assert.match(statusWhy(83.3, 95, 'up', '%').why, /ห่างเป้าอีก 11\.7/);
+  assert.match(statusWhy(100, 95, 'up', '%').why, /ดีกว่าเป้า 5/);
+  // ยิ่งน้อยยิ่งดี: ค่าต่ำกว่าเป้า = ดีกว่าเป้า (ห้ามอ่านกลับด้าน)
+  assert.match(statusWhy(3, 5, 'down', 'ครั้ง').why, /ดีกว่าเป้า 2/);
+});
+
+test('statusLabel: ครบ 4 ระดับ และค่าแปลกๆ ตกเป็น "ตัดสินไม่ได้" ไม่ใช่เขียว', () => {
+  assert.equal(statusLabel('good'), 'ตามเป้า');
+  assert.equal(statusLabel('warn'), 'เฉียดเป้า');
+  assert.equal(statusLabel('bad'), 'หลุดเป้า');
+  assert.equal(statusLabel(undefined), 'ตัดสินไม่ได้');
+  assert.equal(statusLabel('อะไรไม่รู้'), 'ตัดสินไม่ได้');
 });

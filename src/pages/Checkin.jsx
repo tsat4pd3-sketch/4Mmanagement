@@ -13,7 +13,7 @@ import LineSelect from '../components/LineSelect';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildScheduleMaps, resolveAssignedShift, seesAllTeams } from '../utils/shiftAssign';
+import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
@@ -221,7 +221,11 @@ export default function Checkin() {
       }
       // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
+      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+      const teamsSeen = teamsVisibleToLeader(team);
+      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
     } else if (scopeSecs.length) {
       // ทุก role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections)
       empQ = empQ.in('section', scopeSecs);
@@ -875,7 +879,11 @@ export default function Checkin() {
         }
         // ⚠️ ทีมที่ไม่หมุนกะ (C) = หัวหน้าที่ไม่ได้ยืนหน้างาน → เห็นคนทั้งไลน์ทุกทีม
       //    (ขอบเขตไลน์ยังคุมอยู่ · ปลดเฉพาะแกนทีม — ดู seesAllTeams ใน shiftAssign.js)
-      if (!seesAllTeams(team)) empQ = empQ.eq('team', team);
+      // 🔴 ทีมตัวเอง + ทีมที่ไม่หมุนกะ (C) — พนักงานทีม C = กะเช้าตลอด ยืนหน้างานกับทีมที่เข้าเช้า
+      //    เดิม `.eq('team', team)` ทำให้คนทีม C หายจากใบเช็คชื่อของหัวหน้าทีม A/B ทั้งคู่
+      //    (2 คนไม่เคยถูกเช็คชื่อเลย — ดูเหตุผลเต็มที่ teamsVisibleToLeader ใน shiftAssign.js)
+      const teamsSeen = teamsVisibleToLeader(team);
+      if (teamsSeen) empQ = empQ.in('team', teamsSeen);
       } else if (scopeSecs.length) {
         empQ = empQ.in('section', scopeSecs);
       }
