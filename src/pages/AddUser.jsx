@@ -8,6 +8,7 @@ import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
+import { STAFF_KINDS, STAFF_DIRECT, STAFF_INDIRECT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 
 import InfoMore from '../components/InfoMore';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
@@ -79,6 +80,12 @@ export default function AddUser() {
   const [emps, setEmps] = useState([]);      // ฐานพนักงาน — ใช้เป็นตัวตนของบัญชีแบบ 'person'
   const [empSearch, setEmpSearch] = useState('');
   const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
+  const [deptOpts, setDeptOpts] = useState([]);   // แผนกจากผังองค์กร — ใช้ตอนเพิ่มคนเข้าฐานพนักงานจากหน้านี้
+  /* ➕ เพิ่มคนเข้าฐานพนักงานจากหน้านี้เลย (2026-09-21 · เฟส 1 ของ docs/IDENTITY-NOTIFY-DESIGN.md)
+     เดิม: คนที่ไม่มีในทะเบียน (QA/PE/ธุรการ/สโตร์) หาไม่เจอใน dropdown → admin กดได้ทางเดียวคือ
+     "บัญชีหน่วยงาน" ⇒ 32 บัญชีของคนจริงถูกติดป้ายผิด · null = ยังไม่ได้กดปุ่ม */
+  const [newEmp, setNewEmp] = useState(null);
+  const [newEmpSaving, setNewEmpSaving] = useState(false);
 
   useEffect(() => {
     // master ตำแหน่งงาน (positions) — ต้องโหลดก่อน positionLabel()/levelOfPosition() ถึงได้ค่าจาก DB
@@ -93,9 +100,10 @@ export default function AddUser() {
         const nodes = data || [];
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
+        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').map(n => n.code || n.name))]);
       });
     supabase.from('employees')
-      .select('id, employee_id_code, name, team, line_id, section, department, position')
+      .select('id, employee_id_code, name, team, line_id, section, department, position, staff_kind')
       .eq('is_active', true).order('name')
       .then(({ data }) => setEmps(data || []));
     fetchUsers();
@@ -151,6 +159,41 @@ export default function AddUser() {
     setF('position', key);
     setNewPos(null);
   };
+  /* ➕ เพิ่มคนนี้เข้าฐานพนักงาน แล้วผูกกับบัญชีทันที (เฟส 1 · 2026-09-21)
+     ⚠️ คนทางอ้อม (QA/PE/ธุรการ/สโตร์) = `staff_kind: 'indirect'` + ไม่มีไลน์/ทีม/ส่วนงาน
+        → ไม่โผล่ในเช็คชื่อ/สกิล/กำลังคน (ตัวกรองอยู่ที่ src/utils/staffKind.js)
+     ⚠️ `employee_id_code` เป็น not null — คนทางอ้อมที่ยังไม่มีรหัสจริงให้ออกรหัสชั่วคราวไปก่อน
+        (แก้ทีหลังได้ที่ /operator) ห้ามปล่อยว่างเพราะ insert จะล้มเงียบๆ */
+  const addEmployee = async () => {
+    const name = String(newEmp?.name || '').trim();
+    const code = String(newEmp?.employee_id_code || '').trim();
+    if (!name) { setError('เพิ่มพนักงาน: กรอกชื่อ-นามสกุล'); return; }
+    if (!code) { setError('เพิ่มพนักงาน: กรอกรหัสพนักงาน (ยังไม่มีรหัสจริงให้ใส่รหัสชั่วคราวไปก่อน)'); return; }
+    if (emps.some(e => (e.employee_id_code || '').trim().toLowerCase() === code.toLowerCase())) {
+      setError(`เพิ่มพนักงาน: รหัส ${code} มีอยู่แล้วในฐานพนักงาน`); return;
+    }
+    setNewEmpSaving(true);
+    const { data: userData } = await supabase.auth.getUser();
+    const row = {
+      employee_id_code: code,
+      name,
+      department: newEmp.department || null,
+      section: newEmp.staff_kind === STAFF_INDIRECT ? null : (newEmp.section || null),
+      staff_kind: newEmp.staff_kind || STAFF_DIRECT,
+      position: form.position || null,
+      created_by: userData?.user?.id || null,
+    };
+    const res = await supabase.from('employees').insert(row).select('id, employee_id_code, name, team, line_id, section, department, position').single();
+    setNewEmpSaving(false);
+    if (!checkWrite(res, 'เพิ่มพนักงานเข้าฐาน')) return;
+    const created = res.data;
+    setEmps(prev => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th')));
+    setForm(f => ({ ...f, employeeId: created.id, fullName: created.name || f.fullName }));
+    setNewEmp(null);
+    setError(null);
+    setMessage(`เพิ่ม "${created.name}" เข้าฐานพนักงานแล้ว และผูกกับบัญชีนี้ให้เรียบร้อย`);
+  };
+
   const empById = useMemo(() => Object.fromEntries(emps.map(e => [e.id, e])), [emps]);
   const lineName = (id) => lines.find(l => String(l.id) === String(id))?.name || '';
   /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
@@ -713,7 +756,9 @@ export default function AddUser() {
                 <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                   {[
                     { k: 'person', icon: '👤', label: 'บัญชีของคน', desc: 'ผูกกับพนักงานในฐานข้อมูล' },
-                    { k: 'shared', icon: '🏢', label: 'บัญชีหน่วยงาน/อุปกรณ์', desc: 'ไม่มีตัวตนพนักงาน' },
+                    /* ⚠️ 2026-09-21 เปลี่ยนคำจาก "บัญชีหน่วยงาน/อุปกรณ์" — คำเดิมอ่านแล้วเหมือน
+                       "บัญชีของหน่วยงานนั้น" เลยถูกเลือกให้คนจริง 32 ใบ (QC/หัวหน้าแผนก/วิศวกร) */
+                    { k: 'shared', icon: '🖥️', label: 'บัญชีกลาง (ไม่ใช่คน)', desc: 'จอ TV · บัญชีประจำกะ/เครื่อง' },
                   ].map(o => (
                     <button key={o.k} type="button"
                       onClick={() => { setF('accountKind', o.k); if (o.k === 'shared') setF('employeeId', ''); }}
@@ -732,6 +777,17 @@ export default function AddUser() {
                 {!form.accountKind && (
                   <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>
                     ⚠️ บัญชีนี้ยังไม่ได้ระบุประเภท — เลือกให้ถูก แล้วระบบจะรู้ว่าต้องผูกตัวตนไหม
+                  </div>
+                )}
+                {/* 🔴 กันซ้ำรอย: 32 บัญชีของคนจริงเคยถูกติดป้าย "ไม่ใช่คน" เพราะหาชื่อในฐานไม่เจอ
+                    ชื่อที่เป็น "คำไทย 2 คำขึ้นไป" = แทบจะเป็นชื่อคนเสมอ → เตือนไว้ก่อน (ไม่บล็อก) */}
+                {form.accountKind === 'shared' && /^[\u0E00-\u0E7F]+\s+[\u0E00-\u0E7F]+/.test((form.fullName || '').trim()) && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6, lineHeight: 1.5 }}>
+                    ⚠️ ชื่อ "{form.fullName}" ดูเป็นชื่อคน — ถ้าเป็นคนจริงให้เลือก <b>บัญชีของคน</b> แล้วผูกตัวตน
+                    (ไม่มีในฐานพนักงานก็กดเพิ่มได้จากตรงนั้นเลย) · บัญชีกลางไว้ใช้กับ <b>จอ TV / บัญชีประจำเครื่อง</b> เท่านั้น
+                    <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+                      ติดป้ายผิด = ระบบตอบไม่ได้ว่าเขาอยู่แผนกไหน ⇒ ตัวกรอง "แผนก" ของการแจ้งเตือนใช้กับเขาไม่ได้
+                    </div>
                   </div>
                 )}
 
@@ -755,10 +811,13 @@ export default function AddUser() {
                       <option value="">— เลือกพนักงาน —</option>
                       {emps
                         .filter(e2 => {
-                          const q = empSearch.trim().toLowerCase();
+                          /* ⚠️ ต้อง normalize ช่องว่างทั้ง 2 ฝั่ง — ชื่อในบัญชีพิมพ์เว้น 2 เคาะ
+                             (`ชะเอ็ม  เศียรเขียว`) แต่ฐานพนักงานเคาะเดียว ⇒ เดิมพิมพ์ชื่อเต็มแล้วไม่ขึ้น
+                             admin เลยเข้าใจว่า "ไม่มีคนนี้ในระบบ" แล้วกดเป็นบัญชีหน่วยงาน (เกิดจริง 32 ใบ) */
+                          const nz = (v) => (v || '').toString().replace(/\s+/g, '').toLowerCase();
+                          const q = nz(empSearch);
                           if (!q) return true;
-                          return (e2.name || '').toLowerCase().includes(q)
-                              || (e2.employee_id_code || '').toLowerCase().includes(q);
+                          return nz(e2.name).includes(q) || nz(e2.employee_id_code).includes(q);
                         })
                         .slice(0, 300)
                         .map(e2 => (
@@ -770,6 +829,88 @@ export default function AddUser() {
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                       ทีม / ไลน์ / ส่วนงาน จะมาจากฐานพนักงานอัตโนมัติ — หัวหน้าแผนกแก้ที่นั่นแล้วถือเป็นค่าจริง
                     </div>
+
+                    {/* ➕ ไม่มีชื่อเขาในฐาน = เพิ่มจากตรงนี้ได้เลย ไม่ต้องไปหน้าอื่น (2026-09-21)
+                        คนสายสนับสนุน (QA/PE/ธุรการ/สโตร์) ไม่เคยถูกลงทะเบียนไว้ — เดิมทางออกเดียว
+                        คือกดเป็น "บัญชีหน่วยงาน" ซึ่งทำให้ระบบตอบไม่ได้ว่าเขาอยู่แผนกไหน */}
+                    {!form.employeeId && !newEmp && (
+                      <button type="button"
+                        onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_INDIRECT })}
+                        style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--accent)',
+                          background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                        ＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน
+                      </button>
+                    )}
+
+                    {newEmp && (
+                      <div style={{ marginTop: 8, padding: 10, background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)', display: 'grid', gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>➕ เพิ่มคนนี้เข้าฐานพนักงาน</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={labelSt}>ชื่อ - นามสกุล <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <input type="text" autoFocus value={newEmp.name}
+                              onChange={e => setNewEmp(v => ({ ...v, name: e.target.value }))} />
+                          </div>
+                          <div>
+                            <label style={labelSt}>รหัสพนักงาน <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <input type="text" placeholder="เช่น 12345" value={newEmp.employee_id_code}
+                              onChange={e => setNewEmp(v => ({ ...v, employee_id_code: e.target.value }))} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label style={labelSt}>ประเภทพนักงาน</label>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {STAFF_KINDS.map(k => (
+                              <button key={k.key} type="button" onClick={() => setNewEmp(v => ({ ...v, staff_kind: k.key }))}
+                                style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                                  border: `1px solid ${newEmp.staff_kind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
+                                  background: newEmp.staff_kind === k.key ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+                                  color: newEmp.staff_kind === k.key ? 'var(--text)' : 'var(--text2)' }}>
+                                <div style={{ fontWeight: 700 }}>{k.label}</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={labelSt}>แผนก</label>
+                            <select value={newEmp.department} onChange={e => setNewEmp(v => ({ ...v, department: e.target.value }))}>
+                              <option value="">— ไม่ระบุ —</option>
+                              {deptOpts.map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={labelSt}>ส่วนงาน (Section)</label>
+                            <select value={newEmp.staff_kind === STAFF_INDIRECT ? '' : newEmp.section}
+                              disabled={newEmp.staff_kind === STAFF_INDIRECT}
+                              onChange={e => setNewEmp(v => ({ ...v, section: e.target.value }))}>
+                              <option value="">{newEmp.staff_kind === STAFF_INDIRECT ? '— ขึ้นตรงฝ่าย —' : '— ไม่ระบุ —'}</option>
+                              {sectionOpts.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          {newEmp.staff_kind === STAFF_INDIRECT
+                            ? 'สายสนับสนุน = ไม่ผูกไลน์/ทีม ⇒ ไม่โผล่ในหน้าเช็คชื่อ · ไม่ถูกนับเป็นกำลังคนหน้าไลน์ · ไม่มีแผงสกิล'
+                            : 'พนักงานหน้าไลน์ = จะถูกนับในเช็คชื่อ/กำลังคน — ไลน์และทีมไปตั้งต่อที่หน้าพนักงาน (/operator)'}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button type="button" onClick={addEmployee} disabled={newEmpSaving}
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
+                            {newEmpSaving ? 'กำลังบันทึก...' : 'บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้'}
+                          </button>
+                          <button type="button" onClick={() => setNewEmp(null)}
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>

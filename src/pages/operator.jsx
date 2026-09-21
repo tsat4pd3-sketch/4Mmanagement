@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -376,7 +377,7 @@ export default function Operator() {
       famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
-      let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
+      let q = onlyDirectStaff(supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)'));
       if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
