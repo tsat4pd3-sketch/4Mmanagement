@@ -154,7 +154,11 @@ export default function LineOeeBoard() {
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
-    const procByMat = {}; (prods || []).forEach(p2 => { procByMat[p2.mat_no] = p2.process_type; });
+    const procByMat = {}; const pairMap = {};
+    (prods || []).forEach(p2 => {
+      procByMat[p2.mat_no] = p2.process_type;
+      if (p2.pair_mat_no) pairMap[p2.mat_no] = p2.pair_mat_no;   // งานคู่ RH/LH (แม่พิมพ์คู่/gang die)
+    });
     const dtBySess = {}; dtR.rows.forEach(d2 => (dtBySess[d2.session_id] ||= []).push(d2));
     const ngBySess = {}; defR.rows.forEach(d2 => { if (isTrialDefect(d2)) return; ngBySess[d2.session_id] = (ngBySess[d2.session_id] || 0) + defectQty(d2); });
     const lineCfg = Object.fromEntries(lines.map(l => [l.name, l]));
@@ -168,6 +172,8 @@ export default function LineOeeBoard() {
         parallelCap: flowModeOf(lineCfg[s.line_name]?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(lineCfg[s.line_name]) : 1,
         breakPolicies: breaks || [],
         processType: (ordBySess[s.id] || []).map(o => procByMat[o.mat_no]).find(Boolean) || null,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap,
       });
     });
 

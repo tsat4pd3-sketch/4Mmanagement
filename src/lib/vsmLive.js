@@ -42,10 +42,11 @@ const bySession = rows => {
  * @param ctMap     จาก buildCtMap (utils/oee.js)
  * @param lines     production_lines (name, flow_mode, parallel_stations) — ใช้หา N เครื่องขนาน
  * @param breakPolicies break_policies ที่ is_active — **ต้องส่ง** ไม่งั้น A/P สด ≠ ค่าที่ stamp ตอนปิดกะ (2026-09-14)
+ * @param pairMap   mat_no → pair_mat_no (งานคู่ gang die / RH-LH) — **ต้องส่ง** ไม่งั้นเวลามาตรฐานของ %P นับ 2 เท่า (2026-09-18)
  */
 export function buildVsmLive({
   boxes = [], sessions = [], orders = [], downtimes = [], defects = [],
-  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [],
+  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {},
 }) {
   const ordBy = bySession(orders);
   const dtBy = bySession(downtimes);
@@ -96,6 +97,8 @@ export function buildVsmLive({
       workDate: openSess.work_date,
       nowMs, parallelN, parallelCap,
       breakPolicies,
+      // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+      pairMap,
     }) : null;
 
     /* OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')

@@ -34,8 +34,9 @@ export function dieStatusMeta(key) {
     || { key, icon: '❓', label: key, color: '#6b7280', bg: 'rgba(107,114,128,0.16)', desc: 'สถานะที่โค้ดเวอร์ชันนี้ไม่รู้จัก' };
 }
 
-/* สถานะ MO ที่ถือว่า "ยังค้างอยู่" — ตรงกับ STATUS_META ใน MtnRepair.jsx (ทุกตัวที่ไม่ใช่ closed/rejected)
-   returned (ตีกลับ) นับว่าค้าง: ใบยังไม่จบ ผู้แจ้งต้องส่งใหม่ */
+/* สถานะ MO ที่ถือว่า "ยังค้างอยู่" — allowlist (ตรงข้ามกับ MO_DONE_STATUSES ใน mtnStepPerm.js)
+   returned (ตีกลับ) นับว่าค้าง: ใบยังไม่จบ ผู้แจ้งต้องส่งใหม่ · transferred = จบแล้ว จึงไม่อยู่ในลิสต์
+   ⚠️ เป็น allowlist โดยตั้งใจ — สถานะจบตัวใหม่จึงไม่หลุดมาค้างเองเหมือนที่เคยเกิดกับฝั่ง blocklist */
 export const OPEN_MO_STATUSES = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover', 'returned'];
 
 /* ป้ายสถานะ MO — **ไม่ mirror อีกแล้ว** (2026-09-09): ย้ายไปอยู่ที่ `src/utils/mtnStepPerm.js`

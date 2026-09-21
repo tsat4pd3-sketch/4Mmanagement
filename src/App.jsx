@@ -2,7 +2,9 @@ import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { supabase, setDrActorName } from './supabaseClient';
+import { supabase } from './supabaseClient';
+import { setActor } from './utils/actorStamp';
+import { loadProfilesPeople } from './utils/usePeople';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -21,6 +23,7 @@ import { buildProfileMenu } from './utils/profileMenu';             // ราย
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
+import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
@@ -131,7 +134,9 @@ export const NAV_ITEMS = [
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
-  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต' },
+  // วางแผนการผลิต = เจ้าของจริงมี 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
+  // ⇒ โชว์ทั้งสองหมวด ห้ามย้าย (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · สิทธิ์มีชุดเดียวเหมือนเดิม
+  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต', alsoIn: LOGISTIC_GROUPS.control },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
@@ -987,18 +992,22 @@ function NotificationBell({ userId, role }) {
     if (!userId) return;
     const { data } = await supabase
       .from('notifications')
-      .select('id, title, body, type, is_read, created_at, ref_table, ref_id')
+      .select('id, title, body, type, is_read, created_at, ref_table, ref_id, link')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(30);
     setNotifs(data || []);
   }, [userId]);
 
-  // ปลายทางต้องผ่าน canAccessPage ก่อนเสมอ (กฎเดียวกับ telemetry บนหน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน ไม่พาไปแล้วโดนเด้ง
-  const notifTarget = useCallback((n) => {
-    const path = NOTIF_ROUTE[n?.ref_table];
-    return path && canAccessPage(path, role) ? path : null;
-  }, [role]);
+  /* ปลายทาง = `link` ของใบนั้นก่อน (deep-link ถึงตัวปัญหา) ไม่มีค่อยถอยไป NOTIF_ROUTE[ref_table] (หน้ารวม)
+     · ตัวตัดสินอยู่ที่ `src/utils/notifLink.js` ที่เดียว — ห้ามอ่าน n.link ตรงๆ ที่อื่น (มันมาจาก DB
+       = ข้อมูล ต้องกรอง path ภายใน/scheme ก่อนเสมอ)
+     · ต้องผ่าน canAccessPage เสมอ (กฎเดียวกับ telemetry หน้า Home) — ไม่มีสิทธิ์ = กดแล้วแค่ mark อ่าน
+       ห้ามพาไปแล้วปล่อยให้โดนเด้ง (อ่านเหมือนแอปพัง) */
+  const notifTarget = useCallback(
+    (n) => notifTargetPath(n, NOTIF_ROUTE, (p) => canAccessPage(p, role)),
+    [role],
+  );
 
   // เตรียม AudioContext ตอน gesture แรก (เบราว์เซอร์ต้องมี user interaction ก่อนเล่นเสียง)
   useEffect(() => {
@@ -1494,7 +1503,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     // ห้ามใช้ default (global) — global จะ revoke refresh token ของ user นี้ "ทุกเครื่อง"
     // → account ที่ใช้ร่วมกันหลายจุดในโรงงานโดนเด้ง login พร้อมกันทั้งหมดทุกครั้งที่
     // เครื่องใดเครื่องหนึ่ง logout/auto-logout (สาเหตุหลักของ "เด้ง login บ่อย" 2026-07-14)
-    setDrActorName(null);
+    setActor(null, null);   // ล้างตัวตนผู้ใช้ (ชื่อ+uid) ตอน logout
     setDeptAdmin(false);
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
@@ -2021,11 +2030,18 @@ export default function App() {
     setUserRole(data?.role ?? null);
     setUserLineId(ident.line_id);
     setUserFullName(data?.full_name ?? null);
-    setDrActorName(data?.full_name ?? null); // traceability: ฝั่ง DR anon ต้อง stamp ชื่อผู้แก้เอง (ดู supabaseClient.js)
+    // traceability: ฝั่ง DR เป็น anon ต้อง stamp "ใครทำ" มาเองทั้งชื่อและ uid (ดู src/utils/actorStamp.js)
+    //   ชื่อ = snapshot ให้คนอ่าน · uid = คีย์ที่นับ/join ได้ (ชื่อสะกดต่างไม่ทำให้กลายเป็นคนละคน)
+    setActor(user.id, data?.full_name ?? null);
     setUserTeam(ident.team);
     setUserSection(ident.section);
     setUserPosition(data?.position ?? null);
     loadPositions();   // master ตำแหน่งงาน — ให้ positionLabel() ใช้ได้ทั้งแอป
+    /* อุ่นทะเบียน "ชื่อ → uid" ไว้ตั้งแต่ login (2026-09-17)
+       wrapper เติม uid ให้ชื่อคนอื่นได้ก็ต่อเมื่อทะเบียนโหลดแล้ว — หน้าที่ไม่มี <PersonSelect>
+       (เช่น Daily Report ที่เขียน fix_by/followup_by) จะไม่มีใครโหลดให้เลย
+       ใช้ cache ร่วมกับ picker → ไม่ได้ยิงคิวรีเพิ่ม · ล้มก็ไม่กระทบ (resolve ไม่ได้ = uid null เหมือนเดิม) */
+    loadProfilesPeople().catch(() => {});
     setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);

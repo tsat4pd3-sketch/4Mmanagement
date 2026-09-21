@@ -11,7 +11,8 @@ import { supabaseDR } from '../supabaseClient'
 
 let _cache = null
 
-/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } } — cache ครั้งเดียวต่อ session */
+/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } } — cache ครั้งเดียวต่อ session
+ *  parent ว่างได้เสมอ = ของที่ขั้นนี้ประกอบมาไม่มีใบผลิตของตัวเอง (ดู src/utils/opLink.js) */
 export async function loadOpInfo(force = false) {
   if (_cache && !force) return _cache
   try {

@@ -10,8 +10,12 @@ import { explodeBom, checkBomFlow, uomLabel, itemNoLabel, slocLabel } from '../u
    ที่เพิ่มให้ (SAP ไม่มีในจอนั้น แต่หน้างานต้องใช้):
      "ต่อ 1 FG" = qty สะสมทั้งสาย — ตัวที่เอาไปคูณยอดผลิตได้จริง
 
-   ⚠️⚠️ จอนี้ **อ่านอย่างเดียว + ชี้ให้เห็น ห้ามแก้ BOM ให้เอง**
-   จะลบแถวที่นับซ้ำหรือคงไว้ เป็นการตัดสินใจของ PE/Planning (เดาผิด = ความต้องการทั้งโรงงานเพี้ยน)
+   ⚠️⚠️ จอนี้ **ไม่แก้ BOM ให้เอง** — ชี้ให้เห็นอย่างเดียว การตัดสินใจเป็นของ PE/Planning
+   ข้อยกเว้นเดียว (user สั่ง 2026-09-16 "ตัวที่นับซ้ำ ที่ถูก parent ไว้แล้ว ลบให้ได้มั้ย
+   ใช้ตัวเดียวได้ไม่งง เราไม่รู้จะลบยังไง"): ถ้าตัวเรียกส่ง `onDeleteDupes` มา จะมีปุ่มลบ
+   **เฉพาะแถวที่ระบบชี้ว่า `isDupeRow` เท่านั้น** (แถวชั้น 1 ที่ของตัวเดียวกันอยู่ชั้นลึกแล้ว)
+   → คนยังเป็นผู้กด ระบบไม่ลบเอง · ลบแล้วเหลือเส้นทางเดียว = เลิกนับซ้ำ
+   ⚠️ ห้ามขยายปุ่มนี้ไปลบแถวอื่น — แถวที่ไม่ใช่ isDupeRow ลบผิด = ความต้องการวัตถุดิบหาย
 
    ⚠️ หน่วยต้องโชว์เสมอ (user สั่ง 2026-09-02: "จำนวนควรมีหน่วยนะ")
       coil = KG · ชิ้น = PC — เลข 0.341 กับ 5 ดูเหมือนหน่วยเดียวกันถ้าไม่บอก
@@ -31,8 +35,9 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
  * @param {string}   rootName
  * @param {Function} bomOf    (mat) => [{ mat_no, part_name, qty_per_unit, uom }]
  */
-export default function BomTreeView({ rootMat, rootName, bomOf }) {
+export default function BomTreeView({ rootMat, rootName, bomOf, onDeleteDupes }) {
   const [showAll, setShowAll] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const { rows, flatDupes, cycles, truncated, maxLevel, flowWarn } = useMemo(() => {
     const r = explodeBom(rootMat, bomOf);
@@ -53,7 +58,16 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
   }
 
   const shown = showAll ? rows : rows.slice(0, 40);
-  const dupCount = rows.filter(r => r.isDupeRow).length;
+  /* แถวที่ลบได้ = isDupeRow **และมี id จริง** — bomOf บางตัวเรียกไม่ได้ส่ง id มา (ลบมั่วไม่ได้) */
+  const dupRows = rows.filter(r => r.isDupeRow);
+  const dupCount = dupRows.length;
+  const delRows = onDeleteDupes ? dupRows.filter(r => r.id) : [];
+
+  const doDelete = async (list) => {
+    if (!list.length || busy) return;
+    setBusy(true);
+    try { await onDeleteDupes(list); } finally { setBusy(false); }
+  };
   const flowCount = [...flowWarn.values()].length;
 
   return (
@@ -80,8 +94,22 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
             ))}
           </div>
           <div style={{ marginTop: 4, color: 'var(--muted)' }}>
-            ระบบ<b>ไม่แก้ให้เอง</b> — จะลบแถวชั้น 1 ออก (ต่อโซ่) หรือลบ BOM ของขั้นกลาง (คงแบน) ต้องให้ PE/Planning เคาะ
+            ระบบ<b>ไม่ลบให้เอง</b> — ลบแถวชั้น 1 ออก = เหลือเส้นทางเดียว (ต่อโซ่ ตรงของจริง) ·
+            คงไว้ = ยอมรับว่ายอดชั้น 1 นับรวมของที่อยู่ข้างในแล้ว
           </div>
+          {delRows.length > 0 && (
+            <button onClick={() => doDelete(delRows)} disabled={busy}
+              style={{ marginTop: 7, fontSize: 11.5, fontWeight: 800, padding: '6px 13px', borderRadius: 7,
+                cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)', color: TONE.crit,
+                border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
+              🧹 ลบแถวชั้น 1 ที่นับซ้ำทั้งหมด ({delRows.length} รายการ)
+            </button>
+          )}
+          {onDeleteDupes && delRows.length < dupCount && (
+            <div style={{ marginTop: 5, fontSize: 10.5, color: TONE.warn }}>
+              ⚠️ อีก {dupCount - delRows.length} แถวยังลบจากจอนี้ไม่ได้ (ไม่มี id ของบรรทัด) — ลบที่ตารางด้านล่าง
+            </div>
+          )}
         </div>
       )}
 
@@ -134,8 +162,17 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
                   <td style={{ ...td, maxWidth: 260 }}>
                     {r.part_name || '—'}
                     {r.isDupeRow && (
-                      <div style={{ fontSize: 10, color: TONE.crit, fontWeight: 700, marginTop: 1 }}>
+                      <div style={{ fontSize: 10, color: TONE.crit, fontWeight: 700, marginTop: 1,
+                        display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         🔴 นับซ้ำ — ตัวนี้อยู่ชั้นลึกอยู่แล้ว
+                        {onDeleteDupes && r.id && (
+                          <button onClick={() => doDelete([r])} disabled={busy} title="ลบแถวชั้น 1 นี้ทิ้ง"
+                            style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 5,
+                              cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)',
+                              color: TONE.crit, border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
+                            🗑 ลบแถวนี้
+                          </button>
+                        )}
                       </div>
                     )}
                     {w && (
@@ -172,7 +209,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf }) {
       <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
         <b>จำนวน/ตัวแม่</b> = ต่อ 1 หน่วยของชิ้นที่อยู่เหนือขึ้นไป (ตรงกับคอลัมน์ Qty ของ SAP) ·
         <b> ต่อ 1 FG</b> = คูณสะสมทั้งสายแล้ว
-        <br />จอนี้อ่านอย่างเดียว — แก้ BOM ที่ตารางด้านล่าง
+        <br />จอนี้แก้ BOM ไม่ได้ (ยกเว้นปุ่มลบแถว<b>นับซ้ำ</b>) — เพิ่ม/แก้พาร์ทที่ตารางด้านล่าง
       </div>
     </div>
   );

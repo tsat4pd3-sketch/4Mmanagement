@@ -5,6 +5,7 @@ import { deptNameOf } from '../utils/mtnTeams'
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่างซ่อมจากตาราง mtn_teams — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
+import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -16,6 +17,7 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 const targetSummary = (rule) => {
   const parts = []
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
+  if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
   if (rule.inapp_depts?.length) parts.push(`แผนก: ${rule.inapp_depts.join(', ')}`)
   return parts.length ? `● ${parts.join(' · ')}` : '○ ทุกส่วนงาน/ทุกแผนก'
@@ -118,6 +120,7 @@ const renderPreview = (t) => String(t ?? '').replace(/\{(\w+)\}/g, (_m, k) => (S
 export default function NotificationConfig() {
   const [rooms, setRooms] = useState([])
   const [rules, setRules] = useState([])
+  const [reach, setReach] = useState({})   // event_key → แถวดิบจาก RPC notif_rule_reach()
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(null)
   const [newRoom, setNewRoom] = useState({ name: '', chat_id: '' })
@@ -151,6 +154,14 @@ export default function NotificationConfig() {
         const bySort = (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)
         setSecOpts([...new Set(nodes.filter(n => n.kind === 'section').sort(bySort).map(n => n.code || n.name).filter(Boolean))])
         setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(bySort).map(n => n.name).filter(Boolean))])
+      })
+    /* 🏷️ ป้ายราคา — สรุปฝั่ง server (RPC) เพราะต้องอ่าน notifications เป็นหมื่นแถว
+       ดึงมา client เอง = ชนเพดาน 1000 แถว/คิวรี + ลาก egress ฟรี (กฎเหล็กข้อ 5)
+       โหลดแยก ไม่บล็อกหน้าหลัก — ล้มก็แค่ไม่มีป้ายราคา หน้ายังตั้งค่าได้ปกติ */
+    supabase.rpc('notif_rule_reach', { p_days: 14 })
+      .then(({ data, error }) => {
+        if (error) { console.warn('notif_rule_reach:', error.message); return }
+        setReach(Object.fromEntries((data ?? []).map(r => [r.event_key, r])))
       })
     supabase.from('employees').select('section, department').eq('is_active', true)
       .then(({ data }) => {
@@ -456,6 +467,28 @@ export default function NotificationConfig() {
                       })}
                     </div>
 
+                    {/* 🏷️ ป้ายราคา — "ติ๊กแล้วแปลว่าอะไร" (2026-09-17 · คำสั่ง user "จะได้รู้")
+                        เดิมติ๊ก role แล้วไม่เห็นผล ⇒ ทุกคน "ติ๊กเผื่อไว้ก่อน" จนใบซ่อม 1 ใบ = 99 คน
+                        (3,052 แถว/วัน = 79% ของทั้งระบบ · คนอ่าน 8%)
+                        ⚠️ สูตรอยู่ `src/utils/notifReach.js` ที่เดียว ห้ามคำนวณซ้ำที่นี่ */}
+                    <div style={{ marginTop: 7, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <div style={{
+                        fontSize: 11.5, lineHeight: 1.5,
+                        color: (rule.inapp_roles || []).length ? 'var(--text2)' : 'var(--muted)',
+                      }}>
+                        🏷️ {reachLabel(rule, reach[rule.event_key])}
+                      </div>
+                      {reachWarnings(rule, reach[rule.event_key]).map((w, i) => (
+                        <div key={i} style={{
+                          fontSize: 11, lineHeight: 1.5, display: 'flex', gap: 5, alignItems: 'flex-start',
+                          color: w.level === 'red' ? '#ef4444' : 'var(--accent2)',
+                        }}>
+                          <span style={{ flexShrink: 0 }}>{w.level === 'red' ? '🔴' : '⚠️'}</span>
+                          <span>{w.text}</span>
+                        </div>
+                      ))}
+                    </div>
+
                     {/* จำกัดผู้รับให้แคบลงอีก: ส่วนงาน / แผนก / เฉพาะคนที่ดูแลไลน์ที่เกิดเหตุ */}
                     {(rule.inapp_roles || []).length > 0 && (
                       <div style={{ marginTop: 8 }}>
@@ -478,8 +511,26 @@ export default function NotificationConfig() {
                                 <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
                                   เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
-                                  ผู้บริหาร (ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย) และคนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
+                                  คนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
                                   เหตุการณ์ที่ไม่รู้ส่วนงาน = แจ้งทุกคนตาม role (ไม่เงียบ)
+                                </div>
+                              </span>
+                            </label>
+
+                            {/* 🔑 2026-09-21 — เดิม admin/ผจก. ถูกยกเว้นจากตัวกรองส่วนงาน "เสมอ" (hardcode ใน SQL)
+                                วัดจริง: ผจก. 4 คนได้ 50 แถว/วัน อ่านรวมกัน 2 จาก 2,920 (0.07%)
+                                ธงนี้ปิดข้อยกเว้นเป็นรายเรื่อง — ให้เลือกได้ว่าเรื่องไหนผู้บริหารควรเห็นทั้งโรงงาน */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12,
+                              cursor: rule.inapp_match_section ? 'pointer' : 'not-allowed',
+                              opacity: rule.inapp_match_section ? 1 : 0.5, paddingLeft: 22 }}>
+                              <input type="checkbox" checked={!!rule.inapp_scope_strict} disabled={!rule.inapp_match_section}
+                                onChange={e => updateRule(rule.event_key, { inapp_scope_strict: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>ผู้บริหารก็ถูกกรองตามส่วนงานด้วย</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
+                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>ทุกส่วนงาน</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>เรื่องที่ยิงถี่</b> ·
+                                  ⚠️ คนที่ยังไม่ได้ตั้งส่วนงานยังได้รับทุกส่วนงานอยู่ (ตั้งได้ที่หน้าจัดการผู้ใช้งาน)
                                 </div>
                               </span>
                             </label>

@@ -104,3 +104,46 @@ export function pairAwareTotal(perMat, pairOf) {
   });
   return { target, produced, hasPair };
 }
+
+/* ── ยุบงานคู่ให้เหลือ "1 shot" สำหรับสายเวลามาตรฐานของ OEE (2026-09-18 · user ยืนยัน) ──
+   user: *"ถ้างานคู่ แบบ gang die / 1 shot ได้งาน 2 ชิ้น หรือ คู่ซ้าย-ขวา ต้องนับเป็น shot หรือ cycle"*
+
+   🔴 กติกาที่ต้องแยกให้ขาด — **ชิ้น ≠ shot**:
+     · %Q · ยอดผลิต · ของเสีย  → นับ **ชิ้น** (1 shot = 2 ชิ้น) ห้ามยุบ
+     · %P (เวลามาตรฐาน Σ qty×CT) → นับ **shot** เพราะ CT ที่ตั้งไว้คือเวลาต่อ 1 จังหวะเครื่อง
+   ไม่ยุบ = ตัวเศษของ %P เป็น 2 เท่า → ทะลุ 100 แล้วโดน cap เงียบ
+   วัดจริง 45 วัน (ratio = เวลามาตรฐาน ÷ เวลาเครื่องเดิน · เกิน 1 = เป็นไปไม่ได้):
+     LASER-345 1.80→1.04 · HDF2 1.15→0.72 · HDF1 1.14→0.66
+     ไลน์ไม่มีคู่ไม่ขยับเลย (Line 61 0.71 · BENDING E50 0.59) = ยืนยันว่าแตะเฉพาะไลน์งานคู่
+
+   แถวเข้า/ออก = { mat_no, qty, ct, winStart?, winEnd? } · คู่ที่เจอทั้ง 2 ข้างในชุด →
+   เหลือแถวเดียว: qty = max (จำนวน shot) · ct = max · window = union (วิ่งพร้อมกันจังหวะเดียว)
+   ⚠️ `pairOf` ไม่ส่ง/ไม่มีคู่ในชุด = **คืนแถวเดิมเป๊ะทุกกรณี** (backward compatible) */
+export function collapsePairShots(rows, pairOf = () => null) {
+  const byMat = new Map();
+  rows.forEach(r => { if (r?.mat_no != null) byMat.set(r.mat_no, r) });
+  const seen = new Set();
+  const out = [];
+  rows.forEach(r => {
+    const mat = r?.mat_no;
+    if (mat != null && seen.has(mat)) return;
+    const pm = mat != null ? pairOf(mat) : null;
+    const partner = pm != null && pm !== mat ? byMat.get(pm) : null;
+    if (!partner) { if (mat != null) seen.add(mat); out.push(r); return }
+    seen.add(mat); seen.add(partner.mat_no);
+    // ตัวรอด = ข้างที่ยอดมากกว่า (ถือ mat_no ไว้ให้ matRunMinMap/ชื่อพาร์ทอ้างถึงได้เหมือนเดิม)
+    const keep = (Number(r.qty) || 0) >= (Number(partner.qty) || 0) ? r : partner;
+    const nums = [r, partner].map(x => [Number(x.winStart), Number(x.winEnd)]);
+    const starts = nums.map(n => n[0]).filter(Number.isFinite);
+    const ends   = nums.map(n => n[1]).filter(Number.isFinite);
+    out.push({
+      ...keep,
+      qty: Math.max(Number(r.qty) || 0, Number(partner.qty) || 0),
+      ct:  Math.max(Number(r.ct)  || 0, Number(partner.ct)  || 0),
+      ...(starts.length ? { winStart: Math.min(...starts) } : {}),
+      ...(ends.length   ? { winEnd:   Math.max(...ends)   } : {}),
+      _pairedWith: keep.mat_no === mat ? partner.mat_no : mat,
+    });
+  });
+  return out;
+}

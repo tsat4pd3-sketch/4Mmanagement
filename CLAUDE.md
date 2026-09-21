@@ -139,20 +139,11 @@
 | `meeting_action_items` | Action item จากประชุมแถวเช้า **+ ห้อง OBEYA** (ติดตามข้ามวันจนปิด) · **ตารางเดียวใช้ร่วมกัน ห้ามสร้างใหม่** · RLS = `has_perm('morning_meeting:record') or has_perm('obeya:record')` ครบ 4 cmd (2026-09-15) | meeting_date, section, line_name, problem, root_cause, ref_kind/ref_id (ที่มา: downtime/defect/4m/order_miss), assignee, due_date, status (open/doing/done/cancelled), **source** (morning/obeya), **kpi_key** (แกน SQDCM/OEE ที่ใบนี้ไปแก้ — ไม่มี check constraint ตั้งใจ), **target_value/result_value** |
 | `event_comments` (**DR**) | 💬 คอมเมนต์+🔔mention ใต้เหตุการณ์ (นำร่อง: ใบซ่อม MO + downtime — ก้าวแรกของสื่อสารในระบบแทน chat แยก, 2026-07-16) | ref_kind (mtn_order/downtime), ref_id (text), author_id/author_name (snapshot — profiles อยู่คนละ project), body, mentions jsonb · component กลาง `src/components/EventComments.jsx` (embed ใน MtnRepair DetailDrawer + แถว DT ใน DailyReport) · mention → client insert `notifications` ตรง (policy `notifications_insert_authenticated`) + รายชื่อจาก RPC `list_mention_users` (SECURITY DEFINER, guard auth.uid, revoke anon) — migrations `20260716_event_comments.sql` (DR) + `20260716_mention_notify.sql` (Main) · จุดใหม่ที่อยากมีคอมเมนต์ให้ reuse component นี้ + เพิ่มค่า ref_kind ใน check constraint |
 
-### Layer Process Audit — LPA (FM-QMR-008 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `lpa_questions` | คำถาม checklist (seed 23 ข้อมาตรฐาน) — **โมเดลรายไลน์ (2026-07-23):** `line_name` null = **common ฐาน backfall ทุกไลน์** · `line_name`=ไลน์ = ข้อเฉพาะไลน์นั้น · **`hidden_for_lines[]`** = ไลน์ที่ "ไม่ใช้" ข้อ common นั้น (ซ่อนรายไลน์) → แต่ละไลน์ = common − ข้อที่ซ่อน + ข้อเฉพาะไลน์ · category `special` = ข้อเฝ้าระวังปัญหา (สีแดง) ผูกไลน์+ช่วง issue_start/end | category (safety/quality/systemic/visual/special), seq, question, line_name, **hidden_for_lines[]**, issue_start/end, is_active |
-| `lpa_plans` | แผนตรวจรายเดือน (unique ไลน์+กะ+เดือน) | line_name, shift (day/night), month_key 'YYYY-MM', leader/supervisor/manager/gm_name, stations (list ใช้เติมแผนอัตโนมัติ) |
-| `lpa_plan_days` | รายวันของแผน: สถานีตรวจ + ชั้นที่วางแผน | plan_id (FK cascade), day 1-31, station, plan_leader/supervisor/manager/gm |
-| `lpa_audits` | ผลตรวจ 1 ครั้ง (unique ไลน์+กะ+วัน+ชั้น) | audit_date, layer (leader/supervisor/manager/gm), station, auditor_name/sig_url |
-| `lpa_audit_answers` | คำตอบรายข้อ (snapshot question_text) | audit_id (FK cascade), question_id, answer (Y/N/T/NA), note (บังคับเมื่อ N/T) |
+### Layer Process Audit — LPA (FM-QMR-008 · paperless)
+> 📄 โครงตาราง `lpa_questions` · `lpa_plans` · `lpa_plan_days` · `lpa_audits` · `lpa_audit_answers` → `docs/modules/lpa-audit.md`
 
-### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 — paperless · 2026-07-20)
-| Table | คำอธิบาย | Fields สำคัญ |
-|-------|---------|-------------|
-| `ojt_trainings` | หัวใบอบรม OJT (หน้า `/ojt-training` · migration `20260714_ojt_training.sql`) | train_date, time_from/to, location, dept/section/department, for_new/for_review/for_method_change, topic, scope, trainer_name, duration_min, maker/approver/hr (name+sig_url — เลือกจาก profiles ที่มี signature_url), status (open/completed) |
-| `ojt_training_attendees` | ผู้เข้าอบรมต่อใบ (snapshot ชื่อ/รหัส กัน master เปลี่ยน) | training_id (FK cascade), employee_id, emp_code/emp_name, pre_score/post_score (0-4), sign_url (เซ็นบนจอ → bucket `signatures` path ของ user ที่บันทึก), eval_agree, evaluator_name, sort_order |
+### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 · paperless)
+> 📄 โครงตาราง `ojt_trainings` · `ojt_training_attendees` + กฎของโมดูล → `docs/modules/ojt-training.md`
 
 ---
 
@@ -200,13 +191,10 @@ Reject → status: "rejected" + reject_reason
 ```
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
-> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิง 392 ใบใน 10 วัน (พ.ค. 2026) แล้ว **323 ใบค้างคิว 2 เดือนครึ่ง กลบใบจริง 19 ใบ**
-> จนหัวหน้ามองไม่เห็นงานที่ต้องทำ · ล้างแล้ว (`20260810_void_stale_auto_4m_man.sql`) — **รายละเอียดเหตุการณ์ → `docs/modules/four-m-workflow.md`**
-> **กฎที่ตกผลึก:**
-> - **ตัวสร้าง 4M อัตโนมัติต้องมีเพดาน/ตัวนับ + จุดเฝ้าดู** — ยิงวันละหลายสิบใบต่อเนื่องเป็นสัปดาห์โดยไม่มีใครรู้ = บั๊กที่มองไม่เห็น · ก่อน insert อัตโนมัติ ให้เช็คว่ามีใบซ้ำของ (คน+จุดงาน+ไลน์) อยู่แล้วหรือยัง
-> - **แยกใบที่ระบบสร้างออกจากใบที่คนกรอกให้เห็นในคิว** (คิวปนกันแล้วคนไม่กล้าเคลียร์ทั้งก้อน สุดท้ายค้างทั้งคู่) — ปัจจุบันแยกได้แค่ `created_by is null` + ข้อความ `[Auto]` ยังไม่มีคอลัมน์บอกที่มาจริงจัง
-> - **เคลียร์คิวค้างจากบั๊ก = `rejected` + เหตุผลที่อ่านรู้เรื่อง ห้าม `delete` และห้าม `approved`** (approve = โกหกว่ามีคนพิจารณาแล้ว)
-> - งานที่ค้างเกิน ~30 วันในคิวอนุมัติควรมีสัญญาณเตือน — ตอนนี้ยังไม่มี (ใบเก่าสุดที่เหลือ 81 วัน)
+> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิง 392 ใบใน 10 วัน แล้ว **323 ใบค้างคิว 2 เดือนครึ่ง กลบใบจริง 19 ใบ**
+> **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
+> เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
+> 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
 
 ---
 
@@ -264,6 +252,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 > · backfill ประวัติแล้ว 425 กะ (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
+
+> ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน
+> 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ** (วัดจริง HDF1 159% · LASER-345 160%)
+> · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
+> · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) · `computeLiveOee` ต้องส่ง `pairMap`
+>   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
 
@@ -465,13 +460,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 + 2026-09-15 + 2026-09-17)
 
-`Obeya.jsx` = **เปลือกสลับแท็บ** (งาน 2 session ที่ทำคนละมุมโดยไม่รู้กัน · รวมเข้าด้วยกัน 15/09)
-· **`?tab=kpi` (default)** = 📋 บอร์ด KPI ส่วนงาน — ยุบกระดาษ *"OBEYA KPI monitoring"* ที่แปะผนัง
-  (ราย**เดือน** × กลุ่มไลน์ × หัวข้อ) · `components/ObeyaKpiBoard.jsx`
-· **`?tab=table`** = 📑 KPI รายเดือน / ตั้งเป้า (`components/KpiMonthly.jsx`) — ตาราง 12 เดือน + ตั้งนิยาม
-  + ทะเบียนชื่อ + Excel/PDF · **ย้ายมาจาก `/dept-dashboard` 17/09** (ซ้ำกับ `?tab=kpi`) · ลิงก์เก่า redirect มาที่นี่
-· **`?tab=sqdcm`** = 🖥️ จอมอนิเตอร์ SQDCM ราย**วัน/สัปดาห์/เดือน** ผัง "กระดาษ A4 ปูเต็มจอ 5×2" + โหมดจอ TV
-  · `components/ObeyaSqdcmBoard.jsx` · KPI อยู่ `src/utils/obeyaKpi.js` (OEE ยังมาจาก `oee.js` เท่านั้น)
+`Obeya.jsx` = **เปลือกสลับแท็บ** · `?tab=kpi` (default) = 📋 บอร์ด KPI ส่วนงาน ราย**เดือน**
+(`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง 12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` — **ย้ายมาจาก
+`/dept-dashboard` 17/09** ลิงก์เก่า redirect มา) · `?tab=sqdcm` = 🖥️ จอ SQDCM ราย**วัน/สัปดาห์/เดือน**
+(`ObeyaSqdcmBoard.jsx` · KPI อยู่ `obeyaKpi.js` · OEE ยังมาจาก `oee.js` เท่านั้น)
 · **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
   · แต่ `kpi` (บอร์ดไว้ดู) กับ `table` (โต๊ะไว้กรอก/ตั้งค่า) = **ข้อมูลชุดเดียวกัน** (`kpi_definitions` ·
   `kpi_manual_entries` · `kpi_catalog`) คนละมุมมอง — **ห้ามแยกคลัง และห้ามพาไปตั้งเป้าคนละที่**
@@ -486,6 +478,12 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
 · **🧱 ตั้งค่า KPI data-driven (16/09):** scope 6 ระดับ (**`cost_center` คนละแกนกับไลน์ · ไม่ใช่คีย์เอกลักษณ์**)
   · `provider` ลิ้ง data · `kpi_month_plans` · `kpi_base_inputs` · migration `20260916_kpi_scope_provider_plan.sql`
+· **🔴 กติกา "แต่ละส่วนงานเลือก KPI ตัวไหน" เป็นของกลุ่มอยู่แล้ว ห้ามคิดเอง** (21/09) — ทะเบียน
+  `kpi_standard_items` (Main · 318 แถว · 20 หน่วยงาน · migration `20260921`) ทุกแถวติดป้าย **`fixed`
+  (บังคับ) / `choice` (เลือกได้) / `null` = แถวหัวข้อแม่ ไม่ใช่ KPI** · หยิบ `fixed` ครบ + ติ๊ก `choice`
+  แล้ว **ถ่วงน้ำหนักรวม 50 เสมอ** · helper `KPI_STD_UNITS`/`checkStdSelection` ใน `kpiSetup.js`
+  (**เตือนเท่านั้น ห้ามบล็อกการบันทึก** — ใบจริงเพิ่มของนอกมาตรฐานได้) · เกณฑ์ Safety/QCC/Kaizen
+  ยังไม่มี (เอกสารชี้ไป "ประกาศ" คนละฉบับ · user 21/09: รอประธานกิจแจ้ง **ห้ามเดา**)
 > 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
 > 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
 
@@ -610,8 +608,12 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
                        #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
                        #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
-                       #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
-                       #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
+                       #   📌 = ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:
+                       #     IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 · 14/08) ·
+                       #     IDENTITY-NOTIFY-DESIGN.md (ตัวตน/ผู้รับแจ้งเตือน — 48% ของบัญชีถูกดีดเป็น
+                       #       'shared' · 78% ตัวกรองแผนกไม่มีผล · QA ไม่ได้ NCR นอก PD3 · 18/09
+                       #       · แกนสิทธิ์อยู่ PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) ·
+                       #   ADAPTIVE-CT-DESIGN.md (เหตุผลที่เลือกทางนี้ · ของจริง → modules/ct-review.md) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
@@ -698,6 +700,7 @@ getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / 
 8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · realtime handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** (message ~200 bytes เฉพาะตอนมีของเปลี่ยน ถูกกว่า poll ทั้งก้อนเป็นร้อยเท่า) · **จอใหม่ให้ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** — เขียนมือแล้วตกหล่นทุกครั้ง (audit 15/09: 11 จอ เขียนคนละแบบ · 3 จอลืม debounce · 2 จอใช้ `setTimeout` ต่อ event · ไม่มีจอไหนมีเพดานจริงเลย)
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิง 4 คิวรี × 705 ครั้ง/วัน) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (2026-09-17 · `docs/EGRESS-AUDIT-2026-09-17.md`) `mtn_orders` มี **116 คอลัมน์** ⇒ `select('*')&limit=1000` = **1.59 MB/ครั้ง** × 1,389 ครั้ง/วัน = **~628 MB/วัน = เกือบครึ่งของ egress ฝั่ง DR จากคิวรีเดียว** (Free = 5 GB/เดือน ⇒ หมดใน 8 วัน) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` แล้ว · **รูปผังห้ามเป็น PNG** (lossless ⇒ 8.4 MB/ใบ) ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring
 ```js
@@ -750,6 +753,12 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
      เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
      ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
+     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px จับของที่ "ไม่พังแต่ใช้ไม่ได้" (2026-09-16)**
+     crashsweep จับแค่ "หน้าพัง" · อันนี้จับ **sticky ค้างทับเนื้อหา** (layout ยุบเหลือคอลัมน์เดียวแล้วลืมถอด
+     sticky ของ sidebar) · **ของล้นแล้วปัดดูไม่ได้** · **ข้อความถูกบีบเหลือกว้าง 0 หายทั้งบรรทัด**
+     (`whiteSpace:nowrap` ข้างๆ ไม่ยอมหด) — ทั้ง 3 อย่างนี้ **build/lint/เทส/crashsweep ผ่านหมด**
+     แต่หน้างานเปิดมือถือแล้วอ่านไม่ออก (เคสจริงจากคลิป user) · กติกาเต็ม → `docs/UI-CONVENTIONS.md` §มือถือ
+     · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
    - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
 
 ### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
@@ -791,19 +800,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 
 ### 📺 เพดานเบราว์เซอร์ที่ต้องรองรับ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
 
-จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 / 8.4.0 = Chromium 94** (user ยืนยัน "ส่วนใหญ่รุ่นนี้หรือใหม่กว่า")
-· เทียบรุ่น: webOS 22 = Chromium 87 · webOS 23 = **94** · webOS 24 = 108 · webOS 25 = 120
-
-**พื้นจริงของโค้ดตอนนี้ (grep จาก `dist/assets/` หลัง build):**
-
-| ฟีเจอร์ | ต้องการ | อยู่ในชิ้นไหน | ผลถ้าไม่รองรับ |
-|---|---|---|---|
-| `??=` `\|\|=` `&&=` | Cr 85 | **ทุกชิ้นรวม `index-*.js`** | **จอขาว** (parse error ทั้งไฟล์) |
-| `crypto.randomUUID` | Cr 92 | 5 หน้า (OjtTraining · PMSetup · QualityControl · ScrapReport · operator) | หน้านั้นพัง |
-| `Object.hasOwn` | Cr 93 | Recharts (`CategoricalChart`/`Tooltip`) · exceljs · jspdf | **หน้าที่มีกราฟพัง** |
-| `structuredClone` | Cr 98 | Recharts `Tooltip` — เฉพาะ branch `instanceof Error` | ไม่เกิดจริง (ข้อมูลกราฟไม่มี Error) |
-
-⇒ **webOS 23 (Cr 94) ผ่านทุกหน้า** · webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่า webOS 22 = จอขาว
+จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 = Chromium 94** ⇒ **ผ่านทุกหน้า** ·
+webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่านั้น = จอขาว
+> 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง (`??=` Cr85 · `crypto.randomUUID` Cr92 · `Object.hasOwn` Cr93 ฯลฯ)
+> → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
 > - **ห้ามใช้ `color-mix()` (Cr 111)** — ค่าที่ parse ไม่ได้ = **ทั้งบรรทัด declaration ถูกทิ้ง**

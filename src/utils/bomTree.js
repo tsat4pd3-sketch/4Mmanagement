@@ -88,6 +88,7 @@ export { slocLabel } from './storageLoc.js';
  * }}
  *
  * rows[i] = {
+ *   id,               // id ของบรรทัด bom_items (null = ตัวเรียกไม่ได้ส่ง id มา — ห้ามลบ)
  *   level,            // 1, 2, 3…
  *   tag,              // ".1" / "..2"
  *   mat_no, part_name, uom, supplier,
@@ -122,6 +123,9 @@ export function explodeBom(root, bomOf, { maxDepth = 10 } = {}) {
       const kidsOf = isCycle ? [] : (bom(m) || []);
       const row = {
         level, tag: levelTag(level),
+        // 🔑 id ของบรรทัด bom_items จริง — ต้องมี ไม่งั้นลบ "แถวนับซ้ำ" จากจอต้นไม้ไม่ได้
+        //    (null = ตัวเรียก bomOf ไม่ได้ส่ง id มา ⇒ จอต้องซ่อนปุ่มลบ ห้ามเดา id)
+        id: k.id ?? null,
         mat_no: m,
         part_name: k.part_name || '',
         uom: k.uom || '',
