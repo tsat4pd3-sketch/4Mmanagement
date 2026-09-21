@@ -184,6 +184,31 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     });
   });
 
+  /* 5) รูปซ่อม (ก่อน/หลัง/QA) — DR · bucket mtn-images · 39 MB/วัน
+        ⚠️ ต่างจากกลุ่มอื่น: `mtn_orders` เก็บเป็น **URL เต็ม** ไม่ใช่ path ⇒ ต้องแปลงกลับ
+           และเขียนกลับเป็น URL เต็มเช่นกัน · ห้ามแตะโฟลเดอร์ `sign/` (ลายเซ็น PNG โปร่ง ไฟล์เล็ก) */
+  const mtnStore = supabaseDR.storage.from('mtn-images');
+  const IMG_COLS = ['before_img', 'after_img', 'qa_img'];
+  const { data: moRows } = await supabaseDR.from('mtn_orders')
+    .select('id, before_img, after_img, qa_img').limit(2000);
+  (moRows || []).forEach((o) => {
+    IMG_COLS.forEach((col) => {
+      const url = o[col];
+      const oldName = objectNameFromUrl(url, 'mtn-images');
+      if (!oldName || oldName.startsWith('sign/') || /\.webp$/i.test(oldName)) return;
+      jobs.push({
+        label: `รูปซ่อม ${col} · ${oldName.split('/').pop()}`,
+        url, oldName, storage: mtnStore,
+        minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
+        newPathOf: ext => `${oldName.replace(/\.[^./]+$/, '')}.${ext}`,
+        saveRows: async (newPath) => {
+          const { data: pub } = mtnStore.getPublicUrl(newPath);
+          return supabaseDR.from('mtn_orders').update({ [col]: pub.publicUrl }).eq('id', o.id);
+        },
+      });
+    });
+  });
+
   const total = jobs.length;
   const batch = limit > 0 ? jobs.slice(0, limit) : jobs;
   for (let i = 0; i < batch.length; i++) {
