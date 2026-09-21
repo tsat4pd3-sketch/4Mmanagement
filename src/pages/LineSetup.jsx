@@ -602,21 +602,33 @@ export default function LineSetup({ embedded = false } = {}) {
      รูปที่อัปหลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว (compressLayoutImage) · ดู src/utils/recompressLayouts.js */
   const handleRecompress = async () => {
     if (squeeze) return;
-    if (!window.confirm('บีบรูปที่อัปไว้แล้วให้เล็กลง (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM)?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก\nทำทีละ 150 ไฟล์ต่อครั้ง — ถ้ายังเหลือ ระบบจะบอกให้กดซ้ำ (กดซ้ำได้ ไม่ทำของเดิมพัง)\nระหว่างนี้อย่าปิดหน้านี้')) return;
+    if (!window.confirm('บีบรูปที่อัปไว้แล้วให้เล็กลง (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM)?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก\nรูปมีประมาณ 1,000 ใบ ระบบจะทยอยทำเองจนจบ (อาจใช้เวลาหลายนาที)\nระหว่างนี้อย่าปิดหน้านี้ · ถ้าหลุดกลางคัน กดซ้ำได้ ของที่ทำไปแล้วจะถูกข้าม')) return;
     setSqueeze('กำลังเริ่ม…');
     try {
-      const r = await recompressLayouts({
-        supabase, supabaseDR,
-        onProgress: (text, i, n) => setSqueeze(`${text} (${i}/${n})`),
-      });
-      const mb = (r.savedBytes / 1048576).toFixed(1);
-      const more = r.remaining ? ` · ⏭️ เหลืออีก ${r.remaining} ไฟล์ — กดปุ่มนี้ซ้ำได้เลย` : '';
-      if (r.error) toast.error(`บีบเสร็จ ${r.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${r.skip} · ไม่สำเร็จ ${r.error}: ${r.errors[0]}${more}`);
-      else if (r.remaining) toast.info(`บีบเสร็จ ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip}${more}`);
-      else toast.success(`บีบรูปเสร็จครบแล้ว ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip} ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว)`);
+      /* วนทีละล็อตจนหมดเอง — รูป PM มี ~1,000 ไฟล์ ให้คนกด 7 ครั้งคือเชิญให้ลืมกดต่อ
+         ตัวจบลูป: ไม่เหลือแล้ว · หรือ **ล็อตนี้ไม่คืบหน้าเลย** (done = 0 ทั้งที่ยังเหลือ)
+         ⇒ กันวนไม่รู้จบตอนไฟล์เสียซ้ำๆ (ไฟล์ที่ล้มจะยังไม่เป็น .webp จึงถูกหยิบมาใหม่ทุกรอบ) */
+      const all = { done: 0, skip: 0, error: 0, savedBytes: 0, errors: [] };
+      let remaining = 0, stalled = false;
+      for (let round = 1; round <= 40; round++) {
+        const r = await recompressLayouts({
+          supabase, supabaseDR,
+          onProgress: (text, i, n) => setSqueeze(`รอบ ${round} · ${text} (${i}/${n})`),
+        });
+        all.done += r.done; all.skip += r.skip; all.error += r.error;
+        all.savedBytes += r.savedBytes; all.errors.push(...r.errors);
+        remaining = r.remaining;
+        if (!remaining) break;
+        if (r.done === 0) { stalled = true; break; }   // ไม่คืบหน้า = หยุด อย่าวนต่อให้เปลือง egress
+      }
+      const mb = (all.savedBytes / 1048576).toFixed(1);
+      const left = remaining ? ` · เหลือ ${remaining} ไฟล์${stalled ? ' (ติดปัญหา หยุดไว้ก่อน)' : ''}` : '';
+      if (all.error) toast.error(`บีบเสร็จ ${all.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${all.skip} · ไม่สำเร็จ ${all.error}: ${all.errors[0]}${left}`);
+      else if (remaining) toast.info(`บีบเสร็จ ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip}${left} — กดซ้ำได้`);
+      else toast.success(`บีบรูปเสร็จครบแล้ว ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip} ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว)`);
       await fetchLineData();   // URL ผังของไลน์นี้เปลี่ยนไปแล้ว ต้องโหลดใหม่ ไม่งั้นจอค้างรูปที่ถูกลบ
     } catch (err) {
-      toast.error('บีบรูปผังไม่สำเร็จ: ' + (err?.message || err));
+      toast.error('บีบรูปไม่สำเร็จ: ' + (err?.message || err));
     } finally { setSqueeze(''); }
   };
 
