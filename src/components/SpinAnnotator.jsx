@@ -13,12 +13,14 @@ import CalloutPin from './CalloutPin'
      setFrameIdx(idx)
      pins     : [{ key, x, y, label, color }]  (0..1 coords, current frame only)
      arming   : boolean               a checkpoint is waiting for a position
-     onPlace(x, y) / onRemovePin(key)
+     onPlace(x, y) / onRemovePin(key) / onLabelMove(key, dx, dy)
      onAddFrames(FileList) / onRemoveFrame(frameKey) / busy
 */
 export default function SpinAnnotator({
   frames = [], frameIdx = 0, setFrameIdx, pins = [], arming,
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
+  // ลากป้ายเลขหมุดเพื่อหลบไม่ให้ลูกศรทับกัน (2026-09-21) — ไม่ส่งมา = อ่านอย่างเดียว
+  onLabelMove,
   // { pinKey: true } — จุดที่มี "รูปเจาะจุด" แล้ว (โชว์ 🔍 บนหมุด ให้คนตั้งค่าเห็นว่าจุดไหนยังไม่มี)
   pinHasDetail = {},
   // true = ใช้เป็น "ผังวางหมุด" อย่างเดียว (เช่น จุดชิมที่ /fixture) — รูปเป็นของ PM Setup ห้ามเพิ่ม/ลบจากที่นี่
@@ -87,8 +89,10 @@ export default function SpinAnnotator({
           <div ref={layerRef} style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {pins.map(p => (
               <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
+                offX={p.label_dx} offY={p.label_dy}
                 label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
-                title={`${p.label} — คลิกเพื่อลบ${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
+                title={`${p.label} — คลิกเพื่อลบ${onLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
+                onLabelMove={onLabelMove ? ((dx, dy) => onLabelMove(p.key, dx, dy)) : undefined}
                 onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />
             ))}
           </div>
