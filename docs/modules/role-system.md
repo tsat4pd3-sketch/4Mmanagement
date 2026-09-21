@@ -12,7 +12,7 @@
 >
 > **ตัวเลือก "ตำแหน่งงาน" (position) รวมศูนย์ที่ `src/utils/positions.js` จุดเดียว (2026-07-22)** — master list ไทยชุดเดียวใช้ร่วมทั้ง **พนักงาน (`employees.position` — Register/operator)** และ **user (`profiles.position` — AddUser)** · `positionOptionsWith(current)` เติมค่าเก่านอกลิสต์ (เช่น Operator/Leader/Technician/Engineer) ไว้หัวลิสต์ให้ยังเลือก/แสดงได้ไม่หาย · AddUser ยังมี "อื่นๆ (พิมพ์เอง)" · **ห้าม hardcode ลิสต์ position ซ้ำในหน้าใดๆ** เพิ่ม/แก้ตำแหน่งแก้ที่ไฟล์นี้ที่เดียว (เดิมกระจาย 3 หน้า ลิสต์ไม่ตรงกัน — operator/Register เป็นอังกฤษ, AddUser เป็นไทย)
 
-11 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, planner_store, display`
+12 roles ใน enum `user_role`: `admin, manager, supervisor, leader, qa, document_control, sale, mtn, engineer, engineer_nm, planner_store, display`
 
 > **ชื่อแสดงผลของ role ไม่ใช้คำตำแหน่งบริษัทแล้ว (2026-07-13)** — เพื่อไม่ให้ชนกับ `profiles.position`
 > ชื่อ/ไอคอน/สี/คำอธิบายทั้งหมดอยู่ที่ **`src/utils/roleMeta.js` จุดเดียว** (`ROLE_META`, `ROLE_OPTIONS`, `roleLabel()`)
@@ -30,6 +30,7 @@
 | `sale` | 🚚 ขาย-จัดส่ง (Sales & Delivery) | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
+| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่ 2 หน้า: `/npi` + `/pe-docs`** (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
@@ -125,6 +126,32 @@
 > - migration `20260819_mtn_operator_page_main.sql` (**apply แล้ว 2026-08-19**) เปิด `page:/operator` ให้ role `mtn` (กับดัก enum_range — หน้า seed ก่อน role เกิด) — **ให้เฉพาะ page ไม่แจก `employees:edit`** (ช่างได้แผงสกิลตาม skills:edit เท่านั้น ประวัติพนักงานยังเป็นของฝ่ายบุคคล/หัวหน้าผลิต)
 >
 > **⚠️ แผง "📊 ระดับทักษะ" ในโมดัลแก้ไขพนักงาน (`/operator`) แยกสิทธิ์จาก `employees:edit` แล้ว** — เดิมไม่ถูก gate เลย ใครเปิดโมดัลได้ก็แก้คะแนนได้ · ตอนนี้ read-only เมื่อไม่มี `skills:edit` และ `handleUpdate` **ยิง upsert/delete เฉพาะสกิลที่เปลี่ยนจริง** (เดิมยิงทุกสกิลทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป → คนไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ) · สกิลพลาด = **ไม่ throw รวม** (ข้อมูลพนักงานบันทึกไปแล้ว การ throw ทำให้อ่านเหมือนไม่ได้บันทึกอะไรเลย) แต่ต้องขึ้น toast บอกให้ชัดว่าส่วนไหนสำเร็จ ส่วนไหนไม่ — **ห้ามเงียบ**
+
+### 👥 `employees` = ทะเบียนคน**ของทั้งบริษัท** + ธง `staff_kind` (2026-09-21 · user เคาะทางเลือก A)
+
+**ทำไมต้องขยาย:** ทะเบียนเดิมมีแต่สายผลิต+ช่าง (212 คน / 14 แผนก ไม่มี QA/PE/ธุรการ/สโตร์เลยสักคน)
+⇒ บัญชี 30 ใบ (32%) ผูกตัวตนไม่ได้ ⇒ admin กดได้ทางเดียวคือ "บัญชีหน่วยงาน" ⇒ **32 บัญชีของคนจริง
+ถูกติดป้าย `shared`** (QC 14 · หัวหน้าแผนก 3 · วิศวกร 1 · หัวหน้าไลน์ 3 · ธุรการ 1)
+⇒ ตัวกรอง "แผนก" ของแจ้งเตือนใช้กับ 73/94 บัญชีไม่ได้ · เหตุผล/ตัวเลขเต็ม → `docs/IDENTITY-NOTIFY-DESIGN.md`
+
+| ค่า `staff_kind` | ใคร | เช็คชื่อ/สกิล/นับกำลังคน |
+|---|---|---|
+| `direct` (default) | พนักงานหน้าไลน์ + **ช่างทุกทีม** (ช่างเช็คชื่อครบ 25/25 คน) | ✅ |
+| `indirect` | QA · PE/วิศวกรรม · ธุรการ · สโตร์ · เซลล์ | ❌ |
+
+- **🔴 จอที่ "นับคน" ต้องกรองผ่าน `onlyDirectStaff()` (`src/utils/staffKind.js`) เท่านั้น
+  ห้ามพิมพ์ `staff_kind` เองในหน้า** — มีด่าน `src/utils/__tests__/staffKindGuard.test.mjs`
+  (เช็คชื่อ · รายงาน · สกิล · จัดกะ · กำลังคน/turnover) · ข้อยกเว้นเขียนเหตุผลไว้ในไฟล์เทส
+- **✅ จอที่ "เลือกคน" ไม่ต้องกรอง** (ผู้แจ้งซ่อม · ผู้เข้าอบรม OJT · BBS · คนขึ้นรถ) — คนทางอ้อม
+  เป็นตัวเลือกที่ถูกต้องในบริบทนั้น
+- **เพิ่มคนเข้าทะเบียนได้จาก `/add-user` เลย** (ปุ่ม "＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน")
+  — คนทางอ้อมไม่ต้องมีไลน์/ทีม/ส่วนงาน (`section = null` = ขึ้นตรงฝ่าย)
+- **ช่องค้นพนักงานใน `/add-user` ตัดช่องว่างซ้ำทั้ง 2 ฝั่งแล้ว** — ต้นเหตุจริงที่หาชื่อไม่เจอ
+  (บัญชีพิมพ์ `ชะเอ็ม  เศียรเขียว` 2 เคาะ ฐานพนักงานเคาะเดียว) แล้วเข้าใจว่า "ไม่มีคนนี้ในระบบ"
+- ปุ่ม `shared` เปลี่ยนคำเป็น **"บัญชีกลาง (ไม่ใช่คน)"** + เตือนเมื่อชื่อดูเป็นชื่อคนไทย (ไม่บล็อก)
+- migration `20260921_employees_staff_kind.sql` (**apply แล้ว 21/09**) — แถวเดิม 212 คน = `direct`
+  ทั้งหมด ⇒ **ตัวเลขกำลังคน/เข้างาน/turnover เท่าเดิมเป๊ะวันที่ apply** · + ผูกบัญชีคืน **15 ใบ**
+  ที่ชื่อตรงแบบ 1:1 (person 21→37 · shared 45→31) · rollback: `bk_profile_emp_link_20260921`
 
 ### ⚠️ กฎเหล็ก — ตัวตนของคนอยู่ที่ `employees` · `profiles` คือบัญชี (2026-08-21 · คำสั่ง user)
 

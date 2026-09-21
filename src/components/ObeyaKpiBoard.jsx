@@ -7,6 +7,7 @@ import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
+import { scoreDef, fmtBar } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
 import usePolling from '../utils/usePolling';
@@ -172,7 +173,7 @@ function SectionPanel({ section, rows, onOpenKpi }) {
       {!rows.length ? (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
           ยังไม่ได้ตั้ง KPI ระดับส่วนงาน<br />
-          <span style={{ color: '#f59e0b' }}>ตั้งที่ 📑 KPI รายเดือน โดยเว้นช่อง "กลุ่มไลน์" ไว้</span>
+          <span style={{ color: '#f59e0b' }}>ตั้งที่แท็บ 📑 KPI รายเดือน โดยเว้นช่อง "กลุ่มไลน์" ไว้</span>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -538,6 +539,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
     /* ── D · ทำได้ตามเป้า ───────────────────────────────────────────────────── */
     const planT = planOf(todaySess);
+    /* 🔶 เส้นแบ่ง (17/09): 2 บรรทัดนี้เป็น **ไฟเฝ้าระวังรายวัน** ของแถบ SQDCM (ของแถมที่กระดาษไม่มี)
+       ไม่ใช่คะแนน KPI รายเดือน — จึงยังใช้แถบผ่อนผันได้ · **ห้ามเอา `statusVsTarget` ไปใช้กับแถว KPI**
+       (แถว KPI ต้องผ่าน `scoreDef()` เท่านั้น เกณฑ์ทางการ 1/0.5/0 ดูด้านล่าง) */
     const planCmp = statusVsTarget(planT.pct, 100, 'up', 0.1);
 
     /* ── P · OEE ────────────────────────────────────────────────────────────── */
@@ -726,17 +730,21 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           value = man?.value ?? null; target = man?.target ?? null;
         }
 
-        /* สถานะ: มีเป้า → เทียบเป้า · ไม่มีเป้า → เทา (กฎ "ไม่มีเป้า ≠ ผ่าน") */
+        /* 🔴 สถานะ = เกณฑ์ทางการ 1/0.5/0 ผ่าน `scoreDef()` เท่านั้น (17/09)
+           เดิมใช้ `statusVsTarget(...band 0.05)` = แถบ ±5% ที่เราคิดเอง ซึ่ง CLAUDE.md ห้ามไว้ตรงๆ
+           ตอนนี้ "เหลือง" = **ถึง Commitment แต่ไม่ถึง Target** ตามประกาศบริษัท ไม่ใช่ "เกือบถึงเป้า" */
         let st = ST.unknown, why = '';
         if (value == null) {
           why = r.auto ? (note || 'ยังไม่มีข้อมูล') : (man ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้');
         } else if (target != null && dir) {
-          st = statusVsTarget(value, target, dir);
-          why = `เทียบเป้า ${nf(target, 2)}${unit ? ' ' + unit : ''}`;
+          const sc = scoreDef(value, { ...(man?.def || {}), target_value: target, direction: dir });
+          st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
+          const cb = sc.bars.commit_value != null ? ` · Commit ${fmtBar(sc.bars.commit_compare, sc.bars.commit_value, unit)}` : '';
+          why = `เทียบ Target ${fmtBar(sc.bars.target_compare, target, unit)}${cb}`;
         } else {
           why = r.auto
-            ? 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
-            : 'ยังไม่ตั้งเป้า — ตั้งที่ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
+            ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 KPI รายเดือน ปุ่ม 🎯 ท้ายแถว'
+            : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 KPI รายเดือน ตอนแก้นิยาม KPI';
         }
         if (fromDept) why = `${note}${why ? ' · ' + why : ''}`;
         cells.push(st);
@@ -757,8 +765,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         const dir = d.direction || d.kpi_catalog?.direction || null;
         let st = ST.unknown, why = '';
         if (v == null) why = 'ยังไม่กรอกค่าเดือนนี้';
-        else if (target != null && dir) { st = statusVsTarget(v, target, dir); why = `เทียบเป้า ${nf(target, 2)}`; }
-        else why = 'ยังไม่ตั้งเป้า — ตั้งได้ที่ 📑 KPI รายเดือน';
+        else if (target != null && dir) {
+          const sc = scoreDef(v, d);                       // เกณฑ์เดียวกับแถวรายกลุ่มไลน์
+          st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
+          const cb = sc.bars.commit_value != null ? ` · Commit ${fmtBar(sc.bars.commit_compare, sc.bars.commit_value)}` : '';
+          why = `เทียบ Target ${fmtBar(sc.bars.target_compare, target)}${cb}`;
+        } else why = 'ยังไม่ตั้งเป้า — ตั้งได้ที่แท็บ 📑 KPI รายเดือน';
         cells.push(st);
         return {
           key: `s-${d.id}`, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', auto: null,
@@ -902,10 +914,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <b style={{ fontSize: 13, color: 'var(--text)' }}>📋 บอร์ด {section} — {board.cols.length} กลุ่มไลน์</b>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              ตัวเลข = สะสมเดือน {date.slice(0, 7)} · ⚡ ระบบคำนวณให้ · ✍️ ต้องกรอกที่ 📑 KPI รายเดือน
+              ตัวเลข = สะสมเดือน {date.slice(0, 7)} · ⚡ ระบบคำนวณให้ · ✍️ ต้องกรอกที่แท็บ 📑 KPI รายเดือน
             </span>
-            {canAccessPage('/dept-dashboard', role) && (
-              <button onClick={() => navigate(`/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`)}
+            {/* ไปแท็บพี่น้องในหน้าเดียวกัน (17/09 ย้ายมาจาก /dept-dashboard) — ไม่ต้องเช็คสิทธิ์หน้าอื่น
+                เพราะเป็นแท็บของ /obeya ซึ่งคนดูอยู่แล้วก็เข้าถึงได้ */}
+            {onTab && (
+              <button onClick={() => onTab('table')}
                 style={{ ...btn, marginLeft: 'auto', padding: '4px 10px', fontSize: 12 }}>
                 📑 KPI รายเดือน / ตั้งเป้า
               </button>
@@ -916,20 +930,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             gridTemplateColumns: isMobile ? '1fr' : `repeat(auto-fit, minmax(260px, 1fr))`,
           }}>
             <SectionPanel section={section} rows={board.secRows}
-              onOpenKpi={() => {
-                const to = '/dept-dashboard';
-                if (canAccessPage(to, role)) navigate(`${to}?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`);
-              }} />
+              onOpenKpi={() => onTab?.('table')} />
             {board.cols.map(c => (
               <BoardColumn key={c.group} col={c}
                 onOpenGroup={canAccessPage('/dashboard', role) ? () => navigate(`/dashboard?line=${encodeURIComponent(c.group)}`) : undefined}
                 onOpenKpi={(col, r) => {
                   /* ⚠️ ปลายทางต้องผ่าน canAccessPage เสมอ — ไม่มีสิทธิ์ = ไม่พาไปแล้วโดนเด้ง */
-                  const to = r.auto === 'safety' ? null
-                    : r.auto ? '/oee-analytics'
-                      : `/dept-dashboard?view=kpi${section ? `&section=${encodeURIComponent(section)}` : ''}`;
-                  if (r.auto === 'safety' && canRecord) { setShowSafety({ section, line_name: col.group }); return; }
-                  if (to && canAccessPage(to.split('?')[0], role)) navigate(to);
+                  if (r.auto === 'safety') { if (canRecord) setShowSafety({ section, line_name: col.group }); return; }
+                  /* แถวกรอกมือ → แท็บตารางในหน้าเดียวกัน · แถวที่ระบบคำนวณ → หน้าวิเคราะห์ตัวจริง */
+                  if (!r.auto) { onTab?.('table'); return; }
+                  if (canAccessPage('/oee-analytics', role)) navigate('/oee-analytics');
                 }} />
             ))}
           </div>

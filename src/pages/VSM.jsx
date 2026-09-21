@@ -111,7 +111,7 @@ export default function VSM() {
     supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift, flow_mode, parallel_stations')
       .order('name').then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products')
-      .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active')
+      .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active, pair_mat_no')
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));
     supabase.from('pe_doc_sets').select('id, part_no, mat_no, line_name, status')
       .then(({ data }) => setPeSets((data || []).filter(s => s.status !== 'obsolete')));
@@ -316,6 +316,9 @@ export default function VSM() {
         setLiveRaw({
           fgMat: matNo, raw,
           ctMap: buildCtMap({ kanbanStds: raw.kanbanStds, products }),
+          // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+          // เก็บไว้ใน liveRaw เพราะ loadLive ห้ามมี `products` (array) ใน deps — กฎเหล็กเขียน DB ข้อ 9
+          pairMap: Object.fromEntries((products || []).filter(p => p.pair_mat_no).map(p => [p.mat_no, p.pair_mat_no])),
           chainLines: [...new Set(boxes.map(b => b.line).filter(Boolean))],
           allMats: [fg.mat_no, ...raw.bomItems.map(b => b.mat_no)].filter(Boolean),
         });
@@ -373,6 +376,7 @@ export default function VSM() {
     const lv = buildVsmLive({
       boxes, sessions: sess || [], orders, downtimes: dts, defects: dfs,
       ctMap: liveRaw.ctMap, lines, nowMs: Date.now(),
+      pairMap: liveRaw.pairMap || {},
       // นโยบายพัก — ขาดไปแล้ว A/P สดในแท็บสดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
       breakPolicies: liveRaw.raw?.breakPolicies || [],
     });

@@ -191,13 +191,10 @@ Reject → status: "rejected" + reject_reason
 ```
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
-> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิง 392 ใบใน 10 วัน (พ.ค. 2026) แล้ว **323 ใบค้างคิว 2 เดือนครึ่ง กลบใบจริง 19 ใบ**
-> จนหัวหน้ามองไม่เห็นงานที่ต้องทำ · ล้างแล้ว (`20260810_void_stale_auto_4m_man.sql`) — **รายละเอียดเหตุการณ์ → `docs/modules/four-m-workflow.md`**
-> **กฎที่ตกผลึก:**
-> - **ตัวสร้าง 4M อัตโนมัติต้องมีเพดาน/ตัวนับ + จุดเฝ้าดู** — ยิงวันละหลายสิบใบต่อเนื่องเป็นสัปดาห์โดยไม่มีใครรู้ = บั๊กที่มองไม่เห็น · ก่อน insert อัตโนมัติ ให้เช็คว่ามีใบซ้ำของ (คน+จุดงาน+ไลน์) อยู่แล้วหรือยัง
-> - **แยกใบที่ระบบสร้างออกจากใบที่คนกรอกให้เห็นในคิว** (คิวปนกันแล้วคนไม่กล้าเคลียร์ทั้งก้อน สุดท้ายค้างทั้งคู่) — ปัจจุบันแยกได้แค่ `created_by is null` + ข้อความ `[Auto]` ยังไม่มีคอลัมน์บอกที่มาจริงจัง
-> - **เคลียร์คิวค้างจากบั๊ก = `rejected` + เหตุผลที่อ่านรู้เรื่อง ห้าม `delete` และห้าม `approved`** (approve = โกหกว่ามีคนพิจารณาแล้ว)
-> - งานที่ค้างเกิน ~30 วันในคิวอนุมัติควรมีสัญญาณเตือน — ตอนนี้ยังไม่มี (ใบเก่าสุดที่เหลือ 81 วัน)
+> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิง 392 ใบใน 10 วัน แล้ว **323 ใบค้างคิว 2 เดือนครึ่ง กลบใบจริง 19 ใบ**
+> **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
+> เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
+> 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
 
 ---
 
@@ -255,6 +252,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 > · backfill ประวัติแล้ว 425 กะ (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
+
+> ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน
+> 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ** (วัดจริง HDF1 159% · LASER-345 160%)
+> · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
+> · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) · `computeLiveOee` ต้องส่ง `pairMap`
+>   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
 
@@ -454,24 +458,32 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 2 แท็บ · 2026-08-27 + 2026-09-15)
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 + 2026-09-15 + 2026-09-17)
 
-`Obeya.jsx` = **เปลือกสลับแท็บ** (งาน 2 session ที่ทำคนละมุมโดยไม่รู้กัน · รวมเข้าด้วยกัน 15/09)
-· **`?tab=kpi` (default)** = 📋 บอร์ด KPI ส่วนงาน — ยุบกระดาษ *"OBEYA KPI monitoring"* ที่แปะผนัง
-  (ราย**เดือน** × กลุ่มไลน์ × หัวข้อ) · `components/ObeyaKpiBoard.jsx` · สูตร/สถานะอยู่ `src/utils/obeya.js`
-· **`?tab=sqdcm`** = 🖥️ จอมอนิเตอร์ SQDCM ราย**วัน/สัปดาห์/เดือน** ผัง "กระดาษ A4 ปูเต็มจอ 5×2" + โหมดจอ TV
-  · `components/ObeyaSqdcmBoard.jsx` · KPI อยู่ `src/utils/obeyaKpi.js` (OEE ยังมาจาก `oee.js` เท่านั้น)
-· **🔴 ห้ามยุบ 2 แท็บเป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
+`Obeya.jsx` = **เปลือกสลับแท็บ** · `?tab=kpi` (default) = 📋 บอร์ด KPI ส่วนงาน ราย**เดือน**
+(`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง 12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` — **ย้ายมาจาก
+`/dept-dashboard` 17/09** ลิงก์เก่า redirect มา) · `?tab=sqdcm` = 🖥️ จอ SQDCM ราย**วัน/สัปดาห์/เดือน**
+(`ObeyaSqdcmBoard.jsx` · KPI อยู่ `obeyaKpi.js` · OEE ยังมาจาก `oee.js` เท่านั้น)
+· **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
+  · แต่ `kpi` (บอร์ดไว้ดู) กับ `table` (โต๊ะไว้กรอก/ตั้งค่า) = **ข้อมูลชุดเดียวกัน** (`kpi_definitions` ·
+  `kpi_manual_entries` · `kpi_catalog`) คนละมุมมอง — **ห้ามแยกคลัง และห้ามพาไปตั้งเป้าคนละที่**
+· **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** (17/09)
+  **"เหลือง" = ถึง Commitment แต่ไม่ถึง Target** ไม่ใช่ "เกือบถึงเป้า" · ⚠️ ระดับ 1/0.5/0 **ไม่ใช่ boolean
+  (`0.5` truthy)** เทียบ `=== 1` เสมอ · บนใบ: ○ Achieve · △ Improvement · ✗ Miss goal
 · **🔴 กฎความซื่อสัตย์ของจอ:** แกน/ช่องที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง**
   · "ไม่มีเป้า" = เทา ไม่ใช่เขียว · ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง
 · **🔴 กลุ่มมีระบบ KPI ทางการอยู่แล้ว (KPI Online)** — ESM = "ที่ผลิตตัวเลข Actual" **ห้ามทำแข่งเป็นระบบทะเบียน**
   เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
-· **ACTION BOARD** ใช้ `meeting_action_items` **ตารางเดิมร่วมกับ `/morning-meeting`** (ห้ามสร้างใหม่) แยกด้วย `source`
+· **ACTION BOARD** ใช้ `meeting_action_items` ร่วมกับ `/morning-meeting` (ห้ามสร้างใหม่) แยกด้วย `source`
 · สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
-· **🧱 ตั้งค่า KPI เป็น data-driven แล้ว (16/09):** ขอบเขต 6 ระดับ (`scope_kind`+`scope_value` — **`cost_center` คนละแกนกับไลน์**)
-  · Commitment/Target เป็นคนละบาร์ · `provider` = 🔗 ลิ้ง data (auto/formula/manual) · `kpi_month_plans` แผน 12 เดือน
-  · `kpi_base_inputs` ตัวแปรฐานจากบัญชี/SAP → สูตรการเงินคำนวณเอง · **ทะเบียน+เกณฑ์อยู่ `src/utils/kpiSetup.js` เท่านั้น**
-  · migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) — แต่ละแผนกใช้ KPI คนละชุดจริง (JIG MTN ไม่มี OEE/PPM/Inventory)
+· **🧱 ตั้งค่า KPI data-driven (16/09):** scope 6 ระดับ (**`cost_center` คนละแกนกับไลน์ · ไม่ใช่คีย์เอกลักษณ์**)
+  · `provider` ลิ้ง data · `kpi_month_plans` · `kpi_base_inputs` · migration `20260916_kpi_scope_provider_plan.sql`
+· **🔴 กติกา "แต่ละส่วนงานเลือก KPI ตัวไหน" เป็นของกลุ่มอยู่แล้ว ห้ามคิดเอง** (21/09) — ทะเบียน
+  `kpi_standard_items` (Main · 318 แถว · 20 หน่วยงาน · migration `20260921`) ทุกแถวติดป้าย **`fixed`
+  (บังคับ) / `choice` (เลือกได้) / `null` = แถวหัวข้อแม่ ไม่ใช่ KPI** · หยิบ `fixed` ครบ + ติ๊ก `choice`
+  แล้ว **ถ่วงน้ำหนักรวม 50 เสมอ** · helper `KPI_STD_UNITS`/`checkStdSelection` ใน `kpiSetup.js`
+  (**เตือนเท่านั้น ห้ามบล็อกการบันทึก** — ใบจริงเพิ่มของนอกมาตรฐานได้) · เกณฑ์ Safety/QCC/Kaizen
+  ยังไม่มี (เอกสารชี้ไป "ประกาศ" คนละฉบับ · user 21/09: รอประธานกิจแจ้ง **ห้ามเดา**)
 > 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
 > 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
 
@@ -596,8 +608,12 @@ docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก�
                        #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
                        #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
                        #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
-                       #   IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 + ลำดับงานเสนอ — 📌 user สั่ง
-                       #     "จำไว้ก่อน ยังไม่ทำ" 2026-08-14 · ห้ามหยิบไปลงมือเองจนกว่า user จะสั่ง) ·
+                       #   📌 = ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:
+                       #     IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 · 14/08) ·
+                       #     IDENTITY-NOTIFY-DESIGN.md (ตัวตน/ผู้รับแจ้งเตือน — 48% ของบัญชีถูกดีดเป็น
+                       #       'shared' · 78% ตัวกรองแผนกไม่มีผล · QA ไม่ได้ NCR นอก PD3 · 18/09
+                       #       · แกนสิทธิ์อยู่ PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) ·
+                       #   ADAPTIVE-CT-DESIGN.md (เหตุผลที่เลือกทางนี้ · ของจริง → modules/ct-review.md) ·
                        #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
                        #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
                        #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
@@ -684,6 +700,7 @@ getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / 
 8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · realtime handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** (message ~200 bytes เฉพาะตอนมีของเปลี่ยน ถูกกว่า poll ทั้งก้อนเป็นร้อยเท่า) · **จอใหม่ให้ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** — เขียนมือแล้วตกหล่นทุกครั้ง (audit 15/09: 11 จอ เขียนคนละแบบ · 3 จอลืม debounce · 2 จอใช้ `setTimeout` ต่อ event · ไม่มีจอไหนมีเพดานจริงเลย)
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิง 4 คิวรี × 705 ครั้ง/วัน) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (2026-09-17 · `docs/EGRESS-AUDIT-2026-09-17.md`) `mtn_orders` มี **116 คอลัมน์** ⇒ `select('*')&limit=1000` = **1.59 MB/ครั้ง** × 1,389 ครั้ง/วัน = **~628 MB/วัน = เกือบครึ่งของ egress ฝั่ง DR จากคิวรีเดียว** (Free = 5 GB/เดือน ⇒ หมดใน 8 วัน) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` แล้ว · **รูปผังห้ามเป็น PNG** (lossless ⇒ 8.4 MB/ใบ) ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring
 ```js
@@ -783,19 +800,10 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 
 ### 📺 เพดานเบราว์เซอร์ที่ต้องรองรับ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
 
-จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 / 8.4.0 = Chromium 94** (user ยืนยัน "ส่วนใหญ่รุ่นนี้หรือใหม่กว่า")
-· เทียบรุ่น: webOS 22 = Chromium 87 · webOS 23 = **94** · webOS 24 = 108 · webOS 25 = 120
-
-**พื้นจริงของโค้ดตอนนี้ (grep จาก `dist/assets/` หลัง build):**
-
-| ฟีเจอร์ | ต้องการ | อยู่ในชิ้นไหน | ผลถ้าไม่รองรับ |
-|---|---|---|---|
-| `??=` `\|\|=` `&&=` | Cr 85 | **ทุกชิ้นรวม `index-*.js`** | **จอขาว** (parse error ทั้งไฟล์) |
-| `crypto.randomUUID` | Cr 92 | 5 หน้า (OjtTraining · PMSetup · QualityControl · ScrapReport · operator) | หน้านั้นพัง |
-| `Object.hasOwn` | Cr 93 | Recharts (`CategoricalChart`/`Tooltip`) · exceljs · jspdf | **หน้าที่มีกราฟพัง** |
-| `structuredClone` | Cr 98 | Recharts `Tooltip` — เฉพาะ branch `instanceof Error` | ไม่เกิดจริง (ข้อมูลกราฟไม่มี Error) |
-
-⇒ **webOS 23 (Cr 94) ผ่านทุกหน้า** · webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่า webOS 22 = จอขาว
+จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 = Chromium 94** ⇒ **ผ่านทุกหน้า** ·
+webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่านั้น = จอขาว
+> 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง (`??=` Cr85 · `crypto.randomUUID` Cr92 · `Object.hasOwn` Cr93 ฯลฯ)
+> → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
 > - **ห้ามใช้ `color-mix()` (Cr 111)** — ค่าที่ parse ไม่ได้ = **ทั้งบรรทัด declaration ถูกทิ้ง**

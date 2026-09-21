@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
+import { recompressLayouts } from '../utils/recompressLayouts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -70,6 +71,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const [editingLineName, setEditingLineName] = useState('');
   const [layoutImage, setLayoutImage] = useState(null);
   const [usingParentLayout, setUsingParentLayout] = useState(false); // true = ยืมรูปผังจากไลน์หลักมาแสดง (ยังไม่มีรูปของตัวเอง)
+  const [squeeze, setSqueeze] = useState('');   // 🗜️ ข้อความสถานะตอนบีบรูปผังเดิม ('' = ไม่ได้ทำอยู่)
   const [stations, setStations] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [tempPos, setTempPos] = useState(null);
@@ -596,6 +598,40 @@ export default function LineSetup({ embedded = false } = {}) {
     await fetchLines();
   };
 
+  /* 🗜️ บีบรูปผังเดิม (ผังไลน์ + ผังโรงงาน + ผังเครื่องจักร) — งานครั้งเดียว กดจากที่นี่ที่เดียว
+     รูปที่อัปหลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว (compressLayoutImage) · ดู src/utils/recompressLayouts.js */
+  const handleRecompress = async () => {
+    if (squeeze) return;
+    if (!window.confirm('บีบรูปที่อัปไว้แล้วให้เล็กลง (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM)?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก\nรูปมีประมาณ 1,000 ใบ ระบบจะทยอยทำเองจนจบ (อาจใช้เวลาหลายนาที)\nระหว่างนี้อย่าปิดหน้านี้ · ถ้าหลุดกลางคัน กดซ้ำได้ ของที่ทำไปแล้วจะถูกข้าม')) return;
+    setSqueeze('กำลังเริ่ม…');
+    try {
+      /* วนทีละล็อตจนหมดเอง — รูป PM มี ~1,000 ไฟล์ ให้คนกด 7 ครั้งคือเชิญให้ลืมกดต่อ
+         ตัวจบลูป: ไม่เหลือแล้ว · หรือ **ล็อตนี้ไม่คืบหน้าเลย** (done = 0 ทั้งที่ยังเหลือ)
+         ⇒ กันวนไม่รู้จบตอนไฟล์เสียซ้ำๆ (ไฟล์ที่ล้มจะยังไม่เป็น .webp จึงถูกหยิบมาใหม่ทุกรอบ) */
+      const all = { done: 0, skip: 0, error: 0, savedBytes: 0, errors: [] };
+      let remaining = 0, stalled = false;
+      for (let round = 1; round <= 40; round++) {
+        const r = await recompressLayouts({
+          supabase, supabaseDR,
+          onProgress: (text, i, n) => setSqueeze(`รอบ ${round} · ${text} (${i}/${n})`),
+        });
+        all.done += r.done; all.skip += r.skip; all.error += r.error;
+        all.savedBytes += r.savedBytes; all.errors.push(...r.errors);
+        remaining = r.remaining;
+        if (!remaining) break;
+        if (r.done === 0) { stalled = true; break; }   // ไม่คืบหน้า = หยุด อย่าวนต่อให้เปลือง egress
+      }
+      const mb = (all.savedBytes / 1048576).toFixed(1);
+      const left = remaining ? ` · เหลือ ${remaining} ไฟล์${stalled ? ' (ติดปัญหา หยุดไว้ก่อน)' : ''}` : '';
+      if (all.error) toast.error(`บีบเสร็จ ${all.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${all.skip} · ไม่สำเร็จ ${all.error}: ${all.errors[0]}${left}`);
+      else if (remaining) toast.info(`บีบเสร็จ ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip}${left} — กดซ้ำได้`);
+      else toast.success(`บีบรูปเสร็จครบแล้ว ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip} ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว)`);
+      await fetchLineData();   // URL ผังของไลน์นี้เปลี่ยนไปแล้ว ต้องโหลดใหม่ ไม่งั้นจอค้างรูปที่ถูกลบ
+    } catch (err) {
+      toast.error('บีบรูปไม่สำเร็จ: ' + (err?.message || err));
+    } finally { setSqueeze(''); }
+  };
+
   const handleUploadImage = async (e) => {
     let file = e.target.files[0];
     e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังอัปโหลดล้มแล้วลองรูปเดิม)
@@ -606,7 +642,6 @@ export default function LineSetup({ embedded = false } = {}) {
       file = await toDecodableImage(file);
       const fileExt = file.name.split('.').pop();
       const safeLineName = selectedLine.replace(/[^a-zA-Z0-9]/g, '_');
-      const fileName = `layout_${safeLineName}_${Date.now()}.${fileExt}`;
       // บีบรูปผังก่อนอัปโหลด — ผังไลน์บีบเบา 2560px/2.5MB q0.9 (ดู CLAUDE.md "Storage & รูปภาพ") · GIF ส่งทั้งไฟล์คงการเคลื่อนไหว
       const isGif = file.type === 'image/gif' || /^gif$/i.test(fileExt);
       if (isGif && file.size > 2 * 1024 * 1024) {
@@ -614,8 +649,10 @@ export default function LineSetup({ embedded = false } = {}) {
         setIsUploading(false);
         return;
       }
-      // ผังไลน์มีจำนวนน้อยและต้องซูมอ่านรายละเอียด — บีบเบา (2560px/2.5MB q0.9) อย่าลดกลับไป 1600px/0.5MB เคยเบลอ
-      const uploadBlob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* ผังไลน์ต้องซูมอ่านรายละเอียด — **คงความละเอียด 2560px เท่าเดิม ห้ามลดกลับไป 1600px/0.5MB เคยเบลอ**
+         แต่แปลงเป็น WebP เพื่อตัดขนาดไฟล์ (PNG 8.4 MB → ~0.5 MB) · เหตุผลเต็ม → src/utils/layoutImage.js */
+      const { blob: uploadBlob, ext: outExt } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
+      const fileName = `layout_${safeLineName}_${Date.now()}.${outExt}`;
       const { error: uploadError } = await supabase.storage.from('employee-photos').upload(`layouts/${fileName}`, uploadBlob, uploadOpts());
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from('employee-photos').getPublicUrl(`layouts/${fileName}`);
@@ -1512,6 +1549,12 @@ export default function LineSetup({ embedded = false } = {}) {
                 {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
                 <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
               </label>
+              {/* 🗜️ งานครั้งเดียว — ดูเหตุผล (egress) ที่ src/utils/recompressLayouts.js */}
+              <button onClick={handleRecompress} disabled={!!squeeze}
+                title="แปลงรูปผังเดิมที่เป็น PNG ก้อนใหญ่ให้เป็น WebP ขนาดเล็ก — ความละเอียดเท่าเดิม"
+                style={{ fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none', cursor: squeeze ? 'default' : 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                {squeeze || '🗜️ บีบรูปผังเดิมให้เล็กลง'}
+              </button>
             </div>
           )}
           {activeTab === 'stations' && <>

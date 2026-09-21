@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
-import imageCompression from 'browser-image-compression';
+import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
@@ -171,7 +171,12 @@ const METRICS = {
     value: s => s.oee,
     text: s => s.oee != null
       ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}${s.oeePOver ? ` ⚠%P ตัน (${Math.round(s.oeePRaw)}%)` : ''}`
-      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังเก็บข้อมูล...' : ''),
+      /* ยังไม่มียอดผลิตสักชิ้น = ประเมิน OEE ไม่ได้ (computeLiveOee คืน noOutput — ห้ามโชว์ 0)
+         ⚠️ ข้อความต้องบอก "รออะไรอยู่" ไม่ใช่ "ระบบกำลังทำงาน" (คำสั่ง user 2026-09-18):
+         ต้นเหตุจริงคือไลน์ยังไม่ปิดการ์ด/ยังไม่ลงยอด ไม่ใช่จอโหลดข้อมูลช้า — วัดจริง 17/09
+         Line 60/61 ปิดใบแรก 13:34-13:36 · SUB APRON 16:14 ⇒ จอเดิมขึ้น "กำลังเก็บข้อมูล..."
+         5.5-8 ชม. จากกะ 12 ชม. คนดูจอ TV เข้าใจว่าระบบค้าง แทนที่จะรู้ว่าต้องไปปิดการ์ด */
+      : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังรอการคอนเฟิร์มยอดงาน' : ''),
     short: s => s.oee != null ? `${Math.round(s.oee)}%${s.oeePOver ? '⚠' : ''}` : (s.oeeNoCt ? '⚠CT' : ''),
     cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
   },
@@ -647,6 +652,8 @@ export default function FactoryMap({ setupMode = false }) {
            เคสจริง SUB APRON 05/08: คน 4 แต่ 6 พาร์ทวิ่งพร้อมกัน = 6 เครื่อง (2026-08-13) */
         parallelCap: flowModeOf(flowByLineRef.current[s.line_name]?.flow_mode) === 'parallel_machine'
           ? parallelUnitsOf(flowByLineRef.current[s.line_name]) : 1,
+        // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
+        pairMap,
       });
       return r; // คืนทั้งก้อน — ต้องรู้ "สาเหตุ" ที่คำนวณไม่ได้ (noOutput vs ไม่ได้ตั้ง CT) ไม่ใช่แค่ null
     };
@@ -1695,10 +1702,12 @@ export default function FactoryMap({ setupMode = false }) {
       setUploading(true);
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
       file = await toDecodableImage(file);
-      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const isGif = file.type === 'image/gif' || ext === 'gif';
+      const srcExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const isGif = file.type === 'image/gif' || srcExt === 'gif';
       if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
-      const blob = isGif ? file : await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9 });
+      /* คงความละเอียด 2560px (ผังโรงงานต้องซูมอ่านชื่อไลน์ได้) แต่แปลงเป็น WebP —
+         ผังเดิมเป็น PNG 2.4 MB และจอ TV ทุกเครื่องโหลดทั้งก้อน · ดู src/utils/layoutImage.js */
+      const { blob, ext } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
       const path = `factory/map_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from('employee-photos').upload(path, blob, uploadOpts());
       if (upErr) throw upErr;

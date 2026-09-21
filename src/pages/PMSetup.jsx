@@ -4,6 +4,7 @@ import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import imageCompression from 'browser-image-compression'
+import { compressPhotoImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -777,9 +778,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         for (const f of frames) {
           let path = f.image_path ?? null
           if (f._file) {
-            const ext = (f._file.name?.split('.').pop() || 'jpg').toLowerCase()
+            /* WebP — `jig-images/jigs/` คือก้อนใหญ่สุดฝั่ง Storage ของ DR (90 MB/วัน)
+               นามสกุลต้องมาจากชนิดไฟล์จริงที่ได้ ไม่ใช่ชื่อไฟล์ต้นทาง · ดู src/utils/layoutImage.js */
+            const { blob, ext } = await compressPhotoImage(f._file)
             path = `jigs/${jigId}/frame-${f._key}.${ext}`
-            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, f._file, uploadOpts({ mutable: true, upsert: true }))
+            const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, blob, uploadOpts({ mutable: true, upsert: true }))
             if (upErr) throw upErr
           }
           if (path) resolvedFrames.push({ key: f._key, path, title: f.title ?? null })
@@ -846,9 +849,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const cpImagePaths = {}
       for (const c of checkpoints) {
         if (!c._imgFile) continue
-        const ext = (c._imgFile.name?.split('.').pop() || 'jpg').toLowerCase()
+        // WebP — เหตุผลเดียวกับเฟรมด้านบน (นามสกุลจากชนิดจริงเสมอ)
+        const { blob, ext } = await compressPhotoImage(c._imgFile)
         const p = `jigs/${jigId}/cp-${c._key}.${ext}`
-        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, c._imgFile, uploadOpts({ mutable: true, upsert: true }))
+        const { error: imgErr } = await supabaseDR.storage.from('jig-images').upload(p, blob, uploadOpts({ mutable: true, upsert: true }))
         if (imgErr) throw imgErr
         cpImagePaths[c._key] = p
       }

@@ -340,11 +340,16 @@ TS Academy ≥75/≥85% · Engagement Survey ≥80/≥85% · Engineering Day ≥
 
 ### 8.11 คำถามที่ต้องถาม (KPI Audit หรือ QSM ประจำ Plant)
 
-1. ใบ **PD ปี 2026** ใช้ `Inventory Balance (บาท)` หรือ `DSI (วัน)` — คู่มือระดับ Plant ใช้ DSI
-2. สูตรทางการของ **%RM** (ตอนนี้เราเดาว่า `ต้นทุนวัตถุดิบ ÷ Sale from product × 100`)
-3. **Safety**: ค่าที่กรอกคือ "จำนวนเคส" (ตามคู่มือ) หรือ "คะแนนจากหน่วยงานความปลอดภัย" (ตามที่เคยได้ยิน) — และกรณี `Commit 0 / Target 1` ตัดสินคะแนนยังไง
+1. ~~ใบ **PD ปี 2026** ใช้ `Inventory Balance (บาท)` หรือ `DSI (วัน)`~~ ✅ **ปิดแล้ว 17/09 (§14.2) = ใช้ได้ทั้งคู่**
+   แม่แบบ Corporate ระบุ DSI รายงานได้ 2 หน่วย (`MB` หรือ `Days`) แถว "Inventory Balance -…" = ตัวเดียวกันในหน่วย MB
+   · **ตัวหาร = COGS** (ยืนยัน 3 แหล่ง) แก้โค้ดแล้ว · ⚠️ เหลือข้อเดียว: **"× Days" ใช้ 30 คงที่ หรือวันทำงานจริง**
+2. ~~สูตรทางการของ **%RM**~~ ✅ **ปิดแล้ว 17/09 (§13.2)** = `(Raw Material ÷ Sales from product) × 100` · ที่มา = P&L บรรทัด 2
+3. **Safety**: ค่าที่กรอกคือ "จำนวนเคส" (ตามคู่มือ) หรือ "คะแนนจากหน่วยงานความปลอดภัย" (ตามที่เคยได้ยิน)
+   — ⚠️ ใบ Appraisal ที่เซ็นทั้ง 11 ใบเขียน **"0 Case"** ทุกใบ ⇒ น่าจะเป็นจำนวนเคส แต่ยังไม่ยืนยันปากเปล่า
+   · ~~กรณี `Commit 0 / Target 1` ตัดสินคะแนนยังไง~~ ✅ **ปิดแล้ว 17/09 (§14.2)** — ประกาศบริษัทเขียนหัวคอลัมน์
+   `Commitment Score = 0.5` / `Target Score = 1` ⇒ **ตัดสินจากป้าย ไม่ใช่จากบาร์ไหนเข้มกว่า** (แก้โค้ดแล้ว)
 4. เกณฑ์ "**ผ่าน**อบรม" ของ TS Academy (คะแนน post-test เท่าไหร่ถือว่าผ่าน)
-5. **OEE เป้า 87%** เป็นเป้ากลางทั้งกลุ่ม หรือแต่ละ Plant/สายงานตั้งเอง (ของเราตั้งราย parent line)
+5. ~~**OEE เป้า 87%** เป็นเป้ากลางทั้งกลุ่มไหม~~ ✅ **ปิดแล้ว 17/09 (§13.2) = ไม่ใช่** — P4 ใช้ ≥80/≥85 · PD3 ≥85/≥83 · ไฟล์ Excel ≥79/≥76 ⇒ ตั้งต่อ (KPI × แผนก × ปี) เท่านั้น · สูตรทางการ = `A × P × Q`
 6. ESM export ให้ตรงช่อง KPI Online ได้ไหม / มี API หรือ import ไฟล์หรือไม่ (ถาม IT: Ampon.Tan · Rujirott.Som)
 
 ---
@@ -797,3 +802,419 @@ C) กรอกมือ        ระบุเจ้าของ (Acc · SAP ·
 ⇒ **ข้อ B คือคานงัด** — ถ้ามีตารางตัวแปรฐาน 8-10 ตัว/เดือน/cost center ระบบจะคำนวณ
 DL · OH · DL&OH · %RM · 100P · Inventory Day · Sales per Head **ให้เองทั้งหมด** โดยบัญชีกรอกแค่ตัวเลขดิบ
 (แทนที่จะให้แต่ละแผนกคำนวณเองในไฟล์ Excel ที่ลิงก์ข้ามไฟล์กันจนสอบกลับไม่ได้)
+
+---
+
+## 13. 🖥️ **หน้าจอระบบ KPI Online ของจริง** (แกะจากวิดีโอ screen-record · ได้ไฟล์ 2026-09-17)
+
+**ที่มา:** user อัดวิดีโอหน้าจอเว็บ `tsg-hrprd01/KPI_Online/` (79 วิ · 1920×1030) แล้วให้ session Cowork
+แกะเป็นแพ็กเกจ `kpi-online-handoff.zip` (สเปกเลย์เอาต์ + 6 สกรีนช็อต + สแกฟโฟลด์ Next.js)
+**ชี้ขาดกว่าทุกไฟล์ก่อนหน้า** เพราะเป็น *ตัวระบบจริงที่กำลังใช้งานอยู่* ไม่ใช่ใบสรุปหรือคู่มือ
+
+> **⚠️ สกรีนช็อตไม่ถูก commit เข้ารีโปโดยตั้งใจ** — ใบ Appraisal (frame 05) มี **ชื่อ-สกุลจริง รหัสพนักงาน
+> และรูปลายเซ็น** ของผู้บริหารท่านหนึ่ง · รีโปนี้อยู่บน GitHub ⇒ commit = เผยแพร่ข้อมูลส่วนบุคคล
+> ข้อเท็จจริงทั้งหมดถูกถอดเป็นข้อความไว้ที่นี่แทน (ไฟล์ zip อยู่กับ user)
+>
+> **⚠️ สแกฟโฟลด์ `scaffold/` (Next.js 14 + Tailwind) ห้ามเอาเข้าโปรเจค** — ESM = React 19 + Vite
+> และ **CLAUDE.md ห้าม ESM ทำแข่งกับ KPI Online เป็นระบบทะเบียน** · แพ็กเกจนั้นเสนอให้ "สร้างแอปหน้าตา
+> เหมือนกัน" ซึ่ง**ไม่ใช่โจทย์ของเรา** — ของที่มีค่าคือ **data model + สูตร + ที่มาของตัวเลข** เท่านั้น
+
+### 13.1 รายการ KPI ทางการเต็มชุด (ใบ `KPI_Monitoring.pdf` — TSAT **P4 Assembly** ปี 2026)
+
+คอลัมน์ใบจริง: `No · Perspective · Topic · Formula · Scope · Commitment · Target · [Jan…Dec] · Average/Total · Status Point`
+
+| No | Perspective | Topic | Formula | **Scope (ตัวเลขมาจากไหน)** | Commit | Target | หน่วย |
+|---|---|---|---|---|---|---|---|
+| 1 | Financial | Raw Material Control | (Raw Material / Sales from product) × 100 | **Data from P&L line 2** | — | ≤ 68.40 | % |
+| 2 | Financial | Direct Labour & Overhead Expenses | [(DL+OH) / Sale from product] × 100 | **Data from SAP deducts depreciation** | ≤ 1.34 | ≤ 1.30 | % |
+| 3 | Customer | Customer Satisfaction (Q&D) | (Actual Score / Total Score) × 100 | % Satisfaction (Q&D) | ≥ 95.00 | 100.00 | % |
+| 4 | Internal process | **Safety** (แม่ของ 4.1-4.5) | — | — | — | 0 | Case |
+| 4.1 | | Serious Accidents | 0 Case | Actual accident | — | 0 | Case |
+| 4.2 | | Absent Accidents > 3 Days | 0 Case | Actual accident | — | 0 | Case |
+| 4.3 | | Absent Accidents < 3 Days | ถ้าปี 2025 ถึงเป้า → ลด 50% จาก actual 2025 | Actual accident | — | 0 | Case |
+| 4.4 | | Minor Injury / Non Absent Accident | ถ้าปี 2025 ไม่ถึงเป้า → คงเท่าปี 2025 | Actual accident | — | 0 | Case |
+| 4.5 | | Fire Accident / Injury, Absent Accident | 0 Case | Actual accident | — | 0 | Case |
+| 5 | Internal process | Non NC Major (ISO External Audit) | 0 NC Major | External Audit | — | 0 | Major NC |
+| 6 | Internal process | Overall Cost Improvement (100P) | (Actual 100P / Sale from product) × 100 | Value cost improvement | ≥ 0.95 | ≥ 1.00 | % |
+| 8 | Internal process | **Day Sales of Inventory (DSI)** | (Stock value end of month / **COGS**) × Day | Stock end of month | ≤ 0 | ≤ 0 | Days |
+| 9 | Internal process | Internal Quality Rate | **(Defect / Total Production) × 1,000,000** | ยอด scrap+rework จากโปรแกรมภายใน | ≤ 350 | ≤ 300 | PPM |
+| 10 | Internal process | **OEE** | **% OEE = A × P × Q** | ประสิทธิภาพเครื่องจักรรวมกระบวนการผลิต จากโปรแกรมภายใน | ≥ 80.00 | ≥ 85.00 | % |
+| 11 | Learning & Growth | Annual Sale Per Head | Total Sales / **Average** manpower | Annual sales per head | ≥ 5.49 | ≥ 5.65 | MB |
+| 12 | Learning & Growth | TS Academy | (Passed training employee / Total Employee) × 100 | Passed Training | ≥ 80.00 | ≥ 90.00 | % |
+| 13.1 | Learning & Growth | Engineering Day | ผ่านรอบชิงและได้รางวัล | เดียวกัน | — | 1 | Team |
+| 13.1 | Learning & Growth | Engineering Day | จำนวนประเภทที่ลงทะเบียน | Register in types of activities | — | 3 | Types |
+| 13.2 | Learning & Growth | QCC | (พนง.ที่ผ่านอบรม / พนง.ทั้งหมด) × 100 | สัดส่วนคนที่ผ่าน QC Story + QC 7 Tools (By QCC Expert) | ≥ 30.00 | — | % |
+
+**ใบ `KPI_Appraisal.pdf` (APPRAISAL FORM 2026 · เลขฟอร์ม `FM-HRM-6-022(01)` · PM CODE 10100 · REV 0):**
+คอลัมน์ `No · Function · KPI's Description · Commitment · Target · Result · Weight · Appraisal Result (0 / 0.5 / 1) · Point(s)`
+· หัวใบ: Company / Name+Code / Position+Working Year / Department+Age / **Cost Center** / Part+Rev
+· ลายเซ็นหัวใบ 3 ช่อง `Self Assessment By · Reviewed By · Approved By`
+· ท้ายใบ 4 ช่อง `Responsibility (Manager) · Supervisor 1 (General Manager) · Supervisor 2 · Verify By QSM (For Manager Only)`
+· **ท้ายตาราง `Total Weight = 50.00` / `Total Point`** ⇒ ยืนยัน Total Weight 50 อีกครั้ง
+
+### 13.2 ✅ สิ่งที่ใบนี้ **ปิดคำถามค้าง** ได้ (แก้สถานะใน §8.11 / §12.2)
+
+1. **สูตร %RM ทางการ = `(Raw Material / Sales from product) × 100`** — ตรงกับ `rm_pct` ใน `kpiSetup.js` เป๊ะ
+   ⇒ **ปิดคำถาม "สูตร %RM ทางการคืออะไร"** · ที่มาตัวเลข = **P&L บรรทัดที่ 2**
+2. **PPM = `(Defect / Total Production) × 1,000,000`** — **verify ครั้งที่ 4** (ปาก user → คู่มือ → เลขดิบบนบอร์ด → ใบระบบจริง)
+   เป้าทางการ P4: commit ≤350 / target ≤300 PPM ⇒ **ห้ามใครมาแก้สูตรนี้อีก** (ย้ำจาก §10.3)
+3. **OEE เป้าไม่ได้เป็นค่าเดียวทั้งกลุ่ม** — P4 Assembly ใช้ commit ≥80% / target ≥85%
+   (เด็ค H1 บอก PD3 ≥85/≥83 · ไฟล์ Excel บอก ≥79/≥76) ⇒ **ปิดคำถาม "OEE ≥87% เป็นเป้าทั้งกลุ่มไหม" = ไม่ใช่**
+   ต้องตั้งได้ต่อ (KPI × แผนก × ปี) ตามที่ทำไว้แล้ว · และสูตรทางการเขียนตรงๆ ว่า **A × P × Q** ตรงกับ `oee.js`
+4. **🔴 "ค่าเฉลี่ยข้ามเดือนที่ยังไม่มีผล" = ถูกต้องตามใบทางการ** — แถว Customer Satisfaction กรอก ม.ค.-ก.ค.
+   (100.00 · 91.67 · 87.50 · 100.00 · 93.75 · 100.00 · 87.50) เดือน ส.ค.-ธ.ค. **พิมพ์ 0.00**
+   แต่ช่อง Average = **94.35** = ผลรวม 660.42 **÷ 7 ไม่ใช่ ÷ 12**
+   ⇒ **ใบทางการเองก็ไม่นับเดือนว่างเป็นศูนย์** — ยืนยัน `summarizeMonths(..., 'average')` ของเราถูก
+   · **กับดัก: จอแสดง 0.00 ≠ ค่าเป็น 0** ใครอ่านใบนี้แล้วก๊อป 0.00 ไปคิดเฉลี่ยจะได้ 55.03 (ผิด 39 จุด)
+5. **ที่มาตัวเลขการเงินระบุชัดในใบ** — RM = P&L บรรทัด 2 · DL&OH = **SAP หักค่าเสื่อม** ⇒ ตอบว่าตาราง
+   `kpi_base_inputs` ต้องรับค่าจากใคร (บัญชี = P&L · SAP = DL/OH **ที่หักค่าเสื่อมแล้ว**)
+
+### 13.3 ⚠️ สิ่งที่ **ขัดกับโค้ดเราตอนนี้** — ต้องให้ user/KPI Audit ชี้ขาดก่อนแก้
+
+| จุด | ของเรา (`kpiSetup.js`) | ใบทางการ | ผล |
+|---|---|---|---|
+| **DSI / Inventory** | `inventory_baht ÷ (sale_product ÷ days)` | `(Stock value end of month ÷ **COGS**) × Day` | **ตัวหารคนละตัว** — ของเราใช้ยอดขาย ทางการใช้ **ต้นทุนขาย (COGS)** · แผ่นบอร์ด PD3 ที่เทสล็อกไว้ (0.3817) คำนวณจากยอดขาย ⇒ อาจเป็นคนละนิยามระหว่างแผนก **ห้ามแก้เงียบๆ** ต้องถามก่อน + ถ้าแก้ต้องเพิ่มตัวแปรฐาน `cogs` |
+| **Annual Sale Per Head** | `sale_total ÷ manpower` | `Total Sales ÷ **Average** manpower` | ทางการระบุ "ค่าเฉลี่ยกำลังคน" ไม่ใช่กำลังคน ณ จุดใดจุดหนึ่ง ⇒ ควรนิยาม `manpower` ให้ชัดว่าเป็นค่าเฉลี่ยของช่วง |
+| **วิธีรวม (Summary)** | `average · sum · max · as_of · rate` | `Manual · Sum · Average · Calculate · As of · Actual · Actual+Plan` | ตรงกัน 3 (`sum`/`average`/`as_of`) · **เราขาด 4** (Manual · Calculate · Actual · Actual+Plan) · **เราคิดเอง 2** (`max`, `rate`) — `rate` ใช้กับ PPM ซึ่งถูกทางคณิตศาสตร์ แต่**ไม่ใช่ชื่อ/โหมดของบริษัท** ⇒ ถ้าจะ export เข้าใบทางการต้อง map ให้ได้ |
+
+### 13.4 🧩 สิ่งที่โมเดลเรา **ยังไม่มี** (พบจากหน้าจอจริง)
+
+1. **`Perspective` / `Function` = BSC 4 มุมมอง** (`Financial · Customer · Internal process · Learning & Growth`)
+   — เป็น**แกนจัดกลุ่มแถว**ทั้งในเว็บและใน PDF ทั้ง 2 ใบ · `kpi_definitions` **ไม่มีคอลัมน์นี้เลย**
+   ⇒ ถ้าจะให้บอร์ด ESM เรียงเหมือนใบทางการ หรือ export เข้าฟอร์มได้ **ต้องเพิ่ม** (ค่าคงที่ 4 ค่า)
+2. **`Creator` = `Center` | `User`** — ใครเป็นคนใส่/คำนวณผล · ตรงแนวคิดกับ `provider` ของเรา
+   แต่ทางการมีแค่ **2 ค่า** (ศูนย์กลางคำนวณให้ / เจ้าของ KPI กรอกเอง) ⇒ `provider` ของเราควร derive ค่านี้ได้
+3. **🔴 กับดักชื่อ: `Scope` ในใบทางการ = "ตัวเลขมาจากไหน" (ข้อความอิสระ) ไม่ใช่ระดับองค์กร**
+   ขณะที่ `scope_kind`/`scope_value` ของเรา = **ระดับองค์กร** · คนละความหมายคนละเรื่องแต่ชื่อเดียวกัน
+   ⇒ สิ่งที่ตรงกับ `Scope` ทางการจริงๆ คือ `provider` + `provider_config` **ไม่ใช่ `scope_*`**
+   · เวลาคุยกับ KPI Audit / เขียนตัว export ต้องแปลงชื่อ ไม่งั้นเข้าใจผิดกันทั้งสองฝั่ง
+4. **แถวแม่ถือ weight — ลูกเป็นองค์ประกอบ** — Safety (ข้อ 4) มี `weight 4` + `Summary = Sum`
+   ส่วน 4.1-4.5 **ไม่มี weight** ⇒ `parent_id` ที่ทำไว้ถูกทาง แต่กติกาคือ **คะแนนคิดที่แม่ ลูกแค่ป้อนยอดรวม**
+5. **หน่วยของ KPI ต้องเก็บ** — ใบมีคอลัมน์หน่วยจริง (`% · Case · Days · PPM · MB · Major NC · Team · Types`)
+   ⇒ `unit` ที่ทำไว้ 16/09 ตรงความต้องการแล้ว
+6. **โครงสร้างระบบเขา = "KPI ของ *คน* 1 ชุด/ปี" ไม่ใช่ "KPI ของหน่วยงาน"**
+   รหัสการ์ด = `TSAT-P4-Assembly-Automotive Metal Forming-Assembly-<รหัสพนักงาน>`
+   (Company-Plant-Department-Division-SubDivision-**EmployeeCode** · Cost Center เป็นอีกช่องหนึ่งต่างหาก)
+   + มี flow อนุมัติ `Waiting for Owner Submission → Send KPI → Approve` และหน้า `ApproveKPI`
+   ⇒ **ESM ผูก KPI กับหน่วยงาน (ถูกแล้วสำหรับบอร์ดโรงงาน) แต่ต้องรู้ว่าไม่ใช่ unit เดียวกับระบบทางการ**
+   · ลำดับชั้นของเขา 6 ชั้น `Company · Plant · Department · Division · Sub Division · Sub Group`
+   **ไม่ตรง** `scope_kind` ของเรา (`plant/section/department/line_group/line/cost_center`) — ต้อง map ถ้าจะส่งข้อมูลข้ามระบบ
+
+### 13.5 สรุปทิศทาง (ไม่เปลี่ยนจากเดิม — แค่มีหลักฐานหนักขึ้น)
+
+**ESM = ที่ผลิตตัวเลข Actual · KPI Online = ทะเบียน+อนุมัติ+เก็บคะแนน** — ใบ Monitoring บอกเองว่า
+OEE/PPM "มาจากโปรแกรมภายใน" ⇒ **ช่องที่ ESM ควรเติมให้เขาคือช่องรายเดือน 12 ช่องนั้น** ไม่ใช่การสร้างหน้าจอแข่ง
+งานที่คุ้มที่สุด = ทำให้ ESM ตอบ **แถว 9 (PPM) · 10 (OEE) · 6 (100P) · 4.x (Safety)** ต่อ cost center ต่อเดือน
+ได้แบบก๊อปไปวางในใบได้เลย — ของพวกนี้ ESM คำนวณได้อยู่แล้ว ขาดแค่ "สรุปรายเดือนต่อ cost center"
+
+**คำถามที่ยังต้องถาม KPI Audit / IT (เพิ่มจาก §8.11):**
+- DSI หารด้วย **COGS** หรือ **ยอดขาย** · "× Day" ใช้ 30 คงที่หรือวันทำงานจริง (ขัดกัน 3 ที่แล้ว)
+- โหมด `Calculate` · `Actual` · `Actual+Plan` ในคอลัมน์ Summary นิยามยังไงกันแน่
+- ESM ส่งตัวเลขเข้า KPI Online อัตโนมัติได้ไหม (มี API/import ไหม) — ผู้ติดต่อ: Ampon.Tan · Rujirott.Som
+
+---
+
+## 14. 🏆 **ใบ APPRAISAL FORM 2026 ที่เซ็นแล้วครบ 11 แผนก + ประกาศบริษัท + แม่แบบ Corporate** (2026-09-17)
+
+**ไฟล์ที่ได้:** `KPI Appraisal - Monitoring - Action Form TSAT Branch 1 FY2026 *.pdf` (11 ใบ + PE ปี 2025)
+· `Announcement KPI TSAT-P4 2026.pdf` · `Corporate KPI Guideline 2026 As of 11.03.2026.pptx`
+
+> **นี่คือชั้นบนสุดของหลักฐานทั้งหมด** — เป็นเอกสาร**ที่เซ็นอนุมัติแล้ว** ไม่ใช่ใบสรุป/รูปถ่าย/คู่มือ
+> ลำดับความน่าเชื่อถือจากนี้ไป: **ประกาศบริษัท > ใบ Appraisal ที่เซ็น > แม่แบบ Corporate > ระบบ KPI Online > เด็ค/ไฟล์ Excel > รูปบอร์ด**
+> ⚠️ ทุกใบมี **ชื่อ-สกุล รหัสพนักงาน อายุ อายุงาน และลายเซ็นจริง** ⇒ **ห้าม commit ไฟล์/รูปเข้ารีโป** (ถอดเป็นข้อความที่นี่แทน)
+
+### 14.1 โครงเอกสาร 3 ชั้น (ตรงกับที่เราออกแบบ `kpi_catalog` → `kpi_definitions` เป๊ะ)
+
+| ชั้น | เอกสารจริง | บทบาท | เทียบกับ ESM |
+|---|---|---|---|
+| กลุ่ม | **Corporate KPI Guideline 2026** (Internal Audit & Analysis · 11/03/2026) | **แม่แบบ** — 13 รายการ น้ำหนักรวม 50 · ค่าเป็น `XX` ให้แต่ละโรงงานเติม | `kpi_catalog` (ทะเบียนชื่อ+สูตร) |
+| โรงงาน | **ประกาศ QSM-R2 001/2569 Rev.0** (16/03/2026 · เซ็น GM + QSM + Director) | โรงงานเลือก/ปรับรายการจากแม่แบบ แล้ว**ใส่ค่าจริงระดับโรงงาน** | `kpi_definitions` scope=plant |
+| แผนก/คน | **APPRAISAL FORM 2026** `FM-HRM-6-022(01)` REV 1 (11 ใบ) | แตกเป้าโรงงานลงแผนก · **น้ำหนักรวมต้อง 50 เท่ากันทุกใบ** | `kpi_definitions` scope=department |
+
+**กติกาที่เห็นชัดจาก 11 ใบ:** ทุกแผนกรวม **Total Weight = 50** เสมอ แต่ **เลือกรายการและถ่วงน้ำหนักเองได้**
+⇒ ยืนยันอีกครั้งว่า **hardcode ชุด KPI ไม่มีทางพอ** · ที่เราทำ data-driven ไว้ถูกทาง
+
+### 14.2 🔴🔴 ข้อชี้ขาด 2 ข้อที่ทำให้ต้อง**แก้โค้ด**ทันที (แก้แล้ว 17/09)
+
+**(1) เกณฑ์คะแนนตัดสินจาก "ป้ายของบาร์" ไม่ใช่ "บาร์ไหนเข้มกว่า"**
+หัวคอลัมน์ในประกาศบริษัทเขียนตรงตัวว่า **`Commitment Score = 0.5`** และ **`Target Score = 1`**
+⇒ ถึง Target = 1 · ไม่ถึง Target แต่ถึง Commitment = 0.5 · ไม่ถึงทั้งคู่ = 0 **จบ ไม่ต้องตีความ**
+· เดิม `scoreKpi()` ตัดสินว่า "บาร์ที่เข้มกว่า = 1" (เราอนุมานเอง) — **ผิด** กับแถวที่ commit เข้มกว่า target
+· แถวแบบนั้นในใบจริงคือ **คำผิดของคนกรอก ไม่ใช่กติกาอีกแบบ** — พิสูจน์ได้: Total Sales
+  ประกาศพิมพ์ target `≥2,117.82 MB` (ต่ำกว่า commit 2,118.70) แต่**ใบ GM เขียน `≥2,177.82 MB`** = สลับเลข
+· แก้แล้วใน `src/utils/kpiSetup.js` + เทสล็อกด้วยแถวจริง (PD3 OEE ปกติ · JIG MTTR ที่สลับ · QCC ที่มีแต่ Target)
+
+**(2) DSI หารด้วย COGS — ไม่ใช่ยอดขาย**
+`Day Sales of Inventory (DSI) = (Stock value end of month / COGS) × Days`
+**ตรงกัน 3 แหล่งอิสระ:** ประกาศบริษัท · แม่แบบ Corporate · ใบ Monitoring ในระบบ KPI Online
+⇒ ปิดคำถามค้าง §13.3 · แก้ `inventory_day` แล้ว + เพิ่มตัวแปรฐาน **`cogs`** (ไม่ใช่สลับความหมาย `sale_product`)
+· แม่แบบ Corporate ระบุว่า DSI รายงานได้ **2 หน่วย: `MB` (มูลค่าดิบ) หรือ `Days`** — แถว
+  "Inventory Balance - …" ใต้ DSI ในใบแผนก = ตัวเดียวกันรายงานเป็น MB · **Cost Reduction ก็ 2 หน่วยเหมือนกัน
+  (`%` หรือ `บาท`)** — JIG/MTN/Tooling ใช้บาท (≥953,806.53 / ≥3,815,226.13) ส่วน GM/QC/PE ใช้ ≥1%
+· ตัวหารวัน (30 คงที่ หรือวันทำงานจริง) **ยังไม่ชี้ขาด** — ยังเป็นตัวแปรฐาน `days_in_month`
+
+**(3) เป้าที่เขียน "ไม่มีเครื่องหมาย" เป็นเรื่องปกติในใบจริง — ต้องเดาทิศให้ถูก**
+`Customer Satisfaction` เป้า **`100%`** (ไม่มี ≥) โผล่ **ครบทั้ง 12 ใบ น้ำหนัก 5** · อื่นๆ: MTBF `730 Hr.`
+· MTTR `0 Hr.` · Machine Break Down `0%` · Safety `0 Case` · Premium Freight `0` · WH TS Academy `100%`
+⇒ เดิม `parseBar` คืน `compare: null` ⇒ `scoreKpi` ถือว่า "ยังไม่ตั้งเป้า" ⇒ **ข้อน้ำหนัก 5 จะเทาตลอดกาลทุกแผนก**
+เพิ่ม `inferCompare(txt, otherCompare)` — ลำดับคงที่: มีเครื่องหมาย → ยืมทิศจาก Commitment → `0` = `<=` /
+`100` = `>=` → เดาไม่ได้คืน null **ให้จอบอกว่า "ยังไม่ระบุทิศทาง" ห้ามเดามั่ว**
+
+### 14.3 🧮 DSI รายแผนกบวกกัน = DSI ของโรงงาน (พิสูจน์จากเลขในใบที่เซ็นแล้ว)
+
+| แผนก | ตัวตั้ง (storage location / MAT) | Commit | Target |
+|---|---|---|---|
+| PD1 Press | Production Press & WIP (P401,P405,P406,P407,P408) | ≤0.345 | ≤0.318 |
+| PD2 Assy | Production Ass'y (P402+403+404+413) | ≤0.212 | ≤0.196 |
+| PD3 HDF | HYD+Laser 861 (**P409**) + APRON+E50 (**P411**) | ≤0.351 | ≤0.324 |
+| PD4 Assy2 | GOR&LWR+Bending laser (P410+412) | ≤0.053 | ≤0.049 |
+| LOG&Sales | **DSI In-bound** — RM (5xxxxx,3xxxxx) + Semi Part (2xxxxx) | ≤4.115 | ≤3.799 |
+| WH&Delivery | **DSI Out-bound** — FG (1xxxxx) | ≤7.910 | ≤7.301 |
+| **รวม** | | **12.986** | **11.987** |
+| **GM Plant (ใบจริง)** | | **≤13 Days** | **≤12 Days** |
+
+⇒ **ตรงกันทั้งสองบาร์** · แปลว่า **ตัวหาร (COGS) เป็นของทั้งโรงงานตัวเดียว ตัวตั้งเป็นของแต่ละแผนก**
+· ห้ามคำนวณ DSI รายแผนกด้วยยอดขาย/ต้นทุนของแผนกนั้น — จะได้เลขคนละโลก
+· **ESM ทำได้:** ตัวตั้ง = มูลค่าสต็อกตาม storage location ซึ่ง ESM มีทะเบียนอยู่แล้ว · ขาดแค่ COGS รายเดือนจากบัญชี
+· มีเทสล็อกเอกลักษณ์นี้ไว้แล้ว (`kpiSetup.test.mjs`)
+
+### 14.4 📋 KPI ครบทั้ง 11 แผนก — ใครใช้อะไร (น้ำหนักในวงเล็บ · รวม 50 ทุกใบ)
+
+**แกนร่วมทุกใบ:** `Financial` → `Customer` → `Internal Process` → `Learning & Growth` (BSC 4 มุมมอง)
+**L&G เหมือนกันเกือบทุกใบ:** Annual Sales Per Head ≥5.489/≥5.654 MB/Head (3) · TS Academy ≥80%/≥90% (2)
+· QCC ≥30%/plant (2) · Engineering Day 1 Team per Plant + ≥3 Types (2)
+**Safety เหมือนกันทุกใบ:** 5 ข้อย่อย (Serious · Absent>3วัน · Absent<3วัน · Minor Injures · Fire/Injury) เป้า 0 Case
+**น้ำหนักอยู่ที่แถวแม่ ลูกไม่มีน้ำหนัก** ⇒ ยืนยันโครง `parent_id` ที่ทำไว้
+
+| แผนก (Cost Center) | Financial | Customer | Internal Process ที่ต่างจากคนอื่น |
+|---|---|---|---|
+| **GM Plant** (2140306000) | Total Sales ≥2,118.70/≥2,177.82 MB (7) · **EBIT** ≥4.84/≥5.35% (7) | CS (5) | 100P (4) · **Cost Reduction** (4) · **DSI ≤13/≤12 Days** (4) · NonNC (3) · +**Engagement Survey** ≥80/≥85% (3) |
+| **PD1 Press** (2140461000) | RM ≤68.40% (5) · DL&OH ≤1.0485/≤1.0170% (6) | CS (5) | 100P (3) · DSI ≤0.345/≤0.318 (4) · **PPM ≤100/≤75** (6) · OEE ≥83/≥85% (5) · NonNC (3) |
+| **PD2 Assy** (2140470000) | RM ≤68.40% (5) · DL&OH ≤0.8057/≤0.7815% (6) | CS (5) | 100P (3) · DSI ≤0.212/≤0.196 (4) · **PPM ≤75/≤50** (5) · OEE ≥80/≥85% (6) · NonNC (3) |
+| **PD3 HDF** (2140462000) | RM ≤68.40% (5) · DL&OH ≤2.6148/≤2.5364% (6) | CS (5) | 100P (3) · DSI ≤0.351/≤0.324 (4) · PPM ≤350/≤300 (5) · **OEE ≥83/≥85%** (6) · NonNC (3) |
+| **PD4 Assy2** (2140471000) | RM ≤68.40% (5) · DL&OH ≤1.3445/≤1.3042% (6) | CS (5) | 100P (3) · DSI ≤0.053/≤0.049 (4) · PPM ≤350/≤300 (5) · **OEE ≥80/≥85%** (6) · NonNC (3) |
+| **MTN** (2140456000) | DL&OH ≤0.3086/≤0.2993% (6) | **Internal** Satisfaction (4) · **MO Closed on target ≥95/≥99%** (5) | **Machine Break Down ≤0.28/0%** (5) · **MTBF ≥729.5/730 Hr** (5) · **MTTR ≤2/0 Hr** (5) · **Cost Reduction ≥3,815,226.13 B** (4) · NonNC (3) |
+| **JIG MTN** (2140562300) | DL&OH ≤0.2148/≤0.2084% (6) | Internal Satisfaction (5) · **MO Closed ≥95/≥99%** (6) | **Machine Break Down ≤0.6/≤0.5%** (5) · **MTBF ≥200/≥180 Hr** (4) · **MTTR ≤0.2/≤0.3 Hr** (4) · **Cost Reduction ≥953,806.53 B** (4) · NonNC (3) |
+| **Tooling MTN** (2140459100) | DL&OH ≤0.3264/≤0.3166% (6) | Internal Satisfaction (4) · **MO Closed ≥98/100%** (6) | Machine Break Down ≤2.60/≤2.34% (5) · MTBF ≥729.11/730 Hr (5) · MTTR ≤0.64/≤0.61 Hr (4) · Cost Reduction ≥953,806.53 B (4) · NonNC (3) |
+| **QA/QC** (2140441000) | DL&OH ≤0.9052/≤0.8780% (6) | CS (5) · **Customer Claim ≤15/≤5 PPM** (7 ← หนักสุดในทุกใบ) | **Incoming Quality Rate ≤40/≤30 PPM** (5) · 100P (3) · Cost Reduction (3) · **Warranty claim 0 Case** (5) · NonNC (3) |
+| **LOG&Sales** (2140320000) | DL&OH ≤0.6681/≤0.648% (6) | CS (5) | **DSI In-bound ≤4.115/≤3.799** (4) · **Premium Freight 0** (5) · **Stock Accuracy ≥90/≥95%** (4) · **Delivery on time ≥95/100%** (5) · **Supplier delivery on time ≥90/≥95%** (5) · NonNC (3) |
+| **WH&Delivery** (2140320000 — **CC เดียวกับ LOG**) | DL&OH ≤0.6874/≤0.6668% (6) | CS (5) | **DSI Out-bound ≤7.910/≤7.301** (4) · **Stock Accuracy ≥90/≥95%** (6) · **Delivery on time ≥95/100%** (7) · **Control problems rack FG ≤5/0 Case** (6) · NonNC (3) |
+| **PE Process** (2140446000 · *ใบปี 2025*) | DL&OH ≤0.4444/≤0.4310% (6) | CS (5) · **Project Development on time 100%** (6) | 100P (3) · Cost Reduction (3) · **BOM and Routing on time as ECN 100%** (6) · **BOM and Routing accuracy 100%** (5) · NonNC (3) |
+
+### 14.5 🧩 กับดัก/ข้อสังเกตที่ต้องจำ
+
+1. **"PPM" มี 3 ตัวคนละเรื่อง** — `Internal Quality Rate` (ผลิต · ของเสียใน) · `Customer Claim` (QC · ลูกค้าเคลม)
+   · `Incoming Quality Rate` (QC · ของเข้าจากซัพพลายเออร์) ⇒ **ทะเบียนที่คีย์ด้วยคำว่า "PPM" เฉยๆ จะรวมร่างกันทันที**
+2. **เป้า PPM ต่างกันถึง 6 เท่าระหว่างแผนก** — PD2 ≤50 · PD1 ≤75 · PD3/PD4 ≤300 (ปั๊มของเสียน้อยกว่าประกอบมาก)
+   ⇒ ห้ามตั้งเป้า PPM กลางทั้งโรงงานเด็ดขาด
+3. **น้ำหนักของ KPI ตัวเดียวกันต่างกันระหว่างแผนก** — PPM: PD1 ให้ 6 / PD2-PD4 ให้ 5 · OEE: PD1 ให้ 5 / PD2-PD4 ให้ 6
+   ⇒ `weight` ต้องอยู่ที่ `kpi_definitions` (รายแผนก) ไม่ใช่ที่ `kpi_catalog` — **ที่ทำไว้ถูกแล้ว**
+4. **LOG กับ WH ใช้ cost center เดียวกัน (2140320000) แต่เป็นคนละชุด KPI**
+   ⇒ **`cost_center` ไม่ใช่คีย์เอกลักษณ์ของชุด KPI** — ห้ามเอา CC มาเป็น unique key
+5. **"Customer" ของหน่วยสนับสนุน = `Internal Satisfaction`** (MTN · JIG · Tooling) ไม่ใช่ลูกค้าภายนอก
+6. **เป้าเดียวกันคนละค่าในคนละชั้น** — TS Academy: GM ≥75/≥85% · แผนกผลิต ≥80/≥90% · WH เป้า 100%
+   ⇒ เป้าต้องผูกกับ (KPI × ขอบเขต × ปี) **ครบทั้ง 3 แกน**
+7. **แม่แบบ Corporate มี KPI แบบ "มีก็ใส่"** — `2.2 New Business or New Model (If any)` น้ำหนัก 6
+   ⇒ ต้องรองรับ KPI ที่ **บางหน่วยงานเท่านั้นที่มี** (เราทำได้อยู่แล้วเพราะ definition เป็นรายขอบเขต)
+8. **สายอนุมัติเดินตามผังองค์กร** — Manager → General Manager → (Supervisor 2) → **Verify By QSM (For Manager Only)**
+   · ส่วน GM → **Managing Director** · ทุกใบมี `Self Assessment By / Reviewed By / Approved By` ที่หัวใบด้วย
+9. **ปีต่างกัน = ชุด KPI ต่างกัน** — ใบ PE เป็นปี 2025 และมี `BOM and Routing…` ที่ไม่มีในใบ 2026 ใบไหนเลย
+   ⇒ `year` ต้องเป็นส่วนหนึ่งของคีย์เสมอ
+
+### 14.6 🎯 ESM ตอบ KPI พวกนี้ได้แค่ไหน (คิวงานที่คุ้มที่สุด)
+
+| ระดับ | KPI | สถานะใน ESM |
+|---|---|---|
+| ✅ **มีข้อมูลครบ คำนวณได้เลย** | OEE · Internal Quality Rate (PPM) · Machine Break Down · MTBF · MTTR · MO Closed on target · Delivery on time · TS Academy (ผ่านอบรม) · BOM & Routing accuracy/on-time as ECN | `oee.js` · `defect_logs` · `downtime_logs` · `mtn_orders` · logistic · skills/OJT · BOM+NPI |
+| 🟡 **มีบางส่วน ต้องต่อ** | DSI (มี storage location + มูลค่าสต็อก · **ขาด COGS รายเดือน**) · Stock Accuracy · Safety cases · 100P/Cost Reduction (มีใน `/improvements` แต่ยังไม่ผูกเป็นมูลค่ารายเดือน) · Customer Claim PPM (มีทะเบียนเคลม/8D) · Incoming Quality Rate | ต้องเพิ่มจุดกรอก/จุดสรุป |
+| ❌ **ไม่มีเลย ต้องกรอกมือ** | Total Sales · EBIT · RM · DL&OH (บัญชี/SAP) · Non NC Major (ผลออดิตภายนอก) · Premium Freight · Engagement Survey · QCC · Engineering Day · Internal/Customer Satisfaction | = `provider: manual` + `kpi_base_inputs` |
+
+> **คิวที่คุ้มที่สุด (ไม่เปลี่ยนจาก §13.5 แต่ชัดขึ้น):** ทำ **"สรุปรายเดือนต่อ cost center"** ของกลุ่ม ✅
+> ให้ก๊อปไปวางในช่อง Jan–Dec ของใบ Monitoring ได้ตรงๆ — ครอบคลุม **9 จาก 13 รายการ** ของแผนกผลิตและซ่อมบำรุง
+
+### 14.7 ❓ "แต่ละส่วนงานเลือก KPI ยังไง" — ~~guideline ไม่ได้เขียนไว้~~ **⛔ ข้อสรุปนี้ผิด ดู §15**
+
+> **⛔ แก้ 2026-09-21:** ข้อสรุปข้างล่างนี้มาจากการอ่าน **`Corporate KPI Guideline 2026.pptx` (as of 11.03.2026)**
+> ซึ่งเป็น **ฉบับย่อที่มีแค่ส่วนที่ 1** · ตัวเต็ม **`KPI Guideline 2026 (as of 29.01.2026)` 19 หน้า**
+> มี **ส่วนที่ 2 = "KPI Standard 2026" ทะเบียน KPI มาตรฐาน 24 หน่วยงาน พร้อมคอลัมน์ `Fixed`/`Choice`**
+> = **กติกาการเลือกที่เป็นทางการ เขียนไว้ชัดเจน** ⇒ อ่าน **§15** แทน · ส่วนที่ยังถูกอยู่ของ §14.7 คือ
+> การเทียบน้ำหนัก 50 ระหว่างแม่แบบกับประกาศ TSAT (ตารางด้านล่าง) ซึ่ง §15 ไม่ได้ครอบคลุม
+
+#### (ต่อไปนี้คือข้อความเดิม — เก็บไว้เพราะตารางเทียบน้ำหนักยังใช้ได้)
+
+คำถาม user: *"เรื่องเลือก KPI ของแต่ละส่วนงาน ใน guideline เห็นมั้ย"*
+**ตอบ: ไม่มี** — `Corporate KPI Guideline 2026.pptx` ทั้งไฟล์มี 4 สไลด์ · เนื้อหาจริงคือ **ตาราง 2 ตัวเท่านั้น**
+(สไลด์ 1 = ปก + Quality Declaration · สไลด์ 4 = คำคม) · **ไม่มี speaker notes · ไม่มีกล่องข้อความอื่น**
+⇒ **ไม่มีข้อความไหนบอกกติกาการเลือกเลย** — กลไกที่ใช้จริงต้อง**อนุมานจากการเทียบใบ** ไม่ใช่จากนโยบายที่เขียนไว้
+
+**ร่องรอยเดียวที่อยู่ในตัว guideline เอง (3 อย่าง):**
+1. **`2.2 New Business or New Model (If any)`** — คำว่า **"(If any)"** คือตัวบอกเดียวว่า *บางรายการมีก็ใส่ ไม่มีก็ตัด*
+2. **ค่าทุกช่องเป็น `XX`** (`> XX MB` · `> XX%`) ⇒ แม่แบบตั้งใจให้แต่ละหน่วยเติมค่าเอง
+3. **`Total (13 Items) = 50`** = ค่าคงที่ที่ห้ามขยับ · และ 2 รายการให้เลือกหน่วยได้
+   (`Cost Reduction` = `%` หรือ `MB` · `DSI` = `MB` หรือ `Days`)
+
+**กลไกจริงที่โผล่ออกมาเมื่อเทียบ 3 ชั้น — ตรวจเลขแล้วลงตัวพอดี:**
+
+| | แม่แบบ Corporate | ประกาศ TSAT P4 |
+|---|---|---|
+| จำนวนรายการ | 13 | 13 |
+| **น้ำหนักรวม** | **50** | **50** |
+| ตัดออก | — | `New Business or New Model` (น้ำหนัก 6) |
+| เพิ่มเข้า | — | `Non NC Major (ISO External Audit)` (น้ำหนัก 3) |
+| ปรับน้ำหนัก | — | `Total Sales` 6→7 · `100P` 3→4 · `Cost Reduction` 3→4 |
+
+⇒ ตัดของหนัก 6 ออก · ใส่ของใหม่ 3 เข้า · **เกลี่ยที่เหลืออีก 3 กระจายลง 3 รายการ** · รวมยัง 50 เป๊ะ
+**นี่คือ "กติกา" ที่ไม่มีใครเขียนเป็นตัวหนังสือ: เลือกรายการได้ · ถ่วงน้ำหนักเองได้ · แต่รวมต้อง 50 เสมอ**
+
+**ชั้นแผนกก็ทำแบบเดียวกันต่อ** (จาก 11 ใบที่เซ็นแล้ว §14.4):
+· **โครงที่ทุกใบเหมือนกัน** = BSC 4 มุมมอง + `Safety` (5 ข้อย่อย เป้า 0 Case) + `Non NC Major`
+  + บล็อก L&G (`Annual Sales Per Head` · `TS Academy` · `QCC` · `Engineering Day`)
+· **ส่วนที่สลับตามงานที่หน่วยนั้นคุมได้จริง:**
+  – ผลิต: ตัด `Total Sales`/`EBIT` → ใส่ `%RM` · `DL&OH` · `PPM` · `OEE` · `DSI` (ตาม storage location ของตัวเอง)
+  – ซ่อมบำรุง: ตัดของผลิตทั้งหมด → ใส่ `MO Closed on target` · `Machine Break Down` · `MTBF` · `MTTR` · `Cost Reduction (บาท)`
+  – QA: ใส่ `Customer Claim PPM` · `Incoming Quality Rate` · `Warranty claim`
+  – คลัง/ส่งของ: ใส่ `Stock Accuracy` · `Delivery on time` · `Premium Freight` · `Control problems rack FG`
+  – **"Customer" ของหน่วยสนับสนุน = `Internal Satisfaction`** ไม่ใช่ลูกค้าภายนอก
+
+> ### 🔴 สิ่งที่หน้า setup ต้องรองรับ (สรุปจากข้อนี้)
+> 1. **เลือกรายการจากแม่แบบได้ + เพิ่มของนอกแม่แบบได้** (TSAT เพิ่ม `Non NC Major` เอง)
+> 2. **ถ่วงน้ำหนักเองต่อหน่วยงาน** (KPI ตัวเดียวกันน้ำหนักต่างกันจริง — PPM: PD1 ให้ 6 · PD2-4 ให้ 5)
+> 3. **มีตัวนับ "รวมน้ำหนัก" โชว์ตลอด + เตือนเมื่อ ≠ 50** — นี่คือ invariant เดียวที่ทั้งกลุ่มยึด
+>    ⚠️ **แต่ห้ามบล็อกการบันทึก** — ระหว่างตั้งค่ายังไม่ครบ 50 เป็นเรื่องปกติ (เตือน ≠ ห้าม)
+> 4. **รายการที่เลือกหน่วยได้** (`Cost Reduction` %/บาท · `DSI` วัน/MB) ต้องให้เลือกหน่วยตอนตั้ง
+> 5. **`(If any)`** — รองรับ KPI ที่บางหน่วยงานเท่านั้นที่มี (ทำได้อยู่แล้วเพราะ definition เป็นรายขอบเขต)
+
+---
+
+## 15. 🎯 **KPI Guideline 2026 ตัวเต็ม (as of 29.01.2026 · 19 หน้า)** — เจอกติกาการเลือกแล้ว (2026-09-21)
+
+**นี่คือเอกสารที่ตอบคำถาม "แต่ละส่วนงานเลือก KPI ยังไง" โดยตรง** · ผู้จัดทำคนเดียวกับฉบับย่อ
+(Ms. Sasiwimol Aryupantewan · Internal Audit & Analysis Manager) แต่ **ลงวันที่ก่อน 29/01 vs 11/03**
+
+> **⚠️ บทเรียน: ฉบับ `.pptx (11.03.2026)` ที่เคยได้มา = ฉบับย่อที่มีแค่ "ส่วนที่ 1"**
+> ตัวเต็มมี **2 ส่วน** ตาม Agenda หน้า 2: **1) Corporate KPI Guideline 2026** (= ทั้งหมดของฉบับ pptx)
+> **2) KPI Standard 2026** ← **หายไปทั้งส่วนในฉบับ pptx** · เคยสรุปผิดไปแล้วว่า "guideline ไม่ได้เขียนกติกาไว้"
+> **กฎที่ตกผลึก: ก่อนสรุปว่า "เอกสารไม่มีเรื่องนี้" ต้องเช็ค Agenda/สารบัญก่อนว่าไฟล์ที่ถืออยู่ครบไหม**
+
+### 15.1 🔴 กติกาการเลือก = คอลัมน์ **`Fixed` / `Choice`** (ทางการ ไม่ต้องเดา)
+
+หน้า 7-18 = ตาราง **"KPI Standard 2026"** แยก **24 หน่วยงาน** (หน้าละ 2 หน่วย) ทุกแถวมีคอลัมน์ท้ายสุดว่า
+
+| ค่า | ความหมาย | จำนวนในเอกสาร |
+|---|---|---|
+| **`Fixed`** | **KPI บังคับของหน่วยงานนั้น — ต้องมี** | 239 แถว |
+| **`Choice`** | **เลือกได้ — จะเอาหรือไม่เอาก็ได้** | 108 แถว |
+
+⇒ **โครงคือ "เมนูมาตรฐานต่อหน่วยงาน" ไม่ใช่ให้คิดเอง** · แต่ละหน่วยงานหยิบ `Fixed` ทั้งหมด **+ เลือก `Choice` เท่าที่ต้องการ** แล้วถ่วงน้ำหนักให้รวม 50
+
+**24 หน่วยงานในทะเบียน:** `Head of SPG` · `GM Plant` · `GM Plant (Tooling)` · **`Production`** · `Engineering`
+· **`QA`** · **`Logistic & Sales`** · **`Maintenance`** · **`Die Maintenance`** · `Tooling` · `Marketing` · `RDPP`
+· `CSC` · `Accounting` · `Purchase` · `HRM` · `CIC` · `QSM` · `Accounting-TSA` · `HRM-TSA`
+· `Internal Audit-TSA` · `IT-TSA` · `AOBM-TSA` · `Purchase-TSA`
+(ตัวหนา = หน่วยงานที่ ESM มีข้อมูลป้อนให้ได้)
+
+### 15.2 ทะเบียนมาตรฐานของหน่วยงานที่ ESM เกี่ยวข้อง (คัดจากหน้า 8-11)
+
+**`Production`** — Fixed: `Raw Material Control` · `DL&OH` · `Customer Satisfaction (Q&D)` · `Safety`
+· `DSI` · **`Internal Quality Rate` = (Defect/Total Production) × 1,000,000** · **`OEE` = A × P × Q**
+· `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `100P` · `Cost Reduction`
+
+**`Maintenance`** — Fixed: `DL&OH` · **`Internal Satisfaction`** · **`MO Closed on target` = (MO Closed on target/Total MO)×100**
+· `Safety` · **`Machine Break Down` = (ชม.ที่เครื่องหยุด / ชม.ที่เครื่องทำงานได้ปกติ)×100**
+· **`MTBF` = [(730 × จำนวนเครื่อง) − เวลาเสียรวม] / จำนวนเครื่อง** · **`MTTR` = ชม.เสียรวม / จำนวนครั้ง**
+· **`Cost Reduction (MTN)` = CR value from improvement project** · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice:** `Engineering Day`
+
+**`QA`** — Fixed: `DL&OH` · `Customer Satisfaction` · **`Customer Claim` = (Total Defect/Total Delivery)×1,000,000**
+· `Safety` · **`Incoming Quality Rate` = (Total Defect From Production or WH / Total Purchase Quantity)×1,000,000**
+· **`Warranty claim` = 0 Case** · `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `100P` · `Cost Reduction` · `New Model Quality Rate`
+
+**`Logistic & Sales`** — Fixed มีแค่ 4: `Customer Satisfaction` · `Safety` · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice 12 ตัว** (เยอะสุดในเอกสาร): `DL&OH` · `DL&SG&A (หมวด 7)` · `Control Cancelled Bill` · `Cost Reduction`
+· `Import Forecast & Order data into SAP` · `Premium Freight` · **`Stock Accuracy` = (Stock actual count/SAP stock)×100**
+· `DSI` · `Control supply production no stop` · **`Control Long&Dead Stock` = [(Long+Dead stock สิ้นเดือน)/COGS]×Day**
+· `Delivery on time` · `Supplier delivery on time` · `Miss delivery control` · `Control problems rack FG`
+
+**`Engineering`** — Fixed: `DL&OH` · `Customer Satisfaction` · `Safety`
+· **`BOM and Routing on time as ECN` = (Actual correct BOM item/All BOM items)×100** · **`BOM and Routing accuracy`** (สูตรเดียวกัน)
+· `Annual Sale Per Head` · `TS Academy` · `QCC` · `Engineering Day`
+**Choice:** `Tooling payment on time` · `Project Development on time` · `100P` · `Cost Reduction` · `Run@rate on target`
+
+**`Die Maintenance`** — Fixed: `DL&OH` · `Customer Satisfaction` · `Safety` · `Annual Sale Per Head` · `TS Academy` · `QCC`
+**Choice:** `Manage project to achieve & on time delivery` · `Reduce interuption from mold problems`
+· `Keep inventory no more than` · `Part quality concern from Dies & Jig MTN` · `Reduce part rework from DIE & JIG tooling` · `Engineering Day`
+
+### 15.3 ✅ สิ่งที่ยืนยัน / ❗ สิ่งที่ขัดกับที่เคยสรุป
+
+| | ผล |
+|---|---|
+| ✅ **PPM = `(Defect/Total Production) × 1,000,000`** | **verify ครั้งที่ 5** — คราวนี้จากทะเบียนมาตรฐานของกลุ่มเอง |
+| ✅ **OEE = `A × P × Q`** | ตรงกับ `oee.js` |
+| ✅ **DSI หารด้วย COGS** | `(Stock value end of month/COGS) × Day` — **ยืนยันครั้งที่ 4** |
+| ✅ **%RM · DL&OH · Sales/Head · TS Academy** | สูตรตรงกับ `kpiSetup.js` ทุกตัว |
+| ✅ **"Customer" ของหน่วยสนับสนุน = `Internal Satisfaction`** | เขียนไว้ในทะเบียนตรงๆ (Maintenance · RDPP · CSC · Accounting · Purchase · QSM) |
+| ❗ **`Non NC Major` ไม่มีในทะเบียนมาตรฐานเลยสักหน่วยงาน** (grep = 0) | แต่โผล่ใน**ใบ Appraisal ที่เซ็นแล้วทุกใบ** ⇒ **TSAT เพิ่มเองระดับโรงงาน** — ยืนยันว่า "เพิ่มนอกเมนูได้" |
+| ❗ **`MTBF` มีสูตรทางการแล้ว** = `[(730 × จำนวนเครื่อง) − เวลาเสียรวม] / จำนวนเครื่อง` | เลข **730 = ชม./เดือน** (คงที่) ⇒ **ไม่ใช่ชั่วโมงเดินเครื่องจริง** · ต่างจากที่ `mtnMetrics` คำนวณ — **ต้องตรวจก่อนเอาไปใช้** |
+| ❗ **`Machine Break Down`** = (ชม.เครื่องหยุด / ชม.ที่เครื่องทำงานได้ปกติ) × 100 | ตัวหารคือ "เวลาที่เครื่องทำงานได้ปกติ" **ไม่ใช่เวลาเปิดกะ** — ต้องนิยามให้ตรงก่อนคำนวณ |
+
+### 15.4 📎 เอกสารที่ guideline อ้างต่อ แต่**เรายังไม่มี**
+
+ทะเบียนไม่ได้เขียนรายละเอียด 2 เรื่อง แต่ชี้ไปเอกสารอื่น:
+· **`*Refer to safety announcement`** — โผล่ **24 ครั้ง (ทุกหน่วยงาน)** = นิยาม/เกณฑ์ Safety อยู่ในประกาศแยก
+· **`*Refer to activity announcement`** — โผล่ **66 ครั้ง** = เกณฑ์ QCC · Engineering Day · Kaizen · Environment
+  · Energy Saving อยู่ในประกาศแยกเช่นกัน
+⇒ **ถ้าจะทำ Safety/QCC/Engineering Day ให้ถูกต้อง ต้องขอ 2 ประกาศนี้เพิ่ม** (ปิดคำถามค้าง §8.11 ข้อ 3-4 ไม่ได้ด้วยไฟล์นี้)
+
+### 15.5 🔴 ผลต่อหน้า setup ที่จะทำ — **เปลี่ยนจากเดิม**
+
+เดิมออกแบบไว้ว่า "เลือกจากแม่แบบกลางชุดเดียว 13 รายการ" · **ตอนนี้ต้องเป็น "เมนูรายหน่วยงาน 24 ชุด"**
+
+1. **ต้องมีชั้น "หน่วยงานมาตรฐาน" (`std_unit`) + ธง `Fixed`/`Choice`**
+   ⇒ ตอนตั้ง KPI ให้แผนก เลือก "หน่วยงานมาตรฐาน" ก่อน → ระบบเติมแถว `Fixed` ให้ครบอัตโนมัติ
+   → เหลือให้ติ๊กเฉพาะ `Choice` → แล้วค่อยถ่วงน้ำหนักให้รวม 50
+   **ทำแล้ว 21/09 → ตาราง `kpi_standard_items` แยกต่างหาก ไม่ได้ยัดใน `kpi_catalog`** (เหตุผล §15.6)
+2. **ต้องเพิ่มของนอกเมนูได้** (TSAT เพิ่ม `Non NC Major` เองจริง) — แต่ควร**ทำเครื่องหมายว่า "นอกมาตรฐาน"**
+3. **`Fixed` ห้ามลบ** (เตือนอย่างน้อย) · **`Choice` ลบได้อิสระ**
+4. หน่วยงานเดียวกันใช้ชื่อ KPI เดียวกันแต่**สูตรอาจต่างจากหน่วยอื่น** — เช่น PPM มี 3 ตัว
+   (`Internal Quality Rate` ผลิต · `Customer Claim` QA · `Incoming Quality Rate` QA) ⇒ **catalog ต้องคีย์ด้วย (ชื่อ + หน่วยงาน) ไม่ใช่ชื่อเดี่ยว**
+
+### 15.6 ✅ ที่ทำจริงแล้ว — ตาราง `kpi_standard_items` (Main · 21/09/2026)
+
+migration `supabase/migrations/20260921_kpi_standard_2026_main.sql` (**apply แล้ว 21/09** — ทั้ง DDL และ seed)
+
+**ทำไมแยกตาราง ไม่ยัดใน `kpi_catalog`:** ทะเบียนมาตรฐานมีรายการซ้ำข้ามหน่วยงานเยอะมาก —
+`TS Academy training` โผล่**ครบทั้ง 24 หน่วยงาน** ถ้าเอาเข้า `kpi_catalog` ตรงๆ จะได้แถวซ้ำ 24 แถว
+และ `catalog_id` จะชี้กำกวมทันที · `kpi_standard_items` = **"เมนูตามเอกสารกลุ่ม" (อ่านอย่างเดียว เปลี่ยนตามปีเอกสาร)**
+ส่วน `kpi_catalog` = **"ของที่โรงงานเราใช้จริง"** — คนละบทบาท เชื่อกันด้วย `catalog_id` (nullable) เมื่อจับคู่ได้
+
+| คอลัมน์ | หมายเหตุ |
+|---|---|
+| `year` · `std_unit` | คีย์หน่วยงาน — **ข้อความตรงกับ PDF เป๊ะ** (`Logistic & Sales` มี `&` · `GM Plant (Tooling)` มีวงเล็บ) |
+| `seq` | เลขที่พิมพ์บนเอกสาร — **โชว์อย่างเดียว ห้ามใช้เรียง** (ต้นฉบับ Production พิมพ์เลข `6` ซ้ำ 2 แถว) |
+| `sort_order` | คีย์เรียงจริง (unique ร่วมกับ year+std_unit) |
+| `perspective` | `financial` / `customer` / `internal` / `learning` — 4 มุมมอง BSC ตามหัวตารางเอกสาร |
+| `requirement` | `fixed` / `choice` / **`null` = แถวหัวข้อแม่** (เช่น `Activity` ที่มี QCC/Kaizen อยู่ใต้) |
+| `catalog_id` | จับคู่กับ `kpi_catalog` เมื่อโรงงานเอามาใช้จริง — ว่างได้ |
+
+**ยอดที่ seed จริง: `318 แถว · fixed 189 · choice 90 · แถวแม่ 39 · 20 หน่วยงาน`**
+ตรวจแล้วว่า**จำนวน `Fixed`/`Choice` รายหน่วยงานตรงกับที่นับได้จาก PDF ทุกหน่วย** และ
+md5 รายหน่วยงานของ**ไฟล์ migration ตรงกับในฐานครบ 20/20** (ไฟล์ re-run ได้ผลเท่าเดิม)
+
+⚠️ **ยังไม่ seed 4 หน่วยงานสำนักงานใหญ่ TSA:** `Accounting-TSA` · `HRM-TSA` · `Internal Audit-TSA` · `AOBM-TSA`
+— ตารางต้นฉบับหน้า 16-18 มีข้อย่อยซ้อนหลายชั้น (4.1-4.9) ที่ถอดแล้วนับ Fixed/Choice ไม่ตรง PDF
+⇒ **ตั้งใจไม่ใส่ ดีกว่าใส่ผิด** (ESM เป็นระบบระดับโรงงาน ไม่ได้ให้บริการหน่วยงานเหล่านี้)
+
+⚠️ **Safety / QCC / Engineering Day / Kaizen / Environment / Energy Saving** — เอกสารเขียนแค่
+`*Refer to safety announcement` / `*Refer to activity announcement` ⇒ **เกณฑ์อยู่ในประกาศคนละฉบับที่ยังไม่มี**
+· user แจ้ง 21/09: *"แล้วแต่ประธานกิจจะแจ้ง ค่อยใส่ทีหลัง"* — seed หัวข้อไว้แล้ว **เว้นเกณฑ์ไว้ก่อน ห้ามเดา**
+
+**ชั้นโค้ด (`src/utils/kpiSetup.js` §6 · pure · มีเทส 5 เคส):**
+`KPI_STD_UNITS` (24 หน่วย + ธง `seeded`) · `stdUnitOf` / `stdUnitLabel` · `KPI_REQUIREMENTS` ·
+`isStdFixed` / `isStdParent` · `KPI_TOTAL_WEIGHT = 50` · `checkStdSelection(rows, stdItems)`
+→ คืน `{ weight, diff, ok, missingFixed }`
+· **`checkStdSelection` ใช้ "เตือน" เท่านั้น ห้ามเอาไปบล็อกการบันทึก** — ใบจริงบางใบก็ไม่ตรงมาตรฐาน
+  (TSAT เพิ่ม `Non NC Major` เองจริง) การบอกว่าไม่ตรงดีกว่าแอบแก้ให้หรือเงียบ
+· `stdUnitLabel` คืน**ชื่ออังกฤษตามเอกสาร**เมื่อไม่มีคำแปลไทยที่มั่นใจ (`QSM` · `CIC` · `CSC` · `RDPP`
+  · `Tooling` · `Head of SPG`) — **ห้ามเดาคำแปลตัวย่อที่เอกสารไม่ได้ขยายความ**
