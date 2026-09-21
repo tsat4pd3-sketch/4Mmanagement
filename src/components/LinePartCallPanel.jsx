@@ -26,6 +26,7 @@
 ═══════════════════════════════════════════════════════════════════════════════ */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadStorageLocations } from '../utils/useStorageLocations';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
@@ -102,11 +103,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         .order('requested_at', { ascending: true, nullsFirst: false }),
       // จุดส่งเป็นของเสริม (เฟส 4) — ตารางยังไม่ apply/โหลดไม่ได้ ห้ามลากทั้งแผงล้ม แค่ถือว่ายังไม่มีจุด
       supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active').contains('line_names', [lineName]),
-      // ทะเบียนรหัสคลัง = ของเสริม (ชั้นบัญชี) — ยังไม่ apply/โหลดไม่ได้ = ยังไม่ผูก ไม่ใช่ error ของแผง
-      supabaseDR.from('storage_locations').select('code, line_names, is_active'),
+      // ทะเบียนรหัสคลัง = master ที่แทบไม่เปลี่ยน → ผ่าน cache กลาง (ดู utils/useStorageLocations.js)
+      //   ห้ามกลับไปยิงตรง: เดิม 3 หน้ายิงคนละชุดคอลัมน์ = 850 ครั้ง/ครึ่งวัน
+      loadStorageLocations(),
     ]);
     setDpoints(dp.error ? [] : (dp.data || []));
-    setSlocs(sl.error ? [] : (sl.data || []));
+    setSlocs(sl || []);   // loader คืน [] เองเมื่อตารางยังไม่ apply — ไม่มี .error ให้เช็ค
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
        แยกให้ขาดจาก error จริง ไม่งั้นขึ้นแถบแดงให้ทุกคนดูทุกวันโดยไม่มีอะไรให้ทำ */
     const notReady = [lv, st, rq].some(r => r.error?.code === '42P01' || r.error?.code === '42703');
