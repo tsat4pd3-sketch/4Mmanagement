@@ -84,3 +84,57 @@ export function splitAlreadyDone(records, done) {
   }
   return { insert, covered };
 }
+
+/* ═══ 862 ≠ ใบส่งของทุกแถว — แถว forecast ระยะยาวต้องไม่กลายเป็นใบส่งของ ═════════
+   🔴 ที่มา (เกิดจริง 2026-09-19..20 · user: *"ก่อนเค้าใช้มันจะแดงๆ อยากให้เคลียร์ให้ก่อน"*)
+
+   ไฟล์ 862 ของ Ford = **1 เล่ม หลายชีต (ชีตละ ship-to)** และแต่ละชีตมี horizon ไม่เท่ากัน:
+     · ชีต GRBNA — `Forecast Time` ครบทุกแถว (278 แถว สถานะ F) = **ตารางส่งจริง**
+     · ชีต GBJWA/GBJWE/GBJWC — ช่องเวลา **ว่าง** ทอดยาวถึง ก.ย. 2027 = **แผนระยะยาว**
+   พอแก้บั๊ก "อ่านชีตเดียว" (18/09) ให้อ่านครบทุกชีต แถวแผนระยะยาวก็ไหลเข้ามาเป็น
+   `customer_shipping_orders` ด้วย ⇒ **1,361 ใบ / 2.0 ล้านชิ้น** ที่ไม่มีวันมีใครกดส่ง
+   จะทยอยเลยกำหนด **กลายเป็นสีแดงวันต่อวัน** บนบอร์ด Delivery
+
+   วัดจริง 21/09: ทั้ง 1,361 ใบ **ซ้ำกับ `customer_forecasts` ของ EDI 830 ครบ 100%**
+   (mat × เดือนเดียวกัน) — 830 คือเจ้าของแผนระยะยาวอยู่แล้ว 862 ไม่ควรมาถือซ้ำ
+
+   ⇒ กฎ: **ไม่มีเวลาส่ง + เลย horizon ที่มองเห็นได้ = แผน ไม่ใช่ใบส่งของ**
+      → ลง `customer_forecasts` (source `edi_862`) ไม่ใช่ `customer_shipping_orders`
+      · `dedupeForecastRows` ใน demandSupply.js ให้ **830 ชนะ** อยู่แล้ว ⇒ ไม่นับซ้ำ
+      · ที่ไหนไม่มี 830 แถวนี้ยังอยู่ ⇒ แผนไม่หาย (ห้ามทิ้งเงียบ)
+
+   ⚠️ **ห้ามตัดด้วย "ไม่มีเวลา" อย่างเดียว** — แถวไม่มีเวลาที่ตกใน horizon คือของใกล้ส่งจริง
+      (แค่ยังไม่รู้รอบรถ) หน้างานต้องเห็น ⇒ ยังเป็นใบส่งของเหมือนเดิม
+   ⚠️ **ห้ามตัดด้วย "ไกลเกิน horizon" อย่างเดียว** — แถวที่ *มีเวลา* = เที่ยวที่ยืนยันแล้ว
+      ต่อให้อยู่ไกลก็เป็นใบส่งของจริง
+   ═══════════════════════════════════════════════════════════════════════════════════ */
+
+/** กี่วันข้างหน้าที่ยังถือว่า "มองเห็น/วางแผนส่งได้จริง" — เกินนี้ + ไม่มีเวลา = แผนระยะยาว */
+export const FIRM_HORIZON_DAYS = 14;
+
+/** บวกวันแบบปฏิทินท้องถิ่น (ห้ามใช้ toISOString — คลาดวันเพราะ UTC) */
+export const addDays = (ymd, n) => {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * แยกแถว 862 เป็น "ใบส่งของจริง" กับ "แผนระยะยาว"
+ * @param {Array}  records แถวจากไฟล์ 862 ({shipTo, part, mat_no, date, time, qty, ...})
+ * @param {string} today   วันงานปัจจุบัน 'YYYY-MM-DD' — **ต้องส่งเข้ามา** (เทสตรึงค่าได้ ไม่ระเบิดเวลา)
+ * @param {number} horizonDays ค่าเริ่มต้น FIRM_HORIZON_DAYS
+ * @returns {{firm: Array, forecast: Array}}
+ */
+export function splitFirmVsForecast(records, today, horizonDays = FIRM_HORIZON_DAYS) {
+  const cut = addDays(today, horizonDays);
+  const firm = [], forecast = [];
+  for (const r of records || []) {
+    const noTime = !String(r?.time || '').trim();
+    const beyond = !!cut && !!r?.date && String(r.date) > cut;
+    (noTime && beyond ? forecast : firm).push(r);
+  }
+  return { firm, forecast };
+}
