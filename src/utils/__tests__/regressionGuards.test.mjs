@@ -54,6 +54,34 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'kpi-score-via-scoreDef',
+    scan: ['src/components', 'src/pages', 'src/lib'], ext: ['.jsx', '.js'],
+    // จับการเอา statusVsTarget ไปตัดสิน "แถว KPI" (ตัวมันมีแถบผ่อนผัน ±5% ที่เราคิดเอง)
+    re: /statusVsTarget\s*\(/g,
+    why: 'เกณฑ์ทางการของกลุ่มคือ **ถึง Target = 1 · ถึงแค่ Commitment = 0.5 · ไม่ถึง = 0** '
+       + '(หัวคอลัมน์ในประกาศบริษัท QSM-R2 001/2569 เขียนตรงตัว) แต่ statusVsTarget ใช้ "แถบ ±5%" '
+       + 'ที่เราคิดขึ้นเอง ⇒ 17/09/2026 วัดจริง: KPI แถวเดียวกันค่าเดียวกันได้ 3 คำตอบจาก 3 จอ '
+       + '(KpiMonthly = Y/N ไม่มีขั้น 0.5 · ObeyaKpiBoard = เหลืองจากแถบ ±5% · kpiSetup = 1/0.5/0) '
+       + 'และ CLAUDE.md เขียนห้ามไว้ตรงๆ ว่า "ห้ามคิดเกณฑ์สีเอง"',
+    fix: 'ใช้ scoreDef(value, defRow) จาก src/utils/kpiSetup.js (อ่านได้ทั้งคอลัมน์ใหม่และ direction/commitment เก่า) '
+       + 'แล้ว map sc.status → good/warn/bad/unknown',
+    allow: {
+      'src/components/ObeyaKpiBoard.jsx':
+        'เหลือ 2 จุดในแถบ SQDCM = ไฟเฝ้าระวัง**รายวัน** (plan% · OEE วันนี้) ไม่ใช่คะแนน KPI รายเดือน — มีคอมเมนต์เส้นแบ่งกำกับแล้ว',
+    },
+  },
+  {
+    id: 'kpi-level-not-boolean',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    // จับ ternary บนตัวแปรระดับคะแนนโดยตรง เช่น `yn ? 'Y' : 'N'` / `lv ? 'Y' : 'N'`
+    re: /\b(yn|ynTot|ynTotal|lv|level)\s*\?\s*['"]Y['"]\s*:\s*['"]N['"]/g,
+    why: 'ระดับคะแนน KPI เป็น 1 / 0.5 / 0 ไม่ใช่ boolean — **0.5 เป็นค่า truthy** '
+       + '⇒ ใบที่ได้แค่ครึ่งคะแนน (ถึง Commitment แต่ไม่ถึง Target) จะถูกพิมพ์เป็น "Y" สีเขียว '
+       + 'เหมือนผ่านเต็ม ทั้งบนจอและในไฟล์ Excel ฟอร์ม FM-HRM-6-022 ที่ส่งให้ QSM',
+    fix: "เทียบด้วย === 1 / === 0.5 เสมอ · สัญลักษณ์ทางการ ○ Achieve (1) · △ Improvement (0.5) · ✗ Miss goal (0)",
+    allow: {},
+  },
+  {
     id: 'actor-identity-via-setActor',
     scan: ['src'], ext: ['.jsx', '.js'],
     re: /setDrActorName\s*\(/g,
