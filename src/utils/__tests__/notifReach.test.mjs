@@ -36,6 +36,28 @@ test('admin/ผจก. ถูกยกเว้นจากตัวกรอง
   assert.equal(r.perEvent, 7);
 });
 
+test('🔴 inapp_scope_strict = ผจก./admin ถูกกรองตามส่วนงานเหมือนคนอื่น (21/09)', () => {
+  // ที่มา: ผจก. 4 คนได้ 50 แถว/วัน อ่านรวมกัน 2 จาก 2,920 เพราะ notify_recipients
+  // ยกเว้น admin/manager จากตัวกรองส่วนงานเสมอ · ธงนี้ปิดข้อยกเว้นเป็นรายกฎ
+  const rule = { inapp_roles: ['supervisor', 'manager'], inapp_match_section: true, inapp_scope_strict: true };
+  const r = reachOf(rule, raw({ people_all: 20, people_admin_mgr: 4, people_no_section: 2 }));
+  assert.equal(r.strict, true);
+  assert.equal(r.alwaysThrough, 2);              // เหลือแค่คนที่ยังไม่ได้ตั้งส่วนงาน (admin/ผจก. ไม่นับแล้ว)
+  assert.equal(r.perEvent, 2 + Math.round((20 - 2) / 5));
+  // คำเตือนต้องไม่พูดถึง "admin/ผจก. ระบบยกเว้นให้เสมอ" อีก แต่ยังเตือนเรื่องคนไม่มีส่วนงาน
+  const w = reachWarnings(rule, raw({ people_all: 20, people_admin_mgr: 4, people_no_section: 2 }));
+  assert.ok(!w.some(x => x.text.includes('ยกเว้นให้เสมอ')));
+  assert.ok(w.some(x => x.text.includes('ยังไม่ได้ตั้งส่วนงาน')));
+});
+
+test('ไม่ตั้ง strict = พฤติกรรมเดิมเป๊ะ (ค่า default ห้ามเปลี่ยนความหมายของกฎเก่า)', () => {
+  const base = { inapp_roles: ['supervisor', 'manager'], inapp_match_section: true };
+  const a = reachOf(base, raw({ people_all: 20, people_admin_mgr: 4, people_no_section: 2 }));
+  const b = reachOf({ ...base, inapp_scope_strict: false }, raw({ people_all: 20, people_admin_mgr: 4, people_no_section: 2 }));
+  assert.equal(a.alwaysThrough, 6);
+  assert.deepEqual(a, b);
+});
+
 test('ระบุส่วนงาน/แผนกเอง = ประมาณไม่ได้ → null (ห้ามเดาเป็นตัวเลข)', () => {
   const r = reachOf({ inapp_roles: ['supervisor'], inapp_sections: ['PD1'] }, raw());
   assert.equal(r.perEvent, null);
