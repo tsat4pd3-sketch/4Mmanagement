@@ -5,7 +5,7 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
-import resizeImg from '../utils/resizeImage';
+import resizeImg, { imgExt } from '../utils/resizeImage';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -61,7 +61,9 @@ async function logoDataUrl(overrideUrl) {
 }
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
-const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality);
+/* 🗜️ webp:true — รูปซ่อมคือ 39 MB/วันของ egress ฝั่ง DR (งานลด egress 2026-09-21)
+   ⚠️ นามสกุลไฟล์ต้องมาจาก imgExt(blob) เสมอ ห้าม hardcode '.jpg' (เบราว์เซอร์เก่าถอยไป JPEG เอง) */
+const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality, { webp: true });
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -734,7 +736,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.jpg`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -1962,7 +1964,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
         let imgWarn = null;
         if (afterFile) {
-          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.jpg`); }
+          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
         }
         /* 🔴 ต้องเช็คผลก่อนแตะสต็อก (audit 2026-09-02)
@@ -2041,7 +2043,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s, quality_related: QA_RELATED });
         // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
         if (qaFile) {
-          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.jpg`); }
+          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
         }
         if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
