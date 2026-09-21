@@ -9,6 +9,7 @@ import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช�
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_DIRECT, STAFF_INDIRECT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
+import { orphanDepts } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย (QA/MTN/JIG MTN/DIE MTN)
 
 import InfoMore from '../components/InfoMore';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
@@ -80,7 +81,8 @@ export default function AddUser() {
   const [emps, setEmps] = useState([]);      // ฐานพนักงาน — ใช้เป็นตัวตนของบัญชีแบบ 'person'
   const [empSearch, setEmpSearch] = useState('');
   const [posVer, setPosVer] = useState(0);   // bump เมื่อ master ตำแหน่งโหลดเสร็จ → dropdown/ป้ายระดับ re-render
-  const [deptOpts, setDeptOpts] = useState([]);   // แผนกจากผังองค์กร — ใช้ตอนเพิ่มคนเข้าฐานพนักงานจากหน้านี้
+  const [deptOpts, setDeptOpts] = useState([]);   // แผนกจากผังองค์กร — ใช้ตอนเพิ่มคนเข้าฐานพนักงาน
+  const [orphanDeptOpts, setOrphanDeptOpts] = useState([]);   // แผนกขึ้นตรงฝ่าย = ขอบเขตได้เหมือน sectionจากหน้านี้
   /* ➕ เพิ่มคนเข้าฐานพนักงานจากหน้านี้เลย (2026-09-21 · เฟส 1 ของ docs/IDENTITY-NOTIFY-DESIGN.md)
      เดิม: คนที่ไม่มีในทะเบียน (QA/PE/ธุรการ/สโตร์) หาไม่เจอใน dropdown → admin กดได้ทางเดียวคือ
      "บัญชีหน่วยงาน" ⇒ 32 บัญชีของคนจริงถูกติดป้ายผิด · null = ยังไม่ได้กดปุ่ม */
@@ -101,6 +103,12 @@ export default function AddUser() {
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
         setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').map(n => n.code || n.name))]);
+        /* 🔴 ขอบเขตต้องเลือก "แผนกขึ้นตรงฝ่าย" ได้ด้วย (2026-09-21 · feedback "ทำไม section ไม่ขึ้น")
+           ผังองค์กรมี section แค่ PD1-4 / Planning&Store / TEST · หน่วยงานสนับสนุน (QA · MTN ·
+           JIG MTN · DIE MTN) เป็น department ที่ `parent_id is null` = ขึ้นตรงฝ่าย ไม่มี section
+           ⇒ เดิมช่องติ๊กมีแต่ section ⇒ บัญชีที่ scope = 'JIG MTN' (6 ใบ) / 'QA' (6 ใบ)
+             **เปิดโมดัลมาแล้วไม่มีอะไรติ๊ก** ทั้งที่ตั้งไว้แล้ว = อ่านหน้าจอแล้วเข้าใจผิดว่ายังไม่ได้ตั้ง */
+        setOrphanDeptOpts(orphanDepts(nodes.filter(n => n.kind === 'department')).map(n => n.code || n.name));
       });
     supabase.from('employees')
       .select('id, employee_id_code, name, team, line_id, section, department, position, staff_kind')
@@ -1015,14 +1023,21 @@ export default function AddUser() {
                 </label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                   {sectionOpts.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล Section</span>}
-                  {sectionOpts.map(s => {
+                  {/* ส่วนงานผลิต + แผนกขึ้นตรงฝ่าย + ค่าเก่าที่ไม่อยู่ในทะเบียน
+                      (pattern เดียวกับ positionOptionsWith) — **ห้ามซ่อนค่าที่ตั้งไว้แล้ว**
+                      ไม่งั้นคนอ่านหน้าจอเข้าใจว่า "ยังไม่ได้ตั้ง" ทั้งที่ตั้งไว้ */}
+                  {[...new Set([...sectionOpts, ...orphanDeptOpts, ...form.sections])].map(s => {
                     const checked = form.sections.includes(s);
+                    const isOrphan  = orphanDeptOpts.includes(s);
+                    const offList   = !sectionOpts.includes(s) && !isOrphan;   // ค่าเก่านอกทะเบียน
                     return (
-                      <label key={s} style={{
+                      <label key={s} title={isOrphan ? 'แผนกขึ้นตรงฝ่าย — ไม่ได้สังกัดส่วนงานผลิต'
+                                          : offList ? 'ค่าเดิมที่ไม่มีในผังองค์กรแล้ว — ยังใช้งานอยู่ ติ๊กออกได้ถ้าไม่ต้องการ' : ''}
+                        style={{
                         display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
                         padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
                         background: checked ? 'rgba(77,159,255,0.15)' : 'var(--bg2)',
-                        border: `1px solid ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
+                        border: `1px ${offList ? 'dashed' : 'solid'} ${checked ? 'rgba(77,159,255,0.5)' : 'var(--border2)'}`,
                         color: checked ? '#4d9fff' : 'var(--text2)',
                       }}>
                         <input
@@ -1031,14 +1046,15 @@ export default function AddUser() {
                           onChange={() => setF('sections', checked ? form.sections.filter(x => x !== s) : [...form.sections, s])}
                           style={{ margin: 0 }}
                         />
-                        {s}
+                        {isOrphan ? `🏛️ ${s}` : s}{offList ? ' ⚠' : ''}
                       </label>
                     );
                   })}
                 </div>
                 {/* กติกาสำคัญ (ไม่ติ๊ก = เห็นทุกส่วนงาน) เห็นตลอด · เหตุผล/ข้อควรระวังพับไว้ */}
                 <InfoMore size={11} style={{ marginTop: 4 }} id="au_sections"
-                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b></>}>
+                  lead={<>เลือกได้หลายส่วนงาน — เห็นข้อมูลเฉพาะที่ติ๊ก · <b>ไม่ติ๊กเลย = เห็นทุกส่วนงาน</b>
+                    {orphanDeptOpts.length > 0 && <> · 🏛️ = <b>แผนกขึ้นตรงฝ่าย</b> (QA / ช่าง — ไม่ได้สังกัดส่วนงานผลิต)</>}</>}>
                   ใช้ได้กับทุกชุดสิทธิ์ (เช่น สิทธิ์ทั้งฝ่าย ที่ดูแลเฉพาะบางส่วน)
                   <br />💡 ขอบเขตนี้มีผลกับ<b>ข้อมูลฝ่ายผลิต</b> (พนักงาน/ไลน์/เช็คชื่อ/รายงาน) — สาย Logistic/Store/ขาย <b>ไม่ต้องติ๊ก</b> เพราะโมดูล Logistic ไม่ได้แบ่งข้อมูลตามส่วนงาน ใช้ Role คุมการเข้าหน้าแทน
                 </InfoMore>
