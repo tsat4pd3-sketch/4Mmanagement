@@ -18,11 +18,17 @@
       แล้วอัปเดต**ทุกแถวที่ชี้รูปนั้น** ก่อนลบ — ไม่งั้นไลน์อื่นรูปหาย
    3. **บีบแล้วไม่เล็กลงจริง = ไม่ต้องเปลี่ยน** (ปล่อยของเดิมไว้ ดีกว่าเสี่ยงเปล่าๆ)
    4. รูปไหนพัง/โหลดไม่ได้ = ข้ามแล้วรายงาน **ห้ามหยุดทั้งชุด** (ผังใบเดียวเสียไม่ควรบล็อกที่เหลือ)            */
-import { compressLayoutImage } from './layoutImage.js';
+import { compressLayoutImage, compressPhotoImage } from './layoutImage.js';
 import { uploadOpts } from './storageUpload.js';
 
-/** เล็กกว่านี้ถือว่าโอเคแล้ว ไม่ต้องแตะ (บีบต่อได้นิดเดียว แต่เสี่ยงเท่าเดิม) */
+/** รูปผัง: เล็กกว่านี้ถือว่าโอเคแล้ว ไม่ต้องแตะ (บีบต่อได้นิดเดียว แต่เสี่ยงเท่าเดิม) */
 export const RECOMPRESS_MIN_BYTES = 600 * 1024;
+
+/** รูปจุดตรวจ PM: ไฟล์เล็กกว่ารูปผังมาก (เฉลี่ย ~100 KB) แต่มีเป็นพัน ⇒ เกณฑ์ต่ำกว่า */
+export const PHOTO_MIN_BYTES = 40 * 1024;
+
+/** จำนวนไฟล์ต่อการกด 1 ครั้ง — รูป PM มี ~1,000 ไฟล์ ทำรวดเดียวนานเกินไปและปิดหน้าไม่ได้ */
+export const RECOMPRESS_BATCH = 150;
 
 /** ต้องเล็กลงอย่างน้อยเท่านี้ถึงจะยอมสลับไฟล์ */
 export const RECOMPRESS_MIN_GAIN = 0.20;   // 20%
@@ -51,7 +57,11 @@ export function groupByUrl(rows, urlOf) {
  * บีบรูปผังหนึ่งใบแล้วสลับไฟล์
  * @returns {Promise<{status:'done'|'skip'|'error', before?:number, after?:number, msg?:string}>}
  */
-async function recompressOne({ storage, url, newPathOf, saveRows, oldName }) {
+async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBytes = RECOMPRESS_MIN_BYTES, compress = compressLayoutImage }) {
+  // ไฟล์ที่เป็น webp อยู่แล้ว = เคยผ่านตัวนี้มาแล้ว ⇒ ข้ามโดยไม่ต้องโหลดลงมาเสียเปล่า
+  // (ทำให้กดซ้ำได้เรื่อยๆ ปลอดภัย — สำคัญมากเพราะรูป PM มีเป็นพันไฟล์ ต้องทำหลายรอบ)
+  if (/\.webp$/i.test(String(oldName || ''))) return { status: 'skip', msg: 'เป็น WebP แล้ว' };
+
   let blob;
   try {
     const res = await fetch(url, { cache: 'no-store' });
@@ -60,10 +70,10 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName }) {
   } catch (e) { return { status: 'error', msg: 'โหลดรูปไม่ได้: ' + (e?.message || e) }; }
 
   const before = blob.size;
-  if (before < RECOMPRESS_MIN_BYTES) return { status: 'skip', before, msg: 'เล็กอยู่แล้ว' };
+  if (before < minBytes) return { status: 'skip', before, msg: 'เล็กอยู่แล้ว' };
 
   let out;
-  try { out = await compressLayoutImage(blob); }
+  try { out = await compress(blob); }
   catch (e) { return { status: 'error', before, msg: 'บีบไม่สำเร็จ: ' + (e?.message || e) }; }
 
   const after = out.blob.size;
@@ -91,10 +101,11 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName }) {
  * @param {object}   o.supabase   client ฝั่ง Main
  * @param {object}   o.supabaseDR client ฝั่ง DR
  * @param {function} o.onProgress (text, doneCount, total) — อัปเดตข้อความบนจอ
- * @returns {Promise<{done:number, skip:number, error:number, savedBytes:number, errors:string[]}>}
+ * @param {number}   [o.limit]  ทำแค่กี่ไฟล์ต่อรอบ (0 = ไม่จำกัด) — ที่เหลือคืนใน `remaining`
+ * @returns {Promise<{done:number, skip:number, error:number, savedBytes:number, remaining:number, errors:string[]}>}
  */
-export async function recompressLayouts({ supabase, supabaseDR, onProgress = () => {} }) {
-  const sum = { done: 0, skip: 0, error: 0, savedBytes: 0, errors: [] };
+export async function recompressLayouts({ supabase, supabaseDR, onProgress = () => {}, limit = RECOMPRESS_BATCH }) {
+  const sum = { done: 0, skip: 0, error: 0, savedBytes: 0, remaining: 0, errors: [] };
   const jobs = [];
 
   /* 1) ผังไลน์ — Main · bucket employee-photos · layouts/ */
@@ -144,15 +155,47 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     });
   });
 
-  for (let i = 0; i < jobs.length; i++) {
-    const j = jobs[i];
-    onProgress(`กำลังบีบ: ${j.label}`, i, jobs.length);
+  /* 4) รูปอ้างอิงจุดตรวจ PM + เฟรมหมุน — DR · bucket jig-images · jigs/
+        **ก้อนใหญ่สุดฝั่ง Storage ของ DR: 90.1 MB/วัน** (1,014 ไฟล์ = 102 MB)
+        ⚠️ path เดียวถูกอ้างจาก **3 ตาราง** (jig_images · jigs · jig_checkpoints) ⇒ ต้องอัปเดตครบทั้ง 3
+           ก่อนลบไฟล์เก่า ไม่งั้นรูปหายจากจอใดจอหนึ่งแบบไม่รู้ตัว */
+  const [jiRes, jgRes, cpRes] = await Promise.all([
+    supabaseDR.from('jig_images').select('image_path').not('image_path', 'is', null),
+    supabaseDR.from('jigs').select('image_path').not('image_path', 'is', null),
+    supabaseDR.from('jig_checkpoints').select('image_path').not('image_path', 'is', null),
+  ]);
+  const photoPaths = [...new Set([...(jiRes.data || []), ...(jgRes.data || []), ...(cpRes.data || [])]
+    .map(r => r.image_path).filter(p => p && p.startsWith('jigs/') && !/\.webp$/i.test(p)))];
+  photoPaths.forEach((p) => {
+    const { data: pub } = drStore.getPublicUrl(p);
+    jobs.push({
+      label: `รูป PM ${p.split('/').pop()}`,
+      url: pub.publicUrl, oldName: p, storage: drStore,
+      minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
+      newPathOf: ext => `${p.replace(/\.[^./]+$/, '')}.${ext}`,
+      saveRows: async (newPath) => {
+        // อัปเดตทั้ง 3 ตารางที่อาจชี้ path นี้ — ตัวไหนล้มถือว่าล้มทั้งงาน (ผู้เรียกจะลบไฟล์ใหม่ทิ้ง)
+        for (const t of ['jig_images', 'jigs', 'jig_checkpoints']) {
+          const r = await supabaseDR.from(t).update({ image_path: newPath }).eq('image_path', p);
+          if (r.error) return r;
+        }
+        return { error: null };
+      },
+    });
+  });
+
+  const total = jobs.length;
+  const batch = limit > 0 ? jobs.slice(0, limit) : jobs;
+  for (let i = 0; i < batch.length; i++) {
+    const j = batch[i];
+    onProgress(`กำลังบีบ: ${j.label}`, i, batch.length);
     const r = await recompressOne(j);
     if (r.status === 'done') { sum.done++; sum.savedBytes += (r.before - r.after); }
     else if (r.status === 'skip') sum.skip++;
     else { sum.error++; sum.errors.push(`${j.label} — ${r.msg}`); }
   }
-  onProgress('เสร็จแล้ว', jobs.length, jobs.length);
+  sum.remaining = Math.max(0, total - batch.length);
+  onProgress('เสร็จแล้ว', batch.length, batch.length);
   return sum;
 }
 

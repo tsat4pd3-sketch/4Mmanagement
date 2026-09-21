@@ -36,25 +36,42 @@ const extOfType = (type) => ({
 }[String(type || '').toLowerCase()] || 'jpg');
 
 /**
- * บีบรูปผังก่อนอัปโหลด — คืนทั้ง blob และนามสกุลที่ตรงกับชนิดจริง
+ * บีบรูปเป็น WebP — คืนทั้ง blob และนามสกุลที่ **ตรงกับชนิดจริงที่ได้** (ห้ามเดา)
  *
  * GIF ส่งผ่านทั้งไฟล์ (บีบแล้วการเคลื่อนไหวหาย) — ผู้เรียกต้องกันขนาด GIF เองก่อน
  * ตามกฎเดิมใน ImageCropModal
  *
  * @param {File|Blob} file ไฟล์ที่ผู้ใช้เลือก (ผ่าน toDecodableImage มาแล้ว)
+ * @param {object}    [o]
+ * @param {number}    [o.maxPx]   ความละเอียดสูงสุด
+ * @param {number}    [o.maxMB]   เพดานขนาดไฟล์
+ * @param {number}    [o.quality] คุณภาพตั้งต้น
  * @returns {Promise<{blob: Blob, ext: string}>}
  */
-export async function compressLayoutImage(file) {
-  const isGif = file.type === 'image/gif';
-  if (isGif) return { blob: file, ext: 'gif' };
+export async function compressToWebp(file, { maxPx = LAYOUT_MAX_PX, maxMB = LAYOUT_MAX_MB, quality = 0.9 } = {}) {
+  if (file.type === 'image/gif') return { blob: file, ext: 'gif' };
   const blob = await imageCompression(file, {
-    maxSizeMB: LAYOUT_MAX_MB,
-    maxWidthOrHeight: LAYOUT_MAX_PX,
-    initialQuality: 0.9,
+    maxSizeMB: maxMB,
+    maxWidthOrHeight: maxPx,
+    initialQuality: quality,
     fileType: 'image/webp',   // ← หัวใจของการลด egress · เบราว์เซอร์ที่เขียนไม่ได้จะคืนชนิดเดิมมา
   });
   // ชนิดที่ "ได้จริง" อาจไม่ใช่ webp (Safari เก่า) — ใช้ตัวนั้นตั้งนามสกุลเสมอ
   return { blob, ext: extOfType(blob.type || file.type) };
 }
+
+/** รูปผัง (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร) — ความละเอียดสูง ห้ามลด */
+export const compressLayoutImage = (file) => compressToWebp(file);
+
+/* ── รูปอ้างอิงจุดตรวจ PM / เฟรมหมุน ────────────────────────────────────────
+   วัดจริง 16/09: `jig-images/jigs/` = **90.1 MB/วัน** (1,033 ครั้ง × 89 KB) = ก้อนใหญ่สุด
+   ฝั่ง Storage ของ DR · ของที่เก็บอยู่ 1,014 ไฟล์ = 102 MB (JPEG 676 + PNG 338)
+   ⚠️ รูปพวกนี้ **เคยถูกบีบมาแล้วรอบหนึ่ง** (JPEG q ต่ำ) ⇒ บีบซ้ำเป็น lossy อีกทีจะเสียคุณภาพซ้ำซ้อน
+      จึง **ไม่ลดความละเอียดเพิ่ม** (maxPx สูงพอที่จะไม่ไปย่อของเดิม) และใช้ quality สูง 0.85
+      ได้ขนาดลดจากการเปลี่ยน**ฟอร์แมต**เป็นหลัก ไม่ใช่จากการทิ้งรายละเอียด                       */
+export const PHOTO_MAX_PX = 2000;
+export const PHOTO_MAX_MB = 0.35;
+export const compressPhotoImage = (file) =>
+  compressToWebp(file, { maxPx: PHOTO_MAX_PX, maxMB: PHOTO_MAX_MB, quality: 0.85 });
 
 export default compressLayoutImage;

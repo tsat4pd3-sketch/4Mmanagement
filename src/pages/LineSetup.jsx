@@ -602,7 +602,7 @@ export default function LineSetup({ embedded = false } = {}) {
      รูปที่อัปหลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว (compressLayoutImage) · ดู src/utils/recompressLayouts.js */
   const handleRecompress = async () => {
     if (squeeze) return;
-    if (!window.confirm('บีบรูปผังทั้งหมดที่อัปไว้แล้วให้เล็กลง?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก — ทำครั้งเดียวพอ\nระหว่างนี้อย่าปิดหน้านี้')) return;
+    if (!window.confirm('บีบรูปที่อัปไว้แล้วให้เล็กลง (ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM)?\n\nความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก\nทำทีละ 150 ไฟล์ต่อครั้ง — ถ้ายังเหลือ ระบบจะบอกให้กดซ้ำ (กดซ้ำได้ ไม่ทำของเดิมพัง)\nระหว่างนี้อย่าปิดหน้านี้')) return;
     setSqueeze('กำลังเริ่ม…');
     try {
       const r = await recompressLayouts({
@@ -610,8 +610,10 @@ export default function LineSetup({ embedded = false } = {}) {
         onProgress: (text, i, n) => setSqueeze(`${text} (${i}/${n})`),
       });
       const mb = (r.savedBytes / 1048576).toFixed(1);
-      if (r.error) toast.error(`บีบเสร็จ ${r.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${r.skip} · ไม่สำเร็จ ${r.error}: ${r.errors[0]}`);
-      else toast.success(`บีบรูปผังเสร็จ ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip} ใบ (เล็กอยู่แล้ว)`);
+      const more = r.remaining ? ` · ⏭️ เหลืออีก ${r.remaining} ไฟล์ — กดปุ่มนี้ซ้ำได้เลย` : '';
+      if (r.error) toast.error(`บีบเสร็จ ${r.done} ใบ (ประหยัด ${mb} MB) · ข้าม ${r.skip} · ไม่สำเร็จ ${r.error}: ${r.errors[0]}${more}`);
+      else if (r.remaining) toast.info(`บีบเสร็จ ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip}${more}`);
+      else toast.success(`บีบรูปเสร็จครบแล้ว ${r.done} ใบ — ประหยัด ${mb} MB · ข้าม ${r.skip} ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว)`);
       await fetchLineData();   // URL ผังของไลน์นี้เปลี่ยนไปแล้ว ต้องโหลดใหม่ ไม่งั้นจอค้างรูปที่ถูกลบ
     } catch (err) {
       toast.error('บีบรูปผังไม่สำเร็จ: ' + (err?.message || err));
