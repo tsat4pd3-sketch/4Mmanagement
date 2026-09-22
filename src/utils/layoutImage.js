@@ -74,4 +74,16 @@ export const PHOTO_MAX_MB = 0.35;
 export const compressPhotoImage = (file) =>
   compressToWebp(file, { maxPx: PHOTO_MAX_PX, maxMB: PHOTO_MAX_MB, quality: 0.85 });
 
+/* ── สกรีนช็อตแนบ feedback (2026-09-22) ──────────────────────────────────────
+   คนละโจทย์กับ "รูปถ่าย": สกรีนช็อตคือ**ตัวหนังสือ** ย่อความละเอียดลงนิดเดียวก็อ่านไม่ออกทันที
+   (ผู้แจ้งวงกรอบสีชี้ปุ่ม/คอลัมน์เล็กๆ — ย่อแล้วไม่รู้ว่าชี้อะไร = รูปเสียเปล่า)
+   ⇒ **คงความละเอียดไว้สูง (1920px) แล้วลดขนาดด้วยการเปลี่ยนฟอร์แมตเป็น WebP แทน**
+      หลักเดียวกับรูปผัง ต่างแค่เพดาน px (สกรีนช็อตไม่ต้องซูมลึกเท่าผังไลน์)
+   · quality 0.85 — ต่ำกว่านี้ตัวหนังสือเริ่มมี ringing รอบขอบตัวอักษร
+   · เพดาน 0.5 MB ต่อรูป · แนบได้ 4 รูป ⇒ แย่สุด 2 MB/เรื่อง (feedback ไม่ได้ส่งบ่อยเท่ารูปผลิต) */
+export const SHOT_MAX_PX = 1920;
+export const SHOT_MAX_MB = 0.5;
+export const compressScreenshotImage = (file) =>
+  compressToWebp(file, { maxPx: SHOT_MAX_PX, maxMB: SHOT_MAX_MB, quality: 0.85 });
+
 export default compressLayoutImage;
