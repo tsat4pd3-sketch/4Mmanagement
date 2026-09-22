@@ -151,7 +151,10 @@ async function loadProduction(ctx) {
   const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
     supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
-    supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status, created_by_name').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
+    /* ⚠️ `four_m_logs` **ไม่มีคอลัมน์ `created_by_name`** (มีแต่ `created_by`) — เคยใส่ไว้แล้ว
+       คิวรีล้มทั้งก้อน ⇒ การ์ด "4M รออนุมัติ" ขึ้น 0 ทั้งที่ค้างจริง 16 ใบ (วัดจากฐาน 22/09)
+       และค่านี้ไม่เคยถูกอ่านที่ไหนในหน้านี้เลย ⇒ ตัดออก ไม่ใช่เปลี่ยนเป็น created_by */
+    supabase.from('four_m_logs').select('id, work_date, line_name, category, description, status').in('status', ['pending', 'pending_qa']).order('work_date', { ascending: true }).limit(100),
     supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', workDate),
     supabase.from('employees').select('id, line_id').eq('is_active', true),
     // กะค้างจากวันก่อนที่ยังไม่ปิด/ไม่อนุมัติ — คิว escalation (2026-08-25 · "บีบให้เคลียร์ใน 7 วัน")

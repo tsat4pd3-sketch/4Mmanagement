@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -21,6 +21,7 @@ import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
+import { useSearchParams } from 'react-router-dom';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
@@ -356,9 +357,12 @@ export default function OEEAnalytics() {
   /* ══════════════════════════════════════════════════════════════════════
      TAB: TODAY — real-time single-day monitoring dashboard
      ══════════════════════════════════════════════════════════════════════ */
-  const [tdDate,   setTdDate]   = useState(() => getWorkDateStr());
+  /* 🔗 รับตัวกรองที่ "เจาะมา" จากหน้าอื่น (2026-09-22 · user: เจาะจาก OBEYA ที่กรอง PD3 ไว้
+     แล้วต้องมากรองใหม่อีกรอบ) — `?section=` / `?date=` · ไม่มีก็ใช้ค่าเริ่มต้นเดิมเป๊ะ */
+  const [urlParams] = useSearchParams();
+  const [tdDate,   setTdDate]   = useState(() => urlParams.get('date') || getWorkDateStr());
   const [tdShift,  setTdShift]  = useState('');
-  const [tdSection,setTdSection]= useState('');
+  const [tdSection,setTdSection]= useState(() => urlParams.get('section') || '');
   const [tdDept,   setTdDept]   = useState('');
   const [tdLine,   setTdLine]   = useState('');
   const [tdTeam,   setTdTeam]   = useState('');
@@ -387,6 +391,20 @@ export default function OEEAnalytics() {
     const fromOrg = orgSections.filter(sec => inLines.has(sec));
     return fromOrg.length ? fromOrg : [...inLines].sort();
   }, [orgSections, linesFull]);
+
+  /* ⚠️ ส่วนงานที่เจาะมาอาจ **อยู่นอกขอบเขตของคนที่กดเปิดลิงก์** (คนละ role/scope)
+     ปล่อยไว้ = จอกรองด้วยค่าที่ตัวเองไม่มีสิทธิ์ แล้วได้ผลว่าง "เหมือนไม่มีข้อมูล"
+     ⇒ เคลียร์ทิ้งแล้วบอกบนจอ (กฎ: ห้ามล้มเหลวเงียบ) · เช็คครั้งเดียวตอนทะเบียนไลน์โหลดเสร็จ */
+  const secFromUrlDone = useRef(false);
+  useEffect(() => {
+    if (secFromUrlDone.current || !linesFull.length) return;
+    secFromUrlDone.current = true;
+    const want = urlParams.get('section');
+    if (want && !sectionOptions.includes(want)) {
+      setTdSection('');
+      toast.info(`ไม่มีสิทธิ์ดูส่วนงาน "${want}" ที่เจาะมา — แสดงทุกส่วนงานที่คุณเห็นได้แทน`);
+    }
+  }, [linesFull.length, sectionOptions, urlParams]);
 
   // แผนก/กลุ่มไลน์ = ไลน์รากในส่วนงาน (ไม่มีแม่ในทะเบียน) — LineSelect ตัดปลดระวาง/จัดลำดับให้
   const rootLines = useMemo(() => {
