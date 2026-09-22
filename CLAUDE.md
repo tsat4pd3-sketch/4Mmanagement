@@ -369,10 +369,17 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## MTN Work-Order — ใบแจ้งซ่อม MO 7 ขั้น (2026-07-14)
+## MTN Work-Order — ใบแจ้งซ่อม MO (`/mtn-repair`) · JIG/DIE/PD 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**
 
-หน้า `/mtn-repair` (`MtnRepair.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — clone ระบบ AppSheet เดิม (Jig MTN) มาอยู่ใน ESM เพื่อไม่ต้องแยกระบบ + เก็บฐานข้อมูลเดียวกัน · ตารางทั้งหมดอยู่ DR project (anon-open ตาม convention)
+ตารางอยู่ DR project (anon-open) · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ แตกสาขาด้วย
+`stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** — มีด่าน regressionGuards
 > 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`
+
+## 🔍 QC 7 Tools · `/mtn-analysis` (2026-09-22)
+
+สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` — **โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่**
+· 🔴 แยกชนิดสินทรัพย์ด้วย `machines.equipment_kind` **ห้ามใช้ `mtn_dept`** (89% ของใบเป็นทีม production ปนทุกชนิด)
+> 📄 `docs/modules/mtn-problem-analysis.md`
 
 ---
 
