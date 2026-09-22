@@ -779,14 +779,23 @@ export default function ProductMaster() {
             เหตุผล: ของที่ผ่านมาคนเริ่มจากแท็บ Products (แท็บแรก) แล้วคีย์ BOM แยกใบของใครของมัน
             ⇒ ของชิ้นเดียวถูกคีย์ซ้ำหลายใบ = ต้นเหตุ "แถวนับซ้ำ" ทั้งฐาน (ดู docs/modules/bom-levels.md)
             ⚠️ default ของ `useTabParam` ยังเป็น 'products' — ลิงก์เก่า/บุ๊กมาร์กไม่เปลี่ยนปลายทาง */}
-        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' }, { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].map(t => (
+        {/* 🧱 ขีดคั่น (2026-09-22 · user ถามว่าลูกค้า/supplier ควรย้ายไป setup program มั้ย)
+            ไม่ย้ายหน้า — `/products` อยู่ในหมวด "ตั้งค่าโปรแกรม,ฐานข้อมูล" อยู่แล้ว และ 2 ทะเบียนนี้
+            ถูกแก้ "ระหว่างคีย์ข้อมูลสินค้า" ย้ายออกไปคนละหน้า = ต้องสลับหน้าไปมา
+            แค่คั่นให้เห็นว่า **ลำดับงาน** จบที่ 🎴 Kanban Std · หลังขีดคือทะเบียนย่อย/เครื่องมือ */}
+        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' },
+          { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
+          { key:'customers', label:'🏷️ ลูกค้า', sep: true }, { key:'suppliers', label:'🏭 Supplier' },
+          { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].flatMap(t => [
+          t.sep ? <span key={`sep-${t.key}`} title="ทะเบียนย่อย / เครื่องมือ — ไม่ใช่ลำดับงาน"
+            style={{ alignSelf:'stretch', width:1, background:'var(--border)', margin:'2px 8px', flexShrink:0 }} /> : null,
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
               color: mainTab===t.key ? '#08130a' : 'var(--muted)', fontFamily:'var(--font-body)' }}>
             {t.label}
-          </button>
-        ))}
+          </button>,
+        ])}
       </div>
 
       {mainTab === 'products' && (<>
