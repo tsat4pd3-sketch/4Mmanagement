@@ -11,10 +11,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, QA_SKIP_REASON_PURPOSE, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -137,7 +137,7 @@ const MO_LIST_COLS = [
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
-  'cost_mgr_at', 'mtn_head_at',                       // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 7/8/9)
+  'mtn_head_at', 'approve_at',                        // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 6/7/8)
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -160,19 +160,20 @@ const SAT_LEVELS = [
 ];
 const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
 const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
-/* ⚠️ ใบ MTN มี **9 ขั้น** ตาม WI (2026-09-22) — ขั้น 7 ผจก.แผนกที่แจ้งอนุมัติ (ยังไม่ปิด) ⇒ `mtn_approved`
-   · ขั้น 8 หัวหน้าแผนก MTN ตรวจ (ยังไม่ปิด) ⇒ `mtn_head_checked`
-   · ขั้น 9 ผจก.ซ่อมบำรุงปิดจบ ⇒ `mtn_closed` · ฟอร์มอื่นขั้น 7 = ปิดใบเหมือนเดิม
-   ⚠️ `mtn_head_checked` เป็น event ใหม่ที่ edge ยังไม่รู้จัก ⇒ `send-mtn-notification` ตอบ
-      **400 unknown event แล้วไม่ส่งอะไรเลย** (fail-safe — ไม่ใช่ "ส่งข้อความผิด") การแจ้งเตือน
-      ขั้นนี้จะเริ่มทำงานเมื่อ deploy edge รอบถัดไป · ดู docs/modules/mtn-work-order.md */
-const STEP_EVENT = { 1: 'mtn_reported', 2: 'mtn_assigned', 3: 'mtn_repaired', 4: 'mtn_checked', 5: 'mtn_qa', 6: 'mtn_handover', 7: 'mtn_closed', 8: 'mtn_closed', 9: 'mtn_closed' };
-const stepEventOf = (step, mtnForm) => {
-  if (!mtnForm) return STEP_EVENT[step];
-  if (step === 7) return 'mtn_approved';
-  if (step === 8) return 'mtn_head_checked';
-  return STEP_EVENT[step];
+/* event แจ้งเตือนต่อ "จังหวะงาน" (stage) ไม่ใช่เลขขั้น — เลขขั้นเดียวกันคนละความหมายระหว่าง
+   2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN) ⇒ ผูกกับเลขเมื่อไหร่ก็ส่งผิดเมื่อนั้น
+   ⚠️ `mtn_head_checked` / `mtn_approved` เป็น event ที่ edge ยังไม่รู้จัก ⇒ `send-mtn-notification`
+      ตอบ **400 unknown event แล้วไม่ส่งอะไรเลย** (fail-safe — ไม่ใช่ "ส่งข้อความผิด") การแจ้งเตือน
+      2 ขั้นนี้จะเริ่มทำงานเมื่อ deploy edge รอบถัดไป · ดู docs/modules/mtn-work-order.md */
+const STAGE_EVENT = {
+  report: 'mtn_reported', assign: 'mtn_assigned', service: 'mtn_repaired',
+  accept_work: 'mtn_checked', qa: 'mtn_qa', handover: 'mtn_handover',
+  close: 'mtn_closed',
+  mtn_head: 'mtn_head_checked',     // ขั้น 6 ใบ MTN — หัวหน้าแผนกช่างตรวจงาน (ยังไม่ปิด)
+  mtn_approve: 'mtn_approved',      // ขั้น 7 ใบ MTN — ผจก.ช่างอนุมัติ (ยังไม่ปิด)
+  cost_mgr_close: 'mtn_closed',     // ขั้น 8 ใบ MTN — ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ
 };
+const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -180,8 +181,10 @@ const stepEventOf = (step, mtnForm) => {
 const stepPerms = (role) => ({ can: (a) => can('mtn_repair', a, role), seeded: (a) => isActionSeeded('mtn_repair', a) });
 
 /* ใบนี้ใช้ฟอร์ม/ขั้นตอนของทีม MTN (FM-MTN-006) ไหม — JIG/DIE/PRODUCTION ใช้ FM-JIG-008 เหมือนเดิม
+   🔴 นิยามจริงย้ายไป `mtnMoForm.js` (pure) แล้ว 2026-09-22 — เพราะกติกา "ลูป MTN ไม่มี QA"
+      ต้องตัดสินได้จากฝั่ง util ด้วย (qaAppliesTo/moStatusLabel) ⇒ เขียนไว้ 2 ที่ = เพี้ยนกันแน่
    ⚠️ เกณฑ์นี้ถูกใช้ 5 ที่ (ฟอร์มแจ้ง · ขั้นตอน · ป้ายขั้น · ด่านอนุมัติ · ใบพิมพ์) — ห้ามเขียนซ้ำในหน้า */
-const isMtnFormOrder = (o) => teamKeyOf(o?.mtn_dept || deptForItem(o?.item_type)) === 'maintenance';
+const isMtnFormOrder = isMtnFormRow;
 
 const notifyMtn = (payload, event) => {
   // ⚠️ DB เก็บ mtn_dept เป็น "รหัสทีม" แต่ข้อความ Telegram ต้องอ่านออก → ส่งเป็น "ชื่อทีม" ไปใน payload
@@ -928,11 +931,13 @@ function nextStepFor(order) {
     case 'assigned':
     case 'repairing': return S(3);
     case 'repaired':  return S(4);
-    case 'checked':   return isWaitingQa(order) ? S(5) : S(6);   // ขั้น 5 มีเงื่อนไข — ข้ามได้ด้วยปุ่ม ⏭ (canSkipQa)
-    case 'qa':        return S(6);
-    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (7 ผจก.แผนกที่แจ้ง · 8 หัวหน้าแผนก MTN · 9 ปิดใบ)
+    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE — ข้ามได้ด้วยปุ่ม ⏭ canSkipQa) · ของใบ MTN ขั้น 5 คือ "รับมอบ"
+       อยู่แล้ว (ลูปนี้ไม่มี QA) ⇒ isWaitingQa เป็น false เสมอ แล้วลงมาที่ขั้นรับมอบของฟอร์มนั้นเอง */
+    case 'checked':   return isWaitingQa(order) ? S(5) : S(mtnForm ? 5 : 6);
+    case 'qa':        return S(6);   // ใบ MTN ไปไม่ถึงสถานะนี้ (ไม่มี QA ในลูป)
+    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
        — แยกด้วย **เวลาเซ็นจริง** ผ่าน mtnCloseStage() ไม่ใช่ current_step (ใบเก่ามีเลขปนกัน) */
-    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 7) : S(7);
+    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 6) : S(7);
     default:          return null;
   }
 }
@@ -1559,18 +1564,22 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
        · ก่อนรับมอบ = กล่องจางว่างเปล่า อ่านเหมือน "ค้างรอ QA"
        · หลังรับมอบ (current_step ขยับเป็น 6-7) = ขึ้น ✅ เขียว **เหมือน QA ตรวจจริงทั้งที่ไม่มีใครตรวจ**
      → ใช้ `moQaState(o)` (mtnStepPerm.js) เป็นเกณฑ์เดียว แล้ววาดชิป/หมายเหตุ "ข้าม" ค้างไว้ตลอดอายุใบ */
-  const qa5 = moQaState(o);
+  /* ⚠️ ฟอร์ม MTN ไม่มีขั้น QA เลย (ขั้น 5 ของมันคือ "รับมอบ") — กล่อง ⏭ นี้จึงต้องไม่ไปโผล่ทับ
+     กล่องรับมอบ · ใบ MTN แสดงคำอธิบาย "ลูปนี้ไม่มี QA" ไว้ท้ายชุดขั้นตอนแทน */
+  const qa5 = mtnForm ? 'none' : moQaState(o);
   const qa5Note = qa5 === 'skipped' ? (
     <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-      ⏭ <b>ไม่ต้องตรวจ QA — {qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
+      ⏭ <b>ไม่ต้องตรวจ QA — {mtnForm ? 'ใบซ่อมของทีม MTN ไม่มีขั้น QA ในลูป' : qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
       <div style={{ color: 'var(--text2)' }}>
-        {/* 3 ที่มาของ "ข้าม" ต้องแยกให้ออก: QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน (2026-09-15) */}
-        {isQaSkipped(o)
-          ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
-          : !qaAppliesTo(o)
-            ? <>{QA_SKIP_REASON_PURPOSE} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ถ้าอยากให้ตรวจจริง QA ยังบันทึกผลที่ขั้น 5 ได้)</>
-            : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
-        {o.status === 'checked' && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
+        {/* 4 ที่มาของ "ข้าม" ต้องแยกให้ออก: ฟอร์ม MTN ไม่มี QA เลย · QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน */}
+        {mtnForm
+          ? <>{QA_SKIP_REASON_MTN_FORM} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ลำดับลายเซ็นตาม WI ของ MTN ไม่มี QA)</>
+          : isQaSkipped(o)
+            ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
+            : !qaAppliesTo(o)
+              ? <>{QA_SKIP_REASON_PURPOSE} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ถ้าอยากให้ตรวจจริง QA ยังบันทึกผลที่ขั้น 5 ได้)</>
+              : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
+        {o.status === 'checked' && !mtnForm && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
       </div>
     </div>
   ) : null;
@@ -1812,12 +1821,16 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           <StepBox n={4} done={o.current_step >= 4}>
             <Row k="ผล" v={o.check_result} /><Row k="ต้องให้ QA ตรวจ?" v={o.quality_related === QA_NOT_RELATED ? "ไม่ต้อง — QA ระบุว่าไม่เกี่ยวกับคุณภาพ" : o.quality_related ? "ต้องผ่าน QA" : ""} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
-          {/* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */}
-          <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
-            {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
-            <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
-          </StepBox>
-          <StepBox n={6} done={o.current_step >= 6}>
+          {/* ── ขั้น 5 เป็นคนละเรื่องระหว่าง 2 ฟอร์ม: JIG/DIE = ตรวจคุณภาพ (QA) · MTN = รับมอบ ──
+                 ⚠️ วาดตาม `stageOf()` เสมอ ห้ามผูกเนื้อหากับเลขขั้น (เลขทับกัน 2 ฟอร์ม) */}
+          {!mtnForm && (
+            /* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */
+            <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
+              {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
+              <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
+            </StepBox>
+          )}
+          <StepBox n={mtnForm ? 5 : 6} done={!!o.ho_at || o.current_step >= (mtnForm ? 5 : 6)}>
             <Row k="ติดตามผล" v={o.follow_up} /><Row k="ผู้ตรวจ" v={o.ho_checker} /><Img label="ลายเซ็น" url={o.ho_sign} />
             {satAvg(o.satisfaction) != null && <div style={{ marginTop: 4 }}>
               <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
@@ -1828,20 +1841,26 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
               </div>
             </div>}
           </StepBox>
-          <StepBox n={7} done={o.current_step >= 7}>
-            {mtnForm
-              ? <><Row k="อนุมัติเมื่อ" v={o.cost_mgr_at && fmtDateTime(o.cost_mgr_at)} /><Row k="ผจก.แผนกที่แจ้ง" v={o.cost_mgr_name} /><Img label="ลายเซ็น" url={o.cost_mgr_sign} /><Row k="ความคิดเห็นเพิ่มเติม" v={o.extra_comment} /></>
-              : <><Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} /></>}
-          </StepBox>
-          {/* ขั้น 8-9 มีเฉพาะใบ MTN (ฟอร์มอื่นจบที่ขั้น 7) — ตาม WI: หัวหน้าแผนก MTN → ผจก.MTN ปิดใบ */}
-          {mtnForm && (
-            <StepBox n={8} done={!!o.mtn_head_at}>
-              <Row k="ตรวจเมื่อ" v={o.mtn_head_at && fmtDateTime(o.mtn_head_at)} /><Row k="หัวหน้าแผนก MTN" v={o.mtn_head_name} /><Img label="ลายเซ็น" url={o.mtn_head_sign} />
+          {/* ── 3 ขั้นปิดใบของฟอร์ม MTN (ลำดับตามคำสั่ง user 22/09 — ห้ามสลับ):
+                 6 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 7 ผจก.ช่างอนุมัติ → 8 ผจก.ฝ่ายที่แจ้งอนุมัติปิดใบ
+                 ฟอร์มอื่นจบที่ขั้น 7 "อนุมัติปิด" ขั้นเดียวเหมือนเดิม */}
+          {mtnForm ? <>
+            <StepBox n={6} done={!!o.mtn_head_at}>
+              <Row k="ตรวจเมื่อ" v={o.mtn_head_at && fmtDateTime(o.mtn_head_at)} /><Row k="หัวหน้าแผนกช่าง" v={o.mtn_head_name} /><Img label="ลายเซ็น" url={o.mtn_head_sign} />
             </StepBox>
-          )}
-          {mtnForm && (
-            <StepBox n={9} done={o.current_step >= 9 || o.status === 'closed'}>
-              <Row k="ปิดใบเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผจก.ส่วนซ่อมบำรุง" v={o.approver_name} /><Img label="ลายเซ็นปิดใบ" url={o.approve_sign} />
+            <StepBox n={7} done={!!o.approve_at}>
+              <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผจก.ช่าง (รับรองโดย)" v={o.approver_name} /><Img label="ลายเซ็น" url={o.approve_sign} />
+            </StepBox>
+            <StepBox n={8} done={!!o.cost_mgr_at || o.status === 'closed'}>
+              <Row k="ปิดใบเมื่อ" v={o.cost_mgr_at && fmtDateTime(o.cost_mgr_at)} /><Row k="ผจก.ฝ่ายที่แจ้ง" v={o.cost_mgr_name} /><Img label="ลายเซ็นปิดใบ" url={o.cost_mgr_sign} /><Row k="ความคิดเห็นเพิ่มเติม" v={o.extra_comment} />
+            </StepBox>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8, padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
+              🧪 ใบของทีม MTN <b>ไม่มีขั้นตรวจคุณภาพ (QA) ในลูป</b> — ลำดับลายเซ็น 7 จุดตาม WI ของ FM-MTN-006
+              {' '}(ผู้แจ้ง → ผจก.ผู้แจ้งรับทราบ → ช่างรับงาน → ผจก.ช่างรับทราบ → หัวหน้าแผนกช่างตรวจ → ผจก.ช่างอนุมัติ → ผจก.ฝ่ายที่แจ้งปิดใบ)
+            </div>
+          </> : (
+            <StepBox n={7} done={o.current_step >= 7}>
+              <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} />
             </StepBox>
           )}
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
@@ -1866,7 +1885,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
             {/* 🔴 ขั้น 6 ต้องบอก "ใครคนนั้น" ไม่ใช่แค่ตำแหน่ง — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ)
                 ก่อนหน้านี้กล่องนี้บอกแค่ "หัวหน้าแผนกของฝ่ายที่แจ้ง" ลอยๆ คนเปิดดูจึงไม่รู้ว่าต้องไปตาม
                 ใคร แล้วใบก็ค้างต่อ · ชื่อผู้แจ้งมีอยู่ในใบแล้ว (reported_by_name — stamp ตอนเปิดใบ) */}
-            {next.step === 6 && (
+            {stageOf(next.step, { mtnForm }) === 'handover' && (
               <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px dashed rgba(245,158,11,0.45)', color: 'var(--text)' }}>
                 🤝 <b>ฝั่งช่างทำงานเสร็จหมดแล้ว — เหลือขั้นสุดท้ายของฝ่ายที่แจ้ง (รับมอบ/ติดตามผล)</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
@@ -1980,8 +1999,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const touch = () => setDirty(true);
   const set = (k, v) => { touch(); setF(p => ({ ...p, [k]: v })); };
   const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
-  const isReject = step === 2 && f.repair_type === 'Reject MO';
-  const needSign = [4, 5, 6, 7, 8].includes(step) && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
+  /* ขั้นไหนต้องเซ็น + เซ็นลงคอลัมน์ไหน — ผูกกับ **stage** ไม่ใช่เลขขั้น (เลขทับกัน 2 ฟอร์ม)
+     ⚠️ ต้องตรงกับ resolveSign() ในตัวบันทึกเสมอ — ไม่ตรง = ปุ่มไม่มีช่องเซ็นแต่บันทึกขอลายเซ็น
+        (เคยหลุดจริง 22/09: ขั้นปิดใบของฟอร์ม MTN ตกจากลิสต์ ⇒ คนที่ไม่มีลายเซ็นในโปรไฟล์ปิดใบไม่ได้) */
+  const SIGN_COL = { accept_work: 'checker_sign', qa: 'qa_sign', handover: 'ho_sign', close: 'approve_sign',
+                     mtn_head: 'mtn_head_sign', mtn_approve: 'approve_sign', cost_mgr_close: 'cost_mgr_sign' };
+  const modalStage = stageOf(step, { mtnForm: isMtnForm });
+  const isReject = modalStage === 'assign' && f.repair_type === 'Reject MO';
+  const needSign = !!SIGN_COL[modalStage] && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
 
   const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '', unit_price: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
@@ -2078,6 +2103,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
       }
       const upd = { updated_at: new Date().toISOString() };
+      /* 🔴 แตกสาขาด้วย "จังหวะงาน" (stage) ไม่ใช่เลขขั้น — เลขขั้นเดียวกันคนละความหมายระหว่าง
+         2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN · ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ =
+         ผจก.ช่างอนุมัติ ของ MTN) ⇒ ผูกกับเลขเมื่อไหร่ ก็เขียนคนละคอลัมน์กันเงียบๆ เมื่อลำดับขยับ
+         (เกิดจริงมาแล้ว 2 รอบ — 15/09 และ 22/09 · ดู MTN_FORM_STEPS ใน mtnStepPerm.js) */
+      const stage = stageOf(step, { mtnForm: isMtnForm });
       if (skipQa) {
         /* ⏭ ข้าม QA = แก้การตัดสินใจของขั้น 4 ไม่ใช่ขั้นใหม่ — status คง `checked` แล้วพลิก
            quality_related เป็น "ไม่เกี่ยว" → nextStepFor พาไปขั้น 6 เอง (ไม่เพิ่ม status ให้ KPI/Andon/ใบพิมพ์ต้องรู้จัก)
@@ -2090,7 +2120,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           if (!error) toast.error('ข้าม QA แล้ว แต่ยังบันทึกเหตุผลไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_reason (รัน migration 20260903_mtn_qa_skip)');
         }
         if (error) throw error;
-      } else if (step === 2) {
+      } else if (stage === 'assign') {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
         if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
@@ -2105,7 +2135,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (isReject) {
           if (!canBounceBack(o)) { setSaving(false); return toast.error(`ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`); }
           Object.assign(upd, { status: 'returned', current_step: 1, reject_reason: f.reject_reason, returned_at: new Date().toISOString(), returned_from_dept: o.mtn_dept || null });
-        } else if (!editMode) { upd.status = 'assigned'; upd.current_step = 2; }
+        } else if (!editMode) { upd.status = 'assigned'; upd.current_step = step; }
         // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
         // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
@@ -2119,10 +2149,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         }
         // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
         if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
-      } else if (step === 3) {
+      } else if (stage === 'service') {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
-        if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'repaired'; upd.current_step = step; upd.repair_done_at = new Date().toISOString(); }
         /* ฟอร์ม MTN: วันที่เริ่ม/เสร็จ เป็นคนละจังหวะกับ "รับงาน" — ไม่กรอก = ถือว่าเริ่มตอนรับงาน
            (ค่านี้คือ "ช่างลงมือจริง" ใช้แยก MTTA/MTTR ในแท็บ ⚙️ รายอุปกรณ์ ด้วย) */
         if (isMtnForm) {
@@ -2192,7 +2222,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
           if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
-      } else if (step === 4) {
+      } else if (stage === 'accept_work') {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
         /* `quality_related` ไม่ใช่ "ช่องที่ผู้ตรวจรับเลือก" อีกต่อไป (2026-09-14) — ความหมายใหม่คือ
            **"ใบนี้ยังต้องผ่าน QA ไหม"** ค่าเริ่มต้น = ต้องผ่าน · มีแต่ **QA** เท่านั้นที่พลิกเป็น
@@ -2202,14 +2232,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               (เดิมมีเหตุผลข้อ 2 "เป็นสะพานให้ edge รุ่นเก่าที่อ่าน quality_related" — หมดอายุแล้ว
                `send-mtn-notification` v19+ อ่าน `qa_skipped_at` เอง · deploy 2026-09-15) */
         Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, checker_name: f.checker_name, checker_sign: s, quality_related: QA_RELATED });
-        if (!editMode) { upd.status = 'checked'; upd.current_step = 4; upd.check_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'checked'; upd.current_step = step; upd.check_at = new Date().toISOString(); }
         /* ขั้น 4 ไม่ยุ่งกับ qa_skip_* อีกแล้ว (2026-09-14) — การข้าม QA เป็นของ QA ฝั่งเดียว
            ⚠️ ห้าม "ล้าง" qa_skip_* ตอนแก้ไขขั้น 4 ย้อนหลังด้วย: ใบเก่าที่ QA (หรือกฎเดิม) ตัดสินไปแล้ว
            จะถูกดึงกลับมารอ QA ใหม่ทั้งที่เดินไปขั้น 6-7 แล้ว */
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 5) {
+      } else if (stage === 'qa') {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
         // QA ตรวจจริง = ยืนยันว่าใบนี้ "เกี่ยวกับคุณภาพ" (ช่องนี้เป็นคำตอบของ QA ตั้งแต่ 2026-09-14
         // ไม่ใช่ตัวกำหนดเส้นทางอีกต่อไป — ใบพิมพ์/แผงรายละเอียดอ่านค่านี้)
@@ -2219,52 +2249,53 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           try { const b = await resizeImage(qaFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
         }
-        if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'qa'; upd.current_step = step; upd.qa_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 6) {
+      } else if (stage === 'handover') {
         const s = await resolveSign('ho_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น'); }
         { const sat = {}; SAT_DIMS.forEach(d => { const v = Number(f.satisfaction?.[d.key]); if (v >= 1 && v <= 3) sat[d.key] = v; });
           Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null });
           if (isMtnForm) Object.assign(upd, {
             satisfaction_by: f.satisfaction_by || null,
             cost_owner_dept: f.cost_owner_dept || null,
-            // ชื่อ ผจก. = "ผู้ที่ต้องเซ็นขั้น 7" เท่านั้น — เวลาเซ็นจริงมาจากขั้น 7 (เหมือนกฎ dept_manager_at)
+            /* ชื่อ ผจก.ฝ่ายที่แจ้ง = "ผู้ที่ต้องเซ็นขั้นสุดท้าย" เท่านั้น — เวลาเซ็นจริงมาจากขั้นนั้น
+               (กฎเดียวกับ dept_manager_at: ชื่ออยู่ในใบได้ แต่ `*_at` ต้องมาจากการเซ็นจริง) */
             cost_mgr_name: f.cost_mgr_name || null,
           }); }
-        if (!editMode) { upd.status = 'handover'; upd.current_step = 6; upd.ho_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'handover'; upd.current_step = step; upd.ho_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 7 && isMtnForm) {
-        /* ขั้น 7 ของใบ MTN = **ผจก.ของแผนกที่แจ้งเซ็นอนุมัติ** (ช่อง "ผู้จัดการ" ท้ายใบ = cost_mgr_*)
-           ⚠️ ยังไม่ปิดใบ — status คง `handover` แล้วให้ current_step=7 เป็นตัวบอกว่ารอขั้น 8
-              (ห้ามเพิ่มค่า status ใหม่ · KPI/Andon/edge อ่าน status ตรงๆ) */
-        const s = await resolveSign('cost_mgr_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.แผนกที่แจ้ง'); }
-        Object.assign(upd, { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
-        if (!editMode) { upd.current_step = 7; upd.cost_mgr_at = new Date().toISOString(); }
-        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
-          if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 8 && isMtnForm) {
-        /* ขั้น 8 ของใบ MTN = **หัวหน้าแผนก MTN** (ช่องเซ็นที่ 5 ของฟอร์ม · WI ข้อ 8)
-           ⚠️ ยังไม่ปิดใบ — status คง `handover` เหมือนขั้น 7 · ตัวบอกว่าผ่านขั้นนี้คือ `mtn_head_at` */
-        const s = await resolveSign('mtn_head_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นหัวหน้าแผนก MTN'); }
+      } else if (stage === 'mtn_head') {
+        /* ขั้น 6 ของใบ MTN = **หัวหน้าแผนกช่าง ตรวจสอบงานหลังแก้ไข** (ช่องเซ็นที่ 5 ของฟอร์ม)
+           ⚠️ ยังไม่ปิดใบ — status คง `handover` · ตัวบอกว่าผ่านขั้นนี้คือ `mtn_head_at` */
+        const s = await resolveSign('mtn_head_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นหัวหน้าแผนกช่าง'); }
         Object.assign(upd, { mtn_head_name: f.mtn_head_name || fullName || null, mtn_head_sign: s });
-        if (!editMode) { upd.current_step = 8; upd.mtn_head_at = new Date().toISOString(); }
+        if (!editMode) { upd.current_step = step; upd.mtn_head_at = new Date().toISOString(); }
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 9) {
-        // ขั้น 9 (เฉพาะใบ MTN) = ผจก.ส่วนซ่อมบำรุงปิดจบ MO — ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)"
-        const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ส่วนซ่อมบำรุง'); }
-        Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
-        if (!editMode) { upd.status = 'closed'; upd.current_step = 9; upd.approve_at = new Date().toISOString(); }
+      } else if (stage === 'mtn_approve') {
+        /* ขั้น 7 ของใบ MTN = **ผจก.ช่างอนุมัติ** (ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)" = approver_*)
+           ⚠️ ยังไม่ปิดใบ — คนปิดคือ ผจก.ฝ่ายที่แจ้ง ขั้น 8 (คำสั่ง user 22/09) */
+        const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ช่าง'); }
+        Object.assign(upd, { approver_name: f.approver_name || fullName || null, approve_sign: s });
+        if (!editMode) { upd.current_step = step; upd.approve_at = new Date().toISOString(); }
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 7) {
+      } else if (stage === 'cost_mgr_close') {
+        /* ขั้น 8 ของใบ MTN = **ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ** (ช่อง "ผู้จัดการ" ท้ายใบ = cost_mgr_*)
+           ลายเซ็นจุดสุดท้ายของ 7 จุดตาม WI — ปิดแล้วสถานะเป็น closed */
+        const s = await resolveSign('cost_mgr_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ฝ่ายที่แจ้ง'); }
+        Object.assign(upd, { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
+        if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.cost_mgr_at = new Date().toISOString(); }
+        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+          if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
+      } else if (stage === 'close') {
         const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้อนุมัติ'); }
         Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
-        if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.approve_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
@@ -2272,7 +2303,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       // ลบไฟล์เก่าที่ถูกแทนที่ (รูปก่อน/หลัง/QA + ลายเซ็นต่อขั้น) — ลบหลัง DB update สำเร็จเท่านั้น + best-effort
       // ไม่งั้นแก้ไขหลังบันทึกทีไร ไฟล์เดิมกำพร้าค้างใน bucket mtn-images ทุกครั้ง (QC audit 2026-08-03)
       // ข้ามลายเซ็นที่เป็นของโปรไฟล์ (signatures/<uid>/profile...) — ใช้ร่วมทั้งระบบ ห้ามลบ
-      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'mtn_head_sign', 'approve_sign']) {
+      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'mtn_head_sign', 'approve_sign', 'cost_mgr_sign']) {
         const oldUrl = o[fld], newUrl = upd[fld];
         if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
       }
@@ -2298,7 +2329,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             {stepMeta(step, { mtnForm: isMtnForm }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
-        {step === 2 && <>
+        {modalStage === 'assign' && <>
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
@@ -2329,7 +2360,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
           </>}
         </>}
-        {step === 3 && <>
+        {modalStage === 'service' && <>
           {isMtnForm && <>
             <Field label="วันเวลาที่เริ่มลงมือซ่อม">
               <input type="datetime-local" value={f.repair_start_at} onChange={e => set('repair_start_at', e.target.value)} max={localDtNow()} style={inp} />
@@ -2428,7 +2459,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>รวมค่าใช้จ่าย (1)+(2) = <b style={{ color: 'var(--text)' }}>{((Number(f.labor_cost) || 0) + (Number(f.parts_cost) || 0)).toLocaleString()}</b> บาท · ตั้งราคามาตรฐานที่แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน</div>
         </>}
-        {step === 4 && <>
+        {modalStage === 'accept_work' && <>
           <Field label="ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* 🔴 2026-09-14 (คำสั่ง user): ช่อง "กระทบคุณภาพไหม" ถูกถอดออกจากขั้น 4
               เดิมผู้ตรวจรับ (= ฝ่ายที่แจ้ง) เลือกเองได้ว่าไม่ต้องให้ QA ตรวจ = ผู้ถูกตรวจเปิดด่านเอง
@@ -2448,14 +2479,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ผู้ยืนยัน: <b style={{ color: 'var(--text2)' }}>{fullName || '—'}</b> · ผลตรวจรับขั้น 4 ({o.check_result || '—'} · {o.checker_name || '—'}) คงเดิม ไม่ต้องเซ็นใหม่</div>
         </>}
-        {step === 5 && !skipQa && <>
+        {modalStage === 'qa' && !skipQa && <>
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           {/* เจ้าหน้าที่ QA = <PersonSelect> role qa ขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><PersonSelect value={f.qa_checker} source="both" roles={QA_ROLES} section="QA" history={qaCheckerHist} onChange={res => set('qa_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <ImgField label="รูปยืนยันคุณภาพ" value={qaUrl || (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
-        {step === 6 && <>
+        {modalStage === 'handover' && <>
           <Field label="ผลติดตามหลังใช้งานจริง"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* หัวหน้าแผนกฝ่ายที่แจ้ง = <PersonSelect> profiles role supervisor/manager ของไลน์/แผนกใบขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><PersonSelect value={f.ho_checker} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={hoCheckerHist} onChange={res => set('ho_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
@@ -2485,30 +2516,30 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           {isMtnForm && <>
             <Field label="ลงชื่อผู้ประเมินความพึงพอใจ"><PersonSelect value={f.satisfaction_by} source="both" section={o.dept_section} onChange={res => set('satisfaction_by', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้ประเมิน" /></Field>
             <Field label="ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน"><input value={f.cost_owner_dept} onChange={e => set('cost_owner_dept', e.target.value)} style={inp} placeholder={o.work_area || o.dept_section || 'ระบุหน่วยงานที่รับผิดชอบค่าใช้จ่าย'} /></Field>
-            <Field label="ผจก. ของแผนกที่แจ้ง (ผู้ที่ต้องเซ็นอนุมัติขั้น 7)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+            <Field label="ผจก. ของแผนกที่แจ้ง (ผู้ที่ต้องเซ็นอนุมัติปิดใบ ขั้น 8)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           </>}
         </>}
-        {/* ── ใบ MTN: ขั้น 7 = ผจก.แผนกที่แจ้งอนุมัติ (ยังไม่ปิด) · ขั้น 8 = ผจก.ซ่อมบำรุงปิดจบ ── */}
-        {step === 7 && isMtnForm && <>
-          <Field label="ชื่อ ผจก. ของแผนกที่แจ้ง (ผู้อนุมัติ — ช่อง “ผู้จัดการ” ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+        {/* ── 3 ขั้นปิดใบของฟอร์ม MTN (ลำดับตาม WI · คำสั่ง user 22/09 — ห้ามสลับ):
+               6 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 7 ผจก.ช่างอนุมัติ → 8 ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ ── */}
+        {modalStage === 'mtn_head' && <>
+          <Field label="ชื่อหัวหน้าแผนกช่าง (ช่องเซ็นที่ 5 ของฟอร์ม — ผู้ตรวจสอบ)"><PersonSelect value={f.mtn_head_name} source="profiles" roles={MTN_HEAD_ROLES} onChange={res => set('mtn_head_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อหัวหน้าแผนกซ่อมบำรุง" /></Field>
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ช่าง อนุมัติ (ขั้น 7)</b></div>}
+        </>}
+        {modalStage === 'mtn_approve' && <>
+          <Field label="ชื่อ ผจก.ช่าง (ช่องเซ็นที่ 6 ของฟอร์ม — “รับรองโดย (ผจก.ส่วนซ่อมบำรุง)”)"><PersonSelect value={f.approver_name} source="profiles" roles={MTN_HEAD_ROLES} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการส่วนซ่อมบำรุง" /></Field>
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ (ขั้น 8)</b></div>}
+        </>}
+        {modalStage === 'cost_mgr_close' && <>
+          <Field label="ชื่อ ผจก. ของฝ่ายที่แจ้ง (ช่องเซ็นที่ 7 — ช่อง “ผู้จัดการ” ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           <Field label="ความคิดเห็นเพิ่มเติม (ท้ายใบ)"><textarea value={f.extra_comment} onChange={e => set('extra_comment', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>หัวหน้าแผนก MTN ตรวจ (ขั้น 8)</b></div>}
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ลายเซ็นจุดสุดท้ายของใบ — อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {step === 8 && <>
-          {/* ขั้น 8 = ช่องเซ็นที่ 5 ของฟอร์ม (WI ข้อ 8) — เดิมใบพิมพ์ดึงชื่อผู้ตรวจรับฝั่งผู้แจ้งมาลงผิดฝั่ง */}
-          <Field label="ชื่อหัวหน้าแผนก MTN (ช่องเซ็นที่ 5 ของฟอร์ม)"><PersonSelect value={f.mtn_head_name} source="profiles" roles={MTN_HEAD_ROLES} onChange={res => set('mtn_head_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อหัวหน้าแผนกซ่อมบำรุง" /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ส่วนซ่อมบำรุง ปิดจบ MO (ขั้น 9)</b></div>}
-        </>}
-        {step === 9 && <>
-          <Field label="ชื่อผู้ปิดใบ (ผจก.ส่วนซ่อมบำรุง — ช่อง “รับรองโดย”)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการส่วนซ่อมบำรุง" /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
-        </>}
-        {step === 7 && !isMtnForm && <>
+        {modalStage === 'close' && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: isMtnForm ? 'cost_mgr_sign' : 'approve_sign', 8: 'mtn_head_sign', 9: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}
+        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[SIGN_COL[modalStage]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
