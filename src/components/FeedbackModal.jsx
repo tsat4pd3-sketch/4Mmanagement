@@ -10,6 +10,7 @@ import { compressScreenshotImage } from '../utils/layoutImage';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { looksLikeImage, isGifFile } from '../utils/imageFileKind';
 import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
+import { usePerms } from '../utils/usePerms';
 
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
@@ -18,9 +19,15 @@ import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
   ออกแบบให้ "ส่งง่ายที่สุด" เพราะคนหน้างานใส่ถุงมือ/รีบ:
     • พิมพ์ข้อความอย่างเดียวก็ส่งได้ · ประเภทมี default
     • หน้าที่กำลังเปิดอยู่ถูกเก็บให้เอง (page_path) ไม่ต้องอธิบายว่า "อยู่หน้าไหน"
-    • ไม่ทำเป็นหน้าแยก + ไม่เพิ่ม permission key ใหม่ (เลี่ยงกับดัก seed enum_range
-      ที่ทำให้ role ใหม่เข้าไม่ได้แบบ fail-closed) — กล่องขาเข้าเป็นแท็บในโมดัลนี้
-      เห็นเฉพาะ admin/manager ซึ่งตรงกับ RLS ของตาราง
+    • ไม่ทำเป็นหน้าแยก — กล่องขาเข้าเป็นแท็บในโมดัลนี้
+
+  🔐 ใครเห็น "กล่องขาเข้าของทุกคน" = คีย์ `feedback:manage` (2026-09-22 · user แจ้ง
+     "ยิงกลับหาคนแจ้งสิ ไม่ใช่เห็นทุกคน") — เดิมเช็ค `role === 'admin' || role === 'manager'`
+     ตรงๆ ซึ่งตรงกับ RLS เดิมที่ hardcode role array เหมือนกัน ⇒ **ผู้จัดการทุกคนอ่านเรื่องที่
+     คนอื่นแจ้งและคำตอบที่ทีมงานตอบคนอื่นได้ทั้งกล่อง** ทั้งที่ตัวเองก็เป็นคนแจ้งคนหนึ่ง
+     ตอนนี้จอกับ policy อ่าน "คีย์เดียวกัน" แล้ว (`can('feedback','manage')` ↔ `has_perm('feedback:manage')`)
+     เปิดให้ใครเพิ่มได้ที่ /permissions โดยไม่ต้องแก้โค้ด · migration `20260922_feedback_manage_perm_main.sql`
+     ⚠️ ห้าม seed คีย์นี้เหมาทุก role ด้วย enum_range — จะกลับไปกว้างเท่าเดิมโดยไม่มีใครรู้
 
   📎 แนบรูปหน้าจอได้ (2026-09-22 · คุณสุรเสนแจ้งมาทาง LINE 22/09)
   เดิมฟอร์มเขียนบอกผู้ใช้เองว่า "ถ้ามีรูปหน้าจอ ส่งใน LINE ตามหลังได้ (ระบบยังไม่รับไฟล์แนบ)"
@@ -52,7 +59,10 @@ const fmt = (t) => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Ban
 export default function FeedbackModal({ onClose }) {
   const { role, fullName } = useContext(UserContext);
   const location = useLocation();
-  const isAdmin = role === 'admin' || role === 'manager';
+  const { can } = usePerms();
+  // 🔐 เห็นกล่องขาเข้าของทุกคน + ตอบกลับ/ปิดงาน — คีย์เดียวกับ policy `uf_manage_all` ฝั่ง DB
+  //    (admin ได้ true เสมอทั้ง 2 ฝั่ง · ยังโหลด cache สิทธิ์ไม่เสร็จ = false ตาม fail-closed)
+  const canManage = can('feedback', 'manage');
 
   const [tab, setTab]         = useState('send');
   const [kind, setKind]       = useState('bug');
@@ -289,7 +299,7 @@ export default function FeedbackModal({ onClose }) {
 
         <div style={{ padding: '10px 18px 0', display: 'flex', gap: 6 }}>
           {tabBtn('send', '✍️ ส่งเรื่อง')}
-          {tabBtn('list', isAdmin ? `📥 กล่องขาเข้า${openCount ? ` (${openCount})` : ''}` : '📄 เรื่องที่ฉันส่ง')}
+          {tabBtn('list', canManage ? `📥 กล่องขาเข้า${openCount ? ` (${openCount})` : ''}` : '📄 เรื่องที่ฉันส่ง')}
         </div>
 
         <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
@@ -414,7 +424,7 @@ export default function FeedbackModal({ onClose }) {
                           <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
                         </div>
                       )}
-                      {isAdmin && (
+                      {canManage && (
                         <div style={{ marginTop: 7 }}>
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
@@ -429,7 +439,7 @@ export default function FeedbackModal({ onClose }) {
                           </button>
                         </div>
                       )}
-                      {isAdmin && (
+                      {canManage && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS).map(([key, s]) => (
                             <button key={key} onClick={() => setStatus(r, key)} disabled={r.status === key}
