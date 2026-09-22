@@ -366,15 +366,36 @@ test('ขั้น 8: คนที่ถูกตั้งเป็นช่า�
   assert.equal(canDoStep(7, { ...base, hasTeams: true, inOrderTeam: false, inReporterScope: true }).ok, true);
 });
 
-test('stepLabel/stepMeta: ขั้น 7 เปลี่ยนชื่อเฉพาะใบ MTN · ขั้น 8 มีเฉพาะใบ MTN', () => {
+test('stepLabel/stepMeta: ใบ MTN 9 ขั้นตาม WI · ฟอร์มอื่นยัง 7 ขั้น (2026-09-22)', () => {
   assert.equal(stepMeta(7, { mtnForm: true }).whoShort, 'ผจก.แผนกที่แจ้ง');
   assert.equal(stepMeta(7).whoShort, MTN_STEPS[7].whoShort);
-  assert.equal(stepMeta(8, { mtnForm: true }).whoShort, 'ผจก.ซ่อมบำรุง');
+  // ขั้น 8 = หัวหน้าแผนก MTN (แทรกตาม WI) · ขั้น 9 = ผจก.ซ่อมบำรุงปิดใบ (ย้ายจากเดิมขั้น 8)
+  assert.equal(stepMeta(8, { mtnForm: true }).whoShort, 'หัวหน้าแผนก MTN');
+  assert.equal(stepMeta(9, { mtnForm: true }).whoShort, 'ผจก.ซ่อมบำรุง');
   assert.equal(stepMeta(8), null, 'ฟอร์ม JIG/DIE ไม่มีขั้น 8');
+  assert.equal(stepMeta(9), null, 'ฟอร์ม JIG/DIE ไม่มีขั้น 9');
   assert.match(stepLabel(8, { mtnForm: true }), /ขั้น 8/);
-  assert.equal(lastStep({ mtnForm: true }), 8);
+  assert.match(stepLabel(9, { mtnForm: true }), /ขั้น 9/);
+  assert.equal(lastStep({ mtnForm: true }), 9);
   assert.equal(lastStep(), 7);
   for (const s of [2, 3, 4, 5, 6]) assert.equal(stepMeta(s, { mtnForm: true }), MTN_STEPS[s], `ขั้น ${s} ต้องเหมือนกันทั้ง 2 ฟอร์ม`);
+});
+
+test('mtnCloseStage: แยก 3 ขั้นที่ค้างอยู่ใน status handover ด้วยเวลาเซ็นจริง', async () => {
+  const { mtnCloseStage, moStatusLabel, MO_LABEL_WAIT_COST_MGR, MO_LABEL_WAIT_MTN_HEAD, MO_LABEL_WAIT_MTN_CLOSE }
+    = await import('../mtnStepPerm.js');
+  const base = { status: 'handover', current_step: 7, mtn_dept: 'maintenance' };
+  assert.equal(mtnCloseStage({ cost_mgr_at: null, mtn_head_at: null }), 7);
+  assert.equal(mtnCloseStage({ cost_mgr_at: 'x',  mtn_head_at: null }), 8);
+  assert.equal(mtnCloseStage({ cost_mgr_at: 'x',  mtn_head_at: 'y'  }), 9);
+  // แถวที่ไม่ได้ select เวลาเซ็นมา = ตัดสินไม่ได้ ห้ามเดา
+  assert.equal(mtnCloseStage({ cost_mgr_at: null }), null);
+  assert.equal(mtnCloseStage({}), null);
+
+  assert.equal(moStatusLabel({ ...base, cost_mgr_at: null, mtn_head_at: null }), MO_LABEL_WAIT_COST_MGR);
+  assert.equal(moStatusLabel({ ...base, cost_mgr_at: 'x',  mtn_head_at: null }), MO_LABEL_WAIT_MTN_HEAD);
+  assert.equal(moStatusLabel({ ...base, cost_mgr_at: 'x',  mtn_head_at: 'y'  }), MO_LABEL_WAIT_MTN_CLOSE);
+  assert.equal(moStatusLabel(base), MO_LABEL_WAIT_MTN_CLOSE, 'ไม่รู้ = ป้ายรวมเดิม (พฤติกรรมเดิมของใบเก่า)');
 });
 
 test('QA: งานปรับปรุง/สร้างไม่ต้องผ่าน QA · งานซ่อม/บริการและใบเก่ายังต้องผ่านเหมือนเดิม', () => {
