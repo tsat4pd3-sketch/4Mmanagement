@@ -17,6 +17,8 @@ import {
 } from '../utils/capacityModel';
 import { policyBreakForShift } from '../utils/oee';
 import { pairLoadTotal } from '../utils/pairTotals';
+import { buildBomIndex, explodeBom } from '../utils/bomTree';
+import { explodeDemand } from '../utils/demandExplode';
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -62,6 +64,9 @@ export default function ProductionPlan() {
   const [pnoToMat, setPnoToMat] = useState({});   // normalize(p_no) → mat_no (map เลขลูกค้า → SAP เหมือนหน้า Planner&Sales)
   const [capByMat, setCapByMat] = useState({});   // mat_no → estimateCapacity result
   const [shiftNet, setShiftNet] = useState(null); // { netMin, brkMin, fallback } — นาทีทำงานสุทธิต่อกะ (หักพักตามนโยบาย)
+  const [bomIx, setBomIx] = useState(null);       // ดัชนี BOM (buildBomIndex) — null = ยังไม่มี/โหลดไม่ได้
+  const [bomErr, setBomErr] = useState(false);
+  const [useBom, setUseBom] = useState(true);     // รวมความต้องการที่ระเบิดจาก BOM เข้าไปในแผนไหม
   const [orders, setOrders] = useState([]);
   const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
@@ -111,12 +116,14 @@ export default function ProductionPlan() {
          และเพราะไม่มี `.order()` คู่กับ limit จึงได้ **คนละชุดทุกครั้งที่โหลด**
          ⇒ แท็บรายเดือน: shiftsNeeded ต่ำกว่าจริง → verdict ขึ้น "กะเช้าพอ" ทั้งที่ต้องเปิด OT/กะดึก
             และพาร์ทบางตัวหายไปจากแผนทั้งตัว · sessions/orders ยังไม่ทะลุวันนี้แต่โตได้เหมือนกัน */
-      const [{ data: cal }, { data: prods }, brkRes, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
+      const [{ data: cal }, { data: prods }, { data: bomRows, error: bomQErr }, brkRes, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
            (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
-        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
+        supabaseDR.from('dr_products').select('id, mat_no, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
+        // 🌳 BOM ทุกแถว (ฐานจริง ~600 แถว) — ใช้ระเบิดความต้องการลงพาร์ทลูก ดู utils/demandExplode.js
+        supabaseDR.from('bom_items').select('id, product_id, parent_mat, mat_no, qty_per_unit, uom, item_no'),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
         supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
@@ -156,6 +163,12 @@ export default function ProductionPlan() {
       });
       setProdByMat(pmap);
       setPnoToMat(pnoMap);
+      /* 🌳 ดัชนี BOM — **ต้องผ่าน buildBomIndex เท่านั้น** (กฎเหล็ก CLAUDE.md · มีด่านสแกน)
+         matOf = product_id → mat_no ของใบนั้น · ไม่มี BOM = แผนถอยไปเท่าเดิม (ไม่พัง) แต่ต้องบอกบนจอ */
+      const matOfProduct = {};
+      (prods || []).forEach(p => { if (p.id && p.mat_no) matOfProduct[p.id] = p.mat_no; });
+      setBomIx(bomQErr ? null : buildBomIndex(bomRows || [], matOfProduct));
+      setBomErr(!!bomQErr);
 
       // ── กำลังจริงต่อกะ: sum qty ต่อ (session, mat) จากใบปิด แล้ว median ต่อ (mat) ──
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
@@ -290,6 +303,63 @@ export default function ProductionPlan() {
   }, [loading, orders, forecasts, resolveMat, pairOf]);
 
   /* ═══ รายวัน: เดินปฏิทิน จัดสรร shift-load ต่อไลน์ ═══ */
+  /* ═══ 🌳 ความต้องการระดับ mat = "ลูกค้าสั่งตรง" + "ระเบิดจาก BOM" (2026-09-22 · คำสั่ง user) ═══
+     ก่อนหน้านี้แผนเห็นเฉพาะพาร์ทที่ลูกค้าสั่งตรง ⇒ ไลน์ปั๊ม/เลเซอร์ที่ทำพาร์ทลูกป้อนไลน์ประกอบ
+     **ไม่เคยมีงานในแผนเลย** · ตัวระเบิดอยู่ที่ `src/utils/demandExplode.js` (pure + มีเทส)
+     🔴 ต้องบวกกัน ห้ามแทนกัน — ของจริง 22/09 ลูกค้าสั่งพาร์ท 2xxxxxxx ตรงๆ อยู่แล้ว 687 แถว/18 mat
+     ⏱️ เฟส 1 วางความต้องการของลูกไว้ "วันเดียวกับดิวของแม่" (ยังไม่มี lead time) — จอต้องเขียนบอก */
+  const demandPcs = useMemo(() => {
+    if (loading) return { byDate: {}, byMonth: {}, carry: {}, bom: null };
+    const bomStat = { flatDupes: [], cycles: 0, rootsWithBom: 0, rootsNoBom: 0, childPcs: 0 };
+    const explodeInto = (rowsIn) => {
+      if (!useBom || !bomIx) return {};
+      const r = explodeDemand(rowsIn, bomIx, explodeBom);
+      bomStat.flatDupes.push(...r.flatDupes);
+      bomStat.cycles += r.cycles.length;
+      bomStat.rootsWithBom += r.rootsWithBom;
+      bomStat.rootsNoBom += r.rootsNoBom.length;
+      return r.needByMat;
+    };
+
+    // ① รวมความต้องการตั้งต้นเป็น (bucket → mat → qty) ด้วยเลข SAP
+    const bucketize = (rows, keyOf) => {
+      const out = {};
+      rows.forEach(r => {
+        const mat = resolveMat(r.mat_no);
+        const qty = Number(r.qty) || 0;
+        const k = keyOf(r);
+        if (!mat || !k || qty <= 0) return;
+        const bag = out[k] || (out[k] = {});
+        bag[mat] = (bag[mat] || 0) + qty;
+      });
+      return out;
+    };
+    const directByDate = bucketize(orders, o => o.due_date);
+    const directByMonth = bucketize(forecasts, f => monthKey(f.period_month));
+    const directCarry = bucketize(overdueOrders, () => 'carry').carry || {};
+
+    // ② ระเบิด BOM ต่อ bucket แล้วบวกทับของตรง
+    const withBom = (buckets) => {
+      const out = {};
+      Object.entries(buckets).forEach(([k, matQty]) => {
+        const bag = { ...matQty };
+        const need = explodeInto(Object.entries(matQty).map(([mat_no, qty]) => ({ mat_no, qty })));
+        Object.values(need).forEach(e => {
+          bag[e.mat_no] = (bag[e.mat_no] || 0) + e.qty;
+          bomStat.childPcs += e.qty;
+        });
+        out[k] = bag;
+      });
+      return out;
+    };
+    const byDate = withBom(directByDate);
+    const byMonth = withBom(directByMonth);
+    const carry = withBom({ c: directCarry }).c || {};
+    // คู่ (mat) ที่ซ้ำกันข้าม bucket ไม่ต้องยุบ — แต่ละ bucket คือคนละวัน/เดือน
+    const dupes = [...new Map(bomStat.flatDupes.map(f => [`${f.root}|${f.mat_no}`, f])).values()];
+    return { byDate, byMonth, carry, bom: { ...bomStat, flatDupes: dupes } };
+  }, [loading, orders, forecasts, overdueOrders, resolveMat, bomIx, useBom]);
+
   const daily = useMemo(() => {
     if (loading) return [];
     const dates = Array.from({ length: DAILY_HORIZON + 1 }, (_, i) => addDays(today, i));
@@ -297,22 +367,25 @@ export default function ProductionPlan() {
     // เท่านั้น ไลน์แม่จึงได้ order เฉพาะพาร์ทที่ลงทะเบียนที่ตัวแม่เอง ไม่มีทางนับซ้ำกับไลน์ลูก
     // เดิมกรอง leaf ทิ้ง → HYDROFORM ที่มีสินค้าผูกกับตัวแม่ 5 พาร์ท หายจากแผนผลิตทั้งหมด (แก้ 2026-08-05)
     return viewLines.map(line => {
-      // ความต้องการของไลน์นี้ต่อวัน (แปลงเป็น shift-load: qty ÷ กำลังต่อกะ)
-      const lineOrders = orders.filter(o => lineOfMat(o.mat_no) === line.name);
-      /* ⚠️ สะสมโหลด **แยกราย mat ก่อน** แล้วค่อยรวมด้วย pairLoadTotal ตอนท้าย
-         บวกรวมทันทีแบบเดิม = คู่ RH/LH ถูกนับ 2 เท่า (ยุบทีหลังไม่ได้ เพราะรู้แค่ผลบวกแล้ว) */
+      /* ความต้องการของไลน์นี้ต่อวัน (ชิ้น → shift-load) — มาจาก `demandPcs` ซึ่งรวม
+         "ลูกค้าสั่งตรง + ระเบิดจาก BOM" ให้แล้ว · คีย์เป็นเลข SAP เสมอ
+         ⚠️ สะสมโหลด **แยกราย mat ก่อน** แล้วค่อยรวมด้วย pairLoadTotal ตอนท้าย
+            บวกรวมทันทีแบบเดิม = คู่ RH/LH ถูกนับ 2 เท่า (ยุบทีหลังไม่ได้) */
       const loadMatByDate = {}, pcsByDate = {}, matSet = new Set();
       let unknownCap = 0;
-      lineOrders.forEach(o => {
-        const { perShift } = capOfMat(o.mat_no);
-        const qty = Number(o.qty) || 0;
-        pcsByDate[o.due_date] = (pcsByDate[o.due_date] || 0) + qty;
-        matSet.add(o.mat_no);
-        if (perShift > 0) {
-          const rid = resolveMat(o.mat_no) || o.mat_no;      // คีย์ต้องเป็นเลข SAP — pair_mat_no อ้างเลข SAP
-          const byMat = loadMatByDate[o.due_date] || (loadMatByDate[o.due_date] = {});
-          byMat[rid] = (byMat[rid] || 0) + qty / perShift;
-        } else unknownCap += qty;
+      const takeBucket = (matQty, onLoad, onPcs) => {
+        Object.entries(matQty || {}).forEach(([mat, qty]) => {
+          if (lineOfMat(mat) !== line.name || !(qty > 0)) return;   // ไม่ใช่งานของไลน์นี้ (หรือไม่มีไลน์เลย)
+          matSet.add(mat);
+          onPcs(qty);
+          const { perShift } = capOfMat(mat);
+          if (perShift > 0) onLoad(mat, qty / perShift); else unknownCap += qty;
+        });
+      };
+      Object.entries(demandPcs.byDate).forEach(([date, matQty]) => {
+        takeBucket(matQty,
+          (mat, load) => { const b = loadMatByDate[date] || (loadMatByDate[date] = {}); b[mat] = (b[mat] || 0) + load; },
+          (qty) => { pcsByDate[date] = (pcsByDate[date] || 0) + qty; });
       });
       const loadByDate = Object.fromEntries(
         Object.entries(loadMatByDate).map(([d, byMat]) => [d, pairLoadTotal(byMat, pairOf)]));
@@ -320,16 +393,9 @@ export default function ProductionPlan() {
       // ยอดค้างส่งที่เลยดิวของไลน์นี้ = backlog ตั้งต้นวันแรก (convention เดียวกับ Rundown "ค้างเก่ารวมเข้าวันนี้")
       let carryPcs = 0;
       const carryByMat = {};
-      overdueOrders.forEach(o => {
-        if (lineOfMat(o.mat_no) !== line.name) return;
-        const { perShift } = capOfMat(o.mat_no);
-        const qty = Number(o.qty) || 0;
-        carryPcs += qty;
-        if (perShift > 0) {
-          const rid = resolveMat(o.mat_no) || o.mat_no;
-          carryByMat[rid] = (carryByMat[rid] || 0) + qty / perShift;
-        } else unknownCap += qty;
-      });
+      takeBucket(demandPcs.carry,
+        (mat, load) => { carryByMat[mat] = (carryByMat[mat] || 0) + load; },
+        (qty) => { carryPcs += qty; });
       const carryLoad = pairLoadTotal(carryByMat, pairOf);   // ค้างส่งก็ยุบคู่เหมือนกัน
       /* เดินปฏิทิน: กะเช้า → กะดึก (ถ้ามี) → OT · วัน ม.75 ใช้เต็มกำลังก่อน OT วันหยุดจริง
          🔴 ตรรกะอยู่ที่ `buildDayPlan()` ใน utils/capacityModel.js ที่เดียว **ห้ามเขียน walk ซ้ำที่นี่**
@@ -345,9 +411,9 @@ export default function ProductionPlan() {
       // มาตรการ ม.75 รายไลน์: วัน shutdown75 ในช่วง — ไลน์นี้หยุดได้กี่วัน / ต้องเรียกมากี่วัน
       const sd75Total = days.filter(d => d.sd75).length;
       const sd75Stoppable = days.filter(d => d.sd75 && !d.plan.includes('recall75')).length;
-      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length, carryPcs };
+      return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: matSet.size, carryPcs };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0 || r.carryPcs > 0);
-  }, [loading, viewLines, orders, overdueOrders, today, capOfMat, lineOfMat, calOf, resolveMat, pairOf]);
+  }, [loading, viewLines, demandPcs, today, capOfMat, lineOfMat, calOf, pairOf]);
 
   /* ── 🌑 ไลน์ที่ "มีพาร์ทลงทะเบียน แต่ไม่มีความต้องการในระบบเลย" ──
      เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างเปล่าอ่านได้ว่า "ไลน์นี้ว่าง" ทั้งที่ความจริงคือ
@@ -395,16 +461,16 @@ export default function ProductionPlan() {
       // แผนเลยไม่เคยเปิดกะดึกให้ 2 กลุ่มนี้ ทั้งที่ไลน์เดินกะดึกจริง)
       const hasNight = hasNightShift(viewLines, line.name);
       const rows = months.map(mk => {
-        const fcs = forecasts.filter(f => monthKey(f.period_month) === mk && lineOfMat(f.mat_no) === line.name);
-        let pcs = 0, unknownCap = 0;
+        // ความต้องการเดือนนี้ของไลน์นี้ (ชิ้น) — รวมที่ระเบิดจาก BOM มาแล้ว
+        const matQty = demandPcs.byMonth[mk] || {};
+        let pcs = 0, unknownCap = 0, matCnt = 0;
         const loadByMat = {};                 // ยุบคู่ RH/LH ทีหลัง — บวกทันทีคือนับเวลา 2 เท่า
-        fcs.forEach(f => {
-          const { perShift } = capOfMat(f.mat_no);
-          const qty = Number(f.qty) || 0; pcs += qty;
-          if (perShift > 0) {
-            const rid = resolveMat(f.mat_no) || f.mat_no;
-            loadByMat[rid] = (loadByMat[rid] || 0) + qty / perShift;
-          } else unknownCap += qty;
+        Object.entries(matQty).forEach(([mat, qty]) => {
+          if (lineOfMat(mat) !== line.name || !(qty > 0)) return;
+          pcs += qty; matCnt++;
+          const { perShift } = capOfMat(mat);
+          if (perShift > 0) loadByMat[mat] = (loadByMat[mat] || 0) + qty / perShift;
+          else unknownCap += qty;
         });
         const shiftsNeeded = pairLoadTotal(loadByMat, pairOf);
         const wd = workDaysOf(mk);
@@ -415,18 +481,18 @@ export default function ProductionPlan() {
         const sd75Shifts = sd75 * (hasNight ? 2 : 1);   // กำลังจากยกเลิกหยุด ม.75 (ค่าแรงปกติ)
         // ตัดสิน: ปกติพอ / OT / กะดึก / กะดึก+OT / ยกเลิกหยุด 75% (ก่อน OT วันหยุดเสมอ) / เกินกำลัง
         let verdict, color;
-        if (!fcs.length) { verdict = '—'; color = 'var(--muted)'; }
+        if (!matCnt) { verdict = '—'; color = 'var(--muted)'; }
         else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = '#22c55e'; }
         else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = '#f59e0b'; }
         else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = '#8b5cf6'; }
         else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
         else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = '#a78bfa'; }
         else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = '#ef4444'; }
-        return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: fcs.length };
+        return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: matCnt };
       });
       return { line, rows };
     }).filter(r => r.rows.some(x => x.fcCount > 0));
-  }, [loading, viewLines, forecasts, calMap, today, capOfMat, lineOfMat, resolveMat, pairOf]);
+  }, [loading, viewLines, demandPcs, calMap, today, capOfMat, lineOfMat, pairOf]);
 
   /* ── styles ── */
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -452,6 +518,11 @@ export default function ProductionPlan() {
               {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text2)', cursor: 'pointer' }}
+            title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
+            <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
+            🌳 รวมงานจาก BOM
+          </label>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>วางแผนที่กำลัง:</span>
           <button onClick={() => setCapMode('median')} style={btnSt(capMode === 'median')} title="ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)">ปกติ (median)</button>
           <button onClick={() => setCapMode('safe')} style={btnSt(capMode === 'safe')} title="ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)">ปลอดภัย (P25)</button>
@@ -476,6 +547,42 @@ export default function ProductionPlan() {
       </div>
 
       {/* 🔍 ความต้องการที่เลข SAP ถูกต้องแล้ว แต่ยังไม่ถูกนับในแผน — คนละเรื่องกับ "จับคู่ SAP ไม่ได้" */}
+      {/* 🌳 ที่มาของงานในแผน — ต้องบอกว่าตัวเลขรวมอะไรไว้บ้าง ไม่งั้นคนอ่านจะเทียบกับ order ลูกค้าแล้วงง */}
+      {!loading && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+          {bomErr ? (
+            <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)</span>
+          ) : !useBom ? (
+            <span>🌳 ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง</span>
+          ) : demandPcs.bom ? (
+            <>🌳 รวมงานที่ระเบิดจาก BOM แล้ว: <b>{Math.round(demandPcs.bom.childPcs).toLocaleString()} ชิ้น</b> จากพาร์ทที่มี BOM {demandPcs.bom.rootsWithBom} ตัว
+              {demandPcs.bom.rootsNoBom > 0 && <span> · ยังไม่มี BOM {demandPcs.bom.rootsNoBom} ตัว (ลูกของพาร์ทเหล่านี้ยังไม่เข้าแผน)</span>}
+              {' · '}⏱️ <b>ยังไม่เลื่อนวันตาม lead time</b> — งานของลูกถูกวางไว้วันเดียวกับดิวของแม่ (ของจริงต้องเสร็จก่อน)
+            </>
+          ) : null}
+        </div>
+      )}
+
+      {/* 🧹 worklist ให้ PE/Planning — ระบบไม่แก้ข้อมูลให้เอง (กฎของ bomTree.js) */}
+      {!loading && useBom && demandPcs.bom?.flatDupes?.length > 0 && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          🧹 <b>BOM แบนซ้ำ {demandPcs.bom.flatDupes.length} จุด</b> — ชิ้นเดียวกันถูกใส่ไว้ทั้งชั้น 1 และในชั้นลึกของใบเดียวกัน
+          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
+            แผนนี้ <b>ต่อโซ่แบบ SAP</b> (นับครั้งเดียว ไม่นับแถวชั้น 1 ที่ซ้ำ) — ตัวเลขจึงถูกแล้ว
+            แต่ข้อมูลยังซ้ำอยู่ ⇒ ให้ PE/Planning ไปเก็บที่ <b>/products แท็บ BOM</b>
+          </div>
+          <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
+            {demandPcs.bom.flatDupes.slice(0, 6).map(f => `${f.root} → ${f.mat_no}`).join(' · ')}
+            {demandPcs.bom.flatDupes.length > 6 ? ` … อีก ${demandPcs.bom.flatDupes.length - 6} จุด` : ''}
+          </div>
+        </div>
+      )}
+      {!loading && useBom && demandPcs.bom?.cycles > 0 && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
+          ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
+        </div>
+      )}
+
       {!loading && demandGaps.noLine > 0 && (
         <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>{demandGaps.noLine} รายการความต้องการยังไม่ถูกนับในแผน</b> — พาร์ท {demandGaps.noLineParts.size} ตัวนี้<b>ยังไม่ได้ผูกไลน์ผลิต</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
