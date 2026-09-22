@@ -816,3 +816,20 @@ Store sub part → Production sub part (Stamping) → Store raw/purchase → Pur
 > **มองไม่เห็นการตัดชิ้นส่วนของใบนั้นเลย** — วัดจริง 2,247 แถว null ทั้งหมด · แก้ที่ trigger + backfill จับคู่ note `auto: FG <prod_no>` + ไลน์ + work_date
 > ได้ 2,212 แถว (กำกวม 29 + หาไม่เจอ 6 ปล่อย null ไม่เดา) · migration `20260904_explode_consume_ref_order.sql` (DR · apply แล้ว)
 > · guard กันโพสต์ซ้ำ/ปุ่มถอยใบ กรอง `type='issue'` เท่านั้น จึงไม่กระทบ · **แถว ledger อัตโนมัติทุกชนิดต้องผูก ref ต้นทางตั้งแต่เขียน** ไม่งั้นสอบกลับขาดตอน
+
+
+---
+
+## `production_lines.line_type` — ประวัติ + ไลน์ที่ยังไม่ตั้งค่า (ย้ายมาจาก CLAUDE.md 2026-09-22)
+
+> กฎที่ยังอยู่ใน CLAUDE.md (ห้ามลืม): **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · **ไลน์ที่ `line_type` ว่าง
+> ถูกจัดลำดับต่ำสุดแต่ห้ามหายจาก dropdown — ต้องมีตะกร้ารับท้ายลิสต์เสมอ**
+
+- migration `20260722_production_lines_line_type.sql` — **apply แล้ว 2026-08-05** · **ค้างไม่ได้ apply อยู่ 2 สัปดาห์
+  ระหว่างนั้นช่องนี้เซฟไม่ติดเงียบๆ และลาก `flow_mode` ปิดตามไปด้วย** (บทเรียน: คอลัมน์ใหม่ที่ยังไม่ apply
+  = ฟอร์มบันทึกแล้วหายเงียบ ไม่มี error ให้เห็น — ดูวิธี audit migration ค้างใน `qc-audit-history.md`)
+- `20260805_..._fix_laser.sql` — แก้ backfill ที่ตีไลน์เลเซอร์ซึ่งอยู่ใต้กลุ่ม HYDROFORM เป็น `hydroform` ผิด
+  (ที่มาของกฎ "ชื่อไลน์ตัวเองชนะไลน์แม่")
+- `20260910_line_type_pd1_press_lines.sql` — PD1 ครบทั้ง 4 ไลน์
+- **ไลน์ที่ `line_type` ยังว่าง (ณ 2026-09-10):** Rework-PD1 · BENDING E50/EXPORT · LINE GWM ·
+  LINE MAIN TSRA-1/2 · LINE SUB-STATIONARY

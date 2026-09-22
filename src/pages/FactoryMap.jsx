@@ -1133,7 +1133,7 @@ export default function FactoryMap({ setupMode = false }) {
     setFacilitySupply(fac);
   }, []);
 
-  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
+  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/equipment?tab=die&die=layout · 2026-09-22) ──
      กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
      trim+lowercase) = โซนคลังแม่พิมพ์ — pattern เดียวกับโซน facility ↔ pm_facility_areas
      (ข้าม project Main↔DR ทำ FK ไม่ได้ ชื่อคือกุญแจ — เปลี่ยนชื่อผังใน DieLayout จะ cascade ชื่อกรอบให้)
@@ -1527,7 +1527,7 @@ export default function FactoryMap({ setupMode = false }) {
   const openLine = (name, date) => {
     // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
     const dz = dieZoneOf(name);
-    if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
+    if (dz) { setHoverLine(null); navigate(`/equipment?tab=die&die=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
     // 🏬 โซนคลังสินค้า → popup รายการ MAT ในโซน (เต็ม/ขาด) — เช็คก่อน isFac เหมือนโซนแม่พิมพ์
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }

@@ -1854,7 +1854,7 @@ export default function LineSetup({ embedded = false } = {}) {
           {activeTab === 'machines' && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
               {/* ทะเบียนเครื่องจักร (สร้าง/แก้ไข/กำหนดประเภท) ย้ายไปหน้าฐานข้อมูลเครื่องจักรแล้ว — ที่นี่แค่วางจุดบนผัง */}
-              <a href="/machine-database" target="_blank" rel="noopener noreferrer"
+              <a href="/equipment?tab=machine" target="_blank" rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none',
                   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                 <div>
