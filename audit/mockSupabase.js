@@ -201,11 +201,15 @@ const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefi
    "โหลดไม่ได้" ทุกครั้ง = **สาขาที่ใช้งานจริงไม่เคยถูกเรนเดอร์ใน crashsweep เลย**
    ⚠️ ต้องครอบเคสที่ของจริงมีจริงๆ: วิว (แก้ไม่ได้) · ตารางไม่มี PK · RLS ปิด · คอลัมน์ enum ·
       FK ข้าม schema (auth.users) — เคสพวกนี้คือจุดที่โค้ดหน้ามีสาขาแยก                        */
+/* ⚠️ ชุดนี้ต้องมีครบทุก "เคสที่แท็บ 🩺 ตรวจสุขภาพ มีสาขาแยก" ไม่งั้นสาขานั้นไม่เคยถูกเรนเดอร์:
+     วิว (ไม่ฟ้อง PK/RLS) · ตารางสำรองค้าง public · RLS ปิด · ไม่มี PK · ไม่มีใครใช้ · ตารางว่าง */
 const SCHEMA_TABLES = [
-  { t: 'employees', k: 'r', cols: 12, rows: 308, rls: true, pk: ['id'], note: null },
-  { t: 'four_m_logs', k: 'r', cols: 18, rows: 1240, rls: true, pk: ['id'], note: 'บันทึกการเปลี่ยนแปลง 4M' },
-  { t: 'line_stock_summary', k: 'v', cols: 4, rows: 0, rls: false, pk: [], note: null },
-  { t: 'production_lines', k: 'r', cols: 11, rows: 31, rls: true, pk: ['id'], note: null },
+  { t: 'employees', k: 'r', cols: 12, rows: 308, bytes: 311296, rls: true, pk: ['id'], note: null },
+  { t: 'four_m_logs', k: 'r', cols: 18, rows: 1240, bytes: 696320, rls: true, pk: ['id'], note: 'บันทึกการเปลี่ยนแปลง 4M' },
+  { t: 'line_stock_summary', k: 'v', cols: 4, rows: 0, bytes: 0, rls: false, pk: [], note: null },
+  { t: 'production_lines', k: 'r', cols: 11, rows: 31, bytes: 81920, rls: true, pk: ['id'], note: null },
+  { t: 'jigs_bak_test1_20260909', k: 'r', cols: 22, rows: 0, bytes: 16384, rls: false, pk: [], note: null },
+  { t: 'legacy_no_pk', k: 'r', cols: 3, rows: 958, bytes: 65536, rls: false, pk: [], note: null },
 ]
 const SCHEMA_FKS = [
   { name: 'four_m_logs_line_id_fkey', t: 'four_m_logs', c: ['line_id'], rt: 'production_lines', rc: ['id'], del: 'a' },

@@ -1,0 +1,358 @@
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabaseDR } from '../supabaseClient';
+import PageHeader from '../components/PageHeader';
+import ParetoAbcChart from '../components/ParetoAbcChart';
+import useTabParam from '../utils/useTabParam';
+import fetchAllRows from '../utils/fetchAllRows';
+import { toast } from '../components/Toast';
+import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
+import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
+
+/* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
+
+   ที่มา (คำสั่ง user): *"หมวด mtn ยังไม่มีพวก dashboard ปัญหา เครื่องจักร/แม่พิมพ์/jig fixture
+   เลย สรุปปัญหา ระบบวิเคราะห์ qc7tools ยังไม่เห็น"*
+
+   ทำไมเป็นหน้าใหม่ ไม่ใช่แท็บที่ 6 ของ `/mtn-repair`:
+     · `/mtn-repair` = **หน้าทำงาน** (เปิดใบ/เดินขั้น/คลังอะไหล่) · หน้านี้ = **หน้าวิเคราะห์** อ่านอย่างเดียว
+     · chunk ของ MtnRepair 347 KB อยู่แล้ว — ยัดกราฟเข้าไปอีกคือทุกคนที่แค่จะเปิดใบต้องโหลดตาม
+     · user พูดถึง "หมวด mtn" (เมนู) ไม่ใช่ "หน้าแจ้งซ่อม" ⇒ ต้องมีรายการเมนูของตัวเอง
+
+   🔴 แกนชนิดสินทรัพย์ **ห้ามใช้ `mtn_orders.mtn_dept`** — วัดจริง 22/09: 422 จาก 473 ใบเป็นทีม
+      `production` (ช่างประจำไลน์) ซึ่งซ่อมทั้งเครื่อง/จิ๊ก/แม่พิมพ์ปนกัน ⇒ แยกด้วยทีม = แท็บแม่พิมพ์
+      กับ JIG ว่างทั้งที่มีงานจริง · ตัวแยกคือ `machines.equipment_kind` (ดู `assetClassOf` ใน utils/qc7.js)
+
+   🔴 กฎความซื่อสัตย์ของจอ: ทุกกราฟที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอพร้อมเหตุผล**
+      ห้ามโชว์ 0 ห้ามซ่อนแผง · แท็บที่ไม่มีข้อมูลก็ยังต้องอยู่ (กดเข้าไปแล้วเห็นว่า "ยังไม่มีใบ")
+
+   ⚠️ egress: หน้านี้ **ไม่ poll ไม่ subscribe** — โหลดตอนเปิด/กดรีเฟรช/เปลี่ยนช่วงเวลาเท่านั้น
+      และ `select` เฉพาะคอลัมน์ที่ใช้จริง (`mtn_orders` มี 116 คอลัมน์ — `select('*')` = 1.59 MB/ครั้ง)
+   ═════════════════════════════════════════════════════════════════════════════════════════ */
+
+/* คอลัมน์ที่หน้านี้ใช้จริงเท่านั้น — เพิ่มฟิลด์ใหม่ต้องเติมที่นี่ (กฎเพดาน egress CLAUDE.md ข้อ 11) */
+const MO_COLS = [
+  'id', 'mo_no', 'status', 'report_at', 'accept_at', 'repair_done_at',
+  'machine_no', 'item_type', 'line_name', 'mtn_dept',
+  'problem_group', 'problem_characteristic', 'report_note',
+  'cause_category', 'cause_other', 'root_cause', 'solution',
+  'labor_cost', 'parts_cost', 'repair_type',
+].join(',');
+const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
+
+const RANGES = [
+  { d: 30, label: '30 วัน' },
+  { d: 90, label: '90 วัน' },
+  { d: 180, label: '180 วัน' },
+  { d: 365, label: '1 ปี' },
+];
+
+const SOURCES = [
+  { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
+  { key: 'dt', label: '⏱ เครื่องหยุด (Downtime)', unit: 'ครั้ง', note: 'ทุกครั้งที่ไลน์บันทึกว่าเครื่องหยุด — ปริมาณเยอะกว่าใบซ่อมมาก' },
+];
+
+const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
+const isoDaysAgo = (days) => { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString(); };
+const minBetween = (a, b) => {
+  if (!a || !b) return null;
+  const m = (new Date(b) - new Date(a)) / 60000;
+  return Number.isFinite(m) && m >= 0 ? m : null;
+};
+/** คีย์สัปดาห์แบบ local (ไม่ใช่ ISO week ของ UTC — เวลาไทยจะเหลื่อมวัน) */
+function weekKey(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const day = (d.getDay() + 6) % 7;                 // จันทร์ = 0
+  d.setDate(d.getDate() - day);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** ทุกสัปดาห์ในช่วง (รวมสัปดาห์ที่เงียบ) — ไม่ส่งไปให้ runChart/controlChart = สัปดาห์ที่ไม่มีเหตุการณ์หายจากกราฟ */
+function weekKeysBack(days) {
+  const out = [];
+  const end = new Date();
+  const start = new Date(); start.setDate(start.getDate() - days);
+  const cur = new Date(start);
+  cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7));
+  while (cur <= end) {
+    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
+    cur.setDate(cur.getDate() + 7);
+  }
+  return out;
+}
+
+const KPI = ({ label, value, unit, sub, warn }) => (
+  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
+    <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+    <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? '#f59e0b' : 'var(--text)', lineHeight: 1.25 }}>
+      {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
+    </div>
+    {/* ค่า null = "ยังวัดไม่ได้" ต้องเขียนบอก ไม่ใช่โชว์ 0 ให้คนอ่านว่าดีเยี่ยม */}
+    <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.45 }}>{value == null ? 'ยังไม่มีข้อมูลพอ' : sub}</div>
+  </div>
+);
+
+export default function MtnAnalysis() {
+  const [tab, setTab] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine');
+  const [days, setDays] = useState(90);
+  const [src, setSrc] = useState('mo');
+  const [orders, setOrders] = useState([]);
+  const [dts, setDts] = useState([]);
+  const [kindByMc, setKindByMc] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr(null);
+    const since = isoDaysAgo(days);
+    try {
+      /* ทะเบียนเครื่อง = ตัวตัดสินชนิดสินทรัพย์ · เลขเครื่องซ้ำได้ในทะเบียน → ตัวแรกชนะ
+         (ไม่ใช่การตัดสินใจเชิงธุรกิจ แค่ต้องคงที่ ไม่ให้แท็บเปลี่ยนไปมาระหว่างโหลด) */
+      const [mcs, mo, dt] = await Promise.all([
+        fetchAllRows(supabaseDR, 'machines', 'machine_no, equipment_kind'),
+        fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).order('report_at', { ascending: false })),
+        fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).order('started_at', { ascending: false })),
+      ]);
+      const map = {};
+      (mcs || []).forEach(m => {
+        const k = String(m?.machine_no || '').trim().toUpperCase();
+        if (k && !map[k]) map[k] = m.equipment_kind;
+      });
+      setKindByMc(map); setOrders(mo || []); setDts(dt || []);
+    } catch (e) {
+      setErr(e?.message || String(e));
+      toast.error('โหลดข้อมูลวิเคราะห์ไม่สำเร็จ: ' + (e?.message || e));
+    } finally { setLoading(false); }
+  }, [days]);
+
+  useEffect(() => { let alive = true; (async () => { await load(); if (!alive) return; })(); return () => { alive = false; }; }, [load]);
+
+  /* ── แปลงเป็น "แถวเหตุการณ์" รูปแบบเดียว แล้วค่อยแยกแท็บ ─────────────────────
+     ทำแบบนี้เพื่อให้กราฟทุกตัวกินข้อมูลชุดเดียวกัน ไม่ต้องรู้ว่ามาจาก MO หรือ downtime */
+  const events = useMemo(() => {
+    if (src === 'mo') {
+      return (orders || []).map(o => {
+        const { cls, known } = assetClassOf(o, kindByMc);
+        const ttr = minBetween(o.accept_at, o.repair_done_at);
+        const cost = [o.labor_cost, o.parts_cost].some(v => v != null && v !== '')
+          ? (Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0) : null;
+        return {
+          id: o.id, cls, clsKnown: known, at: o.report_at,
+          asset: (o.machine_no || '').trim() || (o.item_type || '').trim() || '(ไม่ระบุอุปกรณ์)',
+          label: o.mo_no || '(ยังไม่ออกเลข)',
+          group: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
+          symptom: (o.problem_characteristic || '').trim() || 'ไม่ระบุอาการ',
+          cause_category: o.cause_category,
+          causeText: [o.root_cause, o.cause_other, o.problem_characteristic, o.report_note].filter(Boolean).join(' '),
+          line: (o.line_name || '').trim() || '(ไม่ระบุไลน์)',
+          team: (o.mtn_dept || '').trim() || '(ไม่ระบุทีม)',
+          minutes: ttr, cost, raw: o,
+        };
+      });
+    }
+    return (dts || []).map(d => {
+      const { cls, known } = assetClassOf(d, kindByMc);
+      const m = d.duration_min == null ? null : Number(d.duration_min);
+      return {
+        id: d.id, cls, clsKnown: known, at: d.started_at,
+        asset: (d.machine_no || '').trim() || '(ไม่ระบุเครื่อง)',
+        label: (d.machine_no || '').trim() || '—',
+        group: (d.description || '').trim().slice(0, 40) || 'ไม่ระบุอาการ',
+        symptom: (d.description || '').trim() || 'ไม่ระบุอาการ',
+        cause_category: null,
+        causeText: [d.description, d.fix_action].filter(Boolean).join(' '),
+        line: '(ไม่ระบุไลน์)',
+        team: (d.call_mtn_team || '').trim() || '(ไม่ได้เรียกช่าง)',
+        minutes: Number.isFinite(m) ? m : null, cost: null, raw: d,
+      };
+    });
+  }, [src, orders, dts, kindByMc]);
+
+  const byClass = useMemo(() => {
+    const m = Object.fromEntries(ASSET_CLASSES.map(a => [a.key, []]));
+    events.forEach(e => { (m[e.cls] || m.other).push(e); });
+    return m;
+  }, [events]);
+
+  const rows = byClass[tab] || [];
+  const srcMeta = SOURCES.find(s => s.key === src);
+  const unit = srcMeta.unit;
+  const wKeys = useMemo(() => weekKeysBack(days), [days]);
+
+  /* สรุปหัวจอ — ทุกตัวคืน null เมื่อ "ยังวัดไม่ได้" (ห้ามตีเป็น 0) */
+  const sum = useMemo(() => {
+    const mins = rows.map(r => r.minutes).filter(v => v != null);
+    const costs = rows.map(r => r.cost).filter(v => v != null);
+    const assets = new Set(rows.map(r => r.asset));
+    const sorted = [...mins].sort((a, b) => a - b);
+    return {
+      n: rows.length,
+      assets: assets.size,
+      totalMin: mins.length ? mins.reduce((a, b) => a + b, 0) : null,
+      avgMin: mins.length ? mins.reduce((a, b) => a + b, 0) / mins.length : null,
+      medMin: sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : null,
+      noMin: rows.length - mins.length,
+      cost: costs.length ? costs.reduce((a, b) => a + b, 0) : null,
+      noCost: rows.length - costs.length,
+      guessed: rows.filter(r => !r.clsKnown).length,
+    };
+  }, [rows]);
+
+  /* อุปกรณ์ = 1 จุดในผังกระจาย (ซ่อมกี่ครั้ง ↔ เสียเวลารวมเท่าไหร่) */
+  const perAsset = useMemo(() => {
+    const m = {};
+    rows.forEach(r => {
+      const g = m[r.asset] || (m[r.asset] = { asset: r.asset, times: 0, minutes: 0, hasMin: 0 });
+      g.times++;
+      if (r.minutes != null) { g.minutes += r.minutes; g.hasMin++; }
+    });
+    // อุปกรณ์ที่ไม่มีเวลาสักครั้งเดียว = ตีเป็น 0 นาทีไม่ได้ ⇒ ตัดออกจากผังกระจาย (แต่ยังนับใน KPI)
+    return Object.values(m).filter(g => g.hasMin > 0);
+  }, [rows]);
+
+  const paretoRecords = useMemo(() => rows.map(r => ({
+    cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
+  })), [rows]);
+
+  /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
+     ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
+  const PARETO_DIMS = useMemo(() => ([
+    { key: 'sub', label: '🛑 อาการย่อย' },
+    { key: 'machine', label: '⚙️ อุปกรณ์' },
+    { key: 'line', label: '🏭 ไลน์' },
+    { key: 'team', label: '👷 ทีมช่าง' },
+    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+  ]), []);
+
+  const tabs = ASSET_CLASSES.map(a => ({
+    key: a.key,
+    label: `${a.icon} ${a.label}${loading ? '' : ` (${(byClass[a.key] || []).length})`}`,
+  }));
+
+  return (
+    <div style={{ padding: '14px 16px 40px' }}>
+      <PageHeader
+        title="วิเคราะห์ปัญหา (ซ่อมบำรุง)" icon="🔍"
+        sub={`QC 7 Tools แยกตามชนิดสินทรัพย์ · ${srcMeta.note}`}
+        tabs={tabs} tab={tab} onTab={setTab}
+        actions={
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select value={src} onChange={e => setSrc(e.target.value)} style={{ width: 180, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+              {SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+            </select>
+            <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+              {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
+            </select>
+            <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
+              {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
+            </button>
+          </div>
+        }
+      />
+
+      {err && (
+        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', marginBottom: 12 }}>
+          โหลดข้อมูลไม่สำเร็จ — {err} · กด ↻ รีเฟรช อีกครั้ง (ยังไม่ได้แสดงตัวเลขใดๆ เพื่อไม่ให้อ่านผิด)
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดข้อมูล {days} วันย้อนหลัง…</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
+          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>
+            <KPI label={`เหตุการณ์ (${days} วัน)`} value={sum.n ? fmt(sum.n) : null} unit={unit} sub={`${sum.assets} อุปกรณ์`} />
+            <KPI label="เวลาสูญเสียรวม" value={sum.totalMin == null ? null : fmt(sum.totalMin)} unit="นาที"
+              sub={sum.noMin ? `⚠️ ${sum.noMin} รายการยังไม่มีเวลา — ไม่ถูกนับ` : 'ครบทุกรายการ'} warn={!!sum.noMin} />
+            <KPI label={src === 'mo' ? 'เวลาซ่อมเฉลี่ย' : 'หยุดเฉลี่ยต่อครั้ง'} value={sum.avgMin == null ? null : fmt(sum.avgMin, 1)} unit="นาที"
+              sub={sum.medMin == null ? '' : `มัธยฐาน ${fmt(sum.medMin, 1)} นาที`} />
+            <KPI label="ค่าใช้จ่ายรวม" value={sum.cost == null ? null : fmt(sum.cost)} unit="บาท"
+              sub={sum.noCost ? `⚠️ ${sum.noCost} รายการยังไม่ลงค่าใช้จ่าย` : 'ครบทุกรายการ'} warn={!!sum.noCost} />
+            <KPI label="แยกชนิดจากทะเบียน" value={sum.n ? fmt(sum.n - sum.guessed) : null} unit={`/ ${sum.n}`}
+              sub={sum.guessed ? `⚠️ ${sum.guessed} รายการระบบเดาชนิดให้` : 'ยืนยันจากทะเบียนเครื่องทุกรายการ'} warn={!!sum.guessed} />
+          </div>
+
+          {rows.length === 0 ? (
+            <Panel title={`ยังไม่มีเหตุการณ์ในกลุ่ม “${ASSET_CLASSES.find(a => a.key === tab)?.label}”`}
+              sub="แท็บนี้ยังอยู่เสมอ ไม่ได้ถูกซ่อน — ว่างแปลว่า “ช่วงนี้ไม่มีงานที่ผูกกับสินทรัพย์กลุ่มนี้” ไม่ใช่จอพัง">
+              <NotEnough
+                reason={`ไม่พบ${srcMeta.label}ของกลุ่มนี้ในช่วง ${days} วันย้อนหลัง`}
+                hint="ลองขยายช่วงเวลา หรือสลับแหล่งข้อมูล · ถ้าแน่ใจว่ามีงานจริง มักเป็นเพราะเลขเครื่องในใบไม่ตรงกับทะเบียน (ไปแก้ที่ทะเบียนเครื่องจักร)" />
+            </Panel>
+          ) : (
+            <>
+              {/* ② พาเรโต — component กลางเดิม ไม่ทำใหม่ */}
+              <ParetoAbcChart
+                title={`② พาเรโต — ปัญหาไหนกินสัดส่วนมากที่สุด (${unit})`}
+                records={paretoRecords} dims={PARETO_DIMS} unit={unit}
+                emptyText="ไม่มีข้อมูลในช่วงนี้"
+                sectionStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
+                titleStyle={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }} />
+
+              {/* ③ ก้างปลา */}
+              <Panel title="③ ผังก้างปลา — สาเหตุกองอยู่แกนไหน (4M)"
+                sub="จัดรายการเข้าแกน คน/เครื่อง/วัสดุ/วิธี/การวัด/สภาพแวดล้อม — ใช้หมวดที่ช่างเลือกไว้ก่อน ไม่มีจึงเดาจากข้อความสาเหตุ">
+                <Fishbone records={rows} categoryOf={r => r.cause_category} textOf={r => r.causeText} labelOf={r => r.label}
+                  effect={`${ASSET_CLASSES.find(a => a.key === tab)?.label} หยุด/เสียหาย`} />
+              </Panel>
+
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, alignContent: 'start' }}>
+                {/* ④ ฮิสโตแกรม */}
+                <Panel title={`④ ฮิสโตแกรม — ${src === 'mo' ? 'เวลาซ่อม' : 'เวลาหยุด'}กระจายยังไง`}
+                  sub="ดูว่างานส่วนใหญ่ใช้เวลาช่วงไหน และมีหางยาวแค่ไหน (หางยาว = งานที่ต้องรออะไหล่/รอ supplier)">
+                  <Histogram values={rows} valOf={r => r.minutes} unit="นาที" />
+                </Panel>
+
+                {/* ⑥ กราฟควบคุม */}
+                <Panel title="⑥ กราฟควบคุม (XmR) — สัปดาห์นี้ผิดปกติหรือเปล่า"
+                  sub="เส้นกลาง = ระดับปกติของงานนี้ · จุดแดง = มีสาเหตุเฉพาะให้ไปตามหา ไม่ใช่ความผันแปรธรรมดา">
+                  <ControlChart
+                    points={(() => {
+                      const agg = {};
+                      rows.forEach(r => { const k = weekKey(r.at); if (k) agg[k] = (agg[k] || 0) + 1; });
+                      return wKeys.map(k => ({ label: k.slice(5), value: agg[k] || 0 }));
+                    })()}
+                    unit={unit} />
+                </Panel>
+
+                {/* ⑤ ผังกระจาย */}
+                <Panel title="⑤ ผังกระจาย — ซ่อมบ่อย ↔ เสียเวลามาก ไปด้วยกันไหม"
+                  sub="1 จุด = 1 อุปกรณ์ · มุมขวาบน = ทั้งบ่อยทั้งนาน คือเป้าหมายแรกของการปรับปรุง">
+                  <ScatterPlot records={perAsset} xOf={a => a.times} yOf={a => a.minutes} labelOf={a => a.asset}
+                    xLabel={`จำนวนครั้ง (${unit})`} yLabel="เวลารวม (นาที)" />
+                </Panel>
+
+                {/* ⑦ แนวโน้ม */}
+                <Panel title="⑦ แนวโน้มรายสัปดาห์" sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
+                  <RunChart records={rows} keyOf={r => weekKey(r.at)} keys={wKeys} unit={unit} />
+                </Panel>
+              </div>
+
+              {/* ⑦ แบ่งชั้น */}
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, alignContent: 'start' }}>
+                <Panel title="⑦ แบ่งชั้น — อุปกรณ์ที่มีปัญหามากที่สุด" sub="เรียงตามจำนวนครั้ง">
+                  <Stratify records={rows} keyOf={r => r.asset} unit={unit} top={10} />
+                </Panel>
+                <Panel title="⑦ แบ่งชั้น — เวลาสูญเสียรวมรายอุปกรณ์" sub="เรียงตามนาที (รายการที่ยังไม่มีเวลาไม่ถูกนับ ไม่ได้ตีเป็น 0)">
+                  <Stratify records={rows.filter(r => r.minutes != null)} keyOf={r => r.asset} valOf={r => r.minutes} unit="นาที" top={10} />
+                </Panel>
+              </div>
+
+              {/* ① ใบตรวจสอบ */}
+              <Panel title="① ใบตรวจสอบ — นับไขว้ อุปกรณ์ × กลุ่มปัญหา"
+                sub="ตารางนับแบบใบเช็กชีตกระดาษ · ช่องเข้มแดง = จุดที่ซ้ำบ่อยที่สุด ให้เริ่มแก้ตรงนั้น">
+                <CheckSheet records={rows} rowOf={r => r.asset} colOf={r => r.group} rowLabel="อุปกรณ์" colLabel="กลุ่มปัญหา" />
+              </Panel>
+            </>
+          )}
+
+          <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.8 }}>
+            📌 แหล่งข้อมูล: {src === 'mo' ? 'mtn_orders (ใบแจ้งซ่อม)' : 'downtime_logs (บันทึกเครื่องหยุดจาก Daily Report)'} ·
+            ชนิดสินทรัพย์ตัดสินจากทะเบียนเครื่องจักร (`machines.equipment_kind`) ไม่ใช่ทีมช่างที่รับงาน ·
+            หน้านี้อ่านอย่างเดียว ไม่แก้ข้อมูล และไม่ดึงซ้ำอัตโนมัติ (กด ↻ เมื่อต้องการข้อมูลล่าสุด)
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

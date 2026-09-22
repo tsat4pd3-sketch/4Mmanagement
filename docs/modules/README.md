@@ -34,6 +34,7 @@
 | Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15) | `docs/modules/production-plan.md` | 6 KB |
 | Remote Control — จอตาม-มือถือคุม (2026-07-15) | `docs/modules/remote-control.md` | 3 KB |
 | MTN Work-Order — ใบแจ้งซ่อม MO 7 ขั้น (2026-07-14) | `docs/modules/mtn-work-order.md` | 31 KB |
+| 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools `/mtn-analysis` (2026-09-22) | `docs/modules/mtn-problem-analysis.md` | 13 KB |
 | คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05) | `docs/modules/spare-part-master.md` | 23 KB |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` | 7 KB |
 | Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า) | `docs/modules/fixture-shim-record.md` | 16 KB |
@@ -50,7 +51,7 @@
 | ประวัติผลิต by Product — `/product-history` (2026-07-24) | `docs/modules/product-history.md` | 17 KB |
 | สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30) | `docs/modules/order-trace.md` | 35 KB |
 | 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user) | `docs/modules/feedback-inbox.md` | 4 KB |
-| 🗄️ โครงสร้างฐานข้อมูล (Data Map) — `/schema` (2026-09-22 · ทีมงานขอ: แจ้งบัคให้ตรงตาราง) | `docs/modules/schema-map.md` | 12 KB |
+| 🗄️ โครงสร้างฐานข้อมูล (Data Map) — `/schema` (2026-09-22 · ทีมงานขอ: แจ้งบัคให้ตรงตาราง) | `docs/modules/schema-map.md` | 23 KB |
 | Edge Functions | `docs/modules/edge-functions.md` | 28 KB |
 | Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09) | `docs/modules/storage-images.md` | 35 KB |
 | Deploy | `docs/modules/deploy.md` | 25 KB |
