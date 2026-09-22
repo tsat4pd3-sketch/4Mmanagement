@@ -149,6 +149,7 @@ const PAGE_GROUPS = [
       { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
       { key: 'page:/schema',           label: 'โครงสร้างฐานข้อมูล — ตาราง/คีย์/ความสัมพันธ์ (อ่านอย่างเดียว ไม่เห็นข้อมูลในตาราง)' },
+      { key: 'page:/storage-maintenance', label: 'ดูแลพื้นที่จัดเก็บ / ค่าเน็ต — บีบรูปที่อัปไว้แล้ว' },
     ],
   },
   {

@@ -17,7 +17,13 @@
    2. **ผัง 1 รูปอาจถูกใช้หลายไลน์** (ไลน์ลูกยืมของไลน์แม่ / ตั้ง URL เดียวกันไว้) ⇒ จัดกลุ่มตาม URL
       แล้วอัปเดต**ทุกแถวที่ชี้รูปนั้น** ก่อนลบ — ไม่งั้นไลน์อื่นรูปหาย
    3. **บีบแล้วไม่เล็กลงจริง = ไม่ต้องเปลี่ยน** (ปล่อยของเดิมไว้ ดีกว่าเสี่ยงเปล่าๆ)
-   4. รูปไหนพัง/โหลดไม่ได้ = ข้ามแล้วรายงาน **ห้ามหยุดทั้งชุด** (ผังใบเดียวเสียไม่ควรบล็อกที่เหลือ)            */
+   4. รูปไหนพัง/โหลดไม่ได้ = ข้ามแล้วรายงาน **ห้ามหยุดทั้งชุด** (ผังใบเดียวเสียไม่ควรบล็อกที่เหลือ)
+   5. **ห้ามใส่งานที่ "ข้ามถาวร" เข้าคิว และห้ามกลับไปแบ่งล็อตแบบมีตัวกันวน `done === 0`** (2026-09-22)
+      เคยพังจริง: ไฟล์ที่เป็น .webp แล้ว / เล็กกว่าเกณฑ์อยู่แล้ว ถูกใส่คิวไว้หน้าสุด**ทุกรอบ**
+      (มันไม่เคยเปลี่ยนสภาพ จึงไม่เคยหลุดออกจากลิสต์) ⇒ ล็อตแรก 150 ใบเป็น skip ทั้งก้อน
+      ⇒ `done === 0` ⇒ ตัวกันวนเข้าใจผิดว่า "ติดปัญหา" แล้วหยุด ⇒ **งานท้ายคิวไม่เคยถูกแตะเลย**
+      (รูปซ่อม MO 85 MB = ก้อนใหญ่สุดที่เหลือ · user กด 3 ครั้งขนาดรวมไม่ลดเลย)
+      ⇒ กรอง .webp ออกตอน**สร้างคิว** · ถามขนาดด้วย HEAD ก่อนโหลด · ผู้เรียกส่ง `limit: 0` รอบเดียวจบ            */
 import { compressLayoutImage, compressPhotoImage } from './layoutImage.js';
 import { uploadOpts } from './storageUpload.js';
 
@@ -27,7 +33,8 @@ export const RECOMPRESS_MIN_BYTES = 600 * 1024;
 /** รูปจุดตรวจ PM: ไฟล์เล็กกว่ารูปผังมาก (เฉลี่ย ~100 KB) แต่มีเป็นพัน ⇒ เกณฑ์ต่ำกว่า */
 export const PHOTO_MIN_BYTES = 40 * 1024;
 
-/** จำนวนไฟล์ต่อการกด 1 ครั้ง — รูป PM มี ~1,000 ไฟล์ ทำรวดเดียวนานเกินไปและปิดหน้าไม่ได้ */
+/** เพดานเริ่มต้นต่อการเรียก 1 ครั้ง — **จอจริงส่ง `limit: 0` (รอบเดียวจบ)** ดูกฎข้อ 5 หัวไฟล์
+ *  ค่านี้เหลือไว้เป็น default กันเผลอเรียกแบบไม่จำกัดจากที่อื่น ไม่ใช่วิธีใช้งานปกติ */
 export const RECOMPRESS_BATCH = 150;
 
 /** ต้องเล็กลงอย่างน้อยเท่านี้ถึงจะยอมสลับไฟล์ */
@@ -61,6 +68,19 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBy
   // ไฟล์ที่เป็น webp อยู่แล้ว = เคยผ่านตัวนี้มาแล้ว ⇒ ข้ามโดยไม่ต้องโหลดลงมาเสียเปล่า
   // (ทำให้กดซ้ำได้เรื่อยๆ ปลอดภัย — สำคัญมากเพราะรูป PM มีเป็นพันไฟล์ ต้องทำหลายรอบ)
   if (/\.webp$/i.test(String(oldName || ''))) return { status: 'skip', msg: 'เป็น WebP แล้ว' };
+
+  /* 🔴 ถามขนาดด้วย HEAD ก่อนโหลดตัวไฟล์ (2026-09-22)
+     เดิมโหลดไฟล์เต็มก้อนมาก่อนแล้วเพิ่งเช็ค `before < minBytes` ⇒ ไฟล์ที่ "เล็กอยู่แล้ว"
+     ถูกดาวน์โหลดทิ้งทุกครั้งที่กดปุ่ม · วัดจริง: รูป PM 198 ใบที่ต่ำกว่าเกณฑ์ (เฉลี่ย 33-44 KB)
+     = **เสีย egress ~9 MB ต่อการกด 1 ครั้ง เพื่อจะรู้ว่าไม่ต้องทำอะไร**
+     HEAD คืนแค่หัว (ไม่มี body) ⇒ ~ไม่กี่ร้อยไบต์ · ถ้า HEAD ใช้ไม่ได้/ไม่บอกขนาด ก็ถอยไปโหลดจริง */
+  try {
+    const h = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+    const len = Number(h.headers.get('content-length'));
+    if (h.ok && Number.isFinite(len) && len > 0 && len < minBytes) {
+      return { status: 'skip', before: len, msg: 'เล็กอยู่แล้ว' };
+    }
+  } catch { /* HEAD ไม่ผ่าน = ไม่ใช่เหตุให้ล้มงาน ไปโหลดจริงต่อ */ }
 
   let blob;
   try {
@@ -102,9 +122,10 @@ async function recompressOne({ storage, url, newPathOf, saveRows, oldName, minBy
  * @param {object}   o.supabaseDR client ฝั่ง DR
  * @param {function} o.onProgress (text, doneCount, total) — อัปเดตข้อความบนจอ
  * @param {number}   [o.limit]  ทำแค่กี่ไฟล์ต่อรอบ (0 = ไม่จำกัด) — ที่เหลือคืนใน `remaining`
- * @returns {Promise<{done:number, skip:number, error:number, savedBytes:number, remaining:number, errors:string[]}>}
+ * @param {boolean}  [o.scanOnly] สำรวจว่าเหลือกี่ใบ **ไม่โหลด/ไม่แก้รูปเลย** → คืน `{scan:true,total,byGroup}`
+ * @returns {Promise<{done:number, skip:number, error:number, savedBytes:number, remaining:number, errors:string[], scan?:boolean, byGroup?:object}>}
  */
-export async function recompressLayouts({ supabase, supabaseDR, onProgress = () => {}, limit = RECOMPRESS_BATCH }) {
+export async function recompressLayouts({ supabase, supabaseDR, onProgress = () => {}, limit = RECOMPRESS_BATCH, scanOnly = false }) {
   const sum = { done: 0, skip: 0, error: 0, savedBytes: 0, remaining: 0, errors: [] };
   const jobs = [];
 
@@ -114,8 +135,9 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   groupByUrl(layoutRows || [], r => r.image_url).forEach((rows, url) => {
     const oldName = objectNameFromUrl(url, 'employee-photos');
     if (!oldName || !oldName.startsWith('layouts/')) return;   // URL นอก bucket เรา = ไม่แตะ
+    if (/\.webp$/i.test(oldName)) return;                     // ทำแล้ว — ไม่ต้องนับเข้าคิว (ให้เลข "เหลือ" ตรงความจริง)
     jobs.push({
-      label: `ผังไลน์ ${rows.map(r => r.line_name).join(', ')}`,
+      group: 'ผังไลน์', label: `ผังไลน์ ${rows.map(r => r.line_name).join(', ')}`,
       url, oldName, storage: mainStore,
       newPathOf: ext => `layouts/${oldName.replace(/^layouts\//, '').replace(/\.[^.]+$/, '')}_c.${ext}`,
       saveRows: async (newPath) => {
@@ -131,8 +153,9 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   groupByUrl(mapRows || [], r => r.image_url).forEach((rows, url) => {
     const oldName = objectNameFromUrl(url, 'employee-photos');
     if (!oldName || !oldName.startsWith('factory/')) return;
+    if (/\.webp$/i.test(oldName)) return;
     jobs.push({
-      label: 'ผังโรงงาน',
+      group: 'ผังโรงงาน', label: 'ผังโรงงาน',
       url, oldName, storage: mainStore,
       newPathOf: ext => `factory/${oldName.replace(/^factory\//, '').replace(/\.[^.]+$/, '')}_c.${ext}`,
       saveRows: async (newPath) => {
@@ -148,7 +171,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   (areaRows || []).filter(a => a.image_path).forEach((a) => {
     const { data: pub } = drStore.getPublicUrl(a.image_path);
     jobs.push({
-      label: `ผังเครื่องจักรโซน ${a.id}`,
+      group: 'ผังเครื่องจักร', label: `ผังเครื่องจักรโซน ${a.id}`,
       url: pub.publicUrl, oldName: a.image_path, storage: drStore,
       newPathOf: ext => `facility/${a.id}.${ext}`,
       saveRows: async (newPath) => supabaseDR.from('pm_facility_areas').update({ image_path: newPath }).eq('id', a.id),
@@ -169,7 +192,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   photoPaths.forEach((p) => {
     const { data: pub } = drStore.getPublicUrl(p);
     jobs.push({
-      label: `รูป PM ${p.split('/').pop()}`,
+      group: 'รูปจุดตรวจ PM', label: `รูป PM ${p.split('/').pop()}`,
       url: pub.publicUrl, oldName: p, storage: drStore,
       minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
       newPathOf: ext => `${p.replace(/\.[^./]+$/, '')}.${ext}`,
@@ -197,7 +220,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
       const oldName = objectNameFromUrl(url, 'mtn-images');
       if (!oldName || oldName.startsWith('sign/') || /\.webp$/i.test(oldName)) return;
       jobs.push({
-        label: `รูปซ่อม ${col} · ${oldName.split('/').pop()}`,
+        group: 'รูปซ่อม MO', label: `รูปซ่อม ${col} · ${oldName.split('/').pop()}`,
         url, oldName, storage: mtnStore,
         minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
         newPathOf: ext => `${oldName.replace(/\.[^./]+$/, '')}.${ext}`,
@@ -220,7 +243,7 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     if (!oldName || oldName.includes('/')) return;          // ผัง/ผังโรงงาน = คนละงาน
     if (/\.gif$/i.test(oldName)) return;                    // GIF บีบไม่ได้ (คงการเคลื่อนไหว)
     jobs.push({
-      label: `รูปพนักงาน ${rows[0]?.name || oldName}`,
+      group: 'รูปพนักงาน', label: `รูปพนักงาน ${rows[0]?.name || oldName}`,
       url, oldName, storage: mainStore,
       minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
       newPathOf: ext => `${oldName.replace(/\.[^.]+$/, '')}.${ext}`,
@@ -233,6 +256,18 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
   });
 
   const total = jobs.length;
+
+  /* 🔍 โหมดสำรวจ — ตอบว่า "ยังเหลือให้บีบกี่ใบ แยกตามกลุ่ม" **โดยไม่โหลดรูปแม้ใบเดียว**
+     (อ่านแค่แถวใน DB ซึ่งอ่านอยู่แล้วข้างบน ⇒ ไม่มีค่า egress ของรูปเลย)
+     มีไว้เพื่อให้จอบอกได้ว่า "กดแล้วได้อะไร" — เดิมกดแล้วต้องรอจนจบถึงจะรู้ว่าไม่มีอะไรเหลือ
+     ⚠️ ตัวเลขนี้คือ "จำนวนใบที่เข้าเกณฑ์จะถูกหยิบ" ไม่ใช่ "จำนวนใบที่จะถูกเปลี่ยนจริง" —
+        ใบที่โหลดมาแล้วเล็กอยู่แล้ว/บีบไม่ลง จะถูกนับเป็น skip ตอนรันจริง */
+  if (scanOnly) {
+    const byGroup = {};
+    jobs.forEach(j => { byGroup[j.group || 'อื่นๆ'] = (byGroup[j.group || 'อื่นๆ'] || 0) + 1; });
+    return { ...sum, scan: true, total, byGroup };
+  }
+
   const batch = limit > 0 ? jobs.slice(0, limit) : jobs;
   for (let i = 0; i < batch.length; i++) {
     const j = batch[i];
