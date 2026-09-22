@@ -116,3 +116,39 @@ export function explodeDemandByDate(demandRows = [], explodeOne, offsetDays = 0,
   });
   return out;
 }
+
+/* ═══ 📦 หัก buffer stock ก่อนสั่งผลิตซ้ำ (net requirement) — 2026-09-22 · คำถาม user ═══
+   *"ต้องไปคิดกับ buffer stock ใน store ป่ะ พาร์ทลูก"* — ใช่ · ของที่มีอยู่แล้วไม่ต้องผลิตซ้ำ
+
+   🔴 กติกา
+   1. **หักเรียงตามเวลา ห้ามหักทุก bucket ด้วยยอดเดิม** — ของกองเดียวกันใช้ได้ครั้งเดียว
+      (หักซ้ำทุกวัน = ความต้องการหายเกือบหมด แล้วแผนบอก "ไม่ต้องเปิดกะ" ทั้งที่ของไม่พอ)
+   2. **หักได้เฉพาะสต็อกที่เชื่อถือได้** — ผู้เรียกต้องส่งเฉพาะยอดที่ STORE เข้ามา
+      ยอดคงเหลือ "ที่ไลน์" (mini-store) ห้ามเอามาหัก: backflush ไม่ทำงาน (issue 5,908 : consume 40)
+      ⇒ สูงกว่าความจริงเสมอ · หักแล้ว = สั่งผลิตน้อยกว่าที่ต้องใช้ = ของขาด (ทิศอันตราย)
+   3. คืน `absorbed` (ถูกหักไปเท่าไหร่) + `leftover` (เหลือเท่าไหร่) ให้จอบอกคนดูได้ว่าเลขหายไปไหน  */
+
+/**
+ * @param {Array<[string, Record<string, number>]>} buckets  [[คีย์เวลา, {mat: qty}], ...] **เรียงจากเร็วไปช้าแล้ว**
+ * @param {Record<string, number>} stock  mat → ยอดที่หักได้ (ปกติ = ยอดที่ STORE)
+ * @returns {{ buckets: Record<string, Record<string, number>>, absorbed: number, leftover: Record<string, number> }}
+ */
+export function netOffBuffer(buckets = [], stock = {}) {
+  const left = { ...(stock || {}) };
+  const out = {};
+  let absorbed = 0;
+  buckets.forEach(([key, matQty]) => {
+    const bag = {};
+    Object.entries(matQty || {}).forEach(([mat, qty]) => {
+      const need = Math.max(0, Number(qty) || 0);
+      // สต็อกติดลบ (ledger เพี้ยน) ต้องถือว่า 0 — ไม่งั้น `need - use` จะ **เพิ่ม** ความต้องการ
+      const have = Math.max(0, Number(left[mat]) || 0);
+      const use = Math.max(0, Math.min(need, have));
+      if (use > 0) { left[mat] = have - use; absorbed += use; }
+      const rest = need - use;
+      if (rest > 0) bag[mat] = rest;      // 0 = ไม่ต้องผลิตรอบนี้ (ของพอ) — ตัดทิ้งได้
+    });
+    out[key] = bag;
+  });
+  return { buckets: out, absorbed, leftover: left };
+}

@@ -18,7 +18,7 @@ import {
 import { policyBreakForShift } from '../utils/oee';
 import { pairLoadTotal } from '../utils/pairTotals';
 import { buildBomIndex, explodeBom } from '../utils/bomTree';
-import { explodeDemand } from '../utils/demandExplode';
+import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -67,6 +67,8 @@ export default function ProductionPlan() {
   const [bomIx, setBomIx] = useState(null);       // ดัชนี BOM (buildBomIndex) — null = ยังไม่มี/โหลดไม่ได้
   const [bomErr, setBomErr] = useState(false);
   const [useBom, setUseBom] = useState(true);     // รวมความต้องการที่ระเบิดจาก BOM เข้าไปในแผนไหม
+  const [storeStock, setStoreStock] = useState({}); // mat → ยอดคงเหลือที่ STORE (buffer ของพาร์ทลูก)
+  const [useBuffer, setUseBuffer] = useState(true); // หัก buffer ที่ STORE ก่อนสั่งผลิตซ้ำไหม
   const [orders, setOrders] = useState([]);
   const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
@@ -116,7 +118,7 @@ export default function ProductionPlan() {
          และเพราะไม่มี `.order()` คู่กับ limit จึงได้ **คนละชุดทุกครั้งที่โหลด**
          ⇒ แท็บรายเดือน: shiftsNeeded ต่ำกว่าจริง → verdict ขึ้น "กะเช้าพอ" ทั้งที่ต้องเปิด OT/กะดึก
             และพาร์ทบางตัวหายไปจากแผนทั้งตัว · sessions/orders ยังไม่ทะลุวันนี้แต่โตได้เหมือนกัน */
-      const [{ data: cal }, { data: prods }, { data: bomRows, error: bomQErr }, brkRes, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
+      const [{ data: cal }, { data: prods }, { data: bomRows, error: bomQErr }, { data: stockRows }, brkRes, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
@@ -124,6 +126,11 @@ export default function ProductionPlan() {
         supabaseDR.from('dr_products').select('id, mat_no, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
         // 🌳 BOM ทุกแถว (ฐานจริง ~600 แถว) — ใช้ระเบิดความต้องการลงพาร์ทลูก ดู utils/demandExplode.js
         supabaseDR.from('bom_items').select('id, product_id, parent_mat, mat_no, qty_per_unit, uom, item_no'),
+        /* 📦 buffer stock ของพาร์ทลูกที่ **STORE** — เอาไปหักความต้องการก่อนสั่งผลิตซ้ำ
+           🔴 หักเฉพาะแถว STORE เท่านั้น **ห้ามหักยอดที่ไลน์ (mini-store)** — กฎเหล็ก demand-flow-tower:
+              backflush ไม่ทำงาน (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์ **สูงกว่าความจริงเสมอ**
+              เอาไปหัก = สั่งผลิตน้อยกว่าที่ต้องใช้ = ของขาด (ทิศอันตราย) */
+        supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', 'STORE'),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
         supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
@@ -169,6 +176,9 @@ export default function ProductionPlan() {
       (prods || []).forEach(p => { if (p.id && p.mat_no) matOfProduct[p.id] = p.mat_no; });
       setBomIx(bomQErr ? null : buildBomIndex(bomRows || [], matOfProduct));
       setBomErr(!!bomQErr);
+      const stk = {};
+      (stockRows || []).forEach(r => { const q = Number(r.qty_on_hand) || 0; if (r.mat_no && q > 0) stk[r.mat_no] = (stk[r.mat_no] || 0) + q; });
+      setStoreStock(stk);
 
       // ── กำลังจริงต่อกะ: sum qty ต่อ (session, mat) จากใบปิด แล้ว median ต่อ (mat) ──
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
@@ -309,7 +319,7 @@ export default function ProductionPlan() {
      🔴 ต้องบวกกัน ห้ามแทนกัน — ของจริง 22/09 ลูกค้าสั่งพาร์ท 2xxxxxxx ตรงๆ อยู่แล้ว 687 แถว/18 mat
      ⏱️ เฟส 1 วางความต้องการของลูกไว้ "วันเดียวกับดิวของแม่" (ยังไม่มี lead time) — จอต้องเขียนบอก */
   const demandPcs = useMemo(() => {
-    if (loading) return { byDate: {}, byMonth: {}, carry: {}, bom: null };
+    if (loading) return { byDate: {}, byMonth: {}, carry: {}, bom: null, buffer: null };
     const bomStat = { flatDupes: [], cycles: 0, rootsWithBom: 0, rootsNoBom: 0, childPcs: 0 };
     const explodeInto = (rowsIn) => {
       if (!useBom || !bomIx) return {};
@@ -352,13 +362,28 @@ export default function ProductionPlan() {
       });
       return out;
     };
-    const byDate = withBom(directByDate);
-    const byMonth = withBom(directByMonth);
-    const carry = withBom({ c: directCarry }).c || {};
+    const grossDate = withBom(directByDate);
+    const grossMonth = withBom(directByMonth);
+    const grossCarry = withBom({ c: directCarry }).c || {};
+
+    /* ③ 📦 หัก buffer ที่ STORE — ของที่มีอยู่แล้วไม่ต้องผลิตซ้ำ (คำถาม user 22/09)
+       🔴 หักเรียงตามเวลา ของกองเดียวใช้ได้ครั้งเดียว · ของค้างส่ง (carry) มาก่อนเสมอ
+       🔴 รายวันกับรายเดือนเป็น **คนละมุมมองของช่วงเวลาเดียวกัน** ⇒ แต่ละแท็บหักจาก buffer
+          ชุดของตัวเอง (ไม่ใช่หักต่อกัน) ไม่งั้นแท็บที่คำนวณทีหลังจะเหลือ buffer 0 เสมอ */
+    const stock = useBuffer ? storeStock : {};
+    const dayOrder = Object.keys(grossDate).sort();
+    const dNet = netOffBuffer([['__carry', grossCarry], ...dayOrder.map(d => [d, grossDate[d]])], stock);
+    const mNet = netOffBuffer(Object.keys(grossMonth).sort().map(m => [m, grossMonth[m]]), stock);
+    const { __carry: carry = {}, ...byDate } = dNet.buckets;
+
     // คู่ (mat) ที่ซ้ำกันข้าม bucket ไม่ต้องยุบ — แต่ละ bucket คือคนละวัน/เดือน
     const dupes = [...new Map(bomStat.flatDupes.map(f => [`${f.root}|${f.mat_no}`, f])).values()];
-    return { byDate, byMonth, carry, bom: { ...bomStat, flatDupes: dupes } };
-  }, [loading, orders, forecasts, overdueOrders, resolveMat, bomIx, useBom]);
+    return {
+      byDate, byMonth: mNet.buckets, carry,
+      bom: { ...bomStat, flatDupes: dupes },
+      buffer: { dailyAbsorbed: dNet.absorbed, monthlyAbsorbed: mNet.absorbed, mats: Object.keys(stock).length },
+    };
+  }, [loading, orders, forecasts, overdueOrders, resolveMat, bomIx, useBom, storeStock, useBuffer]);
 
   const daily = useMemo(() => {
     if (loading) return [];
@@ -523,6 +548,11 @@ export default function ProductionPlan() {
             <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
             🌳 รวมงานจาก BOM
           </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text2)', cursor: 'pointer' }}
+            title="หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)">
+            <input type="checkbox" checked={useBuffer} onChange={e => setUseBuffer(e.target.checked)} style={{ width: 'auto' }} />
+            📦 หักสต็อก STORE
+          </label>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>วางแผนที่กำลัง:</span>
           <button onClick={() => setCapMode('median')} style={btnSt(capMode === 'median')} title="ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)">ปกติ (median)</button>
           <button onClick={() => setCapMode('safe')} style={btnSt(capMode === 'safe')} title="ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)">ปลอดภัย (P25)</button>
@@ -560,6 +590,16 @@ export default function ProductionPlan() {
               {' · '}⏱️ <b>ยังไม่เลื่อนวันตาม lead time</b> — งานของลูกถูกวางไว้วันเดียวกับดิวของแม่ (ของจริงต้องเสร็จก่อน)
             </>
           ) : null}
+          {demandPcs.buffer && (
+            <div style={{ marginTop: 2 }}>
+              📦 {useBuffer
+                ? <>หักของที่มีใน <b>STORE</b> แล้ว <b>{Math.round(demandPcs.buffer.dailyAbsorbed).toLocaleString()} ชิ้น</b> (รายวัน) ·
+                    <b> {Math.round(demandPcs.buffer.monthlyAbsorbed).toLocaleString()} ชิ้น</b> (รายเดือน) จาก {demandPcs.buffer.mats} พาร์ทที่มีของคงเหลือ
+                    {' · '}<span title="backflush ยังไม่ทำงานครบ (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์สูงกว่าความจริง เอามาหักแล้วจะสั่งผลิตน้อยเกินไป">
+                      ⚠️ ไม่หักยอดที่ค้างอยู่ "ที่ไลน์" (เชื่อถือไม่ได้)</span></>
+                : <>ไม่หักสต็อก STORE — ตัวเลขคือความต้องการดิบ (ยังไม่ดูของที่มีอยู่)</>}
+            </div>
+          )}
         </div>
       )}
 

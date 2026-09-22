@@ -117,3 +117,45 @@ test('แถวที่ไม่มีวันครบดิว ต้อง�
   assert.deepEqual(Object.keys(out), ['2026-09-22']);
   assert.equal(out['2026-09-22']['20066660'], 5);
 });
+
+/* ── 📦 หัก buffer ที่ STORE ─────────────────────────────────────────────── */
+import { netOffBuffer } from '../demandExplode.js';
+
+test('🔴 buffer ก้อนเดียวใช้ได้ครั้งเดียว — ห้ามหักซ้ำทุกวัน', () => {
+  const r = netOffBuffer([
+    ['2026-09-22', { A: 100 }],
+    ['2026-09-23', { A: 100 }],
+    ['2026-09-24', { A: 100 }],
+  ], { A: 150 });
+  assert.equal(r.buckets['2026-09-22'].A, undefined, 'วันแรกของพอ = ไม่ต้องผลิต');
+  assert.equal(r.buckets['2026-09-23'].A, 50, 'วันที่ 2 เหลือ buffer 50 → ต้องผลิต 50');
+  assert.equal(r.buckets['2026-09-24'].A, 100, 'วันที่ 3 buffer หมด → ผลิตเต็ม');
+  assert.equal(r.absorbed, 150);
+  assert.equal(r.leftover.A, 0);
+});
+
+test('buffer มากกว่าความต้องการทั้งช่วง = ไม่ต้องผลิตเลย และยังเหลือ', () => {
+  const r = netOffBuffer([['d1', { A: 10 }]], { A: 99 });
+  assert.deepEqual(r.buckets.d1, {});
+  assert.equal(r.leftover.A, 89);
+});
+
+test('พาร์ทที่ไม่มีสต็อก ต้องผ่านเต็มจำนวน', () => {
+  const r = netOffBuffer([['d1', { A: 10, B: 5 }]], { A: 4 });
+  assert.equal(r.buckets.d1.A, 6);
+  assert.equal(r.buckets.d1.B, 5);
+  assert.equal(r.absorbed, 4);
+});
+
+test('ไม่ส่งสต็อก / สต็อกว่าง = คืนความต้องการเดิมครบ', () => {
+  const r = netOffBuffer([['d1', { A: 10 }]], {});
+  assert.equal(r.buckets.d1.A, 10);
+  assert.equal(r.absorbed, 0);
+  assert.deepEqual(netOffBuffer([['d1', { A: 7 }]]).buckets.d1, { A: 7 });
+});
+
+test('สต็อกติดลบ/ค่าเพี้ยน ต้องไม่ทำให้ความต้องการเพิ่ม', () => {
+  const r = netOffBuffer([['d1', { A: 10 }]], { A: -50 });
+  assert.equal(r.buckets.d1.A, 10);
+  assert.equal(r.absorbed, 0);
+});
