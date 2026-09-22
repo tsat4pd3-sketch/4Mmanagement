@@ -1949,7 +1949,7 @@ export default function Operator() {
               </div>
               {empCropFile && (
                 <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
-                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false}
+                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false} webp
                   onCancel={() => setEmpCropFile(null)}
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}
