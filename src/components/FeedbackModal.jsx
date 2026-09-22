@@ -1,10 +1,14 @@
-import { useState, useEffect, useContext, useCallback } from 'react';
+import { useState, useEffect, useContext, useCallback, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
+import { uploadOpts } from '../utils/storageUpload';
+import { compressScreenshotImage } from '../utils/layoutImage';
+import { toDecodableImage } from '../utils/heicToJpeg';
+import { looksLikeImage, isGifFile } from '../utils/imageFileKind';
 
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
@@ -16,7 +20,19 @@ import { checkWrite } from '../utils/dbWrite';
     • ไม่ทำเป็นหน้าแยก + ไม่เพิ่ม permission key ใหม่ (เลี่ยงกับดัก seed enum_range
       ที่ทำให้ role ใหม่เข้าไม่ได้แบบ fail-closed) — กล่องขาเข้าเป็นแท็บในโมดัลนี้
       เห็นเฉพาะ admin/manager ซึ่งตรงกับ RLS ของตาราง
+
+  📎 แนบรูปหน้าจอได้ (2026-09-22 · คุณสุรเสนแจ้งมาทาง LINE 22/09)
+  เดิมฟอร์มเขียนบอกผู้ใช้เองว่า "ถ้ามีรูปหน้าจอ ส่งใน LINE ตามหลังได้ (ระบบยังไม่รับไฟล์แนบ)"
+  ⇒ **ระบบสั่งให้คนเดินออกไปนอกระบบเอง** ซึ่งย้อนแย้งกับเหตุผลที่สร้างกล่องนี้ขึ้นมาแต่แรก
+  (คนแจ้งวงกรอบสีบนสกรีนช็อตในมือถือมาเรียบร้อยแล้ว ขาดแค่ที่แนบ)
+  🔴 **ตั้งใจไม่ทำเครื่องมือวาดกรอบในแอป** — เขาวงเองในมือถือได้อยู่แล้วและเร็วกว่า
+     สิ่งที่ขาดคือ "ช่องแนบ" ไม่ใช่ "โปรแกรมวาด" · อย่าขยายงานเกินที่หน้างานขอ
 */
+
+/* แนบได้ไม่เกิน 4 รูป — จากของจริงที่เขาส่งมาทาง LINE ครั้งละ 1-3 รูป (ก่อน/หลัง + จุดที่ชี้)
+   จำกัดไว้เพื่อไม่ให้ egress บาน และเพื่อให้คนเลือกเฉพาะรูปที่สื่อจริงๆ */
+const MAX_SHOTS = 4;
+const MAX_PICK_MB = 5;          // ขนาด "ก่อนบีบ" ที่ยอมให้เลือก (ตรงกับ file_size_limit ของ bucket)
 
 const KINDS = [
   { key: 'bug',      icon: '🐛', label: 'พบปัญหา/บั๊ก',  color: '#ef4444' },
@@ -45,6 +61,60 @@ export default function FeedbackModal({ onClose }) {
   const [loading, setLoading] = useState(false);
   const [notReady, setNotReady] = useState(false);   // ยังไม่ได้ apply migration
   const [onlyOpen, setOnlyOpen] = useState(true);
+  const [shots, setShots] = useState([]);           // [{ id, file, preview }] — ยังไม่อัป รอกดส่ง
+  const [zoom, setZoom]   = useState(null);         // URL รูปที่กดดูเต็มจอ
+  const fileRef = useRef(null);
+
+  /* preview เป็น blob: URL — ต้อง revoke ตอนถอดรูป/ปิดโมดัล ไม่งั้น memory ค้าง
+     (จอหน้างานเปิดค้างทั้งวัน แนบ-ถอดหลายรอบแล้วไม่คืนหน่วยความจำ)
+     ⚠️ **ห้ามใส่ `shots` ใน deps** — cleanup จะวิ่งทุกครั้งที่ลิสต์เปลี่ยน แล้วไป revoke URL ของรูป
+        ที่ยัง**โชว์อยู่บนจอ** (แนบใบที่ 2 แล้วใบที่ 1 กลายเป็นรูปเสีย) ⇒ เก็บ ref ไว้ revoke ตอน unmount */
+  const shotsRef = useRef(shots);
+  useEffect(() => { shotsRef.current = shots; }, [shots]);
+  useEffect(() => () => { shotsRef.current.forEach(sh => URL.revokeObjectURL(sh.preview)); }, []);
+
+  const pickShots = async (fileList) => {
+    const files = [...(fileList || [])];
+    if (!files.length) return;
+    const room = MAX_SHOTS - shots.length;
+    if (room <= 0) { toast.error(`แนบได้สูงสุด ${MAX_SHOTS} รูป — ถอดรูปเดิมออกก่อน`); return; }
+    const take = files.slice(0, room);
+    if (files.length > room) toast.info(`รับได้อีก ${room} รูป (สูงสุด ${MAX_SHOTS}) — ที่เหลือไม่ได้แนบ`);
+
+    const add = [];
+    for (const f of take) {
+      // ⚠️ ปฏิเสธไฟล์ต้องบอกเหตุผล+ทางแก้เสมอ ห้ามเงียบ (คำสั่ง user 2026-09-11)
+      if (!looksLikeImage(f)) { toast.error(`"${f.name}" ไม่ใช่ไฟล์รูป — แนบได้เฉพาะ JPG / PNG / WebP (สกรีนช็อตจากมือถือใช้ได้เลย)`); continue; }
+      if (isGifFile(f))       { toast.error(`"${f.name}" เป็น GIF — แนบไม่ได้ (บีบไม่ได้ ไฟล์ใหญ่มาก) ให้แคปเป็นภาพนิ่งแทน`); continue; }
+      if (f.size > MAX_PICK_MB * 1024 * 1024) { toast.error(`"${f.name}" ใหญ่เกิน ${MAX_PICK_MB} MB — ลองแคปเฉพาะส่วนที่จะชี้`); continue; }
+      add.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, file: f, preview: URL.createObjectURL(f) });
+    }
+    if (add.length) setShots(prev => [...prev, ...add]);
+  };
+
+  const dropShot = (id) => setShots(prev => {
+    const gone = prev.find(sh => sh.id === id);
+    if (gone) URL.revokeObjectURL(gone.preview);
+    return prev.filter(sh => sh.id !== id);
+  });
+
+  /* อัปรูปทั้งชุด — คืน { urls, paths }
+     path = <uid>/<ts>-<i>.<ext> · ต้องขึ้นต้นด้วย uid ให้ตรง policy feedback_images_write
+     ⚠️ อัป "ตอนกดส่ง" ไม่ใช่ตอนเลือก — เลือกแล้วเปลี่ยนใจปิดหน้าต่าง จะได้ไม่มีไฟล์ขยะค้าง storage */
+  const uploadShots = async (uid) => {
+    const urls = [], paths = [];
+    for (let i = 0; i < shots.length; i++) {
+      let f = shots[i].file;
+      f = await toDecodableImage(f);                       // HEIC/HEIF จากมือถือ → JPEG ก่อน
+      const { blob, ext } = await compressScreenshotImage(f);
+      const path = `${uid}/${Date.now()}-${i}.${ext}`;
+      const { error } = await supabase.storage.from('feedback-images').upload(path, blob, uploadOpts());
+      if (error) throw new Error(`อัปรูปที่ ${i + 1} ไม่สำเร็จ: ${error.message}`);
+      paths.push(path);
+      urls.push(supabase.storage.from('feedback-images').getPublicUrl(path).data.publicUrl);
+    }
+    return { urls, paths };
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,13 +167,38 @@ export default function FeedbackModal({ onClose }) {
     if (!body) return;
     setSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('user_feedback').insert({
+
+    // 1) อัปรูปก่อน (ถ้ามี) — ล้มตรงนี้ = ไม่เขียนแถวเลย ผู้ใช้แก้แล้วกดส่งใหม่ได้ ไม่มีของค้างครึ่งทาง
+    let urls = [], paths = [];
+    if (shots.length) {
+      if (!user?.id) { setSaving(false); toast.error('เซสชันหมดอายุ — เข้าสู่ระบบใหม่แล้วส่งอีกครั้ง'); return; }
+      try { ({ urls, paths } = await uploadShots(user.id)); }
+      catch (e) {
+        setSaving(false);
+        // เก็บกวาดรูปที่อัปไปแล้วก่อนจะพัง ไม่งั้นเหลือไฟล์กำพร้าใน storage
+        await Promise.allSettled(paths.map(pt => supabase.storage.from('feedback-images').remove([pt])));
+        toast.error(e.message || 'อัปรูปไม่สำเร็จ');
+        return;
+      }
+    }
+
+    const row = {
       user_id: user?.id, user_name: fullName || user?.email || null, user_role: role || null,
       kind, page_path: location.pathname + (location.search || ''), message: body,
-    });
+      ...(urls.length ? { images: urls } : null),
+    };
+    let { error } = await supabase.from('user_feedback').insert(row);
+    /* คอลัมน์ `images` ยังไม่ได้ apply migration → ตัดออกแล้วลองใหม่
+       (กฎเดิมของโปรเจค: **การแจ้งเรื่องต้องไม่พังเพราะฟีเจอร์เสริม** — อย่างน้อยข้อความต้องถึงมือทีม) */
+    if (error && urls.length && /images/i.test(error.message || '')) {
+      console.warn('[feedback] ไม่มีคอลัมน์ images — ส่งเฉพาะข้อความ', error);
+      ({ error } = await supabase.from('user_feedback').insert({ ...row, images: undefined }));
+      if (!error) toast.info('ส่งข้อความแล้ว แต่รูปยังไม่เข้าระบบ (ยังไม่ได้ apply migration images) — แจ้ง admin');
+    }
     setSaving(false);
     if (error) {
       console.warn('[feedback] insert', error);
+      await Promise.allSettled(paths.map(pt => supabase.storage.from('feedback-images').remove([pt])));
       // ห้ามขึ้นว่าส่งสำเร็จทั้งที่ไม่เข้า — คนหน้างานจะรอคำตอบที่ไม่มีวันมา
       toast.error(error.code === '42P01'
         ? 'ยังเปิดใช้งานกล่อง feedback ไม่ได้ — ยังไม่ได้ apply migration user_feedback (แจ้ง admin)'
@@ -117,10 +212,13 @@ export default function FeedbackModal({ onClose }) {
         (() => { const k = KINDS.find(x => x.key === kind); return k ? `${k.icon} ${k.label}` : kind; })(),
         `📄 หน้า: ${location.pathname}`,
         `💬 ${body.slice(0, 400)}`,
+        // ลิงก์รูปไปด้วย — คนรับแจ้งใน Telegram กดดูได้ทันที ไม่ต้องเปิดแอปก่อนถึงจะรู้ว่าเรื่องอะไร
+        ...(urls.length ? [`🖼 แนบ ${urls.length} รูป`, ...urls] : []),
       ],
     });
     toast.success('ส่งแล้ว ขอบคุณครับ 🙏 ทีมงานจะตามให้');
-    setMsg(''); load();
+    shots.forEach(sh => URL.revokeObjectURL(sh.preview));
+    setMsg(''); setShots([]); load();
   };
 
   const setStatus = async (row, status) => {
@@ -148,7 +246,10 @@ export default function FeedbackModal({ onClose }) {
     const body = list.map((r, i) => {
       const k = KINDS.find(x => x.key === r.kind) || KINDS[0];
       return `\n${i + 1}. [${k.label} · ${(STATUS[r.status] || STATUS.new).label}] ${fmt(r.created_at)}`
-        + ` · ${r.user_name || '—'}${r.user_role ? ` (${r.user_role})` : ''} · หน้า ${r.page_path || '—'}\n   ${r.message.replace(/\n/g, '\n   ')}`;
+        + ` · ${r.user_name || '—'}${r.user_role ? ` (${r.user_role})` : ''} · หน้า ${r.page_path || '—'}\n   ${r.message.replace(/\n/g, '\n   ')}`
+        /* ⚠️ Claude เปิด URL รูปเองไม่ได้ (เซสชันเว็บโดน network policy บล็อก) — บอกไว้ให้คน
+           ที่เอาข้อความไปวาง รู้ว่าต้องแนบรูปเข้าแชทเองด้วย ไม่งั้นบริบทหายไปเงียบๆ */
+        + (r.images?.length ? `\n   📎 มีรูปแนบ ${r.images.length} รูป (เปิดกล่องขาเข้าแล้วลากรูปมาวางในแชทด้วย):\n   ${r.images.join('\n   ')}` : '');
     }).join('\n');
     const text = head + body;
     try {
@@ -211,15 +312,52 @@ export default function FeedbackModal({ onClose }) {
                 placeholder={'เล่าให้ฟังได้เลยครับ เช่น\n• เลเซอร์ลงดาวน์ไทม์ ไม่มีให้เลือกชิ้นงาน\n• ชื่อสินค้า 2 ตัวเหมือนกัน เลือกผิดใบได้\n• อยากให้เพิ่ม...'}
                 style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
 
+              {/* 📎 แนบรูปหน้าจอ — วางไว้ "ติดใต้ช่องพิมพ์" ให้เห็นตอนกำลังเล่าปัญหา
+                  ไม่ใช่ท้ายฟอร์ม (บทเรียนจากรูปก่อนซ่อมใน /mtn-repair: ช่องอยู่ล่างสุด คนใส่แค่ 25%) */}
+              <div style={{ marginTop: 10 }}>
+                <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple
+                  /* ⚠️ ต้อง **ก๊อป FileList เป็น array ก่อน** แล้วค่อย `value = ''`
+                     `e.target.files` เป็น live list ผูกกับ input — เคลียร์ value ปุ๊บ list ว่างทันที
+                     เขียนสลับลำดับ = แนบรูปไม่ติดสักใบ **แบบเงียบ ไม่มี error** (เจอจริงตอนรันเบราว์เซอร์ 22/09)
+                     ส่วน `value = ''` เองก็ตัดไม่ได้ — ไม่งั้นเลือก "ไฟล์เดิมซ้ำ" แล้ว change ไม่ยิง */
+                  onChange={e => { const fl = [...e.target.files]; e.target.value = ''; pickShots(fl); }}
+                  style={{ display: 'none' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={shots.length >= MAX_SHOTS}
+                    style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
+                      border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                      cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
+                    📎 แนบรูปหน้าจอ
+                  </button>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
+                  </span>
+                </div>
+                {!!shots.length && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                    {shots.map(sh => (
+                      <div key={sh.id} style={{ position: 'relative' }}>
+                        <img src={sh.preview} alt="" onClick={() => setZoom(sh.preview)}
+                          style={{ width: 92, height: 68, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)', cursor: 'zoom-in', display: 'block' }} />
+                        <button type="button" onClick={() => dropShot(sh.id)} title="ถอดรูปนี้ออก"
+                          style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
+                            border: '1px solid var(--border2)', background: 'var(--bg)', color: '#ef4444',
+                            fontSize: 13, fontWeight: 800, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
                 แนบให้อัตโนมัติ: หน้าที่เปิดอยู่ <code>{location.pathname}</code> · ผู้แจ้ง <b>{fullName || '—'}</b>
-                <br />ไม่ต้องพิมพ์ว่าอยู่หน้าไหน · ถ้ามีรูปหน้าจอ ส่งใน LINE ตามหลังได้ (ระบบยังไม่รับไฟล์แนบ)
+                <br />ไม่ต้องพิมพ์ว่าอยู่หน้าไหน · รูปถูกบีบก่อนส่งให้เอง (ตัวหนังสือในรูปยังอ่านออก)
               </div>
 
               <button onClick={send} disabled={saving || !msg.trim()}
                 style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
                   background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
-                {saving ? 'กำลังส่ง...' : '📨 ส่งให้ทีมงาน'}
+                {saving ? (shots.length ? `กำลังอัปรูป ${shots.length} รูป...` : 'กำลังส่ง...') : '📨 ส่งให้ทีมงาน'}
               </button>
             </>
           ) : (
@@ -251,6 +389,14 @@ export default function FeedbackModal({ onClose }) {
                         <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{fmt(r.created_at)}</span>
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--text)', margin: '5px 0', whiteSpace: 'pre-wrap' }}>{r.message}</div>
+                      {!!r.images?.length && (
+                        <div style={{ display: 'flex', gap: 6, margin: '6px 0', flexWrap: 'wrap' }}>
+                          {r.images.map((u, i) => (
+                            <img key={i} src={u} alt={`แนบ ${i + 1}`} loading="lazy" onClick={() => setZoom(u)}
+                              style={{ width: 96, height: 70, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)', cursor: 'zoom-in' }} />
+                          ))}
+                        </div>
+                      )}
                       <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                         {r.user_name || '—'}{r.user_role ? ` · ${r.user_role}` : ''}{r.page_path ? ` · ${r.page_path}` : ''}
                         {r.handled_by ? ` · ปิดโดย ${r.handled_by}` : ''}
@@ -299,6 +445,16 @@ export default function FeedbackModal({ onClose }) {
           )}
         </div>
       </div>
+
+      {/* ดูรูปเต็มจอ — สกรีนช็อตย่อ 96px อ่านไม่ออกแน่นอน ต้องกดขยายได้
+          ⚠️ ซ้อนบนโมดัล feedback (zIndex สูงกว่า) · ปิดจาก backdrop ได้ เพราะไม่ใช่ฟอร์มกรอกข้อมูล */}
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, cursor: 'zoom-out' }}>
+          <img src={zoom} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 6 }} />
+        </div>
+      )}
     </div>
   );
 }
