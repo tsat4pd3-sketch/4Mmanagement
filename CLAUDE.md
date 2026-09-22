@@ -378,6 +378,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` (`?tab=` เดิม redirect ให้) **ห้ามเอากลับมา**
 > 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`
 
+## 📊 กราฟ Pareto — แท่งตั้งมาตรฐานสากลเท่านั้น (2026-09-22 · คำสั่ง user)
+
+ทุกพาเรโตในระบบวาดผ่าน `<ParetoChart>` · พิกัดจาก `paretoGeometry()` (`utils/pareto.js`)
+**ห้ามคำนวณแท่งเองในหน้า — มีด่าน `regressionGuards`** · องค์ประกอบบังคับ: แท่งตั้งเรียงมาก→น้อย ·
+**แท่งชิดกันสนิท** · แกนซ้ายเริ่ม 0 · แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% ·
+ป้ายแกน X เอียง -45°/-90° (เลือกเองได้บนจอ) — **ห้ามกลับไปวาดแท่งนอน**
+> 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
+
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
 
 2 แท็บ `?tab=kpi|qc7` · สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` —

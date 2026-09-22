@@ -135,6 +135,11 @@ export function axisOee({ sessions = [], target = null } = {}) {
    ⇒ KPI "วันปลอดอุบัติเหตุ" ทำไม่ได้จริง — ห้ามโชว์ 0 ครั้งแล้วให้คนเข้าใจว่าปลอดภัย
    ที่ทำได้ตอนนี้คือ "พฤติกรรม" (PPE ครบตอนเช็คชื่อ) ซึ่งเป็น leading indicator ไม่ใช่ผลลัพธ์
    ⚠️ นับเฉพาะคนที่มาทำงาน (is_present) — คนลาไม่มี PPE เป็นเรื่องปกติ ถ้านับรวมจะได้เลขต่ำหลอก */
+/** 🔴 ข้อความนี้ต้องอยู่บนจอทุกบอร์ดที่โชว์แกน S จนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
+ *  — export ไว้จุดเดียว เพราะมีหลายจอใช้ (แผง SQDCM · บอร์ดสดบนผังรวมโรงงาน) */
+export const SAFETY_PROXY_NOTE =
+  'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย';
+
 export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   const present = logs.filter(l => l.is_present);
   const base = {
@@ -151,7 +156,7 @@ export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   return {
     ...base, value, state: 'thin',
     // 🔴 ข้อความนี้ต้องอยู่บนจอเสมอจนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
-    note: 'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย',
+    note: SAFETY_PROXY_NOTE,
     checked: present.length,
     series: bucketBy(present, l => l.work_date,
       (a, l) => { a.n += 1; if (full(l)) a.ok += 1; }, () => ({ n: 0, ok: 0 }))
