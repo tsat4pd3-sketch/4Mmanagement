@@ -22,12 +22,21 @@ const DEF_NAMES = ['รอยร้าว/แตก', 'เจาะรูไม�
 const LINE_NAME = (i) => `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`
 const PARENT_OF = { 2: 1, 3: 1, 4: 2 }
 
+/* ⚠️ **งานคู่ RH/LH (pair_mat_no) ต้องมีใน mock เสมอ ห้ามถอด** (2026-09-22)
+   ของจริงมีคู่ที่ demand ครบทั้ง 2 ข้างอยู่หลายคู่ (20059957↔20059959 · 20065635↔20065715 …)
+   และมีกฎเหล็ก "ชิ้น ≠ shot" ที่โค้ดหลายจุดต้องยุบคู่ก่อนรวม — `collapsePairShots` (OEE/%P) ·
+   `pairLoadTotal` (ภาระกะในแผนผลิต) · `pairAwareTotal` (ยอดรวมภาพใหญ่)
+   เดิม mock ตั้ง `pair_mat_no: null` **ทุกแถว** ⇒ crashsweep ไม่เคยเดินเข้าสาขา "มีคู่" เลยสักหน้า
+   = บั๊กทั้งคลาส (นับ 2 เท่า · ยุบผิดข้าง · คู่ที่มีข้างเดียวในชุดข้อมูล) มองไม่เห็นจาก harness
+   ตั้งเป็นคู่กัน 2 ทางที่แถว 6↔7 (ต้องครบทั้ง 2 ทางเหมือนของจริง ไม่งั้นจับคู่ไม่ติด)  */
+const PAIR_OF = { 6: 7, 7: 6 }
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
   id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
   line_name: 'LINE APRON ASSY / HYDROFORM',
   parent_line_name: PARENT_OF[i] ? LINE_NAME(PARENT_OF[i]) : null, section: 'PD1', line_id: 1,
-  mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: null,
+  mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: PAIR_OF[i] ? `1010${1000 + PAIR_OF[i]}` : null,
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
   /* ⚠️ session_id ต้องชี้ไปที่ id ของแถวจริง (2026-09-18) — เดิมเป็น `s-${i}` ซึ่ง

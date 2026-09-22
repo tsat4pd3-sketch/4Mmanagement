@@ -15,19 +15,76 @@
       (ตัวตัดสินที่คนมองไม่เห็น = บั๊กที่ไม่มีใครจับได้จนของหายไปเป็นสัปดาห์)
    ═══════════════════════════════════════════════════════════════════════════════════ */
 
-/** ชื่อหัวคอลัมน์แบบเทียบได้ — ตัดช่องว่าง/ขีด/ตัวพิมพ์ทิ้ง (`Forecast_Time ` = `forecast time`) */
-export const normHdr = (s) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+/** ชื่อหัวคอลัมน์แบบเทียบได้ — ตัดช่องว่าง/ขีด/ตัวพิมพ์ทิ้ง (`Forecast_Time ` = `forecast time`)
+ *  🔴 ต้องเก็บ **ตัวอักษรทุกภาษา** ไม่ใช่แค่ A-Z0-9 (แก้ 2026-09-22)
+ *  เดิม `replace(/[^A-Z0-9]/g, '')` ทำให้หัวคอลัมน์ภาษาไทยกลายเป็น **สตริงว่างทั้งหมด**
+ *  ⇒ "จำนวนสั่ง" = "กำหนดส่ง" = "" ⇒ จับคู่มั่วข้ามคอลัมน์ (ตัวแรกที่ว่างชนะ)
+ *  ไม่เคยเป็นปัญหาเพราะไฟล์ Ford เป็น ASCII ล้วน — แต่พอเปิดให้ลงทะเบียนลูกค้าไทยได้ มันพังทันที
+ *  ⚠️ ผลข้างเคียงที่ตั้งใจ: หัวคอลัมน์ปนไทย-อังกฤษ เช่น "จำนวน (Qty)" เดิมถูกลดรูปเหลือ "QTY"
+ *     แล้วบังเอิญ match alias `Qty` · ตอนนี้ไม่ match แล้ว ⇒ ให้ลงทะเบียนชื่อเต็มตามไฟล์จริง
+ *     (การ match โดยบังเอิญอันตรายกว่า — มันเดาความหมายคอลัมน์ให้เราโดยไม่มีใครตัดสินใจ) */
+export const normHdr = (s) => String(s ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
 
-/** คอลัมน์ที่ต้องมีถึงจะเป็นไฟล์ EDI — แต่ละช่องใส่ชื่อที่ยอมรับได้หลายแบบ */
-export const EDI_SIG = [
-  ['Part Num', 'Part Number', 'PartNo', 'Part'],
-  ['Forecast Net Qty', 'Net Qty', 'Forecast Qty', 'Quantity', 'Qty'],
-  ['Forecast Date', 'Date', 'Ship Date', 'Delivery Date'],
-];
+/* ── 🧩 พจนานุกรมชื่อหัวคอลัมน์ — **ทะเบียน `customer_file_formats` ชนะค่าในโค้ด** (2026-09-22) ──
+   ที่มา (audit 22/09 · user ยืนยัน): ลูกค้าเจ้าอื่น (TSRA · TSPK · ISUZU · GWM · TSESA)
+   ส่ง **ไฟล์ Excel/CSV เหมือนกัน แต่คนละหน้าตากับ Ford** และวัดจริงพบว่า
+   **72 จาก 115 พาร์ท active ไม่มีความต้องการในระบบเลย** เพราะไม่มีทางนำเข้า
+   ⇒ ชื่อคอลัมน์ต้องเพิ่มได้จากหน้าจอ **ห้ามให้ "ลูกค้าใหม่ = แก้โค้ด + deploy" อีก**
+   (ฝั่ง e-SMART ทำแบบนี้อยู่แล้วที่ `customer_pull_formats` — ตัวนี้คือขาเดียวกันของ order/forecast)
+
+   วิธีรวม: alias ของ **ทุกลูกค้า รวมเป็นพจนานุกรมเดียว** (ไม่ได้แยกตามลูกค้า)
+   เพราะไฟล์ 1 ไฟล์ไม่ได้บอกว่าเป็นของใครจนกว่าจะอ่านคอลัมน์ ship-to ข้างใน
+   ⇒ ชื่อคอลัมน์ของเจ้าไหนก็อ่านออกหมด · การตัดสิน 830/862 ยังใช้สัญญาณเดิม (เวลา/ท่า/ช่วงวันที่) */
+
+/** ค่าตั้งต้นในโค้ด (Ford 830/862) — ใช้เมื่อทะเบียนยังว่าง/โหลดไม่ได้ · จอต้องบอกเมื่อใช้ค่าสำรอง */
+export const FALLBACK_EDI_DICT = {
+  part:    ['Part Num', 'Part Number', 'PartNo', 'Part'],
+  qty:     ['Forecast Net Qty', 'Net Qty', 'Forecast Qty', 'Quantity', 'Qty'],
+  date:    ['Forecast Date', 'Date', 'Ship Date', 'Delivery Date'],
+  time:    ['Forecast Time', 'Time', 'Ship Time', 'Delivery Time', 'Forecast Ship Time'],
+  dock:    ['Dock Code', 'Dock', 'Market Row', 'Unload Point'],
+  ship_to: ['Ship To GSDB Code', 'Ship To', 'GSDB', 'Ship To Code'],
+  po:      ['Purchase Order Num', 'Purchase Order', 'PO Num', 'PO'],
+};
+
+/** ช่องที่ขาดไม่ได้ (ไม่มี 3 ตัวนี้ = ประกอบความต้องการไม่ได้เลย) — เรียงตามลำดับของ EDI_SIG เดิม */
+export const REQUIRED_FIELDS = ['part', 'qty', 'date'];
+
+/**
+ * รวม alias จากทะเบียน (`customer_file_formats`) เข้ากับค่าตั้งต้น → พจนานุกรมเดียว
+ * @param {Array<{col_map: object, is_active?: boolean}>} rows แถวทะเบียน (kind = order/forecast)
+ * @returns {{dict: object, fromDb: number}} fromDb = จำนวนแถวทะเบียนที่ถูกใช้ (0 = ใช้ค่าสำรองล้วน)
+ */
+export function buildEdiDict(rows = []) {
+  const dict = {};
+  Object.entries(FALLBACK_EDI_DICT).forEach(([k, v]) => { dict[k] = [...v]; });
+  let fromDb = 0;
+  (rows || []).filter(r => r && r.is_active !== false).forEach(r => {
+    const cm = r.col_map || {};
+    let used = false;
+    Object.entries(cm).forEach(([field, aliases]) => {
+      if (!Array.isArray(aliases) || !aliases.length) return;
+      const bag = dict[field] || (dict[field] = []);
+      aliases.forEach(a => {
+        const t = String(a || '').trim();
+        // กันชื่อซ้ำแบบ normalize แล้ว (ทะเบียนพิมพ์ต่างกันนิดเดียวไม่ควรบวมพจนานุกรม)
+        if (t && !bag.some(x => normHdr(x) === normHdr(t))) { bag.push(t); used = true; }
+      });
+    });
+    if (used) fromDb++;
+  });
+  return { dict, fromDb };
+}
+
+/** แปลงพจนานุกรม → 3 กลุ่มคอลัมน์บังคับ (รูปแบบเดิมที่โค้ดเก่าใช้) */
+export const sigOf = (dict = FALLBACK_EDI_DICT) => REQUIRED_FIELDS.map(f => dict[f] || []);
+
+/** คอลัมน์ที่ต้องมีถึงจะเป็นไฟล์ EDI (ค่าตั้งต้น — จุดที่มีทะเบียนแล้วให้ส่ง dict เข้าไปแทน) */
+export const EDI_SIG = sigOf(FALLBACK_EDI_DICT);
 
 /** ชื่อที่นับว่าเป็น "คอลัมน์เวลา" = สัญญาณว่าไฟล์นี้เป็น 862 */
-export const TIME_HDRS = ['Forecast Time', 'Time', 'Ship Time', 'Delivery Time', 'Forecast Ship Time'];
-export const DOCK_HDRS = ['Dock Code', 'Dock', 'Market Row', 'Unload Point'];
+export const TIME_HDRS = FALLBACK_EDI_DICT.time;
+export const DOCK_HDRS = FALLBACK_EDI_DICT.dock;
 
 /** หา index ของคอลัมน์จากชื่อที่ยอมรับได้หลายแบบ (normalize แล้ว) · ไม่เจอ = -1 */
 export function colIdx(headers, aliases) {
@@ -37,8 +94,9 @@ export function colIdx(headers, aliases) {
   return -1;
 }
 
-/** แถวนี้เป็นหัวตาราง EDI ไหม (ต้องเจอครบทุกช่องใน EDI_SIG) */
-export const isEdiHeaderRow = (headers) => EDI_SIG.every(g => colIdx(headers, g) >= 0);
+/** แถวนี้เป็นหัวตาราง EDI ไหม (ต้องเจอครบทุกช่องบังคับ) · `dict` = พจนานุกรมจากทะเบียน */
+export const isEdiHeaderRow = (headers, dict = FALLBACK_EDI_DICT) =>
+  sigOf(dict).every(g => g.length > 0 && colIdx(headers, g) >= 0);
 
 /** จำนวนแถวหัวที่ยอมสแกน — พอร์ทัลชอบใส่แถวหัวเรื่อง/ meta นำหน้า
  *  ⚠️ เดิม 5 แถว · ไฟล์ e-SMART จริงมี meta 5 แถวก่อนหัวตารางแล้ว = เฉียดฉิว */
@@ -49,8 +107,8 @@ export const HEADER_SCAN_ROWS = 20;
  * @returns {{is862:boolean, reason:string, sure:boolean}}
  *   sure=false ⇒ จอต้องบังคับให้คนยืนยัน/เลือกเอง ห้ามนำเข้าเงียบ
  */
-export function detectEdiKind(headers, rows = []) {
-  const tIdx = colIdx(headers, TIME_HDRS);
+export function detectEdiKind(headers, rows = [], dict = FALLBACK_EDI_DICT) {
+  const tIdx = colIdx(headers, dict.time || TIME_HDRS);
   if (tIdx >= 0) {
     // มีคอลัมน์เวลา แต่ว่างทั้งไฟล์ = หัวมีแต่ไม่มีค่า → ยังไม่ชัด
     const any = rows.some(r => String(r?.[tIdx] ?? '').trim() !== '');
@@ -58,12 +116,12 @@ export function detectEdiKind(headers, rows = []) {
       ? { is862: true, reason: `พบคอลัมน์เวลา "${headers[tIdx]}" และมีค่าจริง`, sure: true }
       : { is862: true, reason: `พบคอลัมน์เวลา "${headers[tIdx]}" แต่ว่างทุกแถว`, sure: false };
   }
-  const dIdx = colIdx(headers, DOCK_HDRS);
+  const dIdx = colIdx(headers, dict.dock || DOCK_HDRS);
   if (dIdx >= 0 && rows.some(r => String(r?.[dIdx] ?? '').trim() !== '')) {
     return { is862: true, reason: `ไม่มีคอลัมน์เวลา แต่มี "${headers[dIdx]}" (ใบส่งรายวันเท่านั้นที่ระบุท่า)`, sure: false };
   }
   /* ไม่มีเวลา/ท่าเลย → ดูระยะของวันที่: forecast ยิงยาวข้ามปี · ใบส่งอยู่ในไม่กี่สัปดาห์ */
-  const dateIdx = colIdx(headers, EDI_SIG[2]);
+  const dateIdx = colIdx(headers, (dict.date || FALLBACK_EDI_DICT.date));
   const days = dateSpanDays(rows, dateIdx);
   if (days != null && days > 120) {
     return { is862: false, reason: `ไม่มีคอลัมน์เวลา และวันที่กินช่วง ${days} วัน (ยาวเกินใบส่ง)`, sure: true };

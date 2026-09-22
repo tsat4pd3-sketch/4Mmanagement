@@ -93,3 +93,77 @@ test('ชีตที่คอลัมน์เวลาว่างทุก�
   const sureOne = sheets.find(f => f.kind.sure);
   assert.equal(sureOne.is862, true);
 });
+
+/* ═══ 🧩 พจนานุกรมจากทะเบียน `customer_pull_formats` (kind = order/forecast) — 2026-09-22 ═══
+   ที่มา: ลูกค้าเจ้าอื่นส่ง Excel/CSV คนละหน้าตากับ Ford ⇒ 72/115 พาร์ทไม่มีความต้องการในระบบ
+   กติกา: ทะเบียน **เพิ่ม** ชื่อคอลัมน์ ไม่ใช่ **แทนที่** ค่าสำรอง (ไฟล์ Ford ต้องอ่านได้เหมือนเดิมเสมอ) */
+import { buildEdiDict, sigOf, FALLBACK_EDI_DICT } from '../ediDetect.js';
+
+const TSRA_FMT = {
+  code: 'tsra_order', kind: 'order', is_active: true,
+  col_map: {
+    part: ['รหัสสินค้า', 'Item Code'],
+    qty:  ['จำนวนสั่ง'],
+    date: ['กำหนดส่ง'],
+    time: ['เวลานัด'],
+  },
+};
+
+test('ทะเบียนว่าง = ได้ค่าสำรองในโค้ดเป๊ะ (ไฟล์ Ford อ่านได้เหมือนเดิม)', () => {
+  const { dict, fromDb } = buildEdiDict([]);
+  assert.equal(fromDb, 0);
+  assert.deepEqual(dict, FALLBACK_EDI_DICT);
+  assert.ok(isEdiHeaderRow(H862, dict));
+});
+
+test('เพิ่มลูกค้าใหม่ในทะเบียน = อ่านหัวคอลัมน์ภาษาไทยของเจ้านั้นออก โดยของ Ford ยังอ่านได้', () => {
+  const { dict, fromDb } = buildEdiDict([TSRA_FMT]);
+  assert.equal(fromDb, 1);
+  assert.ok(isEdiHeaderRow(['รหัสสินค้า', 'จำนวนสั่ง', 'กำหนดส่ง', 'เวลานัด'], dict), 'ไฟล์ TSRA ต้องอ่านออก');
+  assert.ok(isEdiHeaderRow(H862, dict), 'ไฟล์ Ford ต้องยังอ่านออก (ทะเบียนเพิ่ม ไม่ใช่แทนที่)');
+  assert.ok(isEdiHeaderRow(H830, dict));
+});
+
+test('ไฟล์ลูกค้าใหม่ที่มีคอลัมน์เวลา ต้องถูกตีเป็นใบสั่งส่ง (862) ไม่ใช่แผนล่วงหน้า', () => {
+  const { dict } = buildEdiDict([TSRA_FMT]);
+  const H = ['รหัสสินค้า', 'จำนวนสั่ง', 'กำหนดส่ง', 'เวลานัด'];
+  const r = detectEdiKind(H, [['P1', 10, '2026-09-22', '08:30']], dict);
+  assert.equal(r.is862, true);
+  assert.equal(r.sure, true);
+});
+
+test('แถวที่ปิดใช้ (is_active=false) ต้องไม่ถูกนับเข้าพจนานุกรม', () => {
+  const { dict, fromDb } = buildEdiDict([{ ...TSRA_FMT, is_active: false }]);
+  assert.equal(fromDb, 0);
+  assert.equal(isEdiHeaderRow(['รหัสสินค้า', 'จำนวนสั่ง', 'กำหนดส่ง'], dict), false);
+});
+
+test('ชื่อซ้ำกับค่าสำรอง (ต่างแค่ตัวพิมพ์/เว้นวรรค) ต้องไม่ทำพจนานุกรมบวม', () => {
+  const { dict } = buildEdiDict([{ code: 'x', is_active: true, col_map: { part: ['part num', 'PART  NUM', 'Part Num'] } }]);
+  assert.deepEqual(dict.part, FALLBACK_EDI_DICT.part, 'ทุกตัวคือชื่อเดิมหลัง normalize → ต้องไม่เพิ่มอะไรเลย');
+});
+
+test('col_map เพี้ยน (ไม่ใช่ array / ว่าง / null) ต้องไม่พังและไม่เปลี่ยนค่าสำรอง', () => {
+  const { dict, fromDb } = buildEdiDict([
+    { code: 'a', is_active: true, col_map: null },
+    { code: 'b', is_active: true, col_map: { part: 'ไม่ใช่อาร์เรย์' } },
+    { code: 'c', is_active: true, col_map: { qty: [] } },
+    null,
+  ]);
+  assert.equal(fromDb, 0);
+  assert.deepEqual(dict, FALLBACK_EDI_DICT);
+});
+
+test('sigOf = 3 ช่องบังคับเรียง part/qty/date (ลำดับเดิมของ EDI_SIG)', () => {
+  const sig = sigOf(FALLBACK_EDI_DICT);
+  assert.equal(sig.length, 3);
+  assert.deepEqual(sig, EDI_SIG);
+});
+
+test('🔴 normHdr ต้องไม่ลดหัวคอลัมน์ภาษาไทยเหลือสตริงว่าง (เดิมจับคู่มั่วข้ามคอลัมน์)', () => {
+  assert.notEqual(normHdr('จำนวนสั่ง'), '');
+  assert.notEqual(normHdr('จำนวนสั่ง'), normHdr('กำหนดส่ง'), 'คนละคอลัมน์ต้องไม่เท่ากัน');
+  // ASCII ต้องได้ผลเหมือนเดิมทุกกรณี (ไฟล์ Ford ห้ามเปลี่ยนพฤติกรรม)
+  assert.equal(normHdr(' Forecast_Time '), 'FORECASTTIME');
+  assert.equal(normHdr('Part-Num'), 'PARTNUM');
+});

@@ -257,7 +257,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน
 > 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ** (วัดจริง HDF1 159% · LASER-345 160%)
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
-> · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) · `computeLiveOee` ต้องส่ง `pairMap`
+> · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
+>   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
 >   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)

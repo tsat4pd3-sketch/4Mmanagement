@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
-import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, EDI_SIG, TIME_HDRS, DOCK_HDRS } from '../utils/ediDetect';
+import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
+import CustomerFileFormats from '../components/CustomerFileFormats';
 import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS } from '../utils/ediMerge';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -126,6 +127,22 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [saving, setSaving] = useState(false);
   const [batches, setBatches] = useState([]);
   const [edi, setEdi] = useState(null); // ไฟล์ EDI (Ford 830/862) ที่ parse แล้ว รอยืนยันนำเข้า
+  /* 🧩 ทะเบียนฟอร์แมตไฟล์ลูกค้า (`customer_pull_formats` kind = order/forecast) — 2026-09-22
+     ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา = เพิ่มแถวในทะเบียน **ไม่ต้องแก้โค้ด/deploy**
+     โหลดไม่ได้/ทะเบียนว่าง = ใช้ค่าสำรองในโค้ด (อ่านไฟล์ Ford ได้เหมือนเดิม) แต่ต้องขึ้นจอบอก */
+  const [fmtRows, setFmtRows] = useState([]);
+  const [fmtErr, setFmtErr] = useState(false);
+  const [showFmt, setShowFmt] = useState(false);
+  const ediDict = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
+
+  const loadFormats = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('customer_pull_formats')
+      .select('code, name, customer_name, kind, col_map, is_active, note')
+      .in('kind', ['order', 'forecast']).eq('is_active', true).order('code');
+    setFmtErr(!!error);
+    setFmtRows(data || []);
+  }, []);
+  useEffect(() => { loadFormats(); }, [loadFormats]);
 
   const loadBatches = useCallback(async () => {
     const { data } = await supabaseDR.from('demand_upload_batches').select('*').order('uploaded_at', { ascending: false }).limit(30);
@@ -152,10 +169,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
       for (let i = 0; i < Math.min(m.length, HEADER_SCAN_ROWS); i++) {
         const hd = m[i].map(c => String(c).trim());
-        if (isEdiHeaderRow(hd)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
-        const hit = EDI_SIG.filter(g => colIdx(hd, g) >= 0).length;
+        if (isEdiHeaderRow(hd, ediDict)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
+        const sig = sigOf(ediDict);
+        const hit = sig.filter(g => colIdx(hd, g) >= 0).length;
         if (hit >= 2 && (!near || hit > near.hit)) {
-          near = { hit, sheet: name, headers: hd, missing: EDI_SIG.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
+          near = { hit, sheet: name, headers: hd, missing: sig.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
         }
       }
     }
@@ -167,12 +185,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     const body = matrix.slice(hIdx + 1);
     const col = (aliases) => colIdx(headers, aliases);
     /* ⭐ ตัดสิน 830/862 จากหลายสัญญาณ + คืนเหตุผลให้ขึ้นจอ (ห้ามเดาเงียบ) */
-    const kind = detectEdiKind(headers, body);
+    const kind = detectEdiKind(headers, body, ediDict);
     const is862 = kind.is862;
-    const iPart = col(EDI_SIG[0]), iQty = col(EDI_SIG[1]), iDate = col(EDI_SIG[2]);
-    const iTime = col(TIME_HDRS), iDock = col(DOCK_HDRS);
-    const iShip = col(['Ship To GSDB Code', 'Ship To', 'GSDB', 'Ship To Code']);
-    const iPo = col(['Purchase Order Num', 'Purchase Order', 'PO Num', 'PO']);
+    const [gPart, gQty, gDate] = sigOf(ediDict);
+    const iPart = col(gPart), iQty = col(gQty), iDate = col(gDate);
+    const iTime = col(ediDict.time), iDock = col(ediDict.dock);
+    const iShip = col(ediDict.ship_to);
+    const iPo = col(ediDict.po);
     const out = [];
     let skipped = 0;
     body.forEach(r => {
@@ -623,7 +642,21 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
+            <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
+              🧩 ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
+            </button>
           </div>
+
+          {/* ⚠️ ทะเบียนโหลดไม่ได้ = ยังอ่านไฟล์ Ford ได้ด้วยค่าสำรองในโค้ด แต่ห้ามเงียบ
+              (ลูกค้าที่เพิ่มไว้ในทะเบียนจะอ่านไม่ออกจนกว่าจะโหลดได้) */}
+          {fmtErr && (
+            <div style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12, marginBottom: 8,
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
+              ⚠ อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
+              ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
+            </div>
+          )}
+          {showFmt && <div style={{ marginBottom: 10 }}><CustomerFileFormats canManage={canUpload} onChanged={loadFormats} /></div>}
 
           {edi && (
             <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
