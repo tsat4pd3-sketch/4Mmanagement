@@ -21,7 +21,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -1984,7 +1984,11 @@ export default function Management() {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                       const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                       const doneCount = row.cards.filter(c => c.isDone).length;
-                      const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
+                      const rowPos    = positionedForCards(row.cards);
+                      const delayed   = rowPos.filter(p => p.isDelayed).length;
+                      // ⏱️ เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ (คิวถูกดันด้วยงานที่ค้างแล้ว) — ดู Dashboard.jsx
+                      const finMs     = projectedFinishMs(rowPos);
+                      const finOver   = finMs != null && finMs > gridEndMs;
                       const isOpen    = row.cards.some(c => c.sessionOpen);
                       const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -2005,6 +2009,14 @@ export default function Management() {
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
                                 {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
                                 {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                {finMs != null && (
+                                  <span title={finOver
+                                      ? 'งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต'
+                                      : 'เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ — คิดจากคิวจริงที่ถูกดันด้วยงานที่ค้างอยู่'}
+                                    style={{ fontSize: 11, fontWeight: 800, color: finOver ? '#ef4444' : delayed > 0 ? '#f97316' : 'var(--text2)' }}>
+                                    → จบ ~{fmtMs(finMs)}{finOver ? ' 🔴 ล้นวันงาน' : ''}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
