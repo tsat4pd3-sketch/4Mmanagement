@@ -394,9 +394,12 @@ export default function FixtureRegistry() {
 
   return (
     <div style={{ padding: '16px 20px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader
+      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · วาดเฉพาะแถบแท็บย่อย `?fx=`
+          🔴 prop ชื่อ `tab` ไม่ใช่ `activeTab` — เดิมส่งผิดชื่อ ⇒ **แท็บไม่เคยไฮไลต์เลยสักอัน**
+             (PageHeader ไม่มี `activeTab` มันเลยอ่าน `tab` ได้ undefined เงียบๆ · แก้ 22/09) */}
+      <PageHeader embedded
         tabs={TABS.map(t => ({ key: t.k, label: `${t.icon} ${t.label}` }))}
-        activeTab={tab} onTab={setTab}
+        tab={tab} onTab={setTab}
       />
 
       {dataWarn && (

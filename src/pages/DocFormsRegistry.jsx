@@ -9,6 +9,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PersonSelect from '../components/PersonSelect';
+import PageHeader from '../components/PageHeader';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -189,7 +190,7 @@ export default function DocFormsRegistry() {
   return (
     <div className="page-content">
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📄 ทะเบียนเอกสาร & ฟอร์ม</h2>
+        <PageHeader title="ทะเบียนเอกสาร & ฟอร์ม" icon="📄" />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
           Document Master — เลขฟอร์ม / Rev / Effective Date ของฟอร์มพิมพ์ทุกตัวในระบบ · แก้ที่นี่แล้วใบพิมพ์ใช้ค่าใหม่ทันที ไม่ต้องแก้โปรแกรม
           {!canManage && ' · คุณมีสิทธิ์ดูอย่างเดียว'}

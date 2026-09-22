@@ -11,6 +11,7 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
+import PageHeader from '../components/PageHeader';
 const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
@@ -139,7 +140,7 @@ export default function PokaYokeCheck() {
   return (
     <div className="page-content" style={{ maxWidth: 'min(98vw, 1400px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🛡️ Poka-Yoke Check</h2>
+        <PageHeader title="Poka-Yoke Check" icon="🛡️" />
         <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · {SHIFT_LABEL[selShift]} · {selDate}</p>
       </div>
 

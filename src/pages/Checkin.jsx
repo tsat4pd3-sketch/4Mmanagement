@@ -17,6 +17,7 @@ import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '.
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import PageHeader from '../components/PageHeader';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -1178,9 +1179,7 @@ export default function Checkin() {
       {/* Header */}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
-            📝 เช็คชื่อ & PPE
-          </h2>
+          <PageHeader title="เช็คชื่อ & PPE" icon="📝" />
           <span style={{
             padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
             background: shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',

@@ -13,6 +13,7 @@ import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
 import { lineOptions } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -146,10 +147,7 @@ export default function Register() {
         boxShadow: 'var(--shadow-lg)',
       }}>
         <div style={{ marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-            📸 เพิ่มพนักงานใหม่
-          </h2>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)' }}>บันทึกข้อมูลพนักงานเข้าระบบ</p>
+          <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
         </div>
 
         <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, marginBottom: 24, opacity: 0.6 }} />

@@ -15,6 +15,7 @@ import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
+import PageHeader from '../components/PageHeader';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -421,9 +422,7 @@ export default function ShiftOrganize() {
     <div className="page-content">
       {/* Header — paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม 💾 บันทึก */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          🗓 ตารางกะการทำงาน
-        </h2>
+        <PageHeader title="ตารางกะการทำงาน" icon="🗓" />
         {(canEdit || canEditDept) && pendingCount > 0 && (
           <button
             onClick={handleSave}

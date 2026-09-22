@@ -352,7 +352,9 @@ export default function DieRegistry() {
 
   return (
     <div style={{ padding: '16px 18px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader
+      {/* 🧩 embedded — หน้านี้เป็นแท็บของ `/equipment` แล้ว (route เดิม redirect มา)
+          หน้าแม่วาด breadcrumb+หัวเรื่องไปแล้ว ⇒ ที่นี่วาดเฉพาะแถบแท็บย่อย `?die=` */}
+      <PageHeader embedded
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
         tabs={[
