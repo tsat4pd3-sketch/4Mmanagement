@@ -437,6 +437,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 จอให้ทีมงาน**เห็นเองว่าตารางชื่ออะไร · PK/FK ผูกกันแบบไหน · หน้าไหนใช้ตารางไหน** แล้วกดแจ้งบัคพร้อมบริบท
 · โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
 · **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
+· 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
+  (เคยค้าง 37 ตาราง · 35 ตัวไม่มี RLS = anon อ่านสำเนาข้อมูลจริงได้ · ย้ายแล้ว 22/09 + มีด่านใน build)
 > 📄 `docs/modules/schema-map.md`
 
 ---
@@ -608,33 +610,15 @@ supabase/
                        # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
                        #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
-docs/                  # ENGINEERING-PRINCIPLES.md (หลักการแก้แบบยั่งยืน — อ่านก่อนทุกงาน) ·
-                       #   UI-CONVENTIONS.md (บังคับอ่านก่อนแก้ UI) · PERMISSIONS-DESIGN.md ·
-                       #   ROLLBACK_*.md · sql/ (schema snapshot + seed อ้างอิง) ·
-                       #   TRANSPORT_AMR_DESIGN.md · SCADA_REALTIME_DESIGN.md ·
-                       #   ENERGY_MONITORING_DESIGN.md (โมดูลพลังงาน — ทำแล้ว หน้า /energy) ·
-                       #   VSM-DESIGN.md (Value Stream Mapping — เฟส 1 ทำแล้ว) ·
-                       #   DASHBOARD-DESIGN.md (dashboard รายส่วนงาน) ·
-                       #   NAVIGATION-REVIEW.md (รีวิวโครงเมนู/แท็บ — ทำครบ 5 เฟสแล้ว 2026-08-11 ดู §6) ·
-                       #   PE-FORM-SPEC.md (สเปกฟอร์ม PE + แนวทาง export 100% — สัญญาระหว่างตัวนำเข้า/ส่งออก) ·
-                       #   📌 = ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:
-                       #     IATF16949-GAP-REVIEW.md (gap เทียบ IATF 16949 · 14/08) ·
-                       #     IDENTITY-NOTIFY-DESIGN.md (ตัวตน/ผู้รับแจ้งเตือน — 48% ของบัญชีถูกดีดเป็น
-                       #       'shared' · 78% ตัวกรองแผนกไม่มีผล · QA ไม่ได้ NCR นอก PD3 · 18/09
-                       #       · แกนสิทธิ์อยู่ PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) ·
-                       #   ADAPTIVE-CT-DESIGN.md (เหตุผลที่เลือกทางนี้ · ของจริง → modules/ct-review.md) ·
-                       #   CLOSED-LOOP-8D-PE.md (ลูปปิด 8D → PFMEA/PFC/CP + yokoten + ทะเบียนเคลม
-                       #     + วัดประสิทธิผลจาก defect_logs — เฟส 1-4 ครบ 2026-08-18) ·
-                       #   QC-FLOW-AUDIT-2026-08-25.md (audit multi-agent ทั้ง loop สายธารความต้องการ
-                       #     45+3 findings + สถานะแก้ — ฝั่ง client เคลียร์แล้ว · ค้างฝั่ง DB/edge ดู §สถานะรวม) ·
-                       #   FINANCIAL-GAP-ANALYSIS.md (ราคาขายต่อพาร์ท → สรุปยอดขาย/margin — gap 13 ข้อ
-                       #     + คำถามที่ user ต้องตัดสิน 6 ข้อ · 📌 สำรวจแล้ว ยังไม่ลงมือ 2026-09-09
-                       #     · ⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
-                       #   LOCAL-SERVER-MIGRATION-SPEC.md (สเปก server สำหรับย้ายลง on-prem ของบริษัท —
-                       #     ส่งให้ฝ่าย IT 2026-09-11 · มี 8 จุดที่ hardcode URL Supabase cloud ที่ต้องแก้ก่อนย้าย) ·
-                       #   OBEYA-DESIGN.md (เหตุผลของดีไซน์ Obeya · ของที่ทำจริง → docs/modules/obeya*.md) ·
-                       #   OBEYA-KPI-SOURCES.md (**ที่มาตัวเลข KPI ทุกใบ + คู่มือ KPI Online ของกลุ่ม
-                       #     + ใบจริง PD3/PD4/JIG 2026 §8-12 — อ่านก่อนแตะอะไรที่เกี่ยวกับ KPI**)
+docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.md (ทุกงาน) · UI-CONVENTIONS.md (งาน UI) ·
+                       #   PERMISSIONS-DESIGN.md (สิทธิ์/role) · OBEYA-KPI-SOURCES.md (ก่อนแตะ KPI)
+                       #   ที่เหลือดูชื่อไฟล์เอาใน docs/ — เปิดเฉพาะที่เกี่ยวกับงานที่ทำ
+                       #   📌 **ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:**
+                       #     IATF16949-GAP-REVIEW · IDENTITY-NOTIFY-DESIGN (แกนสิทธิ์อยู่
+                       #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
+                       #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
+                       #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
+                       #   ⚠️ ไฟล์ *-DESIGN.md ที่ "ทำแล้ว" = เหตุผลเบื้องหลัง · ของจริงอยู่ docs/modules/
 ```
 
 > **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**

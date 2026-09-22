@@ -31,6 +31,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
+import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
@@ -206,6 +207,33 @@ function PartsPickModal({ parts, onPick, onClose }) {
   );
 }
 
+/* ✅ ชิปแถบความครบของสินค้า 1 ตัว — "งานใหม่มา ยังขาดอะไร จอบอกเอง" (2026-09-22)
+   สถานะ/สี มาจาก `src/utils/productReadiness.js` ห้ามตั้งเองที่นี่
+   🔴 เหลือง "…" = Routing/Packaging ที่ **อนาคตต้องบังคับ** (คำสั่ง user 22/09) — เตือน ไม่บล็อก
+   กดชิปแล้วเด้งไปแท็บที่ต้องไปเติม (บทเรียน worklist: บอกเฉยๆ ว่าขาด = ไม่มีใครไปเติม) */
+function ReadyChips({ ready, onGo, compact }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+      {ready.steps.map(st => {
+        const c = READINESS_COLOR[st.status];
+        const go = onGo && st.status !== 'na' ? () => onGo(st.key) : undefined;
+        const title = st.status === 'ok' ? `${st.label}: มีแล้ว`
+          : st.status === 'na' ? `${st.label}: ไม่เกี่ยวกับของชิ้นนี้`
+          : st.status === 'wait' ? `${st.label}: ยังไม่ได้ลง — อนาคตต้องบังคับ (ตอนนี้ยังไม่บล็อก)`
+          : `${st.label}: ยังไม่ได้ลง — ต้องมี`;
+        return (
+          <button key={st.key} type="button" onClick={go} disabled={!go} title={title}
+            style={{ fontSize: compact ? 10 : 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 10,
+              background: c.bg, color: c.fg, border: `1px solid ${c.fg}33`, cursor: go ? 'pointer' : 'default',
+              fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+            {st.icon} {compact ? '' : st.label + ' '}{c.mark}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ProductMaster() {
   const { role, fullName, isDeptAdmin } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
@@ -226,6 +254,9 @@ export default function ProductMaster() {
     setSearchParams(next);
   };
 
+  /* ✅ กดชิป "ยังไม่ครบ" แล้วพาไปแท็บที่ต้องไปเติมเลย (BOM เลือกแถวให้ด้วย) */
+  const goFixStep = (it) => (key) => { if (key === 'bom') openBomFor(it.mat_no); else setMainTab(key); };
+
   /* ── state ── */
   const [items,   setItems]   = useState([]);
   const [lines,   setLines]   = useState([]);
@@ -235,6 +266,10 @@ export default function ProductMaster() {
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
+  /* ✅ ความครบของข้อมูลต่อสินค้า (2026-09-22) — ดึงแค่คีย์ 2 ตาราง (ตัวเล็กมาก) ไม่ใช่ทั้งแถว (กฎเหล็ก 11 egress)
+     routing ผูกด้วย mat_no · packaging ผูกด้วย product_id — คนละคีย์ ห้ามสลับ */
+  const [routingMats, setRoutingMats] = useState(() => new Set());
+  const [packagedIds, setPackagedIds] = useState(() => new Set());
 
   const [editing,  setEditing]  = useState(null);          // id | 'new' | null
   const [ecSource, setEcSource] = useState(null);
@@ -257,6 +292,7 @@ export default function ProductMaster() {
   const [search,      setSearch]      = useState('');
   const [lineFilter,  setLineFilter]  = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [readyFilter, setReadyFilter] = useState('');   // '' ทั้งหมด · 'req' ขาดของบังคับ · 'any' ขาดอะไรก็ได้ (รวมที่อนาคตบังคับ)
   const [expandedFamilies, setExpandedFamilies] = useState({});
   const [expandedNameGroups, setExpandedNameGroups] = useState({});
   const [csvImporting, setCsvImporting] = useState(false);
@@ -272,7 +308,7 @@ export default function ProductMaster() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
       supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
@@ -281,11 +317,16 @@ export default function ProductMaster() {
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
       supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
+      // ✅ แถบความครบ — เอาแค่คีย์พอ (มี/ไม่มี) ไม่ดึงรายละเอียดขั้นตอน/กล่อง
+      supabaseDR.from('part_routings').select('mat_no').eq('is_active', true),
+      supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
     ]);
     setItems(pr || []);
     setLines(ln || []);
     setKanbanStds(stds || []);
     setPmParts(pm || []);
+    setRoutingMats(new Set((rt || []).map(r => String(r.mat_no || '').trim().toUpperCase()).filter(Boolean)));
+    setPackagedIds(new Set((pkg || []).map(r => r.product_id).filter(Boolean)));
 
     const bc = {};
     (boms || []).forEach(b => { bc[b.product_id] = (bc[b.product_id] || 0) + 1; });
@@ -561,12 +602,35 @@ export default function ProductMaster() {
     return [...map.values()];
   }, [items]);
 
+  /* ✅ แถบความครบต่อสินค้า (2026-09-22 · คำสั่ง user "อนาคตต้องบังคับ" สำหรับ Routing/Packaging)
+     กฎครบ/ไม่ครบอยู่ `src/utils/productReadiness.js` จุดเดียว — ห้ามตัดสินเองในหน้า */
+  const kanbanByProduct = useMemo(() => {
+    const m = {};
+    kanbanStds.filter(s => s.is_active && s.product_id).forEach(s => { m[s.product_id] = (m[s.product_id] || 0) + 1; });
+    return m;
+  }, [kanbanStds]);
+  const readyOf = useCallback((it) => productReadiness(it, {
+    bom:       bomCounts[it.id] || 0,
+    routing:   routingMats.has(String(it.mat_no || '').trim().toUpperCase()),
+    packaging: packagedIds.has(it.id),
+    kanban:    kanbanByProduct[it.id] || 0,
+  }), [bomCounts, routingMats, packagedIds, kanbanByProduct]);
+
   /* ── filtered ── */
   const visibleFamilies = useMemo(() => {
     const q = search.trim().toLowerCase();
     return families
       .filter(f => showHistory || f.members.some(m => m.is_active))
       .filter(f => !lineFilter || f.members.some(m => m.line_name === lineFilter))
+      .filter(f => {
+        if (!readyFilter) return true;
+        // ดูเฉพาะ revision ที่ยังใช้งาน — rev เก่าที่ถูก EC แทนที่ไปแล้ว ไม่ต้องไล่เติมข้อมูล
+        return f.members.some(m => {
+          if (!m.is_active || m.superseded_by) return false;
+          const r = readyOf(m);
+          return readyFilter === 'req' ? r.missingRequired.length > 0 : r.missing.length > 0;
+        });
+      })
       .filter(f => {
         if (!q) return true;
         return f.members.some(m =>
@@ -576,7 +640,7 @@ export default function ProductMaster() {
           (m.customer || '').toLowerCase().includes(q) ||
           (m.code || '').toLowerCase().includes(q));
       });
-  }, [families, search, lineFilter, showHistory]);
+  }, [families, search, lineFilter, showHistory, readyFilter, readyOf]);
 
   const activeCount = items.filter(i => i.is_active).length;
   const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
@@ -715,14 +779,23 @@ export default function ProductMaster() {
             เหตุผล: ของที่ผ่านมาคนเริ่มจากแท็บ Products (แท็บแรก) แล้วคีย์ BOM แยกใบของใครของมัน
             ⇒ ของชิ้นเดียวถูกคีย์ซ้ำหลายใบ = ต้นเหตุ "แถวนับซ้ำ" ทั้งฐาน (ดู docs/modules/bom-levels.md)
             ⚠️ default ของ `useTabParam` ยังเป็น 'products' — ลิงก์เก่า/บุ๊กมาร์กไม่เปลี่ยนปลายทาง */}
-        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' }, { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].map(t => (
+        {/* 🧱 ขีดคั่น (2026-09-22 · user ถามว่าลูกค้า/supplier ควรย้ายไป setup program มั้ย)
+            ไม่ย้ายหน้า — `/products` อยู่ในหมวด "ตั้งค่าโปรแกรม,ฐานข้อมูล" อยู่แล้ว และ 2 ทะเบียนนี้
+            ถูกแก้ "ระหว่างคีย์ข้อมูลสินค้า" ย้ายออกไปคนละหน้า = ต้องสลับหน้าไปมา
+            แค่คั่นให้เห็นว่า **ลำดับงาน** จบที่ 🎴 Kanban Std · หลังขีดคือทะเบียนย่อย/เครื่องมือ */}
+        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' },
+          { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
+          { key:'customers', label:'🏷️ ลูกค้า', sep: true }, { key:'suppliers', label:'🏭 Supplier' },
+          { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].flatMap(t => [
+          t.sep ? <span key={`sep-${t.key}`} title="ทะเบียนย่อย / เครื่องมือ — ไม่ใช่ลำดับงาน"
+            style={{ alignSelf:'stretch', width:1, background:'var(--border)', margin:'2px 8px', flexShrink:0 }} /> : null,
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
               color: mainTab===t.key ? '#08130a' : 'var(--muted)', fontFamily:'var(--font-body)' }}>
             {t.label}
-          </button>
-        ))}
+          </button>,
+        ])}
       </div>
 
       {mainTab === 'products' && (<>
@@ -763,6 +836,16 @@ export default function ProductMaster() {
         <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
           extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]}
           style={{ ...inputSt, width: 'auto', padding: '8px 10px' }} />
+        {/* ✅ ตัวกรองความครบ (2026-09-22) — แยก "บังคับแล้ว" กับ "อนาคตบังคับ" คนละตัวเลือก
+            ถ้ารวมเป็นตัวเดียว = เกือบทั้งฐานเด้งขึ้นมา (101 ตัวยังไม่มี routing · 106 ยังไม่มี packaging)
+            ⇒ ตัวกรองที่ไม่เคยกรองอะไรออก = คนเลิกใช้ */}
+        <select value={readyFilter} onChange={e => setReadyFilter(e.target.value)}
+          title="กรองตามความครบของข้อมูล — Routing/Packaging ยังไม่บังคับวันนี้ (อนาคตบังคับ)"
+          style={{ ...inputSt, width: 'auto', padding: '8px 10px' }}>
+          <option value="">ความครบ: ทั้งหมด</option>
+          <option value="req">⚠ ยังไม่ครบ (ที่บังคับแล้ว)</option>
+          <option value="any">… ยังไม่ครบ (รวมที่อนาคตบังคับ)</option>
+        </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
           <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
           แสดงประวัติ EC
@@ -838,6 +921,38 @@ export default function ProductMaster() {
         );
       })()}
 
+      {/* ✅ สรุปความครบทั้งฐาน + ความหมายของชิป (2026-09-22)
+          กฎความซื่อสัตย์ของจอ: บอกว่านับจากกี่ตัว และแยกให้ชัดว่าอะไร "ขาด" อะไร "รอ(อนาคตบังคับ)" */}
+      {(() => {
+        const act = items.filter(i => i.is_active && !i.superseded_by);
+        if (!act.length) return null;
+        const rs = act.map(readyOf);
+        const need = rs.filter(r => r.missingRequired.length > 0).length;
+        const wait = rs.filter(r => r.missingRequired.length === 0 && r.missing.length > 0).length;
+        const full = rs.length - need - wait;
+        const pill = (bg, fg, txt, val, onClick) => (
+          <button type="button" onClick={onClick} disabled={!onClick}
+            style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: bg, color: fg,
+              border: `1px solid ${fg}33`, cursor: onClick ? 'pointer' : 'default', fontFamily: 'var(--font-body)' }}>
+            {txt} {val}
+          </button>
+        );
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 14px', marginBottom: 12,
+            background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>✅ ความครบข้อมูล ({rs.length} สินค้าที่ใช้งาน)</span>
+            {pill('rgba(61,214,92,0.10)', 'var(--accent)', '✓ ครบ', full, null)}
+            {pill('rgba(239,68,68,0.10)', '#ef4444', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
+            {pill('rgba(245,158,11,0.10)', '#f59e0b', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
+            {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
+              {' '}· <b>🔀 Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
+            </span>
+          </div>
+        );
+      })()}
+
       {/* ── Name Groups → Family cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {visibleGroups.length === 0 && (
@@ -899,8 +1014,9 @@ export default function ProductMaster() {
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}</span>
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      {/* ✅ แถบความครบ — แทนชิป BOM/Kanban เดิม (เดิมบอกแค่ 2 ขั้น คนยังต้องไล่เปิดแท็บอื่นเอง) */}
+                      <ReadyChips ready={readyOf(item)} onGo={goFixStep(item)} />
+                      {totalBom > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>({totalBom} พาร์ทใน BOM)</span>}
                     </div>
                     <RelatedLinks matNo={item.mat_no} productId={item.id} />
                   </div>
@@ -1033,7 +1149,8 @@ export default function ProductMaster() {
                         {v.p_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {v.p_no}</span>}
                         {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
                         {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
-                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: (bomCounts[v.id] || 0) > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: (bomCounts[v.id] || 0) > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 {(bomCounts[v.id] || 0) > 0 ? `${bomCounts[v.id]} พาร์ท` : 'ไม่มี BOM'}</span>
+                        {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
+                        <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
                         {(canEdit || canDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}

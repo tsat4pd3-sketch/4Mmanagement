@@ -18,6 +18,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { BACKUP_RE } from '../schemaAudit.js';   // ตัวตัดสิน "ชื่อตารางสำรอง" จุดเดียวทั้งระบบ
 import { join, relative } from 'node:path';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
@@ -498,4 +499,35 @@ test('🛡️ virtual-module-plugin-in-both-vite-configs — plugin ที่ห
     + '   ตกที่ audit/vite.audit.mjs = crashsweep/mobilesweep เปิดหน้าไม่ได้ ⇒ หน้าพังโดยไม่มีด่านไหนเห็น\n'
     + '   แก้ยังไง: import schemaUsage จาก scripts/vite-plugin-schema-usage.mjs แล้วใส่ใน plugins ของ config นั้น\n\n'
     + missing.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+test('🛡️ backup-tables-go-to-archive — migration ใหม่ห้ามสร้างตารางสำรองไว้ใน public', () => {
+  // ตัวตัดสินชื่อ "ตารางสำรอง" ใช้ตัวเดียวกับจอ /schema และ migration ที่ย้ายของ (ห้ามนิยามซ้ำ)
+  // บังคับเฉพาะไฟล์ที่ลงวันที่ **หลัง** รอบทำความสะอาด 22/09/2026 — ของเก่า 33 จุดเป็นประวัติศาสตร์
+  // ที่ถูกย้ายเข้า archive ไปแล้ว ไม่ต้องไปไล่แก้ไฟล์ migration ที่รันไปแล้ว
+  const SINCE = 20260923;
+  const dir = join(ROOT, 'supabase/migrations');
+  const hits = [];
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.sql')) continue;
+    const day = Number((f.match(/^(\d{8})/) || [])[1] || 0);
+    if (day < SINCE) continue;
+    // ตัดคอมเมนต์ SQL ก่อน (ไฟล์ migration ในโปรเจคนี้อธิบายยาวและมักยกตัวอย่างคำสั่งจริง)
+    const sql = readFileSync(join(dir, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+    for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:(\w+)\.)?(\w+)/gi)) {
+      const [, schema, name] = m;
+      if (BACKUP_RE.test(name) && (schema || 'public').toLowerCase() !== 'archive') hits.push(`${f} → ${name}`);
+    }
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ migration ด้านล่างสร้าง "ตารางสำรอง/ชั่วคราว" ไว้ใน schema public\n'
+    + '   ทำไมห้าม: สำเนาข้อมูลที่ copy มาแบบ `create table ... as select` **ไม่ได้ RLS ตามมาด้วย**\n'
+    + '   ฝั่ง DR ที่ client วิ่งด้วย anon เสมอ = ใครมี anon key ก็อ่าน/เขียนสำเนาข้อมูลจริงได้โดยไม่ต้อง login\n'
+    + '   (วัดจริง 22/09/2026: ค้างใน public 37 ตาราง · 35 ตัวไม่มี RLS · รวม 56,816 แถว)\n'
+    + '   และมันปนกับตารางจริงในทุกที่ที่มองเห็น schema (SQL Editor · จอ /schema · PostgREST)\n'
+    + '   แก้ยังไง: `create schema if not exists archive;` แล้วสร้างเป็น `archive.<ชื่อ>_<เหตุผล>_<YYYYMMDD>`\n'
+    + '   (schema archive ไม่ถูก expose ผ่าน API และไม่ grant ให้ anon/authenticated)\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
