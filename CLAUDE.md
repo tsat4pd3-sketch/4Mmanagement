@@ -491,34 +491,22 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 + 2026-09-15 + 2026-09-17)
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 → 09-22)
 
-`Obeya.jsx` = **เปลือกสลับแท็บ** · `?tab=kpi` (default) = 📋 บอร์ด KPI ส่วนงาน ราย**เดือน**
-(`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง 12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` — **ย้ายมาจาก
-`/dept-dashboard` 17/09** ลิงก์เก่า redirect มา) · `?tab=sqdcm` = 🖥️ จอ SQDCM ราย**วัน/สัปดาห์/เดือน**
-(`ObeyaSqdcmBoard.jsx` · KPI อยู่ `obeyaKpi.js` · OEE ยังมาจาก `oee.js` เท่านั้น)
-· **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
-  · แต่ `kpi` (บอร์ดไว้ดู) กับ `table` (โต๊ะไว้กรอก/ตั้งค่า) = **ข้อมูลชุดเดียวกัน** (`kpi_definitions` ·
-  `kpi_manual_entries` · `kpi_catalog`) คนละมุมมอง — **ห้ามแยกคลัง และห้ามพาไปตั้งเป้าคนละที่**
-· **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** (17/09)
-  **"เหลือง" = ถึง Commitment แต่ไม่ถึง Target** ไม่ใช่ "เกือบถึงเป้า" · ⚠️ ระดับ 1/0.5/0 **ไม่ใช่ boolean
-  (`0.5` truthy)** เทียบ `=== 1` เสมอ · บนใบ: ○ Achieve · △ Improvement · ✗ Miss goal
-· **🔴 กฎความซื่อสัตย์ของจอ:** แกน/ช่องที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอ ห้ามโชว์ 0 ห้ามซ่อนแผง**
-  · "ไม่มีเป้า" = เทา ไม่ใช่เขียว · ไฟรวมต้องบอกเสมอว่าตัดสินจากกี่ช่อง
-· **🔴 กลุ่มมีระบบ KPI ทางการอยู่แล้ว (KPI Online)** — ESM = "ที่ผลิตตัวเลข Actual" **ห้ามทำแข่งเป็นระบบทะเบียน**
-  เกณฑ์คะแนนทางการ = ถึง Target ×1 · ถึง Commitment ×0.5 · ไม่ถึง 0 (Total Weight 50) **ห้ามคิดเกณฑ์สีเอง**
-· **ACTION BOARD** ใช้ `meeting_action_items` ร่วมกับ `/morning-meeting` (ห้ามสร้างใหม่) แยกด้วย `source`
-· สิทธิ์ `page:/obeya` (ทุก role) · `obeya:record` · `safety:record` · ⚠️ **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้** (400 KB/รอบ)
-· **🧱 ตั้งค่า KPI data-driven (16/09):** scope 6 ระดับ (**`cost_center` คนละแกนกับไลน์ · ไม่ใช่คีย์เอกลักษณ์**)
-  · `provider` ลิ้ง data · `kpi_month_plans` · `kpi_base_inputs` · migration `20260916_kpi_scope_provider_plan.sql`
-· **🔴 กติกา "แต่ละส่วนงานเลือก KPI ตัวไหน" เป็นของกลุ่มอยู่แล้ว ห้ามคิดเอง** (21/09) — ทะเบียน
-  `kpi_standard_items` (Main · 318 แถว · 20 หน่วยงาน · migration `20260921`) ทุกแถวติดป้าย **`fixed`
-  (บังคับ) / `choice` (เลือกได้) / `null` = แถวหัวข้อแม่ ไม่ใช่ KPI** · หยิบ `fixed` ครบ + ติ๊ก `choice`
-  แล้ว **ถ่วงน้ำหนักรวม 50 เสมอ** · helper `KPI_STD_UNITS`/`checkStdSelection` ใน `kpiSetup.js`
-  (**เตือนเท่านั้น ห้ามบล็อกการบันทึก** — ใบจริงเพิ่มของนอกมาตรฐานได้) · เกณฑ์ Safety/QCC/Kaizen
-  ยังไม่มี (เอกสารชี้ไป "ประกาศ" คนละฉบับ · user 21/09: รอประธานกิจแจ้ง **ห้ามเดา**)
-> 📄 แท็บ KPI → `docs/modules/obeya-kpi-board.md` · แท็บ SQDCM → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
-> 📄 **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online + ใบ PD3 2026 → `docs/OBEYA-KPI-SOURCES.md` §8-9 (อ่านก่อนแตะ KPI)**
+`Obeya.jsx` = เปลือกสลับแท็บ · `?tab=kpi` = 📋 บอร์ด KPI ส่วนงานราย**เดือน** (`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง
+12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` ย้ายจาก `/dept-dashboard` 17/09) · `?tab=sqdcm` = 🖥️ จอ SQDCM **สัปดาห์/เดือน/ปี** (ไม่มี "วันนี้")
+(`ObeyaSqdcmBoard.jsx` · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js` เท่านั้น)
+- **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** ห้ามแยกคลัง/ตั้งเป้าคนละที่
+- **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
+- **🔴 กฎความซื่อสัตย์ของจอ:** ข้อมูลไม่พอต้องเขียนบนจอ **ห้ามโชว์ 0 ห้ามซ่อนแผง** · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
+- **🔴 กลุ่มมีระบบ KPI ทางการ (KPI Online)** — ESM = ที่ผลิตตัวเลข Actual **ห้ามทำแข่ง/ห้ามคิดเกณฑ์สีเอง** · กติกาเลือก KPI ต่อหน่วยงาน
+  = ทะเบียน `kpi_standard_items` (`fixed`/`choice`/`null`=หัวข้อแม่ · น้ำหนักรวม 50 · `checkStdSelection` **เตือนเท่านั้นห้ามบล็อก**) **ห้ามคิดเอง**
+- **🔴 โหมดปีห้ามโหลดแถวดิบ** — RPC `obeya_year_rollup` (DR) / `obeya_attendance_rollup` (Main) คืน Σ รายเดือน แล้ว `obeyaYear.js` หาร/ตัดสิน
+  (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
+- ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
+- ตั้งค่า KPI data-driven: scope 6 ระดับ (`cost_center` ไม่ใช่คีย์เอกลักษณ์) · `provider` · `kpi_month_plans` · `kpi_base_inputs`
+> 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
+> ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
 ---
 
