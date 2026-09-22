@@ -10,7 +10,27 @@
 export const MIN_SESSIONS = 3;       // ต้องมีอย่างน้อยกี่กะ ถึงเชื่อ median จากของจริง
 export const HISTORY_DAYS = 60;      // หน้าต่างประวัติที่ใช้ (recency — สะท้อนสภาพปัจจุบัน)
 export const DEFAULT_OEE = 0.75;     // OEE default เมื่อไม่มีประวัติไลน์ (ค่ากลางของระบบ ~75%)
-export const DEFAULT_SHIFT_MIN = 570; // นาทีต่อกะเมื่อไม่มี std (9.5 ชม.)
+export const DEFAULT_SHIFT_MIN = 570; // นาทีต่อกะ **แบบเวลาดิบ** (08:00–17:30 = 9.5 ชม.) — ยังไม่หักพัก
+
+/* 🔴🔴 กฎเหล็ก — `shiftMin` ที่ส่งเข้า estimateCapacity ต้องเป็น "นาทีทำงานสุทธิ" (หักพักแล้ว)
+   ที่มา (audit แผนผลิต 2026-09-22): หน้านี้ส่งเวลาดิบ 570 เข้าสูตร `(shiftMin×60 ÷ CT) × lineOee`
+   แต่ `lineOee` วัดบน `netAvail = elapsed − plannedDT − breakMin` (src/utils/oee.js) = **หักพักไปแล้ว**
+   ⇒ เอา OEE ที่หักพักแล้ว ไปคูณฐานเวลาที่ยังไม่หักพัก = **กำลังผลิตเฟ้อ**
+   วัดจริงจาก `break_policies` (ot_scope=always, กะเช้า): ประชุมแถว 10 + พักเที่ยง 50 + เบรค 10 + 10
+     = 80 นาที ⇒ ฐานที่ถูกคือ ~490 ไม่ใช่ 570 ⇒ **เฟ้อ 570/490 = +16.3%**
+   กระทบ 19 จาก 36 พาร์ทที่มี demand (53%) ซึ่งประวัติ < MIN_SESSIONS จึงตกมาทางสูตรนี้
+   และทิศทางนี้คือทิศที่อันตราย: **กำลังเฟ้อ = วางแผนน้อยกว่าที่ต้องใช้ = ของไม่ทันส่ง**
+   ⇒ คนเรียกต้องคิดสุทธิจาก `policyBreakForShift()` (src/utils/oee.js — เจ้าของกติกาพักที่เดียว)
+     **ห้ามสร้างรายการเวลาพักเองซ้ำในหน้า** */
+
+/** นาทีพักต่อกะที่ใช้เป็นค่าสำรอง **เฉพาะเมื่ออ่านตาราง `break_policies` ไม่ได้**
+ *  (= ผลรวมพักกะเช้าที่ ot_scope='always' ณ 2026-09-22 · ตรงกับตัวเลขในกฎด้านบน)
+ *  ⚠️ ใช้ค่าสำรองเมื่อไหร่ **จอต้องบอกคนดูด้วย ห้ามเงียบ** (กติกาเดียวกับ FALLBACK_PROFILE ใน pullSignal.js) */
+export const FALLBACK_SHIFT_BREAK_MIN = 80;
+
+/** นาทีทำงานสุทธิต่อกะ = เวลาดิบ − พักตามนโยบาย (กันติดลบ/ศูนย์ไว้ที่ 60 นาที) */
+export const netShiftMin = (grossMin = DEFAULT_SHIFT_MIN, breakMin = FALLBACK_SHIFT_BREAK_MIN) =>
+  Math.max(60, (Number(grossMin) || DEFAULT_SHIFT_MIN) - Math.max(0, Number(breakMin) || 0));
 
 export function median(arr) {
   if (!arr?.length) return null;
@@ -32,6 +52,8 @@ export function percentile(arr, p) {
  * ประเมินกำลังต่อกะของพาร์ทหนึ่ง
  * @param {number[]} perShiftOutputs  ยอดดีต่อกะจากประวัติ (อาร์เรย์ต่อ 1 กะ)
  * @param {object}  opts { ctSec, shiftMin, lineOee }
+ *   ⚠️ `shiftMin` = **นาทีทำงานสุทธิ** (หักพักตามนโยบายแล้ว) — ดูกฎเหล็กด้านบนไฟล์
+ *      ใช้ `netShiftMin(DEFAULT_SHIFT_MIN, policyBreakForShift({...}))`
  * @returns {{ perShift, p25, p75, n, method:'actual'|'ct'|null, confidence:'high'|'med'|'low' }}
  */
 export function estimateCapacity(perShiftOutputs = [], { ctSec = 0, shiftMin = DEFAULT_SHIFT_MIN, lineOee = DEFAULT_OEE } = {}) {

@@ -13,7 +13,10 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
+  netShiftMin, FALLBACK_SHIFT_BREAK_MIN,
 } from '../utils/capacityModel';
+import { policyBreakForShift } from '../utils/oee';
+import { pairLoadTotal } from '../utils/pairTotals';
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -58,6 +61,7 @@ export default function ProductionPlan() {
   const [prodByMat, setProdByMat] = useState({}); // mat_no → { line, ct }
   const [pnoToMat, setPnoToMat] = useState({});   // normalize(p_no) → mat_no (map เลขลูกค้า → SAP เหมือนหน้า Planner&Sales)
   const [capByMat, setCapByMat] = useState({});   // mat_no → estimateCapacity result
+  const [shiftNet, setShiftNet] = useState(null); // { netMin, brkMin, fallback } — นาทีทำงานสุทธิต่อกะ (หักพักตามนโยบาย)
   const [orders, setOrders] = useState([]);
   const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
@@ -105,10 +109,14 @@ export default function ProductionPlan() {
          และเพราะไม่มี `.order()` คู่กับ limit จึงได้ **คนละชุดทุกครั้งที่โหลด**
          ⇒ แท็บรายเดือน: shiftsNeeded ต่ำกว่าจริง → verdict ขึ้น "กะเช้าพอ" ทั้งที่ต้องเปิด OT/กะดึก
             และพาร์ทบางตัวหายไปจากแผนทั้งตัว · sessions/orders ยังไม่ทะลุวันนี้แต่โตได้เหมือนกัน */
-      const [{ data: cal }, { data: prods }, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
+      const [{ data: cal }, { data: prods }, brkRes, sessRes, ordRes, fcRes, pastRes] = await Promise.all([
         supabase.from('company_calendar').select('work_date, day_type')
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
-        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no').eq('is_active', true).not('mat_no', 'is', null),
+        /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
+           (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
+        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no, pair_mat_no').eq('is_active', true).not('mat_no', 'is', null),
+        // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
+        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
           .eq('status', 'closed').gte('work_date', histStart)),
         fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')
@@ -121,6 +129,14 @@ export default function ProductionPlan() {
           .neq('status', 'shipped').gte('due_date', addDays(today, -30)).lt('due_date', today)),
       ]);
       const sess = sessRes.rows, ord = ordRes.rows, fc = fcRes.rows, past = pastRes.rows;
+      /* ── นาทีทำงานสุทธิต่อกะ = เวลาดิบ − พักตามนโยบาย (กฎเหล็กใน capacityModel.js) ──
+         อ่านตารางไม่ได้ = ใช้ค่าสำรอง แต่ต้องขึ้นจอบอก ห้ามคิดด้วยเวลาดิบเงียบๆ (= กำลังเฟ้อ 16%) */
+      const brkRows = brkRes.data || [];
+      const brkMin = brkRows.length
+        ? policyBreakForShift({ policies: brkRows, shift: 'day', shiftMin: DEFAULT_SHIFT_MIN, workDate: today })
+        : FALLBACK_SHIFT_BREAK_MIN;
+      const netMin = netShiftMin(DEFAULT_SHIFT_MIN, brkMin);
+      setShiftNet({ netMin, brkMin, fallback: !brkRows.length });
       // โหลดไม่ครบ = แผนกำลังผลิต/ความต้องการ ต่ำกว่าจริง → verdict อาจบอก "พอ" ผิด ห้ามเงียบ
       setPlanWarn([sessRes, ordRes, fcRes, pastRes].some(r => r.error || r.truncated)
         ? 'โหลดข้อมูลไม่ครบ — แผนที่คำนวณอาจต่ำกว่าความจริง (ลองโหลดใหม่)' : '');
@@ -133,7 +149,7 @@ export default function ProductionPlan() {
       const pmap = {};
       const pnoMap = {};
       (prods || []).forEach(p => {
-        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0 };
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null };
         if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
       });
       setProdByMat(pmap);
@@ -171,6 +187,11 @@ export default function ProductionPlan() {
       //   OT/backlog เกินจริง (บั๊ก audit 2026-07-21) · แก้: กะวิ่ง 50–90% ของกะ → คูณกลับเป็นเต็มกะ
       //   แต่ cap ด้วยกำลังทฤษฎีเต็มกะ (shift×60÷CT) กัน over-scale (overstate = วางแผนน้อยไป อันตราย)
       //   กะวิ่ง <50% = สัญญาณน้อยเกิน extrapolate → ตัดทิ้ง · ไม่มี timestamp = ใช้ค่าดิบเดิม (backward-compat)
+      /* ⚠️ 2 ตัวเลขนี้ต่างกันโดยเจตนา **ห้ามยุบเป็นตัวเดียว**:
+         · `SHIFT_MIN` (เวลาดิบ 570) ใช้เทียบ **นาฬิกาแขวน** — `rm` มาจาก opened_at→confirmed_at
+           ซึ่งกินเวลาพักไปด้วย ⇒ อัตราขยายกลับเป็นเต็มกะต้องเทียบกับเวลาดิบ
+         · `netMin` (หักพักแล้ว) ใช้เป็น **เพดานกำลังทางทฤษฎี** — ของจริงผลิตได้แค่ช่วงที่ไม่ใช่เวลาพัก
+           (เดิมใช้เวลาดิบทั้ง 2 ที่ ⇒ เพดานหลวมไป 16% ตาม audit 22/09) */
       const SHIFT_MIN = DEFAULT_SHIFT_MIN;
       const outputsByMat = {};
       Object.entries(perSessMat).forEach(([k, e]) => {
@@ -182,7 +203,7 @@ export default function ProductionPlan() {
         if (rm >= SHIFT_MIN * 0.5 && rm < SHIFT_MIN * 0.9) {
           out = e.qty * (SHIFT_MIN / rm);                                     // scale ≤ 2×
           const ct = pmap[mat]?.ct || 0;
-          if (ct > 0) out = Math.min(out, (SHIFT_MIN * 60) / ct);            // ห้ามเกินกำลังทฤษฎีเต็มกะ
+          if (ct > 0) out = Math.min(out, (netMin * 60) / ct);               // ห้ามเกินกำลังทฤษฎีเต็มกะ (เวลาสุทธิ)
         }
         (outputsByMat[mat] = outputsByMat[mat] || []).push(out);
       });
@@ -190,7 +211,7 @@ export default function ProductionPlan() {
       Object.keys(pmap).forEach(mat => {
         const line = pmap[mat].line;
         const lineOee = oeeByLine[line]?.length ? median(oeeByLine[line]) / 100 : DEFAULT_OEE;
-        cap[mat] = estimateCapacity(outputsByMat[mat] || [], { ctSec: pmap[mat].ct, shiftMin: DEFAULT_SHIFT_MIN, lineOee });
+        cap[mat] = estimateCapacity(outputsByMat[mat] || [], { ctSec: pmap[mat].ct, shiftMin: netMin, lineOee });
       });
       setCapByMat(cap);
       setLoading(false);
@@ -219,6 +240,9 @@ export default function ProductionPlan() {
     const est = rid ? capByMat[rid] : undefined;
     return { est, perShift: planCapacity(est, capMode) };
   }, [resolveMat, capByMat, capMode]);
+  /* ── งานคู่ RH/LH: ปั๊มทีเดียวได้ 2 ข้าง ⇒ **ภาระเวลาไม่บวกกัน** (กฎเหล็ก "ชิ้น ≠ shot") ──
+     ยอดชิ้น (duePcs) ยังบวกตามปกติ เพราะ RH/LH ส่งลูกค้าแยกใบ เป็นชิ้นจริงทั้งคู่ */
+  const pairOf = useCallback((mat) => prodByMat[mat]?.pair || null, [prodByMat]);
   /* ── order/forecast ที่ map ไม่เจอ (ยังไม่ตั้ง SAP/p_no) — ต้องเตือน ไม่ทิ้งเงียบ ── */
   const unmapped = useMemo(() => {
     if (loading) return { orders: 0, parts: new Set(), fcParts: new Set() };
@@ -228,6 +252,20 @@ export default function ProductionPlan() {
     forecasts.forEach(f => { if (!resolveMat(f.mat_no)) fcParts.add(f.mat_no); });
     return { orders: ordCnt, parts, fcParts };
   }, [loading, orders, forecasts, resolveMat]);
+
+  /* ── คู่ RH/LH ที่ "มี demand ครบทั้ง 2 ข้าง" = คู่ที่ระบบยุบภาระเวลาให้ ──
+     ต้องขึ้นจอ ไม่งั้นคนที่บวกเลขมือเองจะงงว่าทำไมโหลดน้อยกว่าที่คิด (และคิดว่าระบบตกหล่น) */
+  const pairsCollapsed = useMemo(() => {
+    if (loading) return [];
+    const have = new Set();
+    [...orders, ...forecasts].forEach(r => { const m = resolveMat(r.mat_no); if (m) have.add(m); });
+    const out = [];
+    have.forEach(m => {
+      const pm = pairOf(m);
+      if (pm && pm !== m && have.has(pm) && m < pm) out.push([m, pm]);
+    });
+    return out;
+  }, [loading, orders, forecasts, resolveMat, pairOf]);
 
   /* ═══ รายวัน: เดินปฏิทิน จัดสรร shift-load ต่อไลน์ ═══ */
   const daily = useMemo(() => {
@@ -239,26 +277,38 @@ export default function ProductionPlan() {
     return viewLines.map(line => {
       // ความต้องการของไลน์นี้ต่อวัน (แปลงเป็น shift-load: qty ÷ กำลังต่อกะ)
       const lineOrders = orders.filter(o => lineOfMat(o.mat_no) === line.name);
-      const loadByDate = {}, pcsByDate = {}, matSet = new Set();
+      /* ⚠️ สะสมโหลด **แยกราย mat ก่อน** แล้วค่อยรวมด้วย pairLoadTotal ตอนท้าย
+         บวกรวมทันทีแบบเดิม = คู่ RH/LH ถูกนับ 2 เท่า (ยุบทีหลังไม่ได้ เพราะรู้แค่ผลบวกแล้ว) */
+      const loadMatByDate = {}, pcsByDate = {}, matSet = new Set();
       let unknownCap = 0;
       lineOrders.forEach(o => {
         const { perShift } = capOfMat(o.mat_no);
         const qty = Number(o.qty) || 0;
         pcsByDate[o.due_date] = (pcsByDate[o.due_date] || 0) + qty;
         matSet.add(o.mat_no);
-        if (perShift > 0) loadByDate[o.due_date] = (loadByDate[o.due_date] || 0) + qty / perShift;
-        else unknownCap += qty;
+        if (perShift > 0) {
+          const rid = resolveMat(o.mat_no) || o.mat_no;      // คีย์ต้องเป็นเลข SAP — pair_mat_no อ้างเลข SAP
+          const byMat = loadMatByDate[o.due_date] || (loadMatByDate[o.due_date] = {});
+          byMat[rid] = (byMat[rid] || 0) + qty / perShift;
+        } else unknownCap += qty;
       });
+      const loadByDate = Object.fromEntries(
+        Object.entries(loadMatByDate).map(([d, byMat]) => [d, pairLoadTotal(byMat, pairOf)]));
       const hasNight = hasNightShift(viewLines, line.name);
       // ยอดค้างส่งที่เลยดิวของไลน์นี้ = backlog ตั้งต้นวันแรก (convention เดียวกับ Rundown "ค้างเก่ารวมเข้าวันนี้")
-      let carryPcs = 0, carryLoad = 0;
+      let carryPcs = 0;
+      const carryByMat = {};
       overdueOrders.forEach(o => {
         if (lineOfMat(o.mat_no) !== line.name) return;
         const { perShift } = capOfMat(o.mat_no);
         const qty = Number(o.qty) || 0;
         carryPcs += qty;
-        if (perShift > 0) carryLoad += qty / perShift; else unknownCap += qty;
+        if (perShift > 0) {
+          const rid = resolveMat(o.mat_no) || o.mat_no;
+          carryByMat[rid] = (carryByMat[rid] || 0) + qty / perShift;
+        } else unknownCap += qty;
       });
+      const carryLoad = pairLoadTotal(carryByMat, pairOf);   // ค้างส่งก็ยุบคู่เหมือนกัน
       // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
       let backlog = carryLoad;
       const days = dates.map(date => {
@@ -291,7 +341,7 @@ export default function ProductionPlan() {
       const sd75Stoppable = days.filter(d => d.sd75 && !d.plan.includes('recall75')).length;
       return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length, carryPcs };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0 || r.carryPcs > 0);
-  }, [loading, viewLines, orders, overdueOrders, today, capOfMat, lineOfMat, calOf]);
+  }, [loading, viewLines, orders, overdueOrders, today, capOfMat, lineOfMat, calOf, resolveMat, pairOf]);
 
   /* ═══ รายเดือน: forecast → shift ที่ต้องการ vs วันทำงานที่มี ═══ */
   const monthly = useMemo(() => {
@@ -324,12 +374,17 @@ export default function ProductionPlan() {
       const hasNight = hasNightShift(viewLines, line.name);
       const rows = months.map(mk => {
         const fcs = forecasts.filter(f => monthKey(f.period_month) === mk && lineOfMat(f.mat_no) === line.name);
-        let shiftsNeeded = 0, pcs = 0, unknownCap = 0;
+        let pcs = 0, unknownCap = 0;
+        const loadByMat = {};                 // ยุบคู่ RH/LH ทีหลัง — บวกทันทีคือนับเวลา 2 เท่า
         fcs.forEach(f => {
           const { perShift } = capOfMat(f.mat_no);
           const qty = Number(f.qty) || 0; pcs += qty;
-          if (perShift > 0) shiftsNeeded += qty / perShift; else unknownCap += qty;
+          if (perShift > 0) {
+            const rid = resolveMat(f.mat_no) || f.mat_no;
+            loadByMat[rid] = (loadByMat[rid] || 0) + qty / perShift;
+          } else unknownCap += qty;
         });
+        const shiftsNeeded = pairLoadTotal(loadByMat, pairOf);
         const wd = workDaysOf(mk);
         const sd75 = sd75DaysOf(mk);
         const dayShifts = wd;                 // 1 กะเช้า/วันทำงาน
@@ -349,7 +404,7 @@ export default function ProductionPlan() {
       });
       return { line, rows };
     }).filter(r => r.rows.some(x => x.fcCount > 0));
-  }, [loading, viewLines, forecasts, calMap, today, capOfMat, lineOfMat]);
+  }, [loading, viewLines, forecasts, calMap, today, capOfMat, lineOfMat, resolveMat, pairOf]);
 
   /* ── styles ── */
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -390,6 +445,12 @@ export default function ProductionPlan() {
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
+        {shiftNet && <> บนฐาน <b>เวลาทำงานสุทธิ {shiftNet.netMin} นาที/กะ</b> (เวลากะ {DEFAULT_SHIFT_MIN} − พักตามนโยบาย {Math.round(shiftNet.brkMin)})
+          {shiftNet.fallback && <span style={{ color: '#f59e0b', fontWeight: 700 }}> ⚠ ใช้ค่าพักสำรอง (อ่านตารางเวลาพักไม่ได้)</span>}</>}
+        {pairsCollapsed.length > 0 && (
+          <> · 🔗 <b>งานคู่ {pairsCollapsed.length} คู่</b> ปั๊มทีเดียวได้ 2 ข้าง — ยอด<b>ชิ้น</b>บวกทั้งคู่ แต่<b>ภาระเวลา</b>นับครั้งเดียว
+            <span style={{ marginLeft: 4 }}>({pairsCollapsed.slice(0, 3).map(([a, b]) => `${a}↔${b}`).join(' · ')}{pairsCollapsed.length > 3 ? ' …' : ''})</span></>
+        )}
       </div>
 
       {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (

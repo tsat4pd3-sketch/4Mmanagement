@@ -23,6 +23,41 @@
 - **⚠️ map เลขลูกค้า→SAP ต้องผ่าน `p_no` ด้วย (2026-07-21):** order/forecast มักอ้าง**เลขลูกค้า** (เช่น `RB3B 8B225 AA`) ไม่ใช่ mat_no SAP — `resolveMat()` ลอง ตรง → normalize mat → `pnoToMat[normalize(p_no)]` · **map ไม่เจอ = ขึ้น banner ⚠️ (N ออเดอร์/พาร์ท ยังไม่ตั้ง SAP)** ห้ามทิ้งเงียบ (เดิม map ผ่าน mat_no อย่างเดียว ทิ้ง ~38% order/85% forecast เงียบ) · ต้นเหตุหลัก = master data `dr_products.p_no` ยังไม่กรอก → ไปตั้งที่ Product Master / ปุ่ม 🔗 จับคู่ SAP ในหน้า Planner&Sales
 - **⚠️ กับดัก `prod_orders` ไม่มีคอลัมน์ `line_name`/`work_date`** — 2 ค่านี้อยู่บน `production_sessions` (join ผ่าน `session_id`) · select ตรงจาก prod_orders = PostgREST error 42703 (ถ้าดึงแค่ `data` จะถูกกลืนเงียบ prodArr ว่าง) — เคยพังที่ PmForecast (shot สะสม = 0) · หน้าใหม่ที่ query prod_orders ตามไลน์/วัน ให้ embed `production_sessions!inner(line_name, work_date)` + เช็ค `error` เสมอ (2026-07-21)
 - **Scope:** leader = family ไลน์ตัวเอง (branch มาก่อน) · role อื่นตาม `sections` · migration สิทธิ์: `20260715_production_plan_page_permission.sql`
+> ### 🔴🔴 2 บั๊กตัวเลขที่ audit 2026-09-22 จับได้ (แก้แล้ว — ห้ามถอยกลับ)
+>
+> **① งานคู่ RH/LH ทำให้ "ภาระกะ" ถูกนับ 2 เท่า**
+> เดิมบวก `qty ÷ กำลังต่อกะ` ของทุกพาร์ทรวมกันทันที (`loadByDate[date] += …`) ⇒ คู่ที่ปั๊มทีเดียว
+> ได้ทั้ง RH+LH ถูกคิดเวลาสองรอบ · ของจริงในฐาน DR วันนั้น — คู่ที่มี demand ครบทั้ง 2 ข้าง:
+> `20065635↔20065715` (LASER-789) · `20059957↔20059959` และ `20059966↔20059967` (LINE D 110&300T)
+> ⇒ **LINE D ซึ่ง `std_night_shift = 0` (ไม่มีกะดึกให้เปิด) ถูกดันไป tier 🚨 เกินกำลัง** ทั้งที่โหลดจริงน้อยกว่านั้น
+> · **แก้:** สะสมโหลด**แยกราย mat** (คีย์ = เลข SAP จาก `resolveMat`) แล้วรวมด้วย
+>   **`pairLoadTotal(loadByMat, pairOf)`** (`src/utils/pairTotals.js`) ทั้ง 3 จุด: order รายวัน ·
+>   ยอดค้างส่ง (carry) · forecast รายเดือน · ต้อง `select('pair_mat_no')` ด้วย (ลืม = pairOf ว่าง = บั๊กเดิมกลับมาเงียบๆ)
+> · **ยอดชิ้น (`duePcs`) ยังบวกทั้งคู่ตามปกติ** — RH/LH ส่งลูกค้าแยกใบ เป็นชิ้นจริงทั้งคู่ (กฎ "ชิ้น ≠ shot")
+> · วัดผลจริงหลังแก้ (window เดือนนี้): LASER-789 โหลด **−48.2%** · LINE D **−18.1%** · อีก 9 ไลน์ **0.0%** (ไม่มีคู่)
+> · ด่านกันถอยกลับ: `plan-load-needs-pair-collapse` ใน `regressionGuards.test.mjs`
+>   (ไฟล์ไหนมี `/ perShift` ต้องมี `pairLoadTotal`)
+>
+> **② กำลังผลิตทาง fallback เฟ้อ 16.3% (ทิศทางอันตราย = วางแผนน้อยไป)**
+> `estimateCapacity` คิด `(shiftMin×60 ÷ CT) × lineOee` แต่ `lineOee` วัดบน
+> `netAvail = elapsed − plannedDT − breakMin` = **หักพักไปแล้ว** ⇒ เดิมส่ง `DEFAULT_SHIFT_MIN = 570`
+> (เวลาดิบ 08:00–17:30) เข้าไปคูณ = เอา OEE ที่หักพักแล้วไปคูณฐานที่ยังไม่หักพัก
+> · พักกะเช้าจาก `break_policies` (ot_scope=always): ประชุมแถว 10 + เที่ยง 50 + เบรค 10 + 10 = **80 นาที**
+>   ⇒ ฐานที่ถูก **490 นาที** · เฟ้อ 570/490 = **+16.3%** · กระทบ **19 จาก 36 พาร์ทที่มี demand (53%)**
+>   ที่ประวัติ < `MIN_SESSIONS` จึงตกมาทางสูตรนี้
+> · **แก้:** หน้าโหลด `break_policies` แล้วคิด
+>   `netShiftMin(DEFAULT_SHIFT_MIN, policyBreakForShift({...}))` ส่งเข้า `estimateCapacity`
+>   · เวลาพักมีเจ้าของที่ `src/utils/oee.js` ที่เดียว **ห้ามตั้งรายการพักเองในหน้า**
+> · ⚠️ **`SHIFT_MIN` (ดิบ) กับ `netMin` (สุทธิ) ในบล็อก normalize กะแชร์ไลน์ ต่างกันโดยเจตนา ห้ามยุบ:**
+>   `rm` มาจาก `opened_at→confirmed_at` = **นาฬิกาแขวน** (กินเวลาพักด้วย) ⇒ อัตราขยายกลับเป็นเต็มกะ
+>   เทียบเวลาดิบ · แต่**เพดานกำลังทางทฤษฎี** ต้องเป็นเวลาสุทธิ
+> · อ่านตาราง `break_policies` ไม่ได้ = ใช้ `FALLBACK_SHIFT_BREAK_MIN` (80) **แล้วขึ้นจอบอกว่าใช้ค่าสำรอง**
+> · ด่านกันถอยกลับ: `capacity-shiftmin-must-be-net` (ห้ามส่ง `shiftMin: DEFAULT_SHIFT_MIN`)
+> · เทส: `src/utils/__tests__/planCapacity.test.mjs` (10 เคส)
+>
+> **จอต้องบอกที่มาเสมอ:** ใต้หัวเพจแสดง "เวลาทำงานสุทธิ N นาที/กะ (เวลากะ 570 − พัก 80)" +
+> "🔗 งานคู่ N คู่ — ยอดชิ้นบวกทั้งคู่ แต่ภาระเวลานับครั้งเดียว" ⇒ คนที่บวกเลขมือเองจะไม่เข้าใจผิดว่าระบบตกหล่น
+
 - **แผนต่อไป (ยังไม่ทำ):** เฟส 2 what-if (เพิ่มคน/ลด NG ทันมั้ย) · เฟส 3 ผูก `ot_night_bookings` — กดจากแผนแล้วจองรถ OT/เปิดกะอัตโนมัติ + Telegram
 
 ---
