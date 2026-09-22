@@ -161,8 +161,9 @@ role `anon` เสมอ = ใครมี anon key (ฝังอยู่ใน
 ### 7.3 กันไม่ให้กลับมาอีก (3 ชั้น)
 
 1. **ด่านใน build** — `regressionGuards` กฎ `backup-tables-go-to-archive`:
-   migration ที่ลงวันที่ ≥ 20260923 ห้าม `create table` ชื่อเข้าข่ายตารางสำรองใน public (ต้องเป็น `archive.`)
-   · ของเก่า 33 จุดก่อนหน้านั้นไม่ถูกฟ้อง (รันไปแล้ว + ย้ายเข้า archive แล้ว)
+   migration ที่ลงวันที่ ≥ 20260922 ห้าม `create table` ชื่อเข้าข่ายตารางสำรองใน public (ต้องเป็น `archive.`)
+   · ของเก่าก่อนหน้านั้นไม่ถูกฟ้อง (รันไปแล้ว + ย้ายเข้า archive แล้ว) · **เดิมตั้ง 20260923 แล้วรั่วจริงภายในวันเดียว — ดู §7.6**
+   · คู่กับกฎ `new-table-needs-rls` (ตารางใหม่ใน public ต้องเปิด RLS ในไฟล์เดียวกัน · §7.6)
 2. **แท็บ 🩺 ในจอ** — ถ้ามีตัวใหม่โผล่ใน public จะขึ้น 🔴 ทันทีที่เปิดจอ
 3. **ตัวตัดสินชื่อมีจุดเดียว** — `BACKUP_RE` ใน `src/utils/schemaAudit.js`
    ใช้ร่วมกันทั้งจอ · ด่าน build · (และ regex เดียวกันในไฟล์ migration) **แก้ต้องแก้พร้อมกัน**
@@ -194,9 +195,39 @@ role `anon` เสมอ = ใครมี anon key (ฝังอยู่ใน
 | ชุด KPI รุ่นเก่า (Main) | `kpi_items` (28) · `kpi_targets` (313) · `kpi_actuals` (39) · `kpi_raw_inputs` · `kpi_section_detail` | ถูกแทนด้วย `kpi_definitions`/`kpi_catalog`/`kpi_manual_entries` — ไม่มีโค้ดอ่านแล้ว แต่ **มีข้อมูลจริงของปีก่อน** |
 | PPE รุ่นเก่า (Main) | `ppe_items` · `ppe_checks` · `ppe_requirements` · `attendances` | ว่างทั้งหมด — ของจริงไปอยู่ใน `daily_production_logs` (has_helmet/boots/gloves) นานแล้ว |
 | ทะเบียนเอกสารรุ่นเก่า | `document_controls` · `document_control_revisions` | ตั้งใจเก็บเป็น vestigial ตั้งแต่ 2026-07-30 (ยุบเข้า `doc_forms`) |
-| อื่นๆ ที่ไม่มีใครเรียก | Main: `part_registry` · `part_images` · `profile_org_access` · `production_shots` · `nav_groups` · `employee_photo_purge_log` · `kpi_base_inputs` · `kpi_month_plans` · DR: `production_shots` · `guests` · `tasks` · `user_signatures` · `pm_org_nodes` · `energy_utilities` · `kanban_scans` · `mtn_mo_counter` · วิว `v_sloc_stock` | ต้องเช็คเป็นตัวๆ ว่าเป็น "เลิกใช้" หรือ "ทำโครงไว้รอต่อ" |
+| อื่นๆ ที่ไม่มีใครเรียก | Main: `part_registry` · `part_images` · `profile_org_access` · `production_shots` · `nav_groups` · `employee_photo_purge_log` (ปิด RLS แล้ว §7.6) · `kpi_base_inputs` · `kpi_month_plans` · DR: `production_shots` · `guests` · `tasks` · `user_signatures` · `pm_org_nodes` · `energy_utilities` · `kanban_scans` · `mtn_mo_counter` · วิว `v_sloc_stock` | ต้องเช็คเป็นตัวๆ ว่าเป็น "เลิกใช้" หรือ "ทำโครงไว้รอต่อ" |
 | ⚠️ **ทะเบียนมาตรฐาน KPI ที่เพิ่ง seed** | `kpi_standard_items` (261 แถว · migration 20260921) | **ยังไม่มีจอไหนอ่านเลย** — งานค้างจริง ไม่ใช่ของทิ้ง |
 | 📦 ไม่มีนโยบายลบย้อนหลัง | Main `notifications` **81,135 แถว / 93 MB** (ตารางใหญ่สุดของระบบ) · DR `audit_log` 38 MB (มี cron 6 เดือนแล้ว) | `notifications` โตเรื่อยๆ ไม่มี cron ลบ — ควรตั้ง retention |
 
 > **ทำไมไม่ลบให้เลย:** ลบตาราง = ย้อนไม่ได้ และ 6 กลุ่มข้างบนมีทั้ง "ข้อมูลจริงปีก่อน" กับ
 > "โครงที่ทำไว้รอต่อ" ปนกัน — กฎของโปรเจคคือ AI ทำเฉพาะสิ่งที่ย้อนได้เอง ที่เหลือหยุดถาม
+
+### 7.6 รอบตาม (2026-09-22 เย็น) — ปิดช่อง RLS ที่เหลือ + หลักฐานว่าวงจร "ตารางสำรองค้าง" เกิดซ้ำจริง
+
+**วงจรเกิดซ้ำภายในวันเดียว:** รอบ §7.2 ย้าย 33 ตารางออกตอนเช้า · บ่ายวันเดียวกัน session ขนาน
+(migration `20260922_bom_flat_dupe_rows_off_dr.sql`) ก็สร้าง `public.bom_items_backup_20260922`
+เพิ่มอีกตัว — RLS ปิด · ไม่มี PK · 598 แถวของ BOM จริง **และด่านใน build ไม่จับ** เพราะตอนนั้นตั้ง
+`SINCE = 20260923` (ไม่บังคับไฟล์ลงวันที่เดียวกับรอบทำความสะอาด)
+⇒ แก้แล้ว: ลด `SINCE` เป็น **20260922** + มีรายการ `CLEANED` ยกเว้นเฉพาะไฟล์นั้นไฟล์เดียว
+(**ห้ามเพิ่มชื่อใหม่เข้า `CLEANED` เพื่อให้ build ผ่าน** — ให้สร้างใน `archive.` ตั้งแต่แรกแทน)
+
+| ทำอะไร | project | migration | ผลหลังรัน |
+|---|---|---|---|
+| ย้าย `bom_items_backup_20260922` → `archive` | DR | `20260922d_archive_bom_backup_dr.sql` | อยู่ schema `archive` · หายจาก API/จอ |
+| เปิด RLS `child_demand_explosions` (14,505 แถว) — policy **INSERT อย่างเดียว** | DR | `20260922d_rls_child_demand_explosions_dr.sql` | `relrowsecurity = true` · 1 policy (`cde_insert_trigger:a`) |
+| เปิด RLS `employee_photo_purge_log` (18 แถว) — **ไม่มี policy** | Main | `20260922d_rls_employee_photo_purge_log_main.sql` | `relrowsecurity = true` · 0 policy · ข้อมูลครบ |
+
+**ผลรวม: ตารางใน `public` ที่ RLS ปิด = 0 ทั้ง 2 project** (จากเดิม DR 1 · Main 1 หลังรอบแรก)
+
+**🔴 บทเรียนที่ต้องจำ — trigger ที่ไม่ใช่ SECURITY DEFINER วิ่งด้วยสิทธิ์ของคนยิงคำสั่ง:**
+`fn_explode_child_demand` มี `prosecdef = false` ⇒ ตอน trigger ทำงานมันเป็น role `anon`
+⇒ **เปิด RLS เฉยๆ โดยไม่ให้ policy INSERT = ยืนยันใบผลิตพัง 42501 ทั้งระบบทันที**
+จึงให้ policy เฉพาะ `for insert with check (true)` — ตัวฟังก์ชันไม่เคย SELECT ตารางนี้เลย
+(ตรวจ `prosrc` ทั้งตัวแล้ว) ⇒ ไม่มี policy อ่าน/แก้/ลบ = anon แตะไม่ได้ แต่ของเดิมทำงานเหมือนเดิม
+· ทดสอบจริงแล้วด้วย `set local role anon`: insert ผ่าน · select ได้ 0 แถว · delete ได้ 0 แถว
+· `unique_violation` (ตัวกันระเบิดซ้ำ) ยังทำงานปกติ — เป็นด่าน index ไม่ใช่ด่าน RLS
+
+**ด่านใหม่ใน build: `new-table-needs-rls`** (`regressionGuards`) — migration ลงวันที่ ≥ 20260923
+ที่ `create table` ใน `public` ต้องมี `alter table ... enable row level security` ในไฟล์เดียวกัน
+· ตารางชั่วคราว/สำรอง → สร้างใน `archive` (ด่านนี้ไม่แตะ) · ตารางที่ตั้งใจให้ไม่มีใครอ่าน
+(log ของ migration) = เปิด RLS แล้วไม่ต้องมี policy
