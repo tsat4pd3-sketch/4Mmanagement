@@ -27,6 +27,7 @@
      + `meeting_action_items` (ต้องสดตอนประชุม) · poll กันเหนียวที่ RATE.ANALYTIC
    ⚠️ อย่าเพิ่ม subscribe `prod_orders`/`downtime_logs` — ทุกใบงานที่ปิดในโรงงานจะลากจอโหลดใหม่ทั้งก้อน */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Cell,
@@ -295,6 +296,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const [attend, setAttend] = useState([]);
   const [partCost, setPartCost] = useState({});
   const [loadWarn, setLoadWarn] = useState(null);
+  /* 🔴 แยก "คิวรี downtime ล้ม" ออกจาก loadWarn รวม — เพราะ 2 แผง (C · ทำไมถึงหลุดเป้า) ตัดสินจาก
+     ข้อมูลก้อนนี้ก้อนเดียว ถ้าไม่รู้ว่ามันล้ม ไฟจะขึ้น **เขียว "ไม่มีเครื่องหยุด"** ทั้งที่แปลว่าโหลดไม่ได้
+     — ว่างเพราะไม่มีเหตุการณ์ กับ ว่างเพราะคิวรีพัง ต้องไม่หน้าตาเหมือนกัน (กฎความซื่อสัตย์ของจอ) */
+  const [dtBad, setDtBad] = useState(false);
   const [loading, setLoading] = useState(true);
 
   /* ⚠️ deps ต้องเป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) — ห้ามใส่ array/object
@@ -310,6 +315,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       // ⚠️ ห้าม .in(ids) ตรงๆ — ช่วงเดือนมี 400+ กะ URL ยาวเกินเพดาน proxy แล้วคืนค่าว่างเงียบ
       const [dtRes, dfRes, ordRes, pRes, atRes] = await Promise.all([
         fetchByIds(ids, c => supabaseDR.from('downtime_logs')
+          /* ⚠️ ข้อความอิสระของ downtime ชื่อ `description` **ไม่ใช่ `reason`** — ไม่มีคอลัมน์ชื่อนั้นในตาราง
+             เขียนผิดมาตั้งแต่สร้างบอร์ด ⇒ คิวรีนี้ล้มทั้งก้อน แผง "ทำไมถึงหลุดเป้า" กับครึ่งหนึ่งของ C
+             ว่างเปล่ามาตลอด (จอขึ้นเหมือน "ไม่มีเครื่องหยุด" ทั้งที่จริงคือโหลดไม่ได้)
+             · ทุก component อื่นในรีโปใช้ `description` หมด — ดู OeeInsightPanel / MachineReliability */
           .select('session_id, duration_min, description, dr_downtime_types(name_th, category)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
@@ -326,6 +335,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       setSess(sRes.rows); setPrevSess(pRes.rows);
       setDts(dtRes.rows); setDefs(dfRes.rows); setOrders(ordRes.rows); setAttend(atRes.rows);
       // โหลดไม่ครบ = ตัวเลขต่ำกว่าจริง **ต้องบอกบนจอ** ห้ามเงียบ (บทเรียนแท็บแนวโน้ม /oee-analytics)
+      setDtBad(!!(dtRes.error || dtRes.truncated));
       const bad = [sRes, dtRes, dfRes, ordRes, pRes, atRes].find(r => r.error || r.truncated);
       setLoadWarn(bad ? (bad.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน) — ตัวเลขอาจต่ำกว่าจริง') : null);
 
@@ -545,18 +555,20 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      กฎความซื่อสัตย์ของจอ: ห้ามแต่งเป้าขึ้นมาเองเพื่อให้ไฟติดสวย และห้ามปล่อยเทาเฉยๆ
      โดยไม่บอกว่าเทาเพราะอะไร — ทุกดวงต้องตอบได้ว่า "สีนี้เพราะอะไร" ใน tooltip */
   const costStat = useMemo(() => {
+    if (dtBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุดล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
     if (kC.value == null) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีความสูญเสียที่คิดเป็นเงินได้' };
     if (kC.value <= 0) return { status: 'good', label: 'ไม่มีความสูญเสีย', why: 'ช่วงนี้ไม่มีเครื่องหยุดนอกแผน/ของเสียที่คิดเป็นเงินได้' };
     // ⚠️ แดงนี้ = "มีเงินหายไป" ไม่ใช่ "เกินเป้า" — ยังไม่มีใครตั้งเพดานค่าความสูญเสียไว้
     return { status: 'bad', label: 'มีความสูญเสีย', why: `เสียไป ${fmtBaht(kC.value)} (ยังไม่ได้ตั้งเพดานค่าความสูญเสีย — แดงนี้แปลว่า "มีเงินหายไป" ไม่ใช่ "เกินเป้า")` };
-  }, [kC.value]);
+  }, [kC.value, dtBad]);
 
   const paretoStat = useMemo(() => {
+    if (dtBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุดล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
     if (!pareto.total) return { status: 'good', label: 'ไม่มีเครื่องหยุด', why: 'ช่วงนี้ไม่มีเวลาเครื่องหยุดนอกแผนเลย' };
     // แผ่นนี้ตอบ "ทำไม" ไม่ใช่ KPI ของตัวเอง ⇒ ไม่มีเป้าของ "นาทีที่หยุด" ให้ตัดสิน = เทาเสมอ
     const top = pareto.rows[0];
     return { status: 'none', label: 'ไม่มีเป้า', why: `หยุดรวม ${pareto.total.toLocaleString()} นาที · อันดับ 1 "${top.name}" ${top.min.toLocaleString()} นาที — ยังไม่ได้ตั้งเป้าเวลาหยุด จึงตัดสินผ่าน/ไม่ผ่านไม่ได้` };
-  }, [pareto]);
+  }, [pareto, dtBad]);
 
   const actionStat = useMemo(() => {
     if (health.empty) return { status: 'none', label: 'ยังไม่มีใบ', why: 'ยังไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้สักใบ — ตามงานไม่ได้' };
@@ -687,6 +699,20 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   const axisSheet = (key) => OBEYA_AXES.find(a => a.key === key);
 
+  /* ── 🔗 เจาะจากแผ่นไปหน้าจริง — **ต้องพาตัวกรองไปด้วย** (2026-09-22 · user แจ้ง) ──────────
+     ของเดิมเขียน `window.location.href = '/oee-analytics'` ซึ่งผิด 2 ชั้น:
+       1. **โหลดเว็บใหม่ทั้งก้อน** ไม่ใช่การเปลี่ยนหน้าแบบ SPA — ช้า + state ทั้งแอปหายหมด
+          (user: "มันรีเฟรชเว็ปไปหน้าใหม่") · ต้องใช้ `navigate()` ของ react-router
+       2. **ทิ้งตัวกรองที่ผู้ใช้ตั้งไว้** — กรอง PD3 อยู่ พอเจาะเข้าไปต้องกรองใหม่อีกรอบ
+          ⇒ ส่ง `section` (+ `date` เมื่อหน้าปลายทางเป็นภาพรายวัน) ติดไปใน URL เสมอ
+     ⚠️ ส่ง param เฉพาะหน้าที่ **อ่านมันจริง** — ใส่ `?section=` บนหน้าที่ไม่ได้อ่าน = URL โกหก */
+  const navigate = useNavigate();
+  const drill = (path, params) => {
+    const q = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => { if (v) q.set(k, v); });
+    navigate(q.toString() ? `${path}?${q}` : path);
+  };
+
   /* โหมดจอ TV = คลุมทั้งจอจริงด้วย position:fixed — ห้ามใช้ `height: 100vh` เฉยๆ
      เพราะหน้านี้อยู่ใน <main> ที่มี sidebar + padding ⇒ 100vh จะล้นจอแล้วแถวล่างโดนตัดเงียบ
      (วัดจริงด้วย Playwright 15/09: แถวที่ 2 ถูกตัด 37px ทั้งแถว) */
@@ -804,7 +830,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             sub={`${ytdTag}ใส่ PPE ครบตอนเช็คชื่อ (leading)`} big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
             stat={statusWhy(kS.value, kS.target, 'up', '%')}
             foot={<WarnNote k={k} text={kS.note} tone="#ef4444" />}
-            link="ไปหน้าเช็คชื่อ/PPE" onLink={() => { window.location.href = '/daily-checker'; }}>
+            link="ไปหน้าเช็คชื่อ/PPE" onLink={() => drill('/daily-checker')}>
             {isYear ? (yearBars(kS, { name: 'PPE ครบ' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kS.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kS.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
@@ -829,7 +855,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
-            link="ดูของเสียละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
             {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
@@ -850,7 +876,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             delta={gapToTarget(kD.value, kD.target, 'up')} stat={statusWhy(kD.value, kD.target, 'up', '%')}
             foot={kD.note ? <WarnNote k={k} text={kD.note} />
               : `แผน ${kD.plan.toLocaleString()} · ทำได้ ${kD.produced.toLocaleString()} ชิ้น`}
-            link="ดูแผน/ใบงาน" onLink={() => { window.location.href = '/production-plan'; }}>
+            link="ดูแผน/ใบงาน" onLink={() => drill('/production-plan')}>
             {isYear ? (yearBars(kD, { name: 'ทำได้ตามแผน' }) || <EmptyChart k={k} text="ยังไม่มีใบงานที่มีเป้าในปีนี้" />) : kD.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kD.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
@@ -876,7 +902,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
-            link="ดู LOSS ละเอียด" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
             {isYear ? (yearBars(kC, { stacked: true, yWidth: 46, left: -8 }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: -8, bottom: 0 }}>
@@ -898,7 +924,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             delta={gapToTarget(kM.value, kM.target, 'up')} stat={statusWhy(kM.value, kM.target, 'up', '%')}
             foot={kM.note ? <WarnNote k={k} text={kM.note} />
               : 'อัตรามาทำงานจากการเช็คชื่อรายวัน (ยังไม่มีข้อมูลขวัญกำลังใจ)'}
-            link="ดูกำลังคนย้อนหลัง" onLink={() => { window.location.href = '/workforce-insight'; }}>
+            link="ดูกำลังคนย้อนหลัง" onLink={() => drill('/workforce-insight')}>
             {isYear ? (yearBars(kM, { name: 'มาทำงาน' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kM.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kM.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
@@ -926,7 +952,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               : kOee.value != null && kOeePrev.value != null
               ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
               : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
-            link="เจาะ OEE" onLink={() => { window.location.href = '/oee-analytics'; }}>
+            link="เจาะ OEE" onLink={() => drill('/oee-analytics', { section: secFilter, date: to })}>
             {isYear ? (yearBars(kOee, { name: 'OEE', span: 2 }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kOee.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
@@ -954,7 +980,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             foot={pareto.rows.length
               ? `อันดับ 1 "${pareto.rows[0].name}" = ${Math.round((pareto.rows[0].min / pareto.total) * 100)}% ของเวลาที่เสีย`
               : 'ไม่มีเวลาเครื่องหยุดนอกแผนในช่วงนี้'}
-            link="ดู Pareto เต็ม" onLink={() => { window.location.href = '/oee-analytics?tab=lean'; }}>
+            link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
             {pareto.rows.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={pareto.rows} layout="vertical" margin={{ top: 2, right: 10, left: 2, bottom: 2 }}>
