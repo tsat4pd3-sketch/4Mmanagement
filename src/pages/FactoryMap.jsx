@@ -2152,13 +2152,8 @@ export default function FactoryMap({ setupMode = false }) {
       )}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
-<<<<<<< HEAD
           <PageHeader title="ผังรวมโรงงาน" icon="🗺️" />
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
-=======
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
           <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = ทบทวนรายวัน · 🏛️ สถานะ OBEYA สด · จัดอันดับ</b></p>
->>>>>>> origin/main
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
