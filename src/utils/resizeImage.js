@@ -28,7 +28,7 @@ export const IMG_READ_ERROR =
   'วิธีแก้: ตั้งกล้องให้ถ่ายเป็น JPEG — Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด "รูปภาพประสิทธิภาพสูง (HEIF)" · iPhone: ตั้งค่า → กล้อง → รูปแบบ → เลือก "เข้ากันได้มากที่สุด" · ' +
   'หรือเปิดระบบผ่าน Chrome/Safari แทนเบราว์เซอร์ในแอป (เช่น LINE) แล้วลองใหม่';
 
-import { toDecodableImage } from './heicToJpeg';
+import { toDecodableImage } from './heicToJpeg.js';   // ต้องมี .js — ไฟล์นี้ถูก import จากเทส node (ESM ไม่เติมนามสกุลให้)
 
 /* ── WebP (งานลด egress 2026-09-21 · `docs/EGRESS-AUDIT-2026-09-17.md` §5c) ────────
    รูปซ่อม `mtn-images/before|after` วัดได้ **39 MB/วัน** (241 ครั้ง × ~165 KB)
@@ -46,12 +46,21 @@ function toBlob(canvas, type, quality) {
   return new Promise(res => canvas.toBlob(res, type, quality));
 }
 
-async function draw(src, w, h, maxPx, quality, webp) {
-  const scale = Math.min(1, maxPx / Math.max(w, h));
+/** กรอบครอบกลางภาพให้ได้สัดส่วนที่ขอ — `aspect` ไม่ส่ง/<=0 = ไม่ครอบ (คืนกรอบเต็มรูปเดิมเป๊ะ) */
+export function centerCrop(w, h, aspect) {
+  if (!(aspect > 0) || !(w > 0) || !(h > 0)) return { sx: 0, sy: 0, sw: w, sh: h };
+  if (w / h > aspect) { const sw = Math.round(h * aspect); return { sx: Math.round((w - sw) / 2), sy: 0, sw, sh: h } }
+  const sh = Math.round(w / aspect);
+  return { sx: 0, sy: Math.round((h - sh) / 2), sw: w, sh };
+}
+
+async function draw(src, w, h, maxPx, quality, webp, aspect) {
+  const { sx, sy, sw, sh } = centerCrop(w, h, aspect);
+  const scale = Math.min(1, maxPx / Math.max(sw, sh));
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(w * scale));
-  canvas.height = Math.max(1, Math.round(h * scale));
-  canvas.getContext('2d').drawImage(src, 0, 0, canvas.width, canvas.height);
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  canvas.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
   if (webp) {
     const b = await toBlob(canvas, 'image/webp', quality);
     if (b && b.type === 'image/webp') return b;   // เบราว์เซอร์เขียน webp ไม่ได้ → ถอยไป JPEG
@@ -70,8 +79,12 @@ export const imgExt = (blob) => ({
  * @param {number}    quality
  * @param {object}    [opts]
  * @param {boolean}   [opts.webp] true = พยายามคืน WebP (ถอยไป JPEG เองถ้าเบราว์เซอร์ไม่รองรับ)
+ * @param {number}    [opts.aspect] สัดส่วนที่ต้องการ (เช่น 16/9) — **ครอบกลางภาพให้อัตโนมัติ**
+ *   ไม่ส่ง = ไม่ครอบ เหมือนเดิมทุกประการ
+ *   ⚠️ ที่เลือก "ครอบให้" แทน "ปฏิเสธรูปที่สัดส่วนไม่ตรง" เพราะหน้างานถ่ายจากมือถือ
+ *      (feedback ผจก.สุรเสน 22/09 · user เลือกข้อ ก) — ปฏิเสธไป = แนบรูปไม่ได้เลย
  */
-export default async function resizeImage(file, maxPx = 1024, quality = 0.8, { webp = false } = {}) {
+export default async function resizeImage(file, maxPx = 1024, quality = 0.8, { webp = false, aspect = 0 } = {}) {
   // ⓪ HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไม่ใช่ HEIC = คืนไฟล์เดิม ไม่มี overhead)
   //    แปลงไม่สำเร็จ = โยน HEIC_FAIL_MSG ที่บอกวิธีตั้งกล้อง — ผู้เรียกโชว์ต่อได้เลย
   file = await toDecodableImage(file, Math.max(quality, 0.9));
@@ -81,7 +94,7 @@ export default async function resizeImage(file, maxPx = 1024, quality = 0.8, { w
     let bmp = null;
     try {
       bmp = await createImageBitmap(file);
-      const blob = await draw(bmp, bmp.width, bmp.height, maxPx, quality, webp);
+      const blob = await draw(bmp, bmp.width, bmp.height, maxPx, quality, webp, aspect);
       if (blob) return blob;
     } catch { /* ตกไปทาง <img> ข้างล่าง */ }
     finally { bmp?.close?.(); }
@@ -96,7 +109,7 @@ export default async function resizeImage(file, maxPx = 1024, quality = 0.8, { w
       im.onerror = () => reject(new Error(IMG_READ_ERROR));
       im.src = url;
     });
-    const blob = await draw(img, img.naturalWidth || img.width, img.naturalHeight || img.height, maxPx, quality, webp);
+    const blob = await draw(img, img.naturalWidth || img.width, img.naturalHeight || img.height, maxPx, quality, webp, aspect);
     if (!blob) throw new Error('บีบรูปไม่สำเร็จ — ลองใช้รูปที่เล็กลง');
     return blob;
   } finally {
