@@ -487,6 +487,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 (`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง 12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` — **ย้ายมาจาก
 `/dept-dashboard` 17/09** ลิงก์เก่า redirect มา) · `?tab=sqdcm` = 🖥️ จอ SQDCM ราย**วัน/สัปดาห์/เดือน**
 (`ObeyaSqdcmBoard.jsx` · KPI อยู่ `obeyaKpi.js` · OEE ยังมาจาก `oee.js` เท่านั้น)
+  · ช่วง สัปดาห์/เดือน/**ปี** (ไม่มี "วันนี้") · **โหมดปีห้ามโหลดแถวดิบ** — RPC คืน Σ รายเดือน แล้ว `obeyaYear.js` หาร/ตัดสิน
+  (RPC ห้ามคำนวณ KPI · `docs/modules/obeya.md` §9) · ⚠️ `assigned_line` = id จุดงาน ไม่ใช่ชื่อไลน์
 · **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** — คนละหน่วยเวลา · คนละแกนตัด · คนละเจ้าของตัวเลข
   · แต่ `kpi` (บอร์ดไว้ดู) กับ `table` (โต๊ะไว้กรอก/ตั้งค่า) = **ข้อมูลชุดเดียวกัน** (`kpi_definitions` ·
   `kpi_manual_entries` · `kpi_catalog`) คนละมุมมอง — **ห้ามแยกคลัง และห้ามพาไปตั้งเป้าคนละที่**

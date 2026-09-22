@@ -280,10 +280,13 @@ export function actionHealth(items = [], today) {
    ⚠️ ห้ามใช้ toISOString() (UTC — เพี้ยนข้ามวันสำหรับไทย) · วันที่งานตัด 08:00 ให้ผู้เรียกส่ง
       `today` ที่ได้จาก getWorkDate() เข้ามา ไฟล์นี้ไม่แตะนาฬิกาเอง (เทสจะได้ตรึงเวลาได้ —
       กฎ "เทสระเบิดเวลา" ใน CLAUDE.md) */
+/* ⚠️ ไม่มี "วันนี้" แล้ว (user 2026-09-22 "ตัดออก") — ทุกแผ่นบนจอนี้จัดกลุ่มเป็นจุดต่อวัน โหมดวันได้แท่งเดียว
+   ไม่ใช่กราฟ · สถานะ "ตอนนี้" มีจอทำหน้าที่อยู่แล้ว (/morning-meeting · /tv · /factory-map)
+   `periodRange('day')` ยังรองรับไว้ให้ผู้เรียกเก่า/เทส แต่ไม่โผล่บนปุ่ม · โหมด 'year' อยู่ใน obeyaYear.js */
 export const PERIODS = [
-  { key: 'day',   label: 'วันนี้' },
   { key: 'week',  label: 'สัปดาห์นี้' },
-  { key: 'month', label: 'เดือนนี้' },
+  { key: 'month', label: 'เดือน' },
+  { key: 'year',  label: 'ปี' },
 ];
 export function periodRange(mode, today) {
   const d = String(today);
