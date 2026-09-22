@@ -19,6 +19,7 @@
 import { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
+import { loadStorageLocations } from '../utils/useStorageLocations';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -60,9 +61,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     setLoadErr('');
     const [{ data, error }, sl] = await Promise.all([
       supabaseDR.from('line_delivery_points').select('*').contains('line_names', [lineName]).order('sort_order').order('name'),
-      supabaseDR.from('storage_locations').select('code, name, line_names, is_active'),
+      loadStorageLocations(),   // master → cache กลาง (ห้ามยิงตรง · ดู utils/useStorageLocations.js)
     ]);
-    setSlocs(sl.error ? [] : (sl.data || []));
+    setSlocs(sl || []);
     if (error) {
       if (error.code === '42P01') { setMissing(true); setRows([]); return; }
       setLoadErr(error.message); return;

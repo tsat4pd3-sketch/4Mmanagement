@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'r
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadStorageLocations } from '../utils/useStorageLocations';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { can } from '../utils/permissions';
@@ -1435,7 +1436,8 @@ export default function HeijunkaKanban() {
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),
-      supabaseDR.from('storage_locations').select('code, name, kind, line_names, is_active, sort_order'),
+      // master → cache กลาง (ชุดคอลัมน์นี้คือ superset ที่ loader ถืออยู่แล้ว · ห้ามยิงตรง)
+      loadStorageLocations().then(rows => ({ data: rows, error: null })),
     ]);
     // ทะเบียนรหัสคลังยังไม่ apply (42P01/42703) = ยังไม่ผูก SLoc ทั้งระบบ (tag เป็น null ตรงความจริง) · error อื่นห้ามกลืน
     if (slocErr && !['42P01', '42703'].includes(slocErr.code)) toast.error('โหลดทะเบียนรหัสคลังไม่ได้: ' + slocErr.message);

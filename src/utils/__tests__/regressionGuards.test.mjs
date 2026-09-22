@@ -143,6 +143,23 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'storage-locations-via-loader',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    re: /\.from\(\s*'storage_locations'\s*\)\s*\n?\s*\.select\(/g,
+    why: 'ทะเบียนรหัสคลังเป็น master ที่แทบไม่เปลี่ยน แต่ 3 หน้ายิงตรงด้วย**ชุดคอลัมน์ของตัวเอง** '
+       + 'ทั้งที่มี loader + cache กลางอยู่แล้ว (มันไม่มี `line_names` คนเลยยิงเองแทนที่จะเติมเข้า loader) '
+       + '⇒ วัดจริง 21/09/2026: `storage_locations` โดน **850 ครั้งในครึ่งวัน** '
+       + '(บั๊กคลาสเดียวกับ invalidate* ที่เขียนไว้แล้วไม่มีใครเรียก — ของกลางมีอยู่แต่ถูกข้าม)',
+    fix: 'ใช้ loadStorageLocations() จาก src/utils/useStorageLocations.js · '
+       + 'ต้องการคอลัมน์เพิ่ม → **เติมใน loader แล้ว bump คีย์ cache** (shape เปลี่ยนแต่คีย์เดิม = '
+       + 'เครื่องที่มี cache เก่าค้างได้แถวขาดคอลัมน์ไปอีก 4 ชม. แบบเงียบๆ)',
+    allow: {
+      'src/utils/useStorageLocations.js': 'ตัว loader เอง',
+      'src/components/StorageLocPanel.jsx': 'แผงจัดการทะเบียน (CRUD) — ต้องเห็นแถวดิบครบรวม inactive',
+      'src/pages/LineSetup.jsx': 'ตามแก้ line_names ตอนเปลี่ยนชื่อไลน์ (เขียน ไม่ใช่อ่านเพื่อแสดง)',
+    },
+  },
+  {
     id: 'no-select-star-on-wide-hot-tables',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ `.from('<ตารางอ้วน>').select('*')` — เว้นวรรค/ขึ้นบรรทัดระหว่างกันได้

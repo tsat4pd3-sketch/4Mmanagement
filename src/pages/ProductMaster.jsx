@@ -3,6 +3,7 @@ import { useObjectUrl } from '../utils/useObjectUrl';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadStorageLocations } from '../utils/useStorageLocations';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
@@ -1575,10 +1576,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       fetchBom(),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
-      // ทะเบียนรหัสคลัง — ยังไม่ apply migration (42P01) = ลิสต์ว่าง แต่ยังพิมพ์รหัสเองได้ ไม่ตัน
-      supabaseDR.from('storage_locations').select('code, name, kind, is_active').eq('is_active', true).order('sort_order').order('code'),
+      // ทะเบียนรหัสคลัง = master → cache กลาง (ห้ามยิงตรง · ดู utils/useStorageLocations.js)
+      //   loader คืน "ทุกแถว" รวม inactive แล้วเรียงมาให้ ⇒ กรอง is_active ฝั่งนี้เอง
+      //   (ตารางยังไม่ apply migration = loader คืน [] เอง ลิสต์ว่างแต่ยังพิมพ์รหัสเองได้ ไม่ตัน)
+      loadStorageLocations(),
     ]);
-    setSlocs(locs || []);
+    setSlocs((locs || []).filter(l => l.is_active));
     // รหัสที่ถูกใช้ใน BOM จริง — เอาไว้เทียบว่ามีตัวไหน "ยังไม่ลงทะเบียน" (ห้ามซ่อน)
     setSlocUsed([...new Set((boms || []).map(b => slocLabel(b.storage_location)).filter(Boolean))].sort());
     /* 🔩 รายการขั้นตอน (OP) อยู่ในลิสต์ด้วย — **เปลี่ยนกฎ 2026-09-15 (คำสั่ง user)**
