@@ -27,99 +27,129 @@
 
 /* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน (mtnMoForm ไม่แตะ supabase) · ต้องมีนามสกุล .js
    ไม่งั้น `npm test` (node:test รันไฟล์ตรงๆ ไม่ผ่าน Vite) จะ ERR_MODULE_NOT_FOUND */
-import { mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
+import { isMtnFormRow, mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
   2: {
+    stage: 'assign',
     key: 'assign', fallback: 'service', ownTeam: true, byReporter: false,
     icon: '🔧', title: 'รับงาน / จ่ายงาน',
     who: 'หัวหน้าช่าง (คนจ่ายงานให้ทีม)', whoShort: 'หัวหน้าช่าง',
   },
   3: {
+    stage: 'service',
     key: 'service', fallback: null, ownTeam: true, byReporter: false,
     icon: '🛠', title: 'ลงมือซ่อม / อัพเดทผล',
     who: 'ช่างที่ได้รับมอบหมาย', whoShort: 'ช่างที่รับงาน',
   },
   4: {
+    stage: 'accept_work',
     key: 'accept_work', fallback: 'service', ownTeam: false, byReporter: true, reporterSide: true,
     icon: '☑️', title: 'ตรวจรับงานหลังซ่อม',
     who: 'ผู้เปิดใบแจ้งซ่อม (ฝ่ายที่แจ้ง)', whoShort: 'ผู้เปิดใบ',
   },
   5: {
+    stage: 'qa',
     key: 'qa', fallback: null, ownTeam: false, byReporter: false,
     icon: '🧪', title: 'ตรวจคุณภาพหลังซ่อม',
     who: 'QA', whoShort: 'QA',
   },
   6: {
+    stage: 'handover',
     key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true,
     icon: '🤝', title: 'รับมอบ / ติดตามผล',
     who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
   },
   7: {
+    stage: 'close',
     key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
     icon: '✅', title: 'อนุมัติปิดใบ MO',
     who: 'หัวหน้าแผนก / หัวหน้าส่วน / ผจก. ของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าส่วน / ผจก.',
   },
 };
 
-/* ═══ ใบของทีม MTN (ฟอร์ม FM-MTN-006) เดินขั้นไม่เหมือน JIG/DIE — 2026-09-15 ════════════
-   คำสั่ง user: *"MO MTN ขั้นตอนไม่เหมือนกับ MO JIG/DIE"* · ข้อ ③ "แยก 2 ขั้น" (ไม่ยุบรวม)
+/* ═══ ใบของทีม MTN (ฟอร์ม FM-MTN-006) เดินขั้นไม่เหมือน JIG/DIE ═══════════════════════
+   🔴 ลำดับสุดท้าย (คำสั่ง user 2026-09-22 — ยึดตามนี้ ห้ามสลับอีก):
+        1 ผู้แจ้ง                       ← ช่องเซ็น 1 (ผู้ออก M/O)          = ขั้น 1 เปิดใบ
+        2 ผจก.ของผู้แจ้ง                 ← ช่องเซ็น 2 (ผู้จัดการต้นสังกัด)   = **รับทราบเฉยๆ นอกลูป**
+        3 ช่างรับงาน                     ← ช่องเซ็น 3 (ผู้รับ MO)           = ขั้น 2
+        4 ผจก.ช่าง รับทราบ               ← ช่องเซ็น 4 (ผู้อนุมัติ ผจก.ส่วนฯ) = **รับทราบเฉยๆ นอกลูป**
+        5 หัวหน้าแผนกช่าง ตรวจงานหลังแก้ไข ← ช่องเซ็น 5 (ผู้ตรวจสอบ)          = ขั้น 6
+        6 ผจก.ช่าง อนุมัติ               ← ช่องเซ็น 6 (รับรองโดย)           = ขั้น 7
+        7 ผจก.ฝ่ายที่แจ้ง อนุมัติ         ← ช่องเซ็น 7 (ผู้จัดการ)           = ขั้น 8 **ปิดใบ**
+      ⇒ ลายเซ็น 2 กับ 4 เป็น "acknowledge" — **มาเซ็นตามหลังได้ ไม่ต้องรอ** (ปุ่ม ✍️ อนุมัติใบ MO
+        และช่องผู้อนุมัติในขั้น 2) งานเดินต่อได้เลย · ยกเว้นงานปรับปรุง/สร้างที่ยังบล็อกตามเดิม
+      ⇒ **ลูปนี้ไม่มี QA** (คำสั่งเดียวกัน) — ขั้น 5 ของฟอร์มอื่น (ตรวจคุณภาพ) ถูกแทนด้วย
+        "รับมอบ / ติดตามผล" ⇒ ใบ MTN มี **8 ขั้น** พอดี (เกณฑ์ QA อยู่ `qaAppliesTo` ที่เดียว)
+      ⇒ ผจก.โรงงานอยู่**นอกลูป** เซ็นเฉพาะงบเกินแสนแล้วปริ้นส่งบัญชี (ดู mtnMoForm.js)
 
-   🔴 แก้ 2026-09-15 (รอบ 2 · user: *"ของ MTN จะต้องมากกว่าขั้นนึง ตรง ผจก ของแผนกที่แจ้งเซ็นอนุมัติ
-      และปิดจบ MO ที่ ผจก MTN"*) — ใบ MTN มี **8 ขั้น** ไม่ใช่ 7 · ปิดใบด้วย 2 ลายเซ็นคนละฝั่ง:
-     ขั้น 6 = ฝั่งผู้แจ้ง รับมอบงาน + ประเมินความพึงพอใจ + ระบุเจ้าของค่าใช้จ่าย   (เหมือนทุกฟอร์ม)
-     ขั้น 7 = **ผจก.ของแผนกที่แจ้ง** เซ็นอนุมัติ (ช่อง "ผู้จัดการ" ท้ายใบ = `cost_mgr_*`) — ยังไม่ปิดใบ
-     ขั้น 8 = **ผจก.ส่วนซ่อมบำรุง** ปิดจบ MO (ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)" = `approver_*`)
-   ⇒ ขั้น 7 ยังเป็นขั้นของฝ่ายที่แจ้ง (reporterSide) เหมือน JIG/DIE · ขั้น 8 เป็นของฝั่งช่าง
-     จึงไม่รัดด้วย scope ฝ่ายที่แจ้ง (ไม่งั้น ผจก.ซ่อมบำรุงที่ถูกตั้ง sections จะปิดใบไลน์อื่นไม่ได้)
-     แต่รัดด้วย `teamSide` แทน = ถ้ารู้ว่าคนกดสังกัดทีมช่างอื่น (profiles.mtn_teams มีค่าและไม่ตรง)
-     ⇒ ปิดใบของทีม MTN ไม่ได้ · **ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน** (ไม่รู้ ≠ ไม่ใช่ — กันล็อกทั้งระบบ)
-   ⚠️ ขั้น 7 ของใบ MTN **ไม่เปลี่ยน status** (คง `handover`) — ห้ามเพิ่มค่า status ใหม่
-     (KPI/Andon/dieStatus/FactoryMap/edge อ่าน status ตรงๆ) · แยกด้วย `current_step` แทน:
-     `handover` + current_step ≥ 7 = รอ ผจก.ซ่อมบำรุงปิด (ขั้น 8) — ฟอร์มอื่นไปไม่ถึงสถานะนี้
-     เพราะขั้น 7 ของมันปิดใบเป็น `closed` ทันที */
+   ⚠️ ประวัติที่เคยผิดมา 2 รอบ — อย่าทำซ้ำ:
+      · 15/09 ใบ MTN ถูกทำเป็น 8 ขั้นโดย "ผจก.แผนกที่แจ้ง" เซ็น**ก่อน** ผจก.ช่าง (สลับกัน)
+        และช่องเซ็นที่ 5 ของฟอร์มถูกเติมด้วย `checker_name` (ผู้ตรวจรับฝั่ง*ผู้แจ้ง* ขั้น 4)
+        = คนละฝั่งกับที่ฟอร์มต้องการ — วัดจริง 22/09: 6 จาก 8 ใบที่มีชื่อในช่องนี้ เป็นคนเดียวกับผู้เปิดใบ
+      · 22/09 รอบแรก แก้เป็น 9 ขั้นโดยเอา ผจก.แผนกที่แจ้งไว้หัวแถว — ผิดอีกทางหนึ่ง
+
+   ⚠️ ขั้น 6-7 ของใบ MTN **ไม่เปลี่ยน status** (คง `handover`) — ห้ามเพิ่มค่า status ใหม่
+      (KPI/Andon/dieStatus/FactoryMap/TvBoard/edge อ่าน status ตรงๆ) · แยก 3 ขั้นด้วย
+      **เวลาเซ็นจริง** ผ่าน `mtnCloseStage()` ⇒ ต้อง select `mtn_head_at` / `approve_at` มาด้วย
+   ⚠️ ขั้น 6-7 เป็นของ **ฝั่งช่าง** จึงรัดด้วย `teamSide` ไม่ใช่ scope ฝ่ายที่แจ้ง (ไม่งั้น ผจก.
+      ซ่อมบำรุงที่ถูกตั้ง sections จะปิดใบไลน์อื่นไม่ได้) — **ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน**
+      (ไม่รู้ ≠ ไม่ใช่ — กันล็อกทั้งระบบ) · ขั้น 8 กลับมาเป็นฝั่งผู้แจ้ง (reporterSide) */
 export const MTN_FORM_STEPS = {
+  /* แทนที่ขั้น 5 (QA) ของฟอร์มอื่น — ลูป MTN ไม่มี QA จึงเดินจากตรวจรับงาน (4) มารับมอบเลย */
+  5: {
+    stage: 'handover',
+    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true,
+    icon: '🤝', title: 'รับมอบ / ติดตามผล',
+    who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
+  },
+  6: {
+    stage: 'mtn_head',
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    icon: '👔', title: 'หัวหน้าแผนกช่าง ตรวจสอบงานหลังแก้ไข',
+    who: 'หัวหน้าแผนกซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'หัวหน้าแผนกช่าง',
+  },
   7: {
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
-    icon: '✍️', title: 'ผจก.แผนกที่แจ้ง อนุมัติ',
-    who: 'ผู้จัดการของแผนกที่แจ้ง (เจ้าของค่าใช้จ่าย)', whoShort: 'ผจก.แผนกที่แจ้ง',
+    stage: 'mtn_approve',
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    icon: '✅', title: 'ผจก.ช่าง อนุมัติ',
+    who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'ผจก.ช่าง',
   },
-  /* 🔴 2026-09-22 — ขั้น 8 "หัวหน้าแผนก MTN" (ทีมส่ง WI + ใบจริงมาเทียบ · user: "flow เอาตาม WI")
-     เดิมระบบมี 8 ขั้นแล้วข้ามขั้นนี้ไปเลย ⇒ ช่องเซ็นที่ 5 ของฟอร์มถูกเติมด้วย `checker_name`
-     (คนตรวจรับฝั่ง**ผู้แจ้ง** ขั้น 4) = คนละฝั่งกับที่ฟอร์มต้องการ
-     วัดจริง 22/09: 6 จาก 8 ใบที่มีชื่อในช่องนี้ เป็นคนเดียวกับผู้เปิดใบ
-     ⇒ ใบที่พิมพ์ออกไปแล้ว "หัวหน้าแผนก MTN เซ็น" จริงๆ คือลายเซ็นผู้แจ้งซ้ำอีกรอบ */
   8: {
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
-    icon: '👔', title: 'หัวหน้าแผนก MTN ตรวจ',
-    who: 'หัวหน้าแผนกซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'หัวหน้าแผนก MTN',
-  },
-  9: {
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
-    icon: '🏁', title: 'ปิดจบใบ MO',
-    who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง — ผู้ปิดใบ)', whoShort: 'ผจก.ซ่อมบำรุง',
+    stage: 'cost_mgr_close',
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
+    icon: '🏁', title: 'ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ',
+    who: 'ผู้จัดการฝ่ายที่แจ้ง (เจ้าของค่าใช้จ่าย — ผู้ปิดใบ)', whoShort: 'ผจก.ฝ่ายที่แจ้ง',
   },
 };
 
-/** ขั้นสุดท้ายของใบ — MTN 9 ขั้น (ตาม WI) · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
-export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 9 : 7);
+/** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
+export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 8 : 7);
 
 /* ── ใบ MTN อยู่ขั้นไหนในช่วง "รอเซ็นปิด" (status คง `handover` ทั้ง 3 ขั้น) ──────────────
-   🔴 ตัดสินด้วย **เวลาเซ็นจริง** ไม่ใช่ `current_step` — ใบเก่าที่เดินมาก่อนมีขั้น 8
-      มี current_step = 7 หรือ 8 ปนกัน เชื่อตัวเลขอย่างเดียวไม่ได้
-   คืน 7 | 8 | 9 = ขั้นถัดไปที่ต้องทำ · คืน `null` = **ตัดสินไม่ได้** (แถวไม่ได้ select เวลาเซ็นมา)
+   🔴 ตัดสินด้วย **เวลาเซ็นจริง** ไม่ใช่ `current_step` — ใบเก่าที่เดินมาก่อนเปลี่ยนลำดับ
+      มี current_step 7/8 ปนกันในความหมายเดิม เชื่อตัวเลขอย่างเดียวไม่ได้
+   คืน 6 | 7 | 8 = ขั้นถัดไปที่ต้องทำ · คืน `null` = **ตัดสินไม่ได้** (แถวไม่ได้ select เวลาเซ็นมา)
    ⚠️ ผู้เรียกต้องรองรับ null ด้วยป้ายรวม ห้ามเดา (กติกาเดียวกับ `qa_skipped_at` ของขั้น 5) */
 export function mtnCloseStage(order = {}) {
-  if (order?.cost_mgr_at === undefined || order?.mtn_head_at === undefined) return null;
-  if (!order.cost_mgr_at) return 7;
-  if (!order.mtn_head_at) return 8;
-  return 9;
+  if (order?.mtn_head_at === undefined || order?.approve_at === undefined) return null;
+  if (!order.mtn_head_at) return 6;
+  if (!order.approve_at) return 7;
+  return 8;
 }
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
 export const stepMeta = (step, { mtnForm = false } = {}) =>
   (mtnForm && MTN_FORM_STEPS[step]) || MTN_STEPS[step] || null;
+
+/* ── `stage` = ชื่อจังหวะงานที่ "ไม่ขยับตามเลขขั้น" ───────────────────────────  2026-09-22
+   🔴 เลขขั้นเดียวกันคนละความหมายระหว่าง 2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN
+      · ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN) ⇒ โค้ดบันทึกที่ `if (step === 7)`
+      จะเขียนคนละคอลัมน์กันเงียบๆ ทันทีที่ลำดับขยับ (เกิดจริงมาแล้ว 2 รอบ)
+   ⇒ **ตัวบันทึก/ตัววาดฟอร์มต้องแตกสาขาด้วย `stageOf()` ไม่ใช่เลขขั้น** เลขขั้นไว้โชว์อย่างเดียว */
+export const stageOf = (step, { mtnForm = false } = {}) =>
+  (Number(step) === 1 ? 'report' : stepMeta(step, { mtnForm })?.stage) || null;
 
 /** ป้ายปุ่ม/หัวข้อขั้น — สร้างจากที่นี่ที่เดียว ห้ามพิมพ์ชื่อขั้นซ้ำในหน้า */
 export const stepLabel = (step, { withWho = true, mtnForm = false } = {}) => {
@@ -435,11 +465,13 @@ export const moStatusMeta = (order) => {
 /** ใบ MTN งานปรับปรุง/สร้างที่ยังไม่ได้อนุมัติ — ไม่ใช่ "รอรับงาน" (ช่างกดรับไม่ได้จนกว่าจะเซ็น) */
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
-/** ใบ MTN ที่ ผจก.แผนกที่แจ้งอนุมัติแล้ว เหลือ ผจก.ซ่อมบำรุงปิดจบ (ขั้น 8 — มีเฉพาะฟอร์ม MTN) */
-export const MO_LABEL_WAIT_MTN_CLOSE = '🏁 รอ ผจก.ซ่อมบำรุง ปิดใบ (ขั้น 9)';
-export const MO_LABEL_WAIT_MTN_HEAD  = '👔 รอหัวหน้าแผนก MTN (ขั้น 8)';
-export const MO_LABEL_WAIT_COST_MGR  = '✍️ รอ ผจก.แผนกที่แจ้งอนุมัติ (ขั้น 7)';
-export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้น 6)';
+/* 3 ขั้นปิดใบของฟอร์ม MTN — ทั้งหมดค้างอยู่ที่ status `handover` แยกด้วยเวลาเซ็นจริง
+   (ลำดับตามคำสั่ง user 22/09: หัวหน้าแผนกช่างตรวจ → ผจก.ช่างอนุมัติ → ผจก.ฝ่ายที่แจ้งปิดใบ) */
+export const MO_LABEL_WAIT_MTN_HEAD    = '👔 รอหัวหน้าแผนกช่างตรวจงาน (ขั้น 6)';
+export const MO_LABEL_WAIT_MTN_APPROVE = '✅ รอ ผจก.ช่าง อนุมัติ (ขั้น 7)';
+export const MO_LABEL_WAIT_COST_MGR    = '🏁 รอ ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ (ขั้น 8)';
+/* ⚠️ ไม่ใส่เลขขั้นในป้ายนี้ — ขั้นรับมอบคือ 6 ของฟอร์ม JIG/DIE แต่เป็น 5 ของฟอร์ม MTN (ไม่มี QA) */
+export const MO_LABEL_WAIT_HANDOVER = '🤝 รอฝ่ายที่แจ้งรับมอบ';
 
 /**
  * ป้ายสถานะของใบนี้ (ใช้ที่การ์ด/หัว drawer/บอร์ด/ใบพิมพ์)
@@ -453,16 +485,16 @@ export function moStatusLabel(order) {
   /* ใบที่ติดด่านอนุมัติ ต้องไม่ขึ้น "📣 รอรับงาน" — ช่างเห็นแล้วกดรับไม่ได้ ก็จะกองค้างเงียบ (2026-09-15)
      ⚠️ ตัดสินเฉพาะแถวที่ select `dept_manager_at` มาด้วยจริง (undefined = ไม่รู้ ห้ามเดา) */
   if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
-  /* `handover` + เดินเลยขั้น 7 แล้ว = ใบ MTN ที่รอขั้น 8 เท่านั้น — ฟอร์มอื่นขั้น 7 ปิดใบเป็น
-     `closed` ทันที จึงมาถึงตรงนี้ไม่ได้ ⇒ ไม่ต้องรู้ว่าใบไหนเป็นฟอร์ม MTN (util นี้ยัง pure) */
-  /* ใบ MTN ค้างที่ `handover` ได้ 3 ขั้น (7 ผจก.แผนกที่แจ้ง · 8 หัวหน้าแผนก MTN · 9 ปิดใบ)
-     แยกด้วยเวลาเซ็นจริง — ป้ายต้องบอกว่า "รอใคร" ไม่ใช่เหมารวมว่ารอคนปิดใบ (2026-09-22)
-     ⚠️ ฟอร์มอื่นมาถึงสถานะนี้ไม่ได้ (ขั้น 7 ของมันปิดใบเป็น `closed` ทันที) */
-  if (st === 'handover' && Number(order?.current_step || 0) >= 7) {
-    const stage = mtnCloseStage(order);
-    if (stage === 7) return MO_LABEL_WAIT_COST_MGR;
-    if (stage === 8) return MO_LABEL_WAIT_MTN_HEAD;
-    return MO_LABEL_WAIT_MTN_CLOSE;      // 9 หรือ null (ไม่ได้ select เวลาเซ็นมา) = ป้ายรวมเดิม
+  /* ใบ MTN ค้างที่ `handover` ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
+     แยกด้วยเวลาเซ็นจริง — ป้ายต้องบอกว่า "รอใคร" ไม่ใช่เหมารวมว่ารออนุมัติปิด (2026-09-22)
+     ⚠️ ฟอร์มอื่น (JIG/DIE/PRODUCTION) `handover` = รอขั้น 7 อนุมัติปิดขั้นเดียว → ป้ายรวมเดิม
+        ⇒ ต้องเช็ค `isMtnFormRow` ก่อน ห้ามเดาจาก current_step (เลขขั้นทับกันระหว่าง 2 ฟอร์ม) */
+  if (st === 'handover') {
+    const stage = isMtnFormRow(order) ? mtnCloseStage(order) : null;
+    if (stage === 6) return MO_LABEL_WAIT_MTN_HEAD;
+    if (stage === 7) return MO_LABEL_WAIT_MTN_APPROVE;
+    if (stage === 8) return MO_LABEL_WAIT_COST_MGR;
+    return MO_STATUS_LABEL.handover;     // null = ไม่ได้ select เวลาเซ็นมา / ฟอร์มอื่น
   }
   if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
   // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา

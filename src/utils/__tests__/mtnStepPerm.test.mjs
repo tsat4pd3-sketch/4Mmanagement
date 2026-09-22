@@ -239,7 +239,7 @@ test('canBounceBack: ซ่อมไปแล้ว/ปิดแล้ว ตี
 
 /* ── 🏷️ ป้ายสถานะ + สถานะขั้น 5 — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ เพราะป้ายเดียวใช้ 2 ความหมาย) ── */
 import {
-  MO_LABEL_WAIT_APPROVAL, MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_MTN_CLOSE, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
+  MO_LABEL_WAIT_APPROVAL, MO_LABEL_WAIT_HANDOVER, MO_LABEL_WAIT_QA, MO_STATUS_LABEL, QA_NOT_RELATED, QA_RELATED,
   moQaState, moStatusLabel,
 } from '../mtnStepPerm.js';
 
@@ -344,58 +344,77 @@ test('ด่านอนุมัติ: manage_master ยังผ่านไ�
   assert.deepEqual(canDoStep(2, boss), { ok: true, code: 'manage_master' });
 });
 
-test('ใบ MTN มี 8 ขั้น — ขั้น 7 ผจก.แผนกที่แจ้ง (ติด scope) · ขั้น 8 ผจก.ซ่อมบำรุง (ไม่ติด scope)', () => {
+/* ═══ 🔴 ลำดับลายเซ็น 7 จุดของใบ MTN (คำสั่ง user 2026-09-22 — เคยสลับผิดมา 2 รอบ) ═══════
+     1 ผู้แจ้ง → 2 ผจก.ผู้แจ้ง (รับทราบ) → 3 ช่างรับงาน → 4 ผจก.ช่าง (รับทราบ)
+   → 5 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 6 ผจก.ช่างอนุมัติ → 7 ผจก.ฝ่ายที่แจ้งอนุมัติ (ปิดใบ)
+     ⇒ ขั้นในโปรแกรม 8 ขั้น (ลูปนี้ไม่มี QA) · ขั้น 6-7 ฝั่งช่าง · ขั้น 8 ฝั่งผู้แจ้ง = ปิดใบ */
+test('🔴 ใบ MTN 8 ขั้น — ขั้น 6/7 ฝั่งช่าง (ไม่ติด scope ผู้แจ้ง) · ขั้น 8 ฝ่ายที่แจ้งปิดใบ (ติด scope)', () => {
   const mgr = { order: ORDER, fullName: 'ผจก.', ...perms(['approve']), inReporterScope: false };
-  // ขั้น 7 = ฝ่ายที่แจ้ง เหมือนเดิมทั้ง 2 ฟอร์ม
+  // ขั้น 6-7 = ฝั่งช่าง มีเฉพาะฟอร์ม MTN — ผจก.ช่างที่ถูกตั้ง sections ต้องตรวจ/อนุมัติใบไลน์ไหนก็ได้
+  assert.deepEqual(canDoStep(6, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' });
+  assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' });
+  // ขั้น 8 = ผจก.ฝ่ายที่แจ้ง ⇒ ติด scope ฝ่ายที่แจ้งเหมือนขั้นปิดใบของฟอร์มอื่น
+  assert.deepEqual(canDoStep(8, { ...mgr, mtnForm: true }), { ok: false, code: 'out_of_scope' });
+  assert.deepEqual(canDoStep(8, { ...mgr, mtnForm: true, inReporterScope: true }), { ok: true, code: 'perm' });
+  assert.deepEqual(canDoStep(8, { ...mgr, mtnForm: false }), { ok: false, code: 'unknown_step' }, 'ฟอร์มอื่นไม่มีขั้น 8');
+  // ฟอร์ม JIG/DIE: ขั้น 7 ยังเป็น "อนุมัติปิด" ของฝ่ายที่แจ้งเหมือนเดิม
   assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: false }), { ok: false, code: 'out_of_scope' });
-  assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: true }), { ok: false, code: 'out_of_scope' });
-  assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: true, inReporterScope: true }), { ok: true, code: 'perm' });
-  // ขั้น 8 = ฝั่งช่าง มีเฉพาะฟอร์ม MTN · ใบอื่นไม่มีขั้นนี้
-  assert.deepEqual(canDoStep(8, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' }, 'ผจก.ซ่อมบำรุงปิดใบไลน์ไหนก็ได้');
-  assert.deepEqual(canDoStep(8, { ...mgr, mtnForm: false }), { ok: false, code: 'unknown_step' });
-  // ขั้น 6 (รับมอบ) ยังเป็นของฝ่ายที่แจ้งทั้ง 2 ฟอร์ม
-  assert.deepEqual(canDoStep(6, { ...mgr, ...perms(['handover']), mtnForm: true }), { ok: false, code: 'out_of_scope' });
+  // ขั้น 5 = รับมอบของใบ MTN (ไม่ใช่ QA) — ยังเป็นของฝ่ายที่แจ้ง
+  assert.deepEqual(canDoStep(5, { ...mgr, ...perms(['handover']), mtnForm: true }), { ok: false, code: 'out_of_scope' });
 });
 
-test('ขั้น 8: คนที่ถูกตั้งเป็นช่างทีมอื่นปิดใบไม่ได้ · ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน (ห้ามล็อกทั้งระบบ)', () => {
+test('ขั้น 6-7 (ฝั่งช่าง): คนที่ถูกตั้งเป็นช่างทีมอื่นทำไม่ได้ · ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน (ห้ามล็อกทั้งระบบ)', () => {
   const base = { order: ORDER, fullName: 'ผจก.', ...perms(['approve']), mtnForm: true };
-  assert.deepEqual(canDoStep(8, { ...base, hasTeams: true, inOrderTeam: false }), { ok: false, code: 'other_team' });
-  assert.deepEqual(canDoStep(8, { ...base, hasTeams: true, inOrderTeam: true }), { ok: true, code: 'perm' });
-  assert.deepEqual(canDoStep(8, { ...base, hasTeams: false, inOrderTeam: false }), { ok: true, code: 'perm' }, 'ไม่ได้ตั้ง mtn_teams = ไม่รู้ ≠ ไม่ใช่');
-  // ขั้น 7 ไม่ใช่ขั้นฝั่งช่าง — teamSide ต้องไม่ไปรัดมัน
-  assert.equal(canDoStep(7, { ...base, hasTeams: true, inOrderTeam: false, inReporterScope: true }).ok, true);
+  for (const st of [6, 7]) {
+    assert.deepEqual(canDoStep(st, { ...base, hasTeams: true, inOrderTeam: false }), { ok: false, code: 'other_team' }, `ขั้น ${st}`);
+    assert.deepEqual(canDoStep(st, { ...base, hasTeams: true, inOrderTeam: true }), { ok: true, code: 'perm' }, `ขั้น ${st}`);
+    assert.deepEqual(canDoStep(st, { ...base, hasTeams: false, inOrderTeam: false }), { ok: true, code: 'perm' }, 'ไม่ได้ตั้ง mtn_teams = ไม่รู้ ≠ ไม่ใช่');
+  }
+  // ขั้น 8 ไม่ใช่ขั้นฝั่งช่าง — teamSide ต้องไม่ไปรัดมัน
+  assert.equal(canDoStep(8, { ...base, hasTeams: true, inOrderTeam: false, inReporterScope: true }).ok, true);
 });
 
-test('stepLabel/stepMeta: ใบ MTN 9 ขั้นตาม WI · ฟอร์มอื่นยัง 7 ขั้น (2026-09-22)', () => {
-  assert.equal(stepMeta(7, { mtnForm: true }).whoShort, 'ผจก.แผนกที่แจ้ง');
-  assert.equal(stepMeta(7).whoShort, MTN_STEPS[7].whoShort);
-  // ขั้น 8 = หัวหน้าแผนก MTN (แทรกตาม WI) · ขั้น 9 = ผจก.ซ่อมบำรุงปิดใบ (ย้ายจากเดิมขั้น 8)
-  assert.equal(stepMeta(8, { mtnForm: true }).whoShort, 'หัวหน้าแผนก MTN');
-  assert.equal(stepMeta(9, { mtnForm: true }).whoShort, 'ผจก.ซ่อมบำรุง');
+test('stepLabel/stepMeta/stageOf: ใบ MTN 8 ขั้น (ไม่มี QA) · ฟอร์มอื่นยัง 7 ขั้น (2026-09-22)', async () => {
+  const { stageOf } = await import('../mtnStepPerm.js');
+  assert.equal(stepMeta(5, { mtnForm: true }).whoShort, 'หัวหน้าแผนกผู้แจ้ง', 'ขั้น 5 ของใบ MTN = รับมอบ ไม่ใช่ QA');
+  assert.equal(stepMeta(6, { mtnForm: true }).whoShort, 'หัวหน้าแผนกช่าง');
+  assert.equal(stepMeta(7, { mtnForm: true }).whoShort, 'ผจก.ช่าง');
+  assert.equal(stepMeta(8, { mtnForm: true }).whoShort, 'ผจก.ฝ่ายที่แจ้ง');
   assert.equal(stepMeta(8), null, 'ฟอร์ม JIG/DIE ไม่มีขั้น 8');
-  assert.equal(stepMeta(9), null, 'ฟอร์ม JIG/DIE ไม่มีขั้น 9');
+  assert.equal(stepMeta(9, { mtnForm: true }), null, 'ไม่มีขั้น 9 อีกแล้ว (เคยทำผิดไว้ 22/09)');
   assert.match(stepLabel(8, { mtnForm: true }), /ขั้น 8/);
-  assert.match(stepLabel(9, { mtnForm: true }), /ขั้น 9/);
-  assert.equal(lastStep({ mtnForm: true }), 9);
+  assert.equal(lastStep({ mtnForm: true }), 8);
   assert.equal(lastStep(), 7);
-  for (const s of [2, 3, 4, 5, 6]) assert.equal(stepMeta(s, { mtnForm: true }), MTN_STEPS[s], `ขั้น ${s} ต้องเหมือนกันทั้ง 2 ฟอร์ม`);
+  for (const s of [2, 3, 4]) assert.equal(stepMeta(s, { mtnForm: true }), MTN_STEPS[s], `ขั้น ${s} ต้องเหมือนกันทั้ง 2 ฟอร์ม`);
+
+  /* 🔴 หัวใจของบั๊กที่เคยเกิด 2 รอบ: เลขขั้นเดียวกันคนละความหมายระหว่าง 2 ฟอร์ม
+     ⇒ ตัวบันทึก/ตัววาดฟอร์มต้องแตกสาขาด้วย stage เท่านั้น */
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7].map(n => stageOf(n)),
+    ['report', 'assign', 'service', 'accept_work', 'qa', 'handover', 'close']);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8].map(n => stageOf(n, { mtnForm: true })),
+    ['report', 'assign', 'service', 'accept_work', 'handover', 'mtn_head', 'mtn_approve', 'cost_mgr_close']);
+  assert.equal(stageOf(9, { mtnForm: true }), null);
+  assert.notEqual(stageOf(5), stageOf(5, { mtnForm: true }), 'ขั้น 5 ต้องคนละ stage — ห้ามผูกตัวบันทึกกับเลขขั้น');
+  assert.notEqual(stageOf(7), stageOf(7, { mtnForm: true }), 'ขั้น 7 ต้องคนละ stage');
 });
 
-test('mtnCloseStage: แยก 3 ขั้นที่ค้างอยู่ใน status handover ด้วยเวลาเซ็นจริง', async () => {
-  const { mtnCloseStage, moStatusLabel, MO_LABEL_WAIT_COST_MGR, MO_LABEL_WAIT_MTN_HEAD, MO_LABEL_WAIT_MTN_CLOSE }
+test('mtnCloseStage: แยก 3 ขั้นปิดใบที่ค้างอยู่ใน status handover ด้วยเวลาเซ็นจริง', async () => {
+  const { mtnCloseStage, moStatusLabel, MO_LABEL_WAIT_COST_MGR, MO_LABEL_WAIT_MTN_HEAD, MO_LABEL_WAIT_MTN_APPROVE, MO_STATUS_LABEL: LBL }
     = await import('../mtnStepPerm.js');
-  const base = { status: 'handover', current_step: 7, mtn_dept: 'maintenance' };
-  assert.equal(mtnCloseStage({ cost_mgr_at: null, mtn_head_at: null }), 7);
-  assert.equal(mtnCloseStage({ cost_mgr_at: 'x',  mtn_head_at: null }), 8);
-  assert.equal(mtnCloseStage({ cost_mgr_at: 'x',  mtn_head_at: 'y'  }), 9);
+  const base = { status: 'handover', current_step: 5, mtn_dept: 'maintenance' };
+  assert.equal(mtnCloseStage({ mtn_head_at: null, approve_at: null }), 6);
+  assert.equal(mtnCloseStage({ mtn_head_at: 'x',  approve_at: null }), 7);
+  assert.equal(mtnCloseStage({ mtn_head_at: 'x',  approve_at: 'y'  }), 8);
   // แถวที่ไม่ได้ select เวลาเซ็นมา = ตัดสินไม่ได้ ห้ามเดา
-  assert.equal(mtnCloseStage({ cost_mgr_at: null }), null);
+  assert.equal(mtnCloseStage({ mtn_head_at: null }), null);
   assert.equal(mtnCloseStage({}), null);
 
-  assert.equal(moStatusLabel({ ...base, cost_mgr_at: null, mtn_head_at: null }), MO_LABEL_WAIT_COST_MGR);
-  assert.equal(moStatusLabel({ ...base, cost_mgr_at: 'x',  mtn_head_at: null }), MO_LABEL_WAIT_MTN_HEAD);
-  assert.equal(moStatusLabel({ ...base, cost_mgr_at: 'x',  mtn_head_at: 'y'  }), MO_LABEL_WAIT_MTN_CLOSE);
-  assert.equal(moStatusLabel(base), MO_LABEL_WAIT_MTN_CLOSE, 'ไม่รู้ = ป้ายรวมเดิม (พฤติกรรมเดิมของใบเก่า)');
+  assert.equal(moStatusLabel({ ...base, mtn_head_at: null, approve_at: null }), MO_LABEL_WAIT_MTN_HEAD);
+  assert.equal(moStatusLabel({ ...base, mtn_head_at: 'x',  approve_at: null }), MO_LABEL_WAIT_MTN_APPROVE);
+  assert.equal(moStatusLabel({ ...base, mtn_head_at: 'x',  approve_at: 'y'  }), MO_LABEL_WAIT_COST_MGR);
+  assert.equal(moStatusLabel(base), LBL.handover, 'ไม่รู้ = ป้ายรวมเดิม (พฤติกรรมเดิมของใบเก่า)');
+  // ฟอร์ม JIG/DIE ที่ handover = รออนุมัติปิดขั้นเดียว — ห้ามไปขึ้นป้ายของสายช่าง MTN
+  assert.equal(moStatusLabel({ status: 'handover', current_step: 6, mtn_dept: 'jig_maintenance', mtn_head_at: null, approve_at: null }), LBL.handover);
 });
 
 test('QA: งานปรับปรุง/สร้างไม่ต้องผ่าน QA · งานซ่อม/บริการและใบเก่ายังต้องผ่านเหมือนเดิม', () => {
@@ -443,10 +462,10 @@ test('ป้ายสถานะ: ใบรออนุมัติต้อง
   assert.equal(moStatusLabel({ status: 'pending' }), MO_STATUS_LABEL.pending, 'ใบทีมอื่น/ใบเก่าเหมือนเดิม');
 });
 
-test('ป้ายสถานะ: ใบ MTN ที่ ผจก.แผนกที่แจ้งอนุมัติแล้ว = รอ ผจก.ซ่อมบำรุงปิด ไม่ใช่ "รออนุมัติปิด"', () => {
-  assert.equal(moStatusLabel({ status: 'handover', current_step: 6 }), MO_STATUS_LABEL.handover, 'ยังไม่ถึงขั้น 7 = เหมือนเดิม');
-  assert.equal(moStatusLabel({ status: 'handover', current_step: 7 }), MO_LABEL_WAIT_MTN_CLOSE);
-  // ฟอร์ม JIG/DIE ไปไม่ถึงสถานะนี้ (ขั้น 7 ปิดใบเป็น closed ทันที) — ไม่ต้องรู้ว่าใบไหนเป็นฟอร์ม MTN
+test('ป้ายสถานะ: `handover` ของฟอร์มอื่นห้ามไปขึ้นป้ายขั้นปิดใบของสาย MTN', () => {
+  // ไม่ได้ select เวลาเซ็นมา / ไม่ใช่ใบ MTN = ป้ายรวมเดิมเสมอ (ห้ามเดา)
+  assert.equal(moStatusLabel({ status: 'handover', current_step: 6 }), MO_STATUS_LABEL.handover);
+  assert.equal(moStatusLabel({ status: 'handover', current_step: 7 }), MO_STATUS_LABEL.handover);
   assert.equal(moStatusLabel({ status: 'closed', current_step: 7 }), MO_STATUS_LABEL.closed);
 });
 
