@@ -36,6 +36,13 @@ export default function ImageCropModal({
   //   — GIF 20 ไฟล์กิน 84 MB จาก bucket 124 MB · คำสั่ง user 2026-09-11 ให้ห้ามในรูปพนักงาน
   //   ⚠️ default = true → จุดที่เรียกอยู่เดิม (สินค้า/อะไหล่/PM/โปรไฟล์) ไม่เปลี่ยนพฤติกรรม
   allowGif = true,
+  // 🗜️ webp = true → เขียนไฟล์ออกเป็น WebP แทน JPEG (เล็กลง ~50% ที่คุณภาพเท่ากัน · 2026-09-22)
+  //   เปิดที่รูปพนักงาน (operator / Register): วัดจริง 21/09 bucket employee-photos
+  //   ส่งออก 54.9 MB/วัน (1,391 ครั้ง × 40 KB) = ก้อนใหญ่สุดที่เหลือฝั่ง Main
+  //   ⚠️ default = false → ทุกจุดที่เรียกอยู่เดิมยังได้ JPEG เหมือนเดิม (ไม่เปลี่ยนพฤติกรรม)
+  //   ⚠️ เบราว์เซอร์ที่ toBlob('image/webp') ไม่ได้ (Safari < 16.4) **คืน PNG เงียบๆ**
+  //      → ต้องเช็ค blob.type ทุกครั้ง แล้วถอยไป JPEG · นามสกุลไฟล์เอาจาก blob.type เท่านั้น
+  webp = false,
   onCancel, onConfirm,
 }) {
   const [useFull, setUseFull] = useState(false);
@@ -142,6 +149,25 @@ export default function ImageCropModal({
     setPos(p => clampPos(p.x, p.y, newScale));
   };
 
+  /* เขียน canvas ออกเป็นไฟล์ — จุดเดียวที่ตัดสินฟอร์แมต/นามสกุล (เดิมซ้ำ 2 ที่ ลืมแก้ทีนึงได้ง่าย)
+     ลำดับ: ขอ WebP (ถ้า opt-in) → ได้จริงไหมดูจาก blob.type → ไม่ได้ก็ JPEG */
+  const emit = (canvas) => {
+    const send = (blob, type) => {
+      const ext = type === 'image/webp' ? '.webp' : '.jpg';
+      const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '') + ext;
+      onConfirm(new File([blob], fileName, { type }));
+    };
+    const asJpeg = () => canvas.toBlob(b => {
+      if (!b) { toast.error('บีบอัดรูปไม่สำเร็จ กรุณาลองใหม่หรือเปลี่ยนรูป'); onCancel?.(); return; }
+      send(b, 'image/jpeg');
+    }, 'image/jpeg', quality);
+    if (!webp) return asJpeg();
+    canvas.toBlob(b => {
+      if (b && b.type === 'image/webp') return send(b, 'image/webp');
+      asJpeg();                            // เบราว์เซอร์เขียน webp ไม่ได้ — ถอยไป JPEG
+    }, 'image/webp', quality);
+  };
+
   const handleConfirm = () => {
     if (!srcFile) return;                 // ยังแปลง/โหลดไม่เสร็จ — กันกดยืนยันแล้วได้ไฟล์ว่าง
     if (isGif) {
@@ -160,10 +186,7 @@ export default function ImageCropModal({
       const imgF = new Image();
       imgF.onload = () => {
         ctx0.drawImage(imgF, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob(blob => {
-          const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
-          onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
-        }, 'image/jpeg', quality);
+        emit(canvas);
       };
       imgF.onerror = () => { toast.error('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ'); onCancel?.(); };
       imgF.src = imgUrl;
@@ -180,10 +203,7 @@ export default function ImageCropModal({
       const cx = canvas.width / 2 - pos.x * renderScale;
       const cy = canvas.height / 2 - pos.y * renderScale;
       ctx.drawImage(img, cx - dispW / 2, cy - dispH / 2, dispW, dispH);
-      canvas.toBlob(blob => {
-        const fileName = (srcFile.name || 'image').replace(/\.\w+$/, '.jpg');
-        onConfirm(new File([blob], fileName, { type: 'image/jpeg' }));
-      }, 'image/jpeg', quality);
+      emit(canvas);
     };
     img.onerror = () => {
       toast.error('ไม่สามารถใช้รูปนี้ได้ ไฟล์อาจเป็นฟอร์แมตที่ไม่รองรับ (เช่น .heic จากกล้อง iPhone) — กรุณาเปลี่ยนรูปเป็น JPG หรือ PNG แล้วลองใหม่');
