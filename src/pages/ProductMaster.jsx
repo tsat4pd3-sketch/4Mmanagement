@@ -1629,20 +1629,38 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   }, [focusMat, products.length]);
 
   // picker: filter parts_master
+  /* 🏭 ของที่เลือกเข้ามาใน BOM ได้ = **ทะเบียนชิ้นส่วน + พาร์ทที่เราผลิตเอง**
+     user 21/09: *"BOM ยังเพิ่มพาร์ทหลักไม่ได้"* — เดิม picker อ่านแค่ `parts_master`
+     ⇒ พาร์ทที่เป็นสินค้าผลิตเอง (2xxxx ใน dr_products) ที่ยังไม่ได้ลงทะเบียน **เลือกไม่ได้เลย**
+     วัดจริง 21/09: 20 สินค้าไม่อยู่ใน parts_master ⇒ เอาไปเป็นลูกใน BOM ของใครไม่ได้สักใบ
+     ⚠️ ชั้น OP (`_op`) ไม่เข้าลิสต์ — กฎเหล็ก "OP ห้ามเป็นลูกใน BOM ของใคร" (docs/modules/oee.md) */
+  const pickerSource = useMemo(() => {
+    const k = (m) => (m || '').trim().toUpperCase();
+    const inPm = new Set(partsMaster.map(x => k(x.mat_no)));
+    const made = products
+      .filter(pr => pr.mat_no && !pr._op && !inPm.has(k(pr.mat_no)) && pr.id !== selProduct?.id)
+      .map(pr => ({
+        id: `made:${pr.id}`, mat_no: pr.mat_no, part_name: pr.name || pr.mat_no,
+        part_no: pr.p_no || '', supplier: pr.customer || '', uom: 'pcs', qty_per_pkg: null,
+        _made: true,                       // ← ยังไม่อยู่ในทะเบียน ลงให้ตอนบันทึก
+      }));
+    return [...partsMaster, ...made];
+  }, [partsMaster, products, selProduct?.id]);
+
   const pickerFiltered = useMemo(() => {
     const q = pickerQ.trim().toLowerCase();
     /* ซ่อนเฉพาะที่มีอยู่ "ใต้ตัวแม่เดียวกัน" แล้ว — ตัวเดียวกันใต้แม่คนละตัวเพิ่มได้ (ตรงกับ SAP)
        ⚠️ เดิมซ่อนทั้งใบ ⇒ หน้างานแจ้ง "เพิ่ม 50027085 ใต้ 20058491 ไม่ได้ เลข Mat ซ้ำ" */
     const pk = (m) => (m || '').trim().toUpperCase();
     const usedMats = new Set(items.filter(i => pk(i.parent_mat) === pk(pickerParent)).map(i => pk(i.mat_no)));
-    const base = partsMaster.filter(p => !usedMats.has(pk(p.mat_no)));
+    const base = pickerSource.filter(p => !usedMats.has(pk(p.mat_no)));
     if (!q) return base;
     return base.filter(p =>
       p.mat_no.toLowerCase().includes(q) ||
       p.part_name.toLowerCase().includes(q) ||
       (p.part_no || '').toLowerCase().includes(q) ||
       (p.supplier || '').toLowerCase().includes(q));
-  }, [partsMaster, pickerQ, items, pickerParent]);
+  }, [pickerSource, pickerQ, items, pickerParent]);
 
   const togglePick = (part) => setPickerSel(prev => {
     const has = prev.find(x => x.part.id === part.id);
@@ -1733,6 +1751,21 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         is_active:    true,
       }));
     if (!rows.length) { setSaving(false); toast.info('พาร์ทที่เลือกมีอยู่ใน BOM แล้วทั้งหมด'); return; }
+
+    /* 🗂 step 1 ของ workflow: ทุกอย่างต้องอยู่ในทะเบียนชิ้นส่วน (user 21/09)
+       พาร์ทผลิตเองที่หลุดทะเบียน ลงให้เลยตอนนี้ — ไม่งั้นทะเบียนโหว่ต่อไปเรื่อยๆ (20 ตัวที่ค้างอยู่)
+       ⚠️ ทะเบียนล้มไม่ล้ม BOM: ขึ้น toast เตือนแล้วไปต่อ (กฎ "ห้ามล้มเหลวเงียบ" — แต่ห้ามบล็อกงานหลัก) */
+    const newToRegister = pickerSel
+      .filter(x => x.part._made && rows.some(r => r.mat_no === x.part.mat_no))
+      .map(x => ({ mat_no: x.part.mat_no, part_name: x.part.part_name, part_no: x.part.part_no || null,
+                   uom: x.part.uom || 'pcs', supplier: x.part.supplier || null,
+                   is_active: true, created_by: fullName }));
+    if (newToRegister.length) {
+      const { error: pmErr } = await supabaseDR.from('parts_master')
+        .upsert(newToRegister, { onConflict: 'mat_no', ignoreDuplicates: true });
+      if (pmErr) toast.info(`เพิ่มใน BOM ได้ แต่ลงทะเบียนชิ้นส่วนไม่สำเร็จ (${pmErr.message}) — ไปเพิ่มเองที่ tab 🗂`);
+      else toast.info(`🗂 ลงทะเบียนชิ้นส่วนให้ ${newToRegister.length} รายการ (พาร์ทผลิตเองที่ยังไม่อยู่ในทะเบียน)`);
+    }
     let { error } = await supabaseDR.from('bom_items').insert(rows);
     // ยังไม่ apply migration (42703) = เพิ่มพาร์ทได้ปกติ แค่ไม่มีเลขรายการ **ห้ามให้ทั้งใบพัง**
     if (error?.code === '42703') {
@@ -2092,7 +2125,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
               {pickerFiltered.length === 0 && (
                 <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-                  {partsMaster.length === 0 ? 'ยังไม่มีพาร์ทใน Parts Master — ไปเพิ่มที่ tab 🗂 Parts Master ก่อน' : 'ไม่พบพาร์ทที่ตรงเงื่อนไข'}
+                  {pickerSource.length === 0 ? 'ยังไม่มีพาร์ทในทะเบียน — ไปเพิ่มที่ tab 🗂 Parts Master ก่อน' : 'ไม่พบพาร์ทที่ตรงเงื่อนไข'}
                 </div>
               )}
               {pickerFiltered.map(p => {
@@ -2106,7 +2139,14 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   }}>
                     <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${sel ? 'var(--accent)' : 'var(--border)'}`, background: sel ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#08130a' }}>{sel ? '✓' : ''}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{p.part_name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                        {p._made && (
+                          <span title="พาร์ทที่เราผลิตเอง — ยังไม่อยู่ในทะเบียนชิ้นส่วน ระบบจะลงทะเบียนให้ตอนบันทึก"
+                            style={{ marginRight: 5, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
+                              background: 'rgba(245,158,11,0.16)', color: '#f59e0b' }}>🏭 ผลิตเอง</span>
+                        )}
+                        {p.part_name}
+                      </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
                         <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</span>
                         {p.part_no && <span> · {p.part_no}</span>}
