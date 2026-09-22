@@ -18,6 +18,12 @@ import useIsMobile from '../utils/useIsMobile';
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 export default function PageHeader({
   title, icon, sub, actions, tabs, tab, onTab, breadcrumb = true, children,
+  /* 🧩 embedded = หน้านี้ถูก **ฝังเป็นแท็บของหน้าแม่ (hub)** ⇒ วาดเฉพาะ "แถบแท็บย่อย"
+     ไม่วาด breadcrumb/หัวเรื่อง เพราะหน้าแม่วาดไปแล้ว (2026-09-22)
+     ⚠️ ที่ต้องมีโหมดนี้: หน้าลูกหา navItem จาก `pathname` ซึ่งตอนถูกฝัง = path ของ**หน้าแม่**
+        ⇒ ปล่อยไว้จะได้ breadcrumb ของหน้าแม่ซ้ำ + หัวเรื่องซ้อน 3 ชั้น
+        (เกิดจริงที่ `/equipment` 22/09 — user ส่งภาพมา 3 ใบ แท็บละหน้าตา) */
+  embedded = false,
 }) {
   const isMobile = useIsMobile();
   const { pathname } = useLocation();
@@ -27,7 +33,7 @@ export default function PageHeader({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-      {breadcrumb && navItem && (
+      {!embedded && breadcrumb && navItem && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
@@ -40,6 +46,7 @@ export default function PageHeader({
         </div>
       )}
 
+      {!embedded && (
       <div style={{
         display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
         justifyContent: 'space-between', paddingRight: 52,   // กัน 🔔 ทับ (UI §7)
@@ -52,6 +59,11 @@ export default function PageHeader({
         </div>
         {actions && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>{actions}</div>}
       </div>
+      )}
+      {/* โหมดฝัง: ปุ่ม action ยังต้องมีที่อยู่ (หน้าแม่ไม่รู้จักปุ่มของลูก) */}
+      {embedded && actions && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>{actions}</div>
+      )}
 
       {!!tabs?.length && (
         <div style={{ display: 'flex', gap: 7, flexWrap: isMobile ? 'nowrap' : 'wrap', overflowX: isMobile ? 'auto' : 'visible', paddingBottom: isMobile ? 4 : 0 }}>
@@ -59,10 +71,13 @@ export default function PageHeader({
             const on = t.key === tab;
             return (
               <button key={t.key} onClick={() => onTab && onTab(t.key)} style={{
-                fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
+                /* แท็บย่อย (embedded) เล็กลงหนึ่งขั้น + ตัวที่เลือกเป็นพื้นอ่อน ไม่ใช่เขียวทึบ
+                   — สองแถวทรงเดียวกันเป๊ะ คนอ่านแยกไม่ออกว่าแถวไหนเป็นชั้นบน */
+                fontSize: embedded ? 12.5 : 13.5, fontWeight: 700,
+                padding: embedded ? '5px 12px' : '7px 14px', borderRadius: 999, cursor: 'pointer',
                 whiteSpace: 'nowrap', flexShrink: 0,
-                background: on ? 'var(--accent)' : 'var(--bg3)',
-                color: on ? '#08120a' : 'var(--text)',
+                background: on ? (embedded ? 'var(--bg3)' : 'var(--accent)') : 'var(--bg3)',
+                color: on ? (embedded ? 'var(--text)' : '#08120a') : 'var(--muted)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
                 {t.label}

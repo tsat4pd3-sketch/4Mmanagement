@@ -30,6 +30,7 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite } from '../utils/dbWrite';
+import PageHeader from '../components/PageHeader';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -642,9 +643,7 @@ export default function QAInspectionSetup() {
   return (
     <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
       <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>
-          📐 มาตรฐานการตรวจ & Drawing
-        </h1>
+        <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐" />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
           อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้
         </div>

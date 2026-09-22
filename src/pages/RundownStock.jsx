@@ -5,6 +5,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
 import { fetchAllPages } from '../utils/fetchByIds';
+import PageHeader from '../components/PageHeader';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -144,9 +145,7 @@ export default function RundownStock() {
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          📉 คาดการณ์ของจะขาด — Balance FG รายวัน
-        </h1>
+        <PageHeader title="คาดการณ์ของจะขาด — Balance FG รายวัน" icon="📉" />
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
           stock พร้อมส่ง{fgDest ? ` (คลัง ${fgDest})` : ''} − order ค้างส่งสะสม {HORIZON} วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง
         </p>

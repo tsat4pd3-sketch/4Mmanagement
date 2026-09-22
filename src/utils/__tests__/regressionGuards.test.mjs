@@ -360,6 +360,27 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'mo-image-via-mtnImage',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    // จับการอัปโหลดขึ้น bucket mtn-images โดยไม่ผ่าน util กลาง
+    re: /storage\s*\.from\(\s*['"]mtn-images['"]\s*\)\s*\.upload/g,
+    why: 'รูปในใบ MO มีกติกา 3 ข้อที่พลาดแล้วเห็นผลช้า: ① สัดส่วน 16:9 ทุก step '
+       + '(ผจก.สุรเสน 22/09) ② บีบเป็น webp — รูปซ่อม = 39 MB/วันของ egress ฝั่ง DR '
+       + '③ นามสกุลไฟล์ต้องมาจาก imgExt(blob) ห้าม hardcode .jpg · เดิมกติกาพวกนี้ฝังอยู่ใน '
+       + 'MtnRepair.jsx ⇒ จุดแนบรูปใหม่ต้องก๊อป แล้วตกหล่นทีละข้อ (22/09: เปิด MO จากดาวน์ไทม์ '
+       + 'ไม่มีช่องแนบรูปเลย เพราะก๊อปไม่ไหว)',
+    fix: 'ใช้ uploadMoBeforeImg(file, orderId) หรือ resizeMoImage()+uploadMtnImg() '
+       + 'จาก src/utils/mtnImage.js',
+    allow: {
+      'src/utils/mtnImage.js': 1,
+      /* 3 ไฟล์นี้ใช้ bucket `mtn-images` ร่วมกัน แต่ **ไม่ใช่รูปในใบ MO** — เป็นรูปผัง/ชั้นวาง/อะไหล่
+         ซึ่ง **ห้ามครอบ 16:9** (ผังโดนครอบ = ตำแหน่งหมุดเพี้ยนทั้งผัง) จึงไม่ควรผ่าน util ของใบ MO */
+      'src/components/DieLayout.jsx': 1,      // รูปผังจัดเก็บแม่พิมพ์ — สัดส่วนตามรูปจริง
+      'src/components/RackMap.jsx': 1,        // รูปชั้นวางอะไหล่ — สัดส่วนตามรูปจริง
+      'src/components/SparePartMaster.jsx': 1, // รูปอะไหล่รายชิ้น
+    },
+  },
+  {
     id: 'mock-mapper-must-return-one-row',
     scan: ['audit'], ext: ['.js', '.mjs'],
     /* จับ mapper ใน TABLE_ROWS ที่คืน "อาร์เรย์" — สัญญาของ TABLE_ROWS คือ 1 แถวเข้า → 1 แถวออก

@@ -39,6 +39,29 @@ test('③ แกนซ้ายเริ่ม 0 เสมอ — ห้าม�
   assert.ok(g.yMax >= Math.max(...rows.map(r => r._val)), 'เพดานแกนต้องคลุมค่าสูงสุด');
 });
 
+test('🔴③b เพดานแกนซ้าย = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด — user ชี้จุดนี้ 22/09', () => {
+  const g = paretoGeometry(rows, { width: 800, height: 340 });
+  const total = rows.reduce((s, r) => s + r._val, 0);
+  assert.ok(Math.abs(g.yMax - total) < 1e-9,
+    'เพดาน = ยอดรวมเป๊ะ ห้ามปัดขึ้น (ปัดแล้ว 100% จะไม่ตรงยอดแกน)');
+  assert.ok(g.yMax > Math.max(...rows.map(r => r._val)),
+    'ถ้าเพดาน = ค่าแท่งสูงสุด แท่งแรกจะชนเพดานแต่หมุดแรกลอยต่ำ = เส้นกับแท่งคนละสเกลโดยไม่มีอะไรบอก');
+});
+
+test('🔴③c หมุด %สะสมตัวที่ i ต้องอยู่ระดับเดียวกับ "หัวแท่ง" ของยอดสะสมถึงแท่งนั้น', () => {
+  const g = paretoGeometry(rows, { width: 800, height: 340 });
+  // หมุดแรก = หัวแท่งแรกพอดี (ภาพจำของ Pareto สากล: เส้นออกจากมุมบนขวาของแท่งที่ 1)
+  assert.ok(Math.abs(g.line[1].y - g.bars[0].y) < 1e-9,
+    'หมุดแรกไม่ตรงหัวแท่งแรก = เพดานแกนซ้ายไม่ได้ใช้ยอดรวม');
+  // ทุกหมุด: y ต้องตรงกับ (ยอดสะสม ÷ ยอดรวม) บนแกนซ้าย
+  let run = 0;
+  rows.forEach((r, i) => {
+    run += r._val;
+    const want = g.base - (run / g.yMax) * g.plotH;
+    assert.ok(Math.abs(g.line[i + 1].y - want) < 1e-9, `หมุด ${i} ไม่ตรงยอดสะสมบนแกนซ้าย`);
+  });
+});
+
 test('④ เส้นสะสมเริ่ม 0% มุมล่างซ้าย → หมุดที่ขอบขวาของแต่ละแท่ง → จบ 100% พอดีขอบขวาสุด', () => {
   const g = paretoGeometry(rows, { width: 800, height: 340 });
   assert.equal(g.line[0].pct, 0);

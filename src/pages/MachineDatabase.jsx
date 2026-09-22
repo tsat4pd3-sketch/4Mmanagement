@@ -290,14 +290,11 @@ export default function MachineDatabase() {
     <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
       <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ทะเบียนเครื่องจักร"
         permKey="machines:edit, machines:create" />
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            🏭 ฐานข้อมูลเครื่องจักร
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            รายการเครื่องจักรทุกไลน์ · {machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่
-          </div>
+      {/* 🧩 เป็นแท็บของ `/equipment` แล้ว — หน้าแม่วาดหัวเรื่องไปแล้ว ที่นี่เหลือแค่แถบปุ่ม + ตัวนับ
+          (เดิมวาด <h1> เองด้วย ⇒ แท็บเครื่องจักรมีหัวเรื่อง 2 ชั้นและไม่มี breadcrumb · ภาพ user 22/09) */}
+      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          รายการเครื่องจักรทุกไลน์ · {machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่
         </div>
         {(canEdit || canCreate) && (
           <div style={{ display: 'flex', gap: 8 }}>

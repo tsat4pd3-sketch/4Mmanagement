@@ -8,6 +8,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
+import PageHeader from '../components/PageHeader';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -118,9 +119,7 @@ export default function StoreMonitor() {
   return (
     <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🚨 เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)
-        </h1>
+        <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨" />
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
           จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)
         </p>

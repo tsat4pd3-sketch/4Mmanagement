@@ -2,6 +2,7 @@ import { useContext, Suspense, lazy } from 'react';
 import { UserContext } from '../App';
 import { canAccessPage } from '../utils/permissions';
 import useTabParam from '../utils/useTabParam';
+import PageHeader from '../components/PageHeader';
 
 /* ── 🔧 ศูนย์ PM — รวม 5 หน้างานซ่อมบำรุงตามแผนเป็นหน้าเดียว (2026-08-26) ──────────────
    ที่มา (feedback หน้างาน): *"หน้าที่เกี่ยวกับ PM 3 หน้า มันควรจะรวมเป็นหน้าเดียวหรือไม่
@@ -56,28 +57,11 @@ export default function PmHub() {
   return (
     <div>
       <div style={{ padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px) 0', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 2px', fontFamily: 'var(--font-display)', fontSize: 'clamp(15px,2.6vw,20px)', color: 'var(--text)' }}>
-          🔧 ซ่อมบำรุงตามแผน (PM)
-        </h2>
-        <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)' }}>
-          สายงานเดียวกันทั้งหมด — ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง
-        </p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderBottom: '1px solid var(--border)', paddingBottom: 10 }}>
-          {available.map(t => {
-            const on = active === t.key;
-            return (
-              <button key={t.key} onClick={() => setActive(t.key)} title={t.hint} style={{
-                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text2)',
-              }}>{t.label}</button>
-            );
-          })}
-        </div>
-        {/* บอกว่าแท็บนี้ทำอะไร — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
-        {cur?.hint && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '7px 2px 0' }}>{cur.hint}</div>
-        )}
+        {/* หัว + แท็บ มาตรฐาน (UI §6.8) · sub = คำอธิบายแท็บที่เลือก
+            — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
+        <PageHeader title="ซ่อมบำรุงตามแผน (PM)" icon="🔧"
+          sub={cur?.hint || 'ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง'}
+          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
       </div>
 
       {cur ? (

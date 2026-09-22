@@ -22,6 +22,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import { classifyAbc } from '../utils/pareto';
+import PageHeader from '../components/PageHeader';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -853,7 +854,7 @@ export default function Improvements() {
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
         <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>💡 Improvements — โปรเจคปรับปรุง</h1>
+          <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡" />
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
             เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ
           </div>
