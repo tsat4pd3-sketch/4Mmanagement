@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pairLoadTotal } from '../pairTotals.js';
 import {
-  estimateCapacity, netShiftMin, DEFAULT_SHIFT_MIN, FALLBACK_SHIFT_BREAK_MIN,
+  estimateCapacity, netShiftMin, buildDayPlan, DEFAULT_SHIFT_MIN, FALLBACK_SHIFT_BREAK_MIN,
 } from '../capacityModel.js';
 import { policyBreakForShift } from '../oee.js';
 
@@ -92,4 +92,54 @@ test('มีประวัติจริง ≥ MIN_SESSIONS — ฐานเ�
   const b = estimateCapacity(rows, { ctSec: 60, lineOee: 0.75, shiftMin: 490 });
   assert.equal(a.method, 'actual');
   assert.deepEqual(a, b, 'ทางที่มีประวัติจริงต้องไม่ขึ้นกับฐานเวลา');
+});
+
+/* ── ③ ปฏิทินแผน (buildDayPlan) — ตรึงลำดับการเปิดตามกฎ user 2026-07-21 ────── */
+
+const DATES = ['2026-09-22', '2026-09-23', '2026-09-24'];
+const cal = (m) => (d) => m[d] || 'working';
+
+test('วันทำงาน: ภาระ ≤ 1 กะ = เปิดกะเช้าอย่างเดียว', () => {
+  const [d] = buildDayPlan({ dates: ['2026-09-22'], loadByDate: { '2026-09-22': 0.8 }, dayTypeOf: cal({}) });
+  assert.deepEqual(d.plan, ['day']);
+  assert.equal(d.backlog, 0);
+});
+
+test('ไลน์ไม่มีกะดึก: เกิน 1 กะ → กะเช้า + OT แล้วที่เหลือยกไปวันถัดไป', () => {
+  const days = buildDayPlan({ dates: DATES, loadByDate: { '2026-09-22': 2 }, hasNight: false, dayTypeOf: cal({}) });
+  assert.deepEqual(days[0].plan, ['day', 'ot']);
+  assert.equal(Math.round(days[0].backlog * 100) / 100, 0.75);   // 2 − 1 − 0.25
+  assert.deepEqual(days[1].plan, ['day'], 'ของค้างไปโผล่วันถัดไป');
+});
+
+test('ไลน์มีกะดึก: เกิน 1 กะ → เปิดกะดึกก่อน OT', () => {
+  const [d] = buildDayPlan({ dates: ['2026-09-22'], loadByDate: { '2026-09-22': 1.5 }, hasNight: true, dayTypeOf: cal({}) });
+  assert.deepEqual(d.plan, ['day', 'night']);
+});
+
+test('🔴 วัน ม.75 (shutdown75) = เรียกมาทำงานเต็มกำลัง ต้องมาก่อน OT วันหยุดจริงเสมอ', () => {
+  const days = buildDayPlan({
+    dates: DATES, carryLoad: 2.5, hasNight: true,
+    dayTypeOf: cal({ '2026-09-22': 'shutdown75', '2026-09-23': 'ot15' }),
+  });
+  assert.deepEqual(days[0].plan, ['recall75', 'night', 'ot'], 'ม.75 ใช้ได้ทั้งกะเช้า+กะดึก+OT');
+  assert.equal(days[0].sd75, true);
+  assert.equal(days[0].backlog, 0.25);
+  assert.deepEqual(days[1].plan, ['holiday_work'], 'วันหยุดจริงเปิดได้แค่กะเดียว (เรียกมาทำ)');
+});
+
+test('วันหยุดที่ไม่มีของค้าง = ไม่เปิดอะไรเลย', () => {
+  const [d] = buildDayPlan({ dates: ['2026-09-22'], dayTypeOf: cal({ '2026-09-22': 'ot2' }) });
+  assert.deepEqual(d.plan, []);
+  assert.equal(d.holiday, true);
+});
+
+test('ยอดค้างจากอดีต (carryLoad) ต้องเป็น backlog ตั้งต้น ไม่ใช่เริ่มที่ 0', () => {
+  const [d] = buildDayPlan({ dates: ['2026-09-22'], carryLoad: 1, dayTypeOf: cal({}) });
+  assert.deepEqual(d.plan, ['day'], 'มีของค้าง = ต้องเปิดกะแม้วันนั้นไม่มีดิวใหม่');
+});
+
+test('ไม่ส่ง dayTypeOf = ถือว่าวันทำงานทั้งหมด (ไม่พัง)', () => {
+  const days = buildDayPlan({ dates: DATES, loadByDate: { '2026-09-22': 1 } });
+  assert.deepEqual(days.map(d => d.plan), [['day'], [], []]);
 });

@@ -13,7 +13,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
-  netShiftMin, FALLBACK_SHIFT_BREAK_MIN,
+  netShiftMin, FALLBACK_SHIFT_BREAK_MIN, buildDayPlan,
 } from '../utils/capacityModel';
 import { policyBreakForShift } from '../utils/oee';
 import { pairLoadTotal } from '../utils/pairTotals';
@@ -86,6 +86,8 @@ export default function ProductionPlan() {
   }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(() => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines), [scopedLines, secFilter]);
   const lineNameSet = useMemo(() => new Set(viewLines.map(l => l.name)), [viewLines]);
+  // ทะเบียนไลน์ทั้งหมด (ไม่กรอง scope) — ใช้แยก "หลุดตัวกรอง" ออกจาก "ไลน์ไม่มีในทะเบียน"
+  const allLineNameSet = useMemo(() => new Set(allLines.map(l => l.name)), [allLines]);
   const calOf = useCallback((d) => calMap[d] || 'working', [calMap]);
 
   useEffect(() => {
@@ -114,7 +116,7 @@ export default function ProductionPlan() {
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
            (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
-        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no, pair_mat_no').eq('is_active', true).not('mat_no', 'is', null),
+        supabaseDR.from('dr_products').select('mat_no, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
         supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
@@ -149,7 +151,7 @@ export default function ProductionPlan() {
       const pmap = {};
       const pnoMap = {};
       (prods || []).forEach(p => {
-        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null };
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null, customer: p.customer || '' };
         if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
       });
       setProdByMat(pmap);
@@ -253,6 +255,26 @@ export default function ProductionPlan() {
     return { orders: ordCnt, parts, fcParts };
   }, [loading, orders, forecasts, resolveMat]);
 
+  /* ── 🔍 ความต้องการที่ map เลข SAP ได้ แต่ **ยังไม่ถูกนับในแผน** (audit 22/09) ──
+     เดิม `lineOfMat()` คืน null แล้วแถวถูกข้ามไปเงียบๆ ทั้ง 2 กรณี ซึ่งคนละเรื่องกัน:
+       · หลุดตัวกรองส่วนงาน = ปกติ (แค่บอกให้รู้ว่าซ่อนอยู่เท่าไหร่)
+       · พาร์ทไม่มีไลน์ผลิต / ไลน์ไม่มีในทะเบียน = **ข้อมูลขาด** ต้องเตือนให้ไปตั้ง
+     ตัวนับ `unmapped` เดิมดูแค่ `resolveMat` จึงมองไม่เห็นทั้ง 2 กรณีนี้เลย */
+  const demandGaps = useMemo(() => {
+    if (loading) return { outScope: 0, noLine: 0, noLineParts: new Set() };
+    let outScope = 0, noLine = 0;
+    const noLineParts = new Set();
+    const check = (row) => {
+      const rid = resolveMat(row.mat_no);
+      if (!rid) return;                                   // นับที่ `unmapped` อยู่แล้ว
+      const line = prodByMat[rid]?.line;
+      if (!line || !allLineNameSet.has(line)) { noLine++; noLineParts.add(rid); return; }
+      if (!lineNameSet.has(line)) outScope++;
+    };
+    orders.forEach(check); forecasts.forEach(check);
+    return { outScope, noLine, noLineParts };
+  }, [loading, orders, forecasts, resolveMat, prodByMat, allLineNameSet, lineNameSet]);
+
   /* ── คู่ RH/LH ที่ "มี demand ครบทั้ง 2 ข้าง" = คู่ที่ระบบยุบภาระเวลาให้ ──
      ต้องขึ้นจอ ไม่งั้นคนที่บวกเลขมือเองจะงงว่าทำไมโหลดน้อยกว่าที่คิด (และคิดว่าระบบตกหล่น) */
   const pairsCollapsed = useMemo(() => {
@@ -309,28 +331,12 @@ export default function ProductionPlan() {
         } else unknownCap += qty;
       });
       const carryLoad = pairLoadTotal(carryByMat, pairOf);   // ค้างส่งก็ยุบคู่เหมือนกัน
-      // เดินวัน: กะเช้า 1 shift → กะดึก (ถ้ามี) → OT · วันหยุดทำเฉพาะเมื่อ backlog
-      let backlog = carryLoad;
-      const days = dates.map(date => {
-        const dtype = calOf(date);
-        const holiday = dtype !== 'working';
-        const sd75 = dtype === 'shutdown75';
-        const due = loadByDate[date] || 0;
-        let need = backlog + due;
-        const plan = [];
-        if (!holiday) {
-          if (need > 0) { need -= Math.min(need, 1); plan.push('day'); }
-          if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
-          if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
-        } else if (sd75) {
-          // ม.75: ยกเลิกหยุด (เรียกมาทำงาน ค่าแรงปกติ) — ใช้ได้เต็มกำลังเหมือนวันทำงาน ก่อนคิด OT วันหยุดจริง
-          if (need > 0) { need -= Math.min(need, 1); plan.push('recall75'); }
-          if (need > 0 && hasNight) { need -= Math.min(need, 1); plan.push('night'); }
-          if (need > 0) { need -= Math.min(need, OT_SHIFT_FRAC); if (!plan.includes('ot')) plan.push('ot'); }
-        } else if (need > 0) { need -= Math.min(need, 1); plan.push('holiday_work'); }
-        backlog = Math.max(0, need);
-        return { date, holiday, sd75, dueLoad: due, duePcs: pcsByDate[date] || 0, plan, backlog };
-      });
+      /* เดินปฏิทิน: กะเช้า → กะดึก (ถ้ามี) → OT · วัน ม.75 ใช้เต็มกำลังก่อน OT วันหยุดจริง
+         🔴 ตรรกะอยู่ที่ `buildDayPlan()` ใน utils/capacityModel.js ที่เดียว **ห้ามเขียน walk ซ้ำที่นี่**
+            (เดิมเขียนซ้ำ ⇒ ตัวกลางกลายเป็นโค้ดตายที่ล้าสมัย — audit 22/09) */
+      const days = buildDayPlan({
+        dates, loadByDate, carryLoad, hasNight, otFactor: OT_SHIFT_FRAC, dayTypeOf: calOf,
+      }).map(d => ({ ...d, duePcs: pcsByDate[d.date] || 0 }));
       const otDays = days.filter(d => d.plan.includes('ot')).length;
       const nightDays = days.filter(d => d.plan.includes('night')).length;
       const recall75Days = days.filter(d => d.plan.includes('recall75')).length;
@@ -342,6 +348,22 @@ export default function ProductionPlan() {
       return { line, days, otDays, nightDays, recall75Days, holidayDays, endBacklog, sd75Total, sd75Stoppable, unknownCap, matCount: matSet.size, orderCount: lineOrders.length, carryPcs };
     }).filter(r => r.orderCount > 0 || r.unknownCap > 0 || r.carryPcs > 0);
   }, [loading, viewLines, orders, overdueOrders, today, capOfMat, lineOfMat, calOf, resolveMat, pairOf]);
+
+  /* ── 🌑 ไลน์ที่ "มีพาร์ทลงทะเบียน แต่ไม่มีความต้องการในระบบเลย" ──
+     เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างเปล่าอ่านได้ว่า "ไลน์นี้ว่าง" ทั้งที่ความจริงคือ
+     "ยังไม่มีทางรับ order ของลูกค้าเจ้านั้นเข้าระบบ" (วัดจริง 22/09: 10 จาก 22 ไลน์)
+     ⇒ ต้องขึ้นจอเป็นแถบเทา พร้อมบอกว่าเป็นของลูกค้าไหน — ห้ามหายเงียบ */
+  const silentLines = useMemo(() => {
+    if (loading) return [];
+    const withDemand = new Set(daily.map(r => r.line.name));
+    const byLine = {};
+    Object.values(prodByMat).forEach(p => {
+      if (!p.line || !lineNameSet.has(p.line) || withDemand.has(p.line)) return;
+      const e = byLine[p.line] || (byLine[p.line] = { line: p.line, parts: 0, customers: new Set() });
+      e.parts++; if (p.customer) e.customers.add(p.customer);
+    });
+    return Object.values(byLine).sort((a, b) => b.parts - a.parts);
+  }, [loading, daily, prodByMat, lineNameSet]);
 
   /* ═══ รายเดือน: forecast → shift ที่ต้องการ vs วันทำงานที่มี ═══ */
   const monthly = useMemo(() => {
@@ -453,6 +475,22 @@ export default function ProductionPlan() {
         )}
       </div>
 
+      {/* 🔍 ความต้องการที่เลข SAP ถูกต้องแล้ว แต่ยังไม่ถูกนับในแผน — คนละเรื่องกับ "จับคู่ SAP ไม่ได้" */}
+      {!loading && demandGaps.noLine > 0 && (
+        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          ⚠️ <b>{demandGaps.noLine} รายการความต้องการยังไม่ถูกนับในแผน</b> — พาร์ท {demandGaps.noLineParts.size} ตัวนี้<b>ยังไม่ได้ผูกไลน์ผลิต</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
+          <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
+            {[...demandGaps.noLineParts].slice(0, 8).join(' · ')}{demandGaps.noLineParts.size > 8 ? ' …' : ''}
+          </div>
+          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ตั้งไลน์ผลิตให้พาร์ทที่หน้า Product Master (ช่อง “ไลน์”)</div>
+        </div>
+      )}
+      {!loading && demandGaps.outScope > 0 && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+          ℹ️ ซ่อนไว้ตามตัวกรองส่วนงาน: {demandGaps.outScope} รายการความต้องการอยู่ไลน์นอกขอบเขตที่เลือก
+        </div>
+      )}
+
       {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
         <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
@@ -461,10 +499,27 @@ export default function ProductionPlan() {
         </div>
       )}
 
+      {/* 🌑 ไลน์ที่ไม่มีความต้องการในระบบเลย — เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างอ่านได้ว่า "ไลน์ว่าง"
+           ทั้งที่ความจริงคือ "ยังไม่มีทางรับ order ของลูกค้าเจ้านั้นเข้าระบบ" (วัดจริง 22/09: 10 จาก 22 ไลน์) */}
+      {!loading && tab === 'daily' && silentLines.length > 0 && (
+        <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
+          🌑 <b>{silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ</b> — ไม่ใช่ "ไลน์ว่าง" แต่คือยังไม่มี order/forecast ของพาร์ทในไลน์นี้เข้าระบบ
+          <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 11.5 }}>
+            {silentLines.slice(0, 12).map(l => (
+              <span key={l.line} style={{ color: 'var(--muted)' }}>
+                <b style={{ color: 'var(--text2)' }}>{l.line}</b> · {l.parts} พาร์ท{l.customers.size ? ` · ${[...l.customers].slice(0, 3).join('/')}` : ''}
+              </span>
+            ))}
+            {silentLines.length > 12 && <span style={{ color: 'var(--muted)' }}>… อีก {silentLines.length - 12} ไลน์</span>}
+          </div>
+          <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5 }}>→ ลูกค้าที่ยังไม่มีทางเข้า order (ไม่ได้ส่ง EDI 830/862 หรือ e-SMART) ต้องนำเข้าด้วยวิธีอื่นก่อน แผนถึงจะครบทั้งโรงงาน</div>
+        </div>
+      )}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'daily' ? (
-        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope</div> : <>
+        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
         {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
         {daily.some(r => r.sd75Total > 0) && (() => {
           const stoppable = daily.filter(r => r.sd75Total > 0 && r.recall75Days === 0);

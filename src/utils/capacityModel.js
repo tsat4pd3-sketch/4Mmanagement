@@ -80,51 +80,55 @@ export function estimateCapacity(perShiftOutputs = [], { ctSec = 0, shiftMin = D
 export const planCapacity = (est, mode = 'median') =>
   !est ? 0 : (mode === 'safe' ? (est.p25 ?? est.perShift ?? 0) : (est.perShift ?? 0));
 
-/* ── ปฏิทินกำลังผลิต: เดินวันต่อวัน จัดสรรกำลังให้ความต้องการ แล้วบอกว่าแต่ละวันต้องเปิดอะไร ──
-   ใช้ทั้งรายวัน (order) และรายเดือน (สรุปจากผลรายวัน)
-   demandByDate: { 'YYYY-MM-DD': qtyDue }  ความต้องการที่ครบดิวในแต่ละวัน (รวมทุกพาร์ทของไลน์)
-   dayCap/nightCap: กำลังต่อกะ (ชิ้น) ของไลน์ · calendar: (dateStr)=>'working'|'holiday'
-   คืน: array ต่อวัน { date, isHoliday, carriedIn, due, producedDay, producedNight, producedOT, plan, shortfall, backlog }
-   หลัก greedy: วันทำงานเปิดกะเช้าก่อน → ถ้า backlog ยังเหลือเปิดกะดึก → ยังเหลือเปิด OT (กะเช้า×1.25)
-              → วันหยุดเปิดเฉพาะเมื่อมี backlog (ต้องมาทำวันหยุด) */
-export function buildDayPlan({ dates, demandByDate, dayCap, nightCap, otFactor = 0.25, calendar }) {
-  let backlog = 0; // ยอดค้างสะสม (ผลิตไม่ทันวันก่อน)
-  return dates.map(date => {
-    const isHoliday = calendar(date) !== 'working';
-    const due = demandByDate[date] || 0;
-    const carriedIn = backlog;
+/* ── ปฏิทินกำลังผลิต: เดินวันต่อวัน จัดสรร "ภาระกะ" ให้ความต้องการ แล้วบอกว่าแต่ละวันต้องเปิดอะไร ──
+   🔴 ตัวนี้คือ **ตัวเดียวของระบบ** ที่ตัดสินว่าวันไหนต้องเปิดอะไร — ห้ามเขียน walk ซ้ำในหน้า
+
+   ประวัติ (audit 2026-09-22): เดิมมีตัวนี้เป็น "โค้ดตาย" (ไม่มีใครเรียกเลย) ส่วนของจริงถูกเขียน
+   ซ้ำอยู่ใน ProductionPlan.jsx แล้วเดินหน้าไปไกลกว่า ⇒ ตัวกลางที่ค้างไว้ **ล้าสมัยกว่าของจริง 2 เรื่อง**
+   (ไม่รู้จักวัน `shutdown75` ตามคำสั่ง user 21/07 · คิดเป็น "ชิ้น" ไม่ใช่ภาระกะ)
+   ใครหยิบตัวกลางไปใช้ตอนนั้นจะได้ลำดับวันหยุดผิดทันที ⇒ ยุบเหลือตัวเดียวแล้ว
+
+   หน่วย = **ภาระกะ (shift-load)** — 1.0 = เต็มกะหนึ่ง (qty ÷ กำลังต่อกะ · รวมทุกพาร์ทของไลน์
+   โดยยุบคู่ RH/LH ด้วย pairLoadTotal มาก่อนแล้ว) · ใช้หน่วยนี้เพราะไลน์เดียวมีหลายพาร์ทคนละ rate
+   บวกเป็น "ชิ้น" ข้ามพาร์ทไม่ได้
+
+   ลำดับการเปิด (กฎ user 2026-07-21 — ห้ามสลับ):
+     วันทำงาน  : กะเช้า → กะดึก (ถ้าไลน์มี) → OT ต่อท้าย
+     วัน ม.75  : **ยกเลิกหยุดมาทำงาน (ค่าแรงปกติ) ใช้ได้เต็มกำลังเหมือนวันทำงาน** → กะดึก → OT
+                 ⇒ ต้องมาก่อน OT วันหยุดจริงเสมอ (ถูกกว่าและไม่ต้องจ่าย OT)
+     วันหยุดอื่น: เปิดเฉพาะเมื่อมี backlog (เรียกมาทำวันหยุด = แพงสุด)
+
+   @param {string[]} dates            วันที่เรียงจากวันนี้ไปข้างหน้า
+   @param {Record<string,number>} loadByDate  ภาระกะที่ครบดิวในแต่ละวัน
+   @param {number} carryLoad          ภาระค้างจากอดีต (ออเดอร์เลยดิว) = backlog ตั้งต้น
+   @param {boolean} hasNight          ไลน์นี้มีกะดึกไหม (std กะดึก > 0 · ตกทอดจากไลน์แม่ได้)
+   @param {number} otFactor           OT ต่อท้ายกะเช้าคิดเป็นสัดส่วนของกะ
+   @param {(d:string)=>string} dayTypeOf  คืน day_type จากปฏิทินบริษัท ('working' | 'shutdown75' | …)
+   @returns {Array<{date, holiday, sd75, dueLoad, plan:string[], backlog}>}
+*/
+export function buildDayPlan({ dates, loadByDate = {}, carryLoad = 0, hasNight = false, otFactor = 0.25, dayTypeOf }) {
+  let backlog = Math.max(0, Number(carryLoad) || 0);
+  return (dates || []).map(date => {
+    const dtype = dayTypeOf ? dayTypeOf(date) : 'working';
+    const holiday = dtype !== 'working';
+    const sd75 = dtype === 'shutdown75';
+    const due = Number(loadByDate[date]) || 0;
     let need = backlog + due;
-    let producedDay = 0, producedNight = 0, producedOT = 0;
     const plan = [];
-
-    if (!isHoliday) {
-      producedDay = Math.min(need, dayCap);
-      need -= producedDay;
-      if (producedDay > 0) plan.push('day');
-      if (need > 0 && nightCap > 0) {
-        producedNight = Math.min(need, nightCap);
-        need -= producedNight;
-        if (producedNight > 0) plan.push('night');
-      }
-      if (need > 0 && dayCap > 0) {
-        // OT ต่อท้าย (สมมติได้เพิ่ม otFactor ของกะเช้า เช่น 2-3 ชม.)
-        producedOT = Math.min(need, Math.round(dayCap * otFactor));
-        need -= producedOT;
-        if (producedOT > 0) plan.push('ot');
-      }
-    } else if (need > 0 && dayCap > 0) {
-      // วันหยุดแต่มี backlog → ต้องมาทำ (นับเป็นกะเช้าวันหยุด)
-      producedDay = Math.min(need, dayCap);
-      need -= producedDay;
-      if (producedDay > 0) plan.push('holiday_work');
-    }
-
-    backlog = need; // เหลือเท่าไหร่ยกไปวันถัดไป
-    return {
-      date, isHoliday, carriedIn, due,
-      producedDay, producedNight, producedOT,
-      produced: producedDay + producedNight + producedOT,
-      plan, shortfall: 0, backlog,
+    const take = (cap, tag) => {
+      if (need <= 0 || cap <= 0) return;
+      need -= Math.min(need, cap);
+      if (!plan.includes(tag)) plan.push(tag);
     };
+    if (!holiday || sd75) {
+      // วัน ม.75 = กำลังสำรองที่เรียกได้ด้วยค่าแรงปกติ ⇒ ใช้เต็มกำลังเหมือนวันทำงาน
+      take(1, sd75 ? 'recall75' : 'day');
+      if (hasNight) take(1, 'night');
+      take(otFactor, 'ot');
+    } else {
+      take(1, 'holiday_work');   // วันหยุดจริง — เปิดเฉพาะเมื่อยังมีของค้าง
+    }
+    backlog = Math.max(0, need);
+    return { date, holiday, sd75, dueLoad: due, plan, backlog };
   });
 }
