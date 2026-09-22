@@ -54,6 +54,10 @@ import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
   axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, fillDays, round1,
 } from '../utils/obeyaKpi';
+import {
+  yearOf, yearRange, monthRange, prevMonthRange, monthLabel, SUMMARY_KEY, monthBarStatus,
+  axisOeeYear, axisSafetyYear, axisQualityYear, axisDeliveryYear, axisCostYear, axisManYear, paretoYear,
+} from '../utils/obeyaYear';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md) */
@@ -239,17 +243,44 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const [period, setPeriod] = useState('week');
   const [secFilter, setSecFilter] = useState('');
   const orgSections = useOrgSections();   // คืน array ตรงๆ (ไม่ใช่ object)
+  /* โหมดปี (2026-09-22): `year` = ปีปฏิทินที่ดู · `monthSel` = เดือนที่ drill-down จากแท่งปี
+     (null = โหมดเดือน "เดือนนี้" แบบเดิม) · กดแท่งเดือนไหนบนโหมดปี → ทั้งจอสลับเป็นโหมดเดือนของเดือนนั้น */
+  const [year, setYear] = useState(() => yearOf(today));
+  const [monthSel, setMonthSel] = useState(null);
+  const isYear = period === 'year';
 
-  const { from, to } = useMemo(() => periodRange(period, today), [period, today]);
-  const prev = useMemo(() => prevRange(period, today), [period, today]);
+  const { from, to } = useMemo(() => {
+    if (period === 'year') return yearRange(year, today);
+    if (period === 'month' && monthSel) return monthRange(monthSel, today);
+    return periodRange(period, today);
+  }, [period, today, year, monthSel]);
+  const prev = useMemo(() => {
+    if (period === 'year') return yearRange(year - 1, today);
+    if (period === 'month' && monthSel) return prevMonthRange(monthSel, today);
+    return prevRange(period, today);
+  }, [period, today, year, monthSel]);
+  const drillMonth = (k) => {
+    if (!k || k === SUMMARY_KEY) return;
+    setMonthSel(k); setPeriod('month');
+  };
+  const pickPeriod = (key) => {
+    setMonthSel(null);
+    if (key === 'year' && period !== 'year') setYear(yearOf(today));
+    setPeriod(key);
+  };
 
   // ── master (โหลดครั้งเดียว) ────────────────────────────────────────────────────
   const [lines, setLines] = useState([]);
   const [targets, setTargets] = useState({});
   const [ccRates, setCcRates] = useState([]);
+  /* daily_production_logs.assigned_line = **id จุดงาน (workstations.id)** ไม่ใช่ชื่อไลน์ (docs/modules/morning-meeting.md)
+     — เดิมจอนี้เอา id ไปเทียบชื่อไลน์ตรงๆ ⇒ ติดตัวกรองส่วนงานเมื่อไหร่ แกน S/M หายเกลี้ยงเงียบๆ (แก้ 2026-09-22) */
+  const [stationLine, setStationLine] = useState({});
   useEffect(() => {
     supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name')
       .then(({ data, error }) => { if (!error) setLines(data || []); });
+    supabase.from('workstations').select('id, line_name')
+      .then(({ data, error }) => { if (!error) setStationLine(Object.fromEntries((data || []).map(w => [String(w.id), w.line_name]))); });
     supabase.from('oee_targets').select('*')
       .then(({ data, error }) => { if (!error) setTargets(Object.fromEntries((data || []).map(t => [t.group_name, t]))); });
     supabase.from('cost_center_rates').select('*')
@@ -319,6 +350,38 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   useLiveBoard(loadBoard, {
     tables: ['production_sessions'], topic: 'obeya-board', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
+    enabled: !isYear,
+  });
+
+  /* ── โหมดปี: ผลรวมรายเดือนจาก RPC (ไม่โหลดแถวดิบ) ─────────────────────────────────
+     วัดจริง 22/09: ทั้งปี 2026 = ~137 KB (DR) + ~63 KB (Main) เทียบโหมดเดือนที่โหลดแถวดิบ ~400 KB
+     · RPC คืน Σ อย่างเดียว — การหาร/ถ่วง/ตัดสินอยู่ใน obeyaYear.js (ห้ามย้ายสูตรลง SQL) */
+  const [yr, setYr] = useState(null);           // { sessions, downtime, defects, orders, attend }
+  const loadYear = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [dr, at] = await Promise.all([
+        supabaseDR.rpc('obeya_year_rollup', { p_from: from, p_to: to }),
+        supabase.rpc('obeya_attendance_rollup', { p_from: from, p_to: to }),
+      ]);
+      const bad = dr.error || at.error;
+      setLoadWarn(bad ? `โหลดสรุปรายปีไม่สำเร็จ: ${bad.message || bad}` : null);
+      const j = dr.data || {};
+      setYr({
+        sessions: j.sessions || [], downtime: j.downtime || [], defects: j.defects || [], orders: j.orders || [],
+        attend: Array.isArray(at.data) ? at.data : [],
+      });
+      const mats = [...new Set((j.defects || []).map(d => d.mat).filter(Boolean))];
+      if (mats.length) {
+        const { data: pm } = await supabaseDR.from('parts_master')
+          .select('mat_no, material_cost, standard_cost').in('mat_no', mats.slice(0, 300));
+        setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
+      } else setPartCost({});
+    } finally { setLoading(false); }
+  }, [from, to]);
+  useLiveBoard(loadYear, {
+    tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
+    enabled: isYear,
   });
 
   // ── Action items (Main project — คนละ client จึงแยก board) ──────────────────────
@@ -351,28 +414,41 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const fDts = useMemo(() => dts.filter(d => sessIds.has(d.session_id)), [dts, sessIds]);
   const fDefs = useMemo(() => defs.filter(d => sessIds.has(d.session_id)), [defs, sessIds]);
   const fOrders = useMemo(() => orders.filter(o => sessIds.has(o.session_id)), [orders, sessIds]);
+  /* เช็คชื่อ: แปลง id จุดงาน → ชื่อไลน์ก่อนกรอง · แถวที่ไม่รู้จุดงาน/จุดงานไม่ผูกไลน์ = คงไว้ (กันแกน S/M หาย) */
+  const lineOfStation = useCallback((st) => (st == null ? null : (stationLine[String(st)] || null)), [stationLine]);
   const fAttend = useMemo(
-    () => attend.filter(a => !a.assigned_line || lineOk(a.assigned_line)),
-    [attend, lineOk],
+    () => attend.filter((a) => { const ln = lineOfStation(a.assigned_line); return !ln || lineOk(ln); }),
+    [attend, lineOk, lineOfStation],
+  );
+
+  // ── โหมดปี: กรอง scope แถวสรุปแบบเดียวกับแถวดิบ ─────────────────────────────────
+  const ySess = useMemo(() => (yr?.sessions || []).filter(r => lineOk(r.line)), [yr, lineOk]);
+  const yDts = useMemo(() => (yr?.downtime || []).filter(r => lineOk(r.line)), [yr, lineOk]);
+  const yDefs = useMemo(() => (yr?.defects || []).filter(r => lineOk(r.line)), [yr, lineOk]);
+  const yOrders = useMemo(() => (yr?.orders || []).filter(r => lineOk(r.line)), [yr, lineOk]);
+  const yAttend = useMemo(
+    () => (yr?.attend || []).filter((a) => { const ln = lineOfStation(a.line); return !ln || lineOk(ln); }),
+    [yr, lineOk, lineOfStation],
   );
 
   // ── เป้า OEE ของขอบเขตที่เลือก (เฉลี่ยรายกรุ๊ป — ไม่เก็บระดับ section ใน DB) ──────
   const target = useMemo(() => {
-    const groups = [...new Set(fSess.map(s => {
-      const l = lines.find(x => x.name === s.line_name);
-      return l?.parent_line_name || s.line_name;
+    const names = isYear ? ySess.map(s => s.line) : fSess.map(s => s.line_name);
+    const groups = [...new Set(names.map((nm) => {
+      const l = lines.find(x => x.name === nm);
+      return l?.parent_line_name || nm;
     }).filter(Boolean))];
     return avgOeeTarget(groups.map(g => targets[g] || null));
-  }, [fSess, lines, targets]);
+  }, [fSess, ySess, isYear, lines, targets]);
 
   // ── KPI รายแกน (คำนวณใน obeyaKpi.js ทั้งหมด) ────────────────────────────────────
-  const kOee = useMemo(() => axisOee({ sessions: fSess, target }), [fSess, target]);
+  const kOeeM = useMemo(() => axisOee({ sessions: fSess, target }), [fSess, target]);
   const kOeePrev = useMemo(() => axisOee({ sessions: fPrev, target }), [fPrev, target]);
-  const kS = useMemo(() => axisSafety({ logs: fAttend }), [fAttend]);
-  const kQ = useMemo(() => axisQuality({ sessions: fSess, defects: fDefs, target }), [fSess, fDefs, target]);
-  const kM = useMemo(() => axisMan({ logs: fAttend }), [fAttend]);
+  const kSM = useMemo(() => axisSafety({ logs: fAttend }), [fAttend]);
+  const kQM = useMemo(() => axisQuality({ sessions: fSess, defects: fDefs, target }), [fSess, fDefs, target]);
+  const kMM = useMemo(() => axisMan({ logs: fAttend }), [fAttend]);
 
-  const kD = useMemo(() => {
+  const kDM = useMemo(() => {
     let plan = 0, made = 0;
     const byDay = {};
     const dayOf = Object.fromEntries(fSess.map(s => [s.id, s.work_date]));
@@ -391,7 +467,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     return axisDelivery({ target: plan, produced: made, series });
   }, [fOrders, fSess]);
 
-  const kC = useMemo(() => {
+  const kCM = useMemo(() => {
     const comps = RATE_COMPONENTS.map(c => c.key);
     const dayOf = Object.fromEntries(fSess.map(s => [s.id, s.work_date]));
     const lineOf = Object.fromEntries(fSess.map(s => [s.id, s.line_name]));
@@ -423,8 +499,41 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     return axisCost({ dtBaht, ngBaht, series, missingRate: noRate.size, missingCost: noCost.size });
   }, [fDts, fDefs, fSess, lines, ccRates, partCost]);
 
+  // ── โหมดปี: KPI จากผลรวมรายเดือน (obeyaYear.js) — โครงผลลัพธ์เดียวกับโหมดเดือน ─────────
+  const kOeeY = useMemo(() => axisOeeYear({ rows: ySess, year, target }), [ySess, year, target]);
+  const kSY = useMemo(() => axisSafetyYear({ rows: yAttend, year }), [yAttend, year]);
+  const kQY = useMemo(() => axisQualityYear({ rows: ySess, defects: yDefs, year, target }), [ySess, yDefs, year, target]);
+  const kMY = useMemo(() => axisManYear({ rows: yAttend, year }), [yAttend, year]);
+  const kDY = useMemo(() => axisDeliveryYear({ rows: yOrders, year }), [yOrders, year]);
+  const kCY = useMemo(() => {
+    const comps = RATE_COMPONENTS.map(c => c.key);
+    const rows = []; const noRate = new Set(); const noCost = new Set();
+    yDts.forEach((d) => {
+      if (d.category === 'planned') return;                       // C = ความสูญเสีย ⇒ นอกแผนเท่านั้น
+      const cc = d.line ? lineCostCenter(lines, d.line) : null;
+      const perHr = ratePerHour(cc ? rateFor(ccRates, cc, `${d.m}-01`) : null, comps);
+      if (!perHr) { if (d.line) noRate.add(d.line); return; }
+      rows.push({ m: d.m, dt: ((Number(d.min) || 0) / 60) * perHr, ng: 0 });
+    });
+    yDefs.forEach((d) => {
+      const { unit } = defectUnitCost(d.mat ? partCost[d.mat] : null);
+      if (!unit) { if (d.mat) noCost.add(d.mat); return; }
+      rows.push({ m: d.m, dt: 0, ng: ((Number(d.ng) || 0) - (Number(d.trial_ng) || 0)) * unit });
+    });
+    return axisCostYear({ rows, year, missingRate: noRate.size, missingCost: noCost.size });
+  }, [yDts, yDefs, year, lines, ccRates, partCost]);
+  const paretoY = useMemo(() => paretoYear(yDts), [yDts]);
+
+  /* จอวาดจากชุดเดียว — โหมดปีกับโหมดวันให้โครงผลลัพธ์เหมือนกัน (value/target/state/note/series) */
+  const kOee = isYear ? kOeeY : kOeeM;
+  const kS = isYear ? kSY : kSM;
+  const kQ = isYear ? kQY : kQM;
+  const kD = isYear ? kDY : kDM;
+  const kC = isYear ? kCY : kCM;
+  const kM = isYear ? kMY : kMM;
+
   // ── "ทำไมหลุดเป้า" — Pareto เวลาเครื่องหยุดนอกแผน (สาเหตุอันดับต้น) ───────────────
-  const pareto = useMemo(() => {
+  const paretoM = useMemo(() => {
     const g = {};
     fDts.forEach((d) => {
       if (d.dr_downtime_types?.category === 'planned') return;
@@ -436,9 +545,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     const total = rows.reduce((a, r) => a + r.min, 0);
     return { rows: rows.slice(0, 6), total };
   }, [fDts]);
+  const pareto = isYear ? paretoY : paretoM;
 
   const health = useMemo(() => actionHealth(actions, today), [actions, today]);
-  const ngTotal = useMemo(() => sumDefectQty(fDefs, 'line'), [fDefs]);
+  const ngTotalM = useMemo(() => sumDefectQty(fDefs, 'line'), [fDefs]);
+  const ngTotal = isYear ? (kQY.ngQty || 0) : ngTotalM;
 
   /* ── ไฟสถานะของ 3 แผ่นที่ "ไม่มีเป้าให้เทียบ" — ต้องเขียนเองแทน statusWhy() ────────────
      กฎความซื่อสัตย์ของจอ: ห้ามแต่งเป้าขึ้นมาเองเพื่อให้ไฟติดสวย และห้ามปล่อยเทาเฉยๆ
@@ -527,6 +638,58 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     labelStyle: { color: 'var(--text2)' },
   };
   const daySeries = (s) => fillDays(s, from, to).map(p => ({ ...p, label: dayLabel(p.k) }));
+  const ytdTag = isYear ? 'YTD · ' : '';
+
+  /* ── กราฟโหมดปี: 12 แท่งรายเดือน + แท่งที่ 13 "สรุป" (เฉลี่ยถ่วงน้ำหนัก หรือรวม แล้วแต่ KPI) ──
+     กดแท่งเดือน = drill-down ทั้งจอไปโหมดเดือนของเดือนนั้น (แท่งสรุปกดไม่ได้)
+     · เดือนว่างไม่มีแท่ง (ไม่ใช่แท่ง 0) · แท่งสรุปจางกว่า + มีขอบ ให้แยกจากเดือนจริงได้จากระยะไกล
+     · สีแท่ง = สถานะเทียบเป้าเดียวกับโหมดวัน (ห้ามคิดเกณฑ์ใหม่) */
+  /* ป้ายแกน X: แผ่นแคบ (A4 แนวตั้ง ~250px) ใส่ชื่อเดือนไทย 13 ตัวไม่พอ → ใช้เลขเดือน 1-12 + "สรุป"
+     (วัดจริง 22/09: ชื่อย่อไทยชนกันเป็นพืด อ่านไม่ออก) · แผ่นกว้าง (OEE 2 ช่อง) ใช้ชื่อย่อไทยได้ · tooltip บอกชื่อเต็มเสมอ */
+  const yearData = (k, narrow) => k.series.map(p => ({
+    ...p, label: p.summary ? 'สรุป' : (narrow ? String(Number(String(p.k).slice(5, 7))) : monthLabel(p.k)),
+  }));
+  const onBarClick = (d) => drillMonth(d?.payload?.k ?? d?.k);
+  const yearBars = (k, { fmt = v => `${v}%`, name = k.key, domain = [0, 100], yWidth = 34, left = -22, stacked = false, span = 1 } = {}) => {
+    const narrow = (cw * span + GAP * (span - 1)) < 420;
+    const data = yearData(k, narrow);
+    if (!data.some(p => p.v != null)) return null;
+    const cellOf = (p, i) => (
+      <Cell key={i} fill={statusColor(monthBarStatus(p, k.target, k.better))}
+        fillOpacity={p.summary ? 0.55 : 1} stroke={p.summary ? 'var(--text2)' : 'none'} strokeDasharray={p.summary ? '3 2' : undefined}
+        cursor={p.summary ? 'default' : 'pointer'} />
+    );
+    const tickY = stacked ? { ...axisTick, fontSize: fs(9.5) } : axisTick;
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 4, right: 6, left, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis dataKey="label" tick={{ ...axisTick, fontSize: fs(9.5) }} interval={0} />
+          <YAxis domain={stacked ? undefined : domain} tick={tickY} width={yWidth}
+            tickFormatter={stacked ? (v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)) : undefined} />
+          <Tooltip {...chartTip} formatter={stacked
+            ? ((v, nm) => [fmtBaht(v), nm === 'dt' ? 'เครื่องหยุด' : 'ของเสีย'])
+            : (v => [fmt(v), name])}
+            labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
+              ? `สรุปปี ${year} (${pl[0].payload.kind === 'sum' ? 'รวมทั้งปี' : 'เฉลี่ยถ่วงน้ำหนักทั้งปี'})`
+              : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year} · กดเพื่อเจาะรายวัน`)} />
+          {k.target != null && !stacked && <ReferenceLine y={k.target} stroke="#ef4444" strokeDasharray="4 3" />}
+          {stacked ? (
+            <>
+              <Bar dataKey="dt" stackId="c" fill="#f59e0b" onClick={onBarClick} cursor="pointer" />
+              <Bar dataKey="ng" stackId="c" fill="#a78bfa" radius={[2, 2, 0, 0]} onClick={onBarClick} cursor="pointer">
+                {data.map((p, i) => <Cell key={i} fill="#a78bfa" fillOpacity={p.summary ? 0.55 : 1} />)}
+              </Bar>
+            </>
+          ) : (
+            <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={onBarClick}>
+              {data.map(cellOf)}
+            </Bar>
+          )}
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  };
 
   const sheetsBox = {
     display: 'grid', gap: GAP, alignContent: 'start', justifyContent: 'center',
@@ -565,21 +728,43 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     } catch { /* เบราว์เซอร์ TV บางรุ่นไม่มี API นี้ — ไม่เป็นไร โหมด fixed ก็เต็มจออยู่แล้ว */ }
   };
 
+  const periodText = isYear ? `ปี ${year}`
+    : period === 'month' ? (monthSel ? `เดือน ${monthLabel(monthSel)} ${monthSel.slice(0, 4)} (เจาะจากปี)` : 'เดือนนี้')
+      : 'สัปดาห์นี้';
+  const shiftCount = isYear ? (kOee.shifts || 0) : fSess.length;
+  const yearNavBtn = {
+    fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+    background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+  };
+
   return (
     <div style={shell}>
       {!board && (
         <PageHeader
           tabs={tabs} tab={tab} onTab={onTab}
           title="OBEYA — ห้องบัญชาการโรงงาน" icon="🏛️"
-          sub={`${period === 'day' ? 'วันนี้' : period === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้'} · ${from} → ${to} · ${fSess.length} กะที่ปิดแล้ว`}
+          sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           actions={(
             <>
               <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 150, fontSize: 13 }}>
                 <option value="">ทุกส่วนงาน</option>
                 {orgSections.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+              {monthSel && (
+                <button onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={{
+                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                  background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+                }}>← ปี {year}</button>
+              )}
+              {isYear && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+                  <button onClick={() => setYear(y => y - 1)} title="ปีก่อน" style={yearNavBtn}>◀</button>
+                  <b style={{ fontSize: 14, minWidth: 44, textAlign: 'center' }}>{year}</b>
+                  <button onClick={() => setYear(y => y + 1)} disabled={year >= yearOf(today)} title="ปีถัดไป" style={yearNavBtn}>▶</button>
+                </span>
+              )}
               {PERIODS.map(p => (
-                <button key={p.key} onClick={() => setPeriod(p.key)} style={{
+                <button key={p.key} onClick={() => pickPeriod(p.key)} style={{
                   fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
                   background: period === p.key ? 'var(--accent)' : 'var(--bg3)',
                   color: period === p.key ? '#08120a' : 'var(--text)',
@@ -608,7 +793,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>🏛️ OBEYA</div>
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-            {secFilter || 'ทุกส่วนงาน'} · {from} → {to} · {fSess.length} กะ
+            {secFilter || 'ทุกส่วนงาน'} · {periodText} · {from} → {to} · {shiftCount.toLocaleString()} กะ
           </div>
           <div style={{ flex: 1 }} />
           <button onClick={() => goBoard(false)} style={{
@@ -635,18 +820,18 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         flex: 1, minWidth: 0, minHeight: 0,
         overflowY: fit ? 'clip' : 'auto', overflowX: 'clip',
       }}>
-        {loading && !fSess.length ? (
+        {loading && (isYear ? !yr : !fSess.length) ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
         ) : (
         <div style={sheetsBox}>
 
           {/* ═══ S — ความปลอดภัย ═══ */}
           <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title="S ความปลอดภัย"
-            sub="ใส่ PPE ครบตอนเช็คชื่อ (leading)" big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
+            sub={`${ytdTag}ใส่ PPE ครบตอนเช็คชื่อ (leading)`} big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
             stat={statusWhy(kS.value, kS.target, 'up', '%')}
             foot={<WarnNote k={k} text={kS.note} tone="#ef4444" />}
             link="ไปหน้าเช็คชื่อ/PPE" onLink={() => drill('/daily-checker')}>
-            {kS.series.length ? (
+            {isYear ? (yearBars(kS, { name: 'PPE ครบ' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kS.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kS.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -666,12 +851,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ Q — คุณภาพ ═══ */}
           <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title="Q คุณภาพ"
-            sub={`%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
+            sub={`${ytdTag}%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
             link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
-            {kQ.series.length ? (
+            {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -687,12 +872,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ D — ส่งมอบ ═══ */}
           <Sheet k={k} cw={cw} icon={axisSheet('D').icon} title="D ส่งมอบ"
-            sub="ผลิตได้ตามแผนในใบงาน" big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
+            sub={`${ytdTag}ผลิตได้ตามแผนในใบงาน`} big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
             delta={gapToTarget(kD.value, kD.target, 'up')} stat={statusWhy(kD.value, kD.target, 'up', '%')}
             foot={kD.note ? <WarnNote k={k} text={kD.note} />
               : `แผน ${kD.plan.toLocaleString()} · ทำได้ ${kD.produced.toLocaleString()} ชิ้น`}
             link="ดูแผน/ใบงาน" onLink={() => drill('/production-plan')}>
-            {kD.series.length ? (
+            {isYear ? (yearBars(kD, { name: 'ทำได้ตามแผน' }) || <EmptyChart k={k} text="ยังไม่มีใบงานที่มีเป้าในปีนี้" />) : kD.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kD.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -712,13 +897,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ C — ต้นทุน ═══ */}
           <Sheet k={k} cw={cw} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
-            sub="เครื่องหยุดนอกแผน + ของเสีย"
+            sub={`${isYear ? "รวมทั้งปี · " : ""}เครื่องหยุดนอกแผน + ของเสีย`}
             big={kC.value != null ? fmtBaht(kC.value) : '—'}
             stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
             link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
-            {kC.series.length ? (
+            {isYear ? (yearBars(kC, { stacked: true, yWidth: 46, left: -8 }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: -8, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -734,13 +919,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ M — กำลังคน ═══ */}
           <Sheet k={k} cw={cw} icon={axisSheet('M').icon} title="M กำลังคน"
-            sub={`มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
+            sub={`${ytdTag}มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
             big={kM.value ?? '—'} unit={kM.value != null ? '%' : ''}
             delta={gapToTarget(kM.value, kM.target, 'up')} stat={statusWhy(kM.value, kM.target, 'up', '%')}
             foot={kM.note ? <WarnNote k={k} text={kM.note} />
               : 'อัตรามาทำงานจากการเช็คชื่อรายวัน (ยังไม่มีข้อมูลขวัญกำลังใจ)'}
             link="ดูกำลังคนย้อนหลัง" onLink={() => drill('/workforce-insight')}>
-            {kM.series.length ? (
+            {isYear ? (yearBars(kM, { name: 'มาทำงาน' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kM.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kM.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -756,15 +941,19 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ OEE — แผ่นแนวนอน (2 ช่อง) ═══ */}
           <Sheet k={k} cw={cw} span={2} icon="⚙️" title="OEE เทียบเป้า"
-            sub={`A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
+            sub={`${ytdTag}A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
             big={kOee.value ?? '—'} unit={kOee.value != null ? '%' : ''}
             delta={gapToTarget(kOee.value, kOee.target, 'up')}
             stat={statusWhy(kOee.value, kOee.target, 'up', '%')}
-            foot={kOee.value != null && kOeePrev.value != null
+            foot={isYear
+              ? (kOee.value != null
+                ? `YTD ${kOee.value}% จาก ${kOee.months} เดือน · ${kOee.shifts.toLocaleString()} กะ · แท่ง "สรุป" = เฉลี่ยถ่วงน้ำหนักทั้งปี · กดแท่งเดือนเพื่อเจาะรายวัน`
+                : 'ยังไม่มีกะที่ปิดแล้วในปีนี้')
+              : kOee.value != null && kOeePrev.value != null
               ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
               : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
             link="เจาะ OEE" onLink={() => drill('/oee-analytics', { section: secFilter, date: to })}>
-            {kOee.series.length ? (
+            {isYear ? (yearBars(kOee, { name: 'OEE', span: 2 }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kOee.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -785,7 +974,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ ทำไมหลุดเป้า — Pareto ═══ */}
           <Sheet k={k} cw={cw} icon="🔎" title="ทำไมถึงหลุดเป้า"
-            sub="เวลาเครื่องหยุดนอกแผน (นาที)"
+            sub={`${isYear ? 'รวมทั้งปี · ' : ''}เวลาเครื่องหยุดนอกแผน (นาที)`}
             big={pareto.total ? pareto.total.toLocaleString() : '—'} unit={pareto.total ? 'นาที' : ''}
             stat={paretoStat}
             foot={pareto.rows.length
