@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { notifyEvent } from '../utils/notifyEvent';
+import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { compressScreenshotImage } from '../utils/layoutImage';
 import { toDecodableImage } from '../utils/heicToJpeg';
@@ -129,6 +130,40 @@ export default function FeedbackModal({ onClose }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  /* ── ตอบกลับคนแจ้ง (2026-09-22 · คำสั่ง user "ตอบคำถาม user ที่แจ้งเข้ามา") ──
+     เดิม `admin_note` ถูกเขียนลง DB ได้ แต่ **ไม่เคยถูกแสดงที่ไหนเลย** ⇒ คนแจ้งส่งเรื่องมาแล้ว
+     ไม่มีวันรู้คำตอบ (เห็นแค่สถานะเปลี่ยนสี) — ซึ่งทำให้คนเลิกแจ้ง
+     ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้อง .select('id') แล้วนับแถว
+        ห้ามขึ้น toast เขียวจาก !error อย่างเดียว (กฎเหล็กเขียน DB ข้อ 2) */
+  const [noteDraft, setNoteDraft] = useState({});
+  const [savingNote, setSavingNote] = useState('');
+  const saveNote = async (row) => {
+    const text = (noteDraft[row.id] ?? row.admin_note ?? '').trim();
+    if (!text) return;
+    setSavingNote(row.id);
+    const res = await supabase.from('user_feedback')
+      .update({ admin_note: text, handled_by: fullName || null, handled_at: new Date().toISOString(),
+                status: row.status === 'new' ? 'seen' : row.status })
+      .eq('id', row.id).select('id');
+    setSavingNote('');
+    if (!checkWrite(res, 'บันทึกคำตอบ')) return;
+    if (!res.data?.length) { toast.error('บันทึกคำตอบไม่สำเร็จ — ไม่มีสิทธิ์แก้เรื่องนี้'); return }
+    // แจ้งเข้ากระดิ่ง 🔔 ของคนแจ้ง — ไม่งั้นเขาไม่รู้ว่ามีคำตอบแล้ว (best-effort ห้ามทำ flow พัง)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (row.user_id && row.user_id !== user?.id) {
+      supabase.from('notifications').insert({
+        user_id: row.user_id, type: 'info',
+        title: '💬 ทีมงานตอบเรื่องที่คุณแจ้งแล้ว',
+        body: text.slice(0, 160),
+      }).then(({ error }) => { if (error) console.warn('feedback reply notify:', error.message); });
+    }
+    toast.success('ส่งคำตอบให้ผู้แจ้งแล้ว');
+    setRows(rs => rs.map(r => r.id === row.id
+      ? { ...r, admin_note: text, handled_by: fullName, handled_at: new Date().toISOString(), status: r.status === 'new' ? 'seen' : r.status }
+      : r));
+    setNoteDraft(d => ({ ...d, [row.id]: undefined }));
+  };
 
   const send = async () => {
     const body = msg.trim();
@@ -369,6 +404,31 @@ export default function FeedbackModal({ onClose }) {
                         {r.user_name || '—'}{r.user_role ? ` · ${r.user_role}` : ''}{r.page_path ? ` · ${r.page_path}` : ''}
                         {r.handled_by ? ` · ปิดโดย ${r.handled_by}` : ''}
                       </div>
+                      {/* 💬 คำตอบจากทีมงาน — คนแจ้งต้องเห็น ไม่งั้นแจ้งไปก็เหมือนตกน้ำ */}
+                      {r.admin_note && (
+                        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8,
+                          background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
+                          <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
+                            💬 คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
+                          </div>
+                          <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
+                        </div>
+                      )}
+                      {isAdmin && (
+                        <div style={{ marginTop: 7 }}>
+                          <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
+                            onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
+                            placeholder="ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)"
+                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7,
+                              padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
+                          <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
+                            style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 7, border: 'none',
+                              background: 'var(--accent)', color: '#08130a',
+                              cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
+                            {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
+                          </button>
+                        </div>
+                      )}
                       {isAdmin && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS).map(([key, s]) => (
