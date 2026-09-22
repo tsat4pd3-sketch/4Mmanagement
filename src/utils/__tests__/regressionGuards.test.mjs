@@ -401,3 +401,20 @@ test('🛡️ live-oee-must-pass-pairmap — ทุกจอที่คิด O
     + '   ⚠️ ห้ามยุบคู่ในฝั่งยอดผลิต/%Q — นั่นนับ "ชิ้น" คนละหน่วยกับ "shot"\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
+
+test('🛡️ virtual-module-plugin-in-both-vite-configs — plugin ที่หน้าใช้ ต้องมีทั้ง build จริงและ audit', () => {
+  const need = 'vite-plugin-schema-usage';
+  const uses = walk(join(ROOT, 'src'), ['.jsx', '.js'])
+    .filter(f => /from\s+['"]virtual:schema-usage['"]/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(f => relative(ROOT, f));
+  if (!uses.length) return;   // ไม่มีหน้าไหนใช้แล้ว = ไม่ต้องบังคับ
+  const missing = ['vite.config.js', 'audit/vite.audit.mjs']
+    .filter(c => !readFileSync(join(ROOT, c), 'utf8').includes(need));
+  assert.deepEqual(missing, [],
+    '\n\n❌ config ด้านล่างไม่ได้ต่อ plugin `' + need + '` ทั้งที่มีหน้าที่ import virtual:schema-usage อยู่\n'
+    + '   (' + uses.join(', ') + ')\n'
+    + '   ทำไมห้าม: virtual module ไม่มีไฟล์จริงบนดิสก์ — config ไหนไม่ต่อ plugin ไว้ หน้านั้น**โหลดไม่ขึ้นเลย**\n'
+    + '   ตกที่ audit/vite.audit.mjs = crashsweep/mobilesweep เปิดหน้าไม่ได้ ⇒ หน้าพังโดยไม่มีด่านไหนเห็น\n'
+    + '   แก้ยังไง: import schemaUsage จาก scripts/vite-plugin-schema-usage.mjs แล้วใส่ใน plugins ของ config นั้น\n\n'
+    + missing.map(h => '   • ' + h).join('\n') + '\n');
+});

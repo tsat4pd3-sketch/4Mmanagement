@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { notifyEvent } from '../utils/notifyEvent';
+import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
 
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
@@ -38,7 +39,9 @@ export default function FeedbackModal({ onClose }) {
 
   const [tab, setTab]         = useState('send');
   const [kind, setKind]       = useState('bug');
-  const [msg, setMsg]         = useState('');
+  // ข้อความตั้งต้นจากหน้าที่สั่งเปิดกล่องนี้ (เช่นปุ่ม 🐛 ในหน้า 🗄️ โครงสร้างฐานข้อมูล
+  // ที่ใส่ชื่อตาราง/PK/FK/หน้ามาให้แล้ว) — อ่านครั้งเดียวตอน mount แล้วล้างทิ้ง
+  const [msg, setMsg]         = useState(() => takeFeedbackPrefill() || '');
   const [saving, setSaving]   = useState(false);
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(false);
