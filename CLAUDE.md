@@ -418,17 +418,19 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16)
+## ⚫ ของที่ยุบ/ถอดออกแล้ว (archived — อย่ารื้อกลับโดยไม่ถาม user)
 
-> ⚫ **archived** — ผังรวมโรงงาน = `/factory-map` (FactoryMap) ที่เดียวเท่านั้น — polygon ต่อไลน์ + หลายโหมด (ยอดผลิต/OEE/Downtime/ของเสีย/คน/PM เครื่องจักร) ดู "Factory Master Map" ด้านบน
-> 📄 รายละเอียดเต็ม → `docs/modules/_archived/factory-overview-merged.md`
+- **ผังรวมโรงงาน** ยุบเป็น `/factory-map` ที่เดียว (2026-07-16) → `docs/modules/_archived/factory-overview-merged.md`
+- **PM Photo-Compare** (เทียบรูปเงา) ถอดทิ้ง ไม่คุ้ม (2026-07-22) → `docs/modules/_archived/pm-photo-compare-removed.md`
 
 ---
 
-## PM Photo-Compare Inspection — ❌ ถอดออกแล้ว (2026-07-22)
+## 🗄️ โครงสร้างฐานข้อมูล — `/schema` (2026-09-22)
 
-> ⚫ **archived** — ถอดระบบเทียบรูปเงา (photo-hunt / PhotoCompareModal) ออกทั้งหมด ตามคำสั่ง user: มันไม่ได้เทียบความเหมือนด้วย AI (แค่ wipe/blink/diff เงา) — ไม่คุ้ม · ใช้ฟีเจอร์ที่มีอยู่พอ = เห็นรูปมาตรฐาน + เห็นจุดที่ต้องเช็ค
-> 📄 รายละเอียดเต็ม → `docs/modules/_archived/pm-photo-compare-removed.md`
+จอให้ทีมงาน**เห็นเองว่าตารางชื่ออะไร · PK/FK ผูกกันแบบไหน · หน้าไหนใช้ตารางไหน** แล้วกดแจ้งบัคพร้อมบริบท
+· โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
+· **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
+> 📄 `docs/modules/schema-map.md`
 
 ---
 

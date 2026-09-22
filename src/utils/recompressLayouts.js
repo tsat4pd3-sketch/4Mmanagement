@@ -209,6 +209,29 @@ export async function recompressLayouts({ supabase, supabaseDR, onProgress = () 
     });
   });
 
+  /* 6) รูปพนักงาน — Main · bucket employee-photos · ไฟล์อยู่ราก (ไม่มี `/` ในชื่อ)
+        **ก้อนใหญ่สุดที่เหลือฝั่ง Main: 54.9 MB/วัน** (วัดจริง 21/09 — 1,391 ครั้ง × 40 KB)
+        ของในถัง: jpg 231 ไฟล์ (เฉลี่ย 66 KB) · **png 44 ไฟล์ (เฉลี่ย 628 KB)** ⇒ png คือหางยาวที่แพง
+        ⚠️ `layouts/` และ `factory/` อยู่ถังเดียวกันแต่เป็นงานกลุ่ม 1-2 แล้ว ⇒ ที่นี่รับเฉพาะไฟล์ราก */
+  const { data: empRows } = await supabase.from('employees')
+    .select('id, name, image_url').not('image_url', 'is', null);
+  groupByUrl(empRows || [], r => r.image_url).forEach((rows, url) => {
+    const oldName = objectNameFromUrl(url, 'employee-photos');
+    if (!oldName || oldName.includes('/')) return;          // ผัง/ผังโรงงาน = คนละงาน
+    if (/\.gif$/i.test(oldName)) return;                    // GIF บีบไม่ได้ (คงการเคลื่อนไหว)
+    jobs.push({
+      label: `รูปพนักงาน ${rows[0]?.name || oldName}`,
+      url, oldName, storage: mainStore,
+      minBytes: PHOTO_MIN_BYTES, compress: compressPhotoImage,
+      newPathOf: ext => `${oldName.replace(/\.[^.]+$/, '')}.${ext}`,
+      saveRows: async (newPath) => {
+        const { data: pub } = mainStore.getPublicUrl(newPath);
+        // อัปเดตทุกคนที่ใช้รูปนี้ร่วมกัน (กฎข้อ 2) — ชี้จาก url เดิม
+        return supabase.from('employees').update({ image_url: pub.publicUrl }).eq('image_url', url);
+      },
+    });
+  });
+
   const total = jobs.length;
   const batch = limit > 0 ? jobs.slice(0, limit) : jobs;
   for (let i = 0; i < batch.length; i++) {

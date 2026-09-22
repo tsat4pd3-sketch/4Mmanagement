@@ -31,7 +31,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
-import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine } from '../utils/bomTree';
+import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -710,7 +710,12 @@ export default function ProductMaster() {
       {/* ── Main Tab Bar ── */}
       {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {[{ key:'products', label:'🔩 Products' }, { key:'bom', label:'📦 BOM' }, { key:'packaging', label:'📦 Packaging' }, { key:'parts', label:'🗂 Parts Master' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'routing', label:'🔀 Routing' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'export', label:'📤 Export' }].map(t => (
+        {/* 🔢 เรียงแท็บตาม **ลำดับงานจริง** ที่ user วางไว้ (21/09) — ไม่ใช่ตามที่ทำฟีเจอร์มาก่อนหลัง
+            1️⃣ ทะเบียนชิ้นส่วน → 2️⃣ ประกอบ BOM → 3️⃣ เปิดเป็นสินค้าที่ผลิต
+            เหตุผล: ของที่ผ่านมาคนเริ่มจากแท็บ Products (แท็บแรก) แล้วคีย์ BOM แยกใบของใครของมัน
+            ⇒ ของชิ้นเดียวถูกคีย์ซ้ำหลายใบ = ต้นเหตุ "แถวนับซ้ำ" ทั้งฐาน (ดู docs/modules/bom-levels.md)
+            ⚠️ default ของ `useTabParam` ยังเป็น 'products' — ลิงก์เก่า/บุ๊กมาร์กไม่เปลี่ยนปลายทาง */}
+        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' }, { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].map(t => (
           <button key={t.key} onClick={() => setMainTab(t.key)}
             style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
               background: mainTab===t.key ? 'var(--accent)' : 'transparent',
@@ -1400,7 +1405,7 @@ export default function ProductMaster() {
             { key: 'note', label: 'หมายเหตุ' },
           ]} />
       )}
-      {mainTab === 'export' && <ExportPanel items={items} kanbanStds={kanbanStds} bomCounts={bomCounts} />}
+      {mainTab === 'export' && <ExportPanel />}
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
       {csvPreview && (
@@ -1650,6 +1655,24 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     return [...partsMaster, ...made];
   }, [partsMaster, products, selProduct?.id]);
 
+  /* 🔴 กันซ้ำที่ต้นทาง (step 2 ของ workflow · user 21/09)
+     user อธิบายต้นเหตุ: *"สมมติ 10011 มีลูก 20011 30011 ไปสร้าง product เบอร์ 10011 ก่อน ก็จะมีบอม
+     2 ตัว และพอไปสร้าง product เบอร์ 20011 ก็จะมีบอม 30011 เป็นลูกซ้ำ ซึ่งผิด"*
+     ⇒ ของที่อยู่ใน "ชั้นลึก" ของใบนี้อยู่แล้ว ถ้าเอามาใส่ชั้น 1 อีก = นับซ้ำ
+     เดิมระบบรู้ตัวตอน**กางต้นไม้ทีหลัง** (แถบแดง + ปุ่มลบ) ⇒ ตามเก็บไม่ทัน
+     ตอนนี้บอกตั้งแต่ตอนเลือก — **เตือน ไม่บล็อก** (ของบางตัวใช้ทั้งใน sub-assy และที่ FG ตรงๆ ได้จริง) */
+  const deepMats = useMemo(() => {
+    if (!selProduct?.mat_no) return new Map();
+    const t = explodeBom(selProduct.mat_no, bomIx.bomOf, { sheetFor: bomIx.sheetFor });
+    const m = new Map();
+    t.rows.forEach(r => {
+      if (r.level <= 1 || !r.mat_no) return;
+      const k = (r.mat_no || '').trim().toUpperCase();
+      if (!m.has(k)) m.set(k, r.parent);
+    });
+    return m;
+  }, [selProduct?.mat_no, bomIx]);
+
   const pickerFiltered = useMemo(() => {
     const q = pickerQ.trim().toLowerCase();
     /* ซ่อนเฉพาะที่มีอยู่ "ใต้ตัวแม่เดียวกัน" แล้ว — ตัวเดียวกันใต้แม่คนละตัวเพิ่มได้ (ตรงกับ SAP)
@@ -1684,7 +1707,39 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const slocRegistered = slocs.some(s => slocLabel(s.code) === slocCode);
   const slocUnregistered = slocCode !== '' && !slocRegistered;
 
-  const openPicker = (parentMat = '') => { setPickerQ(''); setPickerSel([]); setPickerParent(parentMat); setShowPicker(true); };
+  /* 🔴 ห้ามรับ argument ดิบ — `onClick={openPicker}` ส่ง **click event** เข้ามาเป็น arg ตัวแรก
+     เคยพังจริง 22/09: event ถูกเก็บลง `pickerParent` → `(m || '').trim()` ระเบิดทั้งจอ
+     ("(e || \"\").trim is not a function") ⇒ รับเฉพาะ string เท่านั้น ที่เหลือตีเป็นชั้น 1 */
+  /* ➕ step 2 ของ workflow: พาร์ทในทะเบียนต้อง "มีใบ BOM ของตัวเอง" ได้
+     user 22/09: *"ในพาร์ท BOM ก็ยังเพิ่มพาร์ทหลักที่จะสร้าง BOM step ถัดไปไม่ได้"*
+     ข้อจำกัดจริง: `bom_items.product_id` → `dr_products.id` ⇒ **ของที่จะเป็นหัวใบต้องมีแถวใน
+     dr_products** · พาร์ทที่อยู่แค่ `parts_master` จึงเปิดใบ BOM ของตัวเองไม่ได้เลย
+     ⇒ ปุ่มนี้สร้างแถว dr_products ขั้นต่ำให้ (mat_no + ชื่อ) แล้วเลือกให้เลย
+     ⚠️ ไม่ตั้ง `line_name`/CT/เป้า = **ไม่โผล่บนบอร์ดผลิต** (ทุกจอกรองด้วยไลน์) — ค่าผลิตไปเติมที่แท็บ 3️⃣
+     ⚠️ ไม่ติดธง OP — นี่คือพาร์ทจริง (ชั้น OP ต้องติ๊กเองที่แท็บ Products ตามเดิม) */
+  const [headBusy, setHeadBusy] = useState(false);
+  const [headPick, setHeadPick] = useState(false);
+  const makeBomHead = async (part) => {
+    const mat = String(part?.mat_no ?? '').trim().toUpperCase();
+    if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
+    const exist = products.find(pr => String(pr.mat_no ?? '').trim().toUpperCase() === mat);
+    if (exist) { setSelProduct(exist); setSearch(exist.mat_no); toast.info(`${mat} มีใบ BOM อยู่แล้ว — เลือกให้แล้ว`); return; }
+    setHeadBusy(true);
+    const { data, error } = await supabaseDR.from('dr_products')
+      .insert({ mat_no: mat, name: part.part_name || mat, p_no: part.part_no || null, is_active: true, created_by: fullName })
+      .select('id, name, code, mat_no, p_no, customer, line_name').single();
+    setHeadBusy(false);
+    if (error) { toast.error(`เปิดใบ BOM ไม่สำเร็จ: ${error.message}`); return; }
+    toast.success(`เปิดใบ BOM ของ ${mat} แล้ว — ใส่ค่าการผลิต (ไลน์/CT/เป้า) ที่แท็บ 3️⃣ Products`);
+    await loadAll();
+    setSelProduct(data); setSearch(mat);
+  };
+
+  const openPicker = (parentMat) => {
+    setPickerQ(''); setPickerSel([]);
+    setPickerParent(typeof parentMat === 'string' ? parentMat : '');
+    setShowPicker(true);
+  };
   const openEdit_  = (it) => {
     setEditItem(it);
     setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
@@ -1754,6 +1809,19 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         is_active:    true,
       }));
     if (!rows.length) { setSaving(false); toast.info('พาร์ทที่เลือกมีอยู่ใน BOM แล้วทั้งหมด'); return; }
+
+    /* ถามย้ำเมื่อกำลังใส่ของที่อยู่ชั้นลึกของใบนี้แล้วเข้าชั้น 1 (เคส 10011/20011/30011 ของ user)
+       ⚠️ ถามหลังกรอง rows แล้ว เพื่อไม่ถามถึงตัวที่ถูกตัดออกไปอยู่ดี */
+    if (!pickerParent) {
+      const willDup = rows.map(r => ({ mat: r.mat_no, under: deepMats.get((r.mat_no || '').trim().toUpperCase()) }))
+        .filter(x => x.under);
+      if (willDup.length && !window.confirm(
+        `⚠️ ${willDup.length} รายการนี้อยู่ในชั้นลึกของใบนี้อยู่แล้ว:\n\n` +
+        willDup.map(x => `• ${x.mat} — อยู่ใต้ ${x.under}`).join('\n') +
+        `\n\nใส่ที่ชั้น 1 อีก = ยอดต่อ 1 FG ถูกนับ 2 รอบ\n` +
+        `(ถ้าจะใส่จริง ให้เลือก "เพิ่มเข้าไปใต้:" เป็นตัวแม่ที่ถูกต้องแทน)\n\nยืนยันใส่ที่ชั้น 1?`
+      )) { setSaving(false); return; }
+    }
 
     /* 🗂 step 1 ของ workflow: ทุกอย่างต้องอยู่ในทะเบียนชิ้นส่วน (user 21/09)
        พาร์ทผลิตเองที่หลุดทะเบียน ลงให้เลยตอนนี้ — ไม่งั้นทะเบียนโหว่ต่อไปเรื่อยๆ (20 ตัวที่ค้างอยู่)
@@ -1909,6 +1977,15 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* ➕ เปิดใบ BOM ให้พาร์ทในทะเบียนที่ยังไม่มีใบของตัวเอง (step 2 → 3) */}
+        {canCreate && (
+          <button onClick={() => setHeadPick(true)} disabled={headBusy}
+            style={{ marginTop: 8, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
+              cursor: headBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
+              background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.45)' }}>
+            {headBusy ? 'กำลังเปิดใบ…' : '➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
+          </button>
+        )}
         {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
         <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
           {[['part', `พาร์ท (${products.length - opCount})`], ['op', `🔩 ขั้นตอน (${opCount})`], ['all', 'ทั้งหมด']].map(([k, label]) => (
@@ -1966,7 +2043,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               </div>
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={openPicker} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
+                  <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
                   <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
                 </div>
               )}
@@ -2092,6 +2169,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         )}
       </div>
 
+      {/* ══ เลือกพาร์ทจากทะเบียน มาเปิดเป็น "หัวใบ BOM" ══ */}
+      {headPick && (
+        <PartsPickModal parts={partsMaster} onClose={() => setHeadPick(false)}
+          onPick={(pt) => { setHeadPick(false); makeBomHead(pt); }} />
+      )}
+
       {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
       {showPicker && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -2143,6 +2226,13 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                     <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${sel ? 'var(--accent)' : 'var(--border)'}`, background: sel ? 'var(--accent)' : 'transparent', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#08130a' }}>{sel ? '✓' : ''}</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                        {!pickerParent && deepMats.has((p.mat_no || '').trim().toUpperCase()) && (
+                          <span title={`${p.mat_no} อยู่ใต้ ${deepMats.get((p.mat_no || '').trim().toUpperCase())} ในใบนี้แล้ว — ใส่ชั้น 1 อีกจะกลายเป็นนับซ้ำ`}
+                            style={{ marginRight: 5, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
+                              background: 'rgba(239,68,68,0.16)', color: '#ef4444' }}>
+                            🔴 อยู่ใต้ {deepMats.get((p.mat_no || '').trim().toUpperCase())} แล้ว
+                          </span>
+                        )}
                         {p._made && (
                           <span title="พาร์ทที่เราผลิตเอง — ยังไม่อยู่ในทะเบียนชิ้นส่วน ระบบจะลงทะเบียนให้ตอนบันทึก"
                             style={{ marginRight: 5, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
@@ -2337,55 +2427,89 @@ function downloadCsv(filename, headers, rows) {
 /* ═══════════════════════════════════════════════════════════════
    EXPORT PANEL
 ═══════════════════════════════════════════════════════════════ */
-function ExportPanel({ items, kanbanStds, bomCounts }) {
-  const [parts, setParts] = useState([]);
-  const [partsLoaded, setPartsLoaded] = useState(false);
+/* 📤 ทุกตารางของหน้านี้ export ได้ (user 22/09: "ใน export ควร export ได้ทุกตาราง")
+   ทะเบียนเดียวที่นี่ = **ห้ามเพิ่มปุ่ม export รายตัวกระจายในโค้ด** เพิ่มแถวใน EXPORTS แถวเดียวจบ
+   · `cols` ว่าง = ดึงทุกคอลัมน์ที่ตารางมี (อ่านจากคีย์ของแถวแรก) — ตารางเพิ่มคอลัมน์แล้วไม่ต้องตามแก้
+   · ⚠️ `select('*')` ที่นี่ **ยอมได้เฉพาะตอนกดปุ่ม export** (กฎ egress ข้อ 11 ห้ามใน "จอรายการ") */
+const EXPORTS = [
+  { key: 'parts_master',     icon: '🗂', label: 'Parts Master',  order: 'mat_no',
+    cols: ['mat_no','part_name','part_no','uom','qty_per_pkg','supplier','note','material_cost','standard_cost','is_active'] },
+  { key: 'bom_items',        icon: '📦', label: 'BOM',           order: 'product_id',
+    cols: ['product_id','parent_mat','item_no','mat_no','part_name','part_no','qty_per_unit','uom','qty_per_pkg','op_no','storage_location','source_line','supplier','is_active'] },
+  { key: 'dr_products',      icon: '🔩', label: 'Products',      order: 'mat_no',
+    cols: ['mat_no','name','code','p_no','customer','line_name','process_type','cycle_time_sec','target_per_shift','pair_mat_no','posting_mode','lot_accumulate_threshold','is_operation','op_parent_mat','op_seq','is_active'] },
+  { key: 'part_routings',    icon: '🔀', label: 'Routing',       order: 'mat_no',  cols: [] },
+  { key: 'product_packaging', icon: '📦', label: 'Packaging',    order: 'product_id', cols: [] },
+  { key: 'container_types',  icon: '🧺', label: 'ชนิดภาชนะ',     order: 'code',    cols: [] },
+  { key: 'kanban_standards', icon: '🎴', label: 'Kanban Std',    order: 'mat_no',  cols: [] },
+  { key: 'customers',        icon: '🏷️', label: 'ลูกค้า',        order: 'code',    cols: [] },
+  { key: 'suppliers',        icon: '🏭', label: 'Supplier',      order: 'code',    cols: [] },
+];
 
-  useEffect(() => {
-    supabaseDR.from('parts_master').select('*').order('mat_no').then(({ data }) => {
-      setParts(data || []);
-      setPartsLoaded(true);
-    });
-  }, []);
-
+function ExportPanel() {
+  const [busy, setBusy] = useState('');
+  const [counts, setCounts] = useState({});   // key → จำนวนแถว (null = ยังไม่มีตาราง/อ่านไม่ได้)
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' }).replace(/-/g, '');
 
-  const exportProducts = () => {
-    const headers = ['name','code','mat_no','p_no','customer','line_name','cycle_time_sec','target_per_shift','process_type','is_active'];
-    downloadCsv(`products_${today}.csv`, headers, items);
-  };
+  /* นับแถวด้วย head+count — ไม่ดึงข้อมูลจริง (จอนี้เปิดบ่อย ห้ามโหลดทุกตารางมากองไว้) */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const out = {};
+      for (const e of EXPORTS) {
+        const { count, error } = await supabaseDR.from(e.key).select('*', { count: 'exact', head: true });
+        out[e.key] = error ? null : (count ?? 0);
+      }
+      if (alive) setCounts(out);
+    })();
+    return () => { alive = false; };
+  }, []);
 
-  const exportParts = () => {
-    const headers = ['mat_no','part_name','part_no','uom','qty_per_pkg','supplier','note','material_cost','standard_cost','is_active'];
-    downloadCsv(`parts_master_${today}.csv`, headers, parts);
+  const run = async (e) => {
+    setBusy(e.key);
+    try {
+      /* เพดาน 1000 แถว/คิวรี (กฎเหล็กข้อ 5) ⇒ ต้องไล่เป็นหน้า ไม่งั้นไฟล์ขาดแบบเงียบๆ */
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await supabaseDR.from(e.key).select('*').order(e.order).range(from, from + 999);
+        if (error) { toast.error(`export ${e.label} ไม่สำเร็จ: ${error.message}`); return; }
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      if (!rows.length) { toast.info(`${e.label} ยังไม่มีข้อมูล`); return; }
+      const headers = e.cols.length ? e.cols : Object.keys(rows[0]).filter(k => k !== 'id');
+      downloadCsv(`${e.key}_${today}.csv`, headers, rows);
+      toast.success(`⬇️ ${e.label} ${rows.length.toLocaleString()} แถว`);
+    } finally { setBusy(''); }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📤 Export ข้อมูล</div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {/* Products card */}
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, flex: '1 1 240px', minWidth: 240 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>🔩 Product List</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
-            ส่งออก dr_products ทั้งหมด {items.length} รายการ<br />
-            Columns: name, code, mat_no, p_no, customer, line_name, cycle_time_sec, target_per_shift, process_type, is_active
-          </div>
-          <button onClick={exportProducts} style={{ ...btnPrimary, width: '100%', textAlign: 'center' }}>
-            ⬇️ ดาวน์โหลด Products.csv
-          </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📤 Export ข้อมูล</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+          CSV มี BOM หน้าไฟล์ (Excel เปิดภาษาไทยไม่เพี้ยน) · เกิน 1,000 แถวระบบไล่ดึงเป็นหน้าให้เอง ไม่ขาดกลาง
         </div>
-        {/* Parts card */}
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, flex: '1 1 240px', minWidth: 240 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>🗂 Parts Master</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
-            ส่งออก parts_master {partsLoaded ? `${parts.length} รายการ` : '(กำลังโหลด...)'}<br />
-            Columns: mat_no, part_name, part_no, uom, qty_per_pkg, supplier, note, material_cost, standard_cost, is_active
-          </div>
-          <button onClick={exportParts} disabled={!partsLoaded} style={{ ...btnPrimary, width: '100%', textAlign: 'center', opacity: partsLoaded ? 1 : 0.6 }}>
-            ⬇️ ดาวน์โหลด Parts.csv
-          </button>
-        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12, alignContent: 'start' }}>
+        {EXPORTS.map(e => {
+          const n = counts[e.key];
+          const missing = n === null;   // ตารางยังไม่มี/อ่านไม่ได้ — บอกตรงๆ ห้ามซ่อนปุ่ม
+          return (
+            <div key={e.key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14,
+              display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{e.icon} {e.label}</div>
+              <div style={{ fontSize: 11, color: missing ? '#f59e0b' : 'var(--muted)', fontFamily: 'monospace', flex: 1 }}>
+                {e.key}{missing ? ' · ⚠️ อ่านไม่ได้' : n === undefined ? ' · กำลังนับ…' : ` · ${n.toLocaleString()} แถว`}
+              </div>
+              <button onClick={() => run(e)} disabled={!!busy || missing || !n}
+                style={{ ...btnPrimary, width: '100%', textAlign: 'center', fontSize: 12,
+                  opacity: (busy || missing || !n) ? 0.5 : 1, cursor: (busy || missing || !n) ? 'not-allowed' : 'pointer' }}>
+                {busy === e.key ? 'กำลังดึง…' : '⬇️ ดาวน์โหลด CSV'}
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

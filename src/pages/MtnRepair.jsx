@@ -78,6 +78,12 @@ const localDt = (v) => { if (!v) return ''; const d = new Date(v); const p = n =
 const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
+/* 📐 รูปในใบ MO ใช้สัดส่วน 16:9 ทุกจุด (แจ้ง/ซ่อมเสร็จ/QA) — ครอบกลางภาพให้อัตโนมัติใน resizeImage
+   ที่มา: ผจก.สุรเสน 22/09 "กำหนดอัตราส่วน 16:9 ขยายผลไปทุก Step MO ที่มีการแนบรูป"
+   ⚠️ เลือก **ครอบให้** ไม่ใช่ **ปฏิเสธรูป** (user ตัดสิน 22/09) — หน้างานถ่ายจากมือถือ
+      ถ้าปฏิเสธจะแนบรูปไม่ได้เลย · เพิ่มจุดแนบรูปใหม่ในใบ MO ให้ส่ง aspect ตัวนี้ด้วยเสมอ */
+const MO_IMG_ASPECT = 16 / 9;
+
 const uploadMtnImg = async (blob, path) => {
   const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
   if (error) throw error;
@@ -754,7 +760,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeImage(beforeFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -2161,7 +2167,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
         let imgWarn = null;
         if (afterFile) {
-          try { const b = await resizeImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeImage(afterFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
         }
         /* 🔴 ต้องเช็คผลก่อนแตะสต็อก (audit 2026-09-02)
@@ -2240,7 +2246,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s, quality_related: QA_RELATED });
         // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
         if (qaFile) {
-          try { const b = await resizeImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeImage(qaFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
         }
         if (!editMode) { upd.status = 'qa'; upd.current_step = step; upd.qa_at = new Date().toISOString(); }
