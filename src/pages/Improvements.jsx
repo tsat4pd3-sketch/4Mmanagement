@@ -1461,7 +1461,7 @@ export default function Improvements() {
                 {/* ⚠️ เดิมหัวข้อเขียนว่า "พาเรโต้" แต่ของจริงเป็น **ลิสต์ตัวเลือก** (กดเพื่อตั้งเป็นเป้าโปรเจค)
                     ไม่มีเส้นสะสม/เส้น 80% จึงไม่ใช่ Pareto chart — เรียกให้ตรงกับสิ่งที่มันเป็น แล้วเติม
                     "แก้ N อันแรก = กี่ %" ซึ่งเป็นสิ่งที่คนอยากได้จาก Pareto จริงๆ ตอนเลือกเป้า (2026-09-15)
-                    กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-repair (ParetoAbcChart) */}
+                    กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-analysis (ParetoAbcChart) */}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
                   ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค
                   {paretoLead && <> · <b style={{ color: 'var(--accent)' }}>{paretoLead}</b></>}

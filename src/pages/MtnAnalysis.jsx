@@ -1,10 +1,15 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabaseDR } from '../supabaseClient';
+import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import MtnKpiPanel from '../components/MtnKpiPanel';
 import useTabParam from '../utils/useTabParam';
+import useProductionLines from '../utils/useProductionLines';
 import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
+import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 
@@ -25,6 +30,14 @@ import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, Check
    🔴 กฎความซื่อสัตย์ของจอ: ทุกกราฟที่ข้อมูลไม่พอ **ต้องเขียนบนจอว่าไม่พอพร้อมเหตุผล**
       ห้ามโชว์ 0 ห้ามซ่อนแผง · แท็บที่ไม่มีข้อมูลก็ยังต้องอยู่ (กดเข้าไปแล้วเห็นว่า "ยังไม่มีใบ")
 
+   📊 **2 แท็บใหญ่ (2026-09-22 รอบ 2 · คำสั่ง user "ฟังก์ชันของช่างกระจายหลายหน้า")**
+     `?tab=kpi`  = KPI ช่าง (MTTA/MTTR/MDT · ความพึงพอใจ · ความน่าเชื่อถือรายอุปกรณ์)
+                   — **ย้ายมาจาก `/mtn-repair?tab=kpi`** ซึ่ง redirect มาที่นี่แล้ว
+     `?tab=qc7`  = QC 7 Tools แยกชนิดสินทรัพย์ (ชนิดอยู่ `?asset=` **ไม่ใช่ `?tab=`** — แท็บซ้อนแท็บ
+                   ต้องคนละ param ตาม UI-CONVENTIONS §6.8)
+   🔴 พาเรโตมีที่เดียวคือแท็บ `qc7` — เดิมซ้ำกับแท็บ KPI ของ `/mtn-repair` (ถอดออกแล้ว)
+      **ห้ามเอากลับไปใส่ในแผง KPI อีก** จอเดียวกัน 2 พาเรโตคนละฐาน = คนอ่านเถียงกันว่าเชื่อใบไหน
+
    ⚠️ egress: หน้านี้ **ไม่ poll ไม่ subscribe** — โหลดตอนเปิด/กดรีเฟรช/เปลี่ยนช่วงเวลาเท่านั้น
       และ `select` เฉพาะคอลัมน์ที่ใช้จริง (`mtn_orders` มี 116 คอลัมน์ — `select('*')` = 1.59 MB/ครั้ง)
    ═════════════════════════════════════════════════════════════════════════════════════════ */
@@ -36,6 +49,8 @@ const MO_COLS = [
   'problem_group', 'problem_characteristic', 'report_note',
   'cause_category', 'cause_other', 'root_cause', 'solution',
   'labor_cost', 'parts_cost', 'repair_type',
+  // แผง KPI ช่าง (MtnKpiPanel): ความพึงพอใจ + ช่วงที่อยู่กับ supplier (techRepairMin หักออกจาก MTTR)
+  'satisfaction', 'vendor_sent_at', 'vendor_back_at',
 ].join(',');
 const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
 
@@ -91,13 +106,22 @@ const KPI = ({ label, value, unit, sub, warn }) => (
   </div>
 );
 
+const MAIN_TABS = [
+  { key: 'kpi', label: '📊 KPI ช่าง' },
+  { key: 'qc7', label: '🧪 QC 7 Tools (แยกชนิดอุปกรณ์)' },
+];
+
 export default function MtnAnalysis() {
-  const [tab, setTab] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine');
+  const { role, lineId, sections } = useContext(UserContext);
+  const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
+  // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
+  const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
   const [days, setDays] = useState(90);
   const [src, setSrc] = useState('mo');
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});
+  const [machines, setMachines] = useState([]);   // แถวเต็ม — แผง KPI ส่งต่อให้ MachineReliability
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
@@ -107,17 +131,24 @@ export default function MtnAnalysis() {
     try {
       /* ทะเบียนเครื่อง = ตัวตัดสินชนิดสินทรัพย์ · เลขเครื่องซ้ำได้ในทะเบียน → ตัวแรกชนะ
          (ไม่ใช่การตัดสินใจเชิงธุรกิจ แค่ต้องคงที่ ไม่ให้แท็บเปลี่ยนไปมาระหว่างโหลด) */
+      /* 🔴 `fetchAllRows` คืน **`{ data, error }`** ไม่ใช่อาร์เรย์ — ต้อง destructure เสมอ
+         (เคยพลาดจริง 22/09: เอาไปใช้เป็นอาร์เรย์ตรงๆ ⇒ `.forEach is not a function`
+          แล้วถูก try/catch กลืนเป็น "โหลดข้อมูลไม่สำเร็จ" ทั้งหน้า · build/lint/crashsweep ผ่านหมด)
+         และต้องอ่าน `error` ด้วย — supabase-js ไม่ throw (กฎเหล็ก DB ข้อ 1) */
       const [mcs, mo, dt] = await Promise.all([
-        fetchAllRows(supabaseDR, 'machines', 'machine_no, equipment_kind'),
+        fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind', q => q.eq('is_active', true).order('sort_order')),
         fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).order('report_at', { ascending: false })),
         fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).order('started_at', { ascending: false })),
       ]);
+      const firstErr = [mcs, mo, dt].map(r => r?.error).find(Boolean);
+      if (firstErr) throw new Error(firstErr.message || String(firstErr));
+      const mcRows = mcs?.data || [], moRows = mo?.data || [], dtRows = dt?.data || [];
       const map = {};
-      (mcs || []).forEach(m => {
+      mcRows.forEach(m => {
         const k = String(m?.machine_no || '').trim().toUpperCase();
         if (k && !map[k]) map[k] = m.equipment_kind;
       });
-      setKindByMc(map); setOrders(mo || []); setDts(dt || []);
+      setKindByMc(map); setMachines(mcRows); setOrders(moRows); setDts(dtRows);
     } catch (e) {
       setErr(e?.message || String(e));
       toast.error('โหลดข้อมูลวิเคราะห์ไม่สำเร็จ: ' + (e?.message || e));
@@ -173,7 +204,18 @@ export default function MtnAnalysis() {
     return m;
   }, [events]);
 
-  const rows = byClass[tab] || [];
+  /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
+     ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
+  const lines = useProductionLines();
+  const scopeLines = useMemo(() => {
+    if (role === 'admin') return null;
+    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
+    if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
+    return null;
+  }, [lines, role, lineId, sections]);
+  const scopedLineObjs = useMemo(() => (scopeLines ? lines.filter(l => scopeLines.has(l.name)) : lines), [lines, scopeLines]);
+
+  const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
   const unit = srcMeta.unit;
   const wKeys = useMemo(() => weekKeysBack(days), [days]);
@@ -223,7 +265,7 @@ export default function MtnAnalysis() {
     { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
   ]), []);
 
-  const tabs = ASSET_CLASSES.map(a => ({
+  const assetTabs = ASSET_CLASSES.map(a => ({
     key: a.key,
     label: `${a.icon} ${a.label}${loading ? '' : ` (${(byClass[a.key] || []).length})`}`,
   }));
@@ -232,20 +274,30 @@ export default function MtnAnalysis() {
     <div style={{ padding: '14px 16px 40px' }}>
       <PageHeader
         title="วิเคราะห์ปัญหา (ซ่อมบำรุง)" icon="🔍"
-        sub={`QC 7 Tools แยกตามชนิดสินทรัพย์ · ${srcMeta.note}`}
-        tabs={tabs} tab={tab} onTab={setTab}
+        sub={tab === 'kpi'
+          ? 'KPI ทีมช่าง — MTTA / MTTR / MDT · ความพึงพอใจ · ความน่าเชื่อถือรายอุปกรณ์'
+          : `QC 7 Tools แยกตามชนิดสินทรัพย์ · ${srcMeta.note}`}
+        tabs={MAIN_TABS} tab={tab} onTab={setTab}
         actions={
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={src} onChange={e => setSrc(e.target.value)} style={{ width: 180, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-              {SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-            </select>
-            <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-              {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
-            </select>
+          /* ตัวกรองแหล่งข้อมูล/ช่วงเวลา เป็นของแท็บ QC7 เท่านั้น — แผง KPI มีตัวกรองของตัวเอง
+             โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
+          tab === 'qc7' ? (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={src} onChange={e => setSrc(e.target.value)} style={{ width: 180, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+                {SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </select>
+              <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+                {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
+              </select>
+              <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
+                {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
+              </button>
+            </div>
+          ) : (
             <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
               {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
             </button>
-          </div>
+          )
         }
       />
 
@@ -257,8 +309,28 @@ export default function MtnAnalysis() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดข้อมูล {days} วันย้อนหลัง…</div>
+      ) : tab === 'kpi' ? (
+        /* 📊 KPI ช่าง — ย้ายมาจาก `/mtn-repair?tab=kpi` (ลิงก์เก่า redirect มาที่นี่)
+           ใช้ `orders` ชุดเดียวกับแท็บ QC7 ⇒ ไม่ยิงคิวรีเพิ่ม */
+        <MtnKpiPanel orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs}
+          machines={machines} onGoQc7={() => setTab('qc7')} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* ── แถบชนิดสินทรัพย์ (แท็บชั้นที่ 2 · `?asset=`) ─────────────────────
+                 🔴 ทุกชนิดต้องอยู่ครบเสมอ แม้จำนวนเป็น 0 — กดเข้าไปแล้วเห็นว่า "ช่วงนี้ไม่มีงาน"
+                    ต่างจากการซ่อนแท็บทิ้งซึ่งอ่านว่า "ระบบไม่รองรับของชนิดนี้" */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {assetTabs.map(t => (
+              <button key={t.key} type="button" onClick={() => setAsset(t.key)} className="tbtn"
+                style={{
+                  padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                  background: asset === t.key ? 'var(--bg3)' : 'transparent',
+                  color: asset === t.key ? 'var(--text)' : 'var(--muted)',
+                  border: `1px solid ${asset === t.key ? 'var(--accent)' : 'var(--border)'}`,
+                }}>{t.label}</button>
+            ))}
+          </div>
+
           {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>
             <KPI label={`เหตุการณ์ (${days} วัน)`} value={sum.n ? fmt(sum.n) : null} unit={unit} sub={`${sum.assets} อุปกรณ์`} />
@@ -273,7 +345,7 @@ export default function MtnAnalysis() {
           </div>
 
           {rows.length === 0 ? (
-            <Panel title={`ยังไม่มีเหตุการณ์ในกลุ่ม “${ASSET_CLASSES.find(a => a.key === tab)?.label}”`}
+            <Panel title={`ยังไม่มีเหตุการณ์ในกลุ่ม “${ASSET_CLASSES.find(a => a.key === asset)?.label}”`}
               sub="แท็บนี้ยังอยู่เสมอ ไม่ได้ถูกซ่อน — ว่างแปลว่า “ช่วงนี้ไม่มีงานที่ผูกกับสินทรัพย์กลุ่มนี้” ไม่ใช่จอพัง">
               <NotEnough
                 reason={`ไม่พบ${srcMeta.label}ของกลุ่มนี้ในช่วง ${days} วันย้อนหลัง`}
@@ -293,7 +365,7 @@ export default function MtnAnalysis() {
               <Panel title="③ ผังก้างปลา — สาเหตุกองอยู่แกนไหน (4M)"
                 sub="จัดรายการเข้าแกน คน/เครื่อง/วัสดุ/วิธี/การวัด/สภาพแวดล้อม — ใช้หมวดที่ช่างเลือกไว้ก่อน ไม่มีจึงเดาจากข้อความสาเหตุ">
                 <Fishbone records={rows} categoryOf={r => r.cause_category} textOf={r => r.causeText} labelOf={r => r.label}
-                  effect={`${ASSET_CLASSES.find(a => a.key === tab)?.label} หยุด/เสียหาย`} />
+                  effect={`${ASSET_CLASSES.find(a => a.key === asset)?.label} หยุด/เสียหาย`} />
               </Panel>
 
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, alignContent: 'start' }}>

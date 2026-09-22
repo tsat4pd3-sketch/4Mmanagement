@@ -2,8 +2,14 @@
 
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
+> ### 📍 ที่อยู่ใหม่ (2026-09-22) — ยุบเข้า `/equipment` ศูนย์ทะเบียนอุปกรณ์
+> ทะเบียน JIG/Fixture ย้ายเป็นแท็บใน `/equipment` (เดิมอยู่หมวดซ่อมบำรุง ส่วนเครื่องจักร/แม่พิมพ์อยู่หมวดตั้งค่า —
+> ของช่างเหมือนกันแต่คนละหมวด) · route `/fixture` ยัง redirect เข้ามา
+> · **⚠️ แท็บของหน้านี้เปลี่ยน query param จาก `?tab=` → `?fx=`** (`points|shim|status|classify`)
+>   ลิงก์ภายในเขียน `/equipment?tab=jig&fx=shim` (จุดที่แก้แล้ว: `PMCheckData`)
 
-หน้า `/fixture` (`FixtureRegistry.jsx`) — ลูกค้าขอ **ระบบบันทึกชิม (shim record)** เพื่อคุม fixture sustainability
+
+หน้า `/equipment?tab=jig` (เดิม `/fixture` — redirect ให้ · `FixtureRegistry.jsx`) — ลูกค้าขอ **ระบบบันทึกชิม (shim record)** เพื่อคุม fixture sustainability
 · ออกแบบเต็ม + ผลค้นมาตรฐานภายนอก + กฎเหล็ก 11 ข้อ: **`docs/FIXTURE-SHIM-DESIGN.md`**
 · migration `20260901_fixture_shim_record.sql` (DR) + `20260901_fixture_shim_permissions.sql` (Main) — **apply แล้วทั้งคู่ 2026-09-01**
 

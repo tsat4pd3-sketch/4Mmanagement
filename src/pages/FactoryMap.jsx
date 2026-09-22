@@ -22,6 +22,8 @@ import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaP
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
 import { zoneFill, zoneHealth, zoneHealthText, zoneKindMeta, ZONE_KINDS, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
+import { statusColor, statusLabel } from '../utils/obeyaKpi';
+import { LIVE_AXES, catToStatus, rollupAxis, boardOverall, ppeStatus, NOT_LIVE_NOTE, SAFETY_PROXY_NOTE } from '../utils/obeyaLive';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -440,6 +442,8 @@ export default function FactoryMap({ setupMode = false }) {
   const [showFac, setShowFac] = useState(false); // 🫥 เปิดดูโซนสนับสนุนชั่วคราวบน metric ผลิต (กดจากชิป)
   // แผงขวา: 'review' = สรุปทบทวนทั้งวัน (default · ประชุมผู้จัดการ) · 'live' = จัดอันดับสดตาม metric (เดิม)
   const [panelMode, setPanelMode] = useState('review');
+  // 🏛️ หัวข้อที่กดเจาะอยู่บนบอร์ด OBEYA (null = ยังไม่กด) — ดู obeyaBoard
+  const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
   const [reviewLoading, setReviewLoading] = useState(false);
@@ -1133,7 +1137,7 @@ export default function FactoryMap({ setupMode = false }) {
     setFacilitySupply(fac);
   }, []);
 
-  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/die-registry?tab=layout · 2026-08-19) ──
+  /* ── 🔨 โซนคลังแม่พิมพ์ — link ผังรวม ↔ ผังจัดเก็บแม่พิมพ์ (/equipment?tab=die&die=layout · 2026-09-22) ──
      กรอบบนผังรวมที่ "ชื่อตรงกับชื่อผังจัดเก็บแม่พิมพ์" (die_storage_areas.name · จับคู่ normalize
      trim+lowercase) = โซนคลังแม่พิมพ์ — pattern เดียวกับโซน facility ↔ pm_facility_areas
      (ข้าม project Main↔DR ทำ FK ไม่ได้ ชื่อคือกุญแจ — เปลี่ยนชื่อผังใน DieLayout จะ cascade ชื่อกรอบให้)
@@ -1527,7 +1531,7 @@ export default function FactoryMap({ setupMode = false }) {
   const openLine = (name, date) => {
     // 🔨 โซนคลังแม่พิมพ์ → เปิดผังจัดเก็บแม่พิมพ์ของโซนนั้นเลย (ต้องเช็คก่อน isFac — ชื่อโซนแม่พิมพ์ก็ไม่ใช่ไลน์ผลิตเหมือนกัน)
     const dz = dieZoneOf(name);
-    if (dz) { setHoverLine(null); navigate(`/die-registry?tab=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
+    if (dz) { setHoverLine(null); navigate(`/equipment?tab=die&die=layout&area=${encodeURIComponent(dz.id)}&from=factory-map`); return; }
     // 🏬 โซนคลังสินค้า → popup รายการ MAT ในโซน (เต็ม/ขาด) — เช็คก่อน isFac เหมือนโซนแม่พิมพ์
     const sz = storeZoneOf(name);
     if (sz) { setHoverLine(null); setStoreZoneModal(sz); return; }
@@ -1657,6 +1661,96 @@ export default function FactoryMap({ setupMode = false }) {
     });
     return arr;
   }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── 🏛️ บอร์ดสถานะ OBEYA (สด) — แผงขวาโหมด `obeya` ────────────────────────────────
+     2026-09-22 · คำขอ user: แผงขวาเดิม ("จัดอันดับตาม metric") พูดเรื่องเดียวกับป้ายบนผัง
+     + การ์ด hover ⇒ ซ้ำ · เปลี่ยนเป็น "หัวข้อไหนมีปัญหา" แล้วค่อยกดเจาะหาไลน์
+
+     🔴 กฎเหล็กของแผงนี้ (ดูเหตุผลเต็มใน src/utils/obeyaLive.js):
+       - สถานะรายไลน์ **ยืมจาก METRICS.<x>.cat ของแท็บเจ้าของเรื่องบนผังนี้เอง** ห้ามตั้งเกณฑ์ใหม่
+         (กฎเดียวกับแท็บ 🚦 สุขภาพรวม — ไม่งั้นแผงขวากับสีบนผังตอบไม่ตรงกัน)
+       - หัวข้อที่ดูสดไม่ได้ **ต้องอยู่บนบอร์ดเป็นไฟเทา + บอกเหตุผล** ห้ามซ่อน ห้ามโชว์ 0
+       - ไฟรวมต้องบอกว่าตัดสินจากกี่หัวข้อ (boardOverall)
+     ⚠️ โซนสนับสนุน (MTN/utility/คลัง/แม่พิมพ์) ไม่เข้าบอร์ดนี้ — ไม่มีตัวเลข SQDCM
+        (เอามานับก็ได้แต่จะกลายเป็น "เขียวฟรี" ที่ทำให้ไฟรวมสวยกว่าความจริง) */
+  const obeyaBoard = useMemo(() => {
+    const names = [...new Set([...topNames, ...regions.map(r => r.line_name).filter(n => !parentOf[n])])]
+      .filter(n => !isFac(n));
+    const sts = names.map(name => ({ name, st: stOf(name) }));
+    const openLines = sts.filter(x => x.st.hasOpen);
+
+    /** สร้างหัวข้อจาก metric เจ้าของเรื่อง — status มาจาก cat ของ metric นั้นล้วนๆ */
+    const fromMetric = (mKey, extra = {}) => {
+      const Mx = METRICS[mKey];
+      return rollupAxis({
+        rows: sts.map(({ name, st }) => ({
+          name, status: catToStatus(Mx.cat(st)), text: Mx.text(st), val: Mx.value(st),
+        })),
+        ...extra,
+      });
+    };
+
+    // ⚙️ OEE — ค่ารวมถ่วงด้วยเวลารับภาระ (wLoad) ตามกฎ ห้ามเฉลี่ยเปอร์เซ็นต์ตรงๆ
+    const allOeeRows = sts.flatMap(x => x.st.oeeRows || []);
+    const oeeVal = wavg(allOeeRows, r => r.oee, wLoad);
+    const dtNow = sts.filter(x => x.st.dtActive);
+    const oee = fromMetric('oee', {
+      key: 'OEE',
+      value: oeeVal != null ? `${Math.round(oeeVal)}%` : null,
+      sub: dtNow.length ? `🔴 กำลังหยุด ${dtNow.length} ไลน์` : null,
+    });
+    oee.dtNow = dtNow.map(x => x.name);
+
+    // 🦺 S — PPE ครบตอนเช็คชื่อ (ตัวแทน ไม่ใช่ผลด้านความปลอดภัยจริง — ต้องกำกับบนจอเสมอ)
+    const ppeTot = sts.reduce((a, x) => ({ present: a.present + (x.st.present || 0), ppeBad: a.ppeBad + (x.st.ppeBad || 0) }), { present: 0, ppeBad: 0 });
+    const ppeAll = ppeStatus(ppeTot);
+    const s = rollupAxis({
+      key: 'S',
+      rows: sts.map(({ name, st }) => {
+        const p = ppeStatus(st);
+        return { name, status: p.status, val: p.pct,
+          text: p.status === 'none' ? 'ยังไม่มีคนเช็คชื่อ' : (p.bad ? `⚠PPE ไม่ครบ ${p.bad}/${p.present} คน` : `PPE ครบ ${p.present} คน`) };
+      }),
+      value: ppeAll.pct != null ? `${ppeAll.pct}%` : null,
+      sub: ppeAll.bad ? `⚠ PPE ไม่ครบ ${ppeAll.bad} คน` : null,
+      note: SAFETY_PROXY_NOTE,
+    });
+
+    // 🎯 Q — ยืมเกณฑ์จากแท็บ 🚫 ของเสีย (NG 0 เขียว · <20 เหลือง · ≥20 แดง)
+    const ngTot = sts.reduce((a, x) => a + (x.st.ng || 0), 0);
+    const qAvg = wavg(allOeeRows, r => r.q, wProd);
+    const q = fromMetric('ng', {
+      key: 'Q',
+      value: qAvg != null ? `Q ${Math.round(qAvg)}%` : (openLines.length ? `NG ${fmtNum(ngTot)}` : null),
+      sub: qAvg != null ? `NG รวม ${fmtNum(ngTot)} ชิ้น` : null,
+    });
+
+    // 🚚 D — ยืมเกณฑ์จากแท็บ 📦 ยอดผลิต (ทำได้เทียบ "เป้า ณ เวลานี้" ≥95 เขียว · ≥80 เหลือง)
+    const dTot = sts.reduce((a, x) => ({ actual: a.actual + (x.st.actual || 0), onTime: a.onTime + (x.st.onTimeTarget || 0), target: a.target + (x.st.target || 0) }), { actual: 0, onTime: 0, target: 0 });
+    const d = fromMetric('productivity', {
+      key: 'D',
+      value: dTot.onTime >= 1 ? `${Math.round(dTot.actual / dTot.onTime * 100)}%` : null,
+      sub: dTot.target > 0 ? `${fmtNum(dTot.actual)}/${fmtNum(dTot.onTime)} · เป้าเต็มกะ ${fmtNum(dTot.target)}` : null,
+    });
+
+    /* 💰 C — ผังรวมไม่ได้โหลดอัตราค่าแรง (cost center) / ต้นทุนต่อชิ้น ⇒ คิดมูลค่าความสูญเสียสดไม่ได้
+       🔴 ห้ามเอา kWh รายเดือนมาสวมเป็น "ต้นทุนสด" — คนละหน่วยเวลา และเป็นค่ากรอกมือรายเดือน */
+    const c = rollupAxis({
+      key: 'C', live: false,
+      note: NOT_LIVE_NOTE('ผังรวมไม่ได้โหลดอัตราค่าแรงต่อชั่วโมงและต้นทุนต่อชิ้น จึงคิดมูลค่าความสูญเสียไม่ได้'),
+    });
+
+    // 🧑‍🏭 M — ยืมเกณฑ์จากแท็บ 👷 คน & จุดงาน (คนมา ≥95 เขียว · ≥80 เหลือง · จุดงาน 90/70)
+    const mTot = sts.reduce((a, x) => ({ present: a.present + (x.st.present || 0), head: a.head + (x.st.headTotal || 0) }), { present: 0, head: 0 });
+    const m = fromMetric('people', {
+      key: 'M',
+      value: mTot.head > 0 ? `${Math.round(mTot.present / mTot.head * 100)}%` : null,
+      sub: mTot.head > 0 ? `มา ${fmtNum(mTot.present)}/${fmtNum(mTot.head)} คน` : null,
+    });
+
+    const axes = [oee, s, q, d, c, m];
+    return { axes, overall: boardOverall(axes), lineCount: names.length, openCount: openLines.length };
+  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, topNames, parentOf, lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -2058,7 +2152,7 @@ export default function FactoryMap({ setupMode = false }) {
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>🗺️ ผังรวมโรงงาน</h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = สรุปทบทวนทั้งวัน (เลือกวันได้)</b></p>
+          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>แผงขวา = ทบทวนรายวัน · 🏛️ สถานะ OBEYA สด · จัดอันดับ</b></p>
         </div>
         {canEdit && <button onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? '✓ เสร็จ' : '✏️ แก้ผัง'}<ToggleDot on={editing} /></button>}
       </div>
@@ -2453,9 +2547,12 @@ export default function FactoryMap({ setupMode = false }) {
           {!editing && !panelHide && (
             <aside style={{ flex: '0 0 360px', maxWidth: '100%', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 16px', maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
               {/* สลับโหมดแผง */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1 }}>📅 สรุปทบทวนรายวัน</button>
-                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1 }}>⚡ สด (จัดอันดับ)</button>
+              <div style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
+                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>📅 ทบทวนรายวัน</button>
+                <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
+                  title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">🏛️ OBEYA (สด)</button>
+                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
+                  title="จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)">📊 อันดับ</button>
               </div>
 
               {panelMode === 'review' ? (
@@ -2533,7 +2630,118 @@ export default function FactoryMap({ setupMode = false }) {
                     );
                   })}
                 </>
-              ) : (() => {
+              ) : panelMode === 'obeya' ? (() => {
+                /* ── 🏛️ บอร์ดสถานะ OBEYA (สด) ──────────────────────────────────────
+                   ตอบ "วันนี้เรื่องไหนมีปัญหา" → กดหัวข้อ → เห็นไลน์ที่เป็นต้นเหตุ → กดไลน์ไปที่ผัง
+                   🔴 ห้ามซ่อนหัวข้อที่ตัดสินไม่ได้ · ห้ามโชว์ 0 แทน "ไม่มีข้อมูล" ·
+                      ไฟรวมต้องบอกว่าตัดสินจากกี่หัวข้อ (กฎความซื่อสัตย์ของจอ — CLAUDE.md §OBEYA) */
+                const B = obeyaBoard;
+                const ov = B.overall;
+                /* 🔴 ไฟสถานะ KPI **ห้ามกระพริบ** (UI-CONVENTIONS §2.1) — บอร์ดเปิดค้างทั้งวันและมีไฟ 6 ดวง
+                   กระพริบหมด = "แดงหมด" ที่ §2 ห้ามไว้ + รีเพนต์หนักบนจอ TV · แดง = นิ่ง + เรืองแสง
+                   (ตัวที่ควรกระพริบคือ downtime ที่เปิดค้าง ซึ่งอยู่บนผังคนละแผง) */
+                const dot = (st, size = 11) => (
+                  <span style={{ width: size, height: size, borderRadius: '50%', background: statusColor(st), flexShrink: 0, display: 'inline-block',
+                    boxShadow: st === 'bad' ? `0 0 ${Math.round(size * 0.6)}px ${statusColor(st)}` : 'none' }} />
+                );
+                /* เจาะหาไลน์ที่เป็นต้นเหตุของหัวข้อ — แสดงใต้หัวข้อนั้นเลย
+                   ⚠️ ไม่มีไลน์แดง/เหลือง ≠ "ผ่าน" เสมอไป — ต้องบอกด้วยว่าตัดสินได้กี่จาก กี่ไลน์ */
+                const axisDrill = (ax, meta) => (
+                  <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border2)' }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 5 }}>
+                      {meta?.icon} {meta?.label} — ไลน์ที่ต้องดู
+                    </div>
+                    {!ax.live ? (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+                        <Link to="/obeya?tab=sqdcm" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)' }}>🏛️ เปิดห้อง OBEYA →</Link>
+                      </div>
+                    ) : ax.problems.length === 0 ? (
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
+                        {ax.judged > 0
+                          ? `ไม่มีไลน์ที่หลุด/เฉียดเป้าในหัวข้อนี้ (ตัดสินได้ ${ax.judged} จาก ${ax.total} ไลน์)`
+                          : 'ยังไม่มีไลน์ไหนตัดสินหัวข้อนี้ได้'}
+                      </div>
+                    ) : (<>
+                      {ax.problems.map(({ name, status, text }) => {
+                        const hasRegion = regions.some(r => r.line_name === name);
+                        return (
+                          <div key={name} onClick={() => { if (hasRegion) flashLine(name); openLine(name); }}
+                            style={{ padding: '6px 9px', borderRadius: 8, marginBottom: 4, cursor: 'pointer', background: highlight === name ? 'var(--bg2)' : 'var(--bg)', border: `1px solid ${highlight === name ? statusColor(status) : 'var(--border2)'}` }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              {dot(status, 9)}
+                              <div style={{ minWidth: 0, flex: 1, fontSize: 12, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {name}{!hasRegion && <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                              </div>
+                            </div>
+                            {text && <div style={{ fontSize: 11, color: statusColor(status), marginTop: 2, paddingLeft: 16, overflowWrap: 'anywhere' }}>{text}</div>}
+                          </div>
+                        );
+                      })}
+                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
+                    </>)}
+                  </div>
+                );
+                return (
+                  <>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>🏛️ สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์ — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ
+                    </div>
+
+                    {/* ไฟรวม — ต้องบอกเสมอว่าตัดสินจากกี่หัวข้อ ไม่งั้นเขียวจาก 2/6 ดูเหมือนเขียวจาก 6/6 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg3)', border: `1px solid ${statusColor(ov.status)}55`, borderLeft: `4px solid ${statusColor(ov.status)}`, borderRadius: 9, padding: '9px 11px', marginBottom: 10 }}>
+                      {dot(ov.status, 16)}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: statusColor(ov.status) }}>{statusLabel(ov.status)}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{ov.note}</div>
+                      </div>
+                    </div>
+
+                    {/* รายหัวข้อ — 1 แถว/หัวข้อ (อ่านง่ายบนจอ TV กว่าตาราง 2 คอลัมน์ที่บีบตัวเลข) */}
+                    {B.axes.map((ax) => {
+                      const meta = LIVE_AXES.find(a => a.key === ax.key);
+                      const col = statusColor(ax.status);
+                      const on = obeyaAxis === ax.key;
+                      const cnt = ax.counts;
+                      return (
+                        <div key={ax.key} onClick={() => setObeyaAxis(on ? null : ax.key)}
+                          title={ax.live ? 'กดเพื่อดูไลน์ที่เป็นต้นเหตุ' : 'หัวข้อนี้ยังดูสดจากผังไม่ได้'}
+                          style={{ padding: '8px 10px', borderRadius: 9, marginBottom: 5, cursor: 'pointer', background: on ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${on ? col : 'var(--border2)'}`, borderLeft: `4px solid ${col}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {dot(ax.status, 11)}
+                            <div style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {meta?.icon} {meta?.label} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600 }}>{meta?.en}</span>
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 800, color: col, whiteSpace: 'nowrap', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{ax.value ?? '—'}</div>
+                            <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'}</span>
+                          </div>
+                          {ax.sub && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3, paddingLeft: 19 }}>{ax.sub}</div>}
+                          {ax.live && (
+                            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 4, paddingLeft: 19, fontSize: 10.5, fontWeight: 700 }}>
+                              {/* คำบนไฟต้องมาจาก statusLabel() ที่เดียว (UI-CONVENTIONS §2.1 ข้อ 4)
+                                  ห้ามพิมพ์ "หลุดเป้า/เฉียดเป้า" เองในหน้า — จอเดียวกันจะเรียกคนละชื่อ */}
+                              {['bad', 'warn', 'good'].filter(k => cnt[k]).map(k => (
+                                <span key={k} style={{ color: statusColor(k) }}>● {cnt[k]} {statusLabel(k)}</span>
+                              ))}
+                              {/* ⚪ ตัดสินไม่ได้ ต้องเห็นเสมอ — ไม่งั้นคนอ่านคิดว่าไลน์ที่หายไปคือ "ปกติ" */}
+                              {cnt.none > 0 && <span style={{ color: statusColor('none') }}>● {cnt.none} {statusLabel('none')}</span>}
+                            </div>
+                          )}
+                          {ax.note && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4, paddingLeft: 19, lineHeight: 1.45 }}>⚠️ {ax.note}</div>}
+                          {/* drill-down อยู่ "ใต้หัวข้อที่กด" ไม่ใช่ท้ายแผง — แผงสูงกว่าจอ ถ้าไปอยู่ท้าย
+                              คนกดแล้วไม่เห็นอะไรขยับ (แผง 360px มี 6 หัวข้อ = ต้องเลื่อนลงหาเอง) */}
+                          {on && axisDrill(ax, meta)}
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
+                      เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
+                      ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
+                    </div>
+                  </>
+                );
+              })() : (() => {
                 // ── โหมดสด (จัดอันดับตาม metric ที่เลือก) — เดิม ──
                 const counts = ranked.reduce((a, r) => { a[r.cat] = (a[r.cat] || 0) + 1; return a; }, {});
                 const maxVal = Math.max(1, ...ranked.map(r => (r.val == null ? 0 : Math.abs(r.val))));

@@ -239,7 +239,13 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
 > - **✕ / ยกเลิก ถามยืนยันเมื่อกรอกไปแล้ว** (`dirty` + `confirmDiscard()`) — `dirty` ต้องถูกตั้งจาก **ทุก** ทางที่แก้ข้อมูล (ช่องกรอก · แนบรูป · เพิ่ม/ลบอะไหล่ · ลายเซ็น) เพิ่มช่องใหม่ต้องผ่าน `set()`/`touch()` เสมอ ไม่งั้นถามไม่ขึ้นแล้วข้อมูลหายเงียบ
 > - **จุดที่ปิดจาก backdrop ได้จริงอยู่ที่อื่น — แก้แล้ว 12 จุด 9 ไฟล์** (FeedbackModal · SparePartMaster ×4 รวมพรีวิวนำเข้าไฟล์ · RackMap ×2 · DieLayout · BbsCheck · QaClaims · PeChangeRequests · RackCenter QR label) · กติกาเต็ม + รายชื่อ modal ที่**ตั้งใจ**คงการปิดจาก backdrop ไว้ → `docs/UI-CONVENTIONS.md` §5
 
-> ### 📊 แท็บ KPI ช่าง — ที่เดียวจบ + พาเรโตตามหลักสากล (2026-09-15 · คำสั่ง user)
+> ### 📊 แท็บ KPI ช่าง — **ย้ายออกจากหน้านี้แล้ว 2026-09-22 → `/mtn-analysis?tab=kpi`**
+> ตัว panel = `src/components/MtnKpiPanel.jsx` (แกะออกจาก `KpiTab` เดิมของหน้านี้ · props `orders`/`scopeLines`/`lineObjs`/`machines`)
+> · **พาเรโตถูกถอดออกจาก KPI panel** — ไปอยู่ `/mtn-analysis?tab=qc7` ที่เดียว (เดิมมี 2 ที่ = ตัวเลขต่างกันได้)
+> เหลือปุ่มลิงก์ข้ามไปแทน · `/mtn-repair?tab=kpi` และ `?tab=equip` ยัง redirect ไปหน้าใหม่ให้
+> **กฎด้านล่างยังบังคับใช้เหมือนเดิม ย้ายที่อยู่อย่างเดียว:**
+>
+> (ที่มาเดิม · 2026-09-15 · คำสั่ง user)
 > *"KPI กับ MTTR/MTBF/MTTA ควรจะอยู่ใน tab เดียวกันเพราะมันคือ KPI ช่าง"* + *"กราฟ pareto ที่ทำผิด"*
 >
 > **ยุบ 2 แท็บเป็นแท็บเดียว** — เดิม `📊 KPI` (จากใบซ่อม MO) กับ `⚙️ รายอุปกรณ์ (MTTR/MTBF)` (จาก downtime จริง)
@@ -477,6 +483,9 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
 - **แก้ไขหลังบันทึก:** DetailBox แต่ละสเตปมีปุ่ม ✏️ แก้ไข (StepModal `editMode` — อัพเดทเฉพาะฟิลด์ ไม่เลื่อนสถานะ/ไม่แจ้งซ้ำ) · สิทธิ์: `manage_master` (หัวหน้า) หรือผู้มีสิทธิ์ทำสเตปนั้น (ผู้กรอกแก้ของตัวเองได้)
 - **🔎 ช่องเลือกอะไหล่ในขั้นซ่อม (Step 3) ต้องค้นได้ (2026-08-24 · feedback หน้างาน "อะไหล่เป็น 1000 หาไม่เจอ"):** ใช้ **`src/components/SearchSelect.jsx`** (ค้นชื่อ/รหัส/ชั้นวาง/mat_no/part_no · โชว์สต็อก+ชั้นวางในลิสต์ · อะไหล่ทีมของใบขึ้นก่อนแต่**ไม่ตัดทีมอื่นทิ้ง**) — เดิมเป็น `<select>` ยัดทุกแถว + ช่อง "หรือพิมพ์ชื่อ" ซ้อนข้างๆ ที่พอเลือกแล้วแค่สะท้อนชื่อเดิม · **รวมเป็นช่องเดียว**: เลือกจากทะเบียน = ผูก `part_id` หักสต็อกให้ · พิมพ์เองไม่ตรงลิสต์ = เก็บแค่ชื่อ (`part_id` null ไม่หักสต็อก) + ป้าย "✎ ไม่ได้อยู่ในทะเบียน" · เบิกเกินสต็อกขึ้นเตือนก่อนกดบันทึก (RPC กันติดลบอยู่แล้ว แต่บอกก่อนจะได้ไม่เสียเที่ยว) · กติกาเต็ม `docs/UI-CONVENTIONS.md` §5.1.1
 - **⚠️ โหลดทะเบียนอะไหล่ต้องแบ่งหน้า** — `mtn_spare_parts` โตเกิน 1000 แถวได้ · `select('*')` เฉยๆ ได้แค่ 1000 แถวแรก **ของที่เกินหายจากทั้งลิสต์เลือกและหน้าคลังเงียบๆ** (กฎเดียวกับ `role_permissions`) → ผ่าน `fetchAllRows()` ใน `MtnRepair.jsx` (order คงที่ปิดท้ายด้วย `id` ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า)
+- **⚠️ แท็บ 🔩 คลังอะไหล่ / 🗺️ ผังคลัง ย้ายไป `/equipment?tab=spare|rack` แล้ว (2026-09-22)** — หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)
+  · `?tab=spare|rack|kpi|equip` เดิมยัง redirect ให้ · **ห้ามเอากลับมาเป็นแท็บของหน้านี้** (หน้านี้ = หน้าทำงานกับใบ ไม่ใช่หน้าทะเบียน)
+  · ตัวโหลด `mtn_spare_parts` ย้ายไป `EquipmentHub.SparePanel` ด้วย — component `SparePartMaster`/`RackMap` ไม่ถูกแก้
 - **Spare part + stock control:** master `mtn_spare_parts` (code/name/unit/stock_qty/min_qty) + ledger `mtn_stock_txns` (in/adjust/consume) · แท็บอะไหล่: ➕รับเข้า / ปรับยอด (log ledger) + แถบแดงเมื่อ ≤ min · ขั้นซ่อมเบิกอะไหล่ = หัก stock + log consume อัตโนมัติ · migration `20260714_mtn_stock_txns.sql`
 - **ค่าแรงซ่อมมาตรฐาน + ค่าใช้จ่ายต่อใบ (2026-07-22 · คำสั่ง user):** master `mtn_labor_rates` (name/unit/price/dept) — แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน (ช่างกรอกราคามาตรฐานไว้เลือกใช้) · ขั้นซ่อม (step 3) มีช่อง **(1) ค่าแรงซ่อม** (เลือกจากราคามาตรฐาน หรือพิมพ์เอง) + **(2) ค่าอะไหล่/อุปกรณ์** → เก็บ `mtn_orders.labor_cost`/`parts_cost` (numeric) · พิมพ์ลงฟอร์ม **FM-MTN-006** ช่อง (1)/(2)/รวม อัตโนมัติ · migration `20260722_mtn_labor_cost.sql` (DR additive)
 - **แจ้งเตือน Telegram — ครบทุกสเตป (คำสั่ง user 2026-07-14):** edge function `send-mtn-notification` events `mtn_reported`(1,+รูปก่อน)/`mtn_assigned`(2)/`mtn_repaired`(3,+รูปหลัง)/`mtn_checked`(4)/`mtn_qa`(5,+รูป QA)/`mtn_handover`(6)/`mtn_closed`(7) · format mirror ระบบเดิม + หน่วยงานในหัวข้อ · วันที่ พ.ศ. · route ผ่าน notification_rules category maintenance (ตั้งค่า/ปิด/แก้ข้อความที่ `/notification-config`)

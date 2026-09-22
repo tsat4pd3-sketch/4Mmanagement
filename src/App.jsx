@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
 import { loadProfilesPeople } from './utils/usePeople';
@@ -36,8 +36,6 @@ const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
-const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
-const DieRegistry = lazy(() => import('./pages/DieRegistry'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
@@ -70,8 +68,8 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
-const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
 const MtnAnalysis = lazy(() => import('./pages/MtnAnalysis'));
+const EquipmentHub = lazy(() => import('./pages/EquipmentHub'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -178,7 +176,10 @@ export const NAV_ITEMS = [
      คำสั่ง user: "หมวด mtn ยังไม่มี dashboard ปัญหา เครื่องจักร/แม่พิมพ์/jig fixture · qc7tools ยังไม่เห็น" */
   { to: '/mtn-analysis', icon: '🔍', label: 'วิเคราะห์ปัญหา (QC 7 Tools)',    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🧰 ศูนย์ทะเบียนอุปกรณ์ — ยุบ 5 ที่ (ฐานข้อมูลเครื่องจักร · ทะเบียนแม่พิมพ์ · Fixture ·
+     คลังอะไหล่ · ผังคลัง) เป็นแท็บในหน้าเดียว · route เดิมทั้งหมด redirect เข้ามา (2026-09-22)
+     คำสั่ง user: "ฟังก์ชันของช่างเหมือนไปกระจายอยู่หลายหน้า" */
+  { to: '/equipment',   icon: '🧰', label: 'ทะเบียนอุปกรณ์ (เครื่อง·แม่พิมพ์·JIG·อะไหล่)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -211,8 +212,6 @@ export const NAV_ITEMS = [
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
   // ออกจาก "ของที่ตั้งครั้งเดียว" · ห้ามลืมใส่ `sub` ให้เมนูใหม่ในหมวดนี้ (ไม่ใส่ = ตกไปกลุ่มแรก)
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
@@ -281,6 +280,24 @@ export function accessSummaryForRole(role) {
 function RoleRoute({ children, path, userRole }) {
   if (!canAccessPage(path, userRole)) return <Navigate to="/" replace />;
   return children;
+}
+
+/* ─── ทางผ่านของ route ที่ถูกยุบเป็นแท็บ ───────────────────────────────  2026-09-22
+   ยุบหน้าเป็นแท็บทีไร ปัญหาเดิมคือ **`?tab=` ของหน้าลูกชนกับ `?tab=` ของหน้าแม่**
+   ปล่อยไว้ = ลิงก์เก่า `/fixture?tab=shim` พาไป `/equipment?tab=shim` ซึ่งไม่มีแท็บชื่อนั้น
+   → ตกกลับแท็บแรกเงียบๆ (บุ๊กมาร์กของทีมช่างพาไปผิดที่โดยไม่มีใครรู้)
+
+   ตัวนี้จึง **ย้าย `?tab=` เก่าไปเป็น param ของลูก** แล้วค่อยเด้ง · param อื่น (เช่น `?area=`)
+   ถูกส่งต่อครบ · `replace` เสมอ ไม่ให้ปุ่ม Back เด้งกลับมาวนลูป
+   ⚠️ ยุบหน้าอีกครั้งเมื่อไหร่ ให้ใช้ตัวนี้ซ้ำ **ห้ามเขียน `<Navigate to="...">` ลอยๆ** */
+function LegacyTabRedirect({ to, tab, subParam }) {
+  const [sp] = useSearchParams();
+  const next = new URLSearchParams(sp);
+  const oldTab = next.get('tab');
+  next.delete('tab');
+  if (tab) next.set('tab', tab);
+  if (subParam && oldTab) next.set(subParam, oldTab);
+  return <Navigate to={`${to}?${next.toString()}`} replace />;
 }
 
 /* ─── Splash Screen ────────────────────────────────────── */
@@ -1770,12 +1787,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/qr-labels" element={
                 <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
               } />
-              <Route path="/machine-database" element={
-                <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
-              } />
-              <Route path="/die-registry" element={
-                <RoleRoute path="/die-registry" userRole={role}><DieRegistry /></RoleRoute>
-              } />
+              {/* 🧰 3 ทะเบียนเดิมยุบเข้า /equipment (2026-09-22) — route เดิมเหลือไว้เป็นทางผ่าน
+                  `<LegacyTabRedirect>` แปลง `?tab=` เก่าเป็น param ของลูก (`die`/`fx`) ให้ด้วย
+                  เพราะหน้าแม่กิน `?tab=` ไปแล้ว — ปล่อยไว้เฉยๆ = ลิงก์เก่าพาไปผิดแท็บเงียบๆ */}
+              <Route path="/machine-database" element={<LegacyTabRedirect to="/equipment" tab="machine" />} />
+              <Route path="/die-registry"     element={<LegacyTabRedirect to="/equipment" tab="die" subParam="die" />} />
               <Route path="/add-user"   element={
                 <RoleRoute path="/add-user" userRole={role}><AddUser /></RoleRoute>
               } />
@@ -1915,8 +1931,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
-              <Route path="/fixture" element={
-                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
+              <Route path="/fixture" element={<LegacyTabRedirect to="/equipment" tab="jig" subParam="fx" />} />
+              <Route path="/equipment" element={
+                <RoleRoute path="/equipment" userRole={role}><EquipmentHub /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>

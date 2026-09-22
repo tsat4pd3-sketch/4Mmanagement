@@ -89,7 +89,10 @@ export default function DieRegistry() {
   // ใช้สิทธิ์ชุดเดียวกับฐานข้อมูลเครื่องจักร — แม่พิมพ์อยู่ตาราง machines เดียวกัน คนดูแลกลุ่มเดียวกัน
   // (เลี่ยงการ seed permission key ใหม่ ซึ่งมีกับดัก enum_range ทำให้ role ที่เพิ่มทีหลัง fail-closed)
   const canEdit = can('machines', 'edit', role);
-  const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry');
+  /* ⚠️ param ชื่อ `die` ไม่ใช่ `tab` — หน้านี้ถูก embed เป็นแท็บใน `/equipment` (2026-09-22)
+     ซึ่งกิน `?tab=` ไปแล้ว · แท็บซ้อนแท็บต้องคนละ param (UI-CONVENTIONS §6.8)
+     ลิงก์เก่า `/die-registry?tab=layout` ยังใช้ได้ — App.jsx แปลงให้ตอน redirect */
+  const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry', 'die');
   // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
   const pressLines = useDiePressLines();
 
