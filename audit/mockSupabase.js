@@ -185,9 +185,52 @@ const rowsFor = (table) => {
   return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
 }
 const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefined))
+
+/* ── 🗄️ ผลของ RPC ที่คืน "ก้อน jsonb" ไม่ใช่ลิสต์แถว (2026-09-22) ─────────────────────
+   mock เดิม `rpc: q` คืน ROWS (อาร์เรย์) ให้ทุกชื่อฟังก์ชัน ⇒ หน้าที่กิน jsonb ก้อนเดียว
+   (หน้า /schema: esm_schema_overview / esm_schema_table) จะได้ข้อมูลผิดทรง แล้วตกไปสาขา
+   "โหลดไม่ได้" ทุกครั้ง = **สาขาที่ใช้งานจริงไม่เคยถูกเรนเดอร์ใน crashsweep เลย**
+   ⚠️ ต้องครอบเคสที่ของจริงมีจริงๆ: วิว (แก้ไม่ได้) · ตารางไม่มี PK · RLS ปิด · คอลัมน์ enum ·
+      FK ข้าม schema (auth.users) — เคสพวกนี้คือจุดที่โค้ดหน้ามีสาขาแยก                        */
+const SCHEMA_TABLES = [
+  { t: 'employees', k: 'r', cols: 12, rows: 308, rls: true, pk: ['id'], note: null },
+  { t: 'four_m_logs', k: 'r', cols: 18, rows: 1240, rls: true, pk: ['id'], note: 'บันทึกการเปลี่ยนแปลง 4M' },
+  { t: 'line_stock_summary', k: 'v', cols: 4, rows: 0, rls: false, pk: [], note: null },
+  { t: 'production_lines', k: 'r', cols: 11, rows: 31, rls: true, pk: ['id'], note: null },
+]
+const SCHEMA_FKS = [
+  { name: 'four_m_logs_line_id_fkey', t: 'four_m_logs', c: ['line_id'], rt: 'production_lines', rc: ['id'], del: 'a' },
+  { name: 'four_m_logs_created_by_fkey', t: 'four_m_logs', c: ['created_by'], rt: 'auth.users', rc: ['id'], del: 'a' },
+]
+const RPC_RESULT = {
+  esm_schema_overview: () => ({ at: '2026-09-22T01:00:00Z', tables: SCHEMA_TABLES, fks: SCHEMA_FKS }),
+  esm_schema_table: (args) => {
+    const name = args?.p_table || 'four_m_logs'
+    const base = SCHEMA_TABLES.find(x => x.t === name) || SCHEMA_TABLES[0]
+    return {
+      at: '2026-09-22T01:00:00Z', t: base.t, k: base.k, rls: base.rls, rows: base.rows, note: base.note,
+      pk: base.pk,
+      columns: [
+        { name: 'id', type: 'uuid', nn: true, def: 'gen_random_uuid()', note: null, enum: null },
+        { name: 'category', type: 'text', nn: true, def: null, note: 'Man/Machine/Material/Method', enum: null },
+        { name: 'role', type: 'user_role', nn: false, def: null, note: null, enum: ['admin', 'manager', 'supervisor'] },
+        { name: 'line_id', type: 'integer', nn: false, def: null, note: null, enum: null },
+      ],
+      fks: SCHEMA_FKS.filter(f => f.t === base.t),
+      refs: base.t === 'production_lines' ? [{ name: 'x', t: 'four_m_logs', c: ['line_id'], rc: ['id'], del: 'a' }] : [],
+      uniques: [{ name: 'u1', c: ['id'] }],
+      checks: [{ name: 'c1', src: "CHECK (category = ANY (ARRAY['Man'::text, 'Machine'::text]))" }],
+      indexes: [{ name: `${base.t}_pkey`, uniq: true, def: `CREATE UNIQUE INDEX ${base.t}_pkey ON public.${base.t} USING btree (id)` }],
+      policies: base.rls ? [{ name: 'allow auth', cmd: 'ALL', roles: ['authenticated'], permissive: true }] : [],
+      triggers: [{ name: 'trg_audit', fn: 'fn_audit' }],
+    }
+  },
+}
+const rpc = (name, args) => (RPC_RESULT[name] ? thenable(RPC_RESULT[name](args)) : q(name))
+
 const chan = () => { const c = { on: () => c, subscribe: () => c, unsubscribe: () => c, send: () => c }; return c }
 export const supabase = {
-  from: q, rpc: q, channel: () => chan(),
+  from: q, rpc, channel: () => chan(),
   removeChannel: () => {},
   auth: {
     getSession: () => Promise.resolve({ data: { session: { user: { id: 'x', email: 'a@b.c' } } } }),
