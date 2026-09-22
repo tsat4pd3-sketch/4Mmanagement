@@ -19,6 +19,7 @@ import { policyBreakForShift } from '../utils/oee';
 import { pairLoadTotal } from '../utils/pairTotals';
 import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
+import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -268,6 +269,19 @@ export default function ProductionPlan() {
   /* ── งานคู่ RH/LH: ปั๊มทีเดียวได้ 2 ข้าง ⇒ **ภาระเวลาไม่บวกกัน** (กฎเหล็ก "ชิ้น ≠ shot") ──
      ยอดชิ้น (duePcs) ยังบวกตามปกติ เพราะ RH/LH ส่งลูกค้าแยกใบ เป็นชิ้นจริงทั้งคู่ */
   const pairOf = useCallback((mat) => prodByMat[mat]?.pair || null, [prodByMat]);
+
+  /* ⏮️ กำลังผลิต "ต่อวัน" ของพาร์ทหนึ่ง = กำลังต่อกะ × จำนวนกะที่ไลน์นั้นเปิดได้
+     ใช้เป็น **lead time ที่คิดจากของจริง** ตอนไล่ย้อนวัน (ของ 100 ชิ้นกับ 100,000 ชิ้นใช้เวลาไม่เท่ากัน)
+     ⚠️ ใช้ `allLines` ไม่ใช่ `viewLines` — กำลังของไลน์ไม่ได้เปลี่ยนตามตัวกรองส่วนงานบนจอ */
+  const capPerDayOf = useCallback((mat) => {
+    const { perShift } = capOfMat(mat);
+    if (!(perShift > 0)) return 0;
+    const line = prodByMat[resolveMat(mat) || mat]?.line;
+    return perShift * (line && hasNightShift(allLines, line) ? 2 : 1);
+  }, [capOfMat, prodByMat, resolveMat, allLines]);
+
+  // ถอยวันโดยข้ามวันหยุดตามปฏิทินบริษัท (วันหยุดทุกชนิดรวม ม.75 = ไม่ใช่วันทำงาน)
+  const prevWorkDay = useMemo(() => makePrevWorkDay(calOf, addDays), [calOf]);
   /* ── order/forecast ที่ map ไม่เจอ (ยังไม่ตั้ง SAP/p_no) — ต้องเตือน ไม่ทิ้งเงียบ ── */
   const unmapped = useMemo(() => {
     if (loading) return { orders: 0, parts: new Set(), fcParts: new Set() };
@@ -317,9 +331,11 @@ export default function ProductionPlan() {
      ก่อนหน้านี้แผนเห็นเฉพาะพาร์ทที่ลูกค้าสั่งตรง ⇒ ไลน์ปั๊ม/เลเซอร์ที่ทำพาร์ทลูกป้อนไลน์ประกอบ
      **ไม่เคยมีงานในแผนเลย** · ตัวระเบิดอยู่ที่ `src/utils/demandExplode.js` (pure + มีเทส)
      🔴 ต้องบวกกัน ห้ามแทนกัน — ของจริง 22/09 ลูกค้าสั่งพาร์ท 2xxxxxxx ตรงๆ อยู่แล้ว 687 แถว/18 mat
-     ⏱️ เฟส 1 วางความต้องการของลูกไว้ "วันเดียวกับดิวของแม่" (ยังไม่มี lead time) — จอต้องเขียนบอก */
+     ⏱️ **แท็บรายวันไล่ย้อนวันให้แล้ว** (`scheduleBackward` ด้านล่าง — lead time จากกำลังผลิตจริง)
+     · ส่วน**รายเดือน**ยังรวมเป็นก้อนเดือนเดียวกับดิวของแม่ ซึ่งพอสำหรับหน่วย "เดือน" (lead time
+       ส่วนใหญ่สั้นกว่าเดือน) — ถ้าจะทำให้ข้ามเดือน ต้องไล่ย้อนแบบรายวันแล้วค่อยยุบเป็นเดือน */
   const demandPcs = useMemo(() => {
-    if (loading) return { byDate: {}, byMonth: {}, carry: {}, bom: null, buffer: null };
+    if (loading) return { byDate: {}, byMonth: {}, carry: {}, bom: null, buffer: null, sched: null };
     const bomStat = { flatDupes: [], cycles: 0, rootsWithBom: 0, rootsNoBom: 0, childPcs: 0 };
     const explodeInto = (rowsIn) => {
       if (!useBom || !bomIx) return {};
@@ -344,9 +360,7 @@ export default function ProductionPlan() {
       });
       return out;
     };
-    const directByDate = bucketize(orders, o => o.due_date);
     const directByMonth = bucketize(forecasts, f => monthKey(f.period_month));
-    const directCarry = bucketize(overdueOrders, () => 'carry').carry || {};
 
     // ② ระเบิด BOM ต่อ bucket แล้วบวกทับของตรง
     const withBom = (buckets) => {
@@ -362,28 +376,45 @@ export default function ProductionPlan() {
       });
       return out;
     };
-    const grossDate = withBom(directByDate);
     const grossMonth = withBom(directByMonth);
-    const grossCarry = withBom({ c: directCarry }).c || {};
 
     /* ③ 📦 หัก buffer ที่ STORE — ของที่มีอยู่แล้วไม่ต้องผลิตซ้ำ (คำถาม user 22/09)
-       🔴 หักเรียงตามเวลา ของกองเดียวใช้ได้ครั้งเดียว · ของค้างส่ง (carry) มาก่อนเสมอ
        🔴 รายวันกับรายเดือนเป็น **คนละมุมมองของช่วงเวลาเดียวกัน** ⇒ แต่ละแท็บหักจาก buffer
           ชุดของตัวเอง (ไม่ใช่หักต่อกัน) ไม่งั้นแท็บที่คำนวณทีหลังจะเหลือ buffer 0 เสมอ */
     const stock = useBuffer ? storeStock : {};
-    const dayOrder = Object.keys(grossDate).sort();
-    const dNet = netOffBuffer([['__carry', grossCarry], ...dayOrder.map(d => [d, grossDate[d]])], stock);
     const mNet = netOffBuffer(Object.keys(grossMonth).sort().map(m => [m, grossMonth[m]]), stock);
-    const { __carry: carry = {}, ...byDate } = dNet.buckets;
+
+    /* ④ ⏮️ แท็บรายวัน = **ไล่ย้อนจากวันส่ง (backward scheduling)** ไม่ใช่กองรวมวันเดียวกับดิวแม่
+       (คำสั่ง user 22/09: *"reverse calculate — ย้อนกลับ capacity ไลน์ปั๊ม เช็คงานลูกต้องมีของก่อนวันไหน"*)
+       · lead time ของแต่ละชั้นคิดจาก **กำลังผลิตจริงของไลน์นั้น** ไม่ใช่ค่าคงที่
+       · ถอยวันข้ามวันหยุดตามปฏิทินบริษัท · หัก buffer ระหว่างทาง (ของพอ = ตัดทั้งกิ่ง ไม่เบิกลูก)
+       · ของค้างส่ง (เลยดิว) ถือว่าต้องส่ง **วันนี้** แล้วไล่ย้อนจากวันนี้
+       🔴 งานที่ย้อนแล้วตกไปก่อนวันนี้ = **สายแล้ว** — ยกมาเป็น backlog ตั้งต้น (carry) ของวันแรก
+          พร้อมนับไว้ใน `sched.late` ให้ขึ้นจอ ห้ามปัดเข้าวันนี้เงียบๆ */
+    const demandRows = [
+      ...overdueOrders.map(o => ({ mat_no: resolveMat(o.mat_no) || o.mat_no, qty: Number(o.qty) || 0, due_date: today })),
+      ...orders.map(o => ({ mat_no: resolveMat(o.mat_no) || o.mat_no, qty: Number(o.qty) || 0, due_date: o.due_date })),
+    ];
+    const sched = scheduleBackward({
+      demandRows, ix: useBom ? bomIx : null, explode: explodeBom,
+      capPerDayOf, stock, prevWorkDay, today, transferDays: 1,
+    });
+    const carry = {}, byDate = {};
+    Object.entries(sched.byDate).forEach(([d, matQty]) => {
+      const bag = d < today ? carry : (byDate[d] = byDate[d] || {});
+      Object.entries(matQty).forEach(([m, q]) => { bag[m] = (bag[m] || 0) + q; });
+    });
 
     // คู่ (mat) ที่ซ้ำกันข้าม bucket ไม่ต้องยุบ — แต่ละ bucket คือคนละวัน/เดือน
-    const dupes = [...new Map(bomStat.flatDupes.map(f => [`${f.root}|${f.mat_no}`, f])).values()];
+    const dupes = [...new Map([...bomStat.flatDupes, ...sched.flatDupes]
+      .map(f => [`${f.root}|${f.mat_no}`, f])).values()];
     return {
       byDate, byMonth: mNet.buckets, carry,
-      bom: { ...bomStat, flatDupes: dupes },
-      buffer: { dailyAbsorbed: dNet.absorbed, monthlyAbsorbed: mNet.absorbed, mats: Object.keys(stock).length },
+      bom: { ...bomStat, flatDupes: dupes, cycles: bomStat.cycles + sched.cycles, childPcs: bomStat.childPcs + sched.childPcs },
+      buffer: { dailyAbsorbed: sched.absorbed, monthlyAbsorbed: mNet.absorbed, mats: Object.keys(stock).length },
+      sched: { late: sched.late, noCapMats: sched.noCapMats, maxLevel: sched.maxLevel },
     };
-  }, [loading, orders, forecasts, overdueOrders, resolveMat, bomIx, useBom, storeStock, useBuffer]);
+  }, [loading, orders, forecasts, overdueOrders, resolveMat, bomIx, useBom, storeStock, useBuffer, capPerDayOf, prevWorkDay, today]);
 
   const daily = useMemo(() => {
     if (loading) return [];
@@ -587,9 +618,15 @@ export default function ProductionPlan() {
           ) : demandPcs.bom ? (
             <>🌳 รวมงานที่ระเบิดจาก BOM แล้ว: <b>{Math.round(demandPcs.bom.childPcs).toLocaleString()} ชิ้น</b> จากพาร์ทที่มี BOM {demandPcs.bom.rootsWithBom} ตัว
               {demandPcs.bom.rootsNoBom > 0 && <span> · ยังไม่มี BOM {demandPcs.bom.rootsNoBom} ตัว (ลูกของพาร์ทเหล่านี้ยังไม่เข้าแผน)</span>}
-              {' · '}⏱️ <b>ยังไม่เลื่อนวันตาม lead time</b> — งานของลูกถูกวางไว้วันเดียวกับดิวของแม่ (ของจริงต้องเสร็จก่อน)
+              {' · '}⏮️ <b>ไล่ย้อนวันจากดิวลูกค้าแล้ว</b> — lead time ของแต่ละชั้นคิดจากกำลังผลิตจริงของไลน์นั้น
+              (ถอยวันข้ามวันหยุดตามปฏิทิน + เผื่อขนย้าย 1 วันทำงานต่อชั้น){demandPcs.sched?.maxLevel > 1 ? ` · ลึกสุด ${demandPcs.sched.maxLevel} ชั้น` : ''}
             </>
           ) : null}
+          {demandPcs.sched?.noCapMats?.length > 0 && (
+            <div style={{ marginTop: 2 }}>
+              ⏱️ พาร์ทที่ <b>ยังไม่รู้กำลังผลิต {demandPcs.sched.noCapMats.length} ตัว</b> — ไล่ย้อนวันให้ที่ 1 วันไว้ก่อน (อาจสั้นกว่าจริง)
+            </div>
+          )}
           {demandPcs.buffer && (
             <div style={{ marginTop: 2 }}>
               📦 {useBuffer
@@ -602,6 +639,32 @@ export default function ProductionPlan() {
           )}
         </div>
       )}
+
+      {/* 🚨 ไล่ย้อนแล้วหลุดไปก่อนวันนี้ = ต้องเริ่มตั้งแต่เมื่อวาน — ห้ามปัดเข้าวันนี้เงียบๆ */}
+      {!loading && demandPcs.sched?.late?.length > 0 && (() => {
+        const late = demandPcs.sched.late;
+        const mine = late.filter(l => lineOfMat(l.mat_no));      // เฉพาะที่เป็นงานของไลน์ใน scope
+        const show = (mine.length ? mine : late).slice(0, 6);
+        return (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+            🚨 <b style={{ color: '#ef4444' }}>สายแล้ว {late.length} รายการ</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
+            <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, display: 'grid', gap: 2 }}>
+              {show.map((l, i) => (
+                <div key={`${l.mat_no}-${l.needBy}-${i}`}>
+                  <b style={{ color: 'var(--text2)' }}>{l.mat_no}</b> {Math.round(l.qty).toLocaleString()} ชิ้น ·
+                  ต้องเริ่ม <b style={{ color: '#ef4444' }}>{fmtDate(l.needBy)}</b> เพื่อให้ทันดิว {fmtDate(l.dueOfParent)}
+                  {l.days > 1 && <span> · ใช้เวลาผลิต ~{l.days} วัน{l.capped ? ' (ตัดที่เพดาน 60 วัน — กำลังผลิตที่ระบบรู้ต่ำผิดปกติ ตรวจ CT/ประวัติพาร์ทนี้)' : ''}</span>}
+                  {l.root !== l.mat_no && <span> (ของใบ {l.root})</span>}
+                </div>
+              ))}
+              {late.length > show.length && <div>… อีก {late.length - show.length} รายการ</div>}
+            </div>
+            <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
+              → งานพวกนี้ถูกยกมาเป็นยอดค้างของวันแรกในแผนแล้ว (ไม่ได้หายไป) — ต้องเร่ง/เพิ่มกะ หรือเลื่อนดิวกับลูกค้า
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 🧹 worklist ให้ PE/Planning — ระบบไม่แก้ข้อมูลให้เอง (กฎของ bomTree.js) */}
       {!loading && useBom && demandPcs.bom?.flatDupes?.length > 0 && (
