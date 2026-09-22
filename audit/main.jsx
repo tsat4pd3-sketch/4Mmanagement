@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { UserContext, Sidebar } from '../src/App'
 import ScrollHint from '../src/components/ScrollHint'
+import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
 
 const mods = import.meta.glob('../src/pages/*.jsx')
@@ -69,6 +70,24 @@ function App(){
     </MemoryRouter>
   )
 }
+/* ?p=__feedback — โมดัล 💬 แจ้งปัญหา (2026-09-22)
+   มันถูก render จาก App shell ไม่ใช่จากหน้าไหน ⇒ crashsweep ที่ไล่เปิดทีละ "หน้า" มองไม่เห็นเลย
+   พอเพิ่มช่องแนบรูป (สิ่งที่พังได้จริง: preview/ถอดรูป/ล้นโมดัลบนมือถือ) เลยต้องมี harness ของตัวเอง */
+const FeedbackLab = () => (
+  <MemoryRouter>
+    <UserContext.Provider value={{ ...CTX, role:'admin' }}>
+      <EB><Suspense fallback={<div>loading</div>}>
+        {React.createElement(React.lazy(() => import('../src/components/FeedbackModal')), { onClose(){} })}
+      </Suspense></EB>
+      {/* ⚠️ ต้องมี ToastContainer ใน harness ด้วย — ไม่งั้น `toast.error(...)` ไม่โผล่ที่ไหนเลย
+          แล้วกฎ "ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล ห้ามเงียบ" จะตรวจอัตโนมัติไม่ได้
+          (เจอ 22/09: เทสรายงานว่า 'ไม่มีข้อความเตือน' ทั้งที่โค้ดเรียก toast ถูกแล้ว) */}
+      <ToastContainer/>
+    </UserContext.Provider>
+  </MemoryRouter>
+)
+
 window.__PAGES = NAMES
-const wantSidebar = new URLSearchParams(location.search).get('p') === '__sidebar'
-createRoot(document.getElementById('root')).render(wantSidebar ? <SidebarLab/> : <App/>)
+const only = new URLSearchParams(location.search).get('p')
+createRoot(document.getElementById('root')).render(
+  only === '__sidebar' ? <SidebarLab/> : only === '__feedback' ? <FeedbackLab/> : <App/>)
