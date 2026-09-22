@@ -131,6 +131,12 @@ const thenable = (rows = ROWS) => {
       (Assy GOR = 37 ล็อตของ mat เดียว) ถ้าให้ทุกแถวเป็นคนละ mat โค้ดจัดกลุ่มจะไม่เคยถูกรัน
    ⚠️ แถว NULLISH ต้องยัง null ต่อไป — เติมแค่คีย์เชื่อม ห้ามเติมตัวเลขให้                        */
 const FAM_LINE = 'LINE APRON ASSY / HYDROFORM'
+/* รูปผังโรงงานปลอม — SVG data URI 1600×900 (ไม่ต้องต่อเน็ต · <img> เรนเดอร์ได้จริง
+   ต้องมีขนาดจริงในไฟล์ ไม่งั้น onImgLoad ได้ naturalWidth = 0 แล้วสเกลป้ายเพี้ยน) */
+const FACTORY_MAP_IMG = 'data:image/svg+xml;utf8,'
+  + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900">'
+    + '<rect width="1600" height="900" fill="#1f2937"/>'
+    + '<rect x="60" y="60" width="1480" height="780" fill="none" stroke="#475569" stroke-width="6"/></svg>')
 const isNullish = (r) => r.qty === null
 const TABLE_ROWS = {
   child_lot_requests: (r, i) => ({
@@ -184,12 +190,42 @@ const TABLE_ROWS = {
      · 10 ใบ + 4 ใบ ⇒ ได้ **ทั้งสองสาขา**: กลุ่มแรกถึงเกณฑ์ (ปุ่ม "เสนอปรับ" โผล่)
        กลุ่มหลังไม่ถึง (ป้าย "ตัวอย่างไม่พอ") — ถ้าทุกกลุ่มถึงเกณฑ์หมด สาขาที่สองจะไม่เคยถูกรัน */
   prod_orders: (r, i) => ({ ...r, mat_no: i <= 10 ? '10101001' : '10101002', status: 'confirmed' }),
+  /* 🏭 production_sessions — กะต้องผูกกับ **ไลน์ที่มีอยู่จริงใน production_lines** (2026-09-22)
+     เดิมทุกแถวเป็น `line_name: FAM_LINE` ซึ่งไม่ตรงกับ `LINE_NAME(i)` ของ production_lines เลย
+     ⇒ ทุกหน้าที่ถามว่า "ไลน์นี้เปิดกะหรือยัง" ได้คำตอบว่า "ยังไม่เปิด" ทุกไลน์เสมอ
+        (FactoryMap: ทุกกรอบเป็นสีเทา idle · แผงขวาทุกโหมดว่าง · ยอดผลิต/OEE/DT/NG = 0)
+     = สาขา "มีกะเปิดอยู่" ซึ่งเป็นสถานะปกติของวันทำงาน ไม่เคยถูกรันใน harness เลย
+     · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
+     · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
+  production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
+     `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
+     ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**
+        ทั้งผัง polygon · ป้าย/การ์ด KPI · de-overlap ป้าย · แผงขวาทุกโหมด (ทบทวนรายวัน /
+        บอร์ด OBEYA / จัดอันดับ) — crashsweep + mobilesweep ผ่านหน้านี้มาตลอดโดยไม่เคยแตะโค้ดพวกนี้
+     · รูป = data URI (ออฟไลน์ ไม่ต้องต่อเน็ต) ขนาด 1600×900 ให้ aspect ใกล้ผังจริง
+     · กรอบ: 2 ไลน์ผลิต (แม่ 1 + ลูก 1) + 1 โซนสนับสนุนที่ไม่ใช่ไลน์ผลิต (isFac = true)
+       ⇒ ได้ทั้งสาขา "ไลน์" และ "โซน facility" ที่คิดสถานะคนละชุด */
+
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,
   }),
 }
+/* ── ตารางที่ต้องคืน "ชุดแถวของตัวเอง" ไม่ใช่ ROWS แปลงร่าง ──────────────────────────
+   TABLE_ROWS ข้างบนคือ "แปลง ROWS ทีละแถว" (1 แถวเข้า → 1 แถวออก) ⇒ ตารางที่มีรูปทรงคนละเรื่อง
+   กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
+   mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
+const TABLE_FIXED = {
+  factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
+  factory_line_regions: [
+    { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
+    { id: 'rg-2', line_name: LINE_NAME(2), points: [[54, 8], [92, 8], [92, 46], [54, 46]] },
+    { id: 'rg-3', line_name: 'ห้องคอมเพรสเซอร์', points: [[6, 56], [44, 56], [44, 92], [6, 92]] },
+  ],
+}
 const rowsFor = (table) => {
+  if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
   return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
 }
