@@ -103,4 +103,9 @@ export const RATE = {
  *  · หน้าที่แก้ master เองควรเรียก `invalidateMaster(key)` หลังบันทึกสำเร็จ */
 export const MASTER_TTL = 4 * 60 * 60_000;
 
+/** TTL ของ "โครงสร้างฐานข้อมูล" (หน้า /schema) — ตาราง/คอลัมน์/FK เปลี่ยนตอน apply migration
+ *  เท่านั้น (เดือนละไม่กี่ครั้ง) และก้อนใหญ่ ~35 KB/โปรเจค ⇒ ยาวกว่า master ปกติได้สบาย
+ *  · หน้ามีปุ่ม "🔄 โหลดใหม่" ให้ล้าง cache เองเมื่อเพิ่ง apply migration */
+export const SCHEMA_TTL = 12 * 60 * 60_000;
+
 export default RATE;

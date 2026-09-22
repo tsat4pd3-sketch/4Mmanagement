@@ -24,6 +24,7 @@ import { uploadMyAvatar } from './utils/profileSelf';               // อัป
 import { liveChannel } from './utils/liveChannel';
 import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
+import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
 import { isKioskPath } from './utils/kioskRoutes';      // จอแขวนอ่านอย่างเดียว — ยกเว้น auto-logout
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
@@ -82,6 +83,8 @@ const Obeya = lazy(() => import('./pages/Obeya'));
 const ProductionPlan = lazy(() => import('./pages/ProductionPlan'));
 const PermissionsManagement = lazy(() => import('./pages/PermissionsManagement'));
 const AuditLog = lazy(() => import('./pages/AuditLog'));
+// 🗄️ แผนที่ฐานข้อมูล — ตาราง/PK/FK + "หน้าไหนใช้ตารางไหน" (อ่านสดจาก pg_catalog · 2026-09-22)
+const SchemaMap = lazy(() => import('./pages/SchemaMap'));
 const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
@@ -218,6 +221,8 @@ export const NAV_ITEMS = [
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 🗄️ ให้คนที่เจอบัคเห็นเองว่า "ข้อมูลที่เพี้ยนอยู่ตารางไหน · ผูกกับอะไร" แล้วแจ้งได้ตรงจุด
+  { to: '/schema',      icon: '🗄️', label: 'โครงสร้างฐานข้อมูล (ตาราง/คีย์)', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
 export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, LOGISTIC_GROUPS.control, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
@@ -348,6 +353,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
+  // หน้าอื่นขอเปิดกล่องแจ้งปัญหาได้ (เช่นปุ่ม 🐛 ในหน้า /schema) — กล่องนี้ mount อยู่ใน Sidebar
+  // จึงส่ง prop ลงไปไม่ได้ ⇒ ผ่าน event กลาง (src/utils/feedbackPrefill.js) · ห้ามทำกล่องใบที่ 2
+  useEffect(() => {
+    const open = () => setFbOpen(true);
+    window.addEventListener(FEEDBACK_EVENT, open);
+    return () => window.removeEventListener(FEEDBACK_EVENT, open);
+  }, []);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
   // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
@@ -1769,6 +1781,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/permissions" element={
                 <RoleRoute path="/permissions" userRole={role}><PermissionsManagement /></RoleRoute>
+              } />
+              <Route path="/schema" element={
+                <RoleRoute path="/schema" userRole={role}><SchemaMap /></RoleRoute>
               } />
               <Route path="/audit-log" element={
                 <RoleRoute path="/audit-log" userRole={role}><AuditLog /></RoleRoute>

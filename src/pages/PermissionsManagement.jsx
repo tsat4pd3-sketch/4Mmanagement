@@ -148,6 +148,7 @@ const PAGE_GROUPS = [
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
       { key: 'page:/audit-log',        label: 'ประวัติการแก้ไขข้อมูล (Audit Log)' },
+      { key: 'page:/schema',           label: 'โครงสร้างฐานข้อมูล — ตาราง/คีย์/ความสัมพันธ์ (อ่านอย่างเดียว ไม่เห็นข้อมูลในตาราง)' },
     ],
   },
   {
