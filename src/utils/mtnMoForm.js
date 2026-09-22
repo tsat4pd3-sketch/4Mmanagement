@@ -27,6 +27,30 @@ export const CAUSE_CATS = [
 /** งาน "สร้าง" ต้องผ่านผู้จัดการโรงงาน (ข้อความบนฟอร์ม: "MO. สร้าง ส่ง ผจก.โรงงานอนุมัติ") */
 export const needsPlantManager = (purpose) => purpose === 'build';
 
+/* ── ผจก.โรงงาน: เซ็นเฉพาะงบเกินแสน (user 2026-09-22) ─────────────────────────
+   "ลายเซ็นทั้งหมด 7 จุด **ไม่รวม ผจก.โรงงาน** ที่เซ็นเฉพาะงบเกินแสน
+    ตรงนั้นจะต้องปริ้นออกมาให้เซ็น แล้วส่งบัญชี"
+   ⇒ ลายเซ็นนี้ **อยู่นอกลูป 9 ขั้น** — ไม่บล็อกใบ ไม่เพิ่มขั้น เป็นงานกระดาษต่อท้าย
+   ⚠️ ห้ามเอาไปรวมกับ `needsApprovalFirst` (งานปรับปรุง/สร้าง) ซึ่งบล็อก*ก่อน*เริ่มงาน
+      — คนละจังหวะกัน: อันนั้นก่อนซ่อม อันนี้หลังรู้ค่าใช้จ่ายจริง */
+export const PLANT_MGR_COST_LIMIT = 100000;
+
+/** ยอดรวมค่าใช้จ่ายของใบ (ค่าแรง + ค่าอะไหล่) — null = ยังไม่รู้ (ห้ามตีเป็น 0) */
+export function orderCostTotal(order = {}, laborRows = null, partRows = null) {
+  if (Array.isArray(laborRows) || Array.isArray(partRows)) {
+    return grandTotal(laborRows || [], partRows || [], num(order.labor_cost), num(order.parts_cost));
+  }
+  const l = num(order.labor_cost), p = num(order.parts_cost);
+  return l == null && p == null ? null : (l || 0) + (p || 0);
+}
+
+/** ใบนี้ต้องให้ ผจก.โรงงานเซ็น (เพราะงบเกินเพดาน) แล้วปริ้นส่งบัญชีไหม
+ *  คืน false เมื่อยังไม่รู้ยอด — **ห้ามเตือนมั่วตอนยังไม่ได้ลงค่าใช้จ่าย** */
+export function needsPlantMgrByCost(order = {}, laborRows = null, partRows = null) {
+  const t = orderCostTotal(order, laborRows, partRows);
+  return t != null && t > PLANT_MGR_COST_LIMIT;
+}
+
 /* ── เงิน ─────────────────────────────────────────────────────────────────
    กติกา: ถ้ามี `amount` ที่คนกรอกเอง ให้ใช้ค่านั้น (ใบจริงบางใบปัดเลขเอง)
    ไม่มี → คำนวณจาก rate × hours (ค่าแรง) หรือ qty × unit_price (อะไหล่)
