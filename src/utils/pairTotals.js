@@ -147,3 +147,44 @@ export function collapsePairShots(rows, pairOf = () => null) {
   });
   return out;
 }
+
+/* ═══ งานคู่ กับ "ภาระเวลา" (shift-load) ตอน **วางแผน** — 2026-09-22 ═══════════════
+   ที่มา: audit แผนผลิต 22/09 — `ProductionPlan` บวก `qty ÷ กำลังต่อกะ` ของ RH และ LH
+   แยกกัน ทั้งที่ปั๊มทีเดียวได้ทั้งคู่ ⇒ โหลดของคู่ถูกนับ **2 เท่า**
+   วัดจริงในฐาน DR วันเดียวกัน (คู่ที่มี demand ครบทั้ง 2 ข้าง):
+     20065635 ↔ 20065715  LASER-789         (85,320 / 86,091 ชิ้น)
+     20059957 ↔ 20059959  LINE D 110&300T   (76,447 / 81,367)
+     20059966 ↔ 20059967  LINE D 110&300T   (85,516 / 85,212)
+   ⇒ LINE D (ซึ่ง `std_night_shift = 0` = ไม่มีกะดึกให้เปิด) ถูกดันไป tier "🚨 เกินกำลัง"
+     ทั้งที่โหลดจริงประมาณครึ่งเดียว
+
+   🔴 กติกา (ต่อจากกฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md):
+     · **ยอดชิ้น** (ต้องส่งลูกค้า/ของเสีย/%Q) = **บวกตามปกติ** — RH กับ LH ส่งแยกใบ เป็นชิ้นจริงทั้งคู่
+     · **ภาระเวลา / จำนวน shot** = **max ของสองข้าง** — ข้างที่กินเวลามากกว่าเป็นตัวกำหนด
+   เลือก `max(load)` ไม่ใช่ `max(qty) ÷ min(cap)` เพราะข้างที่แทบไม่เคยผลิตเดี่ยวจะมี median
+   กำลังต่ำผิดปกติ แล้วดึงโหลดทั้งคู่เฟ้อขึ้น (overstate โหลด = สั่งเปิด OT เกินจำเป็น)      */
+
+/**
+ * รวม shift-load ของหลายพาร์ทในหน่วยเดียวกัน โดยยุบคู่ RH/LH เป็นภาระเดียว
+ * @param {Record<string, number>|Map<string, number>} loadByMat  mat_no → ภาระ (หน่วยอะไรก็ได้ แต่ต้องหน่วยเดียวกัน)
+ * @param {(mat: string) => string|null|undefined} pairOf  คืน pair_mat_no ของ mat (จาก Product Master)
+ * @returns {number} ผลรวมหลังยุบคู่ — คู่ที่มีข้างเดียวในชุดข้อมูล นับตามปกติ (ไม่ใช่คู่กันในรอบนี้)
+ */
+export function pairLoadTotal(loadByMat, pairOf = () => null) {
+  const m = loadByMat instanceof Map
+    ? new Map([...loadByMat].map(([k, v]) => [k, Number(v) || 0]))
+    : new Map(Object.entries(loadByMat || {}).map(([k, v]) => [k, Number(v) || 0]));
+  const seen = new Set();
+  let total = 0;
+  for (const [mat, load] of m) {
+    if (seen.has(mat)) continue;
+    seen.add(mat);
+    const pm = pairOf(mat);
+    // คู่ต้อง "อยู่ในชุดข้อมูลรอบนี้" ด้วย — ไม่มีอีกข้าง = ผลิตเดี่ยวรอบนี้ นับเต็ม
+    if (pm != null && pm !== mat && m.has(pm)) {
+      seen.add(pm);
+      total += Math.max(load, m.get(pm));
+    } else total += load;
+  }
+  return total;
+}
