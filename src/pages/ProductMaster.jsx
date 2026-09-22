@@ -1707,7 +1707,39 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const slocRegistered = slocs.some(s => slocLabel(s.code) === slocCode);
   const slocUnregistered = slocCode !== '' && !slocRegistered;
 
-  const openPicker = (parentMat = '') => { setPickerQ(''); setPickerSel([]); setPickerParent(parentMat); setShowPicker(true); };
+  /* 🔴 ห้ามรับ argument ดิบ — `onClick={openPicker}` ส่ง **click event** เข้ามาเป็น arg ตัวแรก
+     เคยพังจริง 22/09: event ถูกเก็บลง `pickerParent` → `(m || '').trim()` ระเบิดทั้งจอ
+     ("(e || \"\").trim is not a function") ⇒ รับเฉพาะ string เท่านั้น ที่เหลือตีเป็นชั้น 1 */
+  /* ➕ step 2 ของ workflow: พาร์ทในทะเบียนต้อง "มีใบ BOM ของตัวเอง" ได้
+     user 22/09: *"ในพาร์ท BOM ก็ยังเพิ่มพาร์ทหลักที่จะสร้าง BOM step ถัดไปไม่ได้"*
+     ข้อจำกัดจริง: `bom_items.product_id` → `dr_products.id` ⇒ **ของที่จะเป็นหัวใบต้องมีแถวใน
+     dr_products** · พาร์ทที่อยู่แค่ `parts_master` จึงเปิดใบ BOM ของตัวเองไม่ได้เลย
+     ⇒ ปุ่มนี้สร้างแถว dr_products ขั้นต่ำให้ (mat_no + ชื่อ) แล้วเลือกให้เลย
+     ⚠️ ไม่ตั้ง `line_name`/CT/เป้า = **ไม่โผล่บนบอร์ดผลิต** (ทุกจอกรองด้วยไลน์) — ค่าผลิตไปเติมที่แท็บ 3️⃣
+     ⚠️ ไม่ติดธง OP — นี่คือพาร์ทจริง (ชั้น OP ต้องติ๊กเองที่แท็บ Products ตามเดิม) */
+  const [headBusy, setHeadBusy] = useState(false);
+  const [headPick, setHeadPick] = useState(false);
+  const makeBomHead = async (part) => {
+    const mat = String(part?.mat_no ?? '').trim().toUpperCase();
+    if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
+    const exist = products.find(pr => String(pr.mat_no ?? '').trim().toUpperCase() === mat);
+    if (exist) { setSelProduct(exist); setSearch(exist.mat_no); toast.info(`${mat} มีใบ BOM อยู่แล้ว — เลือกให้แล้ว`); return; }
+    setHeadBusy(true);
+    const { data, error } = await supabaseDR.from('dr_products')
+      .insert({ mat_no: mat, name: part.part_name || mat, p_no: part.part_no || null, is_active: true, created_by: fullName })
+      .select('id, name, code, mat_no, p_no, customer, line_name').single();
+    setHeadBusy(false);
+    if (error) { toast.error(`เปิดใบ BOM ไม่สำเร็จ: ${error.message}`); return; }
+    toast.success(`เปิดใบ BOM ของ ${mat} แล้ว — ใส่ค่าการผลิต (ไลน์/CT/เป้า) ที่แท็บ 3️⃣ Products`);
+    await loadAll();
+    setSelProduct(data); setSearch(mat);
+  };
+
+  const openPicker = (parentMat) => {
+    setPickerQ(''); setPickerSel([]);
+    setPickerParent(typeof parentMat === 'string' ? parentMat : '');
+    setShowPicker(true);
+  };
   const openEdit_  = (it) => {
     setEditItem(it);
     setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
@@ -1945,6 +1977,15 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+        {/* ➕ เปิดใบ BOM ให้พาร์ทในทะเบียนที่ยังไม่มีใบของตัวเอง (step 2 → 3) */}
+        {canCreate && (
+          <button onClick={() => setHeadPick(true)} disabled={headBusy}
+            style={{ marginTop: 8, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
+              cursor: headBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
+              background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.45)' }}>
+            {headBusy ? 'กำลังเปิดใบ…' : '➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
+          </button>
+        )}
         {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
         <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
           {[['part', `พาร์ท (${products.length - opCount})`], ['op', `🔩 ขั้นตอน (${opCount})`], ['all', 'ทั้งหมด']].map(([k, label]) => (
@@ -2002,7 +2043,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               </div>
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={openPicker} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
+                  <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
                   <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
                 </div>
               )}
@@ -2127,6 +2168,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
           </>
         )}
       </div>
+
+      {/* ══ เลือกพาร์ทจากทะเบียน มาเปิดเป็น "หัวใบ BOM" ══ */}
+      {headPick && (
+        <PartsPickModal parts={partsMaster} onClose={() => setHeadPick(false)}
+          onPick={(pt) => { setHeadPick(false); makeBomHead(pt); }} />
+      )}
 
       {/* ══ PICKER MODAL — เลือกพาร์ทจาก Parts Master ══ */}
       {showPicker && (

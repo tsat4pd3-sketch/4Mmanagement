@@ -1619,7 +1619,7 @@ function InstrumentTab({ lineObjs, canManage }) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <button style={ghostBtn} onClick={() => setModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={save}>บันทึก</button>
+            <button style={btnSt()} onClick={() => save()}>บันทึก</button>
           </div>
         </Modal>
       )}
