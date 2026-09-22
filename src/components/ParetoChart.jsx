@@ -70,6 +70,10 @@ export default function ParetoChart({
   const g = paretoGeometry(shown, { width, height: vbH, padBottom, padLeft, cutoff });
 
   if (!shown.length) return null;
+  /* แท่งที่เตี้ยกว่า ~1 พิกเซล — ต้องบอกบนจอว่า "ไม่ใช่ 0" ไม่งั้นคนอ่านสรุปผิด
+     (กฎความซื่อสัตย์ของจอ: ข้อมูลที่จอแสดงไม่ได้ ต้องเขียนว่าแสดงไม่ได้ ห้ามปล่อยให้ดูเหมือน 0) */
+  const tiny = g.bars.filter(b => b.value > 0 && b.h < 1);
+  const tinyMin = tiny.length ? Math.min(...tiny.map(b => b.value)) : 0;
   const axis = 'var(--border2)', txt = 'var(--text2)', mut = 'var(--muted)';
   const showBarVal = g.barW >= 26;
   // % บนหมุด: แสดงทุกจุดถ้าที่พอ · ไม่พอแสดงเฉพาะกลุ่ม A + จุดสุดท้าย (กันเลขทับกัน)
@@ -108,7 +112,11 @@ export default function ParetoChart({
           return (
           <g key={b.i} onClick={onPick && !b.row._tail ? () => onPick(b.row) : undefined}
             style={{ cursor: onPick && !b.row._tail ? 'pointer' : 'default' }}>
-            <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 1 : 0)}
+            {/* 🔴 พื้นขั้นต่ำ 2 หน่วย: เพดานแกน = ยอดรวม ⇒ รายการหางยาวสูงไม่ถึง 1 พิกเซล
+                ปล่อยตามจริง = **ตาเห็นเป็น 0 ทั้งที่ไม่ใช่** (user ถาม 22/09 "ท้ายๆ นี่ค่าเป็น 0 รึป่าว"
+                ข้อมูลจริง: รายการท้ายสุด 10 นาที = 0.004% ของยอดรวม = ~1/40 พิกเซล)
+                ⚠️ พื้นขั้นต่ำทำให้แท่งจิ๋วดู "เท่ากัน" ⇒ **ต้องมีข้อความบอกใต้กราฟด้วย** (ดู tinyNote) */}
+            <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 2 : 0)}
               fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1" />
           </g>
           );
@@ -173,6 +181,22 @@ export default function ParetoChart({
           <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={LINE_COLOR} strokeWidth="2" /></svg>
           % สะสม (อ่านแกนขวา)
         </span>
+        {/* ⚠️ ข้อความนี้ต้องอยู่ **ในไฟล์นี้** เท่านั้น — หน้าแม่ไม่รู้ว่าตอนนี้กางหางยาวอยู่หรือย่ออยู่
+            (เดิมอยู่ใน ParetoAbcChart แล้วเขียนว่า "แสดง 11 อันดับแรกจาก 46" ทั้งที่จอกางครบ 46 แท่งแล้ว) */}
+        {tail && (
+          <span style={{ color: 'var(--muted)' }}>
+            แสดง {shown.length - 1} อันดับแรกจาก {rows.length} · ที่เหลือยุบเป็นแท่ง “หางยาว”
+          </span>
+        )}
+        {showAll && (
+          <span style={{ color: 'var(--muted)' }}>แสดงครบทั้ง {rows.length} รายการ</span>
+        )}
+        {tiny.length > 0 && (
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>
+            ⚠️ {tiny.length} แท่งท้ายเตี้ยกว่า 1 พิกเซล (ต่ำสุด {fmtV(tinyMin)} {unit}) — <u>ไม่ใช่ 0</u>
+            {showAll ? ' · กด “ย่อหางยาว” เพื่อรวมเป็นแท่งเดียว' : ''}
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
           {tail && showTailToggle && (
             <button type="button" onClick={() => setShowAll(true)} style={miniBtn}>
