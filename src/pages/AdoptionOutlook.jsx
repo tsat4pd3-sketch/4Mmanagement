@@ -102,7 +102,7 @@ const DEPTS = [
       { label: 'เครื่องจักรที่มีแผน PM', now: c.pmPlans, total: c.machinesProd, unit: 'เครื่อง', gapTo: '/pm?tab=setup' },
       { label: 'ประวัติการตรวจที่บันทึก', now: c.inspections, total: null, unit: 'ครั้ง', gapTo: '/pm?tab=check' },
       { label: 'อะไหล่ในคลัง', now: c.spare, total: null, unit: 'รายการ', gap: 'ยังไม่ได้ย้ายจากไฟล์ Excel เข้าระบบ', gapTo: '/mtn-repair?tab=spare' },
-      { label: 'แม่พิมพ์/จิ๊กที่ลงทะเบียนตรวจ', now: c.jigsReal, total: c.dies, unit: 'ตัว', gapTo: '/die-registry' },
+      { label: 'แม่พิมพ์/จิ๊กที่ลงทะเบียนตรวจ', now: c.jigsReal, total: c.dies, unit: 'ตัว', gapTo: '/equipment?tab=die' },
     ],
     unlocks: [
       'เครื่องที่หยุดซ้ำถูกชี้เป้าอัตโนมัติ → เปิดใบซ่อมก่อนพัง ไม่ใช่ตามซ่อมทีหลัง',

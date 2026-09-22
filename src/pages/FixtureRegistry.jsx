@@ -78,7 +78,10 @@ export default function FixtureRegistry() {
   const canRecord = can('fixture_shim', 'record', role);
   const canApprove = can('fixture_shim', 'approve', role);
   const canClassify = can('machines', 'edit', role);
-  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points');
+  /* ⚠️ param ชื่อ `fx` ไม่ใช่ `tab` — หน้านี้ถูก embed เป็นแท็บใน `/equipment` (2026-09-22)
+     ซึ่งกิน `?tab=` ไปแล้ว · แท็บซ้อนแท็บต้องคนละ param (UI-CONVENTIONS §6.8)
+     ลิงก์เก่า `/fixture?tab=shim` ยังใช้ได้ — App.jsx แปลงให้ตอน redirect */
+  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points', 'fx');
 
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);   // ทุกชนิด (ใช้แท็บจัดชนิด)

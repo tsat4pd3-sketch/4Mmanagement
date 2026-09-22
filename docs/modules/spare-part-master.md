@@ -2,8 +2,16 @@
 
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
+> ### 📍 ที่อยู่ใหม่ (2026-09-22) — ยุบเข้า `/equipment` ศูนย์ทะเบียนอุปกรณ์
+> เดิมเป็นแท็บใน `/mtn-repair` (หน้า*ทำงาน*กับใบซ่อม) ซึ่งผิดประเภท — คลังอะไหล่คือ*ทะเบียน* ⇒ ย้ายไป
+> `/equipment?tab=spare` · ผังคลัง → `/equipment?tab=rack` · `?tab=spare|rack` เดิมบน `/mtn-repair` ยัง redirect ให้
+> · **ตัว component ไม่ถูกแก้เลย** — เปลี่ยนแค่ใครเป็นคนโหลด `mtn_spare_parts` แล้วส่ง `parts` เข้ามา
+>   (เดิม `MtnRepair` โหลดไว้ให้อยู่แล้ว · ตอนนี้ `EquipmentHub.SparePanel` โหลดเอง **เฉพาะตอนเปิดแท็บ**)
+> · 🔴 `fetchAllRows` คืน `{ data, error }` **ไม่ใช่อาร์เรย์** — จุดโหลดใหม่นี้เคยพลาดมาแล้ววันเดียวกัน
+>   (`(rows||[]).map is not a function`) · มีด่าน `regressionGuards` แล้ว
 
-แท็บ **🔩 คลังอะไหล่** ใน `/mtn-repair` (`src/components/SparePartMaster.jsx`) — ย้าย spare part list จากไฟล์ Excel เข้าระบบ: ค้นหาอะไหล่/ตำแหน่งชั้นวางได้เร็ว · ยอดคงเหลือตรงกับการเบิกจริงในใบ MO · จัด Rank A/B/C อัตโนมัติ · ตารางอยู่ **DR project** (migration `20260805_spare_part_master.sql`)
+
+แท็บ **🔩 คลังอะไหล่** ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ย้าย spare part list จากไฟล์ Excel เข้าระบบ: ค้นหาอะไหล่/ตำแหน่งชั้นวางได้เร็ว · ยอดคงเหลือตรงกับการเบิกจริงในใบ MO · จัด Rank A/B/C อัตโนมัติ · ตารางอยู่ **DR project** (migration `20260805_spare_part_master.sql`)
 
 > ### ⚠️⚠️ กฎเหล็ก — คลังแยกตาม "หน่วยงานเจ้าของ" ด้วยคอลัมน์ `section` **ห้ามแตก `mtn_teams`** (2026-08-27 · feedback หน้างาน)
 > *"แยกคลังอะไหล่ Production เป็น Production 1–4 เนื่องจากแต่ละทีมมีพื้นที่จัดเก็บและผู้รับผิดชอบแตกต่างกัน รวมถึงมีการใช้ Mat. No. ซ้ำกัน"*

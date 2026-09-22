@@ -9,6 +9,7 @@
 อัพเดท 2026-09-07: ใหม่ §5.1.2 — ช่อง "ชื่อคน/เลขเครื่อง/MAT/ลูกค้า/รหัสคลัง" ต้องใช้ picker กลาง (`PersonSelect`/`MachineSelect`/`ProductSelect`/`CustomerSelect`/`StorageLocSelect`) + `useOrgTeams` — audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`
 อัพเดท 2026-08-21: §5.3 ข้อ 9 ใหม่ — **dropdown เลือกไลน์ต้องใช้ `<LineSelect>` เท่านั้น** (ลำดับชั้น + scope + ตัดไลน์ปลดระวาง) · `production_lines.is_active` = ปลดระวางไลน์แทนการลบ
 อัพเดท 2026-08-06: §5.3 ข้อ 7 ใหม่ — แผนก "ขึ้นตรงฝ่าย" (parent_id ว่าง) ต้องเลือกได้ในฟอร์ม Section→แผนก ผ่าน sentinel `ORPHAN_SECTION` (helper กลาง sectionScope.js) · §7 การ์ดสรุปทักษะพนักงาน = component กลาง `SkillRadarPanel` (ตารางที่มีชื่อ/รูปพนักงานควรกดดูได้ ห้ามก๊อป modal ใหม่)
+อัพเดท 2026-09-22: §6.8 ข้อ 2.4 — แท็บซ้อนแท็บต้องคนละ query param (หน้าลูกใน hub ห้ามใช้ `?tab=`)
 อัพเดท 2026-09-16: §6.8 ข้อ 2.5 — ห้าม setSearchParams({...}) ตรงๆ (ล้าง ?tab= ของหน้าแม่ → จอเด้งแท็บ) · §5.1.3 ตัวกรองชนิดอุปกรณ์ต้องมาก่อนช่องเลือก
 อัพเดท 2026-08-11: ใหม่ §6.8 หัวหน้าเพจ + แท็บ — ทุกหน้าใช้ `PageHeader` (breadcrumb อัตโนมัติจาก NAV_ITEMS) · หน้าที่มีแท็บผูก `?tab=` ผ่าน `useTabParam` · route ที่ยุบเป็นแท็บแล้วต้อง redirect
 อัพเดท 2026-08-04: §5.1 viewer วางจุด default = **พอดีกรอบทั้ง 2 แกน** (เดิมเต็มความกว้าง → รูปแนวนอนสูงล้นจนตารางตกจอ) · §5.1 จอ "ตรวจจริง" ต้อง sync สีหมุดกับผลตรวจ + แตะหมุด↔แถว สองทาง
@@ -845,6 +846,22 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
    - ⚠️ **การสลับแท็บที่ "ระบบสั่งเอง" ต้องใช้ `setTab(k, { replace: true })`** (เช่นบันทึกเสร็จแล้วเด้งกลับหน้ารายการ) — ถ้า push ผู้ใช้กด Back จะย้อนเข้าฟอร์มที่เพิ่งบันทึกไปแล้ว · ผู้ใช้กดแท็บเอง = push (ค่าเริ่มต้น)
    - ⚠️ `setTab` จาก `useTabParam` **เปลี่ยน identity ตาม URL** — ถ้าเรียกใน `useCallback`/`useEffect` ต้องใส่ใน deps (เดิม `useState` setter นิ่ง เลยเคยใส่ `[]` ได้)
    - ⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return (กฎ rules-of-hooks — React #310)
+2.4 **🔴 แท็บซ้อนแท็บ = คนละ query param — หน้าลูกที่ถูกยุบเข้าหน้าแม่ห้ามใช้ `?tab=`** (2026-09-22)
+   `useTabParam(keys, default, param)` — **อาร์กิวเมนต์ที่ 3 คือชื่อ param** (default `'tab'`)
+   หน้าแม่ (hub) ถือ `?tab=` ⇒ หน้าลูกต้องเปลี่ยนเป็น param ของตัวเอง ไม่งั้นทั้งสองชั้นอ่าน/เขียนตัวเดียวกัน:
+   กดแท็บลูก → หน้าแม่เห็นค่าที่ไม่รู้จัก → **เด้งกลับแท็บ default เงียบๆ**
+   ```js
+   // หน้าแม่ (EquipmentHub / PmHub / MtnAnalysis)
+   const [tab, setTab] = useTabParam(TABS.map(t => t.key), TABS[0].key);          // ?tab=
+   // หน้าลูก — ตั้งชื่อ param ให้สื่อว่าเป็นของหน้าไหน
+   const [sub, setSub] = useTabParam(['registry','layout','status'], 'registry', 'die');   // ?die=
+   ```
+   · ที่ใช้อยู่จริง: `/equipment` → `?die=` (DieRegistry) · `?fx=` (FixtureRegistry) ·
+     `/mtn-analysis` → `?asset=` (แท็บชนิดอุปกรณ์ใน QC7) · `/pm` → `?dept=`/`?line=`/`?equip=`
+   · **ลิงก์ภายในต้องเขียน param ครบทั้ง 2 ชั้น** (`/equipment?tab=die&die=layout`) และ**ชี้หน้าแม่ตรงๆ
+     ห้ามเด้งผ่าน route redirect ของหน้าลูกเดิม** (redirect มีไว้ให้ bookmark เก่าเท่านั้น)
+   · route เดิมของหน้าลูกใช้ `LegacyTabRedirect` (`App.jsx`) ย้าย `?tab=` เก่าไปเป็น param ใหม่ให้อัตโนมัติ
+
 2.5 **🔴 ห้ามเรียก `setSearchParams({...})` ตรงๆ — ใช้ `useMergeParams()` (`src/utils/useTabParam.js`) เสมอ** (2026-09-16 · บั๊กจริง user ส่งคลิปมา)
    `setSearchParams({ dept: d })` **ล้าง param อื่นทิ้งทั้งหมด** รวมทั้ง `?tab=` ของหน้าแม่ ⇒ หน้าแม่หาแท็บไม่เจอ
    **จอเด้งไปแท็บแรกเอง** · เกิดจริงที่ `/pm?tab=setup` กดแท็บ "ส่วนงาน" แล้วเด้งไป "✅ ตรวจอุปกรณ์"
