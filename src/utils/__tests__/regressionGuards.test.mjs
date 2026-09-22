@@ -416,3 +416,36 @@ test('🛡️ live-oee-must-pass-pairmap — ทุกจอที่คิด O
     + '   ⚠️ ห้ามยุบคู่ในฝั่งยอดผลิต/%Q — นั่นนับ "ชิ้น" คนละหน่วยกับ "shot"\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
+
+/* 🔴 onClick={fn} เมื่อ fn "รับ argument" — React ส่ง click event เป็น arg ตัวแรกเสมอ
+   เคยพังจริง 22/09/2026: `openPicker` ถูกเพิ่มพารามิเตอร์ `parentMat` ทีหลัง แต่ call site ยังเป็น
+   `onClick={openPicker}` ⇒ event ถูกเก็บลง state → `(m || '').trim()` ระเบิดทั้งจอ
+   ("(e || \"\").trim is not a function") · build / lint / เทส / crashsweep **ผ่านหมด**
+   ⚠️ ตรวจแบบเทียบกับ "คำประกาศของฟังก์ชันในไฟล์เดียวกัน" ไม่ใช่ regex กว้างๆ —
+      handler ที่ไม่รับ arg (openNew/openCreate) ต้องไม่ถูกฟ้อง ไม่งั้นด่านนี้จะกลายเป็นที่รำคาญ */
+test('🛡️ onClick={fn} ที่ fn รับ argument — ต้องห่อด้วย () => fn(...)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const rel = relative(ROOT, file);
+    for (const m of code.matchAll(/onClick=\{(\w+)\}/g)) {
+      const fn = m[1];
+      /* เอาเฉพาะ element จริงของ DOM (<button …>) — คอมโพเนนต์ของเราเอง (<SearchSelect onChange={emit}>)
+         ส่ง object ที่ตั้งใจ ไม่ใช่ DOM event ⇒ ไม่ใช่บั๊กคลาสนี้ */
+      const openTag = code.lastIndexOf('<', m.index);
+      if (openTag < 0 || !/^[a-z]/.test(code.slice(openTag + 1, openTag + 2))) continue;
+      // หาคำประกาศในไฟล์เดียวกัน: const fn = (args) =>   /   function fn(args)
+      const d = code.match(new RegExp(`(?:const\\s+${fn}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>|function\\s+${fn}\\s*\\(([^)]*)\\))`));
+      if (!d) continue;                                   // ประกาศที่อื่น/import — ข้าม
+      const args = (d[1] ?? d[2] ?? '').trim();
+      if (!args) continue;                                // ไม่รับ arg = ปลอดภัย
+      if (/^(e|ev|evt|event)\b/.test(args)) continue;      // ตั้งใจรับ event จริง
+      const line = code.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  on…={${fn}} แต่ ${fn} รับ (${args})`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    `\n❌ handler รับ argument แต่ผูกตรงๆ — React จะส่ง event เข้าไปแทน:\n  ${bad.join('\n  ')}\n` +
+    `   เคยพังจริง 22/09/2026: openPicker(parentMat) ได้ event มา → (m || '').trim() ระเบิดทั้งจอ\n` +
+    `   แก้: onClick={() => ${'${fn}'}()} หรือ guard ชนิดใน handler`);
+});
