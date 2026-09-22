@@ -8,6 +8,10 @@
       ต้องอ่านค่าจากที่นี่ที่เดียว ห้ามคิดเลขซ้ำในหน้า (เลขบนจอกับบนใบพิมพ์จะเพี้ยนกัน)
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ⚠️ import ได้เฉพาะ util ที่ pure ด้วยกัน — `mtnTeams.js` import pmTeams → supabaseClient
+   ซึ่งพัง `import.meta.env` นอก Vite (npm test รันไฟล์ตรงๆ) · การเดาทีมจากชื่ออุปกรณ์อยู่ที่นี่ */
+import { guessTeamFromName } from './mtnTeamGuess.js';
+
 /** จุดประสงค์ 4 แบบตามฟอร์ม — เดิมใบพิมพ์เดาจาก repair_type ได้แค่ ซ่อม/ปรับปรุง */
 export const PURPOSES = [
   { key: 'repair',  label: 'ซ่อม' },
@@ -117,14 +121,40 @@ export const APPROVE_FIRST_PURPOSES = ['improve', 'build'];
  *     (เพิ่มจุดประสงค์ใหม่วันหน้า อาจต้องอนุมัติก่อนแต่ยังต้องผ่าน QA หรือกลับกัน) */
 export const NO_QA_PURPOSES = ['improve', 'build'];
 
+/* ── ใบนี้ใช้ฟอร์ม/ขั้นตอนของทีม MTN (FM-MTN-006) ไหม ───────────────────────  2026-09-22
+   เดิมคำตอบนี้คำนวณในหน้า (`teamKeyOf(mtn_dept || deptForItem(item_type)) === 'maintenance'`)
+   ซึ่งเรียกจาก util ที่ pure ไม่ได้ ⇒ กติกา "loop MTN ไม่มี QA" เขียนใน mtnStepPerm ไม่ได้เลย
+   ย้ายมาที่นี่ (pure) แล้วให้หน้าจอ import ตัวนี้ตัวเดียว — **ห้ามเขียนเกณฑ์นี้ซ้ำอีก**
+
+   ⚠️ เทียบกับ **key** ('maintenance') ไม่ใช่ชื่อทีม — ชื่อ (mtn_teams.dept_name) เปลี่ยนได้
+      ทุกคอลัมน์ทีมเก็บ key แล้วตั้งแต่ migration 20260806_unify_team_encoding · ที่ยอมรับชื่อเก่า
+      ('mtn') ไว้ด้วย เพราะข้อมูลที่คนกรอกมือ/นำเข้าก่อนหน้านั้นอาจยังเป็นตัวย่อ */
+const MTN_FORM_TEAM = 'maintenance';
+const MTN_FORM_ALIASES = [MTN_FORM_TEAM, 'mtn'];
+export const isMtnFormRow = (order = {}) => {
+  const d = String(order?.mtn_dept || '').trim().toLowerCase();
+  if (d) return MTN_FORM_ALIASES.includes(d);
+  /* ใบเก่าที่ไม่ได้ระบุหน่วยงาน — เดาจากชนิดอุปกรณ์แบบเดียวกับ teamForItem()
+     ⚠️ **ไม่ระบุทั้งคู่ = ไม่ใช่ฟอร์ม MTN** (ต่างจาก teamForItem ที่ถอยเป็น 'maintenance')
+        เพราะคำตอบนี้ไปตัดสิน "ใบนี้ไม่ต้องผ่าน QA" ด้วย — เดาผิดทางนั้นคือ**ปิดด่านคุณภาพเงียบ**
+        ให้ fail-safe ฝั่งคุณภาพเสมอ: ไม่รู้ = เดินเส้นทางเดิม (ผ่าน QA) */
+  const it = String(order?.item_type || '').trim();
+  return !!it && guessTeamFromName(it) === MTN_FORM_TEAM;
+};
+
+/** เหตุผลมาตรฐานเมื่อ QA ไม่อยู่ในลูปของฟอร์มนี้เลย (ไม่ใช่มีคนกดข้าม) — user 2026-09-22 */
+export const QA_SKIP_REASON_MTN_FORM = 'ใบซ่อมของทีม MTN (FM-MTN-006) — ลูปนี้ไม่มีขั้นตรวจคุณภาพโดย QA';
+
 /** ช่องติ๊ก "จุดประสงค์" บนใบพิมพ์ — ใบเก่าที่ไม่มี purpose เดาจาก repair_type ได้ (แค่การแสดงผล) */
 export const purposeOfPrint = (order) =>
   order?.purpose || (/improve|ปรับปรุง/i.test(order?.repair_type || '') ? 'improve' : 'repair');
 
 /** ใบนี้ต้องรอผู้จัดการเซ็นก่อนไหม (ยังไม่ดูว่าเซ็นหรือยัง) */
 export const needsApprovalFirst = (order) => APPROVE_FIRST_PURPOSES.includes(order?.purpose);
-/** ใบนี้ต้องผ่าน QA ไหม — ว่าง/ค่าที่ไม่รู้จัก = **ต้องผ่าน** (fail-safe ฝั่งคุณภาพ) */
-export const qaAppliesTo = (order) => !NO_QA_PURPOSES.includes(order?.purpose);
+/** ใบนี้ต้องผ่าน QA ไหม — ว่าง/ค่าที่ไม่รู้จัก = **ต้องผ่าน** (fail-safe ฝั่งคุณภาพ)
+ *  🔴 2026-09-22 (คำสั่ง user: *"loop MO ช่างใบนี้ ไม่มี QA ใน loop"*) — ใบของทีม MTN
+ *     ไม่มีขั้น QA เลย ไม่ว่าจุดประสงค์อะไร · JIG/DIE/PRODUCTION ยังผ่าน QA เหมือนเดิมทุกอย่าง */
+export const qaAppliesTo = (order) => !NO_QA_PURPOSES.includes(order?.purpose) && !isMtnFormRow(order);
 
 /** เหตุผลมาตรฐานเมื่อ QA ถูกข้ามเพราะจุดประสงค์ของงาน (ไม่ใช่คนกดข้าม) */
 export const QA_SKIP_REASON_PURPOSE = 'งานสร้าง/ปรับปรุง — ไม่ใช่งานซ่อมของที่กำลังผลิต จึงไม่ต้องตรวจคุณภาพหลังซ่อม';
