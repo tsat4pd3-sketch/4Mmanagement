@@ -4,6 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
 import { toast } from '../components/Toast';
+import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
@@ -320,6 +321,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // { d, team, mode } — เลือกทีมช่างก่อน · mode 'mo' = เปิดใบซ่อม · 'call' = เรียกช่างด่วน (2026-09-21)
   //   ใช้ modal ตัวเดียวกันทั้ง 2 ทาง — ทีมปลายทางคือคำถามเดียวกัน ห้ามแตกเป็น 2 จอให้เพี้ยนกัน
   const [moDtPick, setMoDtPick] = useState(null);
+  const [moImg, setMoImg] = useState(null);        // ไฟล์รูปก่อนซ่อม (ตอนเปิดใบจากดาวน์ไทม์)
+  const [moSaving, setMoSaving] = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
@@ -2648,11 +2651,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadDT(selSession.id);
   };
 
+  /* พรีวิวรูป — ต้อง revokeObjectURL ตอนเปลี่ยน/ปิด ไม่งั้น blob ค้างในหน่วยความจำทุกครั้งที่เลือกรูป */
+  const [moImgPreview, setMoImgPreview] = useState('');
+  useEffect(() => {
+    if (!moImg) { setMoImgPreview(''); return; }
+    const u = URL.createObjectURL(moImg);
+    setMoImgPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [moImg]);
+
   // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
   // เปิด picker เลือกทีมช่างก่อน (แจกให้ถูกทีม) — เดา default จากชื่อเครื่อง (JIG/DIE)
   const openMoPicker = async (d) => {
     const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
     if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
+    setMoImg(null);   // เปิด picker ใหม่ = ล้างรูปเดิม ไม่งั้นรูปของใบก่อนหน้าติดไปกับใบใหม่
     setMoDtPick({ d, team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no), mode: 'mo' });
   };
 
@@ -2665,8 +2678,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
+    setMoSaving(true);
     const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
-    if (error) { toast.error(error.message); return; }
+    if (error) { setMoSaving(false); toast.error('เปิดใบซ่อมไม่สำเร็จ: ' + error.message); return; }
+
+    /* รูปอัปโหลด **หลัง** insert เพราะต้องใช้ id ตั้งชื่อไฟล์ (pattern เดียวกับ step1 ของ MtnRepair)
+       ⚠️ อัปโหลดล้ม = ใบยังต้องถูกเปิด ห้าม rollback ใบทิ้ง — แค่บอกว่ารูปไม่ขึ้นแล้วให้ไปแนบซ้ำที่หน้าแจ้งซ่อม
+          (ใบซ่อมสำคัญกว่ารูป · ถ้าโยนทิ้งทั้งใบเพราะรูปไม่ขึ้น หน้างานจะเสียเวลากรอกใหม่หมด) */
+    if (moImg) {
+      try {
+        const url = await uploadMoBeforeImg(moImg, data.id);
+        const up = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id).select('id');
+        if (up.error || !up.data?.length) throw new Error(up.error?.message || 'บันทึก URL รูปไม่สำเร็จ');
+        data.before_img = url;
+      } catch (e) {
+        toast.error('เปิดใบซ่อมแล้ว แต่แนบรูปไม่สำเร็จ: ' + (e.message || e) + ' — แนบซ้ำได้ที่หน้าแจ้งซ่อม MTN');
+      }
+    }
+    setMoSaving(false);
+    setMoImg(null);
     fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
       // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -3858,7 +3888,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   ? 'แจ้งเฉพาะช่างทีมที่เลือก + หัวหน้า/ผจก.ของส่วนงานนี้ (ทีมอื่นไม่ถูกรบกวน)'
                   : 'ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือนของทีมที่เลือก'}
               </div>
-              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: moDtPick.mode === 'call' ? 16 : 12 }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
                     padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
@@ -3868,13 +3898,32 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }}>{deptNameOf(t)}</button>
                 ))}
               </div>
+              {/* 📷 รูปก่อนซ่อม — user แจ้ง 22/09: *"เปิด MO จากดาวน์ไทม์ ไม่มีให้แนบรูป เหมือนกับเปิด MO ใหม่ step1"*
+                  ใบที่เปิดจากดาวน์ไทม์เข้าคิวเดียวกับใบที่เปิดจากหน้าแจ้งซ่อม ⇒ ต้องแนบรูปได้เหมือนกัน
+                  ไม่งั้นช่างเปิดใบมาแล้วไม่เห็นอาการ ต้องเดินไปดูเองทุกใบ
+                  ⚠️ บีบ/อัปโหลดผ่าน `utils/mtnImage.js` เท่านั้น (16:9 · webp · bucket เดียวกับ step1) */}
+              {moDtPick.mode !== 'call' && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
+                    📷 รูปก่อนซ่อม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ · ครอบ 16:9 ให้อัตโนมัติ)</span>
+                  </div>
+                  {moImgPreview && <img src={moImgPreview} alt="" style={{ display: 'block', width: '100%', maxHeight: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
+                  {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (บทเรียนเดียวกับ ImgField ใน MtnRepair) */}
+                  <input type="file" accept="image/*" capture="environment" style={{ fontSize: 12 }}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setMoImg(f); }} />
+                  {moImg && (
+                    <button type="button" onClick={() => setMoImg(null)}
+                      style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>✕ เอารูปออก</button>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={() => (moDtPick.mode === 'call'
+                <button disabled={moSaving} onClick={() => (moDtPick.mode === 'call'
                     ? handleCallMtn(moDtPick.d, moDtPick.team)
                     : handleCreateMoFromDt(moDtPick.d, moDtPick.team))}
-                  style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-                  {moDtPick.mode === 'call' ? '📞 เรียก' : '📝 เปิดใบซ่อม →'} {deptNameOf(moDtPick.team)}
+                  style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
+                  {moSaving ? '⏳ กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? '📞 เรียก' : '📝 เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
               </div>
             </div>

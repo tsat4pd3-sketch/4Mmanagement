@@ -105,24 +105,11 @@ export default function ParetoChart({
 
         {/* แท่ง — ชิดกันสนิทตามมาตรฐาน (เส้นขอบขาวบางคั่นให้แยกแท่งออก ไม่ใช่ช่องว่าง) */}
         {g.bars.map(b => {
-          /* เส้นสะสมพาดต่ำในแท่งแรกๆ (เพิ่งออกจาก 0%) ⇒ เลขที่ฐานแท่งโดนทับ
-             ⇒ ดูความสูงเส้นตรงกลางแท่ง แล้วเลือกวางเลขฝั่งที่เส้นไม่ผ่าน */
-          const lineY = (g.line[b.i].y + g.line[b.i + 1].y) / 2;
-          const valY = lineY > g.base - 34 ? b.y + 15 : g.base - 9;
           return (
           <g key={b.i} onClick={onPick && !b.row._tail ? () => onPick(b.row) : undefined}
             style={{ cursor: onPick && !b.row._tail ? 'pointer' : 'default' }}>
             <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 1 : 0)}
               fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1" />
-            {/* ⚠️ เลขค่าต้องอยู่ **ในแท่ง** เมื่อแท่งสูงพอ — วางเหนือหัวแท่งจะชนกับ % ของเส้นสะสม
-                ที่ลากผ่านแถวเดียวกัน (เจอจริงรอบแรก 22/09: "25" ทับ "80%", "19" ทับ "62.3%")
-                วางที่ **ฐานแท่ง** ไม่ใช่หัวแท่ง — ข้อมูลที่ค่าใกล้กัน (25/24/23…) เส้นสะสมจะพาดผ่าน
-                หัวแท่งพอดี ⇒ วางหัวแท่งชนแน่นอน ส่วนฐานแท่งเส้นไม่เคยลงไปถึง */}
-            {showBarVal && b.h > 0 && (
-              b.h >= 26
-                ? <text x={b.x + b.w / 2} y={valY} fontSize={FONT} fill="#ffffff" textAnchor="middle" fontWeight="700">{fmtV(b.value)}</text>
-                : <text x={b.x + b.w / 2} y={b.y - 5} fontSize={FONT} fill={txt} textAnchor="middle" fontWeight="600">{fmtV(b.value)}</text>
-            )}
           </g>
           );
         })}
@@ -136,13 +123,25 @@ export default function ParetoChart({
         {g.line.filter(p => !p.origin).map(p => (
           <g key={`p${p.i}`}>
             <rect x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" fill={LINE_COLOR} stroke="var(--card)" strokeWidth="1.2" />
+            {/* หมุด i อยู่ระดับ "ยอดสะสมถึงแท่ง i" ⇒ หมุดแรก = หัวแท่งแรกพอดี (ดู pareto.js)
+                ป้าย % จึงชนเลขค่าของแท่งนั้นแน่นอน — ยกป้ายแรกขึ้นอีกขั้น */}
             {(roomy || p.row?._cls === 'A' || p.i === g.line.length - 2) && (
-              <text x={p.x} y={p.y - 10} fontSize={FONT} textAnchor="middle" fontWeight="700"
+              <text x={p.x} y={p.y - (p.i === 0 ? 22 : 10)} fontSize={FONT} textAnchor="middle" fontWeight="700"
                 fill={LINE_COLOR} stroke="var(--card)" strokeWidth="3" paintOrder="stroke">
                 {p.pct.toFixed(1)}%
               </text>
             )}
           </g>
+        ))}
+
+        {/* เลขค่าบนหัวแท่ง — **วาดหลังเส้นสะสม** เพื่อให้ขอบสีพื้นการ์ดกินเส้นที่พาดผ่าน
+            (วาดก่อนเส้น = เส้นทับเลข · เจอจริง 22/09 เลข "24" ของแท่งที่ 2 หายไปใต้เส้น)
+            เพดานแกนซ้าย = ยอดรวม ⇒ แท่งเตี้ยกว่าพื้นที่กราฟเป็นปกติ ที่ว่างด้านบนคือที่ของเส้นสะสม */}
+        {showBarVal && g.bars.map(b => b.h > 0 && (
+          <text key={`v${b.i}`} x={b.x + b.w / 2} y={b.y - 6} fontSize={FONT} textAnchor="middle"
+            fontWeight="700" fill={txt} stroke="var(--card)" strokeWidth="3.5" paintOrder="stroke">
+            {fmtV(b.value)}
+          </text>
         ))}
 
         {/* ป้ายแกน X — เอียงตามพื้นที่ (0 / -45 / -90) ห้ามตัดคำทิ้งเงียบ */}
