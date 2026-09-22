@@ -71,6 +71,7 @@ const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
 const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
+const MtnAnalysis = lazy(() => import('./pages/MtnAnalysis'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -173,6 +174,9 @@ export const NAV_ITEMS = [
   //    ⭐ วิธีนี้แก้ปัญหา "4 เมนู PM ชื่อขึ้นต้นเหมือนกันจนแยกไม่ออก" ได้แรงกว่าการเปลี่ยนชื่อ
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🔍 หน้าวิเคราะห์ (อ่านอย่างเดียว) แยกจาก /mtn-repair ที่เป็นหน้าทำงาน — 2026-09-22
+     คำสั่ง user: "หมวด mtn ยังไม่มี dashboard ปัญหา เครื่องจักร/แม่พิมพ์/jig fixture · qc7tools ยังไม่เห็น" */
+  { to: '/mtn-analysis', icon: '🔍', label: 'วิเคราะห์ปัญหา (QC 7 Tools)',    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
@@ -1904,6 +1908,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
+              } />
+              <Route path="/mtn-analysis" element={
+                <RoleRoute path="/mtn-analysis" userRole={role}><MtnAnalysis /></RoleRoute>
               } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
