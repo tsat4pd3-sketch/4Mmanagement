@@ -85,15 +85,37 @@ export const MTN_FORM_STEPS = {
     icon: '✍️', title: 'ผจก.แผนกที่แจ้ง อนุมัติ',
     who: 'ผู้จัดการของแผนกที่แจ้ง (เจ้าของค่าใช้จ่าย)', whoShort: 'ผจก.แผนกที่แจ้ง',
   },
+  /* 🔴 2026-09-22 — ขั้น 8 "หัวหน้าแผนก MTN" (ทีมส่ง WI + ใบจริงมาเทียบ · user: "flow เอาตาม WI")
+     เดิมระบบมี 8 ขั้นแล้วข้ามขั้นนี้ไปเลย ⇒ ช่องเซ็นที่ 5 ของฟอร์มถูกเติมด้วย `checker_name`
+     (คนตรวจรับฝั่ง**ผู้แจ้ง** ขั้น 4) = คนละฝั่งกับที่ฟอร์มต้องการ
+     วัดจริง 22/09: 6 จาก 8 ใบที่มีชื่อในช่องนี้ เป็นคนเดียวกับผู้เปิดใบ
+     ⇒ ใบที่พิมพ์ออกไปแล้ว "หัวหน้าแผนก MTN เซ็น" จริงๆ คือลายเซ็นผู้แจ้งซ้ำอีกรอบ */
   8: {
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    icon: '👔', title: 'หัวหน้าแผนก MTN ตรวจ',
+    who: 'หัวหน้าแผนกซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'หัวหน้าแผนก MTN',
+  },
+  9: {
     key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
     icon: '🏁', title: 'ปิดจบใบ MO',
     who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง — ผู้ปิดใบ)', whoShort: 'ผจก.ซ่อมบำรุง',
   },
 };
 
-/** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลข 7 ในหน้าอีก) */
-export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 8 : 7);
+/** ขั้นสุดท้ายของใบ — MTN 9 ขั้น (ตาม WI) · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
+export const lastStep = ({ mtnForm = false } = {}) => (mtnForm ? 9 : 7);
+
+/* ── ใบ MTN อยู่ขั้นไหนในช่วง "รอเซ็นปิด" (status คง `handover` ทั้ง 3 ขั้น) ──────────────
+   🔴 ตัดสินด้วย **เวลาเซ็นจริง** ไม่ใช่ `current_step` — ใบเก่าที่เดินมาก่อนมีขั้น 8
+      มี current_step = 7 หรือ 8 ปนกัน เชื่อตัวเลขอย่างเดียวไม่ได้
+   คืน 7 | 8 | 9 = ขั้นถัดไปที่ต้องทำ · คืน `null` = **ตัดสินไม่ได้** (แถวไม่ได้ select เวลาเซ็นมา)
+   ⚠️ ผู้เรียกต้องรองรับ null ด้วยป้ายรวม ห้ามเดา (กติกาเดียวกับ `qa_skipped_at` ของขั้น 5) */
+export function mtnCloseStage(order = {}) {
+  if (order?.cost_mgr_at === undefined || order?.mtn_head_at === undefined) return null;
+  if (!order.cost_mgr_at) return 7;
+  if (!order.mtn_head_at) return 8;
+  return 9;
+}
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
 export const stepMeta = (step, { mtnForm = false } = {}) =>
@@ -414,7 +436,9 @@ export const moStatusMeta = (order) => {
 export const MO_LABEL_WAIT_APPROVAL = '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)';
 export const MO_LABEL_WAIT_QA = '🧪 รอตรวจคุณภาพ (ขั้น 5)';
 /** ใบ MTN ที่ ผจก.แผนกที่แจ้งอนุมัติแล้ว เหลือ ผจก.ซ่อมบำรุงปิดจบ (ขั้น 8 — มีเฉพาะฟอร์ม MTN) */
-export const MO_LABEL_WAIT_MTN_CLOSE = '🏁 รอ ผจก.ซ่อมบำรุง ปิดใบ (ขั้น 8)';
+export const MO_LABEL_WAIT_MTN_CLOSE = '🏁 รอ ผจก.ซ่อมบำรุง ปิดใบ (ขั้น 9)';
+export const MO_LABEL_WAIT_MTN_HEAD  = '👔 รอหัวหน้าแผนก MTN (ขั้น 8)';
+export const MO_LABEL_WAIT_COST_MGR  = '✍️ รอ ผจก.แผนกที่แจ้งอนุมัติ (ขั้น 7)';
 export const MO_LABEL_WAIT_HANDOVER = '🤝 รอรับมอบ (ขั้น 6)';
 
 /**
@@ -431,7 +455,15 @@ export function moStatusLabel(order) {
   if (st === 'pending' && order?.purpose && order?.dept_manager_at !== undefined && mtnApprovalState(order).blocked) return MO_LABEL_WAIT_APPROVAL;
   /* `handover` + เดินเลยขั้น 7 แล้ว = ใบ MTN ที่รอขั้น 8 เท่านั้น — ฟอร์มอื่นขั้น 7 ปิดใบเป็น
      `closed` ทันที จึงมาถึงตรงนี้ไม่ได้ ⇒ ไม่ต้องรู้ว่าใบไหนเป็นฟอร์ม MTN (util นี้ยัง pure) */
-  if (st === 'handover' && Number(order?.current_step || 0) >= 7) return MO_LABEL_WAIT_MTN_CLOSE;
+  /* ใบ MTN ค้างที่ `handover` ได้ 3 ขั้น (7 ผจก.แผนกที่แจ้ง · 8 หัวหน้าแผนก MTN · 9 ปิดใบ)
+     แยกด้วยเวลาเซ็นจริง — ป้ายต้องบอกว่า "รอใคร" ไม่ใช่เหมารวมว่ารอคนปิดใบ (2026-09-22)
+     ⚠️ ฟอร์มอื่นมาถึงสถานะนี้ไม่ได้ (ขั้น 7 ของมันปิดใบเป็น `closed` ทันที) */
+  if (st === 'handover' && Number(order?.current_step || 0) >= 7) {
+    const stage = mtnCloseStage(order);
+    if (stage === 7) return MO_LABEL_WAIT_COST_MGR;
+    if (stage === 8) return MO_LABEL_WAIT_MTN_HEAD;
+    return MO_LABEL_WAIT_MTN_CLOSE;      // 9 หรือ null (ไม่ได้ select เวลาเซ็นมา) = ป้ายรวมเดิม
+  }
   if (st !== 'checked') return MO_STATUS_LABEL[st] || st || MO_STATUS_LABEL.pending;
   // แถวที่ไม่ได้ select `qa_skipped_at` มาด้วย = ตัดสินไม่ได้ว่าข้ามหรือยัง → ใช้ป้ายรวม ห้ามเดา
   if (order?.qa_skipped_at === undefined) return MO_STATUS_LABEL.checked;
