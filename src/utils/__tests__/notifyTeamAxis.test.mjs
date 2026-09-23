@@ -75,3 +75,44 @@ test('edge ใบแจ้งซ่อมต้องส่ง p_team ด้ว�
   // ⚠️ ผู้เรียกฝั่งเว็บไม่ส่ง Authorization ⇒ ห้ามเปิด verify_jwt (เคยหลุดตอน deploy 23/09)
   assert.ok(src.includes('verify_jwt = false'), 'ต้องมีคำเตือนเรื่อง verify_jwt กำกับไว้ในไฟล์');
 });
+
+/* ── 🎯 แกน "ไลน์" + "คนในใบ" (2026-09-23 · คำสั่ง user "อย่าแจ้งมั่ว เพราะมันถี่") ─────
+   วัดจริงก่อนแก้: ใบซ่อมเดินครบ 8 ขั้น = 24-38 คน/ขั้น (หัวหน้าไลน์ทั้งส่วนงาน PD3 ได้หมด
+   ทั้งที่ใบอยู่ไลน์เดียว) · คนเปิดอ่าน 7.8% */
+test('edge ใบแจ้งซ่อมต้องส่ง p_line ให้ RPC — ไม่งั้นกรองได้แค่ระดับส่วนงาน', () => {
+  const src = readFileSync(new URL('../../../supabase/functions/send-mtn-notification/index.ts', import.meta.url), 'utf8');
+  assert.ok(/args\.p_line\s*=/.test(src), 'ต้องส่ง p_line ให้ notify_recipients');
+  // '-' = ค่าที่หน้าเว็บใช้แทน "ไม่ระบุไลน์" — ส่งไปตรงๆ จะกรองจนไม่เหลือใคร
+  assert.ok(/lineName !== '-'/.test(src), "ต้องแปลง '-' เป็น null ก่อนส่ง p_line");
+});
+
+test('edge ตัวส่งกลางต้องส่ง p_line ด้วย (downtime_call_mtn เปิดแกนไลน์ไว้)', () => {
+  const src = readFileSync(new URL('../../../supabase/functions/send-event-notification/index.ts', import.meta.url), 'utf8');
+  assert.ok(/p_line:\s*line/.test(src), 'ต้องส่ง p_line ให้ notify_recipients');
+  assert.ok(/!== '-'/.test(src), "ต้องแปลง '-' เป็น null ก่อนส่ง p_line");
+});
+
+test('ใบแจ้งซ่อมต้องส่งถึง "คนในใบ" ทุกขั้น + มีทางถอยกันเงียบ', () => {
+  const src = readFileSync(new URL('../../../supabase/functions/send-mtn-notification/index.ts', import.meta.url), 'utf8');
+  const blk = src.slice(src.indexOf('const MO_AUDIENCE'), src.indexOf('const UUID_RE'));
+  assert.ok(blk, 'ต้องมีตาราง MO_AUDIENCE (ใครต้องลงมือในแต่ละขั้น)');
+
+  // ทุกขั้นที่เขียนแจ้งเตือนในแอป (MO_INAPP) ต้องมีแถวใน MO_AUDIENCE — ตกหล่น = กลับไปยิงทั้ง role เงียบๆ
+  const inapp = src.slice(src.indexOf('const MO_INAPP'), src.indexOf('async function notifyMoInApp'));
+  const events = [...inapp.matchAll(/^\s{2}(mtn_\w+)\s*:/gm)].map(m => m[1]);
+  assert.ok(events.length >= 10, `อ่าน MO_INAPP ไม่ออก (เจอ ${events.length} ขั้น)`);
+  for (const ev of events) {
+    assert.ok(new RegExp(`\\b${ev}\\s*:\\s*\\{`).test(blk), `MO_AUDIENCE ขาดขั้น ${ev}`);
+  }
+
+  // ผู้แจ้งต้องได้รับทุกขั้นเสมอ — ใบของตัวเองเดินไปถึงไหนต้องรู้
+  const rows = [...blk.matchAll(/\b(mtn_\w+)\s*:\s*\{([^}]*)\}/g)];
+  assert.equal(rows.length, events.length, 'จำนวนแถวใน MO_AUDIENCE ต้องเท่ากับขั้นที่แจ้งในแอป');
+  for (const [, ev, cfg] of rows) {
+    assert.ok(cfg.includes('reported_by_uid'), `${ev}: ผู้แจ้ง (reported_by_uid) ต้องได้รับเสมอ`);
+  }
+
+  // 🔴 ขั้นที่ไม่ยิงตามทะเบียน (cast:false) ต้องมีทางถอย ไม่งั้นใบเก่าที่ไม่มี uid จะเงียบสนิท
+  assert.ok(/if \(!ids\.length && !aud\.cast\)/.test(src),
+    'ต้องถอยไปยิงตามทะเบียนเมื่อไม่มี uid ในใบเลย — ห้ามล้มเหลวเงียบ');
+});
