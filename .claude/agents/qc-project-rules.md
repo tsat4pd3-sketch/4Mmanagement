@@ -50,7 +50,8 @@ model: inherit
 - **B1** ตารางฝั่ง DR (production_sessions, downtime_logs, defect_logs, machines, prod_orders,
   dr_products, break_policies ฯลฯ) ต้อง query ผ่าน `supabaseDR` — ตารางฝั่ง Main (profiles, employees,
   production_lines, four_m_logs, role_permissions, notifications ฯลฯ) ผ่าน `supabase` —
-  หา query ที่ใช้ client ผิดฝั่ง (เทียบชื่อตารางกับรายการใน CLAUDE.md "Supabase Projects" + "Database Schema")
+  หา query ที่ใช้ client ผิดฝั่ง (เทียบชื่อตารางกับ CLAUDE.md "Supabase Projects" +
+  `docs/modules/db-schema.md` — ย้ายออกจาก CLAUDE.md 2026-09-23 · ตารางที่ไม่อยู่ในเอกสารให้ดูหน้า `/schema` ซึ่งอ่านสดจาก pg_catalog ทั้ง 2 project)
 - **B2** migration ใน `supabase/migrations/` ต้อง**ไม่มี**การเปลี่ยน RLS policy ของตารางฝั่ง DR
   ไปเป็น `TO authenticated` (supabaseDR ไม่เคยส่ง JWT — จะพังทั้งระบบ เคยเกิดแล้ว)
 - **B3** การเปลี่ยน schema ต้องมี migration file ใน `supabase/migrations/` — ถ้าเจอโค้ดอ้างถึง

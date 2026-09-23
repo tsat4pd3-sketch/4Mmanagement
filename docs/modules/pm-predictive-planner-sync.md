@@ -1,5 +1,28 @@
 # PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
 
+## 📅 รอบ PM = จำนวนวัน + ตั้ง "วัน PM ครั้งถัดไป" ได้ (2026-09-23 · feedback "ระบบ PM ตั้งแผนไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
+
+**ต้นเหตุ (วัดฐานจริง):** รอบ PM เลือกได้แค่ `checklists.frequency` 5 ค่า และ**ค่าเริ่มต้นของฟอร์ม = `periodic` ("ตามรอบ") ซึ่งไม่มีจำนวนวัน**
+⇒ **130/142 แผน** (`periodic` + `interval_days` null) ไม่มีวันครบกำหนด · แผนที่มีรอบแต่ยังไม่เคยตรวจก็ไม่มีวันครบ (คิด = ตรวจล่าสุด + รอบ)
+· ไม่มีรอบ 6 เดือน/1 ปี/N วัน · และไม่มีช่องให้ช่างกำหนดวันครั้งถัดไปเองเลย (มีแต่ "เลื่อนแผน")
+
+**กติกาใหม่ (ไม่มี migration — ใช้คอลัมน์เดิม):**
+- **แหล่งจริงของรอบ = `pm_plans.interval_days`** · `checklists.frequency` = ป้าย แปลงด้วย `freqForCycle()` (1/7/30/90 → daily/weekly/monthly/quarterly · อื่น = `periodic`) — **ไม่ต้องแก้ check constraint**
+- helper กลาง `src/lib/pmSchedule.js`: `CYCLE_PRESETS` (รายวัน…ทุก 6 เดือน/รายปี) · `cycleDaysOf(freq, interval)` · `cycleLabel()` · `freqForCycle()` ·
+  `computeNextDue/dueStatus/dueStatusDefer/statusForDays/resolvePlanDue` รับ interval แล้ว — **จุดใหม่ที่โชว์ "ความถี่" ให้ใช้ `cycleLabel` ห้ามใช้ `FREQ_LABEL[frequency]`**
+- **วัน PM ครั้งถัดไป** = เขียน `pm_plans.next_due_date` ตรง (ไม่บังคับ) ใช้เป็นหมุดจนกว่าจะตรวจจริง แล้ว PMCheckData คิดต่อ = วันทำ + `interval_days` เอง
+  · ไม่กรอกวัน แต่เคยทำแล้ว → คิดให้ = ทำล่าสุด + รอบใหม่ (เปลี่ยนรอบแล้ววันครบต้องขยับตาม)
+- จุดตั้ง: **แท็บแผน PM** — แถบส้ม "N รายการยังไม่มีวัน PM ครั้งถัดไป" + ปุ่ม **📅 ตั้งรอบ / วัน PM ครั้งถัดไป (ตั้งทีละหลายรายการได้)** + ปุ่ม 📅 รายแถวในมุมมองตาราง
+  (สิทธิ์ `pm:setup` เดียวกับเลื่อนแผน) · และในฟอร์ม **ตั้งค่าจุดตรวจ** (ปุ่มรอบ + ช่อง "ทุก N วัน" + วันครั้งถัดไป)
+- ป้ายสถานะ `periodic` เปลี่ยนจาก "ไม่มีรอบตายตัว" (ฟังเหมือนตั้งใจ) → **"ยังไม่ตั้งรอบ PM"** · มีรอบแต่ไม่มีวัน = `never`
+
+> 🔴 **กับดักที่ต้องรู้**
+> · trigger `pm_checklist_sync` ตั้ง `interval_days = pm_freq_to_days(frequency)` ทุกครั้งที่ frequency เปลี่ยน (periodic → **null**)
+>   ⇒ **ต้อง update frequency ก่อน แล้วค่อยเขียน interval_days** ไม่งั้นรอบที่เพิ่งตั้งหายเงียบ
+> · **ห้ามเรียก RPC `pm_refresh_plan` เพื่อคิดวันใหม่** — มันเขียน `last_done_at` ทับจาก `inspections` อย่างเดียว
+>   ⇒ ล้างวันที่ PmCoordination/PMCheckData stamp ไว้ · ให้คิด ทำล่าสุด + รอบ ฝั่ง client แทน
+> · ฟอร์มตั้งรอบ**ไม่เติมวันเดิมให้** — ถ้าเติม แล้วคนเปลี่ยนแค่รอบ วันที่คิดจากรอบเก่าจะถูกเขียนเป็นหมุดค้าง
+
 ## 🧭 3 ระดับ — Preventive → Predictive → Prescriptive (`/pm?tab=levels` · 2026-09-23 · คำสั่ง user)
 
 *"เรื่อง preventive - predictive - prescriptive maintenance"* → user เลือก **"ทำจอ 3 ระดับ"** (อ่านอย่างเดียว ไม่แตะแผนเดิม)

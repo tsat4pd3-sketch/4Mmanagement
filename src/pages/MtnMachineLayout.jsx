@@ -48,13 +48,13 @@ async function loadPmForJigs(jigIds) {
   const { data: cls } = await supabaseDR.from('checklists').select('id, equipment_id, department, frequency, name').eq('module', 'mtn').in('equipment_id', jigIds)
   const clIds = (cls || []).map(c => c.id)
   let plans = []
-  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, next_due_date, last_done_at').in('checklist_id', clIds); plans = data || [] }
+  if (clIds.length) { const { data } = await supabaseDR.from('pm_plans').select('checklist_id, interval_days, next_due_date, last_done_at').in('checklist_id', clIds); plans = data || [] }
   const planBy = Object.fromEntries(plans.map(p => [p.checklist_id, p]))
   for (const cl of (cls || [])) {
     const plan = planBy[cl.id]
     const lastDone = plan?.last_done_at ?? null
-    const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
-    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, status: dueStatus(nextDue, cl.frequency), nextDue, freq: cl.frequency, clName: cl.name })
+    const nextDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency, plan?.interval_days)
+    ;(out[cl.equipment_id] ||= []).push({ dept: cl.department, status: dueStatus(nextDue, cl.frequency, plan?.interval_days), nextDue, freq: cl.frequency, clName: cl.name })
   }
   return out
 }
@@ -522,7 +522,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
                         <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
-                        <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ไม่มีรอบตายตัว'}</span>
+                        <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ยังไม่มีวัน PM ครั้งถัดไป'}</span>
                       </div>
                     )
                   })}
