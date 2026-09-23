@@ -21,10 +21,13 @@
       และหลายไลน์ใช้ cc เดียวกัน) จึงมี `depth: null` = เทียบความลึกกับสายไลน์ไม่ได้ ห้ามเอาไป sort ปน */
 export const KPI_SCOPE_LEVELS = [
   { key: 'plant',       label: 'ทั้งโรงงาน',       short: 'โรงงาน',  depth: 0, source: null },
-  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 1, source: 'org_nodes:section' },
-  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 2, source: 'org_nodes:department' },
-  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 3, source: 'production_lines:parent' },
-  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 4, source: 'production_lines:leaf' },
+  /* `division` = ป้ายฝ่ายบน node ชั้นบนสุด (org_nodes.division · ไม่ใช่ node) — เพิ่ม 23/09 เมื่อ picker
+     ขอบเขตกรองได้ทุกมิติของผัง (`src/utils/orgScope.js`) · check constraint ใน DB ขยายแล้ว (migration 20260923b) */
+  { key: 'division',    label: 'ฝ่าย',             short: 'ฝ่าย',    depth: 1, source: 'org_nodes:division' },
+  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 2, source: 'org_nodes:section' },
+  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 3, source: 'org_nodes:department' },
+  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 4, source: 'production_lines:parent' },
+  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 5, source: 'production_lines:leaf' },
   { key: 'cost_center', label: 'Cost Center',     short: 'CC',      depth: null, source: 'cost_centers' },
 ];
 

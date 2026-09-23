@@ -517,11 +517,12 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 → 09-22)
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 4 แท็บ · 2026-08-27 → 09-23)
 
-`Obeya.jsx` = เปลือก 3 แท็บ (ลำดับ 23/09): `kpi` 📋 บอร์ด KPI ส่วนงานราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ จอ SQDCM
-**สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`) → `table` ⚙️ ตั้งค่า KPI/กรอกผล (`KpiMonthly.jsx` · ท้ายสุด) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
-- **🔴 แท็บ `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟสถานะ · ผังกริด) — แก้หน้าตาแผ่นที่นั่นที่เดียว ห้าม copy ไปแก้ในแท็บใดแท็บหนึ่ง
+`Obeya.jsx` = 4 แท็บ: `kpi` 📋 บอร์ด KPI ราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ SQDCM **สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`)
+→ `todo` 📌 งานค้างของส่วนงาน (`DeptDashboard` embed · `/dept-dashboard` redirect) → `table` ⚙️ ตั้งค่า/กรอก (`KpiMonthly.jsx`) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
+- **🔴 ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (ผังทุกมิติ · `utils/orgScope.js` · `?scope=kind:value` · เขียน `scope_kind/scope_value` ผ่าน `defScopeColumns()`) ห้าม select จาก `org_nodes kind='section'` เอง
+- **🔴 `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟ · กริด) — แก้หน้าตาแผ่นที่นั่นที่เดียว
 - **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** ห้ามแยกคลัง/ตั้งเป้าคนละที่
 - **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
 - **🔴 กฎความซื่อสัตย์ของจอ:** ข้อมูลไม่พอต้องเขียนบนจอ **ห้ามโชว์ 0 ห้ามซ่อนแผง** · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
@@ -530,9 +531,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — RPC `obeya_year_rollup` (DR) / `obeya_attendance_rollup` (Main) คืน Σ รายเดือน แล้ว `obeyaYear.js` หาร/ตัดสิน
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
-- ตั้งค่า KPI data-driven: scope 6 ระดับ (`cost_center` ไม่ใช่คีย์เอกลักษณ์) · `provider` · `kpi_month_plans` · `kpi_base_inputs`
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ 📑 (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id` เสมอ
+- หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 

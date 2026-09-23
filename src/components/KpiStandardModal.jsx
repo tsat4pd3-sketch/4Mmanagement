@@ -21,7 +21,8 @@ import {
   matchStdItems, checkStdSelection, requirementOf, KPI_PERSPECTIVES,
 } from '../utils/kpiSetup';
 
-export default function KpiStandardModal({ year, section, group, defs = [], canManage, onClose, onChanged }) {
+/* 23/09: รับ `scope`/`scopeCols` จาก OrgScopePicker (แทน section+group) — แถวที่หยิบเขียน scope_kind/scope_value ตรง */
+export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged }) {
   /* หน่วยงานมาตรฐานที่ใบนี้อิงอยู่ — จำไว้ที่ `kpi_definitions.std_unit` ของแถวในใบ
      (ไม่มีตารางตั้งค่าแยก: ใบคือของจริง ทะเบียนเป็นเอกสารอ้างอิง) */
   const savedUnit = useMemo(() => defs.map(d => d.std_unit).find(Boolean) || '', [defs]);
@@ -59,10 +60,9 @@ export default function KpiStandardModal({ year, section, group, defs = [], canM
     setBusy(it.id);
     try {
       const ok = checkWrite(await supabase.from('kpi_definitions').insert({
-        year, section: section || null, category: it.perspective,
+        year, ...scopeCols, category: it.perspective,
         name: it.topic, formula_text: it.formula_text || null,
-        // ⚠️ ต้องผูกกลุ่มไลน์ที่กำลังดูอยู่ ไม่งั้นแถวใหม่หายจากจอทันที (ตารางกรองด้วย line_group)
-        line_group: group || null,
+        // ⚠️ ต้องผูกขอบเขตที่กำลังดูอยู่เป๊ะ (scope_kind/scope_value) ไม่งั้นแถวใหม่หายจากจอทันที
         /* 🔴 ผูกกลับไปหาแถวในทะเบียนด้วย `std_item_id` (คอลัมน์เพิ่ม 23/09) — `matchStdItems()`
            เช็ค id ก่อนแล้วค่อยตกไปเทียบชื่อ · ถ้าไม่ส่ง id มันจะเหลือแต่การเทียบชื่อ
            ซึ่งพังทันทีที่คนแก้ชื่อ KPI ให้สั้นลง/ใส่วงเล็บเพิ่ม ⇒ จอฟ้อง "ยังไม่ได้หยิบ" ทั้งที่หยิบแล้ว */
@@ -77,13 +77,12 @@ export default function KpiStandardModal({ year, section, group, defs = [], canM
   const pickAllFixed = async () => {
     const todo = matched.filter(m => !m.row && isStdFixed(m.item)).map(m => m.item);
     if (!todo.length) return;
-    if (!window.confirm(`หยิบข้อบังคับที่ยังขาด ${todo.length} ข้อเข้าใบของ${section ? ` ${section}` : 'ส่วนกลาง'} ปี ${year + 543}?\n\nเป้า/น้ำหนักยังต้องกรอกเองที่ตาราง`)) return;
+    if (!window.confirm(`หยิบข้อบังคับที่ยังขาด ${todo.length} ข้อเข้าใบของ ${scopeText || 'ทั้งโรงงาน'} ปี ${year + 543}?\n\nเป้า/น้ำหนักยังต้องกรอกเองที่ตาราง`)) return;
     setBusy('all');
     try {
       const ok = checkWrite(await supabase.from('kpi_definitions').insert(todo.map(it => ({
-        year, section: section || null, category: it.perspective,
+        year, ...scopeCols, category: it.perspective,
         name: it.topic, formula_text: it.formula_text || null,
-        line_group: group || null,
         std_item_id: it.id,                       // ดูเหตุผลที่ `pick()` ด้านบน
         std_unit: unit, is_active: true,
       }))), 'หยิบข้อบังคับที่ขาด');
@@ -115,7 +114,7 @@ export default function KpiStandardModal({ year, section, group, defs = [], canM
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-          📘 KPI Standard ของกลุ่ม — ปี {year + 543}{section ? ` · ${section}` : ' · ส่วนกลาง'}
+          📘 KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '4px 0 10px', lineHeight: 1.6 }}>
           ทะเบียนนี้มาจาก <b>KPI Guideline ของกลุ่ม</b> (อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง ·

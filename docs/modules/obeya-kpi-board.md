@@ -517,3 +517,46 @@ migration `20260921_kpi_standard_2026_main.sql` (**apply แล้ว**) · **31
 **harness:** `audit/mockSupabase.js` — rollup มีแถวของ `LINE_NAME(1)` (ไลน์ที่มีจริงใน mock) เพิ่มแล้ว ไม่งั้นแผ่น OEE/PPM ว่างใน crashsweep ตลอด (บอร์ดกรองตามกลุ่มไลน์)
 
 **เมนู:** `/dept-dashboard` (งานค้างของส่วนงาน) ย้ายมาอยู่ถัดจาก `/obeya` ในหมวด "ภาพรวม" (user: "งานค้างของส่วนงานก็ควรอยู่หมวดเดียวกัน มันคือระบบมอนิเตอร์") — หมวดเดียวกันอยู่แล้ว แค่จัดให้ติดกันเป็นชุด "มอนิเตอร์ส่วนงาน" · ไม่ย้ายไป "จอแสดงผล" เพราะทั้งคู่กดทำงานได้ ไม่ใช่จอแขวน (กติกา pages-routes.md)
+
+## 🌳 ขอบเขต = ผังองค์กรทุกมิติ + แท็บ 📌 งานค้างของส่วนงาน (2026-09-23 · คำสั่ง user)
+
+> *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"* +
+> *"งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย"*
+
+**ปัญหาที่พบตอนตรวจ:** ทุกจอ KPI/OBEYA กรองด้วย `org_nodes kind='section'` + กลุ่มไลน์ (production_lines parent) ⇒
+**แผนกที่ขึ้นตรงฝ่าย (MTN · JIG MTN · DIE MTN · QA) เลือกไม่ได้เลย** ทั้งที่ JIG MTN เป็น 1 ใน 3 ใบ KPI จริงที่ user ส่งมา ·
+แผนกใต้ส่วนงาน (BIG PRESS / HYDROFORM / GOR) ไม่มีในตัวเลือก · cost center เป็นอีกแกนที่ตั้ง KPI การเงินไว้แต่กรองไม่ได้ ·
+และ `kpi_definitions.scope_kind/scope_value` (migration 16/09) **ไม่มีจอไหนเขียน/อ่านเลย** (ยังพึ่ง trigger เดาจาก section/line_group)
+
+**ที่ทำ (ของกลางใหม่ 3 ชิ้น — ใช้ซ้ำได้ทุกจอที่ "เลือกขอบเขตดูข้อมูล")**
+- `src/utils/orgScope.js` (pure · เทส 14 เคส `__tests__/orgScope.test.mjs`) — `buildOrgScope({nodes, lines, divisions})` → ต้นไม้
+  **โรงงาน → ฝ่าย (ป้าย `org_nodes.division`) → ส่วนงาน → แผนก → กลุ่มไลน์ → ไลน์** + แกน **cost center** แยก ·
+  `lineNamesOf(kind,value)` (ตัวกรองข้อมูลจริง) · `ancestorsOf` / `sectionOf` / `sectionsOf` (ไต่ขึ้นบน) · `scopeKey`/`parseScopeKey`
+  (URL `?scope=department:JIG MTN`) · `scopeCovers(index, defScope, selected)` (นิยามระดับแม่ตกทอดถึงลูก) · `scopeOfDef(row)` (อ่านแถวเก่า/ใหม่) ·
+  `defScopeColumns(index, scope)` (คอลัมน์ที่ต้องเขียน: scope_kind/scope_value **+ section เผื่อจอเก่า**) · `filterScopeOptions` (ตัดตามสังกัด user)
+  · กติกาในตัว: ไลน์ที่ผังยังไม่ผูกแผนก → วางใต้ส่วนงานตรงๆ (ป้าย "ผังยังไม่ผูก") **ห้ามหาย** · node ไม่มีไลน์ (JIG MTN · Store Raw Material)
+  ยังเลือกได้ (`lineNamesOf` = [] · จอต้องเขียนว่าข้อมูลไปไม่ถึง) · เทียบชื่อส่วนงานแบบ normalize (`Planning&Store` = `Planning & Store`)
+  · แผนกครอบ**ครอบครัวไลน์ทั้งกลุ่ม** แม้ org line node ชี้มาแค่ไลน์ลูกบางตัว (ข้อมูลจริง: HYDROFORM ชี้ HDF1/HDF2/E50/EXPORT → ได้ทั้ง 10 ไลน์)
+- `src/utils/useOrgScope.js` — โหลด `org_nodes` (active) + `org_divisions` ครั้งเดียว · รับ `lines` จากผู้เรียก (**ต้อง select `id, name, section, parent_line_name, cost_center, is_active`**)
+- `src/components/OrgScopePicker.jsx` — ช่องเดียวแทน select ส่วนงาน + กลุ่มไลน์ · `native` (default · `<select>` ย่อหน้าตามชั้น + optgroup ตามฝ่าย
+  — เร็วบนรีโมท TV/มือถือ ไม่ดันหัวเพจ) หรือ `native={false}` = `SearchSelect` พิมพ์ค้น (ใช้ในโมดัล) · ค่าที่เลือกไว้แต่นอกตัวเลือก = แถว ⚠ ไม่หายเงียบ
+  · **🔴 UI §5.1.2: จอที่เลือก "ขอบเขต" ใช้ตัวนี้เท่านั้น ห้ามวาด select จาก `org_nodes kind='section'` เอง** (ช่อง "ส่วนงานสังกัด" ของคน/เอกสาร ยังใช้ `useOrgSections` ตามเดิม — คนละความหมาย)
+
+**จอที่เปลี่ยน**
+- ⚙️ `KpiMonthly.jsx`: state `scope` แทน `section`+`group` · URL `?scope=` (ยังรับ `?section=`/`?group=` เก่า) · **ตารางเห็นนิยามของ
+  "ขอบเขตที่เลือก + บรรพบุรุษ"** (`scopeCovers` — ขยายกฎเดิม "section null = ทุกส่วนงาน") · แถวที่ตกทอดติดป้าย `(ส่วนงาน: PD3)` ·
+  `defsForStd` (เทียบทะเบียนมาตรฐาน) + `autoDefBy` (เป้าแถว auto) = **ขอบเขตเป๊ะเท่านั้น ไม่ตกทอด** (เป้า OEE ของแผนก ≠ ของไลน์) ·
+  บันทึก/หยิบจาก 📘/คัดลอกปี/ตั้งเป้า auto เขียน `defScopeColumns()` · โมดัลนิยามมีช่อง "ขอบเขต" เป็น picker (default = ที่กำลังดู) ·
+  ขอบเขตไม่มีไลน์ผลิต = ข้ามโหลดกะ + ขึ้นกล่องบอกว่าตัวเลขอัตโนมัติไม่มีให้คำนวณ (KPI กรอกมือใช้ได้ปกติ)
+- 📋 `ObeyaKpiBoard.jsx`: `?scope=` แทน `?section=&group=` (`setScope` ล้าง param เก่าเสมอ — URL ห้ามโกหก) · ชิป ↑ กลับขึ้น + ชิปลูก ≤ 6 ตัวเจาะลง ·
+  นิยาม/เป้า **ไต่จากขอบเขตที่เลือกขึ้นบรรพบุรุษทีละชั้น** (`nearest()`) แล้วเขียนบนแผ่นว่าเอามาจากชั้นไหน · เป้า OEE = เฉลี่ย A×P×Q ของกลุ่มไลน์ในขอบเขต
+  (บอกว่าตั้งแล้วกี่กลุ่ม) · safety/action กรองด้วย `sectionsOf(scope)` (ฝ่าย = หลายส่วนงาน) · แผ่น 📌 = นิยามที่ตั้ง**ที่ขอบเขตนี้เป๊ะ** และไม่ซ้ำ 8 หัวข้อหลัก
+  (ใบ JIG MTN ทั้งใบอยู่ที่นี่) · default = ส่วนงานของ user → ส่วนงานแรก → โรงงาน (รอ `orgReady` ก่อนตัดสินว่า URL ไม่รู้จัก)
+- 🖥️ `ObeyaSqdcmBoard.jsx`: select ส่วนงาน → picker · `lineOk` ตัดด้วย `lineNamesOf(scope)` · `secFilter` กลายเป็นค่า derive (`sectionOf`) สำหรับ Action item / `?section=` ที่ส่งต่อ
+- 📌 แท็บใหม่ `todo` = `DeptDashboard` embed (`embedded` prop · route เดิม redirect) — รายละเอียด `docs/modules/pages-routes.md`
+- DB: `20260923b_kpi_scope_division_main.sql` (**apply แล้ว 23/09** · MAIN) — เพิ่ม `'division'` ใน check constraint ของ `scope_kind` · `kpiSetup.KPI_SCOPE_LEVELS` มี `division` (depth 1 · ชั้นอื่นขยับ) ·
+  unique index `(year, scope_kind, scope_value, catalog_id)` เดิมครอบทุก kind อยู่แล้ว · `kpi_definitions` = 0 แถวตอนรัน (blast radius ศูนย์)
+- harness: `audit/mockSupabase.js` มี `org_nodes` ทรงจริง (section → department → line ผูก `ref_line_id` · แผนกขึ้นตรงฝ่าย · org line node ไม่ผูกไลน์) — **ห้ามถอด** ไม่งั้นสาขาแผนก/ฝ่ายไม่เคยถูกรันใน crashsweep
+
+**ยังไม่ทำ (ตั้งใจ · ต่อจากรายการเดิม)** — จอกรอกตัวแปรฐาน (`kpi_base_inputs`) · แผน 12 เดือน (`kpi_month_plans`) · ต่อ provider auto กับตัวคำนวณจริง
+(ยังรอเคาะสูตร MTBF 730 ชม./Machine Break Down) · `catalog_id` ของแถวที่หยิบจาก 📘 · ตัวกรองขอบเขตยังไม่ลามไปหน้าอื่นนอก OBEYA (`/oee-analytics` ยังรับ `?section=` — บอร์ดส่ง `sectionOf(scope)` ให้)

@@ -1,9 +1,13 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
+import useOrgScope from '../utils/useOrgScope';
+import OrgScopePicker from './OrgScopePicker';
+import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
@@ -28,6 +32,14 @@ import {
      ผ่าน src/lib/kpiExportExcel.js (exceljs dynamic import)
    - drill-down ส่วน → กลุ่มไลน์ (top-level group) — cascade ล้างกลุ่มเมื่อเปลี่ยนส่วน (§5.3)
      ⚠️ KPI กรอกมือผูกกับ "ส่วนงาน" — เลือกกลุ่มไลน์แล้วตัวเลขอัตโนมัติกรองตาม แต่ KPI กรอกมือไม่กรอง (บอกบนจอ)
+
+   ⭐ 23/09/2026 — ขอบเขต = ผังองค์กรทุกมิติ (user: "เลือกได้แค่ section ไม่ตรงผัง ควรกรองได้ทุกมิติ")
+   - ตัวกรอง section + กลุ่มไลน์ 2 ช่อง → `<OrgScopePicker>` ช่องเดียว (โรงงาน/ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)
+     state = `scope` {kind,value} · URL `?scope=department:JIG MTN` (ยังรับ `?section=` เก่าจากบอร์ด)
+   - นิยาม KPI เขียน `scope_kind/scope_value` ตรง (+ `section` เผื่อจอเก่า — `defScopeColumns()`)
+   - ตารางเห็นนิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" (`scopeCovers`) — นิยามระดับแม่ตกทอดถึงลูก
+     (ขยายกฎเดิม "section null = ทุกส่วนงาน" ให้ครบทุกชั้น) · แถวที่ไม่ใช่ขอบเขตปัจจุบันติดป้ายบอก
+   - ตัวเลขอัตโนมัติกรองไลน์ด้วย `index.lineNamesOf(scope)` — ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง) = บอกบนจอ
 
    กติกาที่ยึด (ห้ามละเมิด):
    - OEE เดือน = wavg(oee ที่ stamp, ถ่วง wLoad = shift_min − plannedMin) — ห้าม mean-of-percentages
@@ -170,11 +182,18 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [year, setYear] = useState(nowYear);
   /* ⚠️ รับ ?section= จาก URL — /obeya ส่งมาตอนกดเซลล์บนบอร์ด (กฎ "ลิงก์ต้องพาไปถึงตัวงานนั้น")
      ไม่งั้นกดจากบอร์ด PD3 แล้วเปิดมาเจอส่วนงานอื่น ต้องไปเลือกเองซ้ำ */
-  const [section, setSection] = useState(() => {
-    try { return new URLSearchParams(window.location.search).get('section') || ''; } catch { return ''; }
+  /* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — รับ `?scope=kind:value` · ยังรับ `?section=` เก่าที่บอร์ด/ลิงก์อื่นส่งมา */
+  const [scope, setScope] = useState(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get('scope')) return parseScopeKey(sp.get('scope'));
+      if (sp.get('group')) return { kind: 'line_group', value: sp.get('group') };
+      if (sp.get('section')) return { kind: 'section', value: sp.get('section') };
+    } catch { /* SSR/harness ไม่มี window.location */ }
+    return { ...PLANT };
   });
-  const [group, setGroup] = useState(''); // drill-down กลุ่มไลน์ (top-level)
-  const [orgSections, setOrgSections] = useState(null); // null = ยังโหลด · [] = ผังว่าง → fallback
+  const { index: org, ready: orgReady } = useOrgScope(lines);
+  const { sections: userSections } = useContext(UserContext);   // สังกัดของ user — ตัดตัวเลือกขอบเขต (node ที่ไม่มีไลน์ใช้ตัวนี้ตัดสิน)
   const [loading, setLoading] = useState(false);
   const [prog, setProg] = useState('');
   const [err, setErr] = useState(null);
@@ -192,42 +211,28 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [copying, setCopying] = useState(false);   // กำลังคัดลอกชุด KPI จากปีอื่น
   const reqRef = useRef(0);                        // ลำดับคำขอโหลด — กันผลเก่าทับผลใหม่
 
-  /* ตัวเลือกส่วนงานยึด org_nodes (kind='section') ตามกฎ — fallback เดาจาก production_lines เมื่อผังว่าง */
+  /* ⚠️ ขอบเขตจาก URL ที่ไม่มีในผัง/นอกขอบเขตของ user = ตกกลับ "ทั้งโรงงาน" (กฎ useTabParam: ค่าที่ไม่รู้จักห้ามทำให้จอว่าง)
+     รอผังโหลดก่อนค่อยตัดสิน — ไม่งั้นค่าจาก URL ถูกล้างทิ้งก่อนต้นไม้จะมีแผนก */
   useEffect(() => {
-    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').order('sort_order')
-      .then(({ data: d, error }) => setOrgSections(error ? [] : (d || [])));
-  }, []);
-  const sectionOpts = useMemo(() => {
-    const inScopeSecs = new Set(lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.section).filter(Boolean));
-    const fromOrg = (orgSections || []).map(s => s.code || s.name).filter(s => inScopeSecs.has(s));
-    return fromOrg.length ? fromOrg : [...inScopeSecs].sort();
-  }, [orgSections, lines, scopeSet]);
+    if (!orgReady || isPlant(scope)) return;
+    if (!org.has(scope.kind, scope.value)) setScope({ ...PLANT });
+  }, [orgReady, org, scope]);
 
-  /* ⚠️ ส่วนงานจาก URL ที่ไม่อยู่ในขอบเขตของ user = ตกกลับ "ทุกส่วนงาน"
-     (กฎ useTabParam: ค่าที่ไม่รู้จักห้ามทำให้จอว่าง · และ select จะโชว์ค่าว่างถ้า value ไม่มีใน options) */
-  useEffect(() => {
-    if (section && sectionOpts.length && !sectionOpts.includes(section)) { setSection(''); setGroup(''); }
-  }, [section, sectionOpts]);
-
-  /* กลุ่มไลน์บนสุด (parent หรือไลน์เดี่ยว) ในขอบเขต+ส่วนที่เลือก */
-  const groupOpts = useMemo(() => {
-    let ls = lines.filter(l => !scopeSet || scopeSet.has(l.name));
-    if (section) ls = ls.filter(l => (l.section || '') === section);
-    return [...new Set(ls.map(l => l.parent_line_name || l.name))].sort();
-  }, [lines, scopeSet, section]);
-  useEffect(() => { if (group && !groupOpts.includes(group)) setGroup(''); }, [group, groupOpts]);
-
-  /* ไลน์ในขอบเขตที่เลือก (scope ก่อน → section → กลุ่มไลน์ทับ — pattern มาตรฐาน) */
+  /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขตของ user — ขอบเขตที่ไม่มีไลน์ผลิตเลย (แผนกช่าง/สโตร์) = [] ⇒ ตัวเลขอัตโนมัติไม่มีให้คำนวณ
+     (ต่างจาก "ทั้งโรงงาน" ที่ = ทุกไลน์ในขอบเขต user) */
+  const scopeNoLines = !isPlant(scope) && orgReady && org.lineNamesOf(scope.kind, scope.value).length === 0;
   const targetLineNames = useMemo(() => {
-    let ls = lines.filter(l => !scopeSet || scopeSet.has(l.name));
-    if (section) ls = ls.filter(l => (l.section || '') === section);
-    if (group) ls = ls.filter(l => (l.parent_line_name || l.name) === group);
-    return ls.map(l => l.name);
-  }, [lines, scopeSet, section, group]);
+    const inUser = lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.name);
+    if (isPlant(scope)) return inUser;
+    const mine = new Set(org.lineNamesOf(scope.kind, scope.value));
+    return inUser.filter(n => mine.has(n));
+  }, [lines, scopeSet, scope, org]);
+  const scopeKeyStr = scopeKey(scope.kind, scope.value);
 
   const load = useCallback(async () => {
     if (!lines.length) return;
-    const key = `${year}|${section}|${group}|${targetLineNames.length}`;
+    if (scopeNoLines) { setData(null); setLoading(false); setProg(''); return; }   // ไม่มีไลน์ = ไม่มีอะไรให้คำนวณ (จอบอกเอง)
+    const key = `${year}|${scopeKeyStr}|${targetLineNames.length}`;
     const seq = ++reqRef.current;      // กันผลโหลดเก่าทับผลใหม่ (เปลี่ยนปี/ส่วนงานรัวๆ)
     setLoading(true); setErr(null); setProg('');
     try {
@@ -283,7 +288,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (seq !== reqRef.current) return;
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
     } finally { if (seq === reqRef.current) { setLoading(false); setProg(''); } }
-  }, [lines.length, year, section, group, targetLineNames]);
+  }, [lines.length, year, scopeKeyStr, scopeNoLines, targetLineNames]);
   useEffect(() => { load(); }, [load]);
 
   /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
@@ -311,8 +316,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       return;
     }
     setKpiMissing(false);
-    // section null = ทุกส่วนงาน · เลือกส่วนแล้วเห็น common + ของส่วนนั้น · ไม่เลือก = เห็นทั้งหมด (ติดป้ายส่วน)
-    const rows = (d || []).filter(x => !section || !x.section || x.section === section);
+    /* เห็นนิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (23/09 ขยายจาก "section null = ทุกส่วนงาน")
+       ดูทั้งโรงงาน = เห็นเฉพาะระดับโรงงาน (ไม่ใช่รวมทุกแผนกปนกัน — ใบ KPI เป็นของหน่วยงาน) */
+    const rows = (d || []).filter(x => scopeCovers(org, scopeOfDef(x), scope));
     setAllDefs(rows);
     if (!rows.length) { setEntries({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
@@ -323,7 +329,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (entRes.truncated) toast.error('ค่า KPI กรอกมือโหลดได้ไม่ครบ — ตัวเลขบางเดือนอาจหาย');
     entRes.rows.forEach(e => { (map[e.kpi_id] = map[e.kpi_id] || {})[e.month] = e.value != null ? Number(e.value) : null; });
     setEntries(map);
-  }, [year, section]);
+  }, [year, scopeKeyStr, org]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadDefs(); }, [loadDefs]);
 
   const saveCell = async (kpiId, month, raw) => {
@@ -431,14 +437,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
         คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
         แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
-  const defs = useMemo(() => (allDefs || []).filter(d =>
-    !String(d.source || '').startsWith('auto:') && (d.line_group || '') === (group || '')), [allDefs, group]);
+  const defs = useMemo(() => (allDefs || []).filter(d => !String(d.source || '').startsWith('auto:')), [allDefs]);
+  const isInherited = useCallback(d => !sameScope(scopeOfDef(d), scope), [scope]);
+  const defScopeTag = useCallback(d => (isInherited(d) ? org.labelOf(scopeOfDef(d).kind, scopeOfDef(d).value) : ''), [isInherited, org]);
 
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
      ใบ KPI ทางการถ่วงน้ำหนักรวม 50 จาก KPI ทั้งใบ ไม่ได้แยกว่าใครเป็นคนกรอก ⇒ ส่งแต่ `defs`
      (เฉพาะกรอกมือ) จะนับน้ำหนักขาด และฟ้องว่าข้อบังคับที่ ESM คำนวณให้อยู่แล้ว (OEE/PPM) "ยังไม่ได้หยิบ" */
-  const defsForStd = useMemo(() => (allDefs || []).filter(d =>
-    (d.line_group || '') === (group || '')), [allDefs, group]);
+  const defsForStd = useMemo(() => (allDefs || []).filter(d => sameScope(scopeOfDef(d), scope)), [allDefs, scope]);
 
   /* นิยามของแถวอัตโนมัติ — เก็บ "เป้า/ทิศทาง/commitment" ไว้ที่ kpi_definitions (source='auto:<key>')
      ⚠️ ค่าไม่ได้มาจากที่นี่ (ระบบคำนวณเอง) แถวนิยามเก็บแค่เกณฑ์ตัดสิน                       */
@@ -446,11 +452,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const m = {};
     (allDefs || []).forEach(d => {
       if (!d.source?.startsWith('auto:')) return;
-      if ((d.line_group || '') !== (group || '')) return;   // เป้าผูกกับกลุ่มไลน์ที่กำลังดู
+      if (!sameScope(scopeOfDef(d), scope)) return;   // เป้าผูกกับขอบเขตที่กำลังดูเป๊ะ (ไม่ตกทอด — เป้า OEE ของแผนก ≠ เป้าของไลน์)
       m[d.source.slice(5)] = d;
     });
     return m;
-  }, [allDefs, group]);
+  }, [allDefs, scope]);
 
   /* แถวของตาราง — เพิ่ม KPI ใหม่ = เพิ่ม entry ตรงนี้
      kind: bar = ปริมาณต่อเดือน · line = อัตรา/% (มินิกราฟ+กราฟใหญ่เลือกทรงตามนี้)
@@ -500,9 +506,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
   });
 
-  const scopeLabel = section
-    ? section + (group ? ` › ${group}` : '')
-    : (group ? group : 'ทุกส่วนงานในขอบเขต');
+  const scopeLabel = isPlant(scope) ? 'ทุกส่วนงานในขอบเขต'
+    : [...org.pathOf(scope.kind, scope.value), scope.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ');
 
   /* พิมพ์ — รายงานภายในห่อ withDocFoot ตามกฎทะเบียนเอกสาร (doc_key: kpi_monthly) */
   const handlePrint = async () => {
@@ -519,7 +524,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         return `<td style="${td}">${v == null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>`;
       }).join('');
       const avg = manualAvg(d2);
-      return `<tr><td style="${td};text-align:left">${defName(d2)}${d2.section ? ` (${d2.section})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
+      return `<tr><td style="${td};text-align:left">${defName(d2)}${defScopeTag(d2) ? ` (${defScopeTag(d2)})` : ''}<div style="font-size:8px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
     }).join('');
     const html = `
       <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
@@ -530,7 +535,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       <table style="border-collapse:collapse;width:100%">
         <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">รวม/เฉลี่ย</th></tr>
         ${rows}
-        ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">📝 KPI กรอกมือ (นอกระบบ)${group ? ' — ระดับส่วนงาน ไม่กรองตามกลุ่มไลน์' : ''}</td></tr>${manRows}` : ''}
+        ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">📝 KPI กรอกมือ (นอกระบบ)${!isPlant(scope) ? ' — รวมนิยามที่ตกทอดจากระดับแม่ (ติดป้ายในวงเล็บ)' : ''}</td></tr>${manRows}` : ''}
       </table>
       ${months.tot.costMissQty > 0 ? `<div style="font-size:10px;color:#b45309;margin-top:6px">⚠ ของเสีย ${months.tot.costMissQty.toLocaleString()} ชิ้นยังตีมูลค่าไม่ได้ (พาร์ทไม่มีต้นทุน/ชิ้นใน Parts Master) — Cost of defect จึงต่ำกว่าจริง</div>` : ''}
       <table style="margin-top:26px;width:60%"><tr>${(Array.isArray(df?.sig_blocks) && df.sig_blocks.length ? df.sig_blocks : ['Issued', 'Checked', 'Approved']).map(s2 => `<td style="text-align:center;font-size:11px;padding-top:30px;border-top:1px solid #999">${typeof s2 === 'string' ? s2 : s2?.label || ''}</td>`).join('')}</tr></table>`;
@@ -575,14 +580,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           monthVals, summary: avg,
           ynVals: monthVals.map(v => manualLv(d2, v)), ynTotal: manualLv(d2, avg),
           weight: d2.weight, actionPlan: d2.action_plan || '', actionOwner: d2.action_owner || '',
-          sectionTag: !section && d2.section ? d2.section : '',
+          sectionTag: defScopeTag(d2),
         };
       });
       const { exportKpiExcel } = await import('../lib/kpiExportExcel');
       await exportKpiExcel({
         year, sectionLabel: scopeLabel, rows: [...manualRows, ...autoRows],
         formCode: fullCode(df || {}),
-        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${group ? ` · ตัวเลขอัตโนมัติกรองกลุ่ม ${group} — KPI กรอกมือเป็นระดับส่วนงาน` : ''}`,
+        note: `จากกะที่ปิดแล้ว ${months.tot.n.toLocaleString()} กะ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · export ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}${!isPlant(scope) ? ` · ตัวเลขอัตโนมัติกรองตามขอบเขต ${scopeLabel} — KPI กรอกมือรวมที่ตกทอดจากระดับแม่` : ''}`,
       });
     } catch (e) {
       toast.error('export Excel ไม่สำเร็จ: ' + (e?.message || e));
@@ -626,7 +631,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       }
     }
     const payload = {
-      year, section: form.section || null, category: form.category || 'internal',
+      year, ...defScopeColumns(org, form.scope), category: form.category || 'internal',
       catalog_id: catalogId,
       seq: Number(form.seq) || 0, name: typed,
       formula_text: form.formula_text || null, scope_text: form.scope_text || null,
@@ -637,13 +642,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     };
     if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
     if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
-    /* 🔴 ตอน "เพิ่มใหม่" ต้องผูกกลุ่มไลน์ที่กำลังดูอยู่ด้วย — เดิมไม่ส่ง `line_group` เลย (แก้ 23/09)
-       ⇒ เพิ่ม KPI ขณะเลือกกลุ่มไลน์ไว้ จะได้แถวระดับส่วนงาน ซึ่ง**ตกตัวกรองของตารางทันที**
-         (`defs` กรอง `(d.line_group||'') === (group||'')`) ⇒ กดเพิ่มแล้วไม่มีอะไรโผล่
-         พอกดเพิ่มซ้ำก็เจอ 23505 "ตั้งไว้แล้ว" ทั้งที่ยังไม่เคยเห็นแถวนั้นสักครั้ง
-       · เฉพาะตอน insert — ตอน update ไม่แตะ เพราะฟอร์มไม่มีช่องกลุ่มไลน์ให้แก้ (จะล้างของเดิมทิ้ง)
-       · ส่วนงานในโมดัลไม่ตรงกับที่จอกรองอยู่ = คนตั้งใจตั้งข้ามส่วนงาน ⇒ ไม่ยัดกลุ่มไลน์ให้ */
-    if (!form.id) payload.line_group = (form.section || '') === (section || '') ? (group || null) : null;
+    /* 🔴 ขอบเขตของแถวมาจากช่อง "ขอบเขต" ในโมดัล (default = ขอบเขตที่กำลังดู) — เขียน scope_kind/scope_value ตรง
+       บทเรียน 23/09 (ก่อนมี picker): เพิ่มแถวโดยไม่ผูกขอบเขตที่กำลังดู ⇒ แถวใหม่ตกตัวกรองของตารางทันที
+       แล้วกดซ้ำเจอ 23505 "ตั้งไว้แล้ว" ทั้งที่ไม่เคยเห็น — ตอนนี้ตารางเห็น "ขอบเขตที่เลือก + บรรพบุรุษ"
+       ⇒ แถวที่ตั้งไว้ระดับแม่ยังโผล่ (ติดป้าย) · ตั้งระดับลูกที่ลึกกว่าจอ = ต้องเลือกขอบเขตนั้นถึงเห็น (บอกใน toast) */
     if (form.id) {
       const { data: d, error } = await supabase.from('kpi_definitions').update(payload).eq('id', form.id).select('id');
       if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
@@ -651,12 +653,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       const { error } = await supabase.from('kpi_definitions').insert(payload);
       if (error) {
         toast.error(error.code === '23505'
-          ? `KPI นี้ถูกตั้งไว้ในปี ${year + 543}${form.section ? ` ส่วน ${form.section}` : ' (ส่วนกลาง)'} แล้ว — แก้ที่แถวเดิมแทน`
+          ? `KPI นี้ถูกตั้งไว้ในปี ${year + 543} ขอบเขต ${org.labelOf(form.scope?.kind, form.scope?.value)} แล้ว — แก้ที่แถวเดิมแทน`
           : 'เพิ่มไม่สำเร็จ: ' + error.message);
         return false;
       }
     }
-    toast.success('บันทึก KPI แล้ว');
+    toast.success(scopeCovers(org, form.scope || PLANT, scope) ? 'บันทึก KPI แล้ว'
+      : `บันทึกแล้ว — แถวนี้อยู่ที่ขอบเขต ${org.labelOf(form.scope?.kind, form.scope?.value)} เลือกขอบเขตนั้นที่หัวเพจถึงจะเห็น`);
     loadDefs();
     return true;
   };
@@ -671,11 +674,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (src === year) { toast.error('เป็นปีเดียวกับที่เปิดอยู่'); return; }
     setCopying(true);
     try {
-      let q = supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
-      if (section) q = q.or(`section.eq.${section},section.is.null`);
-      const { data: srcRows, error } = await q;
+      const { data: srcAll, error } = await supabase.from('kpi_definitions').select('*').eq('year', src).eq('is_active', true);
       if (error) { toast.error('อ่านชุดปี ' + be + ' ไม่สำเร็จ: ' + error.message); return; }
-      if (!srcRows?.length) { toast.error(`ปี ${be} ไม่มีชุด KPI${section ? ` ของส่วน ${section}` : ''}`); return; }
+      // คัดลอกเฉพาะชุดของ "ขอบเขตนี้เป๊ะ" — ไม่ลากนิยามระดับแม่มาสร้างซ้ำในระดับลูก
+      const srcRows = (srcAll || []).filter(r => sameScope(scopeOfDef(r), scope));
+      if (!srcRows.length) { toast.error(`ปี ${be} ไม่มีชุด KPI ของ ${scopeLabel}`); return; }
       // ตัดตัวที่ปีนี้มีแล้ว (เทียบด้วย catalog_id ก่อน — ตกมาที่ชื่อเมื่อแถวเก่าไม่ผูกทะเบียน)
       const haveCat = new Set(defs.map(d2 => d2.catalog_id).filter(Boolean));
       const haveName = new Set(defs.map(d2 => normSearch(defName(d2))));
@@ -687,7 +690,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         (skipped ? `\n(ข้าม ${skipped} รายการที่ปีนี้มีอยู่แล้ว)` : '') +
         '\n\nคัดลอกเฉพาะ "นิยาม" (ชื่อ/เป้า/สูตร/น้ำหนัก) — ค่ารายเดือนไม่ถูกคัดลอก')) return;
       const payload = todo.map(r => ({
-        year, section: r.section, category: r.category, catalog_id: r.catalog_id || null,
+        year, ...defScopeColumns(org, scope), category: r.category, catalog_id: r.catalog_id || null,
+        std_item_id: r.std_item_id || null, std_unit: r.std_unit || null, unit: r.unit || null,
+        provider: r.provider || null, provider_config: r.provider_config || null,
+        commit_compare: r.commit_compare || null, commit_value: r.commit_value ?? null, target_compare: r.target_compare || null,
         seq: r.seq, name: r.name, formula_text: r.formula_text, scope_text: r.scope_text,
         commitment: r.commitment, target: r.target, target_value: r.target_value,
         direction: r.direction, weight: r.weight, action_plan: r.action_plan, action_owner: r.action_owner,
@@ -706,7 +712,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
     if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
     const payload = {
-      year, section: section || null, line_group: group || null, source: src,
+      year, ...defScopeColumns(org, scope), source: src,
       category: 'internal', name: f.name, seq: f.seq ?? 0,
       target_value: tv, direction: f.direction || null,
       commitment: f.commitment || null, target: f.target_text || null,
@@ -752,14 +758,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <select value={year} onChange={e => setYear(+e.target.value)} style={selSt(110)}>
           {[nowYear + 1, nowYear, nowYear - 1, nowYear - 2, nowYear - 3, nowYear - 4].map(y => <option key={y} value={y}>{y + 543}</option>)}
         </select>
-        <select value={section} onChange={e => { setSection(e.target.value); setGroup(''); }} style={selSt(190)}>
-          <option value="">ทุกส่วนงานในขอบเขต</option>
-          {sectionOpts.map(s2 => <option key={s2} value={s2}>{s2}</option>)}
-        </select>
-        <select value={group} onChange={e => setGroup(e.target.value)} style={selSt(210)}>
-          <option value="">ทุกกลุ่มไลน์{section ? `ใน ${section}` : ''}</option>
-          {groupOpts.map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
+        {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — ตัวเดียวแทน select ส่วนงาน + กลุ่มไลน์ */}
+        <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={scopeSet} sections={userSections}
+          plantLabel="ทุกส่วนงานในขอบเขต" width={isMobile ? '100%' : 320} title="เลือกขอบเขตตามผังองค์กร: ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center" />
         {months && !loading && (
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
             <button onClick={handleExcel} style={btnSt}>⬇️ Excel 3 ชีท</button>
@@ -774,6 +775,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         Excel export ตามโครง 3 ชีทของฟอร์ม FM-HRM-6-022/024/025
       </div>
 
+      {/* ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง/สโตร์/QA) — บอกตรงๆ ห้ามโชว์ตาราง 0 (กฎความซื่อสัตย์ของจอ) */}
+      {scopeNoLines && !loading && (
+        <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
+          ℹ️ <b>{org.labelOf(scope.kind, scope.value)}</b> ไม่มีไลน์ผลิตในผัง — ตัวเลขอัตโนมัติ (ยอดผลิต · ของเสีย · PPM · OEE · Downtime) ไม่มีให้คำนวณ
+          · <b>KPI กรอกมือ</b> ด้านล่างใช้ได้ตามปกติ (ใบ KPI ของหน่วยงานสนับสนุนเป็นแบบนี้ทั้งใบ เช่น JIG MTN = MTBF/MTTR/PM)
+        </div>
+      )}
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลดข้อมูลทั้งปี... {prog}</div>}
       {err && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดไม่สำเร็จ: {err} <button onClick={load} style={{ marginLeft: 8, cursor: 'pointer' }}>ลองใหม่</button></div>}
 
@@ -876,9 +884,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             <button onClick={() => setShowStd(true)}
               title="ดูข้อ KPI มาตรฐานของกลุ่มสำหรับหน่วยงานนี้ — ข้อไหนบังคับ ข้อไหนเลือกได้ และใบนี้หยิบครบหรือยัง"
               style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>📘 มาตรฐานกลุ่ม</button>
-            {group && (
+            {!isPlant(scope) && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
-                📍 แสดง KPI ของกลุ่มไลน์ <b>{group}</b> — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน
+                📍 ขอบเขต <b>{org.labelOf(scope.kind, scope.value)}</b> — แถวที่ติดป้ายในวงเล็บ = นิยามระดับแม่ที่ตกทอดมา (แก้ที่ระดับนั้น)
               </span>
             )}
           </div>
@@ -891,7 +899,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
             what="กรอก/แก้ KPI นอกระบบ" permKey="kpi:manage" />
           {!defs.length ? (
             <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-              ยังไม่มี KPI กรอกมือของปี {year + 543}{section ? ` (ส่วน ${section} + ส่วนกลาง)` : ''}
+              ยังไม่มี KPI กรอกมือของปี {year + 543}{!isPlant(scope) ? ` (${org.labelOf(scope.kind, scope.value)} + ระดับแม่)` : ''}
               {canManage ? ' — กด ＋ เพิ่ม KPI (เช่น DL ≤ 1.452% · Customer Satisfaction ≥ 95%)' : ''}
             </div>
           ) : (
@@ -923,7 +931,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                               <span title="ยังไม่ได้ผูกกับทะเบียนชื่อ KPI — เปิดแก้ไขแล้วเลือกชื่อจากทะเบียนเพื่อให้เทียบข้ามปีได้"
                                 style={{ marginLeft: 5, fontSize: 10, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
                             )}
-                            {!section && d2.section && <span style={{ marginLeft: 5, fontSize: 10, color: 'var(--muted)' }}>({d2.section})</span>}
+                            {defScopeTag(d2) && <span title="นิยามระดับแม่ที่ตกทอดมา — แก้ไขที่ขอบเขตนั้น" style={{ marginLeft: 5, fontSize: 10, color: 'var(--muted)' }}>({defScopeTag(d2)})</span>}
                             <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                               {[d2.commitment && `เป้า ${d2.commitment}`, d2.scope_text].filter(Boolean).join(' · ')}
                             </div>
@@ -972,7 +980,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {autoTgt && (
         <AutoTargetModal
-          row={autoTgt} def={autoDefBy[autoTgt.src]} year={year} section={section} group={group}
+          row={autoTgt} def={autoDefBy[autoTgt.src]} year={year} scopeText={org.labelOf(scope.kind, scope.value)} deep={!isPlant(scope)}
           onClose={() => setAutoTgt(null)}
           onSave={async f => { if (await saveAutoTarget(f)) setAutoTgt(null); }}
         />
@@ -980,7 +988,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {showStd && (
         <KpiStandardModal
-          year={year} section={section} group={group} defs={defsForStd} canManage={canManage}
+          year={year} scope={scope} scopeCols={defScopeColumns(org, scope)} scopeText={org.labelOf(scope.kind, scope.value)} defs={defsForStd} canManage={canManage}
           onClose={() => setShowStd(false)}
           onChanged={() => { loadCatalog(); loadDefs(); }}
         />
@@ -996,7 +1004,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
 
       {editDef && (
         <DefModal
-          init={editDef} year={year} section={section} sectionOpts={sectionOpts}
+          init={editDef} year={year} scope={scope} org={org} scopeSet={scopeSet} userSections={userSections}
           catalog={catalog} catMissing={catMissing} usedIds={defs.map(d2 => d2.catalog_id).filter(Boolean)}
           onClose={() => setEditDef(null)}
           onSave={async f => { if (await saveDef(f)) setEditDef(null); }}
@@ -1010,7 +1018,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
    ⚠️ ไม่มีช่องกรอก "ค่า" โดยตั้งใจ — ค่ามาจากระบบ แถวนี้เก็บแค่เกณฑ์ตัดสิน
    ⚠️ ทิศทางระบบ "เสนอ" ค่าตั้งต้นให้ (ยอดผลิต=มากดี · ของเสีย/PPM/ต้นทุน/Downtime=น้อยดี)
       แต่คนเปลี่ยนได้ — เช่นบางที่คุมยอดผลิตเป็น "ไม่ให้ผลิตเกินแผน" (overproduction = ความสูญเปล่า) */
-function AutoTargetModal({ row, def, year, section, group, onClose, onSave }) {
+function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
   const [f, setF] = useState(() => ({
     src: row.src,
     name: def?.name || row.label.split(' · เป้า')[0],
@@ -1032,7 +1040,7 @@ function AutoTargetModal({ row, def, year, section, group, onClose, onSave }) {
   };
   const inp = { width: '100%', padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
   const lbl = { fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 };
-  const scope = `ปี ${year + 543}${section ? ` · ${section}` : ' · ทุกส่วนงาน'}${group ? ` · ${group}` : ' · ทุกกลุ่มไลน์'}`;
+  const scope = `ปี ${year + 543} · ${scopeText}`;
   return (
     <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(560px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
@@ -1040,7 +1048,7 @@ function AutoTargetModal({ row, def, year, section, group, onClose, onSave }) {
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, marginBottom: 12, lineHeight: 1.6 }}>
           {scope}<br />
           <b style={{ color: 'var(--accent)' }}>⚡ ค่ารายเดือนระบบคำนวณให้เอง</b> — ที่ตั้งตรงนี้คือ "เกณฑ์ตัดสิน Y/N" เท่านั้น
-          {group ? '' : ' · เลือกกลุ่มไลน์ที่หัวเพจก่อน ถ้าอยากตั้งเป้าแยกรายกลุ่มไลน์'}
+          {deep ? '' : ' · เลือกขอบเขตที่หัวเพจก่อน ถ้าอยากตั้งเป้าแยกรายส่วนงาน/แผนก/กลุ่มไลน์'}
         </div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div>
@@ -1182,11 +1190,11 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
 /* ── โมดัลนิยาม KPI (เพิ่ม/แก้) ──
    ⚠️ ชื่อ KPI เลือกจากทะเบียน (kpi_catalog) เป็นหลัก — พิมพ์เองได้แต่ต้องเห็นว่า
    "กำลังสร้างชื่อใหม่" และถ้าคล้ายชื่อที่มีอยู่ต้องเตือนก่อน (ต้นตอของ KPI แตกหัวข้อ) */
-function DefModal({ init, year, section, sectionOpts, catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
+function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog = [], catMissing = false, usedIds = [], onClose, onSave }) {
   const [f, setF] = useState(() => ({
     id: init.id || null,
     catalog_id: init.catalog_id || '',
-    section: init.id ? (init.section || '') : (section || ''),
+    scope: init.id ? scopeOfDef(init) : { ...scope },   // แก้ = ขอบเขตเดิมของแถว · ใหม่ = ขอบเขตที่กำลังดู
     category: init.category || 'internal',
     seq: init.seq ?? 0,
     name: init.kpi_catalog?.name || init.name || '',
@@ -1295,11 +1303,9 @@ function DefModal({ init, year, section, sectionOpts, catalog = [], catMissing =
             </select>
           </div>
           <div>
-            <div style={lbl}>ส่วนงาน (ว่าง = ทุกส่วนงาน)</div>
-            <select style={inp} value={f.section} onChange={e => set('section', e.target.value)}>
-              <option value="">🌐 ทุกส่วนงาน</option>
-              {sectionOpts.map(s2 => <option key={s2} value={s2}>{s2}</option>)}
-            </select>
+            <div style={lbl}>ขอบเขต (ตามผังองค์กร · โรงงาน = ทุกหน่วยงาน)</div>
+            <OrgScopePicker index={org} value={f.scope} onChange={v => set('scope', v)} scopeSet={scopeSet} sections={userSections}
+              width="100%" inputStyle={inp} />
           </div>
           <div>
             <div style={lbl}>Commitment (ข้อความ เช่น ≤ 1.452%)</div>
@@ -1344,7 +1350,7 @@ function DefModal({ init, year, section, sectionOpts, catalog = [], catMissing =
           <div>
             <div style={lbl}>RESPONSIBILITY</div>
             {/* ผู้รับผิดชอบเลือกจากทะเบียนคน (profiles) — พิมพ์เองได้เพราะใบ Appraisal บางข้อระบุเป็นหน่วยงาน (2026-09-07) */}
-            <PersonSelect value={f.action_owner || ''} section={section || undefined} allowFree freeHint="ระบุเป็นชื่อหน่วยงานได้"
+            <PersonSelect value={f.action_owner || ''} section={(f.scope && !isPlant(f.scope) && org.sectionOf(f.scope.kind, f.scope.value)) || undefined} allowFree freeHint="ระบุเป็นชื่อหน่วยงานได้"
               onChange={({ name }) => set('action_owner', name)} inputStyle={{ padding: '6px 30px 6px 8px', background: 'var(--bg2)' }} />
           </div>
         </div>

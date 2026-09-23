@@ -564,7 +564,8 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
 | ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
-| ส่วนงาน / แผนก | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
+| ส่วนงาน / แผนก **ที่เป็น "สังกัด" ของคน/เอกสาร/ใบงาน** | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
+| **ขอบเขตดูข้อมูล / ตั้ง KPI** (ตัวกรองบนหัวจอ OBEYA · KPI · รายงานตามหน่วยงาน) | `<OrgScopePicker>` — ทุกมิติของผัง: ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC (2026-09-23 · คำสั่ง user "กรองได้ทุกมิติในผังองค์กร") · **ห้ามวาด select จาก `org_nodes kind='section'` เอง** (แผนกขึ้นตรงฝ่าย MTN/JIG MTN/QA จะหาย) | `useOrgScope(lines)` → `src/utils/orgScope.js` | `{kind,value}` → URL `?scope=kind:value` · DB `scope_kind/scope_value` |
 | สถานี | `<select>` จาก `workstations` ของครอบครัวไลน์ (+ "✏️ ระบุเอง" เฉพาะที่จำเป็น) | workstations | station_name |
 
 > #### 🔴 ลิสต์ยาวที่ "ยังไม่รู้ไลน์ปลายทาง" ต้อง `groupByLine` (2026-09-08 · feedback หน้างาน)
