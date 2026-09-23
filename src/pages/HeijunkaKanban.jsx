@@ -18,6 +18,7 @@ import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { notifyEvent } from '../utils/notifyEvent';
+import PageHeader from '../components/PageHeader';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -2292,9 +2293,7 @@ export default function HeijunkaKanban() {
       {/* Header */}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🎴 บอร์ดคัมบัง (ทุกสโตร์) — Heijunka
-          </h1>
+          <PageHeader title="บอร์ดคัมบัง (ทุกสโตร์) — Heijunka" icon="🎴" />
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           </p>

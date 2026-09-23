@@ -217,6 +217,31 @@ const TABLE_ROWS = {
    กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
    mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
 const TABLE_FIXED = {
+  /* 🎯 ทะเบียน KPI มาตรฐานของกลุ่ม — **ห้ามถอด** (2026-09-23)
+     โมดัล `KpiStandardPicker` แตกแขนงตามค่า `requirement` 3 แบบ ซึ่ง ROWS ทั่วไปไม่มีให้เลย
+     ⇒ ถ้าไม่มีชุดนี้ harness จะไม่เคยรันโค้ดสายนี้สักบรรทัด:
+       · `requirement: null` = **แถวหัวข้อแม่** (ไม่ใช่ KPI · ห้ามมี checkbox ห้ามนับน้ำหนัก)
+       · `fixed` = ติ๊กมาให้ · `choice` = ให้คนติ๊กเอง
+     · `seq` ซ้ำกันได้จริง (ต้นฉบับ Production พิมพ์ '6' ซ้ำ 2 แถว) ⇒ ใส่ไว้ให้ชนกันจริง
+       เพื่อพิสูจน์ว่าจอเรียงด้วย `sort_order` ไม่ใช่ `seq`
+     · ต้องมีอย่างน้อย 2 std_unit เพื่อให้ dropdown เลือกหน่วยงานมีของให้สลับ */
+  kpi_standard_items: [
+    { id: 'std-1', year: 2026, std_unit: 'Production', seq: '1', sort_order: 1, perspective: 'financial', topic: 'Raw Material Control', formula_text: '(Raw Material/Sales from product) x 100', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-2', year: 2026, std_unit: 'Production', seq: '6', sort_order: 2, perspective: 'internal', topic: 'Cost Reduction', formula_text: 'Reduce X% from last year or Value', requirement: 'choice', catalog_id: null, note: null },
+    { id: 'std-3', year: 2026, std_unit: 'Production', seq: '6', sort_order: 3, perspective: 'internal', topic: 'Internal Quality Rate', formula_text: '(Defect/Total Production) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-4', year: 2026, std_unit: 'Production', seq: '11', sort_order: 4, perspective: 'learning', topic: 'Activity', formula_text: 'Number of Passed Activity', requirement: null, catalog_id: null, note: null },
+    { id: 'std-5', year: 2026, std_unit: 'Production', seq: '11.1', sort_order: 5, perspective: 'learning', topic: 'QCC', formula_text: '*Refer to activity announcement', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-6', year: 2026, std_unit: 'QA', seq: '1', sort_order: 1, perspective: 'customer', topic: 'Customer Claim', formula_text: '(Claim qty/Delivery qty) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+  ],
+  /* นิยาม KPI — **ต้องมีทั้งแถว `manual` และ `auto:` เสมอ ห้ามถอด** (2026-09-23)
+     `source` เป็น `not null default 'manual'` ⇒ แถวกรอกมือ**ไม่ใช่ null** · เคยเข้าใจผิดจนเกิดบั๊ก
+     2 จุด (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
+     ⇒ ไม่มีแถว auto ในม็อก = ตัวกรองที่แก้บั๊กนั้นไม่เคยถูกรันใน harness */
+  kpi_definitions: [
+    { id: 'kd-1', year: 2026, section: 'PD3', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2 } },
+    { id: 'kd-2', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0 } },
+    { id: 'kd-3', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+  ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
   factory_line_regions: [
     { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
@@ -251,7 +276,42 @@ const SCHEMA_FKS = [
   { name: 'four_m_logs_line_id_fkey', t: 'four_m_logs', c: ['line_id'], rt: 'production_lines', rc: ['id'], del: 'a' },
   { name: 'four_m_logs_created_by_fkey', t: 'four_m_logs', c: ['created_by'], rt: 'auth.users', rc: ['id'], del: 'a' },
 ]
+/* ── 🏛️ OBEYA โหมดปี (2026-09-22): RPC คืน "ผลรวมรายเดือน" (ดู src/utils/obeyaYear.js) ────────
+   ต้องมี: เดือนที่มีข้อมูล · เดือนว่าง (ไม่มีแถว) · แถว NULLISH (wprod/q_w = null) · ไลน์ที่ไม่มีใน production_lines ·
+   downtime ทั้ง planned/unplanned · defect ที่มี mat ไม่รู้ต้นทุน · เช็คชื่อที่ line เป็น id จุดงาน (ของจริงเป็น uuid) */
+const OBEYA_YEAR = () => ({
+  from: '2026-01-01', to: '2026-09-22',
+  sessions: [
+    { m: '2026-01', line: 'LINE 060', n: 40, wload: 20000, oee_w: 1600000, a_wload: 20000, a_w: 1800000, wrun: 18000, p_w: 1620000, wprod: 4000, q_w: 396000, qty: 3960, ng: 40 },
+    { m: '2026-02', line: 'LINE 060', n: 38, wload: 19000, oee_w: 1330000, a_wload: 19000, a_w: 1615000, wrun: 16150, p_w: 1291000, wprod: 3800, q_w: 372400, qty: 3780, ng: 20 },
+    { m: '2026-03', line: 'LINE 061', n: 20, wload: 10000, oee_w: 850000, a_wload: 10000, a_w: 920000, wrun: 9200, p_w: 828000, wprod: null, q_w: null, qty: 0, ng: 0 },
+    { m: '2026-05', line: 'ไลน์ที่ไม่มีในทะเบียน', n: 3, wload: 1500, oee_w: 90000, a_wload: 1500, a_w: 120000, wrun: 1200, p_w: 96000, wprod: 300, q_w: 29700, qty: 297, ng: 3 },
+  ],
+  downtime: [
+    { m: '2026-01', line: 'LINE 060', type: 'Robot (Alarm/Error)', category: 'unplanned', min: 300 },
+    { m: '2026-01', line: 'LINE 060', type: 'พักเที่ยง', category: 'planned', min: 2000 },
+    { m: '2026-02', line: 'LINE 060', type: 'รอวัตถุดิบ', category: 'unplanned', min: 120 },
+    { m: '2026-03', line: 'LINE 061', type: null, category: '', min: 45 },
+  ],
+  defects: [
+    { m: '2026-01', line: 'LINE 060', mat: '90031601', rows: 6, ng: 40, trial_ng: 5 },
+    { m: '2026-02', line: 'LINE 060', mat: 'MAT-ไม่มีต้นทุน', rows: 2, ng: 20, trial_ng: null },
+  ],
+  orders: [
+    { m: '2026-01', line: 'LINE 060', status: 'confirmed', n: 30, qty: 4000, qty_ok_fb: 3960, qty_actual: 0 },
+    { m: '2026-02', line: 'LINE 060', status: 'carry_over', n: 2, qty: 200, qty_ok_fb: 200, qty_actual: 150 },
+    { m: '2026-02', line: 'LINE 060', status: 'open', n: 1, qty: 100, qty_ok_fb: 100, qty_actual: 0 },
+  ],
+})
+const OBEYA_ATTEND = () => ([
+  { m: '2026-01', line: 'ws-1', n: 400, present: 380, ppe_ok: 350, ot: 20 },
+  { m: '2026-02', line: 'ws-1', n: 380, present: 300, ppe_ok: 100, ot: 0 },
+  { m: '2026-03', line: null, n: 50, present: 50, ppe_ok: 50, ot: 5 },
+  { m: '2026-04', line: 'ws-ไม่รู้จัก', n: 10, present: null, ppe_ok: null, ot: null },
+])
 const RPC_RESULT = {
+  obeya_year_rollup: OBEYA_YEAR,
+  obeya_attendance_rollup: OBEYA_ATTEND,
   esm_schema_overview: () => ({ at: '2026-09-22T01:00:00Z', tables: SCHEMA_TABLES, fks: SCHEMA_FKS }),
   esm_schema_table: (args) => {
     const name = args?.p_table || 'four_m_logs'

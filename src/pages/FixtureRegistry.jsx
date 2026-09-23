@@ -394,9 +394,12 @@ export default function FixtureRegistry() {
 
   return (
     <div style={{ padding: '16px 20px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader
+      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · วาดเฉพาะแถบแท็บย่อย `?fx=`
+          🔴 prop ชื่อ `tab` ไม่ใช่ `activeTab` — เดิมส่งผิดชื่อ ⇒ **แท็บไม่เคยไฮไลต์เลยสักอัน**
+             (PageHeader ไม่มี `activeTab` มันเลยอ่าน `tab` ได้ undefined เงียบๆ · แก้ 22/09) */}
+      <PageHeader embedded
         tabs={TABS.map(t => ({ key: t.k, label: `${t.icon} ${t.label}` }))}
-        activeTab={tab} onTab={setTab}
+        tab={tab} onTab={setTab}
       />
 
       {dataWarn && (
@@ -549,7 +552,11 @@ export default function FixtureRegistry() {
           {/* 📍 ผังวางหมุด — รูปชุดเดียวกับใบตรวจ PM: ปักตรงไหน คนตรวจเห็นหมุดม่วงตรงนั้น */}
           {points.length > 0 && (
             frames.length ? (
-              <div style={{ ...card, display: 'grid', gap: 8 }}>
+              /* 📌 ตรึงรูปไว้ตอนเลื่อนดูตารางจุด (user 23/09 — จอที่ต้องใช้รูปอ้างอิงตอนตรวจ
+                 ทุกจอควรตรึงรูป) · พื้นหลังทึบบังคับ ไม่งั้นตารางเลื่อนทะลุใต้รูป
+                 ⚠️ sticky ในหน้า (ไม่ใช่ modal) เกาะ document ได้ก็เพราะ `<main>` ใน App.jsx
+                    เป็น overflowX:'clip' — ห้ามเปลี่ยนเป็น hidden/auto (กับดักใน CLAUDE.md) */
+              <div style={{ ...card, display: 'grid', gap: 8, position: 'sticky', top: 0, zIndex: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>

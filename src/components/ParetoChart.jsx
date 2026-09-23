@@ -70,6 +70,10 @@ export default function ParetoChart({
   const g = paretoGeometry(shown, { width, height: vbH, padBottom, padLeft, cutoff });
 
   if (!shown.length) return null;
+  /* แท่งที่เตี้ยกว่า ~1 พิกเซล — ต้องบอกบนจอว่า "ไม่ใช่ 0" ไม่งั้นคนอ่านสรุปผิด
+     (กฎความซื่อสัตย์ของจอ: ข้อมูลที่จอแสดงไม่ได้ ต้องเขียนว่าแสดงไม่ได้ ห้ามปล่อยให้ดูเหมือน 0) */
+  const tiny = g.bars.filter(b => b.value > 0 && b.h < 1);
+  const tinyMin = tiny.length ? Math.min(...tiny.map(b => b.value)) : 0;
   const axis = 'var(--border2)', txt = 'var(--text2)', mut = 'var(--muted)';
   const showBarVal = g.barW >= 26;
   // % บนหมุด: แสดงทุกจุดถ้าที่พอ · ไม่พอแสดงเฉพาะกลุ่ม A + จุดสุดท้าย (กันเลขทับกัน)
@@ -105,24 +109,25 @@ export default function ParetoChart({
 
         {/* แท่ง — ชิดกันสนิทตามมาตรฐาน (เส้นขอบขาวบางคั่นให้แยกแท่งออก ไม่ใช่ช่องว่าง) */}
         {g.bars.map(b => {
-          /* เส้นสะสมพาดต่ำในแท่งแรกๆ (เพิ่งออกจาก 0%) ⇒ เลขที่ฐานแท่งโดนทับ
-             ⇒ ดูความสูงเส้นตรงกลางแท่ง แล้วเลือกวางเลขฝั่งที่เส้นไม่ผ่าน */
-          const lineY = (g.line[b.i].y + g.line[b.i + 1].y) / 2;
-          const valY = lineY > g.base - 34 ? b.y + 15 : g.base - 9;
           return (
           <g key={b.i} onClick={onPick && !b.row._tail ? () => onPick(b.row) : undefined}
             style={{ cursor: onPick && !b.row._tail ? 'pointer' : 'default' }}>
-            <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 1 : 0)}
-              fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1" />
-            {/* ⚠️ เลขค่าต้องอยู่ **ในแท่ง** เมื่อแท่งสูงพอ — วางเหนือหัวแท่งจะชนกับ % ของเส้นสะสม
-                ที่ลากผ่านแถวเดียวกัน (เจอจริงรอบแรก 22/09: "25" ทับ "80%", "19" ทับ "62.3%")
-                วางที่ **ฐานแท่ง** ไม่ใช่หัวแท่ง — ข้อมูลที่ค่าใกล้กัน (25/24/23…) เส้นสะสมจะพาดผ่าน
-                หัวแท่งพอดี ⇒ วางหัวแท่งชนแน่นอน ส่วนฐานแท่งเส้นไม่เคยลงไปถึง */}
-            {showBarVal && b.h > 0 && (
-              b.h >= 26
-                ? <text x={b.x + b.w / 2} y={valY} fontSize={FONT} fill="#ffffff" textAnchor="middle" fontWeight="700">{fmtV(b.value)}</text>
-                : <text x={b.x + b.w / 2} y={b.y - 5} fontSize={FONT} fill={txt} textAnchor="middle" fontWeight="600">{fmtV(b.value)}</text>
+            {/* 🔴 พื้นขั้นต่ำ 2 หน่วย: เพดานแกน = ยอดรวม ⇒ รายการหางยาวสูงไม่ถึง 1 พิกเซล
+                ปล่อยตามจริง = **ตาเห็นเป็น 0 ทั้งที่ไม่ใช่** (user ถาม 22/09 "ท้ายๆ นี่ค่าเป็น 0 รึป่าว"
+                ข้อมูลจริง: รายการท้ายสุด 10 นาที = 0.004% ของยอดรวม = ~1/40 พิกเซล)
+                ⚠️ พื้นขั้นต่ำทำให้แท่งจิ๋วดู "เท่ากัน" ⇒ **ต้องมีข้อความบอกใต้กราฟด้วย** (ดู tinyNote) */}
+            {/* 🔴 พื้นที่คลิก = ทั้งคอลัมน์จากบนลงล่าง **ไม่ใช่ตัวแท่ง**
+                เพดานแกน = ยอดรวม ⇒ แท่งสูงไม่กี่พิกเซล ⇒ เล็งคลิกแทบไม่โดน
+                (user แจ้ง 23/09 "กราฟคลิกเจาะเข้าไปดูรายละเอียดไม่ได้")
+                วาดก่อนแท่งและ fill โปร่งใส เพื่อไม่บังสีแท่ง */}
+            {onPick && !b.row._tail && (
+              <rect x={b.x} y={g.padTop} width={b.w} height={g.plotH} fill="transparent">
+                <title>{`${b.row.name} — ${fmtV(b.value)} ${unit} · คลิกเพื่อเจาะลึก`}</title>
+              </rect>
             )}
+            <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 2 : 0)}
+              fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1"
+              style={{ pointerEvents: 'none' }} />
           </g>
           );
         })}
@@ -136,13 +141,25 @@ export default function ParetoChart({
         {g.line.filter(p => !p.origin).map(p => (
           <g key={`p${p.i}`}>
             <rect x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" fill={LINE_COLOR} stroke="var(--card)" strokeWidth="1.2" />
+            {/* หมุด i อยู่ระดับ "ยอดสะสมถึงแท่ง i" ⇒ หมุดแรก = หัวแท่งแรกพอดี (ดู pareto.js)
+                ป้าย % จึงชนเลขค่าของแท่งนั้นแน่นอน — ยกป้ายแรกขึ้นอีกขั้น */}
             {(roomy || p.row?._cls === 'A' || p.i === g.line.length - 2) && (
-              <text x={p.x} y={p.y - 10} fontSize={FONT} textAnchor="middle" fontWeight="700"
+              <text x={p.x} y={p.y - (p.i === 0 ? 22 : 10)} fontSize={FONT} textAnchor="middle" fontWeight="700"
                 fill={LINE_COLOR} stroke="var(--card)" strokeWidth="3" paintOrder="stroke">
                 {p.pct.toFixed(1)}%
               </text>
             )}
           </g>
+        ))}
+
+        {/* เลขค่าบนหัวแท่ง — **วาดหลังเส้นสะสม** เพื่อให้ขอบสีพื้นการ์ดกินเส้นที่พาดผ่าน
+            (วาดก่อนเส้น = เส้นทับเลข · เจอจริง 22/09 เลข "24" ของแท่งที่ 2 หายไปใต้เส้น)
+            เพดานแกนซ้าย = ยอดรวม ⇒ แท่งเตี้ยกว่าพื้นที่กราฟเป็นปกติ ที่ว่างด้านบนคือที่ของเส้นสะสม */}
+        {showBarVal && g.bars.map(b => b.h > 0 && (
+          <text key={`v${b.i}`} x={b.x + b.w / 2} y={b.y - 6} fontSize={FONT} textAnchor="middle"
+            fontWeight="700" fill={txt} stroke="var(--card)" strokeWidth="3.5" paintOrder="stroke">
+            {fmtV(b.value)}
+          </text>
         ))}
 
         {/* ป้ายแกน X — เอียงตามพื้นที่ (0 / -45 / -90) ห้ามตัดคำทิ้งเงียบ */}
@@ -174,6 +191,22 @@ export default function ParetoChart({
           <svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke={LINE_COLOR} strokeWidth="2" /></svg>
           % สะสม (อ่านแกนขวา)
         </span>
+        {/* ⚠️ ข้อความนี้ต้องอยู่ **ในไฟล์นี้** เท่านั้น — หน้าแม่ไม่รู้ว่าตอนนี้กางหางยาวอยู่หรือย่ออยู่
+            (เดิมอยู่ใน ParetoAbcChart แล้วเขียนว่า "แสดง 11 อันดับแรกจาก 46" ทั้งที่จอกางครบ 46 แท่งแล้ว) */}
+        {tail && (
+          <span style={{ color: 'var(--muted)' }}>
+            แสดง {shown.length - 1} อันดับแรกจาก {rows.length} · ที่เหลือยุบเป็นแท่ง “หางยาว”
+          </span>
+        )}
+        {showAll && (
+          <span style={{ color: 'var(--muted)' }}>แสดงครบทั้ง {rows.length} รายการ</span>
+        )}
+        {tiny.length > 0 && (
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>
+            ⚠️ {tiny.length} แท่งท้ายเตี้ยกว่า 1 พิกเซล (ต่ำสุด {fmtV(tinyMin)} {unit}) — <u>ไม่ใช่ 0</u>
+            {showAll ? ' · กด “ย่อหางยาว” เพื่อรวมเป็นแท่งเดียว' : ''}
+          </span>
+        )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
           {tail && showTailToggle && (
             <button type="button" onClick={() => setShowAll(true)} style={miniBtn}>

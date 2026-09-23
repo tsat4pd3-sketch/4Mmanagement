@@ -12,6 +12,8 @@
  */
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 import LineSelect from './LineSelect';
 import ProductSelect from './ProductSelect';
 import PersonSelect from './PersonSelect';
@@ -73,8 +75,9 @@ export default function QualityBins() {
   const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by');
   const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
   const [rows, setRows] = useState([]);
-  const [from, setFrom] = useState(daysAgo(30));
-  const [to, setTo] = useState(today());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [lineFilter, setLineFilter] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -239,9 +242,11 @@ export default function QualityBins() {
       </div>
 
       {/* ── แถบควบคุม ── */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-        <div><label style={lbl}>ตั้งแต่</label><input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inp, width: 150 }} /></div>
-        <div><label style={lbl}>ถึง</label><input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...inp, width: 150 }} /></div>
         <div><label style={lbl}>ไลน์</label>
           <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter}
             placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />

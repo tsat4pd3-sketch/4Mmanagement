@@ -55,10 +55,23 @@ test('ตัวส่งเรียกช่างต้องส่ง key ผ
 });
 
 test('edge ตัวส่งกลางต้องส่ง p_team ให้ RPC', () => {
-  // ⚠️ `send-mtn-notification` (30 KB) ยังไม่ได้ส่ง p_team — ตระกูล mtn_* จึงยังกรองทีมผ่าน
-  //    `usersInTeam()` ในไฟล์นั้นแทน · เพิ่ม p_team ที่นั่นได้เมื่อไฟล์ถูกแตกให้เล็กลง
-  //    (กฎขนาดไฟล์ deploy: docs/modules/edge-functions.md)
   const src = readFileSync(new URL('../../../supabase/functions/send-event-notification/index.ts', import.meta.url), 'utf8');
   assert.ok(src.includes('p_team'), 'send-event-notification ต้องส่ง p_team ให้ notify_recipients');
   assert.ok(src.includes("body.team"), 'ต้องรับ team จาก payload');
+});
+
+test('edge ใบแจ้งซ่อมต้องส่ง p_team ด้วย — ต้นทาง 61% ของแถว notifications ทั้งระบบ', () => {
+  /* บั๊กจริง 22→23/09: แกนทีมถูกเพิ่มใน notify_recipients เมื่อ 21/09 พร้อมเจตนา
+     "ทีม DIE MTN ไม่ควรโดนเด้งใบของ JIG MTN" แต่ `send-mtn-notification` เรียก RPC โดย
+     **ไม่ส่ง p_team** ⇒ แกนไม่เคยมีผลกับใบซ่อมเลย (usersInTeam เพิ่มช่างทีมที่ใช่ แต่ไม่ตัดทีมอื่นออก)
+     วัดจริง: 42,220 แถว/14 วัน · เฉลี่ย 30 คน/เหตุการณ์ · คนอ่าน 7.8% */
+  const src = readFileSync(new URL('../../../supabase/functions/send-mtn-notification/index.ts', import.meta.url), 'utf8');
+  assert.ok(/args\.p_team\s*=/.test(src), 'send-mtn-notification ต้องส่ง p_team ให้ notify_recipients');
+  assert.ok(/usersByRule\([^)]*dept/s.test(src), 'usersByRule ต้องรับทีมของใบ (dept) เข้าไปกรอง');
+  // 🔴 ห้ามเงียบ: กรองด้วยทีมแล้วเหลือ 0 คน ต้องถอยไปชุดไม่กรองทีม
+  //    (mtn_closed ตั้ง role ไว้แค่ mtn และช่างทุกคนมีทีม ⇒ ใบทีม production กรองเหลือ 0)
+  assert.ok(/if\s*\(ids\.length\s*\|\|\s*!team\)\s*return ids;/.test(src),
+    'ต้องมีทางถอยเมื่อกรองด้วยทีมแล้วไม่เหลือใคร — ไม่งั้นใบเดินไปเงียบๆ');
+  // ⚠️ ผู้เรียกฝั่งเว็บไม่ส่ง Authorization ⇒ ห้ามเปิด verify_jwt (เคยหลุดตอน deploy 23/09)
+  assert.ok(src.includes('verify_jwt = false'), 'ต้องมีคำเตือนเรื่อง verify_jwt กำกับไว้ในไฟล์');
 });

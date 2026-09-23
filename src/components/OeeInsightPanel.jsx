@@ -4,6 +4,9 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { toHierarchicalOptions } from '../utils/lineHierarchy';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays } from '../utils/timeRange';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -41,7 +44,11 @@ const SEV = {
 export default function OeeInsightPanel({ lines, ccRates = [] }) {
   // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
   const lineOpts = useMemo(() => toHierarchicalOptions(lines || []), [lines]);
-  const [days, setDays] = useState(30);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
+     · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
+     · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const days = rangeDays(tr.from, tr.to) || 30;
   const [selLine, setSelLine] = useState('');
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState(null); // null = ยังไม่รัน
@@ -52,8 +59,10 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
   const run = useCallback(async () => {
     setLoading(true);
     try {
-      const to = todayWorkDate();
-      const from = dateStrAdd(to, -days);
+    /* 🔴 ต้องยึด "ช่วงที่เลือกจริง" ไม่ใช่ "N วันนับถอยจากตอนนี้" — ไม่งั้นพอเลือกช่วงในอดีต
+       จำนวนวันถูกแต่หน้าต่างเวลาผิด (ยังลากถึงวันนี้เสมอ) = ตัวเลขไม่ตรงกับที่จอบอก */
+      const to = tr.to;
+      const from = tr.from;
       const lineNames = selLine ? [selLine] : lines.map(l => l.name);
       if (!lineNames.length) { setInsights([]); setLoading(false); return; }
 
@@ -315,12 +324,17 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       setMeta({ error: e.message });
     }
     setLoading(false);
-  }, [days, selLine, lines]);
+  }, [tr.from, tr.to, selLine, lines]);
 
   useEffect(() => { run(); }, [run]);
 
   return (
     <div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่ */}
+      <TimeRangeBar
+        scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🧠 วิเคราะห์ภาพรวมอัตโนมัติ</span>
         {/* width กัน index.css select{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
@@ -330,9 +344,6 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
           {lineOpts.map(({ line: l, depth }) => (
             <option key={l.id} value={l.name}>{depth ? `${' '.repeat(depth * 3)}↳ ${l.name}` : l.name}</option>
           ))}
-        </select>
-        <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-          {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
         </select>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}

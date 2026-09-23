@@ -47,6 +47,8 @@ import CapaEffectiveness from '../components/CapaEffectiveness';
 import { VERDICTS as EFF_V } from '../utils/capaEffect';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -62,7 +64,6 @@ function getCurrentShift() {
   const h = new Date().getHours();
   return (h >= 8 && h < 20) ? 'day' : 'night';
 }
-function daysAgoStr(n) { const d = new Date(); d.setDate(d.getDate() - n); return localDateStr(d); }
 const fmtD = (s) => s ? new Date(s + (s.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
 
 /* ── SPC constants (AIAG SPC manual, subgroup size n = 2..10) ──────────────
@@ -254,7 +255,7 @@ function Field({ label, children, span }) {
 /* ════════════════════════════════════════════════════════════════════════
    TAB 1 — Dashboard คุณภาพ (PPM / FTT / Pareto จาก DR project)
    ════════════════════════════════════════════════════════════════════════ */
-const RANGE_OPTS = [{ v: 7, label: '7 วัน' }, { v: 30, label: '30 วัน' }, { v: 90, label: '90 วัน' }];
+/* ⏱️ ปุ่มช่วงย้อนหลังย้ายไปแถบกลาง `<TimeRangeBar>` (30/60/90/120 · นับหัวนับท้ายถูกต้อง) — UI §6.16 */
 /* ยอดผลิตจริงต่อใบงาน — สูตรบังคับของโปรเจค (audit 2026-09-02)
    🔴 เดิม `qty_ok ?? qty_actual ?? qty` ตกไปใช้ `qty` (= **เป้า**) กับใบที่ยังไม่ปิดและยังไม่กรอกยอด
       ⇒ ตัวหารพองเกินจริง → **PPM ต่ำกว่าความจริง / FTT สูงกว่าความจริง**
@@ -275,8 +276,13 @@ function QualityDashboard() {
     return null; // ไม่จำกัด
   }, [role, lineId, sections, allLines]);
   useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
-  const [from, setFrom] = useState(() => daysAgoStr(30));
-  const [to, setTo]     = useState(() => getWorkDate());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง `<TimeRangeBar>` (UI §6.16)
+     🔴 ของเดิม `daysAgoStr(30)` ให้ช่วง **31 วัน** ทั้งที่ปุ่มเขียนว่า "30 วัน"
+        (นับหัวนับท้ายแล้วเกินไป 1) · หน้าอื่นอย่าง /workforce-insight ใช้ `daysAgoStr(29)` = 30 วันจริง
+        ⇒ 2 จอเขียน "30 วัน" เหมือนกันแต่ดึงคนละช่วง · `presetRange()` ของกลางแก้ให้ตรงป้ายแล้ว
+     · หน้านี้ไม่แบ่งถังเวลา (ไม่มีกราฟไล่ตามเวลา) ⇒ `scales={null}` ซ่อนปุ่มสเกล (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [lineFilter, setLineFilter] = useState('');    // '' = ทุกไลน์
   const [productFilter, setProductFilter] = useState(''); // '' = ทุก product (คีย์ = mat_no)
   const [loading, setLoading] = useState(true);
@@ -286,7 +292,6 @@ function QualityDashboard() {
   const [ncrOpen, setNcrOpen] = useState(0);
   const [capaOverdue, setCapaOverdue] = useState(0);
 
-  const setRange = (n) => { setFrom(daysAgoStr(n)); setTo(getWorkDate()); };
 
   const sessById = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions]);
 
@@ -435,26 +440,13 @@ function QualityDashboard() {
     };
   }, [shownSessions, shownSessIds, sessById, orders, defects, lineFilter, productFilter]);
 
-  const dateSt = { ...inputSt, width: 148 };
-  const activeRangeDays = useMemo(() => {
-    if (to !== getWorkDate()) return null;
-    const hit = RANGE_OPTS.find(o => daysAgoStr(o.v) === from);
-    return hit ? hit.v : null;
-  }, [from, to]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ช่วงข้อมูล:</span>
-        {RANGE_OPTS.map(o => (
-          <button key={o.v} onClick={() => setRange(o.v)}
-            style={{ ...ghostBtn, ...(activeRangeDays === o.v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>
-            {o.label}
-          </button>
-        ))}
-        <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} style={dateSt} />
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>ถึง</span>
-        <input type="date" value={to} min={from} max={getWorkDate()} onChange={e => setTo(e.target.value)} style={dateSt} />
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+      >
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginLeft: 6 }}>ไลน์:</span>
         <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 150 }}>
           <option value="">ทุกไลน์ ({lineOptions.length})</option>
@@ -467,7 +459,7 @@ function QualityDashboard() {
           onChange={({ id }) => setProductFilter(id)} />
         {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
         {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
-      </div>
+      </TimeRangeBar>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()}

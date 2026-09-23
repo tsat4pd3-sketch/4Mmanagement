@@ -79,6 +79,18 @@ node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px 
 - **⚠️ แถวที่ 14 เป็น "แถวข้อมูลไม่ครบ" (`NULLISH`) โดยตั้งใจ ห้ามถอด** — คอลัมน์ตัวเลขในฐานจริง
   ส่วนใหญ่ nullable แถวเดียวที่เป็น null ทำให้ทั้งหน้าพัง (`undefined.toLocaleString()`) และ
   build/lint จับไม่ได้ · เพิ่มคอลัมน์ใหม่ใน `ROW()` ที่ nullable จริง **ให้เพิ่มใน `NULLISH()` ด้วย**
+- **⚠️ แถวชั้น OP (`is_operation`) ใน mock ห้ามถอด** (2026-09-15 · ย้ายรายละเอียดมาจาก CLAUDE.md 23/09)
+  เดิมไม่มีเลยสักแถว ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` ·
+  ปุ่ม 🧩 ระเบิดของเสียใน `/scrap-report` · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย**
+  = บั๊กทั้งคลาสมองไม่เห็น · `i=4` ผูก parent+seq ครบ · `i=5` ยังไม่ผูก = เคส worklist เหลือง
+- **⚠️ `kpi_standard_items` + `kpi_definitions` ใน `TABLE_FIXED` ห้ามถอด** (2026-09-23)
+  · `kpi_standard_items` ต้องมีครบทั้ง `requirement: 'fixed' | 'choice' | null` (null = **แถวหัวข้อแม่**
+    ไม่ใช่ KPI) + `seq` ที่ **ซ้ำกันจริง** (ต้นฉบับ `Production` พิมพ์ `6` ซ้ำ 2 แถว) เพื่อพิสูจน์ว่าจอ
+    เรียงด้วย `sort_order` ไม่ใช่ `seq` + อย่างน้อย 2 `std_unit` ให้ dropdown มีของสลับ
+  · `kpi_definitions` ต้องมี**ทั้งแถว `source: 'manual'` และ `source: 'auto:<key>'`** —
+    `source` เป็น `not null default 'manual'` (ไม่ใช่ null) · เคยเข้าใจผิดจนเกิดบั๊ก 2 จุดพร้อมกัน
+    (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
+  · ⚠️ **mock ไม่บังคับ `.eq()`** ⇒ จอทดสอบจะเห็นแถวของหน่วยงานอื่นปนมาด้วย (ของจริงกรองถูก)
 - ถ้าหน้าไหน CRASH ใน harness ให้เช็คก่อนว่าเป็น "mock ไม่มีคอลัมน์นั้น" หรือ **โค้ดไม่ได้กัน null จริง**
   (รอบแรกเจอของจริง 3 จุด: `.slice()` บน `due_date`/`period_month` ที่เป็น null แล้วทำหน้าขาวทั้งหน้า)
 

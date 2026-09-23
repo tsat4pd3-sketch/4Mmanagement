@@ -6,7 +6,7 @@ import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
   providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
-  isStdFixed, isStdParent, checkStdSelection,
+  isStdFixed, isStdParent, checkStdSelection, matchStdItems,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -298,4 +298,44 @@ test('เตือน "ขาดข้อบังคับ" — จับคู
 
   // ไม่ส่งทะเบียนมา = ตรวจแค่น้ำหนัก ห้ามเดาว่าขาดข้อบังคับ
   assert.deepEqual(checkStdSelection([{ weight: 50 }]).missingFixed, []);
+});
+
+/* ── matchStdItems — จับคู่ทะเบียนมาตรฐานกับแถวในใบจริง (2026-09-23) ───────────────
+   บั๊กที่กันไว้: `kpi_definitions` เก็บชื่อที่ `name` ไม่ใช่ `topic` ⇒ ถ้าจับคู่ด้วย `topic`
+   อย่างเดียว ข้อ fixed ที่หยิบเข้าใบแล้วจะถูกฟ้องว่า "ยังไม่ได้หยิบ" ทุกข้อ = จอโกหก */
+test('matchStdItems: จับคู่ด้วย name ของใบจริงได้ (ไม่ใช่แค่ topic)', () => {
+  const std = [
+    { id: 'i1', topic: 'Total Sales', requirement: 'fixed' },
+    { id: 'i2', topic: ' EBIT ', requirement: 'fixed' },
+    { id: 'i3', topic: 'New Model', requirement: 'choice' },
+  ];
+  const rows = [{ name: 'total sales', weight: 20 }, { name: 'EBIT', weight: 30 }];
+  const m = matchStdItems(std, rows);
+  assert.equal(m.length, 3);
+  assert.ok(m[0].row, 'ตัวพิมพ์เล็ก/ใหญ่ต้องไม่ทำให้จับคู่พลาด');
+  assert.ok(m[1].row, 'ช่องว่างหัวท้ายต้องไม่ทำให้จับคู่พลาด');
+  assert.equal(m[2].row, null, 'ข้อที่ยังไม่หยิบต้องคืน null');
+});
+
+test('matchStdItems: std_item_id ชนะการจับคู่ด้วยชื่อ · ข้อมูลว่างไม่พัง', () => {
+  const std = [{ id: 'i1', topic: 'Safety' }];
+  assert.equal(matchStdItems(std, [{ std_item_id: 'i1', name: 'เปลี่ยนชื่อไปแล้ว' }])[0].row.std_item_id, 'i1');
+  assert.deepEqual(matchStdItems([], []), []);
+  assert.deepEqual(matchStdItems(null, null), []);
+  assert.equal(matchStdItems(std, [{ name: '' }, { name: null }])[0].row, null);
+});
+
+test('checkStdSelection: ข้อ fixed ที่หยิบเข้าใบแล้วด้วยชื่อ (name) ต้องไม่ถูกฟ้องว่าขาด', () => {
+  const std = [
+    { id: 'a', topic: 'Total Sales', requirement: 'fixed' },
+    { id: 'b', topic: 'EBIT', requirement: 'fixed' },
+    { id: 'c', topic: 'Activity' },                       // แถวหัวข้อแม่ ไม่นับเป็น KPI
+  ];
+  const r = checkStdSelection([{ name: 'Total Sales', weight: 50 }], std);
+  assert.deepEqual(r.missingFixed.map(x => x.id), ['b']);
+  assert.equal(r.ok, false, 'ขาดข้อบังคับ = ยังไม่ผ่านกติกา แม้น้ำหนักครบ 50');
+  assert.equal(r.weight, 50);
+  const r2 = checkStdSelection([{ name: 'Total Sales', weight: 25 }, { name: 'ebit', weight: 25 }], std);
+  assert.deepEqual(r2.missingFixed, []);
+  assert.equal(r2.ok, true);
 });

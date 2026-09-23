@@ -17,6 +17,8 @@ import useTabParam from '../utils/useTabParam';
 import SymptomSearch from '../components/SymptomSearch';
 import { inspMeta } from '../utils/inspectionStatus';
 import { julianLabel, parseJulianTerm, toJulian } from '../utils/julianDate';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
@@ -70,8 +72,9 @@ export default function OrderTrace() {
 
   const [lines, setLines] = useState([]);
   const [search, setSearch] = useState('');
-  const [from, setFrom] = useState(() => addDays(todayStr(), -30));
-  const [to, setTo] = useState(todayStr);
+  /* ⏱️ ช่วงวันงาน = แถบกลาง (UI §6.16) · หน้าสอบกลับไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
 
   /* 🗓 ค้นด้วย Julian date (คำขอ user 2026-09-15: "เพิ่มให้หาจาก julian date ด้วยได้มั้ย จะได้ง่ายขึ้น")
      หน้างานถือชิ้นงานที่มีเลข Julian ปั๊มอยู่ → พิมพ์เลขนั้นลงช่องค้นหาตรงๆ ได้เลย
@@ -972,15 +975,15 @@ export default function OrderTrace() {
 
       {tab === 'order' && (<>
       {/* ── ค้นหา ── */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ ...card, marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <input type="text" value={search} onChange={e => { setSearch(e.target.value); setJulYear(null); }}
           onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
           placeholder="🔍 สแกน PROD.NO / MAT.NO / ชื่อชิ้นงาน / เลข Julian (เช่น 24726A)"
           style={{ width: 340, fontSize: 14 }} autoFocus />
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>ช่วงวันงาน</span>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140 }} />
-        <span style={{ color: 'var(--muted)' }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140 }} />
         <button onClick={() => doSearch()} disabled={searching}
           style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
           {searching ? '⏳' : 'ค้นหา'}

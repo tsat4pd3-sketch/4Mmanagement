@@ -12,6 +12,7 @@ import { STAFF_KINDS, STAFF_DIRECT, STAFF_INDIRECT } from '../utils/staffKind'; 
 import { orphanDepts } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย (QA/MTN/JIG MTN/DIE MTN)
 
 import InfoMore from '../components/InfoMore';
+import PageHeader from '../components/PageHeader';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
 // admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
@@ -473,10 +474,7 @@ export default function AddUser() {
       {/* Header */}
       <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-            🔑 จัดการผู้ใช้งาน
-          </h2>
-          <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user</p>
+          <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user" />
         </div>
         <button
           onClick={openCreate}

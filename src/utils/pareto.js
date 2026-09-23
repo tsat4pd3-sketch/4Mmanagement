@@ -148,10 +148,22 @@ export function paretoGeometry(rows, opts = {}) {
       cutoffX: padLeft, barW: 0, base, plotW, plotH, padLeft, padRight, padTop, padBottom, width, height, yMax: 0 };
   }
 
-  // แกนซ้าย: เริ่ม 0 เสมอ · เพดานปัดขึ้นให้ลงตัวกับขั้นที่อ่านสวย
-  const maxV = Math.max(0, ...rows.map(r => Number(r._val) || 0));
-  const step = niceAxisStep((maxV || 1) / tickCount);
-  const yMax = Math.max(step, Math.ceil((maxV || 1) / step) * step);
+  /* 🔴 แกนซ้าย: เริ่ม 0 เสมอ · **เพดาน = ยอดรวมทั้งหมด (accumulated total) ไม่ใช่ค่าแท่งสูงสุด**
+     (user ชี้จุดนี้ 22/09 พร้อมวงบนจอ: *"ต้องไม่ใช่ 125 max จะต้องเป็น accum
+      ถึงจะทำให้จุดอยู่ที่มุมขวากราฟ"*)
+
+     ทำไมต้องเป็นยอดรวม — นี่คือหัวใจที่ทำให้ Pareto อ่านได้ด้วย **สเกลเดียว** 2 แกน:
+       ค่าสะสมถึงแท่ง i ÷ ยอดรวม = %สะสม ของแท่ง i  ⇒ ถ้าเพดานแกนซ้าย = ยอดรวม
+       **หมุด %สะสมตัวแรกจะอยู่ระดับเดียวกับหัวแท่งแรกพอดี** และหมุดสุดท้าย = 100% = ยอดบนแกนซ้ายพอดี
+     ถ้าเพดาน = ค่าแท่งสูงสุด (ของเดิม) แท่งแรกจะสูงเกือบเต็มกราฟ แต่หมุดแรกอยู่แค่ 17%
+     ⇒ เส้นกับแท่ง**คนละสเกลโดยไม่มีอะไรบอก** (วัดจริงบนจอ user: แท่งแรก 121 ชนเพดาน 125
+       แต่หมุดแรกลอยอยู่ราวๆ 25 บนแกนซ้าย)
+
+     ⚠️ เพดาน = ยอดรวม **เป๊ะ ไม่ปัดขึ้น** — ปัดเมื่อไหร่ 100% จะไม่ตรงยอดแกน
+        ขีดสเกลค่อยวางที่ขั้นอ่านสวยใต้เพดานแทน */
+  const total = rows.reduce((sum, r) => sum + (Number(r._val) || 0), 0);
+  const yMax = total > 0 ? total : 1;
+  const step = niceAxisStep(yMax / tickCount);
 
   const barW = plotW / n;
   const bars = rows.map((r, i) => {
@@ -165,6 +177,7 @@ export function paretoGeometry(rows, opts = {}) {
   const line = [{ x: padLeft, y: base, pct: 0, origin: true },
     ...rows.map((r, i) => ({ i, row: r, x: padLeft + (i + 1) * barW, y: pctY(r._cum), pct: r._cum }))];
 
+  // ขีดแกนซ้าย: วางที่ขั้นอ่านสวย **ใต้เพดาน** (เพดานเองคือยอดรวม ซึ่งไม่ค่อยเป็นเลขกลม)
   const leftTicks = [];
   for (let v = 0; v <= yMax + 1e-9; v += step) leftTicks.push({ value: v, y: base - (v / yMax) * plotH });
 

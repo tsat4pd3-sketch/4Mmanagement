@@ -33,6 +33,7 @@ import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialReque
 import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
 import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
+import PageHeader from '../components/PageHeader';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -508,7 +509,7 @@ export default function ScrapReport() {
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
       <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
+        <PageHeader title="ใบรายงานของเสีย (Scrap Report)" icon="♻️" />
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
           {scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
         </div>
