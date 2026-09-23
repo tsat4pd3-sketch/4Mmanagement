@@ -30,6 +30,7 @@ const PMSchedule    = lazy(() => import('./PMSchedule'));
 const PmForecast    = lazy(() => import('./PmForecast'));
 const PmCoordination = lazy(() => import('./PmCoordination'));
 const PMSetup       = lazy(() => import('./PMSetup'));
+const MaintenanceLevels = lazy(() => import('./MaintenanceLevels'));
 
 /* เรียงตาม "ความถี่ที่ใช้จริง" ไม่ใช่ลำดับ workflow —
    ช่างเปิดจอมาเพื่อ *ตรวจ* ทุกวัน ส่วน *ตั้งค่า* นานๆ ครั้ง (หลักเดียวกับ DailyChecker) */
@@ -40,6 +41,10 @@ const TABS = [
     hint: 'ปฏิทิน/ไทม์ไลน์ว่าเครื่องไหนครบกำหนดวันไหน + ผลตรวจจริงของวันนั้น' },
   { key: 'forecast', label: '🔮 ล่วงหน้า (Planner)',  page: '/pm-forecast',     Comp: PmForecast,
     hint: 'คาดวันที่จะต้อง PM + buffer ที่ต้องผลิตเผื่อก่อนเครื่องหยุด' },
+  /* 3 ระดับ Preventive → Predictive → Prescriptive (2026-09-23) — อ่านอย่างเดียว
+     piggyback สิทธิ์ page:/pm-forecast (ทุก role เข้าได้อยู่แล้ว) ⇒ ไม่ต้อง seed สิทธิ์ใหม่ · ไม่มี route แยก */
+  { key: 'levels',   label: '🧭 3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
+    hint: 'แผนบอกว่าถึงเวลาไหม → ข้อมูลเสียจริงบอกว่าแย่ลงไหม → ระบบแนะนำว่าควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร' },
   { key: 'coord',    label: '🗓️ ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
     hint: 'งาน PM ที่กินหลายวัน — นัด Production ล่วงหน้า + ช่วง Production Support' },
   { key: 'setup',    label: '⚙️ ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
