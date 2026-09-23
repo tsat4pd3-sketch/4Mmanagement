@@ -40,6 +40,7 @@ import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
+import { dtBucketName } from '../utils/downtimeCategory';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
@@ -178,7 +179,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
              เขียนผิดมาตั้งแต่สร้างบอร์ด ⇒ คิวรีนี้ล้มทั้งก้อน แผง "ทำไมถึงหลุดเป้า" กับครึ่งหนึ่งของ C
              ว่างเปล่ามาตลอด (จอขึ้นเหมือน "ไม่มีเครื่องหยุด" ทั้งที่จริงคือโหลดไม่ได้)
              · ทุก component อื่นในรีโปใช้ `description` หมด — ดู OeeInsightPanel / MachineReliability */
-          .select('session_id, duration_min, description, dr_downtime_types(name_th, category)').in('session_id', c)),
+          .select('session_id, duration_min, description, machine_no, dr_downtime_types(name_th, category)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
@@ -396,7 +397,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     const g = {};
     fDts.forEach((d) => {
       if (d.dr_downtime_types?.category === 'planned') return;
-      const name = d.dr_downtime_types?.name_th || d.description || 'ไม่ระบุสาเหตุ';
+      /* 🗑️ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" แตกตามเครื่องก่อนนับ (utils/downtimeCategory 23/09)
+         — ยุบรวมไว้แท่งเดียว = แท่งใหญ่ที่บอกไม่ได้ว่าไปแก้ที่ไหน ผิดกฎความซื่อสัตย์ของจอ */
+      const name = dtBucketName(d);
       g[name] = (g[name] || 0) + (Number(d.duration_min) || 0);
     });
     const rows = Object.entries(g).map(([name, min]) => ({ name, min: Math.round(min) }))

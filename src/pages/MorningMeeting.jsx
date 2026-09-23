@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
+import { dtBucketName } from '../utils/downtimeCategory';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
@@ -366,7 +367,7 @@ export default function MorningMeeting() {
         const pool = dts.filter(d => d.dr_downtime_types?.category !== 'planned');
         const g = {};
         (pool.length ? pool : dts).forEach(d => {
-          const k = d.dr_downtime_types?.name_th || 'Downtime';
+          const k = dtBucketName(d);
           g[k] = (g[k] || 0) + (Number(d.duration_min) || 0);
         });
         const top = Object.entries(g).sort((a, b) => b[1] - a[1])[0];
@@ -388,7 +389,9 @@ export default function MorningMeeting() {
   const topDowntime = useMemo(() => {
     const g = {};
     downtimes.forEach(d => {
-      const k = d.dr_downtime_types?.name_th || 'ไม่ระบุ';
+      /* 🗑️ ประเภทที่บอกอะไรไม่ได้ ("อื่นๆ" / "Alarm ไม่ระบุสาเหตุ") แตกตามเครื่อง
+         — 92% ของใบพวกนี้กรอก machine_no ไว้แล้ว (utils/downtimeCategory 23/09) */
+      const k = dtBucketName(d);
       g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, planned: d.dr_downtime_types?.category === 'planned', min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
       const min = Number(d.duration_min) || 0;
       g[k].min += min;

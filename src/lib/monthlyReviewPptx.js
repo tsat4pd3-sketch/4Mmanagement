@@ -49,6 +49,7 @@
 */
 import { supabase, supabaseDR } from '../supabaseClient';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
+import { dtBucketName } from '../utils/downtimeCategory';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { wavg, wLoad, wRun, wProd, isTrialDefect, normOeeTarget, avgOeeTarget, weightedOeeOf, weekOfMonth,
          buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
@@ -195,7 +196,7 @@ function ppmOfSessions(ss, defectsIdx, output) {
 function dtOfSessions(ss, dtIdx) {
   const unplanned = rowsOfSessions(ss, dtIdx).filter(d => d.dr_downtime_types?.category !== 'planned');
   const byType = {};
-  unplanned.forEach(d => { const k = d.dr_downtime_types?.name_th || 'อื่น ๆ'; byType[k] = (byType[k] || 0) + (Number(d.duration_min) || 0); });
+  unplanned.forEach(d => { const k = dtBucketName(d); byType[k] = (byType[k] || 0) + (Number(d.duration_min) || 0); });
   const top = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
   return { dtHr: hr1(unplanned.reduce((a, d) => a + (Number(d.duration_min) || 0), 0)), topDt: top ? top[0] : null, byType, unplanned };
 }
@@ -695,7 +696,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   const dtGroupsOf = (unplanned) => {
     const g = {};
     unplanned.forEach(d => {
-      const k = d.dr_downtime_types?.name_th || 'อื่น ๆ';
+      const k = dtBucketName(d);   // 🗑️ ถังขยะแตกตามเครื่อง (downtimeCategory 23/09)
       g[k] = g[k] || { name: k, min: 0, count: 0, fixed: 0, items: [] };
       g[k].min += Number(d.duration_min) || 0;
       g[k].count += 1;
