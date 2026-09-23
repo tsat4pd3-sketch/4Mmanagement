@@ -560,3 +560,25 @@ migration `20260921_kpi_standard_2026_main.sql` (**apply แล้ว**) · **31
 
 **ยังไม่ทำ (ตั้งใจ · ต่อจากรายการเดิม)** — จอกรอกตัวแปรฐาน (`kpi_base_inputs`) · แผน 12 เดือน (`kpi_month_plans`) · ต่อ provider auto กับตัวคำนวณจริง
 (ยังรอเคาะสูตร MTBF 730 ชม./Machine Break Down) · `catalog_id` ของแถวที่หยิบจาก 📘 · ตัวกรองขอบเขตยังไม่ลามไปหน้าอื่นนอก OBEYA (`/oee-analytics` ยังรับ `?section=` — บอร์ดส่ง `sectionOf(scope)` ให้)
+
+---
+
+## 📥 ข้อมูลจริงชุดแรกเข้าระบบแล้ว — เด็ค Management Review H1 FY2026 (2026-09-23)
+
+migration `20260923_kpi_seed_h1_fy2026_main.sql` (**apply แล้ว** · MAIN) — **43 นิยาม + 87 ค่ารายเดือน**
+จาก `KPI Management Review H1 FY2026 v11.pptx` (PD3–HDF 15 · PD4–Assy2 15 · PD4–JIG Maintenance 13)
+> 📄 รายละเอียดที่มา · การตรวจย้อน · สิ่งที่จงใจไม่ลง → `docs/OBEYA-KPI-SOURCES.md` §12.6
+
+**ผลต่อคิวงานด้านบน:** ข้อ 2 · 4 (`kpi_base_inputs` · `kpi_month_plans`) ยัง 0 แถวเหมือนเดิม —
+แต่ตอนนี้ **ข้อ 4 กลายเป็นของที่ต้องมีจริง ไม่ใช่ของเสริม**: KPI สะสม (100P · Sales/Head · TS Academy)
+ครึ่งปีย่อมยังไม่ถึงเป้าทั้งปี ⇒ จอขึ้นแดงทั้งที่ยังไม่ถึงกำหนด · เด็คของจริงเลี่ยงด้วยการเขียน
+`◐ In progress` ซึ่ง**ไม่มีในเกณฑ์ทางการ** — ทางแก้ที่ถูกคือเทียบกับ**แผนสะสมถึงเดือนนี้**
+**ห้ามเพิ่มขั้นสีที่ 4 เข้า `KPI_LEVELS`**
+
+**กับดักตอน seed ที่คนถัดไปจะเจอซ้ำ:**
+- ผูก `std_item_id` ต้อง join ด้วย **(std_unit, topic)** — `kpi_standard_items` ของ `Production`
+  มี `seq = '6'` **ซ้ำ 2 แถว** (`Cost Reduction` / `DSI`) ⇒ join ด้วย `seq` ได้แถวผิดโดยไม่ error
+- `kpi_definitions_year_scope_catalog_uniq` = 1 catalog ต่อ 1 ขอบเขตต่อปี ⇒ KPI 2 แถวในแผนกเดียวกัน
+  ห้ามชี้ `catalog_id` ตัวเดียวกัน (เจอตอนแยก `Defect/Scrap Cost` ออกจาก `Cost Reduction`)
+- กราฟในเด็คเป็น **รูป PNG ไม่ใช่ chart XML** — ไม่มีตัวเลขดิบให้ดึง ต้องอ่านจากป้ายบนรูป
+  ⇒ **ต้องรวมกลับเทียบ YTD ที่เด็คพิมพ์ไว้เองทุกเส้นก่อนลงฐาน** (ทำแล้ว ตรง 15/15)
