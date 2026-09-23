@@ -4,7 +4,8 @@ import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { splitUnclassified, unclassifiedNote } from '../utils/unclassified';
-import { deptNameOf } from '../utils/mtnTeams';
+import { buildCategoryIndex, fillCategories } from '../utils/autoCategory';
+import { deptNameOf, visibleToTeam } from '../utils/mtnTeams';
 import MtnKpiPanel from '../components/MtnKpiPanel';
 import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
@@ -128,6 +129,7 @@ export default function MtnAnalysis() {
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});
+  const [taxo, setTaxo] = useState([]);      // ทะเบียนอาการ + ทะเบียนดาวน์ไทม์ → พจนานุกรมเดาหมวด
   const [machines, setMachines] = useState([]);   // แถวเต็ม — แผง KPI ส่งต่อให้ MachineReliability
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -142,11 +144,17 @@ export default function MtnAnalysis() {
          (เคยพลาดจริง 22/09: เอาไปใช้เป็นอาร์เรย์ตรงๆ ⇒ `.forEach is not a function`
           แล้วถูก try/catch กลืนเป็น "โหลดข้อมูลไม่สำเร็จ" ทั้งหน้า · build/lint/crashsweep ผ่านหมด)
          และต้องอ่าน `error` ด้วย — supabase-js ไม่ throw (กฎเหล็ก DB ข้อ 1) */
-      const [mcs, mo, dt] = await Promise.all([
+      const [mcs, mo, dt, pt, dtt] = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind', q => q.eq('is_active', true).order('sort_order')),
         fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).order('report_at', { ascending: false })),
         fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).order('started_at', { ascending: false })),
+        /* ทะเบียน taxonomy = พจนานุกรมของตัวเดาหมวด (utils/autoCategory) — ตารางเล็กทั้งคู่
+           🔴 พจนานุกรมต้องมาจากทะเบียนที่โรงงานเขียนเอง ห้าม hardcode คำในโค้ด (CLAUDE.md) */
+        fetchAllRows(supabaseDR, 'mtn_problem_types', 'team, group_name, characteristic, shared_teams'),
+        fetchAllRows(supabaseDR, 'dr_downtime_types', 'name_th, mo_problem_group'),
       ]);
+      /* ⚠️ ทะเบียน taxonomy เป็น **ของเสริม** (ใช้เดาหมวดเท่านั้น) — ล้มแล้วห้ามทำทั้งหน้าพัง
+         ⇒ ไม่เอา pt/dtt เข้า firstErr · จอยังอ่านได้ปกติ แค่เดาหมวดได้น้อยลง */
       const firstErr = [mcs, mo, dt].map(r => r?.error).find(Boolean);
       if (firstErr) throw new Error(firstErr.message || String(firstErr));
       const mcRows = mcs?.data || [], moRows = mo?.data || [], dtRows = dt?.data || [];
@@ -156,6 +164,10 @@ export default function MtnAnalysis() {
         if (k && !map[k]) map[k] = m.equipment_kind;
       });
       setKindByMc(map); setMachines(mcRows); setOrders(moRows); setDts(dtRows);
+      setTaxo([
+        ...(pt?.data || []).map(r => ({ label: r.characteristic, group: r.group_name, team: r.team, shared_teams: r.shared_teams })),
+        ...(dtt?.data || []).map(r => ({ label: r.name_th, group: r.mo_problem_group })),
+      ]);
     } catch (e) {
       setErr(e?.message || String(e));
       toast.error('โหลดข้อมูลวิเคราะห์ไม่สำเร็จ: ' + (e?.message || e));
@@ -181,7 +193,7 @@ export default function MtnAnalysis() {
         const cost = [o.labor_cost, o.parts_cost].some(v => v != null && v !== '')
           ? (Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0) : null;
         return {
-          id: o.id, cls, clsKnown: known, at: o.report_at,
+          id: o.id, from: 'mo', cls, clsKnown: known, at: o.report_at,
           asset: (o.machine_no || '').trim() || (o.item_type || '').trim() || '(ไม่ระบุอุปกรณ์)',
           label: o.mo_no || '(ยังไม่ออกเลข)',
           group: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
@@ -197,7 +209,7 @@ export default function MtnAnalysis() {
       const { cls, known } = assetClassOf(d, kindByMc);
       const m = d.duration_min == null ? null : Number(d.duration_min);
       return {
-        id: d.id, cls, clsKnown: known, at: d.started_at,
+        id: d.id, from: 'dt', cls, clsKnown: known, at: d.started_at,
         asset: (d.machine_no || '').trim() || '(ไม่ระบุเครื่อง)',
         label: (d.machine_no || '').trim() || '—',
         group: (d.description || '').trim().slice(0, 40) || 'ไม่ระบุอาการ',
@@ -213,17 +225,41 @@ export default function MtnAnalysis() {
     }
   }, [orders, dts, kindByMc]);
 
+  /* ── 🔎 เดาหมวดจากคำที่พนักงานพิมพ์ ก่อนปล่อยให้ตกถัง "อื่นๆ" (user 23/09) ────────
+     *"อื่นๆ ยังมาอันดับ 1 — ต้องหาคำอื่นเพื่อจับหมวดให้ได้ก่อน อื่นๆ ต้องเป็นของที่ลงไม่ได้จริงๆ"*
+     พจนานุกรมมาจาก**ข้อมูลของโรงงานเอง 2 แหล่ง ไม่มีคำ hardcode ในโค้ด**:
+       1. ทะเบียน taxonomy (`mtn_problem_types` + `dr_downtime_types.mo_problem_group`)
+       2. ใบที่ช่าง**จัดกลุ่มไปแล้ว** + ข้อความอิสระของใบนั้น — ที่มาของศัพท์หน้างานจริง
+          ("observeline" · "พาเลทไม่ไหล" · "หัวทิปตัน") ซึ่งไม่มีวันอยู่ในทะเบียน
+     ⇒ โรงงานกรอกมากขึ้น/เพิ่มทะเบียน = เดาเก่งขึ้นเอง ไม่ต้องแก้โค้ด
+     ⚠️ **ไม่เขียนกลับฐาน** — เป็นแค่การอ่านของจอ · ใบไหนถูกเดาดูได้ที่มิติ 🔎 ในพาเรโต */
+  const catIndex = useMemo(() => buildCategoryIndex([
+    ...taxo.map(t => ({ ...t, kind: 'registry' })),
+    /* เรียนจาก **ใบ MO เท่านั้น** — แถวดาวน์ไทม์ที่ยังไม่มีใบใช้ข้อความดิบเป็นชื่อกลุ่ม
+       (ไม่ใช่กลุ่มจริงในทะเบียน) เอามาสอนจะได้ "กลุ่ม" ปลอมเต็มพจนานุกรม */
+    ...events.filter(e => e.from === 'mo')
+      .map(e => ({ label: `${e.symptom} ${e.causeText}`, group: e.group, team: e.team, kind: 'seen' })),
+  ]), [taxo, events]);
+
+  const typed = useMemo(() => fillCategories(events, catIndex, {
+    labelOf: e => e.group,
+    textOf: e => `${e.symptom} ${e.causeText}`,
+    teamOf: e => (e.team && e.team !== '(ไม่ระบุทีม)' ? e.team : null),
+    scopeOf: visibleToTeam,
+  }), [events, catIndex]);
+  const typedEvents = typed.rows;
+
   /* ── แผนกช่าง: dropdown เดิม (MO/Downtime) เปลี่ยนเป็นตัวนี้ (user 23/09) ──────
      "ตรงแท็บคือแยกตามอุปกรณ์ใช่มั้ย · dropdown เดิม…เป็นเลือกแผนกช่างดีกว่า"
      ⇒ แท็บ = ชนิดอุปกรณ์ · dropdown = แผนกช่าง · 2 แกนไม่ซ้อนกัน */
   const teamOpts = useMemo(() => {
     const c = {};
-    events.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
+    typedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
     return Object.entries(c).sort((a, b) => b[1] - a[1]);
-  }, [events]);
+  }, [typedEvents]);
   const scopedEvents = useMemo(
-    () => (team === 'all' ? events : events.filter(e => e.team === team)),
-    [events, team],
+    () => (team === 'all' ? typedEvents : typedEvents.filter(e => e.team === team)),
+    [typedEvents, team],
   );
 
   const byClass = useMemo(() => {
@@ -289,6 +325,9 @@ export default function MtnAnalysis() {
   const paretoRecords = useMemo(() => [...paretoSplit.ok, ...paretoSplit.vagueWithText, ...paretoSplit.blank]
     .map(r => ({
       cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
+      /* 🔎 ที่มาของหมวด — ใบที่ระบบเดาให้ ต้องตรวจสอบย้อนได้ว่าเดาจากคำไหน
+         (กฎความซื่อสัตย์ของจอ: เดาแล้วต้องบอกว่าเดา ห้ามกลืนเป็นข้อมูลที่คนกรอก) */
+      why: r.autoFrom ? `🔎 ระบบเดาจากคำ: ${r.autoFrom.terms.join(' · ')}` : '👷 ช่างเลือกเอง',
     })), [paretoSplit]);
   const paretoNote = useMemo(() => unclassifiedNote(paretoSplit, { unit: 'ใบ' }), [paretoSplit]);
 
@@ -300,6 +339,7 @@ export default function MtnAnalysis() {
     { key: 'line', label: '🏭 ไลน์' },
     { key: 'team', label: '👷 ทีมช่าง' },
     { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+    { key: 'why', label: '🔎 ที่มาของหมวด' },
   ]), []);
 
   const assetTabs = ASSET_CLASSES.map(a => ({
@@ -398,11 +438,16 @@ export default function MtnAnalysis() {
             <>
               {/* ② พาเรโต — component กลางเดิม ไม่ทำใหม่ */}
               {/* กันงานตามแผน + บอกส่วนที่ยังชี้เป้าไม่ได้ — ห้ามเงียบ (utils/unclassified.js) */}
-              {(paretoSplit.planned.length > 0 || paretoNote) && (
+              {(paretoSplit.planned.length > 0 || paretoNote || typed.filled > 0) && (
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
                   {paretoSplit.planned.length > 0 && (
                     <span style={{ color: 'var(--muted)' }}>
                       🗓️ กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                    </span>
+                  )}
+                  {typed.filled > 0 && (
+                    <span style={{ color: 'var(--muted)' }} title="พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎">
+                      🔎 เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
                     </span>
                   )}
                   {paretoNote && (
