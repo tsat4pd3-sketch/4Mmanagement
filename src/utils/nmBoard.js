@@ -141,3 +141,20 @@ export function gradeByTarget(actual, target, { higherIsBetter = true, warnRatio
   const ratio = higherIsBetter ? a / t : t / a;
   return ratio >= warnRatio ? 'Y' : 'R';
 }
+
+/* ── 📺 โหมดจอ TV (70") — ต้องเห็นทั้งบอร์ดในจอเดียว ห้ามเลื่อน ────────────────
+   บอร์ดกระดาษคือผนังแผ่นเดียวที่มองเห็นหมดในพริบตา ถ้าจอ TV ต้องเลื่อนก็เสียจุดขายไป
+   ⇒ คำนวณจำนวนคอลัมน์จากจำนวนแผง แล้วให้แต่ละช่องสูงเท่ากันด้วย grid 1fr */
+export function tvGrid(n, ratio = 16 / 9) {
+  const count = Math.max(1, Number(n) || 0);
+  // หาจำนวนคอลัมน์ที่ทำให้ช่องใกล้สี่เหลี่ยมจัตุรัสที่สุดบนจอ 16:9
+  let best = { cols: 1, rows: count, score: Infinity };
+  for (let cols = 1; cols <= count; cols++) {
+    const rows = Math.ceil(count / cols);
+    const cellRatio = (ratio / cols) / (1 / rows);   // กว้าง:สูง ของช่อง
+    const score = Math.abs(Math.log(cellRatio / 1.5)) + (cols * rows - count) * 0.04;
+    if (score < best.score) best = { cols, rows, score };
+  }
+  return { cols: best.cols, rows: best.rows };
+}
+

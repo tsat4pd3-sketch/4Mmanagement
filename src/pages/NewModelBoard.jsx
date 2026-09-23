@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import useIsMobile from '../utils/useIsMobile';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
-  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions,
+  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions, tvGrid,
 } from '../utils/nmBoard';
 import {
   IEC_TEAMS, CUSTOMERS, PROJECTS, SPTT_REQUIREMENTS, TMA_SPTT_DOCS, SOURCE_DATE,
@@ -515,6 +515,158 @@ function LevelPanel({ proj, panel }) {
   );
 }
 
+
+/* ══ 📺 โหมดจอ TV 70" — วางทั้งบอร์ดในจอเดียว ไม่มีเลื่อน =======================
+   ข้อยกเว้น "บอร์ดจอ TV" ตาม UI-CONVENTIONS §6.8 — เป็นข้อยกเว้นราย *มุมมอง* (`?tv=1`)
+   ไม่ใช่ทั้งหน้า · ไม่มี PageHeader/แถบข้อมูล เพราะแนวตั้งทุกพิกเซลเป็นของบอร์ด
+   🔴 ห้ามให้จอนี้ต้องเลื่อน — บอร์ดกระดาษคือผนังแผ่นเดียวที่เห็นหมดในพริบตา
+   🔴 ต้องมีทางออกเสมอ (ปุ่มมุมขวาบน) ห้ามตัดทางออกแม้เป็นจอแขวน
+   ⚠️ เบราว์เซอร์เป้าหมาย = สมาร์ททีวี Chromium 94 → ห้าม dvh/svh · ห้าม color-mix · ห้าม @container
+   ═════════════════════════════════════════════════════════════════════════════ */
+function TvView({ projects, index, onIndex, onExit }) {
+  const proj = projects[index] || projects[0];
+  const [now, setNow] = useState(() => new Date());
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // สลับรุ่นอัตโนมัติเมื่อมีมากกว่า 1 บอร์ด (จอแขวนไม่มีคนกด)
+  useEffect(() => {
+    if (paused || projects.length < 2) return undefined;
+    const t = setInterval(() => onIndex((index + 1) % projects.length), 25000);
+    return () => clearInterval(t);
+  }, [paused, projects.length, index, onIndex]);
+
+  if (!proj) return null;
+  const { cols, rows } = tvGrid(proj.panels.length);
+  const counts = evaCounts(proj.panels);
+  const clock = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
+
+  const F = { // ขนาดตัวอักษรอิงความกว้างจอ — 70" ดูจากระยะไกล ต้องใหญ่กว่าจอ PC มาก
+    title: 'clamp(20px, 2.1vw, 58px)',
+    sub:   'clamp(12px, 0.95vw, 26px)',
+    axis:  'clamp(13px, 1.05vw, 28px)',
+    panel: 'clamp(12px, 1.02vw, 27px)',
+    note:  'clamp(10px, 0.78vw, 20px)',
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 900, background: 'var(--bg)', color: 'var(--text)',
+      display: 'flex', flexDirection: 'column', padding: '1.1vh 1vw', gap: '1vh', overflow: 'clip',
+    }}>
+      {/* หัวบอร์ด */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '1.4vw', flex: '0 0 auto' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: F.title, fontWeight: 800, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' }}>
+            MODEL : {proj.title}
+          </div>
+          <div style={{ fontSize: F.sub, color: 'var(--muted)' }}>
+            ลูกค้า {proj.customer?.toUpperCase()} · ด่าน {proj.stage} · ส่งชิ้นงาน {proj.pad} · ทีม {proj.team}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.8vw', marginLeft: 'auto', alignItems: 'center' }}>
+          {PROJECT_AXES.map(a => {
+            const m = evaMeta(proj.eva?.[a.key]);
+            return (
+              <div key={a.key} style={{ textAlign: 'center' }}>
+                <div style={{
+                  width: '4.2vw', height: '4.2vw', maxWidth: 96, maxHeight: 96, minWidth: 40, minHeight: 40,
+                  borderRadius: '50%', background: m.color, color: '#0b1220', fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 'clamp(16px, 1.9vw, 46px)', margin: '0 auto',
+                  opacity: (proj.eva?.[a.key] || 'none') === 'none' ? 0.5 : 1,
+                }}>{m.short}</div>
+                <div style={{ fontSize: F.axis, marginTop: '0.4vh', whiteSpace: 'nowrap' }}>{a.label}</div>
+              </div>
+            );
+          })}
+          <div style={{ textAlign: 'right', marginLeft: '0.8vw' }}>
+            <div style={{ fontSize: F.title, fontWeight: 700, lineHeight: 1 }}>{clock}</div>
+            <div style={{ fontSize: F.note, color: 'var(--muted)' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
+          </div>
+          <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
+            background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
+            borderRadius: 8, padding: '0.6vh 0.7vw', cursor: 'pointer', fontSize: F.sub,
+          }}>✕</button>
+        </div>
+      </div>
+
+      {/* เหตุผลที่แดง — บนบอร์ดจริงเป็นกล่องคำอธิบายชี้ที่แถวต้นเหตุ */}
+      {proj.evaNote && (
+        <div style={{
+          flex: '0 0 auto', background: 'var(--card)', borderLeft: '0.4vw solid #ef4444',
+          borderRadius: 6, padding: '0.7vh 0.9vw', fontSize: F.axis, lineHeight: 1.35,
+        }}>{proj.evaNote}</div>
+      )}
+
+      {/* ผังแผง — 1fr ทุกช่อง ⇒ สูงเท่ากันและลงจอพอดีเสมอ */}
+      <div style={{
+        flex: '1 1 auto', minHeight: 0, display: 'grid', gap: '0.8vh 0.6vw',
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+      }}>
+        {proj.panels.map(p => {
+          const m = evaMeta(p.eva);
+          return (
+            <div key={p.key} className={p.eva === 'R' ? 'mo-card-alert' : undefined} style={{
+              background: 'var(--card)', border: `2px solid ${p.eva === 'none' || !p.eva ? 'var(--border)' : m.color}`,
+              borderRadius: 8, padding: '0.7vh 0.7vw', display: 'flex', flexDirection: 'column',
+              gap: '0.4vh', minWidth: 0, minHeight: 0, overflow: 'clip',
+            }}>
+              <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'center', minWidth: 0 }}>
+                <span style={{
+                  width: '0.95vw', height: '0.95vw', minWidth: 10, minHeight: 10, maxWidth: 22, maxHeight: 22,
+                  borderRadius: '50%', background: m.color, flex: '0 0 auto',
+                  opacity: p.eva === 'none' || !p.eva ? 0.5 : 1,
+                }} />
+                <span style={{
+                  fontSize: F.panel, fontWeight: 700, lineHeight: 1.18, minWidth: 0,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
+                }}>{p.label}</span>
+              </div>
+              {p.evaNote && (
+                <div style={{
+                  fontSize: F.note, color: 'var(--text2)', lineHeight: 1.3,
+                  display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'clip',
+                }}>{p.evaNote}</div>
+              )}
+              <div style={{ marginTop: 'auto', fontSize: F.note, color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
+                {freshLabel(p.updated_at)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* แถบล่าง — ตัวนับสี + ตัวสลับรุ่น */}
+      <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '1vw', fontSize: F.sub, color: 'var(--muted)' }}>
+        <span>{proj.panels.length} แผง · {countsLabel(counts)}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.5vw', alignItems: 'center' }}>
+          {projects.length > 1 && (
+            <>
+              <button onClick={() => setPaused(v => !v)} style={{
+                background: 'none', border: '1px solid var(--border)', color: 'var(--text2)',
+                borderRadius: 6, padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
+              }}>{paused ? '▶ เล่นต่อ' : '⏸ หยุดสลับ'}</button>
+              {projects.map((pj, i) => (
+                <button key={pj.id} onClick={() => onIndex(i)} title={pj.title} style={{
+                  width: '0.8vw', height: '0.8vw', minWidth: 10, minHeight: 10, borderRadius: '50%',
+                  border: 'none', cursor: 'pointer', padding: 0,
+                  background: i === index ? 'var(--accent)' : 'var(--border2)',
+                }} />
+              ))}
+            </>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /* ══ หน้า ═══════════════════════════════════════════════════════════════════ */
 export default function NewModelBoard() {
   const data = useBoardData();
@@ -522,6 +674,18 @@ export default function NewModelBoard() {
   const custCode = sp.get('cust') || '';
   const projId = sp.get('proj') || '';
   const panelKey = sp.get('panel') || '';
+
+  const tvOn = sp.get('tv') === '1';
+  // 📺 จอแขวนจะถูกตั้ง URL ไว้ถาวร (เช่น ?proj=d02d-tmt&tv=1) ⇒ ต้องเปิดมาที่รุ่นนั้นเลย
+  //    ไม่ใช่เริ่มที่รุ่นแรกเสมอ (เคยพลาดตอนทดสอบ: ลิงก์ D02D แต่จอขึ้น 737D)
+  const [tvIndex, setTvIndex] = useState(() => {
+    const i = PROJECTS.findIndex(p => p.id === sp.get('proj'));
+    return i >= 0 ? i : 0;
+  });
+  useEffect(() => {
+    const i = PROJECTS.findIndex(p => p.id === projId);
+    if (i >= 0) setTvIndex(i);
+  }, [projId]);
 
   const cust = data.customers.find(c => c.code === custCode) || null;
   const proj = cust?.projects.find(p => p.id === projId) || null;
@@ -532,6 +696,7 @@ export default function NewModelBoard() {
     if (next.cust) q.set('cust', next.cust);
     if (next.proj) q.set('proj', next.proj);
     if (next.panel) q.set('panel', next.panel);
+    if (next.tv) q.set('tv', next.tv);
     setSp(q);
   };
 
@@ -547,6 +712,11 @@ export default function NewModelBoard() {
     : cust ? `รุ่นของ ${cust.name} ที่อยู่ในระบบ`
     : `ถอดจากบอร์ดผนังของ IEC เมื่อ ${SOURCE_DATE} · ยังไม่ต่อฐานข้อมูล`;
 
+  if (tvOn && data.projects.length) {
+    return <TvView projects={data.projects} index={Math.min(tvIndex, data.projects.length - 1)}
+      onIndex={setTvIndex} onExit={() => go({ cust: custCode || undefined, proj: projId || undefined })} />;
+  }
+
   return (
     <div style={{ padding: 14, maxWidth: 1500, margin: '0 auto' }}>
       <PageHeader title="บอร์ด New Model (IEC)" icon="🧭" sub={sub} />
@@ -557,6 +727,16 @@ export default function NewModelBoard() {
         ลูกค้าที่ไม่มีโปรเจคในระบบขึ้นเป็นสีเทา <b>ไม่ใช่เขียว</b> เพราะยังไม่มีข้อมูลจริง ·
         รายละเอียดการออกแบบอยู่ใน <code>docs/IEC-NEW-MODEL-OBEYA-DESIGN.md</code>
       </div>
+
+      {proj && !panel && (
+        <div style={{ marginBottom: 10 }}>
+          <button onClick={() => { setTvIndex(Math.max(0, data.projects.findIndex(p => p.id === proj.id))); go({ cust: cust.code, proj: proj.id, tv: '1' }); }}
+            style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
+              borderRadius: 8, padding: '7px 13px', cursor: 'pointer', fontSize: 12.5 }}>
+            📺 เปิดโหมดจอ TV (70 นิ้ว)
+          </button>
+        </div>
+      )}
 
       {panel ? <LevelPanel proj={proj} panel={panel} />
         : proj ? <LevelProject proj={proj} go={go} />
