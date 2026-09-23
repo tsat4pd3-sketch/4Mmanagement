@@ -43,10 +43,16 @@ const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxP
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
+/* วงแหวนรอบรูปพนักงาน = **ประเภทการจ้าง** (ประจำ/รายวัน/อื่นๆ) — ความหมายเดิม ไม่เปลี่ยน
+   🔴 `ring` เป็น**สีเรียบ** ไม่ใช่ไล่เฉดโลหะ (23/09 ก้อน C)
+   เดิมเป็น `linear-gradient(135deg, …5 stop…)` เลียนแบบผิวทอง/เงิน/ทองแดง — แต่วงแหวนมันหนา
+   **2.5px** ⇒ ไล่เฉด 5 สีในพื้นที่ 2.5px มองไม่ออกว่าเป็นโลหะอยู่แล้ว เห็นเป็นแค่สีที่มีจุดรบกวน
+   และมันคูณตามจำนวนพนักงานในตาราง (วัดจริง: 28 จาก 30 ไล่เฉดทั้งหน้ามาจากตรงนี้จุดเดียว)
+   ⇒ ใช้สีเรียบสีเดียว = หน้าตาเหมือนเดิมในสายตาคนใช้ แต่หน้านี้เลิกเป็นหน้าที่ "ตกแต่งหนักสุดในระบบ" */
 const EMP_GRADES = {
-  gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
-  silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  gold:   { label: 'ประจำ',  ring: '#c8941a', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
+  silver: { label: 'รายวัน', ring: '#a8a8a8', glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
+  bronze: { label: 'อื่นๆ',  ring: '#b06a28', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -1018,9 +1024,11 @@ export default function Operator() {
           {/* Table + fade overlays */}
           <div style={{ position: 'relative' }}>
             {/* Left fade */}
-            <div style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
+            {/* ม่านไล่เฉดขอบซ้าย/ขวา = บอกว่า "ยังเลื่อนต่อไปทางนี้ได้" (ขึ้น-ลงตาม scrollState)
+                = affordance ไม่ใช่การตกแต่ง ⇒ ติด data-ux-ok ให้ uxsweep ข้าม (ดู audit/README.md) */}
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
             {/* Right fade */}
-            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
               {scrollState.right && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: 'var(--accent)', opacity: 0.7, animation: 'bounceX 1.2s ease-in-out infinite' }}>›</div>}
             </div>
 
@@ -1075,7 +1083,7 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
-                        background: !emp.is_active ? 'var(--border2)' : grade.gradient,
+                        background: !emp.is_active ? 'var(--border2)' : grade.ring,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
                         {emp.image_url ? (
