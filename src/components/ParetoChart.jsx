@@ -116,8 +116,18 @@ export default function ParetoChart({
                 ปล่อยตามจริง = **ตาเห็นเป็น 0 ทั้งที่ไม่ใช่** (user ถาม 22/09 "ท้ายๆ นี่ค่าเป็น 0 รึป่าว"
                 ข้อมูลจริง: รายการท้ายสุด 10 นาที = 0.004% ของยอดรวม = ~1/40 พิกเซล)
                 ⚠️ พื้นขั้นต่ำทำให้แท่งจิ๋วดู "เท่ากัน" ⇒ **ต้องมีข้อความบอกใต้กราฟด้วย** (ดู tinyNote) */}
+            {/* 🔴 พื้นที่คลิก = ทั้งคอลัมน์จากบนลงล่าง **ไม่ใช่ตัวแท่ง**
+                เพดานแกน = ยอดรวม ⇒ แท่งสูงไม่กี่พิกเซล ⇒ เล็งคลิกแทบไม่โดน
+                (user แจ้ง 23/09 "กราฟคลิกเจาะเข้าไปดูรายละเอียดไม่ได้")
+                วาดก่อนแท่งและ fill โปร่งใส เพื่อไม่บังสีแท่ง */}
+            {onPick && !b.row._tail && (
+              <rect x={b.x} y={g.padTop} width={b.w} height={g.plotH} fill="transparent">
+                <title>{`${b.row.name} — ${fmtV(b.value)} ${unit} · คลิกเพื่อเจาะลึก`}</title>
+              </rect>
+            )}
             <rect x={b.x} y={b.y} width={b.w} height={Math.max(b.h, b.value > 0 ? 2 : 0)}
-              fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1" />
+              fill={ABC_COLOR[b.cls] || ABC_COLOR.C} stroke="var(--card)" strokeWidth="1"
+              style={{ pointerEvents: 'none' }} />
           </g>
           );
         })}

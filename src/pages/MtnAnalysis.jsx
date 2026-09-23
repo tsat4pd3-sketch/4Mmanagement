@@ -3,6 +3,7 @@ import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import { splitUnclassified, unclassifiedNote } from '../utils/unclassified';
 import MtnKpiPanel from '../components/MtnKpiPanel';
 import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
@@ -251,9 +252,18 @@ export default function MtnAnalysis() {
     return Object.values(m).filter(g => g.hasMin > 0);
   }, [rows]);
 
-  const paretoRecords = useMemo(() => rows.map(r => ({
-    cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
-  })), [rows]);
+  /* 🔴 พาเรโต "ปัญหา" ต้องไม่นับ **งานตามแผน (PM)** (user ตัดสิน 23/09 "แยกออก ไม่ใช่ปัญหา")
+     เปลี่ยนของตามรอบ = งานที่ตั้งใจทำ ไม่ใช่ของเสีย/ของพัง — นับรวมแล้วพาเรโตชี้เป้าผิด
+     ⚠️ **แยกออก ≠ ซ่อน** — ต้องบอกบนจอว่ากันออกไปกี่ใบ (กฎความซื่อสัตย์ของจอ) */
+  const paretoSplit = useMemo(
+    () => splitUnclassified(rows, { labelOf: r => r.group, textOf: r => r.causeText }),
+    [rows],
+  );
+  const paretoRecords = useMemo(() => [...paretoSplit.ok, ...paretoSplit.vagueWithText, ...paretoSplit.blank]
+    .map(r => ({
+      cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
+    })), [paretoSplit]);
+  const paretoNote = useMemo(() => unclassifiedNote(paretoSplit, { unit: 'ใบ' }), [paretoSplit]);
 
   /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
      ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
@@ -354,6 +364,21 @@ export default function MtnAnalysis() {
           ) : (
             <>
               {/* ② พาเรโต — component กลางเดิม ไม่ทำใหม่ */}
+              {/* กันงานตามแผน + บอกส่วนที่ยังชี้เป้าไม่ได้ — ห้ามเงียบ (utils/unclassified.js) */}
+              {(paretoSplit.planned.length > 0 || paretoNote) && (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
+                  {paretoSplit.planned.length > 0 && (
+                    <span style={{ color: 'var(--muted)' }}>
+                      🗓️ กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                    </span>
+                  )}
+                  {paretoNote && (
+                    <span style={{ color: paretoNote.level === 'warn' ? '#f59e0b' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
+                      ⚠️ {paretoNote.text}
+                    </span>
+                  )}
+                </div>
+              )}
               <ParetoAbcChart
                 title={`② พาเรโต — ปัญหาไหนกินสัดส่วนมากที่สุด (${unit})`}
                 records={paretoRecords} dims={PARETO_DIMS} unit={unit}

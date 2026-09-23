@@ -21,6 +21,8 @@ const ABC = {
 const OPA = { A: 1, B: 0.75, C: 0.45 };
 /* แท่งสูงสุดในกราฟย่อ — เกินนี้ยุบหางยาวเป็นแท่งเดียว (ต้องตรงกับที่ส่งให้ ParetoChart) */
 const MAX_BARS = 12;
+/* ชิปกลุ่ม A สูงสุดที่โชว์ใต้กราฟ — เกินนี้ยุบเป็นปุ่ม "ดูครบ" (ดูเหตุผลตรงจุดที่ใช้) */
+const CHIP_MAX = 12;
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
 // สูตร ABC + % สะสม ย้ายไป `utils/pareto.js` แล้ว (เทสได้ — ตัวรันเทสไม่รับ .jsx)
@@ -235,13 +237,27 @@ export default function ParetoAbcChart({
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
       <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>เน้นแก้กลุ่ม A →</span>
-        {groups.A.map((d, i) => (
+        {/* 🔴 กลุ่ม A ไม่ได้แปลว่า "ไม่กี่ตัว" — ข้อมูลที่หมวดกระจายมาก (เช่นพาเรโตจากข้อความอิสระ)
+            มี A ได้ถึง **499 รายการ** ⇒ เดิม render ชิปครบทุกตัว = กำแพงชิปท่วมจอ
+            (user แจ้ง 23/09 "ทำไมมันโชว์เยอะแบบนี้ ควร hide รึป่าว")
+            ⇒ โชว์เท่าที่อ่านไหว แล้วบอกว่าเหลืออีกเท่าไหร่ + กดดูครบได้
+            **ห้ามตัดทิ้งเงียบ** — ลิสต์งานที่ต้องแก้ต้องเข้าถึงได้เสมอ (กฎความซื่อสัตย์ของจอ) */}
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>
+          เน้นแก้กลุ่ม A{groups.A.length > CHIP_MAX ? ` (${CHIP_MAX} จาก ${groups.A.length})` : ''} →
+        </span>
+        {groups.A.slice(0, CHIP_MAX).map((d, i) => (
           <span key={i} onClick={() => dims.length && openDrill(d.name)}
             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
             {d.name}: {fmt(d._val)} {unitOf} ({d._pct.toFixed(0)}%)
           </span>
         ))}
+        {groups.A.length > CHIP_MAX && (
+          <button type="button" onClick={() => setOpen(true)}
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700,
+              background: 'var(--bg3)', color: 'var(--text2)', border: `1px dashed ${ABC.A.color}77` }}>
+            ⤢ ดูกลุ่ม A ครบ {groups.A.length} รายการ
+          </button>
+        )}
       </div>
 
       {/* ── popup ขยาย: เห็นครบทุกรายการ + ตาราง (คลิกแถวเจาะได้) ── */}
