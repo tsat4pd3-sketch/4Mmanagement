@@ -3261,7 +3261,7 @@ export default function FactoryMap({ setupMode = false }) {
                                       <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</span>
                                       {r.sub && <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.sub}</span>}
                                       <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: r.days != null && r.days < 0 ? '#ef4444' : '#f59e0b' }}>
-                                        {r.days == null ? 'ไม่มีรอบตายตัว' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
+                                        {r.days == null ? 'ยังไม่มีวัน PM ครั้งถัดไป' : r.days < 0 ? `เกิน ${Math.abs(r.days)} วัน` : r.days === 0 ? 'ครบวันนี้' : `อีก ${r.days} วัน`}
                                       </span>
                                     </div>
                                   ))}
