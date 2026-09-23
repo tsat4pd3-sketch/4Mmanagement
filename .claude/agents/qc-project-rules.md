@@ -34,6 +34,11 @@ model: inherit
   (ตัด 08:00 + local time) ไม่มี copy ไหนเพี้ยน
 - **A4** บอร์ดเวลา (Heijunka/Shipping/Rack/Store) ต้องใช้ `frameMin`/`frameMinFromIso`/`breaksToFrame`
   จาก `src/utils/timeFrame.js` — ห้ามเขียน wrap นาทีเอง
+- **A7** 🔴 **เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง** (2026-09-23 · docs/modules/daily-report.md)
+  ห้าม hardcode `shift === 'night' && ชั่วโมง < 8` → ใช้ `resolveShiftTime()` / `shiftWindow()` /
+  `checkShiftTime()` จาก `src/utils/shiftWindow.js` (มีด่าน `regressionGuards` แล้ว)
+  · grep: `'night'` ใกล้ `< 8` · และช่องกรอกเวลาที่บันทึกลงฐาน **ต้องมีด่านเช็คว่าอยู่ในกรอบกะ**
+    (เคยเกิด: downtime 04:19 บนกะที่เปิด 08:00 — AM/PM สลับ ไหลเข้าฐานเงียบๆ 86 แถว)
 - **A5** 🔴 **downtime ที่ทับเวลาพักตามนโยบาย ห้ามหักซ้ำ** (2026-09-15 · docs/modules/oee.md)
   พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาแล้ว — โค้ดที่เอานาที downtime ไปหักจากฐานเวลา
   (`netAvail` · `runMin` · `wLoad` = `shift_min − plannedMin` · `strictOee.plannedDtMin` · `upMin`/MTBF)
