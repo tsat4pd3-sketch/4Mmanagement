@@ -15,7 +15,7 @@
    ⚠️ สูตรทั้งหมดอยู่ src/utils/energy.js — ห้ามคำนวณเองในไฟล์นี้ */
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import {
-  ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
+  ResponsiveContainer, ComposedChart, BarChart, LineChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, Cell, ReferenceLine,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -662,18 +662,37 @@ export default function Energy() {
                       <span style={{ color: GOOD }}> ยอดขึ้น + SEC ลง = ดี</span> ·
                       <span style={{ color: BAD }}> ยอดเท่าเดิม + SEC ขึ้น = มีของรั่ว/เครื่องเสื่อม</span>
                     </div>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                    {/* 📊 2 กราฟซ้อนแกน X เดียวกัน — **ห้ามกลับไปเป็นกราฟแกน Y 2 ข้าง** (23/09 ก้อน C)
+                        เดิมเป็น ComposedChart ที่มี `yAxisId="l"` (ชิ้น) กับ `yAxisId="r"` (kWh/ชิ้น) ซ้อนกัน
+                        ⇒ กราฟ 2 แกน Y เป็นกับดักคลาสสิกของ data-viz: **จุดที่เส้นตัดแท่งเป็นของปลอม**
+                           เพราะสเกล 2 ข้างตั้งเองอิสระ — ขยับสเกลข้างเดียวก็เปลี่ยน "เรื่องเล่า" ได้ทันที
+                           (เส้นอยู่เหนือแท่ง/ตัดกันตรงไหน ไม่ได้แปลว่าอะไรเลย แต่ตาคนอ่านว่ามันแปลว่าอะไร)
+                        คำถามจริงของแผงนี้คือ **"2 เส้นนี้ไปทางเดียวกันหรือสวนกัน"** (เขียนไว้ข้างบนแล้ว:
+                        ยอดขึ้น + SEC ลง = ดี) ⇒ วางซ้อนกันคนละกราฟ แกน X ตรงกัน = เทียบทิศทางได้ตรงๆ
+                        โดยไม่มีสเกลปลอมให้เข้าใจผิด · `YAxis width={54}` ทั้งคู่ = พื้นที่กราฟตรงกันเป๊ะ
+                        (ถ้าไม่ล็อก ความกว้างป้ายแกนต่างกัน → เดือนเดียวกันไม่ตรงคอลัมน์กัน = เทียบไม่ได้) */}
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 2 }}>ผลิตได้ (ชิ้น)</div>
+                    <ResponsiveContainer width="100%" height={130}>
+                      <BarChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="label" tick={false} height={4} />
+                        {/* ⚠️ ย่อเป็น "k" ได้เฉพาะตอนเลขใหญ่จริง — ยอดหลักพันจะได้ "2k 1k 1k 0k" ซ้ำกัน
+                            (ปัดเศษชนกัน) = แกนที่อ่านค่าไม่ได้เลย · เห็นชัดตอนแยกกราฟ 23/09 */}
+                        <YAxis width={54} tick={{ fontSize: 11, fill: 'var(--muted)' }}
+                          tickFormatter={v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v).toLocaleString())} />
+                        <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : Math.round(v).toLocaleString(), 'ผลิตได้ (ชิ้น)']} />
+                        <Bar dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b', marginTop: 6, marginBottom: 2 }}>kWh ต่อชิ้น (SEC)</div>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <LineChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                        <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Math.round(v / 1000) + 'k'} />
-                        <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: '#f59e0b' }} />
-                        <Tooltip contentStyle={tipStyle}
-                          formatter={(v, n) => [v == null ? '—' : (n === 'kWh ต่อชิ้น (SEC)' ? v : Math.round(v).toLocaleString()), n]} />
-                        <Legend wrapperStyle={{ fontSize: 11.5 }} />
-                        <Bar yAxisId="l" dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="r" type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
-                      </ComposedChart>
+                        <YAxis width={54} tick={{ fontSize: 11, fill: '#f59e0b' }} />
+                        <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : v, 'kWh ต่อชิ้น (SEC)']} />
+                        <Line type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+                      </LineChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       <span>📏 <b>{PIECE_BASIS_LABEL}</b> — ต่างจากจอผลิตที่นับเป็น stroke (1 ปั๊ม = 1)</span>
