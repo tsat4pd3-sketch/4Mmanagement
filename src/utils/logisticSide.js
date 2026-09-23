@@ -13,12 +13,14 @@
     🏬 Store (ป้อนของเข้าไลน์)  — Store
        ของจาก supplier + ชิ้นส่วนที่คุมภายใน: 3xx (ซื้อนอก) · 5xx (raw) · 2xx (ผลิตเอง)
 
-    🚚 Warehouse & Delivery (ส่งลูกค้า)  — Warehouse · Delivery · Rack Center
-       ทุกอย่างที่ "เกี่ยวพันกับลูกค้า": FG 1xx · รอบส่งลูกค้า · ภาชนะ/packaging
+    🚚 Warehouse & Delivery (ส่งลูกค้า)  — Warehouse · Delivery · Rack Center · Billing
+       ทุกอย่างที่ "เกี่ยวพันกับลูกค้า": FG 1xx · รอบส่งลูกค้า · ภาชนะ/packaging · ออกใบขาย
 
-    🧭 แผนงาน & ข้อมูล   — Sales · Planner · Billing
+    🧭 แผนงาน & ข้อมูล   — Sales · Planner
        ไม่ได้ถือของ แต่คุม/ประสานข้อมูลระหว่าง สโตร์ ↔ ผลิต ↔ จัดส่ง
-       (Sales รับข้อมูลลูกค้า · Planner วางแผนผลิต + เรียกงานจาก supplier · Billing ออกบิลผ่าน SAP)
+       (Sales รับข้อมูลลูกค้า · Planner วางแผนผลิต + เรียกงานจาก supplier)
+       ⚠️ **Billing ไม่ได้อยู่ฝั่งนี้** (user แก้ให้ 2026-09-23) — billing = ออกใบขาย **นั่งรวมกับทีมจัดส่ง**
+          จึงอยู่ฝั่ง Warehouse & Delivery · ตัวออกบิลจริงอยู่ใน SAP ไม่ใช่ ESM
 
   ⚠️⚠️ ความต่าง Warehouse กับ Store (user ย้ำให้จำ 2026-09-03 — ห้ามสลับ)
        Warehouse = ที่เก็บ **ชิ้นส่วน FG 1xx** รอส่งลูกค้า  → หมวด Warehouse & Delivery
@@ -59,12 +61,12 @@ export const SIDES = [
   },
   {
     key: 'outbound', icon: '🚚', label: 'Warehouse & Delivery · ส่งลูกค้า', short: 'จัดส่ง', color: '#f59e0b',
-    owner: 'Warehouse · Delivery · Rack Center',
-    desc: 'ทุกอย่างที่เกี่ยวพันกับลูกค้า · FG 1xx · รอบส่ง · ภาชนะ/packaging',
+    owner: 'Warehouse · Delivery · Rack Center · Billing',
+    desc: 'ทุกอย่างที่เกี่ยวพันกับลูกค้า · FG 1xx · รอบส่ง · ภาชนะ/packaging · ออกใบขาย',
   },
   {
     key: 'control', icon: '🧭', label: 'แผนงาน & ข้อมูล', short: 'แผนงาน', color: '#a78bfa',
-    owner: 'Sales · Planner · Billing',
+    owner: 'Sales · Planner',
     desc: 'คุม/ประสานข้อมูลระหว่าง สโตร์ ↔ ผลิต ↔ จัดส่ง (ไม่ได้ถือของ)',
   },
 ];

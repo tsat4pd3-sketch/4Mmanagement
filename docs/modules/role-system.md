@@ -402,8 +402,20 @@ migration `20260922_store_accounts_planner_store_role.sql` (**apply แล้ว
 | ฝั่ง | role | บัญชี (23/09) |
 |---|---|---|
 | 🏬 Store | `planner_store` 📦 | `planningstore` |
-| 🚚 Warehouse & Delivery | **`warehouse_delivery` 🚚 (ใหม่)** | `warehouse1` · `warehouse2` · `delivery1` · `delivery2` |
-| 🧭 แผนงาน & ข้อมูล | `sale` 🧭 | `billing` |
+| 🚚 Warehouse & Delivery | **`warehouse_delivery` 🚚 (ใหม่)** | `warehouse1` · `warehouse2` · `delivery1` · `delivery2` · **`billing`** |
+| 🧭 แผนงาน & ข้อมูล | `sale` 🧭 | **— ยังไม่มีบัญชี —** |
+
+> **🔧 แก้การจัดกลุ่มรอบเดียวกัน (user แก้ให้ 23/09 · migration `20260923_billing_to_warehouse_delivery.sql`):**
+> ครั้งแรกผมจัด `billing` ไว้ฝั่ง "แผนงาน & ข้อมูล" เพราะอ่านว่า *"ออกบิล = ข้อมูล ไม่ได้ถือของ"* — **ผิด**
+> ของจริง: **billing = ออกใบขาย นั่งรวมกับทีมจัดส่ง** → ฝั่ง Warehouse & Delivery
+> ส่วนงาน "แผนงาน & ข้อมูล" เป็นของ **planning** (บัญชี `planningstore` ซึ่งนั่งอยู่กับ sale)
+> ไม่มีใครเสียสิทธิ์ — `warehouse_delivery` เป็น superset ของ `sale` อยู่แล้ว
+> · ESM ไม่มีฟีเจอร์ออกใบขาย/วางบิลในตัว (ทำใน SAP) จึงไม่มีคีย์สิทธิ์เฉพาะที่ต้องเติม
+> · แก้ `owner` ของ 3 ฝั่งใน `src/utils/logisticSide.js` ให้ตรงด้วยในคอมมิทเดียวกัน
+>
+> ⚠️ **`sale` เหลือ 0 บัญชี** — ตั้งใจเก็บเป็น role สำรองของทีม Sales จริงที่ยังไม่มี login
+> (planning ใช้ `planner_store` เพราะทำงานสโตร์ด้วย) · **แต่ห้ามลืมกฎ "สิทธิ์ที่ seed ไว้กับ role
+> ที่ไม่มีบัญชีใช้ = สิทธิ์ที่ไม่มีอยู่จริง"** — จะ seed อะไรให้ `sale` ต้องเช็คก่อนเสมอว่ามีใครถือ role นี้จริง
 
 - สิทธิ์ตั้งต้นของ role ใหม่ = **copy จาก `sale` ทั้งชุด** (= ชุดที่ delivery ใช้อยู่จริงวันนี้ ⇒ ไม่มีใครเสียของ)
   **+ `page:/rack-center` · `rack_center:operate`** (ภาชนะ/Packaging — อยู่ในหมวดฝั่งจัดส่งของทะเบียนสิทธิ์
