@@ -53,8 +53,12 @@ export const isPlant = (sc) => !sc || !sc.kind || sc.kind === 'plant' || !sc.val
  * @param nodes     org_nodes (id, kind, code, name, parent_id, ref_line_id, cost_center, division, sort_order, is_active)
  * @param lines     production_lines (id, name, section, parent_line_name, cost_center, is_active)
  * @param divisions org_divisions (code, label, icon, sort_order) — ว่างได้
+ * @param costCenters ทะเบียน cost_centers (code, name, is_active) — ว่างได้ (ใช้แค่ "ชื่อ" ของรหัส)
  */
-export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
+export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCenters = [] } = {}) {
+  const ccName = new Map((costCenters || [])
+    .filter(c => c && c.code && c.is_active !== false)
+    .map(c => [String(c.code), (c.name || '').trim()]));
   const act = nodes.filter(n => n && n.is_active !== false);
   const byId = new Map(act.map(n => [String(n.id), n]));
   const kids = new Map();
@@ -146,12 +150,12 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
       const gKey = push('line_group', grp, grp, depth + 1, dKey, fam);
       if (secCode) sectionOfKey.set(gKey, secCode);
       leavesOf(grp).forEach((nm) => {
-        const lk = push('line', nm, nm, depth + 2, gKey, [nm]);
+        const lk = push('line', nm, nm, depth + 2, gKey, [nm], { cost_center: byName.get(nm)?.cost_center || null });
         if (secCode) sectionOfKey.set(lk, secCode);
       });
     });
     orphanNodes.sort(bySort).forEach((ln) => {
-      const lk = push('line', nodeCode(ln), nodeCode(ln), depth + 1, dKey, [], { noData: true });
+      const lk = push('line', nodeCode(ln), nodeCode(ln), depth + 1, dKey, [], { noData: true, cost_center: ln.cost_center || null });
       if (secCode) sectionOfKey.set(lk, secCode);
     });
     return dKey;
@@ -174,7 +178,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
       const gKey = push('line_group', grp, grp, depth + 1, sKey, fam, { unlinked: true });
       sectionOfKey.set(gKey, code);
       leavesOf(grp).filter(nm => fam.includes(nm)).forEach((nm) => {
-        const lk = push('line', nm, nm, depth + 2, gKey, [nm]);
+        const lk = push('line', nm, nm, depth + 2, gKey, [nm], { cost_center: byName.get(nm)?.cost_center || null });
         sectionOfKey.set(lk, code);
       });
     });
@@ -210,7 +214,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
     grps.forEach((grp) => {
       const fam = familyOf(grp);
       const gKey = push('line_group', grp, grp, 1, 'plant', fam, { unlinked: true });
-      leavesOf(grp).forEach(nm => push('line', nm, nm, 2, gKey, [nm]));
+      leavesOf(grp).forEach(nm => push('line', nm, nm, 2, gKey, [nm], { cost_center: byName.get(nm)?.cost_center || null }));
     });
   }
 
@@ -223,7 +227,35 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
     const k = scopeKey(n.kind === 'line' ? 'line' : n.kind, nodeCode(n));
     addCc(n.cost_center, linesOf.get(k) ? [...linesOf.get(k)] : []);
   });
-  [...ccLines.keys()].sort().forEach(cc => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], { icon: '💰' }));
+  /* 🔴 cost center ของ "กลุ่มไลน์" — ไล่ 3 ชั้นตามลำดับ ห้ามข้าม:
+       1. แถวไลน์แม่เองมีรหัส → ใช้รหัสนั้น (ไลน์แม่ก็เป็นแถวใน production_lines และมีรหัสของมันเอง)
+       2. ไม่มี → ถ้าลูกทั้งครอบครัวเหลือรหัสเดียว ถือเป็นของกลุ่ม
+       3. ลูกใช้คนละรหัส → `cc_multi` **ห้ามหยิบรหัสใดรหัสหนึ่งมาเป็นของกลุ่ม** (จอต้องเขียนว่ามีหลายรหัส) */
+  opts.filter(o => o.kind === 'line_group').forEach((o) => {
+    const own = byName.get(o.value)?.cost_center || null;
+    if (own) { o.cost_center = own; return; }
+    const set = new Set([...(linesOf.get(o.key) || [])].map(nm => byName.get(nm)?.cost_center).filter(Boolean));
+    if (set.size === 1) o.cost_center = [...set][0];
+    else if (set.size > 1) { o.cost_center = null; o.cc_multi = set.size; }
+  });
+
+  /* ── แผนที่ 2 ทาง ระหว่าง "หน่วยในผัง" กับ "รหัส cost center" (23/09 · คำสั่ง user
+     *"อย่าปนกัน cost center แยกอีกช่อง · เลือก PD4 ควรโชว์รหัส · พิมพ์รหัสควรเจอ PD3"*)
+     เจ้าของรหัส = หน่วยที่ **กว้างที่สุด** ที่ผูกรหัสนั้น (ส่วนงาน ชนะ แผนก ชนะ กลุ่ม ชนะ ไลน์)
+     — รหัสระดับส่วนงานจะได้คำตอบเป็นส่วนงาน ไม่ใช่ไลน์ลูกตัวใดตัวหนึ่ง
+     ⚠️ 1 รหัสผูกได้หลายหน่วย (ข้อมูลจริงมีซ้ำ) ⇒ เก็บทั้งหมด จอเลือกจะได้เตือนได้ */
+  const OWNER_RANK = { section: 0, department: 1, line_group: 2, line: 3 };
+  const ccOwners = new Map();   // cc → [{ kind, value }] เรียงจากกว้างไปแคบ
+  opts.forEach((o) => {
+    if (!o.cost_center || o.kind === 'cost_center') return;
+    if (!ccOwners.has(o.cost_center)) ccOwners.set(o.cost_center, []);
+    ccOwners.get(o.cost_center).push({ kind: o.kind, value: o.value });
+  });
+  ccOwners.forEach(arr => arr.sort((a, b) => (OWNER_RANK[a.kind] ?? 9) - (OWNER_RANK[b.kind] ?? 9)));
+
+  [...ccLines.keys()].sort().forEach(cc => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], {
+    icon: '💰', cc_name: ccName.get(cc) || '', owners: ccOwners.get(cc) || [],
+  }));
 
   // ── API ──
   const lineNamesOf = (kind, value) => [...(linesOf.get(scopeKey(kind, value)) || [])];
@@ -261,7 +293,22 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [] } = {}) {
   };
   const optionOf = (kind, value) => opts.find(o => o.key === scopeKey(kind, value)) || null;
 
-  return { options: opts, lineNamesOf, ancestorsOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf };
+  /** รหัส cost center ของหน่วยในผัง — `{ code, multi }` · multi = ลูกใช้หลายรหัส (code เป็น null) */
+  const ccOf = (kind, value) => {
+    const o = optionOf(kind, value);
+    if (!o) return { code: null, multi: 0 };
+    return { code: o.cost_center || null, multi: o.cc_multi || 0 };
+  };
+  /** หน่วยในผังที่ผูกรหัสนี้ (กว้าง → แคบ) — ว่าง = รหัสนี้ไม่มีใครในผังอ้างถึง */
+  const ccOwnersOf = (cc) => (ccOwners.get(String(cc || '')) || []).slice();
+  /** ป้ายรหัส: `2140462000 · PD3` (ชื่อมาจากทะเบียน cost_centers ไม่ใช่เดาจากผัง) */
+  const ccLabel = (cc) => {
+    const code = String(cc || '');
+    const nm = ccName.get(code) || '';
+    return nm ? `${code} · ${nm}` : code;
+  };
+
+  return { options: opts, lineNamesOf, ancestorsOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf, ccOf, ccOwnersOf, ccLabel };
 }
 
 /** ขอบเขต `def` (นิยาม KPI) ครอบขอบเขตที่เลือกอยู่ไหม — เท่ากัน หรือเป็นบรรพบุรุษ (นิยามระดับแม่ตกทอดถึงลูก) */
@@ -299,8 +346,8 @@ export function defScopeColumns(index, sc) {
  * @param scopeSet Set(ชื่อไลน์ที่ user เห็น) | null = ไม่จำกัด
  * @param sections ส่วนงานที่ user สังกัด ([] = ไม่จำกัด) — ใช้กับ node ที่ไม่มีไลน์ (แผนกช่าง/สโตร์)
  */
-export function filterScopeOptions(index, { scopeSet = null, sections = [] } = {}) {
-  const opts = index.options;
+export function filterScopeOptions(index, { scopeSet = null, sections = [], withCostCenter = true } = {}) {
+  const opts = withCostCenter ? index.options : index.options.filter(o => o.kind !== 'cost_center');
   const secLimited = !!(sections && sections.length);
   if (!scopeSet && !secLimited) return opts;
   const secAllowed = (s) => !secLimited || sections.some(x => norm(x) === norm(s));

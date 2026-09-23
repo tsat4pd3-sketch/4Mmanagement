@@ -102,3 +102,32 @@ test('raw หาย (RPC ไม่คืนแถวของ event นี้) =
   assert.doesNotThrow(() => reachWarnings({ inapp_roles: ['qa'] }, undefined));
   assert.doesNotThrow(() => reachOf(null, null));
 });
+
+/* ── 🗑️ ความเสียเปล่า — "ยิงผิดคน" ต่างจาก "อ่านน้อย" (2026-09-23) ──────────────────
+   รูทคอสที่วัดได้: 64% ของแถวทั้งระบบส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบใน 30 วัน
+   และคนกลุ่มนั้นไม่ใช่บัญชีร้าง (login สัปดาห์นี้) ⇒ เขาไม่ใช่คนที่ต้องลงมือ */
+test('เตือนแดงเมื่อเกินครึ่งถูกส่งให้คนที่ไม่เคยเปิดอ่านเรื่องนี้เลย', () => {
+  const rule = { inapp_roles: ['supervisor'], inapp_match_section: true };
+  const raw = { people_all: 22, rows_n: 1000, read_n: 40, waste_n: 860, dead_n: 16, days_n: 30, events_n: 50, n_sections: 4 };
+  const r = reachOf(rule, raw);
+  assert.equal(r.wastePct, 86);
+  assert.equal(r.deadUsers, 16);
+  const w = reachWarnings(rule, raw);
+  assert.ok(w.some(x => x.level === 'red' && /ไม่เคยเปิดอ่าน/.test(x.text)), 'ต้องมีคำเตือนแดงเรื่องยิงผิดคน');
+  // ห้ามขึ้นคำเตือน "อ่านน้อย" ซ้ำอีกใบ — ข้อความเดียวที่ชี้ต้นเหตุตรงกว่าพอแล้ว
+  assert.equal(w.filter(x => /คนเปิดอ่าน \d+%/.test(x.text)).length, 0);
+});
+
+test('ข้อมูลน้อยเกินไป ห้ามสรุปว่าเสียเปล่า (กฎความซื่อสัตย์ของจอ)', () => {
+  const rule = { inapp_roles: ['qa'] };
+  const r = reachOf(rule, { people_all: 20, rows_n: 5, read_n: 0, waste_n: 5, dead_n: 3, days_n: 14 });
+  assert.equal(r.wastePct, null, 'ต่ำกว่าเกณฑ์ขั้นต่ำต้องคืน null ไม่ใช่ 100');
+  assert.equal(reachWarnings(rule, { people_all: 20, rows_n: 5, waste_n: 5, dead_n: 3, days_n: 14 })
+    .filter(x => /ไม่เคยเปิดอ่าน/.test(x.text)).length, 0);
+});
+
+test('RPC รุ่นเก่าไม่คืน waste_n ก็ต้องไม่พัง (จอ fallback เป็น 0)', () => {
+  const r = reachOf({ inapp_roles: ['mtn'] }, { people_all: 15, rows_n: 500, read_n: 50, days_n: 14 });
+  assert.equal(r.waste, 0);
+  assert.equal(r.wastePct, 0);
+});

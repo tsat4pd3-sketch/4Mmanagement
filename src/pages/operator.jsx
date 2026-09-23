@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { STAFF_INDIRECT, isDirectStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -172,7 +173,9 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
-  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
+  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect (labor_type จากผังองค์กร)
+  const [empSearch,     setEmpSearch]     = useState(''); // 🔎 ค้นชื่อ/รหัส — 223 คน เลื่อนหาไม่ไหว (feedback 23/09)
+  const [filterStaffKind, setFilterStaffKind] = useState(''); // shopfloor/support (staff_kind — แกนเช็คชื่อ)
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)
   const [lines,           setLines]           = useState([]);
@@ -383,7 +386,12 @@ export default function Operator() {
       famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
-      let q = onlyDirectStaff(supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)'));
+      /* 🔴 หน้านี้คือ **ทะเบียนพนักงาน** — ต้องเห็นทุกคนรวมสายสนับสนุน ไม่งั้นแก้ข้อมูลเขาไม่ได้เลย
+         (เกิดจริง 23/09: ใส่ onlyDirectStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
+          ทั้งที่เพิ่งถูกสร้างจาก /add-user เมื่อวาน — "มีอยู่ในฐานแต่มองไม่เห็น" คือสภาพที่แย่ที่สุด)
+         การกันไม่ให้เขาไปปนใน "กำลังคน" ทำที่จอที่นับคน (Checkin/Report/ShiftOrganize/
+         WorkforceInsight) ไม่ใช่ที่ทะเบียน · ที่นี่ใช้ชิป 🧑‍🏭/🗂️ กรองดูแทน */
+      let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
@@ -762,8 +770,18 @@ export default function Operator() {
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
-    .filter(emp => !filterNoPhoto || !emp.image_url),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, offOrgReasons, laborMap]);
+    .filter(emp => !filterNoPhoto || !emp.image_url)
+    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isDirectStaff(emp) : isDirectStaff(emp)))
+    /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
+       **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
+    .filter(emp => {
+      const q = normSearch(empSearch);
+      if (!q) return true;
+      return normSearch(emp.name).includes(q)
+          || normSearch(emp.employee_id_code).includes(q)
+          || normSearch(emp.position).includes(q);
+    }),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, filterStaffKind, empSearch, offOrgReasons, laborMap]);
 
   // worklist "ยังไม่มีรูป" — นับจากคนที่ยังทำงานอยู่เท่านั้น (คนลาออกไม่ต้องตามถ่าย)
   // ที่มา 2026-09-11: ล้างรูปที่ใหญ่ผิดกติกาออก 18 ไฟล์ (GIF/รูปไม่ได้บีบ) หัวหน้าต้องไล่ถ่ายใหม่
@@ -857,6 +875,15 @@ export default function Operator() {
         <>
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
+                ⚠️ ต้องกำหนด width เอง (index.css ตั้ง `input { width: 100% }` ทั้งแอป —
+                   ไม่กำหนด = กินเต็มบรรทัดแล้วดัน dropdown ตกบรรทัดใหม่ทั้งแถว)
+                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
+            <input type="search" value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+              placeholder="🔎 ค้นชื่อ / รหัส / ตำแหน่ง..."
+              style={{ width: 210, fontSize: 12, padding: '5px 10px', borderRadius: 7,
+                       border: `1px solid ${empSearch ? 'var(--accent)' : 'var(--border2)'}`,
+                       background: 'var(--bg3)', color: 'var(--text)' }} />
             {[
               // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
               { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
@@ -915,6 +942,26 @@ export default function Operator() {
               );
             })}
 
+            {/* 👥 ประเภทพนักงาน (staff_kind) — **คนละแกนกับ Direct/Indirect ข้างล่าง**
+                นี่คือ "ต้องเช็คชื่อ/นับเป็นกำลังคนหน้าไลน์ไหม" (รายคน)
+                ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
+            <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            {[
+              { k: 'shopfloor', icon: '🧑‍🏭', label: 'หน้างาน', color: '#22c55e', title: 'พนักงานหน้าไลน์ + ช่าง — เช็คชื่อ · นับเป็นกำลังคน' },
+              { k: 'support',   icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคนหน้าไลน์' },
+            ].map(t => {
+              const active = filterStaffKind === t.k;
+              return (
+                <button key={t.k} title={t.title} onClick={() => setFilterStaffKind(active ? '' : t.k)}
+                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? t.color : 'var(--border2)'}`,
+                    background: active ? `${t.color}22` : 'var(--bg3)',
+                    color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
+                  {t.icon} {t.label}
+                </button>
+              );
+            })}
+
             {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {['direct', 'indirect'].map(t => {
@@ -931,8 +978,13 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor) && (
-              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); }}
+            {empSearch && (
+              <span style={{ fontSize: 11, color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700 }}>
+                {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
+              </span>
+            )}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor || filterStaffKind || empSearch) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); setFilterStaffKind(''); setEmpSearch(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
