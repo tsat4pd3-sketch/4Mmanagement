@@ -825,7 +825,12 @@ export default function PMCheckData() {
         line_name: selectedJig.line_name || null,
         mtn_dept: teamKeyOf(moTeam) || 'maintenance',
         machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
-        problem_characteristic: 'อื่นๆ',
+        /* 🔴 อาการ/กลุ่ม = หัวข้อที่ตรวจไม่ผ่านจริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
+           บั๊กคลาสเดียวกับใบที่เปิดจากดาวน์ไทม์ — เขียน 'อื่นๆ' ทับทั้งที่ `ngTopics`
+           บอกอยู่แล้วว่าไม่ผ่านข้อไหน ⇒ ใบพวกนี้ไปกองรวมในถังขยะของพาเรโต
+           มีด่าน regressionGuards กฎ no-hardcoded-other-category */
+        problem_characteristic: ngTopics[0] || 'อื่นๆ',
+        problem_group: 'ผลตรวจ PM/AM ไม่ผ่าน',
         report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
         // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น — เดิมหน้านี้ไม่เคยส่ง ⇒ ใบที่เปิดจากผลตรวจ PM/AM
         //   ไม่มีใครถูกเด้งตอนใบถึงคิวตัวเอง (เหตุผลเดียวกับที่ MtnRepair แก้ไปแล้ว 2026-09-14)

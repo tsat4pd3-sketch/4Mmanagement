@@ -21,6 +21,8 @@ const ABC = {
 const OPA = { A: 1, B: 0.75, C: 0.45 };
 /* แท่งสูงสุดในกราฟย่อ — เกินนี้ยุบหางยาวเป็นแท่งเดียว (ต้องตรงกับที่ส่งให้ ParetoChart) */
 const MAX_BARS = 12;
+/* ชิปกลุ่ม A สูงสุดที่โชว์ใต้กราฟ — เกินนี้ยุบเป็นปุ่ม "ดูครบ" (ดูเหตุผลตรงจุดที่ใช้) */
+const CHIP_MAX = 12;
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
 // สูตร ABC + % สะสม ย้ายไป `utils/pareto.js` แล้ว (เทสได้ — ตัวรันเทสไม่รับ .jsx)
@@ -141,8 +143,10 @@ export default function ParetoAbcChart({
     <ParetoChart rows={rows} unit={unitOf} height={330} maxBars={MAX_BARS}
       onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
+  /* viewBox กว้างขึ้นใน popup ⇒ สัดส่วนแบนลง ⇒ กราฟกินความสูงน้อยลงแต่กว้างเต็มจอ
+     (เดิม 1100×420 ในกล่อง 1460px = สูง ~557px กินที่เกือบหมด เหลือที่ตารางนิดเดียว) */
   const chartFull = () => (
-    <ParetoChart rows={rows} unit={unitOf} height={420} width={1100} maxBars={rows.length}
+    <ParetoChart rows={rows} unit={unitOf} height={400} width={1600} maxBars={rows.length}
       showTailToggle={false} onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
 
@@ -235,19 +239,36 @@ export default function ParetoAbcChart({
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
       <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>เน้นแก้กลุ่ม A →</span>
-        {groups.A.map((d, i) => (
+        {/* 🔴 กลุ่ม A ไม่ได้แปลว่า "ไม่กี่ตัว" — ข้อมูลที่หมวดกระจายมาก (เช่นพาเรโตจากข้อความอิสระ)
+            มี A ได้ถึง **499 รายการ** ⇒ เดิม render ชิปครบทุกตัว = กำแพงชิปท่วมจอ
+            (user แจ้ง 23/09 "ทำไมมันโชว์เยอะแบบนี้ ควร hide รึป่าว")
+            ⇒ โชว์เท่าที่อ่านไหว แล้วบอกว่าเหลืออีกเท่าไหร่ + กดดูครบได้
+            **ห้ามตัดทิ้งเงียบ** — ลิสต์งานที่ต้องแก้ต้องเข้าถึงได้เสมอ (กฎความซื่อสัตย์ของจอ) */}
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>
+          เน้นแก้กลุ่ม A{groups.A.length > CHIP_MAX ? ` (${CHIP_MAX} จาก ${groups.A.length})` : ''} →
+        </span>
+        {groups.A.slice(0, CHIP_MAX).map((d, i) => (
           <span key={i} onClick={() => dims.length && openDrill(d.name)}
             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
             {d.name}: {fmt(d._val)} {unitOf} ({d._pct.toFixed(0)}%)
           </span>
         ))}
+        {groups.A.length > CHIP_MAX && (
+          <button type="button" onClick={() => setOpen(true)}
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700,
+              background: 'var(--bg3)', color: 'var(--text2)', border: `1px dashed ${ABC.A.color}77` }}>
+            ⤢ ดูกลุ่ม A ครบ {groups.A.length} รายการ
+          </button>
+        )}
       </div>
 
       {/* ── popup ขยาย: เห็นครบทุกรายการ + ตาราง (คลิกแถวเจาะได้) ── */}
       {open && (
         <div onClick={() => setOpen(false)} style={ovl(1250)}>
-          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 980 }}>
+          {/* popup ขยาย: กว้างขึ้น + **กราฟฟรีซ ตารางเลื่อนในตัวเอง** (user 23/09)
+              "กราฟมันเล็ก สัดส่วนตอนนี้เหมือน 50/50 … เอาให้กราฟ 70 table 30
+               ละถ้าให้ดี ฟรีซกราฟไว้ เลื่อนแค่ตาราง" */}
+          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 1500 }}>
             <div style={head}>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
@@ -257,9 +278,18 @@ export default function ParetoAbcChart({
               </div>
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', padding: '14px 20px 20px' }}>
+            {/* ── กราฟ: ฟรีซไว้ (ไม่เลื่อนไปกับตาราง) · ~70% ของพื้นที่ที่เหลือ ──
+                flexShrink 0 = ไม่ให้ตารางบีบกราฟให้เตี้ยลงเมื่อรายการเยอะ */}
+            {/* สัดส่วน **กราฟ 70 : ตาราง 30** ของพื้นที่ใต้หัว (user 23/09)
+                ทั้งคู่ `minHeight: 0` + เลื่อนในตัวเอง ⇒ เลื่อนตารางแล้วกราฟไม่ขยับ (ฟรีซ)
+                ⚠️ `minHeight: 0` คือตัวที่ทำให้ overflow ทำงานใน flex column — ขาดไปจะดันทะลุกรอบ */}
+            <div style={{ flex: '1 1 70%', minHeight: 0, overflowY: 'auto',
+                          padding: '14px 20px 6px', borderBottom: '1px solid var(--border)' }}>
               {chartFull()}
-              <div style={{ overflowX: 'auto', marginTop: 14 }}>
+            </div>
+            {/* ── ตาราง: เลื่อนในตัวเอง ~30% · minHeight 0 คือสิ่งที่ทำให้ overflow ทำงานใน flex column ── */}
+            <div style={{ flex: '1 1 30%', minHeight: 0, overflowY: 'auto', padding: '10px 20px 20px' }}>
+              <div style={{ overflowX: 'auto' }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                     <th style={thL}>#</th><th style={thL}>รายการ</th><th style={thC}>กลุ่ม</th>
@@ -394,7 +424,14 @@ export default function ParetoAbcChart({
 
 /* ── styles ── */
 const ovl = (z) => ({ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 });
-const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' };
+/* 🔴 `overflow: hidden` บังคับให้ลูกอยู่ในกรอบ 92vh — ขาดตัวนี้ ลูกที่ `flex: 0 0 auto`
+   (เช่นบล็อกกราฟ) จะดันตารางทะลุขอบล่างจอ แล้วตัวเลื่อนด้านในไม่ทำงานเลย
+   (เจอจริง 23/09 ตอนแยกกราฟ/ตารางเป็น 2 ชั้นใน popup ขยาย) */
+const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%',
+  /* 🔴 ต้องเป็น `height` ไม่ใช่แค่ `maxHeight` — `flex-basis: 70%/30%` ของลูกจะทำงานก็ต่อเมื่อ
+     ความสูงของกล่องแม่ "แน่นอน" · ถ้ามีแต่ maxHeight ความสูงจะขึ้นกับเนื้อหา ⇒ % ตีกลับเป็น auto
+     แล้วได้สัดส่วนตามเนื้อหาแทน (เจอจริง 23/09: ตั้ง 70/30 แต่ได้ 41/59 = กลับด้าน) */
+  height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
 const head = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '16px 20px 10px', borderBottom: '1px solid var(--border)' };
 const closeBtn = { background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15, flexShrink: 0 };
 const tbl = { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 520, fontVariantNumeric: 'tabular-nums' };
