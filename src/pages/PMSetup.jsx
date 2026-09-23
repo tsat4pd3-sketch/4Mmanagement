@@ -488,11 +488,22 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
+  const twoColSetup = wideModal && layoutType === 'image_pin'
   // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
+  /* 📌 จอกว้าง = แยก 2 คอลัมน์ "รูปค้างไว้ซ้าย · รายการจุดตรวจเลื่อนขวา" (user 23/09
+     "จอที่ต้องใช้รูปอ้างอิงตอนตรวจ ควรตรึงรูปไว้") — จอแคบตรึงรูปไว้บนหัวแทน
+     ⚠️ sticky ในนี้เกาะกับ `modalBody` (ตัวที่ overflowY:auto) ไม่ใช่ viewport */
+  const [wideModal, setWideModal] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1180px)')
+    const on = e => setWideModal(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
   const [activePinKey, setActivePinKey] = useState(null)
 
@@ -953,7 +964,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   return (
     <div style={S.overlay}>
-      <motion.div style={S.modal} onClick={e => e.stopPropagation()}
+      {/* โหมด "รูป + จุดตรวจ" ต้องการที่ 2 คอลัมน์ → กว้างขึ้น (โหมดรายการใช้ 1000 เท่าเดิม) */}
+      <motion.div style={{ ...S.modal, maxWidth: twoColSetup ? 1340 : 1000 }} onClick={e => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ duration: 0.18 }}>
         {/* Header */}
         <div style={S.modalHead}>
@@ -1241,8 +1253,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
           </div>
 
+          {/* ── 📌 รูปอ้างอิงต้อง "ค้างอยู่" ตอนไล่กรอกจุดตรวจ (user 23/09) ──────────────
+              จอกว้าง: grid 2 คอลัมน์ · รูปซ้าย `position:sticky` · รายการจุดตรวจเลื่อนขวา
+              จอแคบ: คอลัมน์เดียว · รูปตรึงบนหัว (พื้นหลังทึบ full-bleed กันรายการเลื่อนทะลุใต้รูป)
+              🔴 sticky เกาะ `modalBody` ที่เป็น overflowY:auto — ห้ามใส่ overflow ให้กล่อง grid นี้
+                 ไม่งั้นจะกลายเป็น scroll container ซ้อนแล้ว "ขัง" sticky ไว้ข้างใน (กับดักใน CLAUDE.md) */}
+          <div style={twoColSetup
+            ? { display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(380px, 560px)', gap: 20, alignItems: 'start' }
+            : { display: 'flex', flexDirection: 'column', gap: 16 }}>
           {layoutType === 'image_pin' && (
-            <div>
+            <div style={twoColSetup
+              ? { position: 'sticky', top: 0, alignSelf: 'start' }
+              : { position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg2)',
+                  margin: '0 -24px', padding: '0 24px 8px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <label style={{ ...S.label, marginBottom: 0 }}>รูปอุปกรณ์ (หลายมุม) + จุดตรวจ</label>
                 {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
@@ -1293,6 +1316,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               )}
               {grouped.ungrouped.map(renderCard)}
             </div>
+          </div>
           </div>
 
           {error && <p style={{ color: 'var(--red)', fontSize: 13 }}>{error}</p>}
