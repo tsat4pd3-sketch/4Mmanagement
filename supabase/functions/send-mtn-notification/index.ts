@@ -5,6 +5,10 @@
 // Events: mtn_reported/assigned/repaired/checked/qa/handover/closed (step 1..7)
 //   + mtn_approved = ขั้น 7 ของ "ใบทีม MTN" เท่านั้น (ผจก.แผนกที่แจ้งอนุมัติ ใบยังไม่ปิด)
 //     ⇒ ใบทีม MTN มี 8 ขั้น: ปิดจบที่ขั้น 8 โดย ผจก.ส่วนซ่อมบำรุง (mtn_closed)
+//
+// ⚠️ verify_jwt = false โดยตั้งใจ — ผู้เรียกฝั่งเว็บ (MtnRepair/DailyReport/PMCheckData) ยิง fetch
+//    โดย **ไม่ส่ง Authorization/apikey เลย** ⇒ เปิด verify_jwt เมื่อไหร่ = แจ้งเตือน MO เงียบทั้งระบบ 401
+//    (เคยหลุดจริงตอน deploy 23/09 — ค่า default ของเครื่องมือ deploy คือ true ต้องระบุ false ทุกครั้ง)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -156,18 +160,40 @@ async function sectionOfLine(lineName?: string | null): Promise<string | null> {
   } catch { /* หาไม่เจอ = ไม่กรอง ดีกว่าเงียบ */ }
   return null;
 }
-// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก) — RPC เดียวกับ edge อื่นทั้งระบบ
-async function usersByRule(event: string, roles: string[], lineName?: string | null): Promise<string[]> {
+// ผู้รับตามทะเบียน (role × ส่วนงาน × แผนก × **ทีมช่าง**) — RPC เดียวกับ edge อื่นทั้งระบบ
+//
+// 🔴 บั๊กที่เคยเงียบอยู่ 1 วัน (แก้ 2026-09-23): ไฟล์นี้ **ไม่เคยส่ง `p_team`** ให้ RPC เลย
+//    แกนทีมช่างถูกเพิ่มใน `notify_recipients` เมื่อ 21/09 (migration 20260921_notify_recipients_mtn_team)
+//    พร้อมเจตนาที่เขียนไว้ข้างบนว่า *"ทีม DIE MTN ไม่ควรโดนเด้งใบของ JIG MTN"* — แต่ไฟล์นี้ซึ่งเป็น
+//    ต้นทาง **61% ของแถว `notifications` ทั้งระบบ** เรียก RPC โดยไม่ส่งแกนนั้น ⇒ แกนไม่เคยมีผลจริง
+//    (`usersInTeam()` ด้านล่าง *เพิ่ม* ช่างทีมที่ใช่เข้ามา แต่ไม่เคย *ตัด* ช่างทีมอื่นออก)
+//    วัดจริง 23/09 (14 วันย้อนหลัง): ใบซ่อม 42,220 แถว · เฉลี่ย 30 คน/เหตุการณ์ · คนเปิดอ่าน 7.8%
+//    ส่ง p_team แล้วผู้รับต่อเหตุการณ์ลดลง 15–27% แล้วแต่ทีม (เช่น mtn_qa 76 → 57-61 คน)
+//
+// ⚠️ ห้ามให้ผลลัพธ์กลายเป็น "ไม่มีใครได้รับ" — `mtn_closed` ตั้ง role ไว้แค่ `mtn` และช่างทุกคนมีทีม
+//    ⇒ ใบของทีม production (89% ของใบทั้งหมด) จะกรองเหลือ 0 คน · ถ้า `usersInTeam` ก็ว่าง
+//    (ทีมนั้นยังไม่มีใครตั้ง `profiles.mtn_teams`) แปลว่าใบเดินไปเงียบๆ ไม่มีใครรู้
+//    ⇒ กันไว้ด้วยการถอยกลับไปชุดที่ไม่กรองทีม (กติกาโปรเจค: ห้ามล้มเหลวเงียบ)
+async function recipientsRpc(event: string, section: string | null, team: string | null): Promise<string[]> {
+  const args: Record<string, unknown> = { p_event: event, p_section: section };
+  if (team) args.p_team = team;
+  const { data, error } = await supabase.rpc('notify_recipients', args);
+  if (error) throw error;
+  return (data ?? []).map((r: unknown) =>
+    typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+}
+async function usersByRule(event: string, roles: string[], lineName?: string | null,
+                           dept?: string | null): Promise<string[]> {
   if (!roles.length) return [];
+  const team = teamKey(dept) || null;
   try {
-    const { data, error } = await supabase.rpc('notify_recipients',
-      { p_event: event, p_section: await sectionOfLine(lineName) });
-    if (error) throw error;
-    return (data ?? []).map((r: unknown) =>
-      typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients).filter(Boolean) as string[];
+    const section = await sectionOfLine(lineName);
+    const ids = await recipientsRpc(event, section, team);
+    if (ids.length || !team) return ids;
+    return await recipientsRpc(event, section, null);   // กรองด้วยทีมแล้วเหลือ 0 คน → ถอยไปชุดไม่กรองทีม
   } catch (e) {
     console.error('notify_recipients', e);
-    return usersByRole(roles);      // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
+    return await usersByRole(roles);   // RPC ล่ม = ถอยไปตาม role ห้ามเงียบ
   }
 }
 async function usersInTeam(dept?: string | null): Promise<string[]> {
@@ -201,7 +227,8 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
     //    คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่
     const wantTeam = event !== 'mtn_returned';
     const [byRole, byTeam] = await Promise.all([
-      usersByRule(event, routes[event]?.inappRoles ?? [], v.line_name),
+      // ตีกลับ = ไม่กรองด้วยทีม (คนที่ต้องรู้คือผู้แจ้ง/หัวหน้า ไม่ใช่ทีมที่ตีกลับ)
+      usersByRule(event, routes[event]?.inappRoles ?? [], v.line_name, wantTeam ? dept : null),
       wantTeam ? usersInTeam(dept) : Promise.resolve([] as string[]),
     ]);
     // ผู้แจ้งได้รับทุกขั้นเสมอ — ใบของตัวเองเดินไปถึงไหนต้องรู้ (มาจาก mtn_orders.reported_by_uid)

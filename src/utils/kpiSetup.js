@@ -357,6 +357,17 @@ export function scoreDef(value, def = {}) {
 
 export const KPI_TOTAL_WEIGHT = 50;
 
+/* 4 มุมมอง Balanced Scorecard ที่ทั้งเอกสารกลุ่มและใบ KPI ของเราใช้ร่วมกัน
+   คีย์ต้องตรงกับ `kpi_standard_items.perspective` และ `kpi_definitions.category` เป๊ะ
+   ⚠️ เคยเขียนลิสต์นี้ซ้ำในหน้า — ย้ายมาที่เดียว 2026-09-23 (แก้ป้ายที่นี่ที่เดียวพอ) */
+export const KPI_PERSPECTIVES = [
+  { key: 'financial', label: '💰 Financial' },
+  { key: 'customer',  label: '🤝 Customer' },
+  { key: 'internal',  label: '🏭 Internal Process' },
+  { key: 'learning',  label: '📚 Learning & Growth' },
+];
+export const perspectiveLabel = (k) => KPI_PERSPECTIVES.find(c => c.key === k)?.label || k || '';
+
 export const KPI_REQUIREMENTS = [
   { key: 'fixed',  label: 'บังคับ',  short: 'F', color: '#ef4444', hint: 'ต้องมีในใบ ตัดทิ้งไม่ได้' },
   { key: 'choice', label: 'เลือกได้', short: 'C', color: '#3b82f6', hint: 'เลือกตามภาระงานจริงของหน่วยงาน' },
@@ -403,6 +414,30 @@ export const stdUnitLabel = (unit) => {
   return u ? (u.th ? `${u.unit} — ${u.th}` : u.unit) : (unit || '');
 };
 
+/** normalize ชื่อหัวข้อก่อนจับคู่ — ใช้จุดเดียวทั้ง checkStdSelection และ matchStdItems
+ *  ⚠️ แถวในใบจริง (`kpi_definitions`) เก็บชื่อไว้ที่ `name` ไม่ใช่ `topic` ⇒ ต้องดูทั้งสองช่อง
+ *     (ตกหล่นข้อนี้ = ข้อ fixed ที่หยิบมาแล้วยังถูกฟ้องว่า "ยังไม่ได้หยิบ" ทุกข้อ) */
+export const normTopic = (s) => String(s == null ? '' : s).trim().toLowerCase();
+const rowTopic = (r) => normTopic(r?.topic ?? r?.name);
+
+/**
+ * จับคู่ "ทะเบียนมาตรฐาน" กับ "แถวที่อยู่ในใบจริงแล้ว"
+ * @param stdItems แถวจาก `kpi_standard_items` ของหน่วยงาน+ปีนั้น
+ * @param rows     แถวในใบ (`kpi_definitions`)
+ * คืน `[{ item, row }]` เรียงตามทะเบียน — `row = null` แปลว่ายังไม่ได้หยิบเข้าใบ
+ */
+export function matchStdItems(stdItems = [], rows = []) {
+  const byId = new Map();
+  const byTopic = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r?.std_item_id) byId.set(r.std_item_id, r);
+    const t = rowTopic(r);
+    if (t && !byTopic.has(t)) byTopic.set(t, r);
+  }
+  return (Array.isArray(stdItems) ? stdItems : [])
+    .map(item => ({ item, row: byId.get(item?.id) || byTopic.get(normTopic(item?.topic)) || null }));
+}
+
 /**
  * ตรวจใบ KPI ของหน่วยงาน 1 ใบว่าถูกกติกากลุ่มไหม
  * @param rows      แถวในใบ (ต้องมี `weight` · `std_item_id` หรือ `topic` ไว้จับคู่กับทะเบียน)
@@ -421,12 +456,9 @@ export function checkStdSelection(rows = [], stdItems = null) {
 
   let missingFixed = [];
   if (Array.isArray(stdItems)) {
-    const pickedIds = new Set(rows.map(r => r?.std_item_id).filter(Boolean));
-    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
-    const pickedTopics = new Set(rows.map(r => norm(r?.topic)).filter(Boolean));
-    missingFixed = stdItems
-      .filter(isStdFixed)
-      .filter(it => !pickedIds.has(it.id) && !pickedTopics.has(norm(it.topic)));
+    missingFixed = matchStdItems(stdItems.filter(isStdFixed), rows)
+      .filter(m => !m.row)
+      .map(m => m.item);
   }
   return { weight, diff, ok: diff === 0 && missingFixed.length === 0, missingFixed };
 }
