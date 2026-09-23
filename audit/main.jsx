@@ -50,6 +50,16 @@ function SidebarLab(){
   )
 }
 
+/* deep-link เข้า harness ได้ — ส่ง query ของ URL จริง (ยกเว้น ?p= ที่เป็นตัวเลือกหน้า)
+   เข้าไปเป็น initialEntries ของ MemoryRouter ⇒ หน้าที่ใช้ useSearchParams/useTabParam
+   ทดสอบแท็บ/ชั้นที่ลึกกว่าหน้าแรกได้ (เดิม MemoryRouter เริ่มที่ "/" เปล่าเสมอ) */
+function initialEntry(){
+  const q = new URLSearchParams(location.search)
+  q.delete('p'); q.delete('role')
+  const s = q.toString()
+  return [s ? `/?${s}` : '/']
+}
+
 function App(){
   const [name, setName] = useState(new URLSearchParams(location.search).get('p') || NAMES[0])
   const [C, setC] = useState(null)
@@ -58,7 +68,7 @@ function App(){
     mods[key]().then(m => setC(()=>m.default)).catch(e => { window.__crash=true; console.error(e) })
   },[name])
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntry()}>
       <UserContext.Provider value={CTX}>
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
