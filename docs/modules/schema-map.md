@@ -196,7 +196,7 @@ role `anon` เสมอ = ใครมี anon key (ฝังอยู่ใน
 | PPE รุ่นเก่า (Main) | `ppe_items` · `ppe_checks` · `ppe_requirements` · `attendances` | ว่างทั้งหมด — ของจริงไปอยู่ใน `daily_production_logs` (has_helmet/boots/gloves) นานแล้ว |
 | ทะเบียนเอกสารรุ่นเก่า | `document_controls` · `document_control_revisions` | ตั้งใจเก็บเป็น vestigial ตั้งแต่ 2026-07-30 (ยุบเข้า `doc_forms`) |
 | อื่นๆ ที่ไม่มีใครเรียก | Main: `part_registry` · `part_images` · `profile_org_access` · `production_shots` · `nav_groups` · `employee_photo_purge_log` (ปิด RLS แล้ว §7.6) · `kpi_base_inputs` · `kpi_month_plans` · DR: `production_shots` · `guests` · `tasks` · `user_signatures` · `pm_org_nodes` · `energy_utilities` · `kanban_scans` · `mtn_mo_counter` · วิว `v_sloc_stock` | ต้องเช็คเป็นตัวๆ ว่าเป็น "เลิกใช้" หรือ "ทำโครงไว้รอต่อ" |
-| ⚠️ **ทะเบียนมาตรฐาน KPI ที่เพิ่ง seed** | `kpi_standard_items` (261 แถว · migration 20260921) | **ยังไม่มีจอไหนอ่านเลย** — งานค้างจริง ไม่ใช่ของทิ้ง |
+| ✅ ทะเบียนมาตรฐาน KPI | `kpi_standard_items` (migration 20260921) | **ต่อจอแล้ว 23/09** — ปุ่ม 📘 มาตรฐานกลุ่ม ใน `/obeya?tab=table` (ดู `docs/modules/obeya-kpi-board.md` ท้ายไฟล์) |
 | 📦 ไม่มีนโยบายลบย้อนหลัง | ~~Main `notifications`~~ **ตั้ง retention แล้ว 23/09** (84,247 → 51,984 แถว · cron `purge-notifications`) · DR `audit_log` 38 MB (มี cron 6 เดือนแล้ว) | ✅ ดู `docs/modules/notifications-flood.md` — ต้นเหตุจริง (ผู้รับ 30 คน/เหตุการณ์) แก้ไปครึ่งทาง ที่เหลือเป็น product decision |
 
 > **ทำไมไม่ลบให้เลย:** ลบตาราง = ย้อนไม่ได้ และ 6 กลุ่มข้างบนมีทั้ง "ข้อมูลจริงปีก่อน" กับ
