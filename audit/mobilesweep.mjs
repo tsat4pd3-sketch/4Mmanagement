@@ -27,7 +27,11 @@ const bad = [];
 for (const name of PAGES) {
   const p = await b.newPage({ viewport: VIEW, isMobile: true, hasTouch: true, ...TZ });
   try {
-    await p.goto(`http://localhost:5199/audit/index.html?p=${name}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    /* 🔴 ต้องส่ง `role=admin` (23/09) — ไม่ส่ง = harness เรนเดอร์มุมมอง **อ่านอย่างเดียว**
+       ปุ่มของ admin (เพิ่ม/แก้ไข/⚙ ตั้งค่า/เปิดโมดัล) ไม่โผล่เลยสักปุ่ม
+       วัดจริงที่ /pm?tab=setup: ไม่ส่ง role เห็น 4 ปุ่ม · ส่ง role=admin เห็น 8 ปุ่ม
+       ⇒ ครึ่งหนึ่งของส่วนที่กดได้ทั้งแอป **ไม่เคยถูกสวีปเลย** — โมดัลที่พังทั้งใบจึงหลุดถึงหน้างาน */
+    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.waitForTimeout(1300);
     const hits = await p.evaluate(() => {
       const out = [], VW = innerWidth, VH = innerHeight;

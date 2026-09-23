@@ -486,3 +486,34 @@ migration `20260921_kpi_standard_2026_main.sql` (**apply แล้ว**) · **31
    · `Machine Break Down` ตัวหาร**ไม่ใช่เวลาเปิดกะ**
 4. แผน 12 เดือน (`kpi_month_plans`) ยังไม่มีจอ · ยัง 0 แถว
 5. บอร์ด `?tab=kpi` อ่านจากโครง scope ใหม่ (ตอนนี้ยังอ่าน `section`/`line_group` — ทำงานได้เพราะ trigger sync)
+
+---
+
+## 🧩 บอร์ด KPI วาดเป็น "แผ่น A4" ชุดเดียวกับจอ SQDCM (2026-09-23 · คำสั่ง user)
+
+> *"tab kpi กับ obeya มันควรจะรูปแบบเดียวกัน"* + *"tab 2 (setup/manual input) ไปอยู่ tab สุดท้าย"*
+
+**ที่เปลี่ยน**
+- ลำดับแท็บ `/obeya`: 📋 บอร์ด KPI (รายเดือน) → 🖥️ จอ SQDCM (สัปดาห์/เดือน/ปี) → ⚙️ ตั้งค่า KPI / กรอกผล (`useTabParam(['kpi','sqdcm','table'])`)
+- ชิ้นส่วน "แผ่นกระดาษ A4" (`useSheetGrid` · `Sheet` · `StatusLamp` · `WarnNote` · `EmptyChart`) **ย้ายออกจาก `ObeyaSqdcmBoard.jsx`
+  ไปเป็น `src/components/ObeyaSheet.jsx`** — ทั้ง 2 แท็บ import จากที่เดียว · **แก้หน้าตาแผ่นที่นี่ที่เดียว**
+- `ObeyaKpiBoard.jsx` เขียนใหม่ทั้งไฟล์ (1,104 → ~520 บรรทัด): ผัง 5×2 = 10 แผ่น
+  · 8 หัวข้อ KPI (`boardRowsFor(year)` เดิม — %RM · DL+OH · Inventory · CSAT · OEE · PPM · Safety · Training)
+  · 📌 Key Performance ส่วนงาน (นิยาม KPI ที่ไม่ผูกกลุ่มไลน์) · 🚨 งานที่ต้องตามแก้ (action + เหตุความปลอดภัยที่ยังไม่ปิด)
+  · แต่ละแผ่น = ตัวเลขใหญ่ของเดือนที่เลือก · ไฟสถานะ · **กราฟ 12 เดือน + แท่ง "สรุป"** (แบบเดียวกับโหมดปีของ SQDCM) · กดแท่งเดือน = สลับบอร์ดไปเดือนนั้น
+- **"คอลัมน์ = กลุ่มไลน์" ของกระดาษ → ปุ่มเลือกกลุ่มไลน์บนหัวจอ (`?group=`)** — 1 บอร์ดต่อ 1 กลุ่ม (≤ 4 กลุ่ม = ปุ่ม · มากกว่า = dropdown)
+  · deep-link ต่อจอ `?section=PD3&group=HYDROFORM&date=YYYY-MM-DD` · เลื่อนเดือนด้วย ◀ ▶ (อนาคตกดไม่ได้)
+- **ถอดแถบ "ภาพรวมส่วนงาน SQDCM รายวัน" ท้ายหน้าออก** — ซ้ำกับแท็บ 🖥️ ทั้งดุ้น (กฎ "ห้ามยุบ 2 แท็บ" = ห้ามรวมเป็นบอร์ดเดียว ไม่ได้บังคับให้วาดซ้ำ 2 ที่)
+  ⇒ `statusVsTarget` หายจากไฟล์นี้ทั้งหมด · ถอด allow ของไฟล์นี้ออกจากด่าน `kpi-score-via-scoreDef` แล้ว (ด่านคุมเต็มไฟล์)
+- โหมดจอ TV ใช้ pattern เดียวกับ SQDCM (`position: fixed` + แถบหัวเล็ก + ปุ่มออก) แทน `requestFullscreen` เฉยๆ ของเดิม
+
+**ข้อมูล — เลิกโหลดแถวดิบ**
+- เดิม: production_sessions 14 วัน + downtime + defect + prod_orders + break_policies + employees + daily_production_logs (~300 KB+/รอบ)
+- ตอนนี้: RPC `obeya_year_rollup` (Σ รายเดือนทั้งปี ~140 KB) + `oee_targets` + `safety_events` (ปีนี้) + `meeting_action_items` (ค้าง) + `kpi_definitions`/`kpi_manual_entries` + กะเปิดค้างวันนี้ (นับ id)
+- ค่ารายเดือน: OEE = `axisOeeYear` (ถ่วง shift_min) · PPM = `axisPpmYear` (ของเสีย line-mode ÷ (สแกนดี+เสีย)) · กรอกมือ = `manualMonthSeries` (แท่งสรุป = เฉลี่ยเดือนที่กรอก) · Safety = ค่ากรอกมือ (กลุ่ม → ส่วนงาน) ก่อน ไม่มีค่อยนับ `safety_events` รายเดือน (ไม่มีบันทึกเลย = เทา)
+- ⚠️ **OEE เดือนบนแท็บนี้ถ่วงด้วย `shift_min` เต็ม (ไม่หัก planned DT ที่ตัดช่วงพัก) = ชุดเดียวกับโหมดเดือน/ปีของ SQDCM** — เดิมแท็บนี้หักผ่าน `dtMinBySession` ทำให้ 2 แท็บต่างกันเล็กน้อยแล้วอธิบายไม่ได้ · ถ้าวันหน้าจะให้ทุกจอหัก planned DT ต้องทำที่ RPC (ส่ง Σ planned ที่ตัดพักแล้วเพิ่ม) ไม่ใช่ทำแท็บเดียว
+- สีแท่งรายเดือน + ไฟ = `scoreDef()` ผ่าน `monthBarScore(p, def)` (`obeyaYear.js`) — เกณฑ์ทางการ 1/0.5/0 · ไม่มีเป้า/ไม่มีค่า = เทา/ไม่มีแท่ง
+
+**harness:** `audit/mockSupabase.js` — rollup มีแถวของ `LINE_NAME(1)` (ไลน์ที่มีจริงใน mock) เพิ่มแล้ว ไม่งั้นแผ่น OEE/PPM ว่างใน crashsweep ตลอด (บอร์ดกรองตามกลุ่มไลน์)
+
+**เมนู:** `/dept-dashboard` (งานค้างของส่วนงาน) ย้ายมาอยู่ถัดจาก `/obeya` ในหมวด "ภาพรวม" (user: "งานค้างของส่วนงานก็ควรอยู่หมวดเดียวกัน มันคือระบบมอนิเตอร์") — หมวดเดียวกันอยู่แล้ว แค่จัดให้ติดกันเป็นชุด "มอนิเตอร์ส่วนงาน" · ไม่ย้ายไป "จอแสดงผล" เพราะทั้งคู่กดทำงานได้ ไม่ใช่จอแขวน (กติกา pages-routes.md)

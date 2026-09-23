@@ -14,6 +14,7 @@ import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
+import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -986,33 +987,42 @@ export default function Dashboard() {
       {/* ── KPI Row ─────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
+          /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** (`utils/statusTone.js`) — 23/09 จาก brief De-AI UI
+             เดิมแถวนี้ปนกัน 3 แบบในบรรทัดเดียวกัน: น้ำเงิน = สีประจำใบ · ส้ม = สีประจำใบ ·
+             เขียว/ส้ม/แดง = สถานะจริง ⇒ คนหน้างานอ่าน "ส้ม" ของ OT ว่าเป็นคำเตือนทั้งที่ไม่ใช่
+             และเจอแดง 2 เฉด (`#e74c3c` กับ `#ef4444`) ปนกันทั้งหน้า
+             กติกาใหม่: **ไม่มีเป้าให้เทียบ = เทา** และสีทุกเฉดมาจาก `statusColor()` ชุดเดียว */
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
             sub: `เช็คชื่อแล้ว ${present.length + absent.length} / ${totalCapacity} คน`,
-            accent: '#4d9fff', icon: '👥',
-            radial: null,
+            tone: 'none',            // ยอดพนักงานในทะเบียน = ข้อเท็จจริง ไม่มีดี/แย่
+            icon: '👥', radial: null,
           },
           {
             label: 'อัตราการมาทำงาน', value: attendRate, unit: '%',
             sub: `มา ${present.length} · ขาด ${absent.length}`,
-            accent: attendRate >= 90 ? '#22c55e' : attendRate >= 75 ? '#f59e0b' : '#e74c3c',
+            // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง
+            tone: attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
             icon: '✅', radial: attendRate,
           },
           {
             label: 'PPE ครบถ้วน', value: ppeRate, unit: '%',
             sub: `${ppeReady.length} / ${present.length} คนที่มา`,
-            accent: ppeRate >= 90 ? '#22c55e' : ppeRate >= 70 ? '#f59e0b' : '#e74c3c',
+            tone: ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad',
             icon: '🦺', radial: ppeRate,
           },
           {
             label: 'OT วันนี้', value: otCount, unit: 'คน',
             sub: present.length > 0 ? `${Math.round(otCount/present.length*100)}% ของคนที่มา` : 'ไม่มีข้อมูล',
-            accent: '#f59e0b', icon: '⏰', radial: null,
+            tone: 'none',            // OT เยอะ/น้อยไม่ได้แปลว่าดีหรือแย่ในตัวมันเอง ⇒ ห้ามทาส้มทิ้งไว้
+            icon: '⏰', radial: null,
           },
           {
             label: '4M Alerts', value: visibleFourMLogs.length, unit: 'รายการ',
             sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
-            accent: visibleFourMLogs.length > 0 ? '#e74c3c' : '#22c55e', icon: '🚨', radial: null,
+            // เหลือง ไม่ใช่แดง — ให้ตรงกับการ์ด "4M รออนุมัติ" บนหน้าแรก (จอ 2 จอต้องพูดตรงกัน)
+            tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }),
+            icon: '🚨', radial: null,
           },
         ].map((kpi, i) => (
           <motion.div key={kpi.label} {...stagger(i + 2)} style={{ height: '100%' }}>
@@ -1020,7 +1030,7 @@ export default function Dashboard() {
               background: 'var(--card)', border: '1px solid var(--border2)',
               borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
               boxShadow: 'var(--shadow-sm)',
-              borderTop: `3px solid ${kpi.accent}`,
+              borderTop: `3px solid ${statusColor(kpi.tone)}`,
               display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-between',
               position: 'relative', overflow: 'hidden',
               height: '100%', boxSizing: 'border-box',
@@ -1035,8 +1045,8 @@ export default function Dashboard() {
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
                 {kpi.radial !== null ? (
                   <div style={{ position: 'relative', width: isWide ? 92 : 72, height: isWide ? 92 : 72, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={isWide ? 92 : 72} stroke={isWide ? 8 : 7} color={kpi.accent} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 24 : 19, fontWeight: 800, color: kpi.accent, fontFamily: 'var(--font-display)' }}>
+                    <RadialProgress pct={kpi.radial} size={isWide ? 92 : 72} stroke={isWide ? 8 : 7} color={statusColor(kpi.tone)} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 24 : 19, fontWeight: 800, color: toneInk(kpi.tone), fontFamily: 'var(--font-display)' }}>
                       {kpi.value}
                     </div>
                   </div>

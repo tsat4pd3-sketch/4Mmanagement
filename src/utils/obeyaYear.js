@@ -17,6 +17,7 @@
    4. YTD = ถึงเดือนล่าสุดที่มีข้อมูล (ปีย้อนหลัง = ทั้งปี) — เลขใหญ่บนแผ่นคือค่านี้
    ════════════════════════════════════════════════════════════════════════════════════════ */
 import { round1, statusOf, Q_THIN_DEFECT_ROWS } from './obeyaKpi.js';
+import { scoreDef } from './kpiSetup.js';
 import { DEFAULT_OEE_TARGET } from './oee.js';
 
 /* ── ช่วงเวลา ─────────────────────────────────────────────────────────────────────── */
@@ -198,3 +199,53 @@ export function paretoYear(rows = [], top = 6) {
 
 /** สีของแท่งรายเดือน — เดือนว่าง = เทา (ไม่ใช่แดง) · แท่งสรุปใช้เกณฑ์เดียวกับเดือน */
 export const monthBarStatus = (p, target, better) => (p == null || p.v == null ? 'none' : statusOf(p.v, target, better));
+
+/* ════ PPM ปี (บอร์ด KPI ส่วนงาน · 2026-09-23) ════
+   สูตรเดียวกับทุกจอ: ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 1e6 · ไม่รวมงานทดลอง
+   rows = rollup.sessions (qty) · defects = rollup.defects (ng − trial_ng = line-mode) — กรอง scope/กลุ่มไลน์มาแล้ว */
+const seedPpm = () => ({ qty: 0, ng: 0, rows: 0 });
+export function axisPpmYear({ sessions = [], defects = [], year, target = null, direction = 'down' } = {}) {
+  const map = byMonth(sessions, seedPpm, (a, r) => { a.qty += n(r.qty); });
+  defects.forEach((d) => {
+    const k = String(d.m || '').slice(0, 7);
+    if (!k) return;
+    if (!map.has(k)) map.set(k, seedPpm());
+    const a = map.get(k); a.ng += n(d.ng) - n(d.trial_ng); a.rows += n(d.rows);
+  });
+  const { series, ytd, total, months } = monthSeries(year, map, seedPpm,
+    a => ((a.qty + a.ng) > 0 ? Math.round((a.ng / (a.qty + a.ng)) * 1e6) : null), 'avg');
+  return {
+    key: 'PPM', unit: 'PPM', better: direction === 'up' ? 'up' : 'down', target, months,
+    value: ytd, series, summaryKind: 'avg', ngQty: total.ng, qty: total.qty, defectRows: total.rows,
+    state: ytd == null ? 'none' : 'ok',
+    note: ytd == null ? 'ยังไม่มีกะที่ปิดแล้วในปีนี้' : null,
+  };
+}
+
+/* ════ KPI กรอกมือ — อนุกรม 12 เดือนจาก kpi_manual_entries ════
+   entries = { [month 1-12]: value } · ไม่มีค่า = null (เดือนที่ยังไม่กรอกต้องเป็นช่องว่าง ห้ามเป็น 0)
+   แท่งสรุป = ค่าเฉลี่ยธรรมดาของเดือนที่มีค่า (KPI กรอกมือไม่มีน้ำหนักให้ถ่วง — จอต้องเขียนกำกับว่า "เฉลี่ย")
+   ⚠️ KPI แบบ "สะสม" (เช่น % ผ่านอบรม) เฉลี่ยแล้วไม่มีความหมาย — ผู้เรียกส่ง summary:'last' ให้ใช้ค่าเดือนล่าสุดแทน */
+export function manualMonthSeries({ entries = {}, year, summary = 'avg' } = {}) {
+  const series = monthKeys(year).map((k) => {
+    const v = entries[Number(k.slice(5, 7))];
+    return v == null || v === '' ? { k, v: null, empty: true } : { k, v: Number(v) };
+  });
+  const filled = series.filter(p => !p.empty);
+  let sum = null;
+  if (filled.length) {
+    if (summary === 'sum') sum = filled.reduce((a, p) => a + p.v, 0);
+    else if (summary === 'last') sum = filled[filled.length - 1].v;
+    else sum = round1(filled.reduce((a, p) => a + p.v, 0) / filled.length);
+  }
+  series.push({ k: SUMMARY_KEY, v: sum, summary: true, kind: summary });
+  return { series, ytd: sum, months: filled.length };
+}
+
+/** สถานะแท่งรายเดือนตาม **เกณฑ์ทางการ 1/0.5/0** (`scoreDef`) — ใช้กับแถว KPI บนบอร์ด KPI ส่วนงาน
+ *  (จอ SQDCM ยังใช้ `monthBarStatus`/`statusOf` เพราะแกน SQDCM ไม่ใช่ "แถว KPI" ที่มี Commitment) */
+export const monthBarScore = (p, def) => {
+  if (p == null || p.v == null) return 'none';
+  const st = scoreDef(p.v, def).status;
+  return st === 'good' || st === 'warn' || st === 'bad' ? st : 'none';
+};
