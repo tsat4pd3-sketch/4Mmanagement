@@ -9,7 +9,10 @@ export const ROLE_META = {
   leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope' },
   qa:               { icon: '✅', label: 'งานคุณภาพ',        en: 'Quality',          color: '#c084fc', desc: 'อนุมัติ 4M/CQI-15 + QA Center', axis: 'unit' },
   document_control: { icon: '🗂️', label: 'งานเอกสาร',        en: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม', axis: 'unit' },
-  sale:             { icon: '🧭', label: 'ขาย-แผนงาน-บิล',   en: 'Sales · Planner · Billing', color: '#a78bfa', desc: 'ฝั่ง “แผนงาน & ข้อมูล” ของ Logistic — รับ Forecast/Order ลูกค้า · วางแผน · ออกบิล (ไม่ได้ถือของ)', axis: 'unit' },
+  // 🧭 ฝั่ง “แผนงาน & ข้อมูล” — **ไม่รวม billing** (billing = ออกใบขาย นั่งกับทีมจัดส่ง · user แก้ให้ 23/09)
+  //    ⚠️ ตอนนี้ยังไม่มีบัญชีไหนถือ role นี้ (planning ใช้ `planner_store` เพราะทำงานสโตร์ด้วย)
+  //    = role สำรองของทีม Sales จริงที่ยังไม่มี login — ห้าม seed สิทธิ์ให้แล้วเข้าใจว่าหน้างานได้ไปแล้ว
+  sale:             { icon: '🧭', label: 'ขาย-แผนงาน',      en: 'Sales & Planner',  color: '#a78bfa', desc: 'ฝั่ง “แผนงาน & ข้อมูล” ของ Logistic — รับ Forecast/Order ลูกค้า · วางแผน (ไม่ได้ถือของ)', axis: 'unit' },
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
@@ -18,7 +21,7 @@ export const ROLE_META = {
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”
   //    ⇒ คนจัดส่งต้องเลือกระหว่างได้น้อยไป กับได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์/กดผลิต) เกินมา
   //    ตอนนี้ role ↔ 3 ฝั่งใน `logisticSide.js` ตรงกันครบ (สีตรงกับ SIDES ของฝั่งนั้น)
-  warehouse_delivery: { icon: '🚚', label: 'คลัง FG-จัดส่ง', en: 'Warehouse & Delivery', color: '#f97316', desc: 'เก็บสินค้าพร้อมขาย (FG) · รอบส่งลูกค้า · ภาชนะ/Packaging — ไม่มีสิทธิ์จ่ายของเข้าไลน์/ปรับสต๊อกในไลน์', axis: 'unit' },
+  warehouse_delivery: { icon: '🚚', label: 'คลัง FG-จัดส่ง', en: 'Warehouse & Delivery', color: '#f97316', desc: 'เก็บสินค้าพร้อมขาย (FG) · รอบส่งลูกค้า · ภาชนะ/Packaging · ออกใบขาย (billing) — ไม่มีสิทธิ์จ่ายของเข้าไลน์/ปรับสต๊อกในไลน์', axis: 'unit' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)', axis: 'device' },
   // ⚠️ 'dept_admin' ไม่ใช่ base role — เป็น "bucket สิทธิ์" ของ flag แอดมินหน่วยงาน (profiles.is_dept_admin)
   //   ใช้เป็นคอลัมน์ใน /permissions ตั้งว่าแอดมินหน่วยงานทำ action อะไรได้ · ห้ามเลือกเป็น role ของ user
