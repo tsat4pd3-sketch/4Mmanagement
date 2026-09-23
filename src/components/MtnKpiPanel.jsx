@@ -3,6 +3,9 @@ import LineSelect from './LineSelect';
 import MachineReliability from './MachineReliability';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { techRepairMin } from '../utils/mtnVendor';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays } from '../utils/timeRange';
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
    ย้ายมาจากแท็บ `?tab=kpi` ของ `/mtn-repair` เมื่อ 2026-09-22 (คำสั่ง user: *"ฟังก์ชันของช่าง
@@ -40,15 +43,22 @@ const satAvg = (s) => {
 
 export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs = [], machines = [], onGoQc7 }) {
   const [line, setLine] = useState('');
-  const [days, setDays] = useState(30);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
+     · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
+     · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const days = rangeDays(tr.from, tr.to) || 30;
 
   const rows = useMemo(() => {
-    const since = new Date(); since.setDate(since.getDate() - Number(days));
+    /* 🔴 ต้องยึด "ช่วงที่เลือกจริง" ไม่ใช่ "N วันนับถอยจากตอนนี้" — ไม่งั้นพอเลือกช่วงในอดีต
+       จำนวนวันถูกแต่หน้าต่างเวลาผิด (ยังลากถึงวันนี้เสมอ) = ตัวเลขไม่ตรงกับที่จอบอก */
+    const since = new Date(`${tr.from}T00:00:00`);
+    const until = new Date(`${tr.to}T00:00:00`); until.setDate(until.getDate() + 1);
     // กางครอบครัวไลน์เหมือนลิสต์หลัก — เลือกไลน์แม่ต้องนับใบของไลน์ลูกด้วย (fam ว่าง = ถอยไปเทียบตรงตัว)
     const fam = line ? new Set(getLineFamilyNames(lineObjs, line)) : null;
     const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
-    return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
-  }, [orders, scopeLines, line, days, lineObjs]);
+    return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && new Date(o.report_at) < until && o.repair_done_at);
+  }, [orders, scopeLines, line, tr.from, tr.to, lineObjs]);
 
   const stat = useMemo(() => {
     const resp = [], ttr = [], bd = [];
@@ -80,12 +90,14 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
 
   return (
     <div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่ */}
+      <TimeRangeBar
+        scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         {/* <LineSelect> — lineObjs ถูก scope จากหน้าแม่แล้ว · 2026-09-07 */}
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>
-          {[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}
-        </select>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.7 }}>
         📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
