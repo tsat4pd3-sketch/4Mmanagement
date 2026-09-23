@@ -389,6 +389,25 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {})
 
   /* พาร์ทเดียวโผล่ได้หลายบล็อกในชีทเดียว (Argen มี 20065635/20065715 ซ้ำ) ⇒ สต็อกต้องเหลือแถวเดียว
      ไม่งั้น "ตั้งยอดให้ตรงชีท" จะถูกเขียน 2 รอบ แล้วรอบหลังทับรอบแรกโดยไม่มีใครรู้ว่าอันไหนถูก */
+  /* 🔴 พาร์ทเดียวโผล่ 2 บล็อกในชีทเดียว (ของจริง: Argen มี 20065715 / 20065635 ซ้ำ ค่าตรงกันเป๊ะ)
+     ⇒ ถ้าไม่ยุบ ความต้องการของพาร์ทนั้นกลายเป็น **2 เท่า** แล้วแผนสั่งเปิดกะเกินจริง
+     ยุบด้วยคีย์ (mat, วันดิว, ชีท) เอาค่ามากสุด — ไม่บวกกัน เพราะเป็นข้อมูลชุดเดียวที่เขียนซ้ำ */
+  const orderKey = (o) => `${o.mat_no}|${o.due_date}|${o.note || ''}`;
+  const orderMap = new Map();
+  orders.forEach(o => {
+    const k = orderKey(o);
+    const prev = orderMap.get(k);
+    if (!prev || o.qty > prev.qty) orderMap.set(k, o);
+  });
+  const ordersUniq = [...orderMap.values()];
+  const orderDupes = orders.length - ordersUniq.length;
+
   const stockUniq = [...new Map(stock.map(s => [`${s.line_name}|${s.mat_no}`, s])).values()];
-  return { forecasts, orders, levels, lots, stock: stockUniq, stockDupes: stock.length - stockUniq.length, shipped };
+  /* 🔴 ยอดคงเหลือติดลบในไฟล์นี้ = "ความต้องการที่ยังไม่ได้ผลิต" ไม่ใช่ของติดลบในคลัง
+     (วัดจริง 23/09: ชีท Argen มี 5 พาร์ทที่ BALANCE ถึง −47,168 เพราะลงความต้องการล่วงหน้าไว้
+      แต่ยังไม่ลงแผนผลิต) ⇒ ห้ามเอาไปตั้งยอดทับสต็อกจริง · แยกออกมาให้คนดู */
+  const stockOk = stockUniq.filter(s => s.qty >= 0);
+  const stockNegative = stockUniq.filter(s => s.qty < 0);
+  return { forecasts, orders: ordersUniq, orderDupes, levels, lots, stock: stockOk, stockNegative,
+           stockDupes: stock.length - stockUniq.length, shipped };
 }

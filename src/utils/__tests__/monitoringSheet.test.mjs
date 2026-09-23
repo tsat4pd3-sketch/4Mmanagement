@@ -327,3 +327,31 @@ test('พาร์ทซ้ำ 2 บล็อกในชีทเดียว �
   assert.equal(new Set(mats).size, mats.length, 'ห้ามมี mat ซ้ำในกองสต็อก');
   assert.equal(rec.stockDupes, 1);
 });
+
+test('🔴 ยอดคงเหลือติดลบ = ความต้องการที่ยังไม่ผลิต ห้ามเอาไปตั้งยอดทับสต็อกจริง', () => {
+  const rows = [
+    ['Item', null, 'Mat SAP', 'PART NO.', 'PART NAME', null, 'LOT', 'Packing', 'REQUIREMENT DATE', null, D(2026, 9, 21)],
+    [null, null, null, null, null, null, null, null, 'ส่งเกรท', null, D(2026, 9, 21)],
+    [1, null, 20065107, 'X', 'ยังไม่ลงแผนผลิต', null, 2400, 300, 'PROD. DATE'],
+    [null, null, null, null, null, null, null, null, 'BALANCE', null, -47168],
+    [2, null, 20065733, 'Y', 'ปกติ', null, 2400, 300, 'PROD. DATE'],
+    [null, null, null, null, null, null, null, null, 'BALANCE', null, 415],
+  ];
+  const parsed = parseMonitoringWorkbook([{ name: 'Argen', rows }], { asOf: '2026-09-23' });
+  const rec = monitoringToRecords(parsed, { monthKey: '2026-09', today: '2026-09-23', lineOfMat: () => 'LINE A ( 800 Ton )' });
+  assert.deepEqual(rec.stock.map(s => s.mat_no), ['20065733'], 'ตัวติดลบต้องไม่อยู่ในกองที่จะเขียน');
+  assert.deepEqual(rec.stockNegative.map(s => s.mat_no), ['20065107'], 'แต่ต้องยกออกมาให้คนเห็น ไม่ใช่ทิ้งเงียบ');
+});
+
+test('🔴 บล็อกซ้ำในชีทเดียว ต้องไม่ทำให้ความต้องการเป็น 2 เท่า', () => {
+  const dup = [...ARGEN,
+    [null, null, null, null, null, null, null, null, 'ORDER REQUIREMENT', null, 0, 1600, 1200],
+    [9, null, 20065733, 'MB3B-E102D04-BC', 'BRKT ENG GRD', 50, 2400, 300, 'PROD. DATE'],
+  ];
+  const parsed = parseMonitoringWorkbook([{ name: 'Argen', rows: dup }], { asOf: '2026-01-19' });
+  const rec = monitoringToRecords(parsed, { monthKey: '2026-09', today: '2025-01-01' });
+  const same = rec.orders.filter(o => o.mat_no === '20065733' && o.due_date === '2025-12-22');
+  assert.equal(same.length, 1, 'บล็อกซ้ำต้องเหลือแถวเดียว');
+  assert.equal(same[0].qty, 1600, 'ห้ามบวกเป็น 3200');
+  assert.equal(rec.orderDupes, 2, 'และต้องนับจำนวนที่ยุบไว้ให้เห็น');
+});
