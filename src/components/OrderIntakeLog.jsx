@@ -16,6 +16,8 @@ import { supabaseDR } from '../supabaseClient';
 import { fileNameStamp } from '../utils/pullSignal';
 import CollapseCard from './CollapseCard';
 import { INTAKE_KINDS, mergeIntakeLog, intakeSummary, filterIntake } from '../utils/orderIntakeLog';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)',
@@ -58,8 +60,9 @@ const whenLabel = (v) => {
 const PAGE = 40;   // แสดงทีละ 40 รายการ — ห้ามตัดข้อมูลเงียบ ต้องมีปุ่ม "แสดงอีก"
 
 export default function OrderIntakeLog({ shipToMap, custLabel }) {
-  const [from, setFrom] = useState(daysAgo(14));
-  const [to, setTo] = useState(dstr(new Date()));
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 14 });
+  const { from, to } = tr;
   const [kind, setKind] = useState('all');
   const [shipTo, setShipTo] = useState('');
   const [q, setQ] = useState('');
@@ -136,12 +139,12 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+      />
       <div style={card}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* ⚠️ input ใน flex row ต้องกำหนด width เอง (index.css ตั้ง input{width:100%}) */}
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inputSt, width: 150 }} />
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ถึง</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ ...inputSt, width: 150 }} />
           <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={{ ...inputSt, width: 190 }}>
             <option value="">— ทุกลูกค้า —</option>
             {Object.keys(shipToMap || {}).sort().map(c => (

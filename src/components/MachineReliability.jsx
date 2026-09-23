@@ -23,6 +23,9 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays } from '../utils/timeRange';
 
 const inp = {
   padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -46,7 +49,11 @@ const fmtDate = (ms) => (ms
   : '—');
 
 export default function MachineReliability({ machines = [], lineObjs = [], scopeLines = null }) {
-  const [days, setDays] = useState(30);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
+     · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
+     · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const days = rangeDays(tr.from, tr.to) || 30;
   const [line, setLine] = useState('');
   const [kind, setKind] = useState('all');
   const [q, setQ] = useState('');
@@ -68,16 +75,20 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
     let alive = true;
     (async () => {
       setLoading(true); setLoadErr('');
-      const since = new Date(Date.now() - Number(days) * 86400000).toISOString();
+    /* 🔴 ต้องยึด "ช่วงที่เลือกจริง" ไม่ใช่ "N วันนับถอยจากตอนนี้" — ไม่งั้นพอเลือกช่วงในอดีต
+       จำนวนวันถูกแต่หน้าต่างเวลาผิด (ยังลากถึงวันนี้เสมอ) = ตัวเลขไม่ตรงกับที่จอบอก */
+      const since = new Date(`${tr.from}T00:00:00`).toISOString();
+      const until = new Date(`${tr.to}T00:00:00`); until.setDate(until.getDate() + 1);
+      const untilIso = until.toISOString();
       const [dtRes, sesRes] = await Promise.all([
         fetchAllRows(supabaseDR, 'downtime_logs',
           /* call_mtn_ack_at/fix_at = จังหวะ "ช่างรับงาน" และ "ซ่อมเสร็จ" — ใช้แยก MTTA ออกจากเวลาซ่อมจริง
              (ใบ MO ส่งค่ากลับมาให้ตั้งแต่ 2026-09-14 + backfill ของเก่าแล้ว) */
           'id, session_id, machine_no, started_at, ended_at, duration_min, description, call_mtn_ack_at, fix_at, dr_downtime_types(name_th, category)',
-          qq => qq.gte('started_at', since).order('started_at').order('id')),
+          qq => qq.gte('started_at', since).lt('started_at', untilIso).order('started_at').order('id')),
         fetchAllRows(supabaseDR, 'production_sessions',
           'id, line_name, work_date, shift, shift_min, start_time, end_time',
-          qq => qq.gte('work_date', since.slice(0, 10)).order('work_date').order('id')),
+          qq => qq.gte('work_date', tr.from).lte('work_date', tr.to).order('work_date').order('id')),
       ]);
       if (!alive) return;
       const errs = [dtRes.error && 'downtime', sesRes.error && 'กะการผลิต'].filter(Boolean);
@@ -86,7 +97,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [days]);
+  }, [tr.from, tr.to]);
 
   /* นโยบายเวลาพัก — ไม่ผูกกับช่วงวัน โหลดครั้งเดียว
      ⚠️ ต้องได้ process_type มาด้วย (สัญญาของ policyBreakForShift) แม้ตอนนี้ทุกแถวเป็น common */
@@ -163,11 +174,13 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่ */}
+      <TimeRangeBar
+        scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       {/* ── ตัวกรอง ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ ...inp, width: 140 }}>
-          {[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}
-        </select>
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
         <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์"
                aria-label="ค้นหาอุปกรณ์" style={{ ...inp, width: 220 }} />

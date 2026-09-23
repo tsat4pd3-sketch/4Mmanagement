@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { noteSimilarity, clusterNotes, CLUSTER_THRESHOLD } from '../utils/textCluster';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 /* ── 🔎 ค้นด้วย "อาการ" — สอบกลับจากปลายทางเข้าหาต้นเหตุ (2026-08-26 · คำถามหน้างาน) ────
    *"ลูกค้าแจ้ง ปัญหาตัดไม่ขาด — หา downtime/defect ที่เกี่ยวกับอาการนี้ได้มั้ย"*
@@ -60,8 +62,9 @@ export function relevance(q, typeName, description) {
 
 export default function SymptomSearch({ inScope, onOpenOrder }) {
   const [q, setQ] = useState('');
-  const [from, setFrom] = useState(backDays(DEFAULT_BACK_DAYS));
-  const [to, setTo] = useState(todayWork());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: DEFAULT_BACK_DAYS });
+  const { from, to } = tr;
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState(null);      // null = ยังไม่เคยค้น (ต่างจาก [] = ค้นแล้วไม่เจอ)
   const [err, setErr] = useState(null);
@@ -161,6 +164,10 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+      />
       <div style={box}>
         <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 8 }}>🔎 ค้นจากอาการที่ลูกค้าแจ้ง</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -170,14 +177,6 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
               onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
               placeholder="เช่น ตัดไม่ขาด · นัทไม่มี · เป็นครีบ · โรบอทชนจิ๊ก"
               style={{ width: '100%', marginTop: 3 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>ตั้งแต่</label>
-            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} style={{ width: 150, marginTop: 3 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>ถึง</label>
-            <input type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} style={{ width: 150, marginTop: 3 }} />
           </div>
           <button onClick={run} disabled={busy || !q.trim()}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,

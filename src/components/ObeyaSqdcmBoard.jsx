@@ -50,6 +50,8 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { avgOeeTarget, sumDefectQty } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
+import TimeRangeBar from './TimeRangeBar';
+import { LOOKBACK_DAYS, presetRange, addDays, rangeDays, normalizeRange } from '../utils/timeRange';
 import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
   axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, fillDays, round1,
@@ -249,25 +251,49 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const [monthSel, setMonthSel] = useState(null);
   const isYear = period === 'year';
 
+  /* ── ⏱️ กรอบเวลากำหนดเอง (23/09 · คำสั่ง user "เอาทั้งสองอย่าง") ────────────────────
+     จอนี้ **ไม่เหมือนหน้าอื่น**: ปุ่ม สัปดาห์/เดือน/ปี ของมันแปลว่า **"ดูช่วงไหน"**
+     (สัปดาห์นี้ / เดือนนี้ / ปีนี้) ไม่ใช่ "ขนาดถัง" ⇒ **ห้ามแปลงปุ่มพวกนี้เป็นสเกล**
+     จะเปลี่ยนความหมายของจอที่หน้างานคุ้นอยู่แล้ว
+     ⇒ เก็บปุ่มเดิมไว้กดเร็ว **แล้วเพิ่มกรอบวันที่ + ปุ่มย้อนหลังทับได้**:
+       · แก้วันเอง / กดปุ่มย้อนหลัง → `custom` ชนะ (ป้ายบนจอเปลี่ยนเป็น "กำหนดเอง")
+       · กดปุ่ม สัปดาห์/เดือน/ปี → ล้าง `custom` กลับไปโหมดเดิมทันที
+     · ไม่ผูกกับ URL เหมือนหน้าอื่นโดยตั้งใจ — จอนี้เปิดค้างบน TV `?tab=sqdcm`
+       ถ้าเขียน `?from=&to=` ลง URL ด้วย ลิงก์ที่แปะไว้บนจอจะค้างอยู่ช่วงเก่าตลอดไป */
+  const [custom, setCustom] = useState(null);   // null = ใช้ปุ่มสัปดาห์/เดือน/ปีตามเดิม
+
   const { from, to } = useMemo(() => {
+    if (custom) return custom;
     if (period === 'year') return yearRange(year, today);
     if (period === 'month' && monthSel) return monthRange(monthSel, today);
     return periodRange(period, today);
-  }, [period, today, year, monthSel]);
+  }, [custom, period, today, year, monthSel]);
   const prev = useMemo(() => {
+    /* ช่วงเทียบของกรอบกำหนดเอง = ช่วงยาวเท่ากันที่อยู่ติดกันข้างหน้า
+       (เทียบกับ "สัปดาห์ก่อน/เดือนก่อน" ไม่ได้ เพราะกรอบเองไม่ใช่หน่วยปฏิทิน) */
+    if (custom) {
+      const n = rangeDays(custom.from, custom.to) || 1;
+      return { from: addDays(custom.from, -n), to: addDays(custom.from, -1) };
+    }
     if (period === 'year') return yearRange(year - 1, today);
     if (period === 'month' && monthSel) return prevMonthRange(monthSel, today);
     return prevRange(period, today);
-  }, [period, today, year, monthSel]);
+  }, [custom, period, today, year, monthSel]);
   const drillMonth = (k) => {
     if (!k || k === SUMMARY_KEY) return;
     setMonthSel(k); setPeriod('month');
   };
   const pickPeriod = (key) => {
     setMonthSel(null);
+    setCustom(null);                       // กดปุ่มช่วง = เลิกใช้กรอบกำหนดเอง
     if (key === 'year' && period !== 'year') setYear(yearOf(today));
     setPeriod(key);
   };
+  /* แก้วันทีละช่อง: เริ่มจากกรอบที่กำลังดูอยู่ แล้วทับด้านที่แก้ (normalize กันเลือกกลับด้าน) */
+  const setCustomSide = (side, v) => setCustom(c => {
+    const base = c || { from, to };
+    return normalizeRange(side === 'from' ? v : base.from, side === 'to' ? v : base.to);
+  });
 
   // ── master (โหลดครั้งเดียว) ────────────────────────────────────────────────────
   const [lines, setLines] = useState([]);
@@ -728,7 +754,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     } catch { /* เบราว์เซอร์ TV บางรุ่นไม่มี API นี้ — ไม่เป็นไร โหมด fixed ก็เต็มจออยู่แล้ว */ }
   };
 
-  const periodText = isYear ? `ปี ${year}`
+  const periodText = custom ? `กำหนดเอง (${rangeDays(from, to)} วัน)`
+    : isYear ? `ปี ${year}`
     : period === 'month' ? (monthSel ? `เดือน ${monthLabel(monthSel)} ${monthSel.slice(0, 4)} (เจาะจากปี)` : 'เดือนนี้')
       : 'สัปดาห์นี้';
   const shiftCount = isYear ? (kOee.shifts || 0) : fSess.length;
@@ -783,6 +810,23 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               }}>📺 โหมดจอ TV</button>
             </>
           )}
+        />
+      )}
+
+      {/* ⏱️ กรอบเวลากำหนดเอง — วางใต้หัวเพจ ไม่โชว์ในโหมดจอ TV (จอ TV ไม่มีคนกด)
+          `scales={null}` โดยตั้งใจ: ปุ่ม สัปดาห์/เดือน/ปี ด้านบนทำหน้าที่นั้นอยู่แล้ว
+          และมันคนละความหมายกับ "สเกล" ของหน้าอื่น (ดูคอมเมนต์ที่ state `custom`) */}
+      {!board && (
+        <TimeRangeBar
+          scale={null} scales={null} presets={LOOKBACK_DAYS}
+          from={from} to={to} today={today}
+          onFrom={v => setCustomSide('from', v)}
+          onTo={v => setCustomSide('to', v)}
+          onPreset={d => setCustom(presetRange(d, today))}
+          style={{ margin: '0 0 10px', flexShrink: 0 }}
+          note={custom
+            ? '📌 กำลังใช้กรอบเวลาที่กำหนดเอง — กดปุ่ม สัปดาห์/เดือน/ปี ด้านบนเพื่อกลับไปช่วงมาตรฐาน'
+            : 'แก้วันที่หรือกดปุ่มย้อนหลัง เพื่อดูช่วงอื่นนอกเหนือจาก สัปดาห์นี้ / เดือนนี้ / ปีนี้'}
         />
       )}
 
