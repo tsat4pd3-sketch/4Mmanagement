@@ -552,7 +552,11 @@ export default function FixtureRegistry() {
           {/* 📍 ผังวางหมุด — รูปชุดเดียวกับใบตรวจ PM: ปักตรงไหน คนตรวจเห็นหมุดม่วงตรงนั้น */}
           {points.length > 0 && (
             frames.length ? (
-              <div style={{ ...card, display: 'grid', gap: 8 }}>
+              /* 📌 ตรึงรูปไว้ตอนเลื่อนดูตารางจุด (user 23/09 — จอที่ต้องใช้รูปอ้างอิงตอนตรวจ
+                 ทุกจอควรตรึงรูป) · พื้นหลังทึบบังคับ ไม่งั้นตารางเลื่อนทะลุใต้รูป
+                 ⚠️ sticky ในหน้า (ไม่ใช่ modal) เกาะ document ได้ก็เพราะ `<main>` ใน App.jsx
+                    เป็น overflowX:'clip' — ห้ามเปลี่ยนเป็น hidden/auto (กับดักใน CLAUDE.md) */
+              <div style={{ ...card, display: 'grid', gap: 8, position: 'sticky', top: 0, zIndex: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -569,6 +573,7 @@ export default function FixtureRegistry() {
                     .filter(({ pin }) => pin && (pin.imageId ?? frames[0]?._key) === frames[frameIdx]?._key)
                     .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no,
                       label_dx: p.label_dx, label_dy: p.label_dy,
+                      selected: armPoint === p.id,
                       color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
                   onPlace={canManage ? placePin : undefined}
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />

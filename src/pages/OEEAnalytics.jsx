@@ -22,6 +22,9 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
 import PageHeader from '../components/PageHeader';
 import { useSearchParams } from 'react-router-dom';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { bucketKey, bucketLabel } from '../utils/timeRange';
 import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
@@ -112,23 +115,10 @@ const policyBreakMin = (row, policies) => policyBreakForShift({
 // รับ field ได้ทั้งแบบเต็ม (calcA/plannedMin/totalQty จาก calcOEE) และแบบ history (oee_a/actual_qty/qty_ng)
 // ── Date helpers ─────────────────────────────────────────────────
 // ⚠️ ห้ามใช้ toISOString() เพื่อคำนวณวันที่ local — จะเพี้ยนข้ามวันเพราะ UTC offset (ดู CLAUDE.md)
-const fmtMonthKey = d => d.slice(0, 7);          // YYYY-MM
-const fmtYearKey  = d => d.slice(0, 4);          // YYYY
 // สัปดาห์เริ่มวันจันทร์ (ธรรมเนียมโรงงาน) — key = วันที่จันทร์ของสัปดาห์นั้น (YYYY-MM-DD, sortable)
-const fmtWeekKey = d => {
-  const dt = new Date(`${d}T00:00:00`);
-  dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // จันทร์ = 0
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
-};
-// label ช่วง จันทร์–อาทิตย์ เช่น "5–11/8" (เดือนต่างกัน = "29/7–4/8")
-const fmtWeekLabel = k => {
-  const a = new Date(`${k}T00:00:00`), b = new Date(a.getTime() + 6 * 86400000);
-  const dm = x => `${x.getDate()}/${x.getMonth() + 1}`;
-  return a.getMonth() === b.getMonth() ? `${a.getDate()}–${dm(b)}` : `${dm(a)}–${dm(b)}`;
-};
+/* ⏱️ ตัวแบ่งถัง/ป้ายแกนเวลา ย้ายไป `src/utils/timeRange.js` ทั้งหมดแล้ว (23/09)
+   — ของเดิมในหน้านี้ถูกลบทิ้ง **ห้ามเขียนกลับมาในหน้า** (จะกลายเป็นสูตรคนละชุดกับหน้าอื่นอีก) */
 const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-const fmtMonthLabel = k => { const [y, m] = k.split('-'); return `${thMonths[+m - 1]} ${(+y + 543).toString().slice(-2)}`; };
-const fmtDayLabel   = d => { const [,m,dd] = d.split('-'); return `${+dd}/${+m}`; };
 const fmtThaiDate   = d => { if (!d) return '—'; const [y,m,dd] = d.split('-').map(Number); return `${dd} ${thMonths[m-1]} ${y+543}`; };
 
 function getWorkDateStr(date = new Date()) {
@@ -669,7 +659,7 @@ export default function OEEAnalytics() {
       const key = dateStrAdd(tdDate, -i);
       const items = map[key] || [];
       days.push({
-        key, label: fmtDayLabel(key),
+        key, label: bucketLabel(key, 'day'),
         oee: wavg(items, i => i.oee   != null ? +i.oee   : null, wLoad),
         a:   wavg(items, i => i.oee_a != null ? +i.oee_a : null, wLoad),
         p:   wavg(items, i => i.oee_p != null ? +i.oee_p : null, wRun),
@@ -883,8 +873,14 @@ export default function OEEAnalytics() {
   const [loading,    setLoading]    = useState(true);
   const [trLoadWarn, setTrLoadWarn] = useState(null);  // โหลดแถวลูกไม่ครบ = ตัวเลขต่ำกว่าจริง ต้องบอก
 
-  // Filters
-  const [period,     setPeriod]     = useState('monthly'); // daily|weekly|monthly|yearly
+  /* Filters — สเกล + กรอบเวลา ใช้ของกลาง `useTimeRange` (ผูก `?scale=&from=&to=` ใน URL)
+     ⚠️ `defaultDays: 90` คงพฤติกรรมเดิมของหน้านี้ไว้ (เดิม `dateStrAdd(today,-90)`)
+        ห้ามเปลี่ยนเป็น 30 ตามค่ากลาง — หน้านี้ดูแนวโน้มยาว ผู้ใช้คุ้นกับ 90 วันแล้ว */
+  /* 🪜 บันไดความละเอียด (23/09): 90 วัน → แท่งรายสัปดาห์ 13 แท่ง (เดิมรายเดือน = 4 แท่ง อ่านเทรนด์ไม่ออก)
+     🔴 `finest: 'day'` — `production_sessions` เก็บแค่ `work_date` + กะ **ไม่มียอดผลิตรายชั่วโมง**
+        ⇒ %P รายชั่วโมงจะเป็นตัวเลขที่เดาเอา · จอนี้จึงไม่มีปุ่ม "วันนี้" โดยตั้งใจ */
+  const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90, finest: 'day' });
+  const { scale: period, from: dateFrom, to: dateTo } = tr;
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
   // ชื่อไลน์ใน sessions ที่ไม่ตรงทะเบียน (ไลน์ถูก rename/ลบ) — แยก optgroup ใน dropdown ห้ามซ่อน (2026-09-07)
@@ -892,8 +888,6 @@ export default function OEEAnalytics() {
     const reg = new Set(linesFull.map(l => String(l.name).trim().toLowerCase()));
     return lines.filter(n => !reg.has(String(n).trim().toLowerCase()));
   }, [lines, linesFull]);
-  const [dateFrom,   setDateFrom]   = useState(() => dateStrAdd(getWorkDateStr(), -90));
-  const [dateTo,     setDateTo]     = useState(() => getWorkDateStr());
 
   // Target ของแท็บแนวโน้ม: เลือกกรุ๊ป/ไลน์ → เป้ากรุ๊ปนั้น · ทุกไลน์ → เฉลี่ยทุกกรุ๊ปใน scope
   const trTarget = useMemo(() => {
@@ -1030,20 +1024,14 @@ export default function OEEAnalytics() {
   const grouped = useMemo(() => {
     const map = {};
     for (const r of rows) {
-      const key = period === 'daily'
-        ? r.work_date
-        : period === 'weekly'
-        ? fmtWeekKey(r.work_date)
-        : period === 'monthly'
-        ? fmtMonthKey(r.work_date)
-        : fmtYearKey(r.work_date);
+      const key = bucketKey(r.work_date, period);   // ตัวแบ่งถังกลาง (utils/timeRange) — ห้ามคำนวณเองในหน้า
       if (!map[key]) map[key] = [];
       map[key].push(r);
     }
     const out = Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) => {
       return {
         key,
-        label: period === 'daily' ? fmtDayLabel(key) : period === 'weekly' ? fmtWeekLabel(key) : period === 'monthly' ? fmtMonthLabel(key) : `${+key + 543}`,
+        label: bucketLabel(key, period),
         oee:   wavg(items, i => i.calcOEE, wLoad),
         a:     wavg(items, i => i.calcA, wLoad),
         p:     wavg(items, i => i.calcP, wRun),
@@ -1060,9 +1048,9 @@ export default function OEEAnalytics() {
     // ไม่งั้นกราฟ "ข้ามวัน" ทำให้ระยะห่างบนแกนไม่ตรงเวลาจริง อ่านเทรนด์ผิด
     // (UI-CONVENTIONS · pattern เดียวกับกราฟรายวันใน /product-history · QC audit 2026-08-03)
     // เติมเฉพาะช่องว่างระหว่างวันแรก-วันสุดท้ายที่มีข้อมูล (ไม่ pad หัว-ท้ายช่วงที่เลือก) · cap 400 วันกันช่วงยาวผิดปกติ
-    if (!['daily', 'weekly'].includes(period) || out.length < 2) return out;
+    if (!['day', 'week'].includes(period) || out.length < 2) return out;
     const dayMs = 86400000;
-    const stepMs = period === 'weekly' ? 7 * dayMs : dayMs; // แกนสัปดาห์เดินทีละจันทร์
+    const stepMs = period === 'week' ? 7 * dayMs : dayMs; // แกนสัปดาห์เดินทีละจันทร์
     const first = new Date(`${out[0].key}T00:00:00`), last = new Date(`${out[out.length - 1].key}T00:00:00`);
     const span = Math.round((last - first) / stepMs) + 1;
     if (!(span > out.length) || span > 400) return out;
@@ -1072,7 +1060,7 @@ export default function OEEAnalytics() {
       const d = new Date(t);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       filled.push(byKey[key] || {
-        key, label: period === 'weekly' ? fmtWeekLabel(key) : fmtDayLabel(key), empty: true,
+        key, label: bucketLabel(key, period), empty: true,
         oee: null, a: null, p: null, q: null,
         totalQty: 0, ngQty: 0, unplannedMin: 0, count: 0,
       });
@@ -1602,7 +1590,7 @@ export default function OEEAnalytics() {
             </div>
 
             <div style={{ flex: '0 0 auto', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-              <button onClick={() => { setPeriod('daily'); setDateFrom(dateStrAdd(tdDate, -29)); setDateTo(tdDate); setViewTab('trend'); }}
+              <button onClick={() => { tr.setScale('day'); tr.setRange(dateStrAdd(tdDate, -29), tdDate); setViewTab('trend'); }}
                 title="เปิดแท็บแนวโน้ม/ประวัติ พร้อมตั้งช่วง 30 วันล่าสุดให้"
                 style={{ ...s.tab(false), color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.4)', whiteSpace: 'nowrap' }}>
                 📈 ดูย้อนหลังเต็ม (30 วัน)
@@ -1844,15 +1832,13 @@ export default function OEEAnalytics() {
         <OeeInsightPanel lines={linesFull} ccRates={ccRates} />
       ) : (
       <>
-      {/* Filters */}
-      <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['daily','weekly','monthly','yearly'].map(p => (
-            <button key={p} style={s.tab(period === p)} onClick={() => setPeriod(p)}>
-              {p === 'daily' ? 'รายวัน' : p === 'weekly' ? 'รายสัปดาห์' : p === 'monthly' ? 'รายเดือน' : 'รายปี'}
-            </button>
-          ))}
-        </div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน — เหมือนกันทุกหน้า (docs/modules/time-range-filter.md)
+          ของเฉพาะหน้า (ไลน์/กะ) ส่งเข้าไปเป็น children ห้ามวาดแถบเองใหม่ */}
+      <TimeRangeBar
+        scale={period} from={dateFrom} to={dateTo} today={tr.today} finest="day"
+        onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+        onView={tr.setView} onReload={loadData} loading={loading} style={{ marginBottom: 12 }}
+      >
         {/* ทะเบียนไลน์ (scope แล้ว) ผ่าน <LineSelect> กลาง — เดิมสร้างจากชื่อใน sessions: ไลน์ที่ rename แล้วโชว์ชื่อเก่า / ไลน์ที่ยังไม่มี session หาย (2026-09-07) */}
         <LineSelect style={s.sel} lines={linesFull} value={selLine} onChange={setSelLine} placeholder="ทุกไลน์"
           extraGroups={[{ label: '⚠ นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
@@ -1861,12 +1847,7 @@ export default function OEEAnalytics() {
           <option value="day">กะเช้า</option>
           <option value="night">กะดึก</option>
         </select>
-        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={s.sel} />
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>ถึง</span>
-        <input type="date" value={dateTo}   onChange={e => setDateTo(e.target.value)}   style={s.sel} />
-        <button onClick={loadData} style={{ ...s.tab(false), paddingLeft: 12, paddingRight: 12 }}>🔄 โหลด</button>
-        {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</span>}
-      </div>
+      </TimeRangeBar>
 
       {/* KPI Cards */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -2198,7 +2179,7 @@ export default function OEEAnalytics() {
               {/* ตารางโชว์เฉพาะวันที่มีข้อมูลจริง — วันตอว่างที่เติมให้แกนกราฟต่อเนื่อง (empty) ไม่ต้องขึ้นเป็นแถว */}
               {grouped.filter(g => !g.empty).map((g, i) => (
                 <tr key={g.key} style={{ borderBottom: '1px solid var(--border)', background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 700, color: 'var(--text)' }}>{period === 'daily' ? g.key : g.label}</td>
+                  <td style={{ padding: '5px 8px', fontWeight: 700, color: 'var(--text)' }}>{period === 'day' ? g.key : g.label}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)' }}>{g.count}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right' }}>{g.totalQty.toLocaleString()}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: g.unplannedMin > 60 ? '#ef4444' : 'var(--text)' }}>{g.unplannedMin.toLocaleString()}</td>

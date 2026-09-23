@@ -17,6 +17,9 @@ import CalloutPin from './CalloutPin'
      onAddFrames(FileList) / onRemoveFrame(frameKey) / busy
 */
 export default function SpinAnnotator({
+  /* pins: [{ key, x, y, label, label_dx, label_dy, color, selected?, hollow? }]
+       · selected = หมุดที่กำลังเลือก/กำลังวาง → วงไฮไลต์ (ห้ามสื่อด้วยสีอย่างเดียว)
+       · hollow   = สถานะ "ยังไม่ทำ" → วงโปร่งเส้นประ (UI-CONVENTIONS §จอรูปอ้างอิง) */
   frames = [], frameIdx = 0, setFrameIdx, pins = [], arming,
   onPlace, onRemovePin, onAddFrames, onRemoveFrame, busy,
   // ลากป้ายเลขหมุดเพื่อหลบไม่ให้ลูกศรทับกัน (2026-09-21) — ไม่ส่งมา = อ่านอย่างเดียว
@@ -91,6 +94,11 @@ export default function SpinAnnotator({
               <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                 offX={p.label_dx} offY={p.label_dy}
                 label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
+                /* 🔴 "หมุดที่กำลังเลือก" ต้องต่างที่ **วงไฮไลต์** ไม่ใช่แค่เปลี่ยนสี (23/09 · audit หมุดทั้งโปรเจค)
+                   เดิมหน้าเรียกแค่เปลี่ยน `color` เป็น accent (เขียว) — แต่สีประเภทจุดตรวจตั้งเองได้ในทะเบียน
+                   ประเภทที่ตั้งเป็นเขียว (#3dd65c มีจริง) = หมุดธรรมดาหน้าตาเหมือนหมุดที่กำลังวางเป๊ะ
+                   ⇒ ส่ง `selected` ต่อให้ CalloutPin เสมอ · `hollow` ส่งต่อไว้ให้จอที่มีสถานะ ยัง/แล้ว ใช้ */
+                selected={p.selected} hollow={p.hollow}
                 title={`${p.label} — คลิกเพื่อลบ${onLabelMove ? ' · ลากป้ายเลขเพื่อหลบไม่ให้ลูกศรทับกัน' : ''}${pinHasDetail[p.key] ? ' · จุดนี้มีรูปเจาะจุดแล้ว' : ' · ยังไม่มีรูปเจาะจุด (แนบได้ที่แถวจุดตรวจด้านล่าง)'}`}
                 onLabelMove={onLabelMove ? ((dx, dy) => onLabelMove(p.key, dx, dy)) : undefined}
                 onClick={e => { e.stopPropagation(); onRemovePin?.(p.key) }} />

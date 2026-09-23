@@ -24,23 +24,12 @@ export const OBEYA_AXES = [
 export const axisMeta = (key) => OBEYA_AXES.find(a => a.key === key) || null;
 
 /* ── สถานะเทียบเป้า ────────────────────────────────────────────────────────────────
-   `better` = ทิศทางที่ดี: 'up' (ยิ่งมากยิ่งดี เช่น OEE) · 'down' (ยิ่งน้อยยิ่งดี เช่น ของเสีย)
-   เกณฑ์เหลือง = พลาดเป้าไม่เกิน 5% ของค่าเป้า — เลือกให้ตรงกับไฟเหลืองของ Andon ในระบบ
-   ⚠️ เป้า 0 (เช่น "อุบัติเหตุ 0 ครั้ง") ไม่มีแถบเหลือง — เกิน 0 คือแดงทันที ไม่มีครึ่งทาง */
-export function statusOf(value, target, better = 'up') {
-  if (value == null || Number.isNaN(Number(value))) return 'none';
-  if (target == null || Number.isNaN(Number(target))) return 'none';
-  const v = Number(value), t = Number(target);
-  if (better === 'down') {
-    if (t === 0) return v === 0 ? 'good' : 'bad';
-    if (v <= t) return 'good';
-    return v <= t * 1.05 ? 'warn' : 'bad';
-  }
-  if (v >= t) return 'good';
-  return v >= t * 0.95 ? 'warn' : 'bad';
-}
-export const STATUS_COLOR = { good: '#22c55e', warn: '#f59e0b', bad: '#ef4444', none: '#64748b' };
-export const statusColor = (s) => STATUS_COLOR[s] || STATUS_COLOR.none;
+   🔴 **นิยามจริงย้ายไป `src/utils/statusTone.js` แล้ว (23/09)** — ไฟล์นี้ re-export ต่อเฉยๆ
+      เหตุผล: กติกาสถานะถูกต้องอยู่แล้วแต่ **ใช้ได้แค่ในห้อง OBEYA** เพราะไฟล์นี้ลาก `oee.js` มาด้วย
+      ⇒ หน้าแรก/Dashboard เอาไปใช้ไม่ไหว เลยไปตั้งสีกันเอง จนสีในแถวเดียวกันมี 2 ความหมายปนกัน
+      (ดูเหตุการณ์เต็มในหัวไฟล์ `statusTone.js`) · **ห้ามประกาศตาราง STATUS_* ซ้ำที่นี่อีก** */
+import { statusOf, STATUS_LABEL } from './statusTone.js';
+export { statusOf, STATUS_COLOR, statusColor, toneOf, toneInk, hasTarget } from './statusTone.js';
 
 /** ห่างเป้าเท่าไหร่ (บวก = ดีกว่าเป้าเสมอ ไม่ว่าทิศทางไหน) — ใช้โชว์ Δ บนหัวแผง */
 export function gapToTarget(value, target, better = 'up') {
@@ -56,8 +45,7 @@ export function gapToTarget(value, target, better = 'up') {
    🔴 **`none` (เทา) มี 2 ความหมายที่ต้องแยกให้คนหน้าจออ่านออก** — กฎความซื่อสัตย์ของจอ:
       "ยังไม่มีข้อมูล" (ยังไม่เกิดงาน) ≠ "ไม่มีเป้า" (มีตัวเลขแล้ว แต่ไม่มีใครตั้งเป้าให้เทียบ)
       ทั้งคู่ห้ามถูกนับเป็นเขียว และห้ามโชว์เป็น 0 */
-export const STATUS_LABEL = { good: 'ตามเป้า', warn: 'เฉียดเป้า', bad: 'หลุดเป้า', none: 'ตัดสินไม่ได้' };
-export const statusLabel = (s) => STATUS_LABEL[s] || STATUS_LABEL.none;
+export { STATUS_LABEL, statusLabel } from './statusTone.js';
 
 /**
  * ไฟสถานะ 1 ดวง + เหตุผลที่เป็นสีนั้น (ใช้เป็นทั้งป้ายบนจอและ tooltip)

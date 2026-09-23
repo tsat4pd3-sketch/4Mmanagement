@@ -91,6 +91,9 @@ const S = {
     background: status ? STATUS_COLOR[status].bg : 'var(--card)', marginBottom: 8,
   }),
   input: { width: 70, textAlign: 'center', fontFamily: 'monospace' },
+  navBtn: (off) => ({ padding: '6px 14px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+    cursor: off ? 'not-allowed' : 'pointer', opacity: off ? 0.45 : 1,
+    border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }),
   saveBtn: {
     width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700,
     background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', marginTop: 12,
@@ -116,6 +119,11 @@ function measureStdText(cp) {
 
 // สีหมุด = สถานะการตรวจ (dynamic) — เขียวผ่าน / แดง NG / เหลืองเฝ้าระวัง / ยังไม่ตรวจ = สีหมวด
 const PIN_STATUS_COLOR = { ok: '#3dd65c', ng: '#e05c4a', warning: '#f59a3f' }
+/* 🔴 "ยังไม่ตรวจ" ต้องดูออกจาก "ตรวจแล้ว" ทันที (user 23/09) — เดิมใช้ **สีประเภทจุดตรวจ**
+   ซึ่งตั้งเองได้ที่ทะเบียน ⇒ ประเภทที่ตั้งเป็นเขียวจะหน้าตาเหมือนจุดที่ตรวจผ่านแล้วเป๊ะ
+   ⇒ ใช้สีกลาง + **วงโปร่งเส้นประ** (ต่างที่รูปทรงด้วย ไม่ใช่แค่สี) · ตรวจแล้ว = วงทึบ เขียว/แดง
+   ประเภทจุดตรวจยังอ่านได้จากแถวรายการ/tooltip เหมือนเดิม */
+const PIN_TODO_COLOR = '#9aa8b4'
 function cpCheckStatus(cp, r) {
   if (!r) return null
   if (cp.type === 'variable') {
@@ -209,14 +217,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {framePins.map(c => {
               const st = cpCheckStatus(c, results[c.id])
-              const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
+              const col = st ? PIN_STATUS_COLOR[st] : PIN_TODO_COLOR
               const active = c.id === activeCpId
               return (
                 <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                   offX={c.label_dx} offY={c.label_dy}
-                  label={cpIndex[c.id] + 1} color={col} selected={active}
+                  label={cpIndex[c.id] + 1} color={col} selected={active} hollow={!st}
                   badge={c.image_path ? '🔍' : null}
-                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
+                  title={`${cpIndex[c.id] + 1}. ${c.name} — ${st ? st.toUpperCase() : 'ยังไม่ตรวจ'}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
                   onClick={e => {
                     e.stopPropagation()
                     onPinClick?.(c.id)
@@ -228,31 +236,44 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             })}
             {frameShimPins.map(sp => (
               <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false}
-                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false} hollow={!sp.done}
+                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
                 onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
             ))}
           </div>
         )}
-        {spin && (
-          <>
-            <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>🔄 {frameIdx + 1}/{frames.length}</div>
-            <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
-              style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-              {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
-            </button>
-            <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 600, borderRadius: 12, padding: '3px 12px', pointerEvents: 'none' }}>🔄 ลากซ้าย/ขวาเพื่อหมุนดูรอบเครื่อง</div>
-          </>
-        )}
       </div>
+      {/* 🔴 แถบคุมรูปต้องอยู่ **ใต้รูป ไม่ทับรูป** (user 23/09 "ไม่บังรูปได้มั้ย")
+          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 🔄 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
+          ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
-        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: compact ? 5 : 8, flexWrap: 'wrap' }}>
-          {frames.map((f, i) => (
-            <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
-              style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
-          ))}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
+          <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
+          </button>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {frames.map((f, i) => (
+              <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+                style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
+            ))}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔄 {frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
         </div>
       )}
+      {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+        {[{ c: PIN_TODO_COLOR, hollow: true, t: 'ยังไม่ตรวจ' },
+          { c: PIN_STATUS_COLOR.ok, hollow: false, t: 'ตรวจแล้ว ปกติ' },
+          { c: PIN_STATUS_COLOR.ng, hollow: false, t: 'ตรวจแล้ว ผิดปกติ' }].map(x => (
+          <span key={x.t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 13, height: 13, borderRadius: '50%',
+              background: x.hollow ? 'rgba(12,18,15,0.82)' : x.c,
+              border: x.hollow ? `2px dashed ${x.c}` : '2px solid #fff' }} />
+            {x.t}
+          </span>
+        ))}
+      </div>
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
       {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
@@ -665,6 +686,13 @@ export default function PMCheckData() {
   const [otherDepts, setOtherDepts] = useState([])   // แผนกอื่นที่ลงจุดตรวจของเครื่องนี้ไว้ (โชว์เมื่อแผนกปัจจุบันยังไม่มี)
   const [frames, setFrames] = useState([])          // jig_images (360° spin) ของอุปกรณ์ที่เลือก
   const [activeCpId, setActiveCpId] = useState(null) // จุดที่กำลังโฟกัส (sync รูป ↔ checklist)
+  const [activeShimId, setActiveShimId] = useState(null) // จุดชิมที่กำลังโฟกัส (โหมดจิ้มหมุด)
+  /* 📍 โหมดจิ้มหมุด (2026-09-23 · user: "ให้ขึ้นแค่ข้อที่จิ้มจุดนั้นเพื่อตรวจ ก็ดีนะ
+     ได้ไม่รก ไม่ต้องเลื่อนหา") — แตะหมุดบนรูป = โชว์เฉพาะข้อนั้นข้างใต้ ไม่ต้องเลื่อนหา
+     🔴 ซ่อนข้ออื่น "ได้เฉพาะเมื่อจอยังบอกความจริง" — แถบบนต้องบอกตลอดว่าตรวจไปกี่ข้อ
+        เหลือกี่ข้อ + มีชิปข้อที่ยังไม่ตรวจให้กดข้าม และสลับกลับ "ดูทุกข้อ" ได้ตลอด
+        (กฎความซื่อสัตย์ของจอ — ซ่อนแล้วคนลืมตรวจ = ใบตรวจผ่านทั้งที่ยังไม่ได้ตรวจ) */
+  const [pinFocus, setPinFocus] = useState(true)
   const rowRefs = useRef({})                          // แถวเช็คแต่ละจุด (เลื่อนหาเมื่อคลิกหมุด)
   /* 📌 รูปเครื่องเป็น "แถบติดบน" ตอนจอแคบ — พับเก็บได้ (จำต่อเครื่อง)
      ⚠️ ต้อง **วัดความสูงจริง** ไม่ใช่เดา เพราะเอาไปตั้ง `scrollMarginTop` ของแถวเช็ค
@@ -825,7 +853,12 @@ export default function PMCheckData() {
         line_name: selectedJig.line_name || null,
         mtn_dept: teamKeyOf(moTeam) || 'maintenance',
         machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
-        problem_characteristic: 'อื่นๆ',
+        /* 🔴 อาการ/กลุ่ม = หัวข้อที่ตรวจไม่ผ่านจริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
+           บั๊กคลาสเดียวกับใบที่เปิดจากดาวน์ไทม์ — เขียน 'อื่นๆ' ทับทั้งที่ `ngTopics`
+           บอกอยู่แล้วว่าไม่ผ่านข้อไหน ⇒ ใบพวกนี้ไปกองรวมในถังขยะของพาเรโต
+           มีด่าน regressionGuards กฎ no-hardcoded-other-category */
+        problem_characteristic: ngTopics[0] || 'อื่นๆ',
+        problem_group: 'ผลตรวจ PM/AM ไม่ผ่าน',
         report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
         // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น — เดิมหน้านี้ไม่เคยส่ง ⇒ ใบที่เปิดจากผลตรวจ PM/AM
         //   ไม่มีใครถูกเด้งตอนใบถึงคิวตัวเอง (เหตุผลเดียวกับที่ MtnRepair แก้ไปแล้ว 2026-09-14)
@@ -905,10 +938,20 @@ export default function PMCheckData() {
     return () => ro.disconnect()
   }, [selectedJig, checkpoints, frames, viewerOpen, isNarrow, isWide])
 
-  // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น
+  // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น (โหมดจิ้มหมุดไม่ต้องเลื่อน — ข้อโผล่ใต้รูปอยู่แล้ว)
   useEffect(() => {
+    if (pinFocus) return
     if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [activeCpId])
+  }, [activeCpId, pinFocus])
+
+  /* ข้อนี้กรอกครบหรือยัง — เกณฑ์เดียวกับที่ปุ่มบันทึกใช้นับ "ยังไม่ครบกี่จุด"
+     ⚠️ แก้ที่นี่ต้องแก้ปุ่มบันทึกด้วย ไม่งั้นแถบความคืบหน้ากับปุ่มตอบคนละเลข */
+  const cpFilled = (cp) => {
+    const r = results[cp.id]
+    if (cp.type === 'variable') return r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '' && r?.v1 != null
+    if (cp.type === 'measure') return r?.mval !== '' && r?.mval != null
+    return !!r?.attr
+  }
 
   const computeOverall = () => {
     let hasFail = false, hasEmpty = false
@@ -1219,12 +1262,30 @@ export default function PMCheckData() {
                    (480px บนมือถือ = กินเกือบทั้งจอ ตอบ feedback "ในมือถือก็เหมือนยังไม่เหมาะ") */
                 const stackCompact = showPhoto && !twoCol
                 const cpById = Object.fromEntries(checkpoints.map(c => [c.id, c]))
-                const shimPins = shimPoints.map(pt => ({ point: pt, pin: pointPin(pt, cpById) })).filter(x => x.pin)
-                const scrollToShim = (id) => { setActiveCpId(null); rowRefs.current[`shim:${id}`]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }
+                /* 📍 โหมดจิ้มหมุด — ใช้ได้ก็ต่อเมื่อ "จุดตรวจถูกปักบนรูปแล้ว" เท่านั้น
+                   จุดที่ยังไม่ปัก (x_pos = null) แตะจากรูปไม่ได้ ⇒ ถ้าซ่อนไปจะตรวจไม่ถึงตลอดกาล
+                   ⇒ โหมดนี้เปิดเฉพาะตอนปักครบ · ปักไม่ครบ = โชว์ทุกข้อเหมือนเดิม + บอกเหตุผล */
+                const pinnedCps = checkpoints.filter(c => c.x_pos != null)
+                const allPinned = checkpoints.length > 0 && pinnedCps.length === checkpoints.length
+                const focusOn = showPhoto && pinFocus && allPinned
+                const doneN = checkpoints.filter(cpFilled).length
+                const todo = checkpoints.filter(c => !cpFilled(c))
+                /* `done` = กรอกค่าชิมในใบนี้แล้วหรือยัง — ใช้ตัดสินสีหมุด (ยังไม่วัด = วงโปร่ง) */
+                const shimPins = shimPoints
+                  .map(pt => ({ point: pt, pin: pointPin(pt, cpById), done: String(shimVals[pt.id]?.mm ?? '') !== '' }))
+                  .filter(x => x.pin)
+                const scrollToShim = (id) => {
+                  setActiveCpId(null); setActiveShimId(id)
+                  if (!pinFocus) rowRefs.current[`shim:${id}`]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+                }
                 const viewerNode = showPhoto
                   ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId}
                       shimPins={shimPins} onShimPinClick={scrollToShim}
-                      maxH={twoCol ? 560 : (isNarrow ? 190 : 260)} compact={stackCompact} />
+                      /* 🔴 ตัวที่จำกัดขนาดรูปคือ **ความสูง** ไม่ใช่ความกว้าง (วัดจริงที่ 390px · 23/09)
+                         cap 190px: รูปแนวนอน 4:3 ได้แค่ 253px เหลือที่ว่างข้าง 137px · 16:9 เหลือ 52px
+                         cap 300px: 4:3 และ 16:9 **เต็มความกว้างพอดี** (390px)
+                         (รูปแนวตั้งไม่มีทางเต็มความกว้าง เว้นแต่จะครอป ซึ่งทำไม่ได้ — หมุดจะเพี้ยน) */
+                      maxH={twoCol ? 560 : (isNarrow ? 300 : 320)} compact={stackCompact} />
                   : null
 
                 const formNode = (
@@ -1269,15 +1330,76 @@ export default function PMCheckData() {
                     </div>
                   ) : (
                     <>
+                      {/* ── 📍 แถบคุมโหมดจิ้มหมุด (user 23/09 "ขึ้นแค่ข้อที่จิ้มจุดนั้น ไม่รก ไม่ต้องเลื่อนหา")
+                          🔴 ซ่อนข้ออื่นได้ ก็ต่อเมื่อแถบนี้บอกความจริงครบ: ตรวจไปกี่ข้อ · เหลือข้อไหน ·
+                             กดข้ามไปข้อที่ยังไม่ตรวจได้ · สลับกลับ "ทุกข้อ" ได้ตลอด ── */}
+                      {showPhoto && checkpoints.length > 1 && (
+                        <div style={{ position: 'sticky', top: stackCompact ? viewerH : 0, zIndex: 4, background: 'var(--bg)',
+                          borderBottom: '1px solid var(--border)', padding: '7px 0 8px', marginBottom: 8,
+                          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
+                            ตรวจแล้ว {doneN}/{checkpoints.length}
+                            {todo.length > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
+                          </span>
+                          {allPinned ? (
+                            <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
+                              title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
+                              style={{ padding: '4px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                                border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
+                                background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
+                              {pinFocus ? '📍 เฉพาะจุดที่แตะ' : '📋 ทุกข้อ'}
+                            </button>
+                          ) : (
+                            /* ปักไม่ครบ = ซ่อนข้ออื่นไม่ได้ ต้องบอกว่าทำไมโหมดนี้ใช้ไม่ได้ ห้ามเงียบ */
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              (โหมดแตะหมุดต้องปักจุดบนรูปครบก่อน — ตอนนี้ปักแล้ว {pinnedCps.length}/{checkpoints.length} · ปักที่ PM Setup)
+                            </span>
+                          )}
+                          {focusOn && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? 'ยังไม่ตรวจ:' : 'ครบแล้ว 🎉'}</span>
+                              {todo.slice(0, 12).map(c => (
+                                <button key={c.id} onClick={() => { setActiveShimId(null); setActiveCpId(c.id) }}
+                                  title={c.name}
+                                  style={{ minWidth: 22, height: 22, borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                    border: `1px solid ${activeCpId === c.id ? 'var(--accent)' : 'var(--border2)'}`,
+                                    background: activeCpId === c.id ? 'var(--accent)' : 'var(--bg3)',
+                                    color: activeCpId === c.id ? '#071008' : 'var(--text2)' }}>
+                                  {checkpoints.indexOf(c) + 1}
+                                </button>
+                              ))}
+                              {todo.length > 12 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+{todo.length - 12}</span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* ยังไม่ได้แตะหมุด = บอกให้แตะ + ปุ่มลัดไปข้อแรกที่ยังไม่ตรวจ (ห้ามปล่อยจอว่างเฉยๆ) */}
+                      {focusOn && !activeCpId && !activeShimId && (
+                        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '22px 12px', lineHeight: 1.8,
+                          border: '1px dashed var(--border2)', borderRadius: 12, background: 'var(--bg3)' }}>
+                          👆 แตะหมุดบนรูปเพื่อตรวจจุดนั้น
+                          <div style={{ fontSize: 11.5, marginTop: 2 }}>ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “📍 เฉพาะจุดที่แตะ” เพื่อสลับ</div>
+                          {todo.length > 0 && (
+                            <button onClick={() => setActiveCpId(todo[0].id)}
+                              style={{ marginTop: 10, padding: '7px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
+                                border: 'none', background: 'var(--accent)', color: '#071008' }}>
+                              เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
+                            </button>
+                          )}
+                        </div>
+                      )}
                       {(() => {
                         // เลข Item ต่อกลุ่ม (group_name) — sort_order จาก PM Setup จัดกลุ่มมาให้ต่อเนื่องแล้ว
                         const groupNo = {}
                         let gN = 0
                         checkpoints.forEach(c => { const g = (c.group_name || '').trim(); if (g && groupNo[g] == null) groupNo[g] = ++gN })
-                        return checkpoints.map((cp, idx) => {
+                        /* โหมดจิ้มหมุด = โชว์เฉพาะข้อที่แตะบนรูป (ข้อเดียว ⇒ ไม่ต้องมีหัวกลุ่ม) */
+                        const visibleCps = focusOn ? checkpoints.filter(c => c.id === activeCpId) : checkpoints
+                        return visibleCps.map((cp) => {
+                          const idx = checkpoints.indexOf(cp)
                           const g = (cp.group_name || '').trim()
                           const prevG = ((checkpoints[idx - 1]?.group_name) || '').trim()
-                          const header = g && g !== prevG ? (
+                          const header = focusOn ? null : (g && g !== prevG ? (
                             <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--accent-dim)', border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
                               Item {groupNo[g]} — {g}
                             </div>
@@ -1285,7 +1407,7 @@ export default function PMCheckData() {
                             <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
                               อื่นๆ
                             </div>
-                          ) : null)
+                          ) : null))
                           const row = cp.type === 'variable' ? (
                             <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
                           ) : cp.type === 'measure' ? (
@@ -1308,7 +1430,25 @@ export default function PMCheckData() {
                           )
                         })
                       })()}
-                      {shimPoints.length > 0 && (() => {
+                      {/* ปุ่มเดินหน้า-ถอยหลังในโหมดจิ้มหมุด — ตรวจต่อเนื่องได้โดยไม่ต้องกลับไปจิ้มรูปทุกครั้ง */}
+                      {focusOn && activeCpId && (() => {
+                        const i = checkpoints.findIndex(c => c.id === activeCpId)
+                        const go = (d) => { const n = checkpoints[i + d]; if (n) setActiveCpId(n.id) }
+                        const nextTodo = todo.find(c => checkpoints.indexOf(c) > i) || todo.find(c => c.id !== activeCpId)
+                        return (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+                            <button onClick={() => go(-1)} disabled={i <= 0} style={S.navBtn(i <= 0)}>◀ ข้อก่อน</button>
+                            <button onClick={() => go(1)} disabled={i >= checkpoints.length - 1} style={S.navBtn(i >= checkpoints.length - 1)}>ข้อถัดไป ▶</button>
+                            {nextTodo && (
+                              <button onClick={() => setActiveCpId(nextTodo.id)} style={{ ...S.navBtn(false), borderColor: '#f59e0b', color: '#f59e0b' }}>
+                                ⏭ ข้อที่ยังไม่ตรวจ ({checkpoints.indexOf(nextTodo) + 1})
+                              </button>
+                            )}
+                            <button onClick={() => setActiveCpId(null)} style={{ ...S.navBtn(false), marginLeft: 'auto' }}>ปิดข้อนี้</button>
+                          </div>
+                        )
+                      })()}
+                      {shimPoints.length > 0 && (!focusOn || activeShimId) && (() => {
                         const kindOf = (code) => shimKinds.find(k => k.code === code) || { icon: '🔩', label: code || '—' }
                         const dueN = shimPoints.filter(pt => pointDueStatus(pt, { currentShot: null }).due).length
                         return (
@@ -1325,7 +1465,7 @@ export default function PMCheckData() {
                                 🔒 บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
                               </div>
                             )}
-                            {shimPoints.map(pt => {
+                            {shimPoints.filter(pt => !focusOn || pt.id === activeShimId).map(pt => {
                               const st = shimStack(pt)
                               const due = pointDueStatus(pt, { currentShot: null })
                               const v = shimVals[pt.id] ?? { mm: '', note: '' }

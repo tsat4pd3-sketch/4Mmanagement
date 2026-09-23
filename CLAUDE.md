@@ -191,7 +191,7 @@ Reject → status: "rejected" + reject_reason
 ```
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
-> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิง 392 ใบใน 10 วัน แล้ว **323 ใบค้างคิว 2 เดือนครึ่ง กลบใบจริง 19 ใบ**
+> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิงใบท่วมคิว จน**ใบจริงถูกกลบ 2 เดือนครึ่ง**
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
 > เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
 > 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
@@ -247,15 +247,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
 > พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
 > บวกเข้าไปอีก = หักซ้ำ (เครื่องเสีย 11:30-13:00 คร่อมพักเที่ยง 50 น. → หักไป 140 ทั้งที่จริง 90)
-> วัดจริง 90 วัน: **664/1,298 กะ (51%) %A ต่ำกว่าจริงเฉลี่ย 1.52 จุด (สูงสุด 41.1) + %P เฟ้อ**
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
-> · backfill ประวัติแล้ว 425 กะ (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
+> · backfill แล้ว (`20260915_oee_break_dt_overlap_backfill_dr.sql` · rollback ในตาราง backup)
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
 > CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน
-> 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ** (วัดจริง HDF1 159% · LASER-345 160%)
+> 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ**
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
 >   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
@@ -378,14 +377,41 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` (`?tab=` เดิม redirect ให้) **ห้ามเอากลับมา**
 > 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`
 
+## 🗑️ "อื่นๆ / ไม่ระบุ" ห้ามขึ้นอันดับ 1 ของจอวิเคราะห์ (2026-09-23 · คำสั่ง user)
+
+*"ไม่ระบุกับอื่นๆ มาอันดับ 1 กับ 2 การวิเคราะห์จะไม่มีประโยชน์เลย"* → ใช้กับทุกจอที่วิเคราะห์ input พนักงาน
+**กติกา 4 ชั้น** — ตัวช่วย `src/utils/unclassified.js` (ชั้น 1-3) + `src/utils/autoCategory.js` (ชั้น 4)
+1. 🔴 **ต้นทาง — ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้อยู่แล้ว** (มีด่าน `regressionGuards`) = 2 ใน 3 ของปัญหา
+2. **ทะเบียน taxonomy ต้องครบ + มี group** (ทีมที่ไม่มีอาการในทะเบียน = เลือกได้แค่ "อื่นๆ")
+3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก "ไม่กรอกเลย"
+   (ต้องแก้ที่การกรอก) · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
+4. 🔎 **เดาหมวดจากคำก่อนปล่อยตกถัง** (วัดจริง 90 วัน: อื่นๆ 103 ใบ อันดับ 1 → **36 ใบ อันดับ 4**)
+   🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** (ทะเบียน taxonomy + ใบที่คนจัดกลุ่มแล้ว) — `STOP`/`FILLER`
+   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ · ก้ำกึ่ง → null (ตกถังดีกว่าเดาผิด)
+   · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
+> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท
+
+## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
+
+ปุ่ม**ช่วง** (วันนี้/สัปดาห์นี้/เดือนนี้/ปีนี้/🔒หลายปี) + ปุ่ม**ย้อนหลัง** 30/60/90/120 + กรอบวันที่ ·
+**ห้ามวาดปุ่มสเกล/ช่องวันที่เองในหน้า** (เดิม 18 ไฟล์ทำกันเอง 4 แบบ · `period` มี 2 ความหมาย)
+· สูตรแบ่งถัง/ป้ายแกน/บันได = `src/utils/timeRange.js` ที่เดียว · ผูก URL ด้วย `useTimeRange()` (`?scale=&from=&to=`)
+· **สเกลไม่เข้ากับช่วง = เตือน ห้ามบล็อก** · ปุ่มย้อนหลัง = ตัวเติมวัน **ไม่ใช่โหมดค้าง**
+· 🪜 **บันได "ดูช่วงไหน ⇒ แท่งเล็กกว่า 1 ขั้น"** (23/09) วัน→ชม. · สัปดาห์/เดือน→วัน · ปี→เดือน · หลายปี→ปี
+  **ออโต้ แต่กดทับได้ แล้วออโต้ห้ามทับซ้ำ** · จอต้องเขียน "แท่งละ 1 …" เสมอ · 🔴 **เพดานเป็นของข้อมูล
+  ไม่ใช่ของจอ** (`finest`) — OEE ละเอียดสุด = **วัน** · 🔴 **"24 ชม. โรงงาน" = 08:00→07:59 วันถัดไป**
+  (`bkkHourKey` บวก 7 ชม. จาก epoch เอง **ห้ามพึ่ง timezone เครื่อง**) · 🔴 **ปุ่ม "หลายปี" ล็อก default**
+  เปิดเฉพาะจอที่มี RPC rollup (กฎ: โหมดปีห้ามโหลดแถวดิบ)
+· 🔴 **วันทำงานใช้ `getWorkDate()` จาก `src/utils/workDate.js`** (ของกลางใหม่ — เดิมก๊อปซ้ำ 27 ไฟล์ ยังไม่กวาด)
+· 🔴 **SQDCM ยกเว้น** (ปุ่มของมัน = "ดูช่วงไหน") · **หน้าที่ไม่มีตัวกรองเวลาจริง ห้ามยัดแถบลงไป** — เหตุผลรายหน้าดูในเอกสาร
+> 📄 `docs/modules/time-range-filter.md` · UI §6.16
+
 ## 📊 กราฟ Pareto — แท่งตั้งมาตรฐานสากลเท่านั้น (2026-09-22 · คำสั่ง user)
 
 ทุกพาเรโตในระบบวาดผ่าน `<ParetoChart>` · พิกัดจาก `paretoGeometry()` (`utils/pareto.js`)
 **ห้ามคำนวณแท่งเองในหน้า — มีด่าน `regressionGuards`** · องค์ประกอบบังคับ: แท่งตั้งเรียงมาก→น้อย ·
-**แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 และเพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด**
-(ทำให้หมุดแรกตรงหัวแท่งแรกพอดี — แท่งเตี้ย/ที่ว่างด้านบนเยอะคือ*ถูกต้อง* ห้ามแก้กลับ) ·
-แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% ·
-ป้ายแกน X เอียง -45°/-90° (เลือกเองได้บนจอ) — **ห้ามกลับไปวาดแท่งนอน**
+**แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 · เพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด** (แท่งเตี้ย/ที่ว่างด้านบนเยอะ = *ถูกต้อง*) ·
+แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% · ป้ายแกน X เอียง -45°/-90° — **ห้ามกลับไปวาดแท่งนอน**
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
 
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
@@ -493,9 +519,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 3 แท็บ · 2026-08-27 → 09-22)
 
-`Obeya.jsx` = เปลือกสลับแท็บ · `?tab=kpi` = 📋 บอร์ด KPI ส่วนงานราย**เดือน** (`ObeyaKpiBoard.jsx`) · `?tab=table` = 📑 ตาราง
-12 เดือน/ตั้งเป้า (`KpiMonthly.jsx` ย้ายจาก `/dept-dashboard` 17/09) · `?tab=sqdcm` = 🖥️ จอ SQDCM **สัปดาห์/เดือน/ปี** (ไม่มี "วันนี้")
-(`ObeyaSqdcmBoard.jsx` · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js` เท่านั้น)
+`Obeya.jsx` = เปลือก 3 แท็บ (ลำดับ 23/09): `kpi` 📋 บอร์ด KPI ส่วนงานราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ จอ SQDCM
+**สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`) → `table` ⚙️ ตั้งค่า KPI/กรอกผล (`KpiMonthly.jsx` · ท้ายสุด) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
+- **🔴 แท็บ `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟสถานะ · ผังกริด) — แก้หน้าตาแผ่นที่นั่นที่เดียว ห้าม copy ไปแก้ในแท็บใดแท็บหนึ่ง
 - **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** ห้ามแยกคลัง/ตั้งเป้าคนละที่
 - **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
 - **🔴 กฎความซื่อสัตย์ของจอ:** ข้อมูลไม่พอต้องเขียนบนจอ **ห้ามโชว์ 0 ห้ามซ่อนแผง** · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
@@ -505,6 +531,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - ตั้งค่า KPI data-driven: scope 6 ระดับ (`cost_center` ไม่ใช่คีย์เอกลักษณ์) · `provider` · `kpi_month_plans` · `kpi_base_inputs`
+- **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
+- หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ 📑 (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id` เสมอ
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
@@ -568,9 +596,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 - **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
   ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
   ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` ที่ operator/Register) — GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป
-  (ใหญ่กว่ารูปนิ่ง 60 เท่า) · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)
-  · **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}`) — บีบไม่ได้ เฉลี่ย 4.3 MB/รูป · ตัวตรวจชนิดไฟล์ =
+  `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME) · **ปฏิเสธไฟล์ต้องขึ้น toast
+  บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
 > 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
 
 ---
@@ -609,16 +637,11 @@ src/
 
 supabase/
 ├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
-                       #   daily-4m-summary, create-user (v14 2026-07-13: admin-only + validate role
-                       #   กับ enum ผ่าน RPC get_user_roles ห้าม hardcode + เขียนโปรไฟล์ครบทุก field
-                       #   จังหวะเดียว), delete-user (admin-only · กันลบตัวเอง/ลบ admin),
-                       #   reset-user-password (admin-only · ตั้งรหัสใหม่ให้ user ที่ลืมรหัส —
-                       #   ห้ามใช้กับบัญชี admin · ปุ่ม 🔑 ใน modal แก้ไขของ /add-user · 2026-07-14),
-                       #   pm-daily-scan, pm-plan-reminder, shipping-phase-scan,
-                       #   downtime-open-scan (DR cron 5 นาที — เปิดค้างเกินเกณฑ์), cleanup-orphan-photos
-                       # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
-                       #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
+└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบ) — รายชื่อ/กติการายตัว ดู docs/modules/edge-functions.md
+                       #   ที่ต้องรู้ข้าม session: create-user/delete-user/reset-user-password = admin-only
+                       #   (กันลบตัวเอง/ลบ admin · validate role กับ enum ผ่าน RPC get_user_roles ห้าม hardcode)
+                       #   · หน้า Login แยก "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
+                       #     (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
 docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.md (ทุกงาน) · UI-CONVENTIONS.md (งาน UI) ·
                        #   PERMISSIONS-DESIGN.md (สิทธิ์/role) · OBEYA-KPI-SOURCES.md (ก่อนแตะ KPI)
@@ -699,11 +722,11 @@ getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / 
 4. **stale-response race** — จอที่ยิงคิวรีตาม state (เลือกกะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับมา ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report เขียนข้อมูลผิดกะ · รอบ 3) — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / เทียบ request id / เทียบ ref ปัจจุบัน) ก่อน set
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า ต้อง filter/paginate
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (กฎเหล็ก 7 ใน `docs/modules/demand-flow-tower.md`)
-7. **realtime handler ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** (2026-09-15 · audit `docs/POLLING-AUDIT-2026-09-15.md`) — `debounce(reload, 1500)` = "รอให้เงียบ 1.5 วิ" ซึ่ง**วันทำงานจริงไม่มีช่วงเงียบ** ⇒ จอโหลดใหม่ทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล ไม่มีขีดจำกัดบน (วัดจริง 15/09: prod_orders 6,876 req/วัน ทั้งที่ poll ตั้ง 15 นาทีแล้ว · FactoryMap 1 รอบ = 26 KB ⇒ 10 จอ = 1.5 GB/วัน = โควต้า Free ทั้งเดือนใน 3 วัน) · **ใช้ `coalesce(fn, LIVE.x)` จาก `src/utils/liveRefresh.js` เท่านั้น ห้าม debounce/`setTimeout` เอง** (`setTimeout(load, 400)` ต่อ event ยิ่งแย่ — แต่ละ event ตั้งนาฬิกาของตัวเอง = N event N โหลด) · ระดับ `LIVE.ALARM/PAGE/BOARD` อยู่ใน `src/utils/refreshRates.js` ห้ามใส่ ms ดิบ · **subscribe แบบไม่มี `filter:` = ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ** (20 ไลน์ = เสียเปล่า 95%) ให้กรองฝั่ง server เสมอเมื่อรู้ขอบเขต — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default → `old` มีแค่ pk ⇒ event ถูกตัดทิ้งเงียบ) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
-8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · realtime handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** (message ~200 bytes เฉพาะตอนมีของเปลี่ยน ถูกกว่า poll ทั้งก้อนเป็นร้อยเท่า) · **จอใหม่ให้ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** — เขียนมือแล้วตกหล่นทุกครั้ง (audit 15/09: 11 จอ เขียนคนละแบบ · 3 จอลืม debounce · 2 จอใช้ `setTimeout` ต่อ event · ไม่มีจอไหนมีเพดานจริงเลย)
-9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิง 4 คิวรี × 705 ครั้ง/วัน) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
+7. **realtime handler ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** (audit `docs/POLLING-AUDIT-2026-09-15.md` — มีตัวเลขที่วัดจริง) — `debounce(reload, 1500)` = "รอให้เงียบ 1.5 วิ" ซึ่ง**วันทำงานจริงไม่มีช่วงเงียบ** ⇒ จอโหลดใหม่ทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล ไม่มีขีดจำกัดบน · **ใช้ `coalesce(fn, LIVE.x)` จาก `src/utils/liveRefresh.js` เท่านั้น ห้าม debounce/`setTimeout` เอง** (`setTimeout(load, 400)` ต่อ event ยิ่งแย่ — แต่ละ event ตั้งนาฬิกาของตัวเอง = N event N โหลด) · ระดับ `LIVE.ALARM/PAGE/BOARD` อยู่ใน `src/utils/refreshRates.js` ห้ามใส่ ms ดิบ · **subscribe แบบไม่มี `filter:` = ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ** ให้กรองฝั่ง server เสมอเมื่อรู้ขอบเขต — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default → `old` มีแค่ pk ⇒ event ถูกตัดทิ้งเงียบ) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
+8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · realtime handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** (message ~200 bytes เฉพาะตอนมีของเปลี่ยน ถูกกว่า poll ทั้งก้อนเป็นร้อยเท่า) · **จอใหม่ให้ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** — เขียนมือแล้วตกหล่นทุกครั้ง (audit 15/09: 11 จอ เขียนคนละแบบ ไม่มีจอไหนมีเพดานจริงเลย)
+9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิงซ้ำวันละหลายร้อยรอบ) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (2026-09-17 · `docs/EGRESS-AUDIT-2026-09-17.md`) `mtn_orders` มี **116 คอลัมน์** ⇒ `select('*')&limit=1000` = **1.59 MB/ครั้ง** × 1,389 ครั้ง/วัน = **~628 MB/วัน = เกือบครึ่งของ egress ฝั่ง DR จากคิวรีเดียว** (Free = 5 GB/เดือน ⇒ หมดใน 8 วัน) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` แล้ว · **รูปผังห้ามเป็น PNG** (lossless ⇒ 8.4 MB/ใบ) ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (`docs/EGRESS-AUDIT-2026-09-17.md`) `mtn_orders` มี **116 คอลัมน์** ⇒ `select('*')&limit=1000` = **1.59 MB/ครั้ง** = เกือบครึ่งของ egress ฝั่ง DR จากคิวรีเดียว · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` แล้ว · **รูปผังห้ามเป็น PNG** (lossless ⇒ 8.4 MB/ใบ) ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring
 ```js
@@ -744,23 +767,13 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
    - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
      - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ (2026-08-26)**
      เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` (~3 นาที · ต้องเปิด vite audit ค้างไว้)
-     · **เคสจริงวันเดียวกัน 2 เคส:** resolve conflict แล้วบรรทัด `else setSelSession(...)` หลุด → Daily Report
-     เปิดมาจอหลักว่างทั้งหน้า · `/products` แท็บ Kanban Std พังจาก `undefined.toLocaleString()`
-     — **ทั้งคู่ build ผ่าน lint ผ่าน เทสผ่าน**
-     · mock มีแถว **`NULLISH`** (คอลัมน์ตัวเลข/ข้อความเป็น null) เป็นแถวสุดท้ายเสมอ **ห้ามถอด** —
-     คอลัมน์ในฐานจริงส่วนใหญ่ nullable แถวเดียวที่ null ทำให้ทั้งหน้าพัง · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
-     · mock มี **แถวชั้น OP (`is_operation`)** เสมอ **ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
-     ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` · ปุ่ม 🧩 ระเบิดของเสียใน
-     `/scrap-report` · ตัวกรอง OP ของ picker) ไม่เคยถูกรันใน harness เลย = บั๊กทั้งคลาสมองไม่เห็น
-     (i=4 ผูก parent+seq ครบ · i=5 ยังไม่ผูก = เคส worklist เหลือง)
-     · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
-     เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
-     ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
-     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px จับของที่ "ไม่พังแต่ใช้ไม่ได้" (2026-09-16)**
-     crashsweep จับแค่ "หน้าพัง" · อันนี้จับ **sticky ค้างทับเนื้อหา** (layout ยุบเหลือคอลัมน์เดียวแล้วลืมถอด
-     sticky ของ sidebar) · **ของล้นแล้วปัดดูไม่ได้** · **ข้อความถูกบีบเหลือกว้าง 0 หายทั้งบรรทัด**
-     (`whiteSpace:nowrap` ข้างๆ ไม่ยอมหด) — ทั้ง 3 อย่างนี้ **build/lint/เทส/crashsweep ผ่านหมด**
-     แต่หน้างานเปิดมือถือแล้วอ่านไม่ออก (เคสจริงจากคลิป user) · กติกาเต็ม → `docs/UI-CONVENTIONS.md` §มือถือ
+     · เคสจริงที่ **build/lint/เทสผ่านหมดแต่หน้าพัง** → `audit/README.md`
+     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · แถว KPI `manual`+`auto:`) —
+     แต่ละตัวเปิดโค้ดทั้งคลาสที่ไม่งั้น**ไม่เคยถูกรันใน harness เลย** · เหตุผล+เคสจริงรายตัว → `audit/README.md`
+     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
+     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px (2026-09-16)** จับ 3 อาการที่
+     **build/lint/เทส/crashsweep ผ่านหมดแต่ใช้งานจริงไม่ได้**: sticky ค้างทับเนื้อหา · ของล้นแล้วปัดดูไม่ได้ ·
+     ข้อความถูกบีบเหลือกว้าง 0 → `docs/UI-CONVENTIONS.md` §มือถือ
      · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
    - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
 
@@ -810,7 +823,7 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
 > - **ห้ามใช้ `color-mix()` (Cr 111)** — ค่าที่ parse ไม่ได้ = **ทั้งบรรทัด declaration ถูกทิ้ง**
->   เคยหลุดจริง 1 จุด (`StoreMonitor` การ์ดผิดปกติ → พื้นโปร่งบนจอ TV) · แทนด้วย
+>   (เคยหลุดจริง → พื้นการ์ดโปร่งบนจอ TV) · แทนด้วย
 >   `background: 'var(--card)'` + `backgroundImage: linear-gradient(${c}14, ${c}14)` (2 stop สีเดียว = เคลือบทับ ได้ผลเท่ากัน)
 >   หรือ alpha-hex `${color}14` แบบที่ทั้งระบบใช้อยู่แล้ว
 > - ตัวอื่นที่ห้ามเช่นกัน: `@container` (105) · CSS nesting (112) · `text-wrap:balance` (114) · หน่วย `dvh/svh/lvh` (108) · `:has()` **ในที่ที่พังแล้วเสียการใช้งาน**
@@ -822,7 +835,7 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 - **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** (`:root { color-scheme: dark }` + `[data-theme="light"] { color-scheme: light }` — แก้แล้ว 2026-08-21 จาก feedback หน้างาน "Mode dark มองไม่เห็น"): ไอคอนปฏิทิน/นาฬิกาใน `input type=date/time` + ลูกศร select + popup ปฏิทิน เป็นของ browser วาดเอง ไม่ประกาศ = browser ถือว่าหน้าเป็น light → วาดไอคอน**สีดำ**ทับพื้นเขียวเข้ม มองไม่เห็นทั้งระบบ (วัดจริง: โซนไอคอน 0 pixel สว่าง → 77 หลังแก้) · **ห้ามแก้รายจุดด้วย `filter: invert()` ที่ input ตัวใดตัวหนึ่ง** — ประกาศที่ธีมครอบทุก native control ทีเดียว
 
 - **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto` (2026-09-08 วัดจริงด้วย Playwright):** overflow ที่ไม่ใช่ `visible`/`clip` ทำให้ element เป็น scroll container แม้มันไม่เคยเลื่อนเอง (สูงตามเนื้อหา) แล้ว**ขัง sticky ของลูกทุกตัว**ไว้ข้างใน → ตัวเลื่อนจริงของหน้าคือ `<body>` (`html,body{height:100%;overflow-x:hidden}`) sticky จึงไม่เคยเกาะจอเลยสักหน้า · เคสจริง: รูปเครื่องหน้าตรวจ PM เลื่อนหายทั้ง PC/แท็บเล็ต/มือถือ แก้ในหน้าไป 1 รอบ (2026-09-02) ก็ยังหาย เพราะต้นเหตุอยู่ที่ชั้น `main` · **กฎ: กล่องที่แค่ต้องการ "ตัดของล้น" ใช้ `overflow: clip` · ใช้ `hidden`/`auto` เฉพาะกล่องที่ตั้งใจให้เลื่อนในตัวเอง (มี height/maxHeight จำกัด)** · ถ้า sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่มี overflow ≠ visible/clip ก่อนแก้ที่หน้า
-- **`index.css` ตั้ง `input, select, textarea { width: 100% }` เป็น default ทั้งแอป** — input ที่วางใน toolbar/แถบควบคุมแนวนอน (เช่น `<input type="date">` ข้างปุ่ม ◀ ▶) **ต้องกำหนด `width` เองเสมอ** (เช่น `width: 140`) ไม่งั้นมันจะกินเต็มความกว้าง container แล้วดันปุ่มรอบๆ แตกเป็นหลายบรรทัดทั้งที่พื้นที่เหลือ — เคยกัดมาแล้วที่หัวบอร์ด Heijunka ทั้งหน้า Dashboard และหน้าจัดการไลน์ · checkbox/radio เคยโดนยืดจนบีบ label ข้างๆ หายทั้งแถบ (หน้า Daily PM) — ตอนนี้มี rule ยกเว้น `input[type="checkbox"], input[type="radio"] { width: auto }` ใน index.css แล้ว แต่ input ชนิดอื่นใน flex row ยังต้องระวังเอง
+- **`index.css` ตั้ง `input, select, textarea { width: 100% }` เป็น default ทั้งแอป** — input/select ที่วางใน toolbar แนวนอน **ต้องกำหนด `width` เองเสมอ** ไม่งั้นกินเต็ม container แล้วดันปุ่มรอบๆ แตกบรรทัดทั้งที่พื้นที่เหลือ (เคยกัดที่หัวบอร์ด Heijunka · Dashboard · จัดการไลน์) · checkbox/radio มี rule ยกเว้น `width:auto` แล้ว ชนิดอื่นยังต้องระวังเอง
 - UI ที่ตั้งใจให้ดูจากระยะไกล (จอ TV/บอร์ดหน้างาน) อย่าใช้ font 8–9px ทั้งที่พื้นที่แนวนอนเหลือ — เกิดคำถาม "ตัวหนังสือเล็ก พื้นที่ว่างเหลือเยอะ" ซ้ำหลายรอบ ให้เริ่มที่ 11–12px สำหรับชิป/ป้าย และ 14–15px สำหรับหัวข้อ
 - **`display:grid` ที่วางในคอลัมน์สูงๆ (`flex:1`/`flex:7 0 0`) แล้วมีของแค่แถวเดียว → การ์ดถูกยืดสูงผิดสัดส่วน** เพราะ default `align-content: stretch` ของ grid กระจายพื้นที่ว่างแนวตั้งลงแถว → ต้องใส่ **`alignContent: 'start'`** เสมอเมื่อ grid อาจสูงกว่าเนื้อหา (เจอจริง: การ์ดพนักงานใน pool หน้า Management ยืดยาวลงมาทั้งใบ 2026-08-03) · ต่างจาก flexbox (default `align-items: stretch` ยืดแค่แกนขวาง ไม่ยืดตามความสูง container) — pattern เดียวกันกับ grid card ทุกจุดที่ container สูงกว่าเนื้อหา
 

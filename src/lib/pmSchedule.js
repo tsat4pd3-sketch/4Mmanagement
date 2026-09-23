@@ -52,7 +52,12 @@ export function daysUntilDue(nextDue) {
 
 export function dueStatus(nextDue, frequency) {
   if (!nextDue) return frequency === 'periodic' ? 'periodic' : 'never'
-  const diffDays = daysUntilDue(nextDue)
+  return statusForDays(daysUntilDue(nextDue), frequency)
+}
+
+/* กติกาสีของ "อีกกี่วันถึงกำหนด" — จุดเดียว ใช้ทั้ง dueStatus (Date) และ resolvePlanDue (สตริง)
+   ห้ามเขียนหน้าต่าง due_soon ซ้ำที่อื่น (แยกออกมา 2026-09-23 ตอนทำจอ 3 ระดับ PM) */
+export function statusForDays(diffDays, frequency) {
   if (diffDays < 0) return 'overdue'
   // "Due soon" window scales with the cycle: a daily check only warns on the
   // due day itself, while weekly/monthly warn up to 3 days ahead. Without this
@@ -89,4 +94,44 @@ export function dueStatusDefer(nextDue, frequency, deferTo) {
     return base === 'overdue' ? 'overdue' : 'deferred'
   }
   return dueStatus(nextDue, frequency)
+}
+
+/* ═══ resolvePlanDue — วันครบกำหนด PM แบบ pure (สตริง YYYY-MM-DD · ไม่พึ่ง timezone เครื่อง) ═══
+   กติกาเดียวกับ PMSchedule.fetchData ทุกข้อ (ห้ามให้ 2 จอตอบวันครบกำหนดไม่ตรงกัน):
+     1) ทำล่าสุด = pm_plans.last_done_at ก่อน · ไม่มี = ผลตรวจล่าสุดที่ไม่ถูก reject
+     2) ครบกำหนด = pm_plans.next_due_date (server materialize) ก่อน · ไม่มี = ทำล่าสุด + รอบตาม frequency
+     3) เลื่อนแผนที่ตกลงแล้ว (deferActive) ⇒ ใช้วันเลื่อน + สถานะ 'deferred'
+   รับ `todayStr` จากผู้เรียก (เทสตรึงวันได้ — กฎ "เทสระเบิดเวลา" ใน CLAUDE.md)
+   @returns {{ lastYmd, dueYmd, daysTo, status, isDeferred, hasCycle }}
+     hasCycle=false = แผนนี้ "ไม่มีรอบ" (periodic ไม่มีวันครบกำหนด) — จอ 3 ระดับนับเป็นช่องว่างของ Preventive */
+export function ymdBangkok(v) {
+  if (!v) return null
+  const s = String(v)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}
+const ymdUtc = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return Date.UTC(y, m - 1, d) }
+const addYmd = (ymd, n) => new Date(ymdUtc(ymd) + n * 86400000).toISOString().slice(0, 10)   // UTC ล้วน ปลอดภัย (ไม่ใช่เวลาปัจจุบัน)
+export const diffYmd = (from, to) => Math.round((ymdUtc(to) - ymdUtc(from)) / 86400000)
+
+export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null, todayStr }) {
+  const lastYmd = ymdBangkok(plan?.last_done_at ?? lastInspectedAt ?? null)
+  const freqDays = FREQ_DAYS[frequency]
+  const origDue = plan?.next_due_date
+    ? String(plan.next_due_date).slice(0, 10)
+    : (freqDays && lastYmd ? addYmd(lastYmd, freqDays) : null)
+  const isDeferred = deferActive(plan)
+  const deferTo = isDeferred && plan?.deferred_to ? String(plan.deferred_to).slice(0, 10) : null
+  const dueYmd = deferTo || origDue
+  const daysTo = dueYmd && todayStr ? diffYmd(todayStr, dueYmd) : null
+  let status
+  if (!dueYmd) status = frequency === 'periodic' ? 'periodic' : 'never'
+  else {
+    status = statusForDays(daysTo, frequency)
+    if (deferTo) status = status === 'overdue' ? 'overdue' : 'deferred'
+  }
+  const hasCycle = !!(freqDays || plan?.next_due_date || Number(plan?.interval_days) > 0)
+  return { lastYmd, dueYmd, daysTo, status, isDeferred, hasCycle }
 }

@@ -493,6 +493,21 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
   const [imgBusy, setImgBusy] = useState(false)
+  /* 📌 จอกว้าง = แยก 2 คอลัมน์ "รูปค้างไว้ซ้าย · รายการจุดตรวจเลื่อนขวา" (user 23/09
+     "จอที่ต้องใช้รูปอ้างอิงตอนตรวจ ควรตรึงรูปไว้") — จอแคบตรึงรูปไว้บนหัวแทน
+     ⚠️ sticky ในนี้เกาะกับ `modalBody` (ตัวที่ overflowY:auto) ไม่ใช่ viewport */
+  const [wideModal, setWideModal] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1180px)')
+    const on = e => setWideModal(e.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  /* 🔴 ต้องประกาศ **หลัง** `wideModal` — เคยวางไว้ก่อนแล้วโมดัลพังทั้งใบด้วย
+     "Cannot access 'wideModal' before initialization" (TDZ ของ const)
+     ⚠️ ด่านที่มีอยู่จับไม่ได้สักตัว: `no-undef` ไม่ฟ้องเพราะตัวแปร**มีจริงในสโคป** แค่ยังไม่ถูกสร้าง ·
+        build/เทสผ่าน · crashsweep ผ่านเพราะมันไม่เคย**เปิดโมดัล** (23/09 — ทีมงานแจ้ง "แอพล่ม") */
+  const twoColSetup = wideModal && layoutType === 'image_pin'
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
   const [activePinKey, setActivePinKey] = useState(null)
 
@@ -953,7 +968,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   return (
     <div style={S.overlay}>
-      <motion.div style={S.modal} onClick={e => e.stopPropagation()}
+      {/* โหมด "รูป + จุดตรวจ" ต้องการที่ 2 คอลัมน์ → กว้างขึ้น (โหมดรายการใช้ 1000 เท่าเดิม) */}
+      <motion.div style={{ ...S.modal, maxWidth: twoColSetup ? 1340 : 1000 }} onClick={e => e.stopPropagation()}
         initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ duration: 0.18 }}>
         {/* Header */}
         <div style={S.modalHead}>
@@ -1241,8 +1257,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
           </div>
 
+          {/* ── 📌 รูปอ้างอิงต้อง "ค้างอยู่" ตอนไล่กรอกจุดตรวจ (user 23/09) ──────────────
+              จอกว้าง: grid 2 คอลัมน์ · รูปซ้าย `position:sticky` · รายการจุดตรวจเลื่อนขวา
+              จอแคบ: คอลัมน์เดียว · รูปตรึงบนหัว (พื้นหลังทึบ full-bleed กันรายการเลื่อนทะลุใต้รูป)
+              🔴 sticky เกาะ `modalBody` ที่เป็น overflowY:auto — ห้ามใส่ overflow ให้กล่อง grid นี้
+                 ไม่งั้นจะกลายเป็น scroll container ซ้อนแล้ว "ขัง" sticky ไว้ข้างใน (กับดักใน CLAUDE.md) */}
+          <div style={twoColSetup
+            ? { display: 'grid', gridTemplateColumns: 'minmax(360px, 1fr) minmax(380px, 560px)', gap: 20, alignItems: 'start' }
+            : { display: 'flex', flexDirection: 'column', gap: 16 }}>
           {layoutType === 'image_pin' && (
-            <div>
+            <div style={twoColSetup
+              ? { position: 'sticky', top: 0, alignSelf: 'start' }
+              : { position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg2)',
+                  margin: '0 -24px', padding: '0 24px 8px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <label style={{ ...S.label, marginBottom: 0 }}>รูปอุปกรณ์ (หลายมุม) + จุดตรวจ</label>
                 {frames.length > 0 && pinnedCount > 0 && <span style={{ fontSize: 11, color: 'var(--accent)' }}>📍 {pinnedCount}/{checkpoints.length} จุดวางแล้ว</span>}
@@ -1254,6 +1281,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                   .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
                   .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
                     label_dx: c.label_dx, label_dy: c.label_dy,
+                    selected: activePinKey === c._key,
                     color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
                 onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
                 onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}
@@ -1293,6 +1321,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               )}
               {grouped.ungrouped.map(renderCard)}
             </div>
+          </div>
           </div>
 
           {error && <p style={{ color: 'var(--red)', fontSize: 13 }}>{error}</p>}

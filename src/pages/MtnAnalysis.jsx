@@ -3,11 +3,18 @@ import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
 import ParetoAbcChart from '../components/ParetoAbcChart';
+import { splitUnclassified, unclassifiedNote } from '../utils/unclassified';
+import { buildCategoryIndex, fillCategories } from '../utils/autoCategory';
+import { deptNameOf, visibleToTeam } from '../utils/mtnTeams';
 import MtnKpiPanel from '../components/MtnKpiPanel';
 import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
 import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
+import { getWorkDate } from '../utils/workDate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
@@ -54,46 +61,35 @@ const MO_COLS = [
 ].join(',');
 const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
 
-const RANGES = [
-  { d: 30, label: '30 วัน' },
-  { d: 90, label: '90 วัน' },
-  { d: 180, label: '180 วัน' },
-  { d: 365, label: '1 ปี' },
-];
+/* ⏱️ ช่วงย้อนหลังย้ายไปแถบกลาง `<TimeRangeBar>` (ปุ่ม 30/60/90/120 + เลือกช่วงเองได้) — UI §6.16 */
 
 const SOURCES = [
+  /* 🔴 หน้านี้เป็นโมดูล **ซ่อมบำรุง** ⇒ นับเฉพาะงานที่ "มีการติดต่อช่าง" (user 23/09)
+     วัดจริง 90 วัน: ดาวน์ไทม์ 9,600 ครั้ง แต่ **เรียกช่างแค่ 308 (3.2%)**
+     ⇒ เดิมลากงานที่ไม่เกี่ยวกับช่างมา 96.8% — พาเรโตของจอซ่อมบำรุงเลยไม่ใช่ปัญหาของช่าง
+     ชุดข้อมูล = ใบ MO ทั้งหมด **+** ดาวน์ไทม์ที่เรียกช่างแล้วแต่ยังไม่ได้เปิดใบ (เหลือ 19 ครั้ง)
+     ⇒ ไม่นับซ้ำ เพราะดาวน์ไทม์ที่เปิดใบแล้วถูกนับผ่านใบ MO อยู่แล้ว (`source_downtime_id`) */
   { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
-  { key: 'dt', label: '⏱ เครื่องหยุด (Downtime)', unit: 'ครั้ง', note: 'ทุกครั้งที่ไลน์บันทึกว่าเครื่องหยุด — ปริมาณเยอะกว่าใบซ่อมมาก' },
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
-const isoDaysAgo = (days) => { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString(); };
 const minBetween = (a, b) => {
   if (!a || !b) return null;
   const m = (new Date(b) - new Date(a)) / 60000;
   return Number.isFinite(m) && m >= 0 ? m : null;
 };
-/** คีย์สัปดาห์แบบ local (ไม่ใช่ ISO week ของ UTC — เวลาไทยจะเหลื่อมวัน) */
-function weekKey(iso) {
+/* 🪜 คีย์ถังของ "เหตุการณ์ 1 ใบ" ตามขนาดแท่งที่ผู้ใช้เลือก (บันไดกลาง `utils/timeRange`)
+   เดิมตรึงเป็นรายสัปดาห์ตายตัว ทั้งที่แถบเวลามีปุ่มสเกลอยู่ — **ปุ่มนั้นไม่เคยถูกใช้เลย**
+   (กติกาข้อ 3 ของ TimeRangeBar: ปุ่มตายแย่กว่าไม่มีปุ่ม) · ตอนนี้กราฟ ⑥⑦ ตามสเกลจริงแล้ว
+   🔴 ขั้น "ชั่วโมง" ต้องอ่านจาก timestamp จริง (`bkkHourKey` = เวลาไทย)
+   🔴 ขั้นอื่นต้องแปลงเป็น **วันทำงาน** ก่อน (`getWorkDate` ตัด 08:00) ไม่ใช่วันปฏิทิน
+      ไม่งั้นกะดึกถูกผ่าครึ่งไปอยู่คนละถัง */
+const evKey = (iso, scale) => {
   if (!iso) return '';
+  if (scale === 'hour') return bkkHourKey(iso) || '';
   const d = new Date(iso);
-  const day = (d.getDay() + 6) % 7;                 // จันทร์ = 0
-  d.setDate(d.getDate() - day);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-/** ทุกสัปดาห์ในช่วง (รวมสัปดาห์ที่เงียบ) — ไม่ส่งไปให้ runChart/controlChart = สัปดาห์ที่ไม่มีเหตุการณ์หายจากกราฟ */
-function weekKeysBack(days) {
-  const out = [];
-  const end = new Date();
-  const start = new Date(); start.setDate(start.getDate() - days);
-  const cur = new Date(start);
-  cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7));
-  while (cur <= end) {
-    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
-    cur.setDate(cur.getDate() + 7);
-  }
-  return out;
-}
+  return Number.isFinite(d.getTime()) ? (bucketKey(getWorkDate(d), scale) || '') : '';
+};
 
 const KPI = ({ label, value, unit, sub, warn }) => (
   <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
@@ -116,18 +112,26 @@ export default function MtnAnalysis() {
   const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
-  const [days, setDays] = useState(90);
-  const [src, setSrc] = useState('mo');
+  /* ⏱️ แถบเวลามาตรฐาน — เดิมเป็น dropdown "ย้อนหลัง N วัน" อย่างเดียว เลือกช่วงเองไม่ได้
+     ⇒ ดูเดือนที่แล้วย้อนหลังไม่ได้เลย ต้องเลือกช่วงกว้างแล้วกวาดตาหาเอง (UI §6.16) */
+  const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90 });
+  const days = rangeDays(tr.from, tr.to) || 90;
+  const [src] = useState('mo');   // คงไว้เพื่อ unit/ป้ายข้อความ — ไม่มี UI สลับแล้ว
+  const [team, setTeam] = useState('all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม)
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});
+  const [taxo, setTaxo] = useState([]);      // ทะเบียนอาการ + ทะเบียนดาวน์ไทม์ → พจนานุกรมเดาหมวด
   const [machines, setMachines] = useState([]);   // แถวเต็ม — แผง KPI ส่งต่อให้ MachineReliability
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    const since = isoDaysAgo(days);
+    /* ⚠️ ต้องมีขอบบนด้วย — ของเดิมมีแต่ `gte(since)` ⇒ เลือกช่วงในอดีตไม่ได้เลย (ลากถึงวันนี้เสมอ)
+       ขอบบน = สิ้นวันของ `to` (บวก 1 วันแล้วใช้ `lt`) เพื่อกินทั้งวันสุดท้ายรวมกะดึก */
+    const since = new Date(`${tr.from}T00:00:00`).toISOString();
+    const until = new Date(`${addDays(tr.to, 1)}T00:00:00`).toISOString();
     try {
       /* ทะเบียนเครื่อง = ตัวตัดสินชนิดสินทรัพย์ · เลขเครื่องซ้ำได้ในทะเบียน → ตัวแรกชนะ
          (ไม่ใช่การตัดสินใจเชิงธุรกิจ แค่ต้องคงที่ ไม่ให้แท็บเปลี่ยนไปมาระหว่างโหลด) */
@@ -135,11 +139,17 @@ export default function MtnAnalysis() {
          (เคยพลาดจริง 22/09: เอาไปใช้เป็นอาร์เรย์ตรงๆ ⇒ `.forEach is not a function`
           แล้วถูก try/catch กลืนเป็น "โหลดข้อมูลไม่สำเร็จ" ทั้งหน้า · build/lint/crashsweep ผ่านหมด)
          และต้องอ่าน `error` ด้วย — supabase-js ไม่ throw (กฎเหล็ก DB ข้อ 1) */
-      const [mcs, mo, dt] = await Promise.all([
+      const [mcs, mo, dt, pt, dtt] = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind', q => q.eq('is_active', true).order('sort_order')),
-        fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).order('report_at', { ascending: false })),
-        fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).order('started_at', { ascending: false })),
+        fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).lt('report_at', until).order('report_at', { ascending: false })),
+        fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).lt('started_at', until).order('started_at', { ascending: false })),
+        /* ทะเบียน taxonomy = พจนานุกรมของตัวเดาหมวด (utils/autoCategory) — ตารางเล็กทั้งคู่
+           🔴 พจนานุกรมต้องมาจากทะเบียนที่โรงงานเขียนเอง ห้าม hardcode คำในโค้ด (CLAUDE.md) */
+        fetchAllRows(supabaseDR, 'mtn_problem_types', 'team, group_name, characteristic, shared_teams'),
+        fetchAllRows(supabaseDR, 'dr_downtime_types', 'name_th, mo_problem_group'),
       ]);
+      /* ⚠️ ทะเบียน taxonomy เป็น **ของเสริม** (ใช้เดาหมวดเท่านั้น) — ล้มแล้วห้ามทำทั้งหน้าพัง
+         ⇒ ไม่เอา pt/dtt เข้า firstErr · จอยังอ่านได้ปกติ แค่เดาหมวดได้น้อยลง */
       const firstErr = [mcs, mo, dt].map(r => r?.error).find(Boolean);
       if (firstErr) throw new Error(firstErr.message || String(firstErr));
       const mcRows = mcs?.data || [], moRows = mo?.data || [], dtRows = dt?.data || [];
@@ -149,25 +159,36 @@ export default function MtnAnalysis() {
         if (k && !map[k]) map[k] = m.equipment_kind;
       });
       setKindByMc(map); setMachines(mcRows); setOrders(moRows); setDts(dtRows);
+      setTaxo([
+        ...(pt?.data || []).map(r => ({ label: r.characteristic, group: r.group_name, team: r.team, shared_teams: r.shared_teams })),
+        ...(dtt?.data || []).map(r => ({ label: r.name_th, group: r.mo_problem_group })),
+      ]);
     } catch (e) {
       setErr(e?.message || String(e));
       toast.error('โหลดข้อมูลวิเคราะห์ไม่สำเร็จ: ' + (e?.message || e));
     } finally { setLoading(false); }
-  }, [days]);
+  }, [tr.from, tr.to]);
 
   useEffect(() => { let alive = true; (async () => { await load(); if (!alive) return; })(); return () => { alive = false; }; }, [load]);
 
   /* ── แปลงเป็น "แถวเหตุการณ์" รูปแบบเดียว แล้วค่อยแยกแท็บ ─────────────────────
      ทำแบบนี้เพื่อให้กราฟทุกตัวกินข้อมูลชุดเดียวกัน ไม่ต้องรู้ว่ามาจาก MO หรือ downtime */
   const events = useMemo(() => {
-    if (src === 'mo') {
-      return (orders || []).map(o => {
+    {
+      const moDtIds = new Set((orders || []).map(o => o.source_downtime_id).filter(Boolean));
+      /* ดาวน์ไทม์ที่ **เรียกช่างแล้ว** แต่ยังไม่ได้เปิดใบ MO — ยังเป็นงานของช่าง ต้องนับ
+         ⚠️ `call_mtn_team` แทบไม่มีใครกรอก (307/308 ว่าง) ⇒ ทีมของแถวพวกนี้เป็น "(ไม่ระบุทีม)"
+            อย่าเอาไปสรุปว่าทีมนั้นไม่มีงาน — แผนกช่างที่เชื่อถือได้มาจากใบ MO (`mtn_dept`) */
+      const dtNoMo = (dts || []).filter(d =>
+        !moDtIds.has(d.id) &&
+        (d.call_mtn === true || d.call_mtn_at || String(d.call_mtn_team || '').trim()));
+      const moEv = (orders || []).map(o => {
         const { cls, known } = assetClassOf(o, kindByMc);
         const ttr = minBetween(o.accept_at, o.repair_done_at);
         const cost = [o.labor_cost, o.parts_cost].some(v => v != null && v !== '')
           ? (Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0) : null;
         return {
-          id: o.id, cls, clsKnown: known, at: o.report_at,
+          id: o.id, from: 'mo', cls, clsKnown: known, at: o.report_at,
           asset: (o.machine_no || '').trim() || (o.item_type || '').trim() || '(ไม่ระบุอุปกรณ์)',
           label: o.mo_no || '(ยังไม่ออกเลข)',
           group: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
@@ -179,12 +200,11 @@ export default function MtnAnalysis() {
           minutes: ttr, cost, raw: o,
         };
       });
-    }
-    return (dts || []).map(d => {
+      const dtEv = dtNoMo.map(d => {
       const { cls, known } = assetClassOf(d, kindByMc);
       const m = d.duration_min == null ? null : Number(d.duration_min);
       return {
-        id: d.id, cls, clsKnown: known, at: d.started_at,
+        id: d.id, from: 'dt', cls, clsKnown: known, at: d.started_at,
         asset: (d.machine_no || '').trim() || '(ไม่ระบุเครื่อง)',
         label: (d.machine_no || '').trim() || '—',
         group: (d.description || '').trim().slice(0, 40) || 'ไม่ระบุอาการ',
@@ -192,17 +212,56 @@ export default function MtnAnalysis() {
         cause_category: null,
         causeText: [d.description, d.fix_action].filter(Boolean).join(' '),
         line: '(ไม่ระบุไลน์)',
-        team: (d.call_mtn_team || '').trim() || '(ไม่ได้เรียกช่าง)',
+        team: (d.call_mtn_team || '').trim() || '(ไม่ระบุทีม)',
         minutes: Number.isFinite(m) ? m : null, cost: null, raw: d,
       };
-    });
-  }, [src, orders, dts, kindByMc]);
+      });
+      return [...moEv, ...dtEv];
+    }
+  }, [orders, dts, kindByMc]);
+
+  /* ── 🔎 เดาหมวดจากคำที่พนักงานพิมพ์ ก่อนปล่อยให้ตกถัง "อื่นๆ" (user 23/09) ────────
+     *"อื่นๆ ยังมาอันดับ 1 — ต้องหาคำอื่นเพื่อจับหมวดให้ได้ก่อน อื่นๆ ต้องเป็นของที่ลงไม่ได้จริงๆ"*
+     พจนานุกรมมาจาก**ข้อมูลของโรงงานเอง 2 แหล่ง ไม่มีคำ hardcode ในโค้ด**:
+       1. ทะเบียน taxonomy (`mtn_problem_types` + `dr_downtime_types.mo_problem_group`)
+       2. ใบที่ช่าง**จัดกลุ่มไปแล้ว** + ข้อความอิสระของใบนั้น — ที่มาของศัพท์หน้างานจริง
+          ("observeline" · "พาเลทไม่ไหล" · "หัวทิปตัน") ซึ่งไม่มีวันอยู่ในทะเบียน
+     ⇒ โรงงานกรอกมากขึ้น/เพิ่มทะเบียน = เดาเก่งขึ้นเอง ไม่ต้องแก้โค้ด
+     ⚠️ **ไม่เขียนกลับฐาน** — เป็นแค่การอ่านของจอ · ใบไหนถูกเดาดูได้ที่มิติ 🔎 ในพาเรโต */
+  const catIndex = useMemo(() => buildCategoryIndex([
+    ...taxo.map(t => ({ ...t, kind: 'registry' })),
+    /* เรียนจาก **ใบ MO เท่านั้น** — แถวดาวน์ไทม์ที่ยังไม่มีใบใช้ข้อความดิบเป็นชื่อกลุ่ม
+       (ไม่ใช่กลุ่มจริงในทะเบียน) เอามาสอนจะได้ "กลุ่ม" ปลอมเต็มพจนานุกรม */
+    ...events.filter(e => e.from === 'mo')
+      .map(e => ({ label: `${e.symptom} ${e.causeText}`, group: e.group, team: e.team, kind: 'seen' })),
+  ]), [taxo, events]);
+
+  const typed = useMemo(() => fillCategories(events, catIndex, {
+    labelOf: e => e.group,
+    textOf: e => `${e.symptom} ${e.causeText}`,
+    teamOf: e => (e.team && e.team !== '(ไม่ระบุทีม)' ? e.team : null),
+    scopeOf: visibleToTeam,
+  }), [events, catIndex]);
+  const typedEvents = typed.rows;
+
+  /* ── แผนกช่าง: dropdown เดิม (MO/Downtime) เปลี่ยนเป็นตัวนี้ (user 23/09) ──────
+     "ตรงแท็บคือแยกตามอุปกรณ์ใช่มั้ย · dropdown เดิม…เป็นเลือกแผนกช่างดีกว่า"
+     ⇒ แท็บ = ชนิดอุปกรณ์ · dropdown = แผนกช่าง · 2 แกนไม่ซ้อนกัน */
+  const teamOpts = useMemo(() => {
+    const c = {};
+    typedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
+    return Object.entries(c).sort((a, b) => b[1] - a[1]);
+  }, [typedEvents]);
+  const scopedEvents = useMemo(
+    () => (team === 'all' ? typedEvents : typedEvents.filter(e => e.team === team)),
+    [typedEvents, team],
+  );
 
   const byClass = useMemo(() => {
     const m = Object.fromEntries(ASSET_CLASSES.map(a => [a.key, []]));
-    events.forEach(e => { (m[e.cls] || m.other).push(e); });
+    scopedEvents.forEach(e => { (m[e.cls] || m.other).push(e); });
     return m;
-  }, [events]);
+  }, [scopedEvents]);
 
   /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
      ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
@@ -218,7 +277,10 @@ export default function MtnAnalysis() {
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
   const unit = srcMeta.unit;
-  const wKeys = useMemo(() => weekKeysBack(days), [days]);
+  /* แกนเต็มของช่วง (รวมถังที่เงียบ) — ส่งเฉพาะถังที่มีข้อมูล = ช่วงเงียบหายจากกราฟ
+     แล้วเส้นแนวโน้มลากข้ามไปเหมือนไม่เคยมีช่วงเงียบ */
+  const wKeys = useMemo(() => bucketAxis(tr.from, tr.to, tr.scale), [tr.from, tr.to, tr.scale]);
+  const bucketWord = scaleOf(tr.scale)?.short || 'ช่วง';
 
   /* สรุปหัวจอ — ทุกตัวคืน null เมื่อ "ยังวัดไม่ได้" (ห้ามตีเป็น 0) */
   const sum = useMemo(() => {
@@ -251,9 +313,21 @@ export default function MtnAnalysis() {
     return Object.values(m).filter(g => g.hasMin > 0);
   }, [rows]);
 
-  const paretoRecords = useMemo(() => rows.map(r => ({
-    cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
-  })), [rows]);
+  /* 🔴 พาเรโต "ปัญหา" ต้องไม่นับ **งานตามแผน (PM)** (user ตัดสิน 23/09 "แยกออก ไม่ใช่ปัญหา")
+     เปลี่ยนของตามรอบ = งานที่ตั้งใจทำ ไม่ใช่ของเสีย/ของพัง — นับรวมแล้วพาเรโตชี้เป้าผิด
+     ⚠️ **แยกออก ≠ ซ่อน** — ต้องบอกบนจอว่ากันออกไปกี่ใบ (กฎความซื่อสัตย์ของจอ) */
+  const paretoSplit = useMemo(
+    () => splitUnclassified(rows, { labelOf: r => r.group, textOf: r => r.causeText }),
+    [rows],
+  );
+  const paretoRecords = useMemo(() => [...paretoSplit.ok, ...paretoSplit.vagueWithText, ...paretoSplit.blank]
+    .map(r => ({
+      cat: r.group, value: 1, sub: r.symptom, machine: r.asset, line: r.line, team: r.team, note: r.causeText,
+      /* 🔎 ที่มาของหมวด — ใบที่ระบบเดาให้ ต้องตรวจสอบย้อนได้ว่าเดาจากคำไหน
+         (กฎความซื่อสัตย์ของจอ: เดาแล้วต้องบอกว่าเดา ห้ามกลืนเป็นข้อมูลที่คนกรอก) */
+      why: r.autoFrom ? `🔎 ระบบเดาจากคำ: ${r.autoFrom.terms.join(' · ')}` : '👷 ช่างเลือกเอง',
+    })), [paretoSplit]);
+  const paretoNote = useMemo(() => unclassifiedNote(paretoSplit, { unit: 'ใบ' }), [paretoSplit]);
 
   /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
      ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
@@ -263,6 +337,7 @@ export default function MtnAnalysis() {
     { key: 'line', label: '🏭 ไลน์' },
     { key: 'team', label: '👷 ทีมช่าง' },
     { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+    { key: 'why', label: '🔎 ที่มาของหมวด' },
   ]), []);
 
   const assetTabs = ASSET_CLASSES.map(a => ({
@@ -283,15 +358,15 @@ export default function MtnAnalysis() {
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={src} onChange={e => setSrc(e.target.value)} style={{ width: 180, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-                {SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              {/* dropdown = **แผนกช่าง** (เดิมเป็นเลือกแหล่งข้อมูล MO/Downtime — user เปลี่ยน 23/09)
+                  แท็บด้านล่าง = ชนิดอุปกรณ์ · 2 แกนนี้ตัดกันได้ ไม่ซ้อนกัน */}
+              <select value={team} onChange={e => setTeam(e.target.value)} title="แผนกช่างที่รับงาน"
+                style={{ width: 200, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+                <option value="all">👷 ทุกแผนกช่าง ({events.length})</option>
+                {teamOpts.map(([t, n]) => (
+                  <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
+                ))}
               </select>
-              <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-                {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
-              </select>
-              <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
-                {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
-              </button>
             </div>
           ) : (
             <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
@@ -300,6 +375,17 @@ export default function MtnAnalysis() {
           )
         }
       />
+
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองใต้หัวเพจ
+          ช่อง `actions` ของ PageHeader แคบเกินไปสำหรับแถบเต็ม (สเกล + ปุ่มย้อนหลัง + ช่วงวัน)
+          ⚠️ แท็บ KPI มีตัวกรองของตัวเองในแผง — โชว์ทั้งคู่ = คนกดแล้วไม่เห็นอะไรเปลี่ยน */}
+      {tab === 'qc7' && (
+        <TimeRangeBar
+          scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} finest="hour"
+          onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+          onView={tr.setView} onReload={load} loading={loading} style={{ marginBottom: 12 }}
+        />
+      )}
 
       {err && (
         <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', marginBottom: 12 }}>
@@ -354,6 +440,26 @@ export default function MtnAnalysis() {
           ) : (
             <>
               {/* ② พาเรโต — component กลางเดิม ไม่ทำใหม่ */}
+              {/* กันงานตามแผน + บอกส่วนที่ยังชี้เป้าไม่ได้ — ห้ามเงียบ (utils/unclassified.js) */}
+              {(paretoSplit.planned.length > 0 || paretoNote || typed.filled > 0) && (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
+                  {paretoSplit.planned.length > 0 && (
+                    <span style={{ color: 'var(--muted)' }}>
+                      🗓️ กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                    </span>
+                  )}
+                  {typed.filled > 0 && (
+                    <span style={{ color: 'var(--muted)' }} title="พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎">
+                      🔎 เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
+                    </span>
+                  )}
+                  {paretoNote && (
+                    <span style={{ color: paretoNote.level === 'warn' ? '#f59e0b' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
+                      ⚠️ {paretoNote.text}
+                    </span>
+                  )}
+                </div>
+              )}
               <ParetoAbcChart
                 title={`② พาเรโต — ปัญหาไหนกินสัดส่วนมากที่สุด (${unit})`}
                 records={paretoRecords} dims={PARETO_DIMS} unit={unit}
@@ -376,13 +482,13 @@ export default function MtnAnalysis() {
                 </Panel>
 
                 {/* ⑥ กราฟควบคุม */}
-                <Panel title="⑥ กราฟควบคุม (XmR) — สัปดาห์นี้ผิดปกติหรือเปล่า"
+                <Panel title={`⑥ กราฟควบคุม (XmR) — ${bucketWord}นี้ผิดปกติหรือเปล่า`}
                   sub="เส้นกลาง = ระดับปกติของงานนี้ · จุดแดง = มีสาเหตุเฉพาะให้ไปตามหา ไม่ใช่ความผันแปรธรรมดา">
                   <ControlChart
                     points={(() => {
                       const agg = {};
-                      rows.forEach(r => { const k = weekKey(r.at); if (k) agg[k] = (agg[k] || 0) + 1; });
-                      return wKeys.map(k => ({ label: k.slice(5), value: agg[k] || 0 }));
+                      rows.forEach(r => { const k = evKey(r.at, tr.scale); if (k) agg[k] = (agg[k] || 0) + 1; });
+                      return wKeys.map(k => ({ label: bucketLabel(k, tr.scale), value: agg[k] || 0 }));
                     })()}
                     unit={unit} />
                 </Panel>
@@ -395,8 +501,8 @@ export default function MtnAnalysis() {
                 </Panel>
 
                 {/* ⑦ แนวโน้ม */}
-                <Panel title="⑦ แนวโน้มรายสัปดาห์" sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
-                  <RunChart records={rows} keyOf={r => weekKey(r.at)} keys={wKeys} unit={unit} />
+                <Panel title={`⑦ แนวโน้มราย${bucketWord}`} sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
+                  <RunChart records={rows} keyOf={r => evKey(r.at, tr.scale)} keys={wKeys} unit={unit} />
                 </Panel>
               </div>
 
