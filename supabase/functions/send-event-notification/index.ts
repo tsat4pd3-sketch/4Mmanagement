@@ -26,7 +26,9 @@
 //     ⇒ ช่างที่สังกัดทีมอื่นไม่ถูกเด้ง (คนที่ไม่มี mtn_teams เช่นหัวหน้าไลน์ ไม่ถูกกรอง)
 //     ไม่ส่ง = ไม่กรองด้วยทีม (พฤติกรรมเดิมของทุกเรื่องที่มีอยู่)
 //     ที่มาของแกนนี้: docs/IDENTITY-NOTIFY-DESIGN.md §6.1 + migration 20260921_notify_recipients_mtn_team.sql
-//   - `extra_user_ids` = คนที่ **ต้องได้รับเสมอ** ไม่ว่าทะเบียนจะตั้ง role อะไร (uuid ไม่เกิน 20)
+//   - `extra_user_ids` = **เจ้าของงานของรายการนี้** — คนที่ต้องได้รับเสมอ ไม่ว่าทะเบียนจะตั้ง role อะไร (uuid ไม่เกิน 20)
+//     ⭐ ตั้ง `inapp_cast = 'fallback'` ในทะเบียนแล้ว เรื่องนั้นจะ **ยิงตาม role เฉพาะตอนที่ไม่มีเจ้าของงาน**
+//     ⇒ ส่งฟิลด์นี้มาให้ครบคือวิธีแก้ "ยิงมั่ว" ที่ต้นเหตุ (ดู docs/modules/notifications-flood.md §6)
 //     เช่น "ผู้เปิดใบแจ้งซ่อม" ที่อาจไม่เข้าเกณฑ์ role ใดเลย แต่เป็นเจ้าของเรื่องตัวจริง
 //     ⚠️ รวมเข้า Set เดียวกับผู้รับตามทะเบียน ⇒ ไม่มีทางได้ 2 ใบ · ไม่ใช่ช่องให้ข้ามทะเบียน
 //        (ยังจำกัดที่ "คนที่เกี่ยวกับรายการนั้นจริง" เท่านั้น ห้ามยัดรายชื่อทั้งแผนกมาทางนี้)
@@ -44,11 +46,11 @@ async function getBotToken(): Promise<string | undefined> {
 }
 
 type Rule = {
-  enabled: boolean; chats: string[]; template?: string | null; label?: string;
+  enabled: boolean; chats: string[]; template?: string | null; label?: string; cast?: string;
 };
 async function loadRule(event: string): Promise<Rule | null> {
   const { data: r } = await supabase.from('notification_rules')
-    .select('is_enabled, channel_ids, channel_id, template, label')
+    .select('is_enabled, channel_ids, channel_id, template, label, inapp_cast')
     .eq('event_key', event).maybeSingle();
   if (!r) return null;                                  // ไม่มีในทะเบียน = ไม่รู้จัก
   const ids: string[] = Array.isArray(r.channel_ids) ? r.channel_ids as string[]
@@ -58,7 +60,8 @@ async function loadRule(event: string): Promise<Rule | null> {
     const { data: chans } = await supabase.from('telegram_channels').select('id, chat_id, is_active').in('id', ids);
     chats = [...new Set((chans ?? []).filter((c) => c.is_active && c.chat_id).map((c) => String(c.chat_id).trim()))];
   }
-  return { enabled: r.is_enabled as boolean, chats, template: r.template as string | null, label: r.label as string };
+  return { enabled: r.is_enabled as boolean, chats, template: r.template as string | null, label: r.label as string,
+    cast: (r as { inapp_cast?: string }).inapp_cast || 'always' };
 }
 
 const esc = (s: unknown) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -149,13 +152,26 @@ Deno.serve(async (req) => {
          ⚠️ '-' คือค่าที่หน้าเว็บใช้แทน "ไม่ระบุไลน์" ต้องแปลงเป็น null ไม่งั้นกรองจนไม่เหลือใคร */
       const lineRaw = typeof body.line_name === 'string' ? body.line_name.trim() : '';
       const line = lineRaw && lineRaw !== '-' ? lineRaw : null;
-      const { data: ids, error } = await supabase.rpc('notify_recipients',
-        { p_event: event, p_section: section, p_team: team, p_line: line });
-      if (error) throw error;
-      const extra = (Array.isArray(body.extra_user_ids) ? body.extra_user_ids : [])
+      /* 🎯 เจ้าของงานของรายการนี้ (`extra_user_ids`) มาก่อนเสมอ
+         `inapp_cast` ในทะเบียนตัดสินว่ายัง "ยิงตาม role" อีกไหม:
+           always   = ยิงเสมอ (พฤติกรรมเดิมของทุกเรื่อง)
+           fallback = ยิงต่อเมื่อรายการบอกตัวคนไม่ได้ (extra_user_ids ว่าง)
+         🔴 รูทคอสของ "ยิงมั่ว": ทะเบียนถามว่า "คนประเภทไหนควรรู้" แทนที่จะถาม
+            "ใครต้องลงมือกับรายการนี้" ⇒ ผู้รับ = |คนใน role| × |ทุกเหตุการณ์| ไม่มีเพดาน
+            (วัด 30 วัน: 64% ของแถวทั้งระบบส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบ)
+         ⚠️ ห้ามล้มเหลวเงียบ — fallback ที่ไม่มีเจ้าของงาน ต้องถอยไปยิงตามทะเบียนเสมอ */
+      const owners = (Array.isArray(body.extra_user_ids) ? body.extra_user_ids : [])
         .filter((v: unknown) => typeof v === 'string' && UUID_RE.test(v)).slice(0, 20) as string[];
-      const users = [...new Set([...(ids ?? []).map((r: unknown) =>
-        typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients), ...extra])]
+      const castAlways = (rule.cast || 'always') !== 'fallback';
+      let ids: unknown[] = [];
+      if (castAlways || !owners.length) {
+        const res = await supabase.rpc('notify_recipients',
+          { p_event: event, p_section: section, p_team: team, p_line: line });
+        if (res.error) throw res.error;
+        ids = res.data ?? [];
+      }
+      const users = [...new Set([...owners, ...ids.map((r: unknown) =>
+        typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients)])]
         .filter(Boolean) as string[];
       if (users.length) {
         const plain = [title, ...lines, actor ? `โดย ${actor}` : '']
