@@ -1292,7 +1292,12 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
-                  file={cropQueue[0]} aspect={3 / 4} outputSize={900} quality={0.82}
+                  /* 📐 กรอบครอบเป็น "แนวนอน" (4:3) — เดิม 3:4 แนวตั้ง สวนทางกับที่จอตรวจต้องการ
+                     (วัดจริงที่ 390px 23/09: แนวนอนเต็มความกว้างพอดี · แนวตั้งเหลือขอบว่างข้างละครึ่งจอ)
+                     outputSize 900→1200 เพื่อให้ด้านยาวยังได้ 1200px เท่าเดิม —
+                     โหมด "ใช้ทั้งรูป" ย่อด้วย cap = max(outputSize, outputSize/aspect)
+                     ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
+                  file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
                   allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
                   title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
