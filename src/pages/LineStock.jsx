@@ -14,6 +14,7 @@ import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import StockCountSheet from '../components/StockCountSheet';
 import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
@@ -1426,6 +1427,7 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
@@ -1449,6 +1451,7 @@ export default function LineStock() {
       />
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
+      {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
       {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
       {activeTab === 'zones'     && <><StorageLocPanel /><StorageZonePanel /></>}
