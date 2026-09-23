@@ -290,3 +290,10 @@ user แจ้ง 22/09: *"กรอง PD3 ไว้ พอกดเข้า�
   · รันเต็ม 22/09: **DR 527 + MAIN 334 คอลัมน์ = ไม่มีที่ผิดแล้ว**
 - **`audit/main.jsx` ส่ง query string จริงเข้า `MemoryRouter`** — เดิมเป็น router เปล่า
   ⇒ `useSearchParams()` ว่างเสมอ = **โค้ดสาย "รับค่าจาก URL" ไม่เคยถูกรันใน harness เลย**
+
+## 🌳 ตัวกรองขอบเขต = ผังองค์กรทุกมิติ (2026-09-23)
+
+select "ทุกส่วนงาน/PD1..PD4" บนหัวจอ SQDCM เปลี่ยนเป็น `<OrgScopePicker>` (ฝ่าย / ส่วนงาน / แผนก / กลุ่มไลน์ / ไลน์ / cost center)
+· `lineOk()` ตัดด้วย `index.lineNamesOf(scope)` แทนเทียบ section · `secFilter` เหลือเป็นค่า derive (`sectionOf(scope)`) ใช้ตอนตั้ง Action item
+และส่ง `?section=` ให้ `/oee-analytics` ที่ยังอ่านแค่ section · รับ `?scope=` / `?section=` ตอนเปิดหน้า · ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง) = ทุกแกนว่าง + จอบอกเอง
+· ของกลาง/กติกา → `docs/modules/obeya-kpi-board.md` §🌳 · แท็บ 📌 งานค้างของส่วนงาน (เดิม `/dept-dashboard`) อยู่ใน `/obeya?tab=todo` แล้ว → `pages-routes.md`

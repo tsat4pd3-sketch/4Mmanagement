@@ -54,7 +54,6 @@ const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
-const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 // 📺 จอเฝ้าระวังแขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
@@ -121,11 +120,10 @@ export const NAV_ITEMS = [
        ?tab=sqdcm จอมอนิเตอร์ SQDCM — กระดาษ A4 สิบแผ่นปูเต็มจอ TV + ACTION BOARD ปิดลูป
      อยู่หมวด "ภาพรวม" ไม่ใช่ "จอแสดงผล" เพราะหน้านี้ **เขียนข้อมูลได้** (บันทึกเหตุความปลอดภัย /
      ตั้ง-ปิด Action) ไม่ใช่จอที่แขวนทิ้งไว้เฉยๆ · deep-link ต่อจอ: ?section=PD3 · ?tab=sqdcm */
-  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI ส่วนงาน + SQDCM)', group: 'ภาพรวม' },
-  /* 📋 งานค้างของส่วนงาน (/dept-dashboard) วางติดกับ OBEYA (user 23/09: "งานค้างของส่วนงานก็ควรอยู่ในหมวดเดียวกัน
-     มันคือระบบมอนิเตอร์") — หมวดเดียวกัน (ภาพรวม) อยู่แล้ว ย้ายมาอยู่ถัดกันให้เห็นเป็นชุด "มอนิเตอร์ส่วนงาน":
-     OBEYA = ดูตัวเลข/แนวโน้ม → งานค้าง = คิวงานที่กดไปทำ · ไม่ย้ายไป "จอแสดงผล" เพราะทั้งคู่กดทำงานได้ ไม่ใช่จอแขวน */
-  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
+  /* 📌 งานค้างของส่วนงาน (/dept-dashboard เดิม) ยุบเป็นแท็บ `?tab=todo` ใน OBEYA แล้ว (user 23/09:
+     "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย") — route เดิม redirect (LegacyTabRedirect) พา ?dept= มาด้วย
+     · สิทธิ์ยังใช้คีย์ `page:/dept-dashboard` เดิม (แท็บโผล่ตามสิทธิ์ · /permissions ยังตั้งได้) ห้ามลบคีย์ */
+  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI · SQDCM · งานค้าง)', group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -1750,9 +1748,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/line-oee" element={
                 <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
               } />
-              <Route path="/dept-dashboard" element={
-                <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
-              } />
+              {/* งานค้างของส่วนงาน → แท็บใน OBEYA (23/09) · ?dept=/?view=/?team=/?sound= ถูกส่งต่อ (DeptDashboard redirect ?view= ต่อเอง) */}
+              <Route path="/dept-dashboard" element={<LegacyTabRedirect to="/obeya" tab="todo" />} />
               <Route path="/flow-tower" element={
                 <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
               } />

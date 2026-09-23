@@ -139,6 +139,20 @@ const FACTORY_MAP_IMG = 'data:image/svg+xml;utf8,'
     + '<rect x="60" y="60" width="1480" height="780" fill="none" stroke="#475569" stroke-width="6"/></svg>')
 const isNullish = (r) => r.qty === null
 const TABLE_ROWS = {
+  /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
+     แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
+     (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
+     7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
+  org_nodes: (r, i) => ({
+    ...r,
+    kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',
+    code: i === 1 ? 'PD1' : i <= 5 || i === 7 ? null : r.code,
+    parent_id: i === 1 || i === 6 ? null : i === 2 ? 'id-1' : i <= 5 ? 'id-2' : i === 7 ? 'id-6' : 'id-3',
+    ref_line_id: i >= 3 && i <= 5 ? `id-${i}` : null,
+    division: i === 1 ? 'production' : i === 6 ? 'maintenance' : null,
+    cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
+    sort_order: i,
+  }),
   child_lot_requests: (r, i) => ({
     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
     lot_qty: isNullish(r) ? null : 14,

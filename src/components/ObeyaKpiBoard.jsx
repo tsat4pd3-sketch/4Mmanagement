@@ -7,6 +7,9 @@ import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
 import { scoreDef, fmtBar } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
+import useOrgScope from '../utils/useOrgScope';
+import OrgScopePicker from './OrgScopePicker';
+import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
 import usePolling from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -31,8 +34,11 @@ import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
      แถวบน  : 5 แผ่นแรกของ 8 หัวข้อ · แถวล่าง: อีก 3 หัวข้อ + 📌 Key Performance ส่วนงาน + 🚨 งานที่ต้องตามแก้
      แต่ละแผ่น = ตัวเลขใหญ่ (เดือนที่เลือก) · ไฟสถานะตามเกณฑ์ทางการ 1/0.5/0 · **กราฟ 12 เดือน + แท่ง "สรุป"**
      (ทิศทางเดียวกับโหมดปีของจอ SQDCM) · กดแท่งเดือน = สลับบอร์ดไปเดือนนั้น
-   · "คอลัมน์ = กลุ่มไลน์" ของกระดาษเดิม กลายเป็น **ปุ่มเลือกกลุ่มไลน์** บนหัวจอ (`?group=`) — บอร์ด 1 ใบต่อ 1 กลุ่ม
-     เหมือนที่กระดาษ 1 แผงต่อ 1 กลุ่มไลน์ · deep-link ต่อจอ: `?section=PD3&group=HYDROFORM&date=…`
+   · "คอลัมน์ = กลุ่มไลน์" ของกระดาษเดิม กลายเป็น **ขอบเขต 1 ใบต่อ 1 บอร์ด** — 23/09 ขยายเป็น
+     `<OrgScopePicker>` ทุกมิติของผัง (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC · `src/utils/orgScope.js`)
+     + ชิปเจาะลง/กลับขึ้นหนึ่งชั้น · deep-link: `?scope=department:HYDROFORM&date=…` (ยังรับ `?section=&group=` เก่า)
+     · นิยาม/เป้าไต่จากขอบเขตที่เลือกขึ้นบรรพบุรุษ (แผนก→ส่วนงาน→ฝ่าย→โรงงาน) แล้วบอกว่าเอามาจากชั้นไหน
+     · ขอบเขตที่ไม่มีไลน์ผลิต (JIG MTN) = แผ่น OEE/PPM ว่างโดยตั้งใจ · ใบ KPI ของหน่วยงานอยู่แผ่น 📌
    · แถบ "ภาพรวมส่วนงาน SQDCM รายวัน" ที่เคยแถมท้ายหน้า **ถอดออก** — ซ้ำกับแท็บ 🖥️ ทั้งดุ้น (กฎ "ห้ามยุบ 2 แท็บ"
      หมายถึงห้ามรวมเป็นบอร์ดเดียว ไม่ได้แปลว่าต้องวาดซ้ำ 2 ที่)
 
@@ -105,7 +111,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const [sp, setSp] = useSearchParams();
 
   const [lines, setLines] = useState([]);
-  const [orgSections, setOrgSections] = useState(null);
+  const { index: org, ready: orgReady } = useOrgScope(lines);   // ผังองค์กรทุกมิติ (23/09) — แทน org_nodes kind='section'
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -114,11 +120,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const wrapRef = useRef(null);
   const reqRef = useRef(0);                             // กันผลโหลดเก่าทับผลใหม่
 
-  /* วัน + ส่วนงาน + กลุ่มไลน์ อยู่ใน URL → จอ TV bookmark ได้ (?section=PD3&group=HYDROFORM) */
+  /* วัน + ขอบเขต อยู่ใน URL → จอ TV bookmark ได้ (?scope=department:HYDROFORM&date=…)
+     ยังรับ `?section=PD3&group=HYDROFORM` เก่า (ลิงก์จากหน้าอื่น/บุ๊กมาร์กเดิม) — แปลงเป็น scope ให้ */
   const today = workDateNow();
   const date = sp.get('date') || today;
-  const section = sp.get('section') || '';
-  const groupParam = sp.get('group') || '';
+  const scopeParam = sp.get('scope') || '';
+  const scope = useMemo(() => {
+    if (scopeParam) return parseScopeKey(scopeParam);
+    if (sp.get('group')) return { kind: 'line_group', value: sp.get('group') };
+    if (sp.get('section')) return { kind: 'section', value: sp.get('section') };
+    return null;   // ยังไม่เลือก — effect ด้านล่างเลือก default ให้ (ส่วนงานของ user)
+  }, [scopeParam, sp]);
+  const scopeKeyStr = scope ? scopeKey(scope.kind, scope.value) : '';
   const year = yearOf(date);
   const monthKey = date.slice(0, 7);
   const monthNo = Number(date.slice(5, 7));
@@ -131,10 +144,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [setSp]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center')
+    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center, is_active')
       .then(({ data: d }) => setLines(d || []));
-    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').order('sort_order')
-      .then(({ data: d, error }) => setOrgSections(error ? [] : (d || [])));
   }, []);
 
   /* scope มาตรฐาน — helper กลางคืน null = ไม่จำกัด (ห้ามคืน [] ไม่งั้น .in() ว่าง = ไม่เห็นอะไรเลย) */
@@ -143,52 +154,72 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     return names ? new Set(names) : null;
   }, [role, lineId, sections, lines]);
 
-  /* ตัวเลือกส่วนงาน — ยึด org_nodes ตามกฎ · fallback เดาจาก production_lines เมื่อผังว่าง */
-  const sectionOpts = useMemo(() => {
-    const inScope = new Set(lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.section).filter(Boolean));
-    const fromOrg = (orgSections || []).map(s => s.code || s.name).filter(s => inScope.has(s));
-    return fromOrg.length ? fromOrg : [...inScope].sort();
-  }, [orgSections, lines, scopeSet]);
+  /* ตัวเลือกขอบเขตในสังกัดของ user (ตัดด้วย scope ไลน์ + ส่วนงานสังกัด) */
+  const scopeOpts = useMemo(() => filterScopeOptions(org, { scopeSet, sections }), [org, scopeSet, sections]);
+  const setScope = useCallback((sc) => {
+    setSp(prev => {
+      const n = new URLSearchParams(prev);
+      n.set('scope', isPlant(sc) ? 'plant' : scopeKey(sc.kind, sc.value));
+      n.delete('section'); n.delete('group');   // param เก่าอย่าค้างคู่กับ scope — URL ห้ามโกหก
+      return n;
+    }, { replace: true });
+  }, [setSp]);
+  /* default = ส่วนงานของ user (ตัวแรกที่มีในตัวเลือก) → ส่วนงานแรกในผัง → ทั้งโรงงาน
+     ⚠️ รอผังโหลดก่อน (orgReady) ไม่งั้นค่าจาก URL เช่น department:HYDROFORM ถูกตีว่าไม่รู้จักแล้วล้างทิ้ง */
   useEffect(() => {
-    if (section || !sectionOpts.length) return;
-    const mine = (sections || []).find(s => sectionOpts.includes(s));
-    setParam('section', mine || sectionOpts[0]);
-  }, [section, sectionOpts, sections, setParam]);
+    if (!orgReady || !lines.length) return;
+    if (scope && (isPlant(scope) || org.has(scope.kind, scope.value))) return;
+    const mine = (sections || []).map(x => scopeOpts.find(o => o.kind === 'section' && o.value === x)).find(Boolean);
+    const first = scopeOpts.find(o => o.kind === 'section');
+    setScope(mine || first || PLANT);
+  }, [orgReady, lines.length, scope, org, sections, scopeOpts, setScope]);
 
-  const lineNames = useMemo(() => lines
-    .filter(l => (!scopeSet || scopeSet.has(l.name)) && (!section || (l.section || '') === section))
-    .map(l => l.name), [lines, scopeSet, section]);
-
-  /* กลุ่มไลน์ = ไลน์แม่ในส่วนงาน (parent_line_name IS NULL) — ตรงกับ "แผง" บนกระดาษ · 1 บอร์ดต่อ 1 กลุ่ม */
-  const groups = useMemo(() => lines
-    .filter(l => (l.section || '') === section && !l.parent_line_name && (!scopeSet || scopeSet.has(l.name)))
-    .map(l => l.name).sort(), [lines, section, scopeSet]);
-  const group = groups.includes(groupParam) ? groupParam : (groups[0] || '');
-  useEffect(() => {
-    if (groups.length && groupParam && !groups.includes(groupParam)) setParam('group', groups[0]);
-  }, [groups, groupParam, setParam]);
+  /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขต user · ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง) = [] → แผ่นอัตโนมัติว่างโดยตั้งใจ */
+  const lineNames = useMemo(() => {
+    const inUser = lines.filter(l => !scopeSet || scopeSet.has(l.name)).map(l => l.name);
+    if (!scope || isPlant(scope)) return inUser;
+    const mine = new Set(org.lineNamesOf(scope.kind, scope.value));
+    return inUser.filter(n => mine.has(n));
+  }, [lines, scopeSet, scope, org]);
+  const scopeNoLines = !!scope && !isPlant(scope) && orgReady && org.lineNamesOf(scope.kind, scope.value).length === 0;
   const members = useMemo(() => {
-    const m = lines.filter(l => l.name === group || l.parent_line_name === group);
-    return { names: new Set(m.map(l => l.name)), ccs: [...new Set(m.filter(l => l.parent_line_name && l.cost_center).map(l => l.cost_center))].sort() };
-  }, [lines, group]);
+    const set = new Set(lineNames);
+    const m = lines.filter(l => set.has(l.name));
+    return {
+      names: set,
+      groups: [...new Set(m.map(l => l.parent_line_name || l.name))].sort(),   // กลุ่มไลน์ (เป้า OEE ตั้งรายกลุ่ม)
+      ccs: [...new Set(m.filter(l => l.cost_center).map(l => l.cost_center))].sort(),
+    };
+  }, [lines, lineNames]);
+  /* ชิปเจาะลงหนึ่งชั้น (ลูกของขอบเขตที่เลือก · ไม่เกิน 6 ไม่งั้นหัวจอยาว — เกินนั้นใช้ picker) + ชิป ↑ กลับขึ้น */
+  const childChips = useMemo(() => {
+    if (!scope) return [];
+    const kids = org.childrenOf(scope.kind, scope.value).filter(o => o.kind !== 'cost_center' && scopeOpts.some(x => x.key === o.key));
+    return kids.length <= 6 ? kids : [];
+  }, [scope, org, scopeOpts]);
+  const parentScope = useMemo(() => (scope && !isPlant(scope) ? org.ancestorsOf(scope.kind, scope.value).slice(-1)[0] || PLANT : null), [scope, org]);
+  const secSet = useMemo(() => (scope ? org.sectionsOf(scope.kind, scope.value) : null), [scope, org]);   // null = ไม่จำกัด
+  const scopeText = scope ? (isPlant(scope) ? 'ทั้งโรงงาน' : [...org.pathOf(scope.kind, scope.value), scope.value].filter((x, i, a) => a.indexOf(x) === i).join(' › ')) : '—';
 
   /* ── โหลด — ทุกก้อนเช็ค error → warn[] เพื่อขึ้นแถบ "โหลดไม่ครบ" ห้ามเงียบ ─────────────────────
      deps เป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) · lineNames ส่งเป็นสตริงคั่นด้วย | */
   const lineKey = lineNames.join('|');
+  const secKey = secSet ? [...secSet].join('|') : '*';
   const load = useCallback(async () => {
-    if (!lineKey || !section) return;
-    const names = lineKey.split('|');
+    if (!scopeKeyStr) return;                             // ยังไม่เลือกขอบเขต (effect กำลังตั้ง default)
+    const names = lineKey ? lineKey.split('|') : [];      // [] = ขอบเขตไม่มีไลน์ผลิต → ข้าม rollup แต่ยังโหลด KPI กรอกมือ/งานค้าง
+    const secOk = (v) => secKey === '*' || (secKey ? secKey.split('|').includes(v || '') : false);
     const seq = ++reqRef.current;
     setLoading(true); setErr(null);
     const warn = [];
     try {
       // 1) ผลรวมรายเดือนทั้งปีของทุกไลน์ (กรอง scope/กลุ่มฝั่ง client — สลับกลุ่มไม่ยิง DB ใหม่)
-      const yr = await supabaseDR.rpc('obeya_year_rollup', { p_from: `${year}-01-01`, p_to: date });
+      const yr = names.length ? await supabaseDR.rpc('obeya_year_rollup', { p_from: `${year}-01-01`, p_to: date }) : { data: {} };
       if (yr.error) warn.push('ผลรวมรายเดือน (OEE/PPM)');
       const roll = yr.data || {};
       // 2) กะที่ยังเปิดค้างของวันที่ดู — ตัวเลขวันนี้ยังไม่ครบ ต้องบอก
-      const op = await supabaseDR.from('production_sessions').select('id')
-        .eq('work_date', date).neq('status', 'closed').in('line_name', names.slice(0, 200));
+      const op = names.length ? await supabaseDR.from('production_sessions').select('id')
+        .eq('work_date', date).neq('status', 'closed').in('line_name', names.slice(0, 200)) : { data: [] };
       if (op.error) warn.push('กะที่เปิดค้าง');
       // 3) เป้า OEE (A×P×Q รายกรุ๊ป)
       const tg = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q');
@@ -199,14 +230,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         .order('event_date', { ascending: false }).limit(500);
       const safetyMissing = (sf.error?.code || '') === '42P01';
       if (sf.error && !safetyMissing) warn.push('เหตุการณ์ความปลอดภัย');
-      const safety = (sf.data || []).filter(e => !section || (e.section || '') === section);
+      const safety = (sf.data || []).filter(e => secOk(e.section));
       // 5) งานที่ต้องตามแก้จากประชุมเช้า/ห้อง Obeya — "บอร์ดที่มีแต่กราฟ ไม่มี action = ไม่ใช่ Obeya"
       const acts = await supabase.from('meeting_action_items')
         .select('id, meeting_date, section, line_name, problem, assignee, due_date, status, source')
         .in('status', ['open', 'doing']).order('due_date', { ascending: true, nullsFirst: false }).limit(60);
       const actsMissing = (acts.error?.code || '') === '42P01';
       if (acts.error && !actsMissing) warn.push('งานติดตาม');
-      const actions = (acts.data || []).filter(a => !section || (a.section || '') === section);
+      const actions = (acts.data || []).filter(a => secOk(a.section));
       // 6) นิยาม KPI ของปี + ค่ารายเดือน (กรอกมือ / เป้าของแถว auto)
       let kdRes = await supabase.from('kpi_definitions')
         .select('*, kpi_catalog(name, unit, direction)').eq('year', year).eq('is_active', true);
@@ -215,7 +246,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       }
       const kpiMissing = (kdRes.error?.code || '') === '42P01';
       if (kdRes.error && !kpiMissing) warn.push('นิยาม KPI');
-      const kdefs = (kdRes.data || []).filter(d => !d.section || d.section === section);
+      // นิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (ตกลงรุ่นเดียวกับแท็บ ⚙️)
+      const sel = parseScopeKey(scopeKeyStr);
+      const kdefs = (kdRes.data || []).filter(d => scopeCovers(org, scopeOfDef(d), sel));
       let kentries = [];
       if (kdefs.length) {
         const ke = await fetchByIds(kdefs.map(d => d.id), part => supabase
@@ -234,13 +267,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     } finally {
       if (seq === reqRef.current) setLoading(false);
     }
-  }, [lineKey, section, year, date]);
+  }, [lineKey, scopeKeyStr, secKey, year, date, org]);
   useEffect(() => { load(); }, [load]);
   usePolling(load, RATE.BOARD);
 
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
-    if (!data || !group) return [];
+    if (!data || !scope) return [];
     const { sessions, defects, targets, safety, kdefs, kentries } = data;
     const ym = x => String(x ?? '').slice(0, 7);
     const inG = r => members.names.has(r.line);
@@ -249,32 +282,49 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
     const entByKpi = {};
     (kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
-    /* เป้าของแถว auto ตั้งที่แท็บ 📑 (ปุ่ม 🎯) เก็บเป็น source='auto:<key>' — แหล่งเดียวกับตาราง ห้ามตั้งคนละที่ */
-    const autoDefOf = (grp, k) => (kdefs || []).find(d => d.source === `auto:${k}` && (d.line_group || '') === (grp || '')) || null;
-    const manualOf = (grp, rowName) => {
-      const nn = normName(rowName);
-      const d = (kdefs || []).find(x => !String(x.source || '').startsWith('auto:')
-        && normName(x.kpi_catalog?.name || x.name) === nn && (x.line_group || '') === (grp || ''));
-      return d ? { def: d, entries: entByKpi[d.id] || {}, unit: d.kpi_catalog?.unit || '' } : null;
+    /* เป้า/นิยาม = ของขอบเขตที่เลือกก่อน ไม่มีค่อยไต่ขึ้นบรรพบุรุษทีละชั้น (แผนก → ส่วนงาน → ฝ่าย → โรงงาน)
+       แหล่งเดียวกับแท็บ ⚙️ ห้ามตั้งคนละที่ · `inherited` = เอามาจากระดับแม่ (จอต้องบอก) */
+    const chain = [scope, ...org.ancestorsOf(scope.kind, scope.value).slice().reverse()];
+    const nearest = (pred, needEntries = false) => {
+      let firstHit = null;
+      for (const sc of chain) {
+        const d = (kdefs || []).find(x => sameScope(scopeOfDef(x), sc) && pred(x));
+        if (!d) continue;
+        const hit = { def: d, entries: entByKpi[d.id] || {}, unit: d.kpi_catalog?.unit || '', inherited: !sameScope(sc, scope), at: sc };
+        if (!needEntries || Object.keys(hit.entries).length) return hit;
+        firstHit = firstHit || hit;
+      }
+      return firstHit;
     };
+    const autoDefOf = (k) => nearest(d => d.source === `auto:${k}`)?.def || null;
+    const manualOf = (rowName, needEntries = false) => {
+      const nn = normName(rowName);
+      return nearest(x => !String(x.source || '').startsWith('auto:') && normName(x.kpi_catalog?.name || x.name) === nn, needEntries);
+    };
+    /* เป้า OEE = A×P×Q รายกลุ่ม (oee_targets) — ขอบเขตครอบหลายกลุ่ม = เฉลี่ยของกลุ่ม (กติกาเดียวกับ /oee-analytics ระดับ section) */
     const tg = Object.fromEntries((targets || []).map(t => [t.group_name, t]));
-    const t = tg[group] || {};
-    const oeeTarget = Math.round(((Number(t.target_a) || DEFAULT_APQ.a) * (Number(t.target_p) || DEFAULT_APQ.p)
-      * (Number(t.target_q) || DEFAULT_APQ.q) / 10000) * 10) / 10;
+    const apq = (t) => ((Number(t?.target_a) || DEFAULT_APQ.a) * (Number(t?.target_p) || DEFAULT_APQ.p) * (Number(t?.target_q) || DEFAULT_APQ.q)) / 10000;
+    const grpTargets = members.groups.map(g => tg[g] || null);
+    const setGroups = grpTargets.filter(Boolean).length;
+    const oeeTarget = Math.round((grpTargets.length ? grpTargets.reduce((a, t) => a + apq(t), 0) / grpTargets.length : apq(null)) * 10) / 10;
+    const inEv = (e) => (members.names.size ? (e.line_name && members.names.has(e.line_name)) : true);
 
     return boardRowsFor(year).map((r) => {
-      const man = manualOf(group, r.name);
-      let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = false, manual = !r.auto;
+      const man = manualOf(r.name);
+      let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
       let months = 0, sumKind = 'avg';
 
       if (r.auto === 'oee') {
         const k = axisOeeYear({ rows: gSess, year, target: { oee: oeeTarget } });
         series = k.series; months = k.months;
         def = { target_value: oeeTarget, direction: 'up' };
-        note = tg[group] ? `เป้าจากทะเบียนเป้า OEE (A${t.target_a ?? DEFAULT_APQ.a}×P${t.target_p ?? DEFAULT_APQ.p}×Q${t.target_q ?? DEFAULT_APQ.q})`
-          : 'ยังไม่ตั้งเป้า OEE ของกลุ่มนี้ — ใช้ค่ามาตรฐาน 90×90×99';
+        note = !members.groups.length ? 'ขอบเขตนี้ไม่มีไลน์ผลิต — ไม่มี OEE ให้คำนวณ'
+          : setGroups === members.groups.length && members.groups.length === 1
+            ? `เป้าจากทะเบียนเป้า OEE (A${tg[members.groups[0]].target_a ?? DEFAULT_APQ.a}×P${tg[members.groups[0]].target_p ?? DEFAULT_APQ.p}×Q${tg[members.groups[0]].target_q ?? DEFAULT_APQ.q})`
+            : setGroups ? `เป้าเฉลี่ย ${members.groups.length} กลุ่มไลน์ (ตั้งแล้ว ${setGroups} กลุ่ม · ที่เหลือใช้ 90×90×99)`
+              : `ยังไม่ตั้งเป้า OEE ของกลุ่มในขอบเขตนี้ — ใช้ค่ามาตรฐาน 90×90×99`;
       } else if (r.auto === 'ppm') {
-        const ad = autoDefOf(group, 'ppm');
+        const ad = autoDefOf('ppm');
         def = ad ? { ...ad } : null;
         const k = axisPpmYear({ sessions: gSess, defects: gDefs, year, target: def?.target_value ?? null, direction: def?.direction || 'down' });
         series = k.series; months = k.months;
@@ -282,23 +332,23 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else if (r.auto === 'safety') {
         /* ค่า KPI Safety = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับบันทึกหน้างาน
            ห้ามบวก 2 แหล่ง · ไม่มีบันทึกเลย = เทา ห้ามเขียว (0 ที่บันทึก ≠ 0 ที่เกิดจริง) */
-        const manSec = man && Object.keys(man.entries).length ? man : manualOf('', r.name);
+        const manSec = manualOf(r.name, true);
         if (manSec && Object.keys(manSec.entries).length) {
           const k = manualMonthSeries({ entries: manSec.entries, year });
           series = k.series; months = k.months; def = manSec.def; unit = manSec.unit || r.unit;
           fromDept = true; manual = true;
-          const inj = (safety || []).filter(e => ym(e.event_date) === monthKey && e.line_name && members.names.has(e.line_name) && isInjury(e)).length;
-          note = `สรุปจากหน่วยงานความปลอดภัย${manSec === man ? '' : ' (ค่าระดับส่วนงาน)'} · หน้างานบันทึกบาดเจ็บเดือนนี้ ${inj} ครั้ง`;
+          const inj = (safety || []).filter(e => ym(e.event_date) === monthKey && inEv(e) && isInjury(e)).length;
+          note = `สรุปจากหน่วยงานความปลอดภัย${manSec.inherited ? ` (ค่าระดับ ${org.labelOf(manSec.at.kind, manSec.at.value)})` : ''} · หน้างานบันทึกบาดเจ็บเดือนนี้ ${inj} ครั้ง`;
         } else if ((safety || []).length) {
           const cnt = {};
-          (safety || []).forEach((e) => { if (e.line_name && members.names.has(e.line_name) && isInjury(e)) cnt[ym(e.event_date)] = (cnt[ym(e.event_date)] || 0) + 1; });
+          (safety || []).forEach((e) => { if (inEv(e) && isInjury(e)) cnt[ym(e.event_date)] = (cnt[ym(e.event_date)] || 0) + 1; });
           const upto = monthKeys(year).filter(k => k <= monthKey);
           series = monthKeys(year).map(k => (upto.includes(k) ? { k, v: cnt[k] || 0 } : { k, v: null, empty: true }));
           const total = upto.reduce((a, k) => a + (cnt[k] || 0), 0);
           series.push({ k: SUMMARY_KEY, v: total, summary: true, kind: 'sum' });
           months = upto.length; sumKind = 'sum';
           def = { target_value: 0, direction: 'down' };
-          note = 'นับจากบันทึกหน้างาน (safety_events) · เป้า 0 ครั้ง · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในกลุ่มนี้';
+          note = `นับจากบันทึกหน้างาน (safety_events) · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
         } else {
           series = monthKeys(year).map(k => ({ k, v: null, empty: true })).concat([{ k: SUMMARY_KEY, v: null, summary: true }]);
           note = 'ยังไม่มีใครบันทึกเหตุการณ์ และยังไม่กรอกสรุปจากหน่วยงานความปลอดภัย';
@@ -308,6 +358,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         series = k.series; months = k.months; def = man?.def || null;
       }
 
+      if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
       const cur = series.find(p => p.k === monthKey) || null;
       const value = cur?.v ?? null;
       const target = def?.target_value == null ? null : Number(def.target_value);
@@ -331,15 +382,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasDef: !!def,
       };
     });
-  }, [data, group, members, year, monthKey]);
+  }, [data, scope, members, year, monthKey, org]);
 
-  /* แผง Key Performance = นิยาม KPI ระดับส่วนงาน (ไม่ผูกกลุ่มไลน์ · ไม่ใช่แถว auto) */
+  /* แผง Key Performance = นิยาม KPI ของขอบเขตที่เลือกเป๊ะ (ไม่ใช่แถว auto · ไม่ซ้ำ 8 หัวข้อบนแผ่นหลัก)
+     — ใบ KPI ของหน่วยงานสนับสนุน (JIG MTN: MTBF/MTTR/PM) โผล่ที่นี่ทั้งใบ */
   const secRows = useMemo(() => {
-    if (!data) return [];
+    if (!data || !scope) return [];
     const entByKpi = {};
     (data.kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
+    const mainNames = new Set(boardRowsFor(year).map(r => normName(r.name)));
     return (data.kdefs || [])
-      .filter(d => !d.line_group && !String(d.source || '').startsWith('auto:'))
+      .filter(d => sameScope(scopeOfDef(d), scope) && !String(d.source || '').startsWith('auto:')
+        && !mainNames.has(normName(d.kpi_catalog?.name || d.name)))
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       .map((d) => {
         const v = entByKpi[d.id]?.[monthNo];
@@ -353,7 +407,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         }
         return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: d.kpi_catalog?.unit || '', value, st, why };
       });
-  }, [data, monthNo]);
+  }, [data, monthNo, scope, year]);
 
   /* งานค้างที่ต้องตามแก้ — action item + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด · เรียง "เกินกำหนดก่อน แล้วเก่าก่อน" */
   const todo = useMemo(() => {
@@ -460,21 +514,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     data?.warn?.length ? `ตัวเลขบางส่วนโหลดไม่ครบ: ${data.warn.join(' · ')}` : null,
     data?.kpiMissing ? 'ยังไม่ได้ apply migration ตาราง KPI — แถว ✍️ ทั้งหมดจะว่างจนกว่าจะ apply (แจ้ง admin)' : null,
     data?.openSess && monthKey === today.slice(0, 7) ? `วันนี้ยังมี ${data.openSess} กะที่ยังไม่ปิด — ตัวเลขเดือนนี้ยังไม่ครบ` : null,
+    scopeNoLines ? `${scopeText} ไม่มีไลน์ผลิตในผัง — แผ่น OEE/PPM ว่างโดยตั้งใจ · KPI กรอกมือของหน่วยงานนี้อยู่ที่แผ่น 📌 Key Performance (ตั้งที่แท็บ ⚙️)` : null,
     err ? `โหลดไม่สำเร็จ: ${err}` : null,
   ].filter(Boolean);
 
   const controls = (
     <>
-      <select value={section} onChange={e => { setParam('section', e.target.value); setParam('group', ''); }} style={{ width: 120, fontSize: 13 }}>
-        {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
-      {/* กลุ่มไลน์ = 1 แผงบนกระดาษ · ส่วนงานจริงมี 1-3 กลุ่ม = ปุ่ม · เกิน 4 (เช่น harness/ส่วนงานใหญ่) = dropdown ไม่งั้นหัวจอยาว 4 บรรทัด */}
-      {groups.length > 4 ? (
-        <select value={group} onChange={e => setParam('group', e.target.value)} style={{ width: 220, fontSize: 13 }} title="กลุ่มไลน์ = 1 แผงบนกระดาษ">
-          {groups.map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
-      ) : groups.map(g => (
-        <button key={g} onClick={() => setParam('group', g)} style={pill(g === group)} title="กลุ่มไลน์ = 1 แผงบนกระดาษ">{g}</button>
+      {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — 1 บอร์ดต่อ 1 ขอบเขต (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC) · ชิป = เจาะลง/กลับขึ้นหนึ่งชั้น */}
+      <OrgScopePicker index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections}
+        width={230} title="เลือกขอบเขตตามผังองค์กร" />
+      {parentScope && <button onClick={() => setScope(parentScope)} style={pill(false)} title={`กลับขึ้น ${org.labelOf(parentScope.kind, parentScope.value)}`}>↑</button>}
+      {childChips.map(c => (
+        <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{c.label}</button>
       ))}
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
@@ -490,7 +541,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         <PageHeader
           tabs={tabs} tab={tab} onTab={onTab}
           title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
-          sub={`ตามบอร์ดหน้างาน · ${section || '—'} › ${group || '—'}${members.ccs.length ? ` (cost ${members.ccs.join(' · ')})` : ''} · ${monthText} · ประเมินได้ ${overall.known}/${overall.total} ช่อง`}
+          sub={`ตามบอร์ดหน้างาน · ${scopeText}${members.ccs.length && members.ccs.length <= 3 ? ` (cost ${members.ccs.join(' · ')})` : ''} · ${monthText} · ประเมินได้ ${overall.known}/${overall.total} ช่อง`}
           actions={(
             <>
               {controls}
@@ -506,7 +557,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       )}
       {board && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', flexShrink: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 18, fontWeight: 900 }}>📋 OBEYA · {section}</div>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>📋 OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
           {controls}
           <StatusLamp k={1} w={999} stat={overallLamp} />
           <div style={{ flex: 1 }} />
@@ -525,10 +576,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: fit ? 'clip' : 'auto', overflowX: 'clip' }}>
           {loading && !data ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
-          ) : !groups.length ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
-              ส่วนงาน {section || '—'} ยังไม่มีกลุ่มไลน์ (ไลน์แม่) ในขอบเขตของคุณ — ตั้งโครงไลน์ที่ /line-setup
-            </div>
+          ) : !scope ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังเลือกขอบเขตเริ่มต้น…</div>
           ) : (
             <div style={sheetsBox}>
               {rows.map((r) => (
@@ -547,10 +596,10 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               ))}
 
               {/* ═══ Key Performance ระดับส่วนงาน (100P / LEAN / QCC / Kaizen / 5S …) ═══ */}
-              <Sheet k={k} cw={cw} icon="📌" title={`Key Performance ${section}`}
-                sub="KPI ระดับส่วนงาน (ไม่ผูกกลุ่มไลน์)" big={secRows.length ? `${secRows.filter(r => r.st !== ST.unknown).length}/${secRows.length}` : '—'}
+              <Sheet k={k} cw={cw} icon="📌" title={`Key Performance · ${org.labelOf(scope.kind, scope.value)}`}
+                sub="KPI ที่ตั้งไว้ที่ขอบเขตนี้โดยตรง (นอกเหนือ 8 หัวข้อหลัก)" big={secRows.length ? `${secRows.filter(r => r.st !== ST.unknown).length}/${secRows.length}` : '—'}
                 unit={secRows.length ? 'ประเมินได้' : ''}
-                stat={toLamp(worstStatus(secRows.map(r => r.st)), secRows.length ? `${secRows.length} หัวข้อ` : 'ยังไม่ได้ตั้ง KPI ระดับส่วนงาน')}
+                stat={toLamp(worstStatus(secRows.map(r => r.st)), secRows.length ? `${secRows.length} หัวข้อ` : 'ยังไม่ได้ตั้ง KPI ที่ขอบเขตนี้')}
                 link="ตั้ง/กรอกที่แท็บ 📑" onLink={() => onTab?.('table')}>
                 <div style={{ height: '100%', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3, padding: '0 4px' }}>
                   {!secRows.length ? (
@@ -614,8 +663,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
       {showSafety && (
         <SafetyEventModal
-          init={showSafety} section={section} date={date}
-          lineOpts={lineNames} sectionOpts={sectionOpts}
+          init={showSafety} section={secSet && secSet.size === 1 ? [...secSet][0] : ''} date={date}
+          lineOpts={lineNames} sectionOpts={scopeOpts.filter(o => o.kind === 'section').map(o => o.value)}
           onClose={() => setShowSafety(null)}
           onSaved={() => { setShowSafety(null); load(); }}
         />

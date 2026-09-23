@@ -59,3 +59,5 @@
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` | 14 KB |
 | 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` | 4 KB |
 | 🔔 แจ้งเตือนท่วม + นโยบายเก็บย้อนหลัง `notifications` (2026-09-23) | `docs/modules/notifications-flood.md` | 6 KB |
+| 🗄️ Database Schema — กฎ/เหตุผล/ประวัติรายตาราง (ย้ายจาก CLAUDE.md 2026-09-23) | `docs/modules/db-schema.md` | 13 KB |
+| Shift Logic / OT — เวลากะ · OT วันหยุด · มาตรา 75 (ย้ายจาก CLAUDE.md 2026-09-23) | `docs/modules/shift-ot.md` | 4 KB |

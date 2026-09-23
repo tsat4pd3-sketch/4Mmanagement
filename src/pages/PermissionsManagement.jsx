@@ -26,7 +26,7 @@ const PAGE_GROUPS = [
     group: 'ภาพรวม',
     pages: [
       { key: 'page:/',            label: 'หน้าหลัก' },
-      { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน' },
+      { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน (แท็บ 📌 ใน OBEYA)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
     ],
