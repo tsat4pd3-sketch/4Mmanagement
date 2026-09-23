@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { mergeParams } from './useTabParam';
-import { LOOKBACK_DAYS, TIME_SCALES, normalizeRange, presetRange, isDateStr } from './timeRange';
+import { LOOKBACK_DAYS, TIME_SCALES, capBucket, normalizeRange, presetRange, isDateStr } from './timeRange';
 import { getWorkDate } from './workDate';
 
 /* ══ useTimeRange — ผูก "สเกล + กรอบเวลา" ของหน้ากับ URL (2026-09-23) ════════════════
@@ -11,6 +11,9 @@ import { getWorkDate } from './workDate';
  *   (22/09 user ทัก: *"เรากรอง PD3 ไว้ พอกดเข้าไปดู มันรีเฟรชไปหน้าใหม่ ต้องกรองอีกรอบ"*)
  *
  * param ที่ใช้: `?scale=` `?from=` `?to=`  — ค่า default ไม่ถูกเขียนลง URL (ลิงก์สะอาด)
+ *   ⚠️ `scale` = **ขนาดแท่งในกราฟ** (hour/day/week/month/year) ไม่ใช่ "ช่วงที่ดู"
+ *      ช่วงที่ดูคือ from–to เสมอ · ปุ่ม "วันนี้/สัปดาห์นี้/…" เป็นแค่ตัวเติม from–to + ขนาดแท่ง
+ *      พร้อมกันผ่าน `setView({from,to,scale})` (ดูบันไดใน `timeRange.js`)
  *
  * 🔴 **ห้ามเรียก `setSearchParams({...})` ตรงๆ** — ใช้ `mergeParams` เพื่อไม่ล้าง `?tab=`/`?dept=`
  *    ของหน้าแม่ทิ้ง (บั๊กจริงที่เคยเกิดกับ PmHub — ดูหัวไฟล์ `useTabParam.js`)
@@ -22,6 +25,10 @@ export default function useTimeRange(opts = {}) {
   const {
     defaultScale = 'day',
     defaultDays = 30,          // ช่วงตั้งต้นเมื่อ URL ยังไม่มี from/to
+    /* เพดานความละเอียดของ "ข้อมูลหน้านี้" — ดูเหตุผลรายตาราง ใน `timeRange.js`
+       ใช้ล้าง `?scale=` ที่แก้มือมาละเอียดเกินจริงด้วย (เช่น `?scale=hour` บนจอ OEE
+       ซึ่ง `bucketKey` จะคืน null ⇒ ทุกแถวตกถังเดียวชื่อ "null" = กราฟแท่งเดียวที่ดูเหมือนจริง) */
+    finest = 'hour', coarsest = 'year',
     param = { scale: 'scale', from: 'from', to: 'to' },
   } = opts;
 
@@ -32,7 +39,8 @@ export default function useTimeRange(opts = {}) {
     [defaultDays, today]);
 
   const rawScale = sp.get(param.scale);
-  const scale = TIME_SCALES.some(s => s.key === rawScale) ? rawScale : defaultScale;
+  const scale = capBucket(TIME_SCALES.some(s => s.key === rawScale) ? rawScale : defaultScale,
+    finest, coarsest);
 
   const rawFrom = sp.get(param.from);
   const rawTo = sp.get(param.to);
@@ -66,6 +74,9 @@ export default function useTimeRange(opts = {}) {
     setTo: (v) => set({ to: v }),
     setRange: (from, to) => set({ from, to }),
     setPreset: (days) => { const r = presetRange(days, today); if (r) set({ from: r.from, to: r.to }); },
+    /* เปลี่ยน "ช่วง + ขนาดแท่ง" พร้อมกันใน **ครั้งเดียว** — กดปุ่มช่วงทีเขียน URL 2 รอบ
+       = ประวัติ 2 ชั้น ⇒ กด Back ครั้งเดียวไม่กลับ (บั๊กที่ผู้ใช้เจอเป็น "ปุ่ม Back เสีย") */
+    setView: (patch) => set(patch),
     presets: LOOKBACK_DAYS,
   };
 }

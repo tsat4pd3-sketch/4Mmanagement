@@ -386,18 +386,22 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก "ไม่กรอกเลย"
    (ต้องแก้ที่การกรอก) · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
 4. 🔎 **เดาหมวดจากคำก่อนปล่อยตกถัง** (วัดจริง 90 วัน: อื่นๆ 103 ใบ อันดับ 1 → **36 ใบ อันดับ 4**)
-   🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น: ทะเบียน taxonomy + ใบที่คนจัดกลุ่มไว้แล้ว**
-   (ที่มาของศัพท์หน้างาน "observeline"/"พาเลทไม่ไหล") — `STOP`/`FILLER` ใส่ได้แค่**คำกลางของภาษา**
-   (หัก/แตก/the) ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ · ก้ำกึ่ง → คืน null (ตกถังดีกว่าเดาผิด)
+   🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** (ทะเบียน taxonomy + ใบที่คนจัดกลุ่มแล้ว) — `STOP`/`FILLER`
+   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ · ก้ำกึ่ง → null (ตกถังดีกว่าเดาผิด)
    · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
 > 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท
 
 ## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
 
-สเกล **รายวัน/สัปดาห์/เดือน/ปี** + กรอบเวลา + ปุ่มย้อนหลัง **30/60/90/120 วัน** ·
+ปุ่ม**ช่วง** (วันนี้/สัปดาห์นี้/เดือนนี้/ปีนี้/🔒หลายปี) + ปุ่ม**ย้อนหลัง** 30/60/90/120 + กรอบวันที่ ·
 **ห้ามวาดปุ่มสเกล/ช่องวันที่เองในหน้า** (เดิม 18 ไฟล์ทำกันเอง 4 แบบ · `period` มี 2 ความหมาย)
-· สูตรแบ่งถัง/ป้ายแกน = `src/utils/timeRange.js` ที่เดียว · ผูก URL ด้วย `useTimeRange()` (`?scale=&from=&to=`)
+· สูตรแบ่งถัง/ป้ายแกน/บันได = `src/utils/timeRange.js` ที่เดียว · ผูก URL ด้วย `useTimeRange()` (`?scale=&from=&to=`)
 · **สเกลไม่เข้ากับช่วง = เตือน ห้ามบล็อก** · ปุ่มย้อนหลัง = ตัวเติมวัน **ไม่ใช่โหมดค้าง**
+· 🪜 **บันได "ดูช่วงไหน ⇒ แท่งเล็กกว่า 1 ขั้น"** (23/09) วัน→ชม. · สัปดาห์/เดือน→วัน · ปี→เดือน · หลายปี→ปี
+  **ออโต้ แต่กดทับได้ แล้วออโต้ห้ามทับซ้ำ** · จอต้องเขียน "แท่งละ 1 …" เสมอ · 🔴 **เพดานเป็นของข้อมูล
+  ไม่ใช่ของจอ** (`finest`) — OEE ละเอียดสุด = **วัน** · 🔴 **"24 ชม. โรงงาน" = 08:00→07:59 วันถัดไป**
+  (`bkkHourKey` บวก 7 ชม. จาก epoch เอง **ห้ามพึ่ง timezone เครื่อง**) · 🔴 **ปุ่ม "หลายปี" ล็อก default**
+  เปิดเฉพาะจอที่มี RPC rollup (กฎ: โหมดปีห้ามโหลดแถวดิบ)
 · 🔴 **วันทำงานใช้ `getWorkDate()` จาก `src/utils/workDate.js`** (ของกลางใหม่ — เดิมก๊อปซ้ำ 27 ไฟล์ ยังไม่กวาด)
 · 🔴 **SQDCM ยกเว้น** (ปุ่มของมัน = "ดูช่วงไหน") · **หน้าที่ไม่มีตัวกรองเวลาจริง ห้ามยัดแถบลงไป** — เหตุผลรายหน้าดูในเอกสาร
 > 📄 `docs/modules/time-range-filter.md` · UI §6.16
@@ -592,9 +596,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 - **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
   ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
   ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` ที่ operator/Register) — GIF บีบไม่ได้ เฉลี่ย 4.3 MB/รูป
-  (ใหญ่กว่ารูปนิ่ง 60 เท่า) · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)
-  · **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
+- **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}`) — บีบไม่ได้ เฉลี่ย 4.3 MB/รูป · ตัวตรวจชนิดไฟล์ =
+  `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME) · **ปฏิเสธไฟล์ต้องขึ้น toast
+  บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
 > 📄 รายละเอียดเต็ม → `docs/modules/storage-images.md`
 
 ---
@@ -633,16 +637,11 @@ src/
 
 supabase/
 ├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบแล้ว): send-notification, send-cqi15-notification,
-                       #   daily-4m-summary, create-user (v14 2026-07-13: admin-only + validate role
-                       #   กับ enum ผ่าน RPC get_user_roles ห้าม hardcode + เขียนโปรไฟล์ครบทุก field
-                       #   จังหวะเดียว), delete-user (admin-only · กันลบตัวเอง/ลบ admin),
-                       #   reset-user-password (admin-only · ตั้งรหัสใหม่ให้ user ที่ลืมรหัส —
-                       #   ห้ามใช้กับบัญชี admin · ปุ่ม 🔑 ใน modal แก้ไขของ /add-user · 2026-07-14),
-                       #   pm-daily-scan, pm-plan-reminder, shipping-phase-scan,
-                       #   downtime-open-scan (DR cron 5 นาที — เปิดค้างเกินเกณฑ์), cleanup-orphan-photos
-                       # หน้า Login แยก error "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
-                       #   (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
+└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบ) — รายชื่อ/กติการายตัว ดู docs/modules/edge-functions.md
+                       #   ที่ต้องรู้ข้าม session: create-user/delete-user/reset-user-password = admin-only
+                       #   (กันลบตัวเอง/ลบ admin · validate role กับ enum ผ่าน RPC get_user_roles ห้าม hardcode)
+                       #   · หน้า Login แยก "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
+                       #     (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
 
 docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.md (ทุกงาน) · UI-CONVENTIONS.md (งาน UI) ·
                        #   PERMISSIONS-DESIGN.md (สิทธิ์/role) · OBEYA-KPI-SOURCES.md (ก่อนแตะ KPI)
@@ -836,7 +835,7 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 - **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** (`:root { color-scheme: dark }` + `[data-theme="light"] { color-scheme: light }` — แก้แล้ว 2026-08-21 จาก feedback หน้างาน "Mode dark มองไม่เห็น"): ไอคอนปฏิทิน/นาฬิกาใน `input type=date/time` + ลูกศร select + popup ปฏิทิน เป็นของ browser วาดเอง ไม่ประกาศ = browser ถือว่าหน้าเป็น light → วาดไอคอน**สีดำ**ทับพื้นเขียวเข้ม มองไม่เห็นทั้งระบบ (วัดจริง: โซนไอคอน 0 pixel สว่าง → 77 หลังแก้) · **ห้ามแก้รายจุดด้วย `filter: invert()` ที่ input ตัวใดตัวหนึ่ง** — ประกาศที่ธีมครอบทุก native control ทีเดียว
 
 - **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto` (2026-09-08 วัดจริงด้วย Playwright):** overflow ที่ไม่ใช่ `visible`/`clip` ทำให้ element เป็น scroll container แม้มันไม่เคยเลื่อนเอง (สูงตามเนื้อหา) แล้ว**ขัง sticky ของลูกทุกตัว**ไว้ข้างใน → ตัวเลื่อนจริงของหน้าคือ `<body>` (`html,body{height:100%;overflow-x:hidden}`) sticky จึงไม่เคยเกาะจอเลยสักหน้า · เคสจริง: รูปเครื่องหน้าตรวจ PM เลื่อนหายทั้ง PC/แท็บเล็ต/มือถือ แก้ในหน้าไป 1 รอบ (2026-09-02) ก็ยังหาย เพราะต้นเหตุอยู่ที่ชั้น `main` · **กฎ: กล่องที่แค่ต้องการ "ตัดของล้น" ใช้ `overflow: clip` · ใช้ `hidden`/`auto` เฉพาะกล่องที่ตั้งใจให้เลื่อนในตัวเอง (มี height/maxHeight จำกัด)** · ถ้า sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่มี overflow ≠ visible/clip ก่อนแก้ที่หน้า
-- **`index.css` ตั้ง `input, select, textarea { width: 100% }` เป็น default ทั้งแอป** — input ที่วางใน toolbar/แถบควบคุมแนวนอน (เช่น `<input type="date">` ข้างปุ่ม ◀ ▶) **ต้องกำหนด `width` เองเสมอ** (เช่น `width: 140`) ไม่งั้นมันจะกินเต็มความกว้าง container แล้วดันปุ่มรอบๆ แตกเป็นหลายบรรทัดทั้งที่พื้นที่เหลือ — เคยกัดมาแล้วที่หัวบอร์ด Heijunka ทั้งหน้า Dashboard และหน้าจัดการไลน์ · checkbox/radio เคยโดนยืดจนบีบ label ข้างๆ หายทั้งแถบ (หน้า Daily PM) — ตอนนี้มี rule ยกเว้น `input[type="checkbox"], input[type="radio"] { width: auto }` ใน index.css แล้ว แต่ input ชนิดอื่นใน flex row ยังต้องระวังเอง
+- **`index.css` ตั้ง `input, select, textarea { width: 100% }` เป็น default ทั้งแอป** — input/select ที่วางใน toolbar แนวนอน **ต้องกำหนด `width` เองเสมอ** ไม่งั้นกินเต็ม container แล้วดันปุ่มรอบๆ แตกบรรทัดทั้งที่พื้นที่เหลือ (เคยกัดที่หัวบอร์ด Heijunka · Dashboard · จัดการไลน์) · checkbox/radio มี rule ยกเว้น `width:auto` แล้ว ชนิดอื่นยังต้องระวังเอง
 - UI ที่ตั้งใจให้ดูจากระยะไกล (จอ TV/บอร์ดหน้างาน) อย่าใช้ font 8–9px ทั้งที่พื้นที่แนวนอนเหลือ — เกิดคำถาม "ตัวหนังสือเล็ก พื้นที่ว่างเหลือเยอะ" ซ้ำหลายรอบ ให้เริ่มที่ 11–12px สำหรับชิป/ป้าย และ 14–15px สำหรับหัวข้อ
 - **`display:grid` ที่วางในคอลัมน์สูงๆ (`flex:1`/`flex:7 0 0`) แล้วมีของแค่แถวเดียว → การ์ดถูกยืดสูงผิดสัดส่วน** เพราะ default `align-content: stretch` ของ grid กระจายพื้นที่ว่างแนวตั้งลงแถว → ต้องใส่ **`alignContent: 'start'`** เสมอเมื่อ grid อาจสูงกว่าเนื้อหา (เจอจริง: การ์ดพนักงานใน pool หน้า Management ยืดยาวลงมาทั้งใบ 2026-08-03) · ต่างจาก flexbox (default `align-items: stretch` ยืดแค่แกนขวาง ไม่ยืดตามความสูง container) — pattern เดียวกันกับ grid card ทุกจุดที่ container สูงกว่าเนื้อหา
 
