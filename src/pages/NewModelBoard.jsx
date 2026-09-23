@@ -226,6 +226,30 @@ function LevelProject({ proj, go }) {
         </div>
       )}
 
+      {!!proj.lots?.length && (
+        <div style={{ ...CARD, marginBottom: 12 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 7 }}>
+            ล็อตส่งงานของโปรเจคนี้ <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11.5 }}>
+              · แกนนี้เป็นของ "โปรเจค" ไม่ใช่ของลูกค้า — คนละชุดกับรุ่นอื่นของลูกค้าเดียวกันได้</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {proj.lots.map(l => (
+              <span key={l} style={{ fontSize: 11.5, background: 'var(--bg3)', padding: '3px 9px', borderRadius: 99 }}>{l}</span>
+            ))}
+          </div>
+          {proj.evaStatus && (
+            <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.5 }}>
+              ใบ <b>PROJECT EVA STATUS</b> บนบอร์ดนับตัวชี้วัดแยกรายล็อต —
+              KPI หลัก <b>{proj.evaStatus.mainTotal}</b> หัวข้อ · หัวข้อย่อย <b>{proj.evaStatus.subTotal}</b> หัวข้อ
+              {proj.evaStatus.note && <div style={{ color: 'var(--accent2)' }}>⚠️ {proj.evaStatus.note}</div>}
+            </div>
+          )}
+        </div>
+      )}
+      {proj.partsNote && (
+        <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>📦 {proj.partsNote}</div>
+      )}
+
       <div style={{ ...CARD, marginBottom: 12 }}>
         <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 7 }}>เส้นทางด่าน</div>
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
