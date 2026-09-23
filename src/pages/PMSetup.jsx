@@ -1277,6 +1277,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                   .filter(c => c.x_pos != null && ((c._frameKey ?? frames[0]?._key) === frames[frameIdx]?._key))
                   .map(c => ({ key: c._key, x: c.x_pos, y: c.y_pos, label: cpLabels[c._key],
                     label_dx: c.label_dx, label_dy: c.label_dy,
+                    selected: activePinKey === c._key,
                     color: activePinKey === c._key ? 'var(--accent)' : categoryColor(c.category) }))}
                 onPlace={(x, y) => { updateCp(activePinKey, { x_pos: x, y_pos: y, _frameKey: frames[frameIdx]?._key ?? null }); setActivePinKey(null) }}
                 onRemovePin={(key) => { updateCp(key, { x_pos: null, y_pos: null }); if (activePinKey === key) setActivePinKey(null) }}

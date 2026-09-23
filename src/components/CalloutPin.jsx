@@ -93,8 +93,14 @@ export default function CalloutPin({
       <svg style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9, opacity: op, filter: 'drop-shadow(0 1px 2.5px rgba(0,0,0,0.9))' }}>
         {/* เส้นเชื่อม: หัวลูกศร (จุดจริง) → วงเลข (ปลายเส้นลอดใต้วงเลขที่วาดทับ) · casing มืดใต้เส้นให้เด่นทุกพื้นหลัง */}
         <line x1={px} y1={py} x2={bx} y2={by} stroke="rgba(0,0,0,0.55)" strokeWidth={Math.max(4, size * 0.07 + 3)} strokeLinecap="round" />
-        <line x1={px} y1={py} x2={bx} y2={by} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round" />
-        <polygon points={arrow} fill={color} stroke="#fff" strokeWidth={Math.max(1.6, size * 0.09)} strokeLinejoin="round" />
+        {/* 🔴 หมุด "ยังไม่ทำ" ต้องอ่านออกจาก **เส้นชี้** ด้วย — บนแบบที่หมุดเยอะ ตาจับเส้นก่อนวง
+           และบนมือถือหมุดเล็กสุด 20px (สูตร PK) วงประเล็กมาก เส้นประช่วยยืนยันอีกชั้น
+           (เคสจริง: ใบตรวจ QA จุด SC ยังไม่ตรวจ vs จุด NG — เส้น+ลูกศรแดงเหมือนกันเป๊ะ) */}
+        <line x1={px} y1={py} x2={bx} y2={by} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round"
+          strokeDasharray={hollow ? `${Math.max(3, size * 0.16)} ${Math.max(3, size * 0.14)}` : undefined} />
+        {/* ลูกศรชี้ "จุดจริง" ต้องเห็นชัดเสมอ — ยังไม่ทำ = โปร่ง (พื้นเข้ม ขอบสี) · ทำแล้ว = ทึบ */}
+        <polygon points={arrow} fill={hollow ? 'rgba(12,18,15,0.82)' : color} stroke={hollow ? color : '#fff'}
+          strokeWidth={Math.max(1.6, size * 0.09)} strokeLinejoin="round" />
       </svg>
       {/* วงเลข (ตัวคลิก/ลาก) — หลบจากจุด */}
       <button type="button" title={title}
