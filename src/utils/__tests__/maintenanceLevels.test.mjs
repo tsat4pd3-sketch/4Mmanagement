@@ -167,3 +167,30 @@ test('buildMaintenanceLevels: ผูก checklist → เครื่องใ�
   assert.equal(out.summary.preventive.failingNoPlan, 1);
   assert.equal(out.summary.prescriptive.total, out.actions.length);
 });
+
+/* ── รอบ PM = จำนวนวัน (2026-09-23 · "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่") ── */
+import { cycleDaysOf, cycleLabel, freqForCycle, dueStatus } from '../../lib/pmSchedule.js';
+
+test('รอบ PM: interval_days ชนะ frequency · periodic ไม่มี interval = ไม่มีรอบ', () => {
+  assert.equal(cycleDaysOf('periodic', 180), 180);
+  assert.equal(cycleDaysOf('monthly', null), 30);
+  assert.equal(cycleDaysOf('periodic', null), null);
+  assert.equal(cycleLabel('periodic', 365), 'รายปี');
+  assert.equal(cycleLabel('periodic', 45), 'ทุก 45 วัน');
+  assert.equal(cycleLabel('periodic', null), 'ไม่มีรอบ');
+  // รอบนอก 4 ค่ามาตรฐาน → 'periodic' (check constraint ของ checklists.frequency ไม่ต้องแก้)
+  assert.equal(freqForCycle(30), 'monthly');
+  assert.equal(freqForCycle(180), 'periodic');
+  assert.equal(freqForCycle(null), 'periodic');
+});
+
+test('รอบ PM: periodic + interval 180 คิดวันครบได้ · มีรอบแต่ไม่เคยตรวจ = never ไม่ใช่ periodic', () => {
+  const r = resolvePlanDue({ frequency: 'periodic', plan: { interval_days: 180, last_done_at: '2026-04-01T03:00:00Z' }, todayStr: TODAY });
+  assert.equal(r.dueYmd, '2026-09-28');
+  assert.equal(r.hasCycle, true);
+  assert.equal(resolvePlanDue({ frequency: 'periodic', plan: { interval_days: 180 }, todayStr: TODAY }).status, 'never');
+  // วันที่ช่างกำหนดเอง (next_due_date) ใช้ได้แม้ยังไม่เคยตรวจ
+  assert.equal(resolvePlanDue({ frequency: 'periodic', plan: { interval_days: 180, next_due_date: '2026-10-15' }, todayStr: TODAY }).status, 'ok');
+  assert.equal(dueStatus(null, 'periodic', 180), 'never');
+  assert.equal(dueStatus(null, 'periodic', null), 'periodic');
+});
