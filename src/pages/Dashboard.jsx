@@ -126,22 +126,6 @@ function ThumbMap({ imageUrl, alt, markers }) {
   );
 }
 
-function RadialProgress({ pct, size = 80, stroke = 7, color = 'var(--accent)' }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ * (1 - pct / 100);
-  return (
-    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke}
-        style={{ stroke: 'var(--border2)' }} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color}
-        strokeWidth={stroke} strokeLinecap="round"
-        strokeDasharray={circ} strokeDashoffset={offset}
-        style={{ transition: 'stroke-dashoffset 0.8s ease' }} />
-    </svg>
-  );
-}
-
 function MiniBar({ value, max, color }) {
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   return (
@@ -832,8 +816,12 @@ export default function Dashboard() {
   }), [visibleLines, shiftLogs, selectedShift, empCounts, shiftKey, fourMLogs]);
 
   const totalCapacity = useMemo(() => lineStats.reduce((s, l) => s + l.lineTotal, 0) || shiftLogs.length, [lineStats, shiftLogs]);
-  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : 0, [totalCapacity, present]);
-  const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : 0, [present, ppeReady]);
+  /* 🔴 ไม่มีตัวหาร = **null ไม่ใช่ 0** (กฎความซื่อสัตย์ของจอ · 23/09 ก้อน B)
+     เดิมคืน 0 ⇒ ตอนเช้าก่อนใครเช็คชื่อ (และทุกวันที่ยังไม่มีข้อมูล) การ์ด "อัตราการมาทำงาน"
+     ขึ้น **0% ตัวแดงเต็มจอ** ซึ่งแปลว่า "วันนี้ไม่มีใครมาทำงานเลย" — เป็นคำกล่าวอ้างเท็จ
+     ความจริงคือ "ยังไม่รู้" · เห็นชัดตอนทำใบนี้เป็นการ์ดพระเอก 62px (ตอนเป็นวงแหวน 19px ไม่มีใครทันสังเกต) */
+  const attendRate    = useMemo(() => totalCapacity > 0 ? Math.round((present.length / totalCapacity) * 100) : null, [totalCapacity, present]);
+  const ppeRate       = useMemo(() => present.length > 0 ? Math.round((ppeReady.length / present.length) * 100) : null, [present, ppeReady]);
 
   // ── การ์ดผังไลน์ (Line Floor Maps): นับ "ตามจุดงาน" (คนที่ถูกวางบนสถานีของผังนี้) = ตรงกับหมุดบนรูป ──
   // KPI ด้านบนสรุปกำลังคนทั้งไลน์ (roster ตาม employees.line_id = ไลน์แม่) ไปแล้ว การ์ดผังจึงไม่ซ้ำเรื่องนั้น
@@ -985,82 +973,107 @@ export default function Dashboard() {
       )}
 
       {/* ── KPI Row ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(5, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isWide ? 'repeat(6, 1fr)' : 'repeat(auto-fit, minmax(175px, 1fr))', gap: isMobile ? 10 : 14, marginBottom: 24 }}>
         {[
           /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** (`utils/statusTone.js`) — 23/09 จาก brief De-AI UI
              เดิมแถวนี้ปนกัน 3 แบบในบรรทัดเดียวกัน: น้ำเงิน = สีประจำใบ · ส้ม = สีประจำใบ ·
              เขียว/ส้ม/แดง = สถานะจริง ⇒ คนหน้างานอ่าน "ส้ม" ของ OT ว่าเป็นคำเตือนทั้งที่ไม่ใช่
-             และเจอแดง 2 เฉด (`#e74c3c` กับ `#ef4444`) ปนกันทั้งหน้า
-             กติกาใหม่: **ไม่มีเป้าให้เทียบ = เทา** และสีทุกเฉดมาจาก `statusColor()` ชุดเดียว */
+             กติกา: **ไม่มีเป้าให้เทียบ = เทา** และสีทุกเฉดมาจาก `statusColor()` ชุดเดียว
+
+             ── 23/09 ก้อน B (brief ข้อ 03 "One primary, the rest secondary") ──────────────
+             1. **มีใบเดียวเป็นพระเอก** (`primary`) — เดิม 5 ใบขนาดเท่ากันเป๊ะ ตาไม่รู้จะเริ่มตรงไหน
+                เลือก "อัตราการมาทำงาน" เพราะเป็นใบเดียวในแถวที่**มีเกณฑ์ให้ตัดสิน** และเป็นตัวที่
+                ชี้ว่าวันนี้เปิดไลน์ได้แค่ไหน (ใบที่เหลือเป็นข้อเท็จจริง/คิวงาน = ตัดสินไม่ได้ = เทา)
+             2. **ถอดวงแหวน (donut ค่าเดียว)** ออกจากใบมาทำงาน/PPE — วงแหวนที่มีค่าเดียวไม่ได้
+                เทียบกับอะไร (ตัวเลขคือกราฟอยู่แล้ว) ซ้ำร้ายมันบีบตัวเลขเหลือ 19-24px ทั้งที่ใบข้างๆ
+                44-54px ⇒ **ใบที่สำคัญกว่ากลับตัวเล็กกว่า** = ลำดับความสำคัญกลับหัว
+             3. **emoji อยู่ต่อ แต่ย้ายไปข้างหัวข้อ** (คำสั่ง user 23/09 *"emoji ช่วยสื่อได้ ถ้าตรงกับหัวข้อ"*)
+                เดิมเป็นลายน้ำ 56px มุมขวาบน = ของชิ้นใหญ่ที่สุดในการ์ดที่ไม่ใช่ตัวเลข
+             4. **เกณฑ์ที่ใช้ตัดสินสี ต้องเขียนบนจอ** (`basis`) — เดิมทา 90/75 เงียบๆ คนอ่านไม่มีทาง
+                รู้ว่าเขียวเพราะอะไร · คำว่า "เกณฑ์" ไม่ใช่ "เป้า" เพราะเป็นเกณฑ์ของจอนี้เอง
+                ยังไม่ใช่เป้าทางการจากทะเบียน KPI (ห้ามเขียน "เป้า" จนกว่าจะผูกของจริง) */
           {
             label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
             sub: `เช็คชื่อแล้ว ${present.length + absent.length} / ${totalCapacity} คน`,
             tone: 'none',            // ยอดพนักงานในทะเบียน = ข้อเท็จจริง ไม่มีดี/แย่
-            icon: '👥', radial: null,
+            icon: '👥',
           },
           {
-            label: 'อัตราการมาทำงาน', value: attendRate, unit: '%',
-            sub: `มา ${present.length} · ขาด ${absent.length}`,
-            // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง
-            tone: attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
-            icon: '✅', radial: attendRate,
+            label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
+            sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
+              : `มา ${present.length} · ขาด ${absent.length} · จาก ${totalCapacity} คน`,
+            // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
+            tone: attendRate == null ? 'none'
+              : attendRate >= 90 ? 'good' : attendRate >= 75 ? 'warn' : 'bad',
+            basis: attendRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 75%',
+            icon: '✅',
           },
           {
             label: 'PPE ครบถ้วน', value: ppeRate, unit: '%',
-            sub: `${ppeReady.length} / ${present.length} คนที่มา`,
-            tone: ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad',
-            icon: '🦺', radial: ppeRate,
+            sub: ppeRate == null ? 'ยังไม่มีคนมาให้ตรวจ' : `${ppeReady.length} / ${present.length} คนที่มา`,
+            tone: ppeRate == null ? 'none'
+              : ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad',
+            basis: ppeRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 70%',
+            icon: '🦺',
           },
           {
             label: 'OT วันนี้', value: otCount, unit: 'คน',
             sub: present.length > 0 ? `${Math.round(otCount/present.length*100)}% ของคนที่มา` : 'ไม่มีข้อมูล',
             tone: 'none',            // OT เยอะ/น้อยไม่ได้แปลว่าดีหรือแย่ในตัวมันเอง ⇒ ห้ามทาส้มทิ้งไว้
-            icon: '⏰', radial: null,
+            icon: '⏰',
           },
           {
             label: '4M Alerts', value: visibleFourMLogs.length, unit: 'รายการ',
             sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
             // เหลือง ไม่ใช่แดง — ให้ตรงกับการ์ด "4M รออนุมัติ" บนหน้าแรก (จอ 2 จอต้องพูดตรงกัน)
             tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }),
-            icon: '🚨', radial: null,
+            icon: '🚨',
           },
-        ].map((kpi, i) => (
-          <motion.div key={kpi.label} {...stagger(i + 2)} style={{ height: '100%' }}>
+        ].map((kpi, i) => {
+          const numSize = kpi.primary ? (isWide ? 62 : isMobile ? 40 : 48) : (isWide ? 36 : isMobile ? 28 : 32);
+          return (
+          <motion.div key={kpi.label} {...stagger(i + 2)}
+            style={{ height: '100%', gridColumn: isWide && kpi.primary ? 'span 2' : 'auto' }}>
             <div className="kpi-lift" style={{
               background: 'var(--card)', border: '1px solid var(--border2)',
-              borderRadius: 14, padding: isMobile ? '14px 14px' : isWide ? '22px 24px' : '18px 20px',
+              borderRadius: 14, padding: isMobile ? '13px 14px' : isWide ? '20px 24px' : '16px 18px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${statusColor(kpi.tone)}`,
               display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'space-between',
-              position: 'relative', overflow: 'hidden',
               height: '100%', boxSizing: 'border-box',
-              minHeight: isMobile ? 120 : isWide ? 160 : 140,
+              minHeight: isMobile ? 112 : isWide ? 152 : 132,
             }}>
-              <div style={{ position: 'absolute', top: 14, right: 16, opacity: 0.12, fontSize: isWide ? 56 : 42, lineHeight: 1, userSelect: 'none' }}>
-                {kpi.icon}
+              <div style={{
+                display: 'flex', alignItems: 'baseline', gap: 7,
+                fontSize: isWide ? 15 : 14, fontWeight: 700, color: 'var(--muted)',
+                textTransform: 'uppercase', letterSpacing: '0.06em',
+              }}>
+                <span aria-hidden="true" style={{ fontSize: isWide ? 17 : 15, flexShrink: 0 }}>{kpi.icon}</span>
+                <span style={{ minWidth: 0 }}>{kpi.label}</span>
               </div>
-              <div style={{ fontSize: isWide ? 16 : 15, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-                {kpi.label}
+              <div style={{
+                fontSize: numSize, fontWeight: 800, fontFamily: 'var(--font-display)',
+                color: toneInk(kpi.tone), lineHeight: 1.05, marginTop: 2,
+              }}>
+                {loading || kpi.value == null ? '—' : kpi.value}
+                {!loading && kpi.value != null && (
+                  <span style={{ fontSize: Math.round(numSize * 0.4), fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>
+                    {kpi.unit}
+                  </span>
+                )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4 }}>
-                {kpi.radial !== null ? (
-                  <div style={{ position: 'relative', width: isWide ? 92 : 72, height: isWide ? 92 : 72, flexShrink: 0 }}>
-                    <RadialProgress pct={kpi.radial} size={isWide ? 92 : 72} stroke={isWide ? 8 : 7} color={statusColor(kpi.tone)} />
-                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isWide ? 24 : 19, fontWeight: 800, color: toneInk(kpi.tone), fontFamily: 'var(--font-display)' }}>
-                      {kpi.value}
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: isWide ? 54 : 44, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1 }}>
-                    {loading ? '—' : kpi.value}
-                    <span style={{ fontSize: isWide ? 22 : 18, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{kpi.unit}</span>
+              <div>
+                <div style={{ fontSize: isWide ? 14.5 : 13.5, color: 'var(--muted)' }}>{kpi.sub}</div>
+                {kpi.basis && (
+                  <div style={{ fontSize: isWide ? 13 : 12, color: 'var(--muted)', marginTop: 2, opacity: 0.85 }}>
+                    {kpi.basis}
                   </div>
                 )}
               </div>
-              <div style={{ fontSize: isWide ? 15 : 14, color: 'var(--muted)', marginTop: 2 }}>{kpi.sub}</div>
             </div>
           </motion.div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
