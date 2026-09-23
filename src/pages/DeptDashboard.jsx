@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
+import { dtBucketName } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -265,7 +266,7 @@ function ProductionView({ d, ctx }) {
   const dtRecords = useMemo(() => {
     const sMap = {}; d.sess7.forEach(s => { sMap[s.id] = s; });
     return d.dt7.filter(x => x.dr_downtime_types?.category !== 'planned').map(x => ({
-      cat: x.dr_downtime_types?.name_th || 'ไม่ระบุประเภท', value: dtMinOf(x),
+      cat: dtBucketName(x), value: dtMinOf(x),   // 🗑️ ถังขยะแตกตามเครื่อง (downtimeCategory 23/09)
       machine: x.machine_no || '(ไม่ระบุเครื่อง)', line: sMap[x.session_id]?.line_name || '-',
       shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
     })).filter(r => r.value > 0);
@@ -385,7 +386,7 @@ function MaintenanceView({ d, ctx }) {
     d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned' && x.machine_no).forEach(x => {
       const m = (byMc[x.machine_no] ||= { machine: x.machine_no, times: 0, min: 0, line: sMap[x.session_id]?.line_name || '', last: null, causes: {} });
       m.times++; m.min += dtMinOf(x);
-      const c = x.dr_downtime_types?.name_th || 'ไม่ระบุ'; m.causes[c] = (m.causes[c] || 0) + 1;
+      const c = dtBucketName(x); m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
     const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
