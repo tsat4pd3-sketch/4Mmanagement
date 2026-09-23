@@ -59,7 +59,7 @@ test('🛡️ จอที่นับคน: ทุก query รายชื่
       // ต่อบรรทัดถัดไปด้วย เพราะ .update({...}) มักขึ้นบรรทัดใหม่
       const chunk = line + '\n' + (lines[i + 1] || '');
       if (NOT_A_LIST.test(chunk)) return;
-      if (line.includes('onlyDirectStaff(')) return;
+      if (line.includes('onlyShopfloorStaff(') || line.includes('onlyDirectStaff(')) return;
       if (allowed(rel, chunk + '\n' + (lines[i + 2] || ''))) return;
       bad.push(`${rel}:${i + 1} (${what})\n      ${line.trim().slice(0, 110)}`);
     });
@@ -73,13 +73,27 @@ test('🛡️ จอที่นับคน: ทุก query รายชื่
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
 
-test('🛡️ ตัวกรองต้องเป็น neq(indirect) ไม่ใช่ eq(direct) — ห้าม "หายเงียบ"', () => {
+test('🛡️ ตัวกรองต้อง "ตัดสายสนับสนุนออก" ไม่ใช่ "เลือกเฉพาะหน้างาน" — ห้าม "หายเงียบ"', () => {
   const src = readFileSync(join(ROOT, 'src/utils/staffKind.js'), 'utf8');
-  // ใช้ neq เพื่อให้แถวที่ค่าเพี้ยน/ค่าใหม่ในอนาคต ยังถูกนับเป็นคนหน้าไลน์
-  // (นับเกิน = เห็นแล้วรู้ · หายเงียบ = ไม่มีใครรู้ — เลือกอย่างแรกเสมอ)
-  assert.match(src, /\.neq\('staff_kind',\s*STAFF_INDIRECT\)/);
-  assert.ok(!/\.eq\('staff_kind',\s*STAFF_DIRECT\)/.test(src),
-    'ห้ามใช้ eq(direct): ค่าใหม่ที่เพิ่มทีหลังจะหายจากทุกจอที่นับคนโดยไม่มีสัญญาณ');
+  /* ตัดออก (not in) ⇒ แถวที่ค่าเพี้ยน/ค่าใหม่ในอนาคต ยังถูกนับเป็นคนหน้างาน
+     เลือกเข้า (eq) ⇒ ค่าใหม่หายจากทุกจอที่นับคนโดยไม่มีสัญญาณ
+     นับเกิน = เห็นแล้วรู้ · หายเงียบ = ไม่มีใครรู้ — เลือกอย่างแรกเสมอ */
+  assert.match(src, /\.not\('staff_kind',\s*'in',/);
+  assert.ok(!/\.eq\('staff_kind',\s*STAFF_(SHOPFLOOR|DIRECT)\)/.test(src),
+    'ห้ามใช้ eq(shopfloor): ค่าใหม่ที่เพิ่มทีหลังจะหายจากทุกจอที่นับคนโดยไม่มีสัญญาณ');
+});
+
+test('🛡️ ค่าเก่า indirect ต้องยังถูกตัดออกด้วย (ช่วง deploy มีแท็บเก่าเขียนค่าเก่าได้)', async () => {
+  /* 23/09 เปลี่ยนชื่อค่า direct/indirect → shopfloor/support เพื่อเลิกชนกับ org_nodes.labor_type
+     check constraint ฝั่ง DB **ยังรับค่าเก่าไว้** ⇒ ตัวกรองต้องครอบทั้ง 2 ชุด
+     ไม่งั้นแถวที่แท็บเก่าเขียนไว้จะกลับมาโผล่ในลิสต์เช็คชื่อ/กำลังคนเงียบๆ */
+  const m = await import('../staffKind.js');
+  assert.ok(m.SUPPORT_VALUES.includes('support'),  'ต้องตัด support');
+  assert.ok(m.SUPPORT_VALUES.includes('indirect'), 'ต้องตัดค่าเก่า indirect ด้วย');
+  assert.equal(m.isShopfloorStaff({ staff_kind: 'indirect' }), false);
+  assert.equal(m.isShopfloorStaff({ staff_kind: 'support' }),  false);
+  assert.equal(m.isShopfloorStaff({ staff_kind: 'shopfloor' }), true);
+  assert.equal(m.isShopfloorStaff({}), true, 'ไม่ระบุ = นับเป็นหน้างาน (ตาม default ของคอลัมน์)');
 });
 
 test('🛡️ ทุกข้อยกเว้นต้องเขียนเหตุผลกำกับ (ห้ามยกเว้นลอยๆ)', () => {

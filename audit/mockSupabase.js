@@ -67,7 +67,7 @@ const ROW = (i) => ({
      พนักงานทางอ้อม (src/utils/staffKind.js → เช็คชื่อ/สกิล/กำลังคน) ถูกรันใน harness จริง
      ถ้าทุกแถวเป็น direct เหมือนกันหมด ตัวกรองจะไม่เคยถูกทดสอบเลยสักหน้า */
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A',
-               staff_kind: i % 4 === 3 ? 'indirect' : 'direct' },
+               staff_kind: i % 4 === 3 ? 'support' : 'shopfloor' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
 })
 /* ⚠️ แถวสุดท้ายเป็น "แถวข้อมูลไม่ครบ" โดยตั้งใจ (2026-08-26)

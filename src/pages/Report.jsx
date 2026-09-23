@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'r
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -839,7 +839,7 @@ function PerEmployeeTab() {
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id
     // ตรงตัว ไม่งั้นคนที่ผูกไลน์ลูกหายจากสายตาหัวหน้าที่ผูกไลน์แม่) · sections → เฉพาะใน scope
     (async () => {
-      let empQ = onlyDirectStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
+      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
       if (role === 'leader' && userLineId) {
         const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
@@ -2373,7 +2373,7 @@ function SkillMatrixTab() {
     const myReq = ++reqIdRef.current;
     setLoading(true);
     const baseSelect = 'id, name, employee_id_code, image_url, group_name, line_id, section, department, team, employee_skills(skill_name, score)';
-    let q = onlyDirectStaff(supabase.from('employees').select(baseSelect).eq('is_active', true));
+    let q = onlyShopfloorStaff(supabase.from('employees').select(baseSelect).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
@@ -2922,7 +2922,7 @@ function MultiSkillFormTab() {
   const load = async () => {
     setLoading(true);
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
-    let q = onlyDirectStaff(supabase.from('employees').select(sel).eq('is_active', true));
+    let q = onlyShopfloorStaff(supabase.from('employees').select(sel).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
     if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
     else if (scopeSecs.length) q = q.in('section', scopeSecs);
@@ -3940,7 +3940,7 @@ function AttendanceFormTab() {
     // Step 1: get employees matching current filters from employees table (server-side)
     // เลือกไลน์ = ทั้งครอบครัวไลน์ (หลัก↔ย่อย) — พนักงานอาจผูกกับไลน์หลักแต่ทำงานไลน์ย่อย หรือกลับกัน
     const familyIds = line ? [...getLineFamilyIds(lines, line)] : [];
-    let empQ = onlyDirectStaff(supabase.from('employees')
+    let empQ = onlyShopfloorStaff(supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id'));
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
     if (role === 'leader' && userLineId) {

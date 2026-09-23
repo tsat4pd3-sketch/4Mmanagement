@@ -8,7 +8,7 @@ import { deptNameOf, teamKeyOf } from '../utils/mtnTeams';
 import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams';   // ทีมช่างซ่อมจากตาราง mtn_teams (data-driven) — เลิกวน MTN_TEAMS hardcode (2026-09-07)
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
-import { STAFF_KINDS, STAFF_DIRECT, STAFF_INDIRECT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
+import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย + cascade (ของกลางเดียวกับหน้าลงทะเบียนพนักงาน)
 
@@ -178,9 +178,9 @@ export default function AddUser() {
     setNewPos(null);
   };
   /* ➕ เพิ่มคนนี้เข้าฐานพนักงาน แล้วผูกกับบัญชีทันที (เฟส 1 · 2026-09-21)
-     ⚠️ คนทางอ้อม (QA/PE/ธุรการ/สโตร์) = `staff_kind: 'indirect'` + ไม่มีไลน์/ทีม/ส่วนงาน
+     ⚠️ สายสนับสนุน (QA/PE/ธุรการ/สโตร์) = `staff_kind: 'support'` + ไม่ต้องมีไลน์/ทีม
         → ไม่โผล่ในเช็คชื่อ/สกิล/กำลังคน (ตัวกรองอยู่ที่ src/utils/staffKind.js)
-     ⚠️ `employee_id_code` เป็น not null — คนทางอ้อมที่ยังไม่มีรหัสจริงให้ออกรหัสชั่วคราวไปก่อน
+     ⚠️ `employee_id_code` เป็น not null — คนสายสนับสนุนที่ยังไม่มีรหัสจริงให้ออกรหัสชั่วคราวไปก่อน
         (แก้ทีหลังได้ที่ /operator) ห้ามปล่อยว่างเพราะ insert จะล้มเงียบๆ */
   const addEmployee = async () => {
     const name = String(newEmp?.name || '').trim();
@@ -204,7 +204,7 @@ export default function AddUser() {
       name,
       department: newEmp.department || null,
       section: sectionValueForSave(newEmp.section),   // sentinel "ขึ้นตรงฝ่าย" → null (ตรงกับผังจริง)
-      staff_kind: newEmp.staff_kind || STAFF_DIRECT,
+      staff_kind: newEmp.staff_kind || STAFF_SHOPFLOOR,
       position: form.position || null,
       created_by: userData?.user?.id || null,
     };
@@ -888,7 +888,7 @@ export default function AddUser() {
                         คือกดเป็น "บัญชีหน่วยงาน" ซึ่งทำให้ระบบตอบไม่ได้ว่าเขาอยู่แผนกไหน */}
                     {!form.employeeId && !newEmp && (
                       <button type="button"
-                        onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_INDIRECT })}
+                        onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_SUPPORT })}
                         style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--accent)',
                           background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                         ＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน
@@ -965,7 +965,7 @@ export default function AddUser() {
                         )}
 
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          {newEmp.staff_kind === STAFF_INDIRECT
+                          {newEmp.staff_kind === STAFF_SUPPORT
                             ? 'สายสนับสนุน = ไม่ผูกไลน์/ทีม ⇒ ไม่โผล่ในหน้าเช็คชื่อ · ไม่ถูกนับเป็นกำลังคนหน้าไลน์ · ไม่มีแผงสกิล'
                             : 'พนักงานหน้าไลน์ = จะถูกนับในเช็คชื่อ/กำลังคน — ไลน์และทีมไปตั้งต่อที่หน้าพนักงาน (/operator)'}
                         </div>
