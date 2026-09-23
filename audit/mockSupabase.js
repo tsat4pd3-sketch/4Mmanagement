@@ -217,6 +217,31 @@ const TABLE_ROWS = {
    กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
    mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
 const TABLE_FIXED = {
+  /* 🎯 ทะเบียน KPI มาตรฐานของกลุ่ม — **ห้ามถอด** (2026-09-23)
+     โมดัล `KpiStandardPicker` แตกแขนงตามค่า `requirement` 3 แบบ ซึ่ง ROWS ทั่วไปไม่มีให้เลย
+     ⇒ ถ้าไม่มีชุดนี้ harness จะไม่เคยรันโค้ดสายนี้สักบรรทัด:
+       · `requirement: null` = **แถวหัวข้อแม่** (ไม่ใช่ KPI · ห้ามมี checkbox ห้ามนับน้ำหนัก)
+       · `fixed` = ติ๊กมาให้ · `choice` = ให้คนติ๊กเอง
+     · `seq` ซ้ำกันได้จริง (ต้นฉบับ Production พิมพ์ '6' ซ้ำ 2 แถว) ⇒ ใส่ไว้ให้ชนกันจริง
+       เพื่อพิสูจน์ว่าจอเรียงด้วย `sort_order` ไม่ใช่ `seq`
+     · ต้องมีอย่างน้อย 2 std_unit เพื่อให้ dropdown เลือกหน่วยงานมีของให้สลับ */
+  kpi_standard_items: [
+    { id: 'std-1', year: 2026, std_unit: 'Production', seq: '1', sort_order: 1, perspective: 'financial', topic: 'Raw Material Control', formula_text: '(Raw Material/Sales from product) x 100', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-2', year: 2026, std_unit: 'Production', seq: '6', sort_order: 2, perspective: 'internal', topic: 'Cost Reduction', formula_text: 'Reduce X% from last year or Value', requirement: 'choice', catalog_id: null, note: null },
+    { id: 'std-3', year: 2026, std_unit: 'Production', seq: '6', sort_order: 3, perspective: 'internal', topic: 'Internal Quality Rate', formula_text: '(Defect/Total Production) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-4', year: 2026, std_unit: 'Production', seq: '11', sort_order: 4, perspective: 'learning', topic: 'Activity', formula_text: 'Number of Passed Activity', requirement: null, catalog_id: null, note: null },
+    { id: 'std-5', year: 2026, std_unit: 'Production', seq: '11.1', sort_order: 5, perspective: 'learning', topic: 'QCC', formula_text: '*Refer to activity announcement', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-6', year: 2026, std_unit: 'QA', seq: '1', sort_order: 1, perspective: 'customer', topic: 'Customer Claim', formula_text: '(Claim qty/Delivery qty) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+  ],
+  /* นิยาม KPI — **ต้องมีทั้งแถว `manual` และ `auto:` เสมอ ห้ามถอด** (2026-09-23)
+     `source` เป็น `not null default 'manual'` ⇒ แถวกรอกมือ**ไม่ใช่ null** · เคยเข้าใจผิดจนเกิดบั๊ก
+     2 จุด (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
+     ⇒ ไม่มีแถว auto ในม็อก = ตัวกรองที่แก้บั๊กนั้นไม่เคยถูกรันใน harness */
+  kpi_definitions: [
+    { id: 'kd-1', year: 2026, section: 'PD3', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2 } },
+    { id: 'kd-2', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0 } },
+    { id: 'kd-3', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+  ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
   factory_line_regions: [
     { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },

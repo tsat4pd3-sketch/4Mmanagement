@@ -396,10 +396,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ทุกพาเรโตในระบบวาดผ่าน `<ParetoChart>` · พิกัดจาก `paretoGeometry()` (`utils/pareto.js`)
 **ห้ามคำนวณแท่งเองในหน้า — มีด่าน `regressionGuards`** · องค์ประกอบบังคับ: แท่งตั้งเรียงมาก→น้อย ·
-**แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 และเพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด**
-(ทำให้หมุดแรกตรงหัวแท่งแรกพอดี — แท่งเตี้ย/ที่ว่างด้านบนเยอะคือ*ถูกต้อง* ห้ามแก้กลับ) ·
-แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% ·
-ป้ายแกน X เอียง -45°/-90° (เลือกเองได้บนจอ) — **ห้ามกลับไปวาดแท่งนอน**
+**แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 · เพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด** (แท่งเตี้ย/ที่ว่างด้านบนเยอะ = *ถูกต้อง*) ·
+แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% · ป้ายแกน X เอียง -45°/-90° — **ห้ามกลับไปวาดแท่งนอน**
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
 
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
@@ -519,6 +517,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - ตั้งค่า KPI data-driven: scope 6 ระดับ (`cost_center` ไม่ใช่คีย์เอกลักษณ์) · `provider` · `kpi_month_plans` · `kpi_base_inputs`
+- **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** — `kpi_definitions.source` default `'manual'` ⇒ `!d.source` เป็นเท็จเสมอ
+  (ใช้ `!String(d.source||'').startsWith('auto:')` · มีด่าน `regressionGuards`) · 23/09 ทำให้ตั้ง KPI ได้ส่วนงานละ 1 ข้อ **โดยทุกด่านผ่านหมด**
+- หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ 📑 (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · แถวที่หยิบผูก `std_item_id` เสมอ
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
@@ -761,15 +762,9 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
      · **เคสจริงวันเดียวกัน 2 เคส:** resolve conflict แล้วบรรทัด `else setSelSession(...)` หลุด → Daily Report
      เปิดมาจอหลักว่างทั้งหน้า · `/products` แท็บ Kanban Std พังจาก `undefined.toLocaleString()`
      — **ทั้งคู่ build ผ่าน lint ผ่าน เทสผ่าน**
-     · mock มีแถว **`NULLISH`** (คอลัมน์ตัวเลข/ข้อความเป็น null) เป็นแถวสุดท้ายเสมอ **ห้ามถอด** —
-     คอลัมน์ในฐานจริงส่วนใหญ่ nullable แถวเดียวที่ null ทำให้ทั้งหน้าพัง · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
-     · mock มี **แถวชั้น OP (`is_operation`)** เสมอ **ห้ามถอด** (2026-09-15) — เดิมไม่มีเลยสักแถว
-     ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` · ปุ่ม 🧩 ระเบิดของเสียใน
-     `/scrap-report` · ตัวกรอง OP ของ picker) ไม่เคยถูกรันใน harness เลย = บั๊กทั้งคลาสมองไม่เห็น
-     (i=4 ผูก parent+seq ครบ · i=5 ยังไม่ผูก = เคส worklist เหลือง)
-     · mock มี **ลำดับชั้นไลน์แม่-ลูก 3 ชั้น** (`PARENT_OF`) เสมอ **ห้ามถอด** (2026-09-08) — เดิม `parent_line_name`
-     เป็น null ทุกแถว ⇒ โค้ดสายไลน์แม่-ลูก (lineHierarchy · stdManpower · rollup พลังงาน · FactoryMap family)
-     ไม่เคยถูกรันใน harness เลยสักหน้า = บั๊กทั้งคลาส (นับซ้ำแม่-ลูก/หา leaf/ไล่ ancestor) มองไม่เห็น
+     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · แถว KPI `manual`+`auto:`) —
+     แต่ละตัวเปิดโค้ดทั้งคลาสที่ไม่งั้น**ไม่เคยถูกรันใน harness เลย** · เหตุผล+เคสจริงรายตัว → `audit/README.md`
+     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
      - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px จับของที่ "ไม่พังแต่ใช้ไม่ได้" (2026-09-16)**
      crashsweep จับแค่ "หน้าพัง" · อันนี้จับ **sticky ค้างทับเนื้อหา** (layout ยุบเหลือคอลัมน์เดียวแล้วลืมถอด
      sticky ของ sidebar) · **ของล้นแล้วปัดดูไม่ได้** · **ข้อความถูกบีบเหลือกว้าง 0 หายทั้งบรรทัด**

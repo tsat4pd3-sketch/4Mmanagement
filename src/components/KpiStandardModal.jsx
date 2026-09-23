@@ -63,6 +63,10 @@ export default function KpiStandardModal({ year, section, group, defs = [], canM
         name: it.topic, formula_text: it.formula_text || null,
         // ⚠️ ต้องผูกกลุ่มไลน์ที่กำลังดูอยู่ ไม่งั้นแถวใหม่หายจากจอทันที (ตารางกรองด้วย line_group)
         line_group: group || null,
+        /* 🔴 ผูกกลับไปหาแถวในทะเบียนด้วย `std_item_id` (คอลัมน์เพิ่ม 23/09) — `matchStdItems()`
+           เช็ค id ก่อนแล้วค่อยตกไปเทียบชื่อ · ถ้าไม่ส่ง id มันจะเหลือแต่การเทียบชื่อ
+           ซึ่งพังทันทีที่คนแก้ชื่อ KPI ให้สั้นลง/ใส่วงเล็บเพิ่ม ⇒ จอฟ้อง "ยังไม่ได้หยิบ" ทั้งที่หยิบแล้ว */
+        std_item_id: it.id,
         std_unit: unit, is_active: true,
       }), `หยิบ "${it.topic}" เข้าใบ`);
       if (ok) { toast.success(`เพิ่ม "${it.topic}" แล้ว — ไปตั้งเป้า/น้ำหนักที่ตาราง`); onChanged?.(); }
@@ -80,6 +84,7 @@ export default function KpiStandardModal({ year, section, group, defs = [], canM
         year, section: section || null, category: it.perspective,
         name: it.topic, formula_text: it.formula_text || null,
         line_group: group || null,
+        std_item_id: it.id,                       // ดูเหตุผลที่ `pick()` ด้านบน
         std_unit: unit, is_active: true,
       }))), 'หยิบข้อบังคับที่ขาด');
       if (ok) { toast.success(`เพิ่ม ${todo.length} ข้อแล้ว`); onChanged?.(); }

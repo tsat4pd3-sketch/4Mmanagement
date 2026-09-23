@@ -426,9 +426,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 }));
 
   /* ตาราง "กรอกมือ" ต้องไม่มีแถวนิยามของ KPI อัตโนมัติปน (ช่องกรอกจะว่างตลอด + ซ้ำกับตารางบน)
-     และ scope ตามกลุ่มไลน์ที่เลือก — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน (line_group null) */
+     และ scope ตามกลุ่มไลน์ที่เลือก — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน (line_group null)
+     🔴 **ห้ามเขียน `!d.source`** — `kpi_definitions.source` เป็น `not null default 'manual'`
+        ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
+        คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
+        แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
   const defs = useMemo(() => (allDefs || []).filter(d =>
-    !d.source && (d.line_group || '') === (group || '')), [allDefs, group]);
+    !String(d.source || '').startsWith('auto:') && (d.line_group || '') === (group || '')), [allDefs, group]);
 
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
      ใบ KPI ทางการถ่วงน้ำหนักรวม 50 จาก KPI ทั้งใบ ไม่ได้แยกว่าใครเป็นคนกรอก ⇒ ส่งแต่ `defs`
@@ -633,6 +637,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     };
     if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
     if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    /* 🔴 ตอน "เพิ่มใหม่" ต้องผูกกลุ่มไลน์ที่กำลังดูอยู่ด้วย — เดิมไม่ส่ง `line_group` เลย (แก้ 23/09)
+       ⇒ เพิ่ม KPI ขณะเลือกกลุ่มไลน์ไว้ จะได้แถวระดับส่วนงาน ซึ่ง**ตกตัวกรองของตารางทันที**
+         (`defs` กรอง `(d.line_group||'') === (group||'')`) ⇒ กดเพิ่มแล้วไม่มีอะไรโผล่
+         พอกดเพิ่มซ้ำก็เจอ 23505 "ตั้งไว้แล้ว" ทั้งที่ยังไม่เคยเห็นแถวนั้นสักครั้ง
+       · เฉพาะตอน insert — ตอน update ไม่แตะ เพราะฟอร์มไม่มีช่องกลุ่มไลน์ให้แก้ (จะล้างของเดิมทิ้ง)
+       · ส่วนงานในโมดัลไม่ตรงกับที่จอกรองอยู่ = คนตั้งใจตั้งข้ามส่วนงาน ⇒ ไม่ยัดกลุ่มไลน์ให้ */
+    if (!form.id) payload.line_group = (form.section || '') === (section || '') ? (group || null) : null;
     if (form.id) {
       const { data: d, error } = await supabase.from('kpi_definitions').update(payload).eq('id', form.id).select('id');
       if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
@@ -971,7 +982,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <KpiStandardModal
           year={year} section={section} group={group} defs={defsForStd} canManage={canManage}
           onClose={() => setShowStd(false)}
-          onChanged={loadDefs}
+          onChanged={() => { loadCatalog(); loadDefs(); }}
         />
       )}
 
