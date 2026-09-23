@@ -19,6 +19,8 @@ export const MIN_ROWS_FOR_READ = 30;
 export const WIDE_AUDIENCE = 30;
 /** อ่านต่ำกว่านี้ = สัญญาณว่าคนเลิกอ่าน */
 export const LOW_READ_PCT = 20;
+/** สัดส่วนแถวที่ส่งให้ "คนที่ไม่เคยเปิดอ่านเรื่องนี้เลย" เกินนี้ = ยิงผิดคน ไม่ใช่แค่ยิงเยอะ (2026-09-23) */
+export const HIGH_WASTE_PCT = 50;
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const div = (a, b) => (b > 0 ? a / b : null);
@@ -38,6 +40,11 @@ export function reachOf(rule, raw) {
   const rows      = num(raw?.rows_n);
   const read      = num(raw?.read_n);
   const events    = num(raw?.events_n);
+  /* 🗑️ ความเสียเปล่า — แถวที่ส่งให้คนที่ **ไม่เคยเปิดอ่านเรื่องนี้เลยสักครั้ง** ในช่วงที่วัด
+     ต่างจาก readPct ตรงที่มันชี้ "ยิงผิดคน" ไม่ใช่ "ยิงถูกคนแต่เขาไม่ว่าง"
+     (RPC `notif_rule_reach` คืน waste_n/dead_n ตั้งแต่ migration 20260923c) */
+  const waste     = num(raw?.waste_n);
+  const deadUsers = num(raw?.dead_n);
 
   /* กรองตามส่วนงานจริงไหม — `inapp_sections`/`inapp_depts` = ระบุเองแบบตายตัว
      `inapp_match_section` = ตามส่วนงานที่เกิดเหตุ */
@@ -65,13 +72,15 @@ export function reachOf(rule, raw) {
   const eventsPerDay = div(events, days);
   const rowsPerDay   = div(rows, days);
   const estRowsPerDay = perEvent != null && eventsPerDay != null ? perEvent * eventsPerDay : null;
-  const readPct = rows >= MIN_ROWS_FOR_READ ? Math.round((read / rows) * 100) : null;
+  const readPct  = rows >= MIN_ROWS_FOR_READ ? Math.round((read / rows) * 100) : null;
+  const wastePct = rows >= MIN_ROWS_FOR_READ ? Math.round((waste / rows) * 100) : null;
 
   return {
     roles, peopleAll, perEvent, scoped, pinned, matchSec, strict,
     alwaysThrough,
     noSection, adminMgr, nSections,
     eventsPerDay, rowsPerDay, estRowsPerDay, readPct,
+    waste, deadUsers, wastePct,
     rows, days,
     /** ยังไม่มีประวัติพอจะบอกอะไร — จอต้องเขียนว่า "ยังไม่รู้" ห้ามโชว์ 0 */
     thin: rows < MIN_ROWS_FOR_READ,
@@ -102,7 +111,14 @@ export function reachWarnings(rule, raw) {
       text: `ตัวกรองส่วนงานไม่มีผลกับ ${bits.join(' · ')} — กลุ่มนี้ได้รับทุกส่วนงาน` });
   }
 
-  if (r.readPct != null && r.readPct < LOW_READ_PCT) {
+  /* 🗑️ ยิงผิดคน — ชี้ตรงกว่า "อ่านน้อย" เพราะบอกว่ามีคนกลุ่มหนึ่งที่ไม่เคยแตะเรื่องนี้เลย
+     รูทคอส: ทะเบียนถามว่า "คนประเภทไหนควรรู้" แทน "ใครต้องลงมือกับรายการนี้"
+     ⇒ ทางแก้ที่ถูกคือส่งถึงเจ้าของงาน (`inapp_cast = 'fallback'`) ไม่ใช่เล็ม role ไปเรื่อยๆ */
+  if (r.wastePct != null && r.wastePct >= HIGH_WASTE_PCT) {
+    out.push({ level: 'red',
+      text: `${r.waste.toLocaleString()} จาก ${r.rows.toLocaleString()} ครั้ง (${r.wastePct}%) ส่งให้คน ${r.deadUsers} คน`
+          + ` ที่ไม่เคยเปิดอ่านเรื่องนี้เลยสักครั้งใน ${r.days} วัน — คนกลุ่มนี้ไม่ใช่คนที่ต้องลงมือ` });
+  } else if (r.readPct != null && r.readPct < LOW_READ_PCT) {
     out.push({ level: 'amber',
       text: `${r.days} วันที่ผ่านมาส่งไป ${r.rows.toLocaleString()} ครั้ง คนเปิดอ่าน ${r.readPct}% — ลองลดผู้รับ หรือเปลี่ยนเป็นสรุปรายรอบ` });
   }
