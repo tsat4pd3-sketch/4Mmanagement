@@ -488,7 +488,6 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [usageLine, setUsageLine] = useState('')
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
-  const twoColSetup = wideModal && layoutType === 'image_pin'
   // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
@@ -504,6 +503,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     mq.addEventListener('change', on)
     return () => mq.removeEventListener('change', on)
   }, [])
+  /* 🔴 ต้องประกาศ **หลัง** `wideModal` — เคยวางไว้ก่อนแล้วโมดัลพังทั้งใบด้วย
+     "Cannot access 'wideModal' before initialization" (TDZ ของ const)
+     ⚠️ ด่านที่มีอยู่จับไม่ได้สักตัว: `no-undef` ไม่ฟ้องเพราะตัวแปร**มีจริงในสโคป** แค่ยังไม่ถูกสร้าง ·
+        build/เทสผ่าน · crashsweep ผ่านเพราะมันไม่เคย**เปิดโมดัล** (23/09 — ทีมงานแจ้ง "แอพล่ม") */
+  const twoColSetup = wideModal && layoutType === 'image_pin'
   // โมเดล 3D (ถ้ามี) — { path, format } = ของเดิม · _glb = ไฟล์ใหม่ที่แปลงเป็น GLB แล้ว รอ upload
   const [activePinKey, setActivePinKey] = useState(null)
 
