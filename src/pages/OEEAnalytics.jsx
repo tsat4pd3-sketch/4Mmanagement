@@ -876,7 +876,10 @@ export default function OEEAnalytics() {
   /* Filters — สเกล + กรอบเวลา ใช้ของกลาง `useTimeRange` (ผูก `?scale=&from=&to=` ใน URL)
      ⚠️ `defaultDays: 90` คงพฤติกรรมเดิมของหน้านี้ไว้ (เดิม `dateStrAdd(today,-90)`)
         ห้ามเปลี่ยนเป็น 30 ตามค่ากลาง — หน้านี้ดูแนวโน้มยาว ผู้ใช้คุ้นกับ 90 วันแล้ว */
-  const tr = useTimeRange({ defaultScale: 'month', defaultDays: 90 });
+  /* 🪜 บันไดความละเอียด (23/09): 90 วัน → แท่งรายสัปดาห์ 13 แท่ง (เดิมรายเดือน = 4 แท่ง อ่านเทรนด์ไม่ออก)
+     🔴 `finest: 'day'` — `production_sessions` เก็บแค่ `work_date` + กะ **ไม่มียอดผลิตรายชั่วโมง**
+        ⇒ %P รายชั่วโมงจะเป็นตัวเลขที่เดาเอา · จอนี้จึงไม่มีปุ่ม "วันนี้" โดยตั้งใจ */
+  const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90, finest: 'day' });
   const { scale: period, from: dateFrom, to: dateTo } = tr;
   const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
@@ -1832,9 +1835,9 @@ export default function OEEAnalytics() {
       {/* ⏱️ แถบกรองเวลามาตรฐาน — เหมือนกันทุกหน้า (docs/modules/time-range-filter.md)
           ของเฉพาะหน้า (ไลน์/กะ) ส่งเข้าไปเป็น children ห้ามวาดแถบเองใหม่ */}
       <TimeRangeBar
-        scale={period} from={dateFrom} to={dateTo} today={tr.today}
+        scale={period} from={dateFrom} to={dateTo} today={tr.today} finest="day"
         onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-        onReload={loadData} loading={loading} style={{ marginBottom: 12 }}
+        onView={tr.setView} onReload={loadData} loading={loading} style={{ marginBottom: 12 }}
       >
         {/* ทะเบียนไลน์ (scope แล้ว) ผ่าน <LineSelect> กลาง — เดิมสร้างจากชื่อใน sessions: ไลน์ที่ rename แล้วโชว์ชื่อเก่า / ไลน์ที่ยังไม่มี session หาย (2026-09-07) */}
         <LineSelect style={s.sel} lines={linesFull} value={selLine} onChange={setSelLine} placeholder="ทุกไลน์"

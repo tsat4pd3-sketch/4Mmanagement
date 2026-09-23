@@ -13,7 +13,8 @@ import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
-import { rangeDays, weekMonday, addDays } from '../utils/timeRange';
+import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
+import { getWorkDate } from '../utils/workDate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
@@ -77,24 +78,18 @@ const minBetween = (a, b) => {
   const m = (new Date(b) - new Date(a)) / 60000;
   return Number.isFinite(m) && m >= 0 ? m : null;
 };
-/** คีย์สัปดาห์แบบ local (ไม่ใช่ ISO week ของ UTC — เวลาไทยจะเหลื่อมวัน) */
-function weekKey(iso) {
+/* 🪜 คีย์ถังของ "เหตุการณ์ 1 ใบ" ตามขนาดแท่งที่ผู้ใช้เลือก (บันไดกลาง `utils/timeRange`)
+   เดิมตรึงเป็นรายสัปดาห์ตายตัว ทั้งที่แถบเวลามีปุ่มสเกลอยู่ — **ปุ่มนั้นไม่เคยถูกใช้เลย**
+   (กติกาข้อ 3 ของ TimeRangeBar: ปุ่มตายแย่กว่าไม่มีปุ่ม) · ตอนนี้กราฟ ⑥⑦ ตามสเกลจริงแล้ว
+   🔴 ขั้น "ชั่วโมง" ต้องอ่านจาก timestamp จริง (`bkkHourKey` = เวลาไทย)
+   🔴 ขั้นอื่นต้องแปลงเป็น **วันทำงาน** ก่อน (`getWorkDate` ตัด 08:00) ไม่ใช่วันปฏิทิน
+      ไม่งั้นกะดึกถูกผ่าครึ่งไปอยู่คนละถัง */
+const evKey = (iso, scale) => {
   if (!iso) return '';
+  if (scale === 'hour') return bkkHourKey(iso) || '';
   const d = new Date(iso);
-  const day = (d.getDay() + 6) % 7;                 // จันทร์ = 0
-  d.setDate(d.getDate() - day);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-/** ทุกสัปดาห์ในช่วง (รวมสัปดาห์ที่เงียบ) — ไม่ส่งไปให้ runChart/controlChart = สัปดาห์ที่ไม่มีเหตุการณ์หายจากกราฟ */
-/* คีย์สัปดาห์ (วันจันทร์) ทุกสัปดาห์ในช่วงที่เลือก — เดินจากช่วงจริง ไม่ใช่นับถอยจาก "วันนี้"
-   (เดิมนับถอยจากวันนี้เสมอ ⇒ พอเลือกช่วงในอดีตได้แล้ว แกนจะไม่ตรงกับข้อมูล) */
-function weekKeysIn(from, to) {
-  const out = [];
-  let cur = weekMonday(from);
-  if (!cur || !to) return out;
-  for (let i = 0; cur <= to && i < 600; i++) { out.push(cur); cur = addDays(cur, 7); }
-  return out;
-}
+  return Number.isFinite(d.getTime()) ? (bucketKey(getWorkDate(d), scale) || '') : '';
+};
 
 const KPI = ({ label, value, unit, sub, warn }) => (
   <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
@@ -282,7 +277,10 @@ export default function MtnAnalysis() {
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
   const unit = srcMeta.unit;
-  const wKeys = useMemo(() => weekKeysIn(tr.from, tr.to), [tr.from, tr.to]);
+  /* แกนเต็มของช่วง (รวมถังที่เงียบ) — ส่งเฉพาะถังที่มีข้อมูล = ช่วงเงียบหายจากกราฟ
+     แล้วเส้นแนวโน้มลากข้ามไปเหมือนไม่เคยมีช่วงเงียบ */
+  const wKeys = useMemo(() => bucketAxis(tr.from, tr.to, tr.scale), [tr.from, tr.to, tr.scale]);
+  const bucketWord = scaleOf(tr.scale)?.short || 'ช่วง';
 
   /* สรุปหัวจอ — ทุกตัวคืน null เมื่อ "ยังวัดไม่ได้" (ห้ามตีเป็น 0) */
   const sum = useMemo(() => {
@@ -383,9 +381,9 @@ export default function MtnAnalysis() {
           ⚠️ แท็บ KPI มีตัวกรองของตัวเองในแผง — โชว์ทั้งคู่ = คนกดแล้วไม่เห็นอะไรเปลี่ยน */}
       {tab === 'qc7' && (
         <TimeRangeBar
-          scale={tr.scale} from={tr.from} to={tr.to} today={tr.today}
+          scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} finest="hour"
           onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-          onReload={load} loading={loading} style={{ marginBottom: 12 }}
+          onView={tr.setView} onReload={load} loading={loading} style={{ marginBottom: 12 }}
         />
       )}
 
@@ -484,13 +482,13 @@ export default function MtnAnalysis() {
                 </Panel>
 
                 {/* ⑥ กราฟควบคุม */}
-                <Panel title="⑥ กราฟควบคุม (XmR) — สัปดาห์นี้ผิดปกติหรือเปล่า"
+                <Panel title={`⑥ กราฟควบคุม (XmR) — ${bucketWord}นี้ผิดปกติหรือเปล่า`}
                   sub="เส้นกลาง = ระดับปกติของงานนี้ · จุดแดง = มีสาเหตุเฉพาะให้ไปตามหา ไม่ใช่ความผันแปรธรรมดา">
                   <ControlChart
                     points={(() => {
                       const agg = {};
-                      rows.forEach(r => { const k = weekKey(r.at); if (k) agg[k] = (agg[k] || 0) + 1; });
-                      return wKeys.map(k => ({ label: k.slice(5), value: agg[k] || 0 }));
+                      rows.forEach(r => { const k = evKey(r.at, tr.scale); if (k) agg[k] = (agg[k] || 0) + 1; });
+                      return wKeys.map(k => ({ label: bucketLabel(k, tr.scale), value: agg[k] || 0 }));
                     })()}
                     unit={unit} />
                 </Panel>
@@ -503,8 +501,8 @@ export default function MtnAnalysis() {
                 </Panel>
 
                 {/* ⑦ แนวโน้ม */}
-                <Panel title="⑦ แนวโน้มรายสัปดาห์" sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
-                  <RunChart records={rows} keyOf={r => weekKey(r.at)} keys={wKeys} unit={unit} />
+                <Panel title={`⑦ แนวโน้มราย${bucketWord}`} sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
+                  <RunChart records={rows} keyOf={r => evKey(r.at, tr.scale)} keys={wKeys} unit={unit} />
                 </Panel>
               </div>
 
