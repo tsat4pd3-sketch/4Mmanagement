@@ -9,18 +9,23 @@ export const ROLE_META = {
   leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope' },
   qa:               { icon: '✅', label: 'งานคุณภาพ',        en: 'Quality',          color: '#c084fc', desc: 'อนุมัติ 4M/CQI-15 + QA Center', axis: 'unit' },
   document_control: { icon: '🗂️', label: 'งานเอกสาร',        en: 'Document Control', color: '#fb923c', desc: 'ปฏิทินบริษัท + เอกสารควบคุม', axis: 'unit' },
-  // 🧭 ฝั่ง “แผนงาน & ข้อมูล” — **ไม่รวม billing** (billing = ออกใบขาย นั่งกับทีมจัดส่ง · user แก้ให้ 23/09)
-  //    ⚠️ ตอนนี้ยังไม่มีบัญชีไหนถือ role นี้ (planning ใช้ `planner_store` เพราะทำงานสโตร์ด้วย)
-  //    = role สำรองของทีม Sales จริงที่ยังไม่มี login — ห้าม seed สิทธิ์ให้แล้วเข้าใจว่าหน้างานได้ไปแล้ว
-  sale:             { icon: '🧭', label: 'ขาย-แผนงาน',      en: 'Sales & Planner',  color: '#a78bfa', desc: 'ฝั่ง “แผนงาน & ข้อมูล” ของ Logistic — รับ Forecast/Order ลูกค้า · วางแผน (ไม่ได้ถือของ)', axis: 'unit' },
+  // 🚫 `sale` เลิกใช้แล้ว — **ยุบรวมเข้า `planner_store`** (user 2026-09-23: *"store แผนงาน ข้อมูล รวมกัน
+  //    planner_store sale ก็รวมกัน"*) · ฝั่ง Store กับ แผนงาน&ข้อมูล เป็นทีมเดียวกันในความเป็นจริง
+  //    ยุบได้ไม่ต้องย้ายสิทธิ์: วัดแล้ว `planner_store` ⊇ `sale` อยู่แล้วทุกคีย์ ยกเว้น `skills:edit_high`
+  //    ที่ตั้งใจไม่ให้ (งานสโตร์/วางแผนไม่ใช่ผู้ประเมินฝีมือ) · ตอนยุบมี 0 บัญชีถือ = ไม่มีใครกระทบ
+  //    ⚠️ ค่า enum ลบทิ้งไม่ได้ → คงรายการไว้ให้ประวัติเก่า/audit log ยังอ่านออกเป็นชื่อไทย
+  //       และให้ยังจัดการแถวสิทธิ์เดิมได้ที่ /permissions · **ห้ามเอาไปตั้งให้ user ใหม่**
+  sale:             { icon: '🚫', label: 'ขาย-แผนงาน (เลิกใช้ — ใช้ 📦 แผนงาน-คลัง แทน)', en: 'Sales & Planner (retired)', color: '#64748b', desc: 'ยุบรวมเข้า “แผนงาน-คลัง” (planner_store) แล้ว 2026-09-23 — ห้ามตั้งให้ user ใหม่ · คงไว้เพื่อให้ประวัติเก่าอ่านออก', axis: 'unit', retired: true },
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
-  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'ฝั่ง “Store (ป้อนของเข้าไลน์)” — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน', axis: 'unit' },
-  // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกจาก 2 ตัวบน 2026-09-23 (คำสั่ง user)
+  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'Store + แผนงาน & ข้อมูล (ยุบรวม `sale` เข้ามา 23/09) — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
+  // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกมา 2026-09-23 (คำสั่ง user)
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”
   //    ⇒ คนจัดส่งต้องเลือกระหว่างได้น้อยไป กับได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์/กดผลิต) เกินมา
-  //    ตอนนี้ role ↔ 3 ฝั่งใน `logisticSide.js` ตรงกันครบ (สีตรงกับ SIDES ของฝั่งนั้น)
+  //    🔴 **เส้นแบ่งจริงของ Logistic = 2 role ไม่ใช่ 3** (user ยืนยัน 23/09): Store กับ แผนงาน&ข้อมูล
+  //       เป็นทีมเดียวกัน → `planner_store` · ส่วน Warehouse + Delivery + Billing → `warehouse_delivery`
+  //       (หมวดเมนู/ทะเบียนสิทธิ์ยังเป็น 3 ฝั่งตามเดิม — คนละเรื่องกับ role ห้ามยุบตาม)
   warehouse_delivery: { icon: '🚚', label: 'คลัง FG-จัดส่ง', en: 'Warehouse & Delivery', color: '#f97316', desc: 'เก็บสินค้าพร้อมขาย (FG) · รอบส่งลูกค้า · ภาชนะ/Packaging · ออกใบขาย (billing) — ไม่มีสิทธิ์จ่ายของเข้าไลน์/ปรับสต๊อกในไลน์', axis: 'unit' },
   display:          { icon: '📺', label: 'จอแสดงผล',         en: 'View Only',        color: '#94a3b8', desc: 'ดูอย่างเดียว ไม่มี Auto-Logout (จอ TV/บอร์ด)', axis: 'device' },
   // ⚠️ 'dept_admin' ไม่ใช่ base role — เป็น "bucket สิทธิ์" ของ flag แอดมินหน่วยงาน (profiles.is_dept_admin)
