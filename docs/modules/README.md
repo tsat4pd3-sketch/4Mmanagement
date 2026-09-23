@@ -58,3 +58,4 @@
 | 🔗 ลูปปิด 8D → PFMEA / PFC / Control Plan (2026-08-17 · คำสั่ง user) | `docs/modules/closed-loop-8d-pfmea.md` | 15 KB |
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` | 14 KB |
 | 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` | 4 KB |
+| 🔔 แจ้งเตือนท่วม + นโยบายเก็บย้อนหลัง `notifications` (2026-09-23) | `docs/modules/notifications-flood.md` | 6 KB |
