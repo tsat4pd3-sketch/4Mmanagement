@@ -242,23 +242,23 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             ))}
           </div>
         )}
-        {spin && (
-          <>
-            <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>🔄 {frameIdx + 1}/{frames.length}</div>
-            <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
-              style={{ position: 'absolute', top: 8, left: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', border: 'none', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-              {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
-            </button>
-            <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: 11, fontWeight: 600, borderRadius: 12, padding: '3px 12px', pointerEvents: 'none' }}>🔄 ลากซ้าย/ขวาเพื่อหมุนดูรอบเครื่อง</div>
-          </>
-        )}
       </div>
+      {/* 🔴 แถบคุมรูปต้องอยู่ **ใต้รูป ไม่ทับรูป** (user 23/09 "ไม่บังรูปได้มั้ย")
+          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 🔄 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
+          ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
-        <div style={{ display: 'flex', gap: 5, justifyContent: 'center', marginTop: compact ? 5 : 8, flexWrap: 'wrap' }}>
-          {frames.map((f, i) => (
-            <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
-              style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
-          ))}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
+          <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
+          </button>
+          <div style={{ display: 'flex', gap: 5 }}>
+            {frames.map((f, i) => (
+              <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+                style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
+            ))}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔄 {frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
         </div>
       )}
       {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
@@ -1281,7 +1281,11 @@ export default function PMCheckData() {
                 const viewerNode = showPhoto
                   ? <JigSpinCheck frames={frames} checkpoints={checkpoints} results={results} activeCpId={activeCpId} onPinClick={setActiveCpId}
                       shimPins={shimPins} onShimPinClick={scrollToShim}
-                      maxH={twoCol ? 560 : (isNarrow ? 190 : 260)} compact={stackCompact} />
+                      /* 🔴 ตัวที่จำกัดขนาดรูปคือ **ความสูง** ไม่ใช่ความกว้าง (วัดจริงที่ 390px · 23/09)
+                         cap 190px: รูปแนวนอน 4:3 ได้แค่ 253px เหลือที่ว่างข้าง 137px · 16:9 เหลือ 52px
+                         cap 300px: 4:3 และ 16:9 **เต็มความกว้างพอดี** (390px)
+                         (รูปแนวตั้งไม่มีทางเต็มความกว้าง เว้นแต่จะครอป ซึ่งทำไม่ได้ — หมุดจะเพี้ยน) */
+                      maxH={twoCol ? 560 : (isNarrow ? 300 : 320)} compact={stackCompact} />
                   : null
 
                 const formNode = (

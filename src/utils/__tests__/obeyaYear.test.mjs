@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {
   yearRange, monthRange, prevMonthRange, monthKeys, monthLabel, SUMMARY_KEY,
   axisOeeYear, axisQualityYear, axisSafetyYear, axisManYear, axisDeliveryYear, axisCostYear, paretoYear, monthBarStatus,
+  axisPpmYear, manualMonthSeries, monthBarScore,
 } from '../obeyaYear.js';
 
 test('ช่วงเวลา: ปีปัจจุบันตัดที่ today · ปีย้อนหลังทั้งปี · เดือน drill-down ตัดที่ today', () => {
@@ -103,4 +104,38 @@ test('Pareto ปี: ตัดหยุดตามแผนออก · เร�
   ], 1);
   assert.equal(p.total, 120);
   assert.deepEqual(p.rows, [{ name: 'Robot', min: 70 }]);
+});
+
+test('PPM ปี: ของเสีย(line-mode) ÷ (สแกนดี + เสีย) · เดือนไม่มีกะ = null · สรุป = ถ่วงด้วยปริมาณ', () => {
+  const p = axisPpmYear({
+    sessions: [{ m: '2026-01', qty: 9990 }, { m: '2026-02', qty: 4990 }],
+    defects: [{ m: '2026-01', ng: 15, trial_ng: 5, rows: 3 }, { m: '2026-02', ng: 10, trial_ng: null, rows: 2 }],
+    year: 2026, target: 250,
+  });
+  assert.equal(p.series[0].v, 1000);      // 10/(9990+10)
+  assert.equal(p.series[1].v, 2000);      // 10/(4990+10)
+  assert.equal(p.series[2].v, null);
+  assert.equal(p.series[12].v, 1333);     // 20/(14980+20) = 1333.33 — ไม่ใช่ (1000+2000)/2
+  assert.equal(p.ngQty, 20); assert.equal(p.defectRows, 5);
+  assert.equal(axisPpmYear({ year: 2026 }).value, null);
+});
+
+test('KPI กรอกมือ: เดือนว่าง = null · สรุป avg/sum/last ตามชนิด', () => {
+  const e = { 1: 80, 3: 90 };
+  const a = manualMonthSeries({ entries: e, year: 2026 });
+  assert.equal(a.series.length, 13);
+  assert.equal(a.series[1].v, null); assert.equal(a.series[1].empty, true);
+  assert.equal(a.ytd, 85); assert.equal(a.months, 2);
+  assert.equal(manualMonthSeries({ entries: e, year: 2026, summary: 'sum' }).ytd, 170);
+  assert.equal(manualMonthSeries({ entries: e, year: 2026, summary: 'last' }).ytd, 90);
+  assert.equal(manualMonthSeries({ entries: {}, year: 2026 }).ytd, null);
+});
+
+test('monthBarScore: เกณฑ์ทางการ 1/0.5/0 — เหลือง = ถึง Commitment แต่ไม่ถึง Target · ว่าง = none', () => {
+  const def = { target_value: 85, direction: 'up', commit_value: 80 };
+  assert.equal(monthBarScore({ v: 86 }, def), 'good');
+  assert.equal(monthBarScore({ v: 82 }, def), 'warn');
+  assert.equal(monthBarScore({ v: 70 }, def), 'bad');
+  assert.equal(monthBarScore({ v: null }, def), 'none');
+  assert.equal(monthBarScore({ v: 50 }, { direction: 'up' }), 'none');   // ไม่มีเป้า = ตัดสินไม่ได้
 });

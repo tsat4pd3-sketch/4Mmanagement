@@ -89,6 +89,7 @@ const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
+const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -114,7 +115,6 @@ export const NAV_ITEMS = [
   // ⚠️ ชื่อเมนูต้องบอกว่า "เข้าไปทำอะไร" ไม่ใช่บอกแค่ว่าเกี่ยวกับเรื่องอะไร (nav audit 2026-08-27)
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
   // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
-  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   /* 🏛️ OBEYA — 2 แท็บในหน้าเดียว (รวมงาน 2 session · 2026-09-15 ดูหัวไฟล์ pages/Obeya.jsx)
        ?tab=kpi   บอร์ด KPI ส่วนงาน — ยุบกระดาษ "OBEYA KPI monitoring" ที่แปะผนัง (เดือน × กลุ่มไลน์ × 8 หัวข้อ)
@@ -122,6 +122,10 @@ export const NAV_ITEMS = [
      อยู่หมวด "ภาพรวม" ไม่ใช่ "จอแสดงผล" เพราะหน้านี้ **เขียนข้อมูลได้** (บันทึกเหตุความปลอดภัย /
      ตั้ง-ปิด Action) ไม่ใช่จอที่แขวนทิ้งไว้เฉยๆ · deep-link ต่อจอ: ?section=PD3 · ?tab=sqdcm */
   { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI ส่วนงาน + SQDCM)', group: 'ภาพรวม' },
+  /* 📋 งานค้างของส่วนงาน (/dept-dashboard) วางติดกับ OBEYA (user 23/09: "งานค้างของส่วนงานก็ควรอยู่ในหมวดเดียวกัน
+     มันคือระบบมอนิเตอร์") — หมวดเดียวกัน (ภาพรวม) อยู่แล้ว ย้ายมาอยู่ถัดกันให้เห็นเป็นชุด "มอนิเตอร์ส่วนงาน":
+     OBEYA = ดูตัวเลข/แนวโน้ม → งานค้าง = คิวงานที่กดไปทำ · ไม่ย้ายไป "จอแสดงผล" เพราะทั้งคู่กดทำงานได้ ไม่ใช่จอแขวน */
+  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -189,6 +193,7 @@ export const NAV_ITEMS = [
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -1882,6 +1887,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/npi" element={
                 <RoleRoute path="/npi" userRole={role}><NPI /></RoleRoute>
+              } />
+              <Route path="/nm-board" element={
+                <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>

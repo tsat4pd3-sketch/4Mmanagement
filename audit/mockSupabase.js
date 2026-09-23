@@ -282,6 +282,10 @@ const SCHEMA_FKS = [
 const OBEYA_YEAR = () => ({
   from: '2026-01-01', to: '2026-09-22',
   sessions: [
+    /* แถวของไลน์ที่มีจริงใน production_lines ของ mock — บอร์ด KPI กรองตาม "กลุ่มไลน์" ไม่งั้นแผ่น OEE/PPM ว่างใน harness ตลอด */
+    { m: '2026-01', line: LINE_NAME(1), n: 30, wload: 15000, oee_w: 1275000, a_wload: 15000, a_w: 1350000, wrun: 13500, p_w: 1215000, wprod: 3000, q_w: 297000, qty: 2970, ng: 30 },
+    { m: '2026-03', line: LINE_NAME(1), n: 28, wload: 14000, oee_w: 980000, a_wload: 14000, a_w: 1190000, wrun: 11900, p_w: 952000, wprod: 2800, q_w: 274400, qty: 2790, ng: 10 },
+    { m: '2026-09', line: LINE_NAME(1), n: 12, wload: 6000, oee_w: 480000, a_wload: 6000, a_w: 540000, wrun: 5400, p_w: 486000, wprod: 1200, q_w: 118800, qty: 1195, ng: 5 },
     { m: '2026-01', line: 'LINE 060', n: 40, wload: 20000, oee_w: 1600000, a_wload: 20000, a_w: 1800000, wrun: 18000, p_w: 1620000, wprod: 4000, q_w: 396000, qty: 3960, ng: 40 },
     { m: '2026-02', line: 'LINE 060', n: 38, wload: 19000, oee_w: 1330000, a_wload: 19000, a_w: 1615000, wrun: 16150, p_w: 1291000, wprod: 3800, q_w: 372400, qty: 3780, ng: 20 },
     { m: '2026-03', line: 'LINE 061', n: 20, wload: 10000, oee_w: 850000, a_wload: 10000, a_w: 920000, wrun: 9200, p_w: 828000, wprod: null, q_w: null, qty: 0, ng: 0 },
@@ -294,6 +298,8 @@ const OBEYA_YEAR = () => ({
     { m: '2026-03', line: 'LINE 061', type: null, category: '', min: 45 },
   ],
   defects: [
+    { m: '2026-01', line: LINE_NAME(1), mat: '90031601', rows: 4, ng: 30, trial_ng: 10 },
+    { m: '2026-09', line: LINE_NAME(1), mat: '90031601', rows: 1, ng: 5, trial_ng: null },
     { m: '2026-01', line: 'LINE 060', mat: '90031601', rows: 6, ng: 40, trial_ng: 5 },
     { m: '2026-02', line: 'LINE 060', mat: 'MAT-ไม่มีต้นทุน', rows: 2, ng: 20, trial_ng: null },
   ],
