@@ -219,7 +219,8 @@ export const RULES = [
         action: pv.hasPlan ? 'ตั้งรอบให้แผน PM (ตอนนี้ไม่มีรอบ)' : 'สร้างแผน PM ให้อุปกรณ์นี้',
         why: `${trendWhy(pd)} · ${pv.hasPlan ? 'แผนเดิมเป็น "ตามรอบ" ไม่มีวันครบกำหนด' : 'ยังไม่มีแผน PM เลย'}`
           + (c ? ` · จุดตั้งต้นที่แนะนำ: ทุก ${c} วัน (≈ครึ่งของ MTBF ${fmtN(pd.mtbfDays, 0)} วัน)` : ''),
-        byYmd: addYmd(todayStr, 7), link: '/pm?tab=setup', linkLabel: 'ตั้งค่า PM',
+        // แท็บแผน PM มีแถบ "📅 ตั้งรอบ / วัน PM ครั้งถัดไป" (ทีละหลายรายการได้) — ไม่ต้องเข้าหน้าตั้งจุดตรวจ
+        byYmd: addYmd(todayStr, 7), link: '/pm?tab=plan', linkLabel: 'ตั้งรอบ PM',
       };
     },
   },
@@ -228,7 +229,7 @@ export const RULES = [
     when: ({ pv }) => pv.status === 'never',
     make: ({ todayStr }) => ({
       priority: 2, action: 'เริ่มตรวจ PM รอบแรก',
-      why: 'มีแผนแบบมีรอบ แต่ยังไม่เคยบันทึกผลตรวจ — ระบบนับรอบถัดไปไม่ได้จนกว่าจะตรวจครั้งแรก',
+      why: 'มีรอบแล้ว แต่ยังไม่เคยตรวจและยังไม่ได้กำหนดวัน PM ครั้งถัดไป — ระบบเตือนไม่ได้ (ตรวจครั้งแรก หรือกำหนดวันในแท็บแผน PM)',
       byYmd: addYmd(todayStr, 7), link: '/pm?tab=check', linkLabel: 'ตรวจอุปกรณ์',
     }),
   },

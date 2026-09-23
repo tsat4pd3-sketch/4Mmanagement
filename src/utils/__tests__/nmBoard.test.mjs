@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   rollupEva, evaCounts, countsLabel, daysSince, freshness, freshLabel,
-  projectEva, customerEva, gradeByTarget, panelsNeedingAttention, overdueActions,
+  projectEva, customerEva, gradeByTarget, panelsNeedingAttention, overdueActions, tvGrid,
 } from '../nmBoard.js';
 
 const NOW = new Date('2026-09-20T10:00:00');   // ตรึงเวลา — กันเทสระเบิดเวลา (CLAUDE.md)
@@ -84,3 +84,24 @@ test('overdueActions — ดึงเฉพาะงานที่เลยก�
   assert.equal(out[0].no, 1);
   assert.equal(out[0].late, 10);
 });
+
+test('tvGrid — ทุกแผงต้องลงจอเดียว ไม่มีช่องหาย', () => {
+  for (const n of [1, 5, 12, 21, 27, 40]) {
+    const { cols, rows } = tvGrid(n);
+    assert.ok(cols * rows >= n, `n=${n} ได้ ${cols}x${rows} ไม่พอ`);
+    assert.ok(cols >= 1 && rows >= 1);
+    assert.ok((cols - 1) * rows < n, `n=${n} มีคอลัมน์เกินจำเป็น`);
+  }
+});
+
+test('tvGrid — บอร์ดจริง 21 และ 27 แผงได้ผังที่อ่านได้บนจอ 16:9', () => {
+  const a = tvGrid(21), b = tvGrid(27);
+  assert.ok(a.cols >= 5 && a.cols <= 8, `21 แผงได้ ${a.cols} คอลัมน์`);
+  assert.ok(b.cols >= 5 && b.cols <= 9, `27 แผงได้ ${b.cols} คอลัมน์`);
+});
+
+test('tvGrid — ค่าพังไม่ทำให้หารศูนย์', () => {
+  assert.deepEqual(tvGrid(0), { cols: 1, rows: 1 });
+  assert.deepEqual(tvGrid(null), { cols: 1, rows: 1 });
+});
+
