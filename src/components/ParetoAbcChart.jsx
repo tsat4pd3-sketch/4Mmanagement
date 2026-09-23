@@ -143,8 +143,10 @@ export default function ParetoAbcChart({
     <ParetoChart rows={rows} unit={unitOf} height={330} maxBars={MAX_BARS}
       onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
+  /* viewBox กว้างขึ้นใน popup ⇒ สัดส่วนแบนลง ⇒ กราฟกินความสูงน้อยลงแต่กว้างเต็มจอ
+     (เดิม 1100×420 ในกล่อง 1460px = สูง ~557px กินที่เกือบหมด เหลือที่ตารางนิดเดียว) */
   const chartFull = () => (
-    <ParetoChart rows={rows} unit={unitOf} height={420} width={1100} maxBars={rows.length}
+    <ParetoChart rows={rows} unit={unitOf} height={400} width={1600} maxBars={rows.length}
       showTailToggle={false} onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
 
@@ -263,7 +265,10 @@ export default function ParetoAbcChart({
       {/* ── popup ขยาย: เห็นครบทุกรายการ + ตาราง (คลิกแถวเจาะได้) ── */}
       {open && (
         <div onClick={() => setOpen(false)} style={ovl(1250)}>
-          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 980 }}>
+          {/* popup ขยาย: กว้างขึ้น + **กราฟฟรีซ ตารางเลื่อนในตัวเอง** (user 23/09)
+              "กราฟมันเล็ก สัดส่วนตอนนี้เหมือน 50/50 … เอาให้กราฟ 70 table 30
+               ละถ้าให้ดี ฟรีซกราฟไว้ เลื่อนแค่ตาราง" */}
+          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 1500 }}>
             <div style={head}>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
@@ -273,9 +278,18 @@ export default function ParetoAbcChart({
               </div>
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', padding: '14px 20px 20px' }}>
+            {/* ── กราฟ: ฟรีซไว้ (ไม่เลื่อนไปกับตาราง) · ~70% ของพื้นที่ที่เหลือ ──
+                flexShrink 0 = ไม่ให้ตารางบีบกราฟให้เตี้ยลงเมื่อรายการเยอะ */}
+            {/* สัดส่วน **กราฟ 70 : ตาราง 30** ของพื้นที่ใต้หัว (user 23/09)
+                ทั้งคู่ `minHeight: 0` + เลื่อนในตัวเอง ⇒ เลื่อนตารางแล้วกราฟไม่ขยับ (ฟรีซ)
+                ⚠️ `minHeight: 0` คือตัวที่ทำให้ overflow ทำงานใน flex column — ขาดไปจะดันทะลุกรอบ */}
+            <div style={{ flex: '1 1 70%', minHeight: 0, overflowY: 'auto',
+                          padding: '14px 20px 6px', borderBottom: '1px solid var(--border)' }}>
               {chartFull()}
-              <div style={{ overflowX: 'auto', marginTop: 14 }}>
+            </div>
+            {/* ── ตาราง: เลื่อนในตัวเอง ~30% · minHeight 0 คือสิ่งที่ทำให้ overflow ทำงานใน flex column ── */}
+            <div style={{ flex: '1 1 30%', minHeight: 0, overflowY: 'auto', padding: '10px 20px 20px' }}>
+              <div style={{ overflowX: 'auto' }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                     <th style={thL}>#</th><th style={thL}>รายการ</th><th style={thC}>กลุ่ม</th>
@@ -410,7 +424,14 @@ export default function ParetoAbcChart({
 
 /* ── styles ── */
 const ovl = (z) => ({ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 });
-const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' };
+/* 🔴 `overflow: hidden` บังคับให้ลูกอยู่ในกรอบ 92vh — ขาดตัวนี้ ลูกที่ `flex: 0 0 auto`
+   (เช่นบล็อกกราฟ) จะดันตารางทะลุขอบล่างจอ แล้วตัวเลื่อนด้านในไม่ทำงานเลย
+   (เจอจริง 23/09 ตอนแยกกราฟ/ตารางเป็น 2 ชั้นใน popup ขยาย) */
+const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%',
+  /* 🔴 ต้องเป็น `height` ไม่ใช่แค่ `maxHeight` — `flex-basis: 70%/30%` ของลูกจะทำงานก็ต่อเมื่อ
+     ความสูงของกล่องแม่ "แน่นอน" · ถ้ามีแต่ maxHeight ความสูงจะขึ้นกับเนื้อหา ⇒ % ตีกลับเป็น auto
+     แล้วได้สัดส่วนตามเนื้อหาแทน (เจอจริง 23/09: ตั้ง 70/30 แต่ได้ 41/59 = กลับด้าน) */
+  height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
 const head = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '16px 20px 10px', borderBottom: '1px solid var(--border)' };
 const closeBtn = { background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15, flexShrink: 0 };
 const tbl = { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 520, fontVariantNumeric: 'tabular-nums' };

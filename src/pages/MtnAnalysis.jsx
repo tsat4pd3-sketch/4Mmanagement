@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { splitUnclassified, unclassifiedNote } from '../utils/unclassified';
+import { deptNameOf } from '../utils/mtnTeams';
 import MtnKpiPanel from '../components/MtnKpiPanel';
 import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
@@ -63,8 +64,12 @@ const RANGES = [
 ];
 
 const SOURCES = [
+  /* 🔴 หน้านี้เป็นโมดูล **ซ่อมบำรุง** ⇒ นับเฉพาะงานที่ "มีการติดต่อช่าง" (user 23/09)
+     วัดจริง 90 วัน: ดาวน์ไทม์ 9,600 ครั้ง แต่ **เรียกช่างแค่ 308 (3.2%)**
+     ⇒ เดิมลากงานที่ไม่เกี่ยวกับช่างมา 96.8% — พาเรโตของจอซ่อมบำรุงเลยไม่ใช่ปัญหาของช่าง
+     ชุดข้อมูล = ใบ MO ทั้งหมด **+** ดาวน์ไทม์ที่เรียกช่างแล้วแต่ยังไม่ได้เปิดใบ (เหลือ 19 ครั้ง)
+     ⇒ ไม่นับซ้ำ เพราะดาวน์ไทม์ที่เปิดใบแล้วถูกนับผ่านใบ MO อยู่แล้ว (`source_downtime_id`) */
   { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
-  { key: 'dt', label: '⏱ เครื่องหยุด (Downtime)', unit: 'ครั้ง', note: 'ทุกครั้งที่ไลน์บันทึกว่าเครื่องหยุด — ปริมาณเยอะกว่าใบซ่อมมาก' },
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
@@ -118,7 +123,8 @@ export default function MtnAnalysis() {
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
   const [days, setDays] = useState(90);
-  const [src, setSrc] = useState('mo');
+  const [src] = useState('mo');   // คงไว้เพื่อ unit/ป้ายข้อความ — ไม่มี UI สลับแล้ว
+  const [team, setTeam] = useState('all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม)
   const [orders, setOrders] = useState([]);
   const [dts, setDts] = useState([]);
   const [kindByMc, setKindByMc] = useState({});
@@ -161,8 +167,15 @@ export default function MtnAnalysis() {
   /* ── แปลงเป็น "แถวเหตุการณ์" รูปแบบเดียว แล้วค่อยแยกแท็บ ─────────────────────
      ทำแบบนี้เพื่อให้กราฟทุกตัวกินข้อมูลชุดเดียวกัน ไม่ต้องรู้ว่ามาจาก MO หรือ downtime */
   const events = useMemo(() => {
-    if (src === 'mo') {
-      return (orders || []).map(o => {
+    {
+      const moDtIds = new Set((orders || []).map(o => o.source_downtime_id).filter(Boolean));
+      /* ดาวน์ไทม์ที่ **เรียกช่างแล้ว** แต่ยังไม่ได้เปิดใบ MO — ยังเป็นงานของช่าง ต้องนับ
+         ⚠️ `call_mtn_team` แทบไม่มีใครกรอก (307/308 ว่าง) ⇒ ทีมของแถวพวกนี้เป็น "(ไม่ระบุทีม)"
+            อย่าเอาไปสรุปว่าทีมนั้นไม่มีงาน — แผนกช่างที่เชื่อถือได้มาจากใบ MO (`mtn_dept`) */
+      const dtNoMo = (dts || []).filter(d =>
+        !moDtIds.has(d.id) &&
+        (d.call_mtn === true || d.call_mtn_at || String(d.call_mtn_team || '').trim()));
+      const moEv = (orders || []).map(o => {
         const { cls, known } = assetClassOf(o, kindByMc);
         const ttr = minBetween(o.accept_at, o.repair_done_at);
         const cost = [o.labor_cost, o.parts_cost].some(v => v != null && v !== '')
@@ -180,8 +193,7 @@ export default function MtnAnalysis() {
           minutes: ttr, cost, raw: o,
         };
       });
-    }
-    return (dts || []).map(d => {
+      const dtEv = dtNoMo.map(d => {
       const { cls, known } = assetClassOf(d, kindByMc);
       const m = d.duration_min == null ? null : Number(d.duration_min);
       return {
@@ -193,17 +205,32 @@ export default function MtnAnalysis() {
         cause_category: null,
         causeText: [d.description, d.fix_action].filter(Boolean).join(' '),
         line: '(ไม่ระบุไลน์)',
-        team: (d.call_mtn_team || '').trim() || '(ไม่ได้เรียกช่าง)',
+        team: (d.call_mtn_team || '').trim() || '(ไม่ระบุทีม)',
         minutes: Number.isFinite(m) ? m : null, cost: null, raw: d,
       };
-    });
-  }, [src, orders, dts, kindByMc]);
+      });
+      return [...moEv, ...dtEv];
+    }
+  }, [orders, dts, kindByMc]);
+
+  /* ── แผนกช่าง: dropdown เดิม (MO/Downtime) เปลี่ยนเป็นตัวนี้ (user 23/09) ──────
+     "ตรงแท็บคือแยกตามอุปกรณ์ใช่มั้ย · dropdown เดิม…เป็นเลือกแผนกช่างดีกว่า"
+     ⇒ แท็บ = ชนิดอุปกรณ์ · dropdown = แผนกช่าง · 2 แกนไม่ซ้อนกัน */
+  const teamOpts = useMemo(() => {
+    const c = {};
+    events.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
+    return Object.entries(c).sort((a, b) => b[1] - a[1]);
+  }, [events]);
+  const scopedEvents = useMemo(
+    () => (team === 'all' ? events : events.filter(e => e.team === team)),
+    [events, team],
+  );
 
   const byClass = useMemo(() => {
     const m = Object.fromEntries(ASSET_CLASSES.map(a => [a.key, []]));
-    events.forEach(e => { (m[e.cls] || m.other).push(e); });
+    scopedEvents.forEach(e => { (m[e.cls] || m.other).push(e); });
     return m;
-  }, [events]);
+  }, [scopedEvents]);
 
   /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
      ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
@@ -293,8 +320,14 @@ export default function MtnAnalysis() {
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={src} onChange={e => setSrc(e.target.value)} style={{ width: 180, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-                {SOURCES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+              {/* dropdown = **แผนกช่าง** (เดิมเป็นเลือกแหล่งข้อมูล MO/Downtime — user เปลี่ยน 23/09)
+                  แท็บด้านล่าง = ชนิดอุปกรณ์ · 2 แกนนี้ตัดกันได้ ไม่ซ้อนกัน */}
+              <select value={team} onChange={e => setTeam(e.target.value)} title="แผนกช่างที่รับงาน"
+                style={{ width: 200, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
+                <option value="all">👷 ทุกแผนกช่าง ({events.length})</option>
+                {teamOpts.map(([t, n]) => (
+                  <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
+                ))}
               </select>
               <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
                 {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
