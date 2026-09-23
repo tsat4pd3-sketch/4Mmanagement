@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { clusterNotes } from '../utils/textCluster';
 import { classifyAbc, PARETO_CUTOFF, vagueShare } from '../utils/pareto';
 import ParetoChart from './ParetoChart';
@@ -143,10 +143,33 @@ export default function ParetoAbcChart({
     <ParetoChart rows={rows} unit={unitOf} height={330} maxBars={MAX_BARS}
       onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
-  /* viewBox กว้างขึ้นใน popup ⇒ สัดส่วนแบนลง ⇒ กราฟกินความสูงน้อยลงแต่กว้างเต็มจอ
-     (เดิม 1100×420 ในกล่อง 1460px = สูง ~557px กินที่เกือบหมด เหลือที่ตารางนิดเดียว) */
+  /* 🔴 กราฟใน popup ต้อง "เต็มช่อง" — ห้ามล็อกสัดส่วน viewBox ไว้ตายตัว (user 23/09 "เว้นไว้ทำไม")
+     SVG ใช้ `width:100%; height:auto` ⇒ ความสูงที่วาดจริง = กว้างช่อง × (vbH/vbW)
+     ถ้า vbH ตายตัว (เดิม 400) แล้วช่องสูงกว่านั้น ⇒ **เหลือที่ว่างใต้กราฟเป็นแถบใหญ่**
+     (วัดจริง: ช่องสูง ~640px แต่กราฟวาดได้ ~390px = ว่าง 250px)
+     ⇒ วัดช่องจริงด้วย ResizeObserver แล้วคำนวณ vbH ให้สัดส่วนตรงกับช่อง
+     ⚠️ ห้ามแก้ด้วย `preserveAspectRatio="none"` (แท่งยืดผิดสัดส่วน อ่านค่าผิด)
+        และห้ามล็อก `height` เป็น px บน svg (จะได้ letterbox ซ้าย-ขวาแทน — บั๊กเดิม 22/09) */
+  const VB_W = 1600;
+  const LEGEND_H = 46;              // แถบคำอธิบาย/ปุ่มมุมป้ายใต้ svg (อยู่นอก viewBox)
+  const chartPane = useRef(null);
+  const [paneBox, setPaneBox] = useState(null);
+  useEffect(() => {
+    const el = chartPane.current;
+    if (!open || !el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([e]) => {
+      const { width: w, height: h } = e.contentRect;
+      // อัปเดตเฉพาะตอนขยับจริง — กันลูป (กราฟสูงขึ้น → scrollbar โผล่ → กว้างลด → วัดใหม่)
+      setPaneBox(p => (p && Math.abs(p.w - w) < 3 && Math.abs(p.h - h) < 3 ? p : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+  const fullH = paneBox?.w > 0
+    ? Math.round(VB_W * Math.max(paneBox.h - LEGEND_H, 240) / paneBox.w)
+    : 400;
   const chartFull = () => (
-    <ParetoChart rows={rows} unit={unitOf} height={400} width={1600} maxBars={rows.length}
+    <ParetoChart rows={rows} unit={unitOf} height={fullH} width={VB_W} maxBars={rows.length}
       showTailToggle={false} onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
 
@@ -283,7 +306,7 @@ export default function ParetoAbcChart({
             {/* สัดส่วน **กราฟ 70 : ตาราง 30** ของพื้นที่ใต้หัว (user 23/09)
                 ทั้งคู่ `minHeight: 0` + เลื่อนในตัวเอง ⇒ เลื่อนตารางแล้วกราฟไม่ขยับ (ฟรีซ)
                 ⚠️ `minHeight: 0` คือตัวที่ทำให้ overflow ทำงานใน flex column — ขาดไปจะดันทะลุกรอบ */}
-            <div style={{ flex: '1 1 70%', minHeight: 0, overflowY: 'auto',
+            <div ref={chartPane} style={{ flex: '1 1 70%', minHeight: 0, overflowY: 'auto',
                           padding: '14px 20px 6px', borderBottom: '1px solid var(--border)' }}>
               {chartFull()}
             </div>
