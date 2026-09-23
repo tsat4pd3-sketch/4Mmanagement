@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { STAFF_INDIRECT, isDirectStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -43,10 +44,16 @@ const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxP
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
+/* วงแหวนรอบรูปพนักงาน = **ประเภทการจ้าง** (ประจำ/รายวัน/อื่นๆ) — ความหมายเดิม ไม่เปลี่ยน
+   🔴 `ring` เป็น**สีเรียบ** ไม่ใช่ไล่เฉดโลหะ (23/09 ก้อน C)
+   เดิมเป็น `linear-gradient(135deg, …5 stop…)` เลียนแบบผิวทอง/เงิน/ทองแดง — แต่วงแหวนมันหนา
+   **2.5px** ⇒ ไล่เฉด 5 สีในพื้นที่ 2.5px มองไม่ออกว่าเป็นโลหะอยู่แล้ว เห็นเป็นแค่สีที่มีจุดรบกวน
+   และมันคูณตามจำนวนพนักงานในตาราง (วัดจริง: 28 จาก 30 ไล่เฉดทั้งหน้ามาจากตรงนี้จุดเดียว)
+   ⇒ ใช้สีเรียบสีเดียว = หน้าตาเหมือนเดิมในสายตาคนใช้ แต่หน้านี้เลิกเป็นหน้าที่ "ตกแต่งหนักสุดในระบบ" */
 const EMP_GRADES = {
-  gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
-  silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  gold:   { label: 'ประจำ',  ring: '#c8941a', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
+  silver: { label: 'รายวัน', ring: '#a8a8a8', glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
+  bronze: { label: 'อื่นๆ',  ring: '#b06a28', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -166,7 +173,9 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
-  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
+  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect (labor_type จากผังองค์กร)
+  const [empSearch,     setEmpSearch]     = useState(''); // 🔎 ค้นชื่อ/รหัส — 223 คน เลื่อนหาไม่ไหว (feedback 23/09)
+  const [filterStaffKind, setFilterStaffKind] = useState(''); // shopfloor/support (staff_kind — แกนเช็คชื่อ)
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)
   const [lines,           setLines]           = useState([]);
@@ -377,7 +386,12 @@ export default function Operator() {
       famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
-      let q = onlyDirectStaff(supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)'));
+      /* 🔴 หน้านี้คือ **ทะเบียนพนักงาน** — ต้องเห็นทุกคนรวมสายสนับสนุน ไม่งั้นแก้ข้อมูลเขาไม่ได้เลย
+         (เกิดจริง 23/09: ใส่ onlyDirectStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
+          ทั้งที่เพิ่งถูกสร้างจาก /add-user เมื่อวาน — "มีอยู่ในฐานแต่มองไม่เห็น" คือสภาพที่แย่ที่สุด)
+         การกันไม่ให้เขาไปปนใน "กำลังคน" ทำที่จอที่นับคน (Checkin/Report/ShiftOrganize/
+         WorkforceInsight) ไม่ใช่ที่ทะเบียน · ที่นี่ใช้ชิป 🧑‍🏭/🗂️ กรองดูแทน */
+      let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
@@ -756,8 +770,18 @@ export default function Operator() {
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
-    .filter(emp => !filterNoPhoto || !emp.image_url),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, offOrgReasons, laborMap]);
+    .filter(emp => !filterNoPhoto || !emp.image_url)
+    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isDirectStaff(emp) : isDirectStaff(emp)))
+    /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
+       **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
+    .filter(emp => {
+      const q = normSearch(empSearch);
+      if (!q) return true;
+      return normSearch(emp.name).includes(q)
+          || normSearch(emp.employee_id_code).includes(q)
+          || normSearch(emp.position).includes(q);
+    }),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, filterStaffKind, empSearch, offOrgReasons, laborMap]);
 
   // worklist "ยังไม่มีรูป" — นับจากคนที่ยังทำงานอยู่เท่านั้น (คนลาออกไม่ต้องตามถ่าย)
   // ที่มา 2026-09-11: ล้างรูปที่ใหญ่ผิดกติกาออก 18 ไฟล์ (GIF/รูปไม่ได้บีบ) หัวหน้าต้องไล่ถ่ายใหม่
@@ -851,6 +875,15 @@ export default function Operator() {
         <>
           {/* Section / Group / Team / Grade filters */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
+                ⚠️ ต้องกำหนด width เอง (index.css ตั้ง `input { width: 100% }` ทั้งแอป —
+                   ไม่กำหนด = กินเต็มบรรทัดแล้วดัน dropdown ตกบรรทัดใหม่ทั้งแถว)
+                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
+            <input type="search" value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+              placeholder="🔎 ค้นชื่อ / รหัส / ตำแหน่ง..."
+              style={{ width: 210, fontSize: 12, padding: '5px 10px', borderRadius: 7,
+                       border: `1px solid ${empSearch ? 'var(--accent)' : 'var(--border2)'}`,
+                       background: 'var(--bg3)', color: 'var(--text)' }} />
             {[
               // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
               { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
@@ -909,6 +942,26 @@ export default function Operator() {
               );
             })}
 
+            {/* 👥 ประเภทพนักงาน (staff_kind) — **คนละแกนกับ Direct/Indirect ข้างล่าง**
+                นี่คือ "ต้องเช็คชื่อ/นับเป็นกำลังคนหน้าไลน์ไหม" (รายคน)
+                ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
+            <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            {[
+              { k: 'shopfloor', icon: '🧑‍🏭', label: 'หน้างาน', color: '#22c55e', title: 'พนักงานหน้าไลน์ + ช่าง — เช็คชื่อ · นับเป็นกำลังคน' },
+              { k: 'support',   icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคนหน้าไลน์' },
+            ].map(t => {
+              const active = filterStaffKind === t.k;
+              return (
+                <button key={t.k} title={t.title} onClick={() => setFilterStaffKind(active ? '' : t.k)}
+                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? t.color : 'var(--border2)'}`,
+                    background: active ? `${t.color}22` : 'var(--bg3)',
+                    color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
+                  {t.icon} {t.label}
+                </button>
+              );
+            })}
+
             {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {['direct', 'indirect'].map(t => {
@@ -925,8 +978,13 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor) && (
-              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); }}
+            {empSearch && (
+              <span style={{ fontSize: 11, color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700 }}>
+                {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
+              </span>
+            )}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor || filterStaffKind || empSearch) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); setFilterStaffKind(''); setEmpSearch(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
@@ -1018,9 +1076,11 @@ export default function Operator() {
           {/* Table + fade overlays */}
           <div style={{ position: 'relative' }}>
             {/* Left fade */}
-            <div style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
+            {/* ม่านไล่เฉดขอบซ้าย/ขวา = บอกว่า "ยังเลื่อนต่อไปทางนี้ได้" (ขึ้น-ลงตาม scrollState)
+                = affordance ไม่ใช่การตกแต่ง ⇒ ติด data-ux-ok ให้ uxsweep ข้าม (ดู audit/README.md) */}
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
             {/* Right fade */}
-            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
               {scrollState.right && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: 'var(--accent)', opacity: 0.7, animation: 'bounceX 1.2s ease-in-out infinite' }}>›</div>}
             </div>
 
@@ -1075,7 +1135,7 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
-                        background: !emp.is_active ? 'var(--border2)' : grade.gradient,
+                        background: !emp.is_active ? 'var(--border2)' : grade.ring,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
                         {emp.image_url ? (

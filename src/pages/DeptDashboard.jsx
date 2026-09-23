@@ -771,7 +771,9 @@ export const DEPTS = [
   { key: 'qa', icon: '✅', label: 'QA / คุณภาพ', roles: ['qa'], load: loadQa, View: QaView },
 ];
 
-export default function DeptDashboard() {
+/* 🧩 `embedded` (23/09) — หน้านี้เป็นแท็บ 📌 ของ `/obeya` แล้ว (route `/dept-dashboard` redirect มา `?tab=todo`)
+   หน้าแม่ส่ง tabs/tab/onTab มาให้วาดแถบแท็บ OBEYA ที่หัวเพจเดียวกัน · เนื้อหา/ตัวกรอง `?dept=` เหมือนเดิมทุกอย่าง */
+export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onTab } = {}) {
   const { role, lineId, sections } = useContext(UserContext);
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -861,14 +863,14 @@ export default function DeptDashboard() {
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
            ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
-          title="Dashboard ส่วนงาน" icon="📊"
+          title={embedded ? 'OBEYA — งานค้างของส่วนงาน' : 'Dashboard ส่วนงาน'} icon={embedded ? '📌' : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
              เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
              = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
              เหลือแท็บเดียวจึงไม่ต้องมีแถบแท็บ — `?view=kpi` redirect ไป /obeya ให้อัตโนมัติ */
-          tab={view} onTab={setView}
+          tabs={embedded ? tabs : undefined} tab={embedded ? hubTab : view} onTab={embedded ? onTab : setView}
         >
           {/* เลือกส่วนงาน = "ตัวกรอง" ของหน้านี้ — แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 */}
           {view === 'now' && (

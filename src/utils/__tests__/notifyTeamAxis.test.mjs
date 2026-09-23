@@ -112,7 +112,31 @@ test('ใบแจ้งซ่อมต้องส่งถึง "คนใน
     assert.ok(cfg.includes('reported_by_uid'), `${ev}: ผู้แจ้ง (reported_by_uid) ต้องได้รับเสมอ`);
   }
 
-  // 🔴 ขั้นที่ไม่ยิงตามทะเบียน (cast:false) ต้องมีทางถอย ไม่งั้นใบเก่าที่ไม่มี uid จะเงียบสนิท
-  assert.ok(/if \(!ids\.length && !aud\.cast\)/.test(src),
-    'ต้องถอยไปยิงตามทะเบียนเมื่อไม่มี uid ในใบเลย — ห้ามล้มเหลวเงียบ');
+  // 🔴 ห้ามล้มเหลวเงียบ: โหมด fallback ที่ใบไม่มี uid เลย ต้องถอยไปยิงตามทะเบียน
+  assert.ok(/if \(castAlways \|\| !owners\.length\)/.test(src),
+    'ต้องถอยไปยิงตามทะเบียนเมื่อใบไม่มี uid เลย — ห้ามล้มเหลวเงียบ');
+});
+
+/* ── 🎯 รูทคอส "ยิงมั่ว": ทะเบียนถามผิดข้อ (2026-09-23 · คำสั่ง user "หารูทคอสและแก้") ──
+   วัด 30 วัน: 64% ของแถวทั้งระบบ (36,062 จาก 56,445) ส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบ
+   และคนกลุ่มนั้น **ไม่ใช่บัญชีร้าง** (supervisor 16 คนไม่เคยอ่าน แต่ 17 คน login ใน 7 วัน)
+   ⇒ ปัญหาไม่ใช่ตัวกรอง (คนที่หลุดทุกตัวกรองมีแค่ 6 จาก 94) แต่เป็น "ยิงตามประเภทคน" */
+test('โหมดยิงตาม role ต้องมาจากทะเบียน (inapp_cast) ที่เดียว ห้ามฮาร์ดโค้ดในโค้ด', () => {
+  const mtn = readFileSync(new URL('../../../supabase/functions/send-mtn-notification/index.ts', import.meta.url), 'utf8');
+  const evt = readFileSync(new URL('../../../supabase/functions/send-event-notification/index.ts', import.meta.url), 'utf8');
+
+  for (const [name, src] of [['send-mtn-notification', mtn], ['send-event-notification', evt]]) {
+    assert.ok(src.includes('inapp_cast'), `${name}: ต้องอ่าน inapp_cast จากทะเบียน`);
+    assert.ok(/castAlways/.test(src), `${name}: ต้องมีตัวตัดสินโหมดจากทะเบียน`);
+    assert.ok(/'fallback'/.test(src), `${name}: ต้องรู้จักโหมด fallback`);
+  }
+
+  // 🔴 MO_AUDIENCE เหลือแค่ "ใครอยู่ในใบ" (ชื่อคอลัมน์ = โค้ด) · โหมดยิงย้ายไปทะเบียนแล้ว
+  //    มี 2 แหล่งเมื่อไหร่ = จอตั้งค่ากับของจริงคนละเรื่อง (บทเรียน p_team ที่หายไป 1 วัน)
+  const blk = mtn.slice(mtn.indexOf('const MO_AUDIENCE'), mtn.indexOf('const UUID_RE'));
+  assert.ok(!/cast:\s*(true|false)/.test(blk), 'MO_AUDIENCE ห้ามมีฟิลด์ cast อีก — ย้ายไป notification_rules.inapp_cast แล้ว');
+
+  // เจ้าของงานต้องมาก่อน role เสมอ (ไม่ใช่รวมกันแล้วค่อยกรอง)
+  assert.ok(/const owners = /.test(mtn), 'ต้องคิด "เจ้าของงาน" แยกจากชุด role');
+  assert.ok(/const owners = /.test(evt), 'ตัวส่งกลางต้องถือ extra_user_ids เป็นเจ้าของงาน');
 });

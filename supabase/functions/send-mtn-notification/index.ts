@@ -24,12 +24,12 @@ async function getBotToken(): Promise<string | undefined> {
   } catch { return TELEGRAM_BOT_TOKEN || undefined; }
 }
 
-type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[] };
+type Route = { enabled: boolean; chats: string[]; template?: string | null; label?: string; inappRoles?: string[]; cast?: string };
 // teamChats = ห้องที่แท็กทีมไว้ (JIG MTN/DIE MTN/MTN/PRODUCTION) → ส่งแจ้งเตือนเข้าห้องของทีมนั้นก่อน
 async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Record<string, string[]>; chatTeam: Map<string, string> }> {
   try {
     const [{ data: rules }, { data: channels }] = await Promise.all([
-      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles'),
+      supabase.from('notification_rules').select('event_key, is_enabled, channel_ids, channel_id, template, label, inapp_roles, inapp_cast'),
       supabase.from('telegram_channels').select('id, chat_id, is_active, team'),
     ]);
     const chatById = new Map<string, string>();
@@ -50,7 +50,8 @@ async function loadRoutes(): Promise<{ map: Record<string, Route>; teamChats: Re
       const chats = [...new Set(ids.map((id) => chatById.get(String(id))).filter((v): v is string => !!v))];
       const inappRoles = Array.isArray((r as { inapp_roles?: string[] }).inapp_roles) ? (r as { inapp_roles: string[] }).inapp_roles : [];
       map[r.event_key as string] = { enabled: r.is_enabled as boolean, chats, template: (r as { template?: string | null }).template,
-        label: (r as { label?: string }).label, inappRoles };
+        label: (r as { label?: string }).label, inappRoles,
+        cast: (r as { inapp_cast?: string }).inapp_cast || 'always' };
     }
     return { map, teamChats, chatTeam };
   } catch { return { map: {}, teamChats: {}, chatTeam: new Map() }; }
@@ -223,29 +224,31 @@ async function usersInTeam(dept?: string | null): Promise<string[]> {
 
    `people` = คอลัมน์ uid ที่ต้องได้รับเสมอ (คนในใบ + คนที่ต้องลงมือขั้นถัดไป)
    `team`   = ส่งให้ช่างทีมที่รับผิดชอบด้วยไหม
-   `cast`   = ยังต้องยิงตามทะเบียน role อีกไหม — **false = ขั้นนี้รู้ตัวคนแล้ว ไม่ต้องกวนใคร**
+   ⚠️ **"ยังยิงตาม role อีกไหม" ไม่ได้อยู่ในตารางนี้** — อยู่ที่ `notification_rules.inapp_cast`
+      (แก้ได้จาก /notification-config โดยไม่ต้อง deploy) · เคยมี 2 แหล่งแล้วเพี้ยนมาแล้ว 1 รอบ
+      (แกน p_team ที่ทะเบียนมีแต่โค้ดไม่ส่ง = แกนไม่เคยมีผลจริงอยู่ 1 วัน)
 
    🔴 ห้ามล้มเหลวเงียบ: ถ้ารวมแล้วได้ 0 คน (ใบเก่าที่ไม่มี uid) ให้ถอยไปยิงตามทะเบียนเหมือนเดิม */
-const MO_AUDIENCE: Record<string, { people: string[]; team: boolean; cast: boolean }> = {
+const MO_AUDIENCE: Record<string, { people: string[]; team: boolean }> = {
   // ขั้น 1 แจ้งใหม่ — ยังไม่รู้ว่าช่างคนไหนจะรับ ⇒ ต้องยิงหาทีมช่าง + ทะเบียน
-  mtn_reported:   { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid'], team: true, cast: true },
+  mtn_reported:   { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid'], team: true },
   // ขั้น 2 รับงาน — รู้ตัวช่างแล้ว คนที่ต้องรู้คือผู้แจ้งกับช่างที่รับ
-  mtn_assigned:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false, cast: false },
+  mtn_assigned:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false },
   // ขั้น 3 ซ่อมเสร็จ — ฝ่ายที่แจ้งต้องไปตรวจ (ยังไม่รู้ว่าใครจะเป็นคนตรวจ) ⇒ ยังต้องยิงหัวหน้าไลน์
-  mtn_repaired:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false, cast: true },
+  mtn_repaired:   { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid'], team: false },
   // ขั้น 4 ตรวจแล้ว — ต่อไปเป็นงานของ QA
-  mtn_checked:    { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid', 'checker_uid', 'tech_main_uid'], team: false, cast: true },
+  mtn_checked:    { people: ['reported_by_uid', 'reporter_prod_uid', 'reporter_qa_uid', 'checker_uid', 'tech_main_uid'], team: false },
   // ขั้น 5 QA ผ่าน / ข้าม QA — ฝ่ายที่แจ้งต้องมารับมอบ
-  mtn_qa:         { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_checker_uid', 'tech_main_uid'], team: false, cast: true },
-  mtn_qa_skipped: { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_skipped_by_uid', 'tech_main_uid'], team: false, cast: true },
+  mtn_qa:         { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_checker_uid', 'tech_main_uid'], team: false },
+  mtn_qa_skipped: { people: ['reported_by_uid', 'reporter_prod_uid', 'checker_uid', 'qa_skipped_by_uid', 'tech_main_uid'], team: false },
   // ขั้น 6 รับมอบ — ต่อไปเป็นงาน ผจก. (uid ของ ผจก. ยังไม่ถูกกรอก ⇒ ต้องพึ่งทะเบียน)
-  mtn_handover:   { people: ['reported_by_uid', 'ho_checker_uid', 'ho_reporter_uid', 'tech_main_uid'], team: false, cast: true },
+  mtn_handover:   { people: ['reported_by_uid', 'ho_checker_uid', 'ho_reporter_uid', 'tech_main_uid'], team: false },
   // ขั้น 7 ผจก.แผนกที่แจ้งอนุมัติ — ต่อไป ผจก.ซ่อมบำรุงปิดใบ
-  mtn_approved:   { people: ['reported_by_uid', 'ho_checker_uid', 'cost_mgr_uid', 'mtn_head_uid', 'tech_main_uid'], team: true, cast: true },
+  mtn_approved:   { people: ['reported_by_uid', 'ho_checker_uid', 'cost_mgr_uid', 'mtn_head_uid', 'tech_main_uid'], team: true },
   // ขั้น 8 ปิดใบ — จบแล้ว แจ้งให้คนที่ลงแรงรู้ ไม่ต้องกวนคนอื่น
-  mtn_closed:     { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid', 'approver_uid', 'ho_checker_uid'], team: true, cast: false },
+  mtn_closed:     { people: ['reported_by_uid', 'reporter_prod_uid', 'accepted_by_uid', 'tech_main_uid', 'tech_secondary_uid', 'approver_uid', 'ho_checker_uid'], team: true },
   // ตีกลับ — คนที่ต้องแก้คือผู้แจ้งเท่านั้น
-  mtn_returned:   { people: ['reported_by_uid', 'reporter_prod_uid'], team: false, cast: false },
+  mtn_returned:   { people: ['reported_by_uid', 'reporter_prod_uid'], team: false },
 };
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** อ่าน uid ของคนในใบตามรายการคอลัมน์ — ค่าที่ไม่ใช่ uuid ทิ้ง (บางคอลัมน์เก็บ "ชื่อที่พิมพ์เอง") */
@@ -278,21 +281,25 @@ async function notifyMoInApp(routes: Record<string, Route>, event: string, v: Re
     if (!meta) return;
     /* ⚠️ ตีกลับ (mtn_returned) ไม่ส่งให้ทีมช่าง — ทีมนั่นแหละเป็นคนตีกลับ
        คนที่ต้องรู้คือ "ผู้แจ้ง" ที่ต้องไปแก้แผนกแล้วส่งใหม่ */
-    const aud = MO_AUDIENCE[event] || { people: ['reported_by_uid'], team: true, cast: true };
+    const aud = MO_AUDIENCE[event] || { people: ['reported_by_uid'], team: true };
     const roles = routes[event]?.inappRoles ?? [];
-    const [byRole, byTeam] = await Promise.all([
-      aud.cast ? usersByRule(event, roles, v.line_name, aud.team ? dept : null) : Promise.resolve([] as string[]),
-      aud.team ? usersInTeam(dept) : Promise.resolve([] as string[]),
-    ]);
-    // คนในใบนั้น (ผู้แจ้ง/ช่างที่รับ/ผู้ตรวจ ฯลฯ) — ได้รับเสมอ ไม่ว่าทะเบียนจะตั้ง role อะไร
-    const people = peopleOf(mo || {}, aud.people);
-    let ids = [...new Set([...people, ...byTeam, ...byRole])].filter(Boolean);
-    /* 🔴 ห้ามล้มเหลวเงียบ — ขั้นที่ไม่ยิงตามทะเบียน (cast:false) เจอใบเก่าที่ไม่มี uid เลย
-       จะได้ 0 คน ⇒ ใบเดินไปโดยไม่มีใครรู้ · ถอยไปยิงตามทะเบียนเหมือนพฤติกรรมเดิม */
-    if (!ids.length && !aud.cast) {
-      const fallback = await usersByRule(event, roles, v.line_name, aud.team ? dept : null);
-      ids = [...new Set(fallback)].filter(Boolean);
-      console.log(`[mo-audience] ${event} ไม่มี uid ในใบ → ถอยไปยิงตามทะเบียน ${ids.length} คน`);
+    /* 🎯 โหมดยิงตามทะเบียนมาจาก `notification_rules.inapp_cast` **ที่เดียว** (แก้ได้จาก
+       /notification-config) — ห้ามเอากลับมาฮาร์ดโค้ดในไฟล์นี้ ไม่งั้นจอกับของจริงคนละเรื่อง
+         always   = ยิงตาม role เสมอ (ใช้กับขั้นที่ยังไม่รู้ตัวคนถัดไป)
+         fallback = ส่งถึงเจ้าของงานก่อน · ยิงตาม role ต่อเมื่อใบบอกตัวคนไม่ได้ */
+    const castAlways = (routes[event]?.cast || 'always') !== 'fallback';
+
+    // เจ้าของงานของใบนี้ = คนในใบ (ผู้แจ้ง/ช่างที่รับ/ผู้ตรวจ ฯลฯ) + ช่างทีมที่รับผิดชอบ
+    const byTeam = aud.team ? await usersInTeam(dept) : [];
+    const owners = [...new Set([...peopleOf(mo || {}, aud.people), ...byTeam])].filter(Boolean);
+
+    /* 🔴 ห้ามล้มเหลวเงียบ — โหมด fallback ที่เจอใบเก่าไม่มี uid เลยจะได้ 0 คน
+       ⇒ ใบเดินไปโดยไม่มีใครรู้ · ถอยไปยิงตามทะเบียนเหมือนพฤติกรรมเดิม */
+    let ids = owners;
+    if (castAlways || !owners.length) {
+      const byRole = await usersByRule(event, roles, v.line_name, aud.team ? dept : null);
+      ids = [...new Set([...owners, ...byRole])].filter(Boolean);
+      if (!castAlways) console.log(`[mo-audience] ${event} ใบไม่มี uid -> ถอยไปยิงตามทะเบียน ${ids.length} คน`);
     }
     if (!ids.length) return;
     const body = String(message).replace(/<[^>]+>/g, '').replace(/\s*\n\s*/g, ' · ').replace(/\s+/g, ' ').trim().slice(0, 300);

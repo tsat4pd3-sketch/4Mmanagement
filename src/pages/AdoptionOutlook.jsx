@@ -76,7 +76,7 @@ async function inChunks(ids, run) {
    เพิ่มแผนกใหม่ = เพิ่ม entry ที่นี่ที่เดียว การ์ด/แถบสรุป/อันดับตามให้เอง */
 const DEPTS = [
   {
-    key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', to: '/dept-dashboard?dept=production',
+    key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', to: '/obeya?tab=todo&dept=production',
     signals: (c) => [
       { label: 'กะที่ปิดครบ', now: c.sessClosed, total: c.sess, unit: 'กะ' },
       { label: 'ใบผลิตที่ปิด', now: c.ordConfirmed, total: c.ord, unit: 'ใบ' },
@@ -93,7 +93,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', to: '/dept-dashboard?dept=maintenance',
+    key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', to: '/obeya?tab=todo&dept=maintenance',
     signals: (c) => [
       {
         label: 'เหตุเครื่องหยุดที่เปิดใบซ่อม', now: c.mo, total: c.dtUnplannedRows, unit: 'ใบ',
@@ -112,7 +112,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'store', icon: '📦', label: 'สโตร์ / จัดส่ง', to: '/dept-dashboard?dept=store',
+    key: 'store', icon: '📦', label: 'สโตร์ / จัดส่ง', to: '/obeya?tab=todo&dept=store',
     signals: (c) => [
       {
         label: 'รอบส่งที่กดยืนยัน "ส่งแล้ว"', now: c.shipped, total: c.shipOrders, unit: 'รอบ',
@@ -129,7 +129,7 @@ const DEPTS = [
     ],
   },
   {
-    key: 'qa', icon: '✅', label: 'QA / คุณภาพ', to: '/dept-dashboard?dept=qa',
+    key: 'qa', icon: '✅', label: 'QA / คุณภาพ', to: '/obeya?tab=todo&dept=qa',
     signals: (c) => [
       { label: 'ใบตรวจคุณภาพ (Check Sheet)', now: c.qaSheets, total: null, unit: 'ใบ', gapTo: '/qa' },
       { label: 'พาร์ทที่ตั้งมาตรฐานการตรวจ', now: c.qaParts, total: c.prodAll, unit: 'พาร์ท', gapTo: '/qa-setup' },
@@ -281,7 +281,7 @@ const DIMENSIONS = [
           { d: 'ซ่อมบำรุง', l: 'ใบซ่อมที่ผ่านมา', have: c => c.mo > 0 },
           { d: 'ซ่อมบำรุง', l: 'ประวัติการตรวจ', have: c => c.inspections > 0 },
         ],
-        now: 1, full: 3, to: '/dept-dashboard?dept=maintenance',
+        now: 1, full: 3, to: '/obeya?tab=todo&dept=maintenance',
         nowTxt: 'มีข้อมูลเครื่องหยุดครบแล้ว แต่ยังไม่มีใครเปิดใบซ่อมตาม จึงเห็นแค่ "หยุดไปแล้ว" ไม่รู้ว่ากำลังจะหยุดอีก',
         fullTxt: 'สัญญาณเตือน 3 ทางพร้อมกัน: หยุดสั้นถี่ขึ้น + ความเร็วค่อยๆ ตก + ของเสียเพิ่ม = เครื่องกำลังเสื่อม ทั้งที่ยังไม่พัง',
         need: ['เปิดใบซ่อมทุกครั้งที่เครื่องหยุดผิดปกติ', 'บันทึกผลตรวจ PM ตามรอบ'],

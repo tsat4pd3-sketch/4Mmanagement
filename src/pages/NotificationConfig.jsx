@@ -17,6 +17,8 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 /** สรุปว่า "ตอนนี้เรื่องนี้เด้งหาใคร" เป็นข้อความสั้นๆ — คนตั้งค่าต้องเห็นผลโดยไม่ต้องกางแผง */
 const targetSummary = (rule) => {
   const parts = []
+  // 🎯 ตัวนี้ขึ้นก่อนเสมอ — มันเปลี่ยน "ใครได้รับ" มากกว่าตัวกรองอื่นทั้งหมดรวมกัน (2026-09-23)
+  if (rule.inapp_cast === 'fallback') parts.push('เจ้าของงานก่อน')
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
   if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
@@ -503,6 +505,31 @@ export default function NotificationConfig() {
 
                         {openTarget === rule.event_key && (
                           <div style={{ marginTop: 8, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* 🎯 2026-09-23 — ตัวเลือกที่แก้ "ยิงมั่ว" ที่ต้นเหตุ (คำสั่ง user "หารูทคอสและแก้")
+                                รูทคอส: ทะเบียนตอบคำถามผิดข้อ — ถามว่า "คนประเภทไหนควรรู้เรื่องชนิดนี้"
+                                แทนที่จะถาม "ใครต้องลงมือกับรายการนี้" ⇒ ผู้รับ = |คนใน role| × |ทุกเหตุการณ์|
+                                วัด 30 วัน: 64% ของแถวทั้งระบบส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบ
+                                (และคนกลุ่มนั้นไม่ใช่บัญชีร้าง — login สัปดาห์นี้ แต่ไม่ใช้กระดิ่ง)
+                                ⚠️ วางไว้บนสุดโดยตั้งใจ: ตัวกรองข้างล่างแค่ "เล็ม" ตัวนี้แก้ที่ต้นเหตุ */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
+                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              <input type="checkbox" checked={rule.inapp_cast === 'fallback'}
+                                onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
+                                style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>🎯 ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
+                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
+                                  แล้วจะยิงตาม role <b>ต่อเมื่อรายการไม่มีชื่อใครเลย</b> — ใบไม่มีทางเดินไปเงียบๆ
+                                  <div style={{ marginTop: 3 }}>
+                                    ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
+                                    — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
+                                  </div>
+                                </div>
+                              </span>
+                            </label>
+
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer' }}>
                               <input type="checkbox" checked={!!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />

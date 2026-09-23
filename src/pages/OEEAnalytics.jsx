@@ -21,6 +21,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
+import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
 import { useSearchParams } from 'react-router-dom';
 import TimeRangeBar from '../components/TimeRangeBar';
@@ -40,9 +41,10 @@ const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport
 
 // ── Colour helpers ───────────────────────────────────────────────
 const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
-const aColor    = v => v >= 90 ? '#22c55e' : v >= 75 ? '#f59e0b' : '#ef4444';
-const pColor    = v => v >= 85 ? '#22c55e' : v >= 70 ? '#f59e0b' : '#ef4444';
-const qColor    = v => v >= 99 ? '#22c55e' : v >= 95 ? '#f59e0b' : '#ef4444';
+/* 🚦 A/P/Q ไม่มีเกณฑ์ตายตัวในไฟล์นี้แล้ว (23/09) — ทุกจุดตัดสินด้วย `statusOf(v, trTarget.x)`
+   คือ **เป้าจริงของกรุ๊ปที่เลือก** จากตาราง `oee_targets` ซึ่งเป็นเป้าเดียวกับที่จอพิมพ์ให้คนอ่านเห็น
+   (เดิม `aColor` 90/75 · `pColor` 85/70 · `qColor` 99/95 ⇒ กรุ๊ปที่ตั้งเป้าเองจะถูกตัดสินผิดเป้า
+   และค่ามาตรฐานของระบบคือ P 90 แต่โค้ดทาเขียวตั้งแต่ 85) · ห้ามเพิ่มเกณฑ์ตายตัวกลับเข้ามา */
 
 
 // เป้าหมายมาตรฐาน (fallback) — ใช้เมื่อกรุ๊ปใน scope ยังไม่ถูกตั้ง target ในตาราง oee_targets
@@ -52,7 +54,6 @@ const TARGET = { a: 90, p: 90, q: 99 };
 TARGET.oee = Math.round(TARGET.a * TARGET.p * TARGET.q / 10000 * 10) / 10; // 80.2
 const METRIC_COLOR = { a: '#22c55e', p: '#f59e0b', q: '#a78bfa' };
 const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY (Q)' };
-const METRIC_COLOR_FN = { a: aColor, p: pColor, q: qColor };
 
 // ── OEE calculation helpers ──────────────────────────────────────
 // หมายเหตุ: A/P/Q/OEE คำนวณและบันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
@@ -151,13 +152,25 @@ function dateStrAdd(dateStr, deltaDays) {
             "รายละเอียดที่อธิบายเยอะๆ เป็น tooltips ดีมั้ย") เพราะกำแพงข้อความบนการ์ด
             ทำให้เลขจริงจมหาย
    ⚠️ ใช้ "กดเปิด" ไม่ใช่ hover tooltip — จอสัมผัส/จอ TV ไม่มีเมาส์ (UI-CONVENTIONS §6) */
-const KpiCard = ({ label, value, color, sub, calc, more }) => {
+/* `primary` = ใบพระเอกของแถว (23/09 · brief De-AI UI ข้อ 03) — แถวนี้ OEE เป็นพระเอกโดยธรรมชาติ
+   เพราะ **OEE = A × P × Q** ⇒ A/P/Q คือ "ตัวประกอบ" ของมัน ไม่ใช่ตัวเลขคนละเรื่องที่มาเรียงกัน
+   เดิม 5 ใบ 28px เท่ากันหมด ⇒ จอไม่ได้บอกว่าอันไหนคือผลรวม อันไหนคือส่วนประกอบ
+   `unit` = หน่วยท้ายเลข (ค่าเริ่มต้น '%') — ใบ "ผลิตรวม" เคยส่ง value={null} ทำให้ช่องเลขใหญ่
+   ขึ้น "—" แล้วเอาเลขจริงไปซ่อนใน sub ขนาด 11px (= ตัวเลขที่ใหญ่ที่สุดบนการ์ดคือขีด) */
+const KpiCard = ({ label, value, color, sub, calc, more, primary = false, unit = '%' }) => {
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 110, flex: 1 }}>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>{value ?? '—'}{value != null ? '%' : ''}</div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
+    <div style={{
+      background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+      padding: primary ? '16px 22px' : '14px 18px',
+      minWidth: primary ? 210 : 110, flex: primary ? '2 1 240px' : '1 1 130px',
+    }}>
+      <div style={{ fontSize: primary ? 12.5 : 11, fontWeight: primary ? 700 : 400, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: primary ? 46 : 28, fontWeight: 900, color: color || 'var(--text)', lineHeight: 1 }}>
+        {value ?? '—'}
+        {value != null && unit && <span style={{ fontSize: primary ? 20 : 14, fontWeight: 600, marginLeft: 2 }}>{unit}</span>}
+      </div>
+      {sub && <div style={{ fontSize: primary ? 12 : 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
       {calc && (
         <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
           {calc}
@@ -1394,7 +1407,9 @@ export default function OEEAnalytics() {
               {['a', 'p', 'q'].map(k => (
                 <div key={k} style={{ flex: 1, minWidth: 160 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
-                  <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi[k] != null ? METRIC_COLOR_FN[k](tdKpi[k]) : 'var(--muted)' }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
+                  {/* 🚦 เทียบ `tdTarget[k]` = เป้าเดียวกับเส้นประในกราฟและข้อความใต้กราฟ (23/09)
+                      เดิมใช้ `METRIC_COLOR_FN` เกณฑ์ตายตัว ⇒ ตัวเลขเขียวทั้งที่ยังไม่ถึงเส้นประข้างๆ */}
+                  <div style={{ fontSize: 26, fontWeight: 900, color: statusColor(statusOf(tdKpi[k], tdTarget[k])) }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
                   <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={tdTarget[k]} metric={k.toUpperCase()} />
                   <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}><span style={{ color: METRIC_COLOR[k] }}>╌╌</span> เส้นประ = เป้า {tdTarget[k]}%</div>
                 </div>
@@ -1415,13 +1430,14 @@ export default function OEEAnalytics() {
               </div>
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OOE — ใช้เวลากะคุ้มแค่ไหน</div>
-                <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.ooe != null ? oeeColor(tdKpi.ooe) : 'var(--muted)' }}>{tdKpi.ooe ?? '—'}{tdKpi.ooe != null ? '%' : ''}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)</div>
+                {/* ไม่มีเป้า OOE/TEEP ในระบบ ⇒ ห้ามทาเขียว/แดง (statusTone กฎ 2) — เหมือนแถว KPI ด้านล่าง */}
+                <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.ooe ?? '—'}{tdKpi.ooe != null ? '%' : ''}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน) · ยังไม่ได้ตั้งเป้า</div>
               </div>
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>TEEP — ใช้กำลังผลิตที่มีกี่ %</div>
-                <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.teep != null ? oeeColor(tdKpi.teep) : 'var(--muted)' }}>{tdKpi.teep ?? '—'}{tdKpi.teep != null ? '%' : ''}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = ปฏิทิน 24 ชม. · {tdKpi.teepLines} ไลน์</div>
+                <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.teep ?? '—'}{tdKpi.teep != null ? '%' : ''}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = ปฏิทิน 24 ชม. · {tdKpi.teepLines} ไลน์ · ยังไม่ได้ตั้งเป้า</div>
               </div>
               <div style={{ flex: '2 1 260px', minWidth: 230 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
@@ -1852,37 +1868,61 @@ export default function OEEAnalytics() {
         </select>
       </TimeRangeBar>
 
-      {/* KPI Cards */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <KpiCard label="OEE เฉลี่ย"     value={kpi.oee} color={kpi.oee != null ? oeeColor(kpi.oee) : undefined} sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`} />
-        <KpiCard label="Availability (A)" value={kpi.a}   color={kpi.a   != null ? aColor(kpi.a)   : undefined} sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`}
+      {/* KPI Cards
+          🚦 สีของ A/P/Q/OEE = เทียบ **เป้าที่เขียนอยู่บนการ์ดใบเดียวกัน** (`trTarget` จาก `oee_targets`)
+             ผ่าน `statusOf()` ชุดกลาง — 23/09 ก้อน B
+             เดิมใบพวกนี้เขียน "เป้า ≥ 90%" แต่ไปทาสีด้วยเกณฑ์ตายตัวในไฟล์ (`aColor` 90/75 ·
+             `pColor` 85/70 · `qColor` 99/95) ⇒ กรุ๊ปที่ตั้งเป้าเองไม่เท่าค่ามาตรฐาน **จอจะบอกเป้าหนึ่ง
+             แต่ตัดสินอีกเป้าหนึ่ง** (ค่า default ของระบบคือ P 90 แต่โค้ดทาเขียวตั้งแต่ 85)
+             ⇒ 23/09 ไล่แก้ทั้งหน้าแล้ว: การ์ด KPI · A/P/Q แท็บวันนี้ · ตารางรายช่วง ใช้ `trTarget`/`tdTarget`
+             เหมือนกันหมด · `oeeColor` เหลือไว้เฉพาะ OEE (เกณฑ์ 80/60 = เกณฑ์ของ OEE จริงๆ) */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
+        <KpiCard primary label="OEE เฉลี่ย (= A × P × Q)" value={kpi.oee}
+          color={statusColor(statusOf(kpi.oee, trTarget.oee))}
+          sub={`${kpi.sessions} กะ · เป้า ≥ ${trTarget.oee}%`}
+          calc={<>
+            {kpi.a ?? '—'}% <span style={{ color: 'var(--muted)' }}>(A)</span> ×{' '}
+            {kpi.p ?? '—'}% <span style={{ color: 'var(--muted)' }}>(P)</span> ×{' '}
+            {kpi.q ?? '—'}% <span style={{ color: 'var(--muted)' }}>(Q)</span> = <b>{kpi.oee ?? '—'}%</b><br />
+            <span style={{ color: 'var(--muted)' }}>สามใบขวามือคือตัวประกอบของเลขนี้ ไม่ใช่ตัวเลขคนละเรื่อง</span>
+          </>} />
+        <KpiCard label="Availability (A)" value={kpi.a} color={statusColor(statusOf(kpi.a, trTarget.a))}
+          sub={`เป้า ≥ ${trTarget.a}% · % เวลาที่เครื่องพร้อม`}
           calc={<>
             เวลารับภาระ <b>{kpi.netAvailMin.toLocaleString()}</b> น.<br />
             − หยุดนอกแผน <b style={{ color: '#a855f7' }}>{kpi.unplannedMinTotal.toLocaleString()}</b> น.<br />
             = เดินเครื่อง <b>{Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()}</b> น.
           </>} />
-        <KpiCard label="Performance (P)"  value={kpi.p}   color={kpi.p   != null ? pColor(kpi.p)   : undefined} sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`}
+        <KpiCard label="Performance (P)" value={kpi.p} color={statusColor(statusOf(kpi.p, trTarget.p))}
+          sub={`เป้า ≥ ${trTarget.p}% · % ความเร็วผลิต`}
           calc={<>
             เวลาที่ควรใช้ตาม CT ÷ เวลาเดินเครื่อง<br />
             <span style={{ color: 'var(--muted)' }}>ผลิต {kpi.total.toLocaleString()} ชิ้น ใน {Math.max(0, kpi.netAvailMin - kpi.unplannedMinTotal).toLocaleString()} น.</span>
           </>} />
-        <KpiCard label="Quality (Q)"      value={kpi.q}   color={kpi.q   != null ? qColor(kpi.q)   : undefined} sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`}
+        <KpiCard label="Quality (Q)" value={kpi.q} color={statusColor(statusOf(kpi.q, trTarget.q))}
+          sub={`เป้า ≥ ${trTarget.q}% · % ชิ้นงานดี`}
           calc={<>
             ของดี <b style={{ color: '#22c55e' }}>{kpi.okQtyTotal.toLocaleString()}</b> ชิ้น<br />
             ของเสีย <b style={{ color: '#ef4444' }}>{kpi.ngQtyTotal.toLocaleString()}</b> ชิ้น<br />
             = ผลิตจริง <b>{(kpi.okQtyTotal + kpi.ngQtyTotal).toLocaleString()}</b> ชิ้น
           </>} />
-        <KpiCard label="ผลิตรวม" value={null} sub={`${kpi.total.toLocaleString()} ชิ้น`}
-          color="var(--text)" />
+        {/* ผลิตรวม = ข้อเท็จจริง ไม่มีเป้าให้เทียบ ⇒ ตัวเลขสีปกติ ห้ามทาเขียว (statusTone กฎ 2) */}
+        <KpiCard label="ผลิตรวม" value={kpi.total.toLocaleString()} unit=" ชิ้น"
+          color="var(--text)" sub={`${kpi.sessions} กะ · ยังไม่ตั้งเป้ารายช่วง`} />
       </div>
 
       {/* ── OOE / TEEP — ต่างจาก OEE ที่ "ฐานเวลา" · เห็นเวลาที่หายไปกับแผน/ไม่ได้เปิดกะ (2026-08-04) ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16, alignItems: 'stretch' }}>
         {/* OOE/TEEP ต่างจาก OEE ที่ "ตัวหาร" อย่างเดียว — กางตัวเศษ/ตัวหารให้เห็นเหมือน A/P/Q
             (user 2026-08-20: "ให้สองค่านี้เห็นแบบ %A ด้วย") · สูตร = OEE × (รับภาระ ÷ ฐาน) */}
+        {/* 🚦 OOE/TEEP **ไม่มีเป้าในระบบ** (`oee_targets` เก็บแค่ A/P/Q) ⇒ ตามกฎ statusTone ข้อ 2
+            "ไม่มีเป้า = เทา ห้ามเขียว/แดง" — 23/09 ก้อน B
+            เดิมทั้งคู่ถูกทาด้วย `oeeColor()` ซึ่งเป็นเกณฑ์ของ **OEE** ⇒ TEEP ที่ปกติต่ำโดยธรรมชาติ
+            (ฐานเป็นปฏิทิน 24 ชม. รวมวันที่ไม่ได้เปิดกะ) ขึ้นแดงตลอดเวลาโดยไม่มีใครตั้งเกณฑ์ไว้
+            = จอบอกว่า "แย่" ทั้งที่ไม่มีอะไรให้เทียบว่าแย่ · ตั้งเป้าเมื่อไหร่ค่อยเปลี่ยนเป็น statusOf */}
         <KpiCard label="OOE (Overall Operations Effectiveness)" value={kpi.ooe}
-          color={kpi.ooe != null ? oeeColor(kpi.ooe) : undefined}
-          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน)"
+          color="var(--text)"
+          sub="ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน) · ยังไม่ได้ตั้งเป้า"
           calc={<>
             {/* ⚠️ ไม่ใช่ "เอา OEE ไปคูณเพิ่ม" — พีชคณิตยุบแล้วเป็น A×P×Q ชุดเดียวกับ OEE
                 เปลี่ยนแค่ตัวหารของ A (user ทัก 2026-08-20 ว่าคำอธิบายเดิมทำให้เข้าใจผิด) */}
@@ -1893,8 +1933,8 @@ export default function OEEAnalytics() {
             <span style={{ color: 'var(--muted)' }}>P {kpi.p ?? '—'}% · Q {kpi.q ?? '—'}% เหมือน OEE ทุกตัว</span>
           </>} />
         <KpiCard label="TEEP (Total Effective Equipment Performance)" value={kpi.teep}
-          color={kpi.teep != null ? oeeColor(kpi.teep) : undefined}
-          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์`}
+          color="var(--text)"
+          sub={`ฐาน = ปฏิทิน 24 ชม. · ${kpi.teepLines} ไลน์ · รวม ${kpi.teepLineDays.toLocaleString()} วัน-ไลน์ · ยังไม่ได้ตั้งเป้า`}
           calc={<>
             เป็น <b>A × P × Q</b> ชุดเดียวกับ OEE — เปลี่ยนแค่ตัวหารของ A<br />
             A = เดินเครื่อง ÷ <b>ปฏิทิน {kpi.calMin.toLocaleString()}</b> น.
@@ -2172,10 +2212,12 @@ export default function OEEAnalytics() {
                 <th style={{ padding: '6px 8px', textAlign: 'right' }}>กะ</th>
                 <th style={{ padding: '6px 8px', textAlign: 'right' }}>ผลิตรวม</th>
                 <th style={{ padding: '6px 8px', textAlign: 'right' }}>DT (นาที)</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>A%</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>P%</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Q%</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>OEE%</th>
+                {/* 🚦 เขียนเป้าไว้บนหัวคอลัมน์ เพราะสีในตารางตัดสินจากเป้าพวกนี้ (23/09 · statusTone)
+                    เดิมตารางทาสีด้วยเกณฑ์ตายตัวในไฟล์ โดยไม่มีอะไรบอกคนอ่านว่าเทียบกับอะไร */}
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>A% <span style={{ fontWeight: 400 }}>(≥{trTarget.a})</span></th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>P% <span style={{ fontWeight: 400 }}>(≥{trTarget.p})</span></th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Q% <span style={{ fontWeight: 400 }}>(≥{trTarget.q})</span></th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>OEE% <span style={{ fontWeight: 400 }}>(≥{trTarget.oee})</span></th>
               </tr>
             </thead>
             <tbody>
@@ -2186,10 +2228,10 @@ export default function OEEAnalytics() {
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)' }}>{g.count}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right' }}>{g.totalQty.toLocaleString()}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: g.unplannedMin > 60 ? '#ef4444' : 'var(--text)' }}>{g.unplannedMin.toLocaleString()}</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', color: g.a != null ? aColor(g.a) : 'var(--muted)', fontWeight: 700 }}>{g.a ?? '—'}{g.a != null ? '%' : ''}</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', color: g.p != null ? pColor(g.p) : 'var(--muted)', fontWeight: 700 }}>{g.p ?? '—'}{g.p != null ? '%' : ''}</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', color: g.q != null ? qColor(g.q) : 'var(--muted)', fontWeight: 700 }}>{g.q ?? '—'}{g.q != null ? '%' : ''}</td>
-                  <td style={{ padding: '5px 8px', textAlign: 'right', color: g.oee != null ? oeeColor(g.oee) : 'var(--muted)', fontWeight: 900, fontSize: 14 }}>{g.oee ?? '—'}{g.oee != null ? '%' : ''}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', color: statusColor(statusOf(g.a, trTarget.a)), fontWeight: 700 }}>{g.a ?? '—'}{g.a != null ? '%' : ''}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', color: statusColor(statusOf(g.p, trTarget.p)), fontWeight: 700 }}>{g.p ?? '—'}{g.p != null ? '%' : ''}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', color: statusColor(statusOf(g.q, trTarget.q)), fontWeight: 700 }}>{g.q ?? '—'}{g.q != null ? '%' : ''}</td>
+                  <td style={{ padding: '5px 8px', textAlign: 'right', color: statusColor(statusOf(g.oee, trTarget.oee)), fontWeight: 900, fontSize: 14 }}>{g.oee ?? '—'}{g.oee != null ? '%' : ''}</td>
                 </tr>
               ))}
               {grouped.length === 0 && (

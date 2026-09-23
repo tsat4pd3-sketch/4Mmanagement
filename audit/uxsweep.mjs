@@ -10,9 +10,18 @@
  *              (`linear-gradient(${c}14, ${c}14)` = ท่าแทน `color-mix()` ของโปรเจคนี้ = สีเรียบ)
  *  2. `shadow` เงาบนของที่ไม่ได้ลอยจริง — เงาควรมีเฉพาะ overlay (modal/dropdown/toast)
  *              ⇒ ตัดของที่อยู่ใต้ ancestor `position:fixed` + `z-index ≥ 900` ออกก่อนนับ
+ *              ⚠️ **นับเฉพาะเงาที่ "ทำให้ของดูลอย" จริง** — 3 อย่างที่หน้าตาเป็น box-shadow
+ *              แต่ไม่ใช่การตกแต่ง จึง **ไม่นับ**:
+ *                · `0 0 Npx <สี>` = **แสงเรืองของไฟสถานะ** (จุด Andon · กรอบเตือน downtime · ตัวชี้แท็บ)
+ *                · blur ≤ 1px เช่น `0 1px 0 var(--border)` = **เส้นคั่น 1px** ที่ยืมท่า box-shadow มาวาด
+ *                · element ที่ `position: sticky` = มัน**ลอยทับเนื้อหาจริง**ตอนเลื่อน เงาคือสิ่งที่ถูกต้อง
+ *              รอบแรก 23/09 นับรวมหมดแล้วได้ operator 66 / BbsCheck 32 ทั้งที่เกือบทั้งหมดคือ
+ *              ไฟสถานะกลมๆ กับเส้นใต้หัวตาราง sticky ⇒ ตัวเลขสูงแต่ไม่มีอะไรให้แก้ = เครื่องมือที่โกหก
  *  3. `emoji`  emoji ขนาด ≥ 20px ที่อยู่การ์ดเดียวกับตัวเลข ≥ 24px = "ไอคอนแย่งความสนใจจากตัวเลข"
  *              ⚠️ emoji ในเมนู/แท็บ/หัวข้อ **ไม่นับ** (เป็น convention ที่ช่วยสแกนบนจอ TV)
  *  4. `flat`   แถวการ์ด ≥ 3 ใบที่ตัวเลขขนาดเท่ากันหมด + กว้างเท่ากันหมด = ไม่มีใบไหนเป็นพระเอก
+ *              → **"ควรดู" ไม่ใช่ "ผิด"**: ชุดตัวเลขที่ *เป็นพี่น้องกันจริง* (เช่น OEE/OOE/TEEP ที่ต่างกัน
+ *              แค่ฐานเวลา) ควรเท่ากันทั้งแถวอยู่แล้ว · ที่ผิดคือแถวที่มี "ผลรวม" ปนกับ "ส่วนประกอบ"
  *  5. `naked`  ตัวเลขใหญ่ที่ทั้งการ์ดไม่มีหน่วย/เป้า/ฐานเทียบเลย ("71,021" เฉยๆ = 71,021 อะไร?)
  *              → ข้อนี้เป็น **"ควรดู"** ไม่ใช่ "ผิด" (heuristic — บางใบมีบริบทอยู่นอกการ์ด)
  *
@@ -21,6 +30,11 @@
  *    (brief ต้นทางทำมาเพื่อ SaaS dashboard · กติกา "one flat accent" ใช้กับจอโรงงานไม่ได้)
  *  · "สี Andon ถูกใช้เป็นสีประจำการ์ด" ตรวจด้วย runtime ไม่แม่น → ใช้ด่าน grep ใน
  *    `regressionGuards.test.mjs` แทน (ดูกฎ `status-color-as-identity`)
+ *
+ * ── ทางออกสำหรับของที่ "ตั้งใจให้เป็นแบบนั้น" ─────────────────────────────────────────
+ * ใส่ `data-ux-ok="<เหตุผลสั้นๆ>"` บน element นั้น แล้วเครื่องมือจะข้ามให้ **แต่พิมพ์จำนวนที่ข้าม
+ * ออกมาทุกครั้ง** ⇒ ถ้าใครเริ่มเอาไปแปะมั่ว ตัวเลขจะโผล่เองในรายงาน (ช่องโหว่ที่มองเห็นได้
+ * ดีกว่าเครื่องมือที่นับของที่ไม่ควรนับจนไม่มีใครเชื่อตัวเลข)
  *
  * ใช้: เปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้ แล้ว `node audit/uxsweep.mjs`
  *      `node audit/uxsweep.mjs Dashboard DeptHub` = เจาะเฉพาะหน้าที่ระบุ
@@ -71,7 +85,16 @@ for (const name of PAGES) {
         return null;
       };
 
-      const out = { grad: [], shadow: 0, emoji: [], flat: [], naked: [] };
+      const out = { grad: [], shadow: 0, emoji: [], flat: [], naked: [], skipped: 0 };
+      /** ตั้งใจให้เป็นแบบนี้ (มี `data-ux-ok`) — ข้าม แต่ต้องนับให้เห็นในรายงาน */
+      const optedOut = (el) => !!el.closest('[data-ux-ok]');
+      /** เงาที่ "ไม่ใช่การตกแต่ง": แสงเรือง (0 0 …) หรือเส้นคั่น 1px (blur ≤ 1) — ดูหัวไฟล์ */
+      const notDecorShadow = (sh) => {
+        const m = sh.match(/(-?[\d.]+)px\s+(-?[\d.]+)px(?:\s+(-?[\d.]+)px)?/);
+        if (!m) return false;
+        const [dx, dy, blur] = [Number(m[1]), Number(m[2]), Number(m[3] || 0)];
+        return (dx === 0 && dy === 0) || blur <= 1;
+      };
       const bigNums = [];
 
       for (const el of document.querySelectorAll('*')) {
@@ -84,13 +107,16 @@ for (const name of PAGES) {
         if (bi.includes('gradient') && !bi.includes('repeating-')) {
           const stops = bi.match(/rgba?\([^)]*\)/g) || [];
           const flatTint = stops.length >= 2 && stops.every(s => s === stops[0]);
-          if (!flatTint) {
+          if (optedOut(el)) { out.skipped++; } else if (!flatTint) {
             out.grad.push(`${Math.round(r.width)}×${Math.round(r.height)} ${bi.slice(0, 58)}`);
           }
         }
 
         // 2) เงาบนของที่ไม่ได้ลอย
-        if (c.boxShadow && c.boxShadow !== 'none' && !inOverlay(el)) out.shadow++;
+        if (c.boxShadow && c.boxShadow !== 'none' && c.position !== 'sticky'
+          && !notDecorShadow(c.boxShadow) && !inOverlay(el)) {
+          if (optedOut(el)) out.skipped++; else out.shadow++;
+        }
 
         // เก็บ "ตัวเลขใหญ่" ไว้ใช้ข้อ 3-5 (ต้องเป็นใบสุดท้ายที่มีตัวเลข ไม่ใช่กล่องที่ห่อมัน)
         const fs = px(c.fontSize);
@@ -130,7 +156,7 @@ for (const name of PAGES) {
         if (!CTX.test(ctx)) out.naked.push(`${n.t}`);
       }
       return {
-        grad: out.grad, shadow: out.shadow,
+        grad: out.grad, shadow: out.shadow, skipped: out.skipped,
         emoji: [...new Set(out.emoji)], flat: out.flat, naked: [...new Set(out.naked)].slice(0, 6),
       };
     });
@@ -146,7 +172,9 @@ await b.close();
 
 rows.sort((a, b2) => b2.score - a.score);
 const hit = rows.filter(r => r.score > 0);
-console.log(`\nตรวจ ${rows.length} หน้า @${VIEW.width}px — มีจุดที่ควรปรับ ${hit.length} หน้า\n`);
+const skipped = rows.reduce((a, r) => a + (r.skipped || 0), 0);
+console.log(`\nตรวจ ${rows.length} หน้า @${VIEW.width}px — มีจุดที่ควรปรับ ${hit.length} หน้า`
+  + (skipped ? `  (ข้ามของที่ติด data-ux-ok ${skipped} ชิ้น)` : '') + '\n');
 console.log('คะแนน  หน้า                      ไล่เฉด  เงา  emojiแย่งเลข  แถวไร้พระเอก  เลขไร้หน่วย');
 for (const r of hit) {
   if (r.err) { console.log(`  ERR  ${r.name} — ${r.err}`); continue; }

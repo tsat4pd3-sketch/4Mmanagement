@@ -2450,15 +2450,26 @@ export default function Management() {
               </div>
               {workers.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {/* 3 ใบนี้คือ **การแบ่งส่วนของคนกลุ่มเดียวกัน** (workers) ไม่ใช่ KPI คนละตัว — 23/09 ก้อน B
+                      เดิม: 🔵/✅/🟡 ขนาด 24px นั่งอยู่เหนือตัวเลข + ทาสีน้ำเงิน/เขียว/ส้มเป็น "สีประจำใบ"
+                      ⇒ 3 ปัญหาพร้อมกัน (1) วงกลมสีไม่ได้สื่อหัวข้อ เป็นไฟสถานะปลอมที่ใหญ่กว่าป้ายชื่อ
+                      (2) ส้มของ "งานนอกไลน์" อ่านเป็นคำเตือนทั้งที่เป็นแค่ประเภทงาน (statusTone กฎ 1)
+                      (3) เลขลอยๆ ไม่มีหน่วยและไม่มีของรวมให้เทียบว่า "14 จากกี่คน"
+                      ⇒ ตัวเลขเป็นสีปกติ + บอกหน่วย + บอกสัดส่วนของยอดรวม · emoji ถอดเฉพาะวงกลมสี
+                      (emoji ที่ "ตรงกับหัวข้อ" ยังใช้ได้ตามปกติ — อันนี้ไม่ตรง มันคือสีที่วาดเป็นตัวอักษร) */}
                   {[
-                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
-                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
-                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
-                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
+                      <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
+                        {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {Math.round(s.count / workers.length * 100)}% ของ {workers.length} คนวันนี้
+                      </div>
                     </div>
                   ))}
                 </div>

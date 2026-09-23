@@ -11,6 +11,12 @@
       ต้นเหตุประจำ: เพื่อนบ้านตั้ง `whiteSpace: nowrap` แล้วไม่ยอมหด ⇒ **ตัวที่ต้องอ่านที่สุดหายทั้งบรรทัด**
       (เคสจริง: MorningMeeting ชื่อไลน์ 198px จาก 328px ⇒ รายละเอียดปัญหา/4M เหลือ 0)
 
+   ── 📵 หน้าที่ "ตกลงกันแล้วว่าไม่ทำมือถือ" (ACCEPTED ด้านล่าง · คำสั่ง user 2026-09-23) ──
+   ไม่ใช่ทุกหน้าที่ต้องใช้ได้บนจอ 390px — บางหน้าเป็นงานที่**ทำบนคอมอยู่แล้วโดยธรรมชาติ**
+   หรือเป็นจอที่ตั้งใจฉายขึ้นจอใหญ่ · บังคับให้ผ่านทุกหน้า = ยัด UI มือถือให้งานที่ไม่มีใครทำบนมือถือ
+   ⇒ ขึ้นทะเบียนไว้พร้อม**เหตุผลของ user** แล้วรายงานแยกส่วน (ยังพิมพ์ให้เห็น ไม่ได้ซ่อน)
+   🔴 ใส่ชื่อหน้าลงทะเบียนนี้ได้เฉพาะเมื่อ **user ตัดสินใจเอง** — ห้าม AI session ใส่เพราะแก้ไม่ไหว
+
    ใช้: เปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้ แล้ว `node audit/mobilesweep.mjs`
    ⚠️ รันคู่กับ `audit/crashsweep.mjs` (คนละเรื่อง: crashsweep = หน้าพัง · อันนี้ = หน้าไม่พังแต่ใช้ไม่ได้) */
 import { chromium } from 'playwright';
@@ -18,6 +24,13 @@ import { chromium } from 'playwright';
 const VIEW = { width: 390, height: 844 };   // iPhone 14/15 — เล็กที่สุดที่หน้างานใช้จริง
 // 🕐 timezone ไทยเหมือน crashsweep — ไม่งั้นโค้ดสายเวลาถูกข้ามทั้งคลาส (ดูคอมเมนต์ใน crashsweep.mjs)
 const TZ = { timezoneId: 'Asia/Bangkok' };
+/* 📵 หน้าที่ user ตัดสินใจแล้วว่าไม่ต้องรองรับมือถือ — ค่า = เหตุผลที่ user ให้มา (ห้ามแก้เป็นเหตุผลอื่น) */
+const ACCEPTED = {
+  LineSetup: 'ทำในคอม — วางจุดงาน/ลากผังบนจอ 390px ทำไม่ไหวด้วยข้อจำกัดขนาดจอ (user 23/09)',
+  MorningMeeting: 'ไว้เปิดจอประชุม ไม่ใช่จอมือถือ (user 23/09)',
+  Management: 'จัดคนเข้าสถานีบนจอเล็กทำได้ไม่สมบูรณ์ด้วยข้อจำกัดขนาดจอ — เก็บไว้ก่อน (user 23/09)',
+};
+
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const p0 = await b.newPage({ ...TZ });
 await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200);
@@ -65,6 +78,14 @@ for (const name of PAGES) {
 }
 await b.close();
 
-console.log(`ตรวจ ${PAGES.length} หน้า @${VIEW.width}px — มีปัญหา ${bad.length} หน้า`);
-bad.forEach(x => { console.log(`🔴 ${x.name}`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
-process.exit(bad.length ? 1 : 0);
+const open = bad.filter(x => !ACCEPTED[x.name]);
+const accepted = bad.filter(x => ACCEPTED[x.name]);
+
+console.log(`ตรวจ ${PAGES.length} หน้า @${VIEW.width}px — ต้องแก้ ${open.length} หน้า`
+  + (accepted.length ? ` (+ ${accepted.length} หน้าที่ user ตัดสินใจว่าไม่ทำมือถือ)` : ''));
+open.forEach(x => { console.log(`🔴 ${x.name}`); x.hits.slice(0, 4).forEach(h => console.log(`     ${h}`)); });
+if (accepted.length) {
+  console.log('\n📵 ไม่รองรับมือถือโดยตั้งใจ (ไม่นับเป็นปัญหา):');
+  accepted.forEach(x => console.log(`   ${x.name} — ${ACCEPTED[x.name]}`));
+}
+process.exit(open.length ? 1 : 0);
