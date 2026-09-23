@@ -458,11 +458,14 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       {userAvatarUrl ? (
         <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
+        /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
+           เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
+           มาทำของตกแต่ง ทั้งที่ 2 สีนี้ถูกจองไว้แปลว่า "ปกติ/มีปัญหา" ทั้งระบบ (utils/statusTone.js) */
         <div style={{
           width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+          background: 'var(--bg2)', border: '1px solid var(--border2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, color: '#fff',
+          fontSize: 12, fontWeight: 800, color: 'var(--text2)',
         }}>{initials}</div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { useNavigate } from 'react-router-dom';
 import { navItemsForGroups, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
+import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { topPaths } from '../utils/navRecent';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
@@ -229,19 +230,23 @@ function TeleTile({ t, onGo }) {
     <>
       <div className="scan" />
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : t.color, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : toneInk(t.tone), fontVariantNumeric: 'tabular-nums' }}>
           {shown == null ? '–' : shown}
         </span>
+        {/* ตัวหาร: "14 / 20 ไลน์" — เลขลอยๆ ตัดสินไม่ได้ว่ามากหรือน้อย (De-AI tell 05) */}
+        {t.of != null && shown != null && (
+          <span style={{ fontSize: 13, color: 'var(--muted2)', fontFamily: MONO }}>/ {t.of}</span>
+        )}
         <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
       </div>
       <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</span>
-        {onGo && <span style={{ fontSize: 11, color: t.color, marginLeft: 'auto' }}>↗</span>}
+        {onGo && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>↗</span>}
       </div>
     </>
   );
-  const style = { '--tc': t.color };
+  const style = { '--tc': statusColor(t.tone) };
   return onGo
     ? <button type="button" className="tele-tile" style={{ ...style, cursor: 'pointer' }} onClick={onGo} title={t.goTitle}>{body}</button>
     : <div className="tele-tile" style={style}>{body}</div>;
@@ -373,14 +378,25 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
     return `/report?tab=4&from=${from}`;
   }, []);
 
+  /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** ห้ามใช้เป็นสีประจำการ์ด (`utils/statusTone.js`)
+     เดิม: ไลน์=เขียวตายตัว · เช็คชื่อ=น้ำเงินตายตัว · DT/4M=สีตามสถานะ
+     ⇒ 4 ใบเรียงกันแต่สีมี 2 ความหมายปนกัน คนอ่านใบแรกผิดว่า "เขียว = ปกติ"
+        (เขียวอยู่อย่างนั้นแม้เดินจริง 1 จาก 20 ไลน์) · 23/09 จาก brief De-AI UI
+     ตอนนี้: ตัวที่ไม่มีเป้า = **เทา + โชว์ตัวหาร** ให้คนตัดสินเอง · ตัวที่ 0 = ดี ค่อยมีสี */
+  const lineTotal = scopeNames ? scopeNames.length : (prodLines.length || null);
   const TELE = [
-    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   color: '#3dd65c', unit: 'ไลน์',
+    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   unit: 'ไลน์',
+      of: lineTotal, tone: 'none',   // "ควรเดินกี่ไลน์" ขึ้นกับแผนผลิตรายวัน — ระบบไม่มีเป้านี้ ⇒ ห้ามทาสี
       to: '/daily-report', goTitle: 'เปิด Daily Report — ดูกะที่เปิดอยู่' },
-    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, color: '#4d9fff', unit: 'คน',
+    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, unit: 'คน',
+      tone: 'none',                  // ยอดคนที่ "ควรมา" อยู่ที่ตารางกะ ไม่ใช่ที่นี่ ⇒ เทา
       to: '/checkin', goTitle: 'เปิดหน้าเช็คชื่อ & PPE' },
-    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      color: tele.dt > 0 ? '#ef4444' : '#3dd65c', unit: 'จุด',
+    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      unit: 'จุด',
+      tone: toneOf({ value: tele.dt, zeroIsGood: true }),          // > 0 = ผลิตหยุดอยู่จริง ⇒ แดง
       to: '/dashboard', goTitle: 'เปิด Dashboard — แผง Andon เครื่องที่หยุดอยู่' },
-    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   color: tele.fourM > 0 ? '#f59e0b' : '#3dd65c', unit: 'รายการ',
+    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   unit: 'รายการ',
+      // คิวค้าง = ต้องไปจัดการ แต่สายการผลิตยังเดิน ⇒ เหลือง ไม่ใช่แดง (จอที่แดงตลอดคือจอที่คนเลิกมอง)
+      tone: toneOf({ value: tele.fourM, zeroIsGood: true, over: 'warn' }),
       to: fourMLink, goTitle: 'เปิดคิวอนุมัติ 4M (ย้อนหลัง 90 วัน)' },
   ];
 
