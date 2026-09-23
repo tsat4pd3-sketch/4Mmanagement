@@ -11,10 +11,16 @@
 //     ทั้งหมดอยู่ที่ notification_rules → ตั้งที่ /notification-config
 //   - ผู้รับในแอปเรียกผ่าน RPC `notify_recipients()` **ห้ามเขียนเงื่อนไขกรองผู้รับในไฟล์นี้**
 //
+// ⚠️ verify_jwt = false โดยตั้งใจ — ผู้เรียกฝั่งเว็บ (`notifyEvent`) ยิง fetch โดยส่งแค่ apikey
+//    เปิด verify_jwt เมื่อไหร่ = ทุกเรื่องที่ผ่านตัวนี้เงียบหมด 401 (ค่า default ของเครื่องมือ deploy คือ true)
+//
 // payload:
 //   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, vars?, team?, extra_user_ids? }
 //   - `lines`      = เนื้อความ (บรรทัดละรายการ) — ใช้ทั้ง Telegram และ body ในแอป
 //   - `section`    = ส่วนงานของเหตุการณ์ (ใช้กับ inapp_match_section) · ไม่ส่งมาแต่ส่ง line_name = หาให้เอง
+//   - `line_name`  = ไลน์ที่เกิดเหตุ — ส่งต่อเป็น p_line ให้ RPC (ใช้กับ `inapp_match_line`)
+//     ⇒ เรื่องที่เปิดแกนนี้จะแจ้งเฉพาะคนที่ผูกกับ**ครอบครัวไลน์**นั้น (ไลน์แม่-ลูกนับเป็นครอบครัวเดียวกัน)
+//     คนที่ไม่ได้ผูกไลน์ (QA/ช่าง/ผจก.) ไม่ถูกแกนนี้กรอง — ดู migration 20260923_notify_recipients_line_axis_main
 //   - `vars`       = ตัวแปรสำหรับ template ที่ admin เขียนเองที่ /notification-config
 //   - `team`       = **ทีมช่างของเหตุการณ์นี้** (mtn_teams.key) — ส่งต่อเป็น p_team ให้ RPC
 //     ⇒ ช่างที่สังกัดทีมอื่นไม่ถูกเด้ง (คนที่ไม่มี mtn_teams เช่นหัวหน้าไลน์ ไม่ถูกกรอง)
@@ -136,9 +142,15 @@ Deno.serve(async (req) => {
     // ผู้รับมาจาก RPC เดียวของระบบ — role × ส่วนงาน × แผนก ที่ตั้งไว้ในทะเบียน
     let inapp = 0;
     try {
-      // ⚠️ p_team: ส่ง null เมื่อไม่ระบุ — ห้ามส่ง '' (สตริงว่าง ≠ null ใน SQL ⇒ กรองจนไม่เหลือใคร)
+      // ⚠️ p_team / p_line: ส่ง null เมื่อไม่ระบุ — ห้ามส่ง '' (สตริงว่าง ≠ null ใน SQL ⇒ กรองจนไม่เหลือใคร)
       const team = typeof body.team === 'string' && body.team.trim() ? body.team.trim() : null;
-      const { data: ids, error } = await supabase.rpc('notify_recipients', { p_event: event, p_section: section, p_team: team });
+      /* แกนไลน์ (migration 20260923_notify_recipients_line_axis_main) — เรื่องที่ตั้ง `inapp_match_line`
+         จะแจ้งเฉพาะคนที่ผูกกับครอบครัวไลน์ที่เกิดเหตุ · คนที่ไม่ได้ผูกไลน์ไม่ถูกกรอง
+         ⚠️ '-' คือค่าที่หน้าเว็บใช้แทน "ไม่ระบุไลน์" ต้องแปลงเป็น null ไม่งั้นกรองจนไม่เหลือใคร */
+      const lineRaw = typeof body.line_name === 'string' ? body.line_name.trim() : '';
+      const line = lineRaw && lineRaw !== '-' ? lineRaw : null;
+      const { data: ids, error } = await supabase.rpc('notify_recipients',
+        { p_event: event, p_section: section, p_team: team, p_line: line });
       if (error) throw error;
       const extra = (Array.isArray(body.extra_user_ids) ? body.extra_user_ids : [])
         .filter((v: unknown) => typeof v === 'string' && UUID_RE.test(v)).slice(0, 20) as string[];

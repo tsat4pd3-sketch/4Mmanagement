@@ -98,7 +98,10 @@ export default function AddUser() {
     //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
     supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
       .then(({ data }) => setLines(data || []));
-    supabase.from('org_nodes').select('code, name, kind').eq('is_active', true).order('sort_order')
+    /* ⚠️ ต้อง select `parent_id` ด้วย — `orphanDepts()` ตัดสิน "แผนกขึ้นตรงฝ่าย" จาก `!parent_id`
+       ไม่ดึงคอลัมน์มา = undefined ทุกแถว ⇒ **ทุกแผนกกลายเป็นขึ้นตรงฝ่ายหมด** (เกิดจริง 22/09:
+       GOR · LWRBAR · BIG PRESS · HYDROFORM ติดป้าย 🏛️ ทั้งที่อยู่ใต้ส่วนงานผลิต) */
+    supabase.from('org_nodes').select('code, name, kind, parent_id, id').eq('is_active', true).order('sort_order')
       .then(({ data }) => {
         const nodes = data || [];
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
@@ -250,6 +253,20 @@ export default function AddUser() {
 
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
   // section/line_id จะข้าม condition แล้วโชว์ข้อมูลทุกไลน์ทุกแผนกเหมือน admin โดยไม่มีอะไรเตือน
+  /* 🔴 บัญชีของคนต้องมีตัวตนเสมอ (2026-09-23 · เกิดจริง: บัญชี jennipha ถูกบันทึกโดย
+     `account_kind='person'` แต่ `employee_id` และ `full_name` เป็น null ทั้งคู่
+     ⇒ ลิสต์ผู้ใช้ขึ้น "ไม่ระบุชื่อ" · ทุกจอที่โชว์ชื่อผู้ทำ/ผู้อนุมัติได้ค่าว่างตามไปด้วย)
+     เดิมช่องพนักงานมีดอกจัน * แต่ไม่มีตัวตรวจจริง — ชื่อที่พิมพ์ในช่องค้นไม่ได้ถูกบันทึกที่ไหนเลย */
+  const validateIdentity = () => {
+    if (form.accountKind === 'person' && !form.employeeId)
+      return 'บัญชีของคนต้องผูกกับพนักงานในฐานข้อมูล — ถ้ายังไม่มีชื่อเขาในฐาน ให้กดปุ่ม '
+           + '"＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน" (ชื่อที่พิมพ์ในช่องค้นยังไม่ถูกบันทึก) '
+           + '· ถ้านี่เป็นจอ TV หรือบัญชีประจำเครื่อง ให้เลือกประเภท "บัญชีกลาง (ไม่ใช่คน)" แทน';
+    if (!form.accountKind)
+      return 'เลือกประเภทบัญชีก่อน — บัญชีของคน (ต้องผูกตัวตน) หรือบัญชีกลาง (จอ TV / ประจำเครื่อง)';
+    return null;
+  };
+
   const validateScope = () => {
     if (form.role === 'supervisor' && !form.sections.length) return 'ชุดสิทธิ์ระดับส่วน ต้องกำหนด Section อย่างน้อย 1 ส่วนงาน ไม่งั้นจะเห็นข้อมูลทุกส่วนงานแบบไม่จำกัด';
     if (form.role === 'leader' && (!form.lineId || !form.team)) return 'ชุดสิทธิ์ระดับไลน์ ต้องกำหนดทั้งไลน์ผลิตและ Team ไม่งั้นจะเห็นข้อมูลทุกไลน์แบบไม่จำกัด';
@@ -294,6 +311,8 @@ export default function AddUser() {
 
   const handleCreate = async () => {
     if (!form.email || !form.password) return setError('กรุณากรอก Email และรหัสผ่าน');
+    const idErr = validateIdentity();
+    if (idErr) return setError(idErr);
     const scopeErr = validateScope();
     if (scopeErr) return setError(scopeErr);
     setLoading(true);
@@ -394,6 +413,8 @@ export default function AddUser() {
   };
 
   const handleUpdate = async () => {
+    const idErr = validateIdentity();
+    if (idErr) return setError(idErr);
     const scopeErr = validateScope();
     if (scopeErr) return setError(scopeErr);
     setLoading(true);

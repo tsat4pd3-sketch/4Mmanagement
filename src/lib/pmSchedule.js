@@ -1,5 +1,37 @@
 const FREQ_DAYS = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 }
 
+/* ═══ รอบ PM = "จำนวนวัน" (2026-09-23 · feedback "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่") ═══
+   ต้นเหตุ: รอบเดิมเลือกได้แค่ 5 ค่าของ `checklists.frequency` และค่า default ของฟอร์มคือ 'periodic'
+   ("ตามรอบ") ซึ่ง **ไม่มีจำนวนวัน** ⇒ 130/142 แผนไม่มีวันครบกำหนด ระบบเตือนล่วงหน้าไม่ได้เลย
+   และรอบที่ PM ใช้จริงบ่อย (6 เดือน/1 ปี/45 วัน) ไม่มีให้เลือก
+   ⇒ **แหล่งจริงของรอบ = `pm_plans.interval_days`** · `checklists.frequency` เป็นแค่ป้าย/ค่าเข้ากันได้ย้อนหลัง
+      (รอบที่ไม่ตรง 4 ค่ามาตรฐาน เก็บ frequency='periodic' + interval_days=N — ไม่ต้องแก้ check constraint)
+   ⚠️ trigger `pm_checklist_sync` ตั้ง interval_days = pm_freq_to_days(frequency) ทุกครั้งที่ frequency เปลี่ยน
+      ⇒ ผู้เขียนต้อง update frequency **ก่อน** แล้วค่อยเขียน interval_days (ไม่งั้น periodic ล้างรอบเป็น null) */
+export const CYCLE_PRESETS = [
+  { days: 1,   label: 'รายวัน' },
+  { days: 7,   label: 'รายสัปดาห์' },
+  { days: 30,  label: 'รายเดือน' },
+  { days: 90,  label: 'รายไตรมาส' },
+  { days: 180, label: 'ทุก 6 เดือน' },
+  { days: 365, label: 'รายปี' },
+]
+const FREQ_OF_DAYS = { 1: 'daily', 7: 'weekly', 30: 'monthly', 90: 'quarterly' }
+/** จำนวนวัน → ค่า checklists.frequency ที่ constraint รับ (ไม่ตรง 4 ค่า = 'periodic') · null/0 = 'periodic' */
+export const freqForCycle = (days) => FREQ_OF_DAYS[Number(days)] || 'periodic'
+/** รอบจริง (วัน) — interval_days ชนะ · ไม่มี = แปลงจาก frequency · 'periodic' ไม่มี interval = null (ไม่มีรอบ) */
+export function cycleDaysOf(frequency, intervalDays) {
+  const n = Number(intervalDays)
+  if (n > 0) return n
+  return FREQ_DAYS[frequency] ?? null
+}
+/** ป้ายรอบที่คนอ่าน — ใช้แทน FREQ_LABEL[frequency] ทุกจุดที่โชว์ "ความถี่" */
+export function cycleLabel(frequency, intervalDays) {
+  const d = cycleDaysOf(frequency, intervalDays)
+  if (!d) return 'ไม่มีรอบ'
+  return CYCLE_PRESETS.find(p => p.days === d)?.label || `ทุก ${d} วัน`
+}
+
 export const FREQ_LABEL = {
   daily:     'รายวัน',
   weekly:    'รายสัปดาห์',
@@ -27,8 +59,8 @@ export const EQUIP_TYPE_LABEL = {
   machine: 'Machine',
 }
 
-export function computeNextDue(lastInspectedAt, frequency) {
-  const days = FREQ_DAYS[frequency]
+export function computeNextDue(lastInspectedAt, frequency, intervalDays = null) {
+  const days = cycleDaysOf(frequency, intervalDays)
   if (!days || !lastInspectedAt) return null
   const next = new Date(lastInspectedAt)
   next.setDate(next.getDate() + days)
@@ -50,19 +82,19 @@ export function daysUntilDue(nextDue) {
   return Math.round((startOfDay(nextDue).getTime() - startOfDay(new Date()).getTime()) / 86400000)
 }
 
-export function dueStatus(nextDue, frequency) {
-  if (!nextDue) return frequency === 'periodic' ? 'periodic' : 'never'
-  return statusForDays(daysUntilDue(nextDue), frequency)
+export function dueStatus(nextDue, frequency, intervalDays = null) {
+  if (!nextDue) return cycleDaysOf(frequency, intervalDays) ? 'never' : 'periodic'
+  return statusForDays(daysUntilDue(nextDue), frequency, intervalDays)
 }
 
 /* กติกาสีของ "อีกกี่วันถึงกำหนด" — จุดเดียว ใช้ทั้ง dueStatus (Date) และ resolvePlanDue (สตริง)
    ห้ามเขียนหน้าต่าง due_soon ซ้ำที่อื่น (แยกออกมา 2026-09-23 ตอนทำจอ 3 ระดับ PM) */
-export function statusForDays(diffDays, frequency) {
+export function statusForDays(diffDays, frequency, intervalDays = null) {
   if (diffDays < 0) return 'overdue'
   // "Due soon" window scales with the cycle: a daily check only warns on the
   // due day itself, while weekly/monthly warn up to 3 days ahead. Without this
   // a daily checklist could never reach the calm "ok" state.
-  const cycle = FREQ_DAYS[frequency] ?? 0
+  const cycle = cycleDaysOf(frequency, intervalDays) ?? 0
   const soonWindow = Math.min(3, Math.max(0, cycle - 1))
   if (diffDays <= soonWindow) return 'due_soon'
   return 'ok'
@@ -74,7 +106,7 @@ export const STATUS_META = {
   deferred:  { label: 'เลื่อนแผน (ตกลงแล้ว)', color: '#4a90e0', order: 1.5 },
   never:     { label: 'ยังไม่เคยตรวจ',  color: '#9b8de8', order: 2 },
   ok:        { label: 'ตามกำหนด',       color: '#3dd65c', order: 3 },
-  periodic:  { label: 'ไม่มีรอบตายตัว', color: '#527855', order: 4 },
+  periodic:  { label: 'ยังไม่ตั้งรอบ PM', color: '#527855', order: 4 },  // ไม่มีจำนวนวัน = ระบบเตือนไม่ได้ (เดิมป้าย 'ไม่มีรอบตายตัว' ฟังเหมือนตั้งใจ)
 }
 
 // เลื่อนแผน PM แบบตกลงกันแล้ว (คิวผลิตแน่น ฯลฯ) — active เมื่อ deferred_to ตั้งไว้
@@ -88,12 +120,12 @@ export function deferActive(plan) {
 
 // สถานะ PM โดยคำนึงถึงการเลื่อนแผน · deferTo = Date ของวันเลื่อน (หรือ null)
 // เลื่อนแล้ว & ยังไม่ถึงวันเลื่อน → 'deferred' (ฟ้า) · เลยวันเลื่อน → 'overdue' (นับจากวันเลื่อน)
-export function dueStatusDefer(nextDue, frequency, deferTo) {
+export function dueStatusDefer(nextDue, frequency, deferTo, intervalDays = null) {
   if (deferTo) {
-    const base = dueStatus(deferTo, frequency)
+    const base = dueStatus(deferTo, frequency, intervalDays)
     return base === 'overdue' ? 'overdue' : 'deferred'
   }
-  return dueStatus(nextDue, frequency)
+  return dueStatus(nextDue, frequency, intervalDays)
 }
 
 /* ═══ resolvePlanDue — วันครบกำหนด PM แบบ pure (สตริง YYYY-MM-DD · ไม่พึ่ง timezone เครื่อง) ═══
@@ -118,7 +150,7 @@ export const diffYmd = (from, to) => Math.round((ymdUtc(to) - ymdUtc(from)) / 86
 
 export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null, todayStr }) {
   const lastYmd = ymdBangkok(plan?.last_done_at ?? lastInspectedAt ?? null)
-  const freqDays = FREQ_DAYS[frequency]
+  const freqDays = cycleDaysOf(frequency, plan?.interval_days)
   const origDue = plan?.next_due_date
     ? String(plan.next_due_date).slice(0, 10)
     : (freqDays && lastYmd ? addYmd(lastYmd, freqDays) : null)
@@ -127,11 +159,11 @@ export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null,
   const dueYmd = deferTo || origDue
   const daysTo = dueYmd && todayStr ? diffYmd(todayStr, dueYmd) : null
   let status
-  if (!dueYmd) status = frequency === 'periodic' ? 'periodic' : 'never'
+  if (!dueYmd) status = freqDays ? 'never' : 'periodic'
   else {
-    status = statusForDays(daysTo, frequency)
+    status = statusForDays(daysTo, frequency, plan?.interval_days)
     if (deferTo) status = status === 'overdue' ? 'overdue' : 'deferred'
   }
-  const hasCycle = !!(freqDays || plan?.next_due_date || Number(plan?.interval_days) > 0)
+  const hasCycle = !!freqDays
   return { lastYmd, dueYmd, daysTo, status, isDeferred, hasCycle }
 }
