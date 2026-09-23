@@ -18,6 +18,7 @@ import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCa
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
+import MonitoringUpload from '../components/MonitoringUpload';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
@@ -1667,7 +1668,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
 export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload'], 'planner');
+  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload', 'monitoring'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);
   // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canUpload = can('demand', 'upload', role);
@@ -1696,6 +1697,7 @@ export default function PlannerSales() {
           { key: 'planner', label: '📈 Forecast Planner' },
           { key: 'kanban', label: '🎴 คำนวณ Kanban' },
           { key: 'upload', label: '📤 อัพโหลด (Sales)' },
+          { key: 'monitoring', label: '📗 Monitoring (Planning)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -1703,6 +1705,9 @@ export default function PlannerSales() {
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
+      {/* 📗 ไฟล์ Monitoring ของแพลนนิ่ง = ช่องทางที่ 4 ต่อจาก EDI 830/862/e-SMART
+          (ลูกค้าที่ไม่ส่ง EDI — TSPK/TSESA/TSLA/TSRA/GWM/Argen) — แยกแท็บเพราะโครงไฟล์คนละแบบสิ้นเชิง */}
+      {tab === 'monitoring' && <MonitoringUpload canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
     </div>
   );
 }
