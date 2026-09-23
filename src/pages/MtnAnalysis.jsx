@@ -11,6 +11,9 @@ import useTabParam from '../utils/useTabParam';
 import useProductionLines from '../utils/useProductionLines';
 import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays, weekMonday, addDays } from '../utils/timeRange';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
@@ -57,12 +60,7 @@ const MO_COLS = [
 ].join(',');
 const DT_COLS = 'id, machine_no, description, duration_min, started_at, fix_action, fix_by, call_mtn_team';
 
-const RANGES = [
-  { d: 30, label: '30 วัน' },
-  { d: 90, label: '90 วัน' },
-  { d: 180, label: '180 วัน' },
-  { d: 365, label: '1 ปี' },
-];
+/* ⏱️ ช่วงย้อนหลังย้ายไปแถบกลาง `<TimeRangeBar>` (ปุ่ม 30/60/90/120 + เลือกช่วงเองได้) — UI §6.16 */
 
 const SOURCES = [
   /* 🔴 หน้านี้เป็นโมดูล **ซ่อมบำรุง** ⇒ นับเฉพาะงานที่ "มีการติดต่อช่าง" (user 23/09)
@@ -74,7 +72,6 @@ const SOURCES = [
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
-const isoDaysAgo = (days) => { const d = new Date(); d.setDate(d.getDate() - days); return d.toISOString(); };
 const minBetween = (a, b) => {
   if (!a || !b) return null;
   const m = (new Date(b) - new Date(a)) / 60000;
@@ -89,16 +86,13 @@ function weekKey(iso) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 /** ทุกสัปดาห์ในช่วง (รวมสัปดาห์ที่เงียบ) — ไม่ส่งไปให้ runChart/controlChart = สัปดาห์ที่ไม่มีเหตุการณ์หายจากกราฟ */
-function weekKeysBack(days) {
+/* คีย์สัปดาห์ (วันจันทร์) ทุกสัปดาห์ในช่วงที่เลือก — เดินจากช่วงจริง ไม่ใช่นับถอยจาก "วันนี้"
+   (เดิมนับถอยจากวันนี้เสมอ ⇒ พอเลือกช่วงในอดีตได้แล้ว แกนจะไม่ตรงกับข้อมูล) */
+function weekKeysIn(from, to) {
   const out = [];
-  const end = new Date();
-  const start = new Date(); start.setDate(start.getDate() - days);
-  const cur = new Date(start);
-  cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7));
-  while (cur <= end) {
-    out.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`);
-    cur.setDate(cur.getDate() + 7);
-  }
+  let cur = weekMonday(from);
+  if (!cur || !to) return out;
+  for (let i = 0; cur <= to && i < 600; i++) { out.push(cur); cur = addDays(cur, 7); }
   return out;
 }
 
@@ -123,7 +117,10 @@ export default function MtnAnalysis() {
   const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
-  const [days, setDays] = useState(90);
+  /* ⏱️ แถบเวลามาตรฐาน — เดิมเป็น dropdown "ย้อนหลัง N วัน" อย่างเดียว เลือกช่วงเองไม่ได้
+     ⇒ ดูเดือนที่แล้วย้อนหลังไม่ได้เลย ต้องเลือกช่วงกว้างแล้วกวาดตาหาเอง (UI §6.16) */
+  const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90 });
+  const days = rangeDays(tr.from, tr.to) || 90;
   const [src] = useState('mo');   // คงไว้เพื่อ unit/ป้ายข้อความ — ไม่มี UI สลับแล้ว
   const [team, setTeam] = useState('all');   // แผนกช่าง (แทน dropdown แหล่งข้อมูลเดิม)
   const [orders, setOrders] = useState([]);
@@ -136,7 +133,10 @@ export default function MtnAnalysis() {
 
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
-    const since = isoDaysAgo(days);
+    /* ⚠️ ต้องมีขอบบนด้วย — ของเดิมมีแต่ `gte(since)` ⇒ เลือกช่วงในอดีตไม่ได้เลย (ลากถึงวันนี้เสมอ)
+       ขอบบน = สิ้นวันของ `to` (บวก 1 วันแล้วใช้ `lt`) เพื่อกินทั้งวันสุดท้ายรวมกะดึก */
+    const since = new Date(`${tr.from}T00:00:00`).toISOString();
+    const until = new Date(`${addDays(tr.to, 1)}T00:00:00`).toISOString();
     try {
       /* ทะเบียนเครื่อง = ตัวตัดสินชนิดสินทรัพย์ · เลขเครื่องซ้ำได้ในทะเบียน → ตัวแรกชนะ
          (ไม่ใช่การตัดสินใจเชิงธุรกิจ แค่ต้องคงที่ ไม่ให้แท็บเปลี่ยนไปมาระหว่างโหลด) */
@@ -146,8 +146,8 @@ export default function MtnAnalysis() {
          และต้องอ่าน `error` ด้วย — supabase-js ไม่ throw (กฎเหล็ก DB ข้อ 1) */
       const [mcs, mo, dt, pt, dtt] = await Promise.all([
         fetchAllRows(supabaseDR, 'machines', 'id, line_name, machine_no, machine_name, equipment_kind', q => q.eq('is_active', true).order('sort_order')),
-        fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).order('report_at', { ascending: false })),
-        fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).order('started_at', { ascending: false })),
+        fetchAllRows(supabaseDR, 'mtn_orders', MO_COLS, q => q.gte('report_at', since).lt('report_at', until).order('report_at', { ascending: false })),
+        fetchAllRows(supabaseDR, 'downtime_logs', DT_COLS, q => q.gte('started_at', since).lt('started_at', until).order('started_at', { ascending: false })),
         /* ทะเบียน taxonomy = พจนานุกรมของตัวเดาหมวด (utils/autoCategory) — ตารางเล็กทั้งคู่
            🔴 พจนานุกรมต้องมาจากทะเบียนที่โรงงานเขียนเอง ห้าม hardcode คำในโค้ด (CLAUDE.md) */
         fetchAllRows(supabaseDR, 'mtn_problem_types', 'team, group_name, characteristic, shared_teams'),
@@ -172,7 +172,7 @@ export default function MtnAnalysis() {
       setErr(e?.message || String(e));
       toast.error('โหลดข้อมูลวิเคราะห์ไม่สำเร็จ: ' + (e?.message || e));
     } finally { setLoading(false); }
-  }, [days]);
+  }, [tr.from, tr.to]);
 
   useEffect(() => { let alive = true; (async () => { await load(); if (!alive) return; })(); return () => { alive = false; }; }, [load]);
 
@@ -282,7 +282,7 @@ export default function MtnAnalysis() {
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
   const unit = srcMeta.unit;
-  const wKeys = useMemo(() => weekKeysBack(days), [days]);
+  const wKeys = useMemo(() => weekKeysIn(tr.from, tr.to), [tr.from, tr.to]);
 
   /* สรุปหัวจอ — ทุกตัวคืน null เมื่อ "ยังวัดไม่ได้" (ห้ามตีเป็น 0) */
   const sum = useMemo(() => {
@@ -369,12 +369,6 @@ export default function MtnAnalysis() {
                   <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
                 ))}
               </select>
-              <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 110, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-                {RANGES.map(r => <option key={r.d} value={r.d}>ย้อนหลัง {r.label}</option>)}
-              </select>
-              <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
-                {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
-              </button>
             </div>
           ) : (
             <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
@@ -383,6 +377,17 @@ export default function MtnAnalysis() {
           )
         }
       />
+
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองใต้หัวเพจ
+          ช่อง `actions` ของ PageHeader แคบเกินไปสำหรับแถบเต็ม (สเกล + ปุ่มย้อนหลัง + ช่วงวัน)
+          ⚠️ แท็บ KPI มีตัวกรองของตัวเองในแผง — โชว์ทั้งคู่ = คนกดแล้วไม่เห็นอะไรเปลี่ยน */}
+      {tab === 'qc7' && (
+        <TimeRangeBar
+          scale={tr.scale} from={tr.from} to={tr.to} today={tr.today}
+          onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+          onReload={load} loading={loading} style={{ marginBottom: 12 }}
+        />
+      )}
 
       {err && (
         <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', marginBottom: 12 }}>

@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -56,11 +58,6 @@ function getWorkDate() {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
   return toLocalDateStr(now); // ห้าม toISOString() — UTC จะลบวันซ้ำอีกชั้นช่วง 00:00-06:59
-}
-function daysAgoStr(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return toLocalDateStr(d);
 }
 function monthsAgoStr(n) {
   const d = new Date();
@@ -137,8 +134,11 @@ function useEmployeeScope(lines) {
 
 /* ══════════════════════════════ 📊 กำลังคนรายวัน ══════════════════════════════ */
 function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSecFilter, inScope }) {
-  const [from, setFrom] = useState(daysAgoStr(29));
-  const [to, setTo] = useState(getWorkDate());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
+     ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
+     หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [shift, setShift] = useState('all');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -203,6 +203,11 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 
   return (
     <div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
@@ -213,9 +218,6 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
           <option value="day">☀️ กะเช้า</option>
           <option value="night">🌙 กะดึก</option>
         </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <button onClick={() => downloadCSV(`manpower_${from}_${to}.csv`,
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
@@ -288,8 +290,11 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 
 /* ══════════════════════════════ 🔀 เปลี่ยนจุดงานรายวัน ══════════════════════════════ */
 function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
-  const [from, setFrom] = useState(daysAgoStr(29));
-  const [to, setTo] = useState(getWorkDate());
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
+     ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
+     หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const { from, to } = tr;
   const [raw, setRaw] = useState([]);
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
@@ -357,14 +362,16 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 
   return (
     <div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <button onClick={() => downloadCSV(`station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
