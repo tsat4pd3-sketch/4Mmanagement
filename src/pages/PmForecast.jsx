@@ -43,7 +43,10 @@ export default function PmForecast() {
   const [onlyWindow, setOnlyWindow] = useState(false)
   const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
   const [lineObjs, setLineObjs] = useState([])
-  const [tab, setTab] = useTabParam(['due', 'usage'], 'due')
+  /* ⚠️ param `fc` ไม่ใช่ `tab` — หน้านี้ถูก embed ใน /pm (PmHub ใช้ `?tab=forecast` อยู่แล้ว)
+     เดิมใช้ `?tab=` ⇒ กดแท็บ "ยอดผลิตสะสม" แล้ว URL กลายเป็น ?tab=usage ที่ PmHub ไม่รู้จัก
+     ⇒ เด้งกลับแท็บแรกของ /pm (ตรวจอุปกรณ์) · UI-CONVENTIONS §6.8 ข้อ 2.4 (แก้ 2026-09-23) */
+  const [tab, setTab] = useTabParam(['due', 'usage'], 'due', 'fc')
   const todayStr = todayBangkok()
 
   const load = async () => {

@@ -9,7 +9,8 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
-import { FREQ_LABEL, DEPT_LABEL, EQUIP_TYPE_LABEL } from '../lib/pmSchedule'
+import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
+import { addDays as addDaysYmd } from '../utils/pmUsage'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache } from '../utils/pmTeams'
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
@@ -481,7 +482,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [kindFilter, setKindFilter] = useState(editJig?.equipment_type ?? teamEquipTypeOf(department) ?? 'all')
   const [equipCategory, setEquipCategory] = useState(editJig?.equipment_category ?? 'production')
 
-  const [frequency, setFrequency] = useState('periodic')
+  /* รอบ PM = จำนวนวัน (2026-09-23 · feedback "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
+     เดิมเลือก frequency 5 ค่า และ default = 'periodic' ("ตามรอบ") ที่ไม่มีจำนวนวัน ⇒ 130/142 แผนไม่มีวันครบกำหนด
+     ตอนนี้: เก็บจำนวนวันที่ pm_plans.interval_days · frequency = ป้ายที่แปลงจากจำนวนวัน (freqForCycle)
+     `nextDue` = วัน PM ครั้งถัดไปที่ช่างกำหนดเอง (ไม่บังคับ) — เขียนเฉพาะเมื่อแก้ช่องนี้ (nextDueDirty) */
+  const [cycleDays, setCycleDays] = useState('')
+  const [nextDue, setNextDue] = useState('')
+  const [nextDueDirty, setNextDueDirty] = useState(false)
+  const [origFreq, setOrigFreq] = useState(null)
+  // รอบเดิม + วันทำ PM ล่าสุด — เปลี่ยนรอบแล้วต้องคิดวันครบใหม่ = ทำล่าสุด + รอบใหม่ (ไม่งั้นค้างวันที่คิดจากรอบเก่า)
+  // ⚠️ ห้ามเรียก RPC pm_refresh_plan แทน — มันเขียน last_done_at ทับจาก inspections อย่างเดียว
+  //    (ล้างวันที่ PmCoordination/PMCheckData stamp ไว้)
+  const [origCycle, setOrigCycle] = useState(null)
+  const [lastDoneYmd, setLastDoneYmd] = useState(null)
   // Phase 2 — plan type (time | usage | hybrid) + usage-based predictive fields
   const [planType, setPlanType] = useState('time')
   const [usageThreshold, setUsageThreshold] = useState('')
@@ -548,7 +561,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     //    เครื่องนี้อาจยังไม่มี checklist ของแผนกที่เลือก = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (สร้างจริงตอน save)
     ;(async () => {
       const cl = await findChecklist(editJig.id, 'mtn', department)
-      setFrequency(cl?.frequency ?? 'periodic')
+      setOrigFreq(cl?.frequency ?? null)
+      setCycleDays(''); setNextDue(''); setNextDueDirty(false); setOrigCycle(null); setLastDoneYmd(null)
       // load spin frames (jig_images); fall back to jigs.image_path as one frame
       // — รูปเป็นของ "เครื่อง" ไม่ใช่ของ checklist จึงต้องโหลดเสมอแม้แผนกนี้ยังไม่มี checklist
       const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
@@ -573,7 +587,19 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         ...(cps ?? []).map(c => c.image_path),
       ].filter(Boolean))
       if (!cl) return
-      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line').eq('checklist_id', cl.id).maybeSingle()
+      const { data: plan } = await supabaseDR.from('pm_plans').select('plan_type, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at').eq('checklist_id', cl.id).maybeSingle()
+      { const d = cycleDaysOf(cl.frequency, plan?.interval_days); setCycleDays(d ? String(d) : ''); setOrigCycle(d || null) }
+      {
+        // ทำล่าสุด = กติกาเดียวกับ PMSchedule: pm_plans.last_done_at ก่อน · ไม่มี = ผลตรวจล่าสุดที่ไม่ถูก reject
+        let last = plan?.last_done_at || null
+        if (!last) {
+          const { data: li } = await supabaseDR.from('inspections').select('inspected_at').eq('checklist_id', cl.id)
+            .neq('approval_status', 'rejected').order('inspected_at', { ascending: false }).limit(1)
+          last = li?.[0]?.inspected_at || null
+        }
+        setLastDoneYmd(ymdBangkok(last))
+      }
+      setNextDue(plan?.next_due_date ? String(plan.next_due_date).slice(0, 10) : '')
       if (plan) {
         setPlanType(plan.plan_type ?? 'time')
         setUsageThreshold(plan.usage_threshold != null ? String(plan.usage_threshold) : '')
@@ -840,13 +866,16 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           — ตาราง checklists สร้างนอก migration folder จึงไม่มีนิยามในรีโปให้ตรวจ)
          กติกา: งานหลักต้องสำเร็จ + บอกให้ชัดว่าอะไรไม่ถูกบันทึกและต้องทำอะไร **ห้ามเงียบ** */
       let freqWarn = null
+      const cycleN = Number(cycleDays) > 0 ? Math.round(Number(cycleDays)) : null
+      const frequency = freqForCycle(cycleN)
       try {
-        await setChecklistFrequency(cl.id, frequency)
+        // ⚠️ ต้องก่อนเขียน interval_days — trigger pm_checklist_sync ล้าง interval_days ตาม frequency ที่เปลี่ยน
+        if (frequency !== origFreq) await setChecklistFrequency(cl.id, frequency)
       } catch (e) {
         const constraint = e?.code === '23514' || /check constraint|violates/i.test(e?.message || '')
         freqWarn = constraint
-          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่เป็น “${FREQ_LABEL[frequency] ?? frequency}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ (ความถี่ยังเป็นค่าเดิม) · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
-          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งความถี่ไม่ได้: ${e?.message || e}`
+          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบเป็น “${cycleLabel(null, cycleN)}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
+          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบไม่ได้: ${e?.message || e}`
       }
 
       // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
@@ -859,7 +888,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           usage_metric: uses ? 'produced_qty' : null,
           usage_threshold: uses ? thr : null,
           usage_source_line: uses ? (usageLine.trim() || lineName || null) : null,
-        }, { onConflict: 'checklist_id' }), 'บันทึกประเภทแผน PM / เกณฑ์ usage');
+          interval_days: cycleN,
+          // วัน PM ครั้งถัดไป — เขียนเฉพาะเมื่อช่างแก้ช่องนี้ (ไม่งั้นวันที่ระบบคิดให้จะถูกทับด้วยค่าเดิม)
+          ...(nextDueDirty
+            ? { next_due_date: nextDue || null, next_due_reason: nextDue ? 'time' : null }
+            : (cycleN && cycleN !== origCycle && lastDoneYmd)
+              ? { next_due_date: addDaysYmd(lastDoneYmd, cycleN), next_due_reason: 'time' }
+              : {}),
+        }, { onConflict: 'checklist_id' }), 'บันทึกรอบ PM / ประเภทแผน / เกณฑ์ usage');
       }
 
       // อัพโหลดรูปอ้างอิงต่อจุด (ที่เพิ่งแนบใหม่) ก่อน insert
@@ -1205,9 +1241,24 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
           )}
 
           <div>
-            <label style={S.label}>ความถี่การตรวจ ({deptLabel})</label>
+            <label style={S.label}>รอบ PM — ทำซ้ำทุกกี่วัน ({deptLabel})</label>
             <div style={S.freqBtns}>
-              {Object.entries(FREQ_LABEL).map(([v, lbl]) => <button key={v} onClick={() => setFrequency(v)} style={S.freqBtn(frequency === v)}>{lbl}</button>)}
+              {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setCycleDays(String(p.days))} style={S.freqBtn(Number(cycleDays) === p.days)}>{p.label}</button>)}
+            </div>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
+                หรือกำหนดเอง ทุก
+                <input type="number" min="1" max="3650" value={cycleDays} onChange={e => setCycleDays(e.target.value)} style={{ width: 80 }} aria-label="รอบ PM (วัน)" />
+                วัน
+              </label>
+              <label style={{ fontSize: 12.5, color: 'var(--text2)' }}>วัน PM ครั้งถัดไป <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+                <input type="date" value={nextDue} onChange={e => { setNextDue(e.target.value); setNextDueDirty(true) }} style={{ width: 170, display: 'block', marginTop: 3 }} />
+              </label>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11.5, color: Number(cycleDays) > 0 ? 'var(--muted)' : '#f59a3f' }}>
+              {Number(cycleDays) > 0
+                ? <>รอบ: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · ครบกำหนด = {nextDue ? 'วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ' : 'วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)'}</>
+                : <>⚠️ ยังไม่ตั้งรอบ = ระบบคิดวันครบกำหนดและเตือนล่วงหน้าไม่ได้{planType === 'usage' ? ' (แผนตามการใช้งานอย่างเดียวไม่ต้องมีรอบวันก็ได้)' : ''}</>}
             </div>
           </div>
 
@@ -1225,7 +1276,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             </div>
             {(planType === 'time' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                🗓️ <b>ตามเวลา</b> = ใช้รอบจาก “ความถี่การตรวจ” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{FREQ_LABEL[frequency] ?? frequency}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+                🗓️ <b>ตามเวลา</b> = ใช้ “รอบ PM” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
@@ -1292,7 +1343,12 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
-                  file={cropQueue[0]} aspect={3 / 4} outputSize={900} quality={0.82}
+                  /* 📐 กรอบครอบเป็น "แนวนอน" (4:3) — เดิม 3:4 แนวตั้ง สวนทางกับที่จอตรวจต้องการ
+                     (วัดจริงที่ 390px 23/09: แนวนอนเต็มความกว้างพอดี · แนวตั้งเหลือขอบว่างข้างละครึ่งจอ)
+                     outputSize 900→1200 เพื่อให้ด้านยาวยังได้ 1200px เท่าเดิม —
+                     โหมด "ใช้ทั้งรูป" ย่อด้วย cap = max(outputSize, outputSize/aspect)
+                     ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
+                  file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
                   allowFull fullLabel="ใช้ทั้งรูป (ไม่ครอบ) — สำหรับรูปภาพรวมเครื่อง"
                   title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
