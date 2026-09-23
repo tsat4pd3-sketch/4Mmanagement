@@ -37,6 +37,8 @@ import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -1000,8 +1002,10 @@ function StationLogTab() {
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
   const [selectedStation, setSelectedStation] = useState('');
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
-  const [to, setTo] = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
+     แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [stationSection, setStationSection] = useState('');
@@ -1155,9 +1159,6 @@ table{border-collapse:collapse;width:100%}
             </optgroup>
           ))}
         </select>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
         <select value={stationTeam} onChange={e => setStationTeam(e.target.value)} style={selSt}>
           <option value="">ทุก Team</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -1236,8 +1237,10 @@ function RangeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
-  const [from, setFrom] = useState(() => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d); });
-  const [to, setTo] = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
+     แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
@@ -1330,13 +1333,11 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexWrap: 'wrap' }}>
-          <span style={{ color: 'var(--muted)' }}>จาก</span>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-          <span style={{ color: 'var(--muted)' }}>ถึง</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        </div>
         <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }} style={selSt}>
           <option value="">ทุกส่วนงาน</option>
           {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1426,11 +1427,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   const today = getWorkDate();
-  const [from,        setFrom]        = useState(() => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(initFrom)) return initFrom;   // มาจาก deep-link — ครอบวันของใบที่เลือก
-    const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - 6); return toLocalDateStr(d);
-  });
-  const [to,          setTo]          = useState(today);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แผงนี้เป็นรายการใบ 4M ไม่ได้แบ่งถังเวลา ⇒ `scales={null}`
+     ℹ️ deep-link เดิมส่ง `initFrom` มาจาก `?from=` ของ URL ซึ่งเป็น**พารามิเตอร์เดียวกับที่ hook อ่าน**
+        ⇒ `useTimeRange` รับช่วงจาก deep-link ให้เองแล้ว ไม่ต้องเซ็ตซ้ำ (prop คงไว้เพื่อความเข้ากันได้) */
+  const tr = useTimeRange({ defaultDays: 7 });
+  const { from, to } = tr;
   const [line,        setLine]        = useState('');
   const [cat,         setCat]         = useState('');
   const [statusFilter,setStatusFilter]= useState(() => STATUS_META[initStatus] ? initStatus : ''); // validate ค่าจาก URL
@@ -1913,10 +1914,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         ))}
       </div>
 
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      />
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
-        <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 12 }} />
         {(() => {
           const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
           const fourMSections = allowedLineNames

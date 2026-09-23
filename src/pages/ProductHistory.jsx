@@ -10,6 +10,8 @@ import DemandVsProduction from '../components/DemandVsProduction';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
@@ -50,8 +52,10 @@ export default function ProductHistory() {
   const [openDays, setOpenDays]     = useState(() => new Set());   // drill: วัน → ไลน์·กะ → ใบ
   const [openShifts, setOpenShifts] = useState(() => new Set());
   const toggleSet = (setter, key) => setter(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  const [from, setFrom]         = useState(() => addDays(todayStr(), -90));
-  const [to, setTo]             = useState(todayStr);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · `defaultDays: 90` คงพฤติกรรมเดิมของหน้านี้
+     หน้านี้แสดงรายเดือน/รายไลน์ ไม่ได้ให้เลือกขนาดถังเอง ⇒ `scales={null}` */
+  const tr = useTimeRange({ defaultDays: 90 });
+  const { from, to } = tr;
   const [orders, setOrders]     = useState([]);
   const [defects, setDefects]   = useState([]);
   const [audit, setAudit]       = useState([]);
@@ -289,15 +293,11 @@ export default function ProductHistory() {
               role={role} lineId={lineId} sections={sections} placeholder="ทุกไลน์" style={{ marginTop: 4, width: 220 }}
               extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
           </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตั้งแต่</label>
-            <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ marginTop: 4, width: 150 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ถึง</label>
-            <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ marginTop: 4, width: 150 }} />
-          </div>
         </div>
+        <TimeRangeBar
+          scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+          onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginTop: 10 }}
+        />
         {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) · เลือกแล้วพับอัตโนมัติ กดหัวเพื่อกางเปลี่ยนสินค้า */}
         <div style={{ marginTop: 10 }}>
           <div onClick={() => setPickerOpen(o => !o)}
