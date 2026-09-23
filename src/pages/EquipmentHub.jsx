@@ -3,6 +3,7 @@ import { UserContext } from '../App';
 import { supabaseDR } from '../supabaseClient';
 import { can, canAccessPage } from '../utils/permissions';
 import useTabParam from '../utils/useTabParam';
+import PageHeader from '../components/PageHeader';
 import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
 import { teamsForUser } from '../utils/mtnTeams';
@@ -91,23 +92,10 @@ export default function EquipmentHub() {
   return (
     <div>
       <div style={{ padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px) 0', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
-        <h2 style={{ margin: '0 0 2px', fontFamily: 'var(--font-display)', fontSize: 'clamp(15px,2.6vw,20px)', color: 'var(--text)' }}>
-          🧰 ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)
-        </h2>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-          {cur?.hint || 'เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว'}
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          {available.map(t => (
-            <button key={t.key} type="button" onClick={() => setActive(t.key)} className="tbtn"
-              style={{
-                padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                background: active === t.key ? 'var(--bg3)' : 'transparent',
-                color: active === t.key ? 'var(--text)' : 'var(--muted)',
-                border: `1px solid ${active === t.key ? 'var(--accent)' : 'var(--border)'}`,
-              }}>{t.label}</button>
-          ))}
-        </div>
+        {/* หัว + แท็บ มาตรฐาน (UI §6.8) — เดิมวาดเอง ทำให้ 3 แท็บหน้าตาคนละแบบ (ภาพ user 22/09) */}
+        <PageHeader title="ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)" icon="🧰"
+          sub={cur?.hint || 'เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว'}
+          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
         {/* ไม่มีสิทธิ์สักแท็บ = ต้องบอกว่าทำไม ห้ามปล่อยจอว่าง (UI-CONVENTIONS §6.9) */}
         {!available.length && (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 10 }}>

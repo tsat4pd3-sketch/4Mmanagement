@@ -12,6 +12,7 @@ import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
+import PageHeader from '../components/PageHeader';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
@@ -258,12 +259,7 @@ export default function OrgSetup() {
   return (
     <div className="page-content">
       <div style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>
-          🏢 แผนผังองค์กร
-        </h2>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-          จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)
-        </p>
+        <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
       </div>
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}

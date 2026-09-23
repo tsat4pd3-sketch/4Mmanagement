@@ -5,7 +5,9 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
-import resizeImg, { imgExt } from '../utils/resizeImage';
+import { imgExt } from '../utils/resizeImage';
+/* 🖼️ กติการูปใบ MO (16:9 · webp · bucket) อยู่ที่เดียว — ห้ามประกาศซ้ำในหน้า */
+import { resizeMoImage, uploadMtnImg, removeMtnImg } from '../utils/mtnImage';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -59,10 +61,7 @@ async function logoDataUrl(overrideUrl) {
   } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
 }
 
-// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
-/* 🗜️ webp:true — รูปซ่อมคือ 39 MB/วันของ egress ฝั่ง DR (งานลด egress 2026-09-21)
-   ⚠️ นามสกุลไฟล์ต้องมาจาก imgExt(blob) เสมอ ห้าม hardcode '.jpg' (เบราว์เซอร์เก่าถอยไป JPEG เอง) */
-const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality, { webp: true });
+// บีบรูป/อัปโหลดรูป MO ย้ายไป `src/utils/mtnImage.js` แล้ว (ของกลาง — จุดแนบรูปใหม่ต้องใช้ตัวนั้น)
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -72,19 +71,7 @@ const getWorkDate = () => {
 /** ISO → ค่าที่ <input type="datetime-local"> ใช้ได้ (เวลาท้องถิ่น) · ว่าง = '' */
 const localDt = (v) => { if (!v) return ''; const d = new Date(v); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
-const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
-/* 📐 รูปในใบ MO ใช้สัดส่วน 16:9 ทุกจุด (แจ้ง/ซ่อมเสร็จ/QA) — ครอบกลางภาพให้อัตโนมัติใน resizeImage
-   ที่มา: ผจก.สุรเสน 22/09 "กำหนดอัตราส่วน 16:9 ขยายผลไปทุก Step MO ที่มีการแนบรูป"
-   ⚠️ เลือก **ครอบให้** ไม่ใช่ **ปฏิเสธรูป** (user ตัดสิน 22/09) — หน้างานถ่ายจากมือถือ
-      ถ้าปฏิเสธจะแนบรูปไม่ได้เลย · เพิ่มจุดแนบรูปใหม่ในใบ MO ให้ส่ง aspect ตัวนี้ด้วยเสมอ */
-const MO_IMG_ASPECT = 16 / 9;
 
-const uploadMtnImg = async (blob, path) => {
-  const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
-  if (error) throw error;
-  return supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl;
-};
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
 const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
 // echo วันที่ (input ISO YYYY-MM-DD ค.ศ.) → DD/MM/พ.ศ.
@@ -756,7 +743,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeImage(beforeFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -2163,7 +2150,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
         let imgWarn = null;
         if (afterFile) {
-          try { const b = await resizeImage(afterFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeMoImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
         }
         /* 🔴 ต้องเช็คผลก่อนแตะสต็อก (audit 2026-09-02)
@@ -2242,7 +2229,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s, quality_related: QA_RELATED });
         // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
         if (qaFile) {
-          try { const b = await resizeImage(qaFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeMoImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
         }
         if (!editMode) { upd.status = 'qa'; upd.current_step = step; upd.qa_at = new Date().toISOString(); }

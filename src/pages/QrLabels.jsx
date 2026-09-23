@@ -20,6 +20,7 @@ import { buildQrPayload, QR_KINDS } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import PageHeader from '../components/PageHeader';
 
 const SIZES = {
   sm: { key: 'sm', label: 'เล็ก 40×25mm', w: 40, h: 25, qr: 17, no: 8, sub: 4.6 },
@@ -190,10 +191,7 @@ export default function QrLabels() {
   return (
     <div style={{ padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <h1 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: 0 }}>🏷️ พิมพ์ป้าย QR อุปกรณ์</h1>
-      <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
-        พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime
-      </div>
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime" />
 
       {/* เลือกชนิด */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>

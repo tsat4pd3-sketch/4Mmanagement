@@ -21,6 +21,15 @@ class EB extends React.Component {
    ที่ต้อง daily_report:record) **ไม่เคยถูก render ใน crashsweep เลย** — ตรวจตาไม่ได้ด้วย
    default ยังเป็น 'manager' เหมือนเดิม (ไม่กระทบผลตรวจเดิม) */
 const ROLE = new URLSearchParams(location.search).get('role') || 'manager';
+/* ⚠️ harness เดิมใช้ `<MemoryRouter>` เปล่าๆ ⇒ `useSearchParams()` ในหน้าลูก**ว่างเสมอ**
+   ทำให้โค้ดสาย "รับตัวกรองจาก URL" (เช่น /oee-analytics?section=PD3 ที่เจาะมาจาก OBEYA)
+   ไม่เคยถูกรันใน harness เลยสักครั้ง = บั๊กทั้งคลาสมองไม่เห็น (2026-09-22)
+   ⇒ ส่ง query string จริงของ harness เข้าไปเป็นที่อยู่ตั้งต้น (ตัด `p`/`role` ที่เป็นของ harness เองออก) */
+const ENTRY = (() => {
+  const q = new URLSearchParams(location.search);
+  q.delete('p'); q.delete('role');
+  return q.toString() ? `/?${q}` : '/';
+})();
 const CTX = { role:ROLE, lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
   mtnTeams:[], isDeptAdmin:false, sidebarOpen:false }
@@ -33,7 +42,7 @@ function SidebarLab(){
   window.__setPin = setPinned
   const marginLeft = open ? (pinned ? 'calc(var(--rail-w) + var(--sidebar-w))' : 'var(--rail-w)') : 0
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[ENTRY]}>
       <UserContext.Provider value={{ ...CTX, role:'admin' }}>
         <div style={{ display:'flex', minHeight:'100vh', background:'var(--bg)' }}>
           <Sidebar isOpen={open} onClose={()=>setOpen(false)} onLogout={()=>{}} theme="dark" onToggleTheme={()=>{}}
@@ -59,7 +68,7 @@ function App(){
     mods[key]().then(m => setC(()=>m.default)).catch(e => { window.__crash=true; console.error(e) })
   },[name])
   return (
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[ENTRY]}>
       <UserContext.Provider value={CTX}>
         {/* จำลองโครงเดียวกับ App จริง: main เลื่อนแนวตั้งอย่างเดียว */}
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
@@ -74,7 +83,7 @@ function App(){
    มันถูก render จาก App shell ไม่ใช่จากหน้าไหน ⇒ crashsweep ที่ไล่เปิดทีละ "หน้า" มองไม่เห็นเลย
    พอเพิ่มช่องแนบรูป (สิ่งที่พังได้จริง: preview/ถอดรูป/ล้นโมดัลบนมือถือ) เลยต้องมี harness ของตัวเอง */
 const FeedbackLab = () => (
-  <MemoryRouter>
+  <MemoryRouter initialEntries={[ENTRY]}>
     <UserContext.Provider value={{ ...CTX, role:'admin' }}>
       <EB><Suspense fallback={<div>loading</div>}>
         {React.createElement(React.lazy(() => import('../src/components/FeedbackModal')), { onClose(){} })}

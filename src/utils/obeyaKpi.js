@@ -135,6 +135,11 @@ export function axisOee({ sessions = [], target = null } = {}) {
    ⇒ KPI "วันปลอดอุบัติเหตุ" ทำไม่ได้จริง — ห้ามโชว์ 0 ครั้งแล้วให้คนเข้าใจว่าปลอดภัย
    ที่ทำได้ตอนนี้คือ "พฤติกรรม" (PPE ครบตอนเช็คชื่อ) ซึ่งเป็น leading indicator ไม่ใช่ผลลัพธ์
    ⚠️ นับเฉพาะคนที่มาทำงาน (is_present) — คนลาไม่มี PPE เป็นเรื่องปกติ ถ้านับรวมจะได้เลขต่ำหลอก */
+/** 🔴 ข้อความนี้ต้องอยู่บนจอทุกบอร์ดที่โชว์แกน S จนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
+ *  — export ไว้จุดเดียว เพราะมีหลายจอใช้ (แผง SQDCM · บอร์ดสดบนผังรวมโรงงาน) */
+export const SAFETY_PROXY_NOTE =
+  'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย';
+
 export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   const present = logs.filter(l => l.is_present);
   const base = {
@@ -151,7 +156,7 @@ export function axisSafety({ logs = [], incidents = null, target = 100 } = {}) {
   return {
     ...base, value, state: 'thin',
     // 🔴 ข้อความนี้ต้องอยู่บนจอเสมอจนกว่าจะมีทะเบียนอุบัติเหตุจริง (OBEYA-DESIGN §4)
-    note: 'ยังไม่มีทะเบียนอุบัติเหตุ/near-miss — ตัวเลขนี้คือ "ใส่ PPE ครบตอนเช็คชื่อ" ไม่ใช่ผลด้านความปลอดภัย',
+    note: SAFETY_PROXY_NOTE,
     checked: present.length,
     series: bucketBy(present, l => l.work_date,
       (a, l) => { a.n += 1; if (full(l)) a.ok += 1; }, () => ({ n: 0, ok: 0 }))
@@ -280,10 +285,13 @@ export function actionHealth(items = [], today) {
    ⚠️ ห้ามใช้ toISOString() (UTC — เพี้ยนข้ามวันสำหรับไทย) · วันที่งานตัด 08:00 ให้ผู้เรียกส่ง
       `today` ที่ได้จาก getWorkDate() เข้ามา ไฟล์นี้ไม่แตะนาฬิกาเอง (เทสจะได้ตรึงเวลาได้ —
       กฎ "เทสระเบิดเวลา" ใน CLAUDE.md) */
+/* ⚠️ ไม่มี "วันนี้" แล้ว (user 2026-09-22 "ตัดออก") — ทุกแผ่นบนจอนี้จัดกลุ่มเป็นจุดต่อวัน โหมดวันได้แท่งเดียว
+   ไม่ใช่กราฟ · สถานะ "ตอนนี้" มีจอทำหน้าที่อยู่แล้ว (/morning-meeting · /tv · /factory-map)
+   `periodRange('day')` ยังรองรับไว้ให้ผู้เรียกเก่า/เทส แต่ไม่โผล่บนปุ่ม · โหมด 'year' อยู่ใน obeyaYear.js */
 export const PERIODS = [
-  { key: 'day',   label: 'วันนี้' },
   { key: 'week',  label: 'สัปดาห์นี้' },
-  { key: 'month', label: 'เดือนนี้' },
+  { key: 'month', label: 'เดือน' },
+  { key: 'year',  label: 'ปี' },
 ];
 export function periodRange(mode, today) {
   const d = String(today);

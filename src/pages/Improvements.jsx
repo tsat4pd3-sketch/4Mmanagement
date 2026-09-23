@@ -22,6 +22,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import { classifyAbc } from '../utils/pareto';
+import PageHeader from '../components/PageHeader';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -853,7 +854,7 @@ export default function Improvements() {
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
         <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>💡 Improvements — โปรเจคปรับปรุง</h1>
+          <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡" />
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
             เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ
           </div>
@@ -1461,7 +1462,7 @@ export default function Improvements() {
                 {/* ⚠️ เดิมหัวข้อเขียนว่า "พาเรโต้" แต่ของจริงเป็น **ลิสต์ตัวเลือก** (กดเพื่อตั้งเป็นเป้าโปรเจค)
                     ไม่มีเส้นสะสม/เส้น 80% จึงไม่ใช่ Pareto chart — เรียกให้ตรงกับสิ่งที่มันเป็น แล้วเติม
                     "แก้ N อันแรก = กี่ %" ซึ่งเป็นสิ่งที่คนอยากได้จาก Pareto จริงๆ ตอนเลือกเป้า (2026-09-15)
-                    กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-repair (ParetoAbcChart) */}
+                    กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-analysis (ParetoAbcChart) */}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
                   ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค
                   {paretoLead && <> · <b style={{ color: 'var(--accent)' }}>{paretoLead}</b></>}
