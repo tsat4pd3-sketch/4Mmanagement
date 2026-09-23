@@ -8,6 +8,7 @@ import { scoreDef, KPI_LEVELS } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
+import KpiStandardPicker from './KpiStandardPicker';
 import PersonSelect from './PersonSelect';
 import SearchSelect, { normSearch } from './SearchSelect';
 import {
@@ -190,6 +191,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [catalog, setCatalog] = useState([]);      // ทะเบียนชื่อ KPI (kpi_catalog)
   const [catMissing, setCatMissing] = useState(false);
   const [showCat, setShowCat] = useState(false);   // โมดัลจัดการทะเบียนชื่อ
+  const [showStd, setShowStd] = useState(false);   // โมดัลตั้งชุด KPI จากทะเบียนมาตรฐานของกลุ่ม
   const [autoTgt, setAutoTgt] = useState(null);   // โมดัลตั้งเป้าให้แถวที่ระบบคำนวณเอง
   const [copying, setCopying] = useState(false);   // กำลังคัดลอกชุด KPI จากปีอื่น
   const reqRef = useRef(0);                        // ลำดับคำขอโหลด — กันผลเก่าทับผลใหม่
@@ -428,9 +430,19 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 }));
 
   /* ตาราง "กรอกมือ" ต้องไม่มีแถวนิยามของ KPI อัตโนมัติปน (ช่องกรอกจะว่างตลอด + ซ้ำกับตารางบน)
-     และ scope ตามกลุ่มไลน์ที่เลือก — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน (line_group null) */
+     และ scope ตามกลุ่มไลน์ที่เลือก — ไม่เลือกกลุ่ม = KPI ระดับส่วนงาน (line_group null)
+     🔴 **ห้ามเขียน `!d.source`** — `kpi_definitions.source` เป็น `not null default 'manual'`
+        ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
+        คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
+        แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
   const defs = useMemo(() => (allDefs || []).filter(d =>
-    !d.source && (d.line_group || '') === (group || '')), [allDefs, group]);
+    !String(d.source || '').startsWith('auto:') && (d.line_group || '') === (group || '')), [allDefs, group]);
+
+  /* ทุกนิยามของ "ขอบเขตที่กำลังดู" รวมแถว auto — ใช้เป็นฐานของตัวนับน้ำหนักในโมดัลตั้งชุด KPI
+     ⚠️ ต้องรวมแถว auto ด้วย เพราะน้ำหนักในใบ Appraisal นับ**ทั้งใบ** (แถว auto ก็ถ่วงน้ำหนักจริง)
+        ถ้าส่งแต่แถวกรอกมือ ตัวนับจะบอกว่า "ขาด" ทั้งที่ใบครบแล้ว = เตือนผิด */
+  const scopeDefs = useMemo(() => (allDefs || []).filter(d =>
+    (d.line_group || '') === (group || '')), [allDefs, group]);
 
   /* นิยามของแถวอัตโนมัติ — เก็บ "เป้า/ทิศทาง/commitment" ไว้ที่ kpi_definitions (source='auto:<key>')
      ⚠️ ค่าไม่ได้มาจากที่นี่ (ระบบคำนวณเอง) แถวนิยามเก็บแค่เกณฑ์ตัดสิน                       */
@@ -629,6 +641,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     };
     if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
     if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    /* 🔴 ตอน "เพิ่มใหม่" ต้องผูกกลุ่มไลน์ที่กำลังดูอยู่ด้วย — เดิมไม่ส่ง `line_group` เลย (แก้ 23/09)
+       ⇒ เพิ่ม KPI ขณะเลือกกลุ่มไลน์ไว้ จะได้แถวระดับส่วนงาน ซึ่ง**ตกตัวกรองของตารางทันที**
+         (`defs` กรอง `(d.line_group||'') === (group||'')`) ⇒ กดเพิ่มแล้วไม่มีอะไรโผล่
+         พอกดเพิ่มซ้ำก็เจอ 23505 "ตั้งไว้แล้ว" ทั้งที่ยังไม่เคยเห็นแถวนั้นสักครั้ง
+       · เฉพาะตอน insert — ตอน update ไม่แตะ เพราะฟอร์มไม่มีช่องกลุ่มไลน์ให้แก้ (จะล้างของเดิมทิ้ง)
+       · ส่วนงานในโมดัลไม่ตรงกับที่จอกรองอยู่ = คนตั้งใจตั้งข้ามส่วนงาน ⇒ ไม่ยัดกลุ่มไลน์ให้ */
+    if (!form.id) payload.line_group = (form.section || '') === (section || '') ? (group || null) : null;
     if (form.id) {
       const { data: d, error } = await supabase.from('kpi_definitions').update(payload).eq('id', form.id).select('id');
       if (error || !d?.length) { toast.error('บันทึกไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)')); return false; }
@@ -853,6 +872,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                   style={{ ...btnSt, padding: '4px 10px', fontSize: 12, opacity: copying ? 0.6 : 1 }}>
                   {copying ? '⏳ กำลังคัดลอก…' : '📋 คัดลอกชุด KPI จากปีอื่น'}
                 </button>
+                <button onClick={() => setShowStd(true)}
+                  title="เลือกหน่วยงานมาตรฐานตามเอกสารกลุ่ม แล้วระบบเติมข้อบังคับให้ครบ + ติ๊กข้อที่เลือกได้ + ถ่วงน้ำหนักรวม 50"
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12, borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+                  🧩 ตั้งชุดจากทะเบียนมาตรฐาน
+                </button>
                 <button onClick={() => setShowCat(true)} title="ดู/แก้ชื่อ KPI ในทะเบียน — แก้ชื่อแล้วเปลี่ยนพร้อมกันทุกปีทุกส่วนงาน"
                   style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>🗂 ทะเบียนชื่อ KPI ({catalog.length})</button>
               </>
@@ -956,6 +980,15 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           row={autoTgt} def={autoDefBy[autoTgt.src]} year={year} section={section} group={group}
           onClose={() => setAutoTgt(null)}
           onSave={async f => { if (await saveAutoTarget(f)) setAutoTgt(null); }}
+        />
+      )}
+
+      {showStd && (
+        <KpiStandardPicker
+          year={year} section={section} group={group} canManage={canManage} role={role}
+          existingDefs={scopeDefs}
+          onClose={() => setShowStd(false)}
+          onDone={() => { loadCatalog(); loadDefs(); }}
         />
       )}
 

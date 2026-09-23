@@ -505,6 +505,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - ตั้งค่า KPI data-driven: scope 6 ระดับ (`cost_center` ไม่ใช่คีย์เอกลักษณ์) · `provider` · `kpi_month_plans` · `kpi_base_inputs`
+- **🔴 `kpi_definitions.source` = `not null default 'manual'` — ห้ามเช็ค `!d.source`** (เป็นเท็จเสมอ · มีด่าน `regressionGuards`)
+  แถวกรอกมือเช็คจากฝั่งตรงข้าม: `!String(d.source||'').startsWith('auto:')` · 23/09 บั๊กนี้ทำให้ตั้ง KPI ได้ส่วนงานละ 1 ข้อ
+  + ตารางกรอกมือว่างตลอดกาล **ทั้งที่ build/lint/เทส/crashsweep ผ่านหมด** ⇒ **คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness**
+- ตั้งชุด KPI จากทะเบียนกลุ่ม = ปุ่ม 🧩 ในแท็บ 📑 (`KpiStandardPicker`) — เติม `fixed` ให้เอง · ติ๊ก `choice` · **ไม่เดาเป้า ไม่เกลี่ยน้ำหนักเอง**
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 

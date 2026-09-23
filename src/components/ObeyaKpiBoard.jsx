@@ -754,9 +754,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       return { group: g, ccs, rows, sessCount: mSess.length, st: worstStatus(rows.map(x => x.st)) };
     });
 
-    /* แถวของแผง Key Performance = นิยาม KPI ที่ไม่ผูกกลุ่มไลน์ (เรียงตามหมวด/ลำดับที่ตั้งไว้) */
+    /* แถวของแผง Key Performance = นิยาม KPI ที่ไม่ผูกกลุ่มไลน์ (เรียงตามหมวด/ลำดับที่ตั้งไว้)
+       🔴 ต้องตัดแถว `auto:` ออก — ค่าของมันมาจากตัวคำนวณ **ไม่ได้อยู่ใน `kpi_manual_entries`**
+          ⇒ ถ้าปล่อยเข้ามา แผงนี้จะขึ้น "ยังไม่กรอกค่าเดือนนี้" ตลอดกาลทั้งที่ระบบรู้ค่าอยู่แล้ว
+          (แถว auto ที่ไม่ผูกกลุ่มไลน์มี `line_group` เป็น null จึงรอดตัวกรองเดิมมาได้ · แก้ 23/09) */
     const secRows = (kdefs || [])
-      .filter(d => !d.line_group)
+      .filter(d => !d.line_group && !String(d.source || '').startsWith('auto:'))
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       .map(d => {
         const value = entByKpi[d.id]?.[monthNo];
