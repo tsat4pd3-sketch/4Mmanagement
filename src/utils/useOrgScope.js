@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadDivisions } from './orgDivisions';
+import { loadCostCenters } from './useCostCenters';
 import { buildOrgScope } from './orgScope';
 
 /* ══ useOrgScope — โหลดผังองค์กร (org_nodes + org_divisions) แล้วสร้างดัชนีขอบเขต (2026-09-23) ═════
@@ -14,6 +15,7 @@ import { buildOrgScope } from './orgScope';
 export default function useOrgScope(lines = []) {
   const [nodes, setNodes] = useState(null);       // null = ยังโหลด
   const [divisions, setDivisions] = useState([]);
+  const [ccs, setCcs] = useState([]);           // ทะเบียน cost_centers — ใช้แค่ "ชื่อ" ของรหัส (จอ CC โชว์ `รหัส · ชื่อ`)
 
   useEffect(() => {
     let alive = true;
@@ -22,14 +24,15 @@ export default function useOrgScope(lines = []) {
       .eq('is_active', true).order('sort_order', { nullsFirst: false })
       .then(({ data, error }) => { if (alive) setNodes(error ? [] : (data || [])); });
     loadDivisions().then(d => { if (alive) setDivisions(d || []); });
+    loadCostCenters().then(d => { if (alive) setCcs(d || []); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   /* ผูก useMemo กับ "ลายเซ็น" ของ lines ไม่ใช่ตัว array — พ่อ setLines(ใบใหม่เนื้อเดิม) ไม่ต้องสร้างต้นไม้ใหม่ (กฎเหล็ก DB ข้อ 9) */
   const lineSig = (lines || []).map(l => `${l.id}|${l.name}|${l.section || ''}|${l.parent_line_name || ''}|${l.cost_center || ''}|${l.is_active === false ? 0 : 1}`).join('~');
   const index = useMemo(
-    () => buildOrgScope({ nodes: nodes || [], lines: lines || [], divisions }),
-    [nodes, divisions, lineSig], // eslint-disable-line react-hooks/exhaustive-deps
+    () => buildOrgScope({ nodes: nodes || [], lines: lines || [], divisions, costCenters: ccs }),
+    [nodes, divisions, ccs, lineSig], // eslint-disable-line react-hooks/exhaustive-deps
   );
   return { index, ready: nodes !== null };
 }

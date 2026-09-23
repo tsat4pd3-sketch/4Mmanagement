@@ -45,7 +45,14 @@ const divisions = [
   { code: 'maintenance', label: 'ฝ่ายช่าง', icon: '🔧', sort_order: 20 },
   { code: 'logistic', label: 'ฝ่ายวางแผน-คลัง', icon: '📦', sort_order: 40 },
 ];
-const idx = buildOrgScope({ nodes, lines, divisions });
+const costCenters = [
+  { code: '2140462000', name: 'PD3', is_active: true },
+  { code: '2140662201', name: 'Line 60', is_active: true },
+  { code: '2140563100', name: 'JIG MTN', is_active: true },
+  { code: '2140524100', name: 'Store Raw Material', is_active: true },
+  { code: '9999999999', name: 'ปิดแล้ว', is_active: false },
+];
+const idx = buildOrgScope({ nodes, lines, divisions, costCenters });
 const keys = idx.options.map(o => o.key);
 
 test('ต้นไม้ครบทุกมิติ: โรงงาน → ฝ่าย → ส่วนงาน → แผนก → กลุ่มไลน์ → ไลน์ + แกน cost center', () => {
@@ -173,4 +180,67 @@ test('filterScopeOptions: user สังกัด PD3 เห็นสายข�
   assert.ok(!got.includes('division:maintenance'), 'ฝ่ายที่ไม่มีลูกในสังกัด = ไม่โผล่');
   // ไม่จำกัด = ครบ
   assert.equal(filterScopeOptions(idx, { scopeSet: null, sections: [] }).length, idx.options.length);
+});
+
+/* ══ 23/09 · คำสั่ง user: "อย่าปนกัน cost center แยกอีกช่อง · เลือก PD4 ควรโชว์รหัส · พิมพ์รหัสควรเจอ PD3" ══ */
+
+test('ccOf: หน่วยในผังตอบรหัส cost center ของตัวเองได้ · กลุ่มที่ลูกใช้หลายรหัสห้ามเดา', () => {
+  assert.deepEqual(idx.ccOf('section', 'PD3'), { code: '2140462000', multi: 0 }, 'ส่วนงานอ่านจาก org_nodes');
+  assert.deepEqual(idx.ccOf('department', 'JIG MTN'), { code: '2140563100', multi: 0 }, 'แผนกขึ้นตรงฝ่ายก็ต้องได้');
+  assert.deepEqual(idx.ccOf('line', 'HDF1'), { code: '2140662101', multi: 0 }, 'ไลน์อ่านจาก production_lines');
+  assert.deepEqual(idx.ccOf('line', 'Store Raw Material'), { code: '2140524100', multi: 0 }, 'org line node ที่ไม่ผูกไลน์ผลิต');
+  // แถวไลน์แม่ LINE APRON ASSY มีรหัสของตัวเอง ⇒ ชนะรหัสของลูก (Line 60/61 = 2140662201)
+  assert.deepEqual(idx.ccOf('line_group', 'LINE APRON ASSY'), { code: '2140562100', multi: 0 });
+  // HYDROFORM: HDF1 มีรหัส · HDF2/LASER E50 ไม่มี ⇒ เหลือรหัสเดียว = ของกลุ่ม
+  assert.deepEqual(idx.ccOf('line_group', 'HYDROFORM'), { code: '2140662101', multi: 0 });
+  assert.deepEqual(idx.ccOf('plant', ''), { code: null, multi: 0 });
+  assert.deepEqual(idx.ccOf('section', 'ไม่มีจริง'), { code: null, multi: 0 }, 'หน่วยที่ไม่รู้จัก = ไม่มีรหัส ไม่ใช่พัง');
+});
+
+test('ccOf: กลุ่มไลน์ที่ลูกใช้คนละรหัส ต้องคืน multi ไม่ใช่หยิบรหัสใดรหัสหนึ่ง', () => {
+  const ix = buildOrgScope({
+    nodes: [{ id: 's', kind: 'section', code: 'PD9', name: 'PD9', parent_id: null }],
+    lines: [
+      { id: 1, name: 'GRP', section: 'PD9', parent_line_name: null },
+      { id: 2, name: 'A', section: 'PD9', parent_line_name: 'GRP', cost_center: '111' },
+      { id: 3, name: 'B', section: 'PD9', parent_line_name: 'GRP', cost_center: '222' },
+    ],
+  });
+  assert.deepEqual(ix.ccOf('line_group', 'GRP'), { code: null, multi: 2 });
+});
+
+test('ccOwnersOf: พิมพ์รหัสแล้วย้อนกลับไปหาหน่วยงานเจ้าของได้ · เรียงกว้าง → แคบ', () => {
+  assert.deepEqual(idx.ccOwnersOf('2140462000'), [{ kind: 'section', value: 'PD3' }], 'รหัสส่วนงาน → ส่วนงาน');
+  assert.deepEqual(idx.ccOwnersOf('2140563100'), [{ kind: 'department', value: 'JIG MTN' }]);
+  // รหัสที่ไลน์ลูกใช้ร่วมกัน (แต่ไลน์แม่มีรหัสของตัวเอง) ⇒ เจ้าของคือไลน์ลูกทั้งคู่ ไม่ใช่กลุ่ม
+  assert.deepEqual(idx.ccOwnersOf('2140662201').map(o => `${o.kind}:${o.value}`), ['line:Line 60', 'line:Line 61']);
+  assert.deepEqual(idx.ccOwnersOf('2140562100').map(o => `${o.kind}:${o.value}`),
+    ['department:HYDROFORM', 'line_group:LINE APRON ASSY'], 'รหัสเดียวผูก 2 หน่วย = ต้องคืนครบ (ข้อมูลจริงมีซ้ำ)');
+  assert.deepEqual(idx.ccOwnersOf('2140662101').map(o => `${o.kind}:${o.value}`), ['line_group:HYDROFORM', 'line:HDF1']);
+  assert.deepEqual(idx.ccOwnersOf('ไม่มีรหัสนี้'), [], 'รหัสที่ผังไม่มีใครอ้าง = ว่าง ไม่ใช่พัง');
+  assert.deepEqual(idx.ccOwnersOf(null), []);
+});
+
+test('ccLabel: เอาชื่อจากทะเบียน cost_centers เท่านั้น — ไม่มีชื่อก็คืนรหัสเปล่า ห้ามเดาจากผัง', () => {
+  assert.equal(idx.ccLabel('2140462000'), '2140462000 · PD3');
+  assert.equal(idx.ccLabel('2140662101'), '2140662101', 'ไม่มีในทะเบียน = รหัสเปล่า');
+  assert.equal(idx.ccLabel('9999999999'), '9999999999', 'แถวปิดใช้งานไม่เอาชื่อมาใช้');
+  assert.equal(idx.ccLabel(''), '');
+});
+
+test('filterScopeOptions({ withCostCenter: false }) ตัดแกน cost center ออกจากลิสต์ผัง (ช่องผังห้ามมีรหัสปน)', () => {
+  const org = filterScopeOptions(idx, { withCostCenter: false });
+  assert.equal(org.some(o => o.kind === 'cost_center'), false);
+  assert.ok(org.some(o => o.key === 'section:PD3'));
+  const all = filterScopeOptions(idx, {});
+  assert.ok(all.some(o => o.kind === 'cost_center'), 'default ยังได้ครบ (ช่อง 💰 ใช้ลิสต์นี้)');
+  assert.equal(all.length - org.length, idx.options.filter(o => o.kind === 'cost_center').length);
+});
+
+test('ตัวเลือก cost center พก ชื่อ + เจ้าของ ติดตัวมา (ช่อง 💰 โชว์ `รหัส · ชื่อ` และบอกว่าเป็นของใคร)', () => {
+  const o = idx.options.find(x => x.key === 'cost_center:2140462000');
+  assert.equal(o.cc_name, 'PD3');
+  assert.deepEqual(o.owners, [{ kind: 'section', value: 'PD3' }]);
+  const orphan = idx.options.find(x => x.key === 'cost_center:2140662101');
+  assert.equal(orphan.cc_name, '', 'ไม่มีในทะเบียน = ชื่อว่าง ไม่ใช่ undefined');
 });
