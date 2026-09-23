@@ -250,7 +250,7 @@ export function operatingMinutesByLine(sessions = [], { breakPolicies = [] } = {
  *          stops, openStops, closedStops, dtMin, mttrMin|null,
  *          opMin|null, upMin|null, mtbfMin|null, availPct|null,
  *          parallelN, dtMinW, mttrMinW|null, upMinW|null, mtbfMinW|null, availPctW|null,
- *          plannedStops, plannedMin, plannedMinW, lastAt, topCause }
+ *          plannedStops, plannedMin, plannedMinW, lastAt, topCause, topCauseN }
  *   ชุดไม่มี W = **นาทีเต็ม** (มุมมองเครื่อง) · ชุด W = **ถ่วง 1/N** (ให้ตรงกับ %A ของไลน์)
  *   ⚠️ ค่าที่คำนวณไม่ได้ = **null เสมอ ห้ามเป็น 0** (0 = "ไม่เคยเสียเลย" คนละเรื่องกับ "ไม่รู้")
  */
@@ -397,6 +397,8 @@ export function machineReliability({
       restartMin: r.phaseN > 0 ? Math.round(r._restartSum / r.phaseN) : null,
       lastAt: r.lastAt,
       topCause: Object.entries(r._causes).sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+      // จำนวนครั้งของสาเหตุอันดับ 1 — ใช้ตัดสิน "อาการซ้ำ" ใน maintenanceLevels (2026-09-23)
+      topCauseN: Object.values(r._causes).reduce((m, n) => Math.max(m, n), 0),
     });
   }
   /* ── เครื่องจักรที่ "ไม่เคยเสียเลย" ในช่วงที่ดู (คำสั่ง user 2026-09-14 "นับด้วยสิ") ──────────
@@ -427,7 +429,7 @@ export function machineReliability({
         parallelN: m.line_name && parallelOf ? Math.max(1, Number(parallelOf(m.line_name)) || 1) : 1,
         dtMinW: 0, mttrMinW: null, upMinW: Math.round(opMin), mtbfMinW: null, availPctW: 100,
         plannedStops: 0, plannedMin: 0, plannedMinW: 0,
-        lastAt: null, topCause: null, neverFailed: true,
+        lastAt: null, topCause: null, topCauseN: 0, neverFailed: true,
       });
     }
   }

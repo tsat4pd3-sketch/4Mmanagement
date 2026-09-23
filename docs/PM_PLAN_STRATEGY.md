@@ -149,6 +149,11 @@ health_score = clamp(100 * (1 - ratio), 0, 100)
 
 ## 6. Roadmap แบบทำได้จริง (แนะนำลำดับ)
 
+> **สถานะ 2026-09-23 — มีจอรวม 3 ระดับแล้ว: แท็บ 🧭 ใน `/pm` (`?tab=levels`)** อ่านอย่างเดียว
+> · Predictive ที่ทำได้จริงตอนนี้ = **reliability-based** (อัตราเสียจาก downtime ต่อชั่วโมงเดิน) ไม่ใช่ usage/SPC
+>   เพราะผลวัดค่า SPC = 0 แถว และแผน usage = 0/142 · Prescriptive = กฎที่อ่านออก 7 ข้อ (ไม่ใช่ ML · ไม่เขียนกลับฐาน)
+> · รายละเอียด/ข้อจำกัด → `docs/modules/pm-predictive-planner-sync.md` §3 ระดับ
+
 ### Phase 1 — ทำ Preventive ให้แน่น + วางราก (1–2 sprint) ✅ *ส่วนใหญ่ทำแล้ว*
 - [x] แก้บั๊ก save (layout_type/note_text), date correctness, pin numbering *(session นี้)*
 - [x] Schedule ไม่นับผลตรวจที่ถูก reject, off-by-one, daily-freq *(session นี้)*
