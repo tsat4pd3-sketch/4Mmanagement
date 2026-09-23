@@ -103,10 +103,7 @@ const RULES = [
        + 'และ CLAUDE.md เขียนห้ามไว้ตรงๆ ว่า "ห้ามคิดเกณฑ์สีเอง"',
     fix: 'ใช้ scoreDef(value, defRow) จาก src/utils/kpiSetup.js (อ่านได้ทั้งคอลัมน์ใหม่และ direction/commitment เก่า) '
        + 'แล้ว map sc.status → good/warn/bad/unknown',
-    allow: {
-      'src/components/ObeyaKpiBoard.jsx':
-        'เหลือ 2 จุดในแถบ SQDCM = ไฟเฝ้าระวัง**รายวัน** (plan% · OEE วันนี้) ไม่ใช่คะแนน KPI รายเดือน — มีคอมเมนต์เส้นแบ่งกำกับแล้ว',
-    },
+    allow: {},   // 23/09: ObeyaKpiBoard ไม่มี statusVsTarget แล้ว (แถบ SQDCM รายวันถูกถอดออก) — ด่านคุมเต็มทั้งไฟล์
   },
   {
     id: 'fetchallrows-returns-object',

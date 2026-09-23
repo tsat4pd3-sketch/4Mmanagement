@@ -17,11 +17,11 @@ const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
      แท็บ 📋 บอร์ด KPI ส่วนงาน (default)  = ยุบ "กระดาษ OBEYA KPI monitoring" ที่แปะผนังเข้ามา
         รายเดือน × กลุ่มไลน์ (คอลัมน์) × 8 หัวข้อ (แถว) — **จอสำหรับดู**
         → docs/modules/obeya-kpi-board.md
-     แท็บ 📑 KPI รายเดือน / ตั้งเป้า      = ตาราง 12 เดือน + ตั้งนิยาม KPI + ทะเบียนชื่อ + Excel/PDF
+     แท็บ 🖥️ จอ SQDCM                    = บอร์ดจอ TV "กระดาษ A4 สิบแผ่นปูเต็มจอ"
+        สัปดาห์/เดือน/ปี × 5 แกน SQDCM เป็นกราฟ + ACTION BOARD ปิดลูป → docs/modules/obeya.md
+     แท็บ ⚙️ ตั้งค่า KPI / กรอกผล (ท้ายสุด) = ตาราง 12 เดือน + ตั้งนิยาม KPI + ทะเบียนชื่อ + Excel/PDF
         ตามฟอร์ม FM-HRM-6-022/024/025 — **โต๊ะสำหรับกรอกและตั้งค่า** (ข้อมูลชุดเดียวกับแท็บแรก)
-     แท็บ 🖥️ จอมอนิเตอร์ SQDCM           = บอร์ดจอ TV "กระดาษ A4 สิบแผ่นปูเต็มจอ"
-        รายวัน/สัปดาห์/เดือน × 5 แกน SQDCM เป็นกราฟ + ACTION BOARD ปิดลูป
-        → docs/modules/obeya.md
+     ⭐ 23/09: แท็บ 📋 กับ 🖥️ วาดจาก `ObeyaSheet.jsx` ชิ้นเดียวกัน (คำสั่ง user "ควรจะรูปแบบเดียวกัน")
 
    ═══ 🔴 ทำไม 📑 KPI รายเดือน ต้องอยู่ที่นี่ ไม่ใช่ `/dept-dashboard` (17/09) ══════════
    เดิมมันเป็นแท็บใน `/dept-dashboard` → user ทักว่าซ้ำกับแท็บ 📋 ของหน้านี้ **และถูก**
@@ -38,15 +38,16 @@ const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
    ════════════════════════════════════════════════════════════════════════════════ */
 
 export default function Obeya() {
-  const [tab, setTab] = useTabParam(['kpi', 'table', 'sqdcm'], 'kpi');
+  /* ลำดับแท็บ (user 23/09): จอดู 2 ใบไว้หน้า · "ตั้งค่า/กรอก" ไว้ท้ายสุด — คนเปิดหน้านี้ส่วนใหญ่มาดู ไม่ได้มากรอก */
+  const [tab, setTab] = useTabParam(['kpi', 'sqdcm', 'table'], 'kpi');
   const isMobile = useIsMobile();
   const { role, lineId, sections } = useContext(UserContext);
   const [lines, setLines] = useState([]);
 
   const tabs = useMemo(() => ([
-    { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน' },
-    { key: 'table', label: '📑 KPI รายเดือน / ตั้งเป้า' },
-    { key: 'sqdcm', label: '🖥️ จอมอนิเตอร์ SQDCM' },
+    { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน (รายเดือน)' },
+    { key: 'sqdcm', label: '🖥️ จอ SQDCM (สัปดาห์/เดือน/ปี)' },
+    { key: 'table', label: '⚙️ ตั้งค่า KPI / กรอกผล' },
   ]), []);
 
   /* โหลดไลน์เฉพาะตอนเปิดแท็บตาราง — แท็บอื่นโหลดของตัวเองอยู่แล้ว ไม่ยิงซ้ำ */
@@ -69,7 +70,7 @@ export default function Obeya() {
       <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
-          title="OBEYA — KPI รายเดือน / ตั้งเป้า" icon="📑"
+          title="OBEYA — ตั้งค่า KPI / กรอกผล" icon="⚙️"
           sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
         />
         <Suspense fallback={<div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>}>
