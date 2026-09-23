@@ -119,6 +119,11 @@ function measureStdText(cp) {
 
 // สีหมุด = สถานะการตรวจ (dynamic) — เขียวผ่าน / แดง NG / เหลืองเฝ้าระวัง / ยังไม่ตรวจ = สีหมวด
 const PIN_STATUS_COLOR = { ok: '#3dd65c', ng: '#e05c4a', warning: '#f59a3f' }
+/* 🔴 "ยังไม่ตรวจ" ต้องดูออกจาก "ตรวจแล้ว" ทันที (user 23/09) — เดิมใช้ **สีประเภทจุดตรวจ**
+   ซึ่งตั้งเองได้ที่ทะเบียน ⇒ ประเภทที่ตั้งเป็นเขียวจะหน้าตาเหมือนจุดที่ตรวจผ่านแล้วเป๊ะ
+   ⇒ ใช้สีกลาง + **วงโปร่งเส้นประ** (ต่างที่รูปทรงด้วย ไม่ใช่แค่สี) · ตรวจแล้ว = วงทึบ เขียว/แดง
+   ประเภทจุดตรวจยังอ่านได้จากแถวรายการ/tooltip เหมือนเดิม */
+const PIN_TODO_COLOR = '#9aa8b4'
 function cpCheckStatus(cp, r) {
   if (!r) return null
   if (cp.type === 'variable') {
@@ -212,14 +217,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {framePins.map(c => {
               const st = cpCheckStatus(c, results[c.id])
-              const col = st ? PIN_STATUS_COLOR[st] : categoryColor(c.category)
+              const col = st ? PIN_STATUS_COLOR[st] : PIN_TODO_COLOR
               const active = c.id === activeCpId
               return (
                 <CalloutPin key={c.id} xPct={c.x_pos * 100} yPct={c.y_pos * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                   offX={c.label_dx} offY={c.label_dy}
-                  label={cpIndex[c.id] + 1} color={col} selected={active}
+                  label={cpIndex[c.id] + 1} color={col} selected={active} hollow={!st}
                   badge={c.image_path ? '🔍' : null}
-                  title={`${cpIndex[c.id] + 1}. ${c.name}${st ? ` — ${st.toUpperCase()}` : ''}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
+                  title={`${cpIndex[c.id] + 1}. ${c.name} — ${st ? st.toUpperCase() : 'ยังไม่ตรวจ'}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
                   onClick={e => {
                     e.stopPropagation()
                     onPinClick?.(c.id)
@@ -231,8 +236,8 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             })}
             {frameShimPins.map(sp => (
               <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
-                label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false}
-                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false} hollow={!sp.done}
+                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
                 onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
             ))}
           </div>
@@ -256,6 +261,19 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
           ))}
         </div>
       )}
+      {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
+        {[{ c: PIN_TODO_COLOR, hollow: true, t: 'ยังไม่ตรวจ' },
+          { c: PIN_STATUS_COLOR.ok, hollow: false, t: 'ตรวจแล้ว ปกติ' },
+          { c: PIN_STATUS_COLOR.ng, hollow: false, t: 'ตรวจแล้ว ผิดปกติ' }].map(x => (
+          <span key={x.t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 13, height: 13, borderRadius: '50%',
+              background: x.hollow ? 'rgba(12,18,15,0.82)' : x.c,
+              border: x.hollow ? `2px dashed ${x.c}` : '2px solid #fff' }} />
+            {x.t}
+          </span>
+        ))}
+      </div>
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
       {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
@@ -1252,7 +1270,10 @@ export default function PMCheckData() {
                 const focusOn = showPhoto && pinFocus && allPinned
                 const doneN = checkpoints.filter(cpFilled).length
                 const todo = checkpoints.filter(c => !cpFilled(c))
-                const shimPins = shimPoints.map(pt => ({ point: pt, pin: pointPin(pt, cpById) })).filter(x => x.pin)
+                /* `done` = กรอกค่าชิมในใบนี้แล้วหรือยัง — ใช้ตัดสินสีหมุด (ยังไม่วัด = วงโปร่ง) */
+                const shimPins = shimPoints
+                  .map(pt => ({ point: pt, pin: pointPin(pt, cpById), done: String(shimVals[pt.id]?.mm ?? '') !== '' }))
+                  .filter(x => x.pin)
                 const scrollToShim = (id) => {
                   setActiveCpId(null); setActiveShimId(id)
                   if (!pinFocus) rowRefs.current[`shim:${id}`]?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
