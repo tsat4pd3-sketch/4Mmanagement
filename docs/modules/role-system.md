@@ -369,3 +369,63 @@ migration `20260922_store_accounts_planner_store_role.sql` (**apply แล้ว
 > ⚠️ **ผลข้างเคียงที่ตั้งใจ:** 3 บัญชีนี้เสีย `skills:edit_high` (คีย์ที่ `sale` มี แต่ `planner_store` ไม่มี)
 > = พิมพ์คะแนนสกิลเองได้สูงสุด 50 แทน 100 · ถ้าหน้างานต้องใช้จริง ติ๊กคืนได้ที่ `/permissions`
 > 📌 **ยังไม่ได้แก้ (รอ user):** RLS ของ `org_nodes` เปิด `true` ทุกคำสั่งสำหรับ authenticated — ด่านจริงอยู่ที่จอเท่านั้น
+
+---
+
+## 🚚 แยก role ฝั่งจัดส่งออกมา — role ↔ 3 ฝั่ง Logistic ตรงกันครบ (2026-09-23 · คำสั่ง user)
+
+**คำถามตั้งต้นของ user:** *"เราแยกสิทธิ์เป็น inbound-outbound ดีกว่ามั้ยนะ"* → *"เพราะ sale planner
+จะใกล้ๆกัน ที่ต่างคือพวกจัดส่ง"* แล้วนิยามหน้าที่ให้ชัด:
+**planning-store = บริหาร stock + จ่ายงานในโรงงาน · warehouse = เก็บสินค้าพร้อมขาย · delivery = ส่งของให้ลูกค้า**
+
+**สิ่งที่มีอยู่แล้ว ไม่ต้องคิดใหม่:** ระบบแบ่ง Logistic เป็น **3 ฝั่ง** ตั้งแต่ 2026-09-03 แล้ว
+(`LOGISTIC_GROUPS` ใน `src/utils/logisticSide.js` → หมวดเมนู · `permission_catalog.group_name` ·
+ตัวตัดสินฝั่งจากเลข MAT) — และมีคำสั่งเดิมของ user (07/09) ว่า **ห้ามเรียก "ขาเข้า/ขาออก" บนจอ**
+เพราะ "ขาเข้า" อิงรั้วโรงงาน แต่งานจริงของสโตร์คือป้อนของเข้าไลน์ · `inbound`/`outbound` เหลือเป็น key ในโค้ดเท่านั้น
+
+**ช่องว่างที่เจอ:** ชั้น **role** ไม่ได้ตามการแบ่ง 3 ฝั่งนั้นไปด้วย
+
+| ฝั่ง | role (ก่อน 23/09) |
+|---|---|
+| 🏬 Store (`inbound`) | `planner_store` ✅ |
+| 🧭 แผนงาน & ข้อมูล (`control`) | `sale` ✅ |
+| 🚚 Warehouse & Delivery (`outbound`) | **ไม่มี** ← ช่องว่าง |
+
+วัดจริง 23/09: **`planner_store` ⊇ `sale` ทุกหน้าในหมวด Logistic** (มีครบที่ sale มี + สต๊อกในไลน์ ·
+ภาชนะ · สินค้า · รายงาน) ⇒ เป็น **"เต็ม vs ลดทอน" ไม่ใช่ "คนละหน้าที่"** ⇒ คนจัดส่งต้องเลือกระหว่าง
+*ได้น้อยไป* กับ *ได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์ · กดผลิตบนบอร์ดคัมบัง) เกินมา*
+และของที่แจกไว้ยัง**สลับฝั่ง**ด้วย: `rack_center:operate` (ภาชนะ = งานจัดส่ง) ให้ `planner_store`
+แต่ไม่ให้ `sale` ที่คนจัดส่งใช้อยู่จริง · `storage:manage` (โซนคลัง = ฝั่ง Store) กลับให้ `sale`
+
+**ที่ทำ — เพิ่ม role เดียว ไม่รื้อของเดิม:**
+
+| ฝั่ง | role | บัญชี (23/09) |
+|---|---|---|
+| 🏬 Store | `planner_store` 📦 | `planningstore` |
+| 🚚 Warehouse & Delivery | **`warehouse_delivery` 🚚 (ใหม่)** | `warehouse1` · `warehouse2` · `delivery1` · `delivery2` |
+| 🧭 แผนงาน & ข้อมูล | `sale` 🧭 | `billing` |
+
+- สิทธิ์ตั้งต้นของ role ใหม่ = **copy จาก `sale` ทั้งชุด** (= ชุดที่ delivery ใช้อยู่จริงวันนี้ ⇒ ไม่มีใครเสียของ)
+  **+ `page:/rack-center` · `rack_center:operate`** (ภาชนะ/Packaging — อยู่ในหมวดฝั่งจัดส่งของทะเบียนสิทธิ์
+  อยู่แล้ว แต่ `sale` ไม่เคยได้)
+- warehouse1/2 ที่ย้ายออกจาก `planner_store` **เสียสิทธิ์ฝั่งสโตร์ไปตามเจตนา** (จ่ายของเข้าไลน์ ·
+  ปรับยอดสต๊อกในไลน์ · กดผลิตบนบอร์ดคัมบัง · แก้สินค้า · แก้ผังองค์กร) — วัดหลัง apply = **0 คีย์ฝั่งสโตร์ติดมา**
+  · ไม่มี regression: ก่อน 22/09 เขาเป็น `sale` ซึ่งไม่เคยมีสิทธิ์เหล่านี้อยู่แล้ว
+- ป้าย/สีของ 3 role ปรับให้ตรงกับสีฝั่งใน `SIDES` (`logisticSide.js`) — เปลี่ยนแค่ label/icon/color
+  **key ใน enum ไม่แตะ**
+
+migrations `20260923_role_warehouse_delivery_enum.sql` + `_seed.sql`
+(**apply แล้ว 23/09 · MAIN `ewhdfqwfwofivojtsizn`** · rollback ท้ายไฟล์ seed)
+
+> **กฎที่ตกผลึก — เพิ่ม role ใหม่ต้องทำครบ 5 จุด (ตกจุดไหนจะพังเงียบ):**
+> 1. **enum 2 ไฟล์แยกกัน** — `alter type … add value` ใช้ค่าใหม่ในทรานแซกชันเดียวกันไม่ได้
+>    (รวมไฟล์เดียว = `unsafe use of new value of enum type`) · และ **ค่า enum ลบทิ้งไม่ได้** ตั้งชื่อแล้วติดถาวร
+> 2. **`ROLE_META` ใน `src/utils/roleMeta.js`** (+ `axis`) — ไม่ใส่ = คอลัมน์ใน `/permissions` และชิปทุกที่หายไป
+> 3. **seed `role_permissions` ให้ครบตั้งแต่แรก** — role ใหม่เริ่มจาก "ไม่มีอะไรเลย" (fail-closed)
+>    เพราะ migration เก่าที่ seed ด้วย `enum_range` รันไปหมดแล้ว ไม่ย้อนมาแจกให้
+> 4. **ไล่ role array ที่ hardcode ในโค้ด** — `grep -rn "'<role เดิม>'" src/` แล้วดูทีละจุด
+>    (รอบนี้: `DeptDashboard.DEPTS` แท็บสโตร์ · `PMSchedule.AGREE_ROLES` ตัดสินใจไม่ใส่)
+> 5. **ผู้ใช้ที่ถูกย้าย role ต้องรีเฟรช (F5)** — `fetchProfile` อ่าน role ตอนโหลดเซสชันเท่านั้น
+>
+> 📌 **ยังไม่ตัด รอทีมยืนยัน** — 2 คีย์ที่ delivery ยกมาจาก `sale` ทั้งที่เป็นงาน Sales/Planner:
+> `demand:upload` (อัพโหลด Forecast/Order ลูกค้า) · `page:/planner-sales` — ปิดได้ทีละติ๊กที่ `/permissions`

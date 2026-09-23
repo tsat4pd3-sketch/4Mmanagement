@@ -764,7 +764,9 @@ function QaView({ d, ctx }) {
 export const DEPTS = [
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', roles: ['leader', 'supervisor', 'manager', 'admin'], load: loadProduction, View: ProductionView },
   { key: 'maintenance', icon: '🔧', label: 'ซ่อมบำรุง', roles: ['mtn', 'engineer'], load: loadMaintenance, View: MaintenanceView },
-  { key: 'store', icon: '📦', label: 'สโตร์', roles: ['planner_store', 'sale'], load: loadStore, View: StoreView },
+  /* ⚠️ ครอบทั้ง 3 role ของฝั่ง Logistic — `warehouse_delivery` แยกออกมา 2026-09-23 ถ้าลืมใส่
+     คนจัดส่งจะเปิดหน้านี้มาแล้วเด้งไปแท็บ 'ฝ่ายผลิต' (default) แทนแท็บสโตร์ของตัวเอง */
+  { key: 'store', icon: '📦', label: 'สโตร์', roles: ['planner_store', 'sale', 'warehouse_delivery'], load: loadStore, View: StoreView },
   { key: 'qa', icon: '✅', label: 'QA / คุณภาพ', roles: ['qa'], load: loadQa, View: QaView },
 ];
 
