@@ -3,6 +3,7 @@ import { UserContext } from '../App';
 import { canAccessPage } from '../utils/permissions';
 import useTabParam from '../utils/useTabParam';
 import PageHeader from '../components/PageHeader';
+import Page, { Hub } from '../components/Page';
 
 /* ── 🔧 ศูนย์ PM — รวม 5 หน้างานซ่อมบำรุงตามแผนเป็นหน้าเดียว (2026-08-26) ──────────────
    ที่มา (feedback หน้างาน): *"หน้าที่เกี่ยวกับ PM 3 หน้า มันควรจะรวมเป็นหน้าเดียวหรือไม่
@@ -60,22 +61,20 @@ export default function PmHub() {
   const cur = available.find(t => t.key === active);
 
   return (
-    <div>
-      <div style={{ padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px) 0', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+    <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) · sub = คำอธิบายแท็บที่เลือก
             — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
         <PageHeader title="ซ่อมบำรุงตามแผน (PM)" icon="🔧"
           sub={cur?.hint || 'ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง'}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
-      </div>
 
       {cur ? (
         <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}>
-          <cur.Comp />
+          <Hub><cur.Comp /></Hub>
         </Suspense>
       ) : (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>ยังไม่มีสิทธิ์เข้าหน้างาน PM ใดในหน้านี้</div>
       )}
-    </div>
+    </Page>
   );
 }

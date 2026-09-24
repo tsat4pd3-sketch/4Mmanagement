@@ -15,6 +15,8 @@ import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
 import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
+import Page from '../components/Page'
+import PageHeader from '../components/PageHeader'
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -278,29 +280,17 @@ export default function DailyPM() {
     }
   }
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' }}>
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 20 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            🔧 Autonomous Maintenance (AM)
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
-            {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 4, padding: 4, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' }}>
-          {[['status', '📊 สถานะวันนี้'], ['registry', '⚙️ ลงทะเบียนเครื่องตรวจ']].map(([k, lbl]) => (
-            <button key={k} onClick={() => setTab(k)} style={{
-              padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: 'none',
-              background: tab === k ? 'var(--card)' : 'transparent', color: tab === k ? 'var(--text)' : 'var(--muted)',
-            }}>{lbl}</button>
-          ))}
-        </div>
-      </div>
+    <Page>
+      <PageHeader title="Autonomous Maintenance (AM)" icon="🔧"
+        sub={<>
+          พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
+          {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
+        </>}
+        tabs={[{ key: 'status', label: '📊 สถานะวันนี้' }, { key: 'registry', label: '⚙️ ลงทะเบียนเครื่องตรวจ' }]}
+        tab={tab} onTab={setTab} />
 
       {tab === 'status' && (
         dashboard.length === 0 ? (
@@ -479,6 +469,6 @@ export default function DailyPM() {
           )}
         </div>
       )}
-    </div>
+    </Page>
   )
 }

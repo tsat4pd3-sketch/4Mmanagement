@@ -13,6 +13,8 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
 import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import LineSelect from './LineSelect';
 import ProductSelect from './ProductSelect';
@@ -242,21 +244,17 @@ export default function QualityBins() {
       </div>
 
       {/* ── แถบควบคุม ── */}
+      {/* UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar = แถบเดียว (เดิมแยก 2 ชั้น) */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-        <div><label style={lbl}>ไลน์</label>
-          <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter}
-            placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />
-        </div>
-        <div style={{ flex: '1 1 200px', minWidth: 160 }}><label style={lbl}>ค้นหา</label>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ชิ้นงาน / สาเหตุ / ผู้แจ้ง…" style={inp} />
-        </div>
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
+      >
+        <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
+        <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
+        <span className="spacer" />
         {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
         <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>🖨️ พิมพ์ใบ {B.short}</button>
-      </div>
+      </TimeRangeBar>
 
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
         {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
@@ -286,7 +284,7 @@ export default function QualityBins() {
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_no || r.mat_no || ''}</div>
                   {/* มาจากบันทึกงานเสียใน Daily Report — บอกที่มาไว้ กันคีย์ซ้ำ */}
                   {r.defect_log_id && (
-                    <div style={{ fontSize: 10.5, color: '#0ea5e9' }}
+                    <div style={{ fontSize: 11, color: '#0ea5e9' }}
                       title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
                       📋 จาก Daily Report
                     </div>
@@ -305,7 +303,7 @@ export default function QualityBins() {
                 {!isY && <td style={td}>{r.disposed_by || '—'}</td>}
                 {!isY && <td style={td}>
                   {r.disposed_position || '—'}
-                  {r.from_yellow_id && <div style={{ fontSize: 10.5, color: '#f5b942' }}>🟡 มาจากถังเหลือง</div>}
+                  {r.from_yellow_id && <div style={{ fontSize: 11, color: '#f5b942' }}>🟡 มาจากถังเหลือง</div>}
                 </td>}
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {canRecord && <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}

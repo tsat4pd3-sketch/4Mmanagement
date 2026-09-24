@@ -10,6 +10,9 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { todayLocal } from '../utils/dateFormat';
 import cachedMaster from '../utils/masterCache';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import useTabParam from '../utils/useTabParam';
 import FixtureClassify from '../components/FixtureClassify';
@@ -393,11 +396,11 @@ export default function FixtureRegistry() {
   const kindMeta = useCallback((c) => kinds.find(k => k.code === c) || { label: c || '—', icon: '•' }, [kinds]);
 
   return (
-    <div style={{ padding: '16px 20px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · วาดเฉพาะแถบแท็บย่อย `?fx=`
+    <Page>
+      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือแถบแท็บย่อย `?fx=`
           🔴 prop ชื่อ `tab` ไม่ใช่ `activeTab` — เดิมส่งผิดชื่อ ⇒ **แท็บไม่เคยไฮไลต์เลยสักอัน**
              (PageHeader ไม่มี `activeTab` มันเลยอ่าน `tab` ได้ undefined เงียบๆ · แก้ 22/09) */}
-      <PageHeader embedded
+      <PageHeader title="JIG / Fixture" icon="📐"
         tabs={TABS.map(t => ({ key: t.k, label: `${t.icon} ${t.label}` }))}
         tab={tab} onTab={setTab}
       />
@@ -412,10 +415,9 @@ export default function FixtureRegistry() {
       {/* เลือกฟิกเจอร์ — ใช้ร่วม 2 แท็บแรก */}
       {(tab === 'points' || tab === 'shim') && (
         <div style={{ ...card, marginBottom: 12, display: 'grid', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นฟิกเจอร์"
-                   style={{ ...inp, width: 200 }} />
-            <select value={fxId} onChange={e => setFxId(e.target.value)} style={{ ...inp, width: 340 }}>
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <SearchInput value={q} onChange={setQ} fields="ฟิกเจอร์" grow={false} />
+            <select value={fxId} onChange={e => setFxId(e.target.value)}>
               <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
               {shownFixtures.map(f => (
                 <option key={f.id} value={f.id}>
@@ -428,7 +430,7 @@ export default function FixtureRegistry() {
               📷 เฉพาะที่มีรูป ({withImgCount})
             </label>
             {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👥 เห็นเฉพาะส่วนงานของคุณ</span>}
-          </div>
+          </FilterBar>
 
           {fx && (
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
@@ -788,6 +790,6 @@ export default function FixtureRegistry() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

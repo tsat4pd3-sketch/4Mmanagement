@@ -3,6 +3,9 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { suggestFixtureCandidates } from '../utils/fixturePoints';
 import { jigEquipTypeOf, EQUIPMENT_KINDS } from '../utils/equipmentKinds';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import LineSelect from './LineSelect'; // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 
 /* ═══════════════════════════════════════════════════════════════
@@ -123,23 +126,21 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ"
-               style={{ width: 220, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
-                        background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+      {/* แถบกรองมาตรฐาน (UI-STANDARD 2026-09-24): ไลน์ → ค้นหา → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 0 }}>
         {/* <LineSelect> — โชว์เฉพาะไลน์ที่มีรายการเสนอ (§5.3 ข้อ 6) · ชื่อไลน์ของเครื่องที่ไม่อยู่ในทะเบียนไลน์แยก optgroup ⚠ ไม่หายเงียบ · 2026-09-07 */}
-        <LineSelect lines={lines.filter(l => lineOpts.includes(l.name))} value={lineF} onChange={setLineF} placeholder="ทุกไลน์" includeRetired
-                    extraGroups={[{ label: '⚠ ไลน์ที่ไม่มีในทะเบียนไลน์', options: lineOpts.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n })) }]}
-                    style={{ width: 190, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
-                             background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
-        <button onClick={pickAllShown} style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12.5,
+        <LineSelect lines={lines.filter(l => lineOpts.includes(l.name))} value={lineF} onChange={setLineF} placeholder={ALL.line} includeRetired
+                    extraGroups={[{ label: '⚠ ไลน์ที่ไม่มีในทะเบียนไลน์', options: lineOpts.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n })) }]} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ" />
+        <span className="spacer" />
+        {hiddenCount > 0 && (
+          <span className="filter-count">👁 ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
+        )}
+        <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 8, fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ติ๊ก/เอาออก ทั้งที่แสดง ({shown.length})
         </button>
-        {hiddenCount > 0 && (
-          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👁 ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
-        )}
-      </div>
+      </FilterBar>
 
       <div style={{ maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
+import { ALL } from '../utils/filterLabels';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import TimeRangeBar from './TimeRangeBar';
@@ -329,18 +330,17 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
 
   return (
     <div>
-      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่ */}
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่
+          ตัวเลือกไลน์เป็น children = แถบเดียว (UI-STANDARD 2026-09-24) */}
       <TimeRangeBar
         scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
+      >
+        {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ */}
+        <LineSelect lines={lines || []} value={selLine} onChange={setSelLine} placeholder={ALL.line} />
+      </TimeRangeBar>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🧠 วิเคราะห์ภาพรวมอัตโนมัติ</span>
-        {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ
-            width:'auto' กัน index.css select{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
-        <LineSelect lines={lines || []} value={selLine} onChange={setSelLine}
-          placeholder="— ทุกไลน์ที่มองเห็น —"
-          style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
         {meta?.loadErr && (
@@ -386,7 +386,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
             </div>
             {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
             {perHr == null && (
-              <div style={{ fontSize: 10.5, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
                 💰 ยังตีเป็นเงินไม่ได้ — {!selLine
                   ? 'เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)'
                   : `ไลน์ ${selLine} ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate`}
@@ -401,7 +401,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
                       <span style={{ fontWeight: 700, color: r.meta ? 'var(--text)' : 'var(--muted)' }}>
                         {r.meta ? `${r.meta.icon} ${r.meta.label}` : '❔ ยังไม่จัดหมวด'}
                       </span>
-                      {r.meta?.oee && <span style={{ fontSize: 10.5, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
+                      {r.meta?.oee && <span style={{ fontSize: 11, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
                       <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
                         {r.min.toLocaleString()} น. · {r.count} ครั้ง{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
                         {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} บาท</b>}
@@ -411,7 +411,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
                     <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                       <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.${perHr != null ? ` (${fmtB(baht(t.min))}฿)` : ''}`).join(' · ')}
                       {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
                       {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>💡 {r.meta.fix}</div> : null}

@@ -24,13 +24,12 @@ import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
 import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
+import Segmented from './Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 
-const inp = {
-  padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
-  background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
-};
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { padding: '8px 10px', textAlign: 'left', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' };
 const td = { padding: '7px 10px', fontSize: 12.5, borderTop: '1px solid var(--border)' };
@@ -178,13 +177,11 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       <TimeRangeBar
         scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      {/* ── ตัวกรอง ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์"
-               aria-label="ค้นหาอุปกรณ์" style={{ ...inp, width: 220 }} />
-      </div>
+      >
+        {/* ── ตัวกรอง — อยู่ในแถบเวลาแถบเดียว (UI-STANDARD 2026-09-24) ── */}
+        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+      </TimeRangeBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;
@@ -204,19 +201,10 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── สลับมุมมองการนับ — ไลน์เครื่องขนานเท่านั้นที่ตัวเลข 2 ชุดต่างกัน ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
-        {[
-          { key: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', tip: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { key: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', tip: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
-        ].map(m => {
-          const on = mode === m.key;
-          return (
-            <button key={m.key} onClick={() => setMode(m.key)} title={m.tip} style={{
-              padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? '#3b82f6' : 'var(--border2)'}`,
-              background: on ? 'rgba(59,130,246,0.12)' : 'var(--bg3)', color: on ? '#3b82f6' : 'var(--muted)',
-            }}>{m.label}</button>
-          );
-        })}
+        <Segmented value={mode} onChange={setMode} label="นับแบบ" options={[
+          { value: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { value: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+        ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
@@ -321,9 +309,9 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             <div key={k.kind} style={{ ...card, flex: 1, minWidth: 190 }}>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>{meta.icon} {meta.label} · {k.equip} ตัว</div>
               <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>{fmtDur(k.mttrMin)}</div></div>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: '#3b82f6' }}>{fmtDur(k.mtbfMin)}</div></div>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>หยุด</div><div style={{ fontSize: 16, fontWeight: 800 }}>{k.stops}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>{fmtDur(k.mttrMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: '#3b82f6' }}>{fmtDur(k.mtbfMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>หยุด</div><div style={{ fontSize: 16, fontWeight: 800 }}>{k.stops}</div></div>
               </div>
             </div>
           );
@@ -363,12 +351,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                       {r.machineName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.machineName}</div>}
                       {/* หลายสะกด = ต้นทางกรอกไม่นิ่ง — โชว์ให้ไปตามแก้ได้ */}
                       {r.rawNos.length > 1 && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }} title="เลขที่หน้างานพิมพ์มาแล้วระบบยุบเป็นเครื่องเดียวกัน">
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }} title="เลขที่หน้างานพิมพ์มาแล้วระบบยุบเป็นเครื่องเดียวกัน">
                           ✎ กรอกมา {r.rawNos.length} แบบ: {r.rawNos.join(' · ')}
                         </div>
                       )}
-                      {r.openStops > 0 && <div style={{ fontSize: 10.5, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
-                      {r.neverFailed && <div style={{ fontSize: 10.5, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
+                      {r.openStops > 0 && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
+                      {r.neverFailed && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
                     </td>
                     <td style={td}>
                       {meta
@@ -378,7 +366,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>
                       {r.lineName || '—'}
                       {r.parallelN > 1 && (
-                        <div style={{ fontSize: 10.5, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
+                        <div style={{ fontSize: 11, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
                           ⇄ ขนาน {r.parallelN} ตัว
                         </div>
                       )}
@@ -387,7 +375,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
                     <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}
                         title={r.phaseN > 0 ? `แยกช่วง (${r.phaseN} ครั้ง): รอช่าง ${fmtDur(r.mttaMin)} · ซ่อมจริง ${fmtDur(r.mttrPureMin)} · กลับมารัน ${fmtDur(r.restartMin)}` : 'ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง'}>
-                      {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
+                      {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
                     </td>
                     <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
                         title={v.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์ (หักเวลาพักแล้ว)'}>

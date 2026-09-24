@@ -40,7 +40,7 @@ import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
@@ -408,12 +408,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── "ทำไมหลุดเป้า" — Pareto เวลาเครื่องหยุดนอกแผน (สาเหตุอันดับต้น) ───────────────
   const paretoM = useMemo(() => {
+    const dtIdx = buildDtIndex(fDts);
     const g = {};
     fDts.forEach((d) => {
       if (d.dr_downtime_types?.category === 'planned') return;
       /* 🗑️ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" แตกตามเครื่องก่อนนับ (utils/downtimeCategory 23/09)
          — ยุบรวมไว้แท่งเดียว = แท่งใหญ่ที่บอกไม่ได้ว่าไปแก้ที่ไหน ผิดกฎความซื่อสัตย์ของจอ */
-      const name = dtBucketName(d);
+      const name = dtBucketName(d, dtIdx);
       g[name] = (g[name] || 0) + (Number(d.duration_min) || 0);
     });
     const rows = Object.entries(g).map(([name, min]) => ({ name, min: Math.round(min) }))
@@ -609,6 +610,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     : period === 'month' ? (monthSel ? `เดือน ${monthLabel(monthSel)} ${monthSel.slice(0, 4)} (เจาะจากปี)` : 'เดือนนี้')
       : 'สัปดาห์นี้';
   const shiftCount = isYear ? (kOee.shifts || 0) : fSess.length;
+  /* UI-STANDARD 2026-09-24: ป้ายปุ่มช่วงให้เป็นชุดเดียวกัน "…นี้" (PERIODS ใน obeyaKpi.js ใช้ key ตัดสิน ป้ายเป็นแค่ข้อความ) */
+  const PERIOD_LABEL = { week: 'สัปดาห์นี้', month: 'เดือนนี้', year: 'ปีนี้' };
   const yearNavBtn = {
     fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
@@ -644,7 +647,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   background: period === p.key ? 'var(--accent)' : 'var(--bg3)',
                   color: period === p.key ? '#08120a' : 'var(--text)',
                   border: `1px solid ${period === p.key ? 'var(--accent)' : 'var(--border2)'}`,
-                }}>{p.label}</button>
+                }}>{PERIOD_LABEL[p.key] || p.label}</button>
               ))}
               {canRecord && (
                 <button onClick={() => openModal()} style={{

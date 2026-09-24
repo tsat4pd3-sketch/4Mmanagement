@@ -13,6 +13,7 @@ import CostCenterSelect from '../components/CostCenterSelect';
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
@@ -264,10 +265,8 @@ export default function OrgSetup() {
   });
 
   return (
-    <div className="page-content">
-      <div style={{ marginBottom: 20 }}>
-        <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
-      </div>
+    <Page>
+      <PageHeader title="แผนผังองค์กร" icon="🏢" sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)" />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
@@ -514,7 +513,7 @@ export default function OrgSetup() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -545,7 +544,7 @@ function DivBadge({ node, nodes }) {
   return (
     <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
       style={{
-        marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 999,
+        marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 999,
         border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
         color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
       }}>

@@ -354,6 +354,82 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 }
 @media (max-width: 768px)  { .page-content { padding: 14px; } }
 
+/* ══ 📐 มาตรฐานกรอบหน้า + แถบกรอง (2026-09-24 · docs/UI-STANDARD.md) ═══════════════════════
+   กรอบหน้า = `.page-content` (ผ่าน <Page>) ที่เดียว · ช่องกรอง = token --ctl-* ที่เดียว
+   ⚠️ ห้ามตั้ง padding/maxWidth ที่รากของหน้าเอง และห้ามใส่ขนาด inline ที่ช่องในแถบกรอง */
+:root {
+  --ctl-h: 34px;          /* ความสูงช่องกรอง/ปุ่มในแถบ — Carbon "small field" 32 + ขอบ 1px × 2 */
+  --ctl-fs: 13px;
+  --ctl-r: var(--r-md);   /* 8px — ค่ากลางที่ใช้มากที่สุดในระบบ */
+  --ctl-pad-x: 10px;
+}
+/* form/narrow ชิดซ้ายตำแหน่งเดียวกับหน้าอื่น (ไม่จัดกลาง) — ชื่อหน้าต้องเริ่มที่ x เดียวกันทุกหน้า (stdsweep) */
+.page-content.page-form   { max-width: 960px; margin-left: 0; }
+.page-content.page-narrow { max-width: 640px; margin-left: 0; }
+.page-content.page-full   { max-width: none; }
+/* หน้าที่ถูกฝังเป็นแท็บใน hub: ชั้นในไม่เพิ่มขอบซ้ำ (specificity 2 class ชนะ media query ข้างบน) */
+.page-content .page-content { padding: 0; max-width: none; margin: 0; }
+
+.filter-bar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 10px 12px; margin-bottom: 12px; min-width: 0;
+}
+.filter-bar.bare { background: none; border: 0; padding: 0; }
+/* TimeRangeBar = filter-bar หลายแถว — ตัวกรองของหน้าส่งเข้าเป็น children (แถวแรก) */
+.filter-bar.trb { flex-direction: column; align-items: stretch; }
+.trb-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; min-width: 0; }
+.trb-row > * { min-width: 0; }
+.filter-bar > * { min-width: 0; }
+.filter-bar :is(select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),
+.search-input input {
+  width: auto; height: var(--ctl-h); font-size: var(--ctl-fs);
+  padding: 0 var(--ctl-pad-x); border-radius: var(--ctl-r); max-width: 100%;
+}
+.filter-bar select { max-width: 280px; }
+.filter-bar input[type=date] { width: 150px; }
+.filter-bar input[type=month] { width: 160px; }
+.filter-bar .grow { flex: 1 1 220px; }
+.filter-bar .spacer { margin-left: auto; }
+.filter-bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 2px; }
+.filter-label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.filter-count { font-size: 12px; color: var(--muted); white-space: nowrap; }
+/* ปุ่มในแถบกรองสูงเท่าช่อง (ไม่แตะสี — ปุ่มแต่ละชนิดยังคุมสีเอง) */
+.filter-bar > button, .filter-bar .ctl-btn { min-height: var(--ctl-h); }
+
+/* 🔘 Segmented — ตัวเลือก 2–5 ตัวที่เท่ากัน ("ทั้งหมด" ซ้ายสุด) */
+.seg {
+  display: inline-flex; align-items: stretch; height: var(--ctl-h); flex-shrink: 0;
+  border: 1px solid var(--border2); border-radius: var(--ctl-r); overflow: hidden; background: var(--bg3);
+}
+.seg > button {
+  border: 0; border-right: 1px solid var(--border2); border-radius: 0; background: transparent;
+  color: var(--text2); font-size: var(--ctl-fs); font-weight: 700; padding: 0 12px; cursor: pointer; white-space: nowrap;
+}
+.seg > button:last-child { border-right: 0; }
+.seg > button.on { background: var(--accent); color: var(--accent-ink); }
+.seg > button:disabled { opacity: .45; cursor: not-allowed; }
+.seg.seg-sm { height: 28px; }
+.seg.seg-sm > button { font-size: 12px; padding: 0 9px; }
+
+/* 🔍 SearchInput — ไอคอนในกรอบ + ปุ่มล้าง */
+.search-input { position: relative; display: inline-flex; align-items: center; min-width: 180px; }
+.search-input.grow { flex: 1 1 220px; }
+.search-input input { width: 100%; padding-left: 30px; padding-right: 28px; }
+.search-input input::-webkit-search-cancel-button { display: none; }
+.search-input .search-ico { position: absolute; left: 9px; font-size: 13px; opacity: .7; pointer-events: none; }
+.search-input .search-clear {
+  position: absolute; right: 4px; width: 24px; height: 24px; border: 0; background: none;
+  color: var(--muted); cursor: pointer; font-size: 13px; padding: 0;
+}
+
+@media (max-width: 768px) {
+  /* iOS ซูมเมื่อฟอนต์ช่องกรอก < 16px (กฎเดิมของธีม) — class ข้างบน specificity สูงกว่า ต้องย้ำ */
+  .filter-bar :is(select, input), .search-input input { font-size: 16px; }
+  .filter-bar select { max-width: 100%; }
+  .filter-bar { padding: 8px 10px; }
+}
+
 /* ─── Overlay / Modal ────────────────────────────────────────────────────── */
 /* ⚠️ กฎเหล็ก (2026-08-04) — modal ต้องเลื่อนได้เสมอเมื่อเนื้อหาสูงกว่าจอ
    บั๊กเดิม: `position:fixed; align-items:center` + ไม่มี overflow → เนื้อหาสูงกว่าจอจะ

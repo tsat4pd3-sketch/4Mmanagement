@@ -52,6 +52,18 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
+
+/* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
+const STATUS_SEG = [
+  { value: 'all', label: ALL.status },
+  { value: 'active', label: 'ค้างดำเนินการ' },
+  { value: 'closed', label: 'ปิดแล้ว' },
+];
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -464,18 +476,19 @@ function QualityDashboard() {
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
       >
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginLeft: 6 }}>ไลน์:</span>
-        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 150 }}>
-          <option value="">ทุกไลน์ ({lineOptions.length})</option>
+        {/* UI-STANDARD 2026-09-24: ป้าย "ทุก…" ไม่มีวงเล็บจำนวน · ไม่ใส่ขนาด inline ในแถบกรอง
+            (ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ ไม่ใช่ทะเบียน production_lines ⇒ ยังเป็น select ธรรมดา) */}
+        <span className="filter-label">ไลน์</span>
+        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)}>
+          <option value="">{ALL.line}</option>
           {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ชิ้นงาน:</span>
-        <SearchSelect value={productFilter || ''} placeholder={`ทุกชิ้นงาน (${productOptions.length}) — พิมพ์ค้นหา`} style={{ minWidth: 200, maxWidth: 320 }}
-          inputStyle={inputSt}
+        <span className="filter-label">ชิ้นงาน</span>
+        <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
           onChange={({ id }) => setProductFilter(id)} />
         {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
-        {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+        {loading && <span className="filter-count">กำลังโหลด…</span>}
       </TimeRangeBar>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -988,14 +1001,12 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ค้างดำเนินการ'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
@@ -1274,19 +1285,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ค้างดำเนินการ'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
           id: null, capa_no: '', ncr_id: null, title: '', owner_name: fullName || '', due_date: '',
           part_no: '', line_name: '',
           d1_team: '', d2_problem: '', d3_containment: '', d4_root_cause: '', d5_corrective: '',
           d6_implement: '', d7_prevent: '', d8_closure: '', effectiveness: '', status: 'open',
         })}>🛠 เปิด CAPA ใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
@@ -1556,11 +1565,11 @@ function InstrumentTab({ lineObjs, canManage }) {
         <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
         <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input style={{ ...inputSt, maxWidth: 280 }} placeholder="🔍 ค้นหา รหัส/ชื่อ/ตำแหน่ง…" value={search} onChange={e => setSearch(e.target.value)} />
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
+        <span className="spacer" />
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
@@ -1701,7 +1710,7 @@ export default function QualityControl() {
   }, [setTab]);
 
   return (
-    <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Quality Control Center" icon="🔍"
         sub="ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949"
@@ -1717,6 +1726,6 @@ export default function QualityControl() {
       {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lineObjs} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
-    </div>
+    </Page>
   );
 }

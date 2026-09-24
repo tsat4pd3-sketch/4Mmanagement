@@ -4,6 +4,7 @@ import MachineReliability from './MachineReliability';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { techRepairMin } from '../utils/mtnVendor';
 import TimeRangeBar from './TimeRangeBar';
+import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 
@@ -24,7 +25,6 @@ import { rangeDays } from '../utils/timeRange';
 
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
 const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
-const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 
 /* ความพึงพอใจ 5 ด้าน × 3 ระดับ — **คีย์ต้องตรงกับ SAT_DIMS ใน MtnRepair.jsx เป๊ะ**
    (ค่าที่เก็บใน `mtn_orders.satisfaction` เป็น jsonb คีย์ชุดนี้ · เปลี่ยนคีย์ = ใบเก่าอ่านไม่ออก) */
@@ -84,7 +84,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>
-      {h && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}
+      {h && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}
     </div>
   );
 
@@ -94,11 +94,10 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
       <TimeRangeBar
         scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {/* <LineSelect> — lineObjs ถูก scope จากหน้าแม่แล้ว · 2026-09-07 */}
-        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-      </div>
+      >
+        {/* <LineSelect> — lineObjs ถูก scope จากหน้าแม่แล้ว · 2026-09-07 · อยู่ในแถบเวลาแถบเดียว (UI-STANDARD 2026-09-24) */}
+        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+      </TimeRangeBar>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.7 }}>
         📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
         · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก

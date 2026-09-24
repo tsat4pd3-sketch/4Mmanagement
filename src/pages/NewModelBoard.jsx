@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import useIsMobile from '../utils/useIsMobile';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
@@ -718,8 +719,16 @@ export default function NewModelBoard() {
   }
 
   return (
-    <div style={{ padding: 14, maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader title="บอร์ด New Model (IEC)" icon="🧭" sub={sub} />
+    <Page>
+      {/* UI-STANDARD 2026-09-24: กรอบ <Page> + ปุ่มโหมดจอ TV ย้ายเข้า actions ของหัวเพจ (โหมด ?tv=1 ยังเต็มจอเหมือนเดิม) */}
+      <PageHeader title="บอร์ด New Model (IEC)" icon="🧭" sub={sub}
+        actions={proj && !panel ? (
+          <button onClick={() => { setTvIndex(Math.max(0, data.projects.findIndex(p => p.id === proj.id))); go({ cust: cust.code, proj: proj.id, tv: '1' }); }}
+            style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
+              borderRadius: 8, padding: '7px 13px', cursor: 'pointer', fontSize: 12.5 }}>
+            📺 เปิดโหมดจอ TV (70 นิ้ว)
+          </button>
+        ) : null} />
       <Trail items={trail} />
 
       <div style={{ ...CARD, borderLeft: '3px solid var(--accent2)', marginBottom: 12, fontSize: 12, lineHeight: 1.55 }}>
@@ -728,20 +737,10 @@ export default function NewModelBoard() {
         รายละเอียดการออกแบบอยู่ใน <code>docs/IEC-NEW-MODEL-OBEYA-DESIGN.md</code>
       </div>
 
-      {proj && !panel && (
-        <div style={{ marginBottom: 10 }}>
-          <button onClick={() => { setTvIndex(Math.max(0, data.projects.findIndex(p => p.id === proj.id))); go({ cust: cust.code, proj: proj.id, tv: '1' }); }}
-            style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
-              borderRadius: 8, padding: '7px 13px', cursor: 'pointer', fontSize: 12.5 }}>
-            📺 เปิดโหมดจอ TV (70 นิ้ว)
-          </button>
-        </div>
-      )}
-
       {panel ? <LevelPanel proj={proj} panel={panel} />
         : proj ? <LevelProject proj={proj} go={go} />
         : cust ? <LevelCustomer cust={cust} go={go} />
         : <LevelOverview data={data} go={go} />}
-    </div>
+    </Page>
   );
 }

@@ -20,6 +20,9 @@ import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils
 import { checkWrite } from '../utils/dbWrite';
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
+import Page from '../components/Page'
+import PageHeader from '../components/PageHeader'
+import SearchInput from '../components/SearchInput'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -621,7 +624,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                   {r.evidence_path && (
                     <a href={getPublicUrl(r.evidence_path)} target="_blank" rel="noreferrer" title="รูปหลักฐาน (สภาพจริงตอนพบผิดปกติ)" style={{ display: 'inline-block', marginTop: 6 }}>
                       <img src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
-                      <span style={{ fontSize: 10.5, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
+                      <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
                     </a>
                   )}
                 </div>
@@ -1110,14 +1113,14 @@ export default function PMCheckData() {
   const showMain = !isNarrow || !!selectedJig
 
   return (
+    <Page width="full">
+    {/* UI-STANDARD 2026-09-24 — หัวเพจมาตรฐาน (ใน PmHub ชื่อถูกซ่อน เหลือหัวของ hub ชั้นเดียว) */}
+    <PageHeader title="บันทึกผลตรวจ PM" icon="✅" />
     <div style={S.page}>
       {/* Sidebar (จอแคบ = เต็มความกว้าง) */}
       {showSidebar && (
       <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none', position: 'static', height: 'auto' } : null) }}>
-        <div style={S.sidebarHead}>
-          <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', margin: 0, fontFamily: 'var(--font-display)' }}>บันทึกผลตรวจ PM</h2>
-        </div>
-        <div style={S.deptBar}>
+        <div style={{ ...S.deptBar, paddingTop: 12 }}>
           {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
         </div>
         {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) เป็นคนละงาน — บอกให้ชัดว่าแท็บที่เลือกอยู่คืออะไร */}
@@ -1125,9 +1128,8 @@ export default function PMCheckData() {
           <b style={{ color: deptColor }}>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
         </div>
         <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input value={jigQuery} onChange={e => setJigQuery(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์" aria-label="ค้นหาเครื่อง"
-            style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: 12.5, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }} />
-          {jigQuery && <button onClick={() => setJigQuery('')} title="ล้างคำค้น" style={{ flexShrink: 0, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+          <SearchInput value={jigQuery} onChange={setJigQuery} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาเครื่อง"
+            style={{ flex: 1, minWidth: 0 }} />
         </div>
         {qWords.length > 0 && department !== 'production' && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
@@ -1199,7 +1201,7 @@ export default function PMCheckData() {
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
                         {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
                         {!clDeptByJig[jig.id]?.has('production') && (
-                          <p style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
+                          <p style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
                         )}
                       </div>
                     )
@@ -1646,5 +1648,6 @@ export default function PMCheckData() {
         </div>
       )}
     </div>
+    </Page>
   )
 }

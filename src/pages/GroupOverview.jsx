@@ -9,6 +9,10 @@ import WorldFactoryMap from '../components/WorldFactoryMap';
 import ThailandZoneMap from '../components/ThailandZoneMap';
 import { LINE_TYPES } from '../utils/lineTypes';
 import { rnd, jit } from '../utils/seededRandom';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import { ALL } from '../utils/filterLabels';
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
    โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
@@ -387,10 +391,10 @@ export default function GroupOverview() {
               <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.code || it.name}</span>
               {/* ป้ายจริง/จำลอง ใช้กับ "บริษัท" เท่านั้น — โซน/กลุ่มธุรกิจเป็นก้อนรวม (มีทั้งของจริงและจำลอง) */}
               {it.companies
-                ? <span style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
+                ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
                 : it.real
-                  ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                  : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+                  ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
+                  : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
             </button>
             <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
@@ -417,31 +421,32 @@ export default function GroupOverview() {
   );
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 2200px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <Page width="full" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* ── หัวหน้า + ตัวเลือกวัน (paddingRight กัน 🔔 ทับ) ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', paddingRight: 52 }}>
-        <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            🏢 {ORG.code} — ภาพรวมกลุ่มบริษัท
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 999, padding: '2px 10px' }}>
-              🧪 MOCKUP · ตัวอย่างหน้าจอ
-            </span>
-          </h2>
+      {/* ── หัวหน้า + ตัวเลือกวัน — UI-STANDARD 2026-09-24: ใช้ PageHeader (เดิมวาด h2 + แถวปุ่มเอง) ── */}
+      <PageHeader
+        icon="🏢"
+        title={<>
+          {ORG.code} — ภาพรวมกลุ่มบริษัท
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 999, padding: '2px 10px' }}>
+            🧪 MOCKUP · ตัวอย่างหน้าจอ
+          </span>
+        </>}
+        sub={<>
           {/* breadcrumb: TSG › กลุ่มธุรกิจ › บริษัท */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', marginTop: 3 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             {crumbBtn(`🏢 ${ORG.code}`, () => setSel(s => ({ axis: s.axis, node: null, comp: null })), !bizNode)}
             {bizNode && <><span style={{ color: 'var(--muted)' }}>›</span>
               {crumbBtn(`${bizNode.icon} ${bizNode.name}`, () => setSel(s => ({ ...s, comp: null })), !compNode)}</>}
             {compNode && <><span style={{ color: 'var(--muted)' }}>›</span>
               {crumbBtn(`${compNode.flag} ${compNode.code}`, () => { }, true)}</>}
-          </div>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>
+          </span>
+          <span style={{ display: 'block', marginTop: 3 }}>
             {fmtThaiDate(usedDate || date)}
             {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          </span>
+        </>}
+        actions={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
           <div style={{ display: 'flex', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
             {[{ k: 'map', t: '🗺️ ตามพื้นที่' }, { k: 'biz', t: '🗂️ ตามกลุ่มธุรกิจ' }].map(o => (
@@ -452,13 +457,14 @@ export default function GroupOverview() {
               }}>{o.t}</button>
             ))}
           </div>
-          <button className="tbtn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
-          <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)}
-            style={{ width: 148, padding: '7px 9px', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, color: 'var(--text)' }} />
-          <button className="tbtn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
-          <button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>
-        </div>
-      </div>
+          <FilterBar bare>
+            <button className="tbtn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
+            <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
+            <button className="tbtn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
+            <button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>
+          </FilterBar>
+        </>}
+      />
 
       {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
       <div style={{ ...card, borderStyle: 'dashed', borderColor: '#f59e0b', background: 'rgba(245,158,11,0.07)', fontSize: 13, lineHeight: 1.7 }}>
@@ -473,8 +479,8 @@ export default function GroupOverview() {
       {!loading && !!baseLines.length && (
         <div style={{ ...card, padding: '10px 13px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-            <span style={{ fontSize: 12.5, color: 'var(--muted)', fontWeight: 700 }}>🏭 ประเภทไลน์:</span>
-            {[{ value: null, label: 'ทุกประเภท' }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => {
+            <span className="filter-label" style={{ fontWeight: 700 }}>🏭 ประเภทไลน์:</span>
+            {[{ value: null, label: ALL.type }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => {
               const on = ltFilter === t.value;
               return (
                 <button key={t.value || 'all'} onClick={() => setLtFilter(t.value)} style={{
@@ -692,8 +698,8 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       {c.real
-                        ? <span style={{ fontSize: 10, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
-                        : <span style={{ fontSize: 10, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
+                        ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
+                        : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
                     </div>
 
                     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '10px 0 8px' }}>
@@ -810,7 +816,7 @@ export default function GroupOverview() {
                             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                             color: 'var(--accent)', fontSize: 13, fontWeight: 700,
                           }}>{l.comp?.flag} {l.comp?.code}</button>
-                          {!l.comp?.real && <span style={{ fontSize: 10, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
+                          {!l.comp?.real && <span style={{ fontSize: 11, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
                         </td>
                       )}
                       <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
@@ -935,7 +941,7 @@ export default function GroupOverview() {
           </div>
         )}
       </div>
-    </div>
+    </Page>
   );
 }
 
@@ -960,7 +966,7 @@ function Kpi({ label, value, sub, color }) {
 function Mini({ label, value, color }) {
   return (
     <div style={{ background: 'var(--bg3)', borderRadius: 6, padding: '5px 7px' }}>
-      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   );
