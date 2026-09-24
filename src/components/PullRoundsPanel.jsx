@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
+import { ALL } from '../utils/filterLabels';
 
 const PATTERNS = [
   { key: 'normal',   label: 'ปกติ' },
@@ -132,8 +133,8 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 800 }}>🚚 ตารางรอบรับของลูกค้า (milk-run)</div>
         {shipTos.length > 1 && (
-          <select value={filterShipTo} onChange={e => setFilterShipTo(e.target.value)} style={{ ...inp, width: 150 }}>
-            <option value="">ทุกลูกค้า</option>
+          <select value={filterShipTo} onChange={e => setFilterShipTo(e.target.value)} style={{ ...inp, width: 'auto', maxWidth: 220 }}>
+            <option value="">{ALL.customer}</option>
             {shipTos.map(c => <option key={c} value={c}>{shipToMap?.[c]?.customer_name || c}</option>)}
           </select>
         )}

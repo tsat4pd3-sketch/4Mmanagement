@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
+import { allOf } from '../utils/filterLabels';
 import InfoMore from '../components/InfoMore';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
@@ -238,7 +241,7 @@ export default function SchemaMap() {
   };
 
   return (
-    <div style={{ padding: isMobile ? '12px 12px 40px' : '18px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="โครงสร้างฐานข้อมูล" icon="🗄️"
         sub={loading ? 'กำลังอ่านโครงสร้างจากฐานข้อมูล…'
@@ -282,10 +285,9 @@ export default function SchemaMap() {
           {/* ── ลิสต์ตาราง ─────────────────────────────────────────────── */}
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นชื่อตาราง (เช่น downtime, employee)"
-                style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+              <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[{ k: 'all', label: `ทั้งหมด (${rows.length})` },
+                {[{ k: 'all', label: allOf('ฐานข้อมูล') },
                   ...PKEYS.map(k => ({ k, label: `${PROJ[k].label} (${over[k]?.tables?.length || 0})` }))].map(o => (
                   <button key={o.k} onClick={() => setSide(o.k)} style={chip(side === o.k)}>{o.label}</button>
                 ))}
@@ -381,7 +383,7 @@ export default function SchemaMap() {
           catalog={catalog} ghosts={usageIndex.ghosts} onPick={pick}
         />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -590,8 +592,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ ...card(), display: 'grid', gap: 8 }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นชื่อหน้า / path / ชื่อตาราง"
-          style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+        <SearchInput value={q} onChange={setQ} fields="ชื่อหน้า / path / ชื่อตาราง" />
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           แสดง {pages.length} หน้า จากทั้งหมด {(USAGE.pages || []).length} ·
           สแกนซอร์สเมื่อ {new Date(USAGE.builtAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} (ตอน build)

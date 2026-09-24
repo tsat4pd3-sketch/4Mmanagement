@@ -6,6 +6,10 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
 import ProductSelect from '../components/ProductSelect';
@@ -526,11 +530,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* แถวควบคุม — บรรทัดเดียว: เลือกวัน + สรุปยอด */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* แถวควบคุม — บรรทัดเดียว: เลือกวัน + สรุปยอด (UI-STANDARD 2026-09-24 → <FilterBar> ช่องสูงเท่ากัน) */}
+      <FilterBar style={{ marginBottom: 0 }}>
         <button onClick={() => shiftDay(-1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>◀</button>
-        <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)}
-          style={{ ...inputSt, width: 140, flexShrink: 0 }} />
+        <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)} />
         <button onClick={() => shiftDay(1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>▶</button>
         {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>วันนี้</button>}
         <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
@@ -566,7 +569,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
             ➕ เพิ่ม order ด่วน
           </button>
         )}
-      </div>
+      </FilterBar>
 
       {/* อัพโหลดไฟล์ยืนยัน order จากลูกค้า — lazy chunk (โหลดตัวอ่าน xlsx เฉพาะตอนเปิด) */}
       {showPull && (
@@ -860,18 +863,23 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           })()}
 
           {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ — กรองให้เห็นเฉพาะที่ต้องทำก่อน */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {[
-              { id: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => o.status !== 'shipped').length})` },
-              { id: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
-              { id: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
-              { id: 'all',     label: `ทั้งหมด (${orders.length})` },
-            ].map(f => <button key={f.id} onClick={() => setCardFilter(f.id)} style={btn(cardFilter === f.id)}>{f.label}</button>)}
-            <span style={{ width: 1, height: 20, background: 'var(--border)' }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>เรียง:</span>
-            <button onClick={() => setSortMode('urgent')} style={btn(sortMode === 'urgent')} title="ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน">⚡ ใกล้ดิวก่อน</button>
-            <button onClick={() => setSortMode('time')} style={btn(sortMode === 'time')}>🕐 ตามเวลาส่ง</button>
-          </div>
+          {/* UI-STANDARD 2026-09-24 — ตัวเลือกเท่ากัน ≤5 = Segmented · "ทุกสถานะ" ซ้ายสุด ไม่มีวงเล็บจำนวน */}
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <Segmented value={cardFilter} onChange={setCardFilter} label="สถานะรอบส่ง" options={[
+              { value: 'all',     label: ALL.status },
+              { value: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => o.status !== 'shipped').length})` },
+              { value: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
+              { value: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
+            ]} />
+            <span className="sep" />
+            <span className="filter-label">เรียง:</span>
+            <Segmented value={sortMode} onChange={setSortMode} label="เรียงลำดับ" options={[
+              { value: 'urgent', label: '⚡ ใกล้ดิวก่อน', title: 'ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน' },
+              { value: 'time',   label: '🕐 ตามเวลาส่ง' },
+            ]} />
+            <span className="spacer" />
+            <span className="filter-count">{orders.length} รอบส่ง</span>
+          </FilterBar>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(260px, 100%), 1fr))', gap: 12 }}>
             {cardsSorted.filter(o =>
               cardFilter === 'all' ? true
@@ -1099,7 +1107,7 @@ function WorkflowSection({ canEdit }) {
                       หักที่เฟสนี้
                     </label>
                   ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? '📦 หักที่เฟสนี้' : '—'}</span>}
-                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#0ea5e9' }}>← จุดหักจริง</span>}
+                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#0ea5e9' }}>← จุดหักจริง</span>}
                 </td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.id] && (
@@ -1282,7 +1290,7 @@ export default function CustomerDemand() {
   }, [shipToMap]);
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Delivery — ติดตามการส่งงานลูกค้า" icon="🚚"
         sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
@@ -1302,7 +1310,7 @@ export default function CustomerDemand() {
         </Suspense>
       )}
       {tab === 'shipto' && <ShipToTab canEdit={canConfig} fullName={fullName} onChanged={() => { setRefreshKey(k => k + 1); loadShipTo(); }} />}
-    </div>
+    </Page>
   );
 }
 
@@ -1333,11 +1341,11 @@ function CustomerPicker({ value, code, opts, free, setFree, onChange, edSt }) {
       )}
       {/* บอกผลการจับคู่ทันที — "SOUTH ARFIGA" ต้องเห็นว่าไม่ตรงกับใครตั้งแต่ยังไม่กดบันทึก */}
       {unset ? (
-        <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>
       ) : hit ? (
-        <div style={{ fontSize: 10, color: '#22c55e', marginTop: 2 }}>✓ ตรงกับ {hit.n} สินค้าใน Product Master</div>
+        <div style={{ fontSize: 11, color: '#22c55e', marginTop: 2 }}>✓ ตรงกับ {hit.n} สินค้าใน Product Master</div>
       ) : (
-        <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ ไม่มีสินค้าไหนใช้ชื่อลูกค้านี้ — แยกออเดอร์ไม่ได้ (ตรวจตัวสะกด หรือไปตั้งช่อง "ลูกค้า" ที่ Product Master)</div>
+        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>⚠ ไม่มีสินค้าไหนใช้ชื่อลูกค้านี้ — แยกออเดอร์ไม่ได้ (ตรวจตัวสะกด หรือไปตั้งช่อง "ลูกค้า" ที่ Product Master)</div>
       )}
     </div>
   );

@@ -12,6 +12,9 @@ import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { LINE_COLUMNS } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
 const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
@@ -138,29 +141,25 @@ export default function PokaYokeCheck() {
   const failN = activeDevs.filter(d => checks[d.id]?.result === 'fail').length;
 
   return (
-    <div className="page-content" style={{ maxWidth: 'min(98vw, 1400px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 12 }}>
-        <PageHeader title="Poka-Yoke Check" icon="🛡️" />
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--muted)' }}>ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · {SHIFT_LABEL[selShift]} · {selDate}</p>
-      </div>
+    <Page>
+      <PageHeader title="Poka-Yoke Check" icon="🛡️"
+        sub={`ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]} · ${selDate}`} />
 
-      {/* ตัวเลือก */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-        <div><div style={lb}>ไลน์ / พื้นที่</div>
-          {/* <LineSelect> — visibleLines กรอง scope แล้ว (ไม่มี option ว่าง เหมือนเดิม) · 2026-09-07 */}
-          <LineSelect lines={visibleLines} value={selLine} onChange={setSelLine} placeholder={null} style={{ minWidth: 200 }} />
-        </div>
-        <div><div style={lb}>กะ</div>
-          <select value={selShift} onChange={e => setSelShift(e.target.value)} style={{ width: 160 }}>
-            <option value="day">กะเช้า (Shift 01)</option><option value="night">กะดึก (Shift 02)</option>
-          </select>
-        </div>
-        <div><div style={lb}>วันที่</div><input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} style={{ width: 150 }} /></div>
-        <div style={{ flex: '1 1 180px' /* basis 180: จอแคบตกบรรทัดใหม่ ไม่ถูกบีบเหลือ 28px (2026-09-07) */ }}><div style={lb}>ผู้ตรวจ</div>
-          {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
-          <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} /></div>
+      {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <span className="filter-label">ไลน์ / พื้นที่</span>
+        {/* <LineSelect> — visibleLines กรอง scope แล้ว (ไม่มี option ว่าง เหมือนเดิม) · 2026-09-07 */}
+        <LineSelect lines={visibleLines} value={selLine} onChange={setSelLine} placeholder={null} />
+        <Segmented value={selShift} onChange={setSelShift} label="กะ"
+          options={[{ value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />
+        <span className="filter-label">วันที่</span>
+        <input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} />
+        <span className="filter-label">ผู้ตรวจ</span>
+        {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
+        <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ flex: '1 1 180px', maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} />
+        <span className="spacer" />
         {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
-      </div>
+      </FilterBar>
 
       {/* สรุป */}
       {activeDevs.length > 0 && (
@@ -252,7 +251,7 @@ export default function PokaYokeCheck() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

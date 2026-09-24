@@ -17,6 +17,8 @@ import { fileNameStamp } from '../utils/pullSignal';
 import CollapseCard from './CollapseCard';
 import { INTAKE_KINDS, mergeIntakeLog, intakeSummary, filterIntake } from '../utils/orderIntakeLog';
 import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 
 const card = {
@@ -139,27 +141,26 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* ช่วงวัน + ลูกค้า + ค้นหา = แถบเดียว (UI-STANDARD 2026-09-24) · ปุ่มโหลดใหม่ = 🔄 ของแถบ */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-      />
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} onReload={load} loading={loading}
+      >
+        <select value={shipTo} onChange={e => setShipTo(e.target.value)}>
+          <option value="">{ALL.customer}</option>
+          {Object.keys(shipToMap || {}).sort().map(c => (
+            <option key={c} value={c}>{custLabel ? custLabel(c) : c}</option>
+          ))}
+        </select>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อไฟล์ / MAT / คนทำ" />
+      </TimeRangeBar>
       <div style={card}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={{ ...inputSt, width: 190 }}>
-            <option value="">— ทุกลูกค้า —</option>
-            {Object.keys(shipToMap || {}).sort().map(c => (
-              <option key={c} value={c}>{custLabel ? custLabel(c) : c}</option>
-            ))}
-          </select>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นชื่อไฟล์ / MAT / คนทำ"
-            style={{ ...inputSt, width: 230, flex: '1 1 200px', minWidth: 0 }} />
-          <button onClick={load} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700, width: 'auto' }}>↻ โหลดใหม่</button>
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-          <button onClick={() => setKind('all')} style={chip(kind === 'all', 'var(--accent)')}>ทั้งหมด ({sum.total})</button>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button onClick={() => setKind('all')} style={chip(kind === 'all', 'var(--accent)')}>{ALL.type}</button>
           {Object.entries(INTAKE_KINDS).map(([k, m]) => (
             <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{m.label} ({sum[k] || 0})</button>
           ))}
+          <span className="filter-count">รวม {sum.total} รายการ</span>
         </div>
         {sum.esmart > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>
@@ -316,7 +317,7 @@ function PullBatchDetail({ batchId }) {
           {rows.map((r, i) => (
             <tr key={i}>
               <td style={{ ...td, fontWeight: 700 }}>{r.customer_part_no}
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.part_name || ''}</div></td>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name || ''}</div></td>
               <td style={{ ...td, fontFamily: 'monospace', color: r.mat_no ? '#0ea5e9' : 'var(--muted)' }}>{r.mat_no || '—'}</td>
               <td style={td}>{whenLabel(r.pulled_at)}</td>
               <td style={tdR}>{fmt(r.containers)}</td>

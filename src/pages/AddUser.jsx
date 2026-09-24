@@ -11,10 +11,15 @@ import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
-  orgNodeIdFor, ORG_SRC_MANUAL } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย + cascade (ของกลางเดียวกับหน้าลงทะเบียนพนักงาน)
+  orgNodeIdFor, ORG_SRC_MANUAL } from '../utils/sectionScope';
+import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
 // admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
@@ -36,7 +41,7 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
 ));
 // sections = ขอบเขตส่วนงาน (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
 // profiles.section (เดี่ยว) ยังถูกเขียนเป็นตัวแรกของ sections เสมอ เพื่อให้ rollback โค้ดกลับเวอร์ชันเก่าได้โดย supervisor ไม่หลุด scope
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '',
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -133,7 +138,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind');
+      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src');
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const authMap = {};
@@ -270,6 +275,18 @@ export default function AddUser() {
     if (error) setError('บันทึกบัญชีแล้ว แต่ยังผูกกับพนักงานไม่ได้: ' + error.message);
   };
 
+  /* 🔭 ความกว้างของขอบเขต — เขียนตามหลังตอน "สร้างบัญชีใหม่"
+     (edge function create-user ยังไม่รู้จักคอลัมน์นี้ ⇒ แถวใหม่จะได้ default `unit` ของคอลัมน์ไปก่อน
+      ซึ่ง**แคบ** = ปลอดภัยตาม deny-by-default · แล้วค่อยอัพเป็นค่าที่ admin เลือก)
+     ⚠️ ห้ามเงียบเมื่อล้ม — บอกว่าสร้างสำเร็จทั้งที่ขอบเขตไม่ได้ตั้ง = คนเข้าใจผิดว่าคุมแล้ว */
+  const saveScopeDepth = async (id) => {
+    if (!id) return;
+    const { error } = await supabase.from('profiles')
+      .update({ scope_depth: form.scopeDepth || 'unit', scope_depth_src: 'manual' })
+      .eq('id', id).select('id');
+    if (error) setError('สร้างบัญชีแล้ว แต่ตั้งขอบเขตการมองเห็นไม่ได้: ' + error.message);
+  };
+
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
   const saveDeptAdmin = async (id) => {
@@ -321,6 +338,7 @@ export default function AddUser() {
       role:        u.role         || 'supervisor',
       position:    u.position     || '',
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
+      scopeDepth:  u.scope_depth || 'unit',
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
       deptAdmin:   u.is_dept_admin === true,
       lineId:      u.line_id      ? String(u.line_id) : '',
@@ -379,6 +397,7 @@ export default function AddUser() {
       await saveMtnTeams(data.user?.id);
       await saveDeptAdmin(data.user?.id);
       await saveEmpLink(data.user?.id);
+      await saveScopeDepth(data.user?.id);
 
       setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
       setShowModal(false);
@@ -456,6 +475,10 @@ export default function AddUser() {
         position:     form.position    || null,
         section:      form.sections[0] || null,
         sections:     form.sections.length ? form.sections : null,
+        /* 🔭 ความกว้างที่ "คนเลือกเอง" — ต่างจาก legacy_open ที่ได้ all มาจากการเว้นว่าง
+           (docs/ACCESS-CONTROL-STANDARDS.md §2 · ขอบเขตตัดสิทธิ์ให้แคบลงเท่านั้น ห้ามขยาย) */
+        scope_depth:     form.scopeDepth || 'unit',
+        scope_depth_src: 'manual',
         team:         form.team        || null,
         line_id:      form.lineId      ? Number(form.lineId) : null,
         notify_email: form.notifyEmail || null,
@@ -520,19 +543,16 @@ export default function AddUser() {
   );
 
   return (
-    <div className="page-content">
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user" />
-        </div>
-        <button
-          onClick={openCreate}
-          style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-        >
-          ➕ เพิ่มผู้ใช้ใหม่
-        </button>
-      </div>
+    <Page>
+      <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user"
+        actions={
+          <button
+            onClick={openCreate}
+            style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+          >
+            ➕ เพิ่มผู้ใช้ใหม่
+          </button>
+        } />
 
       {message && (
         <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, color: 'var(--green)', fontSize: 13 }}>
@@ -540,32 +560,29 @@ export default function AddUser() {
         </div>
       )}
 
-      {/* Toolbar: ค้นหา + กรอง + ตัวนับ (input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%}) */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <input type="search" placeholder="🔍 ค้นหา ชื่อ / อีเมล / ตำแหน่ง..." value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ width: 260, padding: '8px 12px', borderRadius: 8, fontSize: 13 }} />
-        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-          style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุกชุดสิทธิ์</option>
-          <RoleOptGroups />
-        </select>
-        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
-          style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุก Section</option>
+      {/* Toolbar: ขอบเขต → ชุดสิทธิ์ → ค้นหา → ตัวนับ (UI-STANDARD 2026-09-24 · FilterBar คุมขนาดช่องเอง) */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
         </select>
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+          <option value="">{ALL.role}</option>
+          <RoleOptGroups />
+        </select>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
         {(q || filterRole || filterSection) && (
           <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
             style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
             ✕ ล้างตัวกรอง
           </button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+        <span className="spacer" />
+        <span className="filter-count">
           {view.length === users.length ? `ทั้งหมด ${users.length} คน` : `แสดง ${view.length} จาก ${users.length} คน`}
           <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
         </span>
-      </div>
+      </FilterBar>
 
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
@@ -638,6 +655,30 @@ export default function AddUser() {
                 </div>
               </div>
             )}
+          </div>
+        );
+      })()}
+
+      {/* 📋 คิวทบทวนสิทธิ์ — ISO 27001 A.5.18 บังคับให้ทบทวนสิทธิ์เป็นรอบ
+          `legacy_open` = บัญชีที่เห็นทั้งโรงงานเพราะ "ไม่เคยตั้งขอบเขต" ไม่ใช่เพราะมีคนตัดสินใจให้
+          ⇒ แสดงเป็นตัวเลขให้ไล่เคลียร์จนหมดแล้วหายไปเอง (pattern เดียวกับ "ข้อมูลไม่ตรงผังองค์กร")
+          🔴 ห้ามแก้ให้อัตโนมัติ — คนต้องเป็นคนตัดสินว่าใครควรเห็นแค่ไหน */}
+      {(() => {
+        const review = users.filter(needsScopeReview);
+        if (!review.length) return null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+            background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+            <b style={{ color: '#f59e0b' }}>🔭 ยังไม่ได้ทบทวนขอบเขต {review.length} บัญชี</b>
+            <span>
+              เห็น<b>ทั้งโรงงาน</b>เพราะไม่เคยตั้งขอบเขตไว้ — ไม่ใช่เพราะมีคนตั้งใจให้
+              · เปิดแก้ไขแล้วเลือก “ขอบเขตการมองเห็น” ให้ตรงงานจริง แล้วรายการนี้จะหายไปเอง
+            </span>
+            <span style={{ color: 'var(--muted)' }}>
+              ({review.slice(0, 4).map(u => u.full_name || u.email || '—').join(' · ')}
+              {review.length > 4 ? ` · +${review.length - 4}` : ''})
+            </span>
           </div>
         );
       })()}
@@ -1083,6 +1124,53 @@ export default function AddUser() {
                 })()}
               </div>
 
+              {/* 🔭 ความกว้างของการมองเห็น — คนละแกนกับ role (role = ทำอะไรได้ · อันนี้ = เห็นกว้างแค่ไหน)
+                  ที่มา user: "job level manager มองได้หมด ซึ่งความจริงต้องดูว่าอยู่แผนกไหน ส่วนงานไหน"
+                  🔴 ค่าเริ่มต้นต้องแคบเสมอ — "ทั้งโรงงาน" ต้องเป็นการเลือกที่เห็นได้ ไม่ใช่ผลของการเว้นว่าง
+                     (deny by default · docs/ACCESS-CONTROL-STANDARDS.md §2) */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                {(() => {
+                  const lvl = levelOfPosition(form.position);
+                  const suggested = depthForLevel(lvl);
+                  return (
+                    <>
+                      <label style={labelSt}>ขอบเขตการมองเห็น (เห็นกว้างแค่ไหน)</label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {SCOPE_DEPTHS.map(d => {
+                          const m = SCOPE_DEPTH_META[d];
+                          const on = (form.scopeDepth || 'unit') === d;
+                          const wide = d === 'all';
+                          const col = wide ? '#f59e0b' : '#4d9fff';
+                          return (
+                            <button key={d} type="button" title={m.desc}
+                              onClick={() => setF('scopeDepth', d)}
+                              style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                                cursor: 'pointer', background: on ? `${col}22` : 'var(--bg2)',
+                                border: `1px solid ${on ? col : 'var(--border2)'}`,
+                                color: on ? col : 'var(--text2)' }}>
+                              {m.icon} {m.label}
+                              {d === suggested && <span style={{ fontSize: 10, opacity: 0.75 }}> · แนะนำ</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                        {SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc}
+                        {lvl && <> · ระดับ <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
+                          “{SCOPE_DEPTH_META[suggested].label}” — <b>ตั้งต่างจากที่แนะนำได้</b> ของจริงมีข้อยกเว้นเสมอ</>}
+                        {!lvl && <> · ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้</>}
+                      </div>
+                      {form.scopeDepth === 'all' && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                          ⚠️ <b>เห็นทุกส่วนงานทั้งโรงงาน</b> — รวมถึงได้รับแจ้งเตือนของทุกฝ่ายด้วย
+                          <br />ให้เฉพาะคนที่ต้องดูข้ามฝ่ายจริงๆ (ผู้บริหาร · QA · ช่างที่ดูแลทั้งโรงงาน)
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
                   ขอบเขตส่วนงาน (Section) {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}>* จำเป็นอย่างน้อย 1</span>}
@@ -1268,7 +1356,7 @@ export default function AddUser() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

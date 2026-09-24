@@ -5,6 +5,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import InfoMore from '../components/InfoMore';
 import LineSelect from '../components/LineSelect';
@@ -309,7 +310,7 @@ export default function NPI() {
   );
 
   return (
-    <div style={{ padding: '14px 18px 40px', maxWidth: 1800, margin: '0 auto' }}>
+    <Page>
       <PageHeader title="พาร์ทใหม่ — APQP / PPAP" icon="🚀" sub={sub}
         actions={<>
           {projectSelect}
@@ -463,7 +464,7 @@ export default function NPI() {
           onClose={() => setFromMasterOpen(false)}
           onCreated={(s) => { setPeSets(list => [...list, s].sort((a, b) => String(a.part_no).localeCompare(String(b.part_no)))); setPartModal(m => m ? { ...m, pe_set_id: s.id, part_no: m.part_no || s.part_no, part_name: m.part_name || s.part_name || '', line_name: m.line_name || s.line_name || '' } : m); }} />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -609,7 +610,7 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                                     <LightDot light={pr2?.light || 'grey'} size={18} />
                                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{pr2?.done ?? 0}/{pr2?.total ?? 0}</span>
-                                    {phRow.plan_end && <span style={{ fontSize: 10.5, color: phRow.status !== 'completed' && phRow.plan_end < today ? '#ef4444' : 'var(--muted)' }}>{fmtDate(phRow.plan_end)}</span>}
+                                    {phRow.plan_end && <span style={{ fontSize: 11, color: phRow.status !== 'completed' && phRow.plan_end < today ? '#ef4444' : 'var(--muted)' }}>{fmtDate(phRow.plan_end)}</span>}
                                   </div>
                                 ) : <span style={{ color: '#f59e0b', fontSize: 11 }}>—</span>}
                               </td>

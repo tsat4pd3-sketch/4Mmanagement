@@ -5,6 +5,9 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import DailyBars from '../components/DailyBars';
 import DemandVsProduction from '../components/DemandVsProduction';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
@@ -261,7 +264,7 @@ export default function ProductHistory() {
   const td = { fontSize: 12, padding: '6px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 
   return (
-    <div style={{ padding: '16px 20px', maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="ประวัติผลิต (by Product)" icon="📜"
         sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
@@ -278,28 +281,22 @@ export default function ProductHistory() {
         </div>
       )}
 
-      {/* ตัวเลือกสินค้า + ช่วงวันที่ */}
+      {/* ตัวเลือกสินค้า + ช่วงวันที่ — แถบกรองเดียว (UI-STANDARD 2026-09-24: ไลน์/ค้นหาเป็น children ของ TimeRangeBar
+          เดิมช่องสูง 3 ขนาดในแถวเดียว + ช่องค้นหายืด 1074px) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      >
+        {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
+        <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
+          role={role} lineId={lineId} sections={sections} placeholder={ALL.line}
+          extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
+        <SearchInput value={search} onChange={setSearch} fields="MAT.NO / ชื่อ / P/N" />
+      </TimeRangeBar>
+
       <div style={{ ...card, marginBottom: 16 }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: 1, minWidth: 240 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ค้นหาสินค้า (MAT.NO / ชื่อ / P/N)</label>
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="เช่น 50029377, REINF, B222"
-              style={{ marginTop: 4 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์</label>
-            {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
-            <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
-              role={role} lineId={lineId} sections={sections} placeholder="ทุกไลน์" style={{ marginTop: 4, width: 220 }}
-              extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
-          </div>
-        </div>
-        <TimeRangeBar
-          scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-          onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginTop: 10 }}
-        />
         {/* ผลค้นหา — ลิสต์จัดกลุ่มตามไลน์ (เลื่อนในกรอบ) · เลือกแล้วพับอัตโนมัติ กดหัวเพื่อกางเปลี่ยนสินค้า */}
-        <div style={{ marginTop: 10 }}>
+        <div>
           <div onClick={() => setPickerOpen(o => !o)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', marginBottom: 6 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -563,6 +560,6 @@ export default function ProductHistory() {
           </CollapseCard>
         </>
       )}
-    </div>
+    </Page>
   );
 }

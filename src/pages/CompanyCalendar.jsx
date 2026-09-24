@@ -7,6 +7,7 @@ import { DAY_TYPE_META } from '../utils/companyCalendar';
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 const DAY_TYPES = ['working', 'ot15', 'ot2', 'shutdown75'];
@@ -119,15 +120,15 @@ export default function CompanyCalendar() {
   }, {});
 
   return (
-    <div className="page-content">
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅" />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
-          <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
-          <button onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
-        </div>
-      </div>
+    <Page>
+      <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅"
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
+            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
+            <button onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
+          </div>
+        } />
 
       {/* Legend / summary */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -253,7 +254,7 @@ export default function CompanyCalendar() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

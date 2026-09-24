@@ -5,6 +5,7 @@ import { loadPermissions } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
 
@@ -265,7 +266,6 @@ export default function PermissionsManagement() {
   };
 
   const s = {
-    page:    { padding: 'clamp(10px,2.5vw,20px) clamp(12px,3vw,24px)', maxWidth: 'min(96vw, 1400px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     groupTitle: { fontSize: 13, fontWeight: 800, color: 'var(--accent)', margin: '18px 0 8px', textTransform: 'uppercase', letterSpacing: '0.05em' },
     tabBtn: (active) => ({
@@ -312,14 +312,14 @@ export default function PermissionsManagement() {
     </div>
   );
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
 
   const pageGroups   = PAGE_GROUPS.map(g => ({ group: g.group, items: g.pages }));
   // legacy `manage_master_data` เกษียณแล้ว (2026-07-22) — แตกเป็นสิทธิ์ย่อย oee:set_target /
   // ot_master:manage / management:assign_manpower · แถวเก่ายังอยู่ใน role_permissions (ไม่มีโค้ดอ่าน) เผื่อ rollback
 
   return (
-    <div style={s.page}>
+    <Page>
       <PageHeader
         title="จัดการสิทธิ์" icon="🔐"
         sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
@@ -363,6 +363,6 @@ export default function PermissionsManagement() {
           {renderPermTable(actionGroups, 'การทำงาน')}
         </>
       )}
-    </div>
+    </Page>
   );
 }

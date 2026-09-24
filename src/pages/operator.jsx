@@ -25,6 +25,10 @@ import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillSc
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
@@ -830,35 +834,24 @@ export default function Operator() {
   }, [activeSkillDefs, displayed]);
 
   return (
-    <div className="page-content">
+    <Page>
       {subItemsSkill && (
         <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
       )}
-      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥" />
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
-        {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
-            index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
-        {[
+      {/* UI-STANDARD 2026-09-24: แท็บย้ายเข้า PageHeader (เดิมวาดปุ่มเอง) — ชิปขอบเขตไปอยู่ช่อง actions
+          แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
+          index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
+      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥"
+        tabs={[
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
           [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
-        ].filter(([, , show]) => show).map(([i, t]) => (
-          <button key={i} onClick={() => setTab(i)} style={{
-            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-            background: tab === i ? 'var(--accent)' : 'var(--bg3)',
-            color: tab === i ? '#fff' : 'var(--text2)',
-            fontWeight: tab === i ? 700 : 400,
-            position: 'relative',
-          }}>
-            {t}
-            {i === 2 && levelUpRequests.length > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {levelUpRequests.length}
-              </span>
-            )}
-          </button>
-        ))}
+        ].filter(([, , show]) => show).map(([i, t]) => ({
+          key: TAB_KEYS[i], label: t,
+          badge: i === 2 && levelUpRequests.length > 0 ? levelUpRequests.length : undefined,
+        }))}
+        tab={TAB_KEYS[tab]} onTab={(k) => setTab(TAB_KEYS.indexOf(k))}
+        actions={(scopeSecs.length > 0 || (isLeader && myLineName)) ? (<>
         {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
@@ -877,34 +870,24 @@ export default function Operator() {
             📍 {myLineName}
           </div>
         )}
-      </div>
+        </>) : null}
+      />
 
       {tab === 0 && (
         <>
-          {/* Section / Group / Team / Grade filters */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
-                ⚠️ ต้องกำหนด width เอง (index.css ตั้ง `input { width: 100% }` ทั้งแอป —
-                   ไม่กำหนด = กินเต็มบรรทัดแล้วดัน dropdown ตกบรรทัดใหม่ทั้งแถว)
-                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
-            <input type="search" value={empSearch} onChange={e => setEmpSearch(e.target.value)}
-              placeholder="🔎 ค้นชื่อ / รหัส / ตำแหน่ง..."
-              style={{ width: 210, fontSize: 12, padding: '5px 10px', borderRadius: 7,
-                       border: `1px solid ${empSearch ? 'var(--accent)' : 'var(--border2)'}`,
-                       background: 'var(--bg3)', color: 'var(--text)' }} />
+          {/* Section / Group / Team / Grade filters — UI-STANDARD 2026-09-24: FilterBar คุมขนาด/ความกว้าง select ให้แล้ว
+              (เดิมต้องใส่ width:'auto' เองกัน `select{width:100%}` ของธีม) · ลำดับ ขอบเขต → ตัวกรองอื่น → ค้นหา → จำนวน/ล้าง */}
+          <FilterBar style={{ marginBottom: 12 }}>
             {[
               // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
-              { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
-              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
-              { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
-              { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
+              { label: 'Section', all: ALL.section,    value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
+              { label: 'Dept',    all: ALL.dept,       value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
+              { label: 'Group',   all: allOf('กลุ่ม'), value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
+              { label: 'Team',    all: ALL.team,       value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
-                /* ⚠️ ต้องมี width: 'auto' — index.css ตั้ง `select { width: 100% }` ทั้งแอป
-                   `minWidth` เป็นแค่พื้น override ไม่ได้ → select 4 ตัวกินคนละบรรทัด (วัดจริง
-                   1500px และ 1280px ได้ 7 แถว) ดันปุ่มกรองตกไปแถวที่ 5 ทั้งที่ที่แนวนอนเหลือเฟือ */
-                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', width: 'auto', minWidth: 110, maxWidth: 200 }}>
-                <option value="">{`— ${f.label} —`}</option>
+                style={{ color: f.value ? 'var(--text)' : 'var(--muted)' }}>
+                <option value="">{f.all}</option>
                 {(f.label === 'Dept' || f.label === 'Group') ? (() => {
                   const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
                   const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
@@ -988,8 +971,12 @@ export default function Operator() {
               );
             })}
 
+            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
+                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
+            <SearchInput value={empSearch} onChange={setEmpSearch} fields="ชื่อ / รหัส / ตำแหน่ง" />
+            <span className="spacer" />
             {empSearch && (
-              <span style={{ fontSize: 11, color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700 }}>
+              <span className="filter-count" style={{ color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700, whiteSpace: 'normal' }}>
                 {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
               </span>
             )}
@@ -999,7 +986,7 @@ export default function Operator() {
                 ✕ ล้าง
               </button>
             )}
-          </div>
+          </FilterBar>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
@@ -2038,7 +2025,7 @@ export default function Operator() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

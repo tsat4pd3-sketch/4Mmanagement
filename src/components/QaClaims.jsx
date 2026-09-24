@@ -18,6 +18,9 @@ import { findRepeats, sureRepeats, REPEAT_MONTHS } from '../utils/peLink';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
+import FilterBar from './FilterBar';
+import Segmented from './Segmented';
+import { ALL } from '../utils/filterLabels';
 import PartSelect from './PartSelect';
 import CustomerSelect from './CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
@@ -38,7 +41,7 @@ const btnSt = (bg = 'var(--accent)', fg = '#08130a') => ({ padding: '7px 14px', 
 const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 
 const Chip = ({ label, color }) => (
-  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
+  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
 );
 const Field = ({ label, children, span }) => (
   <label style={{ display: 'block', gridColumn: span ? `span ${span}` : undefined }}>
@@ -190,7 +193,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
           <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 13px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: color || 'var(--text)' }}>{val}</div>
-            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{sub}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div>
           </div>
         ))}
       </div>
@@ -208,14 +211,14 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ยังไม่ปิด'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+      <FilterBar>
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' },
+        ]} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
@@ -237,12 +240,12 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
                     {maybe && <div><Chip label="❓ อาจซ้ำ" color="#f59e0b" /></div>}
                   </td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.claim_date}</td>
-                  <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
-                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>🏭 {c.line_name}</div>}</td>
-                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
+                  <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
+                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>🏭 {c.line_name}</div>}</td>
+                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
-                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 10.5 }}>เลยกำหนด</div>}
+                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>เลยกำหนด</div>}
                   </td>
                   <td style={tdSt}><Chip label={st.label} color={st.color} /></td>
                   <td style={tdSt}>

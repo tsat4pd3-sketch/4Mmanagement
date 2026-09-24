@@ -17,7 +17,7 @@
    4. YTD = ถึงเดือนล่าสุดที่มีข้อมูล (ปีย้อนหลัง = ทั้งปี) — เลขใหญ่บนแผ่นคือค่านี้
    ════════════════════════════════════════════════════════════════════════════════════════ */
 import { round1, statusOf, Q_THIN_DEFECT_ROWS } from './obeyaKpi.js';
-import { scoreDef } from './kpiSetup.js';
+import { scoreDef, summaryOf } from './kpiSetup.js';
 import { DEFAULT_OEE_TARGET } from './oee.js';
 
 /* ── ช่วงเวลา ─────────────────────────────────────────────────────────────────────── */
@@ -226,20 +226,23 @@ export function axisPpmYear({ sessions = [], defects = [], year, target = null, 
    entries = { [month 1-12]: value } · ไม่มีค่า = null (เดือนที่ยังไม่กรอกต้องเป็นช่องว่าง ห้ามเป็น 0)
    แท่งสรุป = ค่าเฉลี่ยธรรมดาของเดือนที่มีค่า (KPI กรอกมือไม่มีน้ำหนักให้ถ่วง — จอต้องเขียนกำกับว่า "เฉลี่ย")
    ⚠️ KPI แบบ "สะสม" (เช่น % ผ่านอบรม) เฉลี่ยแล้วไม่มีความหมาย — ผู้เรียกส่ง summary:'last' ให้ใช้ค่าเดือนล่าสุดแทน */
-export function manualMonthSeries({ entries = {}, year, summary = 'avg' } = {}) {
+/* 🔴 24/09 — วิธีรวมแท่ง "สรุป" ต้องมาจาก `kpi_catalog.summary_mode` ผ่าน `summarizeMonths()`
+   เดิมไฟล์นี้มีคำศัพท์ของตัวเอง (`avg`/`sum`/`last`) คนละชุดกับ `KPI_SUMMARY_MODES`
+   (`average`/`sum`/`max`/`as_of`/`rate`) ⇒ 2 วงศัพท์ = จอตอบคนละวิธีโดยไม่มีใครรู้
+   คำเก่ายังรับได้ (แปลงให้) แต่**โค้ดใหม่ส่งคีย์ของ `KPI_SUMMARY_MODES` เท่านั้น** */
+const LEGACY_SUMMARY = { avg: 'average', last: 'as_of' };
+export function manualMonthSeries({ entries = {}, year, summary = 'average' } = {}) {
+  const mode = LEGACY_SUMMARY[summary] || summary;
   const series = monthKeys(year).map((k) => {
     const v = entries[Number(k.slice(5, 7))];
     return v == null || v === '' ? { k, v: null, empty: true } : { k, v: Number(v) };
   });
   const filled = series.filter(p => !p.empty);
-  let sum = null;
-  if (filled.length) {
-    if (summary === 'sum') sum = filled.reduce((a, p) => a + p.v, 0);
-    else if (summary === 'last') sum = filled[filled.length - 1].v;
-    else sum = round1(filled.reduce((a, p) => a + p.v, 0) / filled.length);
-  }
-  series.push({ k: SUMMARY_KEY, v: sum, summary: true, kind: summary });
-  return { series, ytd: sum, months: filled.length };
+  /* `rate` ไม่มียอดดิบให้หารในสายกรอกมือ ⇒ `summaryOf` ถอยมาเฉลี่ยพร้อมธง approx (จอต้องติดป้าย ≈) */
+  const { value, effMode, approx } = summaryOf(series.map(p => p.v), { kpi_catalog: { summary_mode: mode } });
+  const sum = value == null ? null : (effMode === 'average' ? round1(value) : value);
+  series.push({ k: SUMMARY_KEY, v: sum, summary: true, kind: effMode, mode, approx });
+  return { series, ytd: sum, months: filled.length, mode, effMode, approx };
 }
 
 /** สถานะแท่งรายเดือนตาม **เกณฑ์ทางการ 1/0.5/0** (`scoreDef`) — ใช้กับแถว KPI บนบอร์ด KPI ส่วนงาน

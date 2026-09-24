@@ -29,6 +29,8 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
@@ -94,7 +96,7 @@ function getPublicUrl(path) {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S = {
-  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
+  page: { minHeight: '100%', background: 'var(--bg)' },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   header: { display: 'flex', paddingRight: 52, alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 },
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
@@ -1552,13 +1554,12 @@ export default function PMSetup() {
   const handleSaved = (warn) => { if (!warn) setShowModal(false); fetchData() }
 
   return (
-    <div style={S.page}>
-      <div style={S.header}>
-        <div>
-          <h1 style={S.h1}>ตั้งจุดตรวจ PM — อุปกรณ์ &amp; จุดตรวจ</h1>
-          <p style={S.sub}>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</p>
+    <Page style={S.page}>
+      <PageHeader title="ตั้งจุดตรวจ PM — อุปกรณ์ & จุดตรวจ" icon="⚙️"
+        sub={<>
+          <div>{jigs.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</div>
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
-          <p style={{ ...S.sub, marginTop: 2 }}>
+          <div style={{ marginTop: 2 }}>
             <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
             {canSetup && (
               <>
@@ -1569,16 +1570,13 @@ export default function PMSetup() {
                 </button>
               </>
             )}
-          </p>
-        </div>
-        {canSetup && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
-            <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
-            <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
           </div>
-        )}
-      </div>
+        </>}
+        actions={canSetup && <>
+          <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
+          <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
+          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+        </>} />
 
       <div style={S.deptBar}>
         {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
@@ -1617,6 +1615,6 @@ export default function PMSetup() {
         )}
       </AnimatePresence>
 
-    </div>
+    </Page>
   )
 }

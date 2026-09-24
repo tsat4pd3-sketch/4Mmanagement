@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -12,6 +12,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -188,6 +189,9 @@ async function loadProduction(ctx) {
 }
 
 function ProductionView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt7), [d.dt7]);
   const { workDate, prevDate, lines, navigate, isMobile } = ctx;
   const pairOf = useMemo(() => { const m = {}; d.prods.forEach(p => { if (p.pair_mat_no) m[p.mat_no] = p.pair_mat_no; }); return (x) => m[x] || null; }, [d.prods]);
 
@@ -266,7 +270,7 @@ function ProductionView({ d, ctx }) {
   const dtRecords = useMemo(() => {
     const sMap = {}; d.sess7.forEach(s => { sMap[s.id] = s; });
     return d.dt7.filter(x => x.dr_downtime_types?.category !== 'planned').map(x => ({
-      cat: dtBucketName(x), value: dtMinOf(x),   // 🗑️ ถังขยะแตกตามเครื่อง (downtimeCategory 23/09)
+      cat: dtBucketName(x, dtIdx), value: dtMinOf(x),   // 🗑️ เดาจากคำ → ไม่ได้ก็แตกตามเครื่อง
       machine: x.machine_no || '(ไม่ระบุเครื่อง)', line: sMap[x.session_id]?.line_name || '-',
       shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
     })).filter(r => r.value > 0);
@@ -361,6 +365,9 @@ async function loadMaintenance(ctx) {
 }
 
 function MaintenanceView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt30), [d.dt30]);
   const { workDate, navigate, isMobile, inScope } = ctx;
   const openMo = d.mo.filter(isMoOpen);   // รวม transferred = จบแล้ว (source: utils/mtnStepPerm)
   const scopedMo = openMo.filter(o => !o.line_name || inScope(o.line_name));
@@ -386,7 +393,7 @@ function MaintenanceView({ d, ctx }) {
     d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned' && x.machine_no).forEach(x => {
       const m = (byMc[x.machine_no] ||= { machine: x.machine_no, times: 0, min: 0, line: sMap[x.session_id]?.line_name || '', last: null, causes: {} });
       m.times++; m.min += dtMinOf(x);
-      const c = dtBucketName(x); m.causes[c] = (m.causes[c] || 0) + 1;
+      const c = dtBucketName(x, dtIdx); m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
     const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));
@@ -857,7 +864,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   const scopeText = scopeSet ? `${scopeSet.size} ไลน์ในขอบเขตของคุณ` : 'ทุกไลน์';
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* ── หัวเพจ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
            (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
@@ -875,7 +882,8 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
           {/* เลือกส่วนงาน = "ตัวกรอง" ของหน้านี้ — แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 */}
           {view === 'now' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
+              {/* UI-STANDARD 2026-09-24: "มุมมอง" ไม่ใช่ "ส่วนงาน" — คำว่าส่วนงานในระบบนี้ = PD1..PD4 (ผังองค์กร) */}
+              <span className="filter-label" style={{ fontWeight: 700 }}>มุมมอง:</span>
               {DEPTS.map(t => (
                 <button key={t.key} onClick={() => setDept(t.key)} style={{
                   fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
@@ -901,6 +909,6 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
       {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
       {view === 'now' && !loading && !err && data && data.dept !== dept &&
         <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
-    </div>
+    </Page>
   );
 }

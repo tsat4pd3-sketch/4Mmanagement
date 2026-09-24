@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import { routeThroughStops, nodeKind, bestStopOrder } from '../utils/transportGraph';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import useTabParam from '../utils/useTabParam';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -159,7 +160,7 @@ export default function Transport() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="มอบหมายขนส่ง (Transport)" icon="🚚"
         sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
@@ -270,7 +271,7 @@ export default function Transport() {
         <CarrierModal carrier={editCarrier} vehicles={vehicles} employees={employees} fullName={fullName}
           onClose={() => setEditCarrier(null)} onSaved={() => { setEditCarrier(null); load(); }} />
       )}
-    </div>
+    </Page>
   );
 }
 

@@ -9,6 +9,7 @@ import { toast } from './Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { rpnOf, applyProposal } from '../utils/peMaster';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal, WarnBar } from './NpiUi';
+import SearchInput from './SearchInput';
 
 const KIND_LABEL = { process: 'Process', incoming_insp: 'Incoming Insp.', storage: 'Storage', transport: 'Transport', inspection: 'Inspection', rework: 'Rework', warehouse: 'Warehouse', delivery: 'Delivery' };
 const rpnColor = (v) => (v == null ? 'var(--muted)' : v >= 100 ? '#ef4444' : v >= 70 ? '#f59e0b' : '#22c55e');
@@ -99,7 +100,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
         {/* ── รายการกระบวนการมาตรฐาน ── */}
         <div style={card}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <input style={{ ...inp, flex: 1, minWidth: 140 }} placeholder="ค้นกระบวนการ / tag" value={q} onChange={e => setQ(e.target.value)} />
+            <SearchInput value={q} onChange={setQ} fields="กระบวนการ / tag" style={{ minWidth: 140 }} />
             <label style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyUnconfirmed} onChange={e => setOnlyUnconfirmed(e.target.checked)} /> รอยืนยัน</label>
             {canApprove && <button style={btn()} onClick={() => setMpModal({ name: '', kind: 'process', process_type: '', tags: '', description: '', is_active: true })}>+ กระบวนการ</button>}
           </div>
