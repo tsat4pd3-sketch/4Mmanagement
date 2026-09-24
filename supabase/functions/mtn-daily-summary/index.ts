@@ -4,6 +4,8 @@
 //     + แยกรายทีมเข้าห้องที่แท็กทีมไว้ (telegram_channels.team) ถ้ามี
 //   → 📥 บล็อก "ใบที่รอฝ่ายผู้แจ้งดำเนินการ" (ขั้น 4/6/7) แยกรายส่วนงาน → ห้องฝั่งผลิต
 //     + กระดิ่งในแอปถึงคนในส่วนงานนั้น (event mtn_pickup_pending · 2026-09-16)
+//   → 🧰 บล็อก "ใบที่ยังไม่มีช่างรับ" (ขั้น 2) แยกรายทีมช่าง + ชั้นอายุ 🔴
+//     + กระดิ่งในแอปถึงช่างทีมนั้น (event mtn_accept_pending · 2026-09-24)
 // อ่าน mtn_orders จาก DR project (DR_URL/DR_ANON_KEY) · routing/bot token จาก Main
 // ปิด/แก้ห้อง/แก้ข้อความได้จาก /notification-config (category 'maintenance')
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -237,6 +239,42 @@ function buildPickupBlock(rows: MO[]): string {
   return lines.join('\n');
 }
 
+/* ═══ 🧰 บล็อก "ใบที่ยังไม่มีช่างรับ" → **ทีมช่างเจ้าของใบ** (2026-09-24) ═══════════════
+   ที่มา — วัดจริง 24/09 (`status='pending'` ทั้งระบบ 25 ใบ):
+     **JIG MTN 23 ใบ · เกิน 7 วัน 17 ใบ · นานสุด 22 วัน · เฉลี่ย 12.3 วัน** (ทีมอื่นรวมกัน 2 ใบ)
+   ⇒ ใบที่ "ยังไม่มีใครเริ่มเลย" กองอยู่ทีมเดียว ทั้งที่สรุปเช้ายิงทุกวันมาตลอด
+
+   ทำไมสรุปเช้าเดิมไม่ช่วย — 3 ข้อ วัดได้ทั้งหมด:
+     1. `buildTeamBlock` **ไม่มีชั้นอายุ** (ต่างจาก `buildPickupBlock` ฝั่งผู้แจ้งที่ทำไว้ 16/09)
+        ⇒ ใบค้าง 22 วัน หน้าตาเหมือนใบเมื่อวานเป๊ะ — ไม่มี 🔴 ไม่มีตัวนับ "เกิน N วัน"
+     2. **ไม่มีห้อง Telegram ไหนแท็ก `team` เลย นอกจาก `production`** (วัด telegram_channels 24/09)
+        ⇒ `teamChats['jig_maintenance']` ว่าง ⇒ **บล็อกรายทีมไม่เคยถูกยิงเลยแม้แต่ครั้งเดียว**
+        JIG เห็นแค่ก้อนรวมในห้อง 🔧 Smart Maintenance ปนกับทุกทีม
+     3. กระดิ่งในแอปของ `mtn_daily_summary` ยิง **บรรทัดเดียวทั้งโรงงาน** ("ค้างทั้งหมด N ใบ · M ทีม")
+        ไม่บอกทีม ไม่บอกอายุ ⇒ ช่าง JIG อ่านแล้วไม่รู้ว่าเป็นของตัวเอง
+
+   ⇒ บล็อกนี้ทำให้ **ฝั่งช่างสมมาตรกับฝั่งผู้แจ้ง**: แยกรายทีม + ชั้นอายุ + กระดิ่งถึงทีมนั้นตรงๆ
+
+   🔑 กระดิ่งรายทีมยิงผ่าน `notify_recipients(p_section)` โดยส่ง **ชื่อทีม** เป็น section —
+      ใช้ได้เพราะ `profiles.section` ของช่างเก็บชื่อทีมไว้จริง (วัด 24/09: section='JIG MTN' 6 คน)
+      และ `teamName()` อ่านจาก `mtn_teams.dept_name` ⇒ เปลี่ยนชื่อทีมแล้วตามกันเอง
+   ⚠️ ทีมที่ไม่มีใครตั้ง `profiles.section` ตรงกับชื่อทีม = ส่งถึง **0 คน** — ไม่ใช่ error
+      แต่ **ห้ามเงียบ** → คืนรายชื่อทีมนั้นใน response `acceptNoRecipient` ให้เห็นจาก log
+   ⚠️ `returned` (ถูกตีกลับ) **ไม่อยู่ในบล็อกนี้** — รอผู้แจ้งแก้แผนก ไม่ใช่รอช่างรับ */
+const ACCEPT_WAIT = ['pending'];
+
+/** รายการใบ "ยังไม่มีช่างรับ" ของ 1 ทีม — เก่าสุดขึ้นก่อน (rows เรียง report_at asc มาแล้ว) */
+function buildAcceptBlock(rows: MO[]): string {
+  const stuck = rows.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+  const lines = [`• <b>${WAIT_LABEL.pending}</b> — ${rows.length} ใบ${stuck ? ` (ค้างเกิน ${STUCK_DAYS} วัน <b>${stuck}</b> ใบ)` : ''}`];
+  for (const m of rows.slice(0, 8)) {
+    const d = daysOpen(m.report_at);
+    lines.push(`   ${d >= STUCK_DAYS ? '🔴' : '·'} ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${d > 0 ? ` · ค้าง ${d} วัน` : ''}`);
+  }
+  if (rows.length > 8) lines.push(`   … และอีก ${rows.length - 8} ใบ (ดูทั้งหมดในหน้าแจ้งซ่อม)`);
+  return lines.join('\n');
+}
+
 function buildTeamBlock(rows: MO[]): string {
   // จัดกลุ่มตามสถานะที่ค้าง เรียงตามลำดับขั้น
   const byStatus: Record<string, MO[]> = {};
@@ -245,11 +283,14 @@ function buildTeamBlock(rows: MO[]): string {
   for (const st of WAIT_ORDER) {
     const list = byStatus[st];
     if (!list || !list.length) continue;
-    lines.push(`• <b>${WAIT_LABEL[st] || st}</b> — ${list.length} ใบ`);
+    /* 🔴 ชั้นอายุ — เดิมบล็อกนี้ไม่มี (มีแต่ฝั่งผู้แจ้ง) ⇒ ใบค้าง 22 วันหน้าตาเหมือนใบเมื่อวานเป๊ะ
+       ทีมช่างเลยอ่านสรุปเช้าทุกวันโดยไม่มีอะไรบอกว่าใบไหนเลยเถิด (วัด 24/09 · ดู ACCEPT_WAIT) */
+    const stuck = list.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+    lines.push(`• <b>${WAIT_LABEL[st] || st}</b> — ${list.length} ใบ${stuck ? ` (ค้างเกิน ${STUCK_DAYS} วัน <b>${stuck}</b> ใบ)` : ''}`);
     for (const m of list.slice(0, 8)) {
       const d = daysOpen(m.report_at);
       const age = d > 0 ? ` · ค้าง ${d} วัน` : '';
-      lines.push(`   ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${age}`);
+      lines.push(`   ${d >= STUCK_DAYS ? '🔴' : '·'} ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${age}`);
     }
     if (list.length > 8) lines.push(`   … และอีก ${list.length - 8} ใบ`);
   }
@@ -342,7 +383,60 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, total: rows.length, teams: depts.length, pickup: pickup.length, pickupSections });
+    /* ── 🧰 บล็อก "ใบที่ยังไม่มีช่างรับ" → ทีมช่าง (ขั้น 2) ────────────────────────────
+       Telegram: ห้องของทีมถ้าแท็กไว้ · ไม่แท็ก = ห้อง mtn_accept_pending · ไม่ตั้ง = ห้องหลัก
+       กระดิ่งในแอป: ยิง **รายทีม** ผ่าน notify_recipients(p_section = ชื่อทีม)
+       ปิดทั้งบล็อกได้จาก /notification-config (ปิด event mtn_accept_pending) */
+    let acceptTeams = 0;
+    const acceptNoRecipient: string[] = [];
+    const acceptChat = resolveEvent(routes, 'mtn_accept_pending');
+    const accept = rows.filter((m) => ACCEPT_WAIT.includes(waitKey(m)));
+    if (accept.length && acceptChat !== null) {
+      const byTeam: Record<string, MO[]> = {};
+      for (const m of accept) (byTeam[teamKey(m.mtn_dept)] ||= []).push(m);
+      const teams = Object.keys(byTeam).sort();
+      acceptTeams = teams.length;
+      const stuckAll = accept.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+      const head = `🧰 <b>ใบซ่อมที่ยังไม่มีช่างรับ</b>\n`
+        + `<b>${accept.length}</b> ใบยังไม่มีใครเริ่ม`
+        + `${stuckAll ? ` · ค้างเกิน ${STUCK_DAYS} วัน <b>${stuckAll}</b> ใบ` : ''}\n`
+        + `<i>กด "รับงาน" ในหน้าแจ้งซ่อมเพื่อออกเลข MO (ขั้น 2)</i>`;
+      for (const t of teams) {
+        const room = teamChats[t];
+        const body = `━━━ <b>${teamName(t)}</b> (${byTeam[t].length} ใบ) ━━━\n${buildAcceptBlock(byTeam[t])}`;
+        // ห้องของทีมมี = ส่งเฉพาะก้อนของทีมนั้นเข้าห้องนั้น · ไม่มี = รวมไปห้องกลางทีหลัง
+        if (room && room.length) await sendTelegram(`${head}\n\n${body}`, room);
+      }
+      const noRoom = teams.filter((t) => !(teamChats[t] || []).length);
+      if (noRoom.length) {
+        await sendChunked(head, noRoom.map((t) =>
+          `━━━ <b>${teamName(t)}</b> (${byTeam[t].length} ใบ) ━━━\n${buildAcceptBlock(byTeam[t])}`), acceptChat);
+      }
+      for (const t of teams) {
+        const list = byTeam[t];
+        const stuck = list.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+        /* 🔕 ทีมที่คิวปกติ **ไม่ต้องเด้งกระดิ่ง** — Telegram ยังลิสต์ครบทุกทีมเหมือนเดิม
+           เหตุผล: `notify_recipients` มี "คนที่ไม่ผูกส่วนงาน" ติดมาทุกครั้ง (วัด 24/09: JIG MTN
+           คืน 16 คน = 6 คนของทีม + 10 คนไม่ผูกส่วนงาน) ⇒ ยิงครบทุกทีมทุกวัน = 10 คนนั้นโดน
+           N ใบ/วัน ทั้งที่ทีมที่มีใบเดียวไม่ใช่ปัญหา = **แจ้งเตือนท่วมจนคนเลิกอ่าน**
+           ⚠️ นี่คือการตัดสินว่า "เหตุการณ์เกิดขึ้นไหม" (หน้าที่ของ edge นี้)
+              **ไม่ใช่การกรองผู้รับ** — ผู้รับยังมาจาก notify_recipients จุดเดียวตามกฎ
+           เกณฑ์: มีใบเลยกำหนดแม้ใบเดียว **หรือ** คิวสะสม ≥ 3 ใบ (ปรับที่นี่จุดเดียว) */
+        if (!stuck && list.length < 3) continue;
+        const sent = await notifyInApp('mtn_accept_pending',
+          `🧰 ใบซ่อม ${list.length} ใบยังไม่มีช่างรับ (${teamName(t)})`
+          + `${stuck ? ` · ค้างเกิน ${STUCK_DAYS} วัน ${stuck} ใบ` : ''}`
+          + ' — กด "รับงาน" ในหน้าแจ้งซ่อม',
+          stuck ? 'error' : 'info', teamName(t));
+        if (!sent) acceptNoRecipient.push(teamName(t));   // ห้ามเงียบ — ไม่มีใครรับ ต้องเห็นจาก log
+      }
+      if (acceptNoRecipient.length) {
+        console.error('mtn-daily-summary: ไม่มีผู้รับกระดิ่ง "ยังไม่มีช่างรับ" ของทีม',
+          acceptNoRecipient.join(', '), '— ตั้ง profiles.section ให้ตรงชื่อทีม หรือตั้งผู้รับที่ /notification-config');
+      }
+    }
+
+    return json({ ok: true, total: rows.length, teams: depts.length, pickup: pickup.length, pickupSections, accept: accept.length, acceptTeams, acceptNoRecipient });
   } catch (err) {
     console.error(err);
     return json({ error: String(err) }, 500);
