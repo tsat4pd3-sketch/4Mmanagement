@@ -527,6 +527,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {childChips.map(c => (
         <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{c.label}</button>
       ))}
+      <span className="sep" />
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
         <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }}>{monthText}</b>
@@ -542,9 +543,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           tabs={tabs} tab={tab} onTab={onTab}
           title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
           sub={`ตามบอร์ดหน้างาน · ${scopeText}${members.ccs.length && members.ccs.length <= 3 ? ` (cost ${members.ccs.join(' · ')})` : ''} · ${monthText} · ประเมินได้ ${overall.known}/${overall.total} ช่อง`}
+          filters={controls}
           actions={(
             <>
-              {controls}
               {canRecord && (
                 <button onClick={() => setShowSafety({})} style={{ ...pill(false), background: 'var(--accent2)', color: '#1a1206', border: 'none' }}>
                   ＋ บันทึกเหตุการณ์ความปลอดภัย

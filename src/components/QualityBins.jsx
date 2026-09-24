@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from './ReadOnlyNote';
 import TimeRangeBar from './TimeRangeBar';
+import Segmented from './Segmented';
 import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
@@ -231,24 +232,15 @@ export default function QualityBins() {
     <div>
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
         permKey="scrap:record" />
-      {/* ── เลือกถัง ── */}
-      <div style={{ display: 'flex', gap: 6, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 14, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {BINS.map(b => (
-          <button key={b.key} onClick={() => setBin(b.key)}
-            style={{ padding: '6px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap',
-              background: bin === b.key ? b.color : 'transparent',
-              color: bin === b.key ? '#1a1206' : 'var(--muted)', fontFamily: 'var(--font-body)' }}>
-            {b.label}
-          </button>
-        ))}
-      </div>
-
       {/* ── แถบควบคุม ── */}
       {/* UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar = แถบเดียว (เดิมแยก 2 ชั้น) */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
       >
+        {/* เลือกถัง = ตัวเลือก 2 ตัวที่เท่ากัน ⇒ Segmented อยู่ในแถบเดียว (เดิมเป็นแถวปุ่มแยกเหนือแถบกรอง) · สีถัง = ความหมาย */}
+        <Segmented label="ถัง" value={bin} onChange={setBin}
+          options={BINS.map(b => ({ value: b.key, label: b.label, color: b.color }))} />
         <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
         <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
         <span className="spacer" />

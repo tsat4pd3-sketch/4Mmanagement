@@ -122,13 +122,12 @@ export default function CompanyCalendar() {
   return (
     <Page>
       <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅"
-        actions={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
-            <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
-            <button onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
-          </div>
-        } />
+        filters={<>
+          <span className="filter-label">ปี</span>
+          <button className="ctl-btn" onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
+          <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
+          <button className="ctl-btn" onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
+        </>} />
 
       {/* Legend / summary */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>

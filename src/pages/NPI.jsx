@@ -303,7 +303,7 @@ export default function NPI() {
     : `${projects.length} โปรเจค · เลือกโปรเจคเพื่อดูรายละเอียด`;
 
   const projectSelect = (
-    <select value={projectId} onChange={e => setProject(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 220, maxWidth: 360 }}>
+    <select value={projectId} onChange={e => setProject(e.target.value)} className="grow" style={{ minWidth: 220, maxWidth: 420 }}>
       <option value="">— เลือกโปรเจครุ่นใหม่ —</option>
       {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} · {p.name}{p.status !== 'active' && p.status !== 'planning' ? ` (${PROJECT_STATUS[p.status]?.label})` : ''}</option>)}
     </select>
@@ -312,8 +312,8 @@ export default function NPI() {
   return (
     <Page>
       <PageHeader title="พาร์ทใหม่ — APQP / PPAP" icon="🚀" sub={sub}
+        filters={<><span className="filter-label">โปรเจค</span>{projectSelect}</>}
         actions={<>
-          {projectSelect}
           {project && canEdit && <button style={ghost} onClick={() => setProjModal({ ...emptyProject, ...project })}>✏️ โปรเจค</button>}
           {canEdit && <button style={btn()} onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
         </>}

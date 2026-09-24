@@ -328,33 +328,41 @@ function StockTab({ role, scope }) {
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
         permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
-      {/* Header */}
-      <div style={{ display:'flex', paddingRight: 52, justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
-        {/* UI-STANDARD 2026-09-24 — ชื่อหน้าอยู่ที่ PageHeader แล้ว (1 หน้า = 1 หัวเรื่องหลัก) · เหลือคำอธิบายแท็บ */}
-        <p style={{ margin:0, fontSize:13, color:'var(--muted)' }}>
-          <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
-        </p>
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {(pending.length > 0 || canApprove) && (
-            <button onClick={() => setShowPending(v => !v)}
-              style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
-                position: 'relative',
-                border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-              ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
-              <ToggleDot on={showPending} />
-            </button>
-          )}
-          <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
-            {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+      {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว ใต้แท็บทันที: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน → ปุ่มคำสั่งชิดขวา (UI-STANDARD §2.1) */}
+      <FilterBar>
+        {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
+            ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
+        <LineSelect
+          lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={allOf('ไลน์/คลัง')}
+          extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+        />
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        <span className="spacer" />
+        {(pending.length > 0 || canApprove) && (
+          <button onClick={() => setShowPending(v => !v)}
+            style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+              position: 'relative',
+              border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+            ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+            <ToggleDot on={showPending} />
           </button>
-          {canIssue && (
-            <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
-              + จ่ายพาร์ทเข้าไลน์
-            </button>
-          )}
+        )}
+        <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
+          {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+        </button>
+        {canIssue && (
+          <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
+            + จ่ายพาร์ทเข้าไลน์
+          </button>
+        )}
+        <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)' }}>
+          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </div>
-      </div>
-
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
+        <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
+      </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
@@ -417,20 +425,6 @@ function StockTab({ role, scope }) {
 
       {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
           ตัวนับนับหลังกรองไลน์แล้ว → เลขบนชิปตรงกับที่เห็นในตารางเสมอ */}
-      {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน */}
-      <FilterBar>
-        {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
-            ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
-        <LineSelect
-          lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-          placeholder={allOf('ไลน์/คลัง')}
-          extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
-        />
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
-        <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)' }}>
-          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
-        </div>
-      </FilterBar>
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
@@ -914,21 +908,16 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
 
   return (
     <>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
-        <div>
-          <h3 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
-            ⏰ รอบจัดส่ง — Kanban Delivery Rounds
-          </h3>
-          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
-        </div>
-        <FilterBar bare style={{ marginBottom:0 }}>
-          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder={ALL.line} />
-          {canEdit && (
-            <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
-          )}
-        </FilterBar>
-      </div>
+      {/* UI-STANDARD §2.1: แถบกรองใต้แท็บทันที (ชื่อแท็บบอกหัวเรื่องแล้ว ไม่วาด h3 ซ้ำ) → คำอธิบาย → เนื้อหา */}
+      <FilterBar>
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={ALL.line} />
+        <span className="spacer" />
+        {canEdit && (
+          <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
+        )}
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
 
       {Object.keys(grouped).length === 0 ? (
         <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
