@@ -1,4 +1,7 @@
 -- ═══ 📚 คลัง PFMEA กลาง (Foundation / Family PFMEA) · Main project (ewhdfqwfwofivojtsizn) ═══
+-- ✅ APPLY แล้ว 2026-09-24 บน Main (ewhdfqwfwofivojtsizn) — ห้ามรันซ้ำโดยไม่จำเป็น (idempotent แต่ไม่ต้อง)
+--    ผล seed ที่ตรวจกลับ: 43 กระบวนการ (รอยืนยันทั้งหมด) · 541 แถว master · OP ผูกครบ 126/126 · FMEA ผูก 977/1136
+--    รายละเอียด + บทเรียน "ค้างไม่ได้ apply 9 วัน" → docs/modules/pe-core-tools.md §คลัง PFMEA กลาง — apply แล้ว
 -- 2026-09-15 · คำสั่ง user: "ทำ master data ของ PFMEA เป็น reference — โปรเจคใหม่ดึงไปใช้ได้เลย
 --   และถ้าโปรเจคไหนปรับปรุงแล้ว RPN ดีกว่าของ master ก็อัพเดท" · แบบเต็ม: docs/modules/pe-core-tools.md §คลัง PFMEA
 --
