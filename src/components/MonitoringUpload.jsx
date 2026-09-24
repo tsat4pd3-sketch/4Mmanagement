@@ -18,7 +18,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import fetchAllRows from '../utils/fetchAllRows';
-import { parseMonitoringWorkbook, monitoringToRecords } from '../utils/monitoringSheet';
+import { parseMonitoringWorkbook, monitoringToRecords, sheetReport } from '../utils/monitoringSheet';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
@@ -67,6 +67,12 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
       const { data: prodRows, error: prodErr } = await fetchAllRows(
         supabaseDR, 'dr_products', 'mat_no, name, line_name', q => q.order('mat_no'));
       if (prodErr) { toast.error(`อ่านทะเบียนสินค้าไม่สำเร็จ: ${prodErr.message} — ยังไม่เขียนอะไร`); setBusy(false); return; }
+      /* 🔴 ทะเบียนลูกค้า — ชื่อชีท (TSPK / TSESA+LA) → ลูกค้าจริง
+         เดิมไม่เขียน customer เลย ⇒ ใบทั้งหมดไปกองใน "— ไม่ระบุลูกค้า —" ที่จอ 🚚 Delivery
+         (แพลนนิ่งรายงาน 24/09 ว่า "ลูกค้า TSESA ไม่ขึ้น") · ไม่มีในทะเบียน = null ห้ามเดา */
+      const { data: custRows, error: custErr } = await fetchAllRows(
+        supabaseDR, 'customers', 'code, name, aliases, is_active', q => q.eq('is_active', true).order('code'));
+      if (custErr) toast.info('อ่านทะเบียนลูกค้าไม่ได้ — ใบที่นำเข้าจะไม่มีชื่อลูกค้า (ส่วนอื่นยังนำเข้าได้)');
       const norm = (s) => String(s ?? '').replace(/[\s-]/g, '').toUpperCase();
       const lineOfMat = {}, nameOfMat = {};
       (prodRows || []).forEach(p => {
@@ -77,7 +83,13 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
       });
 
       const month = monthKeyOf(today);
-      const rec = monitoringToRecords(parsed, { monthKey: month, today, lineOfMat: (m) => lineOfMat[norm(m)] || null });
+      const rec = monitoringToRecords(parsed, {
+        monthKey: month, today, customers: custRows || [],
+        lineOfMat: (m) => lineOfMat[norm(m)] || null,
+      });
+      /* 🔎 สรุปรายชีท — จอต้องบอกได้ว่าชีทไหนให้ 0 ใบ **เพราะอะไร**
+         "อ่านถูกแล้วไม่มีของ" กับ "อ่านไม่ออก" หน้าตาเหมือนกันบนจอถ้าไม่แยกข้อความ */
+      const bySheet = sheetReport(parsed, { today, customers: custRows || [] });
 
       /* สต็อก: คิดส่วนต่างจากยอดปัจจุบัน (ลง ledger เป็น adjust — ย้อนได้ ตรวจได้) */
       const { data: stkRows, error: stkErr } = await fetchAllRows(
@@ -105,7 +117,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
         return null;
       }).filter(Boolean);
 
-      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, lotDiff, nameOfMat, norm, today });
+      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, lotDiff, nameOfMat, norm, today, bySheet });
     } catch (e) {
       toast.error(`อ่านไฟล์ไม่สำเร็จ: ${e.message}`);
     }
@@ -126,6 +138,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     if (ok && rec.forecasts.length) {
       ok = await insertChunked('customer_forecasts', rec.forecasts.map(f => ({
         mat_no: f.mat_no, part_name: f.part_name || null, customer_part_no: f.customer_part_no,
+        customer: f.customer || null,
         period_month: f.period_month, qty: f.qty, source: 'monitoring', note: f.note,
       })), 'บันทึก forecast');
     }
@@ -137,7 +150,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     if (ok && future.length) {
       ok = await insertChunked('customer_shipping_orders', future.map(o => ({
         mat_no: o.mat_no, part_name: o.part_name || nameOfMat[norm(o.mat_no)] || null,
-        customer_part_no: o.customer_part_no, due_date: o.due_date, qty: o.qty,
+        customer: o.customer || null, customer_part_no: o.customer_part_no, due_date: o.due_date, qty: o.qty,
         status: 'pending', source: 'monitoring', note: o.note, created_by_name: by,
       })), 'บันทึกออเดอร์');
     }
@@ -231,7 +244,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
 }
 
 function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
-  const { rec, parsed, stockPlan, lotDiff, month, fileName } = p;
+  const { rec, parsed, stockPlan, lotDiff, month, fileName, bySheet } = p;
   const future = rec.orders.filter(o => !o.past);
   const past = rec.orders.length - future.length;
   const histCount = rec.shipped.filter(s => s.due_date < p.today).length + past;
@@ -247,9 +260,48 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
       <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
         ตรวจก่อนเขียน — <span style={{ color: 'var(--accent)' }}>{fileName}</span>
       </div>
-      <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-        ชีทที่อ่านได้: {[...parsed.press.map(s => s.sheet), ...parsed.customer.map(s => s.sheet)].join(' · ') || '—'}
+      {/* 🔎 สรุปรายชีท — บังคับโชว์เสมอ (24/09)
+          เดิมบอกแค่ยอดรวม "ออเดอร์ 232 ใบ" ⇒ คนเข้าใจว่าครบทุกลูกค้า
+          ความจริงคือ TSESA ให้ 0 ใบ เพราะชีทยังเป็นรอบ ก.ค.-ส.ค. — ไม่มีอะไรบนจอบอกเลย */}
+      <div style={{ overflowX: 'auto', marginBottom: 10 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+          <thead><tr>
+            {['ชีท', 'ชนิด', 'ลูกค้า', 'พาร์ท', 'ออเดอร์', 'ถึงวันที่'].map((h, i) => (
+              <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', padding: '4px 8px', fontSize: 11,
+                                   color: 'var(--muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {(bySheet || []).map(r => (
+              <tr key={r.sheet + r.kind}>
+                <td style={{ padding: '4px 8px', fontSize: 12, fontWeight: 700, borderBottom: '1px solid var(--border2)' }}>
+                  {r.sheet}
+                  {r.note && <div style={{ fontWeight: 400, fontSize: 11, color: '#f59e0b', whiteSpace: 'normal' }}>⚠️ {r.note}</div>}
+                </td>
+                <td style={{ padding: '4px 8px', fontSize: 12, color: 'var(--muted)', borderBottom: '1px solid var(--border2)' }}>{r.kind}</td>
+                <td style={{ padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border2)',
+                             color: r.customer ? 'var(--text)' : 'var(--muted)' }}>
+                  {r.customer || (r.kind === 'ลูกค้า' ? '— ไม่มีในทะเบียน —' : '—')}
+                </td>
+                <td style={{ padding: '4px 8px', fontSize: 12, textAlign: 'right', borderBottom: '1px solid var(--border2)' }}>{r.parts}</td>
+                <td style={{ padding: '4px 8px', fontSize: 12, textAlign: 'right', fontWeight: 700,
+                             color: r.orders ? 'var(--accent)' : '#ef4444', borderBottom: '1px solid var(--border2)' }}>
+                  {r.orders ? `${r.orders} ใบ · ${r.orderQty.toLocaleString()}` : '0 ใบ'}
+                </td>
+                <td style={{ padding: '4px 8px', fontSize: 12, textAlign: 'right', whiteSpace: 'nowrap',
+                             color: r.staleDays > 0 ? '#f59e0b' : 'var(--muted)', borderBottom: '1px solid var(--border2)' }}>
+                  {r.lastDate || '—'}{r.staleDays > 0 ? ` (−${r.staleDays} วัน)` : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+      {parsed.skipped?.length > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
+          ชีทที่ข้าม (ไม่ใช่รูปแบบ Monitoring): {parsed.skipped.join(' · ')}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map(([t, v, note]) => (
