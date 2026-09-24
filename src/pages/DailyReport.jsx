@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
@@ -103,9 +103,10 @@ function summarizeParts(entries) {
 
 function summarizeDowntimes(dtLogs) {
   const map = {};
+  const idx = buildDtIndex(dtLogs || []);
   (dtLogs || []).forEach(d => {
     /* 🗑️ ประเภทที่บอกอะไรไม่ได้ แตกตามเครื่อง (utils/downtimeCategory 23/09) */
-    const key = dtBucketName(d);
+    const key = dtBucketName(d, idx);
     const a = (map[key] ||= { name: key, min: 0, count: 0, machines: [] });
     a.min += d.duration_min || 0;
     a.count += 1;
