@@ -5,7 +5,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor,
+  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor, orgNodeIdFor, ORG_SRC_MANUAL,
 } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
@@ -112,6 +112,10 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        /* 🧭 แกนสังกัด — ผูกโหนดในผังตั้งแต่ลงทะเบียน (docs/ORG-AXES-DECISION.md §5.1)
+           ข้อความ section/department ข้างบนยังเขียนเหมือนเดิมในฐานะสำเนาไว้โชว์ */
+        org_node_id:  orgNodeIdFor(section, department, orgSections, orgDepts),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: busRouteId || null,
         start_date: startDate || null,
         image_url:  photoUrl,

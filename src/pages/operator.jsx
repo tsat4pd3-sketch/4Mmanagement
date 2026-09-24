@@ -15,7 +15,8 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+  orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
@@ -506,6 +507,13 @@ export default function Operator() {
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
+        /* 🧭 แกนสังกัด — เก็บ "โหนดในผัง" ไม่ใช่แค่ข้อความ (docs/ORG-AXES-DECISION.md §5.1)
+           คอลัมน์ข้อความข้างบนยังเขียนเหมือนเดิมทุกตัวในฐานะสำเนาไว้โชว์ ⇒ หน้าเก่าไม่กระทบ
+           `manual` = คนเลือกเองจากฟอร์ม (ต่างจาก auto_* ที่ระบบเดาจากข้อความตอน backfill) */
+        org_node_id:  orgNodeIdFor(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes),
+          editingEmp.department, orgSectionNodes, orgDeptNodes),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,

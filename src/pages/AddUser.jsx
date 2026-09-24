@@ -10,7 +10,8 @@ import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
-import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย + cascade (ของกลางเดียวกับหน้าลงทะเบียนพนักงาน)
+import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
+  orgNodeIdFor, ORG_SRC_MANUAL } from '../utils/sectionScope';   // แผนกขึ้นตรงฝ่าย + cascade (ของกลางเดียวกับหน้าลงทะเบียนพนักงาน)
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
@@ -205,6 +206,10 @@ export default function AddUser() {
       name,
       department: newEmp.department || null,
       section: sectionValueForSave(newEmp.section),   // sentinel "ขึ้นตรงฝ่าย" → null (ตรงกับผังจริง)
+      /* 🧭 แกนสังกัด — คนใหม่ต้องผูกโหนดในผังตั้งแต่แรก ไม่ต้องรอ backfill มาเดาทีหลัง
+         (docs/ORG-AXES-DECISION.md §5.1 · ข้อความ section/department ข้างบน = สำเนาไว้โชว์) */
+      org_node_id: orgNodeIdFor(newEmp.section, newEmp.department, orgNodes.sections, orgNodes.depts),
+      org_node_src: ORG_SRC_MANUAL,
       staff_kind: newEmp.staff_kind || STAFF_SHOPFLOOR,
       position: form.position || null,
       created_by: userData?.user?.id || null,
