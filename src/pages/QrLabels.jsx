@@ -194,11 +194,6 @@ export default function QrLabels() {
 
   const th = { padding: '8px 10px', fontSize: 12, color: 'var(--muted)', textAlign: 'left', fontWeight: 700, borderBottom: '1px solid var(--border)' };
   const td = { padding: '7px 10px', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' };
-  const chip = (active, color) => ({
-    padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? color : 'var(--border2)'}`,
-    background: active ? `${color}18` : 'var(--bg3)', color: active ? color : 'var(--muted)',
-  });
 
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>

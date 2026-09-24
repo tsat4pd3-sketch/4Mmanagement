@@ -25,7 +25,6 @@ import { rangeDays } from '../utils/timeRange';
 
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
 const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
-const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 
 /* ความพึงพอใจ 5 ด้าน × 3 ระดับ — **คีย์ต้องตรงกับ SAT_DIMS ใน MtnRepair.jsx เป๊ะ**
    (ค่าที่เก็บใน `mtn_orders.satisfaction` เป็น jsonb คีย์ชุดนี้ · เปลี่ยนคีย์ = ใบเก่าอ่านไม่ออก) */
