@@ -60,7 +60,7 @@
 
 โจทย์: "ทำ master data ของ PFMEA เป็น reference — โปรเจคใหม่ดึงไปใช้ได้เลย · โปรเจคไหนปรับปรุงแล้ว RPN ดีกว่า master ก็อัพเดท" → ทำครบ 3 บล็อกตามที่เสนอ ("เอาตามที่เสนอเลย")
 
-- **ตาราง (Main · migration `20260915_pe_fmea_master_main.sql` — ⏳ รอ user apply):** `pe_master_processes` (กระบวนการมาตรฐาน 1 แถว = 1 กระบวนการ เช่น SPOT WELDING · `key` = ชื่อ normalize · `confirmed_at` null = "รอยืนยัน" จาก seed) · `pe_master_items` (แถว FMEA ของ master + `best_practice` + `version`) · `pe_master_proposals` (ข้อเสนอจากพาร์ท: `improve` = RPN ดีกว่า / `new_item` = failure mode ที่ master ยังไม่มี · status proposed/accepted/rejected · reject ต้องมีเหตุผล — check constraint) · เพิ่ม `pe_processes.master_process_id` + `pe_fmea_items.master_item_id/master_version` (nullable ทั้งหมด — พาร์ทเดิมไม่กระทบ)
+- **ตาราง (Main · migration `20260915_pe_fmea_master_main.sql` — **apply แล้ว 2026-09-24**):** `pe_master_processes` (กระบวนการมาตรฐาน 1 แถว = 1 กระบวนการ เช่น SPOT WELDING · `key` = ชื่อ normalize · `confirmed_at` null = "รอยืนยัน" จาก seed) · `pe_master_items` (แถว FMEA ของ master + `best_practice` + `version`) · `pe_master_proposals` (ข้อเสนอจากพาร์ท: `improve` = RPN ดีกว่า / `new_item` = failure mode ที่ master ยังไม่มี · status proposed/accepted/rejected · reject ต้องมีเหตุผล — check constraint) · เพิ่ม `pe_processes.master_process_id` + `pe_fmea_items.master_item_id/master_version` (nullable ทั้งหมด — พาร์ทเดิมไม่กระทบ)
 - **seed ใน migration:** จัดกลุ่ม OP ที่มีอยู่ตามชื่อ normalize (`pe_master_norm()`) → สร้าง master ต่อกลุ่ม (`confirmed_at` null) ก๊อปแถวจาก OP ที่มีแถวมากสุด แล้วผูก OP อื่นในกลุ่มด้วย failure_mode ที่ตรงกัน — **ไม่ apply = หน้ายังใช้ได้ แค่แท็บ 📚 ว่างและปุ่ม master ไม่มีผล**
 - **กฎ 7 ข้อ (ตกลงกับ user แล้ว):**
   1. **พาร์ทถือ "สำเนา" ไม่ใช่ pointer** — เอกสารควบคุมของพาร์ทต้องนิ่ง แก้ master แล้วพาร์ทเก่า**ไม่**เปลี่ยนเอง (จำ `master_version` ไว้เทียบ)
@@ -74,18 +74,46 @@
 - **ยังไม่ทำ:** แจ้งเตือน yokoten อัตโนมัติเมื่อ master เปลี่ยน (ตอนนี้เห็นจากป้าย behind ในพาร์ท) · master ของ Control Plan · รวม master ซ้ำ (merge) · ประวัติ version รายแถว (มีแค่เลข version + audit_log)
 
 
-## ⚠️ คลัง PFMEA กลาง — migration ยังไม่ได้ apply (พบ 2026-09-16)
+## ✅ คลัง PFMEA กลาง — apply แล้ว 2026-09-24 (ค้างมา 9 วัน)
 
-`20260915_pe_fmea_master_main.sql` **ยังไม่ถูก apply บน Main** — ตรวจ `pg_class` แล้วไม่มีตาราง
-`pe_master_processes` / `pe_master_items` / `pe_master_proposals` เลยสักตัว (0 แถวใน `pg_policies` ด้วย)
-ทั้งที่ CLAUDE.md เขียนถึงฟีเจอร์นี้เหมือนใช้งานได้แล้ว
+`20260915_pe_fmea_master_main.sql` ถูก apply บน **Main (`ewhdfqwfwofivojtsizn`)** วันที่ 2026-09-24
+ตามคำสั่ง user ("ลุย") — ก่อนหน้านั้นโค้ดที่เรียกตาราง `pe_master_*` merge เข้า main ตั้งแต่ 09-15
+แต่ตารางไม่มีจริงสักตัว ⇒ **ฟีเจอร์ตายเงียบ 9 วัน**
 
-- **ผลตอนนี้:** แท็บ 📚 ในหน้า `/pe-docs` ขึ้น "คลังว่าง" — **ไม่พัง** เพราะ `loadMasters()` ใช้
-  `(m.data || [])` รองรับ 42P01 ไว้แล้ว (มีคอมเมนต์กำกับที่ `PEDocs.jsx:162`) · ลูป "ระบบเสนอ คนตัดสิน"
-  จึงยังไม่ทำงานจริง
-- **ยังไม่ apply ให้ เพราะเป็น product decision** (= เปิดฟีเจอร์ใหม่) ต้องให้ user สั่ง
-- **แต่แก้ RLS ในไฟล์ให้ถูกไว้แล้ว (2026-09-16)** — เดิมบล็อกนั้นเป็น `for all to authenticated
-  using (true)` = ใครที่ login ก็แก้ master PFMEA กลางได้ตรงๆ โดยไม่ผ่านลูปข้อเสนอ (ขัดกฎที่ออกแบบไว้เอง)
-  ตอนนี้เป็น: `pe_master_processes`/`pe_master_items` → `has_perm('pe:approve')` ·
-  `pe_master_proposals` → INSERT `pe:edit` / UPDATE-DELETE `pe:approve`
-  ⇒ วันไหนกด apply ก็ได้สิทธิ์ที่ถูกต้องตั้งแต่แรก ไม่ต้องตามแก้ทีหลัง
+### บทเรียน — ทำไมไม่มีใครเห็น
+- **หน้าไม่พัง** (`loadMasters()` ใช้ `(m.data || [])` รับ 42P01 ไว้) ⇒ แท็บ 📚 ขึ้น "คลังว่าง"
+  เหมือนยังไม่มีข้อมูล ไม่ใช่เหมือนระบบเสีย · ปุ่มเขียนทุกตัวถึงจะได้ 42P01 แต่ไม่มีใครกดเพราะคลังว่าง
+- **ด่าน build/crashsweep จับไม่ได้** — harness ใช้ mock supabase ไม่ใช่ DB จริง
+  ⇒ "โค้ดเรียกตารางที่ยังไม่มีในฐานจริง" เป็นคลาสบั๊กที่**ไม่มีด่านไหนในรีโปมองเห็น**
+- 🔴 **กฎที่ได้: feature ที่พึ่ง migration ใหม่ ต้องยืนยันว่า apply แล้วในคอมมิทเดียวกับที่ merge โค้ด**
+  ถ้าเป็น product decision ที่ต้องรอ user ให้เขียนไว้ใน**งานค้างที่ session ถัดไปเห็นแน่ๆ**
+  ไม่ใช่ปล่อยให้เอกสารเขียนเหมือนใช้งานได้แล้ว (CLAUDE.md §PE Core Tools เคยเขียนแบบนั้นอยู่ 9 วัน)
+
+### ผล seed จริง (ตรวจกลับหลัง apply)
+| ตัวชี้วัด | ค่า | หมายเหตุ |
+|---|---|---|
+| `pe_master_processes` | **43** | ตรงกับจำนวนกลุ่มชื่อ OP ที่ normalize แล้ว ที่นับแยกไว้ก่อน apply |
+| รอ PE ยืนยัน (`confirmed_at` null) | **43 / 43** | ตามออกแบบ — seed ไม่ยืนยันให้เอง |
+| master ที่มีแถว FMEA | **43 / 43** | ไม่มี master เปล่า |
+| `pe_master_items` | **541** | ก๊อปจาก OP ต้นทางของแต่ละกลุ่ม |
+| OP ที่ผูก master | **126 / 126** | ครบทุก OP (ไม่มี OP ชื่อว่าง) |
+| แถว FMEA ที่ผูก master item | **977 / 1,136 (86%)** | เหลือ 159 แถว |
+| `pe_master_proposals` | 0 | ยังไม่มีใครเสนอ — ถูกต้อง |
+
+- **159 แถวที่ยังไม่ผูก = ตามออกแบบ ไม่ใช่บั๊ก** — seed ผูกแถวของ OP อื่นในกลุ่มด้วย `failure_mode`
+  ที่ normalize แล้วตรงกันเท่านั้น · แถวที่เขียน failure mode คนละสำนวนจะขึ้นป้าย **unlinked** ในแท็บ FMEA
+  ให้ PE กดผูก/เสนอเข้า master เอง (`compareToMaster`) — เป็นงานของคน ไม่ใช่ของ seed
+- RLS ครบตามที่แก้ไว้ 2026-09-16: `pe_master_processes`/`pe_master_items` → `has_perm('pe:approve')` (FOR ALL) ·
+  `pe_master_proposals` → INSERT `pe:edit` / UPDATE-DELETE `pe:approve` · SELECT = authenticated ทั้ง 3 ตาราง
+  · trigger `trg_set_updated_at` + `trg_audit` ครบทั้ง 3 ตาราง (ป้ายไทยมีใน `src/utils/auditLabels.js` แล้ว)
+- **Rollback** (revert โค้ดก่อน แล้วค่อยแตะ schema — SQL อยู่หัวไฟล์ migration):
+  ```sql
+  alter table public.pe_fmea_items drop column if exists master_item_id, drop column if exists master_version;
+  alter table public.pe_processes  drop column if exists master_process_id;
+  drop table if exists public.pe_master_proposals, public.pe_master_items, public.pe_master_processes cascade;
+  ```
+  (ข้อมูลที่หาย = สำเนา seed ล้วน ไม่มีของที่คนกรอกเอง ตราบใดที่ยังไม่มีใครแก้ master/เสนอเข้ามา)
+
+### ขั้นต่อไปของฟีเจอร์นี้ (ยังไม่ทำ — รอ user สั่ง)
+- PE ไล่ **ยืนยัน 43 กระบวนการ** ที่ระบบจัดกลุ่มให้ (ยังไม่ยืนยัน = ไม่ขึ้นเป็นตัวเลือกใน `/npi` ตามกฎข้อ 6)
+- ตามเก็บ 159 แถวที่ยังไม่ผูก · แจ้งเตือน yokoten อัตโนมัติ · master ของ Control Plan · merge master ซ้ำ
