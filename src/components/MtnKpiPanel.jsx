@@ -114,7 +114,9 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         )}
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} />
+        {/* 📏 ใบนี้คือ **ฐานของค่าเฉลี่ยทุกใบทางขวา** — เขียนไว้ให้ชัด ไม่งั้น MTTR ที่คิดจาก 2 ใบ
+            กับที่คิดจาก 200 ใบ ดูน่าเชื่อถือเท่ากันบนจอ (UI §6.18 ข้อ 4) */}
+        <Card t="งานที่ปิด (ในช่วง)" v={`${stat.n} ใบ`} h="ฐานที่ใช้คิด MTTA / MTTR / MDT ทุกตัวทางขวา" />
         <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
         <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง และหักช่วงที่ส่งซ่อมภายนอกออกแล้ว)" />
         <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />

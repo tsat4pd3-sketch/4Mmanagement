@@ -135,7 +135,7 @@ export default function PageHeader({
             width: isMobile ? 'max-content' : 'auto',
           }}>
             {ind && (
-              <span aria-hidden="true" data-ux-ok="tab-indicator" style={{
+              <span aria-hidden="true" style={{
                 position: 'absolute', left: 0, top: 0, width: ind.w, height: ind.h,
                 transform: `translate3d(${ind.x}px, ${ind.y}px, 0)`,
                 borderRadius: 999, background: 'var(--accent)',

@@ -15,6 +15,7 @@ import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+import { statusColor, toneOf, toneInk } from '../utils/statusTone';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -300,17 +301,33 @@ export default function EventLog() {
         )}
       />
 
-      {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px,1fr))', gap: 12, marginBottom: 24 }}>
+      {/* KPI row — 24/09 (ก้อน E ของ De-AI UI · UI §6.17 + §6.18)
+          🚦 เดิม 4 ใบทาสีประจำใบ: น้ำเงิน/ส้ม/เขียว/แดง ⇒ ปนกัน 2 ความหมายในแถวเดียว
+             ที่แย่ที่สุดคือ "อนุมัติแล้ว" **เขียวตายตัว** — 0 จาก 14 ใบก็ยังเขียว ทั้งที่แปลว่ายังไม่มีใครอนุมัติเลย
+             และ "Cat C (ฉุกเฉิน)" แดงตายตัวทั้งที่ 0 ใบ = ข่าวดี
+          📏 3 ใบหลังเป็น **ส่วนหนึ่งของ "ทั้งหมด"** ไม่ใช่ KPI คนละตัว ⇒ ต้องบอกสัดส่วนของยอดรวม
+             และ "ทั้งหมด" เป็นตัวหาร จึงเป็นใบพระเอกของแถว */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12, marginBottom: 24 }}>
         {[
-          { label: 'ทั้งหมด',       value: stats.total,    color: '#4d9fff' },
-          { label: 'รออนุมัติ',      value: stats.pending,  color: '#f59e0b' },
-          { label: 'อนุมัติแล้ว',    value: stats.approved, color: '#22c55e' },
-          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC,    color: '#ef4444' },
+          { label: 'ทั้งหมด', value: stats.total, tone: 'none', primary: true,
+            sub: `ใบ CQI-15 ในช่วงที่กรองอยู่` },
+          // คิวรออนุมัติ = เหลือง ไม่ใช่แดง (งานยังเดินอยู่) — ให้ตรงกับการ์ด 4M บนหน้าแรก
+          { label: 'รออนุมัติ', value: stats.pending, tone: toneOf({ value: stats.pending, zeroIsGood: true, over: 'warn' }) },
+          // จำนวนที่อนุมัติแล้ว = ข้อเท็จจริง ไม่มีเป้า ⇒ เทา (ห้ามเขียวตายตัว)
+          { label: 'อนุมัติแล้ว', value: stats.approved, tone: 'none' },
+          // Cat C = เหตุฉุกเฉิน · 0 = ดีจริง · มีเมื่อไหร่ = แดงจริง
+          { label: 'Cat C (ฉุกเฉิน)', value: stats.catC, tone: toneOf({ value: stats.catC, zeroIsGood: true }) },
         ].map(k => (
-          <div key={k.label} className="card" style={{ borderTop: `3px solid ${k.color}`, padding: '14px 18px' }}>
+          <div key={k.label} className="card"
+            style={{ borderTop: `3px solid ${statusColor(k.tone)}`, padding: '14px 18px',
+              gridColumn: k.primary ? 'span 2' : 'auto' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
-            <div style={{ fontSize: 32, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.2, marginTop: 4 }}>{k.value}</div>
+            <div style={{ fontSize: k.primary ? 44 : 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: toneInk(k.tone), lineHeight: 1.2, marginTop: 4 }}>
+              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>ใบ</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
+            </div>
           </div>
         ))}
       </div>
