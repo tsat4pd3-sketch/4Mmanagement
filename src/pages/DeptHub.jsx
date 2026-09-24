@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from 'react';
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { useNavigate } from 'react-router-dom';
-import { navItemsForGroups, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
+import { navItemsForGroups, isNavGuest, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { topPaths } from '../utils/navRecent';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
@@ -725,15 +725,25 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {/* ชิปเมนูจริงจาก sidebar (NAV_ITEMS) — คลิกเข้าหน้านั้นได้เลย
                 เกิน CHIP_CAP = พับไว้หลังปุ่ม "ดูทั้งหมด" (ห้ามซ่อนเงียบ — ต้องบอกจำนวนที่พับ) */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {chips.map(item => (
-                <button key={item.to} type="button" className="dept-chip"
-                  title={`เปิด ${item.label}`}
-                  onClick={e => openMenu(e, item.to)}
-                  style={{ background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
-                  <span style={{ fontSize: 12 }}>{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
+              {chips.map(item => {
+                /* 🚪 ชิป "ทางลัด" (หน้าที่บ้านจริงอยู่การ์ดอื่น · `alsoIn`) ต้องหน้าตาต่างจากของการ์ดนี้
+                   — จางลง + `↗ <หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
+                   แล้วคำถาม "หน้านี้อยู่หมวดไหน" มี 2 คำตอบ (24/09 · คำสั่ง user — ดู `isNavGuest`) */
+                const guest = isNavGuest(item, d.group);
+                const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
+                return (
+                  <button key={item.to} type="button" className="dept-chip"
+                    title={guest ? `เปิด ${item.label} — ทางลัด · เมนูนี้อยู่หมวด "${item.group}"` : `เปิด ${item.label}`}
+                    onClick={e => openMenu(e, item.to)}
+                    style={guest
+                      ? { background: 'transparent', color: 'var(--text2)', border: '1px dashed var(--border2)' }
+                      : { background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
+                    <span style={{ fontSize: 12, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+                    {item.label}
+                    {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{homeShort}</span>}
+                  </button>
+                );
+              })}
               {hidden.length > 0 && (
                 <button type="button" className="dept-chip more-chip"
                   onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
