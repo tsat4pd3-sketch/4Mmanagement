@@ -149,7 +149,12 @@ export default function PageHeader({
           overflowX: isMobile ? 'auto' : 'visible',
           paddingTop: 7, paddingBottom: 4,   // เผื่อที่ให้ลำแสง/แสงเรืองไม่โดนกล่องที่เลื่อนตัดหัว
         }}>
-          <div ref={rowRef} style={{
+          {/* 🔖 `data-tabbar` = ที่จับให้ `audit/stdsweep.mjs` หาแถบแท็บของหน้าเพื่อไล่กดทุกแท็บ
+              **ห้ามถอด** — ถอดเมื่อไหร่ stdsweep จะตรวจได้แค่แท็บแรกของทุกหน้าแบบเงียบๆ
+              (เกิดจริง 24/09: เคยยืมแอตทริบิวต์ `data-ux-ok` ของ uxsweep มาใช้เป็นที่จับ
+               พอ uxsweep เลิกต้องการมันแล้วถอดออก stdsweep ก็ร่วงจากหลายมุมมองเหลือหน้าละ 1
+               โดยไม่มีใครรู้ ⇒ ที่จับของเครื่องมือต้องเป็นของตัวเอง ห้ามยืมของเครื่องมืออื่น) */}
+          <div ref={rowRef} data-tabbar="1" style={{
             position: 'relative', display: 'flex', gap: 7,
             flexWrap: isMobile ? 'nowrap' : 'wrap',
             width: isMobile ? 'max-content' : 'auto',

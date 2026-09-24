@@ -10,6 +10,11 @@
  *  3. `wide`   <select> ยืดเกิน 45% ของความกว้างเนื้อหา (บั๊ก select{width:100%})
  *  4. `ctl`    ช่องใน .filter-bar ที่สูง/มุม ไม่ตรง token (--ctl-h 34 · --ctl-r 8)
  *  5. `all`    ตัวเลือก "ทั้งหมด" ของ dropdown ที่ไม่ใช่ป้ายในทะเบียน ALL (src/utils/filterLabels.js)
+ *  6. `nav`    **"คุณอยู่ตรงนี้" บนรางไอคอน** — ยืนอยู่หน้าไหน หมวดที่มีหน้านั้นต้องถูกมาร์ค
+ *              `aria-current` **ครบทุกหมวด** (หน้าที่ตั้ง `alsoIn` อยู่ 2 หมวดจริงๆ ต้องติดทั้งคู่)
+ *              ⚠️ ด่านนี้มีเพราะ bug จริง 24/09: รางไฮไลต์ "แผงที่กดเปิด" แรงกว่า "หน้าที่เปิดอยู่จริง"
+ *                 และ lab ของ sidebar ตรึง path เป็น `/` เสมอ ⇒ **ไม่มี sweep ไหนเคยเห็นไฮไลต์นี้เลย**
+ *                 จน user ต้องมาทักเอง ("sidebar นอกสุดไม่บอกว่าอยู่หน้าไหน")
  *
  * ยกเว้นทั้งหน้า: บอร์ด TV ตาม UI-STANDARD §1 (ไม่มี PageHeader โดยตั้งใจ)
  * ใช้: เปิด `npx vite --config audit/vite.audit.mjs --port 5199` ค้างไว้ แล้ว `node audit/stdsweep.mjs [Page…]`
@@ -62,10 +67,12 @@ for (const name of PAGES) {
   try {
     await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await p.waitForTimeout(1800);
-    const n = await p.evaluate(() => { const i = document.querySelector('#mainbox [data-ux-ok="tab-indicator"]'); return i ? [...i.parentElement.children].filter(c => c.tagName === 'BUTTON').length : 1; });
+    /* หาแถบแท็บจาก `data-tabbar` ของ PageHeader (24/09) — เดิมยืม `data-ux-ok="tab-indicator"`
+       ของ uxsweep มาใช้ พอ uxsweep เลิกต้องการแล้วถอดออก ตัวนี้ก็เหลือหน้าละ 1 แท็บเงียบๆ */
+    const n = await p.evaluate(() => document.querySelectorAll('#mainbox [data-tabbar] > button').length || 1);
     for (let i = 0; i < Math.max(1, n); i++) {
       if (i) {
-        await p.evaluate(k => { const ind = document.querySelector('#mainbox [data-ux-ok="tab-indicator"]'); [...ind.parentElement.children].filter(c => c.tagName === 'BUTTON')[k]?.click(); }, i).catch(() => {});
+        await p.evaluate(k => { document.querySelectorAll('#mainbox [data-tabbar] > button')[k]?.click(); }, i).catch(() => {});
         await p.waitForTimeout(1300); await p.keyboard.press('Escape').catch(() => {});
       }
       rows.push({ name, tab: i, ...(await p.evaluate(measure)) });
@@ -74,6 +81,37 @@ for (const name of PAGES) {
   await p.close();
 }
 await b.close();
+
+/* ── 6) "คุณอยู่ตรงนี้" บนรางไอคอน ───────────────────────────────────────────────
+   เปิด lab ของ sidebar ทีละ route แล้วเทียบ: หมวดที่ถูกมาร์ค `aria-current` บนราง
+   ต้องเท่ากับหมวดที่ทะเบียนเมนูบอก (group + alsoIn) เป๊ะ — ขาดไป/เกินมา = จอโกหกตำแหน่ง */
+const navBad = [];
+{
+  const b2 = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+  const p0b = await b2.newPage({ viewport: VIEW, ...TZ });
+  await p0b.goto('http://localhost:5199/audit/index.html?p=__sidebar&role=admin');
+  await p0b.waitForTimeout(1200);
+  const nav = await p0b.evaluate(() => window.__NAV || []);
+  await p0b.close();
+  const routes = ONLY.length ? [] : [...new Set(nav.map(i => i.to))];
+  for (const to of routes) {
+    const want = new Set(nav.filter(i => i.to === to).flatMap(i => [i.group, i.alsoIn].filter(Boolean)));
+    const p = await b2.newPage({ viewport: VIEW, ...TZ });
+    try {
+      await p.goto(`http://localhost:5199/audit/index.html?p=__sidebar&role=admin&path=${encodeURIComponent(to)}`,
+        { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await p.waitForSelector('nav button[aria-current]', { timeout: 6000 });
+      const got = await p.evaluate(() => [...document.querySelectorAll('nav button[aria-current]')].map(x => x.title.split(' — ')[0]));
+      const miss = [...want].filter(g => !got.includes(g));
+      const extra = got.filter(g => !want.has(g));
+      if (miss.length || extra.length) {
+        navBad.push(`🔴 ${to} — มาร์คหมวด [${got.join(' , ') || '(ไม่มีเลย)'}] แต่ควรเป็น [${[...want].join(' , ')}]`);
+      }
+    } catch (e) { navBad.push(`🔴 ${to} — ตรวจไม่ได้: ${String(e.message).slice(0, 60)}`); }
+    await p.close();
+  }
+  await b2.close();
+}
 
 const xs = rows.filter(r => r.x != null).map(r => r.x);
 const freq = xs.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {});
@@ -92,4 +130,6 @@ for (const r of rows) {
 }
 console.log(`ตรวจ ${PAGES.length} หน้า / ${rows.length} มุมมอง @${VIEW.width}px · ตำแหน่งชื่อหน้ามาตรฐาน x=${STD_X} · ผิด ${bad.length} มุมมอง`);
 bad.forEach(l => console.log(l));
-process.exit(bad.length ? 1 : 0);
+if (!ONLY.length) console.log(`🧭 "คุณอยู่ตรงนี้" บนรางไอคอน — ผิด ${navBad.length} route`);
+navBad.forEach(l => console.log(l));
+process.exit((bad.length + navBad.length) ? 1 : 0);
