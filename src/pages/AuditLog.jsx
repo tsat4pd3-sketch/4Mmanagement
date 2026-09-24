@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import useTabParam from '../utils/useTabParam';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -31,8 +32,9 @@ export default function AuditLog() {
   const src = SRC[tab] || SRC.main;
 
   return (
-    <div style={{ padding: '18px 20px 40px', maxWidth: 1180, margin: '0 auto' }}>
+    <Page>
       <PageHeader
+        title="ประวัติการแก้ไขข้อมูล" icon="📜"
         tabs={Object.entries(SRC).map(([k, v]) => ({ key: k, label: v.label }))}
         tab={tab} onTab={(k) => { setTab(k); setReload(x => x + 1); }}
       />
@@ -50,6 +52,6 @@ export default function AuditLog() {
           </span>
         </>}
       />
-    </div>
+    </Page>
   );
 }

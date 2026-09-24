@@ -39,23 +39,20 @@
    ⚠️ **ผลลัพธ์คือ "ข้อเสนอ" ไม่ใช่การแก้ข้อมูล** — ห้ามเอาไป update ฐานเงียบๆ
       จอที่ใช้ต้องบอกว่าใบไหนถูกเดา + เดาจากคำอะไร (ดู `MtnAnalysis` มิติ 🔎)      */
 
+/* ── 🔄 รอบ 4 (2026-09-24 · คำสั่ง user "หาทฤษฎีจากภายนอกมาช่วย · เรื่องภาษา แก้เลย") ──
+   ชั้นภาษา + ชั้นสถิติ ถูกแยกออกไปเป็นไฟล์ของตัวเอง แล้วไฟล์นี้เรียกใช้:
+     · `thaiText.js`  — ตัดคำไทยด้วย ICU · คีย์เสียงข้ามสคริปต์ (อาราม=alarm) · ทนพิมพ์ผิด
+     · `termStats.js` — log-odds + informative Dirichlet prior แทนกติกา "ชนะ 80%" แบบเดิม
+   เหตุผลว่าทำไมของเดิมไม่พอ อยู่ในหัวไฟล์ทั้งสอง                                       */
 import { PLANNED_GROUP, isVague } from './unclassified.js';
+import { normalizeThai, candidateTerms, phoneticKey, sameWord } from './thaiText.js';
+import { pickDiscriminative } from './termStats.js';
 
 const THAI = '฀-๿';
 const TH_RE = new RegExp(`[${THAI}]`);
 
-/** ทำข้อความให้เทียบกันได้ — lower + แยกรอยต่อไทย↔อังกฤษ + เหลือแต่ตัวอักษร/เลข
- *  (ทะเบียนเขียนติดกันบ่อย เช่น "เครื่องBending มีปัญหา" ⇒ ต้องแยก bending ออกมาให้ได้) */
-export function normText(s) {
-  return String(s ?? '')
-    .normalize('NFC')
-    .toLowerCase()
-    .replace(new RegExp(`([${THAI}])([a-z0-9])`, 'g'), '$1 $2')
-    .replace(new RegExp(`([a-z0-9])([${THAI}])`, 'g'), '$1 $2')
-    .replace(new RegExp(`[^a-z0-9${THAI}]+`, 'g'), ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+/** ทำข้อความให้เทียบกันได้ — ตัวเดียวกับ `normalizeThai` (NFC + แยกรอยต่อไทย↔อังกฤษ + เเ→แ) */
+export const normText = normalizeThai;
 
 /* คำเชื่อม/คำโหลที่ "ไม่บอกหมวด" — ตัดทิ้งก่อนแตกคำ
    ⚠️ ทั้งหมดเป็น**คำกลางของภาษา** (มีปัญหา/ชำรุด/ระบบ/หัก/แตก/the/from)
@@ -75,6 +72,13 @@ const STOP = new Set([
   'หัก', 'แตก', 'ขาด', 'ติด', 'ค้าง', 'ตก', 'สึก', 'หล่น', 'หลวม', 'หมด', 'ไหม้',
   'รั่ว', 'ตัด', 'เข้า', 'ออก', 'จับ', 'ล่วง', 'ร่วง', 'เยื้อง', 'พบอาการ', 'อาการ',
   'ไม่เข้า', 'ไม่ตรง', 'ไม่ทำงาน', 'ไม่ได้', 'ตำแหน่ง', 'ระยะ', 'สัญญาณ',
+  // วลีบอก "จังหวะ/กำลังคน" — ICU ตัดเป็นคำเดียว แล้วคีย์เสียงไปชนคำอังกฤษ (24/09)
+  //   "ไม่ทัน" → mtn ชนกับ "meeting" เป๊ะ ⇒ "พนักงานใหม่เคาะงาน 2 คนไม่ทัน" กลายเป็นวาระประชุม
+  'ไม่ทัน', 'ไม่พอ', 'ไม่เพียงพอ', 'เพียงพอ',
+  // หน่วย/คำบอกปริมาณ-ตำแหน่ง — ช่างพิมพ์ต่อท้ายแทบทุกใบ ("แก้ไข 20 นาที") จึงดู "ถี่" แต่ไม่ชี้หมวด
+  //   วัดจริง 24/09 บนคลัง 16,776 token: "นาที" 622 ครั้ง · "รอบ" 107 · "หน้า" 197
+  //   ("รอบ" ผ่านทั้ง z และ DOMINANCE ไปลงที่ Set up Machine ทั้งที่แปลว่า cycle เฉยๆ)
+  'นาที', 'ชม', 'ชั่วโมง', 'รอบ', 'หน้า', 'ครั้ง', 'ประมาณ',
   // อังกฤษ — function word มาตรฐาน (โผล่จากข้อความ alarm ของเครื่อง ไม่ได้ชี้หมวด)
   'the', 'and', 'for', 'from', 'not', 'has', 'was', 'with', 'this', 'that', 'out',
   'off', 'time', 'core', 'system', 'machine', 'device', 'activity', 'hold', 'effect',
@@ -88,8 +92,16 @@ const MIN_TERM = 3;
 const DOMINANCE = 0.8;
 /** คำที่ "เรียนจากใบที่จัดกลุ่มแล้ว" ต้องเจออย่างน้อยกี่ใบถึงจะเชื่อ (ทะเบียนไม่ต้อง — คนตั้งใจเขียน) */
 const MIN_SEEN = 2;
+/** ตัวคูณน้ำหนักเมื่อคำถูกจับได้ด้วย "เสียง" (ทับศัพท์) ไม่ใช่ตัวอักษรตรงๆ */
+const SOUND_WEIGHT = 0.6;
 
-/** แตกป้าย 1 ป้าย → คำที่ใช้ชี้หมวดได้ */
+/** แตกป้าย 1 ป้าย → คำที่ใช้ชี้หมวดได้
+ *  🔴 **ป้ายในทะเบียนใช้ช่องว่างตัดคำเท่านั้น ห้ามเอา ICU + n-gram มาตัดซอย**
+ *     เพราะป้ายเป็นข้อความที่คน *ตั้งใจเขียน* มาแล้ว (มีช่องว่างคั่นถูกที่)
+ *     ถ้าซอยอีก จะได้ "เศษคำ" ที่ไม่ใช่คำ แล้วมันไปจับข้อความมั่วไปหมด — วัดจริง 24/09:
+ *       "เคาะเศษ / ทำความสะอาดสต๊อปเปอร์" → ICU ซอยได้ "เปอร์" · "อาด" · "ทำความสะ"
+ *       ⇒ "ไวเปอร์ดายสึก" (wiper die) ถูกจับเข้า "เคาะเศษ/ทำความสะอาดสต๊อปเปอร์"
+ *     ICU + n-gram มีไว้ใช้กับ **ข้อความอิสระที่พนักงานพิมพ์** (ดู classifyText) ซึ่งเขียนติดกัน */
 export function termsOfLabel(label) {
   const clean = normText(label).replace(FILLER, ' ');
   const out = new Set();
@@ -111,8 +123,9 @@ export function termsOfLabel(label) {
  * @param {Array} entries  [{ label, group, team?, shared_teams?, kind? }]
  * @returns {{ terms: Array<{term, weight, ascii, hits: Array}> }}
  */
-export function buildCategoryIndex(entries = []) {
+export function buildCategoryIndex(entries = [], { zMin = 1.96, a0 = 50 } = {}) {
   const byTerm = new Map();
+  const seenCount = new Map();                        // term → (group → จำนวนครั้ง) เฉพาะที่ "เรียน"
   for (const e of entries) {
     const group = String(e?.group ?? '').trim();
     if (!group || isVague(group)) continue;          // ป้ายถังขยะสอนอะไรไม่ได้
@@ -123,17 +136,56 @@ export function buildCategoryIndex(entries = []) {
         group, registry,
         team: e?.team ?? null, shared_teams: e?.shared_teams ?? null,
       });
+      if (!registry) {
+        if (!seenCount.has(term)) seenCount.set(term, new Map());
+        const g = seenCount.get(term);
+        g.set(group, (g.get(group) || 0) + 1);
+      }
     }
   }
+  /* 🔴 คำที่ "เรียนจากใบเก่า" ต้องผ่านการทดสอบทางสถิติ ไม่ใช่แค่เจอ ≥ 2 ครั้ง
+     (Monroe et al. 2008 — ดู termStats.js) · วัดจริง 23/09: กติกาเดิมปล่อย
+     "ข้าง" (2 ใบ 100%) ผ่านเท่ากับ "conveyor" (125 ใบ 88%) แล้วเดาผิดครึ่งหนึ่ง */
+  const keep = pickDiscriminative(seenCount, { zMin, a0 });
   const terms = [];
   for (const [term, hits] of byTerm) {
-    // คำที่มาจากการเรียนล้วน + เจอครั้งเดียว = บังเอิญ ทิ้ง
-    if (!hits.some(h => h.registry) && hits.length < MIN_SEEN) continue;
-    terms.push({ term, weight: Math.min(term.length, 12), hits, ascii: !TH_RE.test(term) });
+    const fromRegistry = hits.some(h => h.registry);
+    if (!fromRegistry && !keep.has(term)) continue;
+    terms.push({
+      term, weight: Math.min(term.length, 12), hits, ascii: !TH_RE.test(term),
+      key: phoneticKey(term), z: keep.get(term)?.z ?? null,
+    });
   }
   // คำยาวก่อน — อ่านง่ายตอน debug (ไม่กระทบคะแนน)
   terms.sort((a, b) => b.term.length - a.term.length);
-  return { terms };
+  /* ดัชนีคีย์เสียง + ตัวแปร "ลบ 1 ตัว" (SymSpell · Garbe 2012) — ให้หาคำที่ออกเสียงใกล้กัน
+     ได้ใน O(ความยาวคำ) แทนที่จะวนเทียบทุกคำในพจนานุกรม (500-2,000 คำ × ทุกแถว = ช้าเกิน) */
+  const byKey = new Map();
+  const add = (k, t) => { if (!k) return; if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(t); };
+  for (const t of terms) {
+    if (!t.key || t.key.length < 3) continue;
+    add(t.key, t);
+    for (let i = 0; i < t.key.length; i++) add(t.key.slice(0, i) + t.key.slice(i + 1), t);
+  }
+  return { terms, byKey };
+}
+
+/** คำที่ออกเสียงใกล้ `word` ในดัชนี — ผ่านคีย์ตรง หรือคีย์ที่ต่างกัน 1 ตัว แล้ว **ยืนยันซ้ำ**
+ *  ด้วย `sameWord` (กันคีย์สั้นชนกัน: ลม/อาราม · ราง/รอง — ดู MIN_LEN ใน thaiText.js) */
+function soundAlike(word, index) {
+  const key = phoneticKey(word);
+  if (!key || key.length < 3 || !index?.byKey) return [];
+  const seen = new Set(), out = [];
+  const probe = [key];
+  for (let i = 0; i < key.length; i++) probe.push(key.slice(0, i) + key.slice(i + 1));
+  for (const p of probe) {
+    for (const t of (index.byKey.get(p) || [])) {
+      if (seen.has(t.term)) continue;
+      seen.add(t.term);
+      if (sameWord(word, t.term)) out.push(t);
+    }
+  }
+  return out;
 }
 
 /** คำนี้อยู่ในข้อความไหม — อังกฤษใช้ขอบคำ (กัน "pin" โดน "spin") · ไทยใช้ substring (เขียนติดกัน) */
@@ -162,8 +214,17 @@ export function classifyText(text, index, opt = {}) {
 
   const score = new Map();     // group → คะแนน
   const why = new Map();       // group → คำที่ทำให้ได้คะแนน
-  for (const t of index.terms) {
-    if (!hasTerm(norm, t)) continue;
+  /* คำที่ "โดน" ในข้อความนี้ — 2 ทาง แล้วรวมกัน (คำเดียวกันนับครั้งเดียว)
+       ① ตัวอักษรตรง (substring/ขอบคำ) — ทางเดิม ยังจำเป็นเพราะไทยเขียนติดกัน
+       ② เสียงตรง — ทางใหม่ ทำให้ "คอนเวเย่ออาราม" ไปเจอ conveyor/alarm ในทะเบียนได้ */
+  const matched = new Map();
+  for (const t of index.terms) if (hasTerm(norm, t)) matched.set(t.term, { t, sound: false });
+  if (index.byKey) {
+    for (const w of candidateTerms(norm, { isStop: (t) => STOP.has(t) })) {
+      for (const t of soundAlike(w, index)) if (!matched.has(t.term)) matched.set(t.term, { t, sound: true });
+    }
+  }
+  for (const { t, sound } of matched.values()) {
     const hits = (team && scopeOf) ? t.hits.filter(h => scopeOf(h, team)) : t.hits;
     if (!hits.length) continue;
     // คำกำกวม (ชี้หลายกลุ่มไม่ชัด) = ตัดทิ้ง ไม่ให้คะแนนใคร
@@ -172,7 +233,11 @@ export function classifyText(text, index, opt = {}) {
     let top = null, topN = 0;
     for (const [g, n] of tally) if (n > topN) { top = g; topN = n; }
     if (topN / hits.length < DOMINANCE) continue;
-    score.set(top, (score.get(top) || 0) + t.weight);
+    /* 🔴 หลักฐานจาก "เสียง" เบากว่าหลักฐานจาก "ตัวอักษร" เสมอ — มันคือการ *เดาว่าคำนี้
+       น่าจะสะกดแบบนั้น* ไม่ใช่การเห็นคำนั้นจริงๆ ⇒ คำสั้นที่จับได้ด้วยเสียงอย่างเดียว
+       ต้องไม่มีน้ำหนักพอตัดสินลำพัง (prox 4 → 2.4 < minScore 4) แต่คำยาวยังตัดสินได้
+       (bending 7 → 4.2) · วัดจริง 24/09: กันเคส "ปลอกเซรามิก" → Prox ชำรุด ได้ */
+    score.set(top, (score.get(top) || 0) + t.weight * (sound ? SOUND_WEIGHT : 1));
     if (!why.has(top)) why.set(top, []);
     why.get(top).push(t.term);
   }

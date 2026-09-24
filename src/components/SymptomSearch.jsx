@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { noteSimilarity, clusterNotes, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 
 /* ── 🔎 ค้นด้วย "อาการ" — สอบกลับจากปลายทางเข้าหาต้นเหตุ (2026-08-26 · คำถามหน้างาน) ────
@@ -164,28 +165,23 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* ช่วงวัน + ช่องอาการ + ปุ่มค้น = แถบเดียว (UI-STANDARD 2026-09-24) */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-      />
+      >
+        <SearchInput value={q} onChange={setQ} onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
+          fields="อาการ เช่น ตัดไม่ขาด · นัทไม่มี · เป็นครีบ · โรบอทชนจิ๊ก" />
+        <button onClick={run} disabled={busy || !q.trim()}
+          style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
+                   background: busy || !q.trim() ? 'var(--bg3)' : 'var(--accent)', color: busy || !q.trim() ? 'var(--muted)' : '#fff',
+                   cursor: busy || !q.trim() ? 'default' : 'pointer' }}>
+          {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
+        </button>
+      </TimeRangeBar>
       <div style={box}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 8 }}>🔎 ค้นจากอาการที่ลูกค้าแจ้ง</div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 260px', minWidth: 220 }}>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>อาการ</label>
-            <input value={q} onChange={(e) => setQ(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
-              placeholder="เช่น ตัดไม่ขาด · นัทไม่มี · เป็นครีบ · โรบอทชนจิ๊ก"
-              style={{ width: '100%', marginTop: 3 }} />
-          </div>
-          <button onClick={run} disabled={busy || !q.trim()}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
-                     background: busy || !q.trim() ? 'var(--bg3)' : 'var(--accent)', color: busy || !q.trim() ? 'var(--muted)' : '#fff',
-                     cursor: busy || !q.trim() ? 'default' : 'pointer' }}>
-            {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
-          </button>
-        </div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 7, lineHeight: 1.55 }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>🔎 ค้นจากอาการที่ลูกค้าแจ้ง</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55 }}>
           ค้นจาก <b>ชื่อประเภท</b> + <b>ข้อความที่พนักงานพิมพ์</b> ของ <b>ของเสีย</b> และ <b>เครื่องหยุด</b> ในช่วงวันที่เลือก
           · เป็นการค้นด้วย <b>คำ</b> ไม่ใช่ความหมาย — ลองคำใกล้เคียงหลายแบบด้วย
         </div>
@@ -262,7 +258,7 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
                       <td style={td}>{s.line_name || '—'}<div style={{ color: 'var(--muted)', fontSize: 11 }}>{s.shift === 'night' ? 'กะดึก' : 'กะเช้า'}</div></td>
                       <td style={td}><span style={{ fontSize: 11.5, fontWeight: 800, color: isDt ? '#f59e0b' : '#ef4444' }}>{isDt ? '🔧 เครื่องหยุด' : '🚫 ของเสีย'}</span></td>
                       <td style={td}>{r._type || '—'}
-                        {r._viaType && <div style={{ fontSize: 10.5, color: 'var(--accent)', fontWeight: 700 }}>ชื่อประเภทตรง</div>}</td>
+                        {r._viaType && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>ชื่อประเภทตรง</div>}</td>
                       <td style={td}>{isDt ? (r.machine_no || <span style={{ color: 'var(--muted)' }}>ไม่ระบุเครื่อง</span>)
                         : (r.prod_orders?.part_name || r.prod_orders?.mat_no || '—')}</td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>

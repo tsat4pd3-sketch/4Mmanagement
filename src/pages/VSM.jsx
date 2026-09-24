@@ -30,6 +30,9 @@ import { printVsmA3 } from '../lib/vsmA3Print';
 import VsmCanvas, { VsmLegend, PALETTE_DARK, PALETTE_LIGHT } from '../components/VsmCanvas';
 import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
@@ -473,13 +476,12 @@ export default function VSM() {
   });
 
   // FG picker ใช้ร่วม 2 แท็บ (state `matNo` ตัวเดียวกัน — สลับแท็บแล้วยังโฟกัสสินค้าเดิม)
+  // UI-STANDARD 2026-09-24 — วางใน <FilterBar> (select ไม่ยืดเต็มแถวอีก · ขนาดจาก token)
   const fgPicker = (
-    <div style={{ flex: '1 1 320px', minWidth: 260 }}>
-      <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สินค้าสำเร็จรูป (FG · เบอร์ 1)</label>
-      <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…"
-        style={{ marginBottom: 6, fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
-      <select value={matNo} onChange={e => setMatNo(e.target.value)}
-        style={{ fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
+    <>
+      <span className="filter-label">สินค้าสำเร็จรูป (FG · เบอร์ 1)</span>
+      <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อ / P/N" />
+      <select className="grow" value={matNo} onChange={e => setMatNo(e.target.value)}>
         <option value="">— เลือกสินค้า —</option>
         {fgByLine.map(([ln, ps]) => (
           <optgroup key={ln} label={ln}>
@@ -487,11 +489,11 @@ export default function VSM() {
           </optgroup>
         ))}
       </select>
-    </div>
+    </>
   );
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(98vw, 2200px)', margin: '0 auto' }}>
+    <Page width="full">
       <PageHeader title="แผนผังสายธารคุณค่า (Value Stream Map)" icon="🗺️"
         sub={tab === 'live'
           ? 'มุมมองสด: สถานะไลน์ · OEE กะปัจจุบัน · คงคลัง ▲ ปัจจุบัน — ไม่ใช่เอกสารทางการ'
@@ -503,20 +505,15 @@ export default function VSM() {
 
       {tab === 'doc' && <>
       {/* ── แถบควบคุม ── */}
-      <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <FilterBar style={{ marginBottom: 14 }}>
         {fgPicker}
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือนข้อมูล</label>
-          <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)}
-            style={{ width: 150, fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>สถานะผัง</label>
-          <select value={state} onChange={e => setState(e.target.value)}
-            style={{ width: 170, fontSize: 13, padding: '7px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}>
-            {STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-          </select>
-        </div>
+        <span className="filter-label">เดือนข้อมูล</span>
+        <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} />
+        <span className="filter-label">สถานะผัง</span>
+        <select value={state} onChange={e => setState(e.target.value)}>
+          {STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        <span className="spacer" />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => generate(false)} disabled={!matNo || busy} style={btn('var(--accent)', { opacity: (!matNo || busy) ? 0.5 : 1 })}>
             {busy ? '⏳ กำลังดึง…' : '⚡ สร้างร่างจากข้อมูลจริง'}
@@ -530,7 +527,7 @@ export default function VSM() {
           {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>✍️ เนื้อหา A3</button>}
           <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>📂 ใบที่บันทึกไว้ ({savedMaps.length})</button>
         </div>
-      </div>
+      </FilterBar>
 
       {showLoad && (
         <div style={{ ...S.card, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
@@ -790,7 +787,7 @@ export default function VSM() {
           };
         };
         return <>
-          <div style={{ ...S.card, marginBottom: 14, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <FilterBar style={{ marginBottom: 14 }}>
             {fgPicker}
             <div style={{ flex: '2 1 280px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
               ค่ามาตรฐานในกล่อง (C/T · C/O · %OEE · A/T) = ค่าเฉลี่ย<b style={{ color: 'var(--text)' }}>เดือนนี้</b> ·
@@ -798,7 +795,7 @@ export default function VSM() {
               มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
             </div>
             {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ รีเฟรชตอนนี้</button>}
-          </div>
+          </FilterBar>
 
           {!matNo && (
             <div style={{ ...S.card, textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
@@ -962,6 +959,6 @@ export default function VSM() {
           <div data-legend><VsmLegend palette={PALETTE_LIGHT} /></div>
         </>}
       </div>
-    </div>
+    </Page>
   );
 }

@@ -24,6 +24,8 @@ import { join, relative } from 'node:path';
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
 function walk(dir, exts, out = []) {
+  // `scan` ระบุ "ไฟล์เดี่ยว" ได้ด้วย (กฎบางข้อคุมเฉพาะไฟล์ของชั้นนั้นๆ ไม่ใช่ทั้งโฟลเดอร์)
+  if (!statSync(dir).isDirectory()) { out.push(dir); return out; }
   for (const e of readdirSync(dir)) {
     if (e === 'node_modules' || e === '__tests__' || e === 'dist' || e.startsWith('.')) continue;
     const full = join(dir, e);
@@ -55,6 +57,100 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'no-factory-vocabulary-in-language-layer',
+    scan: ['src/utils/thaiText.js', 'src/utils/termStats.js', 'src/utils/autoCategory.js'],
+    ext: ['.js'],
+    /* จับ "ชื่ออุปกรณ์/ศัพท์เฉพาะโรงงาน" ที่หลุดเข้าไปเป็นโค้ด (คอมเมนต์ไม่นับ — ตัวสแกนตัดออกก่อน)
+       เลือกเฉพาะคำที่เป็นอุปกรณ์ชัดเจน ไม่ใช่คำกลางอย่าง alarm/stop/error ที่อยู่ใน STOP โดยชอบธรรม */
+    re: /\b(conveyor|bending|hydraulic|gripper|solenoid|stopper|mandrel|pallet)\b|เลเซอร์|คอนเวเย่อ|เบนดิ่ง|ไฮดรอลิ/gi,
+    why: 'CLAUDE.md: **ห้าม AI เดา taxonomy ของโรงงาน** — พจนานุกรมที่ใช้จับกลุ่มต้องมาจาก '
+       + 'ทะเบียนของโรงงาน (`mtn_problem_types` / `dr_downtime_types`) + ใบที่คนจัดกลุ่มไว้แล้วเท่านั้น '
+       + '· ถ้าเริ่มฮาร์ดโค้ดศัพท์เครื่องจักรลงในชั้นภาษา มันจะ (1) ถูกต้องเฉพาะโรงงานนี้ '
+       + '(2) ล้าสมัยเงียบๆ เมื่อโรงงานเพิ่ม/เปลี่ยนประเภท (3) ทำให้ไม่มีใครไปแก้ที่ทะเบียนซึ่งเป็นต้นเหตุจริง '
+       + '· ไฟล์ชั้นภาษาเก็บได้แค่ "กฎของภาษา" (ห นำ · c อ่อน/แข็ง · เเ→แ · คำเชื่อม)',
+    fix: 'เอาคำนั้นออก แล้วให้มันมาจากข้อมูล: ป้ายในทะเบียน → `buildCategoryIndex(..., kind:"registry")` '
+       + '· ศัพท์หน้างาน → เรียนจากใบที่จัดกลุ่มแล้ว (`kind:"seen"`) ซึ่งต้องผ่าน log-odds z + พื้นขั้นต่ำ',
+    allow: {},
+  },
+  {
+    id: 'line-dropdown-hand-built',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ "วาด <option> ของไลน์เอง" 2 ลายเซ็นที่เคยหลุดจริง:
+         (1) เยื้องชั้นเอง — `${'\u00a0'…repeat(depth)}` / `'\u21b3 '` ใน <option>
+         (2) ตัดไลน์ลูกทิ้งตอนทำลิสต์ — `!l.parent_line_name` + `.map(... => l.name)` ติดกัน
+       ไม่จับการใช้ `lineOptions()`/`lineOptionLabel()` (ของกลาง) และไม่จับลิสต์ที่สร้างจาก
+       "ข้อมูลที่โหลดมาแล้ว" (เช่น dropdown กรองกะใน /qa ที่ map จาก sessions) ซึ่งถูกต้องอยู่แล้ว */
+    re: /<option\b[^>]*>\s*\{[^}]{0,60}?(?:\.repeat\(\s*\w*\.?depth|\b\w*\.?depth\s*\?)/g,
+    why: 'dropdown เลือกไลน์ที่หน้าประกอบเอง drift กันทุกหน้า — จอ 📟 OEE รายไลน์ (Weekly) กรอง '
+       + '`!l.parent_line_name` ⇒ dropdown มีแต่ไลน์แม่ 9 ตัว ทั้งที่ **งานจริงเกือบทั้งหมดอยู่ไลน์ลูก** '
+       + '(วัดจริง 24/09/2026: Line 60 = 109 กะ · LASER-345 = 106 · HDF2 = 107 ส่วนไลน์แม่ HYDROFORM 11 กะ '
+       + 'และหยุดใช้ตั้งแต่ 02/07) → จอ TV ประจำไลน์เปิดดู OEE ของไลน์ตัวเองไม่ได้เลย '
+       + '· รอบก่อนหน้า (08-25) ก็เป็น dropdown ชุดเดียวกันที่ปน "Office PD4"/"test" เพราะไม่เช็ค is_active',
+    fix: 'ใช้ `<LineSelect>` (`src/components/LineSelect.jsx`) — ลำดับชั้นแม่→ลูก + scope leader/sections '
+       + '+ ไลน์ปลดระวาง + ค่าที่ไม่รู้จักไม่หายเงียบ ครบในตัว (UI-CONVENTIONS §5.1.2) '
+       + '· ต้องวาด <option> เองเพราะ onChange ทำอย่างอื่นต่อ → `lineOptions()` + `lineOptionLabel()` '
+       + 'จากไฟล์เดียวกัน ห้ามก๊อปสูตรเยื้อง',
+    allow: {
+      // ตัวจริงที่เป็นเจ้าของสูตรเยื้อง — ที่อื่น import จากที่นี่
+      'src/components/LineSelect.jsx': 1,
+    },
+  },
+  {
+    id: 'downtime-bucket-not-raw-type-name',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับเฉพาะ "เอาชื่อประเภทดิบไปเป็น**คีย์จัดกลุ่ม**" 2 รูปแบบที่ใช้จริงในรีโป:
+         (1) `const k = d.dr_downtime_types?.name_th || '…'`  → เอาไปเป็น key ของ object นับยอด
+         (2) `cat: d.dr_downtime_types?.name_th || '…'`        → แกนของพาเรโต (ParetoAbcChart)
+       🔴 **ไม่จับการ *แสดงผล* ชื่อประเภทของแถวเดียว** (`<span>{d…name_th || 'Downtime'}</span>`)
+          เพราะนั่นถูกต้องอยู่แล้ว — แถวเดียวมีเลขเครื่องกับข้อความอยู่ข้างๆ ให้อ่านต่อได้
+          (กติกาข้อ 1 ของไฟล์นี้: กฎที่ false positive บ่อย = คนอยากปิดด่าน) */
+    re: /(?:(?:const|let|var)\s+[\w$]+\s*=|\bcat:)\s*[\w$]+\??\.dr_downtime_types\?\.name_th\s*\|\|/g,
+    why: 'พาเรโต downtime ยุบ "อื่นๆ (นอกแผน)" / "เครื่องแจ้งเตือน Alarm (ไม่ระบุสาเหตุ)" เป็นแท่งเดียว '
+       + '⇒ แท่งใหญ่ที่บอกไม่ได้ว่าไปแก้ที่ไหน · วัดจริง 90 วัน (23/09/2026): ถังขยะ 438 ใบ / 15,433 นาที '
+       + '= อันดับ 5 และ 8 ของพาเรโตนอกแผน (รวมกัน 10.3% ของนาที = อันดับ 2 ถ้ายุบเป็นแท่งเดียว) '
+       + 'ทั้งที่ **401 ใบ (92%) กรอก `machine_no` ไว้แล้ว** ⇒ จอโยนค่าที่มีอยู่ทิ้งเอง '
+       + '· เคสที่โผล่ทันทีที่แตกตามเครื่อง: **HDF-02 = 66 ใบ / 2,619 นาที** ที่ไม่มีจอไหนเคยเห็น',
+    fix: "ใช้ `dtBucketName(d)` จาก `src/utils/downtimeCategory.js` เป็นคีย์จัดกลุ่มเสมอ "
+       + '(ประเภทปกติได้ชื่อเดิมเป๊ะ · เฉพาะถังขยะที่ถูกแตกเป็น "<เลขเครื่อง> · <ชื่อประเภท>") '
+       + '· ฝั่ง SQL ที่ rollup รายปีก็ต้องแตกแบบเดียวกัน (migration 20260923_obeya_year_rollup_dt_machine_dr.sql)',
+    allow: {
+      // คีย์นี้ **มี `::${machine_no}` ต่อท้ายอยู่แล้ว** (หาเครื่องที่หยุดซ้ำซาก) = แตกตามเครื่องอยู่แล้ว
+      'src/components/OeeInsightPanel.jsx': 1,
+      // ป้ายกำกับแท่งบนไทม์ไลน์รายใบ (1 แถว = 1 ครั้งที่หยุด) ไม่ได้รวมยอดข้ามใบ
+      'src/components/DowntimeTimeline.jsx': 1,
+      // popup ของไลน์บนผังโรงงาน — ลิสต์รายใบ มีเลขเครื่องอยู่ในแถวเดียวกัน
+      'src/pages/FactoryMap.jsx': 1,
+      // `_causes` ของ KPI ช่าง — ทั้ง record ถูก key ด้วย "เครื่อง" อยู่แล้ว
+      // ⇒ ถ้าเติมเลขเครื่องเข้าไปในชื่อสาเหตุอีก จะได้ "HDF-02 · อื่นๆ" ซ้อนอยู่ใน record ของ HDF-02
+      'src/utils/mtnMetrics.js': 1,
+    },
+  },
+  {
+    id: 'shift-midnight-hardcoded-hour',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการเดา "ข้ามเที่ยงคืนไหม" จากเลขชั่วโมงดิบคู่กับ shift === 'night'
+       เช่น `shift === 'night' && h < 8` · `s.shift==='night' && parseInt(t) < 8`
+       (ตัว resolve ที่ถูกต้องอยู่ `src/utils/shiftWindow.js` ซึ่งไม่ match เพราะไม่อ้าง 'night' เลย) */
+    re: /'night'[\s\S]{0,80}?<\s*8\b/g,
+    why: 'กฎ "กะดึก + ชั่วโมง < 8 = วันถัดไป" **ผิดกับกะดึกที่จบ 08:00 หรือเลยไป** '
+       + '· กะดึกเริ่ม 20:00 จบ 08:00+ ⇒ คนกรอก 5ส./ส่งกะท้ายกะเป็น "08:00"/"08:30" ไม่เข้าเงื่อนไข `< 8` '
+       + '→ ถูก anchor ไว้ "วันเดียวกับ work_date" = **ก่อนเปิดกะ ~12 ชม.** '
+       + '· วัดจริง 23/09/2026: 15 แถว 890 นาที ตรงลายเซ็นนี้เป๊ะ (กะดึกล้วน ไม่ใช่ความผิดคนกรอก) '
+       + '· โผล่พร้อมกัน 3 จุดใน DailyReport (buildDT · backfillIsoFromTime · carryImportOpenedAt) '
+       + 'เพราะเป็นสูตรที่ถูกก๊อปต่อๆ กัน · ผลลัพธ์: ไทม์ไลน์/พาเรโต/OEE ได้เวลาผิดวัน',
+    fix: 'ใช้ `resolveShiftTime(hhmm, session)` จาก `src/utils/shiftWindow.js` '
+       + '— เลือก offset วันจาก **กรอบกะจริง** (start_time + shift_min/end_time) ไม่เดาจากเลขชั่วโมง '
+       + '⇒ กะดึกที่เริ่ม 22:30 หรือกะเช้าที่ลาก OT ข้ามเที่ยงคืน ก็ถูกโดยไม่ต้องแก้โค้ดเพิ่ม '
+       + '· ต้องการแค่ "เวลาเริ่ม/จบกะเป็น ms" ใช้ `shiftWindow()` หรือ `shiftFrameOf()` (oee.js)',
+    allow: {
+      // getCurrentPeriod() เรียงช่วงเวลาที่ **hardcode ไว้ในไฟล์เดียวกัน** (SHIFT_PERIODS: 22:30/03:00)
+      // บนสเกลนาทีสัมพัทธ์ เพื่อตอบ "ตอนนี้อยู่ช่วงไหน" — ไม่ได้ anchor เวลาที่คนกรอกกับ work_date
+      // จึงไม่ใช่บั๊กคลาสเดียวกัน · แต่เป็นสมมติฐาน "กะดึก = 20:00-08:00" ที่ฝังอยู่เหมือนกัน
+      // ⇒ ถ้าวันหนึ่งกะดึกเปลี่ยนเวลา ต้องกลับมาแก้จุดนี้ด้วย (บันทึกไว้กันลืม)
+      'src/pages/Management.jsx': 'ช่วงเวลา hardcode ในไฟล์เอง ไม่ผูก work_date — ดูหมายเหตุด้านบน',
+    },
+  },
+  {
     id: 'kpi-source-not-truthy',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ `!x.source` ที่ใช้ตัดสินว่า "แถวนี้กรอกมือ" — ยกเว้น `!x.source?.startsWith(...)`
@@ -75,6 +171,29 @@ const RULES = [
        + '· กฎทั่วไป: **คอลัมน์ที่มี `not null default` ห้ามเช็คด้วย truthiness** — อ่าน default จาก migration ที่ '
        + '*สร้างตาราง* เสมอ อย่าเชื่อ comment ของ migration ที่มาทีหลัง',
     allow: {},
+  },
+  {
+    id: 'kpi-unit-decimals-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการอ่าน `…kpi_catalog.unit` / `.decimals` / `.summary_mode` ตรงๆ ในหน้า
+       (ทั้ง `?.` และ `.`) — ต้องผ่าน `unitOf`/`decimalsOf`/`summaryModeOf` ของ `kpiSetup.js`
+       ตัว helper เองอยู่ใน kpiSetup.js ซึ่ง allow ไว้ · เทสสร้าง object `{ kpi_catalog: {...} }` = ไม่เข้าเงื่อน */
+    re: /kpi_catalog\??\.(unit|decimals|summary_mode)\b/g,
+    why: '**หน่วย/ทศนิยม ตั้งได้ 2 ชั้น** (24/09 · user เคาะ "2 ชั้น"): `kpi_catalog` = ค่าตั้งต้น '
+       + '· `kpi_definitions.unit`/`.decimals` = override เฉพาะแถวนั้น (ว่าง = ตามทะเบียน) '
+       + '⇒ อ่านจากทะเบียนตรงๆ = **แถวที่ตั้งทับไว้ไม่มีผล** (เกิดจริง: MTBF ใบ JIG ใช้ "นาที" '
+       + 'แต่เด็คใช้ "ชม." · DSI มี 2 หน่วยทางการ วัน/MB) '
+       + '· และ `summary_mode` ถ้าไม่ผ่าน `summaryModeOf` คีย์แปลกจะไม่ถูกปัดเป็น average '
+       + '· บั๊กที่มาก่อนหน้านี้: ทั้งระบบ hardcode `maximumFractionDigits: 2` และ '
+       + "`unit === 'PPM' ? 0 : 1` ทั้งที่คอลัมน์ `decimals` มีอยู่แล้วแต่ไม่มีจอไหนอ่าน (grep = 0)",
+    fix: 'ใช้ `unitOf(d)` · `decimalsOf(d)` · `summaryModeOf(d)` จาก `src/utils/kpiSetup.js` '
+       + '(ส่ง "แถว kpi_definitions ที่ embed kpi_catalog มาแล้ว" เข้าไป) '
+       + '· จัดรูปตัวเลขด้วย `fmtKpi(v, d)` · สรุป 12 เดือนด้วย `summaryOf(months, d)` '
+       + '· 🔴 อย่าลืมใส่ `decimals, summary_mode` ในสตริง `.select()` ที่ embed `kpi_catalog` '
+       + 'ไม่งั้นทุกแถวตกเป็นทศนิยม 2 / วิธีรวม "เฉลี่ย" เงียบๆ',
+    allow: {
+      'src/utils/kpiSetup.js': 'นิยามของ unitOf/decimalsOf/summaryModeOf เอง — เป็นที่เดียวที่อ่านทะเบียนตรงๆ ได้',
+    },
   },
   {
     id: 'filelist-copy-before-reset',
@@ -419,6 +538,50 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'card-shadow-via-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับเงาแบบ "การ์ด/ชิป" ที่เขียนค่าดิบ (offset แนวตั้ง 0-3px และเป็นเงาเดี่ยวทั้งค่า)
+       — เงาของ modal (`0 20px 60px`) และเงาผสม inset ไม่เข้าข่าย ปล่อยไว้ตามเดิม */
+    re: /boxShadow:\s*['"`]0 [0-3]px \d+px rgba\([^)]*\)['"`]/g,
+    why: 'เงาใต้การ์ดในธีมมืดถูกถอดออกแล้ว (24/09 · คำสั่ง user) เพราะบนพื้นเกือบดำมันมองแทบไม่เห็น '
+       + 'เหลือแค่ขอบมัวๆ = ของตกแต่งล้วน · แต่**ธีมสว่างยังต้องมีเงา** (ขอบจาง เงาคือตัวแยกการ์ด '
+       + 'ออกจากพื้นขาว) ⇒ ค่าเงาต้องมาจาก token ที่ธีมตัดสินให้ · เขียน rgba ดิบไว้ในหน้า = '
+       + 'เงานั้นไม่ฟังธีม แล้วธีมมืดจะมีเงาโผล่กลับมาทีละจุดโดยไม่มีใครรู้ '
+       + '(วัดจริงก่อนแก้ด้วย audit/uxsweep.mjs: 6 หน้ามีรวมกัน ~60 จุด)',
+    fix: "การ์ดแบนที่ไม่ได้ลอย → boxShadow: 'var(--shadow-sm)' (ธีมมืด = none) · "
+       + "ของที่ลอยทับเนื้อหาจริง (ป้ายบนรูปผัง · tooltip กราฟ · badge ที่ยื่นออกนอกการ์ด · ปุ่ม toggle) "
+       + "→ 'var(--shadow-float)' (มีเงาทั้ง 2 ธีม) · modal/overlay → 'var(--shadow-md|lg)'",
+    allow: {},
+  },
+  {
+    id: 'pareto-hand-built-recharts',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* พาเรโตที่ประกอบเองด้วย Recharts จะมี "เส้น % สะสม" เป็น series ชื่อ cum เสมอ
+       — ด่าน `pareto-via-ParetoChart` เดิมจับได้แค่แท่งนอนที่คำนวณ width เอง จึงหลุดตัวนี้ไป */
+    re: /dataKey=["'](?:cum|cumPct|cumulative)["']/g,
+    why: 'พาเรโตที่ประกอบเองใน Recharts หลุดด่านเดิมไปตัวหนึ่ง (เจอ 23/09 ที่ QualityControl) '
+       + 'แล้วมันผิดทั้ง 2 อย่างที่กฎพาเรโตห้ามไว้: (1) **`.slice(0,10)` ก่อนคิด % สะสม** '
+       + '⇒ เส้นสะสมจบ 100% ที่รายการที่ 10 ทั้งที่ของจริงยังมีที่ 11+ = จอประกาศว่า '
+       + '"10 อันนี้คือทั้งหมด" ซึ่งไม่จริง (2) **ทาแท่งด้วยสีประจำประเภท** ⇒ แท่งเขียว/เหลือง/แดง '
+       + 'เรียงกันโดยสีไม่ได้แปลว่าหนักเบา ชนกับสี Andon บนจอเดียวกัน (UI §6.17 ข้อ 1)',
+    fix: '<ParetoChart rows={classifyAbc(items, v => v.qty)} unit="…" /> — `collapseTail` ยุบหางเป็นแท่ง '
+       + '"อื่นๆ" ตามมาตรฐาน ทำให้ % สะสมจบ 100% จริง · สีมาจากกลุ่ม ABC (A แดง = 80% แรก ต้องแก้ก่อน)',
+    allow: {},
+  },
+  {
+    id: 'no-dual-y-axis',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    re: /<YAxis[^>]*orientation=["']right["']/g,
+    why: 'กราฟที่มีแกน Y 2 ข้าง = กับดักอันดับ 1 ของ data-viz — **จุดที่เส้นตัดแท่งเป็นของปลอม** '
+       + 'เพราะสเกล 2 ข้างตั้งอิสระจากกัน ขยับข้างเดียวก็เปลี่ยน "เรื่องเล่า" ได้ทันทีโดยตัวเลขไม่เปลี่ยน '
+       + 'แต่ตาคนอ่านว่าการตัดกันนั้นมีความหมาย · เคสจริง 23/09 ที่ /energy: แท่ง = ชิ้น · เส้น = kWh/ชิ้น '
+       + 'คนละหน่วยคนละสเกล ทั้งที่คำถามจริงคือ "2 เส้นนี้ไปทางเดียวกันหรือสวนกัน"',
+    fix: 'แยกเป็น 2 กราฟวางซ้อนกัน ใช้แกน X ชุดเดียวกัน (small multiples) + ล็อก `YAxis width` ให้เท่ากัน '
+       + 'ทั้งคู่ เพื่อให้คอลัมน์ตรงกันเป๊ะ — เทียบทิศทางได้ตรงๆ โดยไม่มีสเกลปลอม · '
+       + 'แกนขวาของพาเรโต (% สะสม) ไม่เข้าข่าย เพราะ <ParetoChart> วาดเป็น SVG เองไม่ได้ใช้ <YAxis>',
+    allow: {},
+  },
+  {
     id: 'pareto-via-ParetoChart',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     // จับการวาดพาเรโตเองในหน้า: ใช้ผลของ classifyAbc ไปทำแท่ง/ความกว้างเป็น % เอง
@@ -427,7 +590,9 @@ const RULES = [
        + 'ตามมาตรฐานสากล (ASQ · Juran · Excel · QI Macros) — user เทียบกับใบมาตรฐานแล้วสรุปว่า '
        + '"ยังเทียบกันไม่ติดเลย ... แนวนอนไม่เวิค" (22/09) · Pareto ต้องมีครบ: แท่งตั้งเรียงมาก→น้อย · '
        + 'แท่งชิดกันสนิท · แกนซ้ายเริ่ม 0 · แกนขวา % สะสม 0-100 · เส้นสะสมจบ 100% ที่ขอบขวา · เส้น 80% '
-       + 'ขาดข้อใดข้อหนึ่ง = ไม่ใช่ Pareto อีกต่อไป (กฎทั้งหมดถูกล็อกใน paretoGeometry.test.mjs)',
+       + 'ขาดข้อใดข้อหนึ่ง = ไม่ใช่ Pareto อีกต่อไป (กฎทั้งหมดถูกล็อกใน paretoGeometry.test.mjs) · '
+       + '⚠️ กฎนี้จับได้แค่ "แท่งนอนที่คำนวณ width เอง" — พาเรโตที่ประกอบด้วย Recharts หลุดไปได้ '
+       + 'จึงมีกฎคู่กัน `pareto-hand-built-recharts` (เพิ่ม 23/09 หลังเจอของหลุดจริงที่ QualityControl)',
     fix: 'ใช้ <ParetoChart rows={classifyAbc(...)} /> (src/components/ParetoChart.jsx) '
        + 'หรือ <ParetoAbcChart> ถ้าต้องการเจาะลึก/ABC ด้วย — พิกัดทั้งหมดมาจาก '
        + 'paretoGeometry() ใน src/utils/pareto.js ห้ามคำนวณความกว้าง/ความสูงแท่งเองในหน้า',
@@ -479,6 +644,22 @@ const RULES = [
     fix: 'ใส่ค่าจริงที่มีอยู่ (เช่น dtType?.name_th / mo_problem_group จากทะเบียน) แล้ว fallback '
        + 'เป็น "อื่นๆ" เฉพาะตอนไม่มีค่าจริงจริงๆ · กติกา 3 ชั้น + ตัวช่วยอยู่ src/utils/unclassified.js',
     allow: {},
+  },
+  {
+    id: 'filter-all-label-hand-written',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* ป้าย "ทั้งหมด" ของตัวกรองที่พิมพ์เอง — option ที่ขึ้นต้น "ทุก…" / "— ทุก… —" · placeholder="ทุก…"
+       ของ LineSelect/SearchSelect · และคำอังกฤษ/ปนภาษาที่เคยหลุดจริง */
+    re: /<option\s+value=(?:""|''|\{''\}|"all"|'all')\s*>\s*(?:—\s*)?ทุก[^<{]*<|placeholder=["'](?:—\s*)?ทุก|ALL SHIFT|ทุก Team\b|ทุก Section\b/g,
+    why: 'audit 23/09/2026: คำว่า "ทั้งหมด" ในตัวกรองมี 30+ แบบ (`ALL SHIFT (ทุกกะ)` · `— ทุกกะ —` · `ทุก Team` · '
+       + '`ทุกไลน์ (5)` …) หน้าเดียวกัน (/report) ยังใช้ 2 แบบ ⇒ ผู้ใช้สงสัยว่าความหมายต่างกันไหม (Nielsen #4) '
+       + 'user ทักว่า "search/filter/dropdown มั่ว"',
+    fix: 'ใช้ `ALL.<คำนาม>` / `allOf(คำนาม)` จาก src/utils/filterLabels.js — ตัวกรอง = "ทุก…" ไม่มีขีด/วงเล็บ '
+       + '(ช่องในฟอร์มใช้ PICK/NONE) · docs/UI-STANDARD.md §3',
+    allow: {
+      'src/utils/filterLabels.js': 'ทะเบียนป้ายเอง',
+      'src/pages/operator.jsx': 'ช่องในฟอร์มเพิ่ม/แก้สกิล — ค่าว่าง = "สกิลกลางใช้ทุกฝ่าย" ไม่ใช่ตัวกรองมุมมอง',
+    },
   },
 ];
 
@@ -865,4 +1046,98 @@ test('🛡️ no-production-sessions-product-id — คอลัมน์ร้�
     + '   ได้ null เงียบๆ แล้วฟีเจอร์ปลายทางตกทั้งชุดโดยไม่มี error ให้จับ\n'
     + '   แก้ยังไง: รุ่นที่ผลิตในกะ ดึงจาก `prod_orders` (มี session_id + mat_no ตรงๆ)\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+
+/* ═══ มาตรฐานกรอบหน้า + หัวเพจ (docs/UI-STANDARD.md §1–2 · 2026-09-24) ════════════
+   audit 23/09: ระยะขอบรากหน้า 20+ แบบ ⇒ ชื่อหน้ากระโดดซ้าย-ขวา 0–78px ตอนเปลี่ยนหน้า · 18 หน้าวาดหัวเอง
+   ⇒ ทุกหน้าใน src/pages ต้องมี <Page และ <PageHeader ยกเว้นบอร์ด TV/หน้าพิเศษที่มีเหตุผลเขียนไว้ */
+const PAGE_EXEMPT = {
+  'Login.jsx': 'หน้า login มีแบรนด์ของตัวเอง ไม่ใช่หน้าในเมนู',
+  'Dashboard.jsx': 'บอร์ดจอ TV — หัวเรื่องกินแนวตั้ง (UI-CONVENTIONS §6.8)',
+  'Management.jsx': 'บอร์ดจอ TV (§6.8)',
+  'LineOeeBoard.jsx': 'บอร์ดจอ TV ประจำไลน์ (§6.8)',
+  'TvBoard.jsx': 'จอแขวนห้อง ไม่มี sidebar (§6.8)',
+  'LineSetup.jsx': 'เครื่องมือวาดผังที่ถูกฝังในแท็บของ /layout-setup (§6.8)',
+  'DeptHub.jsx': 'หน้าแรก (hero) ของระบบ ไม่ใช่หน้างาน (§6.8)',
+};
+test('🛡️ ทุกหน้าใช้ <Page> + <PageHeader> (UI-STANDARD §1–2)', () => {
+  const dir = join(ROOT, 'src/pages');
+  const bad = [];
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.jsx'))) {
+    if (PAGE_EXEMPT[f]) continue;
+    const code = stripComments(readFileSync(join(dir, f), 'utf8'));
+    const miss = [];
+    if (!/<Page[\s>]/.test(code)) miss.push('<Page>');
+    if (!/<PageHeader\b/.test(code) && !/<(ObeyaKpiBoard|ObeyaSqdcmBoard|DeptDashboard)\b/.test(code)) miss.push('<PageHeader>');
+    if (miss.length) bad.push(`src/pages/${f} — ไม่มี ${miss.join(' + ')}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ หน้าที่ไม่ใช้กรอบ/หัวมาตรฐาน ${bad.length} ไฟล์\n`
+    + '   ทำไมห้าม: ระยะขอบ/หัวเพจคนละแบบ ⇒ ชื่อหน้ากระโดดตอนเปลี่ยนหน้า (audit 23/09/2026)\n'
+    + '   แก้ยังไง: รากหน้าเป็น <Page> (components/Page.jsx) + หัว <PageHeader> · บอร์ด TV ให้เพิ่มใน PAGE_EXEMPT พร้อมเหตุผล\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+test('🛡️ hub ที่ฝังหน้าลูกต้องครอบ <Hub> (หัวซ้อน 2 ชั้น — UI-STANDARD §2)', () => {
+  const dir = join(ROOT, 'src/pages');
+  const bad = [];
+  for (const f of readdirSync(dir).filter(n => n.endsWith('.jsx'))) {
+    const code = stripComments(readFileSync(join(dir, f), 'utf8'));
+    const embedsPage = /lazy\(\s*\(\)\s*=>\s*import\(\s*['"]\.\/(?!.*Board)/.test(code) || /^import \w+ from '\.\/\w+'/m.test(code);
+    if (embedsPage && !/<Hub>/.test(code) && f !== 'Obeya.jsx') bad.push(`src/pages/${f}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ hub ที่ฝังหน้าลูกโดยไม่ครอบ <Hub>: ${bad.join(', ')}\n`
+    + '   ทำไมห้าม: หัวเรื่องซ้อน 2 ชั้น ขนาดคนละแบบทุกแท็บ (PmHub/DailyChecker audit 23/09/2026)\n'
+    + '   แก้ยังไง: import { Hub } from components/Page แล้วครอบหน้าลูก — Obeya ยกเว้นเพราะหน้าลูกเป็นเจ้าของหัว+แท็บของ hub เอง\n');
+});
+
+
+/* ═══ ลำดับแนวตั้งของหัวเพจ (UI-STANDARD §2 · 2026-09-24) ═══════════════════════
+   user 24/09: *"ลำดับยังโดดไปมา เดี๋ยวแท็บมาก่อนช่องค้นหา บางหน้าค้นหาอยู่บนสุดก่อนแท็บ"*
+   ต้นเหตุ: ตัวกรอง (ขอบเขต/เดือน/โปรเจค/ช่วงเวลา) ถูกยัดใน `actions` ของ PageHeader ⇒ ไปโผล่แถวชื่อหน้า
+   **เหนือแถบแท็บ** ขณะที่หน้าอื่นวางตัวกรองใต้แท็บ (OBEYA 4 แท็บลำดับไม่เหมือนกันเองด้วยซ้ำ)
+   ⇒ ตัวกรองต้องส่งผ่าน `filters` (PageHeader วาดใต้แท็บให้เสมอ) — `actions` = ปุ่มคำสั่งเท่านั้น */
+function parenBlock(code, i) {
+  let depth = 0;
+  for (let j = i; j < code.length; j++) {
+    if (code[j] === '(') depth++;
+    else if (code[j] === ')') { depth--; if (depth === 0) return code.slice(i, j + 1); }
+  }
+  return '';
+}
+function jsxPropBlock(code, from) {
+  let i = code.indexOf('{', from), depth = 0;
+  for (let j = i; j < code.length; j++) {
+    if (code[j] === '{') depth++;
+    else if (code[j] === '}') { depth--; if (depth === 0) return code.slice(i, j + 1); }
+  }
+  return '';
+}
+test('🛡️ ตัวกรองห้ามอยู่ใน actions ของ PageHeader — ใช้ filters (ลำดับ: ชื่อหน้า → แท็บ → แถบกรอง)', () => {
+  const FILTER_CTL = /<select\b|<OrgScopePicker\b|<LineSelect\b|<Segmented\b|<SearchInput\b|<TimeRangeBar\b|type=["'](?:date|month|week)["']/;
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    let at = 0;
+    while ((at = code.indexOf('<PageHeader', at)) !== -1) {
+      const end = code.indexOf('/>', at);
+      const seg = code.slice(at, end === -1 ? undefined : end);
+      const k = seg.search(/\bactions=\{/);
+      if (k !== -1) {
+        let block = jsxPropBlock(code, at + k);
+        /* ตัวกรองมักถูกประกอบเป็นตัวแปรก่อน (`const controls = (<>…</>)` แล้วส่ง `{controls}`)
+           ⇒ ตามชื่อตัวแปรใน block ไปเปิดดูเนื้อของมันด้วย (เคสจริง: OBEYA {controls} · NPI {projectSelect}) */
+        for (const [, id] of block.matchAll(/\{\s*(\w+)\s*\}/g)) {
+          const d = code.search(new RegExp(`const\\s+${id}\\s*=\\s*\\(`));
+          if (d !== -1) block += parenBlock(code, code.indexOf('(', d));
+        }
+        if (FILTER_CTL.test(block)) bad.push(`${relative(ROOT, file)}:${code.slice(0, at).split('\n').length}`);
+      }
+      at += 11;
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ มีตัวกรองอยู่ใน actions ของ PageHeader ${bad.length} จุด\n`
+    + '   ทำไมห้าม: ตัวกรองไปโผล่เหนือแถบแท็บ ขณะที่หน้าอื่นอยู่ใต้แท็บ ⇒ ลำดับโดดไปมาทุกหน้า (user 24/09/2026)\n'
+    + '   แก้ยังไง: ย้ายไป prop `filters` ของ PageHeader (วาดใต้แท็บเป็น .filter-bar ให้เอง) — actions เหลือแค่ปุ่มคำสั่ง\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
 });

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import PageHeader from '../components/PageHeader'
+import Page, { Hub } from '../components/Page'
 import useTabParam from '../utils/useTabParam'
 import FactoryMap from './FactoryMap'
 import MtnMachineLayout from './MtnMachineLayout'
@@ -25,14 +26,14 @@ export default function LayoutSetup() {
   const cur = TABS.find(t => t.key === tab)
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
       <PageHeader
         title="ตั้งค่าผัง / Floorplan" icon="🗺️"
-        sub="รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่"
+        sub={cur ? cur.desc : 'รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่'}
         tabs={TABS} tab={tab} onTab={setTab}
       />
-      {cur && <p style={{ fontSize: 12.5, color: 'var(--text2)', margin: 0 }}>{cur.desc}</p>}
 
+      <Hub>
       {tab === 'factory' && (
         can('factory_map', 'edit', role)
           ? <FactoryMap setupMode />
@@ -49,6 +50,7 @@ export default function LayoutSetup() {
           : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
       )}
       {tab === 'store' && <TransportMapEditor />}
-    </div>
+      </Hub>
+    </Page>
   )
 }

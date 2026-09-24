@@ -14,6 +14,8 @@ import {
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName } from './NpiUi';
 import { printPpapChecklist } from '../lib/npiPpapPrint';
 import PersonSelect from './PersonSelect';
+import Segmented from './Segmented';
+import { allOf } from '../utils/filterLabels';
 import useColumnHistory from '../utils/useColumnHistory';
 
 export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged }) {
@@ -215,11 +217,13 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
       <div style={{ marginTop: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 800 }}>📄 เอกสารส่งมอบ / ทะเบียน PPAP</div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            {[['all', 'ทั้งหมด'], ['open', 'ยังไม่ปิด'], ['ppap', 'เฉพาะ PPAP'], ['red', '🔴 เลยกำหนด']].map(([k, l]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ ...ghost, padding: '3px 9px', fontSize: 11.5, background: filter === k ? 'var(--accent)' : 'var(--bg2)', color: filter === k ? '#08130a' : 'var(--text)' }}>{l}</button>
-            ))}
-          </div>
+          {/* UI-STANDARD 2026-09-24 — ตัวกรอง 4 ตัวเลือก = Segmented ("ทุก…" ซ้ายสุด) */}
+          <Segmented size="sm" value={filter} onChange={setFilter} label="กรองเอกสารส่งมอบ" options={[
+            { value: 'all', label: allOf('รายการ') },
+            { value: 'open', label: 'ยังไม่ปิด' },
+            { value: 'ppap', label: 'เฉพาะ PPAP' },
+            { value: 'red', label: '🔴 เลยกำหนด' },
+          ]} />
         </div>
         {!delivs.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีรายการ — sync จากแม่แบบ หรือ + รายการ</div>}
         {groups.map(g => {
@@ -251,19 +255,19 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                             <td style={{ ...tdSt, minWidth: 200 }}>
                               <span title={kind.label}>{kind.icon}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{d.label}</span>
                               {d.ppap_element && <Pill label="PPAP" color="#a855f7" small />}{' '}
-                              {d.required === false && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>(ไม่บังคับ)</span>}
+                              {d.required === false && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ไม่บังคับ)</span>}
                             </td>
                             <td style={{ ...tdSt, minWidth: 130 }}>
                               {canEdit ? (
                                 <MetaSelect value={d.status} onChange={v => setStatus(d, v)} meta={DELIV_STATUS} style={{ padding: '3px 6px', fontSize: 11.5, borderColor: DELIV_STATUS[d.status]?.color }} />
                               ) : <Pill label={DELIV_STATUS[d.status]?.label} color={DELIV_STATUS[d.status]?.color} />}
-                              {d.status === 'approved' && d.approved_by && <div style={{ fontSize: 10.5, color: '#22c55e' }}>✓ {d.approved_by}</div>}
+                              {d.status === 'approved' && d.approved_by && <div style={{ fontSize: 11, color: '#22c55e' }}>✓ {d.approved_by}</div>}
                             </td>
                             <td style={tdSt}>{canEdit ? <input type="date" value={d.due_date || ''} onChange={e => patchDeliv(d, { due_date: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5, color: lt === 'red' ? '#ef4444' : undefined }} /> : (d.due_date ? fmtDate(d.due_date) : '—')}</td>
                             <td style={tdSt}>{canEdit ? <input type="date" value={d.done_at || ''} onChange={e => patchDeliv(d, { done_at: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5 }} /> : (d.done_at ? fmtDate(d.done_at) : '—')}</td>
                             <td style={tdSt}>
                               <div>{d.owner_name || <span style={{ color: 'var(--muted)' }}>—</span>}</div>
-                              {d.owner_role && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{OWNER_ROLE[d.owner_role] || d.owner_role}</div>}
+                              {d.owner_role && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{OWNER_ROLE[d.owner_role] || d.owner_role}</div>}
                             </td>
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

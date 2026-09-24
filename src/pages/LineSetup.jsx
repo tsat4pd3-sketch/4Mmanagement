@@ -1069,7 +1069,8 @@ export default function LineSetup({ embedded = false } = {}) {
     <div style={{ padding: embedded ? 0 : '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : (embedded ? 'calc(100vh - 200px)' : 'calc(100vh - 40px)'), minHeight: embedded && !isMobile ? 520 : undefined }}>
       {selectedLine && (
         // paddingRight เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน) — ไม่งั้นปุ่ม 🏷️ ที่ชิดขวาสุดโดนกระดิ่งทับ
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, paddingRight: 52 }}>
+        // 📱 flexWrap: มือถือ 390px แถวนี้ (แท็บ 3 + Undo/Redo + ป้าย) ยาว 408px ล้นจอโดยปัดดูไม่ได้ (mobilesweep 24/09)
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0, paddingRight: 52 }}>
           {TABS.map(t => (
             <button key={t.key}
               onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
@@ -1136,7 +1137,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
                   background: 'rgba(245,158,11,0.95)', color: '#fff',
                   padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  zIndex: 20, boxShadow: 'var(--shadow-float)',   // ป้ายเตือนลอยทับรูปผังจริง
                   whiteSpace: 'nowrap', pointerEvents: 'none',
                 }}>
                   {collisionWarn}
@@ -1147,7 +1148,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   position: 'absolute', top: 8, left: 8,
                   background: 'rgba(77,159,255,0.92)', color: '#fff',
                   padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', pointerEvents: 'none',
+                  zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
                   🔗 ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
                 </div>
@@ -1391,7 +1392,8 @@ export default function LineSetup({ embedded = false } = {}) {
               return shown.map(l => (
                 <div key={l.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
+                    // 📱 มือถือ: dropdown Section/ไลน์หลักห่อลงบรรทัดใหม่ได้ — เดิมล้นกรอบรายการ 320→348px (mobilesweep 24/09)
+                    display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'wrap' : undefined, minWidth: 0,
                     padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
                     marginLeft: l._isChild ? 12 : 0,
                     background: selectedLine === l.name ? 'var(--accent-dim)' : l._isChild ? 'var(--bg3)' : 'var(--bg2)',
@@ -1426,7 +1428,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
                     />
                   ) : (
-                    <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13, flex: 1, minWidth: 0, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.name}
                       {l._orphan && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
                     </span>
@@ -1708,7 +1710,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       {/* ชื่อพาร์ทยาวกว่าความกว้างแถบข้าง — โชว์ใต้ช่องแบบตัดบรรทัด ให้อ่านครบ
                           (ในช่องเก็บแค่เลข mat ไม่งั้นถูกตัดกลางคำจนอ่านไม่ออก) */}
                       {wipMatSel?.sub && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2, overflowWrap: 'anywhere' }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2, overflowWrap: 'anywhere' }}>
                           <span style={{ color: wipMatSel.badgeColor, fontWeight: 700 }}>{wipMatSel.badge}</span>
                           {' · '}{wipMatSel.sub}
                         </div>
@@ -1716,20 +1718,20 @@ export default function LineSetup({ embedded = false } = {}) {
                       {/* ⚠️ ประเภทวัสดุ derive จากเลข mat ได้อยู่แล้ว — บอกให้รู้ว่าไม่ต้องเลือกซ้ำ
                           (ถ้าไม่บอก คนจะคิดว่าเว้นว่างแล้วระบบไม่รู้ว่าเป็นพาร์ทซื้อ) */}
                       {!wipMatCat && wipMatDerived.text && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>
                           ระบบอ่านจากเลข mat ได้เองว่าเป็น <b style={{ color: 'var(--text2)' }}>{wipMatDerived.text}</b> — ไม่ต้องเลือกประเภทก็ได้
                           {' '}(เลือกไว้เพื่อกรองลิสต์ตอนค้นหาเท่านั้น)
                         </div>
                       )}
                       {/* ห้ามซ่อนเงียบ — บอกเสมอว่าตัวกรองประเภทซ่อนไปกี่รายการ + ทางออก */}
                       {wipMatCat !== '' && wipMatHidden > 0 && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: -2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>
                           {/* ⚠️ โชว์ "ชื่อประเภท" ไม่ใช่เลขดิบ — "กรองด้วยประเภท 9" อ่านไม่รู้เรื่อง
                               และทำให้เข้าใจผิดว่ารายการขั้นตอนที่คงไว้เป็นเบอร์ 9 (feedback หน้างาน) */}
                           กรอง: {wipCatLabel(wipMatCat)} · ซ่อน {wipMatHidden} รายการ
                           {wipMatKept > 0 && ` · รวม 🔩 ขั้นตอนย่อย (Operation) ${wipMatKept} รายการไว้ด้วย — ไม่มีเลข MAT SAP จึงไม่แยกตามประเภทวัสดุ`}
                           <button type="button" onClick={() => setWipMatAllCat(v => !v)}
-                            style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 10.5, padding: 0, textDecoration: 'underline' }}>
+                            style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>
                             {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
                           </button>
                         </div>
@@ -1737,13 +1739,13 @@ export default function LineSetup({ embedded = false } = {}) {
                       {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
                           ⚠️ เตือนเฉพาะเลข SAP 8 หลักที่ไม่ใช่ OP — อย่างอื่นตีความประเภทไม่ได้ จะเตือนผิดทุกครั้ง */}
                       {wipForm.mat_no && wipMatCat && wipMatCat !== WIP_CAT_OP && !wipMatIsOp && isSapMat(wipForm.mat_no) && !matMatches(wipForm.mat_no, wipMatCat) && (
-                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
                           ⚠ {wipForm.mat_no} เป็น {matClassOf(wipForm.mat_no)?.label || 'ประเภทที่ไม่รู้จัก'} ไม่ตรงกับที่เลือกไว้ ({wipCatLabel(wipMatCat)})
                         </div>
                       )}
                       {/* ไม่ใช่เลข MAT SAP (8 หลัก) และไม่ใช่ OP = อาจพิมพ์ผิด/เป็นเลขลูกค้า — บอกไว้ ไม่บล็อก */}
                       {wipForm.mat_no && !wipMatIsOp && !isSapMat(wipForm.mat_no) && (
-                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
                           ⚠ “{wipForm.mat_no}” ไม่ใช่เลข MAT SAP (ต้องเป็นตัวเลข 8 หลัก) — บันทึกได้
                           แต่ระบบตอบไม่ได้ว่าเป็นวัสดุประเภทไหน · ถ้าเป็นขั้นตอนการผลิต ให้ติ๊ก 🔩 รายการขั้นตอน ที่ Product Master
                           แล้วเลือกประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”
@@ -1751,7 +1753,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       )}
                       {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
                       {wipMatIsOp && (
-                        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: -2 }}>
+                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
                           🔩 ขั้นตอนย่อย (Operation) — ไม่ใช่พาร์ทในทะเบียน SAP · สโตร์ไม่มีของตัวนี้ให้เบิก
                           จุดนี้จึงเป็น <b>บัฟเฟอร์ระหว่างขั้นในไลน์</b> (Min/Max ใช้ดูจังหวะงาน ไม่ใช่จุดสั่งเติมจากสโตร์)
                           {wipMatCat !== WIP_CAT_OP && ' · แนะนำตั้งประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”'}

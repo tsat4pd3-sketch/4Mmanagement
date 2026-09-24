@@ -10,7 +10,12 @@ import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import CapacityBoard from '../components/CapacityBoard';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
   netShiftMin, FALLBACK_SHIFT_BREAK_MIN, buildDayPlan,
@@ -39,6 +44,7 @@ const normMat = (s) => String(s || '').replace(/[\s-]/g, '').toUpperCase();
 
 const DAILY_HORIZON = 21;   // วางแผนรายวันล่วงหน้ากี่วัน
 const MONTHLY_HORIZON = 6;   // รายเดือนล่วงหน้ากี่เดือน
+const CAPACITY_HORIZON = 12; // แท็บ 📊 Capacity มองไกลกว่า — สไลด์ของโรงงานดู 12 เดือนเสมอ
 const OT_SHIFT_FRAC = 0.25;  // OT ต่อท้ายกะเช้า ≈ 25% ของกะ (2-3 ชม.)
 
 const PLAN_META = {
@@ -53,7 +59,7 @@ const PLAN_META = {
 export default function ProductionPlan() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
-  const [tab, setTab] = useTabParam(['daily', 'monthly'], 'daily');
+  const [tab, setTab] = useTabParam(['daily', 'monthly', 'capacity'], 'daily');
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [planWarn, setPlanWarn] = useState('');   // โหลดไม่ครบ → เตือน (แผนอาจต่ำกว่าจริง)
@@ -73,6 +79,7 @@ export default function ProductionPlan() {
   const [orders, setOrders] = useState([]);
   const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
+  const [lineOee, setLineOee] = useState({});     // ไลน์ → OEE จริง median 60 วัน (0-1) · null = ยังไม่มีประวัติ
 
   const today = getWorkDate();
 
@@ -185,6 +192,8 @@ export default function ProductionPlan() {
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
       const oeeByLine = {};
       (sess || []).forEach(s => { if (s.oee != null) (oeeByLine[s.line_name] = oeeByLine[s.line_name] || []).push(Number(s.oee)); });
+      // OEE จริง (median 60 วัน) ต่อไลน์ — แท็บ 📊 Capacity เอาไปเทียบกับเส้นเป้า A×P×Q
+      setLineOee(Object.fromEntries(Object.entries(oeeByLine).map(([ln, arr]) => [ln, arr.length ? median(arr) / 100 : null])));
       const sessIds = (sess || []).map(s => s.id);
       // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — เดิมแบ่งก้อนเอง 300 id แต่ **ไม่แบ่งหน้า**
       //    300 กะ × ใบปิด ~5 ใบ = ~1,500 แถว > เพดาน 1000 ⇒ ถูกตัดเกือบทุกก้อน แบบเงียบสนิท
@@ -269,6 +278,13 @@ export default function ProductionPlan() {
   /* ── งานคู่ RH/LH: ปั๊มทีเดียวได้ 2 ข้าง ⇒ **ภาระเวลาไม่บวกกัน** (กฎเหล็ก "ชิ้น ≠ shot") ──
      ยอดชิ้น (duePcs) ยังบวกตามปกติ เพราะ RH/LH ส่งลูกค้าแยกใบ เป็นชิ้นจริงทั้งคู่ */
   const pairOf = useCallback((mat) => prodByMat[mat]?.pair || null, [prodByMat]);
+  // CT ดิบ (วินาที/shot) — แท็บ 📊 Capacity คิดภาระงานจาก "เวลามาตรฐาน" ไม่ใช่กำลังผลิตจริง
+  // (ใช้ของจริงแล้วหารด้วย OEE อีก = คิด OEE ซ้ำสองรอบ)
+  const ctOf = useCallback((mat) => Number(prodByMat[mat]?.ct) || 0, [prodByMat]);
+  const capMonths = useMemo(() => Array.from({ length: CAPACITY_HORIZON }, (_, i) => {
+    const d = new Date(`${today.slice(0, 7)}-01T12:00:00`); d.setMonth(d.getMonth() + i);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }), [today]);
 
   /* ⏮️ กำลังผลิต "ต่อวัน" ของพาร์ทหนึ่ง = กำลังต่อกะ × จำนวนกะที่ไลน์นั้นเปิดได้
      ใช้เป็น **lead time ที่คิดจากของจริง** ตอนไล่ย้อนวัน (ของ 100 ชิ้นกับ 100,000 ชิ้นใช้เวลาไม่เท่ากัน)
@@ -555,40 +571,44 @@ export default function ProductionPlan() {
   const chip = (color, bg) => ({ fontSize: 11, fontWeight: 800, color, background: bg || `${color}1f`, border: `1px solid ${color}55`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' });
   const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' };
   const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap', textAlign: 'right' };
-  const btnSt = (active) => ({ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`, background: active ? 'var(--accent-dim)' : 'var(--bg2)', color: active ? 'var(--accent)' : 'var(--text2)' });
   const confChip = (c) => c === 'high' ? null : <span style={chip(c === 'med' ? '#f59e0b' : '#ef4444')}>{c === 'med' ? 'ข้อมูลปานกลาง' : 'ข้อมูลน้อย'}</span>;
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <PageHeader
         title="วางแผนการผลิต" icon="🗓️"
         tabs={[
           { key: 'daily', label: '📅 รายวัน (ออเดอร์)' },
           { key: 'monthly', label: '📆 รายเดือน (Forecast)' },
+          { key: 'capacity', label: '📊 Capacity (แบบสไลด์โรงงาน)' },
         ]}
         tab={tab} onTab={setTab}
-        actions={<>
-          {sectionOpts.length > 1 && (
-            <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 'auto', minWidth: 110, padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-              <option value="">ทุกส่วนงาน</option>
-              {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          )}
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text2)', cursor: 'pointer' }}
-            title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
-            <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
-            🌳 รวมงานจาก BOM
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: 'var(--text2)', cursor: 'pointer' }}
-            title="หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)">
-            <input type="checkbox" checked={useBuffer} onChange={e => setUseBuffer(e.target.checked)} style={{ width: 'auto' }} />
-            📦 หักสต็อก STORE
-          </label>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>วางแผนที่กำลัง:</span>
-          <button onClick={() => setCapMode('median')} style={btnSt(capMode === 'median')} title="ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)">ปกติ (median)</button>
-          <button onClick={() => setCapMode('safe')} style={btnSt(capMode === 'safe')} title="ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)">ปลอดภัย (P25)</button>
-        </>}
       />
+      {/* UI-STANDARD 2026-09-24 — ตัวกรอง/ตัวเลือกแผนย้ายจาก actions ของหัวเพจมาเป็นแถบกรองเดียว */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        {sectionOpts.length > 1 && (
+          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+            <option value="">{ALL.section}</option>
+            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
+          title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
+          <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
+          🌳 รวมงานจาก BOM
+        </label>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
+          title="หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)">
+          <input type="checkbox" checked={useBuffer} onChange={e => setUseBuffer(e.target.checked)} style={{ width: 'auto' }} />
+          📦 หักสต็อก STORE
+        </label>
+        <span className="spacer" />
+        <span className="filter-label">วางแผนที่กำลัง:</span>
+        <Segmented value={capMode} onChange={setCapMode} label="วางแผนที่กำลัง" options={[
+          { value: 'median', label: 'ปกติ (median)', title: 'ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)' },
+          { value: 'safe', label: 'ปลอดภัย (P25)', title: 'ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)' },
+        ]} />
+      </FilterBar>
 
       {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
       {planWarn && (
@@ -728,6 +748,13 @@ export default function ProductionPlan() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
+      ) : tab === 'capacity' ? (
+        <CapacityBoard
+          role={role} scope={{ role, lineId: userLineId, sections: scopeSecs }}
+          lines={viewLines} months={capMonths} calMap={calMap}
+          demandByMonth={demandPcs.byMonth} ctOf={ctOf} lineOfMat={lineOfMat} pairOf={pairOf}
+          lineOee={lineOee}
+        />
       ) : tab === 'daily' ? (
         daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
         {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
@@ -823,6 +850,6 @@ export default function ProductionPlan() {
           </div>
         ))
       )}
-    </div>
+    </Page>
   );
 }

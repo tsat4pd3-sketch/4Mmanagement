@@ -150,7 +150,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
             <div style={{ width: labelW, flexShrink: 0 }} />
             <div style={{ position: 'relative', flex: 1, height: 16 }}>
               {ticks.map(t => (
-                <span key={t} style={{ position: 'absolute', left: `${pct(t)}%`, transform: 'translateX(-50%)', fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                <span key={t} style={{ position: 'absolute', left: `${pct(t)}%`, transform: 'translateX(-50%)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                   {hhmm(t)}
                 </span>
               ))}
@@ -163,7 +163,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
               <div key={r.line} style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
                 <div style={{ width: labelW, flexShrink: 0, paddingRight: 8, minWidth: 0 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.line}>{r.line}</div>
-                  <div style={{ fontSize: 10, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
+                  <div style={{ fontSize: 11, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
                     {unplannedMin > 0 ? `หยุด ${unplannedMin} น.` : 'ไม่มีหยุดนอกแผน'}
                   </div>
                 </div>
@@ -195,7 +195,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                 {/* กรอกแค่จำนวนนาที = วางบนแกนไม่ได้ — ต้องเห็น ห้ามหายเงียบ */}
                 {r.untimed > 0 && (
                   <div title="รายการที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวม/พาเรโต้ยังนับให้ครบ)"
-                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
+                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
                     ⏱ +{r.untimed} ({r.untimedMin} น.)
                   </div>
                 )}
@@ -219,7 +219,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       )}
 
       {totalUntimed > 0 && (
-        <div style={{ marginTop: 6, fontSize: 10.5, color: '#f59e0b', lineHeight: 1.55 }}>
+        <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.55 }}>
           ⏱ มี <b>{totalUntimed} รายการ</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
           (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้
         </div>

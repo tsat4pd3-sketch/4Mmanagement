@@ -9,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 
-/** สูตร %Q ตอนปิดกะ — ถอดมาจาก computeOEE ใน DailyReport.jsx ให้ตรงตัว */
+/** สูตร %Q ตอนปิดกะ — ถอดมาจาก computeSessionOee ใน src/utils/oee.js (§8) ให้ตรงตัว */
 const qualityOf = (produced, ng) =>
   produced > 0 ? produced / (produced + ng) : (ng > 0 ? 0 : null);
 
@@ -29,9 +29,10 @@ test('เคสปกติ — ของดี/(ของดี+เสีย) �
 });
 
 test('🛡️ โค้ดจริงต้องไม่กลับไปใช้ `: 1` อีก', () => {
-  const src = readFileSync(new URL('../../pages/DailyReport.jsx', import.meta.url), 'utf8');
+  // สูตรปิดกะย้ายจาก DailyReport.computeOEE → oee.js `computeSessionOee` เมื่อ 24/09/2026
+  const src = readFileSync(new URL('../oee.js', import.meta.url), 'utf8');
   const m = src.match(/const Q = totalProduced > 0[\s\S]{0,200}?;/);
-  assert.ok(m, 'หาสูตร Q ใน computeOEE ไม่เจอ — ถ้าย้ายที่ ให้แก้เทสนี้ด้วย');
+  assert.ok(m, 'หาสูตร Q ใน computeSessionOee ไม่เจอ — ถ้าย้ายที่ ให้แก้เทสนี้ด้วย');
   assert.ok(!/:\s*1\s*;/.test(m[0]),
     '\n\n❌ สูตร %Q กลับไปคืน 1 เมื่อผลิตได้ 0 แล้ว\n'
     + '   ทำไมห้าม: กะที่ทำออกมาเสียล้วนจะได้ %Q = 100% (เกิดจริง 17 กะ ก.ค. 2026)\n'

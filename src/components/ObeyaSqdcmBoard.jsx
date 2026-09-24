@@ -40,6 +40,7 @@ import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
@@ -54,6 +55,7 @@ import { avgOeeTarget, sumDefectQty } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
+import Segmented from './Segmented';
 import { LOOKBACK_DAYS, presetRange, addDays, rangeDays, normalizeRange } from '../utils/timeRange';
 import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
@@ -192,7 +194,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
              เขียนผิดมาตั้งแต่สร้างบอร์ด ⇒ คิวรีนี้ล้มทั้งก้อน แผง "ทำไมถึงหลุดเป้า" กับครึ่งหนึ่งของ C
              ว่างเปล่ามาตลอด (จอขึ้นเหมือน "ไม่มีเครื่องหยุด" ทั้งที่จริงคือโหลดไม่ได้)
              · ทุก component อื่นในรีโปใช้ `description` หมด — ดู OeeInsightPanel / MachineReliability */
-          .select('session_id, duration_min, description, dr_downtime_types(name_th, category)').in('session_id', c)),
+          .select('session_id, duration_min, description, machine_no, dr_downtime_types(name_th, category)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
           .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
@@ -407,10 +409,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── "ทำไมหลุดเป้า" — Pareto เวลาเครื่องหยุดนอกแผน (สาเหตุอันดับต้น) ───────────────
   const paretoM = useMemo(() => {
+    const dtIdx = buildDtIndex(fDts);
     const g = {};
     fDts.forEach((d) => {
       if (d.dr_downtime_types?.category === 'planned') return;
-      const name = d.dr_downtime_types?.name_th || d.description || 'ไม่ระบุสาเหตุ';
+      /* 🗑️ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" แตกตามเครื่องก่อนนับ (utils/downtimeCategory 23/09)
+         — ยุบรวมไว้แท่งเดียว = แท่งใหญ่ที่บอกไม่ได้ว่าไปแก้ที่ไหน ผิดกฎความซื่อสัตย์ของจอ */
+      const name = dtBucketName(d, dtIdx);
       g[name] = (g[name] || 0) + (Number(d.duration_min) || 0);
     });
     const rows = Object.entries(g).map(([name, min]) => ({ name, min: Math.round(min) }))
@@ -606,8 +611,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     : period === 'month' ? (monthSel ? `เดือน ${monthLabel(monthSel)} ${monthSel.slice(0, 4)} (เจาะจากปี)` : 'เดือนนี้')
       : 'สัปดาห์นี้';
   const shiftCount = isYear ? (kOee.shifts || 0) : fSess.length;
+  /* UI-STANDARD 2026-09-24: ป้ายปุ่มช่วงให้เป็นชุดเดียวกัน "…นี้" (PERIODS ใน obeyaKpi.js ใช้ key ตัดสิน ป้ายเป็นแค่ข้อความ) */
+  const PERIOD_LABEL = { week: 'สัปดาห์นี้', month: 'เดือนนี้', year: 'ปีนี้' };
   const yearNavBtn = {
-    fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
+    fontSize: 'var(--ctl-fs)', fontWeight: 800, padding: '0 10px', borderRadius: 'var(--ctl-r)', cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
   };
 
@@ -618,31 +625,28 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           tabs={tabs} tab={tab} onTab={onTab}
           title="OBEYA — ห้องบัญชาการโรงงาน" icon="🏛️"
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
-          actions={(
+          filters={(
             <>
               <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections}
                 plantLabel="ทุกส่วนงาน" width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
+              <span className="sep" />
+              {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
+              <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}
+                options={PERIODS.map(p => ({ value: p.key, label: PERIOD_LABEL[p.key] || p.label }))} />
               {monthSel && (
-                <button onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={{
-                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
-                  background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
-                }}>← ปี {year}</button>
+                <button className="ctl-btn" onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={yearNavBtn}>← ปี {year}</button>
               )}
               {isYear && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-                  <button onClick={() => setYear(y => y - 1)} title="ปีก่อน" style={yearNavBtn}>◀</button>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  <button className="ctl-btn" onClick={() => setYear(y => y - 1)} title="ปีก่อน" style={yearNavBtn}>◀</button>
                   <b style={{ fontSize: 14, minWidth: 44, textAlign: 'center' }}>{year}</b>
-                  <button onClick={() => setYear(y => y + 1)} disabled={year >= yearOf(today)} title="ปีถัดไป" style={yearNavBtn}>▶</button>
+                  <button className="ctl-btn" onClick={() => setYear(y => y + 1)} disabled={year >= yearOf(today)} title="ปีถัดไป" style={yearNavBtn}>▶</button>
                 </span>
               )}
-              {PERIODS.map(p => (
-                <button key={p.key} onClick={() => pickPeriod(p.key)} style={{
-                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
-                  background: period === p.key ? 'var(--accent)' : 'var(--bg3)',
-                  color: period === p.key ? '#08120a' : 'var(--text)',
-                  border: `1px solid ${period === p.key ? 'var(--accent)' : 'var(--border2)'}`,
-                }}>{p.label}</button>
-              ))}
+            </>
+          )}
+          actions={(
+            <>
               {canRecord && (
                 <button onClick={() => openModal()} style={{
                   fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
@@ -668,9 +672,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           onFrom={v => setCustomSide('from', v)}
           onTo={v => setCustomSide('to', v)}
           onPreset={d => setCustom(presetRange(d, today))}
-          style={{ margin: '0 0 10px', flexShrink: 0 }}
+          style={{ margin: '8px 0 10px', flexShrink: 0 }}
           note={custom
-            ? '📌 กำลังใช้กรอบเวลาที่กำหนดเอง — กดปุ่ม สัปดาห์/เดือน/ปี ด้านบนเพื่อกลับไปช่วงมาตรฐาน'
+            ? '📌 กำลังใช้กรอบเวลาที่กำหนดเอง — กดปุ่ม สัปดาห์นี้/เดือนนี้/ปีนี้ ในแถบด้านบนเพื่อกลับไปช่วงมาตรฐาน'
             : 'แก้วันที่หรือกดปุ่มย้อนหลัง เพื่อดูช่วงอื่นนอกเหนือจาก สัปดาห์นี้ / เดือนนี้ / ปีนี้'}
         />
       )}

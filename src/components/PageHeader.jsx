@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '../App';
 import useIsMobile from '../utils/useIsMobile';
+import { HubContext } from './Page';
 
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
@@ -27,19 +28,31 @@ import useIsMobile from '../utils/useIsMobile';
    4. เฟรมแรกห้ามให้ตัวชี้วิ่งมาจากมุมซ้าย — วัดใน useLayoutEffect (ก่อน paint) แล้วค่อยเปิด transition
    5. เพดาน Chromium 94 (จอ TV): transform/transition/box-shadow/ResizeObserver ผ่านหมด
       **ห้ามใช้ `color-mix()`** — แสงเรืองใช้ตัวแปร `--accent-glow` ใน index.css (มีทั้ง 2 ธีม)      */
+/* ── ⋯ แท็บเกิน 7 = พับที่เหลือเข้า "เพิ่มเติม" (2026-09-24 · UI §6.8 ข้อ 3 · Miller 7±2) ──
+   เดิม QualityControl 9 แท็บ · ProductMaster 10 แท็บ วางเรียงยาวเกินที่ตาไล่อ่านได้
+   · 6 แท็บแรกโชว์ + ช่อง "⋯ เพิ่มเติม" (native <select> — ใช้ได้บนจอ TV/มือถือ ไม่ต้องมี popover)
+   · แท็บที่เลือกอยู่ในกลุ่มพับ = ช่องเพิ่มเติมโชว์ชื่อแท็บนั้น + ตัวชี้ไถลไปที่ช่องนั้น
+   · URL/`?tab=` ไม่เปลี่ยน — ลิงก์เก่าใช้ได้ครบ */
+export const MAX_TABS = 7;
+const MORE = '__more';
+
 const IND_EASE = 'cubic-bezier(.4,1.2,.45,1)';
 const prefersReduced = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function PageHeader({
-  title, icon, sub, actions, tabs, tab, onTab, breadcrumb = true, children,
+  title, icon, sub, actions, tabs, tab, onTab, breadcrumb = true, filters, children,
 }) {
   const isMobile = useIsMobile();
+  const inHub = useContext(HubContext);   // หน้าลูกใน hub → ไม่วาดชื่อหน้า/breadcrumb ซ้ำ (Page.jsx)
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const navItem = NAV_ITEMS.find(n => n.to === pathname);
   const tabList = (tabs || []).filter(Boolean);
   const tabLabel = tabList.find(t => t.key === tab)?.label;
+  const overflow = tabList.length > MAX_TABS ? tabList.slice(MAX_TABS - 1) : [];
+  const shownTabs = overflow.length ? tabList.slice(0, MAX_TABS - 1) : tabList;
+  const activeInMore = overflow.some(t => t.key === tab);
 
   const scrollRef = useRef(null);   // กล่องที่เลื่อนแนวนอน (มือถือ)
   const rowRef = useRef(null);      // แถวปุ่ม = offsetParent ของปุ่มและของตัวชี้
@@ -52,12 +65,12 @@ export default function PageHeader({
 
   useLayoutEffect(() => {
     Object.keys(btnRefs.current).forEach((k) => {
-      if (!tabList.some(t => t.key === k)) delete btnRefs.current[k];
+      if (k !== MORE && !tabList.some(t => t.key === k)) delete btnRefs.current[k];
     });
     if (!tabList.length) { setInd(null); return undefined; }
 
     const measure = () => {
-      const el = btnRefs.current[tab];
+      const el = btnRefs.current[activeInMore ? MORE : tab];
       if (!el || !rowRef.current) { setInd(null); return; }
       const next = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
       setInd(prev => (prev && prev.x === next.x && prev.y === next.y
@@ -82,7 +95,7 @@ export default function PageHeader({
 
   // มือถือ: แท็บที่เลือกอาจอยู่นอกจอ — เลื่อน "เฉพาะกล่องแท็บ" เข้ามา ห้ามใช้ scrollIntoView (เลื่อนทั้งหน้า)
   useEffect(() => {
-    const sc = scrollRef.current; const el = btnRefs.current[tab];
+    const sc = scrollRef.current; const el = btnRefs.current[activeInMore ? MORE : tab];
     if (!sc || !el || sc.scrollWidth <= sc.clientWidth + 1) return;
     const want = Math.max(0, Math.min(el.offsetLeft - (sc.clientWidth - el.offsetWidth) / 2,
       sc.scrollWidth - sc.clientWidth));
@@ -96,46 +109,23 @@ export default function PageHeader({
     ? `transform .28s ${IND_EASE}, width .28s ${IND_EASE}, height .28s ${IND_EASE}`
     : 'none';
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
-      {breadcrumb && navItem && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
-          <button onClick={() => navigate('/')} style={{
-            background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
-          }}>🏠 หน้าหลัก</button>
-          <span>›</span>
-          <span>{navItem.group}</span>
-          <span>›</span>
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{navItem.label}</span>
-          {tabLabel && <><span>›</span><span style={{ color: 'var(--text2)' }}>{tabLabel}</span></>}
-        </div>
-      )}
-
-      <div style={{
-        display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
-        justifyContent: 'space-between', paddingRight: 52,   // กัน 🔔 ทับ (UI §7)
-      }}>
-        <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-            {icon && <span>{icon}</span>}{title}
-          </h2>
-          {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}
-        </div>
-        {actions && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>{actions}</div>}
-      </div>
-
-      {!!tabList.length && (
+  const renderTabs = () => (
         <div ref={scrollRef} style={{
           overflowX: isMobile ? 'auto' : 'visible',
           paddingTop: 7, paddingBottom: 4,   // เผื่อที่ให้ลำแสง/แสงเรืองไม่โดนกล่องที่เลื่อนตัดหัว
         }}>
-          <div ref={rowRef} style={{
+          {/* 🔖 `data-tabbar` = ที่จับให้ `audit/stdsweep.mjs` หาแถบแท็บของหน้าเพื่อไล่กดทุกแท็บ
+              **ห้ามถอด** — ถอดเมื่อไหร่ stdsweep จะตรวจได้แค่แท็บแรกของทุกหน้าแบบเงียบๆ
+              (เกิดจริง 24/09: เคยยืมแอตทริบิวต์ `data-ux-ok` ของ uxsweep มาใช้เป็นที่จับ
+               พอ uxsweep เลิกต้องการมันแล้วถอดออก stdsweep ก็ร่วงจากหลายมุมมองเหลือหน้าละ 1
+               โดยไม่มีใครรู้ ⇒ ที่จับของเครื่องมือต้องเป็นของตัวเอง ห้ามยืมของเครื่องมืออื่น) */}
+          <div ref={rowRef} data-tabbar="1" style={{
             position: 'relative', display: 'flex', gap: 7,
             flexWrap: isMobile ? 'nowrap' : 'wrap',
             width: isMobile ? 'max-content' : 'auto',
           }}>
             {ind && (
-              <span aria-hidden="true" data-ux-ok="tab-indicator" style={{
+              <span aria-hidden="true" data-tab-ind="" style={{
                 position: 'absolute', left: 0, top: 0, width: ind.w, height: ind.h,
                 transform: `translate3d(${ind.x}px, ${ind.y}px, 0)`,
                 borderRadius: 999, background: 'var(--accent)',
@@ -153,7 +143,7 @@ export default function PageHeader({
               </span>
             )}
 
-            {tabList.map(t => {
+            {shownTabs.map(t => {
               const on = t.key === tab;
               const selfPaint = on && !ind;   // ยังวัดไม่ได้ = ปุ่มทาสีเอง (กันแท็บที่เลือกวูบหาย)
               return (
@@ -172,9 +162,84 @@ export default function PageHeader({
                 </button>
               );
             })}
+            {overflow.length > 0 && (
+              <select ref={(el) => { btnRefs.current[MORE] = el; }} aria-label="แท็บเพิ่มเติม"
+                value={activeInMore ? tab : ''} onChange={e => e.target.value && onTab && onTab(e.target.value)}
+                style={{
+                  position: 'relative', zIndex: 1, width: 'auto', flexShrink: 0, cursor: 'pointer',
+                  fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999,
+                  background: activeInMore ? (ind ? 'transparent' : 'var(--accent)') : 'var(--bg3)',
+                  color: activeInMore ? 'var(--accent-ink)' : 'var(--text)',
+                  border: `1px solid ${activeInMore ? 'transparent' : 'var(--border2)'}`,
+                }}>
+                {!activeInMore && <option value="">⋯ เพิ่มเติม ({overflow.length})</option>}
+                {overflow.map(t => <option key={t.key} value={t.key}>{t.label}{t.badge ? ` · ${t.badge}` : ''}</option>)}
+              </select>
+            )}
           </div>
         </div>
+  );
+
+  // ใน hub + ไม่มีอะไรให้โชว์ (ไม่มีคำอธิบาย/ปุ่ม/แท็บ) ⇒ ไม่วาดกล่องเปล่ากินที่ 12px
+  if (inHub && !actions && !tabList.length && !filters) return children ?? null;
+
+  /* ใน hub: หน้าแม่แสดงชื่อ+คำอธิบายของแท็บแล้ว ⇒ หน้าลูกไม่แสดง `sub` ซ้ำ และปุ่มคำสั่งไปอยู่ท้ายแถบกรอง
+     ⇒ ลำดับใต้แท็บของแม่ = [แท็บย่อย] → [แถบกรอง … ปุ่มคำสั่ง] → เนื้อหา เหมือนหน้าเดี่ยวทุกหน้า
+     (stdsweep 24/09: คำอธิบาย/แถวปุ่มของหน้าลูกแทรกระหว่างแท็บกับแถบกรอง 48–67px) */
+  if (inHub) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
+        {!!tabList.length && renderTabs()}
+        {(filters || actions) && (
+          <div className="filter-bar" data-ph="filters" style={{ marginBottom: 0 }}>
+            {filters}
+            {actions && <><span className="spacer" /><span data-ph="hub-actions" style={{ display: 'contents' }}>{actions}</span></>}
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)' }}>
+      {breadcrumb && navItem && !inHub && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+          <button onClick={() => navigate('/')} style={{
+            background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
+          }}>🏠 หน้าหลัก</button>
+          <span>›</span>
+          <span>{navItem.group}</span>
+          <span>›</span>
+          <span style={{ color: 'var(--text)', fontWeight: 700 }}>{navItem.label}</span>
+          {tabLabel && <><span>›</span><span style={{ color: 'var(--text2)' }}>{tabLabel}</span></>}
+        </div>
       )}
+
+      {(!inHub || sub || actions) && (
+      <div style={{
+        display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
+        justifyContent: 'space-between', paddingRight: inHub ? 0 : 52,   // กัน 🔔 ทับ (UI §7) — ใน hub หัวของแม่กันให้แล้ว
+      }}>
+        <div style={{ minWidth: 0 }}>
+          {!inHub && (
+            <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+              {icon && <span>{icon}</span>}{title}
+            </h2>
+          )}
+          {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: inHub ? 0 : 3 }}>{sub}</div>}
+        </div>
+        {/* actions = ปุ่ม "คำสั่งระดับหน้า" เท่านั้น (บันทึก/เพิ่ม/พิมพ์/โหมด TV) — ห้ามใส่ตัวกรอง (select/วันที่/ขอบเขต/สเกล)
+            ตัวกรองต้องอยู่ `filters` ⇒ ลงใต้แถบแท็บเสมอ (UI-STANDARD §2 ลำดับแนวตั้ง · stdsweep ตรวจ data-ph) */}
+        {actions && <div data-ph="actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>{actions}</div>}
+      </div>
+      )}
+
+      {!!tabList.length && renderTabs()}
+
+      {/* ── ลำดับแนวตั้งตายตัวทุกหน้า: breadcrumb → ชื่อหน้า|ปุ่มคำสั่ง → แท็บ → แถบกรอง → เนื้อหา ──
+          (user 24/09: "ลำดับยังโดดไปมา เดี๋ยวแท็บมาก่อนช่องค้นหา บางหน้าค้นหาอยู่บนสุดก่อนแท็บ") */}
+      {filters && <div className="filter-bar" data-ph="filters" style={{ marginTop: 2, marginBottom: 0 }}>{filters}</div>}
       {children}
     </div>
   );

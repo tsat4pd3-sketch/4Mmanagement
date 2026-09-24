@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { STAFF_INDIRECT, isDirectStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
 import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -15,15 +15,21 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+  orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
-import { positionOptionsWith } from '../utils/positions';
+import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
+import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
@@ -47,10 +53,16 @@ const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxP
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
+/* วงแหวนรอบรูปพนักงาน = **ประเภทการจ้าง** (ประจำ/รายวัน/อื่นๆ) — ความหมายเดิม ไม่เปลี่ยน
+   🔴 `ring` เป็น**สีเรียบ** ไม่ใช่ไล่เฉดโลหะ (23/09 ก้อน C)
+   เดิมเป็น `linear-gradient(135deg, …5 stop…)` เลียนแบบผิวทอง/เงิน/ทองแดง — แต่วงแหวนมันหนา
+   **2.5px** ⇒ ไล่เฉด 5 สีในพื้นที่ 2.5px มองไม่ออกว่าเป็นโลหะอยู่แล้ว เห็นเป็นแค่สีที่มีจุดรบกวน
+   และมันคูณตามจำนวนพนักงานในตาราง (วัดจริง: 28 จาก 30 ไล่เฉดทั้งหน้ามาจากตรงนี้จุดเดียว)
+   ⇒ ใช้สีเรียบสีเดียว = หน้าตาเหมือนเดิมในสายตาคนใช้ แต่หน้านี้เลิกเป็นหน้าที่ "ตกแต่งหนักสุดในระบบ" */
 const EMP_GRADES = {
-  gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
-  silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  gold:   { label: 'ประจำ',  ring: '#c8941a', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
+  silver: { label: 'รายวัน', ring: '#a8a8a8', glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
+  bronze: { label: 'อื่นๆ',  ring: '#b06a28', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -197,12 +209,17 @@ export default function Operator() {
   const [mtnTeamRows,     setMtnTeamRows]     = useState(pmTeamsSync());  // ทีมช่างซ่อม (data-driven) — ช่อง 🔧 ในโมดัลแก้ไข
   const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
+  const [gradesReady, setGradesReady] = useState(0);   // bump เมื่อทะเบียนเกรดโหลดเสร็จ (gradesSync เป็น cache นอก React)
+
   useEffect(() => {
     let alive = true;
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
     fetchExpConfig();
+    /* 🎓 ทะเบียนเกรด (20 แถว) — ต้องโหลดก่อน `gradesSync()` ถึงมีข้อมูล
+       ⚠️ cache อยู่นอก React ⇒ ต้อง bump state ด้วย ไม่งั้นช่องเกรดไม่ re-render หลังโหลดเสร็จ */
+    loadGrades().then(() => { if (alive) setGradesReady(n => n + 1); });
     supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
@@ -458,7 +475,7 @@ export default function Operator() {
     }
     const makeBase = () => {
       /* 🔴 หน้านี้คือ **ทะเบียนพนักงาน** — ต้องเห็นทุกคนรวมสายสนับสนุน ไม่งั้นแก้ข้อมูลเขาไม่ได้เลย
-         (เกิดจริง 23/09: ใส่ onlyDirectStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
+         (เกิดจริง 23/09: ใส่ตัวกรอง onlyShopfloorStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
           ทั้งที่เพิ่งถูกสร้างจาก /add-user เมื่อวาน — "มีอยู่ในฐานแต่มองไม่เห็น" คือสภาพที่แย่ที่สุด)
          การกันไม่ให้เขาไปปนใน "กำลังคน" ทำที่จอที่นับคน (Checkin/Report/ShiftOrganize/
          WorkforceInsight) ไม่ใช่ที่ทะเบียน · ที่นี่ใช้ชิป 🧑‍🏭/🗂️ กรองดูแทน */
@@ -569,6 +586,7 @@ export default function Operator() {
         employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
+        grade:      editingEmp.grade      || null,   // 🎓 เกรดตามผังองค์กรทางการ (ว่างได้)
         department: editingEmp.department,
         // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
         // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
@@ -577,6 +595,13 @@ export default function Operator() {
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
+        /* 🧭 แกนสังกัด — เก็บ "โหนดในผัง" ไม่ใช่แค่ข้อความ (docs/ORG-AXES-DECISION.md §5.1)
+           คอลัมน์ข้อความข้างบนยังเขียนเหมือนเดิมทุกตัวในฐานะสำเนาไว้โชว์ ⇒ หน้าเก่าไม่กระทบ
+           `manual` = คนเลือกเองจากฟอร์ม (ต่างจาก auto_* ที่ระบบเดาจากข้อความตอน backfill) */
+        org_node_id:  orgNodeIdFor(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes),
+          editingEmp.department, orgSectionNodes, orgDeptNodes),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
@@ -842,7 +867,7 @@ export default function Operator() {
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
     .filter(emp => !filterNoPhoto || !emp.image_url)
-    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isDirectStaff(emp) : isDirectStaff(emp)))
+    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isShopfloorStaff(emp) : isShopfloorStaff(emp)))
     /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
        **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
     .filter(emp => {
@@ -893,35 +918,24 @@ export default function Operator() {
   }, [activeSkillDefs, displayed]);
 
   return (
-    <div className="page-content">
+    <Page>
       {subItemsSkill && (
         <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
       )}
-      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥" />
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
-        {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
-            index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
-        {[
+      {/* UI-STANDARD 2026-09-24: แท็บย้ายเข้า PageHeader (เดิมวาดปุ่มเอง) — ชิปขอบเขตไปอยู่ช่อง actions
+          แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
+          index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
+      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥"
+        tabs={[
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
           [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
-        ].filter(([, , show]) => show).map(([i, t]) => (
-          <button key={i} onClick={() => setTab(i)} style={{
-            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-            background: tab === i ? 'var(--accent)' : 'var(--bg3)',
-            color: tab === i ? '#fff' : 'var(--text2)',
-            fontWeight: tab === i ? 700 : 400,
-            position: 'relative',
-          }}>
-            {t}
-            {i === 2 && levelUpRequests.length > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {levelUpRequests.length}
-              </span>
-            )}
-          </button>
-        ))}
+        ].filter(([, , show]) => show).map(([i, t]) => ({
+          key: TAB_KEYS[i], label: t,
+          badge: i === 2 && levelUpRequests.length > 0 ? levelUpRequests.length : undefined,
+        }))}
+        tab={TAB_KEYS[tab]} onTab={(k) => setTab(TAB_KEYS.indexOf(k))}
+        actions={(scopeSecs.length > 0 || (isLeader && myLineName)) ? (<>
         {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
@@ -940,34 +954,24 @@ export default function Operator() {
             📍 {myLineName}
           </div>
         )}
-      </div>
+        </>) : null}
+      />
 
       {tab === 0 && (
         <>
-          {/* Section / Group / Team / Grade filters */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
-                ⚠️ ต้องกำหนด width เอง (index.css ตั้ง `input { width: 100% }` ทั้งแอป —
-                   ไม่กำหนด = กินเต็มบรรทัดแล้วดัน dropdown ตกบรรทัดใหม่ทั้งแถว)
-                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
-            <input type="search" value={empSearch} onChange={e => setEmpSearch(e.target.value)}
-              placeholder="🔎 ค้นชื่อ / รหัส / ตำแหน่ง..."
-              style={{ width: 210, fontSize: 12, padding: '5px 10px', borderRadius: 7,
-                       border: `1px solid ${empSearch ? 'var(--accent)' : 'var(--border2)'}`,
-                       background: 'var(--bg3)', color: 'var(--text)' }} />
+          {/* Section / Group / Team / Grade filters — UI-STANDARD 2026-09-24: FilterBar คุมขนาด/ความกว้าง select ให้แล้ว
+              (เดิมต้องใส่ width:'auto' เองกัน `select{width:100%}` ของธีม) · ลำดับ ขอบเขต → ตัวกรองอื่น → ค้นหา → จำนวน/ล้าง */}
+          <FilterBar style={{ marginBottom: 12 }}>
             {[
               // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
-              { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
-              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
-              { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
-              { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
+              { label: 'Section', all: ALL.section,    value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
+              { label: 'Dept',    all: ALL.dept,       value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
+              { label: 'Group',   all: allOf('กลุ่ม'), value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
+              { label: 'Team',    all: ALL.team,       value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
-                /* ⚠️ ต้องมี width: 'auto' — index.css ตั้ง `select { width: 100% }` ทั้งแอป
-                   `minWidth` เป็นแค่พื้น override ไม่ได้ → select 4 ตัวกินคนละบรรทัด (วัดจริง
-                   1500px และ 1280px ได้ 7 แถว) ดันปุ่มกรองตกไปแถวที่ 5 ทั้งที่ที่แนวนอนเหลือเฟือ */
-                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', width: 'auto', minWidth: 110, maxWidth: 200 }}>
-                <option value="">{`— ${f.label} —`}</option>
+                style={{ color: f.value ? 'var(--text)' : 'var(--muted)' }}>
+                <option value="">{f.all}</option>
                 {(f.label === 'Dept' || f.label === 'Group') ? (() => {
                   const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
                   const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
@@ -1033,7 +1037,9 @@ export default function Operator() {
               );
             })}
 
-            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
+            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร ราย**แผนก** เพื่อคิดต้นทุน)
+                ⚠️ **คนละแกนกับชิป 🧑‍🏭/🗂️ ข้างบน** (staff_kind ราย**คน** = นับกำลังคนไหม)
+                ขัดกันจริงที่ช่าง MTN: labor_type=indirect แต่ staff_kind=shopfloor — docs/ORG-AXES-DECISION.md §5.4 */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {['direct', 'indirect'].map(t => {
               const m = LABOR_META[t];
@@ -1049,8 +1055,12 @@ export default function Operator() {
               );
             })}
 
+            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
+                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
+            <SearchInput value={empSearch} onChange={setEmpSearch} fields="ชื่อ / รหัส / ตำแหน่ง" />
+            <span className="spacer" />
             {empSearch && (
-              <span style={{ fontSize: 11, color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700 }}>
+              <span className="filter-count" style={{ color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700, whiteSpace: 'normal' }}>
                 {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
               </span>
             )}
@@ -1060,7 +1070,7 @@ export default function Operator() {
                 ✕ ล้าง
               </button>
             )}
-          </div>
+          </FilterBar>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
@@ -1147,9 +1157,11 @@ export default function Operator() {
           {/* Table + fade overlays */}
           <div style={{ position: 'relative' }}>
             {/* Left fade */}
-            <div style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
+            {/* ม่านไล่เฉดขอบซ้าย/ขวา = บอกว่า "ยังเลื่อนต่อไปทางนี้ได้" (ขึ้น-ลงตาม scrollState)
+                = affordance ไม่ใช่การตกแต่ง ⇒ ติด data-ux-ok ให้ uxsweep ข้าม (ดู audit/README.md) */}
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
             {/* Right fade */}
-            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
               {scrollState.right && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: 'var(--accent)', opacity: 0.7, animation: 'bounceX 1.2s ease-in-out infinite' }}>›</div>}
             </div>
 
@@ -1204,7 +1216,7 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
-                        background: !emp.is_active ? 'var(--border2)' : grade.gradient,
+                        background: !emp.is_active ? 'var(--border2)' : grade.ring,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
                         {emp.image_url ? (
@@ -1794,6 +1806,40 @@ export default function Operator() {
                     <option value="">— เลือก —</option>
                     {positionOptionsWith(editingEmp.position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
+                  {/* 🎓 เกรดตามผังองค์กรทางการ (grades · FM-HRM-1-00102 Rev.03)
+                      🔴 แม่แบบกำหนดเกรดต่อตำแหน่งไว้ แต่ **เตือนอย่างเดียว ห้ามบล็อก** —
+                         ของจริงมีข้อยกเว้น (รักษาการ · เคสเฉพาะ) ดู src/utils/grades.js */}
+                  {(() => {
+                    void gradesReady;                       // ผูก re-render กับตอนทะเบียนโหลดเสร็จ
+                    const allowed = gradeCodesOfPosition(editingEmp.position);
+                    const all = gradesSync();
+                    if (!all.length) return null;          // ทะเบียนยังไม่โหลด = ไม่ต้องโชว์ช่องเปล่า
+                    const fit = gradeFitsPosition(editingEmp.grade, allowed);
+                    const row = gradeRow(editingEmp.grade);
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <label style={labelSt}>เกรด (ตามผังองค์กรทางการ)</label>
+                        <select value={editingEmp.grade || ''}
+                          onChange={e => setEditingEmp({ ...editingEmp, grade: e.target.value || null })}>
+                          <option value="">— ยังไม่ระบุ —</option>
+                          {all.map(g => (
+                            <option key={g.code} value={g.code}>
+                              {g.code} · {g.label_th}{allowed.includes(g.code) ? ' ✓' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
+                          color: fit === 'mismatch' ? '#f59e0b' : 'var(--muted)' }}>
+                          {fit === 'mismatch'
+                            ? <>⚠️ แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> — บันทึกได้ถ้าเป็นเคสรักษาการหรือข้อยกเว้น</>
+                            : allowed.length
+                              ? <>แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> (ติ๊ก ✓ ในลิสต์)</>
+                              : <>แม่แบบไม่ได้ระบุเกรดของตำแหน่งนี้ — เลือกได้ตามจริง</>}
+                          {row && <> · <b>เลขน้อย = สูงกว่า</b> (เช่น S1 สูงกว่า S3)</>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -2137,7 +2183,7 @@ export default function Operator() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

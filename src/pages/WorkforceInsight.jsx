@@ -2,10 +2,14 @@ import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { useOrgSections } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
@@ -85,7 +89,10 @@ function downloadCSV(filename, headers, rows) {
   URL.revokeObjectURL(url);
 }
 
-const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' };
+// UI-STANDARD 2026-09-24 — ปุ่ม export ในแถบกรอง (ขนาดช่อง/ความสูงมาจาก .filter-bar)
+const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' };
+// กะ: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all') คงความหมายเดิม
+const SHIFT_SEG = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 130, flex: 1 };
 
 function Kpi({ label, value, sub, color }) {
@@ -206,25 +213,21 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
       {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={shift} onChange={e => setShift(e.target.value)} style={selSt}>
-          <option value="all">ทุกกะ</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
+        <span className="spacer" />
         <button onClick={() => downloadCSV(`manpower_${from}_${to}.csv`,
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
-          style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>
+          style={csvBtnSt}>
           ⬇️ CSV
         </button>
-      </div>
+      </TimeRangeBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -365,20 +368,20 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
       {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — วางเป็นแถวของตัวเองเหนือตัวกรองเฉพาะหน้า */}
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+        <span className="spacer" />
         <button onClick={() => downloadCSV(`station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
-          style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>
+          style={csvBtnSt}>
           ⬇️ CSV
         </button>
-      </div>
+      </TimeRangeBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -551,18 +554,18 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))} style={selSt}>
+        <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))}>
           <option value={3}>3 เดือนล่าสุด</option>
           <option value={6}>6 เดือนล่าสุด</option>
           <option value={12}>12 เดือนล่าสุด</option>
         </select>
-        {(loading) && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดประวัติการออกงาน…</span>}
-      </div>
+        {(loading) && <span className="filter-count">กำลังโหลดประวัติการออกงาน…</span>}
+      </FilterBar>
 
       {partial && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
@@ -801,17 +804,17 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={month} onChange={e => setMonth(e.target.value)} style={selSt}>
-          {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
-        </select>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 14 }}>
+        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={month} onChange={e => setMonth(e.target.value)}>
+          {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
         </select>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
           เกณฑ์
-          <input type="number" min={1} max={31} value={threshold} style={{ ...selSt, width: 66 }}
+          <input type="number" min={1} max={31} value={threshold} style={{ width: 66 }}
             onChange={e => setThreshold(Math.max(1, Math.min(31, Number(e.target.value) || 20)))} />
           วันขึ้นไป
         </label>
@@ -824,10 +827,10 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           <input type="checkbox" checked={useBookings} onChange={e => setUseBookings(e.target.checked)} />
           นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
         </label>
-        <div style={{ flex: 1 }} />
-        <button onClick={doExcel} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ Excel (ฟอร์ม HR)</button>
-        <button onClick={doCSV} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' }}>⬇️ CSV</button>
-      </div>
+        <span className="spacer" />
+        <button onClick={doExcel} style={csvBtnSt}>⬇️ Excel (ฟอร์ม HR)</button>
+        <button onClick={doCSV} style={csvBtnSt}>⬇️ CSV</button>
+      </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}
       {partial && (
@@ -926,7 +929,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
                     <td style={{ textAlign: 'center' }}>{r.working}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.holiday + r.shutdown}
-                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 10, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
+                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
                     </td>
                     <td style={{ textAlign: 'center', fontWeight: 900, color: over ? 'var(--red)' : 'var(--text)' }}>{r.total}</td>
                     {isCurrentMonth && (
@@ -1004,7 +1007,7 @@ export default function WorkforceInsight() {
     supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, std_day_shift, std_night_shift')
       .then(({ data }) => setLines(data || []));
     // 👥 กำลังคน/turnover นับเฉพาะพนักงานหน้าไลน์ — คนทางอ้อม (QA/PE/ธุรการ) ไม่เข้าสูตร
-    onlyDirectStaff(supabase.from('employees')
+    onlyShopfloorStaff(supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id, is_active, start_date, position'))
       .then(({ data }) => setEmployees(data || []));
     loadPositions();
@@ -1024,7 +1027,7 @@ export default function WorkforceInsight() {
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees]);
 
   return (
-    <div>
+    <Page>
       <PageHeader
         title="กำลังคน & Turnover" icon="📈"
         sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
@@ -1052,6 +1055,6 @@ export default function WorkforceInsight() {
         <OtMonthlyTab empById={empById} sectionsList={sectionsList}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
-    </div>
+    </Page>
   );
 }

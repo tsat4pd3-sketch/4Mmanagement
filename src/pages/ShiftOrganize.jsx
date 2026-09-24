@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -16,6 +16,7 @@ import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -107,7 +108,7 @@ export default function ShiftOrganize() {
   };
 
   const fetchEmployees = async () => {
-    let q = onlyDirectStaff(supabase.from('employees')
+    let q = onlyShopfloorStaff(supabase.from('employees')
       .select('id, name, employee_id_code, line_id, team, section, department, production_lines(section)')
       .eq('is_active', true));
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
@@ -419,11 +420,10 @@ export default function ShiftOrganize() {
   const fmtDate = (d) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
 
   return (
-    <div className="page-content">
-      {/* Header — paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม 💾 บันทึก */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
-        <PageHeader title="ตารางกะการทำงาน" icon="🗓" />
-        {(canEdit || canEditDept) && pendingCount > 0 && (
+    <Page>
+      {/* Header — PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง ไม่ทับปุ่ม 💾 บันทึก */}
+      <PageHeader title="ตารางกะการทำงาน" icon="🗓"
+        actions={(canEdit || canEditDept) && pendingCount > 0 ? (
           <button
             onClick={handleSave}
             disabled={isSaving}
@@ -431,8 +431,7 @@ export default function ShiftOrganize() {
           >
             {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} รายการ)`}
           </button>
-        )}
-      </div>
+        ) : null} />
 
       {/* ⚠️ ไม่มีสิทธิ์แก้ = ต้องบอกให้ชัด ห้ามโชว์ตารางเปล่าๆ แล้วปล่อยให้เดาเอง
           (feedback ทีมงาน 2026-08-20: "กำหนดกะในฐานข้อมูลแล้ว แต่ไม่มีปุ่มสลับกะ"
@@ -973,7 +972,7 @@ export default function ShiftOrganize() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

@@ -23,6 +23,10 @@ import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import { classifyAbc } from '../utils/pareto';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -350,7 +354,7 @@ export default function Improvements() {
   }, [lines, visibleLineNames]);
 
   const typeName = useCallback((imp) => {
-    if (imp.problem_source === 'mtn') return imp.problem_label || 'ทุกอาการ';
+    if (imp.problem_source === 'mtn') return imp.problem_label || ALL.symptom;
     const list = imp.problem_source === 'defect' ? defectTypes : dtTypes;
     return list.find(t => t.id === imp.problem_type_id)?.name_th || imp.problem_label || '—';
   }, [dtTypes, defectTypes]);
@@ -798,7 +802,7 @@ export default function Improvements() {
   };
 
   /* ── render ── */
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>;
 
   // เครื่องของ "ครอบครัวไลน์" ไม่ใช่ชื่อไลน์ตรงเป๊ะ — กะมักเปิดบนไลน์ลูกแต่เครื่องลงทะเบียน
   // ใต้ไลน์แม่/พี่น้อง (pattern เดียวกับ sessionProcessTypesAll ใน DailyReport) · family ว่าง = fallback ตรงเป๊ะ
@@ -848,31 +852,25 @@ export default function Improvements() {
   const typeOpts = modal?.problem_source === 'defect' ? defectTypes : dtTypes;
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 1500px)', margin: '0 auto' }}>
+    <Page>
       <ReadOnlyNote show={!canManage} role={role} what="เปิด/แก้โปรเจคปรับปรุง"
         permKey="improvements:manage" hint="ยังดูโปรเจค พาเรโต้ และผลก่อน/หลังได้ตามปกติ" />
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 8 }}>
-        <div>
-          <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡" />
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ width: 'auto', padding: '7px 10px', fontSize: 12, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-            <option value="all">ทุกสถานะ</option>
-            <option value="monitoring">👁 กำลังติดตามผล</option>
-            <option value="done">✅ สำเร็จ</option>
-            <option value="cancelled">✖ ยกเลิก</option>
-          </select>
-          {canManage && (
-            <button onClick={openCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
-              ➕ เพิ่มโปรเจคปรับปรุง
-            </button>
-          )}
-        </div>
-      </div>
+      {/* header — UI-STANDARD 2026-09-24: ปุ่มหลักอยู่ใน actions · ตัวกรองสถานะ (4 ตัวเลือก) = Segmented */}
+      <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡"
+        sub="เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ"
+        actions={canManage && (
+          <button onClick={openCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+            ➕ เพิ่มโปรเจคปรับปรุง
+          </button>
+        )} />
+      <FilterBar style={{ marginBottom: 8 }}>
+        <Segmented value={statusFilter} onChange={setStatusFilter} label="สถานะ" options={[
+          { value: 'all', label: ALL.status },
+          { value: 'monitoring', label: '👁 กำลังติดตามผล' },
+          { value: 'done', label: '✅ สำเร็จ' },
+          { value: 'cancelled', label: '✖ ยกเลิก' },
+        ]} />
+      </FilterBar>
 
       {/* ── 💰 สรุป cost saving รวมขึ้นตาม hierarchy: กลุ่ม → ส่วน → รวม (2026-08-11 · คำสั่ง user
              "rate อยู่ระดับกลุ่ม แล้วค่อย sum ขึ้นมาตาม hierarchy") — rate ไม่กรอกซ้ำระดับบน ยอดระดับบน = ผลรวมจากกลุ่ม ── */}
@@ -1164,7 +1162,7 @@ export default function Improvements() {
                             <span style={{ color: 'var(--muted)' }}>(บาท/วัน)</span>
                           </div>
                           {imp.problem_source === 'mtn' && costComps.includes('repair') && costComps.includes('idp') && (
-                            <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               ℹ️ IDP (SAP — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม") กับ ค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล — เปิดนับทั้งคู่อาจทับซ้อนบางส่วน เลือกปิดก้อนใดก้อนหนึ่งได้ตามนโยบายบัญชี
                             </div>
                           )}
@@ -1210,7 +1208,7 @@ export default function Improvements() {
                         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🗓 แผนงาน {ms.length ? `${doneCnt}/${ms.length} ขั้น` : '(ยังไม่วางแผน)'}</span>
                         {/* legend PDCA — บอกว่าแผนอิงหลักอะไร + ตัวอักษรสีตรงกับป้ายหน้าแต่ละขั้น */}
                         <span title={Object.values(PHASES).map(p => `${p.s} = ${p.label}`).join('\n')}
-                          style={{ display: 'inline-flex', gap: 2, fontSize: 10, fontWeight: 900, flexShrink: 0 }}>
+                          style={{ display: 'inline-flex', gap: 2, fontSize: 11, fontWeight: 900, flexShrink: 0 }}>
                           {Object.values(PHASES).map(p => <span key={p.s} style={{ color: p.c }}>{p.s}</span>)}
                         </span>
                         {ms.length > 0 && (
@@ -1242,8 +1240,8 @@ export default function Improvements() {
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? '#ef4444' : meta.c}` }} />
                                   {/* ป้ายเฟส PDCA — จากคอลัมน์ phase (null = ขั้นที่ยังไม่ระบุเฟส โชว์ "–" ไม่เดาให้) */}
                                   {PHASES[m.phase]
-                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, fontSize: 9, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${PHASES[m.phase].c}26`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
-                                    : <span title="ยังไม่ระบุเฟส PDCA" style={{ width: 14, flexShrink: 0, fontSize: 10, color: 'var(--muted)', textAlign: 'center' }}>–</span>}
+                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${PHASES[m.phase].c}26`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
+                                    : <span title="ยังไม่ระบุเฟส PDCA" style={{ width: 14, flexShrink: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>–</span>}
                                   <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}${m.phase === 'check' ? '\n🤖 ขั้นนี้ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ด)' : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? '#ef4444' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.phase === 'check' ? '🤖 ' : ''}{m.title}</span>
                                 </button>
                                 {/* แถบ gantt ตามแผน */}
@@ -1356,21 +1354,21 @@ export default function Improvements() {
                 {modal.problem_source === 'mtn' ? (
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ลักษณะปัญหา (จากใบซ่อม MTN)
                     <select value={modal.problem_label || ''} onChange={e => setModal({ ...modal, problem_label: e.target.value, problem_type_id: '' })} style={{ marginTop: 4 }}>
-                      <option value="">— ทุกอาการ —</option>
+                      <option value="">{ALL.symptom}</option>
                       {mtnProblemTypes.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </label>
                 ) : (
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ปัญหาที่แก้ (จาก master {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
                     <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">— ทุกประเภท —</option>
+                      <option value="">{ALL.type}</option>
                       {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name_th}</option>)}
                     </select>
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
-                    <SearchSelect value={modal.machine_no || ''} placeholder="— ทั้งไลน์ — (พิมพ์ค้นหาเครื่อง)" style={{ marginTop: 4 }}
+                    <SearchSelect value={modal.machine_no || ''} placeholder={`${ALL.machine} — พิมพ์ค้นหาเครื่อง`} style={{ marginTop: 4 }}
                       options={[
                         /* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน ต้องยังแสดงได้ — ไม่งั้นช่องโชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ */
                         ...(modal.machine_no && !mcListed(modal.machine_no) ? [{ id: modal.machine_no, label: `⚠ ${modal.machine_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)' }] : []),
@@ -1383,7 +1381,7 @@ export default function Improvements() {
                       onChange={({ id }) => setModal({ ...modal, machine_no: id })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
-                    <SearchSelect value={modal.mat_no || ''} placeholder="— ทุกสินค้า — (พิมพ์ค้นหา MAT / ชื่อ)" style={{ marginTop: 4 }}
+                    <SearchSelect value={modal.mat_no || ''} placeholder={`${ALL.product} — พิมพ์ค้นหา MAT / ชื่อ`} style={{ marginTop: 4 }}
                       options={[
                         ...(modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) ? [{ id: modal.mat_no, label: `⚠ ${modal.mat_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)' }] : []),
                         ...prodHit.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, badge: `${Math.round(matOfHit(p).value).toLocaleString()} ${hitUnit}`, badgeColor: '#f59e0b', group: `⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`, keywords: p.name || '' })),
@@ -1393,7 +1391,7 @@ export default function Improvements() {
                       onChange={({ id }) => setModal({ ...modal, mat_no: id })} />
                     {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
                     {prodAll.length === 0 && prodUnreg.length === 0 && (
-                      <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
+                      <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
                         ยังไม่มีสินค้าผูกกับไลน์ {modal.line_name} (หรือไลน์แม่/ลูก) ใน Product Master — ตั้ง “ไลน์” ของสินค้าที่ /products ก่อน
                       </div>
                     )}
@@ -1625,6 +1623,6 @@ export default function Improvements() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

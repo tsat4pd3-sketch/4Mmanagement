@@ -12,8 +12,12 @@ import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import StockCountSheet from '../components/StockCountSheet';
 import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
 import LineSelect from '../components/LineSelect';
@@ -324,37 +328,41 @@ function StockTab({ role, scope }) {
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
         permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
-      {/* Header */}
-      <div style={{ display:'flex', paddingRight: 52, justifyContent:'space-between', alignItems:'flex-end', gap:12, flexWrap:'wrap', marginBottom:18 }}>
-        <div>
-          <h1 style={{ margin:0, fontSize:'clamp(18px,2.5vw,24px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
-            📦 Line Stock — พาร์ทย่อยคงเหลือในไลน์
-          </h1>
-          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>
-            Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
-          </p>
-        </div>
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          {(pending.length > 0 || canApprove) && (
-            <button onClick={() => setShowPending(v => !v)}
-              style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
-                position: 'relative',
-                border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-              ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
-              <ToggleDot on={showPending} />
-            </button>
-          )}
-          <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
-            {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+      {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว ใต้แท็บทันที: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน → ปุ่มคำสั่งชิดขวา (UI-STANDARD §2.1) */}
+      <FilterBar>
+        {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
+            ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
+        <LineSelect
+          lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={allOf('ไลน์/คลัง')}
+          extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+        />
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        <span className="spacer" />
+        {(pending.length > 0 || canApprove) && (
+          <button onClick={() => setShowPending(v => !v)}
+            style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+              position: 'relative',
+              border: pending.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
+            ⏳ รออนุมัติ{pending.length > 0 ? ` (${pending.length})` : ''}
+            <ToggleDot on={showPending} />
           </button>
-          {canIssue && (
-            <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
-              + จ่ายพาร์ทเข้าไลน์
-            </button>
-          )}
+        )}
+        <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
+          {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+        </button>
+        {canIssue && (
+          <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
+            + จ่ายพาร์ทเข้าไลน์
+          </button>
+        )}
+        <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)' }}>
+          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </div>
-      </div>
-
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
+        <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
+      </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
@@ -417,35 +425,26 @@ function StockTab({ role, scope }) {
 
       {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
           ตัวนับนับหลังกรองไลน์แล้ว → เลขบนชิปตรงกับที่เห็นในตารางเสมอ */}
-      <div style={{ ...card, padding:'10px 14px', marginBottom:12 }}>
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
-          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
-        </div>
-      </div>
 
       {/* Summary chips */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:10, marginBottom:16 }}>
+        {/* 📏 ตัวเลขต้องมีหน่วย + ฐานเทียบ (UI §6.18 ข้อ 4) — "1" เฉยๆ ตอบไม่ได้ว่ามากหรือน้อย
+            "Stock หมด" เป็นส่วนหนึ่งของ "รายการพาร์ท" จึงบอกสัดส่วนของยอดรวมกำกับ */}
         {[
-          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, icon:'🏭' },
-          { label:'รายการพาร์ท', value: filteredStock.length, icon:'🔩' },
-          { label:'Stock หมด / ติดลบ', value: totalLow, icon:'⚠️', warn: totalLow > 0 },
+          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, unit:'ไลน์', icon:'🏭' },
+          { label:'รายการพาร์ท', value: filteredStock.length, unit:'รายการ', icon:'🔩',
+            sub: lineFilter ? `เฉพาะ ${lineFilter}` : 'ทุกไลน์/คลังในสิทธิ์ที่เห็น' },
+          { label:'Stock หมด / ติดลบ', value: totalLow, unit:'รายการ', icon:'⚠️', warn: totalLow > 0,
+            sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)' }}>
             <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {c.label}</div>
-            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? '#ef4444' : 'var(--text)', marginTop:2 }}>{c.value}</div>
+            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? '#ef4444' : 'var(--text)', marginTop:2 }}>
+              {c.value}<span style={{ fontSize:12, fontWeight:600, color:'var(--text2)', marginLeft:3 }}>{c.unit}</span>
+            </div>
+            {c.sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{c.sub}</div>}
           </div>
         ))}
-        <div style={{ ...card, padding:'10px 16px' }}>
-          <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, marginBottom:4 }}>🔍 กรองไลน์</div>
-          {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
-              ไม่กองปนกับไลน์ผลิต — ของ 2 ชนิดนี้คนละความหมายกันคนละเรื่อง */}
-          <LineSelect
-            lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder="ทุกไลน์/คลัง" style={{ ...inputSt, padding:'5px 8px' }}
-            extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
-          />
-        </div>
       </div>
 
       {/* แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้ ไม่งั้นต้องเลื่อนยาวมากกว่าจะเจอไลน์ที่ต้องการ */}
@@ -909,21 +908,16 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
 
   return (
     <>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
-        <div>
-          <h2 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
-            ⏰ รอบจัดส่ง — Kanban Delivery Rounds
-          </h2>
-          <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
-        </div>
-        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder="ทุกไลน์" style={{ ...inputSt, width:180 }} />
-          {canEdit && (
-            <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
-          )}
-        </div>
-      </div>
+      {/* UI-STANDARD §2.1: แถบกรองใต้แท็บทันที (ชื่อแท็บบอกหัวเรื่องแล้ว ไม่วาด h3 ซ้ำ) → คำอธิบาย → เนื้อหา */}
+      <FilterBar>
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={ALL.line} />
+        <span className="spacer" />
+        {canEdit && (
+          <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
+        )}
+      </FilterBar>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
 
       {Object.keys(grouped).length === 0 ? (
         <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
@@ -1033,7 +1027,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                     <option value="day">☀️ กะเช้า (day)</option>
                     <option value="night">🌙 กะดึก (night)</option>
                   </select>
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
                   </div>
                 </div>
@@ -1426,6 +1420,7 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
@@ -1441,7 +1436,7 @@ export default function LineStock() {
   const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
   return (
-    <div style={{ padding:'clamp(12px,2vw,24px)', maxWidth:'min(96vw, 2000px)', margin:'0 auto' }}>
+    <Page>
       <PageHeader
         title="Line Stock — สต๊อกหน้าไลน์" icon="📦"
         sub="ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต"
@@ -1449,12 +1444,13 @@ export default function LineStock() {
       />
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
+      {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
       {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
       {activeTab === 'zones'     && <><StorageLocPanel /><StorageZonePanel /></>}
       {activeTab === 'delivery'  && <DeliveryRoundsTab canEdit={canEdit} fullName={fullName} scope={scope} />}
       {activeTab === 'timeboard' && <DeliveryTimeBoardTab />}
       {activeTab === 'inflow'    && <InflowRulesTab canEdit={canEdit} />}
-    </div>
+    </Page>
   );
 }

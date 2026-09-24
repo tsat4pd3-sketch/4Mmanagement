@@ -14,8 +14,8 @@
  */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import {
-  ResponsiveContainer, ComposedChart, LineChart, BarChart, Line, Bar, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend, ReferenceLine, Cell, LabelList,
+  ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis,
+  CartesianGrid, Tooltip, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -35,6 +35,9 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import usePartOptions from '../utils/usePartOptions';
 import { invalidateInstruments } from '../utils/useInstruments';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
+import ParetoChart from '../components/ParetoChart';
+import { statusColor, toneOf } from '../utils/statusTone';
+import { classifyAbc } from '../utils/pareto';
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import MaterialRequests from '../components/MaterialRequests';
@@ -49,6 +52,18 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from '../components/SearchSelect';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
+
+/* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
+const STATUS_SEG = [
+  { value: 'all', label: ALL.status },
+  { value: 'active', label: 'ค้างดำเนินการ' },
+  { value: 'closed', label: 'ปิดแล้ว' },
+];
 
 /* ── Date helpers (ห้ามใช้ toISOString() หา work date — ดู CLAUDE.md) ─────── */
 function localDateStr(d = new Date()) {
@@ -205,11 +220,18 @@ function Chip({ label, color }) {
   );
 }
 
-function KpiCard({ label, value, sub, color = 'var(--text)' }) {
+/* `unit` = หน่วยท้ายเลข (UI §6.18 ข้อ 4 — เลขลอยๆ ตอบไม่ได้ว่ามากหรือน้อย)
+   `primary` = ใบพระเอกของแถว (ข้อ 1) — แถวนี้คือ PPM: เป็นตัวเดียวที่เทียบข้ามไลน์/ข้ามเดือนได้
+   ส่วนยอดผลิต/NG เป็นเลขดิบที่ขึ้นกับว่าเดือนนี้ผลิตเยอะแค่ไหน */
+function KpiCard({ label, value, sub, color = 'var(--text)', unit = '', primary = false }) {
   return (
-    <div style={{ ...cardSt, padding: '13px 16px', minWidth: 130, flex: '1 1 130px' }}>
-      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 900, color, lineHeight: 1.1 }}>{value ?? '—'}</div>
+    <div style={{ ...cardSt, padding: primary ? '15px 20px' : '13px 16px',
+      minWidth: primary ? 190 : 130, flex: primary ? '1.6 1 190px' : '1 1 130px' }}>
+      <div style={{ fontSize: primary ? 12 : 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: primary ? 38 : 24, fontWeight: 900, color, lineHeight: 1.1 }}>
+        {value ?? '—'}
+        {value != null && unit && <span style={{ fontSize: primary ? 16 : 12, fontWeight: 600, color: 'var(--text2)', marginLeft: 3 }}>{unit}</span>}
+      </div>
       {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
@@ -425,11 +447,18 @@ function QualityDashboard() {
     const lineRows = [...byLine.entries()]
       .map(([line, v]) => ({ line, ng: v.ng, ppm: (v.total + v.ng) ? Math.round(v.ng / (v.total + v.ng) * 1e6) : 0 }))
       .sort((a, b) => b.ng - a.ng).slice(0, 12);
-    let pareto = [...byType.entries()].map(([name, v]) => ({ name, qty: v.qty, color: v.color }))
-      .filter(p => p.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 10);
-    const paretoTotal = pareto.reduce((s, p) => s + p.qty, 0);
-    let cum = 0;
-    pareto = pareto.map(p => { cum += p.qty; return { ...p, cum: paretoTotal ? +(cum / paretoTotal * 100).toFixed(1) : 0 }; });
+    /* 📊 Pareto — ผ่าน `classifyAbc` + `<ParetoChart>` เหมือนทุกพาเรโตในระบบ (23/09 ก้อน C)
+       เดิมหน้านี้ประกอบเอง (Recharts ComposedChart + เรียง + คิด % สะสมเอง) ⇒ 2 ปัญหา:
+       1. **ตัด `.slice(0, 10)` ก่อนคิด % สะสม** ⇒ เส้นสะสมจบ 100% ที่ประเภทที่ 10 ทั้งที่
+          ของจริงยังมีประเภทที่ 11+ เหลืออยู่ = จอบอกว่า "10 ประเภทนี้คือของเสียทั้งหมด" ซึ่งไม่จริง
+          (`collapseTail` ของ ParetoChart ยุบหางเป็นแท่ง "อื่นๆ" ตามมาตรฐาน → 100% จริง)
+       2. **ทาแท่งด้วยสีประจำประเภทของเสีย** (`v.color` จากทะเบียน taxonomy) ⇒ แท่งเขียว/เหลือง/แดง
+          เรียงกันโดยที่สีไม่ได้แปลว่าหนักเบา — ชน §6.17 ข้อ 1 · มาตรฐานพาเรโตใช้สี **ABC**
+          (A แดง = 80% แรกต้องแก้ก่อน · B ส้ม · C เทา) ซึ่งสีสื่อ "ลำดับความสำคัญ" จริงๆ */
+    const pareto = classifyAbc(
+      [...byType.entries()].map(([name, v]) => ({ name, qty: v.qty })).filter(p => p.qty > 0),
+      (p) => p.qty,
+    );
     return {
       total, ng,
       // total = ยอดสแกน = "ของดี" ล้วน · ผลิตจริงทั้งหมด = total + ng → PPM/FTT ต้องหารด้วยผลิตจริง ไม่ใช่ของดี
@@ -447,31 +476,43 @@ function QualityDashboard() {
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
       >
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, marginLeft: 6 }}>ไลน์:</span>
-        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)} style={{ ...inputSt, width: 'auto', minWidth: 150 }}>
-          <option value="">ทุกไลน์ ({lineOptions.length})</option>
+        {/* UI-STANDARD 2026-09-24: ป้าย "ทุก…" ไม่มีวงเล็บจำนวน · ไม่ใส่ขนาด inline ในแถบกรอง
+            (ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ ไม่ใช่ทะเบียน production_lines ⇒ ยังเป็น select ธรรมดา) */}
+        <span className="filter-label">ไลน์</span>
+        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)}>
+          <option value="">{ALL.line}</option>
           {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
         </select>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ชิ้นงาน:</span>
-        <SearchSelect value={productFilter || ''} placeholder={`ทุกชิ้นงาน (${productOptions.length}) — พิมพ์ค้นหา`} style={{ minWidth: 200, maxWidth: 320 }}
-          inputStyle={inputSt}
+        <span className="filter-label">ชิ้นงาน</span>
+        <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
           onChange={({ id }) => setProductFilter(id)} />
         {(lineFilter || productFilter) && <button style={ghostBtn} onClick={() => { setLineFilter(''); setProductFilter(''); }}>ล้างตัวกรอง</button>}
-        {loading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+        {loading && <span className="filter-count">กำลังโหลด…</span>}
       </TimeRangeBar>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="ยอดผลิตรวม (ชิ้น)" value={stat.total.toLocaleString()}
+        {/* 🚦 สีทุกใบมาจาก `statusTone` ชุดเดียวกับทั้งระบบ (23/09) — เดิมตั้ง hex เอง 6 จุด
+            และ **ยอดผลิต/NG ถูกทาเขียวเมื่อ 0** ทั้งที่ "ผลิต 0 ชิ้น" ไม่ใช่เรื่องดี
+            (0 ของ NG = ดีจริง · 0 ของยอดผลิต = ยังไม่มีข้อมูล ⇒ คนละเรื่อง ห้ามใช้สีเดียวกัน)
+            เกณฑ์ PPM/FTT ที่หน้านี้ตั้งเอง เขียนกำกับไว้ใน `sub` แล้ว (UI §6.18 ข้อ 5) */}
+        <KpiCard label="ยอดผลิตรวม" value={stat.total.toLocaleString()} unit="ชิ้น"
           sub={productFilter ? `ชิ้นงาน: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
-        <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} color={stat.ng > 0 ? '#ef4444' : '#22c55e'} />
-        <KpiCard label="PPM" value={stat.ppm != null ? stat.ppm.toLocaleString() : '—'}
-          color={stat.ppm == null ? undefined : stat.ppm <= 500 ? '#22c55e' : stat.ppm <= 3000 ? '#f59e0b' : '#ef4444'}
-          sub="defective parts per million" />
-        <KpiCard label="FTT (First Time Through)" value={stat.ftt != null ? `${stat.ftt}%` : '—'}
-          color={stat.ftt == null ? undefined : stat.ftt >= 99 ? '#22c55e' : stat.ftt >= 97 ? '#f59e0b' : '#ef4444'} />
-        <KpiCard label="NCR เปิดค้าง" value={ncrOpen} color={ncrOpen > 0 ? '#f59e0b' : '#22c55e'} sub="ยังไม่ปิดรายการ" />
-        <KpiCard label="CAPA เกินกำหนด" value={capaOverdue} color={capaOverdue > 0 ? '#ef4444' : '#22c55e'} sub="เลย due date" />
+        <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} unit="ชิ้น"
+          color={statusColor(toneOf({ value: stat.ng, zeroIsGood: true }))}
+          sub={stat.total + stat.ng > 0 ? `จากผลิตจริง ${(stat.total + stat.ng).toLocaleString()} ชิ้น` : 'ยังไม่มีข้อมูล'} />
+        <KpiCard primary label="PPM — ของเสียต่อล้านชิ้น" value={stat.ppm != null ? stat.ppm.toLocaleString() : null}
+          color={stat.ppm == null ? 'var(--text)'
+            : statusColor(stat.ppm <= 500 ? 'good' : stat.ppm <= 3000 ? 'warn' : 'bad')}
+          sub="เกณฑ์จอนี้: เขียว ≤ 500 · เหลือง ≤ 3,000" />
+        <KpiCard label="FTT (First Time Through)" value={stat.ftt != null ? `${stat.ftt}%` : null}
+          color={stat.ftt == null ? 'var(--text)'
+            : statusColor(stat.ftt >= 99 ? 'good' : stat.ftt >= 97 ? 'warn' : 'bad')}
+          sub="เกณฑ์จอนี้: เขียว ≥ 99% · เหลือง ≥ 97%" />
+        <KpiCard label="NCR เปิดค้าง" value={ncrOpen} unit="ใบ"
+          color={statusColor(toneOf({ value: ncrOpen, zeroIsGood: true, over: 'warn' }))} sub="ยังไม่ปิดรายการ" />
+        <KpiCard label="CAPA เกินกำหนด" value={capaOverdue} unit="ใบ"
+          color={statusColor(toneOf({ value: capaOverdue, zeroIsGood: true }))} sub="เลย due date" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 14 }}>
@@ -486,28 +527,6 @@ function QualityDashboard() {
               <Line type="monotone" dataKey="ppm" name="PPM" stroke="#ef4444" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-
-        <div style={cardSt}>
-          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📊 Pareto ของเสียตามประเภท (NG + Suspect)</div>
-          {stat.pareto.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูลของเสียในช่วงนี้</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <ComposedChart data={stat.pareto} margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
-                <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis yAxisId="r" orientation="right" domain={[0, 100]} tick={{ fontSize: 11, fill: 'var(--muted)' }} unit="%" />
-                <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
-                <Bar yAxisId="l" dataKey="qty" name="จำนวน (ชิ้น)" radius={[3, 3, 0, 0]}>
-                  {stat.pareto.map((p, i) => <Cell key={i} fill={p.color} />)}
-                </Bar>
-                <Line yAxisId="r" type="monotone" dataKey="cum" name="สะสม %" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                <ReferenceLine yAxisId="r" y={80} stroke="#f59e0b" strokeDasharray="4 4" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          )}
         </div>
 
         <div style={cardSt}>
@@ -529,6 +548,19 @@ function QualityDashboard() {
             </ResponsiveContainer>
           )}
         </div>
+      </div>
+
+      {/* 📊 พาเรโตอยู่ "นอกกริด" เป็นบล็อกเต็มความกว้างของตัวเอง — แท่งเยอะ + ป้ายภาษาไทยยาว
+          บีบลง 1 ใน 3 ของจอแล้วอ่านป้ายไม่ออก (กฎเดียวกับ A·P·Q ที่ /oee-analytics)
+          ⚠️ ห้ามย้ายกลับเข้ากริดแล้วใส่ `gridColumn: '1 / -1'` — auto-fit จะดันมันลงบรรทัดใหม่
+          แล้ว**เหลือช่องว่างครึ่งแถวข้างบน** (ลองแล้ว 23/09 · ผิดกฎ "ห้ามเหลือขอบข้างว่างเยอะ") */}
+      <div style={{ ...cardSt, marginTop: 14 }}>
+        <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📊 Pareto ของเสียตามประเภท (NG + Suspect)</div>
+        {stat.pareto.length === 0 ? (
+          <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูลของเสียในช่วงนี้</div>
+        ) : (
+          <ParetoChart rows={stat.pareto} unit="ชิ้น" height={300} />
+        )}
       </div>
     </div>
   );
@@ -969,14 +1001,12 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ค้างดำเนินการ'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
@@ -1255,19 +1285,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {[['active', 'ค้างดำเนินการ'], ['closed', 'ปิดแล้ว'], ['all', 'ทั้งหมด']].map(([v, l]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            style={{ ...ghostBtn, ...(filter === v ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderColor: 'var(--accent)' } : {}) }}>{l}</button>
-        ))}
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
           id: null, capa_no: '', ncr_id: null, title: '', owner_name: fullName || '', due_date: '',
           part_no: '', line_name: '',
           d1_team: '', d2_problem: '', d3_containment: '', d4_root_cause: '', d5_corrective: '',
           d6_implement: '', d7_prevent: '', d8_closure: '', effectiveness: '', status: 'open',
         })}>🛠 เปิด CAPA ใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
@@ -1537,11 +1565,11 @@ function InstrumentTab({ lineObjs, canManage }) {
         <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
         <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
       </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input style={{ ...inputSt, maxWidth: 280 }} placeholder="🔍 ค้นหา รหัส/ชื่อ/ตำแหน่ง…" value={search} onChange={e => setSearch(e.target.value)} />
-        <div style={{ flex: 1 }} />
+      <FilterBar>
+        <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
+        <span className="spacer" />
         {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
@@ -1682,7 +1710,7 @@ export default function QualityControl() {
   }, [setTab]);
 
   return (
-    <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Quality Control Center" icon="🔍"
         sub="ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949"
@@ -1698,6 +1726,6 @@ export default function QualityControl() {
       {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lineObjs} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}
-    </div>
+    </Page>
   );
 }

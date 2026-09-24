@@ -7,6 +7,7 @@ import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -311,10 +312,10 @@ export default function NotificationConfig() {
   }
   const insertPh = (ph) => setTplDraft(d => `${d}${d && !d.endsWith(' ') && !d.endsWith('\n') ? ' ' : ''}{${ph}}`)
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
+  if (loading) return <Page width="form"><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 920px)', margin: '0 auto' }}>
+    <Page width="form">
       <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
@@ -667,6 +668,6 @@ export default function NotificationConfig() {
         2. สร้างกลุ่มแต่ละเรื่อง แล้ว <b>add บอท</b> เข้ากลุ่ม (เป็นสมาชิกก็พอ)<br />
         3. add <b>@getidsbot</b> เข้ากลุ่มชั่วคราว → บอก <code>Group ID: -100…</code> → copy ใส่ช่อง chat_id → บันทึก → ทดสอบ
       </div>
-    </div>
+    </Page>
   )
 }

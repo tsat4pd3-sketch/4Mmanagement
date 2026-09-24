@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert';
 import { readFileSync } from 'node:fs';
 
-/** ถอดมาจากสาย sequential ใน computeOEE (DailyReport.jsx) */
+/** ถอดมาจากสาย sequential ใน computeSessionOee (src/utils/oee.js §8) */
 const dtOverstate = (stdSec, runMin) => {
   const ratio = stdSec / (runMin * 60);
   return ratio > 1.001 ? Math.round(stdSec / 60 - runMin) : null;
@@ -45,8 +45,9 @@ test('runMin = 0 — ของจริงไปไม่ถึงตรงน�
   assert.equal(v, 100);
 });
 
-test('🛡️ ด่าน runSec > 0 ใน computeOEE ต้องยังอยู่ — ไม่งั้นกะที่ไม่มีเวลาเดินเครื่องจะได้ %P เพี้ยน', () => {
-  const src = readFileSync(new URL('../../pages/DailyReport.jsx', import.meta.url), 'utf8');
+test('🛡️ ด่าน runSec > 0 ใน computeSessionOee ต้องยังอยู่ — ไม่งั้นกะที่ไม่มีเวลาเดินเครื่องจะได้ %P เพี้ยน', () => {
+  // สูตรปิดกะย้ายจาก DailyReport.computeOEE → oee.js `computeSessionOee` เมื่อ 24/09/2026
+  const src = readFileSync(new URL('../oee.js', import.meta.url), 'utf8');
   assert.ok(/if \(runSec > 0 && matPData\.length > 0\)/.test(src),
-    'ด่าน `if (runSec > 0 && matPData.length > 0)` หายไปจาก computeOEE');
+    'ด่าน `if (runSec > 0 && matPData.length > 0)` หายไปจาก computeSessionOee');
 });

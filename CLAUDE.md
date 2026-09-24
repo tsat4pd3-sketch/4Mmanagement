@@ -327,16 +327,26 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## 🗑️ "อื่นๆ / ไม่ระบุ" ห้ามขึ้นอันดับ 1 ของจอวิเคราะห์ (2026-09-23 · คำสั่ง user)
 
 *"ไม่ระบุกับอื่นๆ มาอันดับ 1 กับ 2 การวิเคราะห์จะไม่มีประโยชน์เลย"* → ใช้กับทุกจอที่วิเคราะห์ input พนักงาน
-**กติกา 4 ชั้น** — ตัวช่วย `src/utils/unclassified.js` (ชั้น 1-3) + `src/utils/autoCategory.js` (ชั้น 4)
-1. 🔴 **ต้นทาง — ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้อยู่แล้ว** (มีด่าน `regressionGuards`) = 2 ใน 3 ของปัญหา
+**กติกา 5 ชั้น** — `utils/unclassified.js` (1-3) · `downtimeCategory.js` (4) · `autoCategory.js` (5)
+1. 🔴 **ต้นทาง — ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้อยู่แล้ว** (มีด่าน `regressionGuards`)
 2. **ทะเบียน taxonomy ต้องครบ + มี group** (ทีมที่ไม่มีอาการในทะเบียน = เลือกได้แค่ "อื่นๆ")
-3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก "ไม่กรอกเลย"
-   (ต้องแก้ที่การกรอก) · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
-4. 🔎 **เดาหมวดจากคำก่อนปล่อยตกถัง** (วัดจริง 90 วัน: อื่นๆ 103 ใบ อันดับ 1 → **36 ใบ อันดับ 4**)
-   🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** (ทะเบียน taxonomy + ใบที่คนจัดกลุ่มแล้ว) — `STOP`/`FILLER`
-   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ · ก้ำกึ่ง → null (ตกถังดีกว่าเดาผิด)
+3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก
+   "ไม่กรอกเลย" · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
+4. 🔑 **ถังขยะที่มีคีย์อื่นกรอกไว้แล้ว ต้องแตกด้วยคีย์นั้นก่อน อย่ารีบเดาจากคำ** (มีด่าน)
+   downtime: ถัง "อื่นๆ/Alarm ไม่ระบุ" **92% มี `machine_no`** ⇒ `dtBucketName` (`utils/downtimeCategory.js`)
+   แตกเป็น `"<เครื่อง> · <ประเภท>"`
+5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
+   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
    · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท
+   · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ตัดคำไทยด้วย ICU `Intl.Segmenter` ·
+     คีย์เสียงข้ามสคริปต์ (เบนดิ่ง=bending) · ทนพิมพ์ผิด ⇒ จับได้ ×2 เท่า
+     🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ต้องตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อนเมื่อไหร่พังทันที)
+     · ข้อยกเว้นเดียว = **r ท้ายคำ** (ไทยไม่ออกเสียง r ท้ายพยางค์ · คอนเวเย่อ=conveyor)
+   · 🔴 **คำที่กำกวมในทะเบียนต้องตัดสินด้วย "การใช้งานจริง" ไม่ใช่ยุบป้ายทะเบียน** — ส่งใบที่คน
+     จัดประเภทแล้วเข้าไปเรียนด้วย (`buildDtIndex`) · ป้ายที่ความหมายต่างกันจริงห้ามยุบ
+   · 📐 **คำที่เรียนจากใบเก่าตัดสินด้วย log-odds z ≥ 1.96 + พื้นขั้นต่ำ 3 ใบ** (`utils/termStats.js`)
+     เลิกใช้ "ชนะ 80%" — 100% จาก 2 ใบ ไม่ใช่หลักฐานระดับเดียวกับ 88% จาก 125 ใบ
+> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
 
 ## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
 
@@ -353,12 +363,29 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · 🔴 **SQDCM ยกเว้น** (ปุ่มของมัน = "ดูช่วงไหน") · **หน้าที่ไม่มีตัวกรองเวลาจริง ห้ามยัดแถบลงไป** — เหตุผลรายหน้าดูในเอกสาร
 > 📄 `docs/modules/time-range-filter.md` · UI §6.16
 
+## 📐 มาตรฐานหน้าตา — กรอบหน้า · หัวเพจ · แถบกรอง · ค้นหา (2026-09-24 · คำสั่ง user)
+
+*"แก้ทุกตัวเลย เราต้องมี standardize แล้ว"* — อ้างอิง Nielsen #4 Consistency · Carbon field sizes · Material 3 · WCAG 2.2
+· รากหน้า = `<Page>` (`components/Page.jsx`) **ห้ามตั้ง padding/maxWidth เอง** · หัว = `PageHeader` · hub ครอบหน้าลูกด้วย `<Hub>`
+· 🔴 **ลำดับตายตัว: ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา** — ตัวกรองส่ง `filters=` ห้ามใส่ `actions=` (ปุ่มคำสั่งเท่านั้น · มีด่าน)
+· แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
+· ป้าย "ทั้งหมด" = `ALL.*` (`utils/filterLabels.js`) · 2–5 ตัวเลือก (กะ) = `<Segmented>` · ค้นหา = `<SearchInput>`
+· 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
+  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · หน้าที่ตั้ง `alsoIn` ต้องมาร์ค**ทุกหมวด**
+  (ห้ามเช็ค `activeGroup === group` — คืนแค่หมวดแรก) · ด่านข้อ 6 ใน stdsweep (UI-STANDARD §4.5)
+· ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
+> 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
+
 ## 📊 กราฟ Pareto — แท่งตั้งมาตรฐานสากลเท่านั้น (2026-09-22 · คำสั่ง user)
 
 ทุกพาเรโตในระบบวาดผ่าน `<ParetoChart>` · พิกัดจาก `paretoGeometry()` (`utils/pareto.js`)
 **ห้ามคำนวณแท่งเองในหน้า — มีด่าน `regressionGuards`** · องค์ประกอบบังคับ: แท่งตั้งเรียงมาก→น้อย ·
 **แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 · เพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด** (แท่งเตี้ย/ที่ว่างด้านบนเยอะ = *ถูกต้อง*) ·
 แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% · ป้ายแกน X เอียง -45°/-90° — **ห้ามกลับไปวาดแท่งนอน**
+· 🕳️ **พาเรโตที่ประกอบด้วย Recharts เคยหลุดด่านไป 1 ตัว** (23/09) แล้ว `.slice(0,10)` ก่อนคิด % สะสม
+  ⇒ เส้นจบ 100% ที่อันดับ 10 ทั้งที่ยังมีที่ 11+ = จอโกหก · มีกฎคู่ `pareto-hand-built-recharts` แล้ว
+· 🔴 **ห้ามกราฟแกน Y 2 ข้าง** (`no-dual-y-axis`) — จุดที่เส้นตัดแท่งเป็นของปลอม (สเกล 2 ข้างตั้งอิสระ)
+  ⇒ แยกเป็น 2 กราฟซ้อนแกน X เดียวกัน + ล็อก `YAxis width` เท่ากัน · แกนขวาของพาเรโตไม่เข้าข่าย (UI §6.19)
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
 
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
@@ -477,6 +504,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 `Obeya.jsx` = 4 แท็บ: `kpi` 📋 บอร์ด KPI ราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ SQDCM **สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`)
 → `todo` 📌 งานค้างของส่วนงาน (`DeptDashboard` embed · `/dept-dashboard` redirect) → `table` ⚙️ ตั้งค่า/กรอก (`KpiMonthly.jsx`) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
 - **🔴 ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (ผังทุกมิติ · `utils/orgScope.js` · `?scope=kind:value` · เขียน `scope_kind/scope_value` ผ่าน `defScopeColumns()`) ห้าม select จาก `org_nodes kind='section'` เอง
+  · 🔴 **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** (23/09) — เลือกหน่วยแล้วมีชิป `💰 รหัส` กดสลับได้ · พิมพ์รหัสในช่องค้นเจอหน่วยเจ้าของ · `ccOf`/`ccOwnersOf`/`ccLabel` · **กลุ่มไลน์ที่ลูกคนละรหัส ห้ามเดาเอารหัสเดียว** · ⚠️ ข้อมูลจริงยังขัดกัน 3 จุด (ดูเอกสาร) จอโชว์ตามจริง ห้ามกลบที่ UI
 - **🔴 `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟ · กริด) — แก้หน้าตาแผ่นที่นั่นที่เดียว
 - **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** ห้ามแยกคลัง/ตั้งเป้าคนละที่
 - **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
@@ -487,6 +515,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
+- **🔴 หน่วย · ทศนิยม · วิธีรวม 12 เดือน = ตั้ง 2 ชั้น** (24/09 · คำสั่ง user) — ทะเบียน `kpi_catalog` = ค่าตั้งต้น (ปุ่ม 📘 · มีผลทุกปีทุกส่วนงาน)
+  · `kpi_definitions.unit`/`.decimals` = **override รายแถว** (ว่าง = ตามทะเบียน · MTBF ใบ JIG "นาที" เด็ค "ชม.")
+  · 🔒 **`summary_mode` override รายแถวไม่ได้** (แต่ละแผนกรวมคนละแบบ = เทียบกันไม่ได้) · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน**
+  · 🔴 `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` ไม่งั้นตกเป็น 2 ตำแหน่ง/"เฉลี่ย" เงียบๆ · หัวคอลัมน์ห้ามเขียน "เฉลี่ย" ตายตัว
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
@@ -577,6 +609,7 @@ src/
 │                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
 │                      #   PersonSelect · MachineSelect · ProductSelect · PartSelect · CustomerSelect · SupplierSelect ·
 │                      #   CostCenterSelect · StorageLocSelect · InstrumentSelect · SelectOrFree (select + ระบุเอง ช่องเดียว) ·
+│                      #   🏷️ MatLabel (เลข MAT + ชื่องาน + Part No. — ที่ที่คนตัดสินใจจากเลข MAT ห้ามวาด mat_no เปล่า · UI §6.21) ·
 │                      #   SimpleMasterPanel (แผง CRUD ทะเบียนเล็ก — ต้นแบบ 2026-09-08)
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
 │                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
@@ -584,6 +617,8 @@ src/
 │                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
 │                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
 │                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
+│                      #   🇹🇭 ชั้นภาษา: thaiText.js (ตัดคำไทย ICU · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด) +
+│                      #     termStats.js (log-odds) + autoCategory.js (เดาหมวด) + downtimeCategory.js
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
 │                      #   otPeriods.js, dateFormat.js, useImgBox.js
@@ -791,6 +826,9 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 - **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto`** · กล่องที่แค่ต้องการตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent: 'start'`** ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน (flexbox ไม่เป็น)
 - **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** ทั้งที่พื้นที่เหลือ — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
+- 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียนค่า rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) —
+  การ์ดแบน `var(--shadow-sm)` (**ธีมมืด = none · ธีมสว่างยังมี** เพราะขอบจาง เงาคือตัวแยกการ์ด) ·
+  ของที่ลอยจริง (ป้ายบนผัง/tooltip/badge ยื่น/ปุ่ม toggle) `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 > 📄 เหตุผล + เคสจริง + ตัวเลขที่วัดได้ (รวมกฎ `input{width:100%}`) → `docs/UI-CONVENTIONS.md` §7 + §7.1
 
 ### Breakpoints
@@ -817,6 +855,19 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**
 > 📄 ตาราง 4 รูปแบบ OT + มาตรา 75 (`shutdown75`) + จุดจองทุกทาง + migration → `docs/modules/shift-ot.md`
+
+> ### 🔴🔴 กฎเหล็กข้าม session — เวลาที่คนกรอก ต้อง resolve ด้วย "กรอบกะจริง" (2026-09-23)
+> **ห้าม hardcode `shift === 'night' && ชั่วโมง < 8 = วันถัดไป`** — มีด่าน `regressionGuards` แล้ว
+> กะดึกจบ 08:00+ ⇒ คนกรอก 5ส./ส่งกะ "08:00" ไม่เข้าเงื่อนไข → ถูกวางไว้ **ก่อนเปิดกะ 12 ชม.**
+> (วัดจริง 15 แถว กะดึกล้วน · สูตรนี้เคยถูกก๊อปไว้ 3 จุดใน DailyReport)
+> · **`resolveShiftTime(hhmm, session)` / `shiftWindow()` / `checkShiftTime()` ใน `src/utils/shiftWindow.js` เท่านั้น**
+>   — เลือก offset วันจาก `start_time` + `shift_min`/`end_time` ของกะนั้น ไม่เดาจากเลขชั่วโมง
+> · **ช่องกรอกเวลาทุกจุดต้องมีด่าน "อยู่ในกรอบกะไหม"** — หลุดกรอบ = ไม่ให้บันทึก
+>   · ±12 ชม. แล้วเข้ากรอบ = **AM/PM สลับ** (จอ 12 ชม. ไม่แตะช่อง AM/PM = ค้างที่ AM) → เสนอแก้ให้คลิกเดียว
+>   · **ห้ามดัดค่าที่คนกรอกให้เข้ากรอบเอง** — คงค่าไว้แล้วเตือน (ดัดให้ = เดาแทนคน)
+> · `<input type="time">` เก็บค่า 24 ชม. แต่**แสดงผลตามเครื่อง** ⇒ ต้องทวนค่าเป็น 24 ชม. ให้เห็นข้างช่องเสมอ
+> 📄 เคสจริง + ตัวเลข + ด่าน 3 ชั้น → `docs/modules/daily-report.md`
+
 
 ---
 

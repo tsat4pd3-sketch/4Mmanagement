@@ -110,7 +110,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, delta,
          สีบนแผ่นเหลือความหมายเดียว = **สถานะ** (ไฟดวงบนหัว + สีแท่งกราฟ) ไม่ใช่ "สีประจำแกน"
          — แถบสีประจำแกนแย่งความสนใจกับไฟสถานะ ทำให้แผ่นที่ปกติกับแผ่นที่มีปัญหาดูเด่นเท่ากัน */
       background: 'var(--card)', border: '1px solid var(--border)',
-      borderRadius: 6, boxShadow: '0 2px 10px rgba(0,0,0,.28)',
+      borderRadius: 6, boxShadow: 'var(--shadow-sm)',   // แผ่น KPI = การ์ดแบนบนกริด ไม่ได้ลอย
       display: 'flex', flexDirection: 'column', overflow: 'clip', minWidth: 0, minHeight: 0,
     }}>
       <div style={{ padding: `${Math.round(8 * k)}px ${Math.round(10 * k)}px 0`, flexShrink: 0 }}>

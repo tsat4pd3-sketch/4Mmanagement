@@ -19,6 +19,11 @@ import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -986,7 +991,7 @@ const PURCHASE_STATUS = {
   cancelled: { label: '⛔ ยกเลิกแล้ว', color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
 };
 const PURCHASE_FILTERS = [
-  { key: '',  label: 'ทั้งหมด' },
+  { key: '',  label: ALL.type },
   { key: '3', label: '🟠 Child ซื้อ (3xxxxxxx)' },
   { key: '5', label: '🟣 Raw Mat (5xxxxxxx)' },
 ];
@@ -1118,18 +1123,14 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
       </div>
 
       {/* ── ค้นหา + สลับงานค้าง/ทั้งหมด (ใช้ได้ทุกแท็บ) ── */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นหา รหัส / ชื่อพาร์ท / ไลน์…"
-          style={{ width: 'min(320px, 100%)', padding: '8px 12px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
-        {q && (
-          <button onClick={() => setQ('')} style={{ padding: '7px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>✕ ล้าง</button>
-        )}
+      <FilterBar bare style={{ marginBottom: 14 }}>
+        <SearchInput value={q} onChange={setQ} fields="รหัส / ชื่อพาร์ท / ไลน์" grow={false} />
         <button onClick={() => setShowDone(v => !v)} style={{
           padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
           background: showDone ? 'var(--bg2)' : 'var(--accent)', color: showDone ? 'var(--text2)' : '#08130a',
           border: `1px solid ${showDone ? 'var(--border)' : 'var(--accent)'}`,
         }}>{showDone ? '📋 ทั้งหมด (รวมที่เสร็จแล้ว)' : '⏳ เฉพาะงานค้าง'}</button>
-      </div>
+      </FilterBar>
 
       {store === 'fg' && (<>
         {hiddenNote}
@@ -1178,14 +1179,10 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
 
       {store === 'purchase' && (
         <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-            {PURCHASE_FILTERS.map(f => (
-              <button key={f.key} onClick={() => setBuyFilter(f.key)}
-                style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-                  background: buyFilter === f.key ? 'var(--accent)' : 'var(--bg2)', color: buyFilter === f.key ? '#08130a' : 'var(--text2)',
-                  border: `1px solid ${buyFilter === f.key ? 'var(--accent)' : 'var(--border)'}` }}>{f.label}</button>
-            ))}
-          </div>
+          <FilterBar bare>
+            <Segmented value={buyFilter} onChange={setBuyFilter} label="ประเภทพาร์ทจัดซื้อ"
+              options={PURCHASE_FILTERS.map(f => ({ value: f.key, label: f.label }))} />
+          </FilterBar>
           {purchaseErr && (
             <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 10 }}>🔴 โหลดคิวจัดซื้อไม่ได้ — {purchaseErr}</div>
           )}
@@ -2286,17 +2283,14 @@ export default function HeijunkaKanban() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page width="full">
       {/* ⚠️ heijunka:operate seed ตั้งแต่ 2026-07-08 = ทุก role ณ ตอนนั้น — mtn/dept_admin ที่เพิ่มทีหลังไม่มีแถว */}
       <ReadOnlyNote show={!canOperate} role={role} what="สั่งงาน/จัดคิวบนบอร์ด"
         permKey="heijunka:operate" />
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <div>
-          <PageHeader title="บอร์ดคัมบัง (ทุกสโตร์) — Heijunka" icon="🎴" />
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
-          </p>
+      {/* Header — UI-STANDARD 2026-09-24: คำอธิบาย+ป้ายดูวันย้อนหลังอยู่ใน sub · ตัวกรองรวมเป็นแถบเดียว */}
+      <PageHeader title="บอร์ดคัมบัง (ทุกสโตร์) — Heijunka" icon="🎴"
+        sub={<>
+          ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           {/* ⚠️ ดูวันย้อนหลัง/ล่วงหน้าต้องเห็นชัด — รอบที่ยังไม่ยืนยันของวันเก่าจะขึ้น 🔴 ค้างส่ง ทั้งกระดาน
               ถ้าไม่ติดป้ายบอก คนอ่านจะเข้าใจว่าเป็นของวันนี้แล้ววิ่งไปตามงานที่ผ่านไปแล้ว */}
           {isBackDate && (
@@ -2312,42 +2306,32 @@ export default function HeijunkaKanban() {
               }}>⟳ กลับวันนี้</button>
             </div>
           )}
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={{
-            width: 140, /* input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */
-            padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)',
-            border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
-          }} />
-          {['all', 'day', 'night'].map(s => (
-            <button key={s} onClick={() => setShiftFilter(s)} style={{
-              padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-              background: shiftFilter === s ? 'var(--accent)' : 'var(--bg2)',
-              color: shiftFilter === s ? '#08130a' : 'var(--text2)',
-              border: `1px solid ${shiftFilter === s ? 'var(--accent)' : 'var(--border)'}`,
-            }}>{s === 'all' ? 'ทุกกะ' : SHIFT_LABEL[s]}</button>
-          ))}
-          <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <button onClick={() => setMatFilter('')} style={{
+        </>} />
+      <FilterBar>
+        <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} />
+        <Segmented value={shiftFilter} onChange={setShiftFilter} label="กะ"
+          options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />
+        <span className="sep" />
+        <button onClick={() => setMatFilter('')} style={{
+          padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+          background: matFilter === '' ? 'var(--accent)' : 'var(--bg2)',
+          color: matFilter === '' ? '#08130a' : 'var(--text2)',
+          border: `1px solid ${matFilter === '' ? 'var(--accent)' : 'var(--border)'}`,
+        }}>{ALL.type}</button>
+        {MAT_PREFIXES.map(m => (
+          <button key={m.prefix} onClick={() => setMatFilter(matFilter === m.prefix ? '' : m.prefix)} style={{
             padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: matFilter === '' ? 'var(--accent)' : 'var(--bg2)',
-            color: matFilter === '' ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${matFilter === '' ? 'var(--accent)' : 'var(--border)'}`,
-          }}>ทุกประเภท</button>
-          {MAT_PREFIXES.map(m => (
-            <button key={m.prefix} onClick={() => setMatFilter(matFilter === m.prefix ? '' : m.prefix)} style={{
-              padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-              background: matFilter === m.prefix ? `${m.color}28` : 'var(--bg2)',
-              color: matFilter === m.prefix ? m.color : 'var(--text2)',
-              border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
-            }}>{m.label}</button>
-          ))}
-          <button onClick={exportCSV} style={{
-            padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700,
-            background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
-          }}>⬇ CSV</button>
-        </div>
-      </div>
+            background: matFilter === m.prefix ? `${m.color}28` : 'var(--bg2)',
+            color: matFilter === m.prefix ? m.color : 'var(--text2)',
+            border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
+          }}>{m.label}</button>
+        ))}
+        <span className="spacer" />
+        <button onClick={exportCSV} style={{
+          padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+          background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
+        }}>⬇ CSV</button>
+      </FilterBar>
 
       {/* Summary — แถบเดียว ไม่ใช่การ์ดใหญ่ 4 ใบ (2026-08-25: หัวหน้าสโตร์ทักว่าหัวหน้าเพจกินครึ่งจอ
           กว่าจะถึงคิวงานจริงต้องเลื่อนลงไปเยอะ — ตัวเลขชุดเดิมครบ แค่ไม่กินที่) */}
@@ -2563,7 +2547,7 @@ export default function HeijunkaKanban() {
           onDone={async () => { await loadPull(); await load(); }}
         />
       )}
-    </div>
+    </Page>
   );
 }
 

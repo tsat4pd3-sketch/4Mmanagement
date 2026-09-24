@@ -1,5 +1,6 @@
 import { useContext } from 'react';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import ImageSqueezePanel from '../components/ImageSqueezePanel';
 import { UserContext } from '../App';
 import { can, isActionSeeded } from '../utils/permissions';
@@ -25,7 +26,7 @@ export default function StorageMaintenance() {
     : can('line_setup', 'edit', role);
 
   return (
-    <div style={{ padding: '18px 20px 40px', maxWidth: 900 }}>
+    <Page width="form">
       <PageHeader
         title="ดูแลพื้นที่จัดเก็บ / ค่าเน็ต" icon="🗜️"
         sub="บีบรูปที่อัปไว้แล้วให้เล็กลง — ความละเอียดเท่าเดิม"
@@ -49,6 +50,6 @@ export default function StorageMaintenance() {
       </div>
 
       <ImageSqueezePanel canRun={canRun} />
-    </div>
+    </Page>
   );
 }

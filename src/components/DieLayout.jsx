@@ -20,6 +20,8 @@ import {
 } from '../utils/dieStatus';
 import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายสถานะใบ MO (แยกรอ QA / รอรับมอบ)
 import DieStatusEditor from './DieStatusEditor';
+import FilterBar from './FilterBar';
+import SearchInput from './SearchInput';
 import { uploadOpts } from '../utils/storageUpload';
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -303,19 +305,18 @@ export default function DieLayout({
 
   return (
     <div>
-      {/* ── แถบเครื่องมือ ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+      {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24 — เดิมช่อง/ปุ่มสูง 3 แบบ) */}
+      <FilterBar>
         {fromFactoryMap && (
           <button onClick={() => navigate('/factory-map')} style={btnGhost}>← กลับผังรวมโรงงาน</button>
         )}
-        <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }} style={{ ...inp, width: 240 }}>
+        <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }}>
           {!areas.length && <option value="">— ยังไม่มีผังจัดเก็บ —</option>}
           {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)}
-          placeholder="🔍 หาแม่พิมพ์ — เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ"
-          style={{ ...inp, width: 320, flex: '1 1 220px' }} />
-        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '8px 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
+        <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
+        <span className="spacer" />
+        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
           🏷️ {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
         </button>
         {canEdit && <>
@@ -330,7 +331,7 @@ export default function DieLayout({
             🏭 ดูบนผังรวมโรงงาน
           </button>
         )}
-      </div>
+      </FilterBar>
       {/* บอกสถานะ link กับผังรวม — ห้ามเงียบ: ตีกรอบแล้วโซนบนผังรวมจะโชว์สถานะแม่พิมพ์ + คลิกเด้งมาหน้านี้ */}
       {area && mapZoneNames && !onFactoryMap && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
