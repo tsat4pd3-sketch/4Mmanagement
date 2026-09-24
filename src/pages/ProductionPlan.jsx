@@ -15,6 +15,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import CapacityBoard from '../components/CapacityBoard';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
   netShiftMin, FALLBACK_SHIFT_BREAK_MIN, buildDayPlan,
@@ -43,6 +44,7 @@ const normMat = (s) => String(s || '').replace(/[\s-]/g, '').toUpperCase();
 
 const DAILY_HORIZON = 21;   // วางแผนรายวันล่วงหน้ากี่วัน
 const MONTHLY_HORIZON = 6;   // รายเดือนล่วงหน้ากี่เดือน
+const CAPACITY_HORIZON = 12; // แท็บ 📊 Capacity มองไกลกว่า — สไลด์ของโรงงานดู 12 เดือนเสมอ
 const OT_SHIFT_FRAC = 0.25;  // OT ต่อท้ายกะเช้า ≈ 25% ของกะ (2-3 ชม.)
 
 const PLAN_META = {
@@ -57,7 +59,7 @@ const PLAN_META = {
 export default function ProductionPlan() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
-  const [tab, setTab] = useTabParam(['daily', 'monthly'], 'daily');
+  const [tab, setTab] = useTabParam(['daily', 'monthly', 'capacity'], 'daily');
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [planWarn, setPlanWarn] = useState('');   // โหลดไม่ครบ → เตือน (แผนอาจต่ำกว่าจริง)
@@ -77,6 +79,7 @@ export default function ProductionPlan() {
   const [orders, setOrders] = useState([]);
   const [overdueOrders, setOverdueOrders] = useState([]);       // open shipping orders (future)
   const [forecasts, setForecasts] = useState([]); // future monthly forecast
+  const [lineOee, setLineOee] = useState({});     // ไลน์ → OEE จริง median 60 วัน (0-1) · null = ยังไม่มีประวัติ
 
   const today = getWorkDate();
 
@@ -189,6 +192,8 @@ export default function ProductionPlan() {
       const sessMeta = {}; (sess || []).forEach(s => { sessMeta[s.id] = s; });
       const oeeByLine = {};
       (sess || []).forEach(s => { if (s.oee != null) (oeeByLine[s.line_name] = oeeByLine[s.line_name] || []).push(Number(s.oee)); });
+      // OEE จริง (median 60 วัน) ต่อไลน์ — แท็บ 📊 Capacity เอาไปเทียบกับเส้นเป้า A×P×Q
+      setLineOee(Object.fromEntries(Object.entries(oeeByLine).map(([ln, arr]) => [ln, arr.length ? median(arr) / 100 : null])));
       const sessIds = (sess || []).map(s => s.id);
       // ⚠️ ต้องผ่าน fetchByIds (กฎ CLAUDE.md) — เดิมแบ่งก้อนเอง 300 id แต่ **ไม่แบ่งหน้า**
       //    300 กะ × ใบปิด ~5 ใบ = ~1,500 แถว > เพดาน 1000 ⇒ ถูกตัดเกือบทุกก้อน แบบเงียบสนิท
@@ -273,6 +278,13 @@ export default function ProductionPlan() {
   /* ── งานคู่ RH/LH: ปั๊มทีเดียวได้ 2 ข้าง ⇒ **ภาระเวลาไม่บวกกัน** (กฎเหล็ก "ชิ้น ≠ shot") ──
      ยอดชิ้น (duePcs) ยังบวกตามปกติ เพราะ RH/LH ส่งลูกค้าแยกใบ เป็นชิ้นจริงทั้งคู่ */
   const pairOf = useCallback((mat) => prodByMat[mat]?.pair || null, [prodByMat]);
+  // CT ดิบ (วินาที/shot) — แท็บ 📊 Capacity คิดภาระงานจาก "เวลามาตรฐาน" ไม่ใช่กำลังผลิตจริง
+  // (ใช้ของจริงแล้วหารด้วย OEE อีก = คิด OEE ซ้ำสองรอบ)
+  const ctOf = useCallback((mat) => Number(prodByMat[mat]?.ct) || 0, [prodByMat]);
+  const capMonths = useMemo(() => Array.from({ length: CAPACITY_HORIZON }, (_, i) => {
+    const d = new Date(`${today.slice(0, 7)}-01T12:00:00`); d.setMonth(d.getMonth() + i);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }), [today]);
 
   /* ⏮️ กำลังผลิต "ต่อวัน" ของพาร์ทหนึ่ง = กำลังต่อกะ × จำนวนกะที่ไลน์นั้นเปิดได้
      ใช้เป็น **lead time ที่คิดจากของจริง** ตอนไล่ย้อนวัน (ของ 100 ชิ้นกับ 100,000 ชิ้นใช้เวลาไม่เท่ากัน)
@@ -568,6 +580,7 @@ export default function ProductionPlan() {
         tabs={[
           { key: 'daily', label: '📅 รายวัน (ออเดอร์)' },
           { key: 'monthly', label: '📆 รายเดือน (Forecast)' },
+          { key: 'capacity', label: '📊 Capacity (แบบสไลด์โรงงาน)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -735,6 +748,13 @@ export default function ProductionPlan() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
+      ) : tab === 'capacity' ? (
+        <CapacityBoard
+          role={role} scope={{ role, lineId: userLineId, sections: scopeSecs }}
+          lines={viewLines} months={capMonths} calMap={calMap}
+          demandByMonth={demandPcs.byMonth} ctOf={ctOf} lineOfMat={lineOfMat} pairOf={pairOf}
+          lineOee={lineOee}
+        />
       ) : tab === 'daily' ? (
         daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
         {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
