@@ -43,7 +43,7 @@
 | ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16) | `docs/modules/floorplan-setup.md` | 35 KB |
 | ⚫ ผังรวมโรงงาน — ผังภาพรวมทั้งโรงงานที่เดียว (ยุบรวมแล้ว 2026-07-16) | `docs/modules/_archived/factory-overview-merged.md` | 1 KB |
 | ⚫ PM Photo-Compare Inspection — ❌ ถอดออกแล้ว (2026-07-22) | `docs/modules/_archived/pm-photo-compare-removed.md` | 2 KB |
-| Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13) | `docs/modules/employee-skills-exp.md` | 14 KB |
+| Employee Skills & EXP Farming (server-side 2026-07-13 · **v2 วัดความสามารถ 2026-09-24**) | `docs/modules/employee-skills-exp.md` | 25 KB |
 | PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) | `docs/modules/pe-core-tools.md` | 36 KB |
 | 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07) | `docs/modules/npi-apqp.md` | 20 KB |
 | Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24) | `docs/modules/traceability-audit-log.md` | 30 KB |

@@ -807,3 +807,62 @@ test('🛡️ backup-tables-go-to-archive — migration ใหม่ห้าม
     + '   (schema archive ไม่ถูก expose ผ่าน API และไม่ grant ให้ anon/authenticated)\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
+
+test('🛡️ postgrest-limit-needs-range — edge function ที่ยิง /rest/v1/ ต้องแบ่งหน้าด้วย Range header', () => {
+  /* บั๊กที่เคยเกิดจริง 2026-09-24 (sync-station-output รอบแรก):
+     ใส่ `limit=20000` ใน query string ของ PostgREST แล้วคิดว่าได้ครบ — แต่ Supabase ตั้ง
+     `max-rows` = 1000 ไว้ที่เซิร์ฟเวอร์ ซึ่ง `limit=` **ชนะไม่ได้** และมันตอบ 200 OK
+     พร้อมข้อมูล 1000 แถวเป๊ะ ⇒ "สำเร็จ" แบบเงียบๆ ทั้งที่ข้อมูลขาด
+     จับได้เพราะบังเอิญเห็นเลข 1000 กลมๆ — ไม่มี error ไม่มี log อะไรเตือนเลย */
+  const dir = join(ROOT, 'supabase/functions');
+  const hits = [];
+  for (const f of walk(dir, ['.ts'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!src.includes('/rest/v1/')) continue;
+    if (!/limit=\d{4,}/.test(src)) continue;             // limit 4 หลักขึ้นไป = ตั้งใจดึงเกิน 1000
+    if (/['"`]Range['"`]\s*:/.test(src)) continue;       // มีการแบ่งหน้าแล้ว
+    hits.push(relative(ROOT, f));
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ edge function ด้านล่างยิง PostgREST ด้วย `limit=` เกิน 1000 แต่ไม่ได้แบ่งหน้า\n'
+    + '   ทำไมพัง: Supabase ตั้ง max-rows = 1000 ที่เซิร์ฟเวอร์ · `limit=` ใน query string ชนะไม่ได้\n'
+    + '   และมันคืน 200 OK พร้อมข้อมูลไม่ครบ = พังเงียบ ไม่มี error ให้จับ\n'
+    + '   (เกิดจริง 24/09/2026: backfill rollup ได้ sessions = 1000 เป๊ะ ทั้งที่จริงมี 1,318)\n'
+    + '   แก้ยังไง: วนอ่านทีละหน้าด้วย header `Range: <from>-<to>` + `Range-Unit: items`\n'
+    + '   แล้วหยุดเมื่อหน้าที่ได้สั้นกว่าขนาดหน้า (ดูตัวอย่าง supabase/functions/sync-station-output/index.ts)\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+test('🛡️ no-production-sessions-product-id — คอลัมน์ร้าง ห้ามใช้หา "รุ่นที่ผลิตในกะ"', () => {
+  /* บั๊กที่เคยเกิดจริง 2026-09-24: rollup ของ EXP v2 ดึงรุ่นที่ผลิตผ่าน production_sessions.product_id
+     → ได้ parts_seen ว่างทุกแถว ⇒ ประตู "ความหลากหลาย" ตกหมดทั้งโรงงานโดยไม่มี error
+     เพราะคอลัมน์นั้น **เป็น null ทั้งตาราง** (วัด 24/09/2026: 0 จาก 1,318 แถว ตั้งแต่ 18/06)
+     ของจริงอยู่ที่ prod_orders.mat_no — 1 กะมีได้หลายใบ/หลายรุ่น
+
+     ⚠️ จุดที่ยกเว้นด้านล่าง = โค้ดเดิมที่ยัง select คอลัมน์นี้อยู่จริง (พบตอนตั้งด่าน 24/09)
+        ทั้ง 3 จุดได้ค่า null เสมอ ⇒ ฟีเจอร์ที่พึ่งมันเงียบอยู่ — ยังไม่ได้แก้ในคอมมิทนี้
+        เพราะอยู่คนละโมดูล (สรุปยอดตาม family / การ์ด Heijunka) ต้องดูเจตนาเดิมก่อน
+        🔴 ห้ามเพิ่มชื่อใหม่เข้ารายการนี้ — จุดใหม่ให้ใช้ prod_orders ตั้งแต่แรก */
+  const ALLOW = new Set([
+    'src/pages/DailyReport.jsx',      // :7244 select('product_id, qty_ok, dr_products(family_id)')
+    'src/pages/HeijunkaKanban.jsx',   // :1819 select('... product_id, dr_products(...)')
+    'src/pages/ProductMaster.jsx',    // :317  select('product_id, qty_ok, dr_products(family_id)')
+  ]);
+  const hits = [];
+  for (const f of [...walk(join(ROOT, 'src'), ['.js', '.jsx']),
+                   ...walk(join(ROOT, 'supabase/functions'), ['.ts'])]) {
+    const rel = relative(ROOT, f);
+    if (ALLOW.has(rel)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // จับเฉพาะ "อ่าน product_id จากตารางนี้จริงๆ" ไม่ใช่แค่เอ่ยชื่อตารางในไฟล์เดียวกัน
+    const viaClient  = /from\(\s*['"`]production_sessions['"`]\s*\)[\s\S]{0,200}?\.select\(\s*['"`][^'"`]*\bproduct_id\b/;
+    const viaRest    = /production_sessions\?[^'"`]*\bproduct_id\b/;
+    if (viaClient.test(src) || viaRest.test(src)) hits.push(rel);
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่าง select `product_id` จากตาราง production_sessions\n'
+    + '   ทำไมพัง: คอลัมน์นั้นเป็นคอลัมน์ร้าง = null ทั้งตาราง (0/1,318 แถว · 24/09/2026)\n'
+    + '   ได้ null เงียบๆ แล้วฟีเจอร์ปลายทางตกทั้งชุดโดยไม่มี error ให้จับ\n'
+    + '   แก้ยังไง: รุ่นที่ผลิตในกะ ดึงจาก `prod_orders` (มี session_id + mat_no ตรงๆ)\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
