@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
+import { allOf } from '../utils/filterLabels';
 import InfoMore from '../components/InfoMore';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
@@ -9,6 +12,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { cachedMaster, invalidateMaster } from '../utils/masterCache';
 import { SCHEMA_TTL } from '../utils/refreshRates';
 import { bugReportText, tableSummaryText, fkLine } from '../utils/schemaReport';
+import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
@@ -80,7 +84,7 @@ function groupTables(rows) {
 export default function SchemaMap() {
   const isMobile = useIsMobile();
   const { fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['tables', 'pages'], 'tables');
+  const [tab, setTab] = useTabParam(['tables', 'pages', 'audit'], 'tables');
   const [sp] = useSearchParams();
   const setParams = useMergeParams();
 
@@ -181,6 +185,26 @@ export default function SchemaMap() {
     return { idx, ghosts };
   }, [catalog]);
 
+  /* ชื่อตารางที่โค้ดฝั่งแอปเรียกใช้จริง แยกตามฝั่ง — ใช้โดยแท็บ 🩺 (ของกำพร้า/ตารางว่าง) */
+  const usedByProj = useMemo(() => {
+    const out = { main: new Set(), dr: new Set() };
+    for (const [key] of usageIndex.idx) {
+      const i = key.indexOf('.');
+      const k = key.slice(0, i);
+      if (out[k]) out[k].add(key.slice(i + 1));
+    }
+    return out;
+  }, [usageIndex]);
+
+  const audits = useMemo(() => PKEYS.map(k => ({
+    key: k,
+    result: over[k] ? auditProject({ tables: over[k].tables, fks: over[k].fks, used: usedByProj[k], side: k }) : null,
+  })), [over, usedByProj]);
+
+  // ตัวเลขบนแท็บ = จำนวนข้อที่เป็น "ปัญหาจริง" (แดง/เหลือง) ไม่รวมข้อแจ้งเพื่อทราบ
+  const auditBadge = audits.reduce((n, a) =>
+    n + (a.result?.checks.filter(c => c.level === 'bad' || c.level === 'warn').length || 0), 0);
+
   const rows = useMemo(() => {
     const s = q.trim().toLowerCase();
     const out = [];
@@ -217,7 +241,7 @@ export default function SchemaMap() {
   };
 
   return (
-    <div style={{ padding: isMobile ? '12px 12px 40px' : '18px 20px 40px', maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="โครงสร้างฐานข้อมูล" icon="🗄️"
         sub={loading ? 'กำลังอ่านโครงสร้างจากฐานข้อมูล…'
@@ -226,6 +250,7 @@ export default function SchemaMap() {
         tabs={[
           { key: 'tables', label: '📋 ตาราง / คีย์ / ความสัมพันธ์' },
           { key: 'pages', label: '🧭 หน้าไหนใช้ตารางไหน' },
+          { key: 'audit', label: '🩺 ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -260,10 +285,9 @@ export default function SchemaMap() {
           {/* ── ลิสต์ตาราง ─────────────────────────────────────────────── */}
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
-              <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นชื่อตาราง (เช่น downtime, employee)"
-                style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+              <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[{ k: 'all', label: `ทั้งหมด (${rows.length})` },
+                {[{ k: 'all', label: allOf('ฐานข้อมูล') },
                   ...PKEYS.map(k => ({ k, label: `${PROJ[k].label} (${over[k]?.tables?.length || 0})` }))].map(o => (
                   <button key={o.k} onClick={() => setSide(o.k)} style={chip(side === o.k)}>{o.label}</button>
                 ))}
@@ -337,6 +361,7 @@ export default function SchemaMap() {
               {sel && (
                 <TableDetail
                   sel={sel} detail={detail} err={detailErr} isMobile={isMobile}
+                  size={(over[sel.proj]?.tables || []).find(r => r.t === sel.table)?.bytes}
                   pages={selPages} url={selUrl} userName={fullName}
                   onBack={() => setParams({ t: null })}
                   onPick={pick} onCopy={copy} catalog={catalog}
@@ -348,18 +373,22 @@ export default function SchemaMap() {
         </div>
       )}
 
+      {tab === 'audit' && (
+        <AuditTab audits={audits} isMobile={isMobile} loading={loading} onPick={pick} onCopy={copy} />
+      )}
+
       {tab === 'pages' && (
         <PagesTab
           q={pq} setQ={setPq} isMobile={isMobile}
           catalog={catalog} ghosts={usageIndex.ghosts} onPick={pick}
         />
       )}
-    </div>
+    </Page>
   );
 }
 
 /* ══ รายละเอียดตารางเดียว ═══════════════════════════════════════════════════════════ */
-function TableDetail({ sel, detail, err, isMobile, pages, url, userName, onBack, onPick, onCopy, catalog, onGoPage }) {
+function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, onBack, onPick, onCopy, catalog, onGoPage }) {
   const P = PROJ[sel.proj];
   const d = detail || {};
   const pkSet = new Set(d.pk || []);
@@ -409,6 +438,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, onBack,
               <span style={tag()}>{d.k === 'v' || d.k === 'm' ? 'VIEW (ไม่ใช่ตารางจริง)' : 'ตาราง'}</span>
               <span style={tag()}>{(d.columns || []).length} คอลัมน์</span>
               <span style={tag()}>{fmtRows(d.rows)} แถว (ประมาณ)</span>
+              {size ? <span style={tag()}>{fmtBytes(size)}</span> : null}
               <span style={tag(d.rls ? '#22c55e' : '#f59e0b')}>{d.rls ? 'RLS เปิด' : 'RLS ปิด'}</span>
               {!!(d.triggers || []).length && <span style={tag()}>{d.triggers.length} trigger</span>}
             </div>
@@ -562,8 +592,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ ...card(), display: 'grid', gap: 8 }}>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นชื่อหน้า / path / ชื่อตาราง"
-          style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+        <SearchInput value={q} onChange={setQ} fields="ชื่อหน้า / path / ชื่อตาราง" />
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           แสดง {pages.length} หน้า จากทั้งหมด {(USAGE.pages || []).length} ·
           สแกนซอร์สเมื่อ {new Date(USAGE.builtAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} (ตอน build)
@@ -629,6 +658,99 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ══ แท็บ 🩺 ตรวจสุขภาพโครงสร้าง ═══════════════════════════════════════════════════════
+   ตัวตรวจอยู่ใน `src/utils/schemaAudit.js` (pure + มีเทส) — ที่นี่แค่วาดผล
+   🔴 กฎของจอนี้: ทุกข้อต้องบอก **"ทำไมถึงเป็นปัญหา" + "แก้ยังไง"** เสมอ
+      ลิสต์ชื่อตารางเฉยๆ ไม่ช่วยใครตัดสินใจ และจะกลายเป็นจอที่ทุกคนเมินภายใน 2 สัปดาห์   */
+const LV = {
+  bad:  { icon: '🔴', color: '#ef4444', label: 'ต้องแก้' },
+  warn: { icon: '🟡', color: '#f59e0b', label: 'ควรดู' },
+  info: { icon: '🔵', color: '#38bdf8', label: 'แจ้งเพื่อทราบ' },
+  ok:   { icon: '✅', color: '#22c55e', label: 'ผ่าน' },
+};
+
+function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
+  const [open, setOpen] = useState({});
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ ...card(), fontSize: 12.5, lineHeight: 1.7 }}>
+        <InfoMore id="schema_audit_intro" lead={<>
+          🩺 <b>ตรวจโครงสร้างจากฐานจริงทุกครั้งที่เปิดจอนี้</b> — ไม่ใช่รายงานที่ทำครั้งเดียวแล้วล้าสมัย ·
+          ตัวเลขบนแท็บนับเฉพาะข้อที่เป็นปัญหาจริง (🔴/🟡)
+        </>}>
+          <div style={{ marginTop: 6, color: 'var(--text2)' }}>
+            <b>ทำความสะอาดรอบแรกไปแล้ว 22/09/2026:</b> ตารางสำรองที่ migration เก่าสร้างค้างไว้ใน public
+            <b> 37 ตัว</b> (ข้อมูลผลิต 33 · ระบบหลัก 4) ถูกย้ายเข้า schema <code>archive</code> —
+            <b>ย้ายไม่ได้ลบ</b> ข้อมูลอยู่ครบทุกแถว ย้อนกลับได้ด้วยคำสั่งเดียวต่อตาราง ·
+            ตารางในจอนี้จึงลดจาก 313 เหลือ 276
+            <br />ที่ต้องย้ายเพราะ 35 ใน 37 ตัวนั้น <b>ไม่ได้เปิด RLS</b> (สำเนาข้อมูลมา แต่ policy ไม่ได้ตามมาด้วย)
+            — ฝั่งข้อมูลผลิตที่ client วิ่งด้วย anon เสมอ แปลว่าใครมี anon key ก็อ่านสำเนาข้อมูลจริงได้โดยไม่ต้อง login
+            <br /><br />⚠️ <b>“ไม่มีหน้าไหนเรียกใช้” ไม่ได้แปลว่าลบได้</b> — ตัวสแกนเห็นเฉพาะโค้ดฝั่งหน้าเว็บ
+            ตารางอาจถูกใช้โดย trigger/function ฝั่งฐานข้อมูล หรือ Edge Function · ใช้เป็น “รายการที่ต้องไปตรวจ” เท่านั้น
+          </div>
+        </InfoMore>
+      </div>
+
+      {loading && <div style={{ ...card(), fontSize: 12.5, color: 'var(--muted)' }}>กำลังอ่านโครงสร้าง…</div>}
+
+      {audits.map(({ key, result }) => {
+        const P = PROJ[key];
+        if (!result) return null;
+        return (
+          <div key={key} style={{ ...card(), display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ minWidth: 0, fontSize: 14, fontWeight: 800, color: P.color }}>
+                {P.label} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} ตาราง/วิว</span>
+              </div>
+              <button onClick={() => onCopy(auditText(result, `${P.label} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
+                📋 คัดลอกผลตรวจ
+              </button>
+            </div>
+
+            {result.checks.map(c => {
+              const lv = LV[c.level] || LV.info;
+              const id = `${key}:${c.id}`;
+              const on = open[id] ?? (c.level === 'bad' || c.level === 'warn');
+              return (
+                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 8, overflow: 'clip' }}>
+                  <button onClick={() => setOpen(o => ({ ...o, [id]: !on }))} style={{
+                    width: '100%', textAlign: 'left', display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap',
+                    alignItems: 'center', gap: 8, background: 'var(--bg2)', border: 'none', color: 'var(--text)',
+                    padding: '8px 10px', cursor: 'pointer',
+                  }}>
+                    <span style={{ flexShrink: 0 }}>{c.rows.length ? lv.icon : '✅'}</span>
+                    <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>{c.title}</span>
+                    <span style={{ flexShrink: 0, fontSize: 12, color: c.rows.length ? lv.color : 'var(--muted)', fontWeight: 700 }}>
+                      {c.rows.length ? `${c.rows.length} รายการ` : 'ไม่พบ'}
+                    </span>
+                    <span style={{ flexShrink: 0, fontSize: 11.5, color: 'var(--muted)' }}>{on ? '▾' : '▸'}</span>
+                  </button>
+                  {on && (
+                    <div style={{ padding: '8px 10px', display: 'grid', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
+                      <div style={{ color: 'var(--text2)' }}><b>ทำไมเป็นปัญหา:</b> {c.why}</div>
+                      <div style={{ color: 'var(--text2)' }}><b>แก้ยังไง:</b> {c.fix}</div>
+                      {c.rows.length ? (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 2 }}>
+                          {c.rows.map(r => (
+                            <button key={r.t} onClick={() => onPick(key, r.t)} style={chip(false)} title="ดูโครงสร้างตารางนี้">
+                              {r.t} <span style={{ color: 'var(--muted)' }}>· {r.note}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : <div style={{ color: 'var(--muted)' }}>— ไม่พบรายการในหมวดนี้</div>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
     </div>
   );
 }

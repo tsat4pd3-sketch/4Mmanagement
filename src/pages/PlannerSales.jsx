@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
-import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, EDI_SIG, TIME_HDRS, DOCK_HDRS } from '../utils/ediDetect';
+import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
+import CustomerFileFormats from '../components/CustomerFileFormats';
 import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS } from '../utils/ediMerge';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -16,10 +17,16 @@ import { wavg, wLoad } from '../utils/oee';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import MonitoringUpload from '../components/MonitoringUpload';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
+import { fmtAxis } from '../utils/chartAxis';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -126,6 +133,22 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [saving, setSaving] = useState(false);
   const [batches, setBatches] = useState([]);
   const [edi, setEdi] = useState(null); // ไฟล์ EDI (Ford 830/862) ที่ parse แล้ว รอยืนยันนำเข้า
+  /* 🧩 ทะเบียนฟอร์แมตไฟล์ลูกค้า (`customer_pull_formats` kind = order/forecast) — 2026-09-22
+     ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา = เพิ่มแถวในทะเบียน **ไม่ต้องแก้โค้ด/deploy**
+     โหลดไม่ได้/ทะเบียนว่าง = ใช้ค่าสำรองในโค้ด (อ่านไฟล์ Ford ได้เหมือนเดิม) แต่ต้องขึ้นจอบอก */
+  const [fmtRows, setFmtRows] = useState([]);
+  const [fmtErr, setFmtErr] = useState(false);
+  const [showFmt, setShowFmt] = useState(false);
+  const ediDict = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
+
+  const loadFormats = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('customer_pull_formats')
+      .select('code, name, customer_name, kind, col_map, is_active, note')
+      .in('kind', ['order', 'forecast']).eq('is_active', true).order('code');
+    setFmtErr(!!error);
+    setFmtRows(data || []);
+  }, []);
+  useEffect(() => { loadFormats(); }, [loadFormats]);
 
   const loadBatches = useCallback(async () => {
     const { data } = await supabaseDR.from('demand_upload_batches').select('*').order('uploaded_at', { ascending: false }).limit(30);
@@ -152,10 +175,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       const m = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: '' });
       for (let i = 0; i < Math.min(m.length, HEADER_SCAN_ROWS); i++) {
         const hd = m[i].map(c => String(c).trim());
-        if (isEdiHeaderRow(hd)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
-        const hit = EDI_SIG.filter(g => colIdx(hd, g) >= 0).length;
+        if (isEdiHeaderRow(hd, ediDict)) { found.push({ matrix: m, hIdx: i, headers: hd, sheet: name }); break; }
+        const sig = sigOf(ediDict);
+        const hit = sig.filter(g => colIdx(hd, g) >= 0).length;
         if (hit >= 2 && (!near || hit > near.hit)) {
-          near = { hit, sheet: name, headers: hd, missing: EDI_SIG.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
+          near = { hit, sheet: name, headers: hd, missing: sig.filter(g => colIdx(hd, g) < 0).map(g => g[0]) };
         }
       }
     }
@@ -167,12 +191,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     const body = matrix.slice(hIdx + 1);
     const col = (aliases) => colIdx(headers, aliases);
     /* ⭐ ตัดสิน 830/862 จากหลายสัญญาณ + คืนเหตุผลให้ขึ้นจอ (ห้ามเดาเงียบ) */
-    const kind = detectEdiKind(headers, body);
+    const kind = detectEdiKind(headers, body, ediDict);
     const is862 = kind.is862;
-    const iPart = col(EDI_SIG[0]), iQty = col(EDI_SIG[1]), iDate = col(EDI_SIG[2]);
-    const iTime = col(TIME_HDRS), iDock = col(DOCK_HDRS);
-    const iShip = col(['Ship To GSDB Code', 'Ship To', 'GSDB', 'Ship To Code']);
-    const iPo = col(['Purchase Order Num', 'Purchase Order', 'PO Num', 'PO']);
+    const [gPart, gQty, gDate] = sigOf(ediDict);
+    const iPart = col(gPart), iQty = col(gQty), iDate = col(gDate);
+    const iTime = col(ediDict.time), iDock = col(ediDict.dock);
+    const iShip = col(ediDict.ship_to);
+    const iPo = col(ediDict.po);
     const out = [];
     let skipped = 0;
     body.forEach(r => {
@@ -623,7 +648,21 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
+            <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
+              🧩 ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
+            </button>
           </div>
+
+          {/* ⚠️ ทะเบียนโหลดไม่ได้ = ยังอ่านไฟล์ Ford ได้ด้วยค่าสำรองในโค้ด แต่ห้ามเงียบ
+              (ลูกค้าที่เพิ่มไว้ในทะเบียนจะอ่านไม่ออกจนกว่าจะโหลดได้) */}
+          {fmtErr && (
+            <div style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12, marginBottom: 8,
+              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
+              ⚠ อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
+              ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
+            </div>
+          )}
+          {showFmt && <div style={{ marginBottom: 10 }}><CustomerFileFormats canManage={canUpload} onChanged={loadFormats} /></div>}
 
           {edi && (
             <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
@@ -700,11 +739,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                     <b> 🚚 Delivery → ⚙️ Ship-to Plant Config</b> (ตั้งชื่อลูกค้าให้ code เช่น GRBNA → AAT) แล้วอัพไฟล์ใหม่
                   </div>
                   {edi.ambiguous.slice(0, 6).map(a => (
-                    <div key={a.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>
+                    <div key={a.part} style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>
                       {a.part} · ship-to {a.shipTos.join(',')} → {a.mats.join(' | ')}
                     </div>
                   ))}
-                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
+                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
                 </div>
               )}
               {/* จับคู่จาก base part (ตัด revision) = การเดาข้าม rev — ถูกเกือบเสมอ แต่เคส EC ออกเลขใหม่
@@ -719,9 +758,9 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                     ควรไปตั้ง P/N ของ MAT ใหม่ที่ Product Master ก่อน ไม่งั้น demand จะเข้าเลข rev เก่า
                   </div>
                   {edi.baseMatched.slice(0, 6).map(b => (
-                    <div key={b.part} style={{ fontSize: 10.5, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
+                    <div key={b.part} style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
                   ))}
-                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
+                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
@@ -872,10 +911,12 @@ function PlannerTab({ refreshKey, custLabel }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ช่วงพยากรณ์:</span>
-        {[3, 6, 12].map(h => <button key={h} onClick={() => setHorizon(h)} style={btn(horizon === h)}>{h} เดือน</button>)}
-      </div>
+      {/* UI-STANDARD 2026-09-24 — ตัวเลือก 3 ตัวเท่ากัน = Segmented ในแถบกรอง */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        <span className="filter-label">ช่วงพยากรณ์:</span>
+        <Segmented value={horizon} onChange={setHorizon} label="ช่วงพยากรณ์"
+          options={[3, 6, 12].map(h => ({ value: h, label: `${h} เดือน` }))} />
+      </FilterBar>
 
       {/* กราฟ Forecast vs Orders รายเดือน */}
       <div style={card}>
@@ -888,7 +929,7 @@ function PlannerTab({ refreshKey, custLabel }) {
               <BarChart data={chartData} margin={{ top: 6, right: 12, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Bar dataKey="Forecast" fill="#4d9fff" radius={[4, 4, 0, 0]} />
@@ -903,9 +944,11 @@ function PlannerTab({ refreshKey, custLabel }) {
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🧠 แผนภาระการผลิตรายพาร์ท</div>
-          <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)} style={{ ...inputSt, width: 170 }}>
-            {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
-          </select>
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)}>
+              {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+            </select>
+          </FilterBar>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           {[
@@ -1350,48 +1393,37 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         {' '}· ตั้ง process_type ต่อพาร์ทที่ Product Master
       </div>
 
-      {/* controls */}
-      <div style={{ ...card, marginBottom: 14, display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เดือน Forecast ที่ใช้คำนวณ</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ ...inputSt, width: 160 }} />
-        </div>
-        <div>
-          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></label>
-          <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ ...inputSt, width: 90 }} />
-        </div>
-        {calcType === 'withdrawal' ? (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Efficiency %</label>
-            <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ ...inputSt, width: 80 }} />
-          </div>
-        ) : (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></label>
-            <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ ...inputSt, width: 90 }} />
-          </div>
-        )}
-        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+      {/* controls — UI-STANDARD 2026-09-24: แถบกรองเดียว ช่องสูงเท่ากัน (เดิม 3 ความสูง)
+          ไลน์ (ขอบเขต) → เดือน → ค่าคำนวณ → spacer → จำนวน/ปุ่ม */}
+      <FilterBar style={{ marginBottom: 14 }}>
         {lines.length > 0 && (
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์</label>
-            {/* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */}
-            <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
-              value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
-              style={{ ...inputSt, width: 150 }}
-              extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
-            />
-          </div>
+          /* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */
+          <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
+            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
+            extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          />
         )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
-          {canApply && (
-            <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
-              style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
-          )}
-          <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
-        </div>
-      </div>
+        <span className="filter-label">เดือน Forecast ที่ใช้คำนวณ</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        <span className="filter-label">📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></span>
+        {/* ช่องตัวเลขสั้น — คงความกว้างไว้ (ค่าตั้งต้นของเบราว์เซอร์กว้างเกินตัวเลข 2-3 หลัก) */}
+        <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ width: 80 }} />
+        {calcType === 'withdrawal' ? (<>
+          <span className="filter-label">Efficiency %</span>
+          <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ width: 80 }} />
+        </>) : (<>
+          <span className="filter-label">⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></span>
+          <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ width: 80 }} />
+        </>)}
+        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+        <span className="spacer" />
+        <span className="filter-count">{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
+        {canApply && (
+          <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
+            style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
+        )}
+        <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
+      </FilterBar>
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
         {calcType === 'production'
@@ -1443,7 +1475,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                     <th key={h.t} title={h.tip || ''} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase', cursor: h.tip ? 'help' : undefined }}>
                       <div>{h.t}{h.tip ? ' ⓘ' : ''}</div>
                       {/* หน่วยต้องเห็นตลอด ห้ามซ่อนใน tooltip — คนกรอกไม่มีทางรู้ว่าช่องนี้เป็นใบหรือชิ้น */}
-                      {h.u && <div style={{ fontSize: 9.5, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
+                      {h.u && <div style={{ fontSize: 11, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
                     </th>
                   ))}
                 </tr>
@@ -1454,7 +1486,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                   return (
                     <tr key={row.mat} style={{ background: row.changed ? 'rgba(245,158,11,0.05)' : undefined }}>
                       <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', textAlign: 'left' }}>{row.mat}</td>
-                      <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
+                      <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 800 }}>{fmt(row.order)}</td>
                       {NCOLS.map(c => (
                         <td key={c} style={{ ...tdc, textAlign: 'center' }}>
@@ -1464,7 +1496,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           {/* ช่อง Lot กรอกเป็น "ใบ" แต่ค่าที่บันทึกลง kanban_standards เป็น "ชิ้น"
                               → ต้องเห็นตัวเลขที่จะถูกบันทึกจริงตรงนี้ ห้ามให้ไปรู้ตอนของระเบิดแล้ว */}
                           {c === 'lot_size' && (
-                            <div style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
+                            <div style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
                               {lotPcsOf(calcType, row.pp) > 0 ? `= ${fmt(lotPcsOf(calcType, row.pp))} ชิ้น` : 'ต้องมี Pkg'}
                             </div>
                           )}
@@ -1477,13 +1509,13 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                                   <div
                                     onClick={() => canApply && setEdit(row.mat, 'capacity_pc_hr', row.capReal)}
                                     title={`กำลังจริง = (3600 ÷ CT) × OEE ${row.oeePct.toFixed(1)}% ของไลน์ ${row.line}\nจากกะที่ปิดแล้ว ${row.oeeN} กะ ใน 90 วัน\nคลิกเพื่อใช้ค่านี้`}
-                                    style={{ fontSize: 9.5, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
+                                    style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
                                              color: far ? '#f59e0b' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
                                     จริง ~{fmt(row.capReal)}
                                   </div>
                                 );
                               })()
-                            : <div style={{ fontSize: 9.5, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
+                            : <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, opacity: 0.6 }} title="ยังไม่มีกะที่ปิดแล้วของไลน์นี้ใน 90 วัน หรือยังไม่ได้ตั้ง CT ที่ Product Master">จริง —</div>
                           )}
                         </td>
                       ))}
@@ -1557,8 +1589,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                           inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12,
                             borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? '#22c55e' : mapSel[u.mat] ? '#ef4444' : 'var(--border)' }} />
                         {mapSel[u.mat] && (drMap[mapSel[u.mat]]
-                          ? <div style={{ fontSize: 10.5, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
-                          : <div style={{ fontSize: 10.5, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
+                          ? <div style={{ fontSize: 11, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
+                          : <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
                         {suggestByCust[u.mat] && (
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
                             {suggestByCust[u.mat].map(c => (
@@ -1634,7 +1666,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
 export default function PlannerSales() {
   const { role, fullName } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload'], 'planner');
+  const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload', 'monitoring'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);
   // สิทธิ์อัพโหลดจากตาราง role_permissions (ปรับได้ที่หน้า จัดการสิทธิ์ → สิทธิ์การทำงาน)
   const canUpload = can('demand', 'upload', role);
@@ -1655,7 +1687,7 @@ export default function PlannerSales() {
   }, [shipToMap]);
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Planner & Sales — Forecast จากลูกค้า" icon="📈"
         sub="Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery"
@@ -1663,6 +1695,7 @@ export default function PlannerSales() {
           { key: 'planner', label: '📈 Forecast Planner' },
           { key: 'kanban', label: '🎴 คำนวณ Kanban' },
           { key: 'upload', label: '📤 อัพโหลด (Sales)' },
+          { key: 'monitoring', label: '📗 Monitoring (Planning)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -1670,6 +1703,9 @@ export default function PlannerSales() {
       {tab === 'planner' && <PlannerTab refreshKey={refreshKey} custLabel={custLabel} />}
       {tab === 'kanban' && <KanbanCalcTab canApply={canUpload} fullName={fullName} custLabel={custLabel} />}
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
-    </div>
+      {/* 📗 ไฟล์ Monitoring ของแพลนนิ่ง = ช่องทางที่ 4 ต่อจาก EDI 830/862/e-SMART
+          (ลูกค้าที่ไม่ส่ง EDI — TSPK/TSESA/TSLA/TSRA/GWM/Argen) — แยกแท็บเพราะโครงไฟล์คนละแบบสิ้นเชิง */}
+      {tab === 'monitoring' && <MonitoringUpload canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
+    </Page>
   );
 }

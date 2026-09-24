@@ -37,6 +37,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
+import { ALL } from '../utils/filterLabels';
 
 /* วันงาน — ตัด 08:00 ตามกฎทั้งระบบ (ห้าม toISOString: คืน UTC = เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 function getWorkDate() {
@@ -184,8 +185,9 @@ export default function TvBoard() {
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
           <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            style={{ width: 190, fontSize: 12.5, padding: '5px 8px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">ทุกส่วนงาน (ตามสิทธิ์)</option>
+            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
+            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+            <option value="">{ALL.section}</option>
             {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
             {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
           </select>

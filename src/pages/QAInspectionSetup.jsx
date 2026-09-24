@@ -30,6 +30,9 @@ import { LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite } from '../utils/dbWrite';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import SearchInput from '../components/SearchInput';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -640,21 +643,15 @@ export default function QAInspectionSetup() {
   });
 
   return (
-    <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>
-          📐 มาตรฐานการตรวจ & Drawing
-        </h1>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้
-        </div>
-      </div>
+    <Page>
+      <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
+        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้" />
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(230px, 290px) 1fr', gap: 14, alignItems: 'start' }}>
         {/* ── ซ้าย: รายการ part ── */}
         <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <input style={{ ...inputSt, flex: 1 }} placeholder="🔍 ค้นหา part…" value={search} onChange={e => setSearch(e.target.value)} />
+            <SearchInput value={search} onChange={setSearch} fields="part" />
             {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title="เพิ่ม Part" onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
           </div>
           <div style={{ maxHeight: '65vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1091,6 +1088,6 @@ export default function QAInspectionSetup() {
           </div>
         </Modal>
       )}
-    </div>
+    </Page>
   );
 }

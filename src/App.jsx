@@ -1,7 +1,7 @@
 import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
 import { loadProfilesPeople } from './utils/usePeople';
@@ -36,8 +36,6 @@ const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const Operator     = lazy(() => import('./pages/operator'));
 const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
-const MachineDatabase = lazy(() => import('./pages/MachineDatabase'));
-const DieRegistry = lazy(() => import('./pages/DieRegistry'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const QrLabels     = lazy(() => import('./pages/QrLabels'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
@@ -56,7 +54,6 @@ const ProductHistory = lazy(() => import('./pages/ProductHistory'));
 const VSM           = lazy(() => import('./pages/VSM'));
 const OrderTrace = lazy(() => import('./pages/OrderTrace'));
 const DeptHub       = lazy(() => import('./pages/DeptHub'));
-const DeptDashboard = lazy(() => import('./pages/DeptDashboard'));
 // 📺 จอเฝ้าระวังแขวนห้อง — เปลือกเต็มจอของ <MtnAndonBoard> (ดูหัวไฟล์ TvBoard.jsx · ไม่ใช่บอร์ดใบใหม่)
 const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
@@ -70,7 +67,8 @@ const RackCenter      = lazy(() => import('./pages/RackCenter'));
 const OrgSetup        = lazy(() => import('./pages/OrgSetup'));
 const PmHub       = lazy(() => import('./pages/PmHub'));   // 🔧 ศูนย์ PM (5 หน้าเดิมเป็นแท็บ)
 const MtnMachineLayout = lazy(() => import('./pages/MtnMachineLayout'));
-const FixtureRegistry = lazy(() => import('./pages/FixtureRegistry'));
+const MtnAnalysis = lazy(() => import('./pages/MtnAnalysis'));
+const EquipmentHub = lazy(() => import('./pages/EquipmentHub'));
 const Energy = lazy(() => import('./pages/Energy'));
 const Improvements = lazy(() => import('./pages/Improvements'));
 const OjtTraining = lazy(() => import('./pages/OjtTraining'));
@@ -90,6 +88,7 @@ const QualityControl = lazy(() => import('./pages/QualityControl'));
 const QAInspectionSetup = lazy(() => import('./pages/QAInspectionSetup'));
 const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
+const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
@@ -115,14 +114,16 @@ export const NAV_ITEMS = [
   // ⚠️ ชื่อเมนูต้องบอกว่า "เข้าไปทำอะไร" ไม่ใช่บอกแค่ว่าเกี่ยวกับเรื่องอะไร (nav audit 2026-08-27)
   // Dashboard รายส่วนงาน (ผลิต/ซ่อมบำรุง/สโตร์/QA) — หน้าเดียวสลับด้วย ?dept= · ดู docs/DASHBOARD-DESIGN.md
   // ⚠️ นี่คือ "คิวงานที่กดไปทำ" ไม่ใช่จอแขวน — จอแขวนอยู่หมวด 📺 จอแสดงผล (nav audit 2026-08-28)
-  { to: '/dept-dashboard', icon: '📋', label: 'งานค้างของส่วนงาน',  group: 'ภาพรวม' },
   { to: '/factory-map', icon: '🗺️', label: 'ผังรวมโรงงาน',       group: 'ภาพรวม' },
   /* 🏛️ OBEYA — 2 แท็บในหน้าเดียว (รวมงาน 2 session · 2026-09-15 ดูหัวไฟล์ pages/Obeya.jsx)
        ?tab=kpi   บอร์ด KPI ส่วนงาน — ยุบกระดาษ "OBEYA KPI monitoring" ที่แปะผนัง (เดือน × กลุ่มไลน์ × 8 หัวข้อ)
        ?tab=sqdcm จอมอนิเตอร์ SQDCM — กระดาษ A4 สิบแผ่นปูเต็มจอ TV + ACTION BOARD ปิดลูป
      อยู่หมวด "ภาพรวม" ไม่ใช่ "จอแสดงผล" เพราะหน้านี้ **เขียนข้อมูลได้** (บันทึกเหตุความปลอดภัย /
      ตั้ง-ปิด Action) ไม่ใช่จอที่แขวนทิ้งไว้เฉยๆ · deep-link ต่อจอ: ?section=PD3 · ?tab=sqdcm */
-  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI ส่วนงาน + SQDCM)', group: 'ภาพรวม' },
+  /* 📌 งานค้างของส่วนงาน (/dept-dashboard เดิม) ยุบเป็นแท็บ `?tab=todo` ใน OBEYA แล้ว (user 23/09:
+     "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย") — route เดิม redirect (LegacyTabRedirect) พา ?dept= มาด้วย
+     · สิทธิ์ยังใช้คีย์ `page:/dept-dashboard` เดิม (แท็บโผล่ตามสิทธิ์ · /permissions ยังตั้งได้) ห้ามลบคีย์ */
+  { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI · SQDCM · งานค้าง)', group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -173,8 +174,14 @@ export const NAV_ITEMS = [
   //    ⭐ วิธีนี้แก้ปัญหา "4 เมนู PM ชื่อขึ้นต้นเหมือนกันจนแยกไม่ออก" ได้แรงกว่าการเปลี่ยนชื่อ
   //       (nav audit 2026-08-27) — ชื่อแท็บในนั้นยึดกฎเดียวกัน: บอกว่าเข้าไปทำอะไร
   { to: '/pm',          icon: '🔧', label: 'ซ่อมบำรุงตามแผน PM (ตรวจ·แผน·ล่วงหน้า·ประสานงาน)', group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🔍 หน้าวิเคราะห์ (อ่านอย่างเดียว) แยกจาก /mtn-repair ที่เป็นหน้าทำงาน — 2026-09-22
+     คำสั่ง user: "หมวด mtn ยังไม่มี dashboard ปัญหา เครื่องจักร/แม่พิมพ์/jig fixture · qc7tools ยังไม่เห็น" */
+  { to: '/mtn-analysis', icon: '🔍', label: 'วิเคราะห์ปัญหา (QC 7 Tools)',    group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/mtn-layout',  icon: '🗺️', label: 'ผังเครื่องจักร (ซ่อมบำรุง)',      group: 'การตรวจสอบและซ่อมบำรุง' },
-  { to: '/fixture',     icon: '📐', label: 'บันทึกชิม Fixture (JIG)',       group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🧰 ศูนย์ทะเบียนอุปกรณ์ — ยุบ 5 ที่ (ฐานข้อมูลเครื่องจักร · ทะเบียนแม่พิมพ์ · Fixture ·
+     คลังอะไหล่ · ผังคลัง) เป็นแท็บในหน้าเดียว · route เดิมทั้งหมด redirect เข้ามา (2026-09-22)
+     คำสั่ง user: "ฟังก์ชันของช่างเหมือนไปกระจายอยู่หลายหน้า" */
+  { to: '/equipment',   icon: '🧰', label: 'ทะเบียนอุปกรณ์ (เครื่อง·แม่พิมพ์·JIG·อะไหล่)', group: 'การตรวจสอบและซ่อมบำรุง' },
   { to: '/energy',      icon: '⚡', label: 'พลังงานไฟฟ้า',                    group: 'การตรวจสอบและซ่อมบำรุง' },
 
   // หมวด "วิศวกรรม (PE)" ที่มีเมนูเดียว ถูกยุบเข้ามาที่นี่ (nav audit 2026-08-27) — หมวดเมนูเดียว
@@ -184,6 +191,7 @@ export const NAV_ITEMS = [
   { to: '/event-log',      icon: '⚡', label: 'CQI-15 Event Log', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/pe-docs',        icon: '📐', label: 'Flow / PFMEA / Control Plan', group: 'คุณภาพ & วิศวกรรม' },
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
+  { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -207,8 +215,6 @@ export const NAV_ITEMS = [
   // ไม่ได้เพิ่มหมวดบนแถบไอคอน — แค่คั่นหัวข้อในแผงเดียวกัน แยก "ของที่กรอกทุกเดือน"
   // ออกจาก "ของที่ตั้งครั้งเดียว" · ห้ามลืมใส่ `sub` ให้เมนูใหม่ในหมวดนี้ (ไม่ใส่ = ตกไปกลุ่มแรก)
   { to: '/products',        icon: '🔩', label: 'Product Master',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/machine-database', icon: '🏭', label: 'ฐานข้อมูลเครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/die-registry', icon: '🔨', label: 'ทะเบียนแม่พิมพ์', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
@@ -277,6 +283,24 @@ export function accessSummaryForRole(role) {
 function RoleRoute({ children, path, userRole }) {
   if (!canAccessPage(path, userRole)) return <Navigate to="/" replace />;
   return children;
+}
+
+/* ─── ทางผ่านของ route ที่ถูกยุบเป็นแท็บ ───────────────────────────────  2026-09-22
+   ยุบหน้าเป็นแท็บทีไร ปัญหาเดิมคือ **`?tab=` ของหน้าลูกชนกับ `?tab=` ของหน้าแม่**
+   ปล่อยไว้ = ลิงก์เก่า `/fixture?tab=shim` พาไป `/equipment?tab=shim` ซึ่งไม่มีแท็บชื่อนั้น
+   → ตกกลับแท็บแรกเงียบๆ (บุ๊กมาร์กของทีมช่างพาไปผิดที่โดยไม่มีใครรู้)
+
+   ตัวนี้จึง **ย้าย `?tab=` เก่าไปเป็น param ของลูก** แล้วค่อยเด้ง · param อื่น (เช่น `?area=`)
+   ถูกส่งต่อครบ · `replace` เสมอ ไม่ให้ปุ่ม Back เด้งกลับมาวนลูป
+   ⚠️ ยุบหน้าอีกครั้งเมื่อไหร่ ให้ใช้ตัวนี้ซ้ำ **ห้ามเขียน `<Navigate to="...">` ลอยๆ** */
+function LegacyTabRedirect({ to, tab, subParam }) {
+  const [sp] = useSearchParams();
+  const next = new URLSearchParams(sp);
+  const oldTab = next.get('tab');
+  next.delete('tab');
+  if (tab) next.set('tab', tab);
+  if (subParam && oldTab) next.set(subParam, oldTab);
+  return <Navigate to={`${to}?${next.toString()}`} replace />;
 }
 
 /* ─── Splash Screen ────────────────────────────────────── */
@@ -413,7 +437,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
-  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด + หมวดที่ accordion มือถือเปิดให้เอง
+  /* หมวดของหน้าปัจจุบัน — ใช้เป็น **แผง default** ตอนปักหมุด + หมวดที่ accordion มือถือกางให้เอง
+     ⚠️ ห้ามเอาไปใช้ไฮไลต์ "อยู่ที่นี่" — มันเป็นค่าเดียว แต่หน้าที่ตั้ง `alsoIn` อยู่ 2 หมวดจริงๆ
+        (ตรงนั้นให้เช็ค `items.some(i => i.to === location.pathname)` ต่อหมวด) */
   const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
   // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
   const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
@@ -437,11 +463,14 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       {userAvatarUrl ? (
         <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
+        /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
+           เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
+           มาทำของตกแต่ง ทั้งที่ 2 สีนี้ถูกจองไว้แปลว่า "ปกติ/มีปัญหา" ทั้งระบบ (utils/statusTone.js) */
         <div style={{
           width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-          background: 'linear-gradient(135deg, var(--accent), #ff6b6b)',
+          background: 'var(--bg2)', border: '1px solid var(--border2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, color: '#fff',
+          fontSize: 12, fontWeight: 800, color: 'var(--text2)',
         }}>{initials}</div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -523,7 +552,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               <div style={{
                 position: 'absolute', top: 2, left: it.on ? 18 : 2,
                 width: 16, height: 16, borderRadius: '50%', background: '#fff',
-                transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                transition: 'left 0.25s', boxShadow: 'var(--shadow-float)',
               }} />
             </div>
           </button>
@@ -582,16 +611,39 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       ? (groupedItems.find(g => g.group === panel)?.items || [])
       : null;
 
+    /* ── 🧭 "คุณอยู่ตรงนี้" บนรางไอคอน (2026-09-24 · user ทักว่ารางนอกสุดไม่บอกว่าอยู่หน้าไหน) ──
+       เดิมสลับกันอยู่: **แผงที่เพิ่งกดเปิด** (`isOpenPanel`) ได้ทั้งกรอบเขียว + พื้นเขียวจาง
+       ส่วน **หมวดของหน้าที่เปิดอยู่จริง** (`isCurrent`) ได้แค่ *สีตัวหนังสือ 11px*
+       ⇒ สัญญาณที่แรงที่สุดบนจอ ไปตกกับสถานะชั่วคราว (แผงปิดแล้วก็หาย) ไม่ใช่ข้อเท็จจริงถาวร
+          พอไม่เปิดแผง รางเลยเหมือน "ไม่มีไฮไลต์" ตามที่ user เห็น
+
+       กติกาใหม่ — **ใช้รูปแบบเดียวกันทุกชั้น** (drawer มือถือทำถูกอยู่แล้ว ยึดตามนั้น):
+         · อยู่ที่นี่      = พื้น `--accent-dim` + **แถบเขียวขอบซ้าย** + ตัวอักษร accent
+         · แผงที่เปิดอยู่ = แค่เส้นขอบกลางๆ (`--border2`) — เบากว่าชัดเจน เพราะเป็นสถานะชั่วคราว
+         · เป็นทั้งคู่    = ซ้อนกันได้เอง อ่านออกทั้ง 2 อย่าง
+       ⚠️ แถบซ้ายวาดเป็น element ลอย **ไม่ใช้ `borderLeft`** — ปุ่มกว้าง 56px จัดกลางแนวตั้ง
+          ถ้าใส่ border ของจะเลื่อนไป 3px เฉพาะปุ่มที่ active แล้วคอลัมน์ไอคอนดูไม่ตรงกัน
+          (แถวเต็มความกว้างใน drawer/แผงไม่มีปัญหานี้ จึงใช้ `borderLeft` ได้) */
     const railBtn = ({ key, icon, label, title, onClick, isOpenPanel, isCurrent }) => (
-      <button key={key} onClick={onClick} title={title}
+      <button key={key} onClick={onClick}
+        title={isCurrent ? `${title} — หน้าที่เปิดอยู่ตอนนี้อยู่ในหมวดนี้` : title}
+        aria-current={isCurrent ? 'true' : undefined}
         style={{
+          position: 'relative',
           width: 56, flexShrink: 0, borderRadius: 10, cursor: 'pointer', outline: 'none',
-          border: `1px solid ${isOpenPanel ? 'var(--accent)' : 'transparent'}`,
-          background: isOpenPanel ? 'var(--accent-dim)' : 'transparent',
-          color: (isOpenPanel || isCurrent) ? 'var(--accent)' : 'var(--text2)',
+          border: `1px solid ${isOpenPanel ? 'var(--border2)' : 'transparent'}`,
+          background: isCurrent ? 'var(--accent-dim)' : 'transparent',
+          color: isCurrent ? 'var(--accent)' : 'var(--text2)',
+          fontWeight: isCurrent ? 800 : 400,
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
           padding: '6px 2px 4px',
         }}>
+        {isCurrent && (
+          <span aria-hidden="true" style={{
+            position: 'absolute', left: 0, top: 6, bottom: 6, width: 3,
+            borderRadius: '0 3px 3px 0', background: 'var(--accent)',
+          }} />
+        )}
         <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
         {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
         <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
@@ -620,14 +672,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
             {/* หมวดเมนู — ส่วนกลางเลื่อนได้ กันจอเตี้ยตกขอบ */}
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%' }}>
-              {groupedItems.map(({ group }) => railBtn({
+              {/* 🔴 เช็คเป็น "หมวดนี้มีหน้าปัจจุบันไหม" ไม่ใช่ `activeGroup === group`
+                  เพราะหน้าที่ตั้ง `alsoIn` อยู่ **2 หมวดจริงๆ** (วางแผนการผลิต = ฝ่ายผลิต + แผนงาน ·
+                  เฝ้าระวังสต๊อก = สโตร์ + จัดส่ง) · `activeGroup` เป็นค่าเดียวจึงคืนแค่หมวดแรก
+                  ⇒ เดิมยืนอยู่หน้าเดียวกันแท้ๆ แต่รางตอบคนละหมวดแล้วแต่ว่าเปิดแผงไหนค้างไว้
+                  (drawer มือถือเช็คแบบนี้อยู่ก่อนแล้ว — ทำให้ 2 โหมดตอบตรงกันเสียที) */}
+              {groupedItems.map(({ group, items }) => railBtn({
                 key: group,
                 icon: NAV_GROUP_META[group]?.icon || '📁',
                 label: NAV_GROUP_META[group]?.short || group,
                 title: group,
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
-                isCurrent: activeGroup === group,
+                isCurrent: items.some(i => i.to === location.pathname),
               }))}
             </div>
 
@@ -709,6 +766,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   )}
                   <Link
                     to={item.to} className="nav-link"
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -729,6 +788,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 ) : starItems.map(item => (
                   <Link
                     key={item.to} to={item.to} className="nav-link"
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -842,6 +903,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {starItems.slice(0, 5).map(item => (
                 <Link
                   key={`star-${item.to}`} to={item.to} className="nav-link"
+                  aria-current={location.pathname === item.to ? 'page' : undefined}
                   style={location.pathname === item.to
                     ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                     : {}}
@@ -893,6 +955,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       <Link
                         to={item.to}
                         className="nav-link"
+                        aria-current={location.pathname === item.to ? 'page' : undefined}
                         style={location.pathname === item.to
                           ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                           : {}}
@@ -1721,9 +1784,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/line-oee" element={
                 <RoleRoute path="/line-oee" userRole={role}><LineOeeBoard /></RoleRoute>
               } />
-              <Route path="/dept-dashboard" element={
-                <RoleRoute path="/dept-dashboard" userRole={role}><DeptDashboard /></RoleRoute>
-              } />
+              {/* งานค้างของส่วนงาน → แท็บใน OBEYA (23/09) · ?dept=/?view=/?team=/?sound= ถูกส่งต่อ (DeptDashboard redirect ?view= ต่อเอง) */}
+              <Route path="/dept-dashboard" element={<LegacyTabRedirect to="/obeya" tab="todo" />} />
               <Route path="/flow-tower" element={
                 <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
               } />
@@ -1766,12 +1828,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/qr-labels" element={
                 <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>
               } />
-              <Route path="/machine-database" element={
-                <RoleRoute path="/machine-database" userRole={role}><MachineDatabase /></RoleRoute>
-              } />
-              <Route path="/die-registry" element={
-                <RoleRoute path="/die-registry" userRole={role}><DieRegistry /></RoleRoute>
-              } />
+              {/* 🧰 3 ทะเบียนเดิมยุบเข้า /equipment (2026-09-22) — route เดิมเหลือไว้เป็นทางผ่าน
+                  `<LegacyTabRedirect>` แปลง `?tab=` เก่าเป็น param ของลูก (`die`/`fx`) ให้ด้วย
+                  เพราะหน้าแม่กิน `?tab=` ไปแล้ว — ปล่อยไว้เฉยๆ = ลิงก์เก่าพาไปผิดแท็บเงียบๆ */}
+              <Route path="/machine-database" element={<LegacyTabRedirect to="/equipment" tab="machine" />} />
+              <Route path="/die-registry"     element={<LegacyTabRedirect to="/equipment" tab="die" subParam="die" />} />
               <Route path="/add-user"   element={
                 <RoleRoute path="/add-user" userRole={role}><AddUser /></RoleRoute>
               } />
@@ -1860,6 +1921,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/npi" element={
                 <RoleRoute path="/npi" userRole={role}><NPI /></RoleRoute>
               } />
+              <Route path="/nm-board" element={
+                <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
+              } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>
               } />
@@ -1905,11 +1969,15 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
+              <Route path="/mtn-analysis" element={
+                <RoleRoute path="/mtn-analysis" userRole={role}><MtnAnalysis /></RoleRoute>
+              } />
               <Route path="/mtn-layout" element={
                 <RoleRoute path="/mtn-layout" userRole={role}><MtnMachineLayout /></RoleRoute>
               } />
-              <Route path="/fixture" element={
-                <RoleRoute path="/fixture" userRole={role}><FixtureRegistry /></RoleRoute>
+              <Route path="/fixture" element={<LegacyTabRedirect to="/equipment" tab="jig" subParam="fx" />} />
+              <Route path="/equipment" element={
+                <RoleRoute path="/equipment" userRole={role}><EquipmentHub /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>

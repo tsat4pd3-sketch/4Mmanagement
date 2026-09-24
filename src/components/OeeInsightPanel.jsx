@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from './LineSelect';
+import { ALL } from '../utils/filterLabels';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
 import { lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
+import TimeRangeBar from './TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays } from '../utils/timeRange';
 
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
@@ -40,8 +44,11 @@ const SEV = {
 
 export default function OeeInsightPanel({ lines, ccRates = [] }) {
   // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
-  const lineOpts = useMemo(() => toHierarchicalOptions(lines || []), [lines]);
-  const [days, setDays] = useState(30);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
+     · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
+     · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const days = rangeDays(tr.from, tr.to) || 30;
   const [selLine, setSelLine] = useState('');
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState(null); // null = ยังไม่รัน
@@ -52,8 +59,10 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
   const run = useCallback(async () => {
     setLoading(true);
     try {
-      const to = todayWorkDate();
-      const from = dateStrAdd(to, -days);
+    /* 🔴 ต้องยึด "ช่วงที่เลือกจริง" ไม่ใช่ "N วันนับถอยจากตอนนี้" — ไม่งั้นพอเลือกช่วงในอดีต
+       จำนวนวันถูกแต่หน้าต่างเวลาผิด (ยังลากถึงวันนี้เสมอ) = ตัวเลขไม่ตรงกับที่จอบอก */
+      const to = tr.to;
+      const from = tr.from;
       const lineNames = selLine ? [selLine] : lines.map(l => l.name);
       if (!lineNames.length) { setInsights([]); setLoading(false); return; }
 
@@ -315,25 +324,23 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
       setMeta({ error: e.message });
     }
     setLoading(false);
-  }, [days, selLine, lines]);
+  }, [tr.from, tr.to, selLine, lines]);
 
   useEffect(() => { run(); }, [run]);
 
   return (
     <div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่
+          ตัวเลือกไลน์เป็น children = แถบเดียว (UI-STANDARD 2026-09-24) */}
+      <TimeRangeBar
+        scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      >
+        {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ */}
+        <LineSelect lines={lines || []} value={selLine} onChange={setSelLine} placeholder={ALL.line} />
+      </TimeRangeBar>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🧠 วิเคราะห์ภาพรวมอัตโนมัติ</span>
-        {/* width กัน index.css select{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
-        <select value={selLine} onChange={e => setSelLine(e.target.value)} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-          <option value="">— ทุกไลน์ที่มองเห็น —</option>
-          {/* เรียงตามลำดับชั้นจริง (แม่ → ลูกใต้แม่) ผ่าน util กลาง — เดิม map ตรงๆ ลูกเลยลอยไปคนละที่กับแม่ */}
-          {lineOpts.map(({ line: l, depth }) => (
-            <option key={l.id} value={l.name}>{depth ? `${' '.repeat(depth * 3)}↳ ${l.name}` : l.name}</option>
-          ))}
-        </select>
-        <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-          {[14, 30, 60, 90].map(d => <option key={d} value={d}>ย้อนหลัง {d} วัน</option>)}
-        </select>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
         {meta?.loadErr && (
@@ -379,7 +386,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
             </div>
             {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
             {perHr == null && (
-              <div style={{ fontSize: 10.5, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
                 💰 ยังตีเป็นเงินไม่ได้ — {!selLine
                   ? 'เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)'
                   : `ไลน์ ${selLine} ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate`}
@@ -394,7 +401,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
                       <span style={{ fontWeight: 700, color: r.meta ? 'var(--text)' : 'var(--muted)' }}>
                         {r.meta ? `${r.meta.icon} ${r.meta.label}` : '❔ ยังไม่จัดหมวด'}
                       </span>
-                      {r.meta?.oee && <span style={{ fontSize: 10.5, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
+                      {r.meta?.oee && <span style={{ fontSize: 11, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
                       <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
                         {r.min.toLocaleString()} น. · {r.count} ครั้ง{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
                         {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} บาท</b>}
@@ -404,7 +411,7 @@ export default function OeeInsightPanel({ lines, ccRates = [] }) {
                     <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                       <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.${perHr != null ? ` (${fmtB(baht(t.min))}฿)` : ''}`).join(' · ')}
                       {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
                       {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>💡 {r.meta.fix}</div> : null}

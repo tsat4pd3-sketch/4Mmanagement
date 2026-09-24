@@ -107,7 +107,7 @@ export default function NpiTemplates({ templates, onChanged }) {
                   <tr key={d.id} style={{ opacity: d.is_active === false ? 0.5 : 1 }}>
                     <td style={tdSt}>{phases.find(p => p.code === d.phase_code)?.label || <span style={{ color: '#f59e0b' }}>{d.phase_code} (ไม่มีเฟส)</span>}</td>
                     <td style={tdSt}>{d.seq}</td>
-                    <td style={tdSt}><b style={{ color: 'var(--text)' }}>{d.label}</b><div style={{ fontFamily: 'monospace', fontSize: 10.5, color: 'var(--muted)' }}>{d.code}</div></td>
+                    <td style={tdSt}><b style={{ color: 'var(--text)' }}>{d.label}</b><div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{d.code}</div></td>
                     <td style={tdSt}>{DOC_KIND[d.doc_kind]?.icon} {DOC_KIND[d.doc_kind]?.label}</td>
                     <td style={tdSt}>{OWNER_ROLE[d.owner_role] || d.owner_role || '—'}</td>
                     <td style={tdSt}>{d.required ? '✓' : '—'}</td>

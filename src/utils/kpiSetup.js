@@ -21,10 +21,13 @@
       และหลายไลน์ใช้ cc เดียวกัน) จึงมี `depth: null` = เทียบความลึกกับสายไลน์ไม่ได้ ห้ามเอาไป sort ปน */
 export const KPI_SCOPE_LEVELS = [
   { key: 'plant',       label: 'ทั้งโรงงาน',       short: 'โรงงาน',  depth: 0, source: null },
-  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 1, source: 'org_nodes:section' },
-  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 2, source: 'org_nodes:department' },
-  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 3, source: 'production_lines:parent' },
-  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 4, source: 'production_lines:leaf' },
+  /* `division` = ป้ายฝ่ายบน node ชั้นบนสุด (org_nodes.division · ไม่ใช่ node) — เพิ่ม 23/09 เมื่อ picker
+     ขอบเขตกรองได้ทุกมิติของผัง (`src/utils/orgScope.js`) · check constraint ใน DB ขยายแล้ว (migration 20260923b) */
+  { key: 'division',    label: 'ฝ่าย',             short: 'ฝ่าย',    depth: 1, source: 'org_nodes:division' },
+  { key: 'section',     label: 'ส่วนงาน',          short: 'ส่วนงาน', depth: 2, source: 'org_nodes:section' },
+  { key: 'department',  label: 'แผนก',            short: 'แผนก',    depth: 3, source: 'org_nodes:department' },
+  { key: 'line_group',  label: 'กลุ่มไลน์ (ไลน์แม่)', short: 'กลุ่ม',  depth: 4, source: 'production_lines:parent' },
+  { key: 'line',        label: 'ไลน์ลูก',          short: 'ไลน์',    depth: 5, source: 'production_lines:leaf' },
   { key: 'cost_center', label: 'Cost Center',     short: 'CC',      depth: null, source: 'cost_centers' },
 ];
 
@@ -244,6 +247,58 @@ export const KPI_SUMMARY_MODES = [
   { key: 'rate',    label: 'คำนวณจากยอดรวมทั้งปี (เช่น PPM)' },
 ];
 
+export const summaryModeLabel = (k) => KPI_SUMMARY_MODES.find(m => m.key === k)?.label || k;
+/** ป้ายสั้นไว้ติดคอลัมน์สรุป — **จอต้องเขียนให้ตรงวิธีรวมของแถวนั้น ห้ามพิมพ์ "เฉลี่ย" ตายตัว**
+ *  (บั๊กที่เจอ 23/09: Scrap ต้องรวมทั้งปี 1,628 แต่จอโชว์ 271.4 = เฉลี่ย โดยหัวคอลัมน์ยังเขียนว่า "เฉลี่ย") */
+export const summaryShort = (k) => (
+  { average: 'เฉลี่ย', sum: 'รวมปี', max: 'สูงสุด', as_of: 'ล่าสุด', rate: 'ทั้งปี' }[k] || 'เฉลี่ย');
+
+/* ── 5.1) ตั้งค่า 2 ชั้น: ทะเบียน `kpi_catalog` = ค่าตั้งต้น · นิยามรายแถว = override (24/09) ──
+   คำถาม user: "หน่วย/ทศนิยม/average-total ตั้งที่ไหน ตั้งต่อจากทะเบียนหรือควรแยก" → ตอบ **2 ชั้น**
+     🔒 **วิธีรวม 12 เดือน = ของตัวตน KPI → ทะเบียนอย่างเดียว ห้าม override รายแถว**
+        (PPM คิดจากยอดรวมทั้งปีเสมอ · Scrap รวมเสมอ ไม่ว่าแผนกไหน — ปล่อยให้ตั้งเองรายแผนก
+         = แผนกหนึ่งเฉลี่ย อีกแผนกรวม แล้วเอาเลขมาเทียบกันไม่ได้ · บั๊กคลาสเดียวกับ "30 วัน คนละเลข")
+     🔓 **หน่วย + ทศนิยม = ทะเบียนตั้ง default · แถว override ได้** (ว่าง/null = ตามทะเบียน)
+        หลักฐานว่าต้อง override ได้: MTBF ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." · DSI มี 2 หน่วยทางการ (วัน / MB)
+   ⚠️ ทุกตัวรับ "แถว kpi_definitions ที่ embed `kpi_catalog` มาด้วย" — ไม่ได้ embed = ได้ค่าของแถวล้วน
+      (ไม่พัง แต่จะไม่เห็นค่าตั้งต้นจากทะเบียน) */
+export const unitOf = (d) => (d?.unit || d?.kpi_catalog?.unit || '');
+
+export function decimalsOf(d) {
+  for (const v of [d?.decimals, d?.kpi_catalog?.decimals]) {
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.min(6, Math.max(0, Math.round(n)));
+  }
+  return 2;
+}
+
+/** วิธีรวมของแถว — อ่านจากทะเบียนเท่านั้น · คีย์แปลก/ไม่มี = `average` (ไม่ใช่พัง) */
+export function summaryModeOf(d) {
+  const k = d?.kpi_catalog?.summary_mode || d?.summary_mode;
+  return KPI_SUMMARY_MODES.some(m => m.key === k) ? k : 'average';
+}
+
+/** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */
+export function fmtKpi(v, d) {
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return '';
+  return Number(v).toLocaleString(undefined, { maximumFractionDigits: decimalsOf(d) });
+}
+
+/**
+ * สรุป 12 เดือนของแถวหนึ่งตามวิธีรวมของมัน
+ * @returns { value, mode, effMode, approx } — `approx` = วิธีจริงคือ `rate` แต่ไม่มียอดดิบให้หาร
+ *   ⇒ ถอยมาเฉลี่ยรายเดือน **จอต้องติดป้าย ≈ ห้ามโชว์เหมือนเป็นตัวเลขทางการ**
+ *   (แถวกรอกมือมีแต่ค่า PPM รายเดือน ไม่มี Σของเสีย/Σยอดผลิต ⇒ คำนวณสูตรทางการไม่ได้)
+ */
+export function summaryOf(months = [], d = null, rate = null) {
+  const mode = summaryModeOf(d);
+  if (mode === 'rate' && !rate) {
+    return { value: summarizeMonths(months, 'average'), mode, effMode: 'average', approx: true };
+  }
+  return { value: summarizeMonths(months, mode, rate), mode, effMode: mode, approx: false };
+}
+
 /**
  * @param months  array ของค่ารายเดือน (null = ยังไม่กรอก — ถูกข้าม ไม่ใช่นับเป็น 0)
  * @param mode    ดู KPI_SUMMARY_MODES
@@ -357,6 +412,17 @@ export function scoreDef(value, def = {}) {
 
 export const KPI_TOTAL_WEIGHT = 50;
 
+/* 4 มุมมอง Balanced Scorecard ที่ทั้งเอกสารกลุ่มและใบ KPI ของเราใช้ร่วมกัน
+   คีย์ต้องตรงกับ `kpi_standard_items.perspective` และ `kpi_definitions.category` เป๊ะ
+   ⚠️ เคยเขียนลิสต์นี้ซ้ำในหน้า — ย้ายมาที่เดียว 2026-09-23 (แก้ป้ายที่นี่ที่เดียวพอ) */
+export const KPI_PERSPECTIVES = [
+  { key: 'financial', label: '💰 Financial' },
+  { key: 'customer',  label: '🤝 Customer' },
+  { key: 'internal',  label: '🏭 Internal Process' },
+  { key: 'learning',  label: '📚 Learning & Growth' },
+];
+export const perspectiveLabel = (k) => KPI_PERSPECTIVES.find(c => c.key === k)?.label || k || '';
+
 export const KPI_REQUIREMENTS = [
   { key: 'fixed',  label: 'บังคับ',  short: 'F', color: '#ef4444', hint: 'ต้องมีในใบ ตัดทิ้งไม่ได้' },
   { key: 'choice', label: 'เลือกได้', short: 'C', color: '#3b82f6', hint: 'เลือกตามภาระงานจริงของหน่วยงาน' },
@@ -403,6 +469,30 @@ export const stdUnitLabel = (unit) => {
   return u ? (u.th ? `${u.unit} — ${u.th}` : u.unit) : (unit || '');
 };
 
+/** normalize ชื่อหัวข้อก่อนจับคู่ — ใช้จุดเดียวทั้ง checkStdSelection และ matchStdItems
+ *  ⚠️ แถวในใบจริง (`kpi_definitions`) เก็บชื่อไว้ที่ `name` ไม่ใช่ `topic` ⇒ ต้องดูทั้งสองช่อง
+ *     (ตกหล่นข้อนี้ = ข้อ fixed ที่หยิบมาแล้วยังถูกฟ้องว่า "ยังไม่ได้หยิบ" ทุกข้อ) */
+export const normTopic = (s) => String(s == null ? '' : s).trim().toLowerCase();
+const rowTopic = (r) => normTopic(r?.topic ?? r?.name);
+
+/**
+ * จับคู่ "ทะเบียนมาตรฐาน" กับ "แถวที่อยู่ในใบจริงแล้ว"
+ * @param stdItems แถวจาก `kpi_standard_items` ของหน่วยงาน+ปีนั้น
+ * @param rows     แถวในใบ (`kpi_definitions`)
+ * คืน `[{ item, row }]` เรียงตามทะเบียน — `row = null` แปลว่ายังไม่ได้หยิบเข้าใบ
+ */
+export function matchStdItems(stdItems = [], rows = []) {
+  const byId = new Map();
+  const byTopic = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (r?.std_item_id) byId.set(r.std_item_id, r);
+    const t = rowTopic(r);
+    if (t && !byTopic.has(t)) byTopic.set(t, r);
+  }
+  return (Array.isArray(stdItems) ? stdItems : [])
+    .map(item => ({ item, row: byId.get(item?.id) || byTopic.get(normTopic(item?.topic)) || null }));
+}
+
 /**
  * ตรวจใบ KPI ของหน่วยงาน 1 ใบว่าถูกกติกากลุ่มไหม
  * @param rows      แถวในใบ (ต้องมี `weight` · `std_item_id` หรือ `topic` ไว้จับคู่กับทะเบียน)
@@ -421,12 +511,9 @@ export function checkStdSelection(rows = [], stdItems = null) {
 
   let missingFixed = [];
   if (Array.isArray(stdItems)) {
-    const pickedIds = new Set(rows.map(r => r?.std_item_id).filter(Boolean));
-    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
-    const pickedTopics = new Set(rows.map(r => norm(r?.topic)).filter(Boolean));
-    missingFixed = stdItems
-      .filter(isStdFixed)
-      .filter(it => !pickedIds.has(it.id) && !pickedTopics.has(norm(it.topic)));
+    missingFixed = matchStdItems(stdItems.filter(isStdFixed), rows)
+      .filter(m => !m.row)
+      .map(m => m.item);
   }
   return { weight, diff, ok: diff === 0 && missingFixed.length === 0, missingFixed };
 }

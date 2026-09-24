@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { clusterNotes } from '../utils/textCluster';
-import { classifyAbc, PARETO_TICKS, PARETO_CUTOFF, vagueShare } from '../utils/pareto';
+import { classifyAbc, PARETO_CUTOFF, vagueShare } from '../utils/pareto';
+import ParetoChart from './ParetoChart';
 
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
    1) ABC: จัดกลุ่มตาม % สะสม (A ≤80% ตัวหลัก · B ≤95% · C หางยาว) — สีตามกลุ่ม ไม่ใช่สีรายประเภท
@@ -18,6 +19,10 @@ const ABC = {
   C: { color: '#6b7280', label: 'C', desc: 'หางยาว (5% สุดท้าย)' },
 };
 const OPA = { A: 1, B: 0.75, C: 0.45 };
+/* แท่งสูงสุดในกราฟย่อ — เกินนี้ยุบหางยาวเป็นแท่งเดียว (ต้องตรงกับที่ส่งให้ ParetoChart) */
+const MAX_BARS = 12;
+/* ชิปกลุ่ม A สูงสุดที่โชว์ใต้กราฟ — เกินนี้ยุบเป็นปุ่ม "ดูครบ" (ดูเหตุผลตรงจุดที่ใช้) */
+const CHIP_MAX = 12;
 const fmt = (n) => Math.round(n).toLocaleString('en-US');
 
 // สูตร ABC + % สะสม ย้ายไป `utils/pareto.js` แล้ว (เทสได้ — ตัวรันเทสไม่รับ .jsx)
@@ -125,177 +130,49 @@ export default function ParetoAbcChart({
     openDrill(focus.cat, focus.dim);
   }, [focusN]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tip = ({ active, payload }) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0].payload; const m = ABC[d._cls];
-    return (
-      <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `3px solid ${m.color}`, borderRadius: 7, padding: '8px 11px', fontSize: 12, maxWidth: 290 }}>
-        <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>{d.name}</div>
-        <div style={{ color: m.color, fontWeight: 700 }}>กลุ่ม {m.label} · {m.desc}</div>
-        <div style={{ color: 'var(--text2)', marginTop: 3 }}>{fmt(d._val)} {unitOf} · <b>{d._pct.toFixed(1)}%</b> ของทั้งหมด · {d.count} ครั้ง</div>
-        <div style={{ color: 'var(--muted)' }}>สะสมถึงรายการนี้ {d._cum.toFixed(1)}%</div>
-        {dims.length > 0 && <div style={{ color: 'var(--accent)', marginTop: 4, fontWeight: 700 }}>🔍 คลิกเพื่อเจาะลึก</div>}
-      </div>
-    );
-  };
+  /* ── 📊 การวาด: ย้ายไป `ParetoChart` (แท่งตั้งมาตรฐานสากล) 2026-09-22 ──────────────
+     เดิมไฟล์นี้วาดเอง = **แท่งนอน ความหนาไม่เท่ากันตามกลุ่ม ABC**
+     user เทียบกับ Pareto มาตรฐาน (Excel · ASQ · QI Macros) แล้วสรุปว่า *"เทียบกันไม่ติดเลย …
+     แนวนอนไม่เวิค เป็นแนวตั้งและเอียง text เอา"* ⇒ เปลี่ยนตัววาดที่นี่ที่เดียว
+     กราฟที่ได้ผลพร้อมกัน 5 จุด: /mtn-analysis · /oee-analytics ×2 · /dept-dashboard ×2
 
-  // แกน Y: ชื่อเฉพาะกลุ่ม A · ที่เหลือเป็นจุด
-  const yTick = ({ x, y, payload }) => {
-    const d = rows[payload.index]; if (!d) return null;
-    const isA = d._cls === 'A';
-    return (
-      <text x={x} y={y} dy={4} textAnchor="end" fill={isA ? 'var(--text)' : 'var(--muted)'}
-        fontSize={isA ? 11 : 13} fontWeight={isA ? 700 : 400}>
-        {isA ? (d.name.length > 22 ? d.name.slice(0, 21) + '…' : d.name) : '·'}
-      </text>
-    );
-  };
-
-  // ── แท่ง HTML: ความหนา/ขนาดตัวอักษรต่างกันตามกลุ่ม ABC (Recharts ทำไม่ได้ — ทุก band สูงเท่ากัน) ──
-  const BAR = { A: { h: 20, font: 12, name: true }, B: { h: 11, font: 11, name: true }, C: { h: 6, font: 10.5, name: false } };
-  const maxVal = Math.max(1, ...rows.map(d => d._val));
-
-  /* คอลัมน์ค่าท้ายแถวกว้างคงที่ — แถวแกน % ด้านบนใช้ grid template เดียวกัน
-     ถ้าปล่อย `auto` ความกว้างจะขึ้นกับตัวเลขในแถวนั้น ⇒ ขีดแกนกับรางแท่งเลื่อนไม่ตรงกัน */
-  const VAL_W = 78;
-  const gridCols = (nameShown, compact) =>
-    (nameShown ? `minmax(0, ${compact ? '38%' : '30%'}) 1fr ${VAL_W}px` : `1fr ${VAL_W}px`);
-
-  /* ── เส้นสะสม % + เส้น cut-off 80% (หัวใจของ Pareto — ก่อนหน้านี้ไม่เคยวาดลงกราฟเลย) ──
-     วาดเป็น SVG ทับ "ราง" ของแต่ละแถว: รางทุกแถวกว้างเท่ากัน = สเกล 0–100% เดียวกันทั้งกราฟ
-     segment ของแถว i ลากจาก (x=_cumPrev, บน) → (x=_cum, ล่าง) ⇒ ต่อกันเป็นเส้นไต่ลงมาทั้งกราฟ
-     (ไม่ต้องวัด DOM / ไม่ต้อง ResizeObserver — responsive เองเพราะเป็น % ล้วน)
-     ⚠️ `preserveAspectRatio="none"` ยืด viewBox เต็มราง ⇒ เส้นต้อง `vector-effect` ไม่งั้นความหนาเพี้ยน */
-  const cumOverlay = (d) => (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible' }}>
-      <line x1={PARETO_CUTOFF} y1="0" x2={PARETO_CUTOFF} y2="100" stroke="var(--text2)" strokeWidth="1"
-        strokeDasharray="3 3" vectorEffect="non-scaling-stroke" opacity="0.5" />
-      <line x1={d._cumPrev} y1="0" x2={d._cum} y2="100" stroke="var(--text)" strokeWidth="1.6"
-        vectorEffect="non-scaling-stroke" opacity="0.9" strokeLinecap="round" />
-    </svg>
+     ⚠️ **ห้ามกลับไปวาดแท่งนอน** — เหตุผลเดิมที่เลือกแท่งนอน (ชื่อยาวเขียนทับกันบนแกน)
+        แก้ด้วย "ป้ายเอียง -45°/-90°" ตามที่ user สั่ง ไม่ใช่ด้วยการพลิกกราฟ
+     ⚠️ ไฟล์นี้เหลือหน้าที่: รวมยอด · จัด ABC · เตือนสุขภาพข้อมูล · เจาะลึก — **ไม่คำนวณพิกัด** */
+  const chartCompact = () => (
+    <ParetoChart rows={rows} unit={unitOf} height={330} maxBars={MAX_BARS}
+      onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
-
-  const barRow = (d, i, { showName, compact }) => {
-    const m = ABC[d._cls]; const cfg = BAR[d._cls];
-    const nameShown = showName || cfg.name;
-    return (
-      <div key={i} onClick={() => dims.length && openDrill(d.name)}
-        title={`${d.name} · ${fmt(d._val)} ${unitOf} (${d._pct.toFixed(1)}%) · ${d.count} ครั้ง · สะสม ${d._cum.toFixed(1)}%`
-          + (hasMoney ? ` · ${money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}${d.unpriced ? ` · ตีมูลค่าไม่ได้ ${d.unpriced} รายการ` : ''}` : '')}
-        style={{ display: 'grid', gridTemplateColumns: gridCols(nameShown, compact),
-          alignItems: 'center', gap: 8, cursor: dims.length ? 'pointer' : 'default',
-          padding: d._cls === 'A' ? '3px 0' : '1.5px 0' }}>
-        {nameShown && (
-          <span style={{ fontSize: cfg.font, fontWeight: d._cls === 'A' ? 700 : 500,
-            color: d._cls === 'A' ? 'var(--text)' : 'var(--text2)',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>{d.name}</span>
-        )}
-        {/* overflow ต้องเป็น visible ที่ชั้นนอก (ไม่งั้นเส้นสะสมโดนตัด) — มุมโค้งของแท่งย้ายไปชั้นใน */}
-        <span style={{ position: 'relative', display: 'block', height: cfg.h }}>
-          <span style={{ position: 'absolute', inset: 0, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
-            <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, d._val / maxVal * 100)}%`,
-              background: m.color, opacity: OPA[d._cls], borderRadius: 3 }} />
-          </span>
-          {cumOverlay(d)}
-        </span>
-        <span style={{ fontSize: d._cls === 'A' ? 11.5 : 10.5, fontWeight: d._cls === 'A' ? 800 : 600,
-          color: d._cls === 'A' ? m.color : 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right',
-          fontVariantNumeric: 'tabular-nums' }}>
-          {fmt(d._val)}{d._cls === 'A' ? ` (${d._pct.toFixed(0)}%)` : ''}
-        </span>
-      </div>
-    );
-  };
-
-  /* แถวแกน % สะสม — วางเหนือแท่ง ใช้ grid template เดียวกันเป๊ะ ขีดจึงตรงกับรางเสมอ
-     กฎ UI ข้อ "กราฟทุกตัวต้องมีแกน + ตัวเลข" (จอ TV ไม่มี hover → ไม่มีแกน = อ่านไม่ได้) */
-  const axisRow = (nameShown, compact) => (
-    <div style={{ display: 'grid', gridTemplateColumns: gridCols(nameShown, compact), gap: 8, marginBottom: 3 }}>
-      {nameShown && <span />}
-      <span style={{ position: 'relative', display: 'block', height: 13 }}>
-        {PARETO_TICKS.map(t => (
-          <span key={t} style={{ position: 'absolute', left: `${t}%`, top: 0,
-            transform: t === 0 ? 'none' : t === 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-            fontSize: 9.5, lineHeight: '13px', color: t === PARETO_CUTOFF ? 'var(--text2)' : 'var(--muted)',
-            whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{t === 100 ? '100%' : t}</span>
-        ))}
-        <span style={{ position: 'absolute', left: `${PARETO_CUTOFF}%`, top: 0, transform: 'translateX(-50%)',
-          fontSize: 9.5, lineHeight: '13px', fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap' }}>80</span>
-      </span>
-      <span style={{ fontSize: 9.5, lineHeight: '13px', color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap',
-        overflow: 'hidden', textOverflow: 'ellipsis' }} title={`ตัวเลขท้ายแถว = ${unitOf} (และ % ของยอดรวม สำหรับกลุ่ม A)`}>{unitOf}</span>
-    </div>
-  );
-
-  /* legend บอกว่าเส้นกับแท่งคนละสเกล — Pareto มี 2 แกนเสมอ ถ้าไม่บอกคนจะอ่านเส้นเป็นค่า */
-  const axisLegend = (
-    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 10, color: 'var(--muted)', marginTop: 5 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ width: 14, height: 7, borderRadius: 2, background: ABC.A.color }} /> ความยาวแท่ง = {unitOf} (เทียบกับรายการสูงสุด)
-      </span>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ width: 14, height: 0, borderTop: '2px solid var(--text)' }} /> เส้นไต่ = % สะสม (อ่านกับแกนบน)
-      </span>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ width: 14, height: 0, borderTop: '1px dashed var(--text2)' }} /> เส้น 80% = เกณฑ์ตัด vital few
-      </span>
-    </div>
-  );
-
-  /* ── โหมดย่อ: แท่ง Top N · ที่เหลือยุบแถวเดียว (2026-09-02 · คำสั่ง user "default top10 พอมั้ย
-        ที่เหลือยุบไว้ ไปโชว์ตอนกดขยาย") ──
-     เดิมยุบเฉพาะกลุ่ม C ⇒ Downtime ยัง render A(13)+B(10) = 23 แท่ง สูงเกือบ 700px
-     บนจอที่คนอ่านจริงแค่ 5-6 อันดับแรก
-     ⚠️ กฎที่ห้ามแหก:
-       · **การจัดกลุ่ม ABC ยังคำนวณจาก "ทุกรายการ" เหมือนเดิม** — ป้าย "A · 13 รายการ (81%)"
-         ต้องเป็นความจริงของทั้งชุด ไม่ใช่ของ 10 อันที่โชว์ (ไม่งั้นเปอร์เซ็นต์โกหก)
-       · **ห้ามซ่อนเงียบ** — แถวที่ยุบต้องบอกจำนวน + ยอดรวม + % และกดเปิดดูครบได้
-       · **ชิป "เน้นแก้กลุ่ม A" ด้านล่างยังโชว์ครบทุกตัว** = ลิสต์งานที่ต้องแก้ไม่มีวันหาย
-         (ตัวที่ยุบไปในกราฟยังอ่านชื่อได้จากชิป) */
-  const TOP_N = 10;
-  // เหลือเกิน 1 รายการถึงคุ้มที่จะยุบ (ยุบ 1 แถวเพื่อได้ 1 แถวคืน = ไม่ได้อะไร)
-  const nShow = rows.length > TOP_N + 1 ? TOP_N : rows.length;
-  const chartCompact = () => {
-    const rest = rows.slice(nShow);
-    const rSum = rest.reduce((s2, d) => s2 + d._val, 0);
-    const restA = rest.filter(d => d._cls === 'A').length;
-    // แถวยุบต้องพาเส้นสะสมไปจบที่ 100% ไม่งั้นเส้นขาดกลางคัน = อ่านเหมือนข้อมูลหาย
-    const restRow = { _cumPrev: rows[nShow - 1]?._cum ?? 0, _cum: 100 };
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {axisRow(true, true)}
-        {rows.slice(0, nShow).map((d, i) => barRow(d, i, { compact: true }))}
-        {rest.length > 0 && (
-          <div onClick={() => setOpen(true)} title={`อีก ${rest.length} รายการ · รวม ${fmt(rSum)} ${unitOf} — กดดูครบทุกรายการ`}
-            style={{ display: 'grid', gridTemplateColumns: gridCols(true, true), alignItems: 'center', gap: 8, cursor: 'pointer', paddingTop: 3 }}>
-            <span style={{ fontSize: 10.5, color: 'var(--muted)', textAlign: 'right' }}>
-              ⤢ อีก {rest.length} รายการ{restA > 0 ? ` (กลุ่ม A ${restA})` : ''}
-            </span>
-            <span style={{ position: 'relative', display: 'block', height: 6 }}>
-              <span style={{ position: 'absolute', inset: 0, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden' }}>
-                <span style={{ display: 'block', height: '100%', width: `${Math.max(1.5, rSum / maxVal * 100)}%`, background: ABC.C.color, opacity: OPA.C }} />
-              </span>
-              {cumOverlay(restRow)}
-            </span>
-            <span style={{ fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' }}>
-              {fmt(rSum)} ({(rSum / total * 100).toFixed(0)}%)
-            </span>
-          </div>
-        )}
-        {axisLegend}
-      </div>
-    );
-  };
-
-  // โหมดขยาย: ทุกรายการมีชื่อ (C ก็เห็น) ความหนายังต่างกันตามกลุ่ม
+  /* 🔴 กราฟใน popup ต้อง "เต็มช่อง" — ห้ามล็อกสัดส่วน viewBox ไว้ตายตัว (user 23/09 "เว้นไว้ทำไม")
+     SVG ใช้ `width:100%; height:auto` ⇒ ความสูงที่วาดจริง = กว้างช่อง × (vbH/vbW)
+     ถ้า vbH ตายตัว (เดิม 400) แล้วช่องสูงกว่านั้น ⇒ **เหลือที่ว่างใต้กราฟเป็นแถบใหญ่**
+     (วัดจริง: ช่องสูง ~640px แต่กราฟวาดได้ ~390px = ว่าง 250px)
+     ⇒ วัดช่องจริงด้วย ResizeObserver แล้วคำนวณ vbH ให้สัดส่วนตรงกับช่อง
+     ⚠️ ห้ามแก้ด้วย `preserveAspectRatio="none"` (แท่งยืดผิดสัดส่วน อ่านค่าผิด)
+        และห้ามล็อก `height` เป็น px บน svg (จะได้ letterbox ซ้าย-ขวาแทน — บั๊กเดิม 22/09) */
+  const VB_W = 1600;
+  const LEGEND_H = 46;              // แถบคำอธิบาย/ปุ่มมุมป้ายใต้ svg (อยู่นอก viewBox)
+  const chartPane = useRef(null);
+  const [paneBox, setPaneBox] = useState(null);
+  useEffect(() => {
+    const el = chartPane.current;
+    if (!open || !el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([e]) => {
+      const { width: w, height: h } = e.contentRect;
+      // อัปเดตเฉพาะตอนขยับจริง — กันลูป (กราฟสูงขึ้น → scrollbar โผล่ → กว้างลด → วัดใหม่)
+      setPaneBox(p => (p && Math.abs(p.w - w) < 3 && Math.abs(p.h - h) < 3 ? p : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+  const fullH = paneBox?.w > 0
+    ? Math.round(VB_W * Math.max(paneBox.h - LEGEND_H, 240) / paneBox.w)
+    : 400;
   const chartFull = () => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-      {axisRow(true, false)}
-      {rows.map((d, i) => barRow(d, i, { showName: true }))}
-      {axisLegend}
-    </div>
+    <ParetoChart rows={rows} unit={unitOf} height={fullH} width={VB_W} maxBars={rows.length}
+      showTailToggle={false} onPick={dims.length ? (r) => openDrill(r.name) : undefined} />
   );
+
 
   const strip = (
     <div style={{ display: 'flex', height: 7, borderRadius: 4, overflow: 'hidden', background: 'var(--bg3)', marginBottom: 8 }}>
@@ -368,36 +245,53 @@ export default function ParetoAbcChart({
         </div>
       ))}
       {chartCompact()}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 9, height: 9, borderRadius: 2, background: ABC[k].color, opacity: OPA[k] }} />
             {k} · {groups[k].length} รายการ ({(groups[k].reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%)
           </span>
         ))}
-        {/* บอกให้ชัดว่ากราฟตัดที่เท่าไหร่ — ป้าย A/B/C ข้างบนเป็นของ "ทุกรายการ" ไม่ใช่ของที่เห็น */}
-        {rows.length > nShow && (
-          <span style={{ color: 'var(--muted)' }}>
-            กราฟแสดง {nShow} อันดับแรกจาก {rows.length} · สัดส่วน A/B/C ข้างบนนับครบทุกรายการ
-          </span>
+        {/* 🔴 "แสดงกี่อันดับ" ย้ายไปอยู่ใน ParetoChart แล้ว — ที่นี่ไม่รู้ว่าผู้ใช้กางหางยาวอยู่หรือย่ออยู่
+            เดิมเขียนตายตัวว่า "แสดง 11 อันดับแรกจาก 46" แล้ว**ยังขึ้นอยู่ทั้งที่จอกางครบ 46 แท่งแล้ว**
+            (user ส่งภาพมา 22/09) · ที่เหลือไว้ตรงนี้คือสิ่งที่หน้าแม่รู้จริง = สัดส่วน A/B/C นับครบทุกรายการ */}
+        {rows.length > MAX_BARS + 1 && (
+          <span style={{ color: 'var(--muted)' }}>สัดส่วน A/B/C ข้างบนนับครบทุกรายการ ไม่ใช่เฉพาะแท่งที่เห็น</span>
         )}
         {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>🔍 คลิกแท่ง/ชิป = เจาะลึก</span>}
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
       <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>เน้นแก้กลุ่ม A →</span>
-        {groups.A.map((d, i) => (
+        {/* 🔴 กลุ่ม A ไม่ได้แปลว่า "ไม่กี่ตัว" — ข้อมูลที่หมวดกระจายมาก (เช่นพาเรโตจากข้อความอิสระ)
+            มี A ได้ถึง **499 รายการ** ⇒ เดิม render ชิปครบทุกตัว = กำแพงชิปท่วมจอ
+            (user แจ้ง 23/09 "ทำไมมันโชว์เยอะแบบนี้ ควร hide รึป่าว")
+            ⇒ โชว์เท่าที่อ่านไหว แล้วบอกว่าเหลืออีกเท่าไหร่ + กดดูครบได้
+            **ห้ามตัดทิ้งเงียบ** — ลิสต์งานที่ต้องแก้ต้องเข้าถึงได้เสมอ (กฎความซื่อสัตย์ของจอ) */}
+        <span style={{ fontSize: 11, fontWeight: 800, color: ABC.A.color }}>
+          เน้นแก้กลุ่ม A{groups.A.length > CHIP_MAX ? ` (${CHIP_MAX} จาก ${groups.A.length})` : ''} →
+        </span>
+        {groups.A.slice(0, CHIP_MAX).map((d, i) => (
           <span key={i} onClick={() => dims.length && openDrill(d.name)}
             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
             {d.name}: {fmt(d._val)} {unitOf} ({d._pct.toFixed(0)}%)
           </span>
         ))}
+        {groups.A.length > CHIP_MAX && (
+          <button type="button" onClick={() => setOpen(true)}
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700,
+              background: 'var(--bg3)', color: 'var(--text2)', border: `1px dashed ${ABC.A.color}77` }}>
+            ⤢ ดูกลุ่ม A ครบ {groups.A.length} รายการ
+          </button>
+        )}
       </div>
 
       {/* ── popup ขยาย: เห็นครบทุกรายการ + ตาราง (คลิกแถวเจาะได้) ── */}
       {open && (
         <div onClick={() => setOpen(false)} style={ovl(1250)}>
-          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 980 }}>
+          {/* popup ขยาย: กว้างขึ้น + **กราฟฟรีซ ตารางเลื่อนในตัวเอง** (user 23/09)
+              "กราฟมันเล็ก สัดส่วนตอนนี้เหมือน 50/50 … เอาให้กราฟ 70 table 30
+               ละถ้าให้ดี ฟรีซกราฟไว้ เลื่อนแค่ตาราง" */}
+          <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 1500 }}>
             <div style={head}>
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
@@ -407,9 +301,18 @@ export default function ParetoAbcChart({
               </div>
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', padding: '14px 20px 20px' }}>
+            {/* ── กราฟ: ฟรีซไว้ (ไม่เลื่อนไปกับตาราง) · ~70% ของพื้นที่ที่เหลือ ──
+                flexShrink 0 = ไม่ให้ตารางบีบกราฟให้เตี้ยลงเมื่อรายการเยอะ */}
+            {/* สัดส่วน **กราฟ 70 : ตาราง 30** ของพื้นที่ใต้หัว (user 23/09)
+                ทั้งคู่ `minHeight: 0` + เลื่อนในตัวเอง ⇒ เลื่อนตารางแล้วกราฟไม่ขยับ (ฟรีซ)
+                ⚠️ `minHeight: 0` คือตัวที่ทำให้ overflow ทำงานใน flex column — ขาดไปจะดันทะลุกรอบ */}
+            <div ref={chartPane} style={{ flex: '1 1 70%', minHeight: 0, overflowY: 'auto',
+                          padding: '14px 20px 6px', borderBottom: '1px solid var(--border)' }}>
               {chartFull()}
-              <div style={{ overflowX: 'auto', marginTop: 14 }}>
+            </div>
+            {/* ── ตาราง: เลื่อนในตัวเอง ~30% · minHeight 0 คือสิ่งที่ทำให้ overflow ทำงานใน flex column ── */}
+            <div style={{ flex: '1 1 30%', minHeight: 0, overflowY: 'auto', padding: '10px 20px 20px' }}>
+              <div style={{ overflowX: 'auto' }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                     <th style={thL}>#</th><th style={thL}>รายการ</th><th style={thC}>กลุ่ม</th>
@@ -497,12 +400,12 @@ export default function ParetoAbcChart({
                           {d._noNote ? '⚠️ ' : ''}{d.name}
                         </span>
                         <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unitOf}
-                          {hasMoney && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
+                          {hasMoney && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} ครั้ง</span>
                       </div>
                       {/* กลุ่มคำ: บอกว่ารวมข้อความที่เขียนต่างกันกี่แบบ + ตัวอย่าง — โปร่งใสว่าจับกลุ่มอะไรเข้ามา */}
                       {d.variants > 1 && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                           รวม {d.variants} แบบที่เขียนต่างกัน{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
                         </div>
                       )}
@@ -544,7 +447,14 @@ export default function ParetoAbcChart({
 
 /* ── styles ── */
 const ovl = (z) => ({ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 });
-const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' };
+/* 🔴 `overflow: hidden` บังคับให้ลูกอยู่ในกรอบ 92vh — ขาดตัวนี้ ลูกที่ `flex: 0 0 auto`
+   (เช่นบล็อกกราฟ) จะดันตารางทะลุขอบล่างจอ แล้วตัวเลื่อนด้านในไม่ทำงานเลย
+   (เจอจริง 23/09 ตอนแยกกราฟ/ตารางเป็น 2 ชั้นใน popup ขยาย) */
+const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%',
+  /* 🔴 ต้องเป็น `height` ไม่ใช่แค่ `maxHeight` — `flex-basis: 70%/30%` ของลูกจะทำงานก็ต่อเมื่อ
+     ความสูงของกล่องแม่ "แน่นอน" · ถ้ามีแต่ maxHeight ความสูงจะขึ้นกับเนื้อหา ⇒ % ตีกลับเป็น auto
+     แล้วได้สัดส่วนตามเนื้อหาแทน (เจอจริง 23/09: ตั้ง 70/30 แต่ได้ 41/59 = กลับด้าน) */
+  height: '92vh', maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
 const head = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '16px 20px 10px', borderBottom: '1px solid var(--border)' };
 const closeBtn = { background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15, flexShrink: 0 };
 const tbl = { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 520, fontVariantNumeric: 'tabular-nums' };
@@ -552,4 +462,4 @@ const tbl = { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidt
 const thL = { textAlign: 'left', padding: '5px 7px' };
 const thR = { textAlign: 'right', padding: '5px 7px' };
 const thC = { textAlign: 'center', padding: '5px 7px' };
-const clsChip = (c) => ({ fontSize: 10.5, fontWeight: 800, color: ABC[c].color, background: `${ABC[c].color}1e`, border: `1px solid ${ABC[c].color}55`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 });
+const clsChip = (c) => ({ fontSize: 11, fontWeight: 800, color: ABC[c].color, background: `${ABC[c].color}1e`, border: `1px solid ${ABC[c].color}55`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 });

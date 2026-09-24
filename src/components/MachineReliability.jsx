@@ -23,11 +23,13 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
+import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
+import Segmented from './Segmented';
+import { ALL } from '../utils/filterLabels';
+import useTimeRange from '../utils/useTimeRange';
+import { rangeDays } from '../utils/timeRange';
 
-const inp = {
-  padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
-  background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
-};
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { padding: '8px 10px', textAlign: 'left', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' };
 const td = { padding: '7px 10px', fontSize: 12.5, borderTop: '1px solid var(--border)' };
@@ -46,7 +48,11 @@ const fmtDate = (ms) => (ms
   : '—');
 
 export default function MachineReliability({ machines = [], lineObjs = [], scopeLines = null }) {
-  const [days, setDays] = useState(30);
+  /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
+     · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
+     · `days` ยังคงไว้เพราะโค้ดคำนวณด้านล่างใช้ตัวเลขนี้ — แต่มาจากช่วงที่เลือกจริงแล้ว ไม่ใช่ค่าคงที่ */
+  const tr = useTimeRange({ defaultDays: 30 });
+  const days = rangeDays(tr.from, tr.to) || 30;
   const [line, setLine] = useState('');
   const [kind, setKind] = useState('all');
   const [q, setQ] = useState('');
@@ -68,16 +74,20 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
     let alive = true;
     (async () => {
       setLoading(true); setLoadErr('');
-      const since = new Date(Date.now() - Number(days) * 86400000).toISOString();
+    /* 🔴 ต้องยึด "ช่วงที่เลือกจริง" ไม่ใช่ "N วันนับถอยจากตอนนี้" — ไม่งั้นพอเลือกช่วงในอดีต
+       จำนวนวันถูกแต่หน้าต่างเวลาผิด (ยังลากถึงวันนี้เสมอ) = ตัวเลขไม่ตรงกับที่จอบอก */
+      const since = new Date(`${tr.from}T00:00:00`).toISOString();
+      const until = new Date(`${tr.to}T00:00:00`); until.setDate(until.getDate() + 1);
+      const untilIso = until.toISOString();
       const [dtRes, sesRes] = await Promise.all([
         fetchAllRows(supabaseDR, 'downtime_logs',
           /* call_mtn_ack_at/fix_at = จังหวะ "ช่างรับงาน" และ "ซ่อมเสร็จ" — ใช้แยก MTTA ออกจากเวลาซ่อมจริง
              (ใบ MO ส่งค่ากลับมาให้ตั้งแต่ 2026-09-14 + backfill ของเก่าแล้ว) */
           'id, session_id, machine_no, started_at, ended_at, duration_min, description, call_mtn_ack_at, fix_at, dr_downtime_types(name_th, category)',
-          qq => qq.gte('started_at', since).order('started_at').order('id')),
+          qq => qq.gte('started_at', since).lt('started_at', untilIso).order('started_at').order('id')),
         fetchAllRows(supabaseDR, 'production_sessions',
           'id, line_name, work_date, shift, shift_min, start_time, end_time',
-          qq => qq.gte('work_date', since.slice(0, 10)).order('work_date').order('id')),
+          qq => qq.gte('work_date', tr.from).lte('work_date', tr.to).order('work_date').order('id')),
       ]);
       if (!alive) return;
       const errs = [dtRes.error && 'downtime', sesRes.error && 'กะการผลิต'].filter(Boolean);
@@ -86,7 +96,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [days]);
+  }, [tr.from, tr.to]);
 
   /* นโยบายเวลาพัก — ไม่ผูกกับช่วงวัน โหลดครั้งเดียว
      ⚠️ ต้องได้ process_type มาด้วย (สัญญาของ policyBreakForShift) แม้ตอนนี้ทุกแถวเป็น common */
@@ -163,15 +173,15 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {/* ── ตัวกรอง ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ ...inp, width: 140 }}>
-          {[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}
-        </select>
-        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์"
-               aria-label="ค้นหาอุปกรณ์" style={{ ...inp, width: 220 }} />
-      </div>
+      {/* ⏱️ แถบกรองเวลามาตรฐาน (UI §6.16) — ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าแม่ */}
+      <TimeRangeBar
+        scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
+      >
+        {/* ── ตัวกรอง — อยู่ในแถบเวลาแถบเดียว (UI-STANDARD 2026-09-24) ── */}
+        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+      </TimeRangeBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;
@@ -191,19 +201,10 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── สลับมุมมองการนับ — ไลน์เครื่องขนานเท่านั้นที่ตัวเลข 2 ชุดต่างกัน ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
-        {[
-          { key: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', tip: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { key: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', tip: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
-        ].map(m => {
-          const on = mode === m.key;
-          return (
-            <button key={m.key} onClick={() => setMode(m.key)} title={m.tip} style={{
-              padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? '#3b82f6' : 'var(--border2)'}`,
-              background: on ? 'rgba(59,130,246,0.12)' : 'var(--bg3)', color: on ? '#3b82f6' : 'var(--muted)',
-            }}>{m.label}</button>
-          );
-        })}
+        <Segmented value={mode} onChange={setMode} label="นับแบบ" options={[
+          { value: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { value: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+        ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
@@ -308,9 +309,9 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             <div key={k.kind} style={{ ...card, flex: 1, minWidth: 190 }}>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>{meta.icon} {meta.label} · {k.equip} ตัว</div>
               <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>{fmtDur(k.mttrMin)}</div></div>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: '#3b82f6' }}>{fmtDur(k.mtbfMin)}</div></div>
-                <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>หยุด</div><div style={{ fontSize: 16, fontWeight: 800 }}>{k.stops}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>{fmtDur(k.mttrMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: '#3b82f6' }}>{fmtDur(k.mtbfMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>หยุด</div><div style={{ fontSize: 16, fontWeight: 800 }}>{k.stops}</div></div>
               </div>
             </div>
           );
@@ -350,12 +351,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                       {r.machineName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.machineName}</div>}
                       {/* หลายสะกด = ต้นทางกรอกไม่นิ่ง — โชว์ให้ไปตามแก้ได้ */}
                       {r.rawNos.length > 1 && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)' }} title="เลขที่หน้างานพิมพ์มาแล้วระบบยุบเป็นเครื่องเดียวกัน">
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }} title="เลขที่หน้างานพิมพ์มาแล้วระบบยุบเป็นเครื่องเดียวกัน">
                           ✎ กรอกมา {r.rawNos.length} แบบ: {r.rawNos.join(' · ')}
                         </div>
                       )}
-                      {r.openStops > 0 && <div style={{ fontSize: 10.5, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
-                      {r.neverFailed && <div style={{ fontSize: 10.5, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
+                      {r.openStops > 0 && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
+                      {r.neverFailed && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
                     </td>
                     <td style={td}>
                       {meta
@@ -365,7 +366,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>
                       {r.lineName || '—'}
                       {r.parallelN > 1 && (
-                        <div style={{ fontSize: 10.5, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
+                        <div style={{ fontSize: 11, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
                           ⇄ ขนาน {r.parallelN} ตัว
                         </div>
                       )}
@@ -374,7 +375,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
                     <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}
                         title={r.phaseN > 0 ? `แยกช่วง (${r.phaseN} ครั้ง): รอช่าง ${fmtDur(r.mttaMin)} · ซ่อมจริง ${fmtDur(r.mttrPureMin)} · กลับมารัน ${fmtDur(r.restartMin)}` : 'ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง'}>
-                      {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 10, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
+                      {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
                     </td>
                     <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
                         title={v.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์ (หักเวลาพักแล้ว)'}>

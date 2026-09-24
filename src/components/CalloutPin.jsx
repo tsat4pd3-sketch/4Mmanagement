@@ -29,6 +29,11 @@ export default function CalloutPin({
   // 🔍 badge = สัญลักษณ์เล็กมุมวงเลข บอกว่าจุดนี้มี "รูปเจาะจุด" ให้กดดูซูมเข้าไปได้
   //    (feedback หน้างาน 2026-08-21: รูปมุมแคบดูไม่ออกว่าอยู่ตรงไหนของเครื่อง)
   badge,
+  /* 🔵 hollow = "ยังไม่ตรวจ" — วงโปร่ง เส้นประ (ตรวจแล้วเป็นวงทึบ)
+     🔴 ต่างกันที่ **รูปทรง ไม่ใช่แค่สี** (user 23/09 "สีหมุดยังไม่ตรวจกับตรวจแล้วต้องต่างกัน")
+        ใช้สีอย่างเดียวไม่พอ — สีประเภทจุดตรวจบังเอิญเขียวได้ แล้วชนกับสี OK
+        + จอ TV/หน้างานสีเพี้ยน และคนตาบอดสีอ่านไม่ออก (UI-CONVENTIONS §Andon) */
+  hollow,
 }) {
   /* ตำแหน่งระหว่างลาก — เก็บใน state เพื่อให้เส้น/ลูกศรขยับตามนิ้วแบบสด
      (ถ้ารอ commit ตอนปล่อย คนจะไม่เห็นว่าลากไปไหน = เล็งไม่ได้) */
@@ -88,8 +93,14 @@ export default function CalloutPin({
       <svg style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none', zIndex: 9, opacity: op, filter: 'drop-shadow(0 1px 2.5px rgba(0,0,0,0.9))' }}>
         {/* เส้นเชื่อม: หัวลูกศร (จุดจริง) → วงเลข (ปลายเส้นลอดใต้วงเลขที่วาดทับ) · casing มืดใต้เส้นให้เด่นทุกพื้นหลัง */}
         <line x1={px} y1={py} x2={bx} y2={by} stroke="rgba(0,0,0,0.55)" strokeWidth={Math.max(4, size * 0.07 + 3)} strokeLinecap="round" />
-        <line x1={px} y1={py} x2={bx} y2={by} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round" />
-        <polygon points={arrow} fill={color} stroke="#fff" strokeWidth={Math.max(1.6, size * 0.09)} strokeLinejoin="round" />
+        {/* 🔴 หมุด "ยังไม่ทำ" ต้องอ่านออกจาก **เส้นชี้** ด้วย — บนแบบที่หมุดเยอะ ตาจับเส้นก่อนวง
+           และบนมือถือหมุดเล็กสุด 20px (สูตร PK) วงประเล็กมาก เส้นประช่วยยืนยันอีกชั้น
+           (เคสจริง: ใบตรวจ QA จุด SC ยังไม่ตรวจ vs จุด NG — เส้น+ลูกศรแดงเหมือนกันเป๊ะ) */}
+        <line x1={px} y1={py} x2={bx} y2={by} stroke={color} strokeWidth={Math.max(2, size * 0.09)} strokeLinecap="round"
+          strokeDasharray={hollow ? `${Math.max(3, size * 0.16)} ${Math.max(3, size * 0.14)}` : undefined} />
+        {/* ลูกศรชี้ "จุดจริง" ต้องเห็นชัดเสมอ — ยังไม่ทำ = โปร่ง (พื้นเข้ม ขอบสี) · ทำแล้ว = ทึบ */}
+        <polygon points={arrow} fill={hollow ? 'rgba(12,18,15,0.82)' : color} stroke={hollow ? color : '#fff'}
+          strokeWidth={Math.max(1.6, size * 0.09)} strokeLinejoin="round" />
       </svg>
       {/* วงเลข (ตัวคลิก/ลาก) — หลบจากจุด */}
       <button type="button" title={title}
@@ -101,10 +112,22 @@ export default function CalloutPin({
         onPointerDown={e => { startDrag(e); onPointerDown?.(e); }}
         onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
         style={{ position: 'absolute', left: `${(bx / (layerW || 1)) * 100}%`, top: `${(by / (layerH || 1)) * 100}%`, transform: 'translate(-50%,-50%)', zIndex: drag ? 20 : 12, background: 'none', border: 'none', padding: 0, cursor: canDrag ? (drag ? 'grabbing' : 'grab') : ((onClick || onPointerDown) ? 'pointer' : 'default'), pointerEvents: (canDrag || onClick || onPointerDown) ? 'auto' : 'none', opacity: op, touchAction: 'none' }}>
-        <div style={{ position: 'relative', minWidth: size, height: size, padding: `0 ${Math.round(size * 0.15)}px`, borderRadius: 999, background: color, border: `${selected ? 3 : 2}px solid #fff`, color: '#fff', fontSize: Math.max(11, Math.round(size * 0.45)), fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: selected ? '0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,0.5)' : '0 2px 6px rgba(0,0,0,0.45)', whiteSpace: 'nowrap' }}>
+        <div style={{ position: 'relative', minWidth: size, height: size, padding: `0 ${Math.round(size * 0.15)}px`, borderRadius: 999,
+          /* ยังไม่ตรวจ = พื้นเข้มโปร่ง + ขอบประสีของสถานะ · ตรวจแล้ว = พื้นทึบสีสถานะ ขอบขาว */
+          background: hollow ? 'rgba(12,18,15,0.82)' : color,
+          border: hollow
+            ? `${selected ? 3 : 2}px dashed ${color}`
+            : `${selected ? 3 : 2}px solid #fff`,
+                    color: '#fff', fontSize: Math.max(11, Math.round(size * 0.45)), fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          /* วงเลือก: ปกติใช้สี accent (เขียว) — แต่หมุด "ยังไม่ตรวจ" ต้องไม่มีเขียวมาใกล้
+             ไม่งั้นเลือกแล้วดูเหมือนตรวจผ่าน ⇒ ใช้วงขาวแทน */
+          boxShadow: selected
+            ? `0 0 0 2px ${hollow ? '#fff' : 'var(--accent)'}, 0 2px 6px rgba(0,0,0,0.5)`
+            : '0 2px 6px rgba(0,0,0,0.45)',
+          whiteSpace: 'nowrap' }}>
           {label}
           {badge && (
-            <span style={{ position: 'absolute', right: -size * 0.18, bottom: -size * 0.18, width: size * 0.52, height: size * 0.52, borderRadius: '50%', background: '#fff', color: '#111', fontSize: Math.max(8, Math.round(size * 0.3)), lineHeight: `${size * 0.52}px`, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>{badge}</span>
+            <span style={{ position: 'absolute', right: -size * 0.18, bottom: -size * 0.18, width: size * 0.52, height: size * 0.52, borderRadius: '50%', background: '#fff', color: '#111', fontSize: Math.max(8, Math.round(size * 0.3)), lineHeight: `${size * 0.52}px`, textAlign: 'center', boxShadow: 'var(--shadow-float)' }}>{badge}</span>
           )}
         </div>
       </button>

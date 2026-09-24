@@ -21,7 +21,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -968,14 +968,15 @@ export default function Management() {
           cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
           display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
           gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          boxShadow: 'var(--shadow-sm)',   // การ์ดพนักงานใน pool = การ์ดแบน ไม่ได้ลอย (ธีมมืด = ไม่มีเงา)
         }}
       >
         {worker.employees?.image_url
           ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
           : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, width: isMobile ? undefined : '100%' }}>
+        {/* 📱 overflow hidden + เว้นขวาให้ปุ่ม ✕ — มือถือ 390px ชื่อยาวดันการ์ดล้น 366→369px (mobilesweep 24/09) */}
+        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, overflow: 'hidden', paddingRight: isMobile ? 22 : undefined, width: isMobile ? undefined : '100%' }}>
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
@@ -1383,7 +1384,7 @@ export default function Management() {
             {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
                 ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
             {!isLiveView && (
-              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
                 ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
               </div>
             )}
@@ -1984,7 +1985,11 @@ export default function Management() {
                       const rowActual = row.cards.reduce((a, c) => a + (c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)), 0);
                       const rowDemand = row.cards.reduce((a, c) => a + (c.qty || 0), 0);
                       const doneCount = row.cards.filter(c => c.isDone).length;
-                      const delayed   = positionedForCards(row.cards).filter(p => p.isDelayed).length;
+                      const rowPos    = positionedForCards(row.cards);
+                      const delayed   = rowPos.filter(p => p.isDelayed).length;
+                      // ⏱️ เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ (คิวถูกดันด้วยงานที่ค้างแล้ว) — ดู Dashboard.jsx
+                      const finMs     = projectedFinishMs(rowPos);
+                      const finOver   = finMs != null && finMs > gridEndMs;
                       const isOpen    = row.cards.some(c => c.sessionOpen);
                       const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                       const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -2005,6 +2010,14 @@ export default function Management() {
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
                                 {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
                                 {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                {finMs != null && (
+                                  <span title={finOver
+                                      ? 'งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต'
+                                      : 'เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ — คิดจากคิวจริงที่ถูกดันด้วยงานที่ค้างอยู่'}
+                                    style={{ fontSize: 11, fontWeight: 800, color: finOver ? '#ef4444' : delayed > 0 ? '#f97316' : 'var(--text2)' }}>
+                                    → จบ ~{fmtMs(finMs)}{finOver ? ' 🔴 ล้นวันงาน' : ''}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -2438,15 +2451,26 @@ export default function Management() {
               </div>
               {workers.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
+                  {/* 3 ใบนี้คือ **การแบ่งส่วนของคนกลุ่มเดียวกัน** (workers) ไม่ใช่ KPI คนละตัว — 23/09 ก้อน B
+                      เดิม: 🔵/✅/🟡 ขนาด 24px นั่งอยู่เหนือตัวเลข + ทาสีน้ำเงิน/เขียว/ส้มเป็น "สีประจำใบ"
+                      ⇒ 3 ปัญหาพร้อมกัน (1) วงกลมสีไม่ได้สื่อหัวข้อ เป็นไฟสถานะปลอมที่ใหญ่กว่าป้ายชื่อ
+                      (2) ส้มของ "งานนอกไลน์" อ่านเป็นคำเตือนทั้งที่เป็นแค่ประเภทงาน (statusTone กฎ 1)
+                      (3) เลขลอยๆ ไม่มีหน่วยและไม่มีของรวมให้เทียบว่า "14 จากกี่คน"
+                      ⇒ ตัวเลขเป็นสีปกติ + บอกหน่วย + บอกสัดส่วนของยอดรวม · emoji ถอดเฉพาะวงกลมสี
+                      (emoji ที่ "ตรงกับหัวข้อ" ยังใช้ได้ตามปกติ — อันนี้ไม่ตรง มันคือสีที่วาดเป็นตัวอักษร) */}
                   {[
-                    { label: 'พร้อมทำงาน', count: poolWorkers.length, color: '#4d9fff', icon: '🔵' },
-                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length, color: 'var(--accent)', icon: '✅' },
-                    { label: 'งานนอกไลน์', count: specialWorkers.length, color: '#f59e0b', icon: '🟡' },
+                    { label: 'พร้อมทำงาน', count: poolWorkers.length },
+                    { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length },
+                    { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '16px 20px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 24, marginBottom: 4 }}>{s.icon}</div>
-                      <div style={{ fontSize: 28, fontWeight: 800, fontFamily: 'var(--font-display)', color: s.color }}>{s.count}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{s.label}</div>
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
+                      <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
+                        {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        {Math.round(s.count / workers.length * 100)}% ของ {workers.length} คนวันนี้
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -3059,7 +3083,7 @@ function WorkerHoverCard({ card, skillDefs }) {
               : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
             }
             {fit && (
-              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
                 {fit.score}
               </div>
             )}

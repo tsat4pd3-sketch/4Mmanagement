@@ -15,6 +15,8 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -520,22 +522,18 @@ table{border-collapse:collapse}
   }, [empSearch, attendeePool]);
 
   return (
-    <div className="page-content">
+    <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
         permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
-      {/* paddingRight: 52 = เว้นที่ให้ 🔔 (fixed top-right) ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 10, paddingRight: 52 }}>
-        <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📖 อบรมสอนงาน OJT</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</div>
-        </div>
-        {canRecord && (
+      {/* PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง — ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
+      <PageHeader title="อบรมสอนงาน OJT" icon="📖"
+        sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
+        actions={canRecord ? (
           <button onClick={() => setEditing(emptyDraft())}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
             ➕ สร้างใบอบรม
           </button>
-        )}
-      </div>
+        ) : null} />
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
@@ -756,7 +754,7 @@ table{border-collapse:collapse}
       )}
 
       {signTarget && <SignPadModal title={signTarget.title} onCancel={() => setSignTarget(null)} onDone={handleSignDone} />}
-    </div>
+    </Page>
   );
 }
 

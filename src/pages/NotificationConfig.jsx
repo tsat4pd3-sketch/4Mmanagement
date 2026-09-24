@@ -6,6 +6,8 @@ import { pmTeamsSync, loadPmTeams } from '../utils/pmTeams'   // ทีมช่
 import { ROLE_OPTIONS } from '../utils/roleMeta'
 import InfoMore from '../components/InfoMore'
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -16,6 +18,8 @@ const monoStyle = { ...inputStyle, fontFamily: 'monospace' }
 /** สรุปว่า "ตอนนี้เรื่องนี้เด้งหาใคร" เป็นข้อความสั้นๆ — คนตั้งค่าต้องเห็นผลโดยไม่ต้องกางแผง */
 const targetSummary = (rule) => {
   const parts = []
+  // 🎯 ตัวนี้ขึ้นก่อนเสมอ — มันเปลี่ยน "ใครได้รับ" มากกว่าตัวกรองอื่นทั้งหมดรวมกัน (2026-09-23)
+  if (rule.inapp_cast === 'fallback') parts.push('เจ้าของงานก่อน')
   if (rule.inapp_match_section) parts.push('เฉพาะส่วนงานที่เกิดเหตุ')
   if (rule.inapp_scope_strict) parts.push('ผู้บริหารก็ถูกกรองตามส่วนงาน')
   if (rule.inapp_sections?.length) parts.push(`ส่วนงาน: ${rule.inapp_sections.join(', ')}`)
@@ -308,13 +312,11 @@ export default function NotificationConfig() {
   }
   const insertPh = (ph) => setTplDraft(d => `${d}${d && !d.endsWith(' ') && !d.endsWith('\n') ? ' ' : ''}{${ph}}`)
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>
+  if (loading) return <Page width="form"><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 920px)', margin: '0 auto' }}>
-      <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-        🔔 ตั้งค่าระบบแจ้งเตือน (Telegram)
-      </h1>
+    <Page width="form">
+      <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
       </div>
@@ -504,6 +506,31 @@ export default function NotificationConfig() {
 
                         {openTarget === rule.event_key && (
                           <div style={{ marginTop: 8, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* 🎯 2026-09-23 — ตัวเลือกที่แก้ "ยิงมั่ว" ที่ต้นเหตุ (คำสั่ง user "หารูทคอสและแก้")
+                                รูทคอส: ทะเบียนตอบคำถามผิดข้อ — ถามว่า "คนประเภทไหนควรรู้เรื่องชนิดนี้"
+                                แทนที่จะถาม "ใครต้องลงมือกับรายการนี้" ⇒ ผู้รับ = |คนใน role| × |ทุกเหตุการณ์|
+                                วัด 30 วัน: 64% ของแถวทั้งระบบส่งให้คนที่ไม่เคยเปิดอ่านเลยสักใบ
+                                (และคนกลุ่มนั้นไม่ใช่บัญชีร้าง — login สัปดาห์นี้ แต่ไม่ใช้กระดิ่ง)
+                                ⚠️ วางไว้บนสุดโดยตั้งใจ: ตัวกรองข้างล่างแค่ "เล็ม" ตัวนี้แก้ที่ต้นเหตุ */}
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
+                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              <input type="checkbox" checked={rule.inapp_cast === 'fallback'}
+                                onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
+                                style={{ marginTop: 2, flexShrink: 0 }} />
+                              <span>
+                                <b>🎯 ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
+                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
+                                  แล้วจะยิงตาม role <b>ต่อเมื่อรายการไม่มีชื่อใครเลย</b> — ใบไม่มีทางเดินไปเงียบๆ
+                                  <div style={{ marginTop: 3 }}>
+                                    ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
+                                    — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
+                                  </div>
+                                </div>
+                              </span>
+                            </label>
+
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer' }}>
                               <input type="checkbox" checked={!!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
@@ -641,6 +668,6 @@ export default function NotificationConfig() {
         2. สร้างกลุ่มแต่ละเรื่อง แล้ว <b>add บอท</b> เข้ากลุ่ม (เป็นสมาชิกก็พอ)<br />
         3. add <b>@getidsbot</b> เข้ากลุ่มชั่วคราว → บอก <code>Group ID: -100…</code> → copy ใส่ช่อง chat_id → บันทึก → ทดสอบ
       </div>
-    </div>
+    </Page>
   )
 }

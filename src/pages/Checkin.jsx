@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -17,6 +17,11 @@ import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '.
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
@@ -166,7 +171,7 @@ export default function Checkin() {
     if (q.length < 2) { setBorrowResults([]); return; }
     const t = setTimeout(async () => {
       setBorrowLoading(true);
-      const { data } = await onlyDirectStaff(supabase.from('employees')
+      const { data } = await onlyShopfloorStaff(supabase.from('employees')
         .select('id, employee_id_code, name, image_url, line_id, section, team')
         .eq('is_active', true))
         .or(`name.ilike.%${q}%,employee_id_code.ilike.%${q}%`)
@@ -213,7 +218,7 @@ export default function Checkin() {
       .select(LINE_COLUMNS).order('section').order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
     setLines(lineData || []);
 
-    let empQ = onlyDirectStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
+    let empQ = onlyShopfloorStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
     if (role === 'leader') {
       if (lineId) {
         const famIdsQ = getLineFamilyIds(lineData || [], Number(lineId));
@@ -870,7 +875,7 @@ export default function Checkin() {
       const days = [];
       for (let d = dayFrom; d <= dayTo; d++) days.push(d);
 
-      let empQ = onlyDirectStaff(supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true)).order('employee_id_code');
+      let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, employee_id_code, name, position, line_id, section').eq('is_active', true)).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       if (role === 'leader') {
         if (lineId) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
@@ -1105,7 +1110,7 @@ export default function Checkin() {
   }, {});
 
   return (
-    <div className="page-content">
+    <Page>
       {/* 🤝 Modal ยืมพนักงานข้ามไลน์ */}
       {showBorrowModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -1128,12 +1133,8 @@ export default function Checkin() {
               <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder="— เลือกไลน์ปลายทาง —"
                 style={{ padding: '7px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 200, flex: 1 }} onChange={setBorrowLineId} />
             </div>
-            <input
-              type="text" value={borrowSearch} onChange={e => setBorrowSearch(e.target.value)}
-              placeholder="🔎 ค้นหาพนักงานทั้งโรงงาน — ชื่อ หรือ รหัสพนักงาน (อย่างน้อย 2 ตัวอักษร)"
-              autoFocus
-              style={{ padding: '9px 12px', borderRadius: 8, fontSize: 13, marginBottom: 10 }}
-            />
+            <SearchInput value={borrowSearch} onChange={setBorrowSearch} autoFocus grow={false}
+              fields="ชื่อ / รหัสพนักงาน (อย่างน้อย 2 ตัวอักษร)" style={{ marginBottom: 10 }} />
             <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg2)', minHeight: 120 }}>
               {borrowLoading && <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>⏳ กำลังค้นหา...</div>}
               {!borrowLoading && borrowSearch.trim().length >= 2 && borrowResults.length === 0 && (
@@ -1175,12 +1176,9 @@ export default function Checkin() {
         </div>
       )}
 
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px, 3vw, 22px)', color: 'var(--text)' }}>
-            📝 เช็คชื่อ & PPE
-          </h2>
+      {/* Header — UI-STANDARD 2026-09-24: ชิปกะ/วันที่อยู่ใน sub · ปุ่มอยู่ใน actions */}
+      <PageHeader title="เช็คชื่อ & PPE" icon="📝"
+        sub={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{
             padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
             background: shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
@@ -1190,9 +1188,9 @@ export default function Checkin() {
             {shiftInfo.label} · {shiftInfo.timeRange}
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
-        </div>
-        {/* flexWrap — ปุ่ม Preview กะดึก + ปุ่มข้างๆ รวมกันยาวเกินจอ 320px แล้วดันล้น */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        </span>}
+        actions={<>
+        {/* ปุ่ม Preview กะดึก + ปุ่มข้างๆ — กล่อง actions ของ PageHeader wrap ให้เอง (เดิมล้นจอ 320px) */}
           {realShiftInfo.shift === 'day' && (
             <button
               onClick={() => setPreviewNight(p => !p)}
@@ -1272,8 +1270,7 @@ export default function Checkin() {
           >
             {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
           </button>
-        </div>
-      </div>
+        </>} />
 
       {/* แถบตัวตนคนล็อกอิน — กันเช็คชื่อผิด session บนเครื่องแชร์ (หัวหน้ากะก่อนไม่ logout)
           เด่นชัดตลอดเวลา + ปุ่มสลับผู้ใช้ในตัว · Andon: นิ่ง ไม่กระพริบ (แค่เตือนตัวตน ไม่ใช่ alarm) */}
@@ -1306,15 +1303,11 @@ export default function Checkin() {
 
       {/* Section & Line filter bar — supervisor only */}
       {role !== 'leader' && lines.length > 0 && (
-        <div style={{
-          background: 'var(--card)', border: '1px solid var(--border)',
-          borderRadius: 10, padding: '12px 16px', marginBottom: 14,
-          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
-        }}>
+        <FilterBar style={{ marginBottom: 14 }}>
           {/* Section tabs — ต้อง wrap เสมอ: section เยอะ (14 ส่วน) เรียงแถวเดียวกว้าง ~1180px
               บนมือถือจะถูก main (overflow-x:hidden) ตัดหายจนกดปุ่มที่เกินขอบไม่ได้ */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Section</span>
+            <span className="filter-label">ส่วนงาน</span>
             <button
               onClick={() => { setSelSection(''); setSelLine(''); }}
               style={{
@@ -1323,7 +1316,7 @@ export default function Checkin() {
                 background: selSection === '' ? 'var(--accent-dim)' : 'var(--bg3)',
                 color: selSection === '' ? 'var(--accent)' : 'var(--text2)',
               }}
-            >ทั้งหมด</button>
+            >{ALL.section}</button>
             {sections.map(sec => (
               <button
                 key={sec}
@@ -1339,23 +1332,23 @@ export default function Checkin() {
           </div>
 
           {/* Divider */}
-          {selSection && <div style={{ width: 1, height: 28, background: 'var(--border)' }} />}
+          {selSection && <span className="sep" />}
 
-          {/* Line dropdown */}
+          {/* Line dropdown — ตัวเลือกเป็นไลน์ในส่วนงานที่เลือก (cascade) */}
           {selSection && (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, letterSpacing: '1.5px', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>ไลน์</span>
+              <span className="filter-label">ไลน์</span>
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง cascade section→line เดิม (linesForSection) */}
-              <LineSelect lines={linesForSection} value={selLine} valueKey="id" placeholder={`— ทุกไลน์ใน ${selSection} —`}
-                style={{ padding: '6px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 180 }} onChange={setSelLine} />
+              <LineSelect lines={linesForSection} value={selLine} valueKey="id" placeholder={ALL.line} onChange={setSelLine} />
             </div>
           )}
 
+          <span className="spacer" />
           {/* Employee count badge */}
-          <div style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
+          <span className="filter-count">
             แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
-          </div>
-        </div>
+          </span>
+        </FilterBar>
       )}
 
       {/* Summary pills */}
@@ -1853,7 +1846,7 @@ export default function Checkin() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ทีม</label>
                 <select value={otBookTeam} onChange={e => setOtBookTeam(e.target.value)}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="">— ทุกทีม —</option>
+                  <option value="">{ALL.team}</option>
                   {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
                 </select>
               </div>
@@ -1938,7 +1931,7 @@ export default function Checkin() {
             <select value={exportSection} onChange={e => setExportSection(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
               {/* จำกัดตัวเลือกตาม scope — "ทุกส่วนงาน" เฉพาะ user ที่ไม่ถูกจำกัดขอบเขต (query ใน handleExportForms กรอง scope ซ้ำอีกชั้นเสมอ) */}
-              <option value="">{scopeSecs.length ? '— ทุกส่วนงานใน scope —' : '— ทุกส่วนงาน —'}</option>
+              <option value="">{ALL.section}</option>
               {(scopeSecs.length ? sections.filter(s => inSectionScope(scopeSecs, s)) : sections)
                 .map(s => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -1953,6 +1946,6 @@ export default function Checkin() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

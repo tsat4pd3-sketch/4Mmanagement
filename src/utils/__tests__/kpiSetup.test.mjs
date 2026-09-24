@@ -6,7 +6,8 @@ import {
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
   providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
-  isStdFixed, isStdParent, checkStdSelection,
+  isStdFixed, isStdParent, checkStdSelection, matchStdItems,
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -298,4 +299,136 @@ test('เตือน "ขาดข้อบังคับ" — จับคู
 
   // ไม่ส่งทะเบียนมา = ตรวจแค่น้ำหนัก ห้ามเดาว่าขาดข้อบังคับ
   assert.deepEqual(checkStdSelection([{ weight: 50 }]).missingFixed, []);
+});
+
+/* ── matchStdItems — จับคู่ทะเบียนมาตรฐานกับแถวในใบจริง (2026-09-23) ───────────────
+   บั๊กที่กันไว้: `kpi_definitions` เก็บชื่อที่ `name` ไม่ใช่ `topic` ⇒ ถ้าจับคู่ด้วย `topic`
+   อย่างเดียว ข้อ fixed ที่หยิบเข้าใบแล้วจะถูกฟ้องว่า "ยังไม่ได้หยิบ" ทุกข้อ = จอโกหก */
+test('matchStdItems: จับคู่ด้วย name ของใบจริงได้ (ไม่ใช่แค่ topic)', () => {
+  const std = [
+    { id: 'i1', topic: 'Total Sales', requirement: 'fixed' },
+    { id: 'i2', topic: ' EBIT ', requirement: 'fixed' },
+    { id: 'i3', topic: 'New Model', requirement: 'choice' },
+  ];
+  const rows = [{ name: 'total sales', weight: 20 }, { name: 'EBIT', weight: 30 }];
+  const m = matchStdItems(std, rows);
+  assert.equal(m.length, 3);
+  assert.ok(m[0].row, 'ตัวพิมพ์เล็ก/ใหญ่ต้องไม่ทำให้จับคู่พลาด');
+  assert.ok(m[1].row, 'ช่องว่างหัวท้ายต้องไม่ทำให้จับคู่พลาด');
+  assert.equal(m[2].row, null, 'ข้อที่ยังไม่หยิบต้องคืน null');
+});
+
+test('matchStdItems: std_item_id ชนะการจับคู่ด้วยชื่อ · ข้อมูลว่างไม่พัง', () => {
+  const std = [{ id: 'i1', topic: 'Safety' }];
+  assert.equal(matchStdItems(std, [{ std_item_id: 'i1', name: 'เปลี่ยนชื่อไปแล้ว' }])[0].row.std_item_id, 'i1');
+  assert.deepEqual(matchStdItems([], []), []);
+  assert.deepEqual(matchStdItems(null, null), []);
+  assert.equal(matchStdItems(std, [{ name: '' }, { name: null }])[0].row, null);
+});
+
+test('checkStdSelection: ข้อ fixed ที่หยิบเข้าใบแล้วด้วยชื่อ (name) ต้องไม่ถูกฟ้องว่าขาด', () => {
+  const std = [
+    { id: 'a', topic: 'Total Sales', requirement: 'fixed' },
+    { id: 'b', topic: 'EBIT', requirement: 'fixed' },
+    { id: 'c', topic: 'Activity' },                       // แถวหัวข้อแม่ ไม่นับเป็น KPI
+  ];
+  const r = checkStdSelection([{ name: 'Total Sales', weight: 50 }], std);
+  assert.deepEqual(r.missingFixed.map(x => x.id), ['b']);
+  assert.equal(r.ok, false, 'ขาดข้อบังคับ = ยังไม่ผ่านกติกา แม้น้ำหนักครบ 50');
+  assert.equal(r.weight, 50);
+  const r2 = checkStdSelection([{ name: 'Total Sales', weight: 25 }, { name: 'ebit', weight: 25 }], std);
+  assert.deepEqual(r2.missingFixed, []);
+  assert.equal(r2.ok, true);
+});
+
+
+/* ══ ตั้งค่า 2 ชั้น: ทะเบียน = ค่าตั้งต้น · นิยามรายแถว = override (24/09 · user เคาะ "2 ชั้น") ══
+   ที่มาของโจทย์: เด็ค KPI Management Review H1 FY2026 — Scrap ต้องรวมทั้งปี (1,628) แต่จอเฉลี่ย (271.4)
+   · PPM ทางการคิดจากยอดรวมทั้งปี (276) จอเฉลี่ยรายเดือน (287.3) · MTBF ใบ JIG "นาที" เด็ค "ชม." */
+
+const CAT = { unit: '%', decimals: 2, summary_mode: 'average' };
+
+test('unitOf: หน่วยของแถวชนะทะเบียน · ว่าง = ตกไปที่ทะเบียน · ไม่มีทั้งคู่ = สตริงว่าง', () => {
+  assert.equal(unitOf({ unit: 'นาที', kpi_catalog: { unit: 'ชม.' } }), 'นาที', 'ใบ JIG ใช้ "นาที" ทับเด็คที่ใช้ "ชม."');
+  assert.equal(unitOf({ unit: null, kpi_catalog: { unit: 'ชม.' } }), 'ชม.');
+  assert.equal(unitOf({ unit: '', kpi_catalog: { unit: 'ชม.' } }), 'ชม.', 'สตริงว่าง = ไม่ override');
+  assert.equal(unitOf({ kpi_catalog: {} }), '');
+  assert.equal(unitOf(null), '');
+});
+
+test('decimalsOf: แถวชนะทะเบียน · 0 ต้องใช้ได้ (ไม่ใช่ falsy ตกไป default) · นอกช่วงถูกบีบ 0-6', () => {
+  assert.equal(decimalsOf({ decimals: 0, kpi_catalog: CAT }), 0, '0 ทศนิยมคือค่าที่ตั้งจริง ไม่ใช่ "ไม่ได้ตั้ง"');
+  assert.equal(decimalsOf({ decimals: 3, kpi_catalog: CAT }), 3);
+  assert.equal(decimalsOf({ decimals: null, kpi_catalog: CAT }), 2, 'null = ตามทะเบียน');
+  assert.equal(decimalsOf({ decimals: '', kpi_catalog: { decimals: 1 } }), 1);
+  assert.equal(decimalsOf({ decimals: 99 }), 6);
+  assert.equal(decimalsOf({ decimals: -3 }), 0);
+  assert.equal(decimalsOf({ decimals: 'abc', kpi_catalog: { decimals: 1 } }), 1, 'ค่าพังของแถว = ถอยไปทะเบียน');
+  assert.equal(decimalsOf({}), 2, 'ไม่มีอะไรเลย = 2');
+  assert.equal(decimalsOf(null), 2);
+});
+
+test('summaryModeOf: อ่านจากทะเบียนเท่านั้น · คีย์แปลก = average (ไม่ใช่พัง)', () => {
+  assert.equal(summaryModeOf({ kpi_catalog: { summary_mode: 'sum' } }), 'sum');
+  assert.equal(summaryModeOf({ kpi_catalog: { summary_mode: 'rate' } }), 'rate');
+  assert.equal(summaryModeOf({ kpi_catalog: { summary_mode: 'ไม่รู้จัก' } }), 'average');
+  assert.equal(summaryModeOf({ kpi_catalog: {} }), 'average');
+  assert.equal(summaryModeOf(null), 'average');
+  // 🔒 override รายแถวไม่ได้ตั้งใจ — ใส่ summary_mode ที่แถวต้องไม่ชนะทะเบียน
+  assert.equal(summaryModeOf({ summary_mode: 'sum', kpi_catalog: { summary_mode: 'average' } }), 'average',
+    'วิธีรวมเป็นของตัวตน KPI — แถวตั้งทับไม่ได้ ไม่งั้นแต่ละแผนกรวมคนละแบบแล้วเทียบกันไม่ได้');
+});
+
+test('summaryShort / summaryModeLabel มีป้ายครบทุกโหมดที่ประกาศไว้', () => {
+  KPI_SUMMARY_MODES.forEach((m) => {
+    assert.ok(summaryShort(m.key) && summaryShort(m.key) !== 'เฉลี่ย' || m.key === 'average', `ป้ายสั้นของ ${m.key}`);
+    assert.equal(summaryModeLabel(m.key), m.label);
+  });
+  assert.equal(summaryShort('ไม่รู้จัก'), 'เฉลี่ย');
+});
+
+test('summaryOf: รวมตามวิธีของ KPI ตัวนั้น — ตัวเลขตรงกับเด็ค H1 FY2026', () => {
+  const scrap = [309.9, 212.9, 245.8, 194.2, 307.1, 358.6];   // PD3 · Defect/Scrap Cost (พันบาท)
+  const sum = summaryOf(scrap, { kpi_catalog: { summary_mode: 'sum' } });
+  assert.equal(Math.round(sum.value * 10) / 10, 1628.5, 'เด็คเขียน ฿1,628K');
+  assert.equal(sum.mode, 'sum');
+  assert.equal(sum.approx, false);
+
+  const oee = [84.51, 82.7, 86.34, 85.08, 81.8, 82.34];        // PD3 · OEE
+  assert.equal(Math.round(summaryOf(oee, { kpi_catalog: { summary_mode: 'average' } }).value * 100) / 100, 83.8);
+
+  // สะสม (Sales/Head · TS Academy) = เอาค่าสูงสุด ไม่ใช่เฉลี่ย
+  assert.equal(summaryOf([0.4, 1.2, 2.37], { kpi_catalog: { summary_mode: 'max' } }).value, 2.37);
+  // เดือนล่าสุดที่กรอก (ข้ามเดือนว่างท้ายตาราง)
+  assert.equal(summaryOf([1, 2, 3, null, null], { kpi_catalog: { summary_mode: 'as_of' } }).value, 3);
+});
+
+test('summaryOf โหมด rate ที่ไม่มียอดดิบ → ถอยมาเฉลี่ย + ชูธง approx (จอต้องติดป้าย ≈)', () => {
+  const ppm = [200, 262, 186, 378, 403, 295];                  // PD3 · Internal Quality Rate
+  const r = summaryOf(ppm, { kpi_catalog: { summary_mode: 'rate' } });
+  assert.equal(Math.round(r.value * 10) / 10, 287.3, 'เฉลี่ยรายเดือน — ไม่ใช่ 276 ที่เด็คคิดจากยอดรวมทั้งปี');
+  assert.equal(r.mode, 'rate');
+  assert.equal(r.effMode, 'average');
+  assert.equal(r.approx, true, 'ต้องบอกว่าไม่ใช่ตัวเลขทางการ ห้ามโชว์เงียบๆ');
+
+  // มียอดดิบเมื่อไหร่ ต้องได้สูตรทางการและไม่ใช่ approx
+  const real = summaryOf(ppm, { kpi_catalog: { summary_mode: 'rate' } }, { num: [3, 4], den: [10000, 20000], scale: 1e6 });
+  assert.equal(Math.round(real.value), 233);
+  assert.equal(real.approx, false);
+});
+
+test('summaryOf: ทุกเดือนว่าง = null ทุกโหมด **ห้ามคืน 0**', () => {
+  KPI_SUMMARY_MODES.filter(m => m.key !== 'rate').forEach((m) => {
+    assert.equal(summaryOf([null, null, ''], { kpi_catalog: { summary_mode: m.key } }).value, null, m.key);
+  });
+});
+
+test('fmtKpi: ใช้ทศนิยมของแถว · ค่าที่ไม่ใช่ตัวเลข = สตริงว่าง ห้ามกลายเป็น 0', () => {
+  assert.equal(fmtKpi(1628.55, { decimals: 1 }), '1,628.6');
+  assert.equal(fmtKpi(1628.55, { decimals: 0 }), '1,629');
+  assert.equal(fmtKpi(83.795, { kpi_catalog: { decimals: 2 } }), '83.8');
+  assert.equal(fmtKpi(null, {}), '');
+  assert.equal(fmtKpi('', {}), '');
+  assert.equal(fmtKpi('ไม่ใช่เลข', {}), '');
+  assert.equal(fmtKpi(0, { decimals: 0 }), '0', '0 ต้องแสดงเป็น 0 ไม่ใช่ว่าง');
 });

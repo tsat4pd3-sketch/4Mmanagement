@@ -15,7 +15,7 @@
    ⚠️ สูตรทั้งหมดอยู่ src/utils/energy.js — ห้ามคำนวณเองในไฟล์นี้ */
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import {
-  ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
+  ResponsiveContainer, ComposedChart, BarChart, LineChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, Tooltip, Legend, Cell, ReferenceLine,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -25,6 +25,8 @@ import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
 import useTabParam from '../utils/useTabParam';
 import {
   monthKeyOf, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct,
@@ -36,8 +38,13 @@ import {
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
+import { shortTick, fmtAxis, alignedYWidth } from '../utils/chartAxis';
+/* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
+const fmtPieces = v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v || 0).toLocaleString());
 
-const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
+// ปุ่ม ◀ ▶ ในแถบเดือน — สูง/มุมจาก token ของแถบกรอง (--ctl-h/--ctl-r)
+const monthBtn = { width: 36, height: 'var(--ctl-h)', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer', padding: 0 };
+const inp = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
 const th = { textAlign: 'left', fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, padding: '7px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 const td = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 12.5 };
@@ -412,20 +419,20 @@ export default function Energy() {
           {p?.section && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}> · {p.section}</span>}
           {/* แม่อยู่คนละตาราง = เยื้องใต้กันไม่ได้ (จะไปเยื้องใต้ไลน์อื่นที่ไม่เกี่ยวกัน) → บอกด้วยข้อความแทน */}
           {p?.outsideParent && !coveredName && (
-            <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+            <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}
               title="ไลน์แม่ไม่ได้อยู่ในตารางนี้ (คนละชั้นมิเตอร์) จึงไม่ได้เยื้องใต้กัน">
               {' '}· ใต้ {p.outsideParent}
             </span>
           )}
           {/* ⚠️ ห้ามให้ค่าแม่กับค่าลูกบวกกันเงียบๆ — บอกตรงๆ ว่าแถวนี้ถูกนับที่ไหน */}
           {coveredName && (
-            <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
+            <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
               title="ไลน์แม่กรอกค่ารวมไว้แล้ว ค่าแถวนี้จึงเป็นรายละเอียดย่อย ไม่ถูกบวกซ้ำเข้ายอดรวม">
               ↳ นับรวมอยู่ใน <b>{coveredName}</b> แล้ว · ไม่บวกซ้ำเข้ายอดที่วัดได้
             </div>
           )}
           {roll?.childCount > 0 && (
-            <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}
               title="ทวนว่าค่าที่ลงไว้ที่ไลน์แม่ ครอบคลุมไลน์ลูกที่ลงไว้แค่ไหน">
               ประกอบด้วยไลน์ย่อยที่ลงไว้ {roll.childCount} จุด รวม {fmtKwh(roll.childQty)} kWh
               {childPct != null && <> = <b>{childPct}%</b> ของค่านี้{childPct > 102 ? ' ⚠ ลูกมากกว่าแม่' : ''}</>}
@@ -435,12 +442,12 @@ export default function Energy() {
               ยังไม่ได้ตั้ง = บอกให้รู้ ห้ามแสดงเป็นช่องว่างเฉยๆ (คนจะนึกว่าไม่มีความสัมพันธ์) */}
           {!isPlant && p.kind === 'zone' && (
             feeds?.length > 0 ? (
-              <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginTop: 2 }}
                 title="จาก Supply route (ฐานข้อมูลเครื่องจักร → เครื่อง facility → 🔗 Supply route)">
                 จ่ายให้: {feeds.slice(0, 4).join(', ')}{feeds.length > 4 ? ` +${feeds.length - 4}` : ''}
               </div>
             ) : (
-              <div style={{ fontSize: 10.5, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
+              <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
                 title="ตั้งที่ /machine-database → แก้เครื่อง facility → แผง 🔗 Supply route">
                 ⚠ ยังไม่ได้ตั้งว่าจ่ายให้ไลน์ไหน
               </div>
@@ -497,19 +504,20 @@ export default function Energy() {
   );
 
   return (
-    <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
         tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' },
           ...(mqttReady ? [{ key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }] : [])]}
         tab={tab} onTab={setTab}
-        actions={
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button onClick={() => setMonth(m => shiftMonth(m, -1))} style={{ ...inp, width: 36, cursor: 'pointer' }}>◀</button>
-            <input type="month" value={month} max={monthKeyOf()} onChange={e => e.target.value && setMonth(e.target.value)} style={{ ...inp, width: 150 }} />
-            <button onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= monthKeyOf()}
-              style={{ ...inp, width: 36, cursor: month >= monthKeyOf() ? 'not-allowed' : 'pointer', opacity: month >= monthKeyOf() ? 0.4 : 1 }}>▶</button>
-          </div>}
       />
+      {/* แถบเดือน = FilterBar มาตรฐาน (UI-STANDARD 2026-09-24 — เดิมอยู่ในช่องปุ่มหัวเพจ ช่องสูง 31/33 มุม 7) */}
+      <FilterBar>
+        <span className="filter-label">เดือน</span>
+        <button className="ctl-btn" onClick={() => setMonth(m => shiftMonth(m, -1))} style={monthBtn} aria-label="เดือนก่อน">◀</button>
+        <input type="month" value={month} max={monthKeyOf()} onChange={e => e.target.value && setMonth(e.target.value)} />
+        <button className="ctl-btn" onClick={() => setMonth(m => shiftMonth(m, 1))} disabled={month >= monthKeyOf()} aria-label="เดือนถัดไป"
+          style={{ ...monthBtn, cursor: month >= monthKeyOf() ? 'not-allowed' : 'pointer', opacity: month >= monthKeyOf() ? 0.4 : 1 }}>▶</button>
+      </FilterBar>
 
       <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--text2)' }}>
         ✍️ <b>เฟส 1 — ตัวเลขมาจากการกรอกมือ</b> ยังไม่ได้ต่อมิเตอร์อัตโนมัติ · ใช้ดูแนวโน้มและเทียบเดือนได้
@@ -579,7 +587,7 @@ export default function Energy() {
                   {cover.unmetered == null ? '—' : fmtKwh(cover.unmetered)}
                   {cover.coverPct != null && <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}> · {Math.round(100 - cover.coverPct)}% ของบิล</span>}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   สำนักงาน · แสงสว่าง · ส่วนกลาง · จุดที่ยังไม่มีมิเตอร์ — <b>ไม่ใช่ข้อผิดพลาด</b>
                 </div>
               </div>
@@ -635,7 +643,7 @@ export default function Energy() {
                   <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
+                    <YAxis width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
                     <Tooltip contentStyle={tipStyle} formatter={(v, n) => [v == null ? '—' : Math.round(v).toLocaleString(), n]} />
                     <Legend wrapperStyle={{ fontSize: 11.5 }} />
                     <Bar dataKey="bill" name="บิลทั้งโรงงาน" fill={ACCENT} radius={[3, 3, 0, 0]} />
@@ -662,18 +670,38 @@ export default function Energy() {
                       <span style={{ color: GOOD }}> ยอดขึ้น + SEC ลง = ดี</span> ·
                       <span style={{ color: BAD }}> ยอดเท่าเดิม + SEC ขึ้น = มีของรั่ว/เครื่องเสื่อม</span>
                     </div>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
+                    {/* 📊 2 กราฟซ้อนแกน X เดียวกัน — **ห้ามกลับไปเป็นกราฟแกน Y 2 ข้าง** (23/09 ก้อน C)
+                        เดิมเป็น ComposedChart ที่มี `yAxisId="l"` (ชิ้น) กับ `yAxisId="r"` (kWh/ชิ้น) ซ้อนกัน
+                        ⇒ กราฟ 2 แกน Y เป็นกับดักคลาสสิกของ data-viz: **จุดที่เส้นตัดแท่งเป็นของปลอม**
+                           เพราะสเกล 2 ข้างตั้งเองอิสระ — ขยับสเกลข้างเดียวก็เปลี่ยน "เรื่องเล่า" ได้ทันที
+                           (เส้นอยู่เหนือแท่ง/ตัดกันตรงไหน ไม่ได้แปลว่าอะไรเลย แต่ตาคนอ่านว่ามันแปลว่าอะไร)
+                        คำถามจริงของแผงนี้คือ **"2 เส้นนี้ไปทางเดียวกันหรือสวนกัน"** (เขียนไว้ข้างบนแล้ว:
+                        ยอดขึ้น + SEC ลง = ดี) ⇒ วางซ้อนกันคนละกราฟ แกน X ตรงกัน = เทียบทิศทางได้ตรงๆ
+                        โดยไม่มีสเกลปลอมให้เข้าใจผิด · `YAxis width={54}` ทั้งคู่ = พื้นที่กราฟตรงกันเป๊ะ
+                        (ถ้าไม่ล็อก ความกว้างป้ายแกนต่างกัน → เดือนเดียวกันไม่ตรงคอลัมน์กัน = เทียบไม่ได้) */}
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 2 }}>ผลิตได้ (ชิ้น)</div>
+                    <ResponsiveContainer width="100%" height={130}>
+                      <BarChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="label" tick={false} height={4} />
+                        {/* ⚠️ ย่อเป็น "k" ได้เฉพาะตอนเลขใหญ่จริง — ยอดหลักพันจะได้ "2k 1k 1k 0k" ซ้ำกัน
+                            (ปัดเศษชนกัน) = แกนที่อ่านค่าไม่ได้เลย · เห็นชัดตอนแยกกราฟ 23/09 */}
+                        {/* 2 กราฟซ้อนแกน X เดียวกัน ⇒ ความกว้างแกน Y ต้องเท่ากัน (§6.19) — คำนวณจากตัวเลขจริงของทั้งคู่ ไม่ใช่เลขตายตัว */}
+                        <YAxis width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: 'var(--muted)' }}
+                          tickFormatter={fmtPieces} />
+                        <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : Math.round(v).toLocaleString(), 'ผลิตได้ (ชิ้น)']} />
+                        <Bar dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b', marginTop: 6, marginBottom: 2 }}>kWh ต่อชิ้น (SEC)</div>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <LineChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                        <YAxis yAxisId="l" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Math.round(v / 1000) + 'k'} />
-                        <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 11, fill: '#f59e0b' }} />
-                        <Tooltip contentStyle={tipStyle}
-                          formatter={(v, n) => [v == null ? '—' : (n === 'kWh ต่อชิ้น (SEC)' ? v : Math.round(v).toLocaleString()), n]} />
-                        <Legend wrapperStyle={{ fontSize: 11.5 }} />
-                        <Bar yAxisId="l" dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
-                        <Line yAxisId="r" type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
-                      </ComposedChart>
+                        <YAxis tickFormatter={fmtAxis} width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: '#f59e0b' }} />
+                        <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : v, 'kWh ต่อชิ้น (SEC)']} />
+                        <Line type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+                      </LineChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       <span>📏 <b>{PIECE_BASIS_LABEL}</b> — ต่างจากจอผลิตที่นับเป็น stroke (1 ปั๊ม = 1)</span>
@@ -711,7 +739,7 @@ export default function Energy() {
                     <BarChart data={contribRows} layout="vertical" margin={{ top: 4, right: 60, left: 8, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Math.round(v).toLocaleString()} />
-                      <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11, fill: 'var(--text2)' }} />
+                      <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={shortTick(16)} />
                       <Tooltip contentStyle={tipStyle}
                         formatter={(v, n, o) => [`${v > 0 ? '+' : ''}${Math.round(v).toLocaleString()} kWh (${o.payload.pct == null ? 'จุดใหม่' : `${o.payload.pct > 0 ? '+' : ''}${o.payload.pct}%`})`, 'ส่วนต่าง']} />
                       <ReferenceLine x={0} stroke="var(--border2)" />
@@ -737,7 +765,7 @@ export default function Energy() {
                   <BarChart data={compData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
+                    <YAxis width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
                     <Tooltip contentStyle={tipStyle} formatter={v => Math.round(v).toLocaleString()} />
                     <Legend wrapperStyle={{ fontSize: 11.5 }} />
                     {compPts.map((p, i) => (
@@ -766,9 +794,9 @@ export default function Energy() {
                       <tr key={keyOf(p)}>
                         <td style={{ ...td, fontWeight: 600, paddingLeft: 8 + (p.depth || 0) * 16 }}>
                           {ptLabel(p)}
-                          {p.outsideParent && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 10.5 }}
+                          {p.outsideParent && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}
                             title="ไลน์แม่ไม่มีข้อมูลในช่วงนี้ จึงไม่ได้อยู่ในตาราง"> · ใต้ {p.outsideParent}</span>}
-                          {meteredSet.has(keyOf(p)) && <span title="มีมิเตอร์" style={{ marginLeft: 5, fontSize: 10.5, color: GOOD }}>🔌</span>}
+                          {meteredSet.has(keyOf(p)) && <span title="มีมิเตอร์" style={{ marginLeft: 5, fontSize: 11, color: GOOD }}>🔌</span>}
                         </td>
                         {/* ค่าที่ถูกนับรวมไว้ที่ไลน์แม่แล้ว = ยังต้องเห็น (เป็นข้อมูลจริง) แต่ต้องรู้ว่าไม่ได้บวกเข้ายอดรวม */}
                         {months.slice(-6).map(mk => {
@@ -802,7 +830,7 @@ export default function Energy() {
           /* ⚙️ ค่าการปล่อย (EF) */
           <EfSetup factors={factors} canEdit={canEdit} cfgMissing={cfgMissing} onSaved={load} month={month} />
         )}
-    </div>
+    </Page>
   );
 }
 

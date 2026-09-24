@@ -105,7 +105,8 @@ component กลางที่รับ client เป็น prop (`client.from(
 
 - แผน ER แบบวาดเส้น (ตอนนี้บอกความสัมพันธ์เป็นลิสต์ 2 ทิศ ซึ่งอ่านง่ายกว่าบนมือถือ/จอ TV)
 - ค้นหา "ระดับคอลัมน์" ข้ามทุกตาราง (ต้องดึงคอลัมน์ทุกตารางมาไว้ฝั่ง client = ขัดกฎ egress ข้อ 11)
-- ผูกตาราง ↔ Edge Function / pg_cron (ตอนนี้เห็นแค่ trigger กับ RPC ที่หน้าเรียก)
+- ผูกตาราง ↔ Edge Function / pg_cron (ตอนนี้เห็นแค่ trigger กับ RPC ที่หน้าเรียก) — จะทำให้หมวด 🕳️ ใน
+  แท็บ 🩺 ฟันธงได้จริงว่า "ลบได้ไหม" แทนที่จะเป็นแค่รายการที่ต้องไปตรวจ
 
 ---
 
@@ -120,3 +121,113 @@ delete from role_permissions where permission_key = 'page:/schema';
 ```
 ฝั่งโค้ด: ถอด route/NAV `/schema` + `src/pages/SchemaMap.jsx` + plugin ใน `vite.config.js`
 และ `audit/vite.audit.mjs` (ถอด plugin อย่างเดียวโดยยังมีหน้าอยู่ = หน้าพังเพราะหา `virtual:schema-usage` ไม่เจอ)
+
+---
+
+## 7. 🩺 แท็บตรวจสุขภาพโครงสร้าง + การล้างตารางสำรอง (2026-09-22 รอบ 2)
+
+> คำสั่ง user: *"พวกตารางซ้ำๆ คือยังไง audit test และ improve ได้มั้ย ตารางไหนไม่ได้ใช้ หรือมัน
+> โครงสร้างไม่ดี แก้ไขให้ที ตอนนี้จำนวน schema เยอะมาก"* (เห็นจากจอ `pm_*` ที่มี `pm_plans` คู่กับ
+> `pm_plans_bak_test1_20260909` เรียงติดกัน)
+
+### 7.1 ต้นเหตุของ "ตารางซ้ำๆ"
+
+ทุกครั้งที่ session ก่อนๆ ทำ migration ที่แตะข้อมูลจริง จะ `create table <ชื่อ>_bak_<วันที่> as select …`
+ไว้กันพลาด — **ถูกต้องตามกฎ rollback แล้ว** แต่สร้างไว้ใน `public` และไม่มีใครกลับมาเก็บกวาด
+⇒ สะสม **37 ตารางใน ~1 เดือน** (DR 33 · Main 4) ปนกับตารางจริงทุกที่ที่มองเห็น schema
+
+**🔴 ที่แย่กว่าความรก — ข้อมูลจริงรั่วผ่าน anon key:** 35 ใน 37 ตัว **ไม่มี RLS**
+(`create table as select` คัดลอกข้อมูลมา แต่ policy ไม่ได้ตามมาด้วย) · ฝั่ง DR ที่ client วิ่งด้วย
+role `anon` เสมอ = ใครมี anon key (ฝังอยู่ในบันเดิลเว็บ) อ่าน/เขียน/ลบสำเนาข้อมูลผลิตจริงได้โดยไม่ต้อง login
+· ของจริงที่ค้างอยู่: ใบผลิต 1,361 + 561 แถว · ใบขอซื้อ 984 แถว · downtime reclass 958 แถว · ลิงก์แจ้งเตือน 51,454 แถว
+
+### 7.2 ทำอะไรไป — **ย้าย ไม่ลบ**
+
+`alter table public.<ชื่อ> set schema archive;` ทั้ง 37 ตัว
+(migration `20260922_archive_backup_tables_{main,dr}.sql` · **apply แล้ว 22/09**)
+
+| | ก่อน | หลัง |
+|---|---|---|
+| ตาราง/วิวใน public — DR | 173 | **140** |
+| ตาราง/วิวใน public — Main | 140 | **136** |
+
+- **ข้อมูลอยู่ครบทุกแถว** — rollback = `alter table archive.<ชื่อ> set schema public;` (มีลิสต์เต็มท้ายไฟล์ migration)
+- schema `archive` **ไม่ถูก expose ผ่าน PostgREST** + `revoke all … from anon, authenticated`
+  ⇒ หายจาก API และจากจอ /schema ทันที แต่ยังเปิดดู/กู้ได้จาก SQL Editor
+- **ไม่ drop** เพราะลบแล้วย้อนไม่ได้ — ให้ user ตัดสินใจลบเองเมื่อมั่นใจ (ดู §7.5)
+- ตรวจก่อนย้ายครบ 2 ชั้น: ไม่มีโค้ด client/edge เรียกใช้ (สแกน `.from()` ทั้งรีโป) **และ**
+  ไม่มี function/trigger/view ฝั่ง DB อ้างถึง (สแกน `pg_get_functiondef` + `pg_get_viewdef`)
+
+### 7.3 กันไม่ให้กลับมาอีก (3 ชั้น)
+
+1. **ด่านใน build** — `regressionGuards` กฎ `backup-tables-go-to-archive`:
+   migration ที่ลงวันที่ ≥ 20260922 ห้าม `create table` ชื่อเข้าข่ายตารางสำรองใน public (ต้องเป็น `archive.`)
+   · ของเก่าก่อนหน้านั้นไม่ถูกฟ้อง (รันไปแล้ว + ย้ายเข้า archive แล้ว) · **เดิมตั้ง 20260923 แล้วรั่วจริงภายในวันเดียว — ดู §7.6**
+   · คู่กับกฎ `new-table-needs-rls` (ตารางใหม่ใน public ต้องเปิด RLS ในไฟล์เดียวกัน · §7.6)
+2. **แท็บ 🩺 ในจอ** — ถ้ามีตัวใหม่โผล่ใน public จะขึ้น 🔴 ทันทีที่เปิดจอ
+3. **ตัวตัดสินชื่อมีจุดเดียว** — `BACKUP_RE` ใน `src/utils/schemaAudit.js`
+   ใช้ร่วมกันทั้งจอ · ด่าน build · (และ regex เดียวกันในไฟล์ migration) **แก้ต้องแก้พร้อมกัน**
+
+### 7.4 แท็บ 🩺 ตรวจสุขภาพโครงสร้าง — 6 หมวด
+
+ตัวตรวจ = `src/utils/schemaAudit.js` (pure + เทส `__tests__/schemaAudit.test.mjs`) อ่านจาก
+`esm_schema_overview()` + ดัชนี "หน้าไหนใช้ตารางไหน" ⇒ **คำนวณสดทุกครั้งที่เปิดจอ ไม่ใช่รายงานแช่แข็ง**
+
+| หมวด | ระดับ | เกณฑ์ |
+|---|---|---|
+| 🧹 ตารางสำรองค้าง public | 🔴 | ชื่อเข้าเกณฑ์ `BACKUP_RE` |
+| 🛡️ RLS ปิด | 🔴 ฝั่ง DR · 🟡 ฝั่ง Main | ตารางจริง (ไม่นับวิว) ที่ `relrowsecurity = false` |
+| 🔑 ไม่มี PK | 🟡 | ตารางจริงที่ไม่มี primary key |
+| 🕳️ ไม่มีหน้าไหนใช้ + ไม่มี FK ชี้มา | 🔵 | ใช้เป็น "รายการที่ต้องไปตรวจ" เท่านั้น |
+| 🈳 โค้ดใช้อยู่แต่ 0 แถว | 🔵 | ฟีเจอร์พร้อมแต่ยังไม่มีใครกรอก (หรือบันทึกไม่ติดเงียบๆ) |
+| 📦 ตารางที่กินที่มากสุด | 🔵 | Top 5 จาก `pg_total_relation_size` (เพิ่ม `bytes` ใน RPC — migration `20260922b`) |
+
+**🔴 กติกาของจอนี้: ทุกหมวดต้องบอก "ทำไมเป็นปัญหา" + "แก้ยังไง" เสมอ** — ลิสต์ชื่อตารางเฉยๆ
+ไม่ช่วยใครตัดสินใจ และจะกลายเป็นจอที่ทุกคนเมินภายใน 2 สัปดาห์
+**และ "ไม่มีหน้าไหนใช้" ≠ "ลบได้"** — ตัวสแกนเห็นเฉพาะโค้ดฝั่งหน้าเว็บ (เขียนเตือนไว้บนจอแล้ว)
+
+### 7.5 ของที่ "เจอแล้ว แต่ยังไม่แตะ" — รอ user ตัดสิน (ห้ามลบเอง)
+
+ทั้งหมดนี้ **ไม่ได้ลบและไม่ได้ย้าย** เพราะเป็น product decision ไม่ใช่ขยะจาก migration:
+
+| กลุ่ม | ตาราง | สภาพ |
+|---|---|---|
+| ชุด KPI รุ่นเก่า (Main) | `kpi_items` (28) · `kpi_targets` (313) · `kpi_actuals` (39) · `kpi_raw_inputs` · `kpi_section_detail` | ถูกแทนด้วย `kpi_definitions`/`kpi_catalog`/`kpi_manual_entries` — ไม่มีโค้ดอ่านแล้ว แต่ **มีข้อมูลจริงของปีก่อน** |
+| PPE รุ่นเก่า (Main) | `ppe_items` · `ppe_checks` · `ppe_requirements` · `attendances` | ว่างทั้งหมด — ของจริงไปอยู่ใน `daily_production_logs` (has_helmet/boots/gloves) นานแล้ว |
+| ทะเบียนเอกสารรุ่นเก่า | `document_controls` · `document_control_revisions` | ตั้งใจเก็บเป็น vestigial ตั้งแต่ 2026-07-30 (ยุบเข้า `doc_forms`) |
+| อื่นๆ ที่ไม่มีใครเรียก | Main: `part_registry` · `part_images` · `profile_org_access` · `production_shots` · `nav_groups` · `employee_photo_purge_log` (ปิด RLS แล้ว §7.6) · `kpi_base_inputs` · `kpi_month_plans` · DR: `production_shots` · `guests` · `tasks` · `user_signatures` · `pm_org_nodes` · `energy_utilities` · `kanban_scans` · `mtn_mo_counter` · วิว `v_sloc_stock` | ต้องเช็คเป็นตัวๆ ว่าเป็น "เลิกใช้" หรือ "ทำโครงไว้รอต่อ" |
+| ✅ ทะเบียนมาตรฐาน KPI | `kpi_standard_items` (migration 20260921) | **ต่อจอแล้ว 23/09** — ปุ่ม 📘 มาตรฐานกลุ่ม ใน `/obeya?tab=table` (ดู `docs/modules/obeya-kpi-board.md` ท้ายไฟล์) |
+| 📦 ไม่มีนโยบายลบย้อนหลัง | ~~Main `notifications`~~ **ตั้ง retention แล้ว 23/09** (84,247 → 51,984 แถว · cron `purge-notifications`) · DR `audit_log` 38 MB (มี cron 6 เดือนแล้ว) | ✅ ดู `docs/modules/notifications-flood.md` — ต้นเหตุจริง (ผู้รับ 30 คน/เหตุการณ์) แก้ไปครึ่งทาง ที่เหลือเป็น product decision |
+
+> **ทำไมไม่ลบให้เลย:** ลบตาราง = ย้อนไม่ได้ และ 6 กลุ่มข้างบนมีทั้ง "ข้อมูลจริงปีก่อน" กับ
+> "โครงที่ทำไว้รอต่อ" ปนกัน — กฎของโปรเจคคือ AI ทำเฉพาะสิ่งที่ย้อนได้เอง ที่เหลือหยุดถาม
+
+### 7.6 รอบตาม (2026-09-22 เย็น) — ปิดช่อง RLS ที่เหลือ + หลักฐานว่าวงจร "ตารางสำรองค้าง" เกิดซ้ำจริง
+
+**วงจรเกิดซ้ำภายในวันเดียว:** รอบ §7.2 ย้าย 33 ตารางออกตอนเช้า · บ่ายวันเดียวกัน session ขนาน
+(migration `20260922_bom_flat_dupe_rows_off_dr.sql`) ก็สร้าง `public.bom_items_backup_20260922`
+เพิ่มอีกตัว — RLS ปิด · ไม่มี PK · 598 แถวของ BOM จริง **และด่านใน build ไม่จับ** เพราะตอนนั้นตั้ง
+`SINCE = 20260923` (ไม่บังคับไฟล์ลงวันที่เดียวกับรอบทำความสะอาด)
+⇒ แก้แล้ว: ลด `SINCE` เป็น **20260922** + มีรายการ `CLEANED` ยกเว้นเฉพาะไฟล์นั้นไฟล์เดียว
+(**ห้ามเพิ่มชื่อใหม่เข้า `CLEANED` เพื่อให้ build ผ่าน** — ให้สร้างใน `archive.` ตั้งแต่แรกแทน)
+
+| ทำอะไร | project | migration | ผลหลังรัน |
+|---|---|---|---|
+| ย้าย `bom_items_backup_20260922` → `archive` | DR | `20260922d_archive_bom_backup_dr.sql` | อยู่ schema `archive` · หายจาก API/จอ |
+| เปิด RLS `child_demand_explosions` (14,505 แถว) — policy **INSERT อย่างเดียว** | DR | `20260922d_rls_child_demand_explosions_dr.sql` | `relrowsecurity = true` · 1 policy (`cde_insert_trigger:a`) |
+| เปิด RLS `employee_photo_purge_log` (18 แถว) — **ไม่มี policy** | Main | `20260922d_rls_employee_photo_purge_log_main.sql` | `relrowsecurity = true` · 0 policy · ข้อมูลครบ |
+
+**ผลรวม: ตารางใน `public` ที่ RLS ปิด = 0 ทั้ง 2 project** (จากเดิม DR 1 · Main 1 หลังรอบแรก)
+
+**🔴 บทเรียนที่ต้องจำ — trigger ที่ไม่ใช่ SECURITY DEFINER วิ่งด้วยสิทธิ์ของคนยิงคำสั่ง:**
+`fn_explode_child_demand` มี `prosecdef = false` ⇒ ตอน trigger ทำงานมันเป็น role `anon`
+⇒ **เปิด RLS เฉยๆ โดยไม่ให้ policy INSERT = ยืนยันใบผลิตพัง 42501 ทั้งระบบทันที**
+จึงให้ policy เฉพาะ `for insert with check (true)` — ตัวฟังก์ชันไม่เคย SELECT ตารางนี้เลย
+(ตรวจ `prosrc` ทั้งตัวแล้ว) ⇒ ไม่มี policy อ่าน/แก้/ลบ = anon แตะไม่ได้ แต่ของเดิมทำงานเหมือนเดิม
+· ทดสอบจริงแล้วด้วย `set local role anon`: insert ผ่าน · select ได้ 0 แถว · delete ได้ 0 แถว
+· `unique_violation` (ตัวกันระเบิดซ้ำ) ยังทำงานปกติ — เป็นด่าน index ไม่ใช่ด่าน RLS
+
+**ด่านใหม่ใน build: `new-table-needs-rls`** (`regressionGuards`) — migration ลงวันที่ ≥ 20260923
+ที่ `create table` ใน `public` ต้องมี `alter table ... enable row level security` ในไฟล์เดียวกัน
+· ตารางชั่วคราว/สำรอง → สร้างใน `archive` (ด่านนี้ไม่แตะ) · ตารางที่ตั้งใจให้ไม่มีใครอ่าน
+(log ของ migration) = เปิด RLS แล้วไม่ต้องมี policy

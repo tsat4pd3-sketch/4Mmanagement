@@ -31,10 +31,17 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
+import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -141,7 +148,7 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
               onMouseLeave={e => e.currentTarget.style.background = ''}>
               <b style={{ fontFamily: 'monospace', flexShrink: 0 }}>{o.mat_no}</b>
               <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>{o.name}</span>
-              {o.tag && <span style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}>{o.tag}</span>}
+              {o.tag && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{o.tag}</span>}
             </div>
           ))}
           {filtered.length > 60 && <div style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>…อีก {filtered.length - 60} รายการ — พิมพ์เพิ่มเพื่อกรอง</div>}
@@ -206,6 +213,33 @@ function PartsPickModal({ parts, onPick, onClose }) {
   );
 }
 
+/* ✅ ชิปแถบความครบของสินค้า 1 ตัว — "งานใหม่มา ยังขาดอะไร จอบอกเอง" (2026-09-22)
+   สถานะ/สี มาจาก `src/utils/productReadiness.js` ห้ามตั้งเองที่นี่
+   🔴 เหลือง "…" = Routing/Packaging ที่ **อนาคตต้องบังคับ** (คำสั่ง user 22/09) — เตือน ไม่บล็อก
+   กดชิปแล้วเด้งไปแท็บที่ต้องไปเติม (บทเรียน worklist: บอกเฉยๆ ว่าขาด = ไม่มีใครไปเติม) */
+function ReadyChips({ ready, onGo, compact }) {
+  return (
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+      {ready.steps.map(st => {
+        const c = READINESS_COLOR[st.status];
+        const go = onGo && st.status !== 'na' ? () => onGo(st.key) : undefined;
+        const title = st.status === 'ok' ? `${st.label}: มีแล้ว`
+          : st.status === 'na' ? `${st.label}: ไม่เกี่ยวกับของชิ้นนี้`
+          : st.status === 'wait' ? `${st.label}: ยังไม่ได้ลง — อนาคตต้องบังคับ (ตอนนี้ยังไม่บล็อก)`
+          : `${st.label}: ยังไม่ได้ลง — ต้องมี`;
+        return (
+          <button key={st.key} type="button" onClick={go} disabled={!go} title={title}
+            style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 10,
+              background: c.bg, color: c.fg, border: `1px solid ${c.fg}33`, cursor: go ? 'pointer' : 'default',
+              fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
+            {st.icon} {compact ? '' : st.label + ' '}{c.mark}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ProductMaster() {
   const { role, fullName, isDeptAdmin } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
@@ -226,6 +260,9 @@ export default function ProductMaster() {
     setSearchParams(next);
   };
 
+  /* ✅ กดชิป "ยังไม่ครบ" แล้วพาไปแท็บที่ต้องไปเติมเลย (BOM เลือกแถวให้ด้วย) */
+  const goFixStep = (it) => (key) => { if (key === 'bom') openBomFor(it.mat_no); else setMainTab(key); };
+
   /* ── state ── */
   const [items,   setItems]   = useState([]);
   const [lines,   setLines]   = useState([]);
@@ -235,6 +272,10 @@ export default function ProductMaster() {
   const [familyTotals, setFamilyTotals] = useState({});
   const [bomCounts, setBomCounts] = useState({});          // product_id → bom count
   const [bomRows, setBomRows] = useState([]);              // {product_id, mat_no} — ใช้จัดอันดับตัวเลือก parent ของ OP ตาม BOM ของไลน์
+  /* ✅ ความครบของข้อมูลต่อสินค้า (2026-09-22) — ดึงแค่คีย์ 2 ตาราง (ตัวเล็กมาก) ไม่ใช่ทั้งแถว (กฎเหล็ก 11 egress)
+     routing ผูกด้วย mat_no · packaging ผูกด้วย product_id — คนละคีย์ ห้ามสลับ */
+  const [routingMats, setRoutingMats] = useState(() => new Set());
+  const [packagedIds, setPackagedIds] = useState(() => new Set());
 
   const [editing,  setEditing]  = useState(null);          // id | 'new' | null
   const [ecSource, setEcSource] = useState(null);
@@ -257,6 +298,7 @@ export default function ProductMaster() {
   const [search,      setSearch]      = useState('');
   const [lineFilter,  setLineFilter]  = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [readyFilter, setReadyFilter] = useState('');   // '' ทั้งหมด · 'req' ขาดของบังคับ · 'any' ขาดอะไรก็ได้ (รวมที่อนาคตบังคับ)
   const [expandedFamilies, setExpandedFamilies] = useState({});
   const [expandedNameGroups, setExpandedNameGroups] = useState({});
   const [csvImporting, setCsvImporting] = useState(false);
@@ -272,7 +314,7 @@ export default function ProductMaster() {
        (ไล่แปะทีละจุดคือวิธีที่ทำให้ `invalidateProducts()` เดิมตกหล่นจนไม่มีใครเรียกเลยสักหน้า)
        ดูทะเบียน "ตาราง → คีย์" ที่ src/utils/masterInvalidate.js */
     invalidateTable('dr_products', 'kanban_standards');   // ทะเบียนสินค้า + kanban อยู่หน้าเดียวกัน
-    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }] = await Promise.all([
+    const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
       supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
@@ -281,11 +323,16 @@ export default function ProductMaster() {
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),
       // ทะเบียนกลาง Parts Master (material master) — ใช้เป็น picker + เช็คเลขหลุดทะเบียนในฟอร์มสินค้า/kanban
       supabaseDR.from('parts_master').select('id, mat_no, part_name, part_no, uom, qty_per_pkg, supplier, image_url').eq('is_active', true).order('mat_no'),
+      // ✅ แถบความครบ — เอาแค่คีย์พอ (มี/ไม่มี) ไม่ดึงรายละเอียดขั้นตอน/กล่อง
+      supabaseDR.from('part_routings').select('mat_no').eq('is_active', true),
+      supabaseDR.from('product_packaging').select('product_id').eq('is_active', true),
     ]);
     setItems(pr || []);
     setLines(ln || []);
     setKanbanStds(stds || []);
     setPmParts(pm || []);
+    setRoutingMats(new Set((rt || []).map(r => String(r.mat_no || '').trim().toUpperCase()).filter(Boolean)));
+    setPackagedIds(new Set((pkg || []).map(r => r.product_id).filter(Boolean)));
 
     const bc = {};
     (boms || []).forEach(b => { bc[b.product_id] = (bc[b.product_id] || 0) + 1; });
@@ -561,12 +608,35 @@ export default function ProductMaster() {
     return [...map.values()];
   }, [items]);
 
+  /* ✅ แถบความครบต่อสินค้า (2026-09-22 · คำสั่ง user "อนาคตต้องบังคับ" สำหรับ Routing/Packaging)
+     กฎครบ/ไม่ครบอยู่ `src/utils/productReadiness.js` จุดเดียว — ห้ามตัดสินเองในหน้า */
+  const kanbanByProduct = useMemo(() => {
+    const m = {};
+    kanbanStds.filter(s => s.is_active && s.product_id).forEach(s => { m[s.product_id] = (m[s.product_id] || 0) + 1; });
+    return m;
+  }, [kanbanStds]);
+  const readyOf = useCallback((it) => productReadiness(it, {
+    bom:       bomCounts[it.id] || 0,
+    routing:   routingMats.has(String(it.mat_no || '').trim().toUpperCase()),
+    packaging: packagedIds.has(it.id),
+    kanban:    kanbanByProduct[it.id] || 0,
+  }), [bomCounts, routingMats, packagedIds, kanbanByProduct]);
+
   /* ── filtered ── */
   const visibleFamilies = useMemo(() => {
     const q = search.trim().toLowerCase();
     return families
       .filter(f => showHistory || f.members.some(m => m.is_active))
       .filter(f => !lineFilter || f.members.some(m => m.line_name === lineFilter))
+      .filter(f => {
+        if (!readyFilter) return true;
+        // ดูเฉพาะ revision ที่ยังใช้งาน — rev เก่าที่ถูก EC แทนที่ไปแล้ว ไม่ต้องไล่เติมข้อมูล
+        return f.members.some(m => {
+          if (!m.is_active || m.superseded_by) return false;
+          const r = readyOf(m);
+          return readyFilter === 'req' ? r.missingRequired.length > 0 : r.missing.length > 0;
+        });
+      })
       .filter(f => {
         if (!q) return true;
         return f.members.some(m =>
@@ -576,7 +646,7 @@ export default function ProductMaster() {
           (m.customer || '').toLowerCase().includes(q) ||
           (m.code || '').toLowerCase().includes(q));
       });
-  }, [families, search, lineFilter, showHistory]);
+  }, [families, search, lineFilter, showHistory, readyFilter, readyOf]);
 
   const activeCount = items.filter(i => i.is_active).length;
   const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
@@ -703,42 +773,33 @@ export default function ProductMaster() {
   };
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page>
       <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ข้อมูลหลักสินค้า"
         permKey="products:edit, products:create"
         hint="แอดมินหน่วยงาน (dept_admin) ก็เปิดสิทธิ์นี้ได้ — ติ๊กที่ /add-user แล้วเปิด action ให้ bucket 🛡️ ที่ /permissions" />
-      {/* ── Main Tab Bar ── */}
-      {/* overflowX + maxWidth: จอแคบเลื่อนแท็บแนวนอนได้ (desktop กว้างพอ ไม่มี scrollbar — เหมือนเดิม) */}
-      <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-        {/* 🔢 เรียงแท็บตาม **ลำดับงานจริง** ที่ user วางไว้ (21/09) — ไม่ใช่ตามที่ทำฟีเจอร์มาก่อนหลัง
+      {/* ── หัวเพจ + แท็บ (UI-STANDARD 2026-09-24 — เดิมแถบแท็บวาดเองวางเหนือชื่อหน้า และชื่อโผล่เฉพาะแท็บ Products) ──
+          🔢 เรียงแท็บตาม **ลำดับงานจริง** ที่ user วางไว้ (21/09) — ไม่ใช่ตามที่ทำฟีเจอร์มาก่อนหลัง
             1️⃣ ทะเบียนชิ้นส่วน → 2️⃣ ประกอบ BOM → 3️⃣ เปิดเป็นสินค้าที่ผลิต
             เหตุผล: ของที่ผ่านมาคนเริ่มจากแท็บ Products (แท็บแรก) แล้วคีย์ BOM แยกใบของใครของมัน
             ⇒ ของชิ้นเดียวถูกคีย์ซ้ำหลายใบ = ต้นเหตุ "แถวนับซ้ำ" ทั้งฐาน (ดู docs/modules/bom-levels.md)
-            ⚠️ default ของ `useTabParam` ยังเป็น 'products' — ลิงก์เก่า/บุ๊กมาร์กไม่เปลี่ยนปลายทาง */}
-        {[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' }, { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' }, { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }].map(t => (
-          <button key={t.key} onClick={() => setMainTab(t.key)}
-            style={{ padding:'6px 18px', borderRadius:6, border:'none', cursor:'pointer', fontSize:13, fontWeight:600, whiteSpace:'nowrap', flexShrink:0,
-              background: mainTab===t.key ? 'var(--accent)' : 'transparent',
-              color: mainTab===t.key ? '#08130a' : 'var(--muted)', fontFamily:'var(--font-body)' }}>
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {mainTab === 'products' && (<>
-      {/* ── Header ── */}
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(18px, 2.5vw, 24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🔩 Product Master
-        </h1>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
+            ⚠️ default ของ `useTabParam` ยังเป็น 'products' — ลิงก์เก่า/บุ๊กมาร์กไม่เปลี่ยนปลายทาง
+          🧱 6 แท็บแรก = ลำดับงาน (จบที่ 🎴 Kanban Std) · ที่เหลือ (ลูกค้า/Supplier/ทบทวน CT/Export) = ทะเบียนย่อย/เครื่องมือ
+            → PageHeader พับเข้า "⋯ เพิ่มเติม" ให้เอง (แทนขีดคั่นเดิม 2026-09-22 — user ถามว่าลูกค้า/supplier
+            ควรย้ายไป setup program มั้ย: ไม่ย้าย เพราะ 2 ทะเบียนนี้ถูกแก้ "ระหว่างคีย์ข้อมูลสินค้า") */}
+      <PageHeader title="Product Master" icon="🔩"
+        sub={<>
           ฐานข้อมูลกลาง Product/Model · เชื่อมกับ{' '}
           <Link to="/daily-report" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Daily Report</Link>,{' '}
           <Link to="/heijunka" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Heijunka Kanban</Link> และ{' '}
           <Link to="/oee-analytics" style={{ color: 'var(--accent)', textDecoration: 'none' }}>OEE Analytics</Link>
-        </p>
-      </div>
+        </>}
+        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' },
+          { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
+          { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' },
+          { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }]}
+        tab={mainTab} onTab={setMainTab} />
 
+      {mainTab === 'products' && (<>
       {/* ── Callout: แนะนำ Parts Master สำหรับ 300/500 ── */}
       <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
@@ -752,23 +813,28 @@ export default function ProductMaster() {
         </button>
       </div>
 
-      {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 16 }}>
-        <input
-          style={{ ...inputSt, maxWidth: 280, padding: '8px 12px' }}
-          placeholder="🔍 ชื่อ / MAT.NO / P.NO / ลูกค้า..."
-          value={search} onChange={e => setSearch(e.target.value)}
-        />
+      {/* ── Toolbar ── (UI-STANDARD 2026-09-24: FilterBar — ขอบเขต → ตัวกรอง → ค้นหา → จำนวน/ปุ่ม) */}
+      <FilterBar style={{ marginBottom: 16 }}>
         {/* 2026-09-07: กรองไลน์ผ่าน <LineSelect> (ลำดับชั้น/ตัดปลดระวาง) แทนลิสต์แบนจากแถวสินค้า */}
-        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
-          extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]}
-          style={{ ...inputSt, width: 'auto', padding: '8px 10px' }} />
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
+          extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]} />
+        {/* ✅ ตัวกรองความครบ (2026-09-22) — แยก "บังคับแล้ว" กับ "อนาคตบังคับ" คนละตัวเลือก
+            ถ้ารวมเป็นตัวเดียว = เกือบทั้งฐานเด้งขึ้นมา (101 ตัวยังไม่มี routing · 106 ยังไม่มี packaging)
+            ⇒ ตัวกรองที่ไม่เคยกรองอะไรออก = คนเลิกใช้ */}
+        <span className="filter-label">ความครบ</span>
+        <select value={readyFilter} onChange={e => setReadyFilter(e.target.value)}
+          title="กรองตามความครบของข้อมูล — Routing/Packaging ยังไม่บังคับวันนี้ (อนาคตบังคับ)">
+          <option value="">{ALL.status}</option>
+          <option value="req">⚠ ยังไม่ครบ (ที่บังคับแล้ว)</option>
+          <option value="any">… ยังไม่ครบ (รวมที่อนาคตบังคับ)</option>
+        </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
           <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
           แสดงประวัติ EC
         </label>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{visibleGroups.length} part · {visibleFamilies.length} variant · {activeCount} ใช้งาน</span>
+        <SearchInput value={search} onChange={setSearch} fields="ชื่อ / MAT.NO / P.NO / ลูกค้า" />
+        <span className="spacer" />
+        <span className="filter-count">{visibleGroups.length} part · {visibleFamilies.length} variant · {activeCount} ใช้งาน</span>
         {canCreate && <>
           <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
           <button onClick={() => csvInputRef.current?.click()} disabled={csvImporting}
@@ -778,7 +844,7 @@ export default function ProductMaster() {
           <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleProductCsvUpload} />
         </>}
         {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
-      </div>
+      </FilterBar>
 
       {/* 🔩 worklist — ขั้นตอน (OP) ที่ "เสี่ยงนับซ้ำจริง" (2026-09-16 · เปลี่ยนเกณฑ์ตามคำสั่ง user)
           เดิมเตือนทุกขั้นที่ช่อง parent ว่าง ⇒ ขั้นที่ประกอบจากหลายชิ้น (291+088) ถูกไล่ให้หาอะไรมาใส่
@@ -834,6 +900,38 @@ export default function ProductMaster() {
                 </button>
               ))}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* ✅ สรุปความครบทั้งฐาน + ความหมายของชิป (2026-09-22)
+          กฎความซื่อสัตย์ของจอ: บอกว่านับจากกี่ตัว และแยกให้ชัดว่าอะไร "ขาด" อะไร "รอ(อนาคตบังคับ)" */}
+      {(() => {
+        const act = items.filter(i => i.is_active && !i.superseded_by);
+        if (!act.length) return null;
+        const rs = act.map(readyOf);
+        const need = rs.filter(r => r.missingRequired.length > 0).length;
+        const wait = rs.filter(r => r.missingRequired.length === 0 && r.missing.length > 0).length;
+        const full = rs.length - need - wait;
+        const pill = (bg, fg, txt, val, onClick) => (
+          <button type="button" onClick={onClick} disabled={!onClick}
+            style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: bg, color: fg,
+              border: `1px solid ${fg}33`, cursor: onClick ? 'pointer' : 'default', fontFamily: 'var(--font-body)' }}>
+            {txt} {val}
+          </button>
+        );
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 14px', marginBottom: 12,
+            background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>✅ ความครบข้อมูล ({rs.length} สินค้าที่ใช้งาน)</span>
+            {pill('rgba(61,214,92,0.10)', 'var(--accent)', '✓ ครบ', full, null)}
+            {pill('rgba(239,68,68,0.10)', '#ef4444', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
+            {pill('rgba(245,158,11,0.10)', '#f59e0b', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
+            {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
+              {' '}· <b>🔀 Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
+            </span>
           </div>
         );
       })()}
@@ -899,8 +997,9 @@ export default function ProductMaster() {
                     </div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       {totalQty > 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>📦 ยอดสะสม {totalQty.toLocaleString()} ชิ้น</span>}
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: totalBom > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: totalBom > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 BOM: {totalBom > 0 ? `${totalBom} พาร์ท` : 'ยังไม่มี'}</span>
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      {/* ✅ แถบความครบ — แทนชิป BOM/Kanban เดิม (เดิมบอกแค่ 2 ขั้น คนยังต้องไล่เปิดแท็บอื่นเอง) */}
+                      <ReadyChips ready={readyOf(item)} onGo={goFixStep(item)} />
+                      {totalBom > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>({totalBom} พาร์ทใน BOM)</span>}
                     </div>
                     <RelatedLinks matNo={item.mat_no} productId={item.id} />
                   </div>
@@ -1033,7 +1132,8 @@ export default function ProductMaster() {
                         {v.p_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {v.p_no}</span>}
                         {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
                         {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
-                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: (bomCounts[v.id] || 0) > 0 ? 'rgba(61,214,92,0.1)' : 'rgba(107,114,128,0.08)', color: (bomCounts[v.id] || 0) > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>📦 {(bomCounts[v.id] || 0) > 0 ? `${bomCounts[v.id]} พาร์ท` : 'ไม่มี BOM'}</span>
+                        {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
+                        <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
                         {(canEdit || canDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
@@ -1504,7 +1604,7 @@ export default function ProductMaster() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -1976,7 +2076,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 300px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* left: product list */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
-        <input style={inputSt} placeholder="🔍 ค้นหา product / mat no. / ลูกค้า..." value={search} onChange={e => setSearch(e.target.value)} />
+        <SearchInput value={search} onChange={setSearch} fields="product / mat no. / ลูกค้า" />
         {/* ➕ เปิดใบ BOM ให้พาร์ทในทะเบียนที่ยังไม่มีใบของตัวเอง (step 2 → 3) */}
         {canCreate && (
           <button onClick={() => setHeadPick(true)} disabled={headBusy}
@@ -1987,18 +2087,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
           </button>
         )}
         {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
-        <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
-          {[['part', `พาร์ท (${products.length - opCount})`], ['op', `🔩 ขั้นตอน (${opCount})`], ['all', 'ทั้งหมด']].map(([k, label]) => (
-            <button key={k} onClick={() => setKind(k)}
-              style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 12, cursor: 'pointer',
-                fontFamily: 'var(--font-body)',
-                background: kind === k ? 'rgba(61,214,92,0.15)' : 'var(--bg2)',
-                color: kind === k ? 'var(--accent)' : 'var(--muted)',
-                border: `1px solid ${kind === k ? 'rgba(61,214,92,0.45)' : 'var(--border)'}` }}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด */}
+        <Segmented size="sm" label="ชนิด" value={kind} onChange={setKind} style={{ marginTop: 8 }}
+          options={[{ value: 'all', label: ALL.kind }, { value: 'part', label: `พาร์ท (${products.length - opCount})` },
+            { value: 'op', label: `🔩 ขั้นตอน (${opCount})` }]} />
         <div style={{ marginTop: 10, maxHeight: '65vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {filtered.map(p => {
             const active = selProduct?.id === p.id;
@@ -2109,7 +2201,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                             </span>
                           )}
                           {it.op_no && (
-                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.14)', color: '#a855f7', whiteSpace: 'nowrap' }}>
+                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.14)', color: '#a855f7', whiteSpace: 'nowrap' }}>
                               OP {it.op_no}
                             </span>
                           )}
@@ -2121,7 +2213,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                             "0.341" กับ "5" ดูเหมือนหน่วยเดียวกันถ้าไม่บอก */}
                         <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {Number(it.qty_per_unit)}
-                          <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', marginLeft: 3 }}>{uomLabel(it.uom) || '⚠'}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 3 }}>{uomLabel(it.uom) || '⚠'}</span>
                         </TD>
                         <TD style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
                         {/* PC / EA / pcs ในฐานเป็นของเดียวกัน 3 สะกด — แสดงให้เป็นมาตรฐานเดียว (ไม่แก้ค่าใน DB) */}
@@ -2228,14 +2320,14 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
                         {!pickerParent && deepMats.has((p.mat_no || '').trim().toUpperCase()) && (
                           <span title={`${p.mat_no} อยู่ใต้ ${deepMats.get((p.mat_no || '').trim().toUpperCase())} ในใบนี้แล้ว — ใส่ชั้น 1 อีกจะกลายเป็นนับซ้ำ`}
-                            style={{ marginRight: 5, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
+                            style={{ marginRight: 5, fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
                               background: 'rgba(239,68,68,0.16)', color: '#ef4444' }}>
                             🔴 อยู่ใต้ {deepMats.get((p.mat_no || '').trim().toUpperCase())} แล้ว
                           </span>
                         )}
                         {p._made && (
                           <span title="พาร์ทที่เราผลิตเอง — ยังไม่อยู่ในทะเบียนชิ้นส่วน ระบบจะลงทะเบียนให้ตอนบันทึก"
-                            style={{ marginRight: 5, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
+                            style={{ marginRight: 5, fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
                               background: 'rgba(245,158,11,0.16)', color: '#f59e0b' }}>🏭 ผลิตเอง</span>
                         )}
                         {p.part_name}
@@ -2307,7 +2399,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <input style={{ ...inputSt, fontFamily: 'monospace' }} maxLength={20}
                   value={form.op_no} onChange={e => setForm(f => ({ ...f, op_no: e.target.value }))}
                   placeholder="เช่น 190 — ไม่รู้ปล่อยว่าง ห้ามเดา" />
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
                   ใช้ตอบ "ของเสียหลุดขั้นไหน ตัดอะไร" · "สโตร์ต้องส่งของนี้ไปขั้นไหน" — ว่าง = ยังไม่ระบุ (ไม่ใช่ error)
                 </div>
               </div>
@@ -2318,7 +2410,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <input type="number" min="1" max="9999" step="10" style={{ ...inputSt, fontFamily: 'monospace' }}
                     value={form.item_no} onChange={e => setForm(f => ({ ...f, item_no: e.target.value }))}
                     placeholder={String(nextItemNo(items))} />
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
                     {itemNoLabel(form.item_no) ? <>จะบันทึกเป็น <b style={{ color: 'var(--text2)' }}>{itemNoLabel(form.item_no)}</b> · </> : null}
                     นับใหม่ทุกตัวแม่ · เว้นทีละ 10 เพื่อแทรกกลางได้
                   </div>
@@ -2344,7 +2436,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                       <option value="__free">✏️ พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
                     </select>
                   )}
-                  <div style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
                     {slocFree && (
                       <div style={{ marginBottom: 2 }}>
                         <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT} · </span>
@@ -2699,15 +2791,13 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
       </div>
 
       {/* toolbar */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <input style={{ ...inputSt, flex: 1, minWidth: 200, background: 'var(--bg2)' }}
-          placeholder="🔍 ค้นหา Part Name / Mat SAP / Part No. / Supplier..."
-          value={search} onChange={e => setSearch(e.target.value)} />
-        <select style={{ ...inputSt, width: 'auto', background: 'var(--bg2)' }}
-          value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
-          <option value="">ทุกประเภท</option>
+      <FilterBar>
+        <select value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
+          <option value="">{ALL.type}</option>
           {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
         </select>
+        <SearchInput value={search} onChange={setSearch} fields="Part Name / Mat SAP / Part No. / Supplier" />
+        <span className="spacer" />
         {canCreate && <>
           <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
           <button onClick={() => csvRef.current?.click()} disabled={csvImporting}
@@ -2717,7 +2807,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
           <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handlePartsCsvUpload} />
           <button onClick={openNew} style={btnPrimary}>➕ เพิ่มพาร์ท</button>
         </>}
-      </div>
+      </FilterBar>
 
       {loading && <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 30 }}>⏳ กำลังโหลด...</div>}
 
@@ -2822,7 +2912,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   {/* ทะเบียนกลางเก็บเฉพาะเลข SAP จริง (ชั้น OP ห้ามเข้าที่นี่) → เตือนได้โดยไม่มี false positive
                       ⚠️ เตือน ไม่บล็อก — ข้อมูลเก่า/เคสยกเว้นต้องยังบันทึกได้ */}
                   {form.mat_no.trim() && !isSapMat(form.mat_no) && (
-                    <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 4 }}>
                       ⚠ ไม่ใช่รูปแบบเลข MAT SAP (ตัวเลขล้วน 8 หลัก) — บันทึกได้ แต่ระบบจะไม่ติดป้ายประเภทวัสดุให้
                       {' '}· ถ้าเป็นขั้นตอนการผลิต ให้ไปติ๊ก 🔩 รายการขั้นตอน ที่ฟอร์มสินค้า ไม่ใช่เพิ่มในทะเบียนนี้
                     </div>
@@ -3003,7 +3093,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>📦 Packaging</h2>
+          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>📦 Packaging</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>ผูกภาชนะกับ product · พอ FG ผลิต → ยิงใบเบิกภาชนะไป Rack Center อัตโนมัติ · ใช้ฐานภาชนะเดียวกับ Rack Center</p>
         </div>
         {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>🗃 จัดการภาชนะ (Container Types) ({masters.length})</button>}
@@ -3012,7 +3102,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
         {/* product list */}
         <div style={{ ...cardSt, padding: 12 }}>
-          <input style={inputSt} placeholder="🔍 ค้นหา product..." value={search} onChange={e => setSearch(e.target.value)} />
+          <SearchInput value={search} onChange={setSearch} fields="product" />
           <div style={{ marginTop: 10, maxHeight: '70vh', overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {filtered.map(p => {
               const active = selProduct?.id === p.id; const n = counts[p.id] || 0;
@@ -3220,9 +3310,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
+          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
             🎴 Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
-          </h2>
+          </h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             UOM และข้อมูลพาร์ทดึงจาก 🗂 Parts Master โดยตรง (ไม่เก็บซ้ำ) · Qty/Kanban ตั้งต้นจาก Qty/Pkg (1 ใบ Kanban = 1 packaging)
           </p>
@@ -3334,7 +3424,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                 </label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
                   value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1" />
-                <div style={{ fontSize: 10.5, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
                   <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
                 </div>
                 {!String(form.lot_size || '').trim() && (

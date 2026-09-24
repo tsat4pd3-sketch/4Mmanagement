@@ -22,12 +22,21 @@ const DEF_NAMES = ['รอยร้าว/แตก', 'เจาะรูไม�
 const LINE_NAME = (i) => `LINE APRON ASSY (HYDROFORM) ชุดที่ ${i} — งานทดสอบชื่อยาว`
 const PARENT_OF = { 2: 1, 3: 1, 4: 2 }
 
+/* ⚠️ **งานคู่ RH/LH (pair_mat_no) ต้องมีใน mock เสมอ ห้ามถอด** (2026-09-22)
+   ของจริงมีคู่ที่ demand ครบทั้ง 2 ข้างอยู่หลายคู่ (20059957↔20059959 · 20065635↔20065715 …)
+   และมีกฎเหล็ก "ชิ้น ≠ shot" ที่โค้ดหลายจุดต้องยุบคู่ก่อนรวม — `collapsePairShots` (OEE/%P) ·
+   `pairLoadTotal` (ภาระกะในแผนผลิต) · `pairAwareTotal` (ยอดรวมภาพใหญ่)
+   เดิม mock ตั้ง `pair_mat_no: null` **ทุกแถว** ⇒ crashsweep ไม่เคยเดินเข้าสาขา "มีคู่" เลยสักหน้า
+   = บั๊กทั้งคลาส (นับ 2 เท่า · ยุบผิดข้าง · คู่ที่มีข้างเดียวในชุดข้อมูล) มองไม่เห็นจาก harness
+   ตั้งเป็นคู่กัน 2 ทางที่แถว 6↔7 (ต้องครบทั้ง 2 ทางเหมือนของจริง ไม่งั้นจับคู่ไม่ติด)  */
+const PAIR_OF = { 6: 7, 7: 6 }
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
   id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
   line_name: 'LINE APRON ASSY / HYDROFORM',
   parent_line_name: PARENT_OF[i] ? LINE_NAME(PARENT_OF[i]) : null, section: 'PD1', line_id: 1,
-  mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: null,
+  mat_no: `1010${1000+i}`, p_no: `MB3B 16E060 CH`, pair_mat_no: PAIR_OF[i] ? `1010${1000 + PAIR_OF[i]}` : null,
   part_name: `PANEL ASSY-COWL SIDE INNER RH ชิ้นที่ ${i}`, product_id: `p-${i}`, customer: 'FORD', model: 'P703',
   machine_no: `SP-${10+i}`, machine_name: `ROBOT HANDLING / SPOT WELDING GUN ${i}`, equipment_id: `e-${i}`,
   /* ⚠️ session_id ต้องชี้ไปที่ id ของแถวจริง (2026-09-18) — เดิมเป็น `s-${i}` ซึ่ง
@@ -78,7 +87,7 @@ const ROW = (i) => ({
      พนักงานทางอ้อม (src/utils/staffKind.js → เช็คชื่อ/สกิล/กำลังคน) ถูกรันใน harness จริง
      ถ้าทุกแถวเป็น direct เหมือนกันหมด ตัวกรองจะไม่เคยถูกทดสอบเลยสักหน้า */
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A',
-               staff_kind: i % 4 === 3 ? 'indirect' : 'direct' },
+               staff_kind: i % 4 === 3 ? 'support' : 'shopfloor' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
 })
 /* ⚠️ แถวสุดท้ายเป็น "แถวข้อมูลไม่ครบ" โดยตั้งใจ (2026-08-26)
@@ -122,8 +131,28 @@ const thenable = (rows = ROWS) => {
       (Assy GOR = 37 ล็อตของ mat เดียว) ถ้าให้ทุกแถวเป็นคนละ mat โค้ดจัดกลุ่มจะไม่เคยถูกรัน
    ⚠️ แถว NULLISH ต้องยัง null ต่อไป — เติมแค่คีย์เชื่อม ห้ามเติมตัวเลขให้                        */
 const FAM_LINE = 'LINE APRON ASSY / HYDROFORM'
+/* รูปผังโรงงานปลอม — SVG data URI 1600×900 (ไม่ต้องต่อเน็ต · <img> เรนเดอร์ได้จริง
+   ต้องมีขนาดจริงในไฟล์ ไม่งั้น onImgLoad ได้ naturalWidth = 0 แล้วสเกลป้ายเพี้ยน) */
+const FACTORY_MAP_IMG = 'data:image/svg+xml;utf8,'
+  + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900">'
+    + '<rect width="1600" height="900" fill="#1f2937"/>'
+    + '<rect x="60" y="60" width="1480" height="780" fill="none" stroke="#475569" stroke-width="6"/></svg>')
 const isNullish = (r) => r.qty === null
 const TABLE_ROWS = {
+  /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
+     แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
+     (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
+     7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
+  org_nodes: (r, i) => ({
+    ...r,
+    kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',
+    code: i === 1 ? 'PD1' : i <= 5 || i === 7 ? null : r.code,
+    parent_id: i === 1 || i === 6 ? null : i === 2 ? 'id-1' : i <= 5 ? 'id-2' : i === 7 ? 'id-6' : 'id-3',
+    ref_line_id: i >= 3 && i <= 5 ? `id-${i}` : null,
+    division: i === 1 ? 'production' : i === 6 ? 'maintenance' : null,
+    cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
+    sort_order: i,
+  }),
   child_lot_requests: (r, i) => ({
     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
     lot_qty: isNullish(r) ? null : 14,
@@ -175,12 +204,94 @@ const TABLE_ROWS = {
      · 10 ใบ + 4 ใบ ⇒ ได้ **ทั้งสองสาขา**: กลุ่มแรกถึงเกณฑ์ (ปุ่ม "เสนอปรับ" โผล่)
        กลุ่มหลังไม่ถึง (ป้าย "ตัวอย่างไม่พอ") — ถ้าทุกกลุ่มถึงเกณฑ์หมด สาขาที่สองจะไม่เคยถูกรัน */
   prod_orders: (r, i) => ({ ...r, mat_no: i <= 10 ? '10101001' : '10101002', status: 'confirmed' }),
+  /* 🏭 production_sessions — กะต้องผูกกับ **ไลน์ที่มีอยู่จริงใน production_lines** (2026-09-22)
+     เดิมทุกแถวเป็น `line_name: FAM_LINE` ซึ่งไม่ตรงกับ `LINE_NAME(i)` ของ production_lines เลย
+     ⇒ ทุกหน้าที่ถามว่า "ไลน์นี้เปิดกะหรือยัง" ได้คำตอบว่า "ยังไม่เปิด" ทุกไลน์เสมอ
+        (FactoryMap: ทุกกรอบเป็นสีเทา idle · แผงขวาทุกโหมดว่าง · ยอดผลิต/OEE/DT/NG = 0)
+     = สาขา "มีกะเปิดอยู่" ซึ่งเป็นสถานะปกติของวันทำงาน ไม่เคยถูกรันใน harness เลย
+     · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
+     · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
+  production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
+     `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
+     ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**
+        ทั้งผัง polygon · ป้าย/การ์ด KPI · de-overlap ป้าย · แผงขวาทุกโหมด (ทบทวนรายวัน /
+        บอร์ด OBEYA / จัดอันดับ) — crashsweep + mobilesweep ผ่านหน้านี้มาตลอดโดยไม่เคยแตะโค้ดพวกนี้
+     · รูป = data URI (ออฟไลน์ ไม่ต้องต่อเน็ต) ขนาด 1600×900 ให้ aspect ใกล้ผังจริง
+     · กรอบ: 2 ไลน์ผลิต (แม่ 1 + ลูก 1) + 1 โซนสนับสนุนที่ไม่ใช่ไลน์ผลิต (isFac = true)
+       ⇒ ได้ทั้งสาขา "ไลน์" และ "โซน facility" ที่คิดสถานะคนละชุด */
+
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,
   }),
 }
+/* ── ตารางที่ต้องคืน "ชุดแถวของตัวเอง" ไม่ใช่ ROWS แปลงร่าง ──────────────────────────
+   TABLE_ROWS ข้างบนคือ "แปลง ROWS ทีละแถว" (1 แถวเข้า → 1 แถวออก) ⇒ ตารางที่มีรูปทรงคนละเรื่อง
+   กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
+   mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
+const TABLE_FIXED = {
+  /* 🎓 ทะเบียนเกรดตามผังองค์กรทางการ — **ห้ามถอด** (2026-09-24)
+     ช่อง "เกรด" ใน /operator จะไม่เรนเดอร์เลยถ้าทะเบียนว่าง (`gradesSync().length === 0`)
+     ⇒ ไม่มีชุดนี้ = harness ไม่เคยรันโค้ดสายเกรด/คำเตือน "เกรดไม่ตรงตำแหน่ง" สักบรรทัด
+     · ต้องมีทั้งเคส **ตรงตำแหน่ง** และ **ไม่ตรง** ให้ใช้ได้จริง
+     · ต้องมี `T3` กับ `T6` คู่กันเสมอ — เป็นคู่ที่พิสูจน์กฎ "เลขน้อย = สูงกว่า"
+       (เทียบสตริงจะได้ผลกลับหัว) */
+  grades: [
+    { code: 'M1', band: 'M', rank: 730, label_th: 'ผู้จัดการ / ผู้ชำนาญการ', is_active: true, sort_order: 40 },
+    { code: 'S1', band: 'S', rank: 630, label_th: 'หัวหน้าส่วน · วิศวกรอาวุโส', is_active: true, sort_order: 50 },
+    { code: 'S3', band: 'S', rank: 610, label_th: 'หัวหน้าแผนก · วิศวกร', is_active: true, sort_order: 52 },
+    { code: 'T3', band: 'T', rank: 510, label_th: 'หัวหน้ากลุ่ม · ช่างเทคนิค', is_active: true, sort_order: 62 },
+    { code: 'T6', band: 'T', rank: 430, label_th: 'พนักงานทั่วไป', is_active: true, sort_order: 70 },
+    { code: 'Y1', band: 'Y', rank: 300, label_th: 'พนักงานชั่วคราว', is_active: true, sort_order: 80 },
+  ],
+
+  /* 🎯 ทะเบียน KPI มาตรฐานของกลุ่ม — **ห้ามถอด** (2026-09-23)
+     โมดัล `KpiStandardPicker` แตกแขนงตามค่า `requirement` 3 แบบ ซึ่ง ROWS ทั่วไปไม่มีให้เลย
+     ⇒ ถ้าไม่มีชุดนี้ harness จะไม่เคยรันโค้ดสายนี้สักบรรทัด:
+       · `requirement: null` = **แถวหัวข้อแม่** (ไม่ใช่ KPI · ห้ามมี checkbox ห้ามนับน้ำหนัก)
+       · `fixed` = ติ๊กมาให้ · `choice` = ให้คนติ๊กเอง
+     · `seq` ซ้ำกันได้จริง (ต้นฉบับ Production พิมพ์ '6' ซ้ำ 2 แถว) ⇒ ใส่ไว้ให้ชนกันจริง
+       เพื่อพิสูจน์ว่าจอเรียงด้วย `sort_order` ไม่ใช่ `seq`
+     · ต้องมีอย่างน้อย 2 std_unit เพื่อให้ dropdown เลือกหน่วยงานมีของให้สลับ */
+  kpi_standard_items: [
+    { id: 'std-1', year: 2026, std_unit: 'Production', seq: '1', sort_order: 1, perspective: 'financial', topic: 'Raw Material Control', formula_text: '(Raw Material/Sales from product) x 100', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-2', year: 2026, std_unit: 'Production', seq: '6', sort_order: 2, perspective: 'internal', topic: 'Cost Reduction', formula_text: 'Reduce X% from last year or Value', requirement: 'choice', catalog_id: null, note: null },
+    { id: 'std-3', year: 2026, std_unit: 'Production', seq: '6', sort_order: 3, perspective: 'internal', topic: 'Internal Quality Rate', formula_text: '(Defect/Total Production) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-4', year: 2026, std_unit: 'Production', seq: '11', sort_order: 4, perspective: 'learning', topic: 'Activity', formula_text: 'Number of Passed Activity', requirement: null, catalog_id: null, note: null },
+    { id: 'std-5', year: 2026, std_unit: 'Production', seq: '11.1', sort_order: 5, perspective: 'learning', topic: 'QCC', formula_text: '*Refer to activity announcement', requirement: 'fixed', catalog_id: null, note: null },
+    { id: 'std-6', year: 2026, std_unit: 'QA', seq: '1', sort_order: 1, perspective: 'customer', topic: 'Customer Claim', formula_text: '(Claim qty/Delivery qty) x 1,000,000', requirement: 'fixed', catalog_id: null, note: null },
+  ],
+  /* นิยาม KPI — **ต้องมีทั้งแถว `manual` และ `auto:` เสมอ ห้ามถอด** (2026-09-23)
+     `source` เป็น `not null default 'manual'` ⇒ แถวกรอกมือ**ไม่ใช่ null** · เคยเข้าใจผิดจนเกิดบั๊ก
+     2 จุด (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
+     ⇒ ไม่มีแถว auto ในม็อก = ตัวกรองที่แก้บั๊กนั้นไม่เคยถูกรันใน harness */
+  /* 🔴 ห้ามถอด/ห้ามเปลี่ยน `scope_kind` ของ 3 แถวนี้ (24/09)
+     ตั้งแต่ย้ายมาใช้แกน `scope_kind/scope_value` (23/09) แถวที่ผูกไว้กับ `section: 'PD3'` เฉยๆ
+     **ตกตัวกรอง `scopeCovers` ของทุกขอบเขต** ⇒ ตาราง "KPI นอกระบบ (กรอกมือ)" ว่างตลอดใน harness
+     = โค้ดสายกรอกมือทั้งหมด (สรุปรายปีตามวิธีรวม · ทศนิยม · โมดัลนิยาม) ไม่เคยถูกรันใน crashsweep เลย
+     ตั้งเป็น `plant` เพราะนิยามระดับโรงงานตกทอดถึงทุกขอบเขต ⇒ เห็นแน่นอนไม่ว่าจอ default ไปที่ไหน
+     ⚠️ ต้องตั้ง `section: null` ด้วย — `scopeOfDef()` ถอยไปอ่าน `section` เมื่อ `scope_kind = 'plant'`
+        (ใส่ scope_kind อย่างเดียวแล้วคง section ไว้ = ยังเป็นนิยามระดับส่วนงานเหมือนเดิม แถวก็ยังไม่โผล่)
+     · `kd-3` (auto) ยังคง `section: 'PD3'` ไว้ = สาขา "นิยามระดับส่วนงาน" ยังถูกรันอยู่
+     · `summary_mode` ต้องมีทั้ง `average`/`sum`/`rate` ให้ครบ — แต่ละตัวเปิดสาขาคนละเส้นใน `summaryOf()`
+       (`rate` = สาขาที่ต้องถอยมาเฉลี่ยแล้วติดป้าย ≈) · `decimals: 0` = สาขาที่ `||` จะตกค่า default */
+  kpi_definitions: [
+    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average' } },
+    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate' } },
+    { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+    /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
+    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
+  ],
+  factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
+  factory_line_regions: [
+    { id: 'rg-1', line_name: LINE_NAME(1), points: [[6, 8], [44, 8], [44, 46], [6, 46]] },
+    { id: 'rg-2', line_name: LINE_NAME(2), points: [[54, 8], [92, 8], [92, 46], [54, 46]] },
+    { id: 'rg-3', line_name: 'ห้องคอมเพรสเซอร์', points: [[6, 56], [44, 56], [44, 92], [6, 92]] },
+  ],
+}
 const rowsFor = (table) => {
+  if (TABLE_FIXED[table]) return TABLE_FIXED[table]
   const fn = TABLE_ROWS[table]
   return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
 }
@@ -192,17 +303,62 @@ const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefi
    "โหลดไม่ได้" ทุกครั้ง = **สาขาที่ใช้งานจริงไม่เคยถูกเรนเดอร์ใน crashsweep เลย**
    ⚠️ ต้องครอบเคสที่ของจริงมีจริงๆ: วิว (แก้ไม่ได้) · ตารางไม่มี PK · RLS ปิด · คอลัมน์ enum ·
       FK ข้าม schema (auth.users) — เคสพวกนี้คือจุดที่โค้ดหน้ามีสาขาแยก                        */
+/* ⚠️ ชุดนี้ต้องมีครบทุก "เคสที่แท็บ 🩺 ตรวจสุขภาพ มีสาขาแยก" ไม่งั้นสาขานั้นไม่เคยถูกเรนเดอร์:
+     วิว (ไม่ฟ้อง PK/RLS) · ตารางสำรองค้าง public · RLS ปิด · ไม่มี PK · ไม่มีใครใช้ · ตารางว่าง */
 const SCHEMA_TABLES = [
-  { t: 'employees', k: 'r', cols: 12, rows: 308, rls: true, pk: ['id'], note: null },
-  { t: 'four_m_logs', k: 'r', cols: 18, rows: 1240, rls: true, pk: ['id'], note: 'บันทึกการเปลี่ยนแปลง 4M' },
-  { t: 'line_stock_summary', k: 'v', cols: 4, rows: 0, rls: false, pk: [], note: null },
-  { t: 'production_lines', k: 'r', cols: 11, rows: 31, rls: true, pk: ['id'], note: null },
+  { t: 'employees', k: 'r', cols: 12, rows: 308, bytes: 311296, rls: true, pk: ['id'], note: null },
+  { t: 'four_m_logs', k: 'r', cols: 18, rows: 1240, bytes: 696320, rls: true, pk: ['id'], note: 'บันทึกการเปลี่ยนแปลง 4M' },
+  { t: 'line_stock_summary', k: 'v', cols: 4, rows: 0, bytes: 0, rls: false, pk: [], note: null },
+  { t: 'production_lines', k: 'r', cols: 11, rows: 31, bytes: 81920, rls: true, pk: ['id'], note: null },
+  { t: 'jigs_bak_test1_20260909', k: 'r', cols: 22, rows: 0, bytes: 16384, rls: false, pk: [], note: null },
+  { t: 'legacy_no_pk', k: 'r', cols: 3, rows: 958, bytes: 65536, rls: false, pk: [], note: null },
 ]
 const SCHEMA_FKS = [
   { name: 'four_m_logs_line_id_fkey', t: 'four_m_logs', c: ['line_id'], rt: 'production_lines', rc: ['id'], del: 'a' },
   { name: 'four_m_logs_created_by_fkey', t: 'four_m_logs', c: ['created_by'], rt: 'auth.users', rc: ['id'], del: 'a' },
 ]
+/* ── 🏛️ OBEYA โหมดปี (2026-09-22): RPC คืน "ผลรวมรายเดือน" (ดู src/utils/obeyaYear.js) ────────
+   ต้องมี: เดือนที่มีข้อมูล · เดือนว่าง (ไม่มีแถว) · แถว NULLISH (wprod/q_w = null) · ไลน์ที่ไม่มีใน production_lines ·
+   downtime ทั้ง planned/unplanned · defect ที่มี mat ไม่รู้ต้นทุน · เช็คชื่อที่ line เป็น id จุดงาน (ของจริงเป็น uuid) */
+const OBEYA_YEAR = () => ({
+  from: '2026-01-01', to: '2026-09-22',
+  sessions: [
+    /* แถวของไลน์ที่มีจริงใน production_lines ของ mock — บอร์ด KPI กรองตาม "กลุ่มไลน์" ไม่งั้นแผ่น OEE/PPM ว่างใน harness ตลอด */
+    { m: '2026-01', line: LINE_NAME(1), n: 30, wload: 15000, oee_w: 1275000, a_wload: 15000, a_w: 1350000, wrun: 13500, p_w: 1215000, wprod: 3000, q_w: 297000, qty: 2970, ng: 30 },
+    { m: '2026-03', line: LINE_NAME(1), n: 28, wload: 14000, oee_w: 980000, a_wload: 14000, a_w: 1190000, wrun: 11900, p_w: 952000, wprod: 2800, q_w: 274400, qty: 2790, ng: 10 },
+    { m: '2026-09', line: LINE_NAME(1), n: 12, wload: 6000, oee_w: 480000, a_wload: 6000, a_w: 540000, wrun: 5400, p_w: 486000, wprod: 1200, q_w: 118800, qty: 1195, ng: 5 },
+    { m: '2026-01', line: 'LINE 060', n: 40, wload: 20000, oee_w: 1600000, a_wload: 20000, a_w: 1800000, wrun: 18000, p_w: 1620000, wprod: 4000, q_w: 396000, qty: 3960, ng: 40 },
+    { m: '2026-02', line: 'LINE 060', n: 38, wload: 19000, oee_w: 1330000, a_wload: 19000, a_w: 1615000, wrun: 16150, p_w: 1291000, wprod: 3800, q_w: 372400, qty: 3780, ng: 20 },
+    { m: '2026-03', line: 'LINE 061', n: 20, wload: 10000, oee_w: 850000, a_wload: 10000, a_w: 920000, wrun: 9200, p_w: 828000, wprod: null, q_w: null, qty: 0, ng: 0 },
+    { m: '2026-05', line: 'ไลน์ที่ไม่มีในทะเบียน', n: 3, wload: 1500, oee_w: 90000, a_wload: 1500, a_w: 120000, wrun: 1200, p_w: 96000, wprod: 300, q_w: 29700, qty: 297, ng: 3 },
+  ],
+  downtime: [
+    { m: '2026-01', line: 'LINE 060', type: 'Robot (Alarm/Error)', category: 'unplanned', min: 300 },
+    { m: '2026-01', line: 'LINE 060', type: 'พักเที่ยง', category: 'planned', min: 2000 },
+    { m: '2026-02', line: 'LINE 060', type: 'รอวัตถุดิบ', category: 'unplanned', min: 120 },
+    { m: '2026-03', line: 'LINE 061', type: null, category: '', min: 45 },
+  ],
+  defects: [
+    { m: '2026-01', line: LINE_NAME(1), mat: '90031601', rows: 4, ng: 30, trial_ng: 10 },
+    { m: '2026-09', line: LINE_NAME(1), mat: '90031601', rows: 1, ng: 5, trial_ng: null },
+    { m: '2026-01', line: 'LINE 060', mat: '90031601', rows: 6, ng: 40, trial_ng: 5 },
+    { m: '2026-02', line: 'LINE 060', mat: 'MAT-ไม่มีต้นทุน', rows: 2, ng: 20, trial_ng: null },
+  ],
+  orders: [
+    { m: '2026-01', line: 'LINE 060', status: 'confirmed', n: 30, qty: 4000, qty_ok_fb: 3960, qty_actual: 0 },
+    { m: '2026-02', line: 'LINE 060', status: 'carry_over', n: 2, qty: 200, qty_ok_fb: 200, qty_actual: 150 },
+    { m: '2026-02', line: 'LINE 060', status: 'open', n: 1, qty: 100, qty_ok_fb: 100, qty_actual: 0 },
+  ],
+})
+const OBEYA_ATTEND = () => ([
+  { m: '2026-01', line: 'ws-1', n: 400, present: 380, ppe_ok: 350, ot: 20 },
+  { m: '2026-02', line: 'ws-1', n: 380, present: 300, ppe_ok: 100, ot: 0 },
+  { m: '2026-03', line: null, n: 50, present: 50, ppe_ok: 50, ot: 5 },
+  { m: '2026-04', line: 'ws-ไม่รู้จัก', n: 10, present: null, ppe_ok: null, ot: null },
+])
 const RPC_RESULT = {
+  obeya_year_rollup: OBEYA_YEAR,
+  obeya_attendance_rollup: OBEYA_ATTEND,
   esm_schema_overview: () => ({ at: '2026-09-22T01:00:00Z', tables: SCHEMA_TABLES, fks: SCHEMA_FKS }),
   esm_schema_table: (args) => {
     const name = args?.p_table || 'four_m_logs'

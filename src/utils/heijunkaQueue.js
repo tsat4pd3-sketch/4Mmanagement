@@ -112,20 +112,39 @@ export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs,
     } else if (!o.isDone && !o.isCarry && nowMs > endMs) {
       occupiedEndMs = nowMs;
     }
-    // เดินคิวต้องไม่ขยับมาก่อน endMs ของการ์ดนี้เด็ดขาด (ไม่งั้นใบถัดไปจะมาทับกล่องที่แสดงอยู่)
-    queueEndMs = isLateDone ? occupiedEndMs : endMs;
+    /* 🔴 เดินคิวด้วย `occupiedEndMs` เสมอ = "เวลาที่เลนนี้ว่างจริง" (2026-09-22 · คำสั่ง user)
+       เดิมเขียน `isLateDone ? occupiedEndMs : endMs` ⇒ ใบที่ **ยังไม่ปิดและเลยกำหนด**
+       เดินคิวจาก `endMs` (เวลาทฤษฎีที่ผ่านไปแล้ว) = **ดีเลย์ไม่ถูกส่งต่อให้ใบถัดไปเลย**
+       ผลบนจอ: ใบต่อๆ ไปถูกวาดทับอยู่ในอดีต · หางแดงถูกตัดสั้น · ใบสุดท้ายยังจบที่เวลาทฤษฎี
+       ⇒ หัวหน้าไลน์อ่านบอร์ดแล้ว **ตอบไม่ได้ว่างานจะไปจบกี่โมง และต้อง recover ยังไง**
+       (user: "ถ้าใบแรกแดง ควรจะยืดดันใบที่ต่อท้ายออกไป เพื่อให้เห็นว่าจะ recovery ยังไง")
+       ตอนนี้ใบค้าง 1 ใบดันทั้งแถวไปข้างหน้า → `endMs` ของใบสุดท้าย = **เวลาที่คาดว่าจะจบจริง**
+       · ใบปกติ `occupiedEndMs === endMs` ⇒ พฤติกรรมเดิมเป๊ะ
+       · ใบปิดช้า = confirmed_at ⇒ เหมือนเดิม
+       ⚠️ ห้ามกลับไปใช้ `endMs` — คิวจะถอยกลับไปอดีตแล้วการ์ดซ้อนทับกันอีก */
+    queueEndMs = occupiedEndMs;
     // ⚠️ `!o.is_backfill` — ใบเปิดย้อนหลังคนกรอกเวลาเอง เวลาเปิดไม่ใช่เวลาเริ่มผลิตจริง
     //    ตัดสิน "ดีเลย์" จากมันไม่ได้ (จุดที่ Dashboard เคยตกไป ทำให้ 2 จอไม่ตรงกัน)
     const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs && rowBehindPace;
     return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
-  }).map((item, i, arr) => {
-    // ใบที่ยังไม่ปิด+เลยกำหนด หางสีแดงจะยืดไปถึง "ตอนนี้" เสมอ — แต่ถ้าใบถัดไปเริ่มทำงานไปแล้ว
-    // ต้องตัดหางแดงให้สุดแค่จุดที่ใบถัดไปเริ่ม ไม่ให้ยืดไปทับใบถัดไป
-    if (item.isDelayed && arr[i + 1]) {
-      return { ...item, occupiedEndMs: Math.min(item.occupiedEndMs, arr[i + 1].startMs) };
-    }
-    return item;
   });
+  /* หมายเหตุ: เดิมมี pass ที่ 2 คอยตัดหางแดงไม่ให้ทับใบถัดไป — ไม่ต้องแล้วตั้งแต่เดินคิวด้วย
+     `occupiedEndMs` เพราะใบถัดไปเริ่มที่จุดนั้นพอดี (pass นั้นคือตัวที่ "ซ่อน" ดีเลย์ไว้) */
+}
+
+/* ⏱️ เวลาที่คาดว่างานทั้งเลน/แถวจะจบ — ตอบคำถาม "แล้วใบสุดท้ายจะจบกี่โมง"
+   นับเฉพาะใบที่ยัง**ไม่จบ** (ใบที่ปิดแล้วไม่ใช่ "งานที่เหลือ") · คืน null เมื่อไม่มีงานค้าง
+   ⚠️ ต้องอ่านจากผลของ `computeQueuedPositionsFull` เท่านั้น — ค่านี้จะถูกต้องก็ต่อเมื่อคิวถูกดัน
+   ด้วย `occupiedEndMs` (ดูคอมเมนต์ด้านบน) ห้ามคำนวณ `opened_at + qty×CT` เองในหน้า */
+export function projectedFinishMs(positioned = []) {
+  let last = null;
+  const each = (item) => {
+    if (!item || item.o?.isDone || item.o?.isCarry) return;
+    const end = Math.max(item.endMs || 0, item.occupiedEndMs || 0);
+    if (end > 0 && (last == null || end > last)) last = end;
+  };
+  if (typeof positioned.forEach === 'function') positioned.forEach(each);
+  return last;
 }
 
 /* ── แบ่ง "เลน" ก่อนต่อคิว — 1 เลน = 1 เครื่องจริงที่ผลิตได้ทีละใบ ─────────────────────

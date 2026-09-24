@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { useNavigate } from 'react-router-dom';
 import { navItemsForGroups, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
+import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { topPaths } from '../utils/navRecent';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
@@ -63,7 +64,10 @@ const DEPT_CSS = `
   /* เส้นสถานะสีประจำโมดูลบนขอบบน */
   .smart-card .edge {
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, var(--mc) 0%, transparent 78%);
+    /* 23/09: เดิมไล่เฉดจางหายทางขวา — เป็นการตกแต่งล้วน (สีเดียวกันทั้งเส้นสื่อความหมายเท่ากัน)
+       ใช้เส้นทึบครึ่งการ์ดแทน ⇒ ยังชี้สีประจำโมดูลได้ แต่ไม่ต้องมีเฉด */
+    right: auto; width: 46%;
+    background: var(--mc);
     opacity: 0.85;
   }
   /* มุม bracket แบบ HUD */
@@ -100,7 +104,7 @@ const DEPT_CSS = `
   }
   .tele-tile .scan {
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, var(--tc) 0%, transparent 70%); opacity: 0.7;
+    right: auto; width: 42%; background: var(--tc); opacity: 0.8;
   }
   @media (hover: hover) {
     .tele-tile:hover { transform: translateY(-4px); border-color: var(--tc); }
@@ -164,15 +168,21 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/dept-dashboard', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
+/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว #22c55e ·
+   เหลือง #f59e0b · แดง #ef4444) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
+   เดิม "ฝ่ายผลิต" เป็น #22c55e และ "Warehouse & Delivery" เป็น #f59e0b **เป๊ะตัวเดียวกับไฟสถานะ**
+   ที่การ์ด telemetry บนหน้าเดียวกันใช้อยู่ ⇒ จอเดียวกันมีแถบเขียว/เหลือง 2 ความหมายปนกัน
+   คนหน้างานอ่านแถบเหลืองเหนือ Warehouse ว่า "คลังมีปัญหา" ทั้งที่มันแปลว่า "นี่คือการ์ดคลัง"
+   ⇒ ย้ายไปโทนเย็นที่ไม่มีความหมายสถานะ (teal / indigo) · การ์ดยังแยกกันออกด้วย emoji + code + สีอื่น */
+  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/obeya?tab=todo', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
   // 📺 จอที่ "แขวนทิ้งไว้" — แยกจากภาพรวมเพราะไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28)
   'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · จอเฝ้าระวังแขวนห้อง · OEE รายไลน์' },
-  'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#22c55e', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
+  'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#14b8a6', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
   'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
   'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
   // Logistic แยก 3 ฝั่งตามแผนกเจ้าของ — ⚠️ Warehouse (FG 1xx · ส่งลูกค้า) ≠ Store (2xx/3xx/5xx · ป้อนไลน์) · ชื่อหมวดจาก LOGISTIC_GROUPS
   [LOGISTIC_GROUPS.inbound]:  { code: 'STO·06', color: '#38bdf8', route: '/line-stock',      label: 'Store · Supply to Line',      desc: 'Store ดูแล 3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง — สต๊อกในไลน์ · บอร์ดคัมบัง · ขนส่งเข้าไลน์' },
-  [LOGISTIC_GROUPS.outbound]: { code: 'DLV·07', color: '#f59e0b', route: '/customer-demand', label: 'Warehouse & Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
+  [LOGISTIC_GROUPS.outbound]: { code: 'DLV·07', color: '#818cf8', route: '/customer-demand', label: 'Warehouse & Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
   [LOGISTIC_GROUPS.control]:  { code: 'PLN·08', color: '#a78bfa', route: '/planner-sales',   label: 'Planning & Data',      desc: 'Sales · Planner · Billing — ประสานข้อมูลระหว่าง สโตร์ ↔ ผลิต ↔ จัดส่ง' },
   'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·09', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
   'คุณภาพ & วิศวกรรม':        { code: 'QUA·10', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
@@ -229,19 +239,23 @@ function TeleTile({ t, onGo }) {
     <>
       <div className="scan" />
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : t.color, fontVariantNumeric: 'tabular-nums' }}>
+        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : toneInk(t.tone), fontVariantNumeric: 'tabular-nums' }}>
           {shown == null ? '–' : shown}
         </span>
+        {/* ตัวหาร: "14 / 20 ไลน์" — เลขลอยๆ ตัดสินไม่ได้ว่ามากหรือน้อย (De-AI tell 05) */}
+        {t.of != null && shown != null && (
+          <span style={{ fontSize: 13, color: 'var(--muted2)', fontFamily: MONO }}>/ {t.of}</span>
+        )}
         <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{t.unit}</span>
       </div>
       <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{t.label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</span>
-        {onGo && <span style={{ fontSize: 11, color: t.color, marginLeft: 'auto' }}>↗</span>}
+        {onGo && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>↗</span>}
       </div>
     </>
   );
-  const style = { '--tc': t.color };
+  const style = { '--tc': statusColor(t.tone) };
   return onGo
     ? <button type="button" className="tele-tile" style={{ ...style, cursor: 'pointer' }} onClick={onGo} title={t.goTitle}>{body}</button>
     : <div className="tele-tile" style={style}>{body}</div>;
@@ -373,14 +387,25 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
     return `/report?tab=4&from=${from}`;
   }, []);
 
+  /* 🚦 สีบนการ์ด = **สถานะเทียบเป้าเท่านั้น** ห้ามใช้เป็นสีประจำการ์ด (`utils/statusTone.js`)
+     เดิม: ไลน์=เขียวตายตัว · เช็คชื่อ=น้ำเงินตายตัว · DT/4M=สีตามสถานะ
+     ⇒ 4 ใบเรียงกันแต่สีมี 2 ความหมายปนกัน คนอ่านใบแรกผิดว่า "เขียว = ปกติ"
+        (เขียวอยู่อย่างนั้นแม้เดินจริง 1 จาก 20 ไลน์) · 23/09 จาก brief De-AI UI
+     ตอนนี้: ตัวที่ไม่มีเป้า = **เทา + โชว์ตัวหาร** ให้คนตัดสินเอง · ตัวที่ 0 = ดี ค่อยมีสี */
+  const lineTotal = scopeNames ? scopeNames.length : (prodLines.length || null);
   const TELE = [
-    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   color: '#3dd65c', unit: 'ไลน์',
+    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   unit: 'ไลน์',
+      of: lineTotal, tone: 'none',   // "ควรเดินกี่ไลน์" ขึ้นกับแผนผลิตรายวัน — ระบบไม่มีเป้านี้ ⇒ ห้ามทาสี
       to: '/daily-report', goTitle: 'เปิด Daily Report — ดูกะที่เปิดอยู่' },
-    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, color: '#4d9fff', unit: 'คน',
+    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, unit: 'คน',
+      tone: 'none',                  // ยอดคนที่ "ควรมา" อยู่ที่ตารางกะ ไม่ใช่ที่นี่ ⇒ เทา
       to: '/checkin', goTitle: 'เปิดหน้าเช็คชื่อ & PPE' },
-    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      color: tele.dt > 0 ? '#ef4444' : '#3dd65c', unit: 'จุด',
+    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      unit: 'จุด',
+      tone: toneOf({ value: tele.dt, zeroIsGood: true }),          // > 0 = ผลิตหยุดอยู่จริง ⇒ แดง
       to: '/dashboard', goTitle: 'เปิด Dashboard — แผง Andon เครื่องที่หยุดอยู่' },
-    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   color: tele.fourM > 0 ? '#f59e0b' : '#3dd65c', unit: 'รายการ',
+    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   unit: 'รายการ',
+      // คิวค้าง = ต้องไปจัดการ แต่สายการผลิตยังเดิน ⇒ เหลือง ไม่ใช่แดง (จอที่แดงตลอดคือจอที่คนเลิกมอง)
+      tone: toneOf({ value: tele.fourM, zeroIsGood: true, over: 'warn' }),
       to: fourMLink, goTitle: 'เปิดคิวอนุมัติ 4M (ย้อนหลัง 90 วัน)' },
   ];
 

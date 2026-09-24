@@ -95,6 +95,22 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/pm-coordination', role)
         || hasPermission('page:/pm-setup', role);
   }
+  /* 🏛️ OBEYA รับแท็บ 📌 งานค้างของส่วนงาน (/dept-dashboard เดิม · 23/09) — piggyback สิทธิ์เดิม
+     คนที่มีสิทธิ์แค่ page:/dept-dashboard ยังเข้า /obeya ได้ (เห็นเฉพาะแท็บ 📌 · Obeya.jsx กรองแท็บด้วย hasPermission) */
+  if (path === '/obeya') {
+    return hasPermission('page:/obeya', role) || hasPermission('page:/dept-dashboard', role);
+  }
+  /* 🧰 ศูนย์ทะเบียนอุปกรณ์ = ศูนย์รวมแท็บทะเบียนของช่าง (เครื่อง/แม่พิมพ์/JIG/อะไหล่)
+     piggyback สิทธิ์หน้าเดิมทั้งหมด — ไม่ต้อง seed page:/equipment
+     แท็บใน EquipmentHub.jsx โผล่ตามสิทธิ์ย่อย ⇒ คนที่เข้าฐานข้อมูลเครื่องจักรไม่ได้
+     ก็ยังไม่เห็นแท็บนั้นเหมือนเดิม (ไม่มีข้อมูลใหม่หลุดให้ใคร) */
+  if (path === '/equipment') {
+    return hasPermission('page:/equipment', role)
+        || hasPermission('page:/machine-database', role)
+        || hasPermission('page:/die-registry', role)
+        || hasPermission('page:/fixture', role)
+        || hasPermission('page:/mtn-repair', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 

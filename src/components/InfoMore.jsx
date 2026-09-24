@@ -72,7 +72,7 @@ export default function InfoMore({
         style={{
           marginLeft: lead ? 6 : 0, padding: '1px 7px', borderRadius: 6, cursor: 'pointer',
           border: `1px solid var(--border2)`, background: 'var(--bg3)',
-          color: 'var(--muted)', fontSize: Math.max(10, size - 1.5), fontWeight: 700,
+          color: 'var(--muted)', fontSize: Math.max(11, size - 1.5), fontWeight: 700,
           whiteSpace: 'nowrap', verticalAlign: 'middle',
         }}>
         {open ? '▴ ย่อ' : `${MORE_MARK} ${label}`}

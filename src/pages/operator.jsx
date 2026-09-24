@@ -1,7 +1,8 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { onlyDirectStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้าไลน์ (กฎ staffKind.js)
+import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -14,20 +15,29 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+  orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
-import { positionOptionsWith } from '../utils/positions';
+import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
+import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { uploadOpts } from '../utils/storageUpload';
+import { checkWrite } from '../utils/dbWrite';
+import { fetchByIds } from '../utils/fetchByIds';
+import SkillEvidencePanel from '../components/SkillEvidencePanel';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -43,10 +53,16 @@ const resizeImage = (file, maxPx = 1280, quality = 0.85) => resizeImg(file, maxP
 /* สเกลสกิล 5 ระดับ / เพดานขั้น / หมวดสกิล ย้ายไป src/utils/skillLevels.js แล้ว (2026-08-06)
    — เดิมนิยามซ้ำกับ Report.jsx แล้ว drift กัน (import ด้านบน ห้ามนิยามซ้ำที่นี่อีก) */
 
+/* วงแหวนรอบรูปพนักงาน = **ประเภทการจ้าง** (ประจำ/รายวัน/อื่นๆ) — ความหมายเดิม ไม่เปลี่ยน
+   🔴 `ring` เป็น**สีเรียบ** ไม่ใช่ไล่เฉดโลหะ (23/09 ก้อน C)
+   เดิมเป็น `linear-gradient(135deg, …5 stop…)` เลียนแบบผิวทอง/เงิน/ทองแดง — แต่วงแหวนมันหนา
+   **2.5px** ⇒ ไล่เฉด 5 สีในพื้นที่ 2.5px มองไม่ออกว่าเป็นโลหะอยู่แล้ว เห็นเป็นแค่สีที่มีจุดรบกวน
+   และมันคูณตามจำนวนพนักงานในตาราง (วัดจริง: 28 จาก 30 ไล่เฉดทั้งหน้ามาจากตรงนี้จุดเดียว)
+   ⇒ ใช้สีเรียบสีเดียว = หน้าตาเหมือนเดิมในสายตาคนใช้ แต่หน้านี้เลิกเป็นหน้าที่ "ตกแต่งหนักสุดในระบบ" */
 const EMP_GRADES = {
-  gold:   { label: 'ประจำ',  gradient: 'linear-gradient(135deg,#7a5800,#ffd700,#c8941a,#ffd700,#7a5800)', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
-  silver: { label: 'รายวัน', gradient: 'linear-gradient(135deg,#555,#d0d0d0,#999,#d0d0d0,#555)',          glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
-  bronze: { label: 'อื่นๆ',  gradient: 'linear-gradient(135deg,#4a2800,#cd7f32,#8b4a1e,#cd7f32,#4a2800)', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
+  gold:   { label: 'ประจำ',  ring: '#c8941a', glow: 'rgba(255,215,0,0.45)',   text: '#c8941a', badge: 'rgba(255,215,0,0.15)',   border: 'rgba(200,148,26,0.5)' },
+  silver: { label: 'รายวัน', ring: '#a8a8a8', glow: 'rgba(192,192,192,0.4)',  text: '#a0a0a0', badge: 'rgba(192,192,192,0.15)', border: 'rgba(160,160,160,0.5)' },
+  bronze: { label: 'อื่นๆ',  ring: '#b06a28', glow: 'rgba(205,127,50,0.35)',  text: '#b06a28', badge: 'rgba(205,127,50,0.15)',  border: 'rgba(176,106,40,0.5)' },
 };
 
 const getEmpGrade = (code = '') => {
@@ -59,7 +75,7 @@ const getEmpGrade = (code = '') => {
 const TAB_KEYS = ['employees', 'skills', 'levelup'];
 
 export default function Operator() {
-  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
@@ -166,7 +182,9 @@ export default function Operator() {
   const [filterGroup,   setFilterGroup]   = useState('');
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
-  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect
+  const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect (labor_type จากผังองค์กร)
+  const [empSearch,     setEmpSearch]     = useState(''); // 🔎 ค้นชื่อ/รหัส — 223 คน เลื่อนหาไม่ไหว (feedback 23/09)
+  const [filterStaffKind, setFilterStaffKind] = useState(''); // shopfloor/support (staff_kind — แกนเช็คชื่อ)
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)
   const [lines,           setLines]           = useState([]);
@@ -181,17 +199,27 @@ export default function Operator() {
   const [rejectLuModal,   setRejectLuModal]   = useState(null);
   const [rejectLuReason,  setRejectLuReason]  = useState('');
   const [runningWeekly,   setRunningWeekly]   = useState(false);
+  /* EXP v2 — หลักฐานสะสม + ค่าปรับแต่ง (ดู docs/modules/employee-skills-exp.md §v2) */
+  const [expCfg,  setExpCfg]  = useState(null);
+  const [evByKey, setEvByKey] = useState({});
+  const [expBusy, setExpBusy] = useState('');
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
   const [mtnTeamRows,     setMtnTeamRows]     = useState(pmTeamsSync());  // ทีมช่างซ่อม (data-driven) — ช่อง 🔧 ในโมดัลแก้ไข
   const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
+  const [gradesReady, setGradesReady] = useState(0);   // bump เมื่อทะเบียนเกรดโหลดเสร็จ (gradesSync เป็น cache นอก React)
+
   useEffect(() => {
     let alive = true;
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
+    fetchExpConfig();
+    /* 🎓 ทะเบียนเกรด (20 แถว) — ต้องโหลดก่อน `gradesSync()` ถึงมีข้อมูล
+       ⚠️ cache อยู่นอก React ⇒ ต้อง bump state ด้วย ไม่งั้นช่องเกรดไม่ re-render หลังโหลดเสร็จ */
+    loadGrades().then(() => { if (alive) setGradesReady(n => n + 1); });
     supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
@@ -234,6 +262,74 @@ export default function Operator() {
     return () => { alive = false; };
   }, []);
 
+  const fetchExpConfig = async () => {
+    const { data, error } = await supabase.from('skill_exp_config').select('*').eq('id', 1).maybeSingle();
+    if (error) { console.warn('skill_exp_config:', error.message); return; }   // ห้ามกลืน error เงียบ
+    setExpCfg(data || null);
+  };
+
+  /* หลักฐานของคำขอที่แสดงอยู่เท่านั้น — เลือกคอลัมน์ที่ใช้จริง ไม่ใช่ select('*') (กฎ egress) */
+  const fetchEvidence = async (reqs) => {
+    const ids = (reqs || []).map(r => r.employee_id).filter(Boolean);
+    if (!ids.length) { setEvByKey({}); return; }
+    const { rows, error } = await fetchByIds(ids, part => supabase
+      .from('employee_skill_evidence')
+      .select('employee_id, skill_name, cum_cycles, days_worked, parts_seen, n_changeover, n_abnormal,'
+            + ' ng_ratio, quality_ok, has_ojt, ojt_post_score, is_trainer, shadow_score, verified,'
+            + ' gate_missing, next_level, cur_band, last_worked_date')
+      .in('employee_id', part), { orderBy: 'employee_id' });   // ⚠️ ตารางนี้ไม่มีคอลัมน์ id (PK คู่)
+    if (error) { console.warn('employee_skill_evidence:', error); return; }
+    const m = {};
+    for (const r of rows || []) m[`${r.employee_id}|${r.skill_name}`] = r;
+    setEvByKey(m);
+  };
+
+  const runExpRebuild = async () => {
+    setExpBusy('rebuild');
+    const { data, error } = await supabase.rpc('fn_skill_exp_rebuild');
+    setExpBusy('');
+    if (error) { toast.error('คำนวณหลักฐานไม่สำเร็จ: ' + error.message); return; }
+    toast.success(data);
+    fetchLevelUpRequests();
+  };
+
+  /* ปิดคิวค้างตามเกณฑ์ใหม่ — dry run ก่อนเสมอ · ใบที่ไม่ผ่าน = rejected + เหตุผล ห้ามลบ ห้าม approve */
+  const runReeval = async (dry = true) => {
+    setExpBusy('reeval');
+    const { data, error } = await supabase.rpc('fn_skill_reeval_pending', { p_dry_run: dry });
+    setExpBusy('');
+    if (error) { toast.error('ประเมินคิวไม่สำเร็จ: ' + error.message); return; }
+    const r = data || {};
+    if (dry) {
+      const ok = window.confirm(
+        `ประเมินคำขอค้าง ${r.pending_total} ใบตามเกณฑ์ใหม่:\n` +
+        `  ✅ ผ่าน ${r.pass} ใบ\n` +
+        `  ❌ ไม่ผ่าน ${r.fail} ใบ\n` +
+        `  ⏸️ ระบบประเมินไม่ได้ ${r.hold} ใบ (ปล่อยไว้ให้คนตัดสิน)\n\n` +
+        `กด OK = ปิดใบที่ไม่ผ่าน ${r.fail} ใบ เป็น "ไม่อนุมัติ" พร้อมเหตุผล\n` +
+        `ใบไม่ถูกลบ · คนที่ถูกปิดจะถูกยื่นใหม่อัตโนมัติทันทีที่หลักฐานครบ`);
+      if (ok) runReeval(false);
+      return;
+    }
+    toast.success(`ปิดคำขอที่ไม่ผ่าน ${r.rejected_now} ใบแล้ว`);
+    fetchLevelUpRequests();
+  };
+
+  const toggleExpLive = async () => {
+    const next = !expCfg?.is_enabled;
+    if (!window.confirm(next
+      ? 'เปิดสูตร EXP v2 กับคะแนนจริง?\n\nคะแนนจะถูกคำนวณใหม่จากหลักฐานที่วัดได้ — บางคนจะลดลง\nปิดกลับได้ทุกเมื่อ (ระดับที่อนุมัติไปแล้วเป็นพื้น ไม่ถูกลดต่ำกว่านั้น)'
+      : 'กลับเป็นโหมดทดลอง (shadow)?\nสูตรใหม่จะคำนวณต่อแต่ไม่แตะคะแนนจริง')) return;
+    /* ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้อง .select() แล้วนับแถว */
+    const res = await supabase.from('skill_exp_config')
+      .update({ is_enabled: next, updated_at: new Date().toISOString(), updated_by: fullName || null })
+      .eq('id', 1).select('id');
+    if (!checkWrite(res, 'สลับโหมด EXP v2')) return;
+    if (!res.data?.length) { toast.error('ไม่มีสิทธิ์เปลี่ยนโหมด (skills:run_weekly_update)'); return; }
+    toast.success(next ? 'เปิดใช้สูตร EXP v2 แล้ว' : 'กลับเป็นโหมดทดลองแล้ว');
+    fetchExpConfig();
+  };
+
   const fetchLevelUpRequests = async () => {
     const { data } = await supabase.from('skill_level_up_requests')
       .select('*, employees(id, name, employee_id_code, section, line_id)')
@@ -244,6 +340,7 @@ export default function Operator() {
     if (isLeader && userLineId)  rows = rows.filter(r => r.employees?.line_id === userLineId);
     else if (scopeSecs.length)   rows = rows.filter(r => inSectionScope(scopeSecs, r.employees?.section));
     setLevelUpRequests(rows);
+    fetchEvidence(rows);
   };
 
   const handleRunWeeklyUpdate = async () => {
@@ -377,7 +474,12 @@ export default function Operator() {
       famIds = s.size ? [...s] : [Number(userLineId)];
     }
     const makeBase = () => {
-      let q = onlyDirectStaff(supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)'));
+      /* 🔴 หน้านี้คือ **ทะเบียนพนักงาน** — ต้องเห็นทุกคนรวมสายสนับสนุน ไม่งั้นแก้ข้อมูลเขาไม่ได้เลย
+         (เกิดจริง 23/09: ใส่ตัวกรอง onlyShopfloorStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
+          ทั้งที่เพิ่งถูกสร้างจาก /add-user เมื่อวาน — "มีอยู่ในฐานแต่มองไม่เห็น" คือสภาพที่แย่ที่สุด)
+         การกันไม่ให้เขาไปปนใน "กำลังคน" ทำที่จอที่นับคน (Checkin/Report/ShiftOrganize/
+         WorkforceInsight) ไม่ใช่ที่ทะเบียน · ที่นี่ใช้ชิป 🧑‍🏭/🗂️ กรองดูแทน */
+      let q = supabase.from('employees').select('*, employee_skills(skill_name, score, pending_level)');
       if (isLeader && userLineId)       q = famIds ? q.in('line_id', famIds) : q.eq('line_id', userLineId);
       else if (scopeSecs.length)        q = q.in('section', scopeSecs);
       return q;
@@ -484,6 +586,7 @@ export default function Operator() {
         employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
+        grade:      editingEmp.grade      || null,   // 🎓 เกรดตามผังองค์กรทางการ (ว่างได้)
         department: editingEmp.department,
         // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
         // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
@@ -492,6 +595,13 @@ export default function Operator() {
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
+        /* 🧭 แกนสังกัด — เก็บ "โหนดในผัง" ไม่ใช่แค่ข้อความ (docs/ORG-AXES-DECISION.md §5.1)
+           คอลัมน์ข้อความข้างบนยังเขียนเหมือนเดิมทุกตัวในฐานะสำเนาไว้โชว์ ⇒ หน้าเก่าไม่กระทบ
+           `manual` = คนเลือกเองจากฟอร์ม (ต่างจาก auto_* ที่ระบบเดาจากข้อความตอน backfill) */
+        org_node_id:  orgNodeIdFor(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes),
+          editingEmp.department, orgSectionNodes, orgDeptNodes),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
@@ -756,8 +866,18 @@ export default function Operator() {
     .filter(emp => !filterGrade   || getEmpGrade(emp.employee_id_code) === EMP_GRADES[filterGrade])
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
-    .filter(emp => !filterNoPhoto || !emp.image_url),
-  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, offOrgReasons, laborMap]);
+    .filter(emp => !filterNoPhoto || !emp.image_url)
+    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isShopfloorStaff(emp) : isShopfloorStaff(emp)))
+    /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
+       **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
+    .filter(emp => {
+      const q = normSearch(empSearch);
+      if (!q) return true;
+      return normSearch(emp.name).includes(q)
+          || normSearch(emp.employee_id_code).includes(q)
+          || normSearch(emp.position).includes(q);
+    }),
+  [employees, inactiveEmployees, showInactive, filterSection, filterDept, filterGroup, filterTeam, filterGrade, filterLabor, filterOffOrg, filterNoPhoto, filterStaffKind, empSearch, offOrgReasons, laborMap]);
 
   // worklist "ยังไม่มีรูป" — นับจากคนที่ยังทำงานอยู่เท่านั้น (คนลาออกไม่ต้องตามถ่าย)
   // ที่มา 2026-09-11: ล้างรูปที่ใหญ่ผิดกติกาออก 18 ไฟล์ (GIF/รูปไม่ได้บีบ) หัวหน้าต้องไล่ถ่ายใหม่
@@ -798,35 +918,24 @@ export default function Operator() {
   }, [activeSkillDefs, displayed]);
 
   return (
-    <div className="page-content">
+    <Page>
       {subItemsSkill && (
         <SkillSubItemsModal skill={subItemsSkill} onClose={() => setSubItemsSkill(null)} />
       )}
-      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥" />
-
-      <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
-        {/* แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
-            index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
-        {[
+      {/* UI-STANDARD 2026-09-24: แท็บย้ายเข้า PageHeader (เดิมวาดปุ่มเอง) — ชิปขอบเขตไปอยู่ช่อง actions
+          แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
+          index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
+      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥"
+        tabs={[
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
           [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
-        ].filter(([, , show]) => show).map(([i, t]) => (
-          <button key={i} onClick={() => setTab(i)} style={{
-            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
-            background: tab === i ? 'var(--accent)' : 'var(--bg3)',
-            color: tab === i ? '#fff' : 'var(--text2)',
-            fontWeight: tab === i ? 700 : 400,
-            position: 'relative',
-          }}>
-            {t}
-            {i === 2 && levelUpRequests.length > 0 && (
-              <span style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {levelUpRequests.length}
-              </span>
-            )}
-          </button>
-        ))}
+        ].filter(([, , show]) => show).map(([i, t]) => ({
+          key: TAB_KEYS[i], label: t,
+          badge: i === 2 && levelUpRequests.length > 0 ? levelUpRequests.length : undefined,
+        }))}
+        tab={TAB_KEYS[tab]} onTab={(k) => setTab(TAB_KEYS.indexOf(k))}
+        actions={(scopeSecs.length > 0 || (isLeader && myLineName)) ? (<>
         {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
@@ -845,25 +954,24 @@ export default function Operator() {
             📍 {myLineName}
           </div>
         )}
-      </div>
+        </>) : null}
+      />
 
       {tab === 0 && (
         <>
-          {/* Section / Group / Team / Grade filters */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Section / Group / Team / Grade filters — UI-STANDARD 2026-09-24: FilterBar คุมขนาด/ความกว้าง select ให้แล้ว
+              (เดิมต้องใส่ width:'auto' เองกัน `select{width:100%}` ของธีม) · ลำดับ ขอบเขต → ตัวกรองอื่น → ค้นหา → จำนวน/ล้าง */}
+          <FilterBar style={{ marginBottom: 12 }}>
             {[
               // เปลี่ยนตัวแม่ = ล้างตัวลูก (กันค้างค่าที่ไม่อยู่ใน scope ใหม่แล้วตารางว่างงงๆ)
-              { label: 'Section', value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
-              { label: 'Dept',    value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
-              { label: 'Group',   value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
-              { label: 'Team',    value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
+              { label: 'Section', all: ALL.section,    value: filterSection, opts: sectionOpts, set: (v) => { setFilterSection(v); setFilterDept(''); setFilterGroup(''); } },
+              { label: 'Dept',    all: ALL.dept,       value: filterDept,    opts: deptOpts,    set: (v) => { setFilterDept(v); setFilterGroup(''); } },
+              { label: 'Group',   all: allOf('กลุ่ม'), value: filterGroup,   opts: groupOpts,   set: setFilterGroup },
+              { label: 'Team',    all: ALL.team,       value: filterTeam,    opts: teamOpts,    set: setFilterTeam },
             ].map(f => (
               <select key={f.label} value={f.value} onChange={e => f.set(e.target.value)}
-                /* ⚠️ ต้องมี width: 'auto' — index.css ตั้ง `select { width: 100% }` ทั้งแอป
-                   `minWidth` เป็นแค่พื้น override ไม่ได้ → select 4 ตัวกินคนละบรรทัด (วัดจริง
-                   1500px และ 1280px ได้ 7 แถว) ดันปุ่มกรองตกไปแถวที่ 5 ทั้งที่ที่แนวนอนเหลือเฟือ */
-                style={{ fontSize: 12, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: f.value ? 'var(--text)' : 'var(--muted)', width: 'auto', minWidth: 110, maxWidth: 200 }}>
-                <option value="">{`— ${f.label} —`}</option>
+                style={{ color: f.value ? 'var(--text)' : 'var(--muted)' }}>
+                <option value="">{f.all}</option>
                 {(f.label === 'Dept' || f.label === 'Group') ? (() => {
                   const orgL = f.label === 'Dept' ? deptOrgList : groupOrgList;
                   const legacyL = f.label === 'Dept' ? deptLegacyList : groupLegacyList;
@@ -909,7 +1017,29 @@ export default function Operator() {
               );
             })}
 
-            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
+            {/* 👥 ประเภทพนักงาน (staff_kind) — **คนละแกนกับ Direct/Indirect ข้างล่าง**
+                นี่คือ "ต้องเช็คชื่อ/นับเป็นกำลังคนหน้าไลน์ไหม" (รายคน)
+                ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
+            <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
+            {[
+              { k: 'shopfloor', icon: '🧑‍🏭', label: 'หน้างาน', color: '#22c55e', title: 'พนักงานหน้าไลน์ + ช่าง — เช็คชื่อ · นับเป็นกำลังคน' },
+              { k: 'support',   icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — ไม่เช็คชื่อ ไม่นับกำลังคนหน้าไลน์' },
+            ].map(t => {
+              const active = filterStaffKind === t.k;
+              return (
+                <button key={t.k} title={t.title} onClick={() => setFilterStaffKind(active ? '' : t.k)}
+                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    border: `1px solid ${active ? t.color : 'var(--border2)'}`,
+                    background: active ? `${t.color}22` : 'var(--bg3)',
+                    color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
+                  {t.icon} {t.label}
+                </button>
+              );
+            })}
+
+            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร ราย**แผนก** เพื่อคิดต้นทุน)
+                ⚠️ **คนละแกนกับชิป 🧑‍🏭/🗂️ ข้างบน** (staff_kind ราย**คน** = นับกำลังคนไหม)
+                ขัดกันจริงที่ช่าง MTN: labor_type=indirect แต่ staff_kind=shopfloor — docs/ORG-AXES-DECISION.md §5.4 */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {['direct', 'indirect'].map(t => {
               const m = LABOR_META[t];
@@ -925,13 +1055,22 @@ export default function Operator() {
               );
             })}
 
-            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor) && (
-              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); }}
+            {/* 🔎 ค้นชื่อ/รหัส — feedback หน้างาน 23/09: "พนักงานหลักร้อย เลื่อนหาแย่เลย"
+                ใช้ normSearch ของกลาง ⇒ ทนช่องว่างซ้อน/ขีด และการสะกดไทย (ธ/ธ์ · สระ/วรรณยุกต์) */}
+            <SearchInput value={empSearch} onChange={setEmpSearch} fields="ชื่อ / รหัส / ตำแหน่ง" />
+            <span className="spacer" />
+            {empSearch && (
+              <span className="filter-count" style={{ color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700, whiteSpace: 'normal' }}>
+                {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
+              </span>
+            )}
+            {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor || filterStaffKind || empSearch) && (
+              <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); setFilterStaffKind(''); setEmpSearch(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ✕ ล้าง
               </button>
             )}
-          </div>
+          </FilterBar>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
@@ -1018,9 +1157,11 @@ export default function Operator() {
           {/* Table + fade overlays */}
           <div style={{ position: 'relative' }}>
             {/* Left fade */}
-            <div style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
+            {/* ม่านไล่เฉดขอบซ้าย/ขวา = บอกว่า "ยังเลื่อนต่อไปทางนี้ได้" (ขึ้น-ลงตาม scrollState)
+                = affordance ไม่ใช่การตกแต่ง ⇒ ติด data-ux-ok ให้ uxsweep ข้าม (ดู audit/README.md) */}
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', left: 220, top: 0, bottom: 14, width: 48, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to right, var(--bg2), transparent)', opacity: scrollState.left ? 1 : 0, transition: 'opacity 0.2s' }} />
             {/* Right fade */}
-            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
+            <div data-ux-ok="scroll-affordance" style={{ position: 'absolute', right: 0, top: 0, bottom: 14, width: 64, pointerEvents: 'none', zIndex: 5, background: 'linear-gradient(to left, var(--bg2), transparent)', opacity: scrollState.right ? 1 : 0, transition: 'opacity 0.2s' }}>
               {scrollState.right && <div style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 18, color: 'var(--accent)', opacity: 0.7, animation: 'bounceX 1.2s ease-in-out infinite' }}>›</div>}
             </div>
 
@@ -1075,7 +1216,7 @@ export default function Operator() {
                     <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
                         display: 'inline-flex', padding: 2.5, borderRadius: 12,
-                        background: !emp.is_active ? 'var(--border2)' : grade.gradient,
+                        background: !emp.is_active ? 'var(--border2)' : grade.ring,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
                         {emp.image_url ? (
@@ -1456,7 +1597,40 @@ export default function Operator() {
                 {runningWeekly ? 'กำลังรัน...' : '🔄 Run Weekly Update'}
               </button>
             )}
+            {can('skills', 'run_weekly_update', role) && (
+              <>
+                <button onClick={runExpRebuild} disabled={!!expBusy} title="คำนวณหลักฐานสะสมใหม่ทั้งก้อนจากข้อมูลจริง"
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: 'rgba(132,204,18,0.12)', color: '#84cc16', border: '1px solid rgba(132,204,18,0.3)',
+                    opacity: expBusy ? 0.6 : 1 }}>
+                  {expBusy === 'rebuild' ? 'กำลังคำนวณ...' : '🧮 คำนวณหลักฐานใหม่'}
+                </button>
+                <button onClick={() => runReeval(true)} disabled={!!expBusy} title="ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)"
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)',
+                    opacity: expBusy ? 0.6 : 1 }}>
+                  {expBusy === 'reeval' ? 'กำลังประเมิน...' : '🧪 ประเมินคิวใหม่'}
+                </button>
+                <button onClick={toggleExpLive} disabled={!!expBusy}
+                  title={expCfg?.is_enabled ? 'กำลังใช้สูตร EXP v2 กับคะแนนจริง' : 'สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง'}
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: expCfg?.is_enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
+                    color: expCfg?.is_enabled ? '#22c55e' : 'var(--muted)',
+                    border: `1px solid ${expCfg?.is_enabled ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}` }}>
+                  {expCfg?.is_enabled ? '🟢 EXP v2: ใช้จริง' : '⚪ EXP v2: โหมดทดลอง'}
+                </button>
+              </>
+            )}
           </div>
+
+          {/* 🔴 โหมดทดลอง = คะแนนบนจออื่นยังมาจากสูตรเดิม — ต้องเขียนให้ชัด ห้ามให้คนเข้าใจผิด */}
+          {expCfg && !expCfg.is_enabled && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 7, fontSize: 12,
+                          background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+              ℹ️ <strong>โหมดทดลอง (shadow)</strong> — สูตร EXP v2 คำนวณหลักฐานให้ดูเทียบได้
+              แต่ <strong>คะแนนจริงยังมาจากสูตรเดิม</strong> (+1/วัน · +2/สัปดาห์) · กดปุ่ม ⚪ ด้านบนเพื่อเริ่มใช้จริง
+            </div>
+          )}
 
           {/* Level legend */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1500,6 +1674,13 @@ export default function Operator() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         ขอเมื่อ {fmtDateMedium(req.requested_at)}
                       </div>
+
+                      {/* หลักฐานที่ระบบวัดได้ — คนอนุมัติต้องเห็นก่อนกดปุ่ม (ISO 9001 §7.2) */}
+                      <SkillEvidencePanel
+                        ev={evByKey[`${req.employee_id}|${req.skill_name}`]}
+                        cfg={expCfg}
+                        currentScore={req.from_score}
+                      />
 
                       {/* Doc upload for level 100 */}
                       {needsDoc && canApprove && (
@@ -1625,6 +1806,40 @@ export default function Operator() {
                     <option value="">— เลือก —</option>
                     {positionOptionsWith(editingEmp.position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
+                  {/* 🎓 เกรดตามผังองค์กรทางการ (grades · FM-HRM-1-00102 Rev.03)
+                      🔴 แม่แบบกำหนดเกรดต่อตำแหน่งไว้ แต่ **เตือนอย่างเดียว ห้ามบล็อก** —
+                         ของจริงมีข้อยกเว้น (รักษาการ · เคสเฉพาะ) ดู src/utils/grades.js */}
+                  {(() => {
+                    void gradesReady;                       // ผูก re-render กับตอนทะเบียนโหลดเสร็จ
+                    const allowed = gradeCodesOfPosition(editingEmp.position);
+                    const all = gradesSync();
+                    if (!all.length) return null;          // ทะเบียนยังไม่โหลด = ไม่ต้องโชว์ช่องเปล่า
+                    const fit = gradeFitsPosition(editingEmp.grade, allowed);
+                    const row = gradeRow(editingEmp.grade);
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <label style={labelSt}>เกรด (ตามผังองค์กรทางการ)</label>
+                        <select value={editingEmp.grade || ''}
+                          onChange={e => setEditingEmp({ ...editingEmp, grade: e.target.value || null })}>
+                          <option value="">— ยังไม่ระบุ —</option>
+                          {all.map(g => (
+                            <option key={g.code} value={g.code}>
+                              {g.code} · {g.label_th}{allowed.includes(g.code) ? ' ✓' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
+                          color: fit === 'mismatch' ? '#f59e0b' : 'var(--muted)' }}>
+                          {fit === 'mismatch'
+                            ? <>⚠️ แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> — บันทึกได้ถ้าเป็นเคสรักษาการหรือข้อยกเว้น</>
+                            : allowed.length
+                              ? <>แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> (ติ๊ก ✓ ในลิสต์)</>
+                              : <>แม่แบบไม่ได้ระบุเกรดของตำแหน่งนี้ — เลือกได้ตามจริง</>}
+                          {row && <> · <b>เลขน้อย = สูงกว่า</b> (เช่น S1 สูงกว่า S3)</>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -1968,7 +2183,7 @@ export default function Operator() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

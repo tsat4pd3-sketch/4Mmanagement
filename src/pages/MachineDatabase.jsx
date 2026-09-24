@@ -13,6 +13,11 @@ import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from '../components/LineSelect';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, children }) {
@@ -284,75 +289,69 @@ export default function MachineDatabase() {
     load();
   };
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>;
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page>
       <ReadOnlyNote show={!canEdit && !canCreate} role={role} what="แก้ทะเบียนเครื่องจักร"
         permKey="machines:edit, machines:create" />
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>
-            🏭 ฐานข้อมูลเครื่องจักร
-          </h1>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-            รายการเครื่องจักรทุกไลน์ · {machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่
-          </div>
-        </div>
-        {(canEdit || canCreate) && (
-          <div style={{ display: 'flex', gap: 8 }}>
+      {/* 🧩 เป็นแท็บของ `/equipment` — PageHeader ใน <Hub> ไม่วาดชื่อหน้าซ้ำ เหลือคำอธิบาย + ปุ่ม (UI-STANDARD 2026-09-24)
+          (เดิมวาด <h1> เองด้วย ⇒ แท็บเครื่องจักรมีหัวเรื่อง 2 ชั้นและไม่มี breadcrumb · ภาพ user 22/09) */}
+      <PageHeader title="ฐานข้อมูลเครื่องจักร" icon="🏭"
+        sub={`รายการเครื่องจักรทุกไลน์ · ${machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่`}
+        actions={(canEdit || canCreate) ? (
+          <>
             {canEdit && <button onClick={() => setShowTypeManager(true)} style={cancelBtnStyle}>🏷️ จัดการประเภทเครื่องจักร</button>}
             {canCreate && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>}
-          </div>
-        )}
-      </div>
+          </>
+        ) : null} />
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-        <input placeholder="🔍 ค้นหาหมายเลข/ชื่อเครื่อง" value={search} onChange={e => setSearch(e.target.value)}
-          style={{ ...inputStyle, width: 220 }} />
+      {/* Filters — ขอบเขต (ชนิด/หมวด/ไลน์) → ตัวกรองอื่น → ค้นหา → จำนวน */}
+      <FilterBar>
         {/* ชนิดอุปกรณ์ — แยกเครื่องจักรออกจากแม่พิมพ์/จิ๊ก (แกนคนละแกนกับ "หมวด" ผลิต/facility) */}
         <select value={filterKind} onChange={e => { setFilterKind(e.target.value); setFilterLine(''); }}
           title="ชนิดอุปกรณ์ — แม่พิมพ์กับจิ๊กไม่ใช่เครื่องจักร จึงแยกกันคนละลิสต์"
-          style={{ ...inputStyle, width: 170, borderColor: filterKind === 'machine' ? undefined : 'var(--accent2)' }}>
-          <option value="">— ทุกชนิด —</option>
+          style={{ borderColor: filterKind === 'machine' ? undefined : 'var(--accent2)' }}>
+          <option value="">{ALL.kind}</option>
           {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
         </select>
         {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
-        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }} style={{ ...inputStyle, width: 150 }}>
-          <option value="">— ทุกหมวด —</option>
+        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }}>
+          <option value="">{ALL.category}</option>
           {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}
         </select>
         {catLineNames ? (
-          <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 180 }}>
-            <option value="">— ทุกระบบ/พื้นที่ —</option>
+          <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+            <option value="">{allOf('ระบบ/พื้นที่')}</option>
             {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
           </select>
         ) : (
           /* 2026-09-07: ไลน์ผลิตผ่าน <LineSelect> (ลำดับชั้น + scope มาตรฐาน leader/sections) แทน optgroup ที่ประกอบเอง
              เลือกไลน์แม่ = เห็นเครื่องทั้งกลุ่ม (logic kids ใน `filtered` เดิม) */
-          <LineSelect lines={lines} value={filterLine} onChange={setFilterLine} placeholder="— ทุกไลน์ —"
-            role={role} lineId={userLineId} sections={scopeSecs} style={{ ...inputStyle, width: 180 }} />
+          <LineSelect lines={lines} value={filterLine} onChange={setFilterLine} placeholder={ALL.line}
+            role={role} lineId={userLineId} sections={scopeSecs} />
         )}
-        <select value={filterType} onChange={e => setFilterType(e.target.value)} style={{ ...inputStyle, width: 180 }}>
-          <option value="">— ทุกประเภท —</option>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}>
+          <option value="">{ALL.type}</option>
           {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
           แสดงที่ปิดใช้งาน
         </label>
+        <SearchInput value={search} onChange={setSearch} fields="หมายเลข/ชื่อเครื่อง" />
+        <span className="spacer" />
         {grouped.length > 1 && (
-          <button type="button" onClick={() => {
+          <button type="button" className="ctl-btn" onClick={() => {
             const allCollapsed = grouped.every(([n]) => collapsedGroups.has(n));
             const next = allCollapsed ? new Set() : new Set(grouped.map(([n]) => n));
             setCollapsedGroups(next);
             try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
-          }} style={{ ...inputStyle, width: 'auto', cursor: 'pointer', fontSize: 12, padding: '7px 12px' }}>
+          }} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer', fontSize: 12, padding: '0 12px' }}>
             {grouped.every(([n]) => collapsedGroups.has(n)) ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
           </button>
         )}
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto', textAlign: 'right' }}>
+        <div className="filter-count" style={{ textAlign: 'right' }}>
           {filtered.length} รายการ
           {/* ห้ามซ่อนเงียบ — บอกเสมอว่าชนิดอื่นถูกกรองออกไปกี่ตัว พร้อมทางไปดู */}
           {(() => {
@@ -368,10 +367,11 @@ export default function MachineDatabase() {
             );
           })()}
         </div>
-      </div>
+      </FilterBar>
 
-      {/* §137: ครอบรายการเครื่อง (จัดกลุ่มตามไลน์) ด้วยความสูงจำกัด + เลื่อนในตัว กันล้นจอเมื่อเครื่องเยอะ */}
-      <div style={{ maxHeight: 'calc(100vh - 230px)', overflowY: 'auto', paddingRight: 4 }}>
+      {/* UI-STANDARD 2026-09-24 (UI-CONVENTIONS §6.8): เลิกกล่องเลื่อนแนวตั้งซ้อน (maxHeight calc(100vh-230px))
+          — รายการย่อ/กางตามกลุ่มไลน์ได้อยู่แล้ว เลื่อนซ้อน 2 ชั้นทำให้ล้อเมาส์ติดกล่องใน */}
+      <div style={{ overflowX: 'auto' }}>
       {grouped.length === 0 && (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>ไม่พบเครื่องจักร</div>
       )}
@@ -399,8 +399,8 @@ export default function MachineDatabase() {
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}
-                    {item.automation_level && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
-                    {item.operation_mode && <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
+                    {item.automation_level && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
+                    {item.operation_mode && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
                     {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility / Utility</span>}
                     {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
                     {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>🔗 จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
@@ -588,7 +588,7 @@ export default function MachineDatabase() {
           onChange={load}
         />
       )}
-    </div>
+    </Page>
   );
 }
 

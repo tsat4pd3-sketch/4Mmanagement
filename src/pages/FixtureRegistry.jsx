@@ -10,6 +10,9 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { todayLocal } from '../utils/dateFormat';
 import cachedMaster from '../utils/masterCache';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import useTabParam from '../utils/useTabParam';
 import FixtureClassify from '../components/FixtureClassify';
@@ -78,7 +81,10 @@ export default function FixtureRegistry() {
   const canRecord = can('fixture_shim', 'record', role);
   const canApprove = can('fixture_shim', 'approve', role);
   const canClassify = can('machines', 'edit', role);
-  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points');
+  /* ⚠️ param ชื่อ `fx` ไม่ใช่ `tab` — หน้านี้ถูก embed เป็นแท็บใน `/equipment` (2026-09-22)
+     ซึ่งกิน `?tab=` ไปแล้ว · แท็บซ้อนแท็บต้องคนละ param (UI-CONVENTIONS §6.8)
+     ลิงก์เก่า `/fixture?tab=shim` ยังใช้ได้ — App.jsx แปลงให้ตอน redirect */
+  const [tab, setTab] = useTabParam(TABS.map(t => t.k), 'points', 'fx');
 
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);   // ทุกชนิด (ใช้แท็บจัดชนิด)
@@ -390,10 +396,13 @@ export default function FixtureRegistry() {
   const kindMeta = useCallback((c) => kinds.find(k => k.code === c) || { label: c || '—', icon: '•' }, [kinds]);
 
   return (
-    <div style={{ padding: '16px 20px 40px', maxWidth: 1500, margin: '0 auto' }}>
-      <PageHeader
+    <Page>
+      {/* 🧩 embedded — เป็นแท็บของ `/equipment` · อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือแถบแท็บย่อย `?fx=`
+          🔴 prop ชื่อ `tab` ไม่ใช่ `activeTab` — เดิมส่งผิดชื่อ ⇒ **แท็บไม่เคยไฮไลต์เลยสักอัน**
+             (PageHeader ไม่มี `activeTab` มันเลยอ่าน `tab` ได้ undefined เงียบๆ · แก้ 22/09) */}
+      <PageHeader title="JIG / Fixture" icon="📐"
         tabs={TABS.map(t => ({ key: t.k, label: `${t.icon} ${t.label}` }))}
-        activeTab={tab} onTab={setTab}
+        tab={tab} onTab={setTab}
       />
 
       {dataWarn && (
@@ -406,10 +415,9 @@ export default function FixtureRegistry() {
       {/* เลือกฟิกเจอร์ — ใช้ร่วม 2 แท็บแรก */}
       {(tab === 'points' || tab === 'shim') && (
         <div style={{ ...card, marginBottom: 12, display: 'grid', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นฟิกเจอร์"
-                   style={{ ...inp, width: 200 }} />
-            <select value={fxId} onChange={e => setFxId(e.target.value)} style={{ ...inp, width: 340 }}>
+          <FilterBar bare style={{ marginBottom: 0 }}>
+            <SearchInput value={q} onChange={setQ} fields="ฟิกเจอร์" grow={false} />
+            <select value={fxId} onChange={e => setFxId(e.target.value)}>
               <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
               {shownFixtures.map(f => (
                 <option key={f.id} value={f.id}>
@@ -422,7 +430,7 @@ export default function FixtureRegistry() {
               📷 เฉพาะที่มีรูป ({withImgCount})
             </label>
             {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👥 เห็นเฉพาะส่วนงานของคุณ</span>}
-          </div>
+          </FilterBar>
 
           {fx && (
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
@@ -546,7 +554,11 @@ export default function FixtureRegistry() {
           {/* 📍 ผังวางหมุด — รูปชุดเดียวกับใบตรวจ PM: ปักตรงไหน คนตรวจเห็นหมุดม่วงตรงนั้น */}
           {points.length > 0 && (
             frames.length ? (
-              <div style={{ ...card, display: 'grid', gap: 8 }}>
+              /* 📌 ตรึงรูปไว้ตอนเลื่อนดูตารางจุด (user 23/09 — จอที่ต้องใช้รูปอ้างอิงตอนตรวจ
+                 ทุกจอควรตรึงรูป) · พื้นหลังทึบบังคับ ไม่งั้นตารางเลื่อนทะลุใต้รูป
+                 ⚠️ sticky ในหน้า (ไม่ใช่ modal) เกาะ document ได้ก็เพราะ `<main>` ใน App.jsx
+                    เป็น overflowX:'clip' — ห้ามเปลี่ยนเป็น hidden/auto (กับดักใน CLAUDE.md) */
+              <div style={{ ...card, display: 'grid', gap: 8, position: 'sticky', top: 0, zIndex: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -563,6 +575,7 @@ export default function FixtureRegistry() {
                     .filter(({ pin }) => pin && (pin.imageId ?? frames[0]?._key) === frames[frameIdx]?._key)
                     .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no,
                       label_dx: p.label_dx, label_dy: p.label_dy,
+                      selected: armPoint === p.id,
                       color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
                   onPlace={canManage ? placePin : undefined}
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
@@ -777,6 +790,6 @@ export default function FixtureRegistry() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

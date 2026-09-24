@@ -74,7 +74,11 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    supabaseDR.from('customer_pull_formats').select('*').eq('is_active', true).order('code')
+    /* 🔴 `kind` ต้องกรอง 'pull' เสมอ (2026-09-22) — ทะเบียนเดียวกันนี้เก็บฟอร์แมตไฟล์ order/forecast
+       ด้วยแล้ว ถ้าไม่กรอง แถวพวกนั้นจะเข้ามาอยู่ใน pool ของ pickProfile แล้วถูกเลือกได้เมื่อ
+       ไม่มีคำ keyword ไหน match (กรณี `guessed`) ⇒ อ่านไฟล์ e-SMART ด้วยแผนที่คอลัมน์ของใบสั่งส่ง
+       ⚠️ แถวเก่าไม่มีคอลัมน์นี้ = default 'pull' (migration ตั้ง default ไว้แล้ว) */
+    supabaseDR.from('customer_pull_formats').select('*').eq('is_active', true).eq('kind', 'pull').order('code')
       .then(({ data, error }) => {
         if (!alive) return;
         if (error || !data?.length) { setProfiles([FALLBACK_PROFILE]); setProfileMissing(true); }

@@ -2,7 +2,8 @@ import { useState, useEffect, useContext } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { supabaseDR } from '../supabaseClient'
-import { FREQ_LABEL, DEPT_LABEL, dueStatus, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
+import { DEPT_LABEL, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue, cycleLabel, cycleDaysOf, CYCLE_PRESETS, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
+import { setChecklistFrequency } from '../lib/pmChecklists'
 import useIsMobile from '../utils/useIsMobile'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -12,6 +13,9 @@ import { inspMeta } from '../utils/inspectionStatus'
 import { checkWrite } from '../utils/dbWrite';
 import PersonSelect from '../components/PersonSelect' // ชื่อคน = picker กลาง (single-source audit 2026-09-07)
 import useColumnHistory from '../utils/useColumnHistory'
+import Page from '../components/Page'
+import PageHeader from '../components/PageHeader'
+import Segmented from '../components/Segmented'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
@@ -46,7 +50,7 @@ function ymd(d) { const x = new Date(d); return `${x.getFullYear()}-${String(x.g
 const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })
 
 const S = {
-  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
+  page: { minHeight: '100%', background: 'var(--bg)' },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 20 },
   deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },
@@ -94,6 +98,7 @@ export default function PMSchedule() {
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('timeline')
   const [deferFor, setDeferFor] = useState(null)   // แถวที่กำลังเลื่อนแผน
+  const [cycleFor, setCycleFor] = useState(null)   // แถว (array) ที่กำลังตั้งรอบ/วัน PM ครั้งถัดไป
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
@@ -131,7 +136,7 @@ export default function PMSchedule() {
       supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
       // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
       // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, next_due_reason, last_done_at, health_score, plan_type, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
+      supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
     ])
 
     const jigMap = {}
@@ -148,13 +153,15 @@ export default function PMSchedule() {
       const lastDone = plan?.last_done_at ?? lastInspMap[cl.id] ?? null
       // Prefer the server-materialized next_due_date; fall back to live compute
       // when there's no plan row (or the migration hasn't run yet).
-      const origDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency)
+      // รอบจริง = pm_plans.interval_days ก่อน (รองรับ 6 เดือน/1 ปี/N วัน) · ไม่มี = แปลงจาก frequency
+      const iv = plan?.interval_days ?? null
+      const origDue = plan?.next_due_date ? parseLocalDate(plan.next_due_date) : computeNextDue(lastDone, cl.frequency, iv)
       // การเลื่อนแผนที่ตกลงแล้ว (ถ้ายังไม่ถูกทำหลังเลื่อน) → ใช้วันเลื่อนแทน + สถานะ 'เลื่อนแผน'
       const isDeferred = deferActive(plan)
       const deferTo = isDeferred && plan?.deferred_to ? parseLocalDate(plan.deferred_to) : null
       const nextDue = deferTo || origDue
-      const status = dueStatusDefer(origDue, cl.frequency, deferTo)
-      return { cl, eq, lastDone, nextDue, status, reason: plan?.next_due_reason ?? 'time',
+      const status = dueStatusDefer(origDue, cl.frequency, deferTo, iv)
+      return { cl, eq, lastDone, nextDue, status, cycle: cycleDaysOf(cl.frequency, iv), cycleText: cycleLabel(cl.frequency, iv), reason: plan?.next_due_reason ?? 'time',
                planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null,
                plan, isDeferred, deferReason: plan?.defer_reason, deferBy: plan?.deferred_by, deferCount: plan?.defer_count ?? 0 }
     })
@@ -177,6 +184,8 @@ export default function PMSchedule() {
 
   useEffect(() => { fetchData() }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // แผนที่ยังไม่มีวันครบกำหนด (ไม่ตั้งรอบ หรือมีรอบแต่ไม่เคยตรวจ) — ไม่นับที่เลื่อนแผนไว้แล้ว
+  const noDue = rows.filter(r => !r.nextDue)
   const counts = rows.reduce((acc, r) => {
     acc[r.status] = (acc[r.status] ?? 0) + 1
     return acc
@@ -189,11 +198,9 @@ export default function PMSchedule() {
   const goCheck = (equipId) => navigate(`/pm?tab=check&dept=${department}&equip=${equipId}`)
 
   return (
-    <div style={S.page}>
-      <div>
-        <h1 style={S.h1}>ปฏิทินแผน PM</h1>
-        <p style={S.sub}>ตารางการตรวจสอบ · {teamMeta?.label ?? DEPT_LABEL[department] ?? department}</p>
-      </div>
+    <Page style={S.page}>
+      <PageHeader title="ปฏิทินแผน PM" icon="📅"
+        sub={`ตารางการตรวจสอบ · ${teamMeta?.label ?? DEPT_LABEL[department] ?? department}`} />
 
       <div style={S.deptBar}>
         {teams.map(d => (
@@ -219,16 +226,23 @@ export default function PMSchedule() {
         </div>
       )}
 
-      {!loading && rows.length > 0 && (
-        <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 10, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 16 }}>
-          {VIEW_OPTIONS.map(v => (
-            <button key={v.key} onClick={() => setView(v.key)} style={{
-              padding: '6px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none',
-              background: view === v.key ? 'var(--card)' : 'transparent', color: view === v.key ? 'var(--text)' : 'var(--muted)',
-              boxShadow: view === v.key ? '0 1px 3px rgba(0,0,0,0.25)' : 'none',
-            }}>{v.label}</button>
-          ))}
+      {/* ⚠️ แผนที่ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้ (feedback 2026-09-23 "ตั้งไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
+          ห้ามซ่อน — บอกจำนวน + ปุ่มตั้งทีเดียวหลายรายการ */}
+      {!loading && noDue.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid #f59a3f55', background: '#f59a3f14' }}>
+          <span style={{ fontSize: 13, color: 'var(--text)', flex: '1 1 260px' }}>
+            ⚠️ <b>{noDue.length}</b> รายการยังไม่มีวัน PM ครั้งถัดไป
+            <span style={{ color: 'var(--muted)' }}> ({noDue.filter(r => !r.cycle).length} ยังไม่ตั้งรอบ · {noDue.filter(r => r.cycle).length} มีรอบแต่ยังไม่เคยตรวจ) — ระบบเตือนล่วงหน้าไม่ได้</span>
+          </span>
+          {canDefer
+            ? <button onClick={() => setCycleFor(noDue)} style={{ ...S.actionBtn('#f59a3f'), fontSize: 13, fontWeight: 800 }}>📅 ตั้งรอบ / วัน PM ครั้งถัดไป</button>
+            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ให้หัวหน้าช่าง/ผู้มีสิทธิ์ตั้งค่า PM เป็นคนตั้ง</span>}
         </div>
+      )}
+
+      {!loading && rows.length > 0 && (
+        <Segmented value={view} onChange={setView} label="มุมมอง" style={{ marginBottom: 16 }}
+          options={VIEW_OPTIONS.map(v => ({ value: v.key, label: v.label }))} />
       )}
 
       {loading ? (
@@ -272,7 +286,7 @@ export default function PMSchedule() {
                       {eq.line_name ?? '—'}
                       {eq.machine_no && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {eq.machine_no}</span>}
                     </td>
-                    <td style={{ fontSize: 13, color: 'var(--muted)' }}>{FREQ_LABEL[cl.frequency] ?? cl.frequency}</td>
+                    <td style={{ fontSize: 13, color: 'var(--muted)' }}>{r.cycleText}</td>
                     <td style={{ fontSize: 13, color: 'var(--text2)' }}>
                       {lastDone ? new Date(lastDone).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
@@ -284,7 +298,7 @@ export default function PMSchedule() {
                         </div>
                       )}
                       {isDeferred && (
-                        <div style={{ fontSize: 10.5, color: '#4a90e0', marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: '#4a90e0', marginTop: 2 }}>
                           ⏭ เลื่อนแผน{deferReason ? ` · ${deferReason}` : ''}{deferCount > 1 ? ` · เลื่อนมา ${deferCount} ครั้ง` : ''}
                         </div>
                       )}
@@ -312,6 +326,7 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn(nextDue ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {nextDue ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
                         {canDefer && r.plan?.id && (isDeferred
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
                           : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
@@ -337,7 +352,120 @@ export default function PMSchedule() {
         <BucketView rows={rows} today={today} onCheck={goCheck} />
       )}
 
+      {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
       {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
+    </Page>
+  )
+}
+
+// ── Modal ตั้งรอบ PM + วัน PM ครั้งถัดไป (2026-09-23) ─────────────────────────────────────
+// feedback: "ระบบ PM ตอนนี้ตั้งแผนไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่"
+//   · รอบ = จำนวนวัน (มี 6 เดือน/รายปี/กำหนดเอง) → เขียน pm_plans.interval_days
+//   · วัน PM ครั้งถัดไป (ไม่บังคับ) → เขียน pm_plans.next_due_date ตรงๆ ใช้เป็นหมุดจนกว่าจะตรวจจริง
+//     พอตรวจครบ PMCheckData/trigger จะคิดรอบถัดไป = วันทำจริง + รอบ ให้เอง
+//   · ไม่กรอกวัน แต่เคยตรวจแล้ว → คิดให้ = ตรวจล่าสุด + รอบ (ไม่งั้นแผนเก่าไม่มีวันครบจนกว่าจะตรวจรอบหน้า)
+// ⚠️ ลำดับการเขียน: checklists.frequency ก่อน แล้วค่อย pm_plans.interval_days
+//    (trigger pm_checklist_sync ล้าง interval_days ตาม frequency — ดูหัว CYCLE_PRESETS ใน lib/pmSchedule.js)
+// ⚠️ RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถวเงียบ ⇒ .select('id') แล้วนับแถว (กฎเหล็ก DB ข้อ 2)
+function addDaysYmd(ymdStr, n) {
+  const [y, m, d] = ymdStr.split('-').map(Number)
+  const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n)
+  return ymd(x)
+}
+function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
+  const single = rows.length === 1 ? rows[0] : null
+  const initDays = single?.cycle || ''
+  const [days, setDays] = useState(initDays ? String(initDays) : '')
+  // ⚠️ ไม่เติมวันเดิมให้ — ถ้าเติม แล้วคนเปลี่ยนแค่รอบ วันเดิม (ที่คิดจากรอบเก่า) จะถูกเขียนทับเป็นหมุดค้าง
+  const [nextDate, setNextDate] = useState('')
+  const [picked, setPicked] = useState(() => new Set(rows.map(r => r.cl.id)))
+  const [saving, setSaving] = useState(false)
+  const n = Number(days)
+  const valid = Number.isInteger(n) && n >= 1 && n <= 3650
+  const lastYmd = single?.lastDone ? ymdBangkok(single.lastDone) : null
+  const preview = nextDate || (valid && lastYmd ? addDaysYmd(lastYmd, n) : '')
+
+  const save = async () => {
+    if (!valid) return toast.error('ใส่รอบ PM เป็นจำนวนวัน 1-3650')
+    const targets = rows.filter(r => picked.has(r.cl.id))
+    if (!targets.length) return toast.error('เลือกอย่างน้อย 1 รายการ')
+    setSaving(true)
+    let ok = 0; const fails = []
+    for (const r of targets) {
+      const label = r.eq?.name || r.cl.name || r.cl.id
+      try {
+        const freq = freqForCycle(n)
+        if (freq !== r.cl.frequency) await setChecklistFrequency(r.cl.id, freq)
+        const rLast = r.lastDone ? ymdBangkok(r.lastDone) : null
+        const due = nextDate || (rLast ? addDaysYmd(rLast, n) : null)
+        const patch = { checklist_id: r.cl.id, interval_days: n, updated_by_name: byName || null, updated_by_uid: byUid || null }
+        if (due) { patch.next_due_date = due; patch.next_due_reason = 'time' }
+        const { data, error } = await supabaseDR.from('pm_plans').upsert(patch, { onConflict: 'checklist_id' }).select('id')
+        if (error) throw error
+        if (!data?.length) throw new Error('ไม่มีสิทธิ์แก้แผน (บันทึกได้ 0 แถว)')
+        ok++
+      } catch (e) { fails.push(`${label}: ${e?.message || e}`) }
+    }
+    setSaving(false)
+    if (fails.length) toast.error(`บันทึกไม่สำเร็จ ${fails.length} รายการ — ${fails.slice(0, 2).join(' · ')}`)
+    if (ok) { toast.success(`ตั้งรอบ PM ${cycleLabel(null, n)} แล้ว ${ok} รายการ`); onSaved() }
+  }
+
+  const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }
+  const chip = (on) => ({ padding: '6px 12px', borderRadius: 16, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text2)' })
+  return (
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(520px,96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>📅 ตั้งรอบ PM / วัน PM ครั้งถัดไป</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>
+          {single
+            ? <>{single.eq?.name ?? '—'}{single.eq?.line_name ? ` · ${single.eq.line_name}` : ''} · รอบตอนนี้: <b>{single.cycleText}</b>{lastYmd ? ` · ตรวจล่าสุด ${new Date(lastYmd).toLocaleDateString('th-TH')}` : ' · ยังไม่เคยตรวจ'}</>
+            : <>ตั้งพร้อมกัน {picked.size} / {rows.length} รายการ (ติ๊กออกรายการที่ไม่ต้องการ)</>}
+        </div>
+
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>รอบ PM (ทำซ้ำทุกกี่วัน) *</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setDays(String(p.days))} style={chip(n === p.days)}>{p.label}</button>)}
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', marginBottom: 14 }}>
+          หรือกำหนดเอง ทุก
+          <input type="number" min="1" max="3650" value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 90 }} aria-label="รอบ PM (วัน)" />
+          วัน
+        </label>
+
+        <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>วัน PM ครั้งถัดไป <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+          <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} style={{ ...inp, width: 200, display: 'block', marginTop: 4 }} />
+        </label>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+          {nextDate
+            ? <>ระบบจะเตือนตามวันนี้ · ตรวจเสร็จแล้วรอบถัดไป = วันที่ตรวจจริง + {valid ? cycleLabel(null, n) : 'รอบ'}</>
+            : single
+              ? (preview ? <>ไม่กรอก = คิดจากตรวจล่าสุด + รอบ → <b style={{ color: 'var(--text)' }}>{new Date(preview).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</b></>
+                         : single.nextDue
+                           ? <>ไม่กรอก = คงวันเดิม {single.nextDue.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+                           : <>⚠️ ยังไม่เคยตรวจ + ไม่กรอกวัน = <b>ยังไม่มีวันครบกำหนด</b> จนกว่าจะตรวจครั้งแรก — แนะนำให้กรอกวัน</>)
+              : <>ไม่กรอก = รายการที่เคยตรวจแล้วคิดจากตรวจล่าสุด + รอบ · รายการที่ไม่เคยตรวจจะยังไม่มีวันครบกำหนด (แนะนำให้กรอกวัน)</>}
+        </div>
+
+        {!single && (
+          <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 10, maxHeight: 220, overflowY: 'auto' }}>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', fontSize: 12.5, fontWeight: 700, background: 'var(--bg3)', position: 'sticky', top: 0 }}>
+              <input type="checkbox" checked={picked.size === rows.length} onChange={e => setPicked(e.target.checked ? new Set(rows.map(r => r.cl.id)) : new Set())} /> เลือกทั้งหมด
+            </label>
+            {rows.map(r => (
+              <label key={r.cl.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 10px', fontSize: 12.5, borderTop: '1px solid var(--border)', color: 'var(--text2)' }}>
+                <input type="checkbox" checked={picked.has(r.cl.id)} onChange={e => setPicked(prev => { const nx = new Set(prev); if (e.target.checked) nx.add(r.cl.id); else nx.delete(r.cl.id); return nx })} />
+                <span style={{ flex: 1, minWidth: 0 }}><b style={{ color: 'var(--text)' }}>{r.eq?.name ?? '—'}</b> <span style={{ color: 'var(--muted)' }}>{r.eq?.line_name ?? ''} · {r.cycleText}</span></span>
+              </label>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving || !valid} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: valid ? 'var(--accent)' : 'var(--bg3)', color: valid ? '#fff' : 'var(--muted)', cursor: valid ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -452,12 +580,12 @@ function TimelineView({ rows, today, onCheck }) {
               style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: r.status === 'overdue' ? 'rgba(224,92,74,0.05)' : undefined }}>
               <div style={{ width: 200, flexShrink: 0, padding: '7px 12px', borderRight: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name ?? '—'}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.line_name ?? '—'} · {FREQ_LABEL[r.cl.frequency] ?? r.cl.frequency}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.line_name ?? '—'} · {r.cycleText}</div>
               </div>
               <div style={{ flex: 1, position: 'relative', minHeight: 40, minWidth: 320 }}>
                 {marks.map(m => <div key={m} style={{ position: 'absolute', left: `${(m / RANGE) * 100}%`, top: 0, bottom: 0, borderLeft: '1px dashed var(--border)' }} />)}
                 {days == null ? (
-                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--muted)' }}>— ไม่มีรอบตายตัว</span>
+                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีวัน PM ครั้งถัดไป</span>
                 ) : days < 0 ? (
                   <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={{ width: 13, height: 13, borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${meta.color}aa` }} />
@@ -545,7 +673,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: missed ? '#e05c4a' : isToday ? 'var(--accent)' : 'var(--text2)' }}>{date.getDate()}</span>
                 {/* ผลตรวจที่ "ทำจริง" วันนั้น — ✅ ปกติ / ⚠️ พบผิดปกติ / ⏳ ตรวจไม่ครบ */}
                 {done.length > 0 && (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800 }} title={`ตรวจจริง ${done.length} รายการ`}>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800 }} title={`ตรวจจริง ${done.length} รายการ`}>
                     {[...new Set(done.map(x => x.meta.icon))].join('')}
                     <span style={{ color: 'var(--muted)', marginLeft: 2 }}>{done.length}</span>
                   </span>
@@ -585,7 +713,7 @@ function DayModal({ sel, onClose, onCheck }) {
               <div key={r.cl.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '8px 12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.eq.name ?? '—'}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.eq.line_name ?? '—'} · {FREQ_LABEL[r.cl.frequency] ?? r.cl.frequency} · <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span></div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.eq.line_name ?? '—'} · {r.cycleText} · <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span></div>
                 </div>
                 <button onClick={() => onCheck(r.cl.equipment_id)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, border: 'none', background: 'var(--accent)', color: '#071008', cursor: 'pointer' }}>✓ ตรวจ</button>
               </div>
@@ -662,7 +790,7 @@ function BucketView({ rows, today, onCheck }) {
                   <div key={r.cl.id} onClick={() => onCheck(r.cl.equipment_id)}
                     style={{ borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name ?? '—'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.eq.line_name ?? '—'} · {FREQ_LABEL[r.cl.frequency] ?? r.cl.frequency}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.eq.line_name ?? '—'} · {r.cycleText}</div>
                     <div style={{ fontSize: 11, color: meta.color, fontWeight: 700, marginTop: 3 }}>
                       {d == null ? meta.label : d < 0 ? `เกิน ${Math.abs(d)} วัน` : d === 0 ? 'ครบวันนี้' : `อีก ${d} วัน · ${fmtDay(r.nextDue)}`}
                     </div>

@@ -245,7 +245,7 @@ export default function PeFlowChart({ procs = [], onPick, mode = 'dark', highlig
           {(f.parts.length ? f.parts : ['(ยังไม่ระบุ child part)']).slice(0, 2).map((p, i) => (
             <text key={i} x={f.x + f.w / 2} y={f.y + 19 + i * 15} textAnchor="middle" fontSize={11} fill={theme.text}>{p.length > 24 ? `${p.slice(0, 23)}…` : p}</text>
           ))}
-          {f.parts.length > 2 && <text x={f.x + f.w / 2} y={f.y + 45} textAnchor="middle" fontSize={10} fill={theme.muted}>+ อีก {f.parts.length - 2}</text>}
+          {f.parts.length > 2 && <text x={f.x + f.w / 2} y={f.y + 45} textAnchor="middle" fontSize={11} fill={theme.muted}>+ อีก {f.parts.length - 2}</text>}
         </g>
       ))}
 
@@ -266,7 +266,7 @@ export default function PeFlowChart({ procs = [], onPick, mode = 'dark', highlig
               <text key={i} x={cx} y={ty + 16 + i * 13} textAnchor="middle" fontSize={11} fill={theme.text}>{ln}</text>
             ))}
             {n.proc.machine_no && !isTri && (
-              <text x={cx} y={ty + 16 + nameLines.length * 13} textAnchor="middle" fontSize={10} fill={theme.muted}>🔧 {n.proc.machine_no}</text>
+              <text x={cx} y={ty + 16 + nameLines.length * 13} textAnchor="middle" fontSize={11} fill={theme.muted}>🔧 {n.proc.machine_no}</text>
             )}
             {n.proc.special_class && (
               <>

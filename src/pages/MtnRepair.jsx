@@ -5,16 +5,18 @@
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
-import resizeImg, { imgExt } from '../utils/resizeImage';
+import { imgExt } from '../utils/resizeImage';
+/* 🖼️ กติการูปใบ MO (16:9 · webp · bucket) อยู่ที่เดียว — ห้ามประกาศซ้ำในหน้า */
+import { resizeMoImage, uploadMtnImg, removeMtnImg } from '../utils/mtnImage';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, QA_SKIP_REASON_PURPOSE, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
+import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -28,11 +30,11 @@ import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { isDie } from '../utils/equipmentKinds';
-import SparePartMaster from '../components/SparePartMaster';
-import RackMap from '../components/RackMap';
-import MachineReliability from '../components/MachineReliability';
-import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -63,10 +65,7 @@ async function logoDataUrl(overrideUrl) {
   } catch { return /^https?:/.test(tsLogo) ? tsLogo : location.origin + tsLogo; }
 }
 
-// บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
-/* 🗜️ webp:true — รูปซ่อมคือ 39 MB/วันของ egress ฝั่ง DR (งานลด egress 2026-09-21)
-   ⚠️ นามสกุลไฟล์ต้องมาจาก imgExt(blob) เสมอ ห้าม hardcode '.jpg' (เบราว์เซอร์เก่าถอยไป JPEG เอง) */
-const resizeImage = (file, maxPx = 1024, quality = 0.8) => resizeImg(file, maxPx, quality, { webp: true });
+// บีบรูป/อัปโหลดรูป MO ย้ายไป `src/utils/mtnImage.js` แล้ว (ของกลาง — จุดแนบรูปใหม่ต้องใช้ตัวนั้น)
 const getWorkDate = () => {
   const now = new Date();
   if (now.getHours() < 8) now.setDate(now.getDate() - 1);
@@ -76,19 +75,7 @@ const getWorkDate = () => {
 /** ISO → ค่าที่ <input type="datetime-local"> ใช้ได้ (เวลาท้องถิ่น) · ว่าง = '' */
 const localDt = (v) => { if (!v) return ''; const d = new Date(v); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-const mtnPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
-const removeMtnImg = (url) => { const p = mtnPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
-/* 📐 รูปในใบ MO ใช้สัดส่วน 16:9 ทุกจุด (แจ้ง/ซ่อมเสร็จ/QA) — ครอบกลางภาพให้อัตโนมัติใน resizeImage
-   ที่มา: ผจก.สุรเสน 22/09 "กำหนดอัตราส่วน 16:9 ขยายผลไปทุก Step MO ที่มีการแนบรูป"
-   ⚠️ เลือก **ครอบให้** ไม่ใช่ **ปฏิเสธรูป** (user ตัดสิน 22/09) — หน้างานถ่ายจากมือถือ
-      ถ้าปฏิเสธจะแนบรูปไม่ได้เลย · เพิ่มจุดแนบรูปใหม่ในใบ MO ให้ส่ง aspect ตัวนี้ด้วยเสมอ */
-const MO_IMG_ASPECT = 16 / 9;
 
-const uploadMtnImg = async (blob, path) => {
-  const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
-  if (error) throw error;
-  return supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl;
-};
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
 const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
 // echo วันที่ (input ISO YYYY-MM-DD ค.ศ.) → DD/MM/พ.ศ.
@@ -137,7 +124,7 @@ const MO_LIST_COLS = [
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
-  'cost_mgr_at', 'mtn_head_at',                       // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 7/8/9)
+  'mtn_head_at', 'approve_at',                        // แยก 3 ขั้นที่ค้างใน status handover (ขั้น 6/7/8)
 ].join(',');
 const SCOPE_OPTS = [{ v: 'in_line', t: 'ซ่อมในไลน์' }, { v: 'off_line', t: 'ซ่อมนอกไลน์' }];
 const CHECK_RESULTS = ['ตรวจสอบผ่าน', 'ตรวจสอบไม่ผ่าน'];
@@ -160,19 +147,20 @@ const SAT_LEVELS = [
 ];
 const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
 const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
-/* ⚠️ ใบ MTN มี **9 ขั้น** ตาม WI (2026-09-22) — ขั้น 7 ผจก.แผนกที่แจ้งอนุมัติ (ยังไม่ปิด) ⇒ `mtn_approved`
-   · ขั้น 8 หัวหน้าแผนก MTN ตรวจ (ยังไม่ปิด) ⇒ `mtn_head_checked`
-   · ขั้น 9 ผจก.ซ่อมบำรุงปิดจบ ⇒ `mtn_closed` · ฟอร์มอื่นขั้น 7 = ปิดใบเหมือนเดิม
-   ⚠️ `mtn_head_checked` เป็น event ใหม่ที่ edge ยังไม่รู้จัก ⇒ `send-mtn-notification` ตอบ
-      **400 unknown event แล้วไม่ส่งอะไรเลย** (fail-safe — ไม่ใช่ "ส่งข้อความผิด") การแจ้งเตือน
-      ขั้นนี้จะเริ่มทำงานเมื่อ deploy edge รอบถัดไป · ดู docs/modules/mtn-work-order.md */
-const STEP_EVENT = { 1: 'mtn_reported', 2: 'mtn_assigned', 3: 'mtn_repaired', 4: 'mtn_checked', 5: 'mtn_qa', 6: 'mtn_handover', 7: 'mtn_closed', 8: 'mtn_closed', 9: 'mtn_closed' };
-const stepEventOf = (step, mtnForm) => {
-  if (!mtnForm) return STEP_EVENT[step];
-  if (step === 7) return 'mtn_approved';
-  if (step === 8) return 'mtn_head_checked';
-  return STEP_EVENT[step];
+/* event แจ้งเตือนต่อ "จังหวะงาน" (stage) ไม่ใช่เลขขั้น — เลขขั้นเดียวกันคนละความหมายระหว่าง
+   2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN) ⇒ ผูกกับเลขเมื่อไหร่ก็ส่งผิดเมื่อนั้น
+   ⚠️ `mtn_head_checked` / `mtn_approved` เป็น event ที่ edge ยังไม่รู้จัก ⇒ `send-mtn-notification`
+      ตอบ **400 unknown event แล้วไม่ส่งอะไรเลย** (fail-safe — ไม่ใช่ "ส่งข้อความผิด") การแจ้งเตือน
+      2 ขั้นนี้จะเริ่มทำงานเมื่อ deploy edge รอบถัดไป · ดู docs/modules/mtn-work-order.md */
+const STAGE_EVENT = {
+  report: 'mtn_reported', assign: 'mtn_assigned', service: 'mtn_repaired',
+  accept_work: 'mtn_checked', qa: 'mtn_qa', handover: 'mtn_handover',
+  close: 'mtn_closed',
+  mtn_head: 'mtn_head_checked',     // ขั้น 6 ใบ MTN — หัวหน้าแผนกช่างตรวจงาน (ยังไม่ปิด)
+  mtn_approve: 'mtn_approved',      // ขั้น 7 ใบ MTN — ผจก.ช่างอนุมัติ (ยังไม่ปิด)
+  cost_mgr_close: 'mtn_closed',     // ขั้น 8 ใบ MTN — ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ
 };
+const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -180,8 +168,10 @@ const stepEventOf = (step, mtnForm) => {
 const stepPerms = (role) => ({ can: (a) => can('mtn_repair', a, role), seeded: (a) => isActionSeeded('mtn_repair', a) });
 
 /* ใบนี้ใช้ฟอร์ม/ขั้นตอนของทีม MTN (FM-MTN-006) ไหม — JIG/DIE/PRODUCTION ใช้ FM-JIG-008 เหมือนเดิม
+   🔴 นิยามจริงย้ายไป `mtnMoForm.js` (pure) แล้ว 2026-09-22 — เพราะกติกา "ลูป MTN ไม่มี QA"
+      ต้องตัดสินได้จากฝั่ง util ด้วย (qaAppliesTo/moStatusLabel) ⇒ เขียนไว้ 2 ที่ = เพี้ยนกันแน่
    ⚠️ เกณฑ์นี้ถูกใช้ 5 ที่ (ฟอร์มแจ้ง · ขั้นตอน · ป้ายขั้น · ด่านอนุมัติ · ใบพิมพ์) — ห้ามเขียนซ้ำในหน้า */
-const isMtnFormOrder = (o) => teamKeyOf(o?.mtn_dept || deptForItem(o?.item_type)) === 'maintenance';
+const isMtnFormOrder = isMtnFormRow;
 
 const notifyMtn = (payload, event) => {
   // ⚠️ DB เก็บ mtn_dept เป็น "รหัสทีม" แต่ข้อความ Telegram ต้องอ่านออก → ส่งเป็น "ชื่อทีม" ไปใน payload
@@ -286,24 +276,19 @@ const DateField = ({ label, value, onChange, required }) => (
 
 /* ═══════════════════════════════════════════════════════ */
 export default function MtnRepair() {
-  const { role, lineId, sections: scopeSecs, section: mySection, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl } = useContext(UserContext);
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: '📋 รายการ MO' },
-    /* 📊 KPI ช่าง = ที่เดียวจบ (2026-09-15 · คำสั่ง user "KPI กับ MTTR/MTBF/MTTA ควรอยู่ tab เดียวกัน
-       เพราะมันคือ KPI ช่าง") — เดิมแยกเป็น 📊 KPI (จากใบซ่อม MO) กับ ⚙️ รายอุปกรณ์ (จาก downtime จริง)
-       ทำให้คนต้องสลับแท็บเพื่อตอบคำถามเดียวกัน · `?tab=equip` เก่าถูก redirect มาที่นี่ (ดู useEffect ล่าง) */
-    { key: 'kpi', label: '📊 KPI ช่าง' },
-    { key: 'spare', label: '🔩 คลังอะไหล่' },   // ทุก role ที่เข้าหน้านี้ได้ (ช่างต้องค้นของ/ดูชั้นวางได้) — แก้/เคลื่อนไหวสต็อกคุมด้วย can() ในตัวคอมโพเนนต์
-    { key: 'rack', label: '🗺️ ผังคลัง' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
   ];
-  // 'equip' = คีย์เก่าที่ยุบเข้า 'kpi' แล้ว — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
-  // แล้วเด้งไปแท็บ default (รายการ MO) = บุ๊กมาร์กของทีมช่างพาไปผิดที่เงียบๆ
+  /* 'kpi'/'equip' = คีย์เก่าที่ **ย้ายออกไปหน้า `/mtn-analysis` แล้ว** (2026-09-22 · คำสั่ง user
+     "ฟังก์ชันของช่างกระจายหลายหน้า") — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
+     แล้วเด้งไปแท็บ default (รายการ MO) เงียบๆ ⇒ บุ๊กมาร์ก/ลิงก์เก่าของทีมช่างพาไปผิดที่
+     **ห้ามถอด 2 คีย์นี้ออกจากลิสต์** จนกว่าจะแน่ใจว่าไม่มีลิงก์เก่าหลงเหลือ */
   const [sp] = useSearchParams();
   const mergeSp = useMergeParams();
-  const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'equip'], 'list');
-  useEffect(() => { if (tab === 'equip') setTab('kpi', { replace: true }); }, [tab, setTab]);
+  const [tab, setTab] = useTabParam([...TAB_DEFS.map(t => t.key), 'kpi', 'equip', 'spare', 'rack'], 'list');
   const [orders, setOrders] = useState([]);
   const [lines, setLines] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -319,6 +304,15 @@ export default function MtnRepair() {
   const [supplyByMachineNo, setSupplyByMachineNo] = useState({}); // machine_no → [line_name] (utility/facility จ่ายไลน์ไหน → ผลกระทบเวลาซ่อม/ตัดไฟ)
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  /* ลิงก์เก่าที่ชี้แท็บที่ "ย้ายบ้าน" ไปแล้ว → พาไปหน้าใหม่ (replace ไม่ให้ Back เด้งกลับมาวนลูป)
+     · kpi / equip  → `/mtn-analysis` (หน้าวิเคราะห์)          2026-09-22
+     · spare / rack → `/equipment` (ศูนย์ทะเบียนอุปกรณ์)        2026-09-22
+     ⚠️ คีย์พวกนี้ต้องคงอยู่ในลิสต์ของ useTabParam ด้วย ไม่งั้นมันตีเป็นค่าไม่รู้จัก
+        แล้วตกกลับแท็บ default ก่อนที่ effect นี้จะได้ทำงาน = redirect ไม่เคยยิง */
+  useEffect(() => {
+    if (tab === 'kpi' || tab === 'equip') navigate('/mtn-analysis?tab=kpi', { replace: true });
+    else if (tab === 'spare' || tab === 'rack') navigate(`/equipment?tab=${tab}`, { replace: true });
+  }, [tab, navigate]);
   const [fStatus, setFStatus] = useState('open');
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
@@ -507,12 +501,12 @@ export default function MtnRepair() {
     navigate('/improvements');
   };
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
   const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
-    <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1800px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="แจ้งซ่อม MTN (MO)" icon="🛠️"
         sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ
@@ -522,28 +516,26 @@ export default function MtnRepair() {
       />
 
       {tab === 'list' && <>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '9px 16px' }}>➕ แจ้งซ่อมใหม่</button>}
-          <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ ...inp, width: 170 }}>
-            <option value="open">🔵 ยังไม่ปิด (ทั้งหมด)</option><option value="all">ทุกสถานะ</option>
+        {/* แถบกรองมาตรฐาน (UI-STANDARD 2026-09-24): ขอบเขต → สถานะ → ค้นหา → จำนวน/ปุ่มหลักชิดขวา */}
+        <FilterBar>
+          <select value={fDept} onChange={e => setFDept(e.target.value)}><option value="">{ALL.unit}</option><TeamOpts list={mtnDepts} /></select>
+          {/* dropdown ไลน์ = <LineSelect> เท่านั้น (UI-CONVENTIONS §5.3 ข้อ 9) — scopedLineObjs กรอง scope ไว้แล้ว · 2026-09-07 */}
+          <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder={ALL.line} />
+          <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
+            <option value="all">{ALL.status}</option><option value="open">🔵 ยังไม่ปิด</option>
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
-          <select value={fDept} onChange={e => setFDept(e.target.value)} style={{ ...inp, width: 150 }}><option value="">ทุกหน่วยงาน</option><TeamOpts list={mtnDepts} /></select>
-          {/* dropdown ไลน์ = <LineSelect> เท่านั้น (UI-CONVENTIONS §5.3 ข้อ 9) — scopedLineObjs กรอง scope ไว้แล้ว · 2026-09-07 */}
-          <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder="ทุกไลน์" style={{ ...inp, width: 180 }} />
-          <input value={fText} onChange={e => setFText(e.target.value)} placeholder="ค้นหา เลข MO/เครื่อง/ปัญหา" style={{ ...inp, width: 230 }} />
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{shown.length} รายการ</span>
-        </div>
+          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
+          <span className="spacer" />
+          <span className="filter-count">{shown.length} รายการ</span>
+          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '0 16px' }}>➕ แจ้งซ่อมใหม่</button>}
+        </FilterBar>
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
           {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
           {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีรายการ</div>}
         </div>
       </>}
 
-      {tab === 'kpi' && <KpiTab orders={orders} scopeLines={scopeLines} lineObjs={scopedLineObjs}
-        machines={machines} />}
-      {tab === 'spare' && <SparePartMaster parts={parts} reload={loadMasters} fullName={fullName} role={role} myTeams={userTeams} mySection={mySection} />}
-      {tab === 'rack' && <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role)} myTeams={userTeams} mySection={mySection} />}
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
@@ -553,7 +545,7 @@ export default function MtnRepair() {
         onClose={() => setDetail(null)} onStep={(step, editMode, extra) => setStepModal({ step, editMode, ...(extra || {}), order: detail })} />}
       {stepModal && <StepModal {...cp} step={stepModal.step} order={stepModal.order} editMode={stepModal.editMode} skipQa={!!stepModal.skipQa}
         onClose={() => setStepModal(null)} onSaved={() => { setStepModal(null); reloadAll(); }} />}
-    </div>
+    </Page>
   );
 }
 
@@ -598,6 +590,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
   const beforeUrl = useObjectUrl(beforeFile);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [allMachines, setAllMachines] = useState(false);  // 🔓 ปลดตัวกรอง "เฉพาะเครื่องของไลน์นี้"
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ฟอร์มนี้ยาว กรอกใหม่ทั้งใบเจ็บมาก)
   const [dirty, setDirty] = useState(false);
   const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
@@ -641,6 +634,41 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
     return machines.filter(m => !isDie(m.equipment_kind));
   }, [machines, wantDie]);
   const machineKinds = useMemo(() => (wantDie ? ['die'] : ['machine', 'jig', 'facility']), [wantDie]);
+  /* ══ 🔗 cascade "สองทาง" ระหว่าง แผนก ↔ ไลน์ ↔ เครื่อง (2026-09-24 · หน้างานแจ้งเอง) ══════
+     อาการที่แจ้ง: *"dropdown ยังไม่มีความสัมพันธ์กันแต่ละช่อง เหมือนไม่มี filter ช่วย"*
+     (ตรงกับ feedback คุณสุรเสน 22/09 ที่ยังค้าง — "เลือกแบบลิสต์ตามลำดับแบบกรองข้อมูล")
+
+     ของเดิมกรอง**ทางเดียว**: เลือกไลน์ → เติมแผนกให้ (`onLine`) แต่เลือกแผนกก่อนแล้ว
+     ช่องไลน์ยังขึ้นครบทุกไลน์ทั้งโรงงาน ⇒ คนที่เริ่มจากแผนกไม่ได้ประโยชน์อะไรเลย
+
+     🔴 กรองแล้ว **ห้ามทำให้ไลน์หายเงียบ** — 3 ตะกร้าที่ต้องอยู่เสมอ:
+        (1) ไลน์ที่ยังไม่ตั้ง section ในผัง (กฎเดียวกับ dropdown ไลน์ที่อื่นทั้งระบบ)
+        (2) ไลน์ที่เลือกค้างไว้แล้ว (เปลี่ยนแผนกทีหลังห้ามล้างของเดิมทิ้ง)
+        (3) กรองแล้วเหลือ 0 ไลน์ = **ถอยไปลิสต์เต็ม** (แผนกนั้นยังไม่มีไลน์ผูกในผัง — ข้อมูลไม่ครบ
+            ไม่ใช่เหตุให้จอตัน) · จอบอกตรงๆ ว่ากำลังกรองอยู่กี่ไลน์
+     ⚠️ เทียบ section ต้องเผื่อ **ไลน์ลูกที่ไม่ตั้ง section เอง** (ใช้ของไลน์แม่) ไม่งั้นไลน์ลูกหายหมด */
+  const sectionOfLine = (l) => (l?.section || (l?.parent_line_name
+    ? lines.find(x => x.name === l.parent_line_name)?.section : '') || '');
+  const scopedLines = useMemo(() => {
+    if (!f.dept_section) return lines;
+    const hit = lines.filter(l => sectionOfLine(l) === f.dept_section);
+    if (!hit.length) return lines;                       // แผนกนี้ยังไม่มีไลน์ในผัง → ห้ามตัน
+    return lines.filter(l => sectionOfLine(l) === f.dept_section || !sectionOfLine(l) || l.name === f.line_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, f.dept_section, f.line_name]);
+
+  /* ตัดลิสต์เครื่องให้เหลือเฉพาะไลน์ที่เลือก (คำสั่ง user 24/09 — กลับมติ 07/09 ที่ "ไม่ตัดตามไลน์")
+     🔴 **แม่พิมพ์ยกเว้นเสมอ** — die ผูก line_name เป็นชื่อกลุ่มเครื่องปั๊ม ("LINE A ( 800 Ton )")
+        ซึ่งไม่มีใน production_lines ⇒ กรองด้วยไลน์ในฟอร์มแล้ว **ไม่มีวันเจอแม่พิมพ์เลย**
+        (เคยเกิดจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01) · และแม่พิมพ์ถอดย้ายเครื่องได้อยู่แล้ว
+     🔴 ไลน์ที่ยังไม่มีเครื่องลงทะเบียน = ไม่ตัด (ตัดแล้วลิสต์ว่าง = แจ้งซ่อมไม่ได้)
+     🔓 ปุ่ม "ทุกไลน์" ข้างช่อง = ทางออกเสมอ (เครื่องย้ายไลน์ / ลงทะเบียนไว้ผิดไลน์) */
+  const famSet = useMemo(() => new Set(lineFam.map(n => String(n).trim().toUpperCase())), [lineFam]);
+  const famMachineCount = useMemo(() => (wantDie || !f.line_name ? 0
+    : lineMachines.filter(m => famSet.has(String(m.line_name ?? '').trim().toUpperCase())).length),
+    [wantDie, f.line_name, lineMachines, famSet]);
+  const machineStrict = !wantDie && !!f.line_name && !allMachines && famMachineCount > 0;
+
 
   const onLine = (name) => {
     const { section, cc } = lineDerived(name);
@@ -757,7 +785,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeImage(beforeFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -777,7 +805,9 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
           </Field>
         </div>
         {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
-        <Field label="ไลน์การผลิต" required><LineSelect lines={lines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required /></Field>
+        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
+          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
+        </Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
           <Field label="ส่วนงาน (ASSY)">
@@ -812,11 +842,30 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} allowFree history={machineHist}
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} strict={machineStrict} allowFree history={machineHist}
               placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
               style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
           </div>
+          {/* 🔗 บอกตรงๆ ว่ากำลังกรองอยู่ + ทางออกคลิกเดียว (ห้ามกรองเงียบ — คนหาเครื่องไม่เจอจะนึกว่าระบบพัง) */}
+          {!wantDie && f.line_name && (
+            <div style={{ fontSize: 11.5, marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {famMachineCount > 0 ? (
+                <>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {machineStrict ? `🎯 เฉพาะเครื่องของ ${f.line_name} (${famMachineCount} ตัว)` : `🏭 ทุกไลน์ (${lineMachines.length} ตัว)`}
+                  </span>
+                  <button type="button" className="tbtn" onClick={() => setAllMachines(v => !v)}
+                    title="เครื่องย้ายไลน์ / ลงทะเบียนไว้ผิดไลน์ — กดดูทั้งโรงงานได้เสมอ"
+                    style={{ padding: '1px 9px', borderRadius: 20, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>
+                    {machineStrict ? 'ดูทุกไลน์' : 'กรองตามไลน์'}
+                  </button>
+                </>
+              ) : (
+                <span style={{ color: '#f59e0b' }}>⚠ {f.line_name} ยังไม่มีเครื่องลงทะเบียน — แสดงทุกไลน์ไว้ก่อน (ลงทะเบียนได้ที่ /equipment)</span>
+              )}
+            </div>
+          )}
           {wantDie && (
             <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
               {lineMachines.length
@@ -928,11 +977,13 @@ function nextStepFor(order) {
     case 'assigned':
     case 'repairing': return S(3);
     case 'repaired':  return S(4);
-    case 'checked':   return isWaitingQa(order) ? S(5) : S(6);   // ขั้น 5 มีเงื่อนไข — ข้ามได้ด้วยปุ่ม ⏭ (canSkipQa)
-    case 'qa':        return S(6);
-    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (7 ผจก.แผนกที่แจ้ง · 8 หัวหน้าแผนก MTN · 9 ปิดใบ)
+    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE — ข้ามได้ด้วยปุ่ม ⏭ canSkipQa) · ของใบ MTN ขั้น 5 คือ "รับมอบ"
+       อยู่แล้ว (ลูปนี้ไม่มี QA) ⇒ isWaitingQa เป็น false เสมอ แล้วลงมาที่ขั้นรับมอบของฟอร์มนั้นเอง */
+    case 'checked':   return isWaitingQa(order) ? S(5) : S(mtnForm ? 5 : 6);
+    case 'qa':        return S(6);   // ใบ MTN ไปไม่ถึงสถานะนี้ (ไม่มี QA ในลูป)
+    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
        — แยกด้วย **เวลาเซ็นจริง** ผ่าน mtnCloseStage() ไม่ใช่ current_step (ใบเก่ามีเลขปนกัน) */
-    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 7) : S(7);
+    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 6) : S(7);
     default:          return null;
   }
 }
@@ -1559,18 +1610,22 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
        · ก่อนรับมอบ = กล่องจางว่างเปล่า อ่านเหมือน "ค้างรอ QA"
        · หลังรับมอบ (current_step ขยับเป็น 6-7) = ขึ้น ✅ เขียว **เหมือน QA ตรวจจริงทั้งที่ไม่มีใครตรวจ**
      → ใช้ `moQaState(o)` (mtnStepPerm.js) เป็นเกณฑ์เดียว แล้ววาดชิป/หมายเหตุ "ข้าม" ค้างไว้ตลอดอายุใบ */
-  const qa5 = moQaState(o);
+  /* ⚠️ ฟอร์ม MTN ไม่มีขั้น QA เลย (ขั้น 5 ของมันคือ "รับมอบ") — กล่อง ⏭ นี้จึงต้องไม่ไปโผล่ทับ
+     กล่องรับมอบ · ใบ MTN แสดงคำอธิบาย "ลูปนี้ไม่มี QA" ไว้ท้ายชุดขั้นตอนแทน */
+  const qa5 = mtnForm ? 'none' : moQaState(o);
   const qa5Note = qa5 === 'skipped' ? (
     <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-      ⏭ <b>ไม่ต้องตรวจ QA — {qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
+      ⏭ <b>ไม่ต้องตรวจ QA — {mtnForm ? 'ใบซ่อมของทีม MTN ไม่มีขั้น QA ในลูป' : qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
       <div style={{ color: 'var(--text2)' }}>
-        {/* 3 ที่มาของ "ข้าม" ต้องแยกให้ออก: QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน (2026-09-15) */}
-        {isQaSkipped(o)
-          ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
-          : !qaAppliesTo(o)
-            ? <>{QA_SKIP_REASON_PURPOSE} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ถ้าอยากให้ตรวจจริง QA ยังบันทึกผลที่ขั้น 5 ได้)</>
-            : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
-        {o.status === 'checked' && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
+        {/* 4 ที่มาของ "ข้าม" ต้องแยกให้ออก: ฟอร์ม MTN ไม่มี QA เลย · QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน */}
+        {mtnForm
+          ? <>{QA_SKIP_REASON_MTN_FORM} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ลำดับลายเซ็นตาม WI ของ MTN ไม่มี QA)</>
+          : isQaSkipped(o)
+            ? <>ข้ามโดย {o.qa_skipped_by || '—'} · {fmtDateTime(o.qa_skipped_at)}<div>เหตุผล: {o.qa_skip_reason || QA_SKIP_REASON_STEP4}</div></>
+            : !qaAppliesTo(o)
+              ? <>{QA_SKIP_REASON_PURPOSE} (กติกาของฟอร์ม ไม่ใช่มีคนกดข้าม — ถ้าอยากให้ตรวจจริง QA ยังบันทึกผลที่ขั้น 5 ได้)</>
+              : <>{QA_SKIP_REASON_STEP4} (ใบเก่าก่อนระบบเก็บร่องรอยการข้าม — ไม่มีชื่อผู้กด/เวลา)</>}
+        {o.status === 'checked' && !mtnForm && <div>→ ขั้นต่อไปคือ <b>ขั้น 6 รับมอบ</b> ของฝ่ายที่แจ้ง (ปุ่ม “⏭ ข้าม QA” ไม่ขึ้นเพราะไม่มีอะไรให้ข้ามแล้ว)</div>}
       </div>
     </div>
   ) : null;
@@ -1812,36 +1867,46 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           <StepBox n={4} done={o.current_step >= 4}>
             <Row k="ผล" v={o.check_result} /><Row k="ต้องให้ QA ตรวจ?" v={o.quality_related === QA_NOT_RELATED ? "ไม่ต้อง — QA ระบุว่าไม่เกี่ยวกับคุณภาพ" : o.quality_related ? "ต้องผ่าน QA" : ""} /><Row k="รายละเอียด" v={o.check_note} /><Row k="ผู้ตรวจ" v={o.checker_name} /><Img label="ลายเซ็นผู้ตรวจ" url={o.checker_sign} />
           </StepBox>
-          {/* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */}
-          <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
-            {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
-            <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
-          </StepBox>
-          <StepBox n={6} done={o.current_step >= 6}>
+          {/* ── ขั้น 5 เป็นคนละเรื่องระหว่าง 2 ฟอร์ม: JIG/DIE = ตรวจคุณภาพ (QA) · MTN = รับมอบ ──
+                 ⚠️ วาดตาม `stageOf()` เสมอ ห้ามผูกเนื้อหากับเลขขั้น (เลขทับกัน 2 ฟอร์ม) */}
+          {!mtnForm && (
+            /* done = QA ตรวจจริงเท่านั้น (moQaState) — ห้ามกลับไปใช้ current_step >= 5 */
+            <StepBox n={5} done={qa5 === 'done'} skipped={qa5 === 'skipped'} note={qa5Note}>
+              {isWaitingQa(o) && !isQaSkipped(o) && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>⏳ รอ QA ตรวจ — ถ้างานนี้ไม่เกี่ยวกับคุณภาพ กด "⏭ ข้าม QA" ด้านล่างเพื่อไปรับมอบได้เลย</div>}
+              <Row k="ผลคุณภาพ" v={o.qa_result} /><Row k="รายละเอียด" v={o.qa_note} /><Row k="ผู้ตรวจ QA" v={o.qa_checker} /><Img label="รูปยืนยันคุณภาพ" url={o.qa_img} /><Img label="ลายเซ็น QA" url={o.qa_sign} />
+            </StepBox>
+          )}
+          <StepBox n={mtnForm ? 5 : 6} done={!!o.ho_at || o.current_step >= (mtnForm ? 5 : 6)}>
             <Row k="ติดตามผล" v={o.follow_up} /><Row k="ผู้ตรวจ" v={o.ho_checker} /><Img label="ลายเซ็น" url={o.ho_sign} />
             {satAvg(o.satisfaction) != null && <div style={{ marginTop: 4 }}>
               <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
                 {SAT_DIMS.filter(d => o.satisfaction?.[d.key]).map(d => { const lv = SAT_LEVELS.find(l => l.v === Number(o.satisfaction[d.key])); return (
-                  <span key={d.key} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 6, background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
+                  <span key={d.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
                 ); })}
               </div>
             </div>}
           </StepBox>
-          <StepBox n={7} done={o.current_step >= 7}>
-            {mtnForm
-              ? <><Row k="อนุมัติเมื่อ" v={o.cost_mgr_at && fmtDateTime(o.cost_mgr_at)} /><Row k="ผจก.แผนกที่แจ้ง" v={o.cost_mgr_name} /><Img label="ลายเซ็น" url={o.cost_mgr_sign} /><Row k="ความคิดเห็นเพิ่มเติม" v={o.extra_comment} /></>
-              : <><Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} /></>}
-          </StepBox>
-          {/* ขั้น 8-9 มีเฉพาะใบ MTN (ฟอร์มอื่นจบที่ขั้น 7) — ตาม WI: หัวหน้าแผนก MTN → ผจก.MTN ปิดใบ */}
-          {mtnForm && (
-            <StepBox n={8} done={!!o.mtn_head_at}>
-              <Row k="ตรวจเมื่อ" v={o.mtn_head_at && fmtDateTime(o.mtn_head_at)} /><Row k="หัวหน้าแผนก MTN" v={o.mtn_head_name} /><Img label="ลายเซ็น" url={o.mtn_head_sign} />
+          {/* ── 3 ขั้นปิดใบของฟอร์ม MTN (ลำดับตามคำสั่ง user 22/09 — ห้ามสลับ):
+                 6 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 7 ผจก.ช่างอนุมัติ → 8 ผจก.ฝ่ายที่แจ้งอนุมัติปิดใบ
+                 ฟอร์มอื่นจบที่ขั้น 7 "อนุมัติปิด" ขั้นเดียวเหมือนเดิม */}
+          {mtnForm ? <>
+            <StepBox n={6} done={!!o.mtn_head_at}>
+              <Row k="ตรวจเมื่อ" v={o.mtn_head_at && fmtDateTime(o.mtn_head_at)} /><Row k="หัวหน้าแผนกช่าง" v={o.mtn_head_name} /><Img label="ลายเซ็น" url={o.mtn_head_sign} />
             </StepBox>
-          )}
-          {mtnForm && (
-            <StepBox n={9} done={o.current_step >= 9 || o.status === 'closed'}>
-              <Row k="ปิดใบเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผจก.ส่วนซ่อมบำรุง" v={o.approver_name} /><Img label="ลายเซ็นปิดใบ" url={o.approve_sign} />
+            <StepBox n={7} done={!!o.approve_at}>
+              <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผจก.ช่าง (รับรองโดย)" v={o.approver_name} /><Img label="ลายเซ็น" url={o.approve_sign} />
+            </StepBox>
+            <StepBox n={8} done={!!o.cost_mgr_at || o.status === 'closed'}>
+              <Row k="ปิดใบเมื่อ" v={o.cost_mgr_at && fmtDateTime(o.cost_mgr_at)} /><Row k="ผจก.ฝ่ายที่แจ้ง" v={o.cost_mgr_name} /><Img label="ลายเซ็นปิดใบ" url={o.cost_mgr_sign} /><Row k="ความคิดเห็นเพิ่มเติม" v={o.extra_comment} />
+            </StepBox>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8, padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
+              🧪 ใบของทีม MTN <b>ไม่มีขั้นตรวจคุณภาพ (QA) ในลูป</b> — ลำดับลายเซ็น 7 จุดตาม WI ของ FM-MTN-006
+              {' '}(ผู้แจ้ง → ผจก.ผู้แจ้งรับทราบ → ช่างรับงาน → ผจก.ช่างรับทราบ → หัวหน้าแผนกช่างตรวจ → ผจก.ช่างอนุมัติ → ผจก.ฝ่ายที่แจ้งปิดใบ)
+            </div>
+          </> : (
+            <StepBox n={7} done={o.current_step >= 7}>
+              <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={o.approve_sign} />
             </StepBox>
           )}
           <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
@@ -1866,7 +1931,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
             {/* 🔴 ขั้น 6 ต้องบอก "ใครคนนั้น" ไม่ใช่แค่ตำแหน่ง — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ)
                 ก่อนหน้านี้กล่องนี้บอกแค่ "หัวหน้าแผนกของฝ่ายที่แจ้ง" ลอยๆ คนเปิดดูจึงไม่รู้ว่าต้องไปตาม
                 ใคร แล้วใบก็ค้างต่อ · ชื่อผู้แจ้งมีอยู่ในใบแล้ว (reported_by_name — stamp ตอนเปิดใบ) */}
-            {next.step === 6 && (
+            {stageOf(next.step, { mtnForm }) === 'handover' && (
               <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px dashed rgba(245,158,11,0.45)', color: 'var(--text)' }}>
                 🤝 <b>ฝั่งช่างทำงานเสร็จหมดแล้ว — เหลือขั้นสุดท้ายของฝ่ายที่แจ้ง (รับมอบ/ติดตามผล)</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
@@ -1980,8 +2045,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const touch = () => setDirty(true);
   const set = (k, v) => { touch(); setF(p => ({ ...p, [k]: v })); };
   const tryClose = () => { if (!dirty || confirmDiscard()) onClose(); };
-  const isReject = step === 2 && f.repair_type === 'Reject MO';
-  const needSign = [4, 5, 6, 7, 8].includes(step) && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
+  /* ขั้นไหนต้องเซ็น + เซ็นลงคอลัมน์ไหน — ผูกกับ **stage** ไม่ใช่เลขขั้น (เลขทับกัน 2 ฟอร์ม)
+     ⚠️ ต้องตรงกับ resolveSign() ในตัวบันทึกเสมอ — ไม่ตรง = ปุ่มไม่มีช่องเซ็นแต่บันทึกขอลายเซ็น
+        (เคยหลุดจริง 22/09: ขั้นปิดใบของฟอร์ม MTN ตกจากลิสต์ ⇒ คนที่ไม่มีลายเซ็นในโปรไฟล์ปิดใบไม่ได้) */
+  const SIGN_COL = { accept_work: 'checker_sign', qa: 'qa_sign', handover: 'ho_sign', close: 'approve_sign',
+                     mtn_head: 'mtn_head_sign', mtn_approve: 'approve_sign', cost_mgr_close: 'cost_mgr_sign' };
+  const modalStage = stageOf(step, { mtnForm: isMtnForm });
+  const isReject = modalStage === 'assign' && f.repair_type === 'Reject MO';
+  const needSign = !!SIGN_COL[modalStage] && !skipQa;   // ข้าม QA = ไม่ใช่การรับรองคุณภาพ ไม่ต้องเซ็น (เก็บชื่อ+เหตุผลแทน)
 
   const addPart = () => { touch(); setUsedParts(p => [...p, { part_id: '', name: '', qty: 1, unit: '', unit_price: '' }]); };
   const setPart = (i, k, v) => { touch(); setUsedParts(p => p.map((x, j) => j === i ? { ...x, [k]: v } : x)); };
@@ -2078,6 +2149,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         return toast.error(`ขั้นนี้เป็นหน้าที่ของ${meta?.who || 'ผู้มีสิทธิ์'} — บัญชีนี้ทำไม่ได้`);
       }
       const upd = { updated_at: new Date().toISOString() };
+      /* 🔴 แตกสาขาด้วย "จังหวะงาน" (stage) ไม่ใช่เลขขั้น — เลขขั้นเดียวกันคนละความหมายระหว่าง
+         2 ฟอร์ม (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN · ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ =
+         ผจก.ช่างอนุมัติ ของ MTN) ⇒ ผูกกับเลขเมื่อไหร่ ก็เขียนคนละคอลัมน์กันเงียบๆ เมื่อลำดับขยับ
+         (เกิดจริงมาแล้ว 2 รอบ — 15/09 และ 22/09 · ดู MTN_FORM_STEPS ใน mtnStepPerm.js) */
+      const stage = stageOf(step, { mtnForm: isMtnForm });
       if (skipQa) {
         /* ⏭ ข้าม QA = แก้การตัดสินใจของขั้น 4 ไม่ใช่ขั้นใหม่ — status คง `checked` แล้วพลิก
            quality_related เป็น "ไม่เกี่ยว" → nextStepFor พาไปขั้น 6 เอง (ไม่เพิ่ม status ให้ KPI/Andon/ใบพิมพ์ต้องรู้จัก)
@@ -2090,7 +2166,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           if (!error) toast.error('ข้าม QA แล้ว แต่ยังบันทึกเหตุผลไม่ได้ — ฐาน DR ยังไม่มีคอลัมน์ qa_skip_reason (รัน migration 20260903_mtn_qa_skip)');
         }
         if (error) throw error;
-      } else if (step === 2) {
+      } else if (stage === 'assign') {
         if (!f.assigned_to && !isReject) { setSaving(false); return toast.error('มอบหมายช่าง'); }
         if (isReject && !f.reject_reason.trim()) { setSaving(false); return toast.error('ระบุเหตุผลที่ตีกลับ'); }
         Object.assign(upd, { accept_at: editMode ? o.accept_at : new Date().toISOString(), accepted_by: f.accepted_by, repair_type: f.repair_type, assign_note: f.assign_note, target_done_at: f.target_done_at || null, assigned_to: f.assigned_to });
@@ -2105,7 +2181,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         if (isReject) {
           if (!canBounceBack(o)) { setSaving(false); return toast.error(`ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`); }
           Object.assign(upd, { status: 'returned', current_step: 1, reject_reason: f.reject_reason, returned_at: new Date().toISOString(), returned_from_dept: o.mtn_dept || null });
-        } else if (!editMode) { upd.status = 'assigned'; upd.current_step = 2; }
+        } else if (!editMode) { upd.status = 'assigned'; upd.current_step = step; }
         // ออกเลข MO ก่อนเลื่อนสถานะ — ถ้า RPC ล้ม (เน็ตสะดุด) ใบยังเป็น pending ให้กดสเตป 2 ใหม่ได้
         // (เดิมเลื่อน status→assigned ก่อน แล้ว RPC ล้ม → ใบค้าง assigned + mo_no=null ตลอดกาล ทำสเตป 2 ซ้ำไม่ได้)
         if (!editMode && !isReject) { const prefix = repairTypes.find(r => r.name === f.repair_type)?.prefix || 'BM'; const { error: eMo } = await supabaseDR.rpc('mtn_assign_mo_no', { p_order_id: o.id, p_prefix: prefix }); if (eMo) { setSaving(false); return toast.error('ออกเลข MO ไม่สำเร็จ: ' + eMo.message); } }
@@ -2119,10 +2195,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         }
         // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
         if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
-      } else if (step === 3) {
+      } else if (stage === 'service') {
         Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
-        if (!editMode) { upd.status = 'repaired'; upd.current_step = 3; upd.repair_done_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'repaired'; upd.current_step = step; upd.repair_done_at = new Date().toISOString(); }
         /* ฟอร์ม MTN: วันที่เริ่ม/เสร็จ เป็นคนละจังหวะกับ "รับงาน" — ไม่กรอก = ถือว่าเริ่มตอนรับงาน
            (ค่านี้คือ "ช่างลงมือจริง" ใช้แยก MTTA/MTTR ในแท็บ ⚙️ รายอุปกรณ์ ด้วย) */
         if (isMtnForm) {
@@ -2137,7 +2213,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         //    บันทึกงานซ่อมให้สำเร็จก่อน แล้วเตือนว่ารูปไม่ได้แนบ — ค่อยมาแนบใหม่ด้วยปุ่มแก้ไข
         let imgWarn = null;
         if (afterFile) {
-          try { const b = await resizeImage(afterFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeMoImage(afterFile); upd.after_img = await uploadMtnImg(b, `after/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { imgWarn = `บันทึกการซ่อมแล้ว แต่แนบ "รูปหลังซ่อม" ไม่สำเร็จ — ${e.message || e}`; }
         }
         /* 🔴 ต้องเช็คผลก่อนแตะสต็อก (audit 2026-09-02)
@@ -2192,7 +2268,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           // สต็อกไม่พอ/อะไหล่ถูกลบ = แจ้งแล้วไปต่อ (บันทึกการซ่อมสำคัญกว่า ห้ามให้ทั้งใบล้มเพราะยอดอะไหล่)
           if (eSt) toast.error(`ตัดสต็อก "${usable.find(x => x.part_id === pid)?.name || ''}" ไม่สำเร็จ: ${eSt.message}`);
         }
-      } else if (step === 4) {
+      } else if (stage === 'accept_work') {
         const s = await resolveSign('checker_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้ตรวจ'); }
         /* `quality_related` ไม่ใช่ "ช่องที่ผู้ตรวจรับเลือก" อีกต่อไป (2026-09-14) — ความหมายใหม่คือ
            **"ใบนี้ยังต้องผ่าน QA ไหม"** ค่าเริ่มต้น = ต้องผ่าน · มีแต่ **QA** เท่านั้นที่พลิกเป็น
@@ -2202,69 +2278,70 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               (เดิมมีเหตุผลข้อ 2 "เป็นสะพานให้ edge รุ่นเก่าที่อ่าน quality_related" — หมดอายุแล้ว
                `send-mtn-notification` v19+ อ่าน `qa_skipped_at` เอง · deploy 2026-09-15) */
         Object.assign(upd, { check_result: f.check_result, check_note: f.check_note, checker_name: f.checker_name, checker_sign: s, quality_related: QA_RELATED });
-        if (!editMode) { upd.status = 'checked'; upd.current_step = 4; upd.check_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'checked'; upd.current_step = step; upd.check_at = new Date().toISOString(); }
         /* ขั้น 4 ไม่ยุ่งกับ qa_skip_* อีกแล้ว (2026-09-14) — การข้าม QA เป็นของ QA ฝั่งเดียว
            ⚠️ ห้าม "ล้าง" qa_skip_* ตอนแก้ไขขั้น 4 ย้อนหลังด้วย: ใบเก่าที่ QA (หรือกฎเดิม) ตัดสินไปแล้ว
            จะถูกดึงกลับมารอ QA ใหม่ทั้งที่เดินไปขั้น 6-7 แล้ว */
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 5) {
+      } else if (stage === 'qa') {
         const s = await resolveSign('qa_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น QA'); }
         // QA ตรวจจริง = ยืนยันว่าใบนี้ "เกี่ยวกับคุณภาพ" (ช่องนี้เป็นคำตอบของ QA ตั้งแต่ 2026-09-14
         // ไม่ใช่ตัวกำหนดเส้นทางอีกต่อไป — ใบพิมพ์/แผงรายละเอียดอ่านค่านี้)
         Object.assign(upd, { qa_result: f.qa_result, qa_note: f.qa_note, qa_checker: f.qa_checker, qa_sign: s, quality_related: QA_RELATED });
         // รูป QA ก็ห้ามลากทั้งใบล้มเหมือนกัน (เหตุผลเดียวกับรูปหลังซ่อมในขั้น 3)
         if (qaFile) {
-          try { const b = await resizeImage(qaFile, 1024, 0.8, { aspect: MO_IMG_ASPECT }); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
+          try { const b = await resizeMoImage(qaFile); upd.qa_img = await uploadMtnImg(b, `qa/${o.id}-${Date.now()}.${imgExt(b)}`); }
           catch (e) { toast.error(`บันทึกผลคุณภาพแล้ว แต่แนบรูปไม่สำเร็จ — ${e.message || e}`); }
         }
-        if (!editMode) { upd.status = 'qa'; upd.current_step = 5; upd.qa_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'qa'; upd.current_step = step; upd.qa_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 6) {
+      } else if (stage === 'handover') {
         const s = await resolveSign('ho_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น'); }
         { const sat = {}; SAT_DIMS.forEach(d => { const v = Number(f.satisfaction?.[d.key]); if (v >= 1 && v <= 3) sat[d.key] = v; });
           Object.assign(upd, { follow_up: f.follow_up, ho_checker: f.ho_checker, ho_reporter: o.reporter_prod || fullName, ho_sign: s, satisfaction: Object.keys(sat).length ? sat : null });
           if (isMtnForm) Object.assign(upd, {
             satisfaction_by: f.satisfaction_by || null,
             cost_owner_dept: f.cost_owner_dept || null,
-            // ชื่อ ผจก. = "ผู้ที่ต้องเซ็นขั้น 7" เท่านั้น — เวลาเซ็นจริงมาจากขั้น 7 (เหมือนกฎ dept_manager_at)
+            /* ชื่อ ผจก.ฝ่ายที่แจ้ง = "ผู้ที่ต้องเซ็นขั้นสุดท้าย" เท่านั้น — เวลาเซ็นจริงมาจากขั้นนั้น
+               (กฎเดียวกับ dept_manager_at: ชื่ออยู่ในใบได้ แต่ `*_at` ต้องมาจากการเซ็นจริง) */
             cost_mgr_name: f.cost_mgr_name || null,
           }); }
-        if (!editMode) { upd.status = 'handover'; upd.current_step = 6; upd.ho_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'handover'; upd.current_step = step; upd.ho_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 7 && isMtnForm) {
-        /* ขั้น 7 ของใบ MTN = **ผจก.ของแผนกที่แจ้งเซ็นอนุมัติ** (ช่อง "ผู้จัดการ" ท้ายใบ = cost_mgr_*)
-           ⚠️ ยังไม่ปิดใบ — status คง `handover` แล้วให้ current_step=7 เป็นตัวบอกว่ารอขั้น 8
-              (ห้ามเพิ่มค่า status ใหม่ · KPI/Andon/edge อ่าน status ตรงๆ) */
-        const s = await resolveSign('cost_mgr_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.แผนกที่แจ้ง'); }
-        Object.assign(upd, { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
-        if (!editMode) { upd.current_step = 7; upd.cost_mgr_at = new Date().toISOString(); }
-        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
-          if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 8 && isMtnForm) {
-        /* ขั้น 8 ของใบ MTN = **หัวหน้าแผนก MTN** (ช่องเซ็นที่ 5 ของฟอร์ม · WI ข้อ 8)
-           ⚠️ ยังไม่ปิดใบ — status คง `handover` เหมือนขั้น 7 · ตัวบอกว่าผ่านขั้นนี้คือ `mtn_head_at` */
-        const s = await resolveSign('mtn_head_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นหัวหน้าแผนก MTN'); }
+      } else if (stage === 'mtn_head') {
+        /* ขั้น 6 ของใบ MTN = **หัวหน้าแผนกช่าง ตรวจสอบงานหลังแก้ไข** (ช่องเซ็นที่ 5 ของฟอร์ม)
+           ⚠️ ยังไม่ปิดใบ — status คง `handover` · ตัวบอกว่าผ่านขั้นนี้คือ `mtn_head_at` */
+        const s = await resolveSign('mtn_head_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นหัวหน้าแผนกช่าง'); }
         Object.assign(upd, { mtn_head_name: f.mtn_head_name || fullName || null, mtn_head_sign: s });
-        if (!editMode) { upd.current_step = 8; upd.mtn_head_at = new Date().toISOString(); }
+        if (!editMode) { upd.current_step = step; upd.mtn_head_at = new Date().toISOString(); }
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 9) {
-        // ขั้น 9 (เฉพาะใบ MTN) = ผจก.ส่วนซ่อมบำรุงปิดจบ MO — ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)"
-        const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ส่วนซ่อมบำรุง'); }
-        Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
-        if (!editMode) { upd.status = 'closed'; upd.current_step = 9; upd.approve_at = new Date().toISOString(); }
+      } else if (stage === 'mtn_approve') {
+        /* ขั้น 7 ของใบ MTN = **ผจก.ช่างอนุมัติ** (ช่อง "รับรองโดย (ผจก.ส่วนซ่อมบำรุง)" = approver_*)
+           ⚠️ ยังไม่ปิดใบ — คนปิดคือ ผจก.ฝ่ายที่แจ้ง ขั้น 8 (คำสั่ง user 22/09) */
+        const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ช่าง'); }
+        Object.assign(upd, { approver_name: f.approver_name || fullName || null, approve_sign: s });
+        if (!editMode) { upd.current_step = step; upd.approve_at = new Date().toISOString(); }
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
-      } else if (step === 7) {
+      } else if (stage === 'cost_mgr_close') {
+        /* ขั้น 8 ของใบ MTN = **ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ** (ช่อง "ผู้จัดการ" ท้ายใบ = cost_mgr_*)
+           ลายเซ็นจุดสุดท้ายของ 7 จุดตาม WI — ปิดแล้วสถานะเป็น closed */
+        const s = await resolveSign('cost_mgr_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ฝ่ายที่แจ้ง'); }
+        Object.assign(upd, { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
+        if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.cost_mgr_at = new Date().toISOString(); }
+        { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
+          if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
+      } else if (stage === 'close') {
         const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้อนุมัติ'); }
         Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
-        if (!editMode) { upd.status = 'closed'; upd.current_step = 7; upd.approve_at = new Date().toISOString(); }
+        if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.approve_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + eUpdN.message); } }
@@ -2272,7 +2349,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       // ลบไฟล์เก่าที่ถูกแทนที่ (รูปก่อน/หลัง/QA + ลายเซ็นต่อขั้น) — ลบหลัง DB update สำเร็จเท่านั้น + best-effort
       // ไม่งั้นแก้ไขหลังบันทึกทีไร ไฟล์เดิมกำพร้าค้างใน bucket mtn-images ทุกครั้ง (QC audit 2026-08-03)
       // ข้ามลายเซ็นที่เป็นของโปรไฟล์ (signatures/<uid>/profile...) — ใช้ร่วมทั้งระบบ ห้ามลบ
-      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'mtn_head_sign', 'approve_sign']) {
+      for (const fld of ['before_img', 'after_img', 'qa_img', 'checker_sign', 'qa_sign', 'ho_sign', 'mtn_head_sign', 'approve_sign', 'cost_mgr_sign']) {
         const oldUrl = o[fld], newUrl = upd[fld];
         if (oldUrl && newUrl && oldUrl !== newUrl && !oldUrl.includes('/profile')) removeMtnImg(oldUrl);
       }
@@ -2298,7 +2375,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             {stepMeta(step, { mtnForm: isMtnForm }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
-        {step === 2 && <>
+        {modalStage === 'assign' && <>
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
@@ -2329,7 +2406,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
           </>}
         </>}
-        {step === 3 && <>
+        {modalStage === 'service' && <>
           {isMtnForm && <>
             <Field label="วันเวลาที่เริ่มลงมือซ่อม">
               <input type="datetime-local" value={f.repair_start_at} onChange={e => set('repair_start_at', e.target.value)} max={localDtNow()} style={inp} />
@@ -2408,7 +2485,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   </div>
                   {/* ⚠️ เบิกเกินสต็อก — RPC mtn_stock_move กันติดลบอยู่แล้ว บอกก่อนกดบันทึกจะได้ไม่เสียเที่ยว */}
                   {over && (
-                    <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
                       ⚠ เบิก {p.qty} แต่คงเหลือ {master.stock_qty} {master.unit || ''} — บันทึกไม่ผ่าน ต้องรับเข้าคลังก่อน หรือลดจำนวน
                     </div>
                   )}
@@ -2428,7 +2505,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>รวมค่าใช้จ่าย (1)+(2) = <b style={{ color: 'var(--text)' }}>{((Number(f.labor_cost) || 0) + (Number(f.parts_cost) || 0)).toLocaleString()}</b> บาท · ตั้งราคามาตรฐานที่แท็บ ⚙️ ข้อมูลตั้งต้น → 💰 ค่าแรงมาตรฐาน</div>
         </>}
-        {step === 4 && <>
+        {modalStage === 'accept_work' && <>
           <Field label="ผลตรวจรับ — ฝ่ายที่แจ้งรับงานได้ไหม"><select value={f.check_result} onChange={e => set('check_result', e.target.value)} style={inp}>{CHECK_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* 🔴 2026-09-14 (คำสั่ง user): ช่อง "กระทบคุณภาพไหม" ถูกถอดออกจากขั้น 4
               เดิมผู้ตรวจรับ (= ฝ่ายที่แจ้ง) เลือกเองได้ว่าไม่ต้องให้ QA ตรวจ = ผู้ถูกตรวจเปิดด่านเอง
@@ -2448,14 +2525,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label="เหตุผลที่ไม่ต้องให้ QA ตรวจ (เช่น ซ่อมไฟ/ลม/โครงสร้าง ไม่แตะจุดที่กระทบชิ้นงาน)" required><textarea value={f.qa_skip_reason} onChange={e => set('qa_skip_reason', e.target.value)} style={{ ...inp, minHeight: 64 }} /></Field>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ผู้ยืนยัน: <b style={{ color: 'var(--text2)' }}>{fullName || '—'}</b> · ผลตรวจรับขั้น 4 ({o.check_result || '—'} · {o.checker_name || '—'}) คงเดิม ไม่ต้องเซ็นใหม่</div>
         </>}
-        {step === 5 && !skipQa && <>
+        {modalStage === 'qa' && !skipQa && <>
           <Field label="คุณภาพหลังการแก้ไข"><select value={f.qa_result} onChange={e => set('qa_result', e.target.value)} style={inp}>{QA_RESULTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           <Field label="ระบุรายละเอียด"><input value={f.qa_note} onChange={e => set('qa_note', e.target.value)} style={inp} /></Field>
           {/* เจ้าหน้าที่ QA = <PersonSelect> role qa ขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้ตรวจ (เจ้าหน้าที่ QA)"><PersonSelect value={f.qa_checker} source="both" roles={QA_ROLES} section="QA" history={qaCheckerHist} onChange={res => set('qa_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           <ImgField label="รูปยืนยันคุณภาพ" value={qaUrl || (editMode ? o.qa_img : null)} onPick={f2 => { touch(); setQaFile(f2); }} />
         </>}
-        {step === 6 && <>
+        {modalStage === 'handover' && <>
           <Field label="ผลติดตามหลังใช้งานจริง"><select value={f.follow_up} onChange={e => set('follow_up', e.target.value)} style={inp}>{FOLLOW_OPTS.map(r => <option key={r}>{r}</option>)}</select></Field>
           {/* หัวหน้าแผนกฝ่ายที่แจ้ง = <PersonSelect> profiles role supervisor/manager ของไลน์/แผนกใบขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้รับมอบงาน (หัวหน้าแผนกฝ่ายที่แจ้ง)"><PersonSelect value={f.ho_checker} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={hoCheckerHist} onChange={res => set('ho_checker', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
@@ -2485,141 +2562,36 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           {isMtnForm && <>
             <Field label="ลงชื่อผู้ประเมินความพึงพอใจ"><PersonSelect value={f.satisfaction_by} source="both" section={o.dept_section} onChange={res => set('satisfaction_by', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้ประเมิน" /></Field>
             <Field label="ค่าใช้จ่ายทั้งหมดเป็นของหน่วยงาน"><input value={f.cost_owner_dept} onChange={e => set('cost_owner_dept', e.target.value)} style={inp} placeholder={o.work_area || o.dept_section || 'ระบุหน่วยงานที่รับผิดชอบค่าใช้จ่าย'} /></Field>
-            <Field label="ผจก. ของแผนกที่แจ้ง (ผู้ที่ต้องเซ็นอนุมัติขั้น 7)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+            <Field label="ผจก. ของแผนกที่แจ้ง (ผู้ที่ต้องเซ็นอนุมัติปิดใบ ขั้น 8)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           </>}
         </>}
-        {/* ── ใบ MTN: ขั้น 7 = ผจก.แผนกที่แจ้งอนุมัติ (ยังไม่ปิด) · ขั้น 8 = ผจก.ซ่อมบำรุงปิดจบ ── */}
-        {step === 7 && isMtnForm && <>
-          <Field label="ชื่อ ผจก. ของแผนกที่แจ้ง (ผู้อนุมัติ — ช่อง “ผู้จัดการ” ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
+        {/* ── 3 ขั้นปิดใบของฟอร์ม MTN (ลำดับตาม WI · คำสั่ง user 22/09 — ห้ามสลับ):
+               6 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 7 ผจก.ช่างอนุมัติ → 8 ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ ── */}
+        {modalStage === 'mtn_head' && <>
+          <Field label="ชื่อหัวหน้าแผนกช่าง (ช่องเซ็นที่ 5 ของฟอร์ม — ผู้ตรวจสอบ)"><PersonSelect value={f.mtn_head_name} source="profiles" roles={MTN_HEAD_ROLES} onChange={res => set('mtn_head_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อหัวหน้าแผนกซ่อมบำรุง" /></Field>
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ช่าง อนุมัติ (ขั้น 7)</b></div>}
+        </>}
+        {modalStage === 'mtn_approve' && <>
+          <Field label="ชื่อ ผจก.ช่าง (ช่องเซ็นที่ 6 ของฟอร์ม — “รับรองโดย (ผจก.ส่วนซ่อมบำรุง)”)"><PersonSelect value={f.approver_name} source="profiles" roles={MTN_HEAD_ROLES} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการส่วนซ่อมบำรุง" /></Field>
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ (ขั้น 8)</b></div>}
+        </>}
+        {modalStage === 'cost_mgr_close' && <>
+          <Field label="ชื่อ ผจก. ของฝ่ายที่แจ้ง (ช่องเซ็นที่ 7 — ช่อง “ผู้จัดการ” ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           <Field label="ความคิดเห็นเพิ่มเติม (ท้ายใบ)"><textarea value={f.extra_comment} onChange={e => set('extra_comment', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>หัวหน้าแผนก MTN ตรวจ (ขั้น 8)</b></div>}
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ลายเซ็นจุดสุดท้ายของใบ — อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {step === 8 && <>
-          {/* ขั้น 8 = ช่องเซ็นที่ 5 ของฟอร์ม (WI ข้อ 8) — เดิมใบพิมพ์ดึงชื่อผู้ตรวจรับฝั่งผู้แจ้งมาลงผิดฝั่ง */}
-          <Field label="ชื่อหัวหน้าแผนก MTN (ช่องเซ็นที่ 5 ของฟอร์ม)"><PersonSelect value={f.mtn_head_name} source="profiles" roles={MTN_HEAD_ROLES} onChange={res => set('mtn_head_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อหัวหน้าแผนกซ่อมบำรุง" /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้วใบ<b style={{ color: 'var(--accent2)' }}>ยังไม่ปิด</b> — ส่งต่อให้ <b>ผจก.ส่วนซ่อมบำรุง ปิดจบ MO (ขั้น 9)</b></div>}
-        </>}
-        {step === 9 && <>
-          <Field label="ชื่อผู้ปิดใบ (ผจก.ส่วนซ่อมบำรุง — ช่อง “รับรองโดย”)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการส่วนซ่อมบำรุง" /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
-        </>}
-        {step === 7 && !isMtnForm && <>
+        {modalStage === 'close' && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
         </>}
-        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[{ 4: 'checker_sign', 5: 'qa_sign', 6: 'ho_sign', 7: isMtnForm ? 'cost_mgr_sign' : 'approve_sign', 8: 'mtn_head_sign', 9: 'approve_sign' }[step]]} onChange={v => { touch(); setSig(v); }} /></Field>}
+        {needSign && <Field label="ลายเซ็น" required><SignField signatureUrl={signatureUrl} existing={o[SIGN_COL[modalStage]]} onChange={v => { touch(); setSig(v); }} /></Field>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
         <button onClick={save} disabled={saving} style={btnPri}>{saving ? 'บันทึก…' : skipQa ? '⏭ ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>
-  );
-}
-
-/* ── KPI tab ─────────────────────────────────────────── */
-function KpiTab({ orders, scopeLines, lineObjs = [], machines = [] }) {
-  const [line, setLine] = useState('');
-  const [days, setDays] = useState(30);
-  const rows = useMemo(() => {
-    const since = new Date(); since.setDate(since.getDate() - Number(days));
-    // กางครอบครัวไลน์เหมือนลิสต์หลัก — เลือกไลน์แม่ต้องนับใบของไลน์ลูกด้วย (fam ว่าง = ถอยไปเทียบตรงตัว)
-    const fam = line ? new Set(getLineFamilyNames(lineObjs, line)) : null;
-    const inLine = (o) => !line || (fam?.size ? fam.has(o.line_name) : o.line_name === line);
-    return orders.filter(o => (!scopeLines || !o.line_name || scopeLines.has(o.line_name)) && inLine(o) && new Date(o.report_at) >= since && o.repair_done_at);
-  }, [orders, scopeLines, line, days, lineObjs]);
-  const stat = useMemo(() => {
-    const resp = [], ttr = [], bd = [];
-    for (const o of rows) { const r = minutesBetween(o.report_at, o.accept_at); if (r != null) resp.push(r);
-      // MTTR หักช่วงอยู่กับ supplier · Breakdown ไม่หัก (ไลน์หยุดจริง) — ดู mtnVendor.js
-      const t = techRepairMin(o); if (t != null) ttr.push(t); const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b); }
-    const avg = a => a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null;
-    // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
-    const rated = rows.filter(o => satAvg(o.satisfaction) != null);
-    const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
-    const satByDim = SAT_DIMS.map(d => { const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3); return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length }; });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), satOverall, satByDim, satN: rated.length };
-  }, [rows]);
-
-  /* พาเรโตลักษณะปัญหา — ป้อน "แถวดิบ" ให้ `ParetoAbcChart` (component กลางตาม UI-CONVENTIONS §304)
-     1 ใบ = 1 แถว (value 1 = นับใบ) · กราฟจัด ABC + เส้นสะสม + เส้น 80% + เจาะลึกให้เอง
-     ⇒ แทนพาเรโต้ 2 ใบที่เคยวาดเอง (กลุ่มใหญ่ + Top 10 หัวข้อ) ซึ่งเป็นแค่แท่งเรียง ไม่มีเส้นสะสม
-        และ "Top 10" ยังตัดหางทิ้งจนคิด % สะสมไม่ได้ · การเจาะหัวข้อย่อยย้ายไปเป็นมิติ 🛑 หัวข้อย่อย
-     ⚠️ ใบเก่าที่แจ้งก่อนระบบมีการจัดกลุ่ม ไม่มี problem_group → 'ไม่ระบุกลุ่ม'
-        ห้ามเดากลุ่มย้อนหลังให้ (ใบเก่าเก็บเป็นข้อความ snapshot ไม่รู้กลุ่มจริง) */
-  const paretoRecords = useMemo(() => rows.map(o => ({
-    cat: (o.problem_group || '').trim() || 'ไม่ระบุกลุ่ม',
-    value: 1,
-    sub: o.problem_characteristic || 'อื่นๆ',
-    machine: o.machine_no || '(ไม่ระบุเครื่อง)',
-    line: o.line_name || '(ไม่ระบุไลน์)',
-    item: o.item_type || '(ไม่ระบุชนิด)',
-    note: o.report_note || '',
-  })), [rows]);
-  const PARETO_DIMS = [
-    { key: 'sub', label: '🛑 หัวข้อย่อย' },
-    { key: 'machine', label: '⚙️ เครื่อง/อุปกรณ์' },
-    { key: 'line', label: '🏭 ไลน์' },
-    { key: 'item', label: '🔧 ชนิดอุปกรณ์' },
-    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
-  ];
-  // h = คำแปลของชื่อย่อสากล — ต้องอ่านได้บนจอเลย ห้ามซ่อนใน tooltip อย่างเดียว (จอ TV ไม่มี hover)
-  const Card = ({ t, v, c, h }) => <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}><div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div><div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>{h && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}</div>;
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {/* <LineSelect> — lineObjs ถูก scope จากหน้าหลักแล้ว · 2026-09-07 */}
-        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <select value={days} onChange={e => setDays(e.target.value)} style={{ ...inp, width: 140 }}>{[7, 30, 60, 90, 180].map(d => <option key={d} value={d}>{d} วันล่าสุด</option>)}</select>
-      </div>
-      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
-        📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
-        · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
-        <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
-      </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
-        <Card t="งานที่ปิด (ในช่วง)" v={stat.n} />
-        <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
-        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง และหักช่วงที่ส่งซ่อมภายนอกออกแล้ว)" />
-        <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />
-        <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'} c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
-      </div>
-      {stat.satN > 0 && <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)</div>
-        {stat.satByDim.map(d => { const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0; const col = d.avg == null ? 'var(--muted)' : d.avg >= 2.5 ? '#22c55e' : d.avg >= 2 ? '#f59e0b' : '#ef4444'; return (
-          <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-            <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</div>
-            <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
-            <div style={{ width: 70, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: col }}>{d.avg != null ? `${d.avg.toFixed(2)}/3` : '—'}</div>
-          </div>
-        ); })}
-      </div>}
-      {/* พาเรโตลักษณะปัญหา — component กลาง (ABC + เส้นสะสม % + เส้น 80% + เจาะลึก)
-          เดิมวาดเองเป็นแท่งเรียงเฉยๆ 2 ใบ · ตอนนี้เป็น Pareto ตามหลักสากลใบเดียว เจาะหัวข้อย่อยได้ */}
-      <ParetoAbcChart
-        title="พาเรโตลักษณะปัญหา (ใบซ่อมที่ปิดแล้ว)"
-        records={paretoRecords} dims={PARETO_DIMS} unit="ใบ"
-        emptyText="ไม่มีใบซ่อมที่ปิดแล้วในช่วงนี้"
-        sectionStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
-        titleStyle={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }} />
-
-      {/* ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — เดิมเป็นแท็บแยก ยุบเข้ามาที่นี่ (คำสั่ง user 2026-09-15)
-          🔴 คนละฐานกับการ์ดข้างบน: ข้างบนนับจาก "ใบซ่อม MO" · ข้างล่างนับจาก "downtime จริงของเครื่อง"
-             ⇒ MTTR 2 ตัวไม่เท่ากันเป็นเรื่องปกติ **ต้องมีป้ายกำกับที่มาเสมอ** ไม่งั้นกลายเป็น
-             "จอเดียวกันตอบคนละเลข" (บทเรียนเดิมของโมดูลนี้) */}
-      <div style={{ marginTop: 18, paddingTop: 14, borderTop: '2px solid var(--border2)' }}>
-        {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
-            ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
-        </div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-          นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง
-        </div>
-        <MachineReliability machines={machines} lineObjs={lineObjs} scopeLines={scopeLines} />
-      </div>
-    </div>
   );
 }
 
@@ -2706,7 +2678,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
               <span style={{ flex: '2 1 180px', fontSize: 13 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
-              <span style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, marginLeft: 'auto' }}>👤 จากฐานพนักงาน</span>
+              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, marginLeft: 'auto' }}>👤 จากฐานพนักงาน</span>
             </div>
           ) : (
             <div key={it.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
@@ -2719,7 +2691,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     </div>
   );
 
-  // ── อะไหล่: ย้ายไปแท็บ "🔩 คลังอะไหล่" (SparePartMaster) แล้ว — ที่นี่เหลือแค่ทางลัด
+  // ── อะไหล่: ย้ายไปหน้า 🧰 ทะเบียนอุปกรณ์ (/equipment?tab=spare) แล้ว — ที่นี่เหลือแค่ทางลัด
   //    เดิมมีตัวแก้อะไหล่แบบย่อซ้ำอยู่ตรงนี้ (prompt + read-modify-write) — ลบทิ้งกันแก้กัน 2 ที่คนละกติกา
 
   // ── ค่าแรงมาตรฐาน (standard price ค่าแรงซ่อม) ──
@@ -2731,7 +2703,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         <input value={nrate.name} onChange={e => setNrate(p => ({ ...p, name: e.target.value }))} placeholder="ประเภทงาน/ระดับช่าง" style={{ ...inp, width: 240 }} />
         <input type="number" value={nrate.price} onChange={e => setNrate(p => ({ ...p, price: e.target.value }))} placeholder="ราคา" style={{ ...inp, width: 100 }} />
         <input value={nrate.unit} onChange={e => setNrate(p => ({ ...p, unit: e.target.value }))} placeholder="หน่วย" style={{ ...inp, width: 110 }} />
-        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 140 }}><option value="">ทุกทีม</option><TeamOpts list={mtnDepts} /></select>
+        <select value={nrate.dept} onChange={e => setNrate(p => ({ ...p, dept: e.target.value }))} style={{ ...inp, width: 140 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
         <button onClick={() => { if (!nrate.name) return; addRow('mtn_labor_rates', { name: nrate.name, price: Number(nrate.price) || 0, unit: nrate.unit, dept: nrate.dept || null, sort_order: laborRates.length + 1 }); setNrate({ name: '', unit: nrate.unit, price: '', dept: '' }); }} style={btnPri}>+ เพิ่มราคา</button>
       </div>
       <div style={{ display: 'grid', gap: 6 }}>
@@ -2740,7 +2712,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 200px', width: 'auto' }} />
             <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
             <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
-            <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">ทุกทีม</option><TeamOpts list={mtnDepts} /></select>
+            <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
             <button onClick={() => delRow('mtn_labor_rates', r.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
           </div>))}
         {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
@@ -2797,15 +2769,16 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
     return (
       <div>
         {teamed && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ทีมช่าง:</span>
-            <select value={fTeam} onChange={e => setFTeam(e.target.value)} style={{ ...inp, width: 210 }}>
-              <option value="">ทุกทีม (เห็นทั้งหมด)</option>
+          <FilterBar>
+            <span className="filter-label">ทีมช่าง</span>
+            <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
+              <option value="">{ALL.team}</option>
               {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select>
-            {!!hiddenN && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ซ่อน {hiddenN} รายการของทีมอื่น</span>}
-            <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>🌐 = ใช้ร่วมทุกทีม</span>
-          </div>
+            {!!hiddenN && <span className="filter-count">ซ่อน {hiddenN} รายการของทีมอื่น</span>}
+            <span className="spacer" />
+            <span className="filter-count">🌐 = ใช้ร่วมทุกทีม</span>
+          </FilterBar>
         )}
         {teamed && !isBoss && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', marginBottom: 10 }}>
@@ -2871,7 +2844,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                     return (
                       <button key={t.key} type="button" disabled={!ok}
                         onClick={() => updRow(table, it.id, { shared_teams: on ? cur.filter(x => x !== teamKeyOf(t.key)) : [...cur, teamKeyOf(t.key)] })}
-                        style={{ padding: '3px 7px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
+                        style={{ padding: '3px 7px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
                           border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
                           color: on ? 'var(--accent)' : 'var(--muted)', opacity: ok ? 1 : 0.6 }}>
                         {t.icon || ''}{(t.dept_name || t.label || '').replace(' MTN', '')}

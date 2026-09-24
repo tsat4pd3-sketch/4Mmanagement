@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
+import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
@@ -26,15 +28,21 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import { scopeMatRows } from '../utils/matScope';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -100,8 +108,10 @@ function summarizeParts(entries) {
 
 function summarizeDowntimes(dtLogs) {
   const map = {};
+  const idx = buildDtIndex(dtLogs || []);
   (dtLogs || []).forEach(d => {
-    const key = d.dr_downtime_types?.name_th || 'ไม่ระบุสาเหตุ';
+    /* 🗑️ ประเภทที่บอกอะไรไม่ได้ แตกตามเครื่อง (utils/downtimeCategory 23/09) */
+    const key = dtBucketName(d, idx);
     const a = (map[key] ||= { name: key, min: 0, count: 0, machines: [] });
     a.min += d.duration_min || 0;
     a.count += 1;
@@ -133,6 +143,14 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         style={{ fontSize: 12, fontWeight: 700, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
         🕐 ตอนนี้
       </button>
+      {/* 🔴 ทวนค่าเป็นแบบ 24 ชม. เสมอ — ด่านสายตากัน AM/PM สลับ (2026-09-23)
+          `<input type="time">` เก็บค่าเป็น 24 ชม. ก็จริง แต่ **แสดงผลตามเครื่อง**: มือถือ/จอที่ตั้งเป็น
+          12 ชม. จะมีช่อง AM/PM แยก ถ้าคนกรอกไม่แตะมันจะค้างที่ AM ⇒ ตั้งใจ 16:19 ได้ 04:19
+          (เกิดจริง Laser GOR 23/09) · ป้ายนี้ทำให้เห็นค่าจริงก่อนกดบันทึก */}
+      {value ? (
+        <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 800, color: 'var(--muted)', whiteSpace: 'nowrap' }}
+          title="ค่าที่จะถูกบันทึก (นาฬิกา 24 ชม.)">= {String(value).slice(0, 5)} น.</span>
+      ) : null}
     </div>
   );
 }
@@ -221,7 +239,7 @@ export default function DailyReport() {
   const [focusSess, setFocusSess] = useState(null);
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Daily Production Report" icon="📊"
         sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
@@ -245,7 +263,7 @@ export default function DailyReport() {
       {tab === 'history' && <HistoryTab role={role} />}
       {tab === 'export'  && <ExportTab />}
       {tab === 'setup'   && canSetup && <SetupTab role={role} />}
-    </div>
+    </Page>
   );
 }
 
@@ -320,6 +338,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // { d, team, mode } — เลือกทีมช่างก่อน · mode 'mo' = เปิดใบซ่อม · 'call' = เรียกช่างด่วน (2026-09-21)
   //   ใช้ modal ตัวเดียวกันทั้ง 2 ทาง — ทีมปลายทางคือคำถามเดียวกัน ห้ามแตกเป็น 2 จอให้เพี้ยนกัน
   const [moDtPick, setMoDtPick] = useState(null);
+  const [moImg, setMoImg] = useState(null);        // ไฟล์รูปก่อนซ่อม (ตอนเปิดใบจากดาวน์ไทม์)
+  const [moSaving, setMoSaving] = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
@@ -865,15 +885,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
+  /* 'HH:mm' → Date ที่ตกในกรอบกะจริง — ผ่าน `resolveShiftTime` (src/utils/shiftWindow.js) เท่านั้น
+     ⚠️ เดิมที่นี่ hardcode "กะดึก + ชั่วโมง < 8 = วันถัดไป" ซึ่ง**ผิดกับกะดึกที่จบ 08:00+**:
+        คนกรอก 5ส./ส่งกะ "08:00"/"08:30" ไม่เข้าเงื่อนไข `< 8` → ถูกวางไว้วันเดียวกัน
+        = ก่อนเปิดกะ ~12 ชม. (วัดจริง 23/09: 15 แถว 890 นาที เป็นกะดึกล้วน)
+     ตัวใหม่เลือก offset วันจาก "กรอบกะของ session นั้น" — ไม่เดาจากเลขชั่วโมง */
   const buildDT = (timeStr) => {
     if (!timeStr || !selSession) return null;
-    const workDate = selSession.work_date;
-    const dt = new Date(`${workDate}T${timeStr}:00`);
-    // If session is night shift and time < 08:00, it's next day
-    if (selSession.shift === 'night' && parseInt(timeStr.split(':')[0]) < 8) {
-      dt.setDate(dt.getDate() + 1);
-    }
-    return dt;
+    const r = resolveShiftTime(timeStr, selSession);
+    return r ? new Date(r.ms) : null;
   };
 
   // เดาเวลาปิดกะที่ "น่าจะ" ถูก จากเวลาจริงตอนกดขอปิดกะ — เทียบกับเวลาเลิกงานมาตรฐาน
@@ -979,6 +999,63 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ · ผูกได้ถ้าต้องการ (machine_no/mat_no nullable)
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
+
+    /* ═══ 🔴 ด่านกันเวลาที่ "เป็นไปไม่ได้" (2026-09-23 · คำสั่ง user "ต้องทำ errorproof ดักไม่ให้เกิดอีก") ═══
+       เคสจริง Laser GOR 23/09: downtime 04:19–04:39 บนกะเช้าที่เปิด 08:00 = **ก่อนเปิดกะ 3 ชม. 41 นาที**
+       บันทึกตอน 16:39 ⇒ ตั้งใจ 16:19 แต่จอ 12 ชม. ทิ้ง AM/PM ไว้ที่ AM · ไหลเข้าฐานโดยไม่มีอะไรทัก
+       ⇒ ไทม์ไลน์/พาเรโต/OEE ได้เวลาผิดหมด · ฐานทั้งระบบมี 86 แถวที่หลุดกรอบกะแบบนี้
+       กติกา: เวลาเริ่มต้องอยู่ในกรอบกะเสมอ — หลุดกรอบ = **ไม่ให้บันทึก** (ห้ามเตือนแล้วปล่อยผ่าน)
+         · ±12 ชม. แล้วเข้ากรอบพอดี = ลายเซ็น AM/PM สลับ → เสนอแก้ให้ในคลิกเดียว **ห้ามแก้เองเงียบๆ**
+         · หลุดไม่เกิน 60 นาทีก่อนเปิดกะ = ของจริงได้ (ไลน์เริ่มก่อนเวลาที่ลงไว้) → ถามยืนยัน
+         · กรอบกะเองผิด (เปิดกะผิดเวลา) → บอกให้ไปแก้ที่ "✏️ แก้เวลากะ" ไม่ใช่ดัดเวลา downtime */
+    if (startedAt) {
+      const chk = checkShiftTime(startedAt.getTime(), selSession);
+      if (!chk.ok) {
+        const win = windowLabel(selSession) || '-';
+        const at = `${String(startedAt.getHours()).padStart(2, '0')}:${String(startedAt.getMinutes()).padStart(2, '0')}`;
+        const whereTxt = chk.kind === 'before' ? `ก่อนเปิดกะ ${fmtOffset(chk.minutesOff)}`
+          : chk.kind === 'future' ? `ล่วงหน้าจากเวลาจริง ${fmtOffset(chk.minutesOff)}`
+          : `เลยเวลาปิดกะ ${fmtOffset(chk.minutesOff)}`;
+        if (chk.suggestHHmm) {
+          const ok = window.confirm(
+            `⏰ เวลาที่กรอก ${at} น. อยู่นอกกรอบกะ (${whereTxt})\n` +
+            `กะนี้: ${win}\n\n` +
+            `💡 น่าจะหมายถึง ${chk.suggestHHmm} น. — ต่างกัน 12 ชม. พอดี (ช่องเวลาบนมือถือ/จอที่ตั้งเป็นแบบ AM-PM\n` +
+            `   ถ้าไม่แตะช่อง AM/PM มันจะค้างที่ AM เช่น ตั้งใจ 16:19 แต่ได้ 04:19)\n\n` +
+            `กด "ตกลง" เพื่อแก้เวลาให้เป็น ${chk.suggestHHmm} · กด "ยกเลิก" เพื่อกลับไปแก้เอง`);
+          if (ok) {
+            // แก้ให้ในฟอร์ม แล้วให้คนกดบันทึกเองอีกครั้ง — ไม่เขียนลงฐานแทนคน
+            const shiftHH = (t) => {
+              const r = resolveShiftTime(t, selSession);
+              if (!r) return t;
+              const d = new Date(r.ms + (chk.suggestMs - startedAt.getTime()));
+              return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            };
+            setDtForm(f => ({ ...f,
+              start_time: f.start_time ? shiftHH(f.start_time) : f.start_time,
+              end_time:   f.end_time   ? shiftHH(f.end_time)   : f.end_time }));
+            toast.info(`แก้เวลาให้แล้ว — ตรวจอีกครั้งแล้วกดบันทึก`);
+          }
+          return;
+        }
+        if (chk.kind === 'before' && chk.minutesOff <= 60) {
+          const ok = window.confirm(
+            `⏰ เวลาเริ่ม ${at} น. อยู่${whereTxt}\nกะนี้: ${win}\n\n` +
+            `ถ้าไลน์เริ่มเดินก่อนเวลาที่ลงไว้จริง กด "ตกลง" เพื่อบันทึก\n` +
+            `ถ้าเวลาเปิดกะตั้งไว้ผิด ให้กด "ยกเลิก" แล้วไปแก้ที่ปุ่ม "✏️ แก้เวลากะ"`);
+          if (!ok) return;
+        } else {
+          toast.error(
+            `เวลาเริ่ม ${at} น. อยู่นอกกรอบกะ (${whereTxt}) — กะนี้ ${win}\n` +
+            `แก้เวลาให้อยู่ในกรอบ · ถ้าเวลาเปิด-ปิดกะตั้งไว้ผิด ให้ไปแก้ที่ "✏️ แก้เวลากะ" ก่อน`);
+          return;
+        }
+      }
+    }
+    if (startedAt && endedAt && (endedAt - startedAt) / 60000 > MAX_SHIFT_MIN) {
+      toast.error(`ช่วงเวลาที่กรอกยาว ${fmtOffset((endedAt - startedAt) / 60000)} — ยาวเกินกว่า 1 กะ ตรวจเวลาอีกครั้ง`);
+      return;
+    }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
     const dtTypeName = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.name_th || '';
     if (dtTypeName.includes('อื่น') && !dtForm.description?.trim()) {
@@ -1278,12 +1355,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // แปลง HH:mm ที่กรอกย้อนหลัง → ISO จริง: anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
   // (ไม่งั้นถ้าไม่ระบุเวลา DB จะ default เป็นเวลาปัจจุบัน ทำให้ Heijunka ขึ้นที่ "ตอนนี้" ไม่ใช่ตอนที่ผลิตจริง)
   // ใช้ร่วมกันทั้งใบสแกน (backfillOpenedAt) และใบ manual (handleManualOpen)
+  // เวลาที่กรอกย้อนหลัง → ISO ที่ตกในกรอบกะ (กฎเดียวกับ buildDT · ห้าม hardcode ชั่วโมง < 8 อีก)
   const backfillIsoFromTime = (hhmm) => {
     if (!hhmm || !selSession) return null;
-    const [h, m] = hhmm.split(':').map(Number);
-    let d = new Date(`${selSession.work_date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
-    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
-    return d.toISOString();
+    const r = resolveShiftTime(hhmm, selSession);
+    return r ? new Date(r.ms).toISOString() : null;
   };
   const backfillOpenedAt = () => {
     if (!openProdForm.is_backfill) return null;
@@ -1793,11 +1869,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // (ไม่ใช่เวลาที่กดปุ่ม import จริง) เพื่อให้ Heijunka จัดออเดอร์นี้ไว้ที่ต้นแถวของกะใหม่ ไม่ใช่ลอยไปอยู่
   // ช่วงเวลาปัจจุบันตามนาฬิกาจริง ซึ่งอาจยังอยู่ในครึ่งวันของกะเก่า ทำให้การ์ดไม่ถูกจัดเรียงเข้าแถวกะใหม่
   const carryImportOpenedAt = () => {
-    if (!selSession?.work_date || !selSession?.start_time) return null;
-    const [h, m] = selSession.start_time.split(':').map(Number);
-    let d = new Date(`${selSession.work_date}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
-    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
-    return d.toISOString();
+    const w = shiftWindow(selSession);      // เวลาเริ่มกะจริง (สูตรเดียวกับ buildDT)
+    return w ? new Date(w.startMs).toISOString() : null;
   };
 
   // Import carry-over orders into current session
@@ -1866,303 +1939,31 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       processType,
     });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
-  const computePolicyBreakMin = (openedAt, closedAt, sessionShift, processType) =>
-    ivMin(computeBreakIv(openedAt, closedAt, sessionShift, processType));
 
   // dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างไปใน call เดียวกัน — state dtLogs ยังเป็นค่าเก่า
-  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) => {
-    const dtl = dtLogsOverride || dtLogs;
-    const confirmedQty = prodOrders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
-    /* ยอดของใบที่ "ไม่ปิด" — ตอนปิดกะใบยังเป็น open + ค่าอยู่ใน state carryQtyActual
-       แต่ตอน "✏️ แก้เวลากะ" (กะปิดไปแล้ว) ใบกลายเป็น carry_over/cancelled และ state ว่าง
-       → ต้อง fallback ไป o.qty_actual ไม่งั้นยอดที่ยกยอดหายจากการคำนวณทั้งก้อน
-       เคสหนัก: กะที่ผลิตไม่จบสักใบ → totalProduced = 0 → noProduction → stamp A/Q/OEE เป็น null ทั้งกะ */
-    /* 🔴 ต้องมี `imported` ด้วย (2026-09-16 · หัวหน้ากลุ่ม Assy2 จับได้ว่า OEE ผิด)
-       `imported` = ใบยกยอดที่ **กะถัดไปกดรับไปแล้ว** — ยอดที่ทำได้ในกะนี้ยังอยู่ที่ `qty_actual` ของใบเดิม
-       ใบสืบทอดฝั่งกะถัดไปถือแค่ "ส่วนที่เหลือ" (remainQty) ⇒ นับตรงนี้ไม่ซ้ำซ้อน (oee.js §6)
-       เคสจริง Assy LWR 15/09 กะเช้า: ตอน "ขอปิดกะ" ใบยังเป็น carry_over ⇒ นับ 384 ชิ้น
-       พอ SV มาอนุมัติ/แก้เวลาเช้าวันถัดไป กะดึกรับยอดไปแล้ว ใบกลายเป็น `imported`
-       ⇒ 32 ชิ้นหายจากสูตร ⇒ %P ร่วง 86.18 → 79.00 · OEE 72.00 → 66.00
-         **ทั้งที่ actual_qty ในแถวเดียวกันยังเป็น 384** (แถวขัดแย้งกันเอง) */
-    const carryActualQty = prodOrders
-      .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-      .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-    const totalProduced  = confirmedQty + carryActualQty;
-    // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — ของเสียจากการลองแม่พิมพ์/ลองงานใหม่
-    // ไม่ควรลงโทษ OEE ของไลน์ · ยอดเต็มยังอยู่ครบใน defect_logs ให้เอาไปคิดมูลค่าของเสีย
-    const ngQty = ngQtyOverride !== undefined ? ngQtyOverride : sumDefectQty(defectLogs, 'line');
-    // ใช้ work_date + start_time (เวลาเริ่มกะที่ตั้งไว้จริง) เป็นจุดเริ่ม — ไม่ใช่ created_at ที่อาจคลาดเคลื่อนจากเวลาที่หัวหน้าเช็คชื่อ/เปิดระบบ
-    // start_time แก้ได้ตอนปิดกะ (startTimeOverride) เผื่อตอนเปิดกะ/auto-open เดาเวลาผิด
-    const workDate    = selSession?.work_date;
-    const startTimeStr = startTimeOverride || selSession?.start_time;
-    const openedAt  = (workDate && startTimeStr) ? new Date(`${workDate}T${startTimeStr.slice(0,5)}:00`) : null;
-    // เวลาปิดกะใช้ "เวลาปิดกะจริง" ที่กรอกในฟอร์ม (endTimeOverride) แทนเวลาที่กดปุ่มจริง เพราะการขอ/อนุมัติปิดกะอาจทำย้อนหลังได้
-    let closedAt = new Date();
-    if (workDate && endTimeOverride) {
-      closedAt = new Date(`${workDate}T${endTimeOverride.slice(0,5)}:00`);
-      if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000); // กะดึกข้ามวัน
-    }
-    const shiftMin  = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
-    // กรอบเวลาของกะนี้ (ใช้เวลาที่แก้ในฟอร์มปิดกะถ้ามี) — ใช้รัดช่วงเวลารายพาร์ททุกจุด (utils/oee §7)
-    const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
-    // ไลน์เครื่องขนาน (เช่น LASER-345/789 เลเซอร์ 3 ตัว): DT ที่ผูกเครื่อง = เครื่องเดียวหยุด
-    // อีก N-1 ตัวยังวิ่ง → หักเวลาไลน์แค่ 1/N ของนาทีที่ลง · DT ไม่ระบุเครื่อง (ไฟดับ/รอวัตถุดิบ
-    // ทั้งไลน์) = หยุดทั้งไลน์ หักเต็มเหมือนเดิม — เคสจริง 2026-08-04: DT รายเครื่อง 3 ตัวถูกบวกรวม
-    // แล้วหักจากเวลาไลน์เดียว → %A โดนกดเป็น 0 ทั้งที่ของออก 400 ชิ้น
-    // N มาจาก parallel_stations (ตั้งที่ LineSetup) ซึ่งแยกจาก flow_mode แล้ว (2026-08-05):
-    // ไลน์งานคู่ LH/RH อย่าง LASER-345/789 เป็น one_piece_flow บนบอร์ด (ไม่ dispatch ผูกเครื่อง)
-    // แต่ยังหัก DT 1/3 ได้ · parallel_machine ที่ไม่ตั้ง stations = fallback นับเครื่อง active ของไลน์
-    const lf = lineFlow[selSession?.line_name] || {};
-    const parallelN = parallelUnitsOf(lf,
-      new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false).map(m => m.machine_no)).size);
-    const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
-    const sessionShift  = selSession?.shift || 'day';
-    const processType   = sessionProcessType();
-    /* 🔴 ช่วงพักตามนโยบายต้องรู้เป็น "ช่วงเวลา" ไม่ใช่แค่ยอดรวม — นาที downtime ที่ตกอยู่ในช่วงพัก
-       ถูกกันออกจากฐานเวลาไปแล้วรอบหนึ่ง หักซ้ำอีก = %A ต่ำกว่าจริง + %P เฟ้อ (utils/oee §3.1) */
-    const breakIv = computeBreakIv(openedAt, closedAt, sessionShift, processType);
-    const policyBreakMin = ivMin(breakIv);
-    const dtEff = d => dtMinOutsideBreaks(d, breakIv) * dtW(d);
-    const loggedPlannedDT  = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + dtEff(d), 0);
-    const loggedUnplannedDT = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + dtEff(d), 0);
-    // นาที DT ที่ถูกตัดทิ้งเพราะไปทับช่วงพัก — โชว์บนจอปิดกะ ห้ามตัดเงียบ (กฎ "ห้ามล้มเหลวเงียบ")
-    const dtBreakOverlapMin = dtl.reduce((s, d) => s + Math.max(0, ((Number(d.duration_min) || 0) - dtMinOutsideBreaks(d, breakIv)) * dtW(d)), 0);
-    // Net available = shift - policy breaks - logged planned; run = net available - unplanned
-    const plannedDT   = loggedPlannedDT + policyBreakMin;
-    const netAvail    = Math.max(0, shiftMin - plannedDT);
-    const runMin      = Math.max(0, netAvail - loggedUnplannedDT);
-
-    // Availability: ถ้ากะนี้มีหลาย MAT.NO/product วิ่งคนละช่วงเวลากัน (เช่นไลน์ร่วม APRON ASSY) ให้แยกคำนวณ
-    // netAvail/runMin ตามช่วงเวลาเปิด-ปิดของแต่ละ MAT.NO เอง แล้วถ่วงเฉลี่ยตามเวลาที่รัน (runMin) กลับเป็นค่าไลน์
-    // เดียว — ไม่ใช้ช่วงเวลาทั้งกะตัวเดียวคำนวณรวม เพราะ MAT.NO หนึ่งอาจหยุดวิ่งไปแล้วก่อนเวลาปิดกะจริง
-    // เวลาที่หัวหน้ากะแก้เองต่อ MAT.NO (เฉพาะ MAT.NO ที่ confirmed ครบแล้ว) — แก้ทับช่วงที่ระบบจับเวลาอัตโนมัติไว้
-    const applyMatTimeOverride = (matNo, hasOpenOrders, startMs, endMs) => {
-      if (hasOpenOrders) return { startMs, endMs };
-      const ov = matTimeOverride[matNo];
-      if (!ov || !workDate) return { startMs, endMs };
-      let s = startMs, e = endMs;
-      if (ov.start) s = new Date(`${workDate}T${ov.start.slice(0,5)}:00`).getTime();
-      if (ov.end) {
-        e = new Date(`${workDate}T${ov.end.slice(0,5)}:00`).getTime();
-        if (s != null && e < s) e += 86400000;
-      }
-      return { startMs: s, endMs: e };
-    };
-    let totalNetAvailByMat = 0, totalRunMinByMat = 0;
-    const matRunMinMap = {};
-    const matWins = [];   // ช่วงที่ "มีพาร์ทวิ่งอยู่จริง" — ใช้หา DT ที่ตกนอกทุกช่วง (ดูหมายเหตุใต้ลูป)
-    const matNosForA = Array.from(new Set(prodOrders.map(o => o.mat_no)));
-    matNosForA.forEach(matNo => {
-      const orders = prodOrders.filter(o => o.mat_no === matNo);
-      const hasOpenOrders = orders.some(o => o.status === 'open');
-      const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-      const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-      // ออเดอร์ที่ยังเปิดแต่ตัดสินใจ (ยกยอด/ยกเลิก) แล้วและกรอก "เวลาหยุดผลิตจริง" ไว้ — ใช้เวลานั้นปิดช่วงของ MAT.NO นี้
-      const openStopTimes = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
-        const stopStr = carryStopTime[o.id] ?? endTimeOverride;
-        if (!stopStr || !workDate) return null;
-        let ms = new Date(`${workDate}T${stopStr.slice(0,5)}:00`).getTime();
-        if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
-        return ms;
-      }).filter(Boolean);
-      let matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
-      let matEndMs   = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
-      ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
-      // 🔴 ช่วงของพาร์ทต้องอยู่ในกะเสมอ — ใบที่ถูกยืนยันย้อนหลังข้ามวันลากฐานเวลายาวเกินจริง (utils/oee §7)
-      ({ startMs: matStartMs, endMs: matEndMs } = clampWinToShift(matStartMs, matEndMs, shiftFrame));
-      if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
-      const windowMin = (matEndMs - matStartMs) / 60000;
-      const matBreakIv = computeBreakIv(new Date(matStartMs), new Date(matEndMs), sessionShift, processType);
-      const matPolicyBreakMin = ivMin(matBreakIv);
-      const matLoggedPlanned   = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category === 'planned', dtl, dtW, matBreakIv);
-      const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => d.dr_downtime_types?.category !== 'planned', dtl, dtW, matBreakIv);
-      const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
-      const matRunMin   = Math.max(0, matNetAvail - matLoggedUnplanned);
-      totalNetAvailByMat += matNetAvail;
-      totalRunMinByMat   += matRunMin;
-      matRunMinMap[matNo] = matRunMin; // เก็บ run ต่อ MAT.NO — ใช้เป็น denominator ของ P ตอน parallel
-      matWins.push([matStartMs, matEndMs]);
+  /* 🔴 สูตรจริงย้ายไป `computeSessionOee` ใน `src/utils/oee.js` แล้ว (§8 · 2026-09-24)
+     ตรงนี้เหลือเป็น **เปลือกบางๆ** ที่รวบ state ของหน้าส่งเข้าไปเท่านั้น
+     — **ห้ามเอาสูตรกลับมาเขียนในหน้า** ไม่งั้นกลับไปเป็นสูตร 2 ชุดเหมือนเดิม
+     ที่ต้องย้ายเพราะสูตรปิดกะถูกขังอยู่ในคอมโพเนนต์ ⇒ คำนวณกะเก่าย้อนหลังจากสคริปต์ไม่ได้เลย
+     (เจอตอนต้องแก้ start_time ของ 10 กะที่ปิดแล้ว 24/09 — ทางเลือกเดียวคือเขียนสูตรซ้ำใน SQL ซึ่งผิดกฎ)
+     dtLogsOverride: ใช้ตอนปิดกะที่เพิ่งปิด/ตัดยอด Downtime เปิดค้างใน call เดียวกัน (state ยังเป็นค่าเก่า) */
+  const computeOEE = (ngQtyOverride, endTimeOverride, startTimeOverride, dtLogsOverride) =>
+    computeSessionOee({
+      session: selSession,
+      orders: prodOrders,
+      downtimes: dtLogsOverride || dtLogs,
+      defects: defectLogs,
+      ngQty: ngQtyOverride !== undefined ? ngQtyOverride : null,
+      products, kanbanStds, breakPolicies,
+      processType: sessionProcessType(),
+      lineFlow: lineFlow[selSession?.line_name] || {},
+      machineCount: new Set(machines
+        .filter(m => m.line_name === selSession?.line_name && m.is_active !== false)
+        .map(m => m.machine_no)).size,
+      startTime: startTimeOverride || null,
+      endTime: endTimeOverride || null,
+      carryQtyActual, carryOverDecisions, carryStopTime, matTimeOverride,
     });
-    // DT ที่กรอกแค่จำนวนนาที (ไม่มีเวลาเริ่ม) — dtOverlapMin จับไม่ได้ → เคยหายเงียบจาก %A แบบแยกตาม MAT
-    // (เคสจริง 2026-07-24: หยุดนอกแผน 20 นาทีแต่ %A = 100) — หักที่ยอดรวมแทน (รวมก่อนหาร ไม่ต้องรู้ตกช่วง MAT ไหน)
-    const untimedPlanned   = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
-    const untimedUnplanned = dtl.filter(d => !d.started_at && d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
-    /* 🔴 DT ที่ "มีเวลาครบ แต่ตกนอกช่วงที่พาร์ทไหนวิ่งเลย" ก็เคยหายเงียบเหมือนกัน (2026-09-17)
-       %A แยกตาม MAT.NO หัก DT ผ่าน dtOverlapMin ซึ่งนับเฉพาะนาทีที่ **ทับ window ของพาร์ท**
-       ⇒ เครื่องเสียก่อนเปิดใบแรก / หลังปิดใบสุดท้าย / ช่วงสลับงาน = ไม่ถูกหักเลยสักนาที
-       เคสจริง HDF1 20/07 กะดึก: เครื่อง HDF-01 เสีย 20:10–21:20 (70 นาที นอกแผนเต็มๆ)
-       ใบผลิตใบเดียวของกะเปิด 22:38 ⇒ DT อยู่ก่อนใบเปิด ⇒ **%A = 100.00 ทั้งที่เครื่องเสีย 70 นาที**
-       วัดจริงทั้งฐาน: 20 กะ %A=100 ทั้งที่มี DT นอกแผน เฉลี่ย 37 นาที/กะ
-       ⇒ หักที่ยอดรวมแบบเดียวกับ DT ที่ไม่มีเวลาเริ่ม (คนละตะกร้ากัน ไม่ซ้ำกันแน่นอน เพราะแยกด้วย started_at)
-       ⚠️ ต้องตัดทั้งช่วงที่ทับ window พาร์ท **และ** ช่วงพักตามนโยบาย ออกก่อน ไม่งั้นหักซ้ำ (§3.1) */
-    const coveredIv = unionIv([...matWins, ...breakIv]);
-    const outsidePlanned   = dtl.filter(d => d.dr_downtime_types?.category === 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
-    const outsideUnplanned = dtl.filter(d => d.dr_downtime_types?.category !== 'planned').reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
-    if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned || outsidePlanned || outsideUnplanned)) {
-      totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned - outsidePlanned);
-      totalRunMinByMat   = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned - outsidePlanned - outsideUnplanned);
-    }
-    // ถ้าแยกตาม MAT.NO ไม่ได้เลย (เช่นกะมีแต่ Downtime ไม่มี Order) ให้ fallback กลับไปใช้ช่วงเวลาทั้งกะแบบเดิม
-    /* ⚠️ netAvail ≤ 0 (พัก+หยุดตามแผนกินทั้งกะ) = **ประเมินไม่ได้ → null ห้ามคืน 0**
-       กฎเดียวกับ computeLiveOee/noOutput/noCt — 0 แปลว่า "แย่มาก" คนละเรื่องกับ "ยังไม่รู้"
-       (เดิมคืน 0 แล้ว stamp ลง oee_a → กะที่ไม่มีเวลารับภาระเลยถูกนับเป็น A=0 ถ่วงค่าเฉลี่ยทั้งไลน์) */
-    const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
-      : (netAvail > 0 ? Math.min(1, runMin / netAvail) : null);
-
-    // Performance: วัดประสิทธิภาพของไลน์ผลิต ไม่ใช่ของแต่ละ order
-    // สูตร OEE มาตรฐาน: P = standard_time_produced / run_time
-    //   standard_time = Σ(qty_i × CT_i)  ← เวลาที่ "ควรใช้" ถ้าวิ่งด้วย CT มาตรฐาน
-    //   run_time = runMin × 60 วินาที    ← เวลาที่ไลน์วิ่งจริงทั้งกะ (หัก break + DT แล้ว)
-    // Sequential (ทำทีละ MAT.NO): P = Σ(qty_i × CT_i) / run_time_sec
-    // Parallel (หลาย MAT.NO วิ่งพร้อมกันคนละสถานี): P = mean(P_i) โดย P_i = (qty_i × CT_i) / run_time_sec
-    //   → ใช้ order time window เพื่อ detect parallel เท่านั้น ไม่ใช่เป็น denominator
-    const runSec = runMin * 60;
-    const matNosForP = Array.from(new Set(prodOrders.map(o => o.mat_no)));
-    const matPDataRaw = []; // { matNo, qty, ctSec, winStart, winEnd }
-    let unknownQty = 0;
-    matNosForP.forEach(matNo => {
-      const orders = prodOrders.filter(o => o.mat_no === matNo);
-      // ต้องนับใบที่ไม่ปิดเหมือนกับ totalProduced ข้างบน (ไม่งั้น %P ของ MAT นั้นหายตอนแก้เวลากะ)
-      const qty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
-                + orders.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-                        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
-      if (!qty) return;
-      const ctSec = ctForMatNo(matNo);
-      if (ctSec <= 0) { unknownQty += qty; return; }
-      // window ใช้สำหรับ detect parallel เท่านั้น
-      const openedTimes = orders.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
-      const closedTimes = orders.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
-      const stopTimes   = orders.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
-        const s = carryStopTime[o.id] ?? endTimeOverride;
-        if (!s || !workDate) return null;
-        let ms = new Date(`${workDate}T${s.slice(0, 5)}:00`).getTime();
-        if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
-        return ms;
-      }).filter(Boolean);
-      // 🔴 รัดให้อยู่ในกะเหมือนสาย %A — window นี้ใช้ตรวจ parallel + เป็นตัวหารฝั่ง parallel (utils/oee §7)
-      const { startMs: winStart, endMs: winEnd } = clampWinToShift(
-        openedTimes.length ? Math.min(...openedTimes) : null,
-        [...closedTimes, ...stopTimes].length ? Math.max(...closedTimes, ...stopTimes) : null,
-        shiftFrame);
-      matPDataRaw.push({ matNo, qty, ctSec, winStart, winEnd });
-    });
-    // 🔴 knownQty นับ "ชิ้น" — ต้องคิดจากแถวดิบก่อนยุบคู่ (ต้องตรงกับ totalProduced ที่นับชิ้นเหมือนกัน)
-    const knownQty = matPDataRaw.reduce((s, d) => s + d.qty, 0);
-    /* 🔴 ตั้งแต่ตรงนี้ลงไปคือสาย **เวลามาตรฐาน (%P)** → ต้องนับเป็น "shot" ไม่ใช่ "ชิ้น"
-       งานคู่ gang die / RH-LH: 1 จังหวะเครื่องได้ 2 ชิ้น แต่ CT ที่ตั้งไว้คือเวลาต่อ 1 จังหวะ
-       ⇒ ไม่ยุบ = ตัวเศษ 2 เท่า → %P ทะลุ 100 แล้วโดน cap เงียบ (user ยืนยันนิยาม 2026-09-18)
-       วัดจริง 45 วัน: LASER-345 1.80→1.04 · HDF2 1.15→0.72 · HDF1 1.14→0.66 · ไลน์ไม่มีคู่ไม่ขยับ
-       ยุบที่นี่ที่เดียวทำให้ทุกสายข้างล่างถูกหมด (totalStdSec · prodGroups · ตรวจ parallel)
-       เพราะคู่ที่ปั๊มพร้อมกัน = **สายเดียว** ไม่ใช่ 2 สายวิ่งขนาน */
-    const matPData = collapsePairShots(
-      matPDataRaw.map(d => ({ mat_no: d.matNo, qty: d.qty, ct: d.ctSec, winStart: d.winStart, winEnd: d.winEnd })),
-      pairOf,
-    ).map(r => ({ matNo: r.mat_no, qty: r.qty, ctSec: r.ct, winStart: r.winStart, winEnd: r.winEnd }));
-
-    // ── ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO (user ชี้ 2026-07-14) ──
-    // MAT ที่เป็น product เดียวกันแตกตามลูกค้า (เช่น FVL/FTM/AAT — ชื่อชิ้นงานเดียวกัน) คืองานตัวเดียวกัน
-    // แค่ส่งแยกลูกค้า → ขึ้น parallel กันเองไม่ได้ ให้รวมเป็นสายเดียวก่อน แล้วค่อยเช็ค overlap ระหว่าง
-    // "คนละ product จริงๆ" (ซึ่ง parallel ได้ถ้าวิ่งคนละเครื่อง/สถานี) · เกณฑ์ overlap ต้องมีนัยยะ:
-    // > 15 นาที และ > 20% ของ window ที่สั้นกว่า — จังหวะสแกนปิดชุดเก่าคาบเกี่ยวเปิดชุดใหม่ไม่นับ
-    // เคยพัง 2026-07-13: Line 60 กะดึก 2 MAT (product เดียวกันคนละลูกค้า) window ทับ 2 นาที → P ตกเหลือ 44%
-    // จับกลุ่มด้วย "ชื่อ product **หรือ** เลขพาร์ทแกนกลาง" (union) — ดู groupSameProductKeys ใน utils/oee.js
-    // เดิมใช้ชื่ออย่างเดียว → พาร์ทเดียวกันที่แตก MAT ตามลูกค้า/เรฟ (ชื่อสะกดต่างกัน) กลายเป็นคนละ product
-    // แล้วขึ้น parallel กันเอง ทำ %P เพี้ยน (Assy LWR 06/08 + 31/08 กะดึก · ทวนสอบกับ Excel 2026-09-09)
-    // ⚠️ ต้องหา p_no/ชื่อจาก kanban_standards **แล้วถอยไป dr_products** — MAT ที่ไม่มีในคัมบัง
-    // เดิมได้คีย์เป็น mat_no ตัวเอง = แตกกลุ่มทุกใบโดยอัตโนมัติ
-    const prodInfoOf = (matNo) =>
-      kanbanStds.find(s => s.mat_no === matNo)?.dr_products
-      || products.find(p => p.mat_no === matNo)
-      || null;
-    const groupKeyByMat = groupSameProductKeys(matPData.map(d => {
-      const info = prodInfoOf(d.matNo);
-      return { matNo: d.matNo, name: info?.name, pNo: info?.p_no };
-    }));
-    const prodGroupMap = {};
-    matPData.forEach(d => {
-      const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
-      const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
-      g.stdSec += d.qty * d.ctSec;
-      g.runMin += matRunMinMap[d.matNo] ?? 0;
-      if (d.winStart != null) g.ws = g.ws == null ? d.winStart : Math.min(g.ws, d.winStart);
-      if (d.winEnd != null) g.we = g.we == null ? d.winEnd : Math.max(g.we, d.winEnd);
-    });
-    const prodGroups = Object.values(prodGroupMap);
-    const overlapOf = (a, b) => Math.max(0, (Math.min(a.we, b.we) - Math.max(a.ws, b.ws)) / 60000);
-    const isParallel = prodGroups.length > 1 && prodGroups.some((a, i) =>
-      prodGroups.slice(i + 1).some(b => {
-        if (a.ws == null || a.we == null || b.ws == null || b.we == null) return false;
-        const ov = overlapOf(a, b);
-        const minDurMin = Math.min(a.we - a.ws, b.we - b.ws) / 60000;
-        return ov > 15 && ov > 0.2 * minDurMin;
-      })
-    );
-
-    /* ⚠️ ไลน์เครื่องขนาน (parallel_machine เช่น SUB APRON): CT เป็น "ต่อเครื่อง" งานกระจายอยู่หลายเครื่อง
-       → ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์" · ต้องใช้สาย parallel เสมอ ห้ามพึ่ง heuristic
-       isParallel (ทับกัน >15 นาที + >20%) ซึ่งเป็น all-or-nothing: บางกะเข้าเงื่อนไข บางกะไม่เข้า
-       → P พลิกไปมา 52/76/89/100 แล้ว cap 100 เงียบ (SUB APRON 14 กะ ชนเพดาน 6 กะ · 2026-08-13)
-       ไลน์ผลิตต่อเนื่อง (one_piece_flow เช่น LASER-345/789) CT เป็นของทั้งไลน์อยู่แล้ว → ห้ามแตะ
-       (เช็คแล้ว หารจำนวนเครื่องจะทำ P ร่วงจาก 63-98% เหลือ 21-33%) */
-    const perMachineCt = flowModeOf(lf.flow_mode) === 'parallel_machine';
-    let P = null, pRawRatio = null;   // pRawRatio = ค่าก่อน cap 100% — ใช้เตือนเมื่องาน > เวลาเครื่องที่มี
-    let dtOverstateMin = null;        // ดูหมายเหตุใต้บล็อกนี้
-    if (runSec > 0 && matPData.length > 0) {
-      const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
-      if (isParallel || perMachineCt) {
-        // Parallel (คนละ product วิ่งพร้อมกันคนละสถานี): denominator = Σ run ต่อ product group
-        // = ถ่วงน้ำหนัก P ตามเวลารันจริงของแต่ละสถานี — ห้ามใช้ mean เท่าๆ กัน
-        // (เคยพัง 2026-07-13: งานแทรก 10 ชิ้น/10 นาที window ทับงานหลัก → mean ลาก P ทั้งกะ
-        //  จาก ~93% เหลือ 48% ทั้งที่งานแทรกวิ่งเต็มประสิทธิภาพในช่วงของมันเอง)
-        // clamp [runSec, N×runSec]: ต่ำกว่าเวลาไลน์ = P เฟ้อ · สูงกว่า N เท่า = อ้างว่ามีเครื่องมากกว่าที่มีจริง
-        const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
-        const denomSec = perMachineCt
-          ? Math.min(Math.max(rawDenom, runSec), runSec * Math.max(1, parallelN))
-          : rawDenom;
-        pRawRatio = totalStdSec / denomSec;
-        P = Math.min(1, pRawRatio);
-      } else {
-        // Sequential: standard time รวมหารด้วย run_time ทั้งกะ (จับ idle ระหว่าง MAT.NO ด้วย)
-        pRawRatio = totalStdSec / runSec;
-        P = Math.min(1, pRawRatio);
-        /* 🔎 %P ทะลุ 100 = "งานที่บันทึกใช้เวลามากกว่าเวลาที่เครื่องเดินจริง" ซึ่ง **เป็นไปไม่ได้ทางฟิสิกส์**
-           แปลว่ามีตัวใดตัวหนึ่งผิด: CT / ยอดที่กรอก / เวลาเปิด-ปิดกะ / **Downtime ที่ลงไว้**
-           user ยืนยัน 17/09 ว่าเคสที่เจอบ่อยที่สุดคือ **ลง downtime เกินจริง** — ซึ่งทำ runMin หดผิด
-           ⇒ %A ตกลง (ดูเหมือนความผิดเครื่อง) แล้ว %P ดีดขึ้นชนเพดานพอดี (ย้ายความผิดออกจากไลน์)
-           ตรงนี้คำนวณ "ถ้า CT กับยอดถูก แล้ว downtime เกินไปกี่นาที" ให้หน้างานเห็นตอนที่ยังแก้ทัน
-           ⚠️ คิดเฉพาะสาย sequential — สาย parallel ตัวหารเป็น "เวลาเครื่องรวม" ไม่ใช่นาทีของไลน์
-              เอามาบอกเป็นนาที downtime ตรงๆ ไม่ได้ (จะได้เลขที่ชวนเข้าใจผิด) */
-        if (pRawRatio > 1.001) dtOverstateMin = Math.round(totalStdSec / 60 - runMin);
-      }
-    }
-    // Q = ของดี / ผลิตจริง(ดี+เสีย) — การ์ดที่สแกนปิด = "ของดีล้วน" (ผลิตครบเป้าของดี · ของเสียผลิตเพิ่มต่างหาก
-    // แล้วลง NG แยก · user ยืนยัน 2026-08-02) ดังนั้น totalProduced = ของดี, ผลิตจริงทั้งหมด = ของดี + NG
-    // ห้ามใช้ (ดี−NG)/ดี ที่หักซ้ำ → เคยทำ %Q ต่ำเกินจริง (เช่น ดี10 NG1 ได้ 90% ที่ถูกคือ 10/11=90.9%,
-    // เคสหนักดี100 NG50 ได้ 50% ที่ถูก 66.7%)
-    /* 🔴 ผลิตได้ 0 ชิ้น ห้ามคืน Q = 1 (2026-09-17 · เจอจาก audit ทั้งฐาน)
-       ของเดิมเขียน `: 1` ⇒ กะที่**ทำออกมาเสียล้วน ไม่มีของดีเลย** ได้ %Q = 100.00 (กลับหัว)
-       วัดจริง: 16 กะเป็นแบบนี้ (เช่น LASER EXPORT 08/07 กะดึก ของดี 0 เสีย 32 ⇒ stamp Q = 100)
-       แยก 2 กรณีให้ชัด ตามกฎเดียวกับ A/P — "0" กับ "ยังไม่รู้" คนละเรื่อง:
-         ของดี 0 + ของเสีย > 0 → **Q = 0** (วัดได้จริง: ที่ทำออกมาเสียหมด)
-         ของดี 0 + ของเสีย 0   → **null** (ไม่มีอะไรให้ประเมิน ห้ามให้เลขไปถ่วงค่าเฉลี่ย) */
-    const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
-            : (ngQty > 0 ? 0 : null);
-    const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
-    /* pOver = P ทะลุ 100% ก่อนโดน cap → งานมาตรฐานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง
-       แปลว่ามีอะไรผิดในข้อมูล (CT / ยอดที่กรอก / เวลาเปิด-ปิดใบ / จำนวนเครื่องขนาน)
-       ต้องเตือนตอนปิดกะ ห้าม cap เงียบ — ถ้ามี guard นี้แต่แรกจะจับได้ตั้งแต่กะแรก
-       แทนที่จะปล่อยจน OEE ของทั้งไลน์อ่านไม่ได้ 14 กะโดยไม่มีใครรู้ (2026-08-13) */
-    /* CT ที่ "ใช้จริง" ในการคิด %P ของกะนี้ — เก็บลง production_sessions.ct_snapshot ตอน stamp
-       เพื่อให้คำนวณ %P ย้อนหลังซ้ำได้แม้ CT ใน master จะถูกแก้ไปแล้ว (เฟส 0 ของ Adaptive CT)
-       บทเรียน 17/09: CT ตระกูล Assy LWR ถูกแก้ 58 → 54 เมื่อ 09/09 ⇒ กะก่อนหน้านั้นคำนวณใหม่ไม่ตรง
-       จนต้อง backfill ด้วย "อัตราส่วน" แทนการคำนวณใหม่ · มี snapshot แล้วจะไม่เจอปัญหานี้อีก */
-    const ctUsed = {};
-    matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
-    return { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, totalProduced, ngQty, knownQty, unknownQty, ctUsed,
-      loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
-      pOver: pRawRatio != null && pRawRatio > 1.001, pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,
-      dtOverstateMin, loggedDtMin: Math.round(loggedPlannedDT + loggedUnplannedDT) };
-  };
   // NOTE: การหัก Line Stock (child parts) ทำโดย DB trigger trg_explode_child_demand
   // บน prod_orders — backflush ตอน order เปลี่ยนเป็น 'confirmed' (ระเบิด BOM → หัก
   // least(on_hand, gross) จาก mini-store ของไลน์ → ส่วนขาดเข้า accumulator → ถึง lot
@@ -2648,11 +2449,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadDT(selSession.id);
   };
 
+  /* พรีวิวรูป — ต้อง revokeObjectURL ตอนเปลี่ยน/ปิด ไม่งั้น blob ค้างในหน่วยความจำทุกครั้งที่เลือกรูป */
+  const [moImgPreview, setMoImgPreview] = useState('');
+  useEffect(() => {
+    if (!moImg) { setMoImgPreview(''); return; }
+    const u = URL.createObjectURL(moImg);
+    setMoImgPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [moImg]);
+
   // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
   // เปิด picker เลือกทีมช่างก่อน (แจกให้ถูกทีม) — เดา default จากชื่อเครื่อง (JIG/DIE)
   const openMoPicker = async (d) => {
     const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
     if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
+    setMoImg(null);   // เปิด picker ใหม่ = ล้างรูปเดิม ไม่งั้นรูปของใบก่อนหน้าติดไปกับใบใหม่
     setMoDtPick({ d, team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no), mode: 'mo' });
   };
 
@@ -2661,12 +2472,37 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const payload = {
       status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
       repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      mtn_dept: teamKeyOf(team) || 'maintenance', machine_no: d.machine_no || null, problem_characteristic: 'อื่นๆ',
-      report_note: `[จาก Downtime] ${dtType?.name_th || ''}${d.description ? ` — ${d.description}` : ''}`.trim(),
+      mtn_dept: teamKeyOf(team) || 'maintenance', machine_no: d.machine_no || null,
+      /* 🔴 อาการ/กลุ่ม = ประเภทดาวน์ไทม์จริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
+         เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
+         พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
+         กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
+         ยังไม่จับคู่ = 'อื่นๆ' ตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards */
+      problem_characteristic: dtType?.name_th || 'อื่นๆ',
+      problem_group: dtType?.mo_problem_group || 'อื่นๆ',
+      // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
+      report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
     };
+    setMoSaving(true);
     const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
-    if (error) { toast.error(error.message); return; }
+    if (error) { setMoSaving(false); toast.error('เปิดใบซ่อมไม่สำเร็จ: ' + error.message); return; }
+
+    /* รูปอัปโหลด **หลัง** insert เพราะต้องใช้ id ตั้งชื่อไฟล์ (pattern เดียวกับ step1 ของ MtnRepair)
+       ⚠️ อัปโหลดล้ม = ใบยังต้องถูกเปิด ห้าม rollback ใบทิ้ง — แค่บอกว่ารูปไม่ขึ้นแล้วให้ไปแนบซ้ำที่หน้าแจ้งซ่อม
+          (ใบซ่อมสำคัญกว่ารูป · ถ้าโยนทิ้งทั้งใบเพราะรูปไม่ขึ้น หน้างานจะเสียเวลากรอกใหม่หมด) */
+    if (moImg) {
+      try {
+        const url = await uploadMoBeforeImg(moImg, data.id);
+        const up = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id).select('id');
+        if (up.error || !up.data?.length) throw new Error(up.error?.message || 'บันทึก URL รูปไม่สำเร็จ');
+        data.before_img = url;
+      } catch (e) {
+        toast.error('เปิดใบซ่อมแล้ว แต่แนบรูปไม่สำเร็จ: ' + (e.message || e) + ' — แนบซ้ำได้ที่หน้าแจ้งซ่อม MTN');
+      }
+    }
+    setMoSaving(false);
+    setMoImg(null);
     fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
       // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2745,7 +2581,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <button onClick={() => toggleSessGroup(groupName)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
                     fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                  <span style={{ fontSize: 9 }}>{collapsed ? '▶' : '▼'}</span>
+                  <span style={{ fontSize: 11 }}>{collapsed ? '▶' : '▼'}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupName}</span>
                   {/* ย่อแล้วแต่ยังโชว์กะที่เลือก → บอกให้ชัดว่าตัวเลขคือ "ทั้งกลุ่ม" ไม่ใช่จำนวนที่เห็น */}
                   <span style={{ fontWeight: 600 }}>{collapsed && hasSel ? `1/${groupSessions.length}` : groupSessions.length}</span>
@@ -2766,7 +2602,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
                       {s.status === 'open' && s.close_reject_at && (
                         <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
-                          style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
+                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2775,7 +2611,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {(() => { const age = sessionAgeDays(s.work_date); if (age < 3) return null;
                         const late = age > STALE_SESSION_DAYS;
                         return <span title={late ? `ค้างเกินเป้า ${STALE_SESSION_DAYS} วัน — OEE ของกะนี้ยังไม่เข้ารายงานเดือน` : 'ค้างจากวันก่อน — ปิด/อนุมัติให้ครบ'}
-                          style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
+                          style={{ fontSize: 11, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
                             background: late ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.15)',
                             color: late ? '#ef4444' : '#f59e0b',
                             border: `1px solid ${late ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.4)'}` }}>⏰ {age}ว</span>;
@@ -2787,7 +2623,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {collapsed && hasSel && hiddenInGroup > 0 && (
                   <button onClick={() => toggleSessGroup(groupName)}
                     style={{ display: 'block', width: '100%', marginBottom: 6, padding: '4px 10px 6px 16px', background: 'none', border: 'none',
-                      textAlign: 'left', cursor: 'pointer', fontSize: 10.5, color: 'var(--muted)' }}>
+                      textAlign: 'left', cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>
                     +{hiddenInGroup} กะในกลุ่มนี้ถูกย่อไว้ — กางดู
                   </button>
                 )}
@@ -2815,7 +2651,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', cursor: 'pointer',
                         fontSize: 11, fontWeight: 800, padding: '6px 8px', borderRadius: 8, letterSpacing: '0.3px',
                         background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}>
-                      <span style={{ fontSize: 9 }}>{staleOpen ? '▼' : '▶'}</span>
+                      <span style={{ fontSize: 11 }}>{staleOpen ? '▼' : '▶'}</span>
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
                       <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
                     </button>
@@ -2989,7 +2825,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         📝 ใบรายงานปัญหา
                         {/* งานค้าง = ป้ายนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) — บอกว่าใบจะออกมาไม่ครบ */}
                         {pend.total > 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, padding: '1px 6px',
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, padding: '1px 6px',
                             borderRadius: 20, background: '#f59e0b', color: '#fff' }}>
                             🛠 {pend.total}
                           </span>
@@ -3370,8 +3206,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
-                          {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
+                          {/* MAT เปล่าๆ อ่านไม่ออกว่าเป็นชิ้นงานอะไร (feedback 23/09) → ของกลาง <MatLabel> เติมชื่อ+Part No. จากทะเบียนให้เอง */}
+                          <MatLabel mat={o.mat_no} name={o.part_name} />
                           {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
                           {o.machine_no && (
                             <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(148,163,184,0.18)', color: '#94a3b8', fontWeight: 700 }}
@@ -3528,7 +3364,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             </button>
                           )}
                           {scanOpen && (
-                            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>ปิดใบยังใช้สแกนเหมือนเดิม</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ปิดใบยังใช้สแกนเหมือนเดิม</span>
                           )}
                         </div>
                       )}
@@ -3611,7 +3447,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {/* งานทดลองต้องเห็นในลิสต์เสมอ (เป็นของเสียจริง) แค่ไม่ถูกนับเข้า %Q */}
                           {isTrialDefect(d) && (
                             <span title="งานทดลอง — ไม่นับเข้า %Q แต่ยังนับเป็นมูลค่าของเสีย"
-                              style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
                               🧪 งานทดลอง
                             </span>
                           )}
@@ -3858,7 +3694,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   ? 'แจ้งเฉพาะช่างทีมที่เลือก + หัวหน้า/ผจก.ของส่วนงานนี้ (ทีมอื่นไม่ถูกรบกวน)'
                   : 'ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือนของทีมที่เลือก'}
               </div>
-              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: moDtPick.mode === 'call' ? 16 : 12 }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoDtPick(p => ({ ...p, team: t }))} style={{
                     padding: '12px 8px', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer',
@@ -3868,13 +3704,32 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }}>{deptNameOf(t)}</button>
                 ))}
               </div>
+              {/* 📷 รูปก่อนซ่อม — user แจ้ง 22/09: *"เปิด MO จากดาวน์ไทม์ ไม่มีให้แนบรูป เหมือนกับเปิด MO ใหม่ step1"*
+                  ใบที่เปิดจากดาวน์ไทม์เข้าคิวเดียวกับใบที่เปิดจากหน้าแจ้งซ่อม ⇒ ต้องแนบรูปได้เหมือนกัน
+                  ไม่งั้นช่างเปิดใบมาแล้วไม่เห็นอาการ ต้องเดินไปดูเองทุกใบ
+                  ⚠️ บีบ/อัปโหลดผ่าน `utils/mtnImage.js` เท่านั้น (16:9 · webp · bucket เดียวกับ step1) */}
+              {moDtPick.mode !== 'call' && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
+                    📷 รูปก่อนซ่อม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ · ครอบ 16:9 ให้อัตโนมัติ)</span>
+                  </div>
+                  {moImgPreview && <img src={moImgPreview} alt="" style={{ display: 'block', width: '100%', maxHeight: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
+                  {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (บทเรียนเดียวกับ ImgField ใน MtnRepair) */}
+                  <input type="file" accept="image/*" capture="environment" style={{ fontSize: 12 }}
+                    onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setMoImg(f); }} />
+                  {moImg && (
+                    <button type="button" onClick={() => setMoImg(null)}
+                      style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>✕ เอารูปออก</button>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={() => (moDtPick.mode === 'call'
+                <button disabled={moSaving} onClick={() => (moDtPick.mode === 'call'
                     ? handleCallMtn(moDtPick.d, moDtPick.team)
                     : handleCreateMoFromDt(moDtPick.d, moDtPick.team))}
-                  style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-                  {moDtPick.mode === 'call' ? '📞 เรียก' : '📝 เปิดใบซ่อม →'} {deptNameOf(moDtPick.team)}
+                  style={{ flex: 2, padding: '10px 0', borderRadius: 8, border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
+                  {moSaving ? '⏳ กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? '📞 เรียก' : '📝 เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
               </div>
             </div>
@@ -4733,7 +4588,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · เป้า {o.qty} ชิ้น</div>
+                                  {/* ตัดสินใจยกยอด/ยกเลิกตอนปิดกะ ต้องรู้ว่าใบนี้คือชิ้นงานอะไร ไม่ใช่เห็นแต่เลข MAT */}
+                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                    <MatLabel mat={o.mat_no} name={o.part_name} size={11} /> · เป้า {o.qty} ชิ้น
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }}>
                                   <button onClick={() => {
@@ -5366,7 +5224,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           🧪 งานทดลอง (Try-out) — ไม่นับเข้า %Q
                         </span>
                       </label>
-                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                         {byType
                           ? 'ประเภทนี้ถูกตั้งเป็นงานทดลองไว้แล้วที่ ⚙️ ตั้งค่า — ติ๊กให้อัตโนมัติ'
                           : 'เช่น ลองแม่พิมพ์ใหม่ / ลองงานใหม่ — ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย แค่ไม่ฉุด OEE ของไลน์'}
@@ -5520,6 +5378,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </Field>
                     )}
                   </div>
+
+                  {/* 🔴 กรอบกะ + เตือนสดเมื่อเวลาที่กรอกหลุดกรอบ (2026-09-23)
+                      ให้เห็น "ตั้งแต่ตอนกรอก" ไม่ใช่ไปรู้ตอนกดบันทึก — ด่านจริงอยู่ที่ handleAddDT */}
+                  {(() => {
+                    const win = windowLabel(selSession);
+                    if (!win) return null;
+                    const st = dtForm.start_time ? resolveShiftTime(dtForm.start_time, selSession) : null;
+                    const chk = st ? checkShiftTime(st.ms, selSession) : null;
+                    const bad = chk && !chk.ok;
+                    return (
+                      <div style={{ fontSize: 12, color: bad ? '#ef4444' : 'var(--muted)', fontWeight: bad ? 800 : 600,
+                        padding: bad ? '8px 12px' : '2px 2px', borderRadius: 8,
+                        background: bad ? 'rgba(239,68,68,0.10)' : 'transparent',
+                        border: bad ? '1px solid rgba(239,68,68,0.35)' : 'none' }}>
+                        ⏱ กรอบกะนี้: <b style={{ fontFamily: 'monospace' }}>{win}</b>
+                        {bad && (
+                          <>
+                            {' · '}เวลาเริ่มที่กรอกอยู่
+                            {chk.kind === 'before' ? ` ก่อนเปิดกะ ${fmtOffset(chk.minutesOff)}`
+                              : chk.kind === 'future' ? ` ล่วงหน้า ${fmtOffset(chk.minutesOff)}`
+                              : ` เลยปิดกะ ${fmtOffset(chk.minutesOff)}`}
+                            {chk.suggestHHmm && ` — น่าจะหมายถึง ${chk.suggestHHmm} น. (AM/PM สลับ)`}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Auto-calculated result preview */}
                   {hasResult && (
@@ -5771,8 +5656,7 @@ function StaleTab({ stale, onOpenSession, role }) {
         {chip(side === 'all', `ทั้งหมด ${rows.length}`, () => setSide('all'))}
         {chip(side === 'sv', `⏳ รอ SV อนุมัติ ${waitSv.length}`, () => setSide('sv'))}
         {chip(side === 'leader', `✏️ หัวหน้ากลุ่มยังไม่ขอปิด ${waitLeader}`, () => setSide('leader'))}
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาไลน์ / ชื่อผู้ขอปิด"
-          style={{ width: 220, padding: '6px 10px', borderRadius: 8, fontSize: 12.5 }} />
+        <SearchInput value={q} onChange={setQ} fields="ไลน์ / ชื่อผู้ขอปิด" grow={false} style={{ width: 240 }} />
         {shown.length !== rows.length && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>แสดง {shown.length} จาก {rows.length} กะ</span>
         )}
@@ -5949,13 +5833,14 @@ function HistoryTab({ role }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} style={{ ...inputStyle, width: 160 }} />
+      {/* UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน: ขอบเขต (ไลน์) → ช่วงเวลา → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 16 }}>
         <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
-          placeholder="ทุกไลน์" style={{ ...inputStyle, width: 200 }}
+          placeholder={ALL.line}
           onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
+        <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} />
         <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
-      </div>
+      </FilterBar>
 
       {sessions.length === 0 && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>ไม่พบข้อมูล</div>}
 
@@ -6171,9 +6056,8 @@ function HistoryTab({ role }) {
                           return (
                             <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${statusColor}`, opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
                               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no}</span>
-                              {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>· {o.part_name}</span>}
-                              {!o.part_name && <span style={{ flex: 1 }} />}
+                              <MatLabel mat={o.mat_no} name={o.part_name} size={11} />
+                              <span style={{ flex: 1 }} />
                               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
                               <span style={{ fontSize: 12, fontWeight: 800, color: statusColor, minWidth: 40, textAlign: 'right' }}>{o.qty}</span>
                             </div>
@@ -6709,7 +6593,7 @@ function ExportTab() {
           <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
             <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
-              placeholder="ทุกไลน์" style={{ ...sel, width: '100%', minWidth: 0 }}
+              placeholder={ALL.line} style={{ ...sel, width: '100%', minWidth: 0 }}
               onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
           </div>
           {loading && <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังโหลด...</div>}
@@ -6927,7 +6811,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
                     {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
-                    {item.excl_from_q && <div style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
+                    {item.excl_from_q && <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
@@ -6981,7 +6865,7 @@ function DefectTypeSetup({ role }) {
                   <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? '#a855f7' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
                 </label>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                   ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
                   <br />ประเภททั่วไปไม่ต้องติ๊ก — พนักงานติ๊ก 🧪 รายครั้งในฟอร์มบันทึกงานเสียได้อยู่แล้ว
                 </div>

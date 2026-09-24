@@ -33,6 +33,9 @@ import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialReque
 import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
 import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -504,24 +507,21 @@ export default function ScrapReport() {
   const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
 
   return (
-    <div style={{ padding: '0 18px 30px', maxWidth: 1500, margin: '0 auto' }}>
+    <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, fontFamily: 'var(--font-display)' }}>♻️ ใบรายงานของเสีย (Scrap Report)</h1>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-          {scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม
-        </div>
-      </div>
+      <PageHeader title="ใบรายงานของเสีย (Scrap Report)" icon="♻️"
+        sub={`${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`} />
 
-      <div style={{ ...cardSt, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ช่วง:</span>
-        <input type="date" value={listFrom} max={listTo} onChange={e => setListFrom(e.target.value)} style={{ ...inputSt, width: 150 }} />
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>ถึง</span>
-        <input type="date" value={listTo} min={listFrom} onChange={e => setListTo(e.target.value)} style={{ ...inputSt, width: 150 }} />
-        <div style={{ flex: 1 }} />
+      {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
+      <FilterBar style={{ marginBottom: 14 }}>
+        <span className="filter-label">ช่วง</span>
+        <input type="date" value={listFrom} max={listTo} onChange={e => setListFrom(e.target.value)} />
+        <span className="filter-label">ถึง</span>
+        <input type="date" value={listTo} min={listFrom} onChange={e => setListTo(e.target.value)} />
+        <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
-      </div>
+      </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
@@ -654,7 +654,7 @@ export default function ScrapReport() {
                       {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
                       {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
                       {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
-                    <td style={tdSt}><span style={{ fontSize: 10.5, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
+                    <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
                     {(() => {
@@ -692,7 +692,7 @@ export default function ScrapReport() {
                           ⚠️ coil เป็น KG ทศนิยม ห้ามปัดเป็นจำนวนเต็ม */}
                       <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
                         <input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.qty} onChange={e => setItem(it._key, { qty: e.target.value })} />
-                        {uomByMat[it.mat_no] && <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{uomByMat[it.mat_no]}</span>}
+                        {uomByMat[it.mat_no] && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{uomByMat[it.mat_no]}</span>}
                       </div>
                     </td>
                     <td style={tdSt}>
@@ -758,7 +758,7 @@ export default function ScrapReport() {
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
               <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? '#f59e0b' : '#4d9fff', background: o.source === 'sub' ? '#f59e0b1f' : '#4d9fff1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? '#f59e0b' : '#4d9fff', background: o.source === 'sub' ? '#f59e0b1f' : '#4d9fff1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.mat_no || o.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_name}</span></div>
                   {o.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.line_name}</div>}
@@ -812,7 +812,7 @@ export default function ScrapReport() {
           onClose={() => setDefectPicker(null)}
           onSave={(codes) => { setItem(defectPicker, { defect_codes: codes }); setDefectPicker(null); }} />
       )}
-    </div>
+    </Page>
   );
 }
 

@@ -14,6 +14,7 @@ import SearchSelect from './SearchSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ทำ tooling = ทะเบียน DR suppliers (แม่พิมพ์/จิ๊ก · ผลิตเอง ขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory';
 import { appendHistoryOptions } from '../utils/pickerOptions';
+import { ALL } from '../utils/filterLabels';
 
 export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged }) {
   // ตัวเลือกชุดแม่พิมพ์ (DR die_sets) สำหรับ SearchSelect — die_set_code เป็น join key กับ /die-registry ห้ามพิมพ์เอง (2026-09-07)
@@ -101,7 +102,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
-            <option value="">ทุกพาร์ท</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
+            <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
           </select>
         </div>
         {canEdit && <button style={btn()} onClick={() => setPlanModal({ part_id: filterPart || parts[0]?.id || '', tool_name: '', tool_kind: 'die', maker_name: '', maker_kind: 'external', po_no: '', die_set_code: '', plan_start: today, plan_end: '', actual_start: '', actual_end: '', status: 'planned', owner_name: '', note: '', _seedSteps: true })}>+ แผน tooling</button>}
@@ -133,7 +134,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   {p?.part_no || '—'} · {kind.label} · ผู้ทำ {t.maker_name || '—'} ({t.maker_kind === 'internal' ? 'ภายใน' : 'ภายนอก'}) · {r.done}/{r.total} ขั้น · {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · ล่าช้า {r.delayed}</span> : null}
-                  {t.die_set_code && <> · 🧱 {die ? <Link to="/die-registry" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
+                  {t.die_set_code && <> · 🧱 {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
                 </div>
               </div>
               <GanttRow plan={[t.plan_start, t.plan_end]} actual={[t.actual_start, t.actual_end]} range={range} todayPos={todayPos} pct={r.pct} light={r.light} />

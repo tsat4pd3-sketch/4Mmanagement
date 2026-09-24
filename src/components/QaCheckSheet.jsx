@@ -527,12 +527,19 @@ export default function QaCheckSheet({ canRecord }) {
     (i.drawing_id === activeDwgId || (!i.drawing_id && drawings[0]?.id === activeDwgId))
   ), [items, activeDwgId, drawings]);
 
+  /* 🔴 "ยังไม่ตรวจ" ต้องดูออกจาก "ตรวจแล้ว" ทันที (user 23/09 · audit ทั้งโปรเจค)
+     บั๊กเดิม: จุด rank **SC ที่ยังไม่ตรวจ** ใช้ `RANK.SC.color = '#ef4444'` ซึ่ง**เท่ากับ**
+     `JUDGE.ng.color = '#ef4444'` เป๊ะ ⇒ บนแบบแยกไม่ออกว่า "ยังไม่ได้ตรวจ" หรือ "ตรวจแล้วไม่ผ่าน"
+     (คนตรวจอ่านผิดได้ 2 ทาง: ข้ามจุดที่ยังไม่ตรวจ หรือตกใจว่ามี NG ทั้งที่ยังไม่ตรวจ)
+     ⇒ แยกที่ **รูปทรง**: ยังไม่ตรวจ = วงโปร่งเส้นประ (`hollow`) · ตรวจแล้ว = วงทึบ
+        **สีขอบยังเป็นสี rank เหมือนเดิม** — M/SC เป็นคุณลักษณะพิเศษ ต้องเห็นบนแบบตลอด ห้ามกลืนเป็นสีกลาง */
+  const pinJudged = (i) => !!resById.get(i.id)?.judgement;
   const pinColor = (i) => {
     const j = resById.get(i.id)?.judgement;
     if (j === 'ok') return JUDGE.ok.color;
     if (j === 'ng') return JUDGE.ng.color;
     if (j === 'na') return JUDGE.na.color;
-    return i.rank ? RANK[i.rank].color : '#4d9fff';   // ยังไม่ตรวจ = สีตาม rank (เหมือนหน้า setup)
+    return i.rank ? RANK[i.rank].color : '#4d9fff';   // ยังไม่ตรวจ = สีตาม rank (วงโปร่ง)
   };
 
   const focusItem = (id) => {
@@ -683,14 +690,20 @@ export default function QaCheckSheet({ canRecord }) {
                           {pinItems.map(i => (
                             <CalloutPin key={i.id} xPct={i.pos_x} yPct={i.pos_y} layerW={imgBox.w} layerH={imgBox.h}
                               size={BK} label={i.balloon_no} color={pinColor(i)} selected={selItemId === i.id}
+                              hollow={!pinJudged(i)}
                               offX={i.label_dx} offY={i.label_dy}
-                              title={`#${i.balloon_no} ${i.characteristic}`}
+                              title={`#${i.balloon_no} ${i.characteristic}${i.rank ? ` · ${i.rank}` : ''} — ${pinJudged(i) ? (JUDGE[resById.get(i.id).judgement]?.label || '') : 'ยังไม่ตรวจ'}`}
                               onClick={() => focusItem(i.id)} />
                           ))}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 6, fontSize: 11.5, color: 'var(--muted)' }}>
-                        <span>🟢 ผ่าน</span><span>🔴 ไม่ผ่าน</span><span>⚪ ข้าม</span><span>🔵/🟠 ยังไม่ตรวจ</span>
+                        {/* legend ต้องบอก "ทรง" ด้วย ไม่ใช่แค่สี — สี rank กับสีผลตรวจใช้สีเดียวกันได้ */}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ width: 12, height: 12, borderRadius: '50%', background: 'rgba(12,18,15,0.82)', border: '2px dashed #4d9fff' }} />
+                          วงโปร่ง = ยังไม่ตรวจ (สีขอบ = rank)
+                        </span>
+                        <span>🟢 ทึบเขียว = ผ่าน</span><span>🔴 ทึบแดง = ไม่ผ่าน</span><span>⚪ ทึบเทา = ข้าม</span>
                         <span>· แตะหมุดเพื่อไปที่จุดนั้น</span>
                       </div>
                     </div>

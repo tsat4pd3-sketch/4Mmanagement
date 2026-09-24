@@ -5,14 +5,16 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor,
+  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor, orgNodeIdFor, ORG_SRC_MANUAL,
 } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
-import { lineOptions } from '../components/LineSelect';
+import { lineOptions, lineOptionLabel } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
+import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -111,6 +113,10 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        /* 🧭 แกนสังกัด — ผูกโหนดในผังตั้งแต่ลงทะเบียน (docs/ORG-AXES-DECISION.md §5.1)
+           ข้อความ section/department ข้างบนยังเขียนเหมือนเดิมในฐานะสำเนาไว้โชว์ */
+        org_node_id:  orgNodeIdFor(section, department, orgSections, orgDepts),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: busRouteId || null,
         start_date: startDate || null,
         image_url:  photoUrl,
@@ -132,11 +138,9 @@ export default function Register() {
   };
 
   return (
-    <div style={{
-      minHeight: 'calc(100vh - 80px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
-    }}>
+    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1) */
+    <Page width="narrow">
+      <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
       <div style={{
         width: '100%', maxWidth: 440,
         background: 'var(--card)',
@@ -145,14 +149,7 @@ export default function Register() {
         padding: '36px 32px',
         boxShadow: 'var(--shadow-lg)',
       }}>
-        <div style={{ marginBottom: 24 }}>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 20, color: 'var(--text)' }}>
-            📸 เพิ่มพนักงานใหม่
-          </h2>
-          <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)' }}>บันทึกข้อมูลพนักงานเข้าระบบ</p>
-        </div>
 
-        <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, marginBottom: 24, opacity: 0.6 }} />
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
@@ -255,7 +252,7 @@ export default function Register() {
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                   {lineOptions(lineOpts, { current: groupName }).map(o => (
-                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
+                    <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>
                   ))}
                 </select>
               );
@@ -303,7 +300,7 @@ export default function Register() {
           </button>
         </form>
       </div>
-    </div>
+    </Page>
   );
 }
 

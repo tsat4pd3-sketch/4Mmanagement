@@ -17,6 +17,11 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -152,26 +157,27 @@ export default function PmCoordination() {
     return out.sort((a, b) => String(a.task_date).localeCompare(String(b.task_date)));
   }, [tasksByPlan, plans, scopeLines]);
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
   const cp = { lines, machines, teams, pmPlans, scopeLines, fullName, role, onClose: () => setEditing(null), onSaved: () => { setEditing(null); load(); } };
 
   return (
-    <div style={{ padding: 'clamp(12px,2.5vw,24px)', maxWidth: 'min(97vw, 1400px)', margin: '0 auto' }}>
+    <Page>
       <ReadOnlyNote show={!canManage} role={role} what="สร้าง/แก้แผนประสานงาน PM"
         permKey="pm_coord:manage" hint="ฝ่ายผลิตดูแผนที่ถูกนัดและพิมพ์ใบได้ตามปกติ (ตั้งใจให้เห็นทุก role)" />
-      <div style={{ display: 'flex', paddingRight: 52, alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <h1 style={{ fontSize: 'clamp(18px,3vw,26px)', fontWeight: 800, color: 'var(--text)', margin: 0 }}>🗓️ แผนประสานงาน PM / งานเครื่องจักร</h1>
-        <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า</span>
-        {canManage && <button onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={{ ...btnPri, marginLeft: 'auto' }}>➕ สร้างแผนใหม่</button>}
-      </div>
+      <PageHeader title="แผนประสานงาน PM / งานเครื่องจักร" icon="🗓️"
+        sub="งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า"
+        actions={canManage && <button onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={btnPri}>➕ สร้างแผนใหม่</button>} />
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-        {[['active', 'กำลังดำเนินการ'], ['notified', '📤 แจ้งแล้ว'], ['done', '✅ เสร็จ'], ['all', 'ทั้งหมด']].map(([k, t]) => (
-          <button key={k} onClick={() => setFStatus(k)} style={{ ...(fStatus === k ? btnPri : btnGhost), padding: '7px 14px', fontSize: 12.5 }}>{t}</button>
-        ))}
-        <span style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>{shown.length} แผน</span>
-      </div>
+      {/* UI-STANDARD 2026-09-24 — ตัวเลือกสถานะ 4 ตัว = Segmented · "ทุกสถานะ" ซ้ายสุด (state 'all' เดิม) */}
+      <FilterBar>
+        <Segmented value={fStatus} onChange={setFStatus} label="สถานะแผน" options={[
+          { value: 'all', label: ALL.status }, { value: 'active', label: 'กำลังดำเนินการ' },
+          { value: 'notified', label: '📤 แจ้งแล้ว' }, { value: 'done', label: '✅ เสร็จ' },
+        ]} />
+        <span className="spacer" />
+        <span className="filter-count">{shown.length} แผน</span>
+      </FilterBar>
 
       {upcomingSupport.length > 0 && (
         <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)' }}>
@@ -199,7 +205,7 @@ export default function PmCoordination() {
       </div>
 
       {editing && <PlanModal plan={editing} {...cp} />}
-    </div>
+    </Page>
   );
 }
 
@@ -259,7 +265,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
             🔧 {[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}{p.line_name ? ` · 🏭 ${p.line_name}` : ''}
           </div>
-          {p.pm_plan_id && <span style={{ display: 'inline-block', marginTop: 4, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
+          {p.pm_plan_id && <span style={{ display: 'inline-block', marginTop: 4, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
         </div>
         <span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: m.color + '22', color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
       </div>
