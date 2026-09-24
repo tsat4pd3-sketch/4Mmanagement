@@ -67,6 +67,11 @@ export const positionsSync = () => _cache || DEFAULT_POSITIONS
 
 const rows = () => positionsSync()
 
+/** เกรดที่ตำแหน่งนี้ใช้ได้ตามแม่แบบ HR (positions.grade_codes) — [] = แม่แบบไม่ได้ระบุ **ห้ามเดา**
+ *  ใช้เสนอค่า + เตือนเมื่อเกรดไม่ตรงตำแหน่ง · ดู src/utils/grades.js + docs/modules/org-hierarchy.md §2 */
+export const gradeCodesOfPosition = (v) =>
+  rows().find(r => r.key === positionKeyOf(v))?.grade_codes || []
+
 /** ค่าใดๆ (key หรือชื่อไทย/อังกฤษเก่า) → key · ไม่รู้จัก = คืนค่าเดิม (ไม่กลืนหาย) */
 export function positionKeyOf(v) {
   const s = String(v || '').trim(); if (!s) return ''

@@ -18,7 +18,8 @@ import {
   sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
   orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
-import { positionOptionsWith } from '../utils/positions';
+import { positionOptionsWith, gradeCodesOfPosition } from '../utils/positions';
+import { loadGrades, gradesSync, gradeFitsPosition, gradeRow } from '../utils/grades';   // 🎓 เกรดตามผังองค์กรทางการ
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
 import { SKILL_LEVELS, SKILL_GATES, getLevel, getBandCeiling, SKILL_CAT_META_FULL, SKILL_EDIT_CAP } from '../utils/skillLevels';
 import { loadDivisions, divisionsSync, divisionOfEmployee, skillInScope, skillScopeLabel, scopeUnitsForDivision } from '../utils/orgDivisions';
@@ -201,11 +202,16 @@ export default function Operator() {
   const [mtnTeamRows,     setMtnTeamRows]     = useState(pmTeamsSync());  // ทีมช่างซ่อม (data-driven) — ช่อง 🔧 ในโมดัลแก้ไข
   const [orgLineNodes,    setOrgLineNodes]    = useState([]); // org groups (kind='line') + ref_line_id
 
+  const [gradesReady, setGradesReady] = useState(0);   // bump เมื่อทะเบียนเกรดโหลดเสร็จ (gradesSync เป็น cache นอก React)
+
   useEffect(() => {
     let alive = true;
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
+    /* 🎓 ทะเบียนเกรด (20 แถว) — ต้องโหลดก่อน `gradesSync()` ถึงมีข้อมูล
+       ⚠️ cache อยู่นอก React ⇒ ต้อง bump state ด้วย ไม่งั้นช่องเกรดไม่ re-render หลังโหลดเสร็จ */
+    loadGrades().then(() => { if (alive) setGradesReady(n => n + 1); });
     supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
@@ -503,6 +509,7 @@ export default function Operator() {
         employee_id_code: newCode,
         name:       editingEmp.name,
         position:   editingEmp.position   || null,
+        grade:      editingEmp.grade      || null,   // 🎓 เกรดตามผังองค์กรทางการ (ว่างได้)
         department: editingEmp.department,
         // เซฟค่าเดียวกับที่ช่อง Section โชว์อยู่เสมอ (WYSIWYG) — "ขึ้นตรงฝ่าย" = null
         // ครอบข้อมูลเก่าที่กรอกชื่อแผนกซ้ำลง section ด้วย (section='MTN' → null) ดู sectionScope.js
@@ -1682,6 +1689,40 @@ export default function Operator() {
                     <option value="">— เลือก —</option>
                     {positionOptionsWith(editingEmp.position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
+                  {/* 🎓 เกรดตามผังองค์กรทางการ (grades · FM-HRM-1-00102 Rev.03)
+                      🔴 แม่แบบกำหนดเกรดต่อตำแหน่งไว้ แต่ **เตือนอย่างเดียว ห้ามบล็อก** —
+                         ของจริงมีข้อยกเว้น (รักษาการ · เคสเฉพาะ) ดู src/utils/grades.js */}
+                  {(() => {
+                    void gradesReady;                       // ผูก re-render กับตอนทะเบียนโหลดเสร็จ
+                    const allowed = gradeCodesOfPosition(editingEmp.position);
+                    const all = gradesSync();
+                    if (!all.length) return null;          // ทะเบียนยังไม่โหลด = ไม่ต้องโชว์ช่องเปล่า
+                    const fit = gradeFitsPosition(editingEmp.grade, allowed);
+                    const row = gradeRow(editingEmp.grade);
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <label style={labelSt}>เกรด (ตามผังองค์กรทางการ)</label>
+                        <select value={editingEmp.grade || ''}
+                          onChange={e => setEditingEmp({ ...editingEmp, grade: e.target.value || null })}>
+                          <option value="">— ยังไม่ระบุ —</option>
+                          {all.map(g => (
+                            <option key={g.code} value={g.code}>
+                              {g.code} · {g.label_th}{allowed.includes(g.code) ? ' ✓' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
+                          color: fit === 'mismatch' ? '#f59e0b' : 'var(--muted)' }}>
+                          {fit === 'mismatch'
+                            ? <>⚠️ แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> — บันทึกได้ถ้าเป็นเคสรักษาการหรือข้อยกเว้น</>
+                            : allowed.length
+                              ? <>แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> (ติ๊ก ✓ ในลิสต์)</>
+                              : <>แม่แบบไม่ได้ระบุเกรดของตำแหน่งนี้ — เลือกได้ตามจริง</>}
+                          {row && <> · <b>เลขน้อย = สูงกว่า</b> (เช่น S1 สูงกว่า S3)</>}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
