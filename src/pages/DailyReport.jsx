@@ -42,6 +42,7 @@ import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import { scopeMatRows } from '../utils/matScope';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -3477,8 +3478,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{o.mat_no}</span>
-                          {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {o.part_name}</span>}
+                          {/* MAT เปล่าๆ อ่านไม่ออกว่าเป็นชิ้นงานอะไร (feedback 23/09) → ของกลาง <MatLabel> เติมชื่อ+Part No. จากทะเบียนให้เอง */}
+                          <MatLabel mat={o.mat_no} name={o.part_name} />
                           {o.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>{o.customer}</span>}
                           {o.machine_no && (
                             <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(148,163,184,0.18)', color: '#94a3b8', fontWeight: 700 }}
@@ -4859,7 +4860,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)' }}>{o.prod_no}</div>
-                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no} · เป้า {o.qty} ชิ้น</div>
+                                  {/* ตัดสินใจยกยอด/ยกเลิกตอนปิดกะ ต้องรู้ว่าใบนี้คือชิ้นงานอะไร ไม่ใช่เห็นแต่เลข MAT */}
+                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                    <MatLabel mat={o.mat_no} name={o.part_name} size={11} /> · เป้า {o.qty} ชิ้น
+                                  </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6 }}>
                                   <button onClick={() => {
@@ -6324,9 +6328,8 @@ function HistoryTab({ role }) {
                           return (
                             <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, borderLeft: `3px solid ${statusColor}`, opacity: o.status === 'cancelled' ? 0.5 : 1 }}>
                               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{o.prod_no}</span>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.mat_no}</span>
-                              {o.part_name && <span style={{ fontSize: 11, color: 'var(--muted)', flex: 1 }}>· {o.part_name}</span>}
-                              {!o.part_name && <span style={{ flex: 1 }} />}
+                              <MatLabel mat={o.mat_no} name={o.part_name} size={11} />
+                              <span style={{ flex: 1 }} />
                               <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: `${statusColor}20`, color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
                               <span style={{ fontSize: 12, fontWeight: 800, color: statusColor, minWidth: 40, textAlign: 'right' }}>{o.qty}</span>
                             </div>
