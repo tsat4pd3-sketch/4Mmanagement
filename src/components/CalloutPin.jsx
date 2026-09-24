@@ -127,7 +127,7 @@ export default function CalloutPin({
           whiteSpace: 'nowrap' }}>
           {label}
           {badge && (
-            <span style={{ position: 'absolute', right: -size * 0.18, bottom: -size * 0.18, width: size * 0.52, height: size * 0.52, borderRadius: '50%', background: '#fff', color: '#111', fontSize: Math.max(8, Math.round(size * 0.3)), lineHeight: `${size * 0.52}px`, textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}>{badge}</span>
+            <span style={{ position: 'absolute', right: -size * 0.18, bottom: -size * 0.18, width: size * 0.52, height: size * 0.52, borderRadius: '50%', background: '#fff', color: '#111', fontSize: Math.max(8, Math.round(size * 0.3)), lineHeight: `${size * 0.52}px`, textAlign: 'center', boxShadow: 'var(--shadow-float)' }}>{badge}</span>
           )}
         </div>
       </button>
