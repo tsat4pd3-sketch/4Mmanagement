@@ -437,7 +437,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
-  // หมวดของหน้าปัจจุบัน — ใช้ไฮไลต์บน rail + เป็นแผง default ตอนปักหมุด + หมวดที่ accordion มือถือเปิดให้เอง
+  /* หมวดของหน้าปัจจุบัน — ใช้เป็น **แผง default** ตอนปักหมุด + หมวดที่ accordion มือถือกางให้เอง
+     ⚠️ ห้ามเอาไปใช้ไฮไลต์ "อยู่ที่นี่" — มันเป็นค่าเดียว แต่หน้าที่ตั้ง `alsoIn` อยู่ 2 หมวดจริงๆ
+        (ตรงนั้นให้เช็ค `items.some(i => i.to === location.pathname)` ต่อหมวด) */
   const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
   // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
   const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
@@ -609,16 +611,39 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       ? (groupedItems.find(g => g.group === panel)?.items || [])
       : null;
 
+    /* ── 🧭 "คุณอยู่ตรงนี้" บนรางไอคอน (2026-09-24 · user ทักว่ารางนอกสุดไม่บอกว่าอยู่หน้าไหน) ──
+       เดิมสลับกันอยู่: **แผงที่เพิ่งกดเปิด** (`isOpenPanel`) ได้ทั้งกรอบเขียว + พื้นเขียวจาง
+       ส่วน **หมวดของหน้าที่เปิดอยู่จริง** (`isCurrent`) ได้แค่ *สีตัวหนังสือ 11px*
+       ⇒ สัญญาณที่แรงที่สุดบนจอ ไปตกกับสถานะชั่วคราว (แผงปิดแล้วก็หาย) ไม่ใช่ข้อเท็จจริงถาวร
+          พอไม่เปิดแผง รางเลยเหมือน "ไม่มีไฮไลต์" ตามที่ user เห็น
+
+       กติกาใหม่ — **ใช้รูปแบบเดียวกันทุกชั้น** (drawer มือถือทำถูกอยู่แล้ว ยึดตามนั้น):
+         · อยู่ที่นี่      = พื้น `--accent-dim` + **แถบเขียวขอบซ้าย** + ตัวอักษร accent
+         · แผงที่เปิดอยู่ = แค่เส้นขอบกลางๆ (`--border2`) — เบากว่าชัดเจน เพราะเป็นสถานะชั่วคราว
+         · เป็นทั้งคู่    = ซ้อนกันได้เอง อ่านออกทั้ง 2 อย่าง
+       ⚠️ แถบซ้ายวาดเป็น element ลอย **ไม่ใช้ `borderLeft`** — ปุ่มกว้าง 56px จัดกลางแนวตั้ง
+          ถ้าใส่ border ของจะเลื่อนไป 3px เฉพาะปุ่มที่ active แล้วคอลัมน์ไอคอนดูไม่ตรงกัน
+          (แถวเต็มความกว้างใน drawer/แผงไม่มีปัญหานี้ จึงใช้ `borderLeft` ได้) */
     const railBtn = ({ key, icon, label, title, onClick, isOpenPanel, isCurrent }) => (
-      <button key={key} onClick={onClick} title={title}
+      <button key={key} onClick={onClick}
+        title={isCurrent ? `${title} — หน้าที่เปิดอยู่ตอนนี้อยู่ในหมวดนี้` : title}
+        aria-current={isCurrent ? 'true' : undefined}
         style={{
+          position: 'relative',
           width: 56, flexShrink: 0, borderRadius: 10, cursor: 'pointer', outline: 'none',
-          border: `1px solid ${isOpenPanel ? 'var(--accent)' : 'transparent'}`,
-          background: isOpenPanel ? 'var(--accent-dim)' : 'transparent',
-          color: (isOpenPanel || isCurrent) ? 'var(--accent)' : 'var(--text2)',
+          border: `1px solid ${isOpenPanel ? 'var(--border2)' : 'transparent'}`,
+          background: isCurrent ? 'var(--accent-dim)' : 'transparent',
+          color: isCurrent ? 'var(--accent)' : 'var(--text2)',
+          fontWeight: isCurrent ? 800 : 400,
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
           padding: '6px 2px 4px',
         }}>
+        {isCurrent && (
+          <span aria-hidden="true" style={{
+            position: 'absolute', left: 0, top: 6, bottom: 6, width: 3,
+            borderRadius: '0 3px 3px 0', background: 'var(--accent)',
+          }} />
+        )}
         <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
         {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
         <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
@@ -647,14 +672,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
             {/* หมวดเมนู — ส่วนกลางเลื่อนได้ กันจอเตี้ยตกขอบ */}
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: '100%' }}>
-              {groupedItems.map(({ group }) => railBtn({
+              {/* 🔴 เช็คเป็น "หมวดนี้มีหน้าปัจจุบันไหม" ไม่ใช่ `activeGroup === group`
+                  เพราะหน้าที่ตั้ง `alsoIn` อยู่ **2 หมวดจริงๆ** (วางแผนการผลิต = ฝ่ายผลิต + แผนงาน ·
+                  เฝ้าระวังสต๊อก = สโตร์ + จัดส่ง) · `activeGroup` เป็นค่าเดียวจึงคืนแค่หมวดแรก
+                  ⇒ เดิมยืนอยู่หน้าเดียวกันแท้ๆ แต่รางตอบคนละหมวดแล้วแต่ว่าเปิดแผงไหนค้างไว้
+                  (drawer มือถือเช็คแบบนี้อยู่ก่อนแล้ว — ทำให้ 2 โหมดตอบตรงกันเสียที) */}
+              {groupedItems.map(({ group, items }) => railBtn({
                 key: group,
                 icon: NAV_GROUP_META[group]?.icon || '📁',
                 label: NAV_GROUP_META[group]?.short || group,
                 title: group,
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
-                isCurrent: activeGroup === group,
+                isCurrent: items.some(i => i.to === location.pathname),
               }))}
             </div>
 
@@ -736,6 +766,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   )}
                   <Link
                     to={item.to} className="nav-link"
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -756,6 +788,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 ) : starItems.map(item => (
                   <Link
                     key={item.to} to={item.to} className="nav-link"
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
+                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -869,6 +903,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {starItems.slice(0, 5).map(item => (
                 <Link
                   key={`star-${item.to}`} to={item.to} className="nav-link"
+                  aria-current={location.pathname === item.to ? 'page' : undefined}
                   style={location.pathname === item.to
                     ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                     : {}}
@@ -920,6 +955,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       <Link
                         to={item.to}
                         className="nav-link"
+                        aria-current={location.pathname === item.to ? 'page' : undefined}
                         style={location.pathname === item.to
                           ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                           : {}}

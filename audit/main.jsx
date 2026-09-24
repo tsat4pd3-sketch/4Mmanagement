@@ -1,7 +1,10 @@
 import React, { Suspense, useState, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
-import { UserContext, Sidebar } from '../src/App'
+import { UserContext, Sidebar, NAV_ITEMS } from '../src/App'
+/* เปิดทะเบียนเมนูให้ `audit/stdsweep.mjs` อ่าน — ตรวจว่า "คุณอยู่ตรงนี้" บนรางตรงกับหมวดจริงไหม
+   (`alsoIn` = หน้าที่อยู่ 2 หมวดจริงๆ ต้องถูกไฮไลต์ทั้งคู่) */
+window.__NAV = NAV_ITEMS.map(i => ({ to: i.to, group: i.group, alsoIn: i.alsoIn || null }))
 import ScrollHint from '../src/components/ScrollHint'
 import { ToastContainer } from '../src/components/Toast'
 import '../src/index.css'
@@ -28,7 +31,12 @@ const ROLE = new URLSearchParams(location.search).get('role') || 'manager';
 const ENTRY = (() => {
   const q = new URLSearchParams(location.search);
   q.delete('p'); q.delete('role');
-  return q.toString() ? `/?${q}` : '/';
+  /* `?path=/production-plan` — ตั้ง **pathname** ของที่อยู่ตั้งต้น (2026-09-24)
+     เดิมตรึงเป็น `/` เสมอ ⇒ lab ของ sidebar จำลอง "กำลังอยู่หน้าไหน" ไม่ได้เลย
+     แล้วไฮไลต์ "คุณอยู่ตรงนี้" บนราง **ไม่เคยถูกเห็นใน harness สักครั้ง**
+     (นั่นคือเหตุผลที่ bug ไฮไลต์รางหลุดไปถึงหน้างาน — user ต้องมาทักเอง) */
+  const path = q.get('path') || '/'; q.delete('path');
+  return q.toString() ? `${path}?${q}` : path;
 })();
 const CTX = { role:ROLE, lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
