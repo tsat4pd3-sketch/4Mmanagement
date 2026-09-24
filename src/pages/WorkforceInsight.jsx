@@ -1,3 +1,4 @@
+import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import TimeRangeBar from '../components/TimeRangeBar';
@@ -251,7 +252,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
             <ComposedChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={d => d.slice(5)} />
-              <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+              <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
               <Tooltip content={<ChartTip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {stdTotal != null && (
@@ -401,7 +402,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
             <BarChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={d => d.slice(5)} />
-              <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+              <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
               <Tooltip content={<ChartTip />} />
               <Bar dataKey="moves" name="ครั้งที่ย้าย" fill="var(--blue)" radius={[3, 3, 0, 0]} isAnimationActive={false} />
             </BarChart>
@@ -592,7 +593,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
           <BarChart data={monthly} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 11.5, fill: 'var(--text2)' }} />
-            <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={40} allowDecimals={false} />
+            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" allowDecimals={false} />
             <Tooltip content={<ChartTip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <Bar dataKey="hires" name="เข้าใหม่" fill="var(--accent)" radius={[3, 3, 0, 0]} isAnimationActive={false} />

@@ -475,10 +475,10 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const isPct = r.unit === '%';
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 6, left: isPct ? -22 : -8, bottom: 0 }}>
+        <BarChart data={data} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
-          <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width={isPct ? 34 : 44}
+          <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
           <Tooltip {...chartTip} formatter={v => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary

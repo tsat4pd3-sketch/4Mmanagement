@@ -355,3 +355,97 @@ test('🔴 บล็อกซ้ำในชีทเดียว ต้อง�
   assert.equal(same[0].qty, 1600, 'ห้ามบวกเป็น 3200');
   assert.equal(rec.orderDupes, 2, 'และต้องนับจำนวนที่ยุบไว้ให้เห็น');
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🔎 recheck 2026-09-24 — feedback แพลนนิ่ง: "TSESA ไม่ขึ้น · RG01/RT50 ไม่ขึ้น ·
+      ขอรอบขายวันนี้ขึ้นยอดเดิมเมื่อวาน"  ⇒ ไล่ไฟล์จริงแล้วทั้ง 3 ข้อคือ**เนื้อในไฟล์**
+      แต่ระบบผิดที่ "เงียบ" — ล็อกพฤติกรรมใหม่ไว้ที่นี่
+   ═══════════════════════════════════════════════════════════════════════════════ */
+import { sheetCustomer, sheetReport } from '../monitoringSheet.js';
+
+const CUSTOMERS = [
+  { code: 'TSPK', name: 'TSPK', aliases: [] },
+  { code: 'TSESA', name: 'TSESA', aliases: [] },
+  { code: 'ARGENTINA', name: 'ARGENTINA', aliases: [] },
+  { code: 'MYANMAR', name: 'Myanmar', aliases: ['MYANMAR'] },
+];
+
+test('sheetCustomer: ชื่อชีทมีช่องว่างท้าย ต้อง trim ก่อนเทียบ', () => {
+  assert.equal(sheetCustomer('TSPK ', CUSTOMERS), 'TSPK');
+});
+
+test('sheetCustomer: "TSESA+LA " → TSESA (ตัดส่วนต่อท้ายหลัง +)', () => {
+  assert.equal(sheetCustomer('TSESA+LA ', CUSTOMERS), 'TSESA');
+});
+
+test('sheetCustomer: เทียบ alias ได้ และคืน name ของทะเบียน ไม่ใช่ชื่อชีทดิบ', () => {
+  assert.equal(sheetCustomer('myanmar', CUSTOMERS), 'Myanmar');
+});
+
+test('sheetCustomer: ไม่มีในทะเบียน = null ห้ามยัดชื่อชีทดิบเป็นลูกค้า', () => {
+  assert.equal(sheetCustomer('110T', CUSTOMERS), null);
+  assert.equal(sheetCustomer('', CUSTOMERS), null);
+  assert.equal(sheetCustomer('TSPK', []), null);
+});
+
+/* ── monitoringToRecords ต้องติดชื่อลูกค้าไปกับใบ ─────────────────────────── */
+const PARSED_CUST = {
+  press: [], customer: [{
+    sheet: 'TSESA+LA ', dates: ['2026-09-25'],
+    parts: [{ mat_no: 'A1', orders: [{ due_date: '2026-09-25', qty: 100 }], min: 0, packing: 0 }],
+  }],
+};
+
+test('monitoringToRecords: ใบจากชีทลูกค้าต้องมี customer (เดิม null ทั้ง 232 ใบ = จอ Delivery จัดกลุ่มไม่ได้)', () => {
+  const r = monitoringToRecords(PARSED_CUST, { today: '2026-09-24', customers: CUSTOMERS, lineOfMat: () => null });
+  assert.equal(r.orders.length, 1);
+  assert.equal(r.orders[0].customer, 'TSESA');
+});
+
+test('monitoringToRecords: ไม่ส่งทะเบียนลูกค้ามา = customer null ไม่ใช่ชื่อชีท (ห้ามเดา)', () => {
+  const r = monitoringToRecords(PARSED_CUST, { today: '2026-09-24', lineOfMat: () => null });
+  assert.equal(r.orders[0].customer, null);
+});
+
+/* ── sheetReport — "อ่านถูกแล้วไม่มีของ" ต้องไม่หน้าตาเหมือน "อ่านไม่ออก" ──── */
+const PARSED_MIX = {
+  customer: [
+    { sheet: 'TSPK', dates: ['2026-09-23', '2026-09-24'],
+      parts: [{ mat_no: 'A', orders: [{ due_date: '2026-09-24', qty: 300 }] },
+              { mat_no: 'B', orders: [] }] },
+    // เคสจริง: ชีท TSESA ในไฟล์ ก.ย. ยังเป็นรอบ ก.ค.-ส.ค. และ Order ว่างทั้งแผ่น
+    { sheet: 'TSESA+LA ', dates: ['2026-07-23', '2026-08-06'],
+      parts: [{ mat_no: 'C', orders: [] }, { mat_no: 'D', orders: [] }] },
+    { sheet: 'พัง', dates: [], parts: [] },
+  ],
+  press: [],
+};
+
+test('sheetReport: ชีทที่ให้ 0 ใบ ต้องบอกเหตุผล + วันที่ล่าสุดในชีท + เก่ากี่วัน', () => {
+  const rep = sheetReport(PARSED_MIX, { today: '2026-09-24', customers: CUSTOMERS });
+  const tsesa = rep.find(r => r.sheet.startsWith('TSESA'));
+  assert.equal(tsesa.orders, 0);
+  assert.equal(tsesa.lastDate, '2026-08-06');
+  assert.equal(tsesa.staleDays, 49);
+  assert.match(tsesa.note, /ช่อง Order ว่าง/);
+  assert.match(tsesa.note, /2026-08-06/);
+});
+
+test('sheetReport: "อ่านพาร์ทไม่ได้เลย" ต้องเป็นข้อความคนละอันกับ "อ่านได้แต่ไม่มีออเดอร์"', () => {
+  const rep = sheetReport(PARSED_MIX, { today: '2026-09-24', customers: CUSTOMERS });
+  const broken = rep.find(r => r.sheet === 'พัง');
+  const tsesa  = rep.find(r => r.sheet.startsWith('TSESA'));
+  assert.match(broken.note, /อ่านพาร์ทไม่ได้เลย/);
+  assert.notEqual(broken.note, tsesa.note, 'สองอาการนี้แก้คนละวิธี ห้ามใช้ข้อความเดียวกัน');
+});
+
+test('sheetReport: ชีทที่มีออเดอร์ = note null (ไม่ต้องเตือน) + นับใบ/ยอดถูก', () => {
+  const rep = sheetReport(PARSED_MIX, { today: '2026-09-24', customers: CUSTOMERS });
+  const tspk = rep.find(r => r.sheet === 'TSPK');
+  assert.equal(tspk.note, null);
+  assert.equal(tspk.orders, 1);
+  assert.equal(tspk.orderQty, 300);
+  assert.equal(tspk.customer, 'TSPK');
+  assert.equal(tspk.lastDate, '2026-09-24');
+  assert.equal(tspk.staleDays, 0, 'ชีทครอบคลุมถึงวันนี้ = ไม่เก่า');
+});

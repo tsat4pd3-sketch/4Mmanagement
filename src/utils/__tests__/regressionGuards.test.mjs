@@ -661,6 +661,25 @@ const RULES = [
       'src/pages/operator.jsx': 'ช่องในฟอร์มเพิ่ม/แก้สกิล — ค่าว่าง = "สกิลกลางใช้ทุกฝ่าย" ไม่ใช่ตัวกรองมุมมอง',
     },
   },
+  {
+    id: 'chart-yaxis-fixed-width',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* แกนตัวเลขที่ตั้งความกว้างเป็นเลขตายตัว — แกนหมวด (type="category") ยกเว้น (ความกว้างคือพื้นที่ชื่อ) */
+    re: /<YAxis\b(?![^\n]*type="category")[^\n]*\bwidth=\{\s*[\d(]/g,
+    why: 'user 24/09/2026 ส่งภาพจอ SQDCM: แกนตั้งเขียน "0", "5", "7" ทั้งที่ค่าจริง 100 / 75 — `<YAxis width={34}>` '
+       + 'แคบกว่าตัวเลข (จอ TV สเกลฟอนต์ขึ้นแต่แกนไม่ขยายตาม) ⇒ SVG ตัดหลักหน้าทิ้ง = ตัวเลขที่อ่านผิดแย่กว่าไม่มีตัวเลข',
+    fix: 'ใช้ `width="auto"` (Recharts 3 วัดจากตัวเลขที่ยาวที่สุดเอง) + `tickFormatter={fmtAxis}` จาก src/utils/chartAxis.js',
+    allow: {},
+  },
+  {
+    id: 'chart-negative-margin',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    re: /margin=\{\{[^}\n]*\bleft:[^,}\n]*-\s*\d/g,
+    why: 'margin ซ้ายติดลบ (`left: -22`) ดึงกราฟไปทับพื้นที่แกน Y ⇒ ตัวเลขแกนถูกตัดครึ่ง (ต้นเหตุคู่กับ YAxis width ตายตัว · '
+       + 'เคยก๊อปต่อกัน 12 จุดใน OBEYA/QA/LineOeeBoard)',
+    fix: 'margin ซ้าย ≥ 0 — ใช้ `CHART_MARGIN` จาก src/utils/chartAxis.js · อยากได้พื้นที่คืน ให้ย่อตัวเลขด้วย fmtAxis แทน',
+    allow: {},
+  },
 ];
 
 function violations(rule) {

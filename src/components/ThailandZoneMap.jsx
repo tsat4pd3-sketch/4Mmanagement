@@ -178,7 +178,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
                 {/* ★ = บริษัทเรา (ข้อมูลจริง) */}
                 {c.real && <>
                   <circle cx={x + r - 1} cy={y - r + 1} r="8" fill="#22c55e" stroke="#fff" strokeWidth="1.5" />
-                  <text x={x + r - 1} y={y - r + 5} textAnchor="middle" fill="#08120a" fontSize="10" fontWeight="900">★</text>
+                  <text x={x + r - 1} y={y - r + 5} textAnchor="middle" fill="#08120a" fontSize="11" fontWeight="900">★</text>
                 </>}
                 {/* ป้ายชื่อใต้หมุด */}
                 {!dim && (

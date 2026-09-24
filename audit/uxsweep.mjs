@@ -63,14 +63,7 @@ await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout
 const ALL = await p0.evaluate(() => window.__PAGES); await p0.close();
 const PAGES = ONLY.length ? ALL.filter(n => ONLY.includes(n)) : ALL;
 
-const rows = [];
-for (const name of PAGES) {
-  const p = await b.newPage({ viewport: VIEW, ...TZ });
-  try {
-    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`,
-      { waitUntil: 'domcontentloaded', timeout: 25000 });
-    await p.waitForTimeout(1800);
-    const r = await p.evaluate(() => {
+const measureUx = () => {
       const EMOJI = /\p{Extended_Pictographic}/u;
       const NUM = /\d/;
       /* หน่วย/เป้า/ฐานเทียบที่นับว่า "ตัวเลขมีรูปร่าง" — ไทย+อังกฤษ+สัญลักษณ์ */
@@ -196,10 +189,27 @@ for (const name of PAGES) {
         grad: out.grad, shadow: out.shadow, skipped: out.skipped,
         emoji: [...new Set(out.emoji)], flat: out.flat, naked: [...new Set(out.naked)].slice(0, 6),
       };
-    });
-    const score = r.grad.length * 2 + Math.max(0, r.shadow - 2) + r.emoji.length * 3
-      + r.flat.length * 4 + r.naked.length;
-    rows.push({ name, ...r, score });
+    };
+
+const rows = [];
+for (const name of PAGES) {
+  const p = await b.newPage({ viewport: VIEW, ...TZ });
+  try {
+    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`,
+      { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await p.waitForTimeout(1800);
+    /* ทุกแท็บของ PageHeader (24/09) — เดิมวัดแค่แท็บแรก ⇒ ของที่อยู่แท็บ 2+ ไม่เคยถูกตรวจ */
+    const nTabs = await p.evaluate(() => document.querySelectorAll('#mainbox [data-tabbar] > button').length || 1);
+    for (let ti = 0; ti < Math.max(1, nTabs); ti++) {
+      if (ti) {
+        await p.evaluate(k => { document.querySelectorAll('#mainbox [data-tabbar] > button')[k]?.click(); }, ti).catch(() => {});
+        await p.waitForTimeout(1300); await p.keyboard.press('Escape').catch(() => {});
+      }
+      const r = await p.evaluate(measureUx);
+      const score = r.grad.length * 2 + Math.max(0, r.shadow - 2) + r.emoji.length * 3
+        + r.flat.length * 4 + r.naked.length;
+      rows.push({ name: ti ? `${name} [แท็บ ${ti}]` : name, ...r, score });
+    }
   } catch (e) {
     rows.push({ name, err: String(e.message).slice(0, 60), score: -1 });
   }

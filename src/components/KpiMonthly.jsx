@@ -1,3 +1,4 @@
+import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -134,7 +135,7 @@ function ChartModal({ c, curIdx, onClose }) {
           <ComposedChart data={data} margin={{ top: 22, left: 0, right: 12, bottom: 0 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="m" tick={{ fontSize: 12, fill: 'var(--text2)' }} />
-            <YAxis tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width={62} domain={c.kind === 'line' ? ['auto', 'auto'] : [0, 'auto']} />
+            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" domain={c.kind === 'line' ? ['auto', 'auto'] : [0, 'auto']} />
             {c.target != null && (
               <ReferenceLine y={c.target} stroke="#f59e0b" strokeDasharray="6 4"
                 label={{ value: `เป้า ${c.dir === 'down' ? '≤' : '≥'} ${Number(c.target).toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 12, fontWeight: 800 }} />
