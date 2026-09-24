@@ -358,7 +358,9 @@ step 3  Product        = เลือกจากของที่อยู่�
 > user: *"จัดไปตามที่แนะนำ"*
 
 migration `20260922_bom_flat_dupe_rows_off_dr.sql` — **DR "Product DB"** (`eyhclzkifitbhbljgoav`)
-**apply แล้ว 22/09 ผ่าน MCP** · ปิด `is_active` **ไม่ลบจริง** + สำรองทั้งตารางไว้ที่ `bom_items_backup_20260922`
+**apply แล้ว 22/09 ผ่าน MCP** · ปิด `is_active` **ไม่ลบจริง** + สำรองทั้งตารางไว้ที่
+**`archive.bom_items_backup_20260922`** (598 แถว — เดิมสร้างไว้ใน `public` แล้วถูกย้ายเข้า `archive`
+วันเดียวกันโดย `20260922d_archive_bom_backup_dr.sql` ตามกฎใหม่ "ตารางสำรองห้ามอยู่ public")
 
 | | ก่อน | หลัง |
 |---|---|---|
@@ -380,5 +382,5 @@ FG ที่แตะ: `10100286`(1) · `10100333`(1) · `10100379`(1) · `10101
 **ถอย:**
 ```sql
 update public.bom_items b set is_active = true
-  from public.bom_items_backup_20260922 k where k.id = b.id and not b.is_active;
+  from archive.bom_items_backup_20260922 k where k.id = b.id and not b.is_active;
 ```

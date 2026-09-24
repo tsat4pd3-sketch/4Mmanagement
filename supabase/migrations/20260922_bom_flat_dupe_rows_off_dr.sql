@@ -43,6 +43,10 @@ update public.bom_items set is_active = false
   '4e7c6587-8a93-4626-84b3-c0c55cff38aa');
 
 /* ── ถอยกลับ (รันทั้งก้อนได้เลย) ─────────────────────────────────────────────
+   ⚠️ 2026-09-22 ตอนเย็น: ตารางสำรองถูกย้ายไป schema `archive` แล้ว
+   โดย `20260922d_archive_bom_backup_dr.sql` (กฎใหม่: ตารางสำรองห้ามอยู่ public —
+   anon อ่านสำเนาข้อมูลจริงได้) ⇒ **ต้องอ้าง `archive.` ไม่ใช่ `public.`**
+
 update public.bom_items b set is_active = true
-  from public.bom_items_backup_20260922 k where k.id = b.id and not b.is_active;
+  from archive.bom_items_backup_20260922 k where k.id = b.id and not b.is_active;
 */
