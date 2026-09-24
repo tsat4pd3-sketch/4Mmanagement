@@ -664,7 +664,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {showSafety && (
         <SafetyEventModal
           init={showSafety} section={secSet && secSet.size === 1 ? [...secSet][0] : ''} date={date}
-          lineOpts={lineNames} sectionOpts={scopeOpts.filter(o => o.kind === 'section').map(o => o.value)}
+          lineRows={lines.filter(l => members.names.has(l.name))} sectionOpts={scopeOpts.filter(o => o.kind === 'section').map(o => o.value)}
           onClose={() => setShowSafety(null)}
           onSaved={() => { setShowSafety(null); load(); }}
         />
