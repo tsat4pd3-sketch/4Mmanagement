@@ -3570,7 +3570,7 @@ export default function FactoryMap({ setupMode = false }) {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
