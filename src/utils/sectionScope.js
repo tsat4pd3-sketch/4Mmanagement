@@ -113,6 +113,28 @@ export function deptNodeFor(sectionValue, department, sectionNodes = [], deptNod
 }
 
 /**
+ * 🧭 **แกนสังกัด — โหนดในผังที่ควรเก็บลง `org_node_id`** (2026-09-23 · docs/ORG-AXES-DECISION.md §5.1)
+ *
+ * ทุกจุดที่บันทึก "คนนี้สังกัดไหน" ต้องเรียกตัวนี้ **ห้ามประกอบ id เองในหน้า**
+ * ละเอียดก่อนหยาบ: แผนกที่เลือก → ส่วนงานที่เลือก → null
+ *
+ * ทำไมต้องเก็บ id ทั้งที่มีคอลัมน์ข้อความอยู่แล้ว: ชื่อแผนกซ้ำกันได้จริง (`ทั่วไป` ใต้ PD2 และ PD4)
+ * ⇒ ข้อความตัวเดียวชี้ได้ 2 หน่วย · และย้ายคน 1 คนต้องแก้ข้อความให้ตรงกันหลายคอลัมน์
+ * คอลัมน์ข้อความยังเขียนเหมือนเดิมทุกตัว (เป็น "สำเนาไว้โชว์") — หน้าเก่าจึงไม่กระทบ
+ *
+ * @returns {string|null} org_nodes.id
+ */
+export function orgNodeIdFor(sectionValue, department, sectionNodes = [], deptNodes = []) {
+  const dept = deptNodeFor(sectionValue, department, sectionNodes, deptNodes);
+  if (dept?.id) return dept.id;
+  if (!sectionValue || sectionValue === ORPHAN_SECTION) return null;
+  return sectionNodes.find(s => (s.code || s.name) === sectionValue)?.id || null;
+}
+
+/** ที่มาของ org_node_id — 'manual' = คนเลือกเองจากฟอร์ม (เชื่อได้) ดูคอมเมนต์คอลัมน์ใน DB */
+export const ORG_SRC_MANUAL = 'manual';
+
+/**
  * ค่าที่ควรโชว์ในช่อง Section ของพนักงานที่มีอยู่แล้ว
  *  1. section ตรงกับส่วนงานในผัง → ใช้ค่านั้น
  *  2. แผนกของพนักงานเป็นแผนกขึ้นตรงฝ่าย → sentinel — ครอบ 2 เคส:

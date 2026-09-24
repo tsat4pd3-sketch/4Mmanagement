@@ -39,4 +39,29 @@ export function laborTypeOf(section, department, laborMap) {
   return 'indirect';
 }
 
+/**
+ * 🧭 ประเภทแรงงานของ **โหนดในผัง** — ไต่ขึ้นหาบรรพบุรุษที่ตั้งค่าไว้ตัวแรก (2026-09-24)
+ *
+ * ต่างจาก `laborTypeOf()` ที่รับ "ชื่อ" ของพนักงาน — ตัวนี้รับ `org_nodes.id` แล้วเดินตาม
+ * `parent_id` ขึ้นไป เพราะ **กลุ่ม (kind='line') ไม่มีคอลัมน์ `labor_type` ของตัวเอง**
+ * (ตั้งได้แค่ระดับ section/department — ลูกตกทอดจากแม่)
+ *
+ * ใช้ตอบว่า "ของใต้หน่วยนี้เป็นสายผลิตหรือสายสนับสนุน" เช่นตัดสินว่าฟอร์มควรถามอะไร
+ * ⚠️ **ห้ามเอาไปตัดสินสิทธิ์/ผู้รับแจ้งเตือน** — แกนนี้มีไว้ตอบเรื่องต้นทุน/หัวคนเท่านั้น
+ *    (docs/ORG-AXES-DECISION.md §5.4 · คนละแกนกับ `employees.staff_kind`)
+ *
+ * @returns {'direct'|'indirect'|null} null = ไม่มีบรรพบุรุษตัวไหนตั้งค่าไว้เลย (ห้ามเดาแทน)
+ */
+export function laborTypeOfNode(nodeId, nodes = []) {
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const seen = new Set();                       // กันผังที่ parent วนกลับมาหาตัวเอง (ข้อมูลเสีย)
+  let cur = byId.get(nodeId);
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    if (cur.labor_type === 'direct' || cur.labor_type === 'indirect') return cur.labor_type;
+    cur = cur.parent_id ? byId.get(cur.parent_id) : null;
+  }
+  return null;
+}
+
 export const laborMeta = (t) => LABOR_META[t] || LABOR_META.indirect;

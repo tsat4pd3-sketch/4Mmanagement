@@ -34,6 +34,11 @@ model: inherit
   (ตัด 08:00 + local time) ไม่มี copy ไหนเพี้ยน
 - **A4** บอร์ดเวลา (Heijunka/Shipping/Rack/Store) ต้องใช้ `frameMin`/`frameMinFromIso`/`breaksToFrame`
   จาก `src/utils/timeFrame.js` — ห้ามเขียน wrap นาทีเอง
+- **A7** 🔴 **เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง** (2026-09-23 · docs/modules/daily-report.md)
+  ห้าม hardcode `shift === 'night' && ชั่วโมง < 8` → ใช้ `resolveShiftTime()` / `shiftWindow()` /
+  `checkShiftTime()` จาก `src/utils/shiftWindow.js` (มีด่าน `regressionGuards` แล้ว)
+  · grep: `'night'` ใกล้ `< 8` · และช่องกรอกเวลาที่บันทึกลงฐาน **ต้องมีด่านเช็คว่าอยู่ในกรอบกะ**
+    (เคยเกิด: downtime 04:19 บนกะที่เปิด 08:00 — AM/PM สลับ ไหลเข้าฐานเงียบๆ 86 แถว)
 - **A5** 🔴 **downtime ที่ทับเวลาพักตามนโยบาย ห้ามหักซ้ำ** (2026-09-15 · docs/modules/oee.md)
   พักเป็น planned stop ที่ถูกกันออกจากฐานเวลาแล้ว — โค้ดที่เอานาที downtime ไปหักจากฐานเวลา
   (`netAvail` · `runMin` · `wLoad` = `shift_min − plannedMin` · `strictOee.plannedDtMin` · `upMin`/MTBF)
@@ -225,6 +230,14 @@ model: inherit
   `parent_line_name` โดยไม่จัดลำดับ · query production_lines ที่ select แค่ `name` (ไม่มี
   parent_line_name = จัดชั้นไม่ได้) · cascade แผนกต้องใช้ helper `deptOptionsFor`/`ORPHAN_SECTION`
   (sectionScope) ห้ามเขียน `parent_id === secNode.id` เอง — เขียนเองแล้วแผนกขึ้นตรงฝ่ายหาย
+- **F10c** 🔴 **ตัวกรอง/dropdown ไลน์ห้ามตัดไลน์ลูกทิ้ง + ห้ามวาด `<option>` ของไลน์เอง** (2026-09-24
+  · UI-CONVENTIONS §5.3 ข้อ 9 รอบ 2 · มีด่าน build `line-dropdown-hand-built`) — จับ:
+  `filter(l => !l.parent_line_name)` เพื่อทำลิสต์ให้คนเลือก (งานจริงอยู่ที่ไลน์ลูก — `/line-oee`
+  เคยเหลือแต่ไลน์แม่ 9 ตัว) · `<option>` ที่เยื้องชั้นเองด้วย `repeat(depth)`/`'↳ '`
+  (ใช้ `lineOptionLabel()` จาก LineSelect) · เอา `getLineFamilyNames` ไป**กรองข้อมูลของไลน์ลูก**
+  ทั้งที่ควรเป็นตัวเอง (family รวม*สายบน* ⇒ กะของไลน์แม่ปนเข้ามา — ใช้ `isLeafLine` แตกสาขาก่อน) ·
+  เป้า/เกณฑ์ที่ตั้งระดับกรุ๊ป (`oee_targets`) ที่ `.eq(lineชื่อลูก)` แล้วตกไปค่า default เงียบ
+  (ต้องไล่ `getAncestorNames` + เขียนบนจอว่ายืมเป้าจากกรุ๊ปไหน)
   (เคยพัง OjtTraining: ออกใบให้ช่าง MTN ไม่ได้) · ข้อยกเว้น: ลิสต์ derive จากข้อมูลจริงที่เป็น
   string ล้วน (เช่น line filter จาก sessions) = ยอมรับได้ · datalist พิมพ์อิสระ = ไม่บังคับ
   (ลำดับ 4M: Man, Machine, Material) · ปุ่ม 🏷️ ป้ายชื่อ = โชว์/ซ่อน **สองสถานะเท่านั้น** (default โชว์

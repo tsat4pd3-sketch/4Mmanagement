@@ -72,7 +72,11 @@ export function lineOptions(lines, { role, lineId, sections, current, includeRet
   return out;
 }
 
-const indent = (o) => `${'  '.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`;
+/** ป้ายของ option ตัวหนึ่ง (เยื้องตามชั้น + ↳) — **จุดเดียวของทั้งระบบ**
+ *  หน้าที่ต้องวาด <option> เองเพราะ onChange ทำอย่างอื่นต่อ (เช่น Register ที่ set lineId ด้วย)
+ *  ให้ import ตัวนี้ไปใช้ ห้ามก๊อปสูตรเยื้อง — ไม่งั้นแต่ละหน้าเยื้องไม่เท่ากัน (มีด่าน regressionGuards) */
+export const lineOptionLabel = (o) => `${'  '.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`;
+const indent = lineOptionLabel;
 
 /**
  * @param {Array}  lines       แถวจาก production_lines (ต้องมี id, name, parent_line_name, section, is_active)

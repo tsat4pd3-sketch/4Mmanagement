@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
+import { dtBucketName } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
@@ -28,6 +29,7 @@ import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
@@ -102,7 +104,8 @@ function summarizeParts(entries) {
 function summarizeDowntimes(dtLogs) {
   const map = {};
   (dtLogs || []).forEach(d => {
-    const key = d.dr_downtime_types?.name_th || 'ไม่ระบุสาเหตุ';
+    /* 🗑️ ประเภทที่บอกอะไรไม่ได้ แตกตามเครื่อง (utils/downtimeCategory 23/09) */
+    const key = dtBucketName(d);
     const a = (map[key] ||= { name: key, min: 0, count: 0, machines: [] });
     a.min += d.duration_min || 0;
     a.count += 1;
@@ -134,6 +137,14 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         style={{ fontSize: 12, fontWeight: 700, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
         🕐 ตอนนี้
       </button>
+      {/* 🔴 ทวนค่าเป็นแบบ 24 ชม. เสมอ — ด่านสายตากัน AM/PM สลับ (2026-09-23)
+          `<input type="time">` เก็บค่าเป็น 24 ชม. ก็จริง แต่ **แสดงผลตามเครื่อง**: มือถือ/จอที่ตั้งเป็น
+          12 ชม. จะมีช่อง AM/PM แยก ถ้าคนกรอกไม่แตะมันจะค้างที่ AM ⇒ ตั้งใจ 16:19 ได้ 04:19
+          (เกิดจริง Laser GOR 23/09) · ป้ายนี้ทำให้เห็นค่าจริงก่อนกดบันทึก */}
+      {value ? (
+        <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 800, color: 'var(--muted)', whiteSpace: 'nowrap' }}
+          title="ค่าที่จะถูกบันทึก (นาฬิกา 24 ชม.)">= {String(value).slice(0, 5)} น.</span>
+      ) : null}
     </div>
   );
 }
@@ -868,15 +879,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   // Build datetime string from session work_date + HH:MM time, handling overnight (night shift)
+  /* 'HH:mm' → Date ที่ตกในกรอบกะจริง — ผ่าน `resolveShiftTime` (src/utils/shiftWindow.js) เท่านั้น
+     ⚠️ เดิมที่นี่ hardcode "กะดึก + ชั่วโมง < 8 = วันถัดไป" ซึ่ง**ผิดกับกะดึกที่จบ 08:00+**:
+        คนกรอก 5ส./ส่งกะ "08:00"/"08:30" ไม่เข้าเงื่อนไข `< 8` → ถูกวางไว้วันเดียวกัน
+        = ก่อนเปิดกะ ~12 ชม. (วัดจริง 23/09: 15 แถว 890 นาที เป็นกะดึกล้วน)
+     ตัวใหม่เลือก offset วันจาก "กรอบกะของ session นั้น" — ไม่เดาจากเลขชั่วโมง */
   const buildDT = (timeStr) => {
     if (!timeStr || !selSession) return null;
-    const workDate = selSession.work_date;
-    const dt = new Date(`${workDate}T${timeStr}:00`);
-    // If session is night shift and time < 08:00, it's next day
-    if (selSession.shift === 'night' && parseInt(timeStr.split(':')[0]) < 8) {
-      dt.setDate(dt.getDate() + 1);
-    }
-    return dt;
+    const r = resolveShiftTime(timeStr, selSession);
+    return r ? new Date(r.ms) : null;
   };
 
   // เดาเวลาปิดกะที่ "น่าจะ" ถูก จากเวลาจริงตอนกดขอปิดกะ — เทียบกับเวลาเลิกงานมาตรฐาน
@@ -982,6 +993,63 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // เป็นการหยุดระดับไลน์ ไม่ผูกเครื่อง/ชิ้นงานเฉพาะ · ผูกได้ถ้าต้องการ (machine_no/mat_no nullable)
     const { startedAt, endedAt, durMin } = computeDtTimes();
     if (!startedAt && !durMin) { toast.error('กรอกเวลาหรือระยะเวลาอย่างน้อย 1 อย่าง'); return; }
+
+    /* ═══ 🔴 ด่านกันเวลาที่ "เป็นไปไม่ได้" (2026-09-23 · คำสั่ง user "ต้องทำ errorproof ดักไม่ให้เกิดอีก") ═══
+       เคสจริง Laser GOR 23/09: downtime 04:19–04:39 บนกะเช้าที่เปิด 08:00 = **ก่อนเปิดกะ 3 ชม. 41 นาที**
+       บันทึกตอน 16:39 ⇒ ตั้งใจ 16:19 แต่จอ 12 ชม. ทิ้ง AM/PM ไว้ที่ AM · ไหลเข้าฐานโดยไม่มีอะไรทัก
+       ⇒ ไทม์ไลน์/พาเรโต/OEE ได้เวลาผิดหมด · ฐานทั้งระบบมี 86 แถวที่หลุดกรอบกะแบบนี้
+       กติกา: เวลาเริ่มต้องอยู่ในกรอบกะเสมอ — หลุดกรอบ = **ไม่ให้บันทึก** (ห้ามเตือนแล้วปล่อยผ่าน)
+         · ±12 ชม. แล้วเข้ากรอบพอดี = ลายเซ็น AM/PM สลับ → เสนอแก้ให้ในคลิกเดียว **ห้ามแก้เองเงียบๆ**
+         · หลุดไม่เกิน 60 นาทีก่อนเปิดกะ = ของจริงได้ (ไลน์เริ่มก่อนเวลาที่ลงไว้) → ถามยืนยัน
+         · กรอบกะเองผิด (เปิดกะผิดเวลา) → บอกให้ไปแก้ที่ "✏️ แก้เวลากะ" ไม่ใช่ดัดเวลา downtime */
+    if (startedAt) {
+      const chk = checkShiftTime(startedAt.getTime(), selSession);
+      if (!chk.ok) {
+        const win = windowLabel(selSession) || '-';
+        const at = `${String(startedAt.getHours()).padStart(2, '0')}:${String(startedAt.getMinutes()).padStart(2, '0')}`;
+        const whereTxt = chk.kind === 'before' ? `ก่อนเปิดกะ ${fmtOffset(chk.minutesOff)}`
+          : chk.kind === 'future' ? `ล่วงหน้าจากเวลาจริง ${fmtOffset(chk.minutesOff)}`
+          : `เลยเวลาปิดกะ ${fmtOffset(chk.minutesOff)}`;
+        if (chk.suggestHHmm) {
+          const ok = window.confirm(
+            `⏰ เวลาที่กรอก ${at} น. อยู่นอกกรอบกะ (${whereTxt})\n` +
+            `กะนี้: ${win}\n\n` +
+            `💡 น่าจะหมายถึง ${chk.suggestHHmm} น. — ต่างกัน 12 ชม. พอดี (ช่องเวลาบนมือถือ/จอที่ตั้งเป็นแบบ AM-PM\n` +
+            `   ถ้าไม่แตะช่อง AM/PM มันจะค้างที่ AM เช่น ตั้งใจ 16:19 แต่ได้ 04:19)\n\n` +
+            `กด "ตกลง" เพื่อแก้เวลาให้เป็น ${chk.suggestHHmm} · กด "ยกเลิก" เพื่อกลับไปแก้เอง`);
+          if (ok) {
+            // แก้ให้ในฟอร์ม แล้วให้คนกดบันทึกเองอีกครั้ง — ไม่เขียนลงฐานแทนคน
+            const shiftHH = (t) => {
+              const r = resolveShiftTime(t, selSession);
+              if (!r) return t;
+              const d = new Date(r.ms + (chk.suggestMs - startedAt.getTime()));
+              return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+            };
+            setDtForm(f => ({ ...f,
+              start_time: f.start_time ? shiftHH(f.start_time) : f.start_time,
+              end_time:   f.end_time   ? shiftHH(f.end_time)   : f.end_time }));
+            toast.info(`แก้เวลาให้แล้ว — ตรวจอีกครั้งแล้วกดบันทึก`);
+          }
+          return;
+        }
+        if (chk.kind === 'before' && chk.minutesOff <= 60) {
+          const ok = window.confirm(
+            `⏰ เวลาเริ่ม ${at} น. อยู่${whereTxt}\nกะนี้: ${win}\n\n` +
+            `ถ้าไลน์เริ่มเดินก่อนเวลาที่ลงไว้จริง กด "ตกลง" เพื่อบันทึก\n` +
+            `ถ้าเวลาเปิดกะตั้งไว้ผิด ให้กด "ยกเลิก" แล้วไปแก้ที่ปุ่ม "✏️ แก้เวลากะ"`);
+          if (!ok) return;
+        } else {
+          toast.error(
+            `เวลาเริ่ม ${at} น. อยู่นอกกรอบกะ (${whereTxt}) — กะนี้ ${win}\n` +
+            `แก้เวลาให้อยู่ในกรอบ · ถ้าเวลาเปิด-ปิดกะตั้งไว้ผิด ให้ไปแก้ที่ "✏️ แก้เวลากะ" ก่อน`);
+          return;
+        }
+      }
+    }
+    if (startedAt && endedAt && (endedAt - startedAt) / 60000 > MAX_SHIFT_MIN) {
+      toast.error(`ช่วงเวลาที่กรอกยาว ${fmtOffset((endedAt - startedAt) / 60000)} — ยาวเกินกว่า 1 กะ ตรวจเวลาอีกครั้ง`);
+      return;
+    }
     // ประเภท "อื่นๆ" เปล่าๆ บอกอะไรไม่ได้ในสรุปประชุมเช้า/รายงาน — บังคับระบุสาเหตุจริงเสมอ
     const dtTypeName = dtTypes.find(t => t.id === dtForm.downtime_type_id)?.name_th || '';
     if (dtTypeName.includes('อื่น') && !dtForm.description?.trim()) {
@@ -1281,12 +1349,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // แปลง HH:mm ที่กรอกย้อนหลัง → ISO จริง: anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
   // (ไม่งั้นถ้าไม่ระบุเวลา DB จะ default เป็นเวลาปัจจุบัน ทำให้ Heijunka ขึ้นที่ "ตอนนี้" ไม่ใช่ตอนที่ผลิตจริง)
   // ใช้ร่วมกันทั้งใบสแกน (backfillOpenedAt) และใบ manual (handleManualOpen)
+  // เวลาที่กรอกย้อนหลัง → ISO ที่ตกในกรอบกะ (กฎเดียวกับ buildDT · ห้าม hardcode ชั่วโมง < 8 อีก)
   const backfillIsoFromTime = (hhmm) => {
     if (!hhmm || !selSession) return null;
-    const [h, m] = hhmm.split(':').map(Number);
-    let d = new Date(`${selSession.work_date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`);
-    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
-    return d.toISOString();
+    const r = resolveShiftTime(hhmm, selSession);
+    return r ? new Date(r.ms).toISOString() : null;
   };
   const backfillOpenedAt = () => {
     if (!openProdForm.is_backfill) return null;
@@ -1796,11 +1863,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // (ไม่ใช่เวลาที่กดปุ่ม import จริง) เพื่อให้ Heijunka จัดออเดอร์นี้ไว้ที่ต้นแถวของกะใหม่ ไม่ใช่ลอยไปอยู่
   // ช่วงเวลาปัจจุบันตามนาฬิกาจริง ซึ่งอาจยังอยู่ในครึ่งวันของกะเก่า ทำให้การ์ดไม่ถูกจัดเรียงเข้าแถวกะใหม่
   const carryImportOpenedAt = () => {
-    if (!selSession?.work_date || !selSession?.start_time) return null;
-    const [h, m] = selSession.start_time.split(':').map(Number);
-    let d = new Date(`${selSession.work_date}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
-    if (selSession.shift === 'night' && h < 8) d = new Date(d.getTime() + 86400000);
-    return d.toISOString();
+    const w = shiftWindow(selSession);      // เวลาเริ่มกะจริง (สูตรเดียวกับ buildDT)
+    return w ? new Date(w.startMs).toISOString() : null;
   };
 
   // Import carry-over orders into current session
@@ -5577,6 +5641,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </Field>
                     )}
                   </div>
+
+                  {/* 🔴 กรอบกะ + เตือนสดเมื่อเวลาที่กรอกหลุดกรอบ (2026-09-23)
+                      ให้เห็น "ตั้งแต่ตอนกรอก" ไม่ใช่ไปรู้ตอนกดบันทึก — ด่านจริงอยู่ที่ handleAddDT */}
+                  {(() => {
+                    const win = windowLabel(selSession);
+                    if (!win) return null;
+                    const st = dtForm.start_time ? resolveShiftTime(dtForm.start_time, selSession) : null;
+                    const chk = st ? checkShiftTime(st.ms, selSession) : null;
+                    const bad = chk && !chk.ok;
+                    return (
+                      <div style={{ fontSize: 12, color: bad ? '#ef4444' : 'var(--muted)', fontWeight: bad ? 800 : 600,
+                        padding: bad ? '8px 12px' : '2px 2px', borderRadius: 8,
+                        background: bad ? 'rgba(239,68,68,0.10)' : 'transparent',
+                        border: bad ? '1px solid rgba(239,68,68,0.35)' : 'none' }}>
+                        ⏱ กรอบกะนี้: <b style={{ fontFamily: 'monospace' }}>{win}</b>
+                        {bad && (
+                          <>
+                            {' · '}เวลาเริ่มที่กรอกอยู่
+                            {chk.kind === 'before' ? ` ก่อนเปิดกะ ${fmtOffset(chk.minutesOff)}`
+                              : chk.kind === 'future' ? ` ล่วงหน้า ${fmtOffset(chk.minutesOff)}`
+                              : ` เลยปิดกะ ${fmtOffset(chk.minutesOff)}`}
+                            {chk.suggestHHmm && ` — น่าจะหมายถึง ${chk.suggestHHmm} น. (AM/PM สลับ)`}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Auto-calculated result preview */}
                   {hasResult && (

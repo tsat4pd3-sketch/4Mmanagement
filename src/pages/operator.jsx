@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { STAFF_INDIRECT, isDirectStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
+import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
 import { normSearch } from '../components/SearchSelect';   // ค้นหาทนการสะกดไทย (ของกลาง)
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -15,7 +15,8 @@ import ImageCropModal from '../components/ImageCropModal';
 import { can, isActionSeeded } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor, MAINTENANCE_ROLES } from '../utils/sectionScope';
+  sectionValueForSave, sectionValueForEdit, orphanDepts, deptOptionsFor, deptNodeFor,
+  orgNodeIdFor, ORG_SRC_MANUAL, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import { positionOptionsWith } from '../utils/positions';
 import { buildLaborMap, laborTypeOf, laborMeta, LABOR_META } from '../utils/laborType';
@@ -387,7 +388,7 @@ export default function Operator() {
     }
     const makeBase = () => {
       /* 🔴 หน้านี้คือ **ทะเบียนพนักงาน** — ต้องเห็นทุกคนรวมสายสนับสนุน ไม่งั้นแก้ข้อมูลเขาไม่ได้เลย
-         (เกิดจริง 23/09: ใส่ onlyDirectStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
+         (เกิดจริง 23/09: ใส่ตัวกรอง onlyShopfloorStaff ไว้ ⇒ เจนนิภา + สุทธวีร์ หายจากหน้านี้ทั้งคู่
           ทั้งที่เพิ่งถูกสร้างจาก /add-user เมื่อวาน — "มีอยู่ในฐานแต่มองไม่เห็น" คือสภาพที่แย่ที่สุด)
          การกันไม่ให้เขาไปปนใน "กำลังคน" ทำที่จอที่นับคน (Checkin/Report/ShiftOrganize/
          WorkforceInsight) ไม่ใช่ที่ทะเบียน · ที่นี่ใช้ชิป 🧑‍🏭/🗂️ กรองดูแทน */
@@ -506,6 +507,13 @@ export default function Operator() {
         group_name: editingEmp.group_name || null,
         team:       editingEmp.team       || null,
         line_id:    editingEmp.line_id    || null,
+        /* 🧭 แกนสังกัด — เก็บ "โหนดในผัง" ไม่ใช่แค่ข้อความ (docs/ORG-AXES-DECISION.md §5.1)
+           คอลัมน์ข้อความข้างบนยังเขียนเหมือนเดิมทุกตัวในฐานะสำเนาไว้โชว์ ⇒ หน้าเก่าไม่กระทบ
+           `manual` = คนเลือกเองจากฟอร์ม (ต่างจาก auto_* ที่ระบบเดาจากข้อความตอน backfill) */
+        org_node_id:  orgNodeIdFor(
+          sectionValueForEdit(editingEmp.section, editingEmp.department, orgDeptNodes, orgSectionNodes),
+          editingEmp.department, orgSectionNodes, orgDeptNodes),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: editingEmp.bus_route_id || null,
         image_url:  photoUrl,
         start_date: editingEmp.start_date || null,
@@ -771,7 +779,7 @@ export default function Operator() {
     .filter(emp => !filterLabor   || empLabor(emp) === filterLabor)
     .filter(emp => !filterOffOrg  || offOrgReasons(emp).length > 0)
     .filter(emp => !filterNoPhoto || !emp.image_url)
-    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isDirectStaff(emp) : isDirectStaff(emp)))
+    .filter(emp => !filterStaffKind || (filterStaffKind === 'support' ? !isShopfloorStaff(emp) : isShopfloorStaff(emp)))
     /* 🔎 ค้นท้ายสุด (หลังตัวกรองอื่น) — ใช้ normSearch ของกลาง: ทนช่องว่างซ้อน/ขีด และ
        **ทนการสะกดไทย** (ชื่อในฐานพิมพ์มือ ต่างกัน 1 ตัวเสมอ เช่น เจริญพันธ/เจริญพันธ์) */
     .filter(emp => {
@@ -962,7 +970,9 @@ export default function Operator() {
               );
             })}
 
-            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร) */}
+            {/* Labor type filter chips (Direct/Indirect — ตั้งที่ผังองค์กร ราย**แผนก** เพื่อคิดต้นทุน)
+                ⚠️ **คนละแกนกับชิป 🧑‍🏭/🗂️ ข้างบน** (staff_kind ราย**คน** = นับกำลังคนไหม)
+                ขัดกันจริงที่ช่าง MTN: labor_type=indirect แต่ staff_kind=shopfloor — docs/ORG-AXES-DECISION.md §5.4 */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {['direct', 'indirect'].map(t => {
               const m = LABOR_META[t];

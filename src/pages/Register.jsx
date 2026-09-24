@@ -5,13 +5,13 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
-  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor,
+  sectionValueForSave, orphanDepts, deptOptionsFor, deptNodeFor, orgNodeIdFor, ORG_SRC_MANUAL,
 } from '../utils/sectionScope';
 import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
-import { lineOptions } from '../components/LineSelect';
+import { lineOptions, lineOptionLabel } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 
@@ -112,6 +112,10 @@ export default function Register() {
         group_name: groupName || null,
         team:       team      || null,
         line_id:    lineId    || null,
+        /* 🧭 แกนสังกัด — ผูกโหนดในผังตั้งแต่ลงทะเบียน (docs/ORG-AXES-DECISION.md §5.1)
+           ข้อความ section/department ข้างบนยังเขียนเหมือนเดิมในฐานะสำเนาไว้โชว์ */
+        org_node_id:  orgNodeIdFor(section, department, orgSections, orgDepts),
+        org_node_src: ORG_SRC_MANUAL,
         bus_route_id: busRouteId || null,
         start_date: startDate || null,
         image_url:  photoUrl,
@@ -253,7 +257,7 @@ export default function Register() {
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                   {lineOptions(lineOpts, { current: groupName }).map(o => (
-                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
+                    <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>
                   ))}
                 </select>
               );
