@@ -21,6 +21,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import LineSelect from '../components/LineSelect';
 import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
@@ -216,6 +217,8 @@ export default function MaintenanceLevels() {
 
   return (
     <Page style={{ display: 'grid', gap: 14 }}>
+      {/* อยู่ใต้ /pm (Hub) เท่านั้น ⇒ ชื่อหน้าถูกซ่อนโดย Hub · ใส่ไว้เพื่อให้หน้านี้ยังมีหัวถ้าเปิดเดี่ยว (UI-STANDARD §2) */}
+      <PageHeader title="3 ระดับ PM" icon="🧭" />
       {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
       {/* ── บันได 3 ขั้น ── */}

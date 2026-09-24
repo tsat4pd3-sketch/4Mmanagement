@@ -109,6 +109,9 @@ export default function PageHeader({
     ? `transform .28s ${IND_EASE}, width .28s ${IND_EASE}, height .28s ${IND_EASE}`
     : 'none';
 
+  // ใน hub + ไม่มีอะไรให้โชว์ (ไม่มีคำอธิบาย/ปุ่ม/แท็บ) ⇒ ไม่วาดกล่องเปล่ากินที่ 12px
+  if (inHub && !sub && !actions && !tabList.length) return children ?? null;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
       {breadcrumb && navItem && !inHub && (

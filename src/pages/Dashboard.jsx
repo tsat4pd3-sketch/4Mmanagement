@@ -916,9 +916,10 @@ export default function Dashboard() {
           {/* Shift toggle */}
           <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
             {[
+              /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
+              { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
               { val: 'day',   label: '☀️ กะเช้า', active: 'rgba(245,158,11,0.2)', color: '#f59e0b' },
               { val: 'night', label: '🌙 กะดึก',  active: 'rgba(77,159,255,0.2)', color: '#4d9fff' },
-              { val: 'all',   label: 'ทั้งหมด',    active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
             ].map(s => (
               <button key={s.val} onClick={() => setSelectedShift(s.val)}
                 style={{

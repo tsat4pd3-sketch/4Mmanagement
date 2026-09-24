@@ -17,7 +17,7 @@ import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
-import Page from '../components/Page';
+import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 
@@ -455,7 +455,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
         tab={view} onTab={k => { setView(k); setSelId(null) }} />
 
       {view === 'overview' ? (
-        <FactoryMap />
+        <Hub><FactoryMap /></Hub>
       ) : (
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
