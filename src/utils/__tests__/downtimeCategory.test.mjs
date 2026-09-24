@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dtTypeName, dtBucketName, isDtVague, dtTrashStats, NO_MACHINE, NO_TYPE }
+import { dtTypeName, dtBucketName, isDtVague, dtTrashStats, buildDtIndex, dtResolve, NO_MACHINE, NO_TYPE }
   from '../downtimeCategory.js';
 
 /* ── แถวจริงจาก downtime_logs 90 วัน (23/09) — ชื่อประเภทตัดมาจาก dr_downtime_types จริง ──
@@ -58,4 +58,52 @@ test('ไม่มีแถว = ต้องไม่หาร 0 (จอเป�
   const s = dtTrashStats([]);
   assert.equal(s.total, 0);
   assert.equal(s.vaguePct, 0);
+});
+
+
+/* ── 🔎 เดาประเภทจากคำ (เปิด 24/09 หลังมีชั้นภาษา) ───────────────────────────
+   สัดส่วนในเทสนี้ = สัดส่วนจริงจาก downtime_logs 180 วัน (conveyor 110 : 15) */
+const conveyorRows = [
+  ...Array.from({ length: 110 }, () => (
+    { dr_downtime_types: { name_th: 'ราง Conveyor มีปํญหา' }, description: 'conveyor ติด' })),
+  ...Array.from({ length: 15 }, () => (
+    { dr_downtime_types: { name_th: 'ชิ้นงานเต็มราง Conveyor' }, description: 'conveyor เต็ม' })),
+];
+
+test('🔴 คำที่กำกวมใน "ทะเบียน" ต้องตัดสินด้วย "การใช้งานจริง" ไม่ใช่ทิ้ง', () => {
+  /* `conveyor` อยู่ใน 2 ป้ายทะเบียน ⇒ ถ้าดูแต่ทะเบียนจะกำกวมและถูกตัดทิ้ง
+     แต่ใบจริง 110 จาก 125 ใบอยู่ "ราง Conveyor มีปํญหา" ⇒ เรียนจากข้อมูลของโรงงานได้
+     🔴 นี่คือเหตุผลที่ buildDtIndex ต้องส่ง "ใบที่จัดประเภทแล้ว" เข้าไปเรียน ไม่ใช่ทะเบียนอย่างเดียว */
+  const idx = buildDtIndex(conveyorRows);
+  const hit = dtResolve(row('อื่นๆ (นอกแผน)', 'CV-01', 30, 'คอนเวเย่ออาราม'), idx);
+  assert.equal(hit.name, 'ราง Conveyor มีปํญหา');
+  assert.equal(hit.guessed, true);
+  assert.ok(hit.terms.includes('conveyor'), 'ต้องบอกได้ว่าเดาจากคำไหน');
+});
+
+test('ไม่ส่ง index = ไม่เดา (พฤติกรรมเดิม) · เดาไม่ได้ = ยังแตกตามเครื่อง', () => {
+  const r = row('อื่นๆ (นอกแผน)', 'CV-01', 30, 'คอนเวเย่ออาราม');
+  assert.equal(dtBucketName(r), 'CV-01 · อื่นๆ (นอกแผน)');
+  const idx = buildDtIndex(conveyorRows);
+  assert.equal(dtBucketName(row('อื่นๆ (นอกแผน)', 'HDF-02', 30, 'ให้เครื่องpeทายงาน'), idx),
+    'HDF-02 · อื่นๆ (นอกแผน)');
+});
+
+test('🔴 ประเภทที่ไม่ใช่ถังขยะ ห้ามถูกเดาทับ (ของที่ช่างเลือกเองชนะเสมอ)', () => {
+  const idx = buildDtIndex(conveyorRows);
+  assert.equal(dtBucketName(row('เลเซอร์มีปัญหา', 'LS-04', 10, 'conveyor'), idx), 'เลเซอร์มีปัญหา');
+});
+
+test('dtTrashStats นับใบที่เดาได้แยกจากใบที่ต้องแตกตามเครื่อง', () => {
+  const idx = buildDtIndex(conveyorRows);
+  const s = dtTrashStats([
+    row('อื่นๆ (นอกแผน)', 'CV-01', 30, 'คอนเวเย่ออาราม'),
+    row('อื่นๆ (นอกแผน)', 'HDF-02', 20, 'ให้เครื่องpeทายงาน'),
+    row('อื่นๆ (นอกแผน)', '', 10, ''),
+  ], { index: idx });
+  assert.equal(s.vague, 3);
+  assert.equal(s.guessed, 1);
+  assert.equal(s.guessedMin, 30);
+  assert.equal(s.withMachine, 1);
+  assert.equal(s.noMachine, 1);
 });
