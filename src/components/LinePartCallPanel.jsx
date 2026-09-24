@@ -32,6 +32,7 @@ import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { notifyEvent } from '../utils/notifyEvent';
 import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -392,7 +393,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           {holds.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
               background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8 }}>
-              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.mat_no}</b>
+              <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                 ขอ {fmtQty(r.request_qty)} ชิ้น · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
               </span>
@@ -420,7 +421,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
-                <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.mat_no}</b>
+                <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                   {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}`}
                 </span>
@@ -492,7 +493,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
       background: short ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.07)',
       border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)'}`, borderRadius: 8 }}>
-      <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{s.mat_no}</b>
+      <MatLabel mat={s.mat_no} size={12.5} />
       <span style={{ fontSize: 11.5, color: short ? '#ef4444' : 'var(--muted)', fontWeight: short ? 800 : 400 }}>
         เหลือ {fmtQty(s.have)} / จุดเรียกเติม {fmtQty(s.min)}{short ? ' · หมดแล้ว' : ''}
       </span>
