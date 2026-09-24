@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { can } from '../utils/permissions';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
@@ -367,7 +367,7 @@ export default function MorningMeeting() {
         const pool = dts.filter(d => d.dr_downtime_types?.category !== 'planned');
         const g = {};
         (pool.length ? pool : dts).forEach(d => {
-          const k = dtBucketName(d);
+          const k = dtBucketName(d, null);   // การ์ดรายใบ — ไม่ต้องเดา ใช้ของจริง
           g[k] = (g[k] || 0) + (Number(d.duration_min) || 0);
         });
         const top = Object.entries(g).sort((a, b) => b[1] - a[1])[0];
@@ -386,12 +386,13 @@ export default function MorningMeeting() {
   }, [orders, sessions, downtimes, attendance, fourM]);
 
   // แยก นอกแผน (ตัวจริงที่ต้องคุยในประชุม — มีแถบ+note) / ในแผน (planned: นับสต็อก ฯลฯ — โชว์จางๆ ท้ายแผง)
+  const dtIdx = useMemo(() => buildDtIndex(downtimes), [downtimes]);
   const topDowntime = useMemo(() => {
     const g = {};
     downtimes.forEach(d => {
       /* 🗑️ ประเภทที่บอกอะไรไม่ได้ ("อื่นๆ" / "Alarm ไม่ระบุสาเหตุ") แตกตามเครื่อง
          — 92% ของใบพวกนี้กรอก machine_no ไว้แล้ว (utils/downtimeCategory 23/09) */
-      const k = dtBucketName(d);
+      const k = dtBucketName(d, dtIdx);
       g[k] = g[k] || { name: k, color: d.dr_downtime_types?.color, planned: d.dr_downtime_types?.category === 'planned', min: 0, count: 0, machines: new Set(), carry: false, descs: {} };
       const min = Number(d.duration_min) || 0;
       g[k].min += min;
@@ -407,7 +408,7 @@ export default function MorningMeeting() {
       unplanned: all.filter(x => !x.planned).sort((a, b) => b.min - a.min).slice(0, 6),
       planned: all.filter(x => x.planned).sort((a, b) => b.min - a.min).slice(0, 4),
     };
-  }, [downtimes]);
+  }, [downtimes, dtIdx]);
 
   const topDefects = useMemo(() => {
     const g = {};

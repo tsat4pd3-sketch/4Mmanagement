@@ -40,7 +40,7 @@ import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
@@ -408,12 +408,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── "ทำไมหลุดเป้า" — Pareto เวลาเครื่องหยุดนอกแผน (สาเหตุอันดับต้น) ───────────────
   const paretoM = useMemo(() => {
+    const dtIdx = buildDtIndex(fDts);
     const g = {};
     fDts.forEach((d) => {
       if (d.dr_downtime_types?.category === 'planned') return;
       /* 🗑️ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" แตกตามเครื่องก่อนนับ (utils/downtimeCategory 23/09)
          — ยุบรวมไว้แท่งเดียว = แท่งใหญ่ที่บอกไม่ได้ว่าไปแก้ที่ไหน ผิดกฎความซื่อสัตย์ของจอ */
-      const name = dtBucketName(d);
+      const name = dtBucketName(d, dtIdx);
       g[name] = (g[name] || 0) + (Number(d.duration_min) || 0);
     });
     const rows = Object.entries(g).map(([name, min]) => ({ name, min: Math.round(min) }))
