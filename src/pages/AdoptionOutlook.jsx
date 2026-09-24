@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
@@ -783,7 +785,7 @@ const Badge = ({ tone, children }) => {
   const c = tone === 'real' ? '#22c55e' : tone === 'guess' ? '#f59e0b' : tone === 'sim' ? '#a78bfa' : 'var(--muted)';
   const dashed = tone === 'guess' || tone === 'sim';   // ของที่ "ยังไม่จริง" ใช้เส้นประเสมอ
   return <span style={{
-    fontSize: 10.5, fontWeight: 700, color: c, whiteSpace: 'nowrap',
+    fontSize: 11, fontWeight: 700, color: c, whiteSpace: 'nowrap',
     border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
   }}>{children}</span>;
 };
@@ -843,7 +845,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-        {[{ key: 'all', icon: '🔗', label: 'ทุกมิติ' }, ...DIMENSIONS].map(d => {
+        {[{ key: 'all', icon: '🔗', label: allOf('มิติ') }, ...DIMENSIONS].map(d => {
           const on = only === d.key;
           return (
             <button key={d.key} onClick={() => setOnly(d.key)} style={{
@@ -922,7 +924,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 7 }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa' }}>🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
                         <span style={{
-                          fontSize: 10.5, fontWeight: 700, color: '#a78bfa',
+                          fontSize: 11, fontWeight: 700, color: '#a78bfa',
                           border: '1px dashed #a78bfa', borderRadius: 4, padding: '1px 6px',
                         }}>ตัวเลขจำลอง · ชื่อไลน์/เครื่อง/ลูกค้าเป็นของจริง</span>
                       </div>
@@ -1293,8 +1295,8 @@ const ApqBar = ({ label, val, hint, worst }) => {
       <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
         <div style={{ width: `${v == null ? 0 : Math.max(0, Math.min(100, v))}%`, height: '100%', background: col }} />
       </div>
-      <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
-      {worst && <div style={{ fontSize: 10.5, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
+      <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
+      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
     </div>
   );
 };
@@ -1448,7 +1450,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <div key={i} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.l}</div>
               <div style={{ fontSize: 16, fontWeight: 800, color: x.c }}>{x.v}</div>
-              {x.s && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
+              {x.s && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
             </div>
           ))}
         </div>
@@ -1484,10 +1486,10 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 6px', flexWrap: 'wrap' }}>
                 <span style={{
-                  fontSize: 10.5, fontWeight: 800, color: '#08120a', background: g.meta.color,
+                  fontSize: 11, fontWeight: 800, color: '#08120a', background: g.meta.color,
                   borderRadius: 4, padding: '1px 7px',
                 }}>ทำให้ {g.meta.oee} ตก</span>
-                <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {g.count} รายการ{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
                 </span>
               </div>
@@ -1766,20 +1768,20 @@ export default function AdoptionOutlook() {
   }, [tab, dd, ddErr]);
 
   if (err) return (
-    <div style={{ padding: 16 }}>
+    <Page>
       <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
-    </div>
+    </Page>
   );
   if (!d) return (
-    <div style={{ padding: 16 }}>
+    <Page>
       <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
       <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังนับข้อมูลจากฐานจริง…</div>
-    </div>
+    </Page>
   );
 
   return (
-    <div style={{ padding: isMobile ? 12 : 16, maxWidth: 1400, margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
@@ -1839,6 +1841,6 @@ export default function AdoptionOutlook() {
       {tab === 'ladder' && <LadderTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'dept' && <DeptTab c={d.c} navigate={navigate} isMobile={isMobile} />}
       {tab === 'roi' && <RoiTab c={d.c} loss={d.loss} rates={d.rates} demoOn={demoOn} day={d.loss.to} navigate={navigate} isMobile={isMobile} />}
-    </div>
+    </Page>
   );
 }

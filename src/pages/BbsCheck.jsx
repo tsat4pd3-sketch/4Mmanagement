@@ -32,6 +32,11 @@ import { printBbsSheet } from '../lib/bbsPrint';
 import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { SHIFT_OPTIONS } from '../utils/filterLabels';
 
 const thisMonth = () => {
   const d = new Date();
@@ -371,11 +376,10 @@ export default function BbsCheck() {
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
 
-  const wrap = { padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px)', maxWidth: 'min(98vw,2400px)', margin: '0 auto' };
   const lbl = { fontSize: 11, color: 'var(--muted)', fontWeight: 700, display: 'block', marginBottom: 3 };
 
   return (
-    <div style={wrap}>
+    <Page width="full">
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกผลสังเกต BBS" permKey="bbs:record" />
 
       {loadWarn && (
@@ -384,37 +388,28 @@ export default function BbsCheck() {
         </div>
       )}
 
-      {/* ── แถบเลือกใบ ── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-        <div>
-          <label style={lbl}>เดือน</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-            style={{ width: 150, padding: '7px 9px', fontSize: 13 }} />
-        </div>
-        <div>
-          <label style={lbl}>พื้นที่ / ไลน์</label>
-          {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-          <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine}
-            style={{ width: 230, padding: '7px 9px', fontSize: 13 }} />
-        </div>
-        <div>
-          <label style={lbl}>กะ</label>
-          <select value={shift} onChange={e => setShift(e.target.value)}
-            style={{ width: 120, padding: '7px 9px', fontSize: 13 }}>
-            <option value="">ทั้งวัน</option>
-            <option value="day">กะเช้า</option>
-            <option value="night">กะดึก</option>
-          </select>
-        </div>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setShowAgree(true)} style={btn()}>📋 ข้อตกลง ({agreements.length})</button>
-        {canRecord && (
-          <button onClick={autoFill} disabled={busy || !emps.length} style={btn('var(--accent)')}>
-            {busy ? 'กำลังเติม…' : '⚡ เติมจากผลตรวจ PPE'}
-          </button>
-        )}
-        <button onClick={doPrint} disabled={!sheet} style={btn()}>🖨️ พิมพ์ / PDF</button>
-      </div>
+      {/* ── หัว + ปุ่มของใบ (UI-STANDARD 2026-09-24 — ใน /daily-checker หัวชื่อหน้าถูกซ่อนเอง เหลือปุ่ม) ── */}
+      <PageHeader title="สังเกตพฤติกรรมความปลอดภัย (BBS)" icon="🦺"
+        actions={<>
+          <button onClick={() => setShowAgree(true)} style={btn()}>📋 ข้อตกลง ({agreements.length})</button>
+          {canRecord && (
+            <button onClick={autoFill} disabled={busy || !emps.length} style={btn('var(--accent)')}>
+              {busy ? 'กำลังเติม…' : '⚡ เติมจากผลตรวจ PPE'}
+            </button>
+          )}
+          <button onClick={doPrint} disabled={!sheet} style={btn()}>🖨️ พิมพ์ / PDF</button>
+        </>} />
+
+      {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <span className="filter-label">พื้นที่ / ไลน์</span>
+        {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
+        <span className="filter-label">เดือน</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        {/* '' = ทั้งวัน (ทุกกะ) — state เดิม */}
+        <Segmented value={shift} onChange={setShift} options={SHIFT_OPTIONS} label="กะ" />
+      </FilterBar>
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -551,7 +546,7 @@ export default function BbsCheck() {
                             <button key={m.key} disabled={!canRecord} style={chip(on, m.color)}
                               onClick={() => { if (m.key === 'ng') { setNgPick(picking ? null : e.id); return; } setNgPick(null); paint(e, day, m.key); }}>
                               <b style={{ fontSize: 16 }}>{m.key === 'ng' ? (on ? c.agreement_seq : '#') : m.glyph}</b>
-                              <span style={{ fontSize: 10.5, fontWeight: 600, lineHeight: 1.15, textAlign: 'center' }}>{MOBILE_LABEL[m.key]}</span>
+                              <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.15, textAlign: 'center' }}>{MOBILE_LABEL[m.key]}</span>
                             </button>
                           );
                         })}
@@ -644,7 +639,7 @@ export default function BbsCheck() {
         <AgreementsModal agreements={agreements} canManage={canManage} role={role}
           onClose={() => { setShowAgree(false); loadStatic(); }} />
       )}
-    </div>
+    </Page>
   );
 }
 

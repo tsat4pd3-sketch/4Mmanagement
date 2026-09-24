@@ -156,7 +156,7 @@ export default function SearchSelect({
 
       {/* ⚠️ พิมพ์ชื่อเองแล้วไม่ตรงลิสต์ = ยังบันทึกได้ แต่ต้องบอกให้เห็น ไม่ปล่อยเงียบ */}
       {!open && allowFree && !sel && text.trim() !== '' && (
-        <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
+        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
       )}
 
       {open && (

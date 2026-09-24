@@ -21,6 +21,18 @@ import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docFo
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
+
+// ชนิดป้าย 3 ตัวเลือกเท่ากัน ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
+const KIND_OPTIONS = [
+  { value: 'machine', label: '⚙️ เครื่องจักร' },
+  { value: 'jig', label: '🧩 จิ๊ก/แม่พิมพ์' },
+  { value: 'delivery', label: '🎯 จุดส่งงาน' },
+];
 
 const SIZES = {
   sm: { key: 'sm', label: 'เล็ก 40×25mm', w: 40, h: 25, qr: 17, no: 8, sub: 4.6 },
@@ -182,23 +194,36 @@ export default function QrLabels() {
 
   const th = { padding: '8px 10px', fontSize: 12, color: 'var(--muted)', textAlign: 'left', fontWeight: 700, borderBottom: '1px solid var(--border)' };
   const td = { padding: '7px 10px', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' };
-  const chip = (active, color) => ({
-    padding: '6px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? color : 'var(--border2)'}`,
-    background: active ? `${color}18` : 'var(--bg3)', color: active ? color : 'var(--muted)',
-  });
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', background: 'var(--bg)', minHeight: '100%' }}>
+    <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
       <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime" />
 
-      {/* เลือกชนิด */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <button onClick={() => setKind('machine')} style={chip(kind === 'machine', '#4d9fff')}>⚙️ เครื่องจักร</button>
-        <button onClick={() => setKind('jig')} style={chip(kind === 'jig', '#34d399')}>🧩 จิ๊ก/แม่พิมพ์</button>
-        <button onClick={() => setKind('delivery')} style={chip(kind === 'delivery', '#f59e0b')}>🎯 จุดส่งงาน</button>
-      </div>
+      {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ชนิด → ไลน์ → ค้นหา → spacer → ขนาดป้าย (พารามิเตอร์ของปุ่มพิมพ์) + ปุ่ม */}
+      <FilterBar>
+        <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
+        {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
+            (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
+        <LineSelect
+          lines={prodLines.filter(l => lineOpts.includes(l.name))}
+          value={filterLine} onChange={setFilterLine} placeholder={ALL.line}
+          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+        />
+        <SearchInput value={q} onChange={setQ} fields="เลข/ชื่อ" />
+        <span className="spacer" />
+        <span className="filter-count">เลือก {sel.size} / {visible.length}</span>
+        <span className="filter-label">ขนาดป้าย</span>
+        <select value={size} onChange={e => setSize(e.target.value)}>
+          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        {canPrint && (
+          <button onClick={handlePrint} disabled={!sel.size}
+            style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? '#08130c' : 'var(--muted)' }}>
+            🖨️ พิมพ์ป้าย ({sel.size})
+          </button>
+        )}
+      </FilterBar>
       {kind === 'delivery' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
           🎯 ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>ใหญ่ 90×60</b> (สแกนจากระยะแร็ค)
@@ -210,31 +235,6 @@ export default function QrLabels() {
         </div>
       )}
 
-      {/* ตัวกรอง */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-        {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
-            (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
-        <LineSelect
-          lines={prodLines.filter(l => lineOpts.includes(l.name))}
-          value={filterLine} onChange={setFilterLine} placeholder="ทุกไลน์"
-          style={{ width: 200, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}
-          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
-        />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหา เลข/ชื่อ…"
-          style={{ width: 220, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
-        <select value={size} onChange={e => setSize(e.target.value)}
-          style={{ width: 170, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
-          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 13, color: 'var(--muted)' }}>เลือก {sel.size} / {visible.length}</span>
-        {canPrint && (
-          <button onClick={handlePrint} disabled={!sel.size}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? '#08130c' : 'var(--muted)' }}>
-            🖨️ พิมพ์ป้าย ({sel.size})
-          </button>
-        )}
-      </div>
 
       {kind === 'jig' && shadowCount > 0 && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
@@ -279,6 +279,6 @@ export default function QrLabels() {
           </tbody>
         </table>
       </div>
-    </div>
+    </Page>
   );
 }

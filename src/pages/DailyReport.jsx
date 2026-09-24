@@ -35,6 +35,10 @@ import SearchSelect from '../components/SearchSelect';
 import { resolveMachine, normCode } from '../utils/qrCode';
 import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
@@ -234,7 +238,7 @@ export default function DailyReport() {
   const [focusSess, setFocusSess] = useState(null);
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader
         title="Daily Production Report" icon="📊"
         sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
@@ -258,7 +262,7 @@ export default function DailyReport() {
       {tab === 'history' && <HistoryTab role={role} />}
       {tab === 'export'  && <ExportTab />}
       {tab === 'setup'   && canSetup && <SetupTab role={role} />}
-    </div>
+    </Page>
   );
 }
 
@@ -2848,7 +2852,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <button onClick={() => toggleSessGroup(groupName)}
                   style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
                     fontSize: 11, fontWeight: 800, color: 'var(--muted)', padding: '6px 4px 2px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-                  <span style={{ fontSize: 9 }}>{collapsed ? '▶' : '▼'}</span>
+                  <span style={{ fontSize: 11 }}>{collapsed ? '▶' : '▼'}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupName}</span>
                   {/* ย่อแล้วแต่ยังโชว์กะที่เลือก → บอกให้ชัดว่าตัวเลขคือ "ทั้งกลุ่ม" ไม่ใช่จำนวนที่เห็น */}
                   <span style={{ fontWeight: 600 }}>{collapsed && hasSel ? `1/${groupSessions.length}` : groupSessions.length}</span>
@@ -2869,7 +2873,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           → ใช้ชิปข้อความสั้น อ่านออกทันทีไม่ต้องเดาความหมายไอคอน · แดงนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) */}
                       {s.status === 'open' && s.close_reject_at && (
                         <span title={`ถูกตีกลับโดย ${s.close_reject_by_name || '—'}${s.close_reject_reason ? ` — "${s.close_reject_reason}"` : ''} · แก้แล้วกดขอปิดกะใหม่`}
-                          style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
+                          style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', background: 'rgba(239,68,68,0.18)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.45)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2878,7 +2882,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {(() => { const age = sessionAgeDays(s.work_date); if (age < 3) return null;
                         const late = age > STALE_SESSION_DAYS;
                         return <span title={late ? `ค้างเกินเป้า ${STALE_SESSION_DAYS} วัน — OEE ของกะนี้ยังไม่เข้ารายงานเดือน` : 'ค้างจากวันก่อน — ปิด/อนุมัติให้ครบ'}
-                          style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
+                          style={{ fontSize: 11, fontWeight: 800, padding: '1px 5px', borderRadius: 8, whiteSpace: 'nowrap',
                             background: late ? 'rgba(239,68,68,0.18)' : 'rgba(245,158,11,0.15)',
                             color: late ? '#ef4444' : '#f59e0b',
                             border: `1px solid ${late ? 'rgba(239,68,68,0.45)' : 'rgba(245,158,11,0.4)'}` }}>⏰ {age}ว</span>;
@@ -2890,7 +2894,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {collapsed && hasSel && hiddenInGroup > 0 && (
                   <button onClick={() => toggleSessGroup(groupName)}
                     style={{ display: 'block', width: '100%', marginBottom: 6, padding: '4px 10px 6px 16px', background: 'none', border: 'none',
-                      textAlign: 'left', cursor: 'pointer', fontSize: 10.5, color: 'var(--muted)' }}>
+                      textAlign: 'left', cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>
                     +{hiddenInGroup} กะในกลุ่มนี้ถูกย่อไว้ — กางดู
                   </button>
                 )}
@@ -2918,7 +2922,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', textAlign: 'left', cursor: 'pointer',
                         fontSize: 11, fontWeight: 800, padding: '6px 8px', borderRadius: 8, letterSpacing: '0.3px',
                         background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b' }}>
-                      <span style={{ fontSize: 9 }}>{staleOpen ? '▼' : '▶'}</span>
+                      <span style={{ fontSize: 11 }}>{staleOpen ? '▼' : '▶'}</span>
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
                       <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
                     </button>
@@ -3092,7 +3096,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         📝 ใบรายงานปัญหา
                         {/* งานค้าง = ป้ายนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) — บอกว่าใบจะออกมาไม่ครบ */}
                         {pend.total > 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, padding: '1px 6px',
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, padding: '1px 6px',
                             borderRadius: 20, background: '#f59e0b', color: '#fff' }}>
                             🛠 {pend.total}
                           </span>
@@ -3631,7 +3635,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             </button>
                           )}
                           {scanOpen && (
-                            <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>ปิดใบยังใช้สแกนเหมือนเดิม</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ปิดใบยังใช้สแกนเหมือนเดิม</span>
                           )}
                         </div>
                       )}
@@ -3714,7 +3718,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {/* งานทดลองต้องเห็นในลิสต์เสมอ (เป็นของเสียจริง) แค่ไม่ถูกนับเข้า %Q */}
                           {isTrialDefect(d) && (
                             <span title="งานทดลอง — ไม่นับเข้า %Q แต่ยังนับเป็นมูลค่าของเสีย"
-                              style={{ fontSize: 10.5, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.15)', color: '#a855f7', fontWeight: 700 }}>
                               🧪 งานทดลอง
                             </span>
                           )}
@@ -5488,7 +5492,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           🧪 งานทดลอง (Try-out) — ไม่นับเข้า %Q
                         </span>
                       </label>
-                      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                         {byType
                           ? 'ประเภทนี้ถูกตั้งเป็นงานทดลองไว้แล้วที่ ⚙️ ตั้งค่า — ติ๊กให้อัตโนมัติ'
                           : 'เช่น ลองแม่พิมพ์ใหม่ / ลองงานใหม่ — ยอดยังถูกเก็บครบเพื่อคิดมูลค่าของเสีย แค่ไม่ฉุด OEE ของไลน์'}
@@ -5920,8 +5924,7 @@ function StaleTab({ stale, onOpenSession, role }) {
         {chip(side === 'all', `ทั้งหมด ${rows.length}`, () => setSide('all'))}
         {chip(side === 'sv', `⏳ รอ SV อนุมัติ ${waitSv.length}`, () => setSide('sv'))}
         {chip(side === 'leader', `✏️ หัวหน้ากลุ่มยังไม่ขอปิด ${waitLeader}`, () => setSide('leader'))}
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาไลน์ / ชื่อผู้ขอปิด"
-          style={{ width: 220, padding: '6px 10px', borderRadius: 8, fontSize: 12.5 }} />
+        <SearchInput value={q} onChange={setQ} fields="ไลน์ / ชื่อผู้ขอปิด" grow={false} style={{ width: 240 }} />
         {shown.length !== rows.length && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>แสดง {shown.length} จาก {rows.length} กะ</span>
         )}
@@ -6098,13 +6101,14 @@ function HistoryTab({ role }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} style={{ ...inputStyle, width: 160 }} />
+      {/* UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน: ขอบเขต (ไลน์) → ช่วงเวลา → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 16 }}>
         <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
-          placeholder="ทุกไลน์" style={{ ...inputStyle, width: 200 }}
+          placeholder={ALL.line}
           onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
+        <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} />
         <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
-      </div>
+      </FilterBar>
 
       {sessions.length === 0 && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>ไม่พบข้อมูล</div>}
 
@@ -6858,7 +6862,7 @@ function ExportTab() {
           <div style={{ minWidth: 0, flex: '1 1 160px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
             <LineSelect lines={allLines.filter(l => lineNames.includes(l.name))} value={filter.line_name}
-              placeholder="ทุกไลน์" style={{ ...sel, width: '100%', minWidth: 0 }}
+              placeholder={ALL.line} style={{ ...sel, width: '100%', minWidth: 0 }}
               onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
           </div>
           {loading && <div style={{ paddingTop: 18, fontSize: 12, color: 'var(--muted)' }}>⏳ กำลังโหลด...</div>}
@@ -7076,7 +7080,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.name_th}</div>
                     {!item.is_active && <div style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</div>}
-                    {item.excl_from_q && <div style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
+                    {item.excl_from_q && <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>🧪 งานทดลอง — ไม่นับเข้า %Q</div>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
@@ -7130,7 +7134,7 @@ function DefectTypeSetup({ role }) {
                   <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? '#a855f7' : 'var(--text)' }}>🧪 งานทดลอง — ไม่นับเข้า %Q</span>
                 </label>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                   ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
                   <br />ประเภททั่วไปไม่ต้องติ๊ก — พนักงานติ๊ก 🧪 รายครั้งในฟอร์มบันทึกงานเสียได้อยู่แล้ว
                 </div>

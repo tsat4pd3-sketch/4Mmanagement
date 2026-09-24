@@ -12,6 +12,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -863,7 +864,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   const scopeText = scopeSet ? `${scopeSet.size} ไลน์ในขอบเขตของคุณ` : 'ทุกไลน์';
 
   return (
-    <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {/* ── หัวเพจ = `<PageHeader>` ตามกฎ UI-CONVENTIONS §6.8 ──
            (เดิมหน้านี้วาดหัวเรื่อง + แถบแท็บเองรวม 3 แถว ทรงปุ่มไม่ตรงกับหน้าอื่น
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
@@ -881,7 +882,8 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
           {/* เลือกส่วนงาน = "ตัวกรอง" ของหน้านี้ — แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 */}
           {view === 'now' && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ส่วนงาน:</span>
+              {/* UI-STANDARD 2026-09-24: "มุมมอง" ไม่ใช่ "ส่วนงาน" — คำว่าส่วนงานในระบบนี้ = PD1..PD4 (ผังองค์กร) */}
+              <span className="filter-label" style={{ fontWeight: 700 }}>มุมมอง:</span>
               {DEPTS.map(t => (
                 <button key={t.key} onClick={() => setDept(t.key)} style={{
                   fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
@@ -907,6 +909,6 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
       {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
       {view === 'now' && !loading && !err && data && data.dept !== dept &&
         <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
-    </div>
+    </Page>
   );
 }

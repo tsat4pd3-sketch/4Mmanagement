@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
@@ -229,7 +230,7 @@ export default function FlowTower() {
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 };
 
   return (
-    <div style={{ padding: '0 4px 40px' }}>
+    <Page>
       <PageHeader
         title="สายธารความต้องการ (Flow Control Tower)" icon="🔗"
         sub={`ความต้องการของลูกค้าไหลย้อนไปถึงวัตถุดิบครบหรือยัง · ข้อมูลสด ${workDate}`}
@@ -287,22 +288,22 @@ export default function FlowTower() {
                   {s.lines.map(([a, b], j) => (
                     <div key={j}>
                       <div style={{ fontSize: j === 0 ? 17 : 12, fontWeight: j === 0 ? 900 : 700, color: j === 0 ? 'var(--text)' : 'var(--text2)', fontFamily: 'var(--font-display)' }}>{a}</div>
-                      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{b}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{b}</div>
                     </div>
                   ))}
                   <div style={{ marginTop: 'auto', paddingTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot }} />
-                    <span style={{ fontSize: 10, fontWeight: 700, color: st.dot }}>{st.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: st.dot }}>{st.label}</span>
                   </div>
                 </div>
                 {lk && i < stations.length - 1 && (
                   <div style={{ flex: '1 1 96px', minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
-                    <div style={{ fontSize: 9, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
                     <div style={{ width: '100%', height: 2, background: ST[lk.st].dot, opacity: 0.75, position: 'relative' }}>
                       <span style={{ position: 'absolute', right: -1, top: -4, color: ST[lk.st].dot, fontSize: 11, lineHeight: 1 }}>▶</span>
                     </div>
-                    <div style={{ fontSize: 9, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{ST[lk.st].label}</div>
-                    {lk.hint && <div style={{ fontSize: 8, color: 'var(--muted)' }}>{lk.hint}</div>}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{ST[lk.st].label}</div>
+                    {lk.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lk.hint}</div>}
                   </div>
                 )}
               </div>
@@ -333,7 +334,7 @@ export default function FlowTower() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ background: 'var(--bg2)' }}>
                     {['MAT', 'ชื่อพาร์ท', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
-                      <th key={h} style={{ padding: '7px 12px', fontSize: 10, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                      <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -375,7 +376,7 @@ export default function FlowTower() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
               {['ช่วง', 'กลไก', 'สถานะ', 'หลักฐานจากข้อมูลจริง'].map(h => (
-                <th key={h} style={{ padding: '7px 12px', fontSize: 10, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
@@ -407,6 +408,6 @@ export default function FlowTower() {
           <b style={{ color: '#f59e0b' }}> 🟠 ส่งต่อด้วยคน</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

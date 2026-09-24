@@ -975,7 +975,8 @@ export default function Management() {
           ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
           : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
-        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, width: isMobile ? undefined : '100%' }}>
+        {/* 📱 overflow hidden + เว้นขวาให้ปุ่ม ✕ — มือถือ 390px ชื่อยาวดันการ์ดล้น 366→369px (mobilesweep 24/09) */}
+        <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, overflow: 'hidden', paddingRight: isMobile ? 22 : undefined, width: isMobile ? undefined : '100%' }}>
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
@@ -1383,7 +1384,7 @@ export default function Management() {
             {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
                 ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
             {!isLiveView && (
-              <div style={{ fontSize: 10.5, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
                 ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
               </div>
             )}

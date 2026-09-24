@@ -6,6 +6,7 @@ import { UserContext } from '../App';
 import { scopedLineNames } from '../utils/sectionScope';
 import { canAccessPage, hasPermission } from '../utils/permissions';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
 
@@ -79,27 +80,31 @@ export default function Obeya() {
     return names ? new Set(names) : null;
   }, [lines, role, lineId, sections]);
 
-  if (tab === 'sqdcm') return <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
-  if (tab === 'todo') {
-    return (
-      <Suspense fallback={<div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>}>
+  /* UI-STANDARD 2026-09-24: ทุกแท็บอยู่ใน <Page> กรอบเดียวกัน — เดิมแต่ละแท็บมีรากของตัวเอง
+     (kpi/sqdcm ชิด sidebar x=0 · todo/table x=24) ⇒ หัวเพจกระโดดตอนสลับแท็บ
+     โหมดจอ TV ของบอร์ดเป็น position:fixed เต็มจอ — ไม่ถูกกรอบนี้บีบ */
+  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>;
+  let body;
+  if (tab === 'sqdcm') body = <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  else if (tab === 'todo') {
+    body = (
+      <Suspense fallback={loadingNote}>
         <DeptDashboard embedded tabs={tabs} tab={tab} onTab={setTab} />
       </Suspense>
     );
-  }
-  if (tab === 'table') {
-    return (
-      <div style={{ maxWidth: 'min(97vw, 1800px)', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+  } else if (tab === 'table') {
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
           title="OBEYA — ตั้งค่า KPI / กรอกผล" icon="⚙️"
           sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
         />
-        <Suspense fallback={<div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>}>
+        <Suspense fallback={loadingNote}>
           <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />
         </Suspense>
       </div>
     );
-  }
-  return <ObeyaKpiBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  } else body = <ObeyaKpiBoard tabs={tabs} tab={tab} onTab={setTab} />;
+  return <Page>{body}</Page>;
 }

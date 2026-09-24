@@ -20,6 +20,12 @@ import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import LineSelect from '../components/LineSelect';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 import fetchAllRows from '../utils/fetchAllRows';
 import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
@@ -206,11 +212,13 @@ export default function MaintenanceLevels() {
 
   useEffect(() => { setLimit(PAGE); }, [view, line, kind, prio, q]);
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังวิเคราะห์แผน PM + downtime 90 วัน…</div>;
+  if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังวิเคราะห์แผน PM + downtime 90 วัน…</div></Page>;
   const cov = built?.coverage;
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,24px)', display: 'grid', gap: 14, maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+    <Page style={{ display: 'grid', gap: 14 }}>
+      {/* อยู่ใต้ /pm (Hub) เท่านั้น ⇒ ชื่อหน้าถูกซ่อนโดย Hub · ใส่ไว้เพื่อให้หน้านี้ยังมีหัวถ้าเปิดเดี่ยว (UI-STANDARD §2) */}
+      <PageHeader title="3 ระดับ PM" icon="🧭" />
       {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
       {/* ── บันได 3 ขั้น ── */}
@@ -247,20 +255,16 @@ export default function MaintenanceLevels() {
       </div>
 
       {/* ── ตัวกรอง ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
-          {[['todo', `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})`], ['equip', `📋 รายอุปกรณ์ (${scoped.length})`]].map(([k, label]) => (
-            <button key={k} onClick={() => setView(k)} style={{
-              padding: '7px 14px', fontSize: 13, fontWeight: 800, cursor: 'pointer', border: 'none',
-              background: view === k ? 'var(--accent)' : 'var(--bg3)', color: view === k ? '#fff' : 'var(--text2)',
-            }}>{label}</button>
-          ))}
-        </div>
-        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์"
-          aria-label="ค้นหาอุปกรณ์" style={{ ...inp, width: 220 }} />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ ...inp, width: 'auto', cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
-      </div>
+      <FilterBar>
+        <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <Segmented value={view} onChange={setView} label="มุมมอง" options={[
+          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
+          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
+        ]} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+        <span className="spacer" />
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
+      </FilterBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;
@@ -280,7 +284,7 @@ export default function MaintenanceLevels() {
               padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1.5px solid ${on ? c : 'var(--border2)'}`, background: on ? `${p ? c : '#3dd65c'}1a` : 'var(--bg3)',
               color: on ? c : 'var(--muted)', marginLeft: p === 0 ? 8 : 0,
-            }}>{p ? PRIORITY[p].label : 'ทุกความด่วน'}</button>
+            }}>{p ? PRIORITY[p].label : ALL.priority}</button>
           );
         })}
       </div>
@@ -384,6 +388,6 @@ export default function MaintenanceLevels() {
         {cov?.checklistNoEquip ? ` ใบตรวจ PM ที่หาอุปกรณ์ไม่เจอ ${cov.checklistNoEquip} ใบ ·` : ''}
         {' '}อุปกรณ์ที่ไม่มีแผน PM และไม่เสียเลยใน 90 วันไม่ขึ้นรายการ
       </div>
-    </div>
+    </Page>
   );
 }

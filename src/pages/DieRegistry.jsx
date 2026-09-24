@@ -9,6 +9,10 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { DIE_SET_KINDS, dieSetKindLabel } from '../utils/equipmentKinds';
 import { OPEN_MO_STATUSES, buildOpenMoMap, openMosOf } from '../utils/dieStatus';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
@@ -348,13 +352,13 @@ export default function DieRegistry() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
 
-  if (loading) return <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
 
   return (
-    <div style={{ padding: '16px 18px 40px', maxWidth: 1500, margin: '0 auto' }}>
+    <Page>
       {/* 🧩 embedded — หน้านี้เป็นแท็บของ `/equipment` แล้ว (route เดิม redirect มา)
-          หน้าแม่วาด breadcrumb+หัวเรื่องไปแล้ว ⇒ ที่นี่วาดเฉพาะแถบแท็บย่อย `?die=` */}
-      <PageHeader embedded
+          อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือคำอธิบาย + แถบแท็บย่อย `?die=` */}
+      <PageHeader
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
         tabs={[
@@ -453,28 +457,25 @@ export default function DieRegistry() {
         </div>
       )}
 
-      {/* filter bar */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="ค้นหา พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์"
-          style={{ ...inputStyle, width: 280 }} />
-        <select value={filterLine} onChange={e => setFilterLine(e.target.value)} style={{ ...inputStyle, width: 190 }}>
-          <option value="">ทุกไลน์</option>
+      {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
+      <FilterBar>
+        <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
+          <option value="">{ALL.line}</option>
           {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
-        <select value={filterKind} onChange={e => setFilterKind(e.target.value)} style={{ ...inputStyle, width: 200 }}>
-          <option value="">ทุกรูปแบบชุด</option>
+        <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
+          <option value="">{allOf('รูปแบบชุด')}</option>
           {DIE_SET_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
         </select>
+        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <span className="spacer" />
+        <span className="filter-count">แสดง {rows.length} ชุด</span>
         {canEdit && (
-          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '8px 14px' }}>
+          <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
             + เพิ่มชุด
           </button>
         )}
-        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-          แสดง {rows.length} ชุด
-        </span>
-      </div>
+      </FilterBar>
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -741,7 +742,7 @@ export default function DieRegistry() {
           </div>
         </Modal>
       )}
-    </div>
+    </Page>
   );
 }
 

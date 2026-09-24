@@ -245,7 +245,7 @@ export default function ParetoAbcChart({
         </div>
       ))}
       {chartCompact()}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 10.5, color: 'var(--muted)', marginTop: 6 }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 9, height: 9, borderRadius: 2, background: ABC[k].color, opacity: OPA[k] }} />
@@ -267,7 +267,7 @@ export default function ParetoAbcChart({
             (user แจ้ง 23/09 "ทำไมมันโชว์เยอะแบบนี้ ควร hide รึป่าว")
             ⇒ โชว์เท่าที่อ่านไหว แล้วบอกว่าเหลืออีกเท่าไหร่ + กดดูครบได้
             **ห้ามตัดทิ้งเงียบ** — ลิสต์งานที่ต้องแก้ต้องเข้าถึงได้เสมอ (กฎความซื่อสัตย์ของจอ) */}
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: ABC.A.color }}>
+        <span style={{ fontSize: 11, fontWeight: 800, color: ABC.A.color }}>
           เน้นแก้กลุ่ม A{groups.A.length > CHIP_MAX ? ` (${CHIP_MAX} จาก ${groups.A.length})` : ''} →
         </span>
         {groups.A.slice(0, CHIP_MAX).map((d, i) => (
@@ -400,12 +400,12 @@ export default function ParetoAbcChart({
                           {d._noNote ? '⚠️ ' : ''}{d.name}
                         </span>
                         <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unitOf}
-                          {hasMoney && <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
+                          {hasMoney && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} ครั้ง</span>
                       </div>
                       {/* กลุ่มคำ: บอกว่ารวมข้อความที่เขียนต่างกันกี่แบบ + ตัวอย่าง — โปร่งใสว่าจับกลุ่มอะไรเข้ามา */}
                       {d.variants > 1 && (
-                        <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                           รวม {d.variants} แบบที่เขียนต่างกัน{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
                         </div>
                       )}
@@ -462,4 +462,4 @@ const tbl = { width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidt
 const thL = { textAlign: 'left', padding: '5px 7px' };
 const thR = { textAlign: 'right', padding: '5px 7px' };
 const thC = { textAlign: 'center', padding: '5px 7px' };
-const clsChip = (c) => ({ fontSize: 10.5, fontWeight: 800, color: ABC[c].color, background: `${ABC[c].color}1e`, border: `1px solid ${ABC[c].color}55`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 });
+const clsChip = (c) => ({ fontSize: 11, fontWeight: 800, color: ABC[c].color, background: `${ABC[c].color}1e`, border: `1px solid ${ABC[c].color}55`, borderRadius: 20, padding: '1px 7px', flexShrink: 0 });

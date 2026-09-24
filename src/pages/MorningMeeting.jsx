@@ -18,6 +18,10 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import { ALL } from '../utils/filterLabels';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -864,12 +868,14 @@ export default function MorningMeeting() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
-          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)' }}>
+          /* 🔴 มือถือ @390px (mobilesweep 2026-09-24): ชื่อไลน์ยาว เช่น "LINE APRON ASSY (HYDROFORM) ชุดที่ 1"
+             + ชิป nowrap ดันแถวล้น 328→386px ⇒ มือถือพับบรรทัด · ชิ้น nowrap หดแบบ ellipsis (UI-CONVENTIONS §มือถือ ข้อ 3) */
+          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span style={{ fontSize: 14 }}>🚨</span>
-            <b>{d._line}</b>
-            <span>{d.machine_no || ''}</span>
-            <span style={{ color: '#fca5a5' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
-            <span style={chip('#ef4444')}>ยังซ่อมไม่เสร็จ</span>
+            <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d._line}</b>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d.machine_no || ''}</span>
+            <span style={{ color: '#fca5a5', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
+            <span style={{ ...chip('#ef4444'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>ยังซ่อมไม่เสร็จ</span>
             {canRecord && (
               <button className="tbtn" onClick={() => openActModal({
                 problem: `เครื่อง ${d.machine_no || ''} ${d._line}: ${d.dr_downtime_types?.name_th || 'Downtime'} ยังซ่อมไม่เสร็จ`,
@@ -882,9 +888,9 @@ export default function MorningMeeting() {
         )}
         {/* 4M ที่ยังรออนุมัติ (ทุกวัน ไม่เฉพาะเมื่อวาน = ของที่ควรตามในที่ประชุม) — เหลืองนิ่งตาม Andon */}
         {fourM.filter(m => ['pending', 'pending_qa'].includes(m.status)).map(m => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.45)' }}>
-            <span>🟡</span><b>{m.line_name}</b>
-            <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>4M {m.category}: {m.description}</span>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.45)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+            <span>🟡</span><b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</b>
+            <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
                 แต่เติมสถานะที่ 3 เข้า filter แล้วลืมเติมใน FOURM_STATUS = จอขาว */}
             <span style={chip('#f59e0b')}>{FOURM_STATUS[m.status]?.label || m.status}</span>
@@ -998,22 +1004,10 @@ export default function MorningMeeting() {
   });
 
   return (
-    <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingRight: 52 }}>
-        <h1 style={{ margin: 0, fontSize: 'clamp(17px, 2.2vw, 22px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          🌅 ประชุมแถวเช้า
-        </h1>
-        <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)}
-          style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)} style={{ width: 'auto', minWidth: 110, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกส่วนงาน</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>สรุปวันงาน {fmtDate(meetingDate)}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+    <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* หัวเพจ + ปุ่ม (UI-STANDARD 2026-09-24) — โหมดประชุม (tvMode) เป็น overlay เต็มจอแยกต่างหาก ไม่ใช้หัวนี้ */}
+      <PageHeader title="ประชุมแถวเช้า" icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
+        actions={<>
           <button onClick={() => { setSlide(0); setTvMode(true); }} style={btnSt(false)} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">📺 โหมดประชุม</button>
           <button onClick={handlePrint} style={btnSt(false)} title="พิมพ์สรุปเป็นเอกสาร">🖨️ พิมพ์</button>
           {canRecord && (
@@ -1021,8 +1015,17 @@ export default function MorningMeeting() {
               {sendingTg ? '⏳ กำลังส่ง…' : '📤 ส่งสรุป Telegram'}
             </button>
           )}
-        </div>
-      </div>
+        </>} />
+      <FilterBar style={{ marginTop: -12 }}>
+        {sectionOpts.length > 1 && (
+          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
+            <option value="">{ALL.section}</option>
+            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        <span className="filter-label">วันที่ประชุม</span>
+        <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
+      </FilterBar>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
@@ -1129,6 +1132,6 @@ export default function MorningMeeting() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }

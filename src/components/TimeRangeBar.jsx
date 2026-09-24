@@ -39,9 +39,11 @@ import {
  *    ไม่งั้นได้ประวัติ 2 ชั้น = กด Back ครั้งเดียวไม่กลับ) — หน้าเก่ายังทำงานเหมือนเดิมทุกอย่าง
  */
 
+/* 2026-09-24 UI-STANDARD §2: สูงเท่าช่องกรองอื่น (--ctl-h) · ตัว/มุมจาก token เดียวกัน
+   เดิมช่องวันที่ของแถบนี้สูง 29px วางข้าง dropdown ของหน้า 33–35px = แถบเดียวสูงไม่เท่ากัน */
 const btnBase = {
-  padding: '5px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
-  cursor: 'pointer', whiteSpace: 'nowrap', lineHeight: 1.5,
+  height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)', fontWeight: 700,
+  cursor: 'pointer', whiteSpace: 'nowrap', lineHeight: 1,
 };
 
 export default function TimeRangeBar({
@@ -70,10 +72,6 @@ export default function TimeRangeBar({
     color: isOn ? 'var(--accent-ink)' : 'var(--text)',
     border: `1px solid ${isOn ? 'var(--accent)' : 'var(--border2)'}`,
   });
-  const dateSt = {
-    width: 148, padding: '5px 8px', fontSize: 12.5, borderRadius: 8,
-    background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)',
-  };
 
   /** เปลี่ยนช่วง → ขนาดแท่งตามบันได (ออโต้เฉพาะตอนที่ค่าเดิมยังเป็นค่าออโต้อยู่) */
   const applyRange = (nf, nt, period = null) => {
@@ -95,11 +93,8 @@ export default function TimeRangeBar({
   const finestLabel = scaleOf(finest)?.short;
 
   return (
-    <div style={{
-      background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
-      padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8, ...style,
-    }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="filter-bar trb" style={style}>
+      <div className="trb-row">
         {periodList.length > 0 && (
           <div style={{ display: 'flex', gap: 4 }} role="group" aria-label="ช่วงที่ดู">
             {periodList.map(p => {
@@ -121,7 +116,7 @@ export default function TimeRangeBar({
 
         {presets?.length > 0 && (
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} role="group" aria-label="ช่วงย้อนหลัง">
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ย้อนหลัง</span>
+            <span className="filter-label">ย้อนหลัง</span>
             {presets.map(d => (
               <button key={d}
                 onClick={() => {
@@ -133,18 +128,18 @@ export default function TimeRangeBar({
                 style={{ ...on(active === d), padding: '5px 9px' }}
                 title={`ตั้งกรอบเวลาเป็น ${d} วันล่าสุด (นับถึงวันทำงานวันนี้) — แก้วันต่อเองได้`}>{d}</button>
             ))}
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>วัน</span>
+            <span className="filter-label">วัน</span>
           </div>
         )}
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input type="date" value={from || ''} max={to || undefined}
-            onChange={e => applyRange(e.target.value, to)} style={dateSt} aria-label="ตั้งแต่วันที่" />
-          <span style={{ color: 'var(--muted)', fontSize: 12 }}>ถึง</span>
+            onChange={e => applyRange(e.target.value, to)} aria-label="ตั้งแต่วันที่" />
+          <span className="filter-label">ถึง</span>
           <input type="date" value={to || ''} min={from || undefined}
-            onChange={e => applyRange(from, e.target.value)} style={dateSt} aria-label="ถึงวันที่" />
+            onChange={e => applyRange(from, e.target.value)} aria-label="ถึงวันที่" />
           {days != null && (
-            <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            <span className="filter-count">
               ({days.toLocaleString()} วัน)
             </span>
           )}
@@ -161,17 +156,17 @@ export default function TimeRangeBar({
       </div>
 
       {showBucket && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>แท่งละ</span>
+        <div className="trb-row">
+          <span className="filter-label">แท่งละ</span>
           <button onClick={() => setBucket(-1)} disabled={scale === finest}
-            style={{ ...btnBase, padding: '3px 9px', background: 'var(--bg3)', color: 'var(--text)',
+            style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === finest ? 0.4 : 1 }}
             title="ละเอียดขึ้น 1 ขั้น">− ละเอียดขึ้น</button>
           <span style={{
             fontSize: 12.5, fontWeight: 700, color: 'var(--accent)', minWidth: 74, textAlign: 'center',
           }}>1 {scaleOf(scale)?.short || '—'}</span>
           <button onClick={() => setBucket(1)} disabled={scale === coarsest}
-            style={{ ...btnBase, padding: '3px 9px', background: 'var(--bg3)', color: 'var(--text)',
+            style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === coarsest ? 0.4 : 1 }}
             title="หยาบลง 1 ขั้น">หยาบลง +</button>
           {/* กฎความซื่อสัตย์: ละเอียดกว่านี้ไม่ได้ ต้องบอกว่าทำไม ห้ามให้คนกดแล้วงงว่าปุ่มเสีย */}

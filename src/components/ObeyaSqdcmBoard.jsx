@@ -610,6 +610,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     : period === 'month' ? (monthSel ? `เดือน ${monthLabel(monthSel)} ${monthSel.slice(0, 4)} (เจาะจากปี)` : 'เดือนนี้')
       : 'สัปดาห์นี้';
   const shiftCount = isYear ? (kOee.shifts || 0) : fSess.length;
+  /* UI-STANDARD 2026-09-24: ป้ายปุ่มช่วงให้เป็นชุดเดียวกัน "…นี้" (PERIODS ใน obeyaKpi.js ใช้ key ตัดสิน ป้ายเป็นแค่ข้อความ) */
+  const PERIOD_LABEL = { week: 'สัปดาห์นี้', month: 'เดือนนี้', year: 'ปีนี้' };
   const yearNavBtn = {
     fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
@@ -645,7 +647,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   background: period === p.key ? 'var(--accent)' : 'var(--bg3)',
                   color: period === p.key ? '#08120a' : 'var(--text)',
                   border: `1px solid ${period === p.key ? 'var(--accent)' : 'var(--border2)'}`,
-                }}>{p.label}</button>
+                }}>{PERIOD_LABEL[p.key] || p.label}</button>
               ))}
               {canRecord && (
                 <button onClick={() => openModal()} style={{

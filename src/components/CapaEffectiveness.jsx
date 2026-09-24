@@ -19,6 +19,7 @@ import {
   effectWindow, splitBeforeAfter, judgeEffect, effectSummaryText,
   VERDICTS, DEFAULT_WINDOW, todayStr,
 } from '../utils/capaEffect';
+import { ALL } from '../utils/filterLabels';
 
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
@@ -253,7 +254,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
                   const t = types.find((x) => x.id === e.target.value);
                   onChange({ eff_defect_type_id: e.target.value || null, eff_defect_type_label: t?.name_th || null });
                 }}>
-                <option value="">— ทุกประเภท —</option>
+                <option value="">{ALL.type}</option>
                 {types.map((t) => <option key={t.id} value={t.id}>{t.name_th}</option>)}
               </select>
             </label>

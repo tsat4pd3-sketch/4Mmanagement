@@ -15,6 +15,10 @@ import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sect
 
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import { ALL } from '../utils/filterLabels';
 // ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
 // (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
 // admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
@@ -520,19 +524,16 @@ export default function AddUser() {
   );
 
   return (
-    <div className="page-content">
-      {/* Header */}
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user" />
-        </div>
-        <button
-          onClick={openCreate}
-          style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-        >
-          ➕ เพิ่มผู้ใช้ใหม่
-        </button>
-      </div>
+    <Page>
+      <PageHeader title="จัดการผู้ใช้งาน" icon="🔑" sub="กำหนดสิทธิ์และสังกัด Section / Group / Team ของแต่ละ user"
+        actions={
+          <button
+            onClick={openCreate}
+            style={{ padding: '10px 20px', background: 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+          >
+            ➕ เพิ่มผู้ใช้ใหม่
+          </button>
+        } />
 
       {message && (
         <div style={{ marginBottom: 14, padding: '10px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 8, color: 'var(--green)', fontSize: 13 }}>
@@ -540,32 +541,29 @@ export default function AddUser() {
         </div>
       )}
 
-      {/* Toolbar: ค้นหา + กรอง + ตัวนับ (input ใน flex row ต้องกำหนด width — index.css ตั้ง input{width:100%}) */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <input type="search" placeholder="🔍 ค้นหา ชื่อ / อีเมล / ตำแหน่ง..." value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ width: 260, padding: '8px 12px', borderRadius: 8, fontSize: 13 }} />
-        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}
-          style={{ width: 'auto', minWidth: 130, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุกชุดสิทธิ์</option>
-          <RoleOptGroups />
-        </select>
-        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}
-          style={{ width: 'auto', minWidth: 120, padding: '8px 10px', borderRadius: 8, fontSize: 13 }}>
-          <option value="">ทุก Section</option>
+      {/* Toolbar: ขอบเขต → ชุดสิทธิ์ → ค้นหา → ตัวนับ (UI-STANDARD 2026-09-24 · FilterBar คุมขนาดช่องเอง) */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
         </select>
+        <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
+          <option value="">{ALL.role}</option>
+          <RoleOptGroups />
+        </select>
+        <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
         {(q || filterRole || filterSection) && (
           <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); }}
             style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
             ✕ ล้างตัวกรอง
           </button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
+        <span className="spacer" />
+        <span className="filter-count">
           {view.length === users.length ? `ทั้งหมด ${users.length} คน` : `แสดง ${view.length} จาก ${users.length} คน`}
           <span style={{ marginLeft: 6, opacity: 0.7 }}>· ไม่มีการจำกัดจำนวน user</span>
         </span>
-      </div>
+      </FilterBar>
 
       {/* ── worklist: บัญชีที่ตัวตนไม่ตรงกับฐานพนักงาน / ยังไม่ระบุประเภท ──────────
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
@@ -1268,7 +1266,7 @@ export default function AddUser() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
