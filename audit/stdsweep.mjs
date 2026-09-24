@@ -10,8 +10,9 @@
  *  3. `wide`   <select> ยืดเกิน 45% ของความกว้างเนื้อหา (บั๊ก select{width:100%})
  *  4. `ctl`    ช่องใน .filter-bar ที่สูง/มุม ไม่ตรง token (--ctl-h 34 · --ctl-r 8)
  *  5. `all`    ตัวเลือก "ทั้งหมด" ของ dropdown ที่ไม่ใช่ป้ายในทะเบียน ALL (src/utils/filterLabels.js)
- *  6. `nav`    **"คุณอยู่ตรงนี้" บนรางไอคอน** — ยืนอยู่หน้าไหน หมวดที่มีหน้านั้นต้องถูกมาร์ค
- *              `aria-current` **ครบทุกหมวด** (หน้าที่ตั้ง `alsoIn` อยู่ 2 หมวดจริงๆ ต้องติดทั้งคู่)
+ *  6. `nav`    **"คุณอยู่ตรงนี้" บนรางไอคอน** — ยืนอยู่หน้าไหน **หมวดบ้านจริงหมวดเดียว**
+ *              (`item.group`) ต้องถูกมาร์ค `aria-current` · หมวดที่หน้านั้นไปโผล่เป็น *ทางลัด*
+ *              (`alsoIn`) **ห้ามถูกมาร์ค** — คำถาม "อยู่หมวดไหน" ต้องมีคำตอบเดียว (24/09 คำสั่ง user)
  *              ⚠️ ด่านนี้มีเพราะ bug จริง 24/09: รางไฮไลต์ "แผงที่กดเปิด" แรงกว่า "หน้าที่เปิดอยู่จริง"
  *                 และ lab ของ sidebar ตรึง path เป็น `/` เสมอ ⇒ **ไม่มี sweep ไหนเคยเห็นไฮไลต์นี้เลย**
  *                 จน user ต้องมาทักเอง ("sidebar นอกสุดไม่บอกว่าอยู่หน้าไหน")
@@ -84,7 +85,9 @@ await b.close();
 
 /* ── 6) "คุณอยู่ตรงนี้" บนรางไอคอน ───────────────────────────────────────────────
    เปิด lab ของ sidebar ทีละ route แล้วเทียบ: หมวดที่ถูกมาร์ค `aria-current` บนราง
-   ต้องเท่ากับหมวดที่ทะเบียนเมนูบอก (group + alsoIn) เป๊ะ — ขาดไป/เกินมา = จอโกหกตำแหน่ง */
+   ต้องเท่ากับ **`item.group` (บ้านจริง) เท่านั้น** — ขาดไป/เกินมา = จอโกหกตำแหน่ง
+   🔴 `alsoIn` = โผล่เป็น "ทางลัด" ในหมวดนั้น **ไม่ใช่บ้านที่สอง** ⇒ ห้ามนับเข้า want
+      (เดิมนับทั้งคู่ ⇒ 2 หมวดสว่างพร้อมกัน = user ทักว่าเมนูซ้ำ · ดู `isNavGuest` ใน src/App.jsx) */
 const navBad = [];
 {
   const b2 = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -95,7 +98,7 @@ const navBad = [];
   await p0b.close();
   const routes = ONLY.length ? [] : [...new Set(nav.map(i => i.to))];
   for (const to of routes) {
-    const want = new Set(nav.filter(i => i.to === to).flatMap(i => [i.group, i.alsoIn].filter(Boolean)));
+    const want = new Set(nav.filter(i => i.to === to).map(i => i.group));
     const p = await b2.newPage({ viewport: VIEW, ...TZ });
     try {
       await p.goto(`http://localhost:5199/audit/index.html?p=__sidebar&role=admin&path=${encodeURIComponent(to)}`,

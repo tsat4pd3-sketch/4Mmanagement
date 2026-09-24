@@ -139,8 +139,9 @@ export const NAV_ITEMS = [
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
-  // วางแผนการผลิต = เจ้าของจริงมี 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
-  // ⇒ โชว์ทั้งสองหมวด ห้ามย้าย (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · สิทธิ์มีชุดเดียวเหมือนเดิม
+  // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
+  // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
+  //    *ทางลัด* ในหมวด Logistic ด้วย (หน้าตาต่างชัด — ดู `isNavGuest`) · สิทธิ์ชุดเดียวเหมือนเดิม
   { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต', alsoIn: LOGISTIC_GROUPS.control },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
@@ -264,6 +265,20 @@ export function navItemsForGroups(groups, role) {
    ⚠️ ห้ามเอาไปใช้กับตัวนับ/สิทธิ์/ค้นหา — เมนู 1 หน้ามีสิทธิ์ชุดเดียว ต้องนับครั้งเดียว */
 export const inNavGroup = (item, groups) =>
   groups.includes(item.group) || (item.alsoIn && groups.includes(item.alsoIn));
+
+/* 🚪 หน้านี้เป็น **"แขก" ของหมวดนี้** ไหม — บ้านจริงคือ `item.group` เสมอ
+   `alsoIn` = "โชว์เป็น **ทางลัด** ในหมวดนั้นด้วย" ไม่ใช่ "มี 2 บ้าน" (24/09 · คำสั่ง user)
+
+   ที่มา: user ทักว่า *"ไม่ซ้ำยังไง วางแผนผลิต อยู่ทั้ง sidebar หมวดผลิต กับ วางแผน"*
+   — เดิม `alsoIn` ทำให้เมนูโผล่ 2 หมวด**หน้าตาเหมือนกันเป๊ะ** ⇒ ดูเป็นเมนูซ้ำ และทำให้
+   คำถาม "ตอนนี้อยู่หมวดไหน" มี 2 คำตอบ (ต้นเหตุของบั๊กไฮไลต์ที่ user ทักมาพร้อมกัน)
+
+   🔴 กติกา: **"คุณอยู่ตรงนี้" ต้องมีคำตอบเดียว**
+     · บ้านจริง → ไฮไลต์เต็ม (พื้น accent-dim + แถบซ้าย) ทั้งบนรางและในแผง
+     · แถวทางลัด → หน้าตาต่างชัด (จาง + `↗ <หมวดบ้าน>` ท้ายแถว) · ตอนเปิดหน้านั้นอยู่
+       บอกแค่ "ตัวอักษร accent" ไม่ใส่พื้น/แถบซ้าย — ไม่งั้นมันจะดูเป็นบ้านที่สอง */
+export const isNavGuest = (item, group) =>
+  !!item.alsoIn && item.alsoIn === group && item.group !== group;
 
 // สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
 // เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
@@ -437,10 +452,12 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
     : '?';
 
-  /* หมวดของหน้าปัจจุบัน — ใช้เป็น **แผง default** ตอนปักหมุด + หมวดที่ accordion มือถือกางให้เอง
-     ⚠️ ห้ามเอาไปใช้ไฮไลต์ "อยู่ที่นี่" — มันเป็นค่าเดียว แต่หน้าที่ตั้ง `alsoIn` อยู่ 2 หมวดจริงๆ
-        (ตรงนั้นให้เช็ค `items.some(i => i.to === location.pathname)` ต่อหมวด) */
-  const activeGroup = groupedItems.find(g => g.items.some(i => i.to === location.pathname))?.group || null;
+  /* `isHomeHere` = "หน้าที่เปิดอยู่ **มีบ้านจริง** อยู่หมวดนี้ไหม" — ตัวตัดสินไฮไลต์ "อยู่ตรงนี้"
+     ทุกชั้น (ราง · แผงลอย · accordion มือถือ) · หน้าที่มาเป็น *ทางลัด* (`alsoIn`) ไม่นับ
+     ⇒ คำถาม "ตอนนี้อยู่หมวดไหน" มีคำตอบเดียวเสมอ (24/09 · คำสั่ง user — ดู `isNavGuest`)
+     `activeGroup` = หมวดนั้น ใช้เป็น **แผง default** ตอนปักหมุด + หมวดที่ accordion กางให้เอง */
+  const isHomeHere = (i, g) => i.to === location.pathname && !isNavGuest(i, g);
+  const activeGroup = groupedItems.find(g => g.items.some(i => isHomeHere(i, g.group)))?.group || null;
   // หน้าที่ใช้บ่อยของเครื่องนี้ (navRecent) — desktop = แผง ⭐ บน rail · มือถือ = บล็อกบนสุดของ drawer
   const starItems = topPaths(8).map(p => visibleItems.find(i => i.to === p)).filter(Boolean);
 
@@ -599,6 +616,44 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     />
   </>);
 
+  /* แถวเมนู 1 แถว — **ตัวเดียวใช้ทั้งแผงลอยและ drawer** ห้ามก๊อปแยก (เคยแยกแล้วหน้าตาเพี้ยนกัน)
+     `group` = หมวดที่กำลังวาดอยู่ ⇒ รู้ว่าแถวนี้เป็น "บ้านจริง" หรือ "ทางลัด" (ดู `isNavGuest`) */
+  const navRow = (item, group, onClick) => {
+    const cur = location.pathname === item.to;
+    const guest = isNavGuest(item, group);
+    const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
+    return (
+      <Link
+        to={item.to} className="nav-link"
+        aria-current={cur ? 'page' : undefined}
+        title={guest ? `${item.label} — ทางลัด · เมนูนี้อยู่หมวด "${item.group}"` : item.label}
+        style={{
+          ...(cur
+            ? (guest
+              /* ทางลัดที่เป็นหน้าปัจจุบัน: บอกแค่ "หน้านี้เปิดอยู่" ด้วยสีตัวอักษร
+                 **ไม่ใส่พื้น/แถบซ้าย** — 2 อย่างนั้นสงวนให้ "บ้านจริง" ของหน้า */
+              ? { color: 'var(--accent)' }
+              : { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' })
+            : (guest ? { color: 'var(--text2)' } : null)),
+          /* บีบช่องไฟคืนให้ชื่อเมนู — แผงกว้างแค่ 210px ป้ายบ้านจริงเลยเบียดชื่อยาวๆ จนตัดคำ
+             🔴 คืนที่ด้วยการลด gap/padding เท่านั้น **ห้ามลดฟอนต์ต่ำกว่า 11px** (UI-STANDARD §5) */
+          ...(guest ? { gap: 8, paddingLeft: 10, paddingRight: 10 } : null),
+        }}
+        onClick={onClick}
+      >
+        <span style={{ fontSize: 17, flexShrink: 0, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+        {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
+            (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
+        {guest && (
+          <span style={{ marginLeft: 'auto', paddingLeft: 2, flexShrink: 0, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+            ↗{homeShort}
+          </span>
+        )}
+      </Link>
+    );
+  };
+
   /* ── Desktop: rail 64px + แผงหมวดลอยทับ (sidebar แบบ D · 2026-08-18) ─────────────
      หลัก: เนื้อหาหลักเสีย 64px เท่านั้น (เดิม 252px) — แผงเมนูลอยทับตอนกดไอคอนหมวด
      เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
@@ -684,7 +739,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 title: group,
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
-                isCurrent: items.some(i => i.to === location.pathname),
+                isCurrent: items.some(i => isHomeHere(i, group)),
               }))}
             </div>
 
@@ -764,18 +819,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       borderTop: i === 0 ? 'none' : '1px solid var(--border)',
                     }}>{item.sub}</div>
                   )}
-                  <Link
-                    to={item.to} className="nav-link"
-                    aria-current={location.pathname === item.to ? 'page' : undefined}
-                    aria-current={location.pathname === item.to ? 'page' : undefined}
-                    style={location.pathname === item.to
-                      ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                      : {}}
-                    onClick={() => { if (!pinned) setPanel(null); }}
-                  >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                  </Link>
+                  {navRow(item, panel, () => { if (!pinned) setPanel(null); })}
                 </div>
               ))}
 
@@ -789,7 +833,6 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   <Link
                     key={item.to} to={item.to} className="nav-link"
                     aria-current={location.pathname === item.to ? 'page' : undefined}
-                    aria-current={location.pathname === item.to ? 'page' : undefined}
                     style={location.pathname === item.to
                       ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
                       : {}}
@@ -797,7 +840,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   >
                     <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
                   </Link>
                 ))
               )}
@@ -919,7 +962,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             {/* หมวด = accordion เปิดทีละหมวด · หมวดของหน้าปัจจุบันเปิดให้เอง (mOpenGroup undefined = follow) */}
             {groupedItems.map(({ group, items }) => {
               const open = (mOpenGroup === undefined ? activeGroup : mOpenGroup) === group;
-              const groupHasActive = items.some(i => location.pathname === i.to);
+              const groupHasActive = items.some(i => isHomeHere(i, group));
               return (
                 <div key={group} style={{ marginBottom: 2 }}>
                   {/* หัวหมวด — ปกติ = สี text (ขาวอมเขียว เป็นกลาง อ่านง่าย ไม่กลืนกับเขียว accent)
@@ -952,18 +995,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
                         }}>{item.sub}</div>
                       )}
-                      <Link
-                        to={item.to}
-                        className="nav-link"
-                        aria-current={location.pathname === item.to ? 'page' : undefined}
-                        style={location.pathname === item.to
-                          ? { background: 'var(--accent-dim)', color: 'var(--accent)', borderLeft: '2px solid var(--accent)' }
-                          : {}}
-                        onClick={onClose}
-                      >
-                        <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
-                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                      </Link>
+                      {navRow(item, group, onClose)}
                     </div>
                   ))}
                 </div>
