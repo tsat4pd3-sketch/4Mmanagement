@@ -251,10 +251,22 @@ const TABLE_FIXED = {
      `source` เป็น `not null default 'manual'` ⇒ แถวกรอกมือ**ไม่ใช่ null** · เคยเข้าใจผิดจนเกิดบั๊ก
      2 จุด (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
      ⇒ ไม่มีแถว auto ในม็อก = ตัวกรองที่แก้บั๊กนั้นไม่เคยถูกรันใน harness */
+  /* 🔴 ห้ามถอด/ห้ามเปลี่ยน `scope_kind` ของ 3 แถวนี้ (24/09)
+     ตั้งแต่ย้ายมาใช้แกน `scope_kind/scope_value` (23/09) แถวที่ผูกไว้กับ `section: 'PD3'` เฉยๆ
+     **ตกตัวกรอง `scopeCovers` ของทุกขอบเขต** ⇒ ตาราง "KPI นอกระบบ (กรอกมือ)" ว่างตลอดใน harness
+     = โค้ดสายกรอกมือทั้งหมด (สรุปรายปีตามวิธีรวม · ทศนิยม · โมดัลนิยาม) ไม่เคยถูกรันใน crashsweep เลย
+     ตั้งเป็น `plant` เพราะนิยามระดับโรงงานตกทอดถึงทุกขอบเขต ⇒ เห็นแน่นอนไม่ว่าจอ default ไปที่ไหน
+     ⚠️ ต้องตั้ง `section: null` ด้วย — `scopeOfDef()` ถอยไปอ่าน `section` เมื่อ `scope_kind = 'plant'`
+        (ใส่ scope_kind อย่างเดียวแล้วคง section ไว้ = ยังเป็นนิยามระดับส่วนงานเหมือนเดิม แถวก็ยังไม่โผล่)
+     · `kd-3` (auto) ยังคง `section: 'PD3'` ไว้ = สาขา "นิยามระดับส่วนงาน" ยังถูกรันอยู่
+     · `summary_mode` ต้องมีทั้ง `average`/`sum`/`rate` ให้ครบ — แต่ละตัวเปิดสาขาคนละเส้นใน `summaryOf()`
+       (`rate` = สาขาที่ต้องถอยมาเฉลี่ยแล้วติดป้าย ≈) · `decimals: 0` = สาขาที่ `||` จะตกค่า default */
   kpi_definitions: [
-    { id: 'kd-1', year: 2026, section: 'PD3', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2 } },
-    { id: 'kd-2', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0 } },
-    { id: 'kd-3', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average' } },
+    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate' } },
+    { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+    /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
+    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
   ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
   factory_line_regions: [
