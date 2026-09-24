@@ -9,7 +9,8 @@ import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
 import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
-import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel } from '../utils/kpiSetup';
+import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -65,7 +66,9 @@ const catLabel = perspectiveLabel;
    ทะเบียน (`kpi_catalog`) เป็นเจ้าของชื่อ · `definitions.name` เป็นแค่ fallback ของแถวเก่า
    ที่ยังไม่ผูกทะเบียน ⇒ แก้ชื่อในทะเบียนแล้วเปลี่ยนทุกปีทุกส่วนงานพร้อมกัน (ไม่มีทาง drift) */
 const defName = d => d?.kpi_catalog?.name || d?.name || '(ไม่มีชื่อ)';
-const defUnit = d => d?.kpi_catalog?.unit || '';
+/* 🔴 หน่วย/ทศนิยม = 2 ชั้น (24/09) — แถวชนะทะเบียน · ว่าง = ตามทะเบียน
+   ห้ามอ่าน `d.kpi_catalog.unit` ตรงๆ อีก (แถวที่ override ไว้จะไม่โผล่) */
+const defUnit = unitOf;
 
 /* ดึงทุกแถวแบบแบ่งหน้า — กับดัก Supabase ตัด 1000 แถว/query */
 async function pageAll(buildQuery, onProg) {
@@ -303,7 +306,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { loadCatalog(); }, [loadCatalog]);
 
   const loadDefs = useCallback(async () => {
-    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals)';
+        /* 🔴 ต้องดึง `summary_mode` + `decimals` มาด้วย — ขาดไปแถวทุกตัวตกเป็น "เฉลี่ย" / ทศนิยม 2 เงียบๆ */
+    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals, summary_mode)';
     const run = (cols) => supabase.from('kpi_definitions').select(cols)
       .eq('year', year).eq('is_active', true)
       .order('category').order('seq').order('created_at');
@@ -361,10 +365,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   ));
 
   const manualLv = (def, v) => (v == null ? null : scoreDef(v, def).level);
-  const manualAvg = def => {
-    const vs = Array.from({ length: 12 }, (_, i) => entries[def.id]?.[i + 1]).filter(v => v != null);
-    return vs.length ? vs.reduce((s, v) => s + v, 0) / vs.length : null;
-  };
+  /* 🔴 สรุปทั้งปีต้องใช้ "วิธีรวม" ของ KPI ตัวนั้น ไม่ใช่เฉลี่ยตายตัว (24/09)
+     เดิมเฉลี่ยทุกแถว ⇒ Scrap ที่ต้องรวมทั้งปีโชว์ 271.4 แทน 1,628 (เทียบเด็ค H1 FY2026)
+     วิธีรวมอยู่ที่ `kpi_catalog.summary_mode` — ของตัวตน KPI ห้าม override รายแถว */
+  const manualSum = def => summaryOf(
+    Array.from({ length: 12 }, (_, i) => entries[def.id]?.[i + 1] ?? null), def);
+  const manualAvg = def => manualSum(def).value;
 
   /* เป้า OEE ของขอบเขต = เฉลี่ยของกรุ๊ป (ไลน์บนสุด) ในขอบเขต — กฎ oee_targets: section ไม่เก็บใน DB */
   const targetOee = useMemo(() => {
@@ -522,10 +528,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const manRows = (defs || []).map(d2 => {
       const cells = Array.from({ length: 12 }, (_, i) => {
         const v = entries[d2.id]?.[i + 1];
-        return `<td style="${td}">${v == null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>`;
+        return `<td style="${td}">${fmtKpi(v, d2)}</td>`;
       }).join('');
-      const avg = manualAvg(d2);
-      return `<tr><td style="${td};text-align:left">${defName(d2)}${defScopeTag(d2) ? ` (${defScopeTag(d2)})` : ''}<div style="font-size:11px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${avg == null ? '' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td></tr>`;
+      const sm = manualSum(d2);
+      const smTag = sm.value == null ? '' : ` <span style="font-weight:normal;font-size:10.5px;color:#777">${sm.approx ? '≈ เฉลี่ย' : summaryShort(sm.mode)}</span>`;
+      return `<tr><td style="${td};text-align:left">${defName(d2)}${defScopeTag(d2) ? ` (${defScopeTag(d2)})` : ''}<div style="font-size:11px;color:#777">${d2.scope_text || ''}</div></td>${cells}<td style="${td};font-weight:bold">${fmtKpi(sm.value, d2)}${smTag}</td></tr>`;
     }).join('');
     const html = `
       <h2 style="margin:0 0 2px">สรุป KPI รายเดือน ${year + 543} — ${scopeLabel}</h2>
@@ -534,7 +541,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
       </div>
       <table style="border-collapse:collapse;width:100%">
-        <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">รวม/เฉลี่ย</th></tr>
+        <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">สรุปทั้งปี</th></tr>
         ${rows}
         ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">📝 KPI กรอกมือ (นอกระบบ)${!isPlant(scope) ? ' — รวมนิยามที่ตกทอดจากระดับแม่ (ติดป้ายในวงเล็บ)' : ''}</td></tr>${manRows}` : ''}
       </table>
@@ -620,22 +627,18 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         loadCatalog();
       }
     }
-    /* หน่วยอยู่ที่ "ทะเบียน" (ใช้ทุกปี) ไม่ใช่ที่นิยามรายปี — แก้ในโมดัลแล้วต้องเขียนกลับทะเบียน
-       best-effort: พลาดแล้วบอก แต่ไม่ทำให้บันทึกนิยามล้ม (กฎ RLS-เงียบ: นับแถวที่เขียนจริง) */
-    if (catalogId && form.unit !== undefined) {
-      const cur = catalog.find(c => c.id === catalogId);
-      const u = (form.unit || '').trim() || null;
-      if (cur && (cur.unit || null) !== u) {
-        const { data: cu, error: ue } = await supabase.from('kpi_catalog').update({ unit: u }).eq('id', catalogId).select('id');
-        if (ue || !cu?.length) toast.error('บันทึกนิยามแล้ว แต่แก้ "หน่วย" ในทะเบียนไม่สำเร็จ' + (ue ? ': ' + ue.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
-        else loadCatalog();
-      }
-    }
+    /* 🔴 24/09: **เลิกเขียนหน่วยย้อนกลับทะเบียนจากโมดัลนี้**
+       เดิมแก้หน่วยที่แถวของ PD3 = เปลี่ยนให้ทุกแผนกทุกปีเงียบๆ (เปลี่ยน *ชื่อ* เตือน แต่เปลี่ยน *หน่วย* ไม่เตือน)
+       ตอนนี้หน่วย/ทศนิยมที่กรอกในโมดัลนี้ = **override เฉพาะแถวนี้** · ว่าง = ตามทะเบียน
+       แก้ค่าตั้งต้นของทะเบียน → ปุ่ม 📘 ทะเบียนชื่อ KPI (มีคำเตือน "มีผลทุกปีทุกส่วนงาน") */
     const payload = {
       year, ...defScopeColumns(org, form.scope), category: form.category || 'internal',
       catalog_id: catalogId,
       seq: Number(form.seq) || 0, name: typed,
       formula_text: form.formula_text || null, scope_text: form.scope_text || null,
+      unit: (form.unit || '').trim() || null,
+      decimals: Number.isFinite(Number(form.decimals)) && form.decimals !== '' && form.decimals != null
+        ? Math.min(6, Math.max(0, Math.round(Number(form.decimals)))) : null,
       commitment: form.commitment || null, target: form.target || null,
       target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
       direction: form.direction || null, weight: form.weight === '' || form.weight == null ? null : Number(form.weight),
@@ -692,7 +695,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         '\n\nคัดลอกเฉพาะ "นิยาม" (ชื่อ/เป้า/สูตร/น้ำหนัก) — ค่ารายเดือนไม่ถูกคัดลอก')) return;
       const payload = todo.map(r => ({
         year, ...defScopeColumns(org, scope), category: r.category, catalog_id: r.catalog_id || null,
-        std_item_id: r.std_item_id || null, std_unit: r.std_unit || null, unit: r.unit || null,
+        std_item_id: r.std_item_id || null, std_unit: r.std_unit || null,
+        unit: r.unit || null, decimals: r.decimals ?? null,
         provider: r.provider || null, provider_config: r.provider_config || null,
         commit_compare: r.commit_compare || null, commit_value: r.commit_value ?? null, target_compare: r.target_compare || null,
         seq: r.seq, name: r.name, formula_text: r.formula_text, scope_text: r.scope_text,
@@ -909,7 +913,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 <tr>
                   <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
                   {TH_M.map(m => <th key={m} style={thSt}>{m}</th>)}
-                  <th style={{ ...thSt, color: 'var(--text)' }}>เฉลี่ย</th>
+                  <th style={{ ...thSt, color: 'var(--text)' }} title="วิธีรวม 12 เดือนต่างกันรายตัว (เฉลี่ย/รวมปี/สูงสุด/ล่าสุด) — ป้ายใต้ตัวเลขบอกว่าแถวนั้นรวมแบบไหน">สรุปทั้งปี</th>
                   <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์</th>
                   {canManage && <th style={thSt} />}
                 </tr>
@@ -921,7 +925,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       <td colSpan={16 + (canManage ? 1 : 0)} style={{ ...tdSt, textAlign: 'left', fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)' }}>{c.label}</td>
                     </tr>,
                     ...defs.filter(d2 => d2.category === c.key).map(d2 => {
-                      const avg = manualAvg(d2);
+                      const sum = manualSum(d2);
+                      const avg = sum.value;
                       const ynT = manualLv(d2, avg);
                       return (
                         <tr key={d2.id}>
@@ -948,7 +953,13 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             );
                           })}
                           <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
-                            {avg == null ? '—' : avg.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {avg == null ? '—' : fmtKpi(avg, d2)}
+                            <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--muted)' }}
+                              title={sum.approx
+                                ? `วิธีทางการของ KPI นี้คือ "${summaryModeLabel(sum.mode)}" แต่แถวกรอกมือไม่มียอดดิบให้หาร — ตัวเลขนี้เป็นค่าเฉลี่ยรายเดือน ไม่ใช่ค่าทางการ`
+                                : summaryModeLabel(sum.mode)}>
+                              {sum.approx ? `≈ ${summaryShort('average')}` : summaryShort(sum.mode)}
+                            </div>
                             <LvMark lv={ynT} />
                           </td>
                           <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
@@ -1124,6 +1135,21 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
       onChanged?.();
     } finally { setBusy(''); }
   };
+  /* 🔴 24/09 — ทะเบียนเป็นเจ้าของ "ค่าตั้งต้น" ของ KPI ตัวนั้น: หน่วย · ทศนิยม · ทิศทาง · วิธีรวม 12 เดือน
+     ทุกช่องมีผล **ทุกปี ทุกส่วนงาน** เหมือนการเปลี่ยนชื่อ ⇒ ต้องเขียนกำกับให้เห็นก่อนกด
+     (หน่วย/ทศนิยม override รายแถวได้ที่โมดัลนิยาม · **วิธีรวม override ไม่ได้ ตั้งใจ** — ดูหัวข้อในเอกสาร) */
+  const patch = async (r, col, value, label) => {
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabase.from('kpi_catalog').update({ [col]: value }).eq('id', r.id).select('id');
+      if (error || !data?.length) {
+        toast.error(`แก้ "${label}" ไม่สำเร็จ` + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์ kpi:manage)'));
+        return;
+      }
+      onChanged?.();
+    } finally { setBusy(''); }
+  };
+
   const toggle = async (r) => {
     if (r.is_active && used.has(r.id) &&
       !window.confirm(`"${r.name}" ถูกใช้ในชุด KPI ของปีที่เปิดอยู่\nปิดใช้งานแล้วจะไม่โผล่ให้เลือกใหม่ (แถวเดิมยังอยู่)\n\nปิดใช้งาน?`)) return;
@@ -1137,14 +1163,18 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
 
   const inp = { padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 260 };
   const td = { padding: '5px 8px', fontSize: 12, color: 'var(--text2)', borderBottom: '1px solid var(--border)' };
+  const mini = { padding: '3px 6px', fontSize: 11.5, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
+  const miniLbl = { display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 10.5, color: 'var(--muted)' };
   return (
     /* ⚠️ ไม่ใช่ฟอร์มที่กรอกค้าง — ปิดจาก backdrop ได้ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(760px, 96vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🗂 ทะเบียนชื่อ KPI</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-          ชื่อชุดเดียวใช้ทุกปีทุกส่วนงาน — <b>แก้ชื่อที่นี่แล้วเปลี่ยนพร้อมกันทั้งระบบ</b> (ใบ Monitoring เทียบปีต่อปีได้)
-          · เพิ่มชื่อใหม่ทำตอนกด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อที่ยังไม่มี
+          ชื่อ + <b>ค่าตั้งต้น</b> (หน่วย · ทศนิยม · ทิศทาง · วิธีรวม 12 เดือน) ของ KPI แต่ละตัว —
+          <b>ทุกช่องที่นี่มีผลทุกปี ทุกส่วนงาน</b> · เพิ่มชื่อใหม่ทำตอนกด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อที่ยังไม่มี
+          <br />🔓 หน่วย/ทศนิยม แต่ละแถวตั้งทับได้ในโมดัลนิยาม (ว่าง = ตามที่นี่) ·
+          🔒 <b>วิธีรวม 12 เดือน ตั้งทับรายแถวไม่ได้</b> — แผนกหนึ่งเฉลี่ย อีกแผนกรวม แล้วเอาเลขมาเทียบกันไม่ได้
         </div>
         <input style={inp} value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ KPI…" />
         <div style={{ overflowY: 'auto', marginTop: 10, flex: 1 }}>
@@ -1164,6 +1194,37 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
                       {used.has(r.id) && <span style={{ marginLeft: 6, fontSize: 11, color: '#22c55e' }}>ใช้ในปีที่เปิดอยู่</span>}
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {[CATS.find(c => c.key === r.category)?.label, r.formula_text, r.scope_text].filter(Boolean).join(' · ')}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 5 }}>
+                        <label style={miniLbl}>หน่วย
+                          <input style={{ ...mini, width: 78 }} defaultValue={r.unit || ''} disabled={!canManage || busy === r.id}
+                            onBlur={e => { const v = e.target.value.trim() || null; if (v !== (r.unit || null)) patch(r, 'unit', v, 'หน่วย'); }} />
+                        </label>
+                        <label style={miniLbl}>ทศนิยม
+                          <input style={{ ...mini, width: 48 }} type="number" min="0" max="6" step="1"
+                            defaultValue={r.decimals ?? 2} disabled={!canManage || busy === r.id}
+                            onBlur={e => {
+                              const n = Number(e.target.value);
+                              if (!Number.isFinite(n)) { e.target.value = String(r.decimals ?? 2); return; }
+                              const v = Math.min(6, Math.max(0, Math.round(n)));
+                              if (v !== (r.decimals ?? 2)) patch(r, 'decimals', v, 'ทศนิยม');
+                            }} />
+                        </label>
+                        <label style={miniLbl}>ทิศทาง
+                          <select style={{ ...mini, width: 96 }} value={r.direction || ''} disabled={!canManage || busy === r.id}
+                            onChange={e => patch(r, 'direction', e.target.value || null, 'ทิศทาง')}>
+                            <option value="">—</option>
+                            <option value="up">มากยิ่งดี</option>
+                            <option value="down">น้อยยิ่งดี</option>
+                          </select>
+                        </label>
+                        <label style={miniLbl} title="ของตัวตน KPI — ตั้งที่นี่ที่เดียว แต่ละแผนก override ไม่ได้ (ไม่งั้นเอาเลขมาเทียบกันไม่ได้)">
+                          วิธีรวม 12 เดือน
+                          <select style={{ ...mini, width: 168 }} value={summaryModeOf({ kpi_catalog: r })} disabled={!canManage || busy === r.id}
+                            onChange={e => patch(r, 'summary_mode', e.target.value, 'วิธีรวม 12 เดือน')}>
+                            {KPI_SUMMARY_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                          </select>
+                        </label>
                       </div>
                     </td>
                     {canManage && (
@@ -1199,7 +1260,10 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
     category: init.category || 'internal',
     seq: init.seq ?? 0,
     name: init.kpi_catalog?.name || init.name || '',
-    unit: init.kpi_catalog?.unit || '',
+    /* 🔴 override ของแถว — ว่าง = ตามทะเบียน (ห้าม prefill ค่าทะเบียนมาที่นี่
+       ไม่งั้นเปิดโมดัลแล้วกดบันทึกเฉยๆ = แถวถูกตรึงหน่วยไว้ ตัดสายจากทะเบียนถาวร) */
+    unit: init.unit || '',
+    decimals: init.decimals ?? '',
     formula_text: init.formula_text || '',
     scope_text: init.scope_text || '',
     commitment: init.commitment || '',
@@ -1211,6 +1275,12 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
     action_owner: init.action_owner || '',
   }));
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  /* ค่าตั้งต้นจากทะเบียนของชื่อที่เลือกอยู่ — โชว์เป็น placeholder ให้รู้ว่า "ว่าง = ได้อะไร" */
+  const curCat = useMemo(() => catalog.find(c => c.id === f.catalog_id) || null, [catalog, f.catalog_id]);
+  const catUnit = curCat?.unit || '';
+  const catDec = decimalsOf({ kpi_catalog: curCat });
+  const catSummary = summaryModeOf({ kpi_catalog: curCat });
 
   const usedSet = useMemo(() => new Set(usedIds.filter(x => x !== init.catalog_id)), [usedIds, init.catalog_id]);
   const catOpts = useMemo(() => catalog.map(c => ({
@@ -1292,10 +1362,26 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
             )}
           </div>
           {!catMissing && (
-            <div>
-              <div style={lbl}>หน่วย (เก็บที่ทะเบียน ใช้ทุกปี)</div>
-              <input style={inp} value={f.unit} onChange={e => set('unit', e.target.value)} placeholder="เช่น % · บาท · ครั้ง" />
-            </div>
+            <>
+              {/* 🔴 2 ชั้น (24/09): หน่วย/ทศนิยมที่นี่ = **เฉพาะแถวนี้** · ว่าง = ตามทะเบียน
+                  เดิมช่องนี้เขียนย้อนกลับทะเบียนเงียบๆ ⇒ แก้หน่วยของ PD3 = เปลี่ยนให้ทุกแผนกทุกปี */}
+              <div>
+                <div style={lbl}>หน่วย — เฉพาะแถวนี้ {catUnit ? `(ว่าง = ตามทะเบียน: ${catUnit})` : '(ทะเบียนยังไม่ตั้งหน่วย)'}</div>
+                <input style={inp} value={f.unit} onChange={e => set('unit', e.target.value)} placeholder={catUnit || 'เช่น % · บาท · ครั้ง'} />
+              </div>
+              <div>
+                <div style={lbl}>ทศนิยม — เฉพาะแถวนี้ (ว่าง = ตามทะเบียน: {catDec})</div>
+                <input style={inp} type="number" min="0" max="6" step="1" value={f.decimals}
+                  onChange={e => set('decimals', e.target.value)} placeholder={String(catDec)} />
+              </div>
+              <div>
+                <div style={lbl}>วิธีรวม 12 เดือน</div>
+                <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text2)' }}>
+                  <span>{summaryModeLabel(catSummary)}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ตั้งที่ทะเบียน (ใช้ร่วมทุกแผนก)</span>
+                </div>
+              </div>
+            </>
           )}
           <div>
             <div style={lbl}>หมวด (ตามใบ Appraisal)</div>

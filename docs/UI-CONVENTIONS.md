@@ -573,6 +573,15 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | ส่วนงาน / แผนก **ที่เป็น "สังกัด" ของคน/เอกสาร/ใบงาน** | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
 | **ขอบเขตดูข้อมูล / ตั้ง KPI** (ตัวกรองบนหัวจอ OBEYA · KPI · รายงานตามหน่วยงาน) | `<OrgScopePicker>` — ทุกมิติของผัง: ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC (2026-09-23 · คำสั่ง user "กรองได้ทุกมิติในผังองค์กร") · **ห้ามวาด select จาก `org_nodes kind='section'` เอง** (แผนกขึ้นตรงฝ่าย MTN/JIG MTN/QA จะหาย) | `useOrgScope(lines)` → `src/utils/orgScope.js` | `{kind,value}` → URL `?scope=kind:value` · DB `scope_kind/scope_value` |
 
+> #### 🔢 ตัวเลข KPI: หน่วย/ทศนิยม = **2 ชั้น** · วิธีรวม 12 เดือน = **ชั้นเดียว** (2026-09-24 · คำสั่ง user)
+> - **ห้ามอ่าน `kpi_catalog.unit/decimals/summary_mode` ตรงๆ ในหน้า** (ด่าน `kpi-unit-decimals-via-helper`)
+>   ใช้ `unitOf(d)` · `decimalsOf(d)` · `summaryModeOf(d)` · `fmtKpi(v, d)` · `summaryOf(months, d)` จาก `utils/kpiSetup.js`
+> - **ห้าม hardcode ทศนิยม** (`maximumFractionDigits: 2` · `unit === 'PPM' ? 0 : 1`) — เป็นค่าต่อ KPI
+> - **ห้ามพิมพ์หัวคอลัมน์ว่า "เฉลี่ย" ตายตัว** — วิธีรวมต่างกันรายแถว ⇒ หัวคอลัมน์ = "สรุปทั้งปี"
+>   แล้วติดป้ายวิธีรวมใต้ตัวเลขแต่ละแถว (`summaryShort`) · โหมด `rate` ที่ไม่มียอดดิบต้องขึ้น **`≈`**
+> - `decimals = 0` เป็นค่าที่ตั้งจริง — **ห้ามใช้ `||` ตกค่า default**
+> 📄 เหตุผล/กับดัก → `docs/modules/obeya-kpi-board.md` §หน่วย·ทศนิยม·วิธีรวม
+
 > #### 💰 Cost Center = **ช่องแยก ห้ามปนในลิสต์ผังองค์กร** (2026-09-23 · คำสั่ง user)
 > *"อย่าปนกัน cost center แยกอีกช่อง · เลือก PD4 ก็ควรโชว์รหัสของมัน · พิมพ์ 2140462000 ก็ควรเจอ PD3"*
 > เดิม `<OrgScopePicker>` ต่อรหัส cc **~74 ตัว** ท้ายลิสต์เดียวกับผัง ⇒ เลื่อนหาหน่วยงานไม่เจอ
