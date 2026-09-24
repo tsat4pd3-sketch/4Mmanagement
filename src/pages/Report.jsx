@@ -2284,7 +2284,6 @@ function DocumentControlPanel() {
 /* ── Shared scope filters for employee tabs ──
    UI-STANDARD 2026-09-24: คืนเป็นชุดช่อง (fragment) ให้ผู้เรียกวางใน <FilterBar> มาตรฐาน
    (เดิมชื่อ FilterBar ซ้ำกับของกลาง + ใส่ขนาด inline เอง) */
-const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
 
 function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)

@@ -20,6 +20,7 @@ import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -1231,7 +1232,7 @@ ${issuesHtml}
               <div><div style={lb}>คำถาม</div><textarea rows={2} value={qEditing.question} onChange={e => setQEditing(p => ({ ...p, question: e.target.value }))} style={{ width: '100%', fontSize: 13 }} /></div>
               <div>
                 <div style={lb}>ใช้กับไลน์ (เว้นว่าง = ทุกไลน์)</div>
-                <LineSelect lines={visibleLines} value={qEditing.line_name || ''} placeholder="— ทุกไลน์ —" style={{ width: '100%' }}
+                <LineSelect lines={visibleLines} value={qEditing.line_name || ''} placeholder={ALL.line} style={{ width: '100%' }}
                   onChange={v => setQEditing(p => ({ ...p, line_name: v }))} />
               </div>
               {qEditing.category === 'special' && (

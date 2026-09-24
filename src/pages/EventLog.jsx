@@ -15,6 +15,10 @@ import LineSelect from '../components/LineSelect';
 import MachineSelect from '../components/MachineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -287,7 +291,7 @@ export default function EventLog() {
   };
 
   return (
-    <div className="page-content">
+    <Page>
       <PageHeader
         title="CQI-15 Event Log" icon="⚡"
         sub="งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix"
@@ -342,7 +346,7 @@ export default function EventLog() {
           onRefresh={() => { fetchAll(); setSelectedLog(null); }}
         />
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -835,35 +839,26 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 8, padding: '14px 16px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>กรอง:</span>
+      {/* Filters — UI-STANDARD 2026-09-24: FilterBar (bare ในหัวการ์ด) · หมวด 4 ตัวเลือก = Segmented */}
+      <FilterBar bare style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+        <span className="filter-label">กรอง:</span>
         {/* Category */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {['all','A','B','C'].map(c => (
-            <button key={c} onClick={() => setFilterCat(c)}
-              style={{ padding: '4px 12px', borderRadius: 20, border: 'none', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                background: filterCat === c ? (c === 'all' ? 'var(--border2)' : CAT_META[c]?.bg) : 'transparent',
-                color: filterCat === c ? (c === 'all' ? 'var(--text)' : CAT_META[c]?.color) : 'var(--muted)' }}>
-              {c === 'all' ? 'ทั้งหมด' : `Cat ${c}`}
-            </button>
-          ))}
-        </div>
+        <Segmented value={filterCat} onChange={setFilterCat} label="หมวด"
+          options={[{ value: 'all', label: ALL.category }, ...['A', 'B', 'C'].map(c => ({ value: c, label: `Cat ${c}` }))]} />
         {/* Status */}
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          style={{ padding: '4px 10px', fontSize: 12, width: 'auto', minWidth: 130 }}>
-          <option value="all">ทุกสถานะ</option>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          <option value="all">{ALL.status}</option>
           <option value="pending">รอดำเนินการ</option>
           <option value="in_progress">กำลังดำเนินการ</option>
           <option value="approved">อนุมัติแล้ว</option>
           <option value="rejected">ปฏิเสธ</option>
         </select>
-        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)}
-          style={{ padding: '4px 10px', fontSize: 12, width: 'auto', minWidth: 140 }} />
+        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
-          <button onClick={() => setFilterDate('')} style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{filtered.length} รายการ</span>
+        <span className="spacer" />
+        <span className="filter-count">{filtered.length} รายการ</span>
         {filtered.length > 0 && (
           <>
             <button
@@ -880,7 +875,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
             </button>
           </>
         )}
-      </div>
+      </FilterBar>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)' }}>กำลังโหลด...</div>

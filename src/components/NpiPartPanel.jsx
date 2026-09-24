@@ -14,6 +14,8 @@ import {
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName } from './NpiUi';
 import { printPpapChecklist } from '../lib/npiPpapPrint';
 import PersonSelect from './PersonSelect';
+import Segmented from './Segmented';
+import { allOf } from '../utils/filterLabels';
 import useColumnHistory from '../utils/useColumnHistory';
 
 export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged }) {
@@ -215,11 +217,13 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
       <div style={{ marginTop: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 800 }}>📄 เอกสารส่งมอบ / ทะเบียน PPAP</div>
-          <div style={{ display: 'flex', gap: 5 }}>
-            {[['all', 'ทั้งหมด'], ['open', 'ยังไม่ปิด'], ['ppap', 'เฉพาะ PPAP'], ['red', '🔴 เลยกำหนด']].map(([k, l]) => (
-              <button key={k} onClick={() => setFilter(k)} style={{ ...ghost, padding: '3px 9px', fontSize: 11.5, background: filter === k ? 'var(--accent)' : 'var(--bg2)', color: filter === k ? '#08130a' : 'var(--text)' }}>{l}</button>
-            ))}
-          </div>
+          {/* UI-STANDARD 2026-09-24 — ตัวกรอง 4 ตัวเลือก = Segmented ("ทุก…" ซ้ายสุด) */}
+          <Segmented size="sm" value={filter} onChange={setFilter} label="กรองเอกสารส่งมอบ" options={[
+            { value: 'all', label: allOf('รายการ') },
+            { value: 'open', label: 'ยังไม่ปิด' },
+            { value: 'ppap', label: 'เฉพาะ PPAP' },
+            { value: 'red', label: '🔴 เลยกำหนด' },
+          ]} />
         </div>
         {!delivs.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีรายการ — sync จากแม่แบบ หรือ + รายการ</div>}
         {groups.map(g => {

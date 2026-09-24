@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import { allOf } from '../utils/filterLabels';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import { splitUnclassified, unclassifiedNote } from '../utils/unclassified';
 import { buildCategoryIndex, fillCategories } from '../utils/autoCategory';
@@ -346,7 +348,7 @@ export default function MtnAnalysis() {
   }));
 
   return (
-    <div style={{ padding: '14px 16px 40px' }}>
+    <Page style={{ paddingBottom: 40 }}>
       <PageHeader
         title="วิเคราะห์ปัญหา (ซ่อมบำรุง)" icon="🔍"
         sub={tab === 'kpi'
@@ -354,21 +356,9 @@ export default function MtnAnalysis() {
           : `QC 7 Tools แยกตามชนิดสินทรัพย์ · ${srcMeta.note}`}
         tabs={MAIN_TABS} tab={tab} onTab={setTab}
         actions={
-          /* ตัวกรองแหล่งข้อมูล/ช่วงเวลา เป็นของแท็บ QC7 เท่านั้น — แผง KPI มีตัวกรองของตัวเอง
+          /* ตัวกรองแหล่งข้อมูล/ช่วงเวลา เป็นของแท็บ QC7 เท่านั้น (อยู่ใน TimeRangeBar ข้างล่าง) — แผง KPI มีตัวกรองของตัวเอง
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
-          tab === 'qc7' ? (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* dropdown = **แผนกช่าง** (เดิมเป็นเลือกแหล่งข้อมูล MO/Downtime — user เปลี่ยน 23/09)
-                  แท็บด้านล่าง = ชนิดอุปกรณ์ · 2 แกนนี้ตัดกันได้ ไม่ซ้อนกัน */}
-              <select value={team} onChange={e => setTeam(e.target.value)} title="แผนกช่างที่รับงาน"
-                style={{ width: 200, padding: '6px 8px', borderRadius: 8, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', fontSize: 12.5 }}>
-                <option value="all">👷 ทุกแผนกช่าง ({events.length})</option>
-                {teamOpts.map(([t, n]) => (
-                  <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
-                ))}
-              </select>
-            </div>
-          ) : (
+          tab === 'qc7' ? null : (
             <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
               {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
             </button>
@@ -384,7 +374,17 @@ export default function MtnAnalysis() {
           scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} finest="hour"
           onScale={tr.setScale} onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
           onView={tr.setView} onReload={load} loading={loading} style={{ marginBottom: 12 }}
-        />
+        >
+          {/* dropdown = **แผนกช่าง** (เดิมเป็นเลือกแหล่งข้อมูล MO/Downtime — user เปลี่ยน 23/09)
+              แท็บด้านล่าง = ชนิดอุปกรณ์ · 2 แกนนี้ตัดกันได้ ไม่ซ้อนกัน
+              · UI-STANDARD 2026-09-24: ย้ายจากหัวเพจเข้าแถบเวลา ให้เป็นแถบกรองแถบเดียว */}
+          <select value={team} onChange={e => setTeam(e.target.value)} title="แผนกช่างที่รับงาน">
+            <option value="all">{allOf('แผนกช่าง')}</option>
+            {teamOpts.map(([t, n]) => (
+              <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
+            ))}
+          </select>
+        </TimeRangeBar>
       )}
 
       {err && (
@@ -531,6 +531,6 @@ export default function MtnAnalysis() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
