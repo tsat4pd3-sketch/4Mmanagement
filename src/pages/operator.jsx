@@ -35,6 +35,9 @@ import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { uploadOpts } from '../utils/storageUpload';
+import { checkWrite } from '../utils/dbWrite';
+import { fetchByIds } from '../utils/fetchByIds';
+import SkillEvidencePanel from '../components/SkillEvidencePanel';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -72,7 +75,7 @@ const getEmpGrade = (code = '') => {
 const TAB_KEYS = ['employees', 'skills', 'levelup'];
 
 export default function Operator() {
-  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
@@ -196,6 +199,10 @@ export default function Operator() {
   const [rejectLuModal,   setRejectLuModal]   = useState(null);
   const [rejectLuReason,  setRejectLuReason]  = useState('');
   const [runningWeekly,   setRunningWeekly]   = useState(false);
+  /* EXP v2 — หลักฐานสะสม + ค่าปรับแต่ง (ดู docs/modules/employee-skills-exp.md §v2) */
+  const [expCfg,  setExpCfg]  = useState(null);
+  const [evByKey, setEvByKey] = useState({});
+  const [expBusy, setExpBusy] = useState('');
   const [orgSectionOpts,  setOrgSectionOpts]  = useState([]);
   const [orgSectionNodes, setOrgSectionNodes] = useState([]);
   const [orgDeptNodes,    setOrgDeptNodes]    = useState([]);
@@ -209,6 +216,7 @@ export default function Operator() {
     fetchSkillDefs();
     fetchEmployees();
     fetchLevelUpRequests();
+    fetchExpConfig();
     /* 🎓 ทะเบียนเกรด (20 แถว) — ต้องโหลดก่อน `gradesSync()` ถึงมีข้อมูล
        ⚠️ cache อยู่นอก React ⇒ ต้อง bump state ด้วย ไม่งั้นช่องเกรดไม่ re-render หลังโหลดเสร็จ */
     loadGrades().then(() => { if (alive) setGradesReady(n => n + 1); });
@@ -254,6 +262,74 @@ export default function Operator() {
     return () => { alive = false; };
   }, []);
 
+  const fetchExpConfig = async () => {
+    const { data, error } = await supabase.from('skill_exp_config').select('*').eq('id', 1).maybeSingle();
+    if (error) { console.warn('skill_exp_config:', error.message); return; }   // ห้ามกลืน error เงียบ
+    setExpCfg(data || null);
+  };
+
+  /* หลักฐานของคำขอที่แสดงอยู่เท่านั้น — เลือกคอลัมน์ที่ใช้จริง ไม่ใช่ select('*') (กฎ egress) */
+  const fetchEvidence = async (reqs) => {
+    const ids = (reqs || []).map(r => r.employee_id).filter(Boolean);
+    if (!ids.length) { setEvByKey({}); return; }
+    const { rows, error } = await fetchByIds(ids, part => supabase
+      .from('employee_skill_evidence')
+      .select('employee_id, skill_name, cum_cycles, days_worked, parts_seen, n_changeover, n_abnormal,'
+            + ' ng_ratio, quality_ok, has_ojt, ojt_post_score, is_trainer, shadow_score, verified,'
+            + ' gate_missing, next_level, cur_band, last_worked_date')
+      .in('employee_id', part), { orderBy: 'employee_id' });   // ⚠️ ตารางนี้ไม่มีคอลัมน์ id (PK คู่)
+    if (error) { console.warn('employee_skill_evidence:', error); return; }
+    const m = {};
+    for (const r of rows || []) m[`${r.employee_id}|${r.skill_name}`] = r;
+    setEvByKey(m);
+  };
+
+  const runExpRebuild = async () => {
+    setExpBusy('rebuild');
+    const { data, error } = await supabase.rpc('fn_skill_exp_rebuild');
+    setExpBusy('');
+    if (error) { toast.error('คำนวณหลักฐานไม่สำเร็จ: ' + error.message); return; }
+    toast.success(data);
+    fetchLevelUpRequests();
+  };
+
+  /* ปิดคิวค้างตามเกณฑ์ใหม่ — dry run ก่อนเสมอ · ใบที่ไม่ผ่าน = rejected + เหตุผล ห้ามลบ ห้าม approve */
+  const runReeval = async (dry = true) => {
+    setExpBusy('reeval');
+    const { data, error } = await supabase.rpc('fn_skill_reeval_pending', { p_dry_run: dry });
+    setExpBusy('');
+    if (error) { toast.error('ประเมินคิวไม่สำเร็จ: ' + error.message); return; }
+    const r = data || {};
+    if (dry) {
+      const ok = window.confirm(
+        `ประเมินคำขอค้าง ${r.pending_total} ใบตามเกณฑ์ใหม่:\n` +
+        `  ✅ ผ่าน ${r.pass} ใบ\n` +
+        `  ❌ ไม่ผ่าน ${r.fail} ใบ\n` +
+        `  ⏸️ ระบบประเมินไม่ได้ ${r.hold} ใบ (ปล่อยไว้ให้คนตัดสิน)\n\n` +
+        `กด OK = ปิดใบที่ไม่ผ่าน ${r.fail} ใบ เป็น "ไม่อนุมัติ" พร้อมเหตุผล\n` +
+        `ใบไม่ถูกลบ · คนที่ถูกปิดจะถูกยื่นใหม่อัตโนมัติทันทีที่หลักฐานครบ`);
+      if (ok) runReeval(false);
+      return;
+    }
+    toast.success(`ปิดคำขอที่ไม่ผ่าน ${r.rejected_now} ใบแล้ว`);
+    fetchLevelUpRequests();
+  };
+
+  const toggleExpLive = async () => {
+    const next = !expCfg?.is_enabled;
+    if (!window.confirm(next
+      ? 'เปิดสูตร EXP v2 กับคะแนนจริง?\n\nคะแนนจะถูกคำนวณใหม่จากหลักฐานที่วัดได้ — บางคนจะลดลง\nปิดกลับได้ทุกเมื่อ (ระดับที่อนุมัติไปแล้วเป็นพื้น ไม่ถูกลดต่ำกว่านั้น)'
+      : 'กลับเป็นโหมดทดลอง (shadow)?\nสูตรใหม่จะคำนวณต่อแต่ไม่แตะคะแนนจริง')) return;
+    /* ⚠️ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้อง .select() แล้วนับแถว */
+    const res = await supabase.from('skill_exp_config')
+      .update({ is_enabled: next, updated_at: new Date().toISOString(), updated_by: fullName || null })
+      .eq('id', 1).select('id');
+    if (!checkWrite(res, 'สลับโหมด EXP v2')) return;
+    if (!res.data?.length) { toast.error('ไม่มีสิทธิ์เปลี่ยนโหมด (skills:run_weekly_update)'); return; }
+    toast.success(next ? 'เปิดใช้สูตร EXP v2 แล้ว' : 'กลับเป็นโหมดทดลองแล้ว');
+    fetchExpConfig();
+  };
+
   const fetchLevelUpRequests = async () => {
     const { data } = await supabase.from('skill_level_up_requests')
       .select('*, employees(id, name, employee_id_code, section, line_id)')
@@ -264,6 +340,7 @@ export default function Operator() {
     if (isLeader && userLineId)  rows = rows.filter(r => r.employees?.line_id === userLineId);
     else if (scopeSecs.length)   rows = rows.filter(r => inSectionScope(scopeSecs, r.employees?.section));
     setLevelUpRequests(rows);
+    fetchEvidence(rows);
   };
 
   const handleRunWeeklyUpdate = async () => {
@@ -1520,7 +1597,40 @@ export default function Operator() {
                 {runningWeekly ? 'กำลังรัน...' : '🔄 Run Weekly Update'}
               </button>
             )}
+            {can('skills', 'run_weekly_update', role) && (
+              <>
+                <button onClick={runExpRebuild} disabled={!!expBusy} title="คำนวณหลักฐานสะสมใหม่ทั้งก้อนจากข้อมูลจริง"
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: 'rgba(132,204,18,0.12)', color: '#84cc16', border: '1px solid rgba(132,204,18,0.3)',
+                    opacity: expBusy ? 0.6 : 1 }}>
+                  {expBusy === 'rebuild' ? 'กำลังคำนวณ...' : '🧮 คำนวณหลักฐานใหม่'}
+                </button>
+                <button onClick={() => runReeval(true)} disabled={!!expBusy} title="ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)"
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)',
+                    opacity: expBusy ? 0.6 : 1 }}>
+                  {expBusy === 'reeval' ? 'กำลังประเมิน...' : '🧪 ประเมินคิวใหม่'}
+                </button>
+                <button onClick={toggleExpLive} disabled={!!expBusy}
+                  title={expCfg?.is_enabled ? 'กำลังใช้สูตร EXP v2 กับคะแนนจริง' : 'สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง'}
+                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    background: expCfg?.is_enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
+                    color: expCfg?.is_enabled ? '#22c55e' : 'var(--muted)',
+                    border: `1px solid ${expCfg?.is_enabled ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}` }}>
+                  {expCfg?.is_enabled ? '🟢 EXP v2: ใช้จริง' : '⚪ EXP v2: โหมดทดลอง'}
+                </button>
+              </>
+            )}
           </div>
+
+          {/* 🔴 โหมดทดลอง = คะแนนบนจออื่นยังมาจากสูตรเดิม — ต้องเขียนให้ชัด ห้ามให้คนเข้าใจผิด */}
+          {expCfg && !expCfg.is_enabled && (
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 7, fontSize: 12,
+                          background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+              ℹ️ <strong>โหมดทดลอง (shadow)</strong> — สูตร EXP v2 คำนวณหลักฐานให้ดูเทียบได้
+              แต่ <strong>คะแนนจริงยังมาจากสูตรเดิม</strong> (+1/วัน · +2/สัปดาห์) · กดปุ่ม ⚪ ด้านบนเพื่อเริ่มใช้จริง
+            </div>
+          )}
 
           {/* Level legend */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -1564,6 +1674,13 @@ export default function Operator() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         ขอเมื่อ {fmtDateMedium(req.requested_at)}
                       </div>
+
+                      {/* หลักฐานที่ระบบวัดได้ — คนอนุมัติต้องเห็นก่อนกดปุ่ม (ISO 9001 §7.2) */}
+                      <SkillEvidencePanel
+                        ev={evByKey[`${req.employee_id}|${req.skill_name}`]}
+                        cfg={expCfg}
+                        currentScore={req.from_score}
+                      />
 
                       {/* Doc upload for level 100 */}
                       {needsDoc && canApprove && (
