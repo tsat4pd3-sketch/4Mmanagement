@@ -1137,7 +1137,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
                   background: 'rgba(245,158,11,0.95)', color: '#fff',
                   padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  zIndex: 20, boxShadow: 'var(--shadow-float)',   // ป้ายเตือนลอยทับรูปผังจริง
                   whiteSpace: 'nowrap', pointerEvents: 'none',
                 }}>
                   {collisionWarn}
@@ -1148,7 +1148,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   position: 'absolute', top: 8, left: 8,
                   background: 'rgba(77,159,255,0.92)', color: '#fff',
                   padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                  zIndex: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.3)', pointerEvents: 'none',
+                  zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
                   🔗 ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
                 </div>

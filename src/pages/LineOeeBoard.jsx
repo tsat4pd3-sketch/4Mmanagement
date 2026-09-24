@@ -5,7 +5,7 @@ import { UserContext } from '../App';
 import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
-import { dtBucketName, dtTrashStats } from '../utils/downtimeCategory';
+import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
 import { getLineFamilyNames, getLeafLineNames, getAncestorNames, isLeafLine } from '../utils/lineHierarchy';
 import LineSelect, { lineOptions } from '../components/LineSelect';
 import { getWorkDate } from '../utils/workDate';
@@ -270,12 +270,14 @@ export default function LineOeeBoard() {
 
     // Pareto (หน้าต่างสัปดาห์เดียวกับ KPI)
     const kpiSessIds = new Set(sessions.filter(s => s.work_date >= kpiFrom).map(s => s.id));
+    /* พจนานุกรมเดาประเภทจากคำ — สร้างจากชื่อประเภทที่อยู่ในชุดนี้เอง ไม่ยิงคิวรีเพิ่ม */
+    const dtIdx = buildDtIndex(dts);
     const dtTop = {}, defTop = {};
     dts.forEach(d2 => {
       if (!kpiSessIds.has(d2.session_id) || d2.dr_downtime_types?.category === 'planned') return; // Pareto นับเฉพาะนอกแผน
       /* 🗑️ ถังขยะ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" ต้องแตกตามเครื่อง (utils/downtimeCategory 23/09)
          ไม่งั้นแท่งเดียวกินนาทีจากหลายเครื่องรวมกัน — ช่างอ่านแล้วไปไล่ต่อไม่ได้ */
-      const k = dtBucketName(d2);
+      const k = dtBucketName(d2, dtIdx);
       dtTop[k] = (dtTop[k] || 0) + (Number(d2.duration_min) || 0);
     });
     defs.forEach(d2 => {
@@ -298,7 +300,7 @@ export default function LineOeeBoard() {
       trend, overall, A, P, Q, tgt, variance: overall != null ? +(overall - tgt).toFixed(1) : null,
       loadMin, runMin, unplMin, plMin, produced, ngTotal,
       dtTop6: top6(dtTop), defTop6: top6(defTop), history,
-      dtTrash: dtTrashStats(dts.filter(d2 => kpiSessIds.has(d2.session_id) && d2.dr_downtime_types?.category !== 'planned')),
+      dtTrash: dtTrashStats(dts.filter(d2 => kpiSessIds.has(d2.session_id) && d2.dr_downtime_types?.category !== 'planned'), { index: dtIdx }),
       hasOpen: !!openNow.length, activeDt, liveNow, kpiN: kpiRows.length,
       liveInWindow: kpiRows.some(r => r.live && r.oee != null),
     };
@@ -468,7 +470,8 @@ export default function LineOeeBoard() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             {barChart(`Alarm Top 6 (นาที · ${DAYS_KPI} วัน)`, C.dtTop6, '#f97316',
                       `เฉพาะหยุดนอกแผน — หยุดตามแผนไม่ใช่ loss${C.dtTrash?.vague
-                        ? ` · 🗑️ ไม่ได้ระบุสาเหตุ ${C.dtTrash.vague} ใบ (แตกตามเครื่องให้แล้ว${
+                        ? ` · 🗑️ ไม่ได้ระบุสาเหตุ ${C.dtTrash.vague} ใบ (${
+                          C.dtTrash.guessed ? `🔎 เดาจากคำ ${C.dtTrash.guessed} · ` : ''}แตกตามเครื่อง${
                           C.dtTrash.noMachine ? ` · ${C.dtTrash.noMachine} ใบไม่กรอกเครื่อง = ชี้เป้าไม่ได้` : ''})` : ''}`)}
             {barChart(`Defect Top 6 (ชิ้น · ${DAYS_KPI} วัน)`, C.defTop6, '#ef4444', 'รวมทุกรายการ (🧪 = งานทดลอง ไม่ถูกนับใน %Q)')}
             <div style={{ ...card, flex: 1.2, minWidth: 340 }}>

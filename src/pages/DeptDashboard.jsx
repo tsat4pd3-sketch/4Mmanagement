@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
@@ -189,6 +189,9 @@ async function loadProduction(ctx) {
 }
 
 function ProductionView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt7), [d.dt7]);
   const { workDate, prevDate, lines, navigate, isMobile } = ctx;
   const pairOf = useMemo(() => { const m = {}; d.prods.forEach(p => { if (p.pair_mat_no) m[p.mat_no] = p.pair_mat_no; }); return (x) => m[x] || null; }, [d.prods]);
 
@@ -267,7 +270,7 @@ function ProductionView({ d, ctx }) {
   const dtRecords = useMemo(() => {
     const sMap = {}; d.sess7.forEach(s => { sMap[s.id] = s; });
     return d.dt7.filter(x => x.dr_downtime_types?.category !== 'planned').map(x => ({
-      cat: dtBucketName(x), value: dtMinOf(x),   // 🗑️ ถังขยะแตกตามเครื่อง (downtimeCategory 23/09)
+      cat: dtBucketName(x, dtIdx), value: dtMinOf(x),   // 🗑️ เดาจากคำ → ไม่ได้ก็แตกตามเครื่อง
       machine: x.machine_no || '(ไม่ระบุเครื่อง)', line: sMap[x.session_id]?.line_name || '-',
       shift: sMap[x.session_id]?.shift === 'night' ? 'กะดึก' : 'กะเช้า', date: sMap[x.session_id]?.work_date, note: x.description || '',
     })).filter(r => r.value > 0);
@@ -362,6 +365,9 @@ async function loadMaintenance(ctx) {
 }
 
 function MaintenanceView({ d, ctx }) {
+  /* พจนานุกรมเดาประเภทดาวน์ไทม์จากคำ — สร้างจากชื่อประเภทในชุดข้อมูลนี้เอง (ไม่ยิงคิวรีเพิ่ม)
+     🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
+  const dtIdx = useMemo(() => buildDtIndex(d.dt30), [d.dt30]);
   const { workDate, navigate, isMobile, inScope } = ctx;
   const openMo = d.mo.filter(isMoOpen);   // รวม transferred = จบแล้ว (source: utils/mtnStepPerm)
   const scopedMo = openMo.filter(o => !o.line_name || inScope(o.line_name));
@@ -387,7 +393,7 @@ function MaintenanceView({ d, ctx }) {
     d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned' && x.machine_no).forEach(x => {
       const m = (byMc[x.machine_no] ||= { machine: x.machine_no, times: 0, min: 0, line: sMap[x.session_id]?.line_name || '', last: null, causes: {} });
       m.times++; m.min += dtMinOf(x);
-      const c = dtBucketName(x); m.causes[c] = (m.causes[c] || 0) + 1;
+      const c = dtBucketName(x, dtIdx); m.causes[c] = (m.causes[c] || 0) + 1;
       const dt = x.started_at || sMap[x.session_id]?.work_date; if (dt && (!m.last || dt > m.last)) m.last = dt;
     });
     const hasMo = new Set(d.mo.filter(o => o.machine_no && (daysSince(o.report_at) ?? 999) <= 30).map(o => o.machine_no));

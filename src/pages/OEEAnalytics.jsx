@@ -7,7 +7,7 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
-import { dtBucketName } from '../utils/downtimeCategory';
+import { dtBucketName, buildDtIndex, dtTrashStats } from '../utils/downtimeCategory';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -230,7 +230,7 @@ function MiniTrendTip({ active, payload, label, dataKey, metric }) {
   if (!active || !payload?.length) return null;
   const v = payload.find(p => p.dataKey === dataKey)?.value;
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11, boxShadow: 'var(--shadow-float)' }}>
       <div style={{ color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontWeight: 800 }}>{metric} {v != null ? `${v}%` : 'ไม่มีข้อมูล'}</div>
     </div>
@@ -768,12 +768,14 @@ export default function OEEAnalytics() {
   const [tdDtShowAll, setTdDtShowAll] = useState(false);
   // เจาะดูรายการดิบของแถวที่กด — { kind: 'cause'|'part', key, label }
   const [tdDtDrill, setTdDtDrill] = useState(null);
+  /* พจนานุกรมเดาประเภทจากคำ — จากชื่อประเภทในชุดข้อมูลเอง (ไม่ยิงคิวรีเพิ่ม) */
+  const tdDtIdx = useMemo(() => buildDtIndex(tdDowntimesScoped), [tdDowntimesScoped]);
   const tdDtByCause = useMemo(() => {
     const map = {};
     for (const d of tdDowntimesScoped) {
       /* 🗑️ "อื่นๆ / Alarm ไม่ระบุสาเหตุ" แตกตามเครื่อง (utils/downtimeCategory 23/09)
          — แท่งที่ยุบรวมไว้บอกไม่ได้ว่าไปแก้เครื่องไหน ทั้งที่ 92% ของใบกรอก machine_no ไว้แล้ว */
-      const name = dtBucketName(d);
+      const name = dtBucketName(d, tdDtIdx);
       const cat  = d.dr_downtime_types?.category || 'unplanned';
       // typeId ไว้ query ย้อนหลังของสาเหตุนี้ตอนกดเจาะ (ชื่อเป็น snapshot เทียบตรงๆ ไม่ได้)
       if (!map[name]) map[name] = { name, min: 0, category: cat, typeId: d.downtime_type_id || null };
@@ -863,11 +865,11 @@ export default function OEEAnalytics() {
     for (const s of tdSessions) sMap[s.id] = s;
     return tdDowntimesScoped
       .filter(d => (tdDtDrill.kind === 'cause'
-        ? dtBucketName(d) === tdDtDrill.key   // ต้องเป็นสูตรเดียวกับตอนสร้างคีย์ใน tdDtByCause
+        ? dtBucketName(d, tdDtIdx) === tdDtDrill.key   // ต้องเป็นสูตรเดียวกับตอนสร้างคีย์ใน tdDtByCause
         : d.dr_downtime_types?.category !== 'planned' && (d.mat_no || 'ไม่ระบุ MAT.NO') === tdDtDrill.key))
       .map(d => ({ ...d, _s: sMap[d.session_id] || null }))
       .sort((a, b) => (b.duration_min || 0) - (a.duration_min || 0));
-  }, [tdDtDrill, tdDowntimesScoped, tdSessions]);
+  }, [tdDtDrill, tdDowntimesScoped, tdSessions, tdDtIdx]);
 
   /* ══════════════════════════════════════════════════════════════════════
      TAB: TREND — historical range analytics (เดิม)
@@ -1198,11 +1200,12 @@ export default function OEEAnalytics() {
     return (min / 60) * ratePerHour(rate, RATE_COMPONENTS.map(c => c.key));
   }, [linesFull, ccRates]);
 
+  const dtIdx = useMemo(() => buildDtIndex(downtimes), [downtimes]);
   const dtRecords = useMemo(() => downtimes.filter(d => dtIncludePlanned || d.dr_downtime_types?.category !== 'planned').map(d => {
     const s = sessById[d.session_id] || {};
     const min = Number(d.duration_min) || 0;
     return {
-      cat: dtBucketName(d),
+      cat: dtBucketName(d, dtIdx),
       value: min,
       // หยุดตามแผนไม่ใช่ loss → ไม่ตีเป็นเงิน (กฎเดียวกับ dtCost) แต่ยังอยู่ในพาเรโตตอนติ๊ก "รวมในแผน"
       baht: d.dr_downtime_types?.category === 'planned' ? null : priceMin(min, s.line_name, s.work_date),
@@ -1234,7 +1237,7 @@ export default function OEEAnalytics() {
       if (!rate) { const k = sess.line_name || 'ไม่ระบุไลน์'; noRate.set(k, (noRate.get(k) || 0) + min); return; }
       const v = (min / 60) * ratePerHour(rate, allComps);
       baht += v; pricedMin += min;
-      const t = dtBucketName(d);   // 🗑️ ถังขยะแตกตามเครื่อง — ต้องตรงกับพาเรโตในหน้าเดียวกัน
+      const t = dtBucketName(d, dtIdx);   // 🗑️ ต้องตรงกับพาเรโตในหน้าเดียวกัน
       const cur = byType.get(t) || { min: 0, baht: 0 };
       cur.min += min; cur.baht += v; byType.set(t, cur);
     });

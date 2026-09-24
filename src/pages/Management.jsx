@@ -968,7 +968,7 @@ export default function Management() {
           cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
           display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
           gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          boxShadow: 'var(--shadow-sm)',   // การ์ดพนักงานใน pool = การ์ดแบน ไม่ได้ลอย (ธีมมืด = ไม่มีเงา)
         }}
       >
         {worker.employees?.image_url
@@ -3083,7 +3083,7 @@ function WorkerHoverCard({ card, skillDefs }) {
               : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
             }
             {fit && (
-              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: '0 2px 8px rgba(0,0,0,0.6)' }}>
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
                 {fit.score}
               </div>
             )}

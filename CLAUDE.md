@@ -336,10 +336,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
    downtime: ถัง "อื่นๆ/Alarm ไม่ระบุ" **92% มี `machine_no`** ⇒ `dtBucketName` (`utils/downtimeCategory.js`)
    แตกเป็น `"<เครื่อง> · <ประเภท>"`
 5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
-   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ · ก้ำกึ่ง → null
+   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
    · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-   · 🔴 **taxonomy ละเอียด/ป้ายซ้ำซ้อน = ห้ามใช้** (วัดแล้วผิดครึ่ง — ยุบป้ายก่อน)
-> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 (downtime)
+   · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ตัดคำไทยด้วย ICU `Intl.Segmenter` ·
+     คีย์เสียงข้ามสคริปต์ (เบนดิ่ง=bending) · ทนพิมพ์ผิด ⇒ จับได้ ×2 เท่า
+     🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ต้องตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อนเมื่อไหร่พังทันที)
+   · 📐 **คำที่เรียนจากใบเก่าตัดสินด้วย log-odds z ≥ 1.96 + พื้นขั้นต่ำ 3 ใบ** (`utils/termStats.js`)
+     เลิกใช้ "ชนะ 80%" — 100% จาก 2 ใบ ไม่ใช่หลักฐานระดับเดียวกับ 88% จาก 125 ใบ
+> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
 
 ## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
 
@@ -593,6 +597,8 @@ src/
 │                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
 │                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
 │                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
+│                      #   🇹🇭 ชั้นภาษา: thaiText.js (ตัดคำไทย ICU · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด) +
+│                      #     termStats.js (log-odds) + autoCategory.js (เดาหมวด) + downtimeCategory.js
 │                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
 │                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
 │                      #   otPeriods.js, dateFormat.js, useImgBox.js
@@ -800,6 +806,9 @@ webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีก�
 - **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto`** · กล่องที่แค่ต้องการตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent: 'start'`** ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน (flexbox ไม่เป็น)
 - **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** ทั้งที่พื้นที่เหลือ — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
+- 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียนค่า rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) —
+  การ์ดแบน `var(--shadow-sm)` (**ธีมมืด = none · ธีมสว่างยังมี** เพราะขอบจาง เงาคือตัวแยกการ์ด) ·
+  ของที่ลอยจริง (ป้ายบนผัง/tooltip/badge ยื่น/ปุ่ม toggle) `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 > 📄 เหตุผล + เคสจริง + ตัวเลขที่วัดได้ (รวมกฎ `input{width:100%}`) → `docs/UI-CONVENTIONS.md` §7 + §7.1
 
 ### Breakpoints
