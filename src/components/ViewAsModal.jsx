@@ -12,7 +12,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
-import { toHierarchicalOptions } from '../utils/lineHierarchy';
+import LineSelect from './LineSelect';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 
 export default function ViewAsModal({ current, onClose, onApply }) {
@@ -92,12 +92,10 @@ export default function ViewAsModal({ current, onClose, onApply }) {
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 2, minWidth: 200 }}>
               ไลน์ของหัวหน้ากลุ่ม (scope = ทั้งครอบครัวไลน์)
-              <select value={lineId} onChange={e => setLineId(e.target.value)} style={{ marginTop: 4 }}>
-                <option value="">— ยังไม่กำหนดไลน์ —</option>
-                {toHierarchicalOptions(lines).map(({ line: l, depth }) => (
-                  <option key={l.id} value={l.id}>{`${'  '.repeat(depth)}${depth ? '↳ ' : ''}${l.name}`}</option>
-                ))}
-              </select>
+              {/* picker กลาง (UI §5.1.2) — ไม่ส่ง role/sections เพราะจอนี้คือ "สวมบทบาท" ต้องเห็นทุกไลน์
+                  includeRetired: คงพฤติกรรมเดิม (เดิม map จาก lines ดิบ ไม่กรอง is_active) */}
+              <LineSelect lines={lines} value={lineId} onChange={setLineId} valueKey="id"
+                placeholder="— ยังไม่กำหนดไลน์ —" includeRetired style={{ marginTop: 4 }} />
             </label>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1, minWidth: 90 }}>
               ทีม

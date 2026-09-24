@@ -11,7 +11,7 @@ import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
-import { lineOptions } from '../components/LineSelect';
+import { lineOptions, lineOptionLabel } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 
@@ -257,7 +257,7 @@ export default function Register() {
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
                   {lineOptions(lineOpts, { current: groupName }).map(o => (
-                    <option key={o.value} value={o.value}>{`${'\u00a0\u00a0'.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`}</option>
+                    <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>
                   ))}
                 </select>
               );

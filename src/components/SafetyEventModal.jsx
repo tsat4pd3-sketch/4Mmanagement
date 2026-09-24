@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { toast } from './Toast';
 import { SAFETY_KINDS, safetyKind } from '../utils/obeya';
 import { notifyEvent } from '../utils/notifyEvent';
+import LineSelect from './LineSelect';
 
 /* ══ 🛡️ บันทึกเหตุการณ์ความปลอดภัย (OBEYA แกน S) · 2026-08-27 ═══════════════════
    ระบบเดิม "ไม่มีที่เก็บอุบัติเหตุเลย" — ตรวจ 2026-08-27: ไม่มีตาราง accident/incident/injury
@@ -18,7 +19,7 @@ import { notifyEvent } from '../utils/notifyEvent';
      ไม่งั้นเปิดแก้ไขแล้วชนิดหายเงียบ
    ═════════════════════════════════════════════════════════════════════════════ */
 
-export default function SafetyEventModal({ init, section, date, lineOpts = [], sectionOpts = [], onClose, onSaved }) {
+export default function SafetyEventModal({ init, section, date, lineRows = [], sectionOpts = [], onClose, onSaved }) {
   const { fullName } = useContext(UserContext);
   const editing = !!init?.id;
   const [busy, setBusy] = useState(false);
@@ -172,11 +173,10 @@ export default function SafetyEventModal({ init, section, date, lineOpts = [], s
           </div>
           <div>
             <div style={lbl}>ไลน์ (ถ้าเกิดในไลน์)</div>
-            <select style={inp} value={f.line_name} onChange={e => set('line_name', e.target.value)}>
-              <option value="">— ไม่ระบุ / นอกไลน์ —</option>
-              {lineOpts.map(l => <option key={l} value={l}>{l}</option>)}
-              {f.line_name && !lineOpts.includes(f.line_name) && <option value={f.line_name}>{f.line_name} (นอกขอบเขต)</option>}
-            </select>
+            {/* picker กลาง (UI §5.1.2) — lineRows ถูกกรองขอบเขต (org scope) มาจากบอร์ดแล้ว
+                จึงไม่ส่ง role/sections ซ้ำ · ค่าเก่าที่นอกลิสต์ LineSelect เติมกลับให้เอง ไม่หายเงียบ */}
+            <LineSelect lines={lineRows} value={f.line_name} onChange={v => set('line_name', v)}
+              placeholder="— ไม่ระบุ / นอกไลน์ —" style={inp} />
           </div>
 
           <div style={{ gridColumn: '1 / -1' }}>
