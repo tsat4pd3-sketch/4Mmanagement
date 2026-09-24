@@ -23,6 +23,10 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import { useSearchParams } from 'react-router-dom';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
@@ -172,14 +176,14 @@ const KpiCard = ({ label, value, color, sub, calc, more, primary = false, unit =
       </div>
       {sub && <div style={{ fontSize: primary ? 12 : 11, color: 'var(--muted)', marginTop: 4 }}>{sub}</div>}
       {calc && (
-        <div style={{ fontSize: 10.5, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border)', lineHeight: 1.65 }}>
           {calc}
           {more && (
             <>
               <button onClick={() => setOpen(o => !o)} style={{
                 marginTop: 5, padding: '2px 7px', borderRadius: 6, cursor: 'pointer',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
-                color: 'var(--muted)', fontSize: 10, fontWeight: 700,
+                color: 'var(--muted)', fontSize: 11, fontWeight: 700,
               }}>{open ? '▴ ย่อ' : `${MORE_MARK} อ่านเพิ่ม`}</button>
               {open && <div style={{ marginTop: 5 }}>{more}</div>}
             </>
@@ -1300,7 +1304,6 @@ export default function OEEAnalytics() {
 
   // ── Styles ─────────────────────────────────────────────────────
   const s = {
-    page:    { padding: '20px 24px', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' },
     section: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 20px', marginBottom: 16 },
     title:   { fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 },
     sel:     { width: 'auto', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', color: 'var(--text)', fontSize: 13 }, // width:auto กัน index.css input/select {width:100%} ยืดเต็ม filter bar
@@ -1309,7 +1312,7 @@ export default function OEEAnalytics() {
   };
 
   return (
-    <div style={s.page}>
+    <Page>
       <PageHeader
         title="OEE Analytics" icon="📈"
         sub="วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality"
@@ -1347,48 +1350,44 @@ export default function OEEAnalytics() {
 
       {viewTab === 'today' ? (
         <>
-          {/* ── Filter bar ── */}
-          <div style={{ ...s.section, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-            <input type="date" value={tdDate} onChange={e => setTdDate(e.target.value)} style={s.sel} />
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtThaiDate(tdDate)}</span>
-
-            <select style={s.sel} value={tdShift} onChange={e => setTdShift(e.target.value)}>
-              <option value="">ALL SHIFT (ทุกกะ)</option>
-              <option value="day">กะเช้า</option>
-              <option value="night">กะดึก</option>
-            </select>
-
-            <select style={s.sel} value={tdSection} onChange={e => { setTdSection(e.target.value); setTdDept(''); setTdLine(''); }}>
-              <option value="">ทุกส่วนงาน</option>
+          {/* ── Filter bar ── UI-STANDARD 2026-09-24: ขอบเขต → เวลา → กะ (Segmented เหมือนแท็บแนวโน้ม) → spacer → สถานะ/ปุ่ม */}
+          <FilterBar style={{ marginBottom: 16 }}>
+            <select value={tdSection} onChange={e => { setTdSection(e.target.value); setTdDept(''); setTdLine(''); }}>
+              <option value="">{ALL.section}</option>
               {sectionOptions.map(sec => <option key={sec} value={sec}>{sec}</option>)}
             </select>
 
             {/* แผนก/กลุ่มไลน์ → ไลน์ลูก ผ่าน <LineSelect> กลาง (linesFull ถูก scope แล้ว จึงไม่ส่ง role/sections ซ้ำ) (2026-09-07) */}
-            <LineSelect style={s.sel} lines={rootLines} value={tdDept} onChange={v => { setTdDept(v); setTdLine(''); }} placeholder="ทุกแผนก/กลุ่มไลน์" />
+            <LineSelect lines={rootLines} value={tdDept} onChange={v => { setTdDept(v); setTdLine(''); }} placeholder={ALL.dept} />
 
             {childLines.length > 0 && (
-              <LineSelect style={s.sel} lines={childLines} value={tdLine} onChange={setTdLine} placeholder={`${tdDept} (ทั้งหมด)`} />
+              <LineSelect lines={childLines} value={tdLine} onChange={setTdLine} placeholder={ALL.line} />
             )}
 
-            <select style={s.sel} value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
-              <option value="">ทุกทีม</option>
+            <select value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
+              <option value="">{ALL.team}</option>
               <option value="A">Team A</option>
               <option value="B">Team B</option>
               <option value="C">Team C</option>
             </select>
 
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              LAST UPDATE : {lastUpdate ? lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+            <input type="date" value={tdDate} onChange={e => setTdDate(e.target.value)} />
+            <span className="filter-label">{fmtThaiDate(tdDate)}</span>
+
+            <Segmented value={tdShift} onChange={setTdShift} options={SHIFT_OPTIONS} label="กะ" />
+
+            <span className="spacer" />
+            <span className="filter-count">
+              อัปเดตล่าสุด : {lastUpdate ? lastUpdate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
             </span>
-            <button onClick={() => { loadToday(); loadTdHistory(); }} style={{ ...s.tab(false) }}>🔄</button>
+            <button onClick={() => { loadToday(); loadTdHistory(); }} style={{ ...s.tab(false) }} title="โหลดใหม่">🔄</button>
             <button onClick={() => setAutoRefresh(v => !v)} style={s.tab(autoRefresh)}>
               {/* จุดเขียวนิ่ง — กระพริบสงวนให้สถานะแดง (Andon) เท่านั้น ตาม UI-CONVENTIONS */}
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: autoRefresh ? '#22c55e' : 'var(--muted)', marginRight: 6, boxShadow: autoRefresh ? '0 0 5px 1px rgba(34,197,94,0.6)' : 'none' }} />
-              AUTO REFRESH
+              รีเฟรชอัตโนมัติ
             </button>
-            {tdLoading && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</span>}
-          </div>
+            {tdLoading && <span className="filter-count">กำลังโหลด...</span>}
+          </FilterBar>
 
           {/* 1. OEE Overview */}
           <div style={s.section}>
@@ -1422,7 +1421,7 @@ export default function OEEAnalytics() {
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OEE จริง — นับหยุดในแผนด้วย</div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: tdKpi.strictOee != null ? oeeColor(tdKpi.strictOee) : 'var(--muted)' }}>{tdKpi.strictOee ?? '—'}{tdKpi.strictOee != null ? '%' : ''}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   ฐาน = เวลากะ − พัก (นับหยุดในแผนเป็นการสูญเสีย)
                   {tdKpi.strictGapPts != null && tdKpi.strictGapPts > 0.05
                     ? <> · <span style={{ color: '#f59e0b' }}>ต่ำกว่า OEE {tdKpi.strictGapPts.toFixed(1)} จุด</span></> : ''}
@@ -1432,12 +1431,12 @@ export default function OEEAnalytics() {
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>OOE — ใช้เวลากะคุ้มแค่ไหน</div>
                 {/* ไม่มีเป้า OOE/TEEP ในระบบ ⇒ ห้ามทาเขียว/แดง (statusTone กฎ 2) — เหมือนแถว KPI ด้านล่าง */}
                 <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.ooe ?? '—'}{tdKpi.ooe != null ? '%' : ''}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน) · ยังไม่ได้ตั้งเป้า</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ฐาน = เวลากะทั้งหมด (รวมพัก + หยุดตามแผน) · ยังไม่ได้ตั้งเป้า</div>
               </div>
               <div style={{ flex: '1 1 150px', minWidth: 140 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>TEEP — ใช้กำลังผลิตที่มีกี่ %</div>
                 <div style={{ fontSize: 26, fontWeight: 900, color: 'var(--text)' }}>{tdKpi.teep ?? '—'}{tdKpi.teep != null ? '%' : ''}</div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>ฐาน = ปฏิทิน 24 ชม. · {tdKpi.teepLines} ไลน์ · ยังไม่ได้ตั้งเป้า</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ฐาน = ปฏิทิน 24 ชม. · {tdKpi.teepLines} ไลน์ · ยังไม่ได้ตั้งเป้า</div>
               </div>
               <div style={{ flex: '2 1 260px', minWidth: 230 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
@@ -1452,7 +1451,7 @@ export default function OEEAnalytics() {
                     <div style={{ width: `${Math.max(0, (tdKpi.netAvailMin / tdKpi.shiftMinSum * 100) - (tdKpi.ooe ?? 0))}%`, background: '#a855f7' }} title="เสียตอนเดินเครื่อง" />
                     <div style={{ flex: 1, background: '#f59e0b' }} title="พัก + หยุดตามแผน" />
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 5 }}>🟩 สร้างของดี · 🟪 เสียตอนเดินเครื่อง · 🟧 พัก+หยุดตามแผน (OEE ไม่เห็นส่วนนี้)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>🟩 สร้างของดี · 🟪 เสียตอนเดินเครื่อง · 🟧 พัก+หยุดตามแผน (OEE ไม่เห็นส่วนนี้)</div>
                 </>) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีกะปิด</div>}
               </div>
             </div>
@@ -1593,14 +1592,14 @@ export default function OEEAnalytics() {
                 const dn = v.diff != null && v.diff < -0.05;
                 return (
                   <div key={k} style={{ flex: '1 1 120px', minWidth: 110, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 9, padding: '8px 11px' }}>
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 700 }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{k === 'oee' ? 'OEE' : k.toUpperCase()}</div>
                     <div style={{ fontSize: 17, fontWeight: 900, color: v.now != null ? (k === 'oee' ? oeeColor(v.now) : METRIC_COLOR[k]) : 'var(--muted)' }}>
                       {v.now ?? '—'}{v.now != null ? '%' : ''}
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: up ? '#22c55e' : dn ? '#ef4444' : 'var(--muted)' }}>
                       {v.diff == null ? 'เทียบไม่ได้' : `${up ? '▲ +' : dn ? '▼ ' : '● '}${v.diff} จุด`}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       เฉลี่ย {v.avg ?? '—'}{v.avg != null ? '%' : ''}
                     </div>
                   </div>
@@ -1617,7 +1616,7 @@ export default function OEEAnalytics() {
               {/* ⚠️ ตัวกรองทีมมีผลกับตัวเลข "วันนี้" แต่ไม่มีผลกับค่าเฉลี่ยย้อนหลัง (ตารางกะโหลดมาแค่วันที่เลือก)
                   — ห้ามปล่อยให้คนอ่านคิดว่าเทียบทีมเดียวกัน */}
               {tdTeam && (
-                <div style={{ fontSize: 10.5, color: '#f59e0b', maxWidth: 220, textAlign: 'right', lineHeight: 1.45 }}>
+                <div style={{ fontSize: 11, color: '#f59e0b', maxWidth: 220, textAlign: 'right', lineHeight: 1.45 }}>
                   ⚠ ค่าเฉลี่ยย้อนหลัง <b>ไม่ได้กรองทีม {tdTeam}</b> — เทียบกับทุกทีม
                 </div>
               )}
@@ -1787,7 +1786,7 @@ export default function OEEAnalytics() {
                                   opacity: d.min > 0 ? 0.9 : 1 }} />
                             ))}
                           </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--muted)', marginTop: 3 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                             <span>{dateStrAdd(tdDate, -29)}</span>
                             <span style={{ color: '#f59e0b' }}>■ วันที่เลือก</span>
                             <span>{tdDate}</span>
@@ -1832,7 +1831,7 @@ export default function OEEAnalytics() {
                               </td>
                               <td style={{ ...td, minWidth: 200 }}>
                                 {d.description || <span style={{ color: 'var(--muted)' }}>— ไม่ได้กรอกหมายเหตุ —</span>}
-                                {d.reported_by_name && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{d.reported_by_name}</div>}
+                                {d.reported_by_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.reported_by_name}</div>}
                                 {/* วิธีแก้ไขที่หัวหน้ากลุ่มลงไว้ (feedback 2026-08-19) */}
                                 {d.fix_action && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>🛠 {d.fix_action}</div>}
                               </td>
@@ -1859,13 +1858,9 @@ export default function OEEAnalytics() {
         onView={tr.setView} onReload={loadData} loading={loading} style={{ marginBottom: 12 }}
       >
         {/* ทะเบียนไลน์ (scope แล้ว) ผ่าน <LineSelect> กลาง — เดิมสร้างจากชื่อใน sessions: ไลน์ที่ rename แล้วโชว์ชื่อเก่า / ไลน์ที่ยังไม่มี session หาย (2026-09-07) */}
-        <LineSelect style={s.sel} lines={linesFull} value={selLine} onChange={setSelLine} placeholder="ทุกไลน์"
+        <LineSelect lines={linesFull} value={selLine} onChange={setSelLine} placeholder={ALL.line}
           extraGroups={[{ label: '⚠ นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
-        <select style={s.sel} value={selShift} onChange={e => setSelShift(e.target.value)}>
-          <option value="">ทุกกะ</option>
-          <option value="day">กะเช้า</option>
-          <option value="night">กะดึก</option>
-        </select>
+        <Segmented value={selShift} onChange={setSelShift} options={SHIFT_OPTIONS} label="กะ" />
       </TimeRangeBar>
 
       {/* KPI Cards
@@ -1986,7 +1981,7 @@ export default function OEEAnalytics() {
               <div style={{ width: `${Math.max(0, (kpi.netAvailMin / kpi.shiftMinTotal * 100) - (kpi.ooe ?? 0))}%`, background: '#a855f7' }} title="เสียในเวลารับภาระ (เครื่องเสีย/ช้า/ของเสีย)" />
               <div style={{ flex: 1, background: '#f59e0b' }} title="พักนโยบาย + หยุดตามแผน" />
             </div>
-            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
               🟩 สร้างของดี · 🟪 เสียตอนเดินเครื่อง · 🟧 พัก+หยุดตามแผน (OEE มองไม่เห็นส่วนนี้ — OOE เห็น)
             </div>
           </>) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อมูล</div>}
@@ -2110,7 +2105,7 @@ export default function OEEAnalytics() {
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
                   </div>
                 ))}
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
                   🔍 <b>คลิกแถวเพื่อเจาะ</b> — แยกตามเครื่อง/ไลน์/ชิ้นงาน/กะ/คนบันทึก/วัน (เห็นบาทรายแถวและรายการดิบ)
                   · หรือเลื่อนลงไปที่ <b>Pareto</b> แล้วกดปุ่ม <b style={{ color: 'var(--accent)' }}>฿ บาท</b> เพื่อเรียงทั้งกราฟตามเงิน
                 </div>
@@ -2164,7 +2159,7 @@ export default function OEEAnalytics() {
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: '#ef4444' }}>{fmtBaht(v.baht)}</b> บาท · {v.qty.toLocaleString()} ชิ้น</span>
                   </div>
                 ))}
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
                   🔍 <b>คลิกแถวเพื่อเจาะ</b> — "ประเภทไหนแพงสุด" ตอบคนละคำถามกับ "ประเภทไหนเยอะสุด" ใน Pareto ด้านล่าง
                   · <b>ประเภทที่ยังตีมูลค่าไม่ได้ไม่โผล่ในลิสต์นี้</b> (ดูแถบเตือนด้านล่าง)
                 </div>
@@ -2259,7 +2254,7 @@ export default function OEEAnalytics() {
           <MonthlyReviewExport onClose={() => setShowReviewExport(false)} />
         </Suspense>
       )}
-    </div>
+    </Page>
   );
 }
 

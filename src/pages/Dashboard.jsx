@@ -25,6 +25,7 @@ import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
+import { ALL } from '../utils/filterLabels';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -903,11 +904,12 @@ export default function Dashboard() {
               value={selectedSection}
               onChange={e => changeSection(e.target.value)}
               style={{
+                width: 'auto', maxWidth: 280,   // UI-STANDARD 2026-09-24 — กัน select{width:100%} ของธีมยืดเต็มแถว (เคยยืด 907px)
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
                 padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
                 cursor: 'pointer', outline: 'none',
               }}>
-              <option value="all">🏭 ทุกส่วนงาน</option>
+              <option value="all">{ALL.section}</option>
               {sections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}

@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
-import { useMergeParams } from '../utils/useTabParam';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import { ALL } from '../utils/filterLabels';
 
 // ล้างเฉพาะ param ของการสแกน — ล้างทั้งก้อน (`setSearchParams({})`) จะพา param อื่นของหน้า/หน้าแม่หายด้วย
 const SCAN_PARAMS_CLEAR = { line: null, ctype: null, qty: null };
@@ -26,6 +30,7 @@ import { coalesce } from '../utils/liveRefresh';
    ─────────────────────────────────────────────────────────────────────────── */
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
+const VIEW_TABS = [{ key: 'board', label: '📋 บอร์ดสถานะ' }, { key: 'time', label: '🕐 บอร์ดเวลา' }, { key: 'sla', label: '⚙️ SLA' }];
 const inputSt = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
 const btn = (bg, color = '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: bg, color, fontFamily: 'var(--font-body)' });
 
@@ -75,7 +80,7 @@ export default function RackCenter() {
   const [showDone,       setShowDone]       = useState(false);
   const [pkgReqs,        setPkgReqs]        = useState([]);   // packaging_withdrawal_requests
   const [pkgBusy,        setPkgBusy]        = useState(null);
-  const [view,           setView]           = useState('board');   // 'board' | 'time' | 'sla'
+  const [view,           setView]           = useTabParam(VIEW_TABS.map(v => v.key), 'board');   // 'board' | 'time' | 'sla' (?tab=)
   const [sla,            setSla]            = useState({ prepare_within_min: 15, deliver_within_min: 45 });
   const [slaDraft,       setSlaDraft]       = useState(null);
   const [popup,          setPopup]          = useState(null);      // { r, x, y } — คลิกบล็อกบนบอร์ดเวลา
@@ -270,49 +275,36 @@ export default function RackCenter() {
   const ACTION_LABEL = { requested: '🔧 เริ่มเตรียม', preparing: '🚚 จัดส่งแล้ว', delivered: '✅ รับแล้ว' };
 
   return (
-    <div style={{ padding: 'clamp(12px,2vw,24px)', maxWidth: 'min(96vw, 2000px)', margin: '0 auto' }}>
+    <Page>
       {/* ⚠️ rack_center:operate seed ไว้ตั้งแต่ 2026-07-08 (ก่อนมี role mtn/engineer/planner_store/dept_admin)
           → role ที่เพิ่มทีหลังเปิดหน้านี้ได้แต่เรียกภาชนะไม่ได้ ต้องบอกให้ชัด */}
       <ReadOnlyNote show={!canOperate} role={role} what="เรียกภาชนะ/รับงาน"
         permKey="rack_center:operate" />
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 'clamp(18px,2.5vw,24px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🗃️ ภาชนะ &amp; Packaging — เรียกภาชนะ
-          </h1>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-            ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {[{ id: 'board', label: '📋 บอร์ดสถานะ' }, { id: 'time', label: '🕐 บอร์ดเวลา' }, { id: 'sla', label: '⚙️ SLA' }].map(v => (
-            <button key={v.id} onClick={() => setView(v.id)}
-              style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-                background: view === v.id ? 'var(--accent)' : 'var(--bg2)', color: view === v.id ? '#08130a' : 'var(--text2)',
-                border: `1px solid ${view === v.id ? 'var(--accent)' : 'var(--border)'}` }}>{v.label}</button>
-          ))}
-          <span style={{ width: 1, height: 22, background: 'var(--border)' }} />
-          <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
-            placeholder="ทุกไลน์" style={{ ...inputSt, width: 160 }} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
-            แสดงที่รับแล้ว
-          </label>
-          {canOperate && (
-            <>
-              <button onClick={() => setScanOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">
-                📷 สแกน
-              </button>
-              <button onClick={() => setQrOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="พิมพ์แผ่นป้าย QR ไปแปะหน้างาน">
-                🏷️ ป้าย QR
-              </button>
-              <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
-                🔔 เรียกภาชนะ
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+      {/* UI-STANDARD 2026-09-24: หัวเพจ + แท็บ ผ่าน PageHeader (เดิมวาด h1/แถบปุ่มเอง) · แท็บผูก ?tab= */}
+      <PageHeader title="ภาชนะ & Packaging — เรียกภาชนะ" icon="🗃️"
+        sub="ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ"
+        actions={canOperate ? (
+          <>
+            <button onClick={() => setScanOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">
+              📷 สแกน
+            </button>
+            <button onClick={() => setQrOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="พิมพ์แผ่นป้าย QR ไปแปะหน้างาน">
+              🏷️ ป้าย QR
+            </button>
+            <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
+              🔔 เรียกภาชนะ
+            </button>
+          </>
+        ) : null}
+        tabs={VIEW_TABS} tab={view} onTab={setView} />
+      <FilterBar>
+        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+          placeholder={ALL.line} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
+          แสดงที่รับแล้ว
+        </label>
+      </FilterBar>
 
       {scanOpen && <QrScanModal onClose={() => setScanOpen(false)} onResult={(text) => applyScan(parseCallQr(text))} />}
       {qrOpen && <QrLabelModal lines={lines} containerTypes={containerTypes} onClose={() => setQrOpen(false)} onPrint={printQrLabels} />}
@@ -553,7 +545,7 @@ export default function RackCenter() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

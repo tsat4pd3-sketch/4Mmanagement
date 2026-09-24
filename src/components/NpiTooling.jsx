@@ -14,6 +14,7 @@ import SearchSelect from './SearchSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ทำ tooling = ทะเบียน DR suppliers (แม่พิมพ์/จิ๊ก · ผลิตเอง ขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory';
 import { appendHistoryOptions } from '../utils/pickerOptions';
+import { ALL } from '../utils/filterLabels';
 
 export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged }) {
   // ตัวเลือกชุดแม่พิมพ์ (DR die_sets) สำหรับ SearchSelect — die_set_code เป็น join key กับ /die-registry ห้ามพิมพ์เอง (2026-09-07)
@@ -101,7 +102,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
-            <option value="">ทุกพาร์ท</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
+            <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
           </select>
         </div>
         {canEdit && <button style={btn()} onClick={() => setPlanModal({ part_id: filterPart || parts[0]?.id || '', tool_name: '', tool_kind: 'die', maker_name: '', maker_kind: 'external', po_no: '', die_set_code: '', plan_start: today, plan_end: '', actual_start: '', actual_end: '', status: 'planned', owner_name: '', note: '', _seedSteps: true })}>+ แผน tooling</button>}

@@ -16,6 +16,10 @@ import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docFor
 import useTabParam from '../utils/useTabParam';
 import { notifyEvent } from '../utils/notifyEvent';
 import { uploadOpts } from '../utils/storageUpload';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -832,33 +836,17 @@ ${issuesHtml}
   };
 
   /* ═════════ RENDER ═════════ */
-  const TabBtn = ({ id, icon, label }) => (
-    <button onClick={() => setTab(id)}
-      style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid ' + (tab === id ? 'var(--accent)' : 'var(--border2)'), background: tab === id ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', color: tab === id ? 'var(--accent)' : 'var(--text2)', fontWeight: 700, cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap' }}>
-      {icon} {label}
-    </button>
-  );
-
+  // UI-STANDARD 2026-09-24 — แถบเลือกไลน์/กะ/เดือน = FilterBar · กะ 2 ตัวเลือก = Segmented
   const selectorBar = (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
-      <div>
-        <div style={lb}>ไลน์ / พื้นที่ตรวจ</div>
-        {/* <LineSelect> — ลำดับชั้น/ตัดไลน์ปลดระวาง/ค่าเดิมไม่หายเงียบ (visibleLines กรอง scope ไว้แล้ว · 2026-09-07) */}
-        <LineSelect lines={visibleLines} value={selLine} placeholder={null} onChange={setSelLine}
-          style={{ width: 210, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-      </div>
-      <div>
-        <div style={lb}>กะ</div>
-        <select value={selShift} onChange={e => setSelShift(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="day">{SHIFT_META.day}</option>
-          <option value="night">{SHIFT_META.night}</option>
-        </select>
-      </div>
-      <div>
-        <div style={lb}>เดือน</div>
-        <input type="month" value={selMonth} onChange={e => e.target.value && setSelMonth(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
-      </div>
-    </div>
+    <FilterBar style={{ marginBottom: 14 }}>
+      <span className="filter-label">ไลน์ / พื้นที่ตรวจ</span>
+      {/* <LineSelect> — ลำดับชั้น/ตัดไลน์ปลดระวาง/ค่าเดิมไม่หายเงียบ (visibleLines กรอง scope ไว้แล้ว · 2026-09-07) */}
+      <LineSelect lines={visibleLines} value={selLine} placeholder={null} onChange={setSelLine} />
+      <Segmented value={selShift} onChange={setSelShift} label="กะ"
+        options={[{ value: 'day', label: SHIFT_META.day }, { value: 'night', label: SHIFT_META.night }]} />
+      <span className="filter-label">เดือน</span>
+      <input type="month" value={selMonth} onChange={e => e.target.value && setSelMonth(e.target.value)} />
+    </FilterBar>
   );
 
   const nDays = daysInMonth(selMonth);
@@ -870,19 +858,16 @@ ${issuesHtml}
   const lpaFormCode = lpaDoc.form_code || FORM_NO.split(' ')[0];
 
   return (
-    <div className="page-content" style={{ maxWidth: 'min(97vw, 1800px)' }}>
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'clamp(16px,3vw,22px)', color: 'var(--text)' }}>📋 Layer Process Audit (LPA)</h2>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แผนตรวจ + บันทึกผล + รายงาน {lpaFormNo} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส</div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <TabBtn id="audit" icon="✅" label="บันทึกผลตรวจ" />
-          <TabBtn id="plan" icon="📅" label="แผนตรวจ" />
-          <TabBtn id="report" icon="📊" label="รายงาน" />
-          {canManage && <TabBtn id="questions" icon="⚙️" label="คำถาม" />}
-        </div>
-      </div>
+    <Page>
+      <PageHeader title="Layer Process Audit (LPA)" icon="📋"
+        sub={`แผนตรวจ + บันทึกผล + รายงาน ${lpaFormNo} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส`}
+        tabs={[
+          { key: 'audit', label: '✅ บันทึกผลตรวจ' },
+          { key: 'plan', label: '📅 แผนตรวจ' },
+          { key: 'report', label: '📊 รายงาน' },
+          canManage && { key: 'questions', label: '⚙️ คำถาม' },
+        ]}
+        tab={tab} onTab={setTab} />
 
       {selectorBar}
 
@@ -1265,7 +1250,7 @@ ${issuesHtml}
       )}
 
       {showSignPad && <SignPadModal title={`${draft?.auditor_name || ''} — เซ็นผู้ตรวจ`} onCancel={() => setShowSignPad(false)} onDone={handleSignDone} />}
-    </div>
+    </Page>
   );
 }
 

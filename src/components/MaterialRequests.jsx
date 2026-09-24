@@ -32,6 +32,8 @@ import {
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from './SearchSelect';
+import FilterBar from './FilterBar';
+import { ALL } from '../utils/filterLabels';
 
 const today = () => {
   const d = new Date();
@@ -272,22 +274,19 @@ export default function MaterialRequests() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
-        <div>
-          <label style={lblSt}>เดือน</label>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, ...inpSt }} />
-        </div>
-        <div>
-          <label style={lblSt}>สถานะ</label>
-          <select value={fStatus} onChange={e => setFStatus(e.target.value)} style={{ width: 150, ...inpSt }}>
-            <option value="">ทั้งหมด</option>
-            {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
-              <option key={s} value={s}>{statusMeta(s).label}</option>)}
-          </select>
-        </div>
-        <div style={{ flex: 1 }} />
+      {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ช่วงเวลา → ตัวกรอง → ปุ่มหลักชิดขวา */}
+      <FilterBar style={{ marginBottom: 10 }}>
+        <span className="filter-label">เดือน</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        <span className="filter-label">สถานะ</span>
+        <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
+          <option value="">{ALL.status}</option>
+          {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
+            <option key={s} value={s}>{statusMeta(s).label}</option>)}
+        </select>
+        <span className="spacer" />
         {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>＋ ออกใบเบิกใหม่</button>}
-      </div>
+      </FilterBar>
 
       <InfoMore style={{ marginBottom: 10 }} id="mr_help"
         lead={<>📦 ใบนี้ใช้เบิกชิ้นงานจากฝ่ายผลิตไปทดสอบ — ของที่ทดสอบแล้วดึงเข้า<b>ใบรายงานของเสีย</b>ได้</>}>

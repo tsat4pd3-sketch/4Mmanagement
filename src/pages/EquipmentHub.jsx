@@ -4,6 +4,7 @@ import { supabaseDR } from '../supabaseClient';
 import { can, canAccessPage } from '../utils/permissions';
 import useTabParam from '../utils/useTabParam';
 import PageHeader from '../components/PageHeader';
+import Page, { Hub } from '../components/Page';
 import fetchAllRows from '../utils/fetchAllRows';
 import { toast } from '../components/Toast';
 import { teamsForUser } from '../utils/mtnTeams';
@@ -90,8 +91,7 @@ export default function EquipmentHub() {
   const cur = available.find(t => t.key === active);
 
   return (
-    <div>
-      <div style={{ padding: 'clamp(10px,2.5vw,18px) clamp(12px,3vw,24px) 0', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
+    <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) — เดิมวาดเอง ทำให้ 3 แท็บหน้าตาคนละแบบ (ภาพ user 22/09) */}
         <PageHeader title="ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)" icon="🧰"
           sub={cur?.hint || 'เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว'}
@@ -104,17 +104,16 @@ export default function EquipmentHub() {
             ที่ <b style={{ color: 'var(--text2)' }}>/permissions</b>
           </div>
         )}
-      </div>
+      <Hub>
       <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>}>
         {active === 'machine' && <MachineDatabase />}
         {active === 'die' && <DieRegistry />}
         {active === 'jig' && <FixtureRegistry />}
         {(active === 'spare' || active === 'rack') && (
-          <div style={{ padding: '0 clamp(12px,3vw,24px) 40px', maxWidth: 'min(98vw, 2400px)', margin: '0 auto' }}>
-            <SparePanel view={active} />
-          </div>
+          <SparePanel view={active} />
         )}
       </Suspense>
-    </div>
+      </Hub>
+    </Page>
   );
 }

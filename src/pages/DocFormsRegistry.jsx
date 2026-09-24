@@ -10,6 +10,7 @@ import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -188,14 +189,12 @@ export default function DocFormsRegistry() {
   };
 
   return (
-    <div className="page-content">
-      <div style={{ marginBottom: 16 }}>
-        <PageHeader title="ทะเบียนเอกสาร & ฟอร์ม" icon="📄" />
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+    <Page>
+      <PageHeader title="ทะเบียนเอกสาร & ฟอร์ม" icon="📄"
+        sub={<>
           Document Master — เลขฟอร์ม / Rev / Effective Date ของฟอร์มพิมพ์ทุกตัวในระบบ · แก้ที่นี่แล้วใบพิมพ์ใช้ค่าใหม่ทันที ไม่ต้องแก้โปรแกรม
           {!canManage && ' · คุณมีสิทธิ์ดูอย่างเดียว'}
-        </div>
-      </div>
+        </>} />
 
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
         <div className="card" style={{ overflowX: 'auto' }}>
@@ -222,7 +221,7 @@ export default function DocFormsRegistry() {
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>{r.effective_date || '—'}</td>
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>
                     {r.paper_size ? `${r.paper_size} ${r.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'}` : (r.paper || '—')}
-                    {r.layout_locked === false && <div style={{ fontSize: 10, color: 'var(--accent)' }}>ปรับแนวได้</div>}
+                    {r.layout_locked === false && <div style={{ fontSize: 11, color: 'var(--accent)' }}>ปรับแนวได้</div>}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {r.used_route
@@ -466,7 +465,7 @@ export default function DocFormsRegistry() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 

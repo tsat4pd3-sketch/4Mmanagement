@@ -302,6 +302,16 @@ model: inherit
   ข้อยกเว้น: master-creation form ที่กำลังตั้งชื่อ master นั้นเอง · search box กรองลิสต์ · ช่องที่ audit
   `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` ระบุ "ยังไม่ทำ" (ไม่มี master: model · inst_type · container category) · supplier / cost center / press line มี master แล้ว 2026-09-08
 
+- [ ] **F-STD มาตรฐานหน้าตา (`docs/UI-STANDARD.md` · 2026-09-24)** — อ่านไฟล์นั้นก่อนตรวจ
+  · หน้าใน `src/pages/` ที่ไม่มี `<Page` และไม่อยู่ในรายการยกเว้น §1 = 🟡 · รากหน้าตั้ง `padding`/`maxWidth` เอง = 🟡
+  · หน้าที่ไม่มี `<PageHeader` (นอกรายการยกเว้น) = 🔴 (UI-CONVENTIONS §6.8)
+  · `<option …>ทุก…` / `placeholder="ทุก…"` ที่พิมพ์เอง แทน `ALL.*` จาก `utils/filterLabels.js` = 🟡 · `ALL SHIFT`/`ทุก Team`/`ทุก Section` = 🔴
+  · select/input ในแถบกรองที่ใส่ `width/height/padding/fontSize/borderRadius` inline = 🟡 (inline ชนะ token)
+  · ตัวกรอง 2–5 ตัวเลือก (โดยเฉพาะกะ) เป็น `<select>` แทน `<Segmented>` = 🟡
+  · ช่องค้นหากรองลิสต์ที่ไม่ใช่ `<SearchInput>` = 🟡
+  · hub ที่ฝังหน้าลูกโดยไม่ครอบ `<Hub>` = 🔴 (หัวซ้อน)
+  · ยืนยันด้วยจอจริง: `node audit/stdsweep.mjs`
+
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)

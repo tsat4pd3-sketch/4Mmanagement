@@ -98,7 +98,7 @@ const KPI = ({ label, value, unit, sub, warn }) => (
       {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
     </div>
     {/* ค่า null = "ยังวัดไม่ได้" ต้องเขียนบอก ไม่ใช่โชว์ 0 ให้คนอ่านว่าดีเยี่ยม */}
-    <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.45 }}>{value == null ? 'ยังไม่มีข้อมูลพอ' : sub}</div>
+    <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{value == null ? 'ยังไม่มีข้อมูลพอ' : sub}</div>
   </div>
 );
 

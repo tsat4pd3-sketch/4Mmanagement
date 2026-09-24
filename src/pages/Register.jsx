@@ -14,6 +14,7 @@ import { filterLinesByDept } from '../utils/lineHierarchy';
 import { lineOptions, lineOptionLabel } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
 
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
@@ -137,10 +138,9 @@ export default function Register() {
   };
 
   return (
-    <div style={{
+    <Page width="narrow" style={{
       minHeight: 'calc(100vh - 80px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 20,
     }}>
       <div style={{
         width: '100%', maxWidth: 440,
@@ -305,7 +305,7 @@ export default function Register() {
           </button>
         </form>
       </div>
-    </div>
+    </Page>
   );
 }
 

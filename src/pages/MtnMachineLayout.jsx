@@ -17,6 +17,9 @@ import useTabParam from '../utils/useTabParam'
 import { monthKeyOf, monthRange, shiftMonth, monthLabel, fmtKwh, fmtBaht, deltaPct } from '../utils/energy'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import { ALL } from '../utils/filterLabels';
 
 // 'YYYY-MM-DD' (from pm_plans.next_due_date) → local-midnight Date, so day math
 // stays aligned with the Asia/Bangkok calendar (not UTC).
@@ -60,7 +63,7 @@ async function loadPmForJigs(jigIds) {
 }
 
 const S = {
-  page: { padding: 'clamp(12px,3vw,24px) clamp(14px,3.5vw,28px)', minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },
+  page: { minHeight: '100%', background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 14 },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   chip: (active, color) => ({
@@ -80,10 +83,10 @@ const S = {
   unplacedRow: { display: 'flex', flexDirection: 'column', gap: 2, padding: '6px 8px', borderRadius: 7, cursor: 'pointer', fontSize: 12 },
   unplacedTop: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 },
   unplacedNo: { fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  unplacedSub: { fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
+  unplacedSub: { fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingLeft: 15 },
   // ชิป "วางจุด" ท้ายแถวอุปกรณ์ที่ยังไม่วาง — armed แล้วเปลี่ยนเป็น "คลิกบนผัง"
   placeChip: (armed) => ({
-    marginLeft: 'auto', flexShrink: 0, fontSize: 10.5, fontWeight: 700, whiteSpace: 'nowrap',
+    marginLeft: 'auto', flexShrink: 0, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
     padding: '2px 7px', borderRadius: 20,
     border: `1px solid ${armed ? 'var(--accent)' : 'var(--border2)'}`,
     background: armed ? 'var(--accent-dim)' : 'var(--bg2)',
@@ -435,30 +438,28 @@ export default function MtnMachineLayout({ setupMode = false }) {
   const unplacedJigs = Object.entries(jigInfo).filter(([id]) => !placedAnyZone.has(id))
 
   return (
-    <div style={S.page}>
+    <Page width="full" style={S.page}>
       <DowntimeSiren mode="call_mtn" />
-      <div style={{ display: 'flex', paddingRight: 52, justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 10 }}>
-        <div>
-          <h1 style={S.h1}>🗺️ ผังเครื่องจักร (ซ่อมบำรุง)</h1>
-          <p style={S.sub}>ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {/* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */}
-          {cameFrom === 'factory-map' && (
-            <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
-          )}
-          {!setupMode && <button onClick={() => { setView('overview'); setSelId(null) }} style={S.viewBtn(view === 'overview')}>🗺️ ภาพรวมทั้งโรงงาน</button>}
-          <button onClick={() => { setView('production'); setSelId(null) }} style={S.viewBtn(view === 'production')}>🏭 ไลน์ผลิต</button>
-          <button onClick={() => { setView('facility'); setSelId(null) }} style={S.viewBtn(view === 'facility')}>🔌 Facility / Utility</button>
-        </div>
-      </div>
+      {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
+      <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
+        sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
+        actions={cameFrom === 'factory-map' && (
+          /* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */
+          <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+        )}
+        tabs={[
+          !setupMode && { key: 'overview', label: '🗺️ ภาพรวมทั้งโรงงาน' },
+          { key: 'production', label: '🏭 ไลน์ผลิต' },
+          { key: 'facility', label: '🔌 Facility / Utility' },
+        ]}
+        tab={view} onTab={k => { setView(k); setSelId(null) }} />
 
       {view === 'overview' ? (
         <FactoryMap />
       ) : (
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>ทั้งหมด</button>
+        <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>{ALL.team}</button>
         {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
         {view === 'facility' && canEdit && (
           <button onClick={() => setFacEdit(v => { if (v) { setArmedJig(null); setArmedMachine(null) } return !v })}
@@ -602,21 +603,21 @@ export default function MtnMachineLayout({ setupMode = false }) {
                                     {/* ปิดลูป: เห็นว่าถึงคิวแล้วกดไปตรวจได้เลย ไม่ต้องไปไล่หาเองในหน้า PM */}
                                     <Link to={`/pm?tab=check&dept=${r.dept || 'maintenance'}&equip=${r.jigId}`}
                                       onClick={e => e.stopPropagation()} title="ไปบันทึกผลตรวจของเครื่องนี้"
-                                      style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
+                                      style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
                                   </div>
                                 )
                               })}
-                              {due.length > 6 && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                              {due.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
                               {/* ทางออกไปหน้าที่ทำงานจริง — จอนี้อ่านอย่างเดียว */}
                               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                                <Link to="/pm?tab=plan" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
-                                <Link to="/pm?tab=coord" style={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
+                                <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
+                                <Link to="/pm?tab=coord" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
                               </div>
                             </div>
                           )}
                           {/* มีแผน PM แต่ยังไม่ได้วางบนผัง = หาไม่เจอบนจอ ห้ามซ่อน */}
                           {zonePm?.unplaced > 0 && (
-                            <div style={{ fontSize: 10.5, color: 'var(--accent2)', marginTop: 5 }}>
+                            <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5 }}>
                               ⚠ อุปกรณ์ในโซนนี้ {zonePm.unplaced} ตัวยังไม่ได้วางบนผัง — กด “✏️ แก้ผังโซน” เพื่อวาง
                             </div>
                           )}
@@ -634,7 +635,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         {o.mo_no || '⏳ รอออกเลข'} · {o.machine_no}
                       </div>
                     ))}
-                    {zoneMo.length > 3 && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
+                    {zoneMo.length > 3 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
                   </div>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>⚡ พลังงานไฟฟ้า{zoneEnergy ? ` · ${monthLabel(zoneEnergy.month)}` : ''}</div>
@@ -642,7 +643,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 2 }}>
                           <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{fmtKwh(zoneEnergy.qty)}</span>
-                          <span style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
                           {d != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: dCol, lineHeight: 1.8 }}>{d > 0 ? '+' : ''}{d}% เทียบเดือนก่อน</span>}
                         </div>
                         {zoneEnergy.cost > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>≈ {fmtBaht(zoneEnergy.cost)} บาท</div>}
@@ -653,7 +654,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     )}
                   </div>
                   {/* ⚠️ ห้ามเขียนว่า uptime/online — ยังไม่มีสัญญาณรายเครื่อง (กฎ SCADA) */}
-                  <div style={{ fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
                     ⏱ Uptime รายเครื่องยังไม่มีสัญญาณ (ต้องต่อ SCADA/มิเตอร์ก่อน) — สีบนผังมาจากรอบ PM ที่คนบันทึก
                   </div>
                 </div>
@@ -719,6 +720,6 @@ export default function MtnMachineLayout({ setupMode = false }) {
       </div>
       </>
       )}
-    </div>
+    </Page>
   )
 }

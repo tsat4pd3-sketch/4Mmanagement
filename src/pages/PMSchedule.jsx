@@ -13,6 +13,9 @@ import { inspMeta } from '../utils/inspectionStatus'
 import { checkWrite } from '../utils/dbWrite';
 import PersonSelect from '../components/PersonSelect' // ชื่อคน = picker กลาง (single-source audit 2026-09-07)
 import useColumnHistory from '../utils/useColumnHistory'
+import Page from '../components/Page'
+import PageHeader from '../components/PageHeader'
+import Segmented from '../components/Segmented'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
@@ -47,7 +50,7 @@ function ymd(d) { const x = new Date(d); return `${x.getFullYear()}-${String(x.g
 const fmtDay = (d) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', timeZone: 'Asia/Bangkok' })
 
 const S = {
-  page: { padding: 'clamp(12px,3vw,28px) clamp(14px,3.5vw,32px)', minHeight: '100%', background: 'var(--bg)' },
+  page: { minHeight: '100%', background: 'var(--bg)' },   // ขอบ/ความกว้างมาจาก <Page> (UI-STANDARD 2026-09-24)
   h1: { fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', margin: 0 },
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 20 },
   deptBar: { display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' },
@@ -195,11 +198,9 @@ export default function PMSchedule() {
   const goCheck = (equipId) => navigate(`/pm?tab=check&dept=${department}&equip=${equipId}`)
 
   return (
-    <div style={S.page}>
-      <div>
-        <h1 style={S.h1}>ปฏิทินแผน PM</h1>
-        <p style={S.sub}>ตารางการตรวจสอบ · {teamMeta?.label ?? DEPT_LABEL[department] ?? department}</p>
-      </div>
+    <Page style={S.page}>
+      <PageHeader title="ปฏิทินแผน PM" icon="📅"
+        sub={`ตารางการตรวจสอบ · ${teamMeta?.label ?? DEPT_LABEL[department] ?? department}`} />
 
       <div style={S.deptBar}>
         {teams.map(d => (
@@ -240,15 +241,8 @@ export default function PMSchedule() {
       )}
 
       {!loading && rows.length > 0 && (
-        <div style={{ display: 'inline-flex', gap: 4, padding: 4, borderRadius: 10, background: 'var(--bg3)', border: '1px solid var(--border)', marginBottom: 16 }}>
-          {VIEW_OPTIONS.map(v => (
-            <button key={v.key} onClick={() => setView(v.key)} style={{
-              padding: '6px 14px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: 'none',
-              background: view === v.key ? 'var(--card)' : 'transparent', color: view === v.key ? 'var(--text)' : 'var(--muted)',
-              boxShadow: view === v.key ? '0 1px 3px rgba(0,0,0,0.25)' : 'none',
-            }}>{v.label}</button>
-          ))}
-        </div>
+        <Segmented value={view} onChange={setView} label="มุมมอง" style={{ marginBottom: 16 }}
+          options={VIEW_OPTIONS.map(v => ({ value: v.key, label: v.label }))} />
       )}
 
       {loading ? (
@@ -304,7 +298,7 @@ export default function PMSchedule() {
                         </div>
                       )}
                       {isDeferred && (
-                        <div style={{ fontSize: 10.5, color: '#4a90e0', marginTop: 2 }}>
+                        <div style={{ fontSize: 11, color: '#4a90e0', marginTop: 2 }}>
                           ⏭ เลื่อนแผน{deferReason ? ` · ${deferReason}` : ''}{deferCount > 1 ? ` · เลื่อนมา ${deferCount} ครั้ง` : ''}
                         </div>
                       )}
@@ -360,7 +354,7 @@ export default function PMSchedule() {
 
       {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
       {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
-    </div>
+    </Page>
   )
 }
 
@@ -679,7 +673,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: missed ? '#e05c4a' : isToday ? 'var(--accent)' : 'var(--text2)' }}>{date.getDate()}</span>
                 {/* ผลตรวจที่ "ทำจริง" วันนั้น — ✅ ปกติ / ⚠️ พบผิดปกติ / ⏳ ตรวจไม่ครบ */}
                 {done.length > 0 && (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, fontWeight: 800 }} title={`ตรวจจริง ${done.length} รายการ`}>
+                  <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800 }} title={`ตรวจจริง ${done.length} รายการ`}>
                     {[...new Set(done.map(x => x.meta.icon))].join('')}
                     <span style={{ color: 'var(--muted)', marginLeft: 2 }}>{done.length}</span>
                   </span>

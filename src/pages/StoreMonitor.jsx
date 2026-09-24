@@ -9,6 +9,10 @@ import { useLiveBoard } from '../utils/useLiveBoard';
 import { splitBySide, sideMatches } from '../utils/logisticSide';
 import SideFilterChips from '../components/SideFilterChips';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL } from '../utils/filterLabels';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -117,13 +121,9 @@ export default function StoreMonitor() {
   const nLate = scoped.filter(f => f.code === 'C').length;
 
   return (
-    <div style={{ padding: 'clamp(12px, 2vw, 24px)', maxWidth: 'min(96vw, 1600px)', margin: '0 auto' }}>
-      <div style={{ marginBottom: 18 }}>
-        <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨" />
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
-          จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)
-        </p>
-      </div>
+    <Page>
+      <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
+        sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
@@ -144,25 +144,20 @@ export default function StoreMonitor() {
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
       </div>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
-        {[['all', 'ทั้งหมด'], ['shortage', '🟥 จะขาด'], ['over', '🟧 ล้น']].map(([k, l]) => (
-          <button key={k} onClick={() => setKindFilter(k)} style={{
-            padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: kindFilter === k ? 'var(--accent)' : 'var(--bg2)', color: kindFilter === k ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${kindFilter === k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{l}</button>
-        ))}
+      {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
+      <FilterBar style={{ marginBottom: 14 }}>
         {lines.length > 0 && (
           /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
              scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
           <LineSelect
             lines={prodLines.filter(l => lines.includes(l.name))}
-            value={lineFilter} onChange={setLineFilter} placeholder="ทุกไลน์"
-            style={{ padding: '7px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 200, marginLeft: 'auto' }}
+            value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
             extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
-      </div>
+        <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
+      </FilterBar>
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
@@ -219,6 +214,6 @@ export default function StoreMonitor() {
         แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
         เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
       </div>
-    </div>
+    </Page>
   );
 }

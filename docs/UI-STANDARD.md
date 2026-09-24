@@ -1,0 +1,107 @@
+# 📐 UI Standard — มาตรฐานหน้าตาเว็บ ESM (2026-09-24)
+
+> ที่มา: audit UX/UI ทั้งระบบ 23/09 (user: *"เหมือนมันแปลกๆ"* + *"ความมั่วของ search, filter, dropdown"*)
+> → user สั่ง 24/09: *"แก้ทุกตัวเลย เราต้องมี standardize แล้ว ไปหาทฤษฎี/หลักการ/บทความอ้างอิง"*
+>
+> ไฟล์นี้ = **มาตรฐาน 5 ข้อที่ทุกหน้าต้องเหมือนกัน** + ทฤษฎีที่ใช้ตัดสิน
+> รายละเอียดเฉพาะเรื่อง (marker, Andon, Pareto, modal ฯลฯ) ยังอยู่ที่ `docs/UI-CONVENTIONS.md` — ไฟล์นั้นอ้างมาที่นี่
+
+---
+
+## 0. หลักการที่ใช้ตัดสิน (อ้างอิงภายนอก)
+
+| หลักการ | ใช้ตัดสินเรื่องอะไรในระบบนี้ |
+|---|---|
+| **Nielsen #4 Consistency & Standards** — ผู้ใช้ไม่ควรต้องสงสัยว่าคำ/สถานการณ์/การกระทำที่ต่างกัน มีความหมายเดียวกันหรือไม่ · แยก *internal consistency* (ในระบบเดียวกัน) กับ *external* (ตามธรรมเนียมเว็บทั่วไป) | ทุกข้อด้านล่าง — ตำแหน่งหัวเพจ, คำว่า "ทุก…", ขนาดช่องกรอง |
+| **Design tokens** (W3C Design Tokens Community Group — spec เสถียรตัวแรก 2025.10) — ค่าการออกแบบ (ระยะ/ขนาด/มุม/สี) เก็บเป็นชื่อกลาง ไม่ใช่เลขดิบกระจายในโค้ด | `--ctl-h` `--ctl-r` `--r-*` `.page-content` — แก้ที่เดียวมีผลทั้งระบบ |
+| **ระบบระยะ 4/8 px** (8-point grid — Material, Carbon, Fluent, Bootstrap ใช้เหมือนกัน) | ช่องไฟในแถบกรอง 8 · ขอบหน้า 24/28 · มุม 8/12 |
+| **ขนาดช่องกรอก 3 ระดับ** (IBM Carbon: small 32 / medium 40 / large 48 px) | แถบกรอง = small (34 รวมขอบ) · ฟอร์มบันทึก = medium (ค่าตั้งต้นของธีม ~39) |
+| **Segmented button ใช้กับ 2–5 ตัวเลือกที่เท่ากัน** (Material Design 3) · มากกว่านั้นใช้ dropdown/chip | กะ (ทุกกะ/เช้า/ดึก) = Segmented · ไลน์ (หลายสิบ) = dropdown |
+| **Dropdown guideline** (NN/g) — เรียงตัวเลือกมีตรรกะ ตัวที่ใช้บ่อยก่อน · dropdown ที่ตัวเลือกเปลี่ยนตามอีกตัวต้องชัดเจน | "ทุก…" เป็นตัวแรกเสมอ · cascade ส่วนงาน→แผนก→ไลน์ (UI-CONVENTIONS §5.3) |
+| **Filter UI** (NN/g *Filters and Sorting*) — วางตัวกรองกับผลลัพธ์ให้เห็นพร้อมกัน ผลอัปเดตทันที | แถบกรองอยู่เหนือรายการ แถบเดียว ไม่แยก 2 ชั้น |
+| **Miller 7±2 / เมนูไม่ควรเกิน 7** | แท็บเกิน 7 พับเข้า "⋯ เพิ่มเติม" |
+| **WCAG 2.2 SC 2.5.8 Target Size (Minimum)** — เป้ากด ≥ 24×24 CSS px (AAA 44×44) · **SC 2.4.6 / 1.3.1** หัวเรื่องบอกโครงสร้างหน้า | ช่องกรอง 34px · 1 หน้า = 1 หัวเรื่องหลัก (ห้ามหัวซ้อนใน hub) |
+
+แหล่งอ้างอิง:
+[NN/g 10 Usability Heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) ·
+[NN/g Dropdowns: Design Guidelines](https://www.nngroup.com/articles/drop-down-menus/) ·
+[NN/g Listboxes vs Dropdown Lists](https://www.nngroup.com/articles/listbox-dropdown/) ·
+[NN/g User Intent Affects Filter Design](https://www.nngroup.com/articles/applying-filters/) ·
+[Material 3 Segmented buttons](https://m3.material.io/components/segmented-buttons/guidelines) ·
+[Carbon Text input](https://carbondesignsystem.com/components/text-input/usage/) ·
+[Carbon Date picker (32/40/48)](https://carbondesignsystem.com/components/date-picker/usage/) ·
+[W3C Design Tokens spec 2025.10](https://www.designtokens.org/tr/drafts/format/) ·
+[designsystems.com — Space, grids and layouts](https://www.designsystems.com/space-grids-and-layouts/) ·
+[WCAG 2.2 SC 2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html)
+
+> ⚠️ ข้อที่ **ไม่** ลอกจากมาตรฐานภายนอก: สีไฟสถานะ (Andon/KPI) — จอโรงงานสีคือความหมาย (UI-CONVENTIONS §2, §6.17)
+> · ฟอนต์ขั้นต่ำ 11-12px (เพดานจอ TV ดูไกล — เข้มกว่ามาตรฐานเว็บทั่วไป)
+
+---
+
+## 1. กรอบหน้า — `<Page>` (`src/components/Page.jsx`)
+
+**ปัญหาที่วัดได้ (23/09):** ระยะขอบรากหน้า 20+ แบบ · ความกว้างสูงสุด 12 ค่า · ชื่อหน้าเริ่มที่ x = 0…78 px
+⇒ กดเปลี่ยนหน้าแล้วหัวเพจ/แท็บ **กระโดดซ้าย-ขวา** · OBEYA/WorkforceInsight ชิดขอบ sidebar
+
+- ทุกหน้าขึ้นด้วย `<Page>` (= `.page-content` ใน `index.css`) — **ห้ามตั้ง padding / maxWidth / margin:auto ที่รากหน้าเอง**
+- ความกว้าง 4 แบบเท่านั้น: `wide` (ค่าตั้งต้น 1800) · `form` (960 — ฟอร์ม/ตั้งค่าคอลัมน์เดียว) · `narrow` (640) · `full` (ผัง/บอร์ด)
+- ระยะขอบตามจอมาจาก CSS ที่เดียว: มือถือ 14 · แท็บเล็ต 18/20 · PC 24/28 · 1600+ 28/36 · TV 36/48
+- **Page ซ้อน Page ไม่เพิ่มขอบ** (`.page-content .page-content`) ⇒ หน้าที่ถูกฝังในแท็บของ hub ใช้ `<Page>` ได้ตามปกติ
+- ยกเว้น (บอร์ดจอ TV · มีเหตุผลใน UI-CONVENTIONS §6.8): `Login` · `Dashboard` · `Management` · `LineOeeBoard` · `TvBoard` · `LineSetup` · `DeptHub` (หน้าแรก hero)
+
+## 2. หัวเพจ — `PageHeader` + `<Hub>`
+
+- ทุกหน้าใช้ `PageHeader` (UI-CONVENTIONS §6.8) — ลำดับตายตัว: breadcrumb → ชื่อหน้า+คำอธิบาย | ปุ่ม → แท็บ
+  **แท็บอยู่ใต้ชื่อหน้าเสมอ** (ProductMaster เคยวางแท็บเหนือชื่อ)
+- **1 หน้า = 1 หัวเรื่องหลัก** — hub (PmHub · DailyChecker · EquipmentHub · LayoutSetup) ครอบหน้าลูกด้วย `<Hub>`
+  ⇒ `PageHeader` ของหน้าลูกไม่วาดชื่อหน้า/breadcrumb ซ้ำ เหลือคำอธิบาย+ปุ่ม+แท็บย่อย
+  (เดิมหัวซ้อน 2 ชั้น และหัวชั้นในขนาด 15/22/23/26px ต่างกันทุกแท็บ)
+- **แท็บ > 7 พับอัตโนมัติ** — 6 แท็บแรก + "⋯ เพิ่มเติม (n)" (`MAX_TABS` ใน `PageHeader.jsx`) · URL ไม่เปลี่ยน
+  เรียงแท็บที่ใช้บ่อยไว้หน้า · แท็บตั้งค่าท้ายสุด (§6.8 ข้อ 4)
+
+## 3. ตัวกรอง — `<FilterBar>` · `<Segmented>` · `ALL`
+
+**ปัญหาที่วัดได้:** ช่องกรอง 71 ทรง (สูง 20–39 · มุม 4/6/7/8/10 · ตัว 11–16) · dropdown ยืดเต็มแถว 1444px
+(`select{width:100%}` ของธีม) · คำว่า "ทั้งหมด" 30+ แบบ · เรื่องเดียวกัน (กะ) ใช้ dropdown ในแท็บหนึ่ง ปุ่มในอีกแท็บ
+
+1. **แถบกรอง = `<FilterBar>`** (`className="filter-bar"`) — การ์ด 1 แถบ · ช่องไฟ 8 · wrap ได้
+   ลำดับ: **ขอบเขต (ส่วนงาน/แผนก/ไลน์/ทีม) → ช่วงเวลา → ตัวกรองอื่น → ค้นหา → `spacer` → จำนวน/ปุ่ม export/ปุ่มหลัก**
+   หน้าที่มี `<TimeRangeBar>` ⇒ **ตัวกรองของหน้าเป็น children ของมัน** (TimeRangeBar ก็คือ filter-bar) — ห้ามแยก 2 ชั้น
+2. **ช่องในแถบกรองสูง 34 · ตัว 13 · มุม 8 จาก token** (`--ctl-h` `--ctl-fs` `--ctl-r`) —
+   **ห้ามใส่ width/height/padding/fontSize/borderRadius inline ที่ select/input ในแถบ** (inline ชนะ class = เพี้ยนกลับ)
+   · อยากให้ช่องยืดใส่ `className="grow"` · select ในแถบ `width:auto` (สูงสุด 280) ให้เอง
+3. **เลือกชนิดตัวควบคุมตามจำนวนตัวเลือก:** 2–5 ตัวเท่ากัน → `<Segmented>` · มากกว่านั้น → dropdown ·
+   ทะเบียนยาว → picker กลาง (`LineSelect`/`SearchSelect`… UI-CONVENTIONS §5.1.2) · **กะ = `<Segmented options={SHIFT_OPTIONS}>` ทุกหน้า**
+4. **ป้าย "ทั้งหมด" จาก `src/utils/filterLabels.js` เท่านั้น** (`ALL.line` = "ทุกไลน์" …)
+   - ตัวกรอง = `ทุก<คำนาม>` ไม่มีขีด ไม่มีวงเล็บจำนวน ภาษาไทย (`ALL SHIFT`/`ทุก Team`/`ทุก Section` ❌)
+   - ช่องในฟอร์ม = `— เลือก —` / `— ไม่ระบุ —` (มีขีด = "ยังไม่ได้ตอบ") — **คนละความหมาย ห้ามปน**
+   - ตัว "ทุก…" อยู่ **ตัวแรก/ซ้ายสุดเสมอ** ทั้งใน dropdown และ Segmented/ชิป
+5. **ช่องที่เป็นพารามิเตอร์ของปุ่ม export (เช่นเดือนของใบ Changing Point) ไม่ใช่ตัวกรองมุมมอง** ⇒
+   วางหลัง `spacer` ชิดปุ่มของมัน + มี `filter-label` บอกว่าเป็นของปุ่มไหน
+
+## 4. ช่องค้นหา — `<SearchInput>`
+
+**ปัญหาที่วัดได้:** placeholder ~60 แบบ (🔍/🔎/ไม่มี · ค้นหา/ค้น/หา/พิมพ์ · …/.../— —)
+- ช่องที่ "กรองรายการบนจอ" = `<SearchInput value onChange fields="MAT / ชื่อพาร์ท" />`
+  → ไอคอน 🔍 ในกรอบ · placeholder `ค้นหา <ช่องที่ค้นได้>` · `type="search"` · ปุ่ม ✕ ล้าง
+- ช่องที่ "เลือก 1 ค่าจากทะเบียน" ไม่ใช่ช่องค้นหา → picker กลาง (UI-CONVENTIONS §5.1.2)
+
+## 5. ตัวหนังสือขั้นต่ำ 11px (ย้ำ UI-CONVENTIONS §4)
+
+audit 23/09 เจอ < 11px ใน 20 หน้า (Improvements 56 จุด · FlowTower 48 · GroupOverview 41) — กวาดขึ้นเป็น 11 แล้ว
+**ยกเว้น** ป้ายบน marker ผังที่คำนวณจาก `markerScale.js` (§1 — สเกลตามผัง)
+
+---
+
+## วิธีตรวจซ้ำ (ไม่ใช้สายตาเดา)
+
+`node audit/stdsweep.mjs` (เปิด `npx vite --config audit/vite.audit.mjs --port 5199` ค้างไว้) —
+เปิดทุกหน้า×ทุกแท็บที่ 1600px แล้วรายงาน: ตำแหน่งชื่อหน้า (x) ไม่ตรงค่ามาตรฐาน · หัวซ้อน ·
+dropdown ยืดเกินครึ่งจอ · ช่องในแถบกรองที่สูง/มุมไม่ตรง token · ป้าย "ทั้งหมด" ที่ไม่อยู่ในทะเบียน `ALL`
+
+ด่าน build (`regressionGuards.test.mjs`): กฎ `filter-all-label` · `no-root-page-padding` (ดูหัวไฟล์)
+
+## ประวัติ
+- 2026-09-24 สร้างไฟล์ + ของกลาง `Page` `Hub` `FilterBar` `Segmented` `SearchInput` `filterLabels` + token `--ctl-*`
+  + กวาดทุกหน้า (ผล audit ก่อน/หลังอยู่ท้าย `docs/modules/ui-standard-sweep.md`)

@@ -9,6 +9,9 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import PageHeader from '../components/PageHeader';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import { allOf } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { fmtDate } from '../utils/dateFormat';
 import PeExcelImportModal from '../components/PeExcelImportModal';
@@ -66,7 +69,7 @@ const rpnOf = (it) => (it.severity && it.occurrence && it.detection) ? it.severi
 const rpnNewOf = (it) => (it.new_severity && it.new_occurrence && it.new_detection) ? it.new_severity * it.new_occurrence * it.new_detection : null;
 const rpnColor = (v) => (v == null ? 'var(--muted)' : v >= 100 ? '#ef4444' : v >= 70 ? '#f59e0b' : '#22c55e');
 const classChip = (c) => c ? (
-  <span style={{ fontSize: 10, fontWeight: 800, borderRadius: 5, padding: '1px 6px',
+  <span style={{ fontSize: 11, fontWeight: 800, borderRadius: 5, padding: '1px 6px',
     background: c === 'CC' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
     color: c === 'CC' ? '#ef4444' : '#f59e0b' }}>{c}</span>
 ) : null;
@@ -312,7 +315,7 @@ export default function PEDocs() {
     if (n) toast.info(`ระบบเสนออัพเดทคลัง PFMEA ${n} รายการจาก revision นี้ — PE ตัดสินที่แท็บ 📚`);
   };
 
-  if (loading) return <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>;
 
   const lineOpts = lines.filter(l => l.parent_line_name || !lines.some(x => x.parent_line_name === l.name));
   // ครอบครัวไลน์ของ OP ที่กำลังแก้ (ไม่ระบุ = ไลน์หลักของชุด) — ให้เครื่องของไลน์นั้นขึ้นก่อนใน MachineSelect (2026-09-07)
@@ -320,7 +323,7 @@ export default function PEDocs() {
   const procFam = procFamLine ? getLineFamilyNames(lines, procFamLine) : [];
 
   return (
-    <div style={{ padding: 'clamp(12px,3vw,28px)', maxWidth: 'min(97vw, 1600px)', margin: '0 auto' }}>
+    <Page>
       <PageHeader icon="📐" title="PE Core Tools — Flow / PFMEA / Control Plan"
         sub="เอกสารวิศวกรรมกระบวนการ ยึดเลข Process (OP) ร่วมกันทั้ง 3 เอกสาร — ข้อมูลชุดเดียว 3 มุมมอง"
         tabs={[
@@ -339,8 +342,8 @@ export default function PEDocs() {
         hint="ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร" />
 
       {/* ── เลือกชุดเอกสาร (1 พาร์ท = 1 ชุด PFC+FMEA+CP) ── */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <select value={setId} onChange={e => pickSet(e.target.value)} style={{ width: 'auto', minWidth: 280, padding: '8px 10px', fontSize: 13, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+      <FilterBar>
+        <select value={setId} onChange={e => pickSet(e.target.value)}>
           <option value="">— เลือกพาร์ท/ชุดเอกสาร —</option>
           {sets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || ''} {s.status === 'obsolete' ? '(obsolete)' : ''}</option>)}
         </select>
@@ -354,7 +357,7 @@ export default function PEDocs() {
             {curSet.doc_no_pfc || '—'} / {curSet.doc_no_fmea || '—'} / {curSet.doc_no_cp || '—'}
           </span>
         )}
-        <span style={{ flex: 1 }} />
+        <span className="spacer" />
         {curSet && (tab === 'fmea' || tab === 'cp') && (
           <button style={btnSm} onClick={doExport} disabled={exporting}
             title={`สร้างไฟล์ .xlsx ตามฟอร์ม ${tab === 'fmea' ? 'FM-PE1-018 (PFMEA)' : 'FM-PE1-019 (Control Plan)'} — 1 ชีทต่อ OP พร้อมตั้งค่าพิมพ์ A4 แนวนอน`}>
@@ -365,7 +368,7 @@ export default function PEDocs() {
         {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>✏️ แก้ข้อมูลชุด</button>}
         {canEdit && <button style={btnSm} onClick={() => setFromMasterOpen(true)} title="เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที">📚 ชุดใหม่จาก master</button>}
         {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>➕ ชุดเอกสารใหม่</button>}
-      </div>
+      </FilterBar>
 
       {exportNotes && (
         <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 8, border: '1px solid #f59e0b55', background: '#f59e0b14', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -415,9 +418,9 @@ export default function PEDocs() {
 
           {/* ── ตัวกรอง OP (ใช้ร่วมแท็บ FMEA/CP) ── */}
           {(tab === 'fmea' || tab === 'cp') && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-              <SearchSelect value={String(procFilter || '')} placeholder="ทุก OP — พิมพ์ค้นหา" style={{ minWidth: 220 }}
-                inputStyle={{ padding: '6px 30px 6px 10px', fontSize: 12, borderRadius: 8, background: 'var(--bg2)' }}
+            <FilterBar>
+              <SearchSelect value={String(procFilter || '')} placeholder={`${allOf('OP')} — พิมพ์ค้นหา`} style={{ minWidth: 220 }}
+                inputStyle={{ paddingRight: 30 }}
                 options={procs.map(p => ({ id: String(p.id), label: `OP ${p.op_no} · ${p.name}`, keywords: String(p.op_no) }))}
                 onChange={({ id }) => setProcFilter(id)} />
               {tab === 'fmea' && (
@@ -432,7 +435,7 @@ export default function PEDocs() {
                   {['same', 'behind', 'better', 'diverged', 'unlinked'].filter(k => mSum[k]).map(k => <span key={k} style={{ color: CMP_META[k].color, fontWeight: 700 }}>{CMP_META[k].icon} {mSum[k]}</span>)}
                 </span>
               )}
-            </div>
+            </FilterBar>
           )}
 
           {/* ══ แท็บ Flow ══ */}
@@ -508,7 +511,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, fontFamily: 'monospace' }}>{p.machine_no || '—'}</td>
                           <td style={tdSt}>{p.line_name || '—'}</td>
                           <td style={{ ...tdSt, fontSize: 11 }}>{multiline(p.child_parts)}</td>
-                          <td style={tdSt}>{classChip(p.special_class)}{p.sccaf_no ? <div style={{ fontSize: 10, color: 'var(--muted)' }}>SCCAF {p.sccaf_no}</div> : null}</td>
+                          <td style={tdSt}>{classChip(p.special_class)}{p.sccaf_no ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>SCCAF {p.sccaf_no}</div> : null}</td>
                           <td style={{ ...tdSt, fontWeight: 700 }}>{p.connector || ''}</td>
                           <td style={tdSt}><button style={{ ...btnSm, color: nf ? 'var(--accent)' : 'var(--muted)' }} onClick={() => { setProcFilter(p.id); setTab('fmea'); }}>{nf} แถว</button></td>
                           <td style={tdSt}><button style={{ ...btnSm, color: nc ? 'var(--accent)' : 'var(--muted)' }} onClick={() => { setProcFilter(p.id); setTab('cp'); }}>{nc} จุด</button></td>
@@ -544,7 +547,7 @@ export default function PEDocs() {
                     <div key={it.id} style={{ background: 'var(--card)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.13)', color: '#4d9fff', borderRadius: 5, padding: '2px 7px' }}>OP {p?.op_no} {p?.name}</span>
-                        {it.item_function && <span style={{ fontSize: 10, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px' }}>{it.item_function}</span>}
+                        {it.item_function && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px' }}>{it.item_function}</span>}
                         {classChip(it.classification)}
                         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{it.failure_mode}</span>
                         <span style={{ flex: 1 }} />
@@ -559,8 +562,8 @@ export default function PEDocs() {
                           const meta = CMP_META[c.state];
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
-                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 10.5, fontWeight: 800, color: meta.color, border: `1px solid ${meta.color}66`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
-                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 10.5, color: '#a855f7', fontWeight: 700 }}>📬 เสนอแล้ว</span>
+                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${meta.color}66`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
+                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>📬 เสนอแล้ว</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? '⭐ เสนอเข้า master' : '➕ เสนอเป็นรายการใหม่'}</button>}
                           </>;
                         })()}
@@ -612,7 +615,7 @@ export default function PEDocs() {
                         <tr key={it.id}>
                           <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>
                             {p?.op_no}
-                            {it.sub_op && <div style={{ fontFamily: 'inherit', fontSize: 10, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.sub_op}</div>}
+                            {it.sub_op && <div style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.sub_op}</div>}
                           </td>
                           <td style={tdSt}>{it.char_no ?? '—'}</td>
                           <td style={tdSt}>
@@ -1041,6 +1044,6 @@ export default function PEDocs() {
           <img src={imgView} alt="" style={{ maxWidth: '94vw', maxHeight: '90vh', borderRadius: 8 }} />
         </div>
       )}
-    </div>
+    </Page>
   );
 }

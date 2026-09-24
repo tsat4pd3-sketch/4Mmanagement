@@ -38,6 +38,10 @@ import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import TimeRangeBar from '../components/TimeRangeBar';
+import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 
 let tsLogoDataUrlPromise = null;
@@ -133,6 +137,9 @@ function CsvBtn({ onClick, style = {} }) {
   );
 }
 
+// UI-STANDARD 2026-09-24 — กะใน /report: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all')
+const SHIFT_SEG_ALL = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
+
 const CAT_META = {
   Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
   Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Machine',  icon: '⚙️' },
@@ -181,7 +188,7 @@ export default function Report({ mode = 'report' }) {
   };
 
   return (
-    <div className="page-content">
+    <Page>
       <PageHeader
         title={mode === 'skills' ? 'Skill Matrix & ค่าฝีมือ' : 'รายงาน'}
         icon={mode === 'skills' ? '🏅' : '📋'}
@@ -199,7 +206,7 @@ export default function Report({ mode = 'report' }) {
       {activeTab === 7 && <AttendanceFormTab />}
       {activeTab === 8 && <MultiSkillFormTab />}
       {activeTab === 9 && <OtTransportBookingTab autoOpenMaster={autoOpenMaster} />}
-    </div>
+    </Page>
   );
 }
 
@@ -339,9 +346,17 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-        <label style={lbSt}>วันที่ทำ OT</label>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 140, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+      <FilterBar style={{ marginBottom: 14 }}>
+        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
+          <option value="">{ALL.section}</option>
+          {sections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
+          <option value="">{ALL.dept}</option>
+          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <span className="filter-label">วันที่ทำ OT</span>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
           <span style={{
             fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
@@ -352,20 +367,9 @@ table{border-collapse:collapse;width:100%}
             {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
           </span>
         )}
-        <select value={shiftFilter} onChange={e => setShiftFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="all">— ทุกกะ —</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="">— ทุกส่วนงาน —</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-          <option value="">— ทุกแผนก —</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <Segmented value={shiftFilter} onChange={setShiftFilter} options={SHIFT_SEG_ALL} label="กะ" />
+        <span className="spacer" />
+        <div style={{ display: 'flex', gap: 8 }}>
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
               position: 'relative',
@@ -381,7 +385,7 @@ table{border-collapse:collapse;width:100%}
             }}>🖨️ พิมพ์</button>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       {showMaster && canManageMaster && <OtMasterDataPanel />}
 
@@ -694,16 +698,6 @@ function DailyTab() {
     return true;
   }), [logs, dailySection, dailyDept, dailyLine, dailyTeam, lines]);
 
-  const shiftBtnStyle = (val) => ({
-    padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600,
-    background: shift === val
-      ? val === 'day' ? 'rgba(245,158,11,0.2)' : val === 'night' ? 'rgba(77,159,255,0.2)' : 'rgba(255,255,255,0.1)'
-      : 'transparent',
-    color: shift === val
-      ? val === 'day' ? '#f59e0b' : val === 'night' ? '#4d9fff' : 'var(--text2)'
-      : 'var(--muted)',
-  });
-
   const handlePrintDaily = () => {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = filteredLogs.map((l, i) => `<tr>
@@ -748,34 +742,30 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 140, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        {/* Shift toggle */}
-        <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
-          <button style={shiftBtnStyle('day')}   onClick={() => setShift('day')}>☀️ กะเช้า</button>
-          <button style={shiftBtnStyle('night')} onClick={() => setShift('night')}>🌙 กะดึก</button>
-          <button style={shiftBtnStyle('all')}   onClick={() => setShift('all')}>ทั้งหมด</button>
-        </div>
-        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }}>
+          <option value="">{ALL.section}</option>
           {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={dailyDept} onChange={e => setDailyDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
+        <select value={dailyDept} onChange={e => setDailyDept(e.target.value)}>
+          <option value="">{ALL.dept}</option>
           {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
         {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={dailyVisibleLines} value={dailyLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setDailyLine} />
-        <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <LineSelect lines={dailyVisibleLines} value={dailyLine} valueKey="id" placeholder={ALL.line} onChange={setDailyLine} />
+        <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>รวม {filteredLogs.length} คน</span>
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calLoaded && (
           <span style={{ fontSize: 12, fontWeight: 700, color: DAY_TYPE_META[getDayType(date)].color }}>
             {DAY_TYPE_META[getDayType(date)].label}
           </span>
         )}
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG_ALL} label="กะ" />
+        <span className="spacer" />
+        <span className="filter-count">รวม {filteredLogs.length} คน</span>
         {canExport && (
           <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
             🖨️ PDF
@@ -787,7 +777,7 @@ table{border-collapse:collapse;width:100%}
           // fallback กะจาก team: C = กะเช้าตลอด · A/B หมุนกะ ไม่รู้รอบจริง = เว้นว่าง (เดิมเดา A=เช้า B=ดึกตายตัว — ผิดครึ่งสัปดาห์)
           filteredLogs.map(l => [date, DAY_TYPE_META[getDayType(date)]?.label || '', l.shift || (l.employees?.team === 'C' ? 'day' : ''), l.employees?.employee_id_code, l.employees?.name, l.employees?.department || '', l.employees?.team || '', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', l.has_ot ? '✓' : ''])
         )} />
-      </div>
+      </FilterBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
@@ -935,25 +925,25 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
+          <option value="">{ALL.section}</option>
           {empSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
+        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
+          <option value="">{ALL.dept}</option>
           {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        <select value={empTeam} onChange={e => setEmpTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
-          inputStyle={{ padding: '7px 30px 7px 10px', borderRadius: 7, fontSize: 13 }}
           options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
           onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 150, padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>มา {logs.filter(l => l.is_present).length} วัน</span>
+        <span className="spacer" />
+        <span className="filter-count">มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
           <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -968,7 +958,7 @@ table{border-collapse:collapse;width:100%}
             logs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.is_present ? '✓' : '✗', l.has_helmet ? '✓' : '✗', l.has_boots ? '✓' : '✗', l.has_gloves ? '✓' : '✗', stationMap[String(l.assigned_line)] || l.assigned_line || ''])
           );
         }} />
-      </div>
+      </FilterBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
@@ -1146,29 +1136,30 @@ table{border-collapse:collapse;width:100%}
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+      {/* ⏱️ UI-STANDARD 2026-09-24 — แถบเวลาเดียวกับแท็บอื่น + ตัวกรองของแท็บเป็น children (แถบเดียว)
+          (ช่องวันที่ของแท็บนี้หลุดหายไปตอนย้ายเข้า TimeRangeBar 23/09 — ใส่คืน) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
+          <option value="">{ALL.section}</option>
           {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)}
-          style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, minWidth: 200 }}>
+        <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
               {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
             </optgroup>
           ))}
         </select>
-        <select value={stationTeam} onChange={e => setStationTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <select value={stationTeam} onChange={e => setStationTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <select value={stationShift} onChange={e => setStationShift(e.target.value)} style={selSt}>
-          <option value="">ทุกกะ</option>
-          <option value="day">☀️ กะเช้า</option>
-          <option value="night">🌙 กะดึก</option>
-        </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} รายการ</span>
+        <Segmented value={stationShift} onChange={setStationShift} options={SHIFT_OPTIONS} label="กะ" />
+        <span className="spacer" />
+        <span className="filter-count">{filteredRows.length} รายการ</span>
         {canExport && (
           <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -1179,7 +1170,7 @@ table{border-collapse:collapse;width:100%}
           ['วันที่', 'ประเภทวัน', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
           filteredRows.map(r => [r.work_date, DAY_TYPE_META[getDayType(r.work_date)].label, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
         )} />
-      </div>
+      </TimeRangeBar>
 
       {station && (
         <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
@@ -1335,20 +1326,20 @@ table{border-collapse:collapse;width:100%}
     <div>
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }} style={selSt}>
-          <option value="">ทุกส่วนงาน</option>
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
+      >
+        <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }}>
+          <option value="">{ALL.section}</option>
           {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={rangeVisibleLines} value={rangeLine} valueKey="id" placeholder="ทุกไลน์" style={selSt} onChange={setRangeLine} />
-        <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)} style={selSt}>
-          <option value="">ทุก Team</option>
+        <LineSelect lines={rangeVisibleLines} value={rangeLine} valueKey="id" placeholder={ALL.line} onChange={setRangeLine} />
+        <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{filteredRows.length} คน</span>
+        <span className="spacer" />
+        <span className="filter-count">{filteredRows.length} คน</span>
         {canExport && (
           <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             🖨️ PDF
@@ -1359,7 +1350,7 @@ table{border-collapse:collapse;width:100%}
           ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
           filteredRows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
         )} />
-      </div>
+      </TimeRangeBar>
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
@@ -1916,9 +1907,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       <TimeRangeBar
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
+      >
+        {/* UI-STANDARD 2026-09-24 — ตัวกรองเป็น children ของแถบเวลา (แถบเดียว) · ช่องเดือน = พารามิเตอร์ของปุ่ม export อยู่หลัง spacer (§3.5) */}
         {(() => {
           const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
           const fourMSections = allowedLineNames
@@ -1926,20 +1917,20 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             : (orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort());
           const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
           return (<>
-            <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-              <option value="">ทุกส่วนงาน</option>
+            <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }}>
+              <option value="">{ALL.section}</option>
               {fourMSections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-            <LineSelect lines={fourMVisibleLines} value={line} placeholder="ทุกไลน์" style={{ width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 12 }} onChange={setLine} />
+            <LineSelect lines={fourMVisibleLines} value={line} placeholder={ALL.line} onChange={setLine} />
           </>);
         })()}
-        <select value={cat} onChange={e => setCat(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-          <option value="">ทุกประเภท</option>
+        <select value={cat} onChange={e => setCat(e.target.value)}>
+          <option value="">{ALL.type}</option>
           {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
         </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ padding: '7px 10px', borderRadius: 7, fontSize: 12 }}>
-          <option value="">ทุกสถานะ</option>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">{ALL.status}</option>
           <option value="pending">⏳ รอ SV Approve</option>
           <option value="pending_qa">🔍 รอ QA Approve</option>
           <option value="approved">✅ Approved</option>
@@ -1950,6 +1941,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
+        <span className="spacer" />
         <CsvBtn onClick={() => downloadCSV(
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
@@ -1958,8 +1950,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         )} />
         {canExport && (
           <>
-            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)', margin: '0 2px' }} />
-            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} style={{ width: 150, padding: '6px 8px', borderRadius: 7, fontSize: 12 }} />
+            <span className="sep" />
+            <span className="filter-label">เดือนของใบ Changing Point</span>
+            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
             <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
               title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
               style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
@@ -1976,7 +1969,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
           }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
-      </div>
+      </TimeRangeBar>
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
@@ -2288,10 +2281,12 @@ function DocumentControlPanel() {
 /* การ์ดสรุปทักษะรายบุคคล (radar + ปุ่มพิมพ์ใบประเมิน) ย้ายไปเป็น component กลาง
    src/components/SkillRadarPanel.jsx แล้ว (2026-08-06) — /operator ใช้ตัวเดียวกัน */
 
-/* ── Shared Filter Bar for employee tabs ── */
+/* ── Shared scope filters for employee tabs ──
+   UI-STANDARD 2026-09-24: คืนเป็นชุดช่อง (fragment) ให้ผู้เรียกวางใน <FilterBar> มาตรฐาน
+   (เดิมชื่อ FilterBar ซ้ำกับของกลาง + ใส่ขนาด inline เอง) */
 const selSt = { width: 'auto', padding: '7px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer', minWidth: 120 }; // width:auto กัน index.css select{width:100%} ยืดเต็ม toolbar
 
-function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
+function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const orgSectionList = useOrgSections();
@@ -2312,24 +2307,24 @@ function FilterBar({ lines, filterSection, setFilterSection, filterLine, setFilt
   }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
   const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }} style={selSt}>
-        <option value="">ทุกส่วนงาน</option>
+    <>
+      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }}>
+        <option value="">{ALL.section}</option>
         {sections.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
       {setFilterDept && (
-        <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)} style={selSt}>
-          <option value="">ทุกแผนก</option>
+        <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)}>
+          <option value="">{ALL.dept}</option>
           {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
       <LineSelect lines={visibleLines} value={filterLine} valueKey="id"
-        placeholder="ทุกไลน์" style={selSt} onChange={setFilterLine} />
-      <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)} style={selSt}>
-        <option value="">ทุก Team</option>
+        placeholder={ALL.line} onChange={setFilterLine} />
+      <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)}>
+        <option value="">{ALL.team}</option>
         {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
       </select>
-    </div>
+    </>
   );
 }
 
@@ -2423,10 +2418,11 @@ function SkillMatrixTab() {
         />
       )}
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
-        <span style={{ color: 'var(--muted)', fontSize: 13 }}>{employees.length} คน · {skillDefs.length} สกิล</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+      <FilterBar style={{ marginBottom: 16 }}>
+        <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        <span className="spacer" />
+        <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
         {canExport && (
         <button onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
@@ -2489,7 +2485,7 @@ ${catHeaderCells}
             })
           );
         }} />
-      </div>
+      </FilterBar>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
@@ -3005,14 +3001,12 @@ function MultiSkillFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters + header inputs */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <span style={lbSt}>ตัวกรอง</span>
-          <FilterBar lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
-        </div>
+      {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
+        <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {employees.length > 0 && (
@@ -3035,7 +3029,7 @@ function MultiSkillFormTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {employees.length > 0 && (
         <>
@@ -3665,48 +3659,37 @@ function SkillAllowanceTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
-              <option key={y} value={y}>{y + 543}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value={1}>งวด 1 (วันที่ 1-15)</option>
-            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์ผลิต</div>
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (scopedLineNames) เดิม */}
-          <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder="ทุกไลน์"
-            style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุก Team</option>
-            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
-          </select>
-        </div>
+      {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → spacer → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (scopedLineNames) เดิม */}
+        <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder={ALL.line}
+          onChange={setLine} />
+        <select value={team} onChange={e => setTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
+        </select>
+        <span className="filter-label">ปี</span>
+        <select value={year} onChange={e => setYear(Number(e.target.value))}>
+          {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+            <option key={y} value={y}>{y + 543}</option>
+          ))}
+        </select>
+        <span className="filter-label">เดือน</span>
+        <select value={month} onChange={e => setMonth(Number(e.target.value))}>
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <span className="filter-label">งวด</span>
+        <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
+          <option value={1}>งวด 1 (วันที่ 1-15)</option>
+          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+        </select>
+        <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {rows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -3732,7 +3715,7 @@ function SkillAllowanceTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {/* รายละเอียดเอกสาร */}
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
@@ -4256,72 +4239,53 @@ function AttendanceFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Filters */}
-      <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ปี</div>
-          <select value={year} onChange={e => setYear(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
-              <option key={y} value={y}>{y+543}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เดือน</div>
-          <select value={month} onChange={e => setMonth(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>งวด</div>
-          <select value={period} onChange={e => setPeriod(Number(e.target.value))} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value={1}>งวด 1 (วันที่ 1-15)</option>
-            <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
-          </select>
-        </div>
-        {/* minWidth:0 — ไม่งั้น div นี้กว้างตาม option ที่ยาวที่สุด (ชื่อไลน์ยาว) แล้วดันล้นจอ */}
-        <div style={{ minWidth: 0, flex: '1 1 150px' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ไลน์</div>
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (attLinesInScope) เดิม */}
-          <LineSelect lines={attLinesInScope} value={line} placeholder="ทุกไลน์" style={{ width: '100%', minWidth: 0, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} onChange={setLine} />
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ส่วนงาน</div>
-          <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกส่วนงาน</option>
-            {attSections.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>แผนก</div>
-          <select value={empDept} onChange={e => setEmpDept(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุกแผนก</option>
-            {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>Team</div>
-          <select value={team} onChange={e => setTeam(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">ทุก Team</option>
-            {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>เลขที่เอกสาร</div>
-          <input
-            type="text"
-            value={formNo}
-            onChange={e => setFormNo(e.target.value)}
-            placeholder="เช่น F-HR-001"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 110 }}
-          />
-        </div>
+      {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → ช่องหัวเอกสาร → spacer → ปุ่ม */}
+      <FilterBar style={{ marginBottom: 0 }}>
+        <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }}>
+          <option value="">{ALL.section}</option>
+          {attSections.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
+          <option value="">{ALL.dept}</option>
+          {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
+        </select>
+        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (attLinesInScope) เดิม */}
+        <LineSelect lines={attLinesInScope} value={line} placeholder={ALL.line} onChange={setLine} />
+        <select value={team} onChange={e => setTeam(e.target.value)}>
+          <option value="">{ALL.team}</option>
+          {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
+        </select>
+        <span className="filter-label">ปี</span>
+        <select value={year} onChange={e => setYear(Number(e.target.value))}>
+          {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
+            <option key={y} value={y}>{y+543}</option>
+          ))}
+        </select>
+        <span className="filter-label">เดือน</span>
+        <select value={month} onChange={e => setMonth(Number(e.target.value))}>
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <span className="filter-label">งวด</span>
+        <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
+          <option value={1}>งวด 1 (วันที่ 1-15)</option>
+          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+        </select>
+        <span className="spacer" />
+        {/* เลขที่เอกสาร = ค่าหัวใบพิมพ์ (ไม่ใช่ตัวกรองมุมมอง) ⇒ อยู่หลัง spacer ชิดปุ่ม (UI-STANDARD §3.5) */}
+        <span className="filter-label">เลขที่เอกสาร</span>
+        <input
+          type="text"
+          value={formNo}
+          onChange={e => setFormNo(e.target.value)}
+          placeholder="เช่น F-HR-001"
+          style={{ width: 110 }}
+        />
         <button onClick={load} disabled={loading}
-          style={{ padding: '8px 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', alignSelf: 'center' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {empRows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -4350,7 +4314,7 @@ function AttendanceFormTab() {
             );
           }} />
         )}
-      </div>
+      </FilterBar>
 
       {/* Preview */}
       {empRows.length > 0 && (
