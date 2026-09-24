@@ -231,6 +231,21 @@ const TABLE_ROWS = {
    กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
    mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
 const TABLE_FIXED = {
+  /* 🎓 ทะเบียนเกรดตามผังองค์กรทางการ — **ห้ามถอด** (2026-09-24)
+     ช่อง "เกรด" ใน /operator จะไม่เรนเดอร์เลยถ้าทะเบียนว่าง (`gradesSync().length === 0`)
+     ⇒ ไม่มีชุดนี้ = harness ไม่เคยรันโค้ดสายเกรด/คำเตือน "เกรดไม่ตรงตำแหน่ง" สักบรรทัด
+     · ต้องมีทั้งเคส **ตรงตำแหน่ง** และ **ไม่ตรง** ให้ใช้ได้จริง
+     · ต้องมี `T3` กับ `T6` คู่กันเสมอ — เป็นคู่ที่พิสูจน์กฎ "เลขน้อย = สูงกว่า"
+       (เทียบสตริงจะได้ผลกลับหัว) */
+  grades: [
+    { code: 'M1', band: 'M', rank: 730, label_th: 'ผู้จัดการ / ผู้ชำนาญการ', is_active: true, sort_order: 40 },
+    { code: 'S1', band: 'S', rank: 630, label_th: 'หัวหน้าส่วน · วิศวกรอาวุโส', is_active: true, sort_order: 50 },
+    { code: 'S3', band: 'S', rank: 610, label_th: 'หัวหน้าแผนก · วิศวกร', is_active: true, sort_order: 52 },
+    { code: 'T3', band: 'T', rank: 510, label_th: 'หัวหน้ากลุ่ม · ช่างเทคนิค', is_active: true, sort_order: 62 },
+    { code: 'T6', band: 'T', rank: 430, label_th: 'พนักงานทั่วไป', is_active: true, sort_order: 70 },
+    { code: 'Y1', band: 'Y', rank: 300, label_th: 'พนักงานชั่วคราว', is_active: true, sort_order: 80 },
+  ],
+
   /* 🎯 ทะเบียน KPI มาตรฐานของกลุ่ม — **ห้ามถอด** (2026-09-23)
      โมดัล `KpiStandardPicker` แตกแขนงตามค่า `requirement` 3 แบบ ซึ่ง ROWS ทั่วไปไม่มีให้เลย
      ⇒ ถ้าไม่มีชุดนี้ harness จะไม่เคยรันโค้ดสายนี้สักบรรทัด:
