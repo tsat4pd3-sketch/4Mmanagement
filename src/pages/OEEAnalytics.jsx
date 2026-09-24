@@ -226,7 +226,7 @@ function MiniTrendTip({ active, payload, label, dataKey, metric }) {
   if (!active || !payload?.length) return null;
   const v = payload.find(p => p.dataKey === dataKey)?.value;
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11, boxShadow: '0 2px 8px rgba(0,0,0,0.3)' }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', fontSize: 11, boxShadow: 'var(--shadow-float)' }}>
       <div style={{ color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontWeight: 800 }}>{metric} {v != null ? `${v}%` : 'ไม่มีข้อมูล'}</div>
     </div>

@@ -410,7 +410,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                           style={{
                             position: 'absolute', right: -5, bottom: -5, width: 12, height: 12,
                             background: 'var(--accent)', border: '2px solid #fff', borderRadius: 3,
-                            cursor: 'nwse-resize', boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                            cursor: 'nwse-resize', boxShadow: 'var(--shadow-float)',
                           }} />
                       )}
                     </div>
