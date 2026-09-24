@@ -12,6 +12,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { isMoOpen } from '../utils/mtnStepPerm';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
+import Segmented from '../components/Segmented';
 import Page from '../components/Page';
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
@@ -878,30 +879,19 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
              = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
              เหลือแท็บเดียวจึงไม่ต้องมีแถบแท็บ — `?view=kpi` redirect ไป /obeya ให้อัตโนมัติ */
           tabs={embedded ? tabs : undefined} tab={embedded ? hubTab : view} onTab={embedded ? onTab : setView}
-        >
-          {/* เลือกส่วนงาน = "ตัวกรอง" ของหน้านี้ — แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 */}
-          {view === 'now' && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center' }}>
-              {/* UI-STANDARD 2026-09-24: "มุมมอง" ไม่ใช่ "ส่วนงาน" — คำว่าส่วนงานในระบบนี้ = PD1..PD4 (ผังองค์กร) */}
-              <span className="filter-label" style={{ fontWeight: 700 }}>มุมมอง:</span>
-              {DEPTS.map(t => (
-                <button key={t.key} onClick={() => setDept(t.key)} style={{
-                  fontSize: 12.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-                  background: dept === t.key ? 'var(--bg3)' : 'transparent',
-                  color: dept === t.key ? 'var(--text)' : 'var(--muted)',
-                  border: `1px solid ${dept === t.key ? 'var(--border2)' : 'var(--border)'}`,
-                }}>{t.icon} {t.label}</button>
-              ))}
-              {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — เดิมเป็นแท็บ 🚨 จอห้องช่าง
-                  ที่ mount `<MtnAndonBoard>` ตัวเดียวกับ `/tv` เป๊ะ = ทางเข้า 2 ทางไปบอร์ดใบเดียวกัน
-                  หน้านี้เป็น "คิวงานที่กดไปทำ" · `/tv` เป็น "จอแขวน" — คนละงาน คนละหน้า
-                  ปุ่มนี้คงทางเข้าเดิมไว้ให้คนที่ชินกับที่นี่ (ห้ามตัดทางออกของใคร) */}
-              <button onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
-                title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-                style={{ ...tvBtn(false), marginLeft: 'auto' }}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
-            </div>
-          )}
-        </PageHeader>
+          /* เลือกมุมมองฝ่าย = "ตัวกรอง" ของหน้านี้ ⇒ `filters` (ใต้แท็บ ตำแหน่งเดียวกับแท็บอื่นของ OBEYA)
+             แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 — จึงใช้คำว่า "มุมมอง" ไม่ใช่ "ส่วนงาน" */
+          filters={view === 'now' ? (<>
+            <span className="filter-label">มุมมอง</span>
+            <Segmented label="มุมมองฝ่าย" value={dept} onChange={setDept}
+              options={DEPTS.map(t => ({ value: t.key, label: `${t.icon} ${t.label}` }))} />
+            <span className="spacer" />
+            {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
+            <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
+              title="เปิดจอเฝ้าระวังสำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+              style={tvBtn(false)}>📺 จอเฝ้าระวัง (แขวนทีวี)</button>
+          </>) : undefined}
+        />
 
       {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}

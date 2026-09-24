@@ -29,10 +29,9 @@ export default function LayoutSetup() {
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
       <PageHeader
         title="ตั้งค่าผัง / Floorplan" icon="🗺️"
-        sub="รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่"
+        sub={cur ? cur.desc : 'รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่'}
         tabs={TABS} tab={tab} onTab={setTab}
       />
-      {cur && <p style={{ fontSize: 12.5, color: 'var(--text2)', margin: 0 }}>{cur.desc}</p>}
 
       <Hub>
       {tab === 'factory' && (

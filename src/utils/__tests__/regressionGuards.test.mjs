@@ -1031,3 +1031,54 @@ test('🛡️ hub ที่ฝังหน้าลูกต้องครอ�
     + '   ทำไมห้าม: หัวเรื่องซ้อน 2 ชั้น ขนาดคนละแบบทุกแท็บ (PmHub/DailyChecker audit 23/09/2026)\n'
     + '   แก้ยังไง: import { Hub } from components/Page แล้วครอบหน้าลูก — Obeya ยกเว้นเพราะหน้าลูกเป็นเจ้าของหัว+แท็บของ hub เอง\n');
 });
+
+
+/* ═══ ลำดับแนวตั้งของหัวเพจ (UI-STANDARD §2 · 2026-09-24) ═══════════════════════
+   user 24/09: *"ลำดับยังโดดไปมา เดี๋ยวแท็บมาก่อนช่องค้นหา บางหน้าค้นหาอยู่บนสุดก่อนแท็บ"*
+   ต้นเหตุ: ตัวกรอง (ขอบเขต/เดือน/โปรเจค/ช่วงเวลา) ถูกยัดใน `actions` ของ PageHeader ⇒ ไปโผล่แถวชื่อหน้า
+   **เหนือแถบแท็บ** ขณะที่หน้าอื่นวางตัวกรองใต้แท็บ (OBEYA 4 แท็บลำดับไม่เหมือนกันเองด้วยซ้ำ)
+   ⇒ ตัวกรองต้องส่งผ่าน `filters` (PageHeader วาดใต้แท็บให้เสมอ) — `actions` = ปุ่มคำสั่งเท่านั้น */
+function parenBlock(code, i) {
+  let depth = 0;
+  for (let j = i; j < code.length; j++) {
+    if (code[j] === '(') depth++;
+    else if (code[j] === ')') { depth--; if (depth === 0) return code.slice(i, j + 1); }
+  }
+  return '';
+}
+function jsxPropBlock(code, from) {
+  let i = code.indexOf('{', from), depth = 0;
+  for (let j = i; j < code.length; j++) {
+    if (code[j] === '{') depth++;
+    else if (code[j] === '}') { depth--; if (depth === 0) return code.slice(i, j + 1); }
+  }
+  return '';
+}
+test('🛡️ ตัวกรองห้ามอยู่ใน actions ของ PageHeader — ใช้ filters (ลำดับ: ชื่อหน้า → แท็บ → แถบกรอง)', () => {
+  const FILTER_CTL = /<select\b|<OrgScopePicker\b|<LineSelect\b|<Segmented\b|<SearchInput\b|<TimeRangeBar\b|type=["'](?:date|month|week)["']/;
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    let at = 0;
+    while ((at = code.indexOf('<PageHeader', at)) !== -1) {
+      const end = code.indexOf('/>', at);
+      const seg = code.slice(at, end === -1 ? undefined : end);
+      const k = seg.search(/\bactions=\{/);
+      if (k !== -1) {
+        let block = jsxPropBlock(code, at + k);
+        /* ตัวกรองมักถูกประกอบเป็นตัวแปรก่อน (`const controls = (<>…</>)` แล้วส่ง `{controls}`)
+           ⇒ ตามชื่อตัวแปรใน block ไปเปิดดูเนื้อของมันด้วย (เคสจริง: OBEYA {controls} · NPI {projectSelect}) */
+        for (const [, id] of block.matchAll(/\{\s*(\w+)\s*\}/g)) {
+          const d = code.search(new RegExp(`const\\s+${id}\\s*=\\s*\\(`));
+          if (d !== -1) block += parenBlock(code, code.indexOf('(', d));
+        }
+        if (FILTER_CTL.test(block)) bad.push(`${relative(ROOT, file)}:${code.slice(0, at).split('\n').length}`);
+      }
+      at += 11;
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ มีตัวกรองอยู่ใน actions ของ PageHeader ${bad.length} จุด\n`
+    + '   ทำไมห้าม: ตัวกรองไปโผล่เหนือแถบแท็บ ขณะที่หน้าอื่นอยู่ใต้แท็บ ⇒ ลำดับโดดไปมาทุกหน้า (user 24/09/2026)\n'
+    + '   แก้ยังไง: ย้ายไป prop `filters` ของ PageHeader (วาดใต้แท็บเป็น .filter-bar ให้เอง) — actions เหลือแค่ปุ่มคำสั่ง\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});

@@ -93,8 +93,9 @@ export default function Obeya() {
       </Suspense>
     );
   } else if (tab === 'table') {
+    /* ไม่มี gap ที่กล่องนี้ — ระยะ แท็บ→แถบกรอง ต้องเท่ากับแท็บอื่น (PageHeader marginBottom 12 ที่เดียว) */
     body = (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
           title="OBEYA — ตั้งค่า KPI / กรอกผล" icon="⚙️"

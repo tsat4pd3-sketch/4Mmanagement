@@ -11,7 +11,7 @@ import { LINE_TYPES } from '../utils/lineTypes';
 import { rnd, jit } from '../utils/seededRandom';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
-import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
@@ -446,24 +446,17 @@ export default function GroupOverview() {
             {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
           </span>
         </>}
-        actions={<>
+        filters={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
-          <div style={{ display: 'flex', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
-            {[{ k: 'map', t: '🗺️ ตามพื้นที่' }, { k: 'biz', t: '🗂️ ตามกลุ่มธุรกิจ' }].map(o => (
-              <button key={o.k} onClick={() => setSel({ axis: o.k, node: null, comp: null })} style={{
-                padding: '7px 11px', fontSize: 13, fontWeight: 700, border: 'none', cursor: 'pointer',
-                background: sel.axis === o.k ? 'var(--accent)' : 'var(--bg3)',
-                color: sel.axis === o.k ? '#08120a' : 'var(--text)',
-              }}>{o.t}</button>
-            ))}
-          </div>
-          <FilterBar bare>
-            <button className="tbtn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
-            <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
-            <button className="tbtn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
-            <button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>
-          </FilterBar>
+          <Segmented label="แกนมอง" value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
+            options={[{ value: 'map', label: '🗺️ ตามพื้นที่' }, { value: 'biz', label: '🗂️ ตามกลุ่มธุรกิจ' }]} />
+          <span className="sep" />
+          <span className="filter-label">วันงาน</span>
+          <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
+          <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
+          <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
         </>}
+        actions={<button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>}
       />
 
       {/* ── แถบอธิบายว่าอันไหนจริง อันไหนจำลอง (ห้ามให้เข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว) ── */}
