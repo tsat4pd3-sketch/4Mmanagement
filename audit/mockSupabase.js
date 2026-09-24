@@ -231,6 +231,21 @@ const TABLE_ROWS = {
    กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
    mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
 const TABLE_FIXED = {
+  /* 🎓 ทะเบียนเกรดตามผังองค์กรทางการ — **ห้ามถอด** (2026-09-24)
+     ช่อง "เกรด" ใน /operator จะไม่เรนเดอร์เลยถ้าทะเบียนว่าง (`gradesSync().length === 0`)
+     ⇒ ไม่มีชุดนี้ = harness ไม่เคยรันโค้ดสายเกรด/คำเตือน "เกรดไม่ตรงตำแหน่ง" สักบรรทัด
+     · ต้องมีทั้งเคส **ตรงตำแหน่ง** และ **ไม่ตรง** ให้ใช้ได้จริง
+     · ต้องมี `T3` กับ `T6` คู่กันเสมอ — เป็นคู่ที่พิสูจน์กฎ "เลขน้อย = สูงกว่า"
+       (เทียบสตริงจะได้ผลกลับหัว) */
+  grades: [
+    { code: 'M1', band: 'M', rank: 730, label_th: 'ผู้จัดการ / ผู้ชำนาญการ', is_active: true, sort_order: 40 },
+    { code: 'S1', band: 'S', rank: 630, label_th: 'หัวหน้าส่วน · วิศวกรอาวุโส', is_active: true, sort_order: 50 },
+    { code: 'S3', band: 'S', rank: 610, label_th: 'หัวหน้าแผนก · วิศวกร', is_active: true, sort_order: 52 },
+    { code: 'T3', band: 'T', rank: 510, label_th: 'หัวหน้ากลุ่ม · ช่างเทคนิค', is_active: true, sort_order: 62 },
+    { code: 'T6', band: 'T', rank: 430, label_th: 'พนักงานทั่วไป', is_active: true, sort_order: 70 },
+    { code: 'Y1', band: 'Y', rank: 300, label_th: 'พนักงานชั่วคราว', is_active: true, sort_order: 80 },
+  ],
+
   /* 🎯 ทะเบียน KPI มาตรฐานของกลุ่ม — **ห้ามถอด** (2026-09-23)
      โมดัล `KpiStandardPicker` แตกแขนงตามค่า `requirement` 3 แบบ ซึ่ง ROWS ทั่วไปไม่มีให้เลย
      ⇒ ถ้าไม่มีชุดนี้ harness จะไม่เคยรันโค้ดสายนี้สักบรรทัด:
@@ -251,10 +266,22 @@ const TABLE_FIXED = {
      `source` เป็น `not null default 'manual'` ⇒ แถวกรอกมือ**ไม่ใช่ null** · เคยเข้าใจผิดจนเกิดบั๊ก
      2 จุด (ตารางกรอกมือว่างตลอดกาล + แผง Key Performance ดูดแถว auto มาโชว์ว่า "ยังไม่กรอกค่า")
      ⇒ ไม่มีแถว auto ในม็อก = ตัวกรองที่แก้บั๊กนั้นไม่เคยถูกรันใน harness */
+  /* 🔴 ห้ามถอด/ห้ามเปลี่ยน `scope_kind` ของ 3 แถวนี้ (24/09)
+     ตั้งแต่ย้ายมาใช้แกน `scope_kind/scope_value` (23/09) แถวที่ผูกไว้กับ `section: 'PD3'` เฉยๆ
+     **ตกตัวกรอง `scopeCovers` ของทุกขอบเขต** ⇒ ตาราง "KPI นอกระบบ (กรอกมือ)" ว่างตลอดใน harness
+     = โค้ดสายกรอกมือทั้งหมด (สรุปรายปีตามวิธีรวม · ทศนิยม · โมดัลนิยาม) ไม่เคยถูกรันใน crashsweep เลย
+     ตั้งเป็น `plant` เพราะนิยามระดับโรงงานตกทอดถึงทุกขอบเขต ⇒ เห็นแน่นอนไม่ว่าจอ default ไปที่ไหน
+     ⚠️ ต้องตั้ง `section: null` ด้วย — `scopeOfDef()` ถอยไปอ่าน `section` เมื่อ `scope_kind = 'plant'`
+        (ใส่ scope_kind อย่างเดียวแล้วคง section ไว้ = ยังเป็นนิยามระดับส่วนงานเหมือนเดิม แถวก็ยังไม่โผล่)
+     · `kd-3` (auto) ยังคง `section: 'PD3'` ไว้ = สาขา "นิยามระดับส่วนงาน" ยังถูกรันอยู่
+     · `summary_mode` ต้องมีทั้ง `average`/`sum`/`rate` ให้ครบ — แต่ละตัวเปิดสาขาคนละเส้นใน `summaryOf()`
+       (`rate` = สาขาที่ต้องถอยมาเฉลี่ยแล้วติดป้าย ≈) · `decimals: 0` = สาขาที่ `||` จะตกค่า default */
   kpi_definitions: [
-    { id: 'kd-1', year: 2026, section: 'PD3', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2 } },
-    { id: 'kd-2', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0 } },
-    { id: 'kd-3', year: 2026, section: 'PD3', line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average' } },
+    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate' } },
+    { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
+    /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
+    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
   ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
   factory_line_regions: [

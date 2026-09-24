@@ -19,6 +19,8 @@
 
 // งานคู่ gang die / RH-LH — ยุบเป็น "1 shot" ก่อนคิดเวลามาตรฐานของ %P (ดูกติกา ชิ้น≠shot ในไฟล์นั้น)
 import { collapsePairShots } from './pairTotals.js';
+// §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
+import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
 
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
    สูตรบังคับของโปรเจค: confirmed → `qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0`
@@ -905,4 +907,248 @@ export function dtMinOutsideWork(d, coveredIv = [], frame = null) {
   const a = Math.max(s0, frame.startMs), b = Math.min(e0, frame.endMs);
   if (!(b > a)) return 0;                       // นอกกรอบกะ = ไม่ใช่เรื่องของกะนี้
   return Math.max(0, (b - a) / 60000 - overlapMinutesWith(a, b, coveredIv));
+}
+
+/* ══ §8 computeSessionOee — A/P/Q/OEE ของ "กะหนึ่งกะ" (ตัวที่ stamp ลงฐานตอนปิดกะ) ══════
+   ย้ายออกมาจาก `DailyReport.computeOEE` (closure ในคอมโพเนนต์ 4,000 บรรทัด) เมื่อ 2026-09-24
+
+   **ทำไมต้องย้าย** — กฎโปรเจคเขียนไว้ตั้งแต่ต้นว่า `src/utils/oee.js` = single source of truth
+   ของสูตร OEE แต่ "ตัวประกอบร่าง" ของสายปิดกะกลับอยู่ในหน้า ⇒ เรียกจากที่อื่นไม่ได้เลย
+   ผลที่ตามมาจริง (24/09): ต้องแก้ `start_time` ของ 10 กะที่ปิดไปแล้วแล้วคำนวณ OEE ใหม่
+   — ทำไม่ได้เลยนอกจากให้คนเปิดหน้าจอกดเองทีละกะ หรือ **เขียนสูตรซ้ำใน SQL ซึ่งผิดกฎ**
+   (มี OEE 2 ชุด = เถียงกันว่าเชื่อจอไหน)
+
+   🔴 ฟังก์ชันนี้คือสูตรเดียวกับตอนปิดกะ — `DailyReport.computeOEE` เป็นเปลือกบางๆ ที่ส่ง state เข้ามา
+      **แก้สูตรที่นี่ที่เดียว ห้ามแก้ในหน้า** · สายสด (ยังไม่ปิดกะ) ยังเป็น `computeLiveOee` เหมือนเดิม
+      (คนละฐานเวลา: สด = "ถึงตอนนี้" · ปิดกะ = "เวลาเปิด→ปิดที่กรอก") ห้ามเอามารวมกัน
+
+   ⚠️ พารามิเตอร์กลุ่ม `carry*`/`matTimeOverride` = state ชั่วคราวบนฟอร์มปิดกะ
+      **กะที่ปิดไปแล้วส่งว่างเสมอ** (ใบกลายเป็น carry_over/imported แล้ว ค่าอยู่ที่ `qty_actual`)
+      — นี่คือเหตุผลที่คำนวณกะเก่าย้อนหลังได้จากข้อมูลในฐานล้วนๆ
+   ══════════════════════════════════════════════════════════════════════════════════════ */
+
+/** @returns {{A,P,Q,oee,shiftMin,...}} — ค่าเดียวกับที่ `handleCloseSession` เอาไป stamp */
+export function computeSessionOee({
+  session,
+  orders = [],
+  downtimes = [],
+  defects = [],
+  ngQty: ngQtyOverride = null,
+  products = [],
+  kanbanStds = [],
+  breakPolicies = [],
+  processType = null,
+  lineFlow = {},
+  machineCount = 0,
+  startTime = null,
+  endTime = null,
+  carryQtyActual = {},
+  carryOverDecisions = {},
+  carryStopTime = {},
+  matTimeOverride = {},
+}) {
+  const dtl = downtimes;
+  const workDate = session?.work_date;
+  const confirmedQty = orders.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0);
+  const carryActualQty = orders
+    .filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+    .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
+  const totalProduced = confirmedQty + carryActualQty;
+  const ngQty = ngQtyOverride !== null && ngQtyOverride !== undefined
+    ? ngQtyOverride : sumDefectQty(defects, 'line');
+
+  const startTimeStr = startTime || session?.start_time;
+  const openedAt = (workDate && startTimeStr) ? new Date(`${workDate}T${startTimeStr.slice(0, 5)}:00`) : null;
+  let closedAt = new Date();
+  if (workDate && endTime) {
+    closedAt = new Date(`${workDate}T${endTime.slice(0, 5)}:00`);
+    if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000);
+  }
+  const shiftMin = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
+  const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
+
+  const parallelN = parallelUnitsOf(lineFlow, machineCount);
+  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+  const sessionShift = session?.shift || 'day';
+  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
+  const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
+
+  const brkIvIn = (a, b) => breakIntervalsIn({
+    policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
+    workDate, shift: sessionShift, processType,
+  });
+  const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
+  const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {
+    if (!startMs || !endMs || endMs <= startMs) return 0;
+    return logs.filter(pred).reduce((sum, d) => {
+      if (!d.started_at) return sum;
+      const s0 = new Date(d.started_at).getTime();
+      const e0 = d.ended_at ? new Date(d.ended_at).getTime() : s0 + (d.duration_min || 0) * 60000;
+      const s = Math.max(s0, startMs), e = Math.min(e0, endMs);
+      if (!(e > s)) return sum;
+      const min = (e - s) / 60000 - overlapMinutesWith(s, e, breakIv);
+      return min > 0 ? sum + min * weightFn(d) : sum;
+    }, 0);
+  };
+  const isPlanned = d => (d?.dr_downtime_types?.category ?? d?.dt_category) === 'planned';
+
+  const breakIv = brkIvIn(openedAt, closedAt);
+  const policyBreakMin = ivMin(breakIv);
+  const dtEff = d => dtMinOutsideBreaks(d, breakIv) * dtW(d);
+  const loggedPlannedDT = dtl.filter(isPlanned).reduce((s, d) => s + dtEff(d), 0);
+  const loggedUnplannedDT = dtl.filter(d => !isPlanned(d)).reduce((s, d) => s + dtEff(d), 0);
+  const dtBreakOverlapMin = dtl.reduce((s, d) =>
+    s + Math.max(0, ((Number(d.duration_min) || 0) - dtMinOutsideBreaks(d, breakIv)) * dtW(d)), 0);
+  const plannedDT = loggedPlannedDT + policyBreakMin;
+  const netAvail = Math.max(0, shiftMin - plannedDT);
+  const runMin = Math.max(0, netAvail - loggedUnplannedDT);
+
+  /* ── %A แยกตามช่วงเวลาของแต่ละ MAT.NO (ดูเหตุผลเต็มใน §7) ── */
+  const applyMatTimeOverride = (matNo, hasOpenOrders, startMs, endMs) => {
+    if (hasOpenOrders) return { startMs, endMs };
+    const ov = matTimeOverride[matNo];
+    if (!ov || !workDate) return { startMs, endMs };
+    let s = startMs, e = endMs;
+    if (ov.start) s = new Date(`${workDate}T${ov.start.slice(0, 5)}:00`).getTime();
+    if (ov.end) {
+      e = new Date(`${workDate}T${ov.end.slice(0, 5)}:00`).getTime();
+      if (s != null && e < s) e += 86400000;
+    }
+    return { startMs: s, endMs: e };
+  };
+  let totalNetAvailByMat = 0, totalRunMinByMat = 0;
+  const matRunMinMap = {};
+  const matWins = [];
+  Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
+    const ords = orders.filter(o => o.mat_no === matNo);
+    const hasOpenOrders = ords.some(o => o.status === 'open');
+    const openedTimes = ords.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+    const closedTimes = ords.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+    const openStopTimes = ords.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+      const stopStr = carryStopTime[o.id] ?? endTime;
+      if (!stopStr || !workDate) return null;
+      let ms = new Date(`${workDate}T${stopStr.slice(0, 5)}:00`).getTime();
+      if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+      return ms;
+    }).filter(Boolean);
+    let matStartMs = openedTimes.length ? Math.min(...openedTimes) : null;
+    let matEndMs = (closedTimes.length || openStopTimes.length) ? Math.max(...closedTimes, ...openStopTimes) : null;
+    ({ startMs: matStartMs, endMs: matEndMs } = applyMatTimeOverride(matNo, hasOpenOrders, matStartMs, matEndMs));
+    ({ startMs: matStartMs, endMs: matEndMs } = clampWinToShift(matStartMs, matEndMs, shiftFrame));
+    if (matStartMs == null || matEndMs == null || matEndMs <= matStartMs) return;
+    const windowMin = (matEndMs - matStartMs) / 60000;
+    const matBreakIv = brkIvIn(new Date(matStartMs), new Date(matEndMs));
+    const matPolicyBreakMin = ivMin(matBreakIv);
+    const matLoggedPlanned = dtOverlapMin(matStartMs, matEndMs, isPlanned, dtl, dtW, matBreakIv);
+    const matLoggedUnplanned = dtOverlapMin(matStartMs, matEndMs, d => !isPlanned(d), dtl, dtW, matBreakIv);
+    const matNetAvail = Math.max(0, windowMin - matPolicyBreakMin - matLoggedPlanned);
+    const matRunMin = Math.max(0, matNetAvail - matLoggedUnplanned);
+    totalNetAvailByMat += matNetAvail;
+    totalRunMinByMat += matRunMin;
+    matRunMinMap[matNo] = matRunMin;
+    matWins.push([matStartMs, matEndMs]);
+  });
+  const untimedPlanned = dtl.filter(d => !d.started_at && isPlanned(d)).reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+  const untimedUnplanned = dtl.filter(d => !d.started_at && !isPlanned(d)).reduce((s, d) => s + (d.duration_min || 0) * dtW(d), 0);
+  const coveredIv = unionIv([...matWins, ...breakIv]);
+  const outsidePlanned = dtl.filter(isPlanned).reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+  const outsideUnplanned = dtl.filter(d => !isPlanned(d)).reduce((s, d) => s + dtMinOutsideWork(d, coveredIv, shiftFrame) * dtW(d), 0);
+  if (totalNetAvailByMat > 0 && (untimedPlanned || untimedUnplanned || outsidePlanned || outsideUnplanned)) {
+    totalNetAvailByMat = Math.max(0, totalNetAvailByMat - untimedPlanned - outsidePlanned);
+    totalRunMinByMat = Math.max(0, totalRunMinByMat - untimedPlanned - untimedUnplanned - outsidePlanned - outsideUnplanned);
+  }
+  const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
+    : (netAvail > 0 ? Math.min(1, runMin / netAvail) : null);
+
+  /* ── %P ── */
+  const runSec = runMin * 60;
+  const matPDataRaw = [];
+  let unknownQty = 0;
+  Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
+    const ords = orders.filter(o => o.mat_no === matNo);
+    const qty = ords.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
+      + ords.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
+        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
+    if (!qty) return;
+    const ctSec = ctForMatNo(matNo);
+    if (ctSec <= 0) { unknownQty += qty; return; }
+    const openedTimes = ords.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
+    const closedTimes = ords.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
+    const stopTimes = ords.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
+      const s = carryStopTime[o.id] ?? endTime;
+      if (!s || !workDate) return null;
+      let ms = new Date(`${workDate}T${s.slice(0, 5)}:00`).getTime();
+      if (o.opened_at && ms < new Date(o.opened_at).getTime()) ms += 86400000;
+      return ms;
+    }).filter(Boolean);
+    const { startMs: winStart, endMs: winEnd } = clampWinToShift(
+      openedTimes.length ? Math.min(...openedTimes) : null,
+      [...closedTimes, ...stopTimes].length ? Math.max(...closedTimes, ...stopTimes) : null,
+      shiftFrame);
+    matPDataRaw.push({ matNo, qty, ctSec, winStart, winEnd });
+  });
+  const knownQty = matPDataRaw.reduce((s, d) => s + d.qty, 0);
+  const matPData = collapsePairShots(
+    matPDataRaw.map(d => ({ mat_no: d.matNo, qty: d.qty, ct: d.ctSec, winStart: d.winStart, winEnd: d.winEnd })),
+    pairOf,
+  ).map(r => ({ matNo: r.mat_no, qty: r.qty, ctSec: r.ct, winStart: r.winStart, winEnd: r.winEnd }));
+
+  const prodInfoOf = (matNo) =>
+    kanbanStds.find(s => s.mat_no === matNo)?.dr_products
+    || products.find(p => p.mat_no === matNo)
+    || null;
+  const groupKeyByMat = groupSameProductKeys(matPData.map(d => {
+    const info = prodInfoOf(d.matNo);
+    return { matNo: d.matNo, name: info?.name, pNo: info?.p_no };
+  }));
+  const prodGroupMap = {};
+  matPData.forEach(d => {
+    const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
+    const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
+    g.stdSec += d.qty * d.ctSec;
+    g.runMin += matRunMinMap[d.matNo] ?? 0;
+    if (d.winStart != null) g.ws = g.ws == null ? d.winStart : Math.min(g.ws, d.winStart);
+    if (d.winEnd != null) g.we = g.we == null ? d.winEnd : Math.max(g.we, d.winEnd);
+  });
+  const prodGroups = Object.values(prodGroupMap);
+  const overlapOf = (a, b) => Math.max(0, (Math.min(a.we, b.we) - Math.max(a.ws, b.ws)) / 60000);
+  const isParallel = prodGroups.length > 1 && prodGroups.some((a, i) =>
+    prodGroups.slice(i + 1).some(b => {
+      if (a.ws == null || a.we == null || b.ws == null || b.we == null) return false;
+      const ov = overlapOf(a, b);
+      const minDurMin = Math.min(a.we - a.ws, b.we - b.ws) / 60000;
+      return ov > 15 && ov > 0.2 * minDurMin;
+    })
+  );
+  const perMachineCt = flowModeOf(lineFlow.flow_mode) === 'parallel_machine';
+  let P = null, pRawRatio = null, dtOverstateMin = null;
+  if (runSec > 0 && matPData.length > 0) {
+    const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
+    if (isParallel || perMachineCt) {
+      const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
+      const denomSec = perMachineCt
+        ? Math.min(Math.max(rawDenom, runSec), runSec * Math.max(1, parallelN))
+        : rawDenom;
+      pRawRatio = totalStdSec / denomSec;
+      P = Math.min(1, pRawRatio);
+    } else {
+      pRawRatio = totalStdSec / runSec;
+      P = Math.min(1, pRawRatio);
+      if (pRawRatio > 1.001) dtOverstateMin = Math.round(totalStdSec / 60 - runMin);
+    }
+  }
+
+  const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
+    : (ngQty > 0 ? 0 : null);
+  const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
+  const ctUsed = {};
+  matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
+  return {
+    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
+    totalProduced, ngQty, knownQty, unknownQty, ctUsed,
+    loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
+    pOver: pRawRatio != null && pRawRatio > 1.001,
+    pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,
+    dtOverstateMin, loggedDtMin: Math.round(loggedPlannedDT + loggedUnplannedDT),
+  };
 }

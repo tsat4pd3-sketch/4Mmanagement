@@ -247,6 +247,58 @@ export const KPI_SUMMARY_MODES = [
   { key: 'rate',    label: 'คำนวณจากยอดรวมทั้งปี (เช่น PPM)' },
 ];
 
+export const summaryModeLabel = (k) => KPI_SUMMARY_MODES.find(m => m.key === k)?.label || k;
+/** ป้ายสั้นไว้ติดคอลัมน์สรุป — **จอต้องเขียนให้ตรงวิธีรวมของแถวนั้น ห้ามพิมพ์ "เฉลี่ย" ตายตัว**
+ *  (บั๊กที่เจอ 23/09: Scrap ต้องรวมทั้งปี 1,628 แต่จอโชว์ 271.4 = เฉลี่ย โดยหัวคอลัมน์ยังเขียนว่า "เฉลี่ย") */
+export const summaryShort = (k) => (
+  { average: 'เฉลี่ย', sum: 'รวมปี', max: 'สูงสุด', as_of: 'ล่าสุด', rate: 'ทั้งปี' }[k] || 'เฉลี่ย');
+
+/* ── 5.1) ตั้งค่า 2 ชั้น: ทะเบียน `kpi_catalog` = ค่าตั้งต้น · นิยามรายแถว = override (24/09) ──
+   คำถาม user: "หน่วย/ทศนิยม/average-total ตั้งที่ไหน ตั้งต่อจากทะเบียนหรือควรแยก" → ตอบ **2 ชั้น**
+     🔒 **วิธีรวม 12 เดือน = ของตัวตน KPI → ทะเบียนอย่างเดียว ห้าม override รายแถว**
+        (PPM คิดจากยอดรวมทั้งปีเสมอ · Scrap รวมเสมอ ไม่ว่าแผนกไหน — ปล่อยให้ตั้งเองรายแผนก
+         = แผนกหนึ่งเฉลี่ย อีกแผนกรวม แล้วเอาเลขมาเทียบกันไม่ได้ · บั๊กคลาสเดียวกับ "30 วัน คนละเลข")
+     🔓 **หน่วย + ทศนิยม = ทะเบียนตั้ง default · แถว override ได้** (ว่าง/null = ตามทะเบียน)
+        หลักฐานว่าต้อง override ได้: MTBF ใบ JIG ใช้ "นาที" เด็คใช้ "ชม." · DSI มี 2 หน่วยทางการ (วัน / MB)
+   ⚠️ ทุกตัวรับ "แถว kpi_definitions ที่ embed `kpi_catalog` มาด้วย" — ไม่ได้ embed = ได้ค่าของแถวล้วน
+      (ไม่พัง แต่จะไม่เห็นค่าตั้งต้นจากทะเบียน) */
+export const unitOf = (d) => (d?.unit || d?.kpi_catalog?.unit || '');
+
+export function decimalsOf(d) {
+  for (const v of [d?.decimals, d?.kpi_catalog?.decimals]) {
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (Number.isFinite(n)) return Math.min(6, Math.max(0, Math.round(n)));
+  }
+  return 2;
+}
+
+/** วิธีรวมของแถว — อ่านจากทะเบียนเท่านั้น · คีย์แปลก/ไม่มี = `average` (ไม่ใช่พัง) */
+export function summaryModeOf(d) {
+  const k = d?.kpi_catalog?.summary_mode || d?.summary_mode;
+  return KPI_SUMMARY_MODES.some(m => m.key === k) ? k : 'average';
+}
+
+/** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */
+export function fmtKpi(v, d) {
+  if (v == null || v === '' || !Number.isFinite(Number(v))) return '';
+  return Number(v).toLocaleString(undefined, { maximumFractionDigits: decimalsOf(d) });
+}
+
+/**
+ * สรุป 12 เดือนของแถวหนึ่งตามวิธีรวมของมัน
+ * @returns { value, mode, effMode, approx } — `approx` = วิธีจริงคือ `rate` แต่ไม่มียอดดิบให้หาร
+ *   ⇒ ถอยมาเฉลี่ยรายเดือน **จอต้องติดป้าย ≈ ห้ามโชว์เหมือนเป็นตัวเลขทางการ**
+ *   (แถวกรอกมือมีแต่ค่า PPM รายเดือน ไม่มี Σของเสีย/Σยอดผลิต ⇒ คำนวณสูตรทางการไม่ได้)
+ */
+export function summaryOf(months = [], d = null, rate = null) {
+  const mode = summaryModeOf(d);
+  if (mode === 'rate' && !rate) {
+    return { value: summarizeMonths(months, 'average'), mode, effMode: 'average', approx: true };
+  }
+  return { value: summarizeMonths(months, mode, rate), mode, effMode: mode, approx: false };
+}
+
 /**
  * @param months  array ของค่ารายเดือน (null = ยังไม่กรอก — ถูกข้าม ไม่ใช่นับเป็น 0)
  * @param mode    ดู KPI_SUMMARY_MODES

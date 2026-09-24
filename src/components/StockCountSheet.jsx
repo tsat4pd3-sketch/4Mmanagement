@@ -60,6 +60,7 @@ export default function StockCountSheet({ role, scope }) {
   const [approveNow, setApproveNow] = useState(false);
   const [saving,  setSaving]  = useState(false);
   const [cutting, setCutting] = useState(false);
+  const [showGap,  setShowGap]  = useState(false);   // worklist ยาวได้เป็นร้อยแถว — พับไว้ก่อน
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -190,87 +191,6 @@ export default function StockCountSheet({ role, scope }) {
   return (
     <div style={{ display:'grid', gap:16, alignContent:'start' }}>
 
-      {/* ── 🚚 ส่งแล้วแต่ยังไม่ถูกหัก ─────────────────────────────────────── */}
-      <div style={card}>
-        <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', marginBottom:8 }}>
-          <div style={{ fontSize:15, fontWeight:800 }}>🚚 ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง</div>
-          {!!shipGap.open.length && (
-            <span style={{ fontSize:12, fontWeight:800, background:'#ef444422', color:'#ef4444', padding:'3px 10px', borderRadius:999 }}>
-              {shipGap.open.length} ใบ · {n0(openQty)} ชิ้น
-            </span>
-          )}
-        </div>
-        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.65, marginBottom:10 }}>
-          หน้า 🚚 Delivery หักสต็อกให้อัตโนมัติตอนกด “ส่งแล้ว” — ใบที่หักไม่ได้ (จับคู่เลข SAP ไม่ได้
-          หรือของไม่เคยถูกบันทึกเข้าคลัง) จะเตือนบนจอครั้งเดียวแล้วหายไป ยอดคงเหลือจึงค้างสูงกว่าจริง
-          <br />
-          🔴 ใบที่ส่ง <b>ก่อน</b> รอบตรวจนับล่าสุดของพาร์ทนั้นถูกกันออกแล้ว
-          {shipGap.closedByCount.length > 0 && <> ({shipGap.closedByCount.length} ใบ)</>} —
-          ยอดที่นับได้สะท้อนของที่ออกไปแล้ว หักซ้ำจะทำให้ยอดหายสองเท่า
-        </div>
-
-        {!fgDest ? (
-          <div style={{ fontSize:13, color:'#f59e0b' }}>
-            ⚠️ ยังไม่มีกฎรับเข้าอัตโนมัติของ FG (เลขขึ้นต้น 1) — ตั้งที่แท็บ ⚙️ รับเข้าอัตโนมัติ ก่อน
-            ระบบจึงจะรู้ว่าต้องหักออกจากคลังไหน
-          </div>
-        ) : !shipGap.open.length && !shipGap.unresolved.length ? (
-          <div style={{ fontSize:13, color:'var(--accent)' }}>✅ ไม่มีใบค้าง — ยอดขาออกตรงกับ ledger ทั้งหมด</div>
-        ) : (
-          <>
-            {!!shipGap.open.length && (
-              <div style={{ overflowX:'auto', marginBottom:10 }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', minWidth:640 }}>
-                  <thead><tr>
-                    <th style={th}>วันส่ง</th><th style={th}>ลูกค้า</th><th style={th}>เลขบนใบ</th>
-                    <th style={th}>→ MAT SAP</th><th style={{ ...th, textAlign:'right' }}>จำนวน</th>
-                    <th style={{ ...th, textAlign:'right' }}>คงเหลือหลังหัก</th>
-                  </tr></thead>
-                  <tbody>
-                    {shipGap.open.slice(0, 200).map(o => {
-                      const cur = stock.find(s => s.line_name === fgDest && s.mat_no === o.sap);
-                      const after = (parseFloat(cur?.qty_on_hand) || 0) - (Number(o.qty) || 0);
-                      return (
-                        <tr key={o.id}>
-                          <td style={td}>{o.due_date} {o.ship_time?.slice(0, 5) || ''}</td>
-                          <td style={td}>{o.customer || '—'}</td>
-                          <td style={{ ...td, fontFamily:'monospace' }}>{o.mat_no}</td>
-                          <td style={{ ...td, fontFamily:'monospace' }}>{o.sap}</td>
-                          <td style={{ ...td, textAlign:'right', fontWeight:700 }}>{n0(o.qty)}</td>
-                          <td style={{ ...td, textAlign:'right', color: after < 0 ? '#ef4444' : 'var(--text2)' }}>{n0(after)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {shipGap.open.length > 200 && (
-                  <div style={{ fontSize:12, color:'var(--muted)', padding:'6px 2px' }}>
-                    …แสดง 200 จาก {shipGap.open.length} ใบ (ปุ่มหักทำครบทุกใบ)
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!!shipGap.unresolved.length && (
-              <div style={{ fontSize:12, color:'#f59e0b', marginBottom:10, lineHeight:1.6 }}>
-                ⚠️ อีก {shipGap.unresolved.length} ใบ ({n0(shipGap.unresolved.reduce((s, o) => s + (Number(o.qty) || 0), 0))} ชิ้น)
-                จับคู่เลข SAP ไม่ได้ — ระบบไม่เดาให้ ต้องแก้ p_no ที่ Product Master ก่อน เช่น{' '}
-                {shipGap.unresolved.slice(0, 3).map(o => o.mat_no).join(', ')}
-                <div style={{ marginTop:2 }}>
-                  {matIssueText(shipGap.unresolved[0].mat_no, pickStockMat(shipGap.unresolved[0].mat_no, pnIndex, hasStockOf)) || ''}
-                </div>
-              </div>
-            )}
-
-            {canCount && !!shipGap.open.length && (
-              <button style={{ ...btn('#ef4444'), opacity: cutting ? 0.6 : 1 }} disabled={cutting} onClick={postMissingCuts}>
-                {cutting ? 'กำลังหัก…' : `🚚 หักย้อนหลัง ${shipGap.open.length} ใบ (${n0(openQty)} ชิ้น)`}
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
       {/* ── 📋 ตรวจนับ / เฟิร์มยอด ─────────────────────────────────────────── */}
       <div style={card}>
         <div style={{ fontSize:15, fontWeight:800, marginBottom:6 }}>📋 ตรวจนับ / เฟิร์มยอด</div>
@@ -359,6 +279,104 @@ export default function StockCountSheet({ role, scope }) {
                 <span style={{ fontSize:12, color:'var(--muted)' }}>ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงบันทึกได้</span>
               )}
             </div>
+          </>
+        )}
+      </div>
+
+      {/* ── 🚚 ส่งแล้วแต่ยังไม่ถูกหัก (worklist — พับเก็บเป็นค่าเริ่มต้น) ──────
+           🔴 รายการนี้ยาวได้เป็นร้อยแถว ถ้ากางทิ้งไว้จะดันงานหลักตกจอจนคนนึกว่า
+              "หน้านี้มีแต่ตาราง" (feedback user 24/09) — ต้องพับ + จำกัดความสูงเสมอ */}
+      <div style={card}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', marginBottom:8 }}>
+          <div style={{ fontSize:15, fontWeight:800 }}>🚚 ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง</div>
+          {!!shipGap.open.length && (
+            <span style={{ fontSize:12, fontWeight:800, background:'#ef444422', color:'#ef4444', padding:'3px 10px', borderRadius:999 }}>
+              {shipGap.open.length} ใบ · {n0(openQty)} ชิ้น
+            </span>
+          )}
+          <div style={{ marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:8 }}>
+            {canCount && !!shipGap.open.length && (
+              <button style={{ ...btn('#ef4444'), opacity: cutting ? 0.6 : 1 }} disabled={cutting} onClick={postMissingCuts}>
+                {cutting ? 'กำลังหัก…' : `🚚 หักย้อนหลัง ${shipGap.open.length} ใบ (${n0(openQty)} ชิ้น)`}
+              </button>
+            )}
+            {!!(shipGap.open.length || shipGap.unresolved.length) && (
+              <button style={btn('var(--bg3)', 'var(--text)')} onClick={() => setShowGap(v => !v)}>
+                {showGap ? '▲ ซ่อนรายการ' : `▼ ดูรายการ (${shipGap.open.length + shipGap.unresolved.length})`}
+              </button>
+            )}
+          </div>
+        </div>
+        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.65, marginBottom:10 }}>
+          หน้า 🚚 Delivery หักสต็อกให้อัตโนมัติตอนกด “ส่งแล้ว” — ใบที่หักไม่ได้ (จับคู่เลข SAP ไม่ได้
+          หรือของไม่เคยถูกบันทึกเข้าคลัง) จะเตือนบนจอครั้งเดียวแล้วหายไป ยอดคงเหลือจึงค้างสูงกว่าจริง
+          <br />
+          🔴 ใบที่ส่ง <b>ก่อน</b> รอบตรวจนับล่าสุดของพาร์ทนั้นถูกกันออกแล้ว
+          {shipGap.closedByCount.length > 0 && <> ({shipGap.closedByCount.length} ใบ)</>} —
+          ยอดที่นับได้สะท้อนของที่ออกไปแล้ว หักซ้ำจะทำให้ยอดหายสองเท่า
+        </div>
+
+        {!fgDest ? (
+          <div style={{ fontSize:13, color:'#f59e0b' }}>
+            ⚠️ ยังไม่มีกฎรับเข้าอัตโนมัติของ FG (เลขขึ้นต้น 1) — ตั้งที่แท็บ ⚙️ รับเข้าอัตโนมัติ ก่อน
+            ระบบจึงจะรู้ว่าต้องหักออกจากคลังไหน
+          </div>
+        ) : !shipGap.open.length && !shipGap.unresolved.length ? (
+          <div style={{ fontSize:13, color:'var(--accent)' }}>✅ ไม่มีใบค้าง — ยอดขาออกตรงกับ ledger ทั้งหมด</div>
+        ) : (
+          <>
+            {showGap && !!shipGap.open.length && (
+              <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'42vh', marginBottom:10, border:'1px solid var(--border2)', borderRadius:8 }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', minWidth:640 }}>
+                  <thead><tr>
+                    {['วันส่ง', 'ลูกค้า', 'MAT', 'จำนวน', 'คงเหลือหลังหัก'].map((h, i) => (
+                      <th key={h} style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1,
+                        textAlign: i >= 3 ? 'right' : 'left' }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {shipGap.open.slice(0, 200).map(o => {
+                      const cur = stock.find(s => s.line_name === fgDest && s.mat_no === o.sap);
+                      const after = (parseFloat(cur?.qty_on_hand) || 0) - (Number(o.qty) || 0);
+                      return (
+                        <tr key={o.id}>
+                          <td style={td}>{o.due_date} {o.ship_time?.slice(0, 5) || ''}</td>
+                          <td style={td}>{o.customer || '—'}</td>
+                          <td style={{ ...td, fontFamily:'monospace' }}>
+                            {o.sap}
+                            {o.sap !== o.mat_no && (
+                              <span style={{ color:'var(--muted)', fontSize:11 }}> ← {o.mat_no}</span>
+                            )}
+                          </td>
+                          <td style={{ ...td, textAlign:'right', fontWeight:700 }}>{n0(o.qty)}</td>
+                          <td style={{ ...td, textAlign:'right', color: after < 0 ? '#ef4444' : 'var(--text2)' }}>{n0(after)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {shipGap.open.length > 200 && (
+                  <div style={{ fontSize:12, color:'var(--muted)', padding:'6px 10px' }}>
+                    …แสดง 200 จาก {shipGap.open.length} ใบ (ปุ่มหักทำครบทุกใบ)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {showGap && !!shipGap.unresolved.length && (
+              <div style={{ fontSize:12, color:'#f59e0b', marginBottom:10, lineHeight:1.6 }}>
+                ⚠️ อีก {shipGap.unresolved.length} ใบ ({n0(shipGap.unresolved.reduce((s, o) => s + (Number(o.qty) || 0), 0))} ชิ้น)
+                จับคู่เลข SAP ไม่ได้ — ระบบไม่เดาให้ ต้องแก้ p_no ที่ Product Master ก่อน เช่น{' '}
+                {shipGap.unresolved.slice(0, 3).map(o => o.mat_no).join(', ')}
+                <div style={{ marginTop:2 }}>
+                  {matIssueText(shipGap.unresolved[0].mat_no, pickStockMat(shipGap.unresolved[0].mat_no, pnIndex, hasStockOf)) || ''}
+                </div>
+              </div>
+            )}
+
+            {!canCount && !!shipGap.open.length && (
+              <div style={{ fontSize:12, color:'var(--muted)' }}>ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงหักย้อนหลังได้</div>
+            )}
           </>
         )}
       </div>

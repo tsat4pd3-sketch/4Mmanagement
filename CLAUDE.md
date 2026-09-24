@@ -341,6 +341,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
    · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ตัดคำไทยด้วย ICU `Intl.Segmenter` ·
      คีย์เสียงข้ามสคริปต์ (เบนดิ่ง=bending) · ทนพิมพ์ผิด ⇒ จับได้ ×2 เท่า
      🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ต้องตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อนเมื่อไหร่พังทันที)
+     · ข้อยกเว้นเดียว = **r ท้ายคำ** (ไทยไม่ออกเสียง r ท้ายพยางค์ · คอนเวเย่อ=conveyor)
+   · 🔴 **คำที่กำกวมในทะเบียนต้องตัดสินด้วย "การใช้งานจริง" ไม่ใช่ยุบป้ายทะเบียน** — ส่งใบที่คน
+     จัดประเภทแล้วเข้าไปเรียนด้วย (`buildDtIndex`) · ป้ายที่ความหมายต่างกันจริงห้ามยุบ
    · 📐 **คำที่เรียนจากใบเก่าตัดสินด้วย log-odds z ≥ 1.96 + พื้นขั้นต่ำ 3 ใบ** (`utils/termStats.js`)
      เลิกใช้ "ชนะ 80%" — 100% จาก 2 ใบ ไม่ใช่หลักฐานระดับเดียวกับ 88% จาก 125 ใบ
 > 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
@@ -367,6 +370,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · 🔴 **ลำดับตายตัว: ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา** — ตัวกรองส่ง `filters=` ห้ามใส่ `actions=` (ปุ่มคำสั่งเท่านั้น · มีด่าน)
 · แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
 · ป้าย "ทั้งหมด" = `ALL.*` (`utils/filterLabels.js`) · 2–5 ตัวเลือก (กะ) = `<Segmented>` · ค้นหา = `<SearchInput>`
+· 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
+  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · หน้าที่ตั้ง `alsoIn` ต้องมาร์ค**ทุกหมวด**
+  (ห้ามเช็ค `activeGroup === group` — คืนแค่หมวดแรก) · ด่านข้อ 6 ใน stdsweep (UI-STANDARD §4.5)
 · ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
 > 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
 
@@ -501,6 +507,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
+- **🔴 หน่วย · ทศนิยม · วิธีรวม 12 เดือน = ตั้ง 2 ชั้น** (24/09 · คำสั่ง user) — ทะเบียน `kpi_catalog` = ค่าตั้งต้น (ปุ่ม 📘 · มีผลทุกปีทุกส่วนงาน)
+  · `kpi_definitions.unit`/`.decimals` = **override รายแถว** (ว่าง = ตามทะเบียน · MTBF ใบ JIG "นาที" เด็ค "ชม.")
+  · 🔒 **`summary_mode` override รายแถวไม่ได้** (แต่ละแผนกรวมคนละแบบ = เทียบกันไม่ได้) · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน**
+  · 🔴 `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` ไม่งั้นตกเป็น 2 ตำแหน่ง/"เฉลี่ย" เงียบๆ · หัวคอลัมน์ห้ามเขียน "เฉลี่ย" ตายตัว
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
@@ -591,6 +601,7 @@ src/
 │                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
 │                      #   PersonSelect · MachineSelect · ProductSelect · PartSelect · CustomerSelect · SupplierSelect ·
 │                      #   CostCenterSelect · StorageLocSelect · InstrumentSelect · SelectOrFree (select + ระบุเอง ช่องเดียว) ·
+│                      #   🏷️ MatLabel (เลข MAT + ชื่องาน + Part No. — ที่ที่คนตัดสินใจจากเลข MAT ห้ามวาด mat_no เปล่า · UI §6.21) ·
 │                      #   SimpleMasterPanel (แผง CRUD ทะเบียนเล็ก — ต้นแบบ 2026-09-08)
 ├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
 │                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·

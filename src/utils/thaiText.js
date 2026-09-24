@@ -251,8 +251,15 @@ export function sameWord(a, b) {
   if (Math.abs(na.length - nb.length) > 3) return false;
   const ka = phoneticKey(na), kb = phoneticKey(nb);
   /* คีย์ต้องมีพยัญชนะ ≥ 3 ตัวถึงจะเชื่อ — 2 ตัวคือข้อมูลน้อยเกินไป (rm/nt/tp ชนกันเพียบ) */
-  if (!ka || !kb || ka.length < 3) return false;
-  return ka === kb;
+  if (!ka || !kb || Math.max(ka.length, kb.length) < 3) return false;
+  if (ka === kb) return true;
+  /* 🇹🇭 **r ท้ายคำเป็นตัวเลือก** — กฎการรับคำยืมของภาษาไทย (non-rhotic loanword adaptation):
+     เสียง /r/ ท้ายพยางค์ของอังกฤษ ไทยไม่ออกเสียง จะเขียน ร์ (ทัณฑฆาต) หรือ **ตัดทิ้งไปเลย**
+     ก็ได้ และช่างเขียนทั้ง 2 แบบจริง:  เลเซอร์ (เก็บ ร์) ↔ laser  ·  คอนเวเย่อ (ตัดทิ้ง) ↔ conveyor
+     ⇒ ยอมให้ต่างกันได้เฉพาะ "r ตัวสุดท้าย" ตัวเดียวเท่านั้น (ไม่ใช่เผื่อ 1 ตัวที่ตำแหน่งไหนก็ได้
+        ซึ่งเคยทำแล้วพัง: เครื่อง krn ↔ clearance krns)
+     🔴 ไม่ใช่ศัพท์โรงงาน — เป็นกฎเสียงของภาษา จึงอยู่ในไฟล์นี้ได้ */
+  return ka === `${kb}r` || `${ka}r` === kb;
 }
 
 /** ยาวพอจะเชื่อ "เสียง" ได้ไหม — ตัดสระทิ้งแล้วคำสั้นชนกันเละ (ดู MIN_LEN ใน sameWord) */

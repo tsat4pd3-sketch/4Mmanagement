@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
-import { scoreDef, fmtBar } from '../utils/kpiSetup';
+import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -240,7 +240,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       const actions = (acts.data || []).filter(a => secOk(a.section));
       // 6) นิยาม KPI ของปี + ค่ารายเดือน (กรอกมือ / เป้าของแถว auto)
       let kdRes = await supabase.from('kpi_definitions')
-        .select('*, kpi_catalog(name, unit, direction)').eq('year', year).eq('is_active', true);
+        .select('*, kpi_catalog(name, unit, direction, decimals, summary_mode)').eq('year', year).eq('is_active', true);
       if (kdRes.error && (kdRes.error.code || '') !== '42P01') {
         kdRes = await supabase.from('kpi_definitions').select('*').eq('year', year).eq('is_active', true);
       }
@@ -290,7 +290,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       for (const sc of chain) {
         const d = (kdefs || []).find(x => sameScope(scopeOfDef(x), sc) && pred(x));
         if (!d) continue;
-        const hit = { def: d, entries: entByKpi[d.id] || {}, unit: d.kpi_catalog?.unit || '', inherited: !sameScope(sc, scope), at: sc };
+        const hit = { def: d, entries: entByKpi[d.id] || {}, unit: unitOf(d), inherited: !sameScope(sc, scope), at: sc };
         if (!needEntries || Object.keys(hit.entries).length) return hit;
         firstHit = firstHit || hit;
       }
@@ -312,7 +312,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     return boardRowsFor(year).map((r) => {
       const man = manualOf(r.name);
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
-      let months = 0, sumKind = 'avg';
+      let months = 0, sumKind = 'average', sumApprox = false;
 
       if (r.auto === 'oee') {
         const k = axisOeeYear({ rows: gSess, year, target: { oee: oeeTarget } });
@@ -334,8 +334,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
            ห้ามบวก 2 แหล่ง · ไม่มีบันทึกเลย = เทา ห้ามเขียว (0 ที่บันทึก ≠ 0 ที่เกิดจริง) */
         const manSec = manualOf(r.name, true);
         if (manSec && Object.keys(manSec.entries).length) {
-          const k = manualMonthSeries({ entries: manSec.entries, year });
+          const k = manualMonthSeries({ entries: manSec.entries, year, summary: summaryModeOf(manSec.def) });
           series = k.series; months = k.months; def = manSec.def; unit = manSec.unit || r.unit;
+          sumKind = k.effMode; sumApprox = k.approx;
           fromDept = true; manual = true;
           const inj = (safety || []).filter(e => ym(e.event_date) === monthKey && inEv(e) && isInjury(e)).length;
           note = `สรุปจากหน่วยงานความปลอดภัย${manSec.inherited ? ` (ค่าระดับ ${org.labelOf(manSec.at.kind, manSec.at.value)})` : ''} · หน้างานบันทึกบาดเจ็บเดือนนี้ ${inj} ครั้ง`;
@@ -354,8 +355,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           note = 'ยังไม่มีใครบันทึกเหตุการณ์ และยังไม่กรอกสรุปจากหน่วยงานความปลอดภัย';
         }
       } else {
-        const k = manualMonthSeries({ entries: man?.entries || {}, year });
+        /* 🔴 24/09: วิธีรวมแท่ง "สรุป" มาจาก `kpi_catalog.summary_mode` ของ KPI ตัวนั้น
+           เดิมเฉลี่ยตายตัว ⇒ Scrap/Cost Reduction ที่ต้องรวมทั้งปีโชว์ค่าเฉลี่ย */
+        const k = manualMonthSeries({ entries: man?.entries || {}, year, summary: summaryModeOf(man?.def) });
         series = k.series; months = k.months; def = man?.def || null;
+        sumKind = k.effMode; sumApprox = k.approx;
       }
 
       if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
@@ -377,7 +381,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       }
       const ytd = series[12]?.v ?? null;
       return {
-        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, ytd,
+        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd,
+        dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
       };
@@ -405,7 +410,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
           why = st === ST.unknown ? 'ยังไม่ตั้งเป้า — ตั้งได้ที่แท็บ 📑' : `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value)}`;
         }
-        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: d.kpi_catalog?.unit || '', value, st, why };
+        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: unitOf(d), dec: decimalsOf(d), value, st, why };
       });
   }, [data, monthNo, scope, year]);
 
@@ -475,7 +480,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width={isPct ? 34 : 44}
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-          <Tooltip {...chartTip} formatter={v => [`${nf(v, 2)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
+          <Tooltip {...chartTip} formatter={v => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
               : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year} · กดเพื่อดูเดือนนี้บนบอร์ด`)} />
@@ -583,8 +588,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <div style={sheetsBox}>
               {rows.map((r) => (
                 <Sheet key={r.key} k={k} cw={cw} icon={r.icon} title={r.name}
-                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null ? ` · ${r.sumKind === 'sum' ? 'รวมปี' : 'YTD'} ${nf(r.ytd, r.unit === 'PPM' ? 0 : 1)}${r.unit ? ' ' + r.unit : ''}` : ''}`}
-                  big={r.value == null ? '—' : nf(r.value, r.unit === 'PPM' || r.unit === 'ครั้ง' ? 0 : 1)}
+                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null ? ` · ${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)} ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''}` : ''}`}
+                  big={r.value == null ? '—' : nf(r.value, r.dec)}
                   unit={r.value != null ? r.unit : ''} delta={r.delta}
                   stat={toLamp(r.st, r.why)}
                   foot={r.note && (r.st === ST.unknown || r.fromDept || r.auto)
@@ -611,7 +616,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                     <div key={r.id} title={r.why} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, background: 'var(--bg3)', borderLeft: `3px solid ${statusColor(r.st === ST.unknown ? 'none' : r.st)}` }}>
                       <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                       <span style={{ fontSize: fs(11.5), fontWeight: 800, color: statusColor(r.st === ST.unknown ? 'none' : r.st), whiteSpace: 'nowrap' }}>
-                        {r.value == null ? '—' : `${nf(r.value, 2)}${r.unit ? ' ' + r.unit : ''}`}
+                        {r.value == null ? '—' : `${nf(r.value, r.dec)}${r.unit ? ' ' + r.unit : ''}`}
                       </span>
                     </div>
                   ))}
