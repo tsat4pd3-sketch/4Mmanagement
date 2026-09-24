@@ -145,7 +145,7 @@ export function parseGridSheet(rows = []) {
     });
   }
   if (skippedRows) warnings.push(`ข้าม ${skippedRows} แถวที่มีตัวเลขแต่ช่อง MAT ว่าง — ไปเติมเลข SAP ในไฟล์ต้นทาง`);
-  return { parts, warnings };
+  return { parts, dates: dateCols.map(([, d]) => d), warnings };
 }
 
 /**
@@ -261,7 +261,7 @@ export function parseCustomerSheet(rows = []) {
   for (let i = 0; i < Math.min(rows.length, 4); i++) {
     if ((rows[i] || []).some(c => normHead(c) === 'ORDER')) { subIdx = i; break; }
   }
-  if (subIdx < 0) return { parts: [], warnings: ['ไม่พบหัวคอลัมน์ "Order"'] };
+  if (subIdx < 0) return { parts: [], dates: [], warnings: ['ไม่พบหัวคอลัมน์ "Order"'] };
   const sub = rows[subIdx] || [];
   const head = rows[subIdx - 1] || [];
 
@@ -278,7 +278,7 @@ export function parseCustomerSheet(rows = []) {
     const c1 = findCol(head, ['MATLNO']);
     return c1 >= 0 ? c1 : findCol(head, MAT_HEADS);
   })();
-  if (matCol < 0) return { parts: [], warnings: [...warnings, 'ไม่พบคอลัมน์เลข MAT'] };
+  if (matCol < 0) return { parts: [], dates: [], warnings: [...warnings, 'ไม่พบคอลัมน์เลข MAT'] };
 
   const cPart = findCol(head, ['PART NO.']);
   const cMin = findCol(head, ['MIN']), cMax = findCol(head, ['MAX']);
@@ -306,7 +306,7 @@ export function parseCustomerSheet(rows = []) {
       orders,
     });
   }
-  return { parts, warnings };
+  return { parts, dates: orderCols.map(([, d]) => d), warnings };
 }
 
 /**
@@ -347,7 +347,12 @@ export function parseMonitoringWorkbook(sheets = [], { asOf } = {}) {
  *    เกือบล้านชิ้นในวันแรก แล้วสั่งเปิดกะดึก/OT ทั้งโรงงานทันที
  *    ⇒ แถวที่ดิวเก่ากว่า `today` ถูกติดธง `past: true` ให้ผู้เรียกลงเป็น **ประวัติ (shipped)** เท่านั้น
  */
-export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {}) {
+export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, customers = [] } = {}) {
+  /* 🔴 ชื่อลูกค้าต้องติดไปกับใบเสมอ (เพิ่ม 24/09) — เดิมไม่เขียนเลย ⇒ ใบทั้ง 232 ใบ customer = null
+     จอ 🚚 Delivery จัดกลุ่มตามลูกค้า ⇒ ของจากไฟล์นี้ไปกองรวมใน "— ไม่ระบุลูกค้า —"
+     แพลนนิ่งจึงรายงานว่า "ลูกค้า TSESA ไม่ขึ้น" ทั้งที่ระบบอ่านชีทได้
+     · ชื่อมาจากทะเบียน `customers` เท่านั้น — ไม่มีในทะเบียน = null (ห้ามยัดชื่อชีทดิบเป็นลูกค้า) */
+  const custOf = (sheet) => sheetCustomer(sheet, customers);
   const forecasts = [], orders = [], levels = [], lots = [], stock = [], shipped = [];
   const lineOf = typeof lineOfMat === 'function' ? lineOfMat : () => null;
   const markPast = (o) => ({ ...o, past: today ? o.due_date < today : false });
@@ -356,6 +361,7 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {})
     parts.forEach(p => {
       if (p.fc > 0 && monthKey) {
         forecasts.push({ mat_no: p.mat_no, part_name: p.part_name, customer_part_no: p.customer_part_no || null,
+                         customer: custOf(sheet),
                          period_month: `${monthKey}-01`, qty: p.fc, source: 'monitoring', note: `Monitoring · ${sheet}` });
       }
       const line = lineOf(p.mat_no);
@@ -367,6 +373,7 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {})
          (ต่างจาก `out` ซึ่งเป็นประวัติการส่ง — ห้ามสลับ) */
       Object.entries(p.demand || {}).forEach(([d, q]) => orders.push(markPast({
         mat_no: p.mat_no, customer_part_no: p.customer_part_no || null, part_name: p.part_name,
+        customer: custOf(sheet), sheet,
         due_date: d, qty: q, source: 'monitoring', note: `Monitoring · ${sheet} · ORDER REQUIREMENT`,
       })));
     });
@@ -375,6 +382,7 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {})
   (parsed?.customer || []).forEach(({ sheet, parts }) => {
     parts.forEach(p => {
       p.orders.forEach(o => orders.push(markPast({ mat_no: p.mat_no, customer_part_no: p.customer_part_no || null,
+                                          customer: custOf(sheet), sheet,
                                           due_date: o.due_date, qty: o.qty, source: 'monitoring', note: `Monitoring · ${sheet}` })));
       if (p.min > 0) {
         const line = lineOf(p.mat_no);
@@ -410,4 +418,70 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today } = {})
   const stockNegative = stockUniq.filter(s => s.qty < 0);
   return { forecasts, orders: ordersUniq, orderDupes, levels, lots, stock: stockOk, stockNegative,
            stockDupes: stock.length - stockUniq.length, shipped };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   🔎 รายงานรายชีท + ชื่อลูกค้า — เพิ่ม 2026-09-24 หลัง recheck จาก feedback แพลนนิ่ง
+   ───────────────────────────────────────────────────────────────────────────────
+   แพลนนิ่งแจ้ง 3 อาการ: "TSESA ไม่ขึ้น" · "PK model RG01 RT50 ไม่ขึ้น" ·
+   "ขอรอบขายวันนี้ มันขึ้นยอดเดิมเมื่อวาน" — ไล่ไฟล์จริงแล้ว **ทั้ง 3 ข้อคือเนื้อในไฟล์
+   ไม่ใช่ตัวอ่านผิด**:
+     · ชีท TSESA+LA คอลัมน์วันที่ล่าสุด = 2026-08-06 (เก่ากว่าวันอัป 48 วัน) · ช่อง Order ว่างทั้งแผ่น
+     · TSPK: 10076602/01 (RG01) และ 10073261/62 (RT50) ช่อง Order ว่าง — ส่วน RG01 อีก 2 ตัวขึ้นปกติ
+     · ชีท TSPK มีคอลัมน์วันที่แค่ 23–26 ก.ย. ⇒ ไฟล์ = snapshot ของวันนั้น **ต้องอัปทุกวัน**
+
+   🔴 บทเรียน: **"อ่านถูกแล้วไม่มีข้อมูล" กับ "อ่านไม่ออก" หน้าตาเหมือนกันบนจอ = ศูนย์เท่ากัน**
+      ⇒ ตัวแปลงต้องรายงาน**รายชีท**เสมอว่าให้กี่ใบ และชีทนั้นครอบคลุมถึงวันไหน
+      ไม่ใช่รายงานแค่ยอดรวม (เดิมบอกแค่ "ออเดอร์ 232 ใบ" แล้วคนเข้าใจว่าครบทุกลูกค้า)
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/** ชื่อชีท → ลูกค้าในทะเบียน `customers`
+ *  🔴 **ไม่มีในทะเบียน = คืน null ห้ามเดา** (กฎเดียวกับ matResolve — เดาผิดแย่กว่าไม่รู้)
+ *  ชื่อชีทจริงมีขยะติดมา: ช่องว่างท้าย ("TSESA+LA ") · ต่อท้ายด้วย +XX ("+LA" = Latin America)
+ *  @param {string} sheet        ชื่อชีท
+ *  @param {Array}  registry     แถวจาก `customers` [{ code, name, aliases }]
+ */
+export function sheetCustomer(sheet, registry = []) {
+  const raw = String(sheet ?? '').trim();
+  if (!raw) return null;
+  // ตัดส่วนต่อท้ายหลัง + (TSESA+LA → TSESA) แล้วเทียบทั้งแบบเต็มและแบบตัด
+  const cands = [raw, raw.split('+')[0].trim()].filter(Boolean);
+  const key = (x) => String(x ?? '').trim().toUpperCase();
+  for (const c of cands) {
+    const k = key(c);
+    if (!k) continue;
+    const hit = (registry || []).find(r =>
+      key(r.code) === k || key(r.name) === k || (r.aliases || []).some(a => key(a) === k));
+    if (hit) return hit.name || hit.code;
+  }
+  return null;
+}
+
+/** สรุปผลรายชีท — จอต้องโชว์ตารางนี้เสมอ ห้ามบอกแค่ยอดรวม
+ *  @returns {Array<{sheet, kind, parts, orders, orderQty, lastDate, staleDays, customer, note}>}
+ */
+export function sheetReport(parsed, { today, customers = [] } = {}) {
+  const out = [];
+  const add = (kind, { sheet, parts = [], dates = [] }, countOrders) => {
+    const orders = parts.reduce((n, p) => n + countOrders(p).length, 0);
+    const orderQty = parts.reduce((n, p) => n + countOrders(p).reduce((a, o) => a + (Number(o.qty) || 0), 0), 0);
+    const lastDate = dates.length ? dates.slice().sort().at(-1) : null;
+    const staleDays = (lastDate && today)
+      ? Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${lastDate}T00:00:00Z`)) / 86400000)
+      : null;
+    out.push({
+      sheet, kind, parts: parts.length, orders, orderQty, lastDate, staleDays,
+      customer: sheetCustomer(sheet, customers),
+      // ข้อความต้องแยก "อ่านไม่ออก" ออกจาก "อ่านได้แต่ไม่มีของ" ให้ชัด
+      note: !parts.length ? 'อ่านพาร์ทไม่ได้เลย — โครงชีทอาจเปลี่ยน'
+          : orders === 0 ? (staleDays != null && staleDays > 0
+              ? `อ่านได้ ${parts.length} พาร์ท แต่ไม่มีออเดอร์ — ช่อง Order ว่าง (วันที่ล่าสุดในชีท ${lastDate} · เก่ากว่าวันนี้ ${staleDays} วัน)`
+              : `อ่านได้ ${parts.length} พาร์ท แต่ช่อง Order ว่างทั้งแผ่น`)
+          : null,
+    });
+  };
+  (parsed?.customer || []).forEach(cs => add('ลูกค้า', cs, p => p.orders || []));
+  (parsed?.press || []).forEach(ps => add('แท่นปั๊ม', ps,
+    p => Object.entries(p.demand || {}).map(([, q]) => ({ qty: q }))));
+  return out.sort((a, b) => (a.kind === b.kind ? b.orders - a.orders : a.kind < b.kind ? -1 : 1));
 }
