@@ -7,6 +7,7 @@ import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
+import OrgAssignmentsPanel from '../components/OrgAssignmentsPanel';   // 👔 ใครคุมหน่วยไหน + รักษาการ
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
@@ -396,6 +397,11 @@ export default function OrgSetup() {
               </div>
             );
           })()}
+
+          {/* 👔 ใครคุมหน่วยไหน + รักษาการ (2026-09-24) — ผังจริงพบว่า 7/14 ส่วนหัวหน้าเป็นรักษาการ */}
+          <div style={{ flexBasis: '100%', width: '100%' }}>
+            <OrgAssignmentsPanel nodes={nodes} />
+          </div>
 
           {/* 💰 Activity Rate ต่อ Cost Center (DL/OH/DP บาท/ชม.) — ใช้คิด cost saving ในโปรเจคปรับปรุง (2026-08-11) */}
           <div style={{ flexBasis: '100%', width: '100%' }}>
