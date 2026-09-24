@@ -550,7 +550,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               <div style={{
                 position: 'absolute', top: 2, left: it.on ? 18 : 2,
                 width: 16, height: 16, borderRadius: '50%', background: '#fff',
-                transition: 'left 0.25s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                transition: 'left 0.25s', boxShadow: 'var(--shadow-float)',
               }} />
             </div>
           </button>

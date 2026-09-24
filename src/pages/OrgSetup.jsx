@@ -5,7 +5,7 @@ import { can } from '../utils/permissions';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
-import { laborMeta } from '../utils/laborType';
+import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -104,6 +104,13 @@ export default function OrgSetup() {
   };
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
+
+  /* 🗂️ กลุ่มที่อยู่ใต้แผนกสายสนับสนุน "ไม่มีไลน์ผลิตให้ผูก" — ถามไปก็ตอบไม่ได้ (feedback user 24/09:
+     *"ลูกของ indirect ไม่น่าต้องเลือกไลน์ผลิตนะ"* — เคสจริง: `Store Semi` ใต้ PLN & STO › STORE)
+     `labor_type` ตั้งได้แค่ระดับ section/department ⇒ กลุ่มต้องไต่ขึ้นไปหาแม่ (laborTypeOfNode) */
+  const modalParentLabor = useMemo(
+    () => (modal?.kind === 'line' && modal.parentId ? laborTypeOfNode(modal.parentId, nodes) : null),
+    [modal, nodes]);
   // รหัส cost center ที่มีใช้อยู่แล้ว (ผัง + ไลน์) — datalist ให้ reuse รหัสเดิม ไม่พิมพ์เพี้ยน (ยังไม่มี master cost_centers) 2026-09-07
   const ccCodes = useMemo(() => [...new Set([...nodes.map(n => n.cost_center), ...lines.map(l => l.cost_center)].map(c => String(c || '').trim()).filter(Boolean))].sort(), [nodes, lines]);
   const lineCostCenter = (node) => {
@@ -470,13 +477,31 @@ export default function OrgSetup() {
                   </div>
                 </div>
               )}
-              {modal.kind === 'line' && (
-                <div>
-                  <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
-                  <LineSelect lines={lines} value={formRefLineId} valueKey="id"
-                    placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
-                </div>
-              )}
+              {modal.kind === 'line' && (() => {
+                /* 🔴 ซ่อนได้เฉพาะตอน "ยังไม่มีค่า" — ถ้ามีค่าอยู่แล้วต้องโชว์เสมอ
+                   ซ่อนช่องที่มีข้อมูลอยู่ = ข้อมูลถูกเก็บไว้แต่มองไม่เห็นและแก้ไม่ได้
+                   (บทเรียนเดียวกับทะเบียนพนักงานที่เผลอกรองสายสนับสนุนออก 23/09) */
+                const supportUnit = modalParentLabor === 'indirect';
+                if (supportUnit && !formRefLineId) return (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)',
+                                border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
+                    🗂️ อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
+                    <div style={{ marginTop: 2 }}>ถ้าหน่วยนี้มีไลน์ผลิตจริง ให้แก้ประเภทที่แผนกแม่เป็น Direct ก่อน</div>
+                  </div>
+                );
+                return (
+                  <div>
+                    <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
+                    <LineSelect lines={lines} value={formRefLineId} valueKey="id"
+                      placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
+                    {supportUnit && (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                        ⚠️ หน่วยแม่เป็นสายสนับสนุน (Indirect) แต่กลุ่มนี้ผูกไลน์ผลิตไว้ — ตรวจว่าตั้งใจไหม
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
