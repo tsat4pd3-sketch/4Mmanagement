@@ -69,8 +69,24 @@ const machineOf = (d) => String(d?.machine_no ?? '').trim();
  */
 export function buildDtIndex(rows = []) {
   const names = new Set();
-  for (const d of rows) { const n = dtTypeName(d); if (n && !isVague(n)) names.add(n); }
-  return buildCategoryIndex([...names].map((n) => ({ label: n, group: n, kind: 'registry' })));
+  const seen = [];
+  for (const d of rows) {
+    const n = dtTypeName(d);
+    if (!n || isVague(n)) continue;
+    names.add(n);
+    /* 🔎 เรียนศัพท์หน้างานจาก "ใบที่ช่างเลือกประเภทไว้แล้ว" ในชุดเดียวกัน — ไม่ยิงคิวรีเพิ่ม
+       จำเป็นเพราะคำที่มีค่าที่สุดหลายคำ**กำกวมในทะเบียน**: `conveyor` อยู่ทั้ง
+       "ราง Conveyor มีปํญหา" และ "ชิ้นงานเต็มราง Conveyor" ⇒ ทะเบียนอย่างเดียวตัดทิ้งเพราะกำกวม
+       แต่**การใช้งานจริง**ชี้ชัด: 110 จาก 125 ครั้งอยู่ "ราง Conveyor มีปํญหา" (z = 22.1)
+       🔴 นี่คือการเรียนจาก *ข้อมูลของโรงงาน* ไม่ใช่การเดา taxonomy — และต้องผ่าน
+          log-odds z ≥ 1.96 + พื้นขั้นต่ำ 3 ใบ + DOMINANCE ก่อนถึงจะถูกใช้ */
+    const txt = String(d?.description ?? '').trim();
+    if (txt) seen.push({ label: txt, group: n, kind: 'seen' });
+  }
+  return buildCategoryIndex([
+    ...[...names].map((n) => ({ label: n, group: n, kind: 'registry' })),
+    ...seen,
+  ]);
 }
 
 /**
