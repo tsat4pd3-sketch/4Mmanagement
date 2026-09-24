@@ -24,6 +24,9 @@ import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { parallelUnitsOf } from '../utils/lineTypes';
 import { machineReliability, summarizeByKind, viewMetrics, poolRowPhases, fmtDur } from '../utils/mtnMetrics';
 import TimeRangeBar from './TimeRangeBar';
+import SearchInput from './SearchInput';
+import Segmented from './Segmented';
+import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 
@@ -178,13 +181,11 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       <TimeRangeBar
         scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 12 }}
-      />
-      {/* ── ตัวกรอง ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder="ทุกไลน์" style={{ ...inp, width: 200 }} />
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้นเลขเครื่อง / ชื่อ / ไลน์"
-               aria-label="ค้นหาอุปกรณ์" style={{ ...inp, width: 220 }} />
-      </div>
+      >
+        {/* ── ตัวกรอง — อยู่ในแถบเวลาแถบเดียว (UI-STANDARD 2026-09-24) ── */}
+        <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
+        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+      </TimeRangeBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
           const on = kind === c.key;
@@ -204,19 +205,10 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── สลับมุมมองการนับ — ไลน์เครื่องขนานเท่านั้นที่ตัวเลข 2 ชุดต่างกัน ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
-        {[
-          { key: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', tip: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { key: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', tip: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
-        ].map(m => {
-          const on = mode === m.key;
-          return (
-            <button key={m.key} onClick={() => setMode(m.key)} title={m.tip} style={{
-              padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? '#3b82f6' : 'var(--border2)'}`,
-              background: on ? 'rgba(59,130,246,0.12)' : 'var(--bg3)', color: on ? '#3b82f6' : 'var(--muted)',
-            }}>{m.label}</button>
-          );
-        })}
+        <Segmented value={mode} onChange={setMode} label="นับแบบ" options={[
+          { value: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { value: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+        ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
