@@ -328,7 +328,7 @@ export default function LineOeeBoard() {
       {!items.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '26px 0', textAlign: 'center' }}>ไม่มีข้อมูลในช่วง {DAYS_KPI} วัน</div> : (
         <ResponsiveContainer width="100%" height={190}>
           <BarChart data={items} margin={{ top: 20, left: 0, right: 6, bottom: 4 }}>
-            <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--text2)' }} interval={0}
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text2)' }} interval={0}
               tickFormatter={n => n.length > 9 ? n.slice(0, 8) + '…' : n} angle={-25} height={48} textAnchor="end" />
             <YAxis hide />
             <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
@@ -338,7 +338,7 @@ export default function LineOeeBoard() {
           </BarChart>
         </ResponsiveContainer>
       )}
-      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{unit}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{unit}</div>
     </div>
   );
 
@@ -385,9 +385,9 @@ export default function LineOeeBoard() {
                     {C.variance == null ? '—' : `${varUp ? '▲ +' : '▼ '}${C.variance}`}</b>
                 </div>
               </div>
-              {!data?.target && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>เป้ามาตรฐาน (ยังไม่ตั้ง 🎯 ที่ /oee-analytics)</div>}
+              {!data?.target && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>เป้ามาตรฐาน (ยังไม่ตั้ง 🎯 ที่ /oee-analytics)</div>}
               {data?.target?.inheritedFrom && (
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                   ใช้เป้าของกรุ๊ป <b style={{ color: 'var(--text2)' }}>{data.target.inheritedFrom}</b> (ไลน์นี้ยังไม่ตั้งเป้าของตัวเอง)
                 </div>
               )}

@@ -138,10 +138,9 @@ export default function Register() {
   };
 
   return (
-    <Page width="narrow" style={{
-      minHeight: 'calc(100vh - 80px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
+    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1) */
+    <Page width="narrow">
+      <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
       <div style={{
         width: '100%', maxWidth: 440,
         background: 'var(--card)',
@@ -150,11 +149,7 @@ export default function Register() {
         padding: '36px 32px',
         boxShadow: 'var(--shadow-lg)',
       }}>
-        <div style={{ marginBottom: 24 }}>
-          <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
-        </div>
 
-        <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, marginBottom: 24, opacity: 0.6 }} />
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>

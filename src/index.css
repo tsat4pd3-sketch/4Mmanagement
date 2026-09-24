@@ -344,8 +344,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   --ctl-r: var(--r-md);   /* 8px — ค่ากลางที่ใช้มากที่สุดในระบบ */
   --ctl-pad-x: 10px;
 }
-.page-content.page-form   { max-width: 960px; }
-.page-content.page-narrow { max-width: 640px; }
+/* form/narrow ชิดซ้ายตำแหน่งเดียวกับหน้าอื่น (ไม่จัดกลาง) — ชื่อหน้าต้องเริ่มที่ x เดียวกันทุกหน้า (stdsweep) */
+.page-content.page-form   { max-width: 960px; margin-left: 0; }
+.page-content.page-narrow { max-width: 640px; margin-left: 0; }
 .page-content.page-full   { max-width: none; }
 /* หน้าที่ถูกฝังเป็นแท็บใน hub: ชั้นในไม่เพิ่มขอบซ้ำ (specificity 2 class ชนะ media query ข้างบน) */
 .page-content .page-content { padding: 0; max-width: none; margin: 0; }

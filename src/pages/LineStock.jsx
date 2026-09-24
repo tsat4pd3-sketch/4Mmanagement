@@ -909,9 +909,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
     <>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', marginBottom:16 }}>
         <div>
-          <h2 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
+          <h3 style={{ margin:0, fontSize:'clamp(16px,2vw,20px)', fontWeight:900, fontFamily:'var(--font-display)', color:'var(--text)' }}>
             ⏰ รอบจัดส่ง — Kanban Delivery Rounds
-          </h2>
+          </h3>
           <p style={{ margin:'4px 0 0', fontSize:13, color:'var(--muted)' }}>ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
         </div>
         <FilterBar bare style={{ marginBottom:0 }}>

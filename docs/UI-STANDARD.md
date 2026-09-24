@@ -46,6 +46,7 @@
 
 - ทุกหน้าขึ้นด้วย `<Page>` (= `.page-content` ใน `index.css`) — **ห้ามตั้ง padding / maxWidth / margin:auto ที่รากหน้าเอง**
 - ความกว้าง 4 แบบเท่านั้น: `wide` (ค่าตั้งต้น 1800) · `form` (960 — ฟอร์ม/ตั้งค่าคอลัมน์เดียว) · `narrow` (640) · `full` (ผัง/บอร์ด)
+  · `form`/`narrow` **ชิดซ้าย ไม่จัดกลาง** — ชื่อหน้าต้องเริ่มที่ x เดียวกันทุกหน้า
 - ระยะขอบตามจอมาจาก CSS ที่เดียว: มือถือ 14 · แท็บเล็ต 18/20 · PC 24/28 · 1600+ 28/36 · TV 36/48
 - **Page ซ้อน Page ไม่เพิ่มขอบ** (`.page-content .page-content`) ⇒ หน้าที่ถูกฝังในแท็บของ hub ใช้ `<Page>` ได้ตามปกติ
 - ยกเว้น (บอร์ดจอ TV · มีเหตุผลใน UI-CONVENTIONS §6.8): `Login` · `Dashboard` · `Management` · `LineOeeBoard` · `TvBoard` · `LineSetup` · `DeptHub` (หน้าแรก hero)
@@ -68,9 +69,11 @@
 1. **แถบกรอง = `<FilterBar>`** (`className="filter-bar"`) — การ์ด 1 แถบ · ช่องไฟ 8 · wrap ได้
    ลำดับ: **ขอบเขต (ส่วนงาน/แผนก/ไลน์/ทีม) → ช่วงเวลา → ตัวกรองอื่น → ค้นหา → `spacer` → จำนวน/ปุ่ม export/ปุ่มหลัก**
    หน้าที่มี `<TimeRangeBar>` ⇒ **ตัวกรองของหน้าเป็น children ของมัน** (TimeRangeBar ก็คือ filter-bar) — ห้ามแยก 2 ชั้น
+   (ในแถบเวลา ลำดับเป็น เวลา → ตัวกรองของหน้า เพราะ children ต่อท้ายช่วงเวลา — ยอมรับเป็นมาตรฐาน)
 2. **ช่องในแถบกรองสูง 34 · ตัว 13 · มุม 8 จาก token** (`--ctl-h` `--ctl-fs` `--ctl-r`) —
    **ห้ามใส่ width/height/padding/fontSize/borderRadius inline ที่ select/input ในแถบ** (inline ชนะ class = เพี้ยนกลับ)
    · อยากให้ช่องยืดใส่ `className="grow"` · select ในแถบ `width:auto` (สูงสุด 280) ให้เอง
+   · ฟอร์มบันทึก (modal/ตาราง) **ไม่อยู่ใต้กฎนี้** — ใช้ขนาดตั้งต้นของธีม (~39px = Carbon medium)
 3. **เลือกชนิดตัวควบคุมตามจำนวนตัวเลือก:** 2–5 ตัวเท่ากัน → `<Segmented>` · มากกว่านั้น → dropdown ·
    ทะเบียนยาว → picker กลาง (`LineSelect`/`SearchSelect`… UI-CONVENTIONS §5.1.2) · **กะ = `<Segmented options={SHIFT_OPTIONS}>` ทุกหน้า**
 4. **ป้าย "ทั้งหมด" จาก `src/utils/filterLabels.js` เท่านั้น** (`ALL.line` = "ทุกไลน์" …)
@@ -100,7 +103,7 @@ audit 23/09 เจอ < 11px ใน 20 หน้า (Improvements 56 จุด �
 เปิดทุกหน้า×ทุกแท็บที่ 1600px แล้วรายงาน: ตำแหน่งชื่อหน้า (x) ไม่ตรงค่ามาตรฐาน · หัวซ้อน ·
 dropdown ยืดเกินครึ่งจอ · ช่องในแถบกรองที่สูง/มุมไม่ตรง token · ป้าย "ทั้งหมด" ที่ไม่อยู่ในทะเบียน `ALL`
 
-ด่าน build (`regressionGuards.test.mjs`): กฎ `filter-all-label` · `no-root-page-padding` (ดูหัวไฟล์)
+ด่าน build (`regressionGuards.test.mjs`): กฎ `filter-all-label-hand-written` · "ทุกหน้าใช้ `<Page>` + `<PageHeader>`" (มี `PAGE_EXEMPT` พร้อมเหตุผล) · "hub ต้องครอบ `<Hub>`"
 
 ## ประวัติ
 - 2026-09-24 สร้างไฟล์ + ของกลาง `Page` `Hub` `FilterBar` `Segmented` `SearchInput` `filterLabels` + token `--ctl-*`

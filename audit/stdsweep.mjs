@@ -40,8 +40,12 @@ const measure = () => {
     if (!vis(s) || inOv(s)) continue; const r = s.getBoundingClientRect();
     if (r.width > mr.width * 0.45) out.wide.push(`${Math.round(r.width)}px "${(s.options[0]?.text || '').slice(0, 24)}"`);
     const t = (s.options[0]?.text || '').trim();
-    if (s.options[0]?.value === '' || /^all$/i.test(s.options[0]?.value || '')) {
-      if (/^(—\s*)?(ทุก|ทั้งหมด|ALL\b)/i.test(t) && !window.__ALL.has(t)) out.all.push(`"${t}"`);
+    /* ตรวจเฉพาะ dropdown ที่เป็น "ตัวกรอง" (อยู่ในแถบกรอง) — ช่องในฟอร์มใช้ "— … —" ได้ตามมาตรฐาน §3.4
+       รูปแบบที่ถูก: ALL.* หรือ allOf() = "ทุก<คำนาม>" ไม่มีขีด/วงเล็บ/อังกฤษ */
+    if (s.closest('.filter-bar') && (s.options[0]?.value === '' || /^all$/i.test(s.options[0]?.value || ''))) {
+      const isAll = /^(—\s*)?(ทุก|ทั้งหมด|ALL\b)/i.test(t);
+      const okForm = window.__ALL.has(t) || /^ทุก[^—()A-Za-z]+$/.test(t) || /^ทุก Rank$/.test(t);
+      if (isAll && !okForm) out.all.push(`"${t}"`);
     }
   }
   for (const el of main.querySelectorAll('.filter-bar select, .filter-bar input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])')) {
