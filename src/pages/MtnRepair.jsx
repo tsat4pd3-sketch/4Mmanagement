@@ -590,6 +590,7 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
   const beforeUrl = useObjectUrl(beforeFile);
   const [saving, setSaving] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [allMachines, setAllMachines] = useState(false);  // 🔓 ปลดตัวกรอง "เฉพาะเครื่องของไลน์นี้"
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ฟอร์มนี้ยาว กรอกใหม่ทั้งใบเจ็บมาก)
   const [dirty, setDirty] = useState(false);
   const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
@@ -633,6 +634,41 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
     return machines.filter(m => !isDie(m.equipment_kind));
   }, [machines, wantDie]);
   const machineKinds = useMemo(() => (wantDie ? ['die'] : ['machine', 'jig', 'facility']), [wantDie]);
+  /* ══ 🔗 cascade "สองทาง" ระหว่าง แผนก ↔ ไลน์ ↔ เครื่อง (2026-09-24 · หน้างานแจ้งเอง) ══════
+     อาการที่แจ้ง: *"dropdown ยังไม่มีความสัมพันธ์กันแต่ละช่อง เหมือนไม่มี filter ช่วย"*
+     (ตรงกับ feedback คุณสุรเสน 22/09 ที่ยังค้าง — "เลือกแบบลิสต์ตามลำดับแบบกรองข้อมูล")
+
+     ของเดิมกรอง**ทางเดียว**: เลือกไลน์ → เติมแผนกให้ (`onLine`) แต่เลือกแผนกก่อนแล้ว
+     ช่องไลน์ยังขึ้นครบทุกไลน์ทั้งโรงงาน ⇒ คนที่เริ่มจากแผนกไม่ได้ประโยชน์อะไรเลย
+
+     🔴 กรองแล้ว **ห้ามทำให้ไลน์หายเงียบ** — 3 ตะกร้าที่ต้องอยู่เสมอ:
+        (1) ไลน์ที่ยังไม่ตั้ง section ในผัง (กฎเดียวกับ dropdown ไลน์ที่อื่นทั้งระบบ)
+        (2) ไลน์ที่เลือกค้างไว้แล้ว (เปลี่ยนแผนกทีหลังห้ามล้างของเดิมทิ้ง)
+        (3) กรองแล้วเหลือ 0 ไลน์ = **ถอยไปลิสต์เต็ม** (แผนกนั้นยังไม่มีไลน์ผูกในผัง — ข้อมูลไม่ครบ
+            ไม่ใช่เหตุให้จอตัน) · จอบอกตรงๆ ว่ากำลังกรองอยู่กี่ไลน์
+     ⚠️ เทียบ section ต้องเผื่อ **ไลน์ลูกที่ไม่ตั้ง section เอง** (ใช้ของไลน์แม่) ไม่งั้นไลน์ลูกหายหมด */
+  const sectionOfLine = (l) => (l?.section || (l?.parent_line_name
+    ? lines.find(x => x.name === l.parent_line_name)?.section : '') || '');
+  const scopedLines = useMemo(() => {
+    if (!f.dept_section) return lines;
+    const hit = lines.filter(l => sectionOfLine(l) === f.dept_section);
+    if (!hit.length) return lines;                       // แผนกนี้ยังไม่มีไลน์ในผัง → ห้ามตัน
+    return lines.filter(l => sectionOfLine(l) === f.dept_section || !sectionOfLine(l) || l.name === f.line_name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, f.dept_section, f.line_name]);
+
+  /* ตัดลิสต์เครื่องให้เหลือเฉพาะไลน์ที่เลือก (คำสั่ง user 24/09 — กลับมติ 07/09 ที่ "ไม่ตัดตามไลน์")
+     🔴 **แม่พิมพ์ยกเว้นเสมอ** — die ผูก line_name เป็นชื่อกลุ่มเครื่องปั๊ม ("LINE A ( 800 Ton )")
+        ซึ่งไม่มีใน production_lines ⇒ กรองด้วยไลน์ในฟอร์มแล้ว **ไม่มีวันเจอแม่พิมพ์เลย**
+        (เคยเกิดจริง: เลือก HDF1 แล้วขึ้นแต่ HDF-01) · และแม่พิมพ์ถอดย้ายเครื่องได้อยู่แล้ว
+     🔴 ไลน์ที่ยังไม่มีเครื่องลงทะเบียน = ไม่ตัด (ตัดแล้วลิสต์ว่าง = แจ้งซ่อมไม่ได้)
+     🔓 ปุ่ม "ทุกไลน์" ข้างช่อง = ทางออกเสมอ (เครื่องย้ายไลน์ / ลงทะเบียนไว้ผิดไลน์) */
+  const famSet = useMemo(() => new Set(lineFam.map(n => String(n).trim().toUpperCase())), [lineFam]);
+  const famMachineCount = useMemo(() => (wantDie || !f.line_name ? 0
+    : lineMachines.filter(m => famSet.has(String(m.line_name ?? '').trim().toUpperCase())).length),
+    [wantDie, f.line_name, lineMachines, famSet]);
+  const machineStrict = !wantDie && !!f.line_name && !allMachines && famMachineCount > 0;
+
 
   const onLine = (name) => {
     const { section, cc } = lineDerived(name);
@@ -769,7 +805,9 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
           </Field>
         </div>
         {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
-        <Field label="ไลน์การผลิต" required><LineSelect lines={lines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required /></Field>
+        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
+          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
+        </Field>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
           <Field label="ส่วนงาน (ASSY)">
@@ -804,11 +842,30 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} allowFree history={machineHist}
+            <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} strict={machineStrict} allowFree history={machineHist}
               placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
               style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
           </div>
+          {/* 🔗 บอกตรงๆ ว่ากำลังกรองอยู่ + ทางออกคลิกเดียว (ห้ามกรองเงียบ — คนหาเครื่องไม่เจอจะนึกว่าระบบพัง) */}
+          {!wantDie && f.line_name && (
+            <div style={{ fontSize: 11.5, marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              {famMachineCount > 0 ? (
+                <>
+                  <span style={{ color: 'var(--muted)' }}>
+                    {machineStrict ? `🎯 เฉพาะเครื่องของ ${f.line_name} (${famMachineCount} ตัว)` : `🏭 ทุกไลน์ (${lineMachines.length} ตัว)`}
+                  </span>
+                  <button type="button" className="tbtn" onClick={() => setAllMachines(v => !v)}
+                    title="เครื่องย้ายไลน์ / ลงทะเบียนไว้ผิดไลน์ — กดดูทั้งโรงงานได้เสมอ"
+                    style={{ padding: '1px 9px', borderRadius: 20, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>
+                    {machineStrict ? 'ดูทุกไลน์' : 'กรองตามไลน์'}
+                  </button>
+                </>
+              ) : (
+                <span style={{ color: '#f59e0b' }}>⚠ {f.line_name} ยังไม่มีเครื่องลงทะเบียน — แสดงทุกไลน์ไว้ก่อน (ลงทะเบียนได้ที่ /equipment)</span>
+              )}
+            </div>
+          )}
           {wantDie && (
             <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
               {lineMachines.length
