@@ -1069,7 +1069,8 @@ export default function LineSetup({ embedded = false } = {}) {
     <div style={{ padding: embedded ? 0 : '16px', display: 'flex', flexDirection: 'column', gap: 12, height: isMobile ? 'auto' : (embedded ? 'calc(100vh - 200px)' : 'calc(100vh - 40px)'), minHeight: embedded && !isMobile ? 520 : undefined }}>
       {selectedLine && (
         // paddingRight เว้นที่ให้กระดิ่งแจ้งเตือน (fixed มุมขวาบน) — ไม่งั้นปุ่ม 🏷️ ที่ชิดขวาสุดโดนกระดิ่งทับ
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0, paddingRight: 52 }}>
+        // 📱 flexWrap: มือถือ 390px แถวนี้ (แท็บ 3 + Undo/Redo + ป้าย) ยาว 408px ล้นจอโดยปัดดูไม่ได้ (mobilesweep 24/09)
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0, paddingRight: 52 }}>
           {TABS.map(t => (
             <button key={t.key}
               onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
@@ -1391,7 +1392,8 @@ export default function LineSetup({ embedded = false } = {}) {
               return shown.map(l => (
                 <div key={l.id}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
+                    // 📱 มือถือ: dropdown Section/ไลน์หลักห่อลงบรรทัดใหม่ได้ — เดิมล้นกรอบรายการ 320→348px (mobilesweep 24/09)
+                    display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'wrap' : undefined, minWidth: 0,
                     padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
                     marginLeft: l._isChild ? 12 : 0,
                     background: selectedLine === l.name ? 'var(--accent-dim)' : l._isChild ? 'var(--bg3)' : 'var(--bg2)',
@@ -1426,7 +1428,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
                     />
                   ) : (
-                    <span style={{ fontSize: 13, flex: 1, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 13, flex: 1, minWidth: 0, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.name}
                       {l._orphan && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
                     </span>
