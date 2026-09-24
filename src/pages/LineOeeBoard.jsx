@@ -429,7 +429,7 @@ export default function LineOeeBoard() {
             <div style={{ ...card, flex: 1, minWidth: 380 }}>
               <div style={capSt}>OEE Trend รายวัน ({DAYS_TREND} วัน · เฉลี่ยถ่วงเวลารับภาระ)</div>
               <ResponsiveContainer width="100%" height={168}>
-                <AreaChart data={C.trend} margin={{ top: 8, left: -14, right: 8, bottom: 0 }}>
+                <AreaChart data={C.trend} margin={{ top: 8, left: 4, right: 8, bottom: 0 }}>
                   <defs>
                     <linearGradient id="oeeG" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.55} /><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.06} />
@@ -437,7 +437,7 @@ export default function LineOeeBoard() {
                   </defs>
                   <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="d" tick={{ fontSize: 11, fill: 'var(--text2)' }} />
-                  <YAxis domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={v => `${v}%`} />
+                  <YAxis width="auto" domain={[0, 100]} ticks={[0, 50, 100]} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={v => `${v}%`} />
                   <ReferenceLine y={C.tgt} stroke="#f59e0b" strokeDasharray="6 4"
                     label={{ value: `target ${C.tgt.toFixed(0)}%`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 11, fontWeight: 800 }} />
                   <Area type="monotone" dataKey="oee" stroke="#2dd4bf" strokeWidth={2.2} fill="url(#oeeG)" connectNulls={false} isAnimationActive={false} dot={{ r: 2.5 }} />

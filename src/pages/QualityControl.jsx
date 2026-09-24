@@ -57,6 +57,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
+import { shortTick, fmtAxis } from '../utils/chartAxis';
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -519,10 +520,10 @@ function QualityDashboard() {
         <div style={cardSt}>
           <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📈 แนวโน้ม PPM รายวัน</div>
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={stat.ppmTrend} margin={{ top: 6, right: 12, left: -8, bottom: 0 }}>
+            <LineChart data={stat.ppmTrend} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-              <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+              <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
               <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
               <Line type="monotone" dataKey="ppm" name="PPM" stroke="#ef4444" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
             </LineChart>
@@ -535,10 +536,10 @@ function QualityDashboard() {
             <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูล</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={stat.lineRows} margin={{ top: 14, right: 12, left: -8, bottom: 0 }}>
+              <BarChart data={stat.lineRows} margin={{ top: 14, right: 12, left: 4, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                <XAxis dataKey="line" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval={0} angle={-18} textAnchor="end" height={52} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                <XAxis dataKey="line" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval={0} angle={-35} textAnchor="end" height={64} tickFormatter={shortTick(12)} />
+                <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                   formatter={(v, name) => [name === 'PPM' ? Number(v).toLocaleString() : v, name]} />
                 <Bar dataKey="ng" name="NG (ชิ้น)" fill="#ef4444" opacity={0.85} radius={[3, 3, 0, 0]}>
@@ -759,10 +760,10 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>{sel.subgroup_size === 1 ? '📉 Individuals (I) Chart' : '📉 X̄ Chart'}</div>
               {spc ? (
                 <ResponsiveContainer width="100%" height={230}>
-                  <LineChart data={spc.points} margin={{ top: 6, right: 42, left: -4, bottom: 0 }}>
+                  <LineChart data={spc.points} margin={{ top: 6, right: 42, left: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="idx" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
+                    <YAxis width="auto" domain={['auto', 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
                     <ReferenceLine y={spc.uclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclX)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />
@@ -781,10 +782,10 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>{sel.subgroup_size === 1 ? '📉 Moving Range (MR) Chart' : '📉 R Chart'}</div>
               {spc ? (
                 <ResponsiveContainer width="100%" height={230}>
-                  <LineChart data={spc.points} margin={{ top: 6, right: 42, left: -4, bottom: 0 }}>
+                  <LineChart data={spc.points} margin={{ top: 6, right: 42, left: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="idx" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis domain={[0, 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
+                    <YAxis width="auto" domain={[0, 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
                     {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />}
@@ -800,10 +801,10 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>📊 Histogram เทียบ Spec</div>
               {hist.length ? (
                 <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={hist} margin={{ top: 6, right: 12, left: -8, bottom: 0 }}>
+                  <BarChart data={hist} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="x" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
+                    <YAxis tickFormatter={fmtAxis} width="auto" allowDecimals={false} tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       formatter={(v) => [v, 'จำนวนค่า']}
                       labelFormatter={(x, p) => p?.[0] ? `${fmtNum(p[0].payload.from, 3)} – ${fmtNum(p[0].payload.to, 3)}` : x} />

@@ -38,6 +38,9 @@ import {
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
+import { shortTick, fmtAxis, alignedYWidth } from '../utils/chartAxis';
+/* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
+const fmtPieces = v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v || 0).toLocaleString());
 
 // ปุ่ม ◀ ▶ ในแถบเดือน — สูง/มุมจาก token ของแถบกรอง (--ctl-h/--ctl-r)
 const monthBtn = { width: 36, height: 'var(--ctl-h)', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', cursor: 'pointer', padding: 0 };
@@ -640,7 +643,7 @@ export default function Energy() {
                   <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
+                    <YAxis width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
                     <Tooltip contentStyle={tipStyle} formatter={(v, n) => [v == null ? '—' : Math.round(v).toLocaleString(), n]} />
                     <Legend wrapperStyle={{ fontSize: 11.5 }} />
                     <Bar dataKey="bill" name="บิลทั้งโรงงาน" fill={ACCENT} radius={[3, 3, 0, 0]} />
@@ -683,8 +686,9 @@ export default function Energy() {
                         <XAxis dataKey="label" tick={false} height={4} />
                         {/* ⚠️ ย่อเป็น "k" ได้เฉพาะตอนเลขใหญ่จริง — ยอดหลักพันจะได้ "2k 1k 1k 0k" ซ้ำกัน
                             (ปัดเศษชนกัน) = แกนที่อ่านค่าไม่ได้เลย · เห็นชัดตอนแยกกราฟ 23/09 */}
-                        <YAxis width={54} tick={{ fontSize: 11, fill: 'var(--muted)' }}
-                          tickFormatter={v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v).toLocaleString())} />
+                        {/* 2 กราฟซ้อนแกน X เดียวกัน ⇒ ความกว้างแกน Y ต้องเท่ากัน (§6.19) — คำนวณจากตัวเลขจริงของทั้งคู่ ไม่ใช่เลขตายตัว */}
+                        <YAxis width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: 'var(--muted)' }}
+                          tickFormatter={fmtPieces} />
                         <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : Math.round(v).toLocaleString(), 'ผลิตได้ (ชิ้น)']} />
                         <Bar dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
                       </BarChart>
@@ -694,7 +698,7 @@ export default function Energy() {
                       <LineChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                        <YAxis width={54} tick={{ fontSize: 11, fill: '#f59e0b' }} />
+                        <YAxis tickFormatter={fmtAxis} width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: '#f59e0b' }} />
                         <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : v, 'kWh ต่อชิ้น (SEC)']} />
                         <Line type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
                       </LineChart>
@@ -735,7 +739,7 @@ export default function Energy() {
                     <BarChart data={contribRows} layout="vertical" margin={{ top: 4, right: 60, left: 8, bottom: 4 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Math.round(v).toLocaleString()} />
-                      <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11, fill: 'var(--text2)' }} />
+                      <YAxis type="category" dataKey="label" width={130} tick={{ fontSize: 11, fill: 'var(--text2)' }} tickFormatter={shortTick(16)} />
                       <Tooltip contentStyle={tipStyle}
                         formatter={(v, n, o) => [`${v > 0 ? '+' : ''}${Math.round(v).toLocaleString()} kWh (${o.payload.pct == null ? 'จุดใหม่' : `${o.payload.pct > 0 ? '+' : ''}${o.payload.pct}%`})`, 'ส่วนต่าง']} />
                       <ReferenceLine x={0} stroke="var(--border2)" />
@@ -761,7 +765,7 @@ export default function Energy() {
                   <BarChart data={compData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                    <YAxis tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
+                    <YAxis width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={fmtKwh} />
                     <Tooltip contentStyle={tipStyle} formatter={v => Math.round(v).toLocaleString()} />
                     <Legend wrapperStyle={{ fontSize: 11.5 }} />
                     {compPts.map((p, i) => (

@@ -1,3 +1,4 @@
+import { fmtAxis } from '../utils/chartAxis';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
 
@@ -29,7 +30,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, LabelList,
   ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -528,7 +529,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     ...p, label: p.summary ? 'สรุป' : (narrow ? String(Number(String(p.k).slice(5, 7))) : monthLabel(p.k)),
   }));
   const onBarClick = (d) => drillMonth(d?.payload?.k ?? d?.k);
-  const yearBars = (k, { fmt = v => `${v}%`, name = k.key, domain = [0, 100], yWidth = 34, left = -22, stacked = false, span = 1 } = {}) => {
+  const yearBars = (k, { fmt = v => `${v}%`, name = k.key, domain = [0, 100], yWidth = 'auto', left = 4, stacked = false, span = 1 } = {}) => {
     const narrow = (cw * span + GAP * (span - 1)) < 420;
     const data = yearData(k, narrow);
     if (!data.some(p => p.v != null)) return null;
@@ -543,7 +544,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         <BarChart data={data} margin={{ top: 4, right: 6, left, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={{ ...axisTick, fontSize: fs(9.5) }} interval={0} />
-          <YAxis domain={stacked ? undefined : domain} tick={tickY} width={yWidth}
+          <YAxis domain={stacked ? undefined : domain} tick={tickY} width="auto"
             tickFormatter={stacked ? (v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)) : undefined} />
           <Tooltip {...chartTip} formatter={stacked
             ? ((v, nm) => [fmtBaht(v), nm === 'dt' ? 'เครื่องหยุด' : 'ของเสีย'])
@@ -726,10 +727,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="ไปหน้าเช็คชื่อ/PPE" onLink={() => drill('/daily-checker')}>
             {isYear ? (yearBars(kS, { name: 'PPE ครบ' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kS.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={daySeries(kS.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                <BarChart data={daySeries(kS.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'PPE ครบ']} />
                   <ReferenceLine y={kS.target} stroke="#ef4444" strokeDasharray="4 3" />
                   <Bar dataKey="v" radius={[2, 2, 0, 0]}>
@@ -751,10 +752,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
             {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis domain={[dataMin => Math.min(95, Math.floor(dataMin)), 100]} tick={axisTick} width={34} />
+                  <YAxis tickFormatter={fmtAxis} domain={[dataMin => Math.min(95, Math.floor(dataMin)), 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'Q']} />
                   <ReferenceLine y={kQ.target} stroke="#ef4444" strokeDasharray="4 3" />
                   <Line type="monotone" dataKey="v" stroke={axisSheet('Q').color} strokeWidth={2} dot={{ r: 2 }} connectNulls />
@@ -772,10 +773,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="ดูแผน/ใบงาน" onLink={() => drill('/production-plan')}>
             {isYear ? (yearBars(kD, { name: 'ทำได้ตามแผน' }) || <EmptyChart k={k} text="ยังไม่มีใบงานที่มีเป้าในปีนี้" />) : kD.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={daySeries(kD.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                <BarChart data={daySeries(kD.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis tick={axisTick} width={34} />
+                  <YAxis tickFormatter={fmtAxis} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'ทำได้ตามแผน']} />
                   <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="4 3" />
                   <Bar dataKey="v" radius={[2, 2, 0, 0]}>
@@ -796,12 +797,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
             link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
-            {isYear ? (yearBars(kC, { stacked: true, yWidth: 46, left: -8 }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
+            {isYear ? (yearBars(kC, { stacked: true }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: -8, bottom: 0 }}>
+                <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis tick={axisTick} width={46} tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+                  <YAxis tick={axisTick} width="auto" tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
                   <Tooltip {...chartTip} formatter={(v, n) => [fmtBaht(v), n === 'dt' ? 'เครื่องหยุด' : 'ของเสีย']} />
                   <Bar dataKey="dt" stackId="c" fill="#f59e0b" />
                   <Bar dataKey="ng" stackId="c" fill="#a78bfa" radius={[2, 2, 0, 0]} />
@@ -820,10 +821,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="ดูกำลังคนย้อนหลัง" onLink={() => drill('/workforce-insight')}>
             {isYear ? (yearBars(kM, { name: 'มาทำงาน' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kM.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={daySeries(kM.series)} margin={{ top: 4, right: 6, left: -22, bottom: 0 }}>
+                <ComposedChart data={daySeries(kM.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={(v, n) => (n === 'v' ? [`${v}%`, 'มาทำงาน'] : [v, 'คน'])} />
                   <ReferenceLine y={kM.target} stroke="#ef4444" strokeDasharray="4 3" />
                   <Bar dataKey="v" fill={axisSheet('M').color} radius={[2, 2, 0, 0]} />
@@ -848,10 +849,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="เจาะ OEE" onLink={() => drill('/oee-analytics', { section: secFilter, date: to })}>
             {isYear ? (yearBars(kOee, { name: 'OEE', span: 2 }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kOee.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis domain={[0, 100]} tick={axisTick} width={34} />
+                  <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'OEE']} />
                   <ReferenceLine y={kOee.target} stroke="#ef4444" strokeDasharray="5 3"
                     label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: '#ef4444', fontSize: fs(10) }} />
@@ -876,11 +877,15 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
             {pareto.rows.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={pareto.rows} layout="vertical" margin={{ top: 2, right: 10, left: 2, bottom: 2 }}>
+                {/* แกนตัวเลขซ่อนเพื่อประหยัดที่ในแผ่น A4 ⇒ ต้องเขียนตัวเลขที่ปลายแท่งแทน (กราฟไม่มีตัวเลข = อ่านไม่ได้ · chartsweep) */}
+                <BarChart data={pareto.rows} layout="vertical" margin={{ top: 2, right: 44, left: 2, bottom: 2 }}>
                   <XAxis type="number" tick={axisTick} hide />
                   <YAxis type="category" dataKey="name" tick={{ ...axisTick, fontSize: fs(9.5) }} width={Math.round(cw * 0.42)} />
                   <Tooltip {...chartTip} formatter={v => [`${v} นาที`, 'เวลาที่เสีย']} />
-                  <Bar dataKey="min" fill="#fb923c" radius={[0, 3, 3, 0]} />
+                  <Bar dataKey="min" fill="#fb923c" radius={[0, 3, 3, 0]}>
+                    <LabelList dataKey="min" position="right" formatter={v => `${Math.round(v).toLocaleString()} น.`}
+                      style={{ fontSize: fs(10), fill: 'var(--text2)', fontWeight: 700 }} />
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ไม่มีเวลาเครื่องหยุดนอกแผน" />}

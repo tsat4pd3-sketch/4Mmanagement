@@ -450,7 +450,7 @@ export default function TransportMapEditor() {
             const selected = sel?.type === 'node' && sel.id === n.id
             const isFrom = edgeFrom === n.id || (mode === 'draw' && chainLast === n.id)
             return (
-              <div key={n.id} data-node onClick={(e) => onNodeClick(e, n)} onPointerDown={(e) => onNodePointerDown(e, n)}
+              <div key={n.id} data-node data-ux-ok="จุดบนผัง ลอยทับรูป (UI §6.20)" onClick={(e) => onNodeClick(e, n)} onPointerDown={(e) => onNodePointerDown(e, n)}
                 title={n.name || k.label}
                 style={{
                   position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, transform: 'translate(-50%,-50%)',
@@ -458,7 +458,7 @@ export default function TransportMapEditor() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12,
                   background: k.color, opacity: dim ? 0.4 : 1,
                   border: `2px solid ${isFrom ? '#fff' : selected ? '#fbbf24' : 'rgba(0,0,0,0.5)'}`,
-                  boxShadow: (isFrom || selected) ? '0 0 0 3px rgba(251,191,36,0.5)' : '0 1px 4px rgba(0,0,0,0.5)',
+                  boxShadow: (isFrom || selected) ? '0 0 0 3px rgba(251,191,36,0.5)' : 'var(--shadow-float)',
                   cursor: canEdit ? (mode === 'select' ? 'grab' : 'pointer') : 'default', touchAction: 'none', zIndex: 2,
                 }}>
                 {n.kind !== 'junction' && <span style={{ pointerEvents: 'none' }}>{k.icon}</span>}

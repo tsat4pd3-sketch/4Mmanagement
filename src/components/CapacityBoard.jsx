@@ -1,3 +1,4 @@
+import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
 import { supabaseDR } from '../supabaseClient';
@@ -256,7 +257,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
             <BarChart data={chartData} margin={{ top:8, right:16, left:0, bottom:4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
               <XAxis dataKey="name" tick={{ fontSize:11, fill:'var(--muted)' }} />
-              <YAxis width={58} tick={{ fontSize:11, fill:'var(--muted)' }} label={{ value:'ชม.', angle:-90, position:'insideLeft', fontSize:11, fill:'var(--muted)' }} />
+              <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize:11, fill:'var(--muted)' }} label={{ value:'ชม.', angle:-90, position:'insideLeft', fontSize:11, fill:'var(--muted)' }} />
               <Tooltip formatter={(v) => `${Number(v).toLocaleString()} ชม.`}
                 contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }} />
               <Legend wrapperStyle={{ fontSize:11 }} />
