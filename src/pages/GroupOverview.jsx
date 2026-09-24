@@ -522,7 +522,10 @@ export default function GroupOverview() {
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(min(190px, 100%), 1fr))' }}>
           <Kpi
             label={compNode ? '🏭 ไลน์ผลิต' : bizNode ? '🏢 บริษัทใน' + (sel.axis === 'map' ? 'โซนนี้' : 'กลุ่มธุรกิจ') : (sel.axis === 'map' ? '🗺️ โซนพื้นที่' : '🗂️ กลุ่มธุรกิจ')}
-            value={compNode ? compNode.lines.length : bizNode ? bizNode.companies.length : axisNodes.length}
+            /* 📏 ใส่หน่วยกำกับเสมอ — เลขนับลอยๆ ตอบไม่ได้ว่านับอะไร (UI §6.18 ข้อ 4) */
+            value={compNode ? `${compNode.lines.length} ไลน์`
+              : bizNode ? `${bizNode.companies.length} บริษัท`
+                : `${axisNodes.length} ${sel.axis === 'map' ? 'โซน' : 'กลุ่ม'}`}
             sub={compNode ? `บริษัท ${compNode.code}`
               : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
                 : `${tree.allComps.length} บริษัท · ${tree.allLines.length} ไลน์`} />
