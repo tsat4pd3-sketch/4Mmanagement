@@ -5721,6 +5721,11 @@ function HistoryTab({ role }) {
   const [deleting, setDeleting]   = useState(null);
   const [ordersMinimized, setOrdersMinimized] = useState({});
   const [ctByMat, setCtByMat]     = useState({});  // mat_no → cycle_time_sec (สำหรับ %P รายชิ้น)
+  /* 📝 ใบรายงานปัญหาการผลิต ของกะที่ปิดไปแล้ว (2026-09-25 · feedback Sup Assy2 "ไปกดดูย้อนหลังไม่ได้ หาที่ดูไม่เจอ")
+     เดิมปุ่มนี้อยู่แท็บ Live ที่เดียว ซึ่ง query `.in('status',['open','pending_close'])`
+     ⇒ **ปิดกะเมื่อไหร่ ใบนั้นออกใหม่ไม่ได้อีกเลยตลอดกาล** — หน้างานเลยต้องเซฟไฟล์เก็บเองทุกวัน
+     (บั๊กคลาสเดียวกับ "ช่องตาย" ที่บันทึกไว้ 2026-08-28: ความสามารถมีอยู่ แต่ไม่มีทางเข้าถึง) */
+  const [histSheet, setHistSheet] = useState(null);   // { session, title }
   const [histBreaks, setHistBreaks] = useState([]); // break_policies — หักพักตามนโยบายจากช่วงวิ่งของพาร์ท
 
   const canDeleteSession = can('daily_report', 'delete_session', role);
@@ -5805,8 +5810,10 @@ function HistoryTab({ role }) {
 
   useEffect(() => { load(); }, [load]);
 
+  /* คืนค่าที่โหลดด้วย (ไม่ใช่แค่ setState) — ปุ่ม 📝 ใบรายงานปัญหาย้อนหลังต้องใช้ข้อมูลทันทีในคลิกเดียว
+     อ่านจาก state ตรงๆ ไม่ได้ เพราะ setState ยังไม่ทันมีผลใน handler เดียวกัน */
   const loadDetail = async (sessionId) => {
-    if (dtMap[sessionId]) return; // already loaded
+    if (dtMap[sessionId]) return { dts: dtMap[sessionId], defects: defectMap[sessionId] || [] }; // already loaded
     const [{ data: dts }, { data: defects }, { data: orders }] = await Promise.all([
       supabaseDR.from('downtime_logs')
         .select('*, dr_downtime_types(name_th, color, category)')
@@ -5821,6 +5828,7 @@ function HistoryTab({ role }) {
     setDtMap(m     => ({ ...m,      [sessionId]: dts     || [] }));
     setDefectMap(m => ({ ...m,      [sessionId]: defects || [] }));
     setOrderMap(m  => ({ ...m,      [sessionId]: orders  || [] }));
+    return { dts: dts || [], defects: defects || [] };
   };
 
   const handleExpand = (id) => {
@@ -5876,6 +5884,25 @@ function HistoryTab({ role }) {
                     </div>
                   )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
+                  {/* 📝 ออกใบรายงานปัญหาย้อนหลัง — โชว์ทุกแถว **ไม่ต้องกางก่อน** (คนหาไม่เจอคือปัญหาเดิม)
+                      กดแล้วโหลดรายละเอียดกะนั้นให้เอง · กะที่ไม่มี downtime/ของเสียเลย = บอกตรงๆ ห้ามเงียบ */}
+                  <button
+                    onClick={async e => {
+                      e.stopPropagation();
+                      const d = await loadDetail(s.id);
+                      const dts = d?.dts || [], defs = d?.defects || [];
+                      if (!dts.length && !defs.length) {
+                        toast.info('กะนี้ไม่มี Downtime และของเสียบันทึกไว้ — ไม่มีอะไรเข้าใบรายงานปัญหา');
+                        return;
+                      }
+                      const R = buildProblemReport({ downtimes: dts, defects: defs, minMinutes: PROBLEM_MIN_MINUTES });
+                      setHistSheet({ session: s, title: R.headline || '' });
+                    }}
+                    title="พิมพ์ใบรายงานปัญหาการผลิตของกะนี้ใหม่ (ดึงข้อมูลเดิมของกะมาเติมให้ — ออกใหม่ได้เสมอ)"
+                    style={{ background: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: 6,
+                      padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    📝 ใบรายงานปัญหา
+                  </button>
                   {canDeleteSession && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(s); }}
@@ -6133,6 +6160,47 @@ function HistoryTab({ role }) {
           );
         })}
       </div>
+
+      {/* 📝 ยืนยันหัวเรื่องก่อนพิมพ์ใบรายงานปัญหาย้อนหลัง — โมดัล/กติกาเดียวกับแท็บ Live
+          (ระบบเสนอจากแถวที่หนักสุดของกะ · คนแก้/ล้างได้ · `extra.problem ?? headline` ฝั่งใบพิมพ์) */}
+      {histSheet && (() => {
+        const hs = histSheet.session;
+        const doPrint = async () => {
+          const title = histSheet.title;
+          setHistSheet(null);
+          const ok = await printProdProblemReport({
+            session: hs,
+            downtimes: dtMap[hs.id] || [],
+            defects: defectMap[hs.id] || [],
+            section: (allLines || []).find(l => l.name === hs.line_name)?.section || null,
+            extra: { problem: title },
+          });
+          if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+        };
+        return (
+          <div className="overlay" style={{ zIndex: 2200 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(245,158,11,0.5)', borderRadius: 14, padding: 22, width: 'min(94vw,520px)' }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#f59e0b' }}>📝 ใบรายงานปัญหาการผลิต (ย้อนหลัง)</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+                {hs.line_name} · {hs.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(hs.work_date)}
+              </div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ปัญหา (หัวเรื่องบนหัวใบ)</label>
+              <input value={histSheet.title} autoFocus
+                onChange={e => setHistSheet(v => ({ ...v, title: e.target.value }))}
+                onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
+                placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
+                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
+                ออกใหม่ได้ทุกเมื่อ — ดึงจาก downtime/ของเสียที่บันทึกไว้ของกะนี้ <b>ไม่ต้องเซฟไฟล์เก็บเอง</b>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button onClick={() => setHistSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={doPrint} style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700 }}>🖨 พิมพ์ใบรายงาน</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
