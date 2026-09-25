@@ -371,8 +371,11 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
 · ป้าย "ทั้งหมด" = `ALL.*` (`utils/filterLabels.js`) · 2–5 ตัวเลือก (กะ) = `<Segmented>` · ค้นหา = `<SearchInput>`
 · 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
-  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · หน้าที่ตั้ง `alsoIn` ต้องมาร์ค**ทุกหมวด**
-  (ห้ามเช็ค `activeGroup === group` — คืนแค่หมวดแรก) · ด่านข้อ 6 ใน stdsweep (UI-STANDARD §4.5)
+  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · ห้ามเช็ค `activeGroup === group` (คืนแค่หมวดแรก)
+· 🚪 **`alsoIn` = "ทางลัด" ไม่ใช่ "บ้านที่สอง"** (24/09 คำสั่ง user — เดิมโผล่ 2 หมวดหน้าตาเหมือนกัน = ดูเป็นเมนูซ้ำ)
+  บ้านจริง = `item.group` **หมวดเดียว** ได้ไฮไลต์เต็ม · แถวทางลัดวาดต่าง (จาง + `↗ <หมวดบ้าน>`) ·
+  ตัดสินด้วย `isNavGuest(item, group)` · "โชว์ในหมวดนี้ไหม (นับทางลัด)" = `inNavGroup()` **คนละคำถาม ห้ามปน**
+  · แถวเมนูวาดจาก `navRow()` ตัวเดียวทั้ง desktop/มือถือ · ด่านข้อ 6 ใน stdsweep + `nav-alsoin-*` (UI-STANDARD §4.5)
 · 📏 **แกนกราฟ: `YAxis width="auto"` · margin ซ้ายห้ามติดลบ** (เลข 100 เคยถูกตัดเหลือ "0") · `utils/chartAxis.js` · ตรวจ `node audit/chartsweep.mjs`
 · ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
 > 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
@@ -528,6 +531,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   · 🔒 **`summary_mode` override รายแถวไม่ได้** (แต่ละแผนกรวมคนละแบบ = เทียบกันไม่ได้) · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน**
   · 🔴 `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` ไม่งั้นตกเป็น 2 ตำแหน่ง/"เฉลี่ย" เงียบๆ · หัวคอลัมน์ห้ามเขียน "เฉลี่ย" ตายตัว
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
+- ⚡ **KPI ช่าง (MO Closed/MBD/MTBF/MTTR) = สูตร Guideline หน้า 10 ใน `utils/kpiAuto.js` เท่านั้น** (RPC `kpi_mtn_rollup` คืน Σ) · ระบบเสนอ คนกด "ใช้ค่านี้" **ห้ามเขียนทับค่าที่กรอกมือ**
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
