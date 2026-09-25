@@ -288,6 +288,22 @@ const TABLE_FIXED = {
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
     { id: 'kd-6', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'customer', seq: 6, name: 'MO Closed on target', source: 'manual', unit: '%', target_compare: '>=', target_value: 99, commit_compare: '>=', commit_value: 95, direction: 'up', weight: 6, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
   ],
+  /* ค่าจริง + แผนรายเดือนของ KPI กรอกมือ (2026-09-25) — ไม่มี 2 ตารางนี้ใน mock แปลว่า
+     ทั้งตารางกรอกมือ · คอลัมน์สรุปทั้งปี · มินิกราฟ · แถว 📅 แผน **ไม่เคยถูกรันด้วยข้อมูลจริงใน harness**
+     🔴 ทรงข้อมูลต้องมีครบ 3 แบบที่ของจริงมี ห้ามตัดให้เหลือแบบเดียว:
+        kd-1 = มีทั้งผลและแผนครบ (ทางที่เทียบได้) · kd-4 = KPI สะสม (summary_mode 'sum')
+        ที่แผนขาดบางเดือน (ทางที่ต้องข้ามเดือนแล้วรายงาน skipped) · kd-6 = มีผลแต่ไม่มีแผนเลย
+        (ทางที่ planProgress คืน null แล้วจอต้องเขียนว่ายังไม่มีเดือนที่เทียบได้) */
+  kpi_manual_entries: [
+    ...[93.1, 94.0, 95.2, 96.4, 95.8, 94.9].map((v, i) => ({ id: `ke-1-${i}`, kpi_id: 'kd-1', month: i + 1, value: v })),
+    ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
+    ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
+  ],
+  kpi_month_plans: [
+    ...[95, 95, 95, 95, 95, 95].map((v, i) => ({ id: `kp-1-${i}`, kpi_id: 'kd-1', month: i + 1, plan_value: v })),
+    { id: 'kp-4-0', kpi_id: 'kd-4', month: 1, plan_value: 105.1 },
+    { id: 'kp-4-2', kpi_id: 'kd-4', month: 3, plan_value: 105.1 },   // เว้น ก.พ./เม.ย. โดยตั้งใจ = เดือนที่ยังไม่ตั้งแผน
+  ],
   /* ทีมช่าง — ทรงเดียวกับ DEFAULT_TEAMS ของ pmTeams.js (dept_name ต้องตรงชื่อแผนกในผัง ไม่งั้นแท็บ ⚙️ ไม่รู้ว่าขอบเขตนี้เป็นทีมช่าง) */
   mtn_teams: [
     { id: 't-1', key: 'maintenance', label: 'MTN (ซ่อมบำรุง)', icon: '🔧', equip_type: 'machine', dept_name: 'MTN', color: '#fb923c', sort_order: 1, kind: 'pm', is_active: true },

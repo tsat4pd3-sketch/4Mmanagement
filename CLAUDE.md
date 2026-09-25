@@ -535,10 +535,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **🔴 หน่วย · ทศนิยม · วิธีรวม 12 เดือน = ตั้ง 2 ชั้น** (24/09 · คำสั่ง user) — ทะเบียน `kpi_catalog` = ค่าตั้งต้น (ปุ่ม 📘 · มีผลทุกปีทุกส่วนงาน)
-  · `kpi_definitions.unit`/`.decimals` = **override รายแถว** (ว่าง = ตามทะเบียน · MTBF ใบ JIG "นาที" เด็ค "ชม.")
-  · 🔒 **`summary_mode` override รายแถวไม่ได้** (แต่ละแผนกรวมคนละแบบ = เทียบกันไม่ได้) · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน**
-  · 🔴 `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` ไม่งั้นตกเป็น 2 ตำแหน่ง/"เฉลี่ย" เงียบๆ · หัวคอลัมน์ห้ามเขียน "เฉลี่ย" ตายตัว
+- **🔴 หน่วย/ทศนิยม/วิธีรวม 12 เดือน = 2 ชั้น** (24/09) ทะเบียน `kpi_catalog` = ค่าตั้งต้น · `unit`/`decimals` override รายแถวได้ · 🔒 `summary_mode` ไม่ได้
+  · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน** · `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` (ขาด = ตกค่า default เงียบ)
+- **📅 แผน 12 เดือน `kpi_month_plans`** (25/09 · `planProgress()`) — 🔴 ป้าย ▲ ตามแผน/▼ ช้ากว่าแผน **ไม่ใช่คะแนน** ห้ามเปลี่ยนสี/เพิ่มขั้น · เทียบเฉพาะเดือนที่มี**ทั้งแผนและผล**
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
 - ⚡ **KPI ช่าง (MO Closed/MBD/MTBF/MTTR) = สูตร Guideline หน้า 10 ใน `utils/kpiAuto.js` เท่านั้น** (RPC `kpi_mtn_rollup` คืน Σ) · ระบบเสนอ คนกด "ใช้ค่านี้" **ห้ามเขียนทับค่าที่กรอกมือ**
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
