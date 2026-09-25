@@ -8,6 +8,7 @@ import {
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
   isStdFixed, isStdParent, checkStdSelection, matchStdItems,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
+  planProgress,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -431,4 +432,90 @@ test('fmtKpi: ใช้ทศนิยมของแถว · ค่าที�
   assert.equal(fmtKpi('', {}), '');
   assert.equal(fmtKpi('ไม่ใช่เลข', {}), '');
   assert.equal(fmtKpi(0, { decimals: 0 }), '0', '0 ต้องแสดงเป็น 0 ไม่ใช่ว่าง');
+});
+
+/* ── แผนรายเดือน (`kpi_month_plans`) — เทียบ "ถึงเดือนนี้" ไม่ใช่เทียบเป้าทั้งปี ────────────
+   เคสต้นเรื่อง: 100P / Annual Sales per Head / TS Academy เป็น KPI สะสม ⇒ เทียบเป้าทั้งปี
+   ตั้งแต่กลางปีแล้วแดงเสมอ (docs/OBEYA-KPI-SOURCES.md §12.4 ข้อ 2) */
+const sixMonths = (...v) => [...v, ...Array(12 - v.length).fill(null)];
+
+test('planProgress: KPI สะสม (sum) ครึ่งปี — เดินตามแผนต้องไม่ถูกมองว่าตก', () => {
+  const def = { target_compare: '>=', target_value: 12, kpi_catalog: { summary_mode: 'sum' } };
+  const r = planProgress({
+    actual: sixMonths(1, 1, 1, 1, 1, 1),   // Σ = 6 · เป้าทั้งปี 12 ⇒ scoreDef จะได้ 0
+    plan:   sixMonths(1, 1, 1, 1, 1, 1),   // แผนถึง มิ.ย. = 6
+    def,
+  });
+  assert.equal(r.upTo, 6);
+  assert.equal(r.months, 6);
+  assert.equal(r.actual, 6);
+  assert.equal(r.plan, 6);
+  assert.equal(r.diff, 0);
+  assert.equal(r.onTrack, true, 'ทำได้เท่าแผน = ตามแผน');
+  assert.equal(r.dir, 'up');
+  // คะแนนทางการยังต้องเป็นของ scoreDef เหมือนเดิม — ตัวนี้ไม่ไปยุ่ง
+  assert.equal(scoreDef(6, def).level, 0, 'planProgress ห้ามเปลี่ยนคะแนนทางการ');
+});
+
+test('planProgress: KPI ยิ่งน้อยยิ่งดี — ต่ำกว่าแผน = ตามแผน', () => {
+  const def = { target_compare: '<=', target_value: 100, kpi_catalog: { summary_mode: 'average' } };
+  const r = planProgress({ actual: sixMonths(90, 95), plan: sixMonths(100, 100), def });
+  assert.equal(r.dir, 'down');
+  assert.equal(r.actual, 92.5);
+  assert.equal(r.plan, 100);
+  assert.equal(r.onTrack, true);
+  assert.ok(r.diff < 0);
+});
+
+test('planProgress: เดือนที่ยังไม่ตั้งแผน ต้องถูกข้ามและนับไว้ ไม่ใช่รวมแล้วขึ้นว่านำแผน', () => {
+  const def = { target_compare: '>=', target_value: 12, kpi_catalog: { summary_mode: 'sum' } };
+  const r = planProgress({
+    actual: sixMonths(1, 1, 1, 1),
+    plan:   sixMonths(2, null, 2, null),   // ตั้งแผนแค่ 2 เดือน
+    def,
+  });
+  assert.equal(r.months, 2, 'เทียบเฉพาะเดือนที่มีทั้งแผนและผล');
+  assert.equal(r.skipped, 2, 'เดือนที่มีผลแต่ไม่มีแผน ต้องรายงานจำนวน');
+  assert.equal(r.actual, 2, 'Σ ผลเฉพาะ 2 เดือนที่เทียบได้');
+  assert.equal(r.plan, 4);
+  assert.equal(r.onTrack, false, 'ทำได้ 2 จากแผน 4 = ช้ากว่าแผน');
+});
+
+test('planProgress: ไม่มีแผน / ไม่มีผล / ไม่ทับกันเลย = null (ห้ามเดา)', () => {
+  const def = { target_compare: '>=', target_value: 10 };
+  assert.equal(planProgress({ actual: sixMonths(1, 2), plan: [], def }), null, 'ไม่มีแผน');
+  assert.equal(planProgress({ actual: [], plan: sixMonths(1, 2), def }), null, 'ไม่มีผลจริง');
+  assert.equal(planProgress({ actual: sixMonths(1), plan: [null, 5], def }), null, 'เดือนไม่ทับกัน');
+  assert.equal(planProgress(), null, 'เรียกเปล่าๆ ต้องไม่ระเบิด');
+});
+
+test('planProgress: ไม่รู้ทิศทางของเป้า = onTrack null (ไม่ใช่ false)', () => {
+  const r = planProgress({ actual: sixMonths(5), plan: sixMonths(4), def: { kpi_catalog: { summary_mode: 'average' } } });
+  assert.equal(r.onTrack, null);
+  assert.equal(r.dir, null);
+  assert.equal(r.diff, 1, 'ยังบอกส่วนต่างได้ แค่ตัดสินไม่ได้');
+});
+
+test('planProgress: mode rate ถอยมาเฉลี่ย + ติดป้าย approx (แผนไม่มียอดดิบให้หาร)', () => {
+  const def = { target_compare: '<=', target_value: 300, kpi_catalog: { summary_mode: 'rate' } };
+  const r = planProgress({ actual: sixMonths(400, 200), plan: sixMonths(300, 300), def });
+  assert.equal(r.approx, true);
+  assert.equal(r.mode, 'average');
+  assert.equal(r.actual, 300);
+});
+
+test('planProgress: max = ตัวสะสม เอาค่าล่าสุด/สูงสุด ไม่ใช่บวกกัน', () => {
+  const def = { target_compare: '>=', target_value: 100, kpi_catalog: { summary_mode: 'max' } };
+  const r = planProgress({ actual: sixMonths(20, 45, 60), plan: sixMonths(25, 50, 75), def });
+  assert.equal(r.actual, 60);
+  assert.equal(r.plan, 75);
+  assert.equal(r.onTrack, false);
+});
+
+test('planProgress: upTo กำหนดเองได้ และไม่หลุดกรอบ 1-12', () => {
+  const def = { target_compare: '>=', target_value: 12, kpi_catalog: { summary_mode: 'sum' } };
+  const a = sixMonths(1, 1, 1, 1, 1, 1), p = sixMonths(1, 1, 1, 1, 1, 1);
+  assert.equal(planProgress({ actual: a, plan: p, def, upTo: 3 }).actual, 3);
+  assert.equal(planProgress({ actual: a, plan: p, def, upTo: 99 }).months, 6, 'เกิน 12 ถูกตัดลงมา');
+  assert.equal(planProgress({ actual: a, plan: p, def, upTo: 0 }), null);
 });
