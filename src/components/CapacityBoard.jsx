@@ -1,6 +1,6 @@
 import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer, LabelList } from 'recharts';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -11,6 +11,7 @@ import { pairLoadTotal } from '../utils/pairTotals';
 import {
   SEED_PATTERNS, DAY_SOURCE_LABEL, monthDayCounts, capacityRow, oeePair,
 } from '../utils/capacityPatterns';
+import { jphTable, jphSummary } from '../utils/jph';
 
 /* ─── 📊 Capacity — แท็บใน /production-plan (2026-09-24) ────────────────────────
    user ส่งสไลด์ `Capacity_TSATP.4_update_June_26.pptx` มาพร้อมภาพหน้านี้ แล้วบอกว่า
@@ -30,12 +31,23 @@ const th   = { padding:'6px 8px', borderBottom:'1px solid var(--border)', fontSi
 const td   = { padding:'5px 8px', borderBottom:'1px solid var(--border2)', fontSize:12, textAlign:'right', whiteSpace:'nowrap' };
 const btn  = (bg, color='#fff') => ({ padding:'6px 12px', borderRadius:8, border:'none', cursor:'pointer', fontSize:12, fontWeight:700, background:bg, color, fontFamily:'var(--font-body)' });
 const hr   = (v) => (v == null ? '—' : Math.round(v).toLocaleString());
+const n1   = (v) => (v == null ? '—' : (Math.round(v * 10) / 10).toLocaleString());
+const pct  = (v) => (v == null ? '—' : `${(v * 100).toFixed(0)}%`);
+/* 🔴 พาร์ทที่ทะเบียนไม่ระบุลูกค้า ต้องมีถังรับ ห้ามตกหาย (ผลรวมแยกลูกค้า = ยอดรวม) */
+const NO_CUST = '— ไม่ระบุลูกค้า —';
+const FLAG_META = {
+  ok:         { label: '✅ เทียบได้',      color: '#22c55e' },
+  mismatch:   { label: '⚠️ ไม่สอดคล้อง',   color: '#f59e0b' },
+  ct_suspect: { label: '🔴 CT น่าจะผิด',    color: '#ef4444' },
+  no_ct:      { label: '➖ ไม่มี CT',       color: 'var(--muted)' },
+  no_actual:  { label: '➖ ไม่มีของจริง',   color: 'var(--muted)' },
+};
 const monthLabel = (mk) => {
   const [y, m] = mk.split('-');
   return `${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][Number(m) - 1]} ${String(Number(y) + 543).slice(-2)}`;
 };
 
-export default function CapacityBoard({ role, scope, lines, months, calMap, demandByMonth, ctOf, lineOfMat, pairOf, lineOee }) {
+export default function CapacityBoard({ role, scope, lines, months, calMap, demandByMonth, ctOf, lineOfMat, pairOf, lineOee, estOf, netMin, customerOf, nameOfMat }) {
   const canEdit = can('production_plan', 'edit', role) || can('master_data', 'manage', role);
   const [patterns, setPatterns] = useState(SEED_PATTERNS);
   const [patErr, setPatErr]     = useState(false);   // โหลดทะเบียนไม่ได้ = ใช้ค่า seed แต่ต้องบอกบนจอ
@@ -89,18 +101,53 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       const matQty = demandByMonth?.[mk] || {};
       const loadByMat = {};     // ชั่วโมงมาตรฐานต่อ mat — ยุบคู่ทีหลัง บวกทันทีคือนับ 2 เท่า
       let pcs = 0, noCt = 0;
+      /* แยกยอดตามลูกค้า (คำขอ user 25/09 — เดิมมีแต่ผลรวม)
+         🔴 พาร์ทที่ทะเบียนไม่ได้ระบุลูกค้า ต้องมีถังรับ "ไม่ระบุลูกค้า" ห้ามหายจากผลรวม
+            (ผลรวมของคอลัมน์แยกลูกค้าต้องเท่ากับยอดรวมเสมอ — มีเทสของกฎนี้ในหน้าอื่นแล้ว) */
+      const byCust = {};
       Object.entries(matQty).forEach(([mat, qty]) => {
         if (lineOfMat(mat) !== activeLine.name || !(qty > 0)) return;
         pcs += qty;
+        const cu = customerOf?.(mat) || NO_CUST;
+        byCust[cu] = (byCust[cu] || 0) + qty;
         const ct = ctOf(mat);
         if (ct > 0) loadByMat[mat] = (loadByMat[mat] || 0) + (qty * ct) / 3600;
         else noCt += qty;      // ไม่มี CT = คิดภาระไม่ได้ ห้ามเงียบ
       });
       const workloadHr = pairLoadTotal(loadByMat, pairOf);
       const dayCounts = monthDayCounts(mk, calMap);
-      return { mk, pcs, noCt, dayCounts, ...capacityRow({ workloadHr, oee: usedOee, patterns, dayCounts }) };
+      return { mk, pcs, noCt, byCust, dayCounts, ...capacityRow({ workloadHr, oee: usedOee, patterns, dayCounts }) };
     });
-  }, [activeLine, months, demandByMonth, calMap, ctOf, lineOfMat, pairOf, patterns, usedOee]);
+  }, [activeLine, months, demandByMonth, calMap, ctOf, lineOfMat, pairOf, patterns, usedOee, customerOf]);
+
+  /* ลูกค้าที่มียอดในไลน์นี้ เรียงยอดรวมมาก→น้อย · "ไม่ระบุลูกค้า" ไปท้ายเสมอ */
+  const custCols = useMemo(() => {
+    const tot = {};
+    rows.forEach(r => Object.entries(r.byCust || {}).forEach(([c, q]) => { tot[c] = (tot[c] || 0) + q; }));
+    return Object.entries(tot)
+      .sort((a, b) => (a[0] === NO_CUST ? 1 : b[0] === NO_CUST ? -1 : b[1] - a[1]))
+      .map(([c, q]) => ({ customer: c, total: q }));
+  }, [rows]);
+
+  /* ⏱️ JPH — มาตรฐาน vs ของจริง (คำขอ user 25/09) · สูตรอยู่ utils/jph.js (มีเทส 18 เคส)
+     ใช้ "ยอดรวมทั้ง 12 เดือน" เป็นน้ำหนัก เพื่อให้พาร์ทที่ผลิตเยอะมีผลต่อค่าเฉลี่ยมากกว่า */
+  const jph = useMemo(() => {
+    if (!activeLine) return { rows: [], sum: null };
+    const qty = {};
+    (months || []).forEach(mk => {
+      Object.entries(demandByMonth?.[mk] || {}).forEach(([mat, q]) => {
+        if (lineOfMat(mat) !== activeLine.name || !(q > 0)) return;
+        qty[mat] = (qty[mat] || 0) + q;
+      });
+    });
+    const list = jphTable({
+      mats: Object.keys(qty), netMin, oee: usedOee,
+      ctOf, estOf, pairOf, customerOf,
+      qtyOf: (m) => qty[m],
+      nameOf: (m) => nameOfMat?.(m) || '',
+    });
+    return { rows: list, sum: jphSummary(list) };
+  }, [activeLine, months, demandByMonth, lineOfMat, netMin, usedOee, ctOf, estOf, pairOf, customerOf, nameOfMat]);
 
   const chartData = useMemo(() => rows.map(r => ({
     name: monthLabel(r.mk),
@@ -254,7 +301,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         </div>
         <div style={{ width:'100%', height:340 }}>
           <ResponsiveContainer>
-            <BarChart data={chartData} margin={{ top:8, right:16, left:0, bottom:4 }}>
+            <BarChart data={chartData} margin={{ top:22, right:16, left:0, bottom:4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
               <XAxis dataKey="name" tick={{ fontSize:11, fill:'var(--muted)' }} />
               <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize:11, fill:'var(--muted)' }} label={{ value:'ชม.', angle:-90, position:'insideLeft', fontSize:11, fill:'var(--muted)' }} />
@@ -265,8 +312,15 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                 <ReferenceLine key={p.key} y={p.hours} stroke={p.color || 'var(--muted)'} strokeDasharray="4 4"
                   label={{ value: p.label, position:'right', fontSize:10, fill:p.color || 'var(--muted)' }} />
               ))}
-              <Bar dataKey="ActWorkload" name="ภาระงาน (ActWorkload)" fill="#3b82f6" />
-              <Bar dataKey="RworkOEE"    name="ต้องใช้จริงเมื่อคิด OEE (RworkOEE)" fill="#ef4444" />
+              {/* ป้ายชั่วโมงบนหัวแท่ง (คำขอ user 25/09) — จอ TV อ่านตัวเลขจากแท่งเองไม่ได้ */}
+              <Bar dataKey="ActWorkload" name="ภาระงาน (ActWorkload)" fill="#3b82f6">
+                <LabelList dataKey="ActWorkload" position="top" fontSize={10} fill="#3b82f6"
+                  formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
+              </Bar>
+              <Bar dataKey="RworkOEE"    name="ต้องใช้จริงเมื่อคิด OEE (RworkOEE)" fill="#ef4444">
+                <LabelList dataKey="RworkOEE" position="top" fontSize={10} fill="#ef4444"
+                  formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -280,7 +334,12 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
             <thead><tr>
               <th style={{ ...th, textAlign:'left' }}>เดือน</th>
               <th style={th}>วันทำงาน</th>
-              <th style={th}>จำนวนชิ้น</th>
+              <th style={th}>จำนวนชิ้น<div style={{ fontWeight:400, fontSize:10 }}>รวมทุกลูกค้า</div></th>
+              {custCols.map(c => (
+                <th key={c.customer} style={{ ...th, color: c.customer === NO_CUST ? '#f59e0b' : 'var(--muted)' }}>
+                  {c.customer}<div style={{ fontWeight:400, fontSize:10 }}>ชิ้น</div>
+                </th>
+              ))}
               <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:10 }}>เพดาน (ชม.)</div></th>
               <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:10 }}>ภาระงาน (ชม.)</div></th>
               <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:10 }}>ต้องใช้จริง (ชม.)</div></th>
@@ -293,7 +352,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                 <tr key={r.mk}>
                   <td style={{ ...td, textAlign:'left', fontWeight:700 }}>{monthLabel(r.mk)}</td>
                   <td style={{ ...td, color:'var(--muted)' }}>{r.dayCounts.working}</td>
-                  <td style={td}>
+                  <td style={{ ...td, fontWeight:700 }}>
                     {r.pcs.toLocaleString()}
                     {r.noCt > 0 && (
                       <div style={{ fontSize:10, color:'#f59e0b' }} title="พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้">
@@ -301,6 +360,11 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                       </div>
                     )}
                   </td>
+                  {custCols.map(c => (
+                    <td key={c.customer} style={{ ...td, color: r.byCust?.[c.customer] ? 'var(--text2)' : 'var(--muted)' }}>
+                      {r.byCust?.[c.customer] ? r.byCust[c.customer].toLocaleString() : '—'}
+                    </td>
+                  ))}
                   <td style={td}>{hr(r.baseHours)}</td>
                   <td style={{ ...td, fontWeight:700 }}>{hr(r.workloadHr)}</td>
                   <td style={td}>{hr(r.rworkOee)}</td>
@@ -323,6 +387,90 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           <br />
           🔴 งานคู่ RH/LH ถูกยุบเป็น shot เดียวแล้ว (ปั๊มทีเดียวได้ 2 ชิ้น — บวกทั้งสองข้าง = ภาระ 2 เท่า)
         </div>
+      </div>
+
+      {/* ── ⏱️ JPH มาตรฐาน vs ของจริง (คำขอ user 25/09) ────────────────── */}
+      <div style={card}>
+        <div style={{ fontSize:14, fontWeight:800 }}>⏱️ JPH — ชิ้น/ชั่วโมง: มาตรฐาน vs ของจริง</div>
+        <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.7, marginBottom:10 }}>
+          <b>มาตรฐาน</b> = 3600 ÷ CT (เพดานทฤษฎี เครื่องเดินไม่หยุด) ·
+          <b> ควรได้ (×OEE)</b> = มาตรฐาน × OEE {usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'} ·
+          <b> ของจริง</b> = ยอดผลิตต่อกะ (median จากใบที่ปิดแล้ว) ÷ {netMin ? (netMin / 60).toFixed(2) : '—'} ชม.ทำงานสุทธิ
+          <br />
+          🔴 <b>“ของจริง” นับจากใบผลิตที่ปิดจริงเท่านั้น</b> — พาร์ทที่ใบปิดยังไม่ถึง 3 กะ ระบบมีแต่ค่าที่คำนวณจาก CT×OEE
+          ซึ่งเอามาเทียบกับ “ควรได้” ไม่ได้ (มันคือตัวเลขเดียวกัน) จึงขึ้นว่า <b>ไม่มีของจริง</b>
+          <br />
+          🔴 <b>งานคู่ RH/LH ไม่คูณ 2</b> — CT คือเวลาต่อ 1 จังหวะ ชั่วโมงนั้นได้พาร์ทคู่อีกเท่าตัวพร้อมกัน (ติดป้าย 👯 ไว้)
+        </div>
+
+        {jph.sum && (
+          <div style={{ display:'flex', flexWrap:'wrap', gap:16, marginBottom:10, alignItems:'center' }}>
+            {[
+              ['JPH มาตรฐาน (ถ่วงยอด)', n1(jph.sum.avgStd), 'var(--text)'],
+              ['JPH ของจริง (ถ่วงยอด)', n1(jph.sum.avgActual), '#22c55e'],
+              ['ทำได้กี่ % ของมาตรฐาน', pct(jph.sum.avgRatio), '#f59e0b'],
+              ['OEE ที่ใช้เทียบ', usedOee ? pct(usedOee) : '—', '#3b82f6'],
+            ].map(([lab, v, c]) => (
+              <div key={lab}>
+                <div style={{ fontSize:11, color:'var(--muted)' }}>{lab}</div>
+                <div style={{ fontSize:19, fontWeight:800, color:c }}>{v}</div>
+              </div>
+            ))}
+            <div style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', maxWidth:330, lineHeight:1.6 }}>
+              เทียบได้ <b style={{ color:'var(--text)' }}>{jph.sum.comparable}</b> จาก {jph.sum.total} พาร์ท
+              {jph.sum.noCt > 0 && <> · ไม่มี CT {jph.sum.noCt}</>}
+              {jph.sum.noActual > 0 && <> · ไม่มีของจริง {jph.sum.noActual}</>}
+              {jph.sum.ctSuspect > 0 && <span style={{ color:'#ef4444' }}> · 🔴 CT น่าจะผิด {jph.sum.ctSuspect}</span>}
+              {jph.sum.mismatch > 0 && <span style={{ color:'#f59e0b' }}> · ⚠️ ไม่สอดคล้อง {jph.sum.mismatch}</span>}
+            </div>
+          </div>
+        )}
+
+        {!jph.rows.length ? (
+          <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทที่มีความต้องการในไลน์นี้</div>
+        ) : (
+          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius:8 }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', minWidth:940 }}>
+              <thead><tr>
+                {[['MAT / ชื่องาน', 'left'], ['ลูกค้า', 'left'], ['ยอด 12 ด. (ชิ้น)', 'right'], ['CT (วิ)', 'right'],
+                  ['JPH มาตรฐาน', 'right'], ['ควรได้ (×OEE)', 'right'], ['JPH ของจริง', 'right'],
+                  ['ทำได้ %', 'right'], ['สถานะ', 'left']].map(([h, al]) => (
+                  <th key={h} style={{ ...th, textAlign: al, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {jph.rows.map(r => {
+                  const m = FLAG_META[r.flag] || FLAG_META.ok;
+                  return (
+                    <tr key={r.mat_no}>
+                      <td style={{ ...td, textAlign:'left' }}>
+                        <span style={{ fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</span>
+                        {r.paired && <span title="งานคู่ RH/LH — 1 จังหวะได้ 2 ชิ้น"> 👯</span>}
+                        {r.name && <div style={{ fontSize:10, color:'var(--muted)', whiteSpace:'normal' }}>{r.name}</div>}
+                      </td>
+                      <td style={{ ...td, textAlign:'left', color: r.customer ? 'var(--text2)' : 'var(--muted)' }}>
+                        {r.customer || NO_CUST}
+                      </td>
+                      <td style={td}>{r.qty.toLocaleString()}</td>
+                      <td style={{ ...td, color:'var(--muted)' }}>{r.ct > 0 ? r.ct : '—'}</td>
+                      <td style={{ ...td, fontWeight:700 }}>{n1(r.std)}</td>
+                      <td style={{ ...td, color:'#3b82f6' }}>{n1(r.expected)}</td>
+                      <td style={{ ...td, fontWeight:800, color: r.actual == null ? 'var(--muted)' : '#22c55e' }}>{n1(r.actual)}</td>
+                      <td style={{ ...td, fontWeight:700, color: r.ratio == null ? 'var(--muted)' : m.color }}>{pct(r.ratio)}</td>
+                      <td style={{ ...td, textAlign:'left' }}>
+                        <span style={{ fontSize:11, fontWeight:700, color:m.color }}>{m.label}</span>
+                        {r.note && <div style={{ fontSize:10, color:'var(--muted)', whiteSpace:'normal', maxWidth:300 }}>{r.note}</div>}
+                        {r.flag !== 'no_actual' && r.n > 0 && (
+                          <div style={{ fontSize:10, color:'var(--muted)' }}>จาก {r.n} กะที่ปิดแล้ว</div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
