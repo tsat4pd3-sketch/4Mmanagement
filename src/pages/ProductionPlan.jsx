@@ -131,7 +131,7 @@ export default function ProductionPlan() {
           .gte('work_date', addDays(today, -2)).lte('work_date', addDays(today, DAILY_HORIZON + 200)),
         /* ⚠️ `pair_mat_no` ห้ามลืม — ขาดคอลัมน์นี้ = คู่ RH/LH จับกันไม่ติด แล้วโหลดถูกนับ 2 เท่าเงียบๆ
            (กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md · บั๊กที่ audit 22/09 จับได้) */
-        supabaseDR.from('dr_products').select('id, mat_no, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
+        supabaseDR.from('dr_products').select('id, mat_no, name, line_name, cycle_time_sec, p_no, pair_mat_no, customer').eq('is_active', true).not('mat_no', 'is', null),
         // 🌳 BOM ทุกแถว (ฐานจริง ~600 แถว) — ใช้ระเบิดความต้องการลงพาร์ทลูก ดู utils/demandExplode.js
         supabaseDR.from('bom_items').select('id, product_id, parent_mat, mat_no, qty_per_unit, uom, item_no'),
         /* 📦 buffer stock ของพาร์ทลูกที่ **STORE** — เอาไปหักความต้องการก่อนสั่งผลิตซ้ำ
@@ -173,7 +173,7 @@ export default function ProductionPlan() {
       const pmap = {};
       const pnoMap = {};
       (prods || []).forEach(p => {
-        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null, customer: p.customer || '' };
+        if (p.mat_no) pmap[p.mat_no] = { line: p.line_name, ct: p.cycle_time_sec || 0, pair: p.pair_mat_no || null, customer: p.customer || '', name: p.name || '' };
         if (p.p_no && p.mat_no) { const k = normMat(p.p_no); if (k && !pnoMap[k]) pnoMap[k] = p.mat_no; } // เลขลูกค้า (p_no) → SAP
       });
       setProdByMat(pmap);
@@ -281,6 +281,13 @@ export default function ProductionPlan() {
   // CT ดิบ (วินาที/shot) — แท็บ 📊 Capacity คิดภาระงานจาก "เวลามาตรฐาน" ไม่ใช่กำลังผลิตจริง
   // (ใช้ของจริงแล้วหารด้วย OEE อีก = คิด OEE ซ้ำสองรอบ)
   const ctOf = useCallback((mat) => Number(prodByMat[mat]?.ct) || 0, [prodByMat]);
+  /* ⏱️ แท็บ 📊 Capacity — JPH มาตรฐาน vs ของจริง
+     🔴 ส่ง `est` ดิบ (มี `method`) ไม่ใช่แค่ `perShift` — utils/jph.js ต้องรู้ว่าค่านั้น
+        มาจากใบผลิตจริง (`actual`) หรือคำนวณจาก CT×OEE (`ct`) ถ้าไม่แยก จอจะเทียบตัวเองกับตัวเอง */
+  const estOf = useCallback((mat) => { const rid = resolveMat(mat); return rid ? capByMat[rid] : undefined; },
+    [resolveMat, capByMat]);
+  const customerOf = useCallback((mat) => prodByMat[mat]?.customer || null, [prodByMat]);
+  const nameOfMat = useCallback((mat) => prodByMat[mat]?.name || '', [prodByMat]);
   const capMonths = useMemo(() => Array.from({ length: CAPACITY_HORIZON }, (_, i) => {
     const d = new Date(`${today.slice(0, 7)}-01T12:00:00`); d.setMonth(d.getMonth() + i);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -753,7 +760,7 @@ export default function ProductionPlan() {
           role={role} scope={{ role, lineId: userLineId, sections: scopeSecs }}
           lines={viewLines} months={capMonths} calMap={calMap}
           demandByMonth={demandPcs.byMonth} ctOf={ctOf} lineOfMat={lineOfMat} pairOf={pairOf}
-          lineOee={lineOee}
+          lineOee={lineOee} estOf={estOf} netMin={shiftNet?.netMin} customerOf={customerOf} nameOfMat={nameOfMat}
         />
       ) : tab === 'daily' ? (
         daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
