@@ -37,6 +37,9 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from './PageHeader';
 import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
+import BoardPager from './BoardPager';
+import useFitHeight from '../utils/useFitHeight';
+import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
 import LineSelect from './LineSelect';
 import PersonSelect from './PersonSelect';
 import { toast } from './Toast';
@@ -459,6 +462,38 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const [board, setBoard] = useState(false);            // โหมดจอ TV = ซ่อนหัวเพจ เต็มจอ
   const wrapRef = useRef(null);
   const grid = useSheetGrid(wrapRef, 10);
+
+  /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
+     แผ่นของบอร์ดนี้ตายตัว 8 ใบ = 10 ช่อง (OEE กับ ACTION BOARD กว้าง 2 ช่อง)
+     🔴 `span` ในลิสต์นี้ **ต้องตรงกับ `span=` บนแผ่นจริง** ไม่งั้นตัวแบ่งหน้านับช่องผิด
+        แล้วหน้าหนึ่งจะมีแผ่นเกินกริด ⇒ กลับไปล้นอีก · แบ่งเฉพาะตอน `fit` (จอกว้าง) */
+  const SHEETS = [
+    { key: 'S', title: 'S ความปลอดภัย' }, { key: 'Q', title: 'Q คุณภาพ' },
+    { key: 'D', title: 'D ส่งมอบ' }, { key: 'C', title: 'C ต้นทุน' }, { key: 'M', title: 'M กำลังคน' },
+    { key: 'oee', title: 'OEE เทียบเป้า', span: 2 },
+    { key: 'why', title: 'ทำไมถึงหลุดเป้า' },
+    { key: 'action', title: 'ACTION BOARD', span: 2 },
+  ];
+  /* ⛔ ความสูงกริด = **วัดจริงจนถึงก้นจอ** ห้ามเดา `78vh` (ของเดิมเดาไว้ รวมกับหัวเพจแล้วเกิน
+     1 จอ ⇒ หน้าเลื่อนขึ้นลงได้ = อาการที่ user ทักมา 25/09)
+     ⚠️ ต้องประกาศ **ก่อน** คำนวณจำนวนหน้า เพราะจำนวนหน้าขึ้นกับความสูงที่วัดได้
+     `null` = ที่ไม่พอจริง (มือถือหัวเพจสูง) ⇒ ถอยไปโหมดเลื่อนแบบเดิม */
+  const [fitRef, availH] = useFitHeight(12, 120);
+  const fitOn = availH != null;
+
+  /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
+     ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
+  const rowsFit = grid.fit
+    ? (grid.rows || 1)
+    : Math.max(1, Math.floor(((grid.bh || 0) + GAP) / ((grid.ch || 1) + GAP)));
+  const perPage = Math.max(1, (grid.cols || 1) * rowsFit);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const pages = useMemo(() => (fitOn ? packPages(SHEETS, perPage) : [SHEETS]), [perPage, fitOn]);
+  const [pgRaw, setPg] = useState(0);
+  const pg = clampPage(pgRaw, pages.length);
+  const has = (key) => (pages[pg] || []).some((x) => x.key === key);
+  const pgLabels = useMemo(() => pageLabels(pages, (x) => x?.title), [pages]);
+
   const { cols, cw, ch, fit, k } = grid;
   const fs = (n) => Math.max(11, Math.round(n * k));
 
@@ -570,10 +605,14 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     );
   };
 
+  const rowsUsed = Math.max(1, Math.ceil(cellsUsed((pages[pg] || [])) / (cols || 1)));
   const sheetsBox = {
     display: 'grid', gap: GAP, alignContent: 'start', justifyContent: 'center',
     gridTemplateColumns: cw ? `repeat(${cols}, ${cw}px)` : `repeat(${cols}, 1fr)`,
-    gridAutoRows: ch ? `${ch}px` : 'auto',
+    /* แถวของ "หน้านี้" เท่านั้น แล้วยืดเต็มกล่อง — หน้าสุดท้ายที่มีแผ่นไม่ครบแถวจะได้ไม่เหลือ
+       ที่ว่างเป็นแถบใหญ่ใต้บอร์ด (เห็นชัดตอนแบ่งหน้าบนจอเตี้ย) · จอที่เต็มพอดีได้ผลเท่าเดิมเป๊ะ */
+    gridTemplateRows: `repeat(${rowsUsed}, minmax(0, 1fr))`,
+    height: '100%',
   };
 
   const axisSheet = (key) => OBEYA_AXES.find(a => a.key === key);
@@ -706,20 +745,20 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       {/* ⚠️ กล่องนอก = ที่ใส่ padding · กล่องใน (wrapRef) = ที่ถูกวัด **ห้ามมี padding**
           `clientHeight` รวม padding เสมอ ⇒ ถ้าวัดกล่องที่มี padding แผ่นจะสูงเกินไป
           แล้วแถวล่างถูก `overflow: clip` ตัดหายเงียบๆ (เจอจริงตอนวัดด้วย Playwright) */}
-      <div style={{
+      <div ref={fitRef} style={{
         display: 'flex', minHeight: 0,
-        flex: board ? 1 : 'none', height: board ? undefined : '78vh', padding: board ? 8 : 0,
+        flex: board ? 1 : 'none', height: board ? undefined : (fitOn ? `${availH}px` : undefined),
+        padding: board ? 8 : 0,
       }}>
-      <div ref={wrapRef} style={{
-        flex: 1, minWidth: 0, minHeight: 0,
-        overflowY: fit ? 'clip' : 'auto', overflowX: 'clip',
-      }}>
+      {/* 🔴 `clip` เมื่อคุมความสูงได้ · ที่ไม่พอจริง = ถอยไป `auto` ยอมให้เลื่อน (ดู useFitHeight) */}
+      <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn ? 'clip' : 'auto' }}>
         {loading && (isYear ? !yr : !fSess.length) ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
         ) : (
         <div style={sheetsBox}>
 
           {/* ═══ S — ความปลอดภัย ═══ */}
+          {has('S') && (
           <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title="S ความปลอดภัย"
             sub={`${ytdTag}ใส่ PPE ครบตอนเช็คชื่อ (leading)`} big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
             stat={statusWhy(kS.value, kS.target, 'up', '%')}
@@ -742,8 +781,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในช่วงนี้" />}
           </Sheet>
+          )}
 
           {/* ═══ Q — คุณภาพ ═══ */}
+          {has('Q') && (
           <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title="Q คุณภาพ"
             sub={`${ytdTag}%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
@@ -763,8 +804,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในช่วงนี้" />}
           </Sheet>
+          )}
 
           {/* ═══ D — ส่งมอบ ═══ */}
+          {has('D') && (
           <Sheet k={k} cw={cw} icon={axisSheet('D').icon} title="D ส่งมอบ"
             sub={`${ytdTag}ผลิตได้ตามแผนในใบงาน`} big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
             delta={gapToTarget(kD.value, kD.target, 'up')} stat={statusWhy(kD.value, kD.target, 'up', '%')}
@@ -788,8 +831,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีใบงานที่มีเป้าในช่วงนี้" />}
           </Sheet>
+          )}
 
           {/* ═══ C — ต้นทุน ═══ */}
+          {has('C') && (
           <Sheet k={k} cw={cw} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
             sub={`${isYear ? "รวมทั้งปี · " : ""}เครื่องหยุดนอกแผน + ของเสีย`}
             big={kC.value != null ? fmtBaht(kC.value) : '—'}
@@ -810,8 +855,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />}
           </Sheet>
+          )}
 
           {/* ═══ M — กำลังคน ═══ */}
+          {has('M') && (
           <Sheet k={k} cw={cw} icon={axisSheet('M').icon} title="M กำลังคน"
             sub={`${ytdTag}มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
             big={kM.value ?? '—'} unit={kM.value != null ? '%' : ''}
@@ -832,8 +879,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในช่วงนี้" />}
           </Sheet>
+          )}
 
           {/* ═══ OEE — แผ่นแนวนอน (2 ช่อง) ═══ */}
+          {has('oee') && (
           <Sheet k={k} cw={cw} span={2} icon="⚙️" title="OEE เทียบเป้า"
             sub={`${ytdTag}A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
             big={kOee.value ?? '—'} unit={kOee.value != null ? '%' : ''}
@@ -865,8 +914,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในช่วงนี้" />}
           </Sheet>
+          )}
 
           {/* ═══ ทำไมหลุดเป้า — Pareto ═══ */}
+          {has('why') && (
           <Sheet k={k} cw={cw} icon="🔎" title="ทำไมถึงหลุดเป้า"
             sub={`${isYear ? 'รวมทั้งปี · ' : ''}เวลาเครื่องหยุดนอกแผน (นาที)`}
             big={pareto.total ? pareto.total.toLocaleString() : '—'} unit={pareto.total ? 'นาที' : ''}
@@ -890,8 +941,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ไม่มีเวลาเครื่องหยุดนอกแผน" />}
           </Sheet>
+          )}
 
           {/* ═══ ACTION BOARD — แผ่นแนวนอน (2 ช่อง) · ที่เดียวของหน้าที่เขียนข้อมูลได้ ═══ */}
+          {has('action') && (
           <Sheet k={k} cw={cw} span={2} icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
             sub={health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}
             big={health.overdue.length || (health.empty ? '0' : health.liveCount)}
@@ -963,11 +1016,14 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               )}
             </div>
           </Sheet>
+          )}
 
         </div>
         )}
       </div>
       </div>
+      {/* 📖 แถบเปลี่ยนหน้า — โผล่เฉพาะตอนมีมากกว่า 1 หน้า */}
+      <BoardPager page={pg} count={pages.length} onPage={setPg} labels={pgLabels} compact={board} />
 
       {/* ── modal ตั้ง action ─────────────────────────────────────────────────── */}
       {modal && (

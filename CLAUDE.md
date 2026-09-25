@@ -227,14 +227,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
-หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: Layer Process Audit Plan (แผนตรวจรายเดือนต่อไลน์+กะ) + Layer Process Aud…
+หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต — ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
 
 ## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
 
-หน้า `/scrap-report` (`ScrapReport.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" ที่เขียนมือ · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100% · ⚠️ `production_lines` อยู่ M…
+หน้า `/scrap-report` (`ScrapReport.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100%
 > 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
 
 ---
@@ -283,7 +283,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
 
-หน้า `AdoptionOutlook.jsx` (กลุ่มภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลมองเห็นกันหมด เราจะมองเห็นมิติไหนได้บ้าง" (สอบกลับย้อนหลังถึงไหน · รู้ตัวก่อนคุณภาพหลุดไหม · เครื่องเบี่ยงเบนหรือยัง · กระทบการจัดส่…
+หน้า `AdoptionOutlook.jsx` (ภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลเชื่อมกันหมด จะมองเห็นมิติไหนได้บ้าง" (สอบกลับ · เตือนก่อนคุณภาพหลุด · กระทบการส่ง)
 > 📄 รายละเอียดเต็ม → `docs/modules/adoption-outlook.md`
 
 ---
@@ -304,7 +304,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
 
-หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ "กำลังผลิตที่ทำได้จริง" → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · เฟส 1 อ่านอย่…
+หน้า `/production-plan` (ฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
 > 📄 รายละเอียดเต็ม → `docs/modules/production-plan.md`
 
 ---
@@ -419,7 +419,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
 
-แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ย้าย spare part list จากไฟล์ Excel เข้าระบบ: ค้นหาอะไหล่/ตำแหน่งชั้นวางได้เร็ว · ยอดคงเหลือตรงกับการเบิกจริงในใบ MO · จัด Rank A/B/C อัตโนมัติ ·…
+แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
 > 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md` (1 หัวข้อย่อย)
 
 ---
@@ -455,7 +455,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
 
-หน้า `/pm-coordination` (`PmCoordination.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — ทำ "ใบแจ้งแผน" แบบเมลที่ MTN ส่งประสานงาน (เช่น "RE: แผนการ Cleaning Cutting Head เครื่อง Laser LS-10") สำหรับงาน PM/แก้เครื่องที่กินหลายวัน +…
+หน้า `/pm-coordination` (`PmCoordination.jsx`, การตรวจสอบและซ่อมบำรุง) — "ใบแจ้งแผน" ที่ MTN ส่งประสานงานกับผลิต สำหรับงาน PM/แก้เครื่องที่กินหลายวัน
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-coordination.md`
 
 ---
@@ -502,7 +502,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
-หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม ใน NAV_GROUP_ORDER — ยุบจากหมวด “วิศวกรรม (PE)” เดิม 2026-08-27) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (A…
+หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม) — โมดูลทีม Process Engineering: Process Flow / PFMEA / Control Plan ถอดโครงจากเอกสารจริง TSAT
 · **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว 2026-09-24** · seed 43 กระบวนการ รอ PE ยืนยันทั้งหมด)
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
@@ -565,7 +565,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
 
-หน้า `WorkforceInsight.jsx` (กลุ่มพนักงาน & ทักษะ) — อ่านอย่างเดียว ไม่มี resource:action ใหม่ (ไม่มีปุ่มเขียนข้อมูล) · 3 แท็บจากคำขอ user เดียวกัน ("insight turn over + สรุปกำลังคนแต่ละวันเป็นกราฟ" + "สรุปการเปลี่ยนตำแห…
+หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
 > 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md` (3 หัวข้อย่อย)
 
 ---
@@ -579,8 +579,20 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
 
-หน้า OrderTrace (กลุ่มวิเคราะห์ & รายงาน) — 2 แท็บ (`useTabParam`): `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการที่แจ้ง) · สแกน/ค้น `prod_no` (บาร์โค้ด kanban) → เห็นทุกเหตุการณ์ของใบนั้น + สถานการณ์รอบข้าง ณ เ…
+หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
 > 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md` (2 หัวข้อย่อย)
+
+---
+
+## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
+
+กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
+- **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push (กระดิ่งวัดจริง 25/09: **19,095 แถว/7 วัน อ่าน 7.3%**)
+- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว ห้ามแตกรายตัว**)
+  — ชื่อในใบ ≠ งานส่วนตัว (วัดจริง: ใบซ่อมรอตรวจรับ 168 ใบ มีแค่ 10 ชื่อ ส่วนงานเดียว = คิวแผนก)
+- **🔴 badge นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
+- **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
+> 📄 `docs/modules/my-queue.md`
 
 ---
 
