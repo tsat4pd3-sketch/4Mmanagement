@@ -6,7 +6,10 @@ import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFor
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
-import { printProdProblemReport, buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
+import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
+/* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
+   (2026-09-25 · user: "ใบบันทึกปัญหา ก็ไม่ได้เก็บข้อมูลหรอ เห็นหัวหน้าต้องปริ้นออกมาเก็บเป็นกระดาษทุกวัน") */
+import { issueProblemReport, reprintProblemReport, loadProblemDocs, docMatchesNow } from '../lib/prodProblemDoc';
 import { loadProcessTypes, activeProcessTypes, procDisplay, procColor } from '../utils/processTypes';
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
@@ -3778,13 +3781,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {problemSheet && selSession && (() => {
           const doPrint = async () => {
             const title = problemSheet.title;
-            setProblemSheet(null);
-            const ok = await printProdProblemReport({
+            setProblemSheet(v => ({ ...v, busy: true }));
+            /* ออกใบ = เขียนทะเบียนก่อน แล้วค่อยพิมพ์ (กฎข้อ 1 ของ prodProblemDoc)
+               เขียนไม่สำเร็จ = **ไม่พิมพ์** และบอกเหตุผล — ใบที่ไม่มีเลขที่/ไม่มีใครรู้ว่ามี คือของเดิมที่แก้อยู่ */
+            const r = await issueProblemReport({
               session: selSession, downtimes: dtLogs, defects: defectLogs,
               section: lineMap?.[selSession.line_name]?.section || null,
-              extra: { problem: title },
+              title, actorName: fullName,   // uid เติมโดย withActorStamp (DR_STEP_ACTORS)
             });
-            if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+            if (!r.ok) { setProblemSheet(v => v && { ...v, busy: false }); toast.error(r.reason); return; }
+            setProblemSheet(null);
+            if (!r.printed) toast.error(`บันทึกใบ ${r.doc.doc_no} แล้ว แต่เบราว์เซอร์บล็อก popup — พิมพ์ซ้ำได้จากแท็บ 📋 ประวัติ`);
+            else toast.success(`ออกใบ ${r.doc.doc_no} แล้ว — พิมพ์ซ้ำย้อนหลังได้ที่แท็บ 📋 ประวัติ`);
           };
           return (
           <div className="overlay" style={{ zIndex: 2200 }}>
@@ -3801,11 +3809,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ระบบเสนอจากรายการที่กินเวลา/จำนวนมากสุดของกะนี้ — แก้ทับหรือล้างทิ้งได้ ช่องอื่นในใบดึงจากที่บันทึกไว้แล้วอัตโนมัติ
+                <br />📌 กดแล้วระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — พิมพ์ซ้ำใบเดิมได้ที่แท็บ 📋 ประวัติ ไม่ต้องเก็บกระดาษเอง
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setProblemSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={doPrint} style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700 }}>
-                  🖨 พิมพ์ใบรายงาน
+                <button onClick={doPrint} disabled={problemSheet.busy}
+                  style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700, opacity: problemSheet.busy ? 0.6 : 1 }}>
+                  {problemSheet.busy ? '⏳ กำลังออกใบ…' : '🖨 ออกใบ + พิมพ์'}
                 </button>
               </div>
             </div>
@@ -5725,7 +5735,10 @@ function HistoryTab({ role }) {
      เดิมปุ่มนี้อยู่แท็บ Live ที่เดียว ซึ่ง query `.in('status',['open','pending_close'])`
      ⇒ **ปิดกะเมื่อไหร่ ใบนั้นออกใหม่ไม่ได้อีกเลยตลอดกาล** — หน้างานเลยต้องเซฟไฟล์เก็บเองทุกวัน
      (บั๊กคลาสเดียวกับ "ช่องตาย" ที่บันทึกไว้ 2026-08-28: ความสามารถมีอยู่ แต่ไม่มีทางเข้าถึง) */
-  const [histSheet, setHistSheet] = useState(null);   // { session, title }
+  const [histSheet, setHistSheet] = useState(null);   // { session, title, busy }
+  /* ใบที่ **เคยออกไปแล้ว** ของแต่ละกะ — { session_id: [row,…] }
+     พิมพ์ซ้ำจาก snapshot ของใบนั้นเสมอ ไม่ใช่ generate ใหม่ (ใบเลขเดียวกันต้องเป็นเนื้อเดียวกัน) */
+  const [probDocs, setProbDocs] = useState({});
   /* 🛠 ลงวิธีแก้ไข/ผลตรวจติดตาม **ย้อนหลัง** (2026-09-25 · user: "ถ้าจะปริ้นย้อนหลัง ก็ต้องดึงข้อมูลที่เคยลงไว้สิ")
      เดิม `ProblemFixModal` อยู่แท็บ Live ที่เดียว ⇒ ปิดกะแล้วลงวิธีแก้ไขไม่ได้อีกเลย
      ⇒ ใบรายงานปัญหาที่ออกย้อนหลังมีช่อง "วิธีแก้ไข/ผลตรวจติดตาม" ว่าง และไม่มีทางเติม
@@ -5798,6 +5811,8 @@ function HistoryTab({ role }) {
     setSessions(ss || []);
     setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
+    // ใบรายงานปัญหาที่เคยออกของกะเหล่านี้ (โหลดพร้อมกัน — ป้ายเลขที่ใบต้องเห็นตั้งแต่ยังไม่กางแถว)
+    setProbDocs(await loadProblemDocs((ss || []).map(x => x.id)));
   }, [filter, role, scopeSecs, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
@@ -5824,7 +5839,8 @@ function HistoryTab({ role }) {
         .select('*, dr_downtime_types(name_th, color, category)')
         .eq('session_id', sessionId).order('started_at'),
       supabaseDR.from('defect_logs')
-        .select('*, dr_defect_types(name_th, color), prod_orders(prod_no)')
+        // mat_no/part_name ต้องมาด้วย — โมดัล 🛠 ใช้จับคู่ WI การซ่อมจากเลขพาร์ท (WI-PD3-069 §6)
+        .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, mat_no, part_name)')
         .eq('session_id', sessionId).order('logged_at'),
       supabaseDR.from('prod_orders')
         .select('*')
@@ -5889,7 +5905,26 @@ function HistoryTab({ role }) {
                     </div>
                   )}
                   <span style={{ color: 'var(--muted)', fontSize: 16 }}>{expanded === s.id ? '▲' : '▼'}</span>
-                  {/* 📝 ออกใบรายงานปัญหาย้อนหลัง — โชว์ทุกแถว **ไม่ต้องกางก่อน** (คนหาไม่เจอคือปัญหาเดิม)
+                  {/* 🧾 ใบรายงานปัญหาที่ **เคยออกไปแล้ว** ของกะนี้ — กดพิมพ์ซ้ำใบเดิมจาก snapshot
+                      (FM-PD1-019 เก็บ 1 ปี · ใบเลขเดียวกันต้องเป็นเนื้อเดียวกับที่ยื่นไป ห้ามพิมพ์ของใหม่ทับ)
+                      ขึ้นก่อนปุ่มออกใบใหม่ เพราะ "ของที่มีอยู่แล้ว" คือสิ่งที่คนมาตามหา */}
+                  {(probDocs[s.id] || []).map(doc => (
+                    <button key={doc.id}
+                      onClick={async e => {
+                        e.stopPropagation();
+                        const r = await reprintProblemReport({ doc, session: s });
+                        if (!r.ok) { toast.error(r.reason); return; }
+                        if (r.countError) toast.info('พิมพ์แล้ว — แต่บันทึกจำนวนครั้งที่พิมพ์ซ้ำไม่สำเร็จ');
+                        setProbDocs(m => ({ ...m, [s.id]: (m[s.id] || []).map(d =>
+                          d.id === doc.id ? { ...d, reprint_count: (Number(d.reprint_count) || 0) + 1 } : d) }));
+                      }}
+                      title={`พิมพ์ซ้ำใบเดิม ${doc.doc_no}\nปัญหา: ${doc.problem_title || '(ไม่ได้ระบุ)'}\nออกโดย ${doc.issued_by || '—'} ${doc.issued_at ? new Date(doc.issued_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : ''}${doc.reprint_count ? `\nพิมพ์ซ้ำแล้ว ${doc.reprint_count} ครั้ง` : ''}`}
+                      style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.45)', color: '#22c55e',
+                        borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      🧾 {doc.doc_no}
+                    </button>
+                  ))}
+                  {/* 📝 ออกใบ**ใหม่** ย้อนหลัง — โชว์ทุกแถว **ไม่ต้องกางก่อน** (คนหาไม่เจอคือปัญหาเดิม)
                       กดแล้วโหลดรายละเอียดกะนั้นให้เอง · กะที่ไม่มี downtime/ของเสียเลย = บอกตรงๆ ห้ามเงียบ */}
                   <button
                     onClick={async e => {
@@ -5901,12 +5936,21 @@ function HistoryTab({ role }) {
                         return;
                       }
                       const R = buildProblemReport({ downtimes: dts, defects: defs, minMinutes: PROBLEM_MIN_MINUTES });
-                      setHistSheet({ session: s, title: R.headline || '' });
+                      /* เคยออกใบไปแล้วและเนื้อยังตรงกับข้อมูลปัจจุบัน = เตือนก่อนออกใบซ้ำ
+                         (ออกใบใหม่ทั้งที่เนื้อเหมือนเดิม = เอกสารซ้ำซ้อนในแฟ้ม ตามหายากกว่าเดิม)
+                         เนื้อเปลี่ยนแล้ว = ออกใบใหม่ถูกต้อง ไม่ต้องเตือน */
+                      const same = (probDocs[s.id] || []).find(doc =>
+                        docMatchesNow(doc, { downtimes: dts, defects: defs }) === true);
+                      if (same && !window.confirm(
+                        `กะนี้ออกใบ ${same.doc_no} ไปแล้ว และเนื้อใบยังเหมือนเดิมทุกอย่าง\n\n`
+                        + 'ถ้าแค่อยากได้กระดาษอีกแผ่น ให้กดปุ่ม 🧾 เลขที่ใบ (พิมพ์ซ้ำใบเดิม) แทน\n'
+                        + 'กด OK = ออกใบใหม่อีกเลขหนึ่ง')) return;
+                      setHistSheet({ session: s, title: R.headline || '', dts, defs });
                     }}
-                    title="พิมพ์ใบรายงานปัญหาการผลิตของกะนี้ใหม่ (ดึงข้อมูลเดิมของกะมาเติมให้ — ออกใหม่ได้เสมอ)"
+                    title="ออกใบรายงานปัญหาการผลิตใบใหม่ของกะนี้ (ระบบออกเลขที่ใบ + เก็บเนื้อใบไว้ให้พิมพ์ซ้ำ)"
                     style={{ background: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: 6,
                       padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    📝 ใบรายงานปัญหา
+                    📝 ออกใบรายงานปัญหา
                   </button>
                   {canDeleteSession && (
                     <button
@@ -5930,6 +5974,33 @@ function HistoryTab({ role }) {
                   {s.close_approve_note && (
                     <div style={{ fontSize: 12, color: '#93c5fd', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 8, padding: '8px 12px' }}>
                       📝 หมายเหตุผู้อนุมัติ ({s.closed_by_name || '—'}): <b>{s.close_approve_note}</b>
+                    </div>
+                  )}
+                  {/* 🧾 ใบรายงานปัญหาที่ออกไปแล้วของกะนี้ + เตือนเมื่อข้อมูลปัจจุบัน "ไม่ตรงกับใบที่ยื่นไป"
+                      🔴 กฎความซื่อสัตย์ของจอ: ใบเลขเดียวกันต้องเป็นเนื้อเดียวกัน — ข้อมูลต้นทางถูกแก้ทีหลัง
+                         ระบบจะยังพิมพ์ "ใบเดิม" ให้ (ถูกต้องตามเอกสารที่ยื่นไป) แต่ต้องบอกบนจอว่าต่างแล้ว
+                         ไม่ใช่เงียบ และไม่ใช่พิมพ์ของใหม่ทับเลขเดิม */}
+                  {(probDocs[s.id] || []).length > 0 && (
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.6 }}>
+                      <b style={{ color: 'var(--text)' }}>🧾 ใบรายงานปัญหาที่ออกไปแล้ว</b> (FM-PD1-019 · เก็บ 1 ปี)
+                      {(probDocs[s.id] || []).map(doc => {
+                        const match = docMatchesNow(doc, { downtimes: dtMap[s.id] || [], defects: defectMap[s.id] || [] });
+                        return (
+                          <div key={doc.id} style={{ marginTop: 4 }}>
+                            <b style={{ color: '#22c55e' }}>{doc.doc_no}</b>
+                            {' · '}{doc.problem_title ? <>ปัญหา: <b style={{ color: 'var(--text)' }}>{doc.problem_title}</b></> : <i>ไม่ได้ระบุหัวเรื่อง</i>}
+                            {' · ออกโดย '}{doc.issued_by || '—'}
+                            {doc.issued_at && ` ${new Date(doc.issued_at).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`}
+                            {!!doc.reprint_count && ` · พิมพ์ซ้ำ ${doc.reprint_count} ครั้ง`}
+                            {match === false && (
+                              <div style={{ color: '#f59e0b', fontWeight: 700 }}>
+                                ⚠ ข้อมูลของกะนี้ถูกแก้หลังออกใบ — ปุ่ม 🧾 จะพิมพ์ <u>ใบเดิมที่ยื่นไป</u> ไม่ใช่ข้อมูลล่าสุด
+                                (อยากได้ใบตามข้อมูลใหม่ ให้กด 📝 ออกใบรายงานปัญหา = ได้เลขที่ใบใหม่)
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   {/* OEE detail row */}
@@ -6222,15 +6293,21 @@ function HistoryTab({ role }) {
         const hs = histSheet.session;
         const doPrint = async () => {
           const title = histSheet.title;
-          setHistSheet(null);
-          const ok = await printProdProblemReport({
+          setHistSheet(v => ({ ...v, busy: true }));
+          /* ออกใบ = เขียนทะเบียนก่อน แล้วค่อยพิมพ์ (กฎข้อ 1 ของ prodProblemDoc)
+             ใช้แถวที่ loadDetail คืนมาตอนกดปุ่ม ไม่พึ่ง dtMap/defectMap ที่อาจโดน invalidate ระหว่างทาง */
+          const r = await issueProblemReport({
             session: hs,
-            downtimes: dtMap[hs.id] || [],
-            defects: defectMap[hs.id] || [],
+            downtimes: histSheet.dts || dtMap[hs.id] || [],
+            defects: histSheet.defs || defectMap[hs.id] || [],
             section: (allLines || []).find(l => l.name === hs.line_name)?.section || null,
-            extra: { problem: title },
+            title, actorName: fullName,   // uid เติมโดย withActorStamp (DR_STEP_ACTORS)
           });
-          if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
+          if (!r.ok) { setHistSheet(v => v && { ...v, busy: false }); toast.error(r.reason); return; }
+          setHistSheet(null);
+          setProbDocs(m => ({ ...m, [hs.id]: [r.doc, ...(m[hs.id] || [])] }));
+          if (!r.printed) toast.error(`บันทึกใบ ${r.doc.doc_no} แล้ว แต่เบราว์เซอร์บล็อก popup — กดปุ่ม 🧾 ${r.doc.doc_no} เพื่อพิมพ์ซ้ำ`);
+          else toast.success(`ออกใบ ${r.doc.doc_no} แล้ว`);
         };
         return (
           <div className="overlay" style={{ zIndex: 2200 }}>
@@ -6247,10 +6324,14 @@ function HistoryTab({ role }) {
                 style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ออกใหม่ได้ทุกเมื่อ — ดึงจาก downtime/ของเสียที่บันทึกไว้ของกะนี้ <b>ไม่ต้องเซฟไฟล์เก็บเอง</b>
+                <br />📌 ระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — ครั้งต่อไปกดปุ่ม 🧾 เลขที่ใบ เพื่อพิมพ์ใบเดิมซ้ำ
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => setHistSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={doPrint} style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700 }}>🖨 พิมพ์ใบรายงาน</button>
+                <button onClick={doPrint} disabled={histSheet.busy}
+                  style={{ ...saveBtnStyle, background: '#f59e0b', fontWeight: 700, opacity: histSheet.busy ? 0.6 : 1 }}>
+                  {histSheet.busy ? '⏳ กำลังออกใบ…' : '🖨 ออกใบ + พิมพ์'}
+                </button>
               </div>
             </div>
           </div>
