@@ -17,7 +17,7 @@ import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
 import ProductSelect from '../components/ProductSelect'
 import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเครื่องที่เคยบันทึกใน jigs — Machine Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { LINE_COLUMNS } from '../utils/useProductionLines'
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
 import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
@@ -550,7 +550,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
     // production lines (MAIN project) for the usage "นับยอดจากไลน์" dropdown + ไลน์ของอุปกรณ์
     // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (ลำดับชั้น + section + is_active) · 2026-09-07
     // ตั้งใจไม่ scope ตาม section — config นับ shot อ้างไลน์ข้ามส่วนงานได้ (เช่นแม่พิมพ์ย้ายเครื่อง)
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
     supabaseDR.from('pm_facility_areas').select('id, name').order('sort_order').order('name')
       .then(({ data }) => setFacilityAreas((data ?? []).filter(a => a.name)), () => {})

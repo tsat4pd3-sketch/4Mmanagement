@@ -53,7 +53,7 @@ import SupplierSelect from '../components/SupplierSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
@@ -362,7 +362,7 @@ export default function MtnRepair() {
     const [{ data: ln }, { data: mc }, { data: tc }, { data: pt }, { data: pp }, { data: rt }, { data: it }, { data: imp }, lr, { data: emps }, sup] = await Promise.all([
       // flow_mode + parallel_stations = จำนวนเครื่องขนาน (N) ของไลน์ — แท็บ ⚙️ รายอุปกรณ์ ใช้ถ่วง DT 1/N
       //   ให้ตรงกับ %A ของ Daily Report (parallelUnitsOf · 2026-09-14) ห้ามถอดออก ไม่งั้นโหมด "มุมไลน์" ตาย
-      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center, flow_mode, parallel_stations`).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
+      loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       // equipment_kind = แกนชนิดอุปกรณ์ (machine/die/jig/facility) — ต้องมี ไม่งั้นแยก "แม่พิมพ์" ออกจาก "เครื่องจักร" ไม่ได้
       supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind').eq('is_active', true).order('sort_order'),
       supabaseDR.from('mtn_technicians').select('*').eq('is_active', true).order('sort_order'),

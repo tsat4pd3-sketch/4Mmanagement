@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadProductionLines } from './useProductionLines';
 
 /* ══ useOrgSections / useOrgDepts — ตัวเลือก "ส่วนงาน"/"แผนก" ยึด org_nodes เสมอ ══════════════
    (ย้ายออกมาจาก Report.jsx เป็น shared util — 2026-09 เมื่อหน้าที่สองต้องใช้ตัวเดียวกัน)
@@ -21,7 +22,7 @@ export function useOrgSections() {
         if (fromOrg.length) { if (alive) setOrgSections(fromOrg); return; }
         // ผังยังว่าง (โรงงานใหม่ตอน rollout) → fallback distinct production_lines.section (backward-compat
         // ตามหมายเหตุหัวไฟล์ — เดิมผู้เรียกต้องทำเองทีละหน้า · 2026-09-07 ย้ายเข้า hook)
-        const { data: ln } = await supabase.from('production_lines').select('section').not('section', 'is', null);
+        const ln = await loadProductionLines();   // cache กลาง — อย่ายิงทะเบียนไลน์ซ้ำเพื่อเอาแค่ section
         if (alive) setOrgSections([...new Set((ln || []).map(l => l.section).filter(Boolean))].sort());
       });
     return () => { alive = false; };

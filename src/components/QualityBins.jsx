@@ -24,6 +24,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าท�
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { positionLabel } from '../utils/positions';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -78,6 +79,7 @@ export default function QualityBins() {
   const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by');
   const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
   const [rows, setRows] = useState([]);
+  const [scrapDocs, setScrapDocs] = useState({});   // scrap_report_id → { doc_no, status } (ถังแดง)
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
   const tr = useTimeRange({ defaultDays: 30 });
   const { from, to } = tr;
@@ -89,7 +91,7 @@ export default function QualityBins() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 
@@ -118,6 +120,15 @@ export default function QualityBins() {
       return;
     }
     setRows(data || []);
+    /* 🔴 ถังแดง: ดึงเลขที่ใบรายงานของเสียของแถวที่ผูกแล้ว มาโชว์ให้เห็นว่า "ออกใบขออนุมัติทำลายหรือยัง"
+       (WI-PD3-069 §5.5 — ของทุกก้อนในถังแดงต้องมี Scrap Report เพื่อขออนุมัติตาม DOA · 2026-09-25)
+       โหลดแยกเพราะ quality_bin_records อยู่คนละ schema ที่ join ตรงไม่ได้ผ่าน PostgREST ที่นี่
+       ล้มเหลว = ปล่อยว่าง ไม่บล็อกตาราง แต่ก็ไม่โกหกว่า "ออกใบแล้ว" */
+    const repIds = [...new Set((data || []).map(r => r.scrap_report_id).filter(Boolean))];
+    if (repIds.length) {
+      const { data: reps } = await supabaseDR.from('scrap_reports').select('id, doc_no, status').in('id', repIds);
+      setScrapDocs(Object.fromEntries((reps || []).map(r => [r.id, r])));
+    } else setScrapDocs({});
   }, [bin, from, to, scopeNames]);
   useEffect(() => { load(); }, [load]);
 
@@ -259,7 +270,7 @@ export default function QualityBins() {
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {(isY
               ? ['วันที่ลงถัง', 'ชิ้นงาน', 'จำนวนรอพิจารณา', 'สาเหตุ', 'ผู้แจ้ง', 'ซ่อมเมื่อ', 'ผู้ซ่อม', 'QA', 'OK', 'NG', 'กลับเข้ากระบวนการ', '']
-              : ['วันที่ลงถัง', 'ชิ้นงาน', 'ไลน์', 'จำนวนเสีย', 'สาเหตุ', 'ผู้แจ้ง', 'QA', 'ผู้กำจัดทำลาย', 'ตำแหน่ง', '']
+              : ['วันที่ลงถัง', 'ชิ้นงาน', 'ไลน์', 'จำนวนเสีย', 'สาเหตุ', 'ผู้แจ้ง', 'QA', 'ผู้กำจัดทำลาย', 'ตำแหน่ง', 'ใบรายงานของเสีย', '']
             ).map((h, i) => <th key={i} style={th}>{h}</th>)}
           </tr></thead>
           <tbody>
@@ -296,6 +307,18 @@ export default function QualityBins() {
                 {!isY && <td style={td}>
                   {r.disposed_position || '—'}
                   {r.from_yellow_id && <div style={{ fontSize: 11, color: '#f5b942' }}>🟡 มาจากถังเหลือง</div>}
+                </td>}
+                {/* 🔴 สาย DOA: ของในถังแดงต้องมีใบรายงานของเสีย (FM-PD2-002) เพื่อขออนุมัติทำลาย
+                    ยังไม่ออกใบ = ส้มเตือน (งานค้าง ไม่ใช่ alarm — ไม่กระพริบ ตาม Andon convention) */}
+                {!isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>
+                  {r.scrap_report_id
+                    ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#22c55e' }}>
+                        🧾 {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
+                      </span>
+                    : <span title="ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง"
+                        style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b' }}>
+                        ⏳ ยังไม่ออกใบ
+                      </span>}
                 </td>}
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {canRecord && <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}

@@ -31,7 +31,7 @@ import PartSelect from '../components/PartSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import usePartOptions from '../utils/usePartOptions';
 import { invalidateInstruments } from '../utils/useInstruments';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
@@ -298,7 +298,7 @@ function QualityDashboard() {
     if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return null; // ไม่จำกัด
   }, [role, lineId, sections, allLines]);
-  useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
+  useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
   /* ⏱️ ช่วงข้อมูล = แถบกลาง `<TimeRangeBar>` (UI §6.16)
      🔴 ของเดิม `daysAgoStr(30)` ให้ช่วง **31 วัน** ทั้งที่ปุ่มเขียนว่า "30 วัน"
         (นับหัวนับท้ายแล้วเกินไป 1) · หน้าอื่นอย่าง /workforce-insight ใช้ `daysAgoStr(29)` = 30 วันจริง
@@ -945,7 +945,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
     return null;
   }, [role, lineId, sections, allLines]);
-  useEffect(() => { supabase.from('production_lines').select('id, name, section, parent_line_name').then(({ data }) => setAllLines(data || [])); }, []);
+  useEffect(() => { loadLinesRes().then(({ data }) => setAllLines(data || [])); }, []);
 
   const load = useCallback(async () => {
     if (scopedLineNames && scopedLineNames.length === 0) { setList([]); return; }
@@ -1679,7 +1679,7 @@ export default function QualityControl() {
 
   // LINE_COLUMNS ครบ (is_active) ให้ <LineSelect> ตัดไลน์ปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setAllLines(data || []));
   }, []);
   // ทะเบียนพาร์ท (pe_doc_sets ∪ qa_parts ∪ dr_products) + เครื่องมือวัด — โหลดครั้งเดียวส่งลงทุกแท็บ (2026-09-07)

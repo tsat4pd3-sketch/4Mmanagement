@@ -12,6 +12,7 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -64,7 +65,7 @@ export default function StorageZonePanel() {
     const addAll = (rows, key) => (rows || []).forEach(r => { const v = String(r[key] || '').trim().toLowerCase(); if (v) claimed.add(v); });
     try {
       const [pl, da, fa, fm] = await Promise.all([
-        supabase.from('production_lines').select('name'),
+        loadLinesRes(),
         supabaseDR.from('die_storage_areas').select('name').eq('is_active', true),
         supabaseDR.from('pm_facility_areas').select('name'),
         supabaseDR.from('machines').select('line_name').in('equipment_category', ['facility', 'utility']),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { wavg } from '../utils/oee';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -171,7 +172,7 @@ export default function GroupOverview() {
     setLoading(true);
     try {
       const [plRes, empRes] = await Promise.all([
-        supabase.from('production_lines').select('id, name, parent_line_name, line_type'),
+        loadLinesRes(),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
       ]);
       const parentOf = {}; (plRes.data || []).forEach(l => { if (l.parent_line_name) parentOf[l.name] = l.parent_line_name; });

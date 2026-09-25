@@ -10,6 +10,7 @@ import { ALL } from '../utils/filterLabels';
 // ล้างเฉพาะ param ของการสแกน — ล้างทั้งก้อน (`setSearchParams({})`) จะพา param อื่นของหน้า/หน้าแม่หายด้วย
 const SCAN_PARAMS_CLEAR = { line: null, ctype: null, qty: null };
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
@@ -94,7 +95,7 @@ export default function RackCenter() {
   const load = useCallback(async () => {
     const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
       // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      loadLinesRes(),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
       supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
