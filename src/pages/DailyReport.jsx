@@ -663,8 +663,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
            ถ้าดึงแค่ open/carry_over จะมองไม่เห็นใบ confirmed/imported ของกะที่ใหม่กว่า
            → ใบที่ค้างอยู่ในกะเก่า (ซึ่ง `pending_close` ก็เข้าเงื่อนไข) ถูกเสนอซ้ำทุกกะไปเรื่อยๆ */
+        /* 🔴 ห้ามกลับไป `select('*')` — คิวรีนี้ดึงใบของ **8 กะก่อนหน้า** และวิ่งใหม่ทุกครั้งที่มี
+           realtime event หรือมีใครบันทึกในกะนี้ · `prod_orders` มี 33 คอลัมน์ และวัดจริง 25/09:
+           shape `select=*` = 8,625 ครั้ง/วัน = 61% ของ traffic ทั้งตาราง
+           คอลัมน์ด้านล่าง = ทุกตัวที่ตรรกะยกยอด + ปุ่ม "รับยอดค้างเข้ากะ" + แบนเนอร์ใช้จริง
+           **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
+        const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
         const { data: carried } = await supabaseDR.from('prod_orders')
-          .select('*')
+          .select(CARRY_COLS)
           .in('session_id', prevIds)
           .order('opened_at', { ascending: false });
         // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
@@ -1242,7 +1248,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const prevIds = prevSessions.map(s => s.id);
       const prevFrame = {}; prevSessions.forEach(s => { prevFrame[s.id] = shiftFrameOf(s); });
       const [{ data: histOrders }, { data: histDt }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('*').in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
+        // ใช้แค่ 5 คอลัมน์นี้ในลูปข้างล่าง — `select('*')` = 33 คอลัมน์โดยเปล่าประโยชน์
+        supabaseDR.from('prod_orders').select('session_id, mat_no, qty, opened_at, confirmed_at')
+          .in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
         supabaseDR.from('downtime_logs').select('session_id, started_at, ended_at, duration_min').in('session_id', prevIds),
       ]);
       if (cancelled) return;

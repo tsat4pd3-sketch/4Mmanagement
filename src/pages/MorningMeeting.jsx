@@ -15,6 +15,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -214,12 +215,8 @@ export default function MorningMeeting() {
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
-        const mats = [...new Set((po || []).map(o => o.mat_no).filter(Boolean))];
-        if (mats.length) {
-          const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats).not('pair_mat_no', 'is', null);
-          const pm = {}; (prods || []).forEach(p => { if (p.mat_no && p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
-          setPairMat(pm);
-        } else setPairMat({});
+        // คู่ RH/LH มาจาก cache ทะเบียนสินค้ากลาง (25/09) — แหล่งเดียวกับทุกจอ ห้ามยิงเอง
+        setPairMat(await loadPairMap() || {});
       } else {
         setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }

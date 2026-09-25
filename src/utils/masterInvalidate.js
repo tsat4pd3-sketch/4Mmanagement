@@ -24,7 +24,8 @@ import { invalidateMaster } from './masterCache.js';   // ใส่ .js ให�
 /** ตาราง → คีย์ cache ทุกตัวที่ "เนื้อมาจากตารางนั้น" (ตารางเดียวมีได้หลายคีย์คนละ shape) */
 export const KEYS_BY_TABLE = {
   dr_products: [
-    'dr_products:picker',        // useProducts (picker กลาง)
+    'dr_products:picker:v2',     // useProducts (picker กลาง) · :v2 = รอบที่เพิ่ม pair_mat_no + op_seq (25/09)
+    'dr_products:picker',        // คีย์เก่า — คงไว้เพื่อล้างของค้างบนเครื่องที่ยังไม่ได้ build ใหม่
     'dr_products:ct',            // FactoryMap · LineOeeBoard (mat_no + cycle_time)
     'dr_products_ct_pair',       // QaFmeBoard
     'dr_products_link',          // QaFmeQueue

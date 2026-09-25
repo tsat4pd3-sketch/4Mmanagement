@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap, loadProductsMaster } from '../utils/useProducts';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -1274,10 +1275,10 @@ export default function FactoryMap({ setupMode = false }) {
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
           supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
-          supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+          loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09)
         ]);
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
-        const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+        const pairMap = prods;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {})
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
         await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
@@ -1340,7 +1341,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').in('session_id', ids) : { data: [] },
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
-          supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadProductsMaster().then(rows => ({ data: rows || [] })),   // cache กลาง (25/09) — ต้องการ name + pair_mat_no
           loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;

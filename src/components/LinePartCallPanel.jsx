@@ -27,6 +27,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
+import { loadProductsMaster } from '../utils/useProducts';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
@@ -541,8 +542,12 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data: prods, error: e1 } = await supabaseDR.from('dr_products').select('id, mat_no').in('line_name', famNames).eq('is_active', true);
-      if (e1 || !prods?.length) return;
+      // 25/09: เดิมยิง dr_products เองทุกครั้งที่สลับไลน์ — กรองจาก cache ทะเบียนกลางแทน
+      const all = await loadProductsMaster().catch(() => null);
+      if (!all) return;                                   // โหลดไม่สำเร็จ = ไม่เติมพาร์ทลูก (เหมือนพฤติกรรมเดิมตอน error)
+      const fam = new Set(famNames);
+      const prods = all.filter(p => p.is_active !== false && fam.has(p.line_name));
+      if (!prods.length) return;
       const { data: boms } = await supabaseDR.from('bom_items').select('mat_no, part_no, part_name').in('product_id', prods.map(p => p.id)).eq('is_active', true).limit(1000);
       if (!alive) return;
       const seen = new Set();

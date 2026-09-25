@@ -7,23 +7,25 @@
    การใช้: loader ของหน้า await loadOpInfo() (cache ระดับ module) แล้วจุดคำนวณอ่าน opInfoSync()
    best-effort: migration ยังไม่ apply / query พัง → คืน {} = พฤติกรรมเดิมเป๊ะ ไม่มีอะไรพัง
    ═══════════════════════════════════════════════════════════════════════════════════════ */
-import { supabaseDR } from '../supabaseClient'
+import { loadProductsMaster, invalidateProducts } from './useProducts'
 
 let _cache = null
 
-/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } } — cache ครั้งเดียวต่อ session
- *  parent ว่างได้เสมอ = ของที่ขั้นนี้ประกอบมาไม่มีใบผลิตของตัวเอง (ดู src/utils/opLink.js) */
+/** โหลด map ของรายการ OP: { [mat_no]: { parent, seq } }
+ *  parent ว่างได้เสมอ = ของที่ขั้นนี้ประกอบมาไม่มีใบผลิตของตัวเอง (ดู src/utils/opLink.js)
+ *
+ *  25/09: เดิมยิง `dr_products` เองแล้ว cache ไว้ใน**ตัวแปรของโมดูล** ⇒ หายทุกครั้งที่เปิดแอปใหม่
+ *  (วัดจริง 481 ครั้ง/วัน ≈ จำนวน boot) — ย้ายมาอ่านทะเบียนสินค้าชุดกลางซึ่ง cache ข้าม boot
+ *  ใน localStorage อยู่แล้ว · ตัวแปรด้านล่างเหลือไว้เป็น snapshot ให้ `opInfoSync()` อ่านแบบ sync */
 export async function loadOpInfo(force = false) {
   if (_cache && !force) return _cache
   try {
-    const { data, error } = await supabaseDR
-      .from('dr_products')
-      .select('mat_no, op_parent_mat, op_seq')
-      .eq('is_operation', true)
-    if (error) throw error
+    if (force) invalidateProducts()
+    const rows = await loadProductsMaster()
+    if (!rows) throw new Error('โหลดทะเบียนสินค้าไม่สำเร็จ')
     const m = {}
-    ;(data || []).forEach(r => {
-      if (r.mat_no) m[r.mat_no] = { parent: r.op_parent_mat || null, seq: r.op_seq ?? null }
+    rows.forEach(r => {
+      if (r.is_operation && r.mat_no) m[r.mat_no] = { parent: r.op_parent_mat || null, seq: r.op_seq ?? null }
     })
     _cache = m
   } catch (e) {
