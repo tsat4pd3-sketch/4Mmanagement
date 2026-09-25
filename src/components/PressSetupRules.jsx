@@ -15,7 +15,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { resolveSetupRule, sequenceSetup, orderByDieHeight, setupDataReadiness } from '../utils/pressSetup';
 
-const COLS = 'id, scope_kind, scope_value, base_min, same_die_min, height_steps, note, is_active, updated_by_name, updated_at';
+const COLS = 'id, scope_kind, scope_value, per_mm_sec, base_min, same_die_min, height_steps, note, is_active, updated_by_name, updated_at';
 const SCOPES = [
   { key: 'global', label: '🏭 ทั้งโรงงาน (ค่าตั้งต้น)' },
   { key: 'line', label: '📍 เฉพาะไลน์' },
@@ -27,11 +27,17 @@ const inp = { padding: '5px 8px', borderRadius: 6, fontSize: 12, border: '1px so
 const btn = (bg, color = '#fff') => ({ padding: '5px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: bg, color, border: '1px solid var(--border)', whiteSpace: 'nowrap' });
 const numOrNull = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
-/* แปลงขั้นบันไดเป็นข้อความอ่านง่าย — "≤10 มม. +0 น. · ≤50 +15 · เกินนั้น +30" */
-function stepsText(steps) {
-  const list = Array.isArray(steps) ? steps : [];
-  if (!list.length) return 'ยังไม่ตั้งขั้นบันได (ความสูงต่างกันเท่าไหร่ก็คิดเท่าเวลาฐาน)';
-  return list.map(s => (s.max_mm == null ? `เกินนั้น +${s.add_min ?? 0} น.` : `≤${s.max_mm} มม. +${s.add_min ?? 0} น.`)).join(' · ');
+/* ปัดเศษนาทีให้อ่านรู้เรื่อง — นาทีที่มาจากวินาที/60 เป็นทศนิยมยาว (ห้ามโชว์ดิบ) */
+const fmtMin = (v) => (v == null ? '—' : (Math.abs(v) < 10 ? Math.round(v * 10) / 10 : Math.round(v)).toLocaleString('th-TH'));
+
+/* แปลงกฎผลของความสูงเป็นข้อความอ่านง่าย — อัตราต่อมม. + ขั้นบันได (ถ้ามี) */
+function heightRuleText(rule) {
+  const per = rule?.per_mm_sec;
+  const list = Array.isArray(rule?.height_steps) ? rule.height_steps : [];
+  const parts = [];
+  if (per != null && per !== '') parts.push(`ต่างกัน 1 มม. = ${per} วินาที`);
+  if (list.length) parts.push(list.map(s => (s.max_mm == null ? `เกินนั้น +${s.add_min ?? 0} น.` : `≤${s.max_mm} มม. +${s.add_min ?? 0} น.`)).join(' · '));
+  return parts.length ? parts.join(' + ') : '🔴 ยังไม่ได้บอกผลของความสูง — จัดลำดับให้ไม่ได้ (ทุกลำดับจะเท่ากันหมด)';
 }
 
 /* ── ตัวแก้ขั้นบันได |Δ ความสูง| → นาทีที่บวกเพิ่ม ─────────────────────────────── */
@@ -112,8 +118,10 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
   const saveRow = async (r) => {
     const d = draft[r.id]; if (!d) return;
     const payload = {};
-    if ('base_min' in d) payload.base_min = numOrNull(d.base_min) ?? 0;
-    if ('same_die_min' in d) payload.same_die_min = numOrNull(d.same_die_min) ?? 0;
+    /* 🔴 ว่าง = null = "ยังไม่รู้" ห้าม ?? 0 (0 = "เปลี่ยนแม่พิมพ์ใช้เวลา 0 นาที" = โกหกที่ดูน่าเชื่อ) */
+    if ('per_mm_sec' in d) payload.per_mm_sec = numOrNull(d.per_mm_sec);
+    if ('base_min' in d) payload.base_min = numOrNull(d.base_min);
+    if ('same_die_min' in d) payload.same_die_min = numOrNull(d.same_die_min);
     if ('height_steps' in d) payload.height_steps = (d.height_steps || []).filter(s => s.add_min != null || s.max_mm != null);
     if ('note' in d) payload.note = d.note || null;
     setBusy(true);
@@ -135,8 +143,9 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
     const payload = {
       scope_kind: a.scope_kind || 'global',
       scope_value: a.scope_kind === 'global' ? null : String(a.scope_value).trim(),
-      base_min: numOrNull(a.base_min) ?? 0,
-      same_die_min: numOrNull(a.same_die_min) ?? 0,
+      per_mm_sec: numOrNull(a.per_mm_sec),
+      base_min: numOrNull(a.base_min),        // ว่าง = ยังไม่รู้ (ห้ามเป็น 0)
+      same_die_min: numOrNull(a.same_die_min),
       height_steps: (a.height_steps || []).filter(s => s.add_min != null || s.max_mm != null),
       note: a.note || null,
     };
@@ -183,7 +192,13 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
         <br />
         {ready.canPlan
           ? <span style={{ color: 'var(--accent)' }}>✅ เริ่มเทียบลำดับได้แล้ว (ยิ่งกรอกความสูงครบ ตัวเลขยิ่งตรง)</span>
-          : <span style={{ color: '#f59e0b' }}>⚠️ ยังจัดลำดับให้ไม่ได้ — ต้องมีกฎอย่างน้อย 1 ข้อ + รู้ความสูงอย่างน้อย 2 ตัว</span>}
+          : <span style={{ color: '#f59e0b' }}>⚠️ ยังจัดลำดับให้ไม่ได้ — ต้องมีกฎที่บอก "ผลของความสูง" + รู้ความสูงอย่างน้อย 2 ตัว</span>}
+        {/* 2 คำถามคนละเรื่อง: จัดลำดับได้ (ไม่ต้องรู้เวลาฐาน) vs ตอบเวลารวมได้ (ต้องรู้) */}
+        {!ready.canTotal && (
+          <div style={{ color: 'var(--muted)' }}>
+            ℹ️ ยังไม่มีกฎไหนกรอก <b>เวลาฐาน</b> ⇒ จอจะบอก "เวลารวมทั้งรอบ" ไม่ได้ (แต่เทียบลำดับได้)
+          </div>
+        )}
       </div>
 
       {/* ตารางกฎ */}
@@ -215,19 +230,31 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                   </>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, alignItems: 'start' }}>
+                  {/* ⭐ ตัวแปรหลักจากช่างปั๊ม: ต่างกัน 1 มม. = กี่วินาที (25/09 = 1 วินาที) */}
                   <label style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    เวลาฐาน (เปลี่ยนแม่พิมพ์คนละตัว)
+                    ต่างกัน 1 มม. = กี่วินาที
+                    <input type="number" step="0.1" min="0" disabled={!canEdit} value={valOf(r, 'per_mm_sec') ?? ''}
+                      placeholder="ยังไม่รู้" onChange={e => patch(r.id, 'per_mm_sec', e.target.value)} style={{ ...inp, marginTop: 3 }} />
+                  </label>
+                  {/* 🔴 ว่าง = "ยังไม่รู้" ไม่ใช่ 0 — placeholder ต้องเขียนให้ชัด ไม่งั้นคนอ่านว่าไม่เสียเวลา */}
+                  <label style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    เวลาฐาน (เปลี่ยนแม่พิมพ์คนละตัว) นาที
                     <input type="number" step="1" min="0" disabled={!canEdit} value={valOf(r, 'base_min') ?? ''}
-                      onChange={e => patch(r.id, 'base_min', e.target.value)} style={{ ...inp, marginTop: 3 }} />
+                      placeholder="ยังไม่รู้ = เว้นว่าง" onChange={e => patch(r.id, 'base_min', e.target.value)} style={{ ...inp, marginTop: 3 }} />
                   </label>
                   <label style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    แม่พิมพ์ตัวเดิม (เปลี่ยนแค่ล็อต)
+                    แม่พิมพ์ตัวเดิม (เปลี่ยนแค่ล็อต) นาที
                     <input type="number" step="1" min="0" disabled={!canEdit} value={valOf(r, 'same_die_min') ?? ''}
-                      onChange={e => patch(r.id, 'same_die_min', e.target.value)} style={{ ...inp, marginTop: 3 }} />
+                      placeholder="ยังไม่รู้ = เว้นว่าง" onChange={e => patch(r.id, 'same_die_min', e.target.value)} style={{ ...inp, marginTop: 3 }} />
                   </label>
                   <div style={{ gridColumn: '1 / -1' }}>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
-                      บวกเพิ่มตามความสูงที่ต่างกัน — <span style={{ color: 'var(--text2)' }}>{stepsText(valOf(r, 'height_steps'))}</span>
+                      ผลของความสูง — <span style={{ color: 'var(--text2)' }}>
+                        {heightRuleText({ per_mm_sec: valOf(r, 'per_mm_sec'), height_steps: valOf(r, 'height_steps') })}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 4 }}>
+                      ขั้นบันไดด้านล่างเป็น <b>ของเสริม</b> (บวกทับอัตราต่อมม.) — ไว้ใส่เงื่อนไขแบบขั้น เช่น "เกิน 200 มม. ต้องเปลี่ยนบล็อกรอง +30 น." · ไม่มีก็เว้นว่างได้
                     </div>
                     <StepsEditor steps={valOf(r, 'height_steps')} disabled={!canEdit}
                       onChange={v => patch(r.id, 'height_steps', v)} />
@@ -264,11 +291,17 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                       placeholder="เช่น P-01" style={{ ...inp, marginTop: 3, fontFamily: 'monospace' }} />
                   </label>
                 )}
+                <label style={{ fontSize: 11, color: 'var(--muted)' }}>ต่างกัน 1 มม. = กี่วินาที
+                  <input type="number" step="0.1" min="0" value={adding.per_mm_sec ?? ''} placeholder="เช่น 1"
+                    onChange={e => setAdding(a => ({ ...a, per_mm_sec: e.target.value }))} style={{ ...inp, marginTop: 3 }} />
+                </label>
                 <label style={{ fontSize: 11, color: 'var(--muted)' }}>เวลาฐาน (นาที)
-                  <input type="number" min="0" value={adding.base_min ?? ''} onChange={e => setAdding(a => ({ ...a, base_min: e.target.value }))} style={{ ...inp, marginTop: 3 }} />
+                  <input type="number" min="0" value={adding.base_min ?? ''} placeholder="ยังไม่รู้ = เว้นว่าง"
+                    onChange={e => setAdding(a => ({ ...a, base_min: e.target.value }))} style={{ ...inp, marginTop: 3 }} />
                 </label>
                 <label style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวเดิม เปลี่ยนล็อต (นาที)
-                  <input type="number" min="0" value={adding.same_die_min ?? ''} onChange={e => setAdding(a => ({ ...a, same_die_min: e.target.value }))} style={{ ...inp, marginTop: 3 }} />
+                  <input type="number" min="0" value={adding.same_die_min ?? ''} placeholder="ยังไม่รู้ = เว้นว่าง"
+                    onChange={e => setAdding(a => ({ ...a, same_die_min: e.target.value }))} style={{ ...inp, marginTop: 3 }} />
                 </label>
               </div>
               <StepsEditor steps={adding.height_steps} onChange={v => setAdding(a => ({ ...a, height_steps: v }))} />
@@ -296,20 +329,31 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
           {!preview?.rule && <div style={{ color: '#f59e0b' }}>⚠️ ไลน์นี้ยังไม่มีกฎ (ของไลน์เองหรือของทั้งโรงงาน) — เทียบเวลาไม่ได้</div>}
           {preview?.rule && preview.tooFew && <div style={{ color: 'var(--muted)' }}>ไลน์นี้มีแม่พิมพ์ที่ใช้งานอยู่น้อยกว่า 2 ตัว — ไม่มีลำดับให้เทียบ</div>}
           {preview?.rule && !preview.tooFew && (() => {
-            const a = preview.asIs.totalMin, b = preview.sortedSeq.totalMin;
+            /* ⭐ เทียบด้วย varMin = "ส่วนที่ขึ้นกับลำดับ" (ผลของความสูง) ไม่ใช่เวลารวม
+               เพราะลำดับที่สลับกันบนของชุดเดิมมีจำนวนครั้งเปลี่ยนเท่ากัน ⇒ เวลาฐานหักกลบ
+               ⇒ ตอบ "ลำดับไหนดีกว่า" ได้แม้ยังไม่รู้เวลาฐาน (base_min = null) */
+            const a = preview.asIs.varMin, b = preview.sortedSeq.varMin;
             const save = a != null && b != null ? a - b : null;
+            const tot = preview.sortedSeq.totalMin;
             return (
               <div style={{ lineHeight: 1.9 }}>
-                ลำดับตามทะเบียนตอนนี้ ({preview.list.length} ตัว) = <b>{a ?? '—'}</b> นาที ·
-                เรียงตามความสูง = <b>{b ?? '—'}</b> นาที
+                เวลาปรับ shut height ตามลำดับทะเบียนตอนนี้ ({preview.list.length} ตัว) = <b>{fmtMin(a)}</b> นาที ·
+                เรียงตามความสูง = <b>{fmtMin(b)}</b> นาที
                 {save != null && (
-                  <div style={{ color: save > 0 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>
-                    {save > 0 ? `⇒ จัดลำดับใหม่ประหยัดได้ ~${save} นาที/รอบ` : '⇒ ลำดับที่เป็นอยู่ดีอยู่แล้ว (เรียงใหม่ไม่ช่วย)'}
+                  <div style={{ color: save > 0.05 ? 'var(--accent)' : 'var(--muted)', fontWeight: 700 }}>
+                    {save > 0.05 ? `⇒ จัดลำดับใหม่ประหยัดได้ ~${fmtMin(save)} นาที/รอบ` : '⇒ ลำดับที่เป็นอยู่ดีอยู่แล้ว (เรียงใหม่ไม่ช่วย)'}
                   </div>
                 )}
+                {preview.sortedSeq.baseUnknown && (
+                  <div style={{ color: 'var(--muted)' }}>
+                    ℹ️ ยังไม่รู้ <b>เวลาฐาน</b> (ยกแม่พิมพ์ลง-ขึ้น-จูน) จึงบอก "เวลารวมทั้งรอบ" ไม่ได้ —
+                    แต่เทียบลำดับได้ เพราะทุกลำดับเปลี่ยนแม่พิมพ์ {preview.sortedSeq.changeCount} ครั้งเท่ากัน เวลาฐานจึงหักกลบ
+                  </div>
+                )}
+                {tot != null && <div style={{ color: 'var(--text2)' }}>เวลารวมทั้งรอบ (รวมเวลาฐาน) = <b>{fmtMin(tot)}</b> นาที</div>}
                 {preview.sortedSeq.unknownCount > 0 && (
                   <div style={{ color: '#f59e0b' }}>
-                    ⚠️ มี {preview.sortedSeq.unknownCount} ช่วงที่ไม่รู้ความสูง — ตัวเลขนี้ <b>ต่ำกว่าความจริง</b> (นับแค่เวลาฐาน)
+                    ⚠️ มี {preview.sortedSeq.unknownCount} ช่วงที่ประเมินผลความสูงไม่ได้ (ยังไม่กรอกความสูง) — ตัวเลขนี้ <b>ต่ำกว่าความจริง</b>
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>

@@ -52,14 +52,17 @@ export function reachOf(rule, raw) {
   const matchSec = !!rule?.inapp_match_section;
   const scoped   = pinned || matchSec;
   /* `inapp_scope_strict` (2026-09-21) = กฎนี้ไม่ยกเว้น admin/ผจก. จากการกรองส่วนงาน
-     ⇒ กลุ่มที่ "ผ่านตัวกรองเสมอ" เหลือแค่คนที่ยังไม่ได้ตั้งส่วนงาน */
+     ⇒ กลุ่มที่ "ผ่านตัวกรองเสมอ" เหลือแค่คนที่ยังไม่ได้ตั้งส่วนงาน (และเป็น scope_depth='all') */
   const strict   = !!rule?.inapp_scope_strict;
 
   /* ผู้รับต่อ 1 เหตุการณ์:
      ไม่กรอง            → ทุกคนที่ role ตรง
      กรองตามที่เกิดเหตุ → คนที่ "รั่วผ่านตัวกรองเสมอ" + ส่วนแบ่งของคนที่มีส่วนงานจริง
-       · admin/manager  `notify_recipients()` ยกเว้นจากการกรองเสมอ
-       · คนที่ไม่มี section เลย ถูกปล่อยผ่านทุกส่วนงาน (ช่างซ่อมเป็นแบบนี้ทั้ง 13 คน)
+       · 🔭 25/09: ทั้ง 2 กลุ่มนี้รั่วได้**ต่อเมื่อ `profiles.scope_depth='all'`** แล้ว
+         (migration 20260925_notify_recipients_scope_depth_main) — RPC `notif_rule_reach`
+         นับเงื่อนไขเดียวกัน ⇒ ตัวเลขที่เข้ามาที่นี่คือ "คนที่รั่วได้จริง" ไม่ใช่ทุก admin/ผจก.
+       · admin/manager ที่ประกาศว่าทั้งโรงงาน → `notify_recipients()` ยกเว้นจากการกรอง
+       · คนที่ไม่มี section เลย + ประกาศทั้งโรงงาน → ปล่อยผ่านทุกส่วนงาน (ช่างซ่อม 9 คน)
      `inapp_sections`/`inapp_depts` ระบุเอง = ประมาณไม่ได้จากตัวเลขชุดนี้ → คืน null (ไม่เดา) */
   const alwaysThrough = Math.min(peopleAll, (strict ? 0 : adminMgr) + noSection);
   let perEvent = peopleAll;
@@ -105,7 +108,7 @@ export function reachWarnings(rule, raw) {
 
   if (r.matchSec && r.alwaysThrough > 0) {
     const bits = [];
-    if (!r.strict && r.adminMgr > 0) bits.push(`admin/ผจก. ${r.adminMgr} คน (ระบบยกเว้นให้เสมอ)`);
+    if (!r.strict && r.adminMgr > 0) bits.push(`admin/ผจก. ${r.adminMgr} คน ที่ตั้งขอบเขต “ทั้งโรงงาน”`);
     if (r.noSection > 0) bits.push(`คนที่ยังไม่ได้ตั้งส่วนงาน ${r.noSection} คน`);
     out.push({ level: 'amber',
       text: `ตัวกรองส่วนงานไม่มีผลกับ ${bits.join(' · ')} — กลุ่มนี้ได้รับทุกส่วนงาน` });

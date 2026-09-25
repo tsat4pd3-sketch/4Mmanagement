@@ -12,6 +12,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
+import { openOnly } from '../utils/shipStatus';
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -78,7 +79,7 @@ export default function FlowTower() {
       const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, wipPts, wipReq] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
-        supabaseDR.from('customer_shipping_orders').select('qty, status').neq('status', 'shipped'),
+        openOnly(supabaseDR.from('customer_shipping_orders').select('qty, status')),
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
         fetchAllPages(() => supabaseDR.from('child_lot_requests')
           .select('id, status, lot_qty, source_line')),

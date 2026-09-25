@@ -24,6 +24,27 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+import useTabParam from '../utils/useTabParam';
+import PartThumb from '../components/PartThumb';
+import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
+
+/* 🧭 ทะเบียนมุมมองของบอร์ดสโตร์ (2026-09-25 · คำสั่ง user *"สับสนการใช้งาน แต่ละ tab มากๆ"*)
+
+   เดิม 7 ปุ่มเรียงเป็นแถวเดียวกลางหน้า **ใต้แถบสรุป 3 ชั้น** ไม่มีคำอธิบายว่าปุ่มไหนทำอะไร
+   และไม่ผูก URL ⇒ (ก) คนเลื่อนลงมาเจอเนื้อหาก่อนเจอปุ่ม เลยนึกว่าหน้านี้มีแค่ตารางเดียว
+   (ข) refresh/แชร์ลิงก์แล้วเด้งกลับแท็บแรกเสมอ (ค) ป้าย "การ์ด"/"ตาราง" ไม่ได้บอกว่าต่างกันตรงไหน
+   — จริงๆ เป็น *ข้อมูลชุดเดียวกัน คนละหน้าตา* จึงยุบเป็นแท็บเดียวแล้วสลับการแสดงผลข้างใน
+
+   กติกา: `purpose` = "แท็บนี้ตอบคำถามอะไร" เขียนบนจอเสมอ **ห้ามปล่อยให้ป้ายแท็บอธิบายตัวเอง**
+   · `act: true` = แท็บที่ "มีปุ่มให้กดทำงาน" · false = ดูอย่างเดียว (ป้ายบอกไว้ให้ไม่ต้องเดา) */
+const VIEW_META = {
+  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — กดเลื่อนสถานะทีละใบ (เตรียม → ส่ง → รับ)' },
+  chart:    { label: '🕐 Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่' },
+  board:    { label: '🏪 Store Board',      act: false, purpose: 'สรุปรายไลน์ว่ามีใบค้างกี่ใบ — เป็นทางลัดเข้าไปทำงานต่อ ไม่มีปุ่มทำงานเอง' },
+  timeline: { label: '📊 Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
+  pull:     { label: '🔄 Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ' },
+  demand:   { label: '📋 ความต้องการวันนี้', act: false, purpose: 'ต้องใช้พาร์ทอะไร กี่ชิ้น กี่ใบคัมบัง — สลับดูแบบการ์ดหรือตารางได้' },
+};
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
    แตกความต้องการพาร์ทย่อยจากแผนผลิตรายวัน (production_sessions + prod_orders)
@@ -750,7 +771,7 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
 }
 
 /* ─── Kanban Card Grid ──────────────────────────────────────────────────── */
-function KanbanCardGrid({ rowList, kanbanStd, fmt }) {
+function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
   if (!rowList.length) return null;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, padding: 16 }}>
@@ -772,7 +793,8 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt }) {
                 borderRadius: 10, fontSize: 11, fontWeight: 800, padding: '2px 7px',
               }}>✓ stock พอ</div>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={42} />
               <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', letterSpacing: 0.5 }}>
                 {r.mat_no}
               </span>
@@ -1000,11 +1022,15 @@ const WIP_STATUS = {
   preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
   delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
 };
-function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColor, statusBg, statusBorder, actionLabel, onAction, busy, meta }) {
+/* 🖼️ `showImg` = "การ์ดใบนี้เป็นของ 'ชิ้นงาน'" (มี mat) — การ์ดรอบส่ง/ภาชนะไม่ใช่ จึงไม่ต้องมีช่องรูป
+   แยก prop จาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่อง 🖼️ ให้คนไปเพิ่มรูป) กับ "ไม่ใช่ชิ้นงาน" คนละเรื่องกัน */
+function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColor, statusBg, statusBorder, actionLabel, onAction, busy, meta, img, showImg }) {
   return (
     <div style={{ background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: 12, overflow: 'hidden' }}>
       <div style={{ height: 4, background: statusColor }} />
-      <div style={{ padding: '10px 14px' }}>
+      <div style={{ padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {showImg && <div style={{ paddingTop: 2 }}><PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={52} /></div>}
+        <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13 }}>{code}</span>
           <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: statusColor }}>{statusLabel}</span>
@@ -1021,6 +1047,7 @@ function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColo
             {busy ? '...' : actionLabel}
           </button>
         )}
+        </div>
       </div>
     </div>
   );
@@ -1052,7 +1079,7 @@ const matchQ = (q, ...fields) => {
   return fields.some(f => String(f ?? '').toLowerCase().includes(s));
 };
 
-function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive,
+function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate }) {
 
   const { roundAlloc } = view;
@@ -1167,7 +1194,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           {vLots.map(lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
-              <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name}
+              <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
                 qty={fmt(lot.lot_qty)} unit="ชิ้น/ล็อต" destination={lot.source_line || 'ของซื้อ'}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
@@ -1208,7 +1235,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 const multiDest = Number(g.dest_count) > 1;
                 const multiSup  = Number(g.supplier_count) > 1;
                 return (
-                  <QueueCard key={`${g.mat_no}|${g.status}`} code={g.mat_no} name={g.part_name}
+                  <QueueCard key={`${g.mat_no}|${g.status}`} code={g.mat_no} name={g.part_name} showImg img={imgOf(g.mat_no)}
                     qty={fmt(g.total_qty)} unit="ชิ้น"
                     destination={multiDest ? `${g.dest_count} ไลน์ (กางดูในปุ่มรวมยอด)` : (g.dest_line || '—')}
                     statusLabel={many ? `${st.label} · ${fmt(g.slips)} ใบ` : st.label}
@@ -1236,7 +1263,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
             return (
-              <QueueCard key={r.id} code={r.raw_mat_no} name={r.part_name}
+              <QueueCard key={r.id} code={r.raw_mat_no} name={r.part_name} showImg img={imgOf(r.raw_mat_no)}
                 qty={fmt(r.qty)} unit="" destination={parentLot?.source_line || '—'}
                 statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                 statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
@@ -1312,7 +1339,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             const pickMeta = fromLine && w.picked_qty != null && w.status !== 'pending'
               ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
             return (
-              <QueueCard key={w.id} code={code}
+              <QueueCard key={w.id} code={code} showImg={w.point_type !== 'packaging'} img={imgOf(w.mat_no)}
                 name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
                 qty={fmt(w.request_qty)} unit="" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
@@ -1336,7 +1363,10 @@ export default function HeijunkaKanban() {
   const [workDate, setWorkDate]   = useState(getWorkDate());
   const [shiftFilter, setShiftFilter] = useState('all');
   const [matFilter, setMatFilter] = useState('');            // '' | '200' | '300' | '500' — กรอง view เดียวกันทั้งฝั่งผลิต/store
-  const [viewMode, setViewMode]   = useState('unified');     // 'unified' | 'board' | 'timeline' | 'pull' | 'cards' | 'table'
+  /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
+     ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
+  const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
+  const [demandFmt, setDemandFmt] = useState('cards');        // แท็บ 📋 ความต้องการวันนี้: 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
   const [demands, setDemands]     = useState([]);
@@ -1377,10 +1407,26 @@ export default function HeijunkaKanban() {
   const [unifiedStore, setUnifiedStore] = useState('wip'); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
   const [showNoBom, setShowNoBom]       = useState(false); // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
+  /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
+     โหลดครั้งเดียวตอนเปิดหน้า — ทะเบียนรูปเปลี่ยนไม่บ่อย ไม่ต้องรีเฟรชตามวัน/ไลน์
+     (2 ตาราง × 2 คอลัมน์ หลักร้อยแถว — ถูกกว่าไป join ในคิวรีบอร์ดทุกครั้งที่เปลี่ยนวัน) */
+  const [partImgs, setPartImgs] = useState({});
+  const imgOf = useCallback((mat) => partImageOf(partImgs, mat), [partImgs]);
 
   useEffect(() => {
     supabaseDR.from('break_policies').select('*').eq('is_active', true)
       .then(({ data }) => setBreakPolicies(data || []));
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    loadPartImages(supabaseDR).then(({ map, error }) => {
+      if (!alive) return;
+      // รูปโหลดไม่ได้ = จอยังใช้งานได้ (ตกไปเป็นกล่อง "ยังไม่มีรูป") — ไม่ต้อง toast ขัดจังหวะสโตร์
+      if (error) console.warn('[heijunka] โหลดทะเบียนรูปชิ้นงานไม่สำเร็จ:', error.message);
+      setPartImgs(map);
+    });
+    return () => { alive = false; };
   }, []);
 
   // นาฬิกาภายใน — สถานะรอบ (รอ/กำลังเตรียม/ค้างส่ง) และ countdown ต้องเดินเองแม้ไม่มีการโหลดข้อมูลใหม่
@@ -2267,6 +2313,20 @@ export default function HeijunkaKanban() {
   };
 
   /* ── CSV export ── */
+  /* แท็บที่แสดง: 📊 Heijunka Board โผล่เฉพาะเมื่อมีรอบส่ง (ไม่มีรอบ = กริดว่างทั้งจอ · audit 2026-09-07)
+     badge = จำนวน "งานค้าง" ของแท็บนั้น — สโตร์จะได้รู้ว่าต้องเข้าแท็บไหนก่อนโดยไม่ต้องกดไล่ทีละอัน
+     (นับเฉพาะใบที่ยังไม่จบ ให้ตรงกับตัวเลขบนแท็บย่อยข้างใน — กฎบอร์ดสโตร์ข้อ 1) */
+  const viewTabs = useMemo(() => {
+    const openWip  = wipRequests.filter(w => w.status !== 'delivered').length;
+    const openLot  = lotRequests.filter(l => l.status !== 'done').length;
+    const openRaw  = rawRequests.filter(r => r.status !== 'issued').length;
+    const openBuy  = purchaseRequests.filter(r => r.status !== 'received' && r.status !== 'cancelled').length;
+    const badgeOf  = { unified: openWip + openLot + openRaw + openBuy, pull: openLot + openRaw };
+    return Object.entries(VIEW_META)
+      .filter(([k]) => k !== 'timeline' || rounds.length > 0)
+      .map(([k, m]) => ({ key: k, label: m.label, badge: badgeOf[k] ? String(badgeOf[k]) : undefined }));
+  }, [wipRequests, lotRequests, rawRequests, purchaseRequests, rounds.length]);
+
   const exportCSV = () => {
     if (!view.rowList.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
     const head = ['Mat No.', 'Part Name', 'UOM', 'Supplier', ...view.cols.map(c => `${c.line} (${c.shift})`), 'Gross', 'Stock in Line', 'Net', 'Qty/Kanban', 'Kanban'];
@@ -2289,6 +2349,7 @@ export default function HeijunkaKanban() {
         permKey="heijunka:operate" />
       {/* Header — UI-STANDARD 2026-09-24: คำอธิบาย+ป้ายดูวันย้อนหลังอยู่ใน sub · ตัวกรองรวมเป็นแถบเดียว */}
       <PageHeader title="บอร์ดคัมบัง (ทุกสโตร์) — Heijunka" icon="🎴"
+        tabs={viewTabs} tab={viewMode} onTab={setViewMode}
         sub={<>
           ความต้องการพาร์ทย่อย{isBackDate ? '' : 'ตามแผนผลิตวันนี้'} · แตกจาก BOM ของแต่ละ product
           {/* ⚠️ ดูวันย้อนหลัง/ล่วงหน้าต้องเห็นชัด — รอบที่ยังไม่ยืนยันของวันเก่าจะขึ้น 🔴 ค้างส่ง ทั้งกระดาน
@@ -2377,19 +2438,24 @@ export default function HeijunkaKanban() {
       <ProdProgressStrip workDate={workDate}
         onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)} />
 
-      {/* View mode toggle */}
-      {/* flexWrap: จอแคบปุ่มสลับมุมมองตกบรรทัดใหม่ได้ ไม่ล้นจอ (desktop แถวเดียวพอ — เหมือนเดิม) */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {/* 📊 Heijunka Board = กริดรอบส่ง 24 ชม. — ไม่มีรอบ = กริดว่างทั้งจอ ซ่อน (โผล่เองเมื่อมีรอบ) · audit 2026-09-07 */}
-        {[{ id: 'unified', label: '🗄️ ตู้ Kanban รวม' }, { id: 'chart', label: '🕐 Store Time Chart' }, { id: 'board', label: '🏪 Store Board' }, ...(rounds.length ? [{ id: 'timeline', label: '📊 Heijunka Board' }] : []), { id: 'pull', label: '🔄 Pull / ใบสั่งผลิต' }, { id: 'cards', label: '🎴 การ์ด' }, { id: 'table', label: '📋 ตาราง' }].map(v => (
-          <button key={v.id} onClick={() => setViewMode(v.id)} style={{
-            padding: '7px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
-            background: viewMode === v.id ? 'var(--accent)' : 'var(--bg2)',
-            color: viewMode === v.id ? '#08130a' : 'var(--text2)',
-            border: `1px solid ${viewMode === v.id ? 'var(--accent)' : 'var(--border)'}`,
-            transition: 'all 0.15s',
-          }}>{v.label}</button>
-        ))}
+      {/* 🧭 แท็บย้ายขึ้น PageHeader แล้ว (UI-STANDARD: ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา)
+          เหลือไว้ที่นี่แค่บรรทัดบอกว่า "แท็บที่เปิดอยู่ตอบคำถามอะไร" — ป้ายแท็บสั้นเกินกว่าจะอธิบายตัวเอง */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10,
+        padding: '7px 12px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)',
+      }}>
+        <span style={{
+          fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
+          background: VIEW_META[viewMode]?.act ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.14)',
+          color: VIEW_META[viewMode]?.act ? '#22c55e' : 'var(--muted)',
+        }}>{VIEW_META[viewMode]?.act ? '🖐 กดทำงานได้' : '👁️ ดูอย่างเดียว'}</span>
+        <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600 }}>{VIEW_META[viewMode]?.purpose}</span>
+        {viewMode === 'demand' && (
+          <span style={{ marginLeft: 'auto' }}>
+            <Segmented value={demandFmt} onChange={setDemandFmt} label="รูปแบบการแสดงผล"
+              options={[{ value: 'cards', label: '🎴 การ์ด' }, { value: 'table', label: '📋 ตาราง' }]} />
+          </span>
+        )}
       </div>
 
       {/* Demand board */}
@@ -2403,7 +2469,7 @@ export default function HeijunkaKanban() {
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
             busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
-            fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
+            fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate} imgOf={imgOf}
           />
         ) : viewMode === 'chart' ? (
           /* ฝาแฝดของ Shipping Time Chart แต่เป็นขาสโตร์ → ไลน์ (user 2026-08-26) */
@@ -2440,8 +2506,8 @@ export default function HeijunkaKanban() {
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
             ยังไม่มี demand พาร์ทย่อย — ตรวจว่าไลน์เปิด order แล้ว และ product มี BOM
           </div>
-        ) : viewMode === 'cards' ? (
-          <KanbanCardGrid rowList={view.rowList} kanbanStd={kanbanStd} fmt={fmt} />
+        ) : demandFmt === 'cards' ? (
+          <KanbanCardGrid rowList={view.rowList} kanbanStd={kanbanStd} fmt={fmt} imgOf={imgOf} />
         ) : (
           <div className="table-sticky" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
@@ -2467,9 +2533,14 @@ export default function HeijunkaKanban() {
                   return (
                     <tr key={r.mat_no} style={{ opacity: stockCovered ? 0.55 : 1 }}>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: matColor(r.mat_no), fontFamily: 'monospace' }}>{r.mat_no}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name}{r.supplier ? ` · ${r.supplier}` : ''}</div>
-                        {stockCovered && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <PartThumb url={imgOf(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={34} radius={6} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: matColor(r.mat_no), fontFamily: 'monospace' }}>{r.mat_no}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name}{r.supplier ? ` · ${r.supplier}` : ''}</div>
+                            {stockCovered && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
+                          </div>
+                        </div>
                       </td>
                       {view.cols.map(c => (
                         <td key={c.id} style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'center', fontSize: 13, color: r.perCol[c.id] ? 'var(--text)' : 'var(--muted)', fontWeight: r.perCol[c.id] ? 700 : 400 }}>
@@ -2502,7 +2573,7 @@ export default function HeijunkaKanban() {
       </div>
 
       {/* Delivery Rounds Panel — only for cards/table view, board has it built-in */}
-      {viewMode !== 'board' && viewMode !== 'pull' && viewMode !== 'unified' && (
+      {(viewMode === 'chart' || viewMode === 'timeline' || viewMode === 'demand') && (
         <DeliveryRoundsPanel rounds={rounds} deliveries={deliveries} onConfirm={confirmRound} confirming={confirming}
           onReceive={openReceive} roundAlloc={view.roundAlloc} workDate={workDate} nowMs={nowMs} canOperate={canOperate} tripsFor={tripsFor} />
       )}
