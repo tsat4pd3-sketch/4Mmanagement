@@ -11,6 +11,7 @@
  */
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { ROLE_OPTIONS, roleLabel } from '../utils/roleMeta';
 import LineSelect from './LineSelect';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
@@ -27,9 +28,11 @@ export default function ViewAsModal({ current, onClose, onApply }) {
   const [teamRows, setTeamRows] = useState(pmTeamsSync());
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
-      .order('section').order('name')
-      .then(({ data }) => setLines(data || []));
+    // ทะเบียนไลน์ผ่าน cache กลาง (25/09) — เรียงเองฝั่งจอ เพราะ loader เรียงตามชื่ออย่างเดียว
+    loadProductionLines().then(d => setLines(
+      [...(d || [])].sort((a, b) =>
+        String(a.section || '').localeCompare(String(b.section || ''))
+        || String(a.name || '').localeCompare(String(b.name || '')))));
     supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true)
       .order('sort_order')
       .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name)));
