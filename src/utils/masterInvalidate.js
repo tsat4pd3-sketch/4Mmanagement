@@ -52,8 +52,10 @@ export const KEYS_BY_TABLE = {
   production_lines: [
     'production_lines:v2',       // useProductionLines (picker กลาง) · :v2 = รอบที่เพิ่ม 6 คอลัมน์ (25/09)
     'production_lines',          // คีย์เก่า — ล้างทิ้งด้วย เผื่อเครื่องที่ยังค้าง cache ชุดก่อน
-    'production_lines:scope',
-    'fx_lines',                  // FixtureRegistry
+    // 3 คีย์ล่างเลิกใช้แล้ว (25/09 — ย้ายมาใช้ 'production_lines:v2' คีย์เดียวทั้งแอป)
+    // **ห้ามลบออกจากทะเบียน** — เครื่องที่ยังไม่ได้รับ build ใหม่ยังมีของค้างใน localStorage
+    'production_lines:scope',    // เดิม TvBoard
+    'fx_lines',                  // เดิม FixtureRegistry
     'factory_map',               // FactoryMiniMap — รูปผัง/ภูมิภาคผูกกับไลน์
     'factory_line_regions',
     'production_lines:dr',       // DailyReport load()

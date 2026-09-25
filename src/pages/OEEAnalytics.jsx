@@ -329,7 +329,7 @@ export default function OEEAnalytics() {
   // เหมือน FactoryMap — ยังไม่ apply migration 20260723 ก็ไม่พังลิสต์ไลน์หลัก · N=1 พฤติกรรมเดิม)
   const [flowByLine, setFlowByLine] = useState({});
   useEffect(() => {
-    supabase.from('production_lines').select('name, flow_mode, parallel_stations')
+    loadLinesRes()
       .then(({ data }) => {
         if (!data) return;
         const m = {}; data.forEach(l => { m[l.name] = l; });

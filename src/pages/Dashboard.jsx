@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
@@ -450,7 +451,7 @@ export default function Dashboard() {
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
@@ -484,7 +485,7 @@ export default function Dashboard() {
     setFourMLogs(fmData || []);
     // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
     let linesEnriched = lineData || [];
-    const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+    const { data: flowData } = await loadLinesRes();
     if (flowData) {
       const fm = {};
       flowData.forEach(l => { fm[l.name] = l; });

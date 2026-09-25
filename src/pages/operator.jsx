@@ -8,7 +8,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { loadLinesRes } from '../utils/useProductionLines';
+import { loadLinesRes, loadProductionLines } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
@@ -256,8 +256,10 @@ export default function Operator() {
     loadDivisions().then(() => { if (alive) setDivisionsReady(v => v + 1); });
     loadPmTeams().then(rows => { if (alive) setMtnTeamRows(rows || []); });
     if (isLeader && userLineId) {
-      supabase.from('production_lines').select('name').eq('id', userLineId).single()
-        .then(({ data }) => { if (alive) setMyLineName(data?.name ?? ''); });
+      // 25/09: เดิมยิงถามชื่อไลน์ตัวเองทีละใบ — หาจาก cache ทะเบียนไลน์ที่หน้านี้โหลดอยู่แล้วแทน
+      loadProductionLines().then(ls => {
+        if (alive) setMyLineName((ls || []).find(l => String(l.id) === String(userLineId))?.name ?? '');
+      });
     }
     return () => { alive = false; };
   }, []);
@@ -466,7 +468,7 @@ export default function Operator() {
     // ต้องมี section ด้วย: mergeBorrowedEmployees ใช้หา section ของไลน์ปลายทางตอน scope เป็นส่วนงาน
     let linesForScope = lines;
     if (!linesForScope.length) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, section, parent_line_name');
+      const { data: ls } = await loadLinesRes();
       linesForScope = ls || [];
     }
     if (isLeader && userLineId) {

@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
@@ -541,7 +542,7 @@ export default function FactoryMap({ setupMode = false }) {
     const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
-      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('line_layouts').select('line_name'),
     ]);
     setImageUrl(fm?.image_url || null);
@@ -550,7 +551,7 @@ export default function FactoryMap({ setupMode = false }) {
     setLines(ln || []);
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
-      const { data: fl } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const { data: fl } = await loadLinesRes();
       const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
       flowByLineRef.current = m;
     } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
@@ -939,7 +940,7 @@ export default function FactoryMap({ setupMode = false }) {
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
     const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
-      supabase.from('production_lines').select('id, name'),
+      loadLinesRes(),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
       // ประวัติเข้า-ออกจุดงาน (มีเวลาเริ่ม/จบ) — ใช้ถ่วงน้ำหนักตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้
@@ -1254,7 +1255,7 @@ export default function FactoryMap({ setupMode = false }) {
         //    ซึ่งเป็นแผงที่มีไว้ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง" โดยเฉพาะ (กะเช้า/ดึกแยกไม่ออก)
         supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
-        supabase.from('production_lines').select('id, name'),
+        loadLinesRes(),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
       ]);
       const out = {};

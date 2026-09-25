@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
@@ -836,7 +837,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   }, [rawView, dept, sp, navigate]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import ReadOnlyNote from '../components/ReadOnlyNote';
@@ -58,7 +59,7 @@ export default function OrgSetup() {
     setLoading(true);
     const [{ data: orgData }, { data: lineData }, { data: signerRows }] = await Promise.all([
       supabase.from('org_nodes').select('*').order('sort_order'),
-      supabase.from('production_lines').select('id, name, section, cost_center').order('name'),
+      loadLinesRes(),
       supabase.from('section_signers').select('*'),
     ]);
     setNodes(orgData || []);

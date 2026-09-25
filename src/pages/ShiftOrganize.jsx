@@ -116,7 +116,7 @@ export default function ShiftOrganize() {
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
     if (role === 'leader' && userLineId) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const { data: ls } = await loadLinesRes();
       const fam = getLineFamilyIds(ls || [], Number(userLineId));
       q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
     }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { scopedLineNames } from '../utils/sectionScope';
@@ -63,7 +64,7 @@ export default function StoreMonitor() {
       if (!data || data.length < PAGE) break;
     }
     if (p >= MAX_PAGES) cut = true;
-    const { data: lines } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active');
+    const { data: lines } = await loadLinesRes();
     const f = rows;
     setProdLines(lines || []);
     // โหลดไม่สำเร็จ ≠ ไม่มีเรื่องผิดปกติ — ต้องบอกให้รู้ ห้ามขึ้นจอเขียว "ปกติดี"

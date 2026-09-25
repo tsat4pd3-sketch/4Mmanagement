@@ -240,7 +240,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const [calReady, setCalReady] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalReady(true));
   }, []);
 
@@ -833,7 +833,7 @@ function PerEmployeeTab() {
     (async () => {
       let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
       if (role === 'leader' && userLineId) {
-        const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+        const { data: ls } = await loadLinesRes();
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
         empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
       } else if (scopeSecs.length) {
@@ -1007,7 +1007,7 @@ function StationLogTab() {
     supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
       setStations(data || []);
     });
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 

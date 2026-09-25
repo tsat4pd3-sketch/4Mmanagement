@@ -447,7 +447,7 @@ export default function Management() {
       const { data } = await loadLinesRes(); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       let all = data || [];
       // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
-      const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const { data: flowData } = await loadLinesRes();
       if (flowData) {
         const fm = {}; flowData.forEach(l => { fm[l.name] = l; });
         all = all.map(l => ({ ...l, flow_mode: fm[l.name]?.flow_mode, parallel_stations: fm[l.name]?.parallel_stations }));

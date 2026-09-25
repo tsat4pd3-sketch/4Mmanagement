@@ -401,8 +401,10 @@ const RULES = [
   {
     id: 'lines-via-cached-loader',
     scan: ['src'], ext: ['.jsx', '.js'],
-    /* จับ "ใช้ชุดคอลัมน์กลาง แต่ยิง DB เอง" — `select(LINE_COLUMNS)` หรือ `select(`${LINE_COLUMNS}…`)` */
-    re: /\.select\(\s*(?:LINE_COLUMNS|`\$\{LINE_COLUMNS\})/g,
+    /* จับ "อ่านทะเบียนไลน์เองแทนที่จะใช้ cache กลาง" — ทุกแบบ ไม่ใช่แค่ที่ใช้ LINE_COLUMNS
+       (25/09: ด่านรอบแรกจับแต่ `select(LINE_COLUMNS)` ⇒ จุดที่ตั้งชุดคอลัมน์เองรอดไปหมด
+        ซึ่งเป็นตัวใหญ่จริง — 4,170 จาก 4,594 ครั้ง/วัน) */
+    re: /from\(\s*'production_lines'\s*\)\s*\.select\(/g,
     why: 'audit 07/09/2026 ทำให้ทุกหน้าใช้ `LINE_COLUMNS` ชุดเดียวกันแล้วจริง **แต่ยังยิง DB เองทุกจุด** '
        + '⇒ "คอลัมน์ตรงกัน" กับ "ยิงครั้งเดียว" เป็นคนละเรื่อง · วัดจริง 23/09/2026: '
        + '`production_lines` โดน **4,041 ครั้ง/วัน** จาก **107 จุด** ที่ select เองทั่วรีโป '
@@ -416,6 +418,7 @@ const RULES = [
     allow: {
       'src/utils/useProductionLines.js': 'ตัว loader เอง',
       'src/pages/Report.jsx': 'จุดเดียวที่ต้องการ head_name ซึ่งไม่อยู่ใน LINE_COLUMNS (ไม่มี dropdown ไหนใช้)',
+      'src/pages/LineSetup.jsx': 'หน้าแก้ทะเบียนไลน์เอง — ต้องเห็นของสดหลังบันทึกทันที + probe ว่าคอลัมน์มีจริงไหม',
     },
   },
   {
