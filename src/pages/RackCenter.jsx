@@ -22,6 +22,8 @@ import { withDocFoot } from '../utils/docForms';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
+import PartCard, { partCardGrid } from '../components/PartCard';
+import { storeBtn } from '../utils/storeUi';
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -319,23 +321,26 @@ export default function RackCenter() {
             <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
               📦 ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 10 }}>
+            <div style={partCardGrid()}>
               {pending.map(p => (
-                <div key={p.id} style={{ background: 'var(--bg2)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#f59e0b' }}>{p.packaging_code}</span>
-                    <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{p.qty}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{p.packaging_name || ''}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    {p.source_line ? `🏭 ${p.source_line}` : ''}{p.product_name ? ` · ${p.product_name}` : ''}
-                    {p.source_prod_no ? ` · FG ${p.source_prod_no}` : ''}
-                  </div>
-                  {canOperate && <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
-                    style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                    {pkgBusy === p.id ? '...' : '✔ จ่าย Packaging'}
-                  </button>}
-                </div>
+                /* 📦 packaging = ภาชนะ ไม่ใช่ชิ้นงาน ⇒ showImg=false (ไม่มีรูปในทะเบียนพาร์ท)
+                   แต่โครงการ์ด/ปุ่ม/ระยะ ใช้ของกลางตัวเดียวกับคิวสโตร์ (UI §6.23) */
+                <PartCard key={p.id}
+                  code={p.packaging_code} name={p.packaging_name} showImg={false}
+                  status={{ label: '🆕 รอจ่าย', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)' }}
+                  metric={{ label: 'จำนวนที่ต้องจ่าย', value: p.qty, unit: '' }}
+                  aside={p.source_line ? { label: 'ไลน์ที่ขอ', value: p.source_line } : null}
+                  rows={[
+                    { k: 'สินค้า', v: p.product_name || null },
+                    { k: 'ใบ FG', v: p.source_prod_no || null },
+                  ]}
+                  footer={canOperate
+                    ? (
+                      <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
+                        style={storeBtn('primary', { width: '100%', opacity: pkgBusy === p.id ? 0.55 : 1 })}>
+                        {pkgBusy === p.id ? 'กำลังบันทึก…' : '✔ จ่าย Packaging'}
+                      </button>
+                    ) : null} />
               ))}
             </div>
           </div>
