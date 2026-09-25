@@ -68,6 +68,9 @@ const EMPTY_ITEM = () => ({
   src_request_item_id: null,
   // 🧩 แถวนี้เกิดจากการระเบิดของเสียของ "ขั้นตอน (OP)" ตัวไหน (null = ของเสียของพาร์ทตรงๆ) — 2026-09-15
   src_op_mat: null,
+  /* 🔴 แถวนี้มาจากถังแดงใบไหน (quality_bin_records) — WI-PD3-069 §5.5 (2026-09-25)
+     WI สั่งให้ Scrap Report อ้างอิง "รายละเอียดและจำนวนตามแท็กแดง" ไม่ใช่ดึงจาก defect_logs ตรงๆ */
+  src_bin_id: null,
 });
 
 function Modal({ title, onClose, children, width = 560 }) {
@@ -397,6 +400,40 @@ export default function ScrapReport() {
     explodeOpItems(next, null, true);
   };
 
+  /* ── ทางที่ 3: ดึงจาก "ถังแดง" (WI-PD3-069 §5.5 · 2026-09-25) ────────────────────
+     เส้นทางที่ WI บังคับจริง: ของเสีย → ติดแท็กแดง → ลงใบปะหน้าถัง (FM-PD2-023)
+     → หัวหน้างานทำ Scrap Report **โดยอ้างอิงรายการตามแท็กแดง** → ขออนุมัติทำลายตาม DOA
+     ต่างจาก "ดึงจาก Daily Report" ที่ข้ามถังแดงไปเอายอดดิบ ⇒ ของในถังไม่มีใบขออนุมัติ
+     (วัดจริง 25/09: ถังแดง 24 แถว · ใบ scrap 6 ใบ · ผูกกัน 0)
+     ⚠️ ดึงเฉพาะใบถังที่ **ยังไม่เคยออกใบ** (scrap_report_id is null) — กันของก้อนเดียวถูกขออนุมัติซ้ำ */
+  const pullFromRedBins = async () => {
+    const { report } = editor;
+    if (!report.line_name || !report.report_date) { toast.error('เลือกไลน์และวันที่ก่อน'); return; }
+    const { data: bins, error } = await supabaseDR.from('quality_bin_records')
+      .select('id, mat_no, part_name, part_no, qty, cause, work_date')
+      .eq('bin', 'red').eq('is_active', true)
+      .eq('line_name', report.line_name).eq('work_date', report.report_date)
+      .is('scrap_report_id', null);
+    if (error) { toast.error('ดึงรายการถังแดงไม่สำเร็จ: ' + error.message); return; }
+    if (!bins?.length) {
+      toast.info('ไม่มีรายการในถังแดงของไลน์/วันนี้ที่ยังไม่ได้ออกใบ — ถ้ายังไม่ได้ลงถัง ให้ลงที่ Daily Report ปุ่ม 🗑️ ลงถัง ก่อน');
+      return;
+    }
+    // ใบถัง 1 แถว = 1 รายการบนใบ scrap (ไม่ยุบรวม — แต่ละแท็กแดงเป็นก้อนของจริงที่ต้องสอบกลับได้)
+    const already = new Set(editor.items.map(it => it.src_bin_id).filter(Boolean));
+    const add = bins.filter(b => !already.has(b.id)).map(b => ({
+      ...EMPTY_ITEM(), source: 'main',
+      mat_no: b.mat_no || '', part_name: b.part_name || '', part_no: b.part_no || '',
+      qty: b.qty ?? '', confirm_qty: b.qty ?? '', m_cause: b.cause || '',
+      src_bin_id: b.id,
+    }));
+    if (!add.length) { toast.info('รายการถังแดงทั้งหมดถูกดึงเข้าใบนี้แล้ว'); return; }
+    const next = [...editor.items, ...add];
+    setEditor(e => (e ? { ...e, items: next } : e));
+    toast.success(`ดึงจากถังแดง ${add.length} รายการ ✓ — บันทึกใบแล้วระบบจะผูกใบถังกลับให้อัตโนมัติ`);
+    explodeOpItems(next, null, true);
+  };
+
   const setRep = (patch) => setEditor(e => ({ ...e, report: { ...e.report, ...patch } }));
   const setItem = (key, patch) => setEditor(e => ({ ...e, items: e.items.map(it => it._key === key ? { ...it, ...patch } : it) }));
   const addItem = (source = 'main') => setEditor(e => ({ ...e, items: [...e.items, { ...EMPTY_ITEM(), source }] }));
@@ -461,14 +498,27 @@ export default function ScrapReport() {
         defect_codes: it.defect_codes || null, src_defect_from_logs: !!it.src_defect_from_logs,
         src_request_item_id: it.src_request_item_id || null,
         src_op_mat: it.src_op_mat || null,
+        src_bin_id: it.src_bin_id || null,
       }));
-      // 42703 = ยังไม่ apply migration ของคอลัมน์ src_op_mat → ถอยไปชุดเดิม (ห้ามให้ทั้งใบบันทึกไม่ได้)
+      // 42703 = ยังไม่ apply migration ของคอลัมน์ src_op_mat/src_bin_id → ถอยไปชุดเดิม (ห้ามให้ทั้งใบบันทึกไม่ได้)
       let { error } = await supabaseDR.from('scrap_report_items').insert(rows);
       if (error?.code === '42703') {
         ({ error } = await supabaseDR.from('scrap_report_items')
-          .insert(rows.map(({ src_op_mat, ...r }) => r)));   // eslint-disable-line no-unused-vars
+          .insert(rows.map(({ src_op_mat, src_bin_id, ...r }) => r)));   // eslint-disable-line no-unused-vars
       }
       if (error) { toast.error(error.message); return; }
+
+      /* 🔴 ผูกใบถังแดงกลับมาที่ใบนี้ (WI-PD3-069 §5.5) — ทำ **หลัง** items บันทึกสำเร็จเท่านั้น
+         ไม่งั้นใบถังจะถูกมาร์คว่า "ออกใบแล้ว" ทั้งที่รายการยังไม่เข้าใบ = ของหลุดจากสายขออนุมัติทำลาย
+         ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับ (กฎเหล็กข้อ 2) */
+      const binIds = [...new Set(items.map(it => it.src_bin_id).filter(Boolean))];
+      if (binIds.length) {
+        const { data: linked, error: bErr } = await supabaseDR.from('quality_bin_records')
+          .update({ scrap_report_id: repId }).in('id', binIds).select('id');
+        if (bErr) toast.error(`บันทึกใบแล้ว แต่ผูกใบถังแดงไม่สำเร็จ: ${bErr.message} — ของในถังจะยังขึ้นว่า "ยังไม่ออกใบ"`);
+        else if ((linked?.length || 0) < binIds.length)
+          toast.error(`ผูกใบถังแดงได้ ${linked?.length || 0}/${binIds.length} รายการ — ที่เหลืออาจไม่มีสิทธิ์แก้ แจ้ง admin`);
+      }
     }
     if (report.status === 'submitted') notifyEvent({
       event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
@@ -604,6 +654,11 @@ export default function ScrapReport() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 13.5 }}>รายการของเสีย ({editor.items.length})</div>
             <div style={{ flex: 1 }} />
+            {/* 🔴 ทางที่ WI บังคับ (§5.5) — วางก่อน "ดึงจาก Daily Report" ให้เป็นทางหลักที่ตาเห็นก่อน */}
+            <button style={btnSt('#e05252')} onClick={pullFromRedBins}
+              title="ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด">
+              ⤵ ดึงจากถังแดง
+            </button>
             <button style={btnSt('#4d9fff')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
             {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
             <button style={btnSt('#a855f7')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
@@ -652,6 +707,7 @@ export default function ScrapReport() {
                     <td style={tdSt}>{i + 1}
                       {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
                       {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
+                      {it.src_bin_id && <span title="ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5" style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
                       {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
                       {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
                     <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
