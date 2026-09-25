@@ -41,6 +41,8 @@ export const DR_AUDIT_TABLES = new Set([
   'die_sets','equipment_die','die_op_types','die_storage_areas','storage_zones','storage_locations',
   'part_routings',
   'quality_bin_records',
+  'repair_wi_registry',      // ทะเบียน QRs ↔ WI ซ่อม (WI-PD3-069 §6) — doc_control แก้เองได้ ต้องรู้ว่าใครแก้
+  'prod_problem_reports',    // ใบรายงานปัญหาการผลิต FM-PD1-019 (เก็บ 1 ปี) — เอกสารคุณภาพ ต้องสอบกลับได้
   'line_part_levels',   // min/max พาร์ทต่อไลน์ — ค่าที่คนตั้งเอง ต้องรู้ว่าใครแก้เมื่อไหร่
   'line_delivery_points',   // จุดส่งงานหน้าไลน์ (QR ESM:D) — ลูปสโตร์เฟส 4 (2026-09-03)
   'press_setup_rules',   // กฎเวลาเปลี่ยนรุ่นงานปั๊ม — ตัวเลขมาจากช่างปั๊ม ต้องรู้ว่าใครแก้เมื่อไหร่ (2026-09-25)
@@ -96,6 +98,7 @@ const DR_STEP_ACTORS = {
   transport_round_assignments: [['assigned_by','assigned_by_uid']],
   quality_bin_records: [['reported_by','reported_by_uid'], ['qa_by','qa_by_uid'],
     ['repair_by','repair_by_uid'], ['disposed_by','disposed_by_uid']],
+  prod_problem_reports: [['issued_by','issued_by_uid']],
   scrap_reports: [['inspector_name','inspector_uid'], ['requester_name','requester_uid'],
     ['approver_qa_name','approver_qa_uid'], ['approver_pd_name','approver_pd_uid'],
     ['approver_gm_name','approver_gm_uid'], ['sender_name','sender_uid'],

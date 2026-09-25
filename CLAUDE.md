@@ -249,6 +249,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน)
 
 หัวหน้ากลุ่ม Assy2 แจ้งว่ายังเขียนมือทุกครั้ง 3 ใบ (ปัญหาการผลิต · ถังเหลือง · ถังแดง) ทั้งที่ข้อมูลอยู่ในระบบแล้ว → ทำเป็น export/paperless
+
+> ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
+> ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร: **ออกใบ = เขียนทะเบียนก่อนค่อยพิมพ์** (ล้ม = ห้ามพิมพ์ต่อเงียบ) ·
+> เก็บ **`snapshot` = เนื้อใบ** · **พิมพ์ซ้ำ = ใบเดิม ไม่ออกเลขใหม่** · snapshot ไม่ตรงข้อมูลปัจจุบัน = เขียนบนจอ ·
+> เลข running = "เลขสูงสุดของเดือน+1" **ห้าม `count()+1`** · ต้นแบบ `src/lib/prodProblemDoc.js`
+> · ถังเหลือง/แดง: อายุแท็ก · ผล QA 4 ทาง · เลข WI ซ่อม → `src/utils/qualityBin.js`/`repair_wi_registry`
+>   **ห้ามประกาศซ้ำในหน้า** · **ห้ามเพิ่ม `closed_at` ที่ต้องมีคนกดปิด** (ไม่มีใครกด = ของค้างเทียมเต็มจอ)
+
 > 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md` (2 หัวข้อย่อย)
 
 ---
@@ -730,7 +738,7 @@ new Date().toISOString().slice(0,10)  // อาจได้วันที่ผ
 getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
 ```
 
-> ⚠️ **กฎวันทำงาน (คำสั่ง user 2026-07-21): ทุกการคำนวณที่เกี่ยวกับ "วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ (22/26 วัน)** — ใช้ helper กลาง `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน) หรือ logic เดียวกัน: จ-ศ ไม่มาร์ค = ทำงาน · มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · เสาร์/อาทิตย์มาร์ค working = ทำงาน · จุดที่ใช้แล้ว: kanban calc (PlannerSales), Production Plan รายวัน+รายเดือน, PM Forecast, LPA — บั๊กที่เคยเจอ: regex เทียบ day_type ไม่ match ค่าจริง (kanban นับวันหยุด จ-ศ เป็นวันทำงาน) และนับเฉพาะวันที่มาร์ค working ชัดๆ (แผนรายเดือนได้ 4-5 วัน/เดือน) — แก้แล้วทั้งคู่ 2026-07-21
+> ⚠️ **กฎวันทำงาน (คำสั่ง user 2026-07-21): ทุกการคำนวณที่เกี่ยวกับ "วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ (22/26 วัน)** — ใช้ helper กลาง `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน) หรือ logic เดียวกัน: จ-ศ ไม่มาร์ค = ทำงาน · มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · เสาร์/อาทิตย์มาร์ค working = ทำงาน · 📄 จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
 
 > **ฝั่ง SQL (DR project)** มี helper กลาง `work_date_bangkok()` (migration `20260714_work_date_bangkok_fallback.sql`)
 > = work date ไทยตัด 08:00 — trigger/function/default ใหม่ฝั่ง DR ที่ต้องการวันที่งาน **ให้ใช้ตัวนี้
@@ -738,17 +746,17 @@ getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / 
 
 ### 🔴 กฎเหล็กการเขียน DB จาก client (ตกผลึกจาก full QC audit 2026-09-03..04 — คลาสบั๊กที่เจอซ้ำทุกรอบ)
 
-1. **supabase-js ไม่ throw** — คืน `{ data, error }` เสมอ ⇒ `try { await supabase… } catch {}` = โค้ดตาย · `const { data } = await …` = กลืน error 100% (คิวรีล้มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล") · **ทุก insert/update/delete ต้องอ่าน `error`** — helper กลาง `checkWrite(await …, 'ป้ายงาน')` ใน `src/utils/dbWrite.js` (toast แดง + คืน false · กวาดครบ 69 จุด 2026-09-07) · จุด delete-then-insert ต้องหยุดก่อน insert เมื่อ delete ล้ม
+1. **supabase-js ไม่ throw** — คืน `{ data, error }` เสมอ ⇒ `try { await supabase… } catch {}` = โค้ดตาย · `const { data } = await …` = กลืน error 100% (คิวรีล้มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล") · **ทุก insert/update/delete ต้องอ่าน `error`** — helper กลาง `checkWrite(await …, 'ป้ายงาน')` ใน `src/utils/dbWrite.js` (toast แดง + คืน false) · จุด delete-then-insert ต้องหยุดก่อน insert เมื่อ delete ล้ม
 2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง `.select('id')` แล้ว**นับแถว** ห้ามขึ้น toast เขียวจาก `!error` อย่างเดียว
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** — วัดจริง 04/09: 5 ตารางที่ hardcode admin/mgr/sv (`machine_points`·`machine_flow_links`·`wip_buffer_points`·`skill_sub_items`·`shift_merge_events`) แคบกว่าสิทธิ์ที่ `/permissions` แจก (dept_admin · sale/mtn/planner_store · document_control) → คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ · และ `operator_special_tasks` **ไม่มี UPDATE policy เลย** → เปลี่ยนงานนอกไลน์ของคนเดิมพัง 42501 ทุก role (migration `20260904_rls_match_ui_permissions.sql`) · **ตารางใหม่ต้องมี policy ครบทั้ง 4 cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE**
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** — role array ที่เขียนมือจะ**แคบกว่าสิทธิ์ที่ `/permissions` แจก** เสมอ ⇒ คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ · **ตารางใหม่ต้องมี policy ครบทั้ง 4 cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 📄 5 ตารางที่เคยพลาด + migration → `docs/modules/db-write-rules.md`
 4. **stale-response race** — จอที่ยิงคิวรีตาม state (เลือกกะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับมา ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report เขียนข้อมูลผิดกะ · รอบ 3) — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / เทียบ request id / เทียบ ref ปัจจุบัน) ก่อน set
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า ต้อง filter/paginate
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (กฎเหล็ก 7 ใน `docs/modules/demand-flow-tower.md`)
 7. **realtime handler ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** (audit `docs/POLLING-AUDIT-2026-09-15.md` — มีตัวเลขที่วัดจริง) — `debounce(reload, 1500)` = "รอให้เงียบ 1.5 วิ" ซึ่ง**วันทำงานจริงไม่มีช่วงเงียบ** ⇒ จอโหลดใหม่ทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล ไม่มีขีดจำกัดบน · **ใช้ `coalesce(fn, LIVE.x)` จาก `src/utils/liveRefresh.js` เท่านั้น ห้าม debounce/`setTimeout` เอง** (`setTimeout(load, 400)` ต่อ event ยิ่งแย่ — แต่ละ event ตั้งนาฬิกาของตัวเอง = N event N โหลด) · ระดับ `LIVE.ALARM/PAGE/BOARD` อยู่ใน `src/utils/refreshRates.js` ห้ามใส่ ms ดิบ · **subscribe แบบไม่มี `filter:` = ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ** ให้กรองฝั่ง server เสมอเมื่อรู้ขอบเขต — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default → `old` มีแค่ pk ⇒ event ถูกตัดทิ้งเงียบ) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
-8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · realtime handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** (message ~200 bytes เฉพาะตอนมีของเปลี่ยน ถูกกว่า poll ทั้งก้อนเป็นร้อยเท่า) · **จอใหม่ให้ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** — เขียนมือแล้วตกหล่นทุกครั้ง (audit 15/09: 11 จอ เขียนคนละแบบ ไม่มีจอไหนมีเพดานจริงเลย)
+8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** (เขียนมือแล้วตกหล่นทุกครั้ง) · 📄 ตัวเลขที่วัดจริง → `docs/modules/db-write-rules.md`
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิงซ้ำวันละหลายร้อยรอบ) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (`docs/EGRESS-AUDIT-2026-09-17.md`) `mtn_orders` มี **116 คอลัมน์** ⇒ `select('*')&limit=1000` = **1.59 MB/ครั้ง** = เกือบครึ่งของ egress ฝั่ง DR จากคิวรีเดียว · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` แล้ว · **รูปผังห้ามเป็น PNG** (lossless ⇒ 8.4 MB/ใบ) ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (`mtn_orders` 116 คอลัมน์ × 1000 แถว = **1.59 MB/ครั้ง**) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ** · 📄 ตัวเลข → `docs/modules/db-write-rules.md`
 
 ### Skill Fit Scoring
 ```js
@@ -769,35 +777,30 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 2. **ทำงานให้สอดคล้องกับกฎ** — ถ้าสิ่งที่จะทำขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
 3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (`docs/modules/<module>.md` เป็นหลัก / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md / CLAUDE.md เฉพาะกฎข้าม session) **ในคอมมิทเดียวกัน** พร้อมวันที่
 4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
-   - **⚠️ `npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** (เทสเข้าด่าน 2026-08-24 · ด่าน context 2026-09-03)
-     ก่อนหน้านี้มีไฟล์เทส 9 ไฟล์ / 51 เคส ที่เอกสารอ้างว่า "ล็อกไว้แล้ว" แต่ **ไม่มี script ไหนรันมันเลย**
-     → เทสที่เขียนไว้กันของพังไม่เคยถูกเรียกใช้จริงถ้าไม่มีคนพิมพ์คำสั่งเอง (พบตอน QC audit)
-     · ตัวรัน = `scripts/run-tests.mjs` ไล่หา `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่ไว้ใน
-     `__tests__/` ที่ไหนก็ได้ใต้ src/ แล้วมันถูกเก็บอัตโนมัติ ไม่ต้องแก้ script**
-     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'` ใน package.json** — node รองรับ glob ใน `--test` ตั้งแต่ v22
-     แต่ Vite 8 รับ Node 20.19+ ได้ ถ้า Render ใช้ Node 20 อยู่จะ **deploy ล่มทั้งที่โค้ดไม่ผิด**
-     · **⏱️ `npm test` รันเทส 2 รอบ: รอบปกติ + รอบ "นาฬิกา +400 วัน" (2026-09-14)** — จับ
-     **เทสระเบิดเวลา** (ผ่านตอนเขียน แล้วตกเองวันหลังโดยไม่มีใครแตะโค้ด) · เกิดจริง: เทส
-     `pullSignal` นับจำนวน warning ของไฟล์ตัวอย่างลงวันที่ 08/09 พอโค้ดเพิ่มคำเตือน "ไฟล์เก่ากว่า
-     วันนี้เกิน 3 วัน" มันก็ตกเองตั้งแต่ 12/09 ⇒ **build ล่ม deploy ไม่ออก และหา commit ต้นเหตุไม่เจอ
-     เพราะไม่มี commit ไหนทำ** · **กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` เป็นพารามิเตอร์ได้
+   - **⚠️ `npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`**
+     · ตัวรันเทส = `scripts/run-tests.mjs` ไล่หา `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่ใน
+     `__tests__/` ที่ไหนก็ได้ใต้ src/ แล้วถูกเก็บอัตโนมัติ ไม่ต้องแก้ script**
+     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'` ใน package.json** (glob ต้อง node v22 · Render อาจใช้ 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+     · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ **เทสระเบิดเวลา** (ผ่านตอนเขียน แล้วตกเองวันหลัง
+     โดยไม่มี commit ไหนทำ ⇒ หาต้นเหตุไม่เจอ) · **กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` เป็นพารามิเตอร์
      แล้วเทสตรึงค่า** — ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออกจาก `scripts/run-tests.mjs`**
+     · 📄 ที่มาของแต่ละด่าน + เคสจริง → `docs/modules/build-gates.md`
    - **🛡️ ด่าน "บั๊กเก่าห้ามกลับมา" = `src/utils/__tests__/regressionGuards.test.mjs`** (2026-09-16 · คำสั่ง user
      *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — สแกนทั้งรีโปบังคับกฎที่**เคยพังจริง** (ตกด่าน = build ล่ม
      พร้อมบอกบรรทัด + บั๊กที่เคยเกิด + วิธีแก้) · **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
      ในคอมมิทเดียวกับที่แก้บั๊ก** (กติกา/ทะเบียนกฎอยู่หัวไฟล์ — ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
-   - **`npm run build` มีด่าน lint กฎ crash ในตัวแล้ว (2026-07-24)** — `eslint.critical.config.js` เช็ค `no-undef` ฯลฯ เฉพาะกฎที่ทำแอปพังตอน runtime (bundler ไม่จับ — เคยเกิดจริง: ใช้ useMemo โดยไม่ import → Daily Report จอขาวทั้งโรงงาน) · lint ไม่ผ่าน = build ไม่ผ่าน ห้าม bypass (`vite build` ตรงๆ) เพื่อหนีด่าน — แก้โค้ดให้ผ่านแทน · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
-     - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ (2026-08-26)**
-     เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` (~3 นาที · ต้องเปิด vite audit ค้างไว้)
-     · เคสจริงที่ **build/lint/เทสผ่านหมดแต่หน้าพัง** → `audit/README.md`
-     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · แถว KPI `manual`+`auto:`) —
-     แต่ละตัวเปิดโค้ดทั้งคลาสที่ไม่งั้น**ไม่เคยถูกรันใน harness เลย** · เหตุผล+เคสจริงรายตัว → `audit/README.md`
-     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย
-     - **📱 `node audit/mobilesweep.mjs` — เปิดทุกหน้าที่ 390px (2026-09-16)** จับ 3 อาการที่
-     **build/lint/เทส/crashsweep ผ่านหมดแต่ใช้งานจริงไม่ได้**: sticky ค้างทับเนื้อหา · ของล้นแล้วปัดดูไม่ได้ ·
-     ข้อความถูกบีบเหลือกว้าง 0 → `docs/UI-CONVENTIONS.md` §มือถือ
+   - **ด่าน lint กฎ crash** — `eslint.critical.config.js` เช็คเฉพาะกฎที่ทำแอปพังตอน runtime (`no-undef` ฯลฯ)
+     ที่ bundler ไม่จับ · lint ไม่ผ่าน = build ไม่ผ่าน **ห้าม bypass ด้วย `vite build` ตรงๆ**
+     · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
+     - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ**
+     (เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` ~3 นาที · ต้องเปิด vite audit ค้างไว้)
+     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · แถว KPI `manual`+`auto:`
+     · แถวเอกสารที่ออกเลขที่ใบแล้ว) — แต่ละตัวเปิดโค้ดทั้งคลาสที่ไม่งั้น**ไม่เคยถูกรันใน harness เลย**
+     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย · เหตุผลรายตัว → `audit/README.md`
+     - **📱 `node audit/mobilesweep.mjs` — ทุกหน้าที่ 390px** จับ sticky ค้างทับเนื้อหา · ของล้นแล้วปัดดูไม่ได้ ·
+     ข้อความถูกบีบเหลือกว้าง 0 (`docs/UI-CONVENTIONS.md` §มือถือ)
      · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
-   - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว (2026-07-30)** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · เคสจริงที่ทำให้เปิดกฎ: MtnRepair (`useMemo` หลัง `if (loading) return`) ทำหน้าแจ้งซ่อม crash + ProtectedLayout (`if (!session) return` ก่อน useAutoLogout/useState) · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — ถ้าเจอ error นี้ตอน build ให้ย้าย hook ขึ้นก่อน return ห้าม disable กฎ
+   - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — เจอ error นี้ตอน build ให้ย้าย hook ขึ้น **ห้าม disable กฎ**
 
 ### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
 
