@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  resolveSetupRule, stepAddMin, setupMinutes, sequenceSetup,
+  resolveSetupRule, stepAddMin, heightAddMin, setupMinutes, sequenceSetup,
   orderByDieHeight, fitsPress, setupDataReadiness,
 } from '../pressSetup.js';
 
@@ -18,6 +18,9 @@ const RULE = {
   height_steps: [{ max_mm: 10, add_min: 0 }, { max_mm: 50, add_min: 15 }, { max_mm: null, add_min: 30 }],
 };
 const die = (id, h) => ({ id, die_height_mm: h });
+/* นาทีที่ได้จากวินาที/60 เป็นทศนิยมฐานสอง — ผลรวมหลายช่วงไม่เท่ากับหารครั้งเดียวเป๊ะ
+   (10/60 + 190/60 ≠ 200/60) ⇒ เทียบแบบมีค่าคลาดเคลื่อน · จอต้องปัดเศษก่อนแสดงเสมอ */
+const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, msg || `${a} ≈ ${b}`);
 
 /* ── resolve ขอบเขต ───────────────────────────────────────────────────────── */
 test('เครื่อง ชนะ ไลน์ ชนะ ทั้งโรงงาน', () => {
@@ -158,6 +161,63 @@ test('readiness บอกตรงๆ ว่ายังขาดอะไร �
   assert.equal(r.canPlan, false, 'ไม่มีกฎ = วางแผนไม่ได้ แม้จะมีความสูงบ้างแล้ว');
 });
 
+/* ── ⭐ อัตราต่อมิลลิเมตร — ตัวเลขจริงจากช่างปั๊ม 2026-09-25: 1mm = 1sec ─────────────── */
+const RATE = { scope_kind: 'global', scope_value: null, per_mm_sec: 1, base_min: null, same_die_min: null, height_steps: [] };
+
+test('1 มม. = 1 วินาที → Δ120 มม. = 2 นาที (heightAddMin คิดเป็นนาทีให้เลย)', () => {
+  assert.equal(heightAddMin(RATE, 120), 2);
+  assert.equal(heightAddMin(RATE, 0), 0);
+  assert.equal(heightAddMin(RATE, 30), 0.5);
+});
+
+test('อัตราต่อมม. + ขั้นบันได บวกทับกันได้ (เผื่อวันหน้ามีเงื่อนไขแบบขั้น)', () => {
+  const both = { per_mm_sec: 1, height_steps: [{ max_mm: 200, add_min: 0 }, { max_mm: null, add_min: 30 }] };
+  assert.equal(heightAddMin(both, 60), 1, 'Δ60 = 1 นาที + ขั้นแรก 0');
+  assert.equal(heightAddMin(both, 300), 35, 'Δ300 = 5 นาที + ขั้นสุดท้าย 30');
+});
+
+test('🔴 กฎที่ไม่ได้บอกผลของความสูงเลย = null ห้ามเป็น 0 (0 = ทุกลำดับเท่ากัน จอจะบอก "เรียงใหม่ไม่ช่วย" แบบมั่ว)', () => {
+  assert.equal(heightAddMin({ base_min: 20 }, 150), null);
+  assert.equal(heightAddMin({ base_min: 20, height_steps: [] }, 150), null);
+});
+
+/* ── ⭐ ไม่รู้เวลาฐาน แต่ยังเทียบลำดับได้ (เวลาฐานหักกลบจากผลต่าง) ──────────────────── */
+test('🔴 ไม่รู้เวลาฐาน = totalMin null แต่ varMin ยังเป็นตัวเลขจริง', () => {
+  const r = setupMinutes({ fromDie: die('a', 300), toDie: die('b', 420), rule: RATE });
+  assert.equal(r.state, 'no_base');
+  assert.equal(r.min, null, 'ตอบเวลารวมไม่ได้ ห้ามเดา');
+  assert.equal(r.varMin, 2, 'Δ120 มม. = 2 นาที — ส่วนนี้รู้แน่');
+  assert.equal(r.baseMin, null);
+});
+
+test('⭐ หัวใจของการลากแผน: เทียบลำดับได้แม้ไม่รู้เวลาฐาน (จำนวนครั้งเปลี่ยนเท่ากัน ฐานหักกลบ)', () => {
+  const A = die('A', 300), B = die('B', 310), C = die('C', 500);
+  const bad  = sequenceSetup([A, C, B], RATE);   // Δ200 + Δ190 = 390 วิ = 6.5 น.
+  const good = sequenceSetup([A, B, C], RATE);   // Δ10  + Δ190 = 200 วิ = 3.33 น.
+  assert.equal(bad.totalMin, null, 'เวลารวมตอบไม่ได้ (ยังไม่รู้เวลาฐาน)');
+  assert.equal(good.totalMin, null);
+  near(bad.varMin, 390 / 60);
+  near(good.varMin, 200 / 60);
+  assert.ok(bad.varMin - good.varMin > 3, 'สลับลำดับ 3 ใบ ประหยัด > 3 นาที');
+  assert.equal(good.baseUnknown, true, 'จอต้องรู้ว่าเวลาฐานยังไม่รู้ เพื่อเขียนกำกับ');
+});
+
+test('⭐ เรียงความสูงทางเดียว = ค่าน้อยสุดที่เป็นไปได้ของ Σ|Δ| (อัตราเชิงเส้น)', () => {
+  const list = [die('a', 100), die('b', 450), die('c', 220), die('d', 380)];
+  const sorted = sequenceSetup(orderByDieHeight(list), RATE).varMin;
+  near(sorted, (450 - 100) / 60, 'ไล่ทางเดียว = ช่วงสูงสุด−ต่ำสุด');
+  /* ทุกลำดับอื่นต้องไม่ดีกว่านี้ */
+  const perm = (a) => a.length <= 1 ? [a] : a.flatMap((x, i) => perm([...a.slice(0, i), ...a.slice(i + 1)]).map(r => [x, ...r]));
+  for (const p of perm(list)) assert.ok(sequenceSetup(p, RATE).varMin >= sorted - 1e-9);
+});
+
+test('เวลาฐานที่ไม่รู้ ห้ามทำให้ varMin หาย (จอต้องยังจัดลำดับได้)', () => {
+  const s = sequenceSetup([die('a', 100), die('b', 200)], RATE);
+  assert.equal(s.totalMin, null);
+  assert.ok(s.varMin > 0);
+  assert.equal(s.unknownCount, 0, 'รู้ความสูงครบ = ไม่มีช่วงที่ประเมินไม่ได้');
+});
+
 test('มีกฎ + รู้ความสูง ≥ 2 ตัว = เริ่มเทียบลำดับได้', () => {
   const r = setupDataReadiness({ dies: [die('a', 100), die('b', 200)], presses: [], rules: [RULE] });
   assert.equal(r.canPlan, true);
@@ -166,4 +226,18 @@ test('มีกฎ + รู้ความสูง ≥ 2 ตัว = เริ�
 test('รู้ความสูงแค่ตัวเดียว = ยังเทียบลำดับไม่ได้', () => {
   const r = setupDataReadiness({ dies: [die('a', 100), die('b', null)], presses: [], rules: [RULE] });
   assert.equal(r.canPlan, false);
+});
+
+test('🔴 กฎที่มีแต่เวลาฐาน (ไม่มีผลของความสูง) = จัดลำดับไม่ได้ แม้จะ "มีกฎ" แล้ว', () => {
+  const onlyBase = { scope_kind: 'global', base_min: 20, height_steps: [] };
+  const r = setupDataReadiness({ dies: [die('a', 100), die('b', 200)], presses: [], rules: [onlyBase] });
+  assert.equal(r.ruleCount, 1);
+  assert.equal(r.ruleWithHeight, 0);
+  assert.equal(r.canPlan, false, 'ทุกลำดับเท่ากันหมด = ไม่มีอะไรให้จัด');
+});
+
+test('canPlan (จัดลำดับ) กับ canTotal (ตอบเวลารวม) เป็นคนละคำถาม', () => {
+  const r = setupDataReadiness({ dies: [die('a', 100), die('b', 200)], presses: [], rules: [RATE] });
+  assert.equal(r.canPlan, true, 'รู้ผลของความสูง = จัดลำดับได้');
+  assert.equal(r.canTotal, false, 'ยังไม่รู้เวลาฐาน = ตอบเวลารวมไม่ได้');
 });
