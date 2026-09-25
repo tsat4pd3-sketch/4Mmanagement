@@ -663,3 +663,13 @@ migration `20260924_kpi_unit_decimals_summary_main.sql` (**apply แล้ว**)
 `provider_config->>'summary'` (ตอน seed 23/09 ยังไม่มีคอลัมน์) เข้า `kpi_catalog.summary_mode` แล้ว**ลบคีย์ที่ฝากทิ้ง**
 (43/43 แถวเคลียร์แล้ว — ห้ามมี 2 แหล่งความจริง) ⇒ ตอนนี้จอโชว์:
 `Scrap รวมปี 1,628.5` (เดิม 271.4) · `Cost Reduction รวมปี 2,270.8` · `PPM ≈ เฉลี่ย 287.3` · `Sales/Head สูงสุด`
+
+## ⚡ KPI ช่างคำนวณเองตามสูตรทางการ (2026-09-24 · user ส่ง KPI Guideline 2026 ซ้ำ)
+
+- **สูตร = KPI Guideline 2026 หน้า 10 verbatim** (MO Closed on target · Machine Break Down · MTBF 730×n · MTTR) — `src/utils/kpiAuto.js` ที่เดียว · ที่มา/ข้อสมมติ → `docs/OBEYA-KPI-SOURCES.md §15.7`
+- **RPC `kpi_mtn_rollup` (DR · Σ ต่อ (เดือน, ทีม) และ (เดือน, ชนิดอุปกรณ์) · ห้ามคำนวณ KPI ใน SQL)** · ~2 KB/ปี แทน downtime_logs ดิบ ~1.5 MB
+- แท็บ ⚙️ (`KpiMonthly`): ขอบเขต = แผนกที่ตรง `mtn_teams.dept_name` ⇒ แถบ "⚡ ทีมช่าง …" + ใต้แถว KPI ที่ `autoKpiOfName()` จับคู่ได้ มีบรรทัด ⚡ 12 เดือน
+  + ปุ่ม **⬇ ใช้ค่านี้** (เติมเดือนว่างเท่านั้น · เขียน `kpi_manual_entries` · confirm ก่อน) · หน่วยแถว "นาที" → `toRowUnit` ×60 · ต่างจากที่กรอก >5% ติด ≠
+- **ทำไมไม่เขียนทับอัตโนมัติ:** ค่าทางการยังเป็นของเจ้าของใบ (KPI Online) และเด็ค H1 ใช้ฐานเวลาอีกแบบ (MTBF 341 vs 729.5) — ระบบ "เสนอ" คนตัดสิน
+- harness: `audit/mockSupabase.js` มี `mtn_teams` (TABLE_FIXED) + แถว `kd-5`/`kd-6` ของ JIG MTN + `RPC_RESULT.kpi_mtn_rollup` — **ห้ามถอด** ไม่งั้นสายนี้ไม่ถูกรัน
+- ยังไม่ทำ: แผ่น 📌 บนบอร์ด `?tab=kpi` ยังอ่านเฉพาะค่าที่กรอก (กด "ใช้ค่านี้" แล้วถึงขึ้น) · PM ตามแผน/TS Academy ยังไม่มีตัวคำนวณ (ต้องนิยาม "ผ่านอบรม")

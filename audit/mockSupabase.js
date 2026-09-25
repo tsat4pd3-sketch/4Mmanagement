@@ -146,7 +146,8 @@ const TABLE_ROWS = {
   org_nodes: (r, i) => ({
     ...r,
     kind: i === 1 ? 'section' : (i === 2 || i === 6) ? 'department' : i <= 5 || i === 7 ? 'line' : 'team',
-    code: i === 1 ? 'PD1' : i <= 5 || i === 7 ? null : r.code,
+    code: i === 1 ? 'PD1' : i <= 5 || i === 7 ? null : i === 6 ? null : r.code,
+    name: i === 6 ? 'JIG MTN' : r.name,   // แผนกช่างชื่อจริง — ให้สาย ⚡ KPI ช่าง (kpi_mtn_rollup → kpiAuto) ถูกรันใน harness
     parent_id: i === 1 || i === 6 ? null : i === 2 ? 'id-1' : i <= 5 ? 'id-2' : i === 7 ? 'id-6' : 'id-3',
     ref_line_id: i >= 3 && i <= 5 ? `id-${i}` : null,
     division: i === 1 ? 'production' : i === 6 ? 'maintenance' : null,
@@ -282,6 +283,17 @@ const TABLE_FIXED = {
     { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
     /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
     { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
+    /* ⚡ KPI ช่างของแผนก JIG MTN (24/09) — ชื่อตามที่ seed จริง ⇒ สาย `autoKpiOfName` → แถว "⚡ ระบบคำนวณ" + ปุ่ม "ใช้ค่านี้" ถูกรันใน harness
+       · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
+    { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
+    { id: 'kd-6', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'customer', seq: 6, name: 'MO Closed on target', source: 'manual', unit: '%', target_compare: '>=', target_value: 99, commit_compare: '>=', commit_value: 95, direction: 'up', weight: 6, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
+  ],
+  /* ทีมช่าง — ทรงเดียวกับ DEFAULT_TEAMS ของ pmTeams.js (dept_name ต้องตรงชื่อแผนกในผัง ไม่งั้นแท็บ ⚙️ ไม่รู้ว่าขอบเขตนี้เป็นทีมช่าง) */
+  mtn_teams: [
+    { id: 't-1', key: 'maintenance', label: 'MTN (ซ่อมบำรุง)', icon: '🔧', equip_type: 'machine', dept_name: 'MTN', color: '#fb923c', sort_order: 1, kind: 'pm', is_active: true },
+    { id: 't-2', key: 'jig_maintenance', label: 'JIG MTN', icon: '🧩', equip_type: 'jig', dept_name: 'JIG MTN', color: '#34d399', sort_order: 2, kind: 'pm', is_active: true },
+    { id: 't-3', key: 'die_maintenance', label: 'DIE MTN', icon: '🗜️', equip_type: 'die', dept_name: 'DIE MTN', color: '#4d9fff', sort_order: 3, kind: 'pm', is_active: true },
+    { id: 't-4', key: 'production', label: 'AM (ผลิตตรวจเอง)', icon: '🏭', equip_type: null, dept_name: 'PRODUCTION', color: '#94a3b8', sort_order: 4, kind: 'am', is_active: true },
   ],
   factory_map: [{ id: 'fm-1', image_url: FACTORY_MAP_IMG, updated_at: '2026-09-01T00:00:00+07:00' }],
   factory_line_regions: [
@@ -356,7 +368,23 @@ const OBEYA_ATTEND = () => ([
   { m: '2026-03', line: null, n: 50, present: 50, ppe_ok: 50, ot: 5 },
   { m: '2026-04', line: 'ws-ไม่รู้จัก', n: 10, present: null, ppe_ok: null, ot: null },
 ])
+/* ⚡ KPI ช่าง (24/09) — Σ รายเดือนทรงเดียวกับ RPC จริง: มีเดือนที่มีข้อมูล/ไม่มี · ทีม jig มีใบไม่ตั้งกำหนด · เดือนที่ jig ไม่เสียเลย */
+const KPI_MTN_ROLL = () => ({
+  machines: [{ kind: 'die', n: 26 }, { kind: 'jig', n: 17 }, { kind: 'machine', n: 21 }],
+  months: ['2026-06', '2026-07', '2026-08', '2026-09'],
+  mo: [
+    { m: '2026-09', team: 'jig_maintenance', closed: 4, on_target: 2, no_target: 1 },
+    { m: '2026-08', team: 'jig_maintenance', closed: 3, on_target: 3, no_target: 0 },
+    { m: '2026-09', team: 'maintenance', closed: 17, on_target: 1, no_target: 1 },
+  ],
+  dt: [
+    { m: '2026-09', kind: 'jig', events: 42, breakdown_min: 502 },
+    { m: '2026-08', kind: 'jig', events: 25, breakdown_min: 270 },
+    { m: '2026-09', kind: 'machine', events: 50, breakdown_min: 600 },
+  ],
+})
 const RPC_RESULT = {
+  kpi_mtn_rollup: KPI_MTN_ROLL,
   obeya_year_rollup: OBEYA_YEAR,
   obeya_attendance_rollup: OBEYA_ATTEND,
   esm_schema_overview: () => ({ at: '2026-09-22T01:00:00Z', tables: SCHEMA_TABLES, fks: SCHEMA_FKS }),
