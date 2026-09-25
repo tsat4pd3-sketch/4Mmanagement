@@ -2077,7 +2077,7 @@ export default function App() {
   const effTeam     = impersonating ? (viewAs.team ?? null) : userTeam;
   const effSection  = impersonating ? ((viewAs.sections || [])[0] ?? null) : userSection;
   const effSections = impersonating
-    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null)
+    ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null, viewAs.scope_depth)
     : userSections;
   const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
   const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
@@ -2098,7 +2098,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin';
+    const COLS = 'role, line_id, full_name, team, section, sections, position, notify_email, signature_url, is_dept_admin, scope_depth';
     // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
@@ -2162,7 +2162,9 @@ export default function App() {
        (เช่น Daily Report ที่เขียน fix_by/followup_by) จะไม่มีใครโหลดให้เลย
        ใช้ cache ร่วมกับ picker → ไม่ได้ยิงคิวรีเพิ่ม · ล้มก็ไม่กระทบ (resolve ไม่ได้ = uid null เหมือนเดิม) */
     loadProfilesPeople().catch(() => {});
-    setUserSections(effectiveSections(data?.role, data?.sections, ident.section));
+    /* 🔭 ขอบเขตการมองเห็นตัดสินจาก `scope_depth` แล้ว (25/09) ไม่ใช่เดาจาก role/ช่องว่าง
+       พิสูจน์ก่อนสลับว่าผลเท่าของเดิมครบทั้ง 97 บัญชี — ดู docs/ORG-AXES-DECISION.md §7.6 */
+    setUserSections(effectiveSections(data?.role, data?.sections, ident.section, data?.scope_depth));
     setUserNotifyEmail(data?.notify_email ?? null);
     setUserSignatureUrl(data?.signature_url ?? null);
     // mtn_teams / avatar_url มาพร้อม select หลักแล้ว (ไม่ต้องยิงเพิ่มอีก 2 คิวรี — ดูหมายเหตุ egress ข้างบน)
