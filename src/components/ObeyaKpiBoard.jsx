@@ -18,6 +18,9 @@ import PageHeader from './PageHeader';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
+import BoardPager from './BoardPager';
+import useFitHeight from '../utils/useFitHeight';
+import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
 import { statusColor, gapToTarget } from '../utils/obeyaKpi';
 import {
   yearOf, monthKeys, monthLabel, lastDayOf, SUMMARY_KEY,
@@ -448,6 +451,39 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   // ── ผังกระดาษ (ชุดเดียวกับจอ SQDCM) ──────────────────────────────────────────────
   const grid = useSheetGrid(wrapRef, 10);
   const { cols, cw, ch, fit, k } = grid;
+
+  /* ── 📖 แบ่งหน้าแทนการเลื่อน (25/09 · คำสั่ง user "ดูจบได้ในหน้าเดียว … กดเปลี่ยนหน้า") ──
+     จอไหนใส่ได้กี่แผ่นก็แบ่งหน้าตามนั้น — **ห้ามบีบแผ่นให้เล็กลงเพื่อยัดให้ครบ**
+     (ฟอนต์ต่ำกว่า 11px = ผิดกติกาจอ TV) · ที่ไม่พอจริงๆ ถึงถอยไปโหมดเลื่อน */
+  /* ⛔ ความสูงกริด = **วัดจริงจนถึงก้นจอ** ห้ามเดา `78vh` (ของเดิมเดาไว้ รวมกับหัวเพจแล้วเกิน
+     1 จอ ⇒ หน้าเลื่อนขึ้นลงได้ = อาการที่ user ทักมา 25/09)
+     ⚠️ ต้องประกาศ **ก่อน** คำนวณจำนวนหน้า เพราะจำนวนหน้าขึ้นกับความสูงที่วัดได้
+     `null` = ที่ไม่พอจริง (มือถือหัวเพจสูง) ⇒ ถอยไปโหมดเลื่อนแบบเดิม */
+  const [fitRef, availH] = useFitHeight(12, 120);
+  const fitOn = availH != null;
+
+  /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
+     ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
+  const rowsFit = grid.fit
+    ? (grid.rows || 1)
+    : Math.max(1, Math.floor(((grid.bh || 0) + GAP) / ((grid.ch || 1) + GAP)));
+  const perPage = Math.max(1, (grid.cols || 1) * rowsFit);
+  /* ⚠️ ต้องนับ **ทุกแผ่นบนกริด** ไม่ใช่แค่แถว KPI — ท้ายบอร์ดมีแผ่นประจำอีก 2 ใบ
+     (📌 Key Performance · 🚨 งานที่ต้องตามแก้) ถ้าลืมนับ พอ KPI เพิ่มจนเต็มหน้า
+     2 ใบนี้จะถูกวาดทับทุกหน้า = หน้าละ 12 ช่องบนกริด 10 ช่อง ⇒ กลับไปล้นเหมือนเดิม */
+  const sheetItems = useMemo(() => [
+    ...rows.map((r) => ({ kind: 'kpi', key: r.key, row: r, title: r.name })),
+    { kind: 'keyperf', key: '__keyperf', title: '📌 Key Performance' },
+    { kind: 'todo', key: '__todo', title: '🚨 งานที่ต้องตามแก้' },
+  ], [rows]);
+  const pages = useMemo(() => (fitOn ? packPages(sheetItems, perPage) : [sheetItems]),
+    [sheetItems, perPage, fitOn]);
+  const [pgRaw, setPg] = useState(0);
+  const pg = clampPage(pgRaw, pages.length);          // เปลี่ยนขอบเขต/เดือนแล้วหน้าหาย ⇒ เด้งกลับ ห้ามจอว่าง
+  const pageItems = pages[pg] || [];
+  const has = (kind) => pageItems.some((x) => x.kind === kind);
+  const pgLabels = useMemo(() => pageLabels(pages, (x) => x?.title), [pages]);
+
   const fs = (n) => Math.max(11, Math.round(n * k));
   const goBoard = (on) => {
     setBoard(on);
@@ -511,10 +547,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   });
   const navBtn = { fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' };
   const overallLamp = toLamp(overall.st, `ประเมินได้ ${overall.known}/${overall.total} ช่อง`);
+  const rowsUsed = Math.max(1, Math.ceil(cellsUsed(pageItems) / (cols || 1)));
   const sheetsBox = {
     display: 'grid', gap: GAP, alignContent: 'start', justifyContent: 'center',
     gridTemplateColumns: cw ? `repeat(${cols}, ${cw}px)` : `repeat(${cols}, 1fr)`,
-    gridAutoRows: ch ? `${ch}px` : 'auto',
+    /* แถวของ "หน้านี้" เท่านั้น แล้วยืดเต็มกล่อง — หน้าสุดท้ายที่มีแผ่นไม่ครบแถวจะได้ไม่เหลือ
+       ที่ว่างเป็นแถบใหญ่ใต้บอร์ด (เห็นชัดตอนแบ่งหน้าบนจอเตี้ย) · จอที่เต็มพอดีได้ผลเท่าเดิมเป๊ะ */
+    gridTemplateRows: `repeat(${rowsUsed}, minmax(0, 1fr))`,
+    height: '100%',
   };
   const warnLines = [
     data?.warn?.length ? `ตัวเลขบางส่วนโหลดไม่ครบ: ${data.warn.join(' · ')}` : null,
@@ -579,15 +619,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       )}
 
       {/* ⚠️ กล่องนอก = padding · กล่องใน (wrapRef) = ที่ถูกวัด ห้ามมี padding (clientHeight รวม padding → แถวล่างโดนตัด) */}
-      <div style={{ display: 'flex', minHeight: 0, flex: board ? 1 : 'none', height: board ? undefined : '78vh', padding: board ? 8 : 0 }}>
-        <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: fit ? 'clip' : 'auto', overflowX: 'clip' }}>
+      <div ref={fitRef} style={{ display: 'flex', minHeight: 0, flex: board ? 1 : 'none',
+        height: board ? undefined : (fitOn ? `${availH}px` : undefined), padding: board ? 8 : 0 }}>
+        {/* 🔴 `clip` เมื่อคุมความสูงได้ — แผ่นที่ลงไม่พอไปหน้าถัดไป ห้ามเลื่อน (คำสั่ง user 25/09)
+            ที่ไม่พอจริง (มือถือหัวเพจสูง) = ถอยไป `auto` ยอมให้เลื่อน ดีกว่าตัดเนื้อหาหาย */}
+        <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn ? 'clip' : 'auto' }}>
           {loading && !data ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
           ) : !scope ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังเลือกขอบเขตเริ่มต้น…</div>
           ) : (
             <div style={sheetsBox}>
-              {rows.map((r) => (
+              {pageItems.filter((x) => x.kind === 'kpi').map(({ row: r }) => (
                 <Sheet key={r.key} k={k} cw={cw} icon={r.icon} title={r.name}
                   sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null ? ` · ${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)} ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''}` : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
@@ -603,6 +646,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               ))}
 
               {/* ═══ Key Performance ระดับส่วนงาน (100P / LEAN / QCC / Kaizen / 5S …) ═══ */}
+              {has('keyperf') && (
               <Sheet k={k} cw={cw} icon="📌" title={`Key Performance · ${org.labelOf(scope.kind, scope.value)}`}
                 sub="KPI ที่ตั้งไว้ที่ขอบเขตนี้โดยตรง (นอกเหนือ 8 หัวข้อหลัก)" big={secRows.length ? `${secRows.filter(r => r.st !== ST.unknown).length}/${secRows.length}` : '—'}
                 unit={secRows.length ? 'ประเมินได้' : ''}
@@ -623,8 +667,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                   ))}
                 </div>
               </Sheet>
+              )}
+
 
               {/* ═══ งานที่ต้องตามแก้ — สิ่งที่ทำให้บอร์ดนี้เป็น Obeya ไม่ใช่แค่จอตัวเลข ═══ */}
+              {has('todo') && (
               <Sheet k={k} cw={cw} icon="🚨" title="งานที่ต้องตามแก้"
                 sub={`action จากประชุมเช้า/ห้อง Obeya + เหตุความปลอดภัยที่ยังไม่ปิด${data?.actsMissing ? ' · ⚠ ยังไม่มีตารางติดตาม' : ''}`}
                 big={todo.length ? String(overdue || todo.length) : '0'} unit={overdue ? 'รายการเกินกำหนด' : 'รายการค้าง'}
@@ -655,10 +702,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                   })}
                 </div>
               </Sheet>
+              )}
             </div>
           )}
         </div>
       </div>
+      {/* 📖 แถบเปลี่ยนหน้า — โผล่เฉพาะตอนมีมากกว่า 1 หน้า (มีหน้าเดียวแล้วโชว์ = ขยะบนจอ) */}
+      <BoardPager page={pg} count={pages.length} onPage={setPg} labels={pgLabels} compact={board} />
 
       {!board && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
