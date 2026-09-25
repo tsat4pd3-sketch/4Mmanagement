@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
@@ -128,7 +129,7 @@ export default function OjtTraining() {
     setLoading(true);
     const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
       // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)

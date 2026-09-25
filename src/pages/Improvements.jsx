@@ -11,7 +11,7 @@ import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
@@ -184,7 +184,7 @@ export default function Improvements() {
     setLoading(true);
     const [{ data: ln }, { data: imp }, { data: dt }, { data: dft }, { data: mc }, { data: pr }, { data: ms }, { data: mpt }, { data: mo }, ccRes, pcRes] = await Promise.all([
       // cost_center: คิด cost saving (ไลน์ลูกไม่กรอก = ตกทอดจากไลน์แม่ — lineCostCenter)
-      supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       supabaseDR.from('improvements').select('*').order('created_at', { ascending: false }),
       // ⚠️ คอลัมน์ชื่อประเภทคือ name_th (ไม่มีคอลัมน์ name) — เคยพลาด select 'name' แล้ว query 400 เงียบ list ว่างทั้งหน้า
       supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),

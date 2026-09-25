@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'r
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -144,7 +145,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   }, [setSp]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, cost_center, is_active')
+    loadLinesRes()
       .then(({ data: d }) => setLines(d || []));
   }, []);
 

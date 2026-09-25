@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'r
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -1941,7 +1942,7 @@ export default function HeijunkaKanban() {
     setLoading(true);
     try {
       // 0) production line hierarchy
-      const { data: linesData } = await supabase.from('production_lines').select('id, name, parent_line_name').order('name');
+      const { data: linesData } = await loadLinesRes();
       const lm = {};
       const pcm = {};
       (linesData || []).forEach(l => {

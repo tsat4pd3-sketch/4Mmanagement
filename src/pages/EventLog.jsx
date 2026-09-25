@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
@@ -128,8 +129,7 @@ export default function EventLog() {
     // ดึงไลน์ก่อน เพื่อคิดขอบเขต (family/section) แล้ว "ดัน scope เข้า query" ก่อน limit —
     // เดิม limit(200) ทั้งโรงงานก่อนกรอง scope ฝั่ง client ทำให้ leader/section เห็น event ตัวเองน้อย/0
     // (200 ใบล่าสุดถูกไลน์อื่นกินหมด) — bug เดียวกับที่ CLAUDE.md เตือนไว้
-    const { data: lineData } = await supabase.from('production_lines')
-      .select('id, name, section, parent_line_name, is_active').order('name');
+    const { data: lineData } = await loadLinesRes();
     let scopedNames = null; // null = ไม่จำกัด (admin/qa/manager ที่ไม่ถูก scope)
     let visibleLines = lineData || [];
     if (role === 'leader' && userLineId) {

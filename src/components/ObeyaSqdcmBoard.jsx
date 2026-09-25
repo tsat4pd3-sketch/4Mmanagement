@@ -51,7 +51,7 @@ import { PLANT, isPlant, parseScopeKey } from '../utils/orgScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { avgOeeTarget, sumDefectQty } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -153,7 +153,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      — เดิมจอนี้เอา id ไปเทียบชื่อไลน์ตรงๆ ⇒ ติดตัวกรองส่วนงานเมื่อไหร่ แกน S/M หายเกลี้ยงเงียบๆ (แก้ 2026-09-22) */
   const [stationLine, setStationLine] = useState({});
   useEffect(() => {
-    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name')
+    loadLinesRes()
       .then(({ data, error }) => { if (!error) setLines(data || []); });
     supabase.from('workstations').select('id, line_name')
       .then(({ data, error }) => { if (!error) setStationLine(Object.fromEntries((data || []).map(w => [String(w.id), w.line_name]))); });

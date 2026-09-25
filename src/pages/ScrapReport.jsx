@@ -16,7 +16,7 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import ProductSelect from '../components/ProductSelect';
 import PersonSelect from '../components/PersonSelect';
 import StorageLocSelect from '../components/StorageLocSelect';
@@ -151,7 +151,7 @@ export default function ScrapReport() {
 
   useEffect(() => {
     // ⚠️ production_lines อยู่ MAIN project (client supabase) ไม่ใช่ DR — ดึงผิด client = dropdown ว่าง
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setAllLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setAllLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     supabaseDR.from('scrap_defect_types').select('*').eq('is_active', true).order('sort_order').then(({ data }) => setDefectTypes(data || []));
     loadDocForms().then(() => setDocReady(true));
   }, []);

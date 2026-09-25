@@ -24,6 +24,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าท�
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { positionLabel } from '../utils/positions';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -89,7 +90,7 @@ export default function QualityBins() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 

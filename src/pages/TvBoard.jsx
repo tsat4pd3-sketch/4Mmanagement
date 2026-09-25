@@ -28,6 +28,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import MtnAndonBoard from '../components/MtnAndonBoard';
 import useIsMobile from '../utils/useIsMobile';
@@ -35,7 +36,6 @@ import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { cachedMaster } from '../utils/masterCache';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { ALL } from '../utils/filterLabels';
 
@@ -76,13 +76,10 @@ export default function TvBoard() {
   const workDate = getWorkDate();
 
   useEffect(() => {
-    /* ทะเบียนไลน์เป็น master → cache (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
-       key ตั้งตาม "ชุดคอลัมน์" ไม่ใช่ชื่อหน้า — หน้าอื่นที่ต้องการชุดเดียวกันจะได้ใช้ cache ร่วมได้ */
-    cachedMaster('production_lines:scope', async () => {
-      const { data, error } = await supabase.from('production_lines').select('id, name, section, parent_line_name');
-      if (error) throw error;
-      return data || [];
-    }).then(setLines).catch(() => setLines([]));
+    /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
+       25/09: เดิมตั้งคีย์ของตัวเอง (`production_lines:scope`) = แยก cache กับหน้าอื่นที่อ่านไลน์เหมือนกัน
+       ⇒ ย้ายมาใช้ `loadProductionLines()` คีย์เดียวทั้งแอป (ดู src/utils/useProductionLines.js) */
+    loadProductionLines().then(d => setLines(d || [])).catch(() => setLines([]));
   }, []);
 
   useEffect(() => {
