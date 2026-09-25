@@ -24,6 +24,7 @@ import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
+import { openOnly } from '../utils/shipStatus';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -333,9 +334,9 @@ export default function Dashboard() {
       const nd = new Date(`${boardDate}T12:00:00`);
       nd.setDate(nd.getDate() + 1);
       const nextDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
-      const { data: shipOrders } = await supabaseDR.from('customer_shipping_orders')
+      const { data: shipOrders } = await openOnly(supabaseDR.from('customer_shipping_orders')
         .select('mat_no, qty, due_date, ship_time, customer, status')
-        .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
+        .gte('due_date', boardDate).lte('due_date', nextDay));
       setEdiOrders(shipOrders || []);
       // stock FG พร้อมส่งของ mat เหล่านั้น — planner จะหักออกก่อนคำนวณว่าต้องผลิตคืนนี้เท่าไหร่
       const shipMats = [...new Set((shipOrders || []).map(o => o.mat_no))];

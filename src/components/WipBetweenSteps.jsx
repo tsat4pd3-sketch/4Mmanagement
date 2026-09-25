@@ -6,6 +6,7 @@ import { can } from '../utils/permissions';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { buildWipChains, computeChainWip, netRequirement } from '../utils/wipChain';
 import { fetchAllPages } from '../utils/fetchByIds';
+import { openOnly } from '../utils/shipStatus';
 
 /* ═══ 📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18) — แท็บใน /line-stock ═══
    ยอดค้างทุก buffer ของสาย OP คำนวณจากใบผลิตที่บันทึกอยู่แล้ว (Σขั้น − Σปลายทาง)
@@ -72,7 +73,7 @@ export default function WipBetweenSteps() {
       if (parentMats.length) {
         const [{ data: stk }, { data: ords }] = await Promise.all([
           supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').in('mat_no', parentMats),
-          supabaseDR.from('customer_shipping_orders').select('mat_no, qty').in('mat_no', parentMats).neq('status', 'shipped'),
+          openOnly(supabaseDR.from('customer_shipping_orders').select('mat_no, qty').in('mat_no', parentMats)),
         ]);
         const fs = {};
         (stk || []).forEach(r => { fs[r.mat_no] = (fs[r.mat_no] || 0) + Number(r.qty_on_hand || 0); });
