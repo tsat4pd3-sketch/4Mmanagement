@@ -26,7 +26,7 @@ import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useProducts from '../utils/useProducts';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -147,7 +147,7 @@ export default function PEDocs() {
     const [{ data: s }, { data: ln }] = await Promise.all([
       supabase.from('pe_doc_sets').select('*').order('part_no'),
       // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> · เครื่องจักรย้ายไป <MachineSelect> (โหลด+cache เอง · 2026-09-07)
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
+      loadLinesRes(),
     ]);
     setSets(s || []);
     setLines(ln || []);

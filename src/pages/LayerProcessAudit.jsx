@@ -9,7 +9,7 @@ import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { loadCompanyCalendar } from '../utils/companyCalendar';
 import tsLogoUrl from '../assets/TS logo.png';
 import { getDocForm, docFormSync, loadDocForms, fullCode } from '../utils/docForms';
@@ -179,7 +179,7 @@ export default function LayerProcessAudit() {
   useEffect(() => {
     (async () => {
       const [{ data: ln }, { data: qs }, { data: profs }, { data: { user } }] = await Promise.all([
-        supabase.from('production_lines').select(LINE_COLUMNS).order('name'),   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+        loadLinesRes(),   // ครบ is_active ให้ <LineSelect> (2026-09-07)
         supabase.from('lpa_questions').select('*').order('seq'),
         supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
         supabase.auth.getUser(),

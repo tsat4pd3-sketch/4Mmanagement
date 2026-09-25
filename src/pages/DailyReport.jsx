@@ -42,7 +42,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
-import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
 import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import { scopeMatRows } from '../utils/matScope';
@@ -481,7 +481,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [ln, pr, dt, ks, bp, mc, dft] = await Promise.all([
-      cachedMaster('production_lines:dr', async () => (await supabase.from('production_lines').select(LINE_COLUMNS).order('name')).data || []),
+      cachedMaster('production_lines:dr', async () => (await loadLinesRes()).data || []),
       cachedMaster('dr_products:full', async () => (await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name')).data || []),
       cachedMaster('dr_downtime_types:active', async () => (await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order')).data || []),
       cachedMaster('kanban_standards:full', async () => (await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no')).data || []),
@@ -5770,7 +5770,7 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: ln } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name');
+    const { data: ln } = await loadLinesRes();
     const lm = {};
     (ln || []).forEach(l => { lm[l.name] = l; });
     const pcm = {};
@@ -6226,7 +6226,7 @@ function ExportTab() {
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => {
         const ln = data || [];
         const normSection = (s) => (s || '').trim().toLowerCase();
@@ -7131,7 +7131,7 @@ function ProductSetup({ role }) {
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
+      loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
     ]);
     setItems(pr || []);

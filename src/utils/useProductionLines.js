@@ -39,6 +39,17 @@ export async function loadProductionLines() {
 }
 
 /** เรียกหลังแก้ทะเบียนไลน์ (LineSetup) เพื่อให้หน้าอื่นเห็นทันทีไม่ต้องรอ TTL */
+/**
+ * รูปแบบ `{ data, error }` ของ `loadProductionLines()` — **มีไว้เพื่อให้จุดเก่าสลับมาใช้ cache ได้บรรทัดเดียว**
+ * (2026-09-25) audit 07/09 ทำให้ทุกหน้าใช้ `LINE_COLUMNS` ชุดเดียวกันแล้วจริง **แต่ยัง
+ * `supabase.from('production_lines').select(LINE_COLUMNS)` เองอยู่ ~30 จุด = ไม่ผ่าน cache เลย
+ * ⇒ "คอลัมน์ตรงกัน" กับ "ยิงครั้งเดียว" เป็นคนละเรื่อง — อันแรกทำแล้ว อันหลังเพิ่งทำ
+ * ⚠️ คืน `[]` เมื่อโหลดพลาด (เท่าพฤติกรรมเดิมของจุดเหล่านั้นที่เขียน `data || []`)
+ *    จุดที่ "ว่างแล้วต้องรู้ว่าพัง" ให้เรียก `loadProductionLines()` ตรงๆ แล้วเช็ค `undefined` เอง
+ *    (ตัวอย่าง: `src/utils/staleSessions.js`)
+ */
+export const loadLinesRes = async () => ({ data: (await loadProductionLines()) || [], error: null });
+
 export const invalidateProductionLines = () => invalidateMaster(KEY);
 
 export default function useProductionLines() {

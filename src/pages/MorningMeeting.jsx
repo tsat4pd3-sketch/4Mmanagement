@@ -10,7 +10,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
@@ -141,9 +141,7 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select(`${LINE_COLUMNS}, std_day_shift, std_night_shift`) // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
-        .order('name');
+      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');

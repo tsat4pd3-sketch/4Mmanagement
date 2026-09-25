@@ -12,7 +12,7 @@ import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
@@ -444,7 +444,7 @@ export default function Management() {
     const fetchLines = async () => {
       // ดึงทุกไลน์เสมอเพื่อ resolve ลำดับชั้น (parent/children) ได้ครบ — scope ไปตัดที่ "รายการให้เลือก" แทน
       // ไม่งั้น leader ที่ผูกกับไลน์หลักจะมองไม่เห็นจุดที่ set ไว้ที่ไลน์ย่อย (และกลับกัน)
-      const { data } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      const { data } = await loadLinesRes(); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       let all = data || [];
       // เติมโหมดการไหลงาน (flow_mode/parallel_stations) best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้าม
       const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');

@@ -36,7 +36,7 @@ import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
 
@@ -340,7 +340,7 @@ export default function OEEAnalytics() {
   useEffect(() => {
     // LINE_COLUMNS (id,name,parent_line_name,section,is_active) ครบสำหรับ <LineSelect> + cost_center ที่หน้านี้ใช้คิดต้นทุน (2026-09-07)
     // (ไม่ใช้ useProductionLines() ตรงๆ เพราะ cache กลางไม่มี cost_center — คิวรีเดียวแต่ scope เองเหมือนเดิม)
-    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center`).order('name').then(({ data }) => {
+    loadLinesRes().then(({ data }) => {
       let rows = data || [];
       if (role === 'leader' && userLineId) {
         const myLine = rows.find(l => String(l.id) === String(userLineId));

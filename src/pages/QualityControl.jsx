@@ -31,7 +31,7 @@ import PartSelect from '../components/PartSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import usePartOptions from '../utils/usePartOptions';
 import { invalidateInstruments } from '../utils/useInstruments';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
@@ -1679,7 +1679,7 @@ export default function QualityControl() {
 
   // LINE_COLUMNS ครบ (is_active) ให้ <LineSelect> ตัดไลน์ปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setAllLines(data || []));
   }, []);
   // ทะเบียนพาร์ท (pe_doc_sets ∪ qa_parts ∪ dr_products) + เครื่องมือวัด — โหลดครั้งเดียวส่งลงทุกแท็บ (2026-09-07)

@@ -399,6 +399,26 @@ const RULES = [
     },
   },
   {
+    id: 'lines-via-cached-loader',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ "ใช้ชุดคอลัมน์กลาง แต่ยิง DB เอง" — `select(LINE_COLUMNS)` หรือ `select(`${LINE_COLUMNS}…`)` */
+    re: /\.select\(\s*(?:LINE_COLUMNS|`\$\{LINE_COLUMNS\})/g,
+    why: 'audit 07/09/2026 ทำให้ทุกหน้าใช้ `LINE_COLUMNS` ชุดเดียวกันแล้วจริง **แต่ยังยิง DB เองทุกจุด** '
+       + '⇒ "คอลัมน์ตรงกัน" กับ "ยิงครั้งเดียว" เป็นคนละเรื่อง · วัดจริง 23/09/2026: '
+       + '`production_lines` โดน **4,041 ครั้ง/วัน** จาก **107 จุด** ที่ select เองทั่วรีโป '
+       + '(ตารางนี้มีแค่ ~50 แถว และแทบไม่เปลี่ยน — ควรโหลดครั้งเดียวแล้วแชร์) '
+       + '· กับดักซ้อน: พอขยาย LINE_COLUMNS เป็น superset จุดที่ยังยิงเองจะ**หนักขึ้น**ทุกจุด '
+       + 'ทั้งที่ตั้งใจจะลด (เจอจริงตอนแก้ 25/09 — ต้องกวาดให้จบในคอมมิทเดียวกัน)',
+    fix: 'ใช้ loadLinesRes() (รูปแบบ { data, error } สลับได้บรรทัดเดียว) หรือ loadProductionLines() / '
+       + 'hook useProductionLines() จาก src/utils/useProductionLines.js · '
+       + 'ต้องการคอลัมน์เพิ่ม → **เติมใน LINE_COLUMNS + bump คีย์ cache** อย่าต่อท้ายที่จุดเรียก '
+       + '(ต่อท้ายแล้วได้คอลัมน์ซ้ำใน querystring ด้วย) · ลำดับต่างจาก order by name → เรียงเองฝั่งจอ',
+    allow: {
+      'src/utils/useProductionLines.js': 'ตัว loader เอง',
+      'src/pages/Report.jsx': 'จุดเดียวที่ต้องการ head_name ซึ่งไม่อยู่ใน LINE_COLUMNS (ไม่มี dropdown ไหนใช้)',
+    },
+  },
+  {
     id: 'no-setSearchParams-object',
     scan: ['src'], ext: ['.jsx', '.js'],
     re: /setSearchParams\s*\(\s*\{/g,

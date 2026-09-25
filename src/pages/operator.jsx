@@ -8,7 +8,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { filterLinesByDept, getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
@@ -220,7 +220,7 @@ export default function Operator() {
     /* 🎓 ทะเบียนเกรด (20 แถว) — ต้องโหลดก่อน `gradesSync()` ถึงมีข้อมูล
        ⚠️ cache อยู่นอก React ⇒ ต้อง bump state ด้วย ไม่งั้นช่องเกรดไม่ re-render หลังโหลดเสร็จ */
     loadGrades().then(() => { if (alive) setGradesReady(n => n + 1); });
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes() // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => { if (alive) setLines(data || []); });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => { if (alive) setBusRoutes(data || []); });
