@@ -415,6 +415,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
 
+> ### ⏱️ เวลาเปลี่ยนรุ่นงานปั๊ม (setup time · 2026-09-25) — คิดผ่าน `src/utils/pressSetup.js` เท่านั้น
+> ความสูงแม่พิมพ์ (`equipment_die.die_height_mm`) + ช่วง shut height ของเครื่อง + กฎ `press_setup_rules`
+> (เครื่อง ชนะ ไลน์ ชนะ global) · กรอกที่ `/equipment?tab=die` (ช่องความสูง + แผง ⏱️ กฎเวลาเปลี่ยนรุ่น) และ `/machines`
+> · 🔴 **ไม่มีกฎ = `null` ห้ามคืน 0 · ไม่รู้ความสูง = ติดธง `unknown_height` + บอกว่าตัวเลขต่ำกว่าจริง
+>   · `fitsPress` คืน `null` ≠ `false` · ตัวที่ไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง** — ห้ามฝังเลขเวลา setup ในโค้ด
+> · ตัวจัดลำดับ/ลากการ์ด (ชั้น 2-3) **ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง** · 📄 `docs/modules/die-maintenance.md`
+
 `/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ (`?die=`): 📋 ทะเบียน (ของเดิม) · 🗺️ ผังจัดเก็บ (`src/components/DieLayout.jsx`) · 📊 สถานะ (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration `20260819_die_lay…
 > 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
 

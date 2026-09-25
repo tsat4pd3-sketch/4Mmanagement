@@ -21,6 +21,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import SelectOrFree from '../components/SelectOrFree';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import CollapseCard from '../components/CollapseCard';
+import PressSetupRules from '../components/PressSetupRules';   // ⏱️ กฎเวลาเปลี่ยนรุ่นงานปั๊ม (2026-09-25)
 import useDiePressLines, { invalidateDiePressLines } from '../utils/useDiePressLines'; // ทะเบียนกลุ่มเครื่องปั๊ม (DR die_press_lines) — 2026-09-08
 
 /* ═══════════════════════════════════════════════════════════════
@@ -270,6 +271,7 @@ export default function DieRegistry() {
       todo: vis.filter(s => issuesOf(s).length > 0).length,
       unlinked: unlinked.length,
       noTon: visDie.filter(d => d.ext?.tonnage_ton == null).length,
+      noHeight: visDie.filter(d => d.ext?.die_height_mm == null).length,
     };
   }, [sets, dies, unlinked, inScope, issuesOf]);
 
@@ -325,6 +327,7 @@ export default function DieRegistry() {
       op_name: f.op_name?.trim() || null,
       op_type: f.op_type || null,
       tonnage_ton: numOrNull(f.tonnage_ton),
+      die_height_mm: numOrNull(f.die_height_mm),
       pieces_per_stroke: numOrNull(f.pieces_per_stroke),
       regrind_count: numOrNull(f.regrind_count) ?? 0,
       regrind_limit: numOrNull(f.regrind_limit),
@@ -343,7 +346,8 @@ export default function DieRegistry() {
     machine_id: d.id, machine_no: d.machine_no, machine_name: d.machine_name,
     die_set_id: d.ext?.die_set_id || '',
     op_seq: d.ext?.op_seq ?? '', op_name: d.ext?.op_name || '', op_type: d.ext?.op_type || '',
-    tonnage_ton: d.ext?.tonnage_ton ?? '', pieces_per_stroke: d.ext?.pieces_per_stroke ?? '',
+    tonnage_ton: d.ext?.tonnage_ton ?? '', die_height_mm: d.ext?.die_height_mm ?? '',
+    pieces_per_stroke: d.ext?.pieces_per_stroke ?? '',
     regrind_count: d.ext?.regrind_count ?? 0, regrind_limit: d.ext?.regrind_limit ?? '',
     note: d.ext?.note || '', shot_total: d.ext?.shot_total ?? 0,
   });
@@ -406,9 +410,13 @@ export default function DieRegistry() {
           { t: 'ชุดแม่พิมพ์', v: stat.sets },
           { t: 'แม่พิมพ์', v: stat.dies },
           { t: 'ยังไม่ระบุตัน', v: stat.noTon, warn: stat.noTon > 0 },
+          /* ⏱️ ความสูงแม่พิมพ์ = ตัวแปรของเวลาเปลี่ยนรุ่น — ยังไม่ครบ = จัดลำดับผลิตให้ประหยัดที่สุดไม่ได้
+             (ตั้งใจโชว์จำนวนที่ "ยังไม่รู้" ตรงๆ ไม่ซ่อน ตามกฎความซื่อสัตย์ของจอ) */
+          { t: 'ยังไม่ระบุความสูง', v: stat.noHeight, warn: stat.noHeight > 0,
+            hint: 'ความสูงแม่พิมพ์ (มม.) ใช้คำนวณเวลาเปลี่ยนรุ่นงานปั๊ม — ยังไม่กรอก = ระบบจัดลำดับให้ประหยัดเวลาไม่ได้' },
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
-          <div key={c.t} style={{
+          <div key={c.t} title={c.hint || undefined} style={{
             background: 'var(--card)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`,
             borderRadius: 10, padding: '8px 14px', minWidth: 110,
           }}>
@@ -551,6 +559,7 @@ export default function DieRegistry() {
                               <th style={{ padding: '4px 6px', fontWeight: 600 }}>กระบวนการ</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600 }}>เลขแม่พิมพ์</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>ตัน</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ความสูงแม่พิมพ์ (มม.) — ใช้คำนวณเวลาเปลี่ยนรุ่น">สูง (มม.)</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>shot สะสม</th>
                               <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>เจียร</th>
                               {canEdit && <th style={{ width: 40 }} />}
@@ -569,6 +578,7 @@ export default function DieRegistry() {
                                   <td style={{ padding: '5px 6px', color: 'var(--muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                     title={d.machine_no}>{d.machine_no}</td>
                                   <td style={{ padding: '5px 6px', textAlign: 'right' }}>{e.tonnage_ton ?? <Blank />}</td>
+                                  <td style={{ padding: '5px 6px', textAlign: 'right' }}>{e.die_height_mm ?? <Blank />}</td>
                                   <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>
                                     {Number(e.shot_total || 0).toLocaleString()}
                                   </td>
@@ -609,6 +619,12 @@ export default function DieRegistry() {
             { key: 'ref_production_line', label: 'ไลน์ผลิตอ้างอิง', placeholder: 'เช่น HDF1 (ถ้าเป็นไลน์ผลิตจริง)' },
             { key: 'note', label: 'หมายเหตุ' },
           ]} />
+      </CollapseCard>
+
+      {/* ⏱️ กฎเวลาเปลี่ยนรุ่น (press_setup_rules · 2026-09-25 · user: setup time change over die เป็นตัวแปร)
+          อยู่ที่นี่เพราะ "ความสูงแม่พิมพ์" ที่กฎใช้ ก็กรอกในแท็บนี้ — ตั้งค่านานๆ ครั้ง จึงพับไว้ */}
+      <CollapseCard id="press_setup_rules" title="⏱️ กฎเวลาเปลี่ยนรุ่น (setup / change over die)" defaultOpen={false} storePrefix="die_registry">
+        <PressSetupRules dies={scopedDies} lineNames={dieLineNames} canEdit={canEdit} />
       </CollapseCard>
       </>}
 
@@ -713,6 +729,13 @@ export default function DieRegistry() {
             <Field label="ขนาดตัน (Ton)">
               <input style={inputStyle} type="number" step="1" value={editDie.tonnage_ton ?? ''}
                 onChange={e => setEditDie(f => ({ ...f, tonnage_ton: e.target.value }))} />
+            </Field>
+            {/* ⏱️ ความสูงแม่พิมพ์ — ตัวแปรหลักของเวลาเปลี่ยนรุ่น (user 2026-09-24)
+                ต่างกันมาก = ปรับ shut height นาน ⇒ ลำดับผลิตที่ดีคือเรียงความสูงให้ไล่กัน
+                ว่าง = "ยังไม่รู้" ระบบจะไม่เดาแทน (pressSetup.js คืน state unknown_height) */}
+            <Field label="ความสูงแม่พิมพ์ (มม.)" hint="ใช้คำนวณเวลาเปลี่ยนรุ่น — ว่าง = ยังไม่รู้ ระบบจะไม่เดาให้">
+              <input style={inputStyle} type="number" step="0.1" min="0" value={editDie.die_height_mm ?? ''}
+                onChange={e => setEditDie(f => ({ ...f, die_height_mm: e.target.value }))} />
             </Field>
             <Field label="ชิ้น / stroke" hint="ว่าง = ใช้ค่าของชุด">
               <input style={inputStyle} type="number" min="1" value={editDie.pieces_per_stroke ?? ''}

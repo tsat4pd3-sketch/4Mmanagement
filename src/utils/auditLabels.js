@@ -87,6 +87,7 @@ export const AUDIT_TABLE_LABELS = {
   die_op_types:            '🔨 กระบวนการแม่พิมพ์',
   equipment_die:           '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง)',
   die_storage_areas:       '🗺️ ผังจัดเก็บแม่พิมพ์',
+  press_setup_rules:       '⏱️ กฎเวลาเปลี่ยนรุ่น (ปั๊ม)',
   // ── งานซ่อม (DR) ──
   mtn_item_types:          '⚙️ ชนิดอุปกรณ์',
   mtn_problem_types:       '🛑 ลักษณะปัญหา',
@@ -128,6 +129,10 @@ export const AUDIT_FIELD_LABELS = {
   die_status: 'สถานะแม่พิมพ์', status_note: 'หมายเหตุสถานะ', area_id: 'ผังจัดเก็บ',
   pos_x: 'ตำแหน่ง X (%)', pos_y: 'ตำแหน่ง Y (%)',
   regrind_count: 'เจียรไปแล้ว (ครั้ง)', regrind_limit: 'เจียรได้สูงสุด', tonnage_ton: 'ขนาดตัน', op_seq: 'OP',
+  die_height_mm: 'ความสูงแม่พิมพ์ (มม.)', shut_height_min_mm: 'shut height ต่ำสุด (มม.)',
+  shut_height_max_mm: 'shut height สูงสุด (มม.)',
+  base_min: 'เวลาฐานเปลี่ยนรุ่น (นาที)', same_die_min: 'ตัวเดิม เปลี่ยนล็อต (นาที)',
+  height_steps: 'ขั้นบันไดตามความสูง', scope_kind: 'ขอบเขตกฎ', scope_value: 'ขอบเขต (ค่า)',
   next_due_date: 'ครบกำหนดถัดไป', last_done_at: 'ตรวจล่าสุด', interval_days: 'รอบ (วัน)',
   dl_rate: 'DL (บาท/ชม.)', oh_rate: 'OH (บาท/ชม.)', dp_rate: 'DP (บาท/ชม.)', idp_rate: 'IDP (บาท/ชม.)',
   effective_from: 'เริ่มใช้', form_code: 'เลขฟอร์ม', rev_no: 'Rev', score: 'คะแนน',
