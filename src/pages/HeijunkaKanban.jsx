@@ -771,67 +771,76 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
 }
 
 /* ─── Kanban Card Grid ──────────────────────────────────────────────────── */
+/* การ์ดความต้องการรายพาร์ท — ใช้ภาษาเดียวกับ `QueueCard` เป๊ะ (2026-09-25)
+   หน้าเดียวกันมีการ์ด 2 ภาษา = ตัวบอก "ประกอบกันมา" ที่ชัดที่สุด ⇒ พื้นเป็นกลาง · แถบสถานะซ้าย ·
+   ทุกตัวเลขมีป้าย · ตัวเลข tabular · เงาผ่าน token · ระยะทวีคูณของ 4 */
 function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
   if (!rowList.length) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12, padding: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(296px, 100%), 1fr))', gap: 12, padding: 16, alignContent: 'start' }}>
       {rowList.map(r => {
         const per = kanbanStd[r.mat_no];
         const stockCovered = r.netTotal === 0;
-        const borderColor = stockCovered ? '#22c55e' : per ? '#f59e0b' : '#ef4444';
+        /* 3 สถานะของแถว: สต็อกพอแล้ว (เขียว) · ต้องเบิกและรู้ว่ากี่ใบ (เหลือง) · ไม่มี std คิดใบไม่ได้ (แดง) */
+        const tone = stockCovered
+          ? { c: '#22c55e', bg: 'rgba(34,197,94,0.1)',  bd: 'rgba(34,197,94,0.3)',  label: '✓ สต็อกพอ' }
+          : per
+            ? { c: '#f59e0b', bg: 'rgba(245,158,11,0.1)', bd: 'rgba(245,158,11,0.3)', label: '🎴 ต้องเบิก' }
+            : { c: '#ef4444', bg: 'rgba(239,68,68,0.1)',  bd: 'rgba(239,68,68,0.3)',  label: '⚠ ไม่มี std' };
         return (
-          <div key={r.mat_no} style={{
-            background: 'var(--bg2)', border: '1px solid var(--border)',
-            borderLeft: `4px solid ${borderColor}`, borderRadius: 8, padding: 12,
-            position: 'relative', opacity: stockCovered ? 0.5 : 1,
-            display: 'flex', flexDirection: 'column', gap: 6,
+          <article key={r.mat_no} style={{
+            position: 'relative', background: 'var(--card)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
+            opacity: stockCovered ? 0.62 : 1, display: 'flex', flexDirection: 'column',
           }}>
-            {stockCovered && (
-              <div style={{
-                position: 'absolute', top: 8, right: 8,
-                background: 'rgba(34,197,94,0.15)', color: '#22c55e',
-                borderRadius: 10, fontSize: 11, fontWeight: 800, padding: '2px 7px',
-              }}>✓ stock พอ</div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={42} />
-              <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', letterSpacing: 0.5 }}>
-                {r.mat_no}
-              </span>
-              {r.supplier && (
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '1px 5px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
-                  {r.supplier}
-                </span>
+            <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tone.c }} />
+
+            <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={56} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matColor(r.mat_no), ...QC_NUM }}>{r.mat_no}</span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius)', whiteSpace: 'nowrap',
+                    background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.c,
+                  }}>{tone.label}</span>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginTop: 3, lineHeight: 1.35 }}>{r.part_name}</div>
+                {r.supplier && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.supplier}</div>}
+              </div>
+            </div>
+
+            <div style={{ padding: '0 12px 12px 15px', display: 'flex', gap: 12, alignItems: 'flex-end', justifyContent: 'space-between' }}>
+              <div style={{ minWidth: 0, whiteSpace: 'nowrap' }}>
+                <div style={QC_LABEL}>{stockCovered ? 'ต้องเบิกเพิ่ม' : 'ต้องเบิก (NET)'}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, color: stockCovered ? '#22c55e' : 'var(--text)', ...QC_NUM }}>
+                  {stockCovered ? '0' : fmt(r.netTotal)}
+                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 }}>{r.uom}</span>
+                </div>
+              </div>
+              {!stockCovered && per && (
+                <div style={{ textAlign: 'right', minWidth: 0 }}>
+                  <div style={QC_LABEL}>คัมบัง</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: tone.c, lineHeight: 1.3, ...QC_NUM }}>
+                    {Math.ceil(r.netTotal / per)} <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ใบ × {fmt(per)}</span>
+                  </div>
+                </div>
               )}
             </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3, fontFamily: 'var(--font-body)' }}>
-              {r.part_name}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-              <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{fmt(r.grossTotal)}</span>
-              <span style={{ color: 'var(--muted)' }}>→</span>
-              <span style={{ fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', color: stockCovered ? '#22c55e' : borderColor }}>
-                {stockCovered ? '✓ พอ' : fmt(r.netTotal)}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{r.uom}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
-              {r.totalStock > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
-                  📦 {fmt(r.totalStock)}
-                </span>
-              )}
-              {!stockCovered && (
-                per
-                  ? <span style={{ fontSize: 13, fontWeight: 900, padding: '3px 10px', borderRadius: 12, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
-                      🎴 {Math.ceil(r.netTotal / per)} ใบ × {per}
-                    </span>
-                  : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
-                      ไม่มี std
-                    </span>
-              )}
-            </div>
-          </div>
+
+            <dl style={{ margin: 0, marginTop: 'auto', padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>ใช้ทั้งวัน</dt>
+                <dd style={{ margin: 0, fontSize: 11.5, color: 'var(--text2)', ...QC_NUM }}>{fmt(r.grossTotal)} {r.uom}</dd>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>มีในสต็อก</dt>
+                <dd style={{ margin: 0, fontSize: 11.5, color: r.totalStock > 0 ? '#22c55e' : 'var(--muted)', fontWeight: r.totalStock > 0 ? 700 : 400, ...QC_NUM }}>
+                  {r.totalStock > 0 ? fmt(r.totalStock) : 'ไม่มีข้อมูล'}
+                </dd>
+              </div>
+            </dl>
+          </article>
         );
       })}
     </div>
@@ -1022,34 +1031,95 @@ const WIP_STATUS = {
   preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
   delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
 };
-/* 🖼️ `showImg` = "การ์ดใบนี้เป็นของ 'ชิ้นงาน'" (มี mat) — การ์ดรอบส่ง/ภาชนะไม่ใช่ จึงไม่ต้องมีช่องรูป
-   แยก prop จาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่อง 🖼️ ให้คนไปเพิ่มรูป) กับ "ไม่ใช่ชิ้นงาน" คนละเรื่องกัน */
-function QueueCard({ code, name, qty, unit, destination, statusLabel, statusColor, statusBg, statusBorder, actionLabel, onAction, busy, meta, img, showImg }) {
+/* ═══ QueueCard — การ์ดคิวงานสโตร์ (redesign 2026-09-25 · คำสั่ง user
+       *"ออกแบบ layout ในการ์ดให้ดูเป็นมาตรฐานโปรแกรมระดับสากลกว่านี้ อันนี้ดูออกว่า AI ทำ"*)
+
+   ของเดิมผิด 5 ข้อที่ทำให้ดู "ไม่ใช่ซอฟต์แวร์จริง" — แก้แล้วทั้งหมด ห้ามถอยกลับ:
+   1. 🔴 **สีสถานะถูกใช้ 3 ที่ในการ์ดใบเดียว** (แถบบน + ขอบการ์ด + พื้นเคลือบทั้งใบ) = ข้อเท็จจริง
+      เดียวตะโกน 3 รอบ พอวางเรียงกัน 100 ใบเลยเป็นกำแพงสี แยกไม่ออกว่าใบไหนสำคัญ
+      ⇒ **พื้นการ์ดเป็นกลางเสมอ · สีสถานะเหลือ 2 จุดที่ทำหน้าที่ต่างกัน**: แถบซ้าย (กวาดตาหาใบ)
+        + ป้ายสถานะ (อ่านว่าสถานะอะไร) — pattern เดียวกับ status tag ของ Carbon/Fiori
+   2. 🔴 **ตัวเลขไม่มีป้ายว่าคือเลขอะไร** — `1,260` ลอยอยู่เฉยๆ คนอ่านต้องเดาเอง
+      ⇒ ทุกค่าต้องมี label ตัวเล็กกำกับ (`qtyLabel` · "ปลายทาง")
+   3. 🔴 **meta เป็นสตริงยาวต่อกันด้วย ` · `** ⇒ ตัดบรรทัดกลางวลี ("หยิบ 1,260 · ตัดสต็อก|แล้ว")
+      ⇒ **`rows={[{k,v}]}` คอลัมน์ป้ายกว้างคงที่** — อ่านเป็นตารางคีย์-ค่า ไม่ใช่ประโยคยาว
+      (`meta` string ยังรับได้สำหรับการ์ดที่มีข้อความสั้นจริงๆ — ขึ้นเป็นบรรทัดเดียวใต้เส้นคั่น)
+   4. 🔴 **ปุ่มเต็มความกว้างติดเนื้อหา** ⇒ มีเส้นคั่น + ปุ่มชิดขวาในแถบของมันเอง (แถวคำสั่ง)
+   5. 🔴 **มุมโค้ง 12 / ระยะ 10-14 ไม่อยู่ในสเกล** ⇒ `var(--radius-lg)` + ระยะทวีคูณของ 4 ทั้งใบ
+
+   · ตัวเลขทุกช่องใช้ `tabular-nums` — ไม่งั้นเลขในกริดไม่ตรงหลักกัน (ตัวบอกงานประณีตที่คนสังเกตได้)
+   · `showImg` = "การ์ดใบนี้เป็นของชิ้นงาน" (มี mat) แยกจาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่องให้ไปเพิ่มรูป)
+     กับ "ไม่ใช่ชิ้นงาน" (การ์ดรอบส่ง/ภาชนะ — ไม่ต้องมีช่องรูป) คนละเรื่องกัน
+   · เงาผ่าน token เท่านั้น (UI §6.20 · มีด่าน) ═══════════════════════════════════════════ */
+const QC_LABEL = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: 0.2, lineHeight: 1.3, whiteSpace: 'nowrap' };
+/* ชื่อไลน์ปลายทางยาวได้มาก ("LINE APRON ASSY / HYDROFORM") — ไม่หนีบ = กินที่จนบีบตัวเลขหลักจนป้ายตัดบรรทัด */
+const QC_CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+const QC_NUM   = { fontVariantNumeric: 'tabular-nums' };
+
+function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destination, statusLabel, statusColor, statusBg, statusBorder,
+                     actionLabel, onAction, busy, meta, rows, img, showImg }) {
+  const metaRows = (rows || []).filter(r => r && r.v != null && String(r.v).trim() !== '');
   return (
-    <div style={{ background: statusBg, border: `1px solid ${statusBorder}`, borderRadius: 12, overflow: 'hidden' }}>
-      <div style={{ height: 4, background: statusColor }} />
-      <div style={{ padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {showImg && <div style={{ paddingTop: 2 }}><PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={52} /></div>}
+    <article style={{
+      position: 'relative', background: 'var(--card)', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
+      display: 'flex', flexDirection: 'column',
+    }}>
+      {/* แถบสถานะซ้าย — ตัวเดียวที่ทำหน้าที่ "กวาดตาหาใบ" (ไม่ใช่พื้นทั้งใบ) */}
+      <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: statusColor }} />
+
+      <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={56} />}
         <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13 }}>{code}</span>
-          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.12)', color: statusColor }}>{statusLabel}</span>
-        </div>
-        {name && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{name}</div>}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 8 }}>
-          <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{qty} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{unit || ''}</span></span>
-          {destination && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>➜ {destination}</span>}
-        </div>
-        {meta && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{meta}</div>}
-        {actionLabel && (
-          <button onClick={onAction} disabled={busy}
-            style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: statusColor, border: `1px solid ${statusBorder}`, fontFamily: 'var(--font-body)' }}>
-            {busy ? '...' : actionLabel}
-          </button>
-        )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13, ...QC_NUM }}>{code}</span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius)', whiteSpace: 'nowrap',
+              background: statusBg, border: `1px solid ${statusBorder}`, color: statusColor,
+            }}>{statusLabel}</span>
+          </div>
+          {name && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.35 }}>{name}</div>}
         </div>
       </div>
-    </div>
+
+      {/* แถวค่าหลัก — ทุกค่ามีป้ายกำกับ ห้ามปล่อยตัวเลขลอย */}
+      <div style={{ padding: '0 12px 12px 15px', display: 'grid', gridTemplateColumns: destination ? 'auto minmax(0, 1fr)' : '1fr', gap: 12, alignItems: 'flex-end' }}>
+        <div>
+          <div style={QC_LABEL}>{qtyLabel}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15, whiteSpace: 'nowrap', ...QC_NUM }}>
+            {qty}{unit ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 }}>{unit}</span> : null}
+          </div>
+        </div>
+        {destination && (
+          <div style={{ minWidth: 0, textAlign: 'right' }}>
+            <div style={QC_LABEL}>ปลายทาง</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3, ...QC_CLAMP2 }} title={String(destination)}>{destination}</div>
+          </div>
+        )}
+      </div>
+
+      {(metaRows.length > 0 || meta) && (
+        <dl style={{ margin: 0, padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
+          {metaRows.map(r => (
+            <div key={r.k} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+              <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>{r.k}</dt>
+              <dd style={{ margin: 0, fontSize: 11.5, color: 'var(--text2)', minWidth: 0, lineHeight: 1.4, ...QC_NUM }}>{r.v}</dd>
+            </div>
+          ))}
+          {meta && <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.4 }}>{meta}</div>}
+        </dl>
+      )}
+
+      {actionLabel && (
+        <div style={{ marginTop: 'auto', padding: '8px 12px 8px 15px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onAction} disabled={busy} style={{
+            padding: '6px 14px', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 700,
+            cursor: busy ? 'default' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
+            background: statusBg, color: statusColor, border: `1px solid ${statusBorder}`, opacity: busy ? 0.6 : 1,
+          }}>{busy ? 'กำลังบันทึก…' : actionLabel}</button>
+        </div>
+      )}
+    </article>
   );
 }
 const RACK_STATUS = {
@@ -1165,7 +1235,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบที่ต้องไปส่งอยู่ที่แท็บ 🔄 คิวเติม WIP · เลือกพาร์ทจาก forecast ได้ที่ 🕐 Store Time Chart
         </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
           {vRounds.map(r => {
             const key = `${r.line_name}|${r.shift}|${r.round_no}`;
             const status = getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs);
@@ -1175,12 +1245,16 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             const needAction = !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง');
             return (
               <QueueCard key={r.id} code={`${r.shift === 'night' ? '🌙' : '☀️'} รอบ ${r.round_no}`} name={r.line_name}
-                qty={alloc.totalKanban} unit="การ์ด" destination={r.line_name}
+                qty={alloc.totalKanban} unit="การ์ด" qtyLabel="คัมบังในรอบนี้" destination={r.line_name}
                 statusLabel={status.label} statusColor={status.top} statusBg={status.bg} statusBorder={status.border}
                 actionLabel={canOperate ? (needAction ? '✅ ยืนยันส่งแล้ว' : (isConf && !isReceived ? '✔️ รับครบ' : null)) : null}
                 busy={confirming === r.id}
                 onAction={() => needAction ? onConfirm(r, alloc.parts) : onReceive(r, alloc.parts, 'full')}
-                meta={`ส่ง ${r.delivery_time?.slice(0,5) || '—'} · ตัดยอด ${r.cutoff_time?.slice(0,5) || '—'} · ${alloc.parts.length} พาร์ท`} />
+                rows={[
+                  { k: 'เวลาส่ง', v: r.delivery_time?.slice(0, 5) || '—' },
+                  { k: 'ตัดยอด', v: r.cutoff_time?.slice(0, 5) || '—' },
+                  { k: 'พาร์ท', v: `${alloc.parts.length} รายการ` },
+                ]} />
             );
           })}
         </div>}
@@ -1190,15 +1264,15 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
           {vLots.map(lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
-                qty={fmt(lot.lot_qty)} unit="ชิ้น/ล็อต" destination={lot.source_line || 'ของซื้อ'}
+                qty={fmt(lot.lot_qty)} unit="ชิ้น" qtyLabel="ขนาดล็อต" destination={lot.source_line || 'ของซื้อ'}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
-                meta={lot.source_prod_no ? `จาก FG ${lot.source_prod_no}` : ''} />
+                rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
             );
           })}
         </div>}
@@ -1220,7 +1294,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
               {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต · กดปุ่มบนการ์ดเพื่อเลื่อนสถานะรวมทีเดียว'}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
               {purGroups.map(g => {
                 const st = PURCHASE_STATUS[g.status] || PURCHASE_STATUS.pending;
                 const many = g.slips > 1;
@@ -1236,7 +1310,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 const multiSup  = Number(g.supplier_count) > 1;
                 return (
                   <QueueCard key={`${g.mat_no}|${g.status}`} code={g.mat_no} name={g.part_name} showImg img={imgOf(g.mat_no)}
-                    qty={fmt(g.total_qty)} unit="ชิ้น"
+                    qty={fmt(g.total_qty)} unit="ชิ้น" qtyLabel="ยอดรวมทุกใบ"
                     destination={multiDest ? `${g.dest_count} ไลน์ (กางดูในปุ่มรวมยอด)` : (g.dest_line || '—')}
                     statusLabel={many ? `${st.label} · ${fmt(g.slips)} ใบ` : st.label}
                     statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
@@ -1244,9 +1318,10 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                     busy={busy === g.first_id}
                     onAction={() => (many ? setBulkBuy({ g, next: st.next, label: st.nextLabel })
                                           : onAdvancePurchase(g, st.next))}
-                    meta={[many ? lot : '',
-                           g.supplier ? `🏢 ${g.supplier}${multiSup ? ` +${g.supplier_count - 1}` : ''}` : '',
-                          ].filter(Boolean).join(' · ')} />
+                    rows={[
+                      { k: 'แตกเป็นใบ', v: many ? lot : null },
+                      { k: 'ซัพพลายเออร์', v: g.supplier ? `${g.supplier}${multiSup ? ` +อีก ${g.supplier_count - 1}` : ''}` : null },
+                    ]} />
                 );
               })}
             </div>
@@ -1258,17 +1333,17 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
           {vRaws.map(r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
             return (
               <QueueCard key={r.id} code={r.raw_mat_no} name={r.part_name} showImg img={imgOf(r.raw_mat_no)}
-                qty={fmt(r.qty)} unit="" destination={parentLot?.source_line || '—'}
+                qty={fmt(r.qty)} unit="" qtyLabel="จำนวนที่ต้องจ่าย" destination={parentLot?.source_line || '—'}
                 statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                 statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
                 actionLabel={issued || !canOperate ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
-                meta={`สำหรับ ${r.lot_request_id ? parentLot?.child_mat_no || '' : ''}`} />
+                rows={[{ k: 'ใช้กับ', v: r.lot_request_id ? parentLot?.child_mat_no || null : null }]} />
             );
           })}
         </div>}
@@ -1285,12 +1360,12 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
           {vRacks.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>{rackRequests.length === 0 ? 'ยังไม่มีการเรียกภาชนะ' : 'ไม่มีการเรียกภาชนะที่ค้างอยู่'}</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
               {vRacks.map(r => {
                 const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
                 return (
                   <QueueCard key={r.id} code={r.container_name || 'ภาชนะ'} name={null}
-                    qty={r.qty} unit="ใบ" destination={r.line_name}
+                    qty={r.qty} unit="ใบ" qtyLabel="จำนวนที่เรียก" destination={r.line_name}
                     statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                     actionLabel={null} busy={busy === r.id}
                     meta={r.note || ''} />
@@ -1300,16 +1375,19 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           )}
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
           {vPkgs.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>{pkgRequests.length === 0 ? 'ยังไม่มีใบเบิก packaging' : 'ไม่มีใบเบิก packaging ที่ค้างอยู่'}</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
               {vPkgs.map(p => {
                 const issued = p.status === 'issued';
                 return (
                   <QueueCard key={p.id} code={p.packaging_code} name={p.packaging_name}
-                    qty={p.qty} unit="" destination={p.source_line || '—'}
+                    qty={p.qty} unit="" qtyLabel="จำนวนที่เบิก" destination={p.source_line || '—'}
                     statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
                     statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
                     actionLabel={null} busy={busy === p.id}
-                    meta={[p.product_name, p.source_prod_no ? `FG ${p.source_prod_no}` : ''].filter(Boolean).join(' · ')} />
+                    rows={[
+                      { k: 'สินค้า', v: p.product_name || null },
+                      { k: 'ใบ FG', v: p.source_prod_no || null },
+                    ]} />
                 );
               })}
             </div>
@@ -1323,7 +1401,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           ยังไม่มีคำขอ — มาจาก 3 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
           {vWips.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
@@ -1341,12 +1419,16 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
             return (
               <QueueCard key={w.id} code={code} showImg={w.point_type !== 'packaging'} img={imgOf(w.mat_no)}
                 name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
-                qty={fmt(w.request_qty)} unit="" destination={w.line_name}
+                qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                meta={fromLine
-                  ? `${w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก'}${at ? ` · ${w.source === 'store_forecast' ? 'เปิด' : 'แจ้ง'} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : ''}${pickMeta ? ` · ${pickMeta}` : ''}${gateMeta ? ` · ${gateMeta}` : ''}`
-                  : (w.point_type === 'packaging' ? '📦 packaging' : '🧱 material')} />
+                rows={fromLine
+                  ? [{ k: 'ที่มา', v: w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
+                     { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
+                       v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
+                     { k: 'หยิบแล้ว', v: pickMeta || null },
+                     { k: 'ถึงไลน์', v: gateMeta || null }]
+                  : [{ k: 'ชนิดจุด', v: w.point_type === 'packaging' ? '📦 packaging' : '🧱 material' }]} />
             );
           })}
         </div>}
