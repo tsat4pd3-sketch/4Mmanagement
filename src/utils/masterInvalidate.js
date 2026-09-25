@@ -50,7 +50,8 @@ export const KEYS_BY_TABLE = {
   dr_downtime_types: ['dr_downtime_types:active'],
   dr_defect_types:   ['dr_defect_types:active'],
   production_lines: [
-    'production_lines',          // useProductionLines (picker กลาง)
+    'production_lines:v2',       // useProductionLines (picker กลาง) · :v2 = รอบที่เพิ่ม 6 คอลัมน์ (25/09)
+    'production_lines',          // คีย์เก่า — ล้างทิ้งด้วย เผื่อเครื่องที่ยังค้าง cache ชุดก่อน
     'production_lines:scope',
     'fx_lines',                  // FixtureRegistry
     'factory_map',               // FactoryMiniMap — รูปผัง/ภูมิภาคผูกกับไลน์
