@@ -89,6 +89,36 @@ const ROW = (i) => ({
   employees: { name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ${i}`, employee_id_code: `6${1000+i}`, image_url: '', team: 'A',
                staff_kind: i % 4 === 3 ? 'support' : 'shopfloor' },
   production_sessions: { line_name: 'LINE APRON ASSY / HYDROFORM', work_date: '2026-08-04', shift: 'day' },
+  /* 📄 เอกสารที่ "ออกเลขที่ใบแล้ว" + สายงานถังคุณภาพ (2026-09-25)
+     ไม่มีคีย์พวกนี้ = โค้ดทั้งสายไม่เคยถูกรันใน harness เลย:
+       · ปุ่มพิมพ์ซ้ำใบรายงานปัญหา + แผงเทียบ snapshot กับข้อมูลปัจจุบัน (prod_problem_reports)
+       · คอลัมน์ "ใบรายงานของเสีย" ของถังแดง (quality_bin_records.scrap_report_id)
+       · ชิปแนะนำ WI การซ่อม ในโมดัลลงวิธีแก้ไข (repair_wi_registry)
+       · ผลพิจารณา QA 4 ทาง + ช่องเลขใบ FM-QA-042 (qa_decision)
+     ⚠️ `snapshot` ต้องเป็นโครงจริงที่ `reportFromSnapshot()` อ่านออก (มีคีย์ quality/machine/wait
+        และ `checked` เป็น **array** อย่างที่ JSON เก็บได้) — ใส่ {} เปล่าจะได้ null แล้วสายพิมพ์ซ้ำตายเหมือนเดิม */
+  doc_no: `PR ${String(i).padStart(4, '0')}/08-26`,
+  issued_by: `นายดุลยทรรศน์ ลาภธนสารสมบัติ ${i}`, issued_at: '2026-08-04T11:00:00+07:00',
+  reprint_count: i % 3, min_minutes: 30, problem_title: `Feed nut ติด (SP-${10 + i}) 45 นาที`,
+  snapshot: {
+    v: 1, headline: `Feed nut ติด (SP-${10 + i}) 45 นาที`,
+    quality: { checked: ['GAP NG'], details: ['GAP NG 12 ชิ้น'], fixes: [], fixBy: '', pendingFix: 1,
+               qty: 12, time: { from: '09:00', to: '10:00' }, by: 'ผู้แจ้ง', count: 1 },
+    machine: { checked: ['Jig'], details: ['Jig มีปัญหา 45 นาที'], fixes: ['เปลี่ยนสปริง'], fixBy: 'ช่างเอ', pendingFix: 0,
+               time: { from: '09:00', to: '09:45' }, by: 'ผู้แจ้ง', count: 1, minutes: 45 },
+    wait: { checked: [], details: [], fixes: [], fixBy: '', pendingFix: 0,
+            time: { from: '', to: '' }, by: '', count: 0, minutes: 0 },
+    followup: { lines: [], by: '', pending: 1 },
+    meta: { minMinutes: 30, skippedShort: 0, hasAny: true, pendingFix: 1 },
+  },
+  scrap_report_id: i % 2 === 0 ? `id-${i}` : null,   // ครึ่งหนึ่งออกใบแล้ว ครึ่งหนึ่งยังค้าง (ต้องได้ทั้ง 2 สาขา)
+  from_yellow_id: null, defect_log_id: `id-${i}`,
+  qa_decision: ['good', 'repair', 'use_as_is', 'scrap', null][i % 5],
+  special_use_doc_no: i % 5 === 2 ? `QA042-${i}` : null,
+  /* ⚠️ `symptom` ต้องเป็นคำที่ **ปรากฏจริงในข้อความของแถวอื่น** (ยืมจาก DEF_NAMES) ไม่งั้น
+     `matchRepairWi()` ไม่เคยจับคู่ติดเลยใน harness ⇒ ชิป 📕 WI ซ่อม ไม่เคยถูกเรนเดอร์
+     (bug class เดียวกับ session_id ที่เคยชี้ `s-${i}` แล้วทุก join ได้ 0 แถว) */
+  symptom: DEF_NAMES[i % DEF_NAMES.length], wi_no: `WI-PD3-0${10 + (i % 80)}`,
 })
 /* ⚠️ แถวสุดท้ายเป็น "แถวข้อมูลไม่ครบ" โดยตั้งใจ (2026-08-26)
    คอลัมน์ตัวเลข/ข้อความในฐานจริงส่วนใหญ่ nullable — แถวเดียวที่เป็น null ทำให้ทั้งหน้าพังได้
@@ -105,6 +135,12 @@ const NULLISH = (i) => ({
   image_url: null, started_at: null, ended_at: null, position: null, customer: null, model: null,
   opened_at: null, confirmed_at: null, end_time: null,
   material_cost: null, standard_cost: null, capacity_pkg: null, mat_nos: null,
+  /* เอกสาร/ถังคุณภาพ ก็ต้องมีแถว "ไม่ครบ" ด้วย — ใบเก่าที่ออกก่อนมีระบบ snapshot มีจริง
+     (snapshot = null ⇒ ปุ่มพิมพ์ซ้ำต้องบอกให้ออกใบใหม่ ไม่ใช่พิมพ์ใบเปล่าเงียบๆ) */
+  doc_no: null, snapshot: null, issued_by: null, issued_at: null, reprint_count: 0,
+  problem_title: null, min_minutes: null,
+  scrap_report_id: null, defect_log_id: null, qa_decision: null, special_use_doc_no: null,
+  symptom: null, wi_no: null,
 })
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
@@ -287,6 +323,22 @@ const TABLE_FIXED = {
        · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
     { id: 'kd-6', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'customer', seq: 6, name: 'MO Closed on target', source: 'manual', unit: '%', target_compare: '>=', target_value: 99, commit_compare: '>=', commit_value: 95, direction: 'up', weight: 6, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
+  ],
+  /* ค่าจริง + แผนรายเดือนของ KPI กรอกมือ (2026-09-25) — ไม่มี 2 ตารางนี้ใน mock แปลว่า
+     ทั้งตารางกรอกมือ · คอลัมน์สรุปทั้งปี · มินิกราฟ · แถว 📅 แผน **ไม่เคยถูกรันด้วยข้อมูลจริงใน harness**
+     🔴 ทรงข้อมูลต้องมีครบ 3 แบบที่ของจริงมี ห้ามตัดให้เหลือแบบเดียว:
+        kd-1 = มีทั้งผลและแผนครบ (ทางที่เทียบได้) · kd-4 = KPI สะสม (summary_mode 'sum')
+        ที่แผนขาดบางเดือน (ทางที่ต้องข้ามเดือนแล้วรายงาน skipped) · kd-6 = มีผลแต่ไม่มีแผนเลย
+        (ทางที่ planProgress คืน null แล้วจอต้องเขียนว่ายังไม่มีเดือนที่เทียบได้) */
+  kpi_manual_entries: [
+    ...[93.1, 94.0, 95.2, 96.4, 95.8, 94.9].map((v, i) => ({ id: `ke-1-${i}`, kpi_id: 'kd-1', month: i + 1, value: v })),
+    ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
+    ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
+  ],
+  kpi_month_plans: [
+    ...[95, 95, 95, 95, 95, 95].map((v, i) => ({ id: `kp-1-${i}`, kpi_id: 'kd-1', month: i + 1, plan_value: v })),
+    { id: 'kp-4-0', kpi_id: 'kd-4', month: 1, plan_value: 105.1 },
+    { id: 'kp-4-2', kpi_id: 'kd-4', month: 3, plan_value: 105.1 },   // เว้น ก.พ./เม.ย. โดยตั้งใจ = เดือนที่ยังไม่ตั้งแผน
   ],
   /* ทีมช่าง — ทรงเดียวกับ DEFAULT_TEAMS ของ pmTeams.js (dept_name ต้องตรงชื่อแผนกในผัง ไม่งั้นแท็บ ⚙️ ไม่รู้ว่าขอบเขตนี้เป็นทีมช่าง) */
   mtn_teams: [

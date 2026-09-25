@@ -16,6 +16,8 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+/* 📕 ทะเบียน QRs ↔ WI การซ่อม (WI-PD3-069 §6) — กติกาการจับคู่อยู่ใน util กลาง (pure + มีเทส) */
+import { matchRepairWi } from '../utils/repairWi';
 
 const TABLE = { downtime: 'downtime_logs', defect: 'defect_logs' };
 const TYPE_COL = { downtime: 'downtime_type_id', defect: 'defect_type_id' };
@@ -33,6 +35,8 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
   // 📜 ชื่อผู้แก้/ผู้ตรวจติดตามที่เคยบันทึก (DR downtime_logs — คอลัมน์ชื่อเดียวกับ defect_logs) — ช่างนอกทะเบียนยังเลือกซ้ำได้ (2026-09-07)
   const fixByHist = useColumnHistory(supabaseDR, 'downtime_logs', 'fix_by');
   const followHist = useColumnHistory(supabaseDR, 'downtime_logs', 'followup_by');
+
+  const [wiHits, setWiHits] = useState([]);   // WI ซ่อมที่เข้าเกณฑ์ (ทะเบียน §6)
 
   const typeId = row?.[TYPE_COL[kind]];
 
@@ -64,6 +68,25 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
     })();
     return () => { dead = true; };
   }, [kind, typeId, row?.id, row?.machine_no]);
+
+  /* ── 📕 WI การซ่อมที่ขึ้นทะเบียนไว้สำหรับอาการ/พาร์ทนี้ ──
+     ทะเบียนมีไม่กี่สิบแถว โหลดทั้งตารางได้ (เลือกเฉพาะคอลัมน์ที่ใช้ — กฎ egress ข้อ 11)
+     ตารางยังไม่มี/คิวรีล้ม = ไม่โชว์ชิป ไม่ขึ้น error (เป็นของเสริม ไม่ใช่ทางหลักของการลงวิธีแก้) */
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      const { data, error } = await supabaseDR.from('repair_wi_registry')
+        .select('code, symptom, wi_no, part_name').eq('is_active', true).limit(500);
+      if (dead || error || !data?.length) return;
+      const codes = [row?.prod_orders?.mat_no, row?.prod_orders?.part_no, row?.mat_no, row?.part_no];
+      const text = [
+        row?.dr_defect_types?.name_th, row?.dr_downtime_types?.name_th,
+        row?.description, row?.prod_orders?.part_name,
+      ].filter(Boolean).join(' ');
+      setWiHits(matchRepairWi(data, { codes, text }));
+    })();
+    return () => { dead = true; };
+  }, [row]);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -114,6 +137,33 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <label style={lbl}>วิธีการแก้ไข</label>
         <textarea value={fix} onChange={e => setFix(e.target.value)} style={ta}
           placeholder="แก้ยังไง เปลี่ยนอะไร ปรับค่าอะไร — เขียนให้กะถัดไปอ่านแล้วทำตามได้" />
+
+        {/* 📕 WI การซ่อมที่ขึ้นทะเบียน (WI-PD3-069 §6) — ขึ้นก่อน "เคยแก้มาก่อน"
+            เพราะเป็น **ข้อกำหนด** ไม่ใช่ประสบการณ์: ของที่ซ่อมได้ต้องซ่อมตาม WI เล่มที่กำหนด
+            กดแล้ว **เติมท้ายข้อความ ไม่ทับของเดิม** (คนอาจพิมพ์รายละเอียดไว้แล้ว) */}
+        {wiHits.length > 0 && (
+          <div style={{ marginTop: 8, marginBottom: 4 }}>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
+              📕 อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>WI การซ่อม</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {wiHits.map(w => (
+                <button key={w.code} type="button"
+                  onClick={() => setFix(v => (txt(v) ? `${v.replace(/\s+$/, '')} · ` : '') + `ซ่อมตาม ${w.wi_no}`)}
+                  title={`${w.code} — ${w.symptom}\n${w.wi_no}${w.why === 'symptom' ? '\n\n(จับคู่จากคำในอาการ — ตรวจว่าตรงเล่มก่อนใช้)' : ''}`}
+                  style={{ maxWidth: 280, textAlign: 'left', fontSize: 11.5, lineHeight: 1.35,
+                    padding: '5px 9px', borderRadius: 8, cursor: 'pointer', color: 'var(--text)',
+                    background: w.why === 'code' ? 'rgba(168,85,247,0.14)' : 'var(--bg2)',
+                    border: `1px solid ${w.why === 'code' ? 'rgba(168,85,247,0.45)' : 'var(--border2)'}` }}>
+                  <span style={{ display: 'block', fontWeight: 800, fontFamily: 'monospace' }}>{w.wi_no}</span>
+                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                    {w.code} · {w.symptom} · {w.why === 'code' ? 'ตรงเลขพาร์ท' : 'ตรงคำอาการ'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {past.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>

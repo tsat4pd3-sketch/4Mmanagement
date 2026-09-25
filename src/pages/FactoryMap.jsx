@@ -3,10 +3,12 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap, loadProductsMaster } from '../utils/useProducts';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -541,7 +543,7 @@ export default function FactoryMap({ setupMode = false }) {
     const [{ data: fm }, { data: rg }, { data: ln }, { data: lay }] = await Promise.all([
       supabase.from('factory_map').select('id, image_url').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
       supabase.from('factory_line_regions').select('id, line_name, points'),
-      supabase.from('production_lines').select('id, name, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('line_layouts').select('line_name'),
     ]);
     setImageUrl(fm?.image_url || null);
@@ -550,7 +552,7 @@ export default function FactoryMap({ setupMode = false }) {
     setLines(ln || []);
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
-      const { data: fl } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+      const { data: fl } = await loadLinesRes();
       const m = {}; (fl || []).forEach(l => { m[l.name] = l; });
       flowByLineRef.current = m;
     } catch { /* คอลัมน์ยังไม่มี — N=1 พฤติกรรมเดิม */ }
@@ -939,7 +941,7 @@ export default function FactoryMap({ setupMode = false }) {
     const curShift = (() => { const h = new Date().getHours(); return h >= 8 && h < 20 ? 'day' : 'night'; })();
     const [{ data: emps }, { data: pls }, { data: logsAll }, { data: ws }, saRes] = await Promise.all([
       supabase.from('employees').select('id, line_id').eq('is_active', true),
-      supabase.from('production_lines').select('id, name'),
+      loadLinesRes(),
       supabase.from('daily_production_logs').select('employee_id, is_present, has_helmet, has_boots, has_gloves, assigned_line, shift').eq('work_date', workDate),
       supabase.from('workstations').select('id, line_name'),
       // ประวัติเข้า-ออกจุดงาน (มีเวลาเริ่ม/จบ) — ใช้ถ่วงน้ำหนักตามเวลา ไม่ใช่ดูแค่ ณ ตอนนี้
@@ -1254,7 +1256,7 @@ export default function FactoryMap({ setupMode = false }) {
         //    ซึ่งเป็นแผงที่มีไว้ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง" โดยเฉพาะ (กะเช้า/ดึกแยกไม่ออก)
         supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
-        supabase.from('production_lines').select('id, name'),
+        loadLinesRes(),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
       ]);
       const out = {};
@@ -1273,10 +1275,10 @@ export default function FactoryMap({ setupMode = false }) {
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
           supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
-          supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+          loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09)
         ]);
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
-        const pairMap = {}; (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; });
+        const pairMap = prods;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {})
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
         await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
@@ -1339,7 +1341,7 @@ export default function FactoryMap({ setupMode = false }) {
           ids.length ? supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, carry_over, dr_downtime_types(name_th, category)').in('session_id', ids) : { data: [] },
           ids.length ? supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect, qty_repair, description, dr_defect_types(name_th), prod_orders(mat_no)').in('session_id', ids) : { data: [] },
           supabase.from('four_m_logs').select('id, line_name, category, description, status').eq('work_date', storyDate).in('line_name', fam),
-          supabaseDR.from('dr_products').select('mat_no, name, pair_mat_no'),
+          loadProductsMaster().then(rows => ({ data: rows || [] })),   // cache กลาง (25/09) — ต้องการ name + pair_mat_no
           loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ยอดรวมใน modal ยุบขั้นซ้ำเหมือนผัง
         ]);
         if (cancelled) return;

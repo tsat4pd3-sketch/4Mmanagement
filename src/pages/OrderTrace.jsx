@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -102,12 +103,10 @@ export default function OrderTrace() {
 
   useEffect(() => {
     // flow_mode ตัดสินว่า "ใบหนึ่งใช้เครื่องกี่ตัว" (ไหลทีละชิ้นผ่านทุกเครื่อง vs เครื่องขนานตัวใครตัวมัน)
-    // — best-effort: ยังไม่ apply migration ก็ถอยไป select เดิม (flowModeOf() default = one_piece_flow)
+    // 25/09: เดิม select เอง + ถอยชุดคอลัมน์ — ย้ายมา cache กลาง (ชุดคอลัมน์อยู่ useProductionLines.js ที่เดียว)
     (async () => {
-      const base = 'id, name, section, parent_line_name, std_day_shift, std_night_shift';
-      let r = await supabase.from('production_lines').select(`${base}, flow_mode, parallel_stations`).order('name');
-      if (r.error) r = await supabase.from('production_lines').select(base).order('name');
-      setLines(r.data || []);
+      const { data } = await loadLinesRes();
+      setLines(data || []);
     })();
   }, []);
 

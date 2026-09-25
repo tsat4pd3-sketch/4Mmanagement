@@ -323,6 +323,67 @@ export function summarizeMonths(months = [], mode = 'average', rate = null) {
   }
 }
 
+/* ── 5.2) แผนรายเดือน (`kpi_month_plans`) — "ถึงเดือนนี้ควรอยู่ตรงไหน" (2026-09-25) ────────
+   🔴 **ไม่ใช่คะแนน** — คะแนนทางการยังมาจาก `scoreDef()` ตัวเดียว (1 / 0.5 / 0)
+      **ห้ามเอาผลของตัวนี้ไปเปลี่ยนสี/ขั้นคะแนน หรือเพิ่มขั้นใหม่** (กฎ: เกณฑ์สีมีเอกสารแล้ว ห้ามคิดเอง)
+      เด็คทบทวนของจริงเขียน `◐ In progress` กับ KPI สะสม — ขั้นนั้น**ไม่มีในประกาศ QSM-R2 001/2569**
+   ปัญหาที่ตัวนี้แก้: KPI สะสม (100P · Annual Sales per Head · TS Academy) ถูกเทียบกับเป้า "ทั้งปี"
+      ตั้งแต่เดือนแรก ⇒ แดงทุกเดือนจนถึง ธ.ค. ทั้งที่เดินตามแผน — จอโกหกโดยโครงสร้าง ไม่ใช่ข้อมูลผิด
+   วิธี: เทียบ **ผลถึงเดือนนี้ vs แผนถึงเดือนนี้** โดยรวมทั้งสองชุดด้วย "วิธีรวม" ของ KPI ตัวนั้นเอง
+      (`sum` = Σ ถึงเดือนนี้ · `max` = ตัวสะสมล่าสุด · `average` = เฉลี่ยถึงเดือนนี้ · `as_of` = เดือนล่าสุด)
+   🔴 **เทียบเฉพาะเดือนที่มีทั้งแผนและผล** แล้วคืนจำนวนเดือนที่ใช้/ที่ข้ามเสมอ —
+      ถ้ารวมทั้งช่วงทั้งที่แผนขาดบางเดือน Σ แผนจะต่ำกว่าจริง ⇒ ขึ้นว่า "นำแผน" ทั้งที่แค่ยังไม่ได้ตั้งแผน
+   @param actual  ค่าจริง 12 ช่อง (index 0 = ม.ค.)
+   @param plan    แผน 12 ช่อง
+   @param def     แถว kpi_definitions (+ embed kpi_catalog) — ใช้หาวิธีรวม + ทิศทาง
+   @param upTo    เดือนสุดท้ายที่นับ (1-12) · ไม่ส่ง = เดือนล่าสุดที่มีผลจริง
+   @returns null = ยังไม่มีอะไรให้เทียบ · หรือ
+     { upTo, months, skipped, actual, plan, diff, diffPct, onTrack, dir, mode, approx }
+     `onTrack` null = ไม่รู้ทิศทางของเป้า (ห้ามเดา — จอต้องบอกว่าตัดสินไม่ได้) */
+export function planProgress({ actual = [], plan = [], def = null, upTo = null } = {}) {
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const a = Array.from({ length: 12 }, (_, i) => num(actual[i]));
+  const p = Array.from({ length: 12 }, (_, i) => num(plan[i]));
+
+  const lastActual = a.reduce((last, v, i) => (v != null ? i + 1 : last), 0);
+  const end = upTo == null ? lastActual
+    : Math.min(12, Math.max(0, Math.round(Number(upTo)) || 0));
+  if (!end) return null;
+
+  const months = [];
+  for (let m = 1; m <= end; m++) if (a[m - 1] != null && p[m - 1] != null) months.push(m);
+  if (!months.length) return null;
+  /* เดือนที่มีผลแต่ยังไม่ได้ตั้งแผน — จอต้องเขียนให้เห็น ไม่ใช่เงียบแล้วเทียบไปเลย */
+  let skipped = 0;
+  for (let m = 1; m <= end; m++) if (a[m - 1] != null && p[m - 1] == null) skipped += 1;
+
+  const mode0 = summaryModeOf(def);
+  /* `rate` คิดจากยอดดิบทั้งปี — แผนไม่มียอดดิบให้หาร ⇒ ถอยมาเฉลี่ย แล้วติดป้าย approx (กฎเดียวกับ summaryOf) */
+  const approx = mode0 === 'rate';
+  const mode = approx ? 'average' : mode0;
+  const pick = (arr) => months.map(m => arr[m - 1]);
+  const av = summarizeMonths(pick(a), mode);
+  const pv = summarizeMonths(pick(p), mode);
+  if (av == null || pv == null) return null;
+
+  const bars = defBars(def || {});
+  const cmp = bars.target_compare || bars.commit_compare || null;
+  const dir = cmp == null ? null : (String(cmp).startsWith('<') ? 'down' : String(cmp).startsWith('>') ? 'up' : null);
+
+  const diff = av - pv;
+  return {
+    upTo: end,
+    months: months.length,
+    skipped,
+    actual: av,
+    plan: pv,
+    diff,
+    diffPct: pv === 0 ? null : (diff / Math.abs(pv)) * 100,
+    onTrack: dir == null ? null : (dir === 'up' ? av >= pv : av <= pv),
+    dir, mode, approx,
+  };
+}
+
 /* ── ตัวช่วยเล็กๆ ─────────────────────────────────────────────────────────────────────── */
 export const COMPARES = ['<=', '>=', '<', '>', '='];
 

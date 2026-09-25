@@ -24,7 +24,8 @@ import { invalidateMaster } from './masterCache.js';   // ใส่ .js ให�
 /** ตาราง → คีย์ cache ทุกตัวที่ "เนื้อมาจากตารางนั้น" (ตารางเดียวมีได้หลายคีย์คนละ shape) */
 export const KEYS_BY_TABLE = {
   dr_products: [
-    'dr_products:picker',        // useProducts (picker กลาง)
+    'dr_products:picker:v2',     // useProducts (picker กลาง) · :v2 = รอบที่เพิ่ม pair_mat_no + op_seq (25/09)
+    'dr_products:picker',        // คีย์เก่า — คงไว้เพื่อล้างของค้างบนเครื่องที่ยังไม่ได้ build ใหม่
     'dr_products:ct',            // FactoryMap · LineOeeBoard (mat_no + cycle_time)
     'dr_products_ct_pair',       // QaFmeBoard
     'dr_products_link',          // QaFmeQueue
@@ -52,8 +53,10 @@ export const KEYS_BY_TABLE = {
   production_lines: [
     'production_lines:v2',       // useProductionLines (picker กลาง) · :v2 = รอบที่เพิ่ม 6 คอลัมน์ (25/09)
     'production_lines',          // คีย์เก่า — ล้างทิ้งด้วย เผื่อเครื่องที่ยังค้าง cache ชุดก่อน
-    'production_lines:scope',
-    'fx_lines',                  // FixtureRegistry
+    // 3 คีย์ล่างเลิกใช้แล้ว (25/09 — ย้ายมาใช้ 'production_lines:v2' คีย์เดียวทั้งแอป)
+    // **ห้ามลบออกจากทะเบียน** — เครื่องที่ยังไม่ได้รับ build ใหม่ยังมีของค้างใน localStorage
+    'production_lines:scope',    // เดิม TvBoard
+    'fx_lines',                  // เดิม FixtureRegistry
     'factory_map',               // FactoryMiniMap — รูปผัง/ภูมิภาคผูกกับไลน์
     'factory_line_regions',
     'production_lines:dr',       // DailyReport load()

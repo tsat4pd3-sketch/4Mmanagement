@@ -445,6 +445,12 @@ audit ทุกไฟล์ที่แตะ A/P/Q/OEE/OOE/TEEP แล้วพ
 
 > ### ⚠️ กฎงานคู่ RH/LH — ต้องตั้ง `dr_products.pair_mat_no` ให้ครบ **ทั้ง 2 ทาง** (ทุก session ต้องรู้ · 2026-07-21)
 > งานคู่ (แม่พิมพ์คู่ ปั๊มครั้งเดียวได้ทั้ง LH+RH = ทำพร้อมกัน) ผูกกันด้วย `pair_mat_no` ใน **Product Master (DR `dr_products`)** — LH ต้องชี้ไป RH **และ** RH ต้องชี้กลับมา LH (ตั้งจากหน้า `/products`) · ค่านี้เป็น source of truth เดียวที่ 3 จุดนี้พึ่งพา:
+>
+> 🔴 **ตั้งแต่ 2026-09-25 ทุกจอต้องอ่านคู่ผ่าน `loadPairMap()` (`src/utils/useProducts.js`) ห้าม `select('mat_no, pair_mat_no')` เอง**
+> (เดิม 5 จอยิงเอง = 780 ครั้ง/วัน และแต่ละจอกรองไม่เหมือนกัน — บางจอ `eq('is_active', true)` บางจอไม่)
+> · **คืน `null` เมื่อโหลดไม่สำเร็จ ห้ามคืน `{}`** — `{}` = "รู้แล้วว่าไม่มีคู่เลย" ⇒ นับ 2 เท่าเงียบๆ
+> · เพิ่ม/ลดคอลัมน์ใน `PRODUCT_COLUMNS` ต้อง **bump คีย์ cache** ในบรรทัดถัดไปเสมอ (ไม่งั้นเครื่องที่ cache ค้าง
+>   ได้แถวไม่มี `pair_mat_no` ไปอีก 4 ชม.) — มีด่าน `regressionGuards` บังคับทั้ง 2 ข้อแล้ว
 > 1. **เปิดเป้าคู่อัตโนมัติ** (DailyReport manual open — สร้าง prod_orders คู่ให้เอง)
 > 2. **OEE `computeOEE`** — จับเป็น product group เดียว/parallel ถูกต้อง (ดูบล็อกด้านบน)
 > 3. **บอร์ด Heijunka (Dashboard + Management)** — วางแถบ **ขนาน (parallel lane)** เริ่มพร้อมกัน แทนการเรียงต่อกัน (helper `laneKeyOf` · 2026-07-21)

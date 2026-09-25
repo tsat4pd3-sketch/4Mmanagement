@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -108,8 +109,7 @@ export default function ProductionPlan() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, std_day_shift, std_night_shift').order('name');
+      const { data } = await loadLinesRes();
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');

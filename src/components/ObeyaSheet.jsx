@@ -6,13 +6,18 @@
    กติกาของผัง (คณิต A4 · ฟอนต์ขั้นต่ำ 11px · ไฟไม่กระพริบ · เทาต้องบอกว่าเทาเพราะอะไร) → docs/modules/obeya.md §2 */
 import { useState, useEffect, useMemo } from 'react';
 import { statusColor } from '../utils/obeyaKpi';
+import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
 
-export const A4 = 1 / Math.SQRT2;          // 0.7071 — กว้าง ÷ สูง ของกระดาษ A4 แนวตั้ง
-export const GAP = 10;                     // ช่องไฟระหว่างแผ่น (px) — เหมือนเว้นขอบกระดาษที่ติดบอร์ด
+/* คณิตของผัง (A4 · GAP · ตัวเลือกผัง) ย้ายไป `src/utils/sheetGrid.js` แล้ว (pure + มีเทส)
+   re-export ไว้เพื่อไม่ต้องไล่แก้ import ของหน้าที่ใช้อยู่ */
+export { A4, GAP, MIN_SHEET_W, chooseSheetGrid } from '../utils/sheetGrid';
 
 /* ── ผังกระดาษ: วัดกล่องจริงแล้วเลือกจำนวนคอลัมน์ที่ "เต็มจอพอดีโดยไม่ต้องเลื่อน" ──────
-   จอกว้าง (TV/PC) → 5×2 ตามคณิตข้างบน · จอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) → ยอมให้เลื่อน
-   เพราะกระดาษ A4 สิบแผ่นบนจอ 6 นิ้วอ่านไม่ออกอยู่ดี (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI) */
+   จอกว้าง (TV/PC) → 5×2 ตามคณิตข้างบน
+   จอแคบ (มือถือ/แท็บเล็ตแนวตั้ง) → คืน `fit:false` + ขนาดแผ่นที่ "อ่านออก" (ไม่บีบให้เล็กกว่า 11px)
+   🔴 **25/09 เปลี่ยนนโยบาย (คำสั่ง user):** แผ่นที่ลงไม่พอ **ห้ามปล่อยให้เลื่อน** อีกต่อไป
+      ให้ผู้เรียกเอา `bh` (ความสูงกล่องที่วัดได้) ไปคำนวณว่าหน้าหนึ่งใส่ได้กี่แถว แล้ว**แบ่งหน้า**
+      ด้วย `packPages()` + `<BoardPager>` แทน — ดู `src/utils/boardPager.js` */
 export function useSheetGrid(ref, sheets = 10) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -29,32 +34,8 @@ export function useSheetGrid(ref, sheets = 10) {
     return () => ro.disconnect();
   }, [ref]);
 
-  return useMemo(() => {
-    const { w, h } = box;
-    if (!w || !h) return { cols: 5, rows: 2, cw: 0, ch: 0, fit: true, k: 1 };
-    const wide = w / h >= 1.25;                        // 16:9, 16:10, 4:3 แนวนอน = จอบอร์ด
-    if (wide) {
-      // ลองผังที่เป็นไปได้ แล้วเลือกอันที่ "แผ่นใหญ่สุดและยังอยู่ในกรอบ"
-      let best = null;
-      [[5, 2], [4, 3], [3, 4]].forEach(([cols, rows]) => {
-        if (cols * rows < sheets) return;
-        const ch = (h - GAP * (rows - 1)) / rows;
-        let cw = ch * A4;
-        if (cols * cw + GAP * (cols - 1) > w) {        // กว้างไม่พอ → ย่อตามกว้างแทน
-          cw = (w - GAP * (cols - 1)) / cols;
-        }
-        const area = cw * Math.min(ch, cw / A4);
-        if (!best || area > best.area) best = { cols, rows, cw, ch: Math.min(ch, cw / A4), area, fit: true };
-      });
-      return { ...best, k: clamp(best.cw / 330, 0.72, 2.4) };
-    }
-    const cols = w >= 700 ? 2 : 1;                      // แนวตั้ง = เลื่อนได้ (อ่านออกสำคัญกว่าเต็มจอ)
-    const cw = (w - GAP * (cols - 1)) / cols;
-    return { cols, rows: Math.ceil(sheets / cols), cw, ch: cw / A4, fit: false, k: clamp(cw / 330, 0.72, 2.4) };
-  }, [box, sheets]);
+  return useMemo(() => chooseSheetGrid(box.w, box.h, sheets), [box, sheets]);
 }
-const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-
 /* ── แผ่นกระดาษ 1 ใบ ──────────────────────────────────────────────────────────────
    หัวแผ่น = ชื่อแกน + ตัวเลขใหญ่ + Δ เทียบเป้า · กลาง = กราฟ · ท้าย = หมายเหตุ/ลิงก์
    ⚠️ ฟอนต์ต่ำสุด 11px เสมอแม้แผ่นเล็ก (กติกาจอ TV) — ถ้าเล็กกว่านั้นให้ลดจำนวนคอลัมน์แทน */

@@ -9,7 +9,7 @@ import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
-import { LINE_COLUMNS } from '../utils/useProductionLines'
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -88,7 +88,7 @@ export default function DailyPM() {
       supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
       supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
       supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').eq('department', 'production'),
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
+      loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
     ])
     /* AM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → default แสดงเฉพาะ "เครื่องผลิต"
        ตัด jig/die tooling + facility/utility ออก ไม่ให้ลิสต์ลงทะเบียนรก (คำสั่ง user 2026-07-22)
