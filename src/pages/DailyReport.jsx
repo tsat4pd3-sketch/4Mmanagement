@@ -5708,7 +5708,7 @@ function StaleTab({ stale, onOpenSession, role }) {
    HISTORY TAB
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
-  const { lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -5726,6 +5726,11 @@ function HistoryTab({ role }) {
      ⇒ **ปิดกะเมื่อไหร่ ใบนั้นออกใหม่ไม่ได้อีกเลยตลอดกาล** — หน้างานเลยต้องเซฟไฟล์เก็บเองทุกวัน
      (บั๊กคลาสเดียวกับ "ช่องตาย" ที่บันทึกไว้ 2026-08-28: ความสามารถมีอยู่ แต่ไม่มีทางเข้าถึง) */
   const [histSheet, setHistSheet] = useState(null);   // { session, title }
+  /* 🛠 ลงวิธีแก้ไข/ผลตรวจติดตาม **ย้อนหลัง** (2026-09-25 · user: "ถ้าจะปริ้นย้อนหลัง ก็ต้องดึงข้อมูลที่เคยลงไว้สิ")
+     เดิม `ProblemFixModal` อยู่แท็บ Live ที่เดียว ⇒ ปิดกะแล้วลงวิธีแก้ไขไม่ได้อีกเลย
+     ⇒ ใบรายงานปัญหาที่ออกย้อนหลังมีช่อง "วิธีแก้ไข/ผลตรวจติดตาม" ว่าง และไม่มีทางเติม
+     (ใบพิมพ์มีบรรทัด "⚠ ยังไม่ได้ลงวิธีแก้ไขในระบบ N รายการ" อยู่แล้ว — แต่บอกแล้วทำอะไรไม่ได้) */
+  const [histFix, setHistFix] = useState(null);      // { kind, row, title, sessionId }
   const [histBreaks, setHistBreaks] = useState([]); // break_policies — หักพักตามนโยบายจากช่วงวิ่งของพาร์ท
 
   const canDeleteSession = can('daily_report', 'delete_session', role);
@@ -6113,6 +6118,24 @@ function HistoryTab({ role }) {
                               {d.qty_ng      > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>NG {d.qty_ng}</span>}
                               {d.qty_suspect > 0 && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>สงสัย {d.qty_suspect}</span>}
                               {d.qty_repair  > 0 && <span style={{ fontSize: 11, color: '#a78bfa', fontWeight: 700 }}>ซ่อม {d.qty_repair}</span>}
+                              {/* ของเสียทุกรายการเข้าใบรายงานปัญหา (ไม่มีเกณฑ์เวลา) → ลงวิธีแก้ไขได้ทุกแถว */}
+                              {(() => {
+                                const done = !!String(d.fix_action || '').trim();
+                                return (
+                                  <button onClick={e => { e.stopPropagation(); setHistFix({ kind: 'defect', row: d, sessionId: s.id,
+                                    title: `${d.dr_defect_types?.name_th || 'ของเสีย'} · NG ${d.qty_ng || 0}` }); }}
+                                    title={done
+                                      ? `ลงวิธีแก้ไขแล้ว${d.fix_by ? ` โดย ${d.fix_by}` : ''}`
+                                      : 'ลงวิธีแก้ไข + ผลตรวจติดตามย้อนหลัง (เติมลงใบรายงานปัญหาให้อัตโนมัติ)'}
+                                    style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+                                      borderRadius: 20, padding: '3px 10px',
+                                      color: done ? '#22c55e' : '#fff',
+                                      background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
+                                      border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                                    {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
+                                  </button>
+                                );
+                              })()}
                             </div>
                             {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -6141,6 +6164,24 @@ function HistoryTab({ role }) {
                                 {d.machine_no && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine_no}</span>}
                                 {d.mat_no && <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 20, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>{d.mat_no}</span>}
                                 <span style={{ fontSize: 12, fontWeight: 700, color: d.dr_downtime_types?.color || '#aaa' }}>{fmtMin(d.duration_min)}</span>
+                                {/* 🛠 เกณฑ์เดียวกับแท็บ Live (นอกแผน ≥ PROBLEM_MIN_MINUTES) — ยังไม่ลง = ส้ม · ลงแล้ว = เขียวเงียบ */}
+                                {dtNeedsFix(d) && (() => {
+                                  const done = !!String(d.fix_action || '').trim();
+                                  return (
+                                    <button onClick={e => { e.stopPropagation(); setHistFix({ kind: 'downtime', row: d, sessionId: s.id,
+                                      title: `${d.dr_downtime_types?.name_th || 'Downtime'}${d.machine_no ? ` · ${d.machine_no}` : ''} · ${fmtMin(d.duration_min)}` }); }}
+                                      title={done
+                                        ? `ลงวิธีแก้ไขแล้ว${d.fix_by ? ` โดย ${d.fix_by}` : ''}${String(d.followup_result || '').trim() ? ' · มีผลตรวจติดตาม' : ' — ยังไม่ลงผลตรวจติดตาม'}`
+                                        : `หยุดเกิน ${PROBLEM_MIN_MINUTES} นาที — ลงวิธีแก้ไข + ผลตรวจติดตามย้อนหลังได้`}
+                                      style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
+                                        borderRadius: 20, padding: '3px 10px',
+                                        color: done ? '#22c55e' : '#fff',
+                                        background: done ? 'rgba(34,197,94,0.12)' : '#f59e0b',
+                                        border: done ? '1px solid rgba(34,197,94,0.35)' : 'none' }}>
+                                      {done ? '🛠 แก้ไขแล้ว' : '🛠 ลงวิธีแก้ไข'}
+                                    </button>
+                                  );
+                                })()}
                               </div>
                               {d.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.description}</div>}
                               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -6160,6 +6201,20 @@ function HistoryTab({ role }) {
           );
         })}
       </div>
+
+      {/* 🛠 ลงวิธีแก้ไข + ผลตรวจติดตาม ย้อนหลัง — component เดียวกับแท็บ Live (reuse ตามกฎโมดูล)
+          บันทึกแล้วโหลดรายละเอียดกะนั้นใหม่ ให้ปุ่มเปลี่ยนเป็นเขียวทันที */}
+      {histFix && (
+        <ProblemFixModal
+          kind={histFix.kind} row={histFix.row} title={histFix.title}
+          actorName={fullName}
+          onClose={() => setHistFix(null)}
+          onSaved={async () => {
+            setDtMap(m => { const n = { ...m }; delete n[histFix.sessionId]; return n; });   // บังคับโหลดใหม่
+            await loadDetail(histFix.sessionId);
+          }}
+        />
+      )}
 
       {/* 📝 ยืนยันหัวเรื่องก่อนพิมพ์ใบรายงานปัญหาย้อนหลัง — โมดัล/กติกาเดียวกับแท็บ Live
           (ระบบเสนอจากแถวที่หนักสุดของกะ · คนแก้/ล้างได้ · `extra.problem ?? headline` ฝั่งใบพิมพ์) */}
