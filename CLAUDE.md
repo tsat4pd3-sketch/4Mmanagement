@@ -227,7 +227,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
-หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: Layer Process Audit Plan (แผนตรวจรายเดือนต่อไลน์+กะ) + Layer Process Aud…
+หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต — ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
