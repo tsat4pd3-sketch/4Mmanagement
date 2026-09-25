@@ -25,6 +25,7 @@ import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import { storeBtn } from '../utils/storeUi';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 
@@ -237,17 +238,17 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                       {canOperate && needAction && (
                         <button onClick={e => { e.stopPropagation(); onConfirm(r, alloc.parts); }} disabled={confirming === r.id}
                           style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
+                          {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งแล้ว'}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => onReceive(r, alloc.parts, 'full')}
-                            style={{ flex: 1, padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                            style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>
                             ✔️ รับครบ
                           </button>
                           <button onClick={() => onReceive(r, alloc.parts, 'partial')}
-                            style={{ flex: 1, padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontFamily: 'var(--font-body)' }}>
+                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>
                             ⚠️ รับไม่ครบ
                           </button>
                         </div>
@@ -626,17 +627,17 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                       {canOperate && !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง') && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
                           style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? '...' : '✅ ยืนยันส่งแล้ว'}
+                          {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งแล้ว'}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           <button onClick={() => onReceive(r, parts, 'full')}
-                            style={{ flex: 1, padding: '5px 4px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
+                            style={storeBtn('primary', { flex: 1, padding: '10px 6px', fontSize: 13 })}>
                             ✔️ รับครบ
                           </button>
                           <button onClick={() => onReceive(r, parts, 'partial')}
-                            style={{ flex: 1, padding: '5px 4px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontFamily: 'var(--font-body)' }}>
+                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', fontSize: 13, color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>
                             ⚠️ ไม่ครบ
                           </button>
                         </div>
@@ -777,7 +778,7 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
 function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
   if (!rowList.length) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(296px, 100%), 1fr))', gap: 12, padding: 16, alignContent: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(330px, 100%), 1fr))', gap: 12, padding: 16, alignContent: 'start' }}>
       {rowList.map(r => {
         const per = kanbanStd[r.mat_no];
         const stockCovered = r.netTotal === 0;
@@ -796,7 +797,7 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
             <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tone.c }} />
 
             <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={56} />
+              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={84} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <span style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matColor(r.mat_no), ...QC_NUM }}>{r.mat_no}</span>
@@ -944,9 +945,9 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                           {canReorder && (
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button className="tbtn" onClick={() => onReorder(queue, lot, 'up')} disabled={busy === lot.id || qIdx === 0}
-                                style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === 0 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === 0 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▲</button>
+                                style={{ minWidth: 36, minHeight: 36, padding: '4px 8px', borderRadius: 'var(--radius)', cursor: qIdx === 0 ? 'default' : 'pointer', fontSize: 13, fontWeight: 800, background: 'var(--bg2)', color: qIdx === 0 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border2)' }}>▲</button>
                               <button className="tbtn" onClick={() => onReorder(queue, lot, 'down')} disabled={busy === lot.id || qIdx === queue.length - 1}
-                                style={{ padding: '2px 8px', borderRadius: 6, cursor: qIdx === queue.length - 1 ? 'default' : 'pointer', fontSize: 12, fontWeight: 800, background: 'var(--bg2)', color: qIdx === queue.length - 1 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border)' }}>▼</button>
+                                style={{ minWidth: 36, minHeight: 36, padding: '4px 8px', borderRadius: 'var(--radius)', cursor: qIdx === queue.length - 1 ? 'default' : 'pointer', fontSize: 13, fontWeight: 800, background: 'var(--bg2)', color: qIdx === queue.length - 1 ? 'var(--border2)' : 'var(--text)', border: '1px solid var(--border2)' }}>▼</button>
                             </div>
                           )}
                         </div>
@@ -955,8 +956,8 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                         </div>
                         {canOperate && st.next && (
                           <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
-                            style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(0,0,0,0.12)', color: st.color, border: `1px solid ${st.border}`, fontFamily: 'var(--font-body)' }}>
-                            {busy === lot.id ? '...' : st.nextLabel}
+                            style={storeBtn('primary', { marginTop: 8, width: '100%' })}>
+                            {busy === lot.id ? 'กำลังบันทึก…' : st.nextLabel}
                           </button>
                         )}
                       </div>
@@ -975,8 +976,8 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
                                   ? <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
                                   : canOperate
                                     ? <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
-                                        style={{ padding: '3px 9px', borderRadius: 7, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                                        {busy === r.id ? '...' : 'จ่าย'}
+                                        style={storeBtn('primary', { padding: '8px 18px', fontSize: 13 })}>
+                                        {busy === r.id ? 'กำลังบันทึก…' : 'จ่าย'}
                                       </button>
                                     : null}
                               </div>
@@ -1069,7 +1070,7 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
       <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: statusColor }} />
 
       <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={56} />}
+        {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={84} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
             <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13, ...QC_NUM }}>{code}</span>
@@ -1110,12 +1111,22 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
         </dl>
       )}
 
+      {/* 🔴 แถบคำสั่ง — ปุ่มนี้คือ "สิ่งที่ต้องกด" ของการ์ดใบนี้ ⇒ ต้องเป็นปุ่มหลักเต็มตัว (2026-09-25 · feedback หน้างาน)
+          *"จุดที่ user ต้อง interactive ด้วยก็ดูบาง หายาก"* — เดิมพื้น `statusBg` (alpha .10) บนพื้นเข้ม
+          = คอนทราสต์ต่ำจนดูเป็นข้อความ ไม่ใช่ปุ่ม · ตอนนี้ **พื้นทึบสีสถานะ + ตัวหนังสือเข้ม**
+          · เป้ากด 44px (WCAG 2.2 AA = 24px ขั้นต่ำ · หน้างานใส่ถุงมือใช้ 44) · เต็มความกว้างการ์ด
+            เพราะ "การ์ด 1 ใบ = งาน 1 ชิ้น" ⇒ ปุ่มเล็กชิดขวาบังคับให้เล็งบนจอสัมผัส
+          🔴 **พื้นปุ่มใช้ `--accent` ไม่ใช่ `statusColor`** — ลองใช้สีสถานะแล้วพังที่สถานะ "⬜ รอ"
+            ซึ่ง `statusColor` เป็น `var(--border2)` (เขียวเข้ม) ⇒ ตัวหนังสือเข้มบนพื้นเข้ม = อ่านไม่ออก
+            · และปุ่มหลักที่หน้าตาเหมือนกันทุกใบ = ตาหาเจอทันทีว่า "อันนี้คือปุ่มที่ต้องกด"
+            (สถานะสื่อด้วยแถบซ้าย + ป้ายอยู่แล้ว ไม่ต้องย้ำที่ปุ่มอีก) */}
       {actionLabel && (
-        <div style={{ marginTop: 'auto', padding: '8px 12px 8px 15px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ marginTop: 'auto', padding: '10px 12px 12px 15px', borderTop: '1px solid var(--border)' }}>
           <button onClick={onAction} disabled={busy} style={{
-            padding: '6px 14px', borderRadius: 'var(--radius)', fontSize: 12, fontWeight: 700,
-            cursor: busy ? 'default' : 'pointer', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
-            background: statusBg, color: statusColor, border: `1px solid ${statusBorder}`, opacity: busy ? 0.6 : 1,
+            width: '100%', minHeight: 44, padding: '10px 14px', borderRadius: 'var(--radius)',
+            fontSize: 13.5, fontWeight: 800, cursor: busy ? 'default' : 'pointer',
+            fontFamily: 'var(--font-body)', lineHeight: 1.25,
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: busy ? 0.55 : 1,
           }}>{busy ? 'กำลังบันทึก…' : actionLabel}</button>
         </div>
       )}
@@ -1235,7 +1246,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบที่ต้องไปส่งอยู่ที่แท็บ 🔄 คิวเติม WIP · เลือกพาร์ทจาก forecast ได้ที่ 🕐 Store Time Chart
         </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
           {vRounds.map(r => {
             const key = `${r.line_name}|${r.shift}|${r.round_no}`;
             const status = getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs);
@@ -1264,7 +1275,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
           {vLots.map(lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
@@ -1294,7 +1305,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
               {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต · กดปุ่มบนการ์ดเพื่อเลื่อนสถานะรวมทีเดียว'}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
               {purGroups.map(g => {
                 const st = PURCHASE_STATUS[g.status] || PURCHASE_STATUS.pending;
                 const many = g.slips > 1;
@@ -1333,7 +1344,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
           {vRaws.map(r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
@@ -1360,7 +1371,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           </div>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
           {vRacks.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>{rackRequests.length === 0 ? 'ยังไม่มีการเรียกภาชนะ' : 'ไม่มีการเรียกภาชนะที่ค้างอยู่'}</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
               {vRacks.map(r => {
                 const st = RACK_STATUS[r.status] || RACK_STATUS.requested;
                 return (
@@ -1375,7 +1386,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           )}
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
           {vPkgs.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>{pkgRequests.length === 0 ? 'ยังไม่มีใบเบิก packaging' : 'ไม่มีใบเบิก packaging ที่ค้างอยู่'}</div> : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
               {vPkgs.map(p => {
                 const issued = p.status === 'issued';
                 return (
@@ -1401,7 +1412,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           ยังไม่มีคำขอ — มาจาก 3 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(296px, 100%), 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
           {vWips.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
@@ -1448,7 +1459,11 @@ export default function HeijunkaKanban() {
   /* ผูก `?view=` (ไม่ใช่ `?tab=` — หน้านี้อาจถูกฝังใต้หน้าแม่ที่ถือ ?tab= อยู่ · UI §6.8 ข้อ 2.4)
      ค่าที่ไม่รู้จักใน URL ตกกลับ 'unified' เอง (useTabParam จัดการให้) ห้ามจอว่าง */
   const [viewMode, setViewMode]   = useTabParam(Object.keys(VIEW_META), 'unified', 'view');
-  const [demandFmt, setDemandFmt] = useState('cards');        // แท็บ 📋 ความต้องการวันนี้: 'cards' | 'table'
+  const [demandFmt, setDemandFmt] = useState('cards');
+  /* ปุ่ม "เลือกพาร์ทไปส่ง" จากแท็บอื่น = ต้องพาไปถึงแผงติ๊กพาร์ท ไม่ใช่แค่สลับแท็บแล้วปล่อยไว้หัวหน้า
+     (feedback หน้างาน 25/09 — หน้า chart สูง 3,285px แผงงานจริงอยู่ต่ำกว่าขอบจอ 2.5 จอ) */
+  const [focusPick, setFocusPick] = useState(0);
+  const goPickParts = useCallback(() => { setViewMode('chart'); setFocusPick(n => n + 1); }, [setViewMode]);        // แท็บ 📋 ความต้องการวันนี้: 'cards' | 'table'
   const [loading, setLoading]     = useState(false);
   const [sessions, setSessions]   = useState([]);
   const [demands, setDemands]     = useState([]);
@@ -2561,7 +2576,7 @@ export default function HeijunkaKanban() {
             workDate={workDate} breakPolicies={breakPolicies} nowMs={nowMs} fmt={fmt}
             canOperate={canOperate} onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             onOpenLine={(ln) => navigate(`/management?line=${encodeURIComponent(ln)}&view=heijunka`)}
-            openRequests={wipRequests} onCreateRequests={createStoreRequests}
+            openRequests={wipRequests} onCreateRequests={createStoreRequests} focusPick={focusPick}
             slocs={slocs} lines={linesArr}
           />
         ) : viewMode === 'board' ? (
@@ -2569,7 +2584,7 @@ export default function HeijunkaKanban() {
             rounds={rounds} deliveries={deliveries} view={view}
             kanbanStd={kanbanStd} onConfirm={confirmRound} confirming={confirming}
             onReceive={openReceive} fmt={fmt} lineMap={lineMap} workDate={workDate} nowMs={nowMs} canOperate={canOperate}
-            wipRequests={wipRequests} onGoChart={() => setViewMode('chart')} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('wip'); }}
+            wipRequests={wipRequests} onGoChart={goPickParts} onGoQueue={() => { setViewMode('unified'); setUnifiedStore('wip'); }}
           />
         ) : viewMode === 'timeline' ? (
           <DeliveryTimelineBoard
