@@ -7,6 +7,7 @@ import { buildPnIndex, pickStockMat, matIssueText } from '../utils/matResolve';
 import { fetchAllPages } from '../utils/fetchByIds';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { openOnly } from '../utils/shipStatus';
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -39,8 +40,8 @@ export default function RundownStock() {
     const [stkR, odsR, { data: st }, { data: rules }, { data: dp }, { data: ks }] = await Promise.all([
       fetchAllPages(() => supabaseDR.from('line_stock_summary').select('line_name, mat_no, part_name, qty_on_hand'),
         { orderBy: ['mat_no', 'line_name'] }),   // view ไม่มี id — order composite ให้คงที่ข้ามหน้า
-      fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('*')
-        .lt('due_date', dateStr(toD)).neq('status', 'shipped')),
+      fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('*')
+        .lt('due_date', dateStr(toD)))),
       supabaseDR.from('ship_to_plants').select('*'),
       // คลังปลายทางของ FG มาจากกฎรับเข้าอัตโนมัติ — ไม่ hardcode 'FG WAREHOUSE'
       supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name').eq('is_active', true),

@@ -272,6 +272,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'open-order-filter-via-openOnly',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    // จับตัวกรอง "งานค้าง" ที่เขียนเองด้วย shipped ตรงๆ ทั้งฝั่งคิวรีและฝั่ง JS
+    re: /\.neq\(\s*['"]status['"]\s*,\s*['"]shipped['"]\s*\)/g,
+    why: 'ทั้งระบบเคยนิยาม "งานค้าง" ด้วย neq(status,shipped) กระจาย 7 จุด ⇒ พอเพิ่มสถานะปิดใหม่ '
+       + '(cancelled — ใบที่ลูกค้ายกเลิก/ใบผี) **ตกไปจุดเดียว = ใบที่ปิดแล้วยังโผล่แดงอยู่จอนั้นเงียบๆ** '
+       + 'ซึ่งเป็นเหตุผลเดียวที่ก่อนหน้านี้ไม่กล้าเพิ่มสถานะ เลยต้องลบข้อมูลทิ้งแทน (25/09/2026)',
+    fix: 'ใช้ openOnly(query) / isOpenOrder(row) จาก src/utils/shipStatus.js — เจ้าของเดียวของนิยาม "ยังเป็นงานค้าง"',
+    allow: { 'src/utils/shipStatus.js': 'ตัว helper เอง' },  },
+  {
     id: 'actor-identity-via-setActor',
     scan: ['src'], ext: ['.jsx', '.js'],
     re: /setDrActorName\s*\(/g,

@@ -16,6 +16,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import CapacityBoard from '../components/CapacityBoard';
+import { openOnly } from '../utils/shipStatus';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
   netShiftMin, FALLBACK_SHIFT_BREAK_MIN, buildDayPlan,
@@ -143,14 +144,14 @@ export default function ProductionPlan() {
         supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope').eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
           .eq('status', 'closed').gte('work_date', histStart)),
-        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')
-          .neq('status', 'shipped').gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON))),
+        fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')
+          .gte('due_date', today).lte('due_date', addDays(today, DAILY_HORIZON)))),
         fetchAllPages(() => supabaseDR.from('customer_forecasts').select('id, mat_no, part_name, customer, qty, period_month, source')
           .gte('period_month', `${monthKey(today)}-01`)),
         // ⚠️ ออเดอร์ค้างส่งที่เลยดิว (pending วันเก่า ย้อน 30 วัน) — เดิมถูกตัดทิ้งทั้งก้อน
         //    แผนรายวันเริ่ม backlog=0 แล้วบอก "กะเช้าพอ" ทั้งที่มีของค้างส่งจริง (QC flow-audit D1 · red)
-        fetchAllPages(() => supabaseDR.from('customer_shipping_orders').select('id, mat_no, qty, due_date')
-          .neq('status', 'shipped').gte('due_date', addDays(today, -30)).lt('due_date', today)),
+        fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('id, mat_no, qty, due_date')
+          .gte('due_date', addDays(today, -30)).lt('due_date', today))),
       ]);
       const sess = sessRes.rows, ord = ordRes.rows, fc = fcRes.rows, past = pastRes.rows;
       /* ── นาทีทำงานสุทธิต่อกะ = เวลาดิบ − พักตามนโยบาย (กฎเหล็กใน capacityModel.js) ──
