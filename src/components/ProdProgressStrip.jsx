@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
@@ -59,10 +60,10 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
       const [{ data: po, error: e2 }, { data: prods }] = await Promise.all([
         supabaseDR.from('prod_orders')
           .select('session_id, mat_no, qty, qty_target, qty_ok, qty_actual, status').in('session_id', ids),
-        supabaseDR.from('dr_products').select('mat_no, pair_mat_no').eq('is_active', true),
+        loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09) · รวมพาร์ทที่ปิดใช้งานด้วย — ไม่กระทบ
       ]);
       if (e2) throw e2;
-      const pairOf = (m) => (prods || []).find(p => p.mat_no === m)?.pair_mat_no ?? null;
+      const pairOf = (m) => prods?.[m] ?? null;   // prods = null (โหลดไม่สำเร็จ) ⇒ ไม่ยุบงานคู่
       const opMap = opInfoSync();
       const lineOf = Object.fromEntries((sess || []).map(s => [s.id, s.line_name]));
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
@@ -20,14 +21,18 @@ import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
-function Field({ label, children }) {
+function Field({ label, hint, children }) {
   return (
     <div>
       <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>{label}</label>
       {children}
+      {hint && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>{hint}</div>}
     </div>
   );
 }
+
+/* ช่องตัวเลขที่ "ว่าง = ไม่รู้" — ห้ามแปลงเป็น 0 (0 คือคำตอบ null คือไม่มีคำตอบ) */
+const numOrNull = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
 const inputStyle = {
   width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -42,7 +47,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 
-const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '' };
+const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: '', machine_type_id: '', sort_order: 0, is_active: true, equipment_category: 'production', equipment_kind: 'machine', automation_level: '', operation_mode: '', gang_count: '', shut_height_min_mm: '', shut_height_max_mm: '' };
 // หมวดอุปกรณ์ในฐานเครื่องจักร — Facility/Utility ไม่ผูกไลน์ผลิต (ระบบน้ำ/ลม/High Pressure ฯลฯ)
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
@@ -117,7 +122,7 @@ export default function MachineDatabase() {
     invalidateTable('machines');
     const [{ data: mc }, { data: ln }, { data: mt }, fa] = await Promise.all([
       supabaseDR.from('machines').select('*, machine_types(id, label, color, icon)').order('line_name').order('sort_order'),
-      supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'),
+      loadLinesRes(),
       supabaseDR.from('machine_types').select('*').order('sort_order'),
       supabaseDR.from('pm_facility_areas').select('name').order('sort_order').then(r => r).catch(() => ({ data: [] })),
     ]);
@@ -210,7 +215,9 @@ export default function MachineDatabase() {
     setEditing(item
       /* ⚠️ ต้องคัดลอก equipment_kind มาด้วยเสมอ — ตกไปแล้ว kindOf(undefined)='machine'
          ⇒ เปิดแก้แม่พิมพ์/จิ๊กแล้วกด save = ชนิดถูกเขียนทับเป็น "เครื่องจักร" เงียบๆ (audit 2026-09-08) */
-      ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '' }
+      ? { id: item.id, equipment_kind: kindOf(item.equipment_kind), line_name: item.line_name, machine_no: item.machine_no, machine_name: item.machine_name || '', machine_type_id: item.machine_type_id || '', sort_order: item.sort_order ?? 0, is_active: item.is_active, equipment_category: item.equipment_category === 'utility' ? 'facility' : (item.equipment_category || 'production'), automation_level: item.automation_level || '', operation_mode: item.operation_mode || '', gang_count: item.gang_count != null ? String(item.gang_count) : '',
+          shut_height_min_mm: item.shut_height_min_mm != null ? String(item.shut_height_min_mm) : '',
+          shut_height_max_mm: item.shut_height_max_mm != null ? String(item.shut_height_max_mm) : '' }
       : { ...emptyMachine, line_name: filterLine || '', sort_order: machines.length + 1 });
   };
 
@@ -237,6 +244,11 @@ export default function MachineDatabase() {
       automation_level:  isRunningMachine ? (editing.automation_level || null) : null,
       operation_mode:    isRunningMachine ? (editing.operation_mode || null) : null,
       gang_count:        editing.operation_mode === 'gang' && parseInt(editing.gang_count) > 0 ? parseInt(editing.gang_count) : null,
+      /* ⏱️ ช่วง shut height ที่เครื่องรับได้ (มม.) — ใช้เช็คว่าแม่พิมพ์ขึ้นเครื่องนี้ได้ไหม
+         + เป็นฐานของเวลาเปลี่ยนรุ่นงานปั๊ม (src/utils/pressSetup.js)
+         ว่าง = null = "ไม่รู้" — fitsPress() จะคืน null ไม่ใช่ false (ห้ามตัดตัวเลือกคนวางแผน) */
+      shut_height_min_mm: isRunningMachine ? numOrNull(editing.shut_height_min_mm) : null,
+      shut_height_max_mm: isRunningMachine ? numOrNull(editing.shut_height_max_mm) : null,
       sort_order:        parseInt(editing.sort_order) || 0,
       is_active:         editing.is_active,
       updated_at:        new Date().toISOString(),
@@ -248,11 +260,13 @@ export default function MachineDatabase() {
     // ทน migration ยังไม่ apply: ถ้าไม่มีคอลัมน์ใหม่ → ตัดออกแล้วบันทึกแบบเดิม
     let strippedCat = false;
     let strippedKind = false;
-    if (error && /equipment_category|equipment_kind|automation_level|operation_mode|gang_count/.test(error.message || '')) {
+    if (error && /equipment_category|equipment_kind|automation_level|operation_mode|gang_count|shut_height_/.test(error.message || '')) {
       strippedCat = /equipment_category/.test(error.message || '');
       strippedKind = /equipment_kind/.test(error.message || '');
-      const { equipment_category, equipment_kind, automation_level, operation_mode, gang_count, ...rest } = payload;
+      const { equipment_category, equipment_kind, automation_level, operation_mode, gang_count,
+        shut_height_min_mm, shut_height_max_mm, ...rest } = payload;
       void equipment_category; void equipment_kind; void automation_level; void operation_mode; void gang_count;
+      void shut_height_min_mm; void shut_height_max_mm;
       ({ error } = await doSave(rest));
     }
     if (error) { setSaving(false); toast.error(error.message); return; }
@@ -537,6 +551,16 @@ export default function MachineDatabase() {
                         <option value="">— not set —</option>
                         {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {o.label}</option>)}
                       </select>
+                    </Field>
+                    {/* ⏱️ ช่วง shut height — ตัวแปรเวลาเปลี่ยนรุ่นงานปั๊ม (user 2026-09-24)
+                        ว่างไว้ได้ = "ยังไม่รู้" ระบบจะไม่สรุปว่าแม่พิมพ์ขึ้นเครื่องนี้ไม่ได้ */}
+                    <Field label="Shut height ต่ำสุด (มม.)" hint="ว่าง = ยังไม่รู้">
+                      <input type="number" step="0.1" min={0} value={editing.shut_height_min_mm ?? ''}
+                        onChange={e => setEditing(f => ({ ...f, shut_height_min_mm: e.target.value }))} placeholder="เช่น 200" style={inputStyle} />
+                    </Field>
+                    <Field label="Shut height สูงสุด (มม.)" hint="ใช้เช็คว่าแม่พิมพ์ขึ้นเครื่องนี้ได้ไหม">
+                      <input type="number" step="0.1" min={0} value={editing.shut_height_max_mm ?? ''}
+                        onChange={e => setEditing(f => ({ ...f, shut_height_max_mm: e.target.value }))} placeholder="เช่น 450" style={inputStyle} />
                     </Field>
                     {editing.operation_mode === 'gang' && (
                       <Field label="Gang count (pieces / stroke)">

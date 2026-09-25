@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
+import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
@@ -44,7 +45,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
-import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
 import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import { scopeMatRows } from '../utils/matScope';
@@ -483,7 +484,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [ln, pr, dt, ks, bp, mc, dft] = await Promise.all([
-      cachedMaster('production_lines:dr', async () => (await supabase.from('production_lines').select(LINE_COLUMNS).order('name')).data || []),
+      cachedMaster('production_lines:dr', async () => (await loadLinesRes()).data || []),
       cachedMaster('dr_products:full', async () => (await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name')).data || []),
       cachedMaster('dr_downtime_types:active', async () => (await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order')).data || []),
       cachedMaster('kanban_standards:full', async () => (await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no')).data || []),
@@ -508,7 +509,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
     // ⚠️ คิวรี production_lines รอบที่ 2 ของ load() เดียวกัน — cache ด้วย ไม่งั้นยิงซ้ำทุกรอบเช่นกัน
     cachedMaster('production_lines:flow', async () =>
-      (await supabase.from('production_lines').select('name, flow_mode, parallel_stations')).data || []).then((data) => {
+      (await loadLinesRes()).data || []).then((data) => {
       if (!data) return;
       const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
       setLineFlow(fm);
@@ -665,8 +666,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            เพราะต้องรู้ด้วยว่า prod_no นั้น **มีใบที่ใหม่กว่าซึ่งถูกรับ/ปิดไปแล้วหรือยัง**
            ถ้าดึงแค่ open/carry_over จะมองไม่เห็นใบ confirmed/imported ของกะที่ใหม่กว่า
            → ใบที่ค้างอยู่ในกะเก่า (ซึ่ง `pending_close` ก็เข้าเงื่อนไข) ถูกเสนอซ้ำทุกกะไปเรื่อยๆ */
+        /* 🔴 ห้ามกลับไป `select('*')` — คิวรีนี้ดึงใบของ **8 กะก่อนหน้า** และวิ่งใหม่ทุกครั้งที่มี
+           realtime event หรือมีใครบันทึกในกะนี้ · `prod_orders` มี 33 คอลัมน์ และวัดจริง 25/09:
+           shape `select=*` = 8,625 ครั้ง/วัน = 61% ของ traffic ทั้งตาราง
+           คอลัมน์ด้านล่าง = ทุกตัวที่ตรรกะยกยอด + ปุ่ม "รับยอดค้างเข้ากะ" + แบนเนอร์ใช้จริง
+           **เพิ่มฟิลด์ที่ handleImportCarryOrders ส่งต่อ = ต้องเติมที่นี่ด้วย** ไม่งั้นค่าหายเงียบ */
+        const CARRY_COLS = 'id, session_id, prod_no, mat_no, part_name, p_no, customer, qty, qty_actual, status, is_manual, carry_over_note, opened_at';
         const { data: carried } = await supabaseDR.from('prod_orders')
-          .select('*')
+          .select(CARRY_COLS)
           .in('session_id', prevIds)
           .order('opened_at', { ascending: false });
         // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
@@ -1244,7 +1251,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const prevIds = prevSessions.map(s => s.id);
       const prevFrame = {}; prevSessions.forEach(s => { prevFrame[s.id] = shiftFrameOf(s); });
       const [{ data: histOrders }, { data: histDt }] = await Promise.all([
-        supabaseDR.from('prod_orders').select('*').in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
+        // ใช้แค่ 5 คอลัมน์นี้ในลูปข้างล่าง — `select('*')` = 33 คอลัมน์โดยเปล่าประโยชน์
+        supabaseDR.from('prod_orders').select('session_id, mat_no, qty, opened_at, confirmed_at')
+          .in('session_id', prevIds).in('mat_no', matNos).eq('status', 'confirmed'),
         supabaseDR.from('downtime_logs').select('session_id, started_at, ended_at, duration_min').in('session_id', prevIds),
       ]);
       if (cancelled) return;
@@ -5288,6 +5297,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                    machineOpts ของ /improvements ที่แก้ไปแล้ว 2026-08-19)
              กติกา: ไลน์นี้ก่อน → ครอบครัวไลน์ → เครื่องอื่นทั้งโรงงาน → แม่พิมพ์ท้ายสุด
                     **ไม่ตัดอะไรทิ้ง** (ค้นเจอได้หมด) แต่เรียงให้ตัวที่น่าจะใช่อยู่บนสุด */
+          const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           const dtMachineOptions = (() => {
             const line = (selSession?.line_name || '').trim().toLowerCase();
             const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
@@ -5459,7 +5469,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           emptyText="ไม่พบเครื่องนี้ในทะเบียน"
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
-                          onChange={({ id, text }) => setDtForm(f => ({ ...f, machine_no: id || text }))}
+                          /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
+                             ไม่งั้นเครื่องเดียวกันแตกเป็นคนละแท่งในพาเรโต (utils/machineNo 24/09) */
+                          onChange={({ id, text }) => setDtForm(f => ({
+                            ...f, machine_no: id || snapMachineNo(text, machineKeyMap) || text }))}
                         />
                         </div>
                         {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
@@ -5783,7 +5796,7 @@ function HistoryTab({ role }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: ln } = await supabase.from('production_lines').select(LINE_COLUMNS).order('name');
+    const { data: ln } = await loadLinesRes();
     const lm = {};
     (ln || []).forEach(l => { lm[l.name] = l; });
     const pcm = {};
@@ -6357,7 +6370,7 @@ function ExportTab() {
   const [preview, setPreview]     = useState(null); // { type, rows, cols }
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => {
         const ln = data || [];
         const normSection = (s) => (s || '').trim().toLowerCase();
@@ -7262,7 +7275,7 @@ function ProductSetup({ role }) {
   const load = useCallback(async () => {
     const [{ data: pr }, { data: ln }, { data: stds }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
+      loadLinesRes(), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (ลำดับชั้น/ปลดระวาง)
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
     ]);
     setItems(pr || []);

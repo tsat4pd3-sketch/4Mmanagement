@@ -33,8 +33,8 @@
 - **ประวัติการแก้ / ผลรันจริง / ตัวเลข runtime / feedback ที่ตัดสินใจไปแล้ว → เขียนสั้นๆ ในไฟล์โมดูล ไม่ใส่ CLAUDE.md** (CLAUDE.md = กฎปัจจุบัน ไม่ใช่ changelog)
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกไว้ในไฟล์โมดูลที่เกี่ยวข้อง (ถ้าข้ามโมดูล เช่น "กับดัก CSS" ค่อยไว้ใน CLAUDE.md)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
-- **⚠️ เวลาบอก user ให้รัน migration ต้อง "วาง SQL เต็มๆ ในแชท" เสมอ ห้ามบอกแค่ชื่อไฟล์ (คำสั่งถาวรจาก user 2026-08-21)** · **user ไม่มี Supabase CLI / terminal — ห้ามส่งคำสั่ง shell/CLI ให้รัน (2026-09-07 เคยก๊อป `supabase functions deploy` ไปวางใน SQL Editor)** · migration ที่ย้อนได้ + edge function → AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ (ดู `docs/modules/edge-functions.md`) · ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ (SQL Editor · ตั้ง secrets ใน dashboard · เมนูในแอป) — user รันผ่าน Supabase SQL Editor บนเว็บ **เปิดไฟล์ในรีโปไม่ได้** · เคยเกิดจริง: บอกชื่อไฟล์ไป user ก๊อป *path* ไปวางใน SQL Editor แล้วได้ `42601 syntax error at or near "supabase"` · ต้องระบุ **project ปลายทาง (Main/DR) กำกับทุกครั้ง** ด้วย (ตาราง 2 ฝั่งชื่อคล้ายกัน รันผิดฝั่งได้ง่าย) · แนบคิวรีเช็คผลหลังรันไปด้วยจะดีที่สุด
-- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) → ต้อง register เข้าระบบทะเบียนเอกสาร `/doc-forms` (Document Master)** ให้ doc_control ปรับแต่งได้เอง (เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/โลโก้/Legend/ผู้ออกเอกสาร/Revision History) โดยไม่ต้องแก้โค้ด — ขั้นตอนบังคับ: (1) seed แถวใน `doc_forms` (migration — เอกสารที่ยังไม่มีเลขฟอร์มทางการก็ seed ด้วย form_code=null ไว้ก่อน) (2) ฟังก์ชันพิมพ์อ่านค่าผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`fullCode`/`getDocFormRevisions` + fallback ค่าเดิมในโค้ดเสมอ) — ฟอร์มทางการวาดหัว/footer เอง · **รายงานภายในที่ไม่มี layout ฟอร์ม อย่างน้อยห่อ html ก่อนพิมพ์ด้วย `withDocFoot(html, doc_key)`** (ทะเบียนยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิมเป๊ะ ตั้งเมื่อไหร่แถบเลขฟอร์มโผล่เอง) (3) โลโก้ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ในโค้ด และห้ามสร้างตารางทะเบียนเอกสารแยกใหม่** (เคยมี `document_controls` ซ้อน — ยุบเข้าทะเบียนกลางแล้ว 2026-07-30 · ดูรายละเอียดแถว `/doc-forms` ใน Pages & Routes + `docs/UI-CONVENTIONS.md` §6.6)
+- **⚠️ เวลาบอก user ให้รัน migration ต้อง "วาง SQL เต็มๆ ในแชท" เสมอ ห้ามบอกแค่ชื่อไฟล์ (คำสั่งถาวรจาก user 2026-08-21)** — user รันผ่าน **Supabase SQL Editor บนเว็บ เปิดไฟล์ในรีโปไม่ได้** · เคยเกิดจริง: บอกชื่อไฟล์ไป user ก๊อป *path* ไปวาง แล้วได้ `42601 syntax error at or near "supabase"` · **user ไม่มี CLI/terminal — ห้ามส่งคำสั่ง shell/CLI ให้รัน** (07/09 เคยก๊อป `supabase functions deploy` ไปวางใน SQL Editor) · migration ที่ย้อนได้ + edge function → AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ (`docs/modules/edge-functions.md`) · ให้ user ทำเฉพาะที่ทำได้จากเว็บ (SQL Editor · secrets ใน dashboard · เมนูในแอป) · ต้องระบุ **project ปลายทาง (Main/DR) ทุกครั้ง** (ตาราง 2 ฝั่งชื่อคล้ายกัน รันผิดฝั่งได้ง่าย) · แนบคิวรีเช็คผลหลังรันด้วยจะดีที่สุด
+- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) → ต้อง register เข้าระบบทะเบียนเอกสาร `/doc-forms` (Document Master)** ให้ doc_control ปรับแต่งได้เอง (เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/โลโก้/Legend/ผู้ออกเอกสาร/Revision History) โดยไม่ต้องแก้โค้ด — ขั้นตอนบังคับ: (1) seed แถวใน `doc_forms` (migration — เอกสารที่ยังไม่มีเลขฟอร์มทางการก็ seed ด้วย form_code=null ไว้ก่อน) (2) ฟังก์ชันพิมพ์อ่านค่าผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`fullCode`/`getDocFormRevisions` + fallback ค่าเดิมในโค้ดเสมอ) — ฟอร์มทางการวาดหัว/footer เอง · **รายงานภายในที่ไม่มี layout ฟอร์ม อย่างน้อยห่อ html ก่อนพิมพ์ด้วย `withDocFoot(html, doc_key)`** (ทะเบียนยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิมเป๊ะ ตั้งเมื่อไหร่แถบเลขฟอร์มโผล่เอง) (3) โลโก้ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ในโค้ด และห้ามสร้างตารางทะเบียนเอกสารแยกใหม่** (เคยมี `document_controls` ซ้อน ยุบแล้ว — `docs/UI-CONVENTIONS.md` §6.6)
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
@@ -83,7 +83,7 @@
 > 📄 กฎ/เหตุผล/ประวัติรายตารางที่ pg_catalog บอกไม่ได้ (employees · production_lines · profiles · oee_targets · ot_night_bookings · workstations · employee_skills · shift_schedules · ppe_* · four_m_logs · notifications · meeting_action_items · event_comments) → **`docs/modules/db-schema.md`**
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
-- `production_lines` — กำลังคน `std_day_shift`/`std_night_shift` อ่านผ่าน **`src/utils/stdManpower.js` เท่านั้น** · `line_type` (source of truth `src/utils/lineTypes.js`) **คนละตัวกับ `process_type` ฝั่ง DR** · 🔴 **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · 🔴 **ไลน์ที่ `line_type` ว่างต้องมีตะกร้ารับท้ายลิสต์ ห้ามหายจาก dropdown**
+- `production_lines` — กำลังคน `std_day_shift`/`std_night_shift` อ่านผ่าน **`src/utils/stdManpower.js` เท่านั้น** · `line_type` (source of truth `src/utils/lineTypes.js`) **คนละตัวกับ `process_type` ฝั่ง DR** · 🔴 **ชื่อไลน์ตัวเองชนะไลน์แม่เสมอ** · 🔴 **ไลน์ที่ `line_type` ว่างต้องมีตะกร้ารับท้ายลิสต์ ห้ามหายจาก dropdown** · 🔴 **อ่านทะเบียนไลน์ผ่าน `src/utils/useProductionLines.js` เท่านั้น ห้าม `from('production_lines').select()` เอง** (มีด่าน) · เพิ่มคอลัมน์ = เติมใน `LINE_COLUMNS` + bump คีย์ cache
 - `profiles` — **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดจน `fn_audit` อ่าน `coalesce(full_name, email)` แล้ว**พังเงียบ ไม่บันทึกผู้แก้ทั้งระบบ**) · **ระบบไม่มีการส่งอีเมลเลย** (`notify_email` ไม่เคยถูกใช้ส่งอะไร)
 - `oee_targets` — **เป้า OEE ห้ามตั้งเอง คำนวณจาก A×P×Q เสมอ** · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
@@ -227,14 +227,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
 
-หน้า `/lpa` (`LayerProcessAudit.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: Layer Process Audit Plan (แผนตรวจรายเดือนต่อไลน์+กะ) + Layer Process Aud…
+หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต — ย้ายจากหมวด QA/QC ตามคำสั่ง user 2026-07-20) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
 
 ## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
 
-หน้า `/scrap-report` (`ScrapReport.jsx`, กลุ่มฝ่ายผลิต — ฝ่ายผลิตเป็นผู้ใช้งานหลัก) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" ที่เขียนมือ · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100% · ⚠️ `production_lines` อยู่ M…
+หน้า `/scrap-report` (`ScrapReport.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · ลงยอด scrap ต่อ ไลน์/วัน แล้ว export Excel ตรงฟอร์ม 100%
 > 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
 
 ---
@@ -292,7 +292,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13)
 
-หน้า `AdoptionOutlook.jsx` (กลุ่มภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลมองเห็นกันหมด เราจะมองเห็นมิติไหนได้บ้าง" (สอบกลับย้อนหลังถึงไหน · รู้ตัวก่อนคุณภาพหลุดไหม · เครื่องเบี่ยงเบนหรือยัง · กระทบการจัดส่…
+หน้า `AdoptionOutlook.jsx` (ภาพรวม) — ตอบผู้บริหารว่า "เมื่อทุกแผนกใช้จริงและข้อมูลเชื่อมกันหมด จะมองเห็นมิติไหนได้บ้าง" (สอบกลับ · เตือนก่อนคุณภาพหลุด · กระทบการส่ง)
 > 📄 รายละเอียดเต็ม → `docs/modules/adoption-outlook.md`
 
 ---
@@ -313,7 +313,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
 
-หน้า `/production-plan` (กลุ่มฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ "กำลังผลิตที่ทำได้จริง" → บอกว่าต้องเปิดกี่กะ กี่วัน วันไหนเปิด OT/กะดึก/ทำวันหยุด วันไหนไม่ต้อง เพื่อทันดิว · เฟส 1 อ่านอย่…
+หน้า `/production-plan` (ฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
 > 📄 รายละเอียดเต็ม → `docs/modules/production-plan.md`
 
 ---
@@ -347,15 +347,23 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
    ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
    · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-   · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ตัดคำไทยด้วย ICU `Intl.Segmenter` ·
-     คีย์เสียงข้ามสคริปต์ (เบนดิ่ง=bending) · ทนพิมพ์ผิด ⇒ จับได้ ×2 เท่า
-     🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ต้องตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อนเมื่อไหร่พังทันที)
-     · ข้อยกเว้นเดียว = **r ท้ายคำ** (ไทยไม่ออกเสียง r ท้ายพยางค์ · คอนเวเย่อ=conveyor)
-   · 🔴 **คำที่กำกวมในทะเบียนต้องตัดสินด้วย "การใช้งานจริง" ไม่ใช่ยุบป้ายทะเบียน** — ส่งใบที่คน
-     จัดประเภทแล้วเข้าไปเรียนด้วย (`buildDtIndex`) · ป้ายที่ความหมายต่างกันจริงห้ามยุบ
-   · 📐 **คำที่เรียนจากใบเก่าตัดสินด้วย log-odds z ≥ 1.96 + พื้นขั้นต่ำ 3 ใบ** (`utils/termStats.js`)
-     เลิกใช้ "ชนะ 80%" — 100% จาก 2 ใบ ไม่ใช่หลักฐานระดับเดียวกับ 88% จาก 125 ใบ
+   · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ICU `Intl.Segmenter` · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด
+     🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อน = พังทันที)
+     ข้อยกเว้นเดียว = **r ท้ายคำ** (คอนเวเย่อ=conveyor)
+   · 🔴 **คำกำกวมตัดสินด้วยการใช้งานจริง ไม่ใช่ยุบป้ายทะเบียน** (`buildDtIndex` เรียนจากใบที่คนจัดแล้ว)
+   · 📐 **คำที่เรียนจากใบเก่า: log-odds z ≥ 1.96 + พื้น 3 ใบ** (`utils/termStats.js`) เลิกใช้ "ชนะ 80%"
 > 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
+
+## 🏷️ `machine_no` = คีย์ join แบบ text — เขียนต่างแบบ = แท่งซ้ำทุกจอ (2026-09-25)
+
+`SW10` กับ `SW-10` คือเครื่องเดียวกัน แต่พาเรโต/KPI ช่าง/MTBF/Andon แตกเป็นคนละแท่ง
+· 🔴 ยุบได้เฉพาะ **รูปแบบ** (ตัวพิมพ์/ช่องว่าง/ขีด/0 นำหน้า) ผ่าน `snapMachineNo` (`utils/machineNo.js`
+  · ฝั่ง SQL `public.machine_key()` **ตรรกะต้องตรงกัน**) · ช่องรับเลขเครื่องใหม่ต้องผ่าน `MachineSelect`
+· 🔴 **ทับศัพท์/ชื่อย่อห้ามเดา** (`เลเซอร์04`·`LWR`) — ทะเบียนมี `LS-11` ชื่อ "Laser" ใต้ HYDROFORM
+  · คีย์ที่ทะเบียนเองเขียน 2 แบบ (`RB-79`/`RB79`) = ข้าม ให้คนลบตัวซ้ำก่อน
+> 📄 `docs/modules/mtn-problem-analysis.md` §รอบ 5
+
+---
 
 ## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
 
@@ -380,8 +388,11 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
 · ป้าย "ทั้งหมด" = `ALL.*` (`utils/filterLabels.js`) · 2–5 ตัวเลือก (กะ) = `<Segmented>` · ค้นหา = `<SearchInput>`
 · 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
-  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · หน้าที่ตั้ง `alsoIn` ต้องมาร์ค**ทุกหมวด**
-  (ห้ามเช็ค `activeGroup === group` — คืนแค่หมวดแรก) · ด่านข้อ 6 ใน stdsweep (UI-STANDARD §4.5)
+  **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · ห้ามเช็ค `activeGroup === group` (คืนแค่หมวดแรก)
+· 🚪 **`alsoIn` = "ทางลัด" ไม่ใช่ "บ้านที่สอง"** (24/09 คำสั่ง user — เดิมโผล่ 2 หมวดหน้าตาเหมือนกัน = ดูเป็นเมนูซ้ำ)
+  บ้านจริง = `item.group` **หมวดเดียว** ได้ไฮไลต์เต็ม · แถวทางลัดวาดต่าง (จาง + `↗ <หมวดบ้าน>`) ·
+  ตัดสินด้วย `isNavGuest(item, group)` · "โชว์ในหมวดนี้ไหม (นับทางลัด)" = `inNavGroup()` **คนละคำถาม ห้ามปน**
+  · แถวเมนูวาดจาก `navRow()` ตัวเดียวทั้ง desktop/มือถือ · ด่านข้อ 6 ใน stdsweep + `nav-alsoin-*` (UI-STANDARD §4.5)
 · 📏 **แกนกราฟ: `YAxis width="auto"` · margin ซ้ายห้ามติดลบ** (เลข 100 เคยถูกตัดเหลือ "0") · `utils/chartAxis.js` · ตรวจ `node audit/chartsweep.mjs`
 · ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
 > 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
@@ -417,12 +428,20 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
 
-แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ย้าย spare part list จากไฟล์ Excel เข้าระบบ: ค้นหาอะไหล่/ตำแหน่งชั้นวางได้เร็ว · ยอดคงเหลือตรงกับการเบิกจริงในใบ MO · จัด Rank A/B/C อัตโนมัติ ·…
+แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
 > 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md` (1 หัวข้อย่อย)
 
 ---
 
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
+
+> ### ⏱️ เวลาเปลี่ยนรุ่นงานปั๊ม (setup time · 2026-09-25) — คิดผ่าน `src/utils/pressSetup.js` เท่านั้น
+> `die_height_mm` + ช่วง shut height + กฎ `press_setup_rules` (เครื่อง ชนะ ไลน์ ชนะ global · กรอกที่ `/equipment?tab=die` + `/machines`)
+> ผลของความสูง = **อัตราเชิงเส้น `per_mm_sec`** (ช่างปั๊ม: 1 มม. = 1 วินาที) · **ห้ามฝังเลขเวลา setup ในโค้ด**
+> · 🔴 **ไม่มีกฎ/ไม่รู้เวลาฐาน = `null` ห้ามคืน 0** · ไม่รู้ความสูง = ธง `unknown_height` + บอกว่าต่ำกว่าจริง ·
+>   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
+> · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
+> 📄 `docs/modules/die-maintenance.md`
 
 `/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ (`?die=`): 📋 ทะเบียน (ของเดิม) · 🗺️ ผังจัดเก็บ (`src/components/DieLayout.jsx`) · 📊 สถานะ (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration `20260819_die_lay…
 > 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
@@ -445,7 +464,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23)
 
-หน้า `/pm-coordination` (`PmCoordination.jsx`, กลุ่มการตรวจสอบและซ่อมบำรุง) — ทำ "ใบแจ้งแผน" แบบเมลที่ MTN ส่งประสานงาน (เช่น "RE: แผนการ Cleaning Cutting Head เครื่อง Laser LS-10") สำหรับงาน PM/แก้เครื่องที่กินหลายวัน +…
+หน้า `/pm-coordination` (`PmCoordination.jsx`, การตรวจสอบและซ่อมบำรุง) — "ใบแจ้งแผน" ที่ MTN ส่งประสานงานกับผลิต สำหรับงาน PM/แก้เครื่องที่กินหลายวัน
 > 📄 รายละเอียดเต็ม → `docs/modules/pm-coordination.md`
 
 ---
@@ -492,8 +511,8 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
 
-หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม ใน NAV_GROUP_ORDER — ยุบจากหมวด “วิศวกรรม (PE)” เดิม 2026-08-27) — โมดูลทีม Process Engineering ถอดโครงจากเอกสารจริง TSAT (PFC-P703-01 Rev.12 / FMEA-P703-01 Rev.33 (A…
-· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql`
+หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม) — โมดูลทีม Process Engineering: Process Flow / PFMEA / Control Plan ถอดโครงจากเอกสารจริง TSAT
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว 2026-09-24** · seed 43 กระบวนการ รอ PE ยืนยันทั้งหมด)
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---
@@ -525,11 +544,11 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
 - ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **🔴 หน่วย · ทศนิยม · วิธีรวม 12 เดือน = ตั้ง 2 ชั้น** (24/09 · คำสั่ง user) — ทะเบียน `kpi_catalog` = ค่าตั้งต้น (ปุ่ม 📘 · มีผลทุกปีทุกส่วนงาน)
-  · `kpi_definitions.unit`/`.decimals` = **override รายแถว** (ว่าง = ตามทะเบียน · MTBF ใบ JIG "นาที" เด็ค "ชม.")
-  · 🔒 **`summary_mode` override รายแถวไม่ได้** (แต่ละแผนกรวมคนละแบบ = เทียบกันไม่ได้) · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน**
-  · 🔴 `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` ไม่งั้นตกเป็น 2 ตำแหน่ง/"เฉลี่ย" เงียบๆ · หัวคอลัมน์ห้ามเขียน "เฉลี่ย" ตายตัว
+- **🔴 หน่วย/ทศนิยม/วิธีรวม 12 เดือน = 2 ชั้น** (24/09) ทะเบียน `kpi_catalog` = ค่าตั้งต้น · `unit`/`decimals` override รายแถวได้ · 🔒 `summary_mode` ไม่ได้
+  · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน** · `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` (ขาด = ตกค่า default เงียบ)
+- **📅 แผน 12 เดือน `kpi_month_plans`** (25/09 · `planProgress()`) — 🔴 ป้าย ▲ ตามแผน/▼ ช้ากว่าแผน **ไม่ใช่คะแนน** ห้ามเปลี่ยนสี/เพิ่มขั้น · เทียบเฉพาะเดือนที่มี**ทั้งแผนและผล**
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
+- ⚡ **KPI ช่าง (MO Closed/MBD/MTBF/MTTR) = สูตร Guideline หน้า 10 ใน `utils/kpiAuto.js` เท่านั้น** (RPC `kpi_mtn_rollup` คืน Σ) · ระบบเสนอ คนกด "ใช้ค่านี้" **ห้ามเขียนทับค่าที่กรอกมือ**
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
 > ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
@@ -554,7 +573,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
 
-หน้า `WorkforceInsight.jsx` (กลุ่มพนักงาน & ทักษะ) — อ่านอย่างเดียว ไม่มี resource:action ใหม่ (ไม่มีปุ่มเขียนข้อมูล) · 3 แท็บจากคำขอ user เดียวกัน ("insight turn over + สรุปกำลังคนแต่ละวันเป็นกราฟ" + "สรุปการเปลี่ยนตำแห…
+หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
 > 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md` (3 หัวข้อย่อย)
 
 ---
@@ -568,8 +587,20 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
 
-หน้า OrderTrace (กลุ่มวิเคราะห์ & รายงาน) — 2 แท็บ (`useTabParam`): `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการที่แจ้ง) · สแกน/ค้น `prod_no` (บาร์โค้ด kanban) → เห็นทุกเหตุการณ์ของใบนั้น + สถานการณ์รอบข้าง ณ เ…
+หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
 > 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md` (2 หัวข้อย่อย)
+
+---
+
+## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
+
+กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
+- **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push (กระดิ่งวัดจริง 25/09: **19,095 แถว/7 วัน อ่าน 7.3%**)
+- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว ห้ามแตกรายตัว**)
+  — ชื่อในใบ ≠ งานส่วนตัว (วัดจริง: ใบซ่อมรอตรวจรับ 168 ใบ มีแค่ 10 ชื่อ ส่วนงานเดียว = คิวแผนก)
+- **🔴 badge นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
+- **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
+> 📄 `docs/modules/my-queue.md`
 
 ---
 

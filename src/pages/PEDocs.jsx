@@ -26,7 +26,7 @@ import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useProducts from '../utils/useProducts';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -147,7 +147,7 @@ export default function PEDocs() {
     const [{ data: s }, { data: ln }] = await Promise.all([
       supabase.from('pe_doc_sets').select('*').order('part_no'),
       // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> · เครื่องจักรย้ายไป <MachineSelect> (โหลด+cache เอง · 2026-09-07)
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
+      loadLinesRes(),
     ]);
     setSets(s || []);
     setLines(ln || []);
@@ -162,7 +162,7 @@ export default function PEDocs() {
       supabase.from('pe_master_proposals').select('*').order('created_at', { ascending: false }).limit(500),
       fetchAllRows(supabase, 'pe_processes', 'id, set_id, master_process_id', q => q.not('master_process_id', 'is', null)),
     ]);
-    // ยังไม่ apply migration 20260915_pe_fmea_master = ตารางไม่มี → คลังว่าง แท็บ 📚 บอกเอง ไม่พัง
+    // migration 20260915_pe_fmea_master_main apply แล้ว 2026-09-24 — คง `|| []` ไว้เป็นตาข่าย (ตารางหาย/RLS ปิด = คลังว่าง ไม่พังทั้งหน้า)
     setMasters(m.data || []); setMasterItems(mi.data || []); setProposals(pr.data || []);
     const u = {};
     (us.data || []).forEach(r => { const o = (u[r.master_process_id] ||= { ops: 0, setIds: new Set() }); o.ops += 1; o.setIds.add(r.set_id); });

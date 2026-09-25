@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -80,7 +81,7 @@ export default function StockCountSheet({ role, scope }) {
       supabaseDR.from('stock_inflow_rules').select('match_value, dest_line_name, match_type').eq('is_active', true),
       // ⚠️ production_lines อยู่ Main project — ไม่ใช่ DR (ดู CLAUDE.md "Supabase Projects")
       //    ต้องมี section + is_active ไม่งั้น LineSelect กรอง scope ไม่ได้ / ไลน์ปลดระวางโผล่ปน
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, line_type').order('name'),
+      loadLinesRes(),
     ]);
     setLoading(false);
     // ห้ามกลืน error — คิวรีล้มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล" คือคลาสบั๊กที่โปรเจคเจอซ้ำ

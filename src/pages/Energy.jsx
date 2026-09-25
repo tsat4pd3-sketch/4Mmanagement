@@ -19,6 +19,7 @@ import {
   CartesianGrid, Tooltip, Legend, Cell, ReferenceLine,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -103,7 +104,7 @@ export default function Energy() {
     setLoading(true);
     const months = monthRange(month, TREND_MONTHS);
     const [{ data: ln }, { data: areas }, { data: facMc }, { data: h }] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      loadLinesRes(),
       supabaseDR.from('pm_facility_areas').select('name').order('name'),
       supabaseDR.from('machines').select('id, line_name').eq('equipment_category', 'facility').eq('is_active', true),
       supabaseDR.from('energy_monthly').select('*').eq('utility', 'electric')

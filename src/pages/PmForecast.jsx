@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
@@ -57,7 +58,7 @@ export default function PmForecast() {
     setLoading(true)
     try {
       const [{ data: lines }, { data: plans }] = await Promise.all([
-        supabase.from('production_lines').select('id, name, parent_line_name, section'),
+        loadLinesRes(),
         supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, usage_metric, usage_threshold, usage_source_line, interval_days, next_due_date, last_done_at, pm_duration_hours, lead_time_days, buffer_margin_pct, is_active').eq('is_active', true),
       ])
       const lineArr = lines || []

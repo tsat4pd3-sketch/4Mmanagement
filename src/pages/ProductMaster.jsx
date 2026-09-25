@@ -21,7 +21,7 @@ import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
-import useProductionLines, { LINE_COLUMNS } from '../utils/useProductionLines';
+import useProductionLines, { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 // ทะเบียนลูกค้า/Supplier (DR customers · suppliers — 2026-09-08 single-source audit): แผง CRUD กลาง + picker กลาง
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import SupplierSelect from '../components/SupplierSelect';
@@ -317,7 +317,7 @@ export default function ProductMaster() {
     const [{ data: pr }, { data: ln }, { data: stds }, { data: boms }, { data: sessions }, { data: pm }, { data: rt }, { data: pkg }] = await Promise.all([
       supabaseDR.from('dr_products').select('*').order('name').order('effective_from', { ascending: false }),
       // 2026-09-07: ต้องครบ LINE_COLUMNS (section/is_active) — <LineSelect> ใช้กรอง scope + ตัดไลน์ปลดระวาง
-      supabase.from('production_lines').select(LINE_COLUMNS).order('name'),
+      loadLinesRes(),
       supabaseDR.from('kanban_standards').select('*').order('mat_no'),
       supabaseDR.from('bom_items').select('product_id, mat_no').eq('is_active', true),
       supabaseDR.from('production_sessions').select('product_id, qty_ok, dr_products(family_id)'),

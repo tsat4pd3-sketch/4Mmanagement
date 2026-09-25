@@ -58,7 +58,7 @@ function stripComments(src) {
 const RULES = [
   {
     id: 'no-factory-vocabulary-in-language-layer',
-    scan: ['src/utils/thaiText.js', 'src/utils/termStats.js', 'src/utils/autoCategory.js'],
+    scan: ['src/utils/thaiText.js', 'src/utils/termStats.js', 'src/utils/autoCategory.js', 'src/utils/machineNo.js'],
     ext: ['.js'],
     /* จับ "ชื่ออุปกรณ์/ศัพท์เฉพาะโรงงาน" ที่หลุดเข้าไปเป็นโค้ด (คอมเมนต์ไม่นับ — ตัวสแกนตัดออกก่อน)
        เลือกเฉพาะคำที่เป็นอุปกรณ์ชัดเจน ไม่ใช่คำกลางอย่าง alarm/stop/error ที่อยู่ใน STOP โดยชอบธรรม */
@@ -272,6 +272,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'open-order-filter-via-openOnly',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    // จับตัวกรอง "งานค้าง" ที่เขียนเองด้วย shipped ตรงๆ ทั้งฝั่งคิวรีและฝั่ง JS
+    re: /\.neq\(\s*['"]status['"]\s*,\s*['"]shipped['"]\s*\)/g,
+    why: 'ทั้งระบบเคยนิยาม "งานค้าง" ด้วย neq(status,shipped) กระจาย 7 จุด ⇒ พอเพิ่มสถานะปิดใหม่ '
+       + '(cancelled — ใบที่ลูกค้ายกเลิก/ใบผี) **ตกไปจุดเดียว = ใบที่ปิดแล้วยังโผล่แดงอยู่จอนั้นเงียบๆ** '
+       + 'ซึ่งเป็นเหตุผลเดียวที่ก่อนหน้านี้ไม่กล้าเพิ่มสถานะ เลยต้องลบข้อมูลทิ้งแทน (25/09/2026)',
+    fix: 'ใช้ openOnly(query) / isOpenOrder(row) จาก src/utils/shipStatus.js — เจ้าของเดียวของนิยาม "ยังเป็นงานค้าง"',
+    allow: { 'src/utils/shipStatus.js': 'ตัว helper เอง' },  },
+  {
     id: 'actor-identity-via-setActor',
     scan: ['src'], ext: ['.jsx', '.js'],
     re: /setDrActorName\s*\(/g,
@@ -355,8 +365,8 @@ const RULES = [
     /* จับ `.from('<ตารางอ้วน>').select('*')` — เว้นวรรค/ขึ้นบรรทัดระหว่างกันได้
        ทะเบียนตารางในกฎนี้ = ตารางที่ **คอลัมน์เยอะ + ถูกดึงซ้ำทั้งวันจากหลายเครื่อง** เท่านั้น
        (ไม่ใช่ทุกตาราง — ทะเบียน master เล็กๆ `select('*')` ได้ตามปกติ ไม่ต้องมาขึ้นด่านนี้) */
-    re: /\.from\(\s*'(mtn_orders)'\s*\)\s*\n?\s*\.select\(\s*'\*'/g,
-    why: 'ตารางกว้าง (mtn_orders = **116 คอลัมน์**) ที่จอเปิดค้างทั้งวันดึงซ้ำ ⇒ egress ระเบิด · '
+    re: /\.from\(\s*'(mtn_orders|prod_orders)'\s*\)\s*\n?\s*\.select\(\s*'\*'/g,
+    why: 'ตารางกว้าง (mtn_orders = **116 คอลัมน์** · prod_orders = **33**) ที่จอเปิดค้างทั้งวันดึงซ้ำ ⇒ egress ระเบิด · '
        + 'วัดจริง 16/09/2026: `mtn_orders?select=*&limit=1000` = **1.59 MB/ครั้ง** (บีบแล้ว ~452 KB) '
        + 'ยิงวันละ **1,389 ครั้ง** ⇒ **~628 MB/วัน = เกือบครึ่งของ egress ฝั่ง DR ทั้งหมดจากคิวรีเดียว** '
        + '· โควต้า Supabase Free = 5 GB/เดือน ⇒ คิวรีนี้ตัวเดียวกินหมดโควต้าใน ~8 วัน '
@@ -368,6 +378,13 @@ const RULES = [
       'src/pages/PMCheckData.jsx': 'insert(...).select() คืนแถวที่เพิ่งสร้าง 1 แถว',
       'src/lib/monthlyReviewPptx.js': 'รายงานรายเดือน กดเองปีละไม่กี่ครั้ง ไม่ใช่จอเปิดค้าง',
       'src/pages/OrderTrace.jsx': 'สอบกลับใบเดียวตามที่ผู้ใช้ค้น ไม่ใช่ทั้งตาราง',
+      /* 🔸 2 ไฟล์ล่าง: prod_orders เท่านั้น — ตั้งใจไม่ตัดคอลัมน์ (ตัดสินไว้แล้ว 25/09 ห้ามรื้อซ้ำ)
+         DailyReport.loadProdOrders = ใบของ **กะที่เลือกกะเดียว** (ไม่กี่สิบแถว) แต่หน้านี้เป็นจอแก้ไข
+         ที่อ่าน/เขียนเกือบทุกคอลัมน์ ⇒ ตัดคอลัมน์แล้วพลาดไป 1 ตัว = ยอด/เป้า/ยอดยกเพี้ยนเงียบ
+         — ได้ไม่คุ้มเสี่ยง · ส่วนคิวรี "ยอดค้าง 8 กะก่อนหน้า" ในไฟล์เดียวกัน **ตัดไปแล้ว** (CARRY_COLS)
+         ⚠️ ด่านนี้จึงมองไม่เห็นถ้าใครเผลอเปลี่ยน CARRY_COLS กลับเป็น '*' — มีคอมเมนต์เตือนคาไว้ที่นั่น */
+      'src/pages/DailyReport.jsx': 'จอแก้ไขใบผลิตของกะที่เลือก — ใช้เกือบทุกคอลัมน์ (ดูเหตุผลเต็มด้านบน)',
+      'src/pages/MorningMeeting.jsx': 'บอร์ดประชุมเช้า เปิดวันละครั้ง ไม่ใช่จอเปิดค้าง',
     },
   },
   {
@@ -386,6 +403,29 @@ const RULES = [
     allow: {
       'src/components/ImageCropModal.jsx': 'emit() เทียบ blob.type แล้วถอยไป JPEG · ตั้งนามสกุลจากชนิดที่ได้จริง',
       'src/utils/resizeImage.js': 'draw() เทียบ b.type === "image/webp" แล้วถอยไป JPEG · imgExt() อ่านจาก blob.type',
+    },
+  },
+  {
+    id: 'lines-via-cached-loader',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ "อ่านทะเบียนไลน์เองแทนที่จะใช้ cache กลาง" — ทุกแบบ ไม่ใช่แค่ที่ใช้ LINE_COLUMNS
+       (25/09: ด่านรอบแรกจับแต่ `select(LINE_COLUMNS)` ⇒ จุดที่ตั้งชุดคอลัมน์เองรอดไปหมด
+        ซึ่งเป็นตัวใหญ่จริง — 4,170 จาก 4,594 ครั้ง/วัน) */
+    re: /from\(\s*'production_lines'\s*\)\s*\.select\(/g,
+    why: 'audit 07/09/2026 ทำให้ทุกหน้าใช้ `LINE_COLUMNS` ชุดเดียวกันแล้วจริง **แต่ยังยิง DB เองทุกจุด** '
+       + '⇒ "คอลัมน์ตรงกัน" กับ "ยิงครั้งเดียว" เป็นคนละเรื่อง · วัดจริง 23/09/2026: '
+       + '`production_lines` โดน **4,041 ครั้ง/วัน** จาก **107 จุด** ที่ select เองทั่วรีโป '
+       + '(ตารางนี้มีแค่ ~50 แถว และแทบไม่เปลี่ยน — ควรโหลดครั้งเดียวแล้วแชร์) '
+       + '· กับดักซ้อน: พอขยาย LINE_COLUMNS เป็น superset จุดที่ยังยิงเองจะ**หนักขึ้น**ทุกจุด '
+       + 'ทั้งที่ตั้งใจจะลด (เจอจริงตอนแก้ 25/09 — ต้องกวาดให้จบในคอมมิทเดียวกัน)',
+    fix: 'ใช้ loadLinesRes() (รูปแบบ { data, error } สลับได้บรรทัดเดียว) หรือ loadProductionLines() / '
+       + 'hook useProductionLines() จาก src/utils/useProductionLines.js · '
+       + 'ต้องการคอลัมน์เพิ่ม → **เติมใน LINE_COLUMNS + bump คีย์ cache** อย่าต่อท้ายที่จุดเรียก '
+       + '(ต่อท้ายแล้วได้คอลัมน์ซ้ำใน querystring ด้วย) · ลำดับต่างจาก order by name → เรียงเองฝั่งจอ',
+    allow: {
+      'src/utils/useProductionLines.js': 'ตัว loader เอง',
+      'src/pages/Report.jsx': 'จุดเดียวที่ต้องการ head_name ซึ่งไม่อยู่ใน LINE_COLUMNS (ไม่มี dropdown ไหนใช้)',
+      'src/pages/LineSetup.jsx': 'หน้าแก้ทะเบียนไลน์เอง — ต้องเห็นของสดหลังบันทึกทันที + probe ว่าคอลัมน์มีจริงไหม',
     },
   },
   {
@@ -538,6 +578,19 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'store-card-hand-drawn',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ "ปุ่มลงมือของโมดูลสโตร์" ที่เขียน padding เตี้ยๆ เอง แทนที่จะผ่าน storeBtn()
+       ⚠️ ตัวรันรองรับแค่ scan/ext/re/allow — **ไม่มี `only`** ⇒ ขอบเขตต้องคุมด้วย regex เอง
+          ที่นี่คุมด้วยคำสั่งงานของสโตร์ (จ่าย/รับครบ/ยืนยันส่ง/เริ่มเตรียม/เริ่มผลิต) ซึ่งไม่โผล่นอกโมดูลนี้ */
+    re: /padding:\s*['"`][0-7]px [0-9]+px['"`][^}]*?(?:จ่าย|รับครบ|ยืนยันส่ง|เริ่มเตรียม|เริ่มผลิต)/g,
+    why: 'feedback หน้างาน 25/09 ("จุดที่ user ต้อง interactive ด้วยก็ดูบาง หายาก") — วัดจริงพบปุ่มลงมือ '
+       + 'ในโมดูลสโตร์เล็กกว่า 40px แทบทุกตัว ที่แย่สุดคือปุ่ม "จ่าย" (จ่ายวัตถุดิบออกจากคลังจริง) = 39×26px '
+       + 'คนหน้างานใส่ถุงมือกดพลาด/หาไม่เจอ',
+    fix: "ใช้ storeBtn('primary'|'secondary', extra) จาก src/utils/storeUi.js (สูง 44px · พื้น accent ทึบ) — UI §6.24",
+    allow: {},
+  },
+  {
     id: 'card-shadow-via-token',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* จับเงาแบบ "การ์ด/ชิป" ที่เขียนค่าดิบ (offset แนวตั้ง 0-3px และเป็นเงาเดี่ยวทั้งค่า)
@@ -552,6 +605,30 @@ const RULES = [
        + "ของที่ลอยทับเนื้อหาจริง (ป้ายบนรูปผัง · tooltip กราฟ · badge ที่ยื่นออกนอกการ์ด · ปุ่ม toggle) "
        + "→ 'var(--shadow-float)' (มีเงาทั้ง 2 ธีม) · modal/overlay → 'var(--shadow-md|lg)'",
     allow: {},
+  },
+  {
+    id: 'nav-alsoin-is-shortcut-not-second-home',
+    scan: ['src', 'audit'], ext: ['.jsx', '.js', '.mjs'],
+    /* จับ "เอา group กับ alsoIn มากองรวมเป็นลิสต์หมวดของหน้านี้" — รูปที่บั๊กเคยเขียนไว้เป๊ะๆ */
+    re: /\[\s*\w+\.group\s*,\s*\w+\.alsoIn/g,
+    why: '`alsoIn` = "โชว์หน้านี้เป็น **ทางลัด** ในหมวดนั้นด้วย" **ไม่ใช่ "หน้านี้มี 2 บ้าน"** — '
+       + 'เดิมเมนูที่ตั้ง alsoIn โผล่ 2 หมวดด้วยหน้าตาเหมือนกันเป๊ะ ⇒ (1) user ทักว่าเมนูซ้ำ '
+       + '("ไม่ซ้ำยังไง วางแผนผลิต อยู่ทั้ง sidebar หมวดผลิต กับ วางแผน" 24/09) '
+       + '(2) ไฮไลต์ "คุณอยู่ตรงนี้" สว่าง 2 หมวดพร้อมกัน = คำถามตำแหน่งมี 2 คำตอบ',
+    fix: 'ตัดสิน "บ้านจริง" ด้วย `item.group` ตัวเดียว · เช็คว่าแถวนี้เป็นทางลัดไหมด้วย '
+       + '`isNavGuest(item, group)` (src/App.jsx) แล้ววาดให้ต่าง (จาง + `↗ <หมวดบ้าน>`) · '
+       + '"หน้านี้อยู่ในหมวดนี้ไหม (นับทางลัด)" ใช้ `inNavGroup()` — คนละคำถามกัน ห้ามปน',
+    allow: {},
+  },
+  {
+    id: 'nav-alsoin-read-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    re: /\.alsoIn\b/g,
+    why: 'ทุกหน้าที่อ่าน `.alsoIn` เองจะตีความเองว่า "บ้านที่สอง" หรือ "ทางลัด" ⇒ แต่ละจอตอบ '
+       + 'คำถาม "หน้านี้อยู่หมวดไหน" ไม่เหมือนกัน (เกิดจริง 24/09: sidebar กับ stdsweep คิดคนละแบบ)',
+    fix: 'ใช้ helper กลางใน src/App.jsx: `inNavGroup(item, groups)` = โชว์ในหมวดนี้ไหม (นับทางลัด) · '
+       + '`isNavGuest(item, group)` = แถวนี้เป็นทางลัดของหมวดนี้ไหม',
+    allow: { 'src/App.jsx': 'เจ้าของ helper — inNavGroup/isNavGuest นิยามอยู่ที่นี่' },
   },
   {
     id: 'pareto-hand-built-recharts',
@@ -1205,4 +1282,27 @@ test('🛡️ ตัวกรองห้ามอยู่ใน actions ขอ
     + '   ทำไมห้าม: ตัวกรองไปโผล่เหนือแถบแท็บ ขณะที่หน้าอื่นอยู่ใต้แท็บ ⇒ ลำดับโดดไปมาทุกหน้า (user 24/09/2026)\n'
     + '   แก้ยังไง: ย้ายไป prop `filters` ของ PageHeader (วาดใต้แท็บเป็น .filter-bar ให้เอง) — actions เหลือแค่ปุ่มคำสั่ง\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── ทะเบียนสินค้ากลาง: คอลัมน์ที่ "ขาดแล้วตัวเลขผิดเงียบ" ต้องอยู่ในชุดเสมอ (2026-09-25) ──
+   กฎเหล็ก CLAUDE.md "ชิ้น ≠ shot": ลืม `pair_mat_no` = pairMap ว่าง = งานคู่ (gang die / RH-LH)
+   ถูกนับ **2 เท่า** ทุกจอที่ใช้ `computeLiveOee` โดยไม่มี error ให้เห็นสักบรรทัด
+   ตั้งแต่ 25/09 ทั้งระบบอ่านคู่จาก cache ก้อนนี้ก้อนเดียว ⇒ คอลัมน์หายที่นี่ = ผิดพร้อมกันทุกจอ */
+test('🛡️ PRODUCT_COLUMNS ต้องมี pair_mat_no + op_seq · และคีย์ cache ต้องถูก bump เมื่อชุดคอลัมน์เปลี่ยน', () => {
+  const src = readFileSync(join(ROOT, 'src/utils/useProducts.js'), 'utf8');
+  const cols = src.match(/PRODUCT_COLUMNS\s*=\s*'([^']+)'/)?.[1] || '';
+  const set = new Set(cols.split(',').map(s => s.trim()));
+  for (const need of ['pair_mat_no', 'op_seq', 'is_operation', 'op_parent_mat']) {
+    assert.ok(set.has(need), `\n\n❌ PRODUCT_COLUMNS ขาด '${need}'\n`
+      + '   ทำไมสำคัญ: pair_mat_no หาย = งานคู่ถูกนับ 2 เท่าทุกจอ (กฎเหล็ก "ชิ้น ≠ shot")\n'
+      + '              op_seq/op_parent_mat หาย = ชั้น OP ไม่ถูกยุบ = ยอดผลิตนับซ้ำหลายขั้น\n'
+      + '   แก้ยังไง: เติมคอลัมน์กลับใน PRODUCT_COLUMNS **แล้ว bump คีย์ cache ในบรรทัดถัดไปด้วย**\n');
+  }
+  // ชุดถอย (fallback ตอน migration ชั้น OP ยังไม่ลง) ต้องมี pair_mat_no ด้วย — ไม่งั้นถอยแล้วนับ 2 เท่า
+  const fallback = [...src.matchAll(/'dr_products'\s*,\s*'([^']+)'/g)].map(m => m[1]).filter(c => c !== cols);
+  assert.ok(fallback.length >= 1, 'คาดว่ามีชุดคอลัมน์ถอยอย่างน้อย 1 ชุดใน useProducts.js — ถ้าเอาออกแล้วให้ลบด่านนี้ด้วย');
+  for (const f of fallback) {
+    assert.ok(f.includes('pair_mat_no'), `\n\n❌ ชุดคอลัมน์ถอยใน useProducts.js ขาด pair_mat_no: '${f}'\n`
+      + '   ถอยแล้วขาดคอลัมน์นี้ = งานคู่ถูกนับ 2 เท่า ซึ่งแย่กว่าการไม่ยุบชั้น OP มาก\n');
+  }
 });

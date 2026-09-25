@@ -105,7 +105,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
             {canApprove && <button style={btn()} onClick={() => setMpModal({ name: '', kind: 'process', process_type: '', tags: '', description: '', is_active: true })}>+ กระบวนการ</button>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{list.length} กระบวนการ · เรียงตามจำนวนพาร์ทที่ใช้</div>
-          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีกระบวนการมาตรฐาน — apply migration 20260915_pe_fmea_master_main จะ seed จากชุดเอกสารที่มีอยู่ให้</div>}
+          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{(masters || []).length ? 'ไม่มีกระบวนการที่ตรงกับตัวกรอง — ลองล้างคำค้น / เอาติ๊ก "รอยืนยัน" ออก' : 'ทะเบียนยังว่าง — กด "+ กระบวนการ" เพื่อสร้างตัวแรก (seed จากชุดเอกสารที่มีอยู่ทำไปแล้วตอน apply migration)'}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {list.map(m => {
               const u = usage[m.id] || { sets: 0, ops: 0 };

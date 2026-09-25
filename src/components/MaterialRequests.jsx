@@ -23,7 +23,7 @@ import PersonSelect from './PersonSelect';
 import StorageLocSelect from './StorageLocSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from './SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
@@ -85,7 +85,7 @@ export default function MaterialRequests() {
 
   useEffect(() => {
     // production_lines + profiles อยู่ Main · parts_master อยู่ DR
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+    loadLinesRes()   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       .then(({ data }) => setLines(data || []));
     supabase.from('profiles').select('id, full_name, signature_url').not('signature_url', 'is', null)
       .then(({ data }) => setSigners(data || []));

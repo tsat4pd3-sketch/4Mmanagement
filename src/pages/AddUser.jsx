@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
 import { positionOptions, positionOptionsWith, positionLabel, loadPositions, clearPositionsCache, levelOfPosition, maintenanceKindOfPosition, levelMeta, POSITION_LEVELS } from '../utils/positions';
@@ -11,7 +12,7 @@ import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, sectionValueForSave,
-  orgNodeIdFor, ORG_SRC_MANUAL } from '../utils/sectionScope';
+  orgNodeIdFor, ORG_SRC_MANUAL, scopeIneffective } from '../utils/sectionScope';
 import { SCOPE_DEPTHS, SCOPE_DEPTH_META, depthForLevel, needsScopeReview } from '../utils/scopeDepth';   // 🔭 เห็นกว้างแค่ไหน (คนละแกนกับ role)
 
 import InfoMore from '../components/InfoMore';
@@ -108,7 +109,7 @@ export default function AddUser() {
     Promise.all([loadPositions(), loadPermissions(), loadPmTeams()]).then(() => setPosVer(v => v + 1));
     // ⚠️ <LineSelect> ต้องการ parent_line_name (ลำดับชั้น) + section (กรอง scope) + is_active
     //    select แค่ id,name = ได้ลิสต์แบนไม่มีลำดับชั้น (กับดักที่เขียนไว้ในหัว LineSelect.jsx)
-    supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
     /* ⚠️ ต้อง select `parent_id` ด้วย — `orphanDepts()` ตัดสิน "แผนกขึ้นตรงฝ่าย" จาก `!parent_id`
        ไม่ดึงคอลัมน์มา = undefined ทุกแถว ⇒ **ทุกแผนกกลายเป็นขึ้นตรงฝ่ายหมด** (เกิดจริง 22/09:
@@ -665,8 +666,28 @@ export default function AddUser() {
           🔴 ห้ามแก้ให้อัตโนมัติ — คนต้องเป็นคนตัดสินว่าใครควรเห็นแค่ไหน */}
       {(() => {
         const review = users.filter(needsScopeReview);
-        if (!review.length) return null;
-        return (
+        /* 🚩 "ตั้งแคบไว้แต่ไม่มีผลจริง" — แคบกว่า all แต่ไม่มีหน่วยให้ยึด ⇒ ยังเห็นทั้งโรงงาน
+           ต้องแยกจากคิวข้างบน เพราะคนละอาการ: อันนั้น "ไม่เคยตั้ง" · อันนี้ "ตั้งแล้วแต่ไม่ครบ"
+           ปล่อยเงียบ = จอบอกว่าถูกจำกัด แต่ความจริงไม่ถูกจำกัด (แย่กว่าไม่ตั้งเลย) */
+        const ghost = users.filter(scopeIneffective);
+        if (!review.length && !ghost.length) return null;
+        return (<>
+          {ghost.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)',
+              borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
+              <b style={{ color: '#ef4444' }}>🚩 ตั้งขอบเขตไว้แต่ไม่มีผลจริง {ghost.length} บัญชี</b>
+              <span>
+                เลือกความกว้างไว้แคบกว่า “ทั้งโรงงาน” แต่<b>ยังไม่ได้ติ๊กส่วนงาน</b> —
+                จำกัดให้อยู่ในหน่วยตัวเองไม่ได้ถ้าไม่เคยบอกว่าหน่วยไหน ⇒ <b>ยังเห็นทั้งโรงงานอยู่</b>
+              </span>
+              <span style={{ color: 'var(--muted)' }}>
+                ({ghost.slice(0, 4).map(u => u.full_name || '—').join(' · ')}
+                {ghost.length > 4 ? ` · +${ghost.length - 4}` : ''})
+              </span>
+            </div>
+          )}
+          {review.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
             borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
@@ -680,7 +701,8 @@ export default function AddUser() {
               {review.length > 4 ? ` · +${review.length - 4}` : ''})
             </span>
           </div>
-        );
+          )}
+        </>);
       })()}
 
       {/* User Table */}

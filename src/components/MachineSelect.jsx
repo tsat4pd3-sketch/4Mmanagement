@@ -16,6 +16,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import useMachines from '../utils/useMachines';
+import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { machineOptions, appendHistoryOptions, pickerText } from '../utils/pickerOptions';
 
 const up = (s) => String(s ?? '').trim().toUpperCase();
@@ -39,9 +40,16 @@ export default function MachineSelect({
     : options.find(o => o.key === up(value))) || null, [options, value, valueKey]);
   // valueKey='id' = พาเรนต์เก็บแค่ id ไม่มีที่เก็บคำค้น → ต้องปล่อยให้ SearchSelect ถือเอง (pickerText คืน undefined)
   const text = pickerText({ selLabel: sel ? sel.label : null, value, storesText: valueKey !== 'id' });
+  /* 🏷️ พิมพ์เองแล้ว "ต่างจากทะเบียนแค่รูปแบบ" (LS10 / RB 102 / sp78) → เก็บเป็นเลขตามทะเบียน
+     ไม่งั้นเครื่องเดียวกันแตกเป็นคนละแท่งในทุกจอวิเคราะห์ (วัดจริง 24/09: 84 ค่า / 498 แถว)
+     🔴 ดัดได้เฉพาะเรื่องรูปแบบ — ทับศัพท์/ชื่อย่อ (เลเซอร์04 · Laser4) ห้ามแตะ ดู utils/machineNo.js */
+  const keyMap = useMemo(() => buildMachineKeyMap(machines), [machines]);
   const emit = ({ text: t, opt }) => {
-    if (opt) onChange?.({ machine_no: opt.machine_no, id: opt.history ? null : opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: !opt.history, opt });
-    else onChange?.({ machine_no: t, id: null, name: null, line_name: null, equipment_kind: null, known: false, opt: null });
+    if (opt) { onChange?.({ machine_no: opt.machine_no, id: opt.history ? null : opt.id, name: opt.name, line_name: opt.line_name, equipment_kind: opt.equipment_kind, known: !opt.history, opt }); return; }
+    const snapped = snapMachineNo(t, keyMap);
+    const hit = snapped ? options.find(o => o.machine_no === snapped) : null;
+    if (hit) { onChange?.({ machine_no: hit.machine_no, id: hit.history ? null : hit.id, name: hit.name, line_name: hit.line_name, equipment_kind: hit.equipment_kind, known: !hit.history, opt: hit }); return; }
+    onChange?.({ machine_no: snapped || t, id: null, name: null, line_name: null, equipment_kind: null, known: false, opt: null });
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={text} options={options} onChange={emit}
