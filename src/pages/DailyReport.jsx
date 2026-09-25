@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { fmtDate, fmtDateTime, fmtDateTimeFull, fmtTime } from '../utils/dateFormat';
+import { buildMachineKeyMap, snapMachineNo } from '../utils/machineNo';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { toast } from '../components/Toast';
 import { uploadMoBeforeImg } from '../utils/mtnImage';
@@ -5278,6 +5279,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                    machineOpts ของ /improvements ที่แก้ไปแล้ว 2026-08-19)
              กติกา: ไลน์นี้ก่อน → ครอบครัวไลน์ → เครื่องอื่นทั้งโรงงาน → แม่พิมพ์ท้ายสุด
                     **ไม่ตัดอะไรทิ้ง** (ค้นเจอได้หมด) แต่เรียงให้ตัวที่น่าจะใช่อยู่บนสุด */
+          const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           const dtMachineOptions = (() => {
             const line = (selSession?.line_name || '').trim().toLowerCase();
             const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
@@ -5449,7 +5451,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           emptyText="ไม่พบเครื่องนี้ในทะเบียน"
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
-                          onChange={({ id, text }) => setDtForm(f => ({ ...f, machine_no: id || text }))}
+                          /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
+                             ไม่งั้นเครื่องเดียวกันแตกเป็นคนละแท่งในพาเรโต (utils/machineNo 24/09) */
+                          onChange={({ id, text }) => setDtForm(f => ({
+                            ...f, machine_no: id || snapMachineNo(text, machineKeyMap) || text }))}
                         />
                         </div>
                         {/* สแกน QR ที่ติดเครื่อง — เครื่องเสียต้องรีบ ไม่ต้องไล่หาในลิสต์ */}
