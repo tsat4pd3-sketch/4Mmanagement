@@ -6,6 +6,10 @@
 //     + กระดิ่งในแอปถึงคนในส่วนงานนั้น (event mtn_pickup_pending · 2026-09-16)
 //   → 🧰 บล็อก "ใบที่ยังไม่มีช่างรับ" (ขั้น 2) แยกรายทีมช่าง + ชั้นอายุ 🔴
 //     + กระดิ่งในแอปถึงช่างทีมนั้น (event mtn_accept_pending · 2026-09-24)
+//   → 🔬 บล็อก "ใบที่รอ QA ตรวจคุณภาพ" (ขั้น 5) แยกรายส่วนงาน + ชั้นอายุ 🔴
+//     + กระดิ่งในแอปถึง QA ส่วนงานนั้น (event mtn_qa_pending · 2026-09-25)
+// ⚠️ 3 บล็อกนี้ **ไม่ทับกัน** — ผู้แจ้ง (4/6/7) · ช่าง (2) · QA (5) แยกขั้นกันคนละชุด
+//    เพิ่มบล็อกใหม่ต้องเช็คว่าขั้นนั้นไม่ได้อยู่ใน WAIT list ของบล็อกอื่นแล้ว (กันเตือนซ้ำ 2 ทาง)
 // อ่าน mtn_orders จาก DR project (DR_URL/DR_ANON_KEY) · routing/bot token จาก Main
 // ปิด/แก้ห้อง/แก้ข้อความได้จาก /notification-config (category 'maintenance')
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -275,6 +279,39 @@ function buildAcceptBlock(rows: MO[]): string {
   return lines.join('\n');
 }
 
+/* ═══ 🔬 บล็อก "ใบที่รอ QA ตรวจคุณภาพ" (ขั้น 5) → **ทีม QA รายส่วนงาน** (2026-09-25) ═════
+   ที่มา — วัดจริง 25/09 (ใบค้างขั้น `checked` **168 ใบ**):
+     **160 ใบรอ QA** (`quality_related='เกี่ยวกับคุณภาพ'` · `qa_at` ว่างทั้งหมด ไม่มีใครแตะเลยสักใบ)
+     และ **109 ใบในนั้นเกิดในบ่ายวันเดียว (23/09 09:56–13:49)** — ช่าง 2 คนนั่งเคลียร์งานตรวจ
+     ขั้น 4 ที่ค้างสะสมรวดเดียว (เขาทำงานดี) ⇒ ตกถึงโต๊ะ QA พร้อมกันทีเดียว 109 ใบ
+
+   🔴 ทำไมของเดิมไม่ช่วย — ช่องว่างที่แท้จริง:
+     · `REPORTER_WAIT` **จงใจไม่รวม `checked_qa`** (ถูกแล้ว — รอ QA ไม่ใช่รอผู้แจ้ง)
+       แต่ **ไม่มีบล็อกไหนส่ง `checked_qa` ไปหา QA เลย** ⇒ ใบกองเงียบมาตลอด
+       (โผล่แค่ในก้อนรวมของทีมช่าง ซึ่ง QA ไม่ได้อ่าน)
+     · กระดิ่งรายใบ `mtn_checked` ยิงถึง QA จริง แต่ยิง **1 ใบ = 1 กระดิ่ง** ⇒ บ่าย 23/09
+       QA 14 คนได้ **1,582 ใบ อ่าน 2 ใบ (0.13%)** · ภาพรวม 7 วัน QA อ่าน **0.6%** = ช่องทางตายแล้ว
+       ⇒ แก้ที่ต้นเหตุด้วย `notification_rules.inapp_rollup_min` (migration 20260925_notif_rollup_main)
+          บล็อกนี้เป็น "ตาข่ายรับ" ของใบที่กองอยู่แล้ว — ของที่ไม่มี event ใหม่ให้ยิงอีก
+
+   ⚠️ จัดกลุ่มด้วย **ส่วนงานที่ถอดจาก `line_name`** เหมือนบล็อกผู้แจ้ง ห้ามใช้ `dept_section`
+      (กฎเดียวกับ REPORTER_WAIT — `dept_section` ว่างเกินครึ่ง)
+   ⚠️ `checked_handover` (QA กดแล้วว่าไม่เกี่ยวกับคุณภาพ) **ไม่อยู่ในบล็อกนี้** — มันรอผู้แจ้งรับมอบ
+      อยู่ใน `REPORTER_WAIT` แล้ว ห้ามนับซ้ำ 2 บล็อก */
+const QA_WAIT = ['checked_qa'];
+
+/** รายการใบ "รอ QA ตรวจ" ของ 1 ส่วนงาน — เก่าสุดขึ้นก่อน (rows เรียง report_at asc มาแล้ว) */
+function buildQaBlock(rows: MO[]): string {
+  const stuck = rows.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+  const lines = [`• <b>${WAIT_LABEL.checked_qa}</b> — ${rows.length} ใบ${stuck ? ` (ค้างเกิน ${STUCK_DAYS} วัน <b>${stuck}</b> ใบ)` : ''}`];
+  for (const m of rows.slice(0, 8)) {
+    const d = daysOpen(m.report_at);
+    lines.push(`   ${d >= STUCK_DAYS ? '🔴' : '·'} ${m.mo_no || '(ยังไม่ออกเลข)'} · ${m.line_name || '-'} · ${equipLabel(m)}${d > 0 ? ` · ค้าง ${d} วัน` : ''}`);
+  }
+  if (rows.length > 8) lines.push(`   … และอีก ${rows.length - 8} ใบ (ดูทั้งหมดในหน้าแจ้งซ่อม)`);
+  return lines.join('\n');
+}
+
 function buildTeamBlock(rows: MO[]): string {
   // จัดกลุ่มตามสถานะที่ค้าง เรียงตามลำดับขั้น
   const byStatus: Record<string, MO[]> = {};
@@ -356,11 +393,16 @@ Deno.serve(async (req) => {
        กระดิ่งในแอป: ยิง **รายส่วนงาน** ผ่าน notify_recipients(p_section) = ถึงหัวหน้าไลน์/ผจก.
          ของส่วนงานนั้นโดยตรง ← นี่คือช่องที่ "ถึงตัวคนที่ต้องกด" จริงๆ
        ปิดทั้งบล็อกได้จาก /notification-config (ปิด event mtn_pickup_pending) */
+    /* ผังไลน์→ส่วนงาน: บล็อกผู้แจ้งกับบล็อก QA ใช้ชุดเดียวกัน — โหลดครั้งเดียว ห้ามยิงซ้ำ 2 รอบ */
+    let secCache: Map<string, string> | null = null;
+    const sectionsOfLines = async (): Promise<Map<string, string>> =>
+      (secCache ??= await loadLineSections());
+
     let pickupSections = 0;
     const pickupChat = resolveEvent(routes, 'mtn_pickup_pending');
     const pickup = rows.filter((m) => REPORTER_WAIT.includes(waitKey(m)));
     if (pickup.length && pickupChat !== null) {
-      const secOfLine = await loadLineSections();
+      const secOfLine = await sectionsOfLines();
       const bySec: Record<string, MO[]> = {};
       for (const m of pickup) (bySec[secOfLine.get(String(m.line_name || '')) || NO_SECTION] ||= []).push(m);
       const secs = Object.keys(bySec).sort();
@@ -436,7 +478,48 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, total: rows.length, teams: depts.length, pickup: pickup.length, pickupSections, accept: accept.length, acceptTeams, acceptNoRecipient });
+    /* ── 🔬 บล็อก "ใบที่รอ QA ตรวจคุณภาพ" → ทีม QA รายส่วนงาน (ขั้น 5) ────────────────
+       Telegram: ห้อง mtn_qa_pending ถ้าตั้งไว้ · ไม่ตั้ง = ห้องหลักเดียวกับภาพรวม
+       กระดิ่งในแอป: ยิง **รายส่วนงาน** ผ่าน notify_recipients(p_section) = ถึง QA ของส่วนงานนั้น
+       ปิดทั้งบล็อกได้จาก /notification-config (ปิด event mtn_qa_pending) */
+    let qaSections = 0;
+    const qaNoRecipient: string[] = [];
+    const qaChat = resolveEvent(routes, 'mtn_qa_pending');
+    const qaWait = rows.filter((m) => QA_WAIT.includes(waitKey(m)));
+    if (qaWait.length && qaChat !== null) {
+      const secOfLine = await sectionsOfLines();
+      const bySec: Record<string, MO[]> = {};
+      for (const m of qaWait) (bySec[secOfLine.get(String(m.line_name || '')) || NO_SECTION] ||= []).push(m);
+      const secs = Object.keys(bySec).sort();
+      qaSections = secs.length;
+      const stuckAll = qaWait.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+      const head = `🔬 <b>ใบซ่อมที่รอ QA ตรวจคุณภาพ</b>\n`
+        + `<b>${qaWait.length}</b> ใบผ่านการตรวจหลังซ่อมแล้ว รอ QA ตัดสิน`
+        + `${stuckAll ? ` · ค้างเกิน ${STUCK_DAYS} วัน <b>${stuckAll}</b> ใบ` : ''}\n`
+        + `<i>กด "ยืนยันคุณภาพ" หรือ "ไม่เกี่ยวกับคุณภาพ" ในหน้าแจ้งซ่อม (ขั้น 5)</i>`;
+      await sendChunked(head, secs.map((sec) =>
+        `━━━ <b>${sec}</b> (${bySec[sec].length} ใบ) ━━━\n${buildQaBlock(bySec[sec])}`), qaChat);
+      for (const sec of secs) {
+        const list = bySec[sec];
+        const stuck = list.filter((m) => daysOpen(m.report_at) >= STUCK_DAYS).length;
+        /* 🔕 เกณฑ์เดียวกับบล็อกทีมช่าง — คิวปกติไม่ต้องเด้ง (ดูเหตุผลเต็มที่ ACCEPT_WAIT)
+           เป็นการตัดสินว่า "เหตุการณ์เกิดขึ้นไหม" **ไม่ใช่การกรองผู้รับ** (ผู้รับยังมาจาก
+           notify_recipients จุดเดียวตามกฎ) · ยิ่งจำเป็นกับ QA ที่อ่านกระดิ่งแค่ 0.6% */
+        if (!stuck && list.length < 3) continue;
+        const sent = await notifyInApp('mtn_qa_pending',
+          `🔬 ใบซ่อม ${list.length} ใบรอ QA ตรวจคุณภาพ (${sec})`
+          + `${stuck ? ` · ค้างเกิน ${STUCK_DAYS} วัน ${stuck} ใบ` : ''}`
+          + ' — ยืนยันคุณภาพ / ระบุว่าไม่เกี่ยวกับคุณภาพ ในหน้าแจ้งซ่อม',
+          stuck ? 'error' : 'info', sec === NO_SECTION ? null : sec);
+        if (!sent) qaNoRecipient.push(sec);   // ห้ามเงียบ — ไม่มีใครรับ ต้องเห็นจาก log
+      }
+      if (qaNoRecipient.length) {
+        console.error('mtn-daily-summary: ไม่มีผู้รับกระดิ่ง "รอ QA ตรวจ" ของส่วนงาน',
+          qaNoRecipient.join(', '), '— ตั้ง profiles.section ของ QA ให้ตรงส่วนงาน หรือตั้งผู้รับที่ /notification-config');
+      }
+    }
+
+    return json({ ok: true, total: rows.length, teams: depts.length, pickup: pickup.length, pickupSections, accept: accept.length, acceptTeams, acceptNoRecipient, qa: qaWait.length, qaSections, qaNoRecipient });
   } catch (err) {
     console.error(err);
     return json({ error: String(err) }, 500);
