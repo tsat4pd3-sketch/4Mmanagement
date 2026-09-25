@@ -14,6 +14,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import PartCard, { partCardGrid } from '../components/PartCard';
+import usePartImages from '../utils/usePartImages';
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -35,6 +37,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 
 export default function StoreMonitor() {
   const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const imgOf = usePartImages();   // 🖼️ รูปชิ้นงาน — การ์ดพาร์ททุกจอต้องมีเหมือนกัน (UI §6.23)
   const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [findings, setFindings] = useState([]);
   const [loadErr, setLoadErr] = useState('');
@@ -177,7 +180,7 @@ export default function StoreMonitor() {
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 11 }}>
+        <div style={partCardGrid()}>
           {shown.map((f, i) => {
             const red = f.kind === 'shortage';
             const tone = red ? '#ef4444' : '#f59e0b';
@@ -185,27 +188,17 @@ export default function StoreMonitor() {
             // กระพริบใช้ class กลาง .mo-card-alert (index.css) — มี [data-perf="lite"] override สำหรับจอ TV
             // ห้ามเขียน keyframes กระพริบเองต่อหน้า (UI-CONVENTIONS §2 · QC audit 2026-08-03)
             return (
-              <div key={i} className={blink ? 'mo-card-alert' : undefined} style={{
-                border: `1px solid ${tone}`, borderLeft: `3px solid ${tone}`, borderRadius: 11, padding: 12,
-                // พื้นการ์ด = สีการ์ด + เคลือบสีสถานะจางๆ
-                // ⚠️ ห้ามใช้ color-mix() — Chromium ต้อง 111+ แต่จอ TV ที่ใช้จริง (LG webOS 23) = Chromium 94
-                //    ค่าที่ parse ไม่ได้ = ทั้งบรรทัด background ถูกทิ้ง → การ์ดพื้นโปร่งบนจอ TV
-                //    ใช้ gradient 2 stop สีเดียวแทน = เคลือบทับสีการ์ดเหมือนกันเป๊ะ แต่รองรับทุกเบราว์เซอร์
-                background: 'var(--card)',
-                backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{f.title}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: tone, whiteSpace: 'nowrap' }}>{red ? '🟥 จะขาด' : '🟧 ล้น'}</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4, fontWeight: 700 }}>
-                  {f.line || '—'}{f.mat ? ` · ${f.mat}` : ''}
-                </div>
-                {f.part && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{f.part}</div>}
-                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, borderTop: '1px dashed var(--border)', paddingTop: 6 }}>
-                  {f.detail} <span style={{ opacity: 0.7 }}>· เคส {f.code}</span>
-                </div>
-              </div>
+              <PartCard key={i} className={blink ? 'mo-card-alert' : undefined}
+                code={f.mat} name={f.part}
+                showImg={!!f.mat}
+                img={imgOf(f.mat)}
+                /* ป้ายสถานะบอกอาการเจาะจง (ต่ำกว่า Min / เกิน Max / เลยเวลา) — เดิมมี 2 ป้าย
+                   ("ต่ำกว่า Min" + "จะขาด") ซึ่งพูดเรื่องเดียวกัน · สีบอก shortage/over อยู่แล้ว */
+                status={{ label: f.title, color: tone, bg: `${tone}1f`, border: `${tone}59` }}
+                aside={{ label: red ? 'ไลน์ที่จะขาด' : 'ไลน์ที่ล้น', value: f.line || 'ทุกไลน์รวมกัน' }}
+                rows={[{ k: 'เคส', v: `${f.code} · ${red ? 'Shortage' : 'Over stock'}` }]}
+                note={f.detail}
+                alert={blink} />
             );
           })}
         </div>

@@ -27,6 +27,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { storeBtn } from '../utils/storeUi';
+import PartCard, { partCardGrid } from '../components/PartCard';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 
@@ -773,76 +774,33 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
 }
 
 /* ─── Kanban Card Grid ──────────────────────────────────────────────────── */
-/* การ์ดความต้องการรายพาร์ท — ใช้ภาษาเดียวกับ `QueueCard` เป๊ะ (2026-09-25)
-   หน้าเดียวกันมีการ์ด 2 ภาษา = ตัวบอก "ประกอบกันมา" ที่ชัดที่สุด ⇒ พื้นเป็นกลาง · แถบสถานะซ้าย ·
-   ทุกตัวเลขมีป้าย · ตัวเลข tabular · เงาผ่าน token · ระยะทวีคูณของ 4 */
+/* การ์ดความต้องการรายพาร์ท — `<PartCard>` ตัวเดียวกับคิวสโตร์ (2026-09-25)
+   หน้าเดียวกันมีการ์ด 2 ภาษา = ตัวบอก "ประกอบกันมา" ที่ชัดที่สุด ⇒ ใช้ของกลางตัวเดียว */
 function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
   if (!rowList.length) return null;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(330px, 100%), 1fr))', gap: 12, padding: 16, alignContent: 'start' }}>
+    <div style={{ ...partCardGrid(), padding: 16 }}>
       {rowList.map(r => {
         const per = kanbanStd[r.mat_no];
-        const stockCovered = r.netTotal === 0;
-        /* 3 สถานะของแถว: สต็อกพอแล้ว (เขียว) · ต้องเบิกและรู้ว่ากี่ใบ (เหลือง) · ไม่มี std คิดใบไม่ได้ (แดง) */
-        const tone = stockCovered
+        const covered = r.netTotal === 0;
+        /* 3 สถานะของแถว: สต็อกพอแล้ว · ต้องเบิกและรู้ว่ากี่ใบ · ไม่มี std คิดใบไม่ได้ */
+        const tone = covered
           ? { c: '#22c55e', bg: 'rgba(34,197,94,0.1)',  bd: 'rgba(34,197,94,0.3)',  label: '✓ สต็อกพอ' }
           : per
             ? { c: '#f59e0b', bg: 'rgba(245,158,11,0.1)', bd: 'rgba(245,158,11,0.3)', label: '🎴 ต้องเบิก' }
             : { c: '#ef4444', bg: 'rgba(239,68,68,0.1)',  bd: 'rgba(239,68,68,0.3)',  label: '⚠ ไม่มี std' };
         return (
-          <article key={r.mat_no} style={{
-            position: 'relative', background: 'var(--card)', border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
-            opacity: stockCovered ? 0.62 : 1, display: 'flex', flexDirection: 'column',
-          }}>
-            <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: tone.c }} />
-
-            <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <PartThumb url={imgOf?.(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={84} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <span style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matColor(r.mat_no), ...QC_NUM }}>{r.mat_no}</span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius)', whiteSpace: 'nowrap',
-                    background: tone.bg, border: `1px solid ${tone.bd}`, color: tone.c,
-                  }}>{tone.label}</span>
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', marginTop: 3, lineHeight: 1.35 }}>{r.part_name}</div>
-                {r.supplier && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.supplier}</div>}
-              </div>
-            </div>
-
-            <div style={{ padding: '0 12px 12px 15px', display: 'flex', gap: 12, alignItems: 'flex-end', justifyContent: 'space-between' }}>
-              <div style={{ minWidth: 0, whiteSpace: 'nowrap' }}>
-                <div style={QC_LABEL}>{stockCovered ? 'ต้องเบิกเพิ่ม' : 'ต้องเบิก (NET)'}</div>
-                <div style={{ fontSize: 22, fontWeight: 800, lineHeight: 1.15, color: stockCovered ? '#22c55e' : 'var(--text)', ...QC_NUM }}>
-                  {stockCovered ? '0' : fmt(r.netTotal)}
-                  <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 }}>{r.uom}</span>
-                </div>
-              </div>
-              {!stockCovered && per && (
-                <div style={{ textAlign: 'right', minWidth: 0 }}>
-                  <div style={QC_LABEL}>คัมบัง</div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: tone.c, lineHeight: 1.3, ...QC_NUM }}>
-                    {Math.ceil(r.netTotal / per)} <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ใบ × {fmt(per)}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <dl style={{ margin: 0, marginTop: 'auto', padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>ใช้ทั้งวัน</dt>
-                <dd style={{ margin: 0, fontSize: 11.5, color: 'var(--text2)', ...QC_NUM }}>{fmt(r.grossTotal)} {r.uom}</dd>
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-                <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>มีในสต็อก</dt>
-                <dd style={{ margin: 0, fontSize: 11.5, color: r.totalStock > 0 ? '#22c55e' : 'var(--muted)', fontWeight: r.totalStock > 0 ? 700 : 400, ...QC_NUM }}>
-                  {r.totalStock > 0 ? fmt(r.totalStock) : 'ไม่มีข้อมูล'}
-                </dd>
-              </div>
-            </dl>
-          </article>
+          <PartCard key={r.mat_no}
+            code={r.mat_no} name={r.part_name} sub={r.supplier} img={imgOf?.(r.mat_no)} matTone={matColor(r.mat_no)}
+            status={{ label: tone.label, color: tone.c, bg: tone.bg, border: tone.bd }}
+            metric={{ label: covered ? 'ต้องเบิกเพิ่ม' : 'ต้องเบิก (NET)', value: covered ? '0' : fmt(r.netTotal), unit: r.uom }}
+            aside={!covered && per ? { label: 'คัมบัง', value: `${Math.ceil(r.netTotal / per)} ใบ × ${fmt(per)}` } : null}
+            rows={[
+              { k: 'ใช้ทั้งวัน', v: `${fmt(r.grossTotal)} ${r.uom || ''}`.trim() },
+              // 🔴 "ไม่มีข้อมูล" ≠ "0" — พาร์ทที่ยังไม่เคยตั้งยอดที่คลัง ห้ามแสดงเป็นศูนย์
+              { k: 'มีในสต็อก', v: r.totalStock > 0 ? fmt(r.totalStock) : 'ยังไม่มีข้อมูล' },
+            ]}
+            dim={covered} />
         );
       })}
     </div>
@@ -1033,105 +991,31 @@ const WIP_STATUS = {
   preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
   delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
 };
-/* ═══ QueueCard — การ์ดคิวงานสโตร์ (redesign 2026-09-25 · คำสั่ง user
-       *"ออกแบบ layout ในการ์ดให้ดูเป็นมาตรฐานโปรแกรมระดับสากลกว่านี้ อันนี้ดูออกว่า AI ทำ"*)
+/* ═══ QueueCard — การ์ดคิวงานสโตร์ = `<PartCard>` + คำศัพท์ของคิว (2026-09-25)
 
-   ของเดิมผิด 5 ข้อที่ทำให้ดู "ไม่ใช่ซอฟต์แวร์จริง" — แก้แล้วทั้งหมด ห้ามถอยกลับ:
-   1. 🔴 **สีสถานะถูกใช้ 3 ที่ในการ์ดใบเดียว** (แถบบน + ขอบการ์ด + พื้นเคลือบทั้งใบ) = ข้อเท็จจริง
-      เดียวตะโกน 3 รอบ พอวางเรียงกัน 100 ใบเลยเป็นกำแพงสี แยกไม่ออกว่าใบไหนสำคัญ
-      ⇒ **พื้นการ์ดเป็นกลางเสมอ · สีสถานะเหลือ 2 จุดที่ทำหน้าที่ต่างกัน**: แถบซ้าย (กวาดตาหาใบ)
-        + ป้ายสถานะ (อ่านว่าสถานะอะไร) — pattern เดียวกับ status tag ของ Carbon/Fiori
-   2. 🔴 **ตัวเลขไม่มีป้ายว่าคือเลขอะไร** — `1,260` ลอยอยู่เฉยๆ คนอ่านต้องเดาเอง
-      ⇒ ทุกค่าต้องมี label ตัวเล็กกำกับ (`qtyLabel` · "ปลายทาง")
-   3. 🔴 **meta เป็นสตริงยาวต่อกันด้วย ` · `** ⇒ ตัดบรรทัดกลางวลี ("หยิบ 1,260 · ตัดสต็อก|แล้ว")
-      ⇒ **`rows={[{k,v}]}` คอลัมน์ป้ายกว้างคงที่** — อ่านเป็นตารางคีย์-ค่า ไม่ใช่ประโยคยาว
-      (`meta` string ยังรับได้สำหรับการ์ดที่มีข้อความสั้นจริงๆ — ขึ้นเป็นบรรทัดเดียวใต้เส้นคั่น)
-   4. 🔴 **ปุ่มเต็มความกว้างติดเนื้อหา** ⇒ มีเส้นคั่น + ปุ่มชิดขวาในแถบของมันเอง (แถวคำสั่ง)
-   5. 🔴 **มุมโค้ง 12 / ระยะ 10-14 ไม่อยู่ในสเกล** ⇒ `var(--radius-lg)` + ระยะทวีคูณของ 4 ทั้งใบ
+   หน้าตา/กติกาทั้งหมดอยู่ที่ `src/components/PartCard.jsx` แล้ว (UI §6.23) —
+   ตัวนี้เหลือหน้าที่เดียว: แปลงพร็อพเดิมของคิวสโตร์ (statusLabel/statusColor/…) ไปเป็นรูปของ PartCard
+   **ห้ามวาดหน้าตาการ์ดเพิ่มที่นี่** เจอปัญหาหน้าตา ให้แก้ที่ PartCard เพื่อให้ทุกจอได้เหมือนกัน
 
-   · ตัวเลขทุกช่องใช้ `tabular-nums` — ไม่งั้นเลขในกริดไม่ตรงหลักกัน (ตัวบอกงานประณีตที่คนสังเกตได้)
-   · `showImg` = "การ์ดใบนี้เป็นของชิ้นงาน" (มี mat) แยกจาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่องให้ไปเพิ่มรูป)
-     กับ "ไม่ใช่ชิ้นงาน" (การ์ดรอบส่ง/ภาชนะ — ไม่ต้องมีช่องรูป) คนละเรื่องกัน
-   · เงาผ่าน token เท่านั้น (UI §6.20 · มีด่าน) ═══════════════════════════════════════════ */
-const QC_LABEL = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: 0.2, lineHeight: 1.3, whiteSpace: 'nowrap' };
-/* ชื่อไลน์ปลายทางยาวได้มาก ("LINE APRON ASSY / HYDROFORM") — ไม่หนีบ = กินที่จนบีบตัวเลขหลักจนป้ายตัดบรรทัด */
-const QC_CLAMP2 = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
-const QC_NUM   = { fontVariantNumeric: 'tabular-nums' };
-
+   `showImg` = "การ์ดใบนี้เป็นของชิ้นงาน" (มี mat) — การ์ดรอบส่ง/ภาชนะไม่ใช่ จึงไม่มีช่องรูป
+   แยกจาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่องให้ไปเพิ่มรูป) กับ "ไม่ใช่ชิ้นงาน" คนละเรื่องกัน */
 function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destination, statusLabel, statusColor, statusBg, statusBorder,
                      actionLabel, onAction, busy, meta, rows, img, showImg }) {
-  const metaRows = (rows || []).filter(r => r && r.v != null && String(r.v).trim() !== '');
   return (
-    <article style={{
-      position: 'relative', background: 'var(--card)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-lg)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)',
-      display: 'flex', flexDirection: 'column',
-    }}>
-      {/* แถบสถานะซ้าย — ตัวเดียวที่ทำหน้าที่ "กวาดตาหาใบ" (ไม่ใช่พื้นทั้งใบ) */}
-      <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: statusColor }} />
-
-      <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={84} />}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(code), fontSize: 13, ...QC_NUM }}>{code}</span>
-            <span style={{
-              fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius)', whiteSpace: 'nowrap',
-              background: statusBg, border: `1px solid ${statusBorder}`, color: statusColor,
-            }}>{statusLabel}</span>
-          </div>
-          {name && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.35 }}>{name}</div>}
-        </div>
-      </div>
-
-      {/* แถวค่าหลัก — ทุกค่ามีป้ายกำกับ ห้ามปล่อยตัวเลขลอย */}
-      <div style={{ padding: '0 12px 12px 15px', display: 'grid', gridTemplateColumns: destination ? 'auto minmax(0, 1fr)' : '1fr', gap: 12, alignItems: 'flex-end' }}>
-        <div>
-          <div style={QC_LABEL}>{qtyLabel}</div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15, whiteSpace: 'nowrap', ...QC_NUM }}>
-            {qty}{unit ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 }}>{unit}</span> : null}
-          </div>
-        </div>
-        {destination && (
-          <div style={{ minWidth: 0, textAlign: 'right' }}>
-            <div style={QC_LABEL}>ปลายทาง</div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3, ...QC_CLAMP2 }} title={String(destination)}>{destination}</div>
-          </div>
-        )}
-      </div>
-
-      {(metaRows.length > 0 || meta) && (
-        <dl style={{ margin: 0, padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
-          {metaRows.map(r => (
-            <div key={r.k} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-              <dt style={{ ...QC_LABEL, flex: '0 0 60px' }}>{r.k}</dt>
-              <dd style={{ margin: 0, fontSize: 11.5, color: 'var(--text2)', minWidth: 0, lineHeight: 1.4, ...QC_NUM }}>{r.v}</dd>
-            </div>
-          ))}
-          {meta && <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.4 }}>{meta}</div>}
-        </dl>
-      )}
-
-      {/* 🔴 แถบคำสั่ง — ปุ่มนี้คือ "สิ่งที่ต้องกด" ของการ์ดใบนี้ ⇒ ต้องเป็นปุ่มหลักเต็มตัว (2026-09-25 · feedback หน้างาน)
-          *"จุดที่ user ต้อง interactive ด้วยก็ดูบาง หายาก"* — เดิมพื้น `statusBg` (alpha .10) บนพื้นเข้ม
-          = คอนทราสต์ต่ำจนดูเป็นข้อความ ไม่ใช่ปุ่ม · ตอนนี้ **พื้นทึบสีสถานะ + ตัวหนังสือเข้ม**
-          · เป้ากด 44px (WCAG 2.2 AA = 24px ขั้นต่ำ · หน้างานใส่ถุงมือใช้ 44) · เต็มความกว้างการ์ด
-            เพราะ "การ์ด 1 ใบ = งาน 1 ชิ้น" ⇒ ปุ่มเล็กชิดขวาบังคับให้เล็งบนจอสัมผัส
-          🔴 **พื้นปุ่มใช้ `--accent` ไม่ใช่ `statusColor`** — ลองใช้สีสถานะแล้วพังที่สถานะ "⬜ รอ"
-            ซึ่ง `statusColor` เป็น `var(--border2)` (เขียวเข้ม) ⇒ ตัวหนังสือเข้มบนพื้นเข้ม = อ่านไม่ออก
-            · และปุ่มหลักที่หน้าตาเหมือนกันทุกใบ = ตาหาเจอทันทีว่า "อันนี้คือปุ่มที่ต้องกด"
-            (สถานะสื่อด้วยแถบซ้าย + ป้ายอยู่แล้ว ไม่ต้องย้ำที่ปุ่มอีก) */}
-      {actionLabel && (
-        <div style={{ marginTop: 'auto', padding: '10px 12px 12px 15px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onAction} disabled={busy} style={{
-            width: '100%', minHeight: 44, padding: '10px 14px', borderRadius: 'var(--radius)',
-            fontSize: 13.5, fontWeight: 800, cursor: busy ? 'default' : 'pointer',
-            fontFamily: 'var(--font-body)', lineHeight: 1.25,
-            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: busy ? 0.55 : 1,
-          }}>{busy ? 'กำลังบันทึก…' : actionLabel}</button>
-        </div>
-      )}
-    </article>
+    <PartCard
+      code={code} name={name} img={img} showImg={showImg} matTone={matColor(code)}
+      status={{ label: statusLabel, color: statusColor, bg: statusBg, border: statusBorder }}
+      metric={{ label: qtyLabel, value: qty, unit }}
+      aside={destination ? { label: 'ปลายทาง', value: destination } : null}
+      rows={rows} note={meta}
+      footer={actionLabel
+        ? (
+          /* 🔴 ปุ่มลงมือ = `storeBtn` เท่านั้น (สูง 44px · พื้น accent ทึบ · UI §6.24)
+             เดิมพื้น alpha .10 บนพื้นเข้ม = "ดูบาง หายาก" ตาม feedback หน้างาน 25/09 */
+          <button onClick={onAction} disabled={busy} style={storeBtn('primary', { width: '100%', opacity: busy ? 0.55 : 1 })}>
+            {busy ? 'กำลังบันทึก…' : actionLabel}
+          </button>
+        ) : null} />
   );
 }
 const RACK_STATUS = {
