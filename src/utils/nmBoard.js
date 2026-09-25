@@ -158,3 +158,118 @@ export function tvGrid(n, ratio = 16 / 9) {
   return { cols: best.cols, rows: best.rows };
 }
 
+
+/* ══ 🧭 work flow การไล่ดูบอร์ด — กติกาจาก IEC เอง (Obeya_E_Board-V2.pptx · 2026-09-24) ══
+   IEC ส่งสไลด์บอกลำดับการเจาะมาเอง 4 ชั้น: 4 แผงหน้าแรก → POP → หัวข้อย่อย → เอกสาร/ไฟล์
+   🔴 กติกาที่เขาเขียนกำกับไว้ ห้ามตีความใหม่:
+   1. EVA **คนตั้งเอง** ("Leader EVA สีด้วยตัวเอง") — ระบบ *เสนอ* ได้ แต่ห้ามเขียนทับ
+   2. แดง **ต้องมีข้อความ** ว่าเกิดอะไร/แก้ยังไง ไม่งั้นคนมาดูบอร์ดไม่รู้เรื่อง
+   3. กลิ้งขึ้นแบบแย่สุดชนะ — "ถ้ามี 1 ตัวเป็นสีแดง ต้องโชว์แดงเลย" (= rollupEva เดิม)
+   4. **เกณฑ์วันไม่เท่ากันทุกแผง** — ห้ามใช้ชุดเดียวทั้งจอ (ดู EVA_RULE ด้านล่าง)
+   ═════════════════════════════════════════════════════════════════════════════════════ */
+
+/** 3 ถังบนหัวบอร์ด — นับจาก EVA ของ sub KPI ทุกตัวใน POP */
+export const BUCKETS = [
+  { key: 'delay',  label: 'Delay',             eva: 'R', hint: 'sub KPI ที่ EVA แดง — กดแล้วกระโดดไปที่รายการเลย' },
+  { key: 'onplan', label: 'On plan',           eva: 'Y', hint: 'กำลังดำเนินการตามแผน' },
+  { key: 'done',   label: 'Complete & Finish', eva: 'G', hint: 'จบแล้ว ไม่ต้อง follow up อีก' },
+];
+/** EVA → ถัง · 'none' ไม่เข้าถังไหน (ยังไม่ถึงด่าน ≠ ไม่ผ่าน — กฎข้อ 2 ของไฟล์นี้) */
+export const bucketOf = (eva) => (eva === 'R' ? 'delay' : eva === 'Y' ? 'onplan' : eva === 'G' ? 'done' : null);
+
+/**
+ * แผ่ POP เป็นรายการ "ใบ" (sub KPI ที่ประเมินได้จริง) — หัวข้อที่มีลูกไม่นับเป็นใบ
+ * คืน [{ path, no, label, mainKey, mainLabel, eva, note, panel }]
+ */
+export function flattenPop(pop) {
+  const out = [];
+  for (const m of pop || []) {
+    const kids = m.subs || [];
+    if (!kids.length) {
+      out.push({ path: m.key, no: m.no, label: m.label, mainKey: m.key, mainLabel: m.label,
+        eva: m.eva || 'none', note: m.note || '', panel: m.panel || null });
+      continue;
+    }
+    for (const s of kids) {
+      out.push({ path: `${m.key}.${s.key}`, no: s.no, label: s.label, mainKey: m.key, mainLabel: m.label,
+        eva: s.eva || 'none', note: s.note || '', panel: s.panel || null });
+    }
+  }
+  return out;
+}
+
+/** EVA ของ main KPI = แย่สุดของ sub KPI ของตัวเอง (ตัวที่ไม่มีลูกใช้ค่าตัวเอง) */
+export function mainEva(main) {
+  const kids = main?.subs || [];
+  return kids.length ? rollupEva(kids.map(s => s.eva)) : (main?.eva || 'none');
+}
+
+/** นับ 3 ถัง + ที่ยังไม่ประเมิน — ใช้กับ "ใบ" จาก flattenPop */
+export function bucketCounts(leaves) {
+  const out = { delay: 0, onplan: 0, done: 0, none: 0, total: 0 };
+  for (const l of leaves || []) {
+    const b = bucketOf(l?.eva);
+    if (b) out[b]++; else out.none++;
+    out.total++;
+  }
+  return out;
+}
+
+/** ใบทั้งหมดในถังหนึ่ง — นี่คือ "ทางลัด" ที่ IEC ขอ: กดถังแดงแล้วเห็นรายการปัญหาเลย */
+export function leavesInBucket(leaves, bucketKey) {
+  return (leaves || []).filter(l => bucketOf(l?.eva) === bucketKey);
+}
+
+/** ใบที่แดงแต่ไม่มีคำอธิบาย = ผิดกติกาข้อ 2 ของ IEC — จอต้องฟ้อง ห้ามปล่อยผ่าน */
+export function redWithoutNote(leaves) {
+  return (leaves || []).filter(l => l?.eva === 'R' && !String(l?.note || '').trim());
+}
+
+/* ── เกณฑ์สีราย "ชนิดแผง" — ตัวเลขมาจากสไลด์ของ IEC ตรงๆ ห้ามแก้เอง ──────────── */
+export const EVA_RULE = {
+  pop: { label: 'POP main KPI', redDays: 10,
+    red: 'delay > 10 วัน',
+    yellow: 'กำลังดำเนินการตามแผน และ KPI target ต้องได้ด้วยทุกสัปดาห์',
+    green: 'ทำแล้ว จบไปแล้ว ไม่มีการ follow up อีก' },
+  delivery: { label: 'Part delivery status', redDays: null,
+    red: 'ส่งไม่ได้ / delay — ต้องระบุว่าตัวไหน สาเหตุอะไร',
+    yellow: 'ส่งได้แบบมีเงื่อนไข — ต้องระบุว่าตัวไหน สาเหตุอะไร',
+    green: 'ส่งได้ตาม Condition stage' },
+  quality: { label: 'Part quality status', redDays: 14, yellowDays: 7,
+    red: 'Data + status part ไม่ตรงตาม Condition stage · delay > 14 วัน',
+    yellow: 'ไม่ตรงตาม Condition stage · delay > 7 วัน + ต้องมีแผน improve',
+    green: 'Data + status part ตรงตาม Condition stage' },
+  doc: { label: 'เอกสาร 7.1 / 7.2', redDays: 10, yellowDays: 7,
+    red: 'delay > 10 วัน',
+    yellow: 'ไม่ตรงตาม Condition stage · delay > 7 วัน + ต้องมีแผน improve',
+    green: 'ผ่านแล้ว จบแล้ว ไม่ติดปัญหา ไม่มีการ follow up อีก' },
+};
+
+/**
+ * สีที่ "ระบบเสนอ" จากจำนวนวันที่ช้า — ตามเกณฑ์ของแผงนั้น
+ * ⚠️ เสนอเท่านั้น — คนตั้งสีจริงคือ Leader (กติกาข้อ 1) · ใช้เทียบว่าสีที่ตั้งตรงเกณฑ์ไหม
+ * คืน 'none' เมื่อยังไม่รู้จำนวนวัน — ห้ามเดาว่าเขียว
+ *
+ * 🟠 **ช่องโหว่ในเกณฑ์ของ IEC (ตัดสินเอง รอเขายืนยัน):** เกณฑ์เหลืองเขียนว่า
+ *    "delay > 7 วัน **+ แผน improve**" ⇒ ช้าเกิน 7 วันแต่ *ไม่มี* แผน improve
+ *    ไม่เข้าทั้งเหลืองและแดง (ถ้ายังไม่เกินวันแดง) · เราเลือกให้เป็น **แดง**
+ *    เพราะ "ช้าแล้วไม่มีแผน" อันตรายกว่า "ช้าแล้วมีแผน" — ห้ามปล่อยเป็นเหลืองเงียบๆ
+ *    ⚠️ ถ้า IEC ตอบว่าให้เป็นเหลือง ให้แก้ที่ฟังก์ชันนี้จุดเดียว
+ */
+export function suggestEva(ruleKey, delayDays, { hasImprovePlan = false } = {}) {
+  const r = EVA_RULE[ruleKey];
+  if (!r || delayDays === null || delayDays === undefined) return 'none';
+  const d = Number(delayDays);
+  if (!Number.isFinite(d)) return 'none';
+  if (d <= 0) return 'G';
+  if (r.redDays !== null && r.redDays !== undefined && d > r.redDays) return 'R';
+  if (r.yellowDays !== undefined && d > r.yellowDays) return hasImprovePlan ? 'Y' : 'R';
+  return 'Y';
+}
+
+/** สีที่คนตั้ง ไม่ตรงกับเกณฑ์ไหม — คืน null ถ้าตรง/ประเมินไม่ได้ (เตือนเท่านั้น ห้ามบล็อก) */
+export function evaMismatch(ruleKey, eva, delayDays, opts) {
+  const s = suggestEva(ruleKey, delayDays, opts);
+  if (s === 'none' || !eva || eva === 'none' || s === eva) return null;
+  return { set: eva, suggested: s, rule: EVA_RULE[ruleKey]?.label || ruleKey };
+}

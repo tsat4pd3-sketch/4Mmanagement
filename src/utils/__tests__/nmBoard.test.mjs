@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {
   rollupEva, evaCounts, countsLabel, daysSince, freshness, freshLabel,
   projectEva, customerEva, gradeByTarget, panelsNeedingAttention, overdueActions, tvGrid,
+  bucketOf, flattenPop, mainEva, bucketCounts, leavesInBucket, redWithoutNote,
+  suggestEva, evaMismatch,
 } from '../nmBoard.js';
 
 const NOW = new Date('2026-09-20T10:00:00');   // ตรึงเวลา — กันเทสระเบิดเวลา (CLAUDE.md)
@@ -105,3 +107,71 @@ test('tvGrid — ค่าพังไม่ทำให้หารศูนย
   assert.deepEqual(tvGrid(null), { cols: 1, rows: 1 });
 });
 
+
+/* ── work flow ที่ IEC ส่งมา (Obeya_E_Board-V2.pptx · 2026-09-24) ─────────────────── */
+
+const POP = [
+  { no: '1', key: 'kickoff', label: 'Kick off', eva: 'G' },
+  { no: '3', key: 'tooling', label: 'Tooling', subs: [
+    { no: '3.1', key: 'die', label: 'Stamping die', eva: 'G' },
+    { no: '3.2', key: 'jig', label: 'Assembly jig', eva: 'R' },       // 1 ตัวแดง
+    { no: '3.3', key: 'cf',  label: 'Checking fixture', eva: 'none' },
+  ] },
+  { no: '8', key: 'pq', label: 'Part Quality', eva: 'R', note: 'Shuken ตก' },
+];
+
+test('mainEva — หัวข้อใหญ่แดงทันทีเมื่อมี sub KPI แดง 1 ตัว (กฎที่ IEC เขียนกำกับ)', () => {
+  assert.equal(mainEva(POP[1]), 'R');
+  assert.equal(mainEva(POP[0]), 'G');            // ไม่มีลูก = ใช้ค่าตัวเอง
+  assert.equal(mainEva({ subs: [{ eva: 'none' }, { eva: 'none' }] }), 'none');  // ห้ามเดาเขียว
+});
+
+test('flattenPop — นับเฉพาะ "ใบ" หัวข้อที่มีลูกไม่นับซ้ำ', () => {
+  const leaves = flattenPop(POP);
+  assert.equal(leaves.length, 5);                 // 1 + 3 ลูก + 8
+  assert.ok(!leaves.some(l => l.path === 'tooling'));
+  assert.equal(leaves.find(l => l.path === 'tooling.jig').mainLabel, 'Tooling');
+});
+
+test('bucketOf — none ไม่เข้าถังไหน (ยังไม่ถึงด่าน ≠ ไม่ผ่าน)', () => {
+  assert.equal(bucketOf('R'), 'delay');
+  assert.equal(bucketOf('Y'), 'onplan');
+  assert.equal(bucketOf('G'), 'done');
+  assert.equal(bucketOf('none'), null);
+  assert.equal(bucketOf(undefined), null);
+});
+
+test('bucketCounts + leavesInBucket — ทางลัด "กดถังแดงแล้วไปที่ปัญหาเลย"', () => {
+  const leaves = flattenPop(POP);
+  assert.deepEqual(bucketCounts(leaves), { delay: 2, onplan: 0, done: 2, none: 1, total: 5 });
+  assert.deepEqual(leavesInBucket(leaves, 'delay').map(l => l.no), ['3.2', '8']);
+  assert.deepEqual(leavesInBucket(leaves, 'onplan'), []);
+});
+
+test('redWithoutNote — แดงต้องมีคำอธิบาย ไม่งั้นจอต้องฟ้อง', () => {
+  const bad = redWithoutNote(flattenPop(POP));
+  assert.equal(bad.length, 1);
+  assert.equal(bad[0].no, '3.2');                 // 8 มี note แล้ว
+});
+
+test('suggestEva — เกณฑ์วันไม่เท่ากันทุกแผง (ห้ามใช้ชุดเดียวทั้งจอ)', () => {
+  assert.equal(suggestEva('pop', 0), 'G');
+  assert.equal(suggestEva('pop', 11), 'R');       // POP แดงที่ > 10 วัน
+  assert.equal(suggestEva('quality', 15), 'R');   // คุณภาพแดงที่ > 14 วัน (คนละเกณฑ์กับ POP)
+  assert.equal(suggestEva('quality', 5), 'Y');    // ยังไม่เกิน 7 วัน = เหลือง
+  assert.equal(suggestEva('quality', 11, { hasImprovePlan: true }), 'Y');
+  // 🟠 ช่องโหว่ในเกณฑ์ IEC: เกิน 7 วันแต่ไม่มีแผน improve ไม่เข้าทั้งเหลืองและแดง
+  //    เราเลือกให้เป็นแดง (ช้าแล้วไม่มีแผน อันตรายกว่า) — รอ IEC ยืนยัน ถ้าเปลี่ยนให้แก้จุดเดียว
+  assert.equal(suggestEva('quality', 11), 'R');
+  assert.equal(suggestEva('doc', 8), 'R');
+  assert.equal(suggestEva('doc', 8, { hasImprovePlan: true }), 'Y');
+  assert.equal(suggestEva('pop', null), 'none');  // ไม่รู้จำนวนวัน = ห้ามเดา
+  assert.equal(suggestEva('ไม่มีกฎนี้', 5), 'none');
+});
+
+test('evaMismatch — เตือนเมื่อสีที่คนตั้งไม่ตรงเกณฑ์ (เตือนเท่านั้น ห้ามบล็อก)', () => {
+  assert.equal(evaMismatch('pop', 'R', 11), null);              // ตรงเกณฑ์
+  assert.equal(evaMismatch('pop', 'G', 11).suggested, 'R');     // ตั้งเขียวทั้งที่ช้า 11 วัน
+  assert.equal(evaMismatch('pop', 'G', null), null);            // ประเมินไม่ได้ = ไม่เตือน
+  assert.equal(evaMismatch('pop', 'none', 11), null);
+});
