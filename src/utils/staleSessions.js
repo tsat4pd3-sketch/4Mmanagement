@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from './useProductionLines';
 import { inSectionScope } from './sectionScope';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -38,7 +39,13 @@ export const ballSideText = (s) => s.status === 'pending_close'
  */
 export async function fetchStaleSessions({ role, lineId, sections = [] }) {
   const [{ data: ln, error: lnErr }, { data: rows, error: sErr }] = await Promise.all([
-    supabase.from('production_lines').select('id, name, section, parent_line_name'),
+    /* ทะเบียนไลน์ผ่าน cache กลาง (25/09 · งานลด request) — ตัวนี้ถูกเรียกทุกรอบที่ Daily Report
+       โหลดใหม่ ⇒ เคยเป็นจุดที่ยิง production_lines ถี่ที่สุดจุดหนึ่งใน 4,041 ครั้ง/วัน
+       ⚠️ คง "โหลดไม่สำเร็จต้องบอก" ไว้เหมือนเดิม — cachedMaster คืน `undefined` เมื่อโหลดพลาด
+          และยังไม่เคยมี cache (คนละความหมายกับ `[]` = ทะเบียนว่างจริง) */
+    loadProductionLines().then(d => ({
+      data: d || [], error: d ? null : new Error('โหลดทะเบียนไลน์ไม่สำเร็จ'),
+    })),
     supabaseDR.from('production_sessions')
       .select('id, line_name, shift, work_date, section, status, close_requested_by_name, close_reject_at, close_reject_by_name, close_reject_reason')
       .in('status', ['open', 'pending_close'])

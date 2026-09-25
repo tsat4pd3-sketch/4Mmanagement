@@ -9,6 +9,9 @@
       (กฎความซื่อสัตย์ของจอ — เหมือน /obeya)
    ═════════════════════════════════════════════════════════════════════════════════════ */
 
+import { rollupEva } from '../utils/nmBoard.js';
+import { POP_TEMPLATE, LOT_TEMPLATE } from './nmBoardPop.js';
+
 /** หน่วยงานใน IEC + ลูกค้าที่ดูแล (ไวท์บอร์ด 18.09.2026) — ทีม↔ลูกค้าเป็น many-to-many */
 export const IEC_TEAMS = [
   { key: 'ECSC', label: 'ECSC', customers: ['*'], note: 'ดูภาพรวมทุกลูกค้า' },
@@ -460,3 +463,90 @@ export const PROJECTS = [
 
 /** วันที่ถอดข้อมูลจากบอร์ด — ใช้บอกผู้ใช้ว่าข้อมูลนี้เก่าแค่ไหน */
 export const SOURCE_DATE = '2026-09-18';
+
+
+/* ══ 📋 POP ของรุ่น — ผูกกับ "แผงบนบอร์ด" ที่ถือหลักฐานจริง ═══════════════════════════
+   🔴 **EVA ของ sub KPI ไม่ได้พิมพ์มือลงไฟล์นี้** — ดึงมาจากแผงที่เป็นหลักฐานของเรื่องนั้น
+      เหตุผล: บอร์ดจริงมีแค่ใบ POP กับแผงย่อย ถ้าพิมพ์สีซ้ำ 2 ที่ มันจะไม่ตรงกันภายในสัปดาห์เดียว
+      หัวข้อที่ยังไม่มีแผงรองรับ = 'none' (เทา) **ห้ามเดาว่าเขียว** (กฎ "ยังไม่ถึงด่าน ≠ ไม่ผ่าน")
+   ของจริงตอนต่อ DB: ตารางจะเก็บ eva ที่ Leader กดเอง + note + ไฟล์แนบ ต่อ sub KPI
+   ═════════════════════════════════════════════════════════════════════════════════════ */
+function buildPop(panels, links = {}, topicLinks = {}) {
+  const panelOf = (k) => (panels || []).find(p => p.key === k) || null;
+  const node = (n, path) => {
+    const pk = links[path] || null;
+    const panel = pk ? panelOf(pk) : null;
+    const topics = n.topics?.map(t => {
+      const tk = topicLinks[t] || null;
+      const tp = tk ? panelOf(tk) : null;
+      return { label: t, panel: tk, eva: tp?.eva || 'none', note: tp?.evaNote || '' };
+    }) || null;
+    // มีหัวข้อเอกสารข้างใน ⇒ สีของใบนี้ = แย่สุดของหัวข้อข้างใน (กฎ "1 ตัวแดง = แดงเลย")
+    const eva = topics?.length ? rollupEva(topics.map(t => t.eva)) : (panel?.eva || 'none');
+    return { ...n, panel: pk, topics, eva, note: panel?.evaNote || '' };
+  };
+  return POP_TEMPLATE.map(m => (m.subs
+    ? { ...m, subs: m.subs.map(s => node(s, `${m.key}.${s.key}`)) }
+    : node(m, m.key)));
+}
+
+/** D02D — ผูกเฉพาะที่มีหลักฐานตรงตัวบนบอร์ด ที่เหลือปล่อยเทา */
+const D02D_LINKS = {
+  'tooling.stamping-die': 'tooling-schedule',
+  'tooling.checking-fixture': 'cf-status',
+  'prod-planning': 'capacity',
+  'part-quality': 'quality-status-graph',
+  'part-delivery': 'eva-milestone',
+  'sptt.sptt3': 'lvpt',
+  'sptt.sptt4': 'hvpt',
+};
+const D02D_TOPIC_LINKS = {
+  // 7.1 Engineering document
+  'SE & CAE result': 'se-study',
+  'CPM & Risk': 'cpm',
+  'ECI control list': 'eci-control',
+  'ECI modify status': 'ppc-ecn',
+  'PPC': 'ppc-ecn',
+  'Tooling schedule': 'tooling-schedule',
+  'Order update': 'order-info',
+  'KADAI status': 'kadai',
+  'Milestone KPI': 'eva-milestone',
+  // 7.2 QA document
+  'Part Quality status': 'quality-status-graph',
+  'CF concept status': 'cf-status',
+  'CF making schedule': 'cf-status',
+  'SHUKEN + QBI': 'shuken',
+  'PFUS': 'pess',
+};
+
+/** ผู้รับผิดชอบ (แผง ④ Responsible) — จาก work flow ที่ IEC ส่งมา 2026-09-24 */
+const D02D_RESPONSIBLE = [
+  { role: 'Act-GM (IEC)', name: 'Mr. Surasak Setsin', tel: '061-9783292', email: 'Surasak.Set@thaisummit.co.th' },
+  { role: 'Manager PE', name: 'Mr. Pissanukorn Amparat', tel: '099-5349151', email: 'Pissanukorn.Amp@thaisummit.co.th' },
+  { role: 'Sr. Engineer (Project Leader, PE)', name: 'Mr. Wanchai Saensimol', tel: '083-5622116', email: 'Wanchai.san@thaisummit.co.th' },
+];
+
+/* ผูก POP + ล็อต + ผู้รับผิดชอบ เข้าโปรเจค (ทำหลังประกาศ PROJECTS เพราะต้องใช้ panels ของมัน) */
+for (const p of PROJECTS) {
+  if (p.id !== 'd02d-tmt') continue;
+  p.pop = buildPop(p.panels, D02D_LINKS, D02D_TOPIC_LINKS);
+  // 9. SPTT Milestones — หลักฐานอยู่ในแถวเส้นทางด่าน (p.sptt) ไม่ใช่แผง ⇒ ผูกตามชื่อด่าน
+  const spttOf = (n) => p.sptt.find(s => s.name.startsWith(n))?.eva || 'none';
+  const SPTT_MAP = { sptt1: 'KS Part prep', sptt2: 'SPTT#2', sptt3: 'LVPT', sptt4: 'HVPT' };
+  for (const m of p.pop) {
+    if (m.key !== 'sptt') continue;
+    m.subs = m.subs.map(s => ({ ...s, eva: spttOf(SPTT_MAP[s.key] || ''), fromStage: SPTT_MAP[s.key] }));
+  }
+  p.responsible = D02D_RESPONSIBLE;
+  // ล็อตของรุ่นนี้: ใช้แม่แบบ 8 ขั้น แต่ D02D บนบอร์ดจริงใช้ "NS Lot" แทน "SKK X LOT"
+  p.lotRows = LOT_TEMPLATE.map(l => ({
+    ...l,
+    label: l.key === 'skk-x' ? 'NS Lot' : l.label,
+    renamed: l.key === 'skk-x' ? 'บอร์ด D02D เขียน NS Lot — แม่แบบ IEC เขียน SKK X LOT' : null,
+    // ยังไม่มีข้อมูลรายล็อตจริง (อ่านจากรูปไม่ชัด) — เทาทั้งคู่ ห้ามเดา
+    delivery: 'none', quality: 'none',
+  }));
+}
+
+/** ที่มาของ work flow การไล่ดูบอร์ด (ลำดับชั้น + เกณฑ์สี) */
+export const FLOW_SOURCE = { file: 'Obeya_E_Board-V2.pptx', from: 'IEC', date: '2026-09-24' };

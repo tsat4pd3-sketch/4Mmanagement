@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
-import { supabase, supabaseDR } from '../supabaseClient';
+import { supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -38,11 +39,11 @@ export default function WipBetweenSteps() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [{ data: prods, error: pErr }, { data: pm }, { data: lns }] = await Promise.all([
+      const [{ data: prods, error: pErr }, { data: pm }, lns] = await Promise.all([
         supabaseDR.from('dr_products')
           .select('mat_no, name, line_name, is_active, is_operation, op_parent_mat, op_seq'),
         supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true),
-        supabase.from('production_lines').select('id, name, section, parent_line_name'),
+        loadProductionLines(),   // ทะเบียนไลน์ผ่าน cache กลาง (25/09)
       ]);
       if (pErr) throw pErr;
       setProdLines(lns || []);

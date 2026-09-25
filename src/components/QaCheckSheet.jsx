@@ -17,6 +17,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { toast } from './Toast';
 import { UserContext } from '../App';
 import useIsMobile from '../utils/useIsMobile';
@@ -128,8 +129,7 @@ export default function QaCheckSheet({ canRecord }) {
 
   /* ── scope ไลน์: leader = ครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด = ตาม sections ── */
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
-      .then(({ data }) => setAllLines(data || []));
+    loadProductionLines().then(d => setAllLines(d || []));   // cache กลาง (25/09)
   }, []);
   const scopedLineNames = useMemo(() => {
     if (role === 'leader' && lineId) {
