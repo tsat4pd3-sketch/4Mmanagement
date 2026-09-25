@@ -37,3 +37,32 @@ export function getCurrentShift(now = new Date()) {
   const h = new Date(now).getHours();
   return h >= WORK_DAY_START_HOUR && h < 20 ? 'day' : 'night';
 }
+
+/* ── จัดเวลาจริง (timestamp) ลง "วันทำงาน/กะ" ───────────────────────────────────────
+ * ใช้ตอนเอา **เวลาที่เกิดขึ้นจริงแล้ว** (report_at, created_at, ฯลฯ) ไปจัดกลุ่ม/กรอง
+ *
+ * 🔴 คนละเรื่องกับ `resolveShiftTime()` ใน `shiftWindow.js` — ห้ามสลับกัน
+ *    · ที่นี่  = มี timestamp จริงอยู่แล้ว → "อันนี้อยู่กะไหน/วันทำงานไหน"
+ *    · ที่นั่น = คนพิมพ์ 'HH:mm' มาลอยๆ → ต้องหา offset วันที่ทำให้ตกในกรอบกะของ session นั้น
+ *      (จึงต้องรู้ start_time/shift_min ของกะ — ที่นี่ไม่ต้องรู้ เพราะเวลาเต็มมากับข้อมูลแล้ว)
+ *
+ * ⚠️ ค่าที่อ่านไม่ได้/ว่าง → คืน `null` **ห้ามคืนค่าเดา** (`new Date(null)` = 1970 ⇒ แถวจะไป
+ *    กองอยู่ในกะเช้าปี 1970 เงียบๆ ซึ่งแย่กว่าไม่มีค่า)
+ */
+const toDate = (ts) => {
+  if (ts == null || ts === '') return null;
+  const d = new Date(ts);
+  return Number.isFinite(d.getTime()) ? d : null;
+};
+
+/** timestamp → 'day' | 'night' · null เมื่ออ่านเวลาไม่ได้ */
+export function shiftOfTime(ts) {
+  const d = toDate(ts);
+  return d ? getCurrentShift(d) : null;
+}
+
+/** timestamp → วันทำงาน 'YYYY-MM-DD' (ก่อน 08:00 = วันก่อนหน้า) · null เมื่ออ่านเวลาไม่ได้ */
+export function workDateOfTime(ts) {
+  const d = toDate(ts);
+  return d ? getWorkDate(d) : null;
+}
