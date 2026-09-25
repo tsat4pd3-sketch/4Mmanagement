@@ -33,8 +33,13 @@ import { isDie } from '../utils/equipmentKinds';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import TimeRangeBar from '../components/TimeRangeBar';
+import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
-import { ALL } from '../utils/filterLabels';
+import useTimeRange from '../utils/useTimeRange';
+/* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
+import { shiftOfTime, workDateOfTime } from '../utils/workDate';
+import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -121,6 +126,7 @@ const MO_LIST_COLS = [
   'id', 'mo_no', 'status', 'current_step',            // การ์ด + แถบสถานะ
   'mtn_dept', 'item_type', 'line_name', 'machine_no', // ฟิลเตอร์ทีม/ไลน์ + การ์ด
   'problem_characteristic', 'problem_group', 'report_note', 'report_at',
+  'work_date', 'repair_type',                         // ตัวกรอง วันที่/กะ/ประเภทงานซ่อม (2026-09-25)
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
   'dept_manager_at', 'purpose',                       // moStatusLabel() ใช้ตัดสินป้ายใบอนุมัติ
@@ -317,6 +323,18 @@ export default function MtnRepair() {
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
   const [fText, setFText] = useState('');
+  /* 📅 วันที่ + กะ + ประเภทงานซ่อม (2026-09-25 · feedback ณัฐพล สีพิมพ์ขัด 24/09
+     *"เพิ่มแท๊ปในรายการแจ้งซ่อมที่สามารถดูเลือกวันที่และกะประเภทของการแจ้งซ่อมได้"*)
+     ทำเป็น **ตัวกรองในแท็บเดิม ไม่ใช่แท็บใหม่** — ตัวกรองช่วงเวลาต้องหน้าตาเดียวกันทุกหน้า
+     (`<TimeRangeBar>` · CLAUDE.md §ตัวกรองช่วงเวลา) และอยู่แท็บเดียวกันจึงกรองร่วมกับ ไลน์/ทีม/สถานะ ได้
+     ⚠️ **ตารางไม่มีคอลัมน์ "กะ"** — user เลือกทาง (ก): อนุมานจากเวลาที่กดแจ้ง (`report_at` ครบ 100%)
+        ผ่าน `shiftOfTime()` ของกลาง · ใบที่แจ้งย้อนหลัง/ข้ามกะจะตกกะตามเวลาที่กด ⇒ จอต้องเขียนบอก */
+  const [fShift, setFShift] = useState('');
+  const [fRepairType, setFRepairType] = useState('');
+  /* ช่วงตั้งต้น 365 วัน = กว้างกว่าอายุข้อมูลทั้งหมด (ใบเก่าสุด 14/07/2026) ⇒ วันนี้ไม่ซ่อนอะไรเลย
+     แต่ปีหน้าจะเริ่มซ่อน ⇒ **ต้องมีตัวนับ "ถูกซ่อนกี่ใบ" เสมอ** (ดู dateHidden ด้านล่าง)
+     `finest='hour'` — ใบซ่อมมีเวลาเต็ม จึงกดปุ่ม "วันนี้" ได้จริง ไม่ใช่ปุ่มหลอก */
+  const tr = useTimeRange({ defaultDays: 365, finest: 'hour' });
   const [showReport, setShowReport] = useState(false);
   const [detail, setDetail] = useState(null);
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
@@ -456,7 +474,7 @@ export default function MtnRepair() {
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders, reloadAll]);
 
-  const shown = useMemo(() => {
+  const shownNoDate = useMemo(() => {
     let rows = orders;
     if (scopeLines) rows = rows.filter(o => !o.line_name || scopeLines.has(o.line_name));
     if (fStatus === 'open') rows = rows.filter(isMoOpen);   // รวม transferred = จบแล้ว (utils/mtnStepPerm)
@@ -469,9 +487,31 @@ export default function MtnRepair() {
       rows = fam.size ? rows.filter(o => fam.has(o.line_name)) : rows.filter(o => o.line_name === fLine);
     }
     if (fDept) rows = rows.filter(o => sameTeam(o.mtn_dept || deptForItem(o.item_type), fDept));
+    if (fShift) rows = rows.filter(o => shiftOfTime(o.report_at) === fShift);
+    if (fRepairType) rows = rows.filter(o => (o.repair_type || '') === fRepairType);
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
-  }, [orders, scopeLines, fStatus, fLine, fDept, fText, lines]);
+  }, [orders, scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
+
+  /* วันของใบ = `work_date` ที่กรอกไว้ก่อน (คนแก้มือได้) ถอยไปคำนวณจากเวลาที่แจ้งเมื่อว่าง
+     — กติกาเดียวกับ MatLabel: **ค่าที่อยู่ในแถวชนะค่าที่ระบบคำนวณ**
+     (วัดจริง 25/09: ตรงกัน 524 ใบ · ต่าง 5 ใบ · ว่าง 4 ใบ ⇒ ถอยแล้วครบ 100%) */
+  const inRange = useCallback((o) => {
+    const d = o.work_date || workDateOfTime(o.report_at);
+    return !d || (d >= tr.from && d <= tr.to);   // ไม่รู้วัน = ไม่ซ่อน (ห้ามหายเงียบ)
+  }, [tr.from, tr.to]);
+  const shown = useMemo(() => shownNoDate.filter(inRange), [shownNoDate, inRange]);
+  /* 🔴 กฎความซื่อสัตย์ของจอ — ตัวกรองวันที่ซ่อนใบไปกี่ใบ ต้องเขียนบนจอเสมอ
+     (คิวงานที่ "ใบค้าง 29 วันหายไปเพราะ default 30 วัน" = จอโกหก · ปัจจุบันใบค้าง >7 วันมี 128 ใบ) */
+  const dateHidden = useMemo(() => {
+    const rows = shownNoDate.filter(o => !inRange(o));
+    return { n: rows.length, open: rows.filter(isMoOpen).length };
+  }, [shownNoDate, inRange]);
+  /* วันของใบที่เก่าที่สุด (หลังกรองอย่างอื่นแล้ว) — ปุ่ม "ดูทั้งหมด" เลื่อนขอบล่างไปถึงตรงนั้น */
+  const oldestDate = useMemo(() => shownNoDate.reduce((a, o) => {
+    const d = o.work_date || workDateOfTime(o.report_at);
+    return d && (!a || d < a) ? d : a;
+  }, null), [shownNoDate]);
 
   const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
 
@@ -516,8 +556,15 @@ export default function MtnRepair() {
       />
 
       {tab === 'list' && <>
-        {/* แถบกรองมาตรฐาน (UI-STANDARD 2026-09-24): ขอบเขต → สถานะ → ค้นหา → จำนวน/ปุ่มหลักชิดขวา */}
-        <FilterBar>
+        {/* แถบกรองมาตรฐาน (UI-STANDARD 2026-09-24): ช่วงเวลา → ขอบเขต → สถานะ → ค้นหา → จำนวน/ปุ่มหลักชิดขวา
+            ⚠️ ช่วงเวลาต้องเป็น <TimeRangeBar> ห้ามวาดปุ่ม/ช่องวันที่เอง (CLAUDE.md §ตัวกรองช่วงเวลา) */}
+        <TimeRangeBar
+          scale={tr.scale} from={tr.from} to={tr.to} today={tr.today}
+          onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} onView={tr.setView}
+          scales={null} periods={['day', 'week', 'month', 'year']} finest="hour"
+          note={<>📅 วันของใบ = <b>วันทำงาน</b> (ก่อน 08:00 นับเป็นวันก่อนหน้า) · กะอนุมานจาก
+            <b> เวลาที่กดแจ้ง</b> (เช้า 08:00–19:59 · ดึก 20:00–07:59) — ใบที่แจ้งย้อนหลังจะตกกะตามเวลาที่กด ไม่ใช่กะที่เครื่องเสียจริง</>}
+        >
           <select value={fDept} onChange={e => setFDept(e.target.value)}><option value="">{ALL.unit}</option><TeamOpts list={mtnDepts} /></select>
           {/* dropdown ไลน์ = <LineSelect> เท่านั้น (UI-CONVENTIONS §5.3 ข้อ 9) — scopedLineObjs กรอง scope ไว้แล้ว · 2026-09-07 */}
           <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder={ALL.line} />
@@ -525,11 +572,33 @@ export default function MtnRepair() {
             <option value="all">{ALL.status}</option><option value="open">🔵 ยังไม่ปิด</option>
             {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
           </select>
+          {/* กะ = 3 ตัวเลือก ⇒ <Segmented> ไม่ใช่ dropdown (UI-STANDARD §3) */}
+          <Segmented value={fShift} onChange={setFShift} label="กะที่แจ้ง" options={SHIFT_OPTIONS} />
+          {/* ประเภทงานซ่อมมาจากทะเบียน `mtn_repair_types` — ห้าม hardcode BM/PM ในหน้า */}
+          <select value={fRepairType} onChange={e => setFRepairType(e.target.value)} aria-label="ประเภทงานซ่อม">
+            <option value="">{ALL.type}</option>
+            {repairTypes.map(r => <option key={r.id} value={r.name}>{r.name}{r.prefix ? ` (${r.prefix})` : ''}</option>)}
+          </select>
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '0 16px' }}>➕ แจ้งซ่อมใหม่</button>}
-        </FilterBar>
+        </TimeRangeBar>
+        {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
+        {dateHidden.n > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)',
+            background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            <span>📅 ตัวกรองวันที่ซ่อนอยู่ <b>{dateHidden.n}</b> ใบ
+              {dateHidden.open > 0 && <> — ในนั้น <b style={{ color: '#ef4444' }}>{dateHidden.open} ใบยังไม่ปิด</b></>}</span>
+            {oldestDate && oldestDate < tr.from && (
+              <button onClick={() => tr.setRange(oldestDate, tr.to)}
+                style={{ height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)', fontWeight: 700,
+                  cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                ดูทั้งหมด (ตั้งแต่ {oldestDate})
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
           {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
           {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีรายการ</div>}

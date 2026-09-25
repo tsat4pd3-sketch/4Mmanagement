@@ -7,6 +7,9 @@
       เลื่อนทะลุขึ้นมาทับ (เคสจริง: DailyReport แผงเลือกกะ 350×651 บนจอ 390×844 = 77% ของจอ)
    2. 🔴 ของล้นแล้วปัดดูไม่ได้ — แถว flex แนวนอน `nowrap` ที่เนื้อหากว้างเกินตัวเอง และไม่มี `overflowX`
       (UI-CONVENTIONS §231: ของกว้างต้องมี scroller ของตัวเอง)
+      · **2ข (25/09): แถว `wrap` ที่ยังล้น** = มีลูกที่หดไม่ลงจริงๆ ไม่ใช่แค่ของเยอะ
+        เคสจริงที่หลุดด่านนี้ไป: `.trb-row` ของ <TimeRangeBar> ในกรอบ flex column + align-items:stretch
+        — `min-width:0` ไม่พอ ต้อง `max-width:100%` ด้วย ไม่งั้น <select> ตัวเลือกยาวดันแถวพ้นการ์ด
    3. 🔴 ข้อความถูกบีบจนกว้าง 0 — span ที่มีตัวอักษรแต่ `width < 1px` ในแถว flex
       ต้นเหตุประจำ: เพื่อนบ้านตั้ง `whiteSpace: nowrap` แล้วไม่ยอมหด ⇒ **ตัวที่ต้องอ่านที่สุดหายทั้งบรรทัด**
       (เคสจริง: MorningMeeting ชื่อไลน์ 198px จาก 328px ⇒ รายละเอียดปัญหา/4M เหลือ 0)
@@ -65,6 +68,17 @@ for (const name of PAGES) {
             && el.scrollWidth > el.clientWidth + 4 && !/(auto|scroll)/.test(cs.overflowX)
             && r.width > VW * 0.5 && r.height > 20)
           out.push(`ล้นปัดไม่ได้ กล่อง ${Math.round(r.width)} เนื้อหา ${el.scrollWidth} | "${txt}"`);
+
+        /* 2ข. แถว flex ที่ **ขึ้นบรรทัดใหม่ได้แล้วยังล้น** — ลูกบางตัวหดไม่ลง (25/09)
+           เคสจริง: `.trb-row` ใน <TimeRangeBar> วางอยู่ใน flex column + align-items:stretch
+           ⇒ ขนาด "เส้น" มาจาก max-content ของแถว ไม่ใช่กรอบการ์ด · <select> ที่ตัวเลือกยาว
+           (ชื่อไลน์) ดันแถว 449px ในกรอบ 370px แล้วล้นพ้นขอบการ์ดออกไปนอกจอ
+           ข้อ 2 เดิมจับไม่ได้เพราะเช็คเฉพาะ `nowrap` — แถวนี้ `wrap` แต่ก็ยังล้น
+           (ล้นทั้งที่ wrap ได้ = มีลูกที่ shrink ไม่ลงจริงๆ ไม่ใช่แค่ของเยอะ) */
+        if (el.tagName === 'DIV' && cs.display === 'flex' && cs.flexDirection === 'row' && cs.flexWrap === 'wrap'
+            && el.scrollWidth > el.clientWidth + 4 && !/(auto|scroll)/.test(cs.overflowX)
+            && r.width > VW * 0.5 && r.height > 20)
+          out.push(`ล้นทั้งที่ขึ้นบรรทัดใหม่ได้ (ลูกหดไม่ลง) กล่อง ${Math.round(r.width)} เนื้อหา ${el.scrollWidth} | "${txt}"`);
 
         if (el.tagName === 'SPAN' && r.width < 1 && r.height > 0 && (el.textContent || '').trim().length > 8
             && getComputedStyle(el.parentElement || el).display === 'flex')

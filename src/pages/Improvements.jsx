@@ -1302,7 +1302,10 @@ export default function Improvements() {
                 })()}
                 {/* footer actions */}
                 <div style={{ marginTop: 'auto', paddingTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>{imp.created_by_name ? `โดย ${imp.created_by_name}` : ''}</span>
+                  {/* 🔴 ต้องไม่เรนเดอร์เมื่อไม่มีชื่อ (25/09) — `<span>` ว่างที่ตั้ง `marginRight:'auto'`
+                      ยัง**กินช่องว่างไปจริง** (วัด 390px: กว้าง 0 แต่ margin-right = 77px)
+                      ⇒ ดันปุ่มท้ายแถวพ้นขอบการ์ดออกนอกจอ กดไม่ถึง (ด่าน mobilesweep ข้อ 2ข) */}
+                  {imp.created_by_name && <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>โดย {imp.created_by_name}</span>}
                   {canManage && imp.status === 'monitoring' && (
                     <>
                       <button onClick={() => setCloseModal({ imp, note: '', peImpact: null })} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✅ ปิดจ๊อบ</button>
