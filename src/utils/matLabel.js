@@ -30,7 +30,7 @@ export const matKey = (m) => String(m ?? '').trim().toUpperCase();
  *    ไม่กรอง is_operation ทิ้งเหมือน buildPnIndex เพราะที่นี่ค้นด้วย mat_no (คีย์ของแถวนั้นเอง)
  *    ไม่ใช่ค้นด้วย p_no ที่ OP ไปใช้เลขซ้ำกับพาร์ทจริง ⇒ ไม่มีปัญหาผู้สมัครปลอม
  */
-export function buildMatIndex(products) {
+export function buildMatIndex(products, childParts) {
   const idx = new Map();
   for (const p of products || []) {
     const k = matKey(p?.mat_no);
@@ -42,6 +42,22 @@ export function buildMatIndex(products) {
       p_no: String(p?.p_no || '').trim(),
       customer: String(p?.customer || '').trim(),
       _active: !!p?.is_active,
+    });
+  }
+  /* 🔴 พาร์ทลูก (2xx/3xx/5xx) อยู่คนละทะเบียน — `parts_master` (DR) ไม่ใช่ `dr_products` (2026-09-30)
+     เดิม index สร้างจาก `dr_products` อย่างเดียว ⇒ **ทั้งโมดูลสโตร์ไม่เคยโชว์ Part No. ได้เลย**
+     ไม่ว่าจะเรียงลำดับยังไง เพราะของที่สโตร์จับคือพาร์ทลูกทั้งหมด
+     (นี่คือสาเหตุจริงของ "ทำไมการ์ดสโตร์ไม่มี Part No." ไม่ใช่เรื่องลำดับการโชว์)
+     · คอลัมน์คนละชื่อ: `parts_master.part_name`/`part_no` vs `dr_products.name`/`p_no` — select ผิด = 42703 เงียบ
+     · `dr_products` ชนะเสมอเมื่อ mat ซ้ำ (เป็นทะเบียนสินค้าหลักที่ PE/NPI ดูแล) — ตัวนี้เติมเฉพาะที่ขาด */
+  for (const c of childParts || []) {
+    const k = matKey(c?.mat_no);
+    if (!k || idx.has(k)) continue;
+    idx.set(k, {
+      name: String(c?.part_name || '').trim(),
+      p_no: String(c?.part_no || '').trim(),
+      customer: '',
+      _active: true,
     });
   }
   return idx;
@@ -71,23 +87,14 @@ export function matInfo(mat, index, row) {
   return { mat: m, name, pNo, from: froms.every(f => f === froms[0]) ? froms[0] : 'mixed' };
 }
 
-/* ── 🔴 ลำดับการโชว์ = Part No. → Part Name → MAT SAP  (2026-09-30 · คำสั่ง user) ──
- * "อยากให้เรียง part no. > part name > mat sap และเช็คทุกหน้าที่โชว์พวกนี้"
- *
- * ทำไมสลับ: เลข MAT เป็นรหัสภายใน (SAP) แต่เวลาคุยกับลูกค้า/ดูของจริงหน้าไลน์
- * คนอ่าน **Part No. ของลูกค้า** ก่อนเสมอ — ของที่คนใช้ตัดสินใจต้องมาก่อน
- *
- * ⚠️ MAT ยังต้องโชว์เสมอ ห้ามตัดทิ้ง (เป็นคีย์ที่ใช้ค้น/ผูกข้อมูลทั้งระบบ) แค่ย้ายไปท้าย
- *    และต้องมีป้าย `MAT` กำกับ — ไม่งั้นเลขเปล่าท้ายบรรทัดแยกไม่ออกจาก Part No.
- *    (เดิม Part No. อยู่ในวงเล็บเหลี่ยมเป็นตัวแยก · พอสลับที่แล้ววงเล็บนำหน้าอ่านยาก)
- */
-export const MAT_PREFIX = 'MAT ';
-
 /**
  * บรรทัดเดียวสำหรับที่ที่วาด JSX ไม่ได้ (toast · confirm · title · export Excel/PDF)
- * รูปแบบเดียวกับที่ `<MatLabel>` วาด: `MB3B 8C306 BC · BRACKET RR · MAT 10100379`
+ * 🔴 **ลำดับต้องตรงกับที่ `<MatLabel>`/`<PartCard>` วาดเสมอ** (คำสั่ง user 2026-09-30
+ *    "เอาให้ฟอร์แมทเดียวกัน") = Part No. → Part Name → MAT SAP
+ *    `MB3B 8C306 BC · BRACKET RR · MAT 10100379`
+ *    ไม่มี Part No. → ขึ้นต้นด้วยชื่อ แล้วต่อด้วย MAT (ไม่เว้นช่องว่างค้างไว้)
  */
 export function matText(mat, index, row) {
   const i = matInfo(mat, index, row);
-  return [i.pNo, i.name, i.mat && `${MAT_PREFIX}${i.mat}`].filter(Boolean).join(' · ');
+  return [i.pNo, i.name, i.mat && `MAT ${i.mat}`].filter(Boolean).join(' · ');
 }
