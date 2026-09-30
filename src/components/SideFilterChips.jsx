@@ -24,7 +24,7 @@ export default function SideFilterChips({ value, onChange, counts = {}, total, u
   const n = { inbound: 0, outbound: 0, unknown: 0, ...counts };
   const all = total ?? (n.inbound + n.outbound + n.unknown);
   // ฝั่งที่ถือของจริง (control = Sales/Planner/Billing ไม่ได้ถือของ จึงไม่มีในตัวกรองพาร์ท)
-  const matSides = SIDES.filter(s => s.key !== 'control');
+  const matSides = SIDES;   // เหลือเฉพาะฝั่งที่ถือของ (control ถูกยุบออกแล้ว 30/09)
   const chips = [
     { key: '', icon: '📋', short: 'ทั้งหมด', color: 'var(--text2)', count: all, desc: `ทุกฝั่งรวมกัน ${all} ${unit}` },
     ...matSides.map(s => ({ key: s.key, icon: s.icon, short: s.short, color: s.color, count: n[s.key], desc: `${s.owner} — ${s.desc}` })),
