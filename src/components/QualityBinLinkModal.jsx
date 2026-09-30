@@ -136,8 +136,10 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
           {defectName}
-          {matNo && <> · <b style={{ fontFamily: 'monospace' }}>{matNo}</b></>}
+          {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
+          {partNo && <> · <b style={{ fontFamily: 'monospace' }}>{partNo}</b></>}
           {defect?.prod_orders?.part_name && <> · {defect.prod_orders.part_name}</>}
+          {matNo && <> · <span style={{ fontFamily: 'monospace', opacity: 0.85 }}>MAT {matNo}</span></>}
           {' · '}{session?.line_name} · {session?.work_date}
         </div>
 

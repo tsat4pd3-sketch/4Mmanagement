@@ -3993,8 +3993,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
-                                {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                                {/* ลำดับ Part No. → ชื่องาน → MAT ผ่านของกลาง <MatLabel> (UI §6.21) */}
+                                <MatLabel mat={r.matNo} name={r.partName} />
                                 {r.actualStart && (
                                   <div style={{ fontSize: 11, color: '#4d9fff', marginTop: 1 }}>🕐 {fmtTime(r.actualStart)}–{r.actualEnd ? fmtTime(r.actualEnd) : '...'}</div>
                                 )}
@@ -4423,8 +4423,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <div key={r.matNo} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 8 }}>
                             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.matNo}</div>
-                                {r.partName && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</div>}
+                                {/* ลำดับ Part No. → ชื่องาน → MAT ผ่านของกลาง <MatLabel> (UI §6.21) */}
+                                <MatLabel mat={r.matNo} name={r.partName} />
                                 {r.actualStart && (
                                   r.editableTime ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3 }}>
@@ -4782,8 +4782,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         const partName     = prodOrders.find(o => o.mat_no === matNo)?.part_name || '';
                         return (
                           <div key={matNo} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px' }}>
-                            <div style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', marginBottom: 4 }}>
-                              {matNo}{partName && <span style={{ color: 'var(--muted)', fontWeight: 400, fontFamily: 'inherit' }}> · {partName}</span>}
+                            <div style={{ marginBottom: 4 }}>
+                              <MatLabel mat={matNo} name={partName} size={11} />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เริ่ม:</span>
@@ -4983,7 +4983,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
                           return {
                             id: s.mat_no,
-                            label: `${s.mat_no}${nm ? ` · ${nm}` : ''}${dup && s.dr_products?.p_no ? ` · [${s.dr_products.p_no}]` : ''}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
+                            // ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) · id ยังเป็น mat_no = ค่าที่เก็บจริง
+                            label: `${[s.dr_products?.p_no, nm, `MAT ${s.mat_no}`].filter(Boolean).join(' · ')}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
                             /* 🏭 ป้ายเจ้าของ — แถวที่ไม่ได้ผูกกับไลน์ที่เปิดกะ ต้องเห็นว่าเป็นของใคร
                                (user 2026-09-15 · กัน human error เลือกพาร์ทผิดไลน์) */
                             sub: `${s.qty_per_kanban} ชิ้น/ใบ${s._foreign && s._owner ? ` · 🏭 ผูกกับไลน์ ${s._owner}` : ''}`,
@@ -5008,9 +5009,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {openProdStd && (
                   <div style={{ padding: '8px 12px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, fontSize: 12, color: 'var(--muted)' }}>
                     <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ {openProdStd.qty_per_kanban} ชิ้น / Kanban ใบ </span>
+                    {/* ลำดับ Part No. → ชื่องาน (UI §6.21) */}
+                    {openProdStd.p_no && <span style={{ color: 'var(--text)', fontWeight: 700, fontFamily: 'monospace' }}> · {openProdStd.p_no}</span>}
                     {(openProdStd.dr_products?.name || openProdStd.part_name) && <span style={{ color: 'var(--text)', fontWeight: 600 }}> · {openProdStd.dr_products?.name || openProdStd.part_name}</span>}
                     {openProdStd.customer && <span> · {openProdStd.customer}</span>}
-                    {openProdStd.p_no && <span> · P.NO: {openProdStd.p_no}</span>}
                   </div>
                 )}
 
@@ -5115,8 +5117,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginBottom: 8 }}>✓ พบ Order</div>
                       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{closeMatch.mat_no}</div>
-                          {closeMatch.part_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{closeMatch.part_name}</div>}
+                          <MatLabel mat={closeMatch.mat_no} name={closeMatch.part_name} size={13} />
                         </div>
                         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
                           <div style={{ fontSize: 28, fontWeight: 900, color: '#22c55e', lineHeight: 1 }}>{closeMatch.qty}</div>
@@ -5183,7 +5184,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         <option value="">เลือก MAT.NO...</option>
                         {matNoOptions.map(mn => {
                           const o = prodOrders.find(o => o.mat_no === mn);
-                          return <option key={mn} value={mn}>{mn}{o?.part_name ? ` · ${o.part_name}` : ''}</option>;
+                          /* value = mat_no (คีย์ที่เก็บจริง ห้ามเปลี่ยน) · ข้อความเรียง Part No. → ชื่อ → MAT */
+                          const pn = o?.p_no || products.find(x => x.mat_no === mn)?.p_no || '';
+                          return <option key={mn} value={mn}>{[pn, o?.part_name, `MAT ${mn}`].filter(Boolean).join(' · ')}</option>;
                         })}
                       </select>
                     </Field>
@@ -6127,8 +6130,7 @@ function HistoryTab({ role }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {rows.map(r => (
                             <div key={r.matNo} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--card)', borderRadius: 6, border: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'monospace' }}>{r.matNo}</span>
-                              {r.partName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{r.partName}</span>}
+                              <MatLabel mat={r.matNo} name={r.partName} />
                               {r.winLabel && <span style={{ fontSize: 11, color: '#4d9fff' }}>🕐 {r.winLabel}</span>}
                               <span style={{ flex: 1 }} />
                               <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>ผลิต {r.qty}</span>
@@ -7465,8 +7467,9 @@ function ProductSetup({ role }) {
 
                   {/* Current MAT.NO / P.NO */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
-                    {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
-                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
+                    {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                    {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.p_no}</span>}
+                    {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>MAT {item.mat_no}</span>}
                     {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -7501,8 +7504,9 @@ function ProductSetup({ role }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
                   {archived.map(rev => (
                     <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
-                      <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
-                      {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
+                      {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                      {rev.p_no && <span style={{ fontFamily: 'monospace', color: '#475569' }}>{rev.p_no}</span>}
+                      <span style={{ fontFamily: 'monospace', color: '#64748b' }}>MAT {rev.mat_no || '—'}</span>
                       <span style={{ color: '#374151' }}>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
                       <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                     </div>
@@ -7579,7 +7583,7 @@ function ProductSetup({ role }) {
             </div>
             {ecSource && (
               <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
-                ต่อจาก: <strong>{ecSource.mat_no}</strong> {ecSource.p_no && `/ ${ecSource.p_no}`}<br/>
+                ต่อจาก: <strong>{ecSource.p_no || ecSource.mat_no}</strong> {ecSource.p_no && `/ MAT ${ecSource.mat_no}`}<br/>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมจะถูก mark เป็น superseded อัตโนมัติ</span>
               </div>
             )}

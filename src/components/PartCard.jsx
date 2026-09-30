@@ -90,10 +90,17 @@ export default function PartCard({
                    ตาราง/ชิป · พอเอามาใส่คอลัมน์แคบของการ์ด (เหลือ ~150px หลังหักรูป 84) มันตัดบรรทัด
                    กลางวลีจนได้ 4 บรรทัดรุ่งริ่ง (เห็นจากจอจริงตอนทำ) — จึงอ่านทะเบียนตัวเดียวกัน
                    (`useMatIndex`/`matInfo`) แล้ววาดเองเป็น 3 ชั้น ข้อมูลยังมาจากแหล่งเดียว */}
+            {/* 🔴 ลำดับ Part No. → ชื่องาน → MAT (2026-09-30 · คำสั่ง user · UI §6.21)
+                ไม่มี Part No. ⇒ ชื่องานขึ้นเป็นตัวเด่นแทน แต่ **MAT ต้องโชว์เสมอ** (คีย์ที่ผูกข้อมูลทั้งระบบ) */}
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matTone || 'var(--text)', ...PC_NUM }}>{info.mat}</div>
-              {info.name && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, lineHeight: 1.35 }}>{info.name}</div>}
-              {info.pNo && <div title="Part No. ของลูกค้า" style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', marginTop: 1 }}>{info.pNo}</div>}
+              {info.pNo
+                ? <div title="Part No. ของลูกค้า" style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matTone || 'var(--text)', ...PC_NUM }}>{info.pNo}</div>
+                : null}
+              {info.name && (
+                <div style={{ fontSize: info.pNo ? 12 : 13, fontWeight: info.pNo ? 400 : 800,
+                  color: info.pNo ? 'var(--text2)' : (matTone || 'var(--text)'), marginTop: info.pNo ? 2 : 0, lineHeight: 1.35 }}>{info.name}</div>
+              )}
+              <div title="เลข MAT (SAP)" style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', marginTop: 1, ...PC_NUM }}>MAT {info.mat}</div>
             </div>
             {st.label && (
               <span style={{

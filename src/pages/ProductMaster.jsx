@@ -199,8 +199,9 @@ function PartsPickModal({ parts, onPick, onClose }) {
               {p.image_url
                 ? <img src={p.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
                 : <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)', flexShrink: 0 }} />}
-              <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: '#0ea5e9', flexShrink: 0 }}>{p.mat_no}</span>
-              <span style={{ fontSize: 12, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
+              {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
+              <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#0ea5e9', flexShrink: 0 }}>MAT {p.mat_no}</span>
               {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>📦 {p.qty_per_pkg}/pkg</span>}
             </div>
           ))}
@@ -1018,8 +1019,9 @@ export default function ProductMaster() {
                     <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
                     {archived.map(rev => (
                       <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
-                        <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rev.mat_no || '—'}</span>
-                        {rev.p_no && <span style={{ color: '#475569' }}>P.NO: {rev.p_no}</span>}
+                        {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                        {rev.p_no && <span style={{ fontFamily: 'monospace', color: '#475569' }}>{rev.p_no}</span>}
+                        <span style={{ fontFamily: 'monospace', color: '#64748b' }}>MAT {rev.mat_no || '—'}</span>
                         <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
                         <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                       </div>
@@ -1128,8 +1130,9 @@ export default function ProductMaster() {
                           ? <img src={v.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
                           : <div style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }} />}
                         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
-                        <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.mat_no}</span>
-                        {v.p_no && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {v.p_no}</span>}
+                        {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                        {v.p_no && <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.p_no}</span>}
+                        <span style={{ fontSize: v.p_no ? 11 : 13, fontWeight: v.p_no ? 400 : 800, fontFamily: 'monospace', color: v.p_no ? 'var(--text2)' : '#0ea5e9' }}>MAT {v.mat_no}</span>
                         {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
                         {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
                         {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
@@ -1206,7 +1209,7 @@ export default function ProductMaster() {
             </div>
             {ecSource && (
               <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
-                ต่อจาก: <strong>{ecSource.mat_no}</strong> {ecSource.p_no && `/ ${ecSource.p_no}`}<br />
+                ต่อจาก: <strong>{ecSource.p_no || ecSource.mat_no}</strong> {ecSource.p_no && `/ MAT ${ecSource.mat_no}`}<br />
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมถูก mark เป็น superseded อัตโนมัติ · MAT ใหม่ถูกลงทะเบียน Parts Master ให้เอง (สืบทอด uom/จำนวนต่อกล่อง/supplier — ต้นทุนให้บัญชีเติม)</span>
               </div>
             )}
@@ -1549,8 +1552,9 @@ export default function ProductMaster() {
                   <div style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ใหม่ — จะ INSERT</div>
                   {csvPreview.newRows.map((r, i) => (
                     <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', marginBottom: 4, fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: 6, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', flexShrink: 0 }}>{r.mat_no}</span>
-                      <span style={{ color: 'var(--text2)' }}>{r.name || r.part_name}</span>
+                      {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                      <span style={{ color: 'var(--text)', fontWeight: 700 }}>{r.name || r.part_name}</span>
+                      <span style={{ fontFamily: 'monospace', color: '#0ea5e9', flexShrink: 0 }}>MAT {r.mat_no}</span>
                     </div>
                   ))}
                 </div>
@@ -1996,7 +2000,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   };
 
   const handleDelete = async (it) => {
-    if (!window.confirm(`ลบ ${it.mat_no} · ${it.part_name} ออกจาก BOM?`)) return;
+    if (!window.confirm(`ลบ ${it.part_name || ''} · MAT ${it.mat_no} ออกจาก BOM?`)) return;
     const { error } = await supabaseDR.from('bom_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบพาร์ทแล้ว');
@@ -2015,7 +2019,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const handleDeleteDupes = async (rows) => {
     const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
     if (!ids.length) return;
-    const list = rows.map(r => `• ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''} — ${r.part_name || ''}`).join('\n');
+    const list = rows.map(r => `• ${r.part_name || ''} — MAT ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''}`).join('\n');
     if (!window.confirm(
       `ลบแถวชั้น 1 ที่นับซ้ำ ${ids.length} รายการ ออกจาก BOM ของ ${selProduct?.mat_no}?\n\n${list}\n\n` +
       `ของพวกนี้ยังอยู่ในชั้นลึก — ยอด "ต่อ 1 FG" จะไม่หาย แค่เลิกนับซ้ำ\n(ปิดใช้งานเท่านั้น ไม่ลบทิ้งถาวร)`
@@ -2121,7 +2125,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
                 {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
                 {selProduct._op && (
                   <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
@@ -2283,7 +2287,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   style={{ ...inputSt, width: 260, padding: '5px 8px', fontSize: 12, background: 'var(--bg2)' }}>
                   <option value="">— ชั้น 1 (ใต้ {selProduct?.mat_no || 'FG'}) —</option>
                   {[...new Map(items.filter(o => o.mat_no).map(o => [o.mat_no, o])).values()].map(o => (
-                    <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no} · {o.part_name || ''}</option>
+                    <option key={o.id} value={o.mat_no}>↳ ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
                   ))}
                 </select>
                 {pickerParent && (
@@ -2333,8 +2337,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                         {p.part_name}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
-                        <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</span>
-                        {p.part_no && <span> · {p.part_no}</span>}
+                        {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                        {p.part_no && <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.part_no}</span>}
+                        <span style={{ fontFamily: 'monospace', color: p.part_no ? 'var(--muted)' : '#0ea5e9', fontWeight: p.part_no ? 400 : 700 }}>{p.part_no ? ' · ' : ''}MAT {p.mat_no}</span>
                         {p.supplier && <span> · {p.supplier}</span>}
                         <span> · {p.uom}</span>
                         {p.qty_per_pkg && <span> · {p.qty_per_pkg}/pkg</span>}
@@ -2377,8 +2382,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
-            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', fontWeight: 700, marginBottom: 4 }}>{editItem.mat_no}</div>
-            <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 16 }}>{editItem.part_name}</div>
+            {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+            <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700, marginBottom: 2 }}>{editItem.part_name}</div>
+            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', marginBottom: 16 }}>MAT {editItem.mat_no}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / ชิ้นงาน *</label>
@@ -3330,7 +3336,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg2)' }}>
-                {['Mat No.', 'Part Name', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
+                {/* ลำดับคอลัมน์ Part Name → Mat No. (UI §6.21 · 2026-09-30) */}
+                {['Part Name', 'Mat No.', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
                   <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                 ))}
                 {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
@@ -3346,8 +3353,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
                   && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
                 return (
                   <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
-                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text)' }}>{row.part_name || '—'}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{row.supplier || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>

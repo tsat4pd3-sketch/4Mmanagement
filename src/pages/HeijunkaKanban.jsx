@@ -27,6 +27,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { storeBtn } from '../utils/storeUi';
+import MatLabel from '../components/MatLabel';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
@@ -269,8 +270,8 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                           return (
                             <div key={p.mat_no} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid rgba(128,128,128,0.1)', fontSize: 11 }}>
                               <div style={{ overflow: 'hidden' }}>
-                                <div style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</div>
-                                <div style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 130 }}>{p.part_name}</div>
+                                {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
+                                <MatLabel mat={p.mat_no} name={p.part_name} size={11} style={{ maxWidth: 150 }} />
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                 <div style={{ fontWeight: 800, color: p.netTotal > 0 ? '#f59e0b' : '#22c55e' }}>
@@ -2516,10 +2517,10 @@ export default function HeijunkaKanban() {
                     <tr key={r.mat_no} style={{ opacity: stockCovered ? 0.55 : 1 }}>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <PartThumb url={imgOf(r.mat_no)} alt={`${r.mat_no} ${r.part_name || ''}`} size={34} radius={6} />
+                          <PartThumb url={imgOf(r.mat_no)} alt={`${r.part_name || ''} MAT ${r.mat_no}`} size={34} radius={6} />
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: matColor(r.mat_no), fontFamily: 'monospace' }}>{r.mat_no}</div>
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name}{r.supplier ? ` · ${r.supplier}` : ''}</div>
+                            <MatLabel mat={r.mat_no} name={r.part_name} />
+                            {r.supplier && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.supplier}</div>}
                             {stockCovered && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
                           </div>
                         </div>
@@ -2627,8 +2628,8 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
             {netParts.map(p => (
               <div key={p.mat_no} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div style={{ flex: 1, overflow: 'hidden' }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#0ea5e9', fontWeight: 700 }}>{p.mat_no}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.part_name} · แจ้งส่ง {fmt(p.netTotal)} {p.uom}</div>
+                  <MatLabel mat={p.mat_no} name={p.part_name} />
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>แจ้งส่ง {fmt(p.netTotal)} {p.uom}</div>
                 </div>
                 <input type="number" min="0" step="any"
                   value={actual[p.mat_no]}

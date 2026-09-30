@@ -67,8 +67,14 @@ test('matInfo: ค่าว่าง/ช่องว่างล้วนบน�
   assert.equal(matInfo('10100379', IDX, { name: '   ' }).name, 'BRACKET RR');
 });
 
-test('matText: รูปแบบเดียวกับที่ <MatLabel> วาด', () => {
-  assert.equal(matText('10100379', IDX, {}), '10100379 · BRACKET RR · [MB3B 8C306 BC]');
-  assert.equal(matText('10100380', IDX, {}), '10100380 · REINF FR');
-  assert.equal(matText('99999999', IDX, {}), '99999999');
+/* 🔴 ลำดับ Part No. → Part Name → MAT SAP (2026-09-30 · คำสั่ง user)
+   ล็อกไว้เพราะเป็น "ลำดับที่คนหน้างานอ่าน" ไม่ใช่รสนิยม — สลับกลับเมื่อไหร่ต้องรู้ตัว */
+test('matText: Part No. → ชื่องาน → MAT (MAT มีป้ายกำกับเสมอ)', () => {
+  assert.equal(matText('10100379', IDX, {}), 'MB3B 8C306 BC · BRACKET RR · MAT 10100379');
+  // ไม่มี Part No. → ชื่อขึ้นก่อน แล้ว MAT ต่อท้าย (ห้ามหาย)
+  assert.equal(matText('10100380', IDX, {}), 'REINF FR · MAT 10100380');
+  // ไม่มีทั้งชื่อและ Part No. → เหลือ MAT อย่างเดียว **ยังต้องมีป้าย** (เลขเปล่าแยกไม่ออกจาก Part No.)
+  assert.equal(matText('99999999', IDX, {}), 'MAT 99999999');
+  // มีแต่ Part No. ไม่มีชื่อ
+  assert.equal(matText('10100381', IDX, {}), 'RB3B 16E060 BA · MAT 10100381');
 });

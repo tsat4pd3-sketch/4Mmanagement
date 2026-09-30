@@ -131,7 +131,9 @@ export function productOptions(products, { lines, strict = false, includeOps = f
   rows = rows.filter(p => includeInactive || p.is_active !== false || up(p.mat_no) === cur);
   const tagged = rows.map(p => ({
     id: p.id, label: p.mat_no, key: up(p.mat_no),
-    sub: [p.name, p.p_no, p.customer, p.line_name].filter(Boolean).join(' · '),
+    // ลำดับ Part No. → ชื่องาน (UI §6.21) · `label` ยังเป็น mat_no เพราะเป็น **ค่าที่ฟอร์มเก็บจริง**
+    // (เปลี่ยน label = ชิปที่เลือกแล้วโชว์คนละค่ากับที่บันทึก + SearchSelect จับคู่ไม่ติด)
+    sub: [p.p_no, p.name, p.customer, p.line_name].filter(Boolean).join(' · '),
     keywords: `${p.name || ''} ${p.p_no || ''} ${p.customer || ''} ${p.line_name || ''}`,
     badge: p.is_active === false ? '⏸' : (p.customer || null),
     badgeColor: p.is_active === false ? 'var(--muted)' : undefined,

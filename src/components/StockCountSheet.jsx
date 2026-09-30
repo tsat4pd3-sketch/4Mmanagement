@@ -229,8 +229,9 @@ export default function StockCountSheet({ role, scope }) {
             <div style={{ overflowX:'auto', maxHeight:'60vh', overflowY:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
                 <thead><tr>
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>MAT</th>
+                  {/* ลำดับคอลัมน์ ชื่อชิ้นงาน → MAT (UI §6.21 · 2026-09-30) */}
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>ชื่อชิ้นงาน</th>
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>MAT</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ยอดในระบบ</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>นับได้จริง</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ผลต่าง</th>
@@ -241,8 +242,8 @@ export default function StockCountSheet({ role, scope }) {
                     const typed = counts[r.mat_no] !== undefined && counts[r.mat_no] !== '';
                     return (
                       <tr key={r.mat_no}>
-                        <td style={{ ...td, fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</td>
                         <td style={{ ...td, color:'var(--text2)' }}>{r.part_name || '—'}</td>
+                        <td style={{ ...td, fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</td>
                         <td style={{ ...td, textAlign:'right' }}>{n0(r.qty_on_hand)}</td>
                         <td style={{ ...td, textAlign:'right' }}>
                           <input type="number" inputMode="numeric" min="0" style={numIn}

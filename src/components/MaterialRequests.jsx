@@ -367,7 +367,8 @@ export default function MaterialRequests() {
             {pickList.map(p => (
               <div key={p.mat_no} onClick={() => applyPart(p)}
                 style={{ padding: '7px 9px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12.5 }}>
-                <b>{p.mat_no}</b> <span style={{ color: 'var(--text2)' }}>{p.part_name}</span>
+                {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                <b>{p.part_name || p.mat_no}</b> {p.part_name && <span style={{ color: 'var(--text2)', fontFamily: 'monospace' }}>MAT {p.mat_no}</span>}
                 {p.uom && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {p.uom}</span>}
               </div>
             ))}

@@ -71,11 +71,23 @@ export function matInfo(mat, index, row) {
   return { mat: m, name, pNo, from: froms.every(f => f === froms[0]) ? froms[0] : 'mixed' };
 }
 
+/* ── 🔴 ลำดับการโชว์ = Part No. → Part Name → MAT SAP  (2026-09-30 · คำสั่ง user) ──
+ * "อยากให้เรียง part no. > part name > mat sap และเช็คทุกหน้าที่โชว์พวกนี้"
+ *
+ * ทำไมสลับ: เลข MAT เป็นรหัสภายใน (SAP) แต่เวลาคุยกับลูกค้า/ดูของจริงหน้าไลน์
+ * คนอ่าน **Part No. ของลูกค้า** ก่อนเสมอ — ของที่คนใช้ตัดสินใจต้องมาก่อน
+ *
+ * ⚠️ MAT ยังต้องโชว์เสมอ ห้ามตัดทิ้ง (เป็นคีย์ที่ใช้ค้น/ผูกข้อมูลทั้งระบบ) แค่ย้ายไปท้าย
+ *    และต้องมีป้าย `MAT` กำกับ — ไม่งั้นเลขเปล่าท้ายบรรทัดแยกไม่ออกจาก Part No.
+ *    (เดิม Part No. อยู่ในวงเล็บเหลี่ยมเป็นตัวแยก · พอสลับที่แล้ววงเล็บนำหน้าอ่านยาก)
+ */
+export const MAT_PREFIX = 'MAT ';
+
 /**
  * บรรทัดเดียวสำหรับที่ที่วาด JSX ไม่ได้ (toast · confirm · title · export Excel/PDF)
- * รูปแบบเดียวกับที่ `<MatLabel>` วาด: `10100379 · BRACKET RR · [MB3B 8C306 BC]`
+ * รูปแบบเดียวกับที่ `<MatLabel>` วาด: `MB3B 8C306 BC · BRACKET RR · MAT 10100379`
  */
 export function matText(mat, index, row) {
   const i = matInfo(mat, index, row);
-  return [i.mat, i.name, i.pNo && `[${i.pNo}]`].filter(Boolean).join(' · ');
+  return [i.pNo, i.name, i.mat && `${MAT_PREFIX}${i.mat}`].filter(Boolean).join(' · ');
 }
