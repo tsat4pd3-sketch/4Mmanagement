@@ -18,7 +18,7 @@ import PageHeader from './PageHeader';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
-import { tooltipProps, CELL_BAR_FILL } from '../utils/chartAxis';
+import { tooltipProps, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -132,6 +132,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ยังรับ `?section=PD3&group=HYDROFORM` เก่า (ลิงก์จากหน้าอื่น/บุ๊กมาร์กเดิม) — แปลงเป็น scope ให้ */
   const today = workDateNow();
   const date = sp.get('date') || today;
+  /* 🎯 โฟกัสช่วงค่า (30/09 · คำขอ user) — ยกพื้นแกน Y ขึ้นใกล้ค่าต่ำสุด ให้เห็น gap T/C · default ปิด · ติด URL ไปกับลิงก์/จอ TV */
+  const yFocus = sp.get('yfocus') === '1';
   const scopeParam = sp.get('scope') || '';
   const scope = useMemo(() => {
     if (scopeParam) return parseScopeKey(scopeParam);
@@ -613,22 +615,44 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     );
   };
   /* `kk` = สเกลของแผ่นที่กำลังวาด (ปกติ = k ของกริด · ใน popup 🔍 ขยาย = ใหญ่กว่า) ⇒ ฟอนต์แกน/ป้ายโตตามแผ่น */
-  const rowChart = (r, kk = k) => {
+  const rowChart = (r, kk = k, sheetW = cw) => {
     const fs = (n) => Math.max(11, Math.round(n * kk));
     const axisTick = { fontSize: fs(9.5), fill: 'var(--muted)' };
     const chartTip = tooltipProps(fs(11));   // สี/พื้น/cursor มาตรฐาน — utils/chartAxis.js
-    const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
+    /* 🔢 ตัวเลขบนแท่ง (UI §กราฟ "ตัวเลขบนแท่งต้องมีเสมอ" · user 30/09 "มีตัวเลข above แต่ละแท่งจะดูง่ายขึ้นมั้ย")
+       แน่นเกิน = เว้นแท่งเว้นเลข ห้ามลดฟอนต์ (แผ่นในกริดกว้าง ~300px / 13 แท่ง = ช่องละ ~20px) —
+       เดือนที่เลือก + แท่งสรุป โชว์เสมอ · 📝 ต่อท้ายตัวเลข (เดิมเป็นป้ายแยก ซ้อนกันไม่ได้) */
+    const slotW = Math.max(0, sheetW - 60) / 13;
+    const labelW = (v) => nf(v, r.dec).length * fs(9.5) * 0.62;
+    const dense = r.series.some(p => p.v != null && labelW(p.v) > slotW);
+    const data = r.series.map((p, i) => {
+      const show = p.v != null && (!dense || p.summary || p.k === monthKey || i % 2 === 0);
+      return { ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))),
+        vLabel: `${show ? nf(p.v, r.dec) : ''}${p.noteMark || ''}` };
+    });
     if (!data.some(p => p.v != null)) return <EmptyChart k={kk} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
     /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
     const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), r.target == null ? 0 : Number(r.target));
     const isPct = r.unit === '%' && peak > 25;
+    /* 🎯 โฟกัส: ทุกอย่างที่วาดต้องอยู่ในช่วง (แท่ง · T · C · แผน) — เส้นเป้าหลุดนอกกราฟเงียบๆ = จอโกหก */
+    const focus = yFocus ? focusDomain([...data.map(p => p.v), ...data.map(p => p.plan), r.target, r.commit], { max: r.unit === '%' ? 100 : null }) : null;
+    const yDomain = focus ? focus.domain : (isPct ? [0, 100] : undefined);
     return (
+      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {focus && (
+        /* 🔴 กติกาความซื่อสัตย์: แกนไม่เริ่ม 0 ต้องเขียนบนจอ — ความสูงแท่งเทียบกันไม่ได้ตรงๆ */
+        <div title="โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)"
+          style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: fs(9.5), fontWeight: 700, color: '#f59e0b',
+            background: 'var(--card)', border: '1px solid #f59e0b55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>
+          🎯 แกนเริ่ม {nf(focus.domain[0], r.dec)} ไม่ใช่ 0
+        </div>
+      )}
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: r.unit ? fs(21) : fs(12), right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
-          <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width="auto"
+          <YAxis domain={yDomain} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
             label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
           <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
@@ -640,7 +664,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {r.commit != null && r.commit !== r.target && <ReferenceLine y={r.commit} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
           {/* fill = สีตัวหนังสือใน tooltip เท่านั้น (Cell ทับสีแท่งจริง) — ไม่ใส่ = Recharts ใช้ #000 (user 30/09 "text ดำ") */}
           <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={(d) => openMonth(r, d?.payload ?? d)}>
-            <LabelList dataKey="noteMark" position="top" style={{ fontSize: fs(9.5) }} />
+            <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
                 fillOpacity={p.summary ? 0.55 : (p.k === monthKey ? 1 : 0.8)}
@@ -652,6 +676,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {r.hasPlan && <Line type="monotone" dataKey="plan" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 2, fill: '#38bdf8' }} connectNulls isAnimationActive={false} />}
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
     );
   };
   /* กดแท่งเดือน = เลือกเดือนบนบอร์ด + เปิดหมายเหตุของเดือนนั้น (แท่ง "สรุป" = ไม่มีโน้ต) */
@@ -707,6 +732,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }}>{monthText}</b>
         <button onClick={() => shiftMonth(1)} disabled={monthKey >= today.slice(0, 7)} title="เดือนถัดไป" style={navBtn}>▶</button>
       </span>
+      <span className="sep" />
+      {/* 🎯 โฟกัสช่วงค่า — ยกพื้นแกน Y ให้เห็น gap T/C (แกนไม่เริ่ม 0 ⇒ แผ่นเขียนบอกเอง) */}
+      <button onClick={() => setParam('yfocus', yFocus ? '' : '1')} style={pill(yFocus)} aria-pressed={yFocus}
+        title={yFocus ? 'กำลังโฟกัสช่วงค่า: แกน Y เริ่มใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัด · กดเพื่อกลับแกนเริ่ม 0'
+          : 'โฟกัสช่วงค่า: ตัดที่ว่างใต้กราฟ ยกพื้นแกน Y ขึ้นใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัดขึ้น (แผ่นจะเขียนบอกว่าแกนไม่เริ่ม 0)'}>
+        🎯 {yFocus ? 'โฟกัสช่วงค่า' : 'แกนเริ่ม 0'}
+      </button>
     </>
   );
 
@@ -770,7 +802,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                   </>}
                   link={r.to ? 'เจาะดู' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
                   onLink={() => (r.to ? goTo(r.to) : onTab?.('table'))}>
-                  {(kk) => rowChart(r, kk)}
+                  {(kk, w) => rowChart(r, kk, w)}
                 </Sheet>
               ))}
 
