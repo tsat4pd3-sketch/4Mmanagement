@@ -8,7 +8,7 @@ import {
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
   isStdFixed, isStdParent, checkStdSelection, matchStdItems,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
-  planProgress,
+  planProgress, valueScopeOf, sharedValueDef,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -518,4 +518,34 @@ test('planProgress: upTo กำหนดเองได้ และไม่ห
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 3 }).actual, 3);
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 99 }).months, 6, 'เกิน 12 ถูกตัดลงมา');
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 0 }), null);
+});
+
+/* ── 🏭 KPI ที่ค่าเป็นของโรงงาน (30/09 · user: %RM + Customer Satisfaction ทุกหน่วยใช้ตัวเลขเดียวกัน) ── */
+const CAT_PLANT = { id: 'c-rm', name: '%RM (Raw Material)', value_scope: 'plant' };
+const CAT_OWN = { id: 'c-x', name: 'Cost Reduction', value_scope: 'own' };
+const plantDef = { id: 'p', year: 2026, scope_kind: 'plant', scope_value: null, catalog_id: 'c-rm', kpi_catalog: CAT_PLANT, source: 'manual' };
+const pd4Def = { id: 'u', year: 2026, scope_kind: 'section', scope_value: 'PD4', catalog_id: 'c-rm', kpi_catalog: CAT_PLANT, source: 'manual' };
+const ownDef = { id: 'o', year: 2026, scope_kind: 'section', scope_value: 'PD4', catalog_id: 'c-x', kpi_catalog: CAT_OWN, source: 'manual' };
+
+test('valueScopeOf — อ่านจากทะเบียน · ไม่ตั้ง/ค่าแปลก = own', () => {
+  assert.equal(valueScopeOf(pd4Def), 'plant');
+  assert.equal(valueScopeOf(ownDef), 'own');
+  assert.equal(valueScopeOf({ kpi_catalog: { value_scope: 'weird' } }), 'own');
+  assert.equal(valueScopeOf(null), 'own');
+});
+test('sharedValueDef — นิยามหน่วยงานของ KPI แบบ plant → ชี้ไปนิยามโรงงานปีเดียวกัน · แบบ own = null', () => {
+  const defs = [ownDef, pd4Def, plantDef];
+  assert.equal(sharedValueDef(defs, pd4Def)?.id, 'p');
+  assert.equal(sharedValueDef(defs, plantDef)?.id, 'p');            // ตัวเองก็คือตัวที่ถือค่า
+  assert.equal(sharedValueDef(defs, ownDef), null);
+});
+test('sharedValueDef — ไม่มีนิยามโรงงาน = null (จอต้องบอกให้ไปสร้าง ห้ามถอยไปใช้ค่าของหน่วย) · คนละปีไม่นับ · แถว auto ไม่นับ', () => {
+  assert.equal(sharedValueDef([pd4Def], pd4Def), null);
+  assert.equal(sharedValueDef([{ ...plantDef, year: 2025 }], pd4Def), null);
+  assert.equal(sharedValueDef([{ ...plantDef, source: 'auto:x' }], pd4Def), null);
+});
+test('sharedValueDef — แถวเก่าที่ไม่มี catalog_id เทียบด้วยชื่อ · แถวเก่า scope_kind null + section null = โรงงาน', () => {
+  const legacyPlant = { id: 'lp', year: 2026, scope_kind: null, section: null, line_group: null, name: '%RM (Raw Material)', kpi_catalog: null };
+  const legacyUnit = { id: 'lu', year: 2026, scope_kind: 'section', scope_value: 'PD3', name: '%RM (Raw Material)', kpi_catalog: CAT_PLANT };
+  assert.equal(sharedValueDef([legacyPlant, legacyUnit], legacyUnit)?.id, 'lp');
 });

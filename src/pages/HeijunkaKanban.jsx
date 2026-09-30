@@ -26,6 +26,7 @@ import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
 import PartCard, { partCardGrid } from '../components/PartCard';
@@ -808,6 +809,93 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
   );
 }
 
+/* การ์ด 1 ใบของตัวสะสม demand */
+function AccCard({ a, fmt }) {
+  const pct = a.pct == null ? null : Math.min(100, a.pct);
+  const done = a.pct != null && a.pct >= 100;
+  return (
+    <div style={{ background: 'var(--bg2)', border: `1px solid ${done ? 'rgba(34,197,94,0.45)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(a.child_mat_no), fontSize: 13 }}>{a.child_mat_no}</span>
+        {/* ค้างนาน = สัญญาณว่าของไม่ไหลแล้ว ห้ามปล่อยให้ดูเหมือนแถวปกติ */}
+        {a.stale && <span title={`ไม่ขยับเกิน ${STALE_DAYS} วัน`} style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>⏳</span>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
+        <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(a.pending_qty)}</span>
+        <span style={{ fontSize: 11, color: a.lot ? 'var(--muted)' : '#f59e0b', fontWeight: a.lot ? 400 : 800 }}>
+          {a.lot ? `/ ${fmt(a.lot)} ล็อต` : 'ยังไม่ตั้ง lot'}
+        </span>
+      </div>
+      {a.lot && (
+        <>
+          <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: done ? '#22c55e' : '#7c3aed' }} />
+          </div>
+          {/* บอก % ตรงๆ — แถบอย่างเดียวเทียบข้ามการ์ดด้วยสายตาไม่ได้ */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: done ? '#22c55e' : 'var(--muted)', marginTop: 3 }}>
+            {done ? `ครบล็อตแล้ว (${Math.round(a.pct)}%)` : `${Math.round(a.pct)}% ของล็อต`}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* 3 กลุ่มของตัวสะสม demand — ยุบได้ แต่ **หัวกลุ่มบอกจำนวนเสมอ ห้ามซ่อนเงียบ** */
+function AccGroup({ title, hint, color, rows, fmt, defaultOpen, cap = 0 }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const [all, setAll] = useState(false);
+  if (!rows.length) return null;
+  /* เพดานการ์ด: โชว์ "ใกล้ครบที่สุด" ก่อน — ที่เหลือกดดูได้
+     (เดิมเทกองทั้ง 98 ใบ = แผง ② ที่ต้องลงมือจริงหลุดใต้จอ)
+     ⚠️ ปุ่มต้องบอกจำนวนที่เหลือเสมอ ห้ามตัดทิ้งเงียบ */
+  const shown = cap > 0 && !all ? rows.slice(0, cap) : rows;
+  const hidden = rows.length - shown.length;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <button onClick={() => setOpen(o => !o)} className="tbtn"
+        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '4px 0', cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color }}>{title}</span>
+        <span style={{ fontSize: 12, fontWeight: 900, color }}>{rows.length}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{hint}</span>
+      </button>
+      {open && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10, alignContent: 'start', marginTop: 8 }}>
+          {shown.map(a => <AccCard key={a.child_mat_no} a={a} fmt={fmt} />)}
+        </div>
+      )}
+      {open && hidden > 0 && (
+        <button className="tbtn" onClick={() => setAll(true)}
+          style={{ marginTop: 8, padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+          ▾ ดูอีก {hidden} รายการที่เหลือ
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AccumulatorGroups({ groups, fmt }) {
+  const { ready, waiting, noLot, staleCount } = groups;
+  return (
+    <>
+      <AccGroup defaultOpen rows={ready} fmt={fmt} color="#22c55e"
+        title="🟢 ครบล็อตแล้ว — ออกใบสั่งผลิตได้" hint="ระบบจะออกใบให้เองรอบถัดไปที่ demand เข้า" />
+      <AccGroup defaultOpen rows={waiting} fmt={fmt} color="#7c3aed" cap={12}
+        title="🟣 กำลังสะสม" hint="เรียงตาม % ของล็อต — ใกล้ครบอยู่บนสุด" />
+      {/* ยังไม่ตั้ง lot = **ไม่มีวันครบ ไม่มีวันออกใบ** — เป็นงานตั้งค่า ไม่ใช่งานรอ
+          ยุบไว้เพราะไม่ใช่งานประจำวันของสโตร์ แต่หัวกลุ่มยังบอกจำนวน + ทางแก้เสมอ */}
+      <AccGroup rows={noLot} fmt={fmt} color="#f59e0b" defaultOpen={false}
+        title="⚠️ ยังไม่ตั้งขนาดล็อต — สะสมไปก็ไม่ออกใบ" hint="ตั้ง lot ที่ /products แท็บ Kanban Std ก่อน" />
+      {staleCount > 0 && (
+        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
+          ⏳ {staleCount} รายการไม่ขยับเกิน {STALE_DAYS} วัน — demand ค้างที่ของอาจไม่ไหลแล้ว
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ─── Pull Board — ตัวสะสม demand + ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ ───────────── */
 const LOT_STATUS = {
   pending:   { label: '🆕 รอผลิต',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)', next: 'producing', nextLabel: '▶ เริ่มผลิต' },
@@ -815,6 +903,8 @@ const LOT_STATUS = {
   done:      { label: '✅ เสร็จแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
 };
 function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, onReorder, fmt, canOperate }) {
+  const accGroups = useMemo(() => groupAccumulator(accumulator, lotSizeMap), [accumulator, lotSizeMap]);
+
   const rawByLot = useMemo(() => {
     const m = {};
     rawRequests.forEach(r => { (m[r.lot_request_id] = m[r.lot_request_id] || []).push(r); });
@@ -842,31 +932,14 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
 
   return (
     <div style={{ padding: 16 }}>
-      {/* ① ตัวสะสม demand */}
+      {/* ① ตัวสะสม demand — จัดกลุ่มตาม "ต้องทำอะไรต่อ" ไม่ใช่กองรวมเรียงตามจำนวน
+          (30/09 · user: "หน้านี้พังมาก" — เดิม 98 การ์ดปูเต็มจอ ดันแผง ② ตกใต้จอ
+           และของที่ครบล็อตจริง 3 ใบกระจายอยู่กลางกำแพง หาไม่เจอ) */}
       <Section title="① 📈 ตัวสะสม Demand (รอครบล็อต)">
         {accumulator.length === 0 ? (
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี demand สะสม</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
-            {accumulator.map(a => {
-              const lot = lotSizeMap[a.child_mat_no];
-              const pct = lot ? Math.min(100, (a.pending_qty / lot) * 100) : 0;
-              return (
-                <div key={a.child_mat_no} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
-                  <div style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(a.child_mat_no), fontSize: 13 }}>{a.child_mat_no}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                    <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(a.pending_qty)}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lot ? `/ ${fmt(lot)} ล็อต` : 'ยังไม่ตั้ง lot'}</span>
-                  </div>
-                  {lot > 0 && (
-                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: pct >= 100 ? '#22c55e' : '#7c3aed' }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <AccumulatorGroups groups={accGroups} fmt={fmt} />
         )}
       </Section>
 

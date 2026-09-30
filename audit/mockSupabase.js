@@ -142,6 +142,7 @@ const NULLISH = (i) => ({
   scrap_report_id: null, defect_log_id: null, qa_decision: null, special_use_doc_no: null,
   symptom: null, wi_no: null,
 })
+
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
 const thenable = (rows = ROWS) => {
@@ -211,6 +212,23 @@ const TABLE_ROWS = {
         /scrap-report · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย** = บั๊กทั้งคลาสมองไม่เห็น
      · i=4 → OP ที่ผูกพาร์ทจริง + ลำดับขั้นครบ (เคสปกติ)
      · i=5 → OP ที่ยังไม่ผูก parent/seq (เคส worklist เหลือง + กฎ "ขั้นเดี่ยว ห้ามเดาสาย") */
+  /* 🔩 parts_master — ทะเบียน**พาร์ทลูก** (2xx/3xx ชิ้นส่วน · 5xx วัตถุดิบ) คนละตารางกับ
+     `dr_products` (2026-09-30) · ไม่มีคีย์นี้ = `from('parts_master')` ตกไปใช้ ROWS กลาง
+     ซึ่งมี `p_no` แต่ **ไม่มี `part_no`** ⇒ `useChildParts()` ได้ Part No. ว่างทุกแถว
+     ⇒ **หัวการ์ดทั้งโมดูลสโตร์ (`<PartCard>`/`<MatLabel>`) ไม่เคยมี Part No. ให้เรนเดอร์เลย**
+        = สาขา "เรียง Part No. → ชื่อ → MAT" มองไม่เห็นจาก crashsweep/mobilesweep
+     🔴 **แถว i%3===2 ต้องเป็นวัตถุดิบ 5xx ที่ part_no เป็น "คำบรรยาย" ห้ามถอด** — วัดทะเบียนจริง
+        30/09: 5xx มี part_no หน้าตาเป็นเลขพาร์ทแค่ 18% (ที่เหลือคือประโยคว่าเอาไปทำงานอะไร
+        ยาวสุด 72 ตัว มีภาษาไทยปน) ⇒ ถ้า mock มีแต่เลขพาร์ทสวยๆ สาขา `lead === 'name'`
+        + การ clamp บรรทัดรอง จะไม่เคยถูกรัน แล้วบั๊ก "พาดหัวด้วยประโยคจนเลขหลุดจอ"
+        กลับมาได้เงียบๆ (UI §6.21) · แถว NULLISH ยังต้องว่างตามกติกา = สาขา lead='mat' */
+  parts_master: (r, i) => isNullish(r)
+    ? { ...r, part_name: null, part_no: null }
+    : i % 3 === 2
+      ? { ...r, mat_no: `5002${6000 + i}`, part_name: `WSS-M1A367-A36 1.5X${270 + i}XC`,
+          part_no: `R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/0${i % 9})1 : 2 Co(1FGใช้2ชิ้น)` }
+      : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
+          part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
     const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
@@ -326,11 +344,13 @@ const TABLE_FIXED = {
      · `summary_mode` ต้องมีทั้ง `average`/`sum`/`rate` ให้ครบ — แต่ละตัวเปิดสาขาคนละเส้นใน `summaryOf()`
        (`rate` = สาขาที่ต้องถอยมาเฉลี่ยแล้วติดป้าย ≈) · `decimals: 0` = สาขาที่ `||` จะตกค่า default */
   kpi_definitions: [
-    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average' } },
-    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate' } },
+    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'plant' } },
+    /* 🏭 30/09 ห้ามถอด: KPI แบบ "ค่าโรงงาน" ที่หน่วยงาน (PD1 = ส่วนงานของ user ใน harness) ถือด้วย — เปิดสาย sharedValueDef/แถวอ่านอย่างเดียวในแท็บ ⚙️ + note บนบอร์ด */
+    { id: 'kd-7', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 96, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'plant' } },
+    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate', value_scope: 'own' } },
     { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
     /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
-    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
+    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum', value_scope: 'own' } },
     /* ⚡ KPI ช่างของแผนก JIG MTN (24/09) — ชื่อตามที่ seed จริง ⇒ สาย `autoKpiOfName` → แถว "⚡ ระบบคำนวณ" + ปุ่ม "ใช้ค่านี้" ถูกรันใน harness
        · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
