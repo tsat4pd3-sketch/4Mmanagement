@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
 import { forecastRunout, byUrgency, RUNOUT_REASON } from '../utils/wipRunout';
+import { storeBtn } from '../utils/storeUi';   // 🖐 เป้ากด 44px ของโมดูลสโตร์ (2026-09-25)
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของไลน์ปลายทาง (2026-09-08)
 
 /* ═══ 🕐 Store Time Chart — สโตร์เตรียมของส่งเข้าไลน์ (2xx/3xx/5xx) ═══════════
@@ -47,6 +48,12 @@ const fmtMin = (m) => {
 
 export default function StoreTimeChart({
   rounds, deliveries, view, storeStock, kanbanStd, lineMap, workDate, breakPolicies, nowMs,
+  /* 🎯 `focusPick` = ตัวนับที่เพิ่มขึ้นเมื่อกด "เลือกพาร์ทไปส่ง" มาจากหน้าอื่น (2026-09-25 · feedback หน้างาน)
+     *"เลือกพาร์ทไปส่ง คลิกละมาหน้านี้ ถ้าไม่ใช่เราไม่รู้ว่าต้องเลื่อนลงมาละคลิกตรงนี้"*
+     🔴 **ลิงก์ที่พาข้ามหน้าต้องพาไปถึง "จุดที่ต้องลงมือ" ไม่ใช่แค่หัวหน้าเพจ** — วัดจริง 25/09:
+        หน้านี้สูง 3,285px บนจอ 900px ⇒ แผงติ๊กพาร์ทอยู่ต่ำกว่าขอบจอ **2.5 จอ** เปิดมาแล้วไม่มีทางรู้ว่ามี
+     ใช้ "ตัวนับ" ไม่ใช่ boolean — กดปุ่มเดิมซ้ำต้องเลื่อนให้ใหม่ทุกครั้ง (boolean = ครั้งที่ 2 เงียบ) */
+  focusPick = 0,
   // ── เลือกพาร์ทไปส่ง (2026-09-07 · user: "คือสิ่งที่ต้องไปส่ง แต่กดเลือกชิ้นงานที่จะไปส่งไม่ได้") ──
   //   openRequests = ใบขอเติมที่ยังไม่จบ (กันสร้างซ้ำ — unique index ระดับ DB กันอีกชั้น)
   //   onCreateRequests(items) = สร้างใบเข้า 🔄 คิวเติม WIP · items[].line ต้องเป็น **ไลน์ย่อยที่สุด** ไม่ใช่กลุ่ม
@@ -64,6 +71,18 @@ export default function StoreTimeChart({
   const [qOpen, setQOpen]           = useState({});   // กางรายการพาร์ทของคิวส่งตามคำขอ
   const [sel, setSel]               = useState({});   // key `${group}|${mat}` → item ที่เลือกจะไปส่ง
   const [creating, setCreating]     = useState(false);
+  /* เลื่อนไปที่แผงติ๊กพาร์ทเมื่อถูกส่งมาจากปุ่มหน้าอื่น
+     ⚠️ ตัวเลื่อนของทั้งหน้าคือ <body> ไม่ใช่ <html> — `scrollIntoView` ไล่หาบรรพบุรุษที่เลื่อนได้เอง
+        จึงใช้ได้ทั้ง 2 กรณี · ห้ามใช้ท่านี้กับกล่องแท็บแนวนอน (จอกระโดด · UI §6.8 ข้อ 7) */
+  const pickRef = useRef(null);
+  const [pickGlow, setPickGlow] = useState(false);
+  useEffect(() => {
+    if (!focusPick || !pickRef.current) return;
+    pickRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPickGlow(true);
+    const t = setTimeout(() => setPickGlow(false), 2600);
+    return () => clearTimeout(t);
+  }, [focusPick]);
   /* 📥 มอง WIP ที่ไลน์ = 0 สำหรับพาร์ทที่ยังไม่ได้ตั้งยอด (user 2026-09-01)
      default = เปิด เพราะสภาพจริงคือพาร์ทส่วนใหญ่ยังไม่มีแถวสต็อกที่ไลน์
      → ปิดไว้ = สโตร์เปิดจอมาแล้วไม่เห็นความต้องการอะไรเลย (ปัญหาที่ทำให้ต้องมีโหมดนี้)
@@ -728,25 +747,30 @@ export default function StoreTimeChart({
             </div>
           </div>
 
+          {/* 🎯 จุดจอดของลิงก์ "เลือกพาร์ทไปส่ง" */}
+          <div ref={pickRef} />
           {/* แถบสร้างใบส่ง — เลือกจากรายการที่ต้องหยิบ แล้วเข้าคิว 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก ไม่แตกคิวใหม่) */}
           {canPick && (
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, padding: '8px 12px',
-              background: selItems.length ? 'rgba(34,197,94,0.10)' : 'var(--bg2)', border: `1px solid ${selItems.length ? 'rgba(34,197,94,0.4)' : 'var(--border)'}`, borderRadius: 10 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10, padding: '12px 14px',
+              background: selItems.length ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+              border: `${pickGlow ? 2 : 1}px solid ${pickGlow ? 'var(--accent)' : (selItems.length ? 'rgba(34,197,94,0.4)' : 'var(--border)')}`,
+              borderRadius: 'var(--radius-lg)', boxShadow: pickGlow ? 'var(--shadow-float)' : undefined, scrollMarginTop: 16 }}>
               <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-                {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : 'ติ๊กพาร์ทในรายการที่ต้องหยิบ แล้วกดสร้างใบส่ง'}
+                {selItems.length ? `☑ เลือกแล้ว ${selItems.length} รายการ · ${selItems.reduce((s, it) => s + it.qty, 0).toLocaleString()} ชิ้น` : '① ติ๊กพาร์ทในรายการด้านล่าง → ② กดสร้างใบส่ง'}
               </span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', flex: '1 1 200px' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)', flex: '1 1 200px' }}>
                 ใบจะเข้า 🔄 คิวเติม WIP (คิวเดียวกับที่ไลน์เรียก) → กด "เริ่มเตรียม" สแกนพาร์ท+จำนวน (ตัดสต็อกให้เลย) → ถึงไลน์สแกนจุดส่ง → ผลิตยืนยันรับ
               </span>
               {selItems.length > 0 && (
                 <button onClick={() => setSel({})} disabled={creating}
-                  style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                  style={{ minHeight: 44, padding: '10px 16px', borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
                   ล้าง
                 </button>
               )}
               <button onClick={createSelected} disabled={!selItems.length || creating}
-                style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: selItems.length ? 'var(--accent)' : 'var(--bg3)', color: selItems.length ? '#08130c' : 'var(--muted)',
-                  fontSize: 12.5, fontWeight: 800, cursor: selItems.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
+                style={{ minHeight: 44, padding: '10px 20px', borderRadius: 'var(--radius)', border: 'none',
+                  background: selItems.length ? 'var(--accent)' : 'var(--bg3)', color: selItems.length ? 'var(--accent-ink)' : 'var(--muted)',
+                  fontSize: 14, fontWeight: 800, cursor: selItems.length ? 'pointer' : 'not-allowed', fontFamily: 'var(--font-body)' }}>
                 {creating ? 'กำลังสร้าง…' : `🚚 สร้างใบส่ง (${selItems.length})`}
               </button>
             </div>
@@ -950,21 +974,21 @@ export default function StoreTimeChart({
 
                   {canOperate && need && (
                     <button onClick={() => onConfirm(r, alloc.parts)} disabled={confirming === r.id}
-                      style={{ marginTop: 9, width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)', fontFamily: 'var(--font-body)' }}>
-                      {confirming === r.id ? '...' : '✅ ยืนยันส่งออกจากสโตร์'}
+                      style={storeBtn('primary', { marginTop: 9, width: '100%' })}>
+                      {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งออกจากสโตร์'}
                     </button>
                   )}
                   {canOperate && conf && !done && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
                       <button onClick={() => onReceive(r, alloc.parts, 'full')}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.35)', fontFamily: 'var(--font-body)' }}>✔️ รับครบ</button>
+                        style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>✔️ รับครบ</button>
                       <button onClick={() => onReceive(r, alloc.parts, 'partial')}
-                        style={{ flex: 1, padding: '8px 4px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', fontFamily: 'var(--font-body)' }}>⚠️ รับไม่ครบ</button>
+                        style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>⚠️ รับไม่ครบ</button>
                     </div>
                   )}
 
                   <button onClick={() => setExpanded(isOpen ? null : r.id)}
-                    style={{ marginTop: 8, width: '100%', padding: '5px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+                    style={storeBtn('secondary', { marginTop: 8, width: '100%', fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' })}>
                     {isOpen ? '▾ ซ่อนรายการของ' : `▸ ดูของที่ต้องเตรียม (${alloc.parts.length})`}
                   </button>
                 </div>

@@ -379,6 +379,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 /* TimeRangeBar = filter-bar หลายแถว — ตัวกรองของหน้าส่งเข้าเป็น children (แถวแรก) */
 .filter-bar.trb { flex-direction: column; align-items: stretch; }
 .trb-row { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; min-width: 0; }
+/* 🔴 `max-width` จำเป็นจริง ห้ามถอด (25/09) — `min-width:0` **ไม่พอ** กับ flex column
+   `.filter-bar.trb` เป็น column + `align-items: stretch` ⇒ ขนาดของ "เส้น" = ขนาด max-content
+   ของ .trb-row ⇒ ลูกที่กว้าง (เช่น <select> ที่ตัวเลือกยาวอย่างชื่อไลน์) ดันแถวให้กว้างกว่ากรอบ
+   แล้ว stretch ก็ยืดแถวตามเส้นนั้น **ไม่ใช่ตามกรอบ** → ของล้นขอบการ์ดบนมือถือ
+   (วัดจริง 390px: กรอบ 370px · แถว 449px · select 449px) · max-width บังคับให้เส้นจบที่กรอบ
+   แล้ว `max-width:100%` ของ select จึงมีตัวตั้งที่แน่นอน = หดพอดีกรอบ */
+.trb-row { max-width: 100%; }
 .trb-row > * { min-width: 0; }
 .filter-bar > * { min-width: 0; }
 .filter-bar :is(select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),
@@ -428,6 +435,16 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   .filter-bar :is(select, input), .search-input input { font-size: 16px; }
   .filter-bar select { max-width: 100%; }
   .filter-bar { padding: 8px 10px; }
+  /* 🔴 <Segmented> บนจอแคบ — ต้องขึ้นบรรทัดใหม่ได้ ห้ามปล่อยให้ดันพ้นกรอบ (25/09)
+     `.seg` ตั้ง `flex-shrink: 0` + ปุ่มข้างใน `white-space: nowrap` ⇒ กลุ่ม 4-5 ปุ่มที่ป้ายยาว
+     (CustomerDemand 405px · DeptDashboard 396px · Improvements 374px ในกรอบ 370px)
+     **หดไม่ลงเลย** แล้วดันแถวกรองทะลุขอบการ์ดออกนอกจอ — ปุ่มท้ายๆ กดไม่ถึง
+     (`overflow: hidden` ของ .seg ทำให้ปัดดูก็ไม่ได้ด้วย = ตัวเลือกหายไปเฉยๆ)
+     บนมือถือจึงให้ wrap — เสียความสวยของแถบเดียว แต่ได้ "ตัวเลือกครบ กดได้ทุกตัว"
+     ⚠️ เดสก์ท็อปไม่แตะ (จอกว้างพอเสมอ · Material 3 segmented button ไม่ wrap) */
+  .seg { flex-wrap: wrap; height: auto; flex-shrink: 1; max-width: 100%; }
+  .seg > button { min-height: var(--ctl-h); }
+  .seg.seg-sm > button { min-height: 28px; }
 }
 
 /* ─── Overlay / Modal ────────────────────────────────────────────────────── */

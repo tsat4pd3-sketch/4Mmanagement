@@ -10,7 +10,7 @@ import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/compa
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
@@ -214,9 +214,11 @@ export default function Checkin() {
     // (ตัวเอง + ไลน์แม่ + ไลน์ลูก) ตาม pattern มาตรฐาน ห้ามกรอง line_id ตรงตัว
     // เคสจริง 2026-08-10: จัดข้อมูล PD4 ย้ายพนักงานจากไลน์แม่ (GOR/LWR BAR) ไปไลน์ลูก
     // (Assy GOR/Assy LWR) → หัวหน้ากลุ่มที่ผูกกับไลน์แม่เห็น 0 คน = "เช็คชื่อหายหมด"
-    const { data: lineData } = await supabase.from('production_lines')
-      .select(LINE_COLUMNS).order('section').order('name'); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
-    setLines(lineData || []);
+    const { data: lineData } = await loadLinesRes();   // cache กลาง (25/09)
+    // คงลำดับเดิมของหน้านี้ (section → name) — loader กลางเรียงตามชื่ออย่างเดียว
+    setLines([...(lineData || [])].sort((a, b) =>
+      String(a.section || '').localeCompare(String(b.section || ''))
+      || String(a.name || '').localeCompare(String(b.name || ''))));
 
     let empQ = onlyShopfloorStaff(supabase.from('employees').select('*').eq('is_active', true)).order('employee_id_code');
     if (role === 'leader') {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -117,8 +118,7 @@ export default function FixtureRegistry() {
     setLoading(true);
     const warn = [];
     const [ln, mc, jg, mp, pr, kd, fp, ji] = await Promise.all([
-      cachedMaster('fx_lines', () => supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, is_active').order('name')),
+      loadLinesRes(),   // 25/09: เดิม cachedMaster('fx_lines') คีย์ของตัวเอง → ใช้ cache ไลน์กลางร่วมทั้งแอป
       supabaseDR.from('machines')
         .select('id, machine_no, machine_name, line_name, equipment_kind, equipment_category, is_active, pieces_per_cycle')
         .eq('is_active', true).order('machine_no'),

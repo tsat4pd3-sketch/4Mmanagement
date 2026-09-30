@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { allOf } from '../utils/filterLabels';
@@ -558,7 +559,7 @@ async function loadAll() {
      ⚠️ ล้มเหลวต้องไม่ทำหน้าพัง → .catch คืน [] แล้วตัวจำลองใช้ค่า fallback แทน */
   const arr = (p, f) => p.then(r => (r.data || []).map(f).filter(Boolean)).catch(() => []);
   const [eLines, eMachines, eProducts, eCustomers, eDt, eDef] = await Promise.all([
-    arr(supabase.from('production_lines').select('name').limit(40), x => x.name),
+    loadProductionLines().then(ls => (ls || []).slice(0, 40).map(l => l.name).filter(Boolean)).catch(() => []),
     arr(supabaseDR.from('machines').select('machine_no').eq('is_active', true).eq('equipment_kind', 'machine').limit(60), x => x.machine_no),
     supabaseDR.from('dr_products').select('mat_no, name, line_name').limit(40).then(r => r.data || []).catch(() => []),
     arr(supabaseDR.from('customer_shipping_orders').select('customer').not('customer', 'is', null).limit(300), x => x.customer)

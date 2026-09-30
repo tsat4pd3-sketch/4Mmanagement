@@ -94,3 +94,60 @@ test('ไม่มีอะไรเข้าใบเลย = ว่าง ห�
   const R = m.buildProblemReport({ downtimes: [dt('สั้นมาก', 5)], defects: [] });
   assert.equal(R.headline, '');
 });
+
+/* ── snapshot ของใบที่ออกไปแล้ว (FM-PD1-019 เก็บ 1 ปี · 2026-09-25) ──────────
+ * 🔴 กติกาที่ห้าม regress:
+ *   1. `checked` เป็น Set — JSON.stringify ตรงๆ ได้ {} เงียบๆ ⇒ ต้องแปลง array ทั้งไปและกลับ
+ *   2. ใบเลขเดียวกันต้องพิมพ์ซ้ำได้เหมือนเดิม แม้ข้อมูลต้นทางถูกแก้ทีหลัง
+ *   3. signature ต้องเปลี่ยนเมื่อ "เนื้อที่พิมพ์ลงใบ" เปลี่ยน — และห้ามเปลี่ยนเพราะตัวนับเฉยๆ
+ */
+const roundTrip = R => m.reportFromSnapshot(JSON.parse(JSON.stringify(m.serializeReport(R))));
+
+test('snapshot ไป-กลับแล้วเนื้อใบเหมือนเดิม (Set ไม่หาย)', () => {
+  const R = m.buildProblemReport({
+    downtimes: [dt('Jig มีปัญหา', 45, { machine_no: 'SP-66' })],
+    defects: [df('GAP NG', 12)],
+  });
+  assert.ok(R.quality.checked.has('GAP NG'), 'ตั้งต้นต้องติ๊ก GAP NG');
+  const back = roundTrip(R);
+  assert.ok(back.quality.checked instanceof Set);
+  assert.ok(back.quality.checked.has('GAP NG'));
+  assert.ok(back.machine.checked.has('Jig'));
+  assert.deepEqual(back.quality.details, R.quality.details);
+  assert.equal(back.headline, R.headline);
+  assert.equal(m.reportSignature(back), m.reportSignature(R));
+});
+
+test('snapshot ว่าง/เสีย = null (ผู้เรียกต้องบอกให้ออกใบใหม่ ห้ามพิมพ์ใบเปล่า)', () => {
+  assert.equal(m.reportFromSnapshot(null), null);
+  assert.equal(m.reportFromSnapshot({}), null);
+  assert.equal(m.reportFromSnapshot('x'), null);
+});
+
+test('signature เปลี่ยนเมื่อเนื้อใบเปลี่ยน (ข้อมูลต้นทางถูกแก้หลังออกใบ)', () => {
+  const a = m.buildProblemReport({ downtimes: [dt('Jig มีปัญหา', 45)], defects: [] });
+  const b = m.buildProblemReport({ downtimes: [dt('Jig มีปัญหา', 90)], defects: [] });
+  assert.notEqual(m.reportSignature(a), m.reportSignature(b));
+});
+
+test('signature เปลี่ยนเมื่อมีการลงวิธีแก้ไขเพิ่ม (ใบที่พิมพ์ออกมาต่างกันจริง)', () => {
+  const a = m.buildProblemReport({ downtimes: [dt('Jig มีปัญหา', 45)], defects: [] });
+  const b = m.buildProblemReport({
+    downtimes: [dt('Jig มีปัญหา', 45, { fix_action: 'เปลี่ยนสปริง', fix_by: 'ช่างเอ' })], defects: [],
+  });
+  assert.notEqual(m.reportSignature(a), m.reportSignature(b));
+});
+
+test('signature ไม่เปลี่ยนเพราะรายการที่ไม่เข้าใบ (สั้นกว่าเกณฑ์ / planned)', () => {
+  const base = [dt('Jig มีปัญหา', 45)];
+  const a = m.buildProblemReport({ downtimes: base, defects: [] });
+  const b = m.buildProblemReport({
+    downtimes: [...base, dt('สั้นมาก', 5), { dr_downtime_types: { name_th: 'นับสต๊อก', category: 'planned' }, duration_min: 300 }],
+    defects: [],
+  });
+  assert.equal(m.reportSignature(a), m.reportSignature(b));
+});
+
+test('serializeReport(null) = null (กะที่ไม่มีอะไรเลย ห้ามเขียน snapshot ขยะ)', () => {
+  assert.equal(m.serializeReport(null), null);
+});

@@ -143,7 +143,8 @@ Gantt: No · (ชื่อกิจกรรม — ช่อง B–J ว่า
 
 ### 5.6 งานที่ตกผลึกจากไฟล์ชุดนี้ (สถานะ 2026-09-07: (e) ทำแล้วในรูป "กรอกมือชนะ" · (a)(b)(c)(d) **ยังไม่ทำ รอ user สั่ง**)
 - (a) `commitment_value` + กติกา G/Y/R 3 ระดับ (target / commitment) — กระทบ `obeya.js` `statusVsTarget` ผู้ใช้ทุกจอ ต้อง backward-compatible (ไม่มี commitment = band เดิม)
-- (b) แผนรายเดือน (`plan`) ต่อ KPI — โมดัลกรอก + กราฟเส้นแผน + export คอลัมน์ Plan/Actual 2 แถวตามใบ
+- (b) แผนรายเดือน (`plan`) ต่อ KPI — ✅ **25/09 ทำแล้วบางส่วน**: แถว 📅 แผน ในแท็บ ⚙️ + เส้นประแผนในมินิกราฟ + ป้าย ▲ ตามแผน/▼ ช้ากว่าแผน (`planProgress()`)
+      · **ยังไม่ทำ:** เส้นแผนบนบอร์ด `?tab=kpi` · export คอลัมน์ Plan/Actual 2 แถวตามใบ
 - (c) Open issue ตามใบ §5.3 บน `meeting_action_items` (เพิ่ม countermeasure / start_date / topic / rag) + พิมพ์ใบ
 - (d) Master Plan Gantt รายสัปดาห์ (ตารางใหม่) — แผง ENGNEER
 - (e) เพิ่มชั้น `fatal`/`disability`/`dismemberment` ใน `SAFETY_KINDS` (severity 6+) + ให้ KPI Safety เลือกได้ว่านับจากชั้นไหน (ขึ้นกับคำตอบข้อ 4 — ห้ามลดความเข้มของบอร์ดเองโดยไม่ได้สั่ง)
@@ -780,7 +781,7 @@ PPM (Progress)     = (Σ defect ทั้งปี ÷ Σ produce ทั้งป
 | 2 | **ขอบเขต** = ระดับ (ส่วนงาน/แผนก/กลุ่ม/ไลน์/cost center) + ค่า | `org_nodes` · `production_lines` · `cost_centers` | ✅ **ทำแล้ว 16/09** — `scope_kind` + `scope_value` |
 | 3 | **🔗 ลิ้ง data** = ตัวเลขมาจากไหน | `KPI_PROVIDERS` + `kpi_base_inputs` | ✅ **ทำแล้ว 16/09** — `provider` + `provider_config` |
 | 4 | **Commitment + Target** (เครื่องหมาย + ค่า + หน่วย) + **Weight** | — | ✅ **ทำแล้ว 16/09** — แยกช่องครบ (`weight` มีอยู่เดิม) |
-| 5 | **แผน 12 เดือน** (Plan รายเดือน) | — | ✅ **ทำแล้ว 16/09** — ตาราง `kpi_month_plans` |
+| 5 | **แผน 12 เดือน** (Plan รายเดือน) | — | ✅ **ทำแล้ว 16/09** — ตาราง `kpi_month_plans` · **จอกรอก + เทียบแผน 25/09** (`planProgress()`) |
 
 > ### ✅ ลงมือแล้ว 2026-09-16 — ชั้น DB + ชั้นสูตร
 > migration `20260916_kpi_scope_provider_plan.sql` (**apply แล้ว**) + `src/utils/kpiSetup.js` (pure · เทส 15 เคส)
@@ -832,6 +833,9 @@ migration `20260923_kpi_seed_h1_fy2026_main.sql` (**apply แล้ว**) · ก
 > 2. **`◐ In progress` ไม่มีในเกณฑ์ทางการ** — เด็คใช้กับ KPI สะสมที่ยังไม่ถึงสิ้นปี (100P · Sales/Head · TS Academy)
 >    ระบบมีแค่ 1 / 0.5 / 0 / ยังไม่มีข้อมูล ⇒ 100P 0.46% (เป้า ≥1%) จะขึ้น **แดง** ทั้งที่เพิ่งครึ่งปี
 >    · ทางแก้ที่ถูกคือ `kpi_month_plans` (แผนรายเดือน) แล้วตัดสินเทียบแผนสะสม **ไม่ใช่เพิ่มขั้นสีใหม่**
+>    · ✅ **25/09 ทำแล้ว** — `planProgress()` เทียบผล/แผน "ถึงเดือนนี้" ด้วยวิธีรวมของ KPI ตัวนั้น
+>      แล้วแสดงเป็นป้าย ▲ ตามแผน / ▼ ช้ากว่าแผน **แยกจากคะแนน** (คะแนน ○△✗ ยังเป็นของ `scoreDef()` เท่านั้น)
+>      ⇒ ข้อ 2 นี้ยัง "ไม่ตรงกัน" เหมือนเดิมโดยตั้งใจ — จอไม่ได้แก้เกณฑ์ แค่บอกเพิ่มว่าเดินตามแผนหรือยัง
 
 **ยังไม่ได้ลง (ไม่มีที่มารายเดือน — ห้ามยัดลงเดือนใดเดือนหนึ่ง):** ตัวเลข H1 ตัวเดียวของ
 `Raw Material` · `DL&OH` · `Customer Satisfaction` · `Safety` · `Non NC Major` · `Annual Sales/Head` · `TS Academy`

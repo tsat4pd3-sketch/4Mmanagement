@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import {
@@ -43,7 +44,7 @@ export default function Register() {
   const [teamOpts,    setTeamOpts]    = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    loadLinesRes()
       .then(({ data }) => {
         setLines(data || []);
         if (scopeSecs.length === 1) {

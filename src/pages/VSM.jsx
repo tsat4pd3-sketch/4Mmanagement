@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'r
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -111,8 +112,7 @@ export default function VSM() {
   /* ── master ─────────────────────────────────────────────────────────────── */
   useEffect(() => {
     // flow_mode/parallel_stations ใช้ในแท็บสด (computeLiveOee หัก DT 1/N + parallelCap)
-    supabase.from('production_lines').select('id, name, section, parent_line_name, std_day_shift, std_night_shift, flow_mode, parallel_stations')
-      .order('name').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     supabaseDR.from('dr_products')
       .select('id, mat_no, name, p_no, customer, line_name, cycle_time_sec, process_type, is_active, pair_mat_no')
       .not('mat_no', 'is', null).order('name').then(({ data }) => setProducts(data || []));

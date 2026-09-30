@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import useTabParam from '../utils/useTabParam';
 import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { scopedLineNames } from '../utils/sectionScope';
 import { canAccessPage, hasPermission } from '../utils/permissions';
@@ -70,7 +71,7 @@ export default function Obeya() {
   useEffect(() => {
     if (tab !== 'table' || lines.length) return;
     let alive = true;
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    loadLinesRes()
       .then(({ data }) => { if (alive) setLines(data || []); });
     return () => { alive = false; };
   }, [tab, lines.length]);

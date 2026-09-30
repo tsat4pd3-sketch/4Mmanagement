@@ -73,3 +73,8 @@
 
 ### OJT (ใบแจ้งการอบรมสอนงาน FM-HRM-004 · paperless)
 > 📄 โครงตาราง `ojt_trainings` · `ojt_training_attendees` + กฎของโมดูล → `docs/modules/ojt-training.md`
+
+### ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง + ทะเบียน WI ซ่อม (DR · 2026-09-25)
+> 📄 `prod_problem_reports` (ใบ FM-PD1-019 ที่ออกไปแล้ว + `snapshot` เนื้อใบ) ·
+> `quality_bin_records` (+`qa_decision`/`special_use_doc_no`) · `repair_wi_registry` (QRs ↔ WI ซ่อม)
+> พร้อมกฎว่าทำไมไม่มีคอลัมน์ `tag_date`/`closed_at` → `docs/modules/production-problem-report-bins.md`

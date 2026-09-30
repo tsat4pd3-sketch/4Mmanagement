@@ -3,6 +3,32 @@
 > ย้ายมาจาก `CLAUDE.md` (2026-09-03 — แยกไฟล์เพื่อลด context) · โหลด**เฉพาะเมื่อแตะโมดูลนี้** · แก้ไฟล์นี้แทน CLAUDE.md เมื่อกฎของโมดูลเปลี่ยน
 
 
+### 🔴🔴 `verify_jwt` ของฟังก์ชันที่ **cron เรียก** ต้องเป็น `false` เสมอ (2026-09-25 · เคยพังจริง)
+
+**เกิดจริง:** deploy `mtn-daily-summary` เมื่อ 24/09 แล้วติด `verify_jwt: true` ไป
+⇒ สรุปงานซ่อมเช้า **25/09 หายทั้งฉบับ** (Telegram ไม่เข้า · กระดิ่ง 0 ใบ)
+
+**ทำไมถึงหาไม่เจอง่ายๆ — มันเงียบสนิท 2 ชั้น:**
+1. `pg_cron` เรียกผ่าน `net.http_post` **ไม่มี header `Authorization`** (ดู `cron.job` ทุกตัวในโปรเจคนี้)
+   ⇒ เปิด `verify_jwt` = โดน **401 ตั้งแต่หน้าประตู ตัวฟังก์ชันไม่เคยรันเลย**
+2. 🔴 **`cron.job_run_details` ยังขึ้น `succeeded`** — มันวัดแค่ว่า "คิว http_post สำเร็จ" ไม่ใช่ผลลัพธ์ HTTP
+   ⇒ ดูหน้า cron แล้วเขียวหมด ทั้งที่งานไม่ได้ทำ
+
+**วิธีตรวจว่า cron job ทำงานจริงไหม (ห้ามดูแค่ job_run_details):**
+```sql
+-- ผลลัพธ์ HTTP จริง (net._http_response เก็บย้อนหลังสั้นมาก ~15 นาที)
+select status_code, left(content,300), created from net._http_response order by created desc limit 20;
+```
+หรือดูจาก log (ย้อนได้ 24 ชม.) — `source='function_edge_logs'` หา `POST | 401 | .../<slug>`
+· **ตัวชี้วัดที่ดีที่สุด = ผลลัพธ์ปลายทาง** (มีแถวใน `notifications` ของ event นั้นวันนี้ไหม)
+
+**กฎ:** ฟังก์ชันที่ถูกเรียกโดย cron/trigger/ระบบภายใน → `verify_jwt: false`
+(ในโปรเจคนี้: `send-notification` · `daily-4m-summary` · `qa-fme-scan` · `send-push` · `send-event-notification`
+ · `mtn-daily-summary` · `cleanup-orphan-photos` ฯลฯ ล้วน false)
+เปิด `true` เฉพาะฟังก์ชันที่ **คนกดจากหน้าเว็บ** และต้องเช็คสิทธิ์ (`create-user`/`delete-user`/`reset-user-password`)
+⚠️ เครื่องมือ deploy บางตัว **ตั้ง `verify_jwt: true` เป็นค่าเริ่มต้น** — ทุกครั้งที่ deploy ต้องส่งค่าให้ตรงของเดิม
+   แล้ว**เช็คกลับจาก `list_edge_functions`** ว่าได้ค่าที่ตั้งใจจริง
+
 ### 🏷️ ป้ายราคาในหน้าตั้งค่าแจ้งเตือน + `notifications.event_key` (2026-09-17)
 
 **คำสั่ง user:** *"ป้ายราคาโชว์ตอนเลือกติ๊กคอนฟิค จะได้รู้"* · *"ตอนนี้มันเลือกแค่ role แต่ไม่เลือก

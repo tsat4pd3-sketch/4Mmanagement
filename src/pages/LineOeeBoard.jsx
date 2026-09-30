@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -62,10 +63,9 @@ export default function LineOeeBoard() {
   /* ── ไลน์ + scope (pattern มาตรฐาน: leader = family ตัวเอง · อื่นตาม sections) ── */
   useEffect(() => {
     (async () => {
-      // tolerant: flow_mode/parallel_stations อาจยังไม่ apply ในบาง env → ถอย select ชุดพื้นฐาน
-      let { data: d, error } = await supabase.from('production_lines')
-        .select('id, name, section, parent_line_name, is_active, flow_mode, parallel_stations').order('name');
-      if (error) ({ data: d } = await supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'));
+      // 25/09: เดิม select เอง + ถอยชุดคอลัมน์เมื่อ flow_mode ยังไม่ apply — ย้ายมา cache กลางแล้ว
+      // (ชุดคอลัมน์/การถอยเป็นหน้าที่ของ useProductionLines.js ที่เดียว)
+      const { data: d } = await loadLinesRes();
       setLines(d || []);
     })();
   }, []);

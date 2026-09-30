@@ -26,7 +26,7 @@ import LineSelect from '../components/LineSelect';
 import InstrumentSelect from '../components/InstrumentSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { specLabel } from '../utils/qaSpec';
 import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite } from '../utils/dbWrite';
@@ -194,7 +194,7 @@ export default function QAInspectionSetup() {
   useEffect(() => {
     // เก็บเป็น object (id/name/parent_line_name) — dropdown จัดชั้นตามผัง (§5.3 ข้อ 8)
     // LINE_COLUMNS ครบ (section/is_active) ให้ <LineSelect> กรองปลดระวาง/จัดลำดับชั้นได้ (2026-09-07)
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 

@@ -20,6 +20,7 @@ import { buildQrPayload, QR_KINDS } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -60,7 +61,7 @@ export default function QrLabels() {
 
   /* ── ไลน์ที่ user มีสิทธิ์เห็น (pattern มาตรฐาน: leader → family, อื่น → sections) ── */
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name').order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 

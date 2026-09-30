@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -141,7 +142,7 @@ export default function NPI() {
       supabase.from('npi_projects').select('*').order('created_at', { ascending: false }),
       supabase.from('pe_doc_sets').select('id, part_no, part_name, model, customer, line_name, mat_no').order('part_no'),
       supabase.from('qa_parts').select('id, part_no, part_name').eq('is_active', true).order('part_no'),
-      supabase.from('production_lines').select('id, name, section, parent_line_name, is_active').order('name'),
+      loadLinesRes(),
       supabase.rpc('list_mention_users'),
       supabase.from('npi_tooling_step_templates').select('*').eq('is_active', true).order('tool_kind').order('seq'),
       supabaseDR.from('die_sets').select('set_code, part_no, model').eq('is_active', true).order('set_code'),

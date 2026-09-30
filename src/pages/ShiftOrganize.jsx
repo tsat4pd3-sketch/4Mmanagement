@@ -7,7 +7,7 @@ import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { roleLabel } from '../utils/roleMeta';
 import { toast } from '../components/Toast';
 
@@ -96,11 +96,12 @@ export default function ShiftOrganize() {
 
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
-      supabase.from('production_lines').select(LINE_COLUMNS).order('id'), // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+      loadLinesRes(),   // cache กลาง (25/09) · loader เรียงตามชื่อ → เรียงตาม id เองด้านล่าง
       supabase.from('org_nodes').select('id, code, name, kind, parent_id')
         .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
-    setLines(lineData || []);
+    // คงลำดับเดิมของหน้านี้ (ตาม id) — loader กลางเรียงตามชื่อ
+    setLines([...(lineData || [])].sort((a, b) => Number(a.id) - Number(b.id)));
     const secs = (orgData || []).filter(n => n.kind === 'section');
     setSectionNodes(secs);
     setDeptNodes((orgData || []).filter(n => n.kind === 'department'));
@@ -115,7 +116,7 @@ export default function ShiftOrganize() {
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
     if (role === 'leader' && userLineId) {
-      const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+      const { data: ls } = await loadLinesRes();
       const fam = getLineFamilyIds(ls || [], Number(userLineId));
       q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
     }

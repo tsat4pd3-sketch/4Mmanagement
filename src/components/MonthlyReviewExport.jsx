@@ -14,6 +14,7 @@
 */
 import { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
 import { toast } from './Toast';
@@ -77,7 +78,7 @@ export default function MonthlyReviewExport({ onClose }) {
       // section จากผังองค์กร (กฎ: section picker ยึด org_nodes) + fallback production_lines
       const [nodeRes, lineRes] = await Promise.all([
         supabase.from('org_nodes').select('code, kind, sort_order').eq('kind', 'section').order('sort_order'),
-        supabase.from('production_lines').select('name, section, parent_line_name'),
+        loadLinesRes(),
       ]);
       if (!alive) return;
       const { data: nodes } = nodeRes, { data: lines } = lineRes;

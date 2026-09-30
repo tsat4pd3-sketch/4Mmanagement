@@ -24,7 +24,7 @@ import { toast } from '../components/Toast';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes } from '../utils/useProductionLines';
 import usePeople from '../utils/usePeople';
 import { inSectionScope } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
@@ -90,8 +90,7 @@ export default function BbsCheck() {
   /* ── ไลน์ (scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections) ── */
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select(LINE_COLUMNS).order('name');   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+      const { data } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
       setLines(data || []);
     })();
   }, []);

@@ -51,6 +51,7 @@
 | ประวัติผลิต by Product — `/product-history` (2026-07-24) | `docs/modules/product-history.md` | 17 KB |
 | สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30) | `docs/modules/order-trace.md` | 40 KB |
 | 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user) | `docs/modules/feedback-inbox.md` | 31 KB |
+| 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user) | `docs/modules/my-queue.md` | 11 KB |
 | 🗄️ โครงสร้างฐานข้อมูล (Data Map) — `/schema` (2026-09-22 · ทีมงานขอ: แจ้งบัคให้ตรงตาราง) | `docs/modules/schema-map.md` | 23 KB |
 | Edge Functions | `docs/modules/edge-functions.md` | 66 KB |
 | Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09) | `docs/modules/storage-images.md` | 65 KB |

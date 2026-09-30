@@ -48,6 +48,7 @@
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadProductionLines } from '../utils/useProductionLines';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -220,9 +221,11 @@ function dtOfSessions(ss, dtIdx) {
 async function loadOeeTargets({ allLineNames }) {
   const out = { lineGroup: {}, byGroup: {}, failed: false, warns: [] };
   try {
-    const { data, error } = await supabase.from('production_lines').select('name, parent_line_name');
-    if (error) throw error;
-    (data || []).forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
+    // ⚠️ ใช้ loadProductionLines() ตรงๆ ไม่ใช่ loadLinesRes() — จุดนี้ต้อง "รู้ว่าโหลดพัง"
+    //    เพื่อขึ้นคำเตือนในสไลด์ (loadLinesRes คืน error:null เสมอ · undefined = พัง, [] = ไม่มีไลน์)
+    const data = await loadProductionLines();
+    if (!data) throw new Error('โหลดทะเบียนไลน์ไม่สำเร็จ');
+    data.forEach(l => { out.lineGroup[l.name] = l.parent_line_name || l.name; });
   } catch (e) { out.warns.push('อ่านผังไลน์แม่-ลูกไม่ได้ — เส้นเป้าใช้ค่ามาตรฐาน'); }
   try {
     const groups = [...new Set(allLineNames.map(ln => out.lineGroup[ln] || ln))];
@@ -474,12 +477,14 @@ async function buildLeanCost({ sections, sessions, downtimes, defects, orders, m
     const ctSecFn = (sid) => { const c = ctBySess[sid]; return c && c.qty > 0 ? c.std / c.qty : 0; };
 
     // cost center ของไลน์ (Main) + activity rate ณ เดือนรายงาน
-    const [lineRes, rateRes] = await Promise.all([
-      supabase.from('production_lines').select('name, parent_line_name, cost_center'),
+    // ⚠️ loadProductionLines() ตรงๆ — จุดนี้ต้อง "รู้ว่าโหลดพัง" (undefined) ไม่ใช่เงียบแล้วได้ []
+    //    ไม่งั้นค่าใช้จ่ายทั้งสไลด์กลายเป็น "ไม่มี cost center" โดยไม่มีใครรู้ว่าอ่านทะเบียนไม่ติด
+    const [lineRows, rateRes] = await Promise.all([
+      loadProductionLines(),
       supabase.from('cost_center_rates').select('cost_center, effective_from, dl_rate, dp_rate, idp_rate, oh_rate'),
     ]);
-    if (lineRes.error || rateRes.error) throw (lineRes.error || rateRes.error);
-    const lines = lineRes.data || [], rates = rateRes.data || [];
+    if (!lineRows || rateRes.error) throw (rateRes.error || new Error('โหลดทะเบียนไลน์ไม่สำเร็จ'));
+    const lines = lineRows, rates = rateRes.data || [];
     const refDate = monthEndOf(monthKey);
     const perHrOf = (ln) => {
       const cc = lineCostCenter(lines, ln);

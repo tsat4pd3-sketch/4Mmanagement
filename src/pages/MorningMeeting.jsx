@@ -10,11 +10,12 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -141,9 +142,7 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from('production_lines')
-        .select(`${LINE_COLUMNS}, std_day_shift, std_night_shift`) // 2026-09-07 ครบคอลัมน์ให้ <LineSelect> (is_active)
-        .order('name');
+      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
@@ -216,12 +215,8 @@ export default function MorningMeeting() {
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
-        const mats = [...new Set((po || []).map(o => o.mat_no).filter(Boolean))];
-        if (mats.length) {
-          const { data: prods } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', mats).not('pair_mat_no', 'is', null);
-          const pm = {}; (prods || []).forEach(p => { if (p.mat_no && p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no; });
-          setPairMat(pm);
-        } else setPairMat({});
+        // คู่ RH/LH มาจาก cache ทะเบียนสินค้ากลาง (25/09) — แหล่งเดียวกับทุกจอ ห้ามยิงเอง
+        setPairMat(await loadPairMap() || {});
       } else {
         setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }

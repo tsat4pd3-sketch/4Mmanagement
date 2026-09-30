@@ -10,7 +10,7 @@ import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -47,7 +47,7 @@ export default function PokaYokeCheck() {
   useEffect(() => { setChecker(fullName || ''); }, [fullName]);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
+    loadLinesRes() // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       .then(({ data }) => setLines(data || []));
   }, []);
 

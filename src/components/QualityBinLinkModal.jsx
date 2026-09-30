@@ -12,10 +12,23 @@
  * ⚠️ ไม่สร้างใบให้อัตโนมัติตอนบันทึกงานเสีย — "เอาของลงถัง" เป็นการกระทำจริงหน้างาน
  *    ต้องมีคนกดยืนยันเสมอ (หลักเดียวกับ AI intake / PE change request)
  * ⚠️ ลงซ้ำได้ (บางทีทยอยลงถัง) แต่ต้องเตือนว่าเคยลงไปแล้วกี่ชิ้น ห้ามเงียบ
+ *
+ * 🔴 2026-09-25 (feedback Sup Assy2 — "ลงข้อมูลซ้ำซ้อน" + "หาที่ดูไม่เจอ"):
+ *    เดิมโมดัลนี้ลงได้แค่ จำนวน+สาเหตุ แล้วขึ้นข้อความว่า "ไปกรอก QA/ผู้กำจัดทำลาย ต่อที่หน้า QA/QC"
+ *    ⇒ คนหน้างานต้องเปิดอีกหน้า หาใบของตัวเองในตาราง แล้วกรอกต่อ — ซึ่งไม่มีใครทำ
+ *      (วัดจริง 25/09: ถังแดง 24 แถว มี disposed_by แค่ 0 แถว)
+ *    ⇒ ย้ายช่องที่ "รู้ตั้งแต่ตอนลงถัง" มาไว้ที่นี่ให้จบในจอเดียว + ปุ่มลิงก์ไปดูใบที่สร้าง
+ *    ⚠️ ช่องที่ยังไม่รู้ตอนลงถังจริงๆ (ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ · ผลพิจารณา QA)
+ *       **ไม่ยกมา** — บังคับกรอกสิ่งที่ยังไม่เกิด = ได้ข้อมูลมั่ว แย่กว่าช่องว่าง
  */
 import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
+import PersonSelect from './PersonSelect';
+import useColumnHistory from '../utils/useColumnHistory';
+import { positionLabel } from '../utils/positions';
+import { TAG_MAX_DAYS } from '../utils/qualityBin';
 
 const num = v => (v === '' || v == null ? 0 : (Number(v) || 0));
 
@@ -30,6 +43,17 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   const matNo = defect?.prod_orders?.mat_no || '';
   const [partNo, setPartNo] = useState('');
   const [saving, setSaving] = useState(false);
+  const [created, setCreated] = useState(null);   // สรุปใบที่เพิ่งสร้าง — ไม่ปิดเงียบ ต้องบอกว่าไปดูที่ไหน
+
+  /* ช่องคนที่ "รู้ตั้งแต่ตอนลงถัง" — ยกมาไว้ที่นี่ให้จบในจอเดียว (ไม่ต้องไปกรอกต่ออีกหน้า)
+     📜 history = ค่าที่เคยบันทึกในตารางเดียวกัน — คนที่ยังไม่อยู่ในทะเบียนยังเลือกซ้ำได้ (กฎ picker กลาง) */
+  const [reportedBy, setReportedBy] = useState(defect?.reported_by_name || actorName || '');
+  const [qaBy, setQaBy] = useState('');
+  const [disposedBy, setDisposedBy] = useState('');
+  const [disposedPos, setDisposedPos] = useState('');
+  const reportedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'reported_by');
+  const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by');
+  const disposedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
 
   const defectName = defect?.dr_defect_types?.name_th || 'ของเสีย';
   const causeDefault = [defectName, defect?.description].filter(Boolean).join(' — ');
@@ -70,7 +94,13 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
       part_no: partNo || null,
       qty: num(rows[b.key].qty),
       cause: rows[b.key].cause.trim() || null,
-      reported_by: defect?.reported_by_name || actorName || null,
+      reported_by: reportedBy.trim() || null,
+      qa_by: qaBy.trim() || null,
+      // ผู้กำจัดทำลาย = ของถังแดงเท่านั้น (ถังเหลืองยังไม่ตัดสินว่าจะทำลาย — WI §5.4 QA เป็นคนชี้)
+      ...(b.key === 'red' ? {
+        disposed_by: disposedBy.trim() || null,
+        disposed_position: disposedPos.trim() || null,
+      } : {}),
       defect_log_id: defect.id,
     }));
     const { data, error } = await supabaseDR.from('quality_bin_records').insert(payload).select('id');
@@ -84,9 +114,10 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
       return;
     }
     if (!data?.length) { toast.error('บันทึกไม่สำเร็จ — ไม่มีรายการถูกสร้าง'); return; }
-    toast.success(`ลงถังแล้ว ${data.length} รายการ — ไปกรอก QA/ผลซ่อม ต่อที่หน้า QA/QC → ถังเหลือง/ถังแดง`);
+    toast.success(`ลงถังแล้ว ${data.length} รายการ`);
     onSaved?.();
-    onClose?.();
+    // ไม่ปิดทันที — บอกว่าสร้างใบอะไรไว้ และกดไปดู/กรอกต่อได้ที่ไหน (เดิมปิดเงียบ คนเลยหาใบไม่เจอ)
+    setCreated(picked.map(b => ({ key: b.key, icon: b.icon, name: b.name, qty: num(rows[b.key].qty) })));
   };
 
   const inp = { width: '100%', padding: '6px 9px', borderRadius: 6, fontSize: 13,
@@ -110,7 +141,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           {' · '}{session?.line_name} · {session?.work_date}
         </div>
 
-        {BINS.map(b => {
+        {!created && BINS.map(b => {
           const src = num(defect?.[b.from]);
           const had = num(existing?.[b.key]);
           const r = rows[b.key];
@@ -151,7 +182,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           );
         })}
 
-        {repaired > 0 && (
+        {!created && repaired > 0 && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
             ℹ️ รายการนี้ลง “ซ่อม {repaired.toLocaleString('th-TH')} ชิ้น” ไว้ด้วย —
             ถ้าของกลุ่มนั้นผ่านถังเหลืองมาแล้ว ให้ไปกรอกผลซ่อม (OK/NG) ที่ใบถังเหลืองใบเดิม
@@ -159,21 +190,80 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           </div>
         )}
 
-        <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
-          ผู้แจ้ง = <b>{defect?.reported_by_name || actorName || '—'}</b> ·
-          ช่อง QA / ผลการซ่อม / ผู้กำจัดทำลาย กรอกต่อที่หน้า <b>QA/QC → ถังเหลือง/ถังแดง</b>
-        </div>
+        {/* ── คนที่เกี่ยวข้อง — กรอกจบที่นี่ ไม่ต้องไปเปิดอีกหน้า ──
+            เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน positions ให้เอง (แก้เองได้)
+            ผู้กำจัดทำลายโผล่เฉพาะเมื่อติ๊กถังแดง — ถังเหลืองยังไม่ตัดสินว่าจะทำลาย (WI §5.4 QA เป็นคนชี้) */}
+        {!created && (
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignContent: 'start' }}>
+              <div>
+                <label style={lbl}>ผู้แจ้ง</label>
+                <PersonSelect value={reportedBy} source="both" history={reportedHist} inputStyle={inp}
+                  onChange={({ name }) => setReportedBy(name)} />
+              </div>
+              <div>
+                <label style={lbl}>ผู้ตรวจสอบ (QA)</label>
+                <PersonSelect value={qaBy} source="both" roles={['qa']} history={qaByHist} inputStyle={inp}
+                  placeholder="ยังไม่รู้ = เว้นว่าง" onChange={({ name }) => setQaBy(name)} />
+              </div>
+              {picked.some(b => b.key === 'red') && (<>
+                <div>
+                  <label style={lbl}>ผู้กำจัดทำลาย</label>
+                  <PersonSelect value={disposedBy} source="both" history={disposedHist} inputStyle={inp}
+                    placeholder="ระดับหัวหน้ากลุ่มขึ้นไป"
+                    onChange={({ name, position, opt }) => {
+                      setDisposedBy(name);
+                      if (opt && position) setDisposedPos(positionLabel(position) || position);
+                    }} />
+                </div>
+                <div>
+                  <label style={lbl}>ตำแหน่ง</label>
+                  <input value={disposedPos} onChange={e => setDisposedPos(e.target.value)}
+                    placeholder="เติมให้อัตโนมัติเมื่อเลือกจากทะเบียน" style={inp} />
+                </div>
+              </>)}
+            </div>
+            {/* ⏱️ อายุแท็กตาม WI-PD3-087 §5.6 — บอกตั้งแต่ตอนลงถัง ว่ามีเวลาเท่าไหร่ก่อนของค้าง */}
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
+              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} วัน</b> · 🔴 แดง <b>{TAG_MAX_DAYS.red} วัน</b> นับจากวันที่ลงถัง —
+              เกินแล้วจะขึ้นเตือนที่หน้า QA/QC → ถังเหลือง/ถังแดง
+            </div>
+          </div>
+        )}
+
+        {/* ✅ สร้างใบแล้ว — บอกว่าไปดู/กรอกต่อที่ไหน แทนการปิดหน้าต่างเงียบ (เดิมคนหาใบของตัวเองไม่เจอ) */}
+        {created && (
+          <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
+            borderRadius: 10, padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
+            <b style={{ color: '#22c55e', fontSize: 13.5 }}>✅ ลงถังเรียบร้อย</b>
+            {created.map(c => (
+              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} ชิ้น</div>
+            ))}
+            <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 11.5 }}>
+              ช่องที่ยังไม่รู้ตอนนี้ (ผลพิจารณา QA · ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ)
+              กรอกทีหลังได้ที่หน้าถังเหลือง/ถังแดง
+            </div>
+            <Link to="/qa?tab=bins" onClick={onClose}
+              style={{ display: 'inline-block', marginTop: 10, padding: '7px 14px', borderRadius: 8,
+                background: '#22c55e', color: '#06230f', fontWeight: 800, fontSize: 12.5, textDecoration: 'none' }}>
+              🗑️ ไปดูใบในถัง →
+            </Link>
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)',
-            background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving || !picked.length} style={{
-            padding: '8px 20px', borderRadius: 8, border: 'none',
-            background: picked.length ? '#e05252' : 'var(--border2)', color: '#fff',
-            fontSize: 13, fontWeight: 700, cursor: saving || !picked.length ? 'default' : 'pointer',
-            opacity: saving ? 0.6 : 1 }}>
-            {saving ? 'กำลังบันทึก…' : `ลงถัง (${picked.length})`}
-          </button>
+            background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
+            {created ? 'ปิด' : 'ยกเลิก'}</button>
+          {!created && (
+            <button onClick={save} disabled={saving || !picked.length} style={{
+              padding: '8px 20px', borderRadius: 8, border: 'none',
+              background: picked.length ? '#e05252' : 'var(--border2)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: saving || !picked.length ? 'default' : 'pointer',
+              opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'กำลังบันทึก…' : `ลงถัง (${picked.length})`}
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { wavg } from '../utils/oee';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
+import { loadPairMap } from '../utils/useProducts';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 import { scopedLineNames } from '../utils/sectionScope';
@@ -174,7 +176,7 @@ async function loadProduction(ctx) {
     fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
-    supabaseDR.from('dr_products').select('mat_no, pair_mat_no'),
+    loadPairMap().then(data => ({ data })),   // cache ทะเบียนสินค้ากลาง (25/09)
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
@@ -182,7 +184,7 @@ async function loadProduction(ctx) {
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
-  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, prods: prods || [], dt7: dt7Res.rows,
+  return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
       || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
@@ -194,7 +196,8 @@ function ProductionView({ d, ctx }) {
      🔴 hook ต้องอยู่บนสุดก่อน early return ทุกกรณี (กฎ react-hooks/rules-of-hooks ในด่าน build) */
   const dtIdx = useMemo(() => buildDtIndex(d.dt7), [d.dt7]);
   const { workDate, prevDate, lines, navigate, isMobile } = ctx;
-  const pairOf = useMemo(() => { const m = {}; d.prods.forEach(p => { if (p.pair_mat_no) m[p.mat_no] = p.pair_mat_no; }); return (x) => m[x] || null; }, [d.prods]);
+  /* d.pairs = map { mat: คู่ } จาก cache กลาง · **null = ยังไม่รู้ ⇒ ไม่ยุบงานคู่** ห้ามแทนด้วย {} */
+  const pairOf = useMemo(() => (x) => d.pairs?.[x] || null, [d.pairs]);
 
   const per = useMemo(() => {
     const bySess = {}; d.orders.forEach(o => (bySess[o.session_id] ||= []).push(o));
@@ -836,7 +839,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   }, [rawView, dept, sp, navigate]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
   }, []);
 

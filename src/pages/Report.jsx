@@ -29,7 +29,7 @@ import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
-import { LINE_COLUMNS } from '../utils/useProductionLines';
+import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
@@ -240,7 +240,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const [calReady, setCalReady] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalReady(true));
   }, []);
 
@@ -637,7 +637,7 @@ function DailyTab() {
       (data || []).forEach(w => { m[String(w.id)] = w.station_name; });
       setStationMap(m);
     });
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -833,7 +833,7 @@ function PerEmployeeTab() {
     (async () => {
       let empQ = onlyShopfloorStaff(supabase.from('employees').select('id, name, employee_id_code, section, department, team').eq('is_active', true));
       if (role === 'leader' && userLineId) {
-        const { data: ls } = await supabase.from('production_lines').select('id, name, parent_line_name');
+        const { data: ls } = await loadLinesRes();
         const fam = getLineFamilyIds(ls || [], Number(userLineId));
         empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
       } else if (scopeSecs.length) {
@@ -1007,7 +1007,7 @@ function StationLogTab() {
     supabase.from('workstations').select('id, station_name, line_name').order('line_name').order('station_name').then(({ data }) => {
       setStations(data || []);
     });
-    supabase.from('production_lines').select('id, name, section').then(({ data }) => setLines(data || []));
+    loadLinesRes().then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);
 
@@ -1240,7 +1240,7 @@ function RangeTab() {
   const [rangeTeam, setRangeTeam] = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
   }, []);
 
   useEffect(() => { load(); }, [from, to]);
@@ -1465,7 +1465,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   }, [role, scopeSecs, userLineId, lines]);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     loadCompanyCalendar();
   }, []);
 
@@ -2346,7 +2346,7 @@ function SkillMatrixTab() {
   const reqIdRef = useRef(0);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name').then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes().then(({ data }) => setLines(data || [])); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
     supabase.from('skill_sub_items').select('skill_name, seq, label, wi_ref').order('seq')
       .then(({ data }) => {
         const map = {};
@@ -2882,7 +2882,7 @@ function MultiSkillFormTab() {
   }, [role, ctxFullName, ctxSigUrl]);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('*').order('sort_order')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3355,7 +3355,9 @@ function SkillAllowanceTab() {
   const [signerHRM,      setSignerHRM]     = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select(`${LINE_COLUMNS}, cost_center, head_name`).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    // 🔸 จุดเดียวที่ยังยิงเอง — ต้องการ `head_name` ซึ่ง**ไม่ได้อยู่ใน LINE_COLUMNS** (ไม่มี dropdown ไหนใช้)
+    //    ถ้าวันหลังมีหน้าที่ 2 ต้องการ head_name → เติมเข้า LINE_COLUMNS + bump คีย์ แล้วสลับมาใช้ loadLinesRes()
+    supabase.from('production_lines').select(`${LINE_COLUMNS}, head_name`).order('name')
       .then(({ data }) => setLines(data || []));
     supabase.from('skill_definitions').select('category, allowance_type').eq('category', 'allowance_skill')
       .then(({ data }) => setSkillDefs(data || []));
@@ -3866,7 +3868,7 @@ function AttendanceFormTab() {
   const [calLoaded, setCalLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from('production_lines').select(LINE_COLUMNS).order('name') // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
+    loadLinesRes() // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       .then(({ data }) => setLines(data || []));
     loadCompanyCalendar().then(() => setCalLoaded(true));
   }, []);

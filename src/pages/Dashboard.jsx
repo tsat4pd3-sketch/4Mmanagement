@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
@@ -26,6 +27,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs } from '../utils/heijunkaQueue';
 import { liveChannel } from '../utils/liveChannel';
 import { ALL } from '../utils/filterLabels';
+import { openOnly } from '../utils/shipStatus';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -319,9 +321,9 @@ export default function Dashboard() {
       const nd = new Date(`${boardDate}T12:00:00`);
       nd.setDate(nd.getDate() + 1);
       const nextDay = `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}-${String(nd.getDate()).padStart(2, '0')}`;
-      const { data: shipOrders } = await supabaseDR.from('customer_shipping_orders')
+      const { data: shipOrders } = await openOnly(supabaseDR.from('customer_shipping_orders')
         .select('mat_no, qty, due_date, ship_time, customer, status')
-        .gte('due_date', boardDate).lte('due_date', nextDay).neq('status', 'shipped');
+        .gte('due_date', boardDate).lte('due_date', nextDay));
       setEdiOrders(shipOrders || []);
       // stock FG พร้อมส่งของ mat เหล่านั้น — planner จะหักออกก่อนคำนวณว่าต้องผลิตคืนนี้เท่าไหร่
       const shipMats = [...new Set((shipOrders || []).map(o => o.mat_no))];
@@ -449,7 +451,7 @@ export default function Dashboard() {
         .eq('work_date', date)
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
-      supabase.from('production_lines').select('id, name, section, std_day_shift, std_night_shift, parent_line_name').order('name'),
+      loadLinesRes(),
       supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
@@ -483,7 +485,7 @@ export default function Dashboard() {
     setFourMLogs(fmData || []);
     // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
     let linesEnriched = lineData || [];
-    const { data: flowData } = await supabase.from('production_lines').select('name, flow_mode, parallel_stations');
+    const { data: flowData } = await loadLinesRes();
     if (flowData) {
       const fm = {};
       flowData.forEach(l => { fm[l.name] = l; });

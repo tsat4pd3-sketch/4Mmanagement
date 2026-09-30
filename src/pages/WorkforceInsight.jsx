@@ -1,6 +1,7 @@
 import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
@@ -1005,7 +1006,7 @@ export default function WorkforceInsight() {
   const [secFilter, setSecFilter] = useState('');
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, parent_line_name, section, is_active, std_day_shift, std_night_shift')
+    loadLinesRes()
       .then(({ data }) => setLines(data || []));
     // 👥 กำลังคน/turnover นับเฉพาะพนักงานหน้าไลน์ — คนทางอ้อม (QA/PE/ธุรการ) ไม่เข้าสูตร
     onlyShopfloorStaff(supabase.from('employees')

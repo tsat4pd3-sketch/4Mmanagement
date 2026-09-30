@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { toDecodableImage } from '../utils/heicToJpeg'
 import { compressLayoutImage } from '../utils/layoutImage'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { dueStatus, STATUS_META, DEPT_LABEL, computeNextDue, daysUntilDue } from '../lib/pmSchedule'
@@ -179,7 +180,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
   useEffect(() => { hist.clear() }, [areaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, parent_line_name').order('name').then(({ data }) => {
+    loadLinesRes().then(({ data }) => {
       setLines(data || []); if (data?.length && !selectedLine) setSelectedLine(data[0].name)
     })
     reloadAreas()

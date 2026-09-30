@@ -10,6 +10,7 @@ import { positionLabel } from '../utils/positions';   // position เก็บ�
 import { canAccessPage } from '../utils/permissions';
 import { buildProfileMenu } from '../utils/profileMenu';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
 import { uploadMyAvatar } from '../utils/profileSelf';
@@ -326,7 +327,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   const [prodLines, setProdLines] = useState([]);
 
   useEffect(() => {
-    supabase.from('production_lines').select('id, name, section, parent_line_name')
+    loadLinesRes()
       .then(({ data }) => setProdLines(data || []));
   }, []);
 

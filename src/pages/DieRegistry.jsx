@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -132,7 +133,7 @@ export default function DieRegistry() {
     //    เหมือนข้อมูลหาย (กฎเหล็กข้อ 1) → เก็บชื่อชุดที่ล้มไปโชว์เป็นแถบเตือน (audit 2026-09-08)
     const warn = [];
     const [lnRes, mcRes, stRes, otRes, pdRes, areaRes, moRes] = await Promise.all([
-      supabase.from('production_lines').select('id, name, section, parent_line_name').order('name'),
+      loadLinesRes(),
       // ตัวตนของแม่พิมพ์ยังอยู่ machines — embed ส่วนขยายมาด้วยในนัดเดียว
       supabaseDR.from('machines')
         .select('id, machine_no, machine_name, line_name, is_active, equipment_die(*)')

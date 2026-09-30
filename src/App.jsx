@@ -5,6 +5,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, us
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
 import { loadProfilesPeople } from './utils/usePeople';
+import MyQueuePanel, { useMyQueue } from './components/MyQueuePanel';
 import { ToastContainer, toast } from './components/Toast';
 import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
@@ -417,6 +418,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   // panel = ชื่อหมวด | '__star' (ใช้บ่อย) | '__me' (โปรไฟล์) | null = ปิด
   // ปกติแผง "ลอยทับ" เนื้อหา (เนื้อหาไม่ถูกบีบ — คำสั่ง user) · ปักหมุด 📌 = ค้างไว้และดันเนื้อหา
   const [panel, setPanel] = useState(null);
+  /* คิวงานของฉัน — โหลดที่นี่เพราะ **badge ต้องมีเลขแม้แผงปิดอยู่** (กฎอยู่ MyQueuePanel.jsx) */
+  const myQueue = useMyQueue(panel === '__me');
   const pinnedRef = useRef(pinned);
   useEffect(() => { pinnedRef.current = pinned; }, [pinned]);
 
@@ -767,6 +770,16 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {remoteCode && (
                 <span title={`รับรีโมทอยู่ · ${remoteCode}`} style={{ position: 'absolute', right: -3, top: -3, fontSize: 12 }}>📺</span>
               )}
+              {/* เลข "รอคุณโดยตรง" — **นับเฉพาะชั้นนั้น** (badgeCount ใน myQueue.js)
+                  0 = ไม่วาดเลย · โหลดไม่ครบก็ไม่วาด (เลขที่อาจผิดแย่กว่าไม่มีเลข) */}
+              {myQueue.badge > 0 && (
+                <span title={`มีงานรอคุณโดยตรง ${myQueue.badge} รายการ`} style={{
+                  position: 'absolute', right: -4, bottom: -2, minWidth: 17, height: 17, padding: '0 4px',
+                  borderRadius: 999, background: '#ef4444', color: '#fff',
+                  fontSize: 10.5, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
+                  border: '2px solid var(--bg2)', boxShadow: 'var(--shadow-float)',
+                }}>{myQueue.badge > 99 ? '99+' : myQueue.badge}</span>
+              )}
             </button>
             <button onClick={onClose} title="ซ่อนเมนู (เต็มจอ — เหมาะจอ TV)" style={{
               width: 32, height: 26, borderRadius: 8, flexShrink: 0, marginTop: 4,
@@ -847,6 +860,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
               {panel === '__me' && (<>
                 {userCard(false)}
+                <MyQueuePanel q={myQueue.q} busy={myQueue.busy}
+                  onGo={() => { if (!pinned) setPanel(null); }} />
                 {profileActions(() => { if (!pinned) setPanel(null); })}
               </>)}
             </div>
@@ -1010,6 +1025,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           {/* User info card — คลิกเพื่อกาง/พับเมนูโปรไฟล์ด้านล่าง */}
           {userCard(true)}
 
+          {/* มือถือ: กางเมนูโปรไฟล์แล้วเห็นคิวงานที่เดียวกันกับ desktop (กฮมาตรฐานเมนูโปรไฟล์: ห้าม drift สองที่) */}
+          {footerOpen && <MyQueuePanel q={myQueue.q} busy={myQueue.busy} onGo={onClose} />}
           {footerOpen && profileActions(onClose)}
         </div>
       </nav>

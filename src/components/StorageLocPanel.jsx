@@ -20,6 +20,7 @@
  */
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -55,7 +56,7 @@ export default function StorageLocPanel() {
     const [r1, r2, r3, r4] = await Promise.all([
       supabaseDR.from('storage_locations').select('*').order('sort_order').order('code'),
       supabaseDR.from('bom_items').select('storage_location').eq('is_active', true),
-      supabase.from('production_lines').select('id, name, parent_line_name, section, is_active').order('name'),
+      loadLinesRes(),
       supabaseDR.from('line_stock_transactions').select('id', { count: 'exact', head: true }).is('storage_location', null).eq('status', 'approved'),
     ]);
     setLoading(false);
