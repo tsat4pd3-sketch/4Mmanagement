@@ -85,15 +85,36 @@ export default function PartCard({
         {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={84} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-            {/* เลข MAT + ชื่องาน + Part No. ครบตาม UI §6.21 (ห้ามวาด mat_no เปล่าที่ที่คนตัดสินใจจากเลข)
-                🔴 แต่ **วางเป็นชั้น ไม่ใช่ inline** — `<MatLabel>` เป็น inline-flex + wrap ซึ่งออกแบบมาสำหรับ
-                   ตาราง/ชิป · พอเอามาใส่คอลัมน์แคบของการ์ด (เหลือ ~150px หลังหักรูป 84) มันตัดบรรทัด
-                   กลางวลีจนได้ 4 บรรทัดรุ่งริ่ง (เห็นจากจอจริงตอนทำ) — จึงอ่านทะเบียนตัวเดียวกัน
-                   (`useMatIndex`/`matInfo`) แล้ววาดเองเป็น 3 ชั้น ข้อมูลยังมาจากแหล่งเดียว */}
+            {/* 🔴 ลำดับเดียวกันทุกจอ (2026-09-30 · คำสั่ง user) — **Part No. → Part Name → MAT SAP**
+                วางเป็น "ชั้น" ไม่ใช่ inline: `<MatLabel>` เป็น inline-flex + wrap ออกแบบมาสำหรับ
+                ตาราง/ชิป · ในคอลัมน์แคบของการ์ด (เหลือ ~150px หลังหักรูป 84) มันตัดบรรทัดกลางวลี
+                จนได้ 4 บรรทัดรุ่งริ่ง (เห็นจากจอจริง) — อ่านทะเบียนตัวเดียวกัน (`useMatIndex`/`matInfo`)
+                ⚠️ **MAT SAP ห้ามตัดทิ้ง** แม้อยู่ท้าย — บาร์โค้ดบนกล่อง/บัตรคัมบังคือ `mat_no`
+                   และด่านสแกน (`PickScanModal`) เทียบ `mat_no` ⇒ ต้องกวาดตาหาเจอ จึงคง mono + คำว่า MAT
+                ⚠️ พาร์ทที่ทะเบียนไม่มี Part No. → หัวการ์ดขึ้นด้วย **ชื่องาน** ไม่ใช่เว้นบรรทัดว่าง */}
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matTone || 'var(--text)', ...PC_NUM }}>{info.mat}</div>
-              {info.name && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, lineHeight: 1.35 }}>{info.name}</div>}
-              {info.pNo && <div title="Part No. ของลูกค้า" style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', marginTop: 1 }}>{info.pNo}</div>}
+              {info.pNo
+                ? <div title="Part No. ของลูกค้า" style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matTone || 'var(--text)', ...PC_NUM }}>{info.pNo}</div>
+                : null}
+              {info.name && (
+                <div style={{
+                  fontSize: info.pNo ? 12 : 13, fontWeight: info.pNo ? 400 : 700,
+                  color: info.pNo ? 'var(--text2)' : 'var(--text)', marginTop: info.pNo ? 2 : 0, lineHeight: 1.35,
+                }}>{info.name}</div>
+              )}
+              {/* 🔴 MAT อยู่ชั้นล่างสุด แต่ **ต้องอ่านออกชัด ไม่ใช่ของประดับ** — 2 เหตุผล:
+                  1. `p_no` **ไม่ unique** ในระบบนี้ (พาร์ทเดียวกันแตกหลาย MAT ตามลูกค้า FVL/FTM/AAT ·
+                     แถว OP ใช้เลขซ้ำกับพาร์ทจริง จน `buildPnIndex` ต้องกรอง `is_operation` ทิ้ง)
+                     ⇒ การ์ดหลายใบหัวเดียวกันได้ · **MAT คือตัวแยกว่าใบไหนคือใบไหน**
+                  2. บาร์โค้ดบนกล่อง/บัตรคัมบัง = `mat_no` และด่านสแกนเทียบ `mat_no`
+                  ⇒ ใช้ `--text2` ไม่ใช่ `--muted` และ 11.5px (เพดานจอ TV 11) */}
+              <div title="เลข MAT (SAP) — เลขเดียวกับบาร์โค้ดบนกล่อง/บัตรคัมบัง · ใช้แยกพาร์ทที่ Part No. ซ้ำกัน"
+                style={{ fontSize: 11.5, fontFamily: 'monospace', letterSpacing: 0.2,
+                  color: (info.pNo || info.name) ? 'var(--text2)' : (matTone || 'var(--text)'),
+                  fontWeight: (info.pNo || info.name) ? 700 : 800, marginTop: 3, ...PC_NUM }}>
+                <span style={{ fontSize: 10, fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--muted)', marginRight: 4 }}>MAT</span>
+                {info.mat}
+              </div>
             </div>
             {st.label && (
               <span style={{
