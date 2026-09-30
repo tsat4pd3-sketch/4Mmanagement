@@ -18,6 +18,7 @@ import PageHeader from './PageHeader';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
+import { tooltipProps, CELL_BAR_FILL } from '../utils/chartAxis';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -615,10 +616,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const rowChart = (r, kk = k) => {
     const fs = (n) => Math.max(11, Math.round(n * kk));
     const axisTick = { fontSize: fs(9.5), fill: 'var(--muted)' };
-    const chartTip = {
-      contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
-      labelStyle: { color: 'var(--text2)' }, cursor: { fill: 'var(--text)', fillOpacity: 0.08 },
-    };
+    const chartTip = tooltipProps(fs(11));   // สี/พื้น/cursor มาตรฐาน — utils/chartAxis.js
     const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
     if (!data.some(p => p.v != null)) return <EmptyChart k={kk} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
     /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
@@ -640,7 +638,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {/* เส้นเป้า (แดง) + เส้น Commitment (เหลือง) — user 30/09: "มาแต่เส้น target เส้น commitment ไม่เห็น" */}
           {r.target != null && <ReferenceLine y={r.target} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: '#ef4444' }} />}
           {r.commit != null && r.commit !== r.target && <ReferenceLine y={r.commit} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
-          <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={(d) => openMonth(r, d?.payload ?? d)}>
+          {/* fill = สีตัวหนังสือใน tooltip เท่านั้น (Cell ทับสีแท่งจริง) — ไม่ใส่ = Recharts ใช้ #000 (user 30/09 "text ดำ") */}
+          <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={(d) => openMonth(r, d?.payload ?? d)}>
             <LabelList dataKey="noteMark" position="top" style={{ fontSize: fs(9.5) }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}

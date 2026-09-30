@@ -39,7 +39,7 @@ import {
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
-import { shortTick, fmtAxis, alignedYWidth } from '../utils/chartAxis';
+import { shortTick, fmtAxis, alignedYWidth, CELL_BAR_FILL } from '../utils/chartAxis';
 /* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
 const fmtPieces = v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v || 0).toLocaleString());
 
@@ -744,7 +744,7 @@ export default function Energy() {
                       <Tooltip contentStyle={tipStyle}
                         formatter={(v, n, o) => [`${v > 0 ? '+' : ''}${Math.round(v).toLocaleString()} kWh (${o.payload.pct == null ? 'จุดใหม่' : `${o.payload.pct > 0 ? '+' : ''}${o.payload.pct}%`})`, 'ส่วนต่าง']} />
                       <ReferenceLine x={0} stroke="var(--border2)" />
-                      <Bar dataKey="delta" radius={[0, 3, 3, 0]}>
+                      <Bar dataKey="delta" fill={CELL_BAR_FILL} radius={[0, 3, 3, 0]}>
                         {contribRows.map((r, i) => <Cell key={i} fill={r.isNew || r.isGone ? NEUTRAL : r.delta > 0 ? BAD : GOOD} />)}
                       </Bar>
                     </BarChart>
