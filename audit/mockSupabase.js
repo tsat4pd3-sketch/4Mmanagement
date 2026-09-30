@@ -374,6 +374,11 @@ const TABLE_FIXED = {
     ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
     ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
   ],
+  /* 📝 หมายเหตุรายเดือน (30/09) — แผ่น %RM (slot rm) ที่ทั้งโรงงาน เดือน 3 มีโน้ต ⇒ เปิดสายเครื่องหมาย 📝 บนแท่ง + โมดัล (ห้ามถอด) */
+  kpi_month_notes: [
+    { id: 'kn-1', year: 2026, month: 3, scope_kind: 'plant', scope_value: '', row_key: 'rm', kind: 'remark', text: 'ราคาเหล็กขึ้น 4% ตามสัญญา Q1', created_by_name: 'ทดสอบ ระบบ', created_at: '2026-04-02T02:00:00Z', is_active: true },
+    { id: 'kn-2', year: 2026, month: 3, scope_kind: 'plant', scope_value: '', row_key: 'rm', kind: 'action', text: 'เจรจา supplier รอบ 2 · เป้าลดลง 1.5% ใน Q2', created_by_name: 'ทดสอบ ระบบ', created_at: '2026-04-02T02:05:00Z', is_active: true },
+  ],
   kpi_month_plans: [
     ...[95, 95, 95, 95, 95, 95].map((v, i) => ({ id: `kp-1-${i}`, kpi_id: 'kd-1', month: i + 1, plan_value: v })),
     { id: 'kp-4-0', kpi_id: 'kd-4', month: 1, plan_value: 105.1 },

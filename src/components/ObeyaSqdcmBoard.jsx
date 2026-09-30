@@ -635,7 +635,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      เพราะหน้านี้อยู่ใน <main> ที่มี sidebar + padding ⇒ 100vh จะล้นจอแล้วแถวล่างโดนตัดเงียบ
      (วัดจริงด้วย Playwright 15/09: แถวที่ 2 ถูกตัด 37px ทั้งแถว) */
   const shell = board
-    ? { position: 'fixed', inset: 0, zIndex: 800, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // > รางเมนู 1000 (30/09)
     : { display: 'flex', flexDirection: 'column' };
   const goBoard = (on) => {
     setBoard(on);
