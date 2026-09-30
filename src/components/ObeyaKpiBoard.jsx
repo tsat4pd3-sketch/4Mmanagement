@@ -585,15 +585,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
-  // ── กราฟ 12 เดือน + แท่งสรุป (หน้าตาเดียวกับโหมดปีของ SQDCM · สีแท่ง = เกณฑ์ทางการ) ─────────
-  const axisTick = { fontSize: fs(9.5), fill: 'var(--muted)' };
-  const chartTip = {
-    contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
-    labelStyle: { color: 'var(--text2)' },
-  };
+  // ── กราฟ 12 เดือน + แท่งสรุป (หน้าตาเดียวกับโหมดปีของ SQDCM · สีแท่ง = เกณฑ์ทางการ) — ดู rowChart() ─────────
   /* 📈 บรรทัด "คาดปลายปี" ใต้แผ่น — ผลจริง + แผนที่เหลือ แล้วตัดสินด้วยเกณฑ์เดียวกับไฟ (scoreDef)
      · ไม่มีแผนครบ = เขียนว่าขาดเดือนไหน (ห้ามเดา) · ไม่มีเป้า = บอกตัวเลขอย่างเดียว ไม่ตัดสิน */
-  const forecastLine = (r) => {
+  const forecastLine = (r, kk = k) => {
+    const fs = (n) => Math.max(11, Math.round(n * kk));
     const f = r.forecast;
     if (!f) return null;
     /* บรรทัดเดียวเสมอ (แผ่นสูงคงที่ — 2 บรรทัด = กราฟถูกบีบจนอ่านไม่ออก) · เต็มความใน title */
@@ -615,9 +611,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       </div>
     );
   };
-  const rowChart = (r) => {
+  /* `kk` = สเกลของแผ่นที่กำลังวาด (ปกติ = k ของกริด · ใน popup 🔍 ขยาย = ใหญ่กว่า) ⇒ ฟอนต์แกน/ป้ายโตตามแผ่น */
+  const rowChart = (r, kk = k) => {
+    const fs = (n) => Math.max(11, Math.round(n * kk));
+    const axisTick = { fontSize: fs(9.5), fill: 'var(--muted)' };
+    const chartTip = {
+      contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
+      labelStyle: { color: 'var(--text2)' }, cursor: { fill: 'var(--text)', fillOpacity: 0.08 },
+    };
     const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
-    if (!data.some(p => p.v != null)) return <EmptyChart k={k} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
+    if (!data.some(p => p.v != null)) return <EmptyChart k={kk} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
     /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
     const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), r.target == null ? 0 : Number(r.target));
     const isPct = r.unit === '%' && peak > 25;
@@ -760,15 +763,15 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
                   unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.why)}
-                  foot={<>
-                    {forecastLine(r)}
+                  foot={(kk) => <>
+                    {forecastLine(r, kk)}
                     {r.note && (r.st === ST.unknown || r.fromDept || r.auto)
-                      ? <WarnNote k={k} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
+                      ? <WarnNote k={kk} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
                       : r.why}
                   </>}
                   link={r.to ? 'เจาะดู' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
                   onLink={() => (r.to ? goTo(r.to) : onTab?.('table'))}>
-                  {rowChart(r)}
+                  {(kk) => rowChart(r, kk)}
                 </Sheet>
               ))}
 
