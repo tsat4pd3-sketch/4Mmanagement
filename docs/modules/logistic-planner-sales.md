@@ -7,6 +7,29 @@
 `/planner-sales` (Sales อัพโหลด Forecast 830 / Order 862 + Forecast Planner) ·
 `/customer-demand` = **Delivery** (Shipping Chart + Ship-to Config) · `/rundown-stock` (Balance FG รายวัน)
 
+## 📬 ดึงไฟล์ EDI 830/862 จากเมลอัตโนมัติ (2026-09-30 · คำสั่ง user)
+
+ไฟล์ Ford EDI มาทางเมล `FTM_AAT_830 & 862_<วันที่>` จากคุณ Sasiyawan (Logistic & Sales) ทุกวัน
+(แนบ `830_dd.mm.yy.xlsm` + `862_dd.mm.yy.xlsm`) · เดิม Sales ต้องบันทึกไฟล์แล้วลากเข้า `/planner-sales` เอง
+
+**สายงาน:** Outlook คลาสสิกบนเครื่อง user → `tools/outlook-mail-ingest/esm_mail_ingest.py` (pywin32 · รันเองตอน login
+ผ่าน Startup folder · เช็คทุก 15 นาที) → Edge Function **`ingest-demand-mail` (DR · verify_jwt=false · ตรวจ `x-ingest-token`)**
+→ Storage `demand-mail` (private · anon อ่านได้) + ตารางคิว **`demand_mail_inbox`** → แผง **📬 ไฟล์จากเมลรอนำเข้า**
+ในแท็บอัพโหลด (`src/components/DemandMailInbox.jsx`) → กด "เปิดเพื่อนำเข้า" = ไฟล์เข้า `handleFiles` → preview → `doImportEdi` เดิม
+→ นำเข้าสำเร็จ ปิดแถวคิวเป็น `imported` + `batch_id` เอง (`markMailImported`)
+
+- 🔴 **สคริปต์และ Edge Function ไม่แกะไฟล์** — ตัวอ่าน 830/862 มีที่เดียว (`PlannerSales.jsx` + `ediDetect`/`ediMerge`) ห้ามเขียนชุดที่ 2 ใน Python/Deno
+- 🔴 **เฟสนี้ยังให้คนกดยืนยัน** เพราะกลไก A (862 ไม่ครบพาร์ท ลบ pending พาร์ทอื่น) ยังรอ user เคาะ · จะให้นำเข้าเองทั้งหมด
+  ต้องย้ายตรรกะ `doImportEdi` เป็นโมดูลกลางที่ Deno ใช้ร่วมได้ก่อน **ห้ามก๊อปไปเขียนใหม่**
+- กันซ้ำ 2 ชั้น: `state.json` ฝั่งเครื่อง + unique `(message_id, file_name)` ฝั่ง DB (Message-ID จาก `PR_INTERNET_MESSAGE_ID`)
+- token: `demand_mail_tokens` เก็บแค่ sha256 · ไม่มี policy (service role เท่านั้น) · ออกใหม่ = insert hash ใหม่ · ปิด = `is_active=false`
+  · token ตัวจริงอยู่ใน `config.ini` บนเครื่อง user เท่านั้น (gitignore)
+- ค้างเกิน 24 ชม. แผงขึ้นแดง · ว่าง = เขียน "ไม่มีไฟล์ค้าง" · กด "ข้าม" ต้องใส่เหตุผล (status `skipped`)
+- ข้อจำกัด: ต้อง Outlook คลาสสิก (New Outlook ไม่มี COM) · ได้ไฟล์เฉพาะตอนเครื่องเปิด (ย้อนหลัง `lookback_days`=7)
+- migration `20260930d_demand_mail_inbox_dr.sql` (**apply แล้ว 30/09** · ทดสอบผ่าน pg_net: token ผิด 401 · ping · บันทึก · ปฏิเสธ .exe · ส่งซ้ำ = duplicate)
+  · เหลือไฟล์ทดสอบ 30 ไบต์ `demand-mail/2026-09/…_selftest.csv` (SQL ลบ storage ตรงไม่ได้ · ไม่มีแถวคิวอ้างถึง)
+- ยังไม่ทำ: เมล `Forecast FORD+AAT+Export+Sodecia_WK` (คนละฟอร์แมต — ต้องได้ไฟล์ตัวอย่างก่อน) · แจ้ง Telegram เมื่อค้าง
+
 ## 🧩 ทะเบียนฟอร์แมตไฟล์ลูกค้า — เพิ่มลูกค้าใหม่โดยไม่ต้อง deploy (2026-09-22 · audit แผนผลิต)
 
 **ปัญหาที่วัดได้:** ความต้องการเข้าระบบได้แค่ 3 ทาง (EDI 830 · 862 · e-SMART) ซึ่งเป็น**ตระกูล Ford ทั้งหมด**

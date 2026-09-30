@@ -52,9 +52,18 @@ test('มือถือ — ไม่มีผังไหนผ่านเก
   assert.equal(g.fit, false);
 });
 
-test('แผ่นคงสัดส่วน A4 เมื่อที่ว่างพอ (ไม่ยืดจนเพี้ยน)', () => {
+test('แผ่นไม่สูงเกินสัดส่วน A4 (ไม่ยืดจนเพี้ยน) — แต่กว้างเต็มคอลัมน์เสมอ', () => {
   const g = chooseSheetGrid(1744, 705, 10);
-  assert.ok(Math.abs(g.cw / g.ch - A4) < 0.02, `สัดส่วน ${(g.cw / g.ch).toFixed(3)} ควรใกล้ A4 ${A4.toFixed(3)}`);
+  assert.ok(g.ch <= g.cw / A4 + 0.01, `สูง ${g.ch.toFixed(0)} ต้องไม่เกิน กว้าง÷A4 = ${(g.cw / A4).toFixed(0)}`);
+  assert.ok(g.cw > 300, `แผ่นต้องกว้างเต็มคอลัมน์ (~340) ไม่ใช่ทรง A4 แคบ ${Math.round(g.cw)}`);
+});
+
+test('🔴 กล่องสูงขึ้น 20px ห้ามทำให้แผ่นแคบลง (30/09 — แถบเตือนหาย/โผล่แล้วบอร์ดสลับทรงทั้งจอ)', () => {
+  const a = chooseSheetGrid(1740, 600, 10);
+  const b = chooseSheetGrid(1740, 620, 10);
+  assert.equal(`${a.cols}x${a.rows}`, `${b.cols}x${b.rows}`);
+  assert.ok(Math.abs(a.cw - b.cw) < 1, `กว้าง ${Math.round(a.cw)} → ${Math.round(b.cw)} เปลี่ยนตามความสูง = สเกลเพี้ยน`);
+  assert.ok(b.ch >= a.ch, 'กล่องสูงขึ้น แผ่นควรสูงขึ้นหรือเท่าเดิม');
 });
 
 test('กล่องยังวัดไม่ได้ (0×0) — คืนค่าตั้งต้น ไม่ระเบิด ไม่หารศูนย์', () => {

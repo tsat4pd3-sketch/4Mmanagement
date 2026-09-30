@@ -55,28 +55,40 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   const i = matInfo(mat, index, { name, pNo });
   if (!i.mat) return null;
   const small = Math.max(11, size - 0.5);
-  const lead = showPartNo && i.pNo;
-  /* 🔴 กติกากันรก (2026-09-30 · คำสั่ง user "อยากเห็นครบทั้ง 3 แต่ต้องไม่ล้น รก เละ"):
-     **ตัดได้เฉพาะ "ชื่องาน" · รหัสห้ามตัดและห้ามขึ้นบรรทัดใหม่กลางเลข**
-       · รหัส (Part No. / MAT) = `nowrap` + ไม่ยอมหด ⇒ อ่านได้เต็มเลขเสมอ
-         (รหัสที่ถูกตัดครึ่งไม่ใช่แค่ "อ่านไม่ครบ" แต่ **อ่านผิดตัว** — อันตรายกว่าไม่โชว์)
-       · ชื่องาน = ตัวเดียวที่หดและตัดท้ายด้วย `…` พร้อม `title` ให้ชี้อ่านเต็มได้
-     กล่องนอกยัง `flexWrap` อยู่ — ที่แคบมากจะตก 2 บรรทัดแบบ "รหัส / รหัส" ไม่ใช่เลขขาดกลาง */
+  /* 🔴 ลำดับตัดสินด้วย `i.lead` เหมือน `<PartCard>` **ห้ามเช็ค `i.pNo` ตรงๆ** — วัตถุดิบ 5xx เก็บ
+     "คำบรรยายว่าเอาไปทำอะไร" ไว้ในช่อง part_no (82% ของแถว · ยาวสุด 72 ตัว) ⇒ ถ้าเอาขึ้นหน้า
+     ตาราง/ชิปจะถูกประโยคดันจนอ่านเลขไม่ได้ (ดู `utils/matLabel.js` §looksLikePartNo)
+
+     🔴 กันล้น/กันรก (30/09 · คำสั่ง user "เห็นครบ 3 แต่ห้ามล้น รก เละ"):
+        **ตัดได้เฉพาะ "ข้อความ" · รหัสห้ามตัดและห้ามขึ้นบรรทัดใหม่กลางเลข**
+        · รหัส (Part No. ที่เป็นเลขจริง / MAT) = `nowrap` + `flexShrink:0` ⇒ อ่านได้เต็มเลขเสมอ
+          (รหัสที่ถูกตัดครึ่งไม่ใช่แค่ "อ่านไม่ครบ" แต่ **อ่านผิดตัว** — อันตรายกว่าไม่โชว์)
+        · ชื่อ/คำบรรยาย = ตัวเดียวที่หดและตัดท้ายด้วย `…` พร้อม `title` ให้ชี้อ่านเต็ม **ไม่ใช่ตัดข้อมูลทิ้ง**
+        · กล่องนอกยัง `flexWrap` — ที่แคบมากจะตกบรรทัดแบบ "รหัส / รหัส" ไม่ใช่เลขขาดกลาง */
+  const lead = showPartNo ? i.lead : (i.name ? 'name' : 'mat');
+  const head = lead === 'pno' ? i.pNo : lead === 'name' ? i.name : '';
+  const sub = lead === 'pno' ? i.name : (showPartNo ? i.pNo : '');
+  const subIsText = lead !== 'pno' && !!sub;                 // คำบรรยาย ไม่ใช่ชื่อสั้นๆ
+  const headIsCode = lead === 'pno';                         // หัวเป็นรหัสจริง ⇒ ห้ามตัด
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap', minWidth: 0, ...style }}>
-      {lead && (
-        <span title="Part No. ของลูกค้า"
-          style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: size, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text2)' }}>{i.pNo}</span>
+      {head && (
+        <span title={headIsCode ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+          style={{ fontSize: size, fontWeight: 700, color: 'var(--text2)', minWidth: 0,
+            ...(headIsCode
+              ? { fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }
+              : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }) }}>{head}</span>
       )}
-      {i.name && (
-        <span title={i.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: small, color: 'var(--muted)' }}>
-          {lead ? `· ${i.name}` : i.name}
+      {sub && (
+        <span title={sub} style={{ fontSize: small, color: 'var(--muted)', minWidth: 0,
+          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
+          {head ? `· ${sub}` : sub}
         </span>
       )}
-      {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
+      {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง/ห้ามตัดครึ่ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
       <span title="เลข MAT (SAP)"
         style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
-        {(i.pNo || i.name) ? '· ' : ''}MAT {i.mat}
+        {(head || sub) ? '· ' : ''}MAT {i.mat}
       </span>
     </span>
   );

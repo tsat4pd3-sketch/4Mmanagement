@@ -1,4 +1,4 @@
-import { fmtAxis } from '../utils/chartAxis';
+import { fmtAxis, tooltipProps, CELL_BAR_FILL } from '../utils/chartAxis';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
 
@@ -50,12 +50,12 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, parseScopeKey } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, drillParams } from '../utils/orgScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { loadLinesRes } from '../utils/useProductionLines';
-import { avgOeeTarget, sumDefectQty } from '../utils/oee';
+import { avgOeeTarget, sumDefectQty, QBIN_EMBED } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
@@ -200,7 +200,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
              · ทุก component อื่นในรีโปใช้ `description` หมด — ดู OeeInsightPanel / MachineReliability */
           .select('session_id, duration_min, description, machine_no, dr_downtime_types(name_th, category)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
-          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
+          .select(`session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no), ${QBIN_EMBED}`).in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c)),
         fetchAllPages(() => supabaseDR.from('production_sessions')
@@ -547,10 +547,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── ตัวช่วยวาดกราฟ (หน้าตาเดียวกันทุกแผ่น — ห้ามแต่ละแผ่นตั้งเอง) ────────────────
   const axisTick = { fontSize: fs(10), fill: 'var(--muted)' };
-  const chartTip = {
-    contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
-    labelStyle: { color: 'var(--text2)' },
-  };
+  const chartTip = tooltipProps(fs(11));   // สี/พื้น/cursor มาตรฐาน — utils/chartAxis.js (แท่ง Cell ต้องมี fill={CELL_BAR_FILL} ไม่งั้น tooltip ดำ)
   const daySeries = (s) => fillDays(s, from, to).map(p => ({ ...p, label: dayLabel(p.k) }));
   const ytdTag = isYear ? 'YTD · ' : '';
 
@@ -596,7 +593,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </Bar>
             </>
           ) : (
-            <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={onBarClick}>
+            <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={onBarClick}>
               {data.map(cellOf)}
             </Bar>
           )}
@@ -635,7 +632,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      เพราะหน้านี้อยู่ใน <main> ที่มี sidebar + padding ⇒ 100vh จะล้นจอแล้วแถวล่างโดนตัดเงียบ
      (วัดจริงด้วย Playwright 15/09: แถวที่ 2 ถูกตัด 37px ทั้งแถว) */
   const shell = board
-    ? { position: 'fixed', inset: 0, zIndex: 800, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }   // > รางเมนู 1000 (30/09)
     : { display: 'flex', flexDirection: 'column' };
   const goBoard = (on) => {
     setBoard(on);
@@ -772,7 +769,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'PPE ครบ']} />
                   <ReferenceLine y={kS.target} stroke="#ef4444" strokeDasharray="4 3" />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kS.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kS.target, 'up'))} />
                     ))}
@@ -790,7 +787,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
-            link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
@@ -822,7 +819,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <YAxis tickFormatter={fmtAxis} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'ทำได้ตามแผน']} />
                   <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="4 3" />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kD.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, 100, 'up'))} />
                     ))}
@@ -841,7 +838,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
-            link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {isYear ? (yearBars(kC, { stacked: true }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
@@ -895,7 +892,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               : kOee.value != null && kOeePrev.value != null
               ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
               : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
-            link="เจาะ OEE" onLink={() => drill('/oee-analytics', { section: secFilter, date: to })}>
+            link="เจาะ OEE" onLink={() => drill('/oee-analytics', { ...drillParams(org, scope), date: to })}>
             {isYear ? (yearBars(kOee, { name: 'OEE', span: 2 }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kOee.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
@@ -905,7 +902,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'OEE']} />
                   <ReferenceLine y={kOee.target} stroke="#ef4444" strokeDasharray="5 3"
                     label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: '#ef4444', fontSize: fs(10) }} />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kOee.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kOee.target, 'up'))} />
                     ))}
@@ -925,7 +922,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             foot={pareto.rows.length
               ? `อันดับ 1 "${pareto.rows[0].name}" = ${Math.round((pareto.rows[0].min / pareto.total) * 100)}% ของเวลาที่เสีย`
               : 'ไม่มีเวลาเครื่องหยุดนอกแผนในช่วงนี้'}
-            link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {pareto.rows.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 {/* แกนตัวเลขซ่อนเพื่อประหยัดที่ในแผ่น A4 ⇒ ต้องเขียนตัวเลขที่ปลายแท่งแทน (กราฟไม่มีตัวเลข = อ่านไม่ได้ · chartsweep) */}

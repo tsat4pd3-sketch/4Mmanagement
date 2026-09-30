@@ -641,7 +641,7 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
   });
   defects.forEach(d => {
     const ty = d.dr_defect_types || {};
-    const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+    const qty = defectQtyAll(d);   // พาเรโต/6 Big Loss = "เห็นทุกอย่าง" รวมของสงสัยที่ยังไม่ตัดสิน (คนละตัวกับที่คิด %Q)
     if (!qty) return;
     const ct = ctSecFn ? ctSecFn(d.session_id) : 0;
     put(ty[axis] || 'defect', ty.name_th || 'ของเสีย', { qty, count: 1, min: ct > 0 ? (qty * ct) / 60 : 0 });
@@ -674,8 +674,97 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
 export const isTrialDefect = (d) =>
   d?.is_trial === true || d?.dr_defect_types?.excl_from_q === true;
 
-/** จำนวนของเสียของ 1 แถว — NG + สงสัย (กฎเดิม: ยึด defect_logs ไม่ใช่คอลัมน์ rollup ของ session) */
-export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+/* ═══ 7.1) 🔴🔴 กฎเหล็กข้าม session — "ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน (2026-09-30 · คำสั่ง user) ═══
+
+   เดิม: `defectQty = qty_ng + qty_suspect` ⇒ ของสงสัยถูกนับเป็นของเสีย**ทันทีที่ลง**
+   และ**ไม่มีทางย้อน** — QA ตัดสินทีหลังว่า "งานดี" ก็ไม่มีอะไรวิ่งกลับไปแก้ %Q ของกะนั้น
+   เคสจริง: Line 60 กะ 21/07 ลงสงสัย 12 ชิ้น เขียนว่า "รอพิจารณา" → ถึง 30/09 ยังรออยู่ (71 วัน)
+   และกะนั้นถูกหัก 12 ชิ้นถาวร
+
+   🔴 ของสงสัย = **ยังไม่รู้ว่าดีหรือเสีย** ⇒ เอาไปหัก %Q ไม่ได้ และเอาไปบวกเป็นงานดีก็ไม่ได้
+      ต้อง **กันออกจากสูตร แล้วเขียนบนจอว่ายังมีของรอพิจารณาอยู่กี่ชิ้น** (%Q ยังไม่สรุป)
+      — หลักเดียวกับ "งานทดลอง" (§7) และกฎความซื่อสัตย์ของจอ Obeya: ข้อมูลไม่พอให้เขียนบนจอ
+        ห้ามโชว์เลขที่แน่ใจไม่ได้เหมือนเลขที่แน่ใจ
+
+   ผลพิจารณามาจากทะเบียนถังเหลือง/แดง (`quality_bin_records` ผูกด้วย `defect_log_id`)
+   ตัดสินตาม WI-PD3-069 §5.4 — ตัวตัดสินอยู่ `src/utils/qualityBin.js` (QA_DECISIONS 4 ทาง)
+     'scrap'                        → เสียจริง          ⇒ **นับเข้า %Q**
+     'good' | 'repair' | 'use_as_is' → ไม่ใช่ของเสีย      ⇒ ไม่นับ (ซ่อมแล้วกลับเข้ากระบวนการ)
+     `return_date` (กลับเข้ากระบวนการแล้ว)               ⇒ ไม่นับ
+     ย้ายลงถังแดงแล้ว (มีใบแดงที่ `from_yellow_id` ชี้มา) ⇒ **นับเข้า %Q** (ยืนยันเสียแล้ว)
+     ยังไม่มีใบถัง / มีใบแต่ยังไม่ตัดสิน                  ⇒ **รอพิจารณา — ไม่นับ + ต้องขึ้นบนจอ**
+
+   ⚠️⚠️ **"ยังไม่ตัดสิน" กับ "ไม่ได้ถามมา" ต้องแยกให้ออก — ห้ามยุบเป็นอันเดียว**
+      คิวรีที่เอาไปคิด %Q ต้อง embed ทะเบียนถังมาด้วย: `.select('..., ' + QBIN_EMBED)`
+      · มี key `quality_bin_records` (แม้เป็น `[]`) = ถามแล้ว ⇒ ตัดสินตามกฎด้านบน
+      · **ไม่มี key เลย = คิวรีนั้นไม่ได้ถาม** ⇒ คืนพฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
+        พร้อมธง `unknown` — ตัวเลขจะ "เท่าเดิม" ไม่เงียบๆ เปลี่ยนหลังบ้าน
+        (บทเรียน `excl_from_q`: ลืม select แล้วตกหล่นเงียบ — คราวนี้ทำให้ *ตรวจจับได้* แทน)
+      มีด่าน `regressionGuards` (`oee-suspect-needs-qbin-embed`)                            */
+
+/** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
+export const QBIN_EMBED =
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id)';
+
+/** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
+const QA_SCRAP = 'scrap';
+/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" */
+const QA_CLEARED = ['good', 'repair', 'use_as_is'];
+
+/**
+ * สถานะของ "ของสงสัย" ในแถวของเสีย 1 แถว
+ * @returns 'none'    ไม่มีของสงสัยในแถวนี้
+ *          'unknown' คิวรีไม่ได้ embed ทะเบียนถังมา — ตอบไม่ได้ (ใช้พฤติกรรมเดิม)
+ *          'pending' ยังไม่มีผลพิจารณา ⇒ กันออกจาก %Q + ต้องขึ้นบนจอ
+ *          'scrap'   QA ตัดสินว่าเสีย / ย้ายลงถังแดงแล้ว ⇒ นับเข้า %Q
+ *          'cleared' ตัดสินแล้วว่าไม่เสีย ⇒ ไม่นับ
+ */
+export function suspectState(d) {
+  if (!(Number(d?.qty_suspect) || 0)) return 'none';
+  const bins = d?.quality_bin_records;
+  if (bins === undefined || bins === null) return 'unknown';
+  const rows = Array.isArray(bins) ? bins : [bins];
+  if (!rows.length) return 'pending';
+
+  /* ใบแดงที่ผูกกับใบของเสียนี้ (หรือใบเหลืองที่ถูกย้ายลงแดง) = ยืนยันเสียแล้ว */
+  const yellowIds = new Set(rows.filter(r => r?.bin === 'yellow').map(r => r?.id).filter(Boolean));
+  const movedToRed = rows.some(r => r?.bin === 'red' && (r?.from_yellow_id == null || yellowIds.has(r.from_yellow_id)));
+  if (movedToRed) return QA_SCRAP;
+
+  const yellows = rows.filter(r => r?.bin === 'yellow');
+  const pool = yellows.length ? yellows : rows;
+  if (pool.some(r => r?.qa_decision === QA_SCRAP)) return QA_SCRAP;
+  if (pool.some(r => r?.return_date || QA_CLEARED.includes(r?.qa_decision))) return 'cleared';
+  return 'pending';
+}
+
+/** ของสงสัยแถวนี้ต้องรอ QA อยู่ไหม (จอต้องเอาไปเขียนว่า "%Q ยังไม่สรุป") */
+export const isSuspectPending = (d) => suspectState(d) === 'pending';
+
+/**
+ * จำนวนของเสียของ 1 แถว — ใช้คิด %Q
+ * NG นับเสมอ · ของสงสัยนับเฉพาะที่ QA ตัดสินว่าเสีย (ดู §7.1)
+ * ⚠️ ยึด `defect_logs` ไม่ใช่คอลัมน์ rollup ของ session (กฎเดิม)
+ */
+export const defectQty = (d) => {
+  const ng = Number(d?.qty_ng) || 0;
+  const sus = Number(d?.qty_suspect) || 0;
+  if (!sus) return ng;
+  const st = suspectState(d);
+  /* 'unknown' = คิวรีไม่ได้ถามทะเบียนถัง ⇒ คงพฤติกรรมเดิมไว้ ห้ามเปลี่ยนเลขเงียบๆ */
+  return (st === QA_SCRAP || st === 'unknown') ? ng + sus : ng;
+};
+
+/**
+ * จำนวนของเสีย "ทุกอย่าง" ของ 1 แถว — NG + สงสัยทั้งหมดไม่สนผลพิจารณา
+ * ⚠️ ใช้กับจอที่ **แสดงรายการ/พาเรโต/มูลค่า** เท่านั้น — ของสงสัยเป็นปัญหาจริงที่ต้องเห็น
+ *    🔴 ห้ามเอาไปคิด %Q (นั่นคือ `defectQty`) — สลับ 2 ตัวนี้ = จอเดียวกันตอบคนละเลข
+ */
+export const defectQtyAll = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/** จำนวนของสงสัยที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้) */
+export const suspectPendingQty = (d) =>
+  (suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0);
 
 /** รวมจำนวนของเสีย
  *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE
@@ -683,12 +772,27 @@ export const defectQty = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspec
 export const sumDefectQty = (rows, mode = 'line') =>
   (rows || []).reduce((s, d) => s + ((mode === 'all' || !isTrialDefect(d)) ? defectQty(d) : 0), 0);
 
-/** แยก 2 ยอดในรอบเดียว — คืน { all, line, trial } */
+/**
+ * แยกยอดในรอบเดียว — คืน { all, line, trial, pending, unknown }
+ *   pending = ของสงสัยที่ยังรอ QA (ไม่อยู่ใน all/line/trial — ยังไม่รู้ว่าเป็นของเสียไหม)
+ *   unknown = true เมื่อมีแถวที่คิวรีไม่ได้ embed ทะเบียนถังมา ⇒ จอห้ามอ้างว่า "สรุปแล้ว"
+ * 🔴 จอที่โชว์ %Q ต้องอ่าน `pending`/`unknown` แล้วเขียนบนจอ ห้ามกลืน
+ */
 export function splitDefectQty(rows) {
-  let all = 0, trial = 0;
-  (rows || []).forEach(d => { const q = defectQty(d); all += q; if (isTrialDefect(d)) trial += q; });
-  return { all, line: all - trial, trial };
+  let all = 0, trial = 0, pending = 0, unknown = false;
+  (rows || []).forEach(d => {
+    const q = defectQty(d);
+    all += q;
+    if (isTrialDefect(d)) trial += q;
+    pending += suspectPendingQty(d);
+    if (suspectState(d) === 'unknown') unknown = true;
+  });
+  return { all, line: all - trial, trial, pending, unknown };
 }
+
+/** ของสงสัยที่ยังรอ QA รวมทั้งชุด — จอเอาไปเขียน "รอพิจารณา N ชิ้น · %Q ยังไม่สรุป" */
+export const sumSuspectPending = (rows) =>
+  (rows || []).reduce((s, d) => s + suspectPendingQty(d), 0);
 
 /* ═══ เป้า A/P/Q และค่าเฉลี่ยข้ามเดือน/ไตรมาส (2026-09-08 · เด็ค Monthly Review โหมด full data) ═══
    อยู่ในไฟล์นี้เพราะเป็น "สูตร OEE" — กฎโปรเจค: util OEE มีไฟล์เดียว ห้ามแตกเพิ่ม */

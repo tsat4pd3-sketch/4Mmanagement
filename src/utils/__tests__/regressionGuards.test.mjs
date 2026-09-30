@@ -178,7 +178,7 @@ const RULES = [
     /* จับการอ่าน `…kpi_catalog.unit` / `.decimals` / `.summary_mode` ตรงๆ ในหน้า
        (ทั้ง `?.` และ `.`) — ต้องผ่าน `unitOf`/`decimalsOf`/`summaryModeOf` ของ `kpiSetup.js`
        ตัว helper เองอยู่ใน kpiSetup.js ซึ่ง allow ไว้ · เทสสร้าง object `{ kpi_catalog: {...} }` = ไม่เข้าเงื่อน */
-    re: /kpi_catalog\??\.(unit|decimals|summary_mode)\b/g,
+    re: /kpi_catalog\??\.(unit|decimals|summary_mode|value_scope|board_slot)\b/g,
     why: '**หน่วย/ทศนิยม ตั้งได้ 2 ชั้น** (24/09 · user เคาะ "2 ชั้น"): `kpi_catalog` = ค่าตั้งต้น '
        + '· `kpi_definitions.unit`/`.decimals` = override เฉพาะแถวนั้น (ว่าง = ตามทะเบียน) '
        + '⇒ อ่านจากทะเบียนตรงๆ = **แถวที่ตั้งทับไว้ไม่มีผล** (เกิดจริง: MTBF ใบ JIG ใช้ "นาที" '
@@ -189,8 +189,9 @@ const RULES = [
     fix: 'ใช้ `unitOf(d)` · `decimalsOf(d)` · `summaryModeOf(d)` จาก `src/utils/kpiSetup.js` '
        + '(ส่ง "แถว kpi_definitions ที่ embed kpi_catalog มาแล้ว" เข้าไป) '
        + '· จัดรูปตัวเลขด้วย `fmtKpi(v, d)` · สรุป 12 เดือนด้วย `summaryOf(months, d)` '
-       + '· 🔴 อย่าลืมใส่ `decimals, summary_mode` ในสตริง `.select()` ที่ embed `kpi_catalog` '
-       + 'ไม่งั้นทุกแถวตกเป็นทศนิยม 2 / วิธีรวม "เฉลี่ย" เงียบๆ',
+       + '· 🔴 อย่าลืมใส่ `decimals, summary_mode, value_scope, board_slot` ในสตริง `.select()` ที่ embed `kpi_catalog` '
+       + 'ไม่งั้นทุกแถวตกเป็นทศนิยม 2 / วิธีรวม "เฉลี่ย" / ค่าของหน่วยเอง เงียบๆ '
+       + '· `value_scope` (30/09) อ่านผ่าน `valueScopeOf(d)` + หานิยามที่ถือค่าด้วย `sharedValueDef(defs, d)` · `board_slot` ผ่าน `boardSlotOf(d)`',
     allow: {
       'src/utils/kpiSetup.js': 'นิยามของ unitOf/decimalsOf/summaryModeOf เอง — เป็นที่เดียวที่อ่านทะเบียนตรงๆ ได้',
     },
@@ -631,6 +632,29 @@ const RULES = [
     allow: { 'src/App.jsx': 'เจ้าของ helper — inNavGroup/isNavGuest นิยามอยู่ที่นี่' },
   },
   {
+    id: 'plan-lot-no-hard-delete',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* แผนสั่งงานที่ยกเลิก = ประวัติที่ต้องสอบกลับได้ว่า "ใครสั่งอะไร แล้วทำไมไม่ได้ทำ" */
+    re: /from\(['"]production_plan_lots['"]\)[\s\S]{0,80}?\.delete\(/g,
+    why: 'ล็อตในแผนคือคำสั่งที่ออกไปหาฝ่ายผลิตแล้ว — ลบแถวทิ้ง = สอบกลับไม่ได้ว่าเคยสั่งอะไร '
+       + 'แล้วทำไมถึงไม่ได้ทำ (ตระกูลเดียวกับกฎ "เคลียร์คิว 4M ค้างด้วย rejected ห้าม delete")',
+    fix: "อัพเดท status = 'cancelled' + cancel_reason แทน — จอกรอง cancelled ออกจากคิวอยู่แล้ว",
+    allow: {},
+  },
+  {
+    id: 'blame-chain-rank-by-impact',
+    scan: ['src/utils'], ext: ['.js'],
+    /* เรียงสายการถีบด้วย ownLateMin ล้วน = ใบที่ "กินเกินนานแต่ไม่พาลใคร" ชนะทุกครั้ง */
+    re: /sort\(\(a, b\) => b\.ownLateMin - a\.ownLateMin\)/g,
+    why: 'วัดกับข้อมูลจริง 2026-09-30 (วันงาน 25/09 ทั้งโรงงาน): chain ที่พาลใบอื่นจริง 27 ตัว '
+       + '**ถูกบังไม่ขึ้นจอ 22 ตัว** เพราะเรียงด้วย ownLateMin ล้วน แล้วใบ manual/ใบที่เปิดคลุมทั้งกะ '
+       + '(กินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย) ชนะการเรียงเสมอ — ไลน์ GOR มีตัวจริง 4 ตัว ขึ้นจอ 0 ตัว '
+       + '⇒ จอตอบคำถามทีมปั๊ม "พาลไปโดนตัวไหนบ้าง" ไม่ได้เลยทั้งที่คำนวณถูกทุกตัว',
+    fix: 'เรียง 3 ชั้นใน pushChainOf: (1) victimCount > 0 ชนะ 0 (2) blameTotalMin มากชนะ '
+       + '(3) ownLateMin มากชนะ — เทสตรึงไว้ที่ src/utils/__tests__/heijunkaBlame.test.mjs',
+    allow: {},
+  },
+  {
     id: 'pareto-hand-built-recharts',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* พาเรโตที่ประกอบเองด้วย Recharts จะมี "เส้น % สะสม" เป็น series ชื่อ cum เสมอ
@@ -818,6 +842,24 @@ const RULES = [
        + '· `label` เหลือไว้เป็น **ค่าที่ฟอร์มเก็บจริง** เท่านั้น (ตัวอย่าง: `productOptions()` ใน src/utils/pickerOptions.js)',
     allow: {},
   },
+  {
+    id: 'partno-headline-via-lead',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการตัดสิน "ใครขึ้นหัว" จากการมีค่า pNo ตรงๆ — ต้องใช้ `info.lead` จาก matInfo แทน
+       (จับได้เฉพาะรูปที่เอาไปใช้เป็นเงื่อนไข: `.pNo ?` / `.pNo &&` / `!.pNo` — การอ่านค่าไปโชว์ไม่เข้าข่าย) */
+    re: /\b\w+\.pNo\s*(\?[^?]|&&)|![a-zA-Z_$][\w$]*\.pNo\b/g,
+    why: 'วัดทะเบียนจริง 30/09 (parts_master 346 แถว): ช่อง `part_no` ของ **วัตถุดิบ 5xx** '
+       + 'ไม่ได้เก็บเลขพาร์ท แต่เก็บ "เอาไปทำงานอะไร" เป็นประโยค — หน้าตาเป็นเลขพาร์ทแค่ 18% '
+       + '(1xx/2xx/3xx = 99/99/95%) ยาวสุด 72 ตัวอักษร มีภาษาไทยปน (mat 50026144) '
+       + '⇒ โค้ดที่เช็คแค่ "มี pNo ไหม" แล้วเอาขึ้นหัว จะทำให้การ์ด/ตารางวัตถุดิบ '
+       + '**พาดหัวด้วยประโยคยาว จนเลขพาร์ทกับ MAT ถูกดันหลุดจอ**',
+    fix: 'ตัดสินด้วย `info.lead` (`\'pno\'|\'name\'|\'mat\'`) ที่ `matInfo()` คืนมา '
+       + '— เกณฑ์อยู่ใน `looksLikePartNo()` (`src/utils/matLabel.js`) ที่เดียว '
+       + '· ค่าที่ไม่ได้ขึ้นหัว **ห้ามตัดทิ้ง** ให้ตกไปเป็นบรรทัดรอง (clamp + title)',
+    allow: {
+      'src/utils/matLabel.js': 'เจ้าของกฎ — เป็นที่คำนวณ pNoIsCode/lead เอง',
+    },
+  },
 ];
 
 function violations(rule) {
@@ -847,6 +889,49 @@ for (const rule of RULES) {
       + `\n\n   (ยกเว้นจริงๆ ให้เติม allow ใน src/utils/__tests__/regressionGuards.test.mjs พร้อมเหตุผล)\n`);
   });
 }
+
+/* 🛡️ oee-suspect-needs-qbin-embed (2026-09-30)
+   ตัวนี้เป็นกฎ "ระดับไฟล์" ไม่ใช่ระดับบรรทัด (เงื่อนไขไขว้กัน 3 อย่าง) จึงเขียนเป็นเทสเดี่ยว
+   ไม่ได้อยู่ใน RULES ที่สแกนทีละบรรทัด
+
+   กฎ §7.1 ของ `src/utils/oee.js`: ของสงสัยไม่ถูกนับเข้า %Q จนกว่า QA จะตัดสิน
+   ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
+   ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
+   ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
+  const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
+  /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
+  const ALLOW = {
+    'src/pages/FactoryMap.jsx:1277': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1342': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/oee.js') continue;                 // ตัวนิยามกฎเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!Q_HELPERS.test(code)) continue;                      // ไฟล์นี้ไม่ได้คิด %Q = ไม่เกี่ยว
+    const re = /from\(\s*'defect_logs'\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 500);         // ตัวคิวรีตั้งแต่ from(...) ไปจนจบ select
+      if (!win.includes('qty_suspect')) continue;             // ไม่ได้ดึงของสงสัยมา = ไม่เกี่ยว
+      const line = code.slice(0, m.index).split('\n').length;
+      const key = `${rel}:${line}`;
+      if (ALLOW[key]) continue;
+      if (!win.includes('QBIN_EMBED')) bad.push(key);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ คิวรีที่ดึง qty_suspect ไปใช้ในไฟล์ที่คิด %Q แต่ไม่ได้ embed ทะเบียนถังเหลือง/แดง\n'
+    + '   ทำไมห้าม: ไม่ embed ⇒ suspectState() ตอบไม่ได้ ระบบถอยไปนับ "ของสงสัย" เป็นของเสียตามพฤติกรรมเดิม\n'
+    + '            ⇒ %Q ของจอนี้ไม่เท่ากับจออื่นที่ embed มา (ข้อมูลชุดเดียวกัน 2 คำตอบ)\n'
+    + '            กฎเต็ม: §7.1 ใน src/utils/oee.js — ของสงสัยยังไม่ใช่ของเสียจนกว่า QA จะตัดสิน\n'
+    + '   แก้ยังไง: import { QBIN_EMBED } from "../utils/oee" แล้วต่อท้าย select:\n'
+    + '            .select(`session_id, qty_ng, qty_suspect, is_trial, ..., ${QBIN_EMBED}`)\n'
+    + '            ถ้าคิวรีนั้นแสดงยอดดิบจริงๆ ไม่ได้คิด %Q ให้เติม ALLOW ในเทสนี้พร้อมเหตุผล\n\n'
+    + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
 
 test('🛡️ ทุกกฎต้องมี why + fix เขียนกำกับ (ข้อความนี้คือสิ่งที่คนเห็นตอน build ล่ม)', () => {
   for (const r of RULES) {
@@ -1023,6 +1108,28 @@ test('🛡️ live-oee-must-pass-pairmap — ทุกจอที่คิด O
     + '   ⚠️ อย่าลืม select `pair_mat_no` ด้วย — ขาดคอลัมน์นี้ pairMap จะว่างเปล่าเงียบๆ (fix ที่ไม่ fix)\n'
     + '   ⚠️ ห้ามยุบคู่ในฝั่งยอดผลิต/%Q — นั่นนับ "ชิ้น" คนละหน่วยกับ "shot"\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+/* 🖤 <Bar> ที่ลูกเป็น <Cell> แต่ไม่มี fill= — tooltip เขียนบรรทัดค่าด้วย "สีของ series" = fill ของ <Bar>
+   ไม่มี ⇒ Recharts ตกไปใช้ #000 = ตัวหนังสือดำบน var(--card) ธีมมืด (user 30/09/2026 ส่งภาพ
+   "พื้นเขียวเข้ม text ดำ" จากแผ่น DL+OH บอร์ด KPI) · เจอ 7 จุดใน 4 ไฟล์ตอนกวาด
+   ⚠️ ต้องดูข้ามบรรทัด (Cell อยู่ในลูก) จึงเขียนเป็นเทสแยก ไม่ใช่กฎใน RULES */
+test('🛡️ <Bar> ที่ระบายสีด้วย <Cell> ต้องมี fill={CELL_BAR_FILL} — ไม่งั้น tooltip ตัวหนังสือดำ', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const rel = relative(ROOT, file);
+    for (const m of code.matchAll(/<Bar\b([^>]*?)>([\s\S]*?)<\/Bar>/g)) {
+      if (/\bfill=/.test(m[1])) continue;              // มี fill แล้ว
+      if (!/<Cell\b/.test(m[2])) continue;              // ไม่ได้ระบายรายแท่ง — สี default ของ Recharts ยังอ่านออก
+      const line = code.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  <Bar dataKey=…> มี <Cell> แต่ไม่มี fill=`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    `\n❌ แท่งที่ระบายสีด้วย <Cell> ไม่มี fill ที่ <Bar> — tooltip จะเขียนค่าเป็นสีดำบนการ์ดเข้ม:\n  ${bad.join('\n  ')}\n` +
+    `   แก้: <Bar fill={CELL_BAR_FILL} …> (จาก src/utils/chartAxis.js — Cell ทับสีที่วาดอยู่แล้ว fill นี้ไปโผล่แค่ใน tooltip)\n` +
+    `   + <Tooltip {...tooltipProps(fs)}> ให้พื้น/ตัวหนังสือ/cursor เป็นมาตรฐานเดียวกัน`);
 });
 
 /* 🔴 onClick={fn} เมื่อ fn "รับ argument" — React ส่ง click event เป็น arg ตัวแรกเสมอ

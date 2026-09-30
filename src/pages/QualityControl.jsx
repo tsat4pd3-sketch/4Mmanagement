@@ -22,7 +22,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
-import { isTrialDefect, defectQty, orderProducedQty } from '../utils/oee';
+import { isTrialDefect, defectQty, orderProducedQty, QBIN_EMBED } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import LineSelect from '../components/LineSelect';
@@ -57,7 +57,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
-import { shortTick, fmtAxis } from '../utils/chartAxis';
+import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -368,7 +368,7 @@ function QualityDashboard() {
           .select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual, status')
           .not('status', 'in', '("cancelled")').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
-          .select('session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q)').in('session_id', c)),
+          .select(`session_id, prod_order_id, qty_ng, qty_suspect, qty_repair, is_trial, dr_defect_types(name_th, color, excl_from_q), ${QBIN_EMBED}`).in('session_id', c)),
       ]);
       const oo = ooRes.rows, dd = ddRes.rows;
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
@@ -808,7 +808,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       formatter={(v) => [v, 'จำนวนค่า']}
                       labelFormatter={(x, p) => p?.[0] ? `${fmtNum(p[0].payload.from, 3)} – ${fmtNum(p[0].payload.to, 3)}` : x} />
-                    <Bar dataKey="count" name="จำนวนค่า" radius={[3, 3, 0, 0]}>
+                    <Bar dataKey="count" name="จำนวนค่า" fill={CELL_BAR_FILL} radius={[3, 3, 0, 0]}>
                       {hist.map((b, i) => {
                         const bad = (spc.usl != null && b.from >= spc.usl) || (spc.lsl != null && b.to <= spc.lsl);
                         return <Cell key={i} fill={bad ? '#ef4444' : '#4d9fff'} opacity={0.85} />;

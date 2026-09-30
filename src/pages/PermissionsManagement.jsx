@@ -88,6 +88,8 @@ const PAGE_GROUPS = [
       { key: 'page:/transport',    label: 'มอบหมายขนส่ง (Transport)' },
       // ทำงานคาบ 2 ฝั่ง (sidebar โชว์ทั้งหมวด Store และ Warehouse & Delivery ผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
       { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal) · คาบ 2 ฝั่ง' },
+      // หมวดแผนงานยุบเข้ามาแล้ว (30/09) — คีย์สิทธิ์เดิมทุกตัว ไม่มีใครเสียสิทธิ์
+      { key: 'page:/planner-sales', label: 'Planner & Sales' },
     ],
   },
   {
@@ -96,12 +98,6 @@ const PAGE_GROUPS = [
       { key: 'page:/customer-demand', label: 'จัดส่งลูกค้า' },
       { key: 'page:/rundown-stock', label: 'คาดการณ์ของจะขาด' },
       { key: 'page:/rack-center',  label: 'ภาชนะ & Packaging' },
-    ],
-  },
-  {
-    group: LOGISTIC_GROUPS.control,
-    pages: [
-      { key: 'page:/planner-sales', label: 'Planner & Sales' },
     ],
   },
   {

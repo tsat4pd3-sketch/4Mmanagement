@@ -8,7 +8,7 @@ import {
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
   isStdFixed, isStdParent, checkStdSelection, matchStdItems,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
-  planProgress,
+  planProgress, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf, KPI_BOARD_SLOTS,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -518,4 +518,69 @@ test('planProgress: upTo กำหนดเองได้ และไม่ห
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 3 }).actual, 3);
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 99 }).months, 6, 'เกิน 12 ถูกตัดลงมา');
   assert.equal(planProgress({ actual: a, plan: p, def, upTo: 0 }), null);
+});
+
+/* ── 🏭 KPI ที่ค่าเป็นของโรงงาน (30/09 · user: %RM + Customer Satisfaction ทุกหน่วยใช้ตัวเลขเดียวกัน) ── */
+const CAT_PLANT = { id: 'c-rm', name: '%RM (Raw Material)', value_scope: 'plant' };
+const CAT_OWN = { id: 'c-x', name: 'Cost Reduction', value_scope: 'own' };
+const plantDef = { id: 'p', year: 2026, scope_kind: 'plant', scope_value: null, catalog_id: 'c-rm', kpi_catalog: CAT_PLANT, source: 'manual' };
+const pd4Def = { id: 'u', year: 2026, scope_kind: 'section', scope_value: 'PD4', catalog_id: 'c-rm', kpi_catalog: CAT_PLANT, source: 'manual' };
+const ownDef = { id: 'o', year: 2026, scope_kind: 'section', scope_value: 'PD4', catalog_id: 'c-x', kpi_catalog: CAT_OWN, source: 'manual' };
+
+test('valueScopeOf — อ่านจากทะเบียน · ไม่ตั้ง/ค่าแปลก = own', () => {
+  assert.equal(valueScopeOf(pd4Def), 'plant');
+  assert.equal(valueScopeOf(ownDef), 'own');
+  assert.equal(valueScopeOf({ kpi_catalog: { value_scope: 'weird' } }), 'own');
+  assert.equal(valueScopeOf(null), 'own');
+});
+test('sharedValueDef — นิยามหน่วยงานของ KPI แบบ plant → ชี้ไปนิยามโรงงานปีเดียวกัน · แบบ own = null', () => {
+  const defs = [ownDef, pd4Def, plantDef];
+  assert.equal(sharedValueDef(defs, pd4Def)?.id, 'p');
+  assert.equal(sharedValueDef(defs, plantDef)?.id, 'p');            // ตัวเองก็คือตัวที่ถือค่า
+  assert.equal(sharedValueDef(defs, ownDef), null);
+});
+test('sharedValueDef — ไม่มีนิยามโรงงาน = null (จอต้องบอกให้ไปสร้าง ห้ามถอยไปใช้ค่าของหน่วย) · คนละปีไม่นับ · แถว auto ไม่นับ', () => {
+  assert.equal(sharedValueDef([pd4Def], pd4Def), null);
+  assert.equal(sharedValueDef([{ ...plantDef, year: 2025 }], pd4Def), null);
+  assert.equal(sharedValueDef([{ ...plantDef, source: 'auto:x' }], pd4Def), null);
+});
+test('sharedValueDef — แถวเก่าที่ไม่มี catalog_id เทียบด้วยชื่อ · แถวเก่า scope_kind null + section null = โรงงาน', () => {
+  const legacyPlant = { id: 'lp', year: 2026, scope_kind: null, section: null, line_group: null, name: '%RM (Raw Material)', kpi_catalog: null };
+  const legacyUnit = { id: 'lu', year: 2026, scope_kind: 'section', scope_value: 'PD3', name: '%RM (Raw Material)', kpi_catalog: CAT_PLANT };
+  assert.equal(sharedValueDef([legacyPlant, legacyUnit], legacyUnit)?.id, 'lp');
+});
+
+/* ── 📈 yearForecast — ผลจริง + แผนที่เหลือ (30/09 · user: "สรุปว่าปีนี้จะรอดหรือร่วง") ── */
+test('yearForecast: average — 9 เดือนจริง + 3 เดือนแผน = เฉลี่ย 12 ค่า', () => {
+  const actual = [80, 80, 80, 80, 80, 80, 80, 80, 80, null, null, null];
+  const plan = Array(12).fill(90);
+  const r = yearForecast({ actual, plan, def: { kpi_catalog: { summary_mode: 'average' } } });
+  assert.equal(r.actualMonths, 9); assert.equal(r.planMonths, 3);
+  assert.ok(Math.abs(r.value - (80 * 9 + 90 * 3) / 12) < 1e-9);
+  assert.equal(r.approx, false);
+});
+test('yearForecast: sum — ของเสียสะสม = Σ จริง + Σ แผนที่เหลือ · ผลจริงชนะแผนในเดือนเดียวกัน', () => {
+  const actual = [10, 12, null, null, null, null, null, null, null, null, null, null];
+  const plan = Array(12).fill(5);   // ม.ค.-ก.พ. มีทั้งจริงและแผน → ใช้จริง
+  const r = yearForecast({ actual, plan, def: { kpi_catalog: { summary_mode: 'sum' } } });
+  assert.equal(r.value, 10 + 12 + 5 * 10);
+});
+test('yearForecast: 🔴 เดือนที่ไม่มีทั้งผลและแผน = คาดการณ์ไม่ได้ (null + บอกเดือนที่ขาด) ห้ามเดา', () => {
+  const actual = [80, 80, null, null, null, null, null, null, null, null, null, null];
+  const r = yearForecast({ actual, plan: [], def: null });
+  assert.equal(r.value, null); assert.equal(r.reason, 'no_plan');
+  assert.deepEqual(r.missing, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(yearForecast({ actual: [], plan: Array(12).fill(1) }).reason, 'no_actual');   // แผนล้วนไม่ใช่คาดการณ์
+});
+test('yearForecast: ครบ 12 เดือนจริง = สรุปปีจริง ไม่ใช้แผน · rate = เฉลี่ย + approx', () => {
+  const r = yearForecast({ actual: Array(12).fill(7), plan: Array(12).fill(1), def: { kpi_catalog: { summary_mode: 'rate' } } });
+  assert.equal(r.planMonths, 0); assert.equal(r.value, 7); assert.equal(r.approx, true);
+});
+
+/* ── 🎯 boardSlotOf — ทะเบียนบอกเองว่าขึ้นแผ่นไหน (30/09 · DSI = Inventory Balance · TS Academy = Training) ── */
+test('boardSlotOf: อ่านจากทะเบียน · คีย์แปลก/ไม่ตั้ง = null · คีย์ทุกตัวไม่ซ้ำ', () => {
+  assert.equal(boardSlotOf({ kpi_catalog: { name: 'Day Sales of Inventory (DSI)', board_slot: 'inv' } }), 'inv');
+  assert.equal(boardSlotOf({ kpi_catalog: { name: 'QCC', board_slot: null } }), null);
+  assert.equal(boardSlotOf({ kpi_catalog: { board_slot: 'bogus' } }), null);
+  assert.equal(new Set(KPI_BOARD_SLOTS.map(s => s.key)).size, KPI_BOARD_SLOTS.length);
 });

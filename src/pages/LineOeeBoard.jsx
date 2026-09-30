@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
@@ -19,6 +19,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
 } from 'recharts';
+import { CELL_BAR_FILL } from '../utils/chartAxis';
 
 /* ═══ 📟 OEE บอร์ดหน้าไลน์ — /line-oee (2026-08-25 · คำสั่ง user "เพิ่มหน้า OEE หน้าไลน์แบบนี้") ═══
    จอ TV ประจำไลน์ผลิต 1 จอ = 1 ไลน์ (deep-link ?line=<ชื่อกลุ่มไลน์>) — โครงตามภาพอ้างอิง
@@ -135,7 +136,7 @@ export default function LineOeeBoard() {
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
       fetchByIds(ids, c => supabaseDR.from('defect_logs')
-        .select('id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)')
+        .select(`id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c)),
       // master ผ่าน cache กลาง — key เดียวกับ FactoryMap = แชร์กัน ไม่ดึงซ้ำ (กฎ egress)
       cachedMaster('dr_products:ct', async () =>
@@ -333,7 +334,7 @@ export default function LineOeeBoard() {
             <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text2)' }} interval={0}
               tickFormatter={n => n.length > 9 ? n.slice(0, 8) + '…' : n} angle={-25} height={48} textAnchor="end" />
             <YAxis hide />
-            <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+            <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[4, 4, 0, 0]} isAnimationActive={false}>
               <LabelList dataKey="v" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'var(--text)' }} />
               {items.map((_, i) => <Cell key={i} fill={color} fillOpacity={1 - i * 0.11} />)}
             </Bar>

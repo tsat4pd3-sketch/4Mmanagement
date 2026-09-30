@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sideOfMat, sideMatches, splitBySide, SIDES, UNKNOWN_SIDE, matClassesOfSide } from '../logisticSide.js';
+import { sideOfMat, sideMatches, splitBySide, SIDES, UNKNOWN_SIDE, matClassesOfSide, LOGISTIC_GROUPS } from '../logisticSide.js';
 
 test('FG 1xx = ขาออก (Warehouse + Delivery) — ห้ามกลับด้านกับ Store', () => {
   assert.equal(sideOfMat('10100384'), 'outbound');
@@ -64,8 +64,10 @@ test('splitBySide รับ matOf ของตัวเองได้ (แถ�
   assert.equal(g.inbound.length, 1);
 });
 
-test('SIDES มี 3 ฝั่ง และเจ้าของงานต้องไม่สลับ Warehouse/Store', () => {
-  assert.deepEqual(SIDES.map(s => s.key), ['inbound', 'outbound', 'control']);
+/* 30/09 (คำสั่ง user): ยุบหมวด "แผนงาน & ข้อมูล" เข้า Store → SIDES เหลือ 2 ฝั่งที่ถือของจริง
+   ⚠️ กติกาที่ห้ามถอย: Warehouse & Delivery ยังเป็นหมวดแยก · Warehouse ≠ Store (user ย้ำ 03/09) */
+test('SIDES มี 2 ฝั่ง และเจ้าของงานต้องไม่สลับ Warehouse/Store', () => {
+  assert.deepEqual(SIDES.map(s => s.key), ['inbound', 'outbound']);
   const inb = SIDES.find(s => s.key === 'inbound');
   const outb = SIDES.find(s => s.key === 'outbound');
   assert.match(inb.owner, /Store/, 'ขาเข้าต้องเป็นของ Store');
@@ -82,4 +84,12 @@ test('matClassesOfSide บอกได้ว่าฝั่งไหนครอ
 test('UNKNOWN_SIDE ต้องแยกจาก SIDES (เป็นสถานะ "ไม่รู้" ไม่ใช่ฝั่งที่ 4)', () => {
   assert.equal(UNKNOWN_SIDE.key, 'unknown');
   assert.ok(!SIDES.some(s => s.key === 'unknown'), 'ห้ามยัด unknown เข้า SIDES — จะกลายเป็นฝั่งที่มีเจ้าของ');
+});
+
+test('ยุบแผนงานเข้า Store แล้ว แต่ Warehouse & Delivery ต้องยังเป็นหมวดแยก (ห้ามยุบตามไปด้วย)', () => {
+  assert.equal(LOGISTIC_GROUPS.control, undefined, 'หมวดแผนงานถูกยุบแล้ว — ห้ามฟื้นเป็นหมวดแยกโดยไม่มีคำสั่ง user');
+  assert.match(LOGISTIC_GROUPS.inbound, /Planning/, 'หมวดรวมต้องบอกว่ามีงานแผนงานอยู่ด้วย');
+  assert.match(LOGISTIC_GROUPS.inbound, /Store/);
+  assert.match(LOGISTIC_GROUPS.outbound, /Warehouse/);
+  assert.notEqual(LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound);
 });

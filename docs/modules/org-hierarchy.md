@@ -38,7 +38,19 @@
 > |---|---|---|---|
 > | 🏬 **Store (ป้อนของเข้าไลน์)** — เดิม "ขาเข้า" เปลี่ยน 2026-09-07 | **Store** | **2xx** ผลิตเอง · **3xx** ซื้อนอก · **5xx** raw | ของเข้ามาครบไหม พอป้อนไลน์ไหม |
 > | 🚚 **Warehouse & Delivery (ส่งลูกค้า)** — เดิม "ขาออก" | **Warehouse · Delivery · Rack Center** | **1xx** FG | ส่งลูกค้าทันไหม ของพอส่งไหม |
-> | 🧭 **แผนงาน & ข้อมูล** | **Sales · Planner · Billing** | — (ไม่ถือของ) | ประสานข้อมูล ขาเข้า ↔ ผลิต ↔ ขาออก |
+> | 🧭 ~~แผนงาน & ข้อมูล~~ → **ยุบเข้า Store 2026-09-30** | Sales · Planner | — (ไม่ถือของ) | ประสานข้อมูล ขาเข้า ↔ ผลิต ↔ ขาออก |
+>
+> ### 🧭 ยุบหมวด "แผนงาน & ข้อมูล" เข้า Store → **Planning & Store** (2026-09-30 · คำสั่ง user)
+> user: *"module แผนงาน (วางแผนผลิต · Planner & Sales) รวมกับสโตร์ได้มั้ย เพราะคนใช้งานเป็นหน่วยงานทีมเดียวกัน"*
+> **วัดจริงก่อนตัดสิน:** role `planner_store` เป็น **role เดียว** ของทั้ง 2 งาน · คนที่ใช้งานจริงตั้ง
+> `profiles.section = 'Planning&Store'` ทุกคน · **ไม่มีใครถือ role `sale`** ⇒ เดิมแยก 2 หมวดทั้งที่เป็นหน่วยเดียว
+> - เมนูเหลือ **2 หมวด**: `Logistic - Planning & Store (แผนงาน + ป้อนของเข้าไลน์)` · `Logistic - Warehouse & Delivery (ส่งลูกค้า)`
+>   · `/planner-sales` ย้ายบ้านเข้า Planning & Store · `/production-plan` **บ้านยังอยู่ฝ่ายผลิต** (หัวหน้าไลน์ใช้) ทางลัดย้ายมา Planning & Store
+> - 🔴 **Warehouse & Delivery ห้ามยุบตามเข้ามา** — กฎ Warehouse ≠ Store ข้างบนยังมีผลเต็ม (มีเทสกันใน `logisticSide.test.mjs`)
+> - `SIDES` (ฝั่งของ MAT) เหลือ 2 ฝั่งที่ถือของจริง — `control` ไม่เคยเป็นฝั่งของ MAT อยู่แล้ว
+> - DB: migration `20260930_nav_groups_v3_planning_store.sql` (MAIN · **apply แล้ว**) เปลี่ยนชื่อหมวด (cascade 8 คีย์)
+>   + ย้าย `demand:upload` เข้าหมวดใหม่ (sort 510) + ลบหมวดแผนงาน · **ไม่แตะ role_permissions สิทธิ์ทุก role คงเดิม**
+> - ⚠️ ที่เคยคิดว่าต้องใส่ทางลัดอัพ e-SMART ให้ฝั่งจัดส่ง — **ไม่ต้อง** ตัวอัพ e-SMART อยู่ `/customer-demand` (บ้านของ W&D) อยู่แล้ว
 >
 > - **🔴 "Warehouse" กับ "Store" เป็นคนละแผนก คนละฝั่ง คนละความรับผิดชอบ — ห้ามใช้สลับกันในโค้ด/จอ/เอกสาร**
 >   Warehouse = ที่เก็บ **FG 1xx** รอส่งลูกค้า (ขาออก) · Store = คุม **2xx/3xx/5xx** (ขาเข้า)
@@ -51,7 +63,7 @@
 >   และ **เลขพาร์ทลูกค้า** (`MB3B-…` ที่ยังไม่ resolve เป็น MAT SAP) → `sideOfMat` คืน `null`
 >   จอต้องโชว์ชิป ❔ **ไม่ระบุฝั่ง** พร้อมจำนวน (หลักเดียวกับ `coverage.unknown` ใน Delivery)
 >   ข้อมูลจริง 2026-09-03: `line_stock_summary` 106 แถว = FG 16 · child 73 · raw 14 · **เลขลูกค้า 3**
-> - **เมนูแยก 3 หมวดตามฝั่งแล้ว** (`Logistic - Store (ป้อนของเข้าไลน์)` / `Warehouse & Delivery (ส่งลูกค้า)` / `แผนงาน & ข้อมูล`)
+> - **เมนูแยกหมวดตามฝั่ง** (เดิม 3 หมวด · **ตั้งแต่ 30/09 เหลือ 2**: `Planning & Store` / `Warehouse & Delivery` — ดูหัวข้อข้างบน)
 >   — `NAV_GROUP_ORDER` + `NAV_GROUP_META` + `CARD_META` (DeptHub) + `PAGE_GROUPS` (/permissions)
 >   + `permission_catalog.group_name/sort` (migration `20260903_permission_catalog_logistic_sides.sql` · **apply แล้ว**
 >   · ซอย sort ในช่วง 5xx: ขาเข้า 500-519 · ขาออก 520-539 · แผนงาน 540-599) — **5 จุดนี้ต้องตรงกันเสมอ**

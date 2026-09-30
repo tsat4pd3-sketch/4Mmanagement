@@ -142,6 +142,7 @@ const NULLISH = (i) => ({
   scrap_report_id: null, defect_log_id: null, qa_decision: null, special_use_doc_no: null,
   symptom: null, wi_no: null,
 })
+
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
 const thenable = (rows = ROWS) => {
@@ -211,6 +212,23 @@ const TABLE_ROWS = {
         /scrap-report · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย** = บั๊กทั้งคลาสมองไม่เห็น
      · i=4 → OP ที่ผูกพาร์ทจริง + ลำดับขั้นครบ (เคสปกติ)
      · i=5 → OP ที่ยังไม่ผูก parent/seq (เคส worklist เหลือง + กฎ "ขั้นเดี่ยว ห้ามเดาสาย") */
+  /* 🔩 parts_master — ทะเบียน**พาร์ทลูก** (2xx/3xx ชิ้นส่วน · 5xx วัตถุดิบ) คนละตารางกับ
+     `dr_products` (2026-09-30) · ไม่มีคีย์นี้ = `from('parts_master')` ตกไปใช้ ROWS กลาง
+     ซึ่งมี `p_no` แต่ **ไม่มี `part_no`** ⇒ `useChildParts()` ได้ Part No. ว่างทุกแถว
+     ⇒ **หัวการ์ดทั้งโมดูลสโตร์ (`<PartCard>`/`<MatLabel>`) ไม่เคยมี Part No. ให้เรนเดอร์เลย**
+        = สาขา "เรียง Part No. → ชื่อ → MAT" มองไม่เห็นจาก crashsweep/mobilesweep
+     🔴 **แถว i%3===2 ต้องเป็นวัตถุดิบ 5xx ที่ part_no เป็น "คำบรรยาย" ห้ามถอด** — วัดทะเบียนจริง
+        30/09: 5xx มี part_no หน้าตาเป็นเลขพาร์ทแค่ 18% (ที่เหลือคือประโยคว่าเอาไปทำงานอะไร
+        ยาวสุด 72 ตัว มีภาษาไทยปน) ⇒ ถ้า mock มีแต่เลขพาร์ทสวยๆ สาขา `lead === 'name'`
+        + การ clamp บรรทัดรอง จะไม่เคยถูกรัน แล้วบั๊ก "พาดหัวด้วยประโยคจนเลขหลุดจอ"
+        กลับมาได้เงียบๆ (UI §6.21) · แถว NULLISH ยังต้องว่างตามกติกา = สาขา lead='mat' */
+  parts_master: (r, i) => isNullish(r)
+    ? { ...r, part_name: null, part_no: null }
+    : i % 3 === 2
+      ? { ...r, mat_no: `5002${6000 + i}`, part_name: `WSS-M1A367-A36 1.5X${270 + i}XC`,
+          part_no: `R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/0${i % 9})1 : 2 Co(1FGใช้2ชิ้น)` }
+      : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
+          part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
     const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
@@ -240,7 +258,26 @@ const TABLE_ROWS = {
         ได้กลุ่มละ 1 ใบเสมอ = ไม่เคยถึงเกณฑ์ตัวอย่างขั้นต่ำเลยสักครั้ง
      · 10 ใบ + 4 ใบ ⇒ ได้ **ทั้งสองสาขา**: กลุ่มแรกถึงเกณฑ์ (ปุ่ม "เสนอปรับ" โผล่)
        กลุ่มหลังไม่ถึง (ป้าย "ตัวอย่างไม่พอ") — ถ้าทุกกลุ่มถึงเกณฑ์หมด สาขาที่สองจะไม่เคยถูกรัน */
-  prod_orders: (r, i) => ({ ...r, mat_no: i <= 10 ? '10101001' : '10101002', status: 'confirmed' }),
+  /* 🔴 **ใบ 13-14 ต้องเป็น `open` ที่เลยกำหนด ห้ามเปลี่ยนเป็น confirmed** (2026-09-30)
+        เดิมทุกใบเป็น `confirmed` ⇒ บอร์ดไทม์ไลน์ไม่มี "ใบค้าง" เลยแม้ใบเดียว
+        ⇒ โค้ดทั้งคลาสที่ดูแลเรื่องดีเลย์ **ไม่เคยถูกรันใน harness**: คิวถูกดันด้วย `occupiedEndMs` ·
+           หางแดง · `delayedCountOf` · `projectedFinishMs` · แถบ "หลุดแผนไปแค่ไหน" (`planStatusOf`
+           + `<PlanSlipBar>`) — ซึ่งเป็นสถานะที่หน้างานเจอทุกวัน
+        · คุมไว้ 2 ใบจากกลุ่มหลัง (i>10) เพื่อ **ไม่แตะเกณฑ์ตัวอย่างของกลุ่มแรก** (10 ใบ ยังถึงเกณฑ์)
+        · `qty_actual` เดินไปครึ่งทาง = ได้เคส "ทำอยู่แต่ยังไม่ปิด" ไม่ใช่ "เปิดแล้วไม่แตะเลย" */
+  prod_orders: (r, i) => ({
+    ...r, mat_no: i <= 10 ? '10101001' : '10101002',
+    /* 🔴 **ใบ 2 ต้องเป็น "ปิดช้า" ห้ามแก้ให้ปิดตรงเวลา** (2026-09-30)
+          ปิดจริง 18:30 ทั้งที่ตามคิวควรจบ ~15:22 (ใบละ 120 ชิ้น × CT 58 วิ ต่อกันมาจาก 09:00)
+          ⇒ เปิดโค้ดสาย `isLateDone`: หางส้ม · คิวถูกดันด้วย `confirmed_at` · **แท่งล้นกรอบแผน**
+             ซึ่งเป็นภาพที่ทีมปั๊มขอ ("วาดกรอบเวลาไว้ แล้วเห็นว่าหลุดจากตัวไหน")
+          เดิมทุกใบปิดก่อนกรอบ ⇒ สายนี้ไม่เคยถูกวาดใน harness เลย */
+    ...(i >= 13
+      ? { status: 'open', confirmed_at: null, qty_ok: null, qty_actual: Math.round((120 + i) * 0.4) }
+      : i === 2
+        ? { status: 'confirmed', confirmed_at: '2026-08-04T18:30:00+07:00' }
+        : { status: 'confirmed' }),
+  }),
   /* 🏭 production_sessions — กะต้องผูกกับ **ไลน์ที่มีอยู่จริงใน production_lines** (2026-09-22)
      เดิมทุกแถวเป็น `line_name: FAM_LINE` ซึ่งไม่ตรงกับ `LINE_NAME(i)` ของ production_lines เลย
      ⇒ ทุกหน้าที่ถามว่า "ไลน์นี้เปิดกะหรือยัง" ได้คำตอบว่า "ยังไม่เปิด" ทุกไลน์เสมอ
@@ -314,11 +351,13 @@ const TABLE_FIXED = {
      · `summary_mode` ต้องมีทั้ง `average`/`sum`/`rate` ให้ครบ — แต่ละตัวเปิดสาขาคนละเส้นใน `summaryOf()`
        (`rate` = สาขาที่ต้องถอยมาเฉลี่ยแล้วติดป้าย ≈) · `decimals: 0` = สาขาที่ `||` จะตกค่า default */
   kpi_definitions: [
-    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average' } },
-    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate' } },
+    { id: 'kd-1', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 95, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'plant', board_slot: 'rm' } },
+    /* 🏭 30/09 ห้ามถอด: KPI แบบ "ค่าโรงงาน" ที่หน่วยงาน (PD1 = ส่วนงานของ user ใน harness) ถือด้วย — เปิดสาย sharedValueDef/แถวอ่านอย่างเดียวในแท็บ ⚙️ + note บนบอร์ด */
+    { id: 'kd-7', year: 2026, section: 'PD1', scope_kind: 'section', scope_value: 'PD1', line_group: null, category: 'financial', seq: 1, name: 'Raw Material Control', source: 'manual', target_value: 96, direction: 'up', weight: 5, is_active: true, catalog_id: 'kc-1', std_unit: 'Production', std_item_id: 'std-1', kpi_catalog: { id: 'kc-1', name: 'Raw Material Control', unit: '%', category: 'financial', direction: 'up', decimals: 2, summary_mode: 'average', value_scope: 'plant', board_slot: 'rm' } },
+    { id: 'kd-2', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 2, name: 'Internal Quality Rate', source: 'manual', target_value: null, direction: null, weight: null, is_active: true, catalog_id: 'kc-2', std_unit: 'Production', std_item_id: 'std-3', kpi_catalog: { id: 'kc-2', name: 'Internal Quality Rate', unit: 'PPM', category: 'internal', direction: 'down', decimals: 0, summary_mode: 'rate', value_scope: 'own' } },
     { id: 'kd-3', year: 2026, section: 'PD3', scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 3, name: 'PPM ของเสียภายใน', source: 'auto:ppm', target_value: 500, direction: 'down', weight: 4, is_active: true, catalog_id: null, std_unit: null, std_item_id: null, kpi_catalog: null },
     /* แถวที่ **ตั้งหน่วย/ทศนิยมทับทะเบียน** + วิธีรวมแบบ "รวมทั้งปี" — สาขา 2 ชั้นของ `unitOf`/`decimalsOf` */
-    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum' } },
+    { id: 'kd-4', year: 2026, section: null, scope_kind: 'plant', scope_value: null, line_group: null, category: 'internal', seq: 4, name: 'Defect / Scrap Cost', source: 'manual', unit: 'พันบาท/เดือน', decimals: 1, target_value: 105.1, direction: 'down', weight: null, is_active: true, catalog_id: 'kc-3', std_unit: null, std_item_id: null, kpi_catalog: { id: 'kc-3', name: 'Defect / Scrap Cost (COPQ)', unit: 'พันบาท', category: 'internal', direction: 'down', decimals: 2, summary_mode: 'sum', value_scope: 'own' } },
     /* ⚡ KPI ช่างของแผนก JIG MTN (24/09) — ชื่อตามที่ seed จริง ⇒ สาย `autoKpiOfName` → แถว "⚡ ระบบคำนวณ" + ปุ่ม "ใช้ค่านี้" ถูกรันใน harness
        · MTBF ตั้งหน่วย "นาที" ทับ = สาขา `toRowUnit` ×60 · ห้ามถอด */
     { id: 'kd-5', year: 2026, section: 'JIG MTN', scope_kind: 'department', scope_value: 'JIG MTN', line_group: null, category: 'internal', seq: 5, name: 'Mean Time Between Failure (MTBF)', source: 'manual', unit: 'นาที', target_compare: '>=', target_value: 10000, commit_compare: '>=', commit_value: 9000, direction: 'up', weight: 4, is_active: true, catalog_id: null, std_unit: 'Maintenance', std_item_id: null, kpi_catalog: null },
@@ -334,6 +373,11 @@ const TABLE_FIXED = {
     ...[93.1, 94.0, 95.2, 96.4, 95.8, 94.9].map((v, i) => ({ id: `ke-1-${i}`, kpi_id: 'kd-1', month: i + 1, value: v })),
     ...[120.5, 98.2, 140.9, 88.4].map((v, i) => ({ id: `ke-4-${i}`, kpi_id: 'kd-4', month: i + 1, value: v })),
     ...[97.5, 99.1, 98.0].map((v, i) => ({ id: `ke-6-${i}`, kpi_id: 'kd-6', month: i + 1, value: v })),
+  ],
+  /* 📝 หมายเหตุรายเดือน (30/09) — แผ่น %RM (slot rm) ที่ทั้งโรงงาน เดือน 3 มีโน้ต ⇒ เปิดสายเครื่องหมาย 📝 บนแท่ง + โมดัล (ห้ามถอด) */
+  kpi_month_notes: [
+    { id: 'kn-1', year: 2026, month: 3, scope_kind: 'plant', scope_value: '', row_key: 'rm', kind: 'remark', text: 'ราคาเหล็กขึ้น 4% ตามสัญญา Q1', created_by_name: 'ทดสอบ ระบบ', created_at: '2026-04-02T02:00:00Z', is_active: true },
+    { id: 'kn-2', year: 2026, month: 3, scope_kind: 'plant', scope_value: '', row_key: 'rm', kind: 'action', text: 'เจรจา supplier รอบ 2 · เป้าลดลง 1.5% ใน Q2', created_by_name: 'ทดสอบ ระบบ', created_at: '2026-04-02T02:05:00Z', is_active: true },
   ],
   kpi_month_plans: [
     ...[95, 95, 95, 95, 95, 95].map((v, i) => ({ id: `kp-1-${i}`, kpi_id: 'kd-1', month: i + 1, plan_value: v })),

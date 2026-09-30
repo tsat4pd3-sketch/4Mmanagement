@@ -135,6 +135,19 @@ export function isActionSeeded(resource, action) {
 }
 
 /**
+ * สิทธิ์ของ **ฟีเจอร์ใหม่** ที่เพิ่ง seed คีย์ลงทะเบียน — deploy-safe (2026-09-30)
+ *   • ยังไม่ seed (โค้ดขึ้นก่อน migration) → ปิดไว้ก่อน = โหมดดูอย่างเดียว **จอไม่พัง**
+ *   • seed แล้ว → ใช้สิทธิ์จาก /permissions ตามปกติ
+ *   • admin ผ่านเสมอ — แบบแผนเดียวกับ `canDelete` ด้านล่าง (ไม่งั้น admin จะถูกล็อกออก
+ *     ระหว่างที่ cache สิทธิ์ยังโหลดไม่เสร็จ ซึ่งดูเหมือนระบบพัง)
+ * ⚠️ ใช้กับ "ฟีเจอร์ที่คีย์อาจยังไม่มีในทะเบียน" เท่านั้น — คีย์ที่ seed มานานแล้วใช้ `can()` ตรงๆ
+ */
+export function canSeeded(resource, action, role) {
+  if (role === 'admin') return true;
+  return isActionSeeded(resource, action) && can(resource, action, role);
+}
+
+/**
  * สิทธิ์ "ลบ" แบบแยก — deploy-safe:
  *   • ถ้า `${resource}:delete` ถูก seed แล้ว → ใช้สิทธิ์ลบแยก (Admin ปรับรายบุคคลได้)
  *   • ถ้ายังไม่ seed (ก่อน apply migration) → fallback สิทธิ์เดิมที่เคยคุมการลบ (พฤติกรรมไม่เปลี่ยน)
