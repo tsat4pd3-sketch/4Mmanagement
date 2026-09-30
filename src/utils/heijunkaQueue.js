@@ -228,8 +228,11 @@ export const orderKeyOf = (o) => o?.id ?? o?.prod_no;
 export function positionAllCards(cards = [], opts = {}) {
   const { flowByLine, machineCountByLine, pairMatByMat, ...queueOpts } = opts;
   const out = new Map();
-  Object.values(buildLanes(cards, { flowByLine, machineCountByLine, pairMatByMat })).forEach(laneCards => {
-    computeQueuedPositionsFull(laneCards, queueOpts).forEach(item => out.set(orderKeyOf(item.o), item));
+  /* ติด `laneKey`/`laneSeq` ไว้ด้วย — จำเป็นต่อการไล่ "ใครถีบใคร" (`pushChainOf`)
+     เพราะการถีบเกิดได้เฉพาะภายในเลนเดียวกัน (1 เลน = 1 เครื่องจริง ทำได้ทีละใบ) */
+  Object.entries(buildLanes(cards, { flowByLine, machineCountByLine, pairMatByMat })).forEach(([laneKey, laneCards]) => {
+    computeQueuedPositionsFull(laneCards, queueOpts).forEach((item, laneSeq) =>
+      out.set(orderKeyOf(item.o), { ...item, laneKey, laneSeq }));
   });
   return out;
 }
@@ -291,5 +294,89 @@ export function planStatusOf({ positioned, cards = [], breaks = [], ctByMat = {}
     behindMin, behindPcs, pcsCt: ctsLeft.length === 1 ? ctsLeft[0] : null,
     overShiftMin, lateCards,
     noCt: !pace.anyCt,
+  };
+}
+
+/* ══ 🔗 "หลุดมาจากตัวไหน พาลไปโดนตัวไหน" — สายการถีบของคิว (2026-09-30 · ทีมปั๊ม) ═══════════
+   คำขอ: *"งานดีเลย์ มันก็จะถีบออกไปเรื่อยๆ ... อยากเห็นว่ามันหลุดมาจากตัวไหน พาลไปโดนตัวไหนบ้าง"*
+
+   🔴🔴 กับดักที่ต้องระวังที่สุด — **"ใบเริ่มช้ากว่าเวลาเปิด" ≠ "ใบถูกดีเลย์ถีบ"**
+   หน้างานสแกนเปิดใบรวดเดียวทั้งล็อตตอนต้นกะ ⇒ `orderStartMs` ของ **ทุกใบ** ≈ 08:00 เท่ากันหมด
+   ⇒ ใบที่ 2-10 จึง "เริ่มช้ากว่าเวลาเปิด" เป็นชั่วโมงๆ **ทั้งที่งานเดินปกติดีทุกอย่าง** (นั่นคือการเข้าคิว
+     ตามธรรมชาติ ไม่ใช่ความเสียหาย) — ถ้านับแบบนั้นจอจะโทษทุกใบในกะ แล้วเลขจะไร้ความหมายทันที
+   ⇒ **กฎ: นับเป็น "ถูกพาล" เฉพาะใบที่ต่อท้าย "ต้นเหตุ" ที่ตัวมันเองช้าจริง** (`isDelayed`/`isLateDone`)
+     และโทษได้ไม่เกินเวลาที่ต้นเหตุกินเกินไปจริง (`min(ถูกดันกี่นาที, ต้นเหตุกินเกินกี่นาที)`)
+
+   ต้นเหตุ (root) = ใบที่ **กินเวลาเกินกรอบของตัวเอง** — `occupiedEndMs − endMs`
+     · ยังไม่ปิด+เลยกำหนด ⇒ ยังกินอยู่ (ถึงตอนนี้) · ปิดช้า ⇒ กินไปถึง `confirmed_at`
+   ผู้ถูกพาล (victims) = ใบที่อยู่**หลังต้นเหตุในเลนเดียวกัน** และถูกเลื่อนเริ่มออกไปจริง (ติดกันเป็นสาย)
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+const PUSH_MIN_MS = 2 * 60000;          // เลื่อนไม่ถึง 2 นาที = เศษเวลา ไม่นับว่าถูกถีบ
+
+export function pushChainOf(positioned) {
+  const items = [];
+  if (positioned && typeof positioned.forEach === 'function') positioned.forEach(it => items.push(it));
+
+  /* จัดเป็นเลน แล้วเรียงตามลำดับที่คิวจัดไว้จริง */
+  const lanes = new Map();
+  items.forEach(it => {
+    const k = it.laneKey ?? it.o?.line_name ?? '';
+    (lanes.get(k) || lanes.set(k, []).get(k)).push(it);
+  });
+  const chains = [];
+  lanes.forEach(lane => {
+    lane.sort((a, b) => (a.startMs - b.startMs) || ((a.laneSeq ?? 0) - (b.laneSeq ?? 0)));
+    lane.forEach((it, i) => {
+      const ownLateMs = Math.max(0, (it.occupiedEndMs || 0) - (it.endMs || 0));
+      if (ownLateMs < PUSH_MIN_MS) return;                       // ไม่ได้กินเกิน = ไม่ใช่ต้นเหตุ
+      if (!(it.isDelayed || it.isLateDone)) return;               // กินเกินแต่ระบบไม่ถือว่าช้า (backfill ฯลฯ)
+      const victims = [];
+      for (let j = i + 1; j < lane.length; j++) {
+        const v = lane[j];
+        const pushedMs = (v.startMs || 0) - (v.o?.orderStartMs || 0);
+        if (pushedMs < PUSH_MIN_MS) break;                        // สายขาด — ใบนี้เริ่มได้ตามเวลาของมัน
+        victims.push({
+          key: orderKeyOf(v.o), o: v.o,
+          pushedMin: Math.round(pushedMs / 60000),
+          /* โทษได้ไม่เกินเวลาที่ต้นเหตุกินเกินจริง — ส่วนที่เหลือคือการเข้าคิวปกติ ไม่ใช่ความเสียหาย */
+          blameMin: Math.round(Math.min(pushedMs, ownLateMs) / 60000),
+        });
+      }
+      chains.push({
+        rootKey: orderKeyOf(it.o), root: it.o, laneKey: it.laneKey ?? null,
+        ownLateMin: Math.round(ownLateMs / 60000),
+        victims, victimCount: victims.length,
+      });
+    });
+  });
+  /* ต้นเหตุที่กินเวลาเยอะสุดขึ้นก่อน — จอมีที่โชว์ไม่กี่บรรทัด */
+  return chains.sort((a, b) => b.ownLateMin - a.ownLateMin);
+}
+
+/* ══ 📆 สรุป "วันนี้" — ดีเลย์ไปกี่งาน / ต้องยกยอดกี่ใบ (2026-09-30 · ทีมปั๊ม) ══════════════
+   🔴 **คนละคำถามกับ `delayedCountOf`** ซึ่งตอบ "ตอนนี้ค้างกี่ใบ" (หลังคิวถูกดัน เหลือใบเดียวต่อเลน)
+      อันนี้ตอบ "วันนี้มีงานหลุดกรอบเวลาไปกี่งาน" = รวมใบที่**ปิดไปแล้วแต่ปิดช้า** ด้วย
+      (ใบที่ช้าแล้วปิดได้ ไม่ควรหายไปจากสรุปวัน — มันคือเหตุที่ทำให้ใบอื่นถูกพาล)
+   · `willCarry` = ใบที่คิวดันไปจบ **เลยกรอบวันงาน** ⇒ ของจริงคือต้องยกยอดไปวันถัดไป
+   · `carriedIn` = ใบที่ยกยอด**มา**จากกะ/วันก่อน (`carry_over_from_session_id`) — บอกว่าหนี้เก่ามีเท่าไหร่ */
+export function dayDelaySummaryOf(positioned, { frameEndMs = null, nowMs = null } = {}) {
+  const items = [];
+  if (positioned && typeof positioned.forEach === 'function') positioned.forEach(it => items.push(it));
+  const lateDone  = items.filter(it => it.isLateDone).length;
+  const stillLate = items.filter(it => it.isDelayed).length;
+  const openItems = items.filter(it => it.o && !it.o.isDone && !it.o.isCarry);
+  /* 🔴 วันงานจบไปแล้ว (ดูย้อนหลัง) = คำถามเปลี่ยน: ไม่ใช่ "จะล้นไหม" แต่เป็น "ปิดไม่ได้กี่ใบ"
+     ⇒ ใบที่ยังเปิดค้างอยู่ทุกใบ = ไม่จบในวันงานนั้น (ของจริงคือถูกยกยอด)
+     ถ้าใช้สูตร "คาดจบ > ปลายวัน" กับวันที่จบแล้ว จะนับต่ำกว่าจริง เพราะเวลาถูก clamp ไว้ที่ปลายวันพอดี
+     ⇒ เคยทำให้ **จอเดียวกันขึ้น 2 เลขขัดกัน** (ชิป PLANNER "งานไม่จบในกะ 2 ใบ" vs สรุปวัน "1 ใบ") */
+  const dayOver = !!(frameEndMs && nowMs && nowMs >= frameEndMs);
+  const willCarry = !frameEndMs ? null
+    : dayOver ? openItems.length
+    : openItems.filter(it => Math.max(it.endMs || 0, it.occupiedEndMs || 0) > frameEndMs).length;
+  const carriedIn = items.filter(it => it.o?.carry_over_from_session_id).length;
+  return {
+    lateJobs: lateDone + stillLate,      // "วันนี้ดีเลย์ไปกี่งาน"
+    lateDone, stillLate, willCarry, carriedIn, dayOver,
+    totalJobs: items.length,
   };
 }
