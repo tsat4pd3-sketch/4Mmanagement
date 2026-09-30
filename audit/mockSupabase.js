@@ -142,6 +142,7 @@ const NULLISH = (i) => ({
   scrap_report_id: null, defect_log_id: null, qa_decision: null, special_use_doc_no: null,
   symptom: null, wi_no: null,
 })
+
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
 
 const thenable = (rows = ROWS) => {
@@ -211,6 +212,23 @@ const TABLE_ROWS = {
         /scrap-report · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย** = บั๊กทั้งคลาสมองไม่เห็น
      · i=4 → OP ที่ผูกพาร์ทจริง + ลำดับขั้นครบ (เคสปกติ)
      · i=5 → OP ที่ยังไม่ผูก parent/seq (เคส worklist เหลือง + กฎ "ขั้นเดี่ยว ห้ามเดาสาย") */
+  /* 🔩 parts_master — ทะเบียน**พาร์ทลูก** (2xx/3xx ชิ้นส่วน · 5xx วัตถุดิบ) คนละตารางกับ
+     `dr_products` (2026-09-30) · ไม่มีคีย์นี้ = `from('parts_master')` ตกไปใช้ ROWS กลาง
+     ซึ่งมี `p_no` แต่ **ไม่มี `part_no`** ⇒ `useChildParts()` ได้ Part No. ว่างทุกแถว
+     ⇒ **หัวการ์ดทั้งโมดูลสโตร์ (`<PartCard>`/`<MatLabel>`) ไม่เคยมี Part No. ให้เรนเดอร์เลย**
+        = สาขา "เรียง Part No. → ชื่อ → MAT" มองไม่เห็นจาก crashsweep/mobilesweep
+     🔴 **แถว i%3===2 ต้องเป็นวัตถุดิบ 5xx ที่ part_no เป็น "คำบรรยาย" ห้ามถอด** — วัดทะเบียนจริง
+        30/09: 5xx มี part_no หน้าตาเป็นเลขพาร์ทแค่ 18% (ที่เหลือคือประโยคว่าเอาไปทำงานอะไร
+        ยาวสุด 72 ตัว มีภาษาไทยปน) ⇒ ถ้า mock มีแต่เลขพาร์ทสวยๆ สาขา `lead === 'name'`
+        + การ clamp บรรทัดรอง จะไม่เคยถูกรัน แล้วบั๊ก "พาดหัวด้วยประโยคจนเลขหลุดจอ"
+        กลับมาได้เงียบๆ (UI §6.21) · แถว NULLISH ยังต้องว่างตามกติกา = สาขา lead='mat' */
+  parts_master: (r, i) => isNullish(r)
+    ? { ...r, part_name: null, part_no: null }
+    : i % 3 === 2
+      ? { ...r, mat_no: `5002${6000 + i}`, part_name: `WSS-M1A367-A36 1.5X${270 + i}XC`,
+          part_no: `R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/0${i % 9})1 : 2 Co(1FGใช้2ชิ้น)` }
+      : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
+          part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
     const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
