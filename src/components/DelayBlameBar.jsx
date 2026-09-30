@@ -55,14 +55,25 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
       {/* ── สายการถีบ: ต้นเหตุ → ผู้ถูกพาล ── */}
       {top.map(c => (
         <div key={c.rootKey} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 5, fontSize: size - 0.5, minWidth: 0 }}>
-          <span style={{ fontWeight: 800, color: '#ef4444' }}>🔗 ต้นเหตุ</span>
+          {/* 🔴 ใบที่กินเกินแต่ไม่ได้ทำใครช้า **ห้ามเรียกว่า "ต้นเหตุ"** — มันไม่ได้เป็นเหตุของอะไร
+              (วัดจริง 25/09: ใบ manual ที่เปิดคลุมทั้งกะกินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย
+               ถ้าพาดหัวว่า "ต้นเหตุ" คนจะไปไล่เบี้ยผิดใบ) · อันดับจัดโดย pushChainOf แล้ว */}
+          {c.victimCount > 0
+            ? <span style={{ fontWeight: 800, color: '#ef4444' }}>🔗 ต้นเหตุ</span>
+            : <span style={{ fontWeight: 800, color: '#f59e0b' }}>⏰ กินเวลาเกินกรอบ</span>}
           {c.root?.prod_no && (
             <span title="เลขใบผลิต (บาร์โค้ดบัตรคัมบัง)" style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>
               #{c.root.prod_no}
             </span>
           )}
           <MatLabel mat={c.root?.mat_no} size={size - 0.5} />
-          <span style={{ fontWeight: 800, color: '#ef4444' }}>กินเวลาเกิน {fmtSlipMin(c.ownLateMin)}</span>
+          <span style={{ fontWeight: 800, color: c.victimCount > 0 ? '#ef4444' : '#f59e0b' }}>
+            {/* 🔴 ยังไม่ปิด = เวลาที่นับได้เป็นเพียง "ถึงตอนนี้/ถึงปลายวัน" ⇒ ต้องมี ≥ กำกับ */}
+            {c.victimCount > 0
+              ? `กินเวลาเกิน ${c.rootUnclosed ? '≥ ' : ''}${fmtSlipMin(c.ownLateMin)}`
+              : `${c.rootUnclosed ? '≥ ' : ''}${fmtSlipMin(c.ownLateMin)}`}
+            {c.rootUnclosed && <span style={{ fontWeight: 600, color: 'var(--muted)' }}> (ยังไม่ปิด)</span>}
+          </span>
           {c.victimCount > 0 ? (
             <span title={`ใบที่ถูกเลื่อนออกไปเพราะใบนี้: ${c.victims.map(v => `${v.o?.prod_no || v.key} (+${v.blameMin} น.)`).join(' · ')}`}
               style={{ fontWeight: 700, color: '#f97316' }}>
@@ -72,7 +83,8 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
               </span>
             </span>
           ) : (
-            <span style={{ fontWeight: 600, color: 'var(--muted)' }}>— ยังไม่มีใบต่อท้ายถูกกระทบ</span>
+            <span title="ใบนี้ใช้เวลาเกินกรอบของตัวเอง แต่ไม่มีใบไหนต่อท้ายในเลนเดียวกัน จึงไม่ได้ทำให้งานอื่นช้า (ส่วนใหญ่คือใบ manual ที่เปิดคลุมทั้งกะ)"
+              style={{ fontWeight: 600, color: 'var(--muted)' }}>— ไม่ได้ทำให้ใบอื่นช้า</span>
           )}
         </div>
       ))}

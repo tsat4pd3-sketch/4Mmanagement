@@ -32,7 +32,7 @@ export function fmtSlipMin(min) {
    (ช้ากี่นาที · คาดจบกี่โมง) ที่เหลือ (ขาดกี่ชิ้น · กี่ใบไม่ทันกะ) อยู่หัวบอร์ดซึ่งมีที่ + tooltip */
 export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneLine = false, compact = false }) {
   if (!st) return null;
-  const { slipMin, behindMin, behindPcs, finishMs, overShiftMin, lateCards, noCt, remainCards, delayed } = st;
+  const { slipMin, behindMin, behindPcs, finishMs, overShiftMin, lateCards, noCt, remainCards, delayed, neverClosed } = st;
 
   /* ไม่มีงานเหลือ = ไม่มีอะไรให้เทียบ (ไม่ใช่ "ตรงแผน") — เงียบไว้ ปล่อยให้ยอด done/total พูดแทน */
   if (!remainCards) return null;
@@ -41,7 +41,12 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
   const late = overShiftMin > 0;
   const slipping = slipMin > 0;
 
-  if (noCt) {
+  if (neverClosed > 0) {
+    /* 🔴 ดูวันย้อนหลังแล้วยังมีใบเปิดค้าง = ใบนั้น**ไม่เคยถูกปิด** — รายงานเป็น "ช้ากว่าแผน N ชม."
+       คือเล่าผิดเรื่อง (วันงานจบไปแล้ว ไม่มีใครมาปิดอีก) · วัดจริง 25/09: LINE A 14 ใบ ⇒ 20:49 ชม.
+       ⇒ บอกจำนวนใบตรงๆ · เวลาที่หายไปยังอ่านได้ใน tooltip ไม่ได้ซ่อน */
+    parts.push({ t: `🚫 ${neverClosed} ใบไม่เคยถูกปิด`, c: '#ef4444', b: true });
+  } else if (noCt) {
     /* 🔴 ไม่มี CT = ประเมินเวลาไม่ได้ — ต้องเขียนตรงๆ ไม่ใช่โชว์ 0 หรือเงียบ */
     parts.push({ t: compact ? '⚠️ ไม่มี CT' : '⚠️ ไม่มี CT — ประเมินว่าช้าแค่ไหนไม่ได้', c: 'var(--muted)' });
   } else if (slipping) {
@@ -57,12 +62,13 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
   }
 
   /* ยอด: บอกเป็น "ชิ้น" ได้เฉพาะเมื่อพาร์ทที่เหลือ CT เท่ากันหมด · ไม่งั้นบอกเป็นนาทีของจังหวะงาน */
-  if (behindPcs > 0 && !compact) parts.push({ t: `📦 ขาด ${behindPcs.toLocaleString()} ชิ้น`, c: '#f97316', b: true });
+  if (neverClosed > 0) { /* วันจบแล้ว — ยอดที่ขาดเป็นของที่ไม่ได้ทำ ไม่ใช่ "ตามไม่ทันจังหวะ" ปล่อยให้ยอด done/total พูด */ }
+  else if (behindPcs > 0 && !compact) parts.push({ t: `📦 ขาด ${behindPcs.toLocaleString()} ชิ้น`, c: '#f97316', b: true });
   else if (behindMin > 0 && !compact) parts.push({ t: `📦 ช้ากว่าจังหวะ ${fmtSlipMin(behindMin)} (หลายพาร์ท บอกเป็นชิ้นไม่ได้)`, c: '#f97316' });
 
   /* 🔴 compact: แถวมีที่แค่บรรทัดเดียวสั้นๆ — โชว์ "คาดจบ" เฉพาะเมื่อยังไม่ได้โชว์ตัวช้า
      (ยอด/ชิ้นของแถวมีอยู่แล้วบรรทัดบน `369/375 ชิ้น` ⇒ แถว = ยอด + เวลา ครบตามที่ user สั่ง) */
-  if (finishMs != null && typeof fmtMs === 'function' && !(compact && parts.length)) {
+  if (finishMs != null && typeof fmtMs === 'function' && !neverClosed && !(compact && parts.length)) {
     parts.push({
       t: compact
         ? `🏁 ${fmtMs(finishMs)}${late ? ' ⚠️เกินกะ' : ''}`
@@ -80,6 +86,7 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
     behindPcs > 0 || behindMin > 0 ? 'ขาด = เทียบกับจังหวะงาน (ยอด × CT) ตั้งแต่เปิดใบแรก หักเวลาพักแล้ว' : null,
     lateCards > 0 ? 'ใบไม่ทันกะ = ใบที่คิวดันไปจบหลังปลายกะที่กำลังเดินอยู่' : null,
     noCt ? 'ไลน์นี้ยังไม่มี cycle time ในทะเบียนสินค้า — ประเมินเวลาไม่ได้จนกว่าจะกรอก' : null,
+    neverClosed > 0 ? `วันงานนี้จบไปแล้ว แต่ยังมี ${neverClosed} ใบที่ไม่เคยถูกสแกนปิด — ของจริงคือถูกยกยอด/ตกหล่น` : null,
   ].filter(Boolean).join(' · ');
 
   return (
