@@ -14,6 +14,10 @@
      2. **ไม่ตัดของหายเงียบ** — เกิน `maxRows` จะบอกว่าซ่อนไปกี่รายการ
      3. **พิมพ์ชื่อเองได้** (`allowFree`) — ของที่ไม่มีในทะเบียนยังบันทึกได้ พร้อมป้ายบอกว่าไม่ได้อยู่ในทะเบียน
      4. **ลิสต์กางในบรรทัด (in-flow) ไม่ absolute** — อยู่ใน modal ที่ overflow:auto ได้โดยไม่โดน clip
+     5. 🔴 **รหัสห้ามถูกตัดด้วย `…`** (2026-09-30 · feedback หน้างาน "ตอนเปิด Tag ตรงนี้ขอเห็นเลข Mat ด้วย")
+        เดิมยัด Part No. + ชื่อ + MAT ลงบรรทัดเดียวเป็น `label` แล้ว ellipsis กินท้ายบรรทัด
+        ⇒ **MAT หายทุกแถว** เพราะอยู่ท้ายสุด · รหัสที่ถูกตัดครึ่งไม่ได้แค่ "อ่านไม่ครบ" แต่**อ่านผิดตัวได้**
+        ⇒ แยกเป็น "ช่องรหัส (ห้ามตัด)" กับ "ช่องข้อความ (ตัดได้)" — ดูฟิลด์ `lead`/`title`/`code` ข้างล่าง
 
    ⚠️ ปิดลิสต์จากการคลิกนอกกรอบ **ได้** (เป็น picker ไม่ใช่ฟอร์ม — ยังไม่ได้กรอกอะไรหาย)
       คนละเรื่องกับกติกา "modal ฟอร์มห้ามปิดจาก backdrop" (UI-CONVENTIONS §5)
@@ -42,7 +46,13 @@ export default function SearchSelect({
   text: textProp,        // ข้อความในช่อง (เมื่อยังไม่ได้เลือก = คำค้น/ชื่อที่พิมพ์เอง)
                          //   ⚠️ ไม่ส่ง = component ถือคำค้นเอง (uncontrolled · 2026-09-08) — ใช้ได้ทั้งใน render
                          //   block/IIFE ที่ใส่ hook ไม่ได้ · ส่งเมื่อต้องการ allowFree แล้วเก็บชื่อที่พิมพ์เองเท่านั้น
-  options = [],          // [{ id, label, sub, badge, badgeColor, group, keywords }]
+  /* options = [{ id, label, sub, badge, badgeColor, group, keywords, lead, title, code }]
+       label  = ค่าที่โชว์ในช่องเมื่อเลือก + ใช้ค้น (เหมือนเดิม — มักเป็นคีย์ที่ฟอร์มเก็บจริง)
+       ── 2 บรรทัดในลิสต์ (ใหม่ 2026-09-30 · ไม่ส่ง = หน้าตาเดิมเป๊ะ) ────────────────
+       บรรทัด 1:  `lead`  (รหัสนำ · mono · **nowrap ห้ามตัด**) + `title` (ข้อความ · ตัดได้ · ไม่ส่ง = `label`)
+       บรรทัด 2:  `code`  (รหัสนำ · mono · **nowrap ห้ามตัด**) + `sub`   (ข้อความ · ตัดได้)
+       🔴 กติกา: **ตัดได้เฉพาะ "ชื่อ" · รหัสห้ามตัด** (รหัสครึ่งตัว = อ่านผิดตัว ไม่ใช่แค่อ่านไม่ครบ) */
+  options = [],
   onChange,              // ({ id, text, opt }) => void
   allowFree = false,     // พิมพ์ชื่อที่ไม่มีในลิสต์ได้ไหม
   placeholder = 'ค้นหา…',
@@ -90,7 +100,9 @@ export default function SearchSelect({
   const matched = useMemo(() => {
     const nq = normSearch(q);
     if (!nq) return options;
-    return options.filter(o => normSearch(`${o.label} ${o.keywords || ''}`).includes(nq));
+    return options.filter(o => normSearch(
+      `${o.label} ${o.lead || ''} ${o.title || ''} ${o.code || ''} ${o.sub || ''} ${o.keywords || ''}`,
+    ).includes(nq));
   }, [options, q]);
 
   const rows = matched.slice(0, maxRows);
@@ -178,8 +190,24 @@ export default function SearchSelect({
                       borderLeft: `3px solid ${i === active ? 'var(--accent)' : 'transparent'}`,
                     }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', ...clampSt }}>{o.label}</div>
-                      {o.sub && <div style={{ fontSize: 10.5, color: 'var(--muted)', ...clampSt }}>{o.sub}</div>}
+                      {/* บรรทัด 1 — รหัสนำ (ห้ามตัด) + ข้อความ (ตัดได้) */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                        {o.lead && (
+                          <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.lead}</span>
+                        )}
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: o.lead ? 400 : 700, color: o.lead ? 'var(--text2)' : 'var(--text)', ...clampSt }}>
+                          {o.title ?? o.label}
+                        </span>
+                      </div>
+                      {/* บรรทัด 2 — รหัสนำ (ห้ามตัด) + ข้อความประกอบ (ตัดได้) */}
+                      {(o.code || o.sub) && (
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, fontSize: 10.5, color: 'var(--muted)' }}>
+                          {o.code && (
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', color: 'var(--text2)' }}>{o.code}</span>
+                          )}
+                          {o.sub && <span style={{ flex: 1, minWidth: 0, ...clampSt }}>{o.sub}</span>}
+                        </div>
+                      )}
                     </div>
                     {o.badge != null && (
                       <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 800, color: o.badgeColor || 'var(--text2)' }}>{o.badge}</span>

@@ -18,6 +18,7 @@
       (กฎเดิมของ StoreMonitor — จอที่ยืนยันสิ่งที่ไม่จริง แย่กว่าจอที่ว่าง)
    ══════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import MatLabel from './MatLabel';
 import { supabaseDR } from '../supabaseClient';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -133,11 +134,8 @@ export default function StoreWaitCards({ inScope, navigate, big = 1, onLineWait 
       {shortMats.slice(0, 6).map((r, i) => (
         <div key={`${r.mat_no}-${i}`} onClick={() => navigate?.('/line-stock')}
           style={{ cursor: 'pointer', display: 'flex', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
-          {/* ลำดับ ชื่องาน → MAT (UI §6.21) · MAT ต้องยังโชว์เสมอ (คีย์ที่ใช้ค้นต่อ) */}
-          <span style={{ color: 'var(--text)', fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {r.part_name || ''}
-          </span>
-          <b style={{ color: 'var(--muted)', fontWeight: 400, flexShrink: 0 }}>MAT {r.mat_no}</b>
+          {/* ครบ 3 ค่าผ่านของกลาง — รหัสไม่ถูกตัด ชื่อตัดได้ตัวเดียว (30/09) */}
+          <MatLabel mat={r.mat_no} name={r.part_name} size={10.5 * big} style={{ minWidth: 0, flex: 1 }} />
         </div>
       ))}
       {shortMats.length > 6 && (

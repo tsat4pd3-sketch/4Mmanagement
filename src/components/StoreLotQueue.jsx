@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import MatLabel from './MatLabel';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -429,9 +430,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {blocks.slice(0, 8).map(b => (
                 <div key={b.mat_no} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11.5 }}>
-                  {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
-                  <span style={{ fontWeight: 700, color: 'var(--text)', flex: 1, minWidth: 100 }}>{b.part_name || '—'}</span>
-                  <span style={{ fontFamily: 'monospace', color: 'var(--text2)' }}>MAT {b.mat_no}</span>
+                  {/* ครบ 3 ค่า (Part No. / ชื่อ / MAT) ผ่านของกลาง — ชื่อเป็นตัวเดียวที่ตัดได้ (30/09) */}
+                  <MatLabel mat={b.mat_no} name={b.part_name} style={{ flex: 1, minWidth: 100 }} />
                   <span style={{ color: '#f59e0b', fontWeight: 700 }}>ค้าง {fmt(b.pending_qty)} ชิ้น</span>
                   {b.block_reason === 'backlog_capped'
                     ? <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดเกินเพดานออกใบต่อรอบ จะทยอยออกใบเมื่อปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>

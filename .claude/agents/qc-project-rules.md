@@ -318,6 +318,10 @@ model: inherit
   · **ตัด MAT ทิ้ง** เพราะย้ายไปท้าย = 🔴 (เป็นคีย์ที่ผูกข้อมูลทั้งระบบ)
   · เปลี่ยน `value`/`label` ของ picker ให้เป็น Part No. ทั้งที่ฟอร์มเก็บ mat_no = 🔴 (ชิปโชว์คนละค่ากับที่บันทึก)
   · ✅ ด่านอัตโนมัติ: `src/utils/__tests__/matOrderSweep.test.mjs` (ข้อยกเว้นอยู่ใน ALLOW ต้องมีเหตุผลกำกับ)
+  · 🔴 **รหัส (Part No./MAT) ที่ถูก `ellipsis` ตัดได้ = 🔴** — ต้อง `whiteSpace:'nowrap'` + `flexShrink:0`
+    · ตัดได้เฉพาะ **ชื่องาน** (ต้องมี `title` ให้ชี้อ่านเต็ม) · ยัดหลายรหัสลง `label` ของ option = 🔴
+      (ใช้ `lead`/`title`/`code`/`sub` ของ `<SearchSelect>` แทน · ด่าน `picker-label-stuffed-with-codes`)
+    · ตารางที่มีคอลัมน์ `ชื่อชิ้นงาน` กับ `MAT` แยกกัน = 🟡 → ยุบเป็นคอลัมน์เดียววาดด้วย `<MatLabel>` (UI §6.21)
   · ไม่ตรวจ `src/lib/**` — ใบพิมพ์/export เรียงตามฟอร์มกระดาษทางการ ห้ามสลับ
 
 ### หมวด G — Workflow & เอกสาร

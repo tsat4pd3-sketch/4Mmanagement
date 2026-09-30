@@ -828,6 +828,21 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'picker-label-stuffed-with-codes',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการยัด "หลายรหัส + ชื่อ" ลง `label:` ของ option ในนิพจน์เดียว
+       (label = บรรทัดเดียว ถูก ellipsis ตัดท้าย ⇒ ตัวท้ายหายทุกแถว) */
+    re: /\blabel:\s*`[^`]*\b(p_no|part_no|partNo)\b[^`]*\bmat_no\b|\blabel:\s*`[^`]*\bmat_no\b[^`]*\b(p_no|part_no|partNo)\b/g,
+    why: 'feedback หน้างาน 30/09 ("ตอนเปิด Tag ตรงนี้ขอเห็นเลข Mat ด้วยครับ") — ลิสต์เลือก MAT.NO '
+       + 'ยัด Part No. + ชื่อสินค้า + MAT ลง `label` บรรทัดเดียว แล้ว `textOverflow: ellipsis` '
+       + 'กินท้ายบรรทัด ⇒ **เลข MAT หายทุกแถว** เพราะอยู่ท้ายสุด '
+       + '· รหัสที่ถูกตัดครึ่งไม่ได้แค่ "อ่านไม่ครบ" แต่ **อ่านผิดตัวได้** (10105769 กับ 10105770 ต่างกันตัวเดียว)',
+    fix: 'แยกเป็นช่อง "รหัส (ห้ามตัด)" กับ "ข้อความ (ตัดได้)" ของ <SearchSelect>: '
+       + '`lead` = Part No. · `title` = ชื่อ (ตัดได้ตัวเดียว) · `code` = `MAT <เลข>` · `sub` = ลูกค้า/ไลน์ '
+       + '· `label` เหลือไว้เป็น **ค่าที่ฟอร์มเก็บจริง** เท่านั้น (ตัวอย่าง: `productOptions()` ใน src/utils/pickerOptions.js)',
+    allow: {},
+  },
+  {
     id: 'partno-headline-via-lead',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการตัดสิน "ใครขึ้นหัว" จากการมีค่า pNo ตรงๆ — ต้องใช้ `info.lead` จาก matInfo แทน
