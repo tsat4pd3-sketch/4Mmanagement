@@ -188,3 +188,40 @@ test('ระบุแม่พิมพ์ครบ = คิดเวลาไ�
   assert.equal(s.noDie, false);
   assert.equal(s.totalMin, 21);
 });
+
+/* ══ 🔴🔴 "ไม่มีแผน" ≠ "แผนอยู่คนละกะ" (เคสจริง 30/09 · user จับได้) ══════════════════
+   LINE B วางแผนกะเช้า 6 ล็อต · กะเช้าปิดโดยไม่ได้เริ่มสักใบ · กะดึกเปิดอยู่
+   จอเดิมกรอง shift = กะที่เปิด ⇒ 0 แถว ⇒ ไม่วาดอะไรเลย ⇒ กะดึกไม่รู้ว่ามีงานค้าง 6 ล็อต */
+import { splitPlanForSession } from '../planLots.js';
+
+test('🔴 แผนของกะก่อนที่ยังไม่ได้เริ่ม ต้องโผล่ให้กะปัจจุบันเห็น (carried)', () => {
+  const lots = [
+    lot('a', { shift: 'day', seq: 1 }), lot('b', { shift: 'day', seq: 2 }),
+    lot('c', { shift: 'night', seq: 1 }),
+  ];
+  const r = splitPlanForSession(lots, { shift: 'night' });
+  assert.deepEqual(r.mine.map(l => l.id), ['c']);
+  assert.deepEqual(r.carried.map(l => l.id), ['a', 'b'], 'กะเช้าที่ยังไม่เริ่ม = กะดึกหยิบต่อได้');
+  assert.equal(r.hasAny, true);
+});
+
+test('แผนกะอื่นที่เริ่มไปแล้ว = แค่บอกให้รู้ ไม่ใช่งานค้างของกะนี้', () => {
+  const lots = [
+    lot('a', { shift: 'day', status: 'started', prod_order_id: 'o1' }),
+    lot('b', { shift: 'day', status: 'done', prod_order_id: 'o2' }),
+  ];
+  const r = splitPlanForSession(lots, { shift: 'night' });
+  assert.equal(r.carried.length, 0);
+  assert.deepEqual(r.elsewhere.map(l => l.id), ['a', 'b']);
+});
+
+test('🔴 ไม่มีแผนเลยจริงๆ = hasAny false (จอไม่ต้องวาด — ไลน์คัมบังจะได้ไม่รก)', () => {
+  assert.equal(splitPlanForSession([], { shift: 'day' }).hasAny, false);
+  /* ยกเลิกหมด = ไม่นับว่ามีแผน */
+  assert.equal(splitPlanForSession([lot('a', { status: 'cancelled' })], { shift: 'day' }).hasAny, false);
+});
+
+test('ล็อตที่ยกเลิกไม่โผล่ในกองไหนเลย', () => {
+  const r = splitPlanForSession([lot('a', { shift: 'day', status: 'cancelled' })], { shift: 'night' });
+  assert.equal(r.mine.length + r.carried.length + r.elsewhere.length, 0);
+});
