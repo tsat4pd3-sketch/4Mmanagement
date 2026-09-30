@@ -10,7 +10,7 @@ import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar } fro
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions } from '../utils/orgScope';
+import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
 import usePolling from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -72,7 +72,7 @@ const ROWS_COMMON = [
   { key: 'inv',   name: 'Inventory Balance',     icon: '📦', auto: null },
   { key: 'csat',  name: 'Customer Satisfaction', icon: '🤝', auto: null },
   { key: 'oee',   name: 'OEE',                   icon: '⚙️', auto: 'oee',    unit: '%',   dir: 'up',   to: '/oee-analytics' },
-  { key: 'ppm',   name: 'PPM',                   icon: '🎯', auto: 'ppm',    unit: 'PPM', dir: 'down', to: '/oee-analytics?tab=lean' },
+  { key: 'ppm',   name: 'PPM',                   icon: '🎯', auto: 'ppm',    unit: 'PPM', dir: 'down', to: '/oee-analytics?tab=insight' },   // ⚠️ `tab=lean` ไม่มีจริง (ตกไปแท็บวันนี้เงียบๆ) — แก้ 30/09
   { key: 'safe',  name: 'Safety',                icon: '🦺', auto: 'safety', unit: 'ครั้ง', dir: 'down' },
   { key: 'train', name: 'Training',              icon: '🎓', auto: null },
 ];
@@ -492,7 +492,20 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     } catch { /* เบราว์เซอร์ TV บางรุ่นไม่มี API นี้ — โหมด fixed ก็เต็มจออยู่แล้ว */ }
   };
-  const goTo = (to) => { if (to && canAccessPage(to.split('?')[0], role)) navigate(to); };
+  /* 🔗 เจาะจากแผ่นไปหน้าจริง **ต้องพาขอบเขต+วันไปด้วย** (30/09 · user: กรอง PD4 แล้วเจาะ OEE ต้องกรองใหม่)
+     ส่งเฉพาะหน้าที่อ่าน param จริง (`/oee-analytics` อ่าน section/dept/line/date) — ใส่บนหน้าที่ไม่อ่าน = URL โกหก
+     · param ที่ลิงก์ตั้งมาเอง (เช่น `tab=`) ชนะเสมอ · ทั้งโรงงาน = ไม่ส่งขอบเขต */
+  const DRILL_AWARE = new Set(['/oee-analytics']);
+  const goTo = (to) => {
+    if (!to) return;
+    const [path, qs] = to.split('?');
+    if (!canAccessPage(path, role)) return;
+    const q = new URLSearchParams(qs || '');
+    if (DRILL_AWARE.has(path)) {
+      Object.entries({ ...drillParams(org, scope), date }).forEach(([k, v]) => { if (v && !q.has(k)) q.set(k, v); });
+    }
+    navigate(q.toString() ? `${path}?${q}` : path);
+  };
   const setMonth = (k) => { if (k && k !== SUMMARY_KEY && k <= today.slice(0, 7)) setParam('date', monthEnd(k, today)); };
   const shiftMonth = (n) => {
     const [y, m] = monthKey.split('-').map(Number);

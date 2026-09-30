@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT,
+  buildOrgScope, scopeKey, parseScopeKey, scopeCovers, scopeOfDef, defScopeColumns, filterScopeOptions, PLANT, drillParams,
 } from '../orgScope.js';
 
 const nodes = [
@@ -243,4 +243,21 @@ test('ตัวเลือก cost center พก ชื่อ + เจ้าข
   assert.deepEqual(o.owners, [{ kind: 'section', value: 'PD3' }]);
   const orphan = idx.options.find(x => x.key === 'cost_center:2140662101');
   assert.equal(orphan.cc_name, '', 'ไม่มีในทะเบียน = ชื่อว่าง ไม่ใช่ undefined');
+});
+
+/* ── 🔗 drillParams — เจาะจากบอร์ดแล้วตัวกรองต้องตามไป (30/09 · user: กรอง PD4 แล้วเจาะ OEE ต้องกรองใหม่) ── */
+test('drillParams — section → section เท่านั้น · ทั้งโรงงาน = {}', () => {
+  const idx = buildOrgScope({ nodes, lines, divisions });
+  assert.deepEqual(drillParams(idx, { kind: 'section', value: 'PD3' }), { section: 'PD3' });
+  assert.deepEqual(drillParams(idx, PLANT), {});
+  assert.deepEqual(drillParams(null, { kind: 'section', value: 'PD3' }), {});
+});
+test('drillParams — กลุ่มไลน์ → section + dept · ไลน์ลูก → section + dept(กลุ่ม) + line', () => {
+  const idx = buildOrgScope({ nodes, lines, divisions });
+  assert.deepEqual(drillParams(idx, { kind: 'line_group', value: 'HYDROFORM' }), { section: 'PD3', dept: 'HYDROFORM' });
+  assert.deepEqual(drillParams(idx, { kind: 'line', value: 'HDF1' }), { section: 'PD3', dept: 'HYDROFORM', line: 'HDF1' });
+});
+test('drillParams — ขอบเขตที่ไม่มีส่วนงาน (แผนกช่างขึ้นตรงฝ่าย) = {} ไม่เดาส่วนงาน', () => {
+  const idx = buildOrgScope({ nodes, lines, divisions });
+  assert.deepEqual(drillParams(idx, { kind: 'department', value: 'JIG MTN' }), {});
 });
