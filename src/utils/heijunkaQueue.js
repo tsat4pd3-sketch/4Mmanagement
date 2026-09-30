@@ -32,6 +32,12 @@ function clampNow(nowMs, frameEndMs) {
   return frameEndMs && nowMs > frameEndMs ? frameEndMs : nowMs;
 }
 
+/* "วันงานที่กำลังดูจบไปแล้วหรือยัง" — ใช้ทั้ง planStatusOf และ dayDelaySummaryOf
+   ⚠️ เคยคิดซ้ำ 2 ที่แล้วจอขึ้น 2 เลขขัดกัน (ดูหมายเหตุใน dayDelaySummaryOf) ⇒ ที่เดียวเท่านั้น */
+export function isDayOver(frameEndMs, nowMs) {
+  return !!(frameEndMs && nowMs && nowMs >= frameEndMs);
+}
+
 /* การ์ดที่คร่อมเวลาพัก — ไม่เลื่อน start (เสียเวลาว่างก่อนเบรคฟรีๆ) แต่ "ยืด" ปลายออกเท่าเวลาพักที่คร่อม
    ⚠️ ใช้ทั้งคิวจริงและคิว "ตามแผน" ⇒ ต้องเป็นฟังก์ชันเดียว (เดิม inline · ก๊อป 2 ที่แล้วดริฟท์แน่) */
 function stretchOverBreaks(startMs, endMs, breaks = []) {
@@ -287,6 +293,11 @@ export function planStatusOf({ positioned, cards = [], breaks = [], ctByMat = {}
   const lateCards = shiftEndMs
     ? open.filter(it => Math.max(it.endMs || 0, it.occupiedEndMs || 0) > shiftEndMs).length : null;
 
+  /* 🔴 ดูวันย้อนหลังที่มีใบเปิดค้าง = ความจริงคือ "ใบนี้ไม่เคยถูกปิด" ไม่ใช่ "ช้ากว่าแผน N ชม."
+     (วัดกับข้อมูลจริง 2026-09-30 · วันงาน 25/09: LINE A เหลือ 14 ใบไม่เคยปิด ⇒ slipMin = 1249 น.
+      จอจะขึ้น "ช้ากว่าแผน 20:49 ชม." ซึ่งคนหน้างานอ่านแล้วตีว่าจอพัง — เพดาน "ค้างข้ามวัน" ที่
+      1440 น. ไม่ครอบเคสนี้) ⇒ ส่งธงให้จอเปลี่ยนคำ **ห้ามซ่อนเลข ห้ามดัดเลข** */
+  const dayOver = isDayOver(frameEndMs, nowMs);
   return {
     delayed: items.filter(it => it.isDelayed).length,
     remainCards: open.length,
@@ -294,6 +305,7 @@ export function planStatusOf({ positioned, cards = [], breaks = [], ctByMat = {}
     behindMin, behindPcs, pcsCt: ctsLeft.length === 1 ? ctsLeft[0] : null,
     overShiftMin, lateCards,
     noCt: !pace.anyCt,
+    dayOver, neverClosed: dayOver ? open.length : 0,
   };
 }
 
@@ -346,11 +358,26 @@ export function pushChainOf(positioned) {
         rootKey: orderKeyOf(it.o), root: it.o, laneKey: it.laneKey ?? null,
         ownLateMin: Math.round(ownLateMs / 60000),
         victims, victimCount: victims.length,
+        /* ความเสียหายรวมที่ใบนี้ก่อ = Σ นาทีที่โทษได้ของผู้ถูกพาลทุกใบ (ตัวจัดอันดับตัวจริง) */
+        blameTotalMin: victims.reduce((a, v) => a + v.blameMin, 0),
+        /* 🔴 ใบที่ยังไม่ถูกปิด: `ownLateMin` = "ถึงตอนที่เลิกนับ" ไม่ใช่เวลาที่กินไปจริง
+           (ยังไม่ปิด = ไม่มีใครรู้ว่าจบเมื่อไหร่ · ดูวันย้อนหลังจะถูก clamp ที่ปลายวัน ⇒ เห็น
+            "กินเวลาเกิน 1 วัน 7 ชม." ซึ่งจริงๆ แปลว่า "ไม่เคยถูกปิด") ⇒ จอต้องเขียน `≥` กำกับ
+           **ห้ามรายงานเป็นเวลาปิดจริง** (เจอจาก screenshot harness 2026-09-30) */
+        rootUnclosed: !it.o?.isDone,
       });
     });
   });
-  /* ต้นเหตุที่กินเวลาเยอะสุดขึ้นก่อน — จอมีที่โชว์ไม่กี่บรรทัด */
-  return chains.sort((a, b) => b.ownLateMin - a.ownLateMin);
+  /* 🔴🔴 เรียงตาม "ก่อความเสียหายให้ใบอื่นเท่าไหร่" ก่อน **ห้ามเรียงด้วย ownLateMin ล้วน**
+     (วัดกับข้อมูลจริง 2026-09-30 · วันงาน 25/09 ทั้งโรงงาน: chain ที่พาลคนอื่นจริง 27 ตัว
+      **ถูกบังไม่ขึ้นจอ 22 ตัว** เพราะใบที่ "กินเกินเยอะแต่ไม่พาลใคร" ชนะการเรียงทุกครั้ง —
+      ใบ manual/ใบที่เปิดคลุมทั้งกะกินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย · ไลน์ GOR มีตัวจริง
+      4 ตัว ขึ้นจอ 0 ตัว) ⇒ จอตอบคำถาม "พาลไปโดนตัวไหนบ้าง" ไม่ได้เลยทั้งที่คำนวณถูก
+     ลำดับ: (1) มีผู้ถูกพาล ชนะ ไม่มี (2) ความเสียหายรวมมากกว่า ชนะ (3) กินเกินนานกว่า ชนะ */
+  return chains.sort((a, b) =>
+    (b.victimCount > 0 ? 1 : 0) - (a.victimCount > 0 ? 1 : 0)
+    || b.blameTotalMin - a.blameTotalMin
+    || b.ownLateMin - a.ownLateMin);
 }
 
 /* ══ 📆 สรุป "วันนี้" — ดีเลย์ไปกี่งาน / ต้องยกยอดกี่ใบ (2026-09-30 · ทีมปั๊ม) ══════════════
@@ -369,7 +396,7 @@ export function dayDelaySummaryOf(positioned, { frameEndMs = null, nowMs = null 
      ⇒ ใบที่ยังเปิดค้างอยู่ทุกใบ = ไม่จบในวันงานนั้น (ของจริงคือถูกยกยอด)
      ถ้าใช้สูตร "คาดจบ > ปลายวัน" กับวันที่จบแล้ว จะนับต่ำกว่าจริง เพราะเวลาถูก clamp ไว้ที่ปลายวันพอดี
      ⇒ เคยทำให้ **จอเดียวกันขึ้น 2 เลขขัดกัน** (ชิป PLANNER "งานไม่จบในกะ 2 ใบ" vs สรุปวัน "1 ใบ") */
-  const dayOver = !!(frameEndMs && nowMs && nowMs >= frameEndMs);
+  const dayOver = isDayOver(frameEndMs, nowMs);
   const willCarry = !frameEndMs ? null
     : dayOver ? openItems.length
     : openItems.filter(it => Math.max(it.endMs || 0, it.occupiedEndMs || 0) > frameEndMs).length;

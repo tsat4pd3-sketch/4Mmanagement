@@ -632,6 +632,19 @@ const RULES = [
     allow: { 'src/App.jsx': 'เจ้าของ helper — inNavGroup/isNavGuest นิยามอยู่ที่นี่' },
   },
   {
+    id: 'blame-chain-rank-by-impact',
+    scan: ['src/utils'], ext: ['.js'],
+    /* เรียงสายการถีบด้วย ownLateMin ล้วน = ใบที่ "กินเกินนานแต่ไม่พาลใคร" ชนะทุกครั้ง */
+    re: /sort\(\(a, b\) => b\.ownLateMin - a\.ownLateMin\)/g,
+    why: 'วัดกับข้อมูลจริง 2026-09-30 (วันงาน 25/09 ทั้งโรงงาน): chain ที่พาลใบอื่นจริง 27 ตัว '
+       + '**ถูกบังไม่ขึ้นจอ 22 ตัว** เพราะเรียงด้วย ownLateMin ล้วน แล้วใบ manual/ใบที่เปิดคลุมทั้งกะ '
+       + '(กินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย) ชนะการเรียงเสมอ — ไลน์ GOR มีตัวจริง 4 ตัว ขึ้นจอ 0 ตัว '
+       + '⇒ จอตอบคำถามทีมปั๊ม "พาลไปโดนตัวไหนบ้าง" ไม่ได้เลยทั้งที่คำนวณถูกทุกตัว',
+    fix: 'เรียง 3 ชั้นใน pushChainOf: (1) victimCount > 0 ชนะ 0 (2) blameTotalMin มากชนะ '
+       + '(3) ownLateMin มากชนะ — เทสตรึงไว้ที่ src/utils/__tests__/heijunkaBlame.test.mjs',
+    allow: {},
+  },
+  {
     id: 'pareto-hand-built-recharts',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* พาเรโตที่ประกอบเองด้วย Recharts จะมี "เส้น % สะสม" เป็น series ชื่อ cum เสมอ

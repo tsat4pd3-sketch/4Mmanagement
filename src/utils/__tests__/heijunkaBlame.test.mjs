@@ -117,3 +117,58 @@ test('วันนี้ (ยังไม่จบวัน) = ใช้สู�
   assert.equal(d.dayOver, false);
   assert.equal(d.willCarry, 0);
 });
+
+/* ══ 🔴🔴 อันดับของ chain — วัดกับข้อมูลจริง 2026-09-30 (วันงาน 25/09 ทั้งโรงงาน) ═══════════
+   chain ที่ "พาลคนอื่นจริง" มี 27 ตัว แต่**ถูกบังไม่ขึ้นจอ 22 ตัว** เพราะเรียงด้วย ownLateMin ล้วน
+   แล้วใบ manual/ใบที่เปิดคลุมทั้งกะ (กินเกิน 270–806 น. โดยไม่มีใบต่อท้าย) ชนะการเรียงทุกครั้ง
+   ⇒ ไลน์ GOR มีตัวจริง 4 ตัว ขึ้นจอ 0 ตัว = จอตอบคำถามทีมปั๊มไม่ได้เลยทั้งที่คำนวณถูก      */
+test('🔴 ใบที่พาลคนอื่นจริง ต้องขึ้นก่อนใบที่กินเกินนานกว่าแต่ไม่พาลใคร', () => {
+  const now = T0 + 5 * H;
+  /* เลน L1: ใบ a ค้าง (กินเกิน ~3 ชม.) แล้วมี b, c ต่อท้าย ⇒ พาล 2 ใบ
+     เลน L2: ใบ z ค้างยาวกว่ามาก (กินเกิน ~4 ชม.) แต่ไม่มีใบต่อท้ายเลย ⇒ ไม่พาลใคร */
+  const cards = [
+    card('a', 0), card('b', 1), card('c', 2),
+    { ...card('z', 0), id: 'z', line_name: 'L2', orderEndMs: T0 + 0.5 * H },
+  ];
+  const chains = pushChainOf(positionAllCards(cards, {
+    breaks: [], ctByMat: { M1: 60 }, nowMs: now, frameEndMs: FRAME_END,
+    roundIndexOf: () => 0, roundStartOf: () => T0,
+  }));
+  const z = chains.find(c => c.rootKey === 'z');
+  const a = chains.find(c => c.rootKey === 'a');
+  assert.equal(a.victimCount > 0, true);
+  assert.equal(z.victimCount, 0);
+  assert.ok(z.ownLateMin > a.ownLateMin, 'ตั้งเคสให้ใบที่ไม่พาลใครกินเกินนานกว่า');
+  assert.ok(chains.indexOf(a) < chains.indexOf(z), 'ใบที่พาลคนอื่นต้องมาก่อนเสมอ');
+});
+
+test('ความเสียหายรวม (blameTotalMin) เป็นตัวตัดสินอันดับระหว่างใบที่พาลคนอื่นทั้งคู่', () => {
+  const now = T0 + 6 * H;
+  const cards = [
+    card('a', 0), card('b', 1), card('c', 2),                                  // L1: พาล 2 ใบ
+    { ...card('p', 0), id: 'p', line_name: 'L2' },
+    { ...card('q', 1), id: 'q', line_name: 'L2' },                             // L2: พาล 1 ใบ
+  ];
+  const chains = pushChainOf(positionAllCards(cards, {
+    breaks: [], ctByMat: { M1: 60 }, nowMs: now, frameEndMs: FRAME_END,
+    roundIndexOf: () => 0, roundStartOf: () => T0,
+  })).filter(c => c.victimCount > 0);
+  assert.ok(chains.length >= 2);
+  for (let i = 1; i < chains.length; i++) {
+    assert.ok(chains[i - 1].blameTotalMin >= chains[i].blameTotalMin, 'เรียงตามความเสียหายรวมจากมากไปน้อย');
+  }
+  /* blameTotalMin ต้องเท่ากับ Σ blameMin ของผู้ถูกพาลจริง (ไม่ใช่ ownLateMin) */
+  chains.forEach(c => assert.equal(c.blameTotalMin, c.victims.reduce((a, v) => a + v.blameMin, 0)));
+});
+
+test('🔴 ใบที่ยังไม่ถูกปิด ต้องติดธง rootUnclosed (จอจะเขียน ≥ กำกับ ห้ามรายงานเป็นเวลาจริง)', () => {
+  const now = T0 + 4 * H;
+  const open = pushChainOf(pos([card('a', 0), card('b', 1)], now)).find(c => c.rootKey === 'a');
+  assert.equal(open.rootUnclosed, true);
+  /* ใบที่ปิดช้าแล้ว = รู้เวลาจบจริง ⇒ ไม่ต้องมี ≥ */
+  const closed = pushChainOf(pos([
+    card('a', 0, { status: 'confirmed', isDone: true, confirmed_at: new Date(T0 + 3 * H).toISOString() }),
+    card('b', 1),
+  ], now)).find(c => c.rootKey === 'a');
+  assert.equal(closed?.rootUnclosed, false);
+});

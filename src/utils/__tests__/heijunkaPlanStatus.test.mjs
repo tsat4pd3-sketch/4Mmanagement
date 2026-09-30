@@ -128,3 +128,31 @@ test('ไม่ส่ง frameEndMs = พฤติกรรมเดิมเป
   });
   assert.deepEqual(mk(null), mk(FRAME_END));
 });
+
+/* ══ 🔴 วันย้อนหลังที่มีใบไม่เคยถูกปิด — วัดกับข้อมูลจริง 2026-09-30 ══════════════════════
+   วันงาน 25/09 · LINE A (800 Ton) เหลือ 14 ใบที่ไม่เคยถูกสแกนปิด ⇒ slipMin = 1249 น.
+   จอจะขึ้น "⏱️ ช้ากว่าแผน 20:49 ชม." (ต่ำกว่าเพดาน "ค้างข้ามวัน" ที่ 1440 น. จึงไม่เข้าเงื่อนไข)
+   ซึ่งเล่าผิดเรื่อง — วันนั้นจบไปแล้ว ไม่มีใครมาปิดอีก ความจริงคือ "14 ใบไม่เคยถูกปิด"       */
+test('🔴 ดูวันย้อนหลัง: ใบที่เปิดค้าง ต้องรายงานเป็น neverClosed ไม่ใช่ปล่อยให้อ่านว่าช้ากว่าแผน', () => {
+  const cards = [card('a'), card('b', { orderStartMs: T0 + H, orderEndMs: T0 + 2 * H })];
+  const nowMs = FRAME_END + 5 * H;                      // ดูวันที่จบไปแล้ว 5 ชม.
+  const st = planStatusOf({
+    positioned: positionAllCards(cards, { breaks: [], ctByMat: { M1: 60 }, nowMs, frameEndMs: FRAME_END, roundIndexOf: () => 0, roundStartOf: () => T0 }),
+    cards, breaks: [], ctByMat: { M1: 60 }, nowMs, frameEndMs: FRAME_END, shiftEndMs: SHIFT_END,
+  });
+  assert.equal(st.dayOver, true);
+  assert.equal(st.neverClosed, 2);
+  assert.equal(st.remainCards, 2);
+});
+
+test('ดูวันนี้ (วันยังไม่จบ) = neverClosed ต้องเป็น 0 เสมอ (พฤติกรรมเดิมไม่เปลี่ยน)', () => {
+  const cards = [card('a'), card('b', { orderStartMs: T0 + H, orderEndMs: T0 + 2 * H })];
+  const nowMs = T0 + 3 * H;
+  const st = planStatusOf({
+    positioned: positionAllCards(cards, { breaks: [], ctByMat: { M1: 60 }, nowMs, frameEndMs: FRAME_END, roundIndexOf: () => 0, roundStartOf: () => T0 }),
+    cards, breaks: [], ctByMat: { M1: 60 }, nowMs, frameEndMs: FRAME_END, shiftEndMs: SHIFT_END,
+  });
+  assert.equal(st.dayOver, false);
+  assert.equal(st.neverClosed, 0);
+  assert.ok(st.remainCards > 0);
+});
