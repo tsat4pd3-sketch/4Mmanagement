@@ -12,8 +12,14 @@
      · **ใบที่หน้างานเปิดเองนอกแผน ต้องโผล่ให้เห็น** — ไม่ใช่ความผิด แต่วางแผนต้องรู้ว่าแผนถูกข้าม
      · **ยกเลิกล็อต = `cancelled` + เหตุผล ห้าม delete แถว** (สอบกลับไม่ได้)
      · สิทธิ์ผ่าน `can('production_plan','write')` **ห้าม hardcode role array**
+     · 🔗 **แผน = คิวต่อเนื่อง ไม่ใช่ "ของกะใดกะหนึ่ง"** (30/09 · คำสั่ง user
+       *"วางได้ทีเดียวทั้ง 2 กะต่อกัน · เกินกะล้นไปกะดึก · เกิน 1 วันล้นไปอีกวัน"*)
+       ⇒ `work_date`/`shift` ของล็อตเป็น **ผลลัพธ์ที่ระบบคำนวณว่างานตกกะไหน** ไม่ใช่ช่องที่คนเลือก
+       (หน้างานยังอ่านเหมือนเดิม — `PlannedLotQueue` กรองด้วย work_date+shift ของกะตัวเอง)
+       · 🔴 **ล็อตที่เวลาเชื่อไม่ได้ (ไม่มี CT / มีใบไม่มี CT อยู่ก่อน) ห้ามย้ายกะให้** (`sure=false`)
+         เดาแทนคนแล้วงานจะไปโผล่ผิดกะบนจอหน้างาน — คงกะเดิมไว้แล้วเขียนบนจอว่าจัดให้ไม่ได้
    ══════════════════════════════════════════════════════════════════════════════════════════ */
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { canSeeded } from '../utils/permissions';
@@ -25,6 +31,8 @@ import {
   planSummary, reconcilePlan, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
 } from '../utils/planLots';
 import { breakIntervalsIn } from '../utils/oee';
+import { buildHorizon, assignShifts, horizonSummary, makeScale, orderAcrossHorizon, SHIFT_LABEL } from '../utils/planHorizon';
+import { layoutLots } from '../utils/planTimeline';
 import PlanTimeline from './PlanTimeline';
 import FilterBar from './FilterBar';
 import Segmented from './Segmented';
@@ -35,11 +43,17 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
 const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap' };
 const fmtMin = (m) => m == null ? '—' : m < 60 ? `${Math.round(m)} น.` : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')} ชม.`;
+/* ข้ามวัน = เวลาเปล่าๆ ไม่พอ ("22:34" ของวันไหน?) */
+const fmtDayTime = (ms) => {
+  const d = new Date(ms);
+  return `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 export default function ProdLotPlanner({
   lines = [], demandByDate = {}, carry = {}, ctOf = () => 0, pairOf = () => null,
   lineOfMat = () => null, nameOfMat = () => '', customerOf = () => null, netMin = null,
+  calOf = null,
 }) {
   const { role, fullName } = useContext(UserContext);
   /* ยังไม่ seed สิทธิ์ = โหมดอ่านอย่างเดียว (deploy-safe — จอไม่พัง คนแค่แก้ไม่ได้) */
@@ -47,7 +61,11 @@ export default function ProdLotPlanner({
 
   const [lineName, setLineName] = useState('');
   const [date, setDate]   = useState(todayStr);
-  const [shift, setShift] = useState('day');
+  const [shift, setShift] = useState('day');          // กะที่**เริ่ม**วางแผน (ไม่ใช่ขอบเขตทั้งหมด)
+  /* กี่กะที่ยอมให้คิวไหลต่อไป — 4 กะ = 2 วัน (ปุ่มยืดได้ ไม่ใช่ค่าตายตัวในโค้ด) */
+  const [segCount, setSegCount] = useState(4);
+  /* 🔴 วันหยุดแบบ OT (ot15/ot2) เปิดทำได้ แต่**ต้องคนสั่ง** ระบบไม่เดาให้ (กฎ "วันหยุด 2 ความหมาย") */
+  const [useOtHoliday, setUseOtHoliday] = useState(false);
   const [lots, setLots]   = useState([]);
   const [orders, setOrders] = useState([]);
   const [dies, setDies]   = useState([]);          // die_sets + ความสูงจาก equipment_die
@@ -59,8 +77,22 @@ export default function ProdLotPlanner({
 
   useEffect(() => { if (!lineName && lines.length) setLineName(lines[0].name); }, [lines, lineName]);
 
-  /* ── โหลดข้อมูลของไลน์/วัน/กะที่เลือก ────────────────────────────────────────────
-     🔴 guard `alive` — จอนี้ยิงคิวรีตาม state (ไลน์/วัน/กะ) ⇒ สลับเร็วกว่าคำตอบเก่ากลับ
+  /* ── 🗓️ ขอบเขต: กะเช้า → กะดึก → วันถัดไป ต่อกันเป็นเส้นเดียว ─────────────────────
+     🔴 กติกาทั้งหมด (กะยาวเท่าไหร่ · วันไหนโรงงานไม่เดิน · ข้ามวันหยุดยังไง) อยู่ใน
+        `utils/planHorizon.js` **ห้ามคิดเองในไฟล์นี้** — บอร์ดอื่นจะได้ตอบเลขเดียวกัน */
+  const horizon = useMemo(() => buildHorizon({
+    startDate: date, startShift: shift, maxSegments: segCount,
+    dayTypeOf: calOf || (() => null), includeOtHoliday: useOtHoliday, calendarLoaded: !!calOf,
+  }), [date, shift, segCount, calOf, useOtHoliday]);
+  const lastDate = horizon.segments.length
+    ? horizon.segments[horizon.segments.length - 1].workDate : date;
+  /* ref ไม่ใช่ dep — `load` ต้องยิงใหม่เมื่อ "ช่วงวันที่" เปลี่ยน ไม่ใช่ทุกครั้งที่ขอบเขตถูกคิดใหม่
+     (ใส่ segments เป็น dep = สลับติ๊กวันหยุด OT แล้วยิงคิวรีซ้ำฟรีๆ · กฎ db-write ข้อ 9) */
+  const segRef = useRef(horizon.segments);
+  segRef.current = horizon.segments;
+
+  /* ── โหลดข้อมูลของไลน์ตลอดขอบเขต (ทุกกะ ไม่ใช่กะเดียว) ──────────────────────────
+     🔴 guard `alive` — จอนี้ยิงคิวรีตาม state (ไลน์/วัน/ขอบเขต) ⇒ สลับเร็วกว่าคำตอบเก่ากลับ
         = คำตอบเก่าเขียนทับจอใหม่ (กฎเหล็ก db-write-rules ข้อ 4 · เคยเกิดจริงที่ Daily Report) */
   const load = useCallback(async (alive = () => true) => {
     if (!lineName || !date) return;
@@ -68,15 +100,17 @@ export default function ProdLotPlanner({
     const [lotRes, dieRes, ruleRes, sessRes, brkRes] = await Promise.all([
       supabaseDR.from('production_plan_lots')
         .select('id, work_date, shift, line_name, seq, mat_no, part_name, qty_plan, machine_no, die_no, status, prod_order_id, due_date, source, setup_min_est, note, cancel_reason, planned_by')
-        .eq('work_date', date).eq('line_name', lineName).eq('shift', shift),
+        .gte('work_date', date).lte('work_date', lastDate).eq('line_name', lineName),
       supabaseDR.from('die_sets').select('id, set_code, mat_no, part_name, line_name, equipment_die(die_height_mm)').eq('is_active', true),
       supabaseDR.from('press_setup_rules').select('*').eq('is_active', true),
-      supabaseDR.from('production_sessions').select('id').eq('work_date', date).eq('line_name', lineName).eq('shift', shift),
+      supabaseDR.from('production_sessions').select('id').gte('work_date', date).lte('work_date', lastDate).eq('line_name', lineName),
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
     ]);
     if (!alive()) return;                       // สลับไลน์/วันก่อนคำตอบกลับ = ทิ้งคำตอบเก่า
     if (lotRes.error) toast.error(`โหลดแผนไม่สำเร็จ: ${lotRes.error.message}`);
-    setLots(resequence(lotRes.data || []));
+    /* 🔴 `seq` เป็นลำดับ**ภายในกะ** ⇒ โหลดหลายกะแล้วเรียงด้วย seq เฉยๆ จะได้ 1,1,2,2,3
+       = งานกะดึกแทรกกลางกะเช้า · ต้องเรียงตามลำดับกะในขอบเขตก่อนเสมอ */
+    setLots(orderAcrossHorizon(lotRes.data || [], segRef.current));
     setDies(dieRes.data || []);                 // กรองตามพาร์ทตอนเลือกใน dieOptsForMat (ไลน์เดียวกันอาจใช้แม่พิมพ์ข้ามไลน์)
     setRules(ruleRes.data || []);
     setBreakPolicies(brkRes.data || []);
@@ -88,7 +122,7 @@ export default function ProdLotPlanner({
       if (alive()) setOrders(ord || []);
     } else if (alive()) setOrders([]);
     if (alive()) { setLoading(false); setDirty(false); }
-  }, [lineName, date, shift]);
+  }, [lineName, date, lastDate]);
 
   /* 🔴 guard stale-response (กฎเหล็ก db-write-rules ข้อ 4) — จอนี้ยิงคิวรีตาม state
      ถ้า user สลับไลน์/วัน/กะ เร็วกว่าคำตอบเก่ากลับ คำตอบเก่าจะเขียนทับจอใหม่ */
@@ -112,19 +146,34 @@ export default function ProdLotPlanner({
   /* ── กรอบเวลาของกะ + ช่วงพัก ─────────────────────────────────────────────────────
      🔴 ช่วงพักต้องมาจาก `breakIntervalsIn()` (`utils/oee.js`) ที่เดียว **ห้ามสร้างช่วงพักเอง**
         (กติกาพักทั้งหมด — กรองกะ/กระบวนการ/ot_scope/กะดึกข้ามวัน — อยู่ที่นั่น) */
-  const frame = useMemo(() => {
-    if (!date) return { startMs: null, endMs: null };
-    const h = shift === 'night' ? 20 : 8;
-    const startMs = new Date(`${date}T${String(h).padStart(2, '0')}:00:00`).getTime();
-    return { startMs, endMs: startMs + 12 * 3600000 };
-  }, [date, shift]);
-  const breaks = useMemo(() => breakIntervalsIn({
-    policies: breakPolicies, startMs: frame.startMs, endMs: frame.endMs, workDate: date, shift,
-  }), [breakPolicies, frame.startMs, frame.endMs, date, shift]);
+  const frame = { startMs: horizon.startMs, endMs: horizon.endMs };
+  /* 🔴 เวลาพักต้องคิด **ทีละกะ** แล้วค่อยต่อกัน — `breakIntervalsIn` รับกรอบกะเดียว
+     (มันต้องรู้ว่ากะไหน/วันไหน ถึงจะกรอง shift + ot_scope + พักกะดึกหลังเที่ยงคืนได้ถูก)
+     ยิงทีเดียวด้วยกรอบ 48 ชม. = ได้พักผิดทั้งยวง */
+  const breaks = useMemo(() => horizon.segments.flatMap(sg => breakIntervalsIn({
+    policies: breakPolicies, startMs: sg.startMs, endMs: sg.endMs, workDate: sg.workDate, shift: sg.shift,
+  })), [breakPolicies, horizon.segments]);
 
   const summary = useMemo(() => planSummary({
     lots, orders, ctOf, pairOf, dieOf, rule, netShiftMin: netMin,
   }), [lots, orders, ctOf, pairOf, dieOf, rule, netMin]);
+
+  /* ── 🔗 วางคิวลงบนขอบเขตจริง แล้วดูว่าล็อตไหน "ตกกะไหน" ────────────────────────────
+     🔴 คำนวณที่นี่ **ที่เดียว** แล้วส่งต่อให้ทั้งหัวสรุป · ตาราง · ปุ่มบันทึก
+        (ให้ไทม์ไลน์คิดเองอีกรอบ = 2 จอตอบคนละเลข — บทเรียนเดิมของโมดูลนี้) */
+  const scale = useMemo(() => makeScale(horizon.segments), [horizon.segments]);
+  const lay = useMemo(() => layoutLots({
+    lots, ctOf, pairOf, dieOf, rule,
+    startMs: horizon.startMs, endMs: horizon.endMs, breaks, closed: horizon.closed, scale,
+  }), [lots, ctOf, pairOf, dieOf, rule, horizon, breaks, scale]);
+  const landing = useMemo(() => assignShifts(lay.boxes, horizon.segments), [lay.boxes, horizon.segments]);
+  const landingOf = useMemo(() => Object.fromEntries(landing.map(a => [a.id, a])), [landing]);
+  const hz = useMemo(() => horizonSummary({
+    boxes: lay.boxes, segments: horizon.segments, endMs: lay.endMs, unknownCount: lay.unknownCount,
+  }), [lay, horizon.segments]);
+  /* ล็อตที่ระบบยังจัดกะให้ไม่ได้ / ล้นเลยขอบเขต — 2 กองคนละเรื่อง ห้ามยุบรวม */
+  const unsureCount = landing.filter(a => !a.sure).length;
+  const overflowCount = landing.filter(a => a.overflow).length;
   const rec = useMemo(() => reconcilePlan(lots, orders), [lots, orders]);
 
   /* ── ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน (ของค้างส่งมาก่อนเสมอ) ───────────── */
@@ -133,14 +182,16 @@ export default function ProdLotPlanner({
     const want = {};
     Object.entries(carry || {}).forEach(([mat, q]) => { if (q > 0) want[mat] = (want[mat] || 0) + q; });
     Object.entries(demandByDate || {}).forEach(([d, byMat]) => {
-      if (d > date) return;                      // เอาเฉพาะที่ถึงกำหนดภายในวันที่วางแผน
+      /* 🔗 ขอบเขตยาวหลายวัน ⇒ ความต้องการที่ถึงกำหนด**ภายในขอบเขต**ก็ต้องเห็น
+         (เดิมตัดที่วันเดียว — วางแผน 3 วันแต่เห็นงานแค่วันแรก) */
+      if (d > lastDate) return;
       Object.entries(byMat || {}).forEach(([mat, q]) => { if (q > 0) want[mat] = (want[mat] || 0) + q; });
     });
     return Object.entries(want)
       .filter(([mat]) => lineOfMat(mat) === lineName && !planned.has(mat))
       .map(([mat, qty]) => ({ mat, qty: Math.round(qty) }))
       .sort((a, b) => b.qty - a.qty);
-  }, [carry, demandByDate, date, lots, lineOfMat, lineName]);
+  }, [carry, demandByDate, lastDate, lots, lineOfMat, lineName]);
 
   /* ── แก้แผนในหน่วยความจำก่อน แล้วค่อยกดบันทึกทีเดียว ────────────────────────── */
   const patch = (id, upd) => { setLots(ls => ls.map(l => (l.id === id ? { ...l, ...upd } : l))); setDirty(true); };
@@ -175,7 +226,21 @@ export default function ProdLotPlanner({
         est = s.setupMin;
       }
       const { id, _new, ...rest } = l;
-      return { ...(_new ? {} : { id }), ...rest, seq: i + 1, setup_min_est: est, planned_by: fullName || null };
+      /* 🔗 กะ/วันที่ของล็อต = **ผลลัพธ์ที่คำนวณได้** ไม่ใช่ช่องที่คนเลือก (คิวไหลข้ามกะ/ข้ามวัน)
+         🔴 แต่ล็อตที่เวลาเชื่อไม่ได้ (`sure=false` — ไม่มี CT หรือมีใบไม่มี CT อยู่ก่อน) หรือ
+            ล้นเลยขอบเขต **ต้องคงกะเดิมไว้** — ย้ายให้ = เดาแทนคน แล้วงานไปโผล่ผิดกะบนจอหน้างาน */
+      const at = landingOf[id];
+      const moved = at && at.sure && !at.overflow && at.workDate
+        ? { work_date: at.workDate, shift: at.shift } : {};
+      return { ...(_new ? {} : { id }), ...rest, ...moved, setup_min_est: est, planned_by: fullName || null };
+    });
+    /* ลำดับนับใหม่ **ภายในกะที่ไปลงจริง** (1 = ทำก่อน) — หน้างานเรียงด้วย seq ในกะตัวเอง
+       ถ้าเอาเลขรวมทั้งขอบเขตไปใส่ กะดึกจะขึ้นต้นที่ #7 ซึ่งอ่านแล้วงง */
+    const perShift = {};
+    rows.forEach(r => {
+      const k = `${r.work_date}|${r.shift}`;
+      perShift[k] = (perShift[k] || 0) + 1;
+      r.seq = perShift[k];
     });
     const news = rows.filter(r => !r.id);
     const olds = rows.filter(r => r.id);
@@ -186,11 +251,13 @@ export default function ProdLotPlanner({
       ok = await checkWrite(await supabaseDR.from('production_plan_lots').update(upd).eq('id', id).select('id'), 'อัพเดทล็อต') && ok;
     }
     setSaving(false);
-    if (ok) { toast.success(`บันทึกแผน ${rows.length} ล็อต ✓`); await load(); }
+    if (ok) {
+      const shifts = new Set(rows.map(r => `${r.work_date}|${r.shift}`)).size;
+      toast.success(`บันทึกแผน ${rows.length} ล็อต · ${shifts} กะ ✓`);
+      await load();
+    }
   };
 
-  const fitColor = { ok: 'var(--accent)', tight: '#f59e0b', over: '#ef4444', unknown: 'var(--muted)' }[summary.fit.state];
-  const fitText = { ok: 'ทำไหว', tight: 'ตึง', over: '🚨 เกินเวลากะ', unknown: 'ประเมินไม่ได้' }[summary.fit.state];
   const noHeight = Object.values(dieByCode).filter(d => d.die_height_mm == null).length;
 
   return (
@@ -200,9 +267,27 @@ export default function ProdLotPlanner({
           {lines.map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
         </select>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-        <Segmented value={shift} onChange={setShift} label="กะ" options={[
+        {/* 🔗 ไม่ใช่ "ดูกะไหน" อีกต่อไป — คิวไหลข้ามกะเอง ช่องนี้แค่บอกว่า**เริ่มวาง**ที่กะไหน */}
+        <Segmented value={shift} onChange={setShift} label="เริ่มที่" options={[
           { value: 'day', label: '☀️ กะเช้า' }, { value: 'night', label: '🌙 กะดึก' },
         ]} />
+        <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
+          title="คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)">
+          ไหลต่อได้
+          <select value={segCount} onChange={e => setSegCount(Number(e.target.value))}>
+            <option value={2}>1 วัน (2 กะ)</option>
+            <option value={4}>2 วัน (4 กะ)</option>
+            <option value={6}>3 วัน (6 กะ)</option>
+            <option value={10}>5 วัน (10 กะ)</option>
+            <option value={14}>7 วัน (14 กะ)</option>
+          </select>
+        </label>
+        {/* 🔴 วันหยุด OT เปิดทำได้ แต่ต้องคนสั่ง — ระบบไม่เดาว่าจะเรียกคนมาทำวันหยุด */}
+        <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
+          title="วันหยุดแบบ OT (×1.5 / ×2) เรียกคนมาทำได้ — ติ๊กแล้วคิวจะไหลลงวันหยุดพวกนั้นด้วย · วันหยุด ม.75 ไม่เข้าข่าย">
+          <input type="checkbox" checked={useOtHoliday} onChange={e => setUseOtHoliday(e.target.checked)} />
+          ใช้วันหยุด OT
+        </label>
         <span className="spacer" />
         {mayWrite && (
           <>
@@ -224,7 +309,9 @@ export default function ProdLotPlanner({
         </div>
       )}
 
-      {/* ── สรุปหัวแผง: ตอบ "กะนี้รับไหวไหม" บรรทัดเดียว ── */}
+      {/* ── สรุปหัวแผง ──────────────────────────────────────────────────────────────
+          🔴 คำถามที่คนวางแผนถามจริงคือ **"งานกองนี้จบเมื่อไหร่ กินกี่กะ"** ไม่ใช่ "ใช้กี่ % ของกะ"
+             (จอเดิมขึ้น "ใช้ 158% ของกะ" ซึ่งไม่ได้บอกว่าอีก 58% ไปตกที่ไหน — user แจ้ง 30/09) */}
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: '6px 18px', alignItems: 'baseline' }}>
         <span style={{ fontSize: 13, fontWeight: 800 }}>{summary.lotCount} ล็อต · {qtyText(summary.qtyPlan)} ชิ้น</span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>⏱️ เวลาผลิต <b>{fmtMin(summary.runMin)}</b></span>
@@ -233,12 +320,29 @@ export default function ProdLotPlanner({
           🔧 เปลี่ยนรุ่น <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
           <span style={{ color: 'var(--muted)' }}> ({summary.setupNoDie ? 'ยังไม่ระบุแม่พิมพ์' : `${summary.changeCount} ครั้ง`})</span>
         </span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: fitColor }}>
-          {fitText}{summary.fit.pct != null && ` · ใช้ ${Math.round(summary.fit.pct)}% ของกะ`}
+        <span style={{ fontSize: 13, fontWeight: 800, color: overflowCount > 0 ? '#ef4444' : 'var(--text)' }}>
+          🏁 คาดจบ <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
+          {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · กิน {hz.shiftsUsed} กะ
+            {hz.lastSegment && ` (ยาวถึง ${SHIFT_LABEL[hz.lastSegment.shift]} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
         </span>
         {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เวลาทำงานสุทธิ {netMin} นาที/กะ</span>}
         {summary.started > 0 && <span style={{ fontSize: 12, color: 'var(--accent)' }}>▶ เริ่มแล้ว {summary.started} · ปิดแล้ว {summary.closed}</span>}
       </div>
+
+      {/* 🔴 งานที่ยังหาที่ลงไม่ได้ / ยังจัดกะให้ไม่ได้ — 2 เรื่องคนละสาเหตุ ห้ามยุบรวม ห้ามซ่อน */}
+      {(overflowCount > 0 || unsureCount > 0) && (
+        <div style={{ ...card, borderColor: overflowCount > 0 ? '#ef444466' : '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
+          {overflowCount > 0 && (
+            <div>🚨 <b style={{ color: '#ef4444' }}>{overflowCount} ล็อตล้นเลยขอบเขต {horizon.segments.length} กะ</b> —
+              งานยังไม่มีที่ลงจริง · ยืด "ไหลต่อได้" ให้ยาวขึ้น หรือลดงาน/เพิ่มกำลังผลิต
+              <b> ระบบไม่ยัดลงกะสุดท้ายให้</b></div>
+          )}
+          {unsureCount > 0 && (
+            <div>⚠️ <b>{unsureCount} ล็อตยังจัดกะให้ไม่ได้</b> — เวลาเชื่อไม่ได้ (ไม่มี cycle time
+              หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) · <b>ล็อตพวกนี้จะคงกะเดิมไว้ตอนบันทึก ไม่ถูกย้าย</b></div>
+          )}
+        </div>
+      )}
 
       {/* 🔴 ความซื่อสัตย์: อะไรที่ประเมินไม่ได้ ต้องเขียนบนจอ ห้ามปล่อยให้ตัวเลขดูสวย */}
       {(summary.noCtMats.length > 0 || summary.setupUnknown || noHeight > 0) && (
@@ -264,21 +368,31 @@ export default function ProdLotPlanner({
       {rec.rows.length > 0 && frame.startMs && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-            🧲 ไทม์ไลน์ของกะนี้ <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
-              (ความยาวกล่อง = เวลาที่ต้องใช้จริง · ลากเพื่อสลับลำดับ)</span>
+            🧲 ไทม์ไลน์ {horizon.segments.length} กะต่อกัน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+              (ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลไปกะถัดไปเอง · ลากเพื่อสลับลำดับ)</span>
           </div>
           <PlanTimeline
             lots={lots} ctOf={ctOf} pairOf={pairOf} dieOf={dieOf} rule={rule}
             startMs={frame.startMs} endMs={frame.endMs} breaks={breaks}
+            closed={horizon.closed} segments={horizon.segments} skipped={horizon.skipped}
             editable={mayWrite} nameOfMat={nameOfMat}
             onReorder={(next) => { setLots(next); setDirty(true); }}
           />
+          {/* 🔴 ปฏิทินยังไม่โหลด = ยังไม่ได้เช็ควันหยุด ต้องเขียนบนจอ ห้ามเงียบ */}
+          {horizon.calendarUnknown && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 5 }}>
+              ⚠️ ยังไม่ได้เช็คปฏิทินบริษัท — ขอบเขตนี้ใช้กติกา จ-ศ ไปก่อน <b>วันหยุดพิเศษอาจยังไม่ถูกข้าม</b>
+            </div>
+          )}
         </div>
       )}
 
       {/* ── ตารางแผน ── */}
       <div style={{ ...card, overflowX: 'auto' }}>
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>📋 คิวงานของกะนี้</div>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
+          📋 คิวงาน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+            (คอลัมน์ "ลงกะ" = กะที่ระบบคำนวณว่างานใบนี้ตกไปอยู่ — บันทึกแล้วหน้างานกะนั้นจะเห็น)</span>
+        </div>
         {loading ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>กำลังโหลด…</div>
           : rec.rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>ยังไม่มีแผนของกะนี้ — เพิ่มจากรายการความต้องการด้านล่าง</div>
           : (
@@ -288,6 +402,7 @@ export default function ProdLotPlanner({
               <th style={{ ...th, textAlign: 'left' }}>พาร์ท</th>
               <th style={{ ...th, textAlign: 'right' }}>จำนวน</th>
               <th style={{ ...th, textAlign: 'right' }}>เวลาผลิต</th>
+              <th style={{ ...th, textAlign: 'left' }}>ลงกะ</th>
               <th style={{ ...th, textAlign: 'left' }}>เครื่อง</th>
               <th style={{ ...th, textAlign: 'left' }}>แม่พิมพ์</th>
               <th style={{ ...th, textAlign: 'left' }}>สถานะ</th>
@@ -317,6 +432,19 @@ export default function ProdLotPlanner({
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{fmtMin(lotRunMin(l, ctOf))}</td>
+                    {/* 🔗 กะที่งานใบนี้ตกไปอยู่ — "—" = ยังตอบไม่ได้ **ไม่ใช่กะแรก** */}
+                    <td style={td}>{(() => {
+                      const at = landingOf[l.id];
+                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title="งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง">🚨 ล้นขอบเขต</span>;
+                      if (!at.sure) return <span style={{ color: '#f59e0b' }} title="เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้">⚠ ยังจัดไม่ได้</span>;
+                      const same = at.workDate === l.work_date && at.shift === l.shift;
+                      return (
+                        <span style={{ color: same ? 'var(--text2)' : 'var(--accent)' }}
+                          title={same ? 'ตรงกับที่บันทึกไว้' : `จะถูกย้ายจาก ${l.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ${l.work_date} ตอนกดบันทึก`}>
+                          {SHIFT_LABEL[at.shift]} {at.workDate.slice(8)}/{at.workDate.slice(5, 7)}{same ? '' : ' ✧'}
+                        </span>
+                      );
+                    })()}</td>
                     <td style={td}>
                       {mayWrite && l.status === 'planned' ? (
                         <MachineSelect value={l.machine_no || ''} lines={[lineName]}
@@ -364,7 +492,7 @@ export default function ProdLotPlanner({
       {rec.startedNotPlanned.length > 0 && (
         <div style={{ ...card, borderColor: '#f59e0b66' }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 5 }}>
-            ⚠️ {rec.startedNotPlanned.length} ใบที่หน้างานเปิดเอง — ไม่ได้อยู่ในแผนของกะนี้
+            ⚠️ {rec.startedNotPlanned.length} ใบที่หน้างานเปิดเอง — ไม่ได้อยู่ในแผนของขอบเขตนี้
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
             {rec.startedNotPlanned.slice(0, 15).map(o => (
@@ -380,7 +508,7 @@ export default function ProdLotPlanner({
       {/* ── ความต้องการที่ยังไม่ได้วางแผน ── */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-          📥 ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ค้างส่ง + ถึงกำหนดภายใน {date})</span>
+          📥 ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ค้างส่ง + ถึงกำหนดภายใน {lastDate})</span>
         </div>
         {unplanned.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>— วางแผนครบทุกพาร์ทที่มีความต้องการแล้ว —</div>

@@ -152,3 +152,22 @@ test('ช่องนามธรรมของกล่องไม่มี C
   assert.equal(r.boxes[1].startMs, r.boxes[0].endMs, 'ใบถัดไปต่อท้ายช่องนามธรรมพอดี');
   assert.equal(r.boxes[1].afterUnknown, true, 'และต้องติดธงว่าเวลาเชื่อไม่ได้');
 });
+
+/* ── 🔴 กล่องห้ามทับกัน ไม่ว่ารางจะยาวแค่ไหน (planlab 30/09) ────────────────────────
+   ช่องนามธรรมของกล่องที่ไม่มี CT เคยตรึงไว้ 30 นาที ⇒ บนรางหลายกะมันแคบกว่าความกว้าง
+   ขั้นต่ำที่จอวาด (4%) แล้วป้ายของ 2 ใบพิมพ์ทับกันจนอ่านไม่ออก */
+test('🔴 ช่องนามธรรมกว้าง ≥ ขั้นต่ำที่จอวาดเสมอ ⇒ กล่องไม่ทับกันแม้รางยาว 48 ชม.', async () => {
+  const { UNKNOWN_BOX_MIN_PCT } = await import('../planTimeline.js');
+  const LONG_END = T0 + 48 * H;
+  const r = layoutLots({
+    lots: [lot('z', { seq: 1, mat_no: 'ZZ' }), lot('b', { seq: 2 })],
+    ctOf, startMs: T0, endMs: LONG_END,
+  });
+  assert.ok(r.boxes[0].nominalPct >= UNKNOWN_BOX_MIN_PCT,
+    `ช่องนามธรรม ${r.boxes[0].nominalPct}% ต้องไม่แคบกว่าที่จอวาด ${UNKNOWN_BOX_MIN_PCT}%`);
+  assert.ok(r.boxes[1].leftPct >= r.boxes[0].leftPct + r.boxes[0].nominalPct - 1e-9,
+    'ใบถัดไปต้องเริ่มหลังกล่องที่ไม่มี CT จบ ไม่ใช่ทับกัน');
+  /* รางสั้น (กะเดียว) ต้องยังเป็น 30 นาทีเท่าเดิม — ห้ามเปลี่ยนพฤติกรรมของจอเดิม */
+  const short = lay([lot('z', { mat_no: 'ZZ' })]);
+  assert.equal(short.boxes[0].endMs - short.boxes[0].startMs, 30 * M);
+});
