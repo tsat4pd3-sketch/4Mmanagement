@@ -57,7 +57,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
-import { shortTick, fmtAxis } from '../utils/chartAxis';
+import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -808,7 +808,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       formatter={(v) => [v, 'จำนวนค่า']}
                       labelFormatter={(x, p) => p?.[0] ? `${fmtNum(p[0].payload.from, 3)} – ${fmtNum(p[0].payload.to, 3)}` : x} />
-                    <Bar dataKey="count" name="จำนวนค่า" radius={[3, 3, 0, 0]}>
+                    <Bar dataKey="count" name="จำนวนค่า" fill={CELL_BAR_FILL} radius={[3, 3, 0, 0]}>
                       {hist.map((b, i) => {
                         const bad = (spc.usl != null && b.from >= spc.usl) || (spc.lsl != null && b.to <= spc.lsl);
                         return <Cell key={i} fill={bad ? '#ef4444' : '#4d9fff'} opacity={0.85} />;

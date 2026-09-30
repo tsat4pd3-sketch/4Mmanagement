@@ -481,6 +481,11 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 - **กราฟ Recharts ก็ต้องมีแกน Y + `<LabelList>`** — `<YAxis hide />` ใช้ได้เฉพาะ sparkline
   ที่มีตัวเลขกำกับอยู่ข้างๆ อยู่แล้ว (เดิม sparkline A/P/Q ใน `/oee-analytics` ซ่อนแกน
   **และ**ไม่มี label = อ่านค่าไม่ได้เลย — แก้แล้ว 2026-08-19)
+- 🖤 **tooltip ของ Recharts: แท่งที่ระบายสีรายแท่งด้วย `<Cell>` ต้องใส่ `fill={CELL_BAR_FILL}` ที่ `<Bar>`** (2026-09-30 ·
+  user ส่งภาพ "พื้นเขียวเข้ม text ดำ") — Recharts เขียนบรรทัดค่าใน tooltip ด้วย "สีของ series" = `fill` ของ `<Bar>`
+  ไม่มี ⇒ ตกไปใช้ `#000` = ดำบน `var(--card)` ธีมมืด (Cell ทับสีแท่งจริงอยู่แล้ว fill นี้โผล่แค่ใน tooltip) ·
+  พื้น/ตัวหนังสือ/cursor ของ tooltip ใช้ `<Tooltip {...tooltipProps(fs)}>` จาก `utils/chartAxis.js` **ห้ามตั้ง contentStyle เองทีละกราฟ**
+  · ไม่บังคับ `itemStyle` เพราะกราฟหลาย series ต้องเห็นสีของแต่ละเส้น · เจอ 9 จุดใน 6 ไฟล์ตอนกวาด · มีด่าน build (regressionGuards)
 
 ## 5.1 Balloon จุดตรวจบน drawing/รูปอ้างอิง (QA `/qa-setup` · PM Setup)
 

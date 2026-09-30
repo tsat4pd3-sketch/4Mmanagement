@@ -1,4 +1,4 @@
-import { fmtAxis } from '../utils/chartAxis';
+import { fmtAxis, tooltipProps, CELL_BAR_FILL } from '../utils/chartAxis';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
 
@@ -547,11 +547,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
   // ── ตัวช่วยวาดกราฟ (หน้าตาเดียวกันทุกแผ่น — ห้ามแต่ละแผ่นตั้งเอง) ────────────────
   const axisTick = { fontSize: fs(10), fill: 'var(--muted)' };
-  const chartTip = {
-    contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
-    labelStyle: { color: 'var(--text2)' },
-    cursor: { fill: 'var(--text)', fillOpacity: 0.08 },   // default ของ Recharts = #ccc ทึบ → ใน popup ขยายกลายเป็นก้อนเทาบังแท่ง
-  };
+  const chartTip = tooltipProps(fs(11));   // สี/พื้น/cursor มาตรฐาน — utils/chartAxis.js (แท่ง Cell ต้องมี fill={CELL_BAR_FILL} ไม่งั้น tooltip ดำ)
   const daySeries = (s) => fillDays(s, from, to).map(p => ({ ...p, label: dayLabel(p.k) }));
   const ytdTag = isYear ? 'YTD · ' : '';
 
@@ -597,7 +593,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               </Bar>
             </>
           ) : (
-            <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={onBarClick}>
+            <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={onBarClick}>
               {data.map(cellOf)}
             </Bar>
           )}
@@ -773,7 +769,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'PPE ครบ']} />
                   <ReferenceLine y={kS.target} stroke="#ef4444" strokeDasharray="4 3" />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kS.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kS.target, 'up'))} />
                     ))}
@@ -823,7 +819,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <YAxis tickFormatter={fmtAxis} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'ทำได้ตามแผน']} />
                   <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="4 3" />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kD.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, 100, 'up'))} />
                     ))}
@@ -906,7 +902,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'OEE']} />
                   <ReferenceLine y={kOee.target} stroke="#ef4444" strokeDasharray="5 3"
                     label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: '#ef4444', fontSize: fs(10) }} />
-                  <Bar dataKey="v" radius={[2, 2, 0, 0]}>
+                  <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kOee.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kOee.target, 'up'))} />
                     ))}

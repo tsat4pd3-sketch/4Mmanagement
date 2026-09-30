@@ -15,6 +15,23 @@
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 export const AXIS_FS = 11;
 
+/* ══ 🖤 tooltip ตัวหนังสือดำบนการ์ดเข้ม (2026-09-30 · user ส่งภาพ "พื้นเขียวเข้ม text ดำ") ═══════
+   Recharts เขียนบรรทัดค่าใน tooltip ด้วย "สีของ series" = prop `fill` ของ <Bar> — แท่งที่ระบายสีรายแท่ง
+   ด้วย <Cell> (ไฟเขียว/เหลือง/แดงตามสถานะ) มักไม่ใส่ fill ที่ <Bar> ⇒ Recharts ตกไปใช้ `#000`
+   = ดำบน var(--card) ธีมมืด อ่านไม่ออกบนจอ TV · เจอ 7 จุดใน 4 ไฟล์ (OBEYA KPI/SQDCM · Energy · QC)
+   กติกา: <Bar> ที่ลูกเป็น <Cell> ต้องใส่ `fill={CELL_BAR_FILL}` (Cell ทับสีที่วาดอยู่แล้ว · fill นี้ไปโผล่แค่ใน tooltip)
+   + <Tooltip {...tooltipProps(fs)}> · มีด่าน build (regressionGuards "แท่ง Cell ไม่มี fill")
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+export const CELL_BAR_FILL = 'var(--text)';
+
+/** props ของ <Tooltip> มาตรฐาน — พื้นการ์ด · ตัวหนังสือสีธีม (ไม่บังคับ itemStyle: หลาย series ยังใช้สีของตัวเอง) ·
+ *  cursor โปร่ง (default #ccc ทึบ → ใน popup ขยายกลายเป็นก้อนเทาบังแท่ง) */
+export const tooltipProps = (fontSize = AXIS_FS) => ({
+  contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: Math.max(AXIS_FS, fontSize), color: 'var(--text)' },
+  labelStyle: { color: 'var(--text)', fontWeight: 600 },
+  cursor: { fill: 'var(--text)', fillOpacity: 0.08 },
+});
+
 /** props ของ tick ที่อ่านออก — fontSize ไม่ต่ำกว่า 11 */
 export const axisTick = (extra = {}) => ({ fill: 'var(--muted)', ...extra, fontSize: Math.max(AXIS_FS, extra.fontSize || AXIS_FS) });
 
