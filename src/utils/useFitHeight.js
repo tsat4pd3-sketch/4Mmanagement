@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from 'react';
 
    ⚠️ ใช้ `rect.top + scrollY` (ตำแหน่งเทียบ **เอกสาร**) ไม่ใช่ `rect.top` เฉยๆ —
       ไม่งั้นพอเลื่อนหน้า กล่องจะโตขึ้นเรื่อยๆ แล้วหน้ายิ่งยาว (ลูปกลายๆ)
-   ไม่เกิดลูปจริง: ความสูงของกล่องเองไม่กระทบตำแหน่ง *บน* ของกล่อง (มันอยู่ใต้หัวเพจเสมอ)
+   ความสูงของกล่องเองไม่กระทบตำแหน่ง *บน* ของกล่อง (มันอยู่ใต้หัวเพจเสมอ) — แต่ **ระยะใต้กล่อง**
+   เคยทำลูปจริงมาแล้ว (30/09) ⇒ ต้องวัดจากเนื้อหาจริงเท่านั้น ดู `contentBelow()` ด้านล่าง
 
    @param {number} bottomReserve  เว้นที่ก้นจอกี่ px (แถบเปลี่ยนหน้า/ระยะหายใจ)
    @param {number} min            ความสูงต่ำสุด — จอเตี้ยมากก็ยังต้องอ่านออก
@@ -17,6 +18,42 @@ import { useEffect, useRef, useState } from 'react';
             ยังวัดไม่ได้ = null (ให้ผู้เรียกตัดสินใจเอง ห้ามคืน 0 — 0 = กล่องแบนหายไปเลย)
    ══════════════════════════════════════════════════════════════════════════════════════ */
 const SAFETY = 8;
+
+/* ── ระยะ "เนื้อหาจริง" ที่อยู่ใต้กล่อง (px) — pure พอที่จะเทสด้วย DOM ปลอมได้ ───────────────
+   🔴 บั๊กที่เคยเกิด (30/09 · user ส่งคลิป "บัคๆ"): เวอร์ชันแรกวัด `parent.bottom - node.bottom`
+      ไล่ขึ้นทุกชั้น โดยคิดว่า "พ่อโตตามลูก ระยะใต้กล่องจึงไม่ขึ้นกับความสูงกล่อง" — **เท็จ** เมื่อ
+      บรรพบุรุษมีความสูงตายตัว: `<main>{minHeight:100vh}` + `html,body{height:100%}`
+      ⇒ กล่องเตี้ยลงเท่าไหร่ ช่องว่างใต้ลูกใน <main> ก็โตขึ้นเท่านั้น → ถูกนับเป็น "ของใต้กล่อง"
+      → ที่ว่างที่วัดได้ลดลง = reserve+SAFETY (20px) **ทุกรอบ** → บอร์ด 5×2 หดจนข้อความซ้อน →
+      หลุดเป็น 6×1 + แถบหน้า → ต่ำกว่า min → null → auto → วนใหม่ (วัดจริงใน harness: 22 สถานะ/5 วิ
+      ทุกขนาดจอ · โซนหน่วง 4px กันไม่อยู่เพราะก้าวละ 20px)
+   วิธีที่ถูก: นับเฉพาะ **พี่น้องที่อยู่ถัดจาก node ในแต่ละชั้น** (ขอบล่างสุดของพวกมัน − ขอบล่างกล่อง)
+      + padding/border ล่างของบรรพบุรุษ — ค่านี้ไม่ขึ้นกับความสูงกล่อง (ของข้างล่างแค่เลื่อนตาม)
+      · ข้ามของที่ไม่กินที่ในผัง (fixed/absolute/display:none) · หยุดที่ `root` (document.body)
+   @param {Element} el
+   @param {{ getStyle?: (n:Element)=>CSSStyleDeclaration, root?: Element|null }} [opt] — ใส่ใน unit test เท่านั้น */
+export function contentBelow(el, opt = {}) {
+  const getStyle = opt.getStyle || ((n) => getComputedStyle(n));
+  const root = 'root' in opt ? opt.root : (typeof document !== 'undefined' ? document.body : null);
+  const boxBottom = el.getBoundingClientRect().bottom;
+  let bottom = boxBottom;
+  let extra = 0;
+  for (let node = el; node && node !== root; node = node.parentElement) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    for (let sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) {
+      const st = getStyle(sib);
+      if (st.display === 'none' || st.position === 'fixed' || st.position === 'absolute') continue;
+      const r = sib.getBoundingClientRect();
+      if (!(r.height > 0)) continue;
+      bottom = Math.max(bottom, r.bottom + (parseFloat(st.marginBottom) || 0));
+    }
+    const ps = getStyle(parent);
+    extra += (parseFloat(ps.paddingBottom) || 0) + (parseFloat(ps.borderBottomWidth) || 0);
+    if (parent === root) break;
+  }
+  return Math.max(0, bottom - boxBottom) + extra;
+}
 
 export default function useFitHeight(bottomReserve = 12, min = 240) {
   const ref = useRef(null);
@@ -30,17 +67,9 @@ export default function useFitHeight(bottomReserve = 12, min = 240) {
       /* 🔑 ต้องหักของที่อยู่ **ใต้** กล่องด้วย ไม่ใช่แค่ของที่อยู่เหนือ
          (แถบเปลี่ยนหน้า · หมายเหตุท้ายบอร์ด · padding ล่างของ <Page>)
          วัดจาก top อย่างเดียว = พลาดของข้างล่างเสมอ — เคยเหลือเลื่อนอีก 88px เพราะเหตุนี้ (25/09)
-         ไล่ขึ้นไปทีละชั้นแล้วบวก "ช่องว่างใต้ตัวเอง" ของแต่ละชั้น
-         ⚠️ ไม่เกิดลูป: ระยะใต้กล่องในแต่ละชั้น **ไม่ขึ้นกับความสูงของกล่องนี้** (พ่อโตตามลูกพร้อมกัน) */
-      let below = 0;
-      for (let node = el; node && node !== document.body;) {
-        const parent = node.parentElement;
-        if (!parent) break;
-        /* ⚠️ หนีบไม่ให้ติดลบ — `html,body{height:100%}` ทำให้ `body.bottom` **เตี้ยกว่า**
-           ลูกที่ล้นออกไป ⇒ ได้ค่าลบ (วัดจริงได้ -104) แล้วไปลบล้างของจริงที่อยู่ใต้กล่อง */
-        below += Math.max(0, parent.getBoundingClientRect().bottom - node.getBoundingClientRect().bottom);
-        node = parent;
-      }
+         🔴 วัดจาก **เนื้อหาจริงที่อยู่ถัดจากกล่อง** (พี่น้องถัดไปทุกชั้น + padding ล่างของบรรพบุรุษ)
+            ห้ามวัดจาก `parent.bottom - node.bottom` — ดู contentBelow() (บั๊กลูปหด 20px/รอบ 30/09) */
+      const below = contentBelow(el);
       const docTop = box.top + window.scrollY;
       /* +SAFETY: margin ที่ยุบรวมกัน (margin collapsing) กับเศษ subpixel ทำให้เตี้ยไปได้ ~2-8px
          ยอมเสียที่ 8px ดีกว่าโผล่ scrollbar — ซึ่งคือสิ่งที่ห้ามทั้งหมดของบอร์ดนี้ */

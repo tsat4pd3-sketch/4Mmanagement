@@ -50,7 +50,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { inSectionScope } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
-import { PLANT, isPlant, parseScopeKey } from '../utils/orgScope';
+import { PLANT, isPlant, parseScopeKey, drillParams } from '../utils/orgScope';
 import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
@@ -790,7 +790,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
-            link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
@@ -841,7 +841,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : `เครื่องหยุด ${fmtBaht(kC.dtBaht)} · ของเสีย ${fmtBaht(kC.ngBaht)}`}
-            link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดู LOSS ละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {isYear ? (yearBars(kC, { stacked: true }) || <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
@@ -895,7 +895,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               : kOee.value != null && kOeePrev.value != null
               ? `งวดก่อน ${kOeePrev.value}% (${prev.from}→${prev.to}) · ${kOee.value >= kOeePrev.value ? 'ดีขึ้น' : 'แย่ลง'} ${Math.abs(round1(kOee.value - kOeePrev.value))} จุด`
               : 'ยังเทียบงวดก่อนไม่ได้ (งวดก่อนไม่มีกะที่ปิดแล้ว)'}
-            link="เจาะ OEE" onLink={() => drill('/oee-analytics', { section: secFilter, date: to })}>
+            link="เจาะ OEE" onLink={() => drill('/oee-analytics', { ...drillParams(org, scope), date: to })}>
             {isYear ? (yearBars(kOee, { name: 'OEE', span: 2 }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kOee.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kOee.series)} margin={{ top: 6, right: 8, left: 4, bottom: 0 }}>
@@ -925,7 +925,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             foot={pareto.rows.length
               ? `อันดับ 1 "${pareto.rows[0].name}" = ${Math.round((pareto.rows[0].min / pareto.total) * 100)}% ของเวลาที่เสีย`
               : 'ไม่มีเวลาเครื่องหยุดนอกแผนในช่วงนี้'}
-            link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight' })}>
+            link="ดู Pareto เต็ม" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
             {pareto.rows.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 {/* แกนตัวเลขซ่อนเพื่อประหยัดที่ในแผ่น A4 ⇒ ต้องเขียนตัวเลขที่ปลายแท่งแทน (กราฟไม่มีตัวเลข = อ่านไม่ได้ · chartsweep) */}

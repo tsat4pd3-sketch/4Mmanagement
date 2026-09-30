@@ -856,8 +856,9 @@ export default function StoreTimeChart({
                                     title={p.netTotal > 0 ? 'เลือกไปส่ง' : 'ไม่มียอดต้องส่ง'} style={{ width: 'auto', cursor: 'pointer', margin: 0 }} />
                             )}
                             <span style={{ color: m.c }} title={`ของในสโตร์: ${m.t}`}>{m.t}</span>
-                            <span style={{ fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>{p.mat_no}</span>
-                            <span style={{ color: 'var(--muted)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                            <span style={{ fontWeight: 700, color: 'var(--text2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                            <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>MAT {p.mat_no}</span>
                             {/* เวลาที่ "ของที่ไลน์" จะหมด — คนละตัวกับของในสโตร์
                                 📥 = ยังไม่ได้ตั้งยอดที่ไลน์ (มองเป็น 0) → เวลานี้คือกำหนดส่ง ไม่ใช่เวลาที่ของหมดจริง */}
                             <span title={p.assumed

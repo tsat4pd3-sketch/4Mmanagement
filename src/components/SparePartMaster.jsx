@@ -329,7 +329,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
           <thead><tr>
             <th style={{ ...th, width: 44 }}></th>
             <th style={th}>อะไหล่</th>
-            <th style={th}>MAT / Part no.</th>
+            <th style={th}>Part no. / MAT</th>
             <th style={th}>หมวด</th>
             <th style={th}>ชั้นวาง</th>
             <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
@@ -362,8 +362,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                     </div>
                   </td>
                   <td style={{ ...td, fontSize: 11.5 }}>
-                    <div>{p.mat_no || '—'}</div>
-                    <div style={{ color: 'var(--muted)' }}>{p.part_no || ''}</div>
+                    {/* ลำดับ Part No. → MAT (UI §6.21) */}
+                    <div>{p.part_no || '—'}</div>
+                    <div style={{ color: 'var(--muted)' }}>{p.mat_no ? `MAT ${p.mat_no}` : ''}</div>
                   </td>
                   <td style={td}>
                     {c ? <span style={{ fontSize: 11.5, padding: '1px 7px', borderRadius: 4, background: 'var(--bg3)', border: `1px solid ${c.color || 'var(--border)'}`, color: c.color || 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap' }}>{c.icon || ''} {c.key}</span>

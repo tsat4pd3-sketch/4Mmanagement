@@ -279,6 +279,30 @@ export function summaryModeOf(d) {
   return KPI_SUMMARY_MODES.some(m => m.key === k) ? k : 'average';
 }
 
+/* ── 5.2) KPI ที่ "ค่าเป็นของโรงงาน" (30/09 · คำสั่ง user: %RM + Customer Satisfaction ทุกหน่วยใช้ตัวเลขเดียวกัน) ──
+   `kpi_catalog.value_scope` = 'own' (ค่าของหน่วยงานเอง) | 'plant' (ค่าโรงงาน) — data-driven ตั้งจากปุ่ม 📘 ทะเบียน
+   🔴 กติกา: KPI แบบ plant **ค่ารายเดือนอยู่ที่นิยามระดับโรงงานตัวเดียว** · นิยามของหน่วยงานยังมีได้
+      (เก็บเป้า/น้ำหนัก/ลำดับในใบของหน่วยนั้น) แต่ทุกจอต้องอ่านค่าจาก `sharedValueDef()` ห้ามอ่าน entries ของตัวเอง
+      · ไม่มีนิยามโรงงาน = "ยังไม่มีค่า" + จอต้องบอกว่าไปสร้างที่ขอบเขต ทั้งโรงงาน (ห้ามถอยไปใช้ค่าของหน่วยเงียบๆ) */
+export const KPI_VALUE_SCOPES = [
+  { key: 'own',   label: 'ของหน่วยงานเอง (แต่ละหน่วยกรอกของตัวเอง)' },
+  { key: 'plant', label: 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' },
+];
+export const valueScopeOf = (d) => ((d?.kpi_catalog?.value_scope || d?.value_scope) === 'plant' ? 'plant' : 'own');
+const normKpiName = (x) => String(x ?? '').toLowerCase().replace(/[\s\-_./()]+/g, '');
+const isPlantDef = (x) => x?.scope_kind === 'plant' || (!x?.scope_kind && !x?.section && !x?.line_group);
+/** นิยามระดับโรงงานที่ถือ "ค่า" ของ KPI แบบ plant — จับคู่ด้วย catalog_id ก่อน ไม่มีค่อยเทียบชื่อ · คืน null = ยังไม่มี
+ *  (ส่งนิยามโรงงานเข้ามาเอง = คืนตัวมันเอง) · KPI แบบ own = null เสมอ */
+export function sharedValueDef(defs, d) {
+  if (valueScopeOf(d) !== 'plant') return null;
+  const cid = d?.catalog_id || d?.kpi_catalog?.id || null;
+  const nm = normKpiName(d?.kpi_catalog?.name || d?.name);
+  return (defs || []).find(x => x && x.is_active !== false && isPlantDef(x)
+    && !String(x.source || '').startsWith('auto:')
+    && (d?.year == null || x.year == null || Number(x.year) === Number(d.year))
+    && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
+}
+
 /** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */
 export function fmtKpi(v, d) {
   if (v == null || v === '' || !Number.isFinite(Number(v))) return '';

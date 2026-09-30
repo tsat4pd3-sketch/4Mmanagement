@@ -1088,8 +1088,9 @@ export default function OrderTrace() {
                         </span>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600 }}>{o.mat_no || '—'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name || ''}{o.customer ? ` · ${o.customer}` : ''}</div>
+                        {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                        <div style={{ fontWeight: 600 }}>{o.part_name || o.mat_no || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.part_name ? `MAT ${o.mat_no || '—'}` : ''}{o.customer ? ` · ${o.customer}` : ''}</div>
                       </td>
                       <td>
                         <div>{s.line_name || '—'}</div>

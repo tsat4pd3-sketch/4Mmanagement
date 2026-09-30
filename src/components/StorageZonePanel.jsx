@@ -332,8 +332,9 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
             <div style={{ display: 'grid', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
               {options.map(p => (
                 <button key={p.mat_no} onClick={() => { setMats(v => [...v, p.mat_no]); }} style={{ ...btnSec, textAlign: 'left', fontSize: 12, display: 'flex', gap: 8 }}>
-                  <b>{p.mat_no}</b>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || ''}</span>
+                  {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                  <b style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || p.mat_no}</b>
+                  {p.part_name && <span style={{ fontFamily: 'monospace', opacity: 0.85 }}>MAT {p.mat_no}</span>}
                   <span style={{ color: 'var(--muted)' }}>{stockByMat[p.mat_no] ? `คงเหลือ ${Number(stockByMat[p.mat_no]).toLocaleString()}` : '—'}</span>
                 </button>
               ))}
