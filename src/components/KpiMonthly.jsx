@@ -1,4 +1,4 @@
-import { fmtAxis } from '../utils/chartAxis';
+import { fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useCallback, useRef, useContext, Fragment } from 'react';
 import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -150,7 +150,7 @@ function ChartModal({ c, curIdx, onClose }) {
                 label={{ value: `เป้า ${c.dir === 'down' ? '≤' : '≥'} ${Number(c.target).toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 12, fontWeight: 800 }} />
             )}
             {c.kind === 'bar' ? (
-              <Bar dataKey="v" radius={[4, 4, 0, 0]} isAnimationActive={false}>
+              <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[4, 4, 0, 0]} isAnimationActive={false}>
                 <LabelList dataKey="v" position="top" formatter={v => (v == null ? '' : Number(v).toLocaleString())} style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text2)' }} />
                 {data.map(d => {
                   const m = missTarget(d.v, c.target, c.dir);

@@ -1095,6 +1095,28 @@ test('🛡️ live-oee-must-pass-pairmap — ทุกจอที่คิด O
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
 
+/* 🖤 <Bar> ที่ลูกเป็น <Cell> แต่ไม่มี fill= — tooltip เขียนบรรทัดค่าด้วย "สีของ series" = fill ของ <Bar>
+   ไม่มี ⇒ Recharts ตกไปใช้ #000 = ตัวหนังสือดำบน var(--card) ธีมมืด (user 30/09/2026 ส่งภาพ
+   "พื้นเขียวเข้ม text ดำ" จากแผ่น DL+OH บอร์ด KPI) · เจอ 7 จุดใน 4 ไฟล์ตอนกวาด
+   ⚠️ ต้องดูข้ามบรรทัด (Cell อยู่ในลูก) จึงเขียนเป็นเทสแยก ไม่ใช่กฎใน RULES */
+test('🛡️ <Bar> ที่ระบายสีด้วย <Cell> ต้องมี fill={CELL_BAR_FILL} — ไม่งั้น tooltip ตัวหนังสือดำ', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const rel = relative(ROOT, file);
+    for (const m of code.matchAll(/<Bar\b([^>]*?)>([\s\S]*?)<\/Bar>/g)) {
+      if (/\bfill=/.test(m[1])) continue;              // มี fill แล้ว
+      if (!/<Cell\b/.test(m[2])) continue;              // ไม่ได้ระบายรายแท่ง — สี default ของ Recharts ยังอ่านออก
+      const line = code.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  <Bar dataKey=…> มี <Cell> แต่ไม่มี fill=`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    `\n❌ แท่งที่ระบายสีด้วย <Cell> ไม่มี fill ที่ <Bar> — tooltip จะเขียนค่าเป็นสีดำบนการ์ดเข้ม:\n  ${bad.join('\n  ')}\n` +
+    `   แก้: <Bar fill={CELL_BAR_FILL} …> (จาก src/utils/chartAxis.js — Cell ทับสีที่วาดอยู่แล้ว fill นี้ไปโผล่แค่ใน tooltip)\n` +
+    `   + <Tooltip {...tooltipProps(fs)}> ให้พื้น/ตัวหนังสือ/cursor เป็นมาตรฐานเดียวกัน`);
+});
+
 /* 🔴 onClick={fn} เมื่อ fn "รับ argument" — React ส่ง click event เป็น arg ตัวแรกเสมอ
    เคยพังจริง 22/09/2026: `openPicker` ถูกเพิ่มพารามิเตอร์ `parentMat` ทีหลัง แต่ call site ยังเป็น
    `onClick={openPicker}` ⇒ event ถูกเก็บลง state → `(m || '').trim()` ระเบิดทั้งจอ
