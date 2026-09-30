@@ -62,3 +62,12 @@
 | 🔔 แจ้งเตือนท่วม + นโยบายเก็บย้อนหลัง `notifications` (2026-09-23) | `docs/modules/notifications-flood.md` | 6 KB |
 | 🗄️ Database Schema — กฎ/เหตุผล/ประวัติรายตาราง (ย้ายจาก CLAUDE.md 2026-09-23) | `docs/modules/db-schema.md` | 13 KB |
 | Shift Logic / OT — เวลากะ · OT วันหยุด · มาตรา 75 (ย้ายจาก CLAUDE.md 2026-09-23) | `docs/modules/shift-ot.md` | 4 KB |
+
+## ไฟล์ที่แยกออกจาก CLAUDE.md เพื่อลด context (2026-09-25..30)
+
+- `claude-md-slim.md` — **อ่านก่อนจะย่อ CLAUDE.md อีก** (ย้ายอะไรไปไหน + กติกา "ตัดเหตุผลได้ ตัดกฎไม่ได้")
+- `file-structure.md` — ผังโฟลเดอร์เต็ม + ของกลางรายตัว (components/utils/lib/edge functions)
+- `date-time-rules.md` — ตัวอย่างโค้ด ✅/❌ ของ `getWorkDate()`/กะ + helper ฝั่ง SQL
+- `db-write-rules.md` — หลักฐาน/ตัวเลขเบื้องหลังกฎเขียน DB 11 ข้อ + ฉบับเต็มของทุกข้อ
+- `build-gates.md` — ที่มาของทุกด่านใน `npm run build` + เคสจริงที่ทำให้ต้องมี
+- `doc-forms.md` — ขั้นตอน register เอกสาร export เข้าทะเบียน `/doc-forms`

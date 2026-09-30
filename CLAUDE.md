@@ -23,18 +23,16 @@
 **หลังแก้/เพิ่มอะไรก็ตาม — อัพเดทกฎในคอมมิทเดียวกัน:**
 - สร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า → อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่)
 - เปลี่ยน schema / ตาราง / Edge Function / workflow / กฎธุรกิจ → อัพเดท **`docs/modules/<module>.md` ของโมดูลนั้น** (พร้อมวันที่) · CLAUDE.md แก้เฉพาะเมื่อกระทบ*ทุก* session (กฎเหล็กข้ามโมดูล, Supabase project, workflow)
-- **📏 เพดาน CLAUDE.md = 120 KB (~45k tokens) — อยู่ในด่าน `npm run build` แล้ว (2026-09-03)**
-  `npm run check:context` (= `scripts/check-claude-md-size.mjs`) รันเป็น**ขั้นแรก**ของ build → **ไม่ผ่าน = build ล่ม = deploy ไม่ออก**
-  ตรวจ 3 ช่องทางที่ทำให้ context บวม (ครบทุกทางที่ Claude Code ดูดไฟล์เข้า memory เอง):
-  1. **ขนาด CLAUDE.md > 120 KB** → ย้ายรายละเอียดโมดูล/ประวัติไป `docs/modules/`
-  2. **`@path` import** ← **ต้นเหตุจริงของ 550k tokens** ไม่ใช่ขนาดไฟล์ · `@` ดูดไฟล์ปลายทางเข้า memory ทุก session ต่อให้ CLAUDE.md เล็กก็บวมได้ — อ้างด้วย path ธรรมดาเสมอ
-  3. **CLAUDE.md ซ้อนในโฟลเดอร์ย่อย** (Claude Code โหลดเพิ่มเองเมื่อทำงานในโฟลเดอร์นั้น)
-  · **ห้ามถอดออกจาก build เพื่อให้ deploy ผ่าน** — แก้ที่เอกสารแทน (บทเรียนเดียวกับเทสที่เคยเขียนไว้แล้วไม่มี script ไหนรัน จนต้องเอาเข้าด่าน 2026-08-24)
+- **📏 เพดาน CLAUDE.md = 120 KB (~45k tokens) — `npm run check:context` เป็น**ขั้นแรก**ของ build ⇒ ไม่ผ่าน = deploy ไม่ออก**
+  ตรวจ 3 ช่องทางที่ทำให้ context บวม: (1) **ขนาดไฟล์** → ย้ายรายละเอียด/ประวัติไป `docs/modules/`
+  (2) **`@path` import** ← ต้นเหตุจริงของ 550k tokens ไม่ใช่ขนาดไฟล์ (`@` ดูดไฟล์เข้า memory ทุก session) **อ้างด้วย path ธรรมดาเสมอ**
+  (3) **CLAUDE.md ซ้อนในโฟลเดอร์ย่อย** · **ห้ามถอดด่านออกเพื่อให้ deploy ผ่าน — แก้ที่เอกสารแทน**
+  · 📄 ผลการรีดไฟล์ + ของที่ย้ายไปไหน → `docs/modules/claude-md-slim.md`
 - **ประวัติการแก้ / ผลรันจริง / ตัวเลข runtime / feedback ที่ตัดสินใจไปแล้ว → เขียนสั้นๆ ในไฟล์โมดูล ไม่ใส่ CLAUDE.md** (CLAUDE.md = กฎปัจจุบัน ไม่ใช่ changelog)
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกไว้ในไฟล์โมดูลที่เกี่ยวข้อง (ถ้าข้ามโมดูล เช่น "กับดัก CSS" ค่อยไว้ใน CLAUDE.md)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
 - **⚠️ เวลาบอก user ให้รัน migration ต้อง "วาง SQL เต็มๆ ในแชท" เสมอ ห้ามบอกแค่ชื่อไฟล์ (คำสั่งถาวรจาก user 2026-08-21)** — user รันผ่าน **Supabase SQL Editor บนเว็บ เปิดไฟล์ในรีโปไม่ได้** · เคยเกิดจริง: บอกชื่อไฟล์ไป user ก๊อป *path* ไปวาง แล้วได้ `42601 syntax error at or near "supabase"` · **user ไม่มี CLI/terminal — ห้ามส่งคำสั่ง shell/CLI ให้รัน** (07/09 เคยก๊อป `supabase functions deploy` ไปวางใน SQL Editor) · migration ที่ย้อนได้ + edge function → AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ (`docs/modules/edge-functions.md`) · ให้ user ทำเฉพาะที่ทำได้จากเว็บ (SQL Editor · secrets ใน dashboard · เมนูในแอป) · ต้องระบุ **project ปลายทาง (Main/DR) ทุกครั้ง** (ตาราง 2 ฝั่งชื่อคล้ายกัน รันผิดฝั่งได้ง่าย) · แนบคิวรีเช็คผลหลังรันด้วยจะดีที่สุด
-- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) → ต้อง register เข้าระบบทะเบียนเอกสาร `/doc-forms` (Document Master)** ให้ doc_control ปรับแต่งได้เอง (เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/footer/โลโก้/Legend/ผู้ออกเอกสาร/Revision History) โดยไม่ต้องแก้โค้ด — ขั้นตอนบังคับ: (1) seed แถวใน `doc_forms` (migration — เอกสารที่ยังไม่มีเลขฟอร์มทางการก็ seed ด้วย form_code=null ไว้ก่อน) (2) ฟังก์ชันพิมพ์อ่านค่าผ่าน `src/utils/docForms.js` (`getDocForm`/`docFormSync`/`fullCode`/`getDocFormRevisions` + fallback ค่าเดิมในโค้ดเสมอ) — ฟอร์มทางการวาดหัว/footer เอง · **รายงานภายในที่ไม่มี layout ฟอร์ม อย่างน้อยห่อ html ก่อนพิมพ์ด้วย `withDocFoot(html, doc_key)`** (ทะเบียนยังไม่ตั้งเลขฟอร์ม = หน้าตาเดิมเป๊ะ ตั้งเมื่อไหร่แถบเลขฟอร์มโผล่เอง) (3) โลโก้ผ่าน `urlToDataUrl(docFormSync(key).logo_url || tsLogoUrl)` **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ในโค้ด และห้ามสร้างตารางทะเบียนเอกสารแยกใหม่** (เคยมี `document_controls` ซ้อน ยุบแล้ว — `docs/UI-CONVENTIONS.md` §6.6)
+- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` (รายงานภายในห่อด้วย `withDocFoot(html, doc_key)`) · 📄 ขั้นตอน 3 ข้อ → `docs/modules/doc-forms.md` · UI §6.6
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
@@ -632,131 +630,69 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## File Structure
 
-> รายชื่อไฟล์เต็มดูของจริงใน `src/` — ด้านล่างคือ "ไฟล์โครงสร้าง/ของกลาง" ที่ทุก session ควรรู้จัก
-> (เลิกลิสต์ pages ทั้งหมดในเอกสาร — เคยลิสต์แล้วล้าสมัยตลอด · pages ปัจจุบัน ~33 ไฟล์ ดูตาราง Pages & Routes ข้างบน)
+> 📄 **ผังโฟลเดอร์เต็ม + ของกลางรายตัว (components/utils/lib · picker กลาง · edge functions) → `docs/modules/file-structure.md`**
+> ของจริงดูใน `src/` เสมอ — ผังที่เขียนมือล้าสมัยทุกครั้ง
 
-```
-src/
-├── App.jsx            # Router + Sidebar + UserContext + NAV_ITEMS (source of truth เมนู/หมวด)
-│                      #   exports: UserContext, NAV_ITEMS, NAV_GROUP_ORDER, NAV_GROUP_META,
-│                      #            navItemsForGroups, accessSummaryForRole, Sidebar
-├── main.jsx           # bootstrap + RootErrorBoundary + vite:preloadError auto-reload (ห้ามถอด)
-├── index.css          # theme variables + CSS กลาง (.now-line/.now-chip, .dt-alarm-*, .person-alarm-*, .table-sticky)
-├── supabaseClient.js  # 2 clients: supabase (Main) / supabaseDR (DR — anon เสมอ)
-├── components/        # ของกลาง: Toast, ImageCropModal, MachineFloorMap, SpinAnnotator,
-│                      #   InternalTimeBoard, SignatureModal, TaxonomyManagerModal, ChangePasswordModal,
-│                      #   DowntimeSiren (เสียงเตือน downtime — 2026-07-14)
-│                      #   ⭐ picker กลาง (2026-09-07 — UI-CONVENTIONS §5.1.2 บังคับ): LineSelect · SearchSelect ·
-│                      #   PersonSelect · MachineSelect · ProductSelect · PartSelect · CustomerSelect · SupplierSelect ·
-│                      #   CostCenterSelect · StorageLocSelect · InstrumentSelect · SelectOrFree (select + ระบุเอง ช่องเดียว) ·
-│                      #   🏷️ MatLabel (เลข MAT + ชื่องาน + Part No. — ที่ที่คนตัดสินใจจากเลข MAT ห้ามวาด mat_no เปล่า · UI §6.21) ·
-│                      #   SimpleMasterPanel (แผง CRUD ทะเบียนเล็ก — ต้นแบบ 2026-09-08)
-├── utils/             # กฎ/สูตรกลาง — permissions.js (can/canAccessPage), usePerms.js, sectionScope.js,
-│                      #   loader ทะเบียนกลางของ picker: useProductionLines · usePeople · useMachines · useProducts ·
-│                      #   useCustomers · useSuppliers · useCostCenters · useDiePressLines (ตาราง master 2026-09-08) · useStorageLocations ·
-│                      #   useOrgSections (+useOrgTeams) · usePartOptions · useInstruments · useColumnHistory (📜 ค่าที่เคยบันทึก —
-│                      #   ทะเบียนไม่มีก็ยังเลือกได้ ห้ามล้าง/บล็อก) · pickerOptions.js + partOptions.js
-│                      #   (pure — มีเทส) · fetchAllRows.js (กับดัก 1000 แถว)
-│                      #   🇹🇭 ชั้นภาษา: thaiText.js (ตัดคำไทย ICU · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด) +
-│                      #     termStats.js (log-odds) + autoCategory.js (เดาหมวด) + downtimeCategory.js
-│                      #   roleMeta.js (ชื่อ/สี role จุดเดียว), useIsMobile.js, markerScale.js, timeFrame.js,
-│                      #   downtimeAlarm.js, personAlarm.js, lineHierarchy.js, companyCalendar.js,
-│                      #   otPeriods.js, dateFormat.js, useImgBox.js
-├── lib/               # logic เฉพาะโดเมน (pmNotify, pmDailyAlarm, pmExportPDF/Excel, changePointChecklist)
-└── pages/             # ~35 หน้า — ชื่อไฟล์ตรงกับ route (⚠️ operator.jsx ตัวพิมพ์เล็ก)
+ที่ต้องรู้ข้าม session:
+- **`src/App.jsx` = source of truth ของเมนู/หมวด** (`NAV_ITEMS`, `NAV_GROUP_ORDER`, `UserContext`, `Sidebar`)
+- **`src/main.jsx`** — `RootErrorBoundary` + `vite:preloadError` auto-reload **ห้ามถอด**
+- **`src/supabaseClient.js`** — 2 clients: `supabase` (Main) / `supabaseDR` (DR — anon เสมอ)
+- **`src/utils/`** = กฎ/สูตรกลางทั้งหมด (สิทธิ์ · ขอบเขตส่วนงาน · loader ทะเบียนของ picker · ชั้นภาษาไทย)
+  **แก้กฎที่นี่ที่เดียว ห้ามก๊อปสูตรไปไว้ในหน้า** · `src/lib/` = logic เฉพาะโดเมน · `src/pages/` ชื่อไฟล์ตรงกับ route (⚠️ `operator.jsx` ตัวพิมพ์เล็ก)
+- **`supabase/migrations/`** — ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่
+- **`docs/`** บังคับอ่าน: `ENGINEERING-PRINCIPLES.md` (ทุกงาน) · `UI-CONVENTIONS.md` (งาน UI) ·
+  `PERMISSIONS-DESIGN.md` (สิทธิ์/role) · `OBEYA-KPI-SOURCES.md` (ก่อนแตะ KPI)
+  · 📌 **`*-GAP-*`/`*-DESIGN.md` บางไฟล์ = ออกแบบไว้แล้วยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง**
+  (รายชื่อ + ข้อห้ามรายไฟล์ เช่น ราคาขายห้ามอยู่ใน `parts_master` ฝั่ง DR → `docs/modules/file-structure.md`)
 
-supabase/
-├── migrations/        # ทุกการเปลี่ยน schema ต้องมีไฟล์ที่นี่ (ดู docs/sql/00_schema_snapshot_*.sql = โครงตารางทั้งหมด)
-└── functions/         # 11 ตัว (ซอร์สอยู่ใน repo ครบ) — รายชื่อ/กติการายตัว ดู docs/modules/edge-functions.md
-                       #   ที่ต้องรู้ข้าม session: create-user/delete-user/reset-user-password = admin-only
-                       #   (กันลบตัวเอง/ลบ admin · validate role กับ enum ผ่าน RPC get_user_roles ห้าม hardcode)
-                       #   · หน้า Login แยก "ไม่พบบัญชี" vs "รหัสผิด" ผ่าน RPC login_email_exists
-                       #     (anon เรียกได้ — enumeration trade-off ที่ตั้งใจ ดู migration 20260714)
-
-docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.md (ทุกงาน) · UI-CONVENTIONS.md (งาน UI) ·
-                       #   PERMISSIONS-DESIGN.md (สิทธิ์/role) · OBEYA-KPI-SOURCES.md (ก่อนแตะ KPI)
-                       #   ที่เหลือดูชื่อไฟล์เอาใน docs/ — เปิดเฉพาะที่เกี่ยวกับงานที่ทำ
-                       #   📌 **ออกแบบไว้แล้ว ยังไม่ลงมือ — ห้ามหยิบไปทำเองจนกว่า user สั่ง:**
-                       #     IATF16949-GAP-REVIEW · IDENTITY-NOTIFY-DESIGN (แกนสิทธิ์อยู่
-                       #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
-                       #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
-                       #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
-                       #   ⚠️ ไฟล์ *-DESIGN.md ที่ "ทำแล้ว" = เหตุผลเบื้องหลัง · ของจริงอยู่ docs/modules/
-```
-
-> **📡 SCADA / ข้อมูลเครื่องจักร realtime — ดู `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
-> ทิศทางที่ตกลงไว้: ให้ SCADA เป็น **"เซ็นเซอร์"** ส่ง raw data (stroke/สถานะเครื่อง/เวลาหยุด) เข้ามา
-> แล้ว **ESM เป็นเจ้าของสูตร** — `src/utils/oee.js` ยังเป็น single source of truth เหมือนเดิม
-> **ห้ามให้ระบบภายนอกคำนวณ OEE เองแล้วเอาเลขมาโชว์** (มี OEE 2 ชุด = เถียงกันว่าจะเชื่อจอไหน)
-> หลักการ: **SCADA = ข้อเท็จจริง · คน = เหตุผล** (เครื่องบอกได้ว่าหยุดตอนไหน บอกไม่ได้ว่าทำไม · และ**ไม่มีทางรู้ NG** → Q ยังต้องมาจากคนเสมอ)
-> ⚠️ ข้อที่มองข้ามบ่อย: ปริมาณแถวจะโต **×113 ถึง ×450** จากที่คนกรอกวันนี้ (DR ตอนนี้ 36MB/500MB) · micro-stop ต้องแยกเป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (ต้องมี `pieces_per_stroke` ไม่งั้นยอดหายครึ่ง)
-
----
+> **📡 SCADA / ข้อมูลเครื่องจักร realtime — อ่าน `docs/SCADA_REALTIME_DESIGN.md` ก่อนลงมือเสมอ (2026-08-06)**
+> SCADA = **"เซ็นเซอร์"** ส่ง raw data (stroke/สถานะ/เวลาหยุด) · **ESM เป็นเจ้าของสูตร** — `src/utils/oee.js`
+> ยังเป็น single source of truth · **ห้ามให้ระบบภายนอกคำนวณ OEE เองแล้วเอาเลขมาโชว์** (มี OEE 2 ชุด = เถียงกันว่าเชื่อจอไหน)
+> **SCADA = ข้อเท็จจริง · คน = เหตุผล** (เครื่องบอกไม่ได้ว่าทำไมหยุด และ**ไม่มีทางรู้ NG** → Q มาจากคนเสมอ)
+> ⚠️ แถวจะโต **×113–×450** จากที่คนกรอกวันนี้ · micro-stop เป็น P ไม่ใช่ A · **1 stroke งานคู่ = 2 ชิ้น** (`pieces_per_stroke`)
 
 ## Patterns & Utilities
 
 ### Toast (Singleton)
 ```js
 import { toast } from '../components/Toast'
-toast.success('บันทึกสำเร็จ')
-toast.error('เกิดข้อผิดพลาด')
-toast.info('กำลังโหลด...')
+toast.success('บันทึกสำเร็จ') · toast.error('เกิดข้อผิดพลาด') · toast.info('กำลังโหลด...')
 ```
 
 ### UserContext
 ```js
 const { role, lineId, team, section, sections, fullName } = useContext(UserContext)
-// sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array, [] = ไม่จำกัด) — ดู "Section/Line/Team Scoping"
+// sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array, [] = ไม่จำกัด)
 ```
 
-### Date/Time Utilities
+### Date/Time Utilities — 📄 ตัวอย่างโค้ด + ฝั่ง SQL → `docs/modules/date-time-rules.md`
 
-> ⚠️ **กฎสำคัญ — ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน**  
-> `toISOString()` คืนค่า UTC ซึ่งต่างจากเวลาไทย (UTC+7) ทำให้วันที่คลาดเคลื่อน  
-> ให้ใช้ฟังก์ชันด้านล่างเท่านั้น และต้องใช้เหมือนกันทุกหน้า
+> ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — คืน UTC ต่างจากไทย (UTC+7) วันที่คลาดเคลื่อน
+> · **วันที่งาน = `getWorkDate()`** (`src/utils/workDate.js` · ก่อน 08:00 = วันก่อนหน้า — กะดึกข้ามวัน)
+> · กะปัจจุบัน = `getCurrentShift()` (day 08:00–19:59 / night 20:00–07:59) · `getShiftInfo()` คืน `{ shift, label }`
+> · **แสดงผล**เวลาใช้ `toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })` (ไม่ใช่สำหรับ query)
+> · **ฝั่ง SQL (DR) ใช้ `work_date_bangkok()` ห้ามใช้ `current_date`** (= UTC · เพี้ยน 07:00-07:59 ไทย)
 
-```js
-// ✅ ใช้ทุกครั้งที่ต้องการ work_date สำหรับ query DB
-getWorkDate()
-// → คืน "YYYY-MM-DD" แบบ local time
-// → ถ้าเวลาปัจจุบัน < 08:00 ให้นับเป็นวันก่อนหน้า (งานกะดึกข้ามวัน)
+> ⚠️ **"วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ 22/26 วัน** (คำสั่ง user 2026-07-21) —
+> `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน)
+> จ-ศ ไม่มาร์ค = ทำงาน · มาร์คหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · ส-อา มาร์ค working = ทำงาน
+> 📄 จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
 
-// ✅ ใช้ detect กะปัจจุบัน
-getCurrentShift()
-// → "day"   เมื่อ 08:00–19:59
-// → "night" เมื่อ 20:00–07:59
+### 🔴 กฎเหล็กการเขียน DB จาก client (full QC audit 2026-09-03..04 — คลาสบั๊กที่เจอซ้ำทุกรอบ)
 
-// ✅ ใช้แสดงผลเวลา (ไม่ใช่สำหรับ query)
-new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
+> 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
-// ❌ ห้ามใช้เพื่อหาวันที่งาน
-new Date().toISOString()          // UTC — ผิดสำหรับไทย
-new Date().toISOString().slice(0,10)  // อาจได้วันที่ผิด
-```
-
-```js
-getShiftInfo()  // object { shift, label } — กะเช้า 08:00-20:00 / กะดึก 20:00-08:00
-```
-
-> ⚠️ **กฎวันทำงาน (คำสั่ง user 2026-07-21): ทุกการคำนวณที่เกี่ยวกับ "วันทำงาน" ต้องอ้างอิงปฏิทินบริษัทก่อน ห้ามใช้ค่าคงที่ (22/26 วัน)** — ใช้ helper กลาง `countWorkingDaysInMonth(monthKey, fallback)` ใน `src/utils/companyCalendar.js` (เรียก `loadCompanyCalendar()` ก่อน) หรือ logic เดียวกัน: จ-ศ ไม่มาร์ค = ทำงาน · มาร์คเป็นวันหยุดทุกชนิด (ot15/ot2/shutdown75) = หยุด · เสาร์/อาทิตย์มาร์ค working = ทำงาน · 📄 จุดที่ใช้แล้ว + 2 บั๊กที่เคยเจอ → `docs/modules/shift-ot.md`
-
-> **ฝั่ง SQL (DR project)** มี helper กลาง `work_date_bangkok()` (migration `20260714_work_date_bangkok_fallback.sql`)
-> = work date ไทยตัด 08:00 — trigger/function/default ใหม่ฝั่ง DR ที่ต้องการวันที่งาน **ให้ใช้ตัวนี้
-> ห้ามใช้ `current_date`** (คือ UTC — เพี้ยนช่วง 07:00-07:59 ไทย เคยเป็นบั๊กใน fn_post_confirmed_output)
-
-### 🔴 กฎเหล็กการเขียน DB จาก client (ตกผลึกจาก full QC audit 2026-09-03..04 — คลาสบั๊กที่เจอซ้ำทุกรอบ)
-
-1. **supabase-js ไม่ throw** — คืน `{ data, error }` เสมอ ⇒ `try { await supabase… } catch {}` = โค้ดตาย · `const { data } = await …` = กลืน error 100% (คิวรีล้มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล") · **ทุก insert/update/delete ต้องอ่าน `error`** — helper กลาง `checkWrite(await …, 'ป้ายงาน')` ใน `src/utils/dbWrite.js` (toast แดง + คืน false) · จุด delete-then-insert ต้องหยุดก่อน insert เมื่อ delete ล้ม
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง `.select('id')` แล้ว**นับแถว** ห้ามขึ้น toast เขียวจาก `!error` อย่างเดียว
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** — role array ที่เขียนมือจะ**แคบกว่าสิทธิ์ที่ `/permissions` แจก** เสมอ ⇒ คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ · **ตารางใหม่ต้องมี policy ครบทั้ง 4 cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 📄 5 ตารางที่เคยพลาด + migration → `docs/modules/db-write-rules.md`
-4. **stale-response race** — จอที่ยิงคิวรีตาม state (เลือกกะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับมา ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report เขียนข้อมูลผิดกะ · รอบ 3) — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / เทียบ request id / เทียบ ref ปัจจุบัน) ก่อน set
-5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า ต้อง filter/paginate
-6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (กฎเหล็ก 7 ใน `docs/modules/demand-flow-tower.md`)
-7. **realtime handler ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** (audit `docs/POLLING-AUDIT-2026-09-15.md` — มีตัวเลขที่วัดจริง) — `debounce(reload, 1500)` = "รอให้เงียบ 1.5 วิ" ซึ่ง**วันทำงานจริงไม่มีช่วงเงียบ** ⇒ จอโหลดใหม่ทุกครั้งที่ใครก็ตามในโรงงานแตะข้อมูล ไม่มีขีดจำกัดบน · **ใช้ `coalesce(fn, LIVE.x)` จาก `src/utils/liveRefresh.js` เท่านั้น ห้าม debounce/`setTimeout` เอง** (`setTimeout(load, 400)` ต่อ event ยิ่งแย่ — แต่ละ event ตั้งนาฬิกาของตัวเอง = N event N โหลด) · ระดับ `LIVE.ALARM/PAGE/BOARD` อยู่ใน `src/utils/refreshRates.js` ห้ามใส่ ms ดิบ · **subscribe แบบไม่มี `filter:` = ทุกเครื่องในโรงงานโหลดใหม่เมื่อไลน์ไหนก็ตามขยับ** ให้กรองฝั่ง server เสมอเมื่อรู้ขอบเขต — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default → `old` มีแค่ pk ⇒ event ถูกตัดทิ้งเงียบ) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
-8. **จอที่มี realtime แล้ว — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** ใช้ `makeIdleGate(LIVE.FLOOR)` (`liveRefresh.js`): ยิงจริงเฉพาะเมื่อมี realtime event ค้าง หรือครบ hard floor 2 ชม. · handler เรียก `touch()` · ทุกตัวโหลดเรียก `loaded()` · `.subscribe(st => st === 'SUBSCRIBED' && g.touch())` (reconnect = อาจพลาด event) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = เหลือแต่ floor = จอค้าง) — จอแบบนั้นให้**เพิ่ม realtime ก่อน** · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` (`src/utils/useLiveBoard.js`) บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น** (เขียนมือแล้วตกหล่นทุกครั้ง) · 📄 ตัวเลขที่วัดจริง → `docs/modules/db-write-rules.md`
-9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิงซ้ำวันละหลายร้อยรอบ) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
-10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (`mtn_orders` 116 คอลัมน์ × 1000 แถว = **1.59 MB/ครั้ง**) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ** · 📄 ตัวเลข → `docs/modules/db-write-rules.md`
+1. **supabase-js ไม่ throw** (คืน `{ data, error }` เสมอ ⇒ `try/catch` = โค้ดตาย · `const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete ต้องอ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert ต้องหยุดก่อน insert เมื่อ delete ล้ม
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง `.select('id')` แล้ว**นับแถว** ห้าม toast เขียวจาก `!error` อย่างเดียว
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือจะแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ ⇒ คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ) · **ตารางใหม่ต้องมี policy ครบ 4 cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE**
+4. **stale-response race** — จอที่ยิงคิวรีตาม state (กะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับ ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report ลงข้อมูลผิดกะ) ⇒ **ทุก effect ที่ await แล้ว set state ต้องมี guard** (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
+5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
+6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (ดู `docs/modules/demand-flow-tower.md`)
+7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **ใช้ `coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับอยู่ใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
+8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง — ให้เพิ่ม realtime ก่อน) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น**
+9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่เนื้อเดิม = ลูกยิงคิวรีซ้ำฟรีๆ ให้แปลงเป็น string/primitive ก่อน · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
+10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring
 ```js
@@ -764,119 +700,88 @@ computeFit(employee, station)  // % ของทักษะที่ผ่า�
 fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
 ```
 
----
-
 ## กฎการทำงานของทุก AI session (Workflow Discipline)
 
 ลำดับที่ต้องทำทุกครั้ง ไม่ว่าจะแก้อะไร:
-1. **เช็คกฎก่อนลงมือ** — อ่าน section ที่เกี่ยวข้องใน CLAUDE.md นี้ + `docs/modules/<module>.md` ของโมดูลที่แตะ + เอกสารเฉพาะทาง:
-   - **ทุกงาน → `docs/ENGINEERING-PRINCIPLES.md`** (หลักการแก้แบบยั่งยืน + checklist ก่อน commit/merge)
-   - แก้ UI → `docs/UI-CONVENTIONS.md` (บังคับ)
-   - แตะสิทธิ์/role → `docs/PERMISSIONS-DESIGN.md`
-   - แตะ DB → section "Supabase Projects" (2 projects!) + เขียน migration ลง `supabase/migrations/` เสมอ
-2. **ทำงานให้สอดคล้องกับกฎ** — ถ้าสิ่งที่จะทำขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
-3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern, schema, สิทธิ์, หรือ workflow ที่ session อื่นต้องรู้ → อัพเดทเอกสารที่เกี่ยวข้อง (`docs/modules/<module>.md` เป็นหลัก / UI-CONVENTIONS.md / PERMISSIONS-DESIGN.md / CLAUDE.md เฉพาะกฎข้าม session) **ในคอมมิทเดียวกัน** พร้อมวันที่
-4. build ผ่าน (`npm run build`) ก่อน commit เสมอ · merge เข้า `main` = deploy จริง
-   - **⚠️ `npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`**
-     · ตัวรันเทส = `scripts/run-tests.mjs` ไล่หา `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่ใน
-     `__tests__/` ที่ไหนก็ได้ใต้ src/ แล้วถูกเก็บอัตโนมัติ ไม่ต้องแก้ script**
-     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'` ใน package.json** (glob ต้อง node v22 · Render อาจใช้ 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
-     · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ **เทสระเบิดเวลา** (ผ่านตอนเขียน แล้วตกเองวันหลัง
-     โดยไม่มี commit ไหนทำ ⇒ หาต้นเหตุไม่เจอ) · **กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` เป็นพารามิเตอร์
-     แล้วเทสตรึงค่า** — ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออกจาก `scripts/run-tests.mjs`**
-     · 📄 ที่มาของแต่ละด่าน + เคสจริง → `docs/modules/build-gates.md`
-   - **🛡️ ด่าน "บั๊กเก่าห้ามกลับมา" = `src/utils/__tests__/regressionGuards.test.mjs`** (2026-09-16 · คำสั่ง user
-     *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — สแกนทั้งรีโปบังคับกฎที่**เคยพังจริง** (ตกด่าน = build ล่ม
-     พร้อมบอกบรรทัด + บั๊กที่เคยเกิด + วิธีแก้) · **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
-     ในคอมมิทเดียวกับที่แก้บั๊ก** (กติกา/ทะเบียนกฎอยู่หัวไฟล์ — ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
-   - **ด่าน lint กฎ crash** — `eslint.critical.config.js` เช็คเฉพาะกฎที่ทำแอปพังตอน runtime (`no-undef` ฯลฯ)
-     ที่ bundler ไม่จับ · lint ไม่ผ่าน = build ไม่ผ่าน **ห้าม bypass ด้วย `vite build` ตรงๆ**
-     · **ห้ามเพิ่มกฎ style จุกจิกใน config นี้** (ทำให้คนอยาก bypass ด่านที่กันของพังจริง)
-     - **⚠️ build ผ่าน ≠ หน้าไม่พัง — merge งานหลาย session ชนกันในไฟล์เดียว ให้รัน `node audit/crashsweep.mjs` เสมอ**
-     (เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค `window.__crash` ~3 นาที · ต้องเปิด vite audit ค้างไว้)
-     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · แถว KPI `manual`+`auto:`
-     · แถวเอกสารที่ออกเลขที่ใบแล้ว) — แต่ละตัวเปิดโค้ดทั้งคลาสที่ไม่งั้น**ไม่เคยถูกรันใน harness เลย**
-     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย · เหตุผลรายตัว → `audit/README.md`
-     - **📱 `node audit/mobilesweep.mjs` — ทุกหน้าที่ 390px** จับ sticky ค้างทับเนื้อหา · ของล้นแล้วปัดดูไม่ได้ ·
-     ข้อความถูกบีบเหลือกว้าง 0 (`docs/UI-CONVENTIONS.md` §มือถือ)
-     · **แตะ layout ที่มี `isMobile` หรือ `position:sticky` ต้องรันตัวนี้ก่อน merge**
-   - **`react-hooks/rules-of-hooks` เปิดในด่านนี้แล้ว** — จับ hook ที่วางหลัง early return / ใน if / ใน loop = React #310 (จอ error ทั้งหน้า) ที่ build ธรรมดาไม่เห็น · **กฎเหล็ก: hook ทุกตัวต้องอยู่บนสุดของ component ก่อน early return เสมอ** — เจอ error นี้ตอน build ให้ย้าย hook ขึ้น **ห้าม disable กฎ**
+1. **เช็คกฎก่อนลงมือ** — section ที่เกี่ยวข้องใน CLAUDE.md + `docs/modules/<module>.md` ของโมดูลที่แตะ +
+   **ทุกงาน → `docs/ENGINEERING-PRINCIPLES.md`** · แก้ UI → `docs/UI-CONVENTIONS.md` (บังคับ) ·
+   แตะสิทธิ์/role → `docs/PERMISSIONS-DESIGN.md` · แตะ DB → §Supabase Projects (**2 projects!**) + เขียน migration เสมอ
+2. **ทำงานให้สอดคล้องกับกฎ** — ขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน
+   (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
+3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern · schema · สิทธิ์ · workflow ที่ session อื่นต้องรู้ →
+   อัพเดทเอกสาร (`docs/modules/<module>.md` เป็นหลัก · CLAUDE.md เฉพาะกฎข้าม session) **ในคอมมิทเดียวกัน** พร้อมวันที่
+4. **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = deploy จริง
+   📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
+   - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
+     ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
+     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (glob ต้อง node v22 · Render อาจใช้ 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+     · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
+     ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
+   - **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** (คำสั่ง user
+     *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
+     ในคอมมิทเดียวกับที่แก้บั๊ก** (ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
+   - **ด่าน lint กฎ crash** (`eslint.critical.config.js`) — เฉพาะกฎที่ทำแอปพังตอน runtime ที่ bundler ไม่จับ ·
+     **ห้าม bypass ด้วย `vite build` ตรงๆ · ห้ามเพิ่มกฎ style จุกจิกในไฟล์นี้**
+     · `react-hooks/rules-of-hooks` เปิดอยู่ — **hook ทุกตัวต้องอยู่บนสุดก่อน early return** (ผิด = React #310 จอ error ทั้งหน้า)
+     **ห้าม disable กฎ** ให้ย้าย hook ขึ้น
+   - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
+     (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
+     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · KPI `manual`+`auto:` · เอกสารที่ออกเลขใบแล้ว)
+     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
+   - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
+     ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)
 
-### QC Agent — ตรวจโค้ดขัดกฎโปรเจค (2026-07-10)
+### QC Agent — ตรวจโค้ดขัดกฎโปรเจค
 
-- **Agent:** `.claude/agents/qc-project-rules.md` (subagent_type: `qc-project-rules`, read-only — ห้ามแก้โค้ด)
-  มี checklist กฎ 7 หมวด: A Date/Time · B Supabase 2 projects · C Permissions · D Section scoping ·
-  E Storage/รูป · F UI Conventions · G Workflow/เอกสาร — แต่ละข้อ map กลับมาที่ CLAUDE.md /
-  docs/UI-CONVENTIONS.md / docs/PERMISSIONS-DESIGN.md (checklist เป็นแค่แผนที่ ตัว agent ต้องอ่านเอกสารจริงก่อนตรวจเสมอ)
-- **Slash command:** `/qc-audit` (`.claude/commands/qc-audit.md`) — ไม่มี argument = ตรวจทุกหมวดทั้งโปรเจค
-  (fan-out 4 subagents ขนาน), ระบุหมวด (`/qc-audit B D`) หรือไฟล์ (`/qc-audit src/pages/X.jsx`) ได้
-- รายงานแบ่ง 🔴 ขัดกฎเหล็ก / 🟡 ขัด convention / 🔵 legacy-ข้อสังเกต / ✅ ผ่าน พร้อม file:line + วิธีแก้
-- **เมื่อเพิ่ม/เปลี่ยนกฎใน CLAUDE.md หรือ docs/** ที่ตรวจอัตโนมัติได้ → อัพเดท checklist ใน
-  `.claude/agents/qc-project-rules.md` ในคอมมิทเดียวกันด้วย ไม่งั้น QC agent จะตรวจไม่ครบ
-- แนะนำรัน `/qc-audit` ก่อน merge งานใหญ่เข้า main และรันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
-
-> 📄 **ประวัติผล audit ที่ตรวจ+แก้ไปแล้ว → `docs/modules/qc-audit-history.md`**
-> (รอบเต็ม 2026-08-03/04 ครบ 7 หมวด · วิธี audit "migration ค้างไม่ได้ apply" ที่เชื่อถือได้ 2026-08-06)
+`/qc-audit` (ไม่มี argument = ทั้งโปรเจค · ระบุหมวด `/qc-audit B D` หรือไฟล์ได้) →
+subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) มี checklist 7 หมวด
+(A Date/Time · B Supabase 2 projects · C Permissions · D Section scoping · E Storage/รูป · F UI · G Workflow/เอกสาร)
+รายงาน 🔴 ขัดกฎเหล็ก / 🟡 ขัด convention / 🔵 legacy / ✅ ผ่าน พร้อม file:line + วิธีแก้
+· **เพิ่ม/เปลี่ยนกฎที่ตรวจอัตโนมัติได้ → อัพเดท checklist ในไฟล์ agent ในคอมมิทเดียวกัน** ไม่งั้น QC ตรวจไม่ครบ
+· แนะนำรันก่อน merge งานใหญ่ + รันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
+> 📄 ประวัติผล audit ที่ตรวจ+แก้ไปแล้ว → `docs/modules/qc-audit-history.md`
 
 ## Design System
 
 > ### ⚠️ บังคับอ่านก่อนแก้ UI ทุกครั้ง: `docs/UI-CONVENTIONS.md`
-> **ช่องกรอกที่รับ "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน" ห้ามเป็น `<input>` เปล่าหรือ datalist เอง —
-> ใช้ picker กลางเท่านั้น (§5.1.2 · คำสั่ง user 2026-09-07 · audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`)**
-> มาตรฐานกลางของ UI ที่หลาย session ต้องทำให้เหมือนกัน — จุด/marker บนผังไลน์ (**วงกลม+ป้ายใต้เท่านั้น ห้ามเหลี่ยม** สูตรขนาด MK สเกลตามผัง + edge clamp), ไฟ Andon เขียว/เหลือง/แดง (**กระพริบเฉพาะแดง** เหลือง=นิ่ง), การ์ดสูงเท่ากันใน grid, ฟอนต์ขั้นต่ำ 11-12px (จอ TV), modal ผังต้อง fit จอเดียวไม่มี scroll, hover ใช้ได้เฉพาะอุปกรณ์มีเมาส์จริง, playhead ไทม์ไลน์ใช้ `.now-line`/`.now-chip`, สิทธิ์ action ผ่าน `can()` ห้าม hardcode role array เพิ่ม
-> **ถ้าสร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า ต้องอัพเดท docs/UI-CONVENTIONS.md (พร้อมวันที่) ในคอมมิทเดียวกัน**
-
+> **ช่องกรอกที่รับ "ชื่อคน / เลขเครื่อง / MAT / ลูกค้า / รหัสคลัง / ไลน์ / ทีม / ส่วนงาน" ห้ามเป็น `<input>` เปล่า
+> หรือ datalist เอง — ใช้ picker กลางเท่านั้น** (§5.1.2 · คำสั่ง user 2026-09-07)
+> มาตรฐานที่ทุก session ต้องทำเหมือนกัน — marker บนผัง (**วงกลม+ป้ายใต้ ห้ามเหลี่ยม** · MK สเกลตามผัง + edge clamp) ·
+> Andon เขียว/เหลือง/แดง (**กระพริบเฉพาะแดง · เหลือง = นิ่ง**) · การ์ดสูงเท่ากันใน grid · ฟอนต์ขั้นต่ำ 11-12px (จอ TV) ·
+> modal ผัง fit จอเดียวไม่มี scroll · hover เฉพาะอุปกรณ์มีเมาส์ · playhead ใช้ `.now-line`/`.now-chip` ·
+> สิทธิ์ action ผ่าน `can()` **ห้าม hardcode role array**
+> **สร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า = อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่) ในคอมมิทเดียวกัน**
 
 ### CSS Variables
-```css
---bg, --bg2, --bg3      /* พื้นหลัง 3 ระดับ */
---card                  /* Card background */
---border, --border2
---accent                /* สีหลัก (green) */
---accent2               /* สีรอง (amber) */
---text, --text2, --muted
---sidebar-w: 252px
---radius-lg: 8px
-```
+`--bg`/`--bg2`/`--bg3` (พื้น 3 ระดับ) · `--card` · `--border`/`--border2` · `--accent` (green) ·
+`--accent2` (amber) · `--text`/`--text2`/`--muted` · `--sidebar-w: 252px` · `--radius-lg: 8px`
 
-### 📺 เพดานเบราว์เซอร์ที่ต้องรองรับ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
+### 📺 เพดานเบราว์เซอร์ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
 
-จอที่ใช้จริงหน้างาน: **LG 43UR751C0SC · webOS 23 = Chromium 94** ⇒ **ผ่านทุกหน้า** ·
-webOS 22 (Cr 87) เปิดได้แต่**หน้าที่มีกราฟพัง** · เก่ากว่านั้น = จอขาว
-> 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง (`??=` Cr85 · `crypto.randomUUID` Cr92 · `Object.hasOwn` Cr93 ฯลฯ)
-> → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
+จอหน้างาน **LG 43UR751C0SC · webOS 23 = Chromium 94** ⇒ ผ่านทุกหน้า · webOS 22 (Cr 87) **หน้าที่มีกราฟพัง** · เก่ากว่า = จอขาว
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
-> - **ห้ามใช้ `color-mix()` (Cr 111)** — ค่าที่ parse ไม่ได้ = **ทั้งบรรทัด declaration ถูกทิ้ง**
->   (เคยหลุดจริง → พื้นการ์ดโปร่งบนจอ TV) · แทนด้วย
->   `background: 'var(--card)'` + `backgroundImage: linear-gradient(${c}14, ${c}14)` (2 stop สีเดียว = เคลือบทับ ได้ผลเท่ากัน)
->   หรือ alpha-hex `${color}14` แบบที่ทั้งระบบใช้อยู่แล้ว
-> - ตัวอื่นที่ห้ามเช่นกัน: `@container` (105) · CSS nesting (112) · `text-wrap:balance` (114) · หน่วย `dvh/svh/lvh` (108) · `:has()` **ในที่ที่พังแล้วเสียการใช้งาน**
-> - **`:has()` ที่มีอยู่ (`index.css` touch target) ปล่อยไว้ได้** — เบราว์เซอร์เก่าทิ้งทั้ง **rule** (ไม่ใช่ทั้งไฟล์) = กลับไปพฤติกรรมเดิม ไม่พัง (มีคอมเมนต์กำกับแล้ว)
+> - **ห้ามใช้ `color-mix()` (Cr 111)** — parse ไม่ได้ = **ทิ้งทั้งบรรทัด declaration** (เคยหลุดจริง → พื้นการ์ดโปร่งบนจอ TV)
+>   แทนด้วย `background:'var(--card)'` + `backgroundImage: linear-gradient(${c}14, ${c}14)` หรือ alpha-hex `${color}14`
+> - ห้ามเช่นกัน: `@container` (105) · CSS nesting (112) · `text-wrap:balance` (114) · `dvh/svh/lvh` (108) ·
+>   `:has()` **ในที่ที่พังแล้วเสียการใช้งาน** (ตัวที่มีใน `index.css` ปล่อยไว้ได้ — เบราว์เซอร์เก่าทิ้งแค่ rule นั้น ไม่พัง)
 > - **ตรวจก่อน merge:** `grep -oF "color-mix(" dist/assets/*` ต้องได้ 0
+> 📄 ตารางฟีเจอร์ที่วัดจากบันเดิลจริง → `docs/UI-CONVENTIONS.md` §เพดานเบราว์เซอร์
 
-### ⚠️ กับดัก CSS ที่เจอซ้ำหลายจุด — จำไว้
+### ⚠️ กับดัก CSS ที่เจอซ้ำหลายจุด (เหตุผล+เคสจริง → `docs/UI-CONVENTIONS.md` §7 + §7.1)
 
-- **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** — ไม่ประกาศ = ไอคอนปฏิทิน/นาฬิกา/ลูกศร select ของ browser วาดสีดำทับพื้นเข้ม มองไม่เห็นทั้งระบบ · ห้ามแก้รายจุดด้วย `filter: invert()`
-- **`position: sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX: 'clip'` — ห้ามเปลี่ยนกลับเป็น `hidden`/`auto`** · กล่องที่แค่ต้องการตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
-- **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent: 'start'`** ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน (flexbox ไม่เป็น)
-- **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** ทั้งที่พื้นที่เหลือ — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
-- 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียนค่า rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) —
-  การ์ดแบน `var(--shadow-sm)` (**ธีมมืด = none · ธีมสว่างยังมี** เพราะขอบจาง เงาคือตัวแยกการ์ด) ·
-  ของที่ลอยจริง (ป้ายบนผัง/tooltip/badge ยื่น/ปุ่ม toggle) `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
-> 📄 เหตุผล + เคสจริง + ตัวเลขที่วัดได้ (รวมกฎ `input{width:100%}`) → `docs/UI-CONVENTIONS.md` §7 + §7.1
+- **`color-scheme` ต้องประกาศคู่กับธีมเสมอ** — ไม่ประกาศ = ไอคอนปฏิทิน/นาฬิกา/ลูกศร select วาดดำทับพื้นเข้ม
+  มองไม่เห็นทั้งระบบ · **ห้ามแก้รายจุดด้วย `filter: invert()`**
+- **`position:sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX:'clip'` — ห้ามเปลี่ยนเป็น `hidden`/`auto`**
+  · กล่องที่แค่ตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
+- **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent:'start'`** (ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน · flexbox ไม่เป็น)
+- **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
+- 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
+  (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 
-### Breakpoints
-| ชื่อ | ขนาด |
-|------|------|
-| Mobile | < 768px |
-| Tablet | 768–1279px |
-| Desktop | 1280–1599px |
-| Ultra-wide | ≥ 1600px |
-
-### Fonts: Sarabun (Thai body), Tahoma (display)
-
----
+### Breakpoints · Fonts
+Mobile < 768px · Tablet 768–1279 · Desktop 1280–1599 · Ultra-wide ≥ 1600px ·
+ฟอนต์ **Sarabun** (Thai body) / **Tahoma** (display)
 
 ## Shift Logic
 
