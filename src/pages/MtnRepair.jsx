@@ -17,6 +17,7 @@ import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmoun
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
 import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions } from '../utils/mtnTeams';
@@ -543,7 +544,7 @@ export default function MtnRepair() {
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด…</div></Page>;
 
-  const cp = { lines: scopedLineObjs, machines, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
+  const cp = { lines: scopedLineObjs, machines, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters };
 
   return (
     <Page>
@@ -644,7 +645,7 @@ function MoCard({ o, onOpen }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
+function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
   const [f, setF] = useState({
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
@@ -680,6 +681,13 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
   );
   // ครอบครัวไลน์ที่เลือก — ให้ picker เครื่อง/คน "ขึ้นก่อน" (ไม่ตัดไลน์อื่น: เครื่องลงทะเบียนไว้ที่ไลน์ลูก แต่ใบเปิดที่ไลน์แม่มีจริง)
   const lineFam = useMemo(() => (f.line_name ? getLineFamilyNames(lines, f.line_name) : NO_LINES), [lines, f.line_name]);
+  /* 🔁 ใบที่ยังเปิดค้างอยู่บน "เครื่องเดียวกัน" — กันเปิดใบซ้ำ (2026-09-30 · วัดจริง 12 กลุ่มซ้ำ)
+     · คิดจาก `orders` ที่หน้าโหลดไว้แล้ว **ไม่ยิงคิวรีเพิ่ม** (egress 0)
+     · `openedAt` ตรึงตอนเปิดโมดัล — ใช้ Date.now() ตรงๆ ใน useMemo = เลขวันขยับทุก render
+     · กฎ/เหตุผล/เทส อยู่ที่ `src/utils/mtnDuplicate.js` ห้ามเขียนตรรกะซ้ำที่นี่ */
+  const [openedAt] = useState(() => Date.now());
+  const dups = useMemo(() => findOpenOnMachine(orders, f.machine_no, { now: openedAt }), [orders, f.machine_no, openedAt]);
+  const dupLv = useMemo(() => dupLevel(dups, teamKeyOf(f.mtn_dept)), [dups, f.mtn_dept]);
   // แผนก + cost center ที่ derive จากไลน์ (ไลน์ลูกไม่มี CC → ใช้ของไลน์แม่) — ใช้ร่วมทั้งเลือกไลน์ / สแกน / เลือกเครื่อง
   const lineDerived = (name) => {
     const l = lines.find(x => x.name === name);
@@ -942,6 +950,39 @@ function ReportModal({ lines, machines, itemTypes, problemTypes, repairTypes = [
                 : '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /die-registry ก่อน (พิมพ์เลขเองได้)'}
             </div>
           )}
+          {/* 🔁 เตือนใบซ้ำ — **เตือนเท่านั้น ห้ามบล็อก** (เครื่องเดียวเสีย 2 เรื่องในวันเดียวเกิดได้จริง)
+              แดง = มีใบของทีมอื่นค้างอยู่ (เสี่ยง 2 ทีมวิ่งไปทำงานเดียวกัน) · เหลือง = ทีมเดียวกัน */}
+          {dupLv !== 'none' && (() => {
+            const c = dupLv === 'cross' ? '#ef4444' : '#f59e0b';
+            return (
+              <div style={{
+                marginTop: 6, padding: '7px 9px', borderRadius: 8,
+                border: `1.5px solid ${c}`, background: 'var(--card)',
+                backgroundImage: `linear-gradient(${c}14, ${c}14)`,   /* ห้าม color-mix() — Chromium 94 บนจอ TV ทิ้งทั้งบรรทัด */
+              }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: c, marginBottom: 4 }}>
+                  {dupLv === 'cross'
+                    ? `⚠️ เครื่องนี้มีใบของทีมอื่นเปิดค้างอยู่ ${dups.length} ใบ — เช็คก่อนว่าเรื่องเดียวกันหรือเปล่า`
+                    : `🔁 เครื่องนี้มีใบเปิดค้างอยู่แล้ว ${dups.length} ใบ`}
+                </div>
+                <div style={{ display: 'grid', gap: 3 }}>
+                  {dups.slice(0, 5).map(o => (
+                    <div key={o.id} style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                      <b style={{ color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข)'}</b>
+                      <span>· {deptNameOf(o.mtn_dept) || '—'}</span>
+                      <span>· {moStatusLabel(o)}</span>
+                      {o._days != null && <span style={{ color: o._days >= 7 ? '#ef4444' : 'var(--muted)' }}>· ค้าง {o._days} วัน</span>}
+                      {o.problem_characteristic && <span style={{ color: 'var(--muted)' }}>· {o.problem_characteristic}</span>}
+                    </div>
+                  ))}
+                  {dups.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>…และอีก {dups.length - 5} ใบ</div>}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                  ถ้าเป็นคนละอาการ แจ้งใบใหม่ได้ตามปกติ — ระบบไม่บล็อก
+                </div>
+              </div>
+            );
+          })()}
         </Field>
         <Field label="ลักษณะปัญหา — กลุ่ม" required>
           <select value={f.problem_group} onChange={e => setF(p => ({ ...p, problem_group: e.target.value, problem_characteristic: '' }))} style={inp}>
