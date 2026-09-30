@@ -155,7 +155,8 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
           <div style={{ overflowX: 'auto', maxHeight: 340, overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr style={{ background: 'var(--bg2)', position: 'sticky', top: 0 }}>
-                <th style={th}>MAT</th><th style={th}>ชื่อพาร์ท</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
+                {/* ลำดับคอลัมน์ ชื่อพาร์ท → MAT (UI §6.21) */}
+                <th style={th}>ชื่อพาร์ท</th><th style={th}>MAT</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
                 <th style={th}>อยู่ที่ (ไลน์แม่)</th><th style={th}>ย้ายไป (ไลน์ลูก)</th>
                 <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}></th>
               </tr></thead>
@@ -165,8 +166,8 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                   const hint = r.groups.find(g => g.lines.includes(sel));
                   return (
                     <tr key={r.key}>
-                      <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{r.mat_no}</td>
                       <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.part_name || ''}>{r.part_name || '—'}</td>
+                      <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{r.mat_no}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 800 }}>{r.qty.toLocaleString()}</td>
                       <td style={{ ...td, color: 'var(--muted)' }}>{r.line_name}</td>
                       <td style={td}>

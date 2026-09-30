@@ -320,9 +320,10 @@ export default function ProductHistory() {
                       style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
                         borderBottom: '1px solid var(--border)',
                         background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
-                      <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.mat_no}</span>
-                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}{!p.is_active && ' ⛔'}</span>
-                      {p.p_no && <span style={{ fontSize: 11, color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>P/N {p.p_no}</span>}
+                      {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
+                      {p.p_no && <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.p_no}</span>}
+                      <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: p.p_no ? 400 : 800 }}>{p.name}{!p.is_active && ' ⛔'}</span>
+                      <span style={{ fontSize: 11, fontFamily: 'ui-monospace, monospace', color: sel ? '#08131f' : 'var(--muted)', whiteSpace: 'nowrap' }}>MAT {p.mat_no}</span>
                     </div>
                   );
                 })}
@@ -344,10 +345,11 @@ export default function ProductHistory() {
                 <div style={{ fontSize: 16, fontWeight: 800 }}>
                   {groupMode && canGroup
                     ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: '#4d9fff' }}>(รวม {groupMats.length} MAT SAP)</span></>
-                    : <>{selMat.mat_no} · {selMat.name}</>}
+                    : <>{selMat.p_no ? `${selMat.p_no} · ` : ''}{selMat.name}</>}
                 </div>
+                {/* ลำดับ Part No. → ชื่องาน (บรรทัดบน) → MAT (บรรทัดล่าง) — UI §6.21 · 2026-09-30 */}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  P/N {selMat.p_no || '—'} · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>MAT {selMat.mat_no}</span> · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

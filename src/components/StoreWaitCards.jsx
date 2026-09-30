@@ -133,10 +133,11 @@ export default function StoreWaitCards({ inScope, navigate, big = 1, onLineWait 
       {shortMats.slice(0, 6).map((r, i) => (
         <div key={`${r.mat_no}-${i}`} onClick={() => navigate?.('/line-stock')}
           style={{ cursor: 'pointer', display: 'flex', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
-          <b style={{ color: 'var(--text)', flexShrink: 0 }}>{r.mat_no}</b>
-          <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* ลำดับ ชื่องาน → MAT (UI §6.21) · MAT ต้องยังโชว์เสมอ (คีย์ที่ใช้ค้นต่อ) */}
+          <span style={{ color: 'var(--text)', fontWeight: 700, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {r.part_name || ''}
           </span>
+          <b style={{ color: 'var(--muted)', fontWeight: 400, flexShrink: 0 }}>MAT {r.mat_no}</b>
         </div>
       ))}
       {shortMats.length > 6 && (
