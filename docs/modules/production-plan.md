@@ -13,7 +13,7 @@
 > - **สิทธิ์ `page:/production-plan` เดิมให้ planner อยู่แล้ว** (`planner_store`, `sale`, `supervisor`, `leader`, `manager`, `dept_admin`, `admin`)
 > ⇒ ปัญหาคือ "หาเมนูไม่เจอ" ไม่ใช่ "เข้าไม่ได้" — **การย้ายหมวดไม่ได้เพิ่มสิทธิ์ให้ใครเลย**
 > - ย้ายไป Logistic ล้วนๆ = หัวหน้าไลน์/ผู้จัดการผลิตหาไม่เจอ — แก้ข้างหนึ่ง พังอีกข้างหนึ่ง
-> - วิธีที่ใช้ = `alsoIn: LOGISTIC_GROUPS.control` ใน `NAV_ITEMS` (App.jsx) — กลไกเดียวกับ `/store-monitor`
+> - วิธีที่ใช้ = `alsoIn: LOGISTIC_GROUPS.inbound` ใน `NAV_ITEMS` (App.jsx · เดิม `.control` — หมวดแผนงานยุบเข้า Planning & Store 30/09) — กลไกเดียวกับ `/store-monitor`
 >   · `inNavGroup()` ทำให้โผล่ sidebar/หน้า Home ทั้ง 2 หมวด · สิทธิ์/ค้นหา/ตัวนับ **นับครั้งเดียว**
 
 - **หน่วยกลาง = shift-load** (qty ÷ กำลังต่อกะ) เพื่อรวมหลายพาร์ทบนไลน์เดียวถูกต้อง (ไลน์มี 1 กะ แต่หลาย product คนละ rate)

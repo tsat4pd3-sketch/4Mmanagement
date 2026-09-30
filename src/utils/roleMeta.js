@@ -19,7 +19,7 @@ export const ROLE_META = {
   mtn:              { icon: '🔧', label: 'ซ่อมบำรุง',        en: 'Maintenance',      color: '#fb7185', desc: 'PM, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร', axis: 'unit' },
   engineer:         { icon: '⚙️', label: 'ส่วนวิศวกรรม',     en: 'Process Engineering', color: '#2dd4bf', desc: 'หน่วยงานวิศวกรรมกระบวนการ — BOM / EC / New Model · ⚠️ ไม่ใช่ "ตำแหน่งวิศวกร" (วิศวกรแผนกช่างใช้ role ซ่อมบำรุง)', axis: 'unit' },
   engineer_nm:      { icon: '🚀', label: 'วิศวกรรมรุ่นใหม่',  en: 'New Model Engineering', color: '#818cf8', desc: 'ทีม Engineering New Model — เข้าได้เฉพาะ 🚀 พาร์ทใหม่ (NPI) + 📐 Flow/PFMEA/CP · ไม่เห็นหน้าอื่นทั้งระบบ', axis: 'unit' },
-  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'Store + แผนงาน & ข้อมูล (ยุบรวม `sale` เข้ามา 23/09) — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
+  planner_store:    { icon: '📦', label: 'แผนงาน-คลัง',      en: 'Planner & Store',  color: '#38bdf8', desc: 'หมวด Planning & Store (ยุบรวม `sale` 23/09 · ยุบหมวดแผนงานเข้า Store 30/09) — บริหารสต๊อก · จ่ายของเข้าไลน์ · จ่ายงานในโรงงาน · รับ Forecast/Order ลูกค้า · วางแผนผลิต', axis: 'unit' },
   // 🚚 ฝั่ง “Warehouse & Delivery (ส่งลูกค้า)” — แยกออกมา 2026-09-23 (คำสั่ง user)
   //    เหตุผล: เดิม planner_store ⊇ sale ทุกหน้าหมวด Logistic = “เต็ม vs ลดทอน” ไม่ใช่ “คนละหน้าที่”
   //    ⇒ คนจัดส่งต้องเลือกระหว่างได้น้อยไป กับได้สิทธิ์สโตร์ (จ่ายของเข้าไลน์/กดผลิต) เกินมา
