@@ -37,12 +37,16 @@ export function chooseSheetGrid(w, h, sheets = 10) {
     const cand = { cols, rows, cw, ch, cells, a4, area: cw * ch, fits: cells >= want };
     if (!best) { best = cand; return; }
     /* ⚠️ พอ "ใส่ครบหน้าเดียว" ได้แล้ว **จำนวนช่องไม่สำคัญอีกต่อไป** — ต้องเอาแผ่นใหญ่ที่สุด
-       ถ้าเอาช่องเยอะไว้ก่อนจะได้ผัง 6×4 = 24 ช่องใส่ 10 แผ่น ⇒ แผ่นเล็กลงโดยไม่ได้อะไรเลย */
+       ถ้าเอาช่องเยอะไว้ก่อนจะได้ผัง 6×4 = 24 ช่องใส่ 10 แผ่น ⇒ แผ่นเล็กลงโดยไม่ได้อะไรเลย
+       🔴 30/09 (user: "สเกลเพี้ยนตอนเปลี่ยนเดือน"): เดิม "ทรง A4 ชนะเสมอถ้าผ่านเกณฑ์" ⇒ กล่องสูงขึ้นแค่ 20px
+       (แถบเตือน "กะยังไม่ปิด" หายไปเมื่อดูเดือนก่อน) แผ่นสลับจากกว้าง 340 → แคบ 216 ทั้งบอร์ด
+       วัดจริง 1740px กว้าง: h=600 → cw 340 · h=620 → cw 216 · ⇒ ตัดสินด้วย **พื้นที่แผ่น** ก่อนเสมอ (ทรง A4 = แค่ตัวตัดสินเสมอ)
+       ผลคือแผ่นกว้างเต็มคอลัมน์ทุกความสูง สูงเปลี่ยนตามที่มี (ไม่เกินสัดส่วน A4) — ไม่มีจุดสลับทรง */
     const better = cand.fits !== best.fits ? cand.fits
       : cand.fits
-        ? (cand.a4 !== best.a4 ? cand.a4 : cand.area > best.area)
+        ? (cand.area !== best.area ? cand.area > best.area : cand.a4)
         : (cand.cells !== best.cells ? cand.cells > best.cells
-          : cand.a4 !== best.a4 ? cand.a4 : cand.area > best.area);
+          : cand.area !== best.area ? cand.area > best.area : cand.a4);
     if (better) best = cand;
   };
   for (let cols = 1; cols <= 6; cols++) {
