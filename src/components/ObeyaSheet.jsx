@@ -127,7 +127,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
   const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
   const [zoomed, setZoomed] = useState(false);
   const zk = useMemo(() => (zoomed ? zoomScale() : 1), [zoomed]);
-  const body = typeof children === 'function' ? children(k) : children;
+  const body = typeof children === 'function' ? children(k, cw) : children;   // cw = ความกว้างแผ่น (popup = 1200) ให้กราฟตัดสินความหนาแน่นของป้าย
   const footNode = typeof foot === 'function' ? foot(k) : foot;     // foot ก็รับ `(k) => node` ได้ (ให้บรรทัดท้ายโตตามใน popup)
   return (<>
     <div style={{
