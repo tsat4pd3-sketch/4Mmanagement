@@ -875,6 +875,49 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ oee-suspect-needs-qbin-embed (2026-09-30)
+   ตัวนี้เป็นกฎ "ระดับไฟล์" ไม่ใช่ระดับบรรทัด (เงื่อนไขไขว้กัน 3 อย่าง) จึงเขียนเป็นเทสเดี่ยว
+   ไม่ได้อยู่ใน RULES ที่สแกนทีละบรรทัด
+
+   กฎ §7.1 ของ `src/utils/oee.js`: ของสงสัยไม่ถูกนับเข้า %Q จนกว่า QA จะตัดสิน
+   ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
+   ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
+   ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
+  const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
+  /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
+  const ALLOW = {
+    'src/pages/FactoryMap.jsx:1277': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1342': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/oee.js') continue;                 // ตัวนิยามกฎเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (!Q_HELPERS.test(code)) continue;                      // ไฟล์นี้ไม่ได้คิด %Q = ไม่เกี่ยว
+    const re = /from\(\s*'defect_logs'\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 500);         // ตัวคิวรีตั้งแต่ from(...) ไปจนจบ select
+      if (!win.includes('qty_suspect')) continue;             // ไม่ได้ดึงของสงสัยมา = ไม่เกี่ยว
+      const line = code.slice(0, m.index).split('\n').length;
+      const key = `${rel}:${line}`;
+      if (ALLOW[key]) continue;
+      if (!win.includes('QBIN_EMBED')) bad.push(key);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ คิวรีที่ดึง qty_suspect ไปใช้ในไฟล์ที่คิด %Q แต่ไม่ได้ embed ทะเบียนถังเหลือง/แดง\n'
+    + '   ทำไมห้าม: ไม่ embed ⇒ suspectState() ตอบไม่ได้ ระบบถอยไปนับ "ของสงสัย" เป็นของเสียตามพฤติกรรมเดิม\n'
+    + '            ⇒ %Q ของจอนี้ไม่เท่ากับจออื่นที่ embed มา (ข้อมูลชุดเดียวกัน 2 คำตอบ)\n'
+    + '            กฎเต็ม: §7.1 ใน src/utils/oee.js — ของสงสัยยังไม่ใช่ของเสียจนกว่า QA จะตัดสิน\n'
+    + '   แก้ยังไง: import { QBIN_EMBED } from "../utils/oee" แล้วต่อท้าย select:\n'
+    + '            .select(`session_id, qty_ng, qty_suspect, is_trial, ..., ${QBIN_EMBED}`)\n'
+    + '            ถ้าคิวรีนั้นแสดงยอดดิบจริงๆ ไม่ได้คิด %Q ให้เติม ALLOW ในเทสนี้พร้อมเหตุผล\n\n'
+    + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
+
 test('🛡️ ทุกกฎต้องมี why + fix เขียนกำกับ (ข้อความนี้คือสิ่งที่คนเห็นตอน build ล่ม)', () => {
   for (const r of RULES) {
     assert.ok(r.why && r.why.length > 30, `${r.id}: ต้องเขียน why ให้เข้าใจว่าเคยพังยังไง`);

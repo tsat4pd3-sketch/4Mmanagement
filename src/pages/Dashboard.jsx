@@ -5,7 +5,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit, QBIN_EMBED } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -343,7 +343,7 @@ export default function Dashboard() {
       const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect, is_trial, description, dr_defect_types(name_th, excl_from_q)').in('session_id', sessionIds),
+        supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, description, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`).in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
       let orders = ordRes.data;

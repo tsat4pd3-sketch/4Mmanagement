@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
@@ -135,7 +135,7 @@ export default function LineOeeBoard() {
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
       fetchByIds(ids, c => supabaseDR.from('defect_logs')
-        .select('id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)')
+        .select(`id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c)),
       // master ผ่าน cache กลาง — key เดียวกับ FactoryMap = แชร์กัน ไม่ดึงซ้ำ (กฎ egress)
       cachedMaster('dr_products:ct', async () =>

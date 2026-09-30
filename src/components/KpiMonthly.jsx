@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, useContext, Fragment
 import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
-import { wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, sumDefectQty, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
@@ -320,7 +320,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       setProg(`โหลด Downtime ${dtRes.rows.length} แถว...`);
       // 3) ของเสีย (line-mode ต้องรู้ is_trial + excl_from_q + mat สำหรับคิดเงิน)
       const defRes = await fetchByIds(ids, (c) => supabaseDR.from('defect_logs')
-        .select('id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q)')
+        .select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c));
       if (defRes.error) throw new Error(defRes.error);
       if (defRes.truncated) throw new Error('โหลดของเสียไม่ครบ — PPM/Cost of defect จะผิด ยังสร้างรายงานไม่ได้');

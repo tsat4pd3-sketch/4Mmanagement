@@ -20,7 +20,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
-import { buildCtMap, dtMinBySession } from '../utils/oee';
+import { buildCtMap, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { fetchByIds } from '../utils/fetchByIds';
 import { buildVsmModel, fmtMct, fmtMinSec } from '../lib/vsmModel';
 import { buildVsmGaps } from '../lib/vsmGaps';
@@ -361,7 +361,7 @@ export default function VSM() {
           .in('session_id', ids),
         // excl_from_q ต้อง join มาด้วย ไม่งั้นงานทดลองตกหล่นเงียบ (กฎ %Q)
         supabaseDR.from('defect_logs')
-          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q)')
+          .select(`session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q), ${QBIN_EMBED}`)
           .in('session_id', ids),
       ]);
       if (o.error || d.error || f.error) partial = true;

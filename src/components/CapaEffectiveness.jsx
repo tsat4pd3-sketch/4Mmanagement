@@ -12,7 +12,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { sumDefectQty } from '../utils/oee';
+import { sumDefectQty, QBIN_EMBED } from '../utils/oee';
 import { cachedMaster } from '../utils/masterCache';
 import { buildPnIndex, resolveMatNo, normMat } from '../utils/matResolve';
 import {
@@ -141,7 +141,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
       const ids = sessions.map((s) => s.id);
       /* ธงงานทดลอง (20260817_defect_trial_flag) อาจยังไม่ apply → ถอยไป select ชุดเดิม
          ⚠️ ถอยแล้วต้องบอกบนจอ: ตัวเลขจะรวมงานทดลองปนเข้ามา ไม่ใช่แค่ "ไม่มีธง" */
-      const FULL = 'session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q)';
+      const FULL = `session_id, qty_ng, qty_suspect, is_trial, defect_type_id, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`;
       const SLIM = 'session_id, qty_ng, qty_suspect, defect_type_id, prod_orders(mat_no)';
       let sel = FULL, noTrialFlag = false, rows = [];
       // ⚠️ ต้องครบ 3 ชั้นตามกฎ: แบ่งก้อน id (120) + **แบ่งหน้า (1000)** + .order() คู่กับ .range()

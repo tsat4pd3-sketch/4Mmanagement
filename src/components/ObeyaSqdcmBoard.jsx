@@ -55,7 +55,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { loadLinesRes } from '../utils/useProductionLines';
-import { avgOeeTarget, sumDefectQty } from '../utils/oee';
+import { avgOeeTarget, sumDefectQty, QBIN_EMBED } from '../utils/oee';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
@@ -200,7 +200,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
              · ทุก component อื่นในรีโปใช้ `description` หมด — ดู OeeInsightPanel / MachineReliability */
           .select('session_id, duration_min, description, machine_no, dr_downtime_types(name_th, category)').in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('defect_logs')
-          .select('session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no)').in('session_id', c)),
+          .select(`session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), prod_orders(mat_no), ${QBIN_EMBED}`).in('session_id', c)),
         fetchByIds(ids, c => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c)),
         fetchAllPages(() => supabaseDR.from('production_sessions')

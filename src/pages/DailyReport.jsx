@@ -32,7 +32,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty } from '../utils/oee';
+import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -724,7 +724,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
     const { data, error } = await supabaseDR.from('defect_logs')
-      .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name)')
+      .select(`*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name), ${QBIN_EMBED}`)
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
     if (error) { console.warn('[loadDefectLogs]', error.message); setSessLoadErr(e => ({ ...e, 'ของเสีย': error.message })); return; }
@@ -4171,6 +4171,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
              เดิมอ่าน state `closeNg` ซึ่งถูกเซ็ตเป็น '0' ที่เดียวและไม่มี input ผูกอยู่เลย
              → Q = 100% ตลอด · SV เห็น OEE สูงเกินจริงก่อนกดอนุมัติ แล้วค่าที่บันทึกไม่ตรงกับที่เห็น */
           const ng = sumDefectQty(defectLogs, 'line');
+          /* ของสงสัยที่ QA ยังไม่ตัดสิน — ไม่อยู่ใน `ng` ข้างบน (กฎ §7.1) แต่ต้องขึ้นบนจอ */
+          const suspendPendingQty = sumSuspectPending(defectLogs);
           // Downtime เปิดค้าง: ถ้าตัดสินใจแล้ว ให้ OEE preview คิดนาทีตามการตัดสินใจทันที (ยังไม่เขียน DB จนกดปิดกะ)
           const modalOpenDT = dtLogs.filter(d => d.duration_min == null);
           const previewDtLogs = !modalOpenDT.length ? dtLogs : dtLogs.map(d => {
@@ -4204,6 +4206,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
                   {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · เริ่ม {selSession.start_time}
                 </div>
+                {/* 🔴 ของสงสัยที่ QA ยังไม่พิจารณา ไม่ถูกนับเข้า %Q (กฎ §7.1 ของ oee.js)
+                    ⇒ คนที่กำลังจะปิดกะ **ต้องเห็นว่า %Q ที่กำลัง stamp นี้ยังไม่ใช่ตัวสรุป** ห้ามเงียบ */}
+                {suspendPendingQty > 0 && (
+                  <div style={{ background: 'var(--card)', border: '1px solid #f59e0b66', borderLeft: '4px solid #f59e0b',
+                                borderRadius: 8, padding: '8px 12px', marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: 'var(--text2)' }}>
+                    ⏳ กะนี้มีของ<b>ต้องสงสัย {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่พิจารณา —
+                    <b> %Q ด้านล่างจึงยังไม่ใช่ตัวสรุป</b>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      ระบบ<b>ยังไม่นับเป็นของเสีย</b> เพราะยังไม่รู้ว่าดีหรือเสีย (นับเลยก็ลงโทษไลน์เกินจริง) ·
+                      ปิดกะได้ตามปกติ · พอ QA ตัดสินว่า “ทำลาย” ของก้อนนี้จะกลายเป็นของเสียและ %Q จะต่ำลง
+                      — ลงถังเหลืองที่รายการของเสีย แล้วให้ QA พิจารณาที่หน้า QA/QC
+                    </div>
+                  </div>
+                )}
                 {/* %P ตันเพดาน — งานที่บันทึกมากกว่าเวลาเครื่องที่มีจริง แปลว่าข้อมูลมีอะไรผิด
                     ห้าม cap เงียบแล้วปล่อยผ่าน (เตือนอย่างเดียว ไม่บล็อกการปิดกะ — หน้างานต้องเดินต่อได้) */}
                 {pOver && (
