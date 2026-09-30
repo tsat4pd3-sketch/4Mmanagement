@@ -303,6 +303,31 @@ export function sharedValueDef(defs, d) {
     && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
 }
 
+/* ── 5.3) คาดการณ์ปลายปี = "ผลจริงที่มีแล้ว + แผนของเดือนที่เหลือ" (30/09 · คำสั่ง user) ─────────────
+   *"มันจะมีบางค่า จะคิดแบบ Actual+Plan ที่เหลือ เพื่อสรุปว่าปีนี้จะรอดหรือร่วง"*
+   · เดือนที่มีผลจริง → ใช้ผลจริง · เดือนที่ยังไม่มีผล → ใช้แผน (`kpi_month_plans`) · รวมด้วยวิธีรวมของ KPI ตัวนั้น
+   · 🔴 เดือนที่ไม่มีทั้งผลและแผน = **คาดการณ์ไม่ได้** (`value:null` + `missing`) — ห้ามเดา ห้ามเติม 0 ห้ามลากค่าเฉลี่ยไปแทน
+   · `rate` ไม่มียอดดิบของแผนให้หาร ⇒ เฉลี่ย + `approx` (กฎเดียวกับ summaryOf/planProgress)
+   · ตัดสิน "รอด/ร่วง" ที่ผู้เรียกด้วย `scoreDef(value, def)` — ที่นี่ไม่ตัดสิน (สูตรสีมีที่เดียว) */
+export function yearForecast({ actual = [], plan = [], def = null } = {}) {
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const a = Array.from({ length: 12 }, (_, i) => num(actual[i]));
+  const p = Array.from({ length: 12 }, (_, i) => num(plan[i]));
+  const used = []; const missing = [];
+  let actualMonths = 0, planMonths = 0;
+  for (let m = 1; m <= 12; m++) {
+    if (a[m - 1] != null) { used.push(a[m - 1]); actualMonths += 1; }
+    else if (p[m - 1] != null) { used.push(p[m - 1]); planMonths += 1; }
+    else missing.push(m);
+  }
+  const mode0 = summaryModeOf(def);
+  const approx = mode0 === 'rate';
+  const mode = approx ? 'average' : mode0;
+  if (!actualMonths) return { value: null, reason: 'no_actual', mode, approx, actualMonths, planMonths, missing };
+  if (missing.length) return { value: null, reason: 'no_plan', mode, approx, actualMonths, planMonths, missing };
+  return { value: summarizeMonths(used, mode), reason: null, mode, approx, actualMonths, planMonths, missing: [] };
+}
+
 /** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */
 export function fmtKpi(v, d) {
   if (v == null || v === '' || !Number.isFinite(Number(v))) return '';

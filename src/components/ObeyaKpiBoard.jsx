@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
-import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef } from '../utils/kpiSetup';
+import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -253,18 +253,23 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       // นิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (ตกลงรุ่นเดียวกับแท็บ ⚙️)
       const sel = parseScopeKey(scopeKeyStr);
       const kdefs = (kdRes.data || []).filter(d => scopeCovers(org, scopeOfDef(d), sel));
-      let kentries = [];
+      let kentries = [], kplans = [];
       if (kdefs.length) {
         const ke = await fetchByIds(kdefs.map(d => d.id), part => supabase
           .from('kpi_manual_entries').select('kpi_id, month, value').in('kpi_id', part));
         if (ke.error) warn.push('ค่า KPI รายเดือน');
         kentries = ke.rows;
+        /* 📅 แผนรายเดือน — ใช้คาดการณ์ปลายปี (ผลจริง + แผนที่เหลือ) · ตารางยังไม่มี = ไม่มีแผน ไม่ใช่บอร์ดล่ม */
+        const kp = await fetchByIds(kdefs.map(d => d.id), part => supabase
+          .from('kpi_month_plans').select('kpi_id, month, plan_value').in('kpi_id', part));
+        if (kp.error && !/42P01/.test(String(kp.error))) warn.push('แผนรายเดือน');
+        kplans = kp.rows || [];
       }
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.data || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kpiMissing, warn,
+        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, kpiMissing, warn,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
@@ -278,7 +283,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kentries } = data;
+    const { sessions, defects, targets, safety, kdefs, kentries, kplans } = data;
+    const planByKpi = {};
+    (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
     const ym = x => String(x ?? '').slice(0, 7);
     const inG = r => members.names.has(r.line);
     const gSess = sessions.filter(inG);
@@ -378,7 +385,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       else if (man?.shared === 'missing' && !r.auto) note = note || `KPI นี้ใช้ค่าโรงงาน แต่ยังไม่มีนิยามระดับ ทั้งโรงงาน ปี ${year} — สร้างที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น`;
       else if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
       const cur = series.find(p => p.k === monthKey) || null;
-      const value = cur?.v ?? null;
+      /* 🗓️ เดือนที่เลือกยังไม่มีค่า (KPI กรอกมือกรอกหลังปิดเดือน — วันที่ 30 ก.ย. ทั้งบอร์ดจะ "—" หมดทั้งที่ ม.ค.–ส.ค. ครบ ·
+         user ทัก 30/09 "ทีมงานกรอกครบแล้ว") ⇒ ใช้ค่าเดือนล่าสุดที่มี ≤ เดือนที่เลือก แล้ว**เขียนบนจอว่าเป็นเดือนไหน** (`valueKey`/`stale`)
+         ไม่ใช่เดาว่าเดือนนี้เท่าเดือนก่อน — ป้าย/เหตุผลต้องบอกว่า "ค่าล่าสุด ส.ค. · ก.ย. ยังไม่กรอก" */
+      let value = cur?.v ?? null, valueKey = monthKey, stale = false;
+      if (value == null) {
+        const prev = series.slice(0, 12).filter(p => p.k <= monthKey && p.v != null).pop();
+        if (prev) { value = prev.v; valueKey = prev.k; stale = true; }
+      }
       const target = def?.target_value == null ? null : Number(def.target_value);
       const dir = def?.direction || (def?.target_compare === '<=' ? 'down' : def?.target_compare === '>=' ? 'up' : r.dir) || null;
       /* 🔴 สถานะ = เกณฑ์ทางการ 1/0.5/0 ผ่าน scoreDef เท่านั้น (17/09) — "เหลือง" = ถึง Commitment แต่ไม่ถึง Target */
@@ -393,9 +407,26 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ตอนแก้นิยาม KPI';
       }
+      if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const ytd = series[12]?.v ?? null;
+      const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
+      /* 📈 คาดปลายปี = ผลจริง + แผนของเดือนที่เหลือ (30/09) — แผนอยู่ที่นิยามของขอบเขตนี้ (แถว auto = นิยาม auto:<key>)
+         ไม่มีแผนครบ = บอกว่าขาดเดือนไหน ไม่เดา · ตัดสินรอด/ร่วงด้วย scoreDef เท่านั้น */
+      const planDef = r.auto ? (def?.id ? def : autoDefOf(r.auto)) : man?.def;
+      const fc = yearForecast({
+        actual: series.slice(0, 12).map(p => p.v),
+        plan: Array.from({ length: 12 }, (_, i) => planByKpi[planDef?.id]?.[i + 1] ?? null),
+        def: planDef && planDef.kpi_catalog ? planDef : { kpi_catalog: { summary_mode: sumKind } },
+      });
+      const fcScore = fc.value != null && def && (target != null || def.commit_value != null || def.commitment) ? scoreDef(fc.value, def) : null;
+      const forecast = value == null && !actualMonths ? null : {
+        ...fc,
+        status: fcScore ? fcScore.status : null,
+        canJudge: !!fcScore,
+        hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
+      };
       return {
-        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
@@ -415,18 +446,25 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         && !mainNames.has(normName(d.kpi_catalog?.name || d.name)))
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       .map((d) => {
-        const v = entByKpi[d.id]?.[monthNo];
+        /* 🏭 KPI แบบค่าโรงงานอ่านจากนิยามโรงงาน · 🗓️ เดือนที่เลือกยังไม่กรอก = ถอยไปเดือนล่าสุด ≤ เดือนที่เลือก แล้วบอกบนจอ (กติกาเดียวกับแผ่นหลัก) */
+        const src = sharedValueDef(data.kdefs, d) || d;
+        const ent = entByKpi[src.id] || {};
+        let m = monthNo, v = ent[m];
+        while (v == null && m > 1) { m -= 1; v = ent[m]; }
         const value = v == null ? null : Number(v);
+        const stale = value != null && m !== monthNo;
         let st = ST.unknown, why = '';
-        if (value == null) why = 'ยังไม่กรอกค่าเดือนนี้';
+        if (value == null) why = 'ยังไม่กรอกค่าสักเดือนในปีนี้';
         else {
           const sc = scoreDef(value, d);
           st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
           why = st === ST.unknown ? 'ยังไม่ตั้งเป้า — ตั้งได้ที่แท็บ 📑' : `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value)}`;
+          if (stale) why = `ค่าล่าสุด ${monthLabel(`${year}-${String(m).padStart(2, '0')}`)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
         }
-        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: unitOf(d), dec: decimalsOf(d), value, st, why };
+        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: unitOf(d), dec: decimalsOf(d), value, st, why,
+          monthTag: stale ? monthLabel(`${year}-${String(m).padStart(2, '0')}`) : '' };
       });
-  }, [data, monthNo, scope, year]);
+  }, [data, monthNo, monthKey, scope, year]);
 
   /* งานค้างที่ต้องตามแก้ — action item + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด · เรียง "เกินกำหนดก่อน แล้วเก่าก่อน" */
   const todo = useMemo(() => {
@@ -529,17 +567,45 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
     labelStyle: { color: 'var(--text2)' },
   };
+  /* 📈 บรรทัด "คาดปลายปี" ใต้แผ่น — ผลจริง + แผนที่เหลือ แล้วตัดสินด้วยเกณฑ์เดียวกับไฟ (scoreDef)
+     · ไม่มีแผนครบ = เขียนว่าขาดเดือนไหน (ห้ามเดา) · ไม่มีเป้า = บอกตัวเลขอย่างเดียว ไม่ตัดสิน */
+  const forecastLine = (r) => {
+    const f = r.forecast;
+    if (!f) return null;
+    /* บรรทัดเดียวเสมอ (แผ่นสูงคงที่ — 2 บรรทัด = กราฟถูกบีบจนอ่านไม่ออก) · เต็มความใน title */
+    const style = { fontSize: fs(10.5), lineHeight: 1.35, marginBottom: 3, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' };
+    if (f.value == null) {
+      if (f.reason !== 'no_plan' || !f.hasTarget) return null;
+      const miss = f.missing.length === 1 ? monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)
+        : `${monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)}–${monthLabel(`${year}-${String(f.missing[f.missing.length - 1]).padStart(2, '0')}`)}`;
+      return <div style={style} title={`คาดการณ์ปลายปีไม่ได้ — เดือน ${miss} ยังไม่มีทั้งผลจริงและแผน · ตั้งแผนที่แท็บ ⚙️ แถว 📅 แผน แล้วบอร์ดจะคำนวณ "ผลจริง + แผนที่เหลือ" ให้`}>📈 ปลายปี: ต้องกรอก "📅 แผนรายเดือน" {miss} ก่อน (แท็บ ⚙️)</div>;
+    }
+    const verdict = f.status === 'good' ? { t: '✅ คาดถึงเป้า', c: '#22c55e' }
+      : f.status === 'warn' ? { t: '🟡 ถึงแค่ Commitment', c: '#f59e0b' }
+      : f.status === 'bad' ? { t: '❌ คาดไม่ถึงเป้า', c: '#ef4444' } : null;
+    return (
+      <div style={style} title={`ผลจริง ${f.actualMonths} เดือน + แผน ${f.planMonths} เดือน รวมด้วยวิธี "${summaryShort(f.mode)}"${f.approx ? ' (โดยประมาณ — KPI นี้คิดจากยอดดิบทั้งปี แต่แผนไม่มียอดดิบ)' : ''}`}>
+        📈 ปลายปี {f.approx ? '≈ ' : ''}<b style={{ color: 'var(--text2)' }}>{nf(f.value, r.dec)}{r.unit ? ' ' + r.unit : ''}</b>
+        {' '}({f.planMonths ? `จริง ${f.actualMonths}+แผน ${f.planMonths} ด.` : `จริงครบ ${f.actualMonths} ด.`})
+        {verdict ? <> · <b style={{ color: verdict.c }}>{verdict.t}</b></> : (f.hasTarget ? '' : ' · ไม่มีเป้า')}
+      </div>
+    );
+  };
   const rowChart = (r) => {
     const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
     if (!data.some(p => p.v != null)) return <EmptyChart k={k} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
-    const isPct = r.unit === '%';
+    /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
+    const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), r.target == null ? 0 : Number(r.target));
+    const isPct = r.unit === '%' && peak > 25;
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
+        <BarChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
+          {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width="auto"
-            tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+            tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
+            label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
           <Tooltip {...chartTip} formatter={v => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
@@ -655,13 +721,19 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <div style={sheetsBox}>
               {pageItems.filter((x) => x.kind === 'kpi').map(({ row: r }) => (
                 <Sheet key={r.key} k={k} cw={cw} icon={r.icon} title={r.name}
-                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null ? ` · ${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)} ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''}` : ''}`}
+                  /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
+                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null
+                    ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
+                    : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
-                  unit={r.value != null ? r.unit : ''} delta={r.delta}
+                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.why)}
-                  foot={r.note && (r.st === ST.unknown || r.fromDept || r.auto)
-                    ? <WarnNote k={k} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
-                    : r.why}
+                  foot={<>
+                    {forecastLine(r)}
+                    {r.note && (r.st === ST.unknown || r.fromDept || r.auto)
+                      ? <WarnNote k={k} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
+                      : r.why}
+                  </>}
                   link={r.to ? 'เจาะดู' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
                   onLink={() => (r.to ? goTo(r.to) : onTab?.('table'))}>
                   {rowChart(r)}
@@ -685,6 +757,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                       <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                       <span style={{ fontSize: fs(11.5), fontWeight: 800, color: statusColor(r.st === ST.unknown ? 'none' : r.st), whiteSpace: 'nowrap' }}>
                         {r.value == null ? '—' : `${nf(r.value, r.dec)}${r.unit ? ' ' + r.unit : ''}`}
+                        {r.monthTag && <span style={{ fontSize: fs(9.5), fontWeight: 600, color: 'var(--muted)', marginLeft: 3 }}>({r.monthTag})</span>}
                       </span>
                     </div>
                   ))}

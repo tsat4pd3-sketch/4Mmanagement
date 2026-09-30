@@ -80,7 +80,8 @@ export function StatusLamp({ k, w, stat, onGo }) {
   );
 }
 
-export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, delta, stat, foot, link, onLink, children }) {
+/* `bigNote` (30/09 · user: "ตัวเลขที่โชว์คืออะไร ไม่มี text บอก") = ป้ายเล็กติดตัวเลขใหญ่ว่าเป็นค่าของอะไร (เช่น "ก.ย." = ค่าเดือนที่เลือก) */
+export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNote, delta, stat, foot, link, onLink, children }) {
   const fs = (n) => Math.max(11, Math.round(n * k));
   const status = stat?.status;
   const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
@@ -112,6 +113,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, delta,
                 {big}
               </div>
               {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
+              {bigNote && <div style={{ fontSize: fs(10.5), fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{bigNote}</div>}
             </div>
           ) : <span />}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
