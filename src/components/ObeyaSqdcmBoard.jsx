@@ -550,6 +550,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const chartTip = {
     contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
     labelStyle: { color: 'var(--text2)' },
+    cursor: { fill: 'var(--text)', fillOpacity: 0.08 },   // default ของ Recharts = #ccc ทึบ → ใน popup ขยายกลายเป็นก้อนเทาบังแท่ง
   };
   const daySeries = (s) => fillDays(s, from, to).map(p => ({ ...p, label: dayLabel(p.k) }));
   const ytdTag = isYear ? 'YTD · ' : '';

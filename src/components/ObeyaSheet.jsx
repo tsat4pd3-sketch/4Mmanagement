@@ -5,6 +5,7 @@
    🔴 แก้หน้าตาแผ่นที่นี่ที่เดียว ห้าม copy ไปแก้ในหน้าใดหน้าหนึ่ง (ไม่งั้น 2 แท็บจะค่อยๆ หน้าตาต่างกันอีก)
    กติกาของผัง (คณิต A4 · ฟอนต์ขั้นต่ำ 11px · ไฟไม่กระพริบ · เทาต้องบอกว่าเทาเพราะอะไร) → docs/modules/obeya.md §2 */
 import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { statusColor } from '../utils/obeyaKpi';
 import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
 
@@ -80,12 +81,55 @@ export function StatusLamp({ k, w, stat, onGo }) {
   );
 }
 
+/* ── 🔍 ขยายแผ่น (2026-09-30 · user: "แต่ละกล่องของกราฟน่าจะมีปุ่มซักมุมเพื่อกดดู popup ขยายใหญ่ จะได้เห็นชัดๆ") ──
+   ปุ่ม 🔍 มุมขวาบนของ**ทุกแผ่น** (ปิดได้ด้วย `zoom={false}`) → เปิดแผ่นใบเดิมซ้ำใน popup ขนาดเกือบเต็มจอ
+   ด้วย `k` ที่ใหญ่ขึ้น (`zoomScale()`) ⇒ หัว/ตัวเลข/ไฟ/ท้ายแผ่นโตตาม ส่วน**กราฟ**:
+   · children เป็น **ฟังก์ชัน `(k) => node`** = วาดใหม่ด้วย k ใหญ่ (ฟอนต์แกน/ป้ายโตด้วย — แท็บ KPI ใช้แบบนี้)
+   · children เป็น node ธรรมดา = วาดซ้ำในกล่องที่ใหญ่ขึ้น (ResponsiveContainer ยืดให้ · ฟอนต์แกนเท่าเดิม — SQDCM ยังเป็นแบบนี้)
+   🔴 modal อยู่ใต้ `document.body` ผ่าน portal (บอร์ด TV มี ancestor ที่ clip/transform) · zIndex 1900 =
+   **เหนือเปลือก TV (1010) แต่ใต้ modal หมายเหตุ (2000)** ⇒ กดแท่งในกราฟที่ขยายแล้ว หมายเหตุยังลอยขึ้นมาบนสุดได้ */
+export function zoomScale(vw = window.innerWidth, vh = window.innerHeight) {
+  return Math.max(1, Math.min(1.8, vw / 720, vh / 470));
+}
+function SheetZoom({ onClose, children }) {
+  useEffect(() => {
+    /* Esc ปิดเฉพาะเมื่อเราอยู่บนสุด — ถ้ามี modal ที่ zIndex สูงกว่า (เช่น หมายเหตุ 2000) เปิดอยู่ ให้มันปิดก่อน */
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const above = [...document.querySelectorAll('.modal-scroll')].some(m => Number(getComputedStyle(m).zIndex) > 1900);
+      if (!above) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="modal-scroll" onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 1900, background: 'rgba(0,0,0,0.6)', display: 'flex', padding: 12 }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(1280px, 96vw)', height: 'min(800px, 92vh)', display: 'grid', margin: 'auto', minHeight: 0 }}>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+const SheetIconBtn = ({ fs, title, onClick, children }) => (
+  <button type="button" onClick={onClick} title={title} aria-label={title} style={{
+    fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+    background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
+  }}>{children}</button>
+);
+
 /* `bigNote` (30/09 · user: "ตัวเลขที่โชว์คืออะไร ไม่มี text บอก") = ป้ายเล็กติดตัวเลขใหญ่ว่าเป็นค่าของอะไร (เช่น "ก.ย." = ค่าเดือนที่เลือก) */
-export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNote, delta, stat, foot, link, onLink, children }) {
+export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNote, delta, stat, foot, link, onLink, zoom = true, onClose, children }) {
   const fs = (n) => Math.max(11, Math.round(n * k));
   const status = stat?.status;
   const sheetW = cw * span + GAP * (span - 1);          // ความกว้างจริงของแผ่นใบนี้
-  return (
+  const [zoomed, setZoomed] = useState(false);
+  const zk = useMemo(() => (zoomed ? zoomScale() : 1), [zoomed]);
+  const body = typeof children === 'function' ? children(k) : children;
+  const footNode = typeof foot === 'function' ? foot(k) : foot;     // foot ก็รับ `(k) => node` ได้ (ให้บรรทัดท้ายโตตามใน popup)
+  return (<>
     <div style={{
       gridColumn: `span ${span}`,
       /* ❌ ไม่มีแถบสีบนหัวแผ่นอีกแล้ว (คำสั่ง user 21/09 "สีสันของเส้นแต่ละ box ไม่เอา")
@@ -99,8 +143,13 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
         {/* ⚠️ ไฟสถานะ **ห้ามอยู่แถวเดียวกับชื่อแผ่น** — วัดจริง 21/09 ที่ 900px: ป้ายไฟกินที่
             จนชื่อ "S ความปลอดภัย" ถูก clip เหลือ 72px (แผ่นไม่รู้ว่าตัวเองเป็นแกนอะไร)
             ⇒ วางไว้ท้ายแถวตัวเลขใหญ่แทน — แถวนั้นที่ว่างเยอะ และไฟอยู่ติดกับเลขที่มันตัดสินพอดี */}
-        <div style={{ fontSize: fs(13), fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'clip' }}>
-          {icon} {title}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: fs(13), fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'clip' }}>
+            {icon} {title}
+          </div>
+          {onClose
+            ? <SheetIconBtn fs={fs} title="ปิด (Esc)" onClick={onClose}>✕</SheetIconBtn>
+            : (zoom && <SheetIconBtn fs={fs} title="ขยายดูใหญ่" onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
         <div style={{
@@ -126,10 +175,10 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
           </div>
         </div>
       </div>
-      <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{children}</div>
-      {(foot || link) && (
+      <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{body}</div>
+      {(footNode || link) && (
         <div style={{ padding: `${Math.round(5 * k)}px ${Math.round(9 * k)}px ${Math.round(7 * k)}px`, flexShrink: 0 }}>
-          {foot && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{foot}</div>}
+          {footNode && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{footNode}</div>}
           {link && (
             <button onClick={onLink} style={{
               marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999,
@@ -139,7 +188,15 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
         </div>
       )}
     </div>
-  );
+    {zoomed && (
+      <SheetZoom onClose={() => setZoomed(false)}>
+        <Sheet k={zk} cw={1200} icon={icon} title={title} sub={sub} big={big} unit={unit} bigNote={bigNote}
+          delta={delta} stat={stat} foot={foot} link={link} onLink={onLink} zoom={false} onClose={() => setZoomed(false)}>
+          {children}
+        </Sheet>
+      </SheetZoom>
+    )}
+  </>);
 }
 
 /* หมายเหตุ "ข้อมูลยังไม่พร้อม" — ต้องเห็นชัดบนแผ่น ไม่ใช่ตัวจิ๋วมุมล่าง (กฎความซื่อสัตย์ของจอ) */
