@@ -159,6 +159,30 @@ export function reconcilePlan(lots = [], orders = []) {
   };
 }
 
+/* ══ 🔀 แบ่งแผนของ "ไลน์+วันงาน" ตามมุมมองของกะที่เปิดอยู่ (2026-09-30 รอบ 2) ═══════════
+   🔴🔴 เคสจริงที่ทำให้ต้องมี — วันงาน 30/09 LINE B: วางแผนไว้ **กะเช้า 6 ล็อต** แต่กะเช้าปิดไปแล้ว
+        โดยไม่ได้เริ่มสักใบ · ตอนนี้ **กะดึกเปิดอยู่** ⇒ จอหน้างานเดิมกรอง `shift = กะที่เปิด`
+        ได้ 0 แถว แล้ว **ไม่วาดอะไรเลย** ⇒ กะดึกไม่มีทางรู้เลยว่ามีแผนค้างอยู่ 6 ล็อต
+        (ล้มเหลวเงียบ — "ไม่มีแผน" กับ "แผนอยู่คนละกะ" ต้องอ่านออกว่าคนละเรื่อง)
+
+   ⇒ โหลดทั้งวันงานของไลน์นั้น แล้วแบ่ง 3 กอง **ห้ามยุบรวมกัน**:
+     · `mine`    แผนของกะนี้ตรงๆ
+     · `carried` แผนของกะอื่นในวันเดียวกันที่ **ยังไม่ได้เริ่ม** = งานที่กะก่อนทำไม่ทัน ⇒ กะนี้หยิบต่อได้
+     · `elsewhere` แผนของกะอื่นที่เริ่ม/ทำไปแล้ว = แค่บอกให้รู้ ไม่ใช่งานของกะนี้
+   ⚠️ ไม่มีทั้ง 3 กอง = ไม่มีแผนจริงๆ ⇒ จอไม่ต้องวาด (ไลน์คัมบังจะได้ไม่รก) */
+export function splitPlanForSession(lots = [], session = null) {
+  const shift = session?.shift ?? null;
+  const active = lots.filter(ACTIVE_LOT);
+  const mine = sortBySeq(active.filter(l => l.shift === shift));
+  const other = active.filter(l => l.shift !== shift);
+  return {
+    mine,
+    carried: sortBySeq(other.filter(l => l.status === 'planned' && !l.prod_order_id)),
+    elsewhere: sortBySeq(other.filter(l => !(l.status === 'planned' && !l.prod_order_id))),
+    hasAny: active.length > 0,
+  };
+}
+
 /* ── ตัวเลขสรุปหัวแผง (จอ TV อ่านบรรทัดเดียวจบ) ─────────────────────────────────
    🔴 ค่าที่ประเมินไม่ได้ต้องเป็น `null` — จอเขียน "—" ห้ามเขียน 0 */
 export function planSummary({ lots = [], orders = [], ctOf, pairOf, dieOf, rule, netShiftMin } = {}) {
