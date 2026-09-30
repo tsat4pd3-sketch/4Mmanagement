@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -17,6 +17,7 @@ import { RATE } from '../utils/refreshRates';
 import PageHeader from './PageHeader';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
+import KpiMonthNoteModal from './KpiMonthNoteModal';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -109,9 +110,11 @@ const toLamp = (st, why) => ({ status: st === ST.unknown ? 'none' : st, label: s
 
 export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const navigate = useNavigate();
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, fullName } = useContext(UserContext);
   const { can } = usePerms();
   const canRecord = can('safety', 'record');
+  const canNote = can('kpi', 'manage');           // เขียนหมายเหตุรายเดือน = คีย์เดียวกับ RLS ของ kpi_month_notes
+  const [noteFor, setNoteFor] = useState(null);   // { rowKey, title, icon, monthKey, valueText }
   const [sp, setSp] = useSearchParams();
 
   const [lines, setLines] = useState([]);
@@ -265,11 +268,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         if (kp.error && !/42P01/.test(String(kp.error))) warn.push('แผนรายเดือน');
         kplans = kp.rows || [];
       }
+      /* 📝 หมายเหตุรายเดือนของขอบเขตที่ดู (remark/action/note) — ตารางยังไม่มี = ไม่มีโน้ต ไม่ใช่บอร์ดล่ม */
+      const kn = await supabase.from('kpi_month_notes')
+        .select('id, month, row_key, kind, text, created_by_name, created_at')
+        .eq('year', year).eq('scope_kind', sel.kind || 'plant').eq('scope_value', sel.value || '').eq('is_active', true)
+        .order('created_at', { ascending: true }).limit(1000);
+      if (kn.error && (kn.error.code || '') !== '42P01') warn.push('หมายเหตุรายเดือน');
+      const knotes = kn.data || [];
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.data || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, kpiMissing, warn,
+        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
@@ -283,9 +293,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kentries, kplans } = data;
+    const { sessions, defects, targets, safety, kdefs, kentries, kplans, knotes } = data;
     const planByKpi = {};
     (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
+    const notesBy = {};
+    (knotes || []).forEach(n => ((notesBy[n.row_key] = notesBy[n.row_key] || {})[n.month] = notesBy[n.row_key][n.month] || []).push(n));
     const ym = x => String(x ?? '').slice(0, 7);
     const inG = r => members.names.has(r.line);
     const gSess = sessions.filter(inG);
@@ -421,6 +433,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         def: planDef && planDef.kpi_catalog ? planDef : { kpi_catalog: { summary_mode: sumKind } },
       });
       const fcScore = fc.value != null && def && (target != null || def.commit_value != null || def.commitment) ? scoreDef(fc.value, def) : null;
+      /* เส้นแผนรายเดือน + เครื่องหมายโน้ต ติดไปกับจุดกราฟ (สเกลเดียวกับผลจริง — ห้ามแกน Y 2 ข้าง) */
+      const planMap = planByKpi[planDef?.id] || {};
+      const notesOfRow = notesBy[r.key] || {};
+      series = series.map((p, i) => (i < 12
+        ? { ...p, plan: planMap[i + 1] ?? null, notes: notesOfRow[i + 1] || [], noteMark: (notesOfRow[i + 1] || []).length ? '📝' : '' }
+        : p));
       const forecast = value == null && !actualMonths ? null : {
         ...fc,
         status: fcScore ? fcScore.status : null,
@@ -429,6 +447,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       };
       return {
         ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
+        commit: def?.commit_value == null ? null : Number(def.commit_value), hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
@@ -604,19 +623,22 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const isPct = r.unit === '%' && peak > 25;
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
             label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
-          <Tooltip {...chartTip} formatter={v => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
+          <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
-              : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year} · กดเพื่อดูเดือนนี้บนบอร์ด`)} />
-          {r.target != null && <ReferenceLine y={r.target} stroke="#ef4444" strokeDasharray="4 3" />}
-          <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={(d) => setMonth(d?.payload?.k ?? d?.k)}>
+              : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year}${pl?.[0]?.payload?.notes?.length ? ` · 📝 ${pl[0].payload.notes.length} หมายเหตุ` : ''} · กดเพื่อดูเดือนนี้ + หมายเหตุ`)} />
+          {/* เส้นเป้า (แดง) + เส้น Commitment (เหลือง) — user 30/09: "มาแต่เส้น target เส้น commitment ไม่เห็น" */}
+          {r.target != null && <ReferenceLine y={r.target} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: '#ef4444' }} />}
+          {r.commit != null && r.commit !== r.target && <ReferenceLine y={r.commit} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
+          <Bar dataKey="v" radius={[2, 2, 0, 0]} onClick={(d) => openMonth(r, d?.payload ?? d)}>
+            <LabelList dataKey="noteMark" position="top" style={{ fontSize: fs(9.5) }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
                 fillOpacity={p.summary ? 0.55 : (p.k === monthKey ? 1 : 0.8)}
@@ -624,15 +646,25 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                 strokeDasharray={p.summary ? '3 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
             ))}
           </Bar>
-        </BarChart>
+          {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
+          {r.hasPlan && <Line type="monotone" dataKey="plan" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 2, fill: '#38bdf8' }} connectNulls isAnimationActive={false} />}
+        </ComposedChart>
       </ResponsiveContainer>
     );
+  };
+  /* กดแท่งเดือน = เลือกเดือนบนบอร์ด + เปิดหมายเหตุของเดือนนั้น (แท่ง "สรุป" = ไม่มีโน้ต) */
+  const openMonth = (r, p) => {
+    const k = p?.k;
+    if (!k || k === SUMMARY_KEY) return;
+    setMonth(k);
+    setNoteFor({ rowKey: r.key, title: r.name, icon: r.icon, monthKey: k, valueText: p?.v == null ? '—' : `${nf(p.v, r.dec)}${r.unit ? ' ' + r.unit : ''}` });
   };
 
   /* ── หัวแผ่นสรุป ── */
   const monthText = `${monthLabel(monthKey)} ${year}`;
   const shell = board
-    ? { position: 'fixed', inset: 0, zIndex: 800, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
+    /* zIndex ต้องสูงกว่ารางเมนู (App.jsx rail = 1000) — เดิม 800 ⇒ รางทับบอร์ดโหมดจอไป ~60px ซ้าย (user ส่งรูป 30/09) · ต่ำกว่าโมดัล 1100+ */
+    ? { position: 'fixed', inset: 0, zIndex: 1010, background: 'var(--bg)', display: 'flex', flexDirection: 'column' }
     : { display: 'flex', flexDirection: 'column' };
   const pill = (active) => ({
     fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
@@ -706,11 +738,6 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         </div>
       )}
 
-      {warnLines.length > 0 && (
-        <div style={{ margin: '0 0 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {warnLines.map((w, i) => <WarnNote key={i} k={1} text={w} tone={err ? '#ef4444' : '#f59e0b'} />)}
-        </div>
-      )}
 
       {/* ⚠️ กล่องนอก = padding · กล่องใน (wrapRef) = ที่ถูกวัด ห้ามมี padding (clientHeight รวม padding → แถวล่างโดนตัด) */}
       <div ref={fitRef} style={{ display: 'flex', minHeight: 0, flex: board ? 1 : 'none',
@@ -810,6 +837,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       </div>
       {/* 📖 แถบเปลี่ยนหน้า — โผล่เฉพาะตอนมีมากกว่า 1 หน้า (มีหน้าเดียวแล้วโชว์ = ขยะบนจอ) */}
       <BoardPager page={pg} count={pages.length} onPage={setPg} labels={pgLabels} compact={board} />
+      {/* ⚠️ แถบเตือน "ตัวเลขเดือนนี้ยังไม่ครบ" อยู่ **ใต้บอร์ด** และกินที่สูงคงที่เสมอ (แม้ไม่มีอะไรเตือน) —
+          user 30/09: "ยังไม่ครบ มาอยู่ข้างล่างดีมั้ย เพื่อไม่ให้สเกลกราฟวิ่งไปวิ่งมา" · เดิมอยู่บนหัว โผล่/หายตามเดือน ⇒ กริดสูงไม่เท่ากัน */}
+      <div style={{ minHeight: 26, margin: board ? '2px 8px 4px' : '6px 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {warnLines.map((w, i) => (
+          <span key={i} style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, color: err ? '#ef4444' : '#f59e0b', background: `${err ? '#ef4444' : '#f59e0b'}1a`, border: `1px solid ${err ? '#ef4444' : '#f59e0b'}55` }}>⚠ {w}</span>
+        ))}
+      </div>
 
       {!board && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
@@ -819,6 +853,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         </div>
       )}
 
+      {noteFor && (
+        <KpiMonthNoteModal
+          title={noteFor.title} icon={noteFor.icon} monthText={`${monthLabel(noteFor.monthKey)} ${year}`} valueText={noteFor.valueText}
+          notes={rows.find(x => x.key === noteFor.rowKey)?.series?.find(p => p.k === noteFor.monthKey)?.notes || []}
+          canEdit={canNote}
+          ctx={{ year, month: Number(noteFor.monthKey.slice(5, 7)), scopeKind: isPlant(scope) ? 'plant' : scope.kind, scopeValue: isPlant(scope) ? '' : scope.value, scopeText, rowKey: noteFor.rowKey, fullName }}
+          onClose={() => setNoteFor(null)} onChanged={() => load()} />
+      )}
       {showSafety && (
         <SafetyEventModal
           init={showSafety} section={secSet && secSet.size === 1 ? [...secSet][0] : ''} date={date}
