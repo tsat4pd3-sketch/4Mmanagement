@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
-import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef } from '../utils/kpiSetup';
+import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -253,18 +253,23 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       // นิยามของ "ขอบเขตที่เลือก + บรรพบุรุษ" — นิยามระดับแม่ตกทอดถึงลูก (ตกลงรุ่นเดียวกับแท็บ ⚙️)
       const sel = parseScopeKey(scopeKeyStr);
       const kdefs = (kdRes.data || []).filter(d => scopeCovers(org, scopeOfDef(d), sel));
-      let kentries = [];
+      let kentries = [], kplans = [];
       if (kdefs.length) {
         const ke = await fetchByIds(kdefs.map(d => d.id), part => supabase
           .from('kpi_manual_entries').select('kpi_id, month, value').in('kpi_id', part));
         if (ke.error) warn.push('ค่า KPI รายเดือน');
         kentries = ke.rows;
+        /* 📅 แผนรายเดือน — ใช้คาดการณ์ปลายปี (ผลจริง + แผนที่เหลือ) · ตารางยังไม่มี = ไม่มีแผน ไม่ใช่บอร์ดล่ม */
+        const kp = await fetchByIds(kdefs.map(d => d.id), part => supabase
+          .from('kpi_month_plans').select('kpi_id, month, plan_value').in('kpi_id', part));
+        if (kp.error && !/42P01/.test(String(kp.error))) warn.push('แผนรายเดือน');
+        kplans = kp.rows || [];
       }
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.data || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kpiMissing, warn,
+        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, kpiMissing, warn,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
@@ -278,7 +283,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kentries } = data;
+    const { sessions, defects, targets, safety, kdefs, kentries, kplans } = data;
+    const planByKpi = {};
+    (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
     const ym = x => String(x ?? '').slice(0, 7);
     const inG = r => members.names.has(r.line);
     const gSess = sessions.filter(inG);
@@ -394,8 +401,24 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ตอนแก้นิยาม KPI';
       }
       const ytd = series[12]?.v ?? null;
+      const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
+      /* 📈 คาดปลายปี = ผลจริง + แผนของเดือนที่เหลือ (30/09) — แผนอยู่ที่นิยามของขอบเขตนี้ (แถว auto = นิยาม auto:<key>)
+         ไม่มีแผนครบ = บอกว่าขาดเดือนไหน ไม่เดา · ตัดสินรอด/ร่วงด้วย scoreDef เท่านั้น */
+      const planDef = r.auto ? (def?.id ? def : autoDefOf(r.auto)) : man?.def;
+      const fc = yearForecast({
+        actual: series.slice(0, 12).map(p => p.v),
+        plan: Array.from({ length: 12 }, (_, i) => planByKpi[planDef?.id]?.[i + 1] ?? null),
+        def: planDef && planDef.kpi_catalog ? planDef : { kpi_catalog: { summary_mode: sumKind } },
+      });
+      const fcScore = fc.value != null && def && (target != null || def.commit_value != null || def.commitment) ? scoreDef(fc.value, def) : null;
+      const forecast = value == null && !actualMonths ? null : {
+        ...fc,
+        status: fcScore ? fcScore.status : null,
+        canJudge: !!fcScore,
+        hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
+      };
       return {
-        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd,
+        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
@@ -529,17 +552,43 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     contentStyle: { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, fontSize: fs(11) },
     labelStyle: { color: 'var(--text2)' },
   };
+  /* 📈 บรรทัด "คาดปลายปี" ใต้แผ่น — ผลจริง + แผนที่เหลือ แล้วตัดสินด้วยเกณฑ์เดียวกับไฟ (scoreDef)
+     · ไม่มีแผนครบ = เขียนว่าขาดเดือนไหน (ห้ามเดา) · ไม่มีเป้า = บอกตัวเลขอย่างเดียว ไม่ตัดสิน */
+  const forecastLine = (r) => {
+    const f = r.forecast;
+    if (!f) return null;
+    /* บรรทัดเดียวเสมอ (แผ่นสูงคงที่ — 2 บรรทัด = กราฟถูกบีบจนอ่านไม่ออก) · เต็มความใน title */
+    const style = { fontSize: fs(10.5), lineHeight: 1.35, marginBottom: 3, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' };
+    if (f.value == null) {
+      if (f.reason !== 'no_plan' || !f.hasTarget) return null;
+      const miss = f.missing.length === 1 ? monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)
+        : `${monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)}–${monthLabel(`${year}-${String(f.missing[f.missing.length - 1]).padStart(2, '0')}`)}`;
+      return <div style={style} title={`คาดการณ์ปลายปีไม่ได้ — เดือน ${miss} ยังไม่มีทั้งผลจริงและแผน · ตั้งแผนที่แท็บ ⚙️ แถว 📅 แผน แล้วบอร์ดจะคำนวณ "ผลจริง + แผนที่เหลือ" ให้`}>📈 ปลายปี: ยังตั้งแผนไม่ครบ ({miss})</div>;
+    }
+    const verdict = f.status === 'good' ? { t: '✅ คาดถึงเป้า', c: '#22c55e' }
+      : f.status === 'warn' ? { t: '🟡 ถึงแค่ Commitment', c: '#f59e0b' }
+      : f.status === 'bad' ? { t: '❌ คาดไม่ถึงเป้า', c: '#ef4444' } : null;
+    return (
+      <div style={style} title={`ผลจริง ${f.actualMonths} เดือน + แผน ${f.planMonths} เดือน รวมด้วยวิธี "${summaryShort(f.mode)}"${f.approx ? ' (โดยประมาณ — KPI นี้คิดจากยอดดิบทั้งปี แต่แผนไม่มียอดดิบ)' : ''}`}>
+        📈 ปลายปี {f.approx ? '≈ ' : ''}<b style={{ color: 'var(--text2)' }}>{nf(f.value, r.dec)}{r.unit ? ' ' + r.unit : ''}</b>
+        {' '}({f.planMonths ? `จริง ${f.actualMonths}+แผน ${f.planMonths} ด.` : `จริงครบ ${f.actualMonths} ด.`})
+        {verdict ? <> · <b style={{ color: verdict.c }}>{verdict.t}</b></> : (f.hasTarget ? '' : ' · ไม่มีเป้า')}
+      </div>
+    );
+  };
   const rowChart = (r) => {
     const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
     if (!data.some(p => p.v != null)) return <EmptyChart k={k} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
     const isPct = r.unit === '%';
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
+        <BarChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
+          {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={isPct ? [0, 100] : undefined} tick={axisTick} width="auto"
-            tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
+            tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
+            label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
           <Tooltip {...chartTip} formatter={v => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
@@ -655,13 +704,19 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <div style={sheetsBox}>
               {pageItems.filter((x) => x.kind === 'kpi').map(({ row: r }) => (
                 <Sheet key={r.key} k={k} cw={cw} icon={r.icon} title={r.name}
-                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null ? ` · ${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)} ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''}` : ''}`}
+                  /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
+                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null
+                    ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
+                    : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
-                  unit={r.value != null ? r.unit : ''} delta={r.delta}
+                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(monthKey)}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.why)}
-                  foot={r.note && (r.st === ST.unknown || r.fromDept || r.auto)
-                    ? <WarnNote k={k} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
-                    : r.why}
+                  foot={<>
+                    {forecastLine(r)}
+                    {r.note && (r.st === ST.unknown || r.fromDept || r.auto)
+                      ? <WarnNote k={k} text={r.note} tone={r.st === ST.unknown ? '#f59e0b' : '#94a3b8'} />
+                      : r.why}
+                  </>}
                   link={r.to ? 'เจาะดู' : (r.manual ? 'กรอก/ตั้งเป้า' : null)}
                   onLink={() => (r.to ? goTo(r.to) : onTab?.('table'))}>
                   {rowChart(r)}

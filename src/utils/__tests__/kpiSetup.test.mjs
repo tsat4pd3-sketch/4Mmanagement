@@ -8,7 +8,7 @@ import {
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
   isStdFixed, isStdParent, checkStdSelection, matchStdItems,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
-  planProgress, valueScopeOf, sharedValueDef,
+  planProgress, valueScopeOf, sharedValueDef, yearForecast,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -548,4 +548,31 @@ test('sharedValueDef — แถวเก่าที่ไม่มี catalog_i
   const legacyPlant = { id: 'lp', year: 2026, scope_kind: null, section: null, line_group: null, name: '%RM (Raw Material)', kpi_catalog: null };
   const legacyUnit = { id: 'lu', year: 2026, scope_kind: 'section', scope_value: 'PD3', name: '%RM (Raw Material)', kpi_catalog: CAT_PLANT };
   assert.equal(sharedValueDef([legacyPlant, legacyUnit], legacyUnit)?.id, 'lp');
+});
+
+/* ── 📈 yearForecast — ผลจริง + แผนที่เหลือ (30/09 · user: "สรุปว่าปีนี้จะรอดหรือร่วง") ── */
+test('yearForecast: average — 9 เดือนจริง + 3 เดือนแผน = เฉลี่ย 12 ค่า', () => {
+  const actual = [80, 80, 80, 80, 80, 80, 80, 80, 80, null, null, null];
+  const plan = Array(12).fill(90);
+  const r = yearForecast({ actual, plan, def: { kpi_catalog: { summary_mode: 'average' } } });
+  assert.equal(r.actualMonths, 9); assert.equal(r.planMonths, 3);
+  assert.ok(Math.abs(r.value - (80 * 9 + 90 * 3) / 12) < 1e-9);
+  assert.equal(r.approx, false);
+});
+test('yearForecast: sum — ของเสียสะสม = Σ จริง + Σ แผนที่เหลือ · ผลจริงชนะแผนในเดือนเดียวกัน', () => {
+  const actual = [10, 12, null, null, null, null, null, null, null, null, null, null];
+  const plan = Array(12).fill(5);   // ม.ค.-ก.พ. มีทั้งจริงและแผน → ใช้จริง
+  const r = yearForecast({ actual, plan, def: { kpi_catalog: { summary_mode: 'sum' } } });
+  assert.equal(r.value, 10 + 12 + 5 * 10);
+});
+test('yearForecast: 🔴 เดือนที่ไม่มีทั้งผลและแผน = คาดการณ์ไม่ได้ (null + บอกเดือนที่ขาด) ห้ามเดา', () => {
+  const actual = [80, 80, null, null, null, null, null, null, null, null, null, null];
+  const r = yearForecast({ actual, plan: [], def: null });
+  assert.equal(r.value, null); assert.equal(r.reason, 'no_plan');
+  assert.deepEqual(r.missing, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  assert.equal(yearForecast({ actual: [], plan: Array(12).fill(1) }).reason, 'no_actual');   // แผนล้วนไม่ใช่คาดการณ์
+});
+test('yearForecast: ครบ 12 เดือนจริง = สรุปปีจริง ไม่ใช้แผน · rate = เฉลี่ย + approx', () => {
+  const r = yearForecast({ actual: Array(12).fill(7), plan: Array(12).fill(1), def: { kpi_catalog: { summary_mode: 'rate' } } });
+  assert.equal(r.planMonths, 0); assert.equal(r.value, 7); assert.equal(r.approx, true);
 });

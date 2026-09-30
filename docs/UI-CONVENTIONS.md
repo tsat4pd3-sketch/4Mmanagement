@@ -463,6 +463,7 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 
 ### ⚠️ กราฟทุกตัวต้องมี **แกน Y + ตัวเลข** (2026-08-19 — คำสั่ง user)
 
+> 📏 **แกน Y ต้องบอกหน่วยบนกราฟ** (2026-09-30 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายหน่วยเหนือแกน (`YAxis label position:'top'` + margin top) ไม่ต่อท้ายทุก tick · ต้นแบบ `rowChart()` ใน `ObeyaKpiBoard.jsx`
 > 📏 **ความกว้างแกน/ป้ายถูกตัด → `docs/UI-STANDARD.md` §6** (2026-09-24): `YAxis width="auto"` · margin ซ้ายห้ามติดลบ · `fmtAxis`/`shortTick`/`alignedYWidth` จาก `utils/chartAxis.js` · มีด่าน build
 > *"เห็นในกราฟพวกนี้ ชอบไม่มีแกนแนวตั้งบอก ไม่มี label ตัวเลขอีก อาจจะเพราะกลัวรก แต่มันดูยาก"*
 
