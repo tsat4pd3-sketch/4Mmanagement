@@ -4,8 +4,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addDays, nextShift, runDay, buildHorizon, makeScale, assignShifts, horizonSummary,
-  segmentTicks, segmentBands, tickStepHours, orderAcrossHorizon, SEG_HOURS,
+  addDays, nextShift, runDay, buildHorizon, assignShifts, horizonSummary,
+  clipToSegment, sliceBySegments, visibleRows, rowTicks, orderAcrossHorizon, SEG_HOURS,
 } from '../planHorizon.js';
 import { layoutLots, nextOpenMs } from '../planTimeline.js';
 
@@ -59,17 +59,42 @@ test('🔴 หยุดคือหยุดทั้งวัน ไม่ใ�
   assert.equal(r.segments.filter(s => s.workDate === '2026-10-02').length, 0);
 });
 
-test('📐 สเกล = เวลาที่โรงงานเดินจริง — วันหยุดที่ข้ามไม่กินความกว้างบนราง', () => {
-  const r = buildHorizon({ startDate: '2026-10-02', maxSegments: 4 });
-  const sc = makeScale(r.segments);
-  assert.equal(sc.totalMs, 4 * SEG_HOURS * H);
-  assert.equal(sc.pctOf(r.segments[0].startMs), 0);
-  assert.equal(Math.round(sc.pctOf(r.segments[2].startMs)), 50, 'กะจันทร์เริ่มที่ครึ่งราง ไม่ใช่เลื่อนไปตามปฏิทิน');
-  assert.equal(Math.round(sc.pctOf(r.segments[3].endMs)), 100);
-  /* ms ที่ตกกลางวันหยุด = เกาะขอบกะก่อนหน้า (ไม่กระโดด) */
-  assert.equal(Math.round(sc.pctOf(r.closed[0][0] + 10 * H)), 50);
-  /* เลยกะสุดท้าย = เกิน 100 ต้องเห็นว่าล้น ห้ามหนีบ */
-  assert.ok(sc.pctOf(r.segments[3].endMs + 2 * H) > 100);
+test('📺 1 กะ = 1 บรรทัด — งานคร่อมเส้นแบ่งกะโผล่ทั้ง 2 บรรทัดเป็นท่อนต่อ', () => {
+  const r = hz();
+  /* ใบเดียว 20 ชม. เริ่ม 08:00 ⇒ กะเช้า 08:00-20:00 (12 ชม.) + กะดึก 20:00-04:00 (8 ชม.) */
+  const lay = layoutLots({ lots: [lot('a', 1, 1200)], ctOf, startMs: r.startMs, endMs: r.endMs });
+  const rows = sliceBySegments(lay.boxes, r.segments);
+  assert.equal(rows.length, 4);
+  assert.equal(rows[0].pieces.length, 1);
+  assert.equal(rows[1].pieces.length, 1, '🔴 ท่อนต่อต้องโผล่ในกะดึกด้วย ห้ามหาย');
+  assert.equal(rows[2].pieces.length, 0);
+
+  const a = rows[0].pieces[0].run, b = rows[1].pieces[0].run;
+  assert.equal(a.cutLeft, false);
+  assert.equal(a.cutRight, true, 'ท่อนแรกยังไม่จบ — ไปต่อกะถัดไป');
+  assert.equal(b.cutLeft, true, 'ท่อนหลังต่อมาจากกะก่อน');
+  assert.equal(b.cutRight, false);
+  /* พิกัดเป็นสเกลของบรรทัดนั้นเอง (ไม่ใช่ของทั้งขอบเขต) */
+  assert.equal(a.leftPct, 0);
+  assert.equal(a.widthPct, 100, 'กินเต็มกะเช้า');
+  assert.equal(b.leftPct, 0);
+  assert.equal(Math.round(b.widthPct), 67, '8 ชม. จาก 12 ชม. ของกะดึก');
+});
+
+test('📺 clipToSegment: อยู่นอกกะ = null (ไม่ใช่ความกว้าง 0)', () => {
+  const r = hz();
+  const s0 = r.segments[0];
+  assert.equal(clipToSegment(s0, s0.endMs, s0.endMs + H), null);
+  assert.equal(clipToSegment(s0, s0.startMs - 2 * H, s0.startMs), null);
+  assert.equal(clipToSegment(null, 1, 2), null);
+});
+
+test('📺 visibleRows: วาดถึงกะสุดท้ายที่มีงาน +1 กะว่าง · กะว่างที่คั่นกลางต้องไม่หาย', () => {
+  const mk = (flags) => flags.map(f => ({ hasWork: f }));
+  assert.equal(visibleRows(mk([true, false, false, false])).length, 2);
+  assert.equal(visibleRows(mk([true, false, true, false])).length, 4, 'กะว่างคั่นกลางต้องวาด');
+  assert.equal(visibleRows(mk([false, false])).length, 1, 'ยังไม่มีงาน = เห็นรางเปล่า 1 บรรทัด');
+  assert.deepEqual(visibleRows([]), []);
 });
 
 test('⏭️ nextOpenMs: ไม่เริ่มงานกลางช่วงปิด — ขยับไปเวลาเปิดถัดไป', () => {
@@ -88,7 +113,7 @@ test('🔗 งาน 20 ชม. ในวันเดียว = ล้นจา
   const r = hz();
   const lay = layoutLots({
     lots: [lot('a', 1, 720), lot('b', 2, 480)],        // 12 ชม. + 8 ชม.
-    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed, scale: makeScale(r.segments),
+    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed,
   });
   const at = assignShifts(lay.boxes, r.segments);
   assert.equal(at[0].shift, 'day');
@@ -102,7 +127,7 @@ test('🔗 งานเกิน 1 วัน = ล้นไปวันถัด
   const r = hz();
   const lay = layoutLots({
     lots: [lot('a', 1, 1440), lot('b', 2, 600)],       // 24 ชม. + 10 ชม.
-    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed, scale: makeScale(r.segments),
+    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed,
   });
   const at = assignShifts(lay.boxes, r.segments);
   assert.deepEqual([at[0].workDate, at[0].shift], ['2026-10-01', 'day']);
@@ -113,7 +138,7 @@ test('🔗 งานคร่อมวันหยุด = เวลาหยุ
   const r = buildHorizon({ startDate: '2026-10-02', maxSegments: 4 });   // ศุกร์ → จันทร์
   const lay = layoutLots({
     lots: [lot('a', 1, 1440), lot('b', 2, 120)],       // 24 ชม. เต็มวันศุกร์ + 2 ชม.
-    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed, scale: makeScale(r.segments),
+    ctOf, startMs: r.startMs, endMs: r.endMs, closed: r.closed,
   });
   const at = assignShifts(lay.boxes, r.segments);
   assert.deepEqual([at[1].workDate, at[1].shift], ['2026-10-05', 'day'], 'ข้ามเสาร์-อาทิตย์ไปจันทร์');
@@ -124,7 +149,7 @@ test('🔴 ไม่มี CT = จัดกะให้ไม่ได้ (sure
   const r = hz();
   const lay = layoutLots({
     lots: [lot('a', 1, 60), { id: 'z', seq: 2, mat_no: 'ZZ', qty_plan: 10, status: 'planned' }, lot('c', 3, 60)],
-    ctOf, startMs: r.startMs, endMs: r.endMs, scale: makeScale(r.segments),
+    ctOf, startMs: r.startMs, endMs: r.endMs,
   });
   const at = assignShifts(lay.boxes, r.segments);
   assert.equal(at[0].sure, true);
@@ -136,7 +161,7 @@ test('🔴 งานล้นเลยขอบเขต = ติดธง overf
   const r = buildHorizon({ startDate: '2026-10-01', maxSegments: 2 });   // ขอบเขตแค่ 24 ชม.
   const lay = layoutLots({
     lots: [lot('a', 1, 1440), lot('b', 2, 60)],
-    ctOf, startMs: r.startMs, endMs: r.endMs, scale: makeScale(r.segments),
+    ctOf, startMs: r.startMs, endMs: r.endMs,
   });
   const at = assignShifts(lay.boxes, r.segments);
   assert.equal(at[1].overflow, true);
@@ -145,7 +170,7 @@ test('🔴 งานล้นเลยขอบเขต = ติดธง overf
 
 test('📊 สรุป: ใช้กี่กะ · จบเมื่อไหร่ — มีล็อตคำนวณไม่ได้ = finishMs null (ห้ามเดา)', () => {
   const r = hz();
-  const mk = (lots) => layoutLots({ lots, ctOf, startMs: r.startMs, endMs: r.endMs, scale: makeScale(r.segments) });
+  const mk = (lots) => layoutLots({ lots, ctOf, startMs: r.startMs, endMs: r.endMs });
   const ok = mk([lot('a', 1, 720), lot('b', 2, 480)]);
   const s1 = horizonSummary({ boxes: ok.boxes, segments: r.segments, endMs: ok.endMs, unknownCount: ok.unknownCount });
   assert.equal(s1.shiftsUsed, 2);
@@ -157,27 +182,24 @@ test('📊 สรุป: ใช้กี่กะ · จบเมื่อไห
   assert.equal(s2.finishMs, null);
 });
 
-test('🕐 ป้ายเวลาห่างขึ้นตามจำนวนกะ · แถบกะกว้างเท่ากันทุกกะ', () => {
-  assert.equal(tickStepHours(1), 1);
-  assert.equal(tickStepHours(4), 3);
-  assert.equal(tickStepHours(8), 6);
+test('🕐 ป้ายเวลาของบรรทัดเดียว = สเกลของกะนั้น (08:00 → 20:00)', () => {
   const r = hz();
-  const sc = makeScale(r.segments);
-  const ticks = segmentTicks(r.segments, sc);
-  assert.equal(ticks.length, 4 * (SEG_HOURS / 3));
-  assert.ok(ticks.every(t => t.pct >= 0 && t.pct < 100));
-  const bands = segmentBands(r.segments, sc);
-  assert.equal(bands.length, 4);
-  bands.forEach(b => assert.equal(Math.round(b.widthPct), 25));
+  const t = rowTicks(r.segments[0], 2);
+  assert.equal(t.length, 7, '08,10,12,14,16,18,20');
+  assert.equal(t[0].label, '08:00');
+  assert.equal(t[0].pct, 0);
+  assert.equal(t[t.length - 1].label, '20:00');
+  assert.equal(t[t.length - 1].pct, 100);
+  assert.equal(rowTicks(r.segments[1], 2)[0].label, '20:00', 'กะดึกเริ่ม 20:00');
+  assert.deepEqual(rowTicks(null), []);
 });
 
 test('ขอบเขตว่าง/ไม่มีวันเริ่ม ต้องไม่พัง', () => {
   const r = buildHorizon({});
   assert.deepEqual(r.segments, []);
   assert.equal(r.startMs, null);
-  assert.deepEqual(segmentTicks([], null), []);
   assert.deepEqual(assignShifts([], []), []);
-  assert.equal(makeScale([]).pctOf(1), 0);
+  assert.deepEqual(sliceBySegments([], []), []);
 });
 
 test('🔢 orderAcrossHorizon: seq เป็นลำดับ**ในกะ** ⇒ ต้องเรียงตามกะก่อน ไม่งั้นคิวสลับมั่ว', () => {

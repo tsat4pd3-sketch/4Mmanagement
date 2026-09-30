@@ -31,7 +31,7 @@ import {
   planSummary, reconcilePlan, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
 } from '../utils/planLots';
 import { breakIntervalsIn } from '../utils/oee';
-import { buildHorizon, assignShifts, horizonSummary, makeScale, orderAcrossHorizon, SHIFT_LABEL } from '../utils/planHorizon';
+import { buildHorizon, assignShifts, horizonSummary, orderAcrossHorizon, SEG_HOURS, SHIFT_LABEL } from '../utils/planHorizon';
 import { layoutLots } from '../utils/planTimeline';
 import PlanTimeline from './PlanTimeline';
 import FilterBar from './FilterBar';
@@ -161,11 +161,11 @@ export default function ProdLotPlanner({
   /* ── 🔗 วางคิวลงบนขอบเขตจริง แล้วดูว่าล็อตไหน "ตกกะไหน" ────────────────────────────
      🔴 คำนวณที่นี่ **ที่เดียว** แล้วส่งต่อให้ทั้งหัวสรุป · ตาราง · ปุ่มบันทึก
         (ให้ไทม์ไลน์คิดเองอีกรอบ = 2 จอตอบคนละเลข — บทเรียนเดิมของโมดูลนี้) */
-  const scale = useMemo(() => makeScale(horizon.segments), [horizon.segments]);
   const lay = useMemo(() => layoutLots({
     lots, ctOf, pairOf, dieOf, rule,
-    startMs: horizon.startMs, endMs: horizon.endMs, breaks, closed: horizon.closed, scale,
-  }), [lots, ctOf, pairOf, dieOf, rule, horizon, breaks, scale]);
+    startMs: horizon.startMs, endMs: horizon.endMs, breaks, closed: horizon.closed,
+    rowSpanMs: SEG_HOURS * 3600000,          // 1 บรรทัดที่คนมอง = 1 กะ (ดู planTimeline §ช่องนามธรรม)
+  }), [lots, ctOf, pairOf, dieOf, rule, horizon, breaks]);
   const landing = useMemo(() => assignShifts(lay.boxes, horizon.segments), [lay.boxes, horizon.segments]);
   const landingOf = useMemo(() => Object.fromEntries(landing.map(a => [a.id, a])), [landing]);
   const hz = useMemo(() => horizonSummary({
@@ -368,8 +368,8 @@ export default function ProdLotPlanner({
       {rec.rows.length > 0 && frame.startMs && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-            🧲 ไทม์ไลน์ {horizon.segments.length} กะต่อกัน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
-              (ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลไปกะถัดไปเอง · ลากเพื่อสลับลำดับ)</span>
+            🧲 ไทม์ไลน์ — 1 บรรทัด = 1 กะ <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+              (ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลลงบรรทัดถัดไปเอง · ลากเพื่อสลับลำดับ)</span>
           </div>
           <PlanTimeline
             lots={lots} ctOf={ctOf} pairOf={pairOf} dieOf={dieOf} rule={rule}

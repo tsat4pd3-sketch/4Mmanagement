@@ -20,9 +20,12 @@
        ⇒ แยกเป็น `includeOtHoliday` ให้คนวางแผนตัดสิน **ระบบไม่เดาแทน**
      · 🔴 **ปฏิทินยังไม่โหลด = ไม่รู้ ห้ามเดาว่าเป็นวันทำงาน** — คืนธง `calendarUnknown`
        ให้จอเขียนว่ายังไม่ได้เช็ควันหยุด (ตกไปใช้กติกา จ-ศ ไปก่อนเพื่อไม่ให้จอว่างเปล่า)
-     · **แกน X = เวลาที่โรงงานเดินจริง ไม่ใช่เวลานาฬิกา** — วันหยุดที่ข้ามไม่กินความกว้างบนจอ
-       (ไม่งั้นเสาร์-อาทิตย์กินครึ่งราง แล้วกล่องงานเล็กจนอ่านไม่ออก) ⇒ `makeScale()` เป็น
-       piecewise **ทุกพิกัดต้องผ่านมัน ห้ามหาร (ms-start)/span ตรงๆ อีก**
+     · 📺 **1 กะ = 1 บรรทัด** (คำสั่ง user 30/09: *"เป็น timeline ขึ้น 2 บรรทัดไป ถ้าเลยไปกะเช้า
+       อีกวันก็เป็น 3 บรรทัด"*) — **ห้ามยัดทุกกะลงรางเดียว** เพราะสเกลจะหดจนกล่องงานอ่านไม่ออก
+       (ลองแล้ว: 4 กะในรางเดียว = แต่ละกะเหลือ 1/4 ของความกว้าง) · แต่ละบรรทัดคงสเกล 12 ชม.
+       เท่าเดิม อ่านง่ายเหมือนจอที่หน้างานคุ้นอยู่แล้ว
+     · 🔴 **งานที่คร่อมเส้นแบ่งกะต้องโผล่ "ทั้ง 2 บรรทัด"** (ท่อนต่อ) ไม่ใช่ตัดหายไปบรรทัดเดียว
+       — เครื่องเดินคาบเกี่ยวจริง คนกะดึกต้องเห็นว่ารับงานอะไรมาทำต่อ ⇒ `sliceBySegments()`
 
    ⏰ หมายเหตุ timezone: ประกอบเวลาด้วย `new Date('YYYY-MM-DDTHH:00:00')` = เวลาเครื่อง
       ซึ่งตรงกับที่ `ProdLotPlanner`/`PlanTimeline` ใช้แสดงผลอยู่แล้ว (เครื่องหน้างาน = ไทย)
@@ -138,30 +141,6 @@ export function buildHorizon({
 }
 
 /**
- * 📐 สเกลแกน X = **เวลาที่โรงงานเดินจริง** (วันหยุดที่ข้ามไม่กินความกว้าง)
- * 🔴 ทุกพิกัดบนรางต้องผ่านตัวนี้ — หาร `(ms - start) / span` ตรงๆ จะเพี้ยนทันทีที่มีวันถูกข้าม
- * @returns {{ totalMs, pctOf(ms), spanPct(aMs,bMs) }}
- *   ms ก่อนกะแรก → 0 · ms ที่ตกในช่องว่าง → เกาะขอบกะก่อนหน้า · ms หลังกะสุดท้าย → เกิน 100 (ล้น ต้องเห็น)
- */
-export function makeScale(segments = []) {
-  const marks = [];
-  let acc = 0;
-  for (const s of segments) { marks.push({ s, base: acc }); acc += s.endMs - s.startMs; }
-  const totalMs = acc;
-  const pctOf = (ms) => {
-    if (!totalMs || ms == null) return 0;
-    if (ms <= marks[0].s.startMs) return 0;
-    for (const { s, base } of marks) {
-      if (ms <= s.endMs) return ((base + Math.max(0, ms - s.startMs)) / totalMs) * 100;
-    }
-    /* เลยกะสุดท้าย — เทียบเป็นเวลาเดินเครื่องต่อเนื่อง (ล้นออกนอกราง ห้ามหนีบให้พอดี) */
-    const last = marks[marks.length - 1];
-    return ((last.base + (last.s.endMs - last.s.startMs) + (ms - last.s.endMs)) / totalMs) * 100;
-  };
-  return { totalMs, pctOf, spanPct: (a, b) => pctOf(b) - pctOf(a) };
-}
-
-/**
  * 🎯 กล่องนี้ตกอยู่กะไหน — ผลลัพธ์ที่เอาไปเขียนลง `work_date` / `shift` ของล็อต
  * 🔴 `sure = false` เมื่อเวลาของกล่องนั้น**เชื่อไม่ได้** (ไม่มี CT หรือมีใบที่ไม่มี CT อยู่ก่อนหน้า)
  *    ⇒ **ห้ามบันทึกทับกะเดิม** — เดาแทนคนแล้วงานจะไปโผล่ผิดกะบนจอหน้างาน
@@ -210,41 +189,6 @@ export function horizonSummary({ boxes = [], segments = [], endMs = null, unknow
 }
 
 /**
- * 🕐 ป้ายชั่วโมงบนหัวราง — เดินทีละกะ แล้วแปลงพิกัดผ่าน `scale`
- * 🔴 ห้ามใช้ `hourTicks()` แบบเชิงเส้นกับขอบเขตหลายกะ — วันที่ถูกข้ามจะทำให้ป้ายเลื่อนหนีกล่อง
- * ระยะห่างป้ายปรับตามความยาวขอบเขต (48 ชม. ที่ 1 ป้าย/ชม. = ป้ายทับกันจนอ่านไม่ออก)
- */
-export function tickStepHours(segCount) {
-  if (segCount <= 1) return 1;
-  if (segCount <= 2) return 2;
-  if (segCount <= 4) return 3;
-  return 6;
-}
-
-export function segmentTicks(segments = [], scale = null, everyHours = null) {
-  if (!segments.length || !scale) return [];
-  const step = (everyHours || tickStepHours(segments.length)) * 3600000;
-  const out = [];
-  for (const s of segments) {
-    for (let ms = s.startMs; ms < s.endMs; ms += step) {
-      const d = new Date(ms);
-      out.push({ ms, pct: scale.pctOf(ms), label: `${String(d.getHours()).padStart(2, '0')}:00` });
-    }
-  }
-  return out;
-}
-
-/** แถบหัวกะ (ชื่อกะ + ช่วงกว้างบนราง) — ให้จอวาดพื้น/เส้นแบ่งกะได้โดยไม่ต้องคิดพิกัดเอง */
-export function segmentBands(segments = [], scale = null) {
-  if (!scale) return [];
-  return segments.map((s, i) => ({
-    ...s, index: i,
-    leftPct: scale.pctOf(s.startMs),
-    widthPct: scale.pctOf(s.endMs) - scale.pctOf(s.startMs),
-  }));
-}
-
-/**
  * 🔢 เรียงล็อตข้ามกะให้เป็น "คิวเดียว" — ตามลำดับกะในขอบเขต แล้วค่อย `seq` ในกะนั้น
  *
  * 🔴 ต้องมี ไม่งั้นคิวสลับมั่ว: `seq` เก็บเป็น **ลำดับภายในกะ** (กะเช้า 1,2,3 · กะดึก 1,2)
@@ -262,4 +206,76 @@ export function orderAcrossHorizon(lots = [], segments = []) {
       || (Number(a?.seq) || 9999) - (Number(b?.seq) || 9999)
       || String(a?.mat_no || '').localeCompare(String(b?.mat_no || '')))
     .map((l, i) => (l.seq === i + 1 ? l : { ...l, seq: i + 1 }));
+}
+
+/* ══ 📺 โหมด "1 กะ = 1 บรรทัด" ══════════════════════════════════════════════════════════
+   คำสั่ง user 30/09: *"เป็น timeline ขึ้น 2 บรรทัดไป ถ้าเลยไปกะเช้าอีกวันก็เป็น 3 บรรทัด"*
+   แต่ละบรรทัดมีสเกลของตัวเอง 12 ชม. (08:00–20:00 / 20:00–08:00) — เท่าที่หน้างานคุ้นอยู่แล้ว
+   🔴 **งานที่คร่อมเส้นแบ่งกะต้องโผล่ทั้ง 2 บรรทัด** เป็นท่อนต่อ (`cutLeft`/`cutRight`)
+      ตัดให้เหลือบรรทัดเดียว = คนกะดึกไม่รู้ว่ารับงานอะไรมาทำต่อ                              */
+
+/**
+ * ตัดช่วงเวลา [aMs,bMs] ให้เหลือเฉพาะส่วนที่อยู่ในกะนี้ + คิดพิกัดบนบรรทัดนั้น
+ * @returns {null|{startMs,endMs,leftPct,widthPct,cutLeft,cutRight}} null = ไม่โผล่ในกะนี้เลย
+ */
+export function clipToSegment(seg, aMs, bMs) {
+  if (!seg || aMs == null || bMs == null) return null;
+  const s = Math.max(aMs, seg.startMs), e = Math.min(bMs, seg.endMs);
+  if (!(e > s)) return null;
+  const span = seg.endMs - seg.startMs;
+  return {
+    startMs: s, endMs: e,
+    leftPct: ((s - seg.startMs) / span) * 100,
+    widthPct: (span > 0 ? ((e - s) / span) * 100 : 0),
+    cutLeft: aMs < seg.startMs,      // ต่อมาจากกะก่อนหน้า
+    cutRight: bMs > seg.endMs,       // ยังไม่จบ ไปต่อกะถัดไป
+  };
+}
+
+/**
+ * 📺 หั่นคิวเป็นบรรทัดละกะ
+ * @param {Array} boxes     ผลจาก layoutLots
+ * @param {Array} segments  ผลจาก buildHorizon
+ * @param {Array} breaks    ช่วงพัก (ทั้งขอบเขต) — จะถูกหั่นตามบรรทัดให้ด้วย
+ * @returns {Array<{ seg, index, pieces, breaks, hasWork }>}
+ *   pieces = [{ box, boxIndex, run, setup }] · `run = null` ได้เมื่อมีแต่ช่วงเปลี่ยนรุ่นตกในกะนี้
+ */
+export function sliceBySegments(boxes = [], segments = [], breaks = []) {
+  return segments.map((seg, index) => {
+    const pieces = [];
+    boxes.forEach((b, boxIndex) => {
+      const run = clipToSegment(seg, b.startMs, b.endMs);
+      const setup = b.setupMs > 0 ? clipToSegment(seg, b.setupStartMs, b.setupStartMs + b.setupMs) : null;
+      if (run || setup) pieces.push({ box: b, boxIndex, run, setup });
+    });
+    return {
+      seg, index, pieces,
+      breaks: breaks.map(([a, z]) => clipToSegment(seg, a, z)).filter(Boolean),
+      hasWork: pieces.length > 0,
+    };
+  });
+}
+
+/**
+ * บรรทัดที่ต้องวาดจริง — ถึงกะสุดท้ายที่มีงาน **+1 กะว่าง** (ให้เห็นว่ายังเหลือที่อีกเท่าไหร่)
+ * 🔴 กะว่างที่**คั่นกลาง**ระหว่างกะที่มีงาน ต้องวาดด้วย — ข้ามไปจะอ่านเป็น "งานต่อกันรวด"
+ *    ทั้งที่จริงมีช่วงว่าง · อย่างน้อย 1 บรรทัดเสมอ (ยังไม่มีงาน = เห็นรางเปล่ารอรับ)
+ */
+export function visibleRows(rows = []) {
+  if (!rows.length) return [];
+  let last = -1;
+  rows.forEach((r, i) => { if (r.hasWork) last = i; });
+  return rows.slice(0, Math.min(rows.length, Math.max(1, last + 2)));
+}
+
+/** ป้ายชั่วโมงของบรรทัดเดียว (สเกลของกะนั้นเอง) */
+export function rowTicks(seg, everyHours = 2) {
+  if (!seg) return [];
+  const out = [];
+  const span = seg.endMs - seg.startMs;
+  for (let ms = seg.startMs; ms <= seg.endMs; ms += everyHours * 3600000) {
+    const d = new Date(ms);
+    out.push({ ms, pct: ((ms - seg.startMs) / span) * 100, label: `${String(d.getHours()).padStart(2, '0')}:00` });
+  }
+  return out;
 }

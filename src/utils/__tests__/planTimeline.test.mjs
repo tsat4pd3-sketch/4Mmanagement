@@ -163,6 +163,7 @@ test('🔴 ช่องนามธรรมกว้าง ≥ ขั้นต�
     lots: [lot('z', { seq: 1, mat_no: 'ZZ' }), lot('b', { seq: 2 })],
     ctOf, startMs: T0, endMs: LONG_END,
   });
+  /* หมายเหตุ: ไม่ส่ง rowSpanMs = บรรทัดยาวเท่ากรอบ (48 ชม.) ⇒ ช่องนามธรรมต้องโตตาม */
   assert.ok(r.boxes[0].nominalPct >= UNKNOWN_BOX_MIN_PCT,
     `ช่องนามธรรม ${r.boxes[0].nominalPct}% ต้องไม่แคบกว่าที่จอวาด ${UNKNOWN_BOX_MIN_PCT}%`);
   assert.ok(r.boxes[1].leftPct >= r.boxes[0].leftPct + r.boxes[0].nominalPct - 1e-9,

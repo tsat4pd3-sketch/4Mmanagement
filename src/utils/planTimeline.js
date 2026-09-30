@@ -20,8 +20,9 @@
        เครื่องที่เดินอยู่ตอน 20:00 ไม่ได้หยุด — เปลี่ยนแค่คนคุม ⇒ กรอบไม่ใช่ "กะเดียว" อีกต่อไป
        ขอบเขตมาจาก `buildHorizon()` (`utils/planHorizon.js`) · **วันที่โรงงานไม่เดิน = `closed`**
        ซึ่งกินเวลาแบบเดียวกับเวลาพัก (หยุดนับ ไม่ใช่วางงานทับ)
-     · 🔴 **พิกัดผ่าน `scale` เมื่อมีวันถูกข้าม** — หาร `(ms-start)/span` ตรงๆ จะเพี้ยน
-       เพราะแกน X เป็น "เวลาที่โรงงานเดินจริง" ไม่ใช่เวลานาฬิกา (ดู `makeScale`)
+     · 📺 **จอวาดเป็น "1 กะ = 1 บรรทัด"** — ไฟล์นี้คืน**เวลาจริง (ms)** ของทุกกล่องตามเดิม
+       แล้ว `sliceBySegments()` (`planHorizon.js`) หั่นเป็นท่อนต่อบรรทัด · `leftPct`/`widthPct`
+       ที่คืนจากที่นี่ใช้กับ**กรอบเดียว**เท่านั้น (จอกะเดียว) — โหมดหลายกะอย่าเอาไปใช้
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 import { stretchOverBreaks } from './heijunkaQueue.js';
 import { setupMinutes } from './pressSetup.js';
@@ -38,13 +39,15 @@ export const UNKNOWN_BOX_MIN_PCT = 4;
 export const UNKNOWN_SLOT_MIN = 30;
 
 /* 🔴 ช่องนามธรรมต้องกว้าง **อย่างน้อยเท่าความกว้างขั้นต่ำที่จอใช้วาด** ไม่งั้นกล่องทับกัน
-   (เจอจาก planlab 30/09 ตอนรางยาวขึ้นเป็นหลายกะ: 30 นาทีบนราง 12 ชม. = 4.17% พอดี แต่บนราง
-    24 ชม. เหลือ 2.08% < ขั้นต่ำ 4% ⇒ จอถ่างกล่องให้กว้างขึ้นแต่ cursor เดินเท่าเดิม
-    = ป้ายของ 2 ใบพิมพ์ทับกันจนอ่านไม่ออก · คลาสบั๊กเดียวกับ "14 ใบซ้อนกัน" ที่แก้ไปแล้ว)
-   ⇒ คิดช่องนามธรรมเป็นสัดส่วนของรางเสมอ · เวลานี้ยัง**ไม่ใช่เวลาจริง** เหมือนเดิม
-     (ทุกใบหลังจากนี้ติดธง `afterUnknown` · `overflowMin` = null · จอเขียน "คิวจบ —" อยู่แล้ว) */
-const unknownSlotMs = (spanMs) =>
-  Math.max(UNKNOWN_SLOT_MIN * 60000, (spanMs || 0) * (UNKNOWN_BOX_MIN_PCT / 100));
+   (เจอจาก planlab 30/09: 30 นาทีบน**บรรทัด** 12 ชม. = 4.17% พอดีกับขั้นต่ำ 4% — แต่ถ้าสเกล
+    ของบรรทัดยาวกว่านั้น จะเหลือน้อยกว่าขั้นต่ำ ⇒ จอถ่างกล่องแต่ cursor เดินเท่าเดิม
+    = ป้ายของ 2 ใบพิมพ์ทับกันจนอ่านไม่ออก · คลาสเดียวกับบั๊ก "14 ใบซ้อนกัน" ที่แก้ไปแล้ว)
+   ⚠️ `rowSpanMs` = ความยาว **1 บรรทัดที่คนมอง** (= 1 กะ ในโหมดหลายกะ) ไม่ใช่ทั้งขอบเขต
+     — ใช้ทั้งขอบเขตจะทำให้ช่องนามธรรมพองเป็นหลายชั่วโมงโดยไม่จำเป็น
+   เวลานี้ยัง**ไม่ใช่เวลาจริง** เหมือนเดิม (ทุกใบหลังจากนี้ติดธง `afterUnknown` ·
+   `overflowMin` = null · จอเขียน "คิวจบ —" อยู่แล้ว) */
+const unknownSlotMs = (rowSpanMs) =>
+  Math.max(UNKNOWN_SLOT_MIN * 60000, (rowSpanMs || 0) * (UNKNOWN_BOX_MIN_PCT / 100));
 
 /* ⏭️ เวลาที่ "เปิดทำงาน" ถัดไป — ถ้า ms ตกอยู่กลางช่วงปิด (พัก/วันหยุดที่ข้าม) ให้ขยับไปที่ปลายช่วงนั้น
    🔴 ต้องมี ไม่งั้นกล่องจะถูกวาด**เริ่มกลางวันหยุด** (เวลาจบยังถูก เพราะ stretchOverBreaks ยืดให้แล้ว
@@ -64,22 +67,21 @@ export function nextOpenMs(ms, closed = []) {
 /**
  * วางล็อตทั้งคิวลงบนกรอบเวลา (กะเดียว หรือหลายกะต่อกันจาก `buildHorizon`)
  * @param {Array}    o.breaks   ช่วงพักตามนโยบาย
- * @param {Array}    o.closed   ช่วงที่โรงงานไม่เดินเลย (วันหยุดที่ขอบเขตข้ามไป) — กินเวลาเหมือนพัก
- * @param {object}   o.scale    `makeScale(segments)` — ใส่เมื่อมีวันถูกข้าม (แกน X ≠ เวลานาฬิกา)
+ * @param {Array}    o.closed     ช่วงที่โรงงานไม่เดินเลย (วันหยุดที่ขอบเขตข้ามไป) — กินเวลาเหมือนพัก
+ * @param {number}   o.rowSpanMs  ความยาว 1 บรรทัดที่คนมอง (โหมดหลายกะ = 1 กะ) — ใช้กับช่องนามธรรมเท่านั้น
  * @returns {{ boxes, endMs, overflowMin, unknownCount, setupUnknownCount }}
  */
 export function layoutLots({
   lots = [], ctOf = () => null, pairOf = () => null, dieOf = () => null, rule = null,
-  startMs, endMs, breaks = [], closed = [], scale = null,
+  startMs, endMs, breaks = [], closed = [], rowSpanMs = null,
 } = {}) {
   const active = sortBySeq(lots.filter(ACTIVE_LOT));
   const span = (endMs || 0) - (startMs || 0);
   /* หยุดเดินเครื่องเพราะอะไรก็ตาม (พัก + วันหยุดที่ข้าม) = เวลาหยุดนับเหมือนกัน */
   const stops = closed.length ? [...breaks, ...closed] : breaks;
-  /* พิกัด: มีสเกล piecewise ใช้สเกล · ไม่มี = เชิงเส้นบนกรอบเดียวเหมือนเดิม (พฤติกรรมเดิมเป๊ะ) */
-  const pctOf = scale ? ((ms) => scale.pctOf(ms)) : ((ms) => (span > 0 ? ((ms - startMs) / span) * 100 : 0));
-  /* ความยาวราง = เวลาที่โรงงานเดินจริง (มีสเกล) หรือกรอบเดียว (ไม่มี) */
-  const slotMs = unknownSlotMs(scale ? scale.totalMs : span);
+  /* พิกัด % ใช้ได้กับจอกะเดียว — โหมดหลายกะหั่นด้วย `sliceBySegments` แล้วคิดพิกัดต่อบรรทัดเอง */
+  const pctOf = (ms) => (span > 0 ? ((ms - startMs) / span) * 100 : 0);
+  const slotMs = unknownSlotMs(rowSpanMs || span);
   const boxes = [];
   let cursor = startMs;
   let afterUnknown = false;          // มีกล่องที่คำนวณเวลาไม่ได้มาก่อน ⇒ เวลาหลังจากนี้เชื่อไม่ได้
