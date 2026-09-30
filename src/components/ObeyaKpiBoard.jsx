@@ -385,7 +385,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       else if (man?.shared === 'missing' && !r.auto) note = note || `KPI นี้ใช้ค่าโรงงาน แต่ยังไม่มีนิยามระดับ ทั้งโรงงาน ปี ${year} — สร้างที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น`;
       else if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
       const cur = series.find(p => p.k === monthKey) || null;
-      const value = cur?.v ?? null;
+      /* 🗓️ เดือนที่เลือกยังไม่มีค่า (KPI กรอกมือกรอกหลังปิดเดือน — วันที่ 30 ก.ย. ทั้งบอร์ดจะ "—" หมดทั้งที่ ม.ค.–ส.ค. ครบ ·
+         user ทัก 30/09 "ทีมงานกรอกครบแล้ว") ⇒ ใช้ค่าเดือนล่าสุดที่มี ≤ เดือนที่เลือก แล้ว**เขียนบนจอว่าเป็นเดือนไหน** (`valueKey`/`stale`)
+         ไม่ใช่เดาว่าเดือนนี้เท่าเดือนก่อน — ป้าย/เหตุผลต้องบอกว่า "ค่าล่าสุด ส.ค. · ก.ย. ยังไม่กรอก" */
+      let value = cur?.v ?? null, valueKey = monthKey, stale = false;
+      if (value == null) {
+        const prev = series.slice(0, 12).filter(p => p.k <= monthKey && p.v != null).pop();
+        if (prev) { value = prev.v; valueKey = prev.k; stale = true; }
+      }
       const target = def?.target_value == null ? null : Number(def.target_value);
       const dir = def?.direction || (def?.target_compare === '<=' ? 'down' : def?.target_compare === '>=' ? 'up' : r.dir) || null;
       /* 🔴 สถานะ = เกณฑ์ทางการ 1/0.5/0 ผ่าน scoreDef เท่านั้น (17/09) — "เหลือง" = ถึง Commitment แต่ไม่ถึง Target */
@@ -400,6 +407,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ 📑 ตอนแก้นิยาม KPI';
       }
+      if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
       const ytd = series[12]?.v ?? null;
       const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
       /* 📈 คาดปลายปี = ผลจริง + แผนของเดือนที่เหลือ (30/09) — แผนอยู่ที่นิยามของขอบเขตนี้ (แถว auto = นิยาม auto:<key>)
@@ -418,7 +426,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
       };
       return {
-        ...r, def, unit, dir, series, value, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
@@ -438,18 +446,25 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         && !mainNames.has(normName(d.kpi_catalog?.name || d.name)))
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       .map((d) => {
-        const v = entByKpi[d.id]?.[monthNo];
+        /* 🏭 KPI แบบค่าโรงงานอ่านจากนิยามโรงงาน · 🗓️ เดือนที่เลือกยังไม่กรอก = ถอยไปเดือนล่าสุด ≤ เดือนที่เลือก แล้วบอกบนจอ (กติกาเดียวกับแผ่นหลัก) */
+        const src = sharedValueDef(data.kdefs, d) || d;
+        const ent = entByKpi[src.id] || {};
+        let m = monthNo, v = ent[m];
+        while (v == null && m > 1) { m -= 1; v = ent[m]; }
         const value = v == null ? null : Number(v);
+        const stale = value != null && m !== monthNo;
         let st = ST.unknown, why = '';
-        if (value == null) why = 'ยังไม่กรอกค่าเดือนนี้';
+        if (value == null) why = 'ยังไม่กรอกค่าสักเดือนในปีนี้';
         else {
           const sc = scoreDef(value, d);
           st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
           why = st === ST.unknown ? 'ยังไม่ตั้งเป้า — ตั้งได้ที่แท็บ 📑' : `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value)}`;
+          if (stale) why = `ค่าล่าสุด ${monthLabel(`${year}-${String(m).padStart(2, '0')}`)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
         }
-        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: unitOf(d), dec: decimalsOf(d), value, st, why };
+        return { id: d.id, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', unit: unitOf(d), dec: decimalsOf(d), value, st, why,
+          monthTag: stale ? monthLabel(`${year}-${String(m).padStart(2, '0')}`) : '' };
       });
-  }, [data, monthNo, scope, year]);
+  }, [data, monthNo, monthKey, scope, year]);
 
   /* งานค้างที่ต้องตามแก้ — action item + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด · เรียง "เกินกำหนดก่อน แล้วเก่าก่อน" */
   const todo = useMemo(() => {
@@ -563,7 +578,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (f.reason !== 'no_plan' || !f.hasTarget) return null;
       const miss = f.missing.length === 1 ? monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)
         : `${monthLabel(`${year}-${String(f.missing[0]).padStart(2, '0')}`)}–${monthLabel(`${year}-${String(f.missing[f.missing.length - 1]).padStart(2, '0')}`)}`;
-      return <div style={style} title={`คาดการณ์ปลายปีไม่ได้ — เดือน ${miss} ยังไม่มีทั้งผลจริงและแผน · ตั้งแผนที่แท็บ ⚙️ แถว 📅 แผน แล้วบอร์ดจะคำนวณ "ผลจริง + แผนที่เหลือ" ให้`}>📈 ปลายปี: ยังตั้งแผนไม่ครบ ({miss})</div>;
+      return <div style={style} title={`คาดการณ์ปลายปีไม่ได้ — เดือน ${miss} ยังไม่มีทั้งผลจริงและแผน · ตั้งแผนที่แท็บ ⚙️ แถว 📅 แผน แล้วบอร์ดจะคำนวณ "ผลจริง + แผนที่เหลือ" ให้`}>📈 ปลายปี: ต้องกรอก "📅 แผนรายเดือน" {miss} ก่อน (แท็บ ⚙️)</div>;
     }
     const verdict = f.status === 'good' ? { t: '✅ คาดถึงเป้า', c: '#22c55e' }
       : f.status === 'warn' ? { t: '🟡 ถึงแค่ Commitment', c: '#f59e0b' }
@@ -579,7 +594,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const rowChart = (r) => {
     const data = r.series.map(p => ({ ...p, label: p.summary ? 'สรุป' : String(Number(String(p.k).slice(5, 7))) }));
     if (!data.some(p => p.v != null)) return <EmptyChart k={k} text={`ยังไม่มีค่าสักเดือนในปี ${year}`} />;   // เหตุผลอยู่ที่ไฟ/ท้ายแผ่นแล้ว ไม่พิมพ์ซ้ำ
-    const isPct = r.unit === '%';
+    /* แกน % ตรึง 0–100 เฉพาะเมื่อค่า/เป้าอยู่ในสเกลนั้นจริง — DL+OH 1.3% บนแกน 0–100 = เส้นแบนอ่านไม่ออก (user ทัก 30/09) */
+    const peak = Math.max(...data.map(p => (p.v == null ? 0 : Number(p.v))), r.target == null ? 0 : Number(r.target));
+    const isPct = r.unit === '%' && peak > 25;
     return (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: r.unit ? fs(21) : 4, right: 6, left: 4, bottom: 0 }}>
@@ -709,7 +726,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                     ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
-                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(monthKey)}` : ''} delta={r.delta}
+                  unit={r.value != null ? r.unit : ''} bigNote={r.value != null ? `เดือน ${monthLabel(r.valueKey)}${r.stale ? ' (ล่าสุด)' : ''}` : ''} delta={r.delta}
                   stat={toLamp(r.st, r.why)}
                   foot={<>
                     {forecastLine(r)}
@@ -740,6 +757,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                       <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
                       <span style={{ fontSize: fs(11.5), fontWeight: 800, color: statusColor(r.st === ST.unknown ? 'none' : r.st), whiteSpace: 'nowrap' }}>
                         {r.value == null ? '—' : `${nf(r.value, r.dec)}${r.unit ? ' ' + r.unit : ''}`}
+                        {r.monthTag && <span style={{ fontSize: fs(9.5), fontWeight: 600, color: 'var(--muted)', marginLeft: 3 }}>({r.monthTag})</span>}
                       </span>
                     </div>
                   ))}
