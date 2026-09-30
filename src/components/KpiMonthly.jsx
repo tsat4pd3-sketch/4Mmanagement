@@ -13,7 +13,7 @@ import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
 import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
-  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES } from '../utils/kpiSetup';
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -359,7 +359,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const seq = ++loadSeq.current;
     const alive = () => seq === loadSeq.current;
         /* 🔴 ต้องดึง `summary_mode` + `decimals` มาด้วย — ขาดไปแถวทุกตัวตกเป็น "เฉลี่ย" / ทศนิยม 2 เงียบๆ */
-    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals, summary_mode, value_scope)';
+    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals, summary_mode, value_scope, board_slot)';
     const run = (cols) => supabase.from('kpi_definitions').select(cols)
       .eq('year', year).eq('is_active', true)
       .order('category').order('seq').order('created_at');
@@ -1429,6 +1429,14 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
                           <select style={{ ...mini, width: 150 }} value={valueScopeOf({ kpi_catalog: r })} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'value_scope', e.target.value, 'ค่าเป็นของ')}>
                             {KPI_VALUE_SCOPES.map(m => <option key={m.key} value={m.key}>{m.key === 'plant' ? '🏭 ค่าโรงงาน (ใช้ร่วมทุกหน่วย)' : 'หน่วยงานเอง'}</option>)}
+                          </select>
+                        </label>
+                        <label style={miniLbl} title="KPI นี้ขึ้นแผ่นไหนบนบอร์ด OBEYA (8 แผ่นหลัก) — ชื่อทางการต่างจากชื่อบนบอร์ดก็จับคู่ได้ (เช่น DSI = Inventory Balance · TS Academy = Training) · ไม่เลือก = แผง Key Performance">
+                          ช่องบนบอร์ด
+                          <select style={{ ...mini, width: 190 }} value={boardSlotOf({ kpi_catalog: r }) || ''} disabled={!canManage || busy === r.id}
+                            onChange={e => patch(r, 'board_slot', e.target.value || null, 'ช่องบนบอร์ด')}>
+                            <option value="">— Key Performance —</option>
+                            {KPI_BOARD_SLOTS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
                           </select>
                         </label>
                         <label style={miniLbl} title="ของตัวตน KPI — ตั้งที่นี่ที่เดียว แต่ละแผนก override ไม่ได้ (ไม่งั้นเอาเลขมาเทียบกันไม่ได้)">

@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
-import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast } from '../utils/kpiSetup';
+import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -244,7 +244,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       const actions = (acts.data || []).filter(a => secOk(a.section));
       // 6) นิยาม KPI ของปี + ค่ารายเดือน (กรอกมือ / เป้าของแถว auto)
       let kdRes = await supabase.from('kpi_definitions')
-        .select('*, kpi_catalog(id, name, unit, direction, decimals, summary_mode, value_scope)').eq('year', year).eq('is_active', true);
+        .select('*, kpi_catalog(id, name, unit, direction, decimals, summary_mode, value_scope, board_slot)').eq('year', year).eq('is_active', true);
       if (kdRes.error && (kdRes.error.code || '') !== '42P01') {
         kdRes = await supabase.from('kpi_definitions').select('*').eq('year', year).eq('is_active', true);
       }
@@ -308,9 +308,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       return firstHit;
     };
     const autoDefOf = (k) => nearest(d => d.source === `auto:${k}`)?.def || null;
-    const manualOf = (rowName, needEntries = false) => {
+    const manualOf = (rowName, needEntries = false, rowKey = null) => {
       const nn = normName(rowName);
-      const pred = x => !String(x.source || '').startsWith('auto:') && normName(x.kpi_catalog?.name || x.name) === nn;
+      /* 🎯 ทะเบียนที่ตั้ง "ช่องบนบอร์ด" (board_slot) ชนะ · ไม่ตั้ง = เทียบชื่อแบบเดิม · ตั้งเป็นช่องอื่นแล้ว = ไม่จับด้วยชื่อ (กันโผล่ 2 ที่) */
+      const pred = x => !String(x.source || '').startsWith('auto:')
+        && (boardSlotOf(x) ? boardSlotOf(x) === rowKey : normName(x.kpi_catalog?.name || x.name) === nn);
       /* 🏭 KPI ที่ค่าเป็นของโรงงาน (30/09): เป้า/นิยามเอาของหน่วยที่ใกล้สุดตามเดิม แต่ **ค่ารายเดือนอ่านจากนิยามโรงงานตัวเดียว**
          ไม่มีนิยามโรงงาน = ไม่มีค่า (ห้ามถอยไปใช้ค่าที่หน่วยเคยกรอกเอง — จะกลายเป็นแต่ละหน่วยตัวเลขไม่ตรงกันอีก) */
       const first = nearest(pred, false);
@@ -329,7 +331,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const inEv = (e) => (members.names.size ? (e.line_name && members.names.has(e.line_name)) : true);
 
     return boardRowsFor(year).map((r) => {
-      const man = manualOf(r.name);
+      const man = manualOf(r.name, false, r.key);
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
       let months = 0, sumKind = 'average', sumApprox = false;
 
@@ -351,7 +353,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else if (r.auto === 'safety') {
         /* ค่า KPI Safety = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับบันทึกหน้างาน
            ห้ามบวก 2 แหล่ง · ไม่มีบันทึกเลย = เทา ห้ามเขียว (0 ที่บันทึก ≠ 0 ที่เกิดจริง) */
-        const manSec = manualOf(r.name, true);
+        const manSec = manualOf(r.name, true, r.key);
         if (manSec && Object.keys(manSec.entries).length) {
           const k = manualMonthSeries({ entries: manSec.entries, year, summary: summaryModeOf(manSec.def) });
           series = k.series; months = k.months; def = manSec.def; unit = manSec.unit || r.unit;
@@ -440,10 +442,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     if (!data || !scope) return [];
     const entByKpi = {};
     (data.kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
-    const mainNames = new Set(boardRowsFor(year).map(r => normName(r.name)));
+    const mainRows = boardRowsFor(year);
+    const mainNames = new Set(mainRows.map(r => normName(r.name)));
+    const mainKeys = new Set(mainRows.map(r => r.key));
+    /* อยู่บน 8 แผ่นหลักแล้ว (ตาม board_slot หรือชื่อ) = ไม่ซ้ำในแผงนี้ · slot ที่ปีนี้ไม่มีแผ่น (เช่น dl/oh ปี 2026) = โชว์ที่นี่ */
+    const onMain = d => (boardSlotOf(d) ? mainKeys.has(boardSlotOf(d)) : mainNames.has(normName(d.kpi_catalog?.name || d.name)));
     return (data.kdefs || [])
-      .filter(d => sameScope(scopeOfDef(d), scope) && !String(d.source || '').startsWith('auto:')
-        && !mainNames.has(normName(d.kpi_catalog?.name || d.name)))
+      .filter(d => sameScope(scopeOfDef(d), scope) && !String(d.source || '').startsWith('auto:') && !onMain(d))
       .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
       .map((d) => {
         /* 🏭 KPI แบบค่าโรงงานอ่านจากนิยามโรงงาน · 🗓️ เดือนที่เลือกยังไม่กรอก = ถอยไปเดือนล่าสุด ≤ เดือนที่เลือก แล้วบอกบนจอ (กติกาเดียวกับแผ่นหลัก) */
