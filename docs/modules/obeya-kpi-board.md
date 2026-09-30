@@ -743,3 +743,15 @@ migration `20260924_kpi_unit_decimals_summary_main.sql` (**apply แล้ว**)
 - บอร์ด `?tab=kpi` ยังไม่โชว์เส้นแผน (แผ่น A4 ยังเทียบเป้าทั้งปีอย่างเดียว)
 - export ยังไม่มีคอลัมน์ Plan/Actual 2 แถวตามใบจริง (§5.6 ข้อ b)
 - ยังไม่มีปุ่ม "กระจายเป้าทั้งปีเป็นแผน 12 เดือน" — ตั้งใจ: แผนเป็นของเจ้าของใบ ระบบเดาให้ = เดาแทนคน
+
+## 🔗 เจาะจากบอร์ดแล้ว "ขอบเขต + วัน" ต้องตามไป (2026-09-30 · user: กรอง PD4 แล้วเจาะ OEE ต้องกรองใหม่)
+
+- ของเดิม: บอร์ด KPI ส่ง path เปล่า (`/oee-analytics`) · จอ SQDCM ส่งแค่ `section` ⇒ ขอบเขตระดับกลุ่มไลน์/ไลน์หลุด ·
+  PPM ส่ง `?tab=lean` ซึ่ง**ไม่มีแท็บนี้จริง** (ตกไปแท็บวันนี้เงียบๆ)
+- ที่แก้: `drillParams(index, scope)` ใน `utils/orgScope.js` (pure · เทส 3 เคส) คืน `{ section, dept, line }` เท่าที่ผังบอกได้
+  · section → `section` · กลุ่มไลน์ → `section+dept` · ไลน์ลูก → `section+dept+line` · ขอบเขตไม่มีส่วนงาน (แผนกช่าง/ฝ่าย) = `{}` ไม่เดา
+  · บอร์ด KPI `goTo()` เติมให้เฉพาะ path ที่**อ่าน param จริง** (`DRILL_AWARE`) + `date` · จอ SQDCM ทุกปุ่มไป `/oee-analytics` ใช้ helper เดียวกัน
+- ฝั่งรับ `OEEAnalytics`: แท็บวันนี้รับ `section/dept/line/date` · แท็บแนวโน้ม `selLine = line ∥ dept` ·
+  แท็บวิเคราะห์ `OeeInsightPanel` ได้ `lines` ที่กรองส่วนงานแล้ว + ชิป `📁 <section>` + `initLine`
+  · ค่าที่เจาะมาแต่คนกดไม่มีสิทธิ์/ไม่มีในทะเบียน = เคลียร์ + toast บอก (ห้ามกรองด้วยชื่อที่ไม่มีแล้วจอว่างเงียบ)
+- ⚠️ harness เป็น `MemoryRouter` หน้าเดียว ⇒ ทดสอบ "กดแล้วไปถึงไหน" ไม่ได้ · ทดสอบฝั่งรับด้วย `?p=OEEAnalytics&section=…&dept=…&line=…&tab=…` แทน

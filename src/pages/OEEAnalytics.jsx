@@ -366,13 +366,17 @@ export default function OEEAnalytics() {
      TAB: TODAY — real-time single-day monitoring dashboard
      ══════════════════════════════════════════════════════════════════════ */
   /* 🔗 รับตัวกรองที่ "เจาะมา" จากหน้าอื่น (2026-09-22 · user: เจาะจาก OBEYA ที่กรอง PD3 ไว้
-     แล้วต้องมากรองใหม่อีกรอบ) — `?section=` / `?date=` · ไม่มีก็ใช้ค่าเริ่มต้นเดิมเป๊ะ */
+     แล้วต้องมากรองใหม่อีกรอบ) — `?section=` / `?date=` · ไม่มีก็ใช้ค่าเริ่มต้นเดิมเป๊ะ
+     30/09 เพิ่ม `?dept=` (แผนก/กลุ่มไลน์) + `?line=` — ขอบเขตบน OBEYA เลือกได้ถึงระดับไลน์ (`drillParams()`)
+     ⇒ ทั้ง 3 แท็บต้องเริ่มที่ขอบเขตเดียวกัน: วันนี้ (section→dept→line) · แนวโน้ม/วิเคราะห์ (ไลน์ = line ∥ dept) */
   const [urlParams] = useSearchParams();
   const [tdDate,   setTdDate]   = useState(() => urlParams.get('date') || getWorkDateStr());
   const [tdShift,  setTdShift]  = useState('');
   const [tdSection,setTdSection]= useState(() => urlParams.get('section') || '');
-  const [tdDept,   setTdDept]   = useState('');
-  const [tdLine,   setTdLine]   = useState('');
+  const [tdDept,   setTdDept]   = useState(() => urlParams.get('dept') || '');
+  const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
+  /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
+  const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
   const [tdTeam,   setTdTeam]   = useState('');
   // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
   const [tdCmpOpen, setTdCmpOpen] = useState(false);
@@ -409,10 +413,16 @@ export default function OEEAnalytics() {
     secFromUrlDone.current = true;
     const want = urlParams.get('section');
     if (want && !sectionOptions.includes(want)) {
-      setTdSection('');
+      setTdSection(''); setTdDept(''); setTdLine('');
       toast.info(`ไม่มีสิทธิ์ดูส่วนงาน "${want}" ที่เจาะมา — แสดงทุกส่วนงานที่คุณเห็นได้แทน`);
+      return;
     }
-  }, [linesFull.length, sectionOptions, urlParams]);
+    /* แผนก/ไลน์ที่เจาะมาก็ต้องมีในทะเบียนที่คนนี้เห็น — ไม่มี = เคลียร์แล้วบอก (ไม่ใช่กรองด้วยชื่อที่ไม่มี = จอว่างเงียบ) */
+    const names = new Set(linesFull.map(l => l.name));
+    const wDept = urlParams.get('dept'), wLine = urlParams.get('line');
+    if (wLine && !names.has(wLine)) { setTdLine(''); setSelLine(wDept && names.has(wDept) ? wDept : ''); toast.info(`ไม่พบไลน์ "${wLine}" ที่เจาะมาในทะเบียนที่คุณเห็นได้`); }
+    if (wDept && !names.has(wDept)) { setTdDept(''); setTdLine(''); setSelLine(''); toast.info(`ไม่พบแผนก/กลุ่มไลน์ "${wDept}" ที่เจาะมาในทะเบียนที่คุณเห็นได้`); }
+  }, [linesFull, linesFull.length, sectionOptions, urlParams]);
 
   // แผนก/กลุ่มไลน์ = ไลน์รากในส่วนงาน (ไม่มีแม่ในทะเบียน) — LineSelect ตัดปลดระวาง/จัดลำดับให้
   const rootLines = useMemo(() => {
@@ -903,7 +913,6 @@ export default function OEEAnalytics() {
         ⇒ %P รายชั่วโมงจะเป็นตัวเลขที่เดาเอา · จอนี้จึงไม่มีปุ่ม "วันนี้" โดยตั้งใจ */
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90, finest: 'day' });
   const { scale: period, from: dateFrom, to: dateTo } = tr;
-  const [selLine,    setSelLine]    = useState('');
   const [selShift,   setSelShift]   = useState('');
   // ชื่อไลน์ใน sessions ที่ไม่ตรงทะเบียน (ไลน์ถูก rename/ลบ) — แยก optgroup ใน dropdown ห้ามซ่อน (2026-09-07)
   const trOrphanLines = useMemo(() => {
@@ -1850,7 +1859,10 @@ export default function OEEAnalytics() {
           })()}
         </>
       ) : viewTab === 'insight' ? (
-        <OeeInsightPanel lines={linesFull} ccRates={ccRates} />
+        /* ขอบเขตที่เจาะมา (section จากแท็บวันนี้ = ค่าที่รับจาก URL แล้วตรวจสิทธิ์แล้ว) ต้องตามมาถึงแท็บนี้ด้วย
+           ไม่งั้นเจาะ "ดูของเสียละเอียด" จาก OBEYA ที่กรอง PD4 แล้วได้พาเรโตทั้งโรงงาน */
+        <OeeInsightPanel lines={tdSection ? linesFull.filter(l => l.section === tdSection) : linesFull} ccRates={ccRates}
+          sectionHint={tdSection} initLine={tdLine || tdDept} />
       ) : (
       <>
       {/* ⏱️ แถบกรองเวลามาตรฐาน — เหมือนกันทุกหน้า (docs/modules/time-range-filter.md)
