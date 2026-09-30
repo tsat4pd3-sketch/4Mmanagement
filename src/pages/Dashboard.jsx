@@ -1679,17 +1679,20 @@ export default function Dashboard() {
                         tailLeftPct = tLeft;
                         tailWidthPct = Math.max(0, tRight - tLeft);
                       }
-                      /* 🖼️ กรอบแผนของใบนี้ (คำขอทีมปั๊ม 30/09: "ถ้าถูกวางแผน วาดกรอบเวลาไว้ มันควรจะได้ตามนั้น")
+                      /* 🖼️ กรอบแผนของใบนี้ (ภาพร่างจาก user 30/09 · ทีมปั๊ม)
                          = ช่วงที่ใบนี้ "ควร" อยู่ถ้าไม่มีใบไหนค้าง (`planStartMs`/`plannedEndMs` จาก cursor ที่ 2)
-                         🔴 วาดเฉพาะใบที่**หลุดกรอบจริง** (เลื่อนเกิน 2 นาที) — วาดทุกใบ = กรอบประสับปะสงบนจอ TV
-                            แล้วสายตาจับไม่ได้ว่าใบไหนคือปัญหา (ตรงข้ามกับที่ทีมปั๊มขอ) */
-                      let planLeftPct = 0, planWidthPct = 0;
-                      if (item.planStartMs != null && Math.abs(item.startMs - item.planStartMs) > 2 * 60000) {
+                         🔴 **วาดทุกใบ** — กรอบคือเส้นอ้างอิงที่ต้องอยู่เสมอ คนถึงจะเทียบได้ว่าแท่งจริง
+                            "ล้นออกขวาเท่าไหร่ = หลุดเท่านั้น" (ใบที่ตรงแผน กรอบจะทับแท่งพอดี = เหมือนเส้นขอบ ไม่รก)
+                         · `slipped` ใช้เน้นเฉพาะใบที่หลุดจริง (กรอบเข้ม + เส้นปิดท้ายกรอบให้เห็นจุดที่แผนจบ) */
+                      let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
+                      if (item.planStartMs != null && item.plannedEndMs != null) {
                         const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
                         const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
                         if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
+                        planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
+                          || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
                       }
-                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs };
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -1773,7 +1776,7 @@ export default function Dashboard() {
                             const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                             positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                           }
-                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, planLeftPct, planWidthPct, planStartMs }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_manual ? '✍️' : '▶';
@@ -1839,12 +1842,15 @@ export default function Dashboard() {
                             {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (เส้นประเทา ไม่ทึบ ไม่แย่งสายตากับสถานะ)
                                 วาดเฉพาะใบที่หลุดกรอบ ⇒ ระยะห่างระหว่างกรอบกับแถบจริง = ขนาดที่หลุด เห็นด้วยตาเปล่า */}
                             {planWidthPct > 0 && (
-                              <div title={`กรอบเวลาที่ใบนี้ควรได้ (ถ้าไม่มีใบไหนค้าง) — เริ่ม ${fmtMs(planStartMs)} · หลุดไป ${Math.round((startMs - planStartMs) / 60000)} นาที`}
+                              <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
                                 style={{
-                                  position: 'absolute', top: 2, bottom: 2,
+                                  position: 'absolute', top: 1, bottom: 1,
                                   left: `${planLeftPct}%`, width: `${planWidthPct}%`,
-                                  border: '1.5px dashed var(--muted)', borderRadius: 4,
-                                  opacity: 0.55, zIndex: 0, pointerEvents: 'none',
+                                  /* 🔴 ใบที่หลุดกรอบ วาดกรอบ **ทับแท่ง** (z=2) ให้เห็นเป็นกล่องชัดๆ ว่า "แผนจบตรงนี้"
+                                     แล้วส่วนที่ยื่นพ้นกล่อง = ที่หลุด (ตรงกับภาพร่าง user)
+                                     · ใบที่ตรงแผน วาดไว้ข้างหลัง (z=0) จางๆ ไม่งั้นทุกใบมีเส้นประล้อม = จอรก */
+                                  border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                  opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none',
                                 }} />
                             )}
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}

@@ -1532,14 +1532,16 @@ export default function Management() {
               tailLeftPct = tLeft;
               tailWidthPct = Math.max(0, tRight - tLeft);
             }
-            /* 🖼️ กรอบแผน — ดู Dashboard.jsx (วาดเฉพาะใบที่หลุดกรอบ ไม่วาดทุกใบ) */
-            let planLeftPct = 0, planWidthPct = 0;
-            if (item.planStartMs != null && Math.abs(item.startMs - item.planStartMs) > 2 * 60000) {
+            /* 🖼️ กรอบแผน — **วาดทุกใบ** (ภาพร่าง user 30/09) · ดูเหตุผลเต็มใน Dashboard.jsx */
+            let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
+            if (item.planStartMs != null && item.plannedEndMs != null) {
               const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
               const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
               if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
+              planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
+                || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
             }
-            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs };
+            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
           const buildCards = (sessList) => {
@@ -1900,7 +1902,7 @@ export default function Management() {
                               const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                               positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                             }
-                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, planLeftPct, planWidthPct, planStartMs }, oi) => {
+                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : o.is_manual ? '✍️' : '▶';
@@ -1956,9 +1958,11 @@ export default function Management() {
                               </div>
                               {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (ดู Dashboard.jsx · วาดเฉพาะใบที่หลุดกรอบ) */}
                               {planWidthPct > 0 && (
-                                <div title={`กรอบเวลาที่ใบนี้ควรได้ (ถ้าไม่มีใบไหนค้าง) — เริ่ม ${fmtMs(planStartMs)} · หลุดไป ${Math.round((startMs - planStartMs) / 60000)} นาที`}
-                                  style={{ position: 'absolute', top: 2, bottom: 2, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
-                                    border: '1.5px dashed var(--muted)', borderRadius: 4, opacity: 0.55, zIndex: 0, pointerEvents: 'none' }} />
+                                <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
+                                  style={{ position: 'absolute', top: 1, bottom: 1, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
+                                    /* ใบที่หลุดกรอบ วาดทับแท่ง (z=2) ให้เห็นกล่อง "แผนจบตรงนี้" · ดู Dashboard.jsx */
+                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                    opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none' }} />
                               )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
