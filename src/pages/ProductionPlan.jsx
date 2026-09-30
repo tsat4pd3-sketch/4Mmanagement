@@ -765,6 +765,9 @@ export default function ProductionPlan() {
           lines={viewLines} demandByDate={demandPcs.byDate} carry={demandPcs.carry}
           ctOf={ctOf} pairOf={pairOf} lineOfMat={lineOfMat} nameOfMat={nameOfMat}
           customerOf={customerOf} netMin={shiftNet?.netMin}
+          /* 🔗 ปฏิทินบริษัท — คิวที่ล้นข้ามวันต้อง**ข้ามวันที่โรงงานไม่เดินเครื่อง**
+             ส่ง null ตอนยังโหลดไม่เสร็จ เพื่อให้แท็บเขียนบนจอว่ายังไม่ได้เช็ควันหยุด (ห้ามเดาเงียบ) */
+          calOf={Object.keys(calMap).length ? calOf : null}
         />
       ) : tab === 'capacity' ? (
         <CapacityBoard
