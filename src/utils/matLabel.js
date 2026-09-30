@@ -23,6 +23,43 @@
 /** กุญแจเทียบ MAT — trim + uppercase (MAT ในระบบเป็นเลข SAP/รหัสตัวพิมพ์ใหญ่ ไม่มีตัวคั่น) */
 export const matKey = (m) => String(m ?? '').trim().toUpperCase();
 
+/* ── 🔴 "Part No. นำหน้า" ใช้ได้เฉพาะเมื่อค่านั้น **เป็นเลขพาร์ทจริง** (2026-09-30 · วัดจากทะเบียนจริง) ──
+
+   วัด `parts_master.part_no` 346 แถว (100% กรอกไว้ครบ) แยกตามหมวดเลข MAT:
+     1xx (FG/ส่งลูกค้า)  128 แถว → หน้าตาเป็นเลขพาร์ท 127 (99%)
+     2xx (ชิ้นส่วน)        94 แถว → 93 (99%)
+     3xx (ชิ้นส่วน)        63 แถว → 60 (95%)
+     5xx (**วัตถุดิบ**)    61 แถว → **11 (18%)**   ← ตัวปัญหาทั้งหมดอยู่ที่นี่
+
+   สาเหตุไม่ใช่ "กรอกผิด" — วัตถุดิบ 2 ช่องนี้**มีความหมายคนละแบบกับชิ้นส่วน**:
+     ชิ้นส่วน 2xx/3xx : part_name = ชื่อชิ้นงาน      · part_no = เลขพาร์ทลูกค้า
+     วัตถุดิบ 5xx    : part_name = **สเปคเหล็ก+ขนาด** (WSS-M1A367-A36 1.5X276XC)
+                       · part_no = **"เอาไปทำอะไร"** (ข้อความยาว มีไทย)
+   ของจริงที่วัดได้: mat 50026144 มี part_no ยาว 72 ตัว
+     "R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/08)1 : 2 Co(1FGใช้2ชิ้น)"
+   ⇒ ถ้าเอา part_no ขึ้นหัวการ์ดแบบเหมา การ์ดวัตถุดิบจะพาดหัวด้วยประโยค 72 ตัวอักษร
+
+   🔴 กฎ: **หน้าตาไม่ใช่เลขพาร์ท = ไม่ขึ้นหัว แต่ห้ามทิ้ง** — ตกไปเป็นบรรทัดรอง (คนสโตร์ใช้หาว่า
+   เหล็กม้วนนี้ของงานอะไร) แล้วให้ชื่อ (สเปคเหล็ก) ขึ้นหัวแทน · **ห้ามซ่อม/ตัดค่าที่คนกรอกให้สั้นลงเอง**
+   (กฎเดียวกับ shiftWindow: คงค่าที่คนกรอกไว้ แล้วให้จอปรับตัว ไม่ใช่ดัดข้อมูล)
+   · เกณฑ์ตั้งหลวมโดยเจตนา (≤30 ตัว · ไม่มีอักษรไทย · อักขระที่เลขพาร์ทใช้ได้เท่านั้น) —
+     ตัดสินแค่ "ขึ้นหัวได้ไหม" ไม่ใช่ validation ตอนกรอก ห้ามเอาไปบล็อกการบันทึก
+*/
+const THAI_RE = /[\u0E00-\u0E7F]/;
+const PARTNO_RE = /^[A-Za-z0-9][A-Za-z0-9 ._/()#-]*$/;
+
+/**
+ * ค่านี้ "หน้าตาเป็นเลขพาร์ท" พอที่จะขึ้นหัวการ์ดไหม
+ * @param {string} v
+ * @returns {boolean} false = เป็นคำบรรยาย/สเปค → ให้ชื่องานขึ้นหัวแทน (แต่ยังโชว์ค่านี้เป็นบรรทัดรอง)
+ */
+export function looksLikePartNo(v) {
+  const s = String(v ?? '').trim();
+  if (s.length < 3 || s.length > 30) return false;
+  if (THAI_RE.test(s)) return false;
+  return PARTNO_RE.test(s);
+}
+
 /**
  * index จากทะเบียนสินค้า (`dr_products` ผ่าน useProducts) → Map<matKey, {name, p_no, customer}>
  *
@@ -79,12 +116,18 @@ export function matInfo(mat, index, row) {
 
   const name = rowName || hit?.name || '';
   const pNo = rowPno || hit?.p_no || '';
-  if (!name && !pNo) return { mat: m, name: '', pNo: '', from: null };
+  if (!name && !pNo) return { mat: m, name: '', pNo: '', pNoIsCode: false, lead: 'mat', from: null };
 
   const nameFrom = rowName ? 'row' : name ? 'master' : null;
   const pnoFrom = rowPno ? 'row' : pNo ? 'master' : null;
   const froms = [nameFrom, pnoFrom].filter(Boolean);
-  return { mat: m, name, pNo, from: froms.every(f => f === froms[0]) ? froms[0] : 'mixed' };
+  /* pNoIsCode = เอา Part No. ขึ้นหัวได้ไหม · lead = ใครขึ้นหัวจริง (จอต้องอ่านค่านี้ ห้ามเดาเอง) */
+  const pNoIsCode = looksLikePartNo(pNo);
+  return {
+    mat: m, name, pNo, pNoIsCode,
+    lead: pNoIsCode && pNo ? 'pno' : name ? 'name' : 'mat',
+    from: froms.every(f => f === froms[0]) ? froms[0] : 'mixed',
+  };
 }
 
 /**
@@ -93,8 +136,10 @@ export function matInfo(mat, index, row) {
  *    "เอาให้ฟอร์แมทเดียวกัน") = Part No. → Part Name → MAT SAP
  *    `MB3B 8C306 BC · BRACKET RR · MAT 10100379`
  *    ไม่มี Part No. → ขึ้นต้นด้วยชื่อ แล้วต่อด้วย MAT (ไม่เว้นช่องว่างค้างไว้)
+ *    🔴 Part No. ที่หน้าตาไม่ใช่เลขพาร์ท (วัตถุดิบ 5xx) สลับไปอยู่หลังชื่อ **ไม่ถูกตัดทิ้ง**
  */
 export function matText(mat, index, row) {
   const i = matInfo(mat, index, row);
-  return [i.pNo, i.name, i.mat && `MAT ${i.mat}`].filter(Boolean).join(' · ');
+  const head = i.lead === 'pno' ? [i.pNo, i.name] : [i.name, i.pNo];   // ดู looksLikePartNo
+  return [...head, i.mat && `MAT ${i.mat}`].filter(Boolean).join(' · ');
 }

@@ -21,8 +21,9 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -1531,7 +1532,14 @@ export default function Management() {
               tailLeftPct = tLeft;
               tailWidthPct = Math.max(0, tRight - tLeft);
             }
-            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs };
+            /* 🖼️ กรอบแผน — ดู Dashboard.jsx (วาดเฉพาะใบที่หลุดกรอบ ไม่วาดทุกใบ) */
+            let planLeftPct = 0, planWidthPct = 0;
+            if (item.planStartMs != null && Math.abs(item.startMs - item.planStartMs) > 2 * 60000) {
+              const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
+              const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
+              if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
+            }
+            return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs };
           };
 
           const buildCards = (sessList) => {
@@ -1616,6 +1624,13 @@ export default function Management() {
                 (feedback หน้างาน 30/09: "ดีเลย์ N ใบ" ไม่บอกขนาด ⇒ ต้องมีนาที + ยอด) */
           const curHalfNow = HALVES.find(hf => nowMs >= hf.startMs && nowMs < hf.startMs + 12 * 3600000);
           const shiftEndMs = curHalfNow ? curHalfNow.startMs + 12 * 3600000 : gridEndMs;
+          /* 🔗 คำขอทีมปั๊ม 30/09 — สรุปวัน + "หลุดมาจากตัวไหน พาลไปโดนตัวไหน" (สูตรกลาง ห้ามนับในหน้า) */
+          const dayDelay   = dayDelaySummaryOf(positionedByOrder, { frameEndMs: gridEndMs, nowMs });
+          const blameChain = pushChainOf(positionedByOrder);
+          const blamedBy   = new Map();
+          blameChain.forEach(c => c.victims.forEach(v => {
+            if (!blamedBy.has(v.key)) blamedBy.set(v.key, { root: c.root, blameMin: v.blameMin, pushedMin: v.pushedMin });
+          }));
           const boardPlan  = planStatusOf({
             positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
             ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
@@ -1743,9 +1758,13 @@ export default function Management() {
                   {boardDate !== todayWd && (
                     <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
                   )}
-                  {totalDelayed > 0 && <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 800, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>⚠️ ดีเลย์ {totalDelayed} ใบ</span>}
+                  {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
                   <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
+                  {/* 🔗 สรุปวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม) */}
+                  <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                    <DelayBlameBar day={dayDelay} chains={blameChain} />
+                  </div>
                   {(() => {
                     // hierarchy: 1 ชิปต่อไลน์ย่อย แทนป้ายต่อ session
                     const byChild = {};
@@ -1881,7 +1900,7 @@ export default function Management() {
                               const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                               positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                             }
-                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs }, oi) => {
+                            return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, planLeftPct, planWidthPct, planStartMs }, oi) => {
                             if (leftPct >= 100) return null;
                             const sc = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : o.is_backfill ? '#6b7280' : '#4d9fff';
                             const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_backfill ? '⏪' : o.is_manual ? '✍️' : '▶';
@@ -1899,10 +1918,15 @@ export default function Management() {
                             const isOverCap = overMs > 5 * 60000;
                             const causeText = isLateDone ? dtTooltip(startMs, new Date(o.confirmed_at).getTime(), o.line_name)
                               : isDelayed ? dtTooltip(startMs, Math.min(nowMs, gridEndMs), o.line_name) : '';
+                            /* 🔗 "ใบฉันเลื่อนเพราะใคร" — ดู Dashboard.jsx */
+                            const blame = blamedBy.get(orderKeyOf(o));
+                            const blameText = blame
+                              ? ` · ⏴ ถูกเลื่อนเพราะใบ #${blame.root?.prod_no || blame.root?.mat_no || '—'} ค้าง (โทษได้ ${blame.blameMin} น. จากที่เลื่อนไป ${blame.pushedMin} น.)`
+                              : '';
                             return (
                               <Fragment key={o.prod_no || oi}>
                               <div
-                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${causeText}`}
+                                title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${blameText}${causeText}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
                                   background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
@@ -1930,6 +1954,12 @@ export default function Management() {
                                 </div>
                                 )}
                               </div>
+                              {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (ดู Dashboard.jsx · วาดเฉพาะใบที่หลุดกรอบ) */}
+                              {planWidthPct > 0 && (
+                                <div title={`กรอบเวลาที่ใบนี้ควรได้ (ถ้าไม่มีใบไหนค้าง) — เริ่ม ${fmtMs(planStartMs)} · หลุดไป ${Math.round((startMs - planStartMs) / 60000)} นาที`}
+                                  style={{ position: 'absolute', top: 2, bottom: 2, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
+                                    border: '1.5px dashed var(--muted)', borderRadius: 4, opacity: 0.55, zIndex: 0, pointerEvents: 'none' }} />
+                              )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
                                 <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"

@@ -67,6 +67,9 @@ export default function PartCard({
   const st = status || {};
   const index = useMatIndex();
   const info = matInfo(code, index, { name });
+  /* หัวการ์ด / บรรทัดรอง — ลำดับ Part No. → Part Name → MAT SAP แต่สลับได้เมื่อ part_no ไม่ใช่เลขพาร์ท */
+  const head = info.lead === 'pno' ? info.pNo : info.name;
+  const sub2 = info.lead === 'pno' ? info.name : info.pNo;
   const metaRows = (rows || []).filter(r => r && r.v != null && String(r.v).trim() !== '');
   return (
     <article onClick={onClick} className={className} style={{
@@ -91,16 +94,26 @@ export default function PartCard({
                 จนได้ 4 บรรทัดรุ่งริ่ง (เห็นจากจอจริง) — อ่านทะเบียนตัวเดียวกัน (`useMatIndex`/`matInfo`)
                 ⚠️ **MAT SAP ห้ามตัดทิ้ง** แม้อยู่ท้าย — บาร์โค้ดบนกล่อง/บัตรคัมบังคือ `mat_no`
                    และด่านสแกน (`PickScanModal`) เทียบ `mat_no` ⇒ ต้องกวาดตาหาเจอ จึงคง mono + คำว่า MAT
-                ⚠️ พาร์ทที่ทะเบียนไม่มี Part No. → หัวการ์ดขึ้นด้วย **ชื่องาน** ไม่ใช่เว้นบรรทัดว่าง */}
+                ⚠️ พาร์ทที่ทะเบียนไม่มี Part No. (หรือ Part No. เป็นคำบรรยาย เช่นวัตถุดิบ 5xx)
+                   → หัวการ์ดขึ้นด้วย **ชื่องาน** ไม่ใช่เว้นบรรทัดว่าง */}
             <div style={{ minWidth: 0 }}>
-              {info.pNo
-                ? <div title="Part No. ของลูกค้า" style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 800, color: matTone || 'var(--text)', ...PC_NUM }}>{info.pNo}</div>
-                : null}
-              {info.name && (
-                <div style={{
-                  fontSize: info.pNo ? 12 : 13, fontWeight: info.pNo ? 400 : 700,
-                  color: info.pNo ? 'var(--text2)' : 'var(--text)', marginTop: info.pNo ? 2 : 0, lineHeight: 1.35,
-                }}>{info.name}</div>
+              {/* 🔴 ใครขึ้นหัวตัดสินด้วย `info.lead` จาก `matInfo` **ห้ามเช็ค `info.pNo` ตรงๆ** (30/09)
+                  วัดทะเบียนจริง: วัตถุดิบ 5xx มี part_no ที่เป็น**คำบรรยาย** 82% (ยาวสุด 72 ตัว มีไทย)
+                  เพราะช่องนี้ของวัตถุดิบหมายถึง "เอาไปทำงานอะไร" ไม่ใช่เลขพาร์ท ⇒ พาดหัวด้วยประโยค
+                  · ค่านั้น **ไม่ถูกทิ้ง** — ตกมาเป็นบรรทัดรอง (clamp 2 บรรทัด + title ดูเต็มได้)
+                  · รายละเอียด/ตัวเลขที่วัด → `src/utils/matLabel.js` §looksLikePartNo */}
+              {head && (
+                <div title={info.lead === 'pno' ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+                  style={{ fontSize: 13, fontWeight: 800, color: matTone || 'var(--text)',
+                    ...(info.lead === 'pno' ? { fontFamily: 'monospace' } : { lineHeight: 1.3 }), ...PC_NUM }}>
+                  {head}
+                </div>
+              )}
+              {sub2 && (
+                <div title={sub2} style={{
+                  fontSize: 12, fontWeight: 400, color: 'var(--text2)', marginTop: 2, lineHeight: 1.35,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}>{sub2}</div>
               )}
               {/* 🔴 MAT อยู่ชั้นล่างสุด แต่ **ต้องอ่านออกชัด ไม่ใช่ของประดับ** — 2 เหตุผล:
                   1. `p_no` **ไม่ unique** ในระบบนี้ (พาร์ทเดียวกันแตกหลาย MAT ตามลูกค้า FVL/FTM/AAT ·
@@ -110,8 +123,8 @@ export default function PartCard({
                   ⇒ ใช้ `--text2` ไม่ใช่ `--muted` และ 11.5px (เพดานจอ TV 11) */}
               <div title="เลข MAT (SAP) — เลขเดียวกับบาร์โค้ดบนกล่อง/บัตรคัมบัง · ใช้แยกพาร์ทที่ Part No. ซ้ำกัน"
                 style={{ fontSize: 11.5, fontFamily: 'monospace', letterSpacing: 0.2,
-                  color: (info.pNo || info.name) ? 'var(--text2)' : (matTone || 'var(--text)'),
-                  fontWeight: (info.pNo || info.name) ? 700 : 800, marginTop: 3, ...PC_NUM }}>
+                  color: head ? 'var(--text2)' : (matTone || 'var(--text)'),
+                  fontWeight: head ? 700 : 800, marginTop: 3, ...PC_NUM }}>
                 <span style={{ fontSize: 10, fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--muted)', marginRight: 4 }}>MAT</span>
                 {info.mat}
               </div>
