@@ -55,14 +55,27 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   const i = matInfo(mat, index, { name, pNo });
   if (!i.mat) return null;
   const small = Math.max(11, size - 0.5);
+  const lead = showPartNo && i.pNo;
+  /* 🔴 กติกากันรก (2026-09-30 · คำสั่ง user "อยากเห็นครบทั้ง 3 แต่ต้องไม่ล้น รก เละ"):
+     **ตัดได้เฉพาะ "ชื่องาน" · รหัสห้ามตัดและห้ามขึ้นบรรทัดใหม่กลางเลข**
+       · รหัส (Part No. / MAT) = `nowrap` + ไม่ยอมหด ⇒ อ่านได้เต็มเลขเสมอ
+         (รหัสที่ถูกตัดครึ่งไม่ใช่แค่ "อ่านไม่ครบ" แต่ **อ่านผิดตัว** — อันตรายกว่าไม่โชว์)
+       · ชื่องาน = ตัวเดียวที่หดและตัดท้ายด้วย `…` พร้อม `title` ให้ชี้อ่านเต็มได้
+     กล่องนอกยัง `flexWrap` อยู่ — ที่แคบมากจะตก 2 บรรทัดแบบ "รหัส / รหัส" ไม่ใช่เลขขาดกลาง */
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap', minWidth: 0, ...style }}>
-      {showPartNo && i.pNo && (
-        <span title="Part No. ของลูกค้า" style={{ fontSize: size, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text2)' }}>{i.pNo}</span>
+      {lead && (
+        <span title="Part No. ของลูกค้า"
+          style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: size, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text2)' }}>{i.pNo}</span>
       )}
-      {i.name && <span style={{ fontSize: small, color: 'var(--muted)' }}>{(showPartNo && i.pNo) ? `· ${i.name}` : i.name}</span>}
+      {i.name && (
+        <span title={i.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: small, color: 'var(--muted)' }}>
+          {lead ? `· ${i.name}` : i.name}
+        </span>
+      )}
       {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
-      <span title="เลข MAT (SAP)" style={{ fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
+      <span title="เลข MAT (SAP)"
+        style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
         {(i.pNo || i.name) ? '· ' : ''}MAT {i.mat}
       </span>
     </span>

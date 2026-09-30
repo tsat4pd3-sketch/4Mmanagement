@@ -4981,14 +4981,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14) → ต่อท้ายเลขพาร์ทลูกค้า + ธง ⚠ */
                           const nm = s.dr_products?.name || s.part_name || '';
                           const dup = nm && lineStds.filter(x => (x.dr_products?.name || x.part_name || '') === nm).length > 1;
+                          /* 🔴 2 บรรทัด · รหัสห้ามถูกตัด (30/09 · feedback "ตอนเปิด Tag ตรงนี้ขอเห็นเลข Mat ด้วย")
+                             เดิมยัด Part No. + ชื่อ + MAT ลง `label` บรรทัดเดียว แล้ว ellipsis กินท้าย ⇒ **MAT หายทุกแถว**
+                             บรรทัด 1 = Part No. (ห้ามตัด) + ชื่อสินค้า (ตัดได้) · บรรทัด 2 = MAT (ห้ามตัด) + ชิ้น/ใบ + เจ้าของไลน์
+                             `label` = mat_no เพราะเป็นค่าที่ช่องนี้เก็บ/โชว์เมื่อเลือกแล้ว */
+                          const pno = s.dr_products?.p_no || null;
+                          const hasHead = !!(pno || nm);
                           return {
                             id: s.mat_no,
-                            // ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) · id ยังเป็น mat_no = ค่าที่เก็บจริง
-                            label: `${[s.dr_products?.p_no, nm, `MAT ${s.mat_no}`].filter(Boolean).join(' · ')}${dup ? ' ⚠ชื่อซ้ำ' : ''}`,
+                            label: s.mat_no,
+                            lead: pno,
+                            title: hasHead ? `${nm}${dup ? ' ⚠ชื่อซ้ำ' : ''}` : `MAT ${s.mat_no}`,
+                            code: hasHead ? `MAT ${s.mat_no}` : null,
                             /* 🏭 ป้ายเจ้าของ — แถวที่ไม่ได้ผูกกับไลน์ที่เปิดกะ ต้องเห็นว่าเป็นของใคร
                                (user 2026-09-15 · กัน human error เลือกพาร์ทผิดไลน์) */
                             sub: `${s.qty_per_kanban} ชิ้น/ใบ${s._foreign && s._owner ? ` · 🏭 ผูกกับไลน์ ${s._owner}` : ''}`,
-                            keywords: `${nm} ${s.dr_products?.p_no || ''} ${s._owner || ''}`,
+                            keywords: `${nm} ${pno || ''} ${s._owner || ''}`,
                           };
                         })}
                         onChange={({ id }) => handleOpenProdMatNoChange(id)} />

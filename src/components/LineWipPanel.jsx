@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import MatLabel from './MatLabel';
 import { supabaseDR } from '../supabaseClient';
 import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHierarchy';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
@@ -337,9 +338,8 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
                 <div key={p.mat_no} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11.5, padding: '1px 0' }}>
                   <span style={{ width: 18 }} title={meta.label}>{meta.icon}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
-                    {p.part_name ? <b style={{ color: 'var(--text2)' }}>{p.part_name}</b> : null}
-                    <span style={{ fontFamily: 'var(--font-display)', color: p.part_name ? 'var(--muted)' : 'var(--text2)', fontWeight: p.part_name ? 400 : 700 }}>{p.part_name ? ' · ' : ''}MAT {p.mat_no}</span>
+                    {/* ครบ 3 ค่าผ่านของกลาง (30/09) */}
+                    <MatLabel mat={p.mat_no} name={p.part_name} size={11} />
                     {p.chainWarn && <span style={{ color: TONE.warn }} title="BOM ซ้อนชั้น — ยอดตัดเป็น FG สูงเกินจริง"> ⚠BOM</span>}
                   </span>
                   <span style={{ width: 74, textAlign: 'right', color: 'var(--muted)' }}>{fmt(p.received)}</span>

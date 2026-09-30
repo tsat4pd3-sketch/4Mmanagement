@@ -129,17 +129,26 @@ export function productOptions(products, { lines, strict = false, includeOps = f
   if (!includeOps) rows = rows.filter(p => !p.is_operation);
   if (strict && pref.size) rows = rows.filter(p => pref.has(up(p.line_name)));
   rows = rows.filter(p => includeInactive || p.is_active !== false || up(p.mat_no) === cur);
-  const tagged = rows.map(p => ({
+  /* 🔴 2 บรรทัด · รหัสห้ามถูกตัด (2026-09-30 · feedback "ขอเห็นเลข Mat ด้วย")
+     บรรทัด 1 = Part No. (lead · ห้ามตัด) + ชื่องาน (title · ตัดได้ตัวเดียว)
+     บรรทัด 2 = MAT SAP (code · ห้ามตัด) + ลูกค้า/ไลน์ (sub · ตัดได้)
+     `label` ยังเป็น mat_no เพราะเป็น **ค่าที่ฟอร์มเก็บจริง** — เปลี่ยนแล้วชิปที่เลือกจะโชว์คนละค่ากับที่บันทึก
+     ไม่มีทั้ง Part No. และชื่อ ⇒ ยก MAT ขึ้นเป็นหัวแถว (ห้ามได้แถวหัวว่าง) */
+  const tagged = rows.map(p => {
+    const hasHead = !!(p.p_no || p.name);
+    return {
     id: p.id, label: p.mat_no, key: up(p.mat_no),
-    // ลำดับ Part No. → ชื่องาน (UI §6.21) · `label` ยังเป็น mat_no เพราะเป็น **ค่าที่ฟอร์มเก็บจริง**
-    // (เปลี่ยน label = ชิปที่เลือกแล้วโชว์คนละค่ากับที่บันทึก + SearchSelect จับคู่ไม่ติด)
-    sub: [p.p_no, p.name, p.customer, p.line_name].filter(Boolean).join(' · '),
+    lead: p.p_no || null,
+    title: hasHead ? (p.name || '') : `MAT ${p.mat_no}`,
+    code: hasHead ? `MAT ${p.mat_no}` : null,
+    sub: [p.customer, p.line_name].filter(Boolean).join(' · '),
     keywords: `${p.name || ''} ${p.p_no || ''} ${p.customer || ''} ${p.line_name || ''}`,
     badge: p.is_active === false ? '⏸' : (p.customer || null),
     badgeColor: p.is_active === false ? 'var(--muted)' : undefined,
     mat_no: p.mat_no, name: p.name || null, p_no: p.p_no || null, customer: p.customer || null, line_name: p.line_name || null,
     _pref: pref.size ? pref.has(up(p.line_name)) : false,
-  }));
+    };
+  });
   tagged.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, undefined, { numeric: true }));
   const main = tagged.map(o => ({ ...o, group: pref.size ? (o._pref ? '🎯 ไลน์ที่เลือก' : '🏭 ไลน์อื่น') : '📦 Product Master' }));
   const seen = new Set(main.map(o => o.key));
@@ -148,7 +157,11 @@ export function productOptions(products, { lines, strict = false, includeOps = f
     if (!o?.mat_no) continue;
     const k = up(o.mat_no); if (seen.has(k)) continue; seen.add(k);
     extra.push({
-      id: `x:${k}`, label: String(o.mat_no).trim(), key: k, sub: o.sub || o.name || '', keywords: `${o.name || ''} ${o.p_no || ''} ${o.keywords || ''}`,
+      id: `x:${k}`, label: String(o.mat_no).trim(), key: k,
+      lead: o.p_no || null,
+      title: (o.p_no || o.name) ? (o.name || '') : `MAT ${String(o.mat_no).trim()}`,
+      code: (o.p_no || o.name) ? `MAT ${String(o.mat_no).trim()}` : null,
+      sub: o.sub || '', keywords: `${o.name || ''} ${o.p_no || ''} ${o.keywords || ''}`,
       mat_no: String(o.mat_no).trim(), name: o.name || null, p_no: o.p_no || null, customer: o.customer || null, line_name: o.line_name || null,
       group: o.group || '🧩 พาร์ทลูก (BOM / parts_master)', extra: true,
     });

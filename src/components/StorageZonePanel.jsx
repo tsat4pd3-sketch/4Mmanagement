@@ -11,6 +11,7 @@
  */
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import MatLabel from './MatLabel';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -332,9 +333,8 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
             <div style={{ display: 'grid', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
               {options.map(p => (
                 <button key={p.mat_no} onClick={() => { setMats(v => [...v, p.mat_no]); }} style={{ ...btnSec, textAlign: 'left', fontSize: 12, display: 'flex', gap: 8 }}>
-                  {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
-                  <b style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name || p.mat_no}</b>
-                  {p.part_name && <span style={{ fontFamily: 'monospace', opacity: 0.85 }}>MAT {p.mat_no}</span>}
+                  {/* ครบ 3 ค่าผ่านของกลาง (30/09) */}
+                  <MatLabel mat={p.mat_no} name={p.part_name} style={{ flex: 1, minWidth: 0 }} />
                   <span style={{ color: 'var(--muted)' }}>{stockByMat[p.mat_no] ? `คงเหลือ ${Number(stockByMat[p.mat_no]).toLocaleString()}` : '—'}</span>
                 </button>
               ))}

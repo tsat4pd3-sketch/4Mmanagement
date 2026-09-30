@@ -19,6 +19,7 @@ import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } fro
 import { loadOpInfo } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
+import MatLabel from '../components/MatLabel';
 import ProductSelect from '../components/ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import useProductionLines, { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
@@ -3336,8 +3337,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg2)' }}>
-                {/* ลำดับคอลัมน์ Part Name → Mat No. (UI §6.21 · 2026-09-30) */}
-                {['Part Name', 'Mat No.', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
+                {/* ยุบ "Part Name + Mat No." เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
+                {['ชิ้นงาน', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
                   <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                 ))}
                 {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
@@ -3345,7 +3346,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 11 : 10} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
+                <tr><td colSpan={canEdit ? 10 : 9} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบข้อมูล — เพิ่มพาร์ทใน Parts Master ก่อน</td></tr>
               )}
               {filtered.map(row => {
                 // ⚠️ ต้องเช็ค qty_per_kanban ด้วย — แถวที่ค่าว่างเทียบไม่ได้ (Number(undefined)=NaN ขึ้น ⚠️ มั่ว)
@@ -3353,8 +3354,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
                   && Number(row.ks.qty_per_kanban) !== Number(row.qty_per_pkg);
                 return (
                   <tr key={row.mat_no} style={{ opacity: row.ks ? 1 : 0.55 }}>
-                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text)' }}>{row.part_name || '—'}</td>
-                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', fontSize: 13 }}>{row.mat_no}</td>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', maxWidth: 340 }}>
+                      <MatLabel mat={row.mat_no} name={row.part_name} size={13} />
+                    </td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{row.supplier || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>

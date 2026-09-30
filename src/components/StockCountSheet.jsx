@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import MatLabel from './MatLabel';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
@@ -229,9 +230,8 @@ export default function StockCountSheet({ role, scope }) {
             <div style={{ overflowX:'auto', maxHeight:'60vh', overflowY:'auto' }}>
               <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
                 <thead><tr>
-                  {/* ลำดับคอลัมน์ ชื่อชิ้นงาน → MAT (UI §6.21 · 2026-09-30) */}
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>ชื่อชิ้นงาน</th>
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>MAT</th>
+                  {/* ยุบ "ชื่อชิ้นงาน + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT ในที่เท่าเดิม (30/09) */}
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>ชิ้นงาน</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ยอดในระบบ</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>นับได้จริง</th>
                   <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ผลต่าง</th>
@@ -242,8 +242,7 @@ export default function StockCountSheet({ role, scope }) {
                     const typed = counts[r.mat_no] !== undefined && counts[r.mat_no] !== '';
                     return (
                       <tr key={r.mat_no}>
-                        <td style={{ ...td, color:'var(--text2)' }}>{r.part_name || '—'}</td>
-                        <td style={{ ...td, fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</td>
+                        <td style={{ ...td, maxWidth:320 }}><MatLabel mat={r.mat_no} name={r.part_name} /></td>
                         <td style={{ ...td, textAlign:'right' }}>{n0(r.qty_on_hand)}</td>
                         <td style={{ ...td, textAlign:'right' }}>
                           <input type="number" inputMode="numeric" min="0" style={numIn}
