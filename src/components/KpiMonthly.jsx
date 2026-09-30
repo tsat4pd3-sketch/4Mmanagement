@@ -13,7 +13,7 @@ import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
 import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
-  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress } from '../utils/kpiSetup';
+  unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
 import { usePerms } from '../utils/usePerms';
 import ReadOnlyNote from './ReadOnlyNote';
@@ -359,7 +359,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const seq = ++loadSeq.current;
     const alive = () => seq === loadSeq.current;
         /* 🔴 ต้องดึง `summary_mode` + `decimals` มาด้วย — ขาดไปแถวทุกตัวตกเป็น "เฉลี่ย" / ทศนิยม 2 เงียบๆ */
-    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals, summary_mode)';
+    const CAT_EMBED = '*, kpi_catalog(id, name, unit, category, formula_text, scope_text, direction, decimals, summary_mode, value_scope)';
     const run = (cols) => supabase.from('kpi_definitions').select(cols)
       .eq('year', year).eq('is_active', true)
       .order('category').order('seq').order('created_at');
@@ -453,8 +453,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* 🔴 สรุปทั้งปีต้องใช้ "วิธีรวม" ของ KPI ตัวนั้น ไม่ใช่เฉลี่ยตายตัว (24/09)
      เดิมเฉลี่ยทุกแถว ⇒ Scrap ที่ต้องรวมทั้งปีโชว์ 271.4 แทน 1,628 (เทียบเด็ค H1 FY2026)
      วิธีรวมอยู่ที่ `kpi_catalog.summary_mode` — ของตัวตน KPI ห้าม override รายแถว */
-  const manualSum = def => summaryOf(
-    Array.from({ length: 12 }, (_, i) => entries[def.id]?.[i + 1] ?? null), def);
+  /* 🏭 ค่าของแถว = ของนิยามที่ "ถือค่า" (KPI แบบ plant → นิยามโรงงาน · ไม่มี = ว่างทั้งแถว ไม่ถอยไปใช้ค่าของหน่วย) */
+  const valuesOf = def => { const vd = valueDefOf(def); return Array.from({ length: 12 }, (_, i) => (vd ? entries[vd.id]?.[i + 1] : null) ?? null); };
+  const manualSum = def => summaryOf(valuesOf(def), def);
   const manualAvg = def => manualSum(def).value;
 
   /* เป้า OEE ของขอบเขต = เฉลี่ยของกรุ๊ป (ไลน์บนสุด) ในขอบเขต — กฎ oee_targets: section ไม่เก็บใน DB */
@@ -529,8 +530,16 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         ⇒ `!d.source` เป็นเท็จเสมอ = ตารางนี้ว่างตลอดกาลไม่ว่าจะตั้ง KPI ไว้กี่ข้อ (บั๊กจริง แก้ 23/09)
         คอมเมนต์ใน migration 20260901 เขียนว่า "null = กรอกมือ" ซึ่งไม่เคยเป็นจริง — อย่าเชื่อ ให้ดู default
         แถวเก่าก่อนมี default อาจเป็น null จริง ⇒ เช็คจากฝั่ง `auto:` เสมอ (ครอบทั้ง null และ 'manual') */
-  const defs = useMemo(() => (allDefs || []).filter(d => !String(d.source || '').startsWith('auto:')), [allDefs]);
   const isInherited = useCallback(d => !sameScope(scopeOfDef(d), scope), [scope]);
+  /* 🏭 30/09: KPI ตัวเดียวกัน (catalog เดียวกัน) ที่มีทั้งนิยามของขอบเขตนี้และนิยามแม่ที่ตกทอดมา → โชว์แถวเดียว (ของขอบเขตนี้)
+     ไม่งั้น KPI แบบ "ค่าโรงงาน" จะขึ้น 2 แถว (ของหน่วย + ของโรงงาน) ทั้งที่เป็นตัวเลขชุดเดียวกัน · กติกาเดียวกับ nearest() ของบอร์ด */
+  const defs = useMemo(() => {
+    const manual = (allDefs || []).filter(d => !String(d.source || '').startsWith('auto:'));
+    const ownCats = new Set(manual.filter(d => d.catalog_id && !isInherited(d)).map(d => d.catalog_id));
+    return manual.filter(d => !(d.catalog_id && isInherited(d) && ownCats.has(d.catalog_id)));
+  }, [allDefs, isInherited]);
+  /* นิยามที่ "ถือค่า" ของแถว — KPI แบบ plant = นิยามโรงงาน (อาจเป็นตัวเดียวกับแถวเมื่อดูขอบเขต ทั้งโรงงาน) · แบบ own = ตัวเอง */
+  const valueDefOf = useCallback(d => (valueScopeOf(d) === 'plant' ? sharedValueDef(allDefs, d) : d), [allDefs]);
   const defScopeTag = useCallback(d => (isInherited(d) ? org.labelOf(scopeOfDef(d).kind, scopeOfDef(d).value) : ''), [isInherited, org]);
 
   /* ชุดที่ใช้เทียบกับ "ทะเบียนมาตรฐานของกลุ่ม" = **ทุกแถวในขอบเขตนี้ รวมแถวอัตโนมัติด้วย**
@@ -1029,6 +1038,11 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       const ynT = manualLv(d2, avg);
                       const ak = autoSeries ? autoKpiOfName(defName(d2)) : null;
                       const autoVals = ak ? autoSeries.months.map(m => toRowUnit(m[ak.key], ak.key, defUnit(d2))) : null;
+                      /* 🏭 KPI แบบ "ค่าโรงงาน": ช่องกรอกอ่าน/เขียนที่นิยามโรงงาน · ดูจากขอบเขตหน่วยงาน = อ่านอย่างเดียว + ปุ่มไปกรอกที่ ทั้งโรงงาน */
+                      const plantKpi = valueScopeOf(d2) === 'plant';
+                      const vDef = valueDefOf(d2);                       // null = plant แต่ยังไม่มีนิยามโรงงาน
+                      const sharedRO = plantKpi && !!vDef && vDef.id !== d2.id;
+                      const rowVals = valuesOf(d2);
                       return (
                         <Fragment key={d2.id}>
                         <tr>
@@ -1040,16 +1054,29 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                                 style={{ marginLeft: 5, fontSize: 11, color: '#f59e0b' }}>⚠ ไม่ผูกทะเบียน</span>
                             )}
                             {defScopeTag(d2) && <span title="นิยามระดับแม่ที่ตกทอดมา — แก้ไขที่ขอบเขตนั้น" style={{ marginLeft: 5, fontSize: 11, color: 'var(--muted)' }}>({defScopeTag(d2)})</span>}
+                            {plantKpi && vDef && (
+                              <span title={sharedRO ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน · กรอกที่ขอบเขต ทั้งโรงงาน (เป้า/น้ำหนักของแถวนี้ยังเป็นของหน่วยงาน)' : 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้อ่านตัวเลขจากแถวนี้'}
+                                style={{ marginLeft: 5, fontSize: 11, color: '#38bdf8', cursor: sharedRO ? 'pointer' : 'default' }}
+                                onClick={sharedRO ? () => setScope({ ...PLANT }) : undefined}>
+                                🏭 ค่าโรงงาน{sharedRO ? ' → กรอกที่ ทั้งโรงงาน' : ''}
+                              </span>
+                            )}
+                            {plantKpi && !vDef && (
+                              <span title="KPI นี้ตั้งไว้ว่าใช้ค่าโรงงาน แต่ปีนี้ยังไม่มีนิยามระดับ ทั้งโรงงาน — สร้าง KPI ตัวนี้ที่ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น (ช่องกรอกของหน่วยงานปิดไว้ กันแต่ละหน่วยตัวเลขไม่ตรงกัน)"
+                                style={{ marginLeft: 5, fontSize: 11, color: '#f59e0b', cursor: 'pointer' }} onClick={() => setScope({ ...PLANT })}>
+                                ⚠ ยังไม่มีนิยามระดับโรงงาน → สร้างที่ ทั้งโรงงาน
+                              </span>
+                            )}
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               {[d2.commitment && `เป้า ${d2.commitment}`, d2.scope_text].filter(Boolean).join(' · ')}
                             </div>
                           </td>
                           {Array.from({ length: 12 }, (_, i) => {
-                            const v = entries[d2.id]?.[i + 1] ?? null;
+                            const v = rowVals[i];
                             const yn = manualLv(d2, v);
                             return (
-                              <td key={i} style={{ ...tdSt, padding: '3px 4px' }}>
-                                <CellInput value={v} disabled={!canManage} onCommit={raw => saveCell(d2.id, i + 1, raw)} />
+                              <td key={i} style={{ ...tdSt, padding: '3px 4px' }} title={sharedRO ? 'ค่าโรงงาน — กรอกที่ขอบเขต ทั้งโรงงาน' : (plantKpi && !vDef ? 'ยังไม่มีนิยามระดับโรงงาน' : undefined)}>
+                                <CellInput value={v} disabled={!canManage || sharedRO || (plantKpi && !vDef)} onCommit={raw => saveCell((vDef || d2).id, i + 1, raw)} />
                                 <LvMark lv={yn} small />
                               </td>
                             );
@@ -1066,7 +1093,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           </td>
                           <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
                             onClick={() => openDefChart(d2)}>
-                            <MiniChart vals={Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null)} kind="line"
+                            <MiniChart vals={rowVals} kind="line"
                               target={d2.target_value != null ? Number(d2.target_value) : null} dir={d2.direction || null} curIdx={curMonthIdx}
                               plan={monthsOf(plans, d2.id)} />
                           </td>
@@ -1395,6 +1422,13 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
                             <option value="">—</option>
                             <option value="up">มากยิ่งดี</option>
                             <option value="down">น้อยยิ่งดี</option>
+                          </select>
+                        </label>
+                        <label style={miniLbl} title="ค่าโรงงาน = ทุกหน่วยงานที่ถือ KPI นี้อ่านตัวเลขจากนิยามระดับ ทั้งโรงงาน ตัวเดียวกัน (เช่น %RM · Customer Satisfaction) · ของหน่วยงานเอง = แต่ละหน่วยกรอกของตัวเอง">
+                          ค่าเป็นของ
+                          <select style={{ ...mini, width: 150 }} value={valueScopeOf({ kpi_catalog: r })} disabled={!canManage || busy === r.id}
+                            onChange={e => patch(r, 'value_scope', e.target.value, 'ค่าเป็นของ')}>
+                            {KPI_VALUE_SCOPES.map(m => <option key={m.key} value={m.key}>{m.key === 'plant' ? '🏭 ค่าโรงงาน (ใช้ร่วมทุกหน่วย)' : 'หน่วยงานเอง'}</option>)}
                           </select>
                         </label>
                         <label style={miniLbl} title="ของตัวตน KPI — ตั้งที่นี่ที่เดียว แต่ละแผนก override ไม่ได้ (ไม่งั้นเอาเลขมาเทียบกันไม่ได้)">

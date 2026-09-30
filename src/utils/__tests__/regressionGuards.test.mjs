@@ -178,7 +178,7 @@ const RULES = [
     /* จับการอ่าน `…kpi_catalog.unit` / `.decimals` / `.summary_mode` ตรงๆ ในหน้า
        (ทั้ง `?.` และ `.`) — ต้องผ่าน `unitOf`/`decimalsOf`/`summaryModeOf` ของ `kpiSetup.js`
        ตัว helper เองอยู่ใน kpiSetup.js ซึ่ง allow ไว้ · เทสสร้าง object `{ kpi_catalog: {...} }` = ไม่เข้าเงื่อน */
-    re: /kpi_catalog\??\.(unit|decimals|summary_mode)\b/g,
+    re: /kpi_catalog\??\.(unit|decimals|summary_mode|value_scope)\b/g,
     why: '**หน่วย/ทศนิยม ตั้งได้ 2 ชั้น** (24/09 · user เคาะ "2 ชั้น"): `kpi_catalog` = ค่าตั้งต้น '
        + '· `kpi_definitions.unit`/`.decimals` = override เฉพาะแถวนั้น (ว่าง = ตามทะเบียน) '
        + '⇒ อ่านจากทะเบียนตรงๆ = **แถวที่ตั้งทับไว้ไม่มีผล** (เกิดจริง: MTBF ใบ JIG ใช้ "นาที" '
@@ -189,8 +189,9 @@ const RULES = [
     fix: 'ใช้ `unitOf(d)` · `decimalsOf(d)` · `summaryModeOf(d)` จาก `src/utils/kpiSetup.js` '
        + '(ส่ง "แถว kpi_definitions ที่ embed kpi_catalog มาแล้ว" เข้าไป) '
        + '· จัดรูปตัวเลขด้วย `fmtKpi(v, d)` · สรุป 12 เดือนด้วย `summaryOf(months, d)` '
-       + '· 🔴 อย่าลืมใส่ `decimals, summary_mode` ในสตริง `.select()` ที่ embed `kpi_catalog` '
-       + 'ไม่งั้นทุกแถวตกเป็นทศนิยม 2 / วิธีรวม "เฉลี่ย" เงียบๆ',
+       + '· 🔴 อย่าลืมใส่ `decimals, summary_mode, value_scope` ในสตริง `.select()` ที่ embed `kpi_catalog` '
+       + 'ไม่งั้นทุกแถวตกเป็นทศนิยม 2 / วิธีรวม "เฉลี่ย" / ค่าของหน่วยเอง เงียบๆ '
+       + '· `value_scope` (30/09) อ่านผ่าน `valueScopeOf(d)` + หานิยามที่ถือค่าด้วย `sharedValueDef(defs, d)`',
     allow: {
       'src/utils/kpiSetup.js': 'นิยามของ unitOf/decimalsOf/summaryModeOf เอง — เป็นที่เดียวที่อ่านทะเบียนตรงๆ ได้',
     },
