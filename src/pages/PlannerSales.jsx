@@ -975,8 +975,9 @@ function PlannerTab({ refreshKey, custLabel }) {
                 {matRows.map(r => (
                   <tr key={r.mat_no}>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{r.mat_no}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.part_name || ''}</div>
+                      {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{r.part_name || r.mat_no}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>MAT {r.mat_no}</div>
                     </td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>

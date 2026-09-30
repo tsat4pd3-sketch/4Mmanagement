@@ -22,9 +22,58 @@
 
 const BATCH_GAP_MS = 5 * 60000;
 
-export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs, roundIndexOf, roundStartOf }) {
+/* 🔴 "ตอนนี้" ต้องไม่หลุดกรอบวันงานที่กำลังดู (2026-09-30 · เจอจาก harness)
+   ดูบอร์ดของ **วันย้อนหลัง** ที่มีใบไม่เคยถูกปิด: ของเดิมเอา `Date.now()` จริงไปดันคิว
+   ⇒ หางแดงยาว 57 วัน · "คาดจบ" = เวลาปัจจุบัน · แถบหลุดแผนขึ้น **"ช้ากว่าแผน 1368:00 ชม."**
+   ซึ่งเป็นตัวเลขขยะที่ทำให้คนเลิกเชื่อจอทั้งบอร์ด · ความจริงของวันนั้นคือ "ใบนี้ไม่เคยถูกปิด"
+   ⇒ หน้าที่วาดบอร์ดต้องส่ง `frameEndMs` (= 08:00 ของวันถัดไป) มาด้วยเสมอเมื่อดูวันที่ระบุ
+   (ดูวันนี้ = now < frameEnd ⇒ ไม่มีผลอะไร พฤติกรรมเดิมเป๊ะ) */
+function clampNow(nowMs, frameEndMs) {
+  return frameEndMs && nowMs > frameEndMs ? frameEndMs : nowMs;
+}
+
+/* การ์ดที่คร่อมเวลาพัก — ไม่เลื่อน start (เสียเวลาว่างก่อนเบรคฟรีๆ) แต่ "ยืด" ปลายออกเท่าเวลาพักที่คร่อม
+   ⚠️ ใช้ทั้งคิวจริงและคิว "ตามแผน" ⇒ ต้องเป็นฟังก์ชันเดียว (เดิม inline · ก๊อป 2 ที่แล้วดริฟท์แน่) */
+function stretchOverBreaks(startMs, endMs, breaks = []) {
+  const used = new Set();
+  let out = endMs, again = true;
+  while (again) {
+    again = false;
+    breaks.forEach(([bs, be], i) => {
+      if (used.has(i)) return;
+      if (bs < out && be > startMs) { used.add(i); out += (be - bs); again = true; }
+    });
+  }
+  return out;
+}
+
+/* ── จังหวะงานของแถว (pace) — "ควรได้เท่าไหร่แล้ว vs ได้จริงเท่าไหร่" ในหน่วย std-second ────
+   std-second = ยอด × CT ของพาร์ทนั้น ⇒ รวมข้ามพาร์ทที่ CT ต่างกันได้ (ห้ามใช้ CT ใบแรกเหมาทั้งคิว)
+   🔴 เป็น **สูตรเดียว** ที่ทั้งการตีสีใบ (isDelayed) และแถบสถานะบนจอใช้ร่วมกัน — ห้ามคิดใหม่ในหน้า
+   · `anyCt = false` (ไม่มี CT เลย) = **ประเมินไม่ได้** ⇒ `behindSec: null` ห้ามอ่านเป็น 0
+     (ของเดิมตั้ง expectedStdSec = Infinity เพื่อให้ตีสีตามเวลาเปิด-ปิดล้วน — คงพฤติกรรมนั้นไว้) */
+export function rowPace(cards = [], { breaks = [], ctByMat = {}, nowMs: rawNow, frameEndMs = null } = {}) {
+  const nowMs = clampNow(rawNow, frameEndMs);
+  const withTime = cards.filter(o => o.orderStartMs && o.orderEndMs);
+  const doneStdSec = cards.reduce((a, c) =>
+    a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMat[c.mat_no] || 0)), 0);
+  const anyCt = cards.some(c => (ctByMat[c.mat_no] || 0) > 0);
+  const firstStartMs = withTime.length ? Math.min(...withTime.map(o => o.orderStartMs)) : null;
+  if (!anyCt || !firstStartMs) {
+    return { doneStdSec, expectedStdSec: Infinity, behindSec: null, anyCt, firstStartMs };
+  }
+  let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
+  breaks.forEach(([bs, be]) => {
+    const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
+    if (oe > os) elapsedMs -= (oe - os);
+  });
+  const expectedStdSec = Math.max(0, elapsedMs) / 1000;
+  return { doneStdSec, expectedStdSec, behindSec: expectedStdSec - doneStdSec, anyCt, firstStartMs };
+}
+
+export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs: rawNow, frameEndMs = null, roundIndexOf, roundStartOf }) {
+  const nowMs = clampNow(rawNow, frameEndMs);
   const filtered = cards.filter(o => o.orderStartMs && o.orderEndMs);
-  const byOpenTime = [...filtered].sort((a, b) => a.orderStartMs - b.orderStartMs);
   // คิวแสดงผลจริง: ใบที่ "ปิดแล้ว" (confirm) คือลำดับการผลิตที่เกิดขึ้นจริง ให้แทรกเข้าคิวก่อนตามเวลาปิดจริง
   // (confirmed_at) เสมอ — ใบที่ "ยังไม่ปิด" ถือว่ายังไม่ถึงตาที่ผลิตจริง ต้องถีบไปต่อท้ายคิวเสมอ ไม่ว่าจะ
   // เปิดมาก่อนนานแค่ไหนก็ตาม ผลคือถ้ามีใบ confirm มาแทรก จะดันใบที่ยังไม่ปิดถอยไปอยู่หลังสุด ไม่บังพื้นที่
@@ -53,21 +102,14 @@ export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs,
   // ถ้ายอดรวมทันเป้าอยู่ (แค่สแกนปิดไม่ตรง FIFO) จะไม่ตีแดง เพราะงานยังผลิตได้ตามแผนจริง
   // pace เทียบเป็น std-time (Σ ยอด×CT ของแต่ละพาร์ท) — คิวหนึ่งอาจมีหลายพาร์ท CT ต่างกัน
   // (คิวคำนวณระดับ sub-line แล้ว ไม่ใช่ต่อพาร์ท — ห้ามใช้ CT ของใบแรกเหมาทั้งคิว)
-  const rowActualStdSec = cards.reduce((a, c) => a + ((c.isDone ? (c.qty_ok ?? c.qty ?? 0) : (c.qty_actual ?? 0)) * (ctByMat[c.mat_no] || 0)), 0);
-  const anyCt = cards.some(c => (ctByMat[c.mat_no] || 0) > 0);
-  const firstStartMs = byOpenTime.length ? byOpenTime[0].orderStartMs : null;
-  let expectedStdSec = Infinity;
-  if (anyCt && firstStartMs) {
-    let elapsedMs = Math.max(0, Math.min(nowMs, firstStartMs + 24 * 3600000) - firstStartMs);
-    breaks.forEach(([bs, be]) => {
-      const os = Math.max(bs, firstStartMs), oe = Math.min(be, nowMs);
-      if (oe > os) elapsedMs -= (oe - os);
-    });
-    expectedStdSec = Math.max(0, elapsedMs) / 1000;
-  }
-  const rowBehindPace = rowActualStdSec < expectedStdSec;
+  const pace = rowPace(cards, { breaks, ctByMat, nowMs });   // nowMs clamp แล้ว
+  const rowBehindPace = pace.doneStdSec < pace.expectedStdSec;
 
   let queueEndMs = -Infinity;
+  /* 🅿️ cursor ที่ 2 = คิว "ตามแผน" — เดินด้วยเวลาทฤษฎีล้วน **ไม่ถูกดันด้วยของค้าง/ปิดช้า**
+     มีไว้เพื่อตอบ "ช้ากว่าแผนกี่นาที" = (คาดจบจริง − ควรจบตามแผน) ⇒ ตัวเลขที่หน้างานถามหา
+     (บอร์ดที่การ์ดต่อกันไปเรื่อยๆ ทำให้ดูไม่ออกว่าส่วนไหนคือ "หลุดแผน" — เลขนี้ตอบแทนตา) */
+  let planEndMs = -Infinity;
   let curRoundIdx = null;
   return sorted.map(o => {
     const roundIdx = roundIndexOf(o.orderStartMs);
@@ -76,25 +118,18 @@ export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs,
     if (curRoundIdx === null || roundIdx !== curRoundIdx) {
       curRoundIdx = roundIdx;
       queueEndMs = Math.max(queueEndMs, roundStartOf(roundIdx));
+      planEndMs = Math.max(planEndMs, roundStartOf(roundIdx));
     }
     const durationMs = Math.max(o.orderEndMs - o.orderStartMs, 0);
+    /* คิวตามแผน: เริ่มได้ไม่ก่อนใบก่อนหน้า "ควร" จบ (ไม่นับเวลาที่เสียไปจริง) */
+    const planStartMs = Math.max(o.orderStartMs, planEndMs);
+    const plannedEndMs = stretchOverBreaks(planStartMs, planStartMs + durationMs, breaks);
+    planEndMs = plannedEndMs;
     const startMs = Math.max(o.orderStartMs, queueEndMs);
     let endMs = startMs + durationMs;
     // ถ้าช่วงเวลาผลิตของการ์ดนี้ทับเวลาพักเบรค ไม่เลื่อน startMs ไปหลังเบรค (เพราะจะทำให้
     // เวลาที่ "ว่าง" ก่อนเบรคเสียไปฟรี ๆ) แต่ให้ "ซอย" ทับเบรคแล้วยืดความยาวการ์ดออกแทน
-    const consumedBreaks = new Set();
-    let extended = true;
-    while (extended) {
-      extended = false;
-      breaks.forEach(([bs, be], i) => {
-        if (consumedBreaks.has(i)) return;
-        if (bs < endMs && be > startMs) {
-          consumedBreaks.add(i);
-          endMs += (be - bs);
-          extended = true;
-        }
-      });
-    }
+    endMs = stretchOverBreaks(startMs, endMs, breaks);
     // กฎตายตัว: ใบกัมบังห้ามซ้อนทับกันเอง และความกว้างต้องไม่สั้นกว่า durationMs (qty × ct) เด็ดขาด
     // ปิดเร็วกว่าทฤษฎี = ไม่บีบการ์ด (ใช้ confirmed_at แค่ตัดสินสี) · ปิดช้า = แสดง "หาง" แยก ไม่ขยับการ์ดหลัก
     let isLateDone = false;
@@ -126,7 +161,7 @@ export function computeQueuedPositionsFull(cards, { breaks, ctByMat = {}, nowMs,
     // ⚠️ `!o.is_backfill` — ใบเปิดย้อนหลังคนกรอกเวลาเอง เวลาเปิดไม่ใช่เวลาเริ่มผลิตจริง
     //    ตัดสิน "ดีเลย์" จากมันไม่ได้ (จุดที่ Dashboard เคยตกไป ทำให้ 2 จอไม่ตรงกัน)
     const isDelayed = !o.isDone && !o.isCarry && !o.is_backfill && endMs < nowMs && rowBehindPace;
-    return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone };
+    return { o, startMs, endMs, occupiedEndMs, isDelayed, isLateDone, planStartMs, plannedEndMs };
   });
   /* หมายเหตุ: เดิมมี pass ที่ 2 คอยตัดหางแดงไม่ให้ทับใบถัดไป — ไม่ต้องแล้วตั้งแต่เดินคิวด้วย
      `occupiedEndMs` เพราะใบถัดไปเริ่มที่จุดนั้นพอดี (pass นั้นคือตัวที่ "ซ่อน" ดีเลย์ไว้) */
@@ -206,4 +241,55 @@ export function delayedCountOf(positioned) {
   let n = 0;
   positioned.forEach(item => { if (item.isDelayed) n++; });
   return n;
+}
+
+/* ══ 📋 "หลุดแผนไปแค่ไหน" — ตัวเลขชุดเดียวที่ทุกบอร์ดใช้ (2026-09-30 · feedback หน้างาน) ═══════
+   คอมเมนต์ที่ได้มา: *"ไม่รู้ว่าดีเลย์หรือหลุดแผนไปแค่ไหน เพราะการ์ดใหม่จะต่อไปเรื่อยๆ"*
+   ⇒ บอร์ดที่การ์ดต่อกันไปทางขวาเรื่อยๆ **ตาแยกไม่ออก**ว่าส่วนไหน "ค้าง" ส่วนไหน "ยังไม่ถึงตา"
+     และ "⚠️ ดีเลย์ N ใบ" ก็ไม่บอกขนาด (ค้าง 1 ใบ 3 ชม. กับ 3 ใบ 5 นาที ขึ้นเลขไม่ต่างกันเลย)
+   ⇒ ต้องตอบเป็น **เวลา + ยอด** (คำสั่ง user 2026-09-30: "เอาทั้งสอง เวลา+ยอด ในแถบเดียว")
+
+   🔴 กฎของตัวเลขชุดนี้:
+     · **ช้ากว่าแผน = คาดจบจริง − ควรจบตามแผน** (cursor 2 เส้นในคิวเดียว) ไม่ใช่ "now − เวลาเปิด"
+     · **ขาดกี่ชิ้น คิดจาก pace เดียวกับที่ใช้ตีสีใบ** (`rowPace`) ห้ามคิดสูตรที่ 2
+     · **ไม่มี CT = ประเมินไม่ได้ ⇒ null ทุกตัวที่เกี่ยวกับเวลา/ชิ้น ห้ามคืน 0** (จอต้องเขียนว่าไม่รู้)
+     · **หลายพาร์ท CT ไม่เท่ากัน = บอกเป็นชิ้นไม่ได้ ⇒ `behindPcs: null`** (บอกเป็นนาทีแทน)
+     · `overShiftMin`/`lateCards` ต้องส่ง `shiftEndMs` เข้ามา — ไม่ส่ง = null (ไม่เดาปลายกะแทนหน้า)
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+export function planStatusOf({ positioned, cards = [], breaks = [], ctByMat = {}, nowMs, frameEndMs = null, shiftEndMs = null } = {}) {
+  const items = [];
+  if (positioned && typeof positioned.forEach === 'function') positioned.forEach(it => items.push(it));
+
+  const open = items.filter(it => it?.o && !it.o.isDone && !it.o.isCarry);
+  const finishMs = projectedFinishMs(items);
+  let planFinishMs = null;
+  open.forEach(it => {
+    const e = it.plannedEndMs;
+    if (e > 0 && (planFinishMs == null || e > planFinishMs)) planFinishMs = e;
+  });
+
+  const slipMin = (finishMs != null && planFinishMs != null)
+    ? Math.max(0, Math.round((finishMs - planFinishMs) / 60000)) : null;
+
+  /* จังหวะงาน (pace) — ช้ากว่าที่ควรได้กี่นาที/กี่ชิ้น */
+  const pace = rowPace(cards, { breaks, ctByMat, nowMs, frameEndMs });
+  const behindMin = pace.behindSec == null ? null : Math.round(Math.max(0, pace.behindSec) / 60);
+  /* แปลงเป็น "ชิ้น" ได้เฉพาะเมื่อพาร์ทที่ยังมีงานเหลืออยู่ CT เท่ากันหมด (ไม่งั้นเป็นการเดา) */
+  const ctsLeft = [...new Set(open.map(it => ctByMat[it.o.mat_no] || 0).filter(v => v > 0))];
+  const behindPcs = (pace.behindSec != null && ctsLeft.length === 1 && pace.behindSec > 0)
+    ? Math.round(pace.behindSec / ctsLeft[0]) : null;
+
+  const overShiftMin = (shiftEndMs && finishMs != null)
+    ? Math.max(0, Math.round((finishMs - shiftEndMs) / 60000)) : null;
+  const lateCards = shiftEndMs
+    ? open.filter(it => Math.max(it.endMs || 0, it.occupiedEndMs || 0) > shiftEndMs).length : null;
+
+  return {
+    delayed: items.filter(it => it.isDelayed).length,
+    remainCards: open.length,
+    finishMs, planFinishMs, slipMin,
+    behindMin, behindPcs, pcsCt: ctsLeft.length === 1 ? ctsLeft[0] : null,
+    overShiftMin, lateCards,
+    noCt: !pace.anyCt,
+  };
 }

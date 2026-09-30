@@ -377,7 +377,7 @@ function StockTab({ role, scope }) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','Mat SAP','Part Name','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
+                  {['วันที่','ไลน์','Part Name','Mat SAP','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                   ))}
                 </tr>
@@ -390,8 +390,8 @@ function StockTab({ role, scope }) {
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                     </td>
@@ -496,7 +496,7 @@ function StockTab({ role, scope }) {
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
-                          {['Mat SAP','Part Name','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
+                          {['Part Name','Mat SAP','คงเหลือ (ชิ้น)','Min / Max','สถานะ'].map(h => (
                             <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: (h==='คงเหลือ (ชิ้น)'||h==='Min / Max') ? 'right' : 'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                           ))}
                           {canIssue && <th style={{ padding:'8px 14px', width:90 }}></th>}
@@ -509,8 +509,8 @@ function StockTab({ role, scope }) {
                           const ks = ksMap[p.mat_no];
                           return (
                             <tr key={p.mat_no} style={{ opacity: qty <= 0 ? 0.7 : 1 }}>
-                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontWeight:700, color:'#0ea5e9', fontSize:13 }}>{p.mat_no}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text)' }}>{p.part_name || bomMap[p.mat_no] || '—'}</td>
+                              <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontWeight:700, color:'#0ea5e9', fontSize:13 }}>{p.mat_no}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
                                 {ks && (ks.min != null || ks.max != null) ? `${ks.min ?? '—'} / ${ks.max ?? '—'}` : '—'}
@@ -568,7 +568,7 @@ function StockTab({ role, scope }) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','Mat SAP','Part Name','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
+                  {['วันที่','ไลน์','Part Name','Mat SAP','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
                   ))}
                 </tr>
@@ -581,8 +581,8 @@ function StockTab({ role, scope }) {
                   <tr key={t.id}>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>{t.work_date}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{t.line_name}</td>
-                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text2)' }}>{t.part_name || '—'}</td>
+                    <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:12, color:'#0ea5e9', fontWeight:700 }}>{t.mat_no}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
                       <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                       {t.status && t.status !== 'approved' && (
@@ -664,7 +664,7 @@ function StockTab({ role, scope }) {
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
                 <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
-                  options={products.map(p => ({ id: String(p.id), label: `${p.mat_no ? `${p.mat_no} · ` : ''}${p.name}`, sub: p.line_name || '', keywords: p.mat_no || '' }))}
+                  options={products.map(p => ({ id: String(p.id), label: `${p.name}${p.mat_no ? ` · MAT ${p.mat_no}` : ''}`, sub: p.line_name || '', keywords: p.mat_no || '' }))}
                   onChange={({ id }) => setBomProduct(id)} />
                 {bomProduct && (productBom[bomProduct] || []).length > 0 && (
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>

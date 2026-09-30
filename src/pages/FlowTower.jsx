@@ -334,15 +334,16 @@ export default function FlowTower() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead><tr style={{ background: 'var(--bg2)' }}>
-                    {['MAT', 'ชื่อพาร์ท', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
+                    {/* ลำดับคอลัมน์ ชื่อพาร์ท → MAT (UI §6.21) */}
+                    {['ชื่อพาร์ท', 'MAT', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
                       <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                     ))}
                   </tr></thead>
                   <tbody>
                     {S.blocks.slice(0, 12).map(b => (
                       <tr key={b.mat_no} style={{ borderTop: '1px solid var(--border)' }}>
-                        <td style={{ padding: '7px 12px', fontWeight: 800, color: 'var(--accent)' }}>{b.mat_no}</td>
                         <td style={{ padding: '7px 12px', color: 'var(--text2)' }}>{b.part_name || '—'}</td>
+                        <td style={{ padding: '7px 12px', fontWeight: 800, color: 'var(--accent)', fontFamily: 'monospace' }}>{b.mat_no}</td>
                         <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 800, color: '#ef4444' }}>{fmt(b.pending_qty)}</td>
                         <td style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>
                           {b.demand_kind === 'purchase' ? '🚛 สั่งซื้อ' : `🔨 ผลิตเอง${b.maker_line ? ` · ${b.maker_line}` : ''}`}

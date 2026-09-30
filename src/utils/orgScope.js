@@ -312,6 +312,25 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
 }
 
 /** ขอบเขต `def` (นิยาม KPI) ครอบขอบเขตที่เลือกอยู่ไหม — เท่ากัน หรือเป็นบรรพบุรุษ (นิยามระดับแม่ตกทอดถึงลูก) */
+/* ── 🔗 เจาะจากบอร์ดไปหน้าที่กรองแบบ "ส่วนงาน → แผนก/กลุ่มไลน์ → ไลน์" (เช่น /oee-analytics) ─────
+   2026-09-30 · user: กรอง PD4 บน OBEYA แล้วกดเจาะ OEE กลายเป็นต้องกรองใหม่ — บอร์ด KPI ส่ง path เปล่า
+   (จอ SQDCM ส่งแค่ `section` ⇒ ขอบเขตระดับกลุ่มไลน์/ไลน์ก็หลุดเหมือนกัน)
+   คืน `{ section, dept, line }` เท่าที่ผังบอกได้ · ขอบเขตที่ไม่มีส่วนงาน (แผนกช่าง/ฝ่าย/cost center ข้ามส่วนงาน)
+   คืน {} = ปลายทางแสดงตามสิทธิ์ของคนกด (ซื่อสัตย์กว่าเดาส่วนงาน) · ทั้งโรงงาน = {}
+   ⚠️ ปลายทางต้อง **อ่าน param เหล่านี้จริง** (`OEEAnalytics` อ่าน section/dept/line/date) — ใส่บนหน้าที่ไม่อ่าน = URL โกหก */
+export function drillParams(index, sc) {
+  if (!index || isPlant(sc)) return {};
+  const out = {};
+  const section = index.sectionOf(sc.kind, sc.value);
+  if (section) out.section = section;
+  if (sc.kind === 'line_group') out.dept = sc.value;
+  else if (sc.kind === 'line') {
+    const grp = index.ancestorsOf(sc.kind, sc.value).slice().reverse().find(a => a.kind === 'line_group');
+    if (grp && grp.value !== sc.value) { out.dept = grp.value; out.line = sc.value; } else out.dept = sc.value;
+  }
+  return out;
+}
+
 export function scopeCovers(index, defScope, selected) {
   if (isPlant(defScope)) return true;
   if (isPlant(selected)) return false;
