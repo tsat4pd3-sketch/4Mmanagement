@@ -55,15 +55,31 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   const i = matInfo(mat, index, { name, pNo });
   if (!i.mat) return null;
   const small = Math.max(11, size - 0.5);
+  /* 🔴 ลำดับตัดสินด้วย `i.lead` เหมือน `<PartCard>` **ห้ามเช็ค `i.pNo` ตรงๆ** — วัตถุดิบ 5xx เก็บ
+     "คำบรรยายว่าเอาไปทำอะไร" ไว้ในช่อง part_no (82% ของแถว · ยาวสุด 72 ตัว) ⇒ ถ้าเอาขึ้นหน้า
+     ตาราง/ชิปจะถูกประโยคดันจนอ่านเลขไม่ได้ (ดู `utils/matLabel.js` §looksLikePartNo)
+     · ที่นี่เป็น inline (ตาราง/ชิป) ⇒ บรรทัดรองที่เป็นคำบรรยายตัดท้ายด้วย … + title ดูเต็มได้
+       **ไม่ใช่ตัดข้อมูลทิ้ง** — การ์ดใน `<PartCard>` มีที่พอ โชว์ 2 บรรทัดเต็ม */
+  const lead = showPartNo ? i.lead : (i.name ? 'name' : 'mat');
+  const head = lead === 'pno' ? i.pNo : lead === 'name' ? i.name : '';
+  const sub = lead === 'pno' ? i.name : (showPartNo ? i.pNo : '');
+  const subIsText = lead !== 'pno' && !!sub;                 // คำบรรยาย ไม่ใช่ชื่อสั้นๆ
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap', minWidth: 0, ...style }}>
-      {showPartNo && i.pNo && (
-        <span title="Part No. ของลูกค้า" style={{ fontSize: size, fontFamily: 'monospace', fontWeight: 700, color: 'var(--text2)' }}>{i.pNo}</span>
+      {head && (
+        <span title={lead === 'pno' ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+          style={{ fontSize: size, fontWeight: 700, color: 'var(--text2)',
+            ...(lead === 'pno' ? { fontFamily: 'monospace' } : null) }}>{head}</span>
       )}
-      {i.name && <span style={{ fontSize: small, color: 'var(--muted)' }}>{(showPartNo && i.pNo) ? `· ${i.name}` : i.name}</span>}
+      {sub && (
+        <span title={sub} style={{ fontSize: small, color: 'var(--muted)', minWidth: 0,
+          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
+          {head ? `· ${sub}` : sub}
+        </span>
+      )}
       {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
       <span title="เลข MAT (SAP)" style={{ fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
-        {(i.pNo || i.name) ? '· ' : ''}MAT {i.mat}
+        {(head || sub) ? '· ' : ''}MAT {i.mat}
       </span>
     </span>
   );

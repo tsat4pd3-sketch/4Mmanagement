@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matKey, buildMatIndex, matInfo, matText } from '../matLabel.js';
+import { matKey, buildMatIndex, matInfo, matText, looksLikePartNo } from '../matLabel.js';
 
 const PRODUCTS = [
   { mat_no: '10100379', name: 'BRACKET RR', p_no: 'MB3B 8C306 BC', customer: 'FVL', is_active: true },
@@ -93,4 +93,47 @@ test('buildMatIndex: ไม่ส่ง childParts = พฤติกรรมเ
   const only = buildMatIndex([{ mat_no: 'A1', name: 'X', p_no: 'P1', is_active: true }]);
   assert.equal(only.size, 1);
   assert.equal(only.get('A1').p_no, 'P1');
+});
+
+/* ── 🔴 วัตถุดิบ 5xx เก็บ "คำบรรยาย" ไว้ในช่อง part_no (2026-09-30 · วัดจากทะเบียนจริง 346 แถว) ──
+   1xx/2xx/3xx หน้าตาเป็นเลขพาร์ท 99/99/95% แต่ 5xx เหลือ 18% ⇒ ถ้าเอา part_no ขึ้นหัวแบบเหมา
+   การ์ดวัตถุดิบจะพาดหัวด้วยประโยคยาว 72 ตัวอักษรที่มีภาษาไทยปน — ค่าจริงจากฐาน ไม่ใช่ตัวอย่างสมมติ */
+test('looksLikePartNo: เลขพาร์ทจริงผ่าน · คำบรรยายไม่ผ่าน', () => {
+  for (const ok of ['MB3B 8C306 BC', 'W520721-S300', 'MB3B-102D04-BC', 'N1WB-17E850-R', '1234567'])
+    assert.equal(looksLikePartNo(ok), true, ok);
+  const bad = [
+    'R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/08)1 : 2 Co(1FGใช้2ชิ้น)',  // mat 50026144 (72 ตัว)
+    'BRKT ENG ELETR CONTR GRD (MB3B-102D04-BC)',                                 // mat 50029610 (41 ตัว)
+    'เหล็กม้วน',                                                                  // มีอักษรไทย
+    '', '  ', 'AB',                                                               // สั้นเกิน/ว่าง
+  ];
+  for (const b of bad) assert.equal(looksLikePartNo(b), false, JSON.stringify(b));
+  assert.equal(looksLikePartNo(null), false);
+  assert.equal(looksLikePartNo(undefined), false);
+});
+
+test('matInfo: lead = ใครขึ้นหัว — part_no ที่เป็นคำบรรยายต้องหลบไปหลังชื่อ ห้ามหาย', () => {
+  const raw = buildMatIndex([], [{
+    mat_no: '50026144',
+    part_name: 'WSS-M1A367-A36 1.5X276XC',
+    part_no: 'R_BMPR SUPPORT BRKT LH/RH (N1WB-17E850-R_PIA-07/08)1 : 2 Co(1FGใช้2ชิ้น)',
+  }]);
+  const i = matInfo('50026144', raw, {});
+  assert.equal(i.pNoIsCode, false);
+  assert.equal(i.lead, 'name');
+  assert.ok(i.pNo.includes('N1WB-17E850'));        // 🔴 ยังอยู่ครบ — จอเอาไปโชว์เป็นบรรทัดรอง
+  // ชิ้นส่วนปกติยังนำด้วย Part No. เหมือนเดิม
+  assert.equal(matInfo('10100379', IDX, {}).lead, 'pno');
+  // ไม่มีทั้งชื่อและ Part No. → MAT ขึ้นหัวเอง
+  assert.equal(matInfo('99999999', IDX, {}).lead, 'mat');
+});
+
+test('matText: คำบรรยายในช่อง part_no ต่อท้ายชื่อ ไม่ขึ้นหน้า (บรรทัดเดียวต้องตรงกับจอ)', () => {
+  const raw = buildMatIndex([], [
+    { mat_no: '50029610', part_name: 'WSS-M1A367-A46 3X295XC', part_no: 'BRKT ENG ELETR CONTR GRD (MB3B-102D04-BC)' },
+  ]);
+  assert.equal(
+    matText('50029610', raw, {}),
+    'WSS-M1A367-A46 3X295XC · BRKT ENG ELETR CONTR GRD (MB3B-102D04-BC) · MAT 50029610',
+  );
 });
