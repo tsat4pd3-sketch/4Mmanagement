@@ -39,8 +39,10 @@ export function isDayOver(frameEndMs, nowMs) {
 }
 
 /* การ์ดที่คร่อมเวลาพัก — ไม่เลื่อน start (เสียเวลาว่างก่อนเบรคฟรีๆ) แต่ "ยืด" ปลายออกเท่าเวลาพักที่คร่อม
-   ⚠️ ใช้ทั้งคิวจริงและคิว "ตามแผน" ⇒ ต้องเป็นฟังก์ชันเดียว (เดิม inline · ก๊อป 2 ที่แล้วดริฟท์แน่) */
-function stretchOverBreaks(startMs, endMs, breaks = []) {
+   ⚠️ ใช้ทั้งคิวจริงและคิว "ตามแผน" ⇒ ต้องเป็นฟังก์ชันเดียว (เดิม inline · ก๊อป 2 ที่แล้วดริฟท์แน่)
+   📤 export ตั้งแต่ 2026-09-30 — ไทม์ไลน์จัดแผน (`utils/planTimeline.js`) ต้องยืดข้ามเบรค
+      ด้วยกฎ**เดียวกับบอร์ดจริง** ไม่งั้นกล่องบนจอวางแผนกับแท่งบนบอร์ดยาวไม่เท่ากัน */
+export function stretchOverBreaks(startMs, endMs, breaks = []) {
   const used = new Set();
   let out = endMs, again = true;
   while (again) {

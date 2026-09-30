@@ -16,14 +16,16 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can, isActionSeeded } from '../utils/permissions';
+import { canSeeded } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
 import { toast } from '../components/Toast';
 import { snapMachineNo } from '../utils/machineNo';
 import { resolveSetupRule } from '../utils/pressSetup';
 import {
-  planSummary, reconcilePlan, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin,
+  planSummary, reconcilePlan, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
 } from '../utils/planLots';
+import { breakIntervalsIn } from '../utils/oee';
+import PlanTimeline from './PlanTimeline';
 import FilterBar from './FilterBar';
 import Segmented from './Segmented';
 import MatLabel from './MatLabel';
@@ -41,7 +43,7 @@ export default function ProdLotPlanner({
 }) {
   const { role, fullName } = useContext(UserContext);
   /* ยังไม่ seed สิทธิ์ = โหมดอ่านอย่างเดียว (deploy-safe — จอไม่พัง คนแค่แก้ไม่ได้) */
-  const mayWrite = isActionSeeded('production_plan', 'write') ? can('production_plan', 'write', role) : false;
+  const mayWrite = canSeeded('production_plan', 'write', role);
 
   const [lineName, setLineName] = useState('');
   const [date, setDate]   = useState(todayStr);
@@ -50,6 +52,7 @@ export default function ProdLotPlanner({
   const [orders, setOrders] = useState([]);
   const [dies, setDies]   = useState([]);          // die_sets + ความสูงจาก equipment_die
   const [rules, setRules] = useState([]);
+  const [breakPolicies, setBreakPolicies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
   const [dirty, setDirty]     = useState(false);
@@ -62,19 +65,21 @@ export default function ProdLotPlanner({
   const load = useCallback(async (alive = () => true) => {
     if (!lineName || !date) return;
     setLoading(true);
-    const [lotRes, dieRes, ruleRes, sessRes] = await Promise.all([
+    const [lotRes, dieRes, ruleRes, sessRes, brkRes] = await Promise.all([
       supabaseDR.from('production_plan_lots')
         .select('id, work_date, shift, line_name, seq, mat_no, part_name, qty_plan, machine_no, die_no, status, prod_order_id, due_date, source, setup_min_est, note, cancel_reason, planned_by')
         .eq('work_date', date).eq('line_name', lineName).eq('shift', shift),
       supabaseDR.from('die_sets').select('id, set_code, mat_no, part_name, line_name, equipment_die(die_height_mm)').eq('is_active', true),
       supabaseDR.from('press_setup_rules').select('*').eq('is_active', true),
       supabaseDR.from('production_sessions').select('id').eq('work_date', date).eq('line_name', lineName).eq('shift', shift),
+      supabaseDR.from('break_policies').select('*').eq('is_active', true),
     ]);
     if (!alive()) return;                       // สลับไลน์/วันก่อนคำตอบกลับ = ทิ้งคำตอบเก่า
     if (lotRes.error) toast.error(`โหลดแผนไม่สำเร็จ: ${lotRes.error.message}`);
     setLots(resequence(lotRes.data || []));
     setDies(dieRes.data || []);                 // กรองตามพาร์ทตอนเลือกใน dieOptsForMat (ไลน์เดียวกันอาจใช้แม่พิมพ์ข้ามไลน์)
     setRules(ruleRes.data || []);
+    setBreakPolicies(brkRes.data || []);
     const sids = (sessRes.data || []).map(s => s.id);
     if (sids.length) {
       const { data: ord } = await supabaseDR.from('prod_orders')
@@ -103,6 +108,19 @@ export default function ProdLotPlanner({
   const dieOptsForMat = useCallback((mat) => dies.filter(d => !mat || d.mat_no === mat), [dies]);
   /* กฎเวลาเปลี่ยนรุ่น — เครื่อง ชนะ ไลน์ ชนะ global (ตัวเลือกกฎอยู่ที่ pressSetup ที่เดียว) */
   const rule = useMemo(() => resolveSetupRule(rules, { lineName }), [rules, lineName]);
+
+  /* ── กรอบเวลาของกะ + ช่วงพัก ─────────────────────────────────────────────────────
+     🔴 ช่วงพักต้องมาจาก `breakIntervalsIn()` (`utils/oee.js`) ที่เดียว **ห้ามสร้างช่วงพักเอง**
+        (กติกาพักทั้งหมด — กรองกะ/กระบวนการ/ot_scope/กะดึกข้ามวัน — อยู่ที่นั่น) */
+  const frame = useMemo(() => {
+    if (!date) return { startMs: null, endMs: null };
+    const h = shift === 'night' ? 20 : 8;
+    const startMs = new Date(`${date}T${String(h).padStart(2, '0')}:00:00`).getTime();
+    return { startMs, endMs: startMs + 12 * 3600000 };
+  }, [date, shift]);
+  const breaks = useMemo(() => breakIntervalsIn({
+    policies: breakPolicies, startMs: frame.startMs, endMs: frame.endMs, workDate: date, shift,
+  }), [breakPolicies, frame.startMs, frame.endMs, date, shift]);
 
   const summary = useMemo(() => planSummary({
     lots, orders, ctOf, pairOf, dieOf, rule, netShiftMin: netMin,
@@ -208,7 +226,7 @@ export default function ProdLotPlanner({
 
       {/* ── สรุปหัวแผง: ตอบ "กะนี้รับไหวไหม" บรรทัดเดียว ── */}
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: '6px 18px', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 13, fontWeight: 800 }}>{summary.lotCount} ล็อต · {summary.qtyPlan.toLocaleString()} ชิ้น</span>
+        <span style={{ fontSize: 13, fontWeight: 800 }}>{summary.lotCount} ล็อต · {qtyText(summary.qtyPlan)} ชิ้น</span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>⏱️ เวลาผลิต <b>{fmtMin(summary.runMin)}</b></span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}
           title={summary.setupNoDie ? 'ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย — ประเมินเวลาเปลี่ยนรุ่นไม่ได้ (ไม่ใช่ "ไม่ต้องเปลี่ยน")' : ''}>
@@ -239,6 +257,22 @@ export default function ProdLotPlanner({
             <div>📏 <b>แม่พิมพ์ {noHeight} ตัวยังไม่ได้กรอกความสูง</b> — ระบบจึงเรียงลำดับให้ประหยัดเวลาเปลี่ยนรุ่นไม่ได้
               (ตัวที่ไม่รู้ความสูงถูกต่อท้ายลำดับ <b>ไม่ได้ตัดทิ้ง</b>)</div>
           )}
+        </div>
+      )}
+
+      {/* ── 🧲 ไทม์ไลน์จัดแผน (ลากสลับก่อนหลัง) ── */}
+      {rec.rows.length > 0 && frame.startMs && (
+        <div style={card}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+            🧲 ไทม์ไลน์ของกะนี้ <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+              (ความยาวกล่อง = เวลาที่ต้องใช้จริง · ลากเพื่อสลับลำดับ)</span>
+          </div>
+          <PlanTimeline
+            lots={lots} ctOf={ctOf} pairOf={pairOf} dieOf={dieOf} rule={rule}
+            startMs={frame.startMs} endMs={frame.endMs} breaks={breaks}
+            editable={mayWrite} nameOfMat={nameOfMat}
+            onReorder={(next) => { setLots(next); setDirty(true); }}
+          />
         </div>
       )}
 
@@ -275,7 +309,7 @@ export default function ProdLotPlanner({
                         <input type="number" min="1" value={l.qty_plan}
                           onChange={e => patch(l.id, { qty_plan: Math.max(1, Number(e.target.value) || 1) })}
                           style={{ width: 84, textAlign: 'right' }} />
-                      ) : <b>{Number(l.qty_plan).toLocaleString()}</b>}
+                      ) : <b>{qtyText(l.qty_plan)}</b>}
                       {r.donePcs != null && (
                         <div style={{ fontSize: 11, color: r.shortPcs > 0 ? '#f59e0b' : 'var(--accent)' }}>
                           ทำได้ {r.donePcs.toLocaleString()}{r.shortPcs > 0 ? ` · ขาด ${r.shortPcs.toLocaleString()}` : ' ✓'}

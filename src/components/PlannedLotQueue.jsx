@@ -13,14 +13,14 @@
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { can, isActionSeeded } from '../utils/permissions';
+import { canSeeded } from '../utils/permissions';
 import { toast } from './Toast';
 import MatLabel from './MatLabel';
-import { sortBySeq, reconcilePlan } from '../utils/planLots';
+import { sortBySeq, reconcilePlan, qtyText } from '../utils/planLots';
 
 export default function PlannedLotQueue({ session, orders = [], onStarted }) {
   const { role, fullName } = useContext(UserContext);
-  const mayStart = isActionSeeded('production_plan', 'start') ? can('production_plan', 'start', role) : false;
+  const mayStart = canSeeded('production_plan', 'start', role);
   const [lots, setLots] = useState([]);
   const [busy, setBusy] = useState(null);
 
@@ -96,12 +96,12 @@ export default function PlannedLotQueue({ session, orders = [], onStarted }) {
               borderLeft: `3px solid ${r.closed ? '#22c55e' : r.started ? '#4d9fff' : 'var(--border2)'}` }}>
               <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
               <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
-              <b>{Number(l.qty_plan).toLocaleString()}</b><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้น</span>
+              <b>{qtyText(l.qty_plan)}</b><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้น</span>
               {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
               {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>🔧 {l.die_no}</span>}
               <span className="spacer" style={{ flex: 1 }} />
               {r.closed ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ ปิดแล้ว</span>
-                : r.started ? <span style={{ color: '#4d9fff', fontWeight: 700 }}>▶ กำลังทำ{r.donePcs != null ? ` · ${r.donePcs.toLocaleString()}/${Number(l.qty_plan).toLocaleString()}` : ''}</span>
+                : r.started ? <span style={{ color: '#4d9fff', fontWeight: 700 }}>▶ กำลังทำ{r.donePcs != null ? ` · ${qtyText(r.donePcs)}/${qtyText(l.qty_plan)}` : ''}</span>
                 : mayStart && session?.status === 'open'
                   ? <button onClick={() => start(l)} disabled={busy === l.id} style={{ fontSize: 11.5, fontWeight: 800 }}>
                       {busy === l.id ? 'กำลังเปิด…' : '▶ เริ่มล็อตนี้'}

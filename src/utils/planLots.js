@@ -17,6 +17,13 @@ import { pairLoadTotal } from './pairTotals.js';
 import { sequenceSetup, orderByDieHeight } from './pressSetup.js';
 
 export const LOT_STATUSES = ['planned', 'started', 'done', 'cancelled'];
+
+/* 🔴 ตัวเลขที่อ่านไม่ได้ต้องขึ้น "—" **ห้ามพ่น `NaN` ออกจอ** (เจอจริงในจอทดสอบ 30/09 · 8 จุด)
+   `Number(undefined).toLocaleString()` = "NaN" ซึ่งดูเหมือนระบบพัง ทั้งที่ความจริงคือข้อมูลไม่ครบ */
+export const qtyText = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString() : '—';
+};
 /* ล็อตที่ "ยังกินเวลาในกะนี้อยู่" — cancelled ไม่กิน · done กินไปแล้วแต่ยังนับในภาระรวมของกะ */
 export const ACTIVE_LOT = (l) => l?.status !== 'cancelled';
 
