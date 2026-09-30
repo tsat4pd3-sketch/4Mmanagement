@@ -17,6 +17,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import CapacityBoard from '../components/CapacityBoard';
+import ProdLotPlanner from '../components/ProdLotPlanner';
 import { openOnly } from '../utils/shipStatus';
 import {
   estimateCapacity, planCapacity, median, HISTORY_DAYS, DEFAULT_SHIFT_MIN, DEFAULT_OEE,
@@ -61,7 +62,7 @@ const PLAN_META = {
 export default function ProductionPlan() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
-  const [tab, setTab] = useTabParam(['daily', 'monthly', 'capacity'], 'daily');
+  const [tab, setTab] = useTabParam(['daily', 'monthly', 'capacity', 'lots'], 'daily');
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [planWarn, setPlanWarn] = useState('');   // โหลดไม่ครบ → เตือน (แผนอาจต่ำกว่าจริง)
@@ -589,6 +590,9 @@ export default function ProductionPlan() {
           { key: 'daily', label: '📅 รายวัน (ออเดอร์)' },
           { key: 'monthly', label: '📆 รายเดือน (Forecast)' },
           { key: 'capacity', label: '📊 Capacity (แบบสไลด์โรงงาน)' },
+          /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — อีก 3 แท็บวิเคราะห์อย่างเดียว
+             (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
+          { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -756,6 +760,12 @@ export default function ProductionPlan() {
 
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
+      ) : tab === 'lots' ? (
+        <ProdLotPlanner
+          lines={viewLines} demandByDate={demandPcs.byDate} carry={demandPcs.carry}
+          ctOf={ctOf} pairOf={pairOf} lineOfMat={lineOfMat} nameOfMat={nameOfMat}
+          customerOf={customerOf} netMin={shiftNet?.netMin}
+        />
       ) : tab === 'capacity' ? (
         <CapacityBoard
           role={role} scope={{ role, lineId: userLineId, sections: scopeSecs }}

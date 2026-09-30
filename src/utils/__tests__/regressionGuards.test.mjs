@@ -632,6 +632,16 @@ const RULES = [
     allow: { 'src/App.jsx': 'เจ้าของ helper — inNavGroup/isNavGuest นิยามอยู่ที่นี่' },
   },
   {
+    id: 'plan-lot-no-hard-delete',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* แผนสั่งงานที่ยกเลิก = ประวัติที่ต้องสอบกลับได้ว่า "ใครสั่งอะไร แล้วทำไมไม่ได้ทำ" */
+    re: /from\(['"]production_plan_lots['"]\)[\s\S]{0,80}?\.delete\(/g,
+    why: 'ล็อตในแผนคือคำสั่งที่ออกไปหาฝ่ายผลิตแล้ว — ลบแถวทิ้ง = สอบกลับไม่ได้ว่าเคยสั่งอะไร '
+       + 'แล้วทำไมถึงไม่ได้ทำ (ตระกูลเดียวกับกฎ "เคลียร์คิว 4M ค้างด้วย rejected ห้าม delete")',
+    fix: "อัพเดท status = 'cancelled' + cancel_reason แทน — จอกรอง cancelled ออกจากคิวอยู่แล้ว",
+    allow: {},
+  },
+  {
     id: 'blame-chain-rank-by-impact',
     scan: ['src/utils'], ext: ['.js'],
     /* เรียงสายการถีบด้วย ownLateMin ล้วน = ใบที่ "กินเกินนานแต่ไม่พาลใคร" ชนะทุกครั้ง */
