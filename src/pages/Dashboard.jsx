@@ -24,7 +24,8 @@ import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf } from '../utils/heijunkaQueue';
+import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { ALL } from '../utils/filterLabels';
 import { openOnly } from '../utils/shipStatus';
@@ -1505,12 +1506,22 @@ export default function Dashboard() {
                     ⇒ **บอร์ดเดียวกัน /dashboard กับ /management ขึ้น "ดีเลย์ N ใบ" คนละเลข**
                     ตอนนี้ทั้ง 2 หน้าเรียก `positionAllCards` ตัวเดียวกัน — ห้ามเขียนสูตรนับเองอีก */
               const positionedByOrder = positionAllCards(allCards, {
-                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, roundIndexOf, roundStartOf,
+                breaks: allBreaksOnce(), ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, roundIndexOf, roundStartOf,
                 flowByLine: linesByName, machineCountByLine: machineCountByLine, pairMatByMat,
               });
               const positionedForCards = (cs) => cs.map(c => positionedByOrder.get(orderKeyOf(c))).filter(Boolean)
                 .sort((a, b) => a.startMs - b.startMs);
               const totalDelayed = delayedCountOf(positionedByOrder);
+              /* ⏱️ ปลายกะที่กำลังเดินอยู่ — ใช้ตัดสิน "ไม่ทันกะ"/"เกินกะ"
+                 ดูวันย้อนหลัง/วันหน้า (ไม่มีกะกำลังเดิน) → ใช้ปลายวันงาน (08:00 วันถัดไป) ตามเดิม */
+              const curHalfNow  = HALVES.find(hf => nowMs >= hf.startMs && nowMs < hf.startMs + 12 * 3600000);
+              const shiftEndMs  = curHalfNow ? curHalfNow.startMs + 12 * 3600000 : gridEndMs;
+              /* 📋 "หลุดแผนไปแค่ไหน" ของทั้งกลุ่มไลน์ — สูตรเดียวกับที่ใช้ในแถว (planStatusOf)
+                 feedback หน้างาน 30/09: "ดีเลย์ N ใบ" ไม่บอกขนาด ⇒ ต้องมีนาที + ยอดคู่กัน */
+              const boardPlan = planStatusOf({
+                positioned: positionedByOrder, cards: allCards, breaks: allBreaksOnce(),
+                ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+              });
 
               return (
                 <div key={lineName} style={{
@@ -1523,13 +1534,17 @@ export default function Dashboard() {
 
                   {/* ── Line header ── */}
                   <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* 📱 ต้องมี flexWrap — ชิปสถานะ (ดีเลย์/แถบหลุดแผน/⬜ ไม่รู้) เป็นข้อความ nowrap
+                        หดไม่ได้ ⇒ ที่ 390px หัวบอร์ดล้นกรอบ 11px (mobilesweep จับได้ 30/09) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
                       <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{lineName}</span>
                       {totalDelayed > 0 && (
                         <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
                           ⚠️ ดีเลย์ {totalDelayed} ใบ
                         </span>
                       )}
+                      {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
+                      <PlanSlipBar st={boardPlan} fmtMs={fmtMs} size={12} />
                       {/* ⬜ นาทีที่ยังไม่มีคำอธิบาย รวมทั้งกลุ่มไลน์ — "ต้อง recover กี่นาที" ตอบด้วยเลขนี้
                           ⚠️ ตั้งใจไม่ทำเป็นไฟแดง: ค่ากลางทั้งโรงงานอยู่ที่ ~20% ของกะ ถ้าตีแดงคือแดงทุกไลน์
                              ทุกกะ แล้วไม่มีใครเชื่อจออีก — ตั้งเกณฑ์เตือนหลังจากดูค่าจริงบนจอสักพักก่อน */}
@@ -2054,6 +2069,11 @@ export default function Dashboard() {
                                 เลยขอบกริด (08:00 วันถัดไป) จะวาดไม่ออก แล้วจอจะดูเหมือน "ไม่มีงานเหลือ" */
                           const finMs     = projectedFinishMs(rowPos);
                           const finOver   = finMs != null && finMs > gridEndMs;
+                          /* 📋 หลุดแผนของแถวนี้ — สูตรกลางตัวเดียวกับหัวบอร์ด (ห้ามคิดเองในหน้า) */
+                          const rowPlan   = planStatusOf({
+                            positioned: rowPos, cards: row.cards, breaks: allBreaksOnce(),
+                            ctByMat: ctByMatNo, nowMs, frameEndMs: gridEndMs, shiftEndMs,
+                          });
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
                           const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
@@ -2076,13 +2096,16 @@ export default function Dashboard() {
                                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
                                     {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
                                     {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
-                                    {finMs != null && (
-                                      <span title={finOver
-                                          ? 'งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต'
-                                          : 'เวลาที่คาดว่าใบสุดท้ายของแถวนี้จะจบ — คิดจากคิวจริงที่ถูกดันด้วยงานที่ค้างอยู่'}
-                                        style={{ fontSize: 11, fontWeight: 800, color: finOver ? '#ef4444' : delayed > 0 ? '#f97316' : 'var(--text2)' }}>
-                                        → จบ ~{fmtMs(finMs)}{finOver ? ' 🔴 ล้นวันงาน' : ''}
-                                      </span>
+                                  </div>
+                                  {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
+                                  <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
+                                    {/* 📱 มือถือ: คอลัมน์ซ้ายแคบ ~55px ⇒ ข้อความถูกตัดเหลือ "ช้า 23:0…" ซึ่ง**อ่านผิดได้**
+                                    (23:0 = 23 นาที?) ⇒ ไม่วาดเลย ให้อ่านจากแถบหัวบอร์ดที่เต็มประโยคแทน
+                                    — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
+                                {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
+                                    {finOver && (
+                                      <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
+                                        style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
                                     )}
                                   </div>
                                 </div>
