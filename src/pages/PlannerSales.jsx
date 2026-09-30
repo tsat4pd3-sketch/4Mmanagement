@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -23,6 +23,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import MonitoringUpload from '../components/MonitoringUpload';
+import DemandMailInbox from '../components/DemandMailInbox';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
@@ -140,6 +141,21 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [fmtErr, setFmtErr] = useState(false);
   const [showFmt, setShowFmt] = useState(false);
   const ediDict = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
+  /* 📬 ไฟล์ที่เปิดจากคิวเมล (2026-09-30) — นำเข้าสำเร็จแล้วต้องปิดแถวคิวพร้อม batch_id
+     เลือกไฟล์เองจากเครื่องเมื่อไหร่ = ล้างทิ้ง (ไม่งั้นไปปิดคิวผิดใบ) */
+  const mailRowsRef = useRef([]);
+  const [mailKey, setMailKey] = useState(0);
+  const markMailImported = async (batchId) => {
+    const ids = mailRowsRef.current.map(r => r.id);
+    mailRowsRef.current = [];
+    if (!ids.length) return;
+    const res = await supabaseDR.from('demand_mail_inbox')
+      .update({ status: 'imported', batch_id: batchId, handled_by: fullName || null, handled_at: new Date().toISOString() })
+      .in('id', ids).select('id');
+    if (checkWrite(res, 'ปิดคิวไฟล์จากเมล') && (res.data?.length || 0) < ids.length)
+      toast.error('นำเข้าแล้ว แต่ปิดแถวคิวเมลไม่ครบ — กด "ข้าม" ที่แผง 📬 เอง');
+    setMailKey(k => k + 1);
+  };
 
   const loadFormats = useCallback(async () => {
     const { data, error } = await supabaseDR.from('customer_pull_formats')
@@ -449,6 +465,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         if (e2) throw e2;
       }
       toast.success(`✅ นำเข้า ${records.length} แถวสำเร็จ${skipped ? ` (ข้าม ${skipped} แถวที่ข้อมูลไม่ครบ)` : ''}`);
+      await markMailImported(batch.id);
       setHeaders([]); setRows([]); setFileName('');
       await loadBatches();
       onImported?.();
@@ -590,6 +607,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           date_from: edi.dateFrom, date_to: edi.dateTo, unmatched: edi.unmatched.length, uploaded_by: fullName || 'Sales',
         } },
       }).catch(() => {});
+      await markMailImported(batch.id);
       setEdi(null);
       await loadBatches();
       onImported?.();
@@ -645,7 +663,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
               <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
-                onChange={e => { handleFiles(e.target.files, kind); e.target.value = ''; }} />
+                onChange={e => { mailRowsRef.current = []; handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
             <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
@@ -662,6 +680,9 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
             </div>
           )}
+          <DemandMailInbox refreshKey={mailKey} fullName={fullName}
+            onOpen={async (files, mailRows) => { mailRowsRef.current = mailRows; await handleFiles(files, kind); }} />
+
           {showFmt && <div style={{ marginBottom: 10 }}><CustomerFileFormats canManage={canUpload} onChanged={loadFormats} /></div>}
 
           {edi && (

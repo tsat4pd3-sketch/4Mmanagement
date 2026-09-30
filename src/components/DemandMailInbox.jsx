@@ -1,0 +1,93 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabaseDR } from '../supabaseClient';
+import { toast } from './Toast';
+import { checkWrite } from '../utils/dbWrite';
+
+/* ─── 📬 ไฟล์จากเมลรอนำเข้า (2026-09-30) ─────────────────────────────────────
+   แถวในคิว `demand_mail_inbox` (DR) เกิดจากสคริปต์ Outlook บนเครื่อง user
+   (tools/outlook-mail-ingest) → Edge Function `ingest-demand-mail`
+   กด "เปิด" = ดาวน์โหลดไฟล์แล้วส่งเข้า **ตัวอ่านเดิมของหน้า** (`onOpen(files, rows)`)
+   🔴 แผงนี้ไม่แกะไฟล์เอง ห้ามเขียนตรรกะ 830/862 ซ้ำที่นี่
+   🔴 ค้างเกิน 24 ชม. = ขึ้นแดง (ห้ามกองเงียบ) · ว่าง = บอกว่าว่าง ไม่ซ่อนแผง
+   เอกสาร: docs/modules/logistic-planner-sales.md §📬 ดึงไฟล์จากเมล */
+
+const STALE_H = 24;
+const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', {
+  timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+}) : '—');
+
+export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
+  const [rows, setRows] = useState([]);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('demand_mail_inbox')
+      .select('id, file_name, subject, sender, received_at, size_bytes, storage_path, created_at')
+      .eq('status', 'pending').order('received_at', { ascending: false }).limit(30);
+    setErr(error ? error.message : null);
+    setRows(data || []);
+  }, []);
+  useEffect(() => { load(); }, [load, refreshKey]);
+
+  const open = async (r) => {
+    setBusy(r.id);
+    try {
+      const { data, error } = await supabaseDR.storage.from('demand-mail').download(r.storage_path);
+      if (error) throw error;
+      await onOpen([new File([data], r.file_name)], [r]);
+    } catch (e) { toast.error(`เปิดไฟล์จากเมลไม่ได้: ${e.message}`); }
+    setBusy(null);
+  };
+
+  const skip = async (r) => {
+    const note = window.prompt(`ข้ามไฟล์ ${r.file_name} — เหตุผล (เช่น ไฟล์ซ้ำ/นำเข้ามือไปแล้ว)`);
+    if (note == null) return;
+    const res = await supabaseDR.from('demand_mail_inbox')
+      .update({ status: 'skipped', note: note || null, handled_by: fullName || null, handled_at: new Date().toISOString() })
+      .eq('id', r.id).select('id');
+    if (!checkWrite(res, 'ข้ามไฟล์จากเมล')) return;
+    if (!res.data?.length) { toast.error('บันทึกไม่สำเร็จ (0 แถว)'); return; }
+    load();
+  };
+
+  const now = Date.now();
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 12, background: 'var(--bg2)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rows.length ? 8 : 0 }}>
+        <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>📬 ไฟล์จากเมลรอนำเข้า</span>
+        <span style={{ fontSize: 12, color: rows.length ? 'var(--accent2)' : 'var(--muted)', fontWeight: 700 }}>
+          {err ? '' : rows.length ? `${rows.length} ไฟล์` : 'ไม่มีไฟล์ค้าง'}
+        </span>
+        <button type="button" onClick={load} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6,
+          background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer' }}>↻</button>
+      </div>
+      {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
+      {rows.map(r => {
+        const ageH = (now - new Date(r.received_at || r.created_at).getTime()) / 3600000;
+        const stale = ageH > STALE_H;
+        return (
+          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px',
+            borderRadius: 8, marginTop: 4, background: 'var(--card)',
+            border: `1px solid ${stale ? 'rgba(239,68,68,0.5)' : 'var(--border)'}` }}>
+            <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>📄 {r.file_name}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {fmtTime(r.received_at)} · {r.sender || '—'} · {r.subject || ''}
+              </div>
+            </div>
+            {stale && <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ค้าง {Math.floor(ageH)} ชม.</span>}
+            <button type="button" disabled={busy === r.id} onClick={() => open(r)}
+              style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+                background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>
+              {busy === r.id ? 'กำลังเปิด…' : '📥 เปิดเพื่อนำเข้า'}
+            </button>
+            <button type="button" onClick={() => skip(r)}
+              style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+                background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ข้าม</button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
