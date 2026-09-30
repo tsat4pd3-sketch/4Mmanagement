@@ -20,7 +20,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget } from '../utils/oee';
+import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -508,7 +508,7 @@ export default function OEEAnalytics() {
         fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
           .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
         fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
-          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
+          .select(`*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name), ${QBIN_EMBED}`).in('session_id', c)),
         fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', c)),
       ]);
@@ -967,7 +967,7 @@ export default function OEEAnalytics() {
         fetchByIds(sessionIds, c => supabaseDR.from('downtime_logs')
           .select('*, dr_downtime_types(name_th, category, color)').in('session_id', c)),
         fetchByIds(sessionIds, c => supabaseDR.from('defect_logs')
-          .select('*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name)').in('session_id', c)),
+          .select(`*, dr_defect_types(name_th, color, excl_from_q), prod_orders(mat_no, part_name), ${QBIN_EMBED}`).in('session_id', c)),
         supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'),
         supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'),
         // ⚠️ ตัวนี้อ่าน "กะปิดแล้วทั้งตาราง" เพื่อทำ dropdown ไลน์ → ไม่แบ่งหน้า = ได้แค่ 1000 แถวแรก
@@ -1273,14 +1273,26 @@ export default function OEEAnalytics() {
      ตัวหลัง = ก้อนเดียวกับที่ถูกนับใน %Q ของ OEE · ต้นทุน/ชิ้นใช้ util กลาง defectUnitCost
      ⚠️ พาร์ทที่ยังไม่กรอกต้นทุนใน Parts Master → ไม่เดาราคา แต่รายงานจำนวนให้เห็นบนจอ */
   const defectCost = useMemo(() => {
-    const acc = { all: 0, line: 0, trial: 0, qtyAll: 0, qtyLine: 0, qtyTrial: 0 };
+    /* 🔴 4 ถังต้องกระทบยอดกันได้: qtyAll = qtyTrial + qtyLine + qtyPending + qtyCleared
+       · qtyLine  = ตัวที่คิดเข้า %Q จริง (NG + ของสงสัยที่ QA ตัดสินว่าเสีย)
+       · qtyPending = ของสงสัยที่ QA ยังไม่พิจารณา — **ยังไม่รู้ว่าเสียไหม** จึงไม่อยู่ใน %Q (§7.1 ของ oee.js)
+       · qtyCleared = QA ตรวจแล้วใช้ได้/ซ่อม/ขอใช้ — ไม่ใช่ของเสีย แต่ยังอยู่ในยอด "ทั้งหมด" ที่คนกรอกไว้ */
+    const acc = { all: 0, line: 0, trial: 0, pendingBaht: 0,
+                  qtyAll: 0, qtyLine: 0, qtyTrial: 0, qtyPending: 0, qtyCleared: 0 };
     const noCost = new Map();   // mat -> จำนวนชิ้นที่ตีมูลค่าไม่ได้
     const byType = new Map();   // ประเภทของเสีย -> { qty, baht }
     defects.forEach(d => {
-      const qty = (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0);
+      const qty = defectQtyAll(d);              // ยอดที่คนกรอก (เห็นทุกอย่าง)
       if (!qty) return;
+      const qtyQ = defectQty(d);                // ตัวที่คิดเข้า %Q
+      const pend = suspectPendingQty(d);        // รอ QA พิจารณา
       const trial = isTrialDefect(d);
-      acc.qtyAll += qty; if (trial) acc.qtyTrial += qty; else acc.qtyLine += qty;
+      acc.qtyAll += qty;
+      if (trial) acc.qtyTrial += qty;
+      else {
+        acc.qtyLine += qtyQ; acc.qtyPending += pend;
+        acc.qtyCleared += Math.max(0, qty - qtyQ - pend);   // QA ตัดสินแล้วว่าไม่ใช่ของเสีย
+      }
       const mat = d.prod_orders?.mat_no || null;
       const { unit } = defectUnitCost(mat ? partCost[mat] : null);
       if (unit == null) {
@@ -1289,7 +1301,9 @@ export default function OEEAnalytics() {
         return;
       }
       const v = qty * unit;
-      acc.all += v; if (trial) acc.trial += v; else acc.line += v;
+      acc.all += v;
+      if (trial) acc.trial += v;
+      else { acc.line += qtyQ * unit; acc.pendingBaht += pend * unit; }
       /* Top ประเภทตามมูลค่า — ตอบคนละคำถามกับ Pareto รายจำนวน
          ("ประเภทไหนแพงสุด" ≠ "ประเภทไหนเยอะสุด" — ของเสีย 5 ชิ้นของพาร์ทแพง กินเงินกว่า 50 ชิ้นของพาร์ทถูก) */
       const t = d.dr_defect_types?.name_th || 'ไม่ระบุ';
@@ -2146,7 +2160,7 @@ export default function OEEAnalytics() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, alignContent: 'start' }}>
               {[
                 { k: 'all',   label: 'ของเสียทั้งหมด',            sub: 'รวมงานทดลอง',                      color: '#ef4444', qty: defectCost.qtyAll },
-                { k: 'line',  label: 'จากไลน์ผลิต',               sub: 'ไม่รวมงานทดลอง = ตัวที่คิดเข้า %Q', color: '#f59e0b', qty: defectCost.qtyLine },
+                { k: 'line',  label: 'จากไลน์ผลิต',               sub: 'ตัวที่คิดเข้า %Q (ไม่รวมงานทดลอง/ของรอ QA)', color: '#f59e0b', qty: defectCost.qtyLine },
                 { k: 'trial', label: '🧪 งานทดลอง (Try-out)',     sub: 'ไม่ถูกนับใน %Q',                    color: '#a855f7', qty: defectCost.qtyTrial },
               ].map(c => (
                 <div key={c.k} style={{ background: 'var(--card)', border: `1px solid ${c.color}44`, borderLeft: `4px solid ${c.color}`, borderRadius: 10, padding: '10px 14px' }}>
@@ -2158,6 +2172,24 @@ export default function OEEAnalytics() {
                 </div>
               ))}
             </div>
+            {/* 🔴 ยอด "ทั้งหมด" กับ "ที่คิดเข้า %Q" ต่างกันตรงไหน ต้องเขียนบนจอ ห้ามให้ไปเดาเอง (กฎ §7.1 oee.js) */}
+            {(defectCost.qtyPending > 0 || defectCost.qtyCleared > 0) && (
+              <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6,
+                            background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px' }}>
+                {defectCost.qtyPending > 0 && (
+                  <div>
+                    ⏳ ในยอด "ทั้งหมด" มีของ<b>ต้องสงสัยที่ QA ยังไม่พิจารณา {defectCost.qtyPending.toLocaleString()} ชิ้น</b>
+                    {defectCost.pendingBaht > 0 && <> (≈ {fmtBaht(defectCost.pendingBaht)} บาท)</>}
+                    {' '}— <b>ยังไม่นับใน %Q</b> เพราะยังไม่รู้ว่าดีหรือเสีย · ถ้า QA ตัดสินว่าทำลาย %Q จะต่ำลงกว่าที่เห็นตอนนี้
+                  </div>
+                )}
+                {defectCost.qtyCleared > 0 && (
+                  <div>
+                    ✅ และมี <b>{defectCost.qtyCleared.toLocaleString()} ชิ้น</b> ที่ QA ตรวจแล้วใช้ได้/ซ่อม/ขอใช้ — ไม่ใช่ของเสีย จึงไม่อยู่ใน %Q
+                  </div>
+                )}
+              </div>
+            )}
             {/* Top ประเภทตามมูลค่า — กดแล้วเจาะทันที (ยอดรวมตอบไม่ได้ว่าเงินก้อนนี้เกิดที่ไลน์ไหน พาร์ทไหน วันไหน) */}
             {defectCost.byType.length > 0 && (
               <div style={{ marginTop: 10 }}>
