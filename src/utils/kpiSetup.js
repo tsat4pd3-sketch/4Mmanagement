@@ -303,6 +303,28 @@ export function sharedValueDef(defs, d) {
     && ((cid && x.catalog_id === cid) || normKpiName(x.kpi_catalog?.name || x.name) === nm)) || null;   // แถวเก่าไม่มี catalog_id = เทียบชื่อ (ชื่อคือตัวตนของทะเบียนอยู่แล้ว · unique index)
 }
 
+/* ── 5.4) ช่องบนบอร์ด OBEYA (30/09 · user: "inventory balance กับ DSI คือเรื่องเดียวกัน · training กับ TS Academy คือสกอเดียวกัน") ──
+   บอร์ด 8 แผ่นหลักเคยจับคู่ด้วย "ชื่อตรงตัว" ⇒ ชื่อทางการในทะเบียน (Day Sales of Inventory (DSI) / TS Academy training)
+   ไม่ตรงชื่อบนบอร์ดกระดาษ (Inventory Balance / Training) ⇒ แผ่นขึ้น "ยังไม่ได้ตั้ง KPI" ทั้งที่กรอกครบ
+   ⇒ `kpi_catalog.board_slot` = ทะเบียนบอกเองว่าขึ้นแผ่นไหน (ตั้งจากปุ่ม 📘) · คีย์ต้องตรง `boardRowsFor()` ใน ObeyaKpiBoard
+   · ทะเบียนที่ตั้ง slot แล้ว **ห้ามจับคู่ด้วยชื่ออีก** (ไม่งั้น KPI ที่ตั้งใจย้ายช่องจะโผล่ 2 ที่) · null = เทียบชื่อแบบเดิม (ของเก่า) */
+export const KPI_BOARD_SLOTS = [
+  { key: 'rm',    label: '%RM (Raw Material)' },
+  { key: 'dloh',  label: 'DL+OH (Direct Labor + Overhead)' },
+  { key: 'dl',    label: 'Direct Labor (ปี ≤ 2025)' },
+  { key: 'oh',    label: 'Overhead (ปี ≤ 2025)' },
+  { key: 'inv',   label: 'Inventory Balance / DSI' },
+  { key: 'csat',  label: 'Customer Satisfaction' },
+  { key: 'oee',   label: 'OEE' },
+  { key: 'ppm',   label: 'PPM' },
+  { key: 'safe',  label: 'Safety' },
+  { key: 'train', label: 'Training / TS Academy' },
+];
+export const boardSlotOf = (d) => {
+  const k = d?.kpi_catalog?.board_slot || d?.board_slot || null;
+  return KPI_BOARD_SLOTS.some(s => s.key === k) ? k : null;
+};
+
 /* ── 5.3) คาดการณ์ปลายปี = "ผลจริงที่มีแล้ว + แผนของเดือนที่เหลือ" (30/09 · คำสั่ง user) ─────────────
    *"มันจะมีบางค่า จะคิดแบบ Actual+Plan ที่เหลือ เพื่อสรุปว่าปีนี้จะรอดหรือร่วง"*
    · เดือนที่มีผลจริง → ใช้ผลจริง · เดือนที่ยังไม่มีผล → ใช้แผน (`kpi_month_plans`) · รวมด้วยวิธีรวมของ KPI ตัวนั้น

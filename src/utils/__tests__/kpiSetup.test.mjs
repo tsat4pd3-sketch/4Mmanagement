@@ -8,7 +8,7 @@ import {
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
   isStdFixed, isStdParent, checkStdSelection, matchStdItems,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, KPI_SUMMARY_MODES,
-  planProgress, valueScopeOf, sharedValueDef, yearForecast,
+  planProgress, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf, KPI_BOARD_SLOTS,
 } from '../kpiSetup.js';
 
 /* ── เกณฑ์คะแนน: ตรวจกับ 6 แถวจริงในคู่มือ KPI Online (§8.3) ─────────────────────────── */
@@ -575,4 +575,12 @@ test('yearForecast: 🔴 เดือนที่ไม่มีทั้งผ�
 test('yearForecast: ครบ 12 เดือนจริง = สรุปปีจริง ไม่ใช้แผน · rate = เฉลี่ย + approx', () => {
   const r = yearForecast({ actual: Array(12).fill(7), plan: Array(12).fill(1), def: { kpi_catalog: { summary_mode: 'rate' } } });
   assert.equal(r.planMonths, 0); assert.equal(r.value, 7); assert.equal(r.approx, true);
+});
+
+/* ── 🎯 boardSlotOf — ทะเบียนบอกเองว่าขึ้นแผ่นไหน (30/09 · DSI = Inventory Balance · TS Academy = Training) ── */
+test('boardSlotOf: อ่านจากทะเบียน · คีย์แปลก/ไม่ตั้ง = null · คีย์ทุกตัวไม่ซ้ำ', () => {
+  assert.equal(boardSlotOf({ kpi_catalog: { name: 'Day Sales of Inventory (DSI)', board_slot: 'inv' } }), 'inv');
+  assert.equal(boardSlotOf({ kpi_catalog: { name: 'QCC', board_slot: null } }), null);
+  assert.equal(boardSlotOf({ kpi_catalog: { board_slot: 'bogus' } }), null);
+  assert.equal(new Set(KPI_BOARD_SLOTS.map(s => s.key)).size, KPI_BOARD_SLOTS.length);
 });
