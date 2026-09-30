@@ -232,7 +232,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการใช้ `defectQtyAll` (เห็นของสงสัยเสมอ) — ห้ามสลับ**
 > · 🔴 **คิวรีที่เอาไปคิด %Q ต้องต่อ `${QBIN_EMBED}` ใน select** ไม่ต่อ = `suspectState()` คืน `unknown`
 >   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
-> · ⚠️ **ไม่ backfill `oee_q` ที่ stamp ไว้แล้ว** — 4 กะในประวัติจึงมีค่า stamp ≠ ค่าคำนวณใหม่ (ดูเอกสาร)
+> · ✅ **backfill ประวัติแล้ว 30/09** (`20260930_oee_q_suspect_backfill_dr.sql` · apply+ตรวจกลับแล้ว) — 3 กะ
+>   `oee_q`→100 และ **`oee` คิดใหม่จาก A×P×Q** · ค่าเดิมอยู่ `archive.oee_q_suspect_backfill_20260930`
+>   🔴 2 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ถ้าตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
 
