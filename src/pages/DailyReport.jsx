@@ -47,6 +47,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
 import MatLabel from '../components/MatLabel';
+import PlannedLotQueue from '../components/PlannedLotQueue';
 import ProductSelect from '../components/ProductSelect';
 import { scopeMatRows } from '../utils/matScope';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยบันทึกใน kanban_standards — Product Master ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -3127,6 +3128,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   </div>
                 </div>
               )}
+
+              {/* 📋 แผนสั่งงานจากทีมวางแผน (2026-09-30) — งาน lot size ที่ไม่ได้เดินตามคัมบัง
+                  ไม่มีแผนของกะนี้ = ไม่วาดอะไรเลย (ไลน์คัมบังจอไม่รก) */}
+              <PlannedLotQueue session={selSession} orders={prodOrders}
+                onStarted={() => selSession && loadProdOrders(selSession.id, selSession.line_name)} />
 
               {/* สรุป "จะส่งต่อกะหน้า" — คู่กับแบนเนอร์ "รับยอดจากกะก่อน" ด้านบน
                   เดิมมีแต่ตัวเลขรายใบ ต้องไล่บวกเอง/ไปเปิดดูกะถัดไปถึงรู้ว่ากะนี้ส่งต่อเท่าไหร่ */}
