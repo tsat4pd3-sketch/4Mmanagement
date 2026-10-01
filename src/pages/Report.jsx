@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useContext, useMemo, useCallback } from 'react';
+import { sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
@@ -286,7 +287,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
     .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
-  const allSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const allSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
   const sections = (role === 'leader' && userLineId)
     ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
     : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
@@ -681,8 +682,8 @@ function DailyTab() {
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
   const dailySections = useMemo(() => {
-    if (role === 'leader' && userLineId) return [...new Set(linesInScope.map(l => l.section).filter(Boolean))].sort();
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    if (role === 'leader' && userLineId) return sortLike(linesInScope.map(l => l.section), orgSectionList);
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, linesInScope, orgSectionList, role, userLineId, scopeSecs]);
   const dailyVisibleLines = dailySection ? linesInScope.filter(l => l.section === dailySection) : linesInScope;
@@ -866,8 +867,8 @@ function PerEmployeeTab() {
 
   // dropdown ส่วนงาน เหลือเฉพาะใน scope (leader → เฉพาะส่วนงานของพนักงานในไลน์ตัวเองซึ่งถูก scope แล้ว)
   const empSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return [...new Set(employees.map(e => e.section).filter(Boolean))].sort();
-    const all = orgSectionList.length ? orgSectionList : [...new Set(employees.map(e => e.section).filter(Boolean))].sort();
+    if (role === 'leader' && userLineId) return sortLike(employees.map(e => e.section), orgSectionList);
+    const all = orgSectionList.length ? orgSectionList : sortLike(employees.map(e => e.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [employees, orgSectionList, role, userLineId, scopeSecs]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
@@ -1022,7 +1023,7 @@ function StationLogTab() {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
       return myLine?.section ? [myLine.section] : [];
     }
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
 
@@ -1225,6 +1226,7 @@ table{border-collapse:collapse;width:100%}
 
 function RangeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
+  const orgSectionList = useOrgSections();   // ลำดับส่วนงานตามผัง เหมือนแท็บอื่น (2026-10-01)
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
@@ -1273,7 +1275,7 @@ function RangeTab() {
     if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
-  const rangeSections = useMemo(() => [...new Set(rangeLinesInScope.map(l => l.section).filter(Boolean))].sort(), [rangeLinesInScope]);
+  const rangeSections = useMemo(() => sortLike(rangeLinesInScope.map(l => l.section), orgSectionList), [rangeLinesInScope, orgSectionList]);
   const rangeVisibleLines = rangeSection ? rangeLinesInScope.filter(l => l.section === rangeSection) : rangeLinesInScope;
 
   const filteredRows = useMemo(() => rows.filter(r => {
@@ -1913,8 +1915,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         {(() => {
           const scopedLines = allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines;
           const fourMSections = allowedLineNames
-            ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
-            : (orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort());
+            ? sortLike(scopedLines.map(l => l.section), orgSectionList)
+            : (orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList));
           const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
           return (<>
             <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }}>
@@ -2300,8 +2302,8 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
     return scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
   }, [lines, role, userLineId, scopeSecs]);
   const sections = useMemo(() => {
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
-    if (role === 'leader' && userLineId) return [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
+    if (role === 'leader' && userLineId) return sortLike(scopedLines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
   const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
@@ -4233,9 +4235,9 @@ function AttendanceFormTab() {
   const attLinesInScope = (role === 'leader' && userLineId)
     ? lines.filter(l => String(l.id) === String(userLineId))
     : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
-  const attAllSections = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const attAllSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
   const attSections = (role === 'leader' && userLineId)
-    ? [...new Set(attLinesInScope.map(l => l.section).filter(Boolean))].sort()
+    ? sortLike(attLinesInScope.map(l => l.section), orgSectionList)
     : scopeSecs.length ? attAllSections.filter(s => inSectionScope(scopeSecs, s)) : attAllSections;
 
   return (

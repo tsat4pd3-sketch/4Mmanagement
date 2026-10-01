@@ -111,6 +111,13 @@ breadcrumb
 - ช่องที่ "กรองรายการบนจอ" = `<SearchInput value onChange fields="MAT / ชื่อพาร์ท" />`
   → ไอคอน 🔍 ในกรอบ · placeholder `ค้นหา <ช่องที่ค้นได้>` · `type="search"` · ปุ่ม ✕ ล้าง
 - ช่องที่ "เลือก 1 ค่าจากทะเบียน" ไม่ใช่ช่องค้นหา → picker กลาง (UI-CONVENTIONS §5.1.2)
+- 🔴 **พิมพ์แล้วต้องกรอง — 2 บั๊กที่ build/lint/crashsweep ผ่านหมด** (01/10 · user: *"พิมไปแล้ว ไม่เห็นกรองให้"* · *"ทับตัวหนังสือ แทบทุกหน้า"*)
+  · picker กลาง: พาเรนต์เก็บคำที่พิมพ์ → `appendHistoryOptions(current)` แปลงเป็น option "⚠ นอกทะเบียน" → ช่องคิดว่า "เลือกแล้ว"
+    → ทิ้งคำค้น ⇒ **`SearchSelect` แยกสถานะ `typing` (คำค้น = สิ่งที่พิมพ์เสมอ) · ซ่อน option ที่เป็นเงาของคำค้น ·
+    ปิดลิสต์โดยไม่เลือก = ล้าง (allowFree=false)** · คลิกช่องที่โฟกัสอยู่แล้วต้องเปิดลิสต์ได้
+  · `<SearchInput>` ในแถบกรอง: กฎขนาด `.filter-bar :is(input:not(…)×5)` specificity (0,6,1) ชนะ `.search-input input`
+    ⇒ padding ซ้ายเหลือ 10px 🔍 ทับคำ 17 หน้า ⇒ **ที่ว่างของไอคอนเขียน inline ในตัว component** (ห้ามย้ายกลับไปพึ่ง class)
+  · ตรวจ `node audit/searchsweep.mjs` (พิมพ์คำที่ไม่มีทางเจอทุกช่อง × ทุกแท็บ · ไอคอนทับ · lab picker `audit/searchlab.html`)
 
 ## 4.5 🧭 "คุณอยู่ตรงนี้" — รูปแบบเดียวกันทุกชั้นของเมนู (2026-09-24 · user ทัก)
 
@@ -193,3 +200,7 @@ dropdown ยืดเกินครึ่งจอ · ช่องในแถ�
 - 2026-10-01 ลำดับ dropdown/ลิสต์ไลน์ (user: *"บางหน้าโอเค บางหน้าเรียงมั่ว ไม่มีแพทเทิร์นในการเรียง"*) —
   `toHierarchicalOptions` เรียงเอง (ส่วนงาน→แม่→ลูก · ธรรมชาติ) + หัวกลุ่ม 🏭 PDx ใน `<LineSelect>` ·
   `sortLineNames`/`lineNameCompare` สำหรับลิสต์ชื่อจากข้อมูล · ด่าน `line-names-raw-sort` · lab `audit/linelab.html`
+- 2026-10-01 ลำดับรายการที่ใช้ซ้ำหลายหน้า (user: *"dropdown ตัวอื่นๆ ที่ใช้เหมือนกันหลายหน้า อย่าให้มั่ว"*) — `src/utils/listOrder.js`
+  ผังองค์กร = `sort_order` → ชื่อธรรมชาติ · ลิสต์จากข้อมูล `sortLike` · ด่าน `org-list-raw-order` (UI-CONVENTIONS §5.3 ข้อ 10)
+- 2026-10-01 ช่องค้นหา: picker พิมพ์แล้วไม่กรอง (SearchSelect `typing`) · 🔍 ทับคำในแถบกรอง 17 หน้า (SearchInput inline padding) ·
+  `audit/searchsweep.mjs` + `audit/searchlab.html` · เทส `searchBoxes.test.mjs`

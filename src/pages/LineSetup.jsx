@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useContext } from 'react';
+import { orgValues } from '../utils/listOrder';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -237,8 +238,8 @@ export default function LineSetup({ embedded = false } = {}) {
   useEffect(() => {
     fetchLines();
     supabase.from('skill_definitions').select('*').order('sort_order').then(({ data }) => setSkillDefs(data || []));
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('sort_order')
-      .then(({ data }) => setSectionOpts((data || []).map(n => n.code || n.name)));
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true)
+      .then(({ data }) => setSectionOpts(orgValues(data)));
   }, []);
 
   useEffect(() => {

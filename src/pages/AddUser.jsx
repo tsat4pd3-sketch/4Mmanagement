@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
@@ -114,9 +115,9 @@ export default function AddUser() {
     /* ⚠️ ต้อง select `parent_id` ด้วย — `orphanDepts()` ตัดสิน "แผนกขึ้นตรงฝ่าย" จาก `!parent_id`
        ไม่ดึงคอลัมน์มา = undefined ทุกแถว ⇒ **ทุกแผนกกลายเป็นขึ้นตรงฝ่ายหมด** (เกิดจริง 22/09:
        GOR · LWRBAR · BIG PRESS · HYDROFORM ติดป้าย 🏛️ ทั้งที่อยู่ใต้ส่วนงานผลิต) */
-    supabase.from('org_nodes').select('code, name, kind, parent_id, id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('code, name, kind, parent_id, id, sort_order').eq('is_active', true)
       .then(({ data }) => {
-        const nodes = data || [];
+        const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setSectionOpts(nodes.filter(n => n.kind === 'section').map(n => n.code || n.name));
         setTeamOpts([...new Set(nodes.filter(n => n.kind === 'team').map(n => n.code || n.name))]);
         setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').map(n => n.code || n.name))]);

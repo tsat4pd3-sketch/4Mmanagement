@@ -9,6 +9,7 @@
  *     → ใช้เพื่อ "ตรวจการมองเห็น" ไม่ใช่สนามทดลองกดบันทึก
  *   - เก็บใน sessionStorage = ต่อแท็บ (เปิดแท็บใหม่ยังเป็น admin ปกติ · refresh คงโหมด)
  */
+import { orgValues } from '../utils/listOrder';
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
@@ -33,9 +34,8 @@ export default function ViewAsModal({ current, onClose, onApply }) {
       [...(d || [])].sort((a, b) =>
         String(a.section || '').localeCompare(String(b.section || ''))
         || String(a.name || '').localeCompare(String(b.name || '')))));
-    supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true)
-      .order('sort_order')
-      .then(({ data }) => setOrgSections((data || []).map(n => n.code || n.name)));
+    supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true)
+      .then(({ data }) => setOrgSections(orgValues(data)));
     loadPmTeams().then(rows => setTeamRows(rows || []));
   }, []);
 

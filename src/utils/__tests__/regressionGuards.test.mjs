@@ -108,6 +108,20 @@ const RULES = [
     },
   },
   {
+    id: 'org-list-raw-order',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ 2 ลายเซ็นที่ทำให้ "ส่วนงาน/แผนก/ทีม" เรียงคนละแบบต่อหน้า:
+         (1) ดึงผังองค์กรด้วย `.order('name')` (ทิ้ง sort_order ที่ admin ตั้งใน /org-setup)
+         (2) ลิสต์ส่วนงาน/รหัสผังที่สร้างจากข้อมูล แล้ว `.sort()` ดิบ */
+    re: /from\('org_nodes'\)[^;]{0,220}?\.order\('name'\)|\.(?:section|team)\)(?:\.filter\(Boolean\))?\)\]\.sort\(\s*\)|n\.code \|\| n\.name\)(?:\.filter\(Boolean\))?\)?\]?\.sort\(\s*\)/g,
+    why: 'dropdown ที่ใช้ซ้ำหลายหน้าเรียงคนละแบบ — user ทัก 01/10/2026 *"ดู dropdown ตัวอื่นๆ ที่ใช้เหมือนกันหลายหน้า '
+       + 'อย่าให้มั่ว"*: ผังองค์กรตัวเดียวกันถูกดึง order(name) / order(sort_order) / ไม่เรียง แล้ว .sort() ทับ ⇒ '
+       + '"แผนก" PD3 หน้าหนึ่ง LINE APRON ASSY → HYDROFORM (ตามผัง) อีกหน้า HYDROFORM → LINE APRON ASSY · แผนกช่าง QA→MTN / MTN→QA',
+    fix: 'ของจากผัง → `orgValues(nodes)` / `.sort(orgNodeCompare)` (select `sort_order` มาด้วย) · ลิสต์ที่สร้างจากข้อมูล → '
+       + '`sortLike(values, orgList)` (ค่านอกผังต่อท้าย) หรือ `.sort(naturalCompare)` — ทั้งหมดจาก `src/utils/listOrder.js`',
+    allow: {},
+  },
+  {
     id: 'line-names-raw-sort',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์
@@ -921,6 +935,22 @@ const RULES = [
        + '· ค่าที่ไม่ได้ขึ้นหัว **ห้ามตัดทิ้ง** ให้ตกไปเป็นบรรทัดรอง (clamp + title)',
     allow: {
       'src/utils/matLabel.js': 'เจ้าของกฎ — เป็นที่คำนวณ pNoIsCode/lead เอง',
+    },
+  },
+  {
+    id: 'plan-lot-time-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* คิดเวลาของล็อตเองในหน้า — `qty_plan × CT` ตรงๆ */
+    re: /\bqty_plan\b[^\n]*\*/g,
+    why: 'เวลาของล็อตไม่ได้มาจาก `qty_plan × CT` เสมอไปแล้ว (01/10) — **ใบจองเครื่องทดลองงานใหม่** '
+       + 'ไม่มีทั้ง `mat_no` และ cycle time (SAP ยังไม่ออกเลข MAT · พาร์ทใหม่ไม่มี CT แน่ๆ) '
+       + 'เวลาของมันมาจาก `est_min` = "ที่คนวางแผนขอ" ⇒ หน้าที่คูณเองจะได้ 0 หรือ null '
+       + 'แล้วงานทดลองจะหายจากไทม์ไลน์ทั้งที่เครื่องถูกจองไปจริงหลายชั่วโมง (แผนโกหกว่าไลน์ว่าง)',
+    fix: 'เรียก `lotRunMin(lot, ctOf)` หรือ `lotRunInfo(lot, ctOf)` (`src/utils/planLots.js`) '
+       + '· `lotRunInfo().from` บอกว่าเลขนั้นมาจากระบบคำนวณ (ct) หรือคนกรอก (est) '
+       + '— จอต้องเขียนให้ต่างกัน ห้ามโชว์เหมือนกัน',
+    allow: {
+      'src/utils/planLots.js': 'เจ้าของสูตร — เป็นที่คิด qty × CT เอง',
     },
   },
 ];

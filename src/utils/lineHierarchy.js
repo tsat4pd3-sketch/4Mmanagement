@@ -1,3 +1,4 @@
+import { naturalCompare } from './listOrder.js';
 /**
  * Line-hierarchy helpers — production_lines เชื่อมลำดับชั้นด้วย parent_line_name (ชื่อไลน์ ไม่ใช่ id)
  *
@@ -124,10 +125,8 @@ export function getAncestorNames(allLines, name) {
      2. ในส่วนงานเดียวกัน **ไลน์แม่** เรียงธรรมชาติ — ไม่สนตัวพิมพ์/ช่องว่าง/วงเล็บ · เลขเรียงแบบตัวเลข
      3. **ไลน์ลูกอยู่ใต้แม่ทันที** เรียงธรรมชาติเหมือนกัน (ไลน์ลูกตามส่วนงานของแม่ — ลำดับชั้นชนะส่วนงาน)
    ไม่ใช้ `sort_order` ที่กรอกมือ — ไม่มีคอลัมน์นั้น และทะเบียน ~35 แถว กติกาตายตัวคาดเดาได้ดีกว่า */
-const COLL = new Intl.Collator('th', { numeric: true, sensitivity: 'base' });
-const normKey = (s) => String(s ?? '').replace(/[\s()_\-]+/g, ' ').trim();
-/** เทียบชื่อไลน์/ส่วนงานแบบ "ธรรมชาติ" — `LINE 9` < `LINE 10` · `Line 60` = `LINE 60` */
-export const lineNameCompare = (a, b) => COLL.compare(normKey(a), normKey(b)) || COLL.compare(String(a ?? ''), String(b ?? ''));
+/** เทียบชื่อไลน์/ส่วนงานแบบ "ธรรมชาติ" — `LINE 9` < `LINE 10` · `Line 60` = `LINE 60` (ตัวเทียบกลาง `listOrder.js`) */
+export const lineNameCompare = naturalCompare;
 /** เทียบส่วนงาน — ว่าง/null ไปท้ายสุด */
 export const sectionCompare = (a, b) => (!a) - (!b) || lineNameCompare(a || '', b || '');
 

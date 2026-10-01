@@ -88,3 +88,22 @@
 - เทส `lineOrder.test.mjs` (ข้อมูลทะเบียนจริง · สลับลำดับ input แล้วผลต้องเท่าเดิม) · ด่าน `line-names-raw-sort`
 - ตรวจบนจอจริง: `audit/linelab.html` (ทะเบียนจริง 4 แบบ: ทั้งโรงงาน · ส่วนงานเดียว · มีกลุ่มคลัง · ตะกร้าท้าย) · crashsweep 78 หน้า พัง 0
 - ไม่แตะ: รายชื่อ "ส่วนงาน" (PD1–PD4 เรียง `.sort()` ได้ถูกอยู่แล้ว) · LineSetup (หน้าตั้งค่า ตารางเรียงตามที่ผู้ตั้งเห็น)
+
+## รอบ 5 — dropdown อื่นที่ใช้ซ้ำหลายหน้า (01/10 · user: "ดู dropdown ตัวอื่นๆ ด้วย อย่าให้มั่ว")
+- ตรวจครบ: picker กลาง 9 ตัว (ตัวโหลดจุดเดียว ✅) · ทะเบียน sort_order (process types/ทีมช่าง/ฝ่าย ✅) ·
+  **ผังองค์กร ❌** — ดึง 3 แบบ (`order('name')` 6 จุด · `order('sort_order')` 7 จุด · ไม่เรียง 2 จุด) + `.sort()` ทับอีก ~25 จุด
+- ผลที่เห็นได้จริง (ผัง MAIN 01/10): แผนก PD3 `LINE APRON ASSY → HYDROFORM` (ผัง) vs `HYDROFORM → LINE APRON ASSY` (ตัวอักษร)
+  · แผนกช่าง `DIE/JIG MTN → QA → MTN` vs `… MTN → QA` · ProductionPlan กับ MorningMeeting สูตรเดียวกันแต่เรียงต่างกัน
+  · Report แท็บช่วงวันที่ = แท็บเดียวที่ส่วนงานไม่อ่านผัง
+- แก้: `src/utils/listOrder.js` (naturalCompare · orgNodeCompare · orgValues · sortLike) — hooks/`deptOptionsFor`/`buildOrgScope`/
+  13 หน้าใช้ตัวเดียวกัน · ตัวเลือกเครื่อง groupByLine เรียงกลุ่มตามลำดับไลน์มาตรฐาน · `lineNameCompare` = `naturalCompare`
+- เทส `listOrder.test.mjs` (ผังจริง) · ด่าน `org-list-raw-order` ทดสอบกับไฟล์ก่อนแก้ จับได้ (Report 13 · useOrgSections 4 · Dashboard 3 · Checkin 3)
+- ⚠️ ข้อมูล: ผังมีส่วนงาน `TEST` + แผนก `test groupe` **is_active = true** ⇒ โผล่ใน dropdown ส่วนงานทุกหน้า — ปิดได้ที่ /org-setup (ไม่แก้ข้อมูลให้เอง)
+
+## รอบ 6 — ระบบค้นหา (01/10 · user: "พิมไปแล้ว ไม่เห็นกรองให้" + "ไอคอนทับตัวหนังสือ แทบทุกหน้า")
+- **picker กลาง 8 ตัว** (สินค้า/คน/เครื่อง/CC/คลัง/supplier/พาร์ท/เครื่องมือวัด) — ภาพจริง EDI จับคู่พาร์ท พิมพ์ `274` ขึ้น "แสดง 60 จาก **128**"
+  = 127 สินค้าที่ใช้ได้ + 1 option "274 ⚠ นอกทะเบียน" ⇒ **ไม่กรองเลย** และ "274" ค้างเป็นค่าในฟอร์มทั้งที่ allowFree=false
+  · ต้นเหตุ: วงจร พิมพ์ → พาเรนต์เก็บ → `appendHistoryOptions(current)` สร้าง option → SearchSelect ถือว่าเลือกแล้ว → `q=''`
+  · แก้ที่ `SearchSelect` จุดเดียว (สถานะ `typing` · ซ่อนเงาคำค้น · ปิดลิสต์ = ล้าง · คลิกซ้ำเปิดลิสต์) — lab ก่อน/หลัง: 128 → 1 แถวที่ถูก
+- **🔍 ทับคำ 17 หน้า** — เฉพาะช่องที่อยู่ในแถบกรอง (specificity (0,6,1) ชนะ) · แก้ inline ใน `SearchInput` ⇒ 21/21 ช่อง ok
+- `audit/searchsweep.mjs` ใหม่: ช่องค้นหา 55 ช่องทุกหน้า×แท็บ กรองได้ทุกช่อง · ทดสอบกับโค้ดก่อนแก้ จับได้ 31 จุด (lab + ทับ 30)

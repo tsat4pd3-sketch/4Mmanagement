@@ -70,6 +70,12 @@ export default function SearchSelect({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [innerText, setInnerText] = useState('');
+  /* 🔴 "กำลังพิมพ์ค้น" แยกจาก "เลือกแล้ว" (2026-10-01 · user: *"พิมไปแล้ว ไม่เห็นกรองให้"*)
+     picker กลางส่งข้อความที่พิมพ์กลับไปให้พาเรนต์เก็บ แล้ว `appendHistoryOptions(current)` แปลงค่านั้นเป็น
+     option "⚠ นอกทะเบียน" ⇒ ช่องนี้เห็นว่า "มีตัวที่เลือกอยู่" ⇒ คำค้นถูกทิ้ง (q='') ⇒ ลิสต์ไม่กรองเลย
+     (เคสจริง EDI จับคู่พาร์ท: พิมพ์ 274 ขึ้นครบ 128 รายการ) · กระทบ picker ทั้ง 8 ตัวที่ใช้ history
+     ⇒ ระหว่างพิมพ์ คำค้น = สิ่งที่พิมพ์เสมอ ไม่ว่าพาเรนต์จะแปลงกลับมาเป็นอะไร · จบเมื่อเลือก/ล้าง/ปิดลิสต์ */
+  const [typing, setTyping] = useState(false);
   const controlled = textProp !== undefined;
   const text = controlled ? textProp : innerText;
   /* เก็บคำค้นไว้เสมอ แม้โหมด controlled — เพราะ picker บางตัว (MachineSelect valueKey='id') สลับโหมดกลางคัน:
@@ -82,28 +88,35 @@ export default function SearchSelect({
   const latest = useRef({});
 
   const sel = useMemo(() => options.find(o => o.id === value) || null, [options, value]);
-  latest.current = { sel, text, allowFree, onChange };
+  latest.current = { sel, text, allowFree, onChange, typing, innerText };
 
   /* ⚠️ allowFree=false = "ต้องเลือกจากทะเบียนเท่านั้น" (2026-09-07 · single-source audit)
      เดิมข้อความที่พิมพ์ค้างไว้ยังไหลผ่าน onChange ไปถึง state ของฟอร์ม → ทุกจุดต้องเขียน guard เอง
      ตอนนี้: ปิดลิสต์ (คลิกนอกกรอบ / Esc) โดยไม่ได้เลือก = ล้างข้อความออกทันที ค่าที่ไม่อยู่ในทะเบียน
      จึงไม่มีทางค้างอยู่ในฟอร์มได้ (พิมพ์ค้นแล้วไม่เจอ = ช่องกลับเป็นว่าง ไม่ใช่เก็บคำค้นเป็นค่า) */
   const closeList = () => {
-    const { sel: s, text: t, allowFree: free, onChange: cb } = latest.current;
+    const { sel: s, text: t, allowFree: free, onChange: cb, typing: ty, innerText: it } = latest.current;
     setOpen(false);
-    if (!free && !s && String(t || '').trim() !== '') cb?.({ id: '', text: '', opt: null });
+    setTyping(false);
+    // พิมพ์ค้างแล้วไม่ได้เลือก = ล้าง (นับกรณีที่พาเรนต์แปลงคำค้นกลับมาเป็น option "นอกทะเบียน" ด้วย)
+    if (!free && ((!s && String(t || '').trim() !== '') || (ty && String(it || '').trim() !== ''))) {
+      setInnerText('');
+      cb?.({ id: '', text: '', opt: null });
+    }
   };
   // เลือกแล้ว = ไม่ถือว่ากำลังค้น (ไม่งั้นเปิดลิสต์อีกทีจะเหลือแถวเดียวคือตัวที่เลือก)
-  const q = sel ? '' : text;
-  const shown = sel ? sel.label : text;
+  const q = typing ? innerText : (sel ? '' : text);
+  const shown = typing ? innerText : (sel ? sel.label : text);
 
   const matched = useMemo(() => {
     const nq = normSearch(q);
     if (!nq) return options;
-    return options.filter(o => normSearch(
+    // ระหว่างพิมพ์: option "นอกทะเบียน" ที่เป็นแค่เงาสะท้อนของคำค้นเอง (พาเรนต์เก็บคำค้น → history เติมกลับ) ไม่ใช่ผลค้นหา
+    const echo = (o) => typing && o.history && normSearch(o.label) === nq;
+    return options.filter(o => !echo(o) && normSearch(
       `${o.label} ${o.lead || ''} ${o.title || ''} ${o.code || ''} ${o.sub || ''} ${o.keywords || ''}`,
     ).includes(nq));
-  }, [options, q]);
+  }, [options, q, typing]);
 
   const rows = matched.slice(0, maxRows);
   const hidden = matched.length - rows.length;
@@ -119,8 +132,8 @@ export default function SearchSelect({
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('touchstart', away); };
   }, [open]);
 
-  const pick = (o) => { emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
-  const clear = () => { emit({ id: '', text: '', opt: null }); setOpen(true); };
+  const pick = (o) => { setTyping(false); emit({ id: o.id, text: o.label, opt: o }); setOpen(false); };
+  const clear = () => { setTyping(false); emit({ id: '', text: '', opt: null }); setOpen(true); };
 
   const onKey = (e) => {
     if (e.key === 'Escape') { closeList(); return; }
@@ -155,8 +168,9 @@ export default function SearchSelect({
           value={shown}
           disabled={disabled}
           placeholder={placeholder}
-          onChange={e => { emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
+          onChange={e => { setTyping(true); emit({ id: '', text: e.target.value, opt: null }); setOpen(true); }}
           onFocus={() => setOpen(true)}
+          onClick={() => setOpen(true)}   // ช่องที่โฟกัสอยู่แล้ว (เพิ่งเลือกเสร็จ) คลิกซ้ำต้องเปิดลิสต์ได้
           onKeyDown={onKey}
           style={inp}
         />

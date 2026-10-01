@@ -1,3 +1,4 @@
+import { lineNameCompare } from './lineHierarchy.js';
 /* ── pickerOptions — ตัวสร้าง option list ของ picker กลาง (pure · ไม่ import supabase/react) ──
    (2026-09-07 · single-source audit) ใช้โดย <PersonSelect> <MachineSelect> <ProductSelect>
    แยกออกมาให้เทสได้ตรงๆ (node:test) — กฎการ "เรียงของที่เกี่ยวข้องขึ้นก่อน ไม่ตัดของอื่นทิ้ง"
@@ -112,7 +113,7 @@ export function machineOptions(machines, { lines, kinds, strict = false, include
   // groupByLine: เรียงตามไลน์ก่อนแล้วค่อยรหัสเครื่อง — แถวของไลน์เดียวกันต้องอยู่ติดกัน
   // ไม่งั้นหัวกลุ่มโผล่ซ้ำ (SearchSelect ขึ้นหัวกลุ่มเมื่อค่า group เปลี่ยนจากแถวก่อนหน้า)
   tagged.sort((a, b) => (b._pref - a._pref)
-    || (groupByLine ? String(a.line_name || '\uFFFF').localeCompare(String(b.line_name || '\uFFFF'), 'th') : 0)
+    || (groupByLine ? ((!a.line_name) - (!b.line_name) || lineNameCompare(a.line_name || '', b.line_name || '')) : 0)   // ลำดับไลน์มาตรฐาน · ไม่ระบุไลน์ = ท้าย
     || a.label.localeCompare(b.label, undefined, { numeric: true }));
   return tagged.map(o => ({
     ...o,

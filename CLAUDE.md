@@ -362,6 +362,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **ห้ามแก้ `prod_orders.session_id` ให้ null ได้** (ทั้งระบบ join `production_sessions!inner`)
 > · **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · **"ไม่ระบุแม่พิมพ์" ≠ "ไม่ต้องเปลี่ยนรุ่น"** ⇒ `null`
 > · 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
+> · 🧪 **จองเครื่องทดลองงานใหม่ `source='trial'`** (01/10) — เวลา = **`est_min` "ที่ขอ" ไม่ใช่ `qty×CT`**
+>   (ด่าน `plan-lot-time-via-helper`) · 🔴 **ห้ามสร้างพาร์ทใหม่ลง `dr_products`** · `mat_no` ว่างได้เฉพาะใบนี้
+>   · **ไม่เข้า `matchPlanToActual`** (`state:'trial'`) · downtime "ทดลองชิ้นงาน" + `is_trial` **มีแล้ว ห้ามซ้ำ**
 > · ⚠️ แม่พิมพ์ 262 ตัว **กรอกความสูง 0 ตัว** ⇒ ยังเสนอลำดับประหยัดเวลาเปลี่ยนรุ่นไม่ได้ (ท่อต่อไว้ครบ)
 > 📄 รายละเอียดเต็ม → `docs/modules/production-plan.md`
 
@@ -446,6 +449,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · 🔴 **ลำดับตายตัว: ชื่อหน้า → แท็บ → แถบกรอง → เนื้อหา** — ตัวกรองส่ง `filters=` ห้ามใส่ `actions=` (ปุ่มคำสั่งเท่านั้น · มีด่าน)
 · แถบกรอง = `<FilterBar>` หรือ children ของ `<TimeRangeBar>` — **ห้ามใส่ขนาด inline ที่ช่อง** (token `--ctl-*`)
 · ป้าย "ทั้งหมด" = `ALL.*` (`utils/filterLabels.js`) · 2–5 ตัวเลือก (กะ) = `<Segmented>` · ค้นหา = `<SearchInput>`
+· 🗂️ **ส่วนงาน/แผนก/ทีม = `sort_order` ใน /org-setup → ชื่อธรรมชาติ** (`utils/listOrder.js` · ห้าม `order('name')`/`.sort()` ดิบ · มีด่าน)
 · 🏭 **รายการไลน์ทุกที่ = ส่วนงาน → แม่ → ลูก เรียงธรรมชาติ** (01/10) — `<LineSelect>` ทำให้เอง (หัวกลุ่ม 🏭 PDx) · ลิสต์ชื่อจากข้อมูล `sortLineNames`/`lineNameCompare` **ห้าม `.sort()` ดิบ** (มีด่าน)
 · 🧭 **"คุณอยู่ตรงนี้" ใช้หน้าตาชุดเดียวทุกชั้นเมนู** (พื้น accent-dim + แถบซ้าย + `aria-current`) ·
   **สถานะชั่วคราว (แผงที่กดเปิด) ห้ามเด่นกว่าข้อเท็จจริงถาวร** · ห้ามเช็ค `activeGroup === group` (คืนแค่หมวดแรก)

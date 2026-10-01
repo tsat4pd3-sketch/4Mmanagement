@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, Fragment } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -454,7 +455,7 @@ export default function Dashboard() {
         .eq('employees.is_active', true),
       supabase.from('four_m_logs').select('*').eq('work_date', date).order('created_at', { ascending: false }),
       loadLinesRes(),
-      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
+      supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true),
       supabase.from('employees').select('id, line_id, team').eq('is_active', true),
       supabase.from('shift_schedules').select('line_id, day_team').eq('work_date', date),
       supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', date),
@@ -495,7 +496,7 @@ export default function Dashboard() {
     }
     linesRef.current = linesEnriched;
     setLines(linesEnriched);
-    setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
+    setOrgSections(orgValues(orgNodeData));
 
     // Build line capacity using shift_schedules for correct day/night split
     const counts = {};
@@ -640,7 +641,7 @@ export default function Dashboard() {
   }, [lines, role, userLineId, scopeSecs]);
 
   const sections = useMemo(
-    () => (!scopeActive && orgSections.length) ? orgSections : [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort(),
+    () => (!scopeActive && orgSections.length) ? orgSections : sortLike(scopedLines.map(l => l.section), orgSections),
     [scopedLines, orgSections, scopeActive],
   );
   const visibleLines = useMemo(

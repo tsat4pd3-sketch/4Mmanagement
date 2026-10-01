@@ -25,6 +25,7 @@
    ⚠️ ตัวเลือกทั้งหมดอยู่ใน **URL** (`?dept=` `?team=` `?sound=` `?sec=`) เพื่อให้แต่ละห้อง
       บุ๊กมาร์กของตัวเองแล้วเปิดค้างได้ **โดยไม่ต้องมีคนมากดทุกเช้า** (หลักเดียวกับ `?team=`/`?sound=` เดิม)
    ══════════════════════════════════════════════════════════════════════════ */
+import { sortLike } from '../utils/listOrder';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -149,7 +150,7 @@ export default function TvBoard() {
   useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC });
 
   const secOpts = useMemo(
-    () => [...new Set(lines.map(l => l.section).filter(Boolean))].sort(), [lines]);
+    () => sortLike(lines.map(l => l.section), []), [lines]);
   const cur = DEPTS.find(x => x.key === dept);
 
   return (
