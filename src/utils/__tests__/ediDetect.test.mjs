@@ -167,3 +167,38 @@ test('🔴 normHdr ต้องไม่ลดหัวคอลัมน์ภ�
   assert.equal(normHdr(' Forecast_Time '), 'FORECASTTIME');
   assert.equal(normHdr('Part-Num'), 'PARTNUM');
 });
+
+/* ── ไฟล์ format ใหม่จาก Sale (830_28.09.26 / 862_30.09.26 · 2026-10-01) ──
+   ทุกชีตมีแถวหัวไฟล์ `830 | Weekly Forecast | SenderID: …` เหนือหัวตาราง · วันที่เป็นเลข YYYYMMDD
+   เดิมไฟล์ 830 ตัดสินไม่ได้ทุกชีต ⇒ ต้องกดเลือกชนิดเองทุกรอบ (กดผิด = forecast 1 ปีกลายเป็นใบส่ง) */
+import { ediSetMarker } from '../ediDetect.js';
+
+test('หัวไฟล์ 830 Weekly Forecast = ชัด แม้ไม่มีคอลัมน์เวลา', () => {
+  const pre = [[830, 'Weekly Forecast', 'SenderID:', 'ZZ:F159B']];
+  const r = detectEdiKind([...H830, 'Dock Code'], [['P1', 10, 20260928, 'GRBNA', '']], undefined, pre);
+  assert.equal(r.is862, false);
+  assert.equal(r.sure, true);
+  assert.match(r.reason, /830/);
+});
+
+test('หัวไฟล์ 862 = ชัด แม้ชีตนั้นคอลัมน์เวลาว่างทุกแถว (ชีต GBJW*)', () => {
+  const r = detectEdiKind(H862, [['P1', 10, 20261001, '', 'TP', 'GBJWA']], undefined, [['862', 'Shipping Schedule']]);
+  assert.equal(r.is862, true);
+  assert.equal(r.sure, true);
+});
+
+test('ediSetMarker ดูแค่เซลล์แรกที่ไม่ว่าง · เลข 830 กลางแถวไม่นับ', () => {
+  assert.deepEqual(ediSetMarker([['', '', ''], ['', 862, 'Shipping Schedule']]), { code: 862, title: 'Shipping Schedule' });
+  assert.equal(ediSetMarker([['Report', 830]]), null);
+  assert.equal(ediSetMarker([]), null);
+  assert.equal(ediSetMarker(undefined), null);
+});
+
+test('ไม่มีหัวไฟล์ — วันที่ YYYYMMDD ต้องอ่านช่วงได้ (830 ยาว 1 ปี = ชัด)', () => {
+  assert.equal(dateSpanDays([[0, 0, 20260928], [0, 0, 20270927]], 2), 364);
+  assert.equal(dateSpanDays([[0, 0, '20261001'], [0, 0, '20261013']], 2), 12);
+  assert.equal(dateSpanDays([[0, 0, 20261399]], 2), null);
+  const r = detectEdiKind(H830, [['P1', 10, 20260928], ['P1', 10, 20270927]]);
+  assert.equal(r.is862, false);
+  assert.equal(r.sure, true);
+});
