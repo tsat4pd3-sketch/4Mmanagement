@@ -3129,10 +3129,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </div>
               )}
 
-              {/* 📋 แผนสั่งงานจากทีมวางแผน (2026-09-30) — งาน lot size ที่ไม่ได้เดินตามคัมบัง
-                  ไม่มีแผนของกะนี้ = ไม่วาดอะไรเลย (ไลน์คัมบังจอไม่รก) */}
-              <PlannedLotQueue session={selSession} orders={prodOrders}
-                onStarted={() => selSession && loadProdOrders(selSession.id, selSession.line_name)} />
+              {/* 📋 กรอบแผนจากทีมวางแผน (Layer 1) — **อ่านอย่างเดียว ไม่สร้างใบผลิต**
+                  หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ (Layer 2) ระบบรวมยอดมาเทียบกรอบให้เอง
+                  ไม่มีแผนของไลน์นี้ = ไม่วาดอะไรเลย (ไลน์คัมบังจอไม่รก) */}
+              <PlannedLotQueue session={selSession} orders={prodOrders} />
 
               {/* สรุป "จะส่งต่อกะหน้า" — คู่กับแบนเนอร์ "รับยอดจากกะก่อน" ด้านบน
                   เดิมมีแต่ตัวเลขรายใบ ต้องไล่บวกเอง/ไปเปิดดูกะถัดไปถึงรู้ว่ากะนี้ส่งต่อเท่าไหร่ */}

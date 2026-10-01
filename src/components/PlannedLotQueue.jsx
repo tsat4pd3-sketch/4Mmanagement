@@ -1,167 +1,131 @@
-/* ══ 📋 คิวงานที่วางแผนไว้ — ฝั่งหน้างานในหน้ากะ (2026-09-30 · คำสั่ง user) ═══════════════
-   คู่กับแท็บ "📋 แผนสั่งงาน (ล็อต)" ใน /production-plan ที่ทีมวางแผนใช้ออกแผน
-   คำสั่ง user: **"แผนออกใบให้เลย หน้างานแค่กดเริ่ม/ปิด"**
-   ⇒ แผงนี้แสดงล็อตของกะนี้ตามลำดับ · กด "▶ เริ่ม" แล้วระบบสร้างใบผลิตให้ (ไม่ต้องกรอกเอง)
+/* ══ 📋 กรอบแผน (Layer 1) บนหน้ากะ — ของจริงคือ Layer 2 (2026-10-01 · คำสั่ง user) ═══════════
+   *"ระบบนี้จะเป็นเหมือนกรอบ เลเยอร์ 1 · ผลิตเปิดคัมบัง คอนเฟิร์มยอด เป็นเลเยอร์ 2"*
 
-   🔴 กติกา:
-     · **claim ล็อตก่อนสร้างใบ แล้วใบล้มต้องคืนสถานะ** (กฎเหล็ก db-write ข้อ 6 — ไม่งั้นล็อตค้าง
-       สถานะ started โดยไม่มีใบจริง แล้วไม่มีใครกดเริ่มได้อีกเลย)
-     · claim แบบ compare-and-swap (`.eq('status','planned')` + นับแถว) — 2 คนกดพร้อมกันต้องได้คนเดียว
-     · **ไม่มีแผน = ไม่วาดอะไรเลย** (ไลน์คัมบังไม่ควรเห็นแผงนี้รก)
-     · **ห้ามบล็อกการเปิดใบเอง** — แผนเป็นทางลัด ไม่ใช่กรง (หน้างานเจอปัญหาต้องสลับงานได้)
+   🔴🔴 แผงนี้ **อ่านอย่างเดียว ไม่สร้างใบผลิต ไม่เขียน DB เลย**
+   เดิม (30/09) มีปุ่ม "▶ เริ่มล็อตนี้" ที่สร้างใบ manual 1 ใบตามยอดล็อต — **ถอดออกแล้ว** เพราะ
+   วัดจากฐานจริง 25/09: **1 พาร์ท 1 กะ = ใบผลิต 5–40 ใบ** (คัมบัง 1 ใบ = 1 กล่อง 10–300 ชิ้น)
+   และ `manual = 0` ทุกแถว **แม้แต่ไลน์ปั๊ม A/B/C** (30 วัน manual แค่ 1.4–3.3%)
+   ⇒ ออกใบตามล็อตแล้วหน้างานสแกนคัมบังตามปกติด้วย = **เป้าในกะถูกนับซ้ำ**
+     (วางแผน 1,000 + สแกนจริง 7 ใบ × 60 ⇒ เป้ากลายเป็น 1,420)
+
+   ⇒ หน้างานทำงานเหมือนเดิมทุกอย่าง (สแกนคัมบัง / ✍️ เปิดเป้า manual) · ระบบจับคู่ยอดให้เอง
+     ผ่าน `matchPlanToActual()` (`utils/planLots.js`) **ห้ามคิดเองในไฟล์นี้**
+   🔴 **ไม่ตัดสินแทนคน** — ไม่ปิดล็อตอัตโนมัติ ไม่เตือนว่าทำผิดแผน แค่แสดงว่าเทียบกรอบแล้วเป็นยังไง
    ══════════════════════════════════════════════════════════════════════════════════════════ */
-import { useState, useEffect, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { UserContext } from '../App';
-import { canSeeded } from '../utils/permissions';
 import { toast } from './Toast';
 import MatLabel from './MatLabel';
-import { sortBySeq, reconcilePlan, qtyText, splitPlanForSession } from '../utils/planLots';
+import { qtyText, splitPlanForSession, matchPlanToActual } from '../utils/planLots';
 
-export default function PlannedLotQueue({ session, orders = [], onStarted }) {
-  const { role, fullName } = useContext(UserContext);
-  const mayStart = canSeeded('production_plan', 'start', role);
+const shiftLabel = (sh) => (sh === 'night' ? 'กะดึก' : 'กะเช้า');
+const STATE_COLOR = { done: '#22c55e', partial: '#4d9fff', pending: 'var(--border2)' };
+
+export default function PlannedLotQueue({ session, orders = [] }) {
   const [lots, setLots] = useState([]);
-  const [busy, setBusy] = useState(null);
 
   const load = useCallback(async (alive = () => true) => {
     if (!session?.line_name || !session?.work_date) { setLots([]); return; }
-    /* 🔴 โหลด **ทั้งวันงานของไลน์** ไม่กรองกะ — กรองกะตรงนี้เคยทำให้กะดึกมองไม่เห็นแผนกะเช้า
-       ที่ยังไม่ได้เริ่มเลยสักใบ แล้วจอเงียบสนิท (เคสจริง 30/09 LINE B 6 ล็อต · user จับได้)
-       การแบ่งกองอยู่ที่ `splitPlanForSession()` ใน utils/planLots.js **ห้ามกรองเองที่นี่** */
+    /* 🔴 โหลดทั้งวันงานของไลน์ ไม่กรองกะ — กรองกะเคยทำให้กะดึกมองไม่เห็นแผนกะเช้าที่ยังไม่ได้เริ่ม
+       แล้วจอเงียบสนิท (เคสจริง 30/09 LINE B 6 ล็อต) · แบ่งกองที่ `splitPlanForSession()` */
     const { data, error } = await supabaseDR.from('production_plan_lots')
-      .select('id, seq, shift, mat_no, part_name, qty_plan, machine_no, die_no, status, prod_order_id, note')
+      .select('id, seq, shift, mat_no, part_name, qty_plan, machine_no, die_no, status, note')
       .eq('work_date', session.work_date).eq('line_name', session.line_name)
       .neq('status', 'cancelled');
     if (!alive()) return;
     if (error) { toast.error(`โหลดแผนสั่งงานไม่สำเร็จ: ${error.message}`); return; }
-    setLots(sortBySeq(data || []));
+    setLots(data || []);
   }, [session?.line_name, session?.work_date]);
   useEffect(() => { let on = true; load(() => on); return () => { on = false; }; }, [load]);
 
-  const start = async (lot) => {
-    if (!mayStart || busy) return;
-    setBusy(lot.id);
-    /* ① claim ก่อน — compare-and-swap กัน 2 คนกดพร้อมกัน (นับแถวเสมอ:
-          RLS/แข่งกันปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" · กฎเหล็ก db-write ข้อ 2) */
-    const { data: claimed, error: ce } = await supabaseDR.from('production_plan_lots')
-      .update({ status: 'started' }).eq('id', lot.id).eq('status', 'planned').is('prod_order_id', null)
-      .select('id');
-    if (ce) { setBusy(null); toast.error(`จองล็อตไม่สำเร็จ: ${ce.message}`); return; }
-    if (!claimed?.length) { setBusy(null); toast.info('ล็อตนี้ถูกเริ่มไปแล้ว (อาจมีคนอื่นกดพร้อมกัน) — รีเฟรชแล้วลองใหม่'); await load(); return; }
-
-    /* ② สร้างใบผลิตจริง — ใช้ prod_no ที่บอกได้ว่ามาจากแผน (สอบกลับง่ายกว่า MANUAL-xxxx ล้วน) */
-    const p2 = (n) => String(n).padStart(2, '0');
-    const now = new Date();
-    const ymd = String(session.work_date).replace(/-/g, '').slice(2);
-    const prodNo = `PLAN-${ymd}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}-${p2(lot.seq)}`;
-    const { data: created, error: oe } = await supabaseDR.from('prod_orders').insert({
-      session_id: session.id, prod_no: prodNo, mat_no: lot.mat_no,
-      part_name: lot.part_name || null,
-      qty: lot.qty_plan, qty_target: lot.qty_plan, qty_actual: 0,
-      is_manual: true, status: 'open', opened_by: fullName || null,
-      ...(lot.machine_no ? { machine_no: lot.machine_no } : {}),
-    }).select('id').single();
-
-    if (oe || !created?.id) {
-      /* ③ 🔴 ใบล้ม = ต้องคืนสถานะล็อต ไม่งั้นค้าง started โดยไม่มีใบ แล้วกดเริ่มไม่ได้อีก */
-      await supabaseDR.from('production_plan_lots')
-        .update({ status: 'planned' }).eq('id', lot.id).eq('status', 'started').is('prod_order_id', null);
-      setBusy(null);
-      toast.error(`เปิดใบผลิตไม่สำเร็จ: ${oe?.message || 'ไม่ทราบสาเหตุ'} — คืนล็อตกลับเป็น "รอคิว" แล้ว`);
-      return;
-    }
-    /* ④ ผูกใบเข้าล็อต */
-    const { error: le } = await supabaseDR.from('production_plan_lots')
-      .update({ prod_order_id: created.id }).eq('id', lot.id);
-    setBusy(null);
-    if (le) toast.error(`เปิดใบแล้วแต่ผูกกับแผนไม่สำเร็จ: ${le.message} — แจ้งวางแผนให้ผูกให้`);
-    else toast.success(`เริ่มล็อต ${lot.mat_no} · ${lot.qty_plan.toLocaleString()} ชิ้น ✓`);
-    await load();
-    onStarted?.();
-  };
-
   const split = splitPlanForSession(lots, session);
   if (!split.hasAny) return null;                      // ไม่มีแผนจริงๆ = ไม่วาดอะไรเลย
-  const rec = reconcilePlan(split.mine, orders);
-  const waiting = rec.rows.filter(r => !r.started).length;
-  const shiftLabel = (sh) => (sh === 'night' ? 'กะดึก' : 'กะเช้า');
-  const canStart = mayStart && session?.status === 'open';
+
+  /* 🔴 ปันยอดต่อ (ไลน์+วันงาน+พาร์ท) **ข้ามกะ** — แยกกะจะทำให้ยอดเดียวถูกนับ 2 รอบ
+     เมื่อล็อตกะเช้าถูกทำต่อในกะดึก (ของจริงเกิดแล้ว 30/09) */
+  const m = matchPlanToActual([...split.mine, ...split.other], orders);
+  const rowOf = (lotId) => m.rows.find(r => r.lot.id === lotId);
+  /* 🔴 "ค้างจากกะก่อน" ตัดสินจาก**ยอดที่ทำได้จริง** ไม่ใช่คอลัมน์สถานะ (ไม่มีใครเขียนแล้ว)
+     ⇒ ล็อตกะอื่นที่ยังไม่ครบ = งานที่กะนี้ทำต่อได้ · ที่ครบแล้ว = แค่บอกให้รู้ */
+  const otherRows = split.other.map(l => rowOf(l.id)).filter(Boolean);
+  const carriedRows  = otherRows.filter(r => r.state !== 'done');
+  const doneElseRows = otherRows.filter(r => r.state === 'done');
+
+  const Row = ({ r, carried }) => {
+    const l = r.lot;
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', fontSize: 12,
+        padding: '4px 8px', background: 'var(--bg2)', borderRadius: 6,
+        borderLeft: `3px solid ${carried && r.state === 'pending' ? '#f59e0b' : STATE_COLOR[r.state]}` }}>
+        <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
+        <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
+        {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
+        {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>🔧 {l.die_no}</span>}
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 12 }}>
+          <b style={{ color: STATE_COLOR[r.state] }}>{qtyText(r.donePcs)}</b>
+          <span style={{ color: 'var(--muted)' }}> / {qtyText(l.qty_plan)} ชิ้น</span>
+          {r.pct != null && <b style={{ color: STATE_COLOR[r.state] }}> · {r.pct}%</b>}
+        </span>
+        {r.fromOrders > 0 && (
+          <span title="ยอดนี้รวมมาจากใบผลิต/บัตรคัมบังที่หน้างานเปิดจริง" style={{ fontSize: 11, color: 'var(--muted)' }}>
+            จาก {r.fromOrders} ใบ
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 9 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff', marginBottom: 6 }}>
-        📋 แผนสั่งงานจากทีมวางแผน — {split.mine.length
-          ? <>{split.mine.length} ล็อตของ{shiftLabel(session?.shift)}{waiting > 0 ? ` · รอเริ่ม ${waiting}` : ' · เริ่มครบแล้ว'}</>
-          : <span style={{ color: 'var(--muted)', fontWeight: 600 }}>ยังไม่มีแผนของ{shiftLabel(session?.shift)}นี้</span>}
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff', marginBottom: 2 }}>
+        📋 กรอบแผนจากทีมวางแผน
+        {m.planPcs > 0 && (
+          <span style={{ color: 'var(--text2)', fontWeight: 700 }}>
+            {' '}— ทำได้ {qtyText(m.donePcs)}/{qtyText(m.planPcs)} ชิ้น ({m.pct}%) · เสร็จ {m.doneLots}/{m.rows.length} ล็อต
+          </span>
+        )}
       </div>
-      {/* 🔴 กะยังไม่เปิด/ปิดแล้ว = กดเริ่มไม่ได้ **ต้องเขียนว่าทำไม** ห้ามซ่อนปุ่มเงียบๆ */}
-      {mayStart && session?.status !== 'open' && (
-        <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 6 }}>
-          ⚠️ กะนี้{session?.status === 'closed' ? 'ปิดแล้ว' : 'ยังไม่เปิด/รอปิด'} — กดเริ่มล็อตไม่ได้ ต้องเปิดกะก่อน
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
+        แผนเป็น<b>กรอบ</b> ไม่ได้สั่งให้เปิดใบ — หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ ระบบรวมยอดมาเทียบให้เอง
+      </div>
+
+      {split.mine.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {split.mine.map(l => { const r = rowOf(l.id); return r ? <Row key={l.id} r={r} /> : null; })}
         </div>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {rec.rows.map(r => {
-          const l = r.lot;
-          return (
-            <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', fontSize: 12,
-              padding: '4px 8px', background: 'var(--bg2)', borderRadius: 6,
-              borderLeft: `3px solid ${r.closed ? '#22c55e' : r.started ? '#4d9fff' : 'var(--border2)'}` }}>
-              <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
-              <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
-              <b>{qtyText(l.qty_plan)}</b><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้น</span>
-              {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
-              {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>🔧 {l.die_no}</span>}
-              <span className="spacer" style={{ flex: 1 }} />
-              {r.closed ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ ปิดแล้ว</span>
-                : r.started ? <span style={{ color: '#4d9fff', fontWeight: 700 }}>▶ กำลังทำ{r.donePcs != null ? ` · ${qtyText(r.donePcs)}/${qtyText(l.qty_plan)}` : ''}</span>
-                : canStart
-                  ? <button onClick={() => start(l)} disabled={busy === l.id} style={{ fontSize: 11.5, fontWeight: 800 }}>
-                      {busy === l.id ? 'กำลังเปิด…' : '▶ เริ่มล็อตนี้'}
-                    </button>
-                  : <span style={{ color: 'var(--muted)' }}>รอคิว</span>}
-            </div>
-          );
-        })}
-      </div>
-      {/* 🔴 แผนของกะก่อนที่ยังไม่ได้เริ่มเลย — ของจริงคือ "งานที่กะก่อนทำไม่ทัน"
-          เดิมจอกรองกะแล้วเงียบสนิท กะนี้ไม่มีทางรู้ว่ามีงานค้าง (เคสจริง 30/09 LINE B 6 ล็อต) */}
-      {split.carried.length > 0 && (
+
+      {/* แผนของกะก่อนที่ยังไม่ได้ทำ — กะนี้ทำต่อได้ (ยอดปันข้ามกะให้แล้ว) */}
+      {carriedRows.length > 0 && (
         <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px dashed var(--border2)' }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: 5 }}>
-            ⤵ ค้างจาก{shiftLabel(split.carried[0].shift)} {split.carried.length} ล็อต — วางแผนไว้แต่<b>ยังไม่ได้เริ่มเลย</b>
+            ⤵ ค้างจาก{shiftLabel(carriedRows[0].lot.shift)} {carriedRows.length} ล็อต — ยังไม่ครบกรอบ กะนี้ทำต่อได้
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {split.carried.map(l => (
-              <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', fontSize: 12,
-                padding: '4px 8px', background: 'var(--bg2)', borderRadius: 6, borderLeft: '3px solid #f59e0b' }}>
-                <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
-                <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
-                <b>{qtyText(l.qty_plan)}</b><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้น</span>
-                {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
-                <span style={{ flex: 1 }} />
-                {canStart
-                  ? <button onClick={() => start(l)} disabled={busy === l.id} style={{ fontSize: 11.5, fontWeight: 800 }}>
-                      {busy === l.id ? 'กำลังเปิด…' : '▶ ทำต่อในกะนี้'}
-                    </button>
-                  : <span style={{ color: 'var(--muted)' }}>รอกะเปิด</span>}
-              </div>
-            ))}
+            {carriedRows.map(r => <Row key={r.lot.id} r={r} carried />)}
           </div>
         </div>
       )}
 
-      {/* แผนของกะอื่นที่เริ่มไปแล้ว — บอกให้รู้เฉยๆ ไม่ใช่งานของกะนี้ */}
-      {split.elsewhere.length > 0 && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-          ℹ️ อีก {split.elsewhere.length} ล็อตของกะอื่นในวันนี้ เริ่ม/ทำไปแล้ว (ไม่ใช่งานของกะนี้)
+      {/* 🔴 ทำเกินแผน / ทำนอกแผน — ต้องโชว์ ห้ามกลืน (เป็นข้อมูล ไม่ใช่ความผิด) */}
+      {(m.over.length > 0 || m.offPlan.length > 0) && (
+        <div style={{ marginTop: 7, fontSize: 11.5, color: 'var(--text2)', display: 'grid', gap: 2 }}>
+          {m.over.length > 0 && (
+            <div>➕ <b>ทำเกินกรอบ</b> {m.over.map(o => `${o.mat_no} +${qtyText(o.pcs)}`).join(' · ')} ชิ้น</div>
+          )}
+          {m.offPlan.length > 0 && (
+            <div>🆕 <b>ทำนอกแผน</b> {m.offPlan.map(o => `${o.mat_no} ${qtyText(o.pcs)}`).join(' · ')} ชิ้น
+              <span style={{ color: 'var(--muted)' }}> — ไม่ใช่ความผิด แต่วางแผนต้องรู้</span></div>
+          )}
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
-        กด “เริ่ม” แล้วระบบเปิดใบผลิตให้ตามแผน — เจอปัญหาสลับงานได้ตามปกติ <b>แผนไม่ได้ล็อกหน้างาน</b>
-      </div>
+      {doneElseRows.length > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
+          ✓ อีก {doneElseRows.length} ล็อตของกะอื่นในวันนี้ครบกรอบแล้ว
+        </div>
+      )}
     </div>
   );
 }

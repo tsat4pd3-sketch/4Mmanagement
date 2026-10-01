@@ -28,7 +28,7 @@ import { toast } from '../components/Toast';
 import { snapMachineNo } from '../utils/machineNo';
 import { resolveSetupRule } from '../utils/pressSetup';
 import {
-  planSummary, reconcilePlan, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
+  planSummary, matchPlanToActual, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
 } from '../utils/planLots';
 import { breakIntervalsIn } from '../utils/oee';
 import { buildHorizon, assignShifts, horizonSummary, orderAcrossHorizon, SEG_HOURS, SHIFT_LABEL } from '../utils/planHorizon';
@@ -174,7 +174,8 @@ export default function ProdLotPlanner({
   /* ล็อตที่ระบบยังจัดกะให้ไม่ได้ / ล้นเลยขอบเขต — 2 กองคนละเรื่อง ห้ามยุบรวม */
   const unsureCount = landing.filter(a => !a.sure).length;
   const overflowCount = landing.filter(a => a.overflow).length;
-  const rec = useMemo(() => reconcilePlan(lots, orders), [lots, orders]);
+  /* 🧩 Layer 1 ↔ Layer 2 — จับคู่จากยอดรวมต่อพาร์ท (ไม่ใช่ 1 ล็อต = 1 ใบ · ดู planLots.js) */
+  const rec = useMemo(() => matchPlanToActual(lots, orders), [lots, orders]);
 
   /* ── ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน (ของค้างส่งมาก่อนเสมอ) ───────────── */
   const unplanned = useMemo(() => {
@@ -425,9 +426,11 @@ export default function ProdLotPlanner({
                           onChange={e => patch(l.id, { qty_plan: Math.max(1, Number(e.target.value) || 1) })}
                           style={{ width: 84, textAlign: 'right' }} />
                       ) : <b>{qtyText(l.qty_plan)}</b>}
-                      {r.donePcs != null && (
-                        <div style={{ fontSize: 11, color: r.shortPcs > 0 ? '#f59e0b' : 'var(--accent)' }}>
-                          ทำได้ {r.donePcs.toLocaleString()}{r.shortPcs > 0 ? ` · ขาด ${r.shortPcs.toLocaleString()}` : ' ✓'}
+                      {/* 🧩 ยอดจริงมาจาก **ผลรวมใบคัมบังของพาร์ทนั้น** ไม่ใช่ใบเดียว (ดู planLots.js) */}
+                      {r.state !== 'pending' && (
+                        <div style={{ fontSize: 11, color: r.state === 'done' ? 'var(--accent)' : '#f59e0b' }}>
+                          ทำได้ {qtyText(r.donePcs)}{r.pct != null ? ` · ${r.pct}%` : ''}
+                          {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> (จาก {r.fromOrders} ใบ)</span>}
                         </div>
                       )}
                     </td>
@@ -464,9 +467,9 @@ export default function ProdLotPlanner({
                     </td>
                     <td style={td}>
                       {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>✕ ยกเลิก</span>
-                        : r.closed ? <span style={{ color: 'var(--accent)' }}>✓ ปิดแล้ว</span>
-                        : r.started ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
-                        : <span style={{ color: 'var(--muted)' }}>รอคิว</span>}
+                        : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>✓ ครบตามกรอบ</span>
+                        : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
+                        : <span style={{ color: 'var(--muted)' }}>ยังไม่เริ่ม</span>}
                       {l.cancel_reason && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{l.cancel_reason}</div>}
                     </td>
                     {mayWrite && (
@@ -488,20 +491,25 @@ export default function ProdLotPlanner({
         )}
       </div>
 
-      {/* ── ใบที่หน้างานเปิดเองนอกแผน — ต้องเห็น ห้ามซ่อน ── */}
-      {rec.startedNotPlanned.length > 0 && (
+      {/* ── ของจริงที่อยู่นอกกรอบแผน — ต้องเห็น ห้ามกลืน (Layer 2 ไม่ได้ผิด แค่ต่างจากกรอบ) ── */}
+      {(rec.offPlan.length > 0 || rec.over.length > 0) && (
         <div style={{ ...card, borderColor: '#f59e0b66' }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 5 }}>
-            ⚠️ {rec.startedNotPlanned.length} ใบที่หน้างานเปิดเอง — ไม่ได้อยู่ในแผนของขอบเขตนี้
+            ⚠️ ของจริงที่อยู่นอกกรอบแผน
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
-            {rec.startedNotPlanned.slice(0, 15).map(o => (
-              <span key={o.id} style={{ color: 'var(--text2)' }}>
-                <MatLabel mat={o.mat_no} size={11.5} /> <span style={{ color: 'var(--muted)' }}>{o.qty} ชิ้น{o.is_manual ? ' · manual' : ''}</span>
+            {[...rec.over.map(o => ({ ...o, kind: 'over' })), ...rec.offPlan.map(o => ({ ...o, kind: 'off' }))].slice(0, 15).map(o => (
+              <span key={`${o.kind}-${o.mat_no}`} style={{ color: 'var(--text2)' }}>
+                {o.kind === 'over' ? '➕' : '🆕'} <MatLabel mat={o.mat_no} size={11.5} />{' '}
+                <span style={{ color: 'var(--muted)' }}>
+                  {qtyText(o.pcs)} ชิ้น · {o.orders} ใบ{o.kind === 'over' ? ' (เกินกรอบ)' : ' (ไม่มีในแผน)'}
+                </span>
               </span>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>ไม่ใช่ความผิดของหน้างาน — แต่วางแผนต้องรู้ว่าแผนถูกข้ามด้วยเหตุอะไร</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+            ➕ ทำเกินยอดที่วางไว้ · 🆕 พาร์ทที่ผลิตจริงแต่ไม่มีในแผน — <b>ไม่ใช่ความผิดของหน้างาน</b> แต่วางแผนต้องรู้
+          </div>
         </div>
       )}
 

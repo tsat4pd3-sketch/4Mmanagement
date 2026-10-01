@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lotRunMin, planRunMin, planSetup, shiftFit, resequence, moveLot,
-  suggestSequence, reconcilePlan, planSummary, sortBySeq,
+  suggestSequence, planSummary, sortBySeq,
 } from '../planLots.js';
 
 const lot = (id, o = {}) => ({ id, work_date: '2026-10-01', shift: 'day', line_name: 'L1',
@@ -113,38 +113,6 @@ test('🔴 ล็อตที่ไม่รู้แม่พิมพ์/ค�
   assert.equal(out[out.length - 1].id, 'b', 'ตัวที่ไม่มีแม่พิมพ์ต่อท้าย');
 });
 
-/* ── เทียบแผน ↔ ของจริง ───────────────────────────────────────────────── */
-test('จับคู่ด้วย prod_order_id เท่านั้น + คิดยอดที่ทำได้/ยังขาด', () => {
-  const lots = [lot('a', { prod_order_id: 'o1', status: 'started' }), lot('b')];
-  const orders = [{ id: 'o1', mat_no: 'M1', status: 'open', qty_actual: 250 }];
-  const r = reconcilePlan(lots, orders);
-  assert.equal(r.rows[0].donePcs, 250);
-  assert.equal(r.rows[0].shortPcs, 350);
-  assert.equal(r.rows[1].donePcs, null, 'ยังไม่เริ่ม = ไม่รู้ยอด ห้ามเป็น 0');
-  assert.equal(r.plannedNotStarted.length, 1);
-});
-
-test('🔴 ใบที่หน้างานเปิดเองนอกแผน ต้องโผล่ ห้ามซ่อน', () => {
-  const lots = [lot('a', { prod_order_id: 'o1' })];
-  const orders = [{ id: 'o1', mat_no: 'M1', status: 'open' }, { id: 'o9', mat_no: 'M9', status: 'open' }];
-  const r = reconcilePlan(lots, orders);
-  assert.deepEqual(r.startedNotPlanned.map(o => o.id), ['o9']);
-});
-
-test('🔴 พาร์ทเดียวกันวางได้หลายล็อตในกะเดียว — ห้ามจับคู่ด้วย mat_no', () => {
-  const lots = [lot('a', { prod_order_id: 'o1' }), lot('b', { mat_no: 'M1' })];
-  const orders = [{ id: 'o1', mat_no: 'M1', status: 'confirmed', qty_ok: 600 }];
-  const r = reconcilePlan(lots, orders);
-  assert.equal(r.rows[0].closed, true);
-  assert.equal(r.rows[1].started, false, 'ล็อตที่ 2 ของ mat เดียวกันต้องไม่ถูกจับคู่มั่ว');
-});
-
-test('ใบที่ปิดแล้วใช้ qty_ok · ใบที่ยังเปิดใช้ qty_actual', () => {
-  const r = reconcilePlan([lot('a', { prod_order_id: 'o1' })],
-    [{ id: 'o1', status: 'confirmed', qty_ok: 580, qty_actual: 999 }]);
-  assert.equal(r.rows[0].donePcs, 580);
-});
-
 /* ── สรุปหัวแผง ────────────────────────────────────────────────────────── */
 test('สรุปหัวแผง — ยอดชิ้นบวกทั้งคู่ แต่เวลานับครั้งเดียว', () => {
   const pairOf = (m) => ({ M1: 'M2', M2: 'M1' }[m] || null);
@@ -194,25 +162,23 @@ test('ระบุแม่พิมพ์ครบ = คิดเวลาไ�
    จอเดิมกรอง shift = กะที่เปิด ⇒ 0 แถว ⇒ ไม่วาดอะไรเลย ⇒ กะดึกไม่รู้ว่ามีงานค้าง 6 ล็อต */
 import { splitPlanForSession } from '../planLots.js';
 
-test('🔴 แผนของกะก่อนที่ยังไม่ได้เริ่ม ต้องโผล่ให้กะปัจจุบันเห็น (carried)', () => {
+test('🔴 แผนของกะก่อนต้องโผล่ให้กะปัจจุบันเห็น (other)', () => {
   const lots = [
     lot('a', { shift: 'day', seq: 1 }), lot('b', { shift: 'day', seq: 2 }),
     lot('c', { shift: 'night', seq: 1 }),
   ];
   const r = splitPlanForSession(lots, { shift: 'night' });
   assert.deepEqual(r.mine.map(l => l.id), ['c']);
-  assert.deepEqual(r.carried.map(l => l.id), ['a', 'b'], 'กะเช้าที่ยังไม่เริ่ม = กะดึกหยิบต่อได้');
+  assert.deepEqual(r.other.map(l => l.id), ['a', 'b'], 'กะเช้า = กะดึกเห็นและทำต่อได้');
   assert.equal(r.hasAny, true);
 });
 
-test('แผนกะอื่นที่เริ่มไปแล้ว = แค่บอกให้รู้ ไม่ใช่งานค้างของกะนี้', () => {
-  const lots = [
-    lot('a', { shift: 'day', status: 'started', prod_order_id: 'o1' }),
-    lot('b', { shift: 'day', status: 'done', prod_order_id: 'o2' }),
-  ];
+test('🔴 ห้ามตัดสิน "ทำแล้วหรือยัง" จาก status/prod_order_id — ไม่มีใครเขียนแล้ว', () => {
+  /* ตั้งแต่ 01/10 แผนเป็นกรอบล้วน ⇒ ถ้าตัวนี้ยังกรองด้วย status ล็อตจะ "ค้าง" ตลอดกาล
+     ความจริงต้องมาจากยอดที่ทำได้ (matchPlanToActual) ที่ชั้นจอ */
+  const lots = [lot('a', { shift: 'day', status: 'planned' })];
   const r = splitPlanForSession(lots, { shift: 'night' });
-  assert.equal(r.carried.length, 0);
-  assert.deepEqual(r.elsewhere.map(l => l.id), ['a', 'b']);
+  assert.equal(r.other.length, 1, 'ต้องคืนทุกล็อตของกะอื่น ไม่กรองด้วยสถานะ');
 });
 
 test('🔴 ไม่มีแผนเลยจริงๆ = hasAny false (จอไม่ต้องวาด — ไลน์คัมบังจะได้ไม่รก)', () => {
@@ -223,5 +189,84 @@ test('🔴 ไม่มีแผนเลยจริงๆ = hasAny false (จ�
 
 test('ล็อตที่ยกเลิกไม่โผล่ในกองไหนเลย', () => {
   const r = splitPlanForSession([lot('a', { shift: 'day', status: 'cancelled' })], { shift: 'night' });
-  assert.equal(r.mine.length + r.carried.length + r.elsewhere.length, 0);
+  assert.equal(r.mine.length + r.other.length, 0);
+  assert.equal(r.hasAny, false);
+});
+
+/* ══ 🧩 Layer 1 (แผน) ↔ Layer 2 (ของจริง) — จับคู่จากยอดรวม (2026-10-01 · คำสั่ง user) ═══════
+   วัดจากฐานจริง 25/09: 1 พาร์ท 1 กะ = ใบผลิต 5–40 ใบ (คัมบัง 1 ใบ = 1 กล่อง) manual = 0
+   ⇒ 1 ล็อตแผน ≠ 1 ใบผลิต · แผนต้องไม่ออกใบ (ไม่งั้นเป้าถูกนับซ้ำกับคัมบังที่สแกนจริง)      */
+import { matchPlanToActual, orderDonePcs } from '../planLots.js';
+
+const ord = (mat, o = {}) => ({ id: `o-${Math.random()}`, mat_no: mat, status: 'confirmed', qty_ok: 10, ...o });
+
+test('⭐ 1 ล็อตแผน = ใบคัมบังหลายใบ — รวมยอดแล้วเทียบกับกรอบ', () => {
+  /* เคสจริง LINE B: แผน 1,000 ชิ้น · หน้างานสแกน 7 ใบ × 60 = 420 */
+  const lots = [lot('a', { mat_no: 'M1', qty_plan: 1000 })];
+  const orders = Array.from({ length: 7 }, () => ord('M1', { qty_ok: 60 }));
+  const r = matchPlanToActual(lots, orders);
+  assert.equal(r.rows[0].donePcs, 420);
+  assert.equal(r.rows[0].pct, 42);
+  assert.equal(r.rows[0].state, 'partial');
+  assert.equal(r.rows[0].fromOrders, 7, 'จอต้องบอกได้ว่ามาจากกี่ใบ');
+});
+
+test('ทำครบ = done · ยังไม่เริ่ม = pending (ยอด 0 ไม่ใช่ null)', () => {
+  const lots = [lot('a', { mat_no: 'M1', qty_plan: 100 }), lot('b', { mat_no: 'M2', qty_plan: 50, seq: 2 })];
+  const r = matchPlanToActual(lots, [ord('M1', { qty_ok: 100 })]);
+  assert.equal(r.rows[0].state, 'done');
+  assert.equal(r.rows[1].state, 'pending');
+  assert.equal(r.rows[1].donePcs, 0);
+});
+
+test('🔴 พาร์ทเดียวกันหลายล็อต — ปันตามลำดับ seq จนเต็มแล้วค่อยล้นใบถัดไป', () => {
+  const lots = [lot('a', { mat_no: 'M1', qty_plan: 100, seq: 1 }),
+                lot('b', { mat_no: 'M1', qty_plan: 100, seq: 2 })];
+  const r = matchPlanToActual(lots, [ord('M1', { qty_ok: 150 })]);
+  assert.equal(r.rows[0].donePcs, 100, 'ล็อตแรกเต็มก่อน');
+  assert.equal(r.rows[1].donePcs, 50);
+  assert.equal(r.over.length, 0);
+});
+
+test('🔴 ทำเกินแผนต้องโชว์ ห้ามกลืน', () => {
+  const r = matchPlanToActual([lot('a', { mat_no: 'M1', qty_plan: 100 })], [ord('M1', { qty_ok: 130 })]);
+  assert.equal(r.rows[0].donePcs, 100);
+  assert.deepEqual(r.over.map(o => [o.mat_no, o.pcs]), [['M1', 30]]);
+});
+
+test('🔴 พาร์ทที่ผลิตจริงแต่ไม่มีในแผน = offPlan ต้องโชว์', () => {
+  const r = matchPlanToActual([lot('a', { mat_no: 'M1', qty_plan: 100 })],
+    [ord('M1', { qty_ok: 100 }), ord('M9', { qty_ok: 55 }), ord('M9', { qty_ok: 45 })]);
+  assert.deepEqual(r.offPlan.map(o => [o.mat_no, o.pcs, o.orders]), [['M9', 100, 2]]);
+});
+
+test('ใบที่ยังไม่ปิดใช้ qty_actual · ปิดแล้วใช้ qty_ok', () => {
+  assert.equal(orderDonePcs({ status: 'open', qty_actual: 30, qty_ok: 999 }), 30);
+  assert.equal(orderDonePcs({ status: 'confirmed', qty_ok: 58, qty_actual: 999 }), 58);
+  assert.equal(orderDonePcs({ status: 'open' }), 0, 'ไม่มียอด = 0 ไม่ใช่ NaN');
+});
+
+test('ล็อตที่ยกเลิกไม่กินยอด — ยอดไปลงล็อตที่ยังอยู่', () => {
+  const lots = [lot('x', { mat_no: 'M1', qty_plan: 100, seq: 1, status: 'cancelled' }),
+                lot('b', { mat_no: 'M1', qty_plan: 100, seq: 2 })];
+  const r = matchPlanToActual(lots, [ord('M1', { qty_ok: 80 })]);
+  assert.equal(r.rows.length, 1);
+  assert.equal(r.rows[0].donePcs, 80);
+});
+
+test('สรุปรวม % ของทั้งแผน', () => {
+  const lots = [lot('a', { mat_no: 'M1', qty_plan: 100 }), lot('b', { mat_no: 'M2', qty_plan: 100, seq: 2 })];
+  const r = matchPlanToActual(lots, [ord('M1', { qty_ok: 100 }), ord('M2', { qty_ok: 50 })]);
+  assert.equal(r.planPcs, 200);
+  assert.equal(r.donePcs, 150);
+  assert.equal(r.pct, 75);
+  assert.equal(r.doneLots, 1);
+  assert.equal(r.startedLots, 2);
+});
+
+test('ไม่มีใบผลิตเลย = ทุกล็อต pending · ไม่พัง', () => {
+  const r = matchPlanToActual([lot('a', { mat_no: 'M1', qty_plan: 100 })], []);
+  assert.equal(r.pct, 0);
+  assert.equal(r.rows[0].state, 'pending');
+  assert.equal(r.offPlan.length, 0);
 });
