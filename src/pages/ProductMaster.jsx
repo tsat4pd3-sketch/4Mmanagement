@@ -17,7 +17,7 @@ import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
 import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
-import { loadOpInfo } from '../utils/opItems';
+import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import MatLabel from '../components/MatLabel';
@@ -33,6 +33,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
+import { parseSapBom, diffSapBom, missingInPartsMaster, decodeSapExport } from '../utils/sapBomImport';
 import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
@@ -1659,6 +1660,11 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   const [showCopyBom, setShowCopyBom] = useState(false);
   const [copySource, setCopySource]   = useState('');
   const [copying, setCopying]         = useState(false);
+  /* 📥 นำเข้า BOM จาก SAP (2026-10-01) — ไฟล์ที่ SAP คายมาเป็น TSV UTF-16LE ตั้งนามสกุล .xls
+     กฎ/ตัวแกะอยู่ `src/utils/sapBomImport.js` ที่เดียว (pure + มีเทส) ห้ามแกะเองในหน้า */
+  const sapFileRef = useRef(null);
+  const [sapImp, setSapImp]   = useState(null);   // { parsed, diff, miss, target, curRows }
+  const [sapBusy, setSapBusy] = useState(false);
   /* 🧩 มาจากปุ่มลัด/worklist ฝั่งแท็บสินค้า (?tab=bom&mat=…) — เลือกแถวให้เลย ไม่ต้องไล่หาในลิสต์ 100+ แถว
      ใช้ mat_no เป็นคีย์ (ไม่ใช่ id) เพราะ mat คือสิ่งที่คนเห็นบนใบของเสีย/หน้าจออื่น */
   const [sp, setSp] = useSearchParams();
@@ -1839,6 +1845,94 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     toast.success(`เปิดใบ BOM ของ ${mat} แล้ว — ใส่ค่าการผลิต (ไลน์/CT/เป้า) ที่แท็บ 3️⃣ Products`);
     await loadAll();
     setSelProduct(data); setSearch(mat);
+  };
+
+  /* ── 📥 นำเข้า BOM จาก SAP ──────────────────────────────────────────────────────────
+     ① แกะไฟล์ → ② หาใบปลายทางจากเลข Material ในไฟล์ → ③ ดึงแถวปัจจุบันของใบนั้นมาเทียบ
+     ④ โชว์ "จะเพิ่ม/จะแก้/เหมือนเดิม/ของที่ SAP ไม่มี" ให้คนดูก่อน แล้วค่อยกดยืนยัน
+     🔴 ไม่ลบแถวที่ SAP ไม่มีให้เอง — ชั้น OP ที่หน้างานเพิ่มเองก็อยู่ในกลุ่มนั้น (คนตัดสิน) */
+  const handleSapFile = async (e) => {
+    const f = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!f) return;
+    setSapBusy(true);
+    let parsed;
+    try { parsed = parseSapBom(decodeSapExport(await f.arrayBuffer())); }
+    catch (err) { setSapBusy(false); toast.error(`อ่านไฟล์ไม่สำเร็จ: ${err?.message || err}`); return; }
+    if (!parsed.rows.length) { setSapBusy(false); toast.error(parsed.warnings[0] || 'ไม่พบบรรทัด component ในไฟล์นี้'); return; }
+
+    const up = (m) => String(m ?? '').trim().toUpperCase();
+    const fileMat = up(parsed.root.mat_no);
+    const target = products.find(pr => up(pr.mat_no) === fileMat) || (fileMat ? null : selProduct);
+    if (!target) {
+      setSapBusy(false);
+      toast.error(`ไฟล์นี้เป็น BOM ของ ${parsed.root.mat_no || '(ไม่ระบุ)'} — ยังไม่มีใบ BOM ในระบบ กดปุ่ม "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ก่อน`);
+      return;
+    }
+    /* แถวปัจจุบันของ "ใบปลายทาง" (ไม่ใช่ใบที่เลือกค้างอยู่ — ไฟล์อาจเป็นของใบอื่น) */
+    const { data: curRows, error } = await supabaseDR.from('bom_items')
+      .select('id, mat_no, parent_mat, qty_per_unit, uom, item_no, storage_location')
+      .eq('product_id', target.id).eq('is_active', true);
+    setSapBusy(false);
+    if (error) { toast.error(`อ่าน BOM เดิมไม่สำเร็จ: ${error.message}`); return; }
+
+    const opMap = opInfoSync();
+    const diff = diffSapBom(parsed.rows, curRows || [], { isOpMat: (m) => !!opMap[m] });
+    const miss = missingInPartsMaster(parsed.rows, partsMaster.map(x => x.mat_no));
+    setSapImp({ parsed, diff, miss, target, curRows: curRows || [] });
+  };
+
+  const applySapImport = async () => {
+    if (!sapImp) return;
+    const { parsed, diff, miss, target } = sapImp;
+    setSapBusy(true);
+
+    /* ① ลงทะเบียนพาร์ทที่ยังไม่มีใน Parts Master ก่อน (step 1 ของ workflow — BOM หยิบจากทะเบียน) */
+    if (miss.length) {
+      const pmErr = (await supabaseDR.from('parts_master').upsert(
+        miss.map(m => ({ mat_no: m.mat_no, part_name: m.part_name || m.mat_no, part_no: m.part_no, uom: m.uom || 'PC', is_active: true, created_by: fullName })),
+        { onConflict: 'mat_no', ignoreDuplicates: true })).error;
+      if (pmErr) { setSapBusy(false); toast.error(`ลงทะเบียน Parts Master ไม่สำเร็จ: ${pmErr.message} — ยังไม่ได้แตะ BOM`); return; }
+    }
+
+    const payload = (r) => ({
+      mat_no: r.mat_no, part_name: r.part_name || r.mat_no,
+      qty_per_unit: r.qty_per_unit ?? 1, uom: r.uom || 'PC',
+      item_no: r.item_no ?? null, parent_mat: r.parent_mat || null,
+      storage_location: r.storage_location || null, prod_sloc: r.prod_sloc || null,
+      part_no: r.part_no || null,
+    });
+    /* คอลัมน์ prod_sloc เพิ่งเพิ่ม — ยังไม่ apply migration (42703) ให้ถอยไปชุดเดิม **แล้วบอกบนจอ** ห้ามเงียบ */
+    const retry = async (fn) => {
+      const r1 = await fn(false);
+      if (r1.error?.code !== '42703') return r1;
+      const r2 = await fn(true);
+      if (!r2.error) toast.info('นำเข้าแล้ว แต่ยังไม่ได้ apply migration 20261001_bom_items_prod_sloc_dr (DR) — ช่อง Prod.SLoc ยังไม่ถูกเก็บ');
+      return r2;
+    };
+    const strip = (o) => { const { prod_sloc, ...rest } = o; void prod_sloc; return rest; };
+
+    let added = 0, changed = 0;
+    if (diff.add.length) {
+      const rows = diff.add.map(r => ({ ...payload(r), product_id: target.id, is_active: true, created_by: fullName }));
+      const res = await retry((legacy) => supabaseDR.from('bom_items').insert(legacy ? rows.map(strip) : rows).select('id'));
+      if (!checkWrite(res, 'นำเข้าแถว BOM ใหม่')) { setSapBusy(false); return; }
+      added = (res.data || []).length;
+    }
+    for (const r of diff.update) {
+      const res = await retry((legacy) => supabaseDR.from('bom_items')
+        .update(legacy ? strip(payload(r)) : payload(r)).eq('id', r.id).select('id'));
+      if (!checkWrite(res, `แก้แถว ${r.mat_no}`)) { setSapBusy(false); return; }
+      changed += (res.data || []).length;        // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว
+    }
+    setSapBusy(false);
+    if (diff.update.length && !changed) { toast.error('แก้ไขไม่สำเร็จสักแถว — สิทธิ์เขียน BOM อาจไม่พอ'); return; }
+    toast.success(`นำเข้าจาก SAP แล้ว · เพิ่ม ${added} · แก้ ${changed}${miss.length ? ` · ลงทะเบียนพาร์ทใหม่ ${miss.length}` : ''}`);
+    setSapImp(null);
+    invalidateTable('bom_items');
+    setSelProduct(target); setSearch(target.mat_no || '');
+    await loadAll(); await loadItems(target.id);
+    void parsed;
   };
 
   const openPicker = (parentMat) => {
@@ -2143,6 +2237,13 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
                   <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
+                  {/* 📥 นำเข้าจาก SAP — ไฟล์ที่ SAP คายมาเป็น .xls แต่เนื้อเป็น TSV UTF-16LE (รับ .txt/.tsv/.xls) */}
+                  <button onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
+                    title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP"
+                    style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(14,165,233,0.45)', cursor: sapBusy ? 'default' : 'pointer', background: 'rgba(14,165,233,0.10)', color: '#0ea5e9', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)', opacity: sapBusy ? 0.6 : 1 }}>
+                    {sapBusy ? '⏳ กำลังอ่าน…' : '📥 นำเข้าจาก SAP'}
+                  </button>
+                  <input ref={sapFileRef} type="file" accept=".xls,.txt,.tsv,.csv" style={{ display: 'none' }} onChange={handleSapFile} />
                 </div>
               )}
             </div>
@@ -2482,6 +2583,76 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
       )}
 
       {/* ══ COPY BOM MODAL ══ */}
+      {/* 📥 พรีวิวก่อนนำเข้า — คนต้องเห็นว่าจะเปลี่ยนอะไรก่อนกด (ห้าม import เงียบ) */}
+      {sapImp && (() => {
+        const { parsed, diff, miss, target } = sapImp;
+        const cell = { padding: '4px 8px', borderBottom: '1px solid var(--border)', fontSize: 11.5 };
+        const pill = (bg, fg, txt) => <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: bg, color: fg, border: `1px solid ${fg}33` }}>{txt}</span>;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}
+            onClick={() => !sapBusy && setSapImp(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(96vw, 880px)', maxHeight: '88vh', overflow: 'auto' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📥 นำเข้า BOM จาก SAP</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 12px' }}>
+                หัวใบ <b style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{parsed.root.mat_no || '—'}</b> {parsed.root.description}
+                {parsed.root.plant && ` · Plant ${parsed.root.plant}`} · รูปแบบไฟล์ {parsed.layout === 'multilevel' ? 'Display Multilevel BOM' : 'BOM & Routing Report'}
+                <br />ลงที่ใบ <b style={{ color: 'var(--accent)' }}>{target.mat_no} {target.name}</b> · ไฟล์มี {parsed.rows.length} บรรทัด · ลึกสุด {Math.max(...parsed.rows.map(r => r.depth))} ชั้น
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {pill('rgba(61,214,92,0.10)', 'var(--accent)', `➕ เพิ่ม ${diff.add.length}`)}
+                {pill('rgba(245,158,11,0.10)', '#f59e0b', `✏️ แก้ ${diff.update.length}`)}
+                {pill('rgba(107,114,128,0.10)', 'var(--muted)', `= เหมือนเดิม ${diff.same.length}`)}
+                {pill('rgba(168,85,247,0.10)', '#a855f7', `🗂 ลงทะเบียนพาร์ทใหม่ ${miss.length}`)}
+                {diff.extra.length > 0 && pill('rgba(239,68,68,0.10)', '#ef4444', `⚠ ESM มี แต่ SAP ไม่มี ${diff.extra.length}`)}
+              </div>
+              {parsed.warnings.length > 0 && (
+                <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                  {parsed.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
+                </div>
+              )}
+              {diff.extra.length > 0 && (
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                  <b style={{ color: '#ef4444' }}>ไม่ลบให้</b> — แถวที่ SAP ไม่มี อาจเป็นของที่หน้างานเพิ่มเอง ให้คนตัดสิน:{' '}
+                  <span style={{ fontFamily: 'monospace' }}>{diff.extra.map(r => r.mat_no).join(' · ')}</span>
+                </div>
+              )}
+              <div style={{ maxHeight: '38vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead><tr style={{ position: 'sticky', top: 0, background: 'var(--bg2)' }}>
+                    {/* ลำดับคอลัมน์ตามกฎ 30/09: Part Name ก่อน MAT SAP (เลข MAT เป็นรหัสภายใน) */}
+                    {['', 'ชั้น', 'ITEM', 'รายละเอียด', 'MAT SAP', 'จำนวน', 'หน่วย', 'ใต้', 'Prod.SLoc', 'Stor.Loc'].map(h =>
+                      <th key={h} style={{ ...cell, textAlign: 'left', fontWeight: 700, color: 'var(--muted)' }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {[...diff.add.map(r => ({ ...r, _k: '➕' })), ...diff.update.map(r => ({ ...r, _k: '✏️' }))].map((r, i) => (
+                      <tr key={i}>
+                        <td style={cell}>{r._k}</td>
+                        <td style={{ ...cell, color: 'var(--muted)' }}>{'·'.repeat(r.depth - 1)}{r.depth}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace' }}>{r.item_no ?? '—'}</td>
+                        <td style={cell}>{r.part_name}{r.diffs?.length ? <span style={{ color: '#f59e0b' }}> · {r.diffs.join(' · ')}</span> : null}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{r.mat_no}</td>
+                        <td style={{ ...cell, textAlign: 'right' }}>{r.qty_per_unit ?? '—'}</td>
+                        <td style={cell}>{r.uom || '—'}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: 'var(--muted)' }}>{r.parent_mat || 'หัวใบ'}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: '#a855f7' }}>{r.prod_sloc || '—'}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: '#a855f7' }}>{r.storage_location || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+                <button onClick={() => setSapImp(null)} disabled={sapBusy} style={{ ...btnSecondary, padding: '8px 16px' }}>ยกเลิก</button>
+                <button onClick={applySapImport} disabled={sapBusy || (!diff.add.length && !diff.update.length && !miss.length)}
+                  style={{ padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: sapBusy ? 0.6 : 1 }}>
+                  {sapBusy ? '⏳ กำลังนำเข้า…' : `นำเข้า (เพิ่ม ${diff.add.length} · แก้ ${diff.update.length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {showCopyBom && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
