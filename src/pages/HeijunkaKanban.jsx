@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { loadStorageLocations } from '../utils/useStorageLocations';
+import { loadDeliveryPoints } from '../utils/useDeliveryPoints';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { can } from '../utils/permissions';
@@ -1532,7 +1533,7 @@ export default function HeijunkaKanban() {
       supabase.from('wip_replenish_requests').select('*')
         .in('status', ['pending', 'preparing', 'delivered'])
         .order('requested_at', { ascending: false }).limit(200),
-      supabaseDR.from('line_delivery_points').select('*'),
+      loadDeliveryPoints().then(data => ({ data })),   // ทะเบียนจุดส่ง = master → cache กลาง (01/10)
       // ⚠️ อ่านจาก "วิวสรุปรายพาร์ท" ไม่ใช่แถวดิบ — คิวจริง 2,211 ใบแต่เป็นแค่ ~25 พาร์ท
       //    ดึงดิบแล้วตัด limit = ยอดรวมต่อพาร์ทไม่ใช่ยอดจริง (คนเอาไปสั่งซื้อผิด) · ดึงครบ = ~550KB ต่อรอบ poll
       supabaseDR.from('v_purchase_open_summary').select('*').order('total_qty', { ascending: false }),

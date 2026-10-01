@@ -27,6 +27,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
+import { loadDeliveryPoints, deliveryPointsOfLine } from '../utils/useDeliveryPoints';
 import { loadProductsMaster } from '../utils/useProducts';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -103,13 +104,14 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       supabase.from('wip_replenish_requests').select('*')
         .eq('line_name', lineName).is('wip_point_id', null).in('status', OPEN_STATUSES)
         .order('requested_at', { ascending: true, nullsFirst: false }),
-      // จุดส่งเป็นของเสริม (เฟส 4) — ตารางยังไม่ apply/โหลดไม่ได้ ห้ามลากทั้งแผงล้ม แค่ถือว่ายังไม่มีจุด
-      supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active').contains('line_names', [lineName]),
+      // จุดส่ง = ทะเบียนที่แทบไม่เปลี่ยน → cache กลาง (01/10 · เดิม 1,546 ครั้ง/วัน จากคำถามเดิม 22 แบบ)
+      //   ตารางยังไม่ apply = loader คืน [] เอง ไม่ลากทั้งแผงล้ม (เหมือนพฤติกรรมเดิม)
+      loadDeliveryPoints(),
       // ทะเบียนรหัสคลัง = master ที่แทบไม่เปลี่ยน → ผ่าน cache กลาง (ดู utils/useStorageLocations.js)
       //   ห้ามกลับไปยิงตรง: เดิม 3 หน้ายิงคนละชุดคอลัมน์ = 850 ครั้ง/ครึ่งวัน
       loadStorageLocations(),
     ]);
-    setDpoints(dp.error ? [] : (dp.data || []));
+    setDpoints(deliveryPointsOfLine(dp, lineName));
     setSlocs(sl || []);   // loader คืน [] เองเมื่อตารางยังไม่ apply — ไม่มี .error ให้เช็ค
     /* ⚠️ ตารางยังไม่ apply migration (42P01) = ฟีเจอร์ยังไม่เปิด ไม่ใช่ error ของผู้ใช้
        แยกให้ขาดจาก error จริง ไม่งั้นขึ้นแถบแดงให้ทุกคนดูทุกวันโดยไม่มีอะไรให้ทำ */

@@ -20,6 +20,7 @@ import { useState, useEffect, useCallback, useContext, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -107,6 +108,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
       toast.error(error.code === '23505' ? `รหัส "${code}" ถูกใช้กับจุดส่งอื่นแล้ว — ตั้งรหัสอื่น` : error.message);
       return;
     }
+    invalidateTable('line_delivery_points');   // จออื่นอ่านจาก cache — ล้างหลังบันทึกสำเร็จเท่านั้น
     toast.success(form.id ? 'บันทึกจุดส่งแล้ว' : `เพิ่มจุดส่ง "${name}" แล้ว — อย่าลืมพิมพ์ป้าย QR ไปติดหน้างาน`);
     setForm(null);
     load();
@@ -118,6 +120,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     if (turnOff && !window.confirm(`ปิดใช้งานจุดส่ง "${r.name}" ?\n\nป้าย QR ที่ติดอยู่หน้างานจะสแกนแล้วขึ้น "จุดนี้ปิดแล้ว" — สโตร์ส่งของที่จุดนี้ไม่ผ่านด่าน`)) return;
     const { error } = await supabaseDR.from('line_delivery_points').update({ is_active: !turnOff }).eq('id', r.id);
     if (error) { toast.error(error.message); return; }
+    invalidateTable('line_delivery_points');   // จออื่นอ่านจาก cache — ไม่ล้าง = เห็นของเก่าถึง 4 ชม.
     load();
   };
 

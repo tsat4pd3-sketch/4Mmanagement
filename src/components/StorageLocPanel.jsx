@@ -21,6 +21,7 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+import { invalidateTable } from '../utils/masterInvalidate';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -166,6 +167,7 @@ export default function StorageLocPanel() {
       const { error } = await supabaseDR.from('line_delivery_points').update({ storage_location: code }).eq('id', d.id);
       if (error) errs.push(`จุดส่ง ${d.id.slice(0, 8)}: ${error.message}`); else pts++;
     }
+    if (pts) invalidateTable('line_delivery_points');   // แก้จุดส่งแล้ว จออื่นอ่านจาก cache ต้องล้าง
     setBusy(false);
     if (errs.length) toast.error(`แปะไม่สำเร็จบางส่วน: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1})` : ''}`);
     toast.success(`แปะรหัสคลังแล้ว — ledger ${total.toLocaleString()} แถว · จุดส่ง ${pts} จุด`);
