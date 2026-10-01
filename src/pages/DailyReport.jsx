@@ -642,8 +642,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setQtyUpdatesByOrder({});
     }
 
-    // Fetch carry-over orders from previous sessions of same line (not yet imported)
-    if (lineName) {
+  }, []);
+
+  /**
+   * ยอดค้างจากกะก่อนหน้าของไลน์เดียวกัน — **แยกออกจาก `loadProdOrders` (2026-10-01)**
+   *
+   * 🔴 ทำไมต้องแยก: บล็อกนี้ขึ้นกับ **กะอื่น** ล้วนๆ (8 กะก่อนหน้า) แต่เดิมถูกคำนวณใหม่
+   * ทุกครั้งที่ `loadProdOrders` วิ่ง ซึ่งคือ **ทุกครั้งที่ใครก็ตามบันทึกอะไรในกะนี้** (~15 จุดเรียก)
+   * และ realtime ของหน้านี้ `filter: session_id=eq.<กะที่เลือก>` ⇒ **ไม่มีทางเห็น event ของกะอื่นอยู่แล้ว**
+   * ⇒ การคำนวณซ้ำทุก bump เป็นงานเสียเปล่า 100% · วัดจริง 01/10: 2 คิวรีนี้ = **4,800 ครั้ง/วัน**
+   *
+   * สิ่งที่ทำให้ยอดค้างเปลี่ยนจริงมี 2 ทางเท่านั้น — เรียกตัวนี้ที่ 2 ทางนั้นพอ:
+   *   1. สลับกะ / เปิดหน้าใหม่
+   *   2. กะก่อนหน้าปิด/ส่งขอปิด ⇒ `production_sessions` ขยับ ⇒ `load()` (subscribe ไม่กรอง) → เรียกต่อ
+   *   (+ หลังกด "รับยอดค้างเข้ากะ" เพื่อให้แบนเนอร์เคลียร์ทันที)
+   */
+  const loadCarryOrders = useCallback(async (sessionId, lineName) => {
+    if (!sessionId || !lineName) { setCarryOrders([]); return; }
+    const { data } = await supabaseDR.from('prod_orders')
+      .select('prod_no').eq('session_id', sessionId);
+    {
       /* ⚠️ ดึงกะก่อนหน้า **ทุกสถานะ** รวม `open` ด้วย แล้วค่อยแยกบทบาททีหลัง (แก้รอบ 2 · 2026-09-09):
            - "กะที่หยิบยอดค้างมาได้" = `closed` / `pending_close` เท่านั้น (ยอดยกถูกบันทึกถาวรตั้งแต่
              หัวหน้ากะ "ส่งขอปิดกะ" ไม่ต้องรอ SV — SV ตรวจแค่ NG/Downtime/OEE ไม่เกี่ยวกับยอดยก)
@@ -751,9 +769,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSessLoadErr({}); // สลับกะ = เริ่มนับใหม่ (ไม่งั้น error ของกะเก่าค้างบล็อกกะใหม่)
       loadDT(selSession.id);
       loadProdOrders(selSession.id, selSession.line_name);
+      loadCarryOrders(selSession.id, selSession.line_name);
       loadDefectLogs(selSession.id);
     }
-  }, [selSession, loadDT, loadProdOrders, loadDefectLogs]);
+  }, [selSession, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   /* ── Realtime ────────────────────────────────────────────────────────────────
      🔴 2026-09-15 — แก้ 2 อย่างพร้อมกัน (งานลด egress · เตรียมรับจอ/แท็บเล็ต ~40 เครื่อง)
@@ -779,7 +798,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            รอบนี้มีไว้เห็นงานของ "คนอื่นในกะเดียวกัน" เท่านั้น จึงช้าได้ถึง 15 วิ            */
   useEffect(() => {
     const sid = selSession?.id;
-    const bumpSess = coalesce(() => load(), LIVE.PAGE);
+    /* กะอื่นปิด/ส่งขอปิด = `production_sessions` ขยับ (subscribe ตัวนี้ไม่กรอง) ⇒ **ทางเดียว**
+       ที่ยอดค้างกะก่อนเปลี่ยนได้จากภายนอก — เกาะรอบนี้พอ ไม่ต้องคิดใหม่ทุก bump ของใบผลิต */
+    const bumpSess = coalesce(() => {
+      load();
+      if (sid) loadCarryOrders(sid, selSession.line_name);
+    }, LIVE.PAGE);
     const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
     const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
     const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
@@ -804,7 +828,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       bumpSess.cancel(); bumpOrd.cancel(); bumpDt.cancel(); bumpDef.cancel();
       supabaseDR.removeChannel(ch);
     };
-  }, [selSession, load, loadDT, loadProdOrders, loadDefectLogs]);
+  }, [selSession, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -1934,6 +1958,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }
     toast.success(`รับยอดค้างมาแล้ว ${imported} Order`);
     loadProdOrders(selSession.id, selSession.line_name);
+    loadCarryOrders(selSession.id, selSession.line_name);   // แบนเนอร์ยอดค้างต้องเคลียร์ทันที
   };
 
   /* wrapper บาง ๆ ครอบ policyBreakOverlapMin (utils/oee §3) — สูตรพักนโยบายมี "ที่เดียว"
