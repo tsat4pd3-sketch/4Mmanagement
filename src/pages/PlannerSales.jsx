@@ -4,7 +4,7 @@ import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
-import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS } from '../utils/ediMerge';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds } from '../utils/ediMerge';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -480,9 +480,23 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   /** ชนิดที่จะใช้จริง — คนเลือกเองชนะการเดาเสมอ */
   const ediKind = edi ? (edi.kindForced || edi.kind) : null;
 
+  /* 🔴 แทนที่เฉพาะชุดที่ไฟล์ส่งมา (ship-to · dock · พาร์ท) — ดู scopedReplaceIds ใน ediMerge.js
+     อ่านแถวเดิมที่ "ลบได้" มาก่อน แล้วลบตาม id · อ่านไม่ได้ = หยุด (ห้ามเดาว่าไม่มีแล้วใส่ทับ) */
+  const replaceScoped = async (table, buildQuery, toCmp, fileRecs, opt) => {
+    const { rows, error, truncated } = await fetchAllPages(buildQuery);
+    if (error) throw new Error(`อ่านข้อมูลเดิม (${table}) ไม่ได้: ${error}`);
+    if (truncated) throw new Error(`ข้อมูลเดิม (${table}) เยอะเกินเพดาน — ไม่นำเข้าเพื่อกันลบไม่ครบ`);
+    const { ids, kept } = scopedReplaceIds(rows.map(toCmp), fileRecs, opt);
+    for (let i = 0; i < ids.length; i += 200) {
+      const { error: e } = await supabaseDR.from(table).delete().in('id', ids.slice(i, i + 200));
+      if (e) throw e;
+    }
+    return { replaced: ids.length, kept };
+  };
+
   const doImportEdi = async () => {
     if (!edi) return;
-    let coveredCount = 0, fcCount = 0, fcSkipped = 0;
+    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -499,15 +513,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       if (ediKind === 'forecast') {
         // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
         // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
-        const months = edi.records.map(r => r.date).filter(Boolean);
-        let delQ = supabaseDR.from('customer_forecasts').delete().eq('source', 'edi_830').in('customer', edi.shipTos);
-        if (months.length) {
-          const minM = months.reduce((a, b) => (a < b ? a : b));
-          const maxM = months.reduce((a, b) => (a > b ? a : b));
-          delQ = delQ.gte('period_month', minM).lte('period_month', maxM);
+        /* แทนที่เฉพาะ ship-to·พาร์ทที่ไฟล์ส่งมา ในช่วงเดือนของพาร์ทนั้น (2026-10-01) — พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ห้ามลบ */
+        if (edi.records.length) {
+          const r830 = await replaceScoped('customer_forecasts',
+            () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
+              .eq('source', 'edi_830').in('customer', edi.shipTos).gte('period_month', edi.dateFrom).lte('period_month', edi.dateTo),
+            x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
+            edi.records, { useDock: false });
+          keptCount = r830.kept;
         }
-        const { error: eDel } = await delQ;
-        if (eDel) throw eDel;
         const recs = edi.records.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
           customer_part_no: r.part, period_month: r.date, qty: r.qty, source: 'edi_830',
@@ -547,10 +561,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         if (eKeep) throw eKeep;      // อ่านใบเดิมไม่ได้ = ห้ามเดาว่า "ไม่มี" แล้วสร้างทับ
         /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
            จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
-        const { error: eDel } = await supabaseDR.from('customer_shipping_orders').delete()
-          .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
-          .gte('due_date', delFrom).lte('due_date', edi.dateTo);
-        if (eDel) throw eDel;
+        /* 🔴 แทนที่เฉพาะ ship-to·dock·พาร์ทที่ไฟล์ส่งมา ในช่วงวันที่ของชุดนั้น (2026-10-01 · ปิดกลไก A)
+           dock/พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ⇒ ใบ pending เดิมอยู่ครบ · วันที่หายกลางช่วงของชุด = ยกเลิก */
+        const r862 = await replaceScoped('customer_shipping_orders',
+          () => supabaseDR.from('customer_shipping_orders').select('id, customer, customer_part_no, mat_no, dock_code, due_date')
+            .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
+            .gte('due_date', delFrom).lte('due_date', edi.dateTo),
+          x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, dock: x.dock_code, date: x.due_date }),
+          edi.records, { useDock: true, from: delFrom });
+        keptCount = r862.kept;
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
         if (edi.dateFrom < delFrom) {
@@ -581,12 +600,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         fcSkipped = fcRecs.length - fcOk.length;
         const fcDates = fcRecs.map(r => r.date).filter(Boolean);
         if (fcDates.length) {
-          let fcDel = supabaseDR.from('customer_forecasts').delete()
-            .eq('source', 'edi_862').in('customer', edi.shipTos)
-            .gte('period_month', fcDates.reduce((a, b) => (a < b ? a : b)))
-            .lte('period_month', fcDates.reduce((a, b) => (a > b ? a : b)));
-          const { error: eFcDel } = await fcDel;
-          if (eFcDel) throw eFcDel;
+          await replaceScoped('customer_forecasts',
+            () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
+              .eq('source', 'edi_862').in('customer', edi.shipTos)
+              .gte('period_month', fcDates.reduce((a, b) => (a < b ? a : b)))
+              .lte('period_month', fcDates.reduce((a, b) => (a > b ? a : b))),
+            x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
+            fcRecs, { useDock: false });
         }
         const fcIns = fcOk.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
@@ -598,7 +618,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (error) throw error;
         }
       }
-      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่ฉบับเดิมของ ${edi.shipTos.join(', ')} แล้ว`
+      toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
+        + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
         + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : ''));
       // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
@@ -734,6 +755,9 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
+                <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
+                  🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
+                </span>
                 <span style={{ color: edi.unmatched.length ? '#f59e0b' : '#22c55e' }}>
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
