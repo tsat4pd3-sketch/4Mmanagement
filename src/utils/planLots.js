@@ -12,6 +12,11 @@
        ⇒ เวลาต้องยุบผ่าน `pairLoadTotal` (กฎเหล็ก "ชิ้น ≠ shot")
      · **เกินกำลัง = เตือน ห้ามบล็อก** — คนวางแผนอาจตั้งใจอัดงานแล้วไปแก้ด้วย OT/คนเพิ่ม
      · **ใบที่หน้างานเปิดเองนอกแผน ต้องโผล่ให้เห็น ห้ามซ่อน** (`startedNotPlanned`)
+     · 🧪 **งานทดลอง (new model trial) กินเวลาเครื่องจริง ⇒ ต้องอยู่ในแผน** (01/10 · หน้างานแจ้ง)
+       เวลามาจาก **`est_min` = "ที่ขอ"** ไม่ใช่ `qty×CT` (พาร์ทใหม่ยังไม่มี CT แน่ๆ) —
+       🔴 **จอต้องเขียนว่าเวลานี้คนกรอก ไม่ใช่คำนวณ** (`lotRunInfo().from === 'est'`)
+       🔴 **ใบทดลองไม่มี `mat_no` ⇒ ห้ามเอาไปจับคู่ยอดจริง** (ไม่มีพาร์ทให้จับ) = `state:'trial'`
+          **ห้ามตีเป็น `pending`** ไม่งั้นจะค้าง "ยังไม่เริ่ม" ตลอดกาลบนจอ
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 import { pairLoadTotal } from './pairTotals.js';
 import { sequenceSetup, orderByDieHeight } from './pressSetup.js';
@@ -36,12 +41,36 @@ const num = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
-/* ── เวลาผลิตของ 1 ล็อต (นาที) ── `null` = ไม่มี CT ⇒ ประเมินไม่ได้ (ห้ามอ่านเป็น 0) */
-export function lotRunMin(lot, ctOf = () => null) {
+/** 🧪 ใบจองเครื่องทดลองงานใหม่ (ยังไม่มีเลข MAT) — คนละชนิดกับล็อตผลิตจริง */
+export const isTrialLot = (l) => l?.source === 'trial';
+
+/* ป้ายชื่อของล็อตบนจอ — งานทดลองไม่มี `mat_no` ให้โชว์ ต้องตกไปใช้ Part No./ชื่อที่กรอกบนใบ
+   🔴 **ห้ามปล่อยว่าง** (กล่องไม่มีชื่อ = คนหน้างานไม่รู้ว่าเครื่องถูกจองไปทำอะไร) */
+export const lotKeyText = (l) => (isTrialLot(l)
+  ? (String(l?.trial_part_no || '').trim() || String(l?.trial_part_name || '').trim() || 'งานทดลอง')
+  : (String(l?.mat_no || '').trim() || '—'));
+
+/**
+ * ── เวลาของ 1 ล็อต (นาที) + **มาจากไหน** ─────────────────────────────────────────
+ * 🔴 `from` สำคัญพอๆ กับตัวเลข — จอต้องแยกให้ออกว่า
+ *    `'ct'`  = ระบบคำนวณจาก qty × cycle time (เชื่อถือได้ตามมาตรฐาน)
+ *    `'est'` = **คนกรอกว่า "ขอเท่านี้"** (งานทดลอง — พาร์ทใหม่ยังไม่มี CT ⇒ คำนวณไม่ได้)
+ *    `null`  = ประเมินไม่ได้เลย **ห้ามอ่านเป็น 0**
+ * ⚠️ `est_min` **ชนะ CT เสมอเมื่อกรอก** (คนวางแผนรู้ดีกว่าสูตรว่างานนี้จะกินเครื่องกี่ชั่วโมง)
+ *    และ**ไม่ถูกยุบคู่ RH/LH** เพราะมันคือ "เวลานาฬิกาที่ขอ" ไม่ใช่ภาระ shot ที่หักกลบกันได้
+ */
+export function lotRunInfo(lot, ctOf = () => null) {
+  const est = num(lot?.est_min);
+  if (est != null && est > 0) return { min: est, from: 'est' };
   const qty = num(lot?.qty_plan);
   const ct = num(ctOf(lot?.mat_no));
-  if (qty == null || qty <= 0 || ct == null || ct <= 0) return null;
-  return (qty * ct) / 60;
+  if (qty == null || qty <= 0 || ct == null || ct <= 0) return { min: null, from: null };
+  return { min: (qty * ct) / 60, from: 'ct' };
+}
+
+/* ── เวลาผลิตของ 1 ล็อต (นาที) ── `null` = ประเมินไม่ได้ (ห้ามอ่านเป็น 0) */
+export function lotRunMin(lot, ctOf = () => null) {
+  return lotRunInfo(lot, ctOf).min;
 }
 
 /* ── ภาระเวลาผลิตรวมของกะ (นาที) ─────────────────────────────────────────────────────
@@ -52,16 +81,25 @@ export function planRunMin(lots = [], ctOf = () => null, pairOf = () => null) {
   const active = lots.filter(ACTIVE_LOT);
   const byMat = {};
   const noCt = new Set();
-  let anyCt = false;
+  let anyKnown = false, estMin = 0, noTimeLots = 0;
   active.forEach(l => {
-    const m = lotRunMin(l, ctOf);
-    if (m == null) { if (l?.mat_no) noCt.add(l.mat_no); return; }
-    anyCt = true;
-    byMat[l.mat_no] = (byMat[l.mat_no] || 0) + m;
+    const { min, from } = lotRunInfo(l, ctOf);
+    /* ⏱️ เวลาที่คนกรอก = เวลานาฬิกาที่ขอ **ไม่ยุบคู่ RH/LH** (ดู lotRunInfo) ⇒ บวกตรงๆ */
+    if (from === 'est') { anyKnown = true; estMin += min; return; }
+    if (min == null) {
+      /* 🔴 ใบที่ไม่มี mat (งานทดลองที่ลืมกรอกเวลา) ต้องนับแยก — ไม่งั้นจอเขียนว่า
+         "0 พาร์ทไม่มี CT" ทั้งที่มีงานที่ประเมินเวลาไม่ได้อยู่จริงในคิว */
+      if (l?.mat_no) noCt.add(l.mat_no); else noTimeLots++;
+      return;
+    }
+    anyKnown = true;
+    byMat[l.mat_no] = (byMat[l.mat_no] || 0) + min;
   });
   return {
-    min: anyCt ? pairLoadTotal(byMat, pairOf) : null,
+    min: anyKnown ? pairLoadTotal(byMat, pairOf) + estMin : null,
     noCt: [...noCt],
+    noTimeLots,
+    estMin,
     lots: active.length,
   };
 }
@@ -194,6 +232,9 @@ export function matchPlanToActual(lots = [], orders = []) {
   /* ปันยอดตามลำดับล็อต */
   const left = new Map([...actual].map(([m, v]) => [m, v.pcs]));
   const rows = active.map(l => {
+    /* 🧪 ใบจองเครื่องทดลอง = ไม่มีพาร์ทให้จับคู่ (SAP ยังไม่ออกเลข MAT)
+       🔴 **ห้ามตีเป็น `pending`** — จะค้าง "ยังไม่เริ่ม" ตลอดกาล · `donePcs: null` = ตอบไม่ได้ ไม่ใช่ 0 */
+    if (isTrialLot(l)) return { lot: l, donePcs: null, pct: null, state: 'trial', fromOrders: 0 };
     const plan = Number(l.qty_plan) || 0;
     const pool = left.get(l.mat_no);
     if (pool == null) return { lot: l, donePcs: 0, pct: 0, state: 'pending', fromOrders: 0 };
@@ -208,15 +249,16 @@ export function matchPlanToActual(lots = [], orders = []) {
   });
 
   /* เหลือหลังปันครบทุกล็อต = ทำเกินแผน · พาร์ทที่ไม่มีล็อตเลย = ทำนอกแผน */
-  const planned = new Set(active.map(l => l.mat_no));
+  const planned = new Set(active.filter(l => !isTrialLot(l)).map(l => l.mat_no));
   const over = [], offPlan = [];
   left.forEach((pcs, mat) => {
     if (pcs <= 0) return;
     (planned.has(mat) ? over : offPlan).push({ mat_no: mat, pcs, orders: actual.get(mat)?.orders || 0 });
   });
 
-  const planPcs = active.reduce((a, l) => a + (Number(l.qty_plan) || 0), 0);
-  const donePcs = rows.reduce((a, r) => a + r.donePcs, 0);
+  /* ยอดชิ้นของกรอบ — ใบทดลองไม่นับ (ยอดมันคือ "ลองกี่ชิ้น" ไม่ใช่ของส่งลูกค้า) */
+  const planPcs = active.reduce((a, l) => a + (isTrialLot(l) ? 0 : Number(l.qty_plan) || 0), 0);
+  const donePcs = rows.reduce((a, r) => a + (r.donePcs || 0), 0);
   return {
     rows, over, offPlan,
     planPcs, donePcs,
@@ -236,7 +278,12 @@ export function planSummary({ lots = [], orders = [], ctOf, pairOf, dieOf, rule,
   const active = lots.filter(ACTIVE_LOT);
   return {
     lotCount: active.length,
-    qtyPlan: active.reduce((a, l) => a + (num(l.qty_plan) || 0), 0),   // ชิ้น — บวกทั้งคู่ RH/LH ตามปกติ
+    qtyPlan: active.reduce((a, l) => a + (isTrialLot(l) ? 0 : num(l.qty_plan) || 0), 0),  // ชิ้น — บวกทั้งคู่ RH/LH ตามปกติ · ใบทดลองไม่นับ
+    /* 🧪 งานทดลองในคิวนี้ — จอต้องบอกแยก ไม่ใช่กลืนรวมกับงานผลิต (คนละเรื่อง คนละเจ้าของ) */
+    trialCount: active.filter(isTrialLot).length,
+    trialMin: run.estMin || 0,
+    /* ล็อตที่ประเมินเวลาไม่ได้และไม่มี mat ให้บอกชื่อ (ทดลองที่ลืมกรอกเวลา) */
+    noTimeLots: run.noTimeLots || 0,
     runMin: run.min, noCtMats: run.noCt,
     setupMin: setup.totalMin, setupVarMin: setup.varMin, changeCount: setup.changeCount,
     setupUnknown: setup.noRule || setup.baseUnknown || setup.noDie, setupPartial: setup.unknownCount,
