@@ -261,6 +261,31 @@ export default function StockCountSheet({ role, scope }) {
               </table>
             </div>
 
+            {/* 🧹 ตัวช่วยกรอก — ตรวจนับทั้งคลังทีละแถวไม่ไหว (154 แถวตอนตั้งต้นใหม่ 01/10)
+                🔴 ปุ่มนี้แค่ "เติมค่าในช่อง" ไม่ได้บันทึกเอง — ยังต้องกดบันทึก + ผ่านคิวอนุมัติเหมือนเดิม
+                   (ของที่ล้างยอดได้ในคลิกเดียวโดยไม่มีใครยืนยัน = ยอดหายเงียบ) */}
+            {canCount && (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', marginTop:12,
+                background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px' }}>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)' }}>🧹 ตัวช่วยกรอก</span>
+                <button style={{ ...btn('var(--bg3)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12, padding:'6px 12px' }}
+                  onClick={() => setCounts(c => {
+                    const next = { ...c };
+                    rows.forEach(r => { if (next[r.mat_no] === undefined || next[r.mat_no] === '') next[r.mat_no] = '0'; });
+                    return next;
+                  })}>
+                  เติม 0 ให้แถวที่ยังไม่กรอก
+                </button>
+                <button style={{ ...btn('var(--bg3)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12, padding:'6px 12px' }}
+                  onClick={() => setCounts({})}>
+                  ล้างที่กรอก
+                </button>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>
+                  ตั้งต้นคลังใหม่ = เติม 0 ทั้งหมด แล้วแก้เฉพาะแถวที่นับเจอของ — ยังต้องกดบันทึกเอง
+                </span>
+              </div>
+            )}
+
             <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginTop:12 }}>
               <div style={{ fontSize:12, color:'var(--muted)' }}>
                 นับแล้ว <b style={{ color:'var(--text)' }}>{summary.counted}</b>/{rows.length} พาร์ท ·

@@ -19,7 +19,8 @@ import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES } from '../utils/replenishGate';
-import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
+import { slocCodeOfLine } from '../utils/storageLoc';
+import { buildReceiptRows } from '../utils/stockReceipt';   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -1653,12 +1654,16 @@ export default function HeijunkaKanban() {
         .update(patch).eq('id', pr.id).eq('status', pr.status).select('id');
       if (error) throw error;
       if (!updated || updated.length === 0) { await loadPull(); setPullBusy(null); return; }
-      if (next === 'received' && pr.dest_line) {
-        const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert({
-          line_name: pr.dest_line, mat_no: pr.mat_no, part_name: pr.part_name, qty: pr.qty,
-          type: 'issue', work_date: pr.work_date || getWorkDate(),
-          note: `รับของซื้อเข้าสโตร์${pr.supplier ? ' · ' + pr.supplier : ''}`, created_by: fullName || 'สโตร์',
-        });
+      if (next === 'received') {
+        /* 🔴 2026-10-01 — ของที่รับเข้าลงที่ **คลัง** ไม่ใช่ `dest_line`
+           `dest_line` = "ไลน์ไหนจะใช้" ไม่ใช่ "ของอยู่ที่ไหน" · ใช้เป็น line_name = ของทั้ง PO
+           เด้งไปกองหน้าไลน์ทันที (วัดจริง 10 แถว 1.34 ล้านชิ้น = 76% ของยอดค้างทั้งระบบ)
+           ⇒ ไลน์ได้ของจากการเบิกจริงเท่านั้น (deductStockForPick: STORE −qty · ไลน์ +qty)
+           ตัวสร้างแถว + เหตุผลเต็ม → src/utils/stockReceipt.js (มีเทส) */
+        const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(
+          buildReceiptRows({ matNo: pr.mat_no, partName: pr.part_name,
+            slips: [{ qty: pr.qty, dest_line: pr.dest_line, work_date: pr.work_date }],
+            supplier: pr.supplier, workDate: getWorkDate(), by: fullName }));
         // claim สถานะไปแล้ว = กดซ้ำไม่ได้ (compare-and-swap จะคืน 0 แถว) → ต้องคืนสถานะเดิมเสมอเมื่อ ledger ล้ม
         // ไม่งั้นใบค้าง "รับเข้าแล้ว" ตลอดกาลโดยของไม่เคยเข้าคลัง และไม่มีทางกดใหม่
         if (e2) {
@@ -1670,12 +1675,11 @@ export default function HeijunkaKanban() {
             : `รับเข้าคลังไม่สำเร็จ — คืนสถานะใบ ${pr.mat_no} กลับเป็น "${pr.status}" แล้ว ลองกดใหม่อีกครั้ง (${e2.message})`);
         }
       }
-      // dest_line ว่าง = ไม่รู้ปลายทางสโตร์ → สต็อกไม่ถูกเติม ห้าม toast เขียวเหมือนสำเร็จ (QC flow-audit #42)
-      if (next === 'received' && !pr.dest_line) {
-        toast.error(`รับสถานะ ${pr.mat_no} แล้ว แต่ใบนี้ไม่ได้ระบุปลายทางสโตร์ — สต็อกยังไม่ถูกเติม ไปบันทึกรับเข้าเองที่ Line Stock`);
-      } else {
-        toast.success(next === 'ordered' ? `🛒 บันทึกสั่งซื้อ ${pr.mat_no}` : `✅ รับเข้าสโตร์ ${pr.mat_no} +${pr.qty}`);
-      }
+      /* ⚠️ เดิม: `dest_line` ว่าง = ข้าม ไม่เติมสต็อกเลย (QC flow-audit #42) — ตอนนี้รับเข้าคลังได้เสมอ
+         เพราะ "ไม่รู้ว่าไลน์ไหนจะใช้" ไม่ได้แปลว่า "ของไม่ได้มา" · ไลน์ที่รอของไปอยู่ในหมายเหตุแทน */
+      toast.success(next === 'ordered'
+        ? `🛒 บันทึกสั่งซื้อ ${pr.mat_no}`
+        : `✅ รับเข้าคลัง ${pr.mat_no} +${pr.qty} — ไลน์เบิกจากคลังอีกที`);
       await loadPull();
       await load();
     } catch (err) { toast.error(err.message); }
