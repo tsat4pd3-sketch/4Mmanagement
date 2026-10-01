@@ -47,6 +47,28 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
   if (body?.action === 'ping') return json({ ok: true, pong: true });
 
+  /* 🔎 ตรวจไฟล์ในคิว (2026-10-01) — ไฟล์จากเมลอ่านไม่ออกบนจอ ต้องแยกให้ได้ว่า
+     "ไฟล์เสียระหว่างทาง" หรือ "ตัวอ่านในแอป" · อ่านอย่างเดียว คืนลายเซ็นไฟล์ + ชื่อชีต + แถวหัว */
+  if (body?.action === 'inspect') {
+    const { data: row, error: rErr } = await sb.from('demand_mail_inbox')
+      .select('file_name, storage_path, size_bytes').eq('id', String(body.id || '')).maybeSingle();
+    if (rErr || !row) return json({ error: rErr?.message || 'not found' }, 404);
+    const { data: blob, error: dErr } = await sb.storage.from('demand-mail').download(row.storage_path);
+    if (dErr || !blob) return json({ error: dErr?.message || 'download failed' }, 500);
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    const head = [...buf.slice(0, 8)].map(b => b.toString(16).padStart(2, '0')).join(' ');
+    const XLSX = await import('npm:xlsx@0.18.5');
+    let sheets: unknown = null, readErr: string | null = null;
+    try {
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+      sheets = wb.SheetNames.map((n: string) => {
+        const m = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' }) as unknown[][];
+        return { name: n, rows: m.length, first: m.slice(0, 3).map(r => r.slice(0, 6).map(c => String(c).slice(0, 30))) };
+      });
+    } catch (e) { readErr = String(e); }
+    return json({ file: row.file_name, stored: row.size_bytes, actual: buf.length, head, readErr, sheets });
+  }
+
   const messageId = String(body?.message_id || '').trim();
   const files: any[] = Array.isArray(body?.files) ? body.files : [];
   if (!messageId) return json({ error: 'message_id required' }, 400);

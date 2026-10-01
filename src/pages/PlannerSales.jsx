@@ -140,7 +140,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const [fmtRows, setFmtRows] = useState([]);
   const [fmtErr, setFmtErr] = useState(false);
   const [showFmt, setShowFmt] = useState(false);
-  const ediDict = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
+  /* 🔴 buildEdiDict คืน { dict, fromDb } — ต้องแกะ .dict (2026-10-01 · เคยพังจริง 9 วัน)
+     เดิมเอาทั้งก้อนไปเป็นพจนานุกรม ⇒ sigOf() ได้ [] ทุกช่อง ⇒ ไม่มีชีตไหนเป็น EDI
+     ⇒ ไฟล์ 830/862 ทุกไฟล์ตกไปโหมด map มือบนชีตแรก (Summary/Running) ตั้งแต่ 22/09 */
+  const { dict: ediDict } = useMemo(() => buildEdiDict(fmtRows), [fmtRows]);
   /* 📬 ไฟล์ที่เปิดจากคิวเมล (2026-09-30) — นำเข้าสำเร็จแล้วต้องปิดแถวคิวพร้อม batch_id
      เลือกไฟล์เองจากเครื่องเมื่อไหร่ = ล้างทิ้ง (ไม่งั้นไปปิดคิวผิดใบ) */
   const mailRowsRef = useRef([]);
