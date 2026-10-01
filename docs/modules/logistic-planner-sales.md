@@ -28,6 +28,10 @@
 - ข้อจำกัด: ต้อง Outlook คลาสสิก (New Outlook ไม่มี COM) · ได้ไฟล์เฉพาะตอนเครื่องเปิด (ย้อนหลัง `lookback_days`=7)
 - migration `20260930d_demand_mail_inbox_dr.sql` (**apply แล้ว 30/09** · ทดสอบผ่าน pg_net: token ผิด 401 · ping · บันทึก · ปฏิเสธ .exe · ส่งซ้ำ = duplicate)
   · เหลือไฟล์ทดสอบ 30 ไบต์ `demand-mail/2026-09/…_selftest.csv` (SQL ลบ storage ตรงไม่ได้ · ไม่มีแถวคิวอ้างถึง)
+- 🔴 **รอบติดตั้งจริง 01/10: ต่อ ESM ได้แต่ "เจอ 0 ฉบับ"** — เครื่อง user มี**หลายกล่องเมล** (บัญชีบริษัท + `Dulyatrust2025`)
+  สคริปต์เดิมสแกนแค่ `GetDefaultFolder(6)` ของกล่องหลัก ⇒ แก้เป็นสแกน Inbox **ทุก store** (`outlook_folders`)
+  + เดินเมลด้วย `GetFirst/GetNext` (เดิม `for item in items` ไม่รับประกันลำดับตาม Sort แล้ว `break` เมื่อเจอเมลเก่า
+  = หยุดตั้งแต่ฉบับแรก) + โหมด `--diag` (`run-diag.bat`) บอกเหตุผลที่ตกรายฉบับ · มี `restart.bat` โหลดสคริปต์ใหม่
 - ยังไม่ทำ: เมล `Forecast FORD+AAT+Export+Sodecia_WK` (คนละฟอร์แมต — ต้องได้ไฟล์ตัวอย่างก่อน) · แจ้ง Telegram เมื่อค้าง
 
 ## 🧩 ทะเบียนฟอร์แมตไฟล์ลูกค้า — เพิ่มลูกค้าใหม่โดยไม่ต้อง deploy (2026-09-22 · audit แผนผลิต)

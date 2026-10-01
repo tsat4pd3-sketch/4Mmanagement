@@ -10,6 +10,7 @@ ESM · ดึงไฟล์ EDI 830/862 จาก Outlook บนเครื่
   โหมด:
     --setup   ถามโทเคน → เขียน config.ini → ทดสอบการเชื่อมต่อ
     --test    ทดสอบ: ต่อ ESM ได้ไหม + ลิสต์เมลที่เข้าเงื่อนไข (ไม่ส่งจริง)
+    --diag    หาสาเหตุ "เจอ 0 ฉบับ": ลิสต์ทุกกล่องเมล + เมลที่หัวเรื่องเข้าแต่ตกเงื่อนไขอื่น พร้อมเหตุผล
     --once    รันรอบเดียวแล้วจบ
     --loop    รันค้าง เช็คทุก interval_minutes (ใช้ตอนเปิดเครื่อง)
   ต้องมี: Windows + Outlook แบบคลาสสิก + Python 3.8+ + pywin32
@@ -32,7 +33,9 @@ DEFAULTS = {
         'token': '',
     },
     'mail': {
-        # โฟลเดอร์ใต้กล่องหลัก คั่นด้วย / เช่น Inbox หรือ Inbox/Forecast (ชื่อตามที่เห็นใน Outlook)
+        # Inbox = กล่องจดหมายเข้าของ "ทุก" กล่องเมล/ไฟล์ข้อมูลใน Outlook (บัญชีบริษัท + PST)
+        # Inbox/Forecast = โฟลเดอร์ย่อยใต้ Inbox ของทุกกล่อง
+        # <ชื่อกล่องตามที่เห็นใน Outlook>/Inbox/... = เจาะกล่องเดียว เช่น Dulyatrust2025/Inbox
         'folder': 'Inbox',
         'subject_regex': r'FTM_AAT.*830.*862',
         'sender_contains': 'Sasiyawan',
@@ -101,18 +104,57 @@ def post(cfg, payload, timeout=120):
 
 
 # ── Outlook ──────────────────────────────────────────────────────────────────
-def outlook_folder(path):
-    import win32com.client
-    ns = win32com.client.Dispatch('Outlook.Application').GetNamespace('MAPI')
-    parts = [p for p in re.split(r'[\\/]', path.strip()) if p]
-    if not parts or parts[0].lower() in ('inbox', 'กล่องจดหมายเข้า'):
-        folder = ns.GetDefaultFolder(6)                 # olFolderInbox — ไม่ขึ้นกับภาษาของ Outlook
-        parts = parts[1:]
-    else:
-        folder = ns.GetDefaultFolder(6).Parent          # รากของกล่องหลัก
+INBOX_NAMES = ('inbox', 'กล่องจดหมายเข้า')
+
+
+def walk(folder, parts):
     for p in parts:
         folder = folder.Folders[p]
     return folder
+
+
+def outlook_folders(path):
+    """คืน [(ป้าย, folder)] ทุกโฟลเดอร์ที่ต้องสแกน
+    🔴 ไม่ใช้ ns.GetDefaultFolder(6) ตัวเดียว (2026-10-01 · เจอจริง): เครื่อง user มีหลายกล่อง
+       (บัญชีบริษัท + Dulyatrust2025) เมลจริงอยู่อีกกล่อง ⇒ สแกนกล่องหลักกล่องเดียวได้ 0 ฉบับ"""
+    import win32com.client
+    ns = win32com.client.Dispatch('Outlook.Application').GetNamespace('MAPI')
+    parts = [p for p in re.split(r'[\\/]', path.strip()) if p]
+    out = []
+    if not parts or parts[0].lower() in INBOX_NAMES:
+        for store in ns.Stores:
+            try:
+                out.append((f'{store.DisplayName}/Inbox', walk(store.GetDefaultFolder(6), parts[1:])))
+            except Exception:
+                continue                                # กล่องที่ไม่มี Inbox/ไม่มีโฟลเดอร์ย่อยนั้น = ข้าม
+        return out
+    for store in ns.Stores:
+        if store.DisplayName.strip().lower() == parts[0].strip().lower():
+            rest = parts[1:]
+            if rest and rest[0].lower() in INBOX_NAMES:
+                return [(path, walk(store.GetDefaultFolder(6), rest[1:]))]
+            return [(path, walk(store.GetRootFolder(), rest))]
+    raise RuntimeError(f'ไม่พบกล่องเมลชื่อ "{parts[0]}" — ดูชื่อที่ถูกด้วย --diag')
+
+
+def recent_items(folder, cutoff):
+    """เมลใหม่ → เก่า จนถึง cutoff
+    🔴 ต้องเดินด้วย GetFirst/GetNext — `for item in items` ไม่รับประกันลำดับตาม Sort
+       ถ้าเจอเมลเก่าก่อนแล้ว break = หยุดตั้งแต่ฉบับแรก (ได้ 0 ฉบับเงียบๆ)"""
+    items = folder.Items
+    items.Sort('[ReceivedTime]', True)
+    item = items.GetFirst()
+    while item is not None:
+        try:
+            ok = item.Class == OL_MAIL
+            rt = local_naive(item.ReceivedTime) if ok else None
+        except Exception:
+            ok = False
+        if ok:
+            if rt < cutoff:
+                return
+            yield item, rt
+        item = items.GetNext()
 
 
 def local_naive(t):
@@ -141,32 +183,60 @@ def message_id(item):
     return 'entry:' + item.EntryID
 
 
-def matching_mails(cfg):
+def check_mail(cfg, item):
+    """คืน (ผ่านไหม, ผู้ส่ง, ไฟล์แนบที่เข้าเงื่อนไข, เหตุผลที่ตก)"""
     m = cfg['mail']
-    subj_re = re.compile(m['subject_regex'], re.I)
-    att_re = re.compile(m['attachment_regex'], re.I)
+    if not re.search(m['subject_regex'], item.Subject or '', re.I):
+        return False, '', [], 'หัวเรื่องไม่เข้า'
+    snd = sender_of(item)
     who = m['sender_contains'].strip().lower()
-    cutoff = dt.datetime.now() - dt.timedelta(days=int(m['lookback_days']))
-    items = outlook_folder(m['folder']).Items
-    items.Sort('[ReceivedTime]', True)                  # ใหม่ → เก่า แล้วหยุดเมื่อเลย cutoff
-    for item in items:
+    if who and who not in snd.lower():
+        return False, snd, [], f'ผู้ส่งไม่มีคำว่า "{who}"'
+    allatt = [item.Attachments.Item(i) for i in range(1, item.Attachments.Count + 1)]
+    atts = [a for a in allatt if re.search(m['attachment_regex'], a.FileName or '', re.I)]
+    if not atts:
+        names = ', '.join(a.FileName for a in allatt) or 'ไม่มีไฟล์แนบ'
+        return False, snd, [], f'ชื่อไฟล์แนบไม่เข้า ({names})'
+    return True, snd, atts, ''
+
+
+def matching_mails(cfg):
+    cutoff = dt.datetime.now() - dt.timedelta(days=int(cfg['mail']['lookback_days']))
+    for _, folder in outlook_folders(cfg['mail']['folder']):
+        for item, rt in recent_items(folder, cutoff):
+            ok, snd, atts, _ = check_mail(cfg, item)
+            if ok:
+                yield item, rt, snd, atts
+
+
+def diag(cfg):
+    import win32com.client
+    ns = win32com.client.Dispatch('Outlook.Application').GetNamespace('MAPI')
+    days = int(cfg['mail']['lookback_days'])
+    cutoff = dt.datetime.now() - dt.timedelta(days=days)
+    log.info('── กล่องเมลทั้งหมดใน Outlook ──')
+    for store in ns.Stores:
         try:
-            if item.Class != OL_MAIL:
-                continue
-            rt = local_naive(item.ReceivedTime)
+            inbox = store.GetDefaultFolder(6)
+            log.info(f'  • {store.DisplayName}  (Inbox {inbox.Items.Count} ฉบับ)')
         except Exception:
-            continue
-        if rt < cutoff:
-            break
-        if not subj_re.search(item.Subject or ''):
-            continue
-        snd = sender_of(item)
-        if who and who not in snd.lower():
-            continue
-        atts = [item.Attachments.Item(i) for i in range(1, item.Attachments.Count + 1)]
-        atts = [a for a in atts if att_re.search(a.FileName or '')]
-        if atts:
-            yield item, rt, snd, atts
+            log.info(f'  • {store.DisplayName}  (ไม่มี Inbox)')
+    log.info(f'── สแกนตามตั้งค่า folder = {cfg["mail"]["folder"]} · ย้อนหลัง {days} วัน ──')
+    for label, folder in outlook_folders(cfg['mail']['folder']):
+        n = 0
+        shown = 0
+        for item, rt in recent_items(folder, cutoff):
+            n += 1
+            ok, snd, atts, why = check_mail(cfg, item)
+            subj = item.Subject or ''
+            if ok:
+                log.info(f'  ✅ {label} · {rt:%d/%m %H:%M} · {subj} · {", ".join(a.FileName for a in atts)}')
+            elif why != 'หัวเรื่องไม่เข้า' or re.search(r'830|862', subj):
+                log.info(f'  ❌ {label} · {rt:%d/%m %H:%M} · {subj} · {why}')
+            elif shown < 3:
+                shown += 1
+                log.info(f'  · {label} · {rt:%d/%m %H:%M} · {subj}')
+        log.info(f'  = {label}: เมลในช่วงนี้ {n} ฉบับ')
 
 
 def run_once(cfg, st, dry=False):
@@ -214,7 +284,7 @@ def single_instance():
 def main():
     ap = argparse.ArgumentParser()
     g = ap.add_mutually_exclusive_group()
-    for a in ('--setup', '--test', '--once', '--loop'):
+    for a in ('--setup', '--test', '--diag', '--once', '--loop'):
         g.add_argument(a, action='store_true')
     args = ap.parse_args()
     setup_logging(console=not args.loop)
@@ -231,6 +301,10 @@ def main():
     if not cfg['esm']['token'].strip():
         log.error('ยังไม่มีโทเคน — รัน install.bat (หรือ --setup) ก่อน')
         return 2
+
+    if args.diag:
+        diag(cfg)
+        return 0
 
     if args.test:
         try:
