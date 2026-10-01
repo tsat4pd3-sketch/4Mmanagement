@@ -920,6 +920,22 @@ const RULES = [
       'src/utils/matLabel.js': 'เจ้าของกฎ — เป็นที่คำนวณ pNoIsCode/lead เอง',
     },
   },
+  {
+    id: 'plan-lot-time-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* คิดเวลาของล็อตเองในหน้า — `qty_plan × CT` ตรงๆ */
+    re: /\bqty_plan\b[^\n]*\*/g,
+    why: 'เวลาของล็อตไม่ได้มาจาก `qty_plan × CT` เสมอไปแล้ว (01/10) — **ใบจองเครื่องทดลองงานใหม่** '
+       + 'ไม่มีทั้ง `mat_no` และ cycle time (SAP ยังไม่ออกเลข MAT · พาร์ทใหม่ไม่มี CT แน่ๆ) '
+       + 'เวลาของมันมาจาก `est_min` = "ที่คนวางแผนขอ" ⇒ หน้าที่คูณเองจะได้ 0 หรือ null '
+       + 'แล้วงานทดลองจะหายจากไทม์ไลน์ทั้งที่เครื่องถูกจองไปจริงหลายชั่วโมง (แผนโกหกว่าไลน์ว่าง)',
+    fix: 'เรียก `lotRunMin(lot, ctOf)` หรือ `lotRunInfo(lot, ctOf)` (`src/utils/planLots.js`) '
+       + '· `lotRunInfo().from` บอกว่าเลขนั้นมาจากระบบคำนวณ (ct) หรือคนกรอก (est) '
+       + '— จอต้องเขียนให้ต่างกัน ห้ามโชว์เหมือนกัน',
+    allow: {
+      'src/utils/planLots.js': 'เจ้าของสูตร — เป็นที่คิด qty × CT เอง',
+    },
+  },
 ];
 
 function violations(rule) {
