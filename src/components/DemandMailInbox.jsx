@@ -12,12 +12,16 @@ import { checkWrite } from '../utils/dbWrite';
    เอกสาร: docs/modules/logistic-planner-sales.md §📬 ดึงไฟล์จากเมล */
 
 const STALE_H = 24;
+/** ชนิดไฟล์จากชื่อ (`830_…` / `862_…`) — ไว้เทียบว่าใบไหนใหม่กว่า · ไม่รู้ = null (ไม่เตือน) */
+const kindOf = (name) => (String(name || '').match(/^(830|862)[_ .-]/) || [])[1] || null;
+const tsOf = (r) => new Date(r.received_at || r.created_at).getTime();
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', {
   timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
 }) : '—');
 
 export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const [rows, setRows] = useState([]);
+  const [latestDone, setLatestDone] = useState({});   // ชนิด → เวลาเมลของฉบับล่าสุดที่นำเข้าแล้ว
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(null);
 
@@ -27,6 +31,14 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
       .eq('status', 'pending').order('received_at', { ascending: false }).limit(30);
     setErr(error ? error.message : null);
     setRows(data || []);
+    /* 🔴 ฉบับเก่ากว่าที่นำเข้าไปแล้ว = ห้ามนำเข้าทับ — 862 แทนที่ใบ pending ทั้งช่วง
+       ⇒ ไฟล์ 25/09 ที่นำเข้าหลังไฟล์ 01/10 จะดึงออเดอร์ถอยหลังกลับไป (เปิดเครื่องทีหลังแล้วเมลค้างหลายฉบับ = เกิดได้จริง) */
+    const { data: done } = await supabaseDR.from('demand_mail_inbox')
+      .select('file_name, received_at, created_at').eq('status', 'imported')
+      .order('received_at', { ascending: false }).limit(20);
+    const latest = {};
+    (done || []).forEach(r => { const k = kindOf(r.file_name); if (k && !(latest[k] >= tsOf(r))) latest[k] = tsOf(r); });
+    setLatestDone(latest);
   }, []);
   useEffect(() => { load(); }, [load, refreshKey]);
 
@@ -52,6 +64,14 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   };
 
   const now = Date.now();
+  /** ใบนี้มีฉบับใหม่กว่า (ในคิว หรือ นำเข้าไปแล้ว) ไหม */
+  const newerOf = (r) => {
+    const k = kindOf(r.file_name);
+    if (!k) return null;
+    if (latestDone[k] > tsOf(r)) return 'นำเข้าฉบับใหม่กว่าไปแล้ว';
+    if (rows.some(o => o.id !== r.id && kindOf(o.file_name) === k && tsOf(o) > tsOf(r))) return 'มีฉบับใหม่กว่าในคิว';
+    return null;
+  };
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 12, background: 'var(--bg2)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rows.length ? 8 : 0 }}>
@@ -65,7 +85,8 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
       {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
       {rows.map(r => {
         const ageH = (now - new Date(r.received_at || r.created_at).getTime()) / 3600000;
-        const stale = ageH > STALE_H;
+        const newer = newerOf(r);
+        const stale = ageH > STALE_H && !newer;
         return (
           <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px',
             borderRadius: 8, marginTop: 4, background: 'var(--card)',
@@ -76,8 +97,13 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
                 {fmtTime(r.received_at)} · {r.sender || '—'} · {r.subject || ''}
               </div>
             </div>
+            {newer && <span style={{ fontSize: 12, color: 'var(--accent2)', fontWeight: 700 }}
+              title="ไฟล์ 862/830 ฉบับใหม่แทนที่ฉบับเก่าทั้งช่วง — นำเข้าฉบับเก่าทีหลังจะดึงยอดถอยหลัง">⚠ {newer} — ควรกดข้าม</span>}
             {stale && <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ค้าง {Math.floor(ageH)} ชม.</span>}
-            <button type="button" disabled={busy === r.id} onClick={() => open(r)}
+            <button type="button" disabled={busy === r.id} onClick={() => {
+              if (newer && !window.confirm(`${r.file_name}: ${newer}\nนำเข้าฉบับเก่าจะแทนที่ข้อมูลที่ใหม่กว่า — ยืนยันเปิด?`)) return;
+              open(r);
+            }}
               style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
                 background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>
               {busy === r.id ? 'กำลังเปิด…' : '📥 เปิดเพื่อนำเข้า'}
