@@ -191,3 +191,21 @@ export function scopedReplaceIds(existing, fileRecords, { useDock = true, from =
   }
   return { ids, groups: [...groups.values()].reduce((a, l) => a + l.length, 0), kept };
 }
+
+/* ═══ คำตัดสินของคน: พาร์ทลูกค้า → MAT (ตาราง `edi_part_map` · 2026-10-01) ═══════════════════
+   ตัวนำเข้าใช้ "ก่อนการเดาทุกชั้น" (p_no ตรง → แยกด้วยลูกค้า → base part)
+   ship-to เฉพาะ ชนะ '' (= ทุก ship-to) · ไม่มีแถว = ถอยไปเดาแบบเดิม */
+export function buildPartMapIndex(rows = []) {
+  const idx = new Map();
+  (rows || []).forEach(r => {
+    const k = normKey(r?.part_key || r?.customer_part_no);
+    if (k && r?.mat_no) idx.set(`${String(r.ship_to || '').trim()}|${k}`, String(r.mat_no).trim());
+  });
+  return idx;
+}
+/** @returns {string|null} MAT ที่คนยืนยันไว้ หรือ null */
+export function mappedMatFor(idx, shipTo, part) {
+  const k = normKey(part);
+  if (!k || !idx?.size) return null;
+  return idx.get(`${String(shipTo || '').trim()}|${k}`) || idx.get(`|${k}`) || null;
+}

@@ -105,3 +105,15 @@ test('scopedReplaceIds: 830 ไม่ใช้ dock', () => {
   assert.deepEqual(scopedReplaceIds(ex, file, { useDock: false }).ids, [1]);
   assert.deepEqual(scopedReplaceIds(ex, file).ids, []);
 });
+
+import { buildPartMapIndex, mappedMatFor } from '../ediMerge.js';
+test('mappedMatFor: ship-to เฉพาะชนะ "ทุก ship-to" · เทียบเลขพาร์ทแบบ normalize', () => {
+  const idx = buildPartMapIndex([
+    { ship_to: '', part_key: 'RB3BE111E50AB', mat_no: '20067039' },
+    { ship_to: 'GBJWA', part_key: 'RB3BE111E50AB', mat_no: '20067545' },
+  ]);
+  assert.equal(mappedMatFor(idx, 'GBJWA', 'RB3B E111E50 AB'), '20067545');
+  assert.equal(mappedMatFor(idx, 'GBJWC', 'RB3B-E111E50-AB'), '20067039');
+  assert.equal(mappedMatFor(idx, 'GBJWC', 'XXX'), null);
+  assert.equal(mappedMatFor(buildPartMapIndex([]), 'S', 'P'), null);
+});
