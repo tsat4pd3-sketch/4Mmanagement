@@ -13,12 +13,14 @@
    5. ช่วงเวลาใช้ `<TimeRangeBar>` ของกลาง (`scales={null}` = ไม่มีกราฟ ไม่ต้องมีปุ่มขนาดแท่ง)
    ═══════════════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import TimeRangeBar from '../components/TimeRangeBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
+import { useMergeParams } from '../utils/useTabParam';
 import { KINDS, kindOf, buildFeed, countByKind } from '../utils/changelog';
 
 const fmtThaiDate = (ymd) => {
@@ -37,7 +39,14 @@ const fmtStamp = (iso) => {
 export default function ProgramUpdate() {
   const tr = useTimeRange({ defaultDays: 30, finest: 'day' });
   const { from, to } = tr;
-  const [kind, setKind] = useState('all');
+  /* ชนิดที่กรองอยู่ต้องอยู่ใน URL ด้วย — มาตรฐานเดียวกับ `useTabParam`/`useTimeRange`:
+     สิ่งที่ผู้ใช้เห็นว่า "กำลังดูอะไรอยู่" ต้องแชร์ลิงก์ได้ (เอาไปใส่สไลด์พรีเซนต์ได้เลย)
+     · ค่า default ('all') ไม่เขียนลง URL — ลิงก์สะอาด · `mergeParams` กัน `?from=/?to=` หลุด */
+  const [sp] = useSearchParams();
+  const merge = useMergeParams();
+  const rawKind = sp.get('kind');
+  const kind = KINDS.some(k => k.key === rawKind) ? rawKind : 'all';
+  const setKind = (v) => merge({ kind: v === 'all' ? null : v }, { replace: true });
   const [q, setQ] = useState('');
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
