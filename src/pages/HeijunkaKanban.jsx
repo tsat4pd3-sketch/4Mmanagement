@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -189,7 +190,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: 16 }}>
-      {Object.keys(byLine).sort().map(lineName => {
+      {Object.keys(byLine).sort(lineNameCompare).map(lineName => {
         const lineRounds = byLine[lineName];
         const demand = groupDemand[lineName] || { parts: [], totalKanban: 0 };
         return (
@@ -493,7 +494,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
           </div>
         ))}
       </div>
-      {Object.keys(byLine).sort().map(lineName => {
+      {Object.keys(byLine).sort(lineNameCompare).map(lineName => {
         const lineRounds = byLine[lineName];
         const demand = groupDemand[lineName] || { parts: [], totalKanban: 0 };
         return (
@@ -592,7 +593,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
       </div>
       {!collapsed && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: 12 }}>
-          {Object.keys(byLine).sort().map(lineName => (
+          {Object.keys(byLine).sort(lineNameCompare).map(lineName => (
             <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                 🏭 {lineName} <LineBoardLink line={lineName} />

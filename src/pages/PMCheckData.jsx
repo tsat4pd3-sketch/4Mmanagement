@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -1148,7 +1149,7 @@ export default function PMCheckData() {
                 ;(byLine[ln] ||= []).push(j)
               })
             })
-            const lineNames = Object.keys(byLine).sort()
+            const lineNames = Object.keys(byLine).sort(lineNameCompare)
             // ⚠️ ช่องว่างที่เคยทำให้ 2 หน้าไม่ตรงกัน: PM Setup ลิสต์เครื่องที่ "มีรายการตรวจ AM" (มี checklist
             //    department=production) แต่หน้านี้ลิสต์เฉพาะเครื่องที่ "ลงทะเบียน AM" (pm_daily_line_targets)
             //    → เครื่องที่ลงจุดตรวจไว้แล้วแต่ยังไม่ลงทะเบียน หายไปเงียบๆ (เจอจริง 21 จาก 27 เครื่อง)

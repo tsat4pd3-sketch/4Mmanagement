@@ -113,32 +113,68 @@ export function getAncestorNames(allLines, name) {
   return out;
 }
 
+/* ══ ลำดับมาตรฐานของ "รายชื่อไลน์" ทั้งระบบ (2026-10-01 · คำสั่ง user) ═════════════════════
+   ที่มา: *"บางหน้าโอเค บางหน้าเรียงมั่ว ไม่มีแพทเทิร์นในการเรียง"* — ต้นเหตุจริง 3 ข้อ:
+     (1) `toHierarchicalOptions` **ไม่เคยเรียงเอง** — ลำดับบนจอ = ลำดับที่หน้านั้นบังเอิญ query มา
+         (`order('name')` / ไม่สั่งเรียง / กรองจาก array อื่น) ⇒ จอเดียวกันคนละหน้าเรียงไม่เหมือนกัน
+     (2) ถึงเรียงตามชื่อ ก็ **ไม่แยกส่วนงาน** — LINE A (PD1) ไปอยู่ระหว่าง APRON (PD3) กับ ASSY (PD2)
+     (3) เรียงแบบ byte/collation ของ DB — `Line 60` กับ `LINE …` ไปคนละที่ · `LINE 10` มาก่อน `LINE 9`
+   กติกา (ทุก dropdown/ชิปไลน์ต้องได้ลำดับนี้ — ห้ามเรียงเองในหน้า · มีด่าน regressionGuards):
+     1. **ส่วนงาน** เรียงธรรมชาติ (PD1 → PD2 → … ) · ไลน์ที่ไม่มีส่วนงาน = ท้ายสุด (ห้ามหาย)
+     2. ในส่วนงานเดียวกัน **ไลน์แม่** เรียงธรรมชาติ — ไม่สนตัวพิมพ์/ช่องว่าง/วงเล็บ · เลขเรียงแบบตัวเลข
+     3. **ไลน์ลูกอยู่ใต้แม่ทันที** เรียงธรรมชาติเหมือนกัน (ไลน์ลูกตามส่วนงานของแม่ — ลำดับชั้นชนะส่วนงาน)
+   ไม่ใช้ `sort_order` ที่กรอกมือ — ไม่มีคอลัมน์นั้น และทะเบียน ~35 แถว กติกาตายตัวคาดเดาได้ดีกว่า */
+const COLL = new Intl.Collator('th', { numeric: true, sensitivity: 'base' });
+const normKey = (s) => String(s ?? '').replace(/[\s()_\-]+/g, ' ').trim();
+/** เทียบชื่อไลน์/ส่วนงานแบบ "ธรรมชาติ" — `LINE 9` < `LINE 10` · `Line 60` = `LINE 60` */
+export const lineNameCompare = (a, b) => COLL.compare(normKey(a), normKey(b)) || COLL.compare(String(a ?? ''), String(b ?? ''));
+/** เทียบส่วนงาน — ว่าง/null ไปท้ายสุด */
+export const sectionCompare = (a, b) => (!a) - (!b) || lineNameCompare(a || '', b || '');
+
 /**
- * เรียง lines สำหรับ dropdown แบบเป็นขั้น: ไลน์หลักก่อน ตามด้วยไลน์ย่อยของมัน (indent ด้วย depth)
+ * เรียง lines สำหรับ dropdown แบบเป็นขั้น: ส่วนงาน → ไลน์หลัก → ไลน์ย่อยของมัน (indent ด้วย depth)
  * ไลน์ที่ parent ไม่อยู่ใน list (เช่นโดน scope ตัด) จะโผล่เป็น top-level ของตัวเอง
- * @returns {Array<{line, depth}>}
+ * **ลำดับไม่ขึ้นกับลำดับ input อีกแล้ว** (2026-10-01) — ส่ง array ลำดับไหนมาก็ได้ผลเดียวกัน
+ * @returns {Array<{line, depth, section}>}  section = ส่วนงานของรากต้นไม้ (ใช้ตั้งหัวกลุ่ม)
  */
 export function toHierarchicalOptions(lines) {
   if (!lines?.length) return [];
+  const byName = (a, b) => lineNameCompare(a.name, b.name);
   const names = new Set(lines.map(l => l.name));
-  const roots = lines.filter(l => !l.parent_line_name || !names.has(l.parent_line_name));
-  const out = [];
-  const walk = (parentName, depth) => {
-    for (const child of lines) {
-      if (child.parent_line_name === parentName) {
-        out.push({ line: child, depth });
-        walk(child.name, depth + 1);
-      }
-    }
-  };
-  for (const root of roots) {
-    out.push({ line: root, depth: 0 });
-    walk(root.name, 1);
+  const roots = lines.filter(l => !l.parent_line_name || !names.has(l.parent_line_name))
+    .sort((a, b) => sectionCompare(a.section, b.section) || byName(a, b));
+  const kids = new Map();
+  for (const l of lines) {
+    if (!l.parent_line_name || !names.has(l.parent_line_name)) continue;
+    if (!kids.has(l.parent_line_name)) kids.set(l.parent_line_name, []);
+    kids.get(l.parent_line_name).push(l);
   }
-  // กันตกหล่น (เช่นข้อมูล parent วนกันเอง) — อะไรที่ยังไม่ถูกใส่ ให้ต่อท้ายแบบ flat
-  const placed = new Set(out.map(o => o.line.id));
-  for (const l of lines) if (!placed.has(l.id)) out.push({ line: l, depth: 0 });
+  for (const arr of kids.values()) arr.sort(byName);
+  const out = [];
+  const placed = new Set();
+  const walk = (line, depth, section) => {
+    if (placed.has(line)) return;          // กันวนลูป (parent ชี้กันเอง)
+    placed.add(line);
+    out.push({ line, depth, section });
+    for (const c of kids.get(line.name) || []) walk(c, depth + 1, section);
+  };
+  for (const root of roots) walk(root, 0, root.section || null);
+  // กันตกหล่น (เช่นข้อมูล parent วนกันเอง) — อะไรที่ยังไม่ถูกใส่ ให้ต่อท้ายแบบ flat (เรียงแล้ว)
+  const rest = lines.filter(l => !placed.has(l)).sort(byName);
+  for (const l of rest) out.push({ line: l, depth: 0, section: l.section || null });
   return out;
+}
+
+/** เรียง "ชื่อไลน์ล้วนๆ" (ลิสต์ที่สร้างจากข้อมูลที่โหลดมา เช่นชื่อไลน์ของกะ/ใบ/ชิป) ตามลำดับมาตรฐานเดียวกัน
+ *  ชื่อที่อยู่ในทะเบียน = ตามลำดับทะเบียน (ส่วนงาน→แม่→ลูก) · ชื่อที่ไม่อยู่ในทะเบียน = ต่อท้าย เรียงธรรมชาติ (ห้ามหาย)
+ *  @param registry แถว production_lines (ไม่ส่ง = เรียงธรรมชาติอย่างเดียว) */
+export function sortLineNames(names, registry = []) {
+  const uniq = [...new Set((names || []).filter(n => n != null && n !== ''))];
+  const rank = new Map(toHierarchicalOptions(registry || []).map((o, i) => [o.line.name, i]));
+  return uniq.sort((a, b) => {
+    const ra = rank.has(a) ? rank.get(a) : Infinity, rb = rank.has(b) ? rank.get(b) : Infinity;
+    return (ra === rb ? 0 : ra < rb ? -1 : 1) || lineNameCompare(a, b);
+  });
 }
 
 /* ── จับคู่แผนก (org_nodes department) ↔ ไลน์ (2026-07-21) ──

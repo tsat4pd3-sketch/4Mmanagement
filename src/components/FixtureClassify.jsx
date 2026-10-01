@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { suggestFixtureCandidates } from '../utils/fixturePoints';
@@ -51,7 +52,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
 
   const hiddenCount = cands.length - shown.length;
   const lineOpts = useMemo(
-    () => [...new Set(cands.map(c => c.line_name).filter(Boolean))].sort(),
+    () => [...new Set(cands.map(c => c.line_name).filter(Boolean))].sort(lineNameCompare),
     [cands],
   );
 

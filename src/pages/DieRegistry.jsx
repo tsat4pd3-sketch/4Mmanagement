@@ -6,7 +6,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { DIE_SET_KINDS, dieSetKindLabel } from '../utils/equipmentKinds';
 import { OPEN_MO_STATUSES, buildOpenMoMap, openMosOf } from '../utils/dieStatus';
 import PageHeader from '../components/PageHeader';
@@ -209,7 +209,7 @@ export default function DieRegistry() {
     const s = new Set();
     sets.forEach(x => { if (x.line_name && inScope(x.line_name)) s.add(x.line_name); });
     dies.forEach(d => { if (d.line_name && inScope(d.line_name)) s.add(d.line_name); });
-    return [...s].sort((a, b) => a.localeCompare(b));
+    return [...s].sort(lineNameCompare);   // เรียงธรรมชาติชุดเดียวกับ dropdown ไลน์ (2026-10-01)
   }, [sets, dies, inScope]);
   /* 2026-09-08: ตัวเลือกไลน์ในฟอร์มชุด = ทะเบียน die_press_lines ที่เปิดใช้ (ขึ้นก่อน) ∪ ชื่อที่ชุด/แม่พิมพ์ใช้อยู่แล้ว
         (ค่าเก่าที่ยังไม่ลงทะเบียนต้องเลือกซ้ำได้ ห้ามหายเงียบ — SelectOrFree ตัดซ้ำให้เอง) */

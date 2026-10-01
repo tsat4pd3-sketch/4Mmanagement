@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -1204,7 +1205,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const otherProcCount = useMemo(() => Object.keys(forecast)
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
-  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(lineNameCompare), [rows]);
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 

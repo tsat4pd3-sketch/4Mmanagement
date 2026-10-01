@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -107,7 +108,7 @@ export default function StoreMonitor() {
       : findings),
     [findings, scopeLineNames, allProdNames]);
 
-  const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(), [scoped]);
+  const lines = useMemo(() => [...new Set(scoped.map(f => f.line).filter(Boolean))].sort(lineNameCompare), [scoped]);
   /* จอนี้คาบ 2 ฝั่งโดยธรรมชาติ (เคส A/B เทียบ min-max ของทุกเลข MAT · E ใบสั่งซื้อค้าง)
      → ให้กรองฝั่งได้ แต่ default = ทั้งหมด เพราะเป็นจอเฝ้าระวังภาพรวม (mat = ตัวจัดฝั่ง) */
   const sideCounts = useMemo(() => {
