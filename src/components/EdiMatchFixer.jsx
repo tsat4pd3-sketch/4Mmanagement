@@ -16,7 +16,9 @@ import { isFgMat } from '../utils/matPrefix';
    🔴 ระบบเสนอ คนตัดสิน — ไม่มีปุ่ม "ยืนยันทั้งหมด" ให้กดผ่านๆ (การเดาผิด = ออเดอร์เข้าเลข SAP ผิดทั้งเดือน)
    🔴 ไม่เขียน dr_products.p_no — 1 เลขพาร์ทลูกค้าผูกได้หลาย MAT ตาม ship-to ซึ่ง p_no เก็บไม่ได้
    🏷️ งานต่างประเทศ: P/N ติดอยู่ที่ 2xx (ก่อนแพ็ค) ส่วนตัวขาย 1xx P/N ว่าง (user 01/10) ⇒ ข้อเสนอ "ตัวขาย"
-      มาจากการเดินขึ้น BOM (`edi.sold` คำนวณในตัวนำเข้า) · ปุ่ม 2xx ยังกดได้แต่ติดป้าย "ก่อนแพ็ค/ระหว่างทาง"
+      มาจากการเดินขึ้น BOM (`edi.sold` คำนวณในตัวนำเข้า)
+   🔴 คู่นี้ตอบ "ส่งอะไรให้ลูกค้า" (shipping chart) เท่านั้น ⇒ **บันทึกได้เฉพาะ 1xx** (`save` บล็อก 2xx) ·
+      ความต้องการ 2xx มาจาก BOM ของ 1xx (งานแพ็คเรียก 2xx) ไม่ใช่จากคู่นี้ (user 01/10)
    เอกสาร: docs/modules/logistic-planner-sales.md §🔗 จับคู่พาร์ท */
 
 const box = (rgb) => ({
@@ -51,6 +53,12 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
   const save = async (shipTo, part, mat, note) => {
     if (!mat) { toast.error('เลือก MAT SAP ก่อน'); return; }
+    /* 🔴 คู่นี้ตอบแค่ "ส่งอะไรให้ลูกค้า" (Delivery · shipping chart) ⇒ ต้องเป็นตัวขาย 1xx เสมอ (user 01/10)
+       2xx ได้ความต้องการจาก BOM ของ 1xx ที่เรียกมันอยู่แล้ว · ผูก 2xx ตรงๆ = ใบส่งของเป็นงานระหว่างทาง + ความต้องการนับซ้ำ */
+    if (!isFgMat(mat)) {
+      toast.error(`${mat} ไม่ใช่ตัวขาย (1xx) — ของที่ส่งลูกค้าต้องเป็น 1xx · 2xx ได้ความต้องการผ่าน BOM ของ 1xx อยู่แล้ว`);
+      return;
+    }
     const key = `${shipTo}|${part}`;
     setBusy(key);
     const res = await supabaseDR.from('edi_part_map')
@@ -105,7 +113,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
           <div style={hint}>
             ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง ⇒ <b>MAT ที่เหลือดูเหมือนไม่มีใครสั่ง</b> ·
             กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว 🏷️ = <b>ตัวขาย (1xx)</b> ที่ระบบหาจาก BOM ·
-            ปุ่มที่ติด (ระหว่างทาง) = MAT 2xx ก่อนแพ็ค ปกติไม่ใช่ตัวที่ลูกค้าสั่ง
+            ชิปจางที่ติด (ระหว่างทาง) = 2xx ก่อนแพ็ค <b>เลือกเป็นของส่งไม่ได้</b> (ความต้องการ 2xx มาจาก BOM ของ 1xx)
           </div>
           {list('amb', ambRows).map(a => (
             <div key={`${a.part}|${a.st}`} style={row}>
@@ -115,13 +123,21 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
               {canEdit ? (
                 <>
                   {soldButtons(a.part, a.st)}
-                  {(a.cands || a.mats.map(m => ({ mat_no: m }))).map(c => (
+                  {(a.cands || a.mats.map(m => ({ mat_no: m }))).map(c => isFgMat(c.mat_no) ? (
                     <button key={c.mat_no} type="button" disabled={!!busy} style={btn(false)}
                       title={[c.name, c.customer && `ลูกค้า ${c.customer}`].filter(Boolean).join(' · ')}
                       onClick={() => save(a.st, a.part, c.mat_no, 'เลือกจาก MAT ที่ใช้ P/N เดียวกัน')}>
                       {matLabel(c)}
                     </button>
+                  ) : (
+                    <span key={c.mat_no} style={{ ...btn(false), cursor: 'default', opacity: 0.5 }}
+                      title={`${c.name || ''} — งานระหว่างทาง ไม่ใช่ของส่ง`}>{matLabel(c)}</span>
                   ))}
+                  <div style={{ minWidth: 200 }}>
+                    <ProductSelect value={pick[`${a.part}|${a.st}`] || ''} onChange={o => setPick(p => ({ ...p, [`${a.part}|${a.st}`]: o?.mat_no || '' }))} />
+                  </div>
+                  <button type="button" disabled={!!busy || !pick[`${a.part}|${a.st}`]} style={btn(false)}
+                    onClick={() => save(a.st, a.part, pick[`${a.part}|${a.st}`], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
                 </>
               ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.mats.join(' | ')}</span>}
             </div>
@@ -185,8 +201,10 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
               {canEdit && (
                 <>
                   {soldButtons(b.part, '')}
-                  <button type="button" disabled={!!busy} style={btn(true)}
-                    onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>✓ ถูก</button>
+                  {isFgMat(b.mat) && (
+                    <button type="button" disabled={!!busy} style={btn(true)}
+                      onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>✓ ถูก</button>
+                  )}
                   <div style={{ minWidth: 220 }}>
                     <ProductSelect value={pick[b.part] || ''} onChange={o => setPick(p => ({ ...p, [b.part]: o?.mat_no || '' }))} />
                   </div>
@@ -206,7 +224,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
           <div style={head('#60a5fa')}>🏷️ {nonFg.length} พาร์ท จับคู่ได้ แต่เป็น MAT งานระหว่างทาง (2xx) ไม่ใช่ตัวขาย</div>
           <div style={hint}>
             ความต้องการลูกค้าควรลงที่ <b>ตัวขาย (1xx)</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
-            กดปุ่มเขียวเพื่อย้ายไปตัวขาย หรือกด <b>2xx นี้ถูกแล้ว</b> ถ้าลูกค้าสั่งตัวนี้จริง (ระบบจะไม่ถามซ้ำ)
+            กดปุ่มเขียวเพื่อผูกกับตัวขาย หรือเลือก 1xx เอง · ไม่ต้องห่วงงาน 2xx — ความต้องการของมันมาจาก BOM ของ 1xx (งานแพ็คเรียกใช้)
           </div>
           {list('nonfg', nonFg).map(n => (
             <div key={n.part} style={row}>
@@ -224,8 +242,6 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                   </div>
                   <button type="button" disabled={!!busy || !pick[n.part]} style={btn(false)}
                     onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
-                  <button type="button" disabled={!!busy} style={btn(false)}
-                    onClick={() => save('', n.part, n.mat, 'ยืนยัน: ลูกค้าสั่ง MAT 2xx นี้จริง')}>2xx นี้ถูกแล้ว</button>
                 </>
               )}
             </div>
