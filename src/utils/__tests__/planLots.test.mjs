@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  lotRunMin, planRunMin, planSetup, shiftFit, resequence, moveLot,
+  lotRunMin, lotRunInfo, isTrialLot, planRunMin, planSetup, shiftFit, resequence, moveLot,
   suggestSequence, planSummary, sortBySeq,
 } from '../planLots.js';
 
@@ -269,4 +269,66 @@ test('ไม่มีใบผลิตเลย = ทุกล็อต pending
   assert.equal(r.pct, 0);
   assert.equal(r.rows[0].state, 'pending');
   assert.equal(r.offPlan.length, 0);
+});
+
+/* ══ 🧪 ใบจองเครื่องทดลองงานใหม่ (2026-10-01 · หน้างานแจ้ง "new model มาขอ trial เครื่อง") ══
+   โจทย์: พาร์ทใหม่ **ยังไม่มีในระบบ** (SAP ยังไม่ออกเลข MAT) และ **ไม่มี CT แน่ๆ**
+   แต่มันกินเวลาเครื่องจริง ⇒ ถ้าไม่อยู่ในแผน ไทม์ไลน์จะบอกว่าไลน์ว่างทั้งที่เครื่องถูกยึด */
+const trial = (id, o = {}) => ({
+  id, work_date: '2026-10-01', shift: 'day', line_name: 'L1', seq: 1,
+  source: 'trial', mat_no: null, qty_plan: 50, status: 'planned',
+  trial_part_no: 'MB3B-99Z999-AA', trial_part_name: 'BRKT NEW MODEL', est_min: 240, ...o,
+});
+
+test('🧪 เวลาของใบทดลองมาจาก "ที่ขอ" (est_min) ไม่ใช่ qty × CT', () => {
+  assert.equal(lotRunMin(trial('t1')), 240);
+  const i = lotRunInfo(trial('t1'));
+  assert.equal(i.from, 'est', '🔴 จอต้องรู้ว่าเลขนี้คนกรอก ไม่ใช่ระบบคำนวณ');
+  assert.equal(isTrialLot(trial('t1')), true);
+  assert.equal(isTrialLot(lot('a')), false);
+});
+
+test('🧪 est_min ชนะ CT เสมอเมื่อกรอก (คนวางแผนรู้ดีกว่าสูตรว่างานนี้กินเครื่องกี่ชั่วโมง)', () => {
+  const l = lot('a', { est_min: 90 });                 // ปกติ 600 × 60 ÷ 60 = 600 นาที
+  assert.equal(lotRunMin(l, ctOf), 90);
+  assert.equal(lotRunInfo(l, ctOf).from, 'est');
+});
+
+test('🔴 ใบทดลองที่ลืมกรอกเวลา = ประเมินไม่ได้ ต้องนับแยก ห้ามเงียบ', () => {
+  const r = planRunMin([trial('t1', { est_min: null })], ctOf);
+  assert.equal(r.min, null, 'ประเมินไม่ได้ = null ห้าม 0');
+  assert.deepEqual(r.noCt, [], 'ไม่มี mat ให้บอกชื่อ');
+  assert.equal(r.noTimeLots, 1, '🔴 ต้องนับไว้ ไม่งั้นจอเขียน "0 พาร์ทไม่มี CT" ทั้งที่มีงานประเมินไม่ได้');
+});
+
+test('🧪 เวลาทดลองบวกเข้าภาระกะจริง · แต่ไม่ถูกยุบคู่ RH/LH (เป็นเวลานาฬิกา ไม่ใช่ shot)', () => {
+  const pairOf = (m) => (m === 'M1' ? 'M2' : m === 'M2' ? 'M1' : null);
+  const r = planRunMin([lot('a', { mat_no: 'M1', qty_plan: 60 }), trial('t1', { seq: 2, est_min: 120 })], ctOf, pairOf);
+  assert.equal(r.estMin, 120);
+  assert.equal(r.min, 60 + 120, 'งานผลิต 60 นาที + เวลาที่ขอ 120 นาที');
+});
+
+test('🔴 ใบทดลองห้ามเข้าการจับคู่ยอดจริง — state = trial ไม่ใช่ pending', () => {
+  const m = matchPlanToActual(
+    [lot('a', { mat_no: 'M1', qty_plan: 100, seq: 1 }), trial('t1', { seq: 2 })],
+    [{ id: 'o1', mat_no: 'M1', status: 'confirmed', qty_ok: 100 }],
+  );
+  const t = m.rows.find(r => r.lot.id === 't1');
+  assert.equal(t.state, 'trial', '🔴 pending = ค้าง "ยังไม่เริ่ม" ตลอดกาลบนจอ');
+  assert.equal(t.donePcs, null, 'ตอบไม่ได้ ไม่ใช่ 0');
+  assert.equal(m.planPcs, 100, 'ยอดชิ้นของกรอบไม่รวมของทดลอง');
+  assert.equal(m.pct, 100, 'ใบทดลองต้องไม่ถ่วง % ความคืบหน้าของงานผลิต');
+  assert.deepEqual(m.offPlan, [], 'พาร์ทที่ผลิตจริงตรงกับแผน ⇒ ไม่มีงานนอกแผน');
+});
+
+test('🧪 สรุปหัวแผงแยกงานทดลองออกจากงานผลิต (คนละเรื่อง คนละเจ้าของ)', () => {
+  const s = planSummary({
+    lots: [lot('a', { mat_no: 'M1', qty_plan: 60, seq: 1 }), trial('t1', { seq: 2, est_min: 180 })],
+    orders: [], ctOf, netShiftMin: 470,
+  });
+  assert.equal(s.trialCount, 1);
+  assert.equal(s.trialMin, 180);
+  assert.equal(s.qtyPlan, 60, 'ยอดชิ้นไม่รวมของทดลอง');
+  assert.equal(s.lotCount, 2, 'แต่จำนวนล็อตในคิวนับทั้งหมด (มันกินเวลาเครื่องจริง)');
+  assert.equal(s.runMin, 60 + 180);
 });

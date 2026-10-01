@@ -16,6 +16,10 @@ const REAL = [
   lot('1', 1, 'M1', 105), lot('2', 2, 'M2', 190), lot('3', 3, 'M1', 93),
   lot('4', 4, 'M2', 82),  lot('5', 5, 'M3', 96),  lot('6', 6, 'M1', 181),
 ]
+const trial = (id, seq, hrs, o = {}) => ({
+  id, seq, source: 'trial', mat_no: null, qty_plan: 50, status: 'planned',
+  trial_part_no: 'MB3B-99Z999-AA', trial_part_name: 'BRKT NEW MODEL', est_min: hrs * 60, ...o,
+})
 const CASES = [
   ['① เดิม — กรอบกะเดียว (ไม่ส่ง segments) = งานล้นทะลุขอบขวาแล้วจบ', '2026-10-01', 1, REAL],
   ['② ใหม่ — 2 กะต่อกัน: งานที่ล้น 20:00 ไหลลงกะดึกเอง', '2026-10-01', 2, REAL],
@@ -25,6 +29,8 @@ const CASES = [
    [lot('a', 1, 'M1', 1400), lot('b', 2, 'M2', 900)]],
   ['⑤ มีล็อตไม่มี CT — กล่องลายทแยง + เวลาหลังจากนั้นเชื่อไม่ได้', '2026-10-01', 2,
    [lot('a', 1, 'M1', 400), lot('z', 2, 'ZZ', 50), lot('c', 3, 'M2', 300)]],
+  ['⑥ 🧪 จองเครื่องทดลองงานใหม่ — เวลามาจาก "ที่ขอ" (4 ชม.) ไม่ใช่ qty×CT · ล้นไปกะดึก', '2026-10-01', 2,
+   [lot('a', 1, 'M1', 400), trial('t1', 2, 4), lot('c', 3, 'M2', 500), trial('t2', 4, 3, { trial_part_no: 'N1WB-17E850-R', trial_reason: 'Run@Rate' })]],
 ]
 
 createRoot(document.getElementById('root')).render(

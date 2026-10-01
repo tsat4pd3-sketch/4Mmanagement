@@ -12,6 +12,9 @@
      · **ใบที่หน้างานเปิดเองนอกแผน ต้องโผล่ให้เห็น** — ไม่ใช่ความผิด แต่วางแผนต้องรู้ว่าแผนถูกข้าม
      · **ยกเลิกล็อต = `cancelled` + เหตุผล ห้าม delete แถว** (สอบกลับไม่ได้)
      · สิทธิ์ผ่าน `can('production_plan','write')` **ห้าม hardcode role array**
+     · 🧪 **จองเครื่องทดลองงานใหม่อยู่ที่นี่** (01/10 · คำสั่ง user — *"ปกติ PE จะแจ้ง PLANNER
+       เพื่อขอบุคกิ้งเครื่อง และวางแผนจะจัดการวางแผนให้"*) ⇒ **คนกรอกคือวางแผน ไม่ใช่ PE**
+       จึงไม่ทำคิวอนุมัติ/ใบขอแยกหน้า — ของที่ขาดจริงคือ "เครื่องถูกจองแล้วแผนต้องรู้"
      · 🔗 **แผน = คิวต่อเนื่อง ไม่ใช่ "ของกะใดกะหนึ่ง"** (30/09 · คำสั่ง user
        *"วางได้ทีเดียวทั้ง 2 กะต่อกัน · เกินกะล้นไปกะดึก · เกิน 1 วันล้นไปอีกวัน"*)
        ⇒ `work_date`/`shift` ของล็อตเป็น **ผลลัพธ์ที่ระบบคำนวณว่างานตกกะไหน** ไม่ใช่ช่องที่คนเลือก
@@ -28,7 +31,8 @@ import { toast } from '../components/Toast';
 import { snapMachineNo } from '../utils/machineNo';
 import { resolveSetupRule } from '../utils/pressSetup';
 import {
-  planSummary, matchPlanToActual, sortBySeq, resequence, moveLot, suggestSequence, lotRunMin, qtyText,
+  planSummary, matchPlanToActual, sortBySeq, resequence, moveLot, suggestSequence,
+  lotRunMin, lotRunInfo, isTrialLot, lotKeyText, qtyText,
 } from '../utils/planLots';
 import { breakIntervalsIn } from '../utils/oee';
 import { buildHorizon, assignShifts, horizonSummary, orderAcrossHorizon, SEG_HOURS, SHIFT_LABEL } from '../utils/planHorizon';
@@ -38,6 +42,7 @@ import FilterBar from './FilterBar';
 import Segmented from './Segmented';
 import MatLabel from './MatLabel';
 import MachineSelect from './MachineSelect';
+import TrialBookingModal from './TrialBookingModal';
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -73,6 +78,7 @@ export default function ProdLotPlanner({
   const [breakPolicies, setBreakPolicies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
+  const [trialOpen, setTrialOpen] = useState(false);
   const [dirty, setDirty]     = useState(false);
 
   useEffect(() => { if (!lineName && lines.length) setLineName(lines[0].name); }, [lines, lineName]);
@@ -206,6 +212,16 @@ export default function ProdLotPlanner({
     }]));
     setDirty(true);
   };
+  /* 🧪 จองเครื่องทดลอง — ต่อท้ายคิวเสมอ (ลากสลับลำดับทีหลังได้)
+     🔴 `mat_no: null` โดยตั้งใจ — งานใหม่ยังไม่มีเลข MAT · DB มี check กันไม่ให้ใบผลิตปกติ null ตาม */
+  const addTrial = (t) => {
+    setLots(ls => resequence([...ls, {
+      id: `new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, _new: true,
+      work_date: date, shift, line_name: lineName, seq: ls.length + 1,
+      mat_no: null, part_name: t.trial_part_name, status: 'planned', source: 'trial', ...t,
+    }]));
+    setDirty(true);
+  };
   const cancelLot = (l) => {
     const why = window.prompt(`ยกเลิกล็อต ${l.mat_no} (${l.qty_plan} ชิ้น) เพราะอะไร?\n(เก็บไว้เป็นประวัติ ไม่ได้ลบทิ้ง)`);
     if (!why) return;
@@ -292,6 +308,10 @@ export default function ProdLotPlanner({
         <span className="spacer" />
         {mayWrite && (
           <>
+            <button onClick={() => setTrialOpen(true)}
+              title="งาน new model ที่ขอเครื่องมาทดลอง — จองเวลาเครื่องให้เห็นบนไทม์ไลน์ (พาร์ทยังไม่ต้องมีในระบบ)">
+              🧪 จองเครื่องทดลอง
+            </button>
             <button onClick={() => { setLots(suggestSequence(lots, dieOf)); setDirty(true); }}
               title="เรียงตามความสูงแม่พิมพ์ให้เสียเวลาเปลี่ยนรุ่นน้อยสุด — เป็นข้อเสนอ แก้ทับได้">
               💡 เสนอลำดับ
@@ -326,6 +346,12 @@ export default function ProdLotPlanner({
           {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · กิน {hz.shiftsUsed} กะ
             {hz.lastSegment && ` (ยาวถึง ${SHIFT_LABEL[hz.lastSegment.shift]} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
         </span>
+        {summary.trialCount > 0 && (
+          <span style={{ fontSize: 12.5, color: '#22d3ee', fontWeight: 700 }}
+            title="งาน new model ที่จองเครื่องมาทดลอง — กินเวลาเครื่องจริง แต่ไม่ใช่ยอดส่งลูกค้า">
+            🧪 ทดลอง {summary.trialCount} ใบ · {fmtMin(summary.trialMin)}
+          </span>
+        )}
         {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เวลาทำงานสุทธิ {netMin} นาที/กะ</span>}
         {summary.started > 0 && <span style={{ fontSize: 12, color: 'var(--accent)' }}>▶ เริ่มแล้ว {summary.started} · ปิดแล้ว {summary.closed}</span>}
       </div>
@@ -346,8 +372,12 @@ export default function ProdLotPlanner({
       )}
 
       {/* 🔴 ความซื่อสัตย์: อะไรที่ประเมินไม่ได้ ต้องเขียนบนจอ ห้ามปล่อยให้ตัวเลขดูสวย */}
-      {(summary.noCtMats.length > 0 || summary.setupUnknown || noHeight > 0) && (
+      {(summary.noCtMats.length > 0 || summary.setupUnknown || noHeight > 0 || summary.noTimeLots > 0) && (
         <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
+          {summary.noTimeLots > 0 && (
+            <div>🧪 <b>{summary.noTimeLots} ใบทดลองยังไม่ได้ระบุเวลาที่ขอ</b> — วางบนไทม์ไลน์ไม่ได้
+              และทำให้เวลาของใบที่อยู่หลังจากนั้น<b>เชื่อไม่ได้ทั้งหมด</b> · แก้ที่ช่อง "ขอใช้เครื่อง"</div>
+          )}
           {summary.noCtMats.length > 0 && (
             <div>⚠️ <b>{summary.noCtMats.length} พาร์ทยังไม่มี cycle time</b> ({summary.noCtMats.slice(0, 4).join(' · ')}{summary.noCtMats.length > 4 ? ' …' : ''})
               — เวลาผลิตข้างบน<b>ต่ำกว่าจริง</b> · ไปกรอกที่ Product Master</div>
@@ -416,9 +446,24 @@ export default function ProdLotPlanner({
                 return (
                   <tr key={l.id} style={{ borderTop: '1px solid var(--border)', opacity: l.status === 'cancelled' ? 0.45 : 1 }}>
                     <td style={{ ...td, textAlign: 'center', fontWeight: 800 }}>{l.seq}</td>
+                    {/* 🧪 งานทดลองไม่มีเลข MAT ⇒ `<MatLabel>` วาดไม่ได้ ต้องโชว์ Part No./ชื่อที่กรอกบนใบแทน */}
                     <td style={td}>
-                      <MatLabel mat={l.mat_no} size={12} />
-                      {customerOf(l.mat_no) && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {customerOf(l.mat_no)}</span>}
+                      {isTrialLot(l) ? (
+                        <>
+                          <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 4,
+                            padding: '1px 5px', fontSize: 10.5, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>🧪 ทดลอง</span>
+                          <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
+                          {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
+                          <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                            {[l.trial_customer, l.trial_reason, l.requested_by && `ขอโดย ${l.requested_by}`].filter(Boolean).join(' · ') || 'ยังไม่ระบุที่มา'}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <MatLabel mat={l.mat_no} size={12} />
+                          {customerOf(l.mat_no) && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {customerOf(l.mat_no)}</span>}
+                        </>
+                      )}
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
                       {mayWrite && l.status === 'planned' ? (
@@ -427,14 +472,20 @@ export default function ProdLotPlanner({
                           style={{ width: 84, textAlign: 'right' }} />
                       ) : <b>{qtyText(l.qty_plan)}</b>}
                       {/* 🧩 ยอดจริงมาจาก **ผลรวมใบคัมบังของพาร์ทนั้น** ไม่ใช่ใบเดียว (ดู planLots.js) */}
-                      {r.state !== 'pending' && (
+                      {r.state !== 'pending' && r.state !== 'trial' && (
                         <div style={{ fontSize: 11, color: r.state === 'done' ? 'var(--accent)' : '#f59e0b' }}>
                           ทำได้ {qtyText(r.donePcs)}{r.pct != null ? ` · ${r.pct}%` : ''}
                           {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> (จาก {r.fromOrders} ใบ)</span>}
                         </div>
                       )}
                     </td>
-                    <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{fmtMin(lotRunMin(l, ctOf))}</td>
+                    {/* 🔴 เวลาที่คนกรอก ("ขอ") ต้องอ่านออกว่าไม่ใช่เวลาที่ระบบคำนวณ */}
+                    <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{(() => {
+                      const ri = lotRunInfo(l, ctOf);
+                      return ri.from === 'est'
+                        ? <span title="เวลาที่คนวางแผนขอไว้ — ไม่ได้คำนวณจาก cycle time">ขอ {fmtMin(ri.min)}</span>
+                        : fmtMin(ri.min);
+                    })()}</td>
                     {/* 🔗 กะที่งานใบนี้ตกไปอยู่ — "—" = ยังตอบไม่ได้ **ไม่ใช่กะแรก** */}
                     <td style={td}>{(() => {
                       const at = landingOf[l.id];
@@ -467,6 +518,8 @@ export default function ProdLotPlanner({
                     </td>
                     <td style={td}>
                       {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>✕ ยกเลิก</span>
+                        /* 🧪 ไม่มีพาร์ทให้จับคู่ยอดจริง ⇒ บอกตรงๆ ว่า "จองเครื่องไว้" ห้ามขึ้น "รอคิว" ค้างตลอดกาล */
+                        : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>🧪 จองเครื่องไว้</span>
                         : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>✓ ครบตามกรอบ</span>
                         : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
                         : <span style={{ color: 'var(--muted)' }}>ยังไม่เริ่ม</span>}
@@ -511,6 +564,11 @@ export default function ProdLotPlanner({
             ➕ ทำเกินยอดที่วางไว้ · 🆕 พาร์ทที่ผลิตจริงแต่ไม่มีในแผน — <b>ไม่ใช่ความผิดของหน้างาน</b> แต่วางแผนต้องรู้
           </div>
         </div>
+      )}
+
+      {trialOpen && (
+        <TrialBookingModal lineName={lineName} dies={dies}
+          onClose={() => setTrialOpen(false)} onAdd={addTrial} />
       )}
 
       {/* ── ความต้องการที่ยังไม่ได้วางแผน ── */}
