@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
+import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 
 /* ═══ 🛒 สั่งซื้อ/รับเข้า "รวมยอดทั้งพาร์ท" — คิวจัดซื้อ ═══════════════════════════
    ที่มา: `fn_explode_child_demand` ออกใบ **1 ใบต่อ 1 ล็อต** (เพดาน 50 ใบ/การปิดออเดอร์)
@@ -21,9 +22,13 @@ import { toast } from './Toast';
       update ใช้ compare-and-swap (`.eq('status', prev)`) — ใบที่คนอื่นเลื่อนไปแล้ว/ยกเลิกแล้ว
       จะไม่ถูกแตะ · ถ้าเอายอดที่ "ตั้งใจจะเลื่อน" ไปโพสต์ = สต็อกเกินจริง
 
-   📦 ledger: รับเข้าหลายใบ → **1 แถวต่อ 1 ปลายทาง** ไม่ใช่ 1 แถวต่อ 1 ใบ
-      (384 ใบ = 384 แถว ทั้งที่ไม่มีคอลัมน์ผูกกลับใบเลย → แยกแถวไม่ได้ traceability เพิ่มเลย
-       ตัวใบเองมี received_by/received_at เป็นหลักฐานอยู่แล้ว · note เขียนกำกับว่ารวมกี่ใบ)
+   📦 ledger: รับเข้าหลายใบ → **1 แถว ลงที่คลัง** (384 ใบ = 384 แถว ทั้งที่ไม่มีคอลัมน์ผูกกลับใบเลย
+      → แยกแถวไม่ได้เพิ่ม traceability · ใบเองมี received_by/received_at เป็นหลักฐานอยู่แล้ว)
+
+   🔴 2026-10-01 — **ของที่รับเข้าลงที่คลัง (`RECEIPT_LINE`) ไม่ใช่ `dest_line` อีกต่อไป**
+      `dest_line` = "ไลน์ไหนจะ*ใช้*" ไม่ใช่ "ของ*อยู่*ที่ไหน" — เอามาใช้เป็น line_name ทำให้ของทั้ง PO
+      เด้งไปกองหน้าไลน์ทันที (วัดจริง: 10 แถว 1.34 ล้านชิ้น = 76% ของยอดค้างทั้งระบบ)
+      กฎ + ตัวเลข + ตัวสร้างแถว → `src/utils/stockReceipt.js` (มีเทส) **ห้ามประกอบแถวเองที่นี่**
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 const IN_CHUNK = 120;                       // กฎโปรเจค: .in() แบ่งก้อนละ 120 กัน URL ยาวเกิน
@@ -112,26 +117,14 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
       }
 
       let stockErr = '';
-      let posted = 0, skipped = 0;
+      let posted = 0;
       if (next === 'received') {
-        /* 1 แถวต่อ 1 ปลายทาง — ยึด dest_line ของใบจริง ไม่ใช่ของการ์ด (กฎข้อ 2) */
-        const g = new Map();
-        done.forEach(r => {
-          const k = r.dest_line || '';
-          const cur = g.get(k) || { dest: k, qty: 0, slips: 0, name: r.part_name, wd: r.work_date };
-          cur.qty += Number(r.qty) || 0; cur.slips += 1;
-          g.set(k, cur);
-        });
-        const rows = [];
-        g.forEach(v => {
-          if (!v.dest) { skipped += v.slips; return; }   // ไม่รู้ปลายทาง = เติมสต็อกไม่ได้
-          posted += v.slips;
-          rows.push({
-            line_name: v.dest, mat_no: mat, part_name: v.name || group.part_name, qty: v.qty,
-            type: 'issue', work_date: v.wd || workDate,
-            note: `รับของซื้อเข้าสโตร์ · รวม ${v.slips} ใบ${group.supplier ? ' · ' + group.supplier : ''}`,
-            created_by: fullName || 'สโตร์',
-          });
+        /* ของเข้าคลังก้อนเดียว = แถวเดียว · ไลน์ที่รอของถูกเขียนไว้ในหมายเหตุ (ดูหัวไฟล์ + stockReceipt.js)
+           ⚠️ ใบที่ไม่ระบุปลายทางก็รับเข้าคลังได้ — "ไม่รู้ว่าใครจะใช้" ไม่ได้แปลว่า "ของไม่ได้มา" */
+        posted = done.length;
+        const rows = buildReceiptRows({
+          matNo: mat, partName: group.part_name, slips: done,
+          supplier: group.supplier, workDate, by: fullName,
         });
         if (rows.length) {
           const { error } = await supabaseDR.from('line_stock_transactions').insert(rows);
@@ -143,14 +136,12 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
       const short = done.length < picked.length;
       if (stockErr) {
         toast.error(`เลื่อนสถานะ ${done.length} ใบแล้ว แต่บันทึกรับเข้าคลังไม่สำเร็จ — ${stockErr} · ไปบันทึกเองที่ Line Stock`);
-      } else if (next === 'received' && skipped > 0) {
-        toast.error(`รับเข้า ${done.length} ใบแล้ว · ${skipped} ใบไม่ได้ระบุปลายทางสโตร์ สต็อกส่วนนั้นยังไม่ถูกเติม (เติมแล้ว ${posted} ใบ)`);
       } else if (short) {
         toast.error(`เลื่อนได้ ${done.length} จาก ${picked.length} ใบ — ที่เหลือถูกคนอื่นเลื่อน/ยกเลิกไปแล้ว`);
       } else {
         toast.success(next === 'ordered'
           ? `🛒 บันทึกสั่งซื้อ ${mat} · ${done.length} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น`
-          : `✅ รับเข้าสโตร์ ${mat} · ${done.length} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น`);
+          : `✅ รับเข้า ${RECEIPT_LINE} · ${mat} · ${posted} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น — ไลน์เบิกจากคลังอีกที`);
       }
       await onDone?.();
       onClose?.();
