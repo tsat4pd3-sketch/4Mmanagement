@@ -19,7 +19,7 @@
 import { useState, useMemo } from 'react';
 import { layoutLots, reorderTo, UNKNOWN_BOX_MIN_PCT } from '../utils/planTimeline';
 import { sliceBySegments, visibleRows, rowTicks, SHIFT_LABEL } from '../utils/planHorizon';
-import { qtyText } from '../utils/planLots';
+import { qtyText, isTrialLot, lotKeyText } from '../utils/planLots';
 
 const fmtHm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 /* ข้ามวัน = บอกเวลาเปล่าๆ ไม่พอ ("22:34" ของวันไหน?) */
@@ -107,7 +107,11 @@ export default function PlanTimeline({
 
                 {row.pieces.map(({ box: b, boxIndex, run, setup }) => {
                   const isUnknown = b.noCt;
-                  const color = isUnknown ? '#94a3b8' : b.pairedWithPrev ? '#a78bfa' : b.afterUnknown ? '#f59e0b' : '#4d9fff';
+                  /* 🧪 งานทดลอง = คนละเรื่องกับงานผลิต ต้องแยกออกด้วยตาทันที (ฟ้าน้ำทะเล)
+                     **ห้ามใช้เขียว/เหลือง/แดง** — สงวนไว้ให้ Andon (UI-CONVENTIONS) */
+                  const isTrial = isTrialLot(b.lot);
+                  const color = isUnknown ? '#94a3b8' : isTrial ? '#22d3ee'
+                    : b.pairedWithPrev ? '#a78bfa' : b.afterUnknown ? '#f59e0b' : '#4d9fff';
                   const w = run ? (isUnknown ? Math.max(run.widthPct, UNKNOWN_BOX_MIN_PCT) : run.widthPct) : 0;
                   return (
                     <div key={b.lot.id}>
@@ -131,7 +135,9 @@ export default function PlanTimeline({
                           onDragEnd={() => { setDragId(null); setOverIdx(null); }}
                           onDragOver={(e) => { if (editable && dragId) { e.preventDefault(); setOverIdx(boxIndex); } }}
                           onDrop={(e) => { e.preventDefault(); drop(boxIndex); }}
-                          title={`#${b.seq} ${b.lot.mat_no} · ${qtyText(b.lot.qty_plan)} ชิ้น\n`
+                          title={`#${b.seq} ${lotKeyText(b.lot)} · ${qtyText(b.lot.qty_plan)} ชิ้น\n`
+                            + (isTrial ? `🧪 จองเครื่องทดลองงานใหม่${b.lot.trial_reason ? ` (${b.lot.trial_reason})` : ''}\n`
+                              + `⏱️ เวลานี้คือ "ที่ขอ" ไม่ใช่ที่ระบบคำนวณ — พาร์ทใหม่ยังไม่มี cycle time\n` : '')
                             + (isUnknown ? 'ยังไม่มี cycle time — คำนวณความยาวไม่ได้'
                               : `${spansDays ? fmtDayHm(b.startMs) : fmtHm(b.startMs)}–${spansDays ? fmtDayHm(b.endMs) : fmtHm(b.endMs)} (${fmtMin(b.runMin)})`)
                             + (run.cutLeft || run.cutRight ? '\n🔗 งานใบนี้คร่อมกะ — ทำต่อเนื่องข้ามเส้นแบ่งกะ' : '')
@@ -161,7 +167,7 @@ export default function PlanTimeline({
                           {w >= 4 && (
                             <>
                               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', lineHeight: 1.2, pointerEvents: 'none' }}>
-                                {run.cutLeft && '↩ '}{b.pairedWithPrev && '👯 '}#{b.seq} {b.lot.mat_no}
+                                {run.cutLeft && '↩ '}{isTrial && '🧪 '}{b.pairedWithPrev && '👯 '}#{b.seq} {lotKeyText(b.lot)}
                               </div>
                               <div style={{ fontSize: 10.5, color: 'var(--text2)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
                                 {isUnknown ? '⚠ ไม่มี CT'
@@ -171,6 +177,8 @@ export default function PlanTimeline({
                                   /* ท่อนต่อท่อนสุดท้าย — สิ่งที่คนกะนี้อยากรู้คือ "ของที่รับช่วงมาจบกี่โมง"
                                      ไม่ใช่ความยาวรวมของล็อต (ซึ่งเกิดไปแล้วครึ่งนึงตั้งแต่กะก่อน) */
                                   : run.cutLeft ? `ต่อจากกะก่อน · จบ ${fmtHm(b.endMs)}`
+                                  /* 🔴 ต้องขึ้นคำว่า "ขอ" — เวลาของงานทดลองคนกรอก ไม่ใช่ระบบคำนวณ */
+                                  : isTrial ? `ทดลอง ${qtyText(b.lot.qty_plan)} ชิ้น · ขอ ${fmtMin(b.runMin)}`
                                   : `${qtyText(b.lot.qty_plan)} ชิ้น · ${fmtMin(b.runMin)}`}
                               </div>
                             </>

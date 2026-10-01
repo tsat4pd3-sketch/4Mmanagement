@@ -362,6 +362,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **ห้ามแก้ `prod_orders.session_id` ให้ null ได้** (ทั้งระบบ join `production_sessions!inner`)
 > · **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · **"ไม่ระบุแม่พิมพ์" ≠ "ไม่ต้องเปลี่ยนรุ่น"** ⇒ `null`
 > · 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
+> · 🧪 **จองเครื่องทดลองงานใหม่ `source='trial'`** (01/10) — เวลา = **`est_min` "ที่ขอ" ไม่ใช่ `qty×CT`**
+>   (ด่าน `plan-lot-time-via-helper`) · 🔴 **ห้ามสร้างพาร์ทใหม่ลง `dr_products`** · `mat_no` ว่างได้เฉพาะใบนี้
+>   · **ไม่เข้า `matchPlanToActual`** (`state:'trial'`) · downtime "ทดลองชิ้นงาน" + `is_trial` **มีแล้ว ห้ามซ้ำ**
 > · ⚠️ แม่พิมพ์ 262 ตัว **กรอกความสูง 0 ตัว** ⇒ ยังเสนอลำดับประหยัดเวลาเปลี่ยนรุ่นไม่ได้ (ท่อต่อไว้ครบ)
 > 📄 รายละเอียดเต็ม → `docs/modules/production-plan.md`
 
