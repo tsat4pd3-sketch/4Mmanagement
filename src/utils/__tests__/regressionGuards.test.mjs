@@ -122,6 +122,15 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'tabs-folded-into-dropdown',
+    scan: ['src/components/PageHeader.jsx'], ext: ['.jsx'],
+    re: /MAX_TABS|aria-label="แท็บเพิ่มเติม"|tabList\.slice\(/g,
+    why: 'แท็บที่ถูกพับเข้า "⋯ เพิ่มเติม" = คนไม่รู้ว่ามี — user ทัก 01/10/2026 *"ถ้าเป็นดรอปดาว จะทำให้ user ไม่รู้ป่าว"* '
+       + '(ProductMaster ลูกค้า/Supplier/ทบทวน CT/Export หายจากสายตา · เดิมอ้าง Miller 7±2 ผิดบริบท)',
+    fix: 'แท็บโชว์ครบเสมอ (เดสก์ท็อป wrap · มือถือเลื่อนแนวนอน) · แท็บเยอะเกิน = ยุบของซ้ำ/แยกเป็นหน้า (NAVIGATION-REVIEW §2.3) ไม่ใช่ซ่อน',
+    allow: {},
+  },
+  {
     id: 'line-names-raw-sort',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์
