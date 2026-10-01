@@ -298,7 +298,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-        const [{ data: stds }, prods, { data: shipTos }, { data: partMapRows, error: partMapErr }] = await Promise.all([
+        const [{ data: stds }, prods, { data: shipTos }, { data: partMapRows, error: partMapErr }, { data: retired }] = await Promise.all([
           // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
@@ -306,6 +306,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
           // 🔗 คำตัดสินของคน (edi_part_map) — ชนะการเดาทุกชั้น · โหลดไม่ได้ = เดาแบบเดิม + เตือน
           supabaseDR.from('edi_part_map').select('ship_to, part_key, customer_part_no, mat_no'),
+          // สินค้าที่ปิดใช้งาน (ECN ออกเลขใหม่แล้ว) — ห้ามเป็นตัวเลือก แม้ kanban_standards ยังเปิดอยู่
+          supabaseDR.from('dr_products').select('mat_no').eq('is_active', false),
         ]);
         if (partMapErr) toast.error('อ่านทะเบียนจับคู่พาร์ท (edi_part_map) ไม่ได้ — ใช้การเดาจาก P/N อย่างเดียวรอบนี้');
         const partMap = buildPartMapIndex(partMapRows || []);
@@ -331,7 +333,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         // dr_products ก่อน — ตัวเดียวที่รู้ "ลูกค้า" ของ mat (list dedupe ต่อ mat_no: ใครใส่ก่อนชนะ
         // ถ้า kanban_standards ใส่ก่อน entry จะไม่มี customer แล้วการแยกด้วย ship-to ใช้ไม่ได้)
         (prods || []).forEach(x => put(x.p_no, x.mat_no, x.name, x.customer));
-        (stds || []).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
+        /* 🔴 สินค้าที่ปิดใช้งาน = ห้ามโผล่เป็นตัวเลือก (user 01/10: "ที่ปิดใช้งานแล้วอย่าโชว์ เดี๋ยวงง เพราะมี ECN ใหม่แล้ว
+           แค่อาจยังไม่ได้ไปตั้งใน product") — เคสจริง 10100333 ปิดแล้วแต่แถว kanban_standards ยังเปิด จึงหลุดมาเป็นตัวเลือก */
+        const retiredSet = new Set((retired || []).map(x => x.mat_no));
+        (stds || []).filter(x => !retiredSet.has(x.mat_no)).forEach(x => put(x.p_no, x.mat_no, x.part_name, null));
         // FG (ขึ้นต้น 1) ชนะ child เสมอ — เรียงให้ FG มาก่อนในทุกลิสต์
         Object.values(matMap).forEach(l => l.sort((a, b) => (isFgMat(b.mat_no) ? 1 : 0) - (isFgMat(a.mat_no) ? 1 : 0)));
         const unmatched = new Set();
@@ -407,7 +412,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   if (info[a.mat]?.is_active === false || inCands.has(a.mat) || !ownPnOk(a.mat, part)) return;
                   const prev = out.get(a.mat);
                   if (prev && prev.depth <= a.via.length) return;
-                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `BOM: ${m} → ${a.via.join(' → ')}`, depth: a.via.length });
+                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `หาจาก BOM (ห่าง ${a.via.length} ชั้น)`, depth: a.via.length });
                 });
               });
               const k = norm(part);
