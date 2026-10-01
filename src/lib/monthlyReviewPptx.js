@@ -47,6 +47,7 @@
 
   Doc control: doc_key 'monthly_review' ใน doc_forms (โลโก้/เลขฟอร์ม override ได้จาก /doc-forms)
 */
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
@@ -794,7 +795,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
     const agg = aggSessions(ss);
     const output = outputOf(ss);
     const { dtHr, unplanned } = dtStats(ss);
-    const lines = [...new Set(ss.map(s => s.line_name))].sort().map(ln => {
+    const lines = [...new Set(ss.map(s => s.line_name))].sort(lineNameCompare).map(ln => {
       const ls = ss.filter(s => s.line_name === ln);
       const la = aggSessions(ls);
       const lo = outputOf(ls);

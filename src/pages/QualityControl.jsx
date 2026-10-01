@@ -326,7 +326,7 @@ function QualityDashboard() {
   const shownSessIds = useMemo(() => new Set(shownSessions.map(s => s.id)), [shownSessions]);
 
   const lineOptions = useMemo(
-    () => [...new Set(sessions.map(s => s.line_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(sessions.map(s => s.line_name).filter(Boolean))],
     [sessions]
   );
   // ตัวเลือก product = mat_no ของใบงานในกะที่แสดง (label = ชื่อชิ้นงาน)
@@ -477,13 +477,13 @@ function QualityDashboard() {
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
       >
-        {/* UI-STANDARD 2026-09-24: ป้าย "ทุก…" ไม่มีวงเล็บจำนวน · ไม่ใส่ขนาด inline ในแถบกรอง
-            (ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ ไม่ใช่ทะเบียน production_lines ⇒ ยังเป็น select ธรรมดา) */}
+        {/* ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ — วาดผ่าน <LineSelect> ให้ได้ลำดับ/หัวกลุ่มส่วนงานชุดเดียวกับทุกหน้า
+            (2026-10-01 · เดิม select ธรรมดาเรียง localeCompare = คนละลำดับกับหน้าอื่น)
+            · ไลน์ปลดระวางที่ยังมีกะในช่วงนี้ต้องเลือกได้ (includeRetired) · ชื่อที่ไม่อยู่ในทะเบียน = กลุ่มท้าย ห้ามหาย */}
         <span className="filter-label">ไลน์</span>
-        <select value={lineFilter} onChange={e => setLineFilter(e.target.value)}>
-          <option value="">{ALL.line}</option>
-          {lineOptions.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
+        <LineSelect lines={allLines.filter(l => lineOptions.includes(l.name))} includeRetired
+          value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} extraAt="end"
+          extraGroups={[{ label: '⚠ ไม่อยู่ในทะเบียนไลน์', options: lineOptions.filter(n => !allLines.some(l => l.name === n)).map(n => ({ value: n })) }]} />
         <span className="filter-label">ชิ้นงาน</span>
         <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}

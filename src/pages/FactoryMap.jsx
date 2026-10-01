@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { sortLineNames } from '../utils/lineHierarchy';
 import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
@@ -1549,7 +1550,7 @@ export default function FactoryMap({ setupMode = false }) {
     else { setStoryLine(null); setDetailLine(name); }
   };
   // ตีกรอบเฉพาะ "ไลน์บนสุด (top-level)" = parent_line_name IS NULL — 1 กรอบ/กลุ่ม (รวมยอดลูกด้วย stOf)
-  const topNames = useMemo(() => lines.filter(l => !l.parent_line_name).map(l => l.name), [lines]);
+  const topNames = useMemo(() => sortLineNames(lines.filter(l => !l.parent_line_name).map(l => l.name), lines), [lines]);
   // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
   const isFac = (name) => !allProdNames.has(name);
@@ -1840,7 +1841,7 @@ export default function FactoryMap({ setupMode = false }) {
     topNames.forEach(t => {
       if (f.has(t)) return;
       const ch = childrenOf[t] || [];
-      if (ch.length && ch.some(c => f.has(c))) out.push(...ch.filter(c => !f.has(c)));
+      if (ch.length && ch.some(c => f.has(c))) out.push(...sortLineNames(ch.filter(c => !f.has(c)), lines));
     });
     return out;
   };

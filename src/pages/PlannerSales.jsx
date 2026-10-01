@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
@@ -10,6 +11,7 @@ import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
 import { baseOfPart } from '../utils/matResolve';
+import { buildParentIndex, targetAncestorsOf } from '../utils/bomTree';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
@@ -337,6 +339,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
         const unmatchedShipTos = new Map();   // part → Set(shipTo) — ไว้ให้คนเลือกขอบเขตตอนจับคู่
         let mappedCount = 0;
+        const nonFgHits = new Map();          // part → { mat, name, shipTos } (จับคู่ได้แต่เป็น 2xx)
         const records = rows2.map(r => {
           const fixed = mappedMatFor(partMap, r.shipTo, r.part);
           if (fixed) { mappedCount++; return { ...r, mat_no: fixed, part_name: nameOfMat[fixed] || null }; }
@@ -358,12 +361,54 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             const bc = baseMap[baseOfPart(r.part)];
             if (bc && bc.length === 1) { hit = bc[0]; baseHits.set(r.part, bc[0].mat_no); }
           }
+          // จับได้ตัวเดียวแต่ไม่ใช่ตัวขาย (2xx ก่อนแพ็ค) = ความต้องการลูกค้าไปลงงานระหว่างทาง ⇒ ให้คนดู
+          if (hit && !isFgMat(hit.mat_no) && !guessed.has(r.part)) {
+            const n = nonFgHits.get(r.part) || { mat: hit.mat_no, name: hit.name, shipTos: new Set() };
+            n.shipTos.add(r.shipTo); nonFgHits.set(r.part, n);
+          }
           if (!hit) {
             unmatched.add(r.part);
             (unmatchedShipTos.get(r.part) || unmatchedShipTos.set(r.part, new Set()).get(r.part)).add(r.shipTo);
           }
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
         });
+        /* 🏷️ ตัวขาย (1xx) ที่น่าจะใช่ — งานต่างประเทศ P/N ติดอยู่ที่ 2xx ก่อนแพ็ค ส่วนตัวขาย P/N ว่าง
+           ⇒ เดินขึ้น BOM จาก 2xx หา 1xx (+ ชื่อสินค้า 1xx ที่มีเลขพาร์ทนี้อยู่) เป็น "ข้อเสนอ" ให้คนเลือก
+           โหลดเฉพาะตอนมีคำเตือน · โหลดไม่ได้ = ไม่มีข้อเสนอ (คำเตือนเดิมยังอยู่ครบ) */
+        const issueParts = new Set([...guessed.keys(), ...unmatched, ...baseHits.keys(), ...nonFgHits.keys()]);
+        const sold = {};
+        if (issueParts.size) {
+          const [bomRes, allProds] = await Promise.all([
+            fetchAllPages(() => supabaseDR.from('bom_items').select('id, product_id, mat_no, parent_mat, is_active').eq('is_active', true)),
+            supabaseDR.from('dr_products').select('id, mat_no, name, customer, is_active'),
+          ]);
+          if (!bomRes.error && !allProds.error) {
+            const plist = allProds.data || [];
+            const matOfProduct = Object.fromEntries(plist.map(x => [x.id, x.mat_no]));
+            const info = Object.fromEntries(plist.map(x => [x.mat_no, x]));
+            const up = buildParentIndex(bomRes.rows, matOfProduct);
+            const fgActive = plist.filter(x => x.is_active !== false && isFgMat(x.mat_no));
+            issueParts.forEach(part => {
+              const seeds = new Set([
+                ...(guessed.get(part)?.mats || []), baseHits.get(part), nonFgHits.get(part)?.mat,
+              ].filter(Boolean));
+              const out = new Map();
+              seeds.forEach(m => {
+                if (isFgMat(m)) return;
+                targetAncestorsOf(m, up, isFgMat).forEach(a => {
+                  if (info[a.mat]?.is_active === false || out.has(a.mat)) return;
+                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `BOM: ${m} → ${a.via.join(' → ')}` });
+                });
+              });
+              const k = norm(part);
+              if (k.length >= 8) fgActive.forEach(x => {
+                if (!out.has(x.mat_no) && norm(x.name).includes(k))
+                  out.set(x.mat_no, { mat_no: x.mat_no, name: x.name, customer: x.customer, why: 'ชื่อสินค้ามีเลขพาร์ทนี้' });
+              });
+              if (out.size) sold[part] = [...out.values()];
+            });
+          }
+        }
         setEdi({
           kind: is862 ? 'orders' : 'forecast',
           kindGuess, kindForced: null,          // kindForced = คนกดเลือกเอง (ชนะการเดาเสมอ)
@@ -374,6 +419,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat, name: nameOfMat[mat] || null })),
           unmatchedShipTos: Object.fromEntries([...unmatchedShipTos.entries()].map(([p, set]) => [p, [...set]])),
           mappedCount,
+          nonFg: [...nonFgHits.entries()].filter(([part]) => !guessed.has(part)).map(([part, n]) => ({ part, mat: n.mat, name: n.name, shipTos: [...n.shipTos] })),
+          sold,
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
           dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
@@ -1204,7 +1251,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
   const otherProcCount = useMemo(() => Object.keys(forecast)
     .filter(m => forecast[m] > 0 && !procMatchesTab(drMap[m]?.process_type)).length, [forecast, drMap, procMatchesTab]);
 
-  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(), [rows]);
+  const lines = useMemo(() => [...new Set(rows.map(r => r.line).filter(Boolean))].sort(lineNameCompare), [rows]);
   const prodLines = useProductionLines();   // ทะเบียนไลน์ (ให้ dropdown มีลำดับชั้น)
   const changedRows = rows.filter(r => r.changed);
 

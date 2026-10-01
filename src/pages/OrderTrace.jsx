@@ -5,7 +5,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
 import { toast } from '../components/Toast';
@@ -137,7 +137,7 @@ export default function OrderTrace() {
       if (o.mat_no) matSet.add(o.mat_no);
       if (ss.work_date) daySet.add(ss.work_date);
     });
-    s.lines = [...lineSet].sort(); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
+    s.lines = [...lineSet].sort(lineNameCompare); s.mats = [...matSet].sort(); s.days = [...daySet].sort();
     return s;
   }, [results]);
 

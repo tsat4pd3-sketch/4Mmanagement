@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -154,7 +155,7 @@ export default function StockCountSheet({ role, scope }) {
   /* ── 📋 ตารางตรวจนับ ────────────────────────────────────────────────────── */
   // คลังที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง ไม่ hardcode ชื่อคลัง (pattern เดียวกับแท็บ 📦 Stock)
   const warehouseNames = useMemo(
-    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
+    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(lineNameCompare),
     [stock, lines]);
   const rows = useMemo(() => {
     let r = lineFilter ? stock.filter(s => s.line_name === lineFilter) : [];

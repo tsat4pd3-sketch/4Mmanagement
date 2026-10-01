@@ -108,6 +108,22 @@ const RULES = [
     },
   },
   {
+    id: 'line-names-raw-sort',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์
+       (ชื่อตัวแปร lines/lineNames/lineOpts/byLine/… หรือ `.map(x => x.line_name)`) */
+    re: /(?:\.map\(\s*\(?\w+\)?\s*=>\s*\w+\.line(?:_name)?\)[^;\n]{0,60}|Object\.keys\(byLine\)|\[\.\.\.(?:lines|lineSet|byLine\.keys\(\))\]|\b(?:line_?[nN]ames?|lineOpts)\b[^;\n]{0,40})\.sort\(\s*(?:\)|\(a, ?b\) => a\.localeCompare\(b\)\))/g,
+    why: 'dropdown/หัวกลุ่มไลน์เรียงคนละแบบทุกหน้า — user ทัก 01/10/2026 *"บางหน้าโอเค บางหน้าเรียงมั่ว '
+       + 'ไม่มีแพทเทิร์น"*: sort ดิบเรียงตาม code unit ⇒ `Line 60` แยกจาก `LINE …` · `LINE 10` มาก่อน `LINE 9` '
+       + 'และไม่แยกส่วนงาน (LINE A ของ PD1 ไปอยู่ระหว่าง APRON ของ PD3 กับ ASSY ของ PD2)',
+    fix: 'มีทะเบียนไลน์ → `sortLineNames(names, lines)` (ส่วนงาน→แม่→ลูก) · ไม่มีทะเบียน → `.sort(lineNameCompare)` '
+       + '(ทั้งคู่จาก `src/utils/lineHierarchy.js`) · dropdown ใช้ `<LineSelect>` ซึ่งเรียง+ตั้งหัวกลุ่มส่วนงานให้เอง',
+    allow: {
+      // ไม่ใช่ลำดับบนจอ — เรียงเพื่อทำ "คีย์" (join '|') ให้ได้ค่าเดิมทุกครั้ง ลำดับแบบไหนก็ได้ขอให้นิ่ง
+      'src/components/StoreLotQueue.jsx': 1,
+    },
+  },
+  {
     id: 'downtime-bucket-not-raw-type-name',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับเฉพาะ "เอาชื่อประเภทดิบไปเป็น**คีย์จัดกลุ่ม**" 2 รูปแบบที่ใช้จริงในรีโป:
@@ -932,8 +948,8 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1277': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1342': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx:1278': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1343': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {

@@ -12,6 +12,7 @@
   รูปประกอบ (แถบท้ายปก + divider) โหลดเป็น dataURL ที่นี่แล้วส่งเข้า builder
   — builder ห้าม import รูปเอง (เหตุผลใน monthlyReviewPptx.js)
 */
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useState, useEffect, useMemo, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -100,7 +101,7 @@ export default function MonthlyReviewExport({ onClose }) {
           const g = l.parent_line_name || l.name;
           (byGroup[g] = byGroup[g] || []).push(l.name);
         });
-        const groups = Object.keys(byGroup).sort().map(g => ({ name: g, lines: byGroup[g].sort() }));
+        const groups = Object.keys(byGroup).sort(lineNameCompare).map(g => ({ name: g, lines: byGroup[g].sort(lineNameCompare) }));
         return { code, groups };
       }).filter(s => s.groups.length);
       setTree(out);
