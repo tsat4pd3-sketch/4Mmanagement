@@ -4,7 +4,8 @@ import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
-import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds } from '../utils/ediMerge';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
+import EdiMatchFixer from '../components/EdiMatchFixer';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -239,9 +240,12 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
+  /* ไฟล์ชุดล่าสุดที่อ่าน — ไว้ "อ่านใหม่" หลังคนตัดสินคู่พาร์ทบนจอ preview โดยไม่ต้องเลือกไฟล์ซ้ำ */
+  const lastFilesRef = useRef(null);
   const handleFiles = async (fileList, kindNow) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
+    lastFilesRef.current = { files, kind: kindNow };
     try {
       const XLSX = await import('xlsx');
       const ediFiles = [];
@@ -292,13 +296,20 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               ห้ามเงียบ และห้ามหยุด import (ไม่งั้นงานส่งของหยุดทั้งวัน) */
         const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-        const [{ data: stds }, prods, { data: shipTos }] = await Promise.all([
+        const [{ data: stds }, prods, { data: shipTos }, { data: partMapRows, error: partMapErr }] = await Promise.all([
           // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
           cachedMaster('dr_products:pno', async () => (await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null)).data || []),
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
+          // 🔗 คำตัดสินของคน (edi_part_map) — ชนะการเดาทุกชั้น · โหลดไม่ได้ = เดาแบบเดิม + เตือน
+          supabaseDR.from('edi_part_map').select('ship_to, part_key, customer_part_no, mat_no'),
         ]);
+        if (partMapErr) toast.error('อ่านทะเบียนจับคู่พาร์ท (edi_part_map) ไม่ได้ — ใช้การเดาจาก P/N อย่างเดียวรอบนี้');
+        const partMap = buildPartMapIndex(partMapRows || []);
+        const nameOfMat = {};
+        (prods || []).forEach(x => { if (x.mat_no && !nameOfMat[x.mat_no]) nameOfMat[x.mat_no] = x.name; });
+        (stds || []).forEach(x => { if (x.mat_no && !nameOfMat[x.mat_no]) nameOfMat[x.mat_no] = x.part_name; });
         // ship-to code → ชื่อลูกค้า (ยังไม่ตั้ง = customer_name เท่ากับ code เอง → ถือว่า "ไม่รู้")
         const custOfShipTo = {};
         (shipTos || []).forEach(t => {
@@ -324,7 +335,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         const unmatched = new Set();
         const guessed = new Map();     // part → { shipTos:Set, mats:[...] } = แยกลูกค้าไม่ออก ต้องตั้ง ship-to
         const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
+        const unmatchedShipTos = new Map();   // part → Set(shipTo) — ไว้ให้คนเลือกขอบเขตตอนจับคู่
+        let mappedCount = 0;
         const records = rows2.map(r => {
+          const fixed = mappedMatFor(partMap, r.shipTo, r.part);
+          if (fixed) { mappedCount++; return { ...r, mat_no: fixed, part_name: nameOfMat[fixed] || null }; }
           const cands = matMap[norm(r.part)] || [];
           let hit = null;
           if (cands.length === 1) hit = cands[0];
@@ -334,7 +349,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             if (byCust.length === 1) hit = byCust[0];
             else {
               hit = cands[0];                                   // เดาตัวแรก (FG ก่อน) แบบเดิม — แต่แจ้ง
-              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no) };
+              const g = guessed.get(r.part) || { shipTos: new Set(), mats: cands.map(c => c.mat_no), cands: cands.map(c => ({ mat_no: c.mat_no, name: c.name, customer: c.customer })) };
               g.shipTos.add(r.shipTo);
               guessed.set(r.part, g);
             }
@@ -343,7 +358,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             const bc = baseMap[baseOfPart(r.part)];
             if (bc && bc.length === 1) { hit = bc[0]; baseHits.set(r.part, bc[0].mat_no); }
           }
-          if (!hit) unmatched.add(r.part);
+          if (!hit) {
+            unmatched.add(r.part);
+            (unmatchedShipTos.get(r.part) || unmatchedShipTos.set(r.part, new Set()).get(r.part)).add(r.shipTo);
+          }
           return { ...r, mat_no: hit ? hit.mat_no : r.part, part_name: hit ? hit.name : null };
         });
         setEdi({
@@ -352,8 +370,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           skipped: ediFiles.reduce((a, f) => a + (f.skipped || 0), 0),
           files: ediFiles.map(f => f.fName),
           records, unmatched: [...unmatched],
-          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats })),
-          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat })),
+          ambiguous: [...guessed.entries()].map(([part, g]) => ({ part, shipTos: [...g.shipTos], mats: g.mats, cands: g.cands })),
+          baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat, name: nameOfMat[mat] || null })),
+          unmatchedShipTos: Object.fromEntries([...unmatchedShipTos.entries()].map(([p, set]) => [p, [...set]])),
+          mappedCount,
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
           dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
           dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
@@ -755,6 +775,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
+                {edi.mappedCount > 0 && <span title="จับคู่ตามที่คนยืนยันไว้ในทะเบียน edi_part_map">✅ ใช้คู่ที่ยืนยันไว้ {edi.mappedCount} รายการ</span>}
                 <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
                   🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
                 </span>
@@ -762,55 +783,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
-              {edi.unmatched.length > 0 && (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', marginBottom: 4 }}>
-                    ⚠️ Part No. ที่ยังจับคู่ mat_no ภายในไม่ได้ (จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน — เพิ่ม P/N ที่ Product Master แล้วอัพใหม่ได้):
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {edi.unmatched.map(pn => (
-                      <span key={pn} style={{ fontSize: 11, fontWeight: 700, fontFamily: 'monospace', padding: '2px 8px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>{pn}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* เลขพาร์ทลูกค้าเดียวมีหลายเลข SAP (ต่างที่ลูกค้าปลายทาง) แล้วยังแยกไม่ออก
-                  → ระบบยังเดาให้เพื่อไม่ให้งานส่งของหยุด แต่ต้องบอกให้ชัดว่าเดา ไม่งั้นออเดอร์ทุกเจ้าไปกองเลขเดียว */}
-              {edi.ambiguous?.length > 0 && (
-                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>
-                    🔴 {edi.ambiguous.length} พาร์ท แยกลูกค้าไม่ออก — ออเดอร์ทุกเจ้าจะไปกองที่เลข SAP เดียว
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
-                    เลขพาร์ทลูกค้าตัวเดียวมีหลายเลข SAP (ต่างกันที่ลูกค้าปลายทาง) แต่ ship-to ยังไม่ได้ตั้งชื่อลูกค้า
-                    → ระบบเลือกตัวแรกให้ก่อน <b>เลขที่เหลือจะดูเหมือนไม่มีใครสั่ง</b> · แก้ที่
-                    <b> 🚚 Delivery → ⚙️ Ship-to Plant Config</b> (ตั้งชื่อลูกค้าให้ code เช่น GRBNA → AAT) แล้วอัพไฟล์ใหม่
-                  </div>
-                  {edi.ambiguous.slice(0, 6).map(a => (
-                    <div key={a.part} style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>
-                      {a.part} · ship-to {a.shipTos.join(',')} → {a.mats.join(' | ')}
-                    </div>
-                  ))}
-                  {edi.ambiguous.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>…และอีก {edi.ambiguous.length - 6} พาร์ท</div>}
-                </div>
-              )}
-              {/* จับคู่จาก base part (ตัด revision) = การเดาข้าม rev — ถูกเกือบเสมอ แต่เคส EC ออกเลขใหม่
-                  จะพา demand เข้าเลขเก่าเงียบๆ → ต้องโชว์ให้คนกวาดตาก่อนกดยืนยัน (ระบบเสนอ คนตรวจ) */}
-              {edi.baseMatched?.length > 0 && (
-                <div style={{ marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
-                    💡 {edi.baseMatched.length} พาร์ท จับคู่จาก base part (เลขตรง rev ไม่มีในระบบ) — ตรวจก่อนยืนยัน
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 5 }}>
-                    ถ้าเป็นพาร์ทเดิมที่ EDI สะกด rev ต่าง = ถูกต้อง · แต่ถ้าเพิ่งออก EC เป็นเลขใหม่
-                    ควรไปตั้ง P/N ของ MAT ใหม่ที่ Product Master ก่อน ไม่งั้น demand จะเข้าเลข rev เก่า
-                  </div>
-                  {edi.baseMatched.slice(0, 6).map(b => (
-                    <div key={b.part} style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)' }}>{b.part} → {b.mat}</div>
-                  ))}
-                  {edi.baseMatched.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>…และอีก {edi.baseMatched.length - 6} พาร์ท</div>}
-                </div>
-              )}
+              {/* 🔗 3 คำเตือนจับคู่พาร์ท — แก้บนจอนี้ได้เลย คำตัดสินถูกจำใน edi_part_map (2026-10-01)
+                  บันทึกแล้วอ่านไฟล์ชุดเดิมใหม่ทันที ⇒ คำเตือนที่แก้แล้วหายไป · รอบหน้าไม่ถามซ้ำ */}
+              <EdiMatchFixer edi={edi} canEdit={canUpload} custLabel={custLabel}
+                onSaved={async () => { const l = lastFilesRef.current; if (l) await handleFiles(l.files, l.kind); }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                 การนำเข้าจะ<strong>แทนที่</strong>ข้อมูล EDI ฉบับเดิมของ ship-to เดียวกัน (อัพใหม่ทุกวันได้ ยอดไม่ทบซ้ำ)
                 {ediKind === 'orders' ? ' · รอบที่เตรียม/ส่งไปแล้วจะไม่ถูกแตะ' : ''}
