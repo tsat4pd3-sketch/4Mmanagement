@@ -12,7 +12,7 @@ import { positionOptionsWith } from '../utils/positions';
 import ImageCropModal from '../components/ImageCropModal';
 import { toast } from '../components/Toast';
 import { filterLinesByDept } from '../utils/lineHierarchy';
-import { lineOptions, lineOptionLabel } from '../components/LineSelect';
+import { lineOptions, lineOptionLabel, groupLineOptions } from '../components/LineSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -252,9 +252,14 @@ export default function Register() {
                   setLineId(line?.id || null);
                 }}>
                   <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
-                  {lineOptions(lineOpts, { current: groupName }).map(o => (
-                    <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>
-                  ))}
+                  {(() => {
+                    // ลำดับ+หัวกลุ่มส่วนงานชุดเดียวกับ <LineSelect> (2026-10-01)
+                    const { pinned, groups } = groupLineOptions(lineOptions(lineOpts, { current: groupName }));
+                    const opt = o => <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>;
+                    return [...pinned.map(opt), ...groups.map(g => g.label
+                      ? <optgroup key={g.label} label={`🏭 ${g.label}`}>{g.options.map(opt)}</optgroup>
+                      : g.options.map(opt))];
+                  })()}
                 </select>
               );
             })()}

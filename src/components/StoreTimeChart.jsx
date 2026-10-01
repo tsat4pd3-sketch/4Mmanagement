@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
@@ -461,7 +462,7 @@ export default function StoreTimeChart({
               )}
             </div>
 
-            {Object.keys(byLine).sort().map(g => {
+            {Object.keys(byLine).sort(lineNameCompare).map(g => {
               const list = byLine[g];
               const lanes = lanesByLine[g] || { map: {}, count: 1 };
               const isCol = !!collapsed[g];

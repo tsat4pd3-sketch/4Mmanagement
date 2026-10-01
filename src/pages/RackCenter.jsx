@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useSearchParams } from 'react-router-dom';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
@@ -370,7 +371,7 @@ export default function RackCenter() {
         };
         const byLine = {};
         inFrame.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
-        const groups = Object.keys(byLine).sort().map(lnName => ({
+        const groups = Object.keys(byLine).sort(lineNameCompare).map(lnName => ({
           key: lnName, label: lnName,
           sub: `${byLine[lnName].length} รายการ · ✅ ${byLine[lnName].filter(x => x.status === 'received').length}`,
           items: byLine[lnName].map(r => {

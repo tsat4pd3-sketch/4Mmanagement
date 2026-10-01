@@ -10,7 +10,8 @@
       (บางหน้ามีลำดับชั้น บางหน้าไม่มี · บางหน้ากรอง scope บางหน้าไม่กรอง)
 
    สิ่งที่ component นี้รับประกันให้เหมือนกันทุกหน้า:
-     1. **ลำดับชั้น** — ไลน์แม่ก่อน แล้วไลน์ลูก indent + ↳ (toHierarchicalOptions)
+     1. **ลำดับชั้น + ลำดับมาตรฐาน** — ส่วนงาน (หัวกลุ่ม 🏭 PD1…) → ไลน์แม่ → ไลน์ลูก indent + ↳
+        เรียงธรรมชาติไม่ขึ้นกับลำดับที่หน้า query มา (toHierarchicalOptions · 2026-10-01)
      2. **ปลดระวาง** — ไลน์ is_active=false ไม่โผล่ (แต่ค่าที่เลือกไว้แล้วยังโชว์
         พร้อมป้าย ⏸ ปลดระวาง — ห้ามให้ค่าเดิมหายเงียบจากฟอร์ม)
      3. **scope** — leader = ครอบครัวไลน์ตัวเอง · role อื่น = ตาม sections
@@ -56,8 +57,8 @@ export function scopeLines(lines, { role, lineId, sections } = {}) {
 export function lineOptions(lines, { role, lineId, sections, current, includeRetired = false, valueKey = 'name' } = {}) {
   const scoped = scopeLines(lines || [], { role, lineId, sections });
   const usable = includeRetired ? scoped : scoped.filter(l => l.is_active !== false);
-  const out = toHierarchicalOptions(usable).map(({ line, depth }) => ({
-    value: String(line[valueKey]), label: line.name, depth, retired: line.is_active === false,
+  const out = toHierarchicalOptions(usable).map(({ line, depth, section }) => ({
+    value: String(line[valueKey]), label: line.name, depth, retired: line.is_active === false, section,
   }));
   const cur = current == null || current === '' ? '' : String(current);
   if (cur && !out.some(o => o.value === cur)) {
@@ -65,7 +66,7 @@ export function lineOptions(lines, { role, lineId, sections, current, includeRet
     const known = (lines || []).find(l => String(l[valueKey]) === cur);
     const nm = known?.name || cur;
     out.unshift({
-      value: cur, depth: 0, retired: known?.is_active === false,
+      value: cur, depth: 0, retired: known?.is_active === false, pinned: true,
       label: known ? `${nm} ${known.is_active === false ? '⏸ ปลดระวาง' : '(นอกขอบเขตของคุณ)'}` : `${nm} ⚠ ไม่มีในทะเบียนไลน์`,
     });
   }
@@ -78,36 +79,62 @@ export function lineOptions(lines, { role, lineId, sections, current, includeRet
 export const lineOptionLabel = (o) => `${'  '.repeat(o.depth)}${o.depth ? '↳ ' : ''}${o.label}`;
 const indent = lineOptionLabel;
 
+export const NO_SECTION_LABEL = 'ไม่ระบุส่วนงาน';
+/** แบ่ง option เป็นกลุ่มตามส่วนงาน (หัวกลุ่มบนจอ) — **จุดเดียวของทั้งระบบ** (2026-10-01)
+ *  คืน `{ pinned, groups:[{ label, options }] }` · ค่าที่ต้องปักไว้บนสุด (ค่าเดิมที่ไม่อยู่ในลิสต์) อยู่ใน `pinned`
+ *  มีส่วนงานเดียว (leader / หน้าที่กรองแล้ว) = กลุ่มเดียวไม่มีหัว (`label: null`) — หัวกลุ่มที่บอกสิ่งที่รู้อยู่แล้ว = รก */
+export function groupLineOptions(opts) {
+  const pinned = opts.filter(o => o.pinned);
+  const groups = [];
+  for (const o of opts) {
+    if (o.pinned) continue;
+    const key = o.section || NO_SECTION_LABEL;
+    const g = groups[groups.length - 1];
+    if (g && g.label === key) g.options.push(o); else groups.push({ label: key, options: [o] });
+  }
+  if (groups.length === 1 && groups[0].label !== NO_SECTION_LABEL) groups[0].label = null;
+  return { pinned, groups };
+}
+
 /**
  * @param {Array}  lines       แถวจาก production_lines (ต้องมี id, name, parent_line_name, section, is_active)
  * @param {string} value       ชื่อไลน์ที่เลือกอยู่ ('' = ยังไม่เลือก)
  * @param {Function} onChange  (name) => void
  * @param {string} placeholder ข้อความ option แรก (null = ไม่มี option ว่าง)
  * @param {Array}  extraGroups กลุ่มพิเศษที่ไม่ใช่ไลน์ผลิต เช่นคลัง — [{ label, options: [{value,label}] }]
+ * @param {'start'|'end'} extraAt ตำแหน่งกลุ่มพิเศษ — 'end' ใช้กับ "ตะกร้ารับท้าย" (ชื่อที่ไม่อยู่ในทะเบียน)
  */
 export default function LineSelect({
   lines, value = '', onChange, placeholder = '— เลือกไลน์ —',
-  role, lineId, sections, extraGroups = [], includeRetired = false,
+  role, lineId, sections, extraGroups = [], extraAt = 'start', includeRetired = false,
   style, disabled, id, required, valueKey = 'name',
 }) {
+  // ค่าที่เลือกอยู่ในกลุ่มพิเศษ (คลัง / ชื่อนอกทะเบียน) = มี option อยู่แล้ว ห้ามปักซ้ำเป็น "⚠ ไม่มีในทะเบียน"
+  const inExtra = extraGroups.some(g => g.options?.some(o => String(o.value) === String(value)));
   const opts = useMemo(
-    () => lineOptions(lines, { role, lineId, sections, current: value, includeRetired, valueKey }),
-    [lines, role, lineId, sections, value, includeRetired, valueKey],
+    () => lineOptions(lines, { role, lineId, sections, current: inExtra ? '' : value, includeRetired, valueKey }),
+    [lines, role, lineId, sections, value, inExtra, includeRetired, valueKey],
   );
+  const grouped = useMemo(() => groupLineOptions(opts), [opts]);
+  const hasExtra = extraGroups.some(g => g.options?.length);
+  const extraEls = extraGroups.filter(g => g.options?.length).map(g => (
+    <optgroup key={g.label} label={g.label}>
+      {g.options.map(o => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
+    </optgroup>
+  ));
   return (
     <select id={id} value={value} disabled={disabled} required={required} style={style}
       onChange={e => onChange?.(e.target.value)}>
       {placeholder != null && <option value="">{placeholder}</option>}
-      {extraGroups.filter(g => g.options?.length).map(g => (
-        <optgroup key={g.label} label={g.label}>
-          {g.options.map(o => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
-        </optgroup>
-      ))}
-      {opts.length > 0 && (
-        extraGroups.some(g => g.options?.length)
-          ? <optgroup label="🏭 ไลน์ผลิต">{opts.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>)}</optgroup>
-          : opts.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>)
-      )}
+      {extraAt !== 'end' && extraEls}
+      {grouped.pinned.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>)}
+      {grouped.groups.map(g => {
+        const items = g.options.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>);
+        // หัวกลุ่ม = ส่วนงาน · มีกลุ่มพิเศษ (คลัง ฯลฯ) แต่ส่วนงานเดียว ⇒ ยังต้องมีหัว "ไลน์ผลิต" กั้นจากกลุ่มพิเศษ
+        const label = g.label ? `🏭 ${g.label}` : (hasExtra ? '🏭 ไลน์ผลิต' : null);
+        return label ? <optgroup key={label} label={label}>{items}</optgroup> : items;
+      })}
+      {extraAt === 'end' && extraEls}
     </select>
   );
 }
