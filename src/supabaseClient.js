@@ -42,6 +42,7 @@ export const DR_AUDIT_TABLES = new Set([
   'part_routings',
   'quality_bin_records',
   'repair_wi_registry',      // ทะเบียน QRs ↔ WI ซ่อม (WI-PD3-069 §6) — doc_control แก้เองได้ ต้องรู้ว่าใครแก้
+  'edi_part_map',            // คำตัดสินคู่ พาร์ทลูกค้า→MAT (นำเข้า EDI) — ผิดคู่ = ออเดอร์เข้า MAT ผิดทั้งเดือน ต้องรู้ว่าใครเลือก
   'prod_problem_reports',    // ใบรายงานปัญหาการผลิต FM-PD1-019 (เก็บ 1 ปี) — เอกสารคุณภาพ ต้องสอบกลับได้
   'line_part_levels',   // min/max พาร์ทต่อไลน์ — ค่าที่คนตั้งเอง ต้องรู้ว่าใครแก้เมื่อไหร่
   'line_delivery_points',   // จุดส่งงานหน้าไลน์ (QR ESM:D) — ลูปสโตร์เฟส 4 (2026-09-03)
