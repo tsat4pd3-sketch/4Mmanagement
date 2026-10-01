@@ -5,7 +5,7 @@
    ⇒ การ์ด/จอฝั่งสโตร์ **ไม่เคยโชว์ Part No. ได้เลย** ไม่ว่าจะเรียงลำดับยังไง
 
    ⚠️ คอลัมน์คนละชื่อกับ `dr_products` — `part_name`/`part_no` (ไม่ใช่ `name`/`p_no`)
-      select ผิด = 42703 เงียบ (ดู `wipMatOptions.js` ที่จดกับดักเดียวกันไว้)
+      select ผิด = 42703 เงียบ (กับดัก `dr_products.name` vs `parts_master.part_name`)
    · ตารางอยู่ DR (anon เสมอ) · ผ่าน `cachedMaster` TTL 4 ชม. เพราะหลายจอเรียกพร้อมกัน */
 import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';

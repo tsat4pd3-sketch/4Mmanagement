@@ -3,7 +3,6 @@ import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
@@ -16,10 +15,6 @@ import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
 import DeliveryPointPanel from '../components/DeliveryPointPanel';
-import { matDigit, matClassOf, matMatches, isSapMat } from '../utils/matPrefix';
-import { mergeMatRegistry, buildWipMatOptions, filterWipMatByCat, wipCatOptions, wipCatValue, wipCatLabel, wipPointCat, WIP_CAT_OP } from '../utils/wipMatOptions';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { loadOpInfo } from '../utils/opItems';
 import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -29,12 +24,15 @@ import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 
-// ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร → WIP (ตามลำดับ 4M: Man, Machine, Material)
-// ให้ตรงกับปุ่ม filter MAN/MACHINE/WIP ที่หน้า Management — UI-CONVENTIONS §1
+/* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
+   MAN/MACHINE ที่หน้า Management — UI-CONVENTIONS §1
+   🔴 2026-10-01 — **ถอดแท็บ "📦 จุด WIP" ออกถาวร (คำสั่ง user)** · ของหน้าไลน์คุมที่ชั้น
+   "พื้นที่ (SLoc) → ไลน์ → พาร์ท" ผ่าน `line_part_levels` แล้ว ไม่เจาะถึงจุดย่อยในไลน์อีก
+   เหตุผล + ตัวเลขที่วัดได้ → docs/modules/demand-flow-tower.md §เลิกจุด WIP
+   ⚠️ ห้ามเอากลับมาโดยไม่ถาม user — ตาราง `wip_buffer_points` ยังอยู่ (ประวัติ) แต่ไม่มีจอไหนเขียนแล้ว */
 const TABS = [
   { key: 'stations', label: '📍 จุดงาน' },
   { key: 'machines', label: '⚙️ เครื่องจักร' },
-  { key: 'wip',      label: '📦 จุด WIP' },
 ];
 
 
@@ -50,7 +48,7 @@ const SKILL_CAT_META = {
 const CARD_W = 70;
 const CARD_H = 58;
 
-// จุด WIP / เครื่องจักร ไม่ต้องเท่ากับ card พนักงาน — ใช้กล่องเล็กลง (~50%)
+// จุดเครื่องจักร ไม่ต้องเท่ากับ card พนักงาน — ใช้กล่องเล็กลง (~50%)
 const POINT_W = 54;
 const POINT_H = 46;
 
@@ -98,7 +96,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   // ลากย้ายจุดที่มีอยู่แล้วได้ (ไม่ต้องลบสร้างใหม่) — drag เกินระยะนิดเดียวถือเป็นการลาก ไม่ใช่คลิกแก้ไข
   const imgRef = useRef(null);
-  const [dragInfo, setDragInfo] = useState(null); // { kind: 'station'|'wip'|'machine', id }
+  const [dragInfo, setDragInfo] = useState(null); // { kind: 'station'|'machine', id }
   const [dragPos, setDragPos] = useState(null);   // { top, left } พรีวิวระหว่างลาก
   const dragMovedRef = useRef(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
@@ -108,18 +106,6 @@ export default function LineSetup({ embedded = false } = {}) {
   // พิกัด pos_top/pos_left ทุกจุดเก็บเป็น % ของตัวรูปจริง (ไม่ใช่ % ของกล่อง container)
   // เพื่อให้ตำแหน่งตรงกันทุกหน้า (Management / Dashboard) และไม่เพี้ยนเมื่อจอ/sidebar เปลี่ยนขนาด
   const [imgBox, setImgBox] = useState(null); // { ox, oy, rw, rh }
-
-  // จุด WIP buffer (min/max ต่อจุด — แผนกที่เกี่ยวข้องเห็นเมื่อของต่ำกว่า min)
-  // 2 ประเภท: material (เรียกงานจากสโตร์ ผูกกับ mat no. จาก Product Master) และ
-  // packaging (เรียกภาชนะเปล่าจาก Tact Center — rack/box/basket แยกด้วย packaging no.)
-  const [wipPoints, setWipPoints] = useState([]);
-  const [wipTempPos, setWipTempPos] = useState(null);
-  const [drProducts, setDrProducts] = useState([]);   // ทะเบียน mat ทั้งหมด + ไลน์ที่ผลิต (ใช้จัดลำดับ picker จุด WIP)
-  const [upstreamLines, setUpstreamLines] = useState(new Set());
-  const [wipMatAllCat, setWipMatAllCat] = useState(false); // กด "ดูทุกประเภท" ในช่องเลือกวัสดุของจุด WIP
-  const [containerTypes, setContainerTypes] = useState([]);
-  const emptyWipForm = { id: null, point_type: 'material', point_name: '', mat_no: '', material_category: '', packaging_no: '', packaging_type: '', min_qty: 0, max_qty: 0, current_qty: 0 };
-  const [wipForm, setWipForm] = useState(emptyWipForm);
 
   // จุดเครื่องจักรบนผัง (ผูกกับตาราง machines ของ Daily Report โปรเจกต์ ด้วย machine_no)
   const [machinePoints, setMachinePoints] = useState([]);
@@ -150,20 +136,18 @@ export default function LineSetup({ embedded = false } = {}) {
   const [signerHead,    setSignerHead]    = useState('');
 
 
-  // ─── Undo/Redo — จุดบนผังไลน์ (จุดงาน+ทักษะ / WIP / เครื่องจักร / เส้น flow) ───
-  // snapshot ทั้ง 4 ชุดของไลน์ที่เลือก · restore = diff แล้วเขียนย้อนลง DB · สลับไลน์ = ล้าง history
-  const mapRef = useRef({ stations: [], wipPoints: [], machinePoints: [], flowLinks: [] });
-  useEffect(() => { mapRef.current = { stations, wipPoints, machinePoints, flowLinks }; }, [stations, wipPoints, machinePoints, flowLinks]);
+  // ─── Undo/Redo — จุดบนผังไลน์ (จุดงาน+ทักษะ / เครื่องจักร / เส้น flow) ───
+  // snapshot ทั้ง 3 ชุดของไลน์ที่เลือก · restore = diff แล้วเขียนย้อนลง DB · สลับไลน์ = ล้าง history
+  const mapRef = useRef({ stations: [], machinePoints: [], flowLinks: [] });
+  useEffect(() => { mapRef.current = { stations, machinePoints, flowLinks }; }, [stations, machinePoints, flowLinks]);
   const ST_F = ['line_name', 'station_name', 'pos_top', 'pos_left', 'skill_allowance', 'skill_allowance_type'];
   const SR_F = ['station_id', 'skill_name', 'min_score'];
-  const WIP_F = ['line_name', 'point_name', 'point_type', 'mat_no', 'material_category', 'packaging_no', 'packaging_type', 'pos_top', 'pos_left', 'min_qty', 'max_qty', 'current_qty'];
   const MP_F = ['line_name', 'machine_no', 'pos_top', 'pos_left', 'redundancy_group'];
   const FL_F = ['line_name', 'from_machine_point_id', 'to_machine_point_id'];
   const pickF = (row, fields) => Object.fromEntries(fields.map(f => [f, row[f] ?? null]));
   const mapSnap = () => ({
     line: selectedLine,
     stations: mapRef.current.stations.map(s => ({ ...s, station_requirements: (s.station_requirements || []).map(r => ({ ...r })) })),
-    wipPoints: mapRef.current.wipPoints.map(p => ({ ...p })),
     machinePoints: mapRef.current.machinePoints.map(p => ({ ...p })),
     flowLinks: mapRef.current.flowLinks.map(l => ({ ...l })),
   });
@@ -182,18 +166,17 @@ export default function LineSetup({ embedded = false } = {}) {
     const snapSr = snap.stations.flatMap(s => s.station_requirements || []);
     const st = diffSets(snap.stations, cur.stations, ST_F);
     const sr = diffSets(snapSr, curSr, SR_F);
-    const wp = diffSets(snap.wipPoints, cur.wipPoints, WIP_F);
     const mp = diffSets(snap.machinePoints, cur.machinePoints, MP_F);
     const fl = diffSets(snap.flowLinks, cur.flowLinks, FL_F);
     try {
       // ลำดับตาม FK: ลบ ลูก→แม่ (links/requirements ก่อน points/stations) · คืน แม่→ลูก
-      for (const [tbl, ids] of [['machine_flow_links', fl.del], ['station_requirements', sr.del], ['machine_points', mp.del], ['wip_buffer_points', wp.del], ['workstations', st.del]]) {
+      for (const [tbl, ids] of [['machine_flow_links', fl.del], ['station_requirements', sr.del], ['machine_points', mp.del], ['workstations', st.del]]) {
         if (ids.length) { const { error } = await supabase.from(tbl).delete().in('id', ids); if (error) throw error; }
       }
-      for (const [tbl, rows] of [['workstations', st.ins], ['station_requirements', sr.ins], ['machine_points', mp.ins], ['wip_buffer_points', wp.ins], ['machine_flow_links', fl.ins]]) {
+      for (const [tbl, rows] of [['workstations', st.ins], ['station_requirements', sr.ins], ['machine_points', mp.ins], ['machine_flow_links', fl.ins]]) {
         if (rows.length) { const { error } = await supabase.from(tbl).insert(rows); if (error) throw error; }
       }
-      for (const [tbl, rows, fields] of [['workstations', st.upd, ST_F], ['station_requirements', sr.upd, SR_F], ['machine_points', mp.upd, MP_F], ['wip_buffer_points', wp.upd, WIP_F], ['machine_flow_links', fl.upd, FL_F]]) {
+      for (const [tbl, rows, fields] of [['workstations', st.upd, ST_F], ['station_requirements', sr.upd, SR_F], ['machine_points', mp.upd, MP_F], ['machine_flow_links', fl.upd, FL_F]]) {
         for (const r of rows) { const { error } = await supabase.from(tbl).update(pickF(r, fields)).eq('id', r.id); if (error) throw error; }
       }
     } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); await fetchLineData(); return false; }
@@ -209,22 +192,6 @@ export default function LineSetup({ embedded = false } = {}) {
   ), [drMachines, placedMachineNos, machineForm.machine_no]);
 
   const skillAllowanceTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
-
-  /* ตัวเลือกวัสดุของจุด WIP — สูตร/ลำดับกลุ่มอยู่ใน src/utils/wipMatOptions.js ที่เดียว
-     (เสนอลำดับ ไม่ตัดอะไรทิ้ง · กรองตามประเภทได้แต่ต้องบอกว่าซ่อนไปกี่รายการ) */
-  const wipMatOptions = useMemo(
-    () => buildWipMatOptions(drProducts, { line: selectedLine, lines, upstreamLines }),
-    [drProducts, lines, selectedLine, upstreamLines],
-  );
-  const wipMatCat = wipCatValue(wipForm.material_category);
-  const { rows: wipMatShown, hidden: wipMatHidden, keptUnjudged: wipMatKept } = useMemo(
-    () => filterWipMatByCat(wipMatOptions, wipMatCat, wipMatAllCat),
-    [wipMatOptions, wipMatCat, wipMatAllCat],
-  );
-  const wipMatSel = wipMatOptions.find(o => o.id === wipForm.mat_no) || null;
-  const wipMatIsOp = wipMatSel?.isOp;
-  // ประเภทที่ระบบอ่านได้เองจากเลข mat (ใช้บอกว่าไม่ต้องเลือกซ้ำ)
-  const wipMatDerived = wipPointCat('', wipForm.mat_no, wipMatIsOp);
 
   // ตัวเลือก Section จำกัดตามขอบเขตส่วนงานของ user (scope ว่าง = เลือกได้ทุกส่วน)
   const sectionOptsInScope = scopeSecs.length ? sectionOpts.filter(s => inSectionScope(scopeSecs, s)) : sectionOpts;
@@ -296,8 +263,6 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     const { data: stationData } = await supabase.from('workstations').select('*, station_requirements(*)').eq('line_name', selectedLine);
     setStations(stationData || []);
-    const { data: wipData } = await supabase.from('wip_buffer_points').select('*').eq('line_name', selectedLine).order('point_name');
-    setWipPoints(wipData || []);
     const { data: mpData } = await supabase.from('machine_points').select('*').eq('line_name', selectedLine);
     setMachinePoints(mpData || []);
     const { data: flData } = await supabase.from('machine_flow_links').select('*').eq('line_name', selectedLine);
@@ -313,38 +278,6 @@ export default function LineSetup({ embedded = false } = {}) {
     setPlacedMachineNos(new Set((placedMp || []).map(p => p.machine_no).filter(Boolean)));
     const { data: drMt } = await supabaseDR.from('machine_types').select('*').order('sort_order');
     setMachineTypes(drMt || []);
-    /* ⚠️⚠️ พาร์ทของจุด WIP ต้องมาจาก "ทะเบียนกลาง parts_master" ไม่ใช่ dr_products ของไลน์นี้
-       เดิม: dr_products .eq('line_name', selectedLine) → ลิสต์เหลือไม่กี่ตัว (feedback "พาร์ทโชว์ไม่ครบ")
-       ผิด 3 ชั้นซ้อนกัน:
-        (ก) `dr_products` = **มุมการผลิต** เก็บเฉพาะของที่ผลิตในไลน์ → พาร์ทซื้อนอก (3xx) และ
-            วัตถุดิบ (5xx) ไม่มีทางโผล่เลย ทั้งที่จุด WIP เก็บของพวกนี้ได้ และ placeholder ก็เขียนว่า
-            "ค้นจาก Product Master" ซึ่งทะเบียนจริงคือ parts_master (กฎ: parts_master = ทะเบียนกลางของทุก mat)
-        (ข) กรอง line_name **ตรงเป๊ะ** = บั๊ก class เดียวกับ picker เครื่องจักร/ชิ้นงานที่แก้ไปแล้ว 3 รอบ
-            (dtMatOptions · machineOpts /improvements · dtMachineOptions) — ของที่ลงทะเบียนไว้ที่ไลน์แม่
-            หรือไลน์พี่น้องหายหมด · สังเกตว่าคิวรี machines เหนือบรรทัดนี้ใช้ familyLines อยู่แล้ว ตกหล่นแค่ตัวนี้
-        (ค) จุด WIP ยิ่งชัดกว่านั้น: ของในบัฟเฟอร์มาจาก **ไลน์ต้นน้ำ** ไม่ใช่ไลน์ที่ตั้งจุด
-            (HDF1 ปั๊ม → บัฟเฟอร์ → LASER-345 กิน) → ต่อให้กางครอบครัวไลน์ก็ยังไม่พอ
-       → โหลดทะเบียนทั้งหมด แล้วใช้ dr_products/line_flow_links แค่ **จัดลำดับ** ห้ามตัดอะไรทิ้ง */
-   // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-    const [{ data: pmRows }, drPd, { data: flRows }, opMap] = await Promise.all([
-      supabaseDR.from('parts_master').select('mat_no, part_name').eq('is_active', true).not('mat_no', 'is', null).order('mat_no'),
-      // ⚠️ dr_products ใช้คอลัมน์ `name` · parts_master ใช้ `part_name` (คนละชื่อ — select ผิดได้ 42703 เงียบ)
-      /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-      cachedMaster('dr_products:matname', async () => (await supabaseDR.from('dr_products').select('mat_no, name, line_name').eq('is_active', true).order('mat_no')).data || []).then(r => r.filter(p => p.mat_no)),
-      supabaseDR.from('line_flow_links').select('from_line, to_line').eq('is_active', true),
-      // รายการขั้นตอน (OP) — ผ่าน util กลาง (cache ระดับ module · best-effort) เพื่อ "ติดป้าย" ไม่ใช่กรองทิ้ง
-      loadOpInfo(),
-    ]);
-    setDrProducts(mergeMatRegistry(pmRows || [], drPd || [], opMap));
-    /* ไลน์ต้นน้ำที่ป้อนงานให้ไลน์นี้ (โหลดไม่ได้ = ไม่มีกลุ่ม "ต้นน้ำ" เฉยๆ ลิสต์ยังครบ)
-       ⚠️ เทียบทั้งครอบครัวไลน์ ไม่ใช่ `familyLines` ของ machines (นั่นคือ ตัวเอง+ลูก สำหรับวางเครื่องบนผัง)
-       — ป้อนงานให้ไลน์แม่ = ป้อนให้งานที่ไลน์ลูกทำด้วย */
-    const famAll = new Set(getLineFamilyNames(lines, selectedLine));
-    famAll.add(selectedLine);
-    setUpstreamLines(new Set((flRows || []).filter(l => famAll.has(l.to_line)).map(l => l.from_line)));
-    // ภาชนะ — ดึงจาก container_types (supabaseDR) ตารางกลางเดียวกับ Packaging/Rack Center
-    const { data: ctData } = await supabaseDR.from('container_types').select('code, name, category').eq('is_active', true).order('code');
-    setContainerTypes(ctData || []);
     const lineObj = lines.find(l => l.name === selectedLine);
     if (lineObj) {
       setStdDay(lineObj.std_day_shift ?? 0);
@@ -644,7 +577,7 @@ export default function LineSetup({ embedded = false } = {}) {
     const lineObj = lines.find(l => l.name === selectedLine);
     const backTo = lineObj?.parent_line_name
       ? `จะกลับไปใช้รูปผังของไลน์แม่ "${lineObj.parent_line_name}" แทน`
-      : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่อง/WIP ที่วางไว้ยังอยู่ครบ';
+      : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่องจักร ที่วางไว้ยังอยู่ครบ';
     if (!window.confirm(`ลบรูปผังของ "${selectedLine}" ?\n${backTo}`)) return;
     try {
       const { error } = await supabase.from('line_layouts').delete().eq('line_name', selectedLine);
@@ -730,12 +663,11 @@ export default function LineSetup({ embedded = false } = {}) {
       const { kind, id } = dragInfo;
       if (dragMovedRef.current && dragPosRef.current) {
         hist.pushHistory();   // state ยังเป็นตำแหน่งก่อนลาก (ตอนลากแสดงผ่าน dragPos overlay) — snapshot คืนที่เดิมได้
-        const table = kind === 'station' ? 'workstations' : kind === 'wip' ? 'wip_buffer_points' : 'machine_points';
+        const table = kind === 'station' ? 'workstations' : 'machine_points';
         await supabase.from(table).update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id);
         await fetchLineData();
       } else {
         if (kind === 'station') { const st = stations.find(s => s.id === id); if (st) editStation(st); }
-        if (kind === 'wip') { const p = wipPoints.find(s => s.id === id); if (p) editWipPoint(p); }
         if (kind === 'machine') {
           if (connectMode) handleMachineConnectClick(id);
           else { const p = machinePoints.find(s => s.id === id); if (p) editMachinePoint(p); }
@@ -791,17 +723,6 @@ export default function LineSetup({ embedded = false } = {}) {
       });
     };
 
-    if (activeTab === 'wip') {
-      if (checkCollision(wipPoints, POINT_W, POINT_H)) {
-        setCollisionWarn('⚠️ ใกล้กับจุดอื่นเกินไป — คลิกในพื้นที่ว่าง');
-        setTimeout(() => setCollisionWarn(null), 2000);
-        return;
-      }
-      setCollisionWarn(null);
-      setWipTempPos(pos);
-      setWipForm(emptyWipForm);
-      return;
-    }
     if (activeTab === 'machines') {
       if (checkCollision(machinePoints, POINT_W, POINT_H)) {
         setCollisionWarn('⚠️ ใกล้กับจุดอื่นเกินไป — คลิกในพื้นที่ว่าง');
@@ -897,82 +818,6 @@ export default function LineSetup({ embedded = false } = {}) {
     setFormData({ id: st.id, name: st.station_name, requirements: reqMap, skill_allowance: st.skill_allowance || false, skill_allowance_type: st.skill_allowance_type || '' });
   };
 
-  /* ── จุด WIP buffer ── */
-  const editWipPoint = (p) => {
-    setWipTempPos(null);
-    setWipForm({
-      id: p.id, point_type: p.point_type || 'material', point_name: p.point_name,
-      mat_no: p.mat_no || '', material_category: p.material_category || '',
-      packaging_no: p.packaging_no || '', packaging_type: p.packaging_type || '',
-      min_qty: p.min_qty ?? 0, max_qty: p.max_qty ?? 0, current_qty: p.current_qty ?? 0,
-    });
-  };
-
-  const handleSaveWip = async () => {
-    if (!wipForm.point_name) return toast.error('กรุณาระบุชื่อจุด WIP');
-    hist.pushHistory();
-    const existing = wipPoints.find(p => p.id === wipForm.id);
-    const isMaterial = wipForm.point_type === 'material';
-    const payload = {
-      line_name:         selectedLine,
-      point_name:        wipForm.point_name,
-      point_type:        wipForm.point_type,
-      mat_no:             isMaterial ? (wipForm.mat_no || null) : null,
-      material_category:  isMaterial ? (wipForm.material_category || null) : null,
-      packaging_no:        !isMaterial ? (wipForm.packaging_no || null) : null,
-      packaging_type:      !isMaterial ? (wipForm.packaging_type || null) : null,
-      pos_top:     wipTempPos ? wipTempPos.top : existing?.pos_top,
-      pos_left:    wipTempPos ? wipTempPos.left : existing?.pos_left,
-      min_qty:     parseFloat(wipForm.min_qty) || 0,
-      max_qty:     parseFloat(wipForm.max_qty) || 0,
-      current_qty: parseFloat(wipForm.current_qty) || 0,
-      updated_at:  new Date().toISOString(),
-    };
-    const { data: saved, error } = wipForm.id
-      ? await supabase.from('wip_buffer_points').update(payload).eq('id', wipForm.id).select('id')
-      : await supabase.from('wip_buffer_points').insert([payload]).select('id');
-    if (error) return toast.error('Error: ' + error.message);
-    if (!saved?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
-    fetchLineData();
-    setWipTempPos(null);
-    setWipForm(emptyWipForm);
-  };
-
-  const deleteWipPoint = async (id) => {
-    if (!window.confirm('ยืนยันการลบจุด WIP นี้?')) return;
-    hist.pushHistory();
-    const { data: gone, error } = await supabase.from('wip_buffer_points').delete().eq('id', id).select('id');
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
-    if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
-    fetchLineData();
-  };
-
-  // เรียกเติมจุด WIP ที่ต่ำกว่า min — สร้างการ์ดคำขอเข้าคิว (ไปโผล่ที่ Heijunka Kanban → ตู้รวม → WIP Point)
-  const requestWipReplenish = async (p) => {
-    const { data: existing } = await supabase.from('wip_replenish_requests')
-      .select('id').eq('wip_point_id', p.id).in('status', ['pending', 'preparing']).limit(1);
-    if (existing?.length) { toast.error('มีคำขอเติมจุดนี้ค้างอยู่แล้ว รอเจ้าหน้าที่ดำเนินการ'); return; }
-    const qty = Math.max(0, (p.max_qty ?? 0) - (p.current_qty ?? 0)) || (p.min_qty ?? 0);
-    const { error } = await supabase.from('wip_replenish_requests').insert({
-      wip_point_id: p.id, line_name: selectedLine, point_name: p.point_name, point_type: p.point_type,
-      mat_no: p.mat_no || null, material_category: p.material_category || null,
-      packaging_type: p.packaging_type || null, packaging_no: p.packaging_no || null,
-      request_qty: qty || 1,
-    });
-    if (error) { toast.error(error.message); return; }
-    notifyEvent({
-      event: 'wip_replenish', type: 'info', ref_table: 'wip_replenish_requests',
-      line_name: selectedLine, actor: fullName,
-      lines: [
-        `🏭 ไลน์: ${selectedLine}`,
-        `📍 จุด: ${p.point_name}${p.point_type ? ` (${p.point_type})` : ''}`,
-        `🔩 ${p.mat_no || '—'} · ขอเติม ${qty || 1} ชิ้น`,
-        `📊 คงเหลือ ${p.current_qty ?? 0} / min ${p.min_qty ?? 0} · max ${p.max_qty ?? 0}`,
-      ],
-    });
-    toast.success(`🔔 เรียกเติม "${p.point_name}" แล้ว — ดูสถานะได้ที่ Heijunka Kanban → ตู้ Kanban รวม → 🔄 WIP Point`);
-  };
-
   /* ── จุดเครื่องจักร ── */
   const editMachinePoint = (p) => {
     setMachineTempPos(null);
@@ -1039,11 +884,10 @@ export default function LineSetup({ embedded = false } = {}) {
 
   // ขนาดหมุดวงกลมบนผัง — ใช้สูตรกลาง markerScale (src/utils/markerScale.js) ตัวเดียวกับหน้าแสดงผล
   // เพื่อให้ WYSIWYG: ขนาดหมุด + พฤติกรรมป้ายชื่อตอนจัดผัง ตรงกับที่ Management/Dashboard แสดงจริงเป๊ะ
-  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร/WIP) ย่อตามความแน่น
-  // หมุดรองที่วาดบนผังจริงในแท็บที่เปิดอยู่ (เครื่องจักร/WIP วาดด้วย SUB ตัวเดียวกัน)
-  // ⚠️ ต้องคิดความแน่นจากชุดที่แสดงจริง — ไม่งั้นแท็บ WIP ที่มีจุดกระจุก 20 จุดจะได้วงใหญ่สุด
+  // MK = จุดงานหลัก · SUB = หมุดรอง (เครื่องจักร) ย่อตามความแน่น
+  // หมุดรองที่วาดบนผังจริงในแท็บที่เปิดอยู่
   //    เพราะสูตรไปนับ machinePoints ที่มีแค่ 3 ตัว แล้วเบียดกัน (อาการเดียวกับที่เพิ่งแก้)
-  const subPoints = activeTab === 'wip' ? wipPoints : machinePoints;
+  const subPoints = machinePoints;
   const { MK, SUB, pillFont: PILL_FONT, subPillFont, badgeFont, pillMaxW, subPillMaxW } =
     markerScale(imgBox?.rw, { machineCount: subPoints.length, points: subPoints, mapHeight: imgBox?.rh });
   // ปุ่ม 🏷️ โชว์/ซ่อนป้ายทุกชนิดจุด (หมุดที่เลือก/แก้ไขโชว์ป้ายเสมอ)
@@ -1055,7 +899,7 @@ export default function LineSetup({ embedded = false } = {}) {
     overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: pillMaxW,
     fontSize: PILL_FONT, lineHeight: 1.35,
   };
-  // ป้ายของหมุดรอง (เครื่องจักร/WIP) — ฟอนต์สเกลตามวง SUB · ความกว้างขั้นต่ำต้องอ่านชื่อออก (markerScale.subPillMaxW)
+  // ป้ายของหมุดรอง (เครื่องจักร) — ฟอนต์สเกลตามวง SUB · ความกว้างขั้นต่ำต้องอ่านชื่อออก (markerScale.subPillMaxW)
   const subPillSt = { ...pillSt, fontSize: subPillFont, maxWidth: subPillMaxW };
   // แถบป้ายใต้วงกลม — เกาะขอบล่างของวงกลม (อยู่ใน hit area เดียวกับหมุด: คลิก/ลากที่ป้ายได้)
   const pillStackSt = {
@@ -1073,7 +917,7 @@ export default function LineSetup({ embedded = false } = {}) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0, paddingRight: 52 }}>
           {TABS.map(t => (
             <button key={t.key}
-              onClick={() => { setActiveTab(t.key); setTempPos(null); setWipTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
+              onClick={() => { setActiveTab(t.key); setTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
               style={{
                 padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${activeTab === t.key ? 'var(--accent)' : 'var(--border2)'}`,
@@ -1209,54 +1053,6 @@ export default function LineSetup({ embedded = false } = {}) {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <div style={{ color: 'var(--accent)', fontSize: 14 }}>+</div>
-                </div>
-              )}
-
-              {activeTab === 'wip' && wipPoints.map(p => {
-                const isSelected = wipForm.id === p.id;
-                const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
-                const isDragging = dragInfo?.kind === 'wip' && dragInfo.id === p.id;
-                const top = isDragging && dragPos ? dragPos.top : p.pos_top;
-                const left = isDragging && dragPos ? dragPos.left : p.pos_left;
-                return (
-                  <div
-                    key={p.id}
-                    onMouseDown={(e) => startDrag(e, 'wip', p.id)}
-                    title={canEdit ? `${p.point_name} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง` : p.point_name}
-                    style={{
-                      position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
-                      width: SUB, height: SUB, borderRadius: '50%',
-                      border: isSelected ? '2px solid var(--green)' : isLow ? '2px solid #ef4444' : '2px solid rgba(255,255,255,0.75)',
-                      backgroundColor: isLow ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.82)',
-                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isLow ? '0 0 8px rgba(239,68,68,0.6)' : '0 2px 6px rgba(0,0,0,0.6)',
-                      cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
-                      zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
-                    }}
-                  >
-                    <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>📦</span>
-                    {(pillsOn || isSelected || isLow) && (
-                      <div style={pillStackSt}>
-                        <div style={{ ...subPillSt, color: isLow ? '#fecaca' : '#fff' }}>
-                          {p.point_name}
-                        </div>
-                        <div style={{ ...subPillSt, fontWeight: isLow ? 800 : 700, color: isLow ? '#fca5a5' : '#a3a3a3' }}>
-                          {p.current_qty ?? 0}/{p.min_qty ?? 0}–{p.max_qty ?? 0}{isLow ? ' ⚠️ ต่ำ' : ''}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {activeTab === 'wip' && wipTempPos && (
-                <div style={{
-                  position: 'absolute', top: wipTempPos.top, left: wipTempPos.left, transform: 'translate(-50%, -50%)',
-                  width: SUB, height: SUB, borderRadius: '50%',
-                  border: '1px dashed var(--accent)', backgroundColor: 'rgba(61,214,92,0.1)',
-                  zIndex: 10, pointerEvents: 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <div style={{ color: 'var(--accent)', fontSize: 12 }}>+</div>
                 </div>
               )}
 
@@ -1652,206 +1448,6 @@ export default function LineSetup({ embedded = false } = {}) {
             })}
           </div>
           </>}
-
-          {activeTab === 'wip' && (
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
-              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                {wipForm.id ? '📝 แก้ไขจุด WIP' : '📦 เพิ่มจุด WIP'}
-              </h4>
-              {(wipTempPos || wipForm.id) ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
-                  <input placeholder="ชื่อจุด WIP (เช่น บัฟเฟอร์ OP20)" value={wipForm.point_name}
-                    onChange={e => setWipForm({ ...wipForm, point_name: e.target.value })} />
-
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {[{ key: 'material', label: '🧱 Material', desc: 'เรียกงานจากสโตร์' }, { key: 'packaging', label: '📦 Packaging', desc: 'เรียกภาชนะจาก Tact Center' }].map(t => (
-                      <button key={t.key} onClick={() => setWipForm({ ...wipForm, point_type: t.key })}
-                        title={t.desc}
-                        style={{
-                          flex: 1, padding: '8px 6px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                          background: wipForm.point_type === t.key ? 'rgba(61,214,92,0.18)' : 'var(--bg3)',
-                          border: wipForm.point_type === t.key ? '1px solid var(--green)' : '1px solid var(--border2)',
-                          color: wipForm.point_type === t.key ? 'var(--green)' : 'var(--text2)',
-                        }}>
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {wipForm.point_type === 'material' ? (
-                    <>
-                      {/* ⚠️ เดิม hardcode 200/300/500 — ขัดกฎ matPrefix.js ที่บอกว่าเลข SAP
-                          รันทะลุช่วงเดิมไปแล้ว ต้องแยกด้วย "เลขตัวแรกตัวเดียว" เท่านั้น
-                          (เบอร์ 1 = FG หายไปจากลิสต์เดิมด้วย ทั้งที่จุด WIP เก็บ FG ได้) */}
-                      {/* ข้อมูลเก่าเก็บ '200'/'300'/'500' — normalize ด้วย wipCatValue ตอนแสดง
-                          ค่าเดิมจึงไม่หายจากช่อง (จะถูกเขียนเป็นเลขตัวเดียวเมื่อบันทึกครั้งถัดไป)
-                          ⚠️ "ขั้นตอนย่อย" เป็นตัวเลือกของตัวเอง ไม่ใช่เบอร์ 9 (ดู wipMatOptions.js) */}
-                      <select value={wipMatCat}
-                        onChange={e => setWipForm({ ...wipForm, material_category: e.target.value })}>
-                        <option value="">-- ประเภทวัสดุ --</option>
-                        {wipCatOptions().map(c => (
-                          <option key={c.value} value={c.value}>{c.label}</option>
-                        ))}
-                      </select>
-                      {/* ⚠️ ทะเบียนพาร์ทหลักร้อยรายการ — <datalist> ค้นได้แค่ "ขึ้นต้นตรง" ใช้กับชื่อไทยไม่ได้
-                          ใช้ SearchSelect ตามกฎ UI-CONVENTIONS §5.1.1 (ลิสต์เกิน ~30 แถวห้ามเป็น select/datalist)
-                          allowFree = พาร์ทที่ยังไม่เข้าทะเบียนยังพิมพ์เองได้ (ติดป้ายบอกว่าอยู่นอกทะเบียน) */}
-                      <SearchSelect
-                        value={wipMatSel ? wipForm.mat_no : ''}
-                        text={wipForm.mat_no}
-                        options={wipMatShown}
-                        allowFree
-                        freeHint="ยังไม่มีในทะเบียนพาร์ท"
-                        placeholder="เลขที่วัสดุ (mat no.) — พิมพ์รหัส/ชื่อเพื่อค้น"
-                        emptyText={wipMatCat && !wipMatAllCat ? `ไม่พบใน ${wipCatLabel(wipMatCat)} — ลองกด "ดูทุกประเภท"` : 'ไม่พบพาร์ทที่ค้นหา'}
-                        wrapRows
-                        onChange={({ id, text }) => setWipForm(f => ({ ...f, mat_no: id || text }))}
-                      />
-                      {/* ชื่อพาร์ทยาวกว่าความกว้างแถบข้าง — โชว์ใต้ช่องแบบตัดบรรทัด ให้อ่านครบ
-                          (ในช่องเก็บแค่เลข mat ไม่งั้นถูกตัดกลางคำจนอ่านไม่ออก) */}
-                      {wipMatSel?.sub && (
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2, overflowWrap: 'anywhere' }}>
-                          <span style={{ color: wipMatSel.badgeColor, fontWeight: 700 }}>{wipMatSel.badge}</span>
-                          {' · '}{wipMatSel.sub}
-                        </div>
-                      )}
-                      {/* ⚠️ ประเภทวัสดุ derive จากเลข mat ได้อยู่แล้ว — บอกให้รู้ว่าไม่ต้องเลือกซ้ำ
-                          (ถ้าไม่บอก คนจะคิดว่าเว้นว่างแล้วระบบไม่รู้ว่าเป็นพาร์ทซื้อ) */}
-                      {!wipMatCat && wipMatDerived.text && (
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>
-                          ระบบอ่านจากเลข mat ได้เองว่าเป็น <b style={{ color: 'var(--text2)' }}>{wipMatDerived.text}</b> — ไม่ต้องเลือกประเภทก็ได้
-                          {' '}(เลือกไว้เพื่อกรองลิสต์ตอนค้นหาเท่านั้น)
-                        </div>
-                      )}
-                      {/* ห้ามซ่อนเงียบ — บอกเสมอว่าตัวกรองประเภทซ่อนไปกี่รายการ + ทางออก */}
-                      {wipMatCat !== '' && wipMatHidden > 0 && (
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>
-                          {/* ⚠️ โชว์ "ชื่อประเภท" ไม่ใช่เลขดิบ — "กรองด้วยประเภท 9" อ่านไม่รู้เรื่อง
-                              และทำให้เข้าใจผิดว่ารายการขั้นตอนที่คงไว้เป็นเบอร์ 9 (feedback หน้างาน) */}
-                          กรอง: {wipCatLabel(wipMatCat)} · ซ่อน {wipMatHidden} รายการ
-                          {wipMatKept > 0 && ` · รวม 🔩 ขั้นตอนย่อย (Operation) ${wipMatKept} รายการไว้ด้วย — ไม่มีเลข MAT SAP จึงไม่แยกตามประเภทวัสดุ`}
-                          <button type="button" onClick={() => setWipMatAllCat(v => !v)}
-                            style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, padding: 0, textDecoration: 'underline' }}>
-                            {wipMatAllCat ? 'กรองตามประเภทอีกครั้ง' : 'ดูทุกประเภท'}
-                          </button>
-                        </div>
-                      )}
-                      {/* เลขที่เลือกไม่ตรงประเภทที่ติ๊กไว้ — เตือน ไม่แก้ให้เอง (คนตัดสิน)
-                          ⚠️ เตือนเฉพาะเลข SAP 8 หลักที่ไม่ใช่ OP — อย่างอื่นตีความประเภทไม่ได้ จะเตือนผิดทุกครั้ง */}
-                      {wipForm.mat_no && wipMatCat && wipMatCat !== WIP_CAT_OP && !wipMatIsOp && isSapMat(wipForm.mat_no) && !matMatches(wipForm.mat_no, wipMatCat) && (
-                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
-                          ⚠ {wipForm.mat_no} เป็น {matClassOf(wipForm.mat_no)?.label || 'ประเภทที่ไม่รู้จัก'} ไม่ตรงกับที่เลือกไว้ ({wipCatLabel(wipMatCat)})
-                        </div>
-                      )}
-                      {/* ไม่ใช่เลข MAT SAP (8 หลัก) และไม่ใช่ OP = อาจพิมพ์ผิด/เป็นเลขลูกค้า — บอกไว้ ไม่บล็อก */}
-                      {wipForm.mat_no && !wipMatIsOp && !isSapMat(wipForm.mat_no) && (
-                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
-                          ⚠ “{wipForm.mat_no}” ไม่ใช่เลข MAT SAP (ต้องเป็นตัวเลข 8 หลัก) — บันทึกได้
-                          แต่ระบบตอบไม่ได้ว่าเป็นวัสดุประเภทไหน · ถ้าเป็นขั้นตอนการผลิต ให้ติ๊ก 🔩 รายการขั้นตอน ที่ Product Master
-                          แล้วเลือกประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”
-                        </div>
-                      )}
-                      {/* เลือก OP = ตั้งใจได้ (บัฟเฟอร์เก็บของหลังขั้นนั้นจริง) แต่ต้องรู้ว่ามันไม่ใช่พาร์ทในทะเบียน */}
-                      {wipMatIsOp && (
-                        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: -2 }}>
-                          🔩 ขั้นตอนย่อย (Operation) — ไม่ใช่พาร์ทในทะเบียน SAP · สโตร์ไม่มีของตัวนี้ให้เบิก
-                          จุดนี้จึงเป็น <b>บัฟเฟอร์ระหว่างขั้นในไลน์</b> (Min/Max ใช้ดูจังหวะงาน ไม่ใช่จุดสั่งเติมจากสโตร์)
-                          {wipMatCat !== WIP_CAT_OP && ' · แนะนำตั้งประเภทเป็น “🔩 ขั้นตอนย่อย (Operation)”'}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <select value={wipForm.packaging_type}
-                        onChange={e => setWipForm({ ...wipForm, packaging_type: e.target.value })}>
-                        <option value="">-- เลือกภาชนะ (Container Types) --</option>
-                        {containerTypes.map(c => <option key={c.code} value={c.code}>{c.code} · {c.name}{c.category ? ` (${c.category})` : ''}</option>)}
-                      </select>
-                      {containerTypes.length === 0 && (
-                        <div style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่มีภาชนะ — เพิ่มที่ Product Master → Packaging → จัดการภาชนะ</div>
-                      )}
-                      <input placeholder="packaging no." value={wipForm.packaging_no}
-                        onChange={e => setWipForm({ ...wipForm, packaging_no: e.target.value })} />
-                    </>
-                  )}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelSt}>Min</label>
-                      <input type="number" value={wipForm.min_qty}
-                        onChange={e => setWipForm({ ...wipForm, min_qty: e.target.value })}
-                        style={{ marginTop: 4, textAlign: 'center' }} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelSt}>Max</label>
-                      <input type="number" value={wipForm.max_qty}
-                        onChange={e => setWipForm({ ...wipForm, max_qty: e.target.value })}
-                        style={{ marginTop: 4, textAlign: 'center' }} />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={labelSt}>ปัจจุบัน</label>
-                      <input type="number" value={wipForm.current_qty}
-                        onChange={e => setWipForm({ ...wipForm, current_qty: e.target.value })}
-                        style={{ marginTop: 4, textAlign: 'center' }} />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button onClick={handleSaveWip} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
-                      {wipForm.id ? 'บันทึก' : 'เพิ่ม'}
-                    </button>
-                    <button onClick={() => { setWipTempPos(null); setWipForm(emptyWipForm); }}
-                      style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
-                      ยกเลิก
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
-                  {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุด WIP<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
-                </div>
-              )}
-              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                รายการจุด WIP ({wipPoints.length})
-              </h4>
-              {wipPoints.length > 6 && (
-                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุด WIP..."
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
-              )}
-              <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
-                {wipPoints.filter(p => { const q = pointSearch.trim().toLowerCase(); return !q || (p.point_name || '').toLowerCase().includes(q); }).map(p => {
-                  const isLow = (p.current_qty ?? 0) < (p.min_qty ?? 0);
-                  return (
-                    <div key={p.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div onClick={() => canEdit && editWipPoint(p)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                          {p.point_type === 'packaging' ? '📦' : '🧱'} {p.point_name} {isLow && <span style={{ fontSize: 11, background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>⚠️ ต่ำกว่า min</span>}
-                        </div>
-                        {/* ⚠️ material_category เป็น "เลขประเภท"/'op' ไม่ใช่เลข MAT → ต้องใช้ wipCatLabel
-                            (matClassOf เข้มขึ้นแล้ว: ไม่ใช่เลข SAP 8 หลัก คืน null · และห้ามโชว์เลขดิบ) */}
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          {p.point_type === 'packaging'
-                            ? `${p.packaging_type ? `${p.packaging_type} · ` : ''}${p.packaging_no ? `${p.packaging_no} · ` : ''}`
-                            : `${wipPointCat(p.material_category, p.mat_no).text ? `${wipPointCat(p.material_category, p.mat_no).text} · ` : ''}${p.mat_no ? `${p.mat_no} · ` : ''}`}
-                          คงเหลือ {p.current_qty ?? 0} (min {p.min_qty ?? 0} / max {p.max_qty ?? 0})
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {isLow && (
-                          <button onClick={() => requestWipReplenish(p)} title="เรียกเติมของจุดนี้"
-                            style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', cursor: 'pointer', fontSize: 11, fontWeight: 700, borderRadius: 6, padding: '4px 8px', whiteSpace: 'nowrap' }}>
-                            🔔 เรียกเติม
-                          </button>
-                        )}
-                        {canDel && <button className="tbtn" onClick={() => deleteWipPoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
-                      </div>
-                    </div>
-                  );
-                })}
-                {wipPoints.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุด WIP</div>
-                )}
-              </div>
-            </div>
-          )}
 
           {activeTab === 'machines' && (
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>

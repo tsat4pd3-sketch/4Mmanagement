@@ -1177,7 +1177,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   };
 
   /* ตัวเลือก MAT.NO ของโมดัล "Scan เปิด Prod Order"
-     ⚠️ บั๊กคลาสเดียวกับ dtMatOptions ข้างล่าง (และ machineOpts ของ /improvements · wipMatOptions)
+     ⚠️ บั๊กคลาสเดียวกับ dtMatOptions ข้างล่าง (และ machineOpts ของ /improvements)
         แต่ตกสำรวจมา 4 รอบ — เดิมกรอง `dr_products.line_name === ชื่อไลน์ที่เปิดกะ` ตรงเป๊ะ
         ไลน์ลูกที่สินค้าผูกไว้กับไลน์แม่/ไลน์พี่น้อง จะได้ลิสต์ว่าง → ไม่ render dropdown เลย
         → mat_no เป็น required → **เปิดใบสแกนไม่ได้ทั้งกะ** และแบนเนอร์ขึ้นว่า "ยังไม่มี Kanban
