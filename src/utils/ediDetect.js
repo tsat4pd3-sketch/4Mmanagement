@@ -107,7 +107,14 @@ export const HEADER_SCAN_ROWS = 20;
  * @returns {{is862:boolean, reason:string, sure:boolean}}
  *   sure=false ⇒ จอต้องบังคับให้คนยืนยัน/เลือกเอง ห้ามนำเข้าเงียบ
  */
-export function detectEdiKind(headers, rows = [], dict = FALLBACK_EDI_DICT) {
+export function detectEdiKind(headers, rows = [], dict = FALLBACK_EDI_DICT, preamble = []) {
+  /* ⓪ หัวไฟล์บอกเองว่าเป็นชุดข้อความ EDI ไหน (2026-10-01) — สัญญาณที่แน่นอนที่สุด
+     ไฟล์ Ford จริงทุกชีตมีแถวเหนือหัวตาราง: `830 | Weekly Forecast | SenderID: …` /
+     `862 | Shipping Schedule | …` · เดิมไม่ได้อ่าน ⇒ ไฟล์ 830 ตกไปข้อ "ไม่ชัด" ทุกครั้ง
+     (บวกกับ ③ อ่านวันที่ YYYYMMDD ไม่ออก) ⇒ **ต้องกดเลือกชนิดเองทุกรอบ** — กดผิดเป็น 862
+     = forecast ทั้งปีกลายเป็นใบส่งของ */
+  const mark = ediSetMarker(preamble);
+  if (mark) return { is862: mark.code === 862, reason: `หัวไฟล์ระบุ EDI ${mark.code}${mark.title ? ` (${mark.title})` : ''}`, sure: true };
   const tIdx = colIdx(headers, dict.time || TIME_HDRS);
   if (tIdx >= 0) {
     // มีคอลัมน์เวลา แต่ว่างทั้งไฟล์ = หัวมีแต่ไม่มีค่า → ยังไม่ชัด
@@ -142,11 +149,33 @@ export function dateSpanDays(rows, idx) {
   return lo == null ? null : Math.round((hi - lo) / 86400000);
 }
 
+/* ⚠️ Ford ส่งวันที่เป็น **ตัวเลข YYYYMMDD** (`20260928`) ไม่ใช่ Date (2026-10-01)
+   เดิมอ่านไม่ออก ⇒ ช่วงวันที่ = null ⇒ ไฟล์ 830 ที่ยิงยาว 1 ปีถูกตีว่า "ไม่ชัด" */
 function cellDateMs(v) {
   if (v instanceof Date) return isNaN(v.getTime()) ? null : v.getTime();
   const s = String(v ?? '').trim();
   if (!s) return null;
+  const m8 = s.match(/^(19|20|21)(\d{2})(\d{2})(\d{2})$/);
+  if (m8) {
+    const mo = +m8[3], da = +m8[4];
+    return mo >= 1 && mo <= 12 && da >= 1 && da <= 31 ? new Date(+(m8[1] + m8[2]), mo - 1, da).getTime() : null;
+  }
   const m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  return null;
+}
+
+/** ชุดข้อความ EDI ที่หัวไฟล์ประกาศไว้ (แถวเหนือหัวตาราง เซลล์แรก = 830/862) · ไม่มี = null
+ *  ⚠️ ดูเฉพาะ **เซลล์แรกที่ไม่ว่างของแต่ละแถว** และต้องเป็น 830/862 ตรงตัว —
+ *     ห้ามค้นตัวเลขทั้งแถว (เลขพาร์ท/จำนวนอาจบังเอิญเป็น 830) */
+export function ediSetMarker(preamble = []) {
+  for (const row of preamble || []) {
+    const cells = (row || []).map(c => String(c ?? '').trim());
+    const i = cells.findIndex(c => c !== '');
+    if (i < 0) continue;
+    if (cells[i] === '830' || cells[i] === '862') {
+      return { code: +cells[i], title: cells.slice(i + 1).find(c => c !== '') || '' };
+    }
+  }
   return null;
 }

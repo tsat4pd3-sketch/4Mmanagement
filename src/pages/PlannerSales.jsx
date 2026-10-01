@@ -207,7 +207,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     const body = matrix.slice(hIdx + 1);
     const col = (aliases) => colIdx(headers, aliases);
     /* ⭐ ตัดสิน 830/862 จากหลายสัญญาณ + คืนเหตุผลให้ขึ้นจอ (ห้ามเดาเงียบ) */
-    const kind = detectEdiKind(headers, body, ediDict);
+    const kind = detectEdiKind(headers, body, ediDict, matrix.slice(0, hIdx));
     const is862 = kind.is862;
     const [gPart, gQty, gDate] = sigOf(ediDict);
     const iPart = col(gPart), iQty = col(gQty), iDate = col(gDate);
