@@ -19,7 +19,9 @@ import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('../components/FeedbackModal'));  // 💬 ช่องรับ feedback (ชุดเดียวกับ sidebar)
 import { visibleInterval } from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { RATE, LIVE } from '../utils/refreshRates';
+import { liveChannel } from '../utils/liveChannel';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -374,9 +376,33 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         });
       } catch { if (alive) setTele({ lines: null, present: null, dt: null, fourM: null }); }
     };
+    /* 🔴 2026-10-01 (งานลด egress · Pro หมด 11 ต.ค.) — เดิมเป็น poll ล้วนทุก 20 นาที
+       และ 1 tick = **5 คิวรี** (3 count + `fetchActiveDowntimes` อีก 2) · หน้านี้เป็นหน้าแรก
+       ที่ทุกคนเปิดค้างไว้ ⇒ วัดจริง 01/10: `production_sessions?select=id,line_name,shift,status`
+       1,168 ครั้ง/วัน + `?select=id` 1,108 ครั้ง/วัน มาจากทางนี้เป็นหลัก
+       แก้เป็นแบบเดียวกับ Management.jsx (กฎเหล็กข้อ 8): realtime = ช่องทางหลัก ·
+       `coalesce` = เพดานความถี่ · `makeIdleGate` = **tick ที่ไม่มีอะไรเปลี่ยนไม่ยิงเลยสักไบต์**
+       ⚠️ ต้อง subscribe **ทั้ง 2 project** — ตัวเลข 4 ตัวบนแถบนี้มาจากคนละฝั่ง
+          (กะ/Downtime = DR · เช็คชื่อ/4M = Main) ถ้า touch แค่ฝั่งเดียว เลขอีกฝั่งจะค้างถึง
+          LIVE.FLOOR (2 ชม.) เช่นตอนเช้าที่คนเช็คชื่อแล้วแต่ยังไม่มีใครเปิดกะ */
+    const g = makeIdleGate(LIVE.FLOOR);
+    const bump = coalesce(() => { g.loaded(); return load(); }, LIVE.BOARD);
+    const onEvent = () => { g.touch(); bump(); };
     load();
-    const stopPoll = visibleInterval(load, RATE.ANALYTIC);
-    return () => { alive = false; stopPoll(); };
+    g.loaded();
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) { g.loaded(); load(); } }, RATE.BACKUP);
+    const chDR = liveChannel(supabaseDR, 'depthub-dr')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onEvent)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'downtime_logs' },       onEvent)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
+    const chMain = liveChannel(supabase, 'depthub-main')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_production_logs' }, onEvent)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'four_m_logs' },           onEvent)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
+    return () => {
+      alive = false; stopPoll(); bump.cancel();
+      supabaseDR.removeChannel(chDR); supabase.removeChannel(chMain);
+    };
   }, [scopeNames, scopeLineIds]);
 
   // ใบค้างเก่ากว่า 7 วัน default ของหน้ารายงาน → ส่ง from ย้อน 90 วันไปด้วย ไม่งั้นเปิดมาเจอจอว่าง
