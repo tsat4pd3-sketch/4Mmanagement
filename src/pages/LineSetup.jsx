@@ -508,6 +508,7 @@ export default function LineSetup({ embedded = false } = {}) {
         const next = (d.line_names || []).map(n => (n === old ? name : n));
         await supabaseDR.from('line_delivery_points').update({ line_names: next }).eq('id', d.id);
       }
+      if (dps?.length) invalidateTable('line_delivery_points');   // เปลี่ยนชื่อไลน์ = จุดส่งใน cache ของจออื่นล้าสมัย
     } catch { /* best-effort — ตารางยังไม่ apply ก็ข้าม */ }
     // 🏬 ทะเบียนรหัสคลัง SAP — line_names text[] เหมือนกัน (ผูกที่ไลน์แม่ → เปลี่ยนชื่อแม่แล้วทั้งแผนกหลุดจาก SLoc เงียบ ถ้าไม่ตาม)
     try {

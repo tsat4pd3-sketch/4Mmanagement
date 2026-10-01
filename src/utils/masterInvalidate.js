@@ -62,7 +62,8 @@ export const KEYS_BY_TABLE = {
     'production_lines:dr',       // DailyReport load()
     'production_lines:flow',     // DailyReport — flow_mode/parallel_stations
   ],
-  storage_locations: ['storage_locations:v2'],   // :v2 = รอบที่เพิ่ม line_names (bump คีย์ตอนเปลี่ยน shape)
+  storage_locations: ['storage_locations:v2'],
+  line_delivery_points: ['line_delivery_points:v1'],   // useDeliveryPoints (01/10)   // :v2 = รอบที่เพิ่ม line_names (bump คีย์ตอนเปลี่ยน shape)
   die_press_lines:   ['die_press_lines:master'],
   suppliers:         ['suppliers:master'],
   cost_centers:      ['cost_centers:master'],
