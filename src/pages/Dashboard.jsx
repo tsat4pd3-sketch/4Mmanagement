@@ -13,7 +13,7 @@ import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
 import { inSectionScope } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam } from '../utils/shiftAssign';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
@@ -1429,7 +1429,7 @@ export default function Dashboard() {
                 ชิป = state ที่มองเห็น (ไลน์อื่นถูกซ่อนโดยผู้ใช้เลือกเอง ไม่ใช่หายเงียบ)
                 boardLineSel ที่ไม่มีในวันนั้น → ตกกลับ "ทุกไลน์" (กฎ cascade §5.3 ห้ามจอว่างเงียบ) */}
             {(() => {
-              const lineNames = Object.keys(byLine).sort();
+              const lineNames = sortLineNames(Object.keys(byLine), lines);   // ลำดับมาตรฐาน (ส่วนงาน→ชื่อ) 2026-10-01
               const effSel = lineNames.includes(boardLineSel) ? boardLineSel : '';
               if (lineNames.length <= 1 && !boardQuery) return null;
               const chip = (active) => ({
@@ -1455,7 +1455,7 @@ export default function Dashboard() {
               );
             })()}
 
-            {Object.entries(byLine)
+            {sortLineNames(Object.keys(byLine), lines).map(n => [n, byLine[n]])
               .filter(([n]) => !boardLineSel || !Object.keys(byLine).includes(boardLineSel) || n === boardLineSel)
               .map(([lineName, sessions]) => {
               const hasOpen = sessions.some(s => s.status === 'open');

@@ -17,6 +17,7 @@
  *
  * อ่านอย่างเดียว — กดบล็อกเพื่อเปิดใบตรวจของรุ่นนั้น (งานตรวจจริงเท่านั้น · บล็อกคาดการณ์ยังไม่มีใบ)
  */
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import InternalTimeBoard from './InternalTimeBoard';
@@ -185,7 +186,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         data: { kind: 'eta', r, etaMin: fc.etaMin, ct: fc.ct },
       });
     });
-    const lines = [...byLine.keys()].sort();
+    const lines = [...byLine.keys()].sort(lineNameCompare);   // เรียงธรรมชาติชุดเดียวกับ dropdown ไลน์
     return {
       etaCount: n,
       noCt: cantEstimate,

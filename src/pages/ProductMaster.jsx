@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -651,7 +652,7 @@ export default function ProductMaster() {
   }, [families, search, lineFilter, showHistory, readyFilter, readyOf]);
 
   const activeCount = items.filter(i => i.is_active).length;
-  const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort();
+  const uniqueLines = [...new Set(items.map(i => i.line_name).filter(Boolean))].sort(lineNameCompare);
   // ชื่อไลน์ที่สินค้าใช้อยู่แต่ไม่มีในทะเบียนไลน์ — ต้องยังกรองได้ (ห้ามหายเงียบ) แยกกลุ่ม ⚠ ใน <LineSelect> (2026-09-07)
   const orphanLineOpts = uniqueLines.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n }));
 

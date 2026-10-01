@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -98,7 +99,7 @@ function StockTab({ role, scope }) {
   const [lineFilter, setLineFilter] = useState('');
   // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
   const warehouseNames = useMemo(
-    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(),
+    () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(lineNameCompare),
     [stock, lines],
   );
   // ไลน์แม่ (มีไลน์ลูก) = ระดับแผนก — ใช้เตือนตอนจ่ายพาร์ท และตรวจสต๊อกที่ค้างผิดชั้น
@@ -1195,7 +1196,7 @@ function DeliveryTimeBoardTab() {
   const groups = useMemo(() => {
     const byLine = {};
     rounds.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
-    return Object.keys(byLine).sort().map(lnName => ({
+    return Object.keys(byLine).sort(lineNameCompare).map(lnName => ({
       key: lnName, label: lnName,
       sub: `${byLine[lnName].length} รอบ · ✔️ ${byLine[lnName].filter(r => dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`]).length} ยืนยันแล้ว`,
       items: byLine[lnName]
@@ -1286,7 +1287,7 @@ function InflowRulesTab({ canEdit }) {
     ]);
     setRules(r || []);
     setLines(ln || []);
-    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort());
+    setDests([...new Set((st || []).map(s => s.line_name).filter(Boolean))].sort(lineNameCompare));
   }, []);
   useEffect(() => { load(); }, [load]);
 

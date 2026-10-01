@@ -8,7 +8,7 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
 import { inSectionScope } from '../utils/sectionScope';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
@@ -187,7 +187,7 @@ export default function MachineDatabase() {
     if (filterCat !== 'facility') return null; // ใช้ dropdown ไลน์ผลิตเดิม
     const set = new Set();
     machines.forEach(m => { if (normCat(m.equipment_category) === filterCat && m.line_name) set.add(m.line_name); });
-    return [...set].sort((a, b) => a.localeCompare(b));
+    return [...set].sort(lineNameCompare);
   }, [machines, filterCat]);
 
   const filtered = useMemo(() => {

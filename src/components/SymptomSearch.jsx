@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabaseDR } from '../supabaseClient';
 import { noteSimilarity, clusterNotes, CLUSTER_THRESHOLD } from '../utils/textCluster';
 import TimeRangeBar from './TimeRangeBar';
@@ -152,7 +153,7 @@ export default function SymptomSearch({ inScope, onOpenOrder }) {
     const machines = new Set(dt.map((r) => r.machine_no).filter(Boolean));
     const { clusters } = clusterNotes(res.rows, (r) => r.description || r._type, () => 1);
     return {
-      dt, def, days: days.size, lines: [...lines].sort(), machines: [...machines].sort(),
+      dt, def, days: days.size, lines: [...lines].sort(lineNameCompare), machines: [...machines].sort(),
       dtMin: dt.reduce((a, r) => a + (Number(r.duration_min) || 0), 0),
       ngQty: def.reduce((a, r) => a + (Number(r.qty_ng) || 0) + (Number(r.qty_suspect) || 0), 0),
       clusters: clusters.slice(0, 6),
