@@ -28,14 +28,12 @@ import { HubContext } from './Page';
    4. เฟรมแรกห้ามให้ตัวชี้วิ่งมาจากมุมซ้าย — วัดใน useLayoutEffect (ก่อน paint) แล้วค่อยเปิด transition
    5. เพดาน Chromium 94 (จอ TV): transform/transition/box-shadow/ResizeObserver ผ่านหมด
       **ห้ามใช้ `color-mix()`** — แสงเรืองใช้ตัวแปร `--accent-glow` ใน index.css (มีทั้ง 2 ธีม)      */
-/* ── ⋯ แท็บเกิน 7 = พับที่เหลือเข้า "เพิ่มเติม" (2026-09-24 · UI §6.8 ข้อ 3 · Miller 7±2) ──
-   เดิม QualityControl 9 แท็บ · ProductMaster 10 แท็บ วางเรียงยาวเกินที่ตาไล่อ่านได้
-   · 6 แท็บแรกโชว์ + ช่อง "⋯ เพิ่มเติม" (native <select> — ใช้ได้บนจอ TV/มือถือ ไม่ต้องมี popover)
-   · แท็บที่เลือกอยู่ในกลุ่มพับ = ช่องเพิ่มเติมโชว์ชื่อแท็บนั้น + ตัวชี้ไถลไปที่ช่องนั้น
-   · URL/`?tab=` ไม่เปลี่ยน — ลิงก์เก่าใช้ได้ครบ */
-export const MAX_TABS = 7;
-const MORE = '__more';
-
+/* ── 🚫 ห้ามพับแท็บเข้า dropdown (2026-10-01 · user: *"ถ้าเป็นดรอปดาว จะทำให้ user ไม่รู้ป่าว ไม่จำเป็นต้องดรอปดาวก็ได้"*) ──
+   รอบ 24/09 เคยพับแท็บที่เกิน 7 เข้า "⋯ เพิ่มเติม" โดยอ้าง Miller 7±2 — **ตีความผิด**: 7±2 คือขีดของสิ่งที่ต้อง "จำ"
+   แท็บที่วางอยู่บนจอคือสิ่งที่ "เห็นแล้วจำได้" (recognition) · ของที่ซ่อนอยู่ = คนไม่รู้ว่ามี (NN/g: hidden navigation
+   ลดการค้นพบ) ⇒ ProductMaster 4 แท็บ (ลูกค้า/Supplier/ทบทวน CT/Export) กลายเป็นของที่ไม่มีใครเจอ
+   · แท็บโชว์ครบเสมอ — เดสก์ท็อปตัดขึ้นบรรทัดใหม่ (ตัวชี้วัด offsetTop ตามได้) · มือถือเลื่อนแนวนอน
+   · แท็บเยอะจนรก = แก้ที่ "ของซ้ำ/ของที่ควรเป็นหน้าแยก" (NAVIGATION-REVIEW §2.3) ไม่ใช่ซ่อน */
 const IND_EASE = 'cubic-bezier(.4,1.2,.45,1)';
 const prefersReduced = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -50,9 +48,6 @@ export default function PageHeader({
   const navItem = NAV_ITEMS.find(n => n.to === pathname);
   const tabList = (tabs || []).filter(Boolean);
   const tabLabel = tabList.find(t => t.key === tab)?.label;
-  const overflow = tabList.length > MAX_TABS ? tabList.slice(MAX_TABS - 1) : [];
-  const shownTabs = overflow.length ? tabList.slice(0, MAX_TABS - 1) : tabList;
-  const activeInMore = overflow.some(t => t.key === tab);
 
   const scrollRef = useRef(null);   // กล่องที่เลื่อนแนวนอน (มือถือ)
   const rowRef = useRef(null);      // แถวปุ่ม = offsetParent ของปุ่มและของตัวชี้
@@ -65,12 +60,12 @@ export default function PageHeader({
 
   useLayoutEffect(() => {
     Object.keys(btnRefs.current).forEach((k) => {
-      if (k !== MORE && !tabList.some(t => t.key === k)) delete btnRefs.current[k];
+      if (!tabList.some(t => t.key === k)) delete btnRefs.current[k];
     });
     if (!tabList.length) { setInd(null); return undefined; }
 
     const measure = () => {
-      const el = btnRefs.current[activeInMore ? MORE : tab];
+      const el = btnRefs.current[tab];
       if (!el || !rowRef.current) { setInd(null); return; }
       const next = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
       setInd(prev => (prev && prev.x === next.x && prev.y === next.y
@@ -95,7 +90,7 @@ export default function PageHeader({
 
   // มือถือ: แท็บที่เลือกอาจอยู่นอกจอ — เลื่อน "เฉพาะกล่องแท็บ" เข้ามา ห้ามใช้ scrollIntoView (เลื่อนทั้งหน้า)
   useEffect(() => {
-    const sc = scrollRef.current; const el = btnRefs.current[activeInMore ? MORE : tab];
+    const sc = scrollRef.current; const el = btnRefs.current[tab];
     if (!sc || !el || sc.scrollWidth <= sc.clientWidth + 1) return;
     const want = Math.max(0, Math.min(el.offsetLeft - (sc.clientWidth - el.offsetWidth) / 2,
       sc.scrollWidth - sc.clientWidth));
@@ -143,7 +138,7 @@ export default function PageHeader({
               </span>
             )}
 
-            {shownTabs.map(t => {
+            {tabList.map(t => {
               const on = t.key === tab;
               const selfPaint = on && !ind;   // ยังวัดไม่ได้ = ปุ่มทาสีเอง (กันแท็บที่เลือกวูบหาย)
               return (
@@ -162,20 +157,6 @@ export default function PageHeader({
                 </button>
               );
             })}
-            {overflow.length > 0 && (
-              <select ref={(el) => { btnRefs.current[MORE] = el; }} aria-label="แท็บเพิ่มเติม"
-                value={activeInMore ? tab : ''} onChange={e => e.target.value && onTab && onTab(e.target.value)}
-                style={{
-                  position: 'relative', zIndex: 1, width: 'auto', flexShrink: 0, cursor: 'pointer',
-                  fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999,
-                  background: activeInMore ? (ind ? 'transparent' : 'var(--accent)') : 'var(--bg3)',
-                  color: activeInMore ? 'var(--accent-ink)' : 'var(--text)',
-                  border: `1px solid ${activeInMore ? 'transparent' : 'var(--border2)'}`,
-                }}>
-                {!activeInMore && <option value="">⋯ เพิ่มเติม ({overflow.length})</option>}
-                {overflow.map(t => <option key={t.key} value={t.key}>{t.label}{t.badge ? ` · ${t.badge}` : ''}</option>)}
-              </select>
-            )}
           </div>
         </div>
   );
