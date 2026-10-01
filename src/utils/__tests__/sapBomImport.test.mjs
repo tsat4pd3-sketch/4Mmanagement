@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSapBom, diffSapBom, missingInPartsMaster, sapDepth, sapNum, decodeSapExport } from '../sapBomImport.js';
+import { parseSapBom, diffSapBom, missingInPartsMaster, sapDepth, sapNum, decodeSapExport, sniffLevelCol } from '../sapBomImport.js';
 
 /* ตัวอย่างย่อจากไฟล์จริงที่ user ส่ง (01/10 · SUPT ASY RAD (FVL) 10101158)
    เว้นคอลัมน์ให้ตรงหัวจริง: ""·Plnt·SPT·Item·Level·""·Obj·desc·Qty·Un·CostRel·MS·SLoc·SLoc·Change·By·On·B */
@@ -122,4 +122,51 @@ test('missingInPartsMaster — ไม่ซ้ำ + ใช้ชื่อ/หน
   assert.equal(miss.length, 6);
   assert.equal(miss.filter(m => m.mat_no === '50027080').length, 1);   // โผล่ 1 ครั้งทั้งที่ไฟล์มี 1 แถว
   assert.equal(miss.find(m => m.mat_no === '50027080').uom, 'KG');
+});
+
+/* ── เคสจริง 01/10: ใบ 10105769 เข้าไม่ได้ ──────────────────────────────────────────
+   อาการ: ทุกแถวขึ้น "อ่านชั้นไม่ออก — ตั้งเป็นชั้น 1" แล้วชน
+   `duplicate key ... bom_items_product_item_uniq` เพราะ ITEM ซ้ำกันเมื่อแบนเป็นชั้นเดียว */
+
+test('🔴 หัวคอลัมน์ถูกย่อ (Lev) ต้องยังอ่านชั้นได้ — ห้ามแบนทั้งใบ', () => {
+  const r = parseSapBom(FILE.replace('\tLevel\t', '\tLev\t'));
+  assert.equal(r.rows.length, 8);
+  assert.equal(Math.max(...r.rows.map(x => x.depth)), 6);
+  assert.equal(r.rows.find(x => x.mat_no === '50027080').parent_mat, '20058483');
+});
+
+test('🔴 ไฟล์ที่ผ่าน Excel มา (.1 กลายเป็น 0.1) ต้องยังอ่านชั้นได้', () => {
+  const r = parseSapBom(FILE.split('\n').map(l => l.replace('\t.1\t', '\t0.1\t')).join('\n'));
+  assert.equal(r.rows.length, 8);
+  assert.equal(r.rows.find(x => x.mat_no === '20067121').depth, 1);
+  assert.equal(Math.max(...r.rows.map(x => x.depth)), 6);
+});
+
+test('🔴 อ่านคอลัมน์ชั้นไม่ได้เลย = ไม่นำเข้า ห้ามเดาเป็นชั้น 1 ทั้งใบ', () => {
+  // ตัดคอลัมน์ Level ทิ้ง — เดิมโค้ดแบนทุกแถวเป็นชั้น 1 เงียบๆ แล้วไปชน unique index ที่ปลายทาง
+  const noLevel = FILE.split('\n').map(l => l.split('\t').filter((_, i) => i !== 4).join('\t')).join('\n');
+  const r = parseSapBom(noLevel);
+  assert.equal(r.rows.length, 0);
+  assert.match(r.warnings[0], /ไม่นำเข้าให้/);
+  assert.match(r.warnings.join(' '), /Excel/);     // บอกทางแก้ด้วย ไม่ใช่แค่บอกว่าพัง
+});
+
+test('sniffLevelCol — หาคอลัมน์ชั้นจากค่าจริง (ต้องเกินครึ่งของแถวที่มีค่า)', () => {
+  assert.equal(sniffLevelCol([['a', '.1', '10'], ['b', '..2', '20'], ['c', '.1', '30']]), 1);
+  assert.equal(sniffLevelCol([['a', '0.1', 'x'], ['b', '..2', 'y']]), 1);
+  assert.equal(sniffLevelCol([['a', 'b', 'c'], ['d', 'e', 'f']]), null);   // ไม่มีคอลัมน์ไหนเข้ารูป
+});
+
+test('🔑 ITEM ซ้ำได้ข้ามตัวแม่ — ของจริง SAP นับเลขใหม่ทุกชั้น', () => {
+  const r = parseSapBom(FILE);
+  const byKey = new Map();
+  r.rows.forEach(x => {
+    const k = `${x.parent_mat || ''}|${x.item_no}`;
+    assert.equal(byKey.has(k), false, `ซ้ำในตัวแม่เดียวกัน: ${k}`);
+    byKey.set(k, x);
+  });
+  // ITEM 10 โผล่ทั้งชั้น 1 (30044771/20067121…) และชั้น 6 (50027080) = คนละตัวแม่ ⇒ ถูกต้อง
+  const item10 = r.rows.filter(x => x.item_no === 10);
+  assert.ok(item10.length > 1);
+  assert.equal(new Set(item10.map(x => x.parent_mat)).size, item10.length);
 });

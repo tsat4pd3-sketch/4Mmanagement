@@ -60,9 +60,27 @@ const HEAD = [
 const headRole = (cell) => {
   const c = upper(cell).toLowerCase().replace(/\.+$/, '').replace(/\s+/g, ' ');
   if (!c) return null;
-  for (const [role, keys] of HEAD) if (keys.some(k => c === k || c.startsWith(k))) return role;
+  /* เทียบ 2 ทาง: หัวยาวกว่าคีย์ ("component no") และ **หัวที่ถูกย่อ** ("lev" ← "level")
+     — SAP export บางใบย่อหัวคอลัมน์ ทำให้ `c.startsWith(k)` อย่างเดียวจับไม่ได้ (เคสจริง 01/10) */
+  for (const [role, keys] of HEAD)
+    if (keys.some(k => c === k || c.startsWith(k) || (c.length >= 3 && k.startsWith(c)))) return role;
   return c.startsWith('sloc') || c.startsWith('prod.sloc') || c.startsWith('stor') ? 'sloc' : null;
 };
+
+/* 🔎 หาคอลัมน์ "ชั้น" จาก **ค่าในข้อมูล** เมื่อหัวตารางบอกไม่ได้ (ชื่อหัวเพี้ยน/ถูกย่อ/ไฟล์ผ่าน Excel มา)
+   ค่าชั้นของ SAP หน้าตาแน่นอนมาก: `.1` `..2` `.....5` — และถ้าไฟล์ผ่าน Excel มา `.1` จะกลายเป็น `0.1`
+   ⇒ สแกนทุกคอลัมน์ เลือกตัวที่ค่าเข้ารูปนี้มากที่สุด (ต้องเกินครึ่งของแถวที่มีค่า) */
+const LEVEL_VALUE = /^0?\.{1,9}\d{0,2}$|^\.{1,9}$/;
+export function sniffLevelCol(dataRows) {
+  const width = Math.max(0, ...dataRows.map(r => r.length));
+  let best = -1, bestHit = 0;
+  for (let c = 0; c < width; c++) {
+    let hit = 0, seen = 0;
+    dataRows.forEach(r => { const v = norm(r[c]); if (!v) return; seen++; if (LEVEL_VALUE.test(v)) hit++; });
+    if (seen && hit > seen / 2 && hit > bestHit) { best = c; bestHit = hit; }
+  }
+  return best < 0 ? null : best;
+}
 
 /** depth จากคอลัมน์ Level: ".....5" → 5 · "5" → 5 · ".1" → 1 · ว่าง/อ่านไม่ออก → null */
 export function sapDepth(level) {
@@ -115,18 +133,39 @@ export function parseSapBom(text) {
   if (hi < 0) return { root, rows: [], warnings: ['หาแถวหัวตารางไม่เจอ — ไฟล์นี้อาจไม่ใช่ BOM ที่ export จาก SAP'], layout: 'unknown' };
   const layout = col.level !== undefined && col.spt !== undefined ? 'multilevel' : 'report';
 
-  /* ③ แถวข้อมูล → ผูกชั้นด้วย stack */
-  const rows = [], stack = [];     // stack[d] = mat ของแถวล่าสุดที่ depth = d
-  let autoDepth = 0;
+  /* ③ เตรียมแถวข้อมูล แล้ว **ยืนยันคอลัมน์ชั้นด้วยค่าจริง** ก่อนเริ่มผูกต้นไม้
+     🔴 เคสจริง 01/10: ไฟล์ของอีกใบหัวคอลัมน์ไม่ตรง ⇒ ชั้นอ่านไม่ออกทั้งใบ แล้วโค้ดเดิม
+        **ยุบทุกแถวเป็นชั้น 1 เงียบๆ** = BOM แบนผิดโครง + ITEM ชนกันจนชน unique index
+        ⇒ ตอนนี้: หาคอลัมน์ชั้นจากค่าจริงก่อน · หาไม่เจอ = **ไม่นำเข้า** ไม่ใช่เดาให้ */
+  const body = [];
   for (let i = hi + 1; i < lines.length; i++) {
     const cells = lines[i].split('\t');
     if (cells.length < 3) continue;
+    if (!upper(cells[col.mat])) continue;
+    body.push({ i, cells });
+  }
+  const levelOk = (ci) => ci !== undefined && ci !== null &&
+    body.filter(b => sapDepth(b.cells[ci]) != null).length > body.length / 2;
+  if (!levelOk(col.level)) {
+    const sniff = sniffLevelCol(body.map(b => b.cells));
+    if (levelOk(sniff)) {
+      col.level = sniff;
+      warnings.push(`หัวคอลัมน์ "ชั้น" ไม่ตรงรูปแบบที่รู้จัก — ใช้คอลัมน์ที่ ${sniff + 1} แทน (ดูจากค่าในไฟล์)`);
+    } else {
+      return { root, rows: [], layout, warnings: [
+        'อ่านคอลัมน์ "ชั้น" (Level) ของไฟล์นี้ไม่ได้ — ไม่นำเข้าให้ เพราะถ้าเดาเป็นชั้น 1 ทั้งใบ โครง BOM จะผิด',
+        'ไฟล์ที่ผ่าน Excel มาแล้วบันทึกทับ มักทำคอลัมน์นี้เพี้ยน — ให้ export จาก SAP ใหม่แล้วอัปโหลดไฟล์นั้นตรงๆ ห้ามเปิดแก้ใน Excel ก่อน',
+      ] };
+    }
+  }
+
+  const rows = [], stack = [];     // stack[d] = mat ของแถวล่าสุดที่ depth = d
+  for (const { i, cells } of body) {
     const mat = upper(cells[col.mat]);
-    if (!mat) continue;
     if (root.mat_no && mat === upper(root.mat_no) && rows.length === 0) continue;   // แถว level 0 = ตัวหัวใบเอง
 
-    let depth = col.level !== undefined ? sapDepth(cells[col.level]) : null;
-    if (depth == null) { depth = ++autoDepth === 1 ? 1 : 1; warnings.push(`แถว ${i + 1} (${mat}) อ่านชั้นไม่ออก — ตั้งเป็นชั้น 1`); }
+    const depth = sapDepth(cells[col.level]);
+    if (depth == null) { warnings.push(`แถว ${i + 1} (${mat}) อ่านชั้นไม่ออก — ข้ามแถวนี้ (ห้ามเดาชั้นให้)`); continue; }
 
     const qty  = col.qty !== undefined ? sapNum(cells[col.qty]) : null;
     const s1   = col.sloc1 !== undefined ? upper(cells[col.sloc1]) : '';

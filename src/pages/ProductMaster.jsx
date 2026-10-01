@@ -1918,6 +1918,15 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (diff.add.length) {
       const rows = diff.add.map(r => ({ ...payload(r), product_id: target.id, is_active: true, created_by: fullName }));
       const res = await retry((legacy) => supabaseDR.from('bom_items').insert(legacy ? rows.map(strip) : rows).select('id'));
+      /* ชน unique index = ข้อความ postgres ดิบอ่านไม่รู้เรื่องสำหรับคนหน้างาน → แปลเป็นสิ่งที่ทำต่อได้
+         (เคสจริง 01/10: index เก่าเป็น (product_id,item_no) ไม่มีมิติตัวแม่ · แก้ด้วย migration 20261001b แล้ว) */
+      if (res.error?.code === '23505') {
+        setSapBusy(false);
+        toast.error(res.error.message.includes('item_uniq')
+          ? 'เลขรายการ (ITEM) ชนกันในใบนี้ — ยังไม่ได้ apply migration 20261001b_bom_item_no_uniq_per_parent_dr (DR) หรือใบนี้มีแถวเลขซ้ำใต้ตัวแม่เดียวกัน'
+          : `มีแถวซ้ำกับของเดิมในใบนี้ (${res.error.message}) — ลองกดนำเข้าใหม่อีกครั้ง ระบบจะเทียบใหม่ให้`);
+        return;
+      }
       if (!checkWrite(res, 'นำเข้าแถว BOM ใหม่')) { setSapBusy(false); return; }
       added = (res.data || []).length;
     }
