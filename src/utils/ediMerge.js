@@ -138,3 +138,56 @@ export function splitFirmVsForecast(records, today, horizonDays = FIRM_HORIZON_D
   }
   return { firm, forecast };
 }
+
+/* ═══ แทนที่ "เฉพาะชุดที่ลูกค้าส่งมา" (2026-10-01 · คำสั่ง user — ปิดกลไก A) ═══════════════════
+   user: *"ลูกค้าบางทีอัพเดทเฉพาะบาง dock หรือบางเจ้า ของเก่าไม่ส่งมา แปลว่าไม่มีอัพเดท"*
+         *"2 และ 4 · 3 หาย แปลว่า 3 ยกเลิก"*
+
+   เดิมลบ pending ทั้ง ship-to ตลอดช่วงวันที่ของไฟล์ แล้วใส่คืนเฉพาะที่อยู่ในไฟล์
+   ⇒ dock/พาร์ทที่ไฟล์ไม่ได้ส่งมา **ถูกลบทิ้งเงียบๆ** (เคสจริง GRBNA 26/08→27/08 พาร์ท 10100814 หาย)
+
+   กฎ:
+   · ชุด = ship-to + dock + พาร์ท (830 = ship-to + พาร์ท · ไม่มี dock)
+   · ชุดที่**ไม่อยู่ในไฟล์** = ไม่มีอัพเดท ⇒ **ห้ามแตะ**
+   · ชุดที่อยู่ในไฟล์ = ไฟล์คือฉบับเต็มของชุดนั้น **ในช่วงวันที่ของชุดนั้นเอง** (min..max ของชุด)
+     ⇒ วันที่หายไป*กลางช่วง* = ลูกค้ายกเลิก (ถูกลบ) · นอกช่วงของชุด = ไม่แตะ
+   · dock ว่างฝั่งใดฝั่งหนึ่ง = จับคู่ได้ทุก dock ของพาร์ทนั้น (ใบเก่าที่ไม่มี dock ต้องถูกแทนที่ ไม่งั้นใบซ้ำ)
+   · พาร์ทเทียบแบบ normalize (`RB3B 16E060 BA` = `RB3B-16E060-BA`)
+   ═══════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @param {Array<{id:any, shipTo:string, part:string, dock?:string|null, date:string}>} existing
+ *        แถวเดิมที่ "ลบได้" (caller กรอง source/status มาแล้ว)
+ * @param {Array<{shipTo:string, part:string, dock?:string|null, date:string}>} fileRecords ทุกแถวในไฟล์
+ * @param {{ useDock?: boolean, from?: string }} opt  from = ห้ามลบก่อนวันนี้ (กฎ "ประวัติห้ามลบ")
+ * @returns {{ ids:any[], groups:number, kept:number }} kept = แถวเดิมในช่วงไฟล์ที่เก็บไว้เพราะไฟล์ไม่ได้ส่งชุดนั้นมา
+ */
+export function scopedReplaceIds(existing, fileRecords, { useDock = true, from = '' } = {}) {
+  const groups = new Map();                    // shipTo|part → [{ dock, min, max }]
+  for (const r of fileRecords || []) {
+    if (!r?.date) continue;
+    const k = `${r.shipTo}|${normKey(r.part)}`;
+    const d = useDock ? dockKey(r.dock) : '';
+    const list = groups.get(k) || [];
+    let g = list.find(x => x.dock === d);
+    if (!g) { g = { dock: d, min: r.date, max: r.date }; list.push(g); groups.set(k, list); }
+    if (r.date < g.min) g.min = r.date;
+    if (r.date > g.max) g.max = r.date;
+  }
+  let fileMin = null, fileMax = null;
+  groups.forEach(list => list.forEach(g => {
+    if (!fileMin || g.min < fileMin) fileMin = g.min;
+    if (!fileMax || g.max > fileMax) fileMax = g.max;
+  }));
+  const ids = [];
+  let kept = 0;
+  for (const e of existing || []) {
+    if (!e?.date || (from && e.date < from)) continue;
+    const list = groups.get(`${e.shipTo}|${normKey(e.part)}`);
+    const d = useDock ? dockKey(e.dock) : '';
+    const hit = list && list.some(g => (!g.dock || !d || g.dock === d) && e.date >= g.min && e.date <= g.max);
+    if (hit) ids.push(e.id);
+    else if (fileMin && e.date >= fileMin && e.date <= fileMax) kept++;
+  }
+  return { ids, groups: [...groups.values()].reduce((a, l) => a + l.length, 0), kept };
+}

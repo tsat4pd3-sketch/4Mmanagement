@@ -70,3 +70,38 @@ test('splitAlreadyDone แยกกองได้ถูก', () => {
 test('normKey ตัดขีด/ช่องว่าง/ตัวพิมพ์', () => {
   assert.equal(normKey('RB3B-16E060-BA'), normKey('rb3b 16e060 ba'));
 });
+
+/* ── scopedReplaceIds (2026-10-01) ── */
+import { scopedReplaceIds } from '../ediMerge.js';
+test('scopedReplaceIds: dock/พาร์ทที่ไฟล์ไม่ได้ส่งมา = ไม่แตะ', () => {
+  const existing = [
+    { id: 1, shipTo: 'GRBNA', part: 'RB3B 16E060 BA', dock: 'B5', date: '2026-10-02' },
+    { id: 2, shipTo: 'GRBNA', part: 'RB3B 16E060 BA', dock: 'B1', date: '2026-10-02' },   // dock อื่น
+    { id: 3, shipTo: 'GRBNA', part: 'MB3B 8A297 CB', dock: 'B5', date: '2026-10-02' },     // พาร์ทอื่น
+    { id: 4, shipTo: 'GBL9A', part: 'RB3B 16E060 BA', dock: 'B5', date: '2026-10-02' },    // ship-to อื่น
+  ];
+  const file = [{ shipTo: 'GRBNA', part: 'RB3B-16E060-BA', dock: 'B5', date: '2026-10-02' }];
+  const r = scopedReplaceIds(existing, file);
+  assert.deepEqual(r.ids, [1]);
+  assert.equal(r.kept, 3);
+});
+test('scopedReplaceIds: วันกลางช่วงหาย = ยกเลิก · นอกช่วงของชุด = ไม่แตะ', () => {
+  const ex = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05']
+    .map((date, i) => ({ id: i + 1, shipTo: 'GRBNA', part: 'P1', dock: 'B5', date }));
+  const file = [{ shipTo: 'GRBNA', part: 'P1', dock: 'B5', date: '2026-10-02' },
+                { shipTo: 'GRBNA', part: 'P1', dock: 'B5', date: '2026-10-04' }];
+  assert.deepEqual(scopedReplaceIds(ex, file).ids, [2, 3, 4]);
+});
+test('scopedReplaceIds: dock ว่างฝั่งใดฝั่งหนึ่ง = จับได้ · from กันประวัติ', () => {
+  const ex = [{ id: 1, shipTo: 'S', part: 'P', dock: null, date: '2026-10-03' },
+              { id: 2, shipTo: 'S', part: 'P', dock: 'X', date: '2026-10-01' }];
+  const file = [{ shipTo: 'S', part: 'P', dock: 'B5', date: '2026-10-01' }, { shipTo: 'S', part: 'P', dock: 'B5', date: '2026-10-05' }];
+  assert.deepEqual(scopedReplaceIds(ex, file).ids, [1]);
+  assert.deepEqual(scopedReplaceIds([{ ...ex[0], dock: 'B5', date: '2026-09-30' }], [{ ...file[0], date: '2026-09-29' }, file[1]], { from: '2026-10-01' }).ids, []);
+});
+test('scopedReplaceIds: 830 ไม่ใช้ dock', () => {
+  const ex = [{ id: 1, shipTo: 'S', part: 'P', dock: 'A', date: '2026-11-02' }];
+  const file = [{ shipTo: 'S', part: 'P', dock: 'Z', date: '2026-11-02' }];
+  assert.deepEqual(scopedReplaceIds(ex, file, { useDock: false }).ids, [1]);
+  assert.deepEqual(scopedReplaceIds(ex, file).ids, []);
+});
