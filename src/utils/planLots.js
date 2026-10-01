@@ -133,53 +133,96 @@ export function suggestSequence(lots = [], dieOf = () => null) {
   return [...ordered.map(d => d._lot), ...noDie].map((l, i) => ({ ...l, seq: i + 1 }));
 }
 
-/* ── 🔍 เทียบแผน ↔ ของจริง ───────────────────────────────────────────────────────
-   คืน 3 กอง **ห้ามยุบรวมกัน** — คนละคำถาม คนละคนต้องไปทำ:
-     · `rows`               ล็อตในแผน + ใบจริงที่ผูกอยู่ (ถ้ามี) + ยอดที่ทำได้
-     · `plannedNotStarted`  แผนมี แต่ยังไม่เริ่ม (ปลายกะ = งานหลุดแผน)
-     · `startedNotPlanned`  หน้างานเปิดใบเอง**นอกแผน** — ต้องเห็น ห้ามซ่อน (ไม่ใช่ความผิด แต่วางแผนต้องรู้)
-   จับคู่ด้วย `prod_order_id` เท่านั้น — **ห้ามเดาจาก mat_no** (พาร์ทเดียวกันวางหลายล็อตในกะเดียวได้) */
-export function reconcilePlan(lots = [], orders = []) {
-  const byId = new Map((orders || []).filter(o => o?.id).map(o => [o.id, o]));
-  const linked = new Set();
-  const rows = sortBySeq(lots.filter(ACTIVE_LOT)).map(l => {
-    const o = l.prod_order_id ? byId.get(l.prod_order_id) || null : null;
-    if (o) linked.add(o.id);
-    const done = o ? (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)) : 0;
-    return {
-      lot: l, order: o, donePcs: o ? done : null,
-      shortPcs: o ? Math.max(0, (num(l.qty_plan) || 0) - done) : null,
-      started: !!o, closed: o?.status === 'confirmed',
-    };
-  });
-  return {
-    rows,
-    plannedNotStarted: rows.filter(r => !r.started).map(r => r.lot),
-    startedNotPlanned: (orders || []).filter(o => o?.id && !linked.has(o.id)),
-  };
-}
-
 /* ══ 🔀 แบ่งแผนของ "ไลน์+วันงาน" ตามมุมมองของกะที่เปิดอยู่ (2026-09-30 รอบ 2) ═══════════
    🔴🔴 เคสจริงที่ทำให้ต้องมี — วันงาน 30/09 LINE B: วางแผนไว้ **กะเช้า 6 ล็อต** แต่กะเช้าปิดไปแล้ว
         โดยไม่ได้เริ่มสักใบ · ตอนนี้ **กะดึกเปิดอยู่** ⇒ จอหน้างานเดิมกรอง `shift = กะที่เปิด`
         ได้ 0 แถว แล้ว **ไม่วาดอะไรเลย** ⇒ กะดึกไม่มีทางรู้เลยว่ามีแผนค้างอยู่ 6 ล็อต
         (ล้มเหลวเงียบ — "ไม่มีแผน" กับ "แผนอยู่คนละกะ" ต้องอ่านออกว่าคนละเรื่อง)
 
-   ⇒ โหลดทั้งวันงานของไลน์นั้น แล้วแบ่ง 3 กอง **ห้ามยุบรวมกัน**:
-     · `mine`    แผนของกะนี้ตรงๆ
-     · `carried` แผนของกะอื่นในวันเดียวกันที่ **ยังไม่ได้เริ่ม** = งานที่กะก่อนทำไม่ทัน ⇒ กะนี้หยิบต่อได้
-     · `elsewhere` แผนของกะอื่นที่เริ่ม/ทำไปแล้ว = แค่บอกให้รู้ ไม่ใช่งานของกะนี้
-   ⚠️ ไม่มีทั้ง 3 กอง = ไม่มีแผนจริงๆ ⇒ จอไม่ต้องวาด (ไลน์คัมบังจะได้ไม่รก) */
+   ⇒ โหลดทั้งวันงานของไลน์นั้น แล้วแบ่งเป็น `mine` (กะนี้) / `other` (กะอื่นในวันเดียวกัน)
+   🔴 **ตัวนี้ไม่ตัดสินว่า "ทำแล้วหรือยัง"** — เดิมเคยดู `status`/`prod_order_id` แต่ตั้งแต่ 01/10
+      แผนเป็น**กรอบล้วน ไม่มีใครเขียน status กลับฐาน** (ดู `matchPlanToActual`) ⇒ ต้องตัดสินจาก
+      **ยอดที่ทำได้จริง** ที่ชั้นจอ ไม่ใช่จากคอลัมน์ที่ไม่มีใครอัพเดท (ไม่งั้น "ค้าง" ตลอดกาล)
+   ⚠️ ไม่มีทั้ง 2 กอง = ไม่มีแผนจริงๆ ⇒ จอไม่ต้องวาด (ไลน์คัมบังจะได้ไม่รก) */
 export function splitPlanForSession(lots = [], session = null) {
   const shift = session?.shift ?? null;
   const active = lots.filter(ACTIVE_LOT);
-  const mine = sortBySeq(active.filter(l => l.shift === shift));
-  const other = active.filter(l => l.shift !== shift);
   return {
-    mine,
-    carried: sortBySeq(other.filter(l => l.status === 'planned' && !l.prod_order_id)),
-    elsewhere: sortBySeq(other.filter(l => !(l.status === 'planned' && !l.prod_order_id))),
+    mine:  sortBySeq(active.filter(l => l.shift === shift)),
+    other: sortBySeq(active.filter(l => l.shift !== shift)),
     hasAny: active.length > 0,
+  };
+}
+
+/* ══ 🧩 Layer 1 (แผน) ↔ Layer 2 (ของจริง) — จับคู่จาก **ยอดรวมต่อพาร์ท** (2026-10-01) ══════
+   แนวคิดจาก user: *"ระบบนี้จะเป็นเหมือนกรอบ เลเยอร์ 1 · ผลิตเปิดคัมบัง คอนเฟิร์มยอด เป็นเลเยอร์ 2"*
+
+   🔴🔴 ทำไมต้องจับคู่ด้วย "ยอดรวม" ไม่ใช่ 1 ล็อต = 1 ใบ — **วัดจากฐานจริง วันงาน 25/09:**
+     Line 60 · 10100384 · กะดึก = **40 ใบ** × 10 ชิ้น   |  LINE A · 10057226 = **14 ใบ** × 70
+     Assy GOR · 20058498 = **32 ใบ** × 14             |  LINE C · 20058489 = **5 ใบ** × 300
+     ⇒ **1 พาร์ท 1 กะ = ใบผลิตหลายใบเสมอ** (คัมบัง 1 ใบ = 1 กล่อง) · `manual = 0` ทุกแถว
+       แม้แต่ไลน์ปั๊ม A/B/C ก็สแกนคัมบัง (30 วัน manual แค่ 1.4–3.3%)
+   ⇒ ถ้าแผน "ออกใบให้" 1 ใบตามยอดล็อต แล้วหน้างานสแกนคัมบังตามปกติด้วย = **เป้าถูกนับซ้ำ**
+     (วางแผน 1,000 + สแกนจริง 7 ใบ × 60 = เป้าในกะกลายเป็น 1,420)
+
+   ⇒ **แผนไม่สร้างใบผลิตเลย** (คำสั่ง user 2026-10-01) — Layer 2 ทำงานเหมือนเดิมทุกอย่าง
+     ระบบแค่เอายอดที่เกิดจริงมาเทียบกับกรอบ
+
+   🔴 กติกาการปันยอด (ต้อง deterministic ไม่งั้นเลขเต้นทุกครั้งที่โหลด):
+     · ปันต่อ **(ไลน์ + วันงาน + พาร์ท)** ข้ามกะ — ไม่ใช่แยกกะ เพราะล็อตที่กะเช้าทำไม่ทัน
+       กะดึกทำต่อได้ (ดู `splitPlanForSession`) · แยกกะ = ยอดเดียวถูกนับ 2 รอบ
+     · เติมตาม **ลำดับล็อต (seq)** จนเต็มยอดแล้วค่อยล้นไปใบถัดไป
+     · 🔴 **ยอดที่เกินทุกล็อตของพาร์ทนั้น = `overPcs` ต้องโชว์ ห้ามกลืน** (ทำเกินแผนคือข้อมูล ไม่ใช่ error)
+     · 🔴 **พาร์ทที่ผลิตจริงแต่ไม่มีในแผนเลย = `offPlan` ต้องโชว์** (หน้างานทำนอกแผน ไม่ใช่ความผิด แต่ต้องรู้)
+     · 🔴 **ไม่ตัดสินแทนคน** (คำสั่ง user) — ไม่เขียน status กลับฐาน ไม่ปิดล็อตเอง · คำนวณสดทุกครั้ง   */
+
+/** ยอดที่ทำได้จริงของใบผลิต 1 ใบ — ปิดแล้วใช้ qty_ok · ยังเปิดใช้ qty_actual */
+export const orderDonePcs = (o) =>
+  (o?.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)) || 0;
+
+export function matchPlanToActual(lots = [], orders = []) {
+  const active = sortBySeq(lots.filter(ACTIVE_LOT));
+  /* ยอดจริงรวมต่อพาร์ท + นับว่ามาจากกี่ใบ (จอต้องบอกได้ว่า "จาก 14 ใบคัมบัง") */
+  const actual = new Map();
+  (orders || []).forEach(o => {
+    if (!o?.mat_no) return;
+    const cur = actual.get(o.mat_no) || { pcs: 0, orders: 0 };
+    cur.pcs += orderDonePcs(o); cur.orders += 1;
+    actual.set(o.mat_no, cur);
+  });
+
+  /* ปันยอดตามลำดับล็อต */
+  const left = new Map([...actual].map(([m, v]) => [m, v.pcs]));
+  const rows = active.map(l => {
+    const plan = Number(l.qty_plan) || 0;
+    const pool = left.get(l.mat_no);
+    if (pool == null) return { lot: l, donePcs: 0, pct: 0, state: 'pending', fromOrders: 0 };
+    const take = Math.min(pool, plan);
+    left.set(l.mat_no, pool - take);
+    return {
+      lot: l, donePcs: take,
+      pct: plan > 0 ? Math.round((take / plan) * 100) : null,
+      state: take >= plan ? 'done' : take > 0 ? 'partial' : 'pending',
+      fromOrders: actual.get(l.mat_no)?.orders || 0,
+    };
+  });
+
+  /* เหลือหลังปันครบทุกล็อต = ทำเกินแผน · พาร์ทที่ไม่มีล็อตเลย = ทำนอกแผน */
+  const planned = new Set(active.map(l => l.mat_no));
+  const over = [], offPlan = [];
+  left.forEach((pcs, mat) => {
+    if (pcs <= 0) return;
+    (planned.has(mat) ? over : offPlan).push({ mat_no: mat, pcs, orders: actual.get(mat)?.orders || 0 });
+  });
+
+  const planPcs = active.reduce((a, l) => a + (Number(l.qty_plan) || 0), 0);
+  const donePcs = rows.reduce((a, r) => a + r.donePcs, 0);
+  return {
+    rows, over, offPlan,
+    planPcs, donePcs,
+    pct: planPcs > 0 ? Math.round((donePcs / planPcs) * 100) : null,
+    doneLots: rows.filter(r => r.state === 'done').length,
+    startedLots: rows.filter(r => r.state !== 'pending').length,
   };
 }
 
@@ -189,7 +232,7 @@ export function planSummary({ lots = [], orders = [], ctOf, pairOf, dieOf, rule,
   const run = planRunMin(lots, ctOf, pairOf);
   const setup = planSetup(lots, dieOf, rule);
   const fit = shiftFit({ runMin: run.min, setupMin: setup.totalMin, netShiftMin });
-  const rec = reconcilePlan(lots, orders);
+  const rec = matchPlanToActual(lots, orders);
   const active = lots.filter(ACTIVE_LOT);
   return {
     lotCount: active.length,
@@ -199,9 +242,10 @@ export function planSummary({ lots = [], orders = [], ctOf, pairOf, dieOf, rule,
     setupUnknown: setup.noRule || setup.baseUnknown || setup.noDie, setupPartial: setup.unknownCount,
     setupNoDie: setup.noDie,
     fit,
-    started: rec.rows.filter(r => r.started).length,
-    closed: rec.rows.filter(r => r.closed).length,
-    notStarted: rec.plannedNotStarted.length,
-    offPlan: rec.startedNotPlanned.length,
+    /* ความคืบหน้าเทียบกรอบ — มาจากยอดรวมต่อพาร์ท ไม่ใช่ "กี่ใบถูกเปิด" (ดู matchPlanToActual) */
+    started: rec.startedLots, closed: rec.doneLots,
+    notStarted: rec.rows.filter(r => r.state === 'pending').length,
+    donePcs: rec.donePcs, donePct: rec.pct,
+    offPlan: rec.offPlan.length, overPlan: rec.over.length,
   };
 }
