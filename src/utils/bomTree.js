@@ -432,3 +432,47 @@ export function moveBomLine(row, toMat, bomOf) {
   }
   return { ok: true, patch: { parent_mat: to } };
 }
+
+/* ═══ เดินขึ้น BOM หา "ตัวขาย" (2026-10-01 · user: งานต่างประเทศ ไลน์ผลิตเป็นเบอร์ 2xx
+   เบอร์ 1xx ที่ขายจริงมี packing เป็นกระบวนการสุดท้าย) ═══════════════════════════════
+   เคสจริง: EDI `RB3B E111E50 AB` เจอแต่ 2xx (P/N ติดอยู่ที่ตัวก่อนแพ็ค) ส่วนตัวขาย
+   `10102017 …-FMCSA` P/N ว่าง ⇒ ตัวนำเข้าไม่เห็น · แต่ BOM ผูกไว้แล้ว: 10102017 → 20067541 (PACK) → 20067543
+   ⇒ เดินขึ้นจากลูกไปหาบรรพบุรุษที่เป็นตัวขาย ใช้เป็น "ข้อเสนอ" ให้คนเลือก (ไม่ตัดสินแทน)
+   ตัวแม่ของแถวตัดสินด้วย `buildBomIndex().parentOf` เท่านั้น (กฎ: ห้ามอ่าน product_id เอง) */
+
+/** child mat → Set(parent mat) จากแถว bom_items ที่ active */
+export function buildParentIndex(rows = [], matOfProduct = {}) {
+  const { parentOf } = buildBomIndex(rows, matOfProduct);
+  const up = new Map();
+  (rows || []).forEach(r => {
+    if (r?.is_active === false) return;
+    const child = norm(r?.mat_no), parent = parentOf(r);
+    if (!child || !parent || child === parent) return;
+    (up.get(child) || up.set(child, new Set()).get(child)).add(parent);
+  });
+  return up;
+}
+
+/**
+ * บรรพบุรุษที่ผ่านเงื่อนไข `isTarget` (เช่น isFgMat) ที่ใกล้ที่สุดในแต่ละสาย
+ * @returns {Array<{ mat: string, via: string[] }>} via = ทางเดินจาก mat ขึ้นไป (ไม่รวมตัวมันเอง)
+ */
+export function targetAncestorsOf(mat, up, isTarget, maxDepth = 6) {
+  const out = new Map();
+  const seen = new Set([norm(mat)]);
+  let frontier = [{ m: norm(mat), via: [] }];
+  for (let d = 0; d < maxDepth && frontier.length; d++) {
+    const next = [];
+    frontier.forEach(({ m, via }) => {
+      (up?.get(m) || []).forEach(p => {
+        if (seen.has(p)) return;            // กันวนลูป
+        seen.add(p);
+        const path = [...via, p];
+        if (isTarget(p)) { if (!out.has(p)) out.set(p, path); }
+        else next.push({ m: p, via: path });
+      });
+    });
+    frontier = next;
+  }
+  return [...out.entries()].map(([m, via]) => ({ mat: m, via }));
+}

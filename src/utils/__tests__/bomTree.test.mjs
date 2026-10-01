@@ -212,3 +212,18 @@ test('slocLabel — ตัวพิมพ์ใหญ่/ตัดช่อง�
   assert.equal(slocLabel(null), '');
   assert.equal(slocLabel('   '), '');
 });
+
+import { buildParentIndex, targetAncestorsOf } from '../bomTree.js';
+test('targetAncestorsOf: 2xx ก่อนแพ็ค → เดินขึ้น BOM เจอตัวขาย 1xx (เคสจริง RB3B E111E50 AB)', () => {
+  const rows = [
+    { product_id: 'p1', mat_no: '20067541' },                          // ใบของ 10102017 ชั้น 1 = PACK
+    { product_id: 'p1', mat_no: '20067543', parent_mat: '20067541' },  // ก่อนแพ็ค ใต้ PACK
+    { product_id: 'p2', mat_no: '20067543' },                          // ใบของ 20067545 (2xx อีกตัว)
+    { product_id: 'p1', mat_no: 'X', is_active: false },
+  ];
+  const up = buildParentIndex(rows, { p1: '10102017', p2: '20067545' });
+  const isFg = (m) => /^1\d{7}$/.test(m);
+  const r = targetAncestorsOf('20067543', up, isFg);
+  assert.deepEqual(r, [{ mat: '10102017', via: ['20067541', '10102017'] }]);
+  assert.deepEqual(targetAncestorsOf('10102017', up, isFg), []);
+});
