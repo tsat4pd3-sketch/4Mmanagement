@@ -202,3 +202,13 @@ test('ไม่มีหัวไฟล์ — วันที่ YYYYMMDD ต�
   assert.equal(r.is862, false);
   assert.equal(r.sure, true);
 });
+
+/* 2026-10-01 — จุดเรียกในหน้าเคยส่ง `{ dict, fromDb }` ทั้งก้อน ⇒ ไฟล์ EDI ทุกไฟล์หาหัวตารางไม่เจอ 9 วัน */
+test('buildEdiDict: ต้องใช้ .dict — ส่งทั้งก้อนแล้วหัวตาราง Ford จริงไม่ผ่าน', () => {
+  const hdr = ['Interchange Control Num', 'Message Release Num', 'Message Release Date', 'Ship To GSDB Code',
+    'Part Num', 'Purchase Order Num', 'Dock Code', 'Forecast Date', 'Forecast Time', 'Forecast Net Qty'];
+  const registry = [{ is_active: true, col_map: { part: ['Part Num'], qty: ['Forecast Net Qty'], date: ['Forecast Date'] } }];
+  const built = buildEdiDict(registry);
+  assert.equal(isEdiHeaderRow(hdr, built.dict), true);
+  assert.equal(isEdiHeaderRow(hdr, built), false);   // ก้อน wrapper = บั๊กเดิม
+});

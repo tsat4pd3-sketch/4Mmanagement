@@ -57,6 +57,18 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'edi-dict-wrapper-not-dict',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ "เอาผลของ buildEdiDict() ทั้งก้อนไปใช้เป็นพจนานุกรม" — ต้องแกะ `{ dict }` เสมอ */
+    re: /(?:const|let|var)\s+\w+\s*=\s*(?:useMemo\(\s*\(\)\s*=>\s*)?buildEdiDict\(/g,
+    why: '`buildEdiDict()` คืน `{ dict, fromDb }` · `/planner-sales` เคยเก็บทั้งก้อนเป็น `ediDict` '
+       + '⇒ `sigOf()` อ่าน `wrapper.part` = undefined ⇒ ไม่มีหัวตารางไหนผ่าน ⇒ **ไฟล์ EDI 830/862 ทุกไฟล์ '
+       + 'ตกไปโหมด map มือบนชีตแรก** (Summary/Running · "ไม่พบหัวตาราง") **ไม่มีใครนำเข้าได้เลย 22/09 → 01/10** '
+       + '· เทสระดับ util ผ่านหมดเพราะส่ง dict ตรง — พังเฉพาะจุดเรียกในหน้า',
+    fix: '`const { dict: ediDict } = useMemo(() => buildEdiDict(rows), [rows])`',
+    allow: {},
+  },
+  {
     id: 'no-factory-vocabulary-in-language-layer',
     scan: ['src/utils/thaiText.js', 'src/utils/termStats.js', 'src/utils/autoCategory.js', 'src/utils/machineNo.js'],
     ext: ['.js'],
