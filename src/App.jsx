@@ -60,6 +60,7 @@ const TvBoard = lazy(() => import('./pages/TvBoard'));
 const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
+const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -125,6 +126,9 @@ export const NAV_ITEMS = [
      "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย") — route เดิม redirect (LegacyTabRedirect) พา ?dept= มาด้วย
      · สิทธิ์ยังใช้คีย์ `page:/dept-dashboard` เดิม (แท็บโผล่ตามสิทธิ์ · /permissions ยังตั้งได้) ห้ามลบคีย์ */
   { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI · SQDCM · งานค้าง)', group: 'ภาพรวม' },
+  /* 📦 อัพเดทโปรแกรม — รายการสิ่งที่เพิ่ม/แก้ไปในระบบ อ่านจากประวัติการแก้จริง (git) ไม่ใช่ลิสต์ที่พิมพ์มือ
+       อยู่หมวดภาพรวมเพราะเป็นของทุกคน (ทีมงานอยากรู้ว่าของที่แจ้งไปแก้แล้วยัง · ผู้มาเยี่ยมชมอยากรู้ว่าระบบยังมีคนดูแล) */
+  { to: '/program-update', icon: '📦', label: 'อัพเดทโปรแกรม',    group: 'ภาพรวม' },
 
   /* ── 📺 จอแสดงผล — 3 จอที่ "แขวนทิ้งไว้" ไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28) ──
      เดิมนั่งปนใน "ภาพรวม" กับ /dept-dashboard (คิวงาน) และ /factory-map (จอสำรวจ มี metric tab)
@@ -1840,6 +1844,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/adoption-outlook" element={
                 <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
+              } />
+              <Route path="/program-update" element={
+                <RoleRoute path="/program-update" userRole={role}><ProgramUpdate /></RoleRoute>
               } />
               <Route path="/group-overview" element={
                 <RoleRoute path="/group-overview" userRole={role}><GroupOverview /></RoleRoute>

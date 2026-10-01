@@ -30,6 +30,7 @@ const PAGE_GROUPS = [
       { key: 'page:/dept-dashboard', label: 'งานค้างของส่วนงาน (แท็บ 📌 ใน OBEYA)' },
       { key: 'page:/factory-map', label: 'ผังรวมโรงงาน' },
       { key: 'page:/remote',      label: 'รีโมทจอ (ไม่อยู่ในเมนูหมวด — เข้าจากแผงโปรไฟล์ 👤)' },
+      { key: 'page:/program-update', label: 'อัพเดทโปรแกรม (อ่านอย่างเดียว — รายการสิ่งที่เพิ่ม/แก้)' },
     ],
   },
   {
