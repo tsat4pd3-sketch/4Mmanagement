@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
@@ -97,7 +98,7 @@ export default function ShiftOrganize() {
   const fetchLines = async () => {
     const [{ data: lineData }, { data: orgData }] = await Promise.all([
       loadLinesRes(),   // cache กลาง (25/09) · loader เรียงตามชื่อ → เรียงตาม id เองด้านล่าง
-      supabase.from('org_nodes').select('id, code, name, kind, parent_id')
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order')
         .in('kind', ['section', 'department']).eq('is_active', true).order('name'),
     ]);
     // คงลำดับเดิมของหน้านี้ (ตาม id) — loader กลางเรียงตามชื่อ
@@ -105,7 +106,7 @@ export default function ShiftOrganize() {
     const secs = (orgData || []).filter(n => n.kind === 'section');
     setSectionNodes(secs);
     setDeptNodes((orgData || []).filter(n => n.kind === 'department'));
-    setOrgSections(secs.map(n => n.code || n.name).sort());
+    setOrgSections(orgValues(secs));
   };
 
   const fetchEmployees = async () => {
@@ -393,9 +394,9 @@ export default function ShiftOrganize() {
     ? lines.filter(l => String(l.id) === String(userLineId))
     : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
 
-  const allSections = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+  const allSections = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
   const scopedSections = (role === 'leader' && userLineId)
-    ? [...new Set(scopedLines.map(l => l.section).filter(Boolean))].sort()
+    ? sortLike(scopedLines.map(l => l.section), orgSections)
     : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
 
   // merge event อยู่ใน scope เมื่อ: ระบุไลน์ → ไลน์นั้นอยู่ใน scope / ระบุ section → section นั้นอยู่ใน scope

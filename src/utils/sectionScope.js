@@ -1,4 +1,5 @@
 import { getLineFamilyNames } from './lineHierarchy.js';
+import { orgNodeCompare } from './listOrder.js';
 // ─── Multi-section scoping ──────────────────────────────────────────────────
 // ขอบเขตส่วนงานของ user: profiles.sections (text[]) = จำกัดหลายส่วนงานได้
 // (เช่น manager แผนกหนึ่งเห็นเฉพาะ PD1+PD2+QA) — ว่าง/NULL = ไม่จำกัด
@@ -142,7 +143,8 @@ export const ORPHAN_SECTION_LABEL = '🏛️ ขึ้นตรงฝ่าย (
 export const sectionValueForSave = (v) => (!v || v === ORPHAN_SECTION ? null : v);
 
 /** แผนกในผังที่ขึ้นตรงฝ่าย (parent_id ว่าง) */
-export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id);
+// ลำดับ = ตามผัง (sort_order → ชื่อ · listOrder.js) ไม่ขึ้นกับว่าหน้าที่เรียก query มาเรียงแบบไหน (2026-10-01)
+export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_id).sort(orgNodeCompare);
 
 /**
  * ตัวเลือกแผนกตามค่าที่เลือกในช่อง Section (cascade — UI-CONVENTIONS §5.3)
@@ -151,7 +153,7 @@ export const orphanDepts = (deptNodes = []) => deptNodes.filter(d => !d.parent_i
 export function deptOptionsFor(sectionValue, sectionNodes = [], deptNodes = []) {
   if (sectionValue === ORPHAN_SECTION) return orphanDepts(deptNodes);
   const node = sectionNodes.find(s => (s.code || s.name) === sectionValue);
-  return node ? deptNodes.filter(d => d.parent_id === node.id) : [];
+  return node ? deptNodes.filter(d => d.parent_id === node.id).sort(orgNodeCompare) : [];
 }
 
 /** node ของแผนกที่เลือก (ใช้ cascade ต่อไปยัง Group) — จำกัดอยู่ในตัวเลือกที่ถูกต้องเสมอ */

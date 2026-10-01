@@ -19,6 +19,7 @@
         (`lineNamesOf` คืน [] · จอที่คำนวณอัตโนมัติต้องเขียนว่า "ข้อมูลไปไม่ถึงระดับนี้" ห้ามโชว์ 0)
      🔴 ชื่อ section เทียบแบบ normalize (PLN & STO vs Planning&Store — ผังใช้ code แต่ไลน์เก็บ text)
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+import { orgNodeCompare, naturalCompare } from './listOrder.js';
 
 export const SCOPE_KIND_META = {
   plant:       { label: 'ทั้งโรงงาน', short: 'โรงงาน', icon: '🏭', depth: 0 },
@@ -67,7 +68,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     if (!kids.has(p)) kids.set(p, []);
     kids.get(p).push(n);
   });
-  const bySort = (a, b) => ((a.sort_order ?? 9999) - (b.sort_order ?? 9999)) || String(nodeCode(a)).localeCompare(String(nodeCode(b)));
+  const bySort = orgNodeCompare;   // ลำดับผังมาตรฐานจุดเดียว (listOrder.js · 2026-10-01)
   kids.forEach(arr => arr.sort(bySort));
 
   const liveLines = lines.filter(l => l && l.name && l.is_active !== false);
@@ -144,7 +145,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     groups.forEach((_, grp) => familyOf(grp).forEach(x => all.add(x)));
     push('department', nodeCode(dep), nodeCode(dep), depth, parentKey, all, { cost_center: dep.cost_center || null });
     if (secCode) sectionOfKey.set(dKey, secCode);
-    [...groups.keys()].sort().forEach((grp) => {
+    [...groups.keys()].sort(naturalCompare).forEach((grp) => {
       const fam = familyOf(grp);
       fam.forEach(x => usedLine.add(x));
       const gKey = push('line_group', grp, grp, depth + 1, dKey, fam);
@@ -171,7 +172,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
       .forEach(dep => placeDepartment(dep, sKey, depth + 1, code));
     // 🔴 ไลน์ในส่วนงานที่ผังยังไม่ผูกกับแผนกไหน → วางใต้ส่วนงานตรงๆ (ห้ามหาย)
     const loose = secLines.filter(x => !usedLine.has(x));
-    const grps = [...new Set(loose.map(nm => groupOf(byName.get(nm))))].sort();
+    const grps = [...new Set(loose.map(nm => groupOf(byName.get(nm))))].sort(naturalCompare);
     grps.forEach((grp) => {
       const fam = familyOf(grp).filter(x => !usedLine.has(x));
       fam.forEach(x => usedLine.add(x));
@@ -202,7 +203,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
 
   // ส่วนงานที่มีแต่ในทะเบียนไลน์ ไม่มีในผัง (โรงงานใหม่ตอน rollout / ผังยังไม่ครบ) → ตะกร้ารับ
   const secInLines = [...new Set(liveLines.map(l => l.section).filter(Boolean))];
-  secInLines.filter(s => !secKeys.has(norm(s))).sort().forEach((s) => {
+  secInLines.filter(s => !secKeys.has(norm(s))).sort(naturalCompare).forEach((s) => {
     placeSection({ id: `virtual-${s}`, code: s, name: s }, 'plant', 1);
     const k = scopeKey('section', s);
     const o = opts.find(x => x.key === k); if (o) o.unlinked = true;
@@ -210,7 +211,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   // ไลน์ที่ไม่มี section เลย → ตะกร้าท้ายสุด
   const noSec = liveLines.filter(l => !l.section && !usedLine.has(l.name));
   if (noSec.length) {
-    const grps = [...new Set(noSec.map(groupOf))].sort();
+    const grps = [...new Set(noSec.map(groupOf))].sort(naturalCompare);
     grps.forEach((grp) => {
       const fam = familyOf(grp);
       const gKey = push('line_group', grp, grp, 1, 'plant', fam, { unlinked: true });
@@ -253,7 +254,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   });
   ccOwners.forEach(arr => arr.sort((a, b) => (OWNER_RANK[a.kind] ?? 9) - (OWNER_RANK[b.kind] ?? 9)));
 
-  [...ccLines.keys()].sort().forEach(cc => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], {
+  [...ccLines.keys()].sort(naturalCompare).forEach(cc => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], {
     icon: '💰', cc_name: ccName.get(cc) || '', owners: ccOwners.get(cc) || [],
   }));
 

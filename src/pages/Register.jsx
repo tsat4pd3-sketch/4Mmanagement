@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { orgNodeCompare } from '../utils/listOrder';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -57,9 +58,9 @@ export default function Register() {
       });
     supabase.from('bus_routes').select('id, code, name').eq('is_active', true).order('sort_order')
       .then(({ data }) => setBusRoutes(data || []));
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, ref_line_id, sort_order').eq('is_active', true)
       .then(({ data }) => {
-        const nodes = data || [];
+        const nodes = [...(data || [])].sort(orgNodeCompare);   // ลำดับผังมาตรฐาน (listOrder.js)
         setOrgSections(nodes.filter(n => n.kind === 'section'));
         setOrgDepts(nodes.filter(n => n.kind === 'department'));
         setOrgLines(nodes.filter(n => n.kind === 'line'));

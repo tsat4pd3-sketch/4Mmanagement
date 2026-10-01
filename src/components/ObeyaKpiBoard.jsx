@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { lineNameCompare } from '../utils/lineHierarchy';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -197,8 +198,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const m = lines.filter(l => set.has(l.name));
     return {
       names: set,
-      groups: [...new Set(m.map(l => l.parent_line_name || l.name))].sort(),   // กลุ่มไลน์ (เป้า OEE ตั้งรายกลุ่ม)
-      ccs: [...new Set(m.filter(l => l.cost_center).map(l => l.cost_center))].sort(),
+      groups: [...new Set(m.map(l => l.parent_line_name || l.name))].sort(lineNameCompare),   // กลุ่มไลน์ (เป้า OEE ตั้งรายกลุ่ม)
+      ccs: [...new Set(m.filter(l => l.cost_center).map(l => l.cost_center))].sort(lineNameCompare),
     };
   }, [lines, lineNames]);
   /* ชิปเจาะลงหนึ่งชั้น (ลูกของขอบเขตที่เลือก · ไม่เกิน 6 ไม่งั้นหัวจอยาว — เกินนั้นใช้ picker) + ชิป ↑ กลับขึ้น */

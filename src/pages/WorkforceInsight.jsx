@@ -1,4 +1,5 @@
 import { fmtAxis } from '../utils/chartAxis';
+import { sortLike } from '../utils/listOrder';
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -1022,7 +1023,7 @@ export default function WorkforceInsight() {
       const myLine = lines.find(l => String(l.id) === String(userLineId));
       return myLine?.section ? [myLine.section] : [];
     }
-    const all = orgSectionList.length ? orgSectionList : [...new Set(lines.map(l => l.section).filter(Boolean))].sort();
+    const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
 

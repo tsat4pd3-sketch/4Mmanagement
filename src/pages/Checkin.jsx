@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
 import { UserContext } from '../App';
@@ -255,7 +256,7 @@ export default function Checkin() {
         .eq('work_date', workDateStr),
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
-      supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name'),
+      supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true),
       supabase.from('shift_merge_events').select('*').lte('start_date', workDateStr).gte('end_date', workDateStr),
       shiftInfo.shift === 'night'
         ? supabase.from('ot_night_bookings').select('employee_id, task_type_id, ot_period').eq('work_date', nextDateStr).eq('shift', 'night')
@@ -265,7 +266,7 @@ export default function Checkin() {
         ? supabase.from('ot_night_bookings').select('employee_id, work_date, task_type_id, ot_period').in('work_date', extraAdvanceDates).eq('shift', shiftInfo.shift)
         : Promise.resolve({ data: [] }),
     ]);
-    setOrgSections((orgNodeData || []).map(n => n.code || n.name).sort());
+    setOrgSections(orgValues(orgNodeData));   // ลำดับตามผัง (listOrder.js)
     setTaskTypes(taskTypeData || []);
 
     if (!empData) return;
@@ -1072,7 +1073,7 @@ export default function Checkin() {
   };
 
   // กรอง dropdown ตาม scope (leader→family · role อื่น→sections · admin/qa→ทั้งหมด) — กันเห็นส่วนงาน/ไลน์ข้าม scope
-  const sectionsAll = orgSections.length ? orgSections : [...new Set(lines.map(l => l.section))].sort();
+  const sectionsAll = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
   const sections = scopeSecs.length ? sectionsAll.filter(s => inSectionScope(scopeSecs, s)) : sectionsAll;
   const famIds = (role === 'leader' && lineId) ? getLineFamilyIds(lines, lineId) : null;
   const scopedLines = famIds ? lines.filter(l => famIds.has(l.id))

@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useMemo, useRef, Fragment, lazy, Suspense } from 'react';
+import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
@@ -121,8 +122,7 @@ export default function MorningMeeting() {
     const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
     const base = orgSections.length ? orgSections : fromLines;
     const scoped = scopeSecs.length ? base.filter(s => inSectionScope(scopeSecs, s)) : base;
-    // คงลำดับตามผัง (org_nodes เรียง sort_order มาแล้ว) — .sort() ตัวอักษรเฉพาะ fallback ที่เดาจากไลน์
-    return orgSections.length ? [...new Set(scoped)] : [...new Set(scoped)].sort();
+    return sortLike(scoped, orgSections);   // ลำดับตามผัง · ค่านอกผังต่อท้าย (listOrder.js)
   }, [scopedLines, orgSections, scopeSecs]);
   const viewLines = useMemo(
     () => (secFilter ? scopedLines.filter(l => l.section === secFilter) : scopedLines),
@@ -145,8 +145,8 @@ export default function MorningMeeting() {
       const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
       setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
-      const { data: og } = await supabase.from('org_nodes').select('code, name').eq('kind', 'section').eq('is_active', true).order('name');
-      setOrgSections((og || []).map(n => n.code || n.name));
+      const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
+      setOrgSections(orgValues(og));
     })();
   }, []);
 

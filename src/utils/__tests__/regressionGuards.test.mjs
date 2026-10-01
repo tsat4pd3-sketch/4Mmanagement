@@ -108,6 +108,20 @@ const RULES = [
     },
   },
   {
+    id: 'org-list-raw-order',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ 2 ลายเซ็นที่ทำให้ "ส่วนงาน/แผนก/ทีม" เรียงคนละแบบต่อหน้า:
+         (1) ดึงผังองค์กรด้วย `.order('name')` (ทิ้ง sort_order ที่ admin ตั้งใน /org-setup)
+         (2) ลิสต์ส่วนงาน/รหัสผังที่สร้างจากข้อมูล แล้ว `.sort()` ดิบ */
+    re: /from\('org_nodes'\)[^;]{0,220}?\.order\('name'\)|\.(?:section|team)\)(?:\.filter\(Boolean\))?\)\]\.sort\(\s*\)|n\.code \|\| n\.name\)(?:\.filter\(Boolean\))?\)?\]?\.sort\(\s*\)/g,
+    why: 'dropdown ที่ใช้ซ้ำหลายหน้าเรียงคนละแบบ — user ทัก 01/10/2026 *"ดู dropdown ตัวอื่นๆ ที่ใช้เหมือนกันหลายหน้า '
+       + 'อย่าให้มั่ว"*: ผังองค์กรตัวเดียวกันถูกดึง order(name) / order(sort_order) / ไม่เรียง แล้ว .sort() ทับ ⇒ '
+       + '"แผนก" PD3 หน้าหนึ่ง LINE APRON ASSY → HYDROFORM (ตามผัง) อีกหน้า HYDROFORM → LINE APRON ASSY · แผนกช่าง QA→MTN / MTN→QA',
+    fix: 'ของจากผัง → `orgValues(nodes)` / `.sort(orgNodeCompare)` (select `sort_order` มาด้วย) · ลิสต์ที่สร้างจากข้อมูล → '
+       + '`sortLike(values, orgList)` (ค่านอกผังต่อท้าย) หรือ `.sort(naturalCompare)` — ทั้งหมดจาก `src/utils/listOrder.js`',
+    allow: {},
+  },
+  {
     id: 'line-names-raw-sort',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์

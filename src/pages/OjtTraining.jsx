@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -130,7 +131,7 @@ export default function OjtTraining() {
     const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
       supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       loadLinesRes(),
-      supabase.from('org_nodes').select('id, code, name, kind, parent_id').eq('is_active', true).order('sort_order'),
+      supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order').eq('is_active', true),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
       // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
       supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
@@ -138,8 +139,8 @@ export default function OjtTraining() {
     setLines(ln || []);
     setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
-    setOrgSections((org || []).filter(n => n.kind === 'section').map(n => n.code || n.name));
-    setOrgSectionNodes((org || []).filter(n => n.kind === 'section'));
+    setOrgSections(orgValues((org || []).filter(n => n.kind === 'section')));
+    setOrgSectionNodes((org || []).filter(n => n.kind === 'section').sort(orgNodeCompare));
     setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
     setTrainings(tr || []);

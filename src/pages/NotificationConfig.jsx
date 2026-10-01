@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient'
 import { toast } from '../components/Toast'
 import { deptNameOf } from '../utils/mtnTeams'
@@ -155,9 +156,8 @@ export default function NotificationConfig() {
     supabase.from('org_nodes').select('kind, code, name, sort_order').in('kind', ['section', 'department'])
       .then(({ data }) => {
         const nodes = data ?? []
-        const bySort = (a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999)
-        setSecOpts([...new Set(nodes.filter(n => n.kind === 'section').sort(bySort).map(n => n.code || n.name).filter(Boolean))])
-        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(bySort).map(n => n.name).filter(Boolean))])
+        setSecOpts(orgValues(nodes.filter(n => n.kind === 'section')))
+        setDeptOpts([...new Set(nodes.filter(n => n.kind === 'department').sort(orgNodeCompare).map(n => n.name).filter(Boolean))])
       })
     /* 🏷️ ป้ายราคา — สรุปฝั่ง server (RPC) เพราะต้องอ่าน notifications เป็นหมื่นแถว
        ดึงมา client เอง = ชนเพดาน 1000 แถว/คิวรี + ลาก egress ฟรี (กฎเหล็กข้อ 5)

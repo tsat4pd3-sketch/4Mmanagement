@@ -314,6 +314,8 @@ model: inherit
 - [ ] **F-LINEORDER ลำดับรายการไลน์** (2026-10-01 · UI-CONVENTIONS §5.3 ข้อ 9) — ทุกที่ต้องเป็น ส่วนงาน → แม่ → ลูก เรียงธรรมชาติ
   · เรียงชื่อไลน์ด้วย `.sort()` ดิบ / `localeCompare` = 🟡 (ใช้ `sortLineNames`/`lineNameCompare` · ด่าน `line-names-raw-sort` จับรูปแบบหลักได้แล้ว)
   · วาด `<option>` ไลน์เองโดยไม่ผ่าน `groupLineOptions(lineOptions(…))` = 🔴 (ไม่มีหัวกลุ่มส่วนงาน/ลำดับคนละแบบ)
+- [ ] **F-ORDER ลำดับรายการผังองค์กร** (2026-10-01 · UI-CONVENTIONS §5.3 ข้อ 10) — ส่วนงาน/แผนก/ทีม ต้องผ่าน `src/utils/listOrder.js`
+  · `from('org_nodes')…order('name')` / `.sort()` ดิบบนลิสต์ส่วนงาน-ทีม = 🟡 (ด่าน `org-list-raw-order`)
 - [ ] **F-MAT ลำดับ Part No. → Part Name → MAT SAP** (2026-09-30 · คำสั่ง user · UI-CONVENTIONS §6.21)
   · จอที่วาด `{row.mat_no}` ไว้**ก่อน** `{row.part_name}` / `{row.p_no}` ในบล็อกเดียวกัน = 🔴
   · ตารางที่คอลัมน์ MAT อยู่ก่อนคอลัมน์ชื่อชิ้นงาน = 🔴 (ต้องสลับทั้ง `<th>` และ `<td>`)
