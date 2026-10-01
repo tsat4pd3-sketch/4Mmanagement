@@ -1866,7 +1866,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const target = products.find(pr => up(pr.mat_no) === fileMat) || (fileMat ? null : selProduct);
     if (!target) {
       setSapBusy(false);
-      toast.error(`ไฟล์นี้เป็น BOM ของ ${parsed.root.mat_no || '(ไม่ระบุ)'} — ยังไม่มีใบ BOM ในระบบ กดปุ่ม "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ก่อน`);
+      toast.error(fileMat
+        ? `ไฟล์นี้เป็น BOM ของ ${parsed.root.mat_no} — ยังไม่มีใบ BOM ในระบบ กดปุ่ม "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ก่อน`
+        : 'ไฟล์ไม่ได้บอกเลข Material ของหัวใบ — เลือกใบ BOM ปลายทางจากลิสต์ซ้ายก่อน แล้วนำเข้าใหม่');
       return;
     }
     /* แถวปัจจุบันของ "ใบปลายทาง" (ไม่ใช่ใบที่เลือกค้างอยู่ — ไฟล์อาจเป็นของใบอื่น) */
@@ -2186,6 +2188,19 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             {headBusy ? 'กำลังเปิดใบ…' : '➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
           </button>
         )}
+        {/* 📥 นำเข้าจาก SAP — **อยู่แผงซ้าย ไม่ใช่ในหัวใบที่เลือก** (user 01/10: "ควรมีตั้งแต่ยังไม่กดที่พาร์ท")
+            ใบปลายทางมาจากเลข Material ในไฟล์อยู่แล้ว ⇒ ไม่ต้องเลือกพาร์ทก่อน
+            ไฟล์ที่ SAP คายมาเป็น .xls แต่เนื้อเป็น TSV UTF-16LE (รับ .txt/.tsv/.csv ด้วย) */}
+        {canCreate && (
+          <button onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
+            title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP — ระบบหาใบปลายทางจากเลข Material ในไฟล์เอง"
+            style={{ marginTop: 6, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
+              cursor: sapBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
+              background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.45)' }}>
+            {sapBusy ? '⏳ กำลังอ่าน…' : '📥 นำเข้า BOM จาก SAP'}
+          </button>
+        )}
+        <input ref={sapFileRef} type="file" accept=".xls,.txt,.tsv,.csv" style={{ display: 'none' }} onChange={handleSapFile} />
         {/* 🔩 ชิปแยกพาร์ทจริง / ขั้นตอน (OP) — ไม่ปนกันในลิสต์เดียว */}
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด */}
         <Segmented size="sm" label="ชนิด" value={kind} onChange={setKind} style={{ marginTop: 8 }}
@@ -2237,13 +2252,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
                   <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
-                  {/* 📥 นำเข้าจาก SAP — ไฟล์ที่ SAP คายมาเป็น .xls แต่เนื้อเป็น TSV UTF-16LE (รับ .txt/.tsv/.xls) */}
-                  <button onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
-                    title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP"
-                    style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(14,165,233,0.45)', cursor: sapBusy ? 'default' : 'pointer', background: 'rgba(14,165,233,0.10)', color: '#0ea5e9', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)', opacity: sapBusy ? 0.6 : 1 }}>
-                    {sapBusy ? '⏳ กำลังอ่าน…' : '📥 นำเข้าจาก SAP'}
-                  </button>
-                  <input ref={sapFileRef} type="file" accept=".xls,.txt,.tsv,.csv" style={{ display: 'none' }} onChange={handleSapFile} />
+
                 </div>
               )}
             </div>
