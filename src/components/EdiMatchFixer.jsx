@@ -4,6 +4,7 @@ import { toast } from './Toast';
 import ProductSelect from './ProductSelect';
 import { checkWrite } from '../utils/dbWrite';
 import { normKey } from '../utils/ediMerge';
+import { isFgMat } from '../utils/matPrefix';
 
 /* ─── 🔗 แก้คำเตือนจับคู่พาร์ท EDI บนจอ preview (2026-10-01 · คำสั่ง user) ──────────────
    user: *"แจ้ง error มาก็ไม่รู้จะไปแก้ยังไง · แจ้งให้เช็คว่าจับคู่ถูกมั้ย แล้วตัดสินใจอะไรได้"*
@@ -14,6 +15,8 @@ import { normKey } from '../utils/ediMerge';
 
    🔴 ระบบเสนอ คนตัดสิน — ไม่มีปุ่ม "ยืนยันทั้งหมด" ให้กดผ่านๆ (การเดาผิด = ออเดอร์เข้าเลข SAP ผิดทั้งเดือน)
    🔴 ไม่เขียน dr_products.p_no — 1 เลขพาร์ทลูกค้าผูกได้หลาย MAT ตาม ship-to ซึ่ง p_no เก็บไม่ได้
+   🏷️ งานต่างประเทศ: P/N ติดอยู่ที่ 2xx (ก่อนแพ็ค) ส่วนตัวขาย 1xx P/N ว่าง (user 01/10) ⇒ ข้อเสนอ "ตัวขาย"
+      มาจากการเดินขึ้น BOM (`edi.sold` คำนวณในตัวนำเข้า) · ปุ่ม 2xx ยังกดได้แต่ติดป้าย "ก่อนแพ็ค/ระหว่างทาง"
    เอกสาร: docs/modules/logistic-planner-sales.md §🔗 จับคู่พาร์ท */
 
 const box = (rgb) => ({
@@ -33,6 +36,11 @@ const btn = (primary) => ({
   border: `1px solid ${primary ? 'var(--accent)' : 'var(--border)'}`, fontFamily: 'var(--font-body)',
 });
 const LIMIT = 8;
+const soldBtn = {
+  fontSize: 12, fontWeight: 800, padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
+  background: 'rgba(34,197,94,0.14)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', fontFamily: 'var(--font-body)',
+};
+const wipTag = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 };
 
 export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
   const [busy, setBusy] = useState('');
@@ -59,6 +67,17 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     setBusy('');
   };
 
+  /** ปุ่ม "ตัวขาย" ที่ระบบเสนอ (จาก BOM/ชื่อ) — ใส่ไว้หน้าสุดเพราะเป็นคำตอบที่ถูกบ่อยสุดของงานต่างประเทศ */
+  const soldButtons = (part, shipTo, note) => (edi.sold?.[part] || []).map(c => (
+    <button key={`s-${c.mat_no}`} type="button" disabled={!!busy} style={soldBtn}
+      title={`${c.name || ''}${c.customer ? ` · ลูกค้า ${c.customer}` : ''}\nที่มา: ${c.why}`}
+      onClick={() => save(shipTo, part, c.mat_no, note || `ตัวขาย (${c.why})`)}>
+      🏷️ {c.mat_no}{c.customer ? ` · ${c.customer}` : ''}
+    </button>
+  ));
+  const matLabel = (c) => (
+    <>{c.mat_no}{c.customer ? ` · ${c.customer}` : ''}{!isFgMat(c.mat_no) && <span style={wipTag}>(ระหว่างทาง)</span>}</>
+  );
   const list = (k, arr) => (showAll[k] ? arr : arr.slice(0, LIMIT));
   const more = (k, arr) => arr.length > LIMIT && (
     <button type="button" style={{ ...btn(false), marginTop: 6 }} onClick={() => setShowAll(s => ({ ...s, [k]: !s[k] }))}>
@@ -75,6 +94,8 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
   const unm = edi.unmatched || [];
   /* ③ เดาจาก base part */
   const base = edi.baseMatched || [];
+  /* ④ จับได้แต่เป็น 2xx */
+  const nonFg = edi.nonFg || [];
 
   return (
     <>
@@ -83,20 +104,26 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
           <div style={head('#ef4444')}>🔴 {ambRows.length} คู่ (พาร์ท × ship-to) มีหลาย MAT — เลือกว่าปลายทางนี้ใช้ MAT ไหน</div>
           <div style={hint}>
             ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง ⇒ <b>MAT ที่เหลือดูเหมือนไม่มีใครสั่ง</b> ·
-            กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย
+            กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว 🏷️ = <b>ตัวขาย (1xx)</b> ที่ระบบหาจาก BOM ·
+            ปุ่มที่ติด (ระหว่างทาง) = MAT 2xx ก่อนแพ็ค ปกติไม่ใช่ตัวที่ลูกค้าสั่ง
           </div>
           {list('amb', ambRows).map(a => (
             <div key={`${a.part}|${a.st}`} style={row}>
               <span style={mono}>{a.part}</span>
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {lbl(a.st)}</span>
               <span style={{ flex: 1 }} />
-              {canEdit ? (a.cands || a.mats.map(m => ({ mat_no: m }))).map(c => (
-                <button key={c.mat_no} type="button" disabled={!!busy} style={btn(false)}
-                  title={[c.name, c.customer && `ลูกค้า ${c.customer}`].filter(Boolean).join(' · ')}
-                  onClick={() => save(a.st, a.part, c.mat_no, 'เลือกจาก MAT ที่ใช้ P/N เดียวกัน')}>
-                  {c.mat_no}{c.customer ? ` · ${c.customer}` : ''}
-                </button>
-              )) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.mats.join(' | ')}</span>}
+              {canEdit ? (
+                <>
+                  {soldButtons(a.part, a.st)}
+                  {(a.cands || a.mats.map(m => ({ mat_no: m }))).map(c => (
+                    <button key={c.mat_no} type="button" disabled={!!busy} style={btn(false)}
+                      title={[c.name, c.customer && `ลูกค้า ${c.customer}`].filter(Boolean).join(' · ')}
+                      onClick={() => save(a.st, a.part, c.mat_no, 'เลือกจาก MAT ที่ใช้ P/N เดียวกัน')}>
+                      {matLabel(c)}
+                    </button>
+                  ))}
+                </>
+              ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.mats.join(' | ')}</span>}
             </div>
           ))}
           {more('amb', ambRows)}
@@ -120,6 +147,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                 <span style={{ flex: 1 }} />
                 {canEdit && (
                   <>
+                    {soldButtons(part, scope[part] ?? '')}
                     <div style={{ minWidth: 240 }}>
                       <ProductSelect value={pick[part] || ''} onChange={o => setPick(p => ({ ...p, [part]: o?.mat_no || '' }))} />
                     </div>
@@ -156,6 +184,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
               <span style={{ flex: 1 }} />
               {canEdit && (
                 <>
+                  {soldButtons(b.part, '')}
                   <button type="button" disabled={!!busy} style={btn(true)}
                     onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>✓ ถูก</button>
                   <div style={{ minWidth: 220 }}>
@@ -168,6 +197,40 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
             </div>
           ))}
           {more('base', base)}
+          {readOnly}
+        </div>
+      )}
+
+      {nonFg.length > 0 && (
+        <div style={box('59,130,246')}>
+          <div style={head('#60a5fa')}>🏷️ {nonFg.length} พาร์ท จับคู่ได้ แต่เป็น MAT งานระหว่างทาง (2xx) ไม่ใช่ตัวขาย</div>
+          <div style={hint}>
+            ความต้องการลูกค้าควรลงที่ <b>ตัวขาย (1xx)</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
+            กดปุ่มเขียวเพื่อย้ายไปตัวขาย หรือกด <b>2xx นี้ถูกแล้ว</b> ถ้าลูกค้าสั่งตัวนี้จริง (ระบบจะไม่ถามซ้ำ)
+          </div>
+          {list('nonfg', nonFg).map(n => (
+            <div key={n.part} style={row}>
+              <span style={mono}>{n.part}</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {n.mat}{n.name ? ` · ${n.name}` : ''} · {n.shipTos.map(lbl).join(', ')}</span>
+              <span style={{ flex: 1 }} />
+              {canEdit && (
+                <>
+                  {soldButtons(n.part, '')}
+                  {!(edi.sold?.[n.part] || []).length && (
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบตัวขายใน BOM — เลือกเอง →</span>
+                  )}
+                  <div style={{ minWidth: 220 }}>
+                    <ProductSelect value={pick[n.part] || ''} onChange={o => setPick(p => ({ ...p, [n.part]: o?.mat_no || '' }))} />
+                  </div>
+                  <button type="button" disabled={!!busy || !pick[n.part]} style={btn(false)}
+                    onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
+                  <button type="button" disabled={!!busy} style={btn(false)}
+                    onClick={() => save('', n.part, n.mat, 'ยืนยัน: ลูกค้าสั่ง MAT 2xx นี้จริง')}>2xx นี้ถูกแล้ว</button>
+                </>
+              )}
+            </div>
+          ))}
+          {more('nonfg', nonFg)}
           {readOnly}
         </div>
       )}
