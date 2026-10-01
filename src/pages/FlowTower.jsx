@@ -77,7 +77,7 @@ export default function FlowTower() {
       //    select เฉยๆ โดน PostgREST ตัดที่ 1000 เงียบๆ แล้วยอด/ตัวนับต่ำเกินจริง (QC flow-audit #19/#36)
       //    ส่วน purchase_requests เคยพองเป็น 1,024 ใบ (96% เป็น cancelled จากบั๊ก lot_size) →
       //    ที่ต้องใช้คือ "จำนวน" อย่างเดียว ใช้ count query ไม่ดึงแถว = ไม่มีเพดาน 1000
-      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, wipPts, wipReq] = await Promise.all([
+      const [stock, ordersOpen, prodToday, childLots, rawAllQ, rawPendQ, purchQ, purchMovedQ, blocks, partLv, wipReq] = await Promise.all([
         fetchAllPages(() => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand'), { orderBy: ['line_name', 'mat_no'] }),
         openOnly(supabaseDR.from('customer_shipping_orders').select('qty, status')),
@@ -92,7 +92,9 @@ export default function FlowTower() {
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true })
           .in('status', ['ordered', 'received']).gte('ordered_at', since),
         supabaseDR.from('v_demand_flow_blocks').select('*').order('pending_qty', { ascending: false }),
-        supabase.from('wip_buffer_points').select('id'),
+        /* 🔴 2026-10-01 — เลิกนับ "จุด WIP" (`wip_buffer_points`) แล้ว · ชั้นควบคุมของหน้าไลน์คือ
+           **ไลน์ + พาร์ท** (`line_part_levels`) ไม่ใช่จุดย่อยในไลน์ — ตัวเลขจุดจึงไม่ตอบอะไรอีก */
+        supabaseDR.from('line_part_levels').select('line_name').eq('is_active', true),
         supabase.from('wip_replenish_requests').select('id, status'),
         // (ตัด customer_forecasts ทิ้ง — fcastQty ไม่เคยถูกแสดงผลที่ไหน แต่จ่าย egress ทุกรอบ poll + realtime event
         //  แถมโดน cap 1000 แถวเงียบ · QC flow-audit #25 · จะใช้จริงให้ sum ฝั่ง server เป็น view/rpc)
@@ -141,7 +143,8 @@ export default function FlowTower() {
         rawAll: rawAllQ.error ? null : (rawAllQ.count ?? 0),
         purchPending: purchQ.error ? null : (purchQ.count ?? 0),
         purchMoved7d: purchMovedQ.error ? null : (purchMovedQ.count ?? 0),
-        wipPts: (wipPts.data || []).length, wipReq: (wipReq.data || []).length,
+        lvParts: (partLv.data || []).length, lvLines: new Set((partLv.data || []).map(r => r.line_name)).size,
+        wipReq: (wipReq.data || []).length,
         blocks: blocks.data || [],
         blockQty: (blocks.data || []).reduce((a, b) => a + (Number(b.pending_qty) || 0), 0),
       });
@@ -192,8 +195,8 @@ export default function FlowTower() {
       lines: [[fmt(S.producedToday), 'ชิ้นวันนี้'], [`${fmt(S.sessAll)} กะ`, `เปิดอยู่ ${fmt(S.sessOpen)}`]],
       to: '/daily-report', st: S.producedToday > 0 ? 'flow' : 'idle' },
     { key: 'wip', divCode: 'production', icon: '🔄', name: 'WIP หน้าไลน์',
-      lines: [[`${fmt(S.wipPts)} จุด`, 'buffer ที่ตั้งไว้'], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
-      to: '/linesetup', st: S.wipReq > 0 ? 'flow' : 'idle' },
+      lines: [[`${fmt(S.lvParts)} พาร์ท`, `ตั้งจุดเรียกเติมแล้ว ${fmt(S.lvLines)} ไลน์`], [`${fmt(S.wipReq)} ใบ`, 'ใบเติมของ']],
+      to: '/daily-report', st: S.wipReq > 0 ? 'flow' : 'idle' },
     { key: 'store', divCode: 'logistic', icon: '📦', name: 'สโตร์พาร์ทย่อย',
       lines: [[fmt(S.subStock), 'ชิ้นคงเหลือ'], [`${fmt(S.subParts)} พาร์ท`, 'ในสโตร์']],
       to: '/line-stock', st: S.subStock > 0 ? 'flow' : 'idle' },
@@ -390,7 +393,7 @@ export default function FlowTower() {
                 ['สโตร์ย่อย → ไลน์ปั๊ม', 'ใบสั่งผลิตลูกตามขนาดล็อต', S.lotAll > 0 ? 'flow' : 'idle', `${fmt(S.lotAll)} ใบ · รู้ไลน์ปลายทางแล้ว ${fmt(S.lotRouted)} ใบ`],
                 ['ไลน์ปั๊ม → สโตร์วัตถุดิบ', 'ใบเบิกวัตถุดิบตามสูตรของพาร์ทลูก', S.rawAll > 0 ? 'flow' : 'idle', `ใบเบิก ${fmt(S.rawAll)} ใบ · ค้าง ${fmt(S.rawPending)}`],
                 ['→ สั่งซื้อวัตถุดิบ (Planning)', 'ระเบิด BOM → ออกใบสั่งซื้ออัตโนมัติ', S.purchMoved7d > 0 ? 'flow' : (S.purchPending > 0 ? 'block' : 'idle'), `ออกใบให้แล้ว ${fmt(S.purchPending)} ใบรอดำเนินการ · อีก ${fmt(S.blocks?.length)} พาร์ทออกใบไม่ได้เพราะยังไม่ตั้งขนาดล็อต`],
-                ['WIP หน้าไลน์', 'ใบเติมของจากจุด buffer', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดไว้ ${fmt(S.wipPts)} จุด · ใบเติม ${fmt(S.wipReq)} ใบ (ยังไม่เริ่มใช้)`],
+                ['WIP หน้าไลน์', 'ไลน์เบิกเองเมื่อต่ำกว่า min (ราย ไลน์+พาร์ท)', S.wipReq > 0 ? 'flow' : 'idle', `ตั้งจุดเรียกเติม ${fmt(S.lvParts)} พาร์ท ใน ${fmt(S.lvLines)} ไลน์ · ใบเติม ${fmt(S.wipReq)} ใบ`],
               ].map(([seg, mech, st, ev]) => (
                 <tr key={seg} style={{ borderTop: '1px solid var(--border)' }}>
                   <td style={{ padding: '8px 12px', fontWeight: 800, whiteSpace: 'nowrap' }}>{seg}</td>

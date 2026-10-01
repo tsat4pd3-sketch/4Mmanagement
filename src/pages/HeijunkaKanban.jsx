@@ -102,7 +102,7 @@ function LineBoardLink({ line }) {
 /* ── 🚚 แถบสถานการณ์โหมดส่งตามคำขอ — แทน PlannerStrip (ซึ่งเป็นของโหมดรอบ) เมื่อไม่มีรอบ (audit 2026-09-07)
    ตอบ 3 อย่างที่สโตร์ต้องรู้ตอนเปิดหน้า: ค้างกี่ใบแยกสถานะ · ใบไหนรอนานสุด · ใบที่ส่งแล้วแต่ไลน์ยังไม่กดรับ */
 function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
-  const tk = wipRequests.filter(w => !w.wip_point_id);
+  const tk = wipRequests;
   const n = (s) => tk.filter(w => w.status === s).length;
   const oldest = tk.filter(w => w.status === 'pending' && w.requested_at)
     .map(w => ({ w, min: Math.round((nowMs - new Date(w.requested_at).getTime()) / 60000) }))
@@ -133,7 +133,7 @@ function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
 const WIP_ST_SHORT = { pending: 'รอหยิบ', preparing: 'กำลังจัด', delivered: 'ส่งแล้ว รอไลน์รับ' };
 function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onGoQueue }) {
   const groupOf = (ln) => lineMap?.[ln]?.parent_line_name || ln;
-  const tickets = wipRequests.filter(w => !w.wip_point_id && groupOf(w.line_name) === lineName);
+  const tickets = wipRequests.filter(w => groupOf(w.line_name) === lineName);
   const byStatus = tickets.reduce((m, w) => { m[w.status] = (m[w.status] || 0) + 1; return m; }, {});
   const linkBtn = (label, fn) => (
     <button onClick={fn} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{label}</button>
@@ -1368,37 +1368,35 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
       {store === 'wip' && (<>
         {hiddenNote}
         {wipRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          ยังไม่มีคำขอ — มาจาก 3 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง · หรือกด "🔔 เรียกเติม" ที่ ⚙️ ตั้งค่าผังไลน์ → จุด WIP
+          ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
           {vWips.map(w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
-            const code = w.point_type === 'packaging' ? (w.packaging_no || w.packaging_type || w.point_name) : (w.mat_no || w.point_name);
-            /* ใบจากไลน์ (wip_point_id = null) ไม่มีชื่อจุด — ต้องบอกให้สโตร์รู้ว่าเอาไปส่ง "เข้าไลน์"
-               ไม่ใช่เติมจุด WIP จุดใดจุดหนึ่ง · เวลาที่ไลน์แจ้งคือคีย์เรียงคิว จึงโชว์ไว้ด้วย */
-            const fromLine = !w.wip_point_id;
+            /* 🔴 2026-10-01 — ใบขอเติมมีรูปแบบเดียว: "ส่งพาร์ทเข้าไลน์" (ชั้น พื้นที่→ไลน์→พาร์ท)
+               เลิกใบแบบ "เติมจุด WIP จุดใดจุดหนึ่ง" แล้ว (ไม่เคยถูกใช้จริงสักใบ — ทุกใบในฐานเป็นใบระดับไลน์)
+               คอลัมน์ `point_name`/`point_type`/`wip_point_id` ยังอยู่ในตารางเพื่ออ่านประวัติ ห้ามเขียนใหม่ */
+            const code = w.mat_no || w.point_name;
             const at = w.requested_at ? new Date(w.requested_at) : null;
             /* ใบจากไลน์: ขั้น "ถึงไลน์" ต้องผ่านสแกนจุดส่งก่อน (เฟส 4 — DeliverScanModal) ปุ่มจึงต้องบอกล่วงหน้า
                · ใบที่ส่งแล้วโชว์ว่าผ่านด่านทางไหน (สแกน / ไลน์ยังไม่ตั้งจุด / ปลดบล็อก) ห้ามซ่อน override */
-            const gate = fromLine && w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
+            const gate = w.status === 'delivered' && w.delivered_gate ? DELIVER_GATES[w.delivered_gate] : null;
             const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
-            const nextLabel = fromLine && w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : fromLine && w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
-            const pickMeta = fromLine && w.picked_qty != null && w.status !== 'pending'
+            const nextLabel = w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
+            const pickMeta = w.picked_qty != null && w.status !== 'pending'
               ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
             return (
-              <QueueCard key={w.id} code={code} showImg={w.point_type !== 'packaging'} img={imgOf(w.mat_no)}
-                name={fromLine ? (w.part_name || 'ไลน์ขอเบิกเข้าไลน์') : w.point_name}
+              <QueueCard key={w.id} code={code} showImg img={imgOf(w.mat_no)}
+                name={w.part_name || w.point_name || 'ไลน์ขอเบิกเข้าไลน์'}
                 qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
-                rows={fromLine
-                  ? [{ k: 'ที่มา', v: w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
+                rows={[{ k: 'ที่มา', v: w.source === 'store_forecast' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
                        v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
                      { k: 'หยิบแล้ว', v: pickMeta || null },
-                     { k: 'ถึงไลน์', v: gateMeta || null }]
-                  : [{ k: 'ชนิดจุด', v: w.point_type === 'packaging' ? '📦 packaging' : '🧱 material' }]} />
+                     { k: 'ถึงไลน์', v: gateMeta || null }]} />
             );
           })}
         </div>}
@@ -1723,7 +1721,7 @@ export default function HeijunkaKanban() {
   // (เดิม advanceRack/issuePkg ซ้ำที่นี่ด้วย → แข่งกันเขียน + พฤติกรรมต่าง · ยุบให้ RackCenter เป็นเจ้าของเดียว 2026-07-21)
   // บอร์ดนี้แสดงคิว rack/packaging แบบอ่านอย่างเดียว + ลิงก์ไป /rack-center
 
-  // เติมจุด WIP: pending → preparing → delivered — พอ delivered ค่อยบวก current_qty กลับที่จุดจริง (main supabase)
+  // ใบส่งพาร์ทเข้าไลน์: pending → preparing (สแกนพาร์ท · ตัดสต็อก) → delivered (สแกนจุดส่ง) → ไลน์กดรับ
   /* บันทึกครั้งที่ด่านบล็อก/override — ไม่บันทึกครั้งที่ผ่าน (docs §4.6) · best-effort: ล้มแล้วห้ามขวางการส่งของ แต่ต้องบอก */
   const logScanBlock = async (w, evt, step = 'deliver') => {
     if (!evt) return;
@@ -1818,15 +1816,15 @@ export default function HeijunkaKanban() {
     if (e2 && e2.code !== '42703') toast.error('ผูกเลข ledger กับใบไม่สำเร็จ: ' + e2.message);
   };
 
-  // gate = { payload, event } จาก DeliverScanModal / PickScanModal (ใบจากไลน์เท่านั้น)
+  // gate = { payload, event } จาก DeliverScanModal / PickScanModal
   const advanceWip = async (w, gate) => {
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
     if (!next) return;
-    /* เฟส 4 (ขั้น 7): ใบจากไลน์ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
-       ใบจุด WIP (wip_point_id) เป็นการเติมจุดในไลน์ ไม่ผ่านด่านนี้ */
-    if (next === 'delivered' && !w.wip_point_id && !gate) { setDeliverModal(w); return; }
-    /* ขั้น 5 (Smart Withdraw Kanban): ใบจากไลน์ต้องสแกนยืนยันพาร์ท + จำนวน ก่อนเป็น "กำลังเตรียม" — และยืนยันแล้วตัดสต็อกให้เลย */
-    if (next === 'preparing' && !w.wip_point_id && !gate) { setPickModal(w); return; }
+    /* เฟส 4 (ขั้น 7): ต้องสแกน QR จุดส่งก่อนมาร์กว่าถึงไลน์ — เปิดโมดัลแทนการเลื่อนสถานะทันที
+       🔴 ทุกใบผ่านด่านนี้ (เลิกใบแบบ "เติมจุด WIP" ที่เคยข้ามด่านไปแล้ว — 2026-10-01) */
+    if (next === 'delivered' && !gate) { setDeliverModal(w); return; }
+    /* ขั้น 5 (Smart Withdraw Kanban): ต้องสแกนยืนยันพาร์ท + จำนวน ก่อนเป็น "กำลังเตรียม" — และยืนยันแล้วตัดสต็อกให้เลย */
+    if (next === 'preparing' && !gate) { setPickModal(w); return; }
     setPullBusy(w.id);
     try {
       const payload = { status: next, ...(gate?.payload || {}) };
@@ -1835,7 +1833,7 @@ export default function HeijunkaKanban() {
          requested_at (ไลน์กด) → picked_at (เริ่มจัด) → delivered_at (ส่งถึง) → received_at (ผลิตเซ็นรับ) */
       if (next === 'preparing') { payload.picked_at = new Date().toISOString(); payload.picked_by_name = fullName || 'สโตร์'; }
       if (next === 'delivered') { payload.delivered_by = fullName || 'สโตร์'; payload.delivered_at = new Date().toISOString(); }
-      // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้น delivered ซ้ำ = บวก current_qty จุด WIP สองรอบ
+      // compare-and-swap กันกดซ้ำ/2 เครื่อง — ไม่งั้นใบเดียวถูกมาร์ก "ส่งแล้ว" 2 รอบจาก 2 เครื่อง
       let { data: updated, error } = await supabase.from('wip_replenish_requests')
         .update(payload).eq('id', w.id).eq('status', w.status).select('id');
       /* 42703 = คอลัมน์ delivered_* ยังไม่มี (ยังไม่ apply 20260903_wip_replenish_deliver_gate.sql)
@@ -1855,41 +1853,16 @@ export default function HeijunkaKanban() {
       setDeliverModal(null);
       setPickModal(null);
       // ขั้น "Scan for SAP update (Deduct stock)" — ยืนยันเตรียมแล้วตัดสต็อกให้เลย (STORE −qty · ไลน์ +qty)
-      if (next === 'preparing' && !w.wip_point_id && gate?.payload?.picked_qty > 0) await deductStockForPick(w, gate.payload.picked_qty);
-      let capNote = '';
-      if (next === 'delivered' && w.wip_point_id) {
-        /* 🔴🔴 ห้ามกลับไป update `wip_buffer_points` ตรงๆ จาก client
-           RLS ของตารางนั้นเขียนได้เฉพาะ admin/manager/supervisor แต่คนกดปุ่มนี้คือผู้ถือ heijunka:operate
-           วัดกับฐานจริง 2026-09-03: 44 บัญชี (leader 19 · qa 20 · planner_store 1 · document_control 2 · display 2)
-           **ไม่ผ่าน RLS สักคน — รวมถึง planner_store ซึ่งเป็นสโตร์ตัวจริงเจ้าของงานนี้**
-           และ RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" → โค้ดเดิมเช็คแค่ error จึงขึ้น "✅ เติมเรียบร้อย"
-           ทั้งที่ current_qty ไม่เคยขยับ (เทสสวมบทยืนยันแล้ว: planner_store update ตรง → rows=0)
-           → ผ่าน RPC wip_point_add_qty (SECURITY DEFINER · guard has_perm · ล็อกแถวกันกดพร้อมกัน) */
-        const { data: res, error: eQty } = await supabase
-          .rpc('wip_point_add_qty', { p_point_id: w.wip_point_id, p_add: w.request_qty });
-        const row = Array.isArray(res) ? res[0] : res;
-        if (eQty || !row) {
-          // สถานะ delivered ถูก claim ไปแล้ว = กดซ้ำไม่ได้ → คืนสถานะเดิมให้กดใหม่ได้
-          const { error: eBack } = await supabase.from('wip_replenish_requests')
-            .update({ status: w.status, delivered_by: null, delivered_at: null }).eq('id', w.id).eq('status', next);
-          throw new Error(eBack
-            ? `เติมยอดจุด WIP ไม่สำเร็จ และคืนสถานะเดิมไม่ได้ด้วย — ใบค้าง "ส่งแล้ว" ทั้งที่ยอดไม่ขึ้น แจ้ง admin (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`
-            : `เติมยอดจุด WIP ไม่สำเร็จ — คืนสถานะกลับแล้ว ลองกดใหม่ (${eQty?.message || 'ไม่ได้ผลลัพธ์กลับมา'})`);
-        }
-        // ชนเพดาน max_qty = ยอดที่ส่งจริงกับที่บันทึกต่างกัน ห้าม clamp เงียบ
-        if (row.capped) capNote = ` · ⚠ ส่ง ${w.request_qty} แต่ยอดชนเพดานจุด (สูงสุด ${row.cap_max}) — ระบบบันทึกยอดคงเหลือ ${row.new_qty} ส่วนที่เกินเพดานไม่ถูกนับ`;
-      }
-      const what = w.point_name || w.mat_no || 'รายการนี้';
-      /* ⚠️ ใบจากไลน์: ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่ตัด/บวกสต็อกให้เอง
-         (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะสโตร์บันทึกจ่ายเข้าไลน์อยู่แล้วอีกทาง)
+      if (next === 'preparing' && gate?.payload?.picked_qty > 0) await deductStockForPick(w, gate.payload.picked_qty);
+      const what = w.mat_no || w.part_name || 'รายการนี้';
+      /* ⚠️ ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่บวกสต็อกให้เองตอนส่งถึง
+         (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะตัดไปแล้วตอนสโตร์ยืนยันเตรียม ขั้น 5)
          ⇒ ต้องเตือนบนจอ ห้ามให้เข้าใจว่ายอดขยับให้แล้ว */
-      const doneMsg = w.wip_point_id
-        ? `✅ เติม ${what} เรียบร้อย${capNote}`
-        : `🚚 ส่ง ${what} แล้ว — รอไลน์ ${w.line_name} กดยืนยันรับ`;   // สต็อกตัดไปแล้วตอนยืนยันเตรียม (ขั้น 5)
-      if (next === 'delivered' && capNote) toast.error(doneMsg);   // ชนเพดาน = ต้องเห็นชัด ไม่ใช่เขียวกลืนไป
-      else toast.success(next === 'delivered' ? doneMsg
-        : next === 'preparing' && !w.wip_point_id ? `🔧 เริ่มเตรียม ${what} — ตัดสต็อกให้แล้ว หยิบเสร็จไปวางที่ไลน์แล้วกด "ถึงไลน์แล้ว"`
-        : `อัปเดต ${what} → ${next}`);
+      toast.success(next === 'delivered'
+        ? `🚚 ส่ง ${what} แล้ว — รอไลน์ ${w.line_name} กดยืนยันรับ`
+        : next === 'preparing'
+          ? `🔧 เริ่มเตรียม ${what} — ตัดสต็อกให้แล้ว หยิบเสร็จไปวางที่ไลน์แล้วกด "ถึงไลน์แล้ว"`
+          : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
