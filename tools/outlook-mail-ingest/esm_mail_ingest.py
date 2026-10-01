@@ -38,7 +38,7 @@ DEFAULTS = {
         # <ชื่อกล่องตามที่เห็นใน Outlook>/Inbox/... = เจาะกล่องเดียว เช่น Dulyatrust2025/Inbox
         'folder': 'Inbox',
         'subject_regex': r'FTM_AAT.*830.*862',
-        'sender_contains': 'Sasiyawan',
+        'sender_contains': 'Sasiyawan,Sineenith',
         'attachment_regex': r'^(830|862)_.*\.(xlsx|xlsm|xls)$',
         'lookback_days': '7',
         'interval_minutes': '15',
@@ -189,9 +189,10 @@ def check_mail(cfg, item):
     if not re.search(m['subject_regex'], item.Subject or '', re.I):
         return False, '', [], 'หัวเรื่องไม่เข้า'
     snd = sender_of(item)
-    who = m['sender_contains'].strip().lower()
-    if who and who not in snd.lower():
-        return False, snd, [], f'ผู้ส่งไม่มีคำว่า "{who}"'
+    # หลายคนคั่นด้วยจุลภาค (คนส่งรายงานเดียวกันแทนกันได้ เช่น Sasiyawan,Sineenith) · ว่าง = ไม่กรองผู้ส่ง
+    who = [w.strip().lower() for w in m['sender_contains'].split(',') if w.strip()]
+    if who and not any(w in snd.lower() for w in who):
+        return False, snd, [], f'ผู้ส่ง "{snd}" ไม่อยู่ในรายชื่อ ({", ".join(who)})'
     allatt = [item.Attachments.Item(i) for i in range(1, item.Attachments.Count + 1)]
     atts = [a for a in allatt if re.search(m['attachment_regex'], a.FileName or '', re.I)]
     if not atts:
