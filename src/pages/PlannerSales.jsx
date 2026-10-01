@@ -380,7 +380,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         if (issueParts.size) {
           const [bomRes, allProds] = await Promise.all([
             fetchAllPages(() => supabaseDR.from('bom_items').select('id, product_id, mat_no, parent_mat, is_active').eq('is_active', true)),
-            supabaseDR.from('dr_products').select('id, mat_no, name, customer, is_active'),
+            supabaseDR.from('dr_products').select('id, mat_no, name, customer, is_active, p_no'),
           ]);
           if (!bomRes.error && !allProds.error) {
             const plist = allProds.data || [];
@@ -388,7 +388,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             const info = Object.fromEntries(plist.map(x => [x.mat_no, x]));
             const up = buildParentIndex(bomRes.rows, matOfProduct);
             const fgActive = plist.filter(x => x.is_active !== false && isFgMat(x.mat_no));
+            /* 🔴 ตัดข้อเสนอที่ผิดแน่ๆ (เห็นจริง 01/10: ARG ได้ปุ่ม 10100817 FTM เพราะใช้ชิ้นส่วนร่วมกันใน BOM)
+               ① 1xx ที่มี P/N ของตัวเองเป็นเลขอื่น = ตัวขายของพาร์ทอื่น ไม่ใช่ของพาร์ทนี้
+               ② อยู่ในรายการตัวเลือกอยู่แล้ว (ปุ่มปกติ) ไม่ต้องซ้ำเป็นปุ่มเขียว */
+            const ownPnOk = (mat, part) => {
+              const pn = info[mat]?.p_no;
+              return !pn || norm(pn) === norm(part) || baseOfPart(pn) === baseOfPart(part);
+            };
             issueParts.forEach(part => {
+              const inCands = new Set((guessed.get(part)?.mats || []));
               const seeds = new Set([
                 ...(guessed.get(part)?.mats || []), baseHits.get(part), nonFgHits.get(part)?.mat,
               ].filter(Boolean));
@@ -396,16 +404,26 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               seeds.forEach(m => {
                 if (isFgMat(m)) return;
                 targetAncestorsOf(m, up, isFgMat).forEach(a => {
-                  if (info[a.mat]?.is_active === false || out.has(a.mat)) return;
-                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `BOM: ${m} → ${a.via.join(' → ')}` });
+                  if (info[a.mat]?.is_active === false || inCands.has(a.mat) || !ownPnOk(a.mat, part)) return;
+                  const prev = out.get(a.mat);
+                  if (prev && prev.depth <= a.via.length) return;
+                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `BOM: ${m} → ${a.via.join(' → ')}`, depth: a.via.length });
                 });
               });
               const k = norm(part);
               if (k.length >= 8) fgActive.forEach(x => {
-                if (!out.has(x.mat_no) && norm(x.name).includes(k))
-                  out.set(x.mat_no, { mat_no: x.mat_no, name: x.name, customer: x.customer, why: 'ชื่อสินค้ามีเลขพาร์ทนี้' });
+                if (!inCands.has(x.mat_no) && ownPnOk(x.mat_no, part) && norm(x.name).includes(k)) {
+                  const prev = out.get(x.mat_no);
+                  out.set(x.mat_no, { mat_no: x.mat_no, name: x.name, customer: x.customer, depth: prev?.depth ?? 99, nameHit: true,
+                    why: prev ? `${prev.why} + ชื่อสินค้ามีเลขพาร์ทนี้` : 'ชื่อสินค้ามีเลขพาร์ทนี้' });
+                }
               });
-              if (out.size) sold[part] = [...out.values()];
+              /* ชิ้นส่วนร่วม (เช่น ตัวก่อนชุบ) ขึ้นไปเจอตัวขายของหลายพาร์ท ⇒ เก็บเฉพาะ "ใกล้สุด" + ที่ชื่อมีเลขพาร์ท
+                 ตัวขายของจริงอยู่ห่างตัวก่อนแพ็คแค่ชั้น PACK (เคสจริง 10102017 → 20067541 → 20067543 = 2 ชั้น) */
+              const minDepth = Math.min(...[...out.values()].map(v => v.depth));
+              const keep = [...out.values()].filter(v => v.nameHit || v.depth === minDepth)
+                .sort((a, b) => (b.nameHit ? 1 : 0) - (a.nameHit ? 1 : 0) || a.depth - b.depth);
+              if (keep.length) sold[part] = keep;
             });
           }
         }
