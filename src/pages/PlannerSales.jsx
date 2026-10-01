@@ -407,7 +407,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   if (info[a.mat]?.is_active === false || inCands.has(a.mat) || !ownPnOk(a.mat, part)) return;
                   const prev = out.get(a.mat);
                   if (prev && prev.depth <= a.via.length) return;
-                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `BOM: ${m} → ${a.via.join(' → ')}`, depth: a.via.length });
+                  out.set(a.mat, { mat_no: a.mat, name: info[a.mat]?.name, customer: info[a.mat]?.customer, why: `หาจาก BOM (ห่าง ${a.via.length} ชั้น)`, depth: a.via.length });
                 });
               });
               const k = norm(part);
