@@ -88,3 +88,14 @@
 - เทส `lineOrder.test.mjs` (ข้อมูลทะเบียนจริง · สลับลำดับ input แล้วผลต้องเท่าเดิม) · ด่าน `line-names-raw-sort`
 - ตรวจบนจอจริง: `audit/linelab.html` (ทะเบียนจริง 4 แบบ: ทั้งโรงงาน · ส่วนงานเดียว · มีกลุ่มคลัง · ตะกร้าท้าย) · crashsweep 78 หน้า พัง 0
 - ไม่แตะ: รายชื่อ "ส่วนงาน" (PD1–PD4 เรียง `.sort()` ได้ถูกอยู่แล้ว) · LineSetup (หน้าตั้งค่า ตารางเรียงตามที่ผู้ตั้งเห็น)
+
+## รอบ 5 — dropdown อื่นที่ใช้ซ้ำหลายหน้า (01/10 · user: "ดู dropdown ตัวอื่นๆ ด้วย อย่าให้มั่ว")
+- ตรวจครบ: picker กลาง 9 ตัว (ตัวโหลดจุดเดียว ✅) · ทะเบียน sort_order (process types/ทีมช่าง/ฝ่าย ✅) ·
+  **ผังองค์กร ❌** — ดึง 3 แบบ (`order('name')` 6 จุด · `order('sort_order')` 7 จุด · ไม่เรียง 2 จุด) + `.sort()` ทับอีก ~25 จุด
+- ผลที่เห็นได้จริง (ผัง MAIN 01/10): แผนก PD3 `LINE APRON ASSY → HYDROFORM` (ผัง) vs `HYDROFORM → LINE APRON ASSY` (ตัวอักษร)
+  · แผนกช่าง `DIE/JIG MTN → QA → MTN` vs `… MTN → QA` · ProductionPlan กับ MorningMeeting สูตรเดียวกันแต่เรียงต่างกัน
+  · Report แท็บช่วงวันที่ = แท็บเดียวที่ส่วนงานไม่อ่านผัง
+- แก้: `src/utils/listOrder.js` (naturalCompare · orgNodeCompare · orgValues · sortLike) — hooks/`deptOptionsFor`/`buildOrgScope`/
+  13 หน้าใช้ตัวเดียวกัน · ตัวเลือกเครื่อง groupByLine เรียงกลุ่มตามลำดับไลน์มาตรฐาน · `lineNameCompare` = `naturalCompare`
+- เทส `listOrder.test.mjs` (ผังจริง) · ด่าน `org-list-raw-order` ทดสอบกับไฟล์ก่อนแก้ จับได้ (Report 13 · useOrgSections 4 · Dashboard 3 · Checkin 3)
+- ⚠️ ข้อมูล: ผังมีส่วนงาน `TEST` + แผนก `test groupe` **is_active = true** ⇒ โผล่ใน dropdown ส่วนงานทุกหน้า — ปิดได้ที่ /org-setup (ไม่แก้ข้อมูลให้เอง)

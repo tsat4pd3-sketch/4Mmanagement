@@ -4,6 +4,7 @@
    Workflow: 1 แจ้งซ่อม → 2 รับ/จ่ายงาน(ออกเลข MO) → 3 ซ่อม → 4 ตรวจ → 5 คุณภาพ(เฉพาะงานคุณภาพ)
              → 6 รับมอบ/ติดตาม → 7 อนุมัติปิด (Close MO)
    สิทธิ์ (role_permissions): mtn_repair:report/service/qa/approve/manage_master · ดู docs/PERMISSIONS-DESIGN.md */
+import { sortLike } from '../utils/listOrder';
 import { useState, useEffect, useContext, useMemo, useRef, useCallback } from 'react';
 import { imgExt } from '../utils/resizeImage';
 /* 🖼️ กติการูปใบ MO (16:9 · webp · bucket) อยู่ที่เดียว — ห้ามประกาศซ้ำในหน้า */
@@ -676,7 +677,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
   const reporterHist = useColumnHistory(supabaseDR, 'mtn_orders', 'reporter_prod');
   const customerHist = useColumnHistory(supabaseDR, 'mtn_orders', 'customer');
   const sectionOpts = useMemo(
-    () => (orgSections.length ? orgSections : [...new Set(lines.map(l => l.section).filter(Boolean))].sort()),
+    () => (orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections)),
     [orgSections, lines],
   );
   // ครอบครัวไลน์ที่เลือก — ให้ picker เครื่อง/คน "ขึ้นก่อน" (ไม่ตัดไลน์อื่น: เครื่องลงทะเบียนไว้ที่ไลน์ลูก แต่ใบเปิดที่ไลน์แม่มีจริง)

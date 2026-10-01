@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
+import { naturalCompare } from '../utils/listOrder';
 import {
   LineChart, Line, BarChart, Bar, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -401,7 +402,7 @@ export default function OEEAnalytics() {
   const sectionOptions = useMemo(() => {
     const inLines = new Set(linesFull.map(l => l.section).filter(Boolean));
     const fromOrg = orgSections.filter(sec => inLines.has(sec));
-    return fromOrg.length ? fromOrg : [...inLines].sort();
+    return fromOrg.length ? fromOrg : [...inLines].sort(naturalCompare);
   }, [orgSections, linesFull]);
 
   /* ⚠️ ส่วนงานที่เจาะมาอาจ **อยู่นอกขอบเขตของคนที่กดเปิดลิงก์** (คนละ role/scope)

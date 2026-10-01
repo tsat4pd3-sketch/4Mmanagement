@@ -193,3 +193,5 @@ dropdown ยืดเกินครึ่งจอ · ช่องในแถ�
 - 2026-10-01 ลำดับ dropdown/ลิสต์ไลน์ (user: *"บางหน้าโอเค บางหน้าเรียงมั่ว ไม่มีแพทเทิร์นในการเรียง"*) —
   `toHierarchicalOptions` เรียงเอง (ส่วนงาน→แม่→ลูก · ธรรมชาติ) + หัวกลุ่ม 🏭 PDx ใน `<LineSelect>` ·
   `sortLineNames`/`lineNameCompare` สำหรับลิสต์ชื่อจากข้อมูล · ด่าน `line-names-raw-sort` · lab `audit/linelab.html`
+- 2026-10-01 ลำดับรายการที่ใช้ซ้ำหลายหน้า (user: *"dropdown ตัวอื่นๆ ที่ใช้เหมือนกันหลายหน้า อย่าให้มั่ว"*) — `src/utils/listOrder.js`
+  ผังองค์กร = `sort_order` → ชื่อธรรมชาติ · ลิสต์จากข้อมูล `sortLike` · ด่าน `org-list-raw-order` (UI-CONVENTIONS §5.3 ข้อ 10)

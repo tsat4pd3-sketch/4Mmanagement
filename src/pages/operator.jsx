@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useRef, useMemo, startTransition, lazy, Suspense } from 'react';
+import { orgNodeCompare, naturalCompare, sortLike } from '../utils/listOrder';
 import { Link } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { STAFF_SUPPORT, isShopfloorStaff } from '../utils/staffKind';   // 👥 หน้างาน vs สายสนับสนุน (แกนเช็คชื่อ)
@@ -242,16 +243,16 @@ export default function Operator() {
     // ⚠️ ต้อง select `division` ด้วย — ใช้ไล่หา "ฝ่าย" ของพนักงานแบบตกทอดจาก node แม่
     //    (คอลัมน์ใหม่ 2026-08-18 · ถ้ายังไม่ apply migration จะได้ undefined = ทุกสกิลเป็นของทุกฝ่าย
     //     ซึ่งคือพฤติกรรมเดิมเป๊ะ ไม่พัง)
-    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division').eq('is_active', true).order('sort_order')
+    supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, division, sort_order').eq('is_active', true)
       .then(({ data, error }) => {
         if (!alive) return;
         // คอลัมน์ division ยังไม่มี (42703) → ถอยไป select ชุดเดิม อย่าให้ทั้งหน้าพัง
         if (error) {
-          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id').eq('is_active', true).order('sort_order')
-            .then(({ data: d2 }) => { if (alive) applyOrgNodes(d2 || []); });
+          supabase.from('org_nodes').select('id, code, name, kind, parent_id, labor_type, ref_line_id, sort_order').eq('is_active', true)
+            .then(({ data: d2 }) => { if (alive) applyOrgNodes([...(d2 || [])].sort(orgNodeCompare)); });
           return;
         }
-        applyOrgNodes(data || []);
+        applyOrgNodes([...(data || [])].sort(orgNodeCompare));   // ลำดับผังมาตรฐาน (listOrder.js)
       });
     loadDivisions().then(() => { if (alive) setDivisionsReady(v => v + 1); });
     loadPmTeams().then(rows => { if (alive) setMtnTeamRows(rows || []); });
@@ -755,7 +756,7 @@ export default function Operator() {
 
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
   const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
-  const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(), [allEmps, orgSectionOpts]);
+  const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(naturalCompare), [allEmps, orgSectionOpts]);
   // ประเภทแรงงาน direct/indirect derive จาก department ก่อน แล้ว section (ตั้งที่ผังองค์กร) — laborType.js
   // ช่างส่วนใหญ่อยู่ระดับแผนก → รวมทั้ง section + department nodes ใน map
   const laborMap = useMemo(() => buildLaborMap([...orgSectionNodes, ...orgDeptNodes]), [orgSectionNodes, orgDeptNodes]);
@@ -821,7 +822,7 @@ export default function Operator() {
       .filter(g => !orgGroupKeys.has(String(g).trim().toLowerCase())).sort()
   , [orgGroupKeys, empsInDept]);
   const groupOpts   = useMemo(() => [...groupOrgList, ...groupLegacyList], [groupOrgList, groupLegacyList]);
-  const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(), [empsInDept, filterGroup]);
+  const teamOpts    = useMemo(() => [...new Set(empsInDept.filter(e => !filterGroup || e.group_name === filterGroup).map(e => e.team).filter(Boolean))].sort(naturalCompare), [empsInDept, filterGroup]);
 
   // ── รายชื่อ "ข้อมูลไม่ตรงผังองค์กร" (worklist สำหรับไล่แก้ · 2026-08-06) ──
   // ฟอร์มเพิ่ม/แก้พนักงานเป็น dropdown จากผังล้วนแล้ว (พิมพ์เองไม่ได้) — ที่ค้างอยู่คือข้อมูลเก่า
@@ -857,8 +858,8 @@ export default function Operator() {
   const offOrgStat = useMemo(() => {
     const rows = (showInactive ? inactiveEmployees : employees).filter(e => offOrgReasons(e).length);
     const blocked = rows.filter(e => e.section && secWithoutDept.has(e.section));
-    return { total: rows.length, blocked: blocked.length, blockedSecs: [...new Set(blocked.map(e => e.section))].sort() };
-  }, [employees, inactiveEmployees, showInactive, offOrgReasons, secWithoutDept]);
+    return { total: rows.length, blocked: blocked.length, blockedSecs: sortLike(blocked.map(e => e.section), sectionOpts) };
+  }, [employees, inactiveEmployees, showInactive, offOrgReasons, secWithoutDept, sectionOpts]);
 
   const displayed = useMemo(() => (showInactive ? inactiveEmployees : employees)
     .filter(emp => !filterSection || emp.section    === filterSection)
