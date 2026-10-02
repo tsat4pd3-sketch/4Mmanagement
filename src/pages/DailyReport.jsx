@@ -23,6 +23,7 @@ import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '.
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
+import { pairQtyPlan, pairOrderGaps } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { getDocForm, fullCode } from '../utils/docForms';
 import EventComments from '../components/EventComments';
@@ -1824,6 +1825,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadProdOrders(selSession.id, selSession.line_name);
   };
 
+  /* 👯 ลงยอดอีกข้างของงานคู่ RH/LH — **เสนอ ไม่เขียนเงียบ** (02/10 · feedback "ได้งานข้างเดียว")
+     ปั๊มทีเดียวได้ 2 ชิ้น ⇒ ยอดควรเท่ากัน แต่ RH/LH บางคู่เสียไม่เท่ากันจริง (วัดจริง 4 คู่)
+     ⇒ ถามก่อนทุกครั้ง · กติกา/การตัดสินใจอยู่ `src/utils/pairOrder.js` ห้ามคิดเองที่นี่ */
+  const syncPairQty = async (o, qty, { close = false } = {}) => {
+    const partner = o?.paired_order_id ? prodOrders.find(x => x.id === o.paired_order_id) : null;
+    const plan = pairQtyPlan(o, partner, qty);
+    if (!plan) return;
+    const ok = window.confirm(
+      `งานคู่ RH/LH — ใบ ${plan.partner.prod_no} (${plan.partner.mat_no}) ยอดอยู่ที่ ${plan.from} ชิ้น\n` +
+      `ลงยอดเป็น ${plan.to} ชิ้นให้ด้วยเลยมั้ย?` +
+      (plan.locked ? '\n\n⚠️ ใบคู่ปิด/ยืนยันไปแล้ว — กดตกลงจะไปทับยอดของใบที่ปิดแล้ว' : '') +
+      '\n\n(กดยกเลิก = ลงเฉพาะใบนี้ อีกข้างไปลงเอง)');
+    if (!ok) return;
+    const nowIso = new Date().toISOString();
+    const payload = close
+      ? { status: 'confirmed', confirmed_by: fullName, confirmed_at: nowIso, qty: plan.to, qty_ok: plan.to, qty_actual: plan.to, qty_updated_at: nowIso }
+      : { qty_actual: plan.to, qty_updated_at: nowIso };
+    // RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้องนับแถว ห้ามขึ้นเขียวจาก !error อย่างเดียว
+    const res = await supabaseDR.from('prod_orders').update(payload).eq('id', plan.partner.id).select('id');
+    if (!checkWrite(res, `ลงยอดใบคู่ ${plan.partner.prod_no}`)) return;
+    if (!(res.data || []).length) { toast.error(`ลงยอดใบคู่ ${plan.partner.prod_no} ไม่สำเร็จ — สิทธิ์เขียนไม่พอ`); return; }
+    await supabaseDR.from('prod_order_qty_updates')
+      .insert({ order_id: plan.partner.id, qty_accum: plan.to, qty_delta: plan.to - plan.from, is_final: close, logged_by: fullName })
+      .then(() => {}, () => {});
+    toast.success(`ลงยอดใบคู่ ${plan.partner.prod_no} · ${plan.to} ชิ้น ✓`);
+  };
+
   const handleManualQtyUpdate = async (o) => {
     const v = parseInt(manualQtyDraft[o.id]);
     if (isNaN(v) || v < 0) { toast.error('กรอกยอดสะสม (ชิ้น) ก่อน'); return; }
@@ -1840,6 +1868,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     await supabaseDR.from('prod_order_qty_updates')
       .insert({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }).then(() => {}, () => {});
     toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น (${delta >= 0 ? '+' : ''}${delta} จากครั้งก่อน) ✓`);
+    await syncPairQty(o, v);
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
@@ -1860,6 +1889,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     await supabaseDR.from('prod_order_qty_updates')
       .insert({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName }).then(() => {}, () => {});
     toast.success(`ปิดใบ ${o.prod_no} · ${finalQty} ชิ้น ✓`);
+    await syncPairQty(o, finalQty, { close: true });
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
     loadProdOrders(selSession.id, selSession.line_name);
   };
@@ -3123,6 +3153,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <span style={{ fontSize: 11, color: 'var(--muted)', transform: prodOrdersOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
                   📦 Prod Orders ({prodOrders.length} ใบ)
                 </div>
+                {/* 👯 งานคู่ RH/LH ที่ยังขาดอีกข้าง — ต้นเหตุของ "คอนเฟิร์มยอดแล้วได้งานข้างเดียว" (02/10)
+                    วัดจริง 60 วัน: ใบของสินค้างานคู่ 676 ใบ · ไม่มีใบอีกข้างเลย 111 ใบ · มีแต่ไม่ผูก 128 ใบ
+                    🔴 ห้ามซ่อน — ไม่งั้นรู้ตัวตอนสรุปยอดปลายกะ ซึ่งแก้ไม่ทันแล้ว */}
+                {prodOrdersOpen && (() => {
+                  const g = pairOrderGaps(prodOrders, pairOf);
+                  if (!g.missing.length && !g.unlinked.length) return null;
+                  const chip = (bg, fg, txt, title) => (
+                    <span title={title} style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 10,
+                      background: bg, color: fg, border: `1px solid ${fg}44`, whiteSpace: 'nowrap' }}>{txt}</span>
+                  );
+                  return (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {g.missing.length > 0 && chip('rgba(239,68,68,0.12)', '#ef4444',
+                        `👯 ยังไม่มีใบอีกข้าง ${g.missing.length}`,
+                        'งานคู่ RH/LH ที่เปิดไว้ข้างเดียว — คอนเฟิร์มยอดแล้วจะได้ข้างเดียว\n' +
+                        g.missing.map(x => `${x.order.mat_no} → ขาดคู่ ${x.pair_mat_no}`).join('\n'))}
+                      {g.unlinked.length > 0 && chip('rgba(245,158,11,0.12)', '#f59e0b',
+                        `👯 มีคู่แต่ยังไม่ผูก ${g.unlinked.length}`,
+                        'ใบของทั้ง 2 ข้างเปิดอยู่ แต่ยังไม่ผูกต่อกัน — ลงยอดแล้วอีกข้างจะไม่ขยับตาม\n' +
+                        g.unlinked.map(x => `${x.order.prod_no} (${x.order.mat_no}) ↔ ${x.candidate.prod_no}`).join('\n'))}
+                    </div>
+                  );
+                })()}
                 {canScan && prodOrdersOpen && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={() => { setShowScanOpen(true); setOpenProdForm({ prod_no: '', mat_no: '', qty: '' }); setOpenProdStd(null); }}
