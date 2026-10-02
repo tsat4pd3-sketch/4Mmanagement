@@ -318,13 +318,35 @@ user ส่งไฟล์จริง `1.Monitoring-Sep.xlsx` มา: *"ไฟ�
 > - **response ต้องกางเหตุผลออกมา ไม่ใช่ true/false** → เพิ่ม `mid_orders_recent` / `min_live_orders` / `live_window_days` / `live_phases` (บั๊กนี้ซ่อนได้ 7 วันเพราะ response ไม่บอกที่มา)
 > - **หลักที่ใช้ซ้ำได้ทุกที่:** heuristic ที่ผลลัพธ์คือ "เปิด/ปิดการเตือนทั้งระบบ" ต้องใช้ **เกณฑ์เชิงปริมาณ + หน้าต่างเวลา** เสมอ · `.some()` / `count > 0` แปลว่า **ข้อมูลผิดแถวเดียวพลิกทั้งระบบ** · และต้อง **รายงานตัวเลขที่ใช้ตัดสินออกมาใน response/log** ไม่งั้นพังเงียบ
 
+### 📥 รับเข้าคลังแบบนับก่อนรับ — `stock_receipts` (2026-10-02 · คำสั่ง user)
+
+user: *"ระบบรับอัตโนมัติถ้าปิด จะเป็นยังไง คนรับจะต้องคอนเฟิมใช่มั้ย เช็คหน้างานจริงก่อนถ้าตรงค่อยกดรับ"*
+
+**ต้นเหตุ:** กฎ `stock_inflow_rules` มีแค่ เปิด/ปิด และ **"ปิด" = trigger `return null` = ของไม่เข้าคลังเลย**
+ไม่มีคิว ไม่มีแจ้งเตือน · 02/10 11:48 ADMIN ปิดทั้ง 2 กฎ (ตั้งใจให้คนยืนยัน) ⇒ ทั้งกะ ~120 ใบหายเงียบ
+(ปกติเข้า FG ~76 ใบ/วัน · STORE ~44 ใบ/วัน)
+
+**ใครทำอะไร:** ไลน์สแกนปิดใบผลิต (**ผู้ส่ง**) → trigger ออกใบ `stock_receipts` status `pending` (ยังไม่บวกสต็อก)
+→ คลังปลายทาง (**ผู้รับ** · สิทธิ์ `line_stock:issue`) นับของจริงที่ `/line-stock?tab=receipts`
+→ ตรง = "นับแล้วตรง · รับ N" · ไม่ตรง = กรอกยอดที่นับได้ + เหตุผล (บังคับ) → RPC `stock_receipt_confirm`
+(ธุรกรรมเดียว: ล็อกใบ → insert `line_stock_transactions` ตามยอดที่นับได้ `created_by` = คนรับ → ปิดใบ)
+- 🔴 **กฎมี 3 ทาง** (`utils/stockReceipts.js` `INFLOW_MODES`) — 🟢 auto · 🟡 confirm · ⚫ ปิด · ปิดต้อง confirm dialog บอกผลตรงๆ
+- 🔴 **ห้ามเขียนกดรับเป็น 2 คำสั่งจาก client** (กฎเหล็ก DB ข้อ 6) — ใช้ RPC เท่านั้น
+- 🔴 **ถอยใบผลิต (DailyReport `handleRevertOrder`) ต้องยกเลิกใบรอรับด้วย** (มีด่าน regressionGuards) ·
+  ใบที่คลังรับไปแล้ว = ของถึงจริง **ห้ามถอนเงียบ** → toast บอกให้คลังปรับยอดเอง
+- ค้างเกิน `stock_inflow_rules.stale_after_min` (default 240 น.) = โซนแดง "ค้างเกินกำหนด"
+- ⚠️ ไม่มี FK ไป `prod_orders` โดยตั้งใจ (สร้าง FK ต้องล็อกตารางร้อนที่สุด — apply ค้าง timeout)
+- ⚠️ ระหว่างใบรอรับ ยอด FG ในระบบ**ต่ำกว่าของจริง** (ของอยู่หน้าคลังแต่ยังไม่นับ) — Shipping Chart/Rundown
+  เห็นขาดได้ ⇒ คลังต้องรับให้ทันก่อนรอบส่ง · ยังไม่ได้โชว์ "รอรับเข้า N" บนจอส่งของ (งานต่อ)
+- migration `20261002_stock_receipts_confirm_dr.sql` (DR · apply แล้วทีละคำสั่ง · backfill ~120 ใบเข้าคิว)
+
 ### วงจร FG stock (ครบ loop — ห้ามตัดขาตอนแก้)
 
 ```
 สแกนปิดออเดอร์ผลิต (prod_orders → confirmed)
-  → trigger trg_post_confirmed_output post เข้า stock ปลายทางทันที ไม่รอปิดกะ
-    (กฎปลายทาง stock_inflow_rules: MAT ขึ้นต้น 1 → FG WAREHOUSE · 2 → STORE ·
-     ปรับได้ที่ Store management → ⚙️ รับเข้าอัตโนมัติ · กันซ้ำด้วย ref_order_id)
+  → trigger trg_post_confirmed_output ทำตามโหมดของกฎปลายทาง (stock_inflow_rules: MAT ขึ้นต้น 1 → FG WAREHOUSE · 2 → STORE)
+    🟢 auto = post เข้า stock ทันที · 🟡 confirm (ตั้งแต่ 02/10 ทั้ง 2 กฎ) = เข้าคิว stock_receipts
+    แล้วคลังนับของจริงก่อนกดรับ (/line-stock?tab=receipts) · ⚫ ปิด = ไม่เข้าเลย · กันซ้ำด้วย ref_order_id
   → Shipping Chart เห็น stock พร้อมส่งต่อรอบ (FIFO ตามเวลาส่ง): เขียวครบ / เหลืองขาดบางส่วน /
     🚨 แดง "ไม่มี stock ต้องผลิต!" (ห้ามปล่อยใบไม่มี stock เงียบ) + ตัวนับ "N รอบ stock ไม่พอ"
   → กด "ส่งแล้ว" หัก stock อัตโนมัติ (line_stock_transactions type consume + ref_shipment_id ผูกรอบส่ง)

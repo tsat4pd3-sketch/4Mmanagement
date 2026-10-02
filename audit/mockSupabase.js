@@ -191,6 +191,15 @@ const TABLE_ROWS = {
     cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
     sort_order: i,
   }),
+  /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
+  stock_receipts: (r, i) => ({
+    ...r, prod_order_id: `po-${i}`, prod_no: `01203${90000 + i}`, mat_no: i % 2 ? '30047001' : '20057003',
+    qty_expected: isNullish(r) ? 10 : 60, dest_line_name: i % 2 ? 'FG WAREHOUSE' : 'STORE', source_line: FAM_LINE,
+    status: i % 4 === 0 ? 'received' : 'pending',
+    created_at: new Date(Date.now() - (i % 3 === 0 ? 6 : 0.5) * 3600e3).toISOString(),
+    qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
+    received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+  }),
   child_lot_requests: (r, i) => ({
     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
     lot_qty: isNullish(r) ? null : 14,

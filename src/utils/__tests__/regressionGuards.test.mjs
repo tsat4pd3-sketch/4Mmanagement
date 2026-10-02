@@ -1679,6 +1679,22 @@ test('🛡️ PRODUCT_COLUMNS ต้องมี pair_mat_no + op_seq · แล�
   }
 });
 
+/* ── คิวรับเข้าคลัง: ถอนยอด "auto" ของใบผลิต ต้องจัดการใบรอรับด้วย (2026-10-02) ──
+   กฎรับเข้าโหมด 🟡 ต้องยืนยันรับ ⇒ ปิดใบผลิตแล้วของ**ไม่ได้ลงสต็อก** แต่ไปรอใน `stock_receipts`
+   จุดที่ถอยใบ/ถอนยอดด้วย `created_by = 'auto'` อย่างเดียว = ใบรอรับค้างอยู่ → คลังกดรับของที่ไลน์ถอยไปแล้ว
+   (สต็อกงอกจากใบที่ไม่มีอยู่จริง) — แถมพอไลน์ปิดใบใหม่ trigger ไม่ออกใบใหม่ให้เพราะเห็นใบเดิมยังรออยู่ */
+test('🛡️ ถอนยอด auto ของใบผลิต ต้องยกเลิกใบรอรับเข้าคลัง (stock_receipts) ในไฟล์เดียวกันด้วย', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    if (/from\(\s*['"]line_stock_transactions['"]\s*\)[\s\S]{0,120}\.delete\(\)[\s\S]{0,160}created_by['"]\s*,\s*['"]auto['"]/.test(code)
+        && !/from\(\s*['"]stock_receipts['"]\s*\)/.test(code)) bad.push(relative(ROOT, file));
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ถอนยอด auto ของใบผลิตแต่ไม่แตะคิวรับเข้า: ${bad.join(', ')}\n`
+    + '   แก้: update stock_receipts set status=cancelled (+ cancel_reason) where prod_order_id=… and status=pending\n'
+    + '        และถ้ามีใบ received แล้ว ห้ามถอนเงียบ — บอกให้คลังปรับยอดเอง (ดู DailyReport handleRevertOrder)\n');
+});
+
 /* ── ช่องที่พิมพ์ ห้ามเป็นตัวที่จัด key/กลุ่มของลิสต์ (2026-10-02 · feedback หน้างาน) ──────
    เคสจริง `/pm-setup` ช่อง "กลุ่ม/หัวข้อ (Item)": การ์ดจุดตรวจถูกจัดกลุ่มตาม `group_name`
    แล้ววาดใน `<div key={g.name}>` ⇒ พิมพ์ "L" การ์ดย้ายจากกอง "ไม่ระบุกลุ่ม" ไปกลุ่มใหม่ ·

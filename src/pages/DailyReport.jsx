@@ -1715,8 +1715,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error) { toast.error(error.message); return; }
     const { error: se } = await supabaseDR.from('line_stock_transactions')
       .delete().eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+    /* 📥 กฎโหมด "ต้องยืนยันรับ" (2026-10-02) — ของไม่ได้เข้าสต็อกตอนปิดใบ แต่ไปรออยู่ในคิว `stock_receipts`
+       · ใบที่ยังรอรับ → ยกเลิก (ไม่งั้นคลังกดรับของที่ไลน์ถอยไปแล้ว) · ปิดใบใหม่ trigger จะออกใบรอรับใหม่ให้
+       · ใบที่คลังรับไปแล้ว = ของถึงคลังจริง **ห้ามถอนเงียบ** → บอกให้คลังปรับยอดเอง */
+    const { data: rcp, error: re } = await supabaseDR.from('stock_receipts')
+      .update({ status: 'cancelled', cancel_reason: `ไลน์ถอยใบ ${o.prod_no || ''} กลับเป็นกำลังผลิต`, cancelled_by: fullName, cancelled_at: new Date().toISOString() })
+      .eq('prod_order_id', o.id).eq('status', 'pending').select('id');
+    const { data: gotIn } = await supabaseDR.from('stock_receipts')
+      .select('qty_received, dest_line_name, received_by').eq('prod_order_id', o.id).eq('status', 'received');
     if (se) toast.error(`⚠️ ถอยใบแล้ว แต่ถอนยอด stock ไม่สำเร็จ: ${se.message} — แจ้ง Store ตรวจยอด ${o.mat_no}`);
-    else toast.success(`↩️ ถอยใบ ${o.prod_no} กลับเป็น "กำลังผลิต" แล้ว (ถอนยอด stock ให้เรียบร้อย)`);
+    else if (re) toast.error(`⚠️ ถอยใบแล้ว แต่ยกเลิกใบรอรับเข้าคลังไม่สำเร็จ: ${re.message} — แจ้งคลังอย่ากดรับใบ ${o.prod_no}`);
+    else if (gotIn?.length) toast.error(`⚠️ ถอยใบแล้ว แต่ ${gotIn[0].dest_line_name} รับของใบนี้ไปแล้ว ${gotIn[0].qty_received} ชิ้น (${gotIn[0].received_by || '—'}) — ยอดคลังไม่ถูกถอน ให้คลังตรวจนับ/ปรับยอดเอง`);
+    else toast.success(`↩️ ถอยใบ ${o.prod_no} กลับเป็น "กำลังผลิต" แล้ว (${rcp?.length ? 'ยกเลิกใบรอรับเข้าคลังให้แล้ว' : 'ถอนยอด stock ให้เรียบร้อย'})`);
     loadProdOrders(selSession.id, selSession.line_name);
   };
   // ยอดชิ้นของใบไว้โชว์ใน confirm dialog (ใบสแกน = qty ตายตัวจาก kanban · manual = ยอดจริงที่ปิด)
