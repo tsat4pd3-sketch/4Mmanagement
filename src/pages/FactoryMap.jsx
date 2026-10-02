@@ -452,6 +452,7 @@ export default function FactoryMap({ setupMode = false }) {
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState('');     // โหลดสรุปล้ม = เขียนบนจอ ห้ามโชว์ "ไม่มีข้อมูล" แทน (02/10)
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
   const [storyLine, setStoryLine] = useState(null);   // ไลน์ที่คลิกดู "สรุปเรื่องราวทั้งวัน" (modal หลัก)
   const [story, setStory] = useState(null);           // ข้อมูลสรุปของ storyLine
@@ -1250,7 +1251,7 @@ export default function FactoryMap({ setupMode = false }) {
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
   const loadReview = useCallback(async () => {
-    setReviewLoading(true);
+    setReviewLoading(true); setReviewError('');
     try {
       const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
         // ⚠️ ต้องมี `shift` — ตาราง "กางวิธีคิด OEE" (oeeRows) โชว์กะ ถ้าไม่ select จะขึ้น "—" ทุกแถว
@@ -1272,14 +1273,16 @@ export default function FactoryMap({ setupMode = false }) {
       });
       if (sessions?.length) {
         const sessIds = sessions.map(s => s.id);
-        const [{ data: orders }, { data: dts }, { data: rvDefs }, { data: prods }] = await Promise.all([
+        /* ⚠️ loadPairMap() คืน map ตรงๆ (หรือ null) ไม่ใช่ { data } — เคยแกะ `{ data: prods }` ⇒ undefined
+           ⇒ `pairMap[m]` ระเบิด ⇒ catch กลืน ⇒ แผงนี้เป็น 0/0 ทั้งแผงตั้งแต่ 25/09 ถึง 02/10 (user ทัก "เมื่อวานมีผลิตงานนะ") */
+        const [{ data: orders }, { data: dts }, { data: rvDefs }, pairMap] = await Promise.all([
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
           supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
           loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09)
         ]);
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
-        const pairMap = prods;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {})
+        const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
         const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
         await loadOpInfo(); // map รายการขั้นตอน (OP) — cache แล้วถูก ไม่ยิงซ้ำ
@@ -1295,7 +1298,7 @@ export default function FactoryMap({ setupMode = false }) {
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
-          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
+          const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
           o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
           // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
@@ -1319,7 +1322,7 @@ export default function FactoryMap({ setupMode = false }) {
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
       setReviewStatus(out);
-    } catch { setReviewStatus({}); }
+    } catch (e) { console.error('[loadReview]', e); setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { setReviewLoading(false); }
   }, [reviewDate]);
   useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
@@ -2601,6 +2604,12 @@ export default function FactoryMap({ setupMode = false }) {
 
                   {reviewLoading ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
+                  ) : reviewError ? (
+                    <div style={{ fontSize: 12, color: '#ef4444', padding: 14, textAlign: 'center', border: '1px solid #ef444455', borderRadius: 8 }}>
+                      ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{reviewError}</div>
+                      <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>↻ ลองใหม่</button>
+                    </div>
                   ) : reviewRanked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ไม่มีข้อมูลการผลิตของวันที่เลือก</div>
                   ) : reviewRanked.map(({ name, r }, i) => {

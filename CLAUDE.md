@@ -795,6 +795,7 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง — ให้เพิ่ม realtime ก่อน) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น**
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่เนื้อเดิม = ลูกยิงคิวรีซ้ำฟรีๆ ให้แปลงเป็น string/primitive ก่อน · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
+12. **helper กลางที่คืนค่าเปล่า (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines`) ห้ามแกะ `{ data: x }`** = `undefined` เงียบ (02/10 แผงทบทวนผังรวม 0/0 อยู่ 7 วัน · มีด่าน) · **`catch {}` เปล่าแล้วโชว์ "ไม่มีข้อมูล" = จอโกหก** ต้องเขียน error บนจอ
 11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring
