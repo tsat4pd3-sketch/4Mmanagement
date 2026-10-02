@@ -43,6 +43,7 @@ const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
 const RundownStock   = lazy(() => import('./pages/RundownStock'));
+const Monitoring     = lazy(() => import('./pages/Monitoring'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
@@ -168,6 +169,9 @@ export const NAV_ITEMS = [
   // 🔴 หมวดแผนงานยุบเข้ามาที่นี่ (30/09 · คำสั่ง user — planner + store = หน่วยเดียว ดู logisticSide.js)
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
 
+  /* 📉 บอร์ด Monitoring = ไฟล์ Excel ที่ทีมวางแผนทำมือทุกวัน ยกเข้าระบบ (01/10 · คำสั่ง user)
+     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
+  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
   { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
@@ -1997,6 +2001,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/rundown-stock" element={
                 <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
+              } />
+              <Route path="/monitoring" element={
+                <RoleRoute path="/monitoring" userRole={role}><Monitoring /></RoleRoute>
               } />
               <Route path="/store-monitor" element={
                 <RoleRoute path="/store-monitor" userRole={role}><StoreMonitor /></RoleRoute>

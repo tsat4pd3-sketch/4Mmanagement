@@ -449,3 +449,240 @@ test('sheetReport: ชีทที่มีออเดอร์ = note null (�
   assert.equal(tspk.lastDate, '2026-09-24');
   assert.equal(tspk.staleDays, 0, 'ชีทครอบคลุมถึงวันนี้ = ไม่เก่า');
 });
+
+/* ═══ ตัวแกะ "เต็มเมทริกซ์" สำหรับบอร์ด Monitoring — 2026-10-01 ════════════════════════
+   เคสทั้งหมดถอดจากไฟล์จริง 1.Monitoring-Oct.xlsx (13 ชีท) · ตัวเลขที่ยืนยันแล้วว่าตรงไฟล์ */
+import {
+  parseBoardSheet, parseRackSheet, parseRawSheet,
+  parseVendorBlockSheet, parseVendorFlatSheet,
+  boardKindOfSheet, parseSheetForBoard, BOARD_ROW_KEY,
+} from '../monitoringSheet.js';
+
+const DT = (s) => new Date(`${s}T00:00:00`);
+
+/* โครงชีท 800T ย่อ (หัวแถว 1 · วันที่แถว 2 · คอลัมน์ป้าย = หลัง %SL) */
+const SHEET_800T = [
+  ['NO', 'Mat SAP', 'PART NO.', 'PART NAME', 'Model', 'Time', 'LOT', 'Cost', 'Packing/std.', 'FC', '%SL', 'PLAN', 'Wed', 'Thu', 'Fri'],
+  [null, null, null, null, null, null, null, null, null, null, null, null, DT('2026-09-30'), DT('2026-10-01'), DT('2026-10-02')],
+  [1, '10076603', 'BHS07706', 'BRACKET LH', 'RG01', 5, 2000, 121.5, 100, 11800, null, 'PLAN', 2000, null, null],
+  [null, null, null, null, null, null, null, null, null, null, null, 'IN', 100, null, null],
+  [null, null, null, null, null, null, null, null, null, null, null, 'UNBOUND', -1700, null, null],
+  [null, null, null, null, null, null, null, null, null, null, null, 'OUT', 700, 700, 800],
+  [null, null, null, null, null, null, null, null, null, null, null, 'BALANCE', 200, null, null],
+  [null, null, null, null, null, null, null, null, null, null, null, 'MIN', 1800, null, null],
+];
+
+test('parseBoardSheet — เก็บทุกช่อง + หัวตารางครบ (ชีท 800T)', () => {
+  const r = parseBoardSheet(SHEET_800T);
+  assert.equal(r.parts.length, 1);
+  const p = r.parts[0];
+  assert.equal(p.mat_no, '10076603');
+  assert.equal(p.part_no, 'BHS07706');
+  assert.equal(p.model, 'RG01');
+  assert.equal(p.ct_sec, 5);
+  assert.equal(p.lot_qty, 2000);
+  assert.equal(p.cost, 121.5);
+  assert.equal(p.packing, 100);
+  assert.equal(p.fc, 11800);
+  assert.deepEqual(r.dates, ['2026-09-30', '2026-10-01', '2026-10-02']);
+  assert.deepEqual(r.rowKeys, ['plan', 'in', 'unbound', 'out', 'balance', 'min']);
+  /* ค่าจริงจากไฟล์ */
+  assert.deepEqual(p.cells.out, { '2026-09-30': 700, '2026-10-01': 700, '2026-10-02': 800 });
+  assert.deepEqual(p.cells.balance, { '2026-09-30': 200 });
+  assert.equal(p.cells.unbound['2026-09-30'], -1700);
+});
+
+test('parseBoardSheet — ช่องว่างไม่ถูกเก็บ (sparse — ไม่งั้นเมทริกซ์เดียวทะลุเพดานคิวรี)', () => {
+  const p = parseBoardSheet(SHEET_800T).parts[0];
+  assert.equal(Object.keys(p.cells.plan).length, 1, 'PLAN มีค่าวันเดียวในไฟล์');
+  assert.equal(p.cells.plan['2026-10-01'], undefined);
+});
+
+test('parseBoardSheet — ชีทที่มี WIP ได้ 7 แถว · ชีทที่ไม่มีได้ 6 แถว (ชุดแถวไม่ hardcode)', () => {
+  const withWip = SHEET_800T.map((r) => [...r]);
+  withWip.splice(7, 0, [null, null, null, null, null, null, null, null, null, null, null, 'WIP', 5, null, null]);
+  assert.deepEqual(parseBoardSheet(withWip).rowKeys, ['plan', 'in', 'unbound', 'out', 'balance', 'wip', 'min']);
+  assert.deepEqual(parseBoardSheet(SHEET_800T).rowKeys, ['plan', 'in', 'unbound', 'out', 'balance', 'min']);
+});
+
+test('parseBoardSheet — ป้ายที่ยังไม่รู้จักต้องรายงาน ห้ามข้ามเงียบ', () => {
+  const rows = SHEET_800T.map((r) => [...r]);
+  rows.push([null, null, null, null, null, null, null, null, null, null, null, 'ป้ายใหม่ที่ไม่รู้จัก', 1, null, null]);
+  const r = parseBoardSheet(rows);
+  assert.ok(r.warnings.some((w) => w.includes('ป้ายใหม่ที่ไม่รู้จัก')), 'ต้องมีคำเตือนบอกชื่อป้าย');
+});
+
+test('parseBoardSheet — #N/A / #DIV/0! / ข้อความ ในช่องตัวเลข ถูกข้าม ไม่กลายเป็น 0', () => {
+  const rows = SHEET_800T.map((r) => [...r]);
+  rows[5] = [null, null, null, null, null, null, null, null, null, null, null, 'OUT', '#N/A', 700, '#DIV/0!'];
+  const p = parseBoardSheet(rows).parts[0];
+  assert.deepEqual(p.cells.out, { '2026-10-01': 700 });
+});
+
+test('BOARD_ROW_KEY ครอบคลุมป้ายทุกตัวที่เจอในไฟล์จริง 13 ชีท', () => {
+  for (const lab of ['PLAN', 'IN', 'UNBOUND', 'OUT', 'BALANCE', 'WIP', 'MIN',
+    'ORDERREQUIREMENT', 'PRODDATE', 'STOCKWH', 'SENDTOGREAT']) {
+    assert.ok(BOARD_ROW_KEY[lab], `ขาดป้าย ${lab}`);
+  }
+});
+
+/* ── ชีท Argen: แถว ORDER REQUIREMENT มาก่อนเลข MAT ของบล็อกนั้น ───────────────────── */
+test('parseBoardSheet — Argen: ความต้องการที่อยู่ก่อนเลข MAT ต้องไปเกาะพาร์ทถัดไป ไม่เลื่อน', () => {
+  const rows = [
+    ['Item', 'Mat SAP', 'PART NO.', 'PART NAME', 'LOT', 'Packing', 'REQUIREMENT DATE', null],
+    [null, null, null, null, null, null, 'ส่งเกรท', DT('2026-10-05'), DT('2026-10-12')],
+    [1, null, null, null, null, null, 'ORDER REQUIREMENT', 1600, 1200],
+    [null, '20065733', 'MB3B-E102D04', 'BRKT ENG GRD', 2400, 300, 'PLAN', 2400, null],
+    [null, null, null, null, null, null, 'BALANCE', 2253, null],
+  ];
+  const r = parseBoardSheet(rows);
+  assert.equal(r.parts.length, 1);
+  assert.equal(r.parts[0].mat_no, '20065733');
+  assert.deepEqual(r.parts[0].cells.order_req, { '2026-10-05': 1600, '2026-10-12': 1200 },
+    'ความต้องการต้องอยู่กับพาร์ทที่เปิดบล็อกถัดมา');
+});
+
+/* ── ชีท TSPK/TSESA รายแร็ค ───────────────────────────────────────────────────────── */
+const SHEET_RACK = [
+  ['ITEM', 'PICTURE', "Mat'l", 'PART NO.', 'Model', 'P.STD.', 'Rack', 'MIN', 'MAX', 'FG', null, null, 'Back', DT('2026-10-01'), null, DT('2026-10-02'), null],
+  [null, null, null, null, null, null, null, null, null, 'Stock W/H', 'ผลิต/WIP', 'Total', null, 'Order', 'balance', 'Order', 'balance'],
+  [1, null, '10076603', 'BHS07706 (LH)', '20TF/RG01', 100, 1, 1800, 3800, 100, null, 100, null, 700, -600, 800, -1400],
+];
+
+test('parseRackSheet — ยอดยกมา = Stock W/H + ผลิต/WIP · คอลัมน์ balance ในไฟล์ไม่ถูกอ่าน', () => {
+  const r = parseRackSheet(SHEET_RACK);
+  assert.equal(r.parts.length, 1);
+  const p = r.parts[0];
+  assert.equal(p.mat_no, '10076603');
+  assert.equal(p.packing, 100);
+  assert.deepEqual(p.cells.order, { '2026-10-01': 700, '2026-10-02': 800 });
+  assert.deepEqual(p.cells.balance, { '2026-10-01': 100 }, 'ยอดยกมาอยู่คอลัมน์แรกเท่านั้น');
+  assert.deepEqual(p.cells.min, { '2026-10-01': 1800 });
+  assert.deepEqual(p.cells.max, { '2026-10-01': 3800 });
+  /* ❗ ค่า −600 / −1400 ในไฟล์เป็นผลของสูตร ⇒ ห้ามเก็บ (RECUR.deplete คิดใหม่ให้เหมือนกัน) */
+  assert.equal(Object.keys(p.cells.balance).length, 1);
+});
+
+/* ── ชีท mat (R402) วัตถุดิบม้วน ──────────────────────────────────────────────────── */
+const SHEET_MAT = [
+  ['DAILY REPORT STORE RAW MATERIAL (R402)'],
+  ['Item', " Mat'l SAP", 'Description', 'PICTURE', 'Semi Part', 'อัตราการใช้', 'อัตรา', 'คงเหลือ', 'จำนวนชิ้น', 'งานท้ายไลน์(ชิ้น)', 'คำนวณเหล็ก'],
+  [1, '50027079', 'WSS-M1A365-A11 1.40 X 187', null, 'GST FRT FNDR APR LH', '0.148 Kgs.', 0.148, 699, 4722.97, 2446, 362.008],
+  [2, '50027083', 'WSS-M1A367-A33 1.70 X 350', null, 'WAL BRKT', '0.341 Kgs. (ได้ 2 ชิ้น)', 0.341, 1135, 6656.89, null, null],
+  [3, '50027085', 'WSS-M1A367-A36 1.50 X 368', null, 'REINF FRT S/M', '0.641 Kgs. (ได้ R/L)', 0.641, null, 0, 221, 141.661],
+];
+
+test('parseRawSheet — อ่านอัตรา/คงเหลือ/งานท้ายไลน์ · ไม่เก็บช่องที่เป็นสูตร', () => {
+  const r = parseRawSheet(SHEET_MAT, { asOf: '2026-10-01' });
+  assert.equal(r.parts.length, 3);
+  const [a, b, c] = r.parts;
+  assert.equal(a.mat_no, '50027079');
+  assert.equal(a.kg_per_piece, 0.148);
+  assert.deepEqual(a.cells.on_hand_kg, { '2026-10-01': 699 });
+  assert.deepEqual(a.cells.queue_pcs, { '2026-10-01': 2446 });
+  /* "จำนวนชิ้น" และ "คำนวณเหล็ก" เป็นสูตร ⇒ ไม่มีคีย์ไหนเก็บไว้ */
+  assert.deepEqual(Object.keys(a.cells).sort(), ['on_hand_kg', 'queue_pcs']);
+  /* งานคู่: "(ได้ 2 ชิ้น)" → 2 · "(ได้ R/L)" → 2 · ไม่ระบุ → null (ห้ามเดา 1) */
+  assert.equal(a.pieces_per_shot, null);
+  assert.equal(b.pieces_per_shot, 2);
+  assert.equal(c.pieces_per_shot, 2);
+  assert.equal(c.cells.on_hand_kg, undefined, 'คงเหลือว่าง = ไม่เก็บ ไม่ใช่ 0');
+});
+
+test('parseRawSheet — ไม่ระบุวันอ้างอิง = เตือน ไม่เก็บยอดคงเหลือ', () => {
+  const r = parseRawSheet(SHEET_MAT, {});
+  assert.ok(r.warnings.some((w) => w.includes('asOf')));
+  assert.deepEqual(r.parts[0].cells, {});
+});
+
+/* ── ชีทงานส่งชุบ ─────────────────────────────────────────────────────────────────── */
+const SHEET_824 = [
+  [],
+  [null, 'Mat.SAP', 'PART NO.', 'Forecast', 'Total SL', null, null, 'WIP Vendor', DT('2026-09-01'), DT('2026-09-02'), DT('2026-09-03')],
+  ['ก่อนชุบ', '20066542', 'R1WB-17K824-AAW', 3383.6, 3634, 'TSAT4 to JRPE', null, null, null, 398, null],
+  ['หลังชุบ', '20066540', null, null, null, 'JRPE to TSAT4', null, null, 250, 150, 200],
+  [null, 1.074, null, null, null, 'Stock Vendor', null, 849, 599, 847, 647],
+];
+
+test('parseVendorBlockSheet — 1 บล็อก = 1 พาร์ท ที่มีเลข SAP ก่อน/หลังชุบ', () => {
+  const r = parseVendorBlockSheet(SHEET_824);
+  assert.equal(r.parts.length, 1, 'ก่อนชุบ+หลังชุบ = พาร์ทเดียว ไม่ใช่ 2');
+  const p = r.parts[0];
+  assert.equal(p.mat_no, '20066542');
+  assert.equal(p.mat_after, '20066540');
+  assert.equal(p.fc, 3383.6);
+  /* ยอดยกมาที่ไม่มีวันที่กำกับ ถูกยกให้เป็นคอลัมน์ "วันก่อนวันแรก" */
+  assert.equal(r.dates[0], '2026-08-31');
+  assert.equal(p.cells.at_vendor['2026-08-31'], 849);
+  assert.equal(p.cells.at_vendor['2026-09-01'], 599);
+  assert.equal(p.cells.from_vendor['2026-09-01'], 250);
+  assert.equal(p.cells.to_vendor['2026-09-02'], 398);
+});
+
+test('parseVendorFlatSheet — ชีท RA: 1 พาร์ท/แถว · หยุดเมื่อเจอตารางที่ 2', () => {
+  const rows = [
+    ['No', 'Mat.SAP', null, 'Part Name', 'FC', 'Sum', 'Total', 'Diff Forecast', '%SL', DT('2026-09-01'), DT('2026-09-02')],
+    [1, '10094690', '73022056', 'N1WB-E20022-AB', 10138, 920, 7760, -2378, 0.765, 40, 40],
+    [1, '10087199', '73022058', 'N1WB-E20022-FTM', null, 2280, null, null, null, 240, 200],
+    [null, null, null, null, null, null, null, null, null, null, null],
+    [null, null, null, null, null, null, null, null, null, null, null],
+    [null, 'Sum total', 'FG', null, null, null, null, null, null, 999, 999],
+    [null, '99999999', 'ของตารางที่ 2 ห้ามเก็บ', null, null, null, null, null, null, 5, 5],
+  ];
+  const r = parseVendorFlatSheet(rows);
+  assert.equal(r.parts.length, 2, 'ต้องหยุดก่อนถึงตารางที่ 2');
+  assert.equal(r.parts[0].fc, 10138);
+  assert.deepEqual(r.parts[0].cells.to_vendor, { '2026-09-01': 40, '2026-09-02': 40 });
+  assert.equal(r.parts[1].fc, null, 'แถวแปรย่อยไม่มี FC = null ห้ามเดา');
+});
+
+/* ── การจัดชนิดชีท ───────────────────────────────────────────────────────────────── */
+test('boardKindOfSheet — ชีทไลน์ปั๊มตามชื่อตัน', () => {
+  for (const n of ['110T', '300T', '250T', '800T', '600T']) {
+    assert.equal(boardKindOfSheet(n, SHEET_800T).kind, 'line', n);
+  }
+});
+
+test('boardKindOfSheet — ชีทที่ตั้งใจไม่ทำเป็นบอร์ด ต้องบอกเหตุผล + ติดธง intentional', () => {
+  const v = boardKindOfSheet('Vlookup Argen', [['', 'Mat.#1', 'Mat.#2', 'Part No.']]);
+  assert.equal(v.kind, null);
+  assert.equal(v.intentional, true);
+  assert.ok(v.why.includes('Argen'));
+  const s = boardKindOfSheet('Sheet1 (2)', [['Picture', 'Mat SAP']]);
+  assert.equal(s.kind, null);
+  assert.equal(s.intentional, true);
+});
+
+test('boardKindOfSheet — ชีทที่แกะไม่ได้จริง ต้องติดธง intentional=false (ของตกหล่น ไม่ใช่ของที่ข้ามเอง)', () => {
+  const r = boardKindOfSheet('ชีทใหม่เดือนหน้า', [['อะไรก็ไม่รู้']]);
+  assert.equal(r.kind, null);
+  assert.equal(r.intentional, false);
+  assert.ok(r.why.length > 0);
+});
+
+test('boardKindOfSheet — RA ต้องเป็น vendor แบบแบน ไม่ใช่แบบบล็อก (Diff Forecast ชนกับป้ายงานชุบ)', () => {
+  const rows = [
+    ['No', 'Mat.SAP', null, 'Part Name', 'FC', 'Sum', 'Total', 'Diff Forecast', '%SL', DT('2026-09-01')],
+    [1, '10094690', '73022056', 'N1WB', 10138, 920, 7760, -2378, 0.765, 40],
+  ];
+  const d = boardKindOfSheet('RA', rows);
+  assert.equal(d.kind, 'vendor');
+  assert.equal(d.flat, true, 'RA เป็นตารางแบน — เคยถูกส่งเข้าตัวแกะแบบบล็อกแล้วได้ 0 ช่อง');
+  assert.equal(boardKindOfSheet('824-825', SHEET_824).flat, false);
+});
+
+test('parseSheetForBoard — เลือกตัวแกะให้ถูกตามชนิด + ส่งเหตุผลต่อเมื่อไม่ทำ', () => {
+  assert.equal(parseSheetForBoard('800T', SHEET_800T).parts.length, 1);
+  assert.equal(parseSheetForBoard('TSPK', SHEET_RACK).parts.length, 1);
+  assert.equal(parseSheetForBoard('mat', SHEET_MAT, { asOf: '2026-10-01' }).parts.length, 3);
+  assert.equal(parseSheetForBoard('824-825', SHEET_824).parts.length, 1);
+  const skip = parseSheetForBoard('Vlookup Argen', [['', 'Mat.#1']]);
+  assert.equal(skip.kind, null);
+  assert.deepEqual(skip.parts, []);
+  assert.equal(skip.intentional, true);
+});
+
+/* ── 🔴 กันของเดิมพัง: การเพิ่ม 'MATLSAP' ต้องไม่เปลี่ยนชนิดชีทที่ MonitoringUpload เห็น ── */
+test('เพิ่ม MATLSAP แล้วชีท mat ยังคืน null จาก detectMonitoringKind (MonitoringUpload ยังข้ามเหมือนเดิม)', () => {
+  assert.equal(detectMonitoringKind(SHEET_MAT), null);
+});

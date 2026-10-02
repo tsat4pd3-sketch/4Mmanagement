@@ -397,6 +397,108 @@ const TABLE_FIXED = {
     { id: 'rg-2', line_name: LINE_NAME(2), points: [[54, 8], [92, 8], [92, 46], [54, 46]] },
     { id: 'rg-3', line_name: 'ห้องคอมเพรสเซอร์', points: [[6, 56], [44, 56], [44, 92], [6, 92]] },
   ],
+
+  /* 📉 บอร์ด Monitoring — **ห้ามถอดแถวพิเศษ** (2026-10-02)
+     หน้า /monitoring วาดจาก `monitor_boards.rows` (jsonb) ⇒ ถ้า mock ไม่มีบอร์ด harness จะ
+     เห็นแค่หน้าจอ "ยังไม่มีบอร์ด" แล้วไม่เคยรันตัวตารางจริงสักบรรทัด · ชุดนี้ตั้งใจให้ครบทุกสาขา:
+       · `mon-line`  = ไลน์ปั๊มมี WIP 7 แถว + ผูกไลน์จริง (เดินสาย IN/OUT/MIN จากระบบ)
+       · `mon-line2` = ไลน์ที่ **ไม่มี WIP** 6 แถว — พิสูจน์ว่าชุดแถวมาจาก DB ไม่ใช่ hardcode
+       · `mon-rack`  = คอลัมน์แบบ `date` (สูตร deplete) — คนละทรงกับรายวัน
+       · `mon-raw`   = คอลัมน์เดียว ไม่มีสูตร recur เลย (สาย กก. ⇄ ชิ้น)
+       · `mon-bad`   = แถวที่อ้าง **สูตรที่ระบบไม่รู้จัก** ⇒ ต้องขึ้นแถบเตือน ไม่ใช่จอพัง */
+  monitor_boards: [
+    { id: 'mon-line', board_key: 'line-800t', name: '800T', kind: 'line',
+      line_name: LINE_NAME(1), customer: null, period_kind: 'day', period_count: 6,
+      start_date: '2026-09-30', sl_row: 'out', sl_includes_seed: false, sort_order: 1, note: null,
+      rows: [
+        { key: 'plan', label: 'PLAN · แผน', kind: 'input' },
+        { key: 'in', label: 'IN · ผลิตเข้า', kind: 'system' },
+        { key: 'unbound', label: 'UNBOUND · แผนค้างสะสม', kind: 'recur', recur: 'plan_backlog' },
+        { key: 'out', label: 'OUT · จ่ายออก', kind: 'system' },
+        { key: 'balance', label: 'BALANCE · คงเหลือ', kind: 'recur', recur: 'stock_run' },
+        { key: 'wip', label: 'WIP · งานระหว่างทำ', kind: 'input' },
+        { key: 'min', label: 'MIN · ขั้นต่ำ', kind: 'const' },
+      ] },
+    { id: 'mon-line2', board_key: 'line-600t', name: '600T', kind: 'line',
+      line_name: null, customer: null, period_kind: 'day', period_count: 5,
+      start_date: '2026-09-30', sl_row: 'in', sl_includes_seed: true, sort_order: 2, note: null,
+      rows: [
+        { key: 'plan', label: 'PLAN · แผน', kind: 'input' },
+        { key: 'in', label: 'IN · ผลิตเข้า', kind: 'system' },
+        { key: 'unbound', label: 'UNBOUND · แผนค้างสะสม', kind: 'recur', recur: 'plan_backlog' },
+        { key: 'out', label: 'OUT · จ่ายออก', kind: 'system' },
+        { key: 'balance', label: 'BALANCE · คงเหลือ', kind: 'recur', recur: 'stock_run' },
+        { key: 'min', label: 'MIN · ขั้นต่ำ', kind: 'const' },
+      ] },
+    { id: 'mon-rack', board_key: 'rack-tspk', name: 'TSPK', kind: 'rack',
+      line_name: null, customer: 'TSPK', period_kind: 'date', period_count: 8,
+      start_date: null, sl_row: 'order', sl_includes_seed: false, sort_order: 1, note: null,
+      rows: [
+        { key: 'order', label: 'ORDER · ลูกค้าสั่ง', kind: 'input' },
+        { key: 'balance', label: 'BALANCE · คงเหลือ', kind: 'recur', recur: 'deplete' },
+        { key: 'min', label: 'MIN · ขั้นต่ำ', kind: 'const' },
+        { key: 'max', label: 'MAX · สูงสุด', kind: 'const' },
+      ] },
+    { id: 'mon-raw', board_key: 'raw-mat', name: 'mat', kind: 'raw',
+      line_name: null, customer: null, period_kind: 'day', period_count: 1,
+      start_date: '2026-10-01', sl_row: 'queue_pcs', sl_includes_seed: false, sort_order: 1, note: null,
+      rows: [
+        { key: 'on_hand_kg', label: 'เหล็กคงเหลือ (กก.)', kind: 'input' },
+        { key: 'queue_pcs', label: 'งานท้ายไลน์ (ชิ้น)', kind: 'input' },
+      ] },
+    { id: 'mon-bad', board_key: 'vendor-ra', name: 'RA', kind: 'vendor',
+      line_name: null, customer: 'JRPE', period_kind: 'day', period_count: 4,
+      start_date: '2026-09-30', sl_row: 'to_vendor', sl_includes_seed: false, sort_order: 1, note: null,
+      rows: [
+        { key: 'to_vendor', label: 'ส่งไปชุบ', kind: 'input' },
+        { key: 'from_vendor', label: 'รับคืนจากชุบ', kind: 'input' },
+        { key: 'at_vendor', label: 'ค้างที่ร้านชุบ', kind: 'recur', recur: 'สูตรที่ยังไม่มี' },
+      ] },
+  ],
+  /* พาร์ท: mp-1 ใส่ยอดยกมาครบ · mp-2 **ไม่ใส่** (ต้องขึ้นแถบ "ยังไม่ใส่ยอดยกมา") ·
+     mp-3 ไม่มีเลข MAT ในทะเบียนสินค้า (ต้องขึ้นป้าย "ยังไม่อยู่ในทะเบียนสินค้า") */
+  monitor_board_parts: [
+    { id: 'mp-1', board_id: 'mon-line', mat_no: '10101001', part_no: 'BHS07706', part_name: 'BRACKET;SHOCK ABS 4X4,LH',
+      model: 'RG01', raw_mat: null, process: null, rack: null, lot_qty: 2000, packing: 100, cost: 121.5,
+      ct_sec: 5, fc: 11800, pieces_per_shot: 2, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },
+    { id: 'mp-2', board_id: 'mon-line', mat_no: '10101002', part_no: 'BHS08555', part_name: 'BRACKET;SHOCK ABS 4X4,RH',
+      model: 'RG01', raw_mat: null, process: null, rack: null, lot_qty: 2000, packing: 100, cost: 137.11,
+      ct_sec: 13.44, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 2, note: null, is_active: true },
+    { id: 'mp-3', board_id: 'mon-line2', mat_no: '99999999', part_no: null, part_name: null,
+      model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: null, cost: null,
+      ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },
+    { id: 'mp-4', board_id: 'mon-rack', mat_no: '10101001', part_no: 'BHS07706 (LH)', part_name: null,
+      model: '20TF/RG01', raw_mat: null, process: null, rack: '1', lot_qty: null, packing: 100, cost: null,
+      ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },
+    { id: 'mp-5', board_id: 'mon-raw', mat_no: '50027079', part_no: null, part_name: null,
+      model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: null, cost: null,
+      ct_sec: null, fc: null, pieces_per_shot: 2, kg_per_piece: 0.148, spec: 'WSS-M1A365-A11 1.40 X 187 X COIL',
+      semi_part: 'GST FRT FNDR APR LH', sort_order: 1, note: null, is_active: true },
+    { id: 'mp-6', board_id: 'mon-bad', mat_no: '20066542', part_no: 'R1WB-17K824-AAW', part_name: null,
+      model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: null, cost: null,
+      ct_sec: null, fc: 3383.6, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null,
+      sort_order: 1, note: 'หลังชุบ: 20066540', is_active: true },
+  ],
+  /* ช่องที่คนกรอก — mp-1 มียอดยกมาครบ (สูตรเดินได้) และ **ตก MIN กลางทาง** (ต้องขึ้นสีแดง)
+     mp-2 จงใจไม่มียอดยกมาเลย ⇒ แถว recur ต้องขึ้นขีด "–" ทั้งแถว ห้ามเป็น 0 */
+  monitor_cells: [
+    { board_part_id: 'mp-1', row_key: 'plan', period_key: '2026-09-30', qty: 2000, txt: null },
+    { board_part_id: 'mp-1', row_key: 'unbound', period_key: '2026-09-30', qty: -1700, txt: null },
+    { board_part_id: 'mp-1', row_key: 'balance', period_key: '2026-09-30', qty: 2000, txt: null },
+    { board_part_id: 'mp-1', row_key: 'min', period_key: '2026-09-30', qty: 1800, txt: null },
+    { board_part_id: 'mp-1', row_key: 'out', period_key: '2026-10-01', qty: 700, txt: null },
+    { board_part_id: 'mp-1', row_key: 'out', period_key: '2026-10-02', qty: 800, txt: null },
+    { board_part_id: 'mp-1', row_key: 'wip', period_key: '2026-10-01', qty: 120, txt: null },
+    { board_part_id: 'mp-3', row_key: 'balance', period_key: '2026-09-30', qty: 50, txt: null },
+    { board_part_id: 'mp-4', row_key: 'balance', period_key: '2026-09-30', qty: 100, txt: null },
+    { board_part_id: 'mp-4', row_key: 'min', period_key: '2026-09-30', qty: 1800, txt: null },
+    { board_part_id: 'mp-4', row_key: 'order', period_key: '2026-10-01', qty: 700, txt: null },
+    { board_part_id: 'mp-4', row_key: 'order', period_key: '2026-10-02', qty: 800, txt: null },
+    { board_part_id: 'mp-5', row_key: 'on_hand_kg', period_key: '2026-10-01', qty: 699, txt: null },
+    { board_part_id: 'mp-5', row_key: 'queue_pcs', period_key: '2026-10-01', qty: 2446, txt: null },
+    { board_part_id: 'mp-6', row_key: 'at_vendor', period_key: '2026-09-30', qty: 849, txt: null },
+    { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
+  ],
 }
 const rowsFor = (table) => {
   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
