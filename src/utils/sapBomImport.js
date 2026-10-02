@@ -61,9 +61,19 @@ const headRole = (cell) => {
   const c = upper(cell).toLowerCase().replace(/\.+$/, '').replace(/\s+/g, ' ');
   if (!c) return null;
   /* เทียบ 2 ทาง: หัวยาวกว่าคีย์ ("component no") และ **หัวที่ถูกย่อ** ("lev" ← "level")
-     — SAP export บางใบย่อหัวคอลัมน์ ทำให้ `c.startsWith(k)` อย่างเดียวจับไม่ได้ (เคสจริง 01/10) */
-  for (const [role, keys] of HEAD)
-    if (keys.some(k => c === k || c.startsWith(k) || (c.length >= 3 && k.startsWith(c)))) return role;
+     — SAP export บางใบย่อหัวคอลัมน์ ทำให้ `c.startsWith(k)` อย่างเดียวจับไม่ได้ (เคสจริง 01/10)
+
+     🔴 **ต้องเลือกคีย์ที่ "ยาวที่สุด" ที่แมตช์ ไม่ใช่ตัวแรกที่เจอ** (บั๊กจริง 02/10):
+     หัว `Object description` ขึ้นต้นด้วย `obj` ⇒ เดิมถูกตีเป็นคอลัมน์ **เลข MAT** (role 'mat')
+     ซึ่งถูกจองไปแล้วโดยคอลัมน์ `Obj` ⇒ `col.desc` ไม่เคยถูกตั้ง ⇒ **ชื่อพาร์ทว่างทั้งใบ**
+     แล้วตอนเขียนลง DB ตกไปใช้ `mat_no` แทนชื่อ = ทุกแถวชื่อเป็นเลข MAT (น้องหน้างานเรียก "เพี้ยน") */
+  let bestRole = null, bestLen = -1;
+  for (const [role, keys] of HEAD) for (const k of keys) {
+    if (!(c === k || c.startsWith(k) || (c.length >= 3 && k.startsWith(c)))) continue;
+    const len = Math.min(c.length, k.length);              // ความ "เฉพาะเจาะจง" ของการแมตช์
+    if (len > bestLen) { bestLen = len; bestRole = role; }
+  }
+  if (bestRole) return bestRole;
   return c.startsWith('sloc') || c.startsWith('prod.sloc') || c.startsWith('stor') ? 'sloc' : null;
 };
 

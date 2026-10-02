@@ -9,6 +9,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
+import CommitInput from '../components/CommitInput';
 import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { addDays as addDaysYmd } from '../utils/pmUsage'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache } from '../utils/pmTeams'
@@ -331,7 +332,10 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
-        <input value={cp.group_name ?? ''} onChange={e => onChange({ group_name: e.target.value })}
+        {/* 🔴 ช่องนี้ = ตัวจัดกลุ่มการ์ด (groupCheckpoints + <div key={g.name}>) ⇒ ถ้าส่งค่าออกทุก
+            keystroke การ์ดจะย้ายกลุ่ม/ถูก unmount ทุกตัวอักษร = หลุดโฟกัส ต้องคลิกกลับทุกครั้ง
+            ⇒ ต้องเป็น <CommitInput> (ส่งค่าตอน blur/Enter) ห้ามเปลี่ยนกลับเป็น <input> */}
+        <CommitInput value={cp.group_name ?? ''} onCommit={v => onChange({ group_name: v })}
           placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
       </div>
 
