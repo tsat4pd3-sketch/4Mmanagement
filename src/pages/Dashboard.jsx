@@ -1939,7 +1939,7 @@ export default function Dashboard() {
                           });
                           const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
                           if (ediQty <= 0 && stockUsed > 0) {
-                            chips.push({ color: '#22c55e', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
                           }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
@@ -1964,13 +1964,13 @@ export default function Dashboard() {
                               const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
                               const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
                               if (nf <= gridEndMs) {
-                                chips.push({ color: '#22c55e', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                                chips.push({ color: 'var(--green)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
                               } else {
                                 const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
                                 if (of2 <= gridEndMs) {
-                                  chips.push({ color: '#f59e0b', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                  chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: '#ef4444', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
                                 }
                               }
                             }
@@ -1980,7 +1980,7 @@ export default function Dashboard() {
                         if (!remainCards) return;
                         const sLabel = shift === 'day' ? '☀️' : '🌙';
                         if (isHistorical) {
-                          chips.push({ color: '#ef4444', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
                           return;
                         }
                         if (isFutureDay || projEndMs == null) return;
@@ -1992,11 +1992,11 @@ export default function Dashboard() {
                           const projLabel = `~${fmtMs(projEndMs)}`;
                           const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
                           if (projEndMs <= DAY_REG_END) {
-                            chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
                           } else if (projEndMs <= DAY_OT_END) {
-                            chips.push({ color: '#f59e0b', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                            chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                           } else {
-                            chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                           }
                           return;
                         }
@@ -2005,13 +2005,13 @@ export default function Dashboard() {
                           // ยังไม่เริ่มกะดึก → โหมดตัดสินใจ: เข้า 22:30 ทันมั้ย หรือต้องเรียกเข้า 20:00 (เปิด OT หัวกะ)
                           const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
                           if (normalFinish <= FRAME_END) {
-                            chips.push({ color: '#22c55e', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
                           } else {
                             const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
                             if (otFinish <= FRAME_END) {
-                              chips.push({ color: '#f59e0b', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                              chips.push({ color: 'var(--amber)', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
                             } else {
-                              chips.push({ color: '#ef4444', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                              chips.push({ color: 'var(--red)', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
                             }
                           }
                           return;
@@ -2019,9 +2019,9 @@ export default function Dashboard() {
                         // กะดึกเริ่มผลิตแล้ว → ใช้คิวจริงเทียบขอบกะ 08:00
                         const projLabel = `~${fmtMs(projEndMs)}`;
                         if (projEndMs <= FRAME_END) {
-                          chips.push({ color: '#22c55e', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+                          chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
                         } else {
-                          chips.push({ color: '#ef4444', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
                         }
                       });
                       return chips;
@@ -2031,7 +2031,7 @@ export default function Dashboard() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
                         {plannerChips.map((c, i) => (
-                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: `${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.12)' : c.color + '1f'}`, color: c.color, border: `1px solid ${c.color === 'var(--muted)' ? 'rgba(148,163,184,0.3)' : c.color + '55'}` }}>
+                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
                           </span>
                         ))}
