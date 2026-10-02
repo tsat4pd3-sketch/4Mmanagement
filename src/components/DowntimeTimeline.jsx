@@ -57,6 +57,8 @@ export function downtimeSpan(d, nowMs) {
   return { st, en: Math.max(en, st) };
 }
 
+/** ล้ำหน้าเกินเท่านี้ = เวลาปิดกะน่าจะกรอกผิด — ตัวเลขเดียวกับด่านตอนกรอก (`CLOSE_AHEAD_WARN_MIN`) */
+const CLOSE_AHEAD_WARN_MIN = 90;
 const PLANNED_COLOR = '#64748b';   // เทาสงบ — หยุดตามแผนไม่ใช่ loss (กฎ Andon: ห้ามแดง ห้ามกระพริบ)
 const RUN_COLOR     = 'rgba(34,197,94,0.55)';
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -81,7 +83,12 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
     for (const s of sessions) {
       const sp = sessionSpan(s, workDate, nowMs);
       if (!sp) continue;
-      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status });
+      /* กะที่ปิดแล้วแต่ "เวลาจบ" ล้ำหน้าเวลาที่กดปิดจริง = แถบเขียวลากไปอนาคต (2026-10-02)
+         ไม่ตัดแถบให้สั้นลงเอง — ความจริงคือข้อมูลผิด ไม่ใช่จอผิด ⇒ ติดป้ายให้คนไปแก้เวลาปิดกะ
+         (กฎความซื่อสัตย์ของจอ · ต้นเหตุ+เกณฑ์ดู `checkCloseTime` ใน utils/shiftWindow.js) */
+      const closedMs = s?.status === 'closed' && s?.closed_at ? new Date(s.closed_at).getTime() : null;
+      const aheadMin = Number.isFinite(closedMs) && closedMs ? Math.round((sp.en - closedMs) / 60000) : 0;
+      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status, aheadMin });
       lo = Math.min(lo, sp.st); hi = Math.max(hi, sp.en);
     }
 
@@ -159,6 +166,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
 
           {rows.map(r => {
             const unplannedMin = r.stops.filter(x => !x.planned).reduce((s, x) => s + x.mins, 0);
+            const aheadMin = Math.max(0, ...r.runs.map(x => x.aheadMin || 0));
             return (
               <div key={r.line} style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
                 <div style={{ width: labelW, flexShrink: 0, paddingRight: 8, minWidth: 0 }}>
@@ -166,6 +174,12 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                   <div style={{ fontSize: 11, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
                     {unplannedMin > 0 ? `หยุด ${unplannedMin} น.` : 'ไม่มีหยุดนอกแผน'}
                   </div>
+                  {aheadMin > CLOSE_AHEAD_WARN_MIN && (
+                    <div title={`กะนี้ปิดไปแล้ว แต่ "เวลาปิดกะ" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง ${Math.round(aheadMin / 60 * 10) / 10} ชม.\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ`}
+                      style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', cursor: 'help' }}>
+                      ⚠️ เวลาปิดกะเกินจริง {Math.round(aheadMin / 60 * 10) / 10} ชม.
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2)', borderRadius: 5, border: '1px solid var(--border)', overflow: 'hidden' }}>

@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   shiftWindow, resolveShiftTime, checkShiftTime, hhmmToMin, fmtOffset, windowLabel, MAX_SHIFT_MIN,
+  checkCloseTime, CLOSE_AHEAD_WARN_MIN,
 } from '../shiftWindow.js';
 
 const at = (iso) => new Date(iso).getTime();
@@ -110,4 +111,52 @@ test('hhmmToMin — อ่านไม่ได้ต้องเป็น null 
 test('windowLabel — กะปิดแล้วโชว์เวลาจบจริง · ยังไม่ปิดโชว์ "ตอนนี้"', () => {
   assert.equal(windowLabel(DAY_CLOSED, at('2026-09-23T20:00:00')), '08:00 → 17:30');
   assert.equal(windowLabel(DAY_OPEN, at('2026-09-23T16:39:00')), '08:00 → ตอนนี้');
+});
+
+/* ── ด่าน "ปิดกะล้ำหน้าเวลาจริง" (2026-10-02) ─────────────────────────────────────────────
+   เคสจริง 01/10: LINE ASSY TSRA ปิดตอน 13:37 แต่กรอกเวลาจบ 17:30 (ล้ำ 3 ชม. 52 นาที)
+   ⇒ shift_min = 570 (เต็มกะ) ทั้งที่เดินจริง ~5.6 ชม. ⇒ %A/%P ต่ำกว่าจริงทั้งกะ
+   ต้นเหตุ: ค่าเริ่มต้นของช่องเวลาจบเดา "17:30" ให้ทุกครั้งที่เปิดกล่องปิดกะก่อน 18:30
+   ⚠️ เทสกลุ่มนี้ตรึงนาฬิกาเอง (กฎ: ฟังก์ชันที่กินเวลาปัจจุบันต้องรับ `now` ได้) */
+const DAY_SESSION   = { work_date: '2026-10-01', shift: 'day',   start_time: '08:00', status: 'open' };
+const NIGHT_SESSION = { work_date: '2026-09-24', shift: 'night', start_time: '20:00', status: 'open' };
+const closeAtMs = (workDate, hhmm) => new Date(`${workDate}T${hhmm}:00`).getTime();
+
+test('checkCloseTime: ปิดก่อนเลิกงาน 30-60 นาที = ปกติ ไม่เตือน', () => {
+  for (const [closeAt, expect] of [['17:00', 30], ['16:30', 60]]) {
+    const r = checkCloseTime('17:30', DAY_SESSION, closeAtMs('2026-10-01', closeAt));
+    assert.equal(r.aheadMin, expect);
+    assert.equal(r.ok, true, `ปิดตอน ${closeAt} กรอกจบ 17:30 = ปกติ ต้องไม่เตือน`);
+  }
+});
+
+test('checkCloseTime: เคสจริง 01/10 — ปิด 13:37 กรอกจบ 17:30 ต้องเตือน + เสนอเวลาตอนนี้', () => {
+  const r = checkCloseTime('17:30', DAY_SESSION, closeAtMs('2026-10-01', '13:37'));
+  assert.equal(r.aheadMin, 233);          // 3 ชม. 53 นาที
+  assert.equal(r.ok, false);
+  assert.equal(r.nowHHmm, '13:37', 'ต้องเสนอ "เวลาตอนนี้" ให้กดแก้ในคลิกเดียว');
+});
+
+test('checkCloseTime: กะดึก — ปิด 22:33 กรอกจบ 08:00 = ล้ำข้ามวัน ต้องจับได้', () => {
+  const r = checkCloseTime('08:00', NIGHT_SESSION, closeAtMs('2026-09-24', '22:33'));
+  assert.equal(r.aheadMin, 567, 'ต้องตีความ 08:00 เป็นเช้าวันถัดไป (ปลายกะ) ไม่ใช่วันเดียวกัน');
+  assert.equal(r.ok, false);
+});
+
+test('checkCloseTime: รอยต่อที่ข้อมูลบอก = 90 นาที (เท่ากับ = ยังผ่าน · เกิน 1 นาที = เตือน)', () => {
+  const base = closeAtMs('2026-10-01', '17:30');
+  assert.equal(checkCloseTime('17:30', DAY_SESSION, base - CLOSE_AHEAD_WARN_MIN * 60000).ok, true);
+  assert.equal(checkCloseTime('17:30', DAY_SESSION, base - (CLOSE_AHEAD_WARN_MIN + 1) * 60000).ok, false);
+});
+
+test('checkCloseTime: ปิดช้ากว่าเวลาที่กรอก (ย้อนหลัง) = ไม่ล้ำ ไม่เตือน', () => {
+  const r = checkCloseTime('17:30', DAY_SESSION, closeAtMs('2026-10-01', '19:00'));
+  assert.ok(r.aheadMin < 0);
+  assert.equal(r.ok, true, 'กรอกย้อนหลังเป็นเรื่องปกติ ห้ามเตือน');
+});
+
+test('checkCloseTime: อ่านไม่ได้ = null (ผู้เรียกต้องปล่อยผ่าน ห้ามบล็อก)', () => {
+  assert.equal(checkCloseTime('', DAY_SESSION), null);
+  assert.equal(checkCloseTime('17:30', { shift: 'day', start_time: '08:00' }), null, 'ไม่มี work_date = ตรวจไม่ได้');
+  assert.equal(checkCloseTime('17:30', null), null);
 });
