@@ -57,6 +57,23 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'monitor-grid-math-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการหยิบสูตร recurrence ของบอร์ด Monitoring ไปคิดเองนอก monitorGrid.js */
+    re: /\bRECUR\s*[[.]/g,
+    why: 'แถว UNBOUND / BALANCE / ค้างที่ร้านชุบ เป็น **recurrence** (ค่าวันนี้กินค่าเมื่อวาน) — '
+       + 'ก๊อปสูตรไปคิดในหน้า = หน้าไหนลืมบวกตัวเดียว ตัวเลขเพี้ยนทั้งแถวแบบไม่มีใครเห็น '
+       + '(ช่องยังมีเลขอยู่ ดูปกติทุกประการ) · และสูตรพวกนี้ถอดมาจากไฟล์ Excel จริงที่ทีมวางแผน '
+       + 'ใช้ตัดสินใจเปิด OT/เพิ่มกะ ⇒ เพี้ยนแล้วตามไม่เจอ · ทุกเลขบนบอร์ดต้องออกจาก `buildGrid()` ที่เดียว',
+    fix: 'เรียก `buildGrid({ parts, periods, rows, manual, system })` แล้วอ่านค่าด้วย `valueAt()` / `cellAt()` '
+       + '· ต้องการสูตรใหม่ ให้เพิ่มใน `RECUR` ของ `src/utils/monitorGrid.js` แล้วอ้างด้วย**ชื่อสูตร** '
+       + 'ผ่าน `monitor_boards.rows[].recur` ไม่ใช่เขียนเลขคณิตในหน้า',
+    allow: {
+      'src/utils/monitorGrid.js': 99,    // เจ้าของสูตร
+      'src/utils/monitorBoards.js': 99,  // เช็คว่าสูตรที่ DB อ้างมีอยู่จริงไหม (unknownRecur)
+    },
+  },
+  {
     id: 'modal-closes-on-backdrop',
     scan: ['src'], ext: ['.jsx'],
     /* จับ "ชั้น backdrop ของ modal มี onClick={onClose}" — บรรทัดเดียวกับ position:'fixed' / className="overlay"

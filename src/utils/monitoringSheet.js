@@ -24,7 +24,11 @@
 /** หัวคอลัมน์ → คีย์ · เทียบแบบตัดอักขระพิเศษ (ไฟล์จริงมีทั้ง "Mat SAP" / "Mat'l" / "MAT'L NO.") */
 const normHead = (s) => String(s ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
 
-const MAT_HEADS = ['MATSAP', 'MATL', 'MATLNO', 'MATSAP2', 'MATNO'];
+const MAT_HEADS = ['MATSAP', 'MATL', 'MATLNO', 'MATSAP2', 'MATNO',
+  /* ชีท mat (R402) เขียน " Mat'l SAP" — เพิ่ม 2026-10-01 ตอนทำบอร์ด Monitoring
+     ✅ ตรวจแล้วไม่กระทบ `detectMonitoringKind`: ชีท mat ยังคืน null เหมือนเดิม (ไม่มีคอลัมน์ป้าย ·
+     ไม่มี Order · ไม่มี FC+%SL) ⇒ MonitoringUpload ยังข้ามชีทนี้เหมือนเดิม ไม่มีพฤติกรรมไหนเปลี่ยน */
+  'MATLSAP'];
 /* ป้ายที่เจอจริงในไฟล์ — ชีทไลน์ปั๊มกับชีท Argen ใช้ชุดไม่เหมือนกัน แต่โครง "บล็อกป้าย × วัน" เดียวกัน
    ⇒ หาคอลัมน์ป้ายด้วยการ**สแกนหาคอลัมน์ที่มีป้ายซ้อนกันหลายตัว** ห้ามผูกกับหัวคอลัมน์ชื่อใดชื่อหนึ่ง
    (เดิมผูกกับหัว 'PLAN' ⇒ ชีท Argen ซึ่งหัวเป็น 'REQUIREMENT DATE' ถูกข้ามทั้งใบ = ตกความต้องการ
@@ -484,4 +488,478 @@ export function sheetReport(parsed, { today, customers = [] } = {}) {
   (parsed?.press || []).forEach(ps => add('แท่นปั๊ม', ps,
     p => Object.entries(p.demand || {}).map(([, q]) => ({ qty: q }))));
   return out.sort((a, b) => (a.kind === b.kind ? b.orders - a.orders : a.kind < b.kind ? -1 : 1));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════
+   📉 ตัวแกะ "เต็มเมทริกซ์" สำหรับบอร์ด Monitoring ในระบบ (2026-10-01)
+
+   ต่างจาก `parsePressSheet` ข้างบนอย่างไร — และทำไมต้องมี 2 ตัว:
+     • `parsePressSheet` = ตัวเดิม (23/09) **ยุบ** ไฟล์ให้เหลือ "สัญญาณความต้องการ" ไปลง
+       monitoring_shipments/สต็อก — ทิ้งรายละเอียดรายวันของ PLAN/IN/UNBOUND ทั้งหมดโดยตั้งใจ
+     • `parseBoardSheet` (ตัวนี้) **เก็บทุกช่อง** เพราะปลายทางคือ "บอร์ดที่ทีมวางแผนทำงานบนนั้น"
+       (user 01/10: "เค้าอยากทำในระบบเรา" + "เอาทุกชีททุกหน้าเลย")
+   ⇒ คนละคำถาม จึงคนละตัว **แต่ใช้ตัวหาหัวคอลัมน์/คอลัมน์ป้าย/วันที่ชุดเดียวกัน**
+     (ห้ามก๊อป findLabelCol/cellDate ไปไว้ที่อื่น — ไฟล์เดือนหน้าเลื่อนคอลัมน์ แก้ที่นี่ที่เดียว)
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+
+/** ป้ายในไฟล์ → คีย์แถวในระบบ · 🔴 ป้ายใหม่ที่ไม่รู้จักต้องรายงาน ห้ามข้ามเงียบ */
+export const BOARD_ROW_KEY = {
+  PLAN: 'plan',
+  IN: 'in',
+  UNBOUND: 'unbound',
+  OUT: 'out',
+  BALANCE: 'balance',
+  WIP: 'wip',
+  MIN: 'min',
+  MAX: 'max',
+  ORDERREQUIREMENT: 'order_req',
+  PRODDATE: 'prod_date',
+  STOCKWH: 'stock_wh',
+  SENDTOGREAT: 'send',
+};
+
+/** หัวคอลัมน์ที่เป็น "แอตทริบิวต์ของพาร์ท" (ไม่ใช่คอลัมน์วันที่) */
+const ATTR_HEADS = [
+  ['part_no', ['PART NO.']],
+  ['part_name', ['PART NAME', 'Part Name']],
+  ['model', ['Model']],
+  ['raw_mat', ['Raw material']],
+  ['process', ['Process']],
+  ['rack', ['Rack']],
+  ['lot_qty', ['LOT']],
+  ['packing', ['Packing', 'Packing/std.', 'P.STD.', 'Packing GREAT']],
+  ['cost', ['Cost', 'cost']],
+  ['ct_sec', ['Time']],
+  ['fc', ['FC', 'Forecast']],
+];
+const NUM_ATTRS = new Set(['lot_qty', 'packing', 'cost', 'ct_sec', 'fc']);
+
+/**
+ * ชีทแบบบล็อก (110T/300T/250T/800T/600T/Argen) → เมทริกซ์เต็ม
+ *
+ * @param {Array<Array>} rows ทั้งแผ่น
+ * @returns {{
+ *   parts: Array<{mat_no, part_no, part_name, …, cells: Object<rowKey, Object<date, number>>,
+ *                 texts: Object<rowKey, Object<date, string>>}>,
+ *   dates: string[], rowKeys: string[], warnings: string[]
+ * }}
+ *
+ * 🔴 ช่องว่างในไฟล์ **ไม่ถูกเก็บ** (sparse) — "ว่าง" คือข้อเท็จจริงว่าวันนั้นไม่มีของไหล
+ *    ถ้าเก็บเป็น 0 ทุกช่อง เมทริกซ์เดียวจะกิน 106 × 34 × 7 = 25,228 แถว ทะลุเพดานคิวรีทันที
+ */
+export function parseBoardSheet(rows = []) {
+  const warnings = [];
+  const head = rows[0] || [];
+  const matCol = findCol(head, MAT_HEADS);
+  const labCol = findLabelCol(rows);
+  if (matCol < 0 || labCol < 0) {
+    return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบคอลัมน์ Mat SAP หรือคอลัมน์ป้ายบล็อก'] };
+  }
+
+  /* แถววันที่: ชีทไลน์ปั๊มอยู่แถว 2 (แถว 1 เป็นชื่อวัน Wed/Thu) · Argen อยู่แถว 1
+     ⇒ เลือกแถวที่มีวันที่มากกว่า แล้วจำว่าข้อมูลเริ่มแถวไหน (ตรรกะเดียวกับ parsePressSheet) */
+  const dateRowOf = (r) => {
+    const out = [];
+    (rows[r] || []).forEach((c, i) => { const d = cellDate(c); if (d) out.push([i, d]); });
+    return out;
+  };
+  const d0 = dateRowOf(0);
+  const d1 = dateRowOf(1);
+  const dateCols = d1.length >= d0.length ? d1 : d0;
+  if (!dateCols.length) warnings.push('ไม่พบแถววันที่');
+  const firstDataRow = dateCols === d1 ? 2 : 1;
+
+  const attrCol = {};
+  for (const [key, heads] of ATTR_HEADS) {
+    const i = findCol(head, heads);
+    if (i >= 0) attrCol[key] = i;
+  }
+
+  const parts = [];
+  const rowKeys = [];
+  const seenLabel = new Set();
+  const unknownLabels = new Set();
+  let cur = null;
+  /* ⚠️ Argen วางแถว ORDER REQUIREMENT ไว้ **ก่อน** แถวที่มีเลข mat ของบล็อกนั้น
+     (เหตุผลเดียวกับ pendingDemand ใน parsePressSheet — ถ้าเก็บใส่พาร์ทปัจจุบันตรงๆ
+     ความต้องการจะเลื่อนไปเกาะพาร์ทก่อนหน้าทั้งไฟล์) */
+  let pending = null;
+
+  const bagOf = (part, rk) => {
+    if (!part.cells[rk]) part.cells[rk] = {};
+    return part.cells[rk];
+  };
+
+  for (let r = firstDataRow; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const matRaw = row[matCol];
+    const hasMat = matRaw !== undefined && matRaw !== null && String(matRaw).trim() !== '';
+
+    if (hasMat) {
+      cur = { mat_no: String(matRaw).trim(), cells: {}, texts: {} };
+      for (const [key, i] of Object.entries(attrCol)) {
+        const v = row[i];
+        if (NUM_ATTRS.has(key)) {
+          const n = num(v);
+          cur[key] = n || null;
+        } else {
+          const s = String(v ?? '').trim();
+          cur[key] = s || null;
+        }
+      }
+      if (pending) { cur.cells = pending.cells; cur.texts = pending.texts; pending = null; }
+      parts.push(cur);
+    }
+
+    const labRaw = row[labCol];
+    if (labRaw === undefined || labRaw === null || String(labRaw).trim() === '') continue;
+    const lab = normHead(labRaw);
+    const rk = BOARD_ROW_KEY[lab];
+    if (!rk) { unknownLabels.add(String(labRaw).trim()); continue; }
+    if (!seenLabel.has(rk)) { seenLabel.add(rk); rowKeys.push(rk); }
+
+    /* ป้ายที่มาก่อนเลข MAT = พักไว้ให้พาร์ทตัวถัดไป */
+    const target = cur || (pending ||= { cells: {}, texts: {} });
+
+    for (const [i, d] of dateCols) {
+      const v = row[i];
+      if (v === undefined || v === null || v === '') continue;
+      /* แถว PROD. DATE เก็บ "วันที่" ไม่ใช่จำนวน ⇒ เก็บแยกใน texts */
+      const asDate = cellDate(v);
+      if (rk === 'prod_date' || (asDate && typeof v !== 'number')) {
+        if (!target.texts[rk]) target.texts[rk] = {};
+        target.texts[rk][d] = asDate || String(v).trim();
+        continue;
+      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;   // #N/A, #DIV/0!, ข้อความ → ข้าม
+      const bag = bagOf(target, rk);
+      bag[d] = (bag[d] || 0) + v;
+    }
+  }
+
+  if (pending) warnings.push('มีบล็อกป้ายค้างท้ายไฟล์ที่ไม่มีพาร์ทรับ — ตรวจโครงชีท');
+  if (unknownLabels.size) {
+    warnings.push(`ป้ายแถวที่ระบบยังไม่รู้จัก: ${[...unknownLabels].join(', ')} — เพิ่มใน BOARD_ROW_KEY ก่อนใช้`);
+  }
+  return { parts, dates: dateCols.map(([, d]) => d), rowKeys, warnings };
+}
+
+/**
+ * ชีทลูกค้ารายแร็ค (TSPK / TSESA+LA) → เมทริกซ์เต็ม
+ * 1 พาร์ท = 1 แถว · คู่คอลัมน์ (Order, balance) ต่อวันส่ง
+ * ⇒ แปลงเป็นแถว `order` รายวัน + ยอดตั้งต้น (FG Total) ใส่ช่อง balance ของคอลัมน์แรก
+ *
+ * 🔴 คอลัมน์ balance ในไฟล์ **ไม่ต้องอ่าน** — เป็นผลของสูตร `=Total-Back-ΣOrder` ซึ่ง
+ *    `RECUR.deplete` คิดใหม่ให้เหมือนกันเป๊ะ · อ่านมาเก็บ = มี 2 แหล่งความจริง
+ */
+export function parseRackSheet(rows = []) {
+  const base = parseCustomerSheet(rows);
+  const warnings = [...base.warnings];
+  const dates = base.dates || [];
+  const seed = dates[0] || null;
+  const parts = (base.parts || []).map((p) => {
+    const cells = { order: {} };
+    for (const o of p.orders || []) if (o.qty) cells.order[o.due_date] = o.qty;
+    /* FG ที่มีอยู่ตอนนี้ = Stock W/H + ผลิต/WIP (ไฟล์: L = J+K) → เป็น "ยอดยกมา" ของคอลัมน์แรก */
+    const fg = (typeof p.fg_stock === 'number' ? p.fg_stock : 0) + (typeof p.wip === 'number' ? p.wip : 0);
+    if (seed && (p.fg_stock !== null || p.wip !== null)) cells.balance = { [seed]: fg };
+    if (seed && p.min !== null && p.min !== undefined) cells.min = { [seed]: p.min };
+    if (seed && p.max !== null && p.max !== undefined) cells.max = { [seed]: p.max };
+    return {
+      mat_no: p.mat_no,
+      part_no: p.customer_part_no || null,
+      packing: p.packing ?? null,
+      cells,
+      texts: {},
+    };
+  });
+  return { parts, dates, rowKeys: ['order', 'balance', 'min', 'max'], warnings };
+}
+
+/**
+ * ชีทวัตถุดิบม้วน (mat — DAILY REPORT STORE RAW MATERIAL R402) → รายการเหล็กม้วน
+ * ไม่มีคอลัมน์วันที่ (เป็นภาพ ณ ปัจจุบัน) ⇒ ลงเป็นพาร์ทพร้อม `kg_per_piece` + ยอดคงเหลือวันนี้
+ *
+ * ⚠️ ไฟล์เดิมคนพิมพ์ `*2` / `/2` มือรายแถวสำหรับงานที่ปั๊มทีเดียวได้ 2 ชิ้น
+ *    ⇒ แปลงเป็น `pieces_per_shot` (กฎเหล็ก "ชิ้น ≠ shot") **ห้ามให้คนพิมพ์ตัวคูณในหน้าซ้ำ**
+ *    อ่านจากข้อความในคอลัมน์ "อัตราการใช้" เช่น "0.341 Kgs. (ได้ 2 ชิ้น)" / "(ได้ R/L)"
+ */
+export function parseRawSheet(rows = [], { asOf } = {}) {
+  const warnings = [];
+  let h = -1;
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    if (findCol(rows[i], MAT_HEADS) >= 0) { h = i; break; }
+  }
+  if (h < 0) return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบคอลัมน์เลข MAT'] };
+  const head = rows[h];
+  const matCol = findCol(head, MAT_HEADS);
+  const cDesc = findCol(head, ['Description']);
+  const cSemi = findCol(head, ['Semi Part']);
+  const cRateTxt = findCol(head, ['อัตราการใช้']);
+  const cRate = findCol(head, ['อัตรา']);
+  const cOnHand = findCol(head, ['คงเหลือ']);
+  const cQueue = findCol(head, ['งานท้ายไลน์(ชิ้น)', 'งานท้ายไลน์']);
+  const seed = asOf || null;
+
+  const parts = [];
+  for (let r = h + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const mat = String(row[matCol] ?? '').trim();
+    if (!/^\d{6,}$/.test(mat)) continue;
+    const rateTxt = cRateTxt >= 0 ? String(row[cRateTxt] ?? '') : '';
+    /* "(ได้ 2 ชิ้น)" → 2 · "(ได้ R/L)" / "(ได้ R2...)" → 2 (ซ้าย-ขวาออกมาพร้อมกัน) */
+    const mNum = rateTxt.match(/ได้\s*(\d+)\s*ชิ้น/);
+    const pieces = mNum ? Number(mNum[1]) : (/ได้\s*R\s*\/?\s*L|ได้\s*R\d/i.test(rateTxt) ? 2 : null);
+    const cells = {};
+    if (seed) {
+      const oh = cOnHand >= 0 ? row[cOnHand] : null;
+      const q = cQueue >= 0 ? row[cQueue] : null;
+      if (typeof oh === 'number' && Number.isFinite(oh)) cells.on_hand_kg = { [seed]: oh };
+      if (typeof q === 'number' && Number.isFinite(q)) cells.queue_pcs = { [seed]: q };
+    }
+    parts.push({
+      mat_no: mat,
+      spec: cDesc >= 0 ? String(row[cDesc] ?? '').trim() || null : null,
+      semi_part: cSemi >= 0 ? String(row[cSemi] ?? '').trim() || null : null,
+      kg_per_piece: cRate >= 0 ? num(row[cRate]) || null : null,
+      pieces_per_shot: pieces && pieces >= 1 && pieces <= 20 ? pieces : null,
+      cells,
+      texts: {},
+    });
+  }
+  if (!seed) warnings.push('ไม่ได้ระบุวันอ้างอิง (asOf) — ยอดคงเหลือเหล็กไม่ถูกเก็บ');
+  return { parts, dates: seed ? [seed] : [], rowKeys: ['on_hand_kg', 'queue_pcs'], warnings };
+}
+
+/* ── ชีทไหนกลายเป็นบอร์ดชนิดอะไร ───────────────────────────────────────────────────
+   🔴 ชีทที่ไม่เข้าเกณฑ์ต้อง**คืนเหตุผล** ไม่ใช่คืน null เฉยๆ — ไฟล์เดือนหน้าอาจเพิ่มชีทใหม่
+     แล้วถ้าจอบอกแค่ "ข้าม 3 ชีท" ไม่มีใครรู้ว่าข้ามเพราะอะไร (จอต้องบอกตรงๆ)
+
+   ชีทที่**ตั้งใจไม่ทำเป็นบอร์ด** (ไม่ใช่ของตกหล่น):
+     • `Vlookup Argen` = ตารางค้นหายอดลูกค้ารายสัปดาห์ที่ **ป้อนแถว ORDER REQUIREMENT ของชีท Argen**
+       ⇒ เป็น "แหล่งข้อมูลของบอร์ด Argen" ไม่ใช่บอร์ดแยก · ทำเป็นบอร์ดจะได้ยอดลูกค้า 2 ที่
+     • `Sheet1`, `Sheet1 (2)`, `รอบ RA` = กระดาษทดของทีมวางแผน (รายการ packing + โน้ตจิปาถะ)
+       ไม่มีโครงตารางที่คงที่ ⇒ ยกเข้าระบบไม่ได้และไม่ควรยก                                 */
+const SOURCE_SHEETS = ['VLOOKUPARGEN'];
+const SCRATCH_SHEETS = ['SHEET1', 'SHEET12', 'ROBRA'];
+
+export function boardKindOfSheet(name, rows = []) {
+  const n = normHead(name);
+  if (SOURCE_SHEETS.includes(n)) {
+    return { kind: null, why: 'ตารางค้นหาที่ป้อนบอร์ด Argen (ไม่ใช่บอร์ดแยก)', intentional: true };
+  }
+  if (SCRATCH_SHEETS.includes(n) || /^SHEET\d/.test(n)) {
+    return { kind: null, why: 'กระดาษทด ไม่มีโครงตารางคงที่', intentional: true };
+  }
+  /* ชีทไลน์ปั๊ม: ชื่อเป็นตันของเครื่อง (110T · 300T · 800T …) */
+  if (/^\d+T$/.test(n)) return { kind: 'line', why: '' };
+  /* ชีทวัตถุดิบม้วน: มีคอลัมน์ "อัตราการใช้" หรือหัวเรื่อง RAW MATERIAL */
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    if (findCol(rows[i], ['อัตราการใช้']) >= 0) return { kind: 'raw', why: '' };
+  }
+  if (/RAWMATERIAL/.test(normHead(rows[0]?.[0]))) return { kind: 'raw', why: '' };
+  /* งานส่งชุบแบบบล็อก (824-825): ต้องเจอป้าย **ที่เป็นเอกลักษณ์** คือทิศทางการส่ง
+     🔴 ห้ามใช้ 'Diff forecast' เป็นตัวตัดสิน — ชีท RA มีหัวคอลัมน์ 'Diff Forecast' ด้วย
+       (เคยพลาดจริง 01/10: RA ถูกส่งเข้าตัวแกะแบบบล็อก แล้วได้ 0 ช่อง + เตือนป้ายมั่ว 10 ตัว) */
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    for (const c of rows[i] || []) {
+      const k = VENDOR_LABELS[normHead(c)];
+      if (k === 'to_vendor' || k === 'from_vendor' || k === 'at_vendor') return { kind: 'vendor', why: '', flat: false };
+    }
+  }
+  const k = detectMonitoringKind(rows);
+  if (k === 'customer') return { kind: 'rack', why: '' };
+  if (k === 'press') return { kind: 'great', why: '' };
+  if (k === 'grid') return { kind: 'vendor', why: '', flat: true };
+  return { kind: null, why: 'แกะโครงไม่ได้ (ไม่พบคอลัมน์ MAT / คอลัมน์ป้าย / คอลัมน์วันที่)', intentional: false };
+}
+
+/**
+ * ตัวเดียวที่หน้า import เรียก — เลือกตัวแกะให้ตามชนิดชีท
+ * @returns {{kind, flat, why, intentional, parts, dates, rowKeys, warnings}}
+ */
+export function parseSheetForBoard(name, rows = [], { asOf } = {}) {
+  const d = boardKindOfSheet(name, rows);
+  if (!d.kind) return { ...d, parts: [], dates: [], rowKeys: [], warnings: [] };
+  let r;
+  if (d.kind === 'line' || d.kind === 'great') r = parseBoardSheet(rows);
+  else if (d.kind === 'rack') r = parseRackSheet(rows);
+  else if (d.kind === 'raw') r = parseRawSheet(rows, { asOf });
+  else if (d.kind === 'vendor') r = d.flat ? parseVendorFlatSheet(rows) : parseVendorBlockSheet(rows);
+  else r = { parts: [], dates: [], rowKeys: [], warnings: ['ชนิดบอร์ดที่ยังไม่มีตัวแกะ'] };
+  return { ...d, ...r };
+}
+
+
+/* ── ชีทงานส่งชุบข้างนอก (RA · 824-825) ────────────────────────────────────────────────
+   🔴 **ห้ามเอาป้ายของ 2 ชีทนี้ไปใส่ `LABELS_PRESS`** — `detectMonitoringKind` ใช้ลิสต์นั้น
+     ถ้าใส่เข้าไป ชีท 824-825 จะกลายเป็น kind='press' แล้ว MonitoringUpload (จอเดิม 23/09)
+     จะเริ่มเขียน "ส่งไปชุบ" เป็นยอดส่งลูกค้า ซึ่งเป็นบั๊กที่คอมเมนต์ของมันเตือนไว้ตรงๆ
+     ⇒ ตัวหาคอลัมน์ป้ายของ 2 ชีทนี้แยกเป็นของตัวเอง · blast radius = 0
+
+   ⚠️ ข้อเท็จจริงที่ต้องบอกคนใช้: ในไฟล์เดือน ต.ค. **2 ชีทนี้ยังเป็นวันที่ ส.ค.-ก.ย.**
+     = ทีมวางแผนไม่ได้อัพเดทมันรายเดือนเหมือนชีทไลน์ปั๊ม ⇒ จอต้องโชว์ว่าข้อมูลหยุดที่วันไหน */
+const VENDOR_LABELS = {
+  TSAT4TOJRPE: 'to_vendor',
+  JRPETOTSAT4: 'from_vendor',
+  STOCKVENDOR: 'at_vendor',
+  DIFFFORECAST: 'diff_fc',
+};
+
+/** ชีท 824-825 — บล็อกป้ายของงานชุบ (ป้ายคนละชุดกับชีทไลน์ปั๊ม) */
+export function parseVendorBlockSheet(rows = []) {
+  const warnings = [];
+  /* หาแถวหัว = แถวที่มีทั้งเลข MAT และคอลัมน์วันที่ */
+  let h = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    if (findCol(rows[i], MAT_HEADS) >= 0 && (rows[i] || []).some((c) => cellDate(c))) { h = i; break; }
+  }
+  if (h < 0) return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบแถวหัวที่มีทั้งเลข MAT และวันที่'] };
+  const head = rows[h];
+  const matCol = findCol(head, MAT_HEADS);
+  const cPart = findCol(head, ['PART NO.']);
+  const cFc = findCol(head, ['Forecast', 'FC']);
+  const dateCols = [];
+  head.forEach((c, i) => { const d = cellDate(c); if (d) dateCols.push([i, d]); });
+  if (!dateCols.length) return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบคอลัมน์วันที่'] };
+
+  /* หาคอลัมน์ป้ายด้วยลิสต์ของชีทนี้เอง */
+  let labCol = -1, bestHits = 0;
+  const width = Math.max(...rows.slice(0, 20).map((r) => (r || []).length), 0);
+  for (let c = 0; c < width; c++) {
+    let hits = 0;
+    for (let r = h; r < Math.min(rows.length, h + 20); r++) if (VENDOR_LABELS[normHead(rows[r]?.[c])]) hits++;
+    if (hits > bestHits) { bestHits = hits; labCol = c; }
+  }
+  if (labCol < 0) return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบคอลัมน์ป้าย (TSAT4 to JRPE / Stock Vendor …)'] };
+
+  /* 🔴 ชีทนี้มี **คอลัมน์ยอดยกมาที่ไม่มีวันที่กำกับ** อยู่ก่อนคอลัมน์วันที่แรก
+     (Stock Vendor = 849 ที่คอลัมน์ก่อน 2026-09-01 ซึ่งมี 599) = สต๊อกที่ร้านก่อนเริ่มช่วง
+     ⇒ ยกให้เป็นคอลัมน์ "วันก่อนวันแรก" ให้โครงเหมือนชีทไลน์ปั๊ม (คอลัมน์แรก = ยอดยกมา)
+     ถ้าทิ้งไป สูตร vendor_wip จะเริ่มจาก null = ทั้งแถวว่าง */
+  const firstDateCol = dateCols[0][0];
+  const seedCol = firstDateCol - 1 > labCol ? firstDateCol - 1 : -1;
+  const seedDate = addDaysStr(dateCols[0][1], -1);
+
+  /* 🔴 1 บล็อกในชีทนี้ = **1 พาร์ท แต่มีเลข SAP 2 ตัว** (ก่อนชุบ / หลังชุบ)
+     งานชิ้นเดียวเปลี่ยนเลขตอนส่งไปชุบแล้วกลับมาเป็นอีกเลข ⇒ ถ้าเปิดพาร์ทใหม่ทุกครั้งที่เจอ
+     เลข 6 หลัก จะได้ 2 พาร์ทที่แถวไม่ครบคนละครึ่ง (เคยพลาดจริง 01/10: พาร์ทแรกมีแต่ to_vendor
+     พาร์ทที่สองมีแต่ from_vendor ⇒ สูตร vendor_wip คิดไม่ได้เลยทั้งใบ)
+     ⇒ เปิดพาร์ทใหม่เมื่อเจอ "ก่อนชุบ" · เลข "หลังชุบ" เก็บเป็น mat_after ของพาร์ทเดิม */
+  const stageCol = (() => {
+    for (let c = 0; c <= Math.max(labCol, matCol); c++) {
+      for (let r = h + 1; r < Math.min(rows.length, h + 20); r++) {
+        if (/ก่อนชุบ/.test(String(rows[r]?.[c] ?? ''))) return c;
+      }
+    }
+    return -1;
+  })();
+  if (stageCol < 0) warnings.push('ไม่พบคอลัมน์ขั้น (ก่อนชุบ/หลังชุบ) — แยกบล็อกด้วยเลข MAT แทน');
+
+  const parts = [];
+  const rowKeys = [];
+  const seen = new Set();
+  const unknown = new Set();
+  let cur = null;
+  for (let r = h + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const matRaw = String(row[matCol] ?? '').trim();
+    const stage = stageCol >= 0 ? String(row[stageCol] ?? '') : '';
+    const isMat = /^\d{6,}$/.test(matRaw);
+    const startsBlock = stageCol >= 0 ? (/ก่อนชุบ/.test(stage) && isMat) : isMat;
+    if (startsBlock) {
+      cur = {
+        mat_no: matRaw,
+        mat_after: null,
+        part_no: cPart >= 0 ? String(row[cPart] ?? '').trim() || null : null,
+        fc: cFc >= 0 ? num(row[cFc]) || null : null,
+        cells: {}, texts: {},
+      };
+      parts.push(cur);
+    } else if (cur && isMat && /หลังชุบ/.test(stage)) {
+      cur.mat_after = matRaw;
+    }
+    if (!cur) continue;
+    const labRaw = row[labCol];
+    if (labRaw === undefined || labRaw === null || String(labRaw).trim() === '') continue;
+    const lab = normHead(labRaw);
+    const rk = VENDOR_LABELS[lab];
+    if (!rk) {
+      /* "Diff % forecast" เป็นผลหารของ Diff forecast ⇒ ไม่เก็บโดยตั้งใจ (คิดสดได้) */
+      if (lab !== 'DIFFFORECAST' && !/^DIFF/.test(lab)) unknown.add(String(labRaw).trim());
+      continue;
+    }
+    if (!seen.has(rk)) { seen.add(rk); rowKeys.push(rk); }
+    if (!cur.cells[rk]) cur.cells[rk] = {};
+    if (seedCol >= 0) {
+      const sv = row[seedCol];
+      if (typeof sv === 'number' && Number.isFinite(sv)) cur.cells[rk][seedDate] = sv;
+    }
+    for (const [i, d] of dateCols) {
+      const v = row[i];
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      cur.cells[rk][d] = (cur.cells[rk][d] || 0) + v;
+    }
+  }
+  if (unknown.size) warnings.push(`ป้ายงานชุบที่ยังไม่รู้จัก: ${[...unknown].join(', ')}`);
+  return {
+    parts,
+    dates: [seedDate, ...dateCols.map(([, d]) => d)],
+    rowKeys,
+    warnings,
+  };
+}
+
+/** ชีท RA — ตารางแบน 1 พาร์ท/แถว · คอลัมน์วันที่ = ยอดที่ส่งไปแล้วในวันนั้น */
+export function parseVendorFlatSheet(rows = []) {
+  const warnings = [];
+  let h = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    if (findCol(rows[i], MAT_HEADS) >= 0 && (rows[i] || []).some((c) => cellDate(c))) { h = i; break; }
+  }
+  if (h < 0) return { parts: [], dates: [], rowKeys: [], warnings: ['ไม่พบแถวหัวที่มีทั้งเลข MAT และวันที่'] };
+  const head = rows[h];
+  const matCol = findCol(head, MAT_HEADS);
+  const cName = findCol(head, ['Part Name', 'PART NAME']);
+  const cFc = findCol(head, ['FC', 'Forecast']);
+  const dateCols = [];
+  head.forEach((c, i) => { const d = cellDate(c); if (d) dateCols.push([i, d]); });
+
+  const parts = [];
+  let blankRun = 0, skipped = 0;
+  for (let r = h + 1; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const mat = String(row[matCol] ?? '').trim();
+    if (!/^\d{6,}$/.test(mat)) {
+      if (dateCols.some(([i]) => num(row[i]) > 0)) skipped++;
+      /* ชีท RA มีตารางที่ 2 (สรุปงานชุบ) ต่อท้าย ⇒ หยุดเมื่อไม่มี MAT ติดกัน 3 แถว
+         (เหตุผลเดียวกับ parseGridSheet — ไล่จนสุดแผ่นจะเก็บขยะของตารางที่ 2 มาเป็นพาร์ท) */
+      if (++blankRun >= 3) break;
+      continue;
+    }
+    blankRun = 0;
+    const bag = {};
+    for (const [i, d] of dateCols) {
+      const v = row[i];
+      if (typeof v === 'number' && Number.isFinite(v) && v !== 0) bag[d] = (bag[d] || 0) + v;
+    }
+    parts.push({
+      mat_no: mat,
+      part_name: cName >= 0 ? String(row[cName] ?? '').trim() || null : null,
+      fc: cFc >= 0 ? num(row[cFc]) || null : null,
+      cells: { to_vendor: bag },
+      texts: {},
+    });
+  }
+  if (skipped) warnings.push(`ข้าม ${skipped} แถวที่มีตัวเลขแต่ช่อง MAT ว่าง — ไปเติมเลข SAP ในไฟล์ต้นทาง`);
+  return { parts, dates: dateCols.map(([, d]) => d), rowKeys: ['to_vendor'], warnings };
+}
+
+/** บวกวันแบบ local (ห้ามใช้ toISOString — UTC เลื่อนวันสำหรับไทย) */
+function addDaysStr(dateStr, n) {
+  const [y, m, d] = String(dateStr || '').split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  const t = new Date(y, m - 1, d + n);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
 }
