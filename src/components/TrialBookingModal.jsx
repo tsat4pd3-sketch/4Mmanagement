@@ -56,17 +56,25 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
   };
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)',
-        borderRadius: 10, padding: 16, width: 'min(680px, 100%)', maxHeight: '90vh', overflowY: 'auto',
-        boxShadow: 'var(--shadow-lg)', display: 'grid', gap: 12 }}>
+    /* 🔴 ไม่ปิดจาก backdrop — ห้ามใส่ onClick={onClose} ที่ชั้นนี้ (UI-CONVENTIONS §5)
+       เผลอแตะพื้นหลังแล้วที่กรอกไว้ทั้งฟอร์มหายหมด · ปิดได้จากปุ่ม ✕ / ยกเลิก เท่านั้น
+       ⚠️ ใช้ className="overlay" + "modal" ของกลาง ห้ามวาง position:fixed / สีพื้นเอง
+          (วางเองแล้วหน้าตาไม่เหมือน modal ตัวอื่นในระบบ — ความทึบพื้นหลัง ขอบ ระยะใน ต่างกันหมด) */
+    <div className="overlay">
+      <div className="modal" onClick={e => e.stopPropagation()}
+        style={{ width: 'min(680px, 96vw)', maxHeight: '92vh', overflowY: 'auto', display: 'grid', gap: 12 }}>
 
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 800 }}>🧪 จองเครื่องทดลองงานใหม่</div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-            {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>🧪 จองเครื่องทดลองงานใหม่</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
+              {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
+            </div>
           </div>
+          {/* ปิดได้จาก ✕ / ยกเลิก เท่านั้น (ชั้น backdrop ไม่รับคลิก — ดูคอมเมนต์ด้านบน) */}
+          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18,
+              cursor: 'pointer', lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
         </div>
 
         <div style={row}>
