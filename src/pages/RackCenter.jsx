@@ -588,6 +588,7 @@ function QrScanModal({ onClose, onResult }) {
     return () => { stop = true; if (raf) cancelAnimationFrame(raf); stream?.getTracks().forEach(t => t.stop()); };
   }, [onResult]);
   return (
+    /* จอสแกน QR = กล้องอย่างเดียว ไม่มีช่องกรอก → ปิดจาก backdrop ได้ตามกฎ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
