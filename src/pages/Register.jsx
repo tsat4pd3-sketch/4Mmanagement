@@ -258,7 +258,7 @@ export default function Register() {
                     const { pinned, groups } = groupLineOptions(lineOptions(lineOpts, { current: groupName }));
                     const opt = o => <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>;
                     return [...pinned.map(opt), ...groups.map(g => g.label
-                      ? <optgroup key={g.label} label={`🏭 ${g.label}`}>{g.options.map(opt)}</optgroup>
+                      ? <optgroup key={g.label} label={`📁 ${g.label}`}>{g.options.map(opt)}</optgroup>
                       : g.options.map(opt))];
                   })()}
                 </select>

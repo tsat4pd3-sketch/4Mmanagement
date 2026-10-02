@@ -28,7 +28,8 @@ import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/chan
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
-import LineSelect, { LineScopeSelect } from '../components/LineSelect';
+import LineSelect from '../components/LineSelect';
+import LineScopeSelect from '../components/LineScopeSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
