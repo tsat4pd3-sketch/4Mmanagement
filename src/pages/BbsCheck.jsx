@@ -36,7 +36,7 @@ import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
-import { SHIFT_OPTIONS } from '../utils/filterLabels';
+/* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
   const d = new Date();
@@ -47,6 +47,28 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const cellKey = (empId, day) => `${empId}|${day}`;
+
+/* ══ 🔴 "กะ" ของหน้า BBS = ส่วนหนึ่งของ "คีย์ใบ" ไม่ใช่ตัวกรองมุมมอง (2026-10-02 · user แจ้ง "ตัวกรองกะใช้งานไม่ได้") ══
+   `bbs_sheets` unique = (month_key, line_name, shift) ⇒ เปลี่ยนปุ่มกะ = **เปิดใบคนละใบ** ไม่ใช่กรองใบเดิม
+   · `shift = ''` หมายถึง **ใบทั้งวัน (ไม่แยกกะ)** — เป็นถังที่ 3 ไม่ใช่ "ผลรวมของ 2 กะ"
+
+   **ต้นเหตุของบั๊ก:** commit 78119fb6 (UI-STANDARD 24/09) กวาดทุกหน้าให้ใช้ `SHIFT_OPTIONS` ร่วมกัน
+   ซึ่งป้ายของ `''` คือ **"ทุกกะ"** = คำของ*ตัวกรอง* (filterLabels.js: "ตัวกรอง (มุมมอง) → ทุก<คำนาม>")
+   ของเดิมหน้านี้เขียนว่า **"ทั้งวัน"** ซึ่งถูกแล้ว ⇒ พอป้ายเปลี่ยน ผู้ใช้อ่านว่าเป็นตัวกรอง
+   กดแล้วใบเปลี่ยน/ว่าง เลยรายงานว่า "ตัวกรองไม่ทำงาน"
+
+   **ผลที่เกิดกับข้อมูลจริง (วัดจริง 02/10):** ข้อมูลถูกกรอกกระจาย 3 ถังของเดือน+ไลน์เดียวกัน เช่น
+   Line 60 ส.ค. = ทั้งวัน 507 ช่อง · กะเช้า 303 · กะดึก 252 (ผู้ตรวจคนเดียวกันทั้ง 3 ใบ)
+   · ASSEMBLY 1 ต.ค. = ทั้งวัน 55 · กะเช้า 18 · LINE APRON ASSY ส.ค. = ทั้งวัน 588 · กะเช้า 303
+
+   **ห้ามเอา `SHIFT_OPTIONS` จาก filterLabels มาใช้ที่นี่** — ตัวนั้นสำหรับหน้าที่ `''` = "แสดงทุกกะจริงๆ"
+   (/report · /oee-analytics · /mtn-repair · /workforce-insight ซึ่งเป็นจออ่านอย่างเดียว) */
+const SHEET_SHIFT_OPTIONS = Object.freeze([
+  { value: '',      label: 'ทั้งวัน',     title: 'ใบที่ไม่แยกกะ — คนละใบกับกะเช้า/กะดึก' },
+  { value: 'day',   label: '☀️ กะเช้า',  title: 'ใบเฉพาะกะเช้า — คนละใบกับทั้งวัน' },
+  { value: 'night', label: '🌙 กะดึก',   title: 'ใบเฉพาะกะดึก — คนละใบกับทั้งวัน' },
+]);
+const SHIFT_TH = { '': 'ทั้งวัน', day: 'กะเช้า', night: 'กะดึก' };
 // ป้ายสั้นบนชิปมือถือ (ป้ายเต็มของ MARKS ยาวเกินชิปกว้าง ~80px · ความหมายเดียวกับ bbsMarks)
 const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมาะสม', fixed: 'ปรับแก้แล้ว', na: 'ไม่ได้ตรวจ' };
 
@@ -68,6 +90,9 @@ export default function BbsCheck() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadWarn, setLoadWarn] = useState('');
+  /* ใบของกะอื่นในเดือน+ไลน์เดียวกันที่ "มีข้อมูลอยู่" — ห้ามเงียบเมื่อผู้ใช้สลับกะแล้วจอว่าง
+     (ENGINEERING-PRINCIPLES §2: ตรวจเจอความไม่ตรงกันของข้อมูล = เตือนบนจอ ห้ามแก้ให้เองเงียบๆ) */
+  const [siblings, setSiblings] = useState([]);   // [{ shift, n }]
 
   const [month, setMonth] = useState(thisMonth);
   const [selLine, setSelLine] = useState('');
@@ -183,6 +208,21 @@ export default function BbsCheck() {
         setCells({});
         setRowNotes({});
       }
+
+      /* ── ใบของกะอื่น (เดือน+ไลน์เดียวกัน) มีข้อมูลไหม ── สูงสุด 2 ใบ ⇒ นับแบบ head ไม่ดึง payload */
+      const { data: sibSheets } = await supabase.from('bbs_sheets')
+        .select('id, shift').eq('month_key', month).eq('line_name', lineObj.name).neq('shift', shift);
+      /* รวมยอดต่อ "กะ" ไม่ใช่ต่อแถว — unique index (month_key,line_name,shift) ควรให้ได้ ≤2 แถวอยู่แล้ว
+         แต่ถ้าวันหน้ามีแถวซ้ำหลุดมา ต้องได้ชิปละกะ ไม่ใช่ชิปละแถว (harness จับได้ตอนทำ 02/10) */
+      const byShift = new Map();
+      for (const ss of sibSheets || []) {
+        const { count } = await supabase.from('bbs_observations')
+          .select('id', { count: 'exact', head: true }).eq('sheet_id', ss.id);
+        if (count) byShift.set(ss.shift, (byShift.get(ss.shift) || 0) + count);
+      }
+      const sibs = [...byShift].map(([sh2, n]) => ({ shift: sh2, n }));
+      if (sheetKeyRef.current !== myKey) return;
+      setSiblings(sibs);
     } finally { setLoading(false); }
   }, [lineObj, lines, month, shift]);
   useEffect(() => { load(); }, [load]);
@@ -406,9 +446,27 @@ export default function BbsCheck() {
         <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
         <span className="filter-label">เดือน</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        {/* '' = ทั้งวัน (ทุกกะ) — state เดิม */}
-        <Segmented value={shift} onChange={setShift} options={SHIFT_OPTIONS} label="กะ" />
+        {/* 🔴 ไม่ใช่ตัวกรอง — เลือกกะ = เปิด "ใบ" คนละใบ (ดู SHEET_SHIFT_OPTIONS) */}
+        <span className="filter-label">ใบของกะ</span>
+        <Segmented value={shift} onChange={setShift} options={SHEET_SHIFT_OPTIONS} label="ใบของกะ" />
       </FilterBar>
+
+      {/* 🔴 BBS แยก "ใบ" ตามกะ ไม่ใช่ตัวกรอง — สลับกะแล้วจอว่างทั้งที่เคยกรอก = ข้อมูลอยู่ในใบของกะอื่น
+          (user แจ้ง 02/10 "ตัวกรองกะใช้งานไม่ได้" · วัดจริง: Line 60 ส.ค. กรอกกระจาย 3 ใบ 507/303/252 ช่อง) */}
+      {siblings.length > 0 && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid var(--accent2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>
+            📄 <b>ปุ่มกะ = เลือก “ใบ” ไม่ใช่ตัวกรอง</b> — เดือน/ไลน์นี้ยังมีข้อมูลอยู่ในใบอื่นด้วย:{' '}
+            {siblings.map(x => `${SHIFT_TH[x.shift] ?? x.shift} ${x.n.toLocaleString()} ช่อง`).join(' · ')}
+            {Object.keys(cells).length === 0 && <> · <b>ใบที่เปิดอยู่ ({SHIFT_TH[shift] ?? shift}) ยังว่าง</b></>}
+          </span>
+          {siblings.map(x => (
+            <button key={x.shift} onClick={() => setShift(x.shift)} style={{ ...btn(), padding: '4px 10px', fontSize: 12 }}>
+              ไปที่ใบ {SHIFT_TH[x.shift] ?? x.shift}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>

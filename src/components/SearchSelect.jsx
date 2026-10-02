@@ -25,6 +25,7 @@
    onChange({ id, text, opt }) — เลือกจากลิสต์ = ครบทั้ง 3 · พิมพ์เอง = id ว่าง, opt null
    ══════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
 
 /* เครื่องหมายประกอบของไทย — สระบน/ล่าง · วรรณยุกต์ · ทัณฑฆาต (์) · ไม้ไต่คู้
    U+0E31 · U+0E34–U+0E3A · U+0E47–U+0E4E */
@@ -121,7 +122,11 @@ export default function SearchSelect({
   const rows = matched.slice(0, maxRows);
   const hidden = matched.length - rows.length;
 
-  useEffect(() => { setActive(0); }, [q, open]);
+  /* 🔴 2026-10-02 — "เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ" (กฎ + เทส: utils/pickerKeys.js)
+     เดิม active = 0 เสมอ ⇒ เครื่องสแกนบาร์โค้ดที่ส่ง Enter ตามท้าย (บางรุ่น CR+LF = 2 ครั้ง)
+     ทำให้ช่องที่เพิ่งได้ focus **เลือกตัวบนสุดของลิสต์ให้เอง เงียบๆ**
+     เคสจริง: สแกน PROD.NO ซ้ำ → focus เด้งมาช่อง MAT → MAT เปลี่ยนเป็นพาร์ทอื่นโดยคนไม่รู้ตัว */
+  useEffect(() => { setActive(initialActiveRow(q)); }, [q, open]);
 
   // ปิดเมื่อคลิกนอกกรอบ (picker — ไม่ใช่ฟอร์ม จึงปิดจากคลิกนอกได้)
   useEffect(() => {
@@ -139,9 +144,10 @@ export default function SearchSelect({
     if (e.key === 'Escape') { closeList(); return; }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => Math.min(a + 1, rows.length - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => Math.max(a - 1, 0)); }
-    else if (e.key === 'Enter') { if (rows[active]) { e.preventDefault(); pick(rows[active]); } }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActive(a => moveActiveRow(a, 1, rows.length)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(a => moveActiveRow(a, -1, rows.length)); }
+    // active = NO_ROW ⇒ rows[active] undefined ⇒ Enter ไม่เลือกอะไร (คนยังไม่ได้เล็งแถวไหน)
+    else if (e.key === 'Enter') { if (active !== NO_ROW && rows[active]) { e.preventDefault(); pick(rows[active]); } }
   };
 
   // เลื่อนแถวที่เลือกด้วยคีย์บอร์ดให้อยู่ในสายตา
