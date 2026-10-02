@@ -36,7 +36,17 @@ export const allOf = (noun) => `ทุก${noun}`;
 export const PICK = '— เลือก —';
 export const NONE = '— ไม่ระบุ —';
 
-/** กะ = 3 ตัวเลือก ⇒ ใช้ <Segmented> ไม่ใช่ dropdown (≤5 ตัวเลือกที่เท่ากัน — Material 3 segmented button) */
+/** กะ = 3 ตัวเลือก ⇒ ใช้ <Segmented> ไม่ใช่ dropdown (≤5 ตัวเลือกที่เท่ากัน — Material 3 segmented button)
+ *
+ *  🔴 ใช้ได้เฉพาะจอที่ `''` แปลว่า **"แสดงทุกกะจริงๆ"** (ตัวกรองมุมมอง) — /report · /oee-analytics ·
+ *     /mtn-repair · /workforce-insight
+ *  **ห้ามใช้กับจอที่ "กะ" เป็นส่วนหนึ่งของคีย์ข้อมูล** (เลือกกะ = เปิดของคนละชิ้น ไม่ใช่กรองของชิ้นเดิม)
+ *     จอแบบนั้นให้ประกาศตัวเลือกของตัวเองที่ป้ายบอกความจริง เช่น `SHEET_SHIFT_OPTIONS` ใน `BbsCheck.jsx`
+ *  เคยพลาดจริง (78119fb6 กวาด UI-STANDARD 24/09 → user แจ้ง 02/10 "ตัวกรองกะใช้งานไม่ได้"):
+ *     `bbs_sheets` unique = (month_key,line_name,shift) และ `''` = "ใบทั้งวัน" (ถังที่ 3)
+ *     พอป้ายกลายเป็น "ทุกกะ" ผู้ใช้อ่านว่าเป็นตัวกรอง กดแล้วใบเปลี่ยน/ว่าง
+ *     ⇒ ข้อมูลถูกกรอกกระจาย 3 ใบของเดือน+ไลน์เดียวกัน (Line 60 ส.ค. = 507/303/252 ช่อง)
+ */
 export const SHIFT_OPTIONS = Object.freeze([
   { value: '', label: ALL.shift },
   { value: 'day', label: '☀️ กะเช้า' },

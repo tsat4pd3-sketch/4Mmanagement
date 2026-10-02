@@ -1096,8 +1096,8 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1278': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1343': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx:1281': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1346': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -1324,6 +1324,62 @@ test('🛡️ <Bar> ที่ระบายสีด้วย <Cell> ต้อ�
     `\n❌ แท่งที่ระบายสีด้วย <Cell> ไม่มี fill ที่ <Bar> — tooltip จะเขียนค่าเป็นสีดำบนการ์ดเข้ม:\n  ${bad.join('\n  ')}\n` +
     `   แก้: <Bar fill={CELL_BAR_FILL} …> (จาก src/utils/chartAxis.js — Cell ทับสีที่วาดอยู่แล้ว fill นี้ไปโผล่แค่ใน tooltip)\n` +
     `   + <Tooltip {...tooltipProps(fs)}> ให้พื้น/ตัวหนังสือ/cursor เป็นมาตรฐานเดียวกัน`);
+});
+
+/* 🧩 helper กลางที่คืน "ค่าเปล่า" (map/array/null) ห้ามถูกแกะด้วย `{ data: x }` ใน Promise.all
+   เคยเกิดจริง 25/09→02/10/2026 (commit 60c4bfc8 ลด egress): แทน `supabaseDR.from('dr_products')…`
+   ด้วย `loadPairMap()` ใน 4 ไฟล์ แต่ยังแกะ `{ data: prods }` อยู่ 3 ไฟล์ ⇒ prods = undefined
+   · FactoryMap แผงทบทวนรายวัน: `pairMap[m]` ระเบิด → catch กลืน → **0/0 ทุกวัน 7 วันเต็ม** (user ทัก)
+   · GroupOverview: เหมือนกัน · ProdProgressStrip: `prods?.[m]` ไม่ระเบิดแต่ **เลิกยุบงานคู่เงียบๆ**
+   build/lint/เทส/crashsweep ผ่านหมด — เพราะ error ถูก try/catch ของหน้ากลืน
+   ⚠️ ตรวจเฉพาะ Promise.all ที่ destructure เป็น array — เทียบ "ช่องที่ i" กับ "สมาชิกที่ i" */
+test('🛡️ loadPairMap/loadOpInfo/loadProductsMaster/loadProductionLines ใน Promise.all — ห้ามแกะ { data }', () => {
+  const BARE = ['loadPairMap(', 'loadOpInfo(', 'loadProductsMaster(', 'loadProductionLines('];
+  /* แยกสมาชิกระดับบนด้วย comma โดยไม่แตะใน () [] {} และสตริง */
+  const splitTop = (src) => {
+    const out = []; let depth = 0, cur = '', q = null;
+    for (let i = 0; i < src.length; i++) {
+      const c = src[i];
+      if (q) { cur += c; if (c === q && src[i - 1] !== '\\') q = null; continue; }
+      if (c === '"' || c === "'" || c === '`') { q = c; cur += c; continue; }
+      if ('([{'.includes(c)) depth++;
+      if (')]}'.includes(c)) depth--;
+      if (c === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    if (cur.trim()) out.push(cur);
+    return out.map(x => x.trim());
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const rel = relative(ROOT, file);
+    const re = /const\s*\[([^\]]*)\]\s*=\s*await\s+Promise\.all\(\[/g;
+    for (const m of code.matchAll(re)) {
+      // หา `]` ที่ปิด array ของ Promise.all แบบนับวงเล็บ
+      let i = m.index + m[0].length, depth = 1, q = null;
+      for (; i < code.length && depth > 0; i++) {
+        const c = code[i];
+        if (q) { if (c === q && code[i - 1] !== '\\') q = null; continue; }
+        if (c === '"' || c === "'" || c === '`') { q = c; continue; }
+        if ('([{'.includes(c)) depth++; else if (')]}'.includes(c)) depth--;
+      }
+      const members = splitTop(code.slice(m.index + m[0].length, i - 1));
+      const slots = splitTop(m[1]);
+      slots.forEach((slot, k) => {
+        const mem = members[k] || '';
+        if (!slot.startsWith('{')) return;                       // ไม่ได้แกะ object = ปลอดภัย
+        if (!BARE.some(b => mem.startsWith(b))) return;          // ไม่ใช่ helper ค่าเปล่า
+        if (/\.then\s*\(/.test(mem)) return;                      // ห่อเป็น { data } เองแล้ว (DeptDashboard)
+        const line = code.slice(0, m.index).split('\n').length;
+        bad.push(`${rel}:${line}  ช่องที่ ${k + 1} แกะ \`${slot.slice(0, 30)}\` จาก \`${mem.slice(0, 40)}\``);
+      });
+    }
+  }
+  assert.deepEqual(bad, [],
+    `\n❌ helper กลางคืนค่าเปล่า (map/array/null) แต่ถูกแกะด้วย { data } ⇒ ได้ undefined เงียบๆ:\n  ${bad.join('\n  ')}\n` +
+    `   เคยเกิดจริง 25/09–02/10/2026: แผงทบทวนรายวันบนผังรวมเป็น 0/0 ทุกวัน (pairMap undefined → TypeError → catch กลืน)\n` +
+    `   แก้: รับค่าตรงๆ \`const [..., pairMap] = await Promise.all([..., loadPairMap()])\` แล้วใช้ \`pairMap?.[m] ?? null\``);
 });
 
 /* 🔴 onClick={fn} เมื่อ fn "รับ argument" — React ส่ง click event เป็น arg ตัวแรกเสมอ
@@ -1637,4 +1693,58 @@ test('🛡️ ถอนยอด auto ของใบผลิต ต้อง�
   assert.deepEqual(bad, [], `\n\n❌ ถอนยอด auto ของใบผลิตแต่ไม่แตะคิวรับเข้า: ${bad.join(', ')}\n`
     + '   แก้: update stock_receipts set status=cancelled (+ cancel_reason) where prod_order_id=… and status=pending\n'
     + '        และถ้ามีใบ received แล้ว ห้ามถอนเงียบ — บอกให้คลังปรับยอดเอง (ดู DailyReport handleRevertOrder)\n');
+/* ── ช่องที่พิมพ์ ห้ามเป็นตัวที่จัด key/กลุ่มของลิสต์ (2026-10-02 · feedback หน้างาน) ──────
+   เคสจริง `/pm-setup` ช่อง "กลุ่ม/หัวข้อ (Item)": การ์ดจุดตรวจถูกจัดกลุ่มตาม `group_name`
+   แล้ววาดใน `<div key={g.name}>` ⇒ พิมพ์ "L" การ์ดย้ายจากกอง "ไม่ระบุกลุ่ม" ไปกลุ่มใหม่ ·
+   พิมพ์ "o" ต่อ key เปลี่ยนเป็น "Lo" = กล่องเดิมถูก unmount แล้วสร้างใหม่
+   ⇒ **หลุดโฟกัสทุกตัวอักษร ต้องคลิกกลับเข้าช่องใหม่ทุกครั้ง** (user แจ้ง 02/10)
+   บั๊กคลาสนี้ build/lint/เทส/crashsweep/mobilesweep ผ่านหมด — เห็นได้ตอนพิมพ์จริงเท่านั้น
+
+   ⚠️ **ทำไมเป็นกฎเจาะจงไฟล์ ไม่ใช่กฎสแกนทั้งรีโป** — ลองเขียนแบบทั่วไปแล้ว (ฟิลด์ที่โผล่ใน
+   `key={}` ห้ามรับค่าจาก `<input>` ดิบ) ได้ 23 จุด **จริง 1 จุด** ที่เหลือเป็นคนละอ็อบเจกต์
+   (ฟอร์ม `form.key` กับลิสต์ `key={t.key}` บังเอิญชื่อฟิลด์ตรงกัน) — regex แยก "ตัวแปรไหน"
+   ไม่ได้ ⇒ ผิดกติกาข้อ 1 ของไฟล์นี้ (กฎที่ false positive บ่อย = คนอยากปิดด่าน)
+   📌 audit ทั้งรีโป 02/10 แล้ว: **มีที่เดียวคือ PMSetup** · เจอที่ใหม่ให้เพิ่มไฟล์ในลิสต์นี้ */
+test('🛡️ pm-setup-group-field-commit-input — ช่อง "กลุ่ม/หัวข้อ (Item)" ต้องเป็น <CommitInput>', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+  const bad = [];
+  // ห้ามกลับไปเป็น input/textarea ดิบที่ยิง group_name ออกทุก keystroke
+  if (/<(?:input|textarea)[^]{0,300}?group_name:\s*e\.target\.value/.test(src)) {
+    bad.push('PMSetup.jsx — group_name ถูกยิงออกทุก keystroke จาก <input> ดิบอีกแล้ว');
+  }
+  if (!/<CommitInput[^]{0,200}?group_name/.test(src)) {
+    bad.push('PMSetup.jsx — ไม่พบ <CommitInput ... group_name> (ช่องกลุ่ม/หัวข้อต้องส่งค่าตอน blur/Enter)');
+  }
+  // ตัวช่วยกลางต้องไม่ sync ค่าจาก prop ทับขณะยังพิมพ์อยู่ (ไม่งั้นของที่พิมพ์ค้างหายเงียบ)
+  const ci = stripComments(readFileSync(join(ROOT, 'src/components/CommitInput.jsx'), 'utf8'));
+  if (!/if\s*\(\s*!focused\.current\s*\)/.test(ci)) {
+    bad.push('CommitInput.jsx — effect ที่ sync ค่าจาก prop ต้องมีเงื่อนไข !focused.current');
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ช่องพิมพ์ที่ค่าของมันคือ key/ตัวจัดกลุ่มของลิสต์\n'
+    + '   ทำไมห้าม: ส่งค่าออกทุก keystroke ⇒ ลิสต์จัดกลุ่มใหม่ ⇒ กล่องที่ถือ focus ถูก unmount\n'
+    + '             = พิมพ์ได้ทีละตัวแล้วเด้ง ต้องคลิกกลับเข้าไปใหม่ (เกิดจริง /pm-setup 02/10)\n'
+    + '   แก้ยังไง: ใช้ <CommitInput value={...} onCommit={v => ...}> (src/components/CommitInput.jsx)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── ชื่อพาร์ทห้ามตกเป็นเลข MAT (บั๊กจริง 02/10/2026) ──────────────────────────────
+   ตัวแกะไฟล์ SAP อ่านคอลัมน์ "Object description" ไม่ออก (หัว `Obj` กินชื่อไปก่อน) ⇒ ทุกแถวได้
+   `part_name = ''` แล้วโค้ดนำเข้าเขียน `part_name || mat_no` ลงฐาน = ทั้งใบขึ้นเป็นเลข 7 แถว
+   **โดยไม่มี error สักบรรทัด** — user เห็นเองจากจอว่า "ทำไมเพี้ยนหมด"
+   กฎ: ไม่มีชื่อ = หยุดแล้วบอกว่าแถวไหน ห้ามเติมเลข MAT ให้ดูเหมือนมีชื่อ */
+test('🛡️ ห้าม fallback ชื่อพาร์ทเป็นเลข MAT (`part_name: x || x.mat_no`)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx', '.mjs'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /part_name\s*:\s*[^,\n]*\|\|\s*[\w.]*mat_no/g;
+    for (const m of code.matchAll(re)) {
+      bad.push(`${relative(ROOT, file)}:${code.slice(0, m.index).split('\n').length}  ${m[0].trim()}`);
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ มีการเติมเลข MAT แทนชื่อพาร์ท ${bad.length} จุด\n`
+    + '   ทำไมห้าม: ชื่อที่หายเพราะอ่านไฟล์ไม่ออก จะถูกกลบด้วยเลข MAT แล้วดูเหมือนข้อมูลปกติ\n'
+    + '              (เกิดจริง 02/10/2026 — ใบ 10102017 ได้ชื่อเป็นเลขทั้ง 7 แถว ไม่มี error ให้เห็น)\n'
+    + '   แก้ยังไง: ชื่อจากไฟล์ → ชื่อในทะเบียน parts_master → **ไม่มี = ไม่เขียน แล้วบอกบนจอว่าแถวไหน**\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
 });

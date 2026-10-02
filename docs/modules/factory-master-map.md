@@ -84,3 +84,18 @@
 - **รูปเก็บ** bucket `employee-photos` path `factory/` — cleanup-orphan-photos whitelist `factory_map.image_url` + สแกนโฟลเดอร์ factory/ แล้ว (กันลบผิด) · เปลี่ยนรูปลบไฟล์เก่าทิ้ง (best-effort)
 
 ---
+
+### 🐛 แผงทบทวนรายวันเป็น 0/0 ทั้งแผง 25/09 → 02/10 (user ทัก "เมื่อวานมีผลิตงานนะ")
+
+- **อาการ:** ผลิตได้รวม 0/0 · OEE — · คนเข้างาน — · "ไม่มีข้อมูลการผลิตของวันที่เลือก" ทั้งที่ DB มี 44 กะ / 380 ใบ (01/10)
+- **ต้นเหตุ:** commit `60c4bfc8` (25/09 ลด egress) แทน `supabaseDR.from('dr_products')…` ด้วย `loadPairMap()` ซึ่ง**คืน map ตรงๆ
+  (หรือ `null`) ไม่ใช่ `{ data }`** แต่ยังแกะ `{ data: prods }` ใน `Promise.all` ⇒ `pairMap = undefined` ⇒ `pairMap[m]` TypeError
+  ⇒ `catch {}` กลืน ⇒ ทุกตัวเลขเป็น 0 **และจอเขียนว่า "ไม่มีข้อมูล"** (โกหก) · build/lint/เทส/crashsweep ผ่านหมด
+- **จุดเดียวกันอีก 2 ไฟล์:** `GroupOverview.jsx` (ระเบิดเหมือนกัน) · `ProdProgressStrip.jsx` (`prods?.[m]` ไม่ระเบิด แต่**เลิกยุบงานคู่
+  RH/LH เงียบๆ** = ยอดคู่นับ 2 เท่า) · `DeptDashboard.jsx` ห่อ `.then(data => ({ data }))` ไว้ถูกต้องอยู่แล้ว
+- **แก้ 02/10:** รับค่าตรงๆ `[..., pairMap] = await Promise.all([..., loadPairMap()])` + `pairOf = m => pairMap?.[m] ?? null`
+  (null = ยังไม่รู้คู่ → ไม่ยุบ ตามสัญญาเดิมของ `loadPairMap`) · แผงทบทวนมี `reviewError`: โหลดล้ม = กล่องแดง
+  "โหลดสรุปไม่สำเร็จ — ตัวเลข 0 ไม่ใช่ไม่มีการผลิต" + ปุ่มลองใหม่ + `console.error` **ห้ามกลับไป `catch {}` เปล่า**
+- **ด่าน:** regressionGuards "loadPairMap/loadOpInfo/loadProductsMaster/loadProductionLines ใน Promise.all — ห้ามแกะ { data }"
+  (เทียบช่อง destructure ที่ i กับสมาชิกที่ i · ยกเว้นที่ห่อ `.then(`) · วิธีพิสูจน์: ยิง SQL `set local role anon` บน DR แล้วนับแถวตรงกับที่ UI ควรเห็น
+- ⚠️ allow-list ของด่าน `oee-suspect-needs-qbin-embed` คีย์ด้วย **เลขบรรทัด** ของไฟล์นี้ — แก้บรรทัดเหนือ ~1280 แล้วต้องขยับคีย์ตาม

@@ -469,7 +469,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
   ตัดสินด้วย `isNavGuest(item, group)` · "โชว์ในหมวดนี้ไหม (นับทางลัด)" = `inNavGroup()` **คนละคำถาม ห้ามปน**
   · แถวเมนูวาดจาก `navRow()` ตัวเดียวทั้ง desktop/มือถือ · ด่านข้อ 6 ใน stdsweep + `nav-alsoin-*` (UI-STANDARD §4.5)
 · 📏 **แกนกราฟ: `YAxis width="auto"` · margin ซ้ายห้ามติดลบ** (เลข 100 เคยถูกตัดเหลือ "0") · `utils/chartAxis.js` · ตรวจ `node audit/chartsweep.mjs`
-  · 🖤 **แท่งที่สีมาจาก `<Cell>` ต้องมี `fill={CELL_BAR_FILL}` + `<Tooltip {...tooltipProps(fs)}>`** (30/09 · ไม่มี = tooltip ตัวหนังสือดำบนการ์ดเข้ม · มีด่าน)
+  · 🖤 **แท่งสีจาก `<Cell>` ต้องมี `fill={CELL_BAR_FILL}` + `<Tooltip {...tooltipProps(fs)}>`** (ไม่มี = tooltip ตัวดำบนการ์ดเข้ม · มีด่าน)
 · ตรวจ `node audit/stdsweep.mjs` · มีด่าน `regressionGuards`
 > 📄 `docs/UI-STANDARD.md` · ผลก่อน/หลัง → `docs/modules/ui-standard-sweep.md`
 
@@ -622,10 +622,10 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
 - **🔴 หน่วย/ทศนิยม/วิธีรวม 12 เดือน = 2 ชั้น** (24/09) ทะเบียน `kpi_catalog` = ค่าตั้งต้น · `unit`/`decimals` override รายแถวได้ · 🔒 `summary_mode` ไม่ได้
   · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน** · `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` (ขาด = ตกค่า default เงียบ)
-- **🏭 KPI ที่ค่าเป็นของโรงงาน (%RM · Customer Satisfaction) = `kpi_catalog.value_scope='plant'`** (30/09 · คำสั่ง user) — ค่ารายเดือนอยู่ที่นิยามระดับ ทั้งโรงงาน ตัวเดียว · นิยามหน่วยงานเก็บแค่เป้า/น้ำหนัก · ทุกจออ่านผ่าน `sharedValueDef()` **ห้ามถอยไปใช้ค่าของหน่วย** · ตั้งจากปุ่ม 📘 ไม่ hardcode ชื่อ
+- **🏭 KPI ค่าของโรงงาน (%RM · Customer Satisfaction) = `kpi_catalog.value_scope='plant'`** (30/09) — ค่ารายเดือนอยู่ที่นิยามระดับทั้งโรงงานตัวเดียว · หน่วยงานเก็บแค่เป้า/น้ำหนัก · อ่านผ่าน `sharedValueDef()` **ห้ามถอยไปใช้ค่าของหน่วย** · ตั้งจากปุ่ม 📘
 - **📅 แผน 12 เดือน `kpi_month_plans`** (25/09 · `planProgress()`) — 🔴 ป้าย ▲ ตามแผน/▼ ช้ากว่าแผน **ไม่ใช่คะแนน** ห้ามเปลี่ยนสี/เพิ่มขั้น · เทียบเฉพาะเดือนที่มี**ทั้งแผนและผล**
-  · กราฟแผ่น = แท่งผลจริง + เส้นเป้า(แดง) + **Commitment(เหลือง)** + **เส้นแผนรายเดือน(ฟ้า · สเกลเดียวกัน ห้ามแกน 2 ข้าง)** · 📝 **กดแท่งเดือน = หมายเหตุ remark/action/note** (`kpi_month_notes` MAIN · คีย์ ปี+เดือน+ขอบเขต+`row_key` · เขียน `kpi:manage`) · แถบเตือน "ยังไม่ครบ" อยู่**ใต้บอร์ด สูงคงที่** (30/09 · ห้ามย้ายขึ้น = สเกลวิ่ง)
-  · 🎯 **โฟกัสช่วงค่า `?yfocus=1`** (30/09) ช่วงจาก `focusDomain()` เท่านั้น · default ปิด · **แกนไม่เริ่ม 0 ต้องมีชิปบอกบนกราฟ** · มี 0 จริง = ไม่โฟกัส · ตัวเลขบนแท่งทุกแท่ง (แคบ = เว้นแท่งเว้นเลข)
+  · กราฟแผ่น = แท่งผลจริง + เป้า(แดง) + **Commitment(เหลือง)** + **แผนรายเดือน(ฟ้า · สเกลเดียวกัน)** · 📝 **กดแท่งเดือน = หมายเหตุ** (`kpi_month_notes` MAIN · คีย์ ปี+เดือน+ขอบเขต+`row_key` · `kpi:manage`) · แถบ "ยังไม่ครบ" อยู่**ใต้บอร์ด สูงคงที่** (ย้ายขึ้น = สเกลวิ่ง)
+  · 🎯 **โฟกัสช่วงค่า `?yfocus=1`** = `focusDomain()` เท่านั้น · default ปิด · **แกนไม่เริ่ม 0 ต้องมีชิปบอก** · มี 0 จริง = ไม่โฟกัส · ตัวเลขบนทุกแท่ง
 - หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
 - ⚡ **KPI ช่าง (MO Closed/MBD/MTBF/MTTR) = สูตร Guideline หน้า 10 ใน `utils/kpiAuto.js` เท่านั้น** (RPC `kpi_mtn_rollup` คืน Σ) · ระบบเสนอ คนกด "ใช้ค่านี้" **ห้ามเขียนทับค่าที่กรอกมือ**
 > 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
@@ -795,6 +795,7 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง — ให้เพิ่ม realtime ก่อน) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น**
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่เนื้อเดิม = ลูกยิงคิวรีซ้ำฟรีๆ ให้แปลงเป็น string/primitive ก่อน · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
+12. **helper ที่คืนค่าเปล่า (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines`) ห้ามแกะ `{ data }`** = undefined เงียบ (02/10 ผังรวม 0/0 อยู่ 7 วัน · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
 11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
 
 ### Skill Fit Scoring

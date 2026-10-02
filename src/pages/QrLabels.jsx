@@ -16,7 +16,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildQrPayload, QR_KINDS } from '../utils/qrCode';
+import { buildQrPayload, buildQrUrl, qrOriginUsable, QR_KINDS } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -139,6 +139,9 @@ export default function QrLabels() {
   const toggleAll = () => setSel(prev => prev.size === visible.length ? new Set() : new Set(visible.map(r => r.id)));
 
   /* ── พิมพ์ ── */
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const linkLabels = qrOriginUsable(origin);
+
   const handlePrint = async () => {
     const picked = visible.filter(r => sel.has(r.id));
     if (!picked.length) return toast.error('ยังไม่ได้เลือกรายการ');
@@ -151,7 +154,12 @@ export default function QrLabels() {
     const esc = s => String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
     const cells = [];
     for (const r of picked) {
-      const payload = buildQrPayload(kind, r.id);
+      /* 🔗 ป้ายแบบ "ลิงก์" (2026-10-02 · คำสั่ง user) — ส่องด้วยกล้องมือถือปกติแล้วเปิดแอป
+         มาที่ /scan ได้เลย ไม่ต้องเปิดแอปเองแล้วค่อยกดสแกน
+         ค่าใน ?c= ยังเป็นรูปแบบเดิม ⇒ ป้ายเก่าที่เป็นข้อความเปล่ายังสแกนในแอปได้เหมือนเดิม
+         🔴 โดเมนใช้ไม่ได้ (localhost/LAN) = ถอยไปป้ายข้อความเดิม ดีกว่าออกป้ายที่ลิงก์เสีย
+            (ถ้าพิมพ์จาก localhost แล้วฝังลิงก์นั้นลงป้าย = ป้ายใช้ได้แค่เครื่องที่พิมพ์) */
+      const payload = linkLabels ? buildQrUrl(kind, r.id, origin) : buildQrPayload(kind, r.id);
       // margin:0 + errorCorrectionLevel M — ป้ายเล็กสแกนติดง่ายกว่าเมื่อ QR เต็มพื้นที่
       const svg = await QR.toString(payload, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
       const no = isDp ? `🎯 ${nameOf(r)}` : (noOf(r) || '— ยังไม่มีเลข —');
@@ -199,7 +207,23 @@ export default function QrLabels() {
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วสแกนเลือกอุปกรณ์ได้ทันทีในหน้าแจ้งซ่อม · ตรวจ PM · บันทึก Downtime" />
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของเครื่องตัวนั้นเลย (ตรวจ PM · แจ้งซ่อม)" />
+
+      {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 10,
+        borderRadius: 8, fontSize: 12.5, lineHeight: 1.7,
+        background: 'var(--bg2)', border: `1px solid ${linkLabels ? 'var(--border2)' : '#f59e0b'}`,
+      }}>
+        {linkLabels ? (
+          <span>🔗 ป้ายที่พิมพ์จะเป็น <b>ลิงก์</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
+            {' '}— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน</span>
+        ) : (
+          <span>⚠️ ตอนนี้เปิดจาก <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
+            <b> ข้อความแบบเดิม</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
+            {' '}— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ</span>
+        )}
+      </div>
 
       {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ชนิด → ไลน์ → ค้นหา → spacer → ขนาดป้าย (พารามิเตอร์ของปุ่มพิมพ์) + ปุ่ม */}
       <FilterBar>

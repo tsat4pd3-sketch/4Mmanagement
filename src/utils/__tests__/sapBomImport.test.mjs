@@ -170,3 +170,13 @@ test('🔑 ITEM ซ้ำได้ข้ามตัวแม่ — ของ�
   assert.ok(item10.length > 1);
   assert.equal(new Set(item10.map(x => x.parent_mat)).size, item10.length);
 });
+
+test('🔴 "Object description" ต้องไม่ถูกตีเป็นคอลัมน์ MAT (บั๊กจริง 02/10 — ชื่อพาร์ทว่างทั้งใบ)', () => {
+  const r = parseSapBom(FILE);
+  // หัว `Obj` (เลข MAT) กับ `Object description` ขึ้นต้นเหมือนกัน ⇒ ต้องเลือกคีย์ที่เฉพาะเจาะจงกว่า
+  assert.equal(r.rows[0].mat_no, '20067121');
+  assert.equal(r.rows[0].part_name, 'PACK SUPT ASY RAD-FVL');
+  assert.equal(r.rows.filter(x => !x.part_name).length, 0, 'ต้องไม่มีแถวไหนชื่อว่าง');
+  // ชื่อต้องไม่ใช่เลข MAT ซ้ำ (อาการที่หน้างานเห็น)
+  assert.equal(r.rows.filter(x => x.part_name === x.mat_no).length, 0);
+});

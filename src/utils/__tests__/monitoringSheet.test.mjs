@@ -686,3 +686,64 @@ test('parseSheetForBoard — เลือกตัวแกะให้ถูก
 test('เพิ่ม MATLSAP แล้วชีท mat ยังคืน null จาก detectMonitoringKind (MonitoringUpload ยังข้ามเหมือนเดิม)', () => {
   assert.equal(detectMonitoringKind(SHEET_MAT), null);
 });
+
+/* ═══ 🔴 FG ห้ามลงเป็น min/max ที่ไลน์ (2026-10-02 · user แจ้งจากหน้างานสโตร์) ═══════════
+   "เลข mat sap ที่โชว์คือ FG หลังกระบวนการผลิตจบ แต่สโตร์จะไม่รู้เลขนี้ สโตร์จะมองหาเลขที่
+    เค้าต้องตัดจ่ายเข้าไลน์ผลิตคือพวก 5xxx 3xxx 2xxx"
+   วัดจริงตอนเจอ: line_part_levels ใช้งานอยู่ 60 แถว เป็น FG 28 แถว ทุกแถวชี้ไลน์ที่ผลิตมันเอง */
+test('monitoringToRecords — FG (1xxx) ไม่ลง line_part_levels · ชิ้นส่วน 2/3/5 ลงตามปกติ', () => {
+  const parsed = {
+    press: [{
+      sheet: '600T',
+      parts: [
+        { mat_no: '10088639', part_name: 'FG ของไลน์นี้', min: 500, fc: 0, out: {}, plan: {}, demand: {} },
+        { mat_no: '20066630', part_name: 'ชิ้นส่วนผลิตเอง', min: 300, fc: 0, out: {}, plan: {}, demand: {} },
+        { mat_no: '30047585', part_name: 'ชิ้นส่วนซื้อ', min: 200, fc: 0, out: {}, plan: {}, demand: {} },
+        { mat_no: '50027079', part_name: 'วัตถุดิบ', min: 100, fc: 0, out: {}, plan: {}, demand: {} },
+      ],
+    }],
+    customer: [],
+  };
+  const r = monitoringToRecords(parsed, { monthKey: '2026-10', today: '2026-10-02', lineOfMat: () => 'LINE B ( 600 Ton )' });
+  const mats = r.levels.map((l) => l.mat_no).sort();
+  assert.deepEqual(mats, ['20066630', '30047585', '50027079'],
+    'FG ต้องไม่อยู่ใน levels — ไลน์ไม่เบิกของที่ตัวเองผลิต');
+  assert.equal(r.fgLevelsSkipped, 1, 'ต้องนับ FG ที่กันออก แล้วรายงานให้คนนำเข้าเห็น ห้ามข้ามเงียบ');
+});
+
+test('monitoringToRecords — ชีทลูกค้า (rack) ก็กัน FG ออกเหมือนกัน', () => {
+  const parsed = {
+    press: [],
+    customer: [{
+      sheet: 'TSPK',
+      parts: [
+        { mat_no: '10076603', min: 1800, max: 3800, packing: 100, orders: [] },
+        { mat_no: '20058481', min: 900, max: 2400, packing: 50, orders: [] },
+      ],
+    }],
+  };
+  const r = monitoringToRecords(parsed, { monthKey: '2026-10', today: '2026-10-02', lineOfMat: () => 'LINE A ( 800 Ton )' });
+  assert.deepEqual(r.levels.map((l) => l.mat_no), ['20058481']);
+  assert.equal(r.fgLevelsSkipped, 1);
+});
+
+test('monitoringToRecords — ไม่มี FG เลย = fgLevelsSkipped 0 (ไม่เตือนพร่ำเพรื่อ)', () => {
+  const parsed = {
+    press: [{ sheet: '600T', parts: [{ mat_no: '20066630', min: 300, fc: 0, out: {}, plan: {}, demand: {} }] }],
+    customer: [],
+  };
+  const r = monitoringToRecords(parsed, { monthKey: '2026-10', today: '2026-10-02', lineOfMat: () => 'LINE B ( 600 Ton )' });
+  assert.equal(r.fgLevelsSkipped, 0);
+  assert.equal(r.levels.length, 1);
+});
+
+test('FG ยังลง forecast/ออเดอร์ได้ตามปกติ — กันเฉพาะ min/max ที่ไลน์เท่านั้น', () => {
+  const parsed = {
+    press: [{ sheet: '600T', parts: [{ mat_no: '10088639', part_name: 'FG', min: 500, fc: 11800, out: {}, plan: {}, demand: {} }] }],
+    customer: [],
+  };
+  const r = monitoringToRecords(parsed, { monthKey: '2026-10', today: '2026-10-02', lineOfMat: () => 'LINE B ( 600 Ton )' });
+  assert.equal(r.levels.length, 0, 'ไม่ลง min/max ที่ไลน์');
+  assert.equal(r.forecasts.length, 1, 'แต่ยังเป็น forecast ของ FG ได้ — คนละเรื่องกัน');
+  assert.equal(r.forecasts[0].mat_no, '10088639');
+});
