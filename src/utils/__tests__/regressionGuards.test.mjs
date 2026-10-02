@@ -1678,3 +1678,38 @@ test('🛡️ PRODUCT_COLUMNS ต้องมี pair_mat_no + op_seq · แล�
       + '   ถอยแล้วขาดคอลัมน์นี้ = งานคู่ถูกนับ 2 เท่า ซึ่งแย่กว่าการไม่ยุบชั้น OP มาก\n');
   }
 });
+
+/* ── ช่องที่พิมพ์ ห้ามเป็นตัวที่จัด key/กลุ่มของลิสต์ (2026-10-02 · feedback หน้างาน) ──────
+   เคสจริง `/pm-setup` ช่อง "กลุ่ม/หัวข้อ (Item)": การ์ดจุดตรวจถูกจัดกลุ่มตาม `group_name`
+   แล้ววาดใน `<div key={g.name}>` ⇒ พิมพ์ "L" การ์ดย้ายจากกอง "ไม่ระบุกลุ่ม" ไปกลุ่มใหม่ ·
+   พิมพ์ "o" ต่อ key เปลี่ยนเป็น "Lo" = กล่องเดิมถูก unmount แล้วสร้างใหม่
+   ⇒ **หลุดโฟกัสทุกตัวอักษร ต้องคลิกกลับเข้าช่องใหม่ทุกครั้ง** (user แจ้ง 02/10)
+   บั๊กคลาสนี้ build/lint/เทส/crashsweep/mobilesweep ผ่านหมด — เห็นได้ตอนพิมพ์จริงเท่านั้น
+
+   ⚠️ **ทำไมเป็นกฎเจาะจงไฟล์ ไม่ใช่กฎสแกนทั้งรีโป** — ลองเขียนแบบทั่วไปแล้ว (ฟิลด์ที่โผล่ใน
+   `key={}` ห้ามรับค่าจาก `<input>` ดิบ) ได้ 23 จุด **จริง 1 จุด** ที่เหลือเป็นคนละอ็อบเจกต์
+   (ฟอร์ม `form.key` กับลิสต์ `key={t.key}` บังเอิญชื่อฟิลด์ตรงกัน) — regex แยก "ตัวแปรไหน"
+   ไม่ได้ ⇒ ผิดกติกาข้อ 1 ของไฟล์นี้ (กฎที่ false positive บ่อย = คนอยากปิดด่าน)
+   📌 audit ทั้งรีโป 02/10 แล้ว: **มีที่เดียวคือ PMSetup** · เจอที่ใหม่ให้เพิ่มไฟล์ในลิสต์นี้ */
+test('🛡️ pm-setup-group-field-commit-input — ช่อง "กลุ่ม/หัวข้อ (Item)" ต้องเป็น <CommitInput>', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+  const bad = [];
+  // ห้ามกลับไปเป็น input/textarea ดิบที่ยิง group_name ออกทุก keystroke
+  if (/<(?:input|textarea)[^]{0,300}?group_name:\s*e\.target\.value/.test(src)) {
+    bad.push('PMSetup.jsx — group_name ถูกยิงออกทุก keystroke จาก <input> ดิบอีกแล้ว');
+  }
+  if (!/<CommitInput[^]{0,200}?group_name/.test(src)) {
+    bad.push('PMSetup.jsx — ไม่พบ <CommitInput ... group_name> (ช่องกลุ่ม/หัวข้อต้องส่งค่าตอน blur/Enter)');
+  }
+  // ตัวช่วยกลางต้องไม่ sync ค่าจาก prop ทับขณะยังพิมพ์อยู่ (ไม่งั้นของที่พิมพ์ค้างหายเงียบ)
+  const ci = stripComments(readFileSync(join(ROOT, 'src/components/CommitInput.jsx'), 'utf8'));
+  if (!/if\s*\(\s*!focused\.current\s*\)/.test(ci)) {
+    bad.push('CommitInput.jsx — effect ที่ sync ค่าจาก prop ต้องมีเงื่อนไข !focused.current');
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ช่องพิมพ์ที่ค่าของมันคือ key/ตัวจัดกลุ่มของลิสต์\n'
+    + '   ทำไมห้าม: ส่งค่าออกทุก keystroke ⇒ ลิสต์จัดกลุ่มใหม่ ⇒ กล่องที่ถือ focus ถูก unmount\n'
+    + '             = พิมพ์ได้ทีละตัวแล้วเด้ง ต้องคลิกกลับเข้าไปใหม่ (เกิดจริง /pm-setup 02/10)\n'
+    + '   แก้ยังไง: ใช้ <CommitInput value={...} onCommit={v => ...}> (src/components/CommitInput.jsx)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
