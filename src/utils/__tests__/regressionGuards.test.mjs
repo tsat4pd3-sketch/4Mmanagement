@@ -942,6 +942,35 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'picker-arms-first-row-on-open',
+    scan: ['src/components'], ext: ['.jsx'],
+    /* จับการตั้ง active = 0 ตอนลิสต์เปิด (ไม่ผ่าน initialActiveRow) ใน picker */
+    re: /setActive\(\s*0\s*\)/g,
+    why: '🔴 feedback หน้างาน 02/10 — เครื่องสแกนบาร์โค้ด **ส่ง Enter ตามท้ายรหัสเสมอ** (บางรุ่น CR+LF '
+       + '= 2 ครั้ง) · ถ้า picker เปิดลิสต์แล้ว "เล็งแถวแรก" ไว้ Enter ที่หลงเข้ามาจะเลือกตัวบนสุดให้เอง '
+       + 'เงียบๆ · เคสจริง: สแกน PROD.NO ซ้ำ → focus เด้งมาช่อง MAT → **MAT เปลี่ยนเป็นพาร์ทอื่น** '
+       + '(98881640 → MAT 10092454 BUMPER REINF คนละพาร์ท) ⇒ ถ้ากดเปิด Order ต่อ = ใบผลิตผูกพาร์ทผิด',
+    fix: 'ใช้ `initialActiveRow(q)` / `moveActiveRow()` จาก `src/utils/pickerKeys.js` (มีเทส) — '
+       + 'ไม่มีคำค้น = `NO_ROW` (ไม่เล็งอะไร) · มีคำค้น = แถวแรกของผลค้นหา (พิมพ์แล้ว Enter ยังใช้ได้เหมือนเดิม)',
+    allow: {},
+  },
+  {
+    id: 'shift-capacity-summed-serially',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับการบวก "ภาระกะ" เองในหน้า — รูปแบบ qty × CT / 60 สะสมลง reducer */
+    re: /\breduce\(\s*\([^)]*\)\s*=>\s*[^,]*\bct\w*\([^)]*\)\s*\/\s*60/gi,
+    why: '🔴 feedback หน้างาน 02/10 ("ทั้งที่เปิดงานใหม่เครื่องใหม่ขนาน แต่ทำไมแจ้งเวลาเกิน") — '
+       + 'ด่านความจุกะเดิมบวก qty×CT ของ **ทุกใบในกะเรียงต่อกันเป็นสายเดียว** โดยไม่สนว่าไลน์เดินกี่เครื่อง '
+       + '· วัดจริง ASSEMBLY 1 กะเช้า 02/10: 55 ใบ 2,180 ชิ้น = 2,120 นาที เทียบความจุ 590 '
+       + '⇒ แจ้ง "เกิน 1,605 นาที" ทั้งที่ใช้ 6 เครื่องขนาน = ~353 นาที/เครื่อง (ใช้ไป 60% เท่านั้น) '
+       + '· ไลน์นั้นลงทะเบียน flow_mode = parallel_machine อยู่แล้ว — `computeLiveOee` อ่านถูกมาตลอด '
+       + 'แต่ด่านความจุไม่เคยอ่าน ⇒ modal เด้งทุกใบจนกลายเป็นเสียงรบกวน',
+    fix: 'คิดผ่าน `checkShiftCapacity()` / `committedMin()` (`src/utils/shiftCapacity.js` · มีเทส) — '
+       + 'แยกภาระเป็น "เลน" ตาม flow_mode + ยุบคู่ RH/LH ด้วย pairLoadTotal (ชิ้น ≠ shot) '
+       + '+ คืน unknownCt ให้จอเขียนบอกว่ามีกี่ใบที่คิดเวลาไม่ได้',
+    allow: {},
+  },
+  {
     id: 'purchase-receipt-to-dest-line',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการเอา `dest_line` ของใบสั่งซื้อไปใส่เป็น `line_name` ของแถว ledger
