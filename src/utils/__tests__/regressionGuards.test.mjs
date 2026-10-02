@@ -1713,3 +1713,24 @@ test('🛡️ pm-setup-group-field-commit-input — ช่อง "กลุ่�
     + '   แก้ยังไง: ใช้ <CommitInput value={...} onCommit={v => ...}> (src/components/CommitInput.jsx)\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
+
+/* ── ชื่อพาร์ทห้ามตกเป็นเลข MAT (บั๊กจริง 02/10/2026) ──────────────────────────────
+   ตัวแกะไฟล์ SAP อ่านคอลัมน์ "Object description" ไม่ออก (หัว `Obj` กินชื่อไปก่อน) ⇒ ทุกแถวได้
+   `part_name = ''` แล้วโค้ดนำเข้าเขียน `part_name || mat_no` ลงฐาน = ทั้งใบขึ้นเป็นเลข 7 แถว
+   **โดยไม่มี error สักบรรทัด** — user เห็นเองจากจอว่า "ทำไมเพี้ยนหมด"
+   กฎ: ไม่มีชื่อ = หยุดแล้วบอกว่าแถวไหน ห้ามเติมเลข MAT ให้ดูเหมือนมีชื่อ */
+test('🛡️ ห้าม fallback ชื่อพาร์ทเป็นเลข MAT (`part_name: x || x.mat_no`)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx', '.mjs'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /part_name\s*:\s*[^,\n]*\|\|\s*[\w.]*mat_no/g;
+    for (const m of code.matchAll(re)) {
+      bad.push(`${relative(ROOT, file)}:${code.slice(0, m.index).split('\n').length}  ${m[0].trim()}`);
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ มีการเติมเลข MAT แทนชื่อพาร์ท ${bad.length} จุด\n`
+    + '   ทำไมห้าม: ชื่อที่หายเพราะอ่านไฟล์ไม่ออก จะถูกกลบด้วยเลข MAT แล้วดูเหมือนข้อมูลปกติ\n'
+    + '              (เกิดจริง 02/10/2026 — ใบ 10102017 ได้ชื่อเป็นเลขทั้ง 7 แถว ไม่มี error ให้เห็น)\n'
+    + '   แก้ยังไง: ชื่อจากไฟล์ → ชื่อในทะเบียน parts_master → **ไม่มี = ไม่เขียน แล้วบอกบนจอว่าแถวไหน**\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});

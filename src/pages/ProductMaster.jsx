@@ -1760,7 +1760,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const made = products
       .filter(pr => pr.mat_no && !pr._op && !inPm.has(k(pr.mat_no)) && pr.id !== selProduct?.id)
       .map(pr => ({
-        id: `made:${pr.id}`, mat_no: pr.mat_no, part_name: pr.name || pr.mat_no,
+        id: `made:${pr.id}`, mat_no: pr.mat_no, part_name: pr.name || '',   // 🔴 ไม่มีชื่อ = ว่าง ห้ามเติมเลข MAT แทนชื่อ (ด่าน regressionGuards)
         part_no: pr.p_no || '', supplier: pr.customer || '', uom: 'pcs', qty_per_pkg: null,
         _made: true,                       // ← ยังไม่อยู่ในทะเบียน ลงให้ตอนบันทึก
       }));
@@ -1836,9 +1836,12 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
     const exist = products.find(pr => String(pr.mat_no ?? '').trim().toUpperCase() === mat);
     if (exist) { setSelProduct(exist); setSearch(exist.mat_no); toast.info(`${mat} มีใบ BOM อยู่แล้ว — เลือกให้แล้ว`); return; }
+    /* 🔴 ชื่อว่าง = ไม่เปิดใบให้ ห้ามเอาเลข MAT มาเป็นชื่อ (เคสจริง 02/10 — ชื่อเป็นเลขแล้วดูเหมือนปกติ) */
+    const headName = String(part?.part_name ?? '').trim();
+    if (!headName) { toast.error(`${mat} ยังไม่มีชื่อพาร์ทในทะเบียน — ใส่ชื่อที่แท็บ 1️⃣ Parts Master ก่อน`); return; }
     setHeadBusy(true);
     const { data, error } = await supabaseDR.from('dr_products')
-      .insert({ mat_no: mat, name: part.part_name || mat, p_no: part.part_no || null, is_active: true, created_by: fullName })
+      .insert({ mat_no: mat, name: headName, p_no: part.part_no || null, is_active: true, created_by: fullName })
       .select('id, name, code, mat_no, p_no, customer, line_name').single();
     setHeadBusy(false);
     if (error) { toast.error(`เปิดใบ BOM ไม่สำเร็จ: ${error.message}`); return; }
@@ -1889,16 +1892,28 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     const { parsed, diff, miss, target } = sapImp;
     setSapBusy(true);
 
+    /* 🔴 ชื่อพาร์ทห้ามตกเป็นเลข MAT (บั๊กจริง 02/10 — ตัวแกะอ่านคอลัมน์ชื่อไม่ออก แล้วโค้ดนี้
+       เขียน `part_name || mat_no` ⇒ ทั้งใบขึ้นเป็นเลข 7 แถว โดยไม่มีใครรู้ว่าเพี้ยน)
+       ลำดับที่ยอมรับได้: ชื่อจากไฟล์ → ชื่อในทะเบียน (คนดูแลเอง ชนะ SAP) → **ไม่มี = ไม่นำเข้า** */
+    const pmName = new Map(partsMaster.map(p => [String(p.mat_no).trim().toUpperCase(), p.part_name]));
+    const nameOf = (r) => String(r.part_name || '').trim() || String(pmName.get(String(r.mat_no).trim().toUpperCase()) || '').trim();
+    const noName = [...diff.add, ...diff.update, ...miss].filter(r => !nameOf(r));
+    if (noName.length) {
+      setSapBusy(false);
+      toast.error(`ไม่นำเข้าให้ — ${noName.length} แถวไม่มีชื่อพาร์ททั้งในไฟล์และในทะเบียน (${noName.slice(0, 3).map(r => r.mat_no).join(', ')}${noName.length > 3 ? ' …' : ''}) · ลงชื่อในแท็บ Parts Master ก่อน แล้วนำเข้าใหม่`);
+      return;
+    }
+
     /* ① ลงทะเบียนพาร์ทที่ยังไม่มีใน Parts Master ก่อน (step 1 ของ workflow — BOM หยิบจากทะเบียน) */
     if (miss.length) {
       const pmErr = (await supabaseDR.from('parts_master').upsert(
-        miss.map(m => ({ mat_no: m.mat_no, part_name: m.part_name || m.mat_no, part_no: m.part_no, uom: m.uom || 'PC', is_active: true, created_by: fullName })),
+        miss.map(m => ({ mat_no: m.mat_no, part_name: nameOf(m), part_no: m.part_no, uom: m.uom || 'PC', is_active: true, created_by: fullName })),
         { onConflict: 'mat_no', ignoreDuplicates: true })).error;
       if (pmErr) { setSapBusy(false); toast.error(`ลงทะเบียน Parts Master ไม่สำเร็จ: ${pmErr.message} — ยังไม่ได้แตะ BOM`); return; }
     }
 
     const payload = (r) => ({
-      mat_no: r.mat_no, part_name: r.part_name || r.mat_no,
+      mat_no: r.mat_no, part_name: nameOf(r),
       qty_per_unit: r.qty_per_unit ?? 1, uom: r.uom || 'PC',
       item_no: r.item_no ?? null, parent_mat: r.parent_mat || null,
       storage_location: r.storage_location || null, prod_sloc: r.prod_sloc || null,
@@ -1953,7 +1968,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
   };
   const openEdit_  = (it) => {
     setEditItem(it);
-    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '' });
+    setForm({ qty_per_unit: it.qty_per_unit, qty_per_pkg: it.qty_per_pkg || '', note: it.note || '', source_line: it.source_line || '', item_no: it.item_no ?? '', storage_location: it.storage_location || '', op_no: it.op_no || '',
+      part_name: it.part_name || '', part_no: it.part_no || '' });
     // รหัสเดิมที่ไม่มีในลิสต์ (ทะเบียน+ที่เคยใช้) = เปิดโหมดพิมพ์เอง ไม่งั้น select จะแสดงว่าง = ค่าหายเงียบ
     const c = slocLabel(it.storage_location);
     setSlocFree(!!c && !slocChoices.some(s => s.code === c));
@@ -2075,11 +2091,15 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     // รูปแบบรหัสคลังผิด = บล็อก (DB มี check ด้วย — บอกก่อนจะได้ไม่เจอ error ดิบ)
     if (!slocValid(form.storage_location)) { toast.error(`รหัสคลังไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; }
     setSaving(true);
+    const partName = String(form.part_name ?? '').trim();
+    if (!partName) { toast.error('ชื่อพาร์ทต้องไม่ว่าง'); setSaving(false); return; }
     const base = {
       qty_per_unit: qty,
       qty_per_pkg:  form.qty_per_pkg ? parseFloat(form.qty_per_pkg) : null,
       note:         form.note.trim() || null,
       source_line:  form.source_line.trim() || null,
+      part_name:    partName,
+      part_no:      String(form.part_no ?? '').trim() || null,
       updated_at:   new Date().toISOString(),
     };
     let { error } = await supabaseDR.from('bom_items').update({
@@ -2504,9 +2524,24 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
             {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
-            <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700, marginBottom: 2 }}>{editItem.part_name}</div>
-            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', marginBottom: 16 }}>MAT {editItem.mat_no}</div>
+            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', marginBottom: 12 }}>MAT {editItem.mat_no}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {/* 🔴 02/10 (feedback user "กดปุ่มดินสอแก้ไขก็ไม่ได้"): เดิมชื่อพาร์ทเป็นข้อความอ่านอย่างเดียว
+                  ⇒ แถวที่ชื่อเข้ามาผิด (เช่นนำเข้าแล้วได้เลข MAT เป็นชื่อ) **แก้ในจอไม่ได้เลย**
+                  SAP ยัด "ชื่อ + Part No." ไว้ในคอลัมน์ Object description ช่องเดียว ⇒ ต้องแยกเองได้ */}
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชื่อพาร์ท (Part Name) *</label>
+                <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
+                  placeholder="เช่น PACK SUPT ASY RAD-FVL" />
+                {String(form.part_name).trim() === String(editItem.mat_no).trim() && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⚠ ชื่อยังเป็นเลข MAT — แถวนี้นำเข้ามาตอนตัวแกะยังอ่านคอลัมน์ชื่อไม่ได้ (แก้แล้ว 02/10) · นำเข้าไฟล์เดิมซ้ำจะเติมชื่อให้เอง</div>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part No. (ลูกค้า)</label>
+                <input style={{ ...inputSt, fontFamily: 'monospace' }} value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))}
+                  placeholder="SAP ไม่มีคอลัมน์นี้แยก — อยู่ในชื่อ เช่น …-MB3B-8A297-CB" />
+              </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / ชิ้นงาน *</label>
                 <input autoFocus type="number" min="0.001" step="any" style={{ ...inputSt, fontSize: 22, fontWeight: 900, textAlign: 'center' }} value={form.qty_per_unit} onChange={e => setForm(f => ({ ...f, qty_per_unit: e.target.value }))} />

@@ -142,13 +142,29 @@ export default function ScrapReport() {
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry (doc_key เดียวกับ export)
   const scrapFormNo = fullCode(docReady ? docFormSync('scrap_report', { form_code: 'FM-PD2-002', rev: 'Rev.06' }) : { form_code: 'FM-PD2-002', rev: 'Rev.06' }) || 'FM-PD2-002 Rev.06';
 
+  /* 🔴 "ไม่มีใบในช่วงนี้" ต้องแยกให้ออกจาก "คิวรีล่ม" และจาก "มีใบ แต่อยู่นอกช่วง" (02/10 · feedback user)
+     เคสจริง: ใบจริง 6 ใบลงวันที่ 18-19 ส.ค. · ช่วง default = 30 วันย้อนหลัง ⇒ จอว่างสนิท
+     แล้วบอกแค่ "ไม่มีใบในช่วงนี้" — user อ่านว่า "ระบบพัง/ข้อมูลหาย"
+     ⇒ บอกด้วยว่านอกช่วงมีกี่ใบ ใบล่าสุดวันไหน + ปุ่มกระโดดไป (กฎความซื่อสัตย์ของจอ) */
+  const [listErr, setListErr]   = useState(null);
+  const [outside, setOutside]   = useState(null);   // { count, latest } | null
   const loadReports = useCallback(async () => {
-    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
+    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); setOutside(null); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
     let q = supabaseDR.from('scrap_reports').select('*')
       .gte('report_date', listFrom).lte('report_date', listTo);
     if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
-    const { data } = await q.order('report_date', { ascending: false }).order('created_at', { ascending: false });
+    // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล่มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล" (กฎเหล็กข้อ 1)
+    const { data, error } = await q.order('report_date', { ascending: false }).order('created_at', { ascending: false });
+    if (error) { setListErr(error.message); setReports([]); setOutside(null); return; }
+    setListErr(null);
     setReports(data || []);
+
+    if ((data || []).length) { setOutside(null); return; }
+    // ว่าง → ถามต่อว่า "นอกช่วงมีมั้ย" (คิวรีเล็ก เฉพาะตอนจอว่างเท่านั้น ไม่กินทุกครั้ง)
+    let oq = supabaseDR.from('scrap_reports').select('report_date').order('report_date', { ascending: false }).limit(1);
+    if (scopedLineNames) oq = oq.in('line_name', scopedLineNames);
+    const { data: any1, error: oe } = await oq;
+    setOutside(!oe && any1?.length ? { latest: any1[0].report_date } : null);
   }, [listFrom, listTo, scopedLineNames]);
   useEffect(() => { loadReports(); }, [loadReports]);
 
@@ -596,7 +612,24 @@ export default function ScrapReport() {
                 </td>
               </tr>
             ))}
-            {reports.length === 0 && <tr><td style={tdSt} colSpan={7}><span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้</span></td></tr>}
+            {reports.length === 0 && (
+              <tr><td style={tdSt} colSpan={7}>
+                {listErr ? (
+                  <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                ) : outside ? (
+                  <span style={{ color: 'var(--text2)' }}>
+                    ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
+                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 8, cursor: 'pointer',
+                        background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
+                      ขยายช่วงไปถึงวันนั้น
+                    </button>
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>
+                )}
+              </td></tr>
+            )}
           </tbody>
         </table>
       </div>
