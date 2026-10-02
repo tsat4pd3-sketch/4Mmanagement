@@ -28,7 +28,7 @@ import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/chan
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { LineScopeSelect } from '../components/LineSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
@@ -686,7 +686,6 @@ function DailyTab() {
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, linesInScope, orgSectionList, role, userLineId, scopeSecs]);
-  const dailyVisibleLines = dailySection ? linesInScope.filter(l => l.section === dailySection) : linesInScope;
 
   const filteredLogs = useMemo(() => logs.filter(l => {
     if (dailySection && l.employees?.section !== dailySection) return false;
@@ -744,16 +743,13 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={dailySection} onChange={e => { setDailySection(e.target.value); setDailyLine(''); setDailyDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {dailySections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        <LineScopeSelect lines={linesInScope} sections={dailySections} section={dailySection} line={dailyLine} valueKey="id"
+          onChange={(sec, ln) => { setDailySection(ln ? '' : sec); setDailyLine(ln); setDailyDept(''); }} />
         <select value={dailyDept} onChange={e => setDailyDept(e.target.value)}>
           <option value="">{ALL.dept}</option>
           {deptsOf(dailySection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={dailyVisibleLines} value={dailyLine} valueKey="id" placeholder={ALL.line} onChange={setDailyLine} />
         <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -1276,7 +1272,6 @@ function RangeTab() {
     return lines;
   }, [lines, role, userLineId, scopeSecs]);
   const rangeSections = useMemo(() => sortLike(rangeLinesInScope.map(l => l.section), orgSectionList), [rangeLinesInScope, orgSectionList]);
-  const rangeVisibleLines = rangeSection ? rangeLinesInScope.filter(l => l.section === rangeSection) : rangeLinesInScope;
 
   const filteredRows = useMemo(() => rows.filter(r => {
     if (rangeSection && r.section !== rangeSection) return false;
@@ -1330,12 +1325,9 @@ table{border-collapse:collapse;width:100%}
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={rangeSection} onChange={e => { setRangeSection(e.target.value); setRangeLine(''); }}>
-          <option value="">{ALL.section}</option>
-          {rangeSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-        <LineSelect lines={rangeVisibleLines} value={rangeLine} valueKey="id" placeholder={ALL.line} onChange={setRangeLine} />
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} valueKey="id"
+          onChange={(sec, ln) => { setRangeSection(ln ? '' : sec); setRangeLine(ln); }} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -1917,14 +1909,10 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           const fourMSections = allowedLineNames
             ? sortLike(scopedLines.map(l => l.section), orgSectionList)
             : (orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList));
-          const fourMVisibleLines = fourMSection ? scopedLines.filter(l => l.section === fourMSection) : scopedLines;
           return (<>
-            <select value={fourMSection} onChange={e => { setFourMSection(e.target.value); setLine(''); }}>
-              <option value="">{ALL.section}</option>
-              {fourMSections.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คงตัวกรอง scope+section เดิม */}
-            <LineSelect lines={fourMVisibleLines} value={line} placeholder={ALL.line} onChange={setLine} />
+            {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+            <LineScopeSelect lines={scopedLines} sections={fourMSections} section={fourMSection} line={line}
+              onChange={(sec, ln) => { setFourMSection(ln ? '' : sec); setLine(ln); }} />
           </>);
         })()}
         <select value={cat} onChange={e => setCat(e.target.value)}>
@@ -2306,21 +2294,17 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
     if (role === 'leader' && userLineId) return sortLike(scopedLines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
-  const visibleLines = filterSection ? scopedLines.filter(l => l.section === filterSection) : scopedLines;
   return (
     <>
-      <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterLine(''); setFilterDept && setFilterDept(''); }}>
-        <option value="">{ALL.section}</option>
-        {sections.map(s => <option key={s} value={s}>{s}</option>)}
-      </select>
+      {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+      <LineScopeSelect lines={scopedLines} sections={sections} section={filterSection} line={filterLine} valueKey="id"
+        onChange={(sec, ln) => { setFilterSection(ln ? '' : sec); setFilterLine(ln); setFilterDept && setFilterDept(''); }} />
       {setFilterDept && (
         <select value={filterDept || ''} onChange={e => setFilterDept(e.target.value)}>
           <option value="">{ALL.dept}</option>
           {deptsOf(filterSection).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
       )}
-      <LineSelect lines={visibleLines} value={filterLine} valueKey="id"
-        placeholder={ALL.line} onChange={setFilterLine} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)}>
         <option value="">{ALL.team}</option>
         {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -4244,16 +4228,13 @@ function AttendanceFormTab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → ช่องหัวเอกสาร → spacer → ปุ่ม */}
       <FilterBar style={{ marginBottom: 0 }}>
-        <select value={dept} onChange={e => { setDept(e.target.value); setEmpDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {attSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
+        <LineScopeSelect lines={attLinesInScope} sections={attSections} section={dept} line={line}
+          onChange={(sec, ln) => { setDept(ln ? '' : sec); setLine(ln); setEmpDept(''); }} />
         <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
           <option value="">{ALL.dept}</option>
           {deptsOf(dept).map(d => <option key={d} value={d}>{d}</option>)}
         </select>
-        {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter scope (attLinesInScope) เดิม */}
-        <LineSelect lines={attLinesInScope} value={line} placeholder={ALL.line} onChange={setLine} />
         <select value={team} onChange={e => setTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}

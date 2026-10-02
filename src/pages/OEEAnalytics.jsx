@@ -36,7 +36,7 @@ import useTabParam from '../utils/useTabParam';
 import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { LineScopeSelect } from '../components/LineSelect';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
@@ -424,19 +424,6 @@ export default function OEEAnalytics() {
     if (wLine && !names.has(wLine)) { setTdLine(''); setSelLine(wDept && names.has(wDept) ? wDept : ''); toast.info(`ไม่พบไลน์ "${wLine}" ที่เจาะมาในทะเบียนที่คุณเห็นได้`); }
     if (wDept && !names.has(wDept)) { setTdDept(''); setTdLine(''); setSelLine(''); toast.info(`ไม่พบแผนก/กลุ่มไลน์ "${wDept}" ที่เจาะมาในทะเบียนที่คุณเห็นได้`); }
   }, [linesFull, linesFull.length, sectionOptions, urlParams]);
-
-  // แผนก/กลุ่มไลน์ = ไลน์รากในส่วนงาน (ไม่มีแม่ในทะเบียน) — LineSelect ตัดปลดระวาง/จัดลำดับให้
-  const rootLines = useMemo(() => {
-    const names = new Set(linesFull.map(l => l.name));
-    return linesFull.filter(l => (!tdSection || l.section === tdSection) && !(l.parent_line_name && names.has(l.parent_line_name)));
-  }, [tdSection, linesFull]);
-
-  // ไลน์ลูกของกลุ่มที่เลือก (ใช้ parentChildrenMap เดิม — สูตรเดียวกับ tdScopeLines)
-  const childLines = useMemo(() => {
-    if (!tdDept) return [];
-    const kids = new Set(parentChildrenMap[tdDept] || []);
-    return linesFull.filter(l => kids.has(l.name));
-  }, [tdDept, linesFull, parentChildrenMap]);
 
   const tdScopeLines = useMemo(() => {
     if (tdLine) return [tdLine];
@@ -1379,17 +1366,14 @@ export default function OEEAnalytics() {
         <>
           {/* ── Filter bar ── UI-STANDARD 2026-09-24: ขอบเขต → เวลา → กะ (Segmented เหมือนแท็บแนวโน้ม) → spacer → สถานะ/ปุ่ม */}
           <FilterBar style={{ marginBottom: 16 }}>
-            <select value={tdSection} onChange={e => { setTdSection(e.target.value); setTdDept(''); setTdLine(''); }}>
-              <option value="">{ALL.section}</option>
-              {sectionOptions.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-            </select>
-
-            {/* แผนก/กลุ่มไลน์ → ไลน์ลูก ผ่าน <LineSelect> กลาง (linesFull ถูก scope แล้ว จึงไม่ส่ง role/sections ซ้ำ) (2026-09-07) */}
-            <LineSelect lines={rootLines} value={tdDept} onChange={v => { setTdDept(v); setTdLine(''); }} placeholder={ALL.dept} />
-
-            {childLines.length > 0 && (
-              <LineSelect lines={childLines} value={tdLine} onChange={setTdLine} placeholder={ALL.line} />
-            )}
+            {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ลูก (<LineScopeSelect> · 2026-10-02 · เดิม 3 ช่อง และช่องไลน์ลูกโผล่
+                เฉพาะตอนเลือกกลุ่มที่มีลูก = user "เจาะไลน์ไม่ได้") · state เดิม tdSection/tdDept/tdLine คงไว้ คิวรีไม่เปลี่ยน */}
+            <LineScopeSelect lines={linesFull} sections={sectionOptions} section={tdSection} line={tdLine || tdDept}
+              onChange={(sec, ln, { root }) => {
+                setTdSection(sec);
+                if (!ln) { setTdDept(''); setTdLine(''); return; }
+                if (root && root !== ln) { setTdDept(root); setTdLine(ln); } else { setTdDept(ln); setTdLine(''); }
+              }} />
 
             <select value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
               <option value="">{ALL.team}</option>
