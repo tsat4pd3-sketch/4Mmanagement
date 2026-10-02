@@ -217,7 +217,7 @@ export default function GroupOverview() {
       });
 
       const sessIds = sessions.map(s => s.id);
-      const [{ data: orders }, { data: dts }, { data: defs }, { data: prods }] = await Promise.all([
+      const [{ data: orders }, { data: dts }, { data: defs }, pairMap] = await Promise.all([   // loadPairMap() คืน map/null ไม่ใช่ { data }
         supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
         supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
@@ -225,7 +225,7 @@ export default function GroupOverview() {
         loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 5 ไม่เข้า destructure แค่ให้ cache พร้อม
       ]);
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
-      const pairMap = prods;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} — จะกลายเป็น "รู้แล้วว่าไม่มีคู่")
+      const pairOf = (m) => pairMap?.[m] ?? null;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} — จะกลายเป็น "รู้แล้วว่าไม่มีคู่")
       const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
       const dtBySess = {}; (dts || []).forEach(x => { (dtBySess[x.session_id] ||= []).push(x); });
 
@@ -242,7 +242,7 @@ export default function GroupOverview() {
           e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
         });
         const nullOs = os.filter(od => !od.mat_no);
-        const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
+        const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
         o.target += pt.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
         o.actual += pt.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
 

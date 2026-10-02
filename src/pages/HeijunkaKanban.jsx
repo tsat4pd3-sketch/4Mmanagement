@@ -33,6 +33,7 @@ import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
 import PartCard, { partCardGrid } from '../components/PartCard';
+import StatusZones from '../components/StatusZones';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 
@@ -46,7 +47,9 @@ import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages'
    กติกา: `purpose` = "แท็บนี้ตอบคำถามอะไร" เขียนบนจอเสมอ **ห้ามปล่อยให้ป้ายแท็บอธิบายตัวเอง**
    · `act: true` = แท็บที่ "มีปุ่มให้กดทำงาน" · false = ดูอย่างเดียว (ป้ายบอกไว้ให้ไม่ต้องเดา) */
 const VIEW_META = {
-  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — กดเลื่อนสถานะทีละใบ (เตรียม → ส่ง → รับ)' },
+  // ⚠️ แต่ละตู้มีขั้นไม่เหมือนกัน (FG เตรียม→ส่ง→รับ · Child ปล่อยเข้าไลน์→รับเข้าสโตร์ ·
+  //    จัดซื้อ สั่งซื้อ→รับเข้า) ⇒ ห้ามเขียนลำดับขั้นเดียวครอบทุกตู้ คนจะหาปุ่มที่ไม่มีอยู่จริง
+  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — สโตร์เป็นคนกดบันทึกสถานะ (แต่ละตู้มีขั้นของตัวเอง ดูคำบนปุ่ม)' },
   chart:    { label: '🕐 Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่' },
   board:    { label: '🏪 Store Board',      act: false, purpose: 'สรุปรายไลน์ว่ามีใบค้างกี่ใบ — เป็นทางลัดเข้าไปทำงานต่อ ไม่มีปุ่มทำงานเอง' },
   timeline: { label: '📊 Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
@@ -900,10 +903,18 @@ function AccumulatorGroups({ groups, fmt }) {
 }
 
 /* ─── Pull Board — ตัวสะสม demand + ใบสั่งผลิตล็อต + ใบเบิกวัตถุดิบ ───────────── */
+/* 🗣️ คำบนการ์ดเขียนจาก **มุมสโตร์** — คนกดคือสโตร์ ไม่ใช่คนผลิต (02/10 · คำสั่ง user)
+   เดิมเขียน "▶ เริ่มผลิต / ✔ ผลิตเสร็จ" ซึ่งเป็นมุมของไลน์ผลิต แต่หน้านี้บ้านจริงคือสโตร์
+   (เมนู Logistic - Planning & Store) ⇒ หน้างานสโตร์งงว่า "เริ่มผลิต" คืออะไร เขาไม่ได้ผลิตงาน
+   📊 หลักฐานว่าสับสนจริง: ตอนเจอปัญหามีใบค้างสถานะ "กำลังผลิต" 9 ใบ ตั้งแต่ 2 ก.ย.–1 ต.ค.
+      = มีคนกดขั้นแรกแล้วไม่มีใครกดปิด
+   ⚠️ สิ่งที่ปุ่มทำจริง (ดู `advanceLot`) — ขั้นที่ 2 **เติมสต็อก child เข้าสโตร์ + ตัดวัตถุดิบ
+      ตามใบเบิก** ⇒ เป็นเหตุการณ์ของสโตร์เต็มตัว คำว่า "รับของเข้าสโตร์" จึงตรงกับของจริง
+   🔴 ห้ามเปลี่ยนกลับไปใช้คำฝั่งผลิตโดยไม่ถาม user — ไลน์ผลิตเป็นคนทำของ แต่**สโตร์เป็นคนบันทึก** */
 const LOT_STATUS = {
-  pending:   { label: '🆕 รอผลิต',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)', next: 'producing', nextLabel: '▶ เริ่มผลิต' },
-  producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '✔ ผลิตเสร็จ' },
-  done:      { label: '✅ เสร็จแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
+  pending:   { label: '🆕 รอปล่อยเข้าไลน์', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)', next: 'producing', nextLabel: '📤 ปล่อยเข้าไลน์' },
+  producing: { label: '🔧 อยู่ที่ไลน์ผลิต',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '📥 รับของเข้าสโตร์' },
+  done:      { label: '✅ รับเข้าสโตร์แล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
 };
 function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, onAdvanceLot, onIssueRaw, onReorder, fmt, canOperate }) {
   const accGroups = useMemo(() => groupAccumulator(accumulator, lotSizeMap), [accumulator, lotSizeMap]);
@@ -1035,12 +1046,13 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, busy, on
 
 /* ─── Unified Store Board — ตู้ Kanban รวมของทุกสโตร์ ─────────────────────────
    หน้างานจริงมีหลายสโตร์แยกกัน แต่ละสโตร์มี "ของ" และ "ปลายทาง" ต่างกัน:
-   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200 ผลิตเอง) → เริ่มผลิต
+   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200 ผลิตเอง) → ปล่อยเข้าไลน์ แล้วรับของกลับ
    🛒 จัดซื้อ (300/500 ซื้อ supplier) → รับเข้าสโตร์ · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
    ทุกสโตร์ใช้การ์ดหน้าตาเดียวกัน: สถานะ → ปลายทาง → ปุ่มขยับสถานะ ────────────── */
 const STORE_TABS = [
   { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'พาร์ทแม่ (100) → ไลน์ประกอบ' },
-  { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยผลิตเอง (200) → เริ่มผลิต' },
+  // คำอธิบายต้องบอกว่า "สโตร์ทำอะไร" ไม่ใช่ "ไลน์ทำอะไร" — คนอ่านคือสโตร์
+  { key: 'child',    icon: '🔧', label: 'Store Child',   desc: 'พาร์ทย่อยที่เราผลิตเอง (200) → ปล่อยให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์' },
   { key: 'purchase', icon: '🛒', label: 'จัดซื้อ',       desc: 'ของซื้อ (300/500) → รับเข้าสโตร์' },
   { key: 'raw',      icon: '🧱', label: 'Store Raw Mat', desc: 'เบิกวัตถุดิบเข้าการผลิต child' },
   // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
@@ -1068,6 +1080,24 @@ const WIP_STATUS = {
   preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
   delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
 };
+/* 🗂️ โซนตามสถานะของคิวสโตร์ (2026-10-02 · feedback หน้างาน "แถบสี/ป้ายสถานะไม่สะดุดตา อยากแยกโซน")
+   ลำดับ = **งานในมือก่อนงานใหม่** (ของที่สแกนหยิบ/ตัดสต็อกแล้วต้องไปถึงไลน์ก่อน ค่อยเริ่มใบใหม่)
+   โซน "เสร็จแล้ว" ใส่เฉพาะตอนกด "รวมที่เสร็จแล้ว" — ป้าย/สีอ่านจาก *_STATUS ตัวเดิม ห้ามประกาศซ้ำ */
+const zoneOf = (meta, statuses, hint) => ({ key: statuses[0], statuses, label: meta.label, color: meta.color, hint });
+const WIP_ZONES = (withDone) => [
+  zoneOf(WIP_STATUS.preparing, ['preparing'], 'หยิบแล้ว · ตัดสต็อกแล้ว → ถึงไลน์แล้วสแกนจุดส่ง'),
+  zoneOf(WIP_STATUS.pending, ['pending'], 'ไลน์/แผนเรียกแล้ว → กดเริ่มเตรียม สแกนพาร์ท'),
+  ...(withDone ? [zoneOf(WIP_STATUS.delivered, ['delivered'], 'ส่งถึงไลน์แล้ว')] : []),
+];
+const LOT_ZONES = (withDone) => [
+  zoneOf(LOT_STATUS.producing, ['producing'], 'ไลน์กำลังทำอยู่ → ของกลับมาเมื่อไหร่ กดรับเข้าสโตร์'),
+  zoneOf(LOT_STATUS.pending, ['pending'], 'ครบล็อตแล้ว รอสโตร์ปล่อยงานให้ไลน์'),
+  ...(withDone ? [zoneOf(LOT_STATUS.done, ['done'], 'ของเข้าสโตร์แล้ว · สต็อกขึ้นให้อัตโนมัติ')] : []),
+];
+const RAW_ZONES = (withDone) => [
+  { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: '#f59e0b', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
+  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: '#22c55e', hint: '' }] : []),
+];
 /* ═══ QueueCard — การ์ดคิวงานสโตร์ = `<PartCard>` + คำศัพท์ของคิว (2026-09-25)
 
    หน้าตา/กติกาทั้งหมดอยู่ที่ `src/components/PartCard.jsx` แล้ว (UI §6.23) —
@@ -1237,8 +1267,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vLots.map(lot => {
+        <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
@@ -1247,8 +1276,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
                 rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
 
       {store === 'purchase' && (
@@ -1306,8 +1334,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vRaws.map(r => {
+        <StatusZones rows={vRaws} zones={RAW_ZONES(showDone)} statusOf={r => (r.status === 'issued' ? 'issued' : 'pending')} renderCard={r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
             return (
@@ -1318,8 +1345,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 actionLabel={issued || !canOperate ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
                 rows={[{ k: 'ใช้กับ', v: r.lot_request_id ? parentLot?.child_mat_no || null : null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
 
       {store === 'rack' && (
@@ -1374,8 +1400,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vWips.map(w => {
+        <StatusZones rows={vWips} zones={WIP_ZONES(showDone)} renderCard={w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             /* 🔴 2026-10-01 — ใบขอเติมมีรูปแบบเดียว: "ส่งพาร์ทเข้าไลน์" (ชั้น พื้นที่→ไลน์→พาร์ท)
                เลิกใบแบบ "เติมจุด WIP จุดใดจุดหนึ่ง" แล้ว (ไม่เคยถูกใช้จริงสักใบ — ทุกใบในฐานเป็นใบระดับไลน์)
@@ -1401,8 +1426,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
     </div>
   );
@@ -1582,7 +1606,7 @@ export default function HeijunkaKanban() {
         toast.info(`ล็อต ${lot.child_mat_no} ถูกเปลี่ยนสถานะโดยคนอื่นไปแล้ว — รีเฟรชให้ใหม่`);
         await loadPull(); setPullBusy(null); return;
       }
-      // ── ผลิตเสร็จ = ปิด loop ──
+      // ── รับของเข้าสโตร์ = ปิด loop (ของที่ไลน์ทำเสร็จ กลับเข้าสต็อกสโตร์ + ตัดวัตถุดิบที่ใช้) ──
       if (next === 'done') {
         /* 🔴 claim สถานะไปแล้ว = กดซ้ำไม่ได้อีก (compare-and-swap ข้างบนจะคืน 0 แถว)
            ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
@@ -1594,7 +1618,7 @@ export default function HeijunkaKanban() {
           // (1) ของที่ผลิตได้ กลับเข้าเติมสต็อกสโตร์ (ที่ไลน์ผลิตพาร์ท) — ถ้าเป็นของซื้อ (ไม่มี source_line) ข้าม
           if (lot.source_line) {
             txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
-              type: 'issue', work_date: wd, note: `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต ${lot.lot_qty})`, created_by: fullName || 'ผลิต' });
+              type: 'issue', work_date: wd, note: `auto: รับ child เข้าสโตร์ (ล็อต ${lot.lot_qty})`, created_by: fullName || 'สโตร์' });
             // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
             //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
             //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
@@ -1603,7 +1627,7 @@ export default function HeijunkaKanban() {
             if (eRaw) throw eRaw;
             (lotRaws || []).forEach(r => {
               txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
-                type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'ผลิต' });
+                type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'สโตร์' });
             });
           }
           if (txns.length) {
@@ -1626,8 +1650,8 @@ export default function HeijunkaKanban() {
       }
       // toast ตามจริง: เติมสต็อกเฉพาะเมื่อมี source_line (ผลิตเองแล้วของกลับเข้าสโตร์)
       toast.success(next === 'done'
-        ? (lot.source_line ? `✅ ผลิตเสร็จ ${lot.child_mat_no} · เติมสต็อกสโตร์ +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
-        : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`);
+        ? (lot.source_line ? `📥 รับเข้าสโตร์ ${lot.child_mat_no} · สต็อก +${lot.lot_qty}` : `✅ ปิดล็อต ${lot.child_mat_no}`)
+        : (next === 'producing' ? `📤 ปล่อย ${lot.child_mat_no} เข้าไลน์ ${lot.source_line || ''} แล้ว` : `อัปเดตล็อต ${lot.child_mat_no} → ${next}`));
       await loadPull();
       await load();
     } catch (err) { toast.error(err.message); }
