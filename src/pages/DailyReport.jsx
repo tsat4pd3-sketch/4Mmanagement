@@ -19,6 +19,7 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
+import { checkShiftCapacity } from '../utils/shiftCapacity';   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
@@ -1416,13 +1417,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     });
   };
 
-  // คำนวณเวลาที่ commit ไปแล้วในกะนี้ (นาที) จากทุก order ที่ยังไม่ cancelled/carry_over — ใช้ CT ของแต่ละ MAT.NO
-  // carry_over คือ order ที่ตัดสินใจส่งไปกะถัดไปแล้ว ไม่ควรนับเป็นภาระของกะนี้อีก ไม่งั้นจะค้างกินความจุไปตลอด
-  const calcCommittedMin = () => {
-    return prodOrders
-      .filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status))
-      .reduce((sum, o) => sum + (o.qty || 0) * ctForMatNo(o.mat_no) / 60, 0);
-  };
+  /* 🔴 2026-10-02 — ภาระกะคิดผ่าน `utils/shiftCapacity.js` เท่านั้น **ห้ามบวก qty×CT เรียงกันเองในหน้า**
+     feedback หน้างาน: *"ทั้งที่เปิดงานใหม่เครื่องใหม่ขนาน แต่ทำไมแจ้งเวลาเกิน"*
+     เดิมบวกทุกใบในกะเป็นสายเดียว ⇒ ASSEMBLY 1 (flow_mode = parallel_machine · 6 เครื่องเดินจริง)
+     ได้ 2,120 นาที เทียบความจุ 590 ⇒ เตือน "เกิน 1,605 นาที" ทั้งที่ของจริง ≈ 353 นาที/เครื่อง
+     ⇒ ของกลางแยกเป็น "เลน" ตาม `flow_mode` + ยุบคู่ RH/LH (ชิ้น ≠ shot) + รายงานใบที่ไม่มี CT */
+  const capacityArgs = () => ({
+    orders: prodOrders,
+    ctOf: ctForMatNo,
+    pairOf: (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null,
+    flowMode: lineFlow[selSession?.line_name]?.flow_mode,
+    parallelUnits: parallelUnitsOf(
+      lineFlow[selSession?.line_name] || {},
+      new Set(machines.filter(m => m.line_name === selSession?.line_name && m.is_active !== false)
+        .map(m => m.machine_no)).size,
+    ),
+    machineNo: openMachineNo || null,
+  });
 
   // แปลง HH:mm ที่กรอกย้อนหลัง → ISO จริง: anchor กับ work_date ของกะนี้ และเลื่อนวันถัดไปถ้าเป็นกะดึกที่ข้ามเที่ยงคืน
   // (ไม่งั้นถ้าไม่ระบุเวลา DB จะ default เป็นเวลาปัจจุบัน ทำให้ Heijunka ขึ้นที่ "ตอนนี้" ไม่ใช่ตอนที่ผลิตจริง)
@@ -1535,16 +1546,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const qty    = std?.qty_per_kanban > 0 ? Number(std.qty_per_kanban) : parseInt(openProdForm.qty);
     const ctSec  = ctForMatNo(matNo);
 
-    // ── Capacity check ──────────────────────────────────────────────
-    if (ctSec > 0) {
-      const netAvailMin   = calcNetAvailMin();
-      const committedMin  = calcCommittedMin();
-      const newOrderMin   = qty * ctSec / 60;
-      if (netAvailMin !== null && (committedMin + newOrderMin) > netAvailMin) {
-        const remainMin = Math.max(0, netAvailMin - committedMin);
-        setOverflowInfo({ prodNo, matNo, qty, std, overMin: Math.round(committedMin + newOrderMin - netAvailMin), remainMin: Math.round(remainMin), newOrderMin: Math.round(newOrderMin) });
-        return; // หยุดรอ user เลือก
-      }
+    // ── Capacity check ── (สูตรอยู่ใน utils/shiftCapacity.js · ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน)
+    const cap = checkShiftCapacity({ netAvailMin: calcNetAvailMin(), newQty: qty, newCtSec: ctSec, ...capacityArgs() });
+    if (cap) {
+      setOverflowInfo({ prodNo, matNo, qty, std, ...cap });
+      return; // หยุดรอ user เลือก
     }
 
     setSavingProdOpen(true);
@@ -4916,6 +4922,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
                   จะเกินเวลาไป {overflowInfo.overMin} นาที
                 </div>
+                {/* 🔴 ต้องบอกว่าเลขนี้คิดจาก "เครื่องไหน" ไม่ใช่ทั้งไลน์ — ไลน์เครื่องขนานเดินพร้อมกัน
+                    ไม่งั้นหน้างานอ่านว่า "ทั้งไลน์เต็ม" แล้วกดส่งกะหน้าทั้งที่เครื่องอื่นยังว่าง (02/10) */}
+                {overflowInfo.basis === 'machine' && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                    ⚙️ คิดจากคิวของ{overflowInfo.lane ? <b style={{ color: 'var(--text2)' }}> เครื่อง {overflowInfo.lane}</b> : 'เครื่องที่คิวยาวที่สุด'}
+                    {' '}เท่านั้น (ไลน์นี้เดินขนาน {overflowInfo.lanes} เครื่อง) — เครื่องอื่นยังรับงานได้
+                  </div>
+                )}
+                {overflowInfo.unknownCt > 0 && (
+                  <div style={{ fontSize: 11, color: '#f59e0b' }}>
+                    ⚠ มีอีก {overflowInfo.unknownCt} ใบที่ยังไม่มี CT — คิดเวลาไม่ได้ ของจริงอาจแน่นกว่านี้
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ต้องการทำอย่างไรกับ Order นี้?
@@ -5022,11 +5041,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onChange={e => setOpenProdForm(f => ({ ...f, prod_no: e.target.value }))}
                     onKeyDown={e => {
                       if (e.key !== 'Enter') return;
-                      if (openProdForm.mat_no && openProdForm.qty && openProdForm.prod_no && !prodOrders.find(o => o.prod_no === openProdForm.prod_no.trim())) {
-                        handleScanOpen();
-                      } else {
-                        document.getElementById('open-mat-select')?.focus();
-                      }
+                      const pn = openProdForm.prod_no.trim();
+                      const dupScan = !!pn && !!prodOrders.find(o => o.prod_no === pn);
+                      if (openProdForm.mat_no && openProdForm.qty && pn && !dupScan) { handleScanOpen(); return; }
+                      /* 🔴 2026-10-02 — สแกนซ้ำ (tag card ใบเดิม) = ต้องแก้ที่ **PROD.NO** ไม่ใช่ไปแก้ MAT
+                         เดิมโยน focus ไปช่อง MAT ทุกกรณีที่เปิดใบไม่ได้ ⇒ Enter ที่เครื่องสแกนส่งตามท้าย
+                         ไปตกที่ picker แล้วเลือกพาร์ทตัวบนสุดให้เอง (ดู utils/pickerKeys.js)
+                         ⇒ ซ้ำ = คาเคอร์เซอร์ไว้ที่เดิม + คลุมข้อความ ให้ยิงใบใหม่ทับได้เลย */
+                      if (dupScan) { e.preventDefault(); e.currentTarget.select(); return; }
+                      document.getElementById('open-mat-select')?.focus();
                     }}
                     placeholder="สแกน PROD.NO..."
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
