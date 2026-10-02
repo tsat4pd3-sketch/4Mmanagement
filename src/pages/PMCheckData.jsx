@@ -24,6 +24,8 @@ import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
 import SearchInput from '../components/SearchInput'
+import ScanModal from '../components/ScanModal'
+import { resolveJig } from '../utils/qrCode'
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -727,6 +729,7 @@ export default function PMCheckData() {
   const canShim = can('fixture_shim', 'record', userRole)
   // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
   const [jigQuery, setJigQuery] = useState('')
+  const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
   const [results, setResults] = useState({})
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -1131,6 +1134,12 @@ export default function PMCheckData() {
         <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
           <SearchInput value={jigQuery} onChange={setJigQuery} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาเครื่อง"
             style={{ flex: 1, minWidth: 0 }} />
+          {/* 📷 สแกนป้ายที่ติดเครื่อง → เปิดใบตรวจของเครื่องนั้นเลย (2026-10-02 · คำสั่ง user)
+              เดิมหน้าพิมพ์ป้ายโฆษณาว่า "สแกนเลือกอุปกรณ์ได้ทันทีใน … ตรวจ PM" แต่หน้านี้ไม่มีปุ่มสแกน
+              ⚠️ ป้ายเครื่องจักรเข้ารหัสด้วย machines.id — resolveJig เด้งไป "แถวเงา" ใน jigs ให้เอง */}
+          <button onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง"
+            style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
+              background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
         {qWords.length > 0 && department !== 'production' && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง</div>
@@ -1649,6 +1658,20 @@ export default function PMCheckData() {
         </div>
       )}
     </div>
+
+    {/* 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์นั้นให้เลย (คืน string = ข้อความ error ให้โชว์ในโมดัล)
+        🔴 ไม่พบ/ไม่อยู่ในแผนกนี้ ต้องบอกเหตุผล ห้ามปิดเงียบแล้วไม่เกิดอะไรขึ้น */}
+    {scanOpen && (
+      <ScanModal title="สแกนป้ายเครื่อง" hint="ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน"
+        onScan={(parsed) => {
+          const j = resolveJig(parsed, jigs)
+          if (!j) return 'ไม่พบอุปกรณ์นี้ในทะเบียน PM — ลงทะเบียนที่แท็บ ⚙️ ตั้งค่าจุดตรวจก่อน'
+          if (!deptJigsAll.some(x => x.id === j.id)) return `${j.jig_no || j.name || 'อุปกรณ์นี้'} อยู่คนละแผนกกับแท็บที่เปิดอยู่ — สลับแผนกด้านบนก่อน`
+          selectJig(j)
+          setScanOpen(false)
+        }}
+        onClose={() => setScanOpen(false)} />
+    )}
     </Page>
   )
 }

@@ -39,6 +39,7 @@ const LineSetup    = lazy(() => import('./pages/LineSetup'));
 const LayoutSetup  = lazy(() => import('./pages/LayoutSetup'));
 const ProcessSetup = lazy(() => import('./pages/ProcessSetup'));
 const QrLabels     = lazy(() => import('./pages/QrLabels'));
+const ScanLanding   = lazy(() => import('./pages/ScanLanding'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
@@ -1715,7 +1716,14 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
 
   // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
   // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
-  if (!session) return <Navigate to="/login" replace />;
+  /* 🔗 ยังไม่ได้ล็อกอินแล้วเปิด deep link (เช่น ส่อง QR เครื่อง → /scan?c=ESM:M:…)
+     ต้องพากลับมาที่เดิมหลังล็อกอิน — เดิมเด้งไปหน้าแรกเฉยๆ แล้วบริบทของป้ายหายหมด
+     คนหน้างานต้องเดินกลับไปส่องใหม่ · เก็บเป็น `?next=` (path ภายในเท่านั้น — Login ตรวจซ้ำ) */
+  if (!session) {
+    const next = `${location.pathname}${location.search}`;
+    const q = (next && next !== '/') ? `?next=${encodeURIComponent(next)}` : '';
+    return <Navigate to={`/login${q}`} replace />;
+  }
 
   // sidebar แบบ D (2026-08-18): desktop เนื้อหาเสียแค่ rail 64px — แผงหมวดลอยทับ ไม่ดันเนื้อหา
   // ยกเว้นปักหมุด 📌 (opt-in) = rail + แผง (var(--rail-w) + var(--sidebar-w))
@@ -1886,6 +1894,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/process-setup" element={
                 <RoleRoute path="/process-setup" userRole={role}><ProcessSetup /></RoleRoute>
+              } />
+              {/* 📷 ปลายทางของ QR ที่ติดเครื่อง (ป้ายแบบลิงก์ `/scan?c=ESM:M:<uuid>`) — 2026-10-02
+                  สิทธิ์ piggyback ปลายทางใน permissions.js ⇒ ไม่ต้อง seed page:/scan */}
+              <Route path="/scan" element={
+                <RoleRoute path="/scan" userRole={role}><ScanLanding /></RoleRoute>
               } />
               <Route path="/qr-labels" element={
                 <RoleRoute path="/qr-labels" userRole={role}><QrLabels /></RoleRoute>

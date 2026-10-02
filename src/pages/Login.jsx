@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import tsLogo from '../assets/TS logo.png';
 
 const ThaiSummitLogo = ({ size = 48 }) => (
@@ -19,13 +19,19 @@ export default function Login() {
   const [error,    setError]    = useState(null);
   const [loading,  setLoading]  = useState(false);
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+  /* 🔗 ปลายทางหลังล็อกอิน (ตั้งโดย ProtectedLayout ตอนโดนเด้งมา เช่น ส่อง QR แล้วยังไม่ล็อกอิน)
+     🔴 รับเฉพาะ path ภายในที่ขึ้นต้น "/" และไม่ใช่ "//" — ไม่งั้นเป็นช่อง open-redirect
+        (ใครส่งลิงก์ `?next=//evil.com` มาให้พนักงาน แล้วล็อกอินเสร็จเด้งออกนอกระบบ) */
+  const nextRaw = sp.get('next') || '';
+  const next = /^\/(?!\/)/.test(nextRaw) ? nextRaw : '/';
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) { setLoading(false); navigate('/'); return; }
+    if (!error) { setLoading(false); navigate(next); return; }
 
     // แปล error เป็นไทย + แยกประเภท "ไม่พบบัญชี" vs "รหัสผ่านผิด" (คำสั่ง user 2026-07-14)
     // ใช้ RPC login_email_exists (security definer ฝั่ง server) เช็คว่าอีเมลนี้มีบัญชีจริงมั้ย

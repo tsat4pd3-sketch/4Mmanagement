@@ -46,6 +46,30 @@ export function buildQrPayload(kind, id) {
 }
 
 /**
+ * สร้าง "ป้ายแบบลิงก์" — ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่หน้า /scan ได้เลย  (2026-10-02)
+ *
+ * ทำไมต้องเป็นลิงก์: ป้ายที่เป็นข้อความ `ESM:M:<uuid>` เฉยๆ กล้องมือถือส่องแล้ว**ไปไหนไม่ได้**
+ * ต้องเปิดแอปเอง → หาเมนู → กดสแกนในแอป · ป้ายแบบลิงก์ตัดขั้นตอนนั้นทิ้งทั้งหมด
+ *
+ * 🔴 ค่าใน `?c=` ยังเป็นรูปแบบเดิมเป๊ะ ⇒ **ป้ายเก่าที่เป็นข้อความเปล่ายังสแกนในแอปได้เหมือนเดิม**
+ *    (`parseQrPayload` แกะ URL ออกมาเป็น ESM:… ให้อยู่แล้ว) — ไม่มีป้ายไหนต้องพิมพ์ซ้ำเพราะของใหม่
+ * @param {string} origin เช่น `https://esm.example.com` (ปกติส่ง window.location.origin)
+ */
+export function buildQrUrl(kind, id, origin) {
+  const base = String(origin ?? '').replace(/\/+$/, '');
+  const payload = buildQrPayload(kind, id);
+  if (!base) return payload;          // ไม่รู้โดเมน = ถอยไปป้ายข้อความเดิม ดีกว่าออกลิงก์เสีย
+  return `${base}/scan?c=${encodeURIComponent(payload)}`;
+}
+
+/** โดเมนนี้พิมพ์ป้ายแบบลิงก์ได้ไหม — localhost/ไอพีวง LAN = ป้ายจะใช้ได้แค่เครื่องที่พิมพ์ */
+export function qrOriginUsable(origin) {
+  const o = String(origin ?? '');
+  if (!/^https?:\/\//i.test(o)) return false;
+  return !/^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.)/i.test(o);
+}
+
+/**
  * แกะข้อความที่สแกนมา → { kind, id, raw, typed }
  *   typed = true  หมายถึงอ่านรูปแบบของระบบเราออก (รู้ชนิดแน่นอน)
  *   typed = false หมายถึงเป็นเลขเปล่า — ต้องให้ผู้เรียกเดาชนิดจากบริบทของหน้า
