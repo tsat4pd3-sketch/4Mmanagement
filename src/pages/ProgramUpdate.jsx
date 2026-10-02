@@ -21,7 +21,11 @@ import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { useMergeParams } from '../utils/useTabParam';
-import { KINDS, kindOf, buildFeed, countByKind } from '../utils/changelog';
+import { KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
+
+/* เพดานรายการที่วาดต่อรอบ — ช่วงกว้างมาก (ทั้งประวัติ = 1,157 รายการ) ทำจอ TV/มือถือหน่วง
+   🔴 ตัดแล้วต้องเขียนบนจอว่า "แสดงกี่จากกี่" + ปุ่มดูเพิ่ม **ห้ามตัดเงียบ** */
+const PAGE_ROWS = 400;
 
 const fmtThaiDate = (ymd) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
@@ -72,7 +76,12 @@ export default function ProgramUpdate() {
     [data, from, to]);
   const counts = useMemo(() => countByKind(inRange), [inRange]);
   const feed = useMemo(() => buildFeed(inRange, { kind, q }), [inRange, kind, q]);
-  const shown = feed.reduce((s, g) => s + g.items.length, 0);
+  const [cap, setCap] = useState(PAGE_ROWS);
+  const view = useMemo(() => limitFeed(feed, cap), [feed, cap]);
+  const shown = view.shown;
+  /* เปลี่ยนช่วง/ชนิด/คำค้น = เริ่มนับเพดานใหม่ (ไม่งั้นกด "ดูเพิ่ม" ค้างไว้แล้วสลับตัวกรอง
+     จะวาดทีเดียวเป็นพันแถวโดยที่ผู้ใช้ไม่ได้ขอ) */
+  useEffect(() => { setCap(PAGE_ROWS); }, [from, to, kind, q]);
 
   const segOpts = [
     { value: 'all', label: `ทั้งหมด ${inRange.length}` },
@@ -134,7 +143,8 @@ export default function ProgramUpdate() {
 
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             {fmtThaiDate(from)} – {fmtThaiDate(to)} · <b style={{ color: 'var(--text2)' }}>{shown.toLocaleString()}</b> รายการ
-            {' '}ใน {feed.length} วันที่มีการแก้
+            {view.hidden > 0 ? <> จาก {view.total.toLocaleString()}</> : null}
+            {' '}ใน {view.days.length} วันที่มีการแก้
             {(kind !== 'all' || q) && inRange.length !== shown
               ? <> · กรองจากทั้งหมด {inRange.length.toLocaleString()} รายการในช่วงนี้</> : null}
           </div>
@@ -145,7 +155,7 @@ export default function ProgramUpdate() {
                 ? 'ไม่มีรายการที่ตรงกับตัวกรอง — ลองเปลี่ยนชนิดหรือล้างคำค้น'
                 : 'ช่วงเวลานี้ไม่มีการเปลี่ยนแปลงระบบ (ไม่ใช่โหลดไม่ได้ — ข้อมูลโหลดครบแล้ว)'}
             </div>
-          ) : feed.map(day => (
+          ) : view.days.map(day => (
             <div key={day.date} style={{ marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{fmtThaiDate(day.date)}</div>
@@ -174,6 +184,21 @@ export default function ProgramUpdate() {
               })}
             </div>
           ))}
+
+          {view.hidden > 0 && (
+            <div style={{ padding: '4px 2px 10px', fontSize: 12, color: 'var(--muted)' }}>
+              ยังเหลืออีก <b style={{ color: 'var(--text2)' }}>{view.hidden.toLocaleString()}</b> รายการในช่วงนี้
+              {' '}
+              <button type="button" onClick={() => setCap(c => c + PAGE_ROWS)}
+                style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700,
+                         cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }}>
+                ดูเพิ่ม {Math.min(PAGE_ROWS, view.hidden).toLocaleString()} รายการ
+              </button>
+              <div style={{ fontSize: 11, marginTop: 4 }}>
+                (วาดทีละ {PAGE_ROWS} รายการ — ช่วงกว้างมากแล้ววาดหมดทีเดียวทำจอหน้างานหน่วง)
+              </div>
+            </div>
+          )}
         </>
       )}
     </Page>

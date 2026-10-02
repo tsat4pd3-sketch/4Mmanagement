@@ -63,3 +63,33 @@ test('buildFeed — ชุดว่าง/undefined = [] ไม่ throw', () =>
   assert.deepEqual(buildFeed([]), []);
   assert.deepEqual(buildFeed(), []);
 });
+
+// ── limitFeed — เพดานจำนวนที่วาด ──────────────────────────────────────────
+import { limitFeed } from '../changelog.js';
+
+const day = (d, n) => ({ date: d, items: Array.from({ length: n }, (_, i) => ({ h: `${d}-${i}` })) });
+
+test('limitFeed — ไม่เกินเพดาน = คืนของเดิมทั้งก้อน', () => {
+  const f = [day('2026-09-30', 3), day('2026-09-29', 2)];
+  assert.deepEqual(limitFeed(f, 10), { days: f, shown: 5, total: 5, hidden: 0 });
+  assert.equal(limitFeed(f).shown, 5);               // ไม่ส่ง max = ไม่ตัด
+});
+
+test('🔴 limitFeed — เกินเพดาน ต้องบอกจำนวนที่ซ่อน (ห้ามตัดเงียบ)', () => {
+  const r = limitFeed([day('2026-09-30', 3), day('2026-09-29', 5)], 4);
+  assert.equal(r.shown, 4);
+  assert.equal(r.total, 8);
+  assert.equal(r.hidden, 4);
+  assert.deepEqual(r.days.map(d => d.items.length), [3, 1]);   // วันสุดท้ายถูกตัดครึ่งได้
+});
+
+test('limitFeed — วันที่ไม่เหลือที่ว่างแล้ว ต้องไม่โผล่เป็นหัวข้อเปล่า', () => {
+  const r = limitFeed([day('2026-09-30', 3), day('2026-09-29', 5)], 3);
+  assert.equal(r.days.length, 1);
+  assert.equal(r.hidden, 5);
+});
+
+test('limitFeed — ชุดว่าง/เพดาน 0 ไม่ throw', () => {
+  assert.deepEqual(limitFeed([], 5), { days: [], shown: 0, total: 0, hidden: 0 });
+  assert.equal(limitFeed([day('2026-09-30', 2)], 0).shown, 2);  // 0 = ไม่ตั้งเพดาน (ไม่ใช่ซ่อนทั้งหมด)
+});
