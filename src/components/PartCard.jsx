@@ -1,6 +1,7 @@
 import PartThumb from './PartThumb';
 import { useMatIndex } from './MatLabel';
 import { matInfo } from '../utils/matLabel';
+import { textOn } from '../utils/statusZones';
 
 /* ═══ 🃏 PartCard — การ์ดพาร์ท/สต๊อกมาตรฐานของทั้งระบบ (2026-09-25 · คำสั่ง user)
 
@@ -82,9 +83,10 @@ export default function PartCard({
       backgroundImage: alert ? 'linear-gradient(rgba(239,68,68,0.07), rgba(239,68,68,0.07))' : undefined,
       ...style,
     }}>
-      {st.color && <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: st.color }} />}
+      {/* แถบซ้าย 5px (เดิม 3px — feedback หน้างาน 02/10 "แถบสีบ่งชี้ดูยาก") */}
+      {st.color && <span aria-hidden style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: st.color }} />}
 
-      <div style={{ padding: '12px 12px 12px 15px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ padding: '12px 12px 12px 17px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
         {showImg && <PartThumb url={img} alt={[code, name].filter(Boolean).join(' · ')} size={84} />}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -121,18 +123,23 @@ export default function PartCard({
                      ⇒ การ์ดหลายใบหัวเดียวกันได้ · **MAT คือตัวแยกว่าใบไหนคือใบไหน**
                   2. บาร์โค้ดบนกล่อง/บัตรคัมบัง = `mat_no` และด่านสแกนเทียบ `mat_no`
                   ⇒ ใช้ `--text2` ไม่ใช่ `--muted` และ 11.5px (เพดานจอ TV 11) */}
+              {/* 🔎 02/10 feedback หน้างาน: *"เลข MAT SAP เล็กไป มองไม่เห็น"* — เดิม 11.5px สี text2
+                  ⇒ 15px ตัวหนา สีข้อความหลัก ในกล่องพื้น bg2 (กวาดตาหาเจอเป็น "ป้ายรหัส" แยกจากชื่องาน) */}
               <div title="เลข MAT (SAP) — เลขเดียวกับบาร์โค้ดบนกล่อง/บัตรคัมบัง · ใช้แยกพาร์ทที่ Part No. ซ้ำกัน"
-                style={{ fontSize: 11.5, fontFamily: 'monospace', letterSpacing: 0.2,
-                  color: head ? 'var(--text2)' : (matTone || 'var(--text)'),
-                  fontWeight: head ? 700 : 800, marginTop: 3, ...PC_NUM }}>
-                <span style={{ fontSize: 10, fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--muted)', marginRight: 4 }}>MAT</span>
+                style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, marginTop: 5,
+                  padding: '2px 8px', borderRadius: 'var(--radius)', background: 'var(--bg2)', border: '1px solid var(--border)',
+                  fontSize: 15, fontFamily: 'monospace', letterSpacing: 0.4, fontWeight: 800,
+                  color: head ? 'var(--text)' : (matTone || 'var(--text)'), whiteSpace: 'nowrap', ...PC_NUM }}>
+                <span style={{ fontSize: 11, fontFamily: 'var(--font-body)', fontWeight: 700, color: 'var(--muted)' }}>MAT</span>
                 {info.mat}
               </div>
             </div>
             {st.label && (
+              /* ป้ายสถานะ = พื้นทึบสีสถานะ (02/10 — เดิมพื้นจาง 10% "ไม่สะดุดตา") · สีตัวอักษรคิดจากความสว่างพื้น */
               <span style={{
-                fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--radius)',
-                whiteSpace: 'nowrap', background: st.bg, border: `1px solid ${st.border}`, color: st.color,
+                fontSize: 12.5, fontWeight: 800, padding: '3px 9px', borderRadius: 'var(--radius)',
+                whiteSpace: 'nowrap', background: st.color || st.bg, border: `1px solid ${st.color || st.border}`,
+                color: st.color ? textOn(st.color) : 'var(--text)',
               }}>{st.label}</span>
             )}
           </div>
@@ -142,7 +149,7 @@ export default function PartCard({
 
       {(metric || aside) && (
         <div style={{
-          padding: '0 12px 12px 15px', display: 'grid',
+          padding: '0 12px 12px 17px', display: 'grid',
           gridTemplateColumns: metric && aside ? 'auto minmax(0, 1fr)' : '1fr', gap: 12, alignItems: 'flex-end',
         }}>
           {metric && (
@@ -165,7 +172,7 @@ export default function PartCard({
       )}
 
       {metaRows.length > 0 && (
-        <dl style={{ margin: 0, padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
+        <dl style={{ margin: 0, padding: '8px 12px 10px 17px', borderTop: '1px solid var(--border)', display: 'grid', gap: 3 }}>
           {metaRows.map(r => (
             <div key={r.k} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
               <dt style={{ ...PC_LABEL, flex: '0 0 60px' }}>{r.k}</dt>
@@ -177,13 +184,13 @@ export default function PartCard({
 
       {note && (
         <div style={{
-          padding: '8px 12px 10px 15px', borderTop: '1px solid var(--border)',
+          padding: '8px 12px 10px 17px', borderTop: '1px solid var(--border)',
           fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.5,
         }}>{note}</div>
       )}
 
       {footer && (
-        <div style={{ marginTop: 'auto', padding: '10px 12px 12px 15px', borderTop: '1px solid var(--border)' }}>
+        <div style={{ marginTop: 'auto', padding: '10px 12px 12px 17px', borderTop: '1px solid var(--border)' }}>
           {footer}
         </div>
       )}
