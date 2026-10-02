@@ -111,6 +111,17 @@ export function canAccessPage(path, role) {
         || hasPermission('page:/fixture', role)
         || hasPermission('page:/mtn-repair', role);
   }
+  /* 📷 /scan = ปลายทางของ QR ที่ติดเครื่อง — เป็น "ทางแยก" ล้วน ไม่มีข้อมูลของตัวเอง
+     (โชว์เลข/ชื่อ/ไลน์ของเครื่อง แล้วลิงก์ไปหน้าที่ผู้ใช้มีสิทธิ์อยู่แล้ว · ปุ่มกรองด้วย canAccessPage ซ้ำอีกชั้น)
+     ⇒ piggyback สิทธิ์ปลายทาง ไม่ต้อง seed `page:/scan` — ไม่งั้นคนส่อง QR จะเจอ "ไม่มีสิทธิ์"
+        ทั้งที่กดเข้าหน้าปลายทางตรงๆ ได้อยู่แล้ว */
+  if (path === '/scan') {
+    return hasPermission('page:/scan', role)
+        || hasPermission('page:/pm-check', role)
+        || hasPermission('page:/mtn-repair', role)
+        || hasPermission('page:/pm-setup', role)
+        || hasPermission('page:/order-trace', role);
+  }
   return hasPermission(`page:${path}`, role);
 }
 
