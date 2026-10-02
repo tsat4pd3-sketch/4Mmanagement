@@ -57,13 +57,13 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
       const ids = (sess || []).map(s => s.id);
       if (!ids.length) { setD({ lines: [], noShift: true }); setErr(''); return; }
 
-      const [{ data: po, error: e2 }, { data: prods }] = await Promise.all([
+      const [{ data: po, error: e2 }, pairMap] = await Promise.all([   // loadPairMap() คืน map/null ไม่ใช่ { data } (เคยแกะผิด ⇒ ไม่ยุบงานคู่เงียบๆ)
         supabaseDR.from('prod_orders')
           .select('session_id, mat_no, qty, qty_target, qty_ok, qty_actual, status').in('session_id', ids),
         loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09) · รวมพาร์ทที่ปิดใช้งานด้วย — ไม่กระทบ
       ]);
       if (e2) throw e2;
-      const pairOf = (m) => prods?.[m] ?? null;   // prods = null (โหลดไม่สำเร็จ) ⇒ ไม่ยุบงานคู่
+      const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap = null (โหลดไม่สำเร็จ) ⇒ ไม่ยุบงานคู่
       const opMap = opInfoSync();
       const lineOf = Object.fromEntries((sess || []).map(s => [s.id, s.line_name]));
 
