@@ -33,6 +33,7 @@ import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
 import PartCard, { partCardGrid } from '../components/PartCard';
+import StatusZones from '../components/StatusZones';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 
@@ -1068,6 +1069,24 @@ const WIP_STATUS = {
   preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
   delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
 };
+/* 🗂️ โซนตามสถานะของคิวสโตร์ (2026-10-02 · feedback หน้างาน "แถบสี/ป้ายสถานะไม่สะดุดตา อยากแยกโซน")
+   ลำดับ = **งานในมือก่อนงานใหม่** (ของที่สแกนหยิบ/ตัดสต็อกแล้วต้องไปถึงไลน์ก่อน ค่อยเริ่มใบใหม่)
+   โซน "เสร็จแล้ว" ใส่เฉพาะตอนกด "รวมที่เสร็จแล้ว" — ป้าย/สีอ่านจาก *_STATUS ตัวเดิม ห้ามประกาศซ้ำ */
+const zoneOf = (meta, statuses, hint) => ({ key: statuses[0], statuses, label: meta.label, color: meta.color, hint });
+const WIP_ZONES = (withDone) => [
+  zoneOf(WIP_STATUS.preparing, ['preparing'], 'หยิบแล้ว · ตัดสต็อกแล้ว → ถึงไลน์แล้วสแกนจุดส่ง'),
+  zoneOf(WIP_STATUS.pending, ['pending'], 'ไลน์/แผนเรียกแล้ว → กดเริ่มเตรียม สแกนพาร์ท'),
+  ...(withDone ? [zoneOf(WIP_STATUS.delivered, ['delivered'], 'ส่งถึงไลน์แล้ว')] : []),
+];
+const LOT_ZONES = (withDone) => [
+  zoneOf(LOT_STATUS.producing, ['producing'], 'อยู่ระหว่างผลิต → กดผลิตเสร็จ'),
+  zoneOf(LOT_STATUS.pending, ['pending'], 'ครบล็อตแล้ว รอเริ่มผลิต'),
+  ...(withDone ? [zoneOf(LOT_STATUS.done, ['done'], 'ผลิตเสร็จแล้ว')] : []),
+];
+const RAW_ZONES = (withDone) => [
+  { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: '#f59e0b', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
+  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: '#22c55e', hint: '' }] : []),
+];
 /* ═══ QueueCard — การ์ดคิวงานสโตร์ = `<PartCard>` + คำศัพท์ของคิว (2026-09-25)
 
    หน้าตา/กติกาทั้งหมดอยู่ที่ `src/components/PartCard.jsx` แล้ว (UI §6.23) —
@@ -1237,8 +1256,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vLots.map(lot => {
+        <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
             const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
@@ -1247,8 +1265,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 actionLabel={canOperate ? st.nextLabel : null} busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
                 rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
 
       {store === 'purchase' && (
@@ -1306,8 +1323,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {hiddenNote}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vRaws.map(r => {
+        <StatusZones rows={vRaws} zones={RAW_ZONES(showDone)} statusOf={r => (r.status === 'issued' ? 'issued' : 'pending')} renderCard={r => {
             const parentLot = lotRequests.find(l => l.id === r.lot_request_id);
             const issued = r.status === 'issued';
             return (
@@ -1318,8 +1334,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                 actionLabel={issued || !canOperate ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
                 rows={[{ k: 'ใช้กับ', v: r.lot_request_id ? parentLot?.child_mat_no || null : null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
 
       {store === 'rack' && (
@@ -1374,8 +1389,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
           ยังไม่มีคำขอ — มาจาก 2 ทาง: ไลน์กด "📦 เบิก" ใน Daily Report · สโตร์เลือกพาร์ทจาก forecast ที่ 🕐 Store Time Chart → 🚚 สร้างใบส่ง
         </div> :
         vWips.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีคำขอเติมที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-          {vWips.map(w => {
+        <StatusZones rows={vWips} zones={WIP_ZONES(showDone)} renderCard={w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
             /* 🔴 2026-10-01 — ใบขอเติมมีรูปแบบเดียว: "ส่งพาร์ทเข้าไลน์" (ชั้น พื้นที่→ไลน์→พาร์ท)
                เลิกใบแบบ "เติมจุด WIP จุดใดจุดหนึ่ง" แล้ว (ไม่เคยถูกใช้จริงสักใบ — ทุกใบในฐานเป็นใบระดับไลน์)
@@ -1401,8 +1415,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null }]} />
             );
-          })}
-        </div>}
+          }} />}
       </>)}
     </div>
   );

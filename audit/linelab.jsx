@@ -11,7 +11,7 @@ const pd3 = LINES.filter(l => l.section === 'PD3')
 function Scope() {
   const [st, setSt] = React.useState({ sec: '', ln: '', root: '' })
   return <div><LineScopeSelect id="scope" lines={LINES} sections={['PD1', 'PD2', 'PD3', 'PD4', 'Planning&Store']} section={st.sec} line={st.ln}
-    onChange={(sec, ln, { root }) => setSt({ sec, ln, root })} /><div id="scopeval" style={{ color: '#fff' }}>{JSON.stringify(st)}</div></div>
+    pickDept unit={st.unit || ""} onChange={(sec, ln, { root, unit, lines }) => setSt({ sec, ln, root, unit, n: (lines || []).length })} /><div id="scopeval" style={{ color: '#fff' }}>{JSON.stringify(st)}</div></div>
 }
 createRoot(document.getElementById('root')).render(<div style={{ padding: 20, display: 'flex', gap: 20 }}>
   <Scope />
