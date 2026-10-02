@@ -1693,6 +1693,8 @@ test('🛡️ ถอนยอด auto ของใบผลิต ต้อง�
   assert.deepEqual(bad, [], `\n\n❌ ถอนยอด auto ของใบผลิตแต่ไม่แตะคิวรับเข้า: ${bad.join(', ')}\n`
     + '   แก้: update stock_receipts set status=cancelled (+ cancel_reason) where prod_order_id=… and status=pending\n'
     + '        และถ้ามีใบ received แล้ว ห้ามถอนเงียบ — บอกให้คลังปรับยอดเอง (ดู DailyReport handleRevertOrder)\n');
+});
+
 /* ── ช่องที่พิมพ์ ห้ามเป็นตัวที่จัด key/กลุ่มของลิสต์ (2026-10-02 · feedback หน้างาน) ──────
    เคสจริง `/pm-setup` ช่อง "กลุ่ม/หัวข้อ (Item)": การ์ดจุดตรวจถูกจัดกลุ่มตาม `group_name`
    แล้ววาดใน `<div key={g.name}>` ⇒ พิมพ์ "L" การ์ดย้ายจากกอง "ไม่ระบุกลุ่ม" ไปกลุ่มใหม่ ·
