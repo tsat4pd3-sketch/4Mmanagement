@@ -39,6 +39,7 @@ import { buildHorizon, assignShifts, horizonSummary, orderAcrossHorizon, SEG_HOU
 import { layoutLots } from '../utils/planTimeline';
 import PlanTimeline from './PlanTimeline';
 import FilterBar from './FilterBar';
+import LineSelect from './LineSelect';
 import Segmented from './Segmented';
 import MatLabel from './MatLabel';
 import MachineSelect from './MachineSelect';
@@ -280,9 +281,8 @@ export default function ProdLotPlanner({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <FilterBar style={{ marginBottom: 0 }}>
-        <select value={lineName} onChange={e => setLineName(e.target.value)}>
-          {lines.map(l => <option key={l.id || l.name} value={l.name}>{l.name}</option>)}
-        </select>
+        {/* ไลน์เดียวที่จะวางคิว = <LineSelect> กลาง (หัวกลุ่มส่วนงาน + แม่→ลูก · 2026-10-02 · เดิม map เองเรียงตัวอักษรแบน) */}
+        <LineSelect lines={lines} value={lineName} onChange={setLineName} placeholder={null} />
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {/* 🔗 ไม่ใช่ "ดูกะไหน" อีกต่อไป — คิวไหลข้ามกะเอง ช่องนี้แค่บอกว่า**เริ่มวาง**ที่กะไหน */}
         <Segmented value={shift} onChange={setShift} label="เริ่มที่" options={[

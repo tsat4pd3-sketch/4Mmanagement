@@ -10,7 +10,7 @@ import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
-import LineSelect from '../components/LineSelect';
+import LineSelect, { LineScopeSelect } from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
@@ -1307,44 +1307,11 @@ export default function Checkin() {
       {/* Section & Line filter bar — supervisor only */}
       {role !== 'leader' && lines.length > 0 && (
         <FilterBar style={{ marginBottom: 14 }}>
-          {/* Section tabs — ต้อง wrap เสมอ: section เยอะ (14 ส่วน) เรียงแถวเดียวกว้าง ~1180px
-              บนมือถือจะถูก main (overflow-x:hidden) ตัดหายจนกดปุ่มที่เกินขอบไม่ได้ */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="filter-label">ส่วนงาน</span>
-            <button
-              onClick={() => { setSelSection(''); setSelLine(''); }}
-              style={{
-                padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                border: selSection === '' ? '2px solid var(--accent)' : '1px solid var(--border2)',
-                background: selSection === '' ? 'var(--accent-dim)' : 'var(--bg3)',
-                color: selSection === '' ? 'var(--accent)' : 'var(--text2)',
-              }}
-            >{ALL.section}</button>
-            {sections.map(sec => (
-              <button
-                key={sec}
-                onClick={() => { setSelSection(sec); setSelLine(''); }}
-                style={{
-                  padding: '6px 14px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                  border: selSection === sec ? '2px solid var(--accent)' : '1px solid var(--border2)',
-                  background: selSection === sec ? 'var(--accent-dim)' : 'var(--bg3)',
-                  color: selSection === sec ? 'var(--accent)' : 'var(--text2)',
-                }}
-              >{sec}</button>
-            ))}
-          </div>
-
-          {/* Divider */}
-          {selSection && <span className="sep" />}
-
-          {/* Line dropdown — ตัวเลือกเป็นไลน์ในส่วนงานที่เลือก (cascade) */}
-          {selSection && (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span className="filter-label">ไลน์</span>
-              {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง cascade section→line เดิม (linesForSection) */}
-              <LineSelect lines={linesForSection} value={selLine} valueKey="id" placeholder={ALL.line} onChange={setSelLine} />
-            </div>
-          )}
+          {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02 · เดิมปุ่มส่วนงาน 14 ปุ่ม + ช่องไลน์
+              ที่โผล่หลังเลือกส่วนงาน = หน้าตาไม่เหมือนหน้าอื่น) · ส่วนงานที่ไม่มีไลน์ (คลัง/QA) ยังเลือกได้เพราะเช็คชื่อ "คน" */}
+          <span className="filter-label">ขอบเขต</span>
+          <LineScopeSelect lines={scopedLines} sections={sections} section={selSection} line={selLine} valueKey="id"
+            onChange={(sec, ln) => { setSelSection(sec); setSelLine(ln); }} />
 
           <span className="spacer" />
           {/* Employee count badge */}

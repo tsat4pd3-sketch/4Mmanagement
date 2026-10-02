@@ -207,3 +207,4 @@ dropdown ยืดเกินครึ่งจอ · ช่องในแถ�
 - 2026-10-01 ช่องค้นหา: picker พิมพ์แล้วไม่กรอง (SearchSelect `typing`) · 🔍 ทับคำในแถบกรอง 17 หน้า (SearchInput inline padding) ·
   `audit/searchsweep.mjs` + `audit/searchlab.html` · เทส `searchBoxes.test.mjs`
 - 2026-10-01 ถอดการพับแท็บเกิน 7 เข้า "⋯ เพิ่มเติม" (ซ่อนแท็บ = คนไม่รู้ว่ามี) · ด่าน `tabs-folded-into-dropdown`
+- 2026-10-02 ตัวกรองขอบเขตไลน์ = `<LineScopeSelect>` ช่องเดียว (OEE 3 ช่อง · Report 5 แท็บ 2 ช่อง · เช็คชื่อปุ่ม 14 ส่วน → ช่องเดียว) · แผนล็อตใช้ `<LineSelect>` · ด่าน `line-scope-split-selects`
