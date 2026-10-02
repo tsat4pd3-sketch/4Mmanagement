@@ -57,3 +57,23 @@ export function buildFeed(rows = [], { kind = 'all', q = '' } = {}) {
     .sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))      // วันใหม่ขึ้นก่อน
     .map(([date, items]) => ({ date, items }));
 }
+
+/**
+ * ตัดฟีดตามเพดานจำนวนรายการที่วาด (กันช่วงกว้างมากทำจอหน่วง — จอ TV/มือถือหน้างานแรงน้อย)
+ * 🔴 ตัดแล้ว **ต้องบอกบนจอว่าแสดงกี่จากกี่** (กฎเดียวกับ `capped()` ของคิวงาน) ห้ามตัดเงียบ
+ * @returns { days, shown, total, hidden } — วันสุดท้ายถูกตัดครึ่งได้ (เรียงใหม่→เก่าอยู่แล้ว)
+ */
+export function limitFeed(feed = [], max = Infinity) {
+  const total = feed.reduce((s, g) => s + (g?.items?.length || 0), 0);
+  if (!(max > 0) || total <= max) return { days: feed, shown: total, total, hidden: 0 };
+  const days = [];
+  let shown = 0;
+  for (const g of feed) {
+    const room = max - shown;
+    if (room <= 0) break;
+    const items = (g.items || []).slice(0, room);
+    days.push({ ...g, items });
+    shown += items.length;
+  }
+  return { days, shown, total, hidden: total - shown };
+}

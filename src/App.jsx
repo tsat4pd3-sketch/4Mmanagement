@@ -61,6 +61,8 @@ const FlowTower    = lazy(() => import('./pages/FlowTower'));
 const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
+/* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
+import NotFound from './pages/NotFound';
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -2038,6 +2040,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>
               } />
+              {/* 🔴 ท้ายลิสต์เสมอ — route ที่ไม่รู้จักต้องขึ้น "ไม่พบหน้านี้" ห้ามวาดจอเปล่าเงียบๆ
+                  (02/10 เคสจริง: ลิงก์หน้าใหม่ถูกเปิดด้วยบันเดิลเก่า ⇒ จอว่าง ⇒ ถูกแจ้งว่า "ล่ม")
+                  **ห้ามย้ายขึ้นก่อน route อื่น** (จะกินทุกที่อยู่) */}
+              <Route path="*" element={<NotFound />} />
             </Routes>
           </Suspense>
         </main>

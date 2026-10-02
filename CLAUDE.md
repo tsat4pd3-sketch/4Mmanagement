@@ -94,7 +94,7 @@
 
 ## Pages & Routes
 
-สิทธิ์เข้าถึงแต่ละหน้า ไม่ได้ hardcode ในโค้ดอีกต่อไป — อ่านจากตาราง `role_permissions` ผ่าน `src/utils/permissions.js` (`canAccessPage`) ปรับได้จากหน้า `/permissions` (admin เท่านั้น) คอลัมน์ "Role" ด้านล่างคือ default…
+สิทธิ์เข้าถึงแต่ละหน้า ไม่ได้ hardcode ในโค้ดอีกต่อไป …
 > 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md` (3 หัวข้อย่อย)
 
 ---
@@ -152,7 +152,7 @@ Reject → status: "rejected" + reject_reason
 
 ## Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17)
 
-Planner/Sale อัพโหลด forecast ลูกค้า → ระบบคำนวณจำนวน kanban ที่ใช้ในระบบดึงอัตโนมัติ · สูตรถอดจากไฟล์ Excel จริง (verify กับตัวอย่างที่คำนวณมือ) · helper กลาง `src/utils/kanbanCalc.js` (pure functions — `calcWithdrawalK…
+Planner/Sale อัพโหลด forecast ลูกค้า → ระบบคำนวณจำนวน kanban ที่ใช้ในระบบดึงอัตโนมัติ …
 > 📄 รายละเอียดเต็ม → `docs/modules/kanban-auto-calc.md`
 
 ---
@@ -173,21 +173,21 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
 
-เลิก hardcode รายชื่อกระบวนการแล้ว (คำสั่ง user — ยืดหยุ่นกับโรงงานอื่น): ตาราง `process_types` (DR · migration `20260723_process_types_master.sql`): key (ค่าที่เก็บใน process_type ของตารางอื่น — สร้างแล้วห้ามแก้)/label/…
+เลิก hardcode รายชื่อกระบวนการแล้ว (คำสั่ง user …
 > 📄 รายละเอียดเต็ม → `docs/modules/process-types.md`
 
 ---
 
 ## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
 
-dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` (union ทุก process ที่มีเครื่อง/สินค้าจริงในครอบครัวไลน์ — แม่+ลูกทั้งหมดผ่าน `getLineFamilyNames` ไม่ใช่ชื่อไลน์ตรงเป๊ะ: กะมักเปิดบนไลน์ลูก แต่เครื่องลงทะเ…
+dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` …
 > 📄 รายละเอียดเต็ม → `docs/modules/daily-report-mixed-process.md`
 
 ---
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
-- ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO — MAT ที่เป็น product เดียวกันแตกตามลูกค้า (ชื่อชิ้นงานเดียวกัน เช่น FVL/FTM/AAT) คืองานตัวเดียวกันแค่ส่งแยกลูกค้า ขึ้น parallel กันเองไม่ได้ ระบบรวมเป็นสายเดียวก่อน (จั…
+- ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO …
 
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
 > พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
@@ -249,7 +249,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Morning Meeting — ประชุมแถวเช้า (2026-07-13)
 
-หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์ วาระ: ภาพรวมเมื่อวาน (ผลิตจริง/เป้า, OEE, DT, NG, เข้างาน) → งานหลุดแผน+สาเหตุ → Top Downtime/ของเสีย →…
+หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์ วาระ …
 > 📄 รายละเอียดเต็ม → `docs/modules/morning-meeting.md`
 
 ---
@@ -508,7 +508,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
 
-`/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ (`?die=`): 📋 ทะเบียน (ของเดิม) · 🗺️ ผังจัดเก็บ (`src/components/DieLayout.jsx`) · 📊 สถานะ (`src/components/DieStatusBoard.jsx`) — ตอบ "แม่พิมพ์ตัวนี้อยู่ตรงไหน · สถานะอะไร" · migration `20260819_die_lay…
+`/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ …
 > 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
 
 ---
@@ -634,7 +634,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
-เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร (เจอจริง: `dr_products.line_name` ถูกเปลี่ยนไลน์ สืบไม่ได้) · ตาราง master/editable ใหม่ทุกตัวต้องผูก audit (เพิ่มชื่อตารางใน…
+เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร …
 > 📄 รายละเอียดเต็ม → `docs/modules/traceability-audit-log.md`
 
 ---
