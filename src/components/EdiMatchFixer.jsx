@@ -106,6 +106,18 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
   return (
     <>
+      {(edi.retiredMaps || []).length > 0 && (
+        <div style={box('239,68,68')}>
+          <div style={head('#ef4444')}>⛔ {edi.retiredMaps.length} คู่ที่เคยจับไว้ ชี้ไปสินค้าที่ปิดใช้งานแล้ว — ไม่ใช้คู่นี้แล้ว ต้องเลือกใหม่ในกล่องด้านล่าง</div>
+          <div style={hint}>สินค้าที่ปิดใช้งานมักเพราะ ECN ออกเลขใหม่ · ถ้าเลขใหม่ยังไม่มีให้เลือก ให้ไปตั้งที่ Product Master ก่อน</div>
+          {edi.retiredMaps.map(m => (
+            <div key={`${m.part}|${m.shipTo}`} style={row}>
+              <span style={mono}>{m.part}</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {lbl(m.shipTo)} · เดิม {m.mat} (ปิดใช้งาน)</span>
+            </div>
+          ))}
+        </div>
+      )}
       {ambRows.length > 0 && (
         <div style={box('239,68,68')}>
           <div style={head('#ef4444')}>🔴 {ambRows.length} คู่ (พาร์ท × ship-to) มีหลาย MAT — เลือกว่าปลายทางนี้ใช้ MAT ไหน</div>

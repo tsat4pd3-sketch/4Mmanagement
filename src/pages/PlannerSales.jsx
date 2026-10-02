@@ -344,10 +344,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         const baseHits = new Map();    // part → mat = จับคู่จาก base part (ตัด revision) — ต้องโชว์ให้คนเห็นก่อนยืนยัน
         const unmatchedShipTos = new Map();   // part → Set(shipTo) — ไว้ให้คนเลือกขอบเขตตอนจับคู่
         let mappedCount = 0;
+        const retiredMaps = new Map();        // คู่ที่ชี้ไปสินค้าปิดใช้งาน — ต้องผูกใหม่
         const nonFgHits = new Map();          // part → { mat, name, shipTos } (จับคู่ได้แต่เป็น 2xx)
         const records = rows2.map(r => {
           const fixed = mappedMatFor(partMap, r.shipTo, r.part);
-          if (fixed) { mappedCount++; return { ...r, mat_no: fixed, part_name: nameOfMat[fixed] || null }; }
+          /* 🔴 คู่ที่เคยยืนยันไว้ แต่สินค้าถูกปิดใช้งานทีหลัง (ECN ออกเลขใหม่) = ห้ามใช้ต่อเงียบๆ
+             เคสจริง 01/10: RB3B 8C306 BC → FVL ถูกผูกกับ 10100333 (ปิดแล้ว) ⇒ ใบส่ง 420 ชิ้นลงเบอร์ที่เลิกใช้
+             ⇒ ข้ามคู่นั้น ให้ไหลไปตัวเตือนปกติ + บอกบนจอว่าคู่เดิมใช้ไม่ได้แล้ว */
+          if (fixed && retiredSet.has(fixed)) retiredMaps.set(`${r.part}|${r.shipTo}`, { part: r.part, shipTo: r.shipTo, mat: fixed });
+          else if (fixed) { mappedCount++; return { ...r, mat_no: fixed, part_name: nameOfMat[fixed] || null }; }
           const cands = matMap[norm(r.part)] || [];
           let hit = null;
           if (cands.length === 1) hit = cands[0];
@@ -442,6 +447,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           baseMatched: [...baseHits.entries()].map(([part, mat]) => ({ part, mat, name: nameOfMat[mat] || null })),
           unmatchedShipTos: Object.fromEntries([...unmatchedShipTos.entries()].map(([p, set]) => [p, [...set]])),
           mappedCount,
+          retiredMaps: [...retiredMaps.values()],
           nonFg: [...nonFgHits.entries()].filter(([part]) => !guessed.has(part)).map(([part, n]) => ({ part, mat: n.mat, name: n.name, shipTos: [...n.shipTos] })),
           sold,
           shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
