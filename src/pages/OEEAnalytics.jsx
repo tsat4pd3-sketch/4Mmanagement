@@ -37,7 +37,8 @@ import { fmtTime } from '../utils/dateFormat';
 import { visibleInterval } from '../utils/usePolling';
 import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import LineSelect from '../components/LineSelect';
-import LineScopeSelect from '../components/LineScopeSelect';
+import LineScopeSelect, { deptLines } from '../components/LineScopeSelect';
+import useOrgScope from '../utils/useOrgScope';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
@@ -376,6 +377,8 @@ export default function OEEAnalytics() {
   const [tdShift,  setTdShift]  = useState('');
   const [tdSection,setTdSection]= useState(() => urlParams.get('section') || '');
   const [tdDept,   setTdDept]   = useState(() => urlParams.get('dept') || '');
+  // แผนกตามผังองค์กร (BIG PRESS ฯลฯ · 2026-10-02) — กรองด้วย "ชุดไลน์ของแผนก" จากดัชนีผังตัวเดียวกับช่องขอบเขต
+  const [tdUnit,   setTdUnit]   = useState(() => urlParams.get('unit') || '');
   const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
   /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
@@ -426,15 +429,19 @@ export default function OEEAnalytics() {
     if (wDept && !names.has(wDept)) { setTdDept(''); setTdLine(''); setSelLine(''); toast.info(`ไม่พบแผนก/กลุ่มไลน์ "${wDept}" ที่เจาะมาในทะเบียนที่คุณเห็นได้`); }
   }, [linesFull, linesFull.length, sectionOptions, urlParams]);
 
+  const { index: orgIdx } = useOrgScope(linesFull);
+  const tdUnitLines = useMemo(() => deptLines(orgIdx, tdUnit, linesFull), [orgIdx, tdUnit, linesFull]);
   const tdScopeLines = useMemo(() => {
     if (tdLine) return [tdLine];
+    // แผนกที่ไม่มีไลน์ผลิต = ห้ามตกไปเป็น "ทั้งโรงงาน" (in() ว่าง = ไม่กรอง) ⇒ ใส่ชื่อที่ไม่มีวันตรง ให้จอขึ้นว่างตามจริง
+    if (tdUnit) return tdUnitLines?.length ? tdUnitLines : ['__ไม่มีไลน์ในแผนกนี้__'];
     if (tdDept) return parentChildrenMap[tdDept] ? [tdDept, ...parentChildrenMap[tdDept]] : [tdDept];
     if (tdSection) return linesFull.filter(l => l.section === tdSection).map(l => l.name);
     // ไม่เลือก filter: role ที่ถูก scope → จำกัดที่ไลน์ใน scope เสมอ (linesFull ถูก scope แล้ว) · ไม่ scope → ทุกไลน์
     return isScoped ? linesFull.map(l => l.name) : null;
-  }, [tdLine, tdDept, tdSection, linesFull, parentChildrenMap, isScoped]);
+  }, [tdLine, tdUnit, tdUnitLines, tdDept, tdSection, linesFull, parentChildrenMap, isScoped]);
 
-  const tdScopeLabel = tdLine || tdDept || tdSection || 'ทุกไลน์';
+  const tdScopeLabel = tdLine || tdDept || (tdUnit ? `แผนก ${tdUnit}` : '') || tdSection || 'ทุกไลน์';
 
   // ── Target ตาม scope ที่เลือก ──
   // กรุ๊ปของไลน์ = parent_line_name (ไลน์เดี่ยวไม่มีแม่ = ตัวมันเอง)
@@ -470,9 +477,10 @@ export default function OEEAnalytics() {
   const tdTarget = useMemo(() => {
     if (tdLine) return targetOf([groupOfLine(tdLine)]);
     if (tdDept) return targetOf([tdDept]);
+    if (tdUnit) return targetOf([...new Set((tdUnitLines || []).map(groupOfLine))]);
     const pool = tdSection ? allGroups.filter(g => g.section === tdSection) : allGroups;
     return targetOf(pool.map(g => g.name));
-  }, [tdLine, tdDept, tdSection, allGroups, targetOf, groupOfLine]);
+  }, [tdLine, tdDept, tdUnit, tdUnitLines, tdSection, allGroups, targetOf, groupOfLine]);
 
   const loadToday = useCallback(async () => {
     // scope แล้วแต่รายชื่อไลน์ยังไม่มา (หรือไม่มีไลน์ใน scope) — ห้าม query แบบไม่กรอง
@@ -1370,8 +1378,9 @@ export default function OEEAnalytics() {
             {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ลูก (<LineScopeSelect> · 2026-10-02 · เดิม 3 ช่อง และช่องไลน์ลูกโผล่
                 เฉพาะตอนเลือกกลุ่มที่มีลูก = user "เจาะไลน์ไม่ได้") · state เดิม tdSection/tdDept/tdLine คงไว้ คิวรีไม่เปลี่ยน */}
             <LineScopeSelect lines={linesFull} sections={sectionOptions} section={tdSection} line={tdLine || tdDept}
-              onChange={(sec, ln, { root }) => {
-                setTdSection(sec);
+              unit={tdUnit} pickDept index={orgIdx}
+              onChange={(sec, ln, { root, unit }) => {
+                setTdSection(sec); setTdUnit(unit || '');
                 if (!ln) { setTdDept(''); setTdLine(''); return; }
                 if (root && root !== ln) { setTdDept(root); setTdLine(ln); } else { setTdDept(ln); setTdLine(''); }
               }} />
