@@ -35,6 +35,9 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
+import StockReceiptQueue from '../components/StockReceiptQueue';
+import Segmented from '../components/Segmented';
+import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -1309,10 +1312,19 @@ function InflowRulesTab({ canEdit }) {
     load();
   };
 
-  const toggleRule = async (r) => {
-    const { error } = await supabaseDR.from('stock_inflow_rules')
-      .update({ is_active: !r.is_active, updated_at: new Date().toISOString() }).eq('id', r.id);
+  /* 🔴 3 ทาง ไม่ใช่เปิด/ปิด (2026-10-02) — เดิม "ปิด" ถูกเข้าใจว่า "ให้คนยืนยันรับ" แต่จริงๆ คือ
+     **ของไม่เข้าคลังเลย** (เกิดจริง ~120 ใบหายเงียบทั้งกะ) · ปิดต้องถามยืนยันพร้อมบอกผลตรงๆ */
+  const setRuleMode = async (r, modeKey) => {
+    if (modeKey === inflowModeOf(r)) return;
+    if (modeKey === 'off' && !window.confirm(
+      `ปิดกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
+      + '⚠️ ปิดแล้ว ใบผลิตที่ปิดต่อจากนี้จะ "ไม่เข้าคลังนี้เลย" และไม่มีคิวให้ใครกดรับ\n'
+      + 'ถ้าต้องการให้คนนับของก่อนรับ ให้เลือก 🟡 ต้องยืนยันรับ แทน')) return;
+    const { data, error } = await supabaseDR.from('stock_inflow_rules')
+      .update({ ...inflowPatchFor(modeKey, r), updated_at: new Date().toISOString() }).eq('id', r.id).select('id');
     if (error) { toast.error(error.message); return; }
+    if (!data?.length) { toast.error('บันทึกไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอหรือกฎถูกลบไปแล้ว'); load(); return; }
+    toast.success(`${INFLOW_MODES[modeKey].label} · ${r.dest_line_name}`);
     load();
   };
 
@@ -1327,10 +1339,12 @@ function InflowRulesTab({ canEdit }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
       <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock อัตโนมัติเมื่อปิดออเดอร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock เมื่อปิดออเดอร์</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
-          สแกนปิดออเดอร์ (confirm) ปุ๊บ ระบบ post ผลผลิตเข้า stock ปลายทางทันที ไม่ต้องรอปิดกะ —
-          FG (เบอร์ 1xxx) เข้า warehouse พร้อมส่งลูกค้า · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์/ปลายทางที่กำหนด
+          สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
+          <br />แต่ละกฎเลือกได้ 3 แบบ: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
+          {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
+          {' '}<b style={{ color: '#ef4444' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
           <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>
       </div>
@@ -1339,7 +1353,7 @@ function InflowRulesTab({ canEdit }) {
        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'สถานะ', ''].map(h => (
+            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'วิธีรับเข้า', ''].map(h => (
               <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
             ))}
           </tr></thead>
@@ -1348,7 +1362,7 @@ function InflowRulesTab({ canEdit }) {
               <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีกฎ — งานที่ปิดออเดอร์จะไม่ถูก post เข้า stock อัตโนมัติ</td></tr>
             )}
             {rules.map(r => (
-              <tr key={r.id} style={{ borderTop: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.45 }}>
+              <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
                   {r.match_type === 'prefix'
                     ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
@@ -1356,12 +1370,10 @@ function InflowRulesTab({ canEdit }) {
                 </td>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>📍 {r.dest_line_name}</td>
                 <td style={{ padding: '8px 14px' }}>
-                  <button onClick={() => canEdit && toggleRule(r)} disabled={!canEdit}
-                    style={{ padding: '4px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: canEdit ? 'pointer' : 'default', fontFamily: 'var(--font-body)',
-                      background: r.is_active ? 'rgba(34,197,94,0.12)' : 'var(--bg2)', color: r.is_active ? '#22c55e' : 'var(--muted)',
-                      border: `1px solid ${r.is_active ? 'rgba(34,197,94,0.35)' : 'var(--border)'}` }}>
-                    {r.is_active ? '✓ ใช้งาน' : 'ปิดอยู่'}
-                  </button>
+                  {canEdit
+                    ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label="วิธีรับเข้า"
+                        options={Object.values(INFLOW_MODES).map(m => ({ value: m.key, label: m.label }))} />
+                    : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{INFLOW_MODES[inflowModeOf(r)].label}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>
                   {canEdit && (
@@ -1426,12 +1438,13 @@ function InflowRulesTab({ canEdit }) {
    ───────────────────────────────────────────────────────────────────────────── */
 const TABS = [
   { key:'stock',     label:'📦 Stock' },
+  { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
   { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   { key:'zones',     label:'🏬 โซนคลัง (ผัง)' },
   { key:'delivery',  label:'⏰ รอบจัดส่ง' },
   { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
-  { key:'inflow',    label:'⚙️ รับเข้าอัตโนมัติ' },
+  { key:'inflow',    label:'⚙️ กฎรับเข้า' },
 ];
 
 export default function LineStock() {
@@ -1450,6 +1463,7 @@ export default function LineStock() {
       />
 
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
+      {activeTab === 'receipts'  && <StockReceiptQueue />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
       {/* 🏬 2 ทะเบียนคนละชั้น: รหัสคลัง (SAP SLoc — อ้างใน BOM) เหนือ โซนกองของบนผัง · ห้ามยุบรวม */}
