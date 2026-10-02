@@ -10,7 +10,7 @@
       (บางหน้ามีลำดับชั้น บางหน้าไม่มี · บางหน้ากรอง scope บางหน้าไม่กรอง)
 
    สิ่งที่ component นี้รับประกันให้เหมือนกันทุกหน้า:
-     1. **ลำดับชั้น + ลำดับมาตรฐาน** — ส่วนงาน (หัวกลุ่ม 🏭 PD1…) → ไลน์แม่ → ไลน์ลูก indent + ↳
+     1. **ลำดับชั้น + ลำดับมาตรฐาน** — ส่วนงาน (หัวกลุ่ม 📁 PD1…) → ไลน์แม่ → ไลน์ลูก indent + ↳
         เรียงธรรมชาติไม่ขึ้นกับลำดับที่หน้า query มา (toHierarchicalOptions · 2026-10-01)
      2. **ปลดระวาง** — ไลน์ is_active=false ไม่โผล่ (แต่ค่าที่เลือกไว้แล้วยังโชว์
         พร้อมป้าย ⏸ ปลดระวาง — ห้ามให้ค่าเดิมหายเงียบจากฟอร์ม)
@@ -25,7 +25,6 @@
 import { useMemo } from 'react';
 import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { ALL } from '../utils/filterLabels';
 
 /** กรองไลน์ตาม scope มาตรฐาน — leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม sections
  *  คืน array เดิมเมื่อไม่ถูกจำกัด (admin / ไม่มี scope) */
@@ -132,83 +131,10 @@ export default function LineSelect({
       {grouped.groups.map(g => {
         const items = g.options.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>);
         // หัวกลุ่ม = ส่วนงาน · มีกลุ่มพิเศษ (คลัง ฯลฯ) แต่ส่วนงานเดียว ⇒ ยังต้องมีหัว "ไลน์ผลิต" กั้นจากกลุ่มพิเศษ
-        const label = g.label ? `🏭 ${g.label}` : (hasExtra ? '🏭 ไลน์ผลิต' : null);
+        const label = g.label ? `📁 ${g.label}` : (hasExtra ? '🏭 ไลน์ผลิต' : null);   // 📁 = ไอคอนส่วนงานชุดเดียวกับผังองค์กร (SCOPE_KIND_META)
         return label ? <optgroup key={label} label={label}>{items}</optgroup> : items;
       })}
       {extraAt === 'end' && extraEls}
-    </select>
-  );
-}
-
-/* ══ <LineScopeSelect> — "ขอบเขต" ช่องเดียว: ทั้งโรงงาน → ส่วนงาน → กลุ่มไลน์ → ไลน์ลูก (2026-10-02 · คำสั่ง user) ══
-   ที่มา: *"ระบบ dropdown ทำงานไม่เหมือนกันในบางหน้า — หน้าวางแผนมี 2 ช่องให้เลือก · หน้าจัดการไลน์เป็นต้นไม้ ·
-   หน้า OEE แยกส่วนงานกับแผนก แต่เจาะไลน์ไม่ได้ — เอาให้เป็นมาตรฐาน"*
-   วัดก่อนแก้: ตัวกรองขอบเขตไลน์มี 3 ทรง — (ก) ส่วนงาน + ไลน์ 2 ช่อง (Report 5 แท็บ) (ข) ส่วนงาน + แผนก + ไลน์ที่โผล่
-   เฉพาะตอนเลือกกลุ่มที่มีลูก 3 ช่อง (OEE) (ค) ไลน์อย่างเดียวเรียงตัวอักษรแบน (แผนล็อต)
-   ⇒ **ตัวกรอง "ดูข้อมูลของไลน์ไหน" = ช่องนี้ช่องเดียว** หน้าตาต้นไม้เดียวกับแถบไลน์ของ /management:
-        ทุกไลน์ · 🏭 PD1 ทั้งส่วนงาน · ไลน์แม่ (= ทั้งกลุ่ม) · ↳ ไลน์ลูก   — เลือกได้ทุกชั้น
-   · ช่องที่ต้องได้ "ไลน์เดียว" (ฟอร์มบันทึก/วางคิว) ยังใช้ `<LineSelect>` (ส่วนงานเป็นหัวกลุ่ม เลือกไม่ได้)
-   · หน้ายังเก็บ state เดิม 2 ตัว (section, line) — ช่องนี้แค่ตั้งทั้งคู่พร้อมกัน ⇒ คิวรีเดิมไม่ต้องแก้
-     เลือกไลน์ = ตั้ง section เป็นส่วนงานของไลน์นั้นด้วย (ไลน์อยู่ในส่วนงานนั้นอยู่แล้ว ผลไม่เปลี่ยน)
-   · `sections` = ลำดับ/รายการส่วนงานของหน้า (ตามผัง + ขอบเขตสิทธิ์) — ส่วนงานที่ไม่มีไลน์ (คลัง/QA) ก็เลือกได้
-     เพราะหน้าที่กรอง "คน" ต้องใช้ · ไม่ส่ง = ส่วนงานที่มีไลน์เท่านั้น */
-const SEC = 'sec:';
-const LIN = 'line:';
-
-/** ตัวเลือกของ LineScopeSelect (pure · มีเทส) — [{ value, label, kind:'section'|'line'|'head', section, line, depth, root }] */
-export function lineScopeOptions(lines, { sections, role, lineId, current, includeRetired = false, valueKey = 'name', scopeSections } = {}) {
-  const opts = lineOptions(lines, { role, lineId, sections: scopeSections, current, includeRetired, valueKey });
-  const byName = new Map((lines || []).map(l => [String(l[valueKey]), l]));
-  const rootOf = (o) => {
-    let l = byName.get(o.value); const seen = new Set();
-    while (l?.parent_line_name && !seen.has(l.name)) {
-      seen.add(l.name);
-      const p = (lines || []).find(x => x.name === l.parent_line_name);
-      if (!p) break; l = p;
-    }
-    return l ? String(l[valueKey]) : o.value;
-  };
-  const secList = sections?.length ? [...sections] : [];
-  for (const o of opts) if (o.section && !secList.includes(o.section)) secList.push(o.section);
-  const out = [];
-  for (const o of opts.filter(x => x.pinned)) out.push({ value: LIN + o.value, label: lineOptionLabel(o), kind: 'line', section: byName.get(o.value)?.section || '', line: o.value, depth: 0, root: o.value });
-  const push = (o) => out.push({ value: LIN + o.value, label: `   ${lineOptionLabel(o)}`, kind: 'line', section: o.section || '', line: o.value, depth: o.depth, root: rootOf(o) });
-  for (const sec of secList) {
-    out.push({ value: SEC + sec, label: `🏭 ${sec} · ทั้งส่วนงาน`, kind: 'section', section: sec, line: '', depth: -1, root: '' });
-    opts.filter(o => !o.pinned && o.section === sec).forEach(push);
-  }
-  const loose = opts.filter(o => !o.pinned && !o.section);
-  if (loose.length) {
-    out.push({ value: 'head:none', label: `── ${NO_SECTION_LABEL} ──`, kind: 'head', section: '', line: '', depth: -1, root: '' });
-    loose.forEach(push);
-  }
-  return out;
-}
-
-/**
- * @param section/line  state เดิมของหน้า ('' = ไม่กรอง) · line เก็บตาม valueKey (name หรือ id)
- * @param onChange      (section, line, info) => void · info = { kind, root } — root = ไลน์แม่บนสุด (หน้าที่ต้องรู้ "กลุ่ม" เช่น OEE)
- */
-export function LineScopeSelect({
-  lines, section = '', line = '', onChange, sections, placeholder = ALL.line,
-  role, lineId, scopeSections, includeRetired = false, valueKey = 'name', style, disabled, id,
-}) {
-  const opts = useMemo(
-    () => lineScopeOptions(lines, { sections, role, lineId, scopeSections, current: line, includeRetired, valueKey }),
-    [lines, sections, role, lineId, scopeSections, line, includeRetired, valueKey],
-  );
-  const value = line ? LIN + String(line) : (section ? SEC + section : '');
-  const hasValue = !value || opts.some(o => o.value === value);
-  return (
-    <select id={id} value={hasValue ? value : ''} disabled={disabled} style={style} aria-label="ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์"
-      onChange={(e) => {
-        const o = opts.find(x => x.value === e.target.value);
-        if (!o) { onChange?.('', '', { kind: 'all', root: '' }); return; }
-        onChange?.(o.section, o.line, { kind: o.kind, root: o.root });
-      }}>
-      {placeholder != null && <option value="">{placeholder}</option>}
-      {!hasValue && section && <option value={SEC + section}>🏭 {section} · ทั้งส่วนงาน</option>}
-      {opts.map(o => <option key={o.value} value={o.value} disabled={o.kind === 'head'}>{o.label}</option>)}
     </select>
   );
 }

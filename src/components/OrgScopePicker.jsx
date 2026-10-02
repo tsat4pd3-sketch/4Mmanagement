@@ -44,10 +44,12 @@ function optionLabel(o, { withIcon = true } = {}) {
  * @param kinds     จำกัดชนิดที่เลือกได้ (เช่น ['section','department'] ตอนตั้ง KPI ระดับหน่วยงาน) — ค่าว่าง = ทุกชนิด
  * @param plantLabel ป้ายของตัวเลือก "ทั้งโรงงาน" (เช่น 'ทุกส่วนงานในขอบเขต') — null = ไม่มีตัวเลือกโรงงาน
  * @param costCenter true = มีช่อง 💰 Cost Center แยกต่อท้าย (default) · false = ซ่อนแกนนี้ไปเลย
+ * @param pickable  ชนิดที่ "กดเลือกได้" — ชนิดอื่นยังโชว์เป็นหัวต้นไม้ (เทา) **ไม่ตัดทิ้ง** ต้นไม้จึงหน้าตาเดียวกันทุกจอ
+ *                  (2026-10-02 · `<LineScopeSelect>` ใช้ ['section','line_group','line'] เพราะหน้าพวกนั้นกรองได้แค่ส่วนงาน/ไลน์)
  */
 export default function OrgScopePicker({
   index, value, onChange, scopeSet = null, sections = [], kinds = null, costCenter = true,
-  plantLabel = SCOPE_KIND_META.plant.label, native = true, width = 260, style, inputStyle, disabled, title, id,
+  plantLabel = SCOPE_KIND_META.plant.label, native = true, pickable = null, width = 260, style, inputStyle, disabled, title, id,
 }) {
   const ccAllowed = costCenter && (!kinds || kinds.includes('cost_center'));
   const all = useMemo(() => {
@@ -172,8 +174,9 @@ export default function OrgScopePicker({
   });
   flush();
   // ฝ่ายเองก็เลือกได้ — เป็น option แรกในกลุ่มของมัน (optgroup label กดไม่ได้)
+  const canPick = (o) => o.kind === 'plant' || !pickable || pickable.includes(o.kind);
   const render = (o) => (
-    <option key={o.key} value={o.key}>
+    <option key={o.key} value={o.key} disabled={!canPick(o)}>
       {o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o)}
     </option>
   );
@@ -186,7 +189,7 @@ export default function OrgScopePicker({
         ? (
           <optgroup key={i} label={g.label}>
             {g.div && (!kinds || kinds.includes('division')) && (
-              <option value={g.div.key}>{`${g.div.icon || '🏢'} ${g.div.label} (ทั้งฝ่าย)`}</option>
+              <option value={g.div.key} disabled={!canPick(g.div)}>{`${g.div.icon || '🏢'} ${g.div.label} (ทั้งฝ่าย)`}</option>
             )}
             {g.items.map(render)}
           </optgroup>
