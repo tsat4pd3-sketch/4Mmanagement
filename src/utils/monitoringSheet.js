@@ -351,6 +351,21 @@ export function parseMonitoringWorkbook(sheets = [], { asOf } = {}) {
  *    เกือบล้านชิ้นในวันแรก แล้วสั่งเปิดกะดึก/OT ทั้งโรงงานทันที
  *    ⇒ แถวที่ดิวเก่ากว่า `today` ถูกติดธง `past: true` ให้ผู้เรียกลงเป็น **ประวัติ (shipped)** เท่านั้น
  */
+/* 🔴 FG (เลข MAT ขึ้นต้น 1) **ห้ามลงเป็น min/max ที่ไลน์** — `line_part_levels` คือ "ของที่ต้องมี
+   อยู่ที่ไลน์เพื่อป้อนการผลิต" แต่ FG คือ**ของที่ไลน์ผลิตออกมา** ไม่ใช่ของที่สโตร์เบิกเข้าไป
+
+   เคยเกิดจริง (user แจ้ง 2026-10-02 พร้อมภาพหน้าจอ): ชีทไลน์ปั๊มในไฟล์ Monitoring มีทั้ง FG และ
+   ชิ้นส่วน (วัดจริง: FG 38 / ชิ้นส่วน 68 จาก 106 พาร์ท) · ตัวนำเข้า 23/09 เขียน `line_part_levels`
+   ให้ **ทุก** พาร์ทรวม FG ⇒ `line_part_levels` ที่ใช้งานอยู่ 60 แถว **เป็น FG 28 แถว**
+   และทุกแถว `line_name` = ไลน์ที่ผลิตพาร์ทนั้นเอง (ตรวจกับ `dr_products` แล้ว ตรงกันทุกตัว)
+   ⇒ จอไลน์ (`LinePartCallPanel`) เสนอให้ไลน์ "เบิกของที่ตัวเองผลิต" แล้วเด้งเข้าคิวสโตร์
+   ⇒ สโตร์เห็นเลข 1xxxxxxx ซึ่ง**ไม่มีทางตัดจ่ายได้** (ของที่สโตร์จ่ายเข้าไลน์คือ 2xxx/3xxx/5xxx)
+
+   ⚠️ ไม่ได้แปลว่า FG ห้ามเข้าไลน์เสมอไป — FG ของไลน์หนึ่งเป็นชิ้นส่วนป้อนไลน์ประกอบได้จริง
+      (นั่นคือตู้ "Store FG → ไลน์ประกอบ") แต่**ตัวนำเข้านี้** map พาร์ทกลับไปที่ "ไลน์ที่ผลิตมัน"
+      เสมอ ⇒ ในบริบทนี้ FG = ขาออกเสมอ ไม่เคยเป็นขาเข้า */
+const isFgMat = (mat) => String(mat ?? '').trim().charAt(0) === '1';
+
 export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, customers = [] } = {}) {
   /* 🔴 ชื่อลูกค้าต้องติดไปกับใบเสมอ (เพิ่ม 24/09) — เดิมไม่เขียนเลย ⇒ ใบทั้ง 232 ใบ customer = null
      จอ 🚚 Delivery จัดกลุ่มตามลูกค้า ⇒ ของจากไฟล์นี้ไปกองรวมใน "— ไม่ระบุลูกค้า —"
@@ -358,6 +373,9 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
      · ชื่อมาจากทะเบียน `customers` เท่านั้น — ไม่มีในทะเบียน = null (ห้ามยัดชื่อชีทดิบเป็นลูกค้า) */
   const custOf = (sheet) => sheetCustomer(sheet, customers);
   const forecasts = [], orders = [], levels = [], lots = [], stock = [], shipped = [];
+  /* นับ FG ที่ถูกกันออกจาก min/max ที่ไลน์ — ต้องรายงานออกไป **ห้ามข้ามเงียบ**
+     (ข้ามเงียบ = คนนำเข้าไม่รู้ว่าตัวเลข min ในไฟล์บางส่วนไม่ได้ถูกใช้) */
+  let fgLevelsSkipped = 0;
   const lineOf = typeof lineOfMat === 'function' ? lineOfMat : () => null;
   const markPast = (o) => ({ ...o, past: today ? o.due_date < today : false });
 
@@ -369,7 +387,8 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
                          period_month: `${monthKey}-01`, qty: p.fc, source: 'monitoring', note: `Monitoring · ${sheet}` });
       }
       const line = lineOf(p.mat_no);
-      if (p.min > 0 && line) levels.push({ line_name: line, mat_no: p.mat_no, min_qty: p.min, max_qty: null, note: `Monitoring · ${sheet}` });
+      if (p.min > 0 && line && !isFgMat(p.mat_no)) levels.push({ line_name: line, mat_no: p.mat_no, min_qty: p.min, max_qty: null, note: `Monitoring · ${sheet}` });
+      else if (p.min > 0 && line) fgLevelsSkipped++;   // FG = ขาออกของไลน์ ไม่ใช่ของที่เบิกเข้า (ดูหมายเหตุบนสุด)
       if (p.lot > 0 || p.packing > 0) lots.push({ mat_no: p.mat_no, part_name: p.part_name, lot_size: p.lot || null, qty_per_kanban: p.packing || null });
       if (typeof p.balance === 'number' && line) stock.push({ line_name: line, mat_no: p.mat_no, part_name: p.part_name, qty: p.balance, sheet });
       Object.entries(p.out || {}).forEach(([d, q]) => shipped.push({ mat_no: p.mat_no, part_name: p.part_name, due_date: d, qty: q, sheet }));
@@ -390,7 +409,8 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
                                           due_date: o.due_date, qty: o.qty, source: 'monitoring', note: `Monitoring · ${sheet}` })));
       if (p.min > 0) {
         const line = lineOf(p.mat_no);
-        if (line) levels.push({ line_name: line, mat_no: p.mat_no, min_qty: p.min, max_qty: p.max || null, note: `Monitoring · ${sheet}` });
+        if (line && !isFgMat(p.mat_no)) levels.push({ line_name: line, mat_no: p.mat_no, min_qty: p.min, max_qty: p.max || null, note: `Monitoring · ${sheet}` });
+        else if (line) fgLevelsSkipped++;
       }
       if (p.packing > 0) lots.push({ mat_no: p.mat_no, part_name: '', lot_size: null, qty_per_kanban: p.packing });
       /* FG ของชีทลูกค้า = ของสำเร็จรูปรอส่ง ⇒ อยู่คลัง FG ไม่ใช่ที่ไลน์
@@ -421,7 +441,7 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
   const stockOk = stockUniq.filter(s => s.qty >= 0);
   const stockNegative = stockUniq.filter(s => s.qty < 0);
   return { forecasts, orders: ordersUniq, orderDupes, levels, lots, stock: stockOk, stockNegative,
-           stockDupes: stock.length - stockUniq.length, shipped };
+           stockDupes: stock.length - stockUniq.length, shipped, fgLevelsSkipped };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
