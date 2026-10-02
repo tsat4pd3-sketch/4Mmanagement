@@ -19,7 +19,8 @@ import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
-import { checkShiftCapacity } from '../utils/shiftCapacity';   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
+import { checkShiftCapacity } from '../utils/shiftCapacity';
+import { canShortClose, shortCloseError, shortClosePatch, isShortClosed } from '../utils/shortClose';   // ✂️ ปิดใบด้วยยอดเศษ (งานปั๊ม 2xx · 2026-10-02)   // ⏱️ ด่าน "เปิดใบนี้แล้วเกินกะไหม" (ไลน์เครื่องขนานนับเป็นเลน · 2026-10-02)
 import { MTN_TEAMS, teamForItem, teamForMachine, teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import useIsMobile from '../utils/useIsMobile';
 import { cardGrid } from '../utils/cardGrid';
@@ -2064,13 +2065,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const openOrders = prodOrders.filter(o => o.status === 'open');
     const undecided  = openOrders.filter(o => !carryOverDecisions[o.id]);
     if (undecided.length > 0) {
-      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (ผลิตครบแล้ว / ยกยอด / ยกเลิก)`);
+      toast.error(`มี ${undecided.length} Order ที่ยังไม่ได้ตัดสินใจ (ผลิตครบแล้ว / ยกยอดต่อ / ปิดด้วยยอดเศษ / ยกเลิก)`);
       return;
     }
     // ครบเป้าแล้วแต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก ต้องใช้ "ผลิตครบแล้ว" แทน
     const invalidCarry = openOrders.filter(o => carryOverDecisions[o.id] === 'carry' && (parseInt(carryQtyActual[o.id]) || 0) >= o.qty);
     if (invalidCarry.length > 0) {
       toast.error(`มี ${invalidCarry.length} Order ที่ผลิตครบเป้าแล้วแต่เลือก "ยกยอดต่อ" — กรุณาเปลี่ยนเป็น "ผลิตครบแล้ว"`);
+      return;
+    }
+    // ✂️ ปิดด้วยยอดเศษ — ยอดต้องเข้าเกณฑ์ (>0 · ไม่เกิน/ไม่เท่าเป้า) และของต้องส่งเศษได้ (ไม่ใช่ FG)
+    const badShort = openOrders.find(o => carryOverDecisions[o.id] === 'short'
+      && (!canShortClose(o.mat_no).ok || shortCloseError(parseInt(carryQtyActual[o.id]) || 0, o.qty_target ?? o.qty)));
+    if (badShort) {
+      const g = canShortClose(badShort.mat_no);
+      toast.error(`Order ${badShort.prod_no || badShort.mat_no} ปิดด้วยยอดเศษไม่ได้ — ${g.reason || shortCloseError(parseInt(carryQtyActual[badShort.id]) || 0, badShort.qty_target ?? badShort.qty)}`);
       return;
     }
 
@@ -2164,6 +2173,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           confirmed_at: stoppedAt,
           confirmed_by: fullName,
         }).eq('id', order.id);
+        if (coErr) { toast.error(`ปิดออเดอร์ ${order.prod_no || order.mat_no} ไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + coErr.message); setSavingClose(false); return; }
+      } else if (decision === 'short') {
+        /* ✂️ ปิดด้วยยอดเศษ — เศษจบใบเลย ไม่มียอดค้าง (คำสั่ง user 02/10 "งานปั๊มเบอร์ 2
+           ผลิตไม่เต็ม packing แต่ต้องส่งไปกระบวนการถัดไป · ใบ SAP จะถูกแก้ให้ตรงยอดเศษ")
+           🔴 กฎ + payload อยู่ `utils/shortClose.js` (มีเทส) — เขียนทั้ง qty และ qty_ok
+              เพราะ trigger 2 ตัวอ่านคนละคอลัมน์ · ห้ามประกอบ payload เองที่นี่
+           🔴 กันซ้ำอีกชั้นฝั่งบันทึก: FG 1xx ส่งเศษไม่ได้ (UI ซ่อนปุ่มแล้ว แต่ state อาจค้าง) */
+        const guard = canShortClose(order.mat_no);
+        const qErr  = shortCloseError(qActual, order.qty_target ?? order.qty);
+        if (!guard.ok || qErr) {
+          toast.error(`ปิดใบ ${order.prod_no || order.mat_no} ด้วยยอดเศษไม่ได้ — ${guard.reason || qErr}`);
+          setSavingClose(false); return;
+        }
+        const { error: coErr } = await supabaseDR.from('prod_orders')
+          .update(shortClosePatch(order, qActual, { by: fullName, stoppedAt })).eq('id', order.id);
         if (coErr) { toast.error(`ปิดออเดอร์ ${order.prod_no || order.mat_no} ไม่สำเร็จ — ยังไม่ปิดกะ ลองใหม่: ` + coErr.message); setSavingClose(false); return; }
       } else if (decision === 'cancel') {
         const { error: coErr } = await supabaseDR.from('prod_orders').update({ status: 'cancelled', qty_actual: qActual, stopped_at: stoppedAt }).eq('id', order.id);
@@ -3312,6 +3336,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: `${statusColor}20`, color: statusColor }}>
                             {statusLabel}
                           </span>
+                          {/* ✂️ ใบที่ถูกปิดด้วยยอดเศษ — ต้องเห็นทันทีว่า "ใบนี้ไม่ได้ทำครบ และ SAP ต้องถูกแก้"
+                              ไม่งั้นเดือนหน้าไม่มีใครรู้ว่าทำไมใบ 60 เหลือ 47 (กฎ: utils/shortClose.js) */}
+                          {isShortClosed(o) && (
+                            <span title={o.carry_over_note || 'ปิดด้วยยอดเศษ — แก้จำนวนใบสั่งใน SAP ให้ตรง'}
+                              style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700 }}>
+                              ✂️ ยอดเศษ {o.qty}/{o.qty_target}
+                            </span>
+                          )}
                           {/* ร่องรอยการถอยใบ — โชว์เสมอให้หัวหน้าแผนกตรวจย้อนหลังได้ว่าใครถอย */}
                           {(o.reopen_count || 0) > 0 && (
                             <span title={`ใบนี้เคยถูกถอยจาก "ปิดแล้ว" กลับมาผลิตต่อ ${o.reopen_count} ครั้ง · ล่าสุดโดย ${o.reopened_by || '-'}`}
@@ -4675,8 +4707,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   // ที่เหลือเริ่มที่ 0 เสมอ บังคับให้กรอกเอง
                   const invalidCarry = openOrders.filter(o => {
                     const dec = carryOverDecisions[o.id];
+                    const qA  = parseInt(carryQtyActual[o.id]) || 0;
+                    // ✂️ ยอดเศษที่ไม่เข้าเกณฑ์ (0 / เกินเป้า / เท่าเป้า) = ยังปิดกะไม่ได้ เหมือนกรณียกยอด
+                    if (dec === 'short') return !!shortCloseError(qA, o.qty_target ?? o.qty) || !canShortClose(o.mat_no).ok;
                     if (dec !== 'carry') return false;
-                    const qA = parseInt(carryQtyActual[o.id]) || 0;
                     return qA >= o.qty; // ผลิตครบ/เกินเป้าแล้ว แต่ยังเลือก "ยกยอดต่อ" — ไม่มีอะไรเหลือให้ยก
                   });
                   const allDecided = openOrders.every(o => carryOverDecisions[o.id]) && invalidCarry.length === 0;
@@ -4713,6 +4747,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'carry' ? '#a78bfa' : 'var(--border)'}`, background: dec === 'carry' ? 'rgba(167,139,250,0.2)' : 'var(--bg2)', color: dec === 'carry' ? '#a78bfa' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ➡ ยกยอดต่อ
                                   </button>
+                                  {/* ✂️ ปิดด้วยยอดเศษ — โผล่เฉพาะของที่ส่งเศษเข้ากระบวนการถัดไปได้
+                                      FG 1xx ไม่มีปุ่มนี้ (ส่งลูกค้าต้องครบ) ⇒ เหลือทาง "ยกยอดต่อ" อย่างเดียว */}
+                                  {canShortClose(o.mat_no).ok && (
+                                    <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'short' }))}
+                                      title="ผลิตไม่เต็มใบ แต่ส่งเข้ากระบวนการถัดไปแล้ว — เศษนี้จบใบเลย ไม่มียอดค้าง"
+                                      style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'short' ? '#f59e0b' : 'var(--border)'}`, background: dec === 'short' ? 'rgba(245,158,11,0.18)' : 'var(--bg2)', color: dec === 'short' ? '#f59e0b' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                      ✂️ ปิดด้วยยอดเศษ
+                                    </button>
+                                  )}
                                   <button onClick={() => setCarryOverDecisions(d => ({ ...d, [o.id]: 'cancel' }))}
                                     style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${dec === 'cancel' ? '#ef4444' : 'var(--border)'}`, background: dec === 'cancel' ? 'rgba(239,68,68,0.15)' : 'var(--bg2)', color: dec === 'cancel' ? '#ef4444' : 'var(--muted)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                     ✕ ยกเลิก
@@ -4725,7 +4768,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                   ✓ ปิดยอด {o.qty} / {o.qty} ชิ้น (ครบเป้า) — ไม่มียอดยกไปกะถัดไป
                                 </div>
                               )}
-                              {(dec === 'carry' || dec === 'cancel') && (
+                              {(dec === 'carry' || dec === 'cancel' || dec === 'short') && (
                                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                                   <div style={{ flex: 1, minWidth: 90 }}>
                                     <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
@@ -4752,6 +4795,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                       {qA >= o.qty ? '⚠ ครบเป้าแล้ว ไม่มีอะไรเหลือให้ยก — กดปุ่ม "ผลิตครบแล้ว" แทน' : <>→ กะหน้ารับต่อ <strong>{remaining}</strong> ชิ้น</>}
                                     </div>
                                   )}
+                                  {/* ✂️ ยอดเศษ: ต้องบอกให้ครบว่า "เหลือเท่าไหร่ที่จะไม่ทำต่อ" + ต้องไปแก้ SAP เป็นเลขอะไร
+                                      ไม่งั้นเดือนหน้าไม่มีใครรู้ว่าทำไมใบ 60 เหลือ 47 */}
+                                  {dec === 'short' && (() => {
+                                    const err = shortCloseError(qActual === '' ? 0 : qA, o.qty_target ?? o.qty);
+                                    return (
+                                      <div style={{ fontSize: 11, fontWeight: 700, color: err ? '#ef4444' : '#f59e0b', maxWidth: 360, lineHeight: 1.6 }}>
+                                        {err || <>✂️ ปิดใบที่ <strong>{qA}</strong> ชิ้น · อีก <strong>{remaining}</strong> ชิ้นไม่ต้องทำต่อ
+                                          <div style={{ color: 'var(--muted)', fontWeight: 600 }}>⚠ ต้องไปแก้จำนวนใบสั่งใน SAP ให้เป็น {qA}</div></>}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </div>
@@ -4760,7 +4814,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       </div>
                       {!allDecided && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 8 }}>
-                          ⚠ ต้องเลือก "ผลิตครบแล้ว" / "ยกยอดต่อ" / "ยกเลิก" ทุก Order ก่อนปิดกะ {invalidCarry.length > 0 && '(บาง Order เลือก "ยกยอดต่อ" ทั้งที่ครบเป้าแล้ว — กรุณาแก้)'}
+                          ⚠ ต้องเลือกทางของทุก Order ก่อนปิดกะ {invalidCarry.length > 0 && '(บาง Order ยอดยังไม่เข้าเกณฑ์ที่เลือกไว้ — ดูข้อความสีแดงในการ์ด)'}
                         </div>
                       )}
                     </div>
