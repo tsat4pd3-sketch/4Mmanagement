@@ -156,6 +156,18 @@
    ใส่เข้าไป ชีท 824-825 จะกลายเป็น `kind='press'` แล้วจอ `MonitoringUpload` (23/09) จะเริ่ม
    เขียน "ส่งไปชุบ" เป็นยอดส่งลูกค้า ซึ่งเป็นบั๊กที่คอมเมนต์ของมันเตือนไว้ตรงๆ
 
+6. 🔴 **คอลัมน์ที่โค้ด `upsert` ต้องมี unique index แบบ "เต็ม" ห้ามเป็น partial** (02/10 · หลุดถึงมือ user)
+   `monitor_board_parts_uniq` เดิมเขียน `where mat_no is not null and is_active` ⇒ PostgREST
+   `.upsert({ onConflict: 'board_id,mat_no' })` ขึ้น **`there is no unique or exclusion constraint
+   matching the ON CONFLICT specification`** นำเข้าไม่ได้เลยสักชีท
+   · Postgres จับคู่ partial index ให้ก็ต่อเมื่อคำสั่งมี WHERE ตรงกับ predicate ซึ่ง PostgREST ส่งไม่ได้
+   · `monitor_cells_uniq` เป็น index เต็มอยู่แล้วจึงไม่ล้ม — ล้มเฉพาะตารางพาร์ท
+   · **บั๊กคลาสนี้ build/lint/เทส/สวีปจอ จับไม่ได้เลย** เห็นตอนกดใช้จริงเท่านั้น
+     ⇒ ตารางใหม่ที่ client จะ upsert **ต้องลองยิง upsert จริง 1 ครั้งก่อนปิดงาน**
+   · แก้ด้วย `20261002_monitoring_parts_uniq_fix_dr.sql` (สร้าง index เต็มชื่อ `…_bm_uniq`)
+     ⚠️ `ON CONFLICT` จับคู่ด้วย**คอลัมน์ ไม่ใช่ชื่อ index** · index partial เดิมยังอยู่ (ซ้ำซ้อน
+     แต่ไม่เป็นอันตราย) เพราะ `DROP INDEX` ผ่าน MCP timeout ซ้ำๆ — เป็นงานค้างให้ลบทีหลัง
+
 ---
 
 ## 7. ความสัมพันธ์กับจอเดิม `/planner-sales?tab=monitoring`
