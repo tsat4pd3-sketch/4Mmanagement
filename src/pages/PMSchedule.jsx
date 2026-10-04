@@ -4,6 +4,12 @@ import { useMergeParams } from '../utils/useTabParam'
 import { supabaseDR } from '../supabaseClient'
 import { DEPT_LABEL, dueStatusDefer, deferActive, STATUS_META, computeNextDue, daysUntilDue, cycleLabel, cycleDaysOf, CYCLE_PRESETS, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { setChecklistFrequency } from '../lib/pmChecklists'
+import { loadProductionLines } from '../utils/useProductionLines'
+import { getLineFamilyNames } from '../utils/lineHierarchy'
+import {
+  CYCLE_BASIS, BASIS_LABEL, BASIS_HINT, DEFAULT_MAX_IDLE_DAYS,
+  basisOf, runDaysOf, resolveRunDayDue, runDayText, countsForCompliance,
+} from '../utils/pmRunDay'
 import useIsMobile from '../utils/useIsMobile'
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
@@ -18,6 +24,11 @@ import PageHeader from '../components/PageHeader'
 import Segmented from '../components/Segmented'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
+
+/* หน้าต่างข้อมูลยอดผลิตที่ดึงมาตอบ "เครื่องเดินวันไหนบ้าง" (RPC `pm_usage_daily`)
+   120 วัน = (ไลน์ × วัน) ~575 แถว — ไม่ชนเพดาน 1000 แถว/คิวรี และพอสำหรับรอบยาวสุดที่ตั้ง run_day ได้จริง
+   ⚠️ เครื่องที่จอดนานกว่านี้จะตอบได้แค่ "ไม่เดินอย่างน้อย 120 วัน" (`idleAtLeast`) ซึ่งจอเขียนบอกไว้แล้ว */
+const USAGE_WINDOW_DAYS = 120
 
 const DEPT_COLORS = {
   maintenance: '#fb923c', jig_maintenance: '#34d399', die_maintenance: '#4d9fff',
@@ -131,13 +142,25 @@ export default function PMSchedule() {
     const clIds = checklists.map(c => c.id)
     const eqIds = [...new Set(checklists.map(c => c.equipment_id))]
 
-    const [{ data: jigs }, { data: inspections }, { data: plans }] = await Promise.all([
+    const [{ data: jigs }, { data: inspections }, { data: plans }, prodRes, lineList] = await Promise.all([
       supabaseDR.from('jigs').select('id, name, jig_no, line_name, machine_no, equipment_type').in('id', eqIds),
       supabaseDR.from('inspections').select('id, checklist_id, inspected_at, status').in('checklist_id', clIds).neq('approval_status', 'rejected').order('inspected_at', { ascending: false }),
       // Server-materialized plan (pm_plans, Phase 1). If the table isn't there yet
       // the query just returns null and we fall back to computing due dates live.
-      supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
+      supabaseDR.from('pm_plans').select('id, checklist_id, interval_days, next_due_date, next_due_reason, last_done_at, health_score, plan_type, cycle_basis, max_idle_days, deferred_to, defer_reason, defer_agreed_with, deferred_by, deferred_at, defer_count').in('checklist_id', clIds),
+      /* ยอดผลิตรายไลน์รายวัน — ใช้ตอบ "วันไหนเครื่องเดินจริง" ของแผน cycle_basis='run_day'
+         ⚠️ ต้องผ่าน RPC เท่านั้น ห้ามดึงใบผลิตดิบ (120 วัน = 13,073 ใบ ชนเพดาน 1000 แถวเงียบๆ) */
+      supabaseDR.rpc('pm_usage_daily', { p_days: USAGE_WINDOW_DAYS }),
+      loadProductionLines(),
     ])
+
+    /* 🔴 "โหลดยอดผลิตไม่ได้" ≠ "ไม่ได้ผลิต" — เดาผิดทางนี้ = ข้ามการตรวจที่จำเป็นเงียบๆ
+       ⇒ ส่ง null ต่อให้ resolveRunDayDue แล้วมันจะถอยไปใช้รอบปฏิทิน + ติดธงให้จอเขียนบอก */
+    if (prodRes?.error) console.warn('[pm-schedule] โหลดยอดผลิตไม่สำเร็จ:', prodRes.error.message)
+    const prodRows = prodRes?.error ? null : (prodRes?.data ?? null)
+    const lineArr = lineList || []
+    const todayStr = ymd(new Date())
+    const windowFromYmd = addDaysYmd(todayStr, -USAGE_WINDOW_DAYS)
 
     const jigMap = {}
     ;(jigs ?? []).forEach(j => { jigMap[j.id] = j })
@@ -160,16 +183,33 @@ export default function PMSchedule() {
       const isDeferred = deferActive(plan)
       const deferTo = isDeferred && plan?.deferred_to ? parseLocalDate(plan.deferred_to) : null
       const nextDue = deferTo || origDue
-      const status = dueStatusDefer(origDue, cl.frequency, deferTo, iv)
+      let status = dueStatusDefer(origDue, cl.frequency, deferTo, iv)
+
+      /* ── รอบที่นับจาก "วันที่เครื่องเดินจริง" (02/10 · คำสั่ง user) ──────────────
+         🔴 ต้องกางครอบครัวไลน์ก่อนเสมอ — PF-H101 ลงทะเบียนที่ไลน์แม่ HYDROFORM
+            แต่ใบผลิตเปิดที่ลูก HDF1/HDF2 · เทียบชื่อตรงตัว = "ไม่เคยเดิน" ทั้งที่เดิน 38/60 วัน
+         การเลื่อนแผน (deferred) ชนะทุกอย่างเหมือนเดิม — คนตกลงกันแล้ว ระบบไม่เถียง */
+      const basis = basisOf(plan)
+      let runDay = null
+      if (basis === CYCLE_BASIS.RUN_DAY && !isDeferred) {
+        const fam = eq.line_name ? getLineFamilyNames(lineArr, eq.line_name) : null
+        runDay = resolveRunDayDue({
+          intervalDays: iv,
+          maxIdleDays: plan?.max_idle_days ?? null,
+          lastYmd: lastDone ? ymdBangkok(lastDone) : null,
+          runDays: runDaysOf(prodRows, fam?.length ? fam : (eq.line_name ? [eq.line_name] : null)),
+          todayStr, windowFromYmd,
+        })
+        status = runDay.status
+      }
+
       return { cl, eq, lastDone, nextDue, status, cycle: cycleDaysOf(cl.frequency, iv), cycleText: cycleLabel(cl.frequency, iv), reason: plan?.next_due_reason ?? 'time',
-               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null,
+               planType: plan?.plan_type ?? 'time', health: plan?.health_score ?? null, basis, runDay,
                plan, isDeferred, deferReason: plan?.defer_reason, deferBy: plan?.deferred_by, deferCount: plan?.defer_count ?? 0 }
     })
 
-    built.sort((a, b) => {
-      const ORDER = { overdue: 0, due_soon: 1, deferred: 1.5, never: 2, ok: 3, periodic: 4 }
-      return (ORDER[a.status] ?? 5) - (ORDER[b.status] ?? 5)
-    })
+    // ⚠️ ลำดับมาจาก STATUS_META จุดเดียว — เดิมก๊อป map ไว้ตรงนี้ สถานะใหม่เลยหล่นไปท้ายเงียบๆ
+    built.sort((a, b) => (STATUS_META[a.status]?.order ?? 9) - (STATUS_META[b.status]?.order ?? 9))
 
     /* ⚠️ ผลตรวจจริงต้องย้อนกลับเข้า "แผน" ด้วย (feedback หน้างาน 2026-08-25:
        "เตือนแล้วไม่ทำ · ไม่มี input กลับมาว่าผลทำเป็นยังไง")
@@ -184,8 +224,17 @@ export default function PMSchedule() {
 
   useEffect(() => { fetchData() }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // แผนที่ยังไม่มีวันครบกำหนด (ไม่ตั้งรอบ หรือมีรอบแต่ไม่เคยตรวจ) — ไม่นับที่เลื่อนแผนไว้แล้ว
-  const noDue = rows.filter(r => !r.nextDue)
+  /* แผนที่ยังไม่มีวันครบกำหนด (ไม่ตั้งรอบ หรือมีรอบแต่ไม่เคยตรวจ) — ไม่นับที่เลื่อนแผนไว้แล้ว
+     🔴 แผน `run_day` **ตั้งใจไม่มีวันปฏิทิน** (ครบกำหนด = เงื่อนไข "เดินครบ N วัน")
+        ถ้าไม่กันออก มันจะไปกองในคำเตือน "ยังไม่มีวัน PM ครั้งถัดไป" ทั้งที่ตั้งครบแล้ว (02/10) */
+  const noDue = rows.filter(r => !r.nextDue && r.basis !== CYCLE_BASIS.RUN_DAY)
+
+  /* %ความครบถ้วนของการตรวจ — 🔴 ตัวหารต้องตัด "วันที่ไม่ได้ผลิต" ออก ไม่งั้น KPI สวยขึ้นเพราะวันหยุด
+     (กติกาเดียวกับ `countsForCompliance` ใน utils/pmRunDay.js — ห้ามนับเองที่นี่) */
+  const runDayRows = rows.filter(r => r.basis === CYCLE_BASIS.RUN_DAY)
+  // ตัดสินด้วย helper กลาง ไม่เทียบสตริง 'idle_skip' เองในหน้า (เพิ่มสถานะใหม่ทีหลังจะได้ไม่ตกหล่น)
+  const idleRows = runDayRows.filter(r => !countsForCompliance(r.status))
+  const unknownUsageRows = runDayRows.filter(r => r.runDay?.unknownUsage)
   const counts = rows.reduce((acc, r) => {
     acc[r.status] = (acc[r.status] ?? 0) + 1
     return acc
@@ -223,6 +272,23 @@ export default function PMSchedule() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* 🏃 แผนที่นับรอบจาก "วันเดินเครื่อง" — จอต้องบอกตรงๆ ว่ากันออกจากคิวกี่รายการเพราะอะไร
+          (กฎความซื่อสัตย์ของจอ: ห้ามแค่หายไปเฉยๆ ให้คนเข้าใจว่า "ตรวจครบแล้ว") */}
+      {!loading && runDayRows.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+          <span style={{ fontSize: 13, color: 'var(--text2)', flex: '1 1 320px', lineHeight: 1.6 }}>
+            🏃 <b style={{ color: 'var(--text)' }}>{runDayRows.length}</b> รายการนับรอบจาก <b>วันที่เดินเครื่อง</b> —
+            วันที่ไลน์ไม่ได้เปิดใบผลิตจะไม่นับและไม่ขึ้นค้าง
+            {idleRows.length > 0 && <> · วันนี้ <b style={{ color: 'var(--text)' }}>{idleRows.length}</b> รายการไม่ได้ผลิต (กันออกจากคิวและจาก %ความครบถ้วน)</>}
+          </span>
+          {unknownUsageRows.length > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#f59a3f' }}>
+              ⚠️ โหลดยอดผลิตไม่ได้ {unknownUsageRows.length} รายการ — ใช้รอบปฏิทินไปก่อน
+            </span>
+          )}
         </div>
       )}
 
@@ -271,7 +337,7 @@ export default function PMSchedule() {
             </thead>
             <tbody>
               {rows.map((r) => {
-                const { cl, eq, lastDone, nextDue, status, reason, planType, health, isDeferred, deferReason, deferBy, deferCount } = r
+                const { cl, eq, lastDone, nextDue, status, reason, planType, health, isDeferred, deferReason, deferBy, deferCount, runDay } = r
                 const meta = STATUS_META[status] ?? STATUS_META.ok
                 const isOverdue = status === 'overdue'
                 const isUsage = planType === 'usage' || planType === 'hybrid'
@@ -291,12 +357,18 @@ export default function PMSchedule() {
                       {lastDone ? new Date(lastDone).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
                     </td>
                     <td style={{ fontSize: 13, color: isOverdue ? '#e05c4a' : isDeferred ? '#4a90e0' : 'var(--text2)', fontWeight: (isOverdue || isDeferred) ? 700 : 400 }}>
-                      {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
-                      {isOverdue && nextDue && (
-                        <div style={{ fontSize: 11, color: '#e05c4a' }}>
-                          เกิน {Math.abs(daysUntilDue(nextDue))} วัน
-                        </div>
-                      )}
+                      {/* 🏃 แผน run_day ไม่มีวันครบกำหนดแบบปฏิทิน — ต้องเขียนเป็น **เงื่อนไข**
+                          ห้ามโชว์ "—" เฉยๆ (คนอ่านว่า "ยังไม่ตั้งรอบ") และห้ามเดาวันให้ */}
+                      {runDay
+                        ? <RunDayCell res={runDay} cycle={r.cycle} />
+                        : <>
+                            {nextDue ? nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' }) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                            {isOverdue && nextDue && (
+                              <div style={{ fontSize: 11, color: '#e05c4a' }}>
+                                เกิน {Math.abs(daysUntilDue(nextDue))} วัน
+                              </div>
+                            )}
+                          </>}
                       {isDeferred && (
                         <div style={{ fontSize: 11, color: '#4a90e0', marginTop: 2 }}>
                           ⏭ เลื่อนแผน{deferReason ? ` · ${deferReason}` : ''}{deferCount > 1 ? ` · เลื่อนมา ${deferCount} ครั้ง` : ''}
@@ -378,15 +450,25 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
   const [days, setDays] = useState(initDays ? String(initDays) : '')
   // ⚠️ ไม่เติมวันเดิมให้ — ถ้าเติม แล้วคนเปลี่ยนแค่รอบ วันเดิม (ที่คิดจากรอบเก่า) จะถูกเขียนทับเป็นหมุดค้าง
   const [nextDate, setNextDate] = useState('')
+  // ฐานการนับรอบ — ตั้งพร้อมกันหลายรายการใช้ค่าของรายการแรกเป็นตั้งต้น
+  const [basis, setBasis] = useState(() => rows[0]?.basis || CYCLE_BASIS.CALENDAR)
+  const [maxIdle, setMaxIdle] = useState(() => {
+    const v = rows[0]?.plan?.max_idle_days
+    return v == null ? String(DEFAULT_MAX_IDLE_DAYS) : String(v)
+  })
   const [picked, setPicked] = useState(() => new Set(rows.map(r => r.cl.id)))
   const [saving, setSaving] = useState(false)
   const n = Number(days)
+  const isRunDay = basis === CYCLE_BASIS.RUN_DAY
+  const idleN = maxIdle === '' ? null : Number(maxIdle)
+  const idleValid = idleN == null || (Number.isInteger(idleN) && idleN >= 1 && idleN <= 3650)
   const valid = Number.isInteger(n) && n >= 1 && n <= 3650
   const lastYmd = single?.lastDone ? ymdBangkok(single.lastDone) : null
   const preview = nextDate || (valid && lastYmd ? addDaysYmd(lastYmd, n) : '')
 
   const save = async () => {
     if (!valid) return toast.error('ใส่รอบ PM เป็นจำนวนวัน 1-3650')
+    if (!idleValid) return toast.error('เพดานวันจอด ใส่เป็นจำนวนวัน 1-3650 หรือเว้นว่าง')
     const targets = rows.filter(r => picked.has(r.cl.id))
     if (!targets.length) return toast.error('เลือกอย่างน้อย 1 รายการ')
     setSaving(true)
@@ -398,8 +480,17 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
         if (freq !== r.cl.frequency) await setChecklistFrequency(r.cl.id, freq)
         const rLast = r.lastDone ? ymdBangkok(r.lastDone) : null
         const due = nextDate || (rLast ? addDaysYmd(rLast, n) : null)
-        const patch = { checklist_id: r.cl.id, interval_days: n, updated_by_name: byName || null, updated_by_uid: byUid || null }
-        if (due) { patch.next_due_date = due; patch.next_due_reason = 'time' }
+        const patch = { checklist_id: r.cl.id, interval_days: n, cycle_basis: basis, updated_by_name: byName || null, updated_by_uid: byUid || null }
+        /* 🔴 run_day ไม่มีวันครบกำหนดแบบปฏิทิน — ต้องล้างของเดิมด้วย ไม่งั้นวันที่ค้างจากตอนเป็น
+           calendar จะยังโชว์เป็น "ค้าง" ต่อไป (เคสเดียวกับที่ migration ต้องล้างให้ตอน seed) */
+        if (isRunDay) {
+          patch.max_idle_days = idleN
+          patch.next_due_date = null
+          patch.next_due_reason = 'run_day'
+        } else {
+          patch.max_idle_days = null
+          if (due) { patch.next_due_date = due; patch.next_due_reason = 'time' }
+        }
         const { data, error } = await supabaseDR.from('pm_plans').upsert(patch, { onConflict: 'checklist_id' }).select('id')
         if (error) throw error
         if (!data?.length) throw new Error('ไม่มีสิทธิ์แก้แผน (บันทึกได้ 0 แถว)')
@@ -408,7 +499,7 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
     }
     setSaving(false)
     if (fails.length) toast.error(`บันทึกไม่สำเร็จ ${fails.length} รายการ — ${fails.slice(0, 2).join(' · ')}`)
-    if (ok) { toast.success(`ตั้งรอบ PM ${cycleLabel(null, n)} แล้ว ${ok} รายการ`); onSaved() }
+    if (ok) { toast.success(`ตั้งรอบ PM ${cycleLabel(null, n)} (${BASIS_LABEL[basis]}) แล้ว ${ok} รายการ`); onSaved() }
   }
 
   const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }
@@ -433,6 +524,33 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
           วัน
         </label>
 
+        {/* ── 🏃 ฐานการนับรอบ (02/10 · คำสั่ง user "ถ้าไม่ผลิตก็ไม่จำเป็นต้องตรวจ") ──────── */}
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>นับรอบจาก *</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+          {[CYCLE_BASIS.CALENDAR, CYCLE_BASIS.RUN_DAY].map(b => (
+            <button key={b} onClick={() => setBasis(b)} style={chip(basis === b)} title={BASIS_HINT[b]}>
+              {b === CYCLE_BASIS.RUN_DAY ? '🏃 ' : '🗓️ '}{BASIS_LABEL[b]}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.6 }}>{BASIS_HINT[basis]}</div>
+
+        {isRunDay && (
+          <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg3)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', flexWrap: 'wrap' }}>
+              จอดเกิน
+              <input type="number" min="1" max="3650" value={maxIdle} onChange={e => setMaxIdle(e.target.value)} style={{ ...inp, width: 80 }} aria-label="เพดานวันจอด (วัน)" />
+              วัน → ต้องตรวจรอบแรกที่กลับมาเดิน
+            </label>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
+              เครื่องที่จอดนานต้องตรวจ <b>มากกว่า</b> ปกติ ไม่ใช่น้อยกว่า · เว้นว่าง = ไม่บังคับ
+              {!idleValid && <span style={{ color: '#e05c4a' }}> · ใส่ 1-3650 หรือเว้นว่าง</span>}
+            </div>
+          </div>
+        )}
+
+        {/* วัน PM ครั้งถัดไป = ของรอบปฏิทินเท่านั้น — run_day ไม่มีวันที่ให้ตั้ง (ครบกำหนด = เงื่อนไข) */}
+        {!isRunDay && (<>
         <label style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>วัน PM ครั้งถัดไป <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ)</span>
           <input type="date" value={nextDate} onChange={e => setNextDate(e.target.value)} style={{ ...inp, width: 200, display: 'block', marginTop: 4 }} />
         </label>
@@ -446,6 +564,7 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
                            : <>⚠️ ยังไม่เคยตรวจ + ไม่กรอกวัน = <b>ยังไม่มีวันครบกำหนด</b> จนกว่าจะตรวจครั้งแรก — แนะนำให้กรอกวัน</>)
               : <>ไม่กรอก = รายการที่เคยตรวจแล้วคิดจากตรวจล่าสุด + รอบ · รายการที่ไม่เคยตรวจจะยังไม่มีวันครบกำหนด (แนะนำให้กรอกวัน)</>}
         </div>
+        </>)}
 
         {!single && (
           <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 10, maxHeight: 220, overflowY: 'auto' }}>
@@ -543,6 +662,26 @@ function DeferModal({ row, byName, byUid, onClose, onSaved }) {
   )
 }
 
+/* เซลล์ "ครบกำหนด" ของแผนที่นับรอบจากวันเดินเครื่อง (02/10)
+   🔴 ข้อความมาจาก `runDayText()` ที่เดียว — ห้ามประกอบประโยคเองในหน้า
+      (จอกับ KPI ต้องตอบเหตุผลเดียวกัน · มีเทสล็อกข้อความไว้แล้ว) */
+function RunDayCell({ res, cycle }) {
+  if (!res) return null
+  const idle = res.status === 'idle_skip'
+  const warn = res.status === 'overdue' || res.status === 'due_soon'
+  return (
+    <>
+      <span style={{ fontSize: 12.5, fontWeight: warn ? 700 : 400, color: idle ? 'var(--muted)' : warn ? (res.status === 'overdue' ? '#e05c4a' : '#f59a3f') : 'var(--text2)' }}>
+        {runDayText(res)}
+      </span>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+        🏃 ทุก {cycle || '—'} วันเดินเครื่อง
+        {res.unknownUsage && <span style={{ color: '#f59a3f' }}> · ยังไม่รู้ยอดผลิต</span>}
+      </div>
+    </>
+  )
+}
+
 // ── Timeline (Gantt-style: 1 แถว/อุปกรณ์, บาร์นับถอยหลัง + หมุดวันครบกำหนด) ──
 function TimelineView({ rows, today, onCheck }) {
   const RANGE = 90
@@ -580,11 +719,22 @@ function TimelineView({ rows, today, onCheck }) {
               style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--border)', cursor: 'pointer', background: r.status === 'overdue' ? 'rgba(224,92,74,0.05)' : undefined }}>
               <div style={{ width: 200, flexShrink: 0, padding: '7px 12px', borderRight: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name ?? '—'}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.line_name ?? '—'} · {r.cycleText}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {r.eq.line_name ?? '—'} · {r.runDay ? `🏃 ทุก ${r.cycle || '—'} วันเดิน` : r.cycleText}
+                </div>
               </div>
               <div style={{ flex: 1, position: 'relative', minHeight: 40, minWidth: 320 }}>
                 {marks.map(m => <div key={m} style={{ position: 'absolute', left: `${(m / RANGE) * 100}%`, top: 0, bottom: 0, borderLeft: '1px dashed var(--border)' }} />)}
-                {days == null ? (
+                {/* 🔴 แผน run_day ไม่มีวันปฏิทิน — ห้ามขึ้น "ยังไม่มีวัน PM ครั้งถัดไป" (คนอ่านว่าตั้งค่าไม่ครบ)
+                    วางที่หมุด "วันนี้" เพราะเงื่อนไขของมันตัดสินจากสถานะวันนี้ ไม่ใช่วันในอนาคต */}
+                {r.runDay ? (
+                  <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11.5, fontWeight: r.status === 'idle_skip' ? 400 : 700, color: r.status === 'idle_skip' ? 'var(--muted)' : meta.color, whiteSpace: 'nowrap' }}>
+                      {runDayText(r.runDay)}
+                    </span>
+                  </div>
+                ) : days == null ? (
                   <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีวัน PM ครั้งถัดไป</span>
                 ) : days < 0 ? (
                   <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 7 }}>

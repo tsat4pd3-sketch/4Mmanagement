@@ -722,6 +722,34 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'pm-run-day-via-helper',
+    scan: ['src/pages', 'src/components', 'src/lib'], ext: ['.jsx', '.js'],
+    /* จับการเทียบสถานะ "ไม่ได้ผลิตเลยไม่ต้องตรวจ" ด้วยสตริงดิบในหน้า */
+    re: /['"`]idle_skip['"`]\s*(?:===|==|!==|!=)|(?:===|==|!==|!=)\s*['"`]idle_skip['"`]/g,
+    why: 'สถานะ `idle_skip` (รอบ PM ที่นับจากวันเดินเครื่อง · 02/10) มีกฎพ่วงอยู่ 2 ข้อที่มองไม่เห็น '
+       + 'จากตัวสตริง: **ห้ามนับในตัวหารของ %ความครบถ้วน** และ **เทาเท่านั้น ห้ามเขียว** · '
+       + 'หน้าที่เทียบสตริงเองจะตกหล่นข้อใดข้อหนึ่งเสมอเมื่อเพิ่มสถานะใหม่ทีหลัง '
+       + '(คลาสเดียวกับที่เคยก๊อป ORDER map ไว้ใน PMSchedule แล้วสถานะใหม่หล่นไปท้ายลิสต์เงียบๆ)',
+    fix: "ใช้ `countsForCompliance(status)` จาก src/utils/pmRunDay.js ตัดสินว่านับเข้า KPI ไหม · "
+       + "สีมาจาก `STATUS_META[status]` (src/lib/pmSchedule.js) · ข้อความมาจาก `runDayText(res)`",
+    allow: {
+      'src/pages/PMSchedule.jsx': 'จอเดียวที่ต้องแยก "เทา" ออกจากสีสถานะอื่นตอนวาดแถว — ตัวหาร KPI ใช้ countsForCompliance แล้ว',
+    },
+  },
+  {
+    id: 'pm-run-day-needs-line-family',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* เรียก runDaysOf โดยส่งชื่อไลน์ตรงๆ จาก record (ไม่ผ่าน getLineFamilyNames) */
+    re: /runDaysOf\([^)]*\[\s*\w+\.line_name\s*\]\s*\)/g,
+    why: '`runDaysOf` ที่เทียบชื่อไลน์ตรงตัวจะมองไม่เห็นใบผลิตของไลน์ลูก — เคสจริง 02/10: '
+       + 'PF-H101 ลงทะเบียนที่ไลน์แม่ **HYDROFORM** แต่ใบผลิตเปิดที่ **HDF1/HDF2** ⇒ ระบบอ่านว่า '
+       + '"ไม่เคยเดินเลย 60 วัน" ทั้งที่ของจริงเดิน 38 วัน แล้ว**ข้ามการตรวจที่จำเป็นเงียบๆ** '
+       + '(ผิดทิศที่อันตรายกว่าตรวจเกิน)',
+    fix: 'กางครอบครัวไลน์ก่อนเสมอ: `runDaysOf(rows, getLineFamilyNames(lines, eq.line_name))` '
+       + '(src/utils/lineHierarchy.js) — กติกาเดียวกับ `sumUsage` ใน pmUsage.js',
+    allow: {},
+  },
+  {
     id: 'nav-alsoin-is-shortcut-not-second-home',
     scan: ['src', 'audit'], ext: ['.jsx', '.js', '.mjs'],
     /* จับ "เอา group กับ alsoIn มากองรวมเป็นลิสต์หมวดของหน้านี้" — รูปที่บั๊กเคยเขียนไว้เป๊ะๆ */
