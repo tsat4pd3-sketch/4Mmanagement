@@ -106,6 +106,10 @@ export const STATUS_META = {
   deferred:  { label: 'เลื่อนแผน (ตกลงแล้ว)', color: '#4a90e0', order: 1.5 },
   never:     { label: 'ยังไม่เคยตรวจ',  color: '#9b8de8', order: 2 },
   ok:        { label: 'ตามกำหนด',       color: '#3dd65c', order: 3 },
+  /* 🔴 `idle_skip` = **เทา ไม่ใช่เขียว** — "ไม่ได้ผลิตเลยไม่ต้องตรวจ" คนละเรื่องกับ "ตรวจแล้วผ่าน"
+     และ **ห้ามนับในตัวหาร %ความครบถ้วน** (ใช้ `countsForCompliance` ใน utils/pmRunDay.js)
+     ไม่งั้น KPI จะสวยขึ้นเพราะวันหยุด · ใช้กับแผน `cycle_basis='run_day'` เท่านั้น (02/10) */
+  idle_skip: { label: 'ไม่ได้ผลิต (ไม่ต้องตรวจ)', color: '#6b7280', order: 3.5 },
   periodic:  { label: 'ยังไม่ตั้งรอบ PM', color: '#527855', order: 4 },  // ไม่มีจำนวนวัน = ระบบเตือนไม่ได้ (เดิมป้าย 'ไม่มีรอบตายตัว' ฟังเหมือนตั้งใจ)
 }
 
