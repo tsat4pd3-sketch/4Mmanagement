@@ -95,28 +95,28 @@
 ## Pages & Routes
 
 สิทธิ์เข้าถึงแต่ละหน้า ไม่ได้ hardcode ในโค้ดอีกต่อไป …
-> 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md` (3 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md`
 
 ---
 
 ## 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19)
 
 โจทย์จาก user: ไล่ audit การส่งต่อ "ความต้องการ" ตั้งแต่ Sales → Warehouse → Production FG → WIP →
-> 📄 รายละเอียดเต็ม → `docs/modules/demand-flow-tower.md` (11 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/demand-flow-tower.md`
 
 ---
 
 ## Organizational Hierarchy (Thai Summit Group)
 
 ลำดับชั้นองค์กรที่สอดคล้องกันทั้งระบบ — ห้ามเพิ่มฟีเจอร์ที่ขัดกับลำดับชั้นนี้
-> 📄 รายละเอียดเต็ม → `docs/modules/org-hierarchy.md` (2 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/org-hierarchy.md`
 
 ---
 
 ## Role System
 
 role = "ชุดสิทธิ์ใช้ระบบ" ไม่ใช่ตำแหน่งงาน (2026-07-10) — ตำแหน่งจริงในโรงงาน
-> 📄 รายละเอียดเต็ม → `docs/modules/role-system.md` (4 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/role-system.md`
 
 ---
 
@@ -146,7 +146,7 @@ Reject → status: "rejected" + reject_reason
 ## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
 
 โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ DR project) — 3 หน้า:
-> 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md` (3 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md`
 
 ---
 
@@ -160,7 +160,7 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 ## Daily Report — ออเดอร์ manual สำหรับไลน์ไม่มี kanban card (2026-07-12)
 
 ไลน์บางไลน์ (เช่น HDF1 ที่ส่งงานต่อ LASER CUT 123) ไม่มีเลข SAP order ให้สแกน เปิด-ปิดใบแบบปกติไม่ได้:
-> 📄 รายละเอียดเต็ม → `docs/modules/daily-report.md` (13 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/daily-report.md`
 
 ---
 
@@ -188,6 +188,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
 - ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO …
+
+> ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
+> `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
+> นับแต่งานดี = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (%P และ %Q) ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
+> (คำสั่ง user "ใช้เครื่องลองผลิต") ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
+> · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
+>   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
+> · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
 
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
 > พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
@@ -222,19 +230,16 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 >   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
-> เดิม `qty_ng + qty_suspect` ⇒ ของสงสัยถูกหัก %Q **ทันทีที่ลง และไม่มีทางย้อน** (QA ว่า "งานดี"
-> ทีหลังก็ไม่มีอะไรวิ่งกลับไปแก้) — เคสจริง Line 60 กะ 21/07 ลง 12 ชิ้น "รอพิจารณา" ค้างถึงวันนี้
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
 >   (หลักเดียวกับงานทดลอง `is_trial`/`excl_from_q`) · ผลพิจารณาอ่านจาก `quality_bin_records`
 >   ผูกด้วย `defect_log_id` · ตัดสินที่ `suspectState()` (§7.1 `oee.js`) **ห้ามคิดเองในหน้า**
 >   — `scrap`/ย้ายลงถังแดง = เสีย · `good`/`repair`/`use_as_is`/`return_date` = ไม่เสีย · ไม่มีผล = **รอ**
-> · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการใช้ `defectQtyAll` (เห็นของสงสัยเสมอ) — ห้ามสลับ**
+> · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
 > · 🔴 **คิวรีที่เอาไปคิด %Q ต้องต่อ `${QBIN_EMBED}` ใน select** ไม่ต่อ = `suspectState()` คืน `unknown`
 >   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
-> · ✅ backfill ประวัติแล้ว 30/09 (รายละเอียด+ตารางสำรองใน `oee.md`)
->   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
+>   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่ (backfill 30/09 แล้ว)
 
-> 📄 รายละเอียดเต็ม → `docs/modules/oee.md` (14 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/oee.md`
 
 ---
 
@@ -284,14 +289,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · ถังเหลือง/แดง: อายุแท็ก · ผล QA 4 ทาง · เลข WI ซ่อม → `src/utils/qualityBin.js`/`repair_wi_registry`
 >   **ห้ามประกาศซ้ำในหน้า** · **ห้ามเพิ่ม `closed_at` ที่ต้องมีคนกดปิด** (ไม่มีใครกด = ของค้างเทียมเต็มจอ)
 
-> 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md` (2 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md`
 
 ---
 
 ## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
 
 สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:
-> 📄 รายละเอียดเต็ม → `docs/modules/qa-inspection.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/qa-inspection.md`
 
 ---
 
@@ -305,14 +310,14 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## Factory Master Map — ผังรวมโรงงานผังเดียว (2026-07-16)
 
 หน้า `/factory-map` (`FactoryMap.jsx`, กลุ่มฝ่ายผลิต) — รูปผังใหญ่ของทั้งโรงงาน 1 รูป แล้ววาด polygon (รูปทรงอิสระ) ล้อมพื้นที่แต่ละไลน์ ระบายสีตามสถานะการผลิตของไลน์นั้น — ดูทุกไลน์บนจอเดียว (เหมาะจอ TV)
-> 📄 รายละเอียดเต็ม → `docs/modules/factory-master-map.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/factory-master-map.md`
 
 ---
 
 ## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
 
 หน้าเดียวสลับส่วนงานด้วย `?dept=` — เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
-> 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md`
 
 ---
 
@@ -407,8 +412,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## 📦 ของหน้าไลน์คุมที่ "พื้นที่ → ไลน์ → พาร์ท" — **เลิกจุด WIP แล้ว** (2026-10-01 · คำสั่ง user)
 
 🔴 **"จุด" ที่เหลือในระบบต้องเป็น "ที่อยู่" ไม่ใช่ "ถังที่มียอด"** — ยอดคงเหลืออยู่ที่ **ไลน์ + พาร์ท**
-(`line_part_levels`) ที่เดียว · ยอดที่ไม่มีใครหักออกคือยอดปลอม และยอดปลอมจุดเดียวทำให้คนเลิกเชื่อทั้งจอ
-(วัดจริง 01/10: ใบขอเติม 25 ใบ **ผูกจุด WIP 0 ใบ** · `current_qty` 10 จุด **เท่ากับ min เป๊ะ ไม่ขยับตั้งแต่ 1 ก.ย.**)
+(`line_part_levels`) ที่เดียว · **ยอดที่ไม่มีใครหักออก = ยอดปลอม** จุดเดียวก็ทำให้คนเลิกเชื่อทั้งจอ
 · ชั้นบัญชี = **SLoc** (`P411` = ทั้ง Apron Assy — ตรง SAP · `slocOfLine()` derive จากไลน์แม่)
 · **`wip_buffer_points` = ตารางอ่านประวัติเท่านั้น ห้ามมีจอไหนเขียน/เรียก `wip_point_add_qty` อีก** (มีด่าน)
 · ⚠️ **คนละตัวกับ `workstations` (จุดงาน = ที่ยืนของคน) และ `line_delivery_points` (ป้าย QR จุดส่ง = ที่อยู่ ไม่มียอด)** — 2 ตัวนี้ยังใช้อยู่
@@ -418,7 +422,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` สะสมเองในหน้า** (มีด่าน)
 `one_piece_flow` = บวกทั้งกะ · **`parallel_machine` = ภาระของ "เลนที่ใบใหม่จะไปลง" ไม่ใช่ผลรวมทั้งไลน์**
-(เดิมเตือน "เกิน 1,605 นาที" ทั้งที่ไลน์เดิน 6 เครื่องขนาน = ใช้ความจุไป 60%)
 · ยุบคู่ RH/LH ด้วย `pairLoadTotal` (ชิ้น ≠ shot) · 🔴 **ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน** · ใบที่คิดไม่ได้คืน `unknownCt` ให้จอเขียนบอก
 · `confirmed` **ยังนับเป็นภาระ** — ตัดเฉพาะ `cancelled`/`imported`/`carry_over`
 
@@ -505,7 +508,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
 
 แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
-> 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md`
 
 ---
 
@@ -548,7 +551,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
 
 หลักการ: หน้า display (ผังรวมโรงงาน/Dashboard) = ดู + popup เท่านั้น · การตั้งค่าผังทั้งหมดรวมที่ `/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan" (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
-> 📄 รายละเอียดเต็ม → `docs/modules/floorplan-setup.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/floorplan-setup.md`
 
 ---
 
@@ -600,7 +603,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 · เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
 · ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
 · migration `20260907_npi_apqp_main.sql` (**apply แล้ว 2026-09-07**) · supplier portal = เฟส 4 ยังไม่ทำ
-> 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md` (9 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`
 
 ---
 
@@ -653,21 +656,21 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
 
 หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
-> 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md` (3 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md`
 
 ---
 
 ## ประวัติผลิต by Product — `/product-history` (2026-07-24)
 
 หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
-> 📄 รายละเอียดเต็ม → `docs/modules/product-history.md` (2 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/product-history.md`
 
 ---
 
 ## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
 
 หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
-> 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md` (2 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md`
 
 ---
 
@@ -676,7 +679,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
 - **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push (กระดิ่งวัดจริง 25/09: **19,095 แถว/7 วัน อ่าน 7.3%**)
 - **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว ห้ามแตกรายตัว**)
-  — ชื่อในใบ ≠ งานส่วนตัว (วัดจริง: ใบซ่อมรอตรวจรับ 168 ใบ มีแค่ 10 ชื่อ ส่วนงานเดียว = คิวแผนก)
+  — ชื่อในใบ ≠ งานส่วนตัว (ตัวเลขวัดจริงใน `my-queue.md`)
 - **🔴 badge นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
 - **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
 > 📄 `docs/modules/my-queue.md`
@@ -714,7 +717,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## Edge Functions
 
 - Endpoint: `POST /functions/v1/send-notification`
-> 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md` (3 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
 ---
 
@@ -918,7 +921,7 @@ Mobile < 768px · Tablet 768–1279 · Desktop 1280–1599 · Ultra-wide ≥ 160
 ## Deploy
 
 Platform:    Render.com (Static Site)
-> 📄 รายละเอียดเต็ม → `docs/modules/deploy.md` (1 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/deploy.md`
 
 ---
 
@@ -947,6 +950,6 @@ Platform:    Render.com (Static Site)
 ## 🔗 ลูปปิด 8D → PFMEA / PFC / Control Plan (2026-08-17 · คำสั่ง user)
 
 ปิด 8D แล้ว ระบบย้อนกลับไปชี้เองว่าต้องแก้เอกสาร PE ตัวไหน บรรทัดไหน + ขยายผลข้ามพาร์ท (yokoten)
-> 📄 รายละเอียดเต็ม → `docs/modules/closed-loop-8d-pfmea.md` (4 หัวข้อย่อย)
+> 📄 รายละเอียดเต็ม → `docs/modules/closed-loop-8d-pfmea.md`
 
 ---
