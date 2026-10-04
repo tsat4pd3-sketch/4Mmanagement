@@ -361,7 +361,8 @@ export default function VSM() {
           .in('session_id', ids),
         // excl_from_q ต้อง join มาด้วย ไม่งั้นงานทดลองตกหล่นเงียบ (กฎ %Q)
         supabaseDR.from('defect_logs')
-          .select(`session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q), ${QBIN_EMBED}`)
+          // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+          .select(`session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`)
           .in('session_id', ids),
       ]);
       if (o.error || d.error || f.error) partial = true;
