@@ -35,7 +35,6 @@ import useIsMobile from '../utils/useIsMobile';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
-import Segmented from '../components/Segmented';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -47,31 +46,25 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const cellKey = (empId, day) => `${empId}|${day}`;
-
-/* ══ 🔴 "กะ" ของหน้า BBS = ส่วนหนึ่งของ "คีย์ใบ" ไม่ใช่ตัวกรองมุมมอง (2026-10-02 · user แจ้ง "ตัวกรองกะใช้งานไม่ได้") ══
-   `bbs_sheets` unique = (month_key, line_name, shift) ⇒ เปลี่ยนปุ่มกะ = **เปิดใบคนละใบ** ไม่ใช่กรองใบเดิม
-   · `shift = ''` หมายถึง **ใบทั้งวัน (ไม่แยกกะ)** — เป็นถังที่ 3 ไม่ใช่ "ผลรวมของ 2 กะ"
-
-   **ต้นเหตุของบั๊ก:** commit 78119fb6 (UI-STANDARD 24/09) กวาดทุกหน้าให้ใช้ `SHIFT_OPTIONS` ร่วมกัน
-   ซึ่งป้ายของ `''` คือ **"ทุกกะ"** = คำของ*ตัวกรอง* (filterLabels.js: "ตัวกรอง (มุมมอง) → ทุก<คำนาม>")
-   ของเดิมหน้านี้เขียนว่า **"ทั้งวัน"** ซึ่งถูกแล้ว ⇒ พอป้ายเปลี่ยน ผู้ใช้อ่านว่าเป็นตัวกรอง
-   กดแล้วใบเปลี่ยน/ว่าง เลยรายงานว่า "ตัวกรองไม่ทำงาน"
-
-   **ผลที่เกิดกับข้อมูลจริง (วัดจริง 02/10):** ข้อมูลถูกกรอกกระจาย 3 ถังของเดือน+ไลน์เดียวกัน เช่น
-   Line 60 ส.ค. = ทั้งวัน 507 ช่อง · กะเช้า 303 · กะดึก 252 (ผู้ตรวจคนเดียวกันทั้ง 3 ใบ)
-   · ASSEMBLY 1 ต.ค. = ทั้งวัน 55 · กะเช้า 18 · LINE APRON ASSY ส.ค. = ทั้งวัน 588 · กะเช้า 303
-
-   **ห้ามเอา `SHIFT_OPTIONS` จาก filterLabels มาใช้ที่นี่** — ตัวนั้นสำหรับหน้าที่ `''` = "แสดงทุกกะจริงๆ"
-   (/report · /oee-analytics · /mtn-repair · /workforce-insight ซึ่งเป็นจออ่านอย่างเดียว) */
-const SHEET_SHIFT_OPTIONS = Object.freeze([
-  { value: '',      label: 'ทั้งวัน',     title: 'ใบที่ไม่แยกกะ — คนละใบกับกะเช้า/กะดึก' },
-  { value: 'day',   label: '☀️ กะเช้า',  title: 'ใบเฉพาะกะเช้า — คนละใบกับทั้งวัน' },
-  { value: 'night', label: '🌙 กะดึก',   title: 'ใบเฉพาะกะดึก — คนละใบกับทั้งวัน' },
-]);
-const SHIFT_TH = { '': 'ทั้งวัน', day: 'กะเช้า', night: 'กะดึก' };
 // ป้ายสั้นบนชิปมือถือ (ป้ายเต็มของ MARKS ยาวเกินชิปกว้าง ~80px · ความหมายเดียวกับ bbsMarks)
 const MOBILE_LABEL = { ok: 'เหมาะสม', ng: 'ไม่เหมาะสม', fixed: 'ปรับแก้แล้ว', na: 'ไม่ได้ตรวจ' };
 
+
+/* ══ 🔴 BBS ไม่แยกกะ — หน้านี้ "ไม่มีปุ่มเลือกกะ" โดยตั้งใจ (2026-10-02 · คำสั่ง user) ══════════
+   1 ใบ = (เดือน × พื้นที่/ไลน์) เท่านั้น · `bbs_sheets` unique = (month_key, line_name)
+
+   ประวัติ (อย่าเผลอเติมปุ่มกะกลับมา):
+   · เดิม unique = (month_key, line_name, **shift**) ⇒ ปุ่มกะบนจอเป็น "คีย์ของใบ" ไม่ใช่ตัวกรอง
+     กดแล้วเปิดใบคนละใบ · `shift=''` คือ "ใบทั้งวัน" = ถังที่ 3 ไม่ใช่ผลรวมของ 2 กะ
+   · commit 78119fb6 (กวาด UI-STANDARD 24/09) เปลี่ยนป้ายของ `''` จาก "ทั้งวัน" → **"ทุกกะ"**
+     (คำของ*ตัวกรอง*) ⇒ ผู้ใช้อ่านว่าเป็นตัวกรอง กดแล้วใบว่าง → แจ้งว่า "ตัวกรองกะใช้งานไม่ได้"
+   · ข้อมูลจริงถูกกรอกกระจาย 3 ถังของเดือน+ไลน์เดียวกัน (Line 60 ส.ค. = 507/303/252 ช่อง)
+   · user ตัดสิน: **"ไม่แยกก็ไม่ต้องมีให้กรอง"** ⇒ ยุบใบ + ถอดปุ่มกะ
+     (migration `20261002_bbs_merge_shift_sheets_main.sql`)
+
+   · คอลัมน์ `shift` ยังอยู่ในตาราง (vestigial · ค่า `''` ทุกแถว) ห้ามเอามาใช้ตัดสินอะไรอีก
+   · **ห้าม import `SHIFT_OPTIONS` จาก `utils/filterLabels` มาใส่หน้านี้** — ตัวนั้นสำหรับจอที่
+     `''` = "แสดงทุกกะจริงๆ" (/report · /oee-analytics · /mtn-repair · /workforce-insight) */
 export default function BbsCheck() {
   const { role, lineId, sections = [], fullName } = useContext(UserContext);
   const { can } = usePerms();
@@ -90,13 +83,9 @@ export default function BbsCheck() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loadWarn, setLoadWarn] = useState('');
-  /* ใบของกะอื่นในเดือน+ไลน์เดียวกันที่ "มีข้อมูลอยู่" — ห้ามเงียบเมื่อผู้ใช้สลับกะแล้วจอว่าง
-     (ENGINEERING-PRINCIPLES §2: ตรวจเจอความไม่ตรงกันของข้อมูล = เตือนบนจอ ห้ามแก้ให้เองเงียบๆ) */
-  const [siblings, setSiblings] = useState([]);   // [{ shift, n }]
 
   const [month, setMonth] = useState(thisMonth);
   const [selLine, setSelLine] = useState('');
-  const [shift, setShift] = useState('');
   const [brushState, setBrush] = useState('ok');        // สัญลักษณ์ที่จะทา (แปรง — desktop)
   const [brushSeqState, setBrushSeq] = useState(1);     // เลขข้อ (เมื่อ brush = ng)
   const brush = brushState, brushSeq = brushSeqState;   // ชื่อเดิมสำหรับส่วน render (แปรง/legend)
@@ -162,15 +151,15 @@ export default function BbsCheck() {
         ⇒ หัวหน้ากรอก BBS หลายไลน์/หลายเดือนติดกัน แล้วเปลี่ยนไลน์-เปลี่ยนเดือนแล้วทาช่องต่อทันที
           → `bbs_observations.sheet_id` ลงใบของ **เดือน/ไลน์ก่อนหน้า** โดยจอทาติดสีปกติ
           = กลับมาดูเดือนนั้นเจอรอยทาที่ไม่ได้ทำ · เดือนที่ทำจริงว่างเปล่า · ใบพิมพ์ FM ไม่ตรงของจริง */
-  const sheetKey = `${month}|${lineObj?.name || ''}|${shift}`;
+  const sheetKey = `${month}|${lineObj?.name || ''}`;
   const sheetKeyRef = useRef(sheetKey);
   sheetKeyRef.current = sheetKey;
-  const matchesKey = (s) => !!s && `${s.month_key}|${s.line_name}|${s.shift}` === sheetKeyRef.current;
+  const matchesKey = (s) => !!s && `${s.month_key}|${s.line_name}` === sheetKeyRef.current;
 
   /* ── พนักงาน + ใบของเดือน/ไลน์/กะที่เลือก ── */
   const load = useCallback(async () => {
     if (!lineObj) return;
-    const myKey = `${month}|${lineObj.name}|${shift}`;
+    const myKey = `${month}|${lineObj.name}`;
     setLoading(true); setLoadWarn('');
     try {
       const fam = getLineFamilyIds(lines, lineObj.id);
@@ -183,12 +172,16 @@ export default function BbsCheck() {
       if (sheetKeyRef.current !== myKey) return;   // เปลี่ยนไลน์/เดือน/กะ ระหว่างรอ → ทิ้งผลรอบนี้
       setEmps(empData || []);
 
-      const { data: sh, error: shErr } = await supabase.from('bbs_sheets').select('*')
-        .eq('month_key', month).eq('line_name', lineObj.name).eq('shift', shift)
-        .maybeSingle();
-      if (shErr && shErr.code !== 'PGRST116') setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      /* ⚠️ ห้ามใช้ `.maybeSingle()` — คืน error PGRST116 เมื่อเจอ >1 แถว และ**ช่วงก่อนรัน migration
+         `20261002` ยังมีใบเก่าแยกกะค้างอยู่ได้จริง** ⇒ จอจะอ่านว่า "ไม่มีใบ" แล้วเปิดใบเปล่าทับ
+         (กฎเหล็กข้อ 1 · CLAUDE.md) · เอาใบเก่าสุดไว้ก่อน — รัน migration แล้วจะเหลือใบเดียวเอง */
+      const { data: shRows, error: shErr } = await supabase.from('bbs_sheets').select('*')
+        .eq('month_key', month).eq('line_name', lineObj.name)
+        .order('created_at', { ascending: true }).limit(1);
+      if (shErr) setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      const sh = (shRows || [])[0] || null;
       if (sheetKeyRef.current !== myKey) return;
-      setSheet(sh || null);
+      setSheet(sh);
 
       if (sh) {
         const { data: obs, error: obErr } = await supabase.from('bbs_observations')
@@ -209,22 +202,8 @@ export default function BbsCheck() {
         setRowNotes({});
       }
 
-      /* ── ใบของกะอื่น (เดือน+ไลน์เดียวกัน) มีข้อมูลไหม ── สูงสุด 2 ใบ ⇒ นับแบบ head ไม่ดึง payload */
-      const { data: sibSheets } = await supabase.from('bbs_sheets')
-        .select('id, shift').eq('month_key', month).eq('line_name', lineObj.name).neq('shift', shift);
-      /* รวมยอดต่อ "กะ" ไม่ใช่ต่อแถว — unique index (month_key,line_name,shift) ควรให้ได้ ≤2 แถวอยู่แล้ว
-         แต่ถ้าวันหน้ามีแถวซ้ำหลุดมา ต้องได้ชิปละกะ ไม่ใช่ชิปละแถว (harness จับได้ตอนทำ 02/10) */
-      const byShift = new Map();
-      for (const ss of sibSheets || []) {
-        const { count } = await supabase.from('bbs_observations')
-          .select('id', { count: 'exact', head: true }).eq('sheet_id', ss.id);
-        if (count) byShift.set(ss.shift, (byShift.get(ss.shift) || 0) + count);
-      }
-      const sibs = [...byShift].map(([sh2, n]) => ({ shift: sh2, n }));
-      if (sheetKeyRef.current !== myKey) return;
-      setSiblings(sibs);
     } finally { setLoading(false); }
-  }, [lineObj, lines, month, shift]);
+  }, [lineObj, lines, month]);
   useEffect(() => { load(); }, [load]);
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
@@ -234,25 +213,38 @@ export default function BbsCheck() {
     if (!lineObj) return null;
     const me = signers.find(s => s.full_name === fullName);
     const payload = {
-      month_key: month, line_name: lineObj.name, shift,
+      month_key: month, line_name: lineObj.name,
       section: lineObj.section || null,
       dept: lineObj.parent_line_name || null,
       inspector_name: fullName || null,
       inspector_sig_url: me?.signature_url || null,
       updated_by_name: fullName || null,
     };
-    const { data, error } = await supabase.from('bbs_sheets')
-      .upsert(payload, { onConflict: 'month_key,line_name,shift' }).select().single();
+    let { data, error } = await supabase.from('bbs_sheets')
+      .upsert(payload, { onConflict: 'month_key,line_name' }).select().single();
+    /* ยังไม่รัน migration `20261002` ⇒ unique ยังเป็น (month_key, line_name, shift) เดิม →
+       PostgREST infer on_conflict ไม่ได้ (42P10) · ถอยไปใช้คีย์เดิมพร้อม shift='' ให้บันทึกได้ต่อ
+       (ENGINEERING-PRINCIPLES §6: โค้ดต้องทำงานได้ทั้งตอน apply แล้วและยังไม่ apply) */
+    if (error?.code === '42P10') {
+      ({ data, error } = await supabase.from('bbs_sheets')
+        .upsert({ ...payload, shift: '' }, { onConflict: 'month_key,line_name,shift' })
+        .select().single());
+    }
     if (error) {
-      // ยังไม่ apply migration / RLS ปฏิเสธ — ต้องบอกให้ชัด ห้ามเงียบ
+      /* ยังไม่ apply migration / RLS ปฏิเสธ — ต้องบอกให้ชัด ห้ามเงียบ
+         42P10 = ยังไม่ได้รัน `20261002_bbs_merge_shift_sheets_main.sql` ⇒ unique ยังเป็น
+         (month_key, line_name, shift) เดิม → PostgREST infer on_conflict ไม่ได้
+         (กับดักเดียวกับที่เขียนเตือนไว้ใน migration ตั้งต้นของ BBS) */
       toast.error(error.code === '42P01'
         ? 'ยังไม่ได้ apply migration ของ BBS — แจ้งผู้ดูแลระบบ'
-        : `สร้างใบไม่สำเร็จ: ${error.message}`);
+        : error.code === '42P10'
+          ? 'ยังไม่ได้รัน migration ยุบใบ BBS ตามกะ (20261002) — แจ้งผู้ดูแลระบบ ยังบันทึกไม่ได้'
+          : `สร้างใบไม่สำเร็จ: ${error.message}`);
       return null;
     }
     setSheet(data);
     return data;
-  }, [sheet, lineObj, month, shift, fullName, signers]);
+  }, [sheet, lineObj, month, fullName, signers]);
 
   /* ── ทาช่อง ── */
   // markOverride/seqOverride: โหมดมือถือกดชิปตรงๆ ไม่ผ่านแปรง (desktop ส่ง 2 ตัวแรกเหมือนเดิม)
@@ -326,10 +318,10 @@ export default function BbsCheck() {
       const from = `${month}-01`;
       const to = `${month}-${String(days).padStart(2, '0')}`;
       let q = supabase.from('daily_production_logs')
-        .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves, shift')
+        .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves')
         .gte('work_date', from).lte('work_date', to)
         .in('employee_id', emps.map(e => e.id));
-      if (shift) q = q.eq('shift', shift);
+      /* ไม่กรองกะ — BBS ไม่แยกกะแล้ว (ดูหัวบล็อกไฟล์) เอาผลตรวจ PPE ของทั้งวัน */
       const { data: logs, error } = await q;
       if (error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${error.message}`); return; }
 
@@ -446,27 +438,8 @@ export default function BbsCheck() {
         <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} />
         <span className="filter-label">เดือน</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        {/* 🔴 ไม่ใช่ตัวกรอง — เลือกกะ = เปิด "ใบ" คนละใบ (ดู SHEET_SHIFT_OPTIONS) */}
-        <span className="filter-label">ใบของกะ</span>
-        <Segmented value={shift} onChange={setShift} options={SHEET_SHIFT_OPTIONS} label="ใบของกะ" />
+        {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
       </FilterBar>
-
-      {/* 🔴 BBS แยก "ใบ" ตามกะ ไม่ใช่ตัวกรอง — สลับกะแล้วจอว่างทั้งที่เคยกรอก = ข้อมูลอยู่ในใบของกะอื่น
-          (user แจ้ง 02/10 "ตัวกรองกะใช้งานไม่ได้" · วัดจริง: Line 60 ส.ค. กรอกกระจาย 3 ใบ 507/303/252 ช่อง) */}
-      {siblings.length > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid var(--accent2)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span>
-            📄 <b>ปุ่มกะ = เลือก “ใบ” ไม่ใช่ตัวกรอง</b> — เดือน/ไลน์นี้ยังมีข้อมูลอยู่ในใบอื่นด้วย:{' '}
-            {siblings.map(x => `${SHIFT_TH[x.shift] ?? x.shift} ${x.n.toLocaleString()} ช่อง`).join(' · ')}
-            {Object.keys(cells).length === 0 && <> · <b>ใบที่เปิดอยู่ ({SHIFT_TH[shift] ?? shift}) ยังว่าง</b></>}
-          </span>
-          {siblings.map(x => (
-            <button key={x.shift} onClick={() => setShift(x.shift)} style={{ ...btn(), padding: '4px 10px', fontSize: 12 }}>
-              ไปที่ใบ {SHIFT_TH[x.shift] ?? x.shift}
-            </button>
-          ))}
-        </div>
-      )}
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
