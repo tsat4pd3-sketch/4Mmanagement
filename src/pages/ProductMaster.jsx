@@ -16,7 +16,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
-import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -989,6 +989,13 @@ export default function ProductMaster() {
                         <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: item.op_parent_mat ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
                           title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
                           🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                        </span>
+                      )}
+                      {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
+                      {rawAsOutputWarning(item.mat_no, item.is_operation) && (
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700 }}
+                          title={rawAsOutputWarning(item.mat_no, item.is_operation)}>
+                          ⚠ วัตถุดิบ ไม่ใช่ของที่ผลิตได้
                         </span>
                       )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
