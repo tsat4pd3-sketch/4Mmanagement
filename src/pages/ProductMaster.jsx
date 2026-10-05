@@ -1857,7 +1857,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (!headName) { toast.error(`${mat} ยังไม่มีชื่อพาร์ทในทะเบียน — ใส่ชื่อที่แท็บ 1️⃣ Parts Master ก่อน`); return; }
     setHeadBusy(true);
     const { data, error } = await supabaseDR.from('dr_products')
-      .insert({ mat_no: mat, name: headName, p_no: part.part_no || null, is_active: true, created_by: fullName })
+      .insert({ mat_no: mat, name: headName, p_no: part.part_no || null, is_active: true })
+      /* 🔴 ห้ามส่ง created_by — dr_products ไม่มีคอลัมน์นี้ (PostgREST ปฏิเสธทั้งแถว · เคสจริง 05/10 เปิดใบ 306 FVL ไม่ได้)
+         ผู้แก้ถูกประทับให้เองที่ updated_by_name/uid (dr_products อยู่ใน DR_AUDIT_TABLES) */
       .select('id, name, code, mat_no, p_no, customer, line_name').single();
     setHeadBusy(false);
     if (error) { toast.error(`เปิดใบ BOM ไม่สำเร็จ: ${error.message}`); return; }
