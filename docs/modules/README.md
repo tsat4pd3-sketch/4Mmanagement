@@ -9,6 +9,7 @@
 | Organizational Hierarchy (Thai Summit Group) | `docs/modules/org-hierarchy.md` | 154 KB |
 | Role System | `docs/modules/role-system.md` | 105 KB |
 | Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11) | `docs/modules/logistic-planner-sales.md` | 138 KB |
+| 🏬 บอร์ดสโตร์ — ใครทำอะไร/ส่งใครรับ ทุกแท็บ + ช่องโหว่ (audit 2026-10-05) | `docs/modules/store-board-workflow.md` | 5 KB |
 | Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17) | `docs/modules/kanban-auto-calc.md` | 10 KB |
 | Daily Report — ออเดอร์ manual สำหรับไลน์ไม่มี kanban card (2026-07-12) | `docs/modules/daily-report.md` | 116 KB |
 | QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user) | `docs/modules/qr-equipment-scan.md` | 15 KB |

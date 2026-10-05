@@ -1094,6 +1094,13 @@ const LOT_ZONES = (withDone) => [
   zoneOf(LOT_STATUS.pending, ['pending'], 'ครบล็อตแล้ว รอสโตร์ปล่อยงานให้ไลน์'),
   ...(withDone ? [zoneOf(LOT_STATUS.done, ['done'], 'ของเข้าสโตร์แล้ว · สต็อกขึ้นให้อัตโนมัติ')] : []),
 ];
+/* ของซื้อ: งานในมือ (สั่งแล้ว รอของเข้า → สโตร์ต้องรับ) ก่อนงานใหม่ (ยังไม่ได้สั่ง → จัดซื้อต้องสั่ง)
+   แถวของแท็บนี้ = กลุ่ม "พาร์ท × สถานะ" จากวิว v_purchase_open_summary (ไม่ใช่รายใบ) */
+const PUR_ZONES = (withDone) => [
+  zoneOf(PURCHASE_STATUS.ordered, ['ordered'], 'จัดซื้อสั่งแล้ว → ของมาถึงสโตร์ กดรับเข้าสโตร์'),
+  zoneOf(PURCHASE_STATUS.pending, ['pending'], 'ของในสโตร์ไม่พอต่อแผนผลิต → จัดซื้อสั่งแล้วกดสั่งซื้อแล้ว'),
+  ...(withDone ? [zoneOf(PURCHASE_STATUS.received, ['received'], 'ของเข้าสโตร์แล้ว')] : []),
+];
 const RAW_ZONES = (withDone) => [
   { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: '#f59e0b', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
   ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: '#22c55e', hint: '' }] : []),
@@ -1199,11 +1206,16 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     return matchQ(q, p.mat_no, p.part_name, p.supplier, p.dest_line);
   }), [purchaseRequests, buyFilter, q, showDone]);
   const purShown = purGroups.reduce((a, g) => a + (g.slips || 0), 0);
+  /* นับที่ซ่อนแบบเดียวกับแท็บอื่น (กฎข้อ 1: ต้องบอกจำนวนที่ซ่อนเสมอ) — หน่วย = กลุ่มพาร์ท ตรงกับการ์ดที่เห็น */
+  tally.purchase = {
+    done: showDone ? 0 : purchaseRequests.filter(p => p.status === 'received').length,
+    search: purchaseRequests.filter(p => (showDone || p.status !== 'received') && !purGroups.includes(p)).length,
+  };
 
   const hid = tally[store] || { done: 0, search: 0 };
   const hiddenNote = (hid.done || hid.search) ? (
     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-      👁 ซ่อนอยู่{hid.done ? ` · เสร็จแล้ว ${hid.done} รายการ` : ''}{hid.search ? ` · ไม่ตรงคำค้น ${hid.search} รายการ` : ''}
+      👁 ซ่อนอยู่{hid.done ? ` · เสร็จแล้ว ${hid.done} รายการ` : ''}{hid.search ? ` · ไม่ตรงคำค้น/ตัวกรอง ${hid.search} รายการ` : ''}
     </div>
   ) : null;
 
@@ -1295,8 +1307,8 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
               🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
               {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต · กดปุ่มบนการ์ดเพื่อเลื่อนสถานะรวมทีเดียว'}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
-              {purGroups.map(g => {
+            {hiddenNote}
+            <StatusZones rows={purGroups} zones={PUR_ZONES(showDone)} renderCard={g => {
                 const st = PURCHASE_STATUS[g.status] || PURCHASE_STATUS.pending;
                 const many = g.slips > 1;
                 const lot = Number(g.min_lot) === Number(g.max_lot)
@@ -1324,8 +1336,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
                       { k: 'ซัพพลายเออร์', v: g.supplier ? `${g.supplier}${multiSup ? ` +อีก ${g.supplier_count - 1}` : ''}` : null },
                     ]} />
                 );
-              })}
-            </div>
+              }} />
           </>)}
         </>
       )}
@@ -1552,7 +1563,7 @@ export default function HeijunkaKanban() {
     //    (2026-08-25: child_lot cancelled 100 ใบ / purchase cancelled 984 ใบ จากบั๊กหน่วย lot_size
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
-    const [{ data: lots }, { data: raws }, { data: acc }, { data: ks }, { data: racks }, { data: pkgs }, { data: wips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
+    const [{ data: lots, error: eLots }, { data: raws, error: eRaws }, { data: acc, error: eAcc }, { data: ks, error: eKs }, { data: racks, error: eRacks }, { data: pkgs, error: ePkgs }, { data: wips, error: eWips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
       supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
       supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
@@ -1580,21 +1591,28 @@ export default function HeijunkaKanban() {
     setPurchaseErr(purErr ? (purErr.code === '42P01'
       ? 'ยังไม่ได้ apply migration 20260825_v_purchase_open_summary.sql (แจ้ง admin)'
       : purErr.message) : '');
-    setLotRequests(lots || []);
-    setRawRequests(raws || []);
-    setAccumulator(acc || []);
+    /* 🔴 โหลดคิวไม่ได้ ห้ามกลายเป็น "ยังไม่มีรายการ" (audit 05/10 — เดิมกลืน error ทั้ง 7 คิว)
+       คิวที่ล้ม = คงข้อมูลรอบก่อนไว้ + บอกบนจอว่าคิวไหนโหลดไม่ได้ (ห้ามเขียนทับด้วยลิสต์ว่าง) */
+    const failed = [['Store Child', eLots], ['ใบเบิกวัตถุดิบ', eRaws], ['ยอดสะสม child', eAcc], ['ขนาดล็อต', eKs],
+      ['แร็ค', eRacks], ['ภาชนะ', ePkgs], ['คิวเติม WIP', eWips]].filter(([, e]) => e);
+    if (failed.length) toast.error(`โหลดคิวสโตร์ไม่ได้: ${failed.map(([n, e]) => `${n} (${e.message})`).join(' · ')} — จอแสดงข้อมูลรอบก่อน`);
+    if (!eLots) setLotRequests(lots || []);
+    if (!eRaws) setRawRequests(raws || []);
+    if (!eAcc) setAccumulator(acc || []);
     // กรองใบยกเลิกออก — ให้เห็นชุดเดียวกับบอร์ดหน้า Rack Center เป๊ะ (เคยโชว์ใบ cancelled เป็น "เรียกแล้ว" หลอกตา)
-    setRackRequests((racks || []).filter(r => r.status !== 'cancelled'));
-    setPkgRequests(pkgs || []);
-    setWipRequests(wips || []);
+    if (!eRacks) setRackRequests((racks || []).filter(r => r.status !== 'cancelled'));
+    if (!ePkgs) setPkgRequests(pkgs || []);
+    if (!eWips) setWipRequests(wips || []);
     /* ทะเบียนจุดส่งยังไม่ apply (42P01) = ทุกไลน์ยังไม่มีจุด → ด่านผ่านแบบ no_point ซึ่งตรงความจริง
        แต่ error อื่นห้ามกลืน — โหลดไม่ได้แล้วเงียบ = ด่านหายไปโดยไม่มีใครรู้ */
     if (dpErr && dpErr.code !== '42P01') toast.error('โหลดทะเบียนจุดส่งไม่ได้: ' + dpErr.message);
     setDeliveryPoints(dpErr ? [] : (dps || []));
     setPurchaseRequests(purchases || []);
-    const lm = {};
-    (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
-    setLotSizeMap(lm);
+    if (!eKs) {
+      const lm = {};
+      (ks || []).forEach(s => { if (s.lot_size != null) lm[s.mat_no] = s.lot_size; });
+      setLotSizeMap(lm);
+    }
   }, []);
 
   const advanceLot = async (lot, next) => {
