@@ -93,7 +93,7 @@
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
 - `daily_production_logs.assigned_line` = **id จุดงาน ไม่ใช่ชื่อไลน์**
 - `employee_skills` — ห้ามเขียนคะแนนจาก client (ดู "Employee Skills & EXP Farming")
-- ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
+- ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`die_set_kinds`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
 - **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
 
 ---
@@ -614,9 +614,9 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 `Obeya.jsx` = 4 แท็บ: `kpi` 📋 บอร์ด KPI ราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ SQDCM **สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`)
 → `todo` 📌 งานค้างของส่วนงาน (`DeptDashboard` embed · `/dept-dashboard` redirect) → `table` ⚙️ ตั้งค่า/กรอก (`KpiMonthly.jsx`) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
 - **🔴 ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (ผังทุกมิติ · `utils/orgScope.js` · `?scope=kind:value` · เขียน `scope_kind/scope_value` ผ่าน `defScopeColumns()`) ห้าม select จาก `org_nodes kind='section'` เอง
-  · 🔴 **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** (23/09) — เลือกหน่วยแล้วมีชิป `💰 รหัส` กดสลับได้ · พิมพ์รหัสในช่องค้นเจอหน่วยเจ้าของ · `ccOf`/`ccOwnersOf`/`ccLabel` · **กลุ่มไลน์ที่ลูกคนละรหัส ห้ามเดาเอารหัสเดียว** · ⚠️ ข้อมูลจริงยังขัดกัน 3 จุด (ดูเอกสาร) จอโชว์ตามจริง ห้ามกลบที่ UI
+  · 🔴 **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** (23/09) — ชิป `💰 รหัส` กดสลับได้ · พิมพ์รหัสเจอหน่วยเจ้าของ · `ccOf`/`ccOwnersOf`/`ccLabel`/`ccUnder` · **ลิสต์รหัสเรียง+จัดกลุ่มตามผัง หน่วยที่เลือกขึ้นก่อน ห้ามเรียงเลข** (05/10) · กลุ่มไลน์ลูกคนละรหัส ห้ามเดา · ข้อมูลขัดกัน = โชว์ตามจริง
 - **🔴 `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟ · กริด · 🔍 ขยายเป็น popup — children/`foot` รับ `(k)=>node` ให้ฟอนต์โตตาม) — แก้หน้าตาแผ่นที่นั่นที่เดียว ห้ามทำ modal ขยายเองในหน้า
-- **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** ห้ามแยกคลัง/ตั้งเป้าคนละที่
+- **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** · **แผ่น = KPI ที่หน่วยถือจริง (05/10)**: 8 ช่องโชว์เมื่อมีนิยาม/มีไลน์ผลิต · KPI นอกช่อง = แผ่นเต็ม `def:<id>` · ยังไม่ตั้งเลย = template · นิยามโรงงานไม่นับว่าถือ
 - **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
 - **🔴 กฎความซื่อสัตย์ของจอ:** ข้อมูลไม่พอต้องเขียนบนจอ **ห้ามโชว์ 0 ห้ามซ่อนแผง** · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
 - **🔴 กลุ่มมีระบบ KPI ทางการ (KPI Online)** — ESM = ที่ผลิตตัวเลข Actual **ห้ามทำแข่ง/ห้ามคิดเกณฑ์สีเอง** · กติกาเลือก KPI ต่อหน่วยงาน

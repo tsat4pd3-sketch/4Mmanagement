@@ -201,7 +201,7 @@ export default function ScanModal({
               style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14 }}
             />
             <button onClick={submitTyped} className="tbtn"
-              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130c', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
               ตกลง
             </button>
           </div>

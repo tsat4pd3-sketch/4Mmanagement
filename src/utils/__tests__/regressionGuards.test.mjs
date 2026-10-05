@@ -57,6 +57,18 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'die-set-kinds-from-registry',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
+    re: /DIE_SET_KINDS\.(map|filter|find)\(/g,
+    why: 'รูปแบบชุดแม่พิมพ์เคย hardcode 4 ค่า (+ check constraint) — ทีมแม่พิมพ์เพิ่ม HYDROFORM/BEND เองไม่ได้ '
+       + 'และศัพท์ทางการหน้างานไม่เข้าใจ (user 2026-10-05) ⇒ ย้ายเป็นทะเบียน DR `die_set_kinds` '
+       + 'ถ้ามีจอวาดจาก DIE_SET_KINDS ตรงๆ อีก ชนิดที่ทีมเพิ่มเองจะไม่โผล่/ป้ายเป็นชื่อเก่า',
+    fix: 'ใช้ `useDieSetKinds()` (src/utils/useDieSetKinds.js) + `dieSetKindOptions()`/`dieSetKindLabel(v, kinds)` '
+       + '— DIE_SET_KINDS เหลือไว้เป็นค่าสำรองตอนยังไม่ apply migration เท่านั้น',
+    allow: { 'src/utils/useDieSetKinds.js': 'ตัวโหลดทะเบียน — ใช้ค่าสำรองเฉพาะตอนตารางยังไม่มี/ก่อนโหลดเสร็จ' },
+  },
+  {
     id: 'master-cache-swallow',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
@@ -98,6 +110,22 @@ const RULES = [
       'src/utils/monitorGrid.js': 99,    // เจ้าของสูตร
       'src/utils/monitorBoards.js': 99,  // เช็คว่าสูตรที่ DB อ้างมีอยู่จริงไหม (unknownRecur)
     },
+  },
+  {
+    id: 'monitor-parts-key-is-mat-plus-part',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการกลับไปใช้ "MAT เดี่ยว" เป็นคีย์แถวพาร์ทของบอร์ด Monitoring */
+    re: /onConflict:\s*['"`]board_id,\s*mat_no['"`]/g,
+    why: 'คีย์แถวพาร์ทของบอร์ด Monitoring ไม่ใช่ MAT เดี่ยว — ไฟล์จริงของทีมวางแผนมี MAT เดียวกัน '
+       + 'หลายแถว (300T: `20059152` = N1WB-E16A416 คว่ำครีบ / N1WB-E16A417 หงายครีบ · Total SL '
+       + '2,100 กับ 1,500) ⇒ คีย์ (board_id, mat_no) ทำให้ **แถวที่ 2 ถูกเขียนทับหายไปเงียบๆ** '
+       + 'หรือ upsert ล้มทั้งก้อน · เคยเกิดจริง 02–05/10: user นำเข้าไฟล์ไม่ได้ 2 รอบ '
+       + '(`no unique or exclusion constraint matching the ON CONFLICT specification` → '
+       + '`ON CONFLICT DO UPDATE command cannot affect row a second time`)',
+    fix: 'ใช้ `onConflict: \'board_id,row_key\'` โดย row_key มาจาก `partRowKey(mat_no, part_no)` '
+       + '(`src/utils/monitorBoards.js` — สูตรเดียวกับ trigger `monitor_parts_set_row_key()` ฝั่ง DR) '
+       + '· และยุบของซ้ำในก้อนเดียวด้วย `dedupeByKey()` ก่อนส่ง **ค่าล่างชนะ ห้ามรวมยอด**',
+    allow: {},
   },
   {
     id: 'modal-closes-on-backdrop',
@@ -732,6 +760,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'accent-bg-hardcoded-ink',
+    scan: ['src/pages', 'src/components', 'src/App.jsx'], ext: ['.jsx'],
+    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#/g,
+    why: 'สี --accent กลับด้านตามธีม (มืด = เขียวสว่าง #3dd65c · สว่าง = เขียวเข้ม #0d3d14) '
+       + 'ตัวหนังสือสีดิบบนพื้น accent จึงจมเสมอ 1 ธีม — ดำ (#071008) จมในธีมสว่าง · ขาว (#fff) จมในธีมมืด '
+       + '(05/10 · ปุ่ม "แจ้งซ่อมใหม่" /mtn-repair อ่านไม่ออก · เจอ 144 จุด 82 ไฟล์)',
+    fix: "ตัวหนังสือบนพื้น var(--accent) ใช้ color: 'var(--accent-ink)' เสมอ",
+    allow: {},
+  },
+  {
     id: 'card-shadow-via-token',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* จับเงาแบบ "การ์ด/ชิป" ที่เขียนค่าดิบ (offset แนวตั้ง 0-3px และเป็นเงาเดี่ยวทั้งค่า)
@@ -1173,6 +1211,26 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ unfiltered-session-bump-needs-shift-tier (2026-10-05) ─────────────────────────
+   subscribe `production_sessions` ของ DailyReport **กรองด้วยไลน์ไม่ได้** (หน้านี้ต้องแสดง
+   "รายการกะทั้งวัน" จึงต้องรู้เมื่อไลน์อื่นเปิดกะใหม่) ⇒ ทุก event ของทั้งโรงงาน ~20 ไลน์
+   ถึงทุกเครื่องที่เปิดหน้านี้ ~40 เครื่อง · แต่เนื้อที่จอใช้ (รายการกะ + ยอดค้างกะก่อน)
+   เปลี่ยน**ไม่กี่ครั้งต่อกะ** ⇒ เพดาน 15 วิ (LIVE.PAGE) จ่าย egress ~20 เท่าโดยไม่มีใครเห็นของใหม่
+   วัดจริง 02/10/2026: ยอดค้างกะก่อน 3,746 req/วัน + รายการกะทั้งวัน 2,564 req/วัน
+     = **คู่คิวรีที่หนักที่สุดของทั้งระบบ** (40-41 เครื่อง) ⇒ ย้ายเป็น LIVE.SHIFT = −5,250 req/วัน
+   🔴 LIVE.PAGE ถูกต้องสำหรับ bumpOrd/bumpDt/bumpDef เท่านั้น — 3 ตัวนั้นกรอง `session_id` ฝั่ง server แล้ว
+   (เป็นเทสแยก ไม่ใช่กฎในลิสต์ เพราะตัวสแกนของลิสต์ตรวจ**บรรทัดต่อบรรทัด** จับ coalesce ที่คร่อม 4 บรรทัดไม่ได้) */
+test('🛡️ unfiltered-session-bump-needs-shift-tier — bump ที่เกาะ subscribe ซึ่งกรองไลน์ไม่ได้ ต้องใช้ LIVE.SHIFT', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const m = /bumpSess\s*=\s*coalesce\([\s\S]{0,400}?LIVE\.([A-Z]+)/.exec(code);
+  assert.ok(m, 'หา `bumpSess = coalesce(…, LIVE.*)` ใน DailyReport.jsx ไม่เจอ — เปลี่ยนชื่อ/ย้ายที่ '
+             + '(หรือเลิกใช้เพดานจาก refreshRates) แล้วต้องมาแก้เทสนี้ด้วย ห้ามลบทิ้งเฉยๆ');
+  assert.equal(m[1], 'SHIFT',
+    'bumpSess (subscribe `production_sessions` ทั้งตาราง กรองไลน์ไม่ได้) ต้องใช้เพดาน LIVE.SHIFT (5 นาที) '
+  + 'ไม่ใช่ LIVE.PAGE — วัดจริง 02/10/2026: LIVE.PAGE ทำให้ 2 คิวรีนี้รวม 6,310 req/วัน '
+  + 'ทั้งที่เนื้อเปลี่ยนไม่กี่ครั้งต่อกะ · เหตุผลเต็ม + ตัวเลข ดู LIVE.SHIFT ใน src/utils/refreshRates.js');
+});
+
 test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
@@ -1876,4 +1934,36 @@ test('🛡️ ตัวนำเข้า 862 ต้องตัดแถว "�
     + '   ทำไมห้าม: แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่รับแล้ว ไม่ใช่เที่ยวรถ\n'
     + '              ถ้าสร้างเป็นใบจะชนใบ e-SMART (เกิดจริง AAT 01–02/10: ค้างแดง 1,605 + 1,415 ชิ้น)\n'
     + '   แก้ยังไง: ดู splitCumCatchUp ใน src/utils/ediMerge.js\n');
+});
+
+/* ── คน "หายทั้งส่วนงาน" เพราะกรองส่วนงานด้วย line_id (บั๊กจริง 05/10/2026) ────────────
+   หัวหน้า PD2 แจ้ง "เช็คชื่อพนักงานผมหายหมดเลย" — ตั้งแผนก Assembly Line D ครบทุกคนแล้ว
+   แต่ `employees.line_id` ยัง null ทั้ง 35 คน (กลุ่ม Assembly Line D2-D6 ในผังยังไม่ผูกไลน์ผลิต)
+   จอเช็คชื่อกรอง section ด้วย `sectionFamilyIds.has(line_id)` ⇒ ไม่มีใครผ่านเลย = "แสดง 0 คน"
+   กฎ: เลือก "ส่วนงาน" ต้องยึด `section` · เลือก "ไลน์" ค่อยยึด `line_id` (เข้มเหมือนเดิม) */
+test('🛡️ /checkin: กรองด้วยส่วนงานต้องไม่ทิ้งคนที่ยังไม่ผูกไลน์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  assert.ok(/if\s*\(\s*selSection\s*\)\s*return[^;]*emp\.section\s*===\s*selSection/.test(code),
+    '\n\n❌ Checkin.jsx กรอง selSection โดยไม่มีทางออกให้คนที่ line_id ว่าง\n'
+    + '   ทำไมห้าม: ผู้ใช้เลือก "ส่วนงาน" แต่โค้ดถามว่า "อยู่ไลน์ไหน" ⇒ คนที่ยังไม่ผูกไลน์หายเงียบทั้งกอง\n'
+    + '              (เกิดจริง 05/10/2026 — PD2 คนหน้างาน 35 คน เช็คชื่อขึ้น 0 คน)\n'
+    + '   แก้ยังไง: `return sectionFamilyIds.has(el) || (!el && emp.section === selSection)`\n'
+    + '              แล้วนับคนที่ไม่มีไลน์ขึ้นเตือนบนจอ (noLineCount) — ห้ามปนเงียบ ๆ\n');
+});
+
+/* ── ตัวเลือกใน dropdown ต้องมาจากกองเดียวกับที่ตารางโชว์ (บั๊กจริง 05/10/2026) ──────────
+   /operator สร้างตัวเลือก แผนก/กลุ่ม/ทีม จาก [...employees, ...inactiveEmployees] ขณะที่ตาราง
+   โชว์ทีละกองตาม showInactive ⇒ dropdown เสนอค่าที่เลือกแล้วได้ 0 แถว (user: "ตัวกรองมั่ว") */
+test('🛡️ /operator: ตัวเลือกตัวกรองต้องมาจากกองที่กำลังโชว์ ไม่ใช่รวมคนที่ปิดใช้งาน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+optPool\s*=\s*useMemo\(\s*\(\)\s*=>\s*\(\s*showInactive\s*\?/.test(code),
+    '\n\n❌ operator.jsx ไม่ได้สร้างตัวเลือกตัวกรองจาก optPool (กองที่กำลังโชว์)\n'
+    + '   ทำไมห้าม: ตารางโชว์ทีละกองตาม showInactive แต่ตัวเลือกมาจากทั้ง 2 กอง\n'
+    + '              ⇒ หัวหน้ากดกรองแล้วจอว่าง นึกว่าคนหาย (เกิดจริง 05/10/2026 PD2)\n'
+    + '   แก้ยังไง: `const optPool = useMemo(() => (showInactive ? inactiveEmployees : employees), …)`\n');
+  /* ห้ามเฉพาะ "แหล่งตัวเลือก" — การค้นคนตาม id ข้ามทั้ง 2 กอง (handleEdit/toggle) ยังถูกต้อง */
+  assert.ok(/const\s+empsInSec\s*=\s*useMemo\(\s*\(\)\s*=>\s*optPool\./.test(code),
+    '\n\n❌ operator.jsx: empsInSec (ต้นทางตัวเลือก แผนก/กลุ่ม/ทีม) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
+  assert.ok(/optPool\.map\(e\s*=>\s*e\.section\)/.test(code),
+    '\n\n❌ operator.jsx: ตัวเลือกส่วนงาน (fallback) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
 });

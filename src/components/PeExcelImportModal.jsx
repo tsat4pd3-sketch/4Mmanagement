@@ -19,7 +19,7 @@ const CHUNK = 400;
 const chunks = (a, n = CHUNK) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
 const btn = { padding: '7px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer' };
-const btnPrim = { ...btn, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#04140a' };
+const btnPrim = { ...btn, background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--accent-ink)' };
 const lbl = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block' };
 const inp = { marginTop: 4, padding: '7px 9px', fontSize: 12, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
 

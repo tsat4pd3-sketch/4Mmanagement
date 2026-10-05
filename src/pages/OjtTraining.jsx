@@ -87,7 +87,7 @@ function SignPadModal({ title, onCancel, onDone }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={clear} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>🗑️ ล้าง</button>
           <button onClick={onCancel} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
+          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
         </div>
       </div>
     </div>
@@ -532,7 +532,7 @@ table{border-collapse:collapse}
         sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
         actions={canRecord ? (
           <button onClick={() => setEditing(emptyDraft())}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
             ➕ สร้างใบอบรม
           </button>
         ) : null} />
@@ -746,7 +746,7 @@ table{border-collapse:collapse}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
                 <button onClick={() => setEditing(null)} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกใบอบรม'}
                 </button>
               </div>

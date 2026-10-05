@@ -1078,7 +1078,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               }}>ยกเลิก</button>
               <button onClick={saveAction} disabled={saving} style={{
                 fontSize: 13.5, fontWeight: 800, padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
-                background: 'var(--accent)', color: '#08120a', border: 'none',
+                background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
               }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
             </div>
           </div>

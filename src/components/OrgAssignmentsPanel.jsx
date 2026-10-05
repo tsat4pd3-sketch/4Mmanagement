@@ -152,7 +152,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
             </div>
           </div>
           <button onClick={add} disabled={busy} style={{ padding: '7px 14px', borderRadius: 7, fontWeight: 700,
-            fontSize: 12, cursor: busy ? 'default' : 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' }}>
+            fontSize: 12, cursor: busy ? 'default' : 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
             บันทึก
           </button>
         </div>

@@ -44,7 +44,7 @@ const card = {
 };
 const btn = (active) => ({
   padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#08130a' : 'var(--text2)',
+  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? 'var(--accent-ink)' : 'var(--text2)',
   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
 });
 const inputSt = {
@@ -221,12 +221,20 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     const iShip = col(ediDict.ship_to);
     const iPo = col(ediDict.po);
     const out = [];
+    /* 🔴 แถวยอด 0 = ลูกค้าบอกว่า "วันนั้นไม่ต้องส่ง" — ไม่สร้างใบ แต่ต้องใช้เป็นขอบเขตแทนที่ (2026-10-05)
+       เดิมทิ้งทั้งแถว ⇒ ลูกค้าส่ง 0 ทั้งสัปดาห์ = ship-to/พาร์ทนั้นไม่อยู่ในไฟล์ ⇒ ใบ pending เก่าค้างเต็มบอร์ด
+       (เคสจริง AAT 05/10: "วีคนี้ไม่มีออเดอร์ AAT แต่ระบบขึ้น 28 รอบ") */
+    const zeros = [];
     let skipped = 0;
     body.forEach(r => {
       const part = String(r[iPart] ?? '').trim();
       if (!part) return;
       const qty = numCell(r[iQty]);
       const d = parseDateCell(r[iDate]);
+      if (d && qty <= 0) {
+        zeros.push({ part, date: dateStr(d), shipTo: String(r[iShip] ?? '').trim() || 'EDI',
+          dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null });
+      }
       if (qty <= 0 || !d) { skipped++; return; }
       out.push({
         part, qty, date: dateStr(d),
@@ -238,7 +246,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null,
       });
     });
-    return { is862, kind, rows: out, fName, skipped, sheet: sheet.sheet || null,
+    return { is862, kind, rows: out, zeros, fName, skipped, sheet: sheet.sheet || null,
       shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
@@ -458,9 +466,16 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           retiredMaps: [...retiredMaps.values()],
           nonFg: [...nonFgHits.entries()].filter(([part]) => !guessed.has(part)).map(([part, n]) => ({ part, mat: n.mat, name: n.name, shipTos: [...n.shipTos] })),
           sold,
-          shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
-          dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
-          dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
+          /* แถวยอด 0 (862 เท่านั้น) — ขยายขอบเขตแทนที่ให้ครอบวัน/ship-to ที่ลูกค้าบอกว่าไม่ต้องส่ง */
+          zeroRecs: is862 ? ediFiles.flatMap(f => f.zeros || []) : [],
+          ...(() => {
+            const all = is862 ? [...records, ...ediFiles.flatMap(f => f.zeros || [])] : records;
+            return {
+              shipTos: [...new Set(all.map(r => r.shipTo))].sort(),
+              dateFrom: all.reduce((a, r) => (a < r.date ? a : r.date), all[0].date),
+              dateTo: all.reduce((a, r) => (a > r.date ? a : r.date), all[0].date),
+            };
+          })(),
         });
         setHeaders([]); setRows([]); setFileName('');
         toast[kindGuess.sure ? 'success' : 'info'](
@@ -677,7 +692,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
             .gte('due_date', delFrom).lte('due_date', edi.dateTo),
           x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, dock: x.dock_code, date: x.due_date }),
-          edi.records, { useDock: true, from: delFrom });
+          [...edi.records, ...(edi.zeroRecs || [])], { useDock: true, from: delFrom });
         keptCount = r862.kept;
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
@@ -865,6 +880,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
+                {ediKind === 'orders' && edi.zeroRecs?.length > 0 && (
+                  <span title="ลูกค้าส่งยอด 0 = วันนั้นไม่ต้องส่ง · ใบ pending เดิมของพาร์ท/dock/วันนั้นจะถูกล้าง (ใบที่ยืนยัน/ส่งแล้วไม่ถูกแตะ)">
+                    🚫 ยอด 0 จากลูกค้า {edi.zeroRecs.length} แถว ({[...new Set(edi.zeroRecs.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')}) → ล้างใบรอส่งเดิมของวันนั้น
+                  </span>
+                )}
                 {edi.mappedCount > 0 && <span title="จับคู่ตามที่คนยืนยันไว้ในทะเบียน edi_part_map">✅ ใช้คู่ที่ยืนยันไว้ {edi.mappedCount} รายการ</span>}
                 <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
                   🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
@@ -901,7 +921,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
@@ -943,7 +963,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </table>
               </div>
               <button onClick={doImport} disabled={saving}
-                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังนำเข้า...' : `⬆ นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>

@@ -85,6 +85,7 @@ export const AUDIT_TABLE_LABELS = {
   pm_checkpoint_categories:'🛠️ ประเภทจุดตรวจ',
   die_sets:                '🔨 ชุดแม่พิมพ์',
   die_op_types:            '🔨 กระบวนการแม่พิมพ์',
+  die_set_kinds:           '🔨 รูปแบบชุดแม่พิมพ์',
   equipment_die:           '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง)',
   die_storage_areas:       '🗺️ ผังจัดเก็บแม่พิมพ์',
   press_setup_rules:       '⏱️ กฎเวลาเปลี่ยนรุ่น (ปั๊ม)',

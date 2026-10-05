@@ -1046,7 +1046,7 @@ export default function AddUser() {
 
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button type="button" onClick={addEmployee} disabled={newEmpSaving}
-                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
                             {newEmpSaving ? 'กำลังบันทึก...' : 'บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้'}
                           </button>
                           <button type="button" onClick={() => setNewEmp(null)}
@@ -1091,7 +1091,7 @@ export default function AddUser() {
                       {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
                     </select>
                     <button type="button" onClick={addPosition} disabled={newPosSaving}
-                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
+                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
                       {newPosSaving ? '...' : 'บันทึกตำแหน่ง'}
                     </button>
                   </div>

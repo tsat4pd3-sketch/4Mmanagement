@@ -1102,9 +1102,19 @@ export default function Checkin() {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
     const el = effLineIdOf(emp);
     if (selLine)    return selLineFamilyIds?.size ? selLineFamilyIds.has(el) : el === Number(selLine);
-    if (selSection) return sectionFamilyIds.has(el);
+    /* 🔴 กรองด้วย "ส่วนงาน" ต้องไม่ทิ้งคนที่ยังไม่ผูกไลน์ (2026-10-05 · หัวหน้า PD2 แจ้ง "หายไปหมดเลย")
+       เดิมเช็ค `sectionFamilyIds.has(el)` อย่างเดียว = ถามว่า "อยู่ไลน์ไหน" ทั้งที่ผู้ใช้เลือก "ส่วนงาน"
+       ⇒ คนที่ `line_id` ยัง null **หายทั้งหมดอย่างเงียบ ๆ** · วัดจริง: PD2 มีคนหน้างาน 35 คน
+       ตั้งแผนกครบแล้วแต่ line_id ว่างทุกคน (กลุ่ม Assembly Line D2-D6 ในผังยังไม่ผูกไลน์ผลิต)
+       ⇒ จอขึ้น "แสดง 0 คน" เช็คชื่อทั้งส่วนงานไม่ได้เลย
+       กติกา: **เลือกส่วนงาน = ยึด section · เลือกไลน์ = ยึด line_id (เข้มเหมือนเดิม)**
+       fail-open แบบเดียวกับ `onlyShopfloorStaff` — "นับเกินแล้วเห็น" ดีกว่า "หายเงียบ"
+       (คนที่ไม่มีไลน์ถูกนับในแถบเตือนใต้แถบกรอง ไม่ใช่ปล่อยให้ปนเงียบ ๆ) */
+    if (selSection) return sectionFamilyIds.has(el) || (!el && emp.section === selSection);
     return true;
   });
+  // คนที่โชว์อยู่แต่ยังไม่ผูกไลน์ — ต้องบอกบนจอว่าทำไมถึงขึ้นมา และจะหายเมื่อกรองรายไลน์
+  const noLineCount = displayed.filter(e => !effLineIdOf(e)).length;
 
   /* Summary counts */
   const counts = displayed.reduce((acc, emp) => {
@@ -1318,6 +1328,12 @@ export default function Checkin() {
           {/* Employee count badge */}
           <span className="filter-count">
             แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
+            {noLineCount > 0 && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}
+                title="คนเหล่านี้อยู่ส่วนงานนี้แต่ยังไม่ได้ผูกไลน์ — จะไม่ขึ้นเมื่อกรองรายไลน์ ไปผูกที่ ฐานข้อมูลพนักงาน (ช่อง Group / กลุ่ม)">
+                ⚠ {noLineCount} คนยังไม่ผูกไลน์
+              </span>
+            )}
           </span>
         </FilterBar>
       )}
@@ -1766,7 +1782,7 @@ export default function Checkin() {
               <button
                 onClick={handleSave}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                  background: 'var(--accent)', color: '#fff', border: 'none' }}>
+                  background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                 ✓ ใช่ บันทึกเลย
               </button>
             </div>
@@ -1870,7 +1886,7 @@ export default function Checkin() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
                 {otBookSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการจอง'}
               </button>
             </div>
@@ -1910,7 +1926,7 @@ export default function Checkin() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
                 {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
               </button>
             </div>

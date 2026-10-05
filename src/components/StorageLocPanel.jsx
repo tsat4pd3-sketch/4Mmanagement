@@ -198,7 +198,7 @@ export default function StorageLocPanel() {
           )}
           {canManage && !missing && (
             <button onClick={() => setEdit({ code: '', name: '', kind: '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] })}
-              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
               + เพิ่มรหัสคลัง
             </button>
           )}
@@ -398,7 +398,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
           <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
           <button onClick={submit} disabled={busy || badFormat}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
             {busy ? '...' : '💾 บันทึก'}
           </button>
         </div>

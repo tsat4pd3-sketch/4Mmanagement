@@ -383,7 +383,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                   <button key={k} onClick={() => setLeanAxis(k)}
                     style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: leanAxis === k ? '1px solid var(--accent)' : '1px solid var(--border)',
-                      background: leanAxis === k ? 'var(--accent)' : 'transparent', color: leanAxis === k ? '#fff' : 'var(--text2)' }}>{lb}</button>
+                      background: leanAxis === k ? 'var(--accent)' : 'transparent', color: leanAxis === k ? 'var(--accent-ink)' : 'var(--text2)' }}>{lb}</button>
                 ))}
               </div>
             </div>

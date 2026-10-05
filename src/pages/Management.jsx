@@ -1425,7 +1425,7 @@ export default function Management() {
             const active = mainView === v.k;
             return (
               <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? '#08130a' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
+                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
                 {v.icon} {v.label}
               </button>
             );
@@ -1731,7 +1731,7 @@ export default function Management() {
                     style={{ width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                   <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -2489,7 +2489,7 @@ export default function Management() {
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
             boxShadow: '0 4px 20px rgba(61,214,92,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2859,7 +2859,7 @@ export default function Management() {
                 } finally {
                   setIsSavingDoc(false);
                 }
-              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
+              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
                 {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
               </button>
               <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
@@ -2990,7 +2990,7 @@ export default function Management() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
