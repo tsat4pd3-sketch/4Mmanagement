@@ -250,11 +250,13 @@ export default function OrgSetup() {
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
-    const { error } = modal.editing
-      ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
-      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 });
+    // นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error ⇒ เดิมขึ้น "แก้ไขสำเร็จ" ทั้งที่ไม่ได้แก้
+    const { data: wrote, error } = modal.editing
+      ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id).select('id')
+      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 }).select('id');
     setSaving(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
+    if (!wrote?.length) return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว');
     toast.success(modal.editing ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
     setModal(null);
     fetchAll();
@@ -263,8 +265,9 @@ export default function OrgSetup() {
   const toggleActive = async (node) => {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
     if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
-    const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
+    const { data: wrote, error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id).select('id');
     if (error) return toast.error(error.message);
+    if (!wrote?.length) return toast.error(`${node.is_active ? 'ปิด' : 'เปิด'}ใช้งานไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว`);
     fetchAll();
   };
 
@@ -283,8 +286,9 @@ export default function OrgSetup() {
         + ' · ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน');
     }
     if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
-    const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
+    const { data: gone, error } = await supabase.from('org_nodes').delete().eq('id', node.id).select('id');
     if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ลบไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือรายการนี้ถูกลบไปแล้ว');
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);
