@@ -1141,3 +1141,35 @@ migration `20260925_shipping_order_cancel.sql` (**apply แล้ว**) — ค�
   ถ้าลืมอัป จอยังเงียบเหมือนเดิม (เห็นแค่ใบเก่า) · ควรทำต่อ
 - `ship_time` ว่างทุกใบ (ไฟล์ไม่มีเวลาส่ง) ⇒ การ์ดขึ้น "⏱ ไม่ระบุเวลา" และเรียงท้ายสุด — ต้องถามแพลนนิ่งว่ารอบส่งจริงกี่โมง
 - ทะเบียน `customers` มี `ARGEN` กับ `ARGENTINA` เป็นคนละแถว (ชีทชื่อ `Argen` จึงได้ `Argen`) — ควรยุบเป็นตัวเดียว/ใส่ alias
+
+
+---
+
+## 📊 แถว "ยอดค้างตาม Cum" ของ 862 ≠ เที่ยวรถ — AAT ชน e-SMART (2026-10-05)
+
+**user:** *"logistic ลูกค้า AAT ยังมีปัญหา 862 ชนกับ esmart"*
+
+**ต้นเหตุ (ดูจากไฟล์จริง `862_30.09.26.xlsm` ชีต GRBNA):** ทุกพาร์ทขึ้นต้นด้วยแถวพิเศษ 1 แถว:
+Forecast Date = วันออกไฟล์ (Horizon Start) · `Forecast Time` ว่าง ·
+Forecast Net Qty = **Forecast Cum Qty − Cum Shipped Qty** (70,510 − 69,970 = 540).
+นี่คือยอดที่ลูกค้าคิดว่าเรายังค้างส่ง ตามบัญชีสะสมของเขา (นับจาก ASN ที่รับแล้วถึง Cum End Date) **ไม่ใช่เที่ยวรถ**
+(วันถัดไปที่ไม่มีเวลาเป็น 0 ทั้งหมด · แถวที่มีเวลาเริ่มวันทำงานถัดไป)
+
+ตัวนำเข้าเดิมสร้างแถวนี้เป็นใบ pending "⏳ ไม่ระบุเวลา" แล้วมันค้างแดงอยู่ข้างใบ e-SMART ที่ส่งจริง
+เพราะทั้ง `findDoneCover` และ `planOrderUpdates` ตั้งใจไม่จับคู่ใบที่ไม่มีเวลา
+(วัดจริง: 01/10 ค้าง 1,605 ชิ้น · 02/10 ค้าง 1,415 ชิ้น · e-SMART ส่งรอบ 08:30 จริง 190 ชิ้น)
+
+**กฎ** (`splitCumCatchUp` ใน `src/utils/ediMerge.js` · เทส `ediCumCatchUp.test.mjs` · มีด่าน `regressionGuards`):
+- ship-to ที่มีตารางรอบ e-SMART (`customer_pull_rounds` · ตอนนี้มีแค่ GRBNA) ถือเป็นเจ้าของเที่ยวรถวันนี้
+  ⇒ แถว**ไม่มีเวลา ที่อยู่วันแรกของชุด** (ship-to·dock·พาร์ท) ในชีตที่มีแถวมีเวลา = ยอดค้างตาม Cum
+  ⇒ **ไม่สร้างเป็นใบส่ง** แต่ต้องโชว์บนจอ preview (แถบ 📊) และใน toast หลังนำเข้า **ห้ามทิ้งเงียบ**
+- ship-to ที่**ไม่มี** e-SMART (FTM/FVL/…) คงเดิม เพราะไม่มีใครดึงแทน ยอดค้างจึงต้องเป็นใบให้หน้างานส่ง
+- ชีตที่ไม่มีเวลาทั้งชีต (GBJWA/GBJWE/GBJWC) ไม่เข้าข่าย ใช้ `splitFirmVsForecast` ตามเดิม
+- อ่าน `customer_pull_rounds` ไม่ได้ = ไม่ตัดอะไร (พฤติกรรมเดิม) + เตือนบนจอ
+- `replaceScoped` ยังรับ `edi.records` ทั้งก้อน ⇒ ใบยอดค้างเก่าของวันเดียวกันถูกแทนที่ ไม่ค้างซ้อน
+
+**ล้างข้อมูลช่วงทดลอง (05/10 · DR):** ยกเลิก (`cancelled` + `cancel_reason` ห้าม delete) 35 ใบของ GRBNA/`edi_862`
+ที่ยังเป็น pending/confirmed และวันส่งก่อน 03/10: ยอดค้างตาม Cum 01–02/10 จำนวน 6 ใบ ·
+ก้อน 21/09 จำนวน 8 ใบ · ใบค้างก่อน go-live 25–26/09 จำนวน 21 ใบ · ไม่มีแถวสต็อกผูกอยู่ (ตรวจแล้ว 0)
+สำรองไว้ที่ `archive.cso_grbna_cum_cleanup_20261005`
+· ย้อนกลับ: `update customer_shipping_orders o set status=a.status, cancel_reason=null, cancelled_at=null, cancelled_by=null from archive.cso_grbna_cum_cleanup_20261005 a where o.id=a.id;`
