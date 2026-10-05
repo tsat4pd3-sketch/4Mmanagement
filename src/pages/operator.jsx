@@ -755,15 +755,21 @@ export default function Operator() {
   };
 
   const workTypes = useMemo(() => [...new Set(skillDefs.filter(sd => sd.category === 'allowance_skill' && sd.allowance_type).map(sd => sd.allowance_type))].sort(), [skillDefs]);
-  const allEmps = useMemo(() => [...employees, ...inactiveEmployees], [employees, inactiveEmployees]);
-  const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(allEmps.map(e => e.section).filter(Boolean))].sort(naturalCompare), [allEmps, orgSectionOpts]);
+  /* 🔴 ตัวเลือกในทุก dropdown ต้องมาจาก **กองเดียวกับที่ตารางกำลังโชว์** (2026-10-05 · user "ตัวกรองดรอปดาวยังมั่ว")
+     เดิมเป็น `[...employees, ...inactiveEmployees]` (รวมคนที่ปิดใช้งาน) ขณะที่ `displayed` โชว์ทีละกองตาม
+     `showInactive` ⇒ **dropdown เสนอค่าที่เลือกแล้วได้ 0 แถว** · วัดจริง PD2 05/10: คนที่ใช้งานอยู่มีแผนก
+     "Assembly Line D - GWM&RA" อย่างเดียว แต่ dropdown ขึ้น "ฝ่ายผลิต"/"ทั่วไป" (จากคนที่ปิดใช้งาน 18 คน)
+     และกลุ่มขึ้น "9"/"LINE ASSY TSRA" (จากคนที่ปิดใช้งานเช่นกัน — "9" คือ id ไลน์ที่เคยถูกเก็บเป็นชื่อกลุ่ม)
+     ⇒ หัวหน้ากดกรองแล้วจอว่าง นึกว่าคนหาย · **ห้ามกลับไปรวม 2 กองเป็นแหล่งตัวเลือกอีก** */
+  const optPool = useMemo(() => (showInactive ? inactiveEmployees : employees), [showInactive, employees, inactiveEmployees]);
+  const sectionOpts = useMemo(() => orgSectionOpts.length ? orgSectionOpts : [...new Set(optPool.map(e => e.section).filter(Boolean))].sort(naturalCompare), [optPool, orgSectionOpts]);
   // ประเภทแรงงาน direct/indirect derive จาก department ก่อน แล้ว section (ตั้งที่ผังองค์กร) — laborType.js
   // ช่างส่วนใหญ่อยู่ระดับแผนก → รวมทั้ง section + department nodes ใน map
   const laborMap = useMemo(() => buildLaborMap([...orgSectionNodes, ...orgDeptNodes]), [orgSectionNodes, orgDeptNodes]);
   const empLabor = (emp) => laborTypeOf(emp.section, emp.department, laborMap);
   // ตัวเลือก filter ไล่ตามลำดับชั้นองค์กร (cascade — คำสั่ง user 2026-07-21): Dept เฉพาะใน Section ที่เลือก ·
   // Group เฉพาะใน Section+Dept · Team ตามที่เหลือ — ดึงจากข้อมูลพนักงานจริง (ตรงกับแถวในตารางเสมอ ไม่มีตัวเลือกข้าม section/ซ้ำ)
-  const empsInSec   = useMemo(() => allEmps.filter(e => !filterSection || e.section === filterSection), [allEmps, filterSection]);
+  const empsInSec   = useMemo(() => optPool.filter(e => !filterSection || e.section === filterSection), [optPool, filterSection]);
   // ตัวกรองแผนก = จัดกลุ่มตามผังองค์กร แต่**โชว์เฉพาะแผนกที่มีพนักงานจริง** (ทุกตัวเลือกเจอคนแน่นอน — หัวหน้าหาคนไม่หาย)
   //   "ในผัง" = แผนกในผังที่มีพนักงาน · "นอกผัง" = แผนกที่พนักงานกรอกไว้แต่ยังไม่มีในผัง (ต้องจัดข้อมูล) · เรียงตาม sort_order ผัง
   const deptOrgList  = useMemo(() => {
@@ -847,6 +853,12 @@ export default function Operator() {
     else if (!orgDeptKeys.has(dep.toLowerCase())) r.push(`แผนก "${dep}" ไม่มีในผัง`);
     const grp = String(emp.group_name || '').trim();
     if (grp && orgLineNodes.length && !allOrgLineKeys.has(grp.toLowerCase())) r.push(`กลุ่ม "${grp}" ไม่มีในผัง`);
+    /* 🔴 คนหน้างานที่ไม่มี `line_id` = **หายจากหน้าเช็คชื่อ/ผังกำลังคนทั้งหมด** (จอพวกนั้นลิสต์คนด้วย line_id)
+       ตั้ง "แผนก" อย่างเดียวไม่พอ — `line_id` มาจาก **กลุ่ม** (org_nodes kind='line' → `ref_line_id`)
+       เคสจริง 05/10 (หัวหน้า PD2 แจ้งทาง LINE "เช็คชื่อพนักงานผมหายหมดเลย"): ตั้งแผนก Assembly Line D
+       ให้ครบทุกคนแล้ว แต่ทั้ง 35 คน `line_id` ยัง null ⇒ เช็คชื่อว่างเปล่า **โดยไม่มีอะไรบนจอบอกสักคำ**
+       · สายสนับสนุน (staff_kind=support) ไม่เข้าเกณฑ์นี้ — ไม่ได้อยู่ไลน์อยู่แล้ว */
+    if (isShopfloorStaff(emp) && !emp.line_id) r.push('ยังไม่ผูกไลน์ — จะไม่ขึ้นในหน้าเช็คชื่อ');
     return r;
   }, [orgDeptNodes, orgLineNodes, orgDeptKeys, allOrgLineKeys]);
   // section ที่ผังยังไม่มีแผนกใต้มันเลย → พนักงาน section นั้น "แก้ผ่านฟอร์มไม่ได้" (ไม่มีตัวเลือกให้เลือก)
@@ -1130,7 +1142,8 @@ export default function Operator() {
                 ⚠️ ข้อมูลไม่ตรงผังองค์กร {offOrgStat.total} คน
               </span>
               <span style={{ fontSize: 11, color: 'var(--text2)' }}>
-                แผนก/กลุ่มที่บันทึกไว้ไม่มีในผัง (ข้อมูลเก่าก่อนระบบบังคับเลือกจากผัง) — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
+                แผนก/กลุ่มไม่มีในผัง หรือ <b>ยังไม่ผูกไลน์ (คนหน้างานที่ไม่มีไลน์จะไม่ขึ้นในหน้าเช็คชื่อ)</b> — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
+                · <b>ไลน์มาจาก "กลุ่ม" ไม่ใช่ "แผนก"</b> — ตั้งแผนกอย่างเดียวยังไม่พอ
                 {offOrgStat.blocked > 0 && (
                   <> · <b style={{ color: '#f59e0b' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
                     ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
@@ -1957,8 +1970,15 @@ export default function Operator() {
                   const sameGroup = (g, v) => g.name === v || (g.code && g.code === v);
                   const curInOrg = orgGroups.some(g => sameGroup(g, cur));
                   if (orgGroups.length) {
+                    /* 🔴 กลุ่มในผังที่ยังไม่ผูกไลน์จริง (`ref_line_id` ว่าง) → เลือกแล้ว `line_id` เป็น null
+                       = คนนั้น**หายจากหน้าเช็คชื่อ/ผังกำลังคน** · เดิมเกิดเงียบสนิท (05/10 PD2 35 คน:
+                       หัวหน้าตั้งแผนก+กลุ่มครบแล้วแต่เช็คชื่อยังว่าง เพราะ Assembly Line D2-D6 ยังไม่ผูกไลน์)
+                       ⇒ ติดป้ายในตัวเลือก + เตือนใต้ช่อง พร้อมบอกว่าไปผูกที่ไหน **ห้ามปล่อยให้เงียบอีก** */
+                    const curNode = orgGroups.find(g => sameGroup(g, cur));
+                    const noRef   = orgGroups.filter(g => !g.ref_line_id);
                     return (
-                      <select value={curInOrg ? (orgGroups.find(g => sameGroup(g, cur))?.name ?? cur) : cur}
+                      <>
+                      <select value={curInOrg ? (curNode?.name ?? cur) : cur}
                         disabled={!editingEmp.department} onChange={e => {
                         const val = e.target.value;
                         const g = orgGroups.find(x => sameGroup(x, val));
@@ -1966,9 +1986,24 @@ export default function Operator() {
                         setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
                       }}>
                         <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
-                        {orgGroups.map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                        {orgGroups.map(g => (
+                          <option key={g.id} value={g.name}>{g.name}{g.ref_line_id ? '' : '  ⚠ ยังไม่ผูกไลน์'}</option>
+                        ))}
                         {cur && !curInOrg && <option value={cur}>{cur} (นอกผัง — ค่าเดิม)</option>}
                       </select>
+                      {curInOrg && !curNode?.ref_line_id && (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                          ⚠️ กลุ่ม <b>{curNode?.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่คนนี้
+                          <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
+                          <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                        </div>
+                      )}
+                      {!curInOrg && noRef.length > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                          ⚠ มี {noRef.length} กลุ่มในแผนกนี้ที่ยังไม่ผูกไลน์ผลิต — เลือกแล้วจะไม่ขึ้นในหน้าเช็คชื่อ
+                        </div>
+                      )}
+                      </>
                     );
                   }
                   // fallback: ผังยังไม่มีกลุ่มใต้แผนกนี้ → ใช้ production_lines เดิม (normalize + fail-open)
