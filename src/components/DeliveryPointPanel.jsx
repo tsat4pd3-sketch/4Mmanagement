@@ -17,6 +17,7 @@
  * ตาราง: line_delivery_points (DR · anon) · สิทธิ์ `delivery_point:manage` · actor stamp ผ่าน DR_AUDIT_TABLES
  */
 import { useState, useEffect, useCallback, useContext, useMemo } from 'react';
+import CollapseCard from './CollapseCard';
 import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
@@ -126,24 +127,16 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
 
   if (!lineName) return null;
 
-  const box = { marginTop: 16, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px' };
-
   return (
-    <div style={box}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => setOpen(v => !v)} className="tbtn"
-          style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 14, fontWeight: 800, cursor: 'pointer', padding: 0 }}>
-          {open ? '▾' : '▸'} 🎯 จุดส่งงานหน้าไลน์
-          {open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}
-        </button>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</span>
-        {open && canManage && isLeaf && !form && !missing && (
-          <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', '#08130c'), marginLeft: 'auto' }}>+ เพิ่มจุดส่ง</button>
-        )}
-      </div>
-
-      {open && (
-        <div style={{ marginTop: 10 }}>
+    /* พับด้วย CollapseCard ของกลาง (05/10) — ปุ่ม "+ เพิ่มจุดส่ง" อยู่หัวการ์ด เห็นแม้พับอยู่ */
+    <CollapseCard id="deliveryPoints" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
+      title={<>🎯 จุดส่งงานหน้าไลน์{open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}</>}
+      right={open && canManage && isLeaf && !form && !missing && (
+        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', '#08130c'), flexShrink: 0 }}>+ เพิ่มจุดส่ง</button>
+      )}>
+      <>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</div>
+        <div>
           <ReadOnlyNote show={!canManage} role={role} what="ตั้งจุดส่งงานของไลน์" permKey="delivery_point:manage" compact />
 
           {missing && (
@@ -257,7 +250,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             </div>
           )}
         </div>
-      )}
-    </div>
+      </>
+    </CollapseCard>
   );
 }
