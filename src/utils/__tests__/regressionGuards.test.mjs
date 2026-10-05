@@ -1189,6 +1189,37 @@ const RULES = [
       'src/utils/planLots.js': 'เจ้าของสูตร — เป็นที่คิด qty × CT เอง',
     },
   },
+  {
+    id: 'legacy-redirect-keeps-query',
+    scan: ['src/App.jsx'], ext: ['.jsx'],
+    /* route เก่าที่ยุบเป็นแท็บ แต่ redirect ด้วย <Navigate to="...?tab=..."> ลอยๆ */
+    re: /<Navigate\s+to="[^"]*\?tab=/g,
+    why: '`<Navigate to="/pm?tab=forecast">` **ทิ้ง query เดิมทั้งหมด** — ลิงก์/บุ๊กมาร์กเก่า `/pm-forecast?tab=usage` '
+       + 'ตกแท็บแรกเงียบๆ และ `?dept=`/`?line=` หาย (QC 05/10: PM 5 route + Daily Checker 4 route)',
+    fix: 'ใช้ `<LegacyTabRedirect to="/pm" tab="forecast" subParam="fc" />` (App.jsx) — ส่งต่อ param ครบ '
+       + 'และย้าย `?tab=` เก่าไปเป็น param ของหน้าลูก (ชื่อเดียวกับที่หน้าลูกส่งให้ useTabParam)',
+    allow: {},
+  },
+  {
+    id: 'daily-report-close-by-permission',
+    scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
+    /* ตัดสิน "ปิดตรง vs ส่งขอปิด" ด้วยชื่อ role */
+    re: /(isLeaderRequest\s*=\s*role\s*===|role\s*===\s*'leader'\s*\?\s*'📋)/g,
+    why: 'ปิดกะตรง/ส่งขอปิดเคยตัดสินด้วย `role === \'leader\'` ⇒ role ที่ /permissions แจก `request_close` อย่างเดียว '
+       + '(ไม่มี `close_shift`) **ปิดกะตรงข้ามการอนุมัติ SV ได้** (QC 05/10)',
+    fix: 'ใช้ `closeIsRequest` (= `!can(\'daily_report\',\'close_shift\')`) ที่ประกาศคู่ canManage',
+    allow: {},
+  },
+  {
+    id: 'daily-report-backfill-shift-window',
+    scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
+    /* เช็คเวลาย้อนหลังด้วยช่วงชั่วโมงตายตัว 08–20 */
+    re: /\b\w+\s*>=\s*8\s*&&\s*\w+\s*<\s*20\b/g,
+    why: 'ด่านเวลาย้อนหลังเคย hardcode 08–20 ⇒ กะดึกที่เริ่ม 22:30 / กะเช้าลาก OT ข้าม 20:00 ถูกบล็อกผิด '
+       + 'และกะดึกกรอก 08:30 (ส่งกะ) ถูกตีว่าหลุดกรอบ (QC 05/10 · CLAUDE.md §เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง)',
+    fix: '`backfillWindowError(hhmm)` ใน DailyReport (→ `resolveShiftTime` + `checkShiftTime` ของ src/utils/shiftWindow.js)',
+    allow: {},
+  },
 ];
 
 function violations(rule) {
