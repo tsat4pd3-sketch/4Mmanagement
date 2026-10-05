@@ -42,7 +42,7 @@
 **✅ แก้แล้ว batch 2 — คุณภาพ/วิศวกรรม + MTN/PM (branch `fix/qc-quality-mtn`)**
 | # | ที่ | สาระ |
 |---|---|---|
-| 1 | `QualityBins.jsx` | `toRed` ส่งต่อ `defect_log_id` (เดิม %Q มองไม่เห็นใบแดง ⇒ ของยืนยันเสียค้าง "รอ QA") · ป้ายเกินอายุแท็กนับจากคิวรีแยกไม่ผูกช่วงวันที่ · stale guard |
+| 1 | `QualityBins.jsx` | `toRed` ส่งต่อ `defect_log_id` (เดิม %Q มองไม่เห็นใบแดง ⇒ ของยืนยันเสียค้าง "รอ QA") · ป้ายเกินอายุแท็กนับจากคิวรีแยกไม่ผูกช่วงวันที่ (ชนเพดาน 500 / เช็คใบย้ายแดงล้ม = เขียนบนจอ) · stale guard |
 | 2 | `MaterialRequests.jsx` + `materialRequest.js` | เลขใบ = เลขสูงสุดของเดือน+1 (`maxReqSeq`) ออกใหม่ตอนบันทึก · ใบ approved/issued ห้ามลบจริง → ยกเลิก · ⚠️ แนะนำ unique index `material_requests.doc_no` (ยังไม่ทำ) |
 | 3 | `vsmModel.js` `demandOf` | Order/year = 12 เดือนจากเดือนที่เลือก + EDI 830 ชนะ manual รายเดือน · ไม่ครบ 12 เดือน = ≈ + จำนวนเดือน · เทส `vsmDemand` |
 | 4 | `QualityControl.jsx` dashboard | กรองสินค้าใช้ `defectQty`/`isTrialDefect` เหมือนทางหลัก · ขึ้นของสงสัยรอ QA · คิวรีล้ม = แถบเตือน (NCR/CAPA `—`) |
@@ -56,9 +56,9 @@
 | 12 | `ScanLanding.jsx` · `MtnRepair.jsx` | 🔴 **select `jigs.department` (ไม่มีคอลัมน์) ⇒ 42703 จิ๊กไม่เคยถูกพบ** → ถอด + แผนกจาก `checklists.department` ส่ง `&dept=` (ด่าน `jigs-has-no-department-column`) · ป้ายจุดส่ง ESM:D มีหน้าปลายทาง · `/mtn-repair` อ่าน `?q=` |
 | 13 | `MtnRepair.jsx` | ค่าแรงรายคน: บล็อกบันทึกจนโหลดของเดิมเสร็จ/สำเร็จ ไม่ทับแถวที่พิมพ์ · `loadOrders` error + แถบเพดาน 1000 · `before_img` / `call_mtn_at` อ่าน error |
 | 14 | `PMCheckData.jsx` | ผลรายจุดล้ม = ลบหัวใบ (ลบไม่ได้บอก) · `last_done_at` = `getWorkDate()` |
-| 15 | `PmCoordination.jsx` | `functions.invoke` error · toast เขียวตามผลจริง · tasks insert-ก่อน-ลบ · `setBusy(false)` |
+| 15 | `PmCoordination.jsx` | `functions.invoke` error · toast เขียวตามผลจริง · tasks insert-ก่อน-ลบ · `setBusy(false)` · แผนใหม่บันทึกซ้ำไม่สร้างหัวซ้ำ · stamp `last_done_at` = `getWorkDate()` + นับแถว |
 | 16 | `PmForecast.jsx` | `pm_usage_daily` ล้ม = แถบเตือน |
-| 17 | `MtnAnalysis.jsx` | stale guard = request id ใน load |
+| 17 | `MtnAnalysis.jsx` | stale guard = request id ใน load · UX: แท็บสินทรัพย์ตั้งต้น = กลุ่มแรกที่มีข้อมูล (`firstAssetWithData` + เทส) · ถอดชื่อตาราง/คอลัมน์ออกจากข้อความบนจอ |
 | 18 | `SparePartMaster.jsx` | delete ยอดใช้ manual อ่าน error |
 
 **✅ UX quick wins (05/10):** PPM ยอดผลิต 0 = "—" ไม่ใช่ 1,000,000 (`KpiMonthly` + `obeyaYear`) · `/program-update` ตั้งต้น "สำหรับผู้ใช้" ซ่อนเอกสาร/งานระบบ
