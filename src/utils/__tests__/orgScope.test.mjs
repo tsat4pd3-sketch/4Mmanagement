@@ -261,3 +261,18 @@ test('drillParams — ขอบเขตที่ไม่มีส่วนง�
   const idx = buildOrgScope({ nodes, lines, divisions });
   assert.deepEqual(drillParams(idx, { kind: 'department', value: 'JIG MTN' }), {});
 });
+
+/* 05/10 · user: "dropdown cost center ยังมั่ว ไม่ตรงหน้า set organize" — เดิมเรียงเลขรหัส ⇒ test groupe (6 หลัก) ขึ้นบนสุด
+   MTN/QA (9 หลัก) มาก่อน PD1–PD4 (10 หลัก) · ต้องเรียงตามตำแหน่งเจ้าของรหัสในผัง + จัดกลุ่มตามหน่วยบนสุด */
+test('cost center: ลำดับตามผังองค์กร (ไม่ใช่เรียงเลข) · กลุ่มตามหน่วยบนสุด · ccUnder คืนรหัสใต้หน่วยที่เลือก', () => {
+  const ccs = idx.options.filter(o => o.kind === 'cost_center').map(o => o.value);
+  assert.ok(ccs.indexOf('2140462000') < ccs.indexOf('2140563100'), 'PD3 (ฝ่ายผลิต) ก่อน JIG MTN (ฝ่ายช่าง) แม้เลขจะมากกว่า');
+  assert.ok(ccs.indexOf('2140662201') < ccs.indexOf('2140563100'), 'Line 60 (ใต้ PD3) ก่อน JIG MTN');
+  assert.ok(ccs.indexOf('2140563100') < ccs.indexOf('2140524100'), 'JIG MTN (ฝ่ายช่าง) ก่อน Store (ฝ่ายวางแผน-คลัง)');
+  assert.equal(idx.optionOf('cost_center', '2140662201').cc_group, 'PD3', 'กลุ่มของรหัสไลน์ = ส่วนงานบนสุด');
+  assert.equal(idx.optionOf('cost_center', '2140563100').cc_group, 'JIG MTN', 'แผนกขึ้นตรงฝ่าย = กลุ่มของตัวเอง');
+  const under = idx.ccUnder('section', 'PD3');
+  assert.ok(under.has('2140462000') && under.has('2140662201') && under.has('2140662101'), 'รหัสของ PD3 เองและของไลน์ใต้ PD3');
+  assert.ok(!under.has('2140563100') && !under.has('2140524100'), 'รหัสของหน่วยอื่นต้องไม่ติดมา');
+  assert.equal(idx.ccUnder('plant', '').size, ccs.length, 'ทั้งโรงงาน = ทุกรหัส');
+});
