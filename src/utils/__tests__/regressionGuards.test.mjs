@@ -2072,3 +2072,16 @@ test('🛡️ orgNodeRefs: คีย์จับคู่ของกลุ่�
     + '   ทำไม: code ของ kind=line เป็นเลขไลน์ (\'9\'/\'12\') ส่วน employees.group_name เก็บชื่อกลุ่ม\n'
     + '          สลับลำดับ = ไล่เปลี่ยนชื่อผิดคอลัมน์/นับคนไม่เจอ (operator.jsx §เลือกกลุ่ม)\n');
 });
+
+test('🛡️ insert/upsert ลง dr_products ห้ามส่ง created_by (ตารางไม่มีคอลัมน์นี้ — ผู้แก้ประทับเองที่ updated_by_*)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /from\(\s*'dr_products'\s*\)\s*\.\s*(?:insert|upsert)\(\s*\{[^}]*\bcreated_by\s*:/g;
+    for (const m of code.matchAll(re)) bad.push(`${relative(ROOT, file)}:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ส่ง created_by เข้า dr_products ${bad.length} จุด\n`
+    + '   ทำไมห้าม: PostgREST ปฏิเสธทั้งแถว "Could not find the created_by column" (เกิดจริง 05/10 ปุ่มเปิดใบ BOM ใช้ไม่ได้)\n'
+    + '   แก้ยังไง: ตัดฟิลด์นี้ออก — dr_products อยู่ใน DR_AUDIT_TABLES ผู้แก้ถูกประทับที่ updated_by_name/uid ให้เอง\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
