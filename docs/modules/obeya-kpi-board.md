@@ -918,3 +918,5 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 4. บอร์ด KPI ยัง `usePolling` ล้วน (ไม่มี realtime) — ควรเป็น `useLiveBoard(load, { tables:['production_sessions'] })` เหมือนแท็บ SQDCM
 5. `KpiMonthly` `parts_master` select ไม่มี filter (เพดาน 1000 แถวเงียบ) · `ObeyaKpiBoard` `.in('line_name', names.slice(0,200))` นับ "กะยังไม่ปิด" ขาดเมื่อขอบเขต >200 ไลน์
 6. `ChartModal` กราฟเส้น `domain=['auto','auto']` (แกนไม่เริ่ม 0 ไม่มีป้าย) · sparkline `MiniChart` พื้นแกน = min (ยอมรับได้ที่ 150×30 — ระบุเจตนาแล้ว)
+
+> 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)
