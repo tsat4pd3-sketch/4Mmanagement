@@ -165,8 +165,32 @@
    · **บั๊กคลาสนี้ build/lint/เทส/สวีปจอ จับไม่ได้เลย** เห็นตอนกดใช้จริงเท่านั้น
      ⇒ ตารางใหม่ที่ client จะ upsert **ต้องลองยิง upsert จริง 1 ครั้งก่อนปิดงาน**
    · แก้ด้วย `20261002_monitoring_parts_uniq_fix_dr.sql` (สร้าง index เต็มชื่อ `…_bm_uniq`)
-     ⚠️ `ON CONFLICT` จับคู่ด้วย**คอลัมน์ ไม่ใช่ชื่อ index** · index partial เดิมยังอยู่ (ซ้ำซ้อน
-     แต่ไม่เป็นอันตราย) เพราะ `DROP INDEX` ผ่าน MCP timeout ซ้ำๆ — เป็นงานค้างให้ลบทีหลัง
+     ⚠️ `ON CONFLICT` จับคู่ด้วย**คอลัมน์ ไม่ใช่ชื่อ index**
+   · ⚠️ แต่ **คีย์ที่เลือกยังผิดอยู่** — ดูข้อ 7
+
+7. 🔴🔴 **คีย์แถวพาร์ทคือ MAT + เลขพาร์ท ไม่ใช่ MAT เดี่ยว** (05/10 · user แจ้ง "ยังเอาไฟล์นี้เข้าไม่ได้อยู่ดี")
+   ข้อ 6 แก้ให้ index เป็นแบบเต็มแล้ว แต่ยังคา**สมมติฐานผิด** ว่า "1 MAT = 1 แถว" ⇒ รอบถัดมาขึ้น
+   **`ON CONFLICT DO UPDATE command cannot affect row a second time`** (คีย์ซ้ำใน**ก้อนเดียว**
+   ที่ส่งไป PostgreSQL ปฏิเสธทั้งก้อน) · ไล่ข้อมูลจริงในไฟล์แล้วพบ **2 เคสที่ต้องแยกกันคนละทาง**:
+   - **300T — ของจริงคนละแถว ห้ามยุบ:** MAT `20059152` มี 2 แถว
+     `N1WB-E16A416 (BL) คว่ำครีบ` / `N1WB-E16A417 (BL) หงายครีบ` · Total SL **2,100 กับ 1,500**
+   - **Argen — สำเนาในไฟล์ ยุบได้:** MAT `20065715` และ `20065635` ซ้ำโดยที่ **เลขพาร์ทเดียวกัน**
+     และทุกช่องที่ทับกัน**ค่าเท่ากันเป๊ะ** (256/256 · 192/192) = บล็อกที่ 2 เป็นสำเนา
+   ⇒ แก้ 2 ชั้นคู่กัน (ชั้นเดียวไม่พอ):
+   1. **คีย์ DB** → `row_key = mat_no || '|' || part_no` · unique `(board_id, row_key)` ·
+      **DB เป็นเจ้าของค่าผ่าน trigger `monitor_parts_set_row_key()`** ไม่ใช่ client คิดส่งมา
+      (วันหลังมีจอแก้ `part_no` แล้วลืมอัพเดทคีย์ = upsert ไปชนแถวผิดเงียบๆ)
+   2. **ยุบของซ้ำในก้อนก่อนส่ง** → `dedupeByKey()` (`monitorBoards.js`) **ค่าล่างชนะ**
+      🔴 **ห้ามรวมยอด** — 256+256 = 512 คือตัวเลขปลอมที่ไม่มีใครจับได้ ·
+      ซ้ำแล้ว**ค่าไม่ตรงกัน** ต้องนับแล้วเขียนบนจอ (ไฟล์ขัดกันเอง = คนต้องไปดู ห้ามกลืน)
+   · สูตรฝั่ง JS (`partRowKey`) กับ trigger ฝั่ง SQL **ต้องตรงกัน** — มีเทสอ่านไฟล์ migration
+     มาเทียบ + ด่าน `monitor-parts-key-is-mat-plus-part` ใน `regressionGuards`
+   · 💀 **`DROP INDEX` ผ่าน MCP ทำไม่ได้เลย** (ทดสอบแล้ว 05/10: สร้าง index เปล่าแล้วสั่งลบทันที
+     ยัง timeout ทั้ง `execute_sql`/`apply_migration`/`concurrently` · `pg_stat_activity` ว่าง
+     ไม่มีใครล็อก) ส่วน `CREATE`/`ALTER`/`CREATE TRIGGER` ผ่านปกติ
+     ⚠️ `apply_migration` เป็น transaction ⇒ **มี `drop` ปนอยู่ตัวเดียว ย้อนทั้งก้อน**
+     (ครั้งแรกใส่ `drop trigger if exists` ไปด้วย เลยไม่ได้อะไรเลยทั้งก้อน) ⇒ แยก `drop`
+     ให้ user รันใน SQL Editor ต่างหากเสมอ
 
 ---
 
@@ -190,7 +214,12 @@
 `monitor_boards` → `monitor_board_parts` → `monitor_cells`
 migration `20261001_monitoring_boards_dr.sql` (**apply แล้ว 01/10**) ·
 สิทธิ์ `20261002_monitoring_permissions_main.sql` (**apply แล้ว 02/10** · `page:/monitoring` 8 role ·
-`monitoring:manage` 5 role)
+`monitoring:manage` 5 role) ·
+`20261005_monitor_parts_row_key_dr.sql` (**apply แล้ว 05/10 เฉพาะส่วน create/alter** — `drop index`
+3 บรรทัดท้ายไฟล์ยังค้าง รอ user รันใน SQL Editor · ดูข้อ 7 + §9)
+
+- **`monitor_board_parts.row_key`** = `mat_no|part_no` · unique `(board_id, row_key)` ·
+  ค่าถูกเขียนโดย trigger `monitor_parts_set_row_key()` **ห้าม client ตัดสินใจเอง**
 
 - **`mat_no` เป็น text ไม่ผูก FK โดยตั้งใจ** — 43 จาก 106 พาร์ทในไฟล์จริงยังไม่อยู่ใน `dr_products`
   ผูก FK = เอาไฟล์เข้าระบบไม่ได้ = ทีมวางแผนกลับไปใช้ Excel ทันที
@@ -202,6 +231,11 @@ migration `20261001_monitoring_boards_dr.sql` (**apply แล้ว 01/10**) ·
 ---
 
 ## 9. งานที่ยังไม่ได้ทำ (ยังไม่มีคำสั่ง user)
+
+- 🔴 **ถอด index เก่าของ `monitor_board_parts`** — `…_bm_uniq` และ `…_uniq` (ทั้งคู่บน
+  `board_id, mat_no`) ต้องถูก `drop` ไม่งั้นแถวที่ 2 ของ MAT เดิมยังถูกปฏิเสธ · MCP ทำไม่ได้
+  (ข้อ 7) ⇒ **user รัน SQL ใน Supabase SQL Editor ของ "Product DB" (`eyhclzkifitbhbljgoav`)**
+  · SQL อยู่ในไฟล์ `supabase/migrations/20261005_monitor_parts_row_key_dr.sql` ท้ายไฟล์
 
 - **ส่งออกกลับเป็น .xlsx หน้าตาเดิม** — ทีมอาจยังต้องส่งไฟล์ให้คนนอกระบบ
 - **แถว UNBOUND ยังไม่มีใครใช้ต่อ** — เป็น "แผนค้างสะสม" ที่ควรไปโผล่ในแผนสั่งงาน (ล็อต)

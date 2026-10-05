@@ -100,6 +100,22 @@ const RULES = [
     },
   },
   {
+    id: 'monitor-parts-key-is-mat-plus-part',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการกลับไปใช้ "MAT เดี่ยว" เป็นคีย์แถวพาร์ทของบอร์ด Monitoring */
+    re: /onConflict:\s*['"`]board_id,\s*mat_no['"`]/g,
+    why: 'คีย์แถวพาร์ทของบอร์ด Monitoring ไม่ใช่ MAT เดี่ยว — ไฟล์จริงของทีมวางแผนมี MAT เดียวกัน '
+       + 'หลายแถว (300T: `20059152` = N1WB-E16A416 คว่ำครีบ / N1WB-E16A417 หงายครีบ · Total SL '
+       + '2,100 กับ 1,500) ⇒ คีย์ (board_id, mat_no) ทำให้ **แถวที่ 2 ถูกเขียนทับหายไปเงียบๆ** '
+       + 'หรือ upsert ล้มทั้งก้อน · เคยเกิดจริง 02–05/10: user นำเข้าไฟล์ไม่ได้ 2 รอบ '
+       + '(`no unique or exclusion constraint matching the ON CONFLICT specification` → '
+       + '`ON CONFLICT DO UPDATE command cannot affect row a second time`)',
+    fix: 'ใช้ `onConflict: \'board_id,row_key\'` โดย row_key มาจาก `partRowKey(mat_no, part_no)` '
+       + '(`src/utils/monitorBoards.js` — สูตรเดียวกับ trigger `monitor_parts_set_row_key()` ฝั่ง DR) '
+       + '· และยุบของซ้ำในก้อนเดียวด้วย `dedupeByKey()` ก่อนส่ง **ค่าล่างชนะ ห้ามรวมยอด**',
+    allow: {},
+  },
+  {
     id: 'modal-closes-on-backdrop',
     scan: ['src'], ext: ['.jsx'],
     /* จับ "ชั้น backdrop ของ modal มี onClick={onClose}" — บรรทัดเดียวกับ position:'fixed' / className="overlay"
