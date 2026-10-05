@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
+import { halfDayBreakIntervals } from '../utils/oee';
 import { createPortal } from 'react-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -1467,18 +1468,8 @@ export default function Management() {
           const imgByMatNo = lineProdData.imgByMatNo || {};
           const pairMatByMat = lineProdData.pairMatByMat || {};
           const breakPolicies = lineProdData.breakPolicies || [];
-          const getBreakIntervals = (half) => breakPolicies
-            .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-            .map(p => {
-              const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-              if (idx < 0) return null;
-              const mins = Number(String(p.start_time).slice(3,5)) || 0;
-              const s = half.startMs + idx * 3600000 + mins * 60000;
-              const e = s + (p.duration_min || 0) * 60000;
-              return [s, e];
-            })
-            .filter(Boolean)
-            .sort((a, b) => a[0] - b[0]);
+          // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+          const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
 
           // คำนวณคิวทั้งวัน (24 ชม.) ครั้งเดียวต่อแถว product แทนการตัดแยกทีละกะ
           // เพื่อให้การ์ดที่ดีเลย์ล้นข้ามกะ (เช่น ผลิตจากกะเช้าไปจบกะดึก) ต่อแถวเดิมได้ ไม่ถูกตัดทิ้งที่ขอบกะ

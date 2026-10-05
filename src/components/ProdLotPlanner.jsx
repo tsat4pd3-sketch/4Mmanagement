@@ -28,6 +28,7 @@ import { UserContext } from '../App';
 import { canSeeded } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
 import { toast } from '../components/Toast';
+import { fetchByIds } from '../utils/fetchByIds';
 import { snapMachineNo } from '../utils/machineNo';
 import { resolveSetupRule } from '../utils/pressSetup';
 import {
@@ -74,6 +75,7 @@ export default function ProdLotPlanner({
   const [useOtHoliday, setUseOtHoliday] = useState(false);
   const [lots, setLots]   = useState([]);
   const [orders, setOrders] = useState([]);
+  const [ordersErr, setOrdersErr] = useState(null);   // โหลดใบผลิตไม่ได้ ≠ "ยังไม่มีใครผลิต" — ต้องเขียนบนจอ
   const [dies, setDies]   = useState([]);          // die_sets + ความสูงจาก equipment_die
   const [rules, setRules] = useState([]);
   const [breakPolicies, setBreakPolicies] = useState([]);
@@ -121,13 +123,22 @@ export default function ProdLotPlanner({
     setDies(dieRes.data || []);                 // กรองตามพาร์ทตอนเลือกใน dieOptsForMat (ไลน์เดียวกันอาจใช้แม่พิมพ์ข้ามไลน์)
     setRules(ruleRes.data || []);
     setBreakPolicies(brkRes.data || []);
-    const sids = (sessRes.data || []).map(s => s.id);
-    if (sids.length) {
-      const { data: ord } = await supabaseDR.from('prod_orders')
-        .select('id, mat_no, prod_no, qty, qty_ok, qty_actual, status, is_manual, opened_at')
-        .in('session_id', sids);
-      if (alive()) setOrders(ord || []);
-    } else if (alive()) setOrders([]);
+    /* 🔴 QC 05/10 — เดิม error ถูกกลืนเป็น [] ⇒ ยอดจริงทุกล็อตขึ้น 0 "ยังไม่เริ่ม" ทั้งที่คิวรีล้ม (จอโกหก · กฎข้อ 12)
+       + `.in(session_id)` ยาว/เกิน 1000 แถว ⇒ ผ่าน fetchByIds (แบ่งก้อน+แบ่งหน้า) */
+    if (sessRes.error) {
+      setOrders([]); setOrdersErr(`โหลดกะของไลน์ไม่ได้: ${sessRes.error.message}`);
+    } else {
+      const sids = (sessRes.data || []).map(s => s.id);
+      if (sids.length) {
+        const r = await fetchByIds(sids, part => supabaseDR.from('prod_orders')
+          .select('id, mat_no, prod_no, qty, qty_ok, qty_actual, status, is_manual, opened_at')
+          .in('session_id', part));
+        if (alive()) {
+          setOrders(r.rows);
+          setOrdersErr(r.error ? `โหลดใบผลิตไม่ครบ: ${r.error}` : r.truncated ? 'ใบผลิตเยอะเกินเพดาน — ยอดจริงอาจไม่ครบ' : null);
+        }
+      } else if (alive()) { setOrders([]); setOrdersErr(null); }
+    }
     if (alive()) { setLoading(false); setDirty(false); }
   }, [lineName, date, lastDate]);
 
@@ -263,15 +274,23 @@ export default function ProdLotPlanner({
     const news = rows.filter(r => !r.id);
     const olds = rows.filter(r => r.id);
     let ok = true;
-    if (news.length) ok = await checkWrite(await supabaseDR.from('production_plan_lots').insert(news).select('id'), 'บันทึกล็อตใหม่') && ok;
+    const insertedNew = news.length
+      ? checkWrite(await supabaseDR.from('production_plan_lots').insert(news).select('id'), 'บันทึกล็อตใหม่')
+      : false;
+    if (news.length && !insertedNew) ok = false;
     for (const r of olds) {
       const { id, ...upd } = r;
-      ok = await checkWrite(await supabaseDR.from('production_plan_lots').update(upd).eq('id', id).select('id'), 'อัพเดทล็อต') && ok;
+      ok = checkWrite(await supabaseDR.from('production_plan_lots').update(upd).eq('id', id).select('id'), 'อัพเดทล็อต') && ok;
     }
     setSaving(false);
     if (ok) {
       const shifts = new Set(rows.map(r => `${r.work_date}|${r.shift}`)).size;
       toast.success(`บันทึกแผน ${rows.length} ล็อต · ${shifts} กะ ✓`);
+      await load();
+    } else if (insertedNew) {
+      /* 🔴 QC 05/10 — ล็อตใหม่ลงฐานแล้ว แต่ในจอยังเป็น `_new` ไม่มี id ⇒ กดบันทึกซ้ำ = insert ล็อตซ้ำ
+         ⇒ บันทึกล้มบางส่วนก็ต้องโหลดจากฐานใหม่ (ล็อตใหม่ได้ id) · ที่อัพเดทไม่ติดให้คนแก้ซ้ำ */
+      toast.error('บันทึกได้บางส่วน — ล็อตใหม่ลงแล้ว โหลดแผนล่าสุดจากฐานให้แล้ว ตรวจรายการที่อัพเดทไม่ติดแล้วบันทึกซ้ำ');
       await load();
     }
   };
@@ -323,6 +342,11 @@ export default function ProdLotPlanner({
           </>
         )}
       </FilterBar>
+      {ordersErr && (
+        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6 }}>
+          ⚠️ {ordersErr} — ยอดที่ผลิตจริงของล็อตด้านล่างอาจต่ำกว่าจริง (ไม่ใช่ "ยังไม่เริ่ม")
+        </div>
+      )}
 
       {!mayWrite && (
         <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12.5, color: 'var(--text2)' }}>

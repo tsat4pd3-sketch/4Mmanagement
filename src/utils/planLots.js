@@ -20,6 +20,7 @@
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 import { pairLoadTotal } from './pairTotals.js';
 import { sequenceSetup, orderByDieHeight } from './pressSetup.js';
+import { orderInQty } from './monitorSystem.js';
 
 export const LOT_STATUSES = ['planned', 'started', 'done', 'cancelled'];
 
@@ -214,9 +215,15 @@ export function splitPlanForSession(lots = [], session = null) {
      · 🔴 **พาร์ทที่ผลิตจริงแต่ไม่มีในแผนเลย = `offPlan` ต้องโชว์** (หน้างานทำนอกแผน ไม่ใช่ความผิด แต่ต้องรู้)
      · 🔴 **ไม่ตัดสินแทนคน** (คำสั่ง user) — ไม่เขียน status กลับฐาน ไม่ปิดล็อตเอง · คำนวณสดทุกครั้ง   */
 
-/** ยอดที่ทำได้จริงของใบผลิต 1 ใบ — ปิดแล้วใช้ qty_ok · ยังเปิดใช้ qty_actual */
-export const orderDonePcs = (o) =>
-  (o?.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)) || 0;
+/** ยอดที่ทำได้จริงของใบผลิต 1 ใบ — ปิดแล้วใช้ `orderInQty` (qty_ok → qty_actual) · ยังเปิดใช้ qty_actual
+ *  🔴 QC 05/10: เดิม confirmed ที่ไม่มี qty_ok ถอยไป `qty` (= **เป้า** ไม่ใช่ของที่ทำได้ — ขัด orderInQty) ·
+ *     ใบ `cancelled` ถูกนับ · `o` เป็น null แล้วพัง ⇒ ยกกฎมาจาก monitorSystem.js ที่เดียว
+ *  ใช้ที่: matchPlanToActual · PlannedLotQueue · FlowTower "ผลิตวันนี้" — **ห้ามเขียนสูตรนี้เองในหน้า** */
+export const orderDonePcs = (o) => {
+  if (!o || o.status === 'cancelled') return 0;
+  if (o.status === 'confirmed') return orderInQty(o) ?? 0;
+  return Number(o.qty_actual) || 0;
+};
 
 export function matchPlanToActual(lots = [], orders = []) {
   const active = sortBySeq(lots.filter(ACTIVE_LOT));

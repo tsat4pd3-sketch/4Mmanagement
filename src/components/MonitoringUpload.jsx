@@ -33,6 +33,18 @@ const monthKeyOf = (d) => String(d || '').slice(0, 7);
 const fmt = (n) => (Number(n) || 0).toLocaleString();
 const CHUNK = 400;   // กันคำขอยาวเกินเพดาน proxy (กฎเหล็กการเขียน DB ข้อ 5)
 
+/* ส่วนต่างสต็อก = ยอดในไฟล์ − ยอดปัจจุบัน (ต่อไลน์+พาร์ท) · 0 = ไม่ต้องลง */
+function stockPlanOf(recStock, stkRows, norm) {
+  const have = {};
+  (stkRows || []).forEach(s => { have[`${s.line_name}|${norm(s.mat_no)}`] = Number(s.qty_on_hand) || 0; });
+  return (recStock || []).map(s => {
+    const cur = have[`${s.line_name}|${norm(s.mat_no)}`] || 0;
+    return { ...s, have: cur, delta: s.qty - cur };
+  }).filter(s => s.delta !== 0);
+}
+const readStock = () => fetchAllRows(
+  supabaseDR, 'line_stock_summary', 'line_name, mat_no, qty_on_hand', q => q.order('line_name').order('mat_no'));
+
 async function insertChunked(table, rows, label) {
   for (let i = 0; i < rows.length; i += CHUNK) {
     if (!checkWrite(await supabaseDR.from(table).insert(rows.slice(i, i + CHUNK)), label)) return false;
@@ -92,15 +104,9 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
       const bySheet = sheetReport(parsed, { today, customers: custRows || [] });
 
       /* สต็อก: คิดส่วนต่างจากยอดปัจจุบัน (ลง ledger เป็น adjust — ย้อนได้ ตรวจได้) */
-      const { data: stkRows, error: stkErr } = await fetchAllRows(
-        supabaseDR, 'line_stock_summary', 'line_name, mat_no, qty_on_hand', q => q.order('line_name').order('mat_no'));
+      const { data: stkRows, error: stkErr } = await readStock();
       if (stkErr) { toast.error(`อ่านยอดคงเหลือไม่สำเร็จ: ${stkErr.message} — ยังไม่เขียนอะไร`); setBusy(false); return; }
-      const have = {};
-      (stkRows || []).forEach(s => { have[`${s.line_name}|${norm(s.mat_no)}`] = Number(s.qty_on_hand) || 0; });
-      const stockPlan = rec.stock.map(s => {
-        const cur = have[`${s.line_name}|${norm(s.mat_no)}`] || 0;
-        return { ...s, have: cur, delta: s.qty - cur };
-      }).filter(s => s.delta !== 0);
+      const stockPlan = stockPlanOf(rec.stock, stkRows, norm);
 
       /* LOT/Packing: เทียบกับ kanban_standards — แสดงอย่างเดียว ไม่เขียน */
       const { data: kbRows, error: kbErr } = await fetchAllRows(
@@ -191,19 +197,29 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     }
 
     // ⑤ สต็อกให้ตรงชีท — ลง ledger เป็น adjust (ไม่ลบของเก่า ย้อนได้)
+    /* 🔴 QC 05/10 — คิดส่วนต่างใหม่จากยอด "ณ ตอนกดยืนยัน" ไม่ใช้ส่วนต่างตอนพรีวิว
+       เดิม: กดยืนยันรอบแรก adjust ลงไปบางก้อนแล้วล้ม → กดซ้ำ = ลงส่วนต่างเดิมซ้ำทั้งชุด (ยอดเพี้ยน 2 เท่า)
+       + ระหว่างพรีวิวค้างไว้ มีใบปิด/จ่ายของเข้ามา ⇒ ส่วนต่างเก่าไม่ตรงอีกต่อไป
+       ตอนนี้: อ่านสต็อกสด → ที่ลงไปแล้วจะได้ส่วนต่าง 0 (ข้ามเอง) ⇒ อัพซ้ำ/กดซ้ำไม่ซ้อนจริง */
+    let stockDone = 0;
     if (ok && stockPlan.length) {
-      const tx = stockPlan.map(s => ({
+      const { data: freshStk, error: freshErr } = await readStock();
+      if (freshErr) { toast.error(`อ่านยอดคงเหลือล่าสุดไม่สำเร็จ — ยังไม่ปรับสต็อก: ${freshErr.message}`); ok = false; }
+      const plan = ok ? stockPlanOf(stockPlan, freshStk, norm) : [];
+      stockDone = plan.length;
+      const tx = plan.map(s => ({
         line_name: s.line_name, mat_no: s.mat_no, part_name: s.part_name || nameOfMat[norm(s.mat_no)] || null,
         qty: s.delta, type: 'adjust', work_date: today, status: 'approved',
         note: `ตั้งยอดให้ตรงไฟล์ Monitoring ${s.sheet} (ก่อนหน้า ${s.have} → ${s.qty})`,
         created_by: by, reviewed_by: by, reviewed_at: new Date().toISOString(),
       }));
-      ok = await insertChunked('line_stock_transactions', tx, 'ปรับยอดสต็อก');
+      if (ok && tx.length) ok = await insertChunked('line_stock_transactions', tx, 'ปรับยอดสต็อก');
     }
 
     setBusy(false);
     if (!ok) { toast.error('นำเข้าไม่ครบ — ดูข้อความแดงด้านบน แล้วลองใหม่ (อัพซ้ำได้ ไม่เกิดแถวซ้ำ)'); return; }
-    toast.success(`นำเข้าสำเร็จ — FC ${rec.forecasts.length} · ออเดอร์ ${future.length} · ประวัติ ${histUniq.length} · MIN ${rec.levels.length} · สต็อก ${stockPlan.length}`);
+    toast.success(`นำเข้าสำเร็จ — FC ${rec.forecasts.length} · ออเดอร์ ${future.length} · ประวัติ ${histUniq.length} · MIN ${rec.levels.length} · สต็อก ${stockDone}`
+      + (stockDone < stockPlan.length ? ` (อีก ${stockPlan.length - stockDone} รายการตรงไฟล์อยู่แล้ว)` : ''));
     setPreview(null);
     if (fileRef.current) fileRef.current.value = '';
     onImported?.();

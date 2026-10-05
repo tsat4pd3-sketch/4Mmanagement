@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import { orIlike } from '../utils/pgrstFilter';
 import { useSearchParams } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -95,6 +96,7 @@ export default function OrderTrace() {
   const [results, setResults] = useState([]);       // ใบที่ค้นเจอ
   const [includeOpen, setIncludeOpen] = useState(false);   // สอบกลับ = ของที่ออกจากไลน์แล้ว → ตัดใบที่ยังผลิตอยู่ออก
   const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState('');   // ค้นล้ม ≠ "ไม่เจอใบ" — ต้องเขียนบนจอ (กฎข้อ 12)
   const [sel, setSel] = useState(null);              // order ที่เลือก (พร้อม session)
   const [trace, setTrace] = useState(null);          // bundle ข้อมูลสอบกลับ
   const [claimFm, setClaimFm] = useState('');        // failure mode ที่เลือกจาก PFMEA ของพาร์ทนี้
@@ -159,7 +161,8 @@ export default function OrderTrace() {
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
         .order('opened_at', { ascending: false }).limit(300);
       if (!allowOpen) query = query.neq('status', 'open');
-      if (q) query = query.or(`prod_no.ilike.%${q}%,mat_no.ilike.%${q}%,part_name.ilike.%${q}%`);
+      // ห่อค่าด้วย orIlike — คำค้นที่มี , ( ) (ชื่อชิ้นงาน "BRKT (RH), LOWER") เคยทำคิวรีล้ม (QC 05/10)
+      if (q) query = query.or(orIlike(['prod_no', 'mat_no', 'part_name'], q));
       const { data, error } = await query;
       if (error) throw error;
       return (data || []).filter(o => inScope(o.production_sessions?.line_name));
@@ -182,6 +185,7 @@ export default function OrderTrace() {
       const seen = new Set(jr.map(r => r.id));
       return { rows: [...jr, ...tr.filter(r => !seen.has(r.id))], jHits: j ? jr.length : null };
     };
+    setSearchErr('');
     try {
       let { rows, jHits } = await both(withOpen);
       // สแกนมาแล้วไม่เจอเพราะใบยังผลิตอยู่ → หาให้ใหม่ (ไม่ปล่อยให้สแกนแล้วเงียบ)
@@ -193,7 +197,13 @@ export default function OrderTrace() {
       setResults(rows);
       if (q && rows.length === 1 && rows[0].prod_no === q) setSel(rows[0]);   // สแกนตรงเป๊ะใบเดียว → เปิดเลย
       return rows;
-    } catch { setResults([]); setJulHits(null); return []; }
+    } catch (e) {
+      /* 🔴 QC 05/10 — เดิม `catch {}` เงียบ ⇒ คิวรีล้มแล้วจอเหมือน "ค้นไม่เจอ" (คนเข้าใจว่าไม่มีใบนี้) */
+      setResults([]); setJulHits(null);
+      setSearchErr(`ค้นหาไม่สำเร็จ: ${e?.message || e}`);
+      toast.error(`ค้นหาใบผลิตไม่สำเร็จ: ${e?.message || e}`);
+      return [];
+    }
     finally { setSearching(false); }
   }, [search, from, to, inScope, includeOpen, julOf]);
 
@@ -1027,6 +1037,12 @@ export default function OrderTrace() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {searchErr && !sel && (
+        <div style={{ ...card, marginBottom: 12, borderColor: '#ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ {searchErr} — ผลว่างด้านล่าง <u>ไม่ได้แปลว่าไม่มีใบนี้</u> ลองค้นใหม่อีกครั้ง
         </div>
       )}
 

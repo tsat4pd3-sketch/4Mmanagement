@@ -14,11 +14,14 @@ export function addMinutes(timeStr, mins) {
 }
 
 /* แปลงเวลา "HH:MM" ของ workDate ให้เป็น ms จริง — ห่อข้ามเที่ยงคืนเข้ากรอบ 08:00→08:00 ของวันนั้น */
+/* 🔴 QC 05/10 — ฐานต้องเป็น "เที่ยงคืนของ workDate" ไม่ใช่ 08:00 · เดิมฐาน 08:00 + ชั่วโมงเต็ม ⇒ เวลาเลื่อน +8 ชม.
+   ทุกตัว (10:00 → 18:00) = บล็อกรอบส่งวาดผิดที่ · สถานะ "ค้างส่ง"/"กำลังเตรียม" ช้าไป 8 ชม. · มีเทสใน deliveryRounds.test */
 export function timeStrToMs(workDate, t) {
   if (!t) return null;
-  const gridStartMs = new Date(`${workDate}T08:00:00`).getTime();
+  const midnightMs = new Date(`${workDate}T00:00:00`).getTime();
   const [h, m] = t.slice(0, 5).split(':').map(Number);
-  let ms = gridStartMs + h * 3600000 + m * 60000;
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  let ms = midnightMs + h * 3600000 + m * 60000;
   if (h < 8) ms += 24 * 3600000;
   return ms;
 }

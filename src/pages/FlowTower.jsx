@@ -8,7 +8,8 @@ import Page from '../components/Page';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { usePolling } from '../utils/usePolling';
-import { fetchAllPages } from '../utils/fetchByIds';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { orderDonePcs } from '../utils/planLots';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
@@ -117,15 +118,20 @@ export default function FlowTower() {
       const lotBy = (st) => lots.filter(l => l.status === st);
 
       // ยอดผลิตวันนี้ (ใบที่ปิดแล้ว + ยอดสะสมของใบที่ยังเปิด) — สูตรบังคับของระบบ
+      /* 🔴 QC 05/10 — เดิม `.in(sids)` ไม่แบ่งหน้า (ตัด 1000 ใบเงียบ) + error ถูกกลืน + ใบ confirmed ที่ไม่มี
+         qty_ok ถอยไปใช้ `qty` (= เป้า ไม่ใช่ของที่ทำได้) + นับใบ cancelled
+         → fetchByIds · ยอดต่อใบผ่าน `orderDonePcs()` (planLots.js → orderInQty ของ monitorSystem.js) ที่เดียว */
       const sids = (prodToday.data || []).map(s => s.id);
-      let po = [];
+      let po = [], poFail = false;
       if (sids.length) {
-        const r = await supabaseDR.from('prod_orders')
-          .select('status, qty, qty_ok, qty_actual').in('session_id', sids).order('id');
-        po = r.data || [];
+        const r = await fetchByIds(sids, part => supabaseDR.from('prod_orders')
+          .select('id, status, qty, qty_ok, qty_actual').in('session_id', part));
+        poFail = !!(r.error || r.truncated);
+        if (poFail) setErr(e => [e, `โหลดไม่ได้: ยอดผลิตวันนี้ (${r.error || 'เกินเพดาน'})`].filter(Boolean).join(' · '));
+        po = r.rows;
       }
-      const producedToday = po.reduce((a, o) =>
-        a + (o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0)), 0);
+      // โหลดไม่ครบ = ไม่รู้ (null → "—") ห้ามโชว์ยอดที่ขาดเป็นตัวเลขจริง
+      const producedToday = poFail ? null : po.reduce((a, o) => a + orderDonePcs(o), 0);
 
       setD({
         fgStock: sum(byPrefix('1')), fgParts: byPrefix('1').length,
