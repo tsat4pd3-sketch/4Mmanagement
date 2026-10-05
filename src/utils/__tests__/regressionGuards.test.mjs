@@ -2098,6 +2098,34 @@ test('🛡️ /operator: ตัวเลือกตัวกรองต้อ�
     '\n\n❌ operator.jsx: ตัวเลือกส่วนงาน (fallback) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
 });
 
+/* ── ลบโหนดผังองค์กร ต้องเช็ค "ทุกตารางที่อ้างถึง" ไม่ใช่แค่ลูกในผัง (05/10/2026) ──────────
+   user: "เช็ค relate table ที แก้ไห้ถูก" — ของเดิมเช็คแค่ `nodes.filter(parent_id === id)`
+   แต่ที่ชี้มาจริงยังมี employees.org_node_id (308 แถว) · profiles.org_node_id (72) ·
+   org_assignments (4) + สำเนาชื่อแบบ text (employees.section/department/group_name/team)
+   ⇒ ลบแผนกที่ "ไม่มีลูก" แต่มีคน 9 คน = FK set null เงียบ · ลบกลุ่ม = 35 คนเหลือชื่อกลุ่มที่ไม่มีอยู่ */
+test('🛡️ /org-setup: ลบโหนดต้องผ่าน loadOrgNodeRefs + orgRefBlockMessage', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  assert.ok(/loadOrgNodeRefs\s*\(/.test(code) && /orgRefBlockMessage\s*\(/.test(code),
+    '\n\n❌ OrgSetup.jsx ลบโหนดโดยไม่ได้เช็คตารางที่อ้างถึง\n'
+    + '   ทำไมห้าม: employees.org_node_id/profiles.org_node_id เคยเป็น ON DELETE SET NULL\n'
+    + '              ⇒ พนักงานหลุดสังกัดเงียบ · สำเนาชื่อแบบ text ไม่มี FK คุมเลย\n'
+    + '   แก้ยังไง: `const refs = await loadOrgNodeRefs(supabase, node, nodes)` แล้วบล็อกด้วย\n'
+    + '              `orgRefBlockMessage(node, refs)` ก่อนยิง delete (src/utils/orgNodeRefs.js)\n');
+  assert.ok(/orgRefKeyChange\s*\(/.test(code) && /renameOrgRefs\s*\(/.test(code),
+    '\n\n❌ OrgSetup.jsx เปลี่ยนชื่อ/code โหนดโดยไม่ไล่แก้ "สำเนาชื่อ" ในทะเบียนอื่น\n'
+    + '   ทำไมห้าม: ทะเบียนพนักงาน/บัญชี จับคู่หน่วยงานด้วยข้อความ (ไม่ใช่ FK)\n'
+    + '              เปลี่ยนคีย์แล้วไม่ตามแก้ = คนหลุดหน่วยงานเงียบ (เคยตามเก็บด้วย migration)\n');
+});
+
+/* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
+test('🛡️ orgNodeRefs: คีย์จับคู่ของกลุ่มต้องเป็นชื่อ ไม่ใช่ code (code = เลขไลน์)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeRefs.js'), 'utf8'));
+  assert.ok(/kind\s*===\s*'line'[\s\S]{0,120}node\.name\s*,\s*node\.code/.test(code),
+    '\n\n❌ orgNodeRefs.orgRefValues: กลุ่ม (kind=line) ต้องเอา name มาก่อน code\n'
+    + '   ทำไม: code ของ kind=line เป็นเลขไลน์ (\'9\'/\'12\') ส่วน employees.group_name เก็บชื่อกลุ่ม\n'
+    + '          สลับลำดับ = ไล่เปลี่ยนชื่อผิดคอลัมน์/นับคนไม่เจอ (operator.jsx §เลือกกลุ่ม)\n');
+});
+
 test('🛡️ insert/upsert ลง dr_products ห้ามส่ง created_by (ตารางไม่มีคอลัมน์นี้ — ผู้แก้ประทับเองที่ updated_by_*)', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
