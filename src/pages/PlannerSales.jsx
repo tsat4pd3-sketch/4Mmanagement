@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
 import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
@@ -302,7 +302,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-          cachedMaster('dr_products:pno', async () => (await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null)).data || []),
+          cachedMaster('dr_products:pno', async () => mrows(await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null))),
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
           // 🔗 คำตัดสินของคน (edi_part_map) — ชนะการเดาทุกชั้น · โหลดไม่ได้ = เดาแบบเดิม + เตือน
           supabaseDR.from('edi_part_map').select('ship_to, part_key, customer_part_no, mat_no'),

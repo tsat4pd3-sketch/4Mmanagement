@@ -5,7 +5,7 @@
    ⚠️ หน้าใหม่ที่ต้องการ "เลือก supplier" ใช้ <SupplierSelect> ห้าม <input> เปล่า */
 import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { cachedMaster, invalidateMaster } from './masterCache';
+import { cachedMaster, invalidateMaster, mrows } from './masterCache';
 
 const KEY = 'suppliers:master';
 export const SUPPLIER_KINDS = {
@@ -19,10 +19,9 @@ export const SUPPLIER_KINDS = {
 
 export async function loadSuppliers() {
   return cachedMaster(KEY, async () => {
-    const { data, error } = await supabaseDR.from('suppliers')
-      .select('code, name, kind, contact, phone, lead_time_days, note, sort_order, is_active').order('sort_order').order('name');
-    if (error) return [];   // ยังไม่ apply migration → picker ทำงานแบบพิมพ์เองพร้อมป้าย
-    return data || [];
+    // ยังไม่ apply migration → `mrows` คืน [] ให้ picker ทำงานแบบพิมพ์เองพร้อมป้าย · error อื่นโยน
+    return mrows(await supabaseDR.from('suppliers')
+      .select('code, name, kind, contact, phone, lead_time_days, note, sort_order, is_active').order('sort_order').order('name'));
   });
 }
 export const invalidateSuppliers = () => invalidateMaster(KEY);

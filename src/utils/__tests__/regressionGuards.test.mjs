@@ -57,6 +57,32 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'master-cache-swallow',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
+    re: /cachedMaster\([^\n]*\.data\s*\|\|\s*\[\]/g,
+    why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
+       + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
+       + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
+       + '⇒ "ผมไม่เห็น แต่ User คนอื่นเห็น" · เกิดจริง 30/09 (คุณนพดล · /daily-report · งาน 068 '
+       + 'หายจากลิสต์ทั้งที่ข้อมูลใน DB ปกติทุกอย่าง) แล้วหาต้นเหตุไม่เจอเพราะไม่มีร่องรอยอะไรเลย',
+    fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
+       + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
+    allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'role-retired-flag-honored',
+    scan: ['src'], ext: ['.js'],
+    /* จับการสร้างลิสต์ "ให้คนเลือก role" จาก ROLE_META โดยไม่กรอง retired ออก */
+    re: /Object\.entries\(ROLE_META\)(?![^\n]*\bisLive\b)(?![^\n]*\bretired\b)[^\n]*\.map\(/g,
+    why: 'role ที่ปลดระวางแล้ว (`retired: true`) ต้องหายจากลิสต์ที่ให้คนเลือก — ไม่งั้นยังตั้งให้ user ใหม่ได้ '
+       + 'และยังกินพื้นที่เป็นคอลัมน์ใน /permissions · เคยเกิดจริง: ธงถูกเขียนตอนปลด `sale` (23/09) '
+       + 'แต่**ไม่มีใครอ่าน** ⇒ 2026-10-04 ยังเจอคอลัมน์ `sale` 46 ช่องติ๊กที่มีคนถือจริง 0 คน',
+    fix: 'กรองด้วย `isLive` ก่อน `.map()` · **ห้ามกรองใน `roleLabel()`** — ป้ายต้องอ่าน role เก่าออกเสมอ '
+       + 'ไม่งั้น audit log / ใบเก่าขึ้นเป็นคีย์ดิบ (= เหตุผลที่เก็บแถวไว้ตั้งแต่แรก)',
+    allow: {},
+  },
+  {
     id: 'monitor-grid-math-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการหยิบสูตร recurrence ของบอร์ด Monitoring ไปคิดเองนอก monitorGrid.js */

@@ -57,10 +57,19 @@ export function groupRolesByAxis(roles) {
                   .filter(g => g.roles.length);
 }
 
-// รายการสำหรับ dropdown/radio เลือก base role ของ user — ตัด bucket (dept_admin) ออก
-export const ROLE_OPTIONS = Object.entries(ROLE_META).filter(([, m]) => !m.bucket).map(([value, m]) => ({ value, ...m }));
-// รวม bucket ด้วย — ใช้เป็นคอลัมน์ในหน้าจัดการสิทธิ์ (/permissions)
-export const PERMISSION_COLUMN_ROLES = Object.entries(ROLE_META).map(([value, m]) => ({ value, ...m }));
+/* 🔴 `retired: true` = role ที่ปลดระวางแล้ว — **ต้องหายจากทุกลิสต์ที่ให้คน "เลือก"**
+   แต่ `roleLabel()` ยังต้องรู้จักชื่อมันต่อไป ไม่งั้น audit log / ใบเก่าที่บันทึก role นั้นไว้
+   จะขึ้นเป็นคีย์ดิบอ่านไม่ออก (= เหตุผลที่เก็บแถวไว้ตั้งแต่แรก)
+   ⚠️ บทเรียน 2026-10-04: ธงนี้ถูกเขียนไว้ตอนปลด `sale` (23/09) แต่ **ไม่มีใครอ่านเลย**
+      ⇒ `sale` ยังโผล่เป็นคอลัมน์เต็มใน /permissions (46 ช่องติ๊ก · คนถือจริง 0 คน)
+      และยัง**ตั้งให้ user ใหม่ได้** ทั้งที่คอมเมนต์เขียนห้ามไว้ชัดเจน
+      → มีด่าน `role-retired-flag-honored` ใน regressionGuards กันลืมซ้ำ */
+const isLive = ([, m]) => !m.retired;
+
+// รายการสำหรับ dropdown/radio เลือก base role ของ user — ตัด bucket (dept_admin) + role ที่ปลดระวางออก
+export const ROLE_OPTIONS = Object.entries(ROLE_META).filter(isLive).filter(([, m]) => !m.bucket).map(([value, m]) => ({ value, ...m }));
+// คอลัมน์ในหน้าจัดการสิทธิ์ (/permissions) — รวม bucket · ตัด role ที่ปลดระวางออก
+export const PERMISSION_COLUMN_ROLES = Object.entries(ROLE_META).filter(isLive).map(([value, m]) => ({ value, ...m }));
 
 // ป้ายสั้นสำหรับชิป/หัวคอลัมน์ เช่น "🏭 สิทธิ์ทั้งฝ่าย" — role แปลกที่ไม่รู้จักคืน key เดิม
 export const roleLabel = (role) => {

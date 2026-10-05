@@ -78,3 +78,22 @@
 > 📄 `prod_problem_reports` (ใบ FM-PD1-019 ที่ออกไปแล้ว + `snapshot` เนื้อใบ) ·
 > `quality_bin_records` (+`qa_decision`/`special_use_doc_no`) · `repair_wi_registry` (QRs ↔ WI ซ่อม)
 > พร้อมกฎว่าทำไมไม่มีคอลัมน์ `tag_date`/`closed_at` → `docs/modules/production-problem-report-bins.md`
+
+---
+
+## 🏷️ `employees.department` = ต้นทางของชื่อหน่วยงานในตารางกะ (2026-10-04)
+
+`shift_schedules.dept_name` **ไม่ใช่ทะเบียน** — `ShiftOrganize` ปั้นรายชื่อแผนกจาก
+`employees.department` (ชื่อในผังองค์กรชนะชื่อที่พนักงานกรอก) แล้วเขียนลงทุกครั้งที่บันทึกกะ
+⇒ **แก้ชื่อผิดที่ `shift_schedules` ไม่มีผล** สัปดาห์ถัดไปแถวผิดกลับมาใหม่ · ต้องแก้ที่ `employees`
+
+⚠️ `employees.department` ถูกอ่านใน ~12 หน้า (ขอบเขตแจ้งเตือน · รายงาน · ตารางกะ)
+⇒ เปลี่ยนค่าผิดตัวเดียว = คนหลุด scope เงียบๆ · **สำรองลง `archive.` ก่อนเสมอ**
+
+**รวมชื่อไปแล้ว 04/10** (migration `20261004_employees_department_typos_main.sql` · apply + ตรวจกลับแล้ว ·
+สำรอง `archive._bak_20261004_emp_dept` 6 แถว): `Smail Press`→`SMALL PRESS` · `Big Press`→`BIG PRESS`
+· `ฝ่าผลิต`→`ฝ่ายผลิต`
+
+🔴 **จงใจไม่แตะ** คู่ที่ตัดสินแทนคนไม่ได้ — ต้องให้ส่วนงานยืนยันก่อน:
+`APRON ASSY` (8) vs `LINE APRON ASSY` (54) · `HDF` (3) vs `HYDROFORM` (46) ·
+และ `ASSY2` (13) / `ฝ่ายผลิต` (39) ที่**ยังไม่มีในผังองค์กร** (คนละปัญหา: ผังไม่ครบ ไม่ใช่พิมพ์ผิด)
