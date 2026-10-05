@@ -71,13 +71,13 @@
 | Main — ชื่อในจอ Supabase **"MAIN"** | `ewhdfqwfwofivojtsizn` | auth, profiles, employees, production_lines, four_m_logs, cqi15_event_logs, role_permissions ฯลฯ | `supabase` (`src/supabaseClient.js`) |
 | DR (Daily Report/PM) — ชื่อในจอ Supabase **"Product DB"** | `eyhclzkifitbhbljgoav` | production_sessions, downtime_logs, defect_logs, machines, prod_orders, dr_products, improvements ฯลฯ | `supabaseDR` (`src/supabaseClient.js`) |
 
-> ⚠️ **ชื่อในจอ Supabase ไม่ตรงกับชื่อที่เอกสารเรียก** — dropdown หัวจอ SQL Editor เขียน "MAIN" / "Product DB" (org TSAT4-ENTERPRISE) · เคยเกิดจริง 2026-09-07: คิวรีเช็ค NPI (ตาราง Main) ถูกรันบน "Product DB" แล้วขึ้น `42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว → เวลาบอก user ให้รัน SQL ระบุ**ทั้งชื่อในจอและ project id** ทุกครั้ง
+> ⚠️ **ชื่อในจอ Supabase ไม่ตรงกับที่เอกสารเรียก** — dropdown SQL Editor เขียน "MAIN" / "Product DB" ⇒ บอก user ให้รัน SQL ต้องระบุ**ทั้งชื่อในจอและ project id ทุกครั้ง** (รันผิดฝั่ง = `42P01` ทั้งที่ migration ลงถูกฝั่งแล้ว)
 >
-> ⚠️ **กฎเหล็ก — `supabaseDR` ไม่เคย authenticate**
-> `supabaseDR` ถูกสร้างด้วย `createClient(url, anonKey)` เฉยๆ ไม่มี `auth` config ผูกกับ session เลย
-> ไม่ว่า user จะ login เข้าแอปแล้วหรือไม่ ทุก query ผ่าน `supabaseDR` วิ่งด้วย role `anon` เสมอ
-> **ห้าม** เปลี่ยน RLS policy ของตารางฝั่ง DR project จาก `public`/`anon` ไปเป็น `TO authenticated` แบบเหมาว่าจะปลอดภัยขึ้น — จะพังทันทีเพราะ client ไม่มี JWT ให้เช็ค (เคยทำพังมาแล้วครั้งหนึ่ง: Product Master, Machine List, PM data, เปิดกะหายหมดทั้งระบบ ต้อง revert ฉุกเฉิน)
-> ถ้าจะ secure ฝั่ง DR project จริงๆ ต้องผ่าน Edge Function ที่ validate ฝั่ง server เอง — ยังไม่ได้ทำ เป็น known gap
+> ⚠️🔴 **กฎเหล็ก — `supabaseDR` ไม่เคย authenticate · ทุก query วิ่งด้วย role `anon` เสมอ**
+> (ไม่มี `auth` config ผูก session — ต่อให้ user login เข้าแอปแล้วก็ยังเป็น `anon`)
+> **ห้ามเปลี่ยน RLS ของตารางฝั่ง DR จาก `public`/`anon` เป็น `TO authenticated`** — client ไม่มี JWT ให้เช็ค
+> = พังทั้งระบบทันที (เคยทำพังจริง ต้อง revert ฉุกเฉิน · 📄 `docs/modules/db-schema.md` §RLS ฝั่ง DR)
+> · จะ secure ฝั่ง DR จริงต้องผ่าน Edge Function ที่ validate ฝั่ง server — **ยังไม่ได้ทำ เป็น known gap**
 
 ---
 
@@ -343,36 +343,20 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15)
+## Production Plan — วางแผนการผลิต (`/production-plan` · แท็บ `?tab=lots` แผนสั่งงานล็อต)
 
-หน้า `/production-plan` (ฝ่ายผลิต) — จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ **กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
+จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ**กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
+· สูตรทั้งหมดอยู่ใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
 
-> ### 📋 แท็บ `?tab=lots` "แผนสั่งงาน (ล็อต)" — ทีมวางแผนจัดคิวงาน lot size (2026-09-30 → 10-01)
-> งานที่**ไม่ได้เดินตามคัมบังแบบ first come first serve** ต้องมีคนวางคิวให้ · ตาราง `production_plan_lots` (DR)
-> · สูตรทั้งหมดใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
->
-> **🧩 แผน = "กรอบ" (Layer 1) · ผลิตเปิดคัมบัง-คอนเฟิร์มยอด = ของจริง (Layer 2)** (01/10 · คำสั่ง user)
-> 🔴 **แผนไม่สร้างใบผลิต ไม่เขียนสถานะ** — จับคู่จาก **ยอดรวมต่อพาร์ท** (`matchPlanToActual`)
->   วัดจริง 25/09: **1 พาร์ท 1 กะ = ใบผลิต 5–40 ใบ** (คัมบัง 1 ใบ = 1 กล่อง) `is_manual = 0` ทุกแถว
->   **แม้แต่ไลน์ปั๊ม A/B/C** ⇒ ออกใบตามล็อตแล้วหน้างานสแกนด้วย = **เป้านับซ้ำ** (1,000 + 7×60 = 1,420)
-> · ปันยอดต่อ **(ไลน์+วันงาน+พาร์ท) ข้ามกะ** ตามลำดับ `seq` · **`over`/`offPlan` ต้องโชว์ ห้ามกลืน**
-> · 🔴 **ไม่ตัดสินแทนคน** คำนวณสดทุกครั้ง · `splitPlanForSession` **ห้ามกรองด้วย `status`/`prod_order_id`**
->   (ไม่มีใครเขียนแล้ว ⇒ ล็อตค้างตลอดกาล) · **จอหน้างานห้ามกรองกะเอง** (เคสจริง 30/09 จอเงียบสนิท)
-> · ⛔ ถอดแล้วอย่ารื้อกลับ: ปุ่ม "เริ่มล็อตนี้" · `reconcilePlan()` · สิทธิ์ `production_plan:start`
->
-> **🧲 ไทม์ไลน์ลากจัดแผน** — **ตำแหน่งกล่องถูกคำนวณ · ลาก = เปลี่ยนลำดับ ห้ามลากไปวางเวลาอิสระ**
-> · ยืดข้ามเบรคด้วย `stretchOverBreaks` + ช่วงพักจาก `breakIntervalsIn()` **ห้ามเขียนเอง**
-> · **ไม่มี CT = `widthPct: null` ลายทแยง** · กล่องที่คำนวณไม่ได้ต้องไม่ทับกัน · ♿ **ห้ามถอดปุ่ม ↑↓**
-> · 🔴 **ห้ามแก้ `prod_orders.session_id` ให้ null ได้** (ทั้งระบบ join `production_sessions!inner`)
-> · **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · **"ไม่ระบุแม่พิมพ์" ≠ "ไม่ต้องเปลี่ยนรุ่น"** ⇒ `null`
-> · 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
-> · 🧪 **จองเครื่องทดลองงานใหม่ `source='trial'`** (01/10) — เวลา = **`est_min` "ที่ขอ" ไม่ใช่ `qty×CT`**
->   (ด่าน `plan-lot-time-via-helper`) · 🔴 **ห้ามสร้างพาร์ทใหม่ลง `dr_products`** · `mat_no` ว่างได้เฉพาะใบนี้
->   · **ไม่เข้า `matchPlanToActual`** (`state:'trial'`) · downtime "ทดลองชิ้นงาน" + `is_trial` **มีแล้ว ห้ามซ้ำ**
-> · ⚠️ แม่พิมพ์ 262 ตัว **กรอกความสูง 0 ตัว** ⇒ ยังเสนอลำดับประหยัดเวลาเปลี่ยนรุ่นไม่ได้ (ท่อต่อไว้ครบ)
-> 📄 รายละเอียดเต็ม → `docs/modules/production-plan.md`
-
----
+**กฎที่ทุก session ต้องรู้ (ที่เหลืออ่านในเอกสาร):**
+- **🧩 แผน = "กรอบ" (Layer 1) · ผลิตเปิดคัมบัง-คอนเฟิร์มยอด = ของจริง (Layer 2)** (คำสั่ง user 01/10)
+  🔴 **แผนไม่สร้างใบผลิต ไม่เขียนสถานะ** — จับคู่จาก**ยอดรวมต่อพาร์ท** (`matchPlanToActual`)
+  ⇒ ออกใบตามล็อตแล้วให้หน้างานสแกนด้วย = **เป้านับซ้ำ** · **`over`/`offPlan` ต้องโชว์ ห้ามกลืน**
+- 🔴 **ห้ามแก้ `prod_orders.session_id` ให้เป็น null ได้** — ทั้งระบบ join `production_sessions!inner`
+- **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
+- 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · ⛔ ถอดแล้วอย่ารื้อกลับ: ปุ่ม "เริ่มล็อตนี้" · `reconcilePlan()` · `production_plan:start`
+> 📄 **รายละเอียด (ปันยอดข้ามกะ · ไทม์ไลน์ลากจัดแผน · ยืดข้ามเบรค · จองเครื่องทดลอง `source='trial'`
+> · เวลาเปลี่ยนรุ่น/ความสูงแม่พิมพ์ที่ยังกรอกไม่ครบ)** → `docs/modules/production-plan.md`
 
 ## Remote Control — จอตาม-มือถือคุม (2026-07-15)
 
@@ -446,14 +430,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 ## ⏱️ ตัวกรองช่วงเวลา — `<TimeRangeBar>` เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user)
 
 ปุ่ม**ช่วง** (วันนี้/สัปดาห์นี้/เดือนนี้/ปีนี้/🔒หลายปี) + ปุ่ม**ย้อนหลัง** 30/60/90/120 + กรอบวันที่ ·
-**ห้ามวาดปุ่มสเกล/ช่องวันที่เองในหน้า** (เดิม 18 ไฟล์ทำกันเอง 4 แบบ · `period` มี 2 ความหมาย)
+**ห้ามวาดปุ่มสเกล/ช่องวันที่เองในหน้า**
 · สูตรแบ่งถัง/ป้ายแกน/บันได = `src/utils/timeRange.js` ที่เดียว · ผูก URL ด้วย `useTimeRange()` (`?scale=&from=&to=`)
 · **สเกลไม่เข้ากับช่วง = เตือน ห้ามบล็อก** · ปุ่มย้อนหลัง = ตัวเติมวัน **ไม่ใช่โหมดค้าง**
 · 🪜 **บันได "ดูช่วงไหน ⇒ แท่งเล็กกว่า 1 ขั้น"** (23/09) วัน→ชม. · สัปดาห์/เดือน→วัน · ปี→เดือน · หลายปี→ปี
   **ออโต้ แต่กดทับได้ แล้วออโต้ห้ามทับซ้ำ** · จอต้องเขียน "แท่งละ 1 …" เสมอ · 🔴 **เพดานเป็นของข้อมูล
-  ไม่ใช่ของจอ** (`finest`) — OEE ละเอียดสุด = **วัน** · 🔴 **"24 ชม. โรงงาน" = 08:00→07:59 วันถัดไป**
-  (`bkkHourKey` บวก 7 ชม. จาก epoch เอง **ห้ามพึ่ง timezone เครื่อง**) · 🔴 **ปุ่ม "หลายปี" ล็อก default**
-  เปิดเฉพาะจอที่มี RPC rollup (กฎ: โหมดปีห้ามโหลดแถวดิบ)
+  ไม่ใช่ของจอ** (`finest` — OEE ละเอียดสุด = **วัน**) · 🔴 **"24 ชม. โรงงาน" = 08:00→07:59 วันถัดไป**
+  (`bkkHourKey` **ห้ามพึ่ง timezone เครื่อง**) · 🔴 **ปุ่ม "หลายปี" เปิดเฉพาะจอที่มี RPC rollup**
 · 🔴 **วันทำงานใช้ `getWorkDate()` จาก `src/utils/workDate.js`** (ของกลางใหม่ — เดิมก๊อปซ้ำ 27 ไฟล์ ยังไม่กวาด)
 · 🔴 **SQDCM ยกเว้น** (ปุ่มของมัน = "ดูช่วงไหน") · **หน้าที่ไม่มีตัวกรองเวลาจริง ห้ามยัดแถบลงไป** — เหตุผลรายหน้าดูในเอกสาร
 > 📄 `docs/modules/time-range-filter.md` · UI §6.16
@@ -484,8 +467,7 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 **ห้ามคำนวณแท่งเองในหน้า — มีด่าน `regressionGuards`** · องค์ประกอบบังคับ: แท่งตั้งเรียงมาก→น้อย ·
 **แท่งชิดกันสนิท** · 🔴 **แกนซ้ายเริ่ม 0 · เพดาน = ยอดรวม (accum) ไม่ใช่ค่าแท่งสูงสุด** (แท่งเตี้ย/ที่ว่างด้านบนเยอะ = *ถูกต้อง*) ·
 แกนขวา % สะสม · เส้นจบ 100% ที่ขอบขวา · เส้น 80% · ป้ายแกน X เอียง -45°/-90° — **ห้ามกลับไปวาดแท่งนอน**
-· 🕳️ **พาเรโตที่ประกอบด้วย Recharts เคยหลุดด่านไป 1 ตัว** (23/09) แล้ว `.slice(0,10)` ก่อนคิด % สะสม
-  ⇒ เส้นจบ 100% ที่อันดับ 10 ทั้งที่ยังมีที่ 11+ = จอโกหก · มีกฎคู่ `pareto-hand-built-recharts` แล้ว
+· 🕳️ **ห้าม `.slice(0,10)` ก่อนคิด % สะสม** (เส้นจบ 100% ที่อันดับ 10 ทั้งที่มีที่ 11+ = จอโกหก · ด่าน `pareto-hand-built-recharts`)
 · 🔴 **ห้ามกราฟแกน Y 2 ข้าง** (`no-dual-y-axis`) — จุดที่เส้นตัดแท่งเป็นของปลอม (สเกล 2 ข้างตั้งอิสระ)
   ⇒ แยกเป็น 2 กราฟซ้อนแกน X เดียวกัน + ล็อก `YAxis width` เท่ากัน · แกนขวาของพาเรโตไม่เข้าข่าย (UI §6.19)
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
@@ -609,34 +591,24 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ---
 
-## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 4 แท็บ · 2026-08-27 → 09-23)
+## 🏛️ OBEYA — ห้องบัญชาการโรงงาน (`/obeya` · 4 แท็บ `kpi|sqdcm|todo|table`)
 
-`Obeya.jsx` = 4 แท็บ: `kpi` 📋 บอร์ด KPI ราย**เดือน** (`ObeyaKpiBoard.jsx`) → `sqdcm` 🖥️ SQDCM **สัปดาห์/เดือน/ปี** (`ObeyaSqdcmBoard.jsx`)
-→ `todo` 📌 งานค้างของส่วนงาน (`DeptDashboard` embed · `/dept-dashboard` redirect) → `table` ⚙️ ตั้งค่า/กรอก (`KpiMonthly.jsx`) · KPI ใน `obeyaKpi.js`/`obeyaYear.js` · OEE จาก `oee.js`
-- **🔴 ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (ผังทุกมิติ · `utils/orgScope.js` · `?scope=kind:value` · เขียน `scope_kind/scope_value` ผ่าน `defScopeColumns()`) ห้าม select จาก `org_nodes kind='section'` เอง
-  · 🔴 **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** (23/09) — ชิป `💰 รหัส` กดสลับได้ · พิมพ์รหัสเจอหน่วยเจ้าของ · `ccOf`/`ccOwnersOf`/`ccLabel`/`ccUnder` · **ลิสต์รหัสเรียง+จัดกลุ่มตามผัง หน่วยที่เลือกขึ้นก่อน ห้ามเรียงเลข** (05/10) · กลุ่มไลน์ลูกคนละรหัส ห้ามเดา · ข้อมูลขัดกัน = โชว์ตามจริง
-- **🔴 `kpi` กับ `sqdcm` วาดจาก `ObeyaSheet.jsx` ชิ้นเดียว** (แผ่น A4 · ไฟ · กริด · 🔍 ขยายเป็น popup — children/`foot` รับ `(k)=>node` ให้ฟอนต์โตตาม) — แก้หน้าตาแผ่นที่นั่นที่เดียว ห้ามทำ modal ขยายเองในหน้า
-- **🔴 ห้ามยุบ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** · `kpi` กับ `table` = **ข้อมูลชุดเดียวกัน** · **แผ่น = KPI ที่หน่วยถือจริง (05/10)**: 8 ช่องโชว์เมื่อมีนิยาม/มีไลน์ผลิต · KPI นอกช่อง = แผ่นเต็ม `def:<id>` · ยังไม่ตั้งเลย = template · นิยามโรงงานไม่นับว่าถือ
-- **🔴 ทุกจอตัดสิน KPI ผ่าน `scoreDef()` (`kpiSetup.js`) เท่านั้น — มีด่านสแกนทั้งรีโป** · "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ 1/0.5/0 **ไม่ใช่ boolean** เทียบ `=== 1`
-- **🔴 กฎความซื่อสัตย์ของจอ:** ข้อมูลไม่พอต้องเขียนบนจอ **ห้ามโชว์ 0 ห้ามซ่อนแผง** · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
-- **🔴 กลุ่มมีระบบ KPI ทางการ (KPI Online)** — ESM = ที่ผลิตตัวเลข Actual **ห้ามทำแข่ง/ห้ามคิดเกณฑ์สีเอง** · กติกาเลือก KPI ต่อหน่วยงาน
-  = ทะเบียน `kpi_standard_items` (`fixed`/`choice`/`null`=หัวข้อแม่ · น้ำหนักรวม 50 · `checkStdSelection` **เตือนเท่านั้นห้ามบล็อก**) **ห้ามคิดเอง**
-- **🔴 โหมดปีห้ามโหลดแถวดิบ** — RPC `obeya_year_rollup` (DR) / `obeya_attendance_rollup` (Main) คืน Σ รายเดือน แล้ว `obeyaYear.js` หาร/ตัดสิน
-  (**RPC ห้ามคำนวณ KPI**) · ⚠️ `daily_production_logs.assigned_line` = **id จุดงาน** ไม่ใช่ชื่อไลน์ · `downtime_logs` ไม่มี `reason` (ใช้ `description`)
-- ACTION BOARD ใช้ `meeting_action_items` ร่วม `/morning-meeting` แยกด้วย `source` · **ใบต้องผ่าน `scopeActions()` ตามขอบเขตเดียวกับข้อมูลผลิต** (05/10 · มีด่าน) · **ห้าม subscribe realtime `prod_orders`/`downtime_logs` ในหน้านี้**
+**กฎที่ทุก session ต้องรู้ (ที่เหลือเป็นเรื่องภายในโมดูล อ่านในเอกสาร):**
+- **🔴 ทุกจอที่ตัดสิน KPI ต้องผ่าน `scoreDef()` (`src/utils/kpiSetup.js`) — มีด่านสแกนทั้งรีโป**
+  "เหลือง" = ถึง Commitment แต่ไม่ถึง Target · ระดับ **1 / 0.5 / 0 ไม่ใช่ boolean** (ห้ามเทียบ `=== 1` ลอยๆ)
+- **🔴 กฎความซื่อสัตย์ของจอ (ใช้ทุกโมดูล):** ข้อมูลไม่พอ **ต้องเขียนบนจอ · ห้ามโชว์ 0 · ห้ามซ่อนแผง**
+  · "ไม่มีเป้า" = เทา · ไฟรวมต้องบอกว่าตัดสินจากกี่ช่อง
+- **🔴 กลุ่มมีระบบ KPI ทางการ (KPI Online) — ESM = ที่ผลิตตัวเลข Actual ห้ามทำแข่ง/ห้ามคิดเกณฑ์สีเอง**
+  · การเลือก KPI ต่อหน่วยงานมีทะเบียน `kpi_standard_items` **ห้ามคิดเอง**
+- **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
+  แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **🔴 หน่วย/ทศนิยม/วิธีรวม 12 เดือน = 2 ชั้น** (24/09) ทะเบียน `kpi_catalog` = ค่าตั้งต้น · `unit`/`decimals` override รายแถวได้ · 🔒 `summary_mode` ไม่ได้
-  · อ่านผ่าน `unitOf`/`decimalsOf`/`summaryModeOf`/`fmtKpi`/`summaryOf` **มีด่าน** · `.select()` ที่ embed `kpi_catalog` ต้องมี `decimals, summary_mode` (ขาด = ตกค่า default เงียบ)
-- **🏭 KPI ค่าของโรงงาน (%RM · Customer Satisfaction) = `kpi_catalog.value_scope='plant'`** (30/09) — ค่ารายเดือนอยู่ที่นิยามระดับทั้งโรงงานตัวเดียว · หน่วยงานเก็บแค่เป้า/น้ำหนัก · อ่านผ่าน `sharedValueDef()` **ห้ามถอยไปใช้ค่าของหน่วย** · ตั้งจากปุ่ม 📘
-- **📅 แผน 12 เดือน `kpi_month_plans`** (25/09 · `planProgress()`) — 🔴 ป้าย ▲ ตามแผน/▼ ช้ากว่าแผน **ไม่ใช่คะแนน** ห้ามเปลี่ยนสี/เพิ่มขั้น · เทียบเฉพาะเดือนที่มี**ทั้งแผนและผล**
-  · กราฟแผ่น = แท่งผลจริง + เป้า(แดง) + **Commitment(เหลือง)** + **แผนรายเดือน(ฟ้า · สเกลเดียวกัน)** · 📝 **กดแท่งเดือน = หมายเหตุ** (`kpi_month_notes` MAIN · คีย์ ปี+เดือน+ขอบเขต+`row_key` · `kpi:manage`) · แถบ "ยังไม่ครบ" อยู่**ใต้บอร์ด สูงคงที่** (ย้ายขึ้น = สเกลวิ่ง)
-  · 🎯 **โฟกัสช่วงค่า `?yfocus=1`** = `focusDomain()` เท่านั้น · default ปิด · **แกนไม่เริ่ม 0 ต้องมีชิปบอก** · มี 0 จริง = ไม่โฟกัส · ตัวเลขบนทุกแท่ง
-- หยิบ KPI จากทะเบียนกลุ่ม = ปุ่ม 📘 ในแท็บ ⚙️ (`KpiStandardModal`) — **ไม่ตั้งเป้า/น้ำหนักให้เอง** · ผูก `std_item_id`
-- ⚡ **KPI ช่าง (MO Closed/MBD/MTBF/MTTR) = สูตร Guideline หน้า 10 ใน `utils/kpiAuto.js` เท่านั้น** (RPC `kpi_mtn_rollup` คืน Σ) · ระบบเสนอ คนกด "ใช้ค่านี้" **ห้ามเขียนทับค่าที่กรอกมือ**
-> 📄 แท็บ KPI/ตั้งค่า/ทะเบียนมาตรฐาน → `docs/modules/obeya-kpi-board.md` · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` ·
-> ดีไซน์ → `docs/OBEYA-DESIGN.md` · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
-
----
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง**
+- **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
+> 📄 **รายละเอียดทั้งหมด (หน่วย/ทศนิยม/วิธีรวม 12 เดือน · KPI ค่าของโรงงาน · แผน 12 เดือน + หมายเหตุ ·
+> โฟกัสช่วงค่า · ทะเบียนมาตรฐาน · KPI ช่างอัตโนมัติ · ACTION BOARD)** → `docs/modules/obeya-kpi-board.md`
+> · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
+> · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
 ## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
 
@@ -790,18 +762,18 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
-1. **supabase-js ไม่ throw** (คืน `{ data, error }` เสมอ ⇒ `try/catch` = โค้ดตาย · `const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete ต้องอ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert ต้องหยุดก่อน insert เมื่อ delete ล้ม
+1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
 2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง `.select('id')` แล้ว**นับแถว** ห้าม toast เขียวจาก `!error` อย่างเดียว
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือจะแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ ⇒ คนมีปุ่มแต่เขียนได้ 0 แถวเงียบ) · **ตารางใหม่ต้องมี policy ครบ 4 cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE**
-4. **stale-response race** — จอที่ยิงคิวรีตาม state (กะ/วัน/ไลน์) แล้ว user สลับก่อนคำตอบเก่ากลับ ⇒ คำตอบเก่าเขียนทับจอใหม่ (เคยเกิด: Daily Report ลงข้อมูลผิดกะ) ⇒ **ทุก effect ที่ await แล้ว set state ต้องมี guard** (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE**
+4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
-6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ** (ดู `docs/modules/demand-flow-tower.md`)
-7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **ใช้ `coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับอยู่ใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** (REPLICA IDENTITY default) ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
-8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง — ให้เพิ่ม realtime ก่อน) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` บรรทัดเดียวจบ ห้ามประกอบเองทีละชิ้น**
-9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่เนื้อเดิม = ลูกยิงคิวรีซ้ำฟรีๆ ให้แปลงเป็น string/primitive ก่อน · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
-10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
-12. **helper ที่คืนค่าเปล่า (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines`) ห้ามแกะ `{ data }`** = undefined เงียบ (02/10 ผังรวม 0/0 อยู่ 7 วัน · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ**
+6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
+7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
+8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` ห้ามประกอบเองทีละชิ้น**
+9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (ให้แปลงเป็น string/primitive ก่อน) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
+10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
+12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
 
 ### Skill Fit Scoring
 ```js
@@ -823,7 +795,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
    📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
    - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
-     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (glob ต้อง node v22 · Render อาจใช้ 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (Render อาจใช้ node 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
      · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
      ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
    - **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** (คำสั่ง user
@@ -910,9 +882,8 @@ Mobile < 768px · Tablet 768–1279 · Desktop 1280–1599 · Ultra-wide ≥ 160
 > · **`resolveShiftTime(hhmm, session)` / `shiftWindow()` / `checkShiftTime()` ใน `src/utils/shiftWindow.js` เท่านั้น**
 >   — เลือก offset วันจาก `start_time` + `shift_min`/`end_time` ของกะนั้น ไม่เดาจากเลขชั่วโมง
 > · **ช่องกรอกเวลาทุกจุดต้องมีด่าน "อยู่ในกรอบกะไหม"** — หลุดกรอบ = ไม่ให้บันทึก
->   · ±12 ชม. แล้วเข้ากรอบ = **AM/PM สลับ** (จอ 12 ชม. ไม่แตะช่อง AM/PM = ค้างที่ AM) → เสนอแก้ให้คลิกเดียว
->   · **ห้ามดัดค่าที่คนกรอกให้เข้ากรอบเอง** — คงค่าไว้แล้วเตือน (ดัดให้ = เดาแทนคน)
-> · `<input type="time">` เก็บค่า 24 ชม. แต่**แสดงผลตามเครื่อง** ⇒ ต้องทวนค่าเป็น 24 ชม. ให้เห็นข้างช่องเสมอ
+>   · ±12 ชม. แล้วเข้ากรอบ = **AM/PM สลับ** → เสนอแก้ให้คลิกเดียว · **ห้ามดัดค่าที่คนกรอกเอง** คงค่าไว้แล้วเตือน
+> · `<input type="time">` **แสดงผลตามเครื่อง** ⇒ ต้องทวนค่าเป็น 24 ชม. ให้เห็นข้างช่องเสมอ
 > · ⏱️ **ปลายกะที่ "ไม่มีใบ downtime รองรับ" > 90 น. = เตือน** (`checkCloseTime` ต้องส่ง `downtimes` · มีด่าน) — `shift_min` = ฐานเวลาของ %A/%P
 >   ⇒ **default ห้ามเดาเวลาเลิกงานถ้าไกลเกินเกณฑ์** · 🔴 ลง "ไม่มีแผนผลิต" ถึงเลิกงาน = **ถูกแล้ว ห้ามเตือน** · ติดป้าย ห้ามตัดแถบ · **ห้าม backfill เดาแทนคน**
 > 📄 เคสจริง + ตัวเลข + ด่าน 3 ชั้น → `docs/modules/daily-report.md`
@@ -938,7 +909,7 @@ Platform:    Render.com (Static Site)
   3. **เตรียม rollback ไว้** — ก่อน merge บันทึก SHA ของ `origin/main` ปัจจุบัน (= จุด rollback) แล้วรายงานให้ user พร้อมวิธีย้อน: `git revert -m 1 <merge-sha>` (ปลอดภัยสุด) หรือ `git reset --hard <old-sha> && git push --force-with-lease`; ถ้ามี DB migration ให้ระบุลำดับ revert ที่ปลอดภัย (revert โค้ดก่อน แล้วค่อยแตะ schema — ดูตัวอย่าง `docs/ROLLBACK_*.md`) และ migration ต้องเขียนแบบ backward-compatible (คอลัมน์ใหม่มี default, view เปลี่ยนแบบ `create or replace`) เพื่อให้ย้อนได้ไม่พังของเดิม
   - **ข้อยกเว้น (ต้องหยุดถามก่อน merge):** ถ้าเงื่อนไข 2 ไม่ผ่าน/ไม่แน่ใจว่ากระทบส่วนอื่น, หรือเป็นการเปลี่ยน schema/RLS/พฤติกรรมที่ย้อนยาก, หรือเป็น product decision ที่ตีความได้หลายแบบ → หยุดถาม user ก่อน อย่า auto-merge
 - ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
-- **ห้ามแก้ RLS policy หรือ schema migration แบบ blanket** (เช่น loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่เข้าใจว่าตารางนั้นอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู "Supabase Projects" ด้านบน เคยทำพังมาแล้วครั้งหนึ่งกับฝั่ง DR project
+- **ห้ามแก้ RLS policy / schema migration แบบ blanket** (loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่รู้ว่าตารางอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู §Supabase Projects
 - เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
 
 ---

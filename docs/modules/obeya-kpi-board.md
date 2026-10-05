@@ -911,7 +911,7 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 | 🟡 ข้อความล้าสมัย: "แผง Key Performance" · "แท็บ 📑" · "Y/N" · "(13/07) 8,000+ ครั้ง" · หัวคอมเมนต์ "3 แท็บ/8 หัวข้อ" | แก้เป็นของจริง (⚙️ · ○△✗ · แผ่นแยก) | — |
 | 🟡 ฟอนต์ 9.5–10.5px ใน KpiMonthly/KpiStandardModal (8 จุด) · ป้าย "— ทั้งหมด" · `plantLabel="ทุกส่วนงาน"` | 11px · `allOf('รหัส Cost Center')` · `ALL.section` | UI §4 / UI-STANDARD §3.4 |
 
-**รอบ 2 (05/10 · user เคาะ "หมวด 3 แก้หมด") — แก้ครบ 6 ข้อที่เคยค้าง:**
+**รอบ 3 (05/10 · user เคาะ "หมวด 3 แก้หมด") — แก้ครบ 6 ข้อที่เคยอยู่ในลิสต์ "ยังไม่แก้":**
 
 | เดิม | แก้เป็น | หลักฐาน/ด่าน |
 |---|---|---|
@@ -923,3 +923,5 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 | 6. `ChartModal` กราฟเส้น `domain=['auto','auto']` ยกพื้นแกนเงียบ | `focusDomain([...vals, target])` + `<FocusAxisNote fixed>` (ชิป "🎯 แกนเริ่ม 79 ไม่ใช่ 0") · แท่งยังเริ่ม 0 · sparkline `MiniChart` 150×30 คงเดิมโดยตั้งใจ | ด่าน `chart-yaxis-domain-hand-made` |
 
 - harness เพิ่ม `?sections=PD2,PD3` (จำลอง user ที่ถูกจำกัดส่วนงาน) และ mount `<ToastContainer/>` ในหน้าปกติ (เดิมมีแค่ FeedbackLab ⇒ toast ของทุกหน้าไม่เคยโผล่ใน harness) → `audit/README.md`
+
+> 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)
