@@ -39,18 +39,28 @@ function Dot({ eva, size = 14, title }) {
   );
 }
 
+/* ไฟสถานะหลักของรุ่น — วงแหวน (ไม่ใช่วงกลมทึบ) ชุดเดียวกับหัวบอร์ดโหมดจอ TV
+   เดิมเป็นวงกลมสีทึบตัวอักษรดำ = ดูเป็น badge ของ bootstrap ทั่วไป · วงแหวน + แกนมืดอ่านง่ายกว่า
+   บนพื้นเข้ม และไม่ตะโกนทับชื่อแกน */
 function EvaBadge({ eva, label, note, big }) {
   const m = evaMeta(eva);
+  const none = eva === 'none' || !eva;
+  const d = big ? 42 : 30;
   return (
-    <div style={{ ...CARD, display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
-      <div style={{
-        width: big ? 40 : 30, height: big ? 40 : 30, borderRadius: '50%', flex: `0 0 ${big ? 40 : 30}px`,
-        background: m.color, color: '#0b1220', fontWeight: 800, fontSize: big ? 18 : 14,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        opacity: eva === 'none' || !eva ? 0.55 : 1,
+    <div className="nmb-card" data-eva={eva || 'none'}
+      style={{ ...CARD, display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0,
+        padding: '12px 13px 12px 17px', borderRadius: 10,
+        borderColor: none ? 'var(--border)' : `${m.color}4d`,
+        '--nmb-color': none ? 'var(--border2)' : m.color, '--nmb-rail': big ? '5px' : '4px' }}>
+      <div className="nmb-ring" style={{
+        width: d, height: d, flex: `0 0 ${d}px`, fontWeight: 800, fontSize: big ? 17 : 13,
+        color: none ? 'var(--muted)' : m.color,
+        '--nmb-color': none ? 'var(--border2)' : m.color,
+        '--nmb-glow': eva === 'R' ? 'rgba(239,68,68,0.3)' : 'transparent',
+        '--nmb-ring-w': big ? '4px' : '3px',
       }}>{m.short}</div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>{label}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em' }}>{label}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{m.label}</div>
         {note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, lineHeight: 1.45 }}>{note}</div>}
       </div>
@@ -457,12 +467,21 @@ function LevelProject({ proj, go }) {
           const hot = panelWeight(p) >= 3 && !isMobile;
           return (
             <button key={p.key} onClick={() => go({ cust: proj.customer, proj: proj.id, panel: p.key })}
+              data-eva={p.eva || 'none'} className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
               style={{ ...CARD, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column',
                 gap: 6, minHeight: 104, gridColumn: hot ? 'span 2' : undefined,
-                borderColor: hot ? evaMeta(p.eva).color : undefined }}>
-              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                <Dot eva={p.eva} size={hot ? 18 : 15} />
+                padding: '12px 13px 12px 17px', borderRadius: 10,
+                /* วัสดุชุดเดียวกับโหมดจอ TV — สีอยู่ที่รางซ้าย ไม่ใช่กรอบสีเต็มใบ */
+                borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${evaMeta(p.eva).color}4d`,
+                '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : evaMeta(p.eva).color,
+                '--nmb-rail': hot ? '6px' : '4px' }}>
+              <div style={{ display: 'flex', gap: 7, alignItems: 'baseline' }}>
+                <span className="nmb-num" style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800,
+                  letterSpacing: '0.04em', color: p.eva === 'none' || !p.eva ? 'var(--muted)' : evaMeta(p.eva).color }}>
+                  {evaMeta(p.eva).short}
+                </span>
                 <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{p.label}</span>
+                <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: 14, flex: '0 0 auto' }}>›</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
               {p.evaNote
@@ -923,6 +942,8 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
     // ชั้น "ร้อน" (แดง) — ใหญ่กว่าชั้นปกติ ~25% · ขั้นต่ำยังเกิน 11px ตาม UI §จอ TV
     panelHot: 'clamp(14px, 1.3vw, 34px)',
     noteHot:  'clamp(11.5px, 0.92vw, 24px)',
+    eyebrow:  'clamp(9px, 0.62vw, 16px)',
+    clock:    'clamp(22px, 2.3vw, 62px)',
   };
 
   return (
@@ -930,49 +951,77 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
       position: 'fixed', inset: 0, zIndex: 900, background: 'var(--bg)', color: 'var(--text)',
       display: 'flex', flexDirection: 'column', padding: '1.1vh 1vw', gap: '1vh', overflow: 'clip',
     }}>
-      {/* หัวบอร์ด */}
+      {/* ══ หัวบอร์ด ══ ป้าย MODEL เป็น eyebrow · ชื่อรุ่นเป็น hero เดียวของจอ
+           เดิมเขียน "MODEL : 737D MLM" รวมเป็นบรรทัดเดียวขนาดเท่ากันหมด = ไม่มีลำดับสายตา */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.4vw', flex: '0 0 auto' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: F.title, fontWeight: 800, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' }}>
-            MODEL : {proj.title}
-          </div>
-          <div style={{ fontSize: F.sub, color: 'var(--muted)' }}>
-            ลูกค้า {proj.customer?.toUpperCase()} · ด่าน {proj.stage} · ส่งชิ้นงาน {proj.pad} · ทีม {proj.team}
+          <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, lineHeight: 1 }}>Model</div>
+          <div style={{
+            fontSize: F.title, fontWeight: 800, lineHeight: 1.02, letterSpacing: '-0.015em',
+            whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis', marginTop: '0.3vh',
+          }}>{proj.title}</div>
+          <div style={{ display: 'flex', gap: '0.5vw', flexWrap: 'wrap', marginTop: '0.6vh' }}>
+            {[
+              ['ลูกค้า', proj.customer?.toUpperCase()],
+              ['ด่าน', proj.stage],
+              ['ส่งชิ้นงาน', proj.pad],
+              ['ทีม', proj.team],
+            ].filter(([, v]) => v).map(([k, v]) => (
+              <span key={k} style={{
+                display: 'inline-flex', alignItems: 'baseline', gap: '0.3vw',
+                background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999,
+                padding: '0.25vh 0.7vw', fontSize: F.sub, whiteSpace: 'nowrap',
+              }}>
+                <span style={{ color: 'var(--muted)' }}>{k}</span>
+                <b className="nmb-num" style={{ color: 'var(--text)' }}>{v}</b>
+              </span>
+            ))}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.8vw', marginLeft: 'auto', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1vw', marginLeft: 'auto', alignItems: 'center' }}>
           {PROJECT_AXES.map(a => {
-            const m = evaMeta(proj.eva?.[a.key]);
+            const k = proj.eva?.[a.key] || 'none';
+            const m = evaMeta(k);
             return (
               <div key={a.key} style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '4.2vw', height: '4.2vw', maxWidth: 96, maxHeight: 96, minWidth: 40, minHeight: 40,
-                  borderRadius: '50%', background: m.color, color: '#0b1220', fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 'clamp(16px, 1.9vw, 46px)', margin: '0 auto',
-                  opacity: (proj.eva?.[a.key] || 'none') === 'none' ? 0.5 : 1,
+                <div className="nmb-ring" style={{
+                  width: '4.4vw', height: '4.4vw', maxWidth: 104, maxHeight: 104, minWidth: 44, minHeight: 44,
+                  margin: '0 auto', fontWeight: 800, color: k === 'none' ? 'var(--muted)' : m.color,
+                  fontSize: 'clamp(15px, 1.75vw, 42px)',
+                  '--nmb-color': k === 'none' ? 'var(--border2)' : m.color,
+                  '--nmb-glow': k === 'R' ? 'rgba(239,68,68,0.35)' : 'transparent',
+                  '--nmb-ring-w': 'clamp(3px, 0.32vw, 8px)',
                 }}>{m.short}</div>
-                <div style={{ fontSize: F.axis, marginTop: '0.4vh', whiteSpace: 'nowrap' }}>{a.label}</div>
+                <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, marginTop: '0.6vh', whiteSpace: 'nowrap' }}>{a.label}</div>
               </div>
             );
           })}
-          <div style={{ textAlign: 'right', marginLeft: '0.8vw' }}>
-            <div style={{ fontSize: F.title, fontWeight: 700, lineHeight: 1 }}>{clock}</div>
-            <div style={{ fontSize: F.note, color: 'var(--muted)' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
+          <div style={{ textAlign: 'right', marginLeft: '0.6vw' }}>
+            <div className="nmb-num" style={{ fontSize: F.clock, fontWeight: 300, lineHeight: 1, letterSpacing: '-0.02em' }}>{clock}</div>
+            <div style={{ fontSize: F.note, color: 'var(--muted)', marginTop: '0.4vh' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
           </div>
           <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
             background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
-            borderRadius: 8, padding: '0.6vh 0.7vw', cursor: 'pointer', fontSize: F.sub,
+            borderRadius: 999, width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', fontSize: F.sub, padding: 0,
           }}>✕</button>
         </div>
       </div>
 
+      {/* เส้นคั่นหัวบอร์ดกับเนื้อบอร์ด — hairline ไล่จาง ไม่ใช่เส้นตรงทึบทั้งเส้น */}
+      <div style={{ flex: '0 0 auto', height: 1, background: 'linear-gradient(90deg, var(--border2), rgba(0,0,0,0) 70%)' }} />
+
       {/* เหตุผลที่แดง — บนบอร์ดจริงเป็นกล่องคำอธิบายชี้ที่แถวต้นเหตุ */}
       {proj.evaNote && (
-        <div style={{
-          flex: '0 0 auto', background: 'var(--card)', borderLeft: '0.4vw solid #ef4444',
-          borderRadius: 6, padding: '0.7vh 0.9vw', fontSize: F.axis, lineHeight: 1.35,
-        }}>{proj.evaNote}</div>
+        <div className="nmb-card" data-eva="R" style={{
+          flex: '0 0 auto', borderRadius: 10, padding: '0.8vh 1vw 0.8vh 1.5vw',
+          '--nmb-color': '#ef4444', '--nmb-rail': 'clamp(4px, 0.3vw, 8px)',
+        }}>
+          {/* ป้ายไทย — ห้ามใช้ชั้น .nmb-eyebrow (letter-spacing .16em ดันสระ/วรรณยุกต์ออกจากพยัญชนะ) */}
+          <div style={{ fontSize: F.eyebrow, color: '#f87171', fontWeight: 700, letterSpacing: '0.02em' }}>ทำไมบอร์ดถึงแดง</div>
+          <div style={{ fontSize: F.axis, lineHeight: 1.35, marginTop: '0.25vh' }}>{proj.evaNote}</div>
+        </div>
       )}
 
       {/* ผังแผง — แถวละหลายใบ กว้างตามน้ำหนัก (แดง 3 : เหลือง 2 : เขียว/ยังไม่ประเมิน 1)
@@ -988,27 +1037,33 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               const hot = p.eva === 'R';
               return (
                 <button key={p.key} onClick={() => onPick(p)} title={`เปิดแผง ${p.label}`}
-                  className={hot ? 'mo-card-alert' : undefined}
+                  data-eva={p.eva || 'none'}
+                  className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
                   style={{
                     flex: `${w} 1 0`, minWidth: 0, minHeight: 0, overflow: 'clip', textAlign: 'left',
                     font: 'inherit', color: 'var(--text)', cursor: 'pointer',
-                    background: 'var(--card)', borderRadius: 8,
-                    border: `${hot ? 3 : 2}px solid ${p.eva === 'none' || !p.eva ? 'var(--border)' : m.color}`,
-                    padding: hot ? '1vh 0.9vw' : '0.7vh 0.7vw',
-                    display: 'flex', flexDirection: 'column', gap: '0.4vh',
+                    borderRadius: 10, borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${m.color}4d`,
+                    /* สีสถานะอยู่ที่ "ราง" ซ้าย + พื้นไล่สีจางๆ — ไม่ใช่กรอบสีเต็มใบทั้ง 21 ใบ */
+                    '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : m.color,
+                    '--nmb-rail': hot ? 'clamp(5px, 0.34vw, 9px)' : 'clamp(3px, 0.2vw, 6px)',
+                    backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0) 46%)${
+                      hot ? `, linear-gradient(100deg, ${m.color}1f, rgba(0,0,0,0) 62%)` : ''}`,
+                    padding: hot ? '1vh 1vw 1vh 1.5vw' : '0.7vh 0.7vw 0.7vh 1.1vw',
+                    display: 'flex', flexDirection: 'column', gap: '0.35vh',
                   }}>
-                  <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'center', minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'baseline', minWidth: 0 }}>
+                    {/* 🔤 ตัวอักษร EVA — สถานะต้องอ่านได้โดย**ไม่พึ่งสีอย่างเดียว**
+                        (ตาบอดสี/จอ TV ที่สีเพี้ยน · กติกาเดียวกับวงแหวน R/Y/G บนหัวบอร์ด) */}
+                    <span className="nmb-num" style={{
+                      flex: '0 0 auto', fontSize: F.note, fontWeight: 800, letterSpacing: '0.04em',
+                      color: p.eva === 'none' || !p.eva ? 'var(--muted)' : m.color,
+                    }}>{m.short}</span>
                     <span style={{
-                      width: hot ? '1.3vw' : '0.95vw', height: hot ? '1.3vw' : '0.95vw',
-                      minWidth: 10, minHeight: 10, maxWidth: 28, maxHeight: 28,
-                      borderRadius: '50%', background: m.color, flex: '0 0 auto',
-                      opacity: p.eva === 'none' || !p.eva ? 0.5 : 1,
-                    }} />
-                    <span style={{
-                      fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700, lineHeight: 1.18, minWidth: 0,
+                      fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700,
+                      lineHeight: 1.16, minWidth: 0, letterSpacing: hot ? '-0.01em' : 0,
                       display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
                     }}>{p.label}</span>
-                    <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: F.note, flex: '0 0 auto' }}>›</span>
+                    <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: F.panel, flex: '0 0 auto' }}>›</span>
                   </div>
                   {p.evaNote ? (
                     /* 🔴 ต้องมี `flex:'0 1 auto'` + `minHeight:0` — ไม่งั้นกล่องข้อความไม่ยอมหด
@@ -1067,7 +1122,27 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
 
       {/* แถบล่าง — ตัวนับสี + ตัวสลับรุ่น */}
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '1vw', fontSize: F.sub, color: 'var(--muted)' }}>
-        <span>{proj.panels.length} แผง · {countsLabel(counts)}</span>
+        {/* ตัวนับสถานะเป็น "ชิป" — ตัวอักษร EVA + จำนวน (ไม่ใช่อีโมจิวงกลมต่อกันเป็นพรืด)
+            🔴 ชิปที่นับได้ 0 ต้องยังอยู่ แค่จาง — "ไม่มีใบแดงเลย" เป็นข้อมูล ห้ามให้หายไปเฉยๆ */}
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.45vw', flexWrap: 'wrap' }}>
+          <span className="nmb-num" style={{ color: 'var(--text2)' }}>{proj.panels.length} แผง</span>
+          {['R', 'Y', 'G', 'none'].map(k => {
+            const m = evaMeta(k);
+            const n = counts[k] || 0;
+            return (
+              <span key={k} title={m.label} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.3vw', opacity: n ? 1 : 0.35,
+                background: 'var(--bg2)', border: `1px solid ${n ? `${m.color}59` : 'var(--border)'}`,
+                borderRadius: 999, padding: '0.2vh 0.55vw', fontSize: F.sub, lineHeight: 1.3,
+              }}>
+                <span style={{ width: '0.5vw', height: '0.5vw', minWidth: 7, minHeight: 7, maxWidth: 12, maxHeight: 12,
+                  borderRadius: '50%', background: m.color, flex: '0 0 auto' }} />
+                <b className="nmb-num" style={{ color: 'var(--text)' }}>{n}</b>
+                <span style={{ color: 'var(--muted)' }}>{m.label}</span>
+              </span>
+            );
+          })}
+        </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.5vw', alignItems: 'center' }}>
           {projects.length > 1 && (
             <>
