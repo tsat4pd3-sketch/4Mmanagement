@@ -19,6 +19,7 @@ import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 import { checkWrite } from '../utils/dbWrite';
+import { getWorkDate } from '../utils/workDate'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -1008,7 +1009,14 @@ export default function PMCheckData() {
         return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
       const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
-      if (e2) throw e2
+      if (e2) {
+        /* 🔴 หัวใบตรวจถูกสร้างไปแล้วแต่ผลรายจุดเข้าไม่ได้ ⇒ ลบหัวใบทิ้ง (QC 05/10)
+           ไม่ลบ = มีแถว inspections ที่ไม่มีผลสักจุด แต่ถูกนับว่า "ตรวจแล้ว" ในประวัติ/สรุปรายกะ/Dashboard
+           ลบไม่ได้ต้องบอกบนจอ ห้ามเงียบ */
+        const { data: gone, error: eDel } = await supabaseDR.from('inspections').delete().eq('id', insp.id).select('id')
+        const orphan = eDel || !gone?.length
+        throw new Error(`บันทึกผลรายจุดไม่สำเร็จ: ${e2.message}${orphan ? ' — ⚠️ และลบหัวใบตรวจที่สร้างค้างไม่สำเร็จ ใบนี้จะขึ้นในประวัติโดยไม่มีผล แจ้ง admin' : ' (ยกเลิกใบนี้แล้ว กดบันทึกใหม่ได้)'}`)
+      }
 
       // 🔩 ค่าชิมที่กรอกมาด้วย → ประวัติชิมของจุด (ผูก inspection_id) — ล้มต้องบอก ห้ามให้ใบตรวจหลักล้มตาม
       const shimEntries = shimPoints.map(pt => [pt, shimVals[pt.id]]).filter(([, v]) => v && v.mm !== '' && v.mm != null && !Number.isNaN(Number(v.mm)))
@@ -1039,8 +1047,9 @@ export default function PMCheckData() {
           const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
             .select('id, plan_type, interval_days, last_done_at').eq('checklist_id', checklistId).eq('is_active', true)
           if (pErr) throw pErr
-          const now = new Date()
-          const done = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` // local — ห้าม toISOString
+          // วันที่ทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — เดิมใช้วันปฏิทินเครื่อง ⇒ กะดึกตรวจตี 2
+          // ได้วันถัดไป แผนเลื่อนรอบเกินจริง 1 วัน + ข้ามด่าน "วันนี้ stamp แล้ว" (QC 05/10)
+          const done = getWorkDate()
           for (const pl of (plans || [])) {
             if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
             const patch = { last_done_at: done }

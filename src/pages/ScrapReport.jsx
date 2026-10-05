@@ -308,8 +308,11 @@ export default function ScrapReport() {
     const [y, mo] = date.slice(0, 7).split('-').map(Number);
     const monthStart = `${date.slice(0, 7)}-01`;
     const nextMonth = mo === 12 ? `${y + 1}-01-01` : `${y}-${String(mo + 1).padStart(2, '0')}-01`;
-    const { data } = await supabaseDR.from('scrap_reports').select('doc_no')
+    const { data, error } = await supabaseDR.from('scrap_reports').select('doc_no')
       .gte('report_date', monthStart).lt('report_date', nextMonth);
+    /* 🔴 คิวรีล้ม = ห้ามออกเลข (เดิมได้ data=null → เริ่ม 0001 ใหม่ = เลขซ้ำใบที่ออกไปแล้ว · QC 05/10)
+       ผู้เรียกจับ throw แล้วไม่บันทึก — เขียนไม่ได้ดีกว่าเขียนเลขที่อาจซ้ำ (หลักเดียวกับ nextProblemDocNo) */
+    if (error) throw new Error(`ออกเลขที่ใบไม่สำเร็จ: ${error.message}`);
     let maxSeq = 0;
     (data || []).forEach(r => { const m = /TSAT4-PDX\s+(\d+)/.exec(r.doc_no || ''); if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10)); });
     const running = maxSeq + 1;
@@ -482,7 +485,10 @@ export default function ScrapReport() {
       if (!window.confirm(`ใบนี้ยังมี ${opScan.opRowsCount} รายการที่เป็นเลขขั้นตอน (OP): ${mats}\n\nเลขพวกนี้ไม่มีใน SAP — สโตร์ตัดสต๊อกไม่ได้\nกด "🧩 ระเบิดขั้นตอน" ก่อนจะตรงกว่า\n\nยืนยันบันทึกทั้งที่ยังไม่ระเบิด?`)) return;
     }
     let doc_no = report.doc_no;
-    if (!doc_no) doc_no = await nextDocNo(report.report_date);
+    if (!doc_no) {
+      try { doc_no = await nextDocNo(report.report_date); }
+      catch (e) { toast.error(`${e.message} — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง`); return; }
+    }
     const payload = {
       report_date: report.report_date, line_name: report.line_name, dept: report.dept || null,
       section: report.section || null, division: report.division || 'TSAT4', other_note: report.other_note || null,
@@ -500,6 +506,9 @@ export default function ScrapReport() {
       const { data, error } = await supabaseDR.from('scrap_reports').insert({ ...payload, created_by: fullName || null }).select().single();
       if (error) { toast.error(error.message); return; }
       repId = data.id;
+      /* 🔴 เขียน id + เลขใบกลับเข้า editor ทันที — ขั้นรายการด้านล่างล้มแล้วกดบันทึกซ้ำ
+         ต้องเป็น "แก้ใบเดิม" ไม่ใช่สร้างหัวใบใหม่ (เดิมได้หัวใบกำพร้าไม่มีรายการ + เลขใบกระโดด · QC 05/10) */
+      setEditor(e => (e ? { ...e, report: { ...e.report, id: repId, doc_no } } : e));
     }
     // replace items ทั้งชุด — เช็ค error ของ delete ก่อน insert ใหม่
     // (ถ้า delete ล้มแล้วปล่อยผ่าน อาจได้ item ซ้ำ · ถ้า insert ล้มหลัง delete สำเร็จ รายการหายหมด — เตือนให้กดบันทึกใหม่)

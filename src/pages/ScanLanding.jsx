@@ -25,7 +25,8 @@ import ScanModal from '../components/ScanModal';
 import { supabaseDR } from '../supabaseClient';
 import useMachines from '../utils/useMachines';
 import { canAccessPage } from '../utils/permissions';
-import { parseQrPayload, resolveMachine, resolveJig, QR_KINDS } from '../utils/qrCode';
+import { DEFAULT_TEAMS } from '../utils/pmTeams';
+import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, QR_KINDS } from '../utils/qrCode';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
@@ -61,7 +62,9 @@ export default function ScanLanding() {
 
   useEffect(() => {
     let alive = true;   // stale-response guard (กฎเขียน DB ข้อ 4)
-    supabaseDR.from('jigs').select('id, name, jig_no, machine_no, machine_id, line_name, department, equipment_type')
+    /* ⚠️ `jigs` ไม่มีคอลัมน์ department (วัด 05/10) — เดิม select ไปด้วย ⇒ 42703 ทั้งคิวรี
+       ⇒ จิ๊กไม่เคยถูกพบ + ปุ่ม "ตรวจ PM" ไม่เคยโผล่ · แผนกของใบตรวจอ่านจาก checklists แทน (ด้านล่าง) */
+    supabaseDR.from('jigs').select('id, name, jig_no, machine_no, machine_id, line_name, equipment_type')
       .then(({ data, error }) => {
         if (!alive) return;
         if (error) { setJigErr(true); setJigs([]); return; }
@@ -71,14 +74,35 @@ export default function ScanLanding() {
   }, []);
 
   const scan = useMemo(() => parseQrPayload(raw), [raw]);
-  const loading = mLoading || jigs === null;
+  const isDelivery = scan?.kind === 'delivery';
+
+  /* 🎯 ป้ายจุดส่งงาน (ESM:D:<uuid>) — QrLabels พิมพ์เป็นลิงก์ /scan เหมือนป้ายเครื่อง
+     เดิมหน้านี้หาแค่เครื่อง/จิ๊ก ⇒ ส่องป้ายจุดส่งด้วยกล้องมือถือแล้วขึ้น "ไม่พบอุปกรณ์" ทุกครั้ง (QC 05/10)
+     โหลดเฉพาะเมื่อเป็นป้ายจุดส่ง (ไม่ดึงทะเบียนทุกครั้งที่สแกนเครื่อง) */
+  const [points, setPoints] = useState(null);
+  const [pointErr, setPointErr] = useState(false);
+  useEffect(() => {
+    if (!isDelivery) { setPoints([]); return undefined; }
+    let alive = true;
+    setPoints(null);
+    supabaseDR.from('line_delivery_points').select('id, code, name, line_names, is_active')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setPointErr(true); setPoints([]); return; }
+        setPoints(data ?? []);
+      });
+    return () => { alive = false; };
+  }, [isDelivery]);
+
+  const loading = mLoading || jigs === null || points === null;
 
   const hit = useMemo(() => {
     if (!scan || loading) return null;
     const machine = resolveMachine(scan, machines);
     const jig = resolveJig(scan, jigs ?? []);     // แถวทะเบียน PM (เครื่องมี "แถวเงา" ใน jigs)
-    return { machine, jig };
-  }, [scan, machines, jigs, loading]);
+    const point = isDelivery ? resolveDeliveryPoint(scan, points ?? []) : null;
+    return { machine, jig, point };
+  }, [scan, machines, jigs, points, isDelivery, loading]);
 
   const title = hit?.machine
     ? `${hit.machine.machine_no || '—'}`
@@ -88,6 +112,24 @@ export default function ScanLanding() {
     : hit?.jig ? [hit.jig.name, hit.jig.line_name].filter(Boolean).join(' · ') : '';
 
   const found = !!(hit?.machine || hit?.jig);
+
+  /* แผนกที่มีใบตรวจของอุปกรณ์นี้ (checklists.department = key ทีมช่าง) — ส่ง `dept=` ไปหน้า PM
+     ไม่ส่ง = PMCheckData เปิดแผนก maintenance เสมอ ⇒ จิ๊กของ JIG MTN/AM หาใบตรวจไม่เจอ (QC 05/10)
+     null = ยังโหลด · [] = ไม่มีใบตรวจ / โหลดไม่ได้ (ปุ่มยังพาไปได้ แบบไม่ระบุแผนก) */
+  const jigId = hit?.jig?.id || null;
+  const [pmDepts, setPmDepts] = useState(null);
+  useEffect(() => {
+    if (!jigId) { setPmDepts(null); return undefined; }
+    let alive = true;
+    supabaseDR.from('checklists').select('department').eq('equipment_id', jigId).eq('module', 'mtn')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        setPmDepts(error ? [] : [...new Set((data || []).map(r => r.department).filter(Boolean))]);
+      });
+    return () => { alive = false; };
+  }, [jigId]);
+  const teamLabel = (k) => DEFAULT_TEAMS.find(t => t.key === k)?.label || k;
+  const pointHit = !found ? hit?.point : null;
 
   return (
     <Page>
@@ -109,13 +151,36 @@ export default function ScanLanding() {
 
       {raw && loading && <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>กำลังค้นหาอุปกรณ์…</div>}
 
-      {raw && !loading && !found && (
+      {raw && !loading && pointHit && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={card}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🎯 จุดส่งงาน</div>
+            <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{pointHit.name || pointHit.code || '—'}</div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
+              {[pointHit.code && `รหัส ${pointHit.code}`, (pointHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
+              {pointHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
+              ป้ายนี้ใช้ยืนยันตอน <b>สโตร์ส่งของถึงไลน์</b> — สแกนจากปุ่ม 📍 ในใบเติม WIP (หน้า Heijunka) ไม่ใช่ป้ายเครื่องจักร
+            </p>
+          </div>
+          {canAccessPage('/heijunka', role) && (
+            <ActionLink to="/heijunka" icon="🔄" label="ไปหน้าส่งของ (Heijunka)" sub="เลือกใบที่จะส่ง แล้วสแกนป้ายนี้ยืนยัน" />
+          )}
+          <button onClick={() => setRescan(true)}
+            style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
+            📷 สแกนป้ายอื่น
+          </button>
+        </div>
+      )}
+
+      {raw && !loading && !found && !pointHit && (
         <div style={{ ...card, borderColor: 'var(--amber, #f59e0b)' }}>
           <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบอุปกรณ์ของป้ายนี้</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
             ชนิดป้าย: {scan?.typed ? `${QR_KINDS[scan.kind]?.icon ?? ''} ${QR_KINDS[scan.kind]?.label ?? scan.kind}` : 'เลขเปล่า (ไม่ใช่ป้ายของระบบ)'}
-            {(mFailed || jigErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {(mFailed || jigErr || pointErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>📷 สแกนใหม่</button>
@@ -135,10 +200,16 @@ export default function ScanLanding() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {hit.jig && canAccessPage('/pm-check', role) && (
-              <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
-                sub="เปิดใบตรวจตามจุดที่ตั้งไว้" />
-            )}
+            {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
+              ? pmDepts.map(d => (
+                  <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon="✅"
+                    label={pmDepts.length > 1 ? `ตรวจ PM เครื่องนี้ — ${teamLabel(d)}` : 'ตรวจ PM เครื่องนี้'}
+                    sub="เปิดใบตรวจตามจุดที่ตั้งไว้" />
+                ))
+              : (
+                <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
+                  sub={pmDepts === null ? 'กำลังหาใบตรวจ…' : 'ยังไม่พบใบตรวจของอุปกรณ์นี้ — เลือกแผนกในหน้าตรวจ'} />
+              ))}
             {canAccessPage('/mtn-repair', role) && (
               <ActionLink to={`/mtn-repair?tab=list&q=${encodeURIComponent(hit.machine?.machine_no || hit.jig?.machine_no || hit.jig?.jig_no || '')}`}
                 icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="#f59e0b" />

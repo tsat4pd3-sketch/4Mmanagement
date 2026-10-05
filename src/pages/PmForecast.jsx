@@ -46,6 +46,8 @@ export default function PmForecast() {
   const [onlyWindow, setOnlyWindow] = useState(false)
   const [daily, setDaily] = useState([])      // ยอดผลิตรายไลน์รายวัน (RPC pm_usage_daily)
   const [lineObjs, setLineObjs] = useState([])
+  /* ยอดผลิตโหลดไม่ได้ = ยอดสะสม/อัตรา/buffer ทั้งหน้าเป็น 0 ⇒ ต้องเขียนบนจอ ห้ามแค่ console.warn (QC 05/10) */
+  const [prodErr, setProdErr] = useState('')
   /* ⚠️ param `fc` ไม่ใช่ `tab` — หน้านี้ถูก embed ใน /pm (PmHub ใช้ `?tab=forecast` อยู่แล้ว)
      เดิมใช้ `?tab=` ⇒ กดแท็บ "ยอดผลิตสะสม" แล้ว URL กลายเป็น ?tab=usage ที่ PmHub ไม่รู้จัก
      ⇒ เด้งกลับแท็บแรกของ /pm (ตรวจอุปกรณ์) · UI-CONVENTIONS §6.8 ข้อ 2.4 (แก้ 2026-09-23) */
@@ -76,8 +78,8 @@ export default function PmForecast() {
          ได้ข้อมูลจริงแค่ ~7.6% ⇒ ยอดสะสม/อัตราต่อวัน/buffer ทั้งหน้าต่ำกว่าความจริงหลายเท่า
          (กฎเหล็กข้อ 5 ใน CLAUDE.md) · แก้ด้วยการรวมยอดฝั่ง server: (ไลน์ × วัน) = 575 แถว
          ⚠️ ห้ามกลับไปดึงใบดิบอีก — เพิ่ม limit ก็ยังชนอยู่ดีเมื่อข้อมูลโต */
-      const { data: prodDaily, error: prodErr } = await supabaseDR.rpc('pm_usage_daily', { p_days: 120 })
-      if (prodErr) console.warn('[pm-forecast] โหลดยอดผลิตไม่สำเร็จ:', prodErr.message)
+      const { data: prodDaily, error: eProd } = await supabaseDR.rpc('pm_usage_daily', { p_days: 120 })
+      setProdErr(eProd ? eProd.message : '')
       const prodArr = prodDaily || []
       setDaily(prodArr)
       setLineObjs(lineArr)
@@ -161,6 +163,11 @@ export default function PmForecast() {
         actions={<button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>🔄 รีเฟรช</button>}
       />
 
+      {prodErr && (
+        <div role="alert" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ โหลดยอดผลิตย้อนหลังไม่สำเร็จ ({prodErr}) — ยอดสะสม / อัตราต่อวัน / buffer ด้านล่างไม่ใช่ค่าจริง (ต่ำกว่าจริง) กด 🔄 รีเฟรช
+        </div>
+      )}
       {tab === 'usage' ? (
         <PmUsageBoard daily={daily} lines={lineObjs} plans={rows} todayStr={todayStr} loading={loading} />
       ) : (<>

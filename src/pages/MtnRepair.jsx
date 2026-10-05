@@ -326,7 +326,11 @@ export default function MtnRepair() {
   const [fStatus, setFStatus] = useState('open');
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
-  const [fText, setFText] = useState('');
+  /* 🔗 `?q=` = คำค้นตั้งต้นจากลิงก์ภายนอก (/scan → "ดูใบซ่อมของเครื่องนี้" ส่งเลขเครื่องมา)
+     เดิมไม่มีใครอ่าน ⇒ สแกนป้ายเครื่องแล้วเห็นใบซ่อมทุกเครื่อง (QC 05/10) · q เปลี่ยน (สแกนป้ายใหม่) = ตามค่าใหม่ */
+  const qParam = sp.get('q') || '';
+  const [fText, setFText] = useState(qParam);
+  useEffect(() => { if (qParam) setFText(qParam); }, [qParam]);
   /* 📅 วันที่ + กะ + ประเภทงานซ่อม (2026-09-25 · feedback ณัฐพล สีพิมพ์ขัด 24/09
      *"เพิ่มแท๊ปในรายการแจ้งซ่อมที่สามารถดูเลือกวันที่และกะประเภทของการแจ้งซ่อมได้"*)
      ทำเป็น **ตัวกรองในแท็บเดิม ไม่ใช่แท็บใหม่** — ตัวกรองช่วงเวลาต้องหน้าตาเดียวกันทุกหน้า
@@ -435,9 +439,15 @@ export default function MtnRepair() {
     teamDefaulted.current = true;
   }, [userTeams, role, lines.length]);
 
+  /* โหลดใบล้ม / ชนเพดาน 1000 ใบ ต้องเขียนบนจอ (QC 05/10) — เดิม error ถูกกลืนแล้วขึ้น "ไม่มีรายการ"
+     และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
+  const ORDER_CAP = 1000;
+  const [ordersErr, setOrdersErr] = useState('');
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
-    const { data } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(1000);
+    const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
+    if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
+    setOrdersErr('');
     setOrders(data || []);
   }, []);
 
@@ -588,6 +598,16 @@ export default function MtnRepair() {
           <span className="filter-count">{shown.length} รายการ</span>
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
+        {ordersErr && (
+          <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444', border: '1px solid #ef4444', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ โหลดรายการใบซ่อมไม่สำเร็จ: {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด
+          </div>
+        )}
+        {orders.length >= ORDER_CAP && (
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ใบที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นใบเก่าด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง)
+          </div>
+        )}
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
         {dateHidden.n > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)',
@@ -918,7 +938,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); const { error: eImg } = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); if (eImg) throw new Error(`ผูกรูปเข้าใบไม่สำเร็จ (${eImg.message}) — แนบใหม่ได้ด้วยปุ่มแก้ไข`); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -2241,14 +2261,29 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   /* ตารางค่าแรงรายคนของฟอร์ม MTN (ชื่อ × ค่าแรง/ชม. × ชม.) — เดิมมีแค่ยอดรวมก้อนเดียว
      เปิดแก้ไขขั้น 3 ให้โหลดของเดิมมาแสดง (ไม่งั้นบันทึกซ้ำแล้วค่าแรงหาย) */
   const [laborRows, setLaborRows] = useState([]);
-  useEffect(() => {
-    if (step !== 3 || !isMtnForm) return;
+  /* 🔴 สถานะโหลดค่าแรงเดิม: 'loading' | 'ok' | 'error' (QC 05/10)
+     ตอนบันทึก ระบบ "ลบค่าแรงเดิมทั้งชุดแล้วเขียนใหม่" ⇒ ถ้ายังโหลดไม่เสร็จ/โหลดล้ม แล้วกดบันทึก
+     = ลบค่าแรงจริงทิ้ง เขียนชุดว่างแทน · และผลโหลดที่มาช้าห้ามทับแถวที่ช่างเพิ่งพิมพ์
+     ⇒ ปุ่มเพิ่มคน/บันทึก รอจนโหลดเสร็จ · โหลดล้ม = บล็อกบันทึก + บอกบนจอ */
+  const needLabor = step === 3 && isMtnForm;
+  const [laborState, setLaborState] = useState(needLabor ? 'loading' : 'ok');
+  const [laborErr, setLaborErr] = useState('');
+  const loadLabor = useCallback(() => {
+    if (!needLabor) { setLaborState('ok'); return () => {}; }
     let alive = true;
+    setLaborState('loading'); setLaborErr('');
     supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq')
-      .then(({ data }) => { if (alive && data?.length) setLaborRows(data.map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }))); });
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setLaborErr(error.message); setLaborState('error'); return; }
+        const loaded = (data || []).map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }));
+        setLaborRows(cur => (cur.length ? cur : loaded));   // มีแถวที่ช่างพิมพ์แล้ว = ไม่ทับ
+        setLaborState('ok');
+      });
     return () => { alive = false; };
-  }, [step, isMtnForm, o.id]);
-  const addLabor = () => { touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
+  }, [needLabor, o.id]);
+  useEffect(() => loadLabor(), [loadLabor]);
+  const addLabor = () => { if (laborState !== 'ok') return; touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
   const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
@@ -2317,14 +2352,21 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
     if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
     if (fillCallAt) {
-      await supabaseDR.from('downtime_logs')
+      // 0 แถว = มีเวลาเรียกช่างอยู่แล้ว (ตั้งใจไม่ทับ) — แต่ error ต้องบอก (QC 05/10 · เดิมไม่อ่านผล)
+      checkWrite(await supabaseDR.from('downtime_logs')
         .update({ call_mtn: true, call_mtn_at: fillCallAt })
-        .eq('id', order.source_downtime_id).is('call_mtn_at', null);
+        .eq('id', order.source_downtime_id).is('call_mtn_at', null), 'บันทึกใบ MO แล้ว แต่ส่งเวลาเรียกช่างกลับไปที่รายการเครื่องหยุด');
     }
   };
 
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
+    /* ค่าแรงเดิมยังไม่ได้โหลด/โหลดล้ม = ห้ามบันทึก (ขั้นบันทึกจะลบค่าแรงเดิมทั้งชุด) */
+    if (needLabor && laborState !== 'ok') {
+      return toast.error(laborState === 'loading'
+        ? 'รอโหลดค่าแรงเดิมของใบนี้ก่อน แล้วกดบันทึกอีกครั้ง'
+        : `โหลดค่าแรงเดิมไม่สำเร็จ (${laborErr}) — กด "โหลดใหม่" ในช่องค่าแรงก่อนบันทึก ไม่งั้นค่าแรงเดิมจะหาย`);
+    }
     setSaving(true);
     try {
       /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
@@ -2659,8 +2701,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label style={lbl}>ค่าแรงในการปฏิบัติงาน (รายคน) · วิศวกร 200 บาท/ชม. · ช่างเทคนิค 100 บาท/ชม.</label>
-                <button type="button" onClick={addLabor} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่มคน</button>
+                <button type="button" onClick={addLabor} disabled={laborState !== 'ok'} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, opacity: laborState !== 'ok' ? 0.5 : 1 }}>+ เพิ่มคน</button>
               </div>
+              {laborState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดค่าแรงเดิมของใบนี้…</div>}
+              {laborState === 'error' && (
+                <div role="alert" style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+                  ⚠️ โหลดค่าแรงเดิมไม่สำเร็จ ({laborErr}) — ยังบันทึกขั้นนี้ไม่ได้ (กันค่าแรงเดิมหาย){' '}
+                  <button type="button" onClick={loadLabor} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
+                </div>
+              )}
               {laborRows.map((r, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2673,7 +2722,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                 </div>
               ))}
-              {!laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
+              {laborState === 'ok' && !laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
               {sumLabor(laborRows) != null && <div style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 800, marginTop: 2 }}>(1) รวมค่าแรง {sumLabor(laborRows).toLocaleString()} บาท</div>}
             </div>
           )}

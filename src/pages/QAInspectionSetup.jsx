@@ -480,7 +480,9 @@ export default function QAInspectionSetup() {
     }).select().single();
     setUploading(false);
     if (error) { toast.error(error.message); return; }
-    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id).then(() => loadParts());
+    // เดิม .then() ไม่อ่าน error — ประทับเวลา drawing ล้มเงียบ (QC 05/10)
+    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id)
+      .then(res => { checkWrite(res, 'ประทับเวลาแก้ drawing '); loadParts(); });
     toast.success(`เพิ่ม drawing "${data.title}" แล้ว ✓`);
     await loadDrawings(sel.id);
     setActiveDwgId(data.id);
@@ -528,7 +530,9 @@ export default function QAInspectionSetup() {
   const deleteDrawing = async (dwg) => {
     const cnt = items.filter(i => i.drawing_id === dwg.id).length;
     if (!window.confirm(`ลบแผ่น "${dwg.title}"?${cnt ? `\nballoon ${cnt} จุดบนแผ่นนี้จะถูกถอดตำแหน่ง (ตัวจุดตรวจไม่หาย)` : ''}`)) return;
-    if (cnt) await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id);
+    /* ถอดตำแหน่ง balloon ก่อนลบแผ่น — ล้มแล้วต้องหยุด (เดิมไม่อ่าน error แล้วลบแผ่นต่อ
+       ⇒ จุดตรวจชี้ drawing_id ที่ไม่มีแล้ว / FK บล็อกการลบแบบงงๆ · QC 05/10) */
+    if (cnt && !checkWrite(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id), 'ถอดตำแหน่ง balloon ')) return;
     const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
     if (error) { toast.error(error.message); return; }
     // ลบ row สำเร็จแล้ว ค่อยลบไฟล์จาก storage ด้วย กันไฟล์กำพร้า (best-effort)

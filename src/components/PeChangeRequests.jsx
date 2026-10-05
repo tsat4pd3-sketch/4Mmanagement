@@ -228,7 +228,10 @@ export default function PeChangeRequests({
     const { data: rev, error: e1 } = await supabase.from('pe_doc_revisions').insert({
       set_id: a.cr.set_id, doc_type: a.cr.doc_type === 'pfc' ? 'pfc' : a.cr.doc_type,
       rev_no: a.rev_no ? Number(a.rev_no) : null, rev_date: a.rev_date || null,
-      content: a.content.trim(), ref_kind: a.cr.ref_kind === 'capa' ? 'ncr' : a.cr.ref_kind,
+      content: a.content.trim(),
+      /* ส่ง ref_kind ตรงตัว — check ของ pe_doc_revisions รับ 'capa' แล้ว (20260819_pe_ref_kind_improvement_main)
+         เดิมแปลง capa→ncr ⇒ ref_id ของ CAPA ถูกอ่านเป็นเลข NCR = สืบย้อนผิดใบ (QC 05/10) */
+      ref_kind: a.cr.ref_kind,
       ref_id: a.cr.ref_id, issued_by: fullName || null,
     }).select('id').single();
     if (e1) { setBusy(false); toast.error(e1.message); return; }

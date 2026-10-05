@@ -269,3 +269,13 @@ test('🔴 assetClassOf: เดาไม่ออก ต้องลง "other" 
   // ทุกผลลัพธ์ต้องอยู่ในลิสต์แท็บ ไม่งั้นใบตกจากทุกแท็บ
   for (const t of ['JIG A', 'DIE B', 'PRESS C', '']) assert.ok(ASSET_KEYS.includes(guessAssetClass(t)));
 });
+
+/* แท็บชนิดสินทรัพย์ตั้งต้น = กลุ่มแรกที่มีข้อมูล (UX 05/10 — เดิมตรึง 'machine' เปิดมาเจอจอว่าง) */
+test('firstAssetWithData — กลุ่มแรกตามลำดับที่มีเหตุการณ์ · ไม่มีเลย = fallback', async () => {
+  const { firstAssetWithData } = await import('../qc7.js');
+  assert.equal(firstAssetWithData({ machine: [], die: [{}], jig: [{}], other: [] }), 'die');
+  assert.equal(firstAssetWithData({ machine: [{}], die: [{}] }), 'machine');
+  assert.equal(firstAssetWithData({ machine: [], die: [], jig: [], other: [{}] }), 'other');
+  assert.equal(firstAssetWithData({}, 'jig'), 'jig');
+  assert.equal(firstAssetWithData(undefined), 'machine');
+});

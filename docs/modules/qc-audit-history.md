@@ -39,6 +39,28 @@
 | 3 | `oee.js` suspectState | 🔴 ลง 2 ถังพร้อมกัน (แดงจาก NG + เหลืองจากสงสัย) ⇒ ของสงสัยถูกนับเสียทันที ผิดกฎ "รอ QA" → ใบแดงตรงนับเฉพาะเมื่อไม่มีใบเหลือง · ใบ `is_active=false` ไม่มีสิทธิ์ตัดสิน (embed เพิ่ม `is_active`) · วัดฐาน: กะที่โดนจริง **0** ไม่ต้อง backfill |
 | 4 | `HeijunkaKanban.jsx` confirmRound | 🔴 claim รอบส่งแล้ว ledger ล้ม ⇒ รอบขึ้น "ส่งแล้ว" ของไม่เข้าสต็อก กดซ้ำไม่ได้ → คืน claim (กฎเขียน DB ข้อ 6) |
 
+**✅ แก้แล้ว batch 2 — คุณภาพ/วิศวกรรม + MTN/PM (branch `fix/qc-quality-mtn`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 1 | `QualityBins.jsx` | `toRed` ส่งต่อ `defect_log_id` (เดิม %Q มองไม่เห็นใบแดง ⇒ ของยืนยันเสียค้าง "รอ QA") · ป้ายเกินอายุแท็กนับจากคิวรีแยกไม่ผูกช่วงวันที่ (ชนเพดาน 500 / เช็คใบย้ายแดงล้ม = เขียนบนจอ) · stale guard |
+| 2 | `MaterialRequests.jsx` + `materialRequest.js` | เลขใบ = เลขสูงสุดของเดือน+1 (`maxReqSeq`) ออกใหม่ตอนบันทึก · ใบ approved/issued ห้ามลบจริง → ยกเลิก · ⚠️ แนะนำ unique index `material_requests.doc_no` (ยังไม่ทำ) |
+| 3 | `vsmModel.js` `demandOf` | Order/year = 12 เดือนจากเดือนที่เลือก + EDI 830 ชนะ manual รายเดือน · ไม่ครบ 12 เดือน = ≈ + จำนวนเดือน · เทส `vsmDemand` |
+| 4 | `QualityControl.jsx` dashboard | กรองสินค้าใช้ `defectQty`/`isTrialDefect` เหมือนทางหลัก · ขึ้นของสงสัยรอ QA · คิวรีล้ม = แถบเตือน (NCR/CAPA `—`) |
+| 5 | `PeChangeRequests.jsx` | ส่ง `ref_kind` ตรงตัว (วัดแล้ว check ทั้ง 2 ตารางรับ `capa`) |
+| 6 | `PeMasterLibrary.jsx` accept | claim CAS ก่อน → เขียน master → ล้มคืน claim · ทุก error ถูกอ่าน |
+| 7 | `Improvements.jsx` + `costSaving.js` | กะ/`fetchByIds` ล้ม = error/partial บนการ์ด · `rateIsFallback()` บอกว่าใช้ rate วันไหน · เทส `costSavingRate` |
+| 8 | `EventLog.jsx` CQI-15 | อนุมัตินับแถว · ปิดสถานะใบอ่าน error+นับแถว · ผลตรวจ upsert ผ่าน `checkWrite` |
+| 9 | `ScrapReport.jsx` | เขียน id/เลขใบกลับ editor หลังสร้างหัวใบ · `nextDocNo` คิวรีล้ม = throw |
+| 10 | `QAInspectionSetup.jsx` · `qaDocNo.js` | ถอด balloon ล้ม = หยุด · ประทับเวลา drawing อ่าน error · `nextDocNo` ล้ม = null + 5 ผู้เรียกบล็อก · ⏭ `NpiDrawingsEci` เลข ECI ต่อโปรเจค = **ตั้งใจ** (unique `(project_id, eci_no)`) ไม่แก้ |
+| 11 | `PeSetFromMasterModal.jsx` | rollback ลบชุดนับแถว — ลบไม่ได้บอกว่าชุดค้าง |
+| 12 | `ScanLanding.jsx` · `MtnRepair.jsx` | 🔴 **select `jigs.department` (ไม่มีคอลัมน์) ⇒ 42703 จิ๊กไม่เคยถูกพบ** → ถอด + แผนกจาก `checklists.department` ส่ง `&dept=` (ด่าน `jigs-has-no-department-column`) · ป้ายจุดส่ง ESM:D มีหน้าปลายทาง · `/mtn-repair` อ่าน `?q=` |
+| 13 | `MtnRepair.jsx` | ค่าแรงรายคน: บล็อกบันทึกจนโหลดของเดิมเสร็จ/สำเร็จ ไม่ทับแถวที่พิมพ์ · `loadOrders` error + แถบเพดาน 1000 · `before_img` / `call_mtn_at` อ่าน error |
+| 14 | `PMCheckData.jsx` | ผลรายจุดล้ม = ลบหัวใบ (ลบไม่ได้บอก) · `last_done_at` = `getWorkDate()` |
+| 15 | `PmCoordination.jsx` | `functions.invoke` error · toast เขียวตามผลจริง · tasks insert-ก่อน-ลบ · `setBusy(false)` · แผนใหม่บันทึกซ้ำไม่สร้างหัวซ้ำ · stamp `last_done_at` = `getWorkDate()` + นับแถว |
+| 16 | `PmForecast.jsx` | `pm_usage_daily` ล้ม = แถบเตือน |
+| 17 | `MtnAnalysis.jsx` | stale guard = request id ใน load · UX: แท็บสินทรัพย์ตั้งต้น = กลุ่มแรกที่มีข้อมูล (`firstAssetWithData` + เทส) · ถอดชื่อตาราง/คอลัมน์ออกจากข้อความบนจอ |
+| 18 | `SparePartMaster.jsx` | delete ยอดใช้ manual อ่าน error |
+
 **✅ UX quick wins (05/10):** PPM ยอดผลิต 0 = "—" ไม่ใช่ 1,000,000 (`KpiMonthly` + `obeyaYear`) · `/program-update` ตั้งต้น "สำหรับผู้ใช้" ซ่อนเอกสาร/งานระบบ
 
 **✅ แก้แล้ว (batch ผลิต/admin · branch `fix/qc-production-admin`)**
@@ -59,8 +81,8 @@
 | — | `LineSetup.jsx` `wip_buffer_points` | **ไม่แก้ — รายงาน:** เขียนแค่ rename cascade (คงประวัติให้ชื่อตรง) + ลบตอนลบไลน์ทั้งไลน์ · ไม่ได้เขียนยอด/เรียก `wip_point_add_qty` · จะเลิกลบประวัติตอนลบไลน์ไหม = ให้ user ตัดสิน |
 
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/MtnAnalysis/ProductHistory/QualityBins) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
-- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ"
+- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/ProductHistory) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
+- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
 - 🔴 edge แจ้งเตือน (`send-notification`/`-event-`/`-mtn-`/`-store-`/`-cqi15-`/`send-push`) `verify_jwt=false` ไม่เช็คผู้เรียก ⇒ ยิงแจ้งเตือนปลอม/ push ใครก็ได้จากภายนอก · `daily-4m-summary` รับ Bearer อะไรก็ได้
