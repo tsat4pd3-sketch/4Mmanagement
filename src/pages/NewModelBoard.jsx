@@ -5,7 +5,8 @@ import Page from '../components/Page';
 import useIsMobile from '../utils/useIsMobile';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
-  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions, tvGrid,
+  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions,
+  tvWeightedLayout, panelWeight,
   BUCKETS, bucketOf, flattenPop, mainEva, bucketCounts, leavesInBucket, redWithoutNote, EVA_RULE,
 } from '../utils/nmBoard';
 import {
@@ -451,16 +452,25 @@ function LevelProject({ proj, go }) {
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(245px, 1fr))' }}>
         {proj.panels.map(p => {
           const kind = PANEL_KIND[p.kind] || PANEL_KIND.doc;
+          /* น้ำหนักเดียวกับโหมดจอ TV — ใบแดงมีเหตุผลต้องอ่าน กินสองคอลัมน์
+             (ลำดับแผงคงเดิมเสมอ ⇒ ห้ามใส่ gridAutoFlow:'dense' มาอุดรู มันสลับที่ใบ) */
+          const hot = panelWeight(p) >= 3 && !isMobile;
           return (
             <button key={p.key} onClick={() => go({ cust: proj.customer, proj: proj.id, panel: p.key })}
               style={{ ...CARD, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                gap: 6, minHeight: 104 }}>
+                gap: 6, minHeight: 104, gridColumn: hot ? 'span 2' : undefined,
+                borderColor: hot ? evaMeta(p.eva).color : undefined }}>
               <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                <Dot eva={p.eva} size={15} />
-                <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{p.label}</span>
+                <Dot eva={p.eva} size={hot ? 18 : 15} />
+                <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{p.label}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
-              {p.evaNote && <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>}
+              {p.evaNote
+                ? <div style={{ fontSize: hot ? 12.5 : 11.5, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>
+                : p.eva === 'R'
+                  /* กฎ IEC ข้อ 2 — แดงต้องมีข้อความ · ยังไม่เขียน = ฟ้องบนจอ ห้ามปล่อยว่างเนียนๆ */
+                  ? <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.45 }}>⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง</div>
+                  : null}
               <div style={{ marginTop: 'auto' }}><FreshChip iso={p.updated_at} /></div>
             </button>
           );
@@ -865,7 +875,7 @@ function LevelPanel({ proj, panel }) {
    🔴 ต้องมีทางออกเสมอ (ปุ่มมุมขวาบน) ห้ามตัดทางออกแม้เป็นจอแขวน
    ⚠️ เบราว์เซอร์เป้าหมาย = สมาร์ททีวี Chromium 94 → ห้าม dvh/svh · ห้าม color-mix · ห้าม @container
    ═════════════════════════════════════════════════════════════════════════════ */
-function TvView({ projects, index, onIndex, onExit }) {
+function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClosePanel }) {
   const proj = projects[index] || projects[0];
   const [now, setNow] = useState(() => new Date());
   const [paused, setPaused] = useState(false);
@@ -877,13 +887,30 @@ function TvView({ projects, index, onIndex, onExit }) {
 
   // สลับรุ่นอัตโนมัติเมื่อมีมากกว่า 1 บอร์ด (จอแขวนไม่มีคนกด)
   useEffect(() => {
-    if (paused || projects.length < 2) return undefined;
+    if (paused || openPanelKey || projects.length < 2) return undefined;
     const t = setInterval(() => onIndex((index + 1) % projects.length), 25000);
     return () => clearInterval(t);
-  }, [paused, projects.length, index, onIndex]);
+  }, [paused, openPanelKey, projects.length, index, onIndex]);
+
+  /* ⎋ ปิดแผงที่เปิดอยู่ — จอแขวนบางตัวมีแต่รีโมท ปุ่ม Back/Esc คือทางออกเดียวที่มี
+     🔴 ห้ามหยุดสลับรุ่นค้างไว้ตอนเปิดแผง ถ้าไม่มีใครปิด (จอแขวนไม่มีคนยืนเฝ้า) ⇒ ปิดเองใน 90 วิ */
+  useEffect(() => {
+    if (!openPanelKey) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') onClosePanel?.(); };
+    window.addEventListener('keydown', esc);
+    const t = setTimeout(() => onClosePanel?.(), 90000);
+    return () => { window.removeEventListener('keydown', esc); clearTimeout(t); };
+  }, [openPanelKey, onClosePanel]);
 
   if (!proj) return null;
-  const { cols, rows } = tvGrid(proj.panels.length);
+  const { rows } = tvWeightedLayout(proj.panels);
+  /* แถวที่มีใบแดงสูงกว่าแถวเขียวล้วน — น้ำหนักต้องต่างทั้ง "กว้าง" และ "สูง"
+     ไม่งั้นแถวที่มี 7 ใบเขียวจะสูงเท่าแถวที่มี 2 ใบแดงที่มี 4 บรรทัดต้องอ่าน */
+  const rowFlex = (row) => {
+    const top = row.items.reduce((m, p) => Math.max(m, panelWeight(p)), 1);
+    return top >= 3 ? 1.45 : top === 2 ? 1.15 : 1;
+  };
+  const openPanel = proj.panels.find(p => p.key === openPanelKey) || null;
   const counts = evaCounts(proj.panels);
   const clock = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
@@ -893,6 +920,9 @@ function TvView({ projects, index, onIndex, onExit }) {
     axis:  'clamp(13px, 1.05vw, 28px)',
     panel: 'clamp(12px, 1.02vw, 27px)',
     note:  'clamp(10px, 0.78vw, 20px)',
+    // ชั้น "ร้อน" (แดง) — ใหญ่กว่าชั้นปกติ ~25% · ขั้นต่ำยังเกิน 11px ตาม UI §จอ TV
+    panelHot: 'clamp(14px, 1.3vw, 34px)',
+    noteHot:  'clamp(11.5px, 0.92vw, 24px)',
   };
 
   return (
@@ -945,44 +975,95 @@ function TvView({ projects, index, onIndex, onExit }) {
         }}>{proj.evaNote}</div>
       )}
 
-      {/* ผังแผง — 1fr ทุกช่อง ⇒ สูงเท่ากันและลงจอพอดีเสมอ */}
-      <div style={{
-        flex: '1 1 auto', minHeight: 0, display: 'grid', gap: '0.8vh 0.6vw',
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-      }}>
-        {proj.panels.map(p => {
-          const m = evaMeta(p.eva);
-          return (
-            <div key={p.key} className={p.eva === 'R' ? 'mo-card-alert' : undefined} style={{
-              background: 'var(--card)', border: `2px solid ${p.eva === 'none' || !p.eva ? 'var(--border)' : m.color}`,
-              borderRadius: 8, padding: '0.7vh 0.7vw', display: 'flex', flexDirection: 'column',
-              gap: '0.4vh', minWidth: 0, minHeight: 0, overflow: 'clip',
-            }}>
-              <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'center', minWidth: 0 }}>
-                <span style={{
-                  width: '0.95vw', height: '0.95vw', minWidth: 10, minHeight: 10, maxWidth: 22, maxHeight: 22,
-                  borderRadius: '50%', background: m.color, flex: '0 0 auto',
-                  opacity: p.eva === 'none' || !p.eva ? 0.5 : 1,
-                }} />
-                <span style={{
-                  fontSize: F.panel, fontWeight: 700, lineHeight: 1.18, minWidth: 0,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
-                }}>{p.label}</span>
-              </div>
-              {p.evaNote && (
-                <div style={{
-                  fontSize: F.note, color: 'var(--text2)', lineHeight: 1.3,
-                  display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'clip',
-                }}>{p.evaNote}</div>
-              )}
-              <div style={{ marginTop: 'auto', fontSize: F.note, color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
-                {freshLabel(p.updated_at)}
-              </div>
-            </div>
-          );
-        })}
+      {/* ผังแผง — แถวละหลายใบ กว้างตามน้ำหนัก (แดง 3 : เหลือง 2 : เขียว/ยังไม่ประเมิน 1)
+         🔴 ความกว้าง = "ปริมาณที่ต้องอ่าน" ไม่ใช่ลำดับความสำคัญลอยๆ · ลำดับแผงคงเดิมเสมอ
+         🔴 ห้ามกลับไปใช้กริด 1fr เท่ากันทุกใบ — 67% ของใบไม่มีข้อความให้อ่าน แต่กินที่เท่าใบแดง
+            (feedback user 2026-10-05) · สูตรอยู่ที่ tvWeightedLayout ห้ามคิดเองในหน้า */}
+      <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.8vh' }}>
+        {rows.map((row, ri) => (
+          <div key={ri} style={{ flex: `${rowFlex(row)} 1 0`, minHeight: 0, display: 'flex', gap: '0.6vw' }}>
+            {row.items.map(p => {
+              const m = evaMeta(p.eva);
+              const w = panelWeight(p);
+              const hot = p.eva === 'R';
+              return (
+                <button key={p.key} onClick={() => onPick(p)} title={`เปิดแผง ${p.label}`}
+                  className={hot ? 'mo-card-alert' : undefined}
+                  style={{
+                    flex: `${w} 1 0`, minWidth: 0, minHeight: 0, overflow: 'clip', textAlign: 'left',
+                    font: 'inherit', color: 'var(--text)', cursor: 'pointer',
+                    background: 'var(--card)', borderRadius: 8,
+                    border: `${hot ? 3 : 2}px solid ${p.eva === 'none' || !p.eva ? 'var(--border)' : m.color}`,
+                    padding: hot ? '1vh 0.9vw' : '0.7vh 0.7vw',
+                    display: 'flex', flexDirection: 'column', gap: '0.4vh',
+                  }}>
+                  <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'center', minWidth: 0 }}>
+                    <span style={{
+                      width: hot ? '1.3vw' : '0.95vw', height: hot ? '1.3vw' : '0.95vw',
+                      minWidth: 10, minHeight: 10, maxWidth: 28, maxHeight: 28,
+                      borderRadius: '50%', background: m.color, flex: '0 0 auto',
+                      opacity: p.eva === 'none' || !p.eva ? 0.5 : 1,
+                    }} />
+                    <span style={{
+                      fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700, lineHeight: 1.18, minWidth: 0,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
+                    }}>{p.label}</span>
+                    <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: F.note, flex: '0 0 auto' }}>›</span>
+                  </div>
+                  {p.evaNote ? (
+                    /* 🔴 ต้องมี `flex:'0 1 auto'` + `minHeight:0` — ไม่งั้นกล่องข้อความไม่ยอมหด
+                       แล้วบรรทัด "อัปเดต N วันก่อน" ถูกดันทับข้อความ (เจอจริงที่ใบ Order Information
+                       บนจอ 1366 · 2026-10-05) · ใบน้ำหนัก 1 แคบกว่า ⇒ ตัดที่ 2 บรรทัด */
+                    <div style={{
+                      flex: '0 1 auto', minHeight: 0,
+                      fontSize: hot ? F.noteHot : F.note, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.32,
+                      display: '-webkit-box', WebkitLineClamp: hot ? 4 : w === 2 ? 3 : 2,
+                      WebkitBoxOrient: 'vertical', overflow: 'clip',
+                    }}>{p.evaNote}</div>
+                  ) : hot ? (
+                    /* กฎ IEC ข้อ 2: แดงต้องมีข้อความ — ยังไม่เขียน = ฟ้องบนจอ ห้ามย่อการ์ดให้เนียน */
+                    <div style={{ fontSize: F.noteHot, color: '#fca5a5', lineHeight: 1.32 }}>
+                      ⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง
+                    </div>
+                  ) : null}
+                  <div style={{ marginTop: 'auto', flex: '0 0 auto', fontSize: F.note,
+                    color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
+                    {freshLabel(p.updated_at)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
+
+      {/* 🔎 แผงที่กดเจาะ — ซ้อนบนบอร์ด ไม่ใช่ออกจากโหมดจอ TV
+           บอร์ดยังอยู่ข้างหลัง ⇒ คนที่ยืนประชุมไม่หลุดบริบทว่ากำลังดูรุ่นไหน
+           🔴 บอร์ด (ข้างหลัง) ห้ามเลื่อน — แต่ "ใบที่เปิดอ่าน" เลื่อนในตัวเองได้
+              (ตาราง Kadai/เมทริกซ์พาร์ท ยาวเกินจอจริง · ตัดทิ้ง = จอโกหก) */}
+      {openPanel && (
+        <div onClick={onClosePanel} style={{
+          position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(2,6,23,0.72)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3vh 3vw',
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+            width: 'min(1500px, 94vw)', maxHeight: '94vh', overflow: 'auto',
+            padding: '18px 20px', boxShadow: 'var(--shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {proj.title} · แผงบนบอร์ด
+              </div>
+              <button onClick={onClosePanel} style={{
+                marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)',
+                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13,
+              }}>✕ ปิด (Esc)</button>
+            </div>
+            <LevelPanel proj={proj} panel={openPanel} />
+          </div>
+        </div>
+      )}
 
       {/* แถบล่าง — ตัวนับสี + ตัวสลับรุ่น */}
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '1vw', fontSize: F.sub, color: 'var(--muted)' }}>
@@ -1072,8 +1153,14 @@ export default function NewModelBoard() {
     : `ถอดจากบอร์ดผนังของ IEC เมื่อ ${SOURCE_DATE} · ยังไม่ต่อฐานข้อมูล`;
 
   if (tvOn && data.projects.length) {
+    const tvProj = data.projects[Math.min(tvIndex, data.projects.length - 1)];
     return <TvView projects={data.projects} index={Math.min(tvIndex, data.projects.length - 1)}
-      onIndex={setTvIndex} onExit={() => go({ cust: custCode || undefined, proj: projId || undefined })} />;
+      onIndex={setTvIndex} onExit={() => go({ cust: custCode || undefined, proj: projId || undefined })}
+      openPanelKey={panelKey}
+      /* กดการ์ด = เปิดแผงซ้อนบนบอร์ด **คง `tv=1` ไว้** — ออกจากโหมดจอไปเลยจะทำให้
+         จอแขวนที่ไม่มีคีย์บอร์ดกลับเข้าโหมดจอเองไม่ได้ (เคยเป็นกับดักของหน้าอื่นมาแล้ว) */
+      onPick={(p) => go({ cust: tvProj.customer, proj: tvProj.id, panel: p.key, tv: '1' })}
+      onClosePanel={() => go({ cust: tvProj.customer, proj: tvProj.id, tv: '1' })} />;
   }
 
   return (
