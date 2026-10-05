@@ -2093,7 +2093,12 @@ export default function HeijunkaKanban() {
       }));
       if (issueRows.length) {
         const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(issueRows);
-        if (e2) throw e2;
+        if (e2) {
+          // ledger ล้ม ⇒ คืนแถวยืนยัน (กฎเขียน DB ข้อ 6) — ไม่งั้นรอบนี้ขึ้น "ส่งแล้ว" ทั้งที่ไม่มีของเข้าสต็อก
+          // แล้วกดซ้ำไม่ได้อีกเลย (ชน claim ⇒ "ไม่บันทึกซ้ำ")
+          const { error: eUndo } = await supabaseDR.from('kanban_deliveries').delete().eq('id', claimed[0].id);
+          throw new Error(`บันทึกสต็อกไม่สำเร็จ: ${e2.message}${eUndo ? ' · คืนสถานะรอบไม่สำเร็จ แจ้ง admin' : ' · ยกเลิกการยืนยันแล้ว กดใหม่ได้'}`);
+        }
       }
       toast.success(`✅ ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
       await loadDeliveries();
