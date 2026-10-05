@@ -1293,9 +1293,10 @@ export function computeSessionOee({
     })
   );
   const perMachineCt = flowModeOf(lineFlow.flow_mode) === 'parallel_machine';
-  let P = null, pRawRatio = null, dtOverstateMin = null;
+  let P = null, pRawRatio = null, dtOverstateMin = null, stdMin = 0;
   if (runSec > 0 && matPData.length > 0) {
     const totalStdSec = matPData.reduce((s, d) => s + d.qty * d.ctSec, 0);
+    stdMin = totalStdSec / 60;                 // "เวลามาตรฐานของกะ" — คู่กับ stdMin ของ computeLiveOee
     if (isParallel || perMachineCt) {
       const rawDenom = prodGroups.reduce((s, g) => s + g.runMin * 60, 0) || runSec;
       const denomSec = perMachineCt
@@ -1317,7 +1318,7 @@ export function computeSessionOee({
   matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
   return {
     A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
-    totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP,
+    totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP, stdMin,
     loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
     pOver: pRawRatio != null && pRawRatio > 1.001,
     pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,

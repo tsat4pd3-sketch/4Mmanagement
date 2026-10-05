@@ -45,12 +45,15 @@ function processTypeOf(session, orders, master) {
   return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || 'common';
 }
 
-/** คำนวณกะเดียว — startTime/endTime ว่าง = ใช้ค่าที่อยู่ในแถว */
-export async function recompute(session, master, lineCfg, { startTime = null, endTime = null } = {}) {
+/** คำนวณกะเดียว — startTime/endTime ว่าง = ใช้ค่าที่อยู่ในแถว
+ *  `ngInP: false` = **ไม่** เอาของเสียเข้าตัวเศษ %P (= พฤติกรรมก่อน 2026-10-04)
+ *    ใช้เทียบ "สูตรเก่า vs สูตรใหม่" บนข้อมูลชุดเดียวกัน — ส่ง defects ว่างพอ เพราะ %Q ใช้ `ngQty` ที่ override แยก */
+export async function recompute(session, master, lineCfg, { startTime = null, endTime = null, ngInP = true } = {}) {
   const [ordR, dtR, defR] = await Promise.all([
     dr.from('prod_orders').select('id, mat_no, status, qty, qty_actual, opened_at, confirmed_at, stopped_at').eq('session_id', session.id),
     dr.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, dr_downtime_types(name_th, category)').eq('session_id', session.id),
-    dr.from('defect_logs').select('id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)').eq('session_id', session.id),
+    // prod_order_id = ไว้ชี้ MAT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+    dr.from('defect_logs').select('id, prod_order_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)').eq('session_id', session.id),
   ]);
   for (const [n, r] of [['prod_orders', ordR], ['downtime_logs', dtR], ['defect_logs', defR]])
     if (r.error) throw new Error(`กะ ${session.id} โหลด ${n} ไม่สำเร็จ: ${r.error.message}`);
@@ -58,7 +61,8 @@ export async function recompute(session, master, lineCfg, { startTime = null, en
   const cfg = lineCfg[session.line_name] || {};
   return computeSessionOee({
     session, orders, downtimes,
-    ngQty: sumDefectQty(defects, 'line'),
+    defects: ngInP ? defects : [],          // ตัวเศษ %P — ของเสีย/ทดลอง/สงสัย กินรอบเครื่องเหมือนกัน
+    ngQty: sumDefectQty(defects, 'line'),   // ตัวหาร %Q — ไม่นับงานทดลอง (คนละชุด ห้ามสลับ)
     products: master.products, kanbanStds: master.kanbanStds, breakPolicies: master.breakPolicies,
     processType: processTypeOf(session, orders, master),
     lineFlow: cfg,

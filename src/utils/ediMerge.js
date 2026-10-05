@@ -139,6 +139,53 @@ export function splitFirmVsForecast(records, today, horizonDays = FIRM_HORIZON_D
   return { firm, forecast };
 }
 
+/* ═══ แถว "ยอดค้างตาม Cum" ของ 862 ≠ เที่ยวรถ — ship-to ที่ใช้ e-SMART ห้ามสร้างเป็นใบส่ง ═════
+   🔴 ที่มา (เกิดจริง 01–02/10 · user: *"logistic ลูกค้า AAT ยังมีปัญหา 862 ชนกับ esmart"*)
+
+   ไฟล์ 862 รูปแบบใหม่ (Sales อัพเดท 30/09) ชีต GRBNA ทุกพาร์ทขึ้นต้นด้วยแถวพิเศษ 1 แถว:
+     Forecast Date = **วันออกไฟล์ (Horizon Start)** · `Forecast Time` **ว่าง** ·
+     Forecast Net Qty = **Forecast Cum Qty − Cum Shipped Qty** (70,510 − 69,970 = **540**)
+   = ยอดที่ลูกค้าคิดว่าเรา "ค้าง" ตามบัญชีสะสมของเขา (นับเฉพาะ ASN ที่เขารับแล้ว ถึงวันที่ Cum End)
+   **ไม่ใช่เที่ยวรถใหม่** — วันถัดไปที่ไม่มีเวลาเป็น 0 ทั้งหมด แถวที่มีเวลาเริ่มวันทำงานถัดไป
+
+   ตัวนำเข้าเดิมสร้างแถวนี้เป็นใบ pending "⏳ ไม่ระบุเวลา" 540 ชิ้น ⇒ บน AAT ที่เดินด้วย e-SMART
+   (ลูกค้าดึงจริงทีละเที่ยว) ยอดเดียวกันถูกนับ 2 ทาง: e-SMART ยืนยัน/ส่งรอบ 08:30 = 60 ·
+   ใบ 862 ก้อน 540 ค้างแดงข้างๆ (ทั้ง `findDoneCover` และ `planOrderUpdates` ตั้งใจไม่แตะใบไม่มีเวลา)
+   วัดจริง: 01/10 ค้าง 1,605 ชิ้น · 02/10 ค้าง 1,415 ชิ้น — ไม่มีใครส่งได้เพราะไม่ใช่เที่ยวจริง
+
+   ⇒ กฎ: ship-to ที่มีตารางรอบ e-SMART (`customer_pull_rounds`) = **e-SMART เป็นเจ้าของเที่ยววันนี้**
+      แถวไม่มีเวลา **ที่อยู่วันแรกของชุด** (ship-to·dock·พาร์ท) ในชีตที่มีแถวมีเวลา = ยอดค้างตาม Cum
+      → **ไม่สร้างใบส่ง** แต่ต้องรายงานบนจอ (ยอดค้างเป็นข้อมูลที่คนต้องเห็น ห้ามทิ้งเงียบ)
+   ⚠️ ship-to ที่ไม่มี e-SMART (FTM/FVL…) คงเดิม — ไม่มีใครดึงแทน ยอดค้างจึงต้องเป็นใบให้หน้างานส่ง
+   ⚠️ ชีตที่ไม่มีเวลาเลยทั้งชีต (GBJWA/GBJWE/GBJWC) ไม่เข้าข่าย — ใช้กฎ splitFirmVsForecast ตามเดิม
+   ═══════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * แยกแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ออกจากใบส่งของ
+ * @param {Array}  records แถวจากไฟล์ 862
+ * @param {Iterable<string>} pullShipTos ship-to ที่มีตารางรอบ e-SMART
+ * @returns {{keep: Array, catchUp: Array}}
+ */
+export function splitCumCatchUp(records, pullShipTos) {
+  const pull = new Set([...(pullShipTos || [])].map(s => String(s).trim()));
+  const hasTime = (r) => !!String(r?.time || '').trim();
+  const timedShipTo = new Set();
+  const firstDate = new Map();                 // shipTo|dock|part → วันแรกของชุด
+  const keyOf = (r) => `${r.shipTo}|${dockKey(r.dock)}|${normKey(r.part)}`;
+  for (const r of records || []) {
+    if (hasTime(r)) timedShipTo.add(r.shipTo);
+    const k = keyOf(r);
+    if (r?.date && (!firstDate.has(k) || r.date < firstDate.get(k))) firstDate.set(k, r.date);
+  }
+  const keep = [], catchUp = [];
+  for (const r of records || []) {
+    const isCatchUp = pull.has(String(r?.shipTo || '').trim()) && timedShipTo.has(r.shipTo)
+      && !hasTime(r) && !!r?.date && firstDate.get(keyOf(r)) === r.date;
+    (isCatchUp ? catchUp : keep).push(r);
+  }
+  return { keep, catchUp };
+}
+
 /* ═══ แทนที่ "เฉพาะชุดที่ลูกค้าส่งมา" (2026-10-01 · คำสั่ง user — ปิดกลไก A) ═══════════════════
    user: *"ลูกค้าบางทีอัพเดทเฉพาะบาง dock หรือบางเจ้า ของเก่าไม่ส่งมา แปลว่าไม่มีอัพเดท"*
          *"2 และ 4 · 3 หาย แปลว่า 3 ยกเลิก"*

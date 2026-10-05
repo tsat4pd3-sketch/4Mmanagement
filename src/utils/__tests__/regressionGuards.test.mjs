@@ -1841,3 +1841,12 @@ test('🛡️ ห้าม fallback ชื่อพาร์ทเป็นเ�
     + '   แก้ยังไง: ชื่อจากไฟล์ → ชื่อในทะเบียน parts_master → **ไม่มี = ไม่เขียน แล้วบอกบนจอว่าแถวไหน**\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
+
+test('🛡️ ตัวนำเข้า 862 ต้องตัดแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ก่อนสร้างใบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/PlannerSales.jsx'), 'utf8'));
+  assert.ok(/splitCumCatchUp\(\s*edi\.records/.test(code),
+    '\n\n❌ PlannerSales.jsx ไม่เรียก splitCumCatchUp(edi.records, …) ก่อนสร้างใบ 862 แล้ว\n'
+    + '   ทำไมห้าม: แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่รับแล้ว ไม่ใช่เที่ยวรถ\n'
+    + '              ถ้าสร้างเป็นใบจะชนใบ e-SMART (เกิดจริง AAT 01–02/10: ค้างแดง 1,605 + 1,415 ชิ้น)\n'
+    + '   แก้ยังไง: ดู splitCumCatchUp ใน src/utils/ediMerge.js\n');
+});

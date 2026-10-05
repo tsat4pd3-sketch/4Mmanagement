@@ -250,3 +250,17 @@ FG คือ**ขาออก**ของไลน์ · ของที่สโ
 update line_part_levels set is_active = true
  where mat_no like '1%' and note ilike '%ปิดใช้งาน 2026-10-02%';
 ```
+
+---
+
+## 🔁 เลข MAT ซ้ำในชีทเดียว → รวมเป็นพาร์ทเดียว (2026-10-05 · เคสจริงชีท Argen)
+
+**อาการ:** นำเข้าแล้วขึ้น *"พาร์ทของ Argen ไม่สำเร็จ: ON CONFLICT DO UPDATE command cannot affect row a second time"*
+และบอร์ดนั้นล้มทั้งบอร์ด
+**ต้นเหตุ:** `monitor_board_parts` เป็น unique `(board_id, mat_no)` แต่ชีทมี MAT เดียวกันหลายบล็อก
+⇒ upsert ก้อนเดียวมีคีย์ซ้ำ Postgres จึงปฏิเสธทั้งก้อน
+**กฎ** (`mergeDuplicateParts` ใน `src/utils/monitoringSheet.js` · ทุกชนิดชีทผ่าน `parseSheetForBoard` · เทส `monitorDupMat.test.mjs`):
+- ยอดไหล (PLAN/IN/OUT/ORDER REQUIREMENT/ส่งชุบ/order) ของ MAT ซ้ำ = **บวกกัน**
+- ยอดระดับ/คงเหลือ (BALANCE/UNBOUND/WIP/MIN/MAX/STOCK W/H/ค้างที่ร้านชุบ), ข้อความ และแอตทริบิวต์ = **แถวแรกชนะ**
+  (นับของชิ้นเดียวกัน 2 รอบ = สต็อกปลอม) · แอตทริบิวต์ที่แถวแรกว่างให้เติมจากแถวหลัง
+- ทุก MAT ที่ซ้ำ และทุกค่าคงเหลือที่ขัดกัน **ต้องขึ้นเป็นคำเตือนบน preview** ให้ทีมวางแผนไปแก้ไฟล์ต้นทาง ห้ามรวมเงียบ
