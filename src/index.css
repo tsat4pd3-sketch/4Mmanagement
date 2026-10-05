@@ -616,7 +616,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .kpi-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
 @media (hover: hover) {
   .kpi-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  /* ช่องตารางที่กดแก้ได้ (/monitoring) — เดิมมีแต่ cursor:'cell' ซึ่งไม่มีใครสังเกต
+     ทีมวางแผนจึงคิดว่าแก้ตัวเลขไม่ได้ ต้องนำเข้าไฟล์อย่างเดียว (05/10) */
+  .mon-cell-edit:hover { background: var(--accent-dim) !important; }
 }
+/* เส้นประใต้ตัวเลข = "ช่องนี้กรอกทับได้" — เห็นได้ทั้งจอสัมผัสและจอที่มีเมาส์ */
+.mon-cell-edit { text-decoration: underline dotted var(--border2); text-underline-offset: 3px; }
 
 /* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
 @keyframes spin {
