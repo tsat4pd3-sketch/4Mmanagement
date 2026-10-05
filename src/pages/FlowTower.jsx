@@ -85,8 +85,10 @@ export default function FlowTower() {
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
         fetchAllPages(() => supabaseDR.from('child_lot_requests')
           .select('id, status, lot_qty, source_line')),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'done'),
+        /* 🔴 QC 05/10 — ตารางนี้มีแค่ pending / issued / cancelled (ไม่มี 'done')
+           เดิม `.neq('status','done')` = นับ cancelled เป็น "ค้าง" (1,472 แทน 482) · ยอดรวมก็ไม่นับใบยกเลิก */
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'cancelled'),
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         // มิติเวลาของสถานีสั่งซื้อ: มีใบขยับ (สั่งซื้อ/รับเข้า) ใน 7 วัน = ✅ ไหลจริง (QC flow-audit #22 —
         // เดิมสถานีนี้ไม่มีทางเป็น flow เลย ขัดนิยาม 4 สถานะของหน้าตัวเอง)

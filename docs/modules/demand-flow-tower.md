@@ -1238,3 +1238,5 @@ toast หลังกด · **และข้อความใน ledger** (`no
 - รีเฟรช = realtime + `makeIdleGate` (กฎเขียน DB ข้อ 8): ใบผลิต/กะ → touch+โหลด (coalesce `LIVE.BOARD`) · ledger สต็อก/ใบสั่งผลิตลูก → touch
   · poll ทุก `RATE.ANALYTIC` ยิงเฉพาะเมื่อมี touch · **hard floor = `RATE.SLOW`** (ไม่ใช่ `LIVE.FLOOR`) เพราะ
     `customer_shipping_orders`/`purchase_requests`/`raw_withdrawal_requests`/`wip_replenish_requests` **ไม่อยู่ใน publication realtime** (เช็ค 05/10)
+- 🔴 `raw_withdrawal_requests` มีแค่ `pending`/`issued`/`cancelled` (**ไม่มี `done`**) — "ค้าง" = `eq('status','pending')` · ยอดรวม = ไม่นับ `cancelled`
+  (เดิม `.neq('status','done')` ขึ้นค้าง 1,472 แทน 482 · ด่าน `raw-withdrawal-status-set`)

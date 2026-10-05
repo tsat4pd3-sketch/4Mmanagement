@@ -32,7 +32,7 @@ import useTabParam from '../utils/useTabParam';
 import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { halfDayBreakIntervals } from '../utils/oee';
 import { SPENT_STATUSES } from '../utils/shiftCapacity';
 import PartCard, { partCardGrid } from '../components/PartCard';
@@ -1171,7 +1171,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     fg: rounds.filter(r => !confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`)).length,
     child: lotRequests.filter(l => l.status !== 'done').length,
     purchase: openPurchases.length,
-    raw: rawRequests.filter(r => r.status !== 'issued').length,
+    raw: rawRequests.filter(r => r.status === 'pending').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
     wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
@@ -1448,6 +1448,18 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   );
 }
 
+/* ใบค้าง (ทุกหน้า) + ประวัติล่าสุด N ใบ → { data, error } รูปเดียวกับผลคิวรีเดี่ยว (เรียงใหม่→เก่า)
+   ใบค้างโหลดไม่ครบ (error/เกินเพดาน) = error ทั้งก้อน ⇒ จอคงข้อมูลรอบก่อน + บอกว่าโหลดไม่ได้ */
+const openPlusHistory = async (openQ, histQ, histN) => {
+  const [op, hi] = await Promise.all([
+    fetchAllPages(openQ),
+    histQ().order('created_at', { ascending: false }).limit(histN),
+  ]);
+  const err = op.error ? { message: op.error } : op.truncated ? { message: 'ใบค้างเยอะเกินเพดาน — โหลดได้ไม่ครบ' } : hi.error;
+  const data = [...op.rows, ...(hi.data || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return { data, error: err || null };
+};
+
 export default function HeijunkaKanban() {
   const { fullName, role } = useContext(UserContext);
   const navigate = useNavigate();
@@ -1560,8 +1572,16 @@ export default function HeijunkaKanban() {
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
     const [{ data: lots, error: eLots }, { data: raws, error: eRaws }, { data: acc, error: eAcc }, { data: ks, error: eKs }, { data: racks, error: eRacks }, { data: pkgs, error: ePkgs }, { data: wips, error: eWips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
-      supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
-      supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
+      /* 🔴 QC 05/10 — "งานค้าง" ต้องโหลดครบทุกใบ (แบ่งหน้า) · "ประวัติ" ค่อยตัดล่าสุด N ใบ
+         เดิม: ใบเบิก = ล่าสุด 400 ใบ**ไม่กรองสถานะ** ⇒ ปนใบ cancelled 700 ใบ (ขึ้นเป็น "รอจ่าย" มีปุ่มจ่าย)
+               แล้วใบรอจ่ายเก่า 172 ใบหลุดหน้าต่างหายจากจอสโตร์ (วัด 05/10: pending 482 · issued 290 · cancelled 700)
+               ใบ child = ล่าสุด 200 ใบ (ตอนนี้ 164 — โตอีกนิดใบค้างเก่าก็หลุดแบบเดียวกัน) */
+      openPlusHistory(
+        () => supabaseDR.from('child_lot_requests').select('*').in('status', ['pending', 'producing']),
+        () => supabaseDR.from('child_lot_requests').select('*').eq('status', 'done'), 100),
+      openPlusHistory(
+        () => supabaseDR.from('raw_withdrawal_requests').select('*').eq('status', 'pending'),
+        () => supabaseDR.from('raw_withdrawal_requests').select('*').eq('status', 'issued'), 200),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
@@ -2451,7 +2471,7 @@ export default function HeijunkaKanban() {
   const viewTabs = useMemo(() => {
     const openWip  = wipRequests.filter(w => w.status !== 'delivered').length;
     const openLot  = lotRequests.filter(l => l.status !== 'done').length;
-    const openRaw  = rawRequests.filter(r => r.status !== 'issued').length;
+    const openRaw  = rawRequests.filter(r => r.status === 'pending').length;
     const openBuy  = purchaseRequests.filter(r => r.status !== 'received' && r.status !== 'cancelled').length;
     const badgeOf  = { unified: openWip + openLot + openRaw + openBuy, pull: openLot + openRaw };
     return Object.entries(VIEW_META)
