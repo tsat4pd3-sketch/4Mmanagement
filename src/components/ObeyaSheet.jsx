@@ -113,11 +113,17 @@ function SheetZoom({ onClose, children }) {
     document.body,
   );
 }
+/* 🔴 `inline-flex` ไม่ใช่ `inline-block` (2026-10-05) — ปุ่มนี้มีอีโมจิ (🔍/✕) เป็นเนื้อหา
+   อีโมจิมาจากฟอนต์สำรองที่ความกว้างจริงกว้างกว่า `font-size` ที่ตั้งไว้ ⇒ กล่องปุ่มแคบกว่าตัวอักษร
+   แล้วส่วนเกินล้นออกนอกแถวหัวแผ่น (flex row · nowrap · ไม่มี overflow) = **แถวล้นแต่ปัดไม่ได้**
+   วัดจริง @390px: แถวกว้าง 346 เนื้อหา 352 · ปุ่ม w=29 แต่ sw=33 (จับได้จาก audit/mobilesweep.mjs)
+   `inline-flex` ทำให้อีโมจิเป็น flex item ⇒ ความกว้างปุ่มคิดจาก max-content ของมันจริงๆ */
 const SheetIconBtn = ({ fs, title, onClick, children }) => (
   <button type="button" onClick={onClick} title={title} aria-label={title} style={{
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 4, flexShrink: 0, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
-  }}>{children}</button>
+  }}><span aria-hidden="true" style={{ display: 'block' }}>{children}</span></button>
 );
 
 /* `bigNote` (30/09 · user: "ตัวเลขที่โชว์คืออะไร ไม่มี text บอก") = ป้ายเล็กติดตัวเลขใหญ่ว่าเป็นค่าของอะไร (เช่น "ก.ย." = ค่าเดือนที่เลือก) */
