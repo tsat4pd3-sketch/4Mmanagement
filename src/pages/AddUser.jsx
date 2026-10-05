@@ -1334,13 +1334,32 @@ export default function AddUser() {
                   (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
               {(() => {
                 const linked = form.accountKind === 'person' && !!form.employeeId;
+                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
+                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
+                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
+                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
+                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
+                const emp = linked ? empById[form.employeeId] : null;
+                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
+                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
+                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
+                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                const fixHint = linked && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                  </div>
+                );
                 return (<>
                   <div>
                     <label style={labelSt}>
                       Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <select value={form.team} disabled={linked}
+                    <select value={effTeam} disabled={linked}
                       title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
                       onChange={e => setF('team', e.target.value)}>
                       <option value="">— เลือก —</option>
@@ -1355,6 +1374,7 @@ export default function AddUser() {
                         {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
                       </div>
                     )}
+                    {fixHint}
                   </div>
 
                   {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
@@ -1363,8 +1383,9 @@ export default function AddUser() {
                       ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <LineSelect lines={lines} value={form.lineId} valueKey="id"
+                    <LineSelect lines={lines} value={effLine} valueKey="id"
                       disabled={linked} onChange={v => setF('lineId', v)} />
+                    {fixHint}
                   </div>
                 </>);
               })()}
