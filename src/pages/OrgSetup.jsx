@@ -272,11 +272,15 @@ export default function OrgSetup() {
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
-    const { error } = editNode
-      ? await supabase.from('org_nodes').update(payload).eq('id', editNode.id)
-      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 });
-    if (error) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
-    // นับแถวที่เขียนได้จริง — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
+    /* นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error
+       ⇒ เดิมขึ้น "แก้ไขสำเร็จ" ทั้งที่ไม่ได้แก้ · ⚠️ สำคัญขึ้นอีกตั้งแต่ 05/10 เพราะ RLS เขียนของ
+         org_nodes ผูก has_perm('org:manage'/'org:manage_own_unit') แล้ว = ปฏิเสธได้จริง */
+    const { data: wrote, error } = editNode
+      ? await supabase.from('org_nodes').update(payload).eq('id', editNode.id).select('id')
+      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 }).select('id');
+    if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
+    if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
+    // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
     const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
     setSaving(false);
     if (casc?.failed.length) {
@@ -300,8 +304,10 @@ export default function OrgSetup() {
       if (!confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`
         + orgRefDeactivateNote(refs))) return;
     }
-    const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
+    const { data: wrote, error } = await supabase.from('org_nodes')
+      .update({ is_active: !node.is_active }).eq('id', node.id).select('id');
     if (error) return toast.error(error.message);
+    if (!wrote?.length) return toast.error(`${node.is_active ? 'ปิด' : 'เปิด'}ใช้งานไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว`);
     fetchAll();
   };
 
@@ -331,11 +337,12 @@ export default function OrgSetup() {
     if (blocked) return toast.error(blocked);
     if (!confirm(`ลบ "${node.name}" ?` + orgRefDeleteNote(refs)
       + '\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)')) return;
-    const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
+    const { data: gone, error } = await supabase.from('org_nodes').delete().eq('id', node.id).select('id');
     // FK ฝั่ง DB เป็น restrict แล้ว (migration 20261005) — ด่านชั้นสองกันกรณีมีคนผูกเพิ่มระหว่างที่เปิดจอค้าง
     if (error) return toast.error(error.code === '23503'
       ? `ลบไม่ได้: ยังมีข้อมูลอื่นผูกกับ "${node.name}" อยู่ (เพิ่งถูกผูกเพิ่ม?) — รีเฟรชแล้วลองอีกครั้ง`
       : 'ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ลบไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือรายการนี้ถูกลบไปแล้ว');
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);

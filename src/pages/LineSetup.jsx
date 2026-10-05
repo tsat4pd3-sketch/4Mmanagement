@@ -521,22 +521,24 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // 🎯 จุดส่งงาน — line_names เป็น text[] (1 จุดหลายไลน์) → bump ธรรมดาใช้ไม่ได้ ต้องอ่าน-แก้-เขียนรายแถว
     //    (แบบเดียวกับ lpa_questions.hidden_for_lines) ไม่งั้นเปลี่ยนชื่อไลน์แล้วจุดส่ง+ป้าย QR ที่พิมพ์ไปแล้วกำพร้าเงียบ
-    try {
-      const { data: dps } = await supabaseDR.from('line_delivery_points').select('id, line_names').contains('line_names', [old]);
-      for (const d of dps || []) {
-        const next = (d.line_names || []).map(n => (n === old ? name : n));
-        await supabaseDR.from('line_delivery_points').update({ line_names: next }).eq('id', d.id);
+    /* ⚠️ เดิมห่อ try/catch แล้วไม่อ่าน error = โค้ดตาย (supabase-js ไม่ throw) ⇒ ป้าย QR จุดส่ง/SLoc กำพร้าเงียบ
+       (QC 05/10) — อ่าน error ทั้งขาอ่านและขาเขียน แล้วรายงานผ่าน bumpFailed เหมือน bump() · 42P01/42703 = ยังไม่ apply = ข้าม */
+    const bumpArr = async (table, keyCol, label = table) => {
+      const { data: rows, error: eSel } = await supabaseDR.from(table).select(`${keyCol}, line_names`).contains('line_names', [old]);
+      if (eSel) { if (!['42P01', '42703'].includes(eSel.code)) bumpFailed.push(label); return 0; }
+      let failed = false;
+      for (const r of rows || []) {
+        const next = (r.line_names || []).map(n => (n === old ? name : n));
+        const { error: eUp } = await supabaseDR.from(table).update({ line_names: next }).eq(keyCol, r[keyCol]);
+        if (eUp) failed = true;
       }
-      if (dps?.length) invalidateTable('line_delivery_points');   // เปลี่ยนชื่อไลน์ = จุดส่งใน cache ของจออื่นล้าสมัย
-    } catch { /* best-effort — ตารางยังไม่ apply ก็ข้าม */ }
+      if (failed) bumpFailed.push(label);
+      return (rows || []).length;
+    };
+    const dpCount = await bumpArr('line_delivery_points', 'id');
+    if (dpCount) invalidateTable('line_delivery_points');   // เปลี่ยนชื่อไลน์ = จุดส่งใน cache ของจออื่นล้าสมัย
     // 🏬 ทะเบียนรหัสคลัง SAP — line_names text[] เหมือนกัน (ผูกที่ไลน์แม่ → เปลี่ยนชื่อแม่แล้วทั้งแผนกหลุดจาก SLoc เงียบ ถ้าไม่ตาม)
-    try {
-      const { data: sls } = await supabaseDR.from('storage_locations').select('code, line_names').contains('line_names', [old]);
-      for (const sl of sls || []) {
-        const next = (sl.line_names || []).map(n => (n === old ? name : n));
-        await supabaseDR.from('storage_locations').update({ line_names: next }).eq('code', sl.code);
-      }
-    } catch { /* best-effort — ยังไม่ apply 20260908 ก็ข้าม */ }
+    await bumpArr('storage_locations', 'code');
 
     /* cascade ล้มบางตาราง = ข้อมูลชื่อเก่ากำพร้าอยู่ตรงนั้น ต้องบอกให้รู้ว่าตารางไหน
        (ไม่ abort ตามดีไซน์เดิม — แต่ห้ามเงียบ ไม่งั้นไม่มีใครรู้ว่าต้องไปตามแก้) */
@@ -685,7 +687,11 @@ export default function LineSetup({ embedded = false } = {}) {
       if (dragMovedRef.current && dragPosRef.current) {
         hist.pushHistory();   // state ยังเป็นตำแหน่งก่อนลาก (ตอนลากแสดงผ่าน dragPos overlay) — snapshot คืนที่เดิมได้
         const table = kind === 'station' ? 'workstations' : 'machine_points';
-        await supabase.from(table).update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id);
+        // ไม่อ่านผล = ลากแล้วจุดเด้งกลับที่เดิมหลังโหลดใหม่โดยไม่บอกเหตุ (QC 05/10) · RLS ปฏิเสธ = 0 แถว ไม่ error
+        const { data: moved, error: eMove } = await supabase.from(table)
+          .update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id).select('id');
+        if (eMove) toast.error('ย้ายตำแหน่งไม่สำเร็จ: ' + eMove.message);
+        else if (!moved?.length) toast.error('ย้ายตำแหน่งไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือจุดนี้ถูกลบไปแล้ว');
         await fetchLineData();
       } else {
         if (kind === 'station') { const st = stations.find(s => s.id === id); if (st) editStation(st); }
@@ -827,9 +833,12 @@ export default function LineSetup({ embedded = false } = {}) {
   const deleteStation = async (id) => {
     if (!window.confirm('ยืนยันการลบจุดงานนี้?')) return;
     hist.pushHistory();
-    checkWrite(await supabase.from('station_requirements').delete().eq('station_id', id), 'ล้างทักษะของจุดงานที่ลบ');
-    const { error } = await supabase.from('workstations').delete().eq('id', id);
-    if (!error) fetchLineData();
+    // ล้างทักษะไม่สำเร็จ = หยุด (FK ทำให้ลบจุดต่อไม่ได้อยู่แล้ว) · ลบจุดต้องนับแถว — เดิม error/0 แถวเงียบ (QC 05/10)
+    if (!checkWrite(await supabase.from('station_requirements').delete().eq('station_id', id), 'ล้างทักษะของจุดงานที่ลบ')) return;
+    const { data: gone, error } = await supabase.from('workstations').delete().eq('id', id).select('id');
+    if (error) toast.error('ลบจุดงานไม่สำเร็จ: ' + error.message);
+    else if (!gone?.length) toast.error('ลบจุดงานไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือจุดนี้ถูกลบไปแล้ว');
+    fetchLineData();
   };
 
   const editStation = (st) => {
