@@ -2077,3 +2077,12 @@ MorningMeeting ตัดใบ imported/carry_over ทิ้งทั้งใ�
 - ล้ม = **โยน** (ไม่ cache ลิสต์ว่างทับของดี 4 ชม.) ⇒ ผู้เรียกจับแล้วเขียนบนจอ · CT/คู่โหลดไม่ได้ ⇒ `pairMap = null` (ไม่ยุบ) ห้าม `{}`
 - ด่าน `master-cache-swallow` ขยายจับ loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` แล้ว
 - **น้ำหนัก wLoad ทุกจอผ่าน `dtMinBySession`** (FactoryMap แผงทบทวน + sparkline · GroupOverview · DeptDashboard) — ด่าน `no-wload-without-break-helper` จับสูตร `shift_min − planned…` ที่เขียนเองแล้ว
+
+---
+
+## 🔴 QC audit 05/10 — ช่วงพักบนบอร์ดไทม์ไลน์ = `halfDayBreakIntervals()` ที่เดียว
+- บอร์ดกริด 24 ชม. (Dashboard · /management · Heijunka รอบส่ง + PlannerStrip) เคยก๊อปสูตรช่วงพักเอง 4 จุด ไม่กรอง `ot_scope`/process
+  ⇒ 5ส.(ไม่ทำโอ) 17:10 กับพักโอ 17:30/19:40 ขึ้นพร้อมกัน · PlannerStrip วางพักกะดึกหลังเที่ยงคืนไว้ "เช้าวันงาน" (ผิดวัน)
+- `halfDayBreakIntervals({ policies, half: { key: 'am'|'pm', startMs }, processType })` → `breakIntervalsIn` (กรอบ 12 ชม.)
+  · กรอบครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`) · `processType` null = เฉพาะ common (ข้อมูล 05/10 ทุกแถวเป็น common = ไม่มีผลวันนี้)
+  · ด่าน `timeline-break-intervals-via-helper` ใน regressionGuards · เทสใน `oeeLive.test.mjs`

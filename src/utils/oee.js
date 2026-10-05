@@ -206,6 +206,23 @@ export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate,
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
 }
 
+/** ช่วงพักบน "ครึ่งวัน" ของกริดเวลา 24 ชม. (บอร์ดไทม์ไลน์ Dashboard · /management · Heijunka)
+ *  half = { key: 'am' | 'pm', startMs } — am = กะเช้า 08:00→20:00 · pm = กะดึก 20:00→08:00 วันถัดไป
+ *  🔴 QC 05/10 — เดิม 4 จอก๊อปสูตรเอง (`half.hours.indexOf(ชั่วโมง)`) ไม่กรอง process_type/ot_scope
+ *     ⇒ พัก 5ส. ไม่ทำโอ (17:10) กับพักโอ (17:30/19:40) ขึ้นพร้อมกัน = คิวการ์ดถูกดันเกินจริง
+ *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
+ *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
+export function halfDayBreakIntervals({ policies = [], half, processType = null }) {
+  if (!half?.startMs) return [];
+  const d = new Date(half.startMs);
+  const p2 = (n) => String(n).padStart(2, '0');
+  const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  return breakIntervalsIn({
+    policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
+    shift: half.key === 'pm' ? 'night' : 'day', processType,
+  });
+}
+
 /* ═══ 3.1) 🔴🔴 กฎเหล็ก — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15 · user ถาม) ═══
    พักตามนโยบาย = planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว ⇒ นาที downtime ที่ตกอยู่ในช่วงพัก
    ถูกหักไปรอบหนึ่งแล้ว · การบวก `duration_min` เต็มใบเข้าไปอีก = **หักซ้ำ**

@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -1384,17 +1384,8 @@ export default function Dashboard() {
           { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
         ];
         // ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
-        const getBreakIntervals = (half) => breakPolicies
-          .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-          .map(p => {
-            const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-            if (idx < 0) return null;
-            const mins = Number(String(p.start_time).slice(3,5)) || 0;
-            const st = half.startMs + idx * 3600000 + mins * 60000;
-            return [st, st + (p.duration_min || 0) * 60000];
-          })
-          .filter(Boolean)
-          .sort((a, b) => a[0] - b[0]);
+        // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+        const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
         // รวมเวลาพักทั้งวัน (เช้า+ดึก) — คิวต้องต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
         const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
         /* จัดการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง — จำกัดผลของดีเลย์ให้อยู่ในรอบตัวเอง

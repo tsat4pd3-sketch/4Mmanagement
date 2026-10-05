@@ -246,6 +246,23 @@ test('ใบที่ยังไม่ปิดใช้ qty_actual · ปิ�
   assert.equal(orderDonePcs({ status: 'open' }), 0, 'ไม่มียอด = 0 ไม่ใช่ NaN');
 });
 
+test('🔴 orderDonePcs (QC 05/10) — confirmed ไม่มี qty_ok ห้ามถอยไป qty (เป้า) · cancelled = 0 · null ไม่พัง', () => {
+  assert.equal(orderDonePcs({ status: 'confirmed', qty_ok: null, qty_actual: 40, qty: 120 }), 40,
+    'ถอยไป qty_actual ตาม orderInQty ไม่ใช่เป้า 120');
+  assert.equal(orderDonePcs({ status: 'confirmed', qty_ok: null, qty_actual: null, qty: 120 }), 0);
+  assert.equal(orderDonePcs({ status: 'confirmed', qty_ok: 0, qty_actual: 50 }), 0, 'ผลิตได้ 0 จริง ≠ ไม่รู้');
+  assert.equal(orderDonePcs({ status: 'cancelled', qty_ok: 50, qty_actual: 50 }), 0);
+  assert.equal(orderDonePcs(null), 0);
+  assert.equal(orderDonePcs(undefined), 0);
+  assert.equal(orderDonePcs({ status: 'open', qty_actual: '25' }), 25, 'ค่าจาก DB เป็นข้อความได้');
+});
+
+test('ใบ cancelled ไม่ถูกปันเข้าล็อต', () => {
+  const r = matchPlanToActual([lot('a', { mat_no: 'M1', qty_plan: 100 })],
+    [ord('M1', { qty_ok: 60 }), ord('M1', { status: 'cancelled', qty_ok: 999 })]);
+  assert.equal(r.rows[0].donePcs, 60);
+});
+
 test('ล็อตที่ยกเลิกไม่กินยอด — ยอดไปลงล็อตที่ยังอยู่', () => {
   const lots = [lot('x', { mat_no: 'M1', qty_plan: 100, seq: 1, status: 'cancelled' }),
                 lot('b', { mat_no: 'M1', qty_plan: 100, seq: 2 })];

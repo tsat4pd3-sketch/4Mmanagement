@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useContext, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useContext, useCallback, useRef, Fragment } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { inSectionScope } from '../utils/sectionScope';
@@ -96,8 +96,13 @@ export default function ProductHistory() {
     [groupMode, canGroup, groupMats, selMat],
   );
 
+  /* 🔴 stale-response guard (กฎเขียน DB ข้อ 4 · QC 05/10) — คิวรีนี้ยาว (แบ่งหน้าหลายรอบ)
+     สลับสินค้า/ช่วงวันระหว่างโหลด = คำตอบของสินค้าเก่ากลับมาทีหลังแล้วเขียนทับจอใหม่ */
+  const reqRef = useRef(0);
   const loadHistory = useCallback(async (mats) => {
     if (!mats?.length) return;
+    const myReq = ++reqRef.current;
+    const stale = () => myReq !== reqRef.current;
     setLoading(true);
     // ใบผลิตของ mat ที่เลือก (เดี่ยวหรือทั้งกลุ่ม) + join session (line/date/shift/oee)
     /* ⚠️ ต้องแบ่งหน้า — `.limit(2000)` ใช้ไม่ได้จริง PostgREST clamp ที่ 1000 เสมอ (audit 2026-09-02)
@@ -112,6 +117,7 @@ export default function ProductHistory() {
       .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to),
       { orderBy: ['opened_at', 'id'] });
     // fetchAllPages เรียงขึ้นเสมอ (ต้องคงที่คู่กับ .range) — ใบล่าสุดขึ้นก่อนเป็นเรื่องการแสดงผล เรียงกลับที่นี่
+    if (stale()) return;
     const ord = ordRes.rows.slice().reverse();
     const ordWarn = ordRes.error ? 'โหลดใบผลิตไม่สำเร็จ' : (ordRes.truncated ? 'ใบผลิตโหลดได้ไม่ครบ' : '');
     /* ⚠️ defect_logs **ไม่มีคอลัมน์ mat_no** — ผูกกับสินค้าผ่าน prod_order_id เท่านั้น
@@ -123,6 +129,7 @@ export default function ProductHistory() {
     const defRes = await fetchByIds(oIds, (c) => supabaseDR.from('defect_logs')
       .select('prod_order_id, qty_ng, qty_suspect, dr_defect_types(name_th)')
       .in('prod_order_id', c));
+    if (stale()) return;
     const def = defRes.rows;
     const defWarn = defRes.error ? 'โหลดของเสียไม่สำเร็จ' : (defRes.truncated ? 'ของเสียโหลดได้ไม่ครบ' : '');
     // audit ของแถว dr_products นี้ (best-effort — ถ้ายังไม่ apply migration audit_log จะว่าง)
@@ -134,6 +141,7 @@ export default function ProductHistory() {
         .order('changed_at', { ascending: false }).limit(200);
       auditRows = a || [];
     } catch { auditRows = []; }
+    if (stale()) return;
     setOrders(ord || []); setDefects(def); setAudit(auditRows);
     // ⚠️ โหลดไม่ครบ = ตัวเลขบนหน้านี้ต่ำกว่าจริง ต้องบอกเสมอ ห้ามให้ดูเหมือนข้อมูลครบ
     setLoadWarn([ordWarn, defWarn].filter(Boolean).join(' · '));

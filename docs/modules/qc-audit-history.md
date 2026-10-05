@@ -101,9 +101,28 @@
 | 26 | chartsweep/stdsweep | ป้ายหน่วยแกน `axisUnitLabel`/`axisUnitTop` + Pareto `shortTick` (Obeya 0 ปัญหา) · StockReceiptQueue แถบกรองชิดแท็บ · MaterialRequests ตัด padding บน (QualityControl 20→16px) |
 | UX | จอเดโม | TV มีชื่อไลน์ในกรอบ (`utils/regionGeom.js`) · GroupOverview พับ mockup/คำอธิบาย + ตัดข้อความนักพัฒนา + "ยังไม่มีข้อมูล" แทน 0/0 (2.61→1.98 จอ) · SQDCM จอ < 800px ไม่บีบ · Obeya หัวเพจเดียว · งานค้างไม่มี "?"/หัวข้อว่าง · ตัด `scoreDef`/`parts_master`/`safety_events` ออกจากข้อความบนจอ |
 
+**✅ แก้แล้ว batch 3 — planning/store (branch `fix/qc-planning-store`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 1 | `PlannerSales.jsx` ลบไฟล์ | 🔴 detach ใบประวัติด้วยตัวกรอง (ไม่ใช่ `.in()` ยาว) · นับ exact ก่อน/หลัง · ไม่เท่ากัน = ยกเลิกการลบ (FK cascade จริง) |
+| 2 | `PlannerSales.jsx` EDI | insert ก่อน → ลบฉบับเดิมตาม id (ทีละ 200) · ล้ม = ถอย batch ใหม่ · ใบวันเก่า/ที่ทำแล้วอ่านแบ่งหน้า+เช็ค error · ship_to upsert/จับคู่ MAT เช็คผล |
+| 3 | `PlannedLotQueue.jsx` | 🔴 โหลดใบผลิตทุกกะของไลน์+วันงานเอง (`production_sessions!inner`) · stale guard · โหลดไม่ได้ = แถบเตือน |
+| 4 | `ProdLotPlanner.jsx` | หลัง insert โหลดใหม่เสมอ (กันล็อตซ้ำ) · UPDATE 0 แถว = ล้ม · โหลดใบผลิตล้ม = แถบเตือน |
+| 5 | `HeijunkaKanban.jsx` | ตัดสต็อกล้ม → ลองใหม่ก่อน "ถึงไลน์" (กันตัดซ้ำจาก note) · รับไม่ครบ ledger ล้ม = คืน claim · demand แบ่งหน้า+error · carry_over/imported = `qty_actual` |
+| 6 | ช่วงพักบอร์ดไทม์ไลน์ | `halfDayBreakIntervals()` แทนสูตรก๊อป 4 จุด (Heijunka ×2 · Dashboard · Management) + ด่าน + เทส |
+| 7 | `deliveryRounds.js` `timeStrToMs` | 🔴 ทุกเวลาเลื่อน +8 ชม. (ฐาน 08:00 + ชั่วโมงเต็ม) → ฐานเที่ยงคืน · เทสใหม่ |
+| 8 | `CustomerDemand.jsx` advance | ตัดสต็อก FG ล้ม = คืนสถานะใบ + ไม่ยิงแจ้ง "ส่งแล้ว" |
+| 9 | `RackCenter.jsx` | เลื่อนขั้น/ยกเลิก/จ่าย packaging = CAS + นับแถว |
+| 10 | `FlowTower.jsx` | "ผลิตวันนี้" = `orderDonePcs` + fetchByIds + ล้ม = "—" · poll ผ่าน `makeIdleGate` (floor `RATE.SLOW`) |
+| 11 | `planLots.js` `orderDonePcs` | ใช้ `orderInQty` (ห้ามถอยไปเป้า) · cancelled = 0 · null-safe · เทส |
+| 12 | `ProductHistory` / `OrderTrace` | stale guard · ค้นล้มขึ้นแถบแดง · `orIlike()` escape `,()` (`pgrstFilter.js` + เทส) · ช่องค้น+ปุ่มกลุ่มเดียว placeholder สั้น |
+| 13 | `MonitoringUpload.jsx` | ส่วนต่างสต็อกคิดใหม่จากยอดสดตอนยืนยัน (`stockAdjustPlan` + เทส) · ข้อความล้มบอกตรงว่าข้อมูลบางขั้นถูกล้าง |
+| 14 | `Transport.jsx` saveStops / `PullSignalUpload.jsx` | เส้นทาง insert-first (seq สลับช่วง) · ตัวนับ batch e-SMART นับแถว |
+| 15 | `FlowTower.jsx` · `HeijunkaKanban.jsx` ใบเบิก/ใบ child | ค้าง = `pending` (ตารางไม่มี `done` — เดิมนับ cancelled เป็นค้าง 1,472 แทน 482) · คิวสโตร์โหลดใบค้างทุกหน้า + ประวัติล่าสุด (เดิม 172 ใบรอจ่ายหาย · ใบยกเลิกขึ้นปุ่มจ่าย) · ด่าน `raw-withdrawal-status-set` |
+
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม (ที่เหลือ): stale-response ProductHistory (MtnAnalysis/QualityBins แก้แล้วใน batch quality/MTN) · Obeya SQDCM โหลด `oee_targets` ล้มแล้วใช้เป้ามาตรฐานเงียบ
-- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ"
+- จอเดโม: Obeya SQDCM โหลดเป้า OEE ล้มแล้วถอยไปเป้า default เงียบ · MtnAnalysis แท็บ QC7 พาเรโต ป้าย "100.0%" ล้นกรอบ 11px (chartsweep)
+- ข้อมูล/สต็อก: write ไม่เช็ค error ~8 จุด (ลำดับรอง)
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
 - 🔴 edge แจ้งเตือน (`send-notification`/`-event-`/`-mtn-`/`-store-`/`-cqi15-`/`send-push`) `verify_jwt=false` ไม่เช็คผู้เรียก ⇒ ยิงแจ้งเตือนปลอม/ push ใครก็ได้จากภายนอก · `daily-4m-summary` รับ Bearer อะไรก็ได้
