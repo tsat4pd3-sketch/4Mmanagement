@@ -317,7 +317,7 @@ export default function ProdLotPlanner({
               💡 เสนอลำดับ
             </button>
             <button onClick={save} disabled={saving || !dirty}
-              style={{ background: dirty ? 'var(--accent)' : undefined, color: dirty ? '#04210f' : undefined, fontWeight: 800 }}>
+              style={{ background: dirty ? 'var(--accent)' : undefined, color: dirty ? 'var(--accent-ink)' : undefined, fontWeight: 800 }}>
               {saving ? 'กำลังบันทึก…' : dirty ? '💾 บันทึกแผน' : 'บันทึกแล้ว'}
             </button>
           </>

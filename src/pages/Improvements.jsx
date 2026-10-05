@@ -859,7 +859,7 @@ export default function Improvements() {
       <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡"
         sub="เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ"
         actions={canManage && (
-          <button onClick={openCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={openCreate} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
             ➕ เพิ่มโปรเจคปรับปรุง
           </button>
         )} />
@@ -1530,7 +1530,7 @@ export default function Improvements() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button onClick={() => setModal(null)} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button disabled={saving} onClick={handleSave} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+              <button disabled={saving} onClick={handleSave} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
               </button>
             </div>

@@ -170,7 +170,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 160px' }}>หมายเหตุ<br />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></label>
             <button onClick={save} disabled={busy}
-              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
               {busy ? '⏳' : editId ? '💾 บันทึก' : '+ เพิ่ม'}
             </button>
             {editId && <button onClick={() => { setEditId(null); setForm(EMPTY); }}

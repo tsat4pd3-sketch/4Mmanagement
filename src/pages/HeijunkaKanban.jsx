@@ -1226,7 +1226,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
         {STORE_TABS.filter(t => t.key !== 'fg' || rounds.length > 0).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
             style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-              background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? '#08130a' : 'var(--text2)',
+              background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? 'var(--accent-ink)' : 'var(--text2)',
               border: `1px solid ${store === t.key ? 'var(--accent)' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 150 }}>
             <span>{t.icon} {t.label} {counts[t.key] > 0 && <span style={{ opacity: 0.8 }}>({counts[t.key]})</span>}</span>
             <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>{t.desc}</span>

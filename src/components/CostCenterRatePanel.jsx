@@ -336,7 +336,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                   <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                     {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>

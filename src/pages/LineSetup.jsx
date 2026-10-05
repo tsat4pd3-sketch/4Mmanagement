@@ -1234,7 +1234,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   {editingLineId === l.id ? (
                     <>
                       <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
-                        style={{ background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
+                        style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
                         style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
                     </>
@@ -1292,7 +1292,7 @@ export default function LineSetup({ embedded = false } = {}) {
               value={newLineParent} onChange={setNewLineParent} placeholder="ไม่มีไลน์หลัก (standalone)"
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
+              style={{ padding: '8px 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
@@ -1785,6 +1785,6 @@ const inheritNoteSt = {
 
 const uploadBtnSt = {
   display: 'inline-block', padding: '10px 20px',
-  background: 'var(--accent)', color: '#fff',
+  background: 'var(--accent)', color: 'var(--accent-ink)',
   borderRadius: 8, cursor: 'pointer', fontSize: 14
 };

@@ -254,9 +254,32 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   });
   ccOwners.forEach(arr => arr.sort((a, b) => (OWNER_RANK[a.kind] ?? 9) - (OWNER_RANK[b.kind] ?? 9)));
 
-  [...ccLines.keys()].sort(naturalCompare).forEach(cc => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], {
-    icon: '💰', cc_name: ccName.get(cc) || '', owners: ccOwners.get(cc) || [],
-  }));
+  /* ── ลำดับ/กลุ่มของรหัส = ตามผังองค์กร ไม่ใช่เรียงเลข (05/10 · user: "dropdown cost center ยังมั่ว ไม่ตรงหน้า set organize") ──
+     เดิม sort ด้วยเลขรหัส ⇒ test groupe (245455) ขึ้นบนสุด · MTN/QA (9 หลัก) มาก่อน PD1–PD4 (10 หลัก) ทั้งที่ผังเรียง PD1→PD4 ก่อน
+     · อันดับ = ตำแหน่งของ "เจ้าของรหัสที่กว้างสุด" ในต้นไม้ (`opts` ถูก push ตาม sort_order ของผังอยู่แล้ว)
+     · รหัสที่ไม่มีหน่วยในผังผูก (มาจาก production_lines ล้วน) ใช้ตำแหน่งของไลน์ · ไม่รู้ที่ทางเลย = ต่อท้ายตามเลข
+     · `cc_group` = หน่วยบนสุดใต้โรงงาน (ส่วนงาน / แผนกขึ้นตรง) ให้ dropdown ทำ optgroup หน้าตาเดียวกับผัง */
+  const optIndex = new Map(opts.map((o, i) => [o.key, i]));
+  const topOfKey = (k) => {
+    let cur = k, up = parentOf.get(k);
+    while (up && up !== 'plant' && !String(up).startsWith('division:')) { cur = up; up = parentOf.get(cur); }
+    return cur;
+  };
+  const ccPlace = (cc) => {
+    const ownerKeys = (ccOwners.get(cc) || []).map(w => scopeKey(w.kind, w.value));
+    const lineKeys = [...(ccLines.get(cc) || [])].map(nm => scopeKey('line', nm)).filter(k => optIndex.has(k));
+    const keys = (ownerKeys.length ? ownerKeys : lineKeys).filter(k => optIndex.has(k));
+    if (!keys.length) return { rank: Infinity, group: '', groupKey: null };
+    const anchor = keys.reduce((a, k) => (optIndex.get(k) < optIndex.get(a) ? k : a), keys[0]);
+    const top = topOfKey(anchor);
+    return { rank: optIndex.get(anchor), group: labelOfKey.get(top) || '', groupKey: top };
+  };
+  [...ccLines.keys()].map(cc => ({ cc, ...ccPlace(cc) }))
+    .sort((a, b) => (a.rank - b.rank) || naturalCompare(a.cc, b.cc))
+    .forEach(({ cc, rank, group, groupKey }) => push('cost_center', cc, cc, 1, 'plant', [...ccLines.get(cc)], {
+      icon: '💰', cc_name: ccName.get(cc) || '', owners: ccOwners.get(cc) || [],
+      cc_group: group, cc_group_key: groupKey, cc_rank: Number.isFinite(rank) ? rank : null,
+    }));
 
   // ── API ──
   const lineNamesOf = (kind, value) => [...(linesOf.get(scopeKey(kind, value)) || [])];
@@ -308,8 +331,23 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     const nm = ccName.get(code) || '';
     return nm ? `${code} · ${nm}` : code;
   };
+  /** รหัส cost center ที่อยู่ "ใต้" หน่วยที่เลือก (05/10) — เจ้าของรหัส (หรือบรรพบุรุษของเจ้าของ) คือหน่วยนั้น
+   *  หรือไลน์ของรหัสอยู่ในหน่วย · โรงงาน = ทุกรหัส · ใช้ให้ dropdown เอารหัสของหน่วยที่เลือกขึ้นก่อน */
+  const ccUnder = (kind, value) => {
+    const all = new Set(ccLines.keys());
+    if (isPlant({ kind, value })) return all;
+    const k = scopeKey(kind, value);
+    const names = new Set(lineNamesOf(kind, value));
+    const under = (wk) => { let c = wk; for (let i = 0; c && i < 12; i++) { if (c === k) return true; c = parentOf.get(c); } return false; };
+    const out = new Set();
+    all.forEach((cc) => {
+      const owners = ccOwners.get(cc) || [];
+      if (owners.some(w => under(scopeKey(w.kind, w.value))) || [...(ccLines.get(cc) || [])].some(nm => names.has(nm))) out.add(cc);
+    });
+    return out;
+  };
 
-  return { options: opts, lineNamesOf, ancestorsOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf, ccOf, ccOwnersOf, ccLabel };
+  return { options: opts, lineNamesOf, ancestorsOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf, ccOf, ccOwnersOf, ccLabel, ccUnder };
 }
 
 /** ขอบเขต `def` (นิยาม KPI) ครอบขอบเขตที่เลือกอยู่ไหม — เท่ากัน หรือเป็นบรรพบุรุษ (นิยามระดับแม่ตกทอดถึงลูก) */

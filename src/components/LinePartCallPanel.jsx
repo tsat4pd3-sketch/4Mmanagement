@@ -647,7 +647,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
         </div>
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border2)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ fontSize: 12.5, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: '#08130a' }}>
+          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)' }}>
             {saving ? 'กำลังบันทึก…' : 'บันทึก'}
           </button>
         </div>

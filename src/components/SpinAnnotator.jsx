@@ -113,7 +113,7 @@ export default function SpinAnnotator({
         )}
         {arming && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง (เฟรม {frameIdx + 1})</span>
+            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง (เฟรม {frameIdx + 1})</span>
           </div>
         )}
       </div>

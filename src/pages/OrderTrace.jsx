@@ -990,7 +990,7 @@ export default function OrderTrace() {
           onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
           fields="PROD.NO (สแกนได้) / MAT.NO / ชื่อชิ้นงาน / เลข Julian เช่น 24726A" autoFocus />
         <button onClick={() => doSearch()} disabled={searching}
-          style={{ padding: '0 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>
+          style={{ padding: '0 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
           {searching ? '⏳' : 'ค้นหา'}
         </button>
         {sel && <>
