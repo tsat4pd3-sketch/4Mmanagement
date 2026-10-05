@@ -108,9 +108,10 @@ export function axisOee({ sessions = [], target = null } = {}) {
   return {
     key: 'OEE', unit: '%', better: 'up', target: tg,
     value: val == null ? null : +val.toFixed(1),
-    a: round1(wavg(rows, r => Number(r.oee_a), wLoad)),
-    p: round1(wavg(rows, r => Number(r.oee_p), wRun)),
-    q: round1(wavg(rows, r => Number(r.oee_q), wProd)),
+    /* audit 05/10: `Number(null) = 0` ⇒ กะที่ stamp oee แต่ a/p/q ว่าง เคยถูกถ่วงเป็น 0 ลาก A·P·Q ต่ำกว่าจริง — null ต้องเป็น null ให้ wavg ข้าม */
+    a: round1(wavg(rows, r => (r.oee_a == null ? null : Number(r.oee_a)), wLoad)),
+    p: round1(wavg(rows, r => (r.oee_p == null ? null : Number(r.oee_p)), wRun)),
+    q: round1(wavg(rows, r => (r.oee_q == null ? null : Number(r.oee_q)), wProd)),
     shifts: rows.length,
     state: 'ok', note: null,
     series: bucketBy(rows, r => r.work_date, (acc, r) => acc.rows.push(r), () => ({ rows: [] }))

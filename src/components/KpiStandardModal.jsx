@@ -101,9 +101,9 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
 
   const Badge = ({ req }) => {
     const r = requirementOf(req);
-    if (!r) return <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>หัวข้อแม่</span>;
+    if (!r) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>หัวข้อแม่</span>;
     return (
-      <span title={r.hint} style={{ fontSize: 10.5, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 5, padding: '1px 5px', whiteSpace: 'nowrap' }}>
+      <span title={r.hint} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 5, padding: '1px 5px', whiteSpace: 'nowrap' }}>
         {r.label}
       </span>
     );
@@ -190,8 +190,8 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                           <td style={{ ...td, width: 62 }}><Badge req={item.requirement} /></td>
                           <td style={{ ...td, whiteSpace: 'normal' }}>
                             <b style={{ color: 'var(--text)' }}>{item.topic}</b>
-                            {item.formula_text && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{item.formula_text}</div>}
-                            {item.note && <div style={{ fontSize: 10.5, color: '#f59e0b' }}>{item.note}</div>}
+                            {item.formula_text && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{item.formula_text}</div>}
+                            {item.note && <div style={{ fontSize: 11, color: '#f59e0b' }}>{item.note}</div>}
                           </td>
                           <td style={{ ...td, width: 130, whiteSpace: 'nowrap' }}>
                             {row

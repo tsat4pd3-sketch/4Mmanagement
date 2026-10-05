@@ -826,7 +826,7 @@ fitColor(score)   // 80+ green | 60-79 amber | 40-59 orange | <40 red
    - **ด่าน lint กฎ crash** (`eslint.critical.config.js`) — เฉพาะกฎที่ทำแอปพังตอน runtime ที่ bundler ไม่จับ ·
      **ห้าม bypass ด้วย `vite build` ตรงๆ · ห้ามเพิ่มกฎ style จุกจิกในไฟล์นี้**
      · `react-hooks/rules-of-hooks` เปิดอยู่ — **hook ทุกตัวต้องอยู่บนสุดก่อน early return** (ผิด = React #310 จอ error ทั้งหน้า)
-     **ห้าม disable กฎ** ให้ย้าย hook ขึ้น
+     **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
    - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
      · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · KPI `manual`+`auto:` · เอกสารที่ออกเลขใบแล้ว)

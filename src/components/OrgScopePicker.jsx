@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
@@ -112,7 +113,7 @@ export default function OrgScopePicker({
       title="Cost Center — แกนคนละสายกับผังองค์กร (1 กลุ่มไลน์ครอบหลายรหัสได้ และหลายไลน์ใช้รหัสเดียวกันได้)"
       onChange={e => (e.target.value ? emit(e.target.value) : emit('plant'))}
       style={{ width: 210, fontSize: 13, ...inputStyle }}>
-      <option value="">💰 Cost Center — ทั้งหมด</option>
+      <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
       {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
       {ccGroups.map(g => (
