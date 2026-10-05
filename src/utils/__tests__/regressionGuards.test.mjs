@@ -1744,6 +1744,31 @@ test('🛡️ PRODUCT_COLUMNS ต้องมี pair_mat_no + op_seq · แล�
   }
 });
 
+/* ── ชั้น OP ต้องยุบเข้า "สินค้า" ไม่ใช่ "MAT ตัวเดียว" (2026-10-05 · คำสั่ง user) ──────────
+   `op_parent_mat` เป็น text ช่องเดียว แต่สินค้าตัวเดียวแตกเป็นหลาย MAT ตามลูกค้า
+   (แยกบิล/รหัส/MAT SAP) ⇒ กะที่ไลน์รันลูกค้าอื่น ขั้นตอนไม่ยุบ แล้วยอดถูกนับ 2 ครั้ง
+   วัดจริงฐาน DR 05/10 (ต่อวันทำงาน+กะ ทั้งโรงงาน): **27 กะ · 18,659 ชิ้น · OP 5 ตัว**
+   ⇒ `loadOpInfo` ต้องแนบ `alts` (พี่น้องแกน p_no เดียวกัน) · `collapseOps` ต้องเช็ค `alts` ด้วย */
+test('🛡️ op-parent-is-product-not-mat — loadOpInfo ต้องแนบ alts · collapseOps ต้องใช้ alts', () => {
+  const op = readFileSync(join(ROOT, 'src/utils/opItems.js'), 'utf8');
+  const code = stripComments(op);
+  assert.ok(/partCoreOf/.test(code), '\n\n❌ src/utils/opItems.js ไม่ได้ใช้ partCoreOf\n'
+    + '   ทำไมสำคัญ: ไม่จับกลุ่มด้วยแกน p_no = `alts` ว่าง = ขั้นตอนไม่ยุบเมื่อไลน์รันลูกค้าอื่น\n'
+    + '              ⇒ ยอดผลิตถูกนับ 2 ครั้ง (ขั้น + พาร์ทจริง) โดยไม่มี error (วัดจริง 18,659 ชิ้น)\n'
+    + '   แก้ยังไง: import { partCoreOf } from \'./partGroup\' แล้วแนบ alts ใน loadOpInfo\n');
+  assert.ok(/\balts\b/.test(code), '\n\n❌ loadOpInfo ไม่ได้คืน `alts` — ดูเหตุผลข้างบน\n');
+  // ห้ามจับกลุ่มด้วย "ชื่อ" (ชื่อเป็นข้อความที่คนพิมพ์ ชนกันได้ ⇒ ยุบเกิน = ยอดขาด กู้ไม่ได้)
+  assert.ok(!/groupSameProductKeys/.test(code),
+    '\n\n❌ opItems.js ห้ามใช้ groupSameProductKeys (รวมด้วย "ชื่อ" ด้วย)\n'
+    + '   ยุบเกิน = ตัดขั้นที่ไม่ควรตัด = ยอด**ขาด** ซึ่งแย่กว่านับซ้ำ · ใช้ partCoreOf (แกน p_no) เท่านั้น\n');
+
+  const pt = stripComments(readFileSync(join(ROOT, 'src/utils/pairTotals.js'), 'utf8'));
+  const fn = pt.slice(pt.indexOf('export function collapseOps'), pt.indexOf('function resolvePairAcrossOps'));
+  assert.ok(fn.includes('op.alts'), '\n\n❌ collapseOps ไม่ได้เช็ค `op.alts`\n'
+    + '   ทำไมสำคัญ: opItems แนบ alts มาแล้วแต่ไม่มีใครอ่าน = การแก้ตายเงียบ ยอดยังนับซ้ำ\n'
+    + '   แก้ยังไง: ก่อนยุบเป็นกลุ่ม ให้ตัดขั้นทิ้งเมื่อ `(op.alts||[]).some(a => present.has(a))`\n');
+});
+
 /* ── คิวรับเข้าคลัง: ถอนยอด "auto" ของใบผลิต ต้องจัดการใบรอรับด้วย (2026-10-02) ──
    กฎรับเข้าโหมด 🟡 ต้องยืนยันรับ ⇒ ปิดใบผลิตแล้วของ**ไม่ได้ลงสต็อก** แต่ไปรอใน `stock_receipts`
    จุดที่ถอยใบ/ถอนยอดด้วย `created_by = 'auto'` อย่างเดียว = ใบรอรับค้างอยู่ → คลังกดรับของที่ไลน์ถอยไปแล้ว
