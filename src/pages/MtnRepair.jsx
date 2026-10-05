@@ -195,7 +195,7 @@ const notifyMtn = (payload, event) => {
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 
 /* ── ลายเซ็น: ใช้ลายเซ็นโปรไฟล์ (ไม่เพิ่มไฟล์ใหม่) หรือเซ็นใหม่ ── */
@@ -585,7 +585,7 @@ export default function MtnRepair() {
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
-          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '0 16px' }}>➕ แจ้งซ่อมใหม่</button>}
+          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
         {dateHidden.n > 0 && (
@@ -602,9 +602,20 @@ export default function MtnRepair() {
             )}
           </div>
         )}
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
-          {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
-          {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีรายการ</div>}
+        {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
+            สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 170px)' }}>
+          {/* กรอบเลื่อนเอง (สูงไม่เกินจอ) ⇒ หัวตาราง sticky ค้างอยู่ตอนเลื่อนลง 300 ใบ */}
+          <table className="mo-list">
+            <thead><tr>
+              <th>เลข MO</th><th>สถานะ</th><th>ขั้น</th><th>แจ้งเมื่อ</th><th>ทีมช่าง</th>
+              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ประเภท</th>
+            </tr></thead>
+            <tbody>
+              {shown.map(o => <MoRow key={o.id} o={o} onOpen={() => openDetail(o)} />)}
+              {!shown.length && <tr><td colSpan={10} style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>ไม่มีรายการ</td></tr>}
+            </tbody>
+          </table>
         </div>
       </>}
 
@@ -621,27 +632,45 @@ export default function MtnRepair() {
   );
 }
 
-function MoCard({ o, onOpen }) {
+function MoRow({ o, onOpen }) {
   const m = statusMetaOf(o);
+  const last = lastStep({ mtnForm: isMtnFormOrder(o) });
   // ใบเก่าปิดที่ current_step 8 (flow 8 ขั้นก่อน 22/09) — ปิดแล้วต้องเต็ม 100% ห้ามค้าง 89%
-  const pct = o.status === 'closed' ? 100
-    : Math.round((o.current_step / lastStep({ mtnForm: isMtnFormOrder(o) })) * 100);
+  const pct = o.status === 'closed' ? 100 : Math.round((o.current_step / last) * 100);
   const dept = o.mtn_dept || deptForItem(o.item_type);
+  const pending = o.status === 'pending';
   return (
-    <div className={o.status === 'pending' ? 'mo-card-alert' : ''} onClick={onOpen}
-      style={{ background: 'var(--card)', border: `1px solid ${o.status === 'pending' ? '#ef4444' : 'var(--border)'}`, borderRadius: 12, padding: 12, cursor: 'pointer' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข MO)'}</div>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>{m.label}</span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🏢 {deptNameOf(dept)}</div>
-      <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 3 }}>🏭 <b>{o.line_name || '—'}</b> · {o.item_type || '—'} {o.machine_no ? `· ${o.machine_no}` : ''}</div>
-      <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3 }}>🛑 {o.problem_characteristic || '—'}</div>
-      {o.report_note && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.report_note}</div>}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 7, fontSize: 11, color: 'var(--muted)' }}>
-        <span>{fmtDateTime(o.report_at)}</span>{o.status !== 'rejected' && <span>ขั้น {o.current_step}/{lastStep({ mtnForm: isMtnFormOrder(o) })}</span>}
-      </div>
-      {o.status !== 'rejected' && <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 4, marginTop: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: o.status === 'closed' ? '#22c55e' : '#f59e0b' }} /></div>}
+    <tr onClick={onOpen} tabIndex={0} role="button" className={pending ? 'mo-row-alert' : ''}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
+      <td style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>(ยังไม่ออกเลข)</span>}</td>
+      <td><span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>{m.label}</span></td>
+      <td style={{ whiteSpace: 'nowrap' }}>
+        {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
+          <div style={{ width: 52, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 2 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: o.status === 'closed' ? 'var(--green)' : 'var(--amber)' }} />
+          </div>
+        </>}
+      </td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{fmtDateTime(o.report_at)}</td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{deptNameOf(dept)}</td>
+      <td style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>{o.line_name || '—'}</td>
+      <td style={{ color: 'var(--text2)', minWidth: 120 }}>{o.item_type || '—'}{o.machine_no ? <> · <b style={{ color: 'var(--text)' }}>{o.machine_no}</b></> : ''}</td>
+      <td style={{ minWidth: 140 }}>{o.problem_characteristic || '—'}</td>
+      <td className="mo-note" title={o.report_note || ''}>{o.report_note || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{o.repair_type || '—'}</td>
+    </tr>
+  );
+}
+
+/* หัวขั้นของฟอร์มคอลัมน์เดียว — เลขวงกลม + ชื่อขั้น · `visible={false}` = ไม่วาด (ขั้นที่มีเฉพาะบางทีม) */
+function FormStep({ n, title, visible = true }) {
+  if (!visible) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n > 1 ? 10 : 0, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+      <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12.5, fontWeight: 800,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{title}</span>
     </div>
   );
 }
@@ -871,31 +900,22 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
   };
 
   return (
-    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty} wide>
-      <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty}>
+      {/* 📝 คอลัมน์เดียว ไล่กรอกลงทีละขั้น · แต่ละมิติเรียง "ใหญ่ → เล็ก" (05/10 · คำสั่ง user — เดิม 2 คอลัมน์ ตาต้องสลับซ้าย-ขวา)
+          ① ทีม/ชนิดงาน → ② ที่ไหน (แผนก → ส่วนงาน → ไลน์) → ③ อุปกรณ์ (ชนิด → เลข) → ④ ปัญหา (กลุ่ม → หัวข้อย่อย → รายละเอียด → รูป)
+          → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
+      <div style={{ display: 'grid', gap: 12 }}>
+        <FormStep n={1} title="แจ้งถึงทีมช่าง · ชนิดงาน" />
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
-        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <Field label="ขอบเขตการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-          <Field label="ประเภทงานซ่อม (BM/PM)">
+        <Field label="ขอบเขตการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
+        <Field label="ประเภทงานซ่อม (BM/PM)">
             <select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>
               <option value="">— ให้หัวหน้าช่างระบุ —</option>
               {teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}
             </select>
           </Field>
-        </div>
-        {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
-        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
-          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
-        </Field>
-        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
-          <Field label="ส่วนงาน (ASSY)">
-            <select value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp}>
-              <option value="">— ไม่ระบุ —</option>
-              {f.work_area && !deptsOf(f.dept_section).includes(f.work_area) && <option value={f.work_area}>⚠ {f.work_area} (ไม่มีในผัง)</option>}
-              {deptsOf(f.dept_section).map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
+
+        <FormStep n={2} title="ที่ไหน — แผนก → ส่วนงาน → ไลน์" />
           {/* แผนก = section จากผังองค์กร (default ตามไลน์ · เปลี่ยนได้เฉพาะผ่านตัวเลือก — คีย์ scope ของ mtnStepPerm) · 2026-09-07 */}
           <Field label="แผนก (PD)">
             <select value={f.dept_section} onChange={e => { setDirty(true); setF(p => ({ ...p, dept_section: e.target.value, work_area: '' })); }} style={inp}>
@@ -904,7 +924,22 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
               {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
-        </div>
+          {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
+          <Field label="ส่วนงาน (ASSY)">
+            <select value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp}>
+              <option value="">— ไม่ระบุ —</option>
+              {f.work_area && !deptsOf(f.dept_section).includes(f.work_area) && <option value={f.work_area}>⚠ {f.work_area} (ไม่มีในผัง)</option>}
+              {deptsOf(f.dept_section).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+        {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
+        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
+          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
+        </Field>
+        {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
+        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
+
+        <FormStep n={3} title="อุปกรณ์ — ชนิด → หมายเลข" />
         <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
           ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
           : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
@@ -986,6 +1021,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             );
           })()}
         </Field>
+        <FormStep n={4} title="ปัญหา — กลุ่ม → หัวข้อย่อย → รายละเอียด" />
         <Field label="ลักษณะปัญหา — กลุ่ม" required>
           <select value={f.problem_group} onChange={e => setF(p => ({ ...p, problem_group: e.target.value, problem_characteristic: '' }))} style={inp}>
             <option value="">— เลือกกลุ่ม —</option>
@@ -999,7 +1035,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
           </select>
         </Field>
         {/* ค้นหาข้ามชั้น — ช่างที่รู้อยู่แล้วว่าจะเลือกอะไร ไม่ต้องไล่เลือกกลุ่มก่อน */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div>
           <Field label="🔍 หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
             <input value={probQ} onChange={e => setProbQ(e.target.value)} placeholder="เช่น ลมรั่ว / พันช์ / เซนเซอร์" style={inp} />
           </Field>
@@ -1015,22 +1051,26 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </div>
           )}
         </div>
-        {/* ── ช่องที่มีเฉพาะบนฟอร์มกระดาษของทีม MTN (user 2026-09-15 "ใช้รูปแบบใบเดิม 100%") ──
-            โชว์เฉพาะเมื่อแจ้งถึงทีม MTN — ทีม JIG/DIE ใช้ FM-JIG-008 ที่ไม่มีช่องพวกนี้ */}
+        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
+        <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
+          <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>
+        </Field>
+
+        <FormStep n={5} title="ข้อมูลฟอร์ม MTN" visible={teamKeyOf(f.mtn_dept) === 'maintenance'} />
         {teamKeyOf(f.mtn_dept) === 'maintenance' && <>
           <Field label="เบอร์ติดต่อ (ผู้แจ้ง)"><input value={f.contact_phone} onChange={e => set('contact_phone', e.target.value)} style={inp} placeholder="เช่น 183" /></Field>
-          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
+          <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
             <Field label="I/O."><input value={f.io_no} onChange={e => set('io_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div>
             <Field label="จุดประสงค์">
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {PURPOSES.map(pp => { const on = (f.purpose || 'repair') === pp.key; return (
                   <button key={pp.key} type="button" onClick={() => set('purpose', pp.key)} style={{
                     padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{pp.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{pp.label}</button>
                 ); })}
               </div>
               {/* จุดประสงค์ไม่ใช่แค่ช่องติ๊กบนใบ — มันเปลี่ยนเส้นทางของใบจริง ต้องบอกผลตั้งแต่ตอนเลือก */}
@@ -1046,22 +1086,16 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             <Field label="ผู้จัดการโรงงาน (งานสร้างต้องเซ็นด้วย)"><PersonSelect value={f.plant_manager_name} source="both" onChange={res => set('plant_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการโรงงาน" /></Field>
           )}
         </>}
-        {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
-        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
+        <FormStep n={teamKeyOf(f.mtn_dept) === 'maintenance' ? 6 : 5} title="กำหนดการ · ผู้แจ้ง" />
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
-        <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
-          <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>
-        </Field>
         {/* ลูกค้า = <CustomerSelect> (รายชื่อจาก Product Master · พิมพ์ใหม่ได้พร้อมป้าย) · โมเดลไม่มี master — พิมพ์เอง (2026-09-07) */}
-        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><input value={f.model} onChange={e => set('model', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="โมเดล" /><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} /></div></Field>
-        <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
+        <Field label="โมเดล"><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /></Field>
+        <Field label="ลูกค้า"><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" inputStyle={{ background: 'var(--bg)' }} /></Field>
         {/* ชื่อคน = <PersonSelect> (profiles + employees · คนของไลน์/แผนกที่เลือกขึ้นก่อน) — เก็บ snapshot ชื่อเหมือนเดิม
             ตัวตนจริงของผู้เปิดใบยังเป็น reported_by_name (stamp ตอนบันทึก) · 2026-09-07 */}
         <Field label="ผู้แจ้ง (ผลิต)"><PersonSelect value={f.reporter_prod} source="both" lines={lineFam} section={f.dept_section} history={reporterHist} onChange={res => set('reporter_prod', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><PersonSelect value={f.reporter_qa} source="both" roles={QA_ROLES} section="QA" onChange={res => set('reporter_qa', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อ QA (เว้นว่างได้)" /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} /></div>
-        <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
@@ -2565,7 +2599,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button key={c.key} type="button" onClick={() => set('cause_category', on ? '' : c.key)} style={{
                     padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{c.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.label}</button>
                 ); })}
               </div>
               {f.cause_category === 'other' && (

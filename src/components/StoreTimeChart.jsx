@@ -563,7 +563,7 @@ export default function StoreTimeChart({
               </div>
               <StockNote cov={cov} fmt={fmt} />
               <button onClick={() => goToCard(r)}
-                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: '#08130a', border: 'none', fontFamily: 'var(--font-body)' }}>
+                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
                 ↓ ดูของที่ต้องเตรียม
               </button>
             </div>

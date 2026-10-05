@@ -369,7 +369,7 @@ export default function FeedbackModal({ onClose }) {
 
               <button onClick={send} disabled={saving || !msg.trim()}
                 style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
-                  background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
+                  background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
                 {saving ? (shots.length ? `กำลังอัปรูป ${shots.length} รูป...` : 'กำลังส่ง...') : '📨 ส่งให้ทีมงาน'}
               </button>
             </>
@@ -433,7 +433,7 @@ export default function FeedbackModal({ onClose }) {
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
                             style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 7, border: 'none',
-                              background: 'var(--accent)', color: '#08130a',
+                              background: 'var(--accent)', color: 'var(--accent-ink)',
                               cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
                             {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
                           </button>

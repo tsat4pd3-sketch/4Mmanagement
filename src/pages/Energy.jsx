@@ -891,7 +891,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
           <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 240px' }}>ที่มา (บังคับ)<br />
             <input value={ref} onChange={e => setRef(e.target.value)} placeholder="เช่น TGO Emission Factor ฉบับ … 25xx" style={inp} /></label>
           <button onClick={add} disabled={busy}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             {busy ? '⏳' : '+ เพิ่มค่า'}
           </button>
         </div>

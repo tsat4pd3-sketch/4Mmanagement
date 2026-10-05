@@ -258,7 +258,7 @@ export default function Monitoring() {
         actions={canEdit ? (
           <button type="button" onClick={() => setShowImport(true)}
             style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
-              background: 'var(--accent)', color: '#08120a', border: 'none' }}>
+              background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
             📗 นำเข้าจากไฟล์ Excel
           </button>
         ) : null}

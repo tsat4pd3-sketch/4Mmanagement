@@ -234,7 +234,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
                     {canEdit && (
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <button onClick={() => save(r)} disabled={!dirty(r.id) || busy === r.id}
-                          style={{ ...btn(dirty(r.id) ? 'var(--accent)' : 'var(--bg3)'), color: dirty(r.id) ? '#0b1220' : 'var(--muted)' }}>บันทึก</button>
+                          style={{ ...btn(dirty(r.id) ? 'var(--accent)' : 'var(--bg3)'), color: dirty(r.id) ? 'var(--accent-ink)' : 'var(--muted)' }}>บันทึก</button>
                         {' '}
                         <button onClick={() => removeRow(r)} disabled={busy === r.id}
                           style={{ ...btn('rgba(239,68,68,0.9)'), color: '#fff' }}>ลบ</button>

@@ -360,6 +360,6 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
 }
 
 const lbl = { display: 'grid', gap: 4, fontSize: 12, color: 'var(--text2)' };
-const btnPri = { background: 'var(--accent)', color: '#08110a', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnSec = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontSize: 13 };
 const btnMini = { background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer', fontSize: 11 };

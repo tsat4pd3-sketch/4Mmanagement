@@ -918,7 +918,7 @@ export default function ShiftOrganize() {
                 <button
                   onClick={handleAddMergeEvent}
                   disabled={!(mrgScope === 'section' ? mrgSection : mrgLineId) || !mrgStart || !mrgEnd}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
                   ✅ ยืนยันยุบกะ
                 </button>
                 <button onClick={() => setShowMergeModal(false)}
@@ -962,7 +962,7 @@ export default function ShiftOrganize() {
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={handleAddOverride} disabled={!ovrEmpId}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   บันทึก
                 </button>
                 <button onClick={() => setShowOvrModal(false)}

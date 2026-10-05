@@ -379,7 +379,7 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button onClick={onConfirm} disabled={busy}
                 style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 6,
-                         background: 'var(--accent)', color: '#062', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
+                         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
           {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า'}
         </button>
         <button onClick={onCancel} disabled={busy}

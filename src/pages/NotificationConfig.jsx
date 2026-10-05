@@ -333,7 +333,7 @@ export default function NotificationConfig() {
           placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
           style={{ ...monoStyle, flex: 1, minWidth: 220 }}
         />
-        <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
         </button>
         <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
@@ -353,7 +353,7 @@ export default function NotificationConfig() {
           style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
         />
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
-        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
         </button>
         <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
@@ -384,7 +384,7 @@ export default function NotificationConfig() {
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
-            <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+            <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             {!(room.chat_id ?? '').trim() && (
@@ -643,7 +643,7 @@ export default function NotificationConfig() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <button onClick={() => saveTpl(rule)}
-                            style={{ background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
+                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
                           <button onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
                             style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>โหลดแบบเริ่มต้น</button>
                           <button onClick={() => resetTpl(rule)}

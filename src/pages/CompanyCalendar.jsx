@@ -258,6 +258,6 @@ export default function CompanyCalendar() {
 }
 
 const navBtnSt = { padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, flexShrink: 0 };
-const primaryBtnSt = { padding: '7px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 };
-const saveBtnSt = { padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
+const primaryBtnSt = { padding: '7px 16px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 };
+const saveBtnSt = { padding: '8px 18px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };
 const cancelBtnSt = { padding: '8px 18px', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' };

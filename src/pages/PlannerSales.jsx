@@ -44,7 +44,7 @@ const card = {
 };
 const btn = (active) => ({
   padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#08130a' : 'var(--text2)',
+  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? 'var(--accent-ink)' : 'var(--text2)',
   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
 });
 const inputSt = {
@@ -901,7 +901,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
@@ -943,7 +943,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </table>
               </div>
               <button onClick={doImport} disabled={saving}
-                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังนำเข้า...' : `⬆ นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>

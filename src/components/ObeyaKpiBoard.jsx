@@ -696,7 +696,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     : { display: 'flex', flexDirection: 'column' };
   const pill = (active) => ({
     fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
-    background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? '#08120a' : 'var(--text)',
+    background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text)',
     border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
   });
   const navBtn = { fontSize: 12, fontWeight: 800, padding: '4px 8px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' };

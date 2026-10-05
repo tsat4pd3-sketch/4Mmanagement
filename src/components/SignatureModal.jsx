@@ -273,7 +273,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Actions */}
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={handleSave} disabled={saving} style={{
-              flex: 2, padding: '10px 0', background: 'var(--accent)', color: '#fff',
+              flex: 2, padding: '10px 0', background: 'var(--accent)', color: 'var(--accent-ink)',
               border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>
