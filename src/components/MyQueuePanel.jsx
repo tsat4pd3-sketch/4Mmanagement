@@ -21,6 +21,7 @@ import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { getActor } from '../utils/actorStamp';
 import { loadProductionLines } from '../utils/useProductionLines';
+import { OPEN_MO_STATUSES } from '../utils/mtnStepPerm';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
@@ -36,6 +37,8 @@ const MO_COLS = [
   'machine_no', 'mtn_dept', 'item_type',
   'assigned_to', 'tech_main', 'tech_main_uid',
   'reporter_prod', 'reporter_prod_uid', 'reported_by_name', 'reported_by_uid',
+  // nextStepOf() ต้องใช้ตัดสินขั้นถัดไป (รอ QA หรือข้ามแล้ว · ช่วงเซ็นปิดของใบ MTN) — 05/10
+  'qa_skipped_at', 'purpose', 'mtn_head_at', 'approve_at',
 ].join(', ');
 
 const DEAD = ['cancelled', 'rejected'];
@@ -46,8 +49,10 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const [moR, sesR, prR, fourR, actR, lines] = await Promise.all([
+    /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
+       ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
-      .is('approve_at', null).gt('current_step', 1)
+      .in('status', OPEN_MO_STATUSES)
       .order('work_date', { ascending: true }).limit(LIMIT),
     supabaseDR.from('production_sessions').select('id, line_name, section, shift, work_date')
       .eq('status', 'pending_close').order('work_date', { ascending: true }).limit(100),

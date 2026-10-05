@@ -45,28 +45,48 @@ test('isMe — uid คนละตัว = คนละคน แม้ชื่
 // ── moWaitingOn — ห้าม hardcode เลขขั้น ────────────────────────────────────
 test('moWaitingOn — ขั้นตรวจรับงาน รอ "ผู้เปิดใบ" ไม่ใช่ผู้ตรวจรับ', () => {
   // เคสจริง 25/09: 168 ใบค้างขั้นนี้ เฉลี่ย 9.3 วัน · ชื่อในช่อง checker ถูกกรอกทีหลัง
-  const w = moWaitingOn(mo({ current_step: 4, reporter_prod: 'สมชาย ใจดี', checker_name: 'คนอื่น' }));
+  const w = moWaitingOn(mo({ status: 'repaired', current_step: 3, reporter_prod: 'สมชาย ใจดี', checker_name: 'คนอื่น' }));
   assert.equal(w.byName, true);
   assert.equal(w.who.name, 'สมชาย ใจดี');
   assert.equal(w.meta.stage, 'accept_work');
 });
 
 test('moWaitingOn — ขั้นลงมือซ่อม รอช่างที่ถูกมอบหมาย', () => {
-  const w = moWaitingOn(mo({ current_step: 3, assigned_to: 'ช่าง ก', tech_main_uid: 'uid-tech' }));
+  const w = moWaitingOn(mo({ status: 'assigned', current_step: 2, assigned_to: 'ช่าง ก', tech_main_uid: 'uid-tech' }));
   assert.equal(w.meta.stage, 'service');
   assert.equal(w.who.uid, 'uid-tech');
 });
 
 test('🔴 moWaitingOn — ขั้นที่รอ "ตำแหน่ง" ต้องคืน who = null (ห้ามเดาเป็นตัวคน)', () => {
-  for (const step of [2, 5, 7]) {
-    const w = moWaitingOn(mo({ current_step: step }));
+  for (const [status, step] of [['pending', 2], ['checked', 5], ['handover', 7]]) {
+    const w = moWaitingOn(mo({ status, current_step: step - 1 }));
+    assert.equal(w.step, step);
     assert.equal(w.who, null, `ขั้น ${step} ไม่ควรผูกตัวบุคคล`);
     assert.equal(w.byName, false);
   }
 });
 
-test('moWaitingOn — ใบขั้น 1 (ยังไม่เข้าลูป) คืน meta = null', () => {
-  assert.equal(moWaitingOn(mo({ current_step: 1 })).meta, null);
+test('moWaitingOn — ใบปิด/ตีกลับ (ไม่อยู่ในลูป) คืน meta = null', () => {
+  assert.equal(moWaitingOn(mo({ status: 'closed', current_step: 7 })).meta, null);
+  assert.equal(moWaitingOn(mo({ status: 'returned', current_step: 1 })).meta, null);
+});
+
+test('🔴 moWaitingOn — ขั้นรอ = ขั้น "ถัดไป" จาก status ไม่ใช่ current_step (workflow audit 05/10)', () => {
+  // current_step = ขั้นที่ทำเสร็จแล้ว · ใบที่ผู้แจ้งตรวจรับแล้ว (checked, current_step 4) ต้องรอ QA ไม่ใช่รอผู้แจ้งอีก
+  const w = moWaitingOn(mo({ status: 'checked', current_step: 4, reporter_prod_uid: 'uid-me' }));
+  assert.equal(w.step, 5);
+  assert.equal(w.meta.stage, 'qa');
+  assert.equal(w.byName, false);
+  // ใบเพิ่งเปิด (current_step 1) = รอจ่ายงาน — เดิมถูกตัดทิ้งไม่โผล่ที่ไหนเลย
+  assert.equal(moWaitingOn(mo({ status: 'pending', current_step: 1 })).meta.stage, 'assign');
+  // QA กดข้ามแล้ว = รอรับมอบ (ขั้น 6) ไม่ค้างที่ QA
+  assert.equal(moWaitingOn(mo({ status: 'checked', current_step: 4, qa_skipped_at: '2026-10-01T01:00:00Z' })).step, 6);
+});
+
+test('🔴 buildQueue — ใบรอ QA ต้องไม่โผล่ในชั้น "รอคุณโดยตรง" ของผู้แจ้งที่ตรวจรับไปแล้ว', () => {
+  const q = buildQueue({ ...EMPTY_SRC, mo: [mo({ id: 'q', status: 'checked', current_step: 4, reporter_prod_uid: 'uid-me' })] }, ME, NOW);
+  assert.equal(q.mine.length, 0);
+  assert.deepEqual(q.unit.map(x => x.key), ['mo:q']);
 });
 
 // ── inMyScope ──────────────────────────────────────────────────────────────
@@ -90,8 +110,8 @@ test('buildQueue — ใบที่รอเราเข้าชั้น mine
   const q = buildQueue({
     ...EMPTY_SRC,
     mo: [
-      mo({ id: 'a', current_step: 4, reporter_prod_uid: 'uid-me' }),
-      mo({ id: 'b', current_step: 4, reporter_prod: 'คนอื่น ในแผนก' }),
+      mo({ id: 'a', status: 'repaired', current_step: 3, reporter_prod_uid: 'uid-me' }),
+      mo({ id: 'b', status: 'repaired', current_step: 3, reporter_prod: 'คนอื่น ในแผนก' }),
     ],
   }, ME, NOW);
   assert.deepEqual(q.mine.map(x => x.key), ['mo:a']);
@@ -99,7 +119,7 @@ test('buildQueue — ใบที่รอเราเข้าชั้น mine
 });
 
 test('buildQueue — ใบนอกส่วนงานเรา และไม่ได้รอเรา ต้องไม่โผล่เลย', () => {
-  const q = buildQueue({ ...EMPTY_SRC, mo: [mo({ id: 'c', current_step: 4, dept_section: 'PD1', reporter_prod: 'คนอื่น' })] }, ME, NOW);
+  const q = buildQueue({ ...EMPTY_SRC, mo: [mo({ id: 'c', status: 'repaired', current_step: 3, dept_section: 'PD1', reporter_prod: 'คนอื่น' })] }, ME, NOW);
   assert.equal(q.mine.length + q.unit.length, 0);
 });
 
@@ -107,8 +127,8 @@ test('🔴 buildQueue — เรียงเก่าสุดขึ้นก่
   const q = buildQueue({
     ...EMPTY_SRC,
     mo: [
-      mo({ id: 'new', current_step: 4, reporter_prod_uid: 'uid-me', work_date: '2026-09-24' }),
-      mo({ id: 'old', current_step: 4, reporter_prod_uid: 'uid-me', work_date: '2026-09-01' }),
+      mo({ id: 'new', status: 'repaired', current_step: 3, reporter_prod_uid: 'uid-me', work_date: '2026-09-24' }),
+      mo({ id: 'old', status: 'repaired', current_step: 3, reporter_prod_uid: 'uid-me', work_date: '2026-09-01' }),
     ],
   }, ME, NOW);
   assert.deepEqual(q.mine.map(x => x.key), ['mo:old', 'mo:new']);
@@ -159,8 +179,8 @@ test('buildQueue — งานที่มอบหมายชื่อเร�
 test('🔴 badgeCount — นับเฉพาะชั้น "รอเราจริงๆ" ไม่รวมคิวแผนก/โรงงาน', () => {
   const q = buildQueue({
     ...EMPTY_SRC,
-    mo: [mo({ id: 'a', current_step: 4, reporter_prod_uid: 'uid-me' }),
-         mo({ id: 'b', current_step: 4, reporter_prod: 'คนอื่น' })],
+    mo: [mo({ id: 'a', status: 'repaired', current_step: 3, reporter_prod_uid: 'uid-me' }),
+         mo({ id: 'b', status: 'repaired', current_step: 3, reporter_prod: 'คนอื่น' })],
     summaries: [{ key: 'pr', title: 'ใบขอซื้อ', count: 6743 }],
   }, ME, NOW);
   assert.equal(badgeCount(q), 1);

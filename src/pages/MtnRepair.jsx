@@ -17,7 +17,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
@@ -1176,23 +1176,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
 
 /* ขั้นถัดไปของใบ — ป้ายปุ่มมาจาก stepLabel() (mtnStepPerm.js) ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
    ⚠️ ไม่มี field `perm` แล้ว — สิทธิ์ตัดสินด้วย canDoStep() ซึ่งดูทั้งคีย์/ทีม/ผู้เปิดใบ */
+/* ตรรกะ "ขั้นถัดไป" ย้ายไป nextStepOf() (mtnStepPerm.js) ให้คิวงานของฉันใช้ชุดเดียวกัน (05/10)
+   — ใบ MTN ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็นจริง (mtnCloseStage) ไม่ใช่ current_step */
 function nextStepFor(order) {
-  const mtnForm = isMtnFormOrder(order);
-  const S = (step) => ({ step, label: stepLabel(step, { mtnForm }) });
-  switch (order.status) {
-    case 'pending':   return S(2);
-    case 'assigned':
-    case 'repairing': return S(3);
-    case 'repaired':  return S(4);
-    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE — ข้ามได้ด้วยปุ่ม ⏭ canSkipQa) · ของใบ MTN ขั้น 5 คือ "รับมอบ"
-       อยู่แล้ว (ลูปนี้ไม่มี QA) ⇒ isWaitingQa เป็น false เสมอ แล้วลงมาที่ขั้นรับมอบของฟอร์มนั้นเอง */
-    case 'checked':   return isWaitingQa(order) ? S(5) : S(mtnForm ? 5 : 6);
-    case 'qa':        return S(6);   // ใบ MTN ไปไม่ถึงสถานะนี้ (ไม่มี QA ในลูป)
-    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
-       — แยกด้วย **เวลาเซ็นจริง** ผ่าน mtnCloseStage() ไม่ใช่ current_step (ใบเก่ามีเลขปนกัน) */
-    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 6) : S(7);
-    default:          return null;
-  }
+  const step = nextStepOf(order);
+  return step == null ? null : { step, label: stepLabel(step, { mtnForm: isMtnFormOrder(order) }) };
 }
 
 /* ช่อง "5.คุณภาพ" ในใบพิมพ์: ใบที่ไม่ต้องตรวจ QA ต้องพิมพ์ว่า "ไม่เกี่ยวกับคุณภาพ" ไม่ใช่ปล่อยว่าง
