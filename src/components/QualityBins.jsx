@@ -140,7 +140,11 @@ export default function QualityBins() {
     if (stale()) return;
     setLoading(false);
     if (ores.error) { setOverdueErr(ores.error.message); setOverdueRows([]); }
-    else { setOverdueErr(''); setOverdueRows(ores.data || []); }
+    else {
+      /* เพดาน 500 แถว (กฎเขียน DB ข้อ 5) — ชนเพดาน = ยอดค้างอาจมากกว่านี้ ต้องบอก */
+      setOverdueErr((ores.data || []).length >= 500 ? 'ของค้างเกิน 500 รายการ — แสดงเฉพาะ 500 รายการที่เก่าที่สุด' : '');
+      setOverdueRows(ores.data || []);
+    }
     if (error) {
       // ยังไม่ apply migration = ต้องบอกให้ชัด ห้ามโชว์เป็น "ไม่มีข้อมูล"
       toast.error(error.code === '42P01'
@@ -170,13 +174,17 @@ export default function QualityBins() {
       : [];
     if (yIds.length) {
       const kids = new Set();
+      let kidsErr = '';
       for (let i = 0; i < yIds.length; i += 100) {
-        const { data: ch } = await supabaseDR.from('quality_bin_records')
+        const { data: ch, error: chErr } = await supabaseDR.from('quality_bin_records')
           .select('from_yellow_id').eq('bin', 'red').eq('is_active', true)
           .in('from_yellow_id', yIds.slice(i, i + 100));
+        if (chErr) { kidsErr = chErr.message; break; }
         (ch || []).forEach(c => c.from_yellow_id && kids.add(c.from_yellow_id));
       }
       if (stale()) return;
+      /* ไม่รู้ว่าใบไหนย้ายลงแดงแล้ว = ป้ายค้างอาจเกินจริง → เขียนบนจอ ห้ามเงียบ */
+      if (kidsErr) setOverdueErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${kidsErr}`);
       setRedChildOf(kids);
     } else setRedChildOf(new Set());
   }, [bin, from, to, scopeNames]);
@@ -377,7 +385,7 @@ export default function QualityBins() {
           <span style={{ color: '#f97316', fontWeight: 700 }}> · ⏱ เกินอายุแท็ก {overdueCount} รายการ</span>
         )}
         {!loading && overdueErr && (
-          <span style={{ color: '#e05252', fontWeight: 700 }} title={overdueErr}> · ⚠️ โหลดรายการค้างเกินอายุแท็กไม่สำเร็จ — ป้ายเตือนอาจไม่ครบ</span>
+          <span style={{ color: '#e05252', fontWeight: 700 }} title={overdueErr}> · ⚠️ รายการค้างเกินอายุแท็กอาจไม่ครบ ({overdueErr})</span>
         )}
         {overdueOnly && <span> · แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก) <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>แสดงทั้งหมด</button></span>}
       </div>
@@ -394,7 +402,7 @@ export default function QualityBins() {
           <tbody>
             {!loading && !filtered.length && (
               <tr><td colSpan={14} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 28 }}>
-                {overdueOnly ? 'ไม่มีของค้างเกินอายุแท็ก 👍' : 'ไม่มีรายการในช่วงที่เลือก'}
+                {overdueOnly ? (overdueErr ? 'โหลดรายการค้างไม่สำเร็จ — ดูข้อความเตือนด้านบน' : 'ไม่มีของค้างเกินอายุแท็ก 👍') : 'ไม่มีรายการในช่วงที่เลือก'}
               </td></tr>
             )}
             {filtered.map(r => (

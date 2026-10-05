@@ -19,7 +19,8 @@ import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, sca
 import { getWorkDate } from '../utils/workDate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { ASSET_CLASSES, assetClassOf } from '../utils/qc7';
+import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
+import { useSearchParams } from 'react-router-dom';
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -114,6 +115,10 @@ export default function MtnAnalysis() {
   const [tab, setTab] = useTabParam(MAIN_TABS.map(t => t.key), 'kpi');
   // ⚠️ ชนิดสินทรัพย์ใช้ `?asset=` — แท็บซ้อนแท็บห้ามใช้ `?tab=` ซ้ำ (UI-CONVENTIONS §6.8)
   const [asset, setAsset] = useTabParam(ASSET_CLASSES.map(a => a.key), 'machine', 'asset');
+  /* URL ระบุ `?asset=` มาเอง = เคารพค่านั้น · ไม่ระบุ = ให้ระบบเลือกกลุ่มแรกที่มีข้อมูล (ทำครั้งเดียว ด้านล่าง) */
+  const [sp] = useSearchParams();
+  const assetInUrl = sp.has('asset');
+  const assetAutoDone = useRef(false);
   /* ⏱️ แถบเวลามาตรฐาน — เดิมเป็น dropdown "ย้อนหลัง N วัน" อย่างเดียว เลือกช่วงเองไม่ได้
      ⇒ ดูเดือนที่แล้วย้อนหลังไม่ได้เลย ต้องเลือกช่วงกว้างแล้วกวาดตาหาเอง (UI §6.16) */
   const tr = useTimeRange({ defaultScale: 'week', defaultDays: 90 });
@@ -272,6 +277,16 @@ export default function MtnAnalysis() {
     scopedEvents.forEach(e => { (m[e.cls] || m.other).push(e); });
     return m;
   }, [scopedEvents]);
+
+  /* 🎯 แท็บชนิดสินทรัพย์ตั้งต้น = กลุ่มแรกที่มีข้อมูล (UX 05/10 — เดิมตรึง "เครื่องจักร" ⇒ เปิดมาเจอจอว่าง)
+     ทำครั้งเดียวหลังโหลดเสร็จรอบแรก · ผู้ใช้กดแท็บเอง/ลิงก์ระบุ `?asset=` = ไม่ยุ่ง (ห้ามออโต้ทับซ้ำ) */
+  useEffect(() => {
+    if (loading || err || assetAutoDone.current) return;
+    assetAutoDone.current = true;
+    if (assetInUrl) return;
+    const pick = firstAssetWithData(byClass, asset);
+    if (pick !== asset) setAsset(pick, { replace: true });
+  }, [loading, err, byClass, asset, assetInUrl, setAsset]);
 
   /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
      ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
@@ -533,8 +548,8 @@ export default function MtnAnalysis() {
           )}
 
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.8 }}>
-            📌 แหล่งข้อมูล: {src === 'mo' ? 'mtn_orders (ใบแจ้งซ่อม)' : 'downtime_logs (บันทึกเครื่องหยุดจาก Daily Report)'} ·
-            ชนิดสินทรัพย์ตัดสินจากทะเบียนเครื่องจักร (`machines.equipment_kind`) ไม่ใช่ทีมช่างที่รับงาน ·
+            📌 แหล่งข้อมูล: {src === 'mo' ? 'ใบแจ้งซ่อม (MO)' : 'บันทึกเครื่องหยุดจาก Daily Report'} ·
+            ชนิดสินทรัพย์ตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียนเครื่องจักร ไม่ใช่ทีมช่างที่รับงาน ·
             หน้านี้อ่านอย่างเดียว ไม่แก้ข้อมูล และไม่ดึงซ้ำอัตโนมัติ (กด ↻ เมื่อต้องการข้อมูลล่าสุด)
           </div>
         </div>

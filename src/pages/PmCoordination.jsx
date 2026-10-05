@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import { useState, useEffect, useMemo, useContext, useCallback, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -16,6 +16,7 @@ import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import { getWorkDate } from '../utils/workDate';
 import SearchSelect from '../components/SearchSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -236,15 +237,18 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
     if (status === 'done' && p.pm_plan_id && pmPlan) {
       if (confirm('PM ของเครื่องนี้ทำเสร็จจริงแล้ว?\nกด OK เพื่ออัพเดท "วันทำล่าสุด" ในระบบแผน PM (เลื่อนรอบถัดไปให้อัตโนมัติ)')) {
-        const done = todayStr();
+        // วันทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — ชุดเดียวกับ PMCheckData (QC 05/10)
+        const done = getWorkDate();
         const patch = { last_done_at: done };
         // ตามรอบเวลา → เลื่อน next_due = วันทำ + interval_days · ตาม usage → forecast คำนวณเองจาก last_done_at
         if (!pmPlan.is_usage && pmPlan.interval_days) {
           const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pmPlan.interval_days));
           patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
-        const { error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id);
+        // RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error ⇒ นับแถว (กฎเขียน DB ข้อ 2)
+        const { data: upd, error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id).select('id');
         if (error) toast.error('อัพเดทแผน PM ไม่สำเร็จ: ' + error.message);
+        else if (!upd?.length) toast.error('อัพเดทแผน PM ไม่สำเร็จ — ไม่มีสิทธิ์หรือแผนถูกลบไปแล้ว');
         else toast.success('อัพเดทวันทำล่าสุดในระบบแผน PM แล้ว');
       }
     }
@@ -313,6 +317,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
 
 /* ── modal สร้าง/แก้แผน ─────────────────────── */
 function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, fullName, onClose, onSaved }) {
+  const createdIdRef = useRef(null);   // id หัวแผนที่สร้างไปแล้วในหน้าต่างนี้ (แผนใหม่)
   const [f, setF] = useState({
     title: plan.title || '', machine_id: plan.machine_id || '', machine_no: plan.machine_no || '',
     machine_name: plan.machine_name || '', line_name: plan.line_name || '', remark: plan.remark || '',
@@ -370,15 +375,18 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
       machine_name: f.machine_name || null, line_name: f.line_name || null, remark: f.remark || null,
       pm_plan_id: f.pm_plan_id || null, updated_at: nowIso };
-    let planId = plan._new ? null : plan.id;
+    /* แผนใหม่ที่หัวแผนสร้างไปแล้วแต่รายการงานล้ม → กดบันทึกซ้ำต้อง "แก้หัวเดิม" ไม่สร้างหัวใหม่ซ้ำ */
+    const isNew = plan._new && !createdIdRef.current;
+    let planId = plan._new ? createdIdRef.current : plan.id;
     /* 🔴 รายการงาน: "เขียนชุดใหม่ก่อน แล้วค่อยลบชุดเดิม" (QC 05/10)
        เดิม ลบก่อน-เขียนทีหลัง ⇒ insert ล้ม = งานทั้งแผนหายถาวร (+ ลืม setBusy(false) ปุ่มค้าง)
        ตอนนี้: insert ล้ม = ของเดิมยังอยู่ครบ · ลบชุดเดิมล้ม = มีแถวซ้ำ ⇒ บอกบนจอ (ไม่เงียบ) */
     let oldIds = [];
-    if (plan._new) {
+    if (isNew) {
       const { data, error } = await supabaseDR.from('pm_coordination_plans').insert({ ...head, status: 'draft', created_by: fullName || null }).select('id').single();
       if (error) { setBusy(false); return toast.error(error.message); }
       planId = data.id;
+      createdIdRef.current = data.id;
     } else {
       const { error } = await supabaseDR.from('pm_coordination_plans').update(head).eq('id', planId);
       if (error) { setBusy(false); return toast.error(error.message); }
@@ -392,7 +400,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     }));
     if (rows.length) {
       const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows);
-      if (error) { setBusy(false); return toast.error(`บันทึกรายการงานไม่สำเร็จ (รายการเดิมยังอยู่): ${error.message}`); }
+      if (error) {
+        setBusy(false);   // คงหน้าต่างไว้ — รายการที่พิมพ์ไม่หาย กดบันทึกซ้ำได้
+        return toast.error(`บันทึกรายการงานไม่สำเร็จ${isNew ? ' (หัวแผนสร้างแล้ว — กดบันทึกอีกครั้งเพื่อเพิ่มรายการงาน)' : ' (รายการเดิมยังอยู่)'}: ${error.message}`);
+      }
     }
     if (oldIds.length) {
       const { error: eDel } = await supabaseDR.from('pm_coordination_tasks').delete().in('id', oldIds);
