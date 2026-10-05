@@ -920,3 +920,38 @@ SQL Editor ของ project **MAIN**: `drop policy if exists org_nodes_delete_p
   ในรอบนี้เพราะ blast radius กว้างกว่าเรื่องผัง) — ถ้าจะรัดต้องไล่เช็คทุกหน้าที่เขียน 2 ตารางนี้ก่อน
 - `org_assignments` ยังเป็น `cascade` ตั้งใจ — ถ้าภายหลังต้องเก็บประวัติการแต่งตั้ง ให้เปลี่ยนเป็น
   soft-delete แทนการพึ่ง cascade
+
+---
+
+## 🔤 ชื่อหน่วยงานต้องมีสะกดเดียว — `code` กับ `name` ของ node เดียวกันห้ามขัดกัน (2026-10-05 · คำสั่ง user "เอาชื่อที่ดูสากล")
+
+**รูทคอส (ไม่ใช่ "คนกรอกคนละแบบ"):** ค่าที่ระบบ **เก็บลงคอลัมน์ text** = `orgKey(node) = code || name`
+(`src/utils/listOrder.js`) ⇒ node ไหนที่ `code` กับ `name` ต่างกัน **จะมี 2 สะกดวิ่งคู่กันทันที** —
+จอที่ผ่าน picker ได้ `code` · จอ/การนำเข้าที่อ่าน `name` ได้อีกค่า
+แล้วเพราะ section/department เป็น **text key ไม่ใช่ FK** ตัวกรองจึง**ไม่ error แค่คืน 0 แถว**
+(คลาสเดียวกับ `machine_no` — CLAUDE.md 🏷️)
+
+### ค่าทางการที่เลือก (migration `20261005_section_name_canonical_main.sql` · apply แล้ว)
+
+| หน่วย | เดิม | ตอนนี้ | ทำไม |
+|---|---|---|---|
+| ส่วนงาน | `PLN & STO` (ผัง) vs `Planning&Store` (บัญชี) | **`Planning&Store`** | ผังทางการ ORG-001 Rev.09 เขียน `Log&Sales/Planning&Store` (cost 2140429000) · เป็นค่าใน `org_nodes.code` + `profiles` + `notification_rules` อยู่แล้ว · `PLN & STO` เป็นตัวย่อภายใน คนนอกอ่านไม่ออก |
+| แผนกใต้ PD4 | code `PD4-GEN` vs name `ทั่วไป` | **`ทั่วไป`** (ถอด code ทิ้ง) | picker คืน `PD4-GEN` แต่ `employees.department` เก็บ `ทั่วไป` ไว้ **16 แถว** · `PD4-GEN` **0 แถว** ⇒ กรองแผนกนี้ได้ 0 คนมาตลอด · ถอด code = ไม่มีแถวข้อมูลไหนขยับ แต่ตรงกันทันที |
+
+**ขอบเขตที่วัดจริงก่อนแก้** (สแกน 22 คอลัมน์ section/scope ฝั่ง Main + 8 ฝั่ง DR):
+`PLN & STO` อยู่แค่ `employees.section` 10 แถว + `org_nodes.name` 1 แถว · **ฝั่ง DR 0 แถวทุกตาราง** ·
+ไม่มี hardcode ในโค้ด (เจอแต่คอมเมนต์กับ fixture ของเทส)
+
+> ### 🔴 กฎสำหรับ session ถัดไป
+> 1. **ตั้งชื่อหน่วยในผัง: `code` ว่าง หรือ `code` = `name` เท่านั้น** — ตั้งให้ต่างกันเมื่อไหร่
+>    = ปล่อย 2 สะกดเข้าระบบเมื่อนั้น · **ยกเว้น `kind='team'`** ที่ตั้งใจให้ code `A`/`B`/`C`
+>    (ค่าที่เก็บใน `employees.team`) คู่กับ name `Team A` (ป้ายบนจอ) — อันนั้นถูกแล้ว
+> 2. **ตรวจเป็นระยะ:** `select kind, code, name from org_nodes where code is not null and code <> name;`
+>    เหลือได้แค่ 12 แถว `team` · ถ้ามี `section`/`department` โผล่มา = ระเบิดเวลาลูกใหม่
+>    (ค้างอยู่ 2 แถว `kind='line'`: code `Assembly Line D1|D2` vs name `ASSEMBLY 1|GWM`
+>    — ไลน์ผูกด้วย `ref_line_id` (FK) ไม่ใช่ text จึงยังไม่กระทบ **แต่ห้ามเอาไปเก็บเป็น text**)
+> 3. **ย้ายชื่อหน่วยที่มีคนใช้แล้ว = migration เสมอ** ไล่ทุกคอลัมน์ text ทั้ง 2 project ก่อน
+>    ห้ามแก้ชื่อใน `/org-setup` เฉยๆ แล้วหวังว่าของเก่าจะตามมาเอง (มันไม่ตาม)
+
+**ยังไม่ normalize (รอ user เคาะ):** `TEST` — section ของจริงในฐาน มีไลน์ผูก 3 เส้น + พนักงาน 1 คน
+ดูเหมือนของทดสอบที่ค้างมาจากตอน rollout · ไม่ลบเองเพราะมีข้อมูลจริงห้อยอยู่
