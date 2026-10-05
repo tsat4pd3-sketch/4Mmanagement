@@ -2,6 +2,8 @@
 
 > **ไฟล์จริง: `src/components/ObeyaKpiBoard.jsx`** — เป็นแท็บ `?tab=kpi` (default) ของ `/obeya` ตั้งแต่ 2026-09-15
 
+> ⚠️ **ประวัติ 15/09 — ปัจจุบัน `/obeya` มี 4 แท็บ (kpi · sqdcm · todo · table) และแผ่นบนบอร์ด = KPI ที่หน่วยถือจริง (ดู §🧾 05/10) ไม่ใช่ 8 ช่องตายตัว · `boardRowsFor()` อยู่ใน ObeyaKpiBoard.jsx · กรอกที่แท็บ ⚙️**
+>
 > ## 🔀 2026-09-15 — `/obeya` เป็น **หน้าเดียว 2 แท็บ** (รวมงาน 2 session)
 > สอง session ทำ `/obeya` คนละมุมพร้อมกันโดยไม่รู้ว่าอีกฝั่งทำอยู่ (`claude/obeya-kpi-dashboard-85xbgm`
 > กับ `claude/oee-report-ppt-export-tjojy0`) — ทั้งคู่มาจากคำสั่ง user คนละครั้งและ**ไม่ทับกัน** จึงรวมเป็นแท็บ:
@@ -880,3 +882,39 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 - ⚠️ หน่วยที่ตั้ง KPI จาก 📘 แล้วแต่ไม่ได้ผูก `catalog_id` (MTN ทั้ง 11 ตัว) จะไม่เข้าช่องมาตรฐานแม้ชื่อคล้าย (TS Academy training ≠ Training) ⇒ ขึ้นเป็นแผ่นพิเศษ
   — ถูกต้องตามข้อมูล แต่ถ้าอยากให้เข้าช่อง ให้ตั้ง `board_slot` ที่ทะเบียน 📘 (ไม่ต้องแก้โค้ด)
 - ตรวจกับ harness: `?scope=department:JIG MTN` ⇒ ไม่มีแผ่น OEE/PPM · มีแผ่น MTBF / MO Closed · `?scope=section:PD1` ⇒ template เต็ม (ยังไม่ตั้ง)
+
+### 🛡️ audit รอบ 05/10 (user: "เรื่องที่เคยผิด ไม่ควรเกิดอีกในทุกส่วนของ obeya") — สิ่งที่ล็อกไว้แล้ว
+
+| คลาสบั๊กที่เคยเกิด | ล็อกด้วย |
+|---|---|
+| แผ่นไม่วิ่งตามหน่วย (MTN เห็น OEE/PPM) | กติกาย้ายไป **`utils/kpiBoardRows.js` (pure)** + เทส `kpiBoardRows.test.mjs` 7 เคสจากข้อมูลจริง (MTN · PD1 · PD2 · PD4 · แผนกใต้ PD4 · plant) — บอร์ดส่งแค่ closure หา-นิยาม |
+| `const dense = data.some()` ก่อน `const data` (TDZ จอขาว · build ผ่าน) | lint crash `no-use-before-define` (`variables:false` = ฟ้องเฉพาะ scope เดียวกัน · กวาดทั้ง src = 0 hit เดิม) |
+| แกน Y ไม่เริ่ม 0 แบบเขียนเอง ไม่มีป้าย (SQDCM %Q 95–100) | ด่าน `chart-yaxis-domain-hand-made` + ป้ายร่วม `<FocusAxisNote>` ใน ObeyaSheet (KPI board + SQDCM %Q ใช้ตัวเดียวกัน) |
+| `Number(null)=0` ดึงพื้นแกนลง 0 | เทส `focusDomain` เดือนว่าง (30/09) |
+| `{ data: x }` จาก helper ค่าเปล่า (ผังรวม 0/0 7 วัน) | ด่าน "ห้ามแกะ { data }" (02/10) |
+| tooltip ตัวดำบนการ์ดเข้ม | ด่าน "แท่ง Cell ไม่มี fill" (30/09) |
+| ลิสต์ cost center เรียงเลข | เทส orgScope "ลำดับตามผังองค์กร" (05/10) · `.sort()` ดิบใน `leavesOf` แก้เป็น `naturalCompare` + ขยาย regex ด่าน `line-names-raw-sort` |
+| `catch {}` กลืน error แล้วโชว์ "ไม่มีข้อมูล" | กฎ DB ข้อ 12 · กวาด OBEYA 14 ไฟล์: ไม่มี `catch {}` เปล่า (2 จุดที่เหลือเป็น guard harness/SSR มีคอมเมนต์) |
+
+**รอบ 2 (QC agent `qc-project-rules` 14 ไฟล์ · 🔴 4 · 🟡 22 · 🔵 13) — แก้ในคอมมิทเดียวกัน:**
+
+| ที่เจอ | แก้ | ล็อกด้วย |
+|---|---|---|
+| 🔴 `KpiMonthly` กราฟเล็ก/กราฟใหญ่ใช้ `missTarget` 2 สี (ไม่รู้จัก Commitment) ⇒ ตาราง △ แต่กราฟแดง | `levelColor(v, def)` = `scoreDef().status` → `statusColor` · ส่ง `def` เข้ากราฟ · caption 3 ระดับ | กฎ scoreDef + ด่าน `status-palette-single-source` |
+| 🔴 `ynTotal` ของ OEE คืน boolean ⇒ Excel FM-HRM-6-022 พิมพ์ ✗ เสมอ | `scoreDef(...).level` | ด่านใหม่ `kpi-yn-boolean-compare` |
+| 🔴 `targetLineNames` (array) ใน deps ของตัวโหลดทั้งปี | `lineKey = join('|')` + split ใน body | กฎ DB ข้อ 9 |
+| 🔴 SQDCM %Q แกน 95–100 เขียนเอง ไม่มีป้าย | `focusDomain` + `<FocusAxisNote fixed>` | ด่าน `chart-yaxis-domain-hand-made` |
+| 🟡 upsert ค่า/แผน ไม่นับแถว (RLS ปฏิเสธเงียบ = state เปลี่ยนเหมือนสำเร็จ) | `.select('kpi_id')` + นับ | กฎ DB ข้อ 2 |
+| 🟡 `parts_master` ใน SQDCM `.slice(0,300)` + กลืน error ⇒ "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม | `fetchByIds` + `setLoadWarn` | กฎ DB ข้อ 5 |
+| 🟡 `break_policies` โหลดล้มเงียบ ⇒ OEE ตารางไม่ตัดพักต่างจาก /oee-analytics | toast บอก | ห้ามล้มเหลวเงียบ |
+| 🟡 `obeyaKpi.js` A/P/Q `Number(null)=0` ถูกถ่วงเป็น 0 | คืน null ให้ `wavg` ข้าม | คลาส `Number(null)` |
+| 🟡 ข้อความล้าสมัย: "แผง Key Performance" · "แท็บ 📑" · "Y/N" · "(13/07) 8,000+ ครั้ง" · หัวคอมเมนต์ "3 แท็บ/8 หัวข้อ" | แก้เป็นของจริง (⚙️ · ○△✗ · แผ่นแยก) | — |
+| 🟡 ฟอนต์ 9.5–10.5px ใน KpiMonthly/KpiStandardModal (8 จุด) · ป้าย "— ทั้งหมด" · `plantLabel="ทุกส่วนงาน"` | 11px · `allOf('รหัส Cost Center')` · `ALL.section` | UI §4 / UI-STANDARD §3.4 |
+
+**ยังไม่แก้ — ต้องให้ user ตัดสินก่อน (เปลี่ยนพฤติกรรม/ขอบเขตข้อมูล):**
+1. SQDCM **ACTION BOARD ไม่กรองตาม scope ที่เลือก/sections ของ user** (`actions` → `actionHealth`) — เลือก PD3 ยังนับใบ PD4 · ถ้าตั้งใจให้ห้อง Obeya เห็นทั้งโรงงาน ต้องเขียนไว้ใน obeya.md §5
+2. บอร์ด KPI: เปิด `?scope=` นอกสังกัด (เช่น PD1 ด้วยบัญชี PD3) → OEE/PPM ว่าง แต่ `safety_events`/`meeting_action_items` ยังเห็นของ PD1 — ควร reset เป็นขอบเขตของตัวเอง + toast
+3. SQDCM `lineOk` กรองด้วย `inSectionScope` อย่างเดียว ไม่ผ่าน `scopedLineNames` (branch leader ระดับไลน์/ทีมไม่ถูกใช้) ต่างจากแท็บ 📋
+4. บอร์ด KPI ยัง `usePolling` ล้วน (ไม่มี realtime) — ควรเป็น `useLiveBoard(load, { tables:['production_sessions'] })` เหมือนแท็บ SQDCM
+5. `KpiMonthly` `parts_master` select ไม่มี filter (เพดาน 1000 แถวเงียบ) · `ObeyaKpiBoard` `.in('line_name', names.slice(0,200))` นับ "กะยังไม่ปิด" ขาดเมื่อขอบเขต >200 ไลน์
+6. `ChartModal` กราฟเส้น `domain=['auto','auto']` (แกนไม่เริ่ม 0 ไม่มีป้าย) · sparkline `MiniChart` พื้นแกน = min (ยอมรับได้ที่ 150×30 — ระบุเจตนาแล้ว)

@@ -19,6 +19,11 @@ CLAUDE.md เคยโต + มี `@import` จนกิน context 550k tokens
 (ต้นเหตุจริงคือ `@path` ไม่ใช่ขนาดไฟล์) → `scripts/check-claude-md-size.mjs` เป็นขั้นแรกของ build
 
 ## ด่าน lint กฎ crash (2026-07-24)
+
+### + `no-use-before-define` (TDZ · 2026-10-05)
+อ่าน `const`/`let` ก่อนบรรทัดประกาศใน scope เดียวกัน = `ReferenceError: Cannot access 'x' before initialization` ทั้งจอขาว · bundler ไม่จับ
+· เคสจริง 30/09: ObeyaKpiBoard `const dense = data.some(…)` อยู่เหนือ `const data = …` — build/lint/เทสผ่าน เจอจาก harness
+· ตั้ง `{ functions:false, classes:false, variables:false }` = ฟ้องเฉพาะ scope เดียวกัน (อ้าง const ระดับโมดูลจากในฟังก์ชันที่ประกาศไว้ก่อน = ถูกเรียกทีหลัง ไม่พัง ไม่ฟ้อง) · กวาดทั้ง src ตอนเปิดกฎ = 0 hit
 เคสจริง: ใช้ `useMemo` โดยไม่ import → **Daily Report จอขาวทั้งโรงงาน** (bundler ไม่จับ)
 
 ## `react-hooks/rules-of-hooks` (2026-07-30)

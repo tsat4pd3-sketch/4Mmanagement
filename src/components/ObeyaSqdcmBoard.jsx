@@ -1,4 +1,5 @@
-import { fmtAxis, tooltipProps, CELL_BAR_FILL } from '../utils/chartAxis';
+import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { ALL } from '../utils/filterLabels';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
 
@@ -36,7 +37,7 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from './PageHeader';
-import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart } from './ObeyaSheet';
+import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
@@ -220,9 +221,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
       const mats = [...new Set(dfRes.rows.map(d => d.prod_orders?.mat_no).filter(Boolean))];
       if (mats.length) {
-        const { data: pm } = await supabaseDR.from('parts_master')
-          .select('mat_no, material_cost, standard_cost').in('mat_no', mats.slice(0, 300));
-        setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
+        /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
+        const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
+        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
+        setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
     } finally { setLoading(false); }
   }, [from, to, prev.from, prev.to]);
@@ -252,9 +254,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       });
       const mats = [...new Set((j.defects || []).map(d => d.mat).filter(Boolean))];
       if (mats.length) {
-        const { data: pm } = await supabaseDR.from('parts_master')
-          .select('mat_no, material_cost, standard_cost').in('mat_no', mats.slice(0, 300));
-        setPartCost(Object.fromEntries((pm || []).map(r => [r.mat_no, r])));
+        /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
+        const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
+        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
+        setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
     } finally { setLoading(false); }
   }, [from, to]);
@@ -561,7 +564,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     ...p, label: p.summary ? 'สรุป' : (narrow ? String(Number(String(p.k).slice(5, 7))) : monthLabel(p.k)),
   }));
   const onBarClick = (d) => drillMonth(d?.payload?.k ?? d?.k);
-  const yearBars = (k, { fmt = v => `${v}%`, name = k.key, domain = [0, 100], yWidth = 'auto', left = 4, stacked = false, span = 1 } = {}) => {
+  const yearBars = (k, { fmt = v => `${v}%`, name = k.key, domain = [0, 100], ticks = undefined, yWidth = 'auto', left = 4, stacked = false, span = 1 } = {}) => {
     const narrow = (cw * span + GAP * (span - 1)) < 420;
     const data = yearData(k, narrow);
     if (!data.some(p => p.v != null)) return null;
@@ -576,7 +579,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         <BarChart data={data} margin={{ top: 4, right: 6, left, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={{ ...axisTick, fontSize: fs(9.5) }} interval={0} />
-          <YAxis domain={stacked ? undefined : domain} tick={tickY} width="auto"
+          <YAxis domain={stacked ? undefined : domain} ticks={stacked ? undefined : ticks} allowDataOverflow={!stacked && !!ticks} tick={tickY} width="auto"
             tickFormatter={stacked ? (v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)) : undefined} />
           <Tooltip {...chartTip} formatter={stacked
             ? ((v, nm) => [fmtBaht(v), nm === 'dt' ? 'เครื่องหยุด' : 'ของเสีย'])
@@ -665,7 +668,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           filters={(
             <>
               <OrgScopePicker index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections}
-                plantLabel="ทุกส่วนงาน" width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
+                plantLabel={ALL.section} width={230} title="เลือกขอบเขตตามผังองค์กร (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC)" />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
               <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}
@@ -780,28 +783,30 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </Sheet>
           )}
 
-          {/* ═══ Q — คุณภาพ ═══ */}
-          {has('Q') && (
+          {/* ═══ Q — คุณภาพ ═══
+              %Q กระจุกใกล้ 100 ⇒ ขยายช่วงถาวรด้วย `focusDomain()` (เดิมเขียน domain เองว่า 95–100 โดยไม่มีป้าย = ผิดกติกาความซื่อสัตย์ 05/10)
+              🔴 แกนไม่เริ่ม 0 ต้องมี <FocusAxisNote> เสมอ · ค่าที่มี 0 จริง = focusDomain คืน null = แกน 0–100 ตามปกติ */}
+          {has('Q') && (() => { const qFocus = focusDomain([...(kQ.series || []).map(p => p.v), kQ.target], { max: 100 }); const qDom = qFocus ? qFocus.domain : [0, 100]; const qNote = (node) => (node ? <div style={{ position: 'relative', width: '100%', height: '100%' }}>{qFocus && <FocusAxisNote k={k} loText={String(qFocus.domain[0])} fixed />}{node}</div> : null); return (
           <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title="Q คุณภาพ"
             sub={`${ytdTag}%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
             foot={kQ.note ? <WarnNote k={k} text={kQ.note} /> : `เป้า ${kQ.target}%`}
             link="ดูของเสียละเอียด" onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
-            {isYear ? (yearBars(kQ, { name: 'Q', domain: [dataMin => Math.min(95, Math.floor(dataMin)), 100] }) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? (
+            {isYear ? (qNote(yearBars(kQ, { name: 'Q', domain: qDom, ticks: qFocus?.ticks })) || <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในปีนี้" />) : kQ.series.length ? qNote(
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={daySeries(kQ.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
-                  <YAxis tickFormatter={fmtAxis} domain={[dataMin => Math.min(95, Math.floor(dataMin)), 100]} tick={axisTick} width="auto" />
+                  <YAxis tickFormatter={fmtAxis} domain={qDom} ticks={qFocus?.ticks} allowDataOverflow={!!qFocus} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'Q']} />
                   <ReferenceLine y={kQ.target} stroke="#ef4444" strokeDasharray="4 3" />
                   <Line type="monotone" dataKey="v" stroke={axisSheet('Q').color} strokeWidth={2} dot={{ r: 2 }} connectNulls />
                 </ComposedChart>
-              </ResponsiveContainer>
+              </ResponsiveContainer>,
             ) : <EmptyChart k={k} text="ยังไม่มีกะที่ปิดแล้วในช่วงนี้" />}
           </Sheet>
-          )}
+          ); })()}
 
           {/* ═══ D — ส่งมอบ ═══ */}
           {has('D') && (
@@ -951,7 +956,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               {health.empty ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
                   <WarnNote k={k} tone="#ef4444"
-                    text="ตารางติดตามงานนี้ว่างเปล่าตั้งแต่สร้าง (13/07) ทั้งที่มีบันทึกเครื่องหยุด 8,000+ ครั้ง — แปลว่า 'สิ่งที่ตกลงกันว่าจะแก้' ยังอยู่นอกระบบ ตามงานไม่ได้" />
+                    text="ยังไม่มีใบ action ในช่วงที่ดู — ตามงานไม่ได้ว่าปัญหาที่พบถูกแก้หรือยัง (ตั้ง Action จากปุ่มบนหัวจอ)" />
                   <div style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
                     นี่คือเหตุผลหลักที่ทำหน้านี้ — ไม่ใช่เพื่อโชว์ตัวเลขสวยๆ แต่เพื่อปิดลูป:
                     ตัวเลขหลุดเป้า → ใครรับ → ทำอะไร → ภายในเมื่อไหร่ → ดีขึ้นจริงไหม

@@ -84,7 +84,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   };
   const familyOf = (grp) => liveLines.filter(l => l.name === grp || groupOf(l) === grp).map(l => l.name);
   /* ไลน์ที่โชว์เป็น "ไลน์" ใต้กลุ่ม = ทุกตัวในครอบครัวที่ไม่ใช่รากและไม่มีลูกเอง (ไลน์กลางที่มีลูก = แสดงผ่านลูกของมัน) */
-  const leavesOf = (grp) => liveLines.filter(l => l.name !== grp && groupOf(l) === grp && !hasKids(l.name)).map(l => l.name).sort();
+  const leavesOf = (grp) => liveLines.filter(l => l.name !== grp && groupOf(l) === grp && !hasKids(l.name)).map(l => l.name).sort(naturalCompare);   // 05/10: เดิม .sort() ดิบ (LINE 10 ก่อน LINE 9)
 
   // ฝ่ายของ node = ป้ายตัวเอง หรือตกทอดจากแม่ (กัน loop 10 ชั้น)
   const divisionOf = (n) => {

@@ -252,7 +252,7 @@ const RULES = [
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์
        (ชื่อตัวแปร lines/lineNames/lineOpts/byLine/… หรือ `.map(x => x.line_name)`) */
-    re: /(?:\.map\(\s*\(?\w+\)?\s*=>\s*\w+\.line(?:_name)?\)[^;\n]{0,60}|Object\.keys\(byLine\)|\[\.\.\.(?:lines|lineSet|byLine\.keys\(\))\]|\b(?:line_?[nN]ames?|lineOpts)\b[^;\n]{0,40})\.sort\(\s*(?:\)|\(a, ?b\) => a\.localeCompare\(b\)\))/g,
+    re: /(?:\.map\(\s*\(?\w+\)?\s*=>\s*\w+\.line(?:_name)?\)[^;\n]{0,60}|liveLines[^;\n]{0,120}\.map\(l => l\.name\)|Object\.keys\(byLine\)|\[\.\.\.(?:lines|lineSet|byLine\.keys\(\))\]|\b(?:line_?[nN]ames?|lineOpts)\b[^;\n]{0,40})\.sort\(\s*(?:\)|\(a, ?b\) => a\.localeCompare\(b\)\))/g,
     why: 'dropdown/หัวกลุ่มไลน์เรียงคนละแบบทุกหน้า — user ทัก 01/10/2026 *"บางหน้าโอเค บางหน้าเรียงมั่ว '
        + 'ไม่มีแพทเทิร์น"*: sort ดิบเรียงตาม code unit ⇒ `Line 60` แยกจาก `LINE …` · `LINE 10` มาก่อน `LINE 9` '
        + 'และไม่แยกส่วนงาน (LINE A ของ PD1 ไปอยู่ระหว่าง APRON ของ PD3 กับ ASSY ของ PD2)',
@@ -976,6 +976,27 @@ const RULES = [
     why: 'user 24/09/2026 ส่งภาพจอ SQDCM: แกนตั้งเขียน "0", "5", "7" ทั้งที่ค่าจริง 100 / 75 — `<YAxis width={34}>` '
        + 'แคบกว่าตัวเลข (จอ TV สเกลฟอนต์ขึ้นแต่แกนไม่ขยายตาม) ⇒ SVG ตัดหลักหน้าทิ้ง = ตัวเลขที่อ่านผิดแย่กว่าไม่มีตัวเลข',
     fix: 'ใช้ `width="auto"` (Recharts 3 วัดจากตัวเลขที่ยาวที่สุดเอง) + `tickFormatter={fmtAxis}` จาก src/utils/chartAxis.js',
+    allow: {},
+  },
+  {
+    id: 'kpi-yn-boolean-compare',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* คอลัมน์ตัดสิน yn/ynTotal ที่คืน boolean จากการเทียบเอง (>= / <=) แทนระดับ 1/0.5/0 ของ scoreDef */
+    re: /\byn(?:Total)?:\s*[^,\n]*?\s(?:>=|<=|<|>)\s/g,
+    why: 'ระดับ KPI = 1/0.5/0 (scoreDef) ไม่ใช่ boolean — LV_SYM ใน kpiExportExcel เทียบ === 1 / === 0.5 ⇒ true/false ตกเป็น ✗ ทั้งคู่ · '
+       + 'เคยเกิดจริง (audit 05/10): คอลัมน์สรุปปี OEE ในฟอร์ม FM-HRM-6-022 พิมพ์ ✗ เสมอแม้ผ่านเป้า',
+    fix: 'yn: v => scoreDef(v, { target_compare, target_value }).level (null เมื่อไม่มีเป้า)',
+    allow: {},
+  },
+  {
+    id: 'chart-yaxis-domain-hand-made',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* แกน Y ที่ไม่เริ่ม 0 แบบเขียนเอง: domain={[dataMin => …, …]} / domain={[95, 100]} / domain: [min => …] */
+    re: /(?:domain=\{\[|domain:\s*\[)\s*(?:dataMin|\(?\s*\w+\s*\)?\s*=>|[1-9]\d*)/g,
+    why: 'แกน Y ที่ไม่เริ่ม 0 ทำให้ "แท่งสูง 2 เท่า ≠ ค่ามาก 2 เท่า" — กติกาความซื่อสัตย์ (UI §กราฟ 30/09): ช่วงต้องมาจาก '
+       + '`focusDomain()` (ทุกอย่างที่วาดอยู่ในช่วง · มี 0 จริง = ไม่โฟกัส) และต้องมี <FocusAxisNote> บนกราฟ · '
+       + 'เคยหลุด 05/10: SQDCM %Q เขียน domain 95–100 เองโดยไม่มีป้าย',
+    fix: 'const f = focusDomain(values, { max }) → domain={f ? f.domain : [0, max]} ticks={f?.ticks} + <FocusAxisNote loText=…/> (ObeyaSheet)',
     allow: {},
   },
   {
