@@ -7,7 +7,8 @@ import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
-import { DIE_SET_KINDS, dieSetKindLabel } from '../utils/equipmentKinds';
+import { dieSetKindLabel, dieSetKindOptions, dieSetKindKey } from '../utils/equipmentKinds';
+import useDieSetKinds, { invalidateDieSetKinds } from '../utils/useDieSetKinds'; // ทะเบียนรูปแบบชุด (DR die_set_kinds) — 2026-10-05
 import { OPEN_MO_STATUSES, buildOpenMoMap, openMosOf } from '../utils/dieStatus';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -101,6 +102,26 @@ export default function DieRegistry() {
   const [tab, setTab] = useTabParam(['registry', 'layout', 'status'], 'registry', 'die');
   // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
   const pressLines = useDiePressLines();
+  // 2026-10-05: รูปแบบชุด = ทะเบียน die_set_kinds (เดิม hardcode 4 ค่า) — ทีมแม่พิมพ์เพิ่ม/ตั้งชื่อเรียกเองได้
+  const [kindsVer, setKindsVer] = useState(0);
+  const setKinds = useDieSetKinds(kindsVer);
+  /* ตัวเลือก "ชนิดอุปกรณ์ในใบแจ้งซ่อม" ของแผง ⚙️ รูปแบบชุด = ชื่อใน mtn_item_types ของทีม DIE + ของกลาง
+     โหลดแยกจาก load() หลัก (ใช้แค่ในแผงตั้งค่า) · โหลดไม่ได้ = ลิสต์ว่าง + ขึ้น toast (ห้ามเงียบ) */
+  const [dieItemTypes, setDieItemTypes] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('mtn_item_types').select('name, team').eq('is_active', true).order('sort_order').then(({ data, error }) => {
+      if (!alive) return;
+      if (error) { toast.error('โหลดชนิดอุปกรณ์ (ใบแจ้งซ่อม) ไม่สำเร็จ: ' + error.message); return; }
+      setDieItemTypes((data || []).filter(t => !t.team || t.team === 'die_maintenance').map(t => t.name));
+    });
+    return () => { alive = false; };
+  }, []);
+  const dieItemTypeOpts = useMemo(() => {
+    const names = new Set(dieItemTypes);
+    setKinds.forEach(k => { if (k.mo_item_type) names.add(k.mo_item_type); }); // ค่าที่ตั้งไว้แล้วต้องอยู่ในลิสต์เสมอ
+    return [...names].map(n => ({ value: n, label: n }));
+  }, [dieItemTypes, setKinds]);
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
@@ -314,6 +335,7 @@ export default function DieRegistry() {
     setSaving(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     toast.success('บันทึกชุดแม่พิมพ์แล้ว');
+    invalidateDieSetKinds(); // ใบแจ้งซ่อมแม่พิมพ์เติม "ชนิดอุปกรณ์" จากรูปแบบชุด — ล้าง cache ให้เห็นค่าใหม่
     setEditSet(null); load();
   };
 
@@ -474,7 +496,7 @@ export default function DieRegistry() {
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
           <option value="">{allOf('รูปแบบชุด')}</option>
-          {DIE_SET_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
         </select>
         <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
         <span className="spacer" />
@@ -524,7 +546,7 @@ export default function DieRegistry() {
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
-                    }}>{dieSetKindLabel(s.kind)}</span>
+                    }}>{dieSetKindLabel(s.kind, setKinds)}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
@@ -622,6 +644,22 @@ export default function DieRegistry() {
           ]} />
       </CollapseCard>
 
+      {/* ⚙️ ทะเบียนรูปแบบชุดแม่พิมพ์ (DR die_set_kinds · 2026-10-05) — เดิม hardcode 4 ค่า (Tandem/Progressive/Transfer/Single)
+          ทีมแม่พิมพ์เพิ่มเอง (HYDROFORM/BEND ฯลฯ) + ตั้ง "ชื่อที่หน้างานเรียก" เอง (ศัพท์ทางการหน้างานไม่เข้าใจ)
+          key สร้างให้อัตโนมัติ — คนกรอกแค่ชื่อ · mo_item_type = ชนิดอุปกรณ์ที่ใบแจ้งซ่อมเติมให้เมื่อเลือกแม่พิมพ์ */}
+      <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
+          keyFrom={dieSetKindKey}
+          stampCol="updated_by_name" stampName={fullName}
+          onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}
+          help="ตั้งชื่อเป็นคำที่หน้างานเรียกจริงได้เลย (แก้ชื่อทีหลังได้ ชุดเดิมไม่กระทบ) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; = ค่าที่ใบ MO เติมให้เองเมื่อผู้แจ้งเลือกแม่พิมพ์ในชุดแบบนี้ (ว่าง = ให้ผู้แจ้งเลือกเอง · เพิ่มชื่อใหม่ได้ที่ /mtn-repair แท็บข้อมูลหลัก › ชนิดอุปกรณ์) · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)"
+          fields={[
+            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น HYDROFORM DIE / แม่พิมพ์ดัด' },
+            { key: 'description', label: 'คำอธิบาย (ภาษาบ้านๆ)', placeholder: 'โชว์ใต้ช่องเลือกตอนแก้ชุด' },
+            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+          ]} />
+      </CollapseCard>
+
       {/* ⏱️ กฎเวลาเปลี่ยนรุ่น (press_setup_rules · 2026-09-25 · user: setup time change over die เป็นตัวแปร)
           อยู่ที่นี่เพราะ "ความสูงแม่พิมพ์" ที่กฎใช้ ก็กรอกในแท็บนี้ — ตั้งค่านานๆ ครั้ง จึงพับไว้ */}
       <CollapseCard id="press_setup_rules" title="⏱️ กฎเวลาเปลี่ยนรุ่น (setup / change over die)" defaultOpen={false} storePrefix="die_registry">
@@ -666,12 +704,14 @@ export default function DieRegistry() {
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รูปแบบชุด">
+              {/* ตัวเลือกจากทะเบียน die_set_kinds (แผง ⚙️ ท้ายแท็บ) · ค่าปัจจุบันที่ถูกปิดใช้ยังอยู่ในลิสต์ (ไม่บันทึกทับเงียบ) */}
               <select style={inputStyle} value={editSet.kind || 'tandem'}
                 onChange={e => setEditSet(f => ({ ...f, kind: e.target.value }))}>
-                {DIE_SET_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+                {dieSetKindOptions(setKinds, editSet.kind || 'tandem').map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                {DIE_SET_KINDS.find(k => k.key === editSet.kind)?.desc}
+                {setKinds.find(k => k.key === (editSet.kind || 'tandem'))?.desc}
+                {canEdit && <> · ไม่มีแบบที่ต้องการ? เพิ่มได้ที่แผง ⚙️ รูปแบบชุดแม่พิมพ์ ท้ายแท็บนี้</>}
               </div>
             </Field>
             <Field label="จำนวน OP ทั้งชุด">

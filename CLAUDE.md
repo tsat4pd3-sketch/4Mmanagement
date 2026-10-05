@@ -87,7 +87,7 @@
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
 - `daily_production_logs.assigned_line` = **id จุดงาน ไม่ใช่ชื่อไลน์**
 - `employee_skills` — ห้ามเขียนคะแนนจาก client (ดู "Employee Skills & EXP Farming")
-- ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
+- ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`die_set_kinds`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
 - **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
 
 ---

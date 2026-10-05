@@ -32,7 +32,8 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
-import { isDie } from '../utils/equipmentKinds';
+import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
+import { useDieItemTypeMap } from '../utils/useDieSetKinds'; // เลขแม่พิมพ์ → ชนิดอุปกรณ์ จากทะเบียน (2026-10-05)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -706,6 +707,30 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     () => /^DIE\b/i.test(f.item_type || '') || (!f.item_type && teamKeyOf(f.mtn_dept) === 'die_maintenance'),
     [f.item_type, f.mtn_dept],
   );
+  /* 🔨 แจ้งซ่อมแม่พิมพ์: "ชนิดอุปกรณ์" มาจากทะเบียน ไม่ต้องให้ผู้แจ้งเลือก (2026-10-05 · คำสั่ง user)
+     *"เลือกแม่พิมพ์แล้ว ก็ควรดึงจากฐานข้อมูลได้ว่าแม่พิมพ์นี้คือแม่พิมพ์อะไร"*
+     วัดจริง 05/10: ใบ DIE ที่ผู้แจ้งเลือกชนิดเอง **ไม่ตรงทะเบียน 2 ใน 4 ใบ** ที่ระบุชนิด (เลือก SINGLE บนชุด tandem ฯลฯ)
+     ทางเดิน = แม่พิมพ์ → ชุด (equipment_die) → รูปแบบชุด (die_sets.kind) → die_set_kinds.mo_item_type
+     · ชี้ไม่ได้ (ไม่ผูกชุด / รูปแบบยังไม่ตั้งชนิดในใบแจ้งซ่อม / โหลดทะเบียนไม่ได้) = **ให้ผู้แจ้งเลือกเองตามเดิม ห้ามเดา**
+     · เปลี่ยนแม่พิมพ์ไปตัวที่ชี้ไม่ได้ = ล้างเฉพาะค่าที่ "ระบบเติม" (autoItemRef) — ค่าที่คนเลือกเองไม่แตะ
+     · ทะเบียนผิด = แก้ที่ /equipment?tab=die (ต้นทาง) ไม่ใช่แก้ในใบ */
+  const dieItemMap = useDieItemTypeMap(wantDie);
+  const dieDerived = wantDie ? dieItemTypeOf(dieItemMap, f.machine_no) : null;
+  const dieItemAuto = !!dieDerived?.itemType && f.item_type === dieDerived.itemType;
+  const autoItemRef = useRef('');
+  useEffect(() => {
+    const it = dieDerived?.itemType || '';
+    setF(p => {
+      if (it) {
+        if (p.item_type === it) return p;
+        autoItemRef.current = it;
+        return { ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) };
+      }
+      if (autoItemRef.current && p.item_type === autoItemRef.current) { autoItemRef.current = ''; return { ...p, item_type: '' }; }
+      return p;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dieDerived?.itemType]);
   const lineMachines = useMemo(() => {
     if (wantDie) return machines.filter(m => isDie(m.equipment_kind));
     // ไม่ใช่งานแม่พิมพ์ → ตัดแม่พิมพ์ออกจากลิสต์เครื่องจักร (262 ตัวอยู่ตารางเดียวกัน เคยปนกันมาตลอด)
@@ -905,7 +930,16 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </select>
           </Field>
         </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
+        {dieItemAuto ? (
+          <Field label="ชนิดอุปกรณ์" required>
+            {/* ล็อกเพราะมาจากทะเบียนแม่พิมพ์ — ผู้แจ้งไม่ต้องเลือก (ข้อมูลผิดให้แก้ที่ทะเบียน ไม่ใช่ในใบ) */}
+            <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)' }}>
+              <b>{f.item_type}</b>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 จากทะเบียนแม่พิมพ์ · ชุดแบบ {dieDerived.kindLabel}</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ตรงกับของจริง? แจ้งทีมแม่พิมพ์แก้รูปแบบชุดที่ /equipment (แท็บแม่พิมพ์)</div>
+          </Field>
+        ) : <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
           ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
           : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
             (() => {
@@ -917,7 +951,14 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
               });
               return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
                 .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
-            })()}</select></Field>
+            })()}</select>
+          {wantDie && !f.machine_no && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
+          )}
+          {wantDie && f.machine_no && dieItemMap && !dieDerived?.itemType && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(ชุดแบบ ${dieDerived.kindLabel}) รูปแบบนี้ยังไม่ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุดในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
+          )}
+        </Field>}
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
@@ -2754,6 +2795,7 @@ const AUDIT_TABLES = {
   mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
   equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
   die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
+  die_set_kinds:       '🔨 รูปแบบชุดแม่พิมพ์',
 };
 
 function MasterAuditLog({ teams = [] }) {

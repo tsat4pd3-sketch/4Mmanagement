@@ -57,6 +57,18 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'die-set-kinds-from-registry',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
+    re: /DIE_SET_KINDS\.(map|filter|find)\(/g,
+    why: 'รูปแบบชุดแม่พิมพ์เคย hardcode 4 ค่า (+ check constraint) — ทีมแม่พิมพ์เพิ่ม HYDROFORM/BEND เองไม่ได้ '
+       + 'และศัพท์ทางการหน้างานไม่เข้าใจ (user 2026-10-05) ⇒ ย้ายเป็นทะเบียน DR `die_set_kinds` '
+       + 'ถ้ามีจอวาดจาก DIE_SET_KINDS ตรงๆ อีก ชนิดที่ทีมเพิ่มเองจะไม่โผล่/ป้ายเป็นชื่อเก่า',
+    fix: 'ใช้ `useDieSetKinds()` (src/utils/useDieSetKinds.js) + `dieSetKindOptions()`/`dieSetKindLabel(v, kinds)` '
+       + '— DIE_SET_KINDS เหลือไว้เป็นค่าสำรองตอนยังไม่ apply migration เท่านั้น',
+    allow: { 'src/utils/useDieSetKinds.js': 'ตัวโหลดทะเบียน — ใช้ค่าสำรองเฉพาะตอนตารางยังไม่มี/ก่อนโหลดเสร็จ' },
+  },
+  {
     id: 'master-cache-swallow',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
