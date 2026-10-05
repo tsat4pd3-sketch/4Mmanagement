@@ -5,6 +5,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { parseSheetForBoard } from '../utils/monitoringSheet';
 import {
   ROW_PRESETS, BOARD_DEFAULTS, BOARD_TABS, boardKeyOfSheet, SHEET_LINE_HINT, ROW_LABEL,
+  partRowKey, dedupeByKey,
 } from '../utils/monitorBoards';
 
 /* ══ 📗 MonitorImport — ยกไฟล์ Excel ของทีมวางแผนเข้าเป็นบอร์ด (2026-10-01) ═══════════════
@@ -32,8 +33,14 @@ const RECUR_KEYS = new Set(['unbound', 'balance', 'at_vendor']);
 
 async function insertChunked(table, rows, label, conflict) {
   for (let i = 0; i < rows.length; i += CHUNK) {
-    const q = supabaseDR.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict: conflict });
-    if (!checkWrite(await q, label)) return false;
+    const res = await supabaseDR.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict: conflict });
+    /* index เก่า (board_id, mat_no) ยังอยู่ = MAT เดียวกันคนละพาร์ทถูกปฏิเสธ — บอกทางแก้ ไม่ใช่โยนข้อความ pg ดิบ */
+    if (/monitor_board_parts_(bm_)?uniq/.test(res.error?.message || '')) {
+      toast.error('ยังไม่ได้ถอด index เก่า (board_id, mat_no) ของ monitor_board_parts — '
+        + 'MAT เดียวกันคนละพาร์ท (เช่น 300T คว่ำครีบ/หงายครีบ) จึงถูกปฏิเสธ · แจ้ง admin รัน SQL ถอด index');
+      return false;
+    }
+    if (!checkWrite(res, label)) return false;
   }
   return true;
 }
@@ -77,6 +84,7 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
     setBusy(true);
     try {
       let boardsN = 0, partsN = 0, cellsN = 0;
+      let mergedParts = 0, mergedCells = 0, conflictParts = 0, conflictCells = 0;
       for (const sh of preview.made) {
         const kind = sh.kind;
         const def = BOARD_DEFAULTS[kind] || BOARD_DEFAULTS.line;
@@ -106,13 +114,16 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
         if (!boardId) { toast.error(`สร้างบอร์ด ${sh.name} ไม่สำเร็จ — ไม่มีสิทธิ์เขียน`); setBusy(false); return; }
         boardsN++;
 
-        /* พาร์ท — upsert ตาม (board_id, mat_no) · พาร์ทที่ไม่มีเลข MAT ข้าม (ซ้ำกันไม่ได้) */
-        const partRows = sh.parts
+        /* พาร์ท — upsert ตาม (board_id, row_key) = MAT + เลขพาร์ท
+           🔴 ห้ามใช้ MAT เดี่ยวเป็นคีย์: 300T มี 20059152 สองแถว (คว่ำครีบ/หงายครีบ) Total SL ต่างกัน
+           · พาร์ทที่ไม่มีเลข MAT ข้าม (ไม่มีอะไรให้ผูกกับระบบ) */
+        const partRowsRaw = sh.parts
           .filter((p) => String(p.mat_no || '').trim())
-          .map((p, i) => ({
+          .map((p) => ({
             board_id: boardId,
             mat_no: String(p.mat_no).trim(),
-            part_no: p.part_no ?? null,
+            part_no: (p.part_no == null ? null : String(p.part_no).trim() || null),
+            row_key: partRowKey(p.mat_no, p.part_no),
             part_name: p.part_name ?? null,
             model: p.model ?? null,
             raw_mat: p.raw_mat ?? null,
@@ -128,46 +139,63 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
             spec: p.spec ?? null,
             semi_part: p.semi_part ?? null,
             note: p.mat_after ? `หลังชุบ: ${p.mat_after}` : null,
-            sort_order: i,
             is_active: true,
             updated_by_name: fullName || null,
           }));
-        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `พาร์ทของ ${sh.name}`, 'board_id,mat_no')) {
+        /* ไฟล์จริงวางบล็อกซ้ำไว้ (Argen ซ้ำ 2 พาร์ท ค่าเท่ากันทุกช่อง) — ยุบก่อนส่ง
+           ไม่ยุบ = PostgreSQL ปฏิเสธทั้งก้อน "cannot affect row a second time" */
+        const dPart = dedupeByKey(partRowsRaw, (r) => r.row_key, (a, b) => a.part_name === b.part_name && a.fc === b.fc);
+        const partRows = dPart.rows.map((r, i) => ({ ...r, sort_order: i }));
+        mergedParts += dPart.merged; conflictParts += dPart.conflict;
+        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `พาร์ทของ ${sh.name}`, 'board_id,row_key')) {
           setBusy(false); return;
         }
         partsN += partRows.length;
 
         /* ต้องอ่าน id กลับมาเพื่อผูกช่อง (upsert คืนเฉพาะที่เพิ่งเขียน ไม่ครบเมื่อนำเข้าซ้ำ) */
         const { data: saved, error: sErr } = await supabaseDR
-          .from('monitor_board_parts').select('id, mat_no').eq('board_id', boardId).eq('is_active', true);
+          .from('monitor_board_parts').select('id, mat_no, part_no').eq('board_id', boardId).eq('is_active', true);
         if (sErr) { toast.error(`อ่านพาร์ทกลับไม่สำเร็จ: ${sErr.message}`); setBusy(false); return; }
-        const idOf = new Map((saved || []).map((r) => [String(r.mat_no || '').trim(), r.id]));
+        const idOf = new Map((saved || []).map((r) => [partRowKey(r.mat_no, r.part_no), r.id]));
 
-        const cellRows = [];
+        const cellRowsRaw = [];
         const seed = sh.dates?.[0] || null;
         for (const p of sh.parts) {
-          const pid = idOf.get(String(p.mat_no || '').trim());
+          const pid = idOf.get(partRowKey(p.mat_no, p.part_no));
           if (!pid) continue;
           for (const [rk, byDate] of Object.entries(p.cells || {})) {
             for (const [d, v] of Object.entries(byDate || {})) {
               /* แถวที่คำนวณได้: เก็บเฉพาะช่องยอดยกมา ที่เหลือให้สูตรคิดใหม่ */
               if (RECUR_KEYS.has(rk) && d !== seed) continue;
               if (!Number.isFinite(Number(v))) continue;
-              cellRows.push({ board_part_id: pid, row_key: rk, period_key: d, qty: Number(v), txt: null, updated_by_name: fullName || null });
+              cellRowsRaw.push({ board_part_id: pid, row_key: rk, period_key: d, qty: Number(v), txt: null, updated_by_name: fullName || null });
             }
           }
           for (const [rk, byDate] of Object.entries(p.texts || {})) {
             for (const [d, v] of Object.entries(byDate || {})) {
-              cellRows.push({ board_part_id: pid, row_key: rk, period_key: d, qty: null, txt: String(v), updated_by_name: fullName || null });
+              cellRowsRaw.push({ board_part_id: pid, row_key: rk, period_key: d, qty: null, txt: String(v), updated_by_name: fullName || null });
             }
           }
         }
-        if (cellRows.length && !await insertChunked('monitor_cells', cellRows, `ข้อมูลของ ${sh.name}`, 'board_part_id,row_key,period_key')) {
+        /* บล็อกซ้ำในไฟล์ส่งช่องเดียวกันมา 2 ครั้ง — ยุบ (ค่าล่างชนะ) แล้วนับที่ค่าไม่ตรงกันไว้บอกบนจอ */
+        const dCell = dedupeByKey(
+          cellRowsRaw,
+          (r) => `${r.board_part_id}|${r.row_key}|${r.period_key}`,
+          (a, b) => a.qty === b.qty && a.txt === b.txt,
+        );
+        mergedCells += dCell.merged; conflictCells += dCell.conflict;
+        if (dCell.rows.length && !await insertChunked('monitor_cells', dCell.rows, `ข้อมูลของ ${sh.name}`, 'board_part_id,row_key,period_key')) {
           setBusy(false); return;
         }
-        cellsN += cellRows.length;
+        cellsN += dCell.rows.length;
       }
-      toast.success(`นำเข้าแล้ว — ${boardsN} บอร์ด · ${fmt(partsN)} พาร์ท · ${fmt(cellsN)} ช่อง`);
+      toast.success(`นำเข้าแล้ว — ${boardsN} บอร์ด · ${fmt(partsN)} พาร์ท · ${fmt(cellsN)} ช่อง`
+        + (mergedParts || mergedCells ? ` · ยุบของซ้ำในไฟล์ ${fmt(mergedParts)} พาร์ท/${fmt(mergedCells)} ช่อง` : ''));
+      /* ซ้ำแล้วค่าไม่ตรงกัน = ไฟล์ขัดกันเอง ต้องให้คนไปดู ห้ามกลืน (ใช้ค่าบล็อกล่าง) */
+      if (conflictParts || conflictCells) {
+        toast.error(`⚠️ ของซ้ำในไฟล์ที่ค่าไม่ตรงกัน ${fmt(conflictParts)} พาร์ท · ${fmt(conflictCells)} ช่อง`
+          + ' — ระบบใช้ค่าของบล็อกล่างสุด ให้ทีมวางแผนตรวจไฟล์');
+      }
       onImported?.();
     } catch (e) {
       toast.error(`นำเข้าไม่สำเร็จ: ${e.message}`);
