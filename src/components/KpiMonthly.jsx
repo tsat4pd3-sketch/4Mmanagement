@@ -1,4 +1,5 @@
-import { fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
+import { fmtAxis, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { FocusAxisNote } from './ObeyaSheet';
 import { statusColor } from '../utils/statusTone';
 import { useState, useEffect, useMemo, useCallback, useRef, useContext, Fragment } from 'react';
 import { UserContext } from '../App';
@@ -140,6 +141,9 @@ function MiniChart({ vals, kind, target, dir, curIdx, plan, def = null }) {
 function ChartModal({ c, curIdx, onClose }) {
   const sdef = c.def || defOfTarget(c.target, c.dir);
   const data = TH_M.map((m, i) => ({ m: m.replace('.', ''), v: c.vals[i] != null && Number.isFinite(c.vals[i]) ? +Number(c.vals[i]).toFixed(c.dec ?? 0) : null, i }));
+  /* กราฟเส้นขยายช่วงค่าให้เห็นความต่าง — ช่วงต้องมาจาก focusDomain (ทุกจุด+เป้าอยู่ในช่วง · มี 0 จริง = ไม่โฟกัส) และต้องมีป้ายบอกว่าแกนไม่เริ่ม 0
+     (05/10 · audit — เดิม domain ['auto','auto'] = Recharts ยกพื้นแกนเองเงียบๆ ไม่มีป้าย) · แท่ง = เริ่ม 0 เสมอ */
+  const focus = c.kind === 'line' ? focusDomain([...data.map(d => d.v), c.target], { max: null }) : null;
   return (
     <div className="modal-scroll" onClick={onClose} /* ดูกราฟอย่างเดียว ไม่ใช่ฟอร์มกรอก → ปิดจาก backdrop ได้ตามกฎ */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: '16px 18px', width: 'min(860px, 96vw)' }}>
@@ -147,11 +151,14 @@ function ChartModal({ c, curIdx, onClose }) {
           <b style={{ fontSize: 14.5, color: 'var(--text)' }}>📈 {c.title}</b>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer' }}>✕</button>
         </div>
+        <div style={{ position: 'relative', width: '100%', height: 300 }}>
+        {focus && <FocusAxisNote k={1.2} fixed loText={Number(focus.domain[0]).toLocaleString(undefined, { maximumFractionDigits: c.dec ?? 1 })} />}
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 22, left: 0, right: 12, bottom: 0 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="m" tick={{ fontSize: 12, fill: 'var(--text2)' }} />
-            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" domain={c.kind === 'line' ? ['auto', 'auto'] : [0, 'auto']} />
+            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto"
+              domain={focus ? focus.domain : [0, 'auto']} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} />
             {c.target != null && (
               <ReferenceLine y={c.target} stroke="#f59e0b" strokeDasharray="6 4"
                 label={{ value: `เป้า ${c.dir === 'down' ? '≤' : '≥'} ${Number(c.target).toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 12, fontWeight: 800 }} />
@@ -167,6 +174,7 @@ function ChartModal({ c, curIdx, onClose }) {
             )}
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
           ตัวเลขชุดเดียวกับตาราง (นับเฉพาะกะปิดแล้ว){curIdx >= 0 ? ` · ${TH_M[curIdx]} ยังไม่จบเดือน (แสดงจาง)` : ''}
           {sdef ? ' · เขียว = ถึง Target · เหลือง = ถึงแค่ Commitment · แดง = ไม่ถึง (เกณฑ์เดียวกับ ○△✗ ในตาราง)' : ''}
@@ -333,13 +341,17 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (defRes.truncated) throw new Error('โหลดของเสียไม่ครบ — PPM/Cost of defect จะผิด ยังสร้างรายงานไม่ได้');
       const defects = defRes.rows;
       // 4) ต้นทุน/ชิ้น + เป้า OEE
-      const [{ data: parts, error: e4 }, { data: targets, error: e5 }] = await Promise.all([
-        supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost'),
+      /* parts_master ดึงเฉพาะ MAT ที่มีของเสียจริง (05/10 · audit) — เดิม select ทั้งตารางไม่กรอง ⇒ ชนเพดาน 1000 แถว
+         พาร์ทที่ 1001+ ไม่มีต้นทุน = Cost of defect ต่ำกว่าจริงเงียบๆ (กฎเหล็ก DB ข้อ 5) */
+      const mats = [...new Set(defects.map(d => d.prod_orders?.mat_no).filter(Boolean))];
+      const [partRes, { data: targets, error: e5 }] = await Promise.all([
+        fetchByIds(mats, (c) => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c)),
         supabase.from('oee_targets').select('group_name, target_a, target_p, target_q'),
       ]);
-      if (e4) throw e4;
+      if (partRes.error) throw new Error(partRes.error);
+      if (partRes.truncated) throw new Error('โหลดต้นทุนพาร์ทไม่ครบ — Cost of defect จะต่ำกว่าจริง ยังสร้างรายงานไม่ได้');
       if (e5) throw e5;
-      const partCost = Object.fromEntries((parts || []).map(p => [p.mat_no, p]));
+      const partCost = Object.fromEntries(partRes.rows.map(p => [p.mat_no, p]));
       if (seq !== reqRef.current) return;               // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({ key, sessions, dtPlanned, dtUnplanned, defects, partCost, targets: targets || [] });
     } catch (e) {

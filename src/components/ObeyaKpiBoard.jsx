@@ -13,8 +13,9 @@ import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
-import usePolling from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
+import { LIVE, RATE } from '../utils/refreshRates';
+import { toast } from './Toast';
 import PageHeader from './PageHeader';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
@@ -64,7 +65,7 @@ import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
    • **ไม่มีเป้า ≠ ผ่าน** = เทา + บอกว่าไปตั้งที่ไหน · **ไม่มีค่า ≠ 0** = ไม่มีแท่ง
    • **Safety**: ค่า KPI = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับ `safety_events`
      · ไม่มีบันทึกเลย = เทา **ห้ามเขียว** · ห้ามบวก 2 แหล่ง
-   • egress: usePolling(RATE.BOARD) — แท็บซ่อน = หยุดยิง · ห้าม subscribe realtime prod_orders/downtime_logs
+   • egress: useLiveBoard(production_sessions · RATE.BOARD + idle gate) — แท็บซ่อน = หยุดยิง · ห้าม subscribe realtime prod_orders/downtime_logs
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 8 หัวข้อบนบอร์ดจริง (ถอดจากป้ายเหลืองในรูปที่ user ถ่ายมา 2026-09-01) ───────────────────────
@@ -180,11 +181,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ⚠️ รอผังโหลดก่อน (orgReady) ไม่งั้นค่าจาก URL เช่น department:HYDROFORM ถูกตีว่าไม่รู้จักแล้วล้างทิ้ง */
   useEffect(() => {
     if (!orgReady || !lines.length) return;
-    if (scope && (isPlant(scope) || org.has(scope.kind, scope.value))) return;
+    const known = !!scope && (isPlant(scope) || org.has(scope.kind, scope.value));
+    /* 🔒 ขอบเขตจาก URL ที่ผังรู้จักแต่ **อยู่นอกสังกัด user** (05/10 · audit) — เดิมผ่านด่าน org.has แล้วค้างอยู่
+       ทั้งที่ dropdown ไม่มีให้เลือก ⇒ จอว่าง/ตัวเลขของหน่วยอื่น · ให้ถอยกลับหน่วยของตัวเองแล้วบอกบนจอ ไม่สลับเงียบ */
+    const allowed = known && (isPlant(scope) || scopeOpts.some(o => o.key === scopeKeyStr));
+    if (allowed) return;
     const mine = (sections || []).map(x => scopeOpts.find(o => o.kind === 'section' && o.value === x)).find(Boolean);
     const first = scopeOpts.find(o => o.kind === 'section');
+    if (known) toast.info(`ขอบเขต "${org.labelOf(scope.kind, scope.value)}" อยู่นอกสังกัดของคุณ — สลับไปดูหน่วยของคุณแทน`);
     setScope(mine || first || PLANT);
-  }, [orgReady, lines.length, scope, org, sections, scopeOpts, setScope]);
+  }, [orgReady, lines.length, scope, scopeKeyStr, org, sections, scopeOpts, setScope]);
 
   /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขต user · ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง) = [] → แผ่นอัตโนมัติว่างโดยตั้งใจ */
   const lineNames = useMemo(() => {
@@ -230,9 +236,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (yr.error) warn.push('ผลรวมรายเดือน (OEE/PPM)');
       const roll = yr.data || {};
       // 2) กะที่ยังเปิดค้างของวันที่ดู — ตัวเลขวันนี้ยังไม่ครบ ต้องบอก
-      const op = names.length ? await supabaseDR.from('production_sessions').select('id')
-        .eq('work_date', date).neq('status', 'closed').in('line_name', names.slice(0, 200)) : { data: [] };
-      if (op.error) warn.push('กะที่เปิดค้าง');
+      /* `.in()` ยาวทะลุเพดาน URL = คืนว่างเงียบ (กฎเหล็ก DB ข้อ 5) → ซอยก้อนผ่าน fetchByIds แทน `slice(0, 200)` เดิม
+         ที่ตัดไลน์ที่ 201+ ทิ้งเงียบๆ (05/10 · audit) */
+      const op = names.length ? await fetchByIds(names, part => supabaseDR.from('production_sessions').select('id')
+        .eq('work_date', date).neq('status', 'closed').in('line_name', part)) : { rows: [] };
+      if (op.error || op.truncated) warn.push('กะที่เปิดค้าง');
       // 3) เป้า OEE (A×P×Q รายกรุ๊ป)
       const tg = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q');
       if (tg.error) warn.push('เป้า OEE');
@@ -283,7 +291,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
-        openSess: (op.data || []).length, targets: tg.data || [],
+        openSess: (op.rows || []).length, targets: tg.data || [],
         safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn,
       });
     } catch (e) {
@@ -292,8 +300,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (seq === reqRef.current) setLoading(false);
     }
   }, [lineKey, scopeKeyStr, secKey, year, date, org]);
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.BOARD);
+  /* โหลดครั้งแรก + poll + realtime ผ่านตัวกลางตัวเดียว (กฎเหล็ก DB ข้อ 8 · เดิมประกอบ useEffect+usePolling เอง ไม่มี idle gate)
+     ฟังแค่ production_sessions (เปิด/ปิดกะ = ตัวเลขเดือนเปลี่ยน) — prod_orders/downtime_logs ห้าม subscribe ในหน้านี้ */
+  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD });
 
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {

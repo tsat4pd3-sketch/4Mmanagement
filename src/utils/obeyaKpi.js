@@ -256,6 +256,32 @@ export function actionBuckets(items = [], today) {
 }
 
 /** สุขภาพของลูปปิด — ใช้ตอบคำถามเดียวที่สำคัญที่สุดของ Obeya: "ที่ตกลงกันไว้ ทำจริงไหม" */
+/** 🔒 ใบ Action ที่ "อยู่ในขอบเขต" (05/10 · audit: ACTION BOARD เดิมโชว์ทุกใบทั้งโรงงานไม่สนทั้ง scope user และขอบเขตที่เลือก)
+ *  · ใบที่ระบุไลน์ → ตัดสินด้วย `lineOk(line)` = ชุดเดียวกับที่กรองข้อมูลผลิตบนจอ (scope user ∩ ขอบเขตที่เลือก)
+ *    `lineOk` คืน `null` = ไลน์นี้ไม่อยู่ในทะเบียนแล้ว (เปลี่ยนชื่อ/ยุบ) → ถอยไปตัดสินด้วยส่วนงานของใบแทน ไม่ทิ้งใบเงียบ
+ *  · ใบที่ระบุแค่ส่วนงาน → ต้องอยู่ในสังกัด user (`sections` · [] = ไม่จำกัด) และใต้ขอบเขตที่เลือก (`scopeSecs` · null = ทั้งโรงงาน)
+ *  · ใบที่ไม่ระบุทั้งคู่ = ใบระดับโรงงาน → เห็นเมื่อดู "ทั้งโรงงาน" และ user ไม่ถูกจำกัดส่วนงาน
+ *  คืน `{ items, hidden }` — hidden = จำนวนที่ถูกกรองออก **จอต้องเขียนบอก ห้ามหายเงียบ** (กฎความซื่อสัตย์) */
+export function scopeActions(items = [], { sections = [], scopeSecs = null, lineOk = null } = {}) {
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const secLimited = !!(sections && sections.length);
+  const userSecs = secLimited ? new Set(sections.map(norm)) : null;
+  const sel = scopeSecs ? new Set([...scopeSecs].map(norm)) : null;
+  const ok = (a) => {
+    if (a.line_name) {
+      const r = lineOk ? lineOk(a.line_name) : true;
+      if (r !== null && r !== undefined) return !!r;
+    }
+    const s = norm(a.section);
+    if (!s) return !secLimited && !sel;
+    if (userSecs && !userSecs.has(s)) return false;
+    if (sel && !sel.has(s)) return false;
+    return true;
+  };
+  const kept = items.filter(ok);
+  return { items: kept, hidden: items.length - kept.length };
+}
+
 export function actionHealth(items = [], today) {
   const b = actionBuckets(items, today);
   const live = b.overdue.length + b.dueSoon.length + b.open.length;

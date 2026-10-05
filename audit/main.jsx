@@ -30,7 +30,7 @@ const ROLE = new URLSearchParams(location.search).get('role') || 'manager';
    ⇒ ส่ง query string จริงของ harness เข้าไปเป็นที่อยู่ตั้งต้น (ตัด `p`/`role` ที่เป็นของ harness เองออก) */
 const ENTRY = (() => {
   const q = new URLSearchParams(location.search);
-  q.delete('p'); q.delete('role');
+  q.delete('p'); q.delete('role'); q.delete('sections');
   /* `?path=/production-plan` — ตั้ง **pathname** ของที่อยู่ตั้งต้น (2026-09-24)
      เดิมตรึงเป็น `/` เสมอ ⇒ lab ของ sidebar จำลอง "กำลังอยู่หน้าไหน" ไม่ได้เลย
      แล้วไฮไลต์ "คุณอยู่ตรงนี้" บนราง **ไม่เคยถูกเห็นใน harness สักครั้ง**
@@ -38,7 +38,10 @@ const ENTRY = (() => {
   const path = q.get('path') || '/'; q.delete('path');
   return q.toString() ? `${path}?${q}` : path;
 })();
-const CTX = { role:ROLE, lineId:1, team:'A', section:'PD1', sections:[], fullName:'ทดสอบ ระบบ',
+/* ?sections=PD2,PD3 — จำลอง user ที่ถูกจำกัดส่วนงาน (2026-10-05) · เดิม sections:[] ตายตัว ⇒ สาย "ขอบเขตจาก URL
+   อยู่นอกสังกัด user" / ตัวกรองส่วนงานของบอร์ด OBEYA ไม่เคยถูกรันใน harness เลย */
+const SECTIONS = (new URLSearchParams(location.search).get('sections') || '').split(',').map(s => s.trim()).filter(Boolean);
+const CTX = { role:ROLE, lineId:1, team:'A', section:SECTIONS[0] || 'PD1', sections:SECTIONS, fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
   mtnTeams:[], isDeptAdmin:false, sidebarOpen:false }
 
@@ -82,6 +85,8 @@ function App(){
         <main id="mainbox" style={{ flex:1, minHeight:'100vh', paddingTop:14, background:'var(--bg)',
           overflowY:'auto', overflowX:'hidden', minWidth:0 }}>
           <ScrollHint/><EB><Suspense fallback={<div>loading</div>}>{C ? <C/> : null}</Suspense></EB>
+          {/* ToastContainer ต้องมีในหน้าปกติด้วย (05/10) — เดิมมีแค่ใน FeedbackLab ⇒ toast จากหน้าอื่น (เช่น "ขอบเขตนอกสังกัด" ของบอร์ด KPI) ไม่โผล่ ตรวจอัตโนมัติไม่ได้ */}
+          <ToastContainer/>
         </main>
       </UserContext.Provider>
     </MemoryRouter>
