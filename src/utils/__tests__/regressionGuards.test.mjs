@@ -1923,3 +1923,35 @@ test('🛡️ ตัวนำเข้า 862 ต้องตัดแถว "�
     + '              ถ้าสร้างเป็นใบจะชนใบ e-SMART (เกิดจริง AAT 01–02/10: ค้างแดง 1,605 + 1,415 ชิ้น)\n'
     + '   แก้ยังไง: ดู splitCumCatchUp ใน src/utils/ediMerge.js\n');
 });
+
+/* ── คน "หายทั้งส่วนงาน" เพราะกรองส่วนงานด้วย line_id (บั๊กจริง 05/10/2026) ────────────
+   หัวหน้า PD2 แจ้ง "เช็คชื่อพนักงานผมหายหมดเลย" — ตั้งแผนก Assembly Line D ครบทุกคนแล้ว
+   แต่ `employees.line_id` ยัง null ทั้ง 35 คน (กลุ่ม Assembly Line D2-D6 ในผังยังไม่ผูกไลน์ผลิต)
+   จอเช็คชื่อกรอง section ด้วย `sectionFamilyIds.has(line_id)` ⇒ ไม่มีใครผ่านเลย = "แสดง 0 คน"
+   กฎ: เลือก "ส่วนงาน" ต้องยึด `section` · เลือก "ไลน์" ค่อยยึด `line_id` (เข้มเหมือนเดิม) */
+test('🛡️ /checkin: กรองด้วยส่วนงานต้องไม่ทิ้งคนที่ยังไม่ผูกไลน์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  assert.ok(/if\s*\(\s*selSection\s*\)\s*return[^;]*emp\.section\s*===\s*selSection/.test(code),
+    '\n\n❌ Checkin.jsx กรอง selSection โดยไม่มีทางออกให้คนที่ line_id ว่าง\n'
+    + '   ทำไมห้าม: ผู้ใช้เลือก "ส่วนงาน" แต่โค้ดถามว่า "อยู่ไลน์ไหน" ⇒ คนที่ยังไม่ผูกไลน์หายเงียบทั้งกอง\n'
+    + '              (เกิดจริง 05/10/2026 — PD2 คนหน้างาน 35 คน เช็คชื่อขึ้น 0 คน)\n'
+    + '   แก้ยังไง: `return sectionFamilyIds.has(el) || (!el && emp.section === selSection)`\n'
+    + '              แล้วนับคนที่ไม่มีไลน์ขึ้นเตือนบนจอ (noLineCount) — ห้ามปนเงียบ ๆ\n');
+});
+
+/* ── ตัวเลือกใน dropdown ต้องมาจากกองเดียวกับที่ตารางโชว์ (บั๊กจริง 05/10/2026) ──────────
+   /operator สร้างตัวเลือก แผนก/กลุ่ม/ทีม จาก [...employees, ...inactiveEmployees] ขณะที่ตาราง
+   โชว์ทีละกองตาม showInactive ⇒ dropdown เสนอค่าที่เลือกแล้วได้ 0 แถว (user: "ตัวกรองมั่ว") */
+test('🛡️ /operator: ตัวเลือกตัวกรองต้องมาจากกองที่กำลังโชว์ ไม่ใช่รวมคนที่ปิดใช้งาน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+optPool\s*=\s*useMemo\(\s*\(\)\s*=>\s*\(\s*showInactive\s*\?/.test(code),
+    '\n\n❌ operator.jsx ไม่ได้สร้างตัวเลือกตัวกรองจาก optPool (กองที่กำลังโชว์)\n'
+    + '   ทำไมห้าม: ตารางโชว์ทีละกองตาม showInactive แต่ตัวเลือกมาจากทั้ง 2 กอง\n'
+    + '              ⇒ หัวหน้ากดกรองแล้วจอว่าง นึกว่าคนหาย (เกิดจริง 05/10/2026 PD2)\n'
+    + '   แก้ยังไง: `const optPool = useMemo(() => (showInactive ? inactiveEmployees : employees), …)`\n');
+  /* ห้ามเฉพาะ "แหล่งตัวเลือก" — การค้นคนตาม id ข้ามทั้ง 2 กอง (handleEdit/toggle) ยังถูกต้อง */
+  assert.ok(/const\s+empsInSec\s*=\s*useMemo\(\s*\(\)\s*=>\s*optPool\./.test(code),
+    '\n\n❌ operator.jsx: empsInSec (ต้นทางตัวเลือก แผนก/กลุ่ม/ทีม) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
+  assert.ok(/optPool\.map\(e\s*=>\s*e\.section\)/.test(code),
+    '\n\n❌ operator.jsx: ตัวเลือกส่วนงาน (fallback) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
+});
