@@ -22,6 +22,8 @@ const PAGE_COLS = ROLES.filter(r => !r.bucket);
 //   oee-analytics/scrap-report/event-log อยู่ผิดหมวด · ลำดับสลับ — คนตั้งสิทธิ์หาหน้าไม่เจอ)
 //   เพิ่มหน้าใหม่ = เพิ่มที่นี่ให้ตรงตำแหน่งเดียวกับที่เพิ่มใน NAV_ITEMS
 //   หน้าที่ไม่อยู่ในเมนู (/remote, /linesetup, แท็บใน Daily Checker) คงไว้พร้อมหมายเหตุ — สิทธิ์ยังต้องตั้งได้
+//   🛡️ มีเทส `navPermissionCoverage.test.mjs` — หน้าใน NAV_ITEMS ที่ไม่มีแถวที่นี่ = build ล่ม
+//      (QC 05/10: /monitoring /mtn-analysis /nm-board หลุด = ตั้งสิทธิ์หน้านั้นจากจอไม่ได้เลย)
 const PAGE_GROUPS = [
   {
     group: 'ภาพรวม',
@@ -91,6 +93,8 @@ const PAGE_GROUPS = [
       { key: 'page:/store-monitor', label: 'เฝ้าระวังสต๊อก (Abnormal) · คาบ 2 ฝั่ง' },
       // หมวดแผนงานยุบเข้ามาแล้ว (30/09) — คีย์สิทธิ์เดิมทุกตัว ไม่มีใครเสียสิทธิ์
       { key: 'page:/planner-sales', label: 'Planner & Sales' },
+      // คาบ 2 หมวด (บ้าน = Store/แผนงาน · ทางลัดในฝ่ายผลิต ผ่าน alsoIn) — สิทธิ์ชุดเดียว (seed 20261002)
+      { key: 'page:/monitoring',    label: 'Monitoring แผน-สต๊อก · คาบ 2 หมวด' },
     ],
   },
   {
@@ -112,6 +116,7 @@ const PAGE_GROUPS = [
       { key: 'page:/pm-forecast', label: '— แท็บ PM ที่จะครบกำหนด (ใน ศูนย์ PM)' },
       { key: 'page:/pm-coordination', label: '— แท็บ ประสานงาน PM (แจ้งผลิต) (ใน ศูนย์ PM)' },
       { key: 'page:/pm-setup',    label: '— แท็บ ตั้งจุดตรวจ PM (ใน ศูนย์ PM)' },
+      { key: 'page:/mtn-analysis', label: 'วิเคราะห์ปัญหา (QC 7 Tools)' },
       { key: 'page:/mtn-layout',  label: 'ผังเครื่องจักร (ซ่อมบำรุง)' },
       { key: 'page:/fixture',     label: 'บันทึกชิม Fixture (JIG)' },
       { key: 'page:/energy',      label: 'พลังงานไฟฟ้า' },
@@ -125,6 +130,7 @@ const PAGE_GROUPS = [
       { key: 'page:/event-log', label: 'CQI-15 Event Log' },
       { key: 'page:/pe-docs', label: 'Flow / PFMEA / Control Plan' },
       { key: 'page:/npi', label: 'พาร์ทใหม่ APQP / PPAP' },
+      { key: 'page:/nm-board', label: 'บอร์ด New Model (IEC)' },
     ],
   },
   {
@@ -166,6 +172,7 @@ export default function PermissionsManagement() {
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({}); // { [`${role}:${key}`]: true }
+  const [loadErr, setLoadErr] = useState(null);   // โหลดสิทธิ์ไม่ครบ = ห้ามโชว์ตาราง (ติ๊กทับค่าจริงได้)
 
   const load = async () => {
     setLoading(true);
@@ -174,19 +181,32 @@ export default function PermissionsManagement() {
     const fetchAllPerms = async () => {
       const PAGE = 1000; const out = [];
       for (let from = 0; ; from += PAGE) {
-        const { data } = await supabase.from('role_permissions')
+        const { data, error } = await supabase.from('role_permissions')
           // ⚠️ .range() ต้องมี .order() ครบคีย์ unique เสมอ ไม่งั้นแถวหลุดระหว่างหน้า (ดู utils/permissions.js)
           .select('role, permission_key, allowed').order('role').order('permission_key').range(from, from + PAGE - 1);
+        /* 🔴 หน้าไหนล้ม = ทั้งตารางเชื่อไม่ได้ (QC 05/10) — เดิม break เงียบ ⇒ แถวที่เหลือขึ้น "ไม่ติ๊ก"
+           แล้วคนกดติ๊กใหม่ = เขียนทับค่าจริงใน DB · โยนออกไปให้ load() แสดง error แทนตารางครึ่งเดียว */
+        if (error) throw error;
         if (!data) break;
         out.push(...data);
         if (data.length < PAGE) break;
       }
       return out;
     };
-    const [perms, { data: cat }] = await Promise.all([
-      fetchAllPerms(),
-      supabase.from('permission_catalog').select('resource, action, label, group_name, sort').order('sort'),
-    ]);
+    let perms, cat;
+    try {
+      const [p, c] = await Promise.all([
+        fetchAllPerms(),
+        supabase.from('permission_catalog').select('resource, action, label, group_name, sort').order('sort'),
+      ]);
+      if (c.error) throw c.error;
+      perms = p; cat = c.data;
+    } catch (e) {
+      setLoadErr(e?.message || String(e));
+      setLoading(false);
+      return;
+    }
+    setLoadErr(null);
     setRows(perms || []);
     setCatalog(cat || []);
     setLoading(false);
@@ -310,6 +330,14 @@ export default function PermissionsManagement() {
   );
 
   if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
+  if (loadErr) return (
+    <Page>
+      <div style={{ padding: 24, margin: 24, borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', fontSize: 14 }}>
+        ⚠️ โหลดตารางสิทธิ์ไม่ครบ ({loadErr}) — ไม่แสดงตารางเพื่อกันการติ๊กทับค่าจริง ·{' '}
+        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
+      </div>
+    </Page>
+  );
 
   const pageGroups   = PAGE_GROUPS.map(g => ({ group: g.group, items: g.pages }));
   // legacy `manage_master_data` เกษียณแล้ว (2026-07-22) — แตกเป็นสิทธิ์ย่อย oee:set_target /

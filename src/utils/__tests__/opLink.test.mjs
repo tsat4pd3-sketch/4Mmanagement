@@ -40,17 +40,68 @@ test('ของเข้าซ้ำกันหลายบรรทัด = �
   assert.equal(r.candidates.length, 1)
 })
 
-test('⚠️ ผูก parent ที่ไม่อยู่ในสูตรของตัวเอง = เตือน (warn) ไม่ฟันธง', () => {
-  const w = opLinkIssues(OP({ op_parent_mat: '20066332' }), ['20065734', '50029610'])
+/* ── opLinkIssues — กฎใหม่ 2026-10-05: "ปลายสายต้องเป็นพาร์ทจริง 1xxx/2xxx" ─────────
+   user: *"ปลายทางจะไปต้องไปจบที่พาร์ทจริงที่มี mat sap … ยกเว้นจะเป็น sub ของ sub
+   อีกทีก่อนจะกลายเป็นพาร์ท 2xxx หรือ 1xxx"* */
+
+test('ปลายทางเป็น FG (1xxx) = ไม่เตือน', () => {
+  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: '10100385' })), [])
+})
+
+test('ปลายทางเป็น Child ผลิตเอง (2xxx) = ไม่เตือน', () => {
+  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: '20066332' })), [])
+})
+
+test('ว่าง = ไม่เตือน (ไม่ใช่ "กรอกไม่เสร็จ")', () => {
+  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: null })), [])
+  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: '  ' })), [])
+})
+
+test('🔴 ปลายทางเป็นวัตถุดิบ (5xxx) = เตือน — ไม่มีใบผลิตให้ยุบยอดเข้า (เคสจริง 20067039(BENDING))', () => {
+  const w = opLinkIssues(OP({ mat_no: '20067039(BENDING)', op_parent_mat: '50029126' }))
   assert.equal(w.length, 1)
-  assert.equal(w[0].level, 'warn')
+  assert.match(w[0].text, /ไม่มีใบผลิตของตัวเอง/)
 })
 
-test('🔴 ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — เป็นเรื่องปกติ 8/18 ขั้นเป็นแบบนี้', () => {
-  // 291 (M6 มีเกลียว): กิน 30047596 เข้าไปแล้วคายตัวเดิมที่มีนัท — ถูกต้องแล้ว ห้ามขึ้นแดง
-  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: '30047596' }), ['30042571', '30047596']), [])
+test('🔴 ปลายทางเป็นของซื้อนอก (3xxx) = เตือน (เคสจริง 290/291/173 M8/5049)', () => {
+  const w = opLinkIssues(OP({ mat_no: '290 (M6 มีเกลียว)', op_parent_mat: '30047585' }))
+  assert.equal(w.length, 1)
+  assert.match(w[0].text, /ไม่มีใบผลิตของตัวเอง/)
 })
 
-test('สูตรว่าง = ข้ามการเทียบ', () => {
-  assert.deepEqual(opLinkIssues(OP({ op_parent_mat: '10100385' }), []), [])
+test('ปลายทางไม่ใช่เลข MAT SAP 8 หลัก = เตือน (ห้ามเดาประเภทจากตัวแรก)', () => {
+  const w = opLinkIssues(OP({ op_parent_mat: '127' }))
+  assert.equal(w.length, 1)
+  assert.match(w[0].text, /MAT SAP 8 หลัก/)
+})
+
+test('sub ของ sub — ขั้นชี้ไปขั้นอื่น แล้วไปจบที่พาร์ทจริง = ไม่เตือน', () => {
+  const chain = { 'STEP A': 'STEP B', 'STEP B': '20066332' }
+  assert.deepEqual(
+    opLinkIssues(OP({ mat_no: 'OP0', op_parent_mat: 'STEP A' }), { parentOf: m => chain[m] }), [])
+})
+
+test('🔴 sub ของ sub ที่ปลายสายยังเป็นวัตถุดิบ = เตือน (ต้องไล่จนสุดสาย ไม่ใช่ดูแค่ตัวแรก)', () => {
+  const chain = { 'STEP A': 'STEP B', 'STEP B': '50029126' }
+  const w = opLinkIssues(OP({ mat_no: 'OP0', op_parent_mat: 'STEP A' }), { parentOf: m => chain[m] })
+  assert.equal(w.length, 1)
+  assert.match(w[0].text, /50029126/)
+})
+
+test('🔴 สายวนกลับมาที่ตัวเอง = เตือน ไม่ใช่ลูปค้าง', () => {
+  const chain = { 'STEP A': 'STEP B', 'STEP B': 'STEP A' }
+  const w = opLinkIssues(OP({ mat_no: 'OP0', op_parent_mat: 'STEP A' }), { parentOf: m => chain[m] })
+  assert.equal(w.length, 1)
+  assert.match(w[0].text, /วนกลับมา/)
+})
+
+test('🔴 ห้ามเตือนเรื่องทิศทาง — ข้อมูลจริงใช้ทั้ง 2 ทิศและถูกทั้งคู่ (วัด 05/10: 8 ตัวรับเข้า · 16 ตัวกลายเป็น)', () => {
+  // ขั้นขับนัท: parent = ของที่รับเข้ามา (อยู่ในสูตรของตัวเอง)
+  assert.deepEqual(opLinkIssues(OP({ mat_no: 'D04 (BOLT M6)', op_parent_mat: '20066332' })), [])
+  // STEP 1: parent = ของที่ทำเสร็จแล้วกลายเป็น (ไม่อยู่ในสูตร)
+  assert.deepEqual(opLinkIssues(OP({ mat_no: '824-STEP 1', op_parent_mat: '20066542' })), [])
+})
+
+test('ไม่ใช่ OP = ไม่เตือนอะไรเลย', () => {
+  assert.deepEqual(opLinkIssues({ is_operation: false, op_parent_mat: '50029126' }), [])
 })
