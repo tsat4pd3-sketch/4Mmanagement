@@ -5,7 +5,7 @@ import { UserContext } from '../App';
 import { cachedMaster } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
-import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, splitCumCatchUp, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
 import EdiMatchFixer from '../components/EdiMatchFixer';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -437,7 +437,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             });
           }
         }
+        /* 🔴 ship-to ที่ใช้ e-SMART (มีตารางรอบใน customer_pull_rounds) — แถว "ยอดค้างตาม Cum" ของ 862
+           ไม่ใช่เที่ยวรถ ห้ามเป็นใบส่ง (ชน e-SMART · เคสจริง AAT 01–02/10) ดู splitCumCatchUp ใน ediMerge.js
+           อ่านไม่ได้ = ไม่ตัดอะไร (พฤติกรรมเดิม) + บอกบนจอ ห้ามเดาเงียบ */
+        const { data: pullRows, error: pullErr } = await supabaseDR.from('customer_pull_rounds')
+          .select('ship_to').eq('is_active', true);
+        const pullShipTos = [...new Set((pullRows || []).map(x => String(x.ship_to || '').trim()).filter(Boolean))];
+        const catchUp = is862 ? splitCumCatchUp(records, pullShipTos).catchUp : [];
         setEdi({
+          pullShipTos, pullErr: pullErr ? pullErr.message : null, catchUp,
           kind: is862 ? 'orders' : 'forecast',
           kindGuess, kindForced: null,          // kindForced = คนกดเลือกเอง (ชนะการเดาเสมอ)
           skipped: ediFiles.reduce((a, f) => a + (f.skipped || 0), 0),
@@ -592,7 +600,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   const doImportEdi = async () => {
     if (!edi) return;
-    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0;
+    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0, cumCount = 0, cumQty = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -644,7 +652,12 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            แล้วทยอยกลายเป็นสีแดงวันต่อวัน (เกิดจริง 1,361 ใบ / 2.0 ล้านชิ้น)
            → ไม่มีเวลา + เกิน +14 วัน ⇒ ลง `customer_forecasts` แทน (ดู ediMerge.js)
            หมายเหตุ: 830 ชนะเสมอใน `dedupeForecastRows` ⇒ ไม่นับซ้ำ · ที่ไม่มี 830 แผนไม่หาย */
-        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(edi.records, wd);
+        /* ① ตัดแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ออกก่อน (ไม่ใช่เที่ยวรถ — e-SMART เป็นเจ้าของเที่ยววันนี้)
+           ⚠️ replaceScoped ด้านล่างยังรับ edi.records ทั้งก้อน ⇒ ใบค้างเก่าของวันเดียวกันถูกแทนที่ (ไม่ค้างซ้อน) */
+        const { keep: keepRecs, catchUp: cumRecs } = splitCumCatchUp(edi.records, edi.pullShipTos || []);
+        cumCount = cumRecs.length;
+        cumQty = cumRecs.reduce((a, r) => a + (Number(r.qty) || 0), 0);
+        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(keepRecs, wd);
         fcCount = fcRecs.length;
         /* 🔴 ใบที่ "ทำไปแล้ว" = ความจริงของเที่ยวนั้น — 862 ห้ามสร้างซ้ำ (2026-09-18)
            เดิมเทียบ `customer|part|date|time` **ตรงตัว** ⇒ ไม่เคย match กับใบ e-SMART เพราะ
@@ -717,7 +730,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
         + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
-        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : ''));
+        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : '')
+        + (cumCount ? ` · 📊 ${cumCount} รายการเป็นยอดค้างตาม Cum ของลูกค้า (${cumQty.toLocaleString()} ชิ้น) ไม่สร้างเป็นใบส่ง — e-SMART ดึงตามจริง` : ''));
       // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
       if (fcSkipped) toast.error(`⚠️ แผนระยะยาว ${fcSkipped} รายการยังจับคู่ MAT ไม่ได้ จึงไม่ได้บันทึก — ผูก MAT ที่ตาราง "จับคู่พาร์ท" แล้วอัพไฟล์ซ้ำ`);
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
@@ -859,6 +873,24 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
+              {/* 📊 ยอดค้างตาม Cum (ship-to ที่ใช้ e-SMART) — ไม่สร้างใบ แต่ต้องเห็นตัวเลข (ห้ามทิ้งเงียบ) */}
+              {ediKind === 'orders' && edi.catchUp?.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, padding: '8px 10px', borderRadius: 8,
+                  background: 'rgba(77,159,255,0.08)', border: '1px solid rgba(77,159,255,0.3)' }}>
+                  📊 <strong>ยอดค้างตาม Cum ของลูกค้า {edi.catchUp.length} รายการ</strong> (แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่ลูกค้ารับแล้ว)
+                  — <strong>ไม่สร้างเป็นใบส่ง</strong> เพราะ {[...new Set(edi.catchUp.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')} ใช้ e-SMART ดึงเป็นเที่ยวจริงอยู่แล้ว
+                  <div style={{ marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {edi.catchUp.map((r, i) => (
+                      <span key={i} style={{ fontFamily: 'monospace' }}>{r.mat_no || r.part} · {r.dock || '—'} · <strong>{Number(r.qty).toLocaleString()}</strong></span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {ediKind === 'orders' && edi.pullErr && (
+                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                  ⚠️ อ่านตารางรอบ e-SMART ไม่ได้ ({edi.pullErr}) — รอบนี้จะสร้างแถวยอดค้างตาม Cum เป็นใบส่งเหมือนเดิม
+                </div>
+              )}
               {/* 🔗 3 คำเตือนจับคู่พาร์ท — แก้บนจอนี้ได้เลย คำตัดสินถูกจำใน edi_part_map (2026-10-01)
                   บันทึกแล้วอ่านไฟล์ชุดเดิมใหม่ทันที ⇒ คำเตือนที่แก้แล้วหายไป · รอบหน้าไม่ถามซ้ำ */}
               <EdiMatchFixer edi={edi} canEdit={canUpload} custLabel={custLabel}
