@@ -5,6 +5,10 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
+import {
+  loadOrgNodeRefs, orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote,
+  orgRefKeyChange, renameOrgRefs,
+} from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
@@ -236,6 +240,24 @@ export default function OrgSetup() {
       );
       if (dup) return toast.error(`Cost Center นี้ถูกใช้แล้วที่ "${dup.name}" — กรุณาเปลี่ยนเลข`);
     }
+    /* 🔴 เปลี่ยน "คีย์" ของโหนด = สำเนาชื่อในทะเบียนอื่นชี้ของที่ไม่มีอยู่แล้ว (05/10)
+         คีย์ = `code || name` · กลุ่มใช้ "ชื่อ" (ดู src/utils/orgNodeRefs.js)
+       ⇒ ถามก่อน แล้วไล่เปลี่ยนตามให้ในคราวเดียว · ไม่เปลี่ยนตาม = คนหลุดหน่วยงานเงียบๆ
+         (เคยต้องตามเก็บด้วย migration: 20261004_employees_department_typos_main.sql) */
+    const editNode = modal.editing;
+    const keyChg = editNode ? orgRefKeyChange(editNode, formName.trim(), formCode.trim() || null) : null;
+    let cascade = null;
+    if (keyChg) {
+      const refs = await loadOrgNodeRefs(supabase, editNode, nodes);
+      if (refs.partial) return toast.error('ยังไม่บันทึก — ตรวจไม่ครบว่ามีใครอ้างชื่อเดิมอยู่ · ลองใหม่อีกครั้ง');
+      const affected = (refs.textEmp || 0) + (refs.textProf || 0);
+      if (affected) {
+        if (!confirm(`เปลี่ยน "${keyChg.from}" → "${keyChg.to}" ?\n\n`
+          + `ทะเบียนที่ยังอ้างชื่อเดิม ${affected} รายการจะถูกเปลี่ยนตามให้ด้วย\n`
+          + '(ถ้าไม่เปลี่ยนตาม คนเหล่านั้นจะหลุดจากหน่วยงานนี้เงียบๆ)')) return;
+        cascade = keyChg;
+      }
+    }
     setSaving(true);
     const payload = {
       kind: modal.kind,
@@ -250,25 +272,42 @@ export default function OrgSetup() {
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
-    const { error } = modal.editing
-      ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
+    const { error } = editNode
+      ? await supabase.from('org_nodes').update(payload).eq('id', editNode.id)
       : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 });
+    if (error) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
+    // นับแถวที่เขียนได้จริง — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
     setSaving(false);
-    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
-    toast.success(modal.editing ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    if (casc?.failed.length) {
+      toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
+        + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
+    } else if (casc) {
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+    } else {
+      toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    }
     setModal(null);
     fetchAll();
   };
 
   const toggleActive = async (node) => {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
-    if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
+    /* 🔴 บอกจำนวนคน/บัญชีที่ผูกอยู่ก่อนปิด — เดิมถามลอยๆ คนกดไม่รู้ว่ากระทบใคร
+       (เคสจริง 05/10: กลุ่มที่คนผูกอยู่ 35 คนหายจาก dropdown แล้วหน้าเช็คชื่อว่างเปล่า) */
+    if (node.is_active) {
+      const refs = await loadOrgNodeRefs(supabase, node, nodes);
+      if (!confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`
+        + orgRefDeactivateNote(refs))) return;
+    }
     const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
     if (error) return toast.error(error.message);
     fetchAll();
   };
 
   const handleDelete = async (node) => {
+    // ไม่มี id = แถวเพี้ยน · ยิง delete ไม่ได้อยู่แล้ว และนับของที่อ้างถึงก็เชื่อไม่ได้ ⇒ ไม่แตะเลย
+    if (!node?.id) return toast.error('ลบไม่ได้: แถวนี้ไม่มี id — รีเฟรชหน้าแล้วลองใหม่');
     // กันลบทั้งที่ยังมีลูก — เดิม confirm บอก "ลบลูกทั้งหมด" แต่โค้ดลบแค่ node เดียว (พึ่ง cascade)
     // ถ้าไม่มี cascade ลูกจะกำพร้า parent_id ค้าง · ให้ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน
     /* 🔴 บอกให้ได้ว่า "ลูกคือใคร" — เดิมบอกแค่จำนวน ผู้ใช้เลยหาไม่เจอว่าต้องไปลบอะไรที่ไหน
@@ -282,9 +321,21 @@ export default function OrgSetup() {
       return toast.error(`ลบไม่ได้: "${node.name}" ยังมี${kinds}ลูก ${children.length} รายการ — ${names}`
         + ' · ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน');
     }
-    if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
+    /* 🔴 relate table ไม่ได้มีแค่ "ลูกในผัง" — ตารางอื่นชี้โหนดนี้อยู่ด้วย (05/10 วัดจริง)
+         employees.org_node_id 308 แถว · profiles.org_node_id 72 · org_assignments 4
+         + สำเนาชื่อแบบ text (employees.section/department/group_name/team · profiles.section/team/sections[])
+       เดิมเช็คแค่ลูก ⇒ ลบ "DIE MTN" (ไม่มีลูก) = พนักงาน 9 คนถูก set null เงียบ ·
+       ลบกลุ่ม "APRON ASSY" = 35 คนเหลือชื่อกลุ่มที่ไม่มีอยู่ในผัง · ดู src/utils/orgNodeRefs.js */
+    const refs = await loadOrgNodeRefs(supabase, node, nodes);
+    const blocked = orgRefBlockMessage(node, refs);
+    if (blocked) return toast.error(blocked);
+    if (!confirm(`ลบ "${node.name}" ?` + orgRefDeleteNote(refs)
+      + '\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)')) return;
     const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    // FK ฝั่ง DB เป็น restrict แล้ว (migration 20261005) — ด่านชั้นสองกันกรณีมีคนผูกเพิ่มระหว่างที่เปิดจอค้าง
+    if (error) return toast.error(error.code === '23503'
+      ? `ลบไม่ได้: ยังมีข้อมูลอื่นผูกกับ "${node.name}" อยู่ (เพิ่งถูกผูกเพิ่ม?) — รีเฟรชแล้วลองอีกครั้ง`
+      : 'ลบไม่สำเร็จ: ' + error.message);
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);
