@@ -1,7 +1,7 @@
 /* 🗂️ laborTypeOfNode — "ของใต้หน่วยนี้เป็นสายผลิตหรือสนับสนุน"        2026-09-24
  *
  * ที่มา (feedback user): *"ลูกของ indirect ไม่น่าต้องเลือกไลน์ผลิตนะ"*
- * เคสจริง: กลุ่ม `Store Semi` ใต้ `PLN & STO › STORE` (indirect ทั้งคู่) แต่ฟอร์มแก้ไขกลุ่ม
+ * เคสจริง: กลุ่ม `Store Semi` ใต้ `Planning&Store › STORE` (indirect ทั้งคู่) แต่ฟอร์มแก้ไขกลุ่ม
  * ยังถาม "ผูกกับไลน์ผลิตจริง (production_lines)" ซึ่งหน่วยงานสโตร์ตอบไม่ได้
  *
  * 🔴 กลุ่ม (kind='line') **ไม่มีคอลัมน์ `labor_type` ของตัวเอง** — ตั้งได้แค่ระดับ
@@ -11,9 +11,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { laborTypeOfNode } from '../laborType.js';
 
-/* ผังย่อจากของจริง (ตรวจกับฐาน 24/09): PLN & STO(indirect) › STORE(indirect) › Store Semi(ไม่ตั้ง) */
+/* ผังย่อจากของจริง (ตรวจกับฐาน 24/09 · ชื่อส่วนงานตามที่ normalize แล้ว 05/10):
+   Planning&Store(indirect) › STORE(indirect) › Store Semi(ไม่ตั้ง) */
 const NODES = [
-  { id: 'sec-pln', kind: 'section',    name: 'PLN & STO', parent_id: null,      labor_type: 'indirect' },
+  { id: 'sec-pln', kind: 'section',    name: 'Planning&Store', parent_id: null,      labor_type: 'indirect' },
   { id: 'dep-sto', kind: 'department', name: 'STORE',     parent_id: 'sec-pln', labor_type: 'indirect' },
   { id: 'grp-semi', kind: 'line',      name: 'Store Semi', parent_id: 'dep-sto', labor_type: null },
   { id: 'sec-pd3', kind: 'section',    name: 'PD3',       parent_id: null,      labor_type: 'direct' },
