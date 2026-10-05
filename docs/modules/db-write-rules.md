@@ -94,3 +94,20 @@ cachedMaster เห็นเป็น "สำเร็จ ได้ 0 แถว"
 
 `DailyReport` (7) · `QAInspectionSetup` · `HeijunkaKanban` · `PmCoordination` · `PlannerSales`
 · `useCostCenters` · `useDiePressLines` · `useStorageLocations` · `useSuppliers` · `useColumnHistory`
+
+---
+
+## § ส่ง SQL ให้ user รันเอง — เคสที่เคยพลาด (ย้ายมาจาก CLAUDE.md 2026-10-05 ตามกฎรับเข้า)
+
+กฎย่ออยู่ใน CLAUDE.md แล้ว (วาง SQL เต็มๆ · ระบุ project · แนบคิวรีเช็คผล) — ที่นี่เก็บ**ว่าทำไม**:
+
+**user รันผ่าน Supabase SQL Editor บนเว็บเท่านั้น — ไม่มี CLI/terminal และเปิดไฟล์ในรีโปไม่ได้**
+
+| เคยเกิดจริง | ผล |
+|---|---|
+| บอกแค่ชื่อไฟล์ migration ไป | user ก๊อป **path** ไปวางใน SQL Editor → `42601 syntax error at or near "supabase"` |
+| ส่งคำสั่ง CLI ให้ (07/09) | user ก๊อป `supabase functions deploy` ไปวางใน **SQL Editor** |
+| คิวรีเช็ค NPI (ตาราง Main) ถูกรันบน "Product DB" (07/09) | `42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว ⇒ ต้องบอก**ทั้งชื่อในจอและ project id** |
+
+⇒ ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ: **SQL Editor · secrets ใน dashboard · เมนูในแอป**
+· migration ที่ย้อนได้ + edge function → **AI session ลงเองผ่าน MCP แล้วคิวรีตรวจกลับ** (`docs/modules/edge-functions.md`)
