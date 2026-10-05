@@ -733,7 +733,7 @@ export const isTrialDefect = (d) =>
 
 /** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
 export const QBIN_EMBED =
-  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id)';
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active)';
 
 /** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
 const QA_SCRAP = 'scrap';
@@ -752,12 +752,17 @@ export function suspectState(d) {
   if (!(Number(d?.qty_suspect) || 0)) return 'none';
   const bins = d?.quality_bin_records;
   if (bins === undefined || bins === null) return 'unknown';
-  const rows = Array.isArray(bins) ? bins : [bins];
+  /* ใบที่ถูกลบ (soft delete `is_active=false`) ห้ามมีสิทธิ์ตัดสิน — ไม่ select มา (undefined) = ถือว่ายังใช้อยู่ */
+  const rows = (Array.isArray(bins) ? bins : [bins]).filter(r => r && r.is_active !== false);
   if (!rows.length) return 'pending';
 
-  /* ใบแดงที่ผูกกับใบของเสียนี้ (หรือใบเหลืองที่ถูกย้ายลงแดง) = ยืนยันเสียแล้ว */
+  /* ยืนยันเสียแล้ว = ใบเหลืองของแถวนี้ถูกย้ายลงแดง (`from_yellow_id` ชี้ใบเหลืองในชุด)
+     🔴 ใบแดงที่ลงตรงจาก NG (`from_yellow_id` ว่าง) **ไม่ใช่คำตัดสินของสงสัย** ถ้าแถวนี้มีใบเหลืองอยู่ด้วย
+        (QA 05/10: โมดัลลงถังติ๊ก 2 ถังพร้อมกัน — แดงจาก NG + เหลืองจากสงสัย ⇒ เดิมนับสงสัยเป็นเสียทันที)
+        ไม่มีใบเหลืองเลย = เอาของสงสัยลงแดงตรง ⇒ ยังถือว่าเสีย (พฤติกรรมเดิม) */
   const yellowIds = new Set(rows.filter(r => r?.bin === 'yellow').map(r => r?.id).filter(Boolean));
-  const movedToRed = rows.some(r => r?.bin === 'red' && (r?.from_yellow_id == null || yellowIds.has(r.from_yellow_id)));
+  const movedToRed = rows.some(r => r?.bin === 'red'
+    && (yellowIds.size ? yellowIds.has(r.from_yellow_id) : r?.from_yellow_id == null));
   if (movedToRed) return QA_SCRAP;
 
   const yellows = rows.filter(r => r?.bin === 'yellow');

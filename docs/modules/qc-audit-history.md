@@ -25,6 +25,32 @@
 **ผลรอบนี้ (175 ไฟล์ · 215 object):** ค้างจริง **1 ไฟล์** = `20260722_mtn_return_reroute.sql` (apply แล้ว 2026-08-06 · ดูรายละเอียดในหัวข้อ MTN Work-Order) · อีก 6 ตาราง `pm_equipment`/`pm_checklists`/`pm_checkpoints`/`pm_inspections`/`pm_inspection_results`/`pm_schedules` จาก `20260701_add_pm_maintenance_module.sql` **ไม่มีในทั้ง 2 project และไม่ต้อง apply** — ไฟล์นั้น DEPRECATED ตั้งแต่ 2026-07-10 (โมดูล PM จริงย้ายไป `jigs`/`checklists`/`jig_checkpoints`/`inspections`/`inspection_results`/`pm_plans` ฝั่ง DR) เก็บไว้เป็นประวัติเท่านั้น
 **บทเรียน:** migration ที่ค้างจะ**พังเงียบ** (write ตัวที่ไม่ tolerant ได้ error 42703 เฉพาะตอนผู้ใช้กดใช้ฟีเจอร์นั้น) — ค้างมา 2 สัปดาห์กว่าจะรู้ · เขียน migration เสร็จ **ต้อง apply แล้วบันทึกวันที่ apply ใน CLAUDE.md ทันที** (pattern เดียวกับที่ `line_type`/`flow_mode`/`equipment_category` เคยค้างแล้วทำให้ช่องเซฟไม่ติดเงียบๆ)
 
+### 🎯 QC audit เต็มก่อน roadshow (2026-10-05) — ทุกโมดูล/หน้า/แท็บ · ทะเบียนสถานะ
+
+คำสั่ง user *"qc test audit all module all page all tab all function all feature"* · 8 agent (กฎ A–G × 2 + bug-hunt 6 กลุ่มโดเมน)
++ เครื่องวัดเบราว์เซอร์จริง · **ผลอัตโนมัติ:** build/เทส 2269 ผ่าน · `crashsweep` 81 หน้า **พัง 0** · `mobilesweep` 81 หน้า **0** ·
+`stdsweep` ผิด 2 มุมมอง (LineStock ระยะแท็บ→กรอง 48px · QualityControl 20px) · `chartsweep` Obeya ป้ายแกนยื่น 3–6px 2 มุมมอง
+
+**✅ แก้แล้วรอบนี้ (batch 1)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 1 | `PMSetup.jsx` handleSave | 🔴 กดบันทึกรายการตรวจ PM = **ลบจุดตรวจทั้งชุดแล้ว insert ใหม่** · `inspection_results.checkpoint_id` เป็น CASCADE ⇒ ประวัติผลตรวจหายถาวรทุกครั้ง + `fixture_points` หลุด (วัด: 18 จุด เหลือผูก checkpoint 0) → sync ตาม id · ลบเฉพาะจุดที่ถอดจริง มีประวัติต้องยืนยัน · `jig_images` ทำแบบเดียวกัน · ด่าน `pm-checkpoints-no-delete-all` |
+| 2 | `pmChecklists.js` copyChecklistToDept | "คัดลอกทับ" แผนกที่มีประวัติผลตรวจ = ห้าม (เดิมลบประวัติปลายทาง) |
+| 3 | `oee.js` suspectState | 🔴 ลง 2 ถังพร้อมกัน (แดงจาก NG + เหลืองจากสงสัย) ⇒ ของสงสัยถูกนับเสียทันที ผิดกฎ "รอ QA" → ใบแดงตรงนับเฉพาะเมื่อไม่มีใบเหลือง · ใบ `is_active=false` ไม่มีสิทธิ์ตัดสิน (embed เพิ่ม `is_active`) · วัดฐาน: กะที่โดนจริง **0** ไม่ต้อง backfill |
+| 4 | `HeijunkaKanban.jsx` confirmRound | 🔴 claim รอบส่งแล้ว ledger ล้ม ⇒ รอบขึ้น "ส่งแล้ว" ของไม่เข้าสต็อก กดซ้ำไม่ได้ → คืน claim (กฎเขียน DB ข้อ 6) |
+
+**✅ UX quick wins (05/10):** PPM ยอดผลิต 0 = "—" ไม่ใช่ 1,000,000 (`KpiMonthly` + `obeyaYear`) · `/program-update` ตั้งต้น "สำหรับผู้ใช้" ซ่อนเอกสาร/งานระบบ
+
+**⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
+- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/MtnAnalysis/ProductHistory/QualityBins/DailyReport live) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
+- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · OJT ลบผู้เข้าอบรม/ลายเซ็นก่อนบันทึก · Management 4M Man อัตโนมัติไม่กันซ้ำ · DailyReport ปิดกะตรง/ขอปิดตัดสินด้วย role · Checkin ข้าม 20:00 แล้วยกเลิกจองรถ OT · ด่านเวลาย้อนหลัง hardcode 08–20 · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ" · `/monitoring` `/mtn-analysis` `/nm-board` ไม่อยู่ในตาราง `/permissions` · legacy redirect PM ทิ้ง query
+**⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
+- 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
+- 🔴 edge แจ้งเตือน (`send-notification`/`-event-`/`-mtn-`/`-store-`/`-cqi15-`/`send-push`) `verify_jwt=false` ไม่เช็คผู้เรียก ⇒ ยิงแจ้งเตือนปลอม/ push ใครก็ได้จากภายนอก · `daily-4m-summary` รับ Bearer อะไรก็ได้
+- 🔴 `employees` UPDATE/DELETE `using(true)` · 🔴 `profiles` INSERT `with check(true)` (ถ้าเปิด sign-up = สมัครเองเป็น admin ได้)
+- 🟡 `org_nodes`/`section_signers` ไม่จำกัด "หน่วยตัวเอง" ฝั่ง server · `company_calendar`/`ojt_*` เขียนได้ทุกคน · `telegram-webhook` secret ว่าง = เปิด (ยังไม่ deploy)
+- MachineDatabase เปลี่ยน `machine_no` ไม่ cascade ประวัติ (ต้องตัดสินว่าจะ cascade หรือบล็อก)
+
 ### full QC audit หา zero-day (2026-09-02..04 · 10 รอบ) — สรุปคลาสบั๊ก
 รายละเอียดแต่ละรอบอยู่ในข้อความคอมมิท (`git log --grep="audit รอบ"`) · กฎที่ตกผลึกอยู่ CLAUDE.md §"กฎเหล็กการเขียน DB จาก client"
 - **วิธีที่ได้ผล:** ทุก finding วัดกับฐานจริงก่อนตัดสิน · เทส RLS ต้อง**สวมบทผู้ใช้จริง** (`set_config('request.jwt.claims', …)` + `set local role authenticated` ปิดท้าย `raise exception 'RESULT: %'` ให้ rollback) — service role bypass RLS แล้วหลอกว่าผ่าน · เช็คชื่อคอลัมน์จริงก่อนเขียนคิวรีเทส

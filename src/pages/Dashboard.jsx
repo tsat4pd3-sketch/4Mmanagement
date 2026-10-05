@@ -2130,7 +2130,7 @@ export default function Dashboard() {
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
-                                {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                                {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                     {row.label}

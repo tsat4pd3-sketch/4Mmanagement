@@ -16,7 +16,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
-import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -875,7 +875,7 @@ export default function ProductMaster() {
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
-              กด "แก้ไข" แล้วใส่ช่อง <b>"ทำต่อจากของชิ้นไหน"</b>
+              กด "แก้ไข" แล้วใส่ช่อง <b>"ยอดของขั้นนี้ไปรวมกับพาร์ทจริงตัวไหน"</b>
             </span>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
               ({risky.map(r => `${r.item.mat_no} → ${r.candidates.join('/')}`).join(' · ')})
@@ -993,6 +993,13 @@ export default function ProductMaster() {
                         <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: item.op_parent_mat ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
                           title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
                           🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                        </span>
+                      )}
+                      {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
+                      {rawAsOutputWarning(item.mat_no, item.is_operation) && (
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700 }}
+                          title={rawAsOutputWarning(item.mat_no, item.is_operation)}>
+                          ⚠ วัตถุดิบ ไม่ใช่ของที่ผลิตได้
                         </span>
                       )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
@@ -1321,7 +1328,7 @@ export default function ProductMaster() {
                     {/* 🔩 คำถามเดียวที่ระบบต้องการคำตอบ: "ยอดของขั้นนี้ไปซ้ำกับใบผลิตของใคร"
                         **ไม่บังคับ** — user 2026-09-16 "ทุกขั้นก็มองเป็นพาร์ทตัวใหม่ได้ ไม่อยากให้มีหลายแบบ"
                         (เคยแยก op_kind sequence/assembly แล้วถอดออกวันเดียวกัน — ถามคำถามผิด) */}
-                    <Field label="ทำต่อจากของชิ้นไหน (ว่างได้)">
+                    <Field label="ยอดของขั้นนี้ไปรวมกับพาร์ทจริงตัวไหน — MAT SAP (ว่างได้)">
                       {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
                           เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
@@ -1344,8 +1351,8 @@ export default function ProductMaster() {
                               tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
                           return [...real, ...bought];
                         })()}
-                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ของที่ประกอบมาไม่มีใบผลิตของตัวเอง)"
-                        hint="ใส่เมื่อของที่ขั้นนี้รับมา **มีใบผลิตของตัวเอง** (ไม่งั้นชิ้นเดียวกันถูกนับ 2 รอบ) · ประกอบจากหลายชิ้นที่ไม่มีใบผลิตของตัวเอง = ปล่อยว่าง · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ไม่มีพาร์ทจริงให้ยอดไปซ้ำ)"
+                        hint="ชิ้นงานเดียวกันถูกนับ 2 รอบ (ใบของขั้น + ใบของพาร์ทจริง) — ชี้ว่าไปซ้ำกับตัวไหน ระบบจะยุบยอดขั้นเข้าพาร์ทนั้น · **ปลายทางต้องเป็นพาร์ทจริงที่มีใบผลิต (1xxx FG / 2xxx ผลิตเอง)** · เป็น sub ของ sub = ชี้ไปที่ขั้นอื่นก่อนได้ แต่สุดท้ายต้องจบที่ 1xxx/2xxx · ของซื้อนอก (3xxx) / วัตถุดิบ (5xxx) ไม่มีใบผลิต ⇒ ผูกไปก็ไม่มีผล · ไม่มีตัวให้ซ้ำ = ปล่อยว่าง (ถูกแล้ว ไม่ใช่กรอกไม่ครบ) · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
@@ -1353,9 +1360,10 @@ export default function ProductMaster() {
                     {/* ⚠️ บอกเมื่อค่าไม่สอดคล้องกับสูตรจริง ห้ามเงียบ
                         (แต่ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — นั่นคือเรื่องปกติ) */}
                     {(() => {
-                      const cur = editing !== 'new' ? items.find(i => i.id === editing) : null;
-                      const own = cur ? bomRows.filter(b => b.product_id === cur.id).map(b => b.mat_no) : [];
-                      const issues = opLinkIssues({ ...form, is_operation: true }, own);
+                      /* ไล่สาย "ขั้น → ขั้น → พาร์ทจริง" ให้ด้วย (sub ของ sub · user 05/10) */
+                      const opOf = (m) => items.find(i => i.is_operation
+                        && String(i.mat_no ?? '').trim().toUpperCase() === String(m ?? '').trim().toUpperCase())?.op_parent_mat;
+                      const issues = opLinkIssues({ ...form, is_operation: true }, { parentOf: opOf });
                       if (!issues.length) return null;
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1400,7 +1408,7 @@ export default function ProductMaster() {
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -3260,7 +3268,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];

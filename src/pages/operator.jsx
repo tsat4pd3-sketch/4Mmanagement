@@ -1239,6 +1239,7 @@ export default function Operator() {
                           <img
                             src={emp.image_url}
                             alt=""
+                            loading="lazy"
                             style={{
                               width: 42, height: 42, borderRadius: 9,
                               objectFit: 'cover', display: 'block',
