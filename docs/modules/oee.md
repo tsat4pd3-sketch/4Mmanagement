@@ -2054,3 +2054,12 @@ update public.production_sessions s set oee_p = a.oee_p_old, oee = a.oee_old
   (20 กะในฐานเข้าข่าย แต่ทั้งหมดไม่มีใบผลิตเลย ⇒ ไม่มี MAT ⇒ ไม่มี CT อยู่ดี)
 - **`prod_orders.qty_ng` ยังเป็นคอลัมน์ตาย** (ทั้งตาราง = 0) — `ngFromOrders` ใน `computeLiveOee`
   จึงบวกได้ 0 เสมอ **ห้ามหลงไปใช้คอลัมน์นี้** NG ที่เชื่อถือได้มีที่เดียวคือ `defect_logs`
+
+---
+
+## 🔴 QC audit 05/10 — ช่วงพักบนบอร์ดไทม์ไลน์ = `halfDayBreakIntervals()` ที่เดียว
+- บอร์ดกริด 24 ชม. (Dashboard · /management · Heijunka รอบส่ง + PlannerStrip) เคยก๊อปสูตรช่วงพักเอง 4 จุด ไม่กรอง `ot_scope`/process
+  ⇒ 5ส.(ไม่ทำโอ) 17:10 กับพักโอ 17:30/19:40 ขึ้นพร้อมกัน · PlannerStrip วางพักกะดึกหลังเที่ยงคืนไว้ "เช้าวันงาน" (ผิดวัน)
+- `halfDayBreakIntervals({ policies, half: { key: 'am'|'pm', startMs }, processType })` → `breakIntervalsIn` (กรอบ 12 ชม.)
+  · กรอบครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`) · `processType` null = เฉพาะ common (ข้อมูล 05/10 ทุกแถวเป็น common = ไม่มีผลวันนี้)
+  · ด่าน `timeline-break-intervals-via-helper` ใน regressionGuards · เทสใน `oeeLive.test.mjs`

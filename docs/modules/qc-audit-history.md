@@ -58,9 +58,27 @@
 | 16 | `OrgSetup.jsx` | บันทึก/เปิด-ปิด/ลบ นับแถว (RLS 0 แถว = แจ้ง ไม่ขึ้นเขียว) |
 | — | `LineSetup.jsx` `wip_buffer_points` | **ไม่แก้ — รายงาน:** เขียนแค่ rename cascade (คงประวัติให้ชื่อตรง) + ลบตอนลบไลน์ทั้งไลน์ · ไม่ได้เขียนยอด/เรียก `wip_point_add_qty` · จะเลิกลบประวัติตอนลบไลน์ไหม = ให้ user ตัดสิน |
 
+**✅ แก้แล้ว (batch planning/store · branch `fix/qc-planning-store`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 17 | `PlannerSales.jsx` ลบไฟล์ | 🔴 detach ใบประวัติด้วยตัวกรอง (ไม่ใช่ `.in()` ยาว) · นับ exact ก่อน/หลัง · ไม่เท่ากัน = ยกเลิกการลบ (FK cascade จริง) |
+| 18 | `PlannerSales.jsx` EDI | insert ก่อน → ลบฉบับเดิมตาม id (ทีละ 200) · ล้ม = ถอย batch ใหม่ · ใบวันเก่า/ที่ทำแล้วอ่านแบ่งหน้า+เช็ค error · ship_to upsert/จับคู่ MAT เช็คผล |
+| 19 | `PlannedLotQueue.jsx` | 🔴 โหลดใบผลิตทุกกะของไลน์+วันงานเอง (`production_sessions!inner`) · stale guard · โหลดไม่ได้ = แถบเตือน |
+| 20 | `ProdLotPlanner.jsx` | หลัง insert โหลดใหม่เสมอ (กันล็อตซ้ำ) · UPDATE 0 แถว = ล้ม · โหลดใบผลิตล้ม = แถบเตือน |
+| 21 | `HeijunkaKanban.jsx` | ตัดสต็อกล้ม → ลองใหม่ก่อน "ถึงไลน์" (กันตัดซ้ำจาก note) · รับไม่ครบ ledger ล้ม = คืน claim · demand แบ่งหน้า+error · carry_over/imported = `qty_actual` |
+| 22 | ช่วงพักบอร์ดไทม์ไลน์ | `halfDayBreakIntervals()` แทนสูตรก๊อป 4 จุด (Heijunka ×2 · Dashboard · Management) + ด่าน + เทส |
+| 23 | `deliveryRounds.js` `timeStrToMs` | 🔴 ทุกเวลาเลื่อน +8 ชม. (ฐาน 08:00 + ชั่วโมงเต็ม) → ฐานเที่ยงคืน · เทสใหม่ |
+| 24 | `CustomerDemand.jsx` advance | ตัดสต็อก FG ล้ม = คืนสถานะใบ + ไม่ยิงแจ้ง "ส่งแล้ว" |
+| 25 | `RackCenter.jsx` | เลื่อนขั้น/ยกเลิก/จ่าย packaging = CAS + นับแถว |
+| 26 | `FlowTower.jsx` | "ผลิตวันนี้" = `orderDonePcs` + fetchByIds + ล้ม = "—" · poll ผ่าน `makeIdleGate` (floor `RATE.SLOW`) |
+| 27 | `planLots.js` `orderDonePcs` | ใช้ `orderInQty` (ห้ามถอยไปเป้า) · cancelled = 0 · null-safe · เทส |
+| 28 | `ProductHistory` / `OrderTrace` | stale guard · ค้นล้มขึ้นแถบแดง · `orIlike()` escape `,()` (`pgrstFilter.js` + เทส) · ช่องค้น+ปุ่มกลุ่มเดียว placeholder สั้น |
+| 29 | `MonitoringUpload.jsx` | ส่วนต่างสต็อกคิดใหม่จากยอดสดตอนยืนยัน (`stockAdjustPlan` + เทส) · ข้อความล้มบอกตรงว่าข้อมูลบางขั้นถูกล้าง |
+| 30 | `Transport.jsx` saveStops / `PullSignalUpload.jsx` | เส้นทาง insert-first (seq สลับช่วง) · ตัวนับ batch e-SMART นับแถว |
+
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/MtnAnalysis/ProductHistory/QualityBins) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
-- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ"
+- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/MtnAnalysis/QualityBins) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
+- ข้อมูล/สต็อก: MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ"
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
 - 🔴 edge แจ้งเตือน (`send-notification`/`-event-`/`-mtn-`/`-store-`/`-cqi15-`/`send-push`) `verify_jwt=false` ไม่เช็คผู้เรียก ⇒ ยิงแจ้งเตือนปลอม/ push ใครก็ได้จากภายนอก · `daily-4m-summary` รับ Bearer อะไรก็ได้

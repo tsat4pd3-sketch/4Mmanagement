@@ -996,13 +996,18 @@ export default function OrderTrace() {
             onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
           รวมใบที่กำลังผลิต
         </label>
-        <SearchInput value={search} onChange={v => { setSearch(v); setJulYear(null); }}
-          onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
-          fields="PROD.NO (สแกนได้) / MAT.NO / ชื่อชิ้นงาน / เลข Julian เช่น 24726A" autoFocus />
-        <button onClick={() => doSearch()} disabled={searching}
-          style={{ padding: '0 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
-          {searching ? '⏳' : 'ค้นหา'}
-        </button>
+        {/* ช่องค้นหา + ปุ่มค้นหา = กลุ่มเดียวกัน (UX audit 05/10) — เดิมช่อง grow ยืดเต็มแถวแล้วปุ่มไปอยู่สุดขอบ
+            + placeholder ยาวจนถูกตัด ("…เลข Julian เช่น 24726A" ไม่เคยโชว์ครบ) ⇒ ป้ายสั้น · รายละเอียดอยู่ใน title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 360px', minWidth: 0, maxWidth: 640 }}
+          title="สแกนบาร์โค้ด PROD.NO หรือพิมพ์ MAT.NO / ชื่อชิ้นงาน / เลข Julian บนชิ้นงาน (เช่น 24726A)">
+          <SearchInput value={search} onChange={v => { setSearch(v); setJulYear(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
+            fields="PROD.NO / MAT / ชื่อชิ้นงาน / Julian" autoFocus />
+          <button onClick={() => doSearch()} disabled={searching}
+            style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
+            {searching ? '⏳' : 'ค้นหา'}
+          </button>
+        </div>
         {sel && <>
           <span className="spacer" />
           <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>✕ ปิด — ดูใบอื่น</button>

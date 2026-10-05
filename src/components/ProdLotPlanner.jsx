@@ -278,19 +278,24 @@ export default function ProdLotPlanner({
       ? checkWrite(await supabaseDR.from('production_plan_lots').insert(news).select('id'), 'บันทึกล็อตใหม่')
       : false;
     if (news.length && !insertedNew) ok = false;
+    let zeroRows = 0;   // UPDATE ที่ไม่เจอแถว (ถูกลบ/สิทธิ์) = "สำเร็จ 0 แถว ไม่มี error" — ต้องนับ (กฎเขียน DB ข้อ 2)
     for (const r of olds) {
       const { id, ...upd } = r;
-      ok = checkWrite(await supabaseDR.from('production_plan_lots').update(upd).eq('id', id).select('id'), 'อัพเดทล็อต') && ok;
+      const res = await supabaseDR.from('production_plan_lots').update(upd).eq('id', id).select('id');
+      if (!checkWrite(res, 'อัพเดทล็อต')) ok = false;
+      else if (!res.data?.length) { zeroRows++; ok = false; }
     }
+    if (zeroRows) toast.error(`อัพเดทไม่ติด ${zeroRows} ล็อต (ไม่พบแถวในฐาน — ถูกลบ/ไม่มีสิทธิ์) — โหลดแผนล่าสุดแล้วตรวจอีกครั้ง`);
     setSaving(false);
     if (ok) {
       const shifts = new Set(rows.map(r => `${r.work_date}|${r.shift}`)).size;
       toast.success(`บันทึกแผน ${rows.length} ล็อต · ${shifts} กะ ✓`);
       await load();
-    } else if (insertedNew) {
+    } else if (insertedNew || zeroRows) {
       /* 🔴 QC 05/10 — ล็อตใหม่ลงฐานแล้ว แต่ในจอยังเป็น `_new` ไม่มี id ⇒ กดบันทึกซ้ำ = insert ล็อตซ้ำ
-         ⇒ บันทึกล้มบางส่วนก็ต้องโหลดจากฐานใหม่ (ล็อตใหม่ได้ id) · ที่อัพเดทไม่ติดให้คนแก้ซ้ำ */
-      toast.error('บันทึกได้บางส่วน — ล็อตใหม่ลงแล้ว โหลดแผนล่าสุดจากฐานให้แล้ว ตรวจรายการที่อัพเดทไม่ติดแล้วบันทึกซ้ำ');
+         ⇒ หลังขั้น insert สำเร็จ **ต้องโหลดจากฐานใหม่เสมอ** (ล็อตใหม่ได้ id) แม้ขั้นอัพเดทจะล้ม
+         ราคาที่จ่าย: ค่าที่แก้แต่อัพเดทไม่ติดกลับเป็นค่าในฐาน — บอกตรงๆ ให้แก้ซ้ำ (ดีกว่าล็อตซ้ำเงียบ) */
+      toast.error('บันทึกได้บางส่วน — โหลดแผนล่าสุดจากฐานแล้ว ล็อตที่อัพเดทไม่ติดกลับเป็นค่าเดิม แก้แล้วบันทึกอีกครั้ง');
       await load();
     }
   };
