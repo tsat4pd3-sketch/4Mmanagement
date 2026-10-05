@@ -23,6 +23,7 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
+import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
@@ -393,18 +394,7 @@ const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, search, o
 };
 // ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
 const COMPACT_W = 820;
-const polyArea = (pts) => {
-  let a = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
-  return Math.abs(a) / 2;
-};
-const centroid = (pts) => pts.length
-  ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
-  : [50, 50];
-// จุดยึดป้าย = กึ่งกลางแนวนอน + ขอบบนสุดของ polygon → ป้ายเกาะขอบบน ไม่ทับกลางผังไลน์ (2026-07-22)
-const labelAnchor = (pts) => pts.length
-  ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
-  : [50, 50];
+// polyArea/centroid/labelAnchor ย้ายไป utils/regionGeom.js (05/10 — ใช้ร่วมกับ <FactoryMiniMap> จอ TV)
 const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
