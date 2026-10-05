@@ -17,10 +17,11 @@ import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { toast } from './Toast';
 import PageHeader from './PageHeader';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
-import { tooltipProps, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { tooltipProps, CELL_BAR_FILL, focusDomain, axisUnitLabel, axisUnitTop } from '../utils/chartAxis';
 import { pickBoardRows, normKpiRowName } from '../utils/kpiBoardRows';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
@@ -409,7 +410,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           series.push({ k: SUMMARY_KEY, v: total, summary: true, kind: 'sum' });
           months = upto.length; sumKind = 'sum';
           def = { target_value: 0, direction: 'down' };
-          note = `นับจากบันทึกหน้างาน (safety_events) · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
+          note = `นับจากบันทึกเหตุการณ์ความปลอดภัยหน้างาน · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
         } else {
           series = monthKeys(year).map(k => ({ k, v: null, empty: true })).concat([{ k: SUMMARY_KEY, v: null, summary: true }]);
           note = 'ยังไม่มีใครบันทึกเหตุการณ์ และยังไม่กรอกสรุปจากหน่วยงานความปลอดภัย';
@@ -487,15 +488,17 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     if (!data) return [];
     const acts = (data.actions || []).map(a => ({
       id: `a-${a.id}`, icon: a.source === 'obeya' ? '🏛️' : '🌅', kind: 'action',
-      title: a.problem || '(ไม่ได้ระบุปัญหา)',
+      // หัวข้อว่าง/ช่องว่างล้วน = เขียนให้รู้ว่าว่าง ห้ามปล่อยแถวไม่มีชื่อ (UX audit 05/10)
+      title: (a.problem || '').trim() || '(ไม่มีหัวข้อ)',
       meta: [a.line_name, a.assignee ? `ผู้รับผิดชอบ ${a.assignee}` : 'ยังไม่ระบุผู้รับผิดชอบ'].filter(Boolean).join(' · '),
       due: a.due_date || null, color: '#3b82f6', to: a.source === 'obeya' ? '/obeya?tab=sqdcm' : '/morning-meeting',
     }));
     const sf = (data.safety || []).filter(e => e.status === 'open').map((e) => {
       const k = safetyKind(e.kind);
       return {
-        id: `s-${e.id}`, icon: k.icon, kind: 'safety', ev: e,
-        title: `${k.short} — ${e.description}`,
+        id: `s-${e.id}`, icon: k.unknown ? '🦺' : k.icon, kind: 'safety', ev: e,
+        /* ชนิดที่ไม่อยู่ในทะเบียน = safetyKind คืน short '?' ⇒ เดิมขึ้น "? — …" (UX audit 05/10) — เขียนเป็นคำแทน */
+        title: `${k.unknown ? 'ไม่ระบุชนิด' : k.short} — ${(e.description || '').trim() || '(ไม่มีรายละเอียด)'}`,
         meta: [e.line_name, e.employee_name].filter(Boolean).join(' · ') || 'ยังไม่ปิดเคส',
         due: null, color: k.color, to: null, warn: !e.countermeasure ? 'ยังไม่ได้ลงมาตรการแก้ไข' : null,
       };
@@ -630,13 +633,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {/* 🔴 กติกาความซื่อสัตย์: แกนไม่เริ่ม 0 ต้องเขียนบนจอ — ตัวร่วมใน ObeyaSheet (SQDCM %Q ใช้ตัวเดียวกัน) */}
       {focus && <FocusAxisNote k={kk} loText={nf(focus.domain[0], r.dec)} />}
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: r.unit ? fs(21) : fs(12), right: 6, left: 4, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: r.unit ? axisUnitTop(fs(9.5), fs(6)) : fs(12), right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={yDomain} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
-            label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
+            label={axisUnitLabel(r.unit, { fontSize: fs(9.5), lift: fs(6) })} />
           <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
@@ -729,7 +732,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {!board && (
         <PageHeader
           tabs={tabs} tab={tab} onTab={onTab}
-          title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
+          title={OBEYA_TITLE} icon={OBEYA_ICON}
           sub={`KPI ที่ตั้งไว้ของ ${scopeText}${members.ccs.length && members.ccs.length <= 3 ? ` (cost ${members.ccs.join(' · ')})` : ''} · ${monthText} · ประเมินได้ ${overall.known}/${overall.total} ช่อง`}
           filters={controls}
           actions={(
@@ -813,7 +816,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? '#ef4444' : x.color}` }}>
                         <span style={{ fontSize: fs(11) }}>{x.icon}</span>
                         <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.title}</span>
-                        <span style={{ fontSize: fs(10), color: late ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        {/* ป้ายท้ายแถวห้ามกินที่ชื่อเรื่องจนหาย (UX audit 05/10: ชื่อไลน์ยาว → หัวข้อกว้าง 0) */}
+                        <span style={{ fontSize: fs(10), color: late ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap', maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>
                           {x.warn ? `⚠ ${x.warn}` : (x.due ? `ครบ ${x.due}` : x.meta)}
                         </span>
                       </div>

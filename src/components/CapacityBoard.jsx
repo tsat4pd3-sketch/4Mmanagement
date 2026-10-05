@@ -5,6 +5,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
+import { fetchOeeTargets } from '../utils/oeeMasters';
 import FilterBar from './FilterBar';
 import LineSelect from './LineSelect';
 import { pairLoadTotal } from '../utils/pairTotals';
@@ -55,6 +56,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
   const [oeeMode, setOeeMode]   = useState('actual'); // 'actual' | 'target' — ตัวเลขในตารางยึดเส้นไหน
   const [lineName, setLineName] = useState('');
   const [targets, setTargets]   = useState({});      // group_name → แถว oee_targets
+  const [tgErr, setTgErr]       = useState(false);   // โหลดเป้า OEE ไม่ได้ = กำลังใช้ค่ามาตรฐาน ต้องบอกบนจอ
   const [draft, setDraft]       = useState({});      // key → { hours_per_day, day_source }
   const [saving, setSaving]     = useState(false);
 
@@ -63,12 +65,14 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       supabaseDR.from('capacity_shift_patterns')
         .select('key, label, hours_per_day, day_source, sort_order, color, is_active, note')
         .eq('is_active', true).order('sort_order'),
-      supabaseDR.from('oee_targets').select('group_name, target_a, target_p, target_q'),
+      /* 05/10 (QC audit): `oee_targets` อยู่ **Main** — เดิมอ่านผ่าน supabaseDR (ตารางไม่มีฝั่ง DR = 42P01)
+         แล้วไม่เช็ค error ⇒ ทุกไลน์ได้ "เป้ามาตรฐาน 80.2%" เงียบๆ แทนเป้าที่ทีมตั้งไว้จริง */
+      fetchOeeTargets(),
     ]);
     // ทะเบียนยังไม่ได้ apply / โหลดไม่ได้ → ถอยไปใช้ค่า seed (จอไม่พัง) **แต่ต้องขึ้นจอบอก ห้ามเงียบ**
     if (pat.error || !pat.data?.length) { setPatterns(SEED_PATTERNS); setPatErr(true); }
     else { setPatterns(pat.data); setPatErr(false); }
-    setTargets(Object.fromEntries((tg.data || []).map(r => [r.group_name, r])));
+    setTargets(tg.byGroup || {}); setTgErr(!!tg.error);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -209,6 +213,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         <div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>OEE เป้า (A×P×Q)</div>
           <div style={{ fontSize:20, fontWeight:800, color:'#f59e0b' }}>{(oee.target * 100).toFixed(1)}%</div>
+          {tgErr && <div style={{ fontSize:11, color:'#ef4444', fontWeight:700 }}>⚠️ โหลดเป้าไม่ได้ — นี่คือค่ามาตรฐาน ไม่ใช่เป้าที่ทีมตั้ง</div>}
         </div>
         {oee.hasActual && (
           <div style={{ fontSize:12, color: oee.actual >= oee.target ? '#22c55e' : '#ef4444', fontWeight:700 }}>

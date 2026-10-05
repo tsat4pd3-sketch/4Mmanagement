@@ -91,6 +91,17 @@ const RULES = [
     allow: { 'src/lib/pmChecklists.js': 'คัดลอกทับแผนกอื่น (ผู้ใช้กด "ทับ" เอง) — เช็คก่อนว่าปลายทางไม่มีประวัติผลตรวจ มี = โยน error ไม่ลบ' },
   },
   {
+    id: 'order-plan-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการรวม "เป้า" ของใบผลิตด้วย qty_target ?? qty ดิบ (ไม่สนสถานะ) */
+    re: /target\s*\+=\s*\(?\s*\w+\.qty_target\s*\?\?\s*\w+\.qty\b/g,
+    why: 'ใบยกยอด (`imported`) ถือเป้าเต็มไว้ ขณะที่กะถัดไปออกใบใหม่ด้วยยอดที่เหลือ ⇒ Σ เป้าดิบนับ 2 รอบ '
+       + '(35 + 30 = 65 ทั้งที่งานจริง 35) + นับใบยกเลิกด้วย · QC 05/10: จอเดโม Obeya/FactoryMap/GroupOverview/'
+       + 'DeptDashboard ขึ้น "ผลิตได้ 71% ของแผน" ทั้งที่จบครบ',
+    fix: 'ใช้ `orderPlanQty(o)` จาก src/utils/oee.js §6.1 (คู่กับ orderProducedQty)',
+    allow: {},
+  },
+  {
     id: 'die-set-kinds-from-registry',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
@@ -106,7 +117,9 @@ const RULES = [
     id: 'master-cache-swallow',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
-    re: /cachedMaster\([^\n]*\.data\s*\|\|\s*\[\]/g,
+    /* 05/10 ขยายเป็น 2 บรรทัด — loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` หลบด่านเดิมได้ทั้งที่กลืน error เหมือนกัน
+       (เจอจริง: FactoryMap dr_products:ct / kanban_standards:ct / break_policies:active / machines:* · LineOeeBoard) */
+    re: /cachedMaster\([^\n]*(?:\n[^\n]*)?\.data\s*\|\|\s*\[\]/g,
     why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
        + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
        + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
@@ -1363,10 +1376,13 @@ test('🛡️ unfiltered-session-bump-needs-shift-tier — bump ที่เก�
 
 test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
-  /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
+  /* ยกเว้นรายคิวรี — ต้องเขียนเหตุผลทุกตัว · 05/10: เปลี่ยนจาก "ไฟล์:บรรทัด" เป็น "ไฟล์ + ข้อความใน select"
+     (คีย์บรรทัดเลื่อนทุกครั้งที่ใครแก้ไฟล์ข้างบน ⇒ ด่านล้มทั้งที่คิวรีเดิมไม่ได้เปลี่ยน) */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1285': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1350': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx': [
+      ["select('session_id, qty_ng, qty_suspect')", 'แผงทบทวนทั้งวัน — NG ดิบของไลน์ (ไม่ได้เอาไปคิด %Q · %Q ใช้ค่า stamp ของกะ)'],
+      ['qty_suspect, qty_repair, description', 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว'],
+    ],
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -1381,7 +1397,7 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
       if (!win.includes('qty_suspect')) continue;             // ไม่ได้ดึงของสงสัยมา = ไม่เกี่ยว
       const line = code.slice(0, m.index).split('\n').length;
       const key = `${rel}:${line}`;
-      if (ALLOW[key]) continue;
+      if ((ALLOW[rel] || []).some(([snip]) => win.includes(snip))) continue;
       if (!win.includes('QBIN_EMBED')) bad.push(key);
     }
   }
@@ -1468,6 +1484,8 @@ test('🛡️ ตัวสแกนต้องไม่พลาดของจ
    vsmLive · monthlyReviewPptx ×2 · VSM) — จุดสุดท้าย QC audit เองก็ตกหล่น เพราะ VSM
    ไม่ได้ import wLoad ตรงๆ แต่เซ็ต `s.plannedMin` ให้ util ไปใช้ */
 const BREAK_AWARE = /dtMinBySession|dtMinOutsideBreaks|breakIntervalsIn|policyBreakForShift|policyBreakOverlapMin/;
+// สูตรน้ำหนักที่เขียนเองในหน้า: `(s.shift_min || 570) - plannedMin` · `r.shift_min - r.plannedMin`
+const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
@@ -1483,7 +1501,11 @@ test('🛡️ no-wload-without-break-helper — ไฟล์ที่ถ่ว�
     const rel = relative(ROOT, file);
     if (WLOAD_ALLOW[rel] || rel === 'src/utils/oee.js') continue;
     const code = stripComments(readFileSync(file, 'utf8'));
-    if (!/^import[^\n]*\bwLoad\b/m.test(code)) continue;   // ใช้จริง ไม่ใช่แค่ชื่อคล้าย (borrowLoading ฯลฯ)
+    /* 05/10 (QC audit) ขยาย: นอกจาก import wLoad แล้ว ยังจับ "สูตรน้ำหนักเขียนเอง" `shift_min − planned…`
+       (GroupOverview/DeptDashboard เขียนตรงๆ ไม่ import wLoad ⇒ หลุดด่านเดิม ทั้งที่หักพักซ้ำจริง) */
+    const usesWLoad = /^import[^\n]*\bwLoad\b/m.test(code)   // ใช้จริง ไม่ใช่แค่ชื่อคล้าย (borrowLoading ฯลฯ)
+      || INLINE_WLOAD.test(code);
+    if (!usesWLoad) continue;
     if (!BREAK_AWARE.test(code)) hits.push(rel);
   }
   assert.deepEqual(hits, [],

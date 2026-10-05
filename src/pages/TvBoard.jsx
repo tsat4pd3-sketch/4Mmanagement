@@ -72,6 +72,11 @@ export default function TvBoard() {
   const [lines, setLines] = useState([]);
   const [d, setD] = useState(null);
   const [err, setErr] = useState(null);
+  /* ทะเบียนไลน์: 'loading' | 'ok' | 'empty' | ข้อความ error — 05/10 (QC audit): เดิม `.catch(() => setLines([]))`
+     ⇒ โหลดล้ม = lines ว่างตลอดกาล ⇒ loader ไม่ยิง ⇒ จอ TV ค้าง "กำลังโหลด..." ทั้งวันโดยไม่มีใครรู้
+     ตอนนี้: ล้ม = เขียนบนจอ + ลองใหม่เองทุก 30 วิ (จอไม่มีคนเฝ้า) + ปุ่มลองใหม่ */
+  const [linesState, setLinesState] = useState('loading');
+  const [linesTry, setLinesTry] = useState(0);
   const [fs, setFs] = useState(false);
   const [barOpen, setBarOpen] = useState(false);   // แถบตั้งค่า — พับไว้ จอ TV ต้องเป็นเนื้อหาล้วน
   const workDate = getWorkDate();
@@ -80,8 +85,17 @@ export default function TvBoard() {
     /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
        25/09: เดิมตั้งคีย์ของตัวเอง (`production_lines:scope`) = แยก cache กับหน้าอื่นที่อ่านไลน์เหมือนกัน
        ⇒ ย้ายมาใช้ `loadProductionLines()` คีย์เดียวทั้งแอป (ดู src/utils/useProductionLines.js) */
-    loadProductionLines().then(d => setLines(d || [])).catch(() => setLines([]));
-  }, []);
+    let alive = true, t = null;
+    loadProductionLines()
+      .then(d => { if (!alive) return; setLines(d || []); setLinesState((d || []).length ? 'ok' : 'empty'); })
+      .catch(e => {
+        if (!alive) return;
+        console.error('[TvBoard] โหลดทะเบียนไลน์ไม่สำเร็จ:', e);
+        setLinesState(e?.message || String(e) || 'โหลดทะเบียนไลน์ไม่สำเร็จ');
+        t = setTimeout(() => setLinesTry(n => n + 1), 30000);
+      });
+    return () => { alive = false; if (t) clearTimeout(t); };
+  }, [linesTry]);
 
   useEffect(() => {
     const on = () => setFs(!!document.fullscreenElement);
@@ -135,9 +149,10 @@ export default function TvBoard() {
       if (planRes.error) throw planRes.error;
       const cls = clsRes.data || [];
       const eqIds = [...new Set(cls.map(c => c.equipment_id).filter(Boolean))];
-      const { data: jigs } = eqIds.length
+      const { data: jigs, error: jErr } = eqIds.length
         ? await supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name').in('id', eqIds)
         : { data: [] };
+      if (jErr) throw jErr;   // ไม่รู้ชื่ออุปกรณ์ = แผน PM ขึ้นไม่ครบ ห้ามเงียบ
       setD({ mo: moRes.data || [], plans: planRes.data || [], cls, jigs: jigs || [], loadErr: false });
       setErr(null);
     } catch (e) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); }
@@ -205,7 +220,16 @@ export default function TvBoard() {
           ⚠ โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})
         </div>
       )}
-      {!d && !err && (
+      {linesState !== 'loading' && linesState !== 'ok' && (
+        <div role="alert" style={{ background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 10, padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>⚠ {linesState === 'empty'
+            ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
+            : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
+          <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>↻ ลองใหม่</button>
+        </div>
+      )}
+      {!d && !err && (linesState === 'loading' || linesState === 'ok') && (
         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
       )}
       {d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />}

@@ -35,6 +35,17 @@ export const tooltipProps = (fontSize = AXIS_FS) => ({
 /** props ของ tick ที่อ่านออก — fontSize ไม่ต่ำกว่า 11 */
 export const axisTick = (extra = {}) => ({ fill: 'var(--muted)', ...extra, fontSize: Math.max(AXIS_FS, extra.fontSize || AXIS_FS) });
 
+/** ป้ายหน่วยเหนือแกน Y ("%" · "PPM" · "ครั้ง" · "บาท") + ระยะขอบบนที่ป้ายต้องใช้ — **คู่กันเสมอ** (05/10 · chartsweep)
+ *  เดิมตั้ง margin top ตายตัว (fs(21)) ⇒ กล่องข้อความไทยสูงเกือบ 2 เท่าของ font-size (สระ/วรรณยุกต์บน)
+ *  ⇒ "%"/"PPM" ยื่นเลยขอบบนของ SVG 4px · "ครั้ง" 6px แล้วถูกตัด (ป้ายหน่วยที่ถูกตัด = อ่านไม่ออกว่าหน่วยอะไร)
+ *  ใช้: `margin={{ top: unit ? axisUnitTop(fs) : …}}` + `<YAxis label={axisUnitLabel(unit, { fontSize: fs })}>` */
+export const axisUnitLabel = (unit, { fontSize = 9.5, lift = 6 } = {}) => (unit ? {
+  value: unit, position: 'top', offset: 2, dy: -lift,
+  fontSize, fill: 'var(--muted)', fontWeight: 700,
+} : undefined);
+/** margin top ที่ป้ายหน่วยต้องใช้: เผื่อกล่องข้อความไทย ~2×font-size + ระยะยก + offset */
+export const axisUnitTop = (fontSize = 9.5, lift = 6) => Math.ceil(fontSize * 2 + lift + 4);
+
 /** ขอบกราฟมาตรฐาน — ซ้ายไม่ติดลบ (แกน Y มีที่ของมันเอง) */
 export const CHART_MARGIN = Object.freeze({ top: 8, right: 12, left: 4, bottom: 0 });
 

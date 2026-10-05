@@ -390,3 +390,17 @@ select "ทุกส่วนงาน/PD1..PD4" บนหัวจอ SQDCM เ
   Esc ของ `SheetZoom` จะ**ไม่ปิด**ถ้ามี `.modal-scroll` ที่ zIndex สูงกว่าเปิดอยู่ (ไม่งั้น Esc ปิดชั้นล่างทั้งที่ชั้นบนยังค้าง)
 - กับดักที่เจอ: Tooltip ของ Recharts ไม่ตั้ง `cursor` = สี่เหลี่ยม `#ccc` ทึบ — ในแผ่นเล็กแทบไม่เห็น แต่ใน popup กลายเป็น
   ก้อนเทาบังแท่งทั้งแท่ง ⇒ `chartTip.cursor = { fill:'var(--text)', fillOpacity:0.08 }` ทั้ง 2 บอร์ด
+
+
+## 🧹 QC audit ก่อน roadshow (2026-10-05)
+- **แกน D:** เป้า = `orderPlanQty` / ทำได้ = `orderProducedQty` (oee.md §เป้าของใบผลิต) — เดิม Σqty ทุกสถานะ (ใบยกยอดนับ 2 รอบ)
+- **แกน C / Pareto ไม่มีข้อมูล = เทา "ยังไม่มีข้อมูล"** ห้ามเขียว "ไม่มีความสูญเสีย/ไม่มีเครื่องหยุด" — `axisCost`/`axisCostYear` รับ `sessions` (0 = `value:null, state:'none'`) ·
+  ไฟ `costStat`/`paretoStat` เช็ค `nSess` · ของเสียโหลดไม่ได้ = `dfBad` · **โหมดปี RPC ล้ม = ตั้ง `dtBad`/`dfBad`** (เดิมไม่ตั้งเลย)
+- **C เดือน = C ปี:** ตัดของเสียงานทดลอง (`isTrialDefect`) ออกเหมือนโหมดปี (`ng − trial_ng`)
+- stale-response: `loadBoard`/`loadYear` ผ่าน `useLatestRequest`
+- 💻 **จอเตี้ย < 800px (โน้ตบุ๊ก 1366×768) ไม่บีบลงจอเดียว** — กริดสูงคงที่ 760px แล้วหน้าเลื่อนได้ (`shortScreen` ใน `ObeyaSqdcmBoard`) · โหมดจอ TV ยังคุมเต็มจอ
+  เหตุผล: แผ่นเหลือ ~220px กล่องเตือนในแผ่นทับกราฟจนอ่านไม่ได้ — ข้อยกเว้นของ §บอร์ดไม่เลื่อน เฉพาะจอเตี้ย
+- **หัวเพจเดียวทุกแท็บ** `OBEYA_TITLE`/`OBEYA_ICON` (`utils/obeyaPage.js`) — แท็บ kpi/sqdcm/todo/table ห้ามตั้งชื่อ/ไอคอนเอง
+- ACTION BOARD: หัวข้อว่าง = "(ไม่มีหัวข้อ)" · ไม่มีผู้รับผิดชอบ = "ยังไม่ระบุผู้รับผิดชอบ" · เหตุการณ์ชนิดที่ไม่อยู่ในทะเบียน = "ไม่ระบุชนิด" (เดิม "?")
+- ข้อความบนจอห้ามมีชื่อตาราง/ฟังก์ชัน (`parts_master`, `safety_events`, `scoreDef`) — เขียนเป็นภาษาคน
+- ป้ายหน่วยแกน Y: `axisUnitLabel()` + `axisUnitTop()` (`utils/chartAxis.js`) คู่กันเสมอ (chartsweep: "%"/"ครั้ง" ยื่นเลยขอบบน 3–6px) · Pareto ชื่อยาวตัดด้วย `shortTick`

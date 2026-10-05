@@ -98,6 +98,17 @@ test('axisCost: ขาดอัตราค่าแรง/ต้นทุน = 
   assert.equal(ok.better, 'down');
 });
 
+test('⭐ axisCost: ไม่มีกะในช่วง = "ไม่มีข้อมูล" (null) ห้ามเป็น 0 บาท/เขียว "ไม่มีความสูญเสีย" (QC 05/10)', () => {
+  const none = axisCost({ dtBaht: 0, ngBaht: 0, sessions: 0 });
+  assert.equal(none.value, null);
+  assert.equal(none.state, 'none');
+  assert.match(none.note, /ยังไม่มีกะ/);
+  // มีกะผลิตจริงแต่ไม่เสียอะไร = 0 บาทได้ (ข้อเท็จจริง ไม่ใช่ข้อมูลขาด)
+  assert.equal(axisCost({ dtBaht: 0, ngBaht: 0, sessions: 12 }).value, 0);
+  // ไม่ส่ง sessions = พฤติกรรมเดิม
+  assert.equal(axisCost({ dtBaht: 0, ngBaht: 0 }).value, 0);
+});
+
 test('axisMan: อัตรามาทำงาน + แยกจำนวนมา/ขาด', () => {
   const logs = [
     { work_date: '2026-09-01', is_present: true },

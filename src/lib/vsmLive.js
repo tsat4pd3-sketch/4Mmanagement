@@ -16,7 +16,7 @@
  * ⚠️ ชั้นนี้เป็น "มุมมองสด" เท่านั้น — ห้ามเอาไป stamp/บันทึกทับ snapshot ของใบ VSM
  */
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
-import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession } from '../utils/oee.js';
+import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession, orderPlanQty } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
@@ -147,7 +147,7 @@ export function buildVsmLive({
         orderCount += 1;
         // สูตรบังคับ "ผลิตได้ระหว่างกะ" — ห้ามเปลี่ยน (CLAUDE.md §ยอดที่จะส่งต่อกะหน้า)
         produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
-        target += (o.qty_target ?? o.qty ?? 0);
+        target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด · ใบยกเลิก = 0 (oee §6.1 · 05/10)
       });
     });
     byKey[b.key] = { ...lv, produced, target, orderCount };

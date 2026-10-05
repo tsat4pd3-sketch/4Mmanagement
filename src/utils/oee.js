@@ -51,13 +51,32 @@ import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
    ✅ ไม่ double count: ตอนรับยอด กะถัดไปเปิดใบใหม่ด้วย **ยอดที่เหลือ** เท่านั้น
       (`remainQty = qty − qty_actual` ใน handleImportCarryOrders) → 5 (ต้นทาง) + 30 (ปลายทาง) = 35 ✅
 
-   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — เป้าของใบ `imported` ถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว
-      จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม ไม่งั้นเป้าถูกนับซ้ำ  */
+   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — ใช้ `orderPlanQty()` (§6.1 ข้างล่าง) ที่เดียว
+      (เป้าของใบ `imported` ส่วนที่ยังไม่ทำถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว)  */
 export function orderProducedQty(o) {
   if (!o) return 0;
   return o.status === 'confirmed'
     ? Number(o.qty_ok ?? o.qty ?? 0)
     : Number(o.qty_actual ?? 0);
+}
+
+/* ═══ 6.1) "เป้า/แผน" ของใบผลิต 1 ใบ — คู่กับ orderProducedQty (QC audit 05/10 · roadshow) ═══
+   เดิมแต่ละจอคิดเป้าเอง 3 แบบ: (ก) Σqty ทุกสถานะ (Obeya/FactoryMap/GroupOverview/DeptDashboard)
+   ⇒ ใบยกยอดถูกนับเป้า 2 รอบ: ต้นทาง 35 + ปลายทาง 30 = 65 ทั้งที่งานจริง 35 (จอเดโมขึ้น 71% แทน 100%)
+   (ข) ตัด imported/carry_over ทิ้งทั้งใบ (MorningMeeting) ⇒ ยอดผลิตของต้นทางยังนับ แต่เป้าหาย = เกิน 100%
+   กติกาเดียว (นับเป้าครั้งเดียวทั้งสาย ไม่ว่าจะยกกี่ทอด):
+     · `cancelled`  → 0 (ยกเลิกแล้ว ไม่ใช่แผน)
+     · `imported`   → min(เป้า, qty_actual) = ส่วนของเป้าที่ "ใช้ไปในกะนี้" — ที่เหลือถูกออกใบใหม่ที่กะถัดไป
+                      ด้วย `qty − qty_actual` แล้ว (handleImportCarryOrders) ⇒ 5 + 30 = 35 ✅
+     · `carry_over` → เป้าเต็ม (ยังไม่มีใครรับไป = ส่วนที่เหลือยังไม่ได้ออกใบที่ไหน — ตัดทิ้ง = แผนหายเงียบ)
+     · อื่นๆ        → `qty_target ?? qty` (ใบ manual/ปิดยอดเศษเก็บเป้าเดิมไว้ที่ qty_target)
+   ⚠️ trade-off ที่ยอมรับ: กะต้นทางที่ส่งงานต่อ จะเห็นเป้าของใบนั้น = ยอดที่ทำได้ (ส่วนที่เหลือย้ายไปกะถัดไป)
+   🔴 จุดที่รวม "เป้า" ของใบผลิตต้องเรียกตัวนี้ **ห้ามเขียน `o.qty_target ?? o.qty` / `Number(o.qty)` เองในหน้า** */
+export function orderPlanQty(o) {
+  if (!o || o.status === 'cancelled') return 0;
+  const t = Number(o.qty_target ?? o.qty ?? 0) || 0;
+  if (o.status === 'imported') return Math.max(0, Math.min(t, Number(o.qty_actual ?? 0) || 0));
+  return t;
 }
 
 
@@ -928,6 +947,21 @@ export function avgOeeTarget(rows = []) {
   const oees = effs.map(e => ((e.a ?? D.a) * (e.p ?? D.p) * (e.q ?? D.q)) / 10000);
   out.oee = Math.round((oees.reduce((s, v) => s + v, 0) / oees.length) * 10) / 10;
   return out;
+}
+
+/**
+ * เป้า OEE ของ "ชุดไลน์" — กติกาเดียวกับห้อง OBEYA (QC audit 05/10 · เดิม FactoryMap/GroupOverview/DeptDashboard
+ * ตัดสีด้วยเลขตายตัว 80/65 ขณะที่ Obeya ใช้เป้ากลุ่ม ⇒ ไลน์เดียวกันเขียวจอหนึ่ง แดงอีกจอ)
+ *  · กลุ่มของไลน์ = `parent_line_name || name` (oee_targets ตั้งที่ระดับกลุ่ม/ไลน์แม่)
+ *  · `targetsByGroup` = { [group_name]: แถว oee_targets } · **null = ยังไม่รู้เป้า (โหลดไม่ได้/ยังไม่โหลด) ⇒ คืน null**
+ *    (ผู้เรียกต้องวาดเป็น "ตัดสินไม่ได้" — ห้ามถอยไปเลขตายตัว) · กลุ่มที่ไม่ตั้ง = ค่ามาตรฐาน 90×90×99 ตาม avgOeeTarget
+ * คืนผลของ avgOeeTarget ({ a, p, q, oee, configured, missing }) หรือ null
+ */
+export function oeeTargetForLines(names = [], lines = [], targetsByGroup = null) {
+  if (!targetsByGroup) return null;
+  const byName = new Map((lines || []).map(l => [l.name, l]));
+  const groups = [...new Set((names || []).filter(Boolean).map(n => byName.get(n)?.parent_line_name || n))];
+  return avgOeeTarget(groups.map(g => targetsByGroup[g] || null));
 }
 
 /**

@@ -187,3 +187,9 @@
 - **⚠️ กับดัก: หน้าเดียวหลาย View ต้องผูกข้อมูลกับ "ส่วนงานที่โหลดมา" (`data = { dept, d }`)** — ตอนสลับแท็บ React จะ render View ของส่วนงานใหม่ **ก่อน** effect โหลดข้อมูลจะวิ่ง ถ้าเก็บแต่ก้อนข้อมูลเปล่า View ใหม่จะได้ข้อมูล**รูปทรงของส่วนงานเก่า** → พังทันที (เจอจริง 2026-08-06: `Cannot read properties of undefined (reading 'forEach')` ตอนคลิกแท็บ) · render เฉพาะเมื่อ `data.dept === dept` เท่านั้น · **build/lint จับไม่ได้ (เป็น runtime shape mismatch) — หน้าใหม่ที่สลับ View ด้วย state ต้องใช้ pattern นี้เสมอ**
 
 ---
+
+## 🧹 QC audit ก่อน roadshow (2026-10-05)
+- **`/tv` โหลดทะเบียนไลน์ล้ม** = แถบแดงบนจอ + ลองใหม่เองทุก 30 วิ + ปุ่ม ↻ (เดิม `.catch(() => setLines([]))` ⇒ ค้าง "กำลังโหลด..." ทั้งวัน) · ทะเบียนว่าง = บอกให้ไปตั้งไลน์
+- ผังจอ TV มีชื่อไลน์ในทุกกรอบ (`plainLabelLayout` · factory-master-map.md)
+- `/dept-dashboard` (แท็บ 📌 ของ /obeya): เป้า = `orderPlanQty` · น้ำหนัก wLoad = `dtMinBySession` · สี OEE = เป้ากลุ่ม · นโยบายพัก/เป้า OEE โหลดไม่ได้ = ติดธง `loadErr`
+- `/` Dashboard: ทุกคิวรีผลิตอ่าน error → แถบแดง + ซ่อน OEE สด (ห้ามโชว์ %A/%Q 100% จากลิสต์ว่าง) · computeLiveOee ใช้ `pairMap` ของรอบโหลดนั้น (เดิม state เก่า ⇒ คู่ RH/LH %P 2 เท่าตอนเปิดจอครั้งแรก) · ทะเบียนสินค้าแบ่งหน้าครบ

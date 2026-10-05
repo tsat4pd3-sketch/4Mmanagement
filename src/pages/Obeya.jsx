@@ -7,6 +7,7 @@ import { UserContext } from '../App';
 import { scopedLineNames } from '../utils/sectionScope';
 import { canAccessPage, hasPermission } from '../utils/permissions';
 import PageHeader from '../components/PageHeader';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
@@ -99,7 +100,7 @@ export default function Obeya() {
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
-          title="OBEYA — ตั้งค่า KPI / กรอกผล" icon="⚙️"
+          title={OBEYA_TITLE} icon={OBEYA_ICON}
           sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
         />
         <Suspense fallback={loadingNote}>

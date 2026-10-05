@@ -127,7 +127,10 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
      (กฎเหล็กข้อ 9 ใน CLAUDE.md · เกิดจริงกับ StoreLotQueue 4 คิวรี × 705 ครั้ง/วัน) */
   /* 🔴 2026-09-15 — เดิม poll ล้วนไม่มี realtime · ดู src/utils/useLiveBoard.js
      นาฬิกา/วันงานยังเดินตามเดิมด้วย visibleInterval (ไม่ยิง DB) */
-  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders', 'qa_fme_obligations'], topic: 'qa-fme-board' });
+  /* 05/10 (QC audit): `qa_fme_obligations` อยู่ **Main** — เดิมรวมอยู่ใน board เดียวกับตาราง DR (client default = supabaseDR)
+     ⇒ subscribe ผิด project = cron สร้างงานแล้วจอไม่รู้ (รอ poll) · แยก 2 board ตาม project (pattern QaFmeQueue) */
+  useLiveBoard(load, { tables: ['production_sessions', 'prod_orders'], topic: 'qa-fme-board' });
+  useLiveBoard(load, { tables: ['qa_fme_obligations'], topic: 'qa-fme-board-main', client: supabase, rate: RATE.BACKUP });
   useEffect(() => visibleInterval(() => { setNow(Date.now()); setWd(getWorkDate()); }, RATE.BOARD), []);
 
   const nowMin = useMemo(() => {
