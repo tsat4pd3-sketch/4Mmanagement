@@ -57,6 +57,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'myqueue-next-step-not-current-step',
+    scan: ['src/utils/myQueue.js'], ext: ['.js'],
+    /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
+    re: /\.current_step\b/g,
+    why: '`mtn_orders.current_step` = ขั้นที่ **ทำเสร็จแล้ว** ไม่ใช่ขั้นที่รอ — คิวงานเคยอ่านตรงๆ แล้วช้าไป 1 ขั้นทุกใบ '
+       + '(workflow audit 05/10: ใบรอ QA 204 ใบไปขึ้นเป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิว · '
+       + 'ใบรอจ่ายงาน 32 ใบไม่โผล่ที่ไหนเลย)',
+    fix: 'ใช้ `nextStepOf(order)` จาก src/utils/mtnStepPerm.js (ตัดสินจาก status · ตัวเดียวกับปุ่มขั้นถัดไปใน MtnRepair)',
+    allow: {},
+  },
+  {
     id: 'jigs-has-no-department-column',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */

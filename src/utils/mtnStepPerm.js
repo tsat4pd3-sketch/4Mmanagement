@@ -139,6 +139,31 @@ export function mtnCloseStage(order = {}) {
   return 8;
 }
 
+/** สถานะใบที่ยัง "มีคนต้องทำต่อ" — ตัวโหลดคิวงานใช้กรอง (ปิด/ตีกลับ/โอน/ปฏิเสธ = ไม่อยู่ในคิว) */
+export const OPEN_MO_STATUSES = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover'];
+
+/**
+ * 🔴 ขั้น "ถัดไปที่ต้องทำ" ของใบ — ตัดสินจาก `status` ไม่ใช่ `current_step`   (2026-10-05 · workflow audit)
+ * `current_step` = ขั้นที่ **ทำเสร็จแล้ว** (เปิดใบ = 1 · StepBox ถือว่าขั้น N เสร็จเมื่อ current_step ≥ N)
+ * ⇒ ผู้ที่ถามว่า "ใบนี้รอใคร" ต้องใช้ตัวนี้ — เคยอ่าน current_step ตรงๆ แล้ว**ช้าไป 1 ขั้นทุกใบ**
+ *   (ใบรอ QA 204 ใบไปโผล่ที่ผู้แจ้งที่เซ็นตรวจรับไปแล้ว · ใบรอจ่ายงาน 32 ใบไม่โผล่ที่ไหนเลย)
+ * คืนเลขขั้น · `null` = ใบปิด/ไม่อยู่ในลูป · ใบ MTN ช่วง handover ที่ไม่ได้ select เวลาเซ็น → ขั้น 6 (ตาม MtnRepair เดิม)
+ */
+export function nextStepOf(order = {}) {
+  const mtnForm = isMtnFormRow(order);
+  switch (order?.status) {
+    case 'pending':   return 2;
+    case 'assigned':
+    case 'repairing': return 3;
+    case 'repaired':  return 4;
+    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE) · ของใบ MTN ขั้น 5 คือ "รับมอบ" (ลูปนี้ไม่มี QA ⇒ isWaitingQa = false เสมอ) */
+    case 'checked':   return isWaitingQa(order) ? 5 : (mtnForm ? 5 : 6);
+    case 'qa':        return 6;
+    case 'handover':  return mtnForm ? (mtnCloseStage(order) ?? 6) : 7;
+    default:          return null;
+  }
+}
+
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
 export const stepMeta = (step, { mtnForm = false } = {}) =>
   (mtnForm && MTN_FORM_STEPS[step]) || MTN_STEPS[step] || null;
