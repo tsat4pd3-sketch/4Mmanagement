@@ -2054,3 +2054,26 @@ update public.production_sessions s set oee_p = a.oee_p_old, oee = a.oee_old
   (20 กะในฐานเข้าข่าย แต่ทั้งหมดไม่มีใบผลิตเลย ⇒ ไม่มี MAT ⇒ ไม่มี CT อยู่ดี)
 - **`prod_orders.qty_ng` ยังเป็นคอลัมน์ตาย** (ทั้งตาราง = 0) — `ngFromOrders` ใน `computeLiveOee`
   จึงบวกได้ 0 เสมอ **ห้ามหลงไปใช้คอลัมน์นี้** NG ที่เชื่อถือได้มีที่เดียวคือ `defect_logs`
+
+
+## 🎯 "เป้า" ของใบผลิต + เป้า OEE ของชุดไลน์ + loader ทะเบียนกลาง (2026-10-05 · QC audit ก่อน roadshow)
+
+**ปัญหา:** จอเดโม (Obeya SQDCM · FactoryMap · GroupOverview · DeptDashboard · VSM สด) รวมเป้าด้วย `qty_target ?? qty` ดิบทุกสถานะ
+⇒ ใบยกยอด (`imported` 35 + ใบใหม่กะถัดไป 30) นับเป้า 2 รอบ + นับใบ `cancelled` ⇒ "ผลิตได้ 71% ของแผน" ทั้งที่งานจบครบ ·
+MorningMeeting ตัดใบ imported/carry_over ทิ้งทั้งใบ แต่ยอดผลิตยังนับ ⇒ เกิน 100%
+
+**กติกาเดียว — `orderPlanQty(o)` (`src/utils/oee.js` §6.1 · คู่กับ `orderProducedQty`) · เทส `orderPlanQty.test.mjs`**
+- `cancelled` → 0 · `imported` → min(เป้า, qty_actual) (ส่วนที่เหลือถูกออกใบใหม่ที่กะถัดไปแล้ว) · `carry_over` (ยังไม่มีใครรับ) → เป้าเต็ม · อื่นๆ → `qty_target ?? qty`
+- trade-off: กะต้นทางที่ส่งงานต่อเห็นเป้าของใบนั้น = ยอดที่ทำได้ · ด่าน `order-plan-via-helper` จับ `target += o.qty_target ?? o.qty` ใหม่
+- ⚠️ โหมดปี (`obeya_year_rollup` ฝั่ง DR) **RPC ส่ง Σqty ต่อ (เดือน, ไลน์, สถานะ)** — `obeyaYear.addOrd` ส่งเข้า `orderPlanQty` ระดับกลุ่ม
+  (imported = min(Σqty, Σqty_actual) ไม่ใช่ Σmin รายใบ · ไม่มี qty_target) ⇒ คลาดได้เฉพาะเดือนที่ imported ผลิตเกินเป้า · **ไม่แก้ SQL รอบนี้**
+
+**สี OEE เทียบเป้ากลุ่ม — `oeeTargetForLines(names, lines, targetsByGroup)`** (เทส `oeeTargetForLines.test.mjs`)
+- กลุ่ม = `parent_line_name || name` → `avgOeeTarget` · `targetsByGroup = null` (โหลดไม่ได้) ⇒ คืน `null` = จอ "ตัดสินไม่ได้" **ห้ามถอยไป 80/65**
+- ทาสีด้วย `valueInk(value, target)` / `statusOf` (`utils/statusTone.js`) — FactoryMap (METRICS.oee.cat + แผงทบทวน) · GroupOverview · DeptDashboard เลิกเลขตายตัว 80/65
+- โหลดเป้า = `fetchOeeTargets()` (`utils/oeeMasters.js` · Main `oee_targets` · error ≠ "ไม่ได้ตั้ง") — CapacityBoard เคยอ่านผ่าน `supabaseDR` (ตารางไม่มีฝั่ง DR) แล้วเงียบ
+
+**loader ทะเบียนที่สูตร OEE ใช้ — `utils/oeeMasters.js`:** `loadBreakPolicies()` (`break_policies:active:v2` = `*` ทุกจอ) · `loadCtProducts()` / `loadCtKanban()` (แบ่งหน้าครบ · `:v2`)
+- ล้ม = **โยน** (ไม่ cache ลิสต์ว่างทับของดี 4 ชม.) ⇒ ผู้เรียกจับแล้วเขียนบนจอ · CT/คู่โหลดไม่ได้ ⇒ `pairMap = null` (ไม่ยุบ) ห้าม `{}`
+- ด่าน `master-cache-swallow` ขยายจับ loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` แล้ว
+- **น้ำหนัก wLoad ทุกจอผ่าน `dtMinBySession`** (FactoryMap แผงทบทวน + sparkline · GroupOverview · DeptDashboard) — ด่าน `no-wload-without-break-helper` จับสูตร `shift_min − planned…` ที่เขียนเองแล้ว

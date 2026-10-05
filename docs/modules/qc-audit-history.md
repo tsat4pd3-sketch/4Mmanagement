@@ -58,8 +58,23 @@
 | 16 | `OrgSetup.jsx` | บันทึก/เปิด-ปิด/ลบ นับแถว (RLS 0 แถว = แจ้ง ไม่ขึ้นเขียว) |
 | — | `LineSetup.jsx` `wip_buffer_points` | **ไม่แก้ — รายงาน:** เขียนแค่ rename cascade (คงประวัติให้ชื่อตรง) + ลบตอนลบไลน์ทั้งไลน์ · ไม่ได้เขียนยอด/เรียก `wip_point_add_qty` · จะเลิกลบประวัติตอนลบไลน์ไหม = ให้ user ตัดสิน |
 
+**✅ แก้แล้ว (batch จอเดโม/ผู้บริหาร · branch `fix/qc-exec-screens`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 17 | `orderPlanQty()` (oee §6.1) | เป้าใบผลิตกติกาเดียว: cancelled 0 · imported = min(เป้า, ทำได้) · carry_over เต็ม — Obeya D (เดือน+ปี) · FactoryMap · GroupOverview · DeptDashboard · Dashboard · MorningMeeting · vsmLive · ด่าน `order-plan-via-helper` · RPC ปีส่ง Σ ต่อสถานะ (ข้อจำกัดระดับกลุ่ม — ไม่แก้ SQL) |
+| 18 | Obeya C/Pareto | ไม่มีกะ = เทา "ยังไม่มีข้อมูล" (`axisCost`/`axisCostYear` รับ `sessions`) · ปี RPC ล้มตั้ง `dtBad`/`dfBad` · C เดือนตัดของเสียทดลองเหมือนปี |
+| 19 | สี OEE | `oeeTargetForLines` + `statusOf`/`valueInk` แทน 80/65 (FactoryMap · GroupOverview · DeptDashboard) · ไม่รู้เป้า = เทา |
+| 20 | wLoad | `dtMinBySession` ที่ FactoryMap (ทบทวน + sparkline) · DeptDashboard · GroupOverview · ด่าน `no-wload-without-break-helper` จับสูตรเขียนเอง |
+| 21 | stale-response | `useLatestRequest()` ใหม่ (+เทส) — SQDCM · WorkforceInsight · MorningMeeting · Energy · OEEAnalytics · LineOeeBoard · Dashboard · FactoryMap ทบทวน · GroupOverview |
+| 22 | โหลดล้ม ≠ 0 | MorningMeeting · FactoryMap ทบทวน · GroupOverview · TvBoard (แถบแดง + ลองใหม่ 30 วิ) · Dashboard (ซ่อน OEE สด) · OEEAnalytics วันนี้ |
+| 23 | Dashboard | live OEE ใช้ `pairMap` ของรอบโหลดนั้น (เดิม state เก่า ⇒ %P คู่ RH/LH 2 เท่า) |
+| 24 | ทะเบียน CT/พัก | `utils/oeeMasters.js` แบ่งหน้าครบ + โยนเมื่อล้ม (`:v2`) · LineOeeBoard ไลน์เคยผลิตแบ่งหน้าครบ · ด่าน `master-cache-swallow` จับ 2 บรรทัด |
+| 25 | CapacityBoard / QaFmeBoard | `oee_targets` อ่านจาก Main + เตือนเมื่อล้ม · realtime `qa_fme_obligations` แยก board `client: supabase` |
+| 26 | chartsweep/stdsweep | ป้ายหน่วยแกน `axisUnitLabel`/`axisUnitTop` + Pareto `shortTick` (Obeya 0 ปัญหา) · StockReceiptQueue แถบกรองชิดแท็บ · MaterialRequests ตัด padding บน (QualityControl 20→16px) |
+| UX | จอเดโม | TV มีชื่อไลน์ในกรอบ (`utils/regionGeom.js`) · GroupOverview พับ mockup/คำอธิบาย + ตัดข้อความนักพัฒนา + "ยังไม่มีข้อมูล" แทน 0/0 (2.61→1.94 จอ) · SQDCM จอ < 800px ไม่บีบ · Obeya หัวเพจเดียว · งานค้างไม่มี "?"/หัวข้อว่าง · ตัด `scoreDef`/`parts_master`/`safety_events` ออกจากข้อความบนจอ |
+
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/MtnAnalysis/ProductHistory/QualityBins) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
+- จอเดโม (ที่เหลือ): stale-response MtnAnalysis/ProductHistory/QualityBins · Obeya SQDCM โหลด `oee_targets` ล้มแล้วใช้เป้ามาตรฐานเงียบ
 - ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · MaterialRequests เลขใบ `count()+1` · VSM order/ปี บวกทุก forecast · `toRed` ไม่ส่ง `defect_log_id` · QA dashboard กรองสินค้าแล้วสูตรเปลี่ยน · PeChangeRequests `capa→ncr` · PFMEA proposal ไม่ CAS · CQI-15 approve ไม่นับแถว · ScrapReport header กำพร้า + เลขซ้ำตอนคิวรีล้ม · MtnRepair labour ถูกล้าง · PMCheckData header ไม่มีผล · PmCoordination toast เขียวตอนล้ม · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด · ScanLanding `q=` ไม่ถูกอ่าน · ป้าย QR จุดส่งงานสแกนแล้ว "ไม่พบ"
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)

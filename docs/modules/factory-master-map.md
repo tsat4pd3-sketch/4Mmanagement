@@ -99,3 +99,11 @@
 - **ด่าน:** regressionGuards "loadPairMap/loadOpInfo/loadProductsMaster/loadProductionLines ใน Promise.all — ห้ามแกะ { data }"
   (เทียบช่อง destructure ที่ i กับสมาชิกที่ i · ยกเว้นที่ห่อ `.then(`) · วิธีพิสูจน์: ยิง SQL `set local role anon` บน DR แล้วนับแถวตรงกับที่ UI ควรเห็น
 - ⚠️ allow-list ของด่าน `oee-suspect-needs-qbin-embed` คีย์ด้วย **เลขบรรทัด** ของไฟล์นี้ — แก้บรรทัดเหนือ ~1280 แล้วต้องขยับคีย์ตาม
+
+
+## 🧹 QC audit ก่อน roadshow (2026-10-05)
+- เรขาคณิตกรอบ (`polyArea`/`centroid`/`labelAnchor`/`bboxOf` + `plainLabelLayout`) ย้ายไป `src/utils/regionGeom.js` (มีเทส) — ใช้ร่วมกับ `<FactoryMiniMap>` (จอ TV `/tv`)
+  · จอ TV วาด **ชื่อไลน์ข้อความล้วนในทุกกรอบที่วางได้ไม่ทับกัน** (เดิมไม่มีชื่อเลยถ้าไลน์ปกติ) · ไลน์ผิดปกติยังได้ป้ายเด่นเหมือนเดิม
+- สี OEE = เป้ากลุ่ม (`oeeTargetForLines` + `statusOf`) ไม่ใช่ 80/65 · ไม่รู้เป้า = เทา (oee.md)
+- เป้าแผงทบทวน/ป๊อปอัปไลน์ = `orderPlanQty` · น้ำหนัก wLoad = `dtMinBySession` · แผงทบทวนอ่าน error ทุกคิวรี (ล้ม = เขียนว่าโหลดไม่สำเร็จ ไม่ใช่ 0/0)
+- loader CT/พัก/เครื่อง/supply ล้ม = โยน (`utils/oeeMasters.js` · คีย์ `:v2`) ⇒ แถบ partial บอกชื่อทะเบียนที่ขาด · loadPM/loadSupply ล้ม = คงค่าเดิม
