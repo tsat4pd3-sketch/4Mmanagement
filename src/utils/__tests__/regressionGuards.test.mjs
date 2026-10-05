@@ -1150,8 +1150,8 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1281': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1346': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx:1285': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1350': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -1178,6 +1178,43 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
     + '   แก้ยังไง: import { QBIN_EMBED } from "../utils/oee" แล้วต่อท้าย select:\n'
     + '            .select(`session_id, qty_ng, qty_suspect, is_trial, ..., ${QBIN_EMBED}`)\n'
     + '            ถ้าคิวรีนั้นแสดงยอดดิบจริงๆ ไม่ได้คิด %Q ให้เติม ALLOW ในเทสนี้พร้อมเหตุผล\n\n'
+    + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
+
+/* 🛡️ oee-live-needs-ngforp (2026-10-04)
+   กฎ "ระดับไฟล์" อีกตัว (ต้องดูทั้งก้อน argument ของ computeLiveOee ไม่ใช่บรรทัดเดียว)
+
+   หัวหน้าทัก 04/10: *"P คิดที่งานผลิตได้ งานที่ผลิตเสียออกมาไม่คิด ทำให้ P ตก"* — จริง
+   %P วัด**ความเร็ว** ⇒ ชิ้นที่ออกมาเสีย/ทดลอง/รอ QA ก็กินรอบเครื่องเท่าชิ้นดี ต้องอยู่ในตัวเศษ
+   ไม่งั้นของเสีย 1 ชิ้นถูกหัก 2 ครั้ง (ทั้ง %P และ %Q) — ตรงกับสูตรสากล Total Count = ดี + เสีย
+   🔴 จอที่ลืมส่ง `ngForP` จะ **ไม่พัง ไม่เตือน** แค่ตอบ %P ต่ำกว่าจออื่นเงียบๆ = คลาสเดียวกับ
+      ที่เคยเกิดกับ `pairMap` (ลืมส่ง = นับ 2 เท่า) และ `excl_from_q` (ลืม join = Q เพี้ยน) */
+test('🛡️ oee-live-needs-ngforp — ทุกจุดที่เรียก computeLiveOee ต้องส่ง ngForP', () => {
+  /* ยกเว้นรายจุด (ไฟล์:บรรทัด) — ต้องเขียนเหตุผลทุกตัว */
+  const ALLOW = {};
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/oee.js') continue;                 // ตัวนิยามเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /computeLiveOee\(\s*\{/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 1200);        // ก้อน argument ของ call นี้
+      const line = code.slice(0, m.index).split('\n').length;
+      const key = `${rel}:${line}`;
+      if (ALLOW[key]) continue;
+      if (!/\bngForP\s*:/.test(win)) bad.push(key);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เรียก computeLiveOee แต่ไม่ได้ส่ง ngForP ⇒ %P ของจอนี้นับแค่ "งานดี"\n'
+    + '   ทำไมห้าม: ของเสีย/งานทดลอง/ของสงสัย กินรอบเครื่องไปแล้ว ไม่นับ = หักซ้ำทั้ง %P และ %Q\n'
+    + '            ⇒ จอนี้ตอบ %P ต่ำกว่าจออื่นที่ส่งมา (ข้อมูลชุดเดียวกัน 2 คำตอบ) และไม่มีอะไรเตือน\n'
+    + '   แก้ยังไง: import { ngByMatFrom } from "../utils/oee" แล้วใส่ในก้อน argument:\n'
+    + '            ngForP: ngByMatFrom(<แถว defect_logs ของกะนั้น>, <ใบในกะ>)\n'
+    + '            คิวรี defect_logs ต้อง embed `prod_orders(mat_no)` (หรือ select prod_order_id + ใบมี id)\n'
+    + '            ไม่งั้นชี้ CT ของ NG ไม่ได้ → ตกไปอยู่ noMat (ไม่เข้า %P แต่รายงานออกจอ)\n\n'
     + bad.map(f => '   • ' + f).join('\n') + '\n');
 });
 

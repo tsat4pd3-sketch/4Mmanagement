@@ -17,7 +17,8 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -1427,6 +1428,13 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
 
 /* ── Detail drawer ───────────────────────────────────── */
 function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+  /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
+     🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
+        ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
+  const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const posRank = positionRank(myPosition);
+
   const o = order;
   const m = statusMetaOf(o);
   const next = nextStepFor(o);
@@ -1459,7 +1467,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
      (คำสั่ง user 2026-09-15 — เกณฑ์อยู่ที่ mtnApprovalState() ใน mtnMoForm.js ที่เดียว) */
   const mtnForm = isMtnFormOrder(o);
   const appr = mtnForm ? mtnApprovalState(o) : null;
-  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, ...stepPerms(role) };
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -2034,8 +2042,18 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team', orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
+            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
+              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
+              orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
               awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {/* 🔴 ระบบปล่อยผ่านเพราะ "ไม่รู้ฝั่ง/ตำแหน่งของคนกด" ⇒ ต้องเขียนบนจอ ห้ามเงียบ
+                (ไม่งั้นคนเข้าใจว่าด่านตรวจแล้ว ทั้งที่ไม่ได้ตรวจ — 31% ยังไม่มีส่วนงาน · 79% ไม่มีทีมช่าง) */}
+            {(() => {
+              const hint = canDoStep(next.step, stepCtx).ok
+                ? assumptionHint(stepAssumptions(next.step, { mtnForm, actorSide, posRank }))
+                : null;
+              return hint ? <div style={{ color: '#f59e0b', marginTop: 3 }}>{hint}</div> : null;
+            })()}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ <b>ต้องให้ QA เป็นผู้กด</b> (ขั้น 5) — ฝ่ายที่แจ้ง/ผู้เปิดใบ ข้ามขั้น QA เองไม่ได้แล้ว ตั้งแต่ 14/09/2026</div>)}
@@ -2078,6 +2096,13 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
 function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], lines = NO_LINES, fullName, signatureUrl, role, userTeams = [], reporterScope = null, onClose, onSaved }) {
+  /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
+     🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
+        ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
+  const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const posRank = positionRank(myPosition);
+
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
@@ -2235,7 +2260,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const inReporterScope = orderInReporterScope(o, reporterScope || {});
       // 🔒 ด่านอนุมัติของใบ MTN (งานปรับปรุง/สร้าง) — เกณฑ์เดียวกับตัวซ่อนปุ่มใน DetailDrawer
       const approvalBlocked = isMtnForm && mtnApprovalState(o).blocked;
-      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, ...stepPerms(role) };
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -2253,6 +2278,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           return toast.error('ใบนี้เป็นงานปรับปรุง/สร้าง — ต้องให้ผู้จัดการเซ็นอนุมัติก่อนช่างเริ่มงาน (ปุ่ม “✍️ อนุมัติใบ MO” ในใบ)');
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
           return toast.error(`ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} — คุณทำได้เฉพาะใบของทีมตัวเอง`);
+        /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — "ไม่มีสิทธิ์" เฉยๆ ทำให้คนไปขอ role เพิ่ม
+           ทั้งที่ปัญหาคือ "ช่องนี้ไม่ใช่ของคุณ" · ต้องชี้ทางแก้ที่ถูก (ไปแก้ข้อมูลบัญชี ไม่ใช่ขอสิทธิ์) */
+        if (verdict.code === 'wrong_side')
+          return toast.error(meta?.side === 'reporter'
+            ? `ช่องนี้เป็นของฝ่ายที่แจ้ง (${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'เจ้าของค่าใช้จ่าย'}) — ฝั่งช่างเซ็นแทนไม่ได้`
+            : 'ช่องนี้เป็นของฝั่งซ่อมบำรุง — ฝ่ายที่แจ้งเซ็นแทนไม่ได้');
+        if (verdict.code === 'rank_too_low')
+          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
         if (verdict.code === 'out_of_scope')
           return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)
