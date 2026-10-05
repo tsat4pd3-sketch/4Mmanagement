@@ -40,7 +40,8 @@ export function lineCostCenter(lines, lineName) {
 }
 
 /* เลือกแถว rate ของ cost center ตามวันอ้างอิง: แถว effective_from ล่าสุดที่ ≤ refDate
-   ไม่มีแถวที่ ≤ refDate (rate เริ่มบันทึกทีหลัง) = ใช้แถวเก่าสุดแทน (ดีกว่าไม่มี — ผู้ใช้เห็น effective บนจอ) */
+   ไม่มีแถวที่ ≤ refDate (rate เริ่มบันทึกทีหลัง) = ใช้แถวเก่าสุดแทน (ดีกว่าไม่มี)
+   ⚠️ ผู้เรียกที่โชว์เงินต้องเช็ค `rateIsFallback()` แล้วเขียนบนจอว่าใช้ rate ปีไหน — ห้ามเงียบ (QC 05/10) */
 export function rateFor(rates, costCenter, refDate) {
   const cc = normCC(costCenter);
   if (!cc) return null;
@@ -49,6 +50,11 @@ export function rateFor(rates, costCenter, refDate) {
   if (!rows.length) return null;
   const usable = rows.filter(r => !refDate || String(r.effective_from) <= String(refDate));
   return usable.length ? usable[usable.length - 1] : rows[0];
+}
+
+/** rate ที่ได้จาก rateFor เป็น "ตัวถอย" (เริ่มใช้หลังวันอ้างอิง) ไหม — จอต้องบอกว่าใช้ rate ของวันไหน */
+export function rateIsFallback(rateRow, refDate) {
+  return !!(rateRow && refDate && String(rateRow.effective_from) > String(refDate));
 }
 
 /* บาท/ชม. ของ rate ตามก้อนที่เลือก (comps = ['dl','dp','idp','oh']) */

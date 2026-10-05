@@ -216,15 +216,18 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
 
   const notify = async () => {
     try {
-      await supabase.functions.invoke('send-notification', {
+      /* functions.invoke ไม่ throw — คืน { error } (QC 05/10 · เดิมกลืน แล้วขึ้น "แจ้งแล้ว" ทั้งที่ไม่มีใครได้รับ) */
+      const { error: eFn } = await supabase.functions.invoke('send-notification', {
         body: { event: 'pm_coordination', plan: {
           title: p.title, machine_name: p.machine_name, machine_no: p.machine_no, line_name: p.line_name,
           remark: p.remark, by_name: fullName || '',
           tasks: tasks.map(t => ({ task_date: t.task_date, team: teamLabelOf(t.team), description: t.description, time_from: t.time_from, time_to: t.time_to, is_support: t.is_support })),
         } },
       });
-      checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ตั้งสถานะ "แจ้งแล้ว"');
-      toast.success('แจ้ง Production แล้ว'); onReload();
+      if (eFn) throw eFn;
+      const ok = checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ส่งแจ้งเตือนแล้ว แต่ตั้งสถานะ "แจ้งแล้ว"');
+      if (ok) toast.success('แจ้ง Production แล้ว');
+      onReload();
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
   };
   const setStatus = async (status) => {
@@ -253,8 +256,13 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
   };
   const del = async () => {
     if (!confirm('ลบแผนนี้?')) return;
-    checkWrite(await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id), 'ลบแผน');
-    toast.success('ลบแล้ว'); onReload();
+    // RLS DELETE ปฏิเสธ = 0 แถวไม่มี error ⇒ นับแถวก่อนขึ้น "ลบแล้ว" (กฎเขียน DB ข้อ 2)
+    const res = await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id).select('id');
+    if (checkWrite(res, 'ลบแผน')) {
+      if (res.data?.length) toast.success('ลบแล้ว');
+      else toast.error('ลบแผนไม่สำเร็จ — ไม่มีสิทธิ์หรือแผนถูกลบไปแล้ว');
+    }
+    onReload();
   };
 
   return (
@@ -363,6 +371,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       machine_name: f.machine_name || null, line_name: f.line_name || null, remark: f.remark || null,
       pm_plan_id: f.pm_plan_id || null, updated_at: nowIso };
     let planId = plan._new ? null : plan.id;
+    /* 🔴 รายการงาน: "เขียนชุดใหม่ก่อน แล้วค่อยลบชุดเดิม" (QC 05/10)
+       เดิม ลบก่อน-เขียนทีหลัง ⇒ insert ล้ม = งานทั้งแผนหายถาวร (+ ลืม setBusy(false) ปุ่มค้าง)
+       ตอนนี้: insert ล้ม = ของเดิมยังอยู่ครบ · ลบชุดเดิมล้ม = มีแถวซ้ำ ⇒ บอกบนจอ (ไม่เงียบ) */
+    let oldIds = [];
     if (plan._new) {
       const { data, error } = await supabaseDR.from('pm_coordination_plans').insert({ ...head, status: 'draft', created_by: fullName || null }).select('id').single();
       if (error) { setBusy(false); return toast.error(error.message); }
@@ -370,14 +382,22 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     } else {
       const { error } = await supabaseDR.from('pm_coordination_plans').update(head).eq('id', planId);
       if (error) { setBusy(false); return toast.error(error.message); }
-      const { error: wErr350 } = await supabaseDR.from('pm_coordination_tasks').delete().eq('plan_id', planId);
-      if (wErr350) { toast.error('ล้างรายการงานเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr350.message); return; }
+      const { data: olds, error: eOld } = await supabaseDR.from('pm_coordination_tasks').select('id').eq('plan_id', planId);
+      if (eOld) { setBusy(false); return toast.error('อ่านรายการงานเดิมไม่สำเร็จ (ยังไม่แก้รายการงาน): ' + eOld.message); }
+      oldIds = (olds || []).map(r => r.id);
     }
     const rows = tasks.filter(t => t.description?.trim() || t.task_date).map((t, i) => ({
       plan_id: planId, task_date: t.task_date || null, team: t.team || null, description: t.description || null,
       time_from: t.time_from || null, time_to: t.time_to || null, is_support: !!t.is_support, done: !!t.done, sort_order: i,
     }));
-    if (rows.length) { const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows); if (error) { setBusy(false); return toast.error(error.message); } }
+    if (rows.length) {
+      const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows);
+      if (error) { setBusy(false); return toast.error(`บันทึกรายการงานไม่สำเร็จ (รายการเดิมยังอยู่): ${error.message}`); }
+    }
+    if (oldIds.length) {
+      const { error: eDel } = await supabaseDR.from('pm_coordination_tasks').delete().in('id', oldIds);
+      if (eDel) { setBusy(false); toast.error(`บันทึกรายการใหม่แล้ว แต่ลบรายการเดิมไม่สำเร็จ — แผนนี้อาจมีงานซ้ำ ลบแถวเกินออกเอง: ${eDel.message}`); onSaved(); return; }
+    }
     setBusy(false); toast.success('บันทึกแล้ว'); onSaved();
   };
 

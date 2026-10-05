@@ -259,3 +259,7 @@ React จึง unmount กล่องเดิมทิ้งทุกคร�
 
 **ด่าน:** `regressionGuards` → `pm-setup-group-field-commit-input` (พิสูจน์แล้วว่าตกจริงถ้าย้อนโค้ดกลับ)
 · กติกาทั่วไปของคลาสนี้ → `docs/UI-CONVENTIONS.md` §6.25
+
+### 🛠️ QC 05/10
+- RPC `pm_usage_daily` ล้ม = **แถบเตือนบนจอ** (เดิมแค่ `console.warn` แล้วยอดสะสม/buffer ทั้งหน้าเป็น 0 เงียบๆ)
+- `PMCheckData` บันทึกผลตรวจ: ผลรายจุด (`inspection_results`) เข้าไม่ได้ = ลบหัวใบ `inspections` ทิ้ง (ลบไม่ได้ต้องบอก) · `pm_plans.last_done_at` = `getWorkDate()` (เดิมวันปฏิทินเครื่อง — กะดึกตี 2 ได้วันถัดไป)

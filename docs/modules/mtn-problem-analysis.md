@@ -505,3 +505,6 @@ backfill รอบแรกแก้ได้เฉพาะใบที่**เ
 ⚠️ md5 ของชุด `id` เปลี่ยน — **ไม่ใช่ผลของ migration** แต่เพราะตารางนี้มีของเข้าออกสดๆ ระหว่างวัด
 (4 แถวใหม่ใน 30 นาที + ฟอร์มใช้ท่า delete-then-insert) ⇒ **ห้ามใช้ id-hash เป็น invariant กับตารางเป็นๆ**
 ให้ใช้ยอดรวม + ตารางสำรองเทียบทีละแถวแทน
+
+### 🛠️ QC 05/10
+- `/mtn-analysis` load: stale-response guard เป็น request id ใน `load()` (เดิม flag `alive` อยู่ใน effect ที่ไม่ได้ set state เอง = ไม่กันอะไร)

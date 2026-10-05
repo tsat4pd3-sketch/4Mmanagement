@@ -13,11 +13,14 @@ function workDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** เลขถัดไปของเดือนนี้ — นับต่อจากเลขล่าสุดที่มีอยู่ของ prefix+เดือนเดียวกัน */
+/** เลขถัดไปของเดือนนี้ — นับต่อจากเลขล่าสุดที่มีอยู่ของ prefix+เดือนเดียวกัน
+ *  🔴 คิวรีล้ม = คืน `null` (QC 05/10 — เดิมกลืน error แล้วเริ่ม 001 ใหม่ = เลขซ้ำใบที่ออกไปแล้ว)
+ *     ผู้เรียกต้องเช็ค null แล้ว "ไม่บันทึก + บอกบนจอ" — ออกเลขไม่ได้ดีกว่าออกเลขที่อาจซ้ำ */
 export async function nextDocNo(table, col, prefix) {
   const ym = workDate().slice(0, 7).replace('-', '');
   const full = `${prefix}-${ym}-`;
-  const { data } = await supabase.from(table).select(col).like(col, `${full}%`).order(col, { ascending: false }).limit(1);
+  const { data, error } = await supabase.from(table).select(col).like(col, `${full}%`).order(col, { ascending: false }).limit(1);
+  if (error) return null;
   const last = data?.[0]?.[col];
   const seq = last ? parseInt(last.slice(full.length), 10) + 1 : 1;
   return `${full}${String(seq).padStart(3, '0')}`;
