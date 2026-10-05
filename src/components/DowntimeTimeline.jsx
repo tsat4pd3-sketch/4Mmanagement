@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { CLOSE_AHEAD_WARN_MIN, dtCoverMin, fmtOffset } from '../utils/shiftWindow';
 
 /**
  * ⏱ ไทม์ไลน์เครื่องหยุดรายไลน์ — "หยุดตอนไหนของวัน" ไม่ใช่แค่ "หยุดรวมกี่นาที"
@@ -57,8 +58,6 @@ export function downtimeSpan(d, nowMs) {
   return { st, en: Math.max(en, st) };
 }
 
-/** ล้ำหน้าเกินเท่านี้ = เวลาปิดกะน่าจะกรอกผิด — ตัวเลขเดียวกับด่านตอนกรอก (`CLOSE_AHEAD_WARN_MIN`) */
-const CLOSE_AHEAD_WARN_MIN = 90;
 const PLANNED_COLOR = '#64748b';   // เทาสงบ — หยุดตามแผนไม่ใช่ loss (กฎ Andon: ห้ามแดง ห้ามกระพริบ)
 const RUN_COLOR     = 'rgba(34,197,94,0.55)';
 const hhmm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -70,6 +69,8 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
   const view = useMemo(() => {
     const sessById = {};
     sessions.forEach(s => { sessById[s.id] = s; });
+    const dtBySession = {};
+    downtimes.forEach(d => { (dtBySession[d.session_id] ||= []).push(d); });
 
     // แถว = ไลน์ (กะเช้า+ดึกของไลน์เดียวกันอยู่แถวเดียวกัน คนละตำแหน่งบนแกน 24 ชม.)
     const byLine = new Map();
@@ -85,10 +86,15 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       if (!sp) continue;
       /* กะที่ปิดแล้วแต่ "เวลาจบ" ล้ำหน้าเวลาที่กดปิดจริง = แถบเขียวลากไปอนาคต (2026-10-02)
          ไม่ตัดแถบให้สั้นลงเอง — ความจริงคือข้อมูลผิด ไม่ใช่จอผิด ⇒ ติดป้ายให้คนไปแก้เวลาปิดกะ
-         (กฎความซื่อสัตย์ของจอ · ต้นเหตุ+เกณฑ์ดู `checkCloseTime` ใน utils/shiftWindow.js) */
+         (กฎความซื่อสัตย์ของจอ · ต้นเหตุ+เกณฑ์ดู `checkCloseTime` ใน utils/shiftWindow.js)
+         🔴 หัก "ปลายกะที่ลง downtime คลุมไว้แล้ว" ออกก่อนตัดสิน (05/10) — ปิดงานเที่ยงแล้วลง
+            "ไม่มีแผนผลิต" ถึงเลิกงาน = กะเดินถึงเวลานั้นจริง **ห้ามติดป้ายว่าผิด**
+            (เกณฑ์เดิมดูแต่ `aheadMin` ⇒ ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์) */
       const closedMs = s?.status === 'closed' && s?.closed_at ? new Date(s.closed_at).getTime() : null;
       const aheadMin = Number.isFinite(closedMs) && closedMs ? Math.round((sp.en - closedMs) / 60000) : 0;
-      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status, aheadMin });
+      const unaccountedMin = aheadMin > 0
+        ? Math.max(0, aheadMin - dtCoverMin(dtBySession[s.id] || [], closedMs, sp.en)) : 0;
+      push(s.line_name || '—', 'runs', { ...sp, shift: s.shift, status: s.status, aheadMin, unaccountedMin });
       lo = Math.min(lo, sp.st); hi = Math.max(hi, sp.en);
     }
 
@@ -166,7 +172,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
 
           {rows.map(r => {
             const unplannedMin = r.stops.filter(x => !x.planned).reduce((s, x) => s + x.mins, 0);
-            const aheadMin = Math.max(0, ...r.runs.map(x => x.aheadMin || 0));
+            const unaccMin = Math.max(0, ...r.runs.map(x => x.unaccountedMin || 0));
             return (
               <div key={r.line} style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
                 <div style={{ width: labelW, flexShrink: 0, paddingRight: 8, minWidth: 0 }}>
@@ -174,10 +180,10 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                   <div style={{ fontSize: 11, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
                     {unplannedMin > 0 ? `หยุด ${unplannedMin} น.` : 'ไม่มีหยุดนอกแผน'}
                   </div>
-                  {aheadMin > CLOSE_AHEAD_WARN_MIN && (
-                    <div title={`กะนี้ปิดไปแล้ว แต่ "เวลาปิดกะ" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง ${Math.round(aheadMin / 60 * 10) / 10} ชม.\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ`}
+                  {unaccMin > CLOSE_AHEAD_WARN_MIN && (
+                    <div title={`กะนี้ปิดไปแล้ว แต่ "เวลาปิดกะ" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง และช่วงที่ล้ำ ${fmtOffset(unaccMin)} ไม่มีใบ Downtime รองรับเลย\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ หรือลง Downtime คลุมช่วงที่ไม่ได้ผลิต`}
                       style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', cursor: 'help' }}>
-                      ⚠️ เวลาปิดกะเกินจริง {Math.round(aheadMin / 60 * 10) / 10} ชม.
+                      ⚠️ ปลายกะไม่มีอะไรรองรับ {fmtOffset(unaccMin)}
                     </div>
                   )}
                 </div>

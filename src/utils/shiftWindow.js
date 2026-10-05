@@ -133,7 +133,7 @@ export function checkShiftTime(ms, session, nowMs = Date.now()) {
   };
 }
 
-/* ── ปิดกะ "ก่อนเวลาเลิกงาน" ปกติ · แต่ล้ำหน้าเกินไป = กรอกผิด (2026-10-02 · user หน้างาน) ──────
+/* ── ปิดกะ "ก่อนเวลาเลิกงาน" ปกติ · แต่ปลายกะต้องมีอะไรรองรับ (2026-10-02 · ปรับ 10-05) ──────
    user: *"ปกติเค้าจะปิดกะก่อนเวลาเลิกงาน ไม่น่าจะก่อน 30-60 นาที … มันเป็นไปไม่ได้ที่จะรู้ล่วงหน้า
    และปิดกะก่อน 3 ชั่วโมง"* ⇒ เวลาจบที่กรอก ไม่ควรล้ำ "เวลาที่กดปิดจริง" มากกว่าที่คนจะรู้อนาคตได้
 
@@ -141,24 +141,68 @@ export function checkShiftTime(ms, session, nowMs = Date.now()) {
       ล้ำ 3 ชม. = ไลน์นั้นถูกชาร์จเวลาเดินเครื่องเกินจริง 3 ชม. ⇒ **OEE ต่ำกว่าความจริงทั้งกะ**
       และไทม์ไลน์เครื่องหยุดลากแถบเขียวไปใน "อนาคต" (เคสที่ user เห็น 01/10)
 
-   เกณฑ์มาจากข้อมูลจริง ไม่ได้ตั้งเอง — ปิดกะ 120 วันหลัง (1,407 กะ):
-     · เฉลี่ยกรอกเวลาจบ **ล้ำหน้าเวลาที่กดปิด 45 นาที** (ตรงกับที่ user บอก 30-60 นาที)
-     · ล้ำเกิน 60 นาที = **9 ใบ (0.6%)** · **ไม่มีสักใบอยู่ระหว่าง 60–90 นาที** ⇒ 90 คือรอยต่อที่ข้อมูลบอกเอง
-     · ใบที่เกิน: 97 · 174 ×2 · 209 · 220 ×3 · 232 · **567 นาที** (Laser LWR กะดึก 24/09 ปิด 22:33 กรอกจบ 08:00) */
+   🔴🔴 **"ล้ำหน้า" เพียวๆ ไม่ใช่ความผิด — ต้องหัก "ปลายกะที่ลง downtime คลุมไว้แล้ว" ออกก่อน** (05/10)
+      เกณฑ์เดิม (ดูแต่ `aheadMin`) เตือนผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ เพราะหน้างาน**ทำถูกแล้ว**:
+      ปิดงานตอนเที่ยง แล้วลง downtime *"นับสต๊อก / ไม่มีแผนผลิต"* คลุมถึง 17:30 — กะนั้นเดินถึง 17:30 จริง
+      ส่วนที่เหลือถูกนับเป็น planned stop ไปแล้ว (SP-72/74/88 คลุม 220/220 น. · Line 60/61 คลุม 174/174 น.)
+      ⇒ **ของจริงที่ต้องเตือน = นาทีปลายกะที่ "ไม่มีใบอะไรรองรับเลย"** (`unaccountedMin`)
+
+   เกณฑ์มาจากข้อมูลจริง ไม่ได้ตั้งเอง — กะที่ปิดแล้วทั้งระบบ 1,445 ใบ (วัด 05/10):
+     · ปิดก่อนเวลาเลิกงาน 64 ใบ · เฉลี่ยล้ำหน้า **65 นาที** (ตรงกับที่ user บอก 30-60 นาที)
+     · ปลายกะไม่มีอะไรรองรับ > 60 น. = **5 ใบ (0.3%)** · **ไม่มีสักใบอยู่ระหว่าง 61–90 นาที**
+       ⇒ 90 คือรอยต่อที่ข้อมูลบอกเอง (เกณฑ์เดิมก็ 90 — เปลี่ยนแต่ "แกนที่วัด" ไม่ได้เปลี่ยนตัวเลข)
+     · ใบที่เหลือจริงหลังหักส่วนที่คลุมแล้ว: 97 (HYDROFORM 25/06 — มีใบ DT เปิดค้างไม่ปิดจนวันนี้) ·
+       209 + 232 (TSRA 01/10 — **ไม่มีใบ downtime เลย**) · 567 (Laser LWR กะดึก 24/09 ปิด 22:33 กรอกจบ 08:00) */
 export const CLOSE_AHEAD_WARN_MIN = 90;
 
 /**
- * เวลาปิดกะที่กรอก "ล้ำหน้าเวลาจริง" กี่นาที
+ * นาทีในช่วง [fromMs, toMs] ที่มีใบ downtime คลุมอยู่ — ใช้ตอบว่า "ปลายกะมีอะไรรองรับแล้วหรือยัง"
+ * ใบที่ยังไม่ปิด (`ended_at` ว่าง) ยาวเท่า `duration_min` ที่กรอก — **ไม่ลากถึง "ตอนนี้"**
+ * (สูตรเดียวกับที่ `computeSessionOee` ใช้ ⇒ นาทีที่เตือนตรงกับนาทีที่ OEE คิดจริง)
+ * 🔴 ยุบช่วงที่ทับกันก่อนบวก — ไลน์เครื่องขนานลง DT หลายใบพร้อมกัน บวกดิบ = คลุมเกินจริง
+ */
+export function dtCoverMin(downtimes = [], fromMs, toMs) {
+  if (!(toMs > fromMs)) return 0;
+  const iv = [];
+  for (const d of downtimes || []) {
+    if (!d?.started_at) continue;
+    const s0 = new Date(d.started_at).getTime();
+    if (!Number.isFinite(s0)) continue;
+    const e0 = d.ended_at ? new Date(d.ended_at).getTime()
+      : s0 + (Number(d.duration_min) || 0) * 60000;
+    const a = Math.max(s0, fromMs), b = Math.min(e0, toMs);
+    if (b > a) iv.push([a, b]);
+  }
+  if (!iv.length) return 0;
+  iv.sort((x, y) => x[0] - y[0]);
+  let total = 0, [cs, ce] = iv[0];
+  for (const [a, b] of iv.slice(1)) {
+    if (a > ce) { total += ce - cs; cs = a; ce = b; } else if (b > ce) ce = b;
+  }
+  return Math.round((total + (ce - cs)) / 60000);
+}
+
+/**
+ * เวลาปิดกะที่กรอก "ล้ำหน้าเวลาจริง" กี่นาที และในนั้น **ไม่มีอะไรรองรับกี่นาที**
+ * @param downtimes ใบ downtime ของกะนั้น — 🔴 **ไม่ส่งมา = ถือว่าไม่มีอะไรรองรับ** (เตือนเกินจริงได้)
+ *   ⇒ ทุกจุดที่เรียกต้องส่ง (มีด่าน `regressionGuards`: `close-time-needs-downtimes`)
  * @returns null = ตรวจไม่ได้ (อ่านเวลาไม่ออก / ไม่รู้ work_date) — **ผู้เรียกต้องปล่อยผ่าน ห้ามบล็อก**
- *   { ok, aheadMin, nowHHmm } · `ok=false` ⇒ จอต้องเตือน + เสนอ `nowHHmm` ให้กดแก้ในคลิกเดียว
+ *   { ok, aheadMin, coveredMin, unaccountedMin, nowHHmm }
+ *   `ok=false` ⇒ จอต้องเตือน + เสนอ `nowHHmm` ให้กดแก้ในคลิกเดียว
  *   🔴 **ห้ามแก้ค่าให้เองเงียบๆ** (กฎเดียวกับ `checkShiftTime` — ดัดให้ = เดาแทนคน)
  */
-export function checkCloseTime(hhmm, session, nowMs = Date.now()) {
+export function checkCloseTime(hhmm, session, nowMs = Date.now(), { downtimes = null } = {}) {
   const r = resolveShiftTime(hhmm, session, nowMs);
   if (!r) return null;
   const aheadMin = Math.round((r.ms - nowMs) / 60000);
+  const coveredMin = aheadMin > 0 ? dtCoverMin(downtimes, nowMs, r.ms) : 0;
+  const unaccountedMin = Math.max(0, aheadMin - coveredMin);
   const d = new Date(nowMs);
-  return { ok: aheadMin <= CLOSE_AHEAD_WARN_MIN, aheadMin, nowHHmm: `${pad2(d.getHours())}:${pad2(d.getMinutes())}` };
+  return {
+    ok: unaccountedMin <= CLOSE_AHEAD_WARN_MIN,
+    aheadMin, coveredMin, unaccountedMin,
+    nowHHmm: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+  };
 }
 
 /** นาที → "3 ชม. 41 นาที" (ข้อความเตือนต้องอ่านแล้วเห็นภาพทันที ไม่ใช่ "221 นาที") */

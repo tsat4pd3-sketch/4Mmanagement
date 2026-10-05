@@ -1138,6 +1138,33 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ close-time-needs-downtimes (2026-10-05)
+   `checkCloseTime()` ตัดสินว่า "เวลาปิดกะที่กรอกล้ำหน้าเวลาจริงเกินไปไหม" — แต่ปลายกะที่
+   **ลง downtime คลุมไว้แล้ว ไม่ใช่ความผิด** (ปิดงานเที่ยงแล้วลง "ไม่มีแผนผลิต" ถึงเลิกงาน
+   = กะเดินถึงเวลานั้นจริง ส่วนที่เหลือเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว)
+   ไม่ส่ง `downtimes` เข้าไป = ฟังก์ชันถือว่าไม่มีอะไรรองรับ ⇒ **เตือนผิด/ติดป้ายผิด**
+   วัดจริง 05/10: เกณฑ์ที่ดูแต่ `aheadMin` ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ (SP-72/74/88 · Line 60/61) */
+test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/shiftWindow.js') continue;          // ตัวนิยามกฎเอง
+    if (rel.includes('__tests__')) continue;                   // เทสตั้งใจเรียกแบบไม่ส่ง เพื่อตรวจ fallback
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /checkCloseTime\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 260);
+      const line = code.slice(0, m.index).split('\n').length;
+      if (!/downtimes\s*:/.test(win)) bad.push(`${rel}:${line}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เรียก checkCloseTime โดยไม่ส่ง { downtimes } — ปลายกะที่ลง downtime คลุมไว้แล้วจะถูกเตือนว่าผิด\n'
+    + '   แก้: checkCloseTime(hhmm, session, Date.now(), { downtimes: dtLogs })\n'
+    + `   จุดที่ขาด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ oee-suspect-needs-qbin-embed (2026-09-30)
    ตัวนี้เป็นกฎ "ระดับไฟล์" ไม่ใช่ระดับบรรทัด (เงื่อนไขไขว้กัน 3 อย่าง) จึงเขียนเป็นเทสเดี่ยว
    ไม่ได้อยู่ใน RULES ที่สแกนทีละบรรทัด

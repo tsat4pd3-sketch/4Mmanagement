@@ -10,11 +10,23 @@
      --apply <ids>   เขียนจริง (ต้องมี --start HH:MM ต่อ id ผ่านไฟล์ plan)
    ══════════════════════════════════════════════════════════════════════════════════ */
 import { createClient } from '@supabase/supabase-js';
-import { computeSessionOee, sumDefectQty } from '../../src/utils/oee.js';
+import { computeSessionOee, sumDefectQty, QBIN_EMBED } from '../../src/utils/oee.js';
 
 const DR_URL = 'https://eyhclzkifitbhbljgoav.supabase.co';
 const DR_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4';
 export const dr = createClient(DR_URL, DR_KEY);
+
+/* 🔴 ด่าน TZ — `computeSessionOee` ประกอบเวลาเปิด/ปิดกะจาก `workDate + HH:MM` ด้วย **เวลาเครื่อง**
+   แล้วเอาไปเทียบกับ `started_at` ของ downtime ที่เป็น timestamptz (เวลาสัมบูรณ์)
+   ⇒ รันในเครื่อง UTC (คอนเทนเนอร์ CI/เว็บเป็น UTC) กรอบกะจะเลื่อนไป 7 ชม. = DT ตกนอกกรอบเงียบๆ
+   จอจริงรันบนเบราว์เซอร์ที่โรงงาน (Asia/Bangkok) ⇒ สคริปต์ต้องบังคับ TZ ให้ตรงกัน
+   ใช้: TZ=Asia/Bangkok node scripts/backfill/<script>.mjs                                      */
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+if (TZ !== 'Asia/Bangkok') {
+  console.error(`\n🔴 TZ ของเครื่องคือ ${TZ} — ต้องรันด้วย TZ=Asia/Bangkok ไม่งั้นกรอบกะเลื่อน `
+    + `และนาที downtime ที่ตกในกรอบจะผิด\n   ตัวอย่าง: TZ=Asia/Bangkok node ${process.argv[1] || 'scripts/backfill/...'}\n`);
+  process.exit(1);
+}
 
 /** master ที่ทุกกะใช้ร่วมกัน — โหลดรอบเดียว */
 export async function loadMaster() {
@@ -52,8 +64,12 @@ export async function recompute(session, master, lineCfg, { startTime = null, en
   const [ordR, dtR, defR] = await Promise.all([
     dr.from('prod_orders').select('id, mat_no, status, qty, qty_actual, opened_at, confirmed_at, stopped_at').eq('session_id', session.id),
     dr.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, dr_downtime_types(name_th, category)').eq('session_id', session.id),
-    // prod_order_id = ไว้ชี้ MAT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
-    dr.from('defect_logs').select('id, prod_order_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q)').eq('session_id', session.id),
+    dr.from('defect_logs')
+      // prod_order_id = ไว้ชี้ MAT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+      // 🔴 ต้องต่อ QBIN_EMBED — ไม่ต่อ = `suspectState()` คืน unknown แล้วถอยไปนับของสงสัยเป็นของเสีย
+      //    (กฎ 30/09 · สคริปต์นี้เขียนก่อนกฎนั้น จึงเคยคิด %Q คนละแบบกับจอ — เติมเมื่อ 05/10)
+      .select(`id, prod_order_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
+      .eq('session_id', session.id),
   ]);
   for (const [n, r] of [['prod_orders', ordR], ['downtime_logs', dtR], ['defect_logs', defR]])
     if (r.error) throw new Error(`กะ ${session.id} โหลด ${n} ไม่สำเร็จ: ${r.error.message}`);
