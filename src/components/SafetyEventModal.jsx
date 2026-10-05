@@ -234,7 +234,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
             ยกเลิก
           </button>
           <button onClick={save} disabled={busy}
-            style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
+            style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
             {busy ? 'กำลังบันทึก...' : '💾 บันทึก'}
           </button>
         </div>

@@ -120,6 +120,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
     if (f.id) ({ data: row, error } = await supabase.from('qa_customer_claims').update(payload).eq('id', f.id).select('id').single());
     else {
       const claim_no = await nextDocNo('qa_customer_claims', 'claim_no', 'CLM');
+      if (!claim_no) { setBusy(false); toast.error('ออกเลขที่เคลมไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return null; }
       ({ data: row, error } = await supabase.from('qa_customer_claims').insert({ ...payload, claim_no, created_by: fullName || null }).select('id').single());
     }
     setBusy(false);
@@ -147,6 +148,7 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
     if (!canRecord) return;
     setBusy(true);
     const capa_no = await nextDocNo('qa_capa', 'capa_no', 'CAPA');
+    if (!capa_no) { setBusy(false); toast.error('ออกเลขที่ CAPA ไม่สำเร็จ — ลองใหม่อีกครั้ง'); return; }
     const { data, error } = await supabase.from('qa_capa').insert({
       capa_no, ncr_id: c.ncr_id || null,
       title: `เคลมลูกค้า ${c.customer} — ${c.defect_desc.slice(0, 50)} (${c.claim_no})`,

@@ -3,7 +3,7 @@
    ⚠️ หน้าใหม่ที่ต้องการ "เลือกรหัสคลัง" ใช้ <StorageLocSelect> ห้ามพิมพ์ input เปล่า */
 import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { cachedMaster, invalidateMaster } from './masterCache';
+import { cachedMaster, invalidateMaster, mrows } from './masterCache';
 
 /* 🔴 เปลี่ยน "ชุดคอลัมน์" ของ cachedMaster เมื่อไหร่ **ต้องเปลี่ยนคีย์ด้วยเสมอ** (2026-09-21)
    cache อยู่ใน localStorage ของแต่ละเครื่อง อายุ 4 ชม. ⇒ ถ้าใช้คีย์เดิม เครื่องที่มีของเก่าค้าง
@@ -19,11 +19,10 @@ const KEY = 'storage_locations:v2';
  */
 export async function loadStorageLocations() {
   return cachedMaster(KEY, async () => {
-    const { data, error } = await supabaseDR.from('storage_locations')
-      .select('code, name, kind, line_names, is_active, sort_order').order('sort_order').order('code');
-    // ยังไม่ apply migration 20260902 → ตารางไม่มี (42P01) — คืน [] ให้ picker ทำงานแบบพิมพ์เองพร้อมป้าย
-    if (error) return [];
-    return data || [];
+    // ยังไม่ apply migration 20260902 → ตารางไม่มี (42P01) — `mrows` คืน [] ให้ picker ทำงานแบบพิมพ์เองพร้อมป้าย
+    // error อื่น (เน็ต/RLS) = โยน → ไม่ถูก cache ทับของดี
+    return mrows(await supabaseDR.from('storage_locations')
+      .select('code, name, kind, line_names, is_active, sort_order').order('sort_order').order('code'));
   });
 }
 export const invalidateStorageLocations = () => invalidateMaster(KEY);

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   shiftWindow, resolveShiftTime, checkShiftTime, hhmmToMin, fmtOffset, windowLabel, MAX_SHIFT_MIN,
-  checkCloseTime, CLOSE_AHEAD_WARN_MIN,
+  checkCloseTime, CLOSE_AHEAD_WARN_MIN, dtCoverMin,
 } from '../shiftWindow.js';
 
 const at = (iso) => new Date(iso).getTime();
@@ -153,6 +153,68 @@ test('checkCloseTime: ปิดช้ากว่าเวลาที่กร�
   const r = checkCloseTime('17:30', DAY_SESSION, closeAtMs('2026-10-01', '19:00'));
   assert.ok(r.aheadMin < 0);
   assert.equal(r.ok, true, 'กรอกย้อนหลังเป็นเรื่องปกติ ห้ามเตือน');
+});
+
+/* ── ปลายกะที่ลง downtime คลุมไว้แล้ว ไม่ใช่ความผิด (05/10 · วัดจาก 1,445 กะที่ปิดแล้ว) ──────
+   เคสจริงที่เกณฑ์เดิม (ดูแต่ `aheadMin`) ติดป้ายผิด: SP-72/74/88 23/07 ปิด 13:49 กรอกจบ 17:30
+   แต่ลง downtime "นับสต๊อก / ไม่มีแผนผลิต" 11:21→17:30 ⇒ กะเดินถึง 17:30 จริง ส่วนที่เหลือเป็น planned stop */
+const dtRow = (workDate, from, to) => ({
+  started_at: new Date(`${workDate}T${from}:00`).toISOString(),
+  ended_at: new Date(`${workDate}T${to}:00`).toISOString(),
+});
+
+test('checkCloseTime: เคสจริง SP-72 23/07 — ปลายกะลง DT คลุมถึงเลิกงาน = ไม่เตือน', () => {
+  const dt = [dtRow('2026-07-23', '11:21', '17:30')];
+  const ses = { ...DAY_SESSION, work_date: '2026-07-23' };
+  const r = checkCloseTime('17:30', ses, closeAtMs('2026-07-23', '13:49'), { downtimes: dt });
+  assert.equal(r.aheadMin, 221, 'ล้ำหน้าจริง ~220 นาที');
+  assert.equal(r.coveredMin, 221, 'แต่ถูก DT คลุมไว้หมด');
+  assert.equal(r.unaccountedMin, 0);
+  assert.equal(r.ok, true, 'ลง DT ครบ = หน้างานทำถูก ห้ามเตือน');
+});
+
+test('checkCloseTime: ใบเดิมแต่ไม่ได้ลง DT = เตือนเหมือนเดิม', () => {
+  const ses = { ...DAY_SESSION, work_date: '2026-07-23' };
+  const r = checkCloseTime('17:30', ses, closeAtMs('2026-07-23', '13:49'), { downtimes: [] });
+  assert.equal(r.unaccountedMin, 221);
+  assert.equal(r.ok, false);
+});
+
+test('checkCloseTime: DT คลุมแค่ครึ่ง = เตือนด้วยนาทีที่เหลือ ไม่ใช่นาทีที่ล้ำทั้งหมด', () => {
+  const ses = { ...DAY_SESSION, work_date: '2026-07-23' };
+  const dt = [dtRow('2026-07-23', '14:00', '15:00')];
+  const r = checkCloseTime('17:30', ses, closeAtMs('2026-07-23', '13:49'), { downtimes: dt });
+  assert.equal(r.coveredMin, 60);
+  assert.equal(r.unaccountedMin, 161);
+  assert.equal(r.ok, false);
+});
+
+test('checkCloseTime: ไม่ส่ง downtimes = ถือว่าไม่มีอะไรรองรับ (ปลอดภัยฝั่งเตือน)', () => {
+  const ses = { ...DAY_SESSION, work_date: '2026-07-23' };
+  const r = checkCloseTime('17:30', ses, closeAtMs('2026-07-23', '13:49'));
+  assert.equal(r.coveredMin, 0);
+  assert.equal(r.unaccountedMin, r.aheadMin);
+});
+
+test('dtCoverMin: ใบที่ทับกันต้องยุบก่อนบวก (ไลน์เครื่องขนานลงหลายใบพร้อมกัน)', () => {
+  const iv = [dtRow('2026-07-23', '10:00', '11:00'), dtRow('2026-07-23', '10:30', '11:30'),
+              dtRow('2026-07-23', '10:10', '10:20')];
+  const from = closeAtMs('2026-07-23', '10:00'), to = closeAtMs('2026-07-23', '12:00');
+  assert.equal(dtCoverMin(iv, from, to), 90, 'บวกดิบจะได้ 130 = คลุมเกินจริง');
+});
+
+test('dtCoverMin: ใบที่ยังไม่ปิดยาวเท่า duration_min ที่กรอก ไม่ลากถึงตอนนี้', () => {
+  const from = closeAtMs('2026-06-25', '15:53'), to = closeAtMs('2026-06-25', '17:30');
+  const open = [{ started_at: new Date('2026-06-25T10:20:00').toISOString(), ended_at: null, duration_min: null }];
+  assert.equal(dtCoverMin(open, from, to), 0,
+    'เคสจริง HYDROFORM 25/06 — ใบ DT เปิดค้างไม่มีนาที ⇒ คลุมไม่ได้ ปลายกะยังไม่มีอะไรรองรับ');
+});
+
+test('dtCoverMin: ช่วงว่าง/ข้อมูลพัง = 0 ไม่ throw', () => {
+  const from = closeAtMs('2026-07-23', '13:49'), to = closeAtMs('2026-07-23', '17:30');
+  assert.equal(dtCoverMin(null, from, to), 0);
+  assert.equal(dtCoverMin([{ started_at: null }, { started_at: 'ไม่ใช่เวลา' }], from, to), 0);
+  assert.equal(dtCoverMin([dtRow('2026-07-23', '11:00', '12:00')], to, from), 0, 'to <= from = 0');
 });
 
 test('checkCloseTime: อ่านไม่ได้ = null (ผู้เรียกต้องปล่อยผ่าน ห้ามบล็อก)', () => {

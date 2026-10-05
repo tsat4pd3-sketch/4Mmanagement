@@ -22,6 +22,11 @@ export const KINDS = [
     types: [] },                 // ← ตะกร้ารับท้ายลิสต์: อะไรที่ไม่เข้าข้างบนมาลงที่นี่
   ];
 
+/** มุมมองตั้งต้น "สำหรับผู้ใช้" — เฉพาะของที่คนใช้รับรู้ได้ (ฟีเจอร์ · แก้ปัญหา · ปรับปรุง)
+ *  ซ่อนเอกสาร/กฎและงานระบบ (ชื่อไฟล์ · ตัวแปร · ขนาด CLAUDE.md) ซึ่งเป็นภาษาของนักพัฒนา
+ *  (UX audit 05/10 — จอนี้อยู่ในเส้นทางเดโมผู้บริหาร) · ดูครบได้ที่ "ทั้งหมด" */
+export const USER_KINDS = ['feat', 'fix', 'tune'];
+
 const BY_TYPE = new Map();
 for (const k of KINDS) for (const t of k.types) BY_TYPE.set(t, k);
 const FALLBACK = KINDS[KINDS.length - 1];
@@ -48,7 +53,8 @@ export function buildFeed(rows = [], { kind = 'all', q = '' } = {}) {
   const byDay = new Map();
   for (const r of rows) {
     if (!r?.d) continue;
-    if (kind !== 'all' && kindOf(r.t).key !== kind) continue;
+    if (kind === 'user' ? !USER_KINDS.includes(kindOf(r.t).key)
+      : (kind !== 'all' && kindOf(r.t).key !== kind)) continue;
     if (needle && !norm(`${r.m} ${r.s || ''}`).includes(needle)) continue;
     if (!byDay.has(r.d)) byDay.set(r.d, []);
     byDay.get(r.d).push(r);

@@ -24,6 +24,38 @@
 
 ---
 
+## 🔨 รูปแบบชุดแม่พิมพ์ = ทะเบียน `die_set_kinds` (DR) — 2026-10-05 · คำสั่ง user
+
+*"ทีมแม่พิมพ์จะให้เพิ่มพวก HYDROFORM DIE, BEND DIE … ควรทำเป็นให้ user เพิ่มเองได้ เหมือนประเภทการผลิต
+บางทีศัพท์ทางการ user หน้างานไม่เข้าใจ"* — เดิม hardcode 4 ค่า (`DIE_SET_KINDS` ใน `equipmentKinds.js`)
+**+ check constraint `die_sets_kind_chk`** (2 ชั้น = เพิ่มชนิดใหม่ต้องแก้โค้ด+schema)
+
+- migration **`20261005_die_set_kinds_dr.sql` (DR "Product DB" · apply แล้ว 05/10 โดย AI session ผ่าน MCP)**
+  ตาราง `key` (= ค่าที่ `die_sets.kind` เก็บ · **ไม่ผูก FK** ตามคอนเวนชันทะเบียน master) · `label` ชื่อที่หน้างานเรียก
+  (แก้อิสระ) · `description` · **`mo_item_type`** · RLS `using(true)` (DR anon) · `fn_audit` + `DR_AUDIT_TABLES`
+  · seed 4 ค่าเดิม + `hydroform` / `bend` · **ถอด check constraint แล้ว** · เติม `DIE HYDROFORM`/`DIE BEND` ใน `mtn_item_types` (ทีม DIE)
+- จัดการที่ `/equipment?tab=die` แผง **⚙️ รูปแบบชุดแม่พิมพ์** (`SimpleMasterPanel` · สิทธิ์ `machines:edit` เดิม)
+  · **คนกรอกแค่ชื่อ — key สร้างให้เอง** (`dieSetKindKey` · ชื่อไทยล้วน = `k_<เวลา>`) · 🔴 key ห้ามเปลี่ยนตาม label ทีหลัง
+- โหลดผ่าน `useDieSetKinds()` (`src/utils/useDieSetKinds.js` · masterCache) · ตารางยังไม่มี = ถอยไปค่าสำรอง `DIE_SET_KINDS`
+  · 🔴 **ห้ามวาด dropdown จาก `DIE_SET_KINDS` ตรงๆ อีก** (ด่าน `die-set-kinds-from-registry`)
+  · dropdown ในฟอร์มชุดใช้ `dieSetKindOptions(kinds, current)` — **ค่าปัจจุบันที่ถูกปิดใช้/ไม่มีในทะเบียนต้องอยู่ในลิสต์**
+    (select ที่ value ไม่อยู่ใน option = โชว์ตัวแรกแล้วบันทึกทับเงียบ) · ป้าย `dieSetKindLabel(v, kinds)` ไม่รู้จัก = key ดิบ
+- ⚠️ **ข้อมูลจริง 05/10: ชุดทั้ง 92 ชุดเป็น "สร้างอัตโนมัติจากชื่อเครื่องเดิม" (10/08)** — รูปแบบชุด (tandem 52 · progressive 26
+  · single 14) ถูกเดาจากชื่อ ยังไม่มีคนยืนยัน · ค่า default ของคอลัมน์/ฟอร์มยังเป็น `tandem` (ยังไม่เปลี่ยนเป็น "ยังไม่ระบุ" — รอ user สั่ง)
+
+### 🔗 ใบแจ้งซ่อมแม่พิมพ์เติม "ชนิดอุปกรณ์" จากทะเบียน (2026-10-05)
+*"เลือกแม่พิมพ์ ก็ควรดึงจากฐานข้อมูลได้ว่าแม่พิมพ์นี้คือแม่พิมพ์อะไร"* — ทางเดิน `machines.machine_no` → `equipment_die.die_set_id`
+→ `die_sets.kind` → `die_set_kinds.mo_item_type` (`buildDieItemTypeMap` · `useDieItemTypeMap` โหลดเฉพาะตอนแจ้งงานแม่พิมพ์)
+· ชี้ได้ = ช่องชนิดอุปกรณ์ **ล็อก** โชว์ "🔗 จากทะเบียนแม่พิมพ์" · ชี้ไม่ได้ = ผู้แจ้งเลือกเองตามเดิม + ป้ายส้มบอกเหตุ (ไม่ผูกชุด / รูปแบบยังไม่ตั้งชนิด)
+· วัดก่อนทำ: ใบ DIE ที่ผู้แจ้งเลือกชนิดเอง **ไม่ตรงทะเบียน 2 ใน 4 ใบ** · แม่พิมพ์ 259/266 ตัวผูกชุดแล้ว
+· ทะเบียนผิด = แก้ที่ต้นทาง (ฟอร์มชุด) ไม่ใช่ในใบ · cache 4 ชม. ข้ามเครื่อง (DieRegistry ล้างของเครื่องตัวเองตอนบันทึกชุด)
+
+### 🔙 rollback
+revert โค้ดก่อน แล้วค่อย (ถ้าจำเป็น): `alter table die_sets add constraint die_sets_kind_chk check (kind in ('tandem','progressive','transfer','single'));`
+(**ทำได้เฉพาะเมื่อไม่มีชุดใช้ key ใหม่**) + `drop table die_set_kinds;` + ลบ `DIE HYDROFORM`/`DIE BEND` ใน `mtn_item_types` ที่ `updated_by_name='migration 20261005'`
+
+---
+
 ## กลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ = ทะเบียน `die_press_lines` — 2026-09-08 · ทะเบียน (DR)
 
 เดิม DieRegistry derive รายชื่อ "LINE A ( 800 Ton )" จากแถวของตัวเอง (พิมพ์ผิดตัวเดียว = กลุ่มใหม่) · ตอนนี้มีตาราง DR `die_press_lines`

@@ -23,6 +23,8 @@ import { roleLabel } from './utils/roleMeta';                       // ป้า
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
+import { coalesce } from './utils/liveRefresh';
+import { LIVE } from './utils/refreshRates';
 import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
@@ -492,7 +494,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         marginBottom: 2, cursor: clickable ? 'pointer' : 'default', userSelect: 'none',
       }}>
       {userAvatarUrl ? (
-        <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+        <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
         /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
            เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
@@ -1157,11 +1159,14 @@ function NotificationBell({ userId, role }) {
   useEffect(() => {
     load();
     if (!userId) return;
+    // เพดานด้วย coalesce (กฎเขียน DB ข้อ 7 · QC 05/10) — edge ยิงแจ้งเตือนเป็นชุด (หลายแถว/วินาที)
+    // เดิม load() ทุก INSERT = โหลดกระดิ่งซ้ำเท่าจำนวนแถว · เสียงยังเล่นทันทีทุกครั้งเหมือนเดิม
+    const bump = coalesce(load, LIVE.PAGE);
     const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { bump(); playNotifChime(); })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [userId, load]);
 
   const toggleMute = () => {
@@ -1333,7 +1338,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--accent2)', fontWeight: 600 }}>⚠️ การลงทะเบียนหลุด — กดเปิดใหม่</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1351,7 +1356,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1598,7 +1603,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button onClick={onStay} style={{
             padding: '10px 24px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
           }}>
             ยังอยู่ที่นี่
           </button>
@@ -1953,16 +1958,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               {/* ⤵ route เก่าที่ยุบเข้าแท็บ Daily Checker แล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้
                   และทุกคนเห็นภาพเดียวกัน ไม่ใช่หน้าเดี่ยวที่ไม่มีแท็บพี่น้อง — ดู NAVIGATION-REVIEW §2.4)
                   สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
-              <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
-              <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
-              <Route path="/bbs" element={<Navigate to="/daily-checker?tab=bbs" replace />} />
+              <Route path="/pokayoke" element={<LegacyTabRedirect to="/daily-checker" tab="pokayoke" />} />
+              <Route path="/daily-pm" element={<LegacyTabRedirect to="/daily-checker" tab="pm" subParam="sub" />} />
+              <Route path="/bbs" element={<LegacyTabRedirect to="/daily-checker" tab="bbs" />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
-              <Route path="/lpa" element={<Navigate to="/daily-checker?tab=lpa" replace />} />
+              <Route path="/lpa" element={<LegacyTabRedirect to="/daily-checker" tab="lpa" subParam="sub" />} />
               <Route path="/doc-forms" element={
                 <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
               } />
@@ -2039,11 +2044,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                 <RoleRoute path="/pm" userRole={role}><PmHub /></RoleRoute>
               } />
               {/* ⤵ route เก่าที่ยุบเข้าแท็บแล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้ · ห้าม render ซ้ำ 2 ทาง) */}
-              <Route path="/pm-check"        element={<Navigate to="/pm?tab=check" replace />} />
-              <Route path="/pm-schedule"     element={<Navigate to="/pm?tab=plan" replace />} />
-              <Route path="/pm-forecast"     element={<Navigate to="/pm?tab=forecast" replace />} />
-              <Route path="/pm-coordination" element={<Navigate to="/pm?tab=coord" replace />} />
-              <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
+              <Route path="/pm-check"        element={<LegacyTabRedirect to="/pm" tab="check" />} />
+              <Route path="/pm-schedule"     element={<LegacyTabRedirect to="/pm" tab="plan" />} />
+              <Route path="/pm-forecast"     element={<LegacyTabRedirect to="/pm" tab="forecast" subParam="fc" />} />
+              <Route path="/pm-coordination" element={<LegacyTabRedirect to="/pm" tab="coord" />} />
+              <Route path="/pm-setup"        element={<LegacyTabRedirect to="/pm" tab="setup" />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
@@ -2260,13 +2265,16 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
+    // admin ติ๊กสิทธิ์รัวๆ = event ต่อแถว ⇒ ทุกเครื่องในโรงงานดึง role_permissions ทั้งตาราง (>1000 แถว) ซ้ำทุกติ๊ก
+    // coalesce = ยุบเป็นรอบเดียวต่อเพดาน (กฎเขียน DB ข้อ 7 · QC 05/10)
+    const bump = coalesce(async () => {
+      await loadPermissions(true);
+      setPermsVersion(v => v + 1);
+    }, LIVE.PAGE);
     const ch = liveChannel(supabase, 'role-permissions-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
-        await loadPermissions(true);
-        setPermsVersion(v => v + 1);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, () => bump())
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [session?.user?.id]);
 
   return (

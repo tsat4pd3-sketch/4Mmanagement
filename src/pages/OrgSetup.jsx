@@ -5,6 +5,10 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
+import {
+  loadOrgNodeRefs, orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote,
+  orgRefKeyChange, renameOrgRefs,
+} from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
 import CostCenterRatePanel from '../components/CostCenterRatePanel';
@@ -36,6 +40,7 @@ export default function OrgSetup() {
   const [loading, setLoading] = useState(true);
   const [selSection, setSelSection] = useState(null);
   const [selDept, setSelDept] = useState(null);
+  const [selLine, setSelLine] = useState(null);   // กลุ่มที่เลือก → ไล่ลงชั้น "ทีม"
   const [modal, setModal] = useState(null); // { kind, parentId, editing }
   const [formName, setFormName] = useState('');
   const [formCode, setFormCode] = useState('');
@@ -78,6 +83,13 @@ export default function OrgSetup() {
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
   const linesOf = (deptId) => nodes.filter(n => n.kind === 'line' && n.parent_id === deptId);
+  /* 🔴 ชั้น "ทีม" มีจริงในผัง (`org_nodes kind='team'`) และถูกใช้งานอยู่ — `useOrgTeams()` อ่านไปทำ
+     ลิสต์ทีม/กะทั้งระบบ (ผังไม่มีทีม = ถอยไป A/B/C เดิม) · แต่เดิมหน้านี้มีแค่ 3 ชั้น
+     ⇒ ทีมที่ seed ไว้ "มองไม่เห็นจากที่ไหนเลย" แล้วไปโผล่ตอนลบกลุ่มว่า "ยังมีหน่วยงานลูก 3 รายการ"
+     (เคสจริง 05/10 · user ถามว่า "ลูกอยู่ไหน" — Assembly Line A1 / Spare Part มีทีม A/B/C อยู่ใต้)
+     **ห้ามถอดพาเนลทีมออก** ถ้าไม่ย้ายการจัดการทีมไปไว้ที่อื่นก่อน ไม่งั้นกลับไปเป็นทางตันเหมือนเดิม */
+  const allLines = useMemo(() => nodes.filter(n => n.kind === 'line'), [nodes]);
+  const teamsOf = (lineId) => nodes.filter(n => n.kind === 'team' && n.parent_id === lineId);
 
   /* id ของ section ที่ผู้ใช้สังกัด — เทียบทั้ง code และ name (บาง section ไม่มี code) */
   const mySecId = useMemo(() => {
@@ -97,12 +109,23 @@ export default function OrgSetup() {
       const dep = allDepts.find(d => d.id === node.parent_id);
       return !!dep && dep.parent_id === mySecId;
     }
+    if (node.kind === 'team') {        // ทีม → ไต่ขึ้น กลุ่ม → แผนก → ส่วนงานของตัวเอง
+      const ln  = allLines.find(l => l.id === node.parent_id);
+      const dep = ln && allDepts.find(d => d.id === ln.parent_id);
+      return !!dep && dep.parent_id === mySecId;
+    }
     return false;                       // section = admin เท่านั้น
   };
   const canAddDeptHere = (secId) => isAdmin || (canOwn && !!mySecId && secId === mySecId);
   const canAddLineHere = (deptId) => {
     if (isAdmin) return true;
     const dep = allDepts.find(d => d.id === deptId);
+    return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
+  };
+  const canAddTeamHere = (lineId) => {
+    if (isAdmin) return true;
+    const ln  = allLines.find(l => l.id === lineId);
+    const dep = ln && allDepts.find(d => d.id === ln.parent_id);
     return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
   };
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
@@ -128,9 +151,13 @@ export default function OrgSetup() {
       const sec = sections.find(s => s.id === d.parent_id);
       return { id: d.id, label: `${sec ? sec.name : 'ขึ้นตรงฝ่าย'} > ${d.name}` };
     });
+    if (kind === 'team') return allLines.map(l => {
+      const dep = allDepts.find(d => d.id === l.parent_id);
+      return { id: l.id, label: `${dep ? dep.name : 'ไม่มีแผนก'} > ${l.name}` };
+    });
     return [];
   };
-  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department' };
+  const PARENT_LABEL = { department: 'อยู่ภายใต้ Section', line: 'อยู่ภายใต้ Department', team: 'อยู่ภายใต้ Group' };
 
   useEffect(() => {
     if (!selSection && sections.length) setSelSection(sections[0].id);
@@ -143,6 +170,7 @@ export default function OrgSetup() {
   }, [selSection, nodes]); // eslint-disable-line
 
   const currentLines = selDept ? linesOf(selDept) : [];
+  const currentTeams = selLine ? teamsOf(selLine) : [];
 
   // key ของ section_signers = ค่าที่ production_lines.section ใช้ (= ค่าที่ใบค่าฝีมืออ้างถึง)
   // resolve จาก node.code / node.name โดยเทียบกับค่าจริงใน production_lines กันคีย์ผิดจนข้อมูลกำพร้า
@@ -212,6 +240,24 @@ export default function OrgSetup() {
       );
       if (dup) return toast.error(`Cost Center นี้ถูกใช้แล้วที่ "${dup.name}" — กรุณาเปลี่ยนเลข`);
     }
+    /* 🔴 เปลี่ยน "คีย์" ของโหนด = สำเนาชื่อในทะเบียนอื่นชี้ของที่ไม่มีอยู่แล้ว (05/10)
+         คีย์ = `code || name` · กลุ่มใช้ "ชื่อ" (ดู src/utils/orgNodeRefs.js)
+       ⇒ ถามก่อน แล้วไล่เปลี่ยนตามให้ในคราวเดียว · ไม่เปลี่ยนตาม = คนหลุดหน่วยงานเงียบๆ
+         (เคยต้องตามเก็บด้วย migration: 20261004_employees_department_typos_main.sql) */
+    const editNode = modal.editing;
+    const keyChg = editNode ? orgRefKeyChange(editNode, formName.trim(), formCode.trim() || null) : null;
+    let cascade = null;
+    if (keyChg) {
+      const refs = await loadOrgNodeRefs(supabase, editNode, nodes);
+      if (refs.partial) return toast.error('ยังไม่บันทึก — ตรวจไม่ครบว่ามีใครอ้างชื่อเดิมอยู่ · ลองใหม่อีกครั้ง');
+      const affected = (refs.textEmp || 0) + (refs.textProf || 0);
+      if (affected) {
+        if (!confirm(`เปลี่ยน "${keyChg.from}" → "${keyChg.to}" ?\n\n`
+          + `ทะเบียนที่ยังอ้างชื่อเดิม ${affected} รายการจะถูกเปลี่ยนตามให้ด้วย\n`
+          + '(ถ้าไม่เปลี่ยนตาม คนเหล่านั้นจะหลุดจากหน่วยงานนี้เงียบๆ)')) return;
+        cascade = keyChg;
+      }
+    }
     setSaving(true);
     const payload = {
       kind: modal.kind,
@@ -226,35 +272,81 @@ export default function OrgSetup() {
       // ฝ่าย — ติดที่ node ระดับบนสุดพอ ลูกตกทอดขึ้นไปหาเอง (ดู divisionOfNode)
       ...(['section', 'department'].includes(modal.kind) && canDivisions ? { division: formDivision || null } : {}),
     };
-    const { error } = modal.editing
-      ? await supabase.from('org_nodes').update(payload).eq('id', modal.editing.id)
-      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 });
+    /* นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error
+       ⇒ เดิมขึ้น "แก้ไขสำเร็จ" ทั้งที่ไม่ได้แก้ · ⚠️ สำคัญขึ้นอีกตั้งแต่ 05/10 เพราะ RLS เขียนของ
+         org_nodes ผูก has_perm('org:manage'/'org:manage_own_unit') แล้ว = ปฏิเสธได้จริง */
+    const { data: wrote, error } = editNode
+      ? await supabase.from('org_nodes').update(payload).eq('id', editNode.id).select('id')
+      : await supabase.from('org_nodes').insert({ ...payload, sort_order: nodes.length + 1 }).select('id');
+    if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
+    if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
+    // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
     setSaving(false);
-    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
-    toast.success(modal.editing ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    if (casc?.failed.length) {
+      toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
+        + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
+    } else if (casc) {
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+    } else {
+      toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
+    }
     setModal(null);
     fetchAll();
   };
 
   const toggleActive = async (node) => {
     // ยืนยันเฉพาะตอน "ปิดใช้งาน" (กระทบ dropdown/การอ้างอิงทั้งระบบ) — เปิดกลับไม่ต้องถาม
-    if (node.is_active && !confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`)) return;
-    const { error } = await supabase.from('org_nodes').update({ is_active: !node.is_active }).eq('id', node.id);
+    /* 🔴 บอกจำนวนคน/บัญชีที่ผูกอยู่ก่อนปิด — เดิมถามลอยๆ คนกดไม่รู้ว่ากระทบใคร
+       (เคสจริง 05/10: กลุ่มที่คนผูกอยู่ 35 คนหายจาก dropdown แล้วหน้าเช็คชื่อว่างเปล่า) */
+    if (node.is_active) {
+      const refs = await loadOrgNodeRefs(supabase, node, nodes);
+      if (!confirm(`ปิดใช้งาน "${node.name}" ?\n\nจะหายจาก dropdown/การเลือกในหน้าอื่น (ข้อมูลเดิมยังอยู่ เปิดกลับได้)`
+        + orgRefDeactivateNote(refs))) return;
+    }
+    const { data: wrote, error } = await supabase.from('org_nodes')
+      .update({ is_active: !node.is_active }).eq('id', node.id).select('id');
     if (error) return toast.error(error.message);
+    if (!wrote?.length) return toast.error(`${node.is_active ? 'ปิด' : 'เปิด'}ใช้งานไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว`);
     fetchAll();
   };
 
   const handleDelete = async (node) => {
+    // ไม่มี id = แถวเพี้ยน · ยิง delete ไม่ได้อยู่แล้ว และนับของที่อ้างถึงก็เชื่อไม่ได้ ⇒ ไม่แตะเลย
+    if (!node?.id) return toast.error('ลบไม่ได้: แถวนี้ไม่มี id — รีเฟรชหน้าแล้วลองใหม่');
     // กันลบทั้งที่ยังมีลูก — เดิม confirm บอก "ลบลูกทั้งหมด" แต่โค้ดลบแค่ node เดียว (พึ่ง cascade)
     // ถ้าไม่มี cascade ลูกจะกำพร้า parent_id ค้าง · ให้ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน
-    const childCount = nodes.filter(n => n.parent_id === node.id).length;
-    if (childCount > 0) return toast.error(`ลบไม่ได้: "${node.name}" ยังมีหน่วยงานลูก ${childCount} รายการ — ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน`);
-    if (!confirm(`ลบ "${node.name}" ?\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)`)) return;
-    const { error } = await supabase.from('org_nodes').delete().eq('id', node.id);
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    /* 🔴 บอกให้ได้ว่า "ลูกคือใคร" — เดิมบอกแค่จำนวน ผู้ใช้เลยหาไม่เจอว่าต้องไปลบอะไรที่ไหน
+       (user ถามตรง ๆ 05/10: "ลูกอยู่ไหน" — ลูกของกลุ่มคือ *ทีม* ซึ่งตอนนั้นยังไม่มีพาเนลให้เห็น) */
+    const children = nodes.filter(n => n.parent_id === node.id);
+    if (children.length > 0) {
+      const KIND_TH = { section: 'ส่วนงาน', department: 'แผนก', line: 'กลุ่ม', team: 'ทีม' };
+      const kinds = [...new Set(children.map(c => KIND_TH[c.kind] || c.kind))].join('/');
+      const names = children.slice(0, 6).map(c => c.name).join(', ')
+                  + (children.length > 6 ? ` …อีก ${children.length - 6}` : '');
+      return toast.error(`ลบไม่ได้: "${node.name}" ยังมี${kinds}ลูก ${children.length} รายการ — ${names}`
+        + ' · ย้าย/ลบลูกก่อน หรือกด "ปิดใช้งาน" แทน');
+    }
+    /* 🔴 relate table ไม่ได้มีแค่ "ลูกในผัง" — ตารางอื่นชี้โหนดนี้อยู่ด้วย (05/10 วัดจริง)
+         employees.org_node_id 308 แถว · profiles.org_node_id 72 · org_assignments 4
+         + สำเนาชื่อแบบ text (employees.section/department/group_name/team · profiles.section/team/sections[])
+       เดิมเช็คแค่ลูก ⇒ ลบ "DIE MTN" (ไม่มีลูก) = พนักงาน 9 คนถูก set null เงียบ ·
+       ลบกลุ่ม "APRON ASSY" = 35 คนเหลือชื่อกลุ่มที่ไม่มีอยู่ในผัง · ดู src/utils/orgNodeRefs.js */
+    const refs = await loadOrgNodeRefs(supabase, node, nodes);
+    const blocked = orgRefBlockMessage(node, refs);
+    if (blocked) return toast.error(blocked);
+    if (!confirm(`ลบ "${node.name}" ?` + orgRefDeleteNote(refs)
+      + '\n\n(ถ้าเคยผูกกับข้อมูลอื่นแนะนำ "ปิดใช้งาน" แทนการลบ)')) return;
+    const { data: gone, error } = await supabase.from('org_nodes').delete().eq('id', node.id).select('id');
+    // FK ฝั่ง DB เป็น restrict แล้ว (migration 20261005) — ด่านชั้นสองกันกรณีมีคนผูกเพิ่มระหว่างที่เปิดจอค้าง
+    if (error) return toast.error(error.code === '23503'
+      ? `ลบไม่ได้: ยังมีข้อมูลอื่นผูกกับ "${node.name}" อยู่ (เพิ่งถูกผูกเพิ่ม?) — รีเฟรชแล้วลองอีกครั้ง`
+      : 'ลบไม่สำเร็จ: ' + error.message);
+    if (!gone?.length) return toast.error('ลบไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือรายการนี้ถูกลบไปแล้ว');
     toast.success('ลบสำเร็จ');
     if (node.kind === 'section' && selSection === node.id) setSelSection(null);
     if (node.kind === 'department' && selDept === node.id) setSelDept(null);
+    if (node.kind === 'line' && selLine === node.id) setSelLine(null);
     fetchAll();
   };
 
@@ -351,15 +443,39 @@ export default function OrgSetup() {
               )}
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
-              <div key={l.id} style={itemStyle(false)}>
+              <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
                 <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
                   {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
+                  {/* จำนวนทีมใต้กลุ่ม — เห็นตั้งแต่ก่อนกด จะได้รู้ว่าทำไมลบไม่ได้ */}
+                  {teamsOf(l.id).length > 0 && (
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({teamsOf(l.id).length} ทีม)</span>
+                  )}
                   {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
                 </span>
                 {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
             {selDept && !currentLines.length && <Empty text="ยังไม่มีกลุ่มในแผนกนี้" />}
+          </div>
+
+          {/* Teams — ชั้นที่ 4 (2026-10-05) · ทีมมีอยู่ในผังและถูกใช้จริงโดย useOrgTeams()
+              แต่เดิมไม่มีที่ไหนให้เห็น ⇒ ลบกลุ่มไม่ได้แล้วหาลูกไม่เจอ (ดูคอมเมนต์ที่ teamsOf) */}
+          <div style={colStyle} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <strong style={{ fontSize: 13, color: 'var(--text2)' }}>TEAM / ทีม ({currentTeams.length})</strong>
+              {canAddTeamHere(selLine) && (
+                <button className="tbtn" onClick={() => selLine && openCreate('team', selLine)} disabled={!selLine} style={addBtnSt}>➕</button>
+              )}
+            </div>
+            {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
+              <div key={t.id} style={itemStyle(false)}>
+                <span style={{ fontSize: 13, color: t.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: t.is_active ? 'none' : 'line-through' }}>
+                  {t.name}{t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>}
+                </span>
+                {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
+              </div>
+            ))}
+            {selLine && !currentTeams.length && <Empty text="ยังไม่มีทีมในกลุ่มนี้" />}
           </div>
 
           {/* ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ ราย section (ย้ายมาจาก LineSetup — เป็นข้อมูลราย "ส่วนงาน") */}

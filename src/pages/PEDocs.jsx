@@ -79,7 +79,7 @@ const lbl = { fontSize: 12, fontWeight: 700, color: 'var(--muted)' };
 const thSt = { padding: '7px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const tdSt = { padding: '7px 9px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
 const btnSm = { padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11, fontWeight: 700, cursor: 'pointer' };
-const btnPrim = { padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, fontSize: 13, cursor: 'pointer' };
+const btnPrim = { padding: '7px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: 'pointer' };
 const multiline = (t) => (t || '').split('\n').filter(Boolean).map((l, i) => <div key={i}>{l}</div>);
 
 export default function PEDocs() {
@@ -348,7 +348,7 @@ export default function PEDocs() {
           {sets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || ''} {s.status === 'obsolete' ? '(obsolete)' : ''}</option>)}
         </select>
         {curSet?.image_url && (
-          <img src={curSet.image_url} alt="product" onClick={() => setImgView(curSet.image_url)}
+          <img loading="lazy" src={curSet.image_url} alt="product" onClick={() => setImgView(curSet.image_url)}
             style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', cursor: 'zoom-in' }} />
         )}
         {curSet && (

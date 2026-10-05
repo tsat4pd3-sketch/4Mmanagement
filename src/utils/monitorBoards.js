@@ -183,3 +183,33 @@ export const SHEET_LINE_HINT = {
   '110T': 'LINE D ( 110&300 Ton )',
   '300T': 'LINE D ( 110&300 Ton )',
 };
+
+/** คีย์ประจำ "แถวพาร์ท" ในบอร์ด = MAT + เลขพาร์ท
+ *  🔴 MAT เดียวกันเป็นคนละแถวได้จริง — 300T มี `20059152` 2 แถว (N1WB-E16A416 คว่ำครีบ /
+ *     N1WB-E16A417 หงายครีบ) Total SL 2,100 กับ 1,500 ⇒ ยุบเป็นแถวเดียว = ทีมวางแผนเสียแถวไป 1 แถว
+ *  🔴 **สูตรนี้ต้องตรงกับ trigger `monitor_parts_set_row_key()` ฝั่ง DR เป๊ะ** (migration
+ *     20261005_monitor_parts_row_key_dr.sql) — DB เป็นเจ้าของค่าที่เก็บ ฝั่งนี้ใช้แค่จับคู่/ยุบซ้ำ
+ *     ก่อนส่ง แก้ข้างเดียว = upsert ไปชนแถวผิดเงียบๆ */
+export const partRowKey = (matNo, partNo) =>
+  `${String(matNo ?? '').trim()}|${String(partNo ?? '').trim()}`;
+
+/** ยุบแถวซ้ำใน "ก้อนเดียวที่จะ upsert" — คีย์ซ้ำในชุดเดียว PostgreSQL ปฏิเสธทั้งก้อน
+ *  (`ON CONFLICT DO UPDATE command cannot affect row a second time`)
+ *  🔴 **ค่าล่างทับค่าบน ห้ามรวมยอด** — ไฟล์จริงวางบล็อกซ้ำไว้ (Argen ซ้ำ 2 พาร์ท ค่าเท่ากันทุกช่อง
+ *     256/256 · 192/192 = สำเนา) ถ้ารวมยอดจะกลายเป็น 2 เท่าเงียบๆ
+ *  คืน `conflict` = จำนวนที่ซ้ำแล้ว**ค่าไม่ตรงกัน** ⇒ จอต้องเขียนบอก ห้ามกลืน */
+export function dedupeByKey(rows, keyOf, sameOf) {
+  const at = new Map();
+  const out = [];
+  let merged = 0;
+  let conflict = 0;
+  for (const r of rows) {
+    const k = keyOf(r);
+    const i = at.get(k);
+    if (i === undefined) { at.set(k, out.length); out.push(r); continue; }
+    merged++;
+    if (sameOf && !sameOf(out[i], r)) conflict++;
+    out[i] = r;                        // ค่าล่างชนะ
+  }
+  return { rows: out, merged, conflict };
+}

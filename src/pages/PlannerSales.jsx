@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'r
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { colIdx, isEdiHeaderRow, detectEdiKind, HEADER_SCAN_ROWS, buildEdiDict, sigOf } from '../utils/ediDetect';
 import CustomerFileFormats from '../components/CustomerFileFormats';
-import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
+import { splitAlreadyDone, DONE_STATUSES, splitFirmVsForecast, splitCumCatchUp, FIRM_HORIZON_DAYS, scopedReplaceIds, buildPartMapIndex, mappedMatFor } from '../utils/ediMerge';
 import EdiMatchFixer from '../components/EdiMatchFixer';
 import LineSelect from '../components/LineSelect';
 import ProductSelect from '../components/ProductSelect';
@@ -44,7 +44,7 @@ const card = {
 };
 const btn = (active) => ({
   padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? '#08130a' : 'var(--text2)',
+  background: active ? 'var(--accent)' : 'var(--bg2)', color: active ? 'var(--accent-ink)' : 'var(--text2)',
   border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
 });
 const inputSt = {
@@ -221,12 +221,20 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     const iShip = col(ediDict.ship_to);
     const iPo = col(ediDict.po);
     const out = [];
+    /* 🔴 แถวยอด 0 = ลูกค้าบอกว่า "วันนั้นไม่ต้องส่ง" — ไม่สร้างใบ แต่ต้องใช้เป็นขอบเขตแทนที่ (2026-10-05)
+       เดิมทิ้งทั้งแถว ⇒ ลูกค้าส่ง 0 ทั้งสัปดาห์ = ship-to/พาร์ทนั้นไม่อยู่ในไฟล์ ⇒ ใบ pending เก่าค้างเต็มบอร์ด
+       (เคสจริง AAT 05/10: "วีคนี้ไม่มีออเดอร์ AAT แต่ระบบขึ้น 28 รอบ") */
+    const zeros = [];
     let skipped = 0;
     body.forEach(r => {
       const part = String(r[iPart] ?? '').trim();
       if (!part) return;
       const qty = numCell(r[iQty]);
       const d = parseDateCell(r[iDate]);
+      if (d && qty <= 0) {
+        zeros.push({ part, date: dateStr(d), shipTo: String(r[iShip] ?? '').trim() || 'EDI',
+          dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null });
+      }
       if (qty <= 0 || !d) { skipped++; return; }
       out.push({
         part, qty, date: dateStr(d),
@@ -238,7 +246,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         dock: iDock >= 0 ? (String(r[iDock] ?? '').trim() || null) : null,
       });
     });
-    return { is862, kind, rows: out, fName, skipped, sheet: sheet.sheet || null,
+    return { is862, kind, rows: out, zeros, fName, skipped, sheet: sheet.sheet || null,
       shipTos: [...new Set(out.map(r => r.shipTo))] };
   };
 
@@ -302,7 +310,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           // ⚠️ ต้องกรอง is_active — แถว kanban ที่ปิดไปแล้ว (EC superseded) ห้ามจ่ายคู่ p_no ได้อีก
           supabaseDR.from('kanban_standards').select('mat_no, p_no, part_name').eq('is_active', true).not('p_no', 'is', null),
           /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-          cachedMaster('dr_products:pno', async () => (await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null)).data || []),
+          cachedMaster('dr_products:pno', async () => mrows(await supabaseDR.from('dr_products').select('mat_no, p_no, name, customer').eq('is_active', true).not('p_no', 'is', null))),
           supabaseDR.from('ship_to_plants').select('code, customer_name'),
           // 🔗 คำตัดสินของคน (edi_part_map) — ชนะการเดาทุกชั้น · โหลดไม่ได้ = เดาแบบเดิม + เตือน
           supabaseDR.from('edi_part_map').select('ship_to, part_key, customer_part_no, mat_no'),
@@ -437,7 +445,15 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             });
           }
         }
+        /* 🔴 ship-to ที่ใช้ e-SMART (มีตารางรอบใน customer_pull_rounds) — แถว "ยอดค้างตาม Cum" ของ 862
+           ไม่ใช่เที่ยวรถ ห้ามเป็นใบส่ง (ชน e-SMART · เคสจริง AAT 01–02/10) ดู splitCumCatchUp ใน ediMerge.js
+           อ่านไม่ได้ = ไม่ตัดอะไร (พฤติกรรมเดิม) + บอกบนจอ ห้ามเดาเงียบ */
+        const { data: pullRows, error: pullErr } = await supabaseDR.from('customer_pull_rounds')
+          .select('ship_to').eq('is_active', true);
+        const pullShipTos = [...new Set((pullRows || []).map(x => String(x.ship_to || '').trim()).filter(Boolean))];
+        const catchUp = is862 ? splitCumCatchUp(records, pullShipTos).catchUp : [];
         setEdi({
+          pullShipTos, pullErr: pullErr ? pullErr.message : null, catchUp,
           kind: is862 ? 'orders' : 'forecast',
           kindGuess, kindForced: null,          // kindForced = คนกดเลือกเอง (ชนะการเดาเสมอ)
           skipped: ediFiles.reduce((a, f) => a + (f.skipped || 0), 0),
@@ -450,9 +466,16 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           retiredMaps: [...retiredMaps.values()],
           nonFg: [...nonFgHits.entries()].filter(([part]) => !guessed.has(part)).map(([part, n]) => ({ part, mat: n.mat, name: n.name, shipTos: [...n.shipTos] })),
           sold,
-          shipTos: [...new Set(records.map(r => r.shipTo))].sort(),
-          dateFrom: records.reduce((a, r) => (a < r.date ? a : r.date), records[0].date),
-          dateTo: records.reduce((a, r) => (a > r.date ? a : r.date), records[0].date),
+          /* แถวยอด 0 (862 เท่านั้น) — ขยายขอบเขตแทนที่ให้ครอบวัน/ship-to ที่ลูกค้าบอกว่าไม่ต้องส่ง */
+          zeroRecs: is862 ? ediFiles.flatMap(f => f.zeros || []) : [],
+          ...(() => {
+            const all = is862 ? [...records, ...ediFiles.flatMap(f => f.zeros || [])] : records;
+            return {
+              shipTos: [...new Set(all.map(r => r.shipTo))].sort(),
+              dateFrom: all.reduce((a, r) => (a < r.date ? a : r.date), all[0].date),
+              dateTo: all.reduce((a, r) => (a > r.date ? a : r.date), all[0].date),
+            };
+          })(),
         });
         setHeaders([]); setRows([]); setFileName('');
         toast[kindGuess.sure ? 'success' : 'info'](
@@ -592,7 +615,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
 
   const doImportEdi = async () => {
     if (!edi) return;
-    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0;
+    let coveredCount = 0, fcCount = 0, fcSkipped = 0, keptCount = 0, cumCount = 0, cumQty = 0;
     if (!edi.kindGuess?.sure && !edi.kindForced) {
       toast.error('ระบบแยกไม่ออกว่าเป็น 830 หรือ 862 — กดเลือกชนิดก่อนนำเข้า');
       return;
@@ -644,7 +667,12 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            แล้วทยอยกลายเป็นสีแดงวันต่อวัน (เกิดจริง 1,361 ใบ / 2.0 ล้านชิ้น)
            → ไม่มีเวลา + เกิน +14 วัน ⇒ ลง `customer_forecasts` แทน (ดู ediMerge.js)
            หมายเหตุ: 830 ชนะเสมอใน `dedupeForecastRows` ⇒ ไม่นับซ้ำ · ที่ไม่มี 830 แผนไม่หาย */
-        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(edi.records, wd);
+        /* ① ตัดแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ออกก่อน (ไม่ใช่เที่ยวรถ — e-SMART เป็นเจ้าของเที่ยววันนี้)
+           ⚠️ replaceScoped ด้านล่างยังรับ edi.records ทั้งก้อน ⇒ ใบค้างเก่าของวันเดียวกันถูกแทนที่ (ไม่ค้างซ้อน) */
+        const { keep: keepRecs, catchUp: cumRecs } = splitCumCatchUp(edi.records, edi.pullShipTos || []);
+        cumCount = cumRecs.length;
+        cumQty = cumRecs.reduce((a, r) => a + (Number(r.qty) || 0), 0);
+        const { firm: firmRecs, forecast: fcRecs } = splitFirmVsForecast(keepRecs, wd);
         fcCount = fcRecs.length;
         /* 🔴 ใบที่ "ทำไปแล้ว" = ความจริงของเที่ยวนั้น — 862 ห้ามสร้างซ้ำ (2026-09-18)
            เดิมเทียบ `customer|part|date|time` **ตรงตัว** ⇒ ไม่เคย match กับใบ e-SMART เพราะ
@@ -664,7 +692,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
             .gte('due_date', delFrom).lte('due_date', edi.dateTo),
           x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, dock: x.dock_code, date: x.due_date }),
-          edi.records, { useDock: true, from: delFrom });
+          [...edi.records, ...(edi.zeroRecs || [])], { useDock: true, from: delFrom });
         keptCount = r862.kept;
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
@@ -717,7 +745,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
         + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
-        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : ''));
+        + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : '')
+        + (cumCount ? ` · 📊 ${cumCount} รายการเป็นยอดค้างตาม Cum ของลูกค้า (${cumQty.toLocaleString()} ชิ้น) ไม่สร้างเป็นใบส่ง — e-SMART ดึงตามจริง` : ''));
       // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
       if (fcSkipped) toast.error(`⚠️ แผนระยะยาว ${fcSkipped} รายการยังจับคู่ MAT ไม่ได้ จึงไม่ได้บันทึก — ผูก MAT ที่ตาราง "จับคู่พาร์ท" แล้วอัพไฟล์ซ้ำ`);
       // แจ้งห้อง Smart Logistic (best-effort — พังก็ไม่กระทบการนำเข้า)
@@ -851,6 +880,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
                 <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
                 <span>🧾 {edi.records.length} รายการ</span>
+                {ediKind === 'orders' && edi.zeroRecs?.length > 0 && (
+                  <span title="ลูกค้าส่งยอด 0 = วันนั้นไม่ต้องส่ง · ใบ pending เดิมของพาร์ท/dock/วันนั้นจะถูกล้าง (ใบที่ยืนยัน/ส่งแล้วไม่ถูกแตะ)">
+                    🚫 ยอด 0 จากลูกค้า {edi.zeroRecs.length} แถว ({[...new Set(edi.zeroRecs.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')}) → ล้างใบรอส่งเดิมของวันนั้น
+                  </span>
+                )}
                 {edi.mappedCount > 0 && <span title="จับคู่ตามที่คนยืนยันไว้ในทะเบียน edi_part_map">✅ ใช้คู่ที่ยืนยันไว้ {edi.mappedCount} รายการ</span>}
                 <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
                   🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
@@ -859,6 +893,24 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
+              {/* 📊 ยอดค้างตาม Cum (ship-to ที่ใช้ e-SMART) — ไม่สร้างใบ แต่ต้องเห็นตัวเลข (ห้ามทิ้งเงียบ) */}
+              {ediKind === 'orders' && edi.catchUp?.length > 0 && (
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, padding: '8px 10px', borderRadius: 8,
+                  background: 'rgba(77,159,255,0.08)', border: '1px solid rgba(77,159,255,0.3)' }}>
+                  📊 <strong>ยอดค้างตาม Cum ของลูกค้า {edi.catchUp.length} รายการ</strong> (แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่ลูกค้ารับแล้ว)
+                  — <strong>ไม่สร้างเป็นใบส่ง</strong> เพราะ {[...new Set(edi.catchUp.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')} ใช้ e-SMART ดึงเป็นเที่ยวจริงอยู่แล้ว
+                  <div style={{ marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {edi.catchUp.map((r, i) => (
+                      <span key={i} style={{ fontFamily: 'monospace' }}>{r.mat_no || r.part} · {r.dock || '—'} · <strong>{Number(r.qty).toLocaleString()}</strong></span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {ediKind === 'orders' && edi.pullErr && (
+                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                  ⚠️ อ่านตารางรอบ e-SMART ไม่ได้ ({edi.pullErr}) — รอบนี้จะสร้างแถวยอดค้างตาม Cum เป็นใบส่งเหมือนเดิม
+                </div>
+              )}
               {/* 🔗 3 คำเตือนจับคู่พาร์ท — แก้บนจอนี้ได้เลย คำตัดสินถูกจำใน edi_part_map (2026-10-01)
                   บันทึกแล้วอ่านไฟล์ชุดเดิมใหม่ทันที ⇒ คำเตือนที่แก้แล้วหายไป · รอบหน้าไม่ถามซ้ำ */}
               <EdiMatchFixer edi={edi} canEdit={canUpload} custLabel={custLabel}
@@ -869,7 +921,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
@@ -911,7 +963,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </table>
               </div>
               <button onClick={doImport} disabled={saving}
-                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังนำเข้า...' : `⬆ นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>

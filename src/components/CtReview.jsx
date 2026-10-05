@@ -219,7 +219,7 @@ export default function CtReview({ lines = [] }) {
                       {canApprove && (
                         <>
                           <button className="tbtn" disabled={busy === q.id} onClick={() => approve(q)}
-                            style={{ background: 'var(--accent)', color: '#fff', border: 'none', marginRight: 6 }}>
+                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', marginRight: 6 }}>
                             ✓ อนุมัติ
                           </button>
                           <button className="tbtn" disabled={busy === q.id} onClick={() => reject(q)}>✕ ปฏิเสธ</button>

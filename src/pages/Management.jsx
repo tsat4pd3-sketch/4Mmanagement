@@ -593,16 +593,18 @@ export default function Management() {
       const periodStart = getPeriodStartDate(period, workDate);
 
       // ปิด record เดิมที่ยังเปิดอยู่ของพนักงานคนนี้
-      await supabase
+      // 🔴 ปิดไม่สำเร็จ = ห้าม insert ต่อ (QC 05/10 · กฎเขียน DB ข้อ 1) — ไม่งั้นมี record เปิดค้าง 2 จุดพร้อมกัน
+      //    ⇒ ประวัติประจำจุด/Workforce Insight นับคนคนเดียวอยู่ 2 ที่ · การย้ายจุดหลัก (daily_production_logs) สำเร็จไปแล้ว
+      const closedOk = checkWrite(await supabase
         .from('station_assignment_logs')
         .update({ ended_at: periodStart.toISOString() })
         .eq('employee_id', droppedWorker.employee_id)
         .eq('work_date', workDate)
         .eq('shift', shift)
-        .is('ended_at', null);
+        .is('ended_at', null), 'ย้ายจุดแล้ว แต่ปิดประวัติประจำจุดเดิม');
 
       // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
-      if (finalAssign) {
+      if (closedOk && finalAssign) {
         const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
         checkWrite(await supabase.from('station_assignment_logs').insert({
           employee_id:      droppedWorker.employee_id,
@@ -668,6 +670,21 @@ export default function Management() {
           } else {
             const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
             const mc = MAN_CASE_META[manCase];
+            /* 🔴 กันใบซ้ำ (CLAUDE.md §4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ · QC 05/10)
+               ลากคนเดิมเข้า-ออกจุดเดิมหลายรอบ = ใบรอเอกสารซ้อนในคิวทีละใบ — ใบที่ยังค้าง (คน+จุด+ไลน์เดียวกัน) มีอยู่แล้ว = ไม่ออกใหม่
+               ไม่จำกัดวัน (ต่างจาก case 1): ใบ pending ของเมื่อวานยังเป็นงานเดียวกันที่รอ OJT อยู่ */
+            const { data: dupPend, error: dupErr } = await supabase.from('four_m_logs')
+              .select('id').eq('category', 'Man').eq('line_name', station.line_name).eq('description', desc)
+              .in('status', ['pending_doc', 'pending', 'pending_qa']).limit(1);
+            if (dupErr) {
+              // เช็คซ้ำไม่ได้ = ไม่ออกใบ (เสี่ยงท่วมคิว) แต่ต้องบอกให้คนเปิดเอง — ห้ามเงียบ
+              toast.error('เข้าตำแหน่งแล้ว แต่ตรวจใบ 4M Man ซ้ำไม่สำเร็จ — ยังไม่ได้เปิดใบ ให้เปิดเองที่หน้า 4M: ' + dupErr.message);
+              return;
+            }
+            if (dupPend?.length) {
+              toast.info('เข้าตำแหน่งแล้ว — มีใบ 4M Man ของคน/จุดนี้รอเอกสารอยู่แล้ว (ไม่ออกใบซ้ำ)');
+              return;
+            }
             const { error: m4Err } = await supabase.from('four_m_logs').insert([{
               work_date: today,
               line_name: station.line_name,
@@ -1274,7 +1291,7 @@ export default function Management() {
                             {h.workers.map(w => (
                               <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
                                 {w.image_url
-                                  ? <img src={w.image_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
+                                  ? <img loading="lazy" src={w.image_url} alt="" style={{ width: 20, height: 20, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                                   : <span style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--bg3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 11 }}>👤</span>}
                                 <span style={{ minWidth: 0, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{w.name || '—'}</span>
                                 {w.station && <span style={{ color: 'var(--muted)', marginLeft: 'auto', flexShrink: 0, whiteSpace: 'nowrap' }}>{w.station}</span>}
@@ -1425,7 +1442,7 @@ export default function Management() {
             const active = mainView === v.k;
             return (
               <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? '#08130a' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
+                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
                 {v.icon} {v.label}
               </button>
             );
@@ -1731,7 +1748,7 @@ export default function Management() {
                     style={{ width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                   <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: '#08130a' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -2020,7 +2037,7 @@ export default function Management() {
                       return (
                         <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' } : null) }}>
-                            {row.img && <img src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                            {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                               <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                 {row.label}
@@ -2076,7 +2093,7 @@ export default function Management() {
             {ppeAlertsInView.map(p => (
               <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)' }}>
                 {p.employees?.image_url
-                  ? <img src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
+                  ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
                   : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
                 <span style={{ fontSize: 11, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
@@ -2464,7 +2481,7 @@ export default function Management() {
                     {workers.map(w => (
                       <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
                         {w.employees?.image_url
-                          ? <img src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
+                          ? <img loading="lazy" src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                           : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
                         }
                         <div style={{ minWidth: 0 }}>
@@ -2489,7 +2506,7 @@ export default function Management() {
           style={{
             position: 'fixed', bottom: 20, right: 20, zIndex: 500,
             width: 54, height: 54, borderRadius: '50%',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             fontSize: 22, fontWeight: 900, cursor: 'pointer',
             boxShadow: '0 4px 20px rgba(61,214,92,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -2504,7 +2521,7 @@ export default function Management() {
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
-                ? <img src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
+                ? <img loading="lazy" src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
                 : <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
@@ -2562,7 +2579,7 @@ export default function Management() {
       {isMobile && fitPopup && (
         <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
+            <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{fitPopup.worker.employees?.name}</div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>→ {fitPopup.station.station_name}</div>
@@ -2586,7 +2603,7 @@ export default function Management() {
             {/* Worker header */}
             <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
               {detailSheet.worker.employees?.image_url
-                ? <img src={detailSheet.worker.employees.image_url} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${fitColor(detailSheet.fit.score)}`, flexShrink: 0 }} />
+                ? <img loading="lazy" src={detailSheet.worker.employees.image_url} style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${fitColor(detailSheet.fit.score)}`, flexShrink: 0 }} />
                 : <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, flexShrink: 0 }}>👤</div>
               }
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -2695,7 +2712,7 @@ export default function Management() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
-                      ? <img src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
+                      ? <img loading="lazy" src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
                       : <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
                     }
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -2743,7 +2760,7 @@ export default function Management() {
                       style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `${fc}0d`, border: `1px solid ${fc}30`, cursor: 'pointer', transition: 'background 0.15s' }}
                     >
                       {w.employees?.image_url
-                        ? <img src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
+                        ? <img loading="lazy" src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
                         : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}18`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
                       }
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2859,7 +2876,7 @@ export default function Management() {
                 } finally {
                   setIsSavingDoc(false);
                 }
-              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
+              }} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, opacity: isSavingDoc ? 0.6 : 1, cursor: isSavingDoc ? 'not-allowed' : 'pointer' }}>
                 {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
               </button>
               <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
@@ -2990,7 +3007,7 @@ export default function Management() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
@@ -3144,7 +3161,7 @@ function FitPopup({ fitPopup, onClose }) {
     <div style={{ position: 'fixed', bottom: 24, right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: `0 8px 36px rgba(0,0,0,0.6)`, zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <img src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
+        <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: '#f0f0f4' }}>{fitPopup.worker.employees?.name}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>

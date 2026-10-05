@@ -42,7 +42,7 @@ const appendCsv = (cur, v) => {
 /* ── styles (ให้ตรงกับ MtnRepair) ── */
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const th = { textAlign: 'left', padding: '8px 8px', fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' };
 const td = { padding: '7px 8px', fontSize: 12.5, borderBottom: '1px solid var(--border)', verticalAlign: 'middle' };
@@ -348,7 +348,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                 <tr key={p.id}>
                   <td style={td}>
                     {p.image_url
-                      ? <img src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
+                      ? <img loading="lazy" src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
                       : <div style={{ width: 34, height: 34, borderRadius: 5, background: 'var(--bg3)', border: '1px dashed var(--border)', display: 'grid', placeItems: 'center', fontSize: 13, color: 'var(--muted)' }}>🔩</div>}
                   </td>
                   <td style={td}>
@@ -625,8 +625,12 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
           const { error: e3 } = await supabaseDR.from('mtn_spare_usage_monthly').upsert(rows, { onConflict: 'part_id,month_key,source' });
           if (e3) toast.error('บันทึกยอดใช้ย้อนหลังไม่สำเร็จ: ' + e3.message);
         }
-        if (clear.length) await supabaseDR.from('mtn_spare_usage_monthly')
-          .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+        if (clear.length) {
+          // เดิมไม่อ่าน error — ล้างยอดเดือนที่ลบออกไม่สำเร็จ = ยอดเก่ายังนับใน Rank A/B/C เงียบๆ (QC 05/10)
+          const { error: e4 } = await supabaseDR.from('mtn_spare_usage_monthly')
+            .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+          if (e4) toast.error('ล้างยอดใช้ย้อนหลังที่ลบออกไม่สำเร็จ (ยอดเดิมยังถูกนับ): ' + e4.message);
+        }
       }
     }
     setSaving(false);

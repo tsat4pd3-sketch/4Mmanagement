@@ -34,7 +34,7 @@ const row = {
 const mono = { fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--text)' };
 const btn = (primary) => ({
   fontSize: 12, fontWeight: 700, padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
-  background: primary ? 'var(--accent)' : 'var(--bg2)', color: primary ? '#08130a' : 'var(--text2)',
+  background: primary ? 'var(--accent)' : 'var(--bg2)', color: primary ? 'var(--accent-ink)' : 'var(--text2)',
   border: `1px solid ${primary ? 'var(--accent)' : 'var(--border)'}`, fontFamily: 'var(--font-body)',
 });
 const LIMIT = 8;

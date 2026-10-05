@@ -807,7 +807,61 @@ export function parseSheetForBoard(name, rows = [], { asOf } = {}) {
   else if (d.kind === 'raw') r = parseRawSheet(rows, { asOf });
   else if (d.kind === 'vendor') r = d.flat ? parseVendorFlatSheet(rows) : parseVendorBlockSheet(rows);
   else r = { parts: [], dates: [], rowKeys: [], warnings: ['ชนิดบอร์ดที่ยังไม่มีตัวแกะ'] };
-  return { ...d, ...r };
+  const m = mergeDuplicateParts(r.parts);
+  return { ...d, ...r, parts: m.parts, warnings: [...(r.warnings || []), ...m.warnings] };
+}
+
+/* ═══ เลข MAT ซ้ำในชีทเดียว → รวมเป็นพาร์ทเดียว (2026-10-05 · เคสจริงชีท Argen)
+   ตาราง `monitor_board_parts` unique (board_id, mat_no) ⇒ ส่ง MAT ซ้ำใน upsert ก้อนเดียว
+   = Postgres โยน *"ON CONFLICT DO UPDATE command cannot affect row a second time"* ⇒ **นำเข้าล้มทั้งบอร์ด**
+   กติกา (ห้ามทิ้งแถวเงียบ · ห้ามเดาเกินหลักฐาน):
+   · แถว "ยอดไหล" (PLAN/IN/OUT/ORDER REQUIREMENT/ส่งชุบ) = **บวกกัน** (ความต้องการ 2 บล็อกของ MAT เดียว = ต้องการรวม)
+   · แถว "ระดับ/ยอดคงเหลือ" (BALANCE/UNBOUND/WIP/MIN/MAX/STOCK W/H/ค้างที่ร้านชุบ) + ข้อความ + แอตทริบิวต์
+     = **แถวแรกชนะ** (ของชิ้นเดียวกันนับ 2 รอบ = สต็อกปลอม) · ค่าที่ขัดกันต้องขึ้นเป็นคำเตือน
+   · ทุก MAT ที่ซ้ำต้องขึ้นคำเตือนบนจอ preview ให้ทีมวางแผนไปแก้ไฟล์ต้นทาง */
+const FLOW_ROW_KEYS = new Set(['plan', 'in', 'out', 'order_req', 'send', 'order', 'to_vendor', 'from_vendor']);
+
+export function mergeDuplicateParts(parts = []) {
+  const byMat = new Map();
+  const out = [];
+  const dup = new Map();          // mat → จำนวนแถว
+  const clash = new Set();        // mat ที่ค่าระดับ/คงเหลือขัดกัน
+  for (const p of parts || []) {
+    const k = String(p?.mat_no ?? '').trim();
+    if (!k) { out.push(p); continue; }
+    const first = byMat.get(k);
+    if (!first) {
+      const copy = { ...p, cells: {}, texts: {} };
+      for (const [rk, m] of Object.entries(p.cells || {})) copy.cells[rk] = { ...m };
+      for (const [rk, m] of Object.entries(p.texts || {})) copy.texts[rk] = { ...m };
+      byMat.set(k, copy); out.push(copy);
+      continue;
+    }
+    dup.set(k, (dup.get(k) || 1) + 1);
+    for (const [key, v] of Object.entries(p)) {
+      if (key === 'cells' || key === 'texts') continue;
+      if ((first[key] === null || first[key] === undefined || first[key] === '') && v !== null && v !== undefined) first[key] = v;
+    }
+    for (const [rk, m] of Object.entries(p.cells || {})) {
+      const bag = (first.cells[rk] ||= {});
+      for (const [d, v] of Object.entries(m || {})) {
+        if (FLOW_ROW_KEYS.has(rk)) bag[d] = (bag[d] || 0) + v;
+        else if (bag[d] === undefined) bag[d] = v;
+        else if (bag[d] !== v) clash.add(k);
+      }
+    }
+    for (const [rk, m] of Object.entries(p.texts || {})) {
+      const bag = (first.texts[rk] ||= {});
+      for (const [d, v] of Object.entries(m || {})) if (bag[d] === undefined) bag[d] = v;
+    }
+  }
+  const warnings = [];
+  if (dup.size) {
+    warnings.push(`เลข MAT ซ้ำในชีท ${dup.size} ตัว (${[...dup].map(([m, n]) => `${m} ×${n}`).join(', ')}) — `
+      + 'รวมเป็นแถวเดียว: ยอดไหล (PLAN/IN/OUT/ความต้องการ) บวกกัน · ยอดคงเหลือ/MIN/MAX ใช้แถวแรก — ตรวจไฟล์ต้นทาง');
+  }
+  if (clash.size) warnings.push(`ยอดคงเหลือ/MIN/MAX ของ MAT ซ้ำไม่ตรงกัน: ${[...clash].join(', ')} — ใช้ค่าของแถวแรก`);
+  return { parts: out, warnings };
 }
 
 

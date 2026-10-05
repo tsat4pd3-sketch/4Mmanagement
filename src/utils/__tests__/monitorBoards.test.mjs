@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   BOARD_TABS, BOARD_KINDS, ROW_PRESETS, BOARD_DEFAULTS, ROW_LABEL,
   rowDefs, balanceRowKey, minRowKey, boardPeriods, boardKeyOfSheet, SHEET_LINE_HINT,
+  partRowKey, dedupeByKey,
 } from '../monitorBoards.js';
+import { readFileSync } from 'node:fs';
 
 test('ทุกชนิดบอร์ดมีชุดแถวตั้งต้น + ค่าตั้งต้นครบ', () => {
   for (const k of BOARD_KINDS) {
@@ -108,4 +110,49 @@ test('SHEET_LINE_HINT — 110T กับ 300T ชี้ไลน์เดีย�
   assert.equal(SHEET_LINE_HINT['110T'], SHEET_LINE_HINT['300T']);
   assert.equal(SHEET_LINE_HINT['800T'], 'LINE A ( 800 Ton )');
   assert.equal(Object.keys(SHEET_LINE_HINT).length, 5);
+});
+
+/* ── คีย์แถวพาร์ท = MAT + เลขพาร์ท (05/10) ─────────────────────────────────────
+   เคสจริงจากไฟล์ 1.Monitoring-Oct.xlsx ที่ทำให้นำเข้าไม่ได้ 2 รอบ */
+test('partRowKey — MAT เดียวกันคนละเลขพาร์ท = คนละคีย์ (300T คว่ำครีบ/หงายครีบ)', () => {
+  assert.notEqual(
+    partRowKey('20059152', 'N1WB-E16A416 (BL) คว่ำครีบ'),
+    partRowKey('20059152', 'N1WB-E16A417 (BL) หงายครีบ'),
+  );
+  // ไฟล์มีช่องว่างหัวท้ายปนมาเสมอ — ต้องไม่ทำให้แถวเดิมกลายเป็นแถวใหม่
+  assert.equal(partRowKey(' 20059152 ', ' N1WB-E16A416 '), partRowKey('20059152', 'N1WB-E16A416'));
+  // ไม่มีเลขพาร์ท = ท้ายคีย์ว่าง (ตรงกับ coalesce(part_no,'') ฝั่ง SQL) · null กับ '' ต้องเท่ากัน
+  assert.equal(partRowKey('5001', null), '5001|');
+  assert.equal(partRowKey('5001', null), partRowKey('5001', ''));
+});
+
+test('partRowKey — สูตรฝั่ง JS ต้องตรงกับ trigger ฝั่ง DR (กันแก้ข้างเดียว)', () => {
+  const sql = readFileSync(
+    new URL('../../../supabase/migrations/20261005_monitor_parts_row_key_dr.sql', import.meta.url),
+    'utf8',
+  );
+  // trigger ต่อด้วยขีดตั้ง 1 ตัว และ coalesce เป็น '' ทั้งสองฝั่ง — เปลี่ยนตัวคั่น/ลำดับ = คีย์เก่าอ่านไม่ตรง
+  assert.match(sql, /new\.row_key\s*:=\s*coalesce\(new\.mat_no,''\)\s*\|\|\s*'\|'\s*\|\|\s*coalesce\(new\.part_no,''\)/);
+  assert.equal(partRowKey('A', 'B'), 'A|B');
+  // index ที่ ON CONFLICT อ้าง ต้องมีจริงในไฟล์ migration และต้องถอดคีย์เก่าที่ตั้งบนสมมติฐาน "1 MAT 1 แถว"
+  assert.match(sql, /create unique index if not exists monitor_board_parts_rowkey_uniq[\s\S]*\(board_id, row_key\)/);
+  assert.match(sql, /drop index if exists public\.monitor_board_parts_bm_uniq/);
+  assert.match(sql, /drop index if exists public\.monitor_board_parts_uniq/);
+});
+
+test('dedupeByKey — ค่าล่างชนะ ห้ามรวมยอด และต้องนับที่ค่าไม่ตรงกัน', () => {
+  const rows = [
+    { k: 'a', qty: 256 }, { k: 'b', qty: 192 },
+    { k: 'a', qty: 256 },          // Argen: สำเนา ค่าเท่ากัน ⇒ ยุบเฉยๆ
+    { k: 'b', qty: 999 },          // ค่าไม่ตรง ⇒ ต้องถูกนับไว้บอกบนจอ
+  ];
+  const d = dedupeByKey(rows, (r) => r.k, (x, y) => x.qty === y.qty);
+  assert.equal(d.rows.length, 2);
+  assert.equal(d.merged, 2);
+  assert.equal(d.conflict, 1);
+  // 🔴 ห้ามรวมยอด — 256+256 = 512 คือบั๊กที่กฎนี้มีไว้กัน
+  assert.equal(d.rows.find((r) => r.k === 'a').qty, 256);
+  assert.equal(d.rows.find((r) => r.k === 'b').qty, 999);   // ค่าล่างชนะ
+  // ลำดับแถวยึดตำแหน่งที่เจอครั้งแรก (แถวในบอร์ดต้องเรียงเหมือนในไฟล์)
+  assert.deepEqual(d.rows.map((r) => r.k), ['a', 'b']);
 });

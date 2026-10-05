@@ -1,4 +1,6 @@
-import { fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
+import { fmtAxis, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { FocusAxisNote } from './ObeyaSheet';
+import { statusColor } from '../utils/statusTone';
 import { useState, useEffect, useMemo, useCallback, useRef, useContext, Fragment } from 'react';
 import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -92,11 +94,16 @@ async function pageAll(buildQuery, onProg) {
    - แกนเดือนต่อเนื่อง ม.ค.–ธ.ค. เสมอ (เดือนไม่มีข้อมูล = เว้น ไม่ข้ามเดือน)
    - เดือนปัจจุบัน "ยังไม่จบ" = โปร่ง/จาง ห้ามดูเหมือนเดือนจบแล้ว
    - สี: มีเป้า+ทิศทาง → เดือนผ่านเป้าเขียว/พลาดแดง · ไม่มีเป้า → สีกลางเดียว */
-const missTarget = (v, target, dir) => {
-  if (v == null || target == null || !dir) return null;
-  return dir === 'up' ? v < target : v > target;
+/* 🔴 สีจุด/แท่งในกราฟ = เกณฑ์ทางการ `scoreDef` เท่านั้น (audit 05/10 — เดิม `missTarget` 2 สีไม่รู้จัก Commitment
+   ⇒ เดือนที่ตารางให้ △ เหลือง กราฟข้างๆ กลับแดง = จอเดียวกันตอบคนละสถานะ) · ไม่มีเป้า = สีกลาง */
+const defOfTarget = (target, dir) => (target == null || !dir ? null : { target_compare: dir === 'down' ? '<=' : '>=', target_value: target, direction: dir });
+const levelColor = (v, def) => {
+  if (v == null || !def || (def.target_value == null && def.commit_value == null && !def.commitment)) return 'var(--accent)';
+  const st = scoreDef(v, def).status;
+  return st === 'good' || st === 'warn' || st === 'bad' ? statusColor(st) : 'var(--accent)';   // ชุดสีกลาง utils/statusTone
 };
-function MiniChart({ vals, kind, target, dir, curIdx, plan }) {
+function MiniChart({ vals, kind, target, dir, curIdx, plan, def = null }) {
+  const sdef = def || defOfTarget(target, dir);
   const W = 150, H = 30, PAD = 2, n = 12, step = W / n;
   const nums = vals.filter(v => v != null && Number.isFinite(v));
   if (!nums.length) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>·</span>;
@@ -108,7 +115,7 @@ function MiniChart({ vals, kind, target, dir, curIdx, plan }) {
   const hi = Math.max(...nums, ...pnums, target ?? -Infinity, isBar ? 1 : -Infinity);
   const span = hi - lo || 1;
   const y = v => H - PAD - ((v - lo) / span) * (H - PAD * 2);
-  const colorOf = (v) => { const m = missTarget(v, target, dir); return m == null ? 'var(--accent)' : m ? '#ef4444' : '#22c55e'; };
+  const colorOf = (v) => levelColor(v, sdef);
   const pts = vals.map((v, i) => (v == null ? null : { x: i * step + step / 2, y: y(v), v, i })).filter(Boolean);
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }} aria-hidden>
@@ -132,7 +139,11 @@ function MiniChart({ vals, kind, target, dir, curIdx, plan }) {
 
 /* กราฟใหญ่ (คลิกจากแถว) — Recharts เต็มแกน + เส้นเป้า · ตัวเลขชุดเดียวกับตาราง ห้ามคำนวณใหม่ */
 function ChartModal({ c, curIdx, onClose }) {
+  const sdef = c.def || defOfTarget(c.target, c.dir);
   const data = TH_M.map((m, i) => ({ m: m.replace('.', ''), v: c.vals[i] != null && Number.isFinite(c.vals[i]) ? +Number(c.vals[i]).toFixed(c.dec ?? 0) : null, i }));
+  /* กราฟเส้นขยายช่วงค่าให้เห็นความต่าง — ช่วงต้องมาจาก focusDomain (ทุกจุด+เป้าอยู่ในช่วง · มี 0 จริง = ไม่โฟกัส) และต้องมีป้ายบอกว่าแกนไม่เริ่ม 0
+     (05/10 · audit — เดิม domain ['auto','auto'] = Recharts ยกพื้นแกนเองเงียบๆ ไม่มีป้าย) · แท่ง = เริ่ม 0 เสมอ */
+  const focus = c.kind === 'line' ? focusDomain([...data.map(d => d.v), c.target], { max: null }) : null;
   return (
     <div className="modal-scroll" onClick={onClose} /* ดูกราฟอย่างเดียว ไม่ใช่ฟอร์มกรอก → ปิดจาก backdrop ได้ตามกฎ */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: '16px 18px', width: 'min(860px, 96vw)' }}>
@@ -140,11 +151,14 @@ function ChartModal({ c, curIdx, onClose }) {
           <b style={{ fontSize: 14.5, color: 'var(--text)' }}>📈 {c.title}</b>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer' }}>✕</button>
         </div>
+        <div style={{ position: 'relative', width: '100%', height: 300 }}>
+        {focus && <FocusAxisNote k={1.2} fixed loText={Number(focus.domain[0]).toLocaleString(undefined, { maximumFractionDigits: c.dec ?? 1 })} />}
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart data={data} margin={{ top: 22, left: 0, right: 12, bottom: 0 }}>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="m" tick={{ fontSize: 12, fill: 'var(--text2)' }} />
-            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto" domain={c.kind === 'line' ? ['auto', 'auto'] : [0, 'auto']} />
+            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 11.5, fill: 'var(--text2)' }} width="auto"
+              domain={focus ? focus.domain : [0, 'auto']} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} />
             {c.target != null && (
               <ReferenceLine y={c.target} stroke="#f59e0b" strokeDasharray="6 4"
                 label={{ value: `เป้า ${c.dir === 'down' ? '≤' : '≥'} ${Number(c.target).toLocaleString(undefined, { maximumFractionDigits: 1 })}`, position: 'insideTopRight', fill: '#f59e0b', fontSize: 12, fontWeight: 800 }} />
@@ -152,10 +166,7 @@ function ChartModal({ c, curIdx, onClose }) {
             {c.kind === 'bar' ? (
               <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[4, 4, 0, 0]} isAnimationActive={false}>
                 <LabelList dataKey="v" position="top" formatter={v => (v == null ? '' : Number(v).toLocaleString())} style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text2)' }} />
-                {data.map(d => {
-                  const m = missTarget(d.v, c.target, c.dir);
-                  return <Cell key={d.i} fill={m == null ? 'var(--accent)' : m ? '#ef4444' : '#22c55e'} fillOpacity={d.i === curIdx ? 0.4 : 0.9} />;
-                })}
+                {data.map(d => <Cell key={d.i} fill={levelColor(d.v, sdef)} fillOpacity={d.i === curIdx ? 0.4 : 0.9} />)}
               </Bar>
             ) : (
               <Line dataKey="v" type="monotone" stroke="var(--accent)" strokeWidth={2.4} connectNulls
@@ -163,9 +174,10 @@ function ChartModal({ c, curIdx, onClose }) {
             )}
           </ComposedChart>
         </ResponsiveContainer>
+        </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
           ตัวเลขชุดเดียวกับตาราง (นับเฉพาะกะปิดแล้ว){curIdx >= 0 ? ` · ${TH_M[curIdx]} ยังไม่จบเดือน (แสดงจาง)` : ''}
-          {c.target != null && c.dir ? ` · ${c.dir === 'up' ? 'เขียว = ≥ เป้า' : 'เขียว = ≤ เป้า'} · แดง = พลาดเป้า` : ''}
+          {sdef ? ' · เขียว = ถึง Target · เหลือง = ถึงแค่ Commitment · แดง = ไม่ถึง (เกณฑ์เดียวกับ ○△✗ ในตาราง)' : ''}
         </div>
       </div>
     </div>
@@ -249,6 +261,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     const mine = new Set(org.lineNamesOf(scope.kind, scope.value));
     return inUser.filter(n => mine.has(n));
   }, [lines, scopeSet, scope, org]);
+  const lineKey = targetLineNames.join('|');   // primitive สำหรับ deps (array ใบใหม่เนื้อเดิม = ยิงคิวรีซ้ำฟรีๆ)
   const scopeKeyStr = scopeKey(scope.kind, scope.value);
   useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t) setPmTeams(t); }); return () => { alive = false; }; }, []);
   const normTeam = (v) => String(v || '').toLowerCase().replace(/[\s\-_]+/g, '');
@@ -283,7 +296,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const load = useCallback(async () => {
     if (!lines.length) return;
     if (scopeNoLines) { setData(null); setLoading(false); setProg(''); return; }   // ไม่มีไลน์ = ไม่มีอะไรให้คำนวณ (จอบอกเอง)
-    const key = `${year}|${scopeKeyStr}|${targetLineNames.length}`;
+    const lineNames = lineKey ? lineKey.split('|') : [];
+    const key = `${year}|${scopeKeyStr}|${lineKey}`;
     const seq = ++reqRef.current;      // กันผลโหลดเก่าทับผลใหม่ (เปลี่ยนปี/ส่วนงานรัวๆ)
     setLoading(true); setErr(null); setProg('');
     try {
@@ -294,7 +308,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           .select('id, line_name, work_date, shift, start_time, shift_min, oee, actual_qty')
           .eq('status', 'closed').gte('work_date', `${year}-01-01`).lte('work_date', `${year}-12-31`)
           .order('id');
-        if (targetLineNames.length) q = q.in('line_name', targetLineNames);
+        if (lineNames.length) q = q.in('line_name', lineNames);
         return q;
       }, n => setProg(`โหลดกะ ${n} แถว...`));
 
@@ -313,9 +327,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       /* นาที downtime ที่ตกอยู่ในช่วงพักตามนโยบาย ถูกกันออกจากฐานเวลาไปแล้ว **ห้ามหักซ้ำ** (utils/oee §3.1)
          ⇒ plannedMin (ตัวถ่วง wLoad) และนาทีนอกแผนที่เทียบกับเวลากะ ต้องเป็นชุดที่ตัดแล้ว
          ให้ตรงกับ /oee-analytics · ไม่โหลดนโยบายพักได้ = ไม่ตัด (เท่าพฤติกรรมเดิม ไม่ใช่ล้มทั้งรายงาน) */
-      const { data: brkPols } = await supabaseDR.from('break_policies')
+      const brk = await supabaseDR.from('break_policies')
         .select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true);
-      const dtEffBy = dtMinBySession(sessions, dtRes.rows, brkPols || []);
+      if (brk.error) toast.error(`โหลดนโยบายพักไม่สำเร็จ — OEE ในตารางนี้จะไม่ตัดช่วงพัก (ต่างจาก /oee-analytics): ${brk.error.message}`);   // ห้ามล้มเหลวเงียบ (audit 05/10)
+      const dtEffBy = dtMinBySession(sessions, dtRes.rows, brk.data || []);
       Object.entries(dtEffBy).forEach(([sid, v]) => { dtPlanned[sid] = v.planned; dtUnplanned[sid] = v.unplanned; });
       setProg(`โหลด Downtime ${dtRes.rows.length} แถว...`);
       // 3) ของเสีย (line-mode ต้องรู้ is_trial + excl_from_q + mat สำหรับคิดเงิน)
@@ -326,20 +341,24 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (defRes.truncated) throw new Error('โหลดของเสียไม่ครบ — PPM/Cost of defect จะผิด ยังสร้างรายงานไม่ได้');
       const defects = defRes.rows;
       // 4) ต้นทุน/ชิ้น + เป้า OEE
-      const [{ data: parts, error: e4 }, { data: targets, error: e5 }] = await Promise.all([
-        supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost'),
+      /* parts_master ดึงเฉพาะ MAT ที่มีของเสียจริง (05/10 · audit) — เดิม select ทั้งตารางไม่กรอง ⇒ ชนเพดาน 1000 แถว
+         พาร์ทที่ 1001+ ไม่มีต้นทุน = Cost of defect ต่ำกว่าจริงเงียบๆ (กฎเหล็ก DB ข้อ 5) */
+      const mats = [...new Set(defects.map(d => d.prod_orders?.mat_no).filter(Boolean))];
+      const [partRes, { data: targets, error: e5 }] = await Promise.all([
+        fetchByIds(mats, (c) => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c)),
         supabase.from('oee_targets').select('group_name, target_a, target_p, target_q'),
       ]);
-      if (e4) throw e4;
+      if (partRes.error) throw new Error(partRes.error);
+      if (partRes.truncated) throw new Error('โหลดต้นทุนพาร์ทไม่ครบ — Cost of defect จะต่ำกว่าจริง ยังสร้างรายงานไม่ได้');
       if (e5) throw e5;
-      const partCost = Object.fromEntries((parts || []).map(p => [p.mat_no, p]));
+      const partCost = Object.fromEntries(partRes.rows.map(p => [p.mat_no, p]));
       if (seq !== reqRef.current) return;               // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({ key, sessions, dtPlanned, dtUnplanned, defects, partCost, targets: targets || [] });
     } catch (e) {
       if (seq !== reqRef.current) return;
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
     } finally { if (seq === reqRef.current) { setLoading(false); setProg(''); } }
-  }, [lines.length, year, scopeKeyStr, scopeNoLines, targetLineNames]);
+  }, [lines.length, year, scopeKeyStr, scopeNoLines, lineKey]);   // 🔴 กฎ DB ข้อ 9: ห้าม array ใน deps ของตัวโหลด — ใช้คีย์ string
   useEffect(() => { load(); }, [load]);
 
   /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
@@ -406,8 +425,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = entries[kpiId]?.[month] ?? null;
     if (prev === value) return;
-    const { error } = await supabase.from('kpi_manual_entries')
-      .upsert({ kpi_id: kpiId, month, value }, { onConflict: 'kpi_id,month' });
+    const { data: up, error } = await supabase.from('kpi_manual_entries')
+      .upsert({ kpi_id: kpiId, month, value }, { onConflict: 'kpi_id,month' }).select('kpi_id');
+    if (!error && !up?.length) { toast.error('บันทึกไม่ได้ (ไม่มีสิทธิ์แก้แถวนี้ — RLS ปฏิเสธเงียบ)'); setEntries(p => ({ ...p })); return; }   // กฎ DB ข้อ 2
     if (error) {
       toast.error((error.code === '42501' ? 'ไม่มีสิทธิ์กรอก KPI (ต้องมี kpi:manage) — ' : 'บันทึกไม่สำเร็จ: ') + error.message);
       setEntries(p => ({ ...p })); // trigger sync กลับค่าเดิม
@@ -422,8 +442,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     if (raw !== '' && !Number.isFinite(value)) { toast.error('กรอกเป็นตัวเลขเท่านั้น'); return; }
     const prev = plans[kpiId]?.[month] ?? null;
     if (prev === value) return;
-    const { error } = await supabase.from('kpi_month_plans')
-      .upsert({ kpi_id: kpiId, month, plan_value: value }, { onConflict: 'kpi_id,month' });
+    const { data: up, error } = await supabase.from('kpi_month_plans')
+      .upsert({ kpi_id: kpiId, month, plan_value: value }, { onConflict: 'kpi_id,month' }).select('kpi_id');
+    if (!error && !up?.length) { toast.error('บันทึกแผนไม่ได้ (ไม่มีสิทธิ์แก้แถวนี้ — RLS ปฏิเสธเงียบ)'); setPlans(p => ({ ...p })); return; }   // กฎ DB ข้อ 2
     if (error) {
       toast.error((error.code === '42501' ? 'ไม่มีสิทธิ์ตั้งแผน KPI (ต้องมี kpi:manage) — '
         : error.code === '42P01' ? 'ยังไม่มีตารางแผนรายเดือนในฐาน (migration 20260916) — ' : 'บันทึกไม่สำเร็จ: ') + error.message);
@@ -499,7 +520,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     });
     out.forEach(m => {
       m.oee = m.sess.length ? wavg(m.sess, x => x.oee, wLoad) : null;
-      m.ppm = (m.produce + m.ng) > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
+      /* ไม่มียอดผลิตเลยแต่มีของเสีย = ยอดผลิตยังไม่ถูกบันทึก ไม่ใช่ "เสียล้านชิ้นในล้าน" ⇒ null (จอเขียน "—")
+         (UX audit 05/10: แท็บตั้งค่าโชว์ PPM 1,000,000 ตอนผลิต 0 · NG 91) */
+      m.ppm = m.produce > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
       /* ⚠️ "ตีมูลค่าไม่ได้" ≠ "ไม่มีต้นทุน" — ของเสียมีจริงแต่ไม่มีพาร์ทไหนตีมูลค่าได้เลย
          ต้องเป็น "—" ห้ามเป็น 0 (กฎเดียวกับ OEE: ประเมินไม่ได้ = null ห้ามแปลงเป็นศูนย์)
          ไม่มีของเสียเลย → 0 ถูกต้อง                                                     */
@@ -516,7 +539,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       n: out.reduce((s, m) => s + m.n, 0),
       oee: allSess.length ? wavg(allSess, x => x.oee, wLoad) : null,
     };
-    tot.ppm = (tot.produce + tot.ng) > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
+    tot.ppm = tot.produce > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
     tot.costKnown = tot.costQty > 0 || tot.costMissQty === 0;
     return { out, tot };
   }, [data]);
@@ -605,6 +628,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     title: defName(d2) + (d2.commitment ? ` (เป้า ${d2.commitment})` : ''), kind: 'line', dec: 2,
     vals: Array.from({ length: 12 }, (_, i) => entries[d2.id]?.[i + 1] ?? null),
     target: d2.target_value != null ? Number(d2.target_value) : null, dir: d2.direction || null,
+    def: d2,   // ให้สีจุดรู้จัก Commitment ด้วย (scoreDef 3 ระดับ)
   });
 
   const scopeLabel = isPlant(scope) ? 'ทุกส่วนงานในขอบเขต'
@@ -663,7 +687,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           commitment: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '', target: targetOee != null ? `≥ ${targetOee.toFixed(1)}%` : '',
           val: m => (m.n ? m.oee : null), sum: months.tot.oee,
           yn: m => (m.n && m.oee != null && targetOee != null ? scoreDef(m.oee, { target_compare: '>=', target_value: targetOee }).level : null),
-          ynTotal: months.tot.oee != null && targetOee != null ? months.tot.oee >= targetOee : null },
+          ynTotal: months.tot.oee != null && targetOee != null ? scoreDef(months.tot.oee, { target_compare: '>=', target_value: targetOee }).level : null },   // ระดับ 1/0.5/0 ไม่ใช่ boolean (audit 05/10: Excel เคยพิมพ์ ✗ เสมอ)
         { key: 'dt', name: 'Downtime นอกแผน (นาที)', formula: 'Σ downtime นอกแผนของกะที่ปิดแล้ว', val: m => (m.n ? m.dtMin : null), sum: months.tot.dtMin },
       ].map(r => ({
         category: 'internal', name: r.name, formula: r.formula, scope: 'คำนวณอัตโนมัติจาก ESM',
@@ -739,7 +763,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       action_plan: form.action_plan || null, action_owner: form.action_owner || null,
     };
     if (!payload.name) { toast.error('กรอกชื่อ KPI ก่อน'); return false; }
-    if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    if (payload.target_value != null && !payload.direction) { toast.error('ตั้งค่าเป้าตัวเลขแล้วต้องเลือกทิศทาง (≥/≤) ด้วย ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
     /* 🔴 ขอบเขตของแถวมาจากช่อง "ขอบเขต" ในโมดัล (default = ขอบเขตที่กำลังดู) — เขียน scope_kind/scope_value ตรง
        บทเรียน 23/09 (ก่อนมี picker): เพิ่มแถวโดยไม่ผูกขอบเขตที่กำลังดู ⇒ แถวใหม่ตกตัวกรองของตารางทันที
        แล้วกดซ้ำเจอ 23505 "ตั้งไว้แล้ว" ทั้งที่ไม่เคยเห็น — ตอนนี้ตารางเห็น "ขอบเขตที่เลือก + บรรพบุรุษ"
@@ -809,7 +833,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const saveAutoTarget = async f => {
     const src = `auto:${f.src}`;
     const tv = f.target_value === '' || f.target_value == null ? null : Number(f.target_value);
-    if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน Y/N ไม่ได้'); return false; }
+    if (tv != null && !f.direction) { toast.error('ตั้งเป้าตัวเลขแล้วต้องเลือกทิศทาง (มากกว่าดี/น้อยกว่าดี) ไม่งั้นตัดสิน ○△✗ ไม่ได้'); return false; }
     const payload = {
       year, ...defScopeColumns(org, scope), source: src,
       category: 'internal', name: f.name, seq: f.seq ?? 0,
@@ -1083,7 +1107,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           })}
                           <td style={{ ...tdSt, fontWeight: 800, color: 'var(--text)' }}>
                             {avg == null ? '—' : fmtKpi(avg, d2)}
-                            <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--muted)' }}
+                            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}
                               title={sum.approx
                                 ? `วิธีทางการของ KPI นี้คือ "${summaryModeLabel(sum.mode)}" แต่แถวกรอกมือไม่มียอดดิบให้หาร — ตัวเลขนี้เป็นค่าเฉลี่ยรายเดือน ไม่ใช่ค่าทางการ`
                                 : summaryModeLabel(sum.mode)}>
@@ -1093,7 +1117,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           </td>
                           <td style={{ ...tdSt, padding: '3px 8px', cursor: 'pointer' }} title="คลิกดูกราฟใหญ่พร้อมเส้นเป้า"
                             onClick={() => openDefChart(d2)}>
-                            <MiniChart vals={rowVals} kind="line"
+                            <MiniChart vals={rowVals} kind="line" def={d2}
                               target={d2.target_value != null ? Number(d2.target_value) : null} dir={d2.direction || null} curIdx={curMonthIdx}
                               plan={monthsOf(plans, d2.id)} />
                           </td>
@@ -1132,7 +1156,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                                     + '\nนี่ไม่ใช่คะแนนทางการ — คะแนน 1/0.5/0 ตัดสินจากเป้าทั้งปีเหมือนเดิม'}>
                                     <b>{pg.onTrack == null ? '↔' : pg.onTrack ? '▲' : '▼'}</b>{' '}
                                     {pg.onTrack == null ? 'เป้ายังไม่ระบุทิศทาง' : pg.onTrack ? 'ตามแผน' : 'ช้ากว่าแผน'}
-                                    <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                                       ถึงเดือน {pg.upTo} · ผล {fmtKpi(pg.actual, d2)} / แผน {fmtKpi(pg.plan, d2)}
                                       {pg.skipped ? ` · ข้าม ${pg.skipped} ด.` : ''}{pg.approx ? ' · ≈' : ''}
                                     </div>
@@ -1148,7 +1172,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', fontSize: 11, color: 'var(--accent)' }}
                               title={`${ak.formula}\n${ak.note}`}>
                               ⚡ ระบบคำนวณ · {ak.formula}
-                              <div style={{ fontSize: 10, color: 'var(--muted)' }}>{ak.note}</div>
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{ak.note}</div>
                             </td>
                             {autoVals.map((v, i) => {
                               const m = autoSeries.months[i];
@@ -1186,7 +1210,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           )}
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
             กรอกแล้วบันทึกทันทีตอนออกจากช่อง (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
-            Y/N ตัดสินจากเป้าตัวเลข + ทิศทาง (≥/≤) ที่ตั้งในนิยาม KPI ·
+            ○△✗ ตัดสินจากเป้า/Commitment + ทิศทาง (≥/≤) ที่ตั้งในนิยาม KPI (`scoreDef`) ·
             <b>📅 แผนรายเดือน</b> = สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้ —
             ป้าย ▲ ตามแผน / ▼ ช้ากว่าแผน เป็น<b>ข้อมูลประกอบ ไม่ใช่คะแนน</b> (คะแนน ○ △ ✗ ยังตัดสินจากเป้าทั้งปีเหมือนเดิม) ·
             เส้นประเทาในกราฟเล็ก = แผน
@@ -1265,14 +1289,14 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้งเป้า — {f.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, marginBottom: 12, lineHeight: 1.6 }}>
           {scope}<br />
-          <b style={{ color: 'var(--accent)' }}>⚡ ค่ารายเดือนระบบคำนวณให้เอง</b> — ที่ตั้งตรงนี้คือ "เกณฑ์ตัดสิน Y/N" เท่านั้น
+          <b style={{ color: 'var(--accent)' }}>⚡ ค่ารายเดือนระบบคำนวณให้เอง</b> — ที่ตั้งตรงนี้คือ "เกณฑ์ตัดสิน ○△✗" เท่านั้น
           {deep ? '' : ' · เลือกขอบเขตที่หัวเพจก่อน ถ้าอยากตั้งเป้าแยกรายส่วนงาน/แผนก/กลุ่มไลน์'}
         </div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div>
             <div style={lbl}>เป้าตัวเลข</div>
             <input style={inp} type="number" step="any" value={f.target_value}
-              onChange={e => set('target_value', e.target.value)} placeholder="เว้นว่าง = ไม่ตัดสิน Y/N" />
+              onChange={e => set('target_value', e.target.value)} placeholder="เว้นว่าง = ไม่ตัดสิน ○△✗" />
           </div>
           <div>
             <div style={lbl}>ทิศทาง *</div>
@@ -1305,7 +1329,7 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={close} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
         </div>
       </div>
     </div>
@@ -1370,7 +1394,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
   const inp = { padding: '6px 8px', fontSize: 13, borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', width: 260 };
   const td = { padding: '5px 8px', fontSize: 12, color: 'var(--text2)', borderBottom: '1px solid var(--border)' };
   const mini = { padding: '3px 6px', fontSize: 11.5, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' };
-  const miniLbl = { display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 10.5, color: 'var(--muted)' };
+  const miniLbl = { display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 11, color: 'var(--muted)' };
   return (
     /* ⚠️ ไม่ใช่ฟอร์มที่กรอกค้าง — ปิดจาก backdrop ได้ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
@@ -1431,11 +1455,11 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged }) {
                             {KPI_VALUE_SCOPES.map(m => <option key={m.key} value={m.key}>{m.key === 'plant' ? '🏭 ค่าโรงงาน (ใช้ร่วมทุกหน่วย)' : 'หน่วยงานเอง'}</option>)}
                           </select>
                         </label>
-                        <label style={miniLbl} title="KPI นี้ขึ้นแผ่นไหนบนบอร์ด OBEYA (8 แผ่นหลัก) — ชื่อทางการต่างจากชื่อบนบอร์ดก็จับคู่ได้ (เช่น DSI = Inventory Balance · TS Academy = Training) · ไม่เลือก = แผง Key Performance">
+                        <label style={miniLbl} title="KPI นี้ขึ้นแผ่นไหนบนบอร์ด OBEYA (8 แผ่นหลัก) — ชื่อทางการต่างจากชื่อบนบอร์ดก็จับคู่ได้ (เช่น DSI = Inventory Balance · TS Academy = Training) · ไม่เลือก = ขึ้นเป็นแผ่นแยกของหน่วย (def:<id>)">
                           ช่องบนบอร์ด
                           <select style={{ ...mini, width: 190 }} value={boardSlotOf({ kpi_catalog: r }) || ''} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'board_slot', e.target.value || null, 'ช่องบนบอร์ด')}>
-                            <option value="">— Key Performance —</option>
+                            <option value="">— ไม่เข้าช่องมาตรฐาน (แผ่นแยก) —</option>
                             {KPI_BOARD_SLOTS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
                           </select>
                         </label>
@@ -1624,13 +1648,13 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
             <input style={inp} value={f.target} onChange={e => set('target', e.target.value)} />
           </div>
           <div>
-            <div style={lbl}>เป้าตัวเลข (ใช้ตัดสิน Y/N)</div>
+            <div style={lbl}>เป้าตัวเลข (ใช้ตัดสิน ○△✗)</div>
             <input style={inp} type="number" step="any" value={f.target_value} onChange={e => set('target_value', e.target.value)} />
           </div>
           <div>
             <div style={lbl}>ทิศทาง</div>
             <select style={inp} value={f.direction} onChange={e => set('direction', e.target.value)}>
-              <option value="">— ไม่ตัดสิน Y/N —</option>
+              <option value="">— ไม่ตัดสิน ○△✗ —</option>
               <option value="up">ยิ่งมากยิ่งดี (≥ เป้า = Y)</option>
               <option value="down">ยิ่งน้อยยิ่งดี (≤ เป้า = Y)</option>
             </select>
@@ -1664,7 +1688,7 @@ function DefModal({ init, year, scope, org, scopeSet, userSections = [], catalog
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08130a', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
         </div>
       </div>
     </div>

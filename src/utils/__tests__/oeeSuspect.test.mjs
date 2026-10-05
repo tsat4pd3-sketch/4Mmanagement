@@ -71,6 +71,29 @@ test('🔴 ย้ายลงถังแดงแล้ว = ยืนยัน
   assert.equal(defectQty(d), 4);
 });
 
+test('🔴 ลง 2 ถังพร้อมกัน (แดงจาก NG + เหลืองจากสงสัย) — ใบแดงตรงไม่ใช่คำตัดสินของสงสัย (QC 05/10)', () => {
+  const d = row({ qty_ng: 3, qty_suspect: 5, quality_bin_records: [
+    { id: 'r1', bin: 'red', from_yellow_id: null },
+    { id: 'y1', bin: 'yellow', qa_decision: null },
+  ] });
+  assert.equal(suspectState(d), 'pending');
+  assert.equal(defectQty(d), 3);
+  d.quality_bin_records[1].qa_decision = 'good';
+  assert.equal(suspectState(d), 'cleared');
+  assert.equal(defectQty(d), 3);
+});
+
+test('ไม่มีใบเหลืองเลย แล้วลงแดงตรง = ของสงสัยถูกทิ้ง ⇒ ยังนับเสีย (พฤติกรรมเดิม)', () => {
+  const d = row({ qty_suspect: 4, quality_bin_records: [{ id: 'r1', bin: 'red', from_yellow_id: null }] });
+  assert.equal(suspectState(d), 'scrap');
+});
+
+test('ใบที่ถูกลบ (is_active=false) ห้ามมีสิทธิ์ตัดสิน', () => {
+  const d = row({ qty_suspect: 4, quality_bin_records: [{ id: 'r1', bin: 'red', from_yellow_id: null, is_active: false }] });
+  assert.equal(suspectState(d), 'pending');
+  assert.equal(defectQty(d), 0);
+});
+
 test('ตัดสินขัดกันหลายใบ — "ทำลาย" ชนะ (ปลอดภัยฝั่งลูกค้า ห้ามปล่อยของเสียผ่าน)', () => {
   const d = row({ qty_suspect: 6, quality_bin_records: [
     { id: 'y1', bin: 'yellow', qa_decision: 'good' },
@@ -123,7 +146,7 @@ test('รับ embed แบบ object เดี่ยว (ไม่ใช่ ar
 });
 
 test('QBIN_EMBED ต้องมีทุกคอลัมน์ที่กฎใช้ตัดสิน (ขาดตัวใดตัวหนึ่ง = ตัดสินผิดเงียบ)', () => {
-  for (const col of ['id', 'bin', 'qa_decision', 'return_date', 'from_yellow_id']) {
+  for (const col of ['id', 'bin', 'qa_decision', 'return_date', 'from_yellow_id', 'is_active']) {
     assert.ok(QBIN_EMBED.includes(col), `QBIN_EMBED ขาด ${col}`);
   }
 });

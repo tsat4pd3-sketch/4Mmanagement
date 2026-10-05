@@ -257,7 +257,7 @@ export default function PokaYokeCheck() {
 
 const lb = { fontSize: 11, color: 'var(--muted)', marginBottom: 3, fontWeight: 600 };
 const chip = (c) => ({ display: 'inline-flex', alignItems: 'center', gap: 5, color: c, background: `${c}1a`, border: `1px solid ${c}44`, padding: '3px 10px', borderRadius: 20 });
-const btnAccent = { padding: '9px 16px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: '#fff', border: 'none' };
+const btnAccent = { padding: '9px 16px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' };
 const btnGray = { padding: '9px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' };
 const resBtn = (on, color, enabled) => ({
   padding: '7px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: enabled ? 'pointer' : 'not-allowed',

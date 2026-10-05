@@ -68,7 +68,7 @@ const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', b
 // ปุ่มเล็กบนหัวจอ TV ห้องช่าง — เล็กโดยตั้งใจ (พื้นที่แนวตั้งเป็นของผัง ไม่ใช่ของปุ่ม)
 const tvBtn = (on) => ({
   fontSize: 12.5, fontWeight: 700, padding: '5px 11px', borderRadius: 8, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });
 

@@ -107,7 +107,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
           <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 14 }}>
             เปิดหน้า VSM เลือกสินค้า <b>{matNo}</b> แล้วกด "⚡ สร้างร่างจากข้อมูลจริง" — ผังจะแตกเป็นหลายกล่องตาม routing นี้
           </div>
-          <Link to="/vsm" style={{ fontSize: 13, fontWeight: 700, color: '#08130a', background: 'var(--accent)', padding: '8px 18px', borderRadius: 6, textDecoration: 'none' }}>
+          <Link to="/vsm" style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', padding: '8px 18px', borderRadius: 6, textDecoration: 'none' }}>
             🗺️ ไปหน้า VSM
           </Link>
         </div>
@@ -199,7 +199,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
           <button onClick={confirm} disabled={saving || !included}
-            style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#08130a', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
+            style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
             {saving ? '⏳ กำลังบันทึก…' : `✅ ยืนยันบันทึก ${included} ขั้น`}
           </button>
         </div>

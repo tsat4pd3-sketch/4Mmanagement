@@ -16,7 +16,7 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
 import { QA_STAGES } from '../utils/qaStages';
@@ -333,7 +333,7 @@ export default function QAInspectionSetup() {
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
       const [prods, { data: boms }] = await Promise.all([
         /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-        cachedMaster('dr_products:qa', async () => (await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name')).data || []),
+        cachedMaster('dr_products:qa', async () => mrows(await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name'))),
         supabaseDR.from('bom_items').select('id, product_id, mat_no, part_no, part_name, supplier').eq('is_active', true).order('part_name'),
       ]);
       if (!alive) return;
@@ -480,7 +480,9 @@ export default function QAInspectionSetup() {
     }).select().single();
     setUploading(false);
     if (error) { toast.error(error.message); return; }
-    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id).then(() => loadParts());
+    // เดิม .then() ไม่อ่าน error — ประทับเวลา drawing ล้มเงียบ (QC 05/10)
+    supabase.from('qa_parts').update({ drawing_updated_at: new Date().toISOString() }).eq('id', sel.id)
+      .then(res => { checkWrite(res, 'ประทับเวลาแก้ drawing '); loadParts(); });
     toast.success(`เพิ่ม drawing "${data.title}" แล้ว ✓`);
     await loadDrawings(sel.id);
     setActiveDwgId(data.id);
@@ -528,7 +530,9 @@ export default function QAInspectionSetup() {
   const deleteDrawing = async (dwg) => {
     const cnt = items.filter(i => i.drawing_id === dwg.id).length;
     if (!window.confirm(`ลบแผ่น "${dwg.title}"?${cnt ? `\nballoon ${cnt} จุดบนแผ่นนี้จะถูกถอดตำแหน่ง (ตัวจุดตรวจไม่หาย)` : ''}`)) return;
-    if (cnt) await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id);
+    /* ถอดตำแหน่ง balloon ก่อนลบแผ่น — ล้มแล้วต้องหยุด (เดิมไม่อ่าน error แล้วลบแผ่นต่อ
+       ⇒ จุดตรวจชี้ drawing_id ที่ไม่มีแล้ว / FK บล็อกการลบแบบงงๆ · QC 05/10) */
+    if (cnt && !checkWrite(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id), 'ถอดตำแหน่ง balloon ')) return;
     const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
     if (error) { toast.error(error.message); return; }
     // ลบ row สำเร็จแล้ว ค่อยลบไฟล์จาก storage ด้วย กันไฟล์กำพร้า (best-effort)

@@ -72,11 +72,18 @@ test('manage_master แก้ย้อนหลังได้ทุกขั้
   for (const s of [2, 3, 4, 5, 6, 7]) assert.deepEqual(canDoStep(s, boss), { ok: true, code: 'manage_master' });
 });
 
-test('ขั้น 7 ไม่มี fallback และไม่ให้ผู้เปิดใบอนุมัติเอง', () => {
+test('ขั้น 7 ไม่ให้ผู้เปิดใบอนุมัติเอง · คีย์ = close_cost (แยกจาก approve ของฝั่งช่าง 2026-10-04)', () => {
   const opener = { order: ORDER, fullName: 'สมชาย ใจดี', ...perms(['report'], SEEDED_ALL) };
   assert.equal(canDoStep(7, opener).ok, false, 'คนเปิดใบปิดใบเองไม่ได้');
-  const sup = { order: ORDER, fullName: 'หัวหน้าส่วน', ...perms(['approve'], SEEDED_ALL) };
+  const sup = { order: ORDER, fullName: 'หัวหน้าส่วน', ...perms(['close_cost'], SEEDED_ALL) };
   assert.equal(canDoStep(7, sup).ok, true);
+  /* 🔒 หลัง seed แล้ว คนที่ถือแค่ `approve` (ขั้นของฝั่งช่าง) ปิดใบฝั่งผู้แจ้งไม่ได้อีก
+     — นี่คือรูที่ user เจอ: "ผจก ช่าง อนุมัติเลยก็มาอนุมัติแทน ผจก ผลิตได้" */
+  const mtnMgr = { order: ORDER, fullName: 'ผจก.ช่าง', ...perms(['approve'], SEEDED_ALL) };
+  assert.equal(canDoStep(7, mtnMgr).ok, false, 'ถือคีย์ฝั่งช่างอย่างเดียว ปิดใบแทนฝั่งผู้แจ้งไม่ได้');
+  // ⚠️ deploy-safe: ยังไม่ seed close_cost → ถอยไป approve (ใบต้องไม่ค้างตอน deploy โค้ดก่อนรัน SQL)
+  const beforeSeed = { order: ORDER, fullName: 'ผจก.', ...perms(['approve'], SEEDED_OLD) };
+  assert.equal(canDoStep(7, beforeSeed).ok, true, 'ก่อน apply migration ต้องยังปิดใบได้');
 });
 
 test('isOrderReporter: ยึด reported_by_name ก่อน — reporter_prod ที่พิมพ์แก้ได้ห้ามสวมสิทธิ์', () => {
@@ -183,7 +190,7 @@ test('orderInReporterScope: ไลน์ไม่รู้จักแต่ใ�
 });
 
 test('ขั้น 4/6/7: ถือคีย์แต่ใบเป็นของฝ่ายอื่น = out_of_scope · ใบในฝ่ายตัวเอง = perm', () => {
-  for (const [step, key] of [[4, 'accept_work'], [6, 'handover'], [7, 'approve']]) {
+  for (const [step, key] of [[4, 'accept_work'], [6, 'handover'], [7, 'close_cost']]) {
     const other = { order: ORDER, fullName: 'หัวหน้า PD3', inReporterScope: false, ...perms([key], SEEDED_ALL) };
     assert.deepEqual(canDoStep(step, other), { ok: false, code: 'out_of_scope' }, `ขั้น ${step} ต้องล็อกใบฝ่ายอื่น`);
     const own = { ...other, inReporterScope: true };
@@ -349,7 +356,7 @@ test('ด่านอนุมัติ: manage_master ยังผ่านไ�
    → 5 หัวหน้าแผนกช่างตรวจงานหลังแก้ไข → 6 ผจก.ช่างอนุมัติ → 7 ผจก.ฝ่ายที่แจ้งอนุมัติ (ปิดใบ)
      ⇒ ขั้นในโปรแกรม 8 ขั้น (ลูปนี้ไม่มี QA) · ขั้น 6-7 ฝั่งช่าง · ขั้น 8 ฝั่งผู้แจ้ง = ปิดใบ */
 test('🔴 ใบ MTN 8 ขั้น — ขั้น 6/7 ฝั่งช่าง (ไม่ติด scope ผู้แจ้ง) · ขั้น 8 ฝ่ายที่แจ้งปิดใบ (ติด scope)', () => {
-  const mgr = { order: ORDER, fullName: 'ผจก.', ...perms(['approve']), inReporterScope: false };
+  const mgr = { order: ORDER, fullName: 'ผจก.', ...perms(['approve', 'mtn_head', 'close_cost']), inReporterScope: false };
   // ขั้น 6-7 = ฝั่งช่าง มีเฉพาะฟอร์ม MTN — ผจก.ช่างที่ถูกตั้ง sections ต้องตรวจ/อนุมัติใบไลน์ไหนก็ได้
   assert.deepEqual(canDoStep(6, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' });
   assert.deepEqual(canDoStep(7, { ...mgr, mtnForm: true }), { ok: true, code: 'perm' });
@@ -364,7 +371,7 @@ test('🔴 ใบ MTN 8 ขั้น — ขั้น 6/7 ฝั่งช่า�
 });
 
 test('ขั้น 6-7 (ฝั่งช่าง): คนที่ถูกตั้งเป็นช่างทีมอื่นทำไม่ได้ · ไม่ได้ตั้งทีมไว้ = ปล่อยผ่าน (ห้ามล็อกทั้งระบบ)', () => {
-  const base = { order: ORDER, fullName: 'ผจก.', ...perms(['approve']), mtnForm: true };
+  const base = { order: ORDER, fullName: 'ผจก.', ...perms(['approve', 'mtn_head', 'close_cost']), mtnForm: true };
   for (const st of [6, 7]) {
     assert.deepEqual(canDoStep(st, { ...base, hasTeams: true, inOrderTeam: false }), { ok: false, code: 'other_team' }, `ขั้น ${st}`);
     assert.deepEqual(canDoStep(st, { ...base, hasTeams: true, inOrderTeam: true }), { ok: true, code: 'perm' }, `ขั้น ${st}`);

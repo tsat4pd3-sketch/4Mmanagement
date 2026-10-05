@@ -484,7 +484,8 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
         <rect x={planX + PLAN_W + 22} y={Y_TOP} width="228" height="92" fill={P.data} stroke={P.line} strokeWidth="1.2" />
         {[
           ['Working day', I.workingDays ? `${I.workingDays} วัน/เดือน` : '—'],
-          ['Order/year', I.orderYear ? `${fmt(I.orderYear)} pcs` : '—'],
+          /* < 12 เดือนมี forecast = ค่าประมาณ (เฉลี่ย × 12) — ขึ้น ≈ + จำนวนเดือนที่ใช้ (กล่องแคบ ห้ามข้อความยาว) */
+          ['Order/year', I.orderYear ? (I.orderYearMonths && I.orderYearMonths < 12 ? `≈${fmt(I.orderYear)} pcs (${I.orderYearMonths} ด.)` : `${fmt(I.orderYear)} pcs`) : '—'],
           ['Order/month', I.orderMonth ? `${fmt(I.orderMonth)} pcs` : '—'],
           ['Order/day', I.orderDay ? `${fmt(I.orderDay)} pcs` : '—'],
           ['A/T', I.atSec == null ? '—' : `${fmt(I.atSec)} sec`],

@@ -471,6 +471,7 @@ export default function QaCheckSheet({ canRecord }) {
     if (!window.confirm(`เปิดใบ NCR จากจุด #${item.balloon_no} ${item.characteristic}?`)) return;
     setBusy(true);
     const ncr_no = await nextDocNo('qa_ncr', 'ncr_no', 'NCR');
+    if (!ncr_no) { setBusy(false); toast.error('ออกเลขที่ NCR ไม่สำเร็จ — ลองใหม่อีกครั้ง'); return; }
     const { data, error } = await supabase.from('qa_ncr').insert({
       ncr_no, report_date: workDate,
       line_name: part?.line_name || null, part_no: part?.part_no || null, part_name: part?.part_name || null,

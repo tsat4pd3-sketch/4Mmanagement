@@ -2,6 +2,22 @@ import { StrictMode, Component } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { onMasterLoadFail } from './utils/masterCache.js'
+import { toast } from './components/Toast'
+
+/* 🔴 โหลดทะเบียน (master) ไม่สำเร็จ = ต้องเห็นบนจอ ห้ามเงียบ (2026-10-04)
+   เคส 30/09: คิวรีล้มเงียบ → ลิสต์ว่างถูก cache ทับ 4 ชม. → หน้างานนึกว่าข้อมูลหาย
+   ส่วน "ไม่เขียนทับของเดิม + รอบหน้าลองใหม่" ทำใน masterCache แล้ว
+   ⚠️ รวบเป็นข้อความเดียวต่อ 10 วิ — หน้าโหลดทะเบียน 7 ตัวพร้อมกัน เน็ตหลุด = 7 toast ซ้อน */
+let lastFailAt = 0;
+onMasterLoadFail((key, err, { hadFallback }) => {
+  if (Date.now() - lastFailAt < 10_000) return;
+  lastFailAt = Date.now();
+  toast.error(hadFallback
+    ? 'โหลดข้อมูลทะเบียนไม่สำเร็จ — กำลังแสดงของเดิมที่เก็บไว้ อาจไม่ใช่ล่าสุด (กดรีเฟรชอีกครั้ง)'
+    : 'โหลดข้อมูลทะเบียนไม่สำเร็จ — บางรายการอาจยังไม่ขึ้น กรุณากดรีเฟรช (Ctrl+Shift+R)');
+  console.warn('[masterLoadFail]', key, err);
+});
 
 /* ── กันจอดำหลัง deploy เวอร์ชันใหม่ ──────────────────────────────────────
    ทุกหน้าเป็น lazy chunk ชื่อไฟล์มี hash — พอ deploy ใหม่ ไฟล์เวอร์ชันเก่าหายจาก server

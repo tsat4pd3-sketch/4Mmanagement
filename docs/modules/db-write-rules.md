@@ -51,3 +51,76 @@ CLAUDE.md เหลือ "หัวข้อ + สิ่งที่ต้อ�
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** — พ่อ `setState(arr)` ใบใหม่ที่เนื้อเหมือนเดิม = ลูกยิงคิวรีซ้ำฟรีๆ (เกิดจริง: `StoreLotQueue` ยิงซ้ำวันละหลายร้อยรอบ) ให้แปลงเป็น string/primitive ก่อนเสมอ · **บั๊กคลาสนี้ build/lint/เทส/หน้าจอผ่านหมด เห็นได้จาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — migration ทีหลังเปิดหน้าให้ role ใหม่ได้เสมอ ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง (บทเรียน cost_center_rates · wip_buffer_points · line_setup)
 11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** (`mtn_orders` 116 คอลัมน์ × 1000 แถว = **1.59 MB/ครั้ง**) · **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้จริง · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน `regressionGuards` · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) = WebP 2560px **ห้ามลดความละเอียด เคยเบลอ** · 📄 ตัวเลข → `docs/modules/db-write-rules.md`
+
+---
+
+## ข้อ 12 — helper ที่คืนค่าเปล่า ห้ามแกะ `{ data }` (2026-10-02 · ย้ายรายละเอียดมา 10-05)
+
+ของกลางที่โหลดทะเบียนให้ (`loadPairMap` · `loadOpInfo` · `loadProductsMaster` · `loadProductionLines`)
+**คืน "ก้อนข้อมูล" ตรงๆ ไม่ได้ห่อ `{ data, error }`** ⇒ เขียน `const { data } = await loadPairMap()`
+ได้ `undefined` **เงียบสนิท** (ไม่มี error ให้จับ · build/lint/เทสผ่านหมด)
+
+**เคสจริง:** ผังรวมโรงงานโชว์ `0/0` อยู่ **7 วัน** ก่อนมีคนทัก — ไม่มีใครรู้ว่าจอตาย
+เพราะหน้าจอขึ้น "ไม่มีข้อมูล" ซึ่งดูเหมือนกะที่ยังไม่เปิด
+
+**กติกา:** รับค่าตรงๆ (`const pairMap = await loadPairMap(...)`) · มีด่านใน `regressionGuards`
+🔴 **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก** — โหลดไม่สำเร็จต้องเขียนบนจอว่าโหลดไม่สำเร็จ
+(หลักเดียวกับ §read ที่ลงแคช ข้างล่าง)
+
+## 🔴 read ที่ลงแคช — "โหลดไม่สำเร็จ" ห้ามถูกเก็บเป็น "ไม่มีข้อมูล" (2026-10-04 · feedback หน้างาน)
+
+กฎเหล็กข้อ 1 (`supabase-js ไม่ throw`) เขียนไว้สำหรับ **write** — ฝั่ง **read ที่ผลลัพธ์ลง
+`cachedMaster`** ไม่เคยมีใครคุม จึง drift ไป **11 จุด** แล้วระเบิดที่หน้างาน
+
+### เคสจริง 30/09 — คุณนพดล พงษ์ก๋าแก้ว (supervisor PD1 · `/daily-report`)
+
+> *"จะเปิดผลิตงาน 068 แต่ในรายการผลิตไลน์ 250T ไม่มีรายการให้เลือก
+> **ลองเอา User คนอื่นเข้าเปิด มีรายการให้เปิด**"*
+
+ตรวจข้อมูลจริงแล้ว **ปกติทุกอย่าง** — MAT `20063134` ผูก `LINE C ( 200&250 Ton )` ·
+`is_active` · มี `kanban_standards` ตั้งแต่ 4 ส.ค. · สิทธิ์เขา (PD1) ครอบคลุมไลน์นั้น ·
+วันนั้นเขาเปิด-ปิดกะบนไลน์นี้ได้ทั้ง 2 กะ
+
+**ลูกโซ่:**
+```
+(await supabaseDR.from('kanban_standards').select(…)).data || []
+         ↑ คิวรีล้ม (เน็ตสะดุด/timeout/RLS) → data = null → || [] → ได้ []
+cachedMaster เห็นเป็น "สำเร็จ ได้ 0 แถว" → lsWrite([]) ทับของดีใน localStorage
+                                          → เครื่องนั้นเห็นลิสต์ว่างต่ออีก 4 ชม. (MASTER_TTL)
+                                          → ไม่มีข้อความอะไรบนจอเลย
+```
+เครื่องอื่นที่โหลดติด จึงเห็นครบ ⇒ **"ผมไม่เห็น แต่ User คนอื่นเห็น"** ตรงเป๊ะ
+
+### กติกาตั้งแต่ 2026-10-04
+
+1. **loader ของ `cachedMaster` ต้องห่อด้วย `mrows(await …)`** (`src/utils/masterCache.js`)
+   **ห้าม `.data || []`** — มีด่าน `master-cache-swallow`
+2. **`mrows` มีข้อยกเว้นเดียว = `42P01`/`42703`** (ตาราง/คอลัมน์ยังไม่ apply migration) → คืน `[]`
+   ตามเดิม · ที่เหลือ **โยน `MasterLoadError`** · เขียนไว้เพราะหลาย picker *ตั้งใจ* ถอยไปโหมด
+   "พิมพ์เองพร้อมป้าย" เมื่อตารางยังไม่มี — **ห้ามเปลี่ยนพฤติกรรมนั้น**
+3. **ล้มเหลว = ไม่ `lsWrite` · `at: 0` (รอบหน้ายิงใหม่ทันที) · คืนของเก่าแม้หมด TTL** (`lsAny`)
+   — ของเก่าเกิน 4 ชม. ยังดีกว่าลิสต์ว่าง · **คืน `?? []` เสมอ ห้าม `undefined`** (ผู้เรียก `.map()` ต่อ)
+4. **ล้มเหลวต้องเห็นบนจอ** — `onMasterLoadFail()` ผูก toast ใน `main.jsx` (รวบ 1 ข้อความ/10 วิ ·
+   โหลดทะเบียน 7 ตัวพร้อมกันตอนเน็ตหลุด = 7 toast ซ้อน)
+
+### ของที่แก้ไปแล้ว (11 + 5 จุด)
+
+`DailyReport` (7) · `QAInspectionSetup` · `HeijunkaKanban` · `PmCoordination` · `PlannerSales`
+· `useCostCenters` · `useDiePressLines` · `useStorageLocations` · `useSuppliers` · `useColumnHistory`
+
+---
+
+## § ส่ง SQL ให้ user รันเอง — เคสที่เคยพลาด (ย้ายมาจาก CLAUDE.md 2026-10-05 ตามกฎรับเข้า)
+
+กฎย่ออยู่ใน CLAUDE.md แล้ว (วาง SQL เต็มๆ · ระบุ project · แนบคิวรีเช็คผล) — ที่นี่เก็บ**ว่าทำไม**:
+
+**user รันผ่าน Supabase SQL Editor บนเว็บเท่านั้น — ไม่มี CLI/terminal และเปิดไฟล์ในรีโปไม่ได้**
+
+| เคยเกิดจริง | ผล |
+|---|---|
+| บอกแค่ชื่อไฟล์ migration ไป | user ก๊อป **path** ไปวางใน SQL Editor → `42601 syntax error at or near "supabase"` |
+| ส่งคำสั่ง CLI ให้ (07/09) | user ก๊อป `supabase functions deploy` ไปวางใน **SQL Editor** |
+| คิวรีเช็ค NPI (ตาราง Main) ถูกรันบน "Product DB" (07/09) | `42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว ⇒ ต้องบอก**ทั้งชื่อในจอและ project id** |
+
+⇒ ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ: **SQL Editor · secrets ใน dashboard · เมนูในแอป**
+· migration ที่ย้อนได้ + edge function → **AI session ลงเองผ่าน MCP แล้วคิวรีตรวจกลับ** (`docs/modules/edge-functions.md`)

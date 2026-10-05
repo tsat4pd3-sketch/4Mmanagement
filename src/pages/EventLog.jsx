@@ -1,3 +1,4 @@
+import { checkWrite } from '../utils/dbWrite';
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../supabaseClient';
@@ -1050,15 +1051,20 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
     setApprovingRole(roleKey);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from('cqi15_event_approvals')
+      /* RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2 · QC 05/10)
+         เดิม toast เขียว "อนุมัติสำเร็จ" ทั้งที่ไม่มีอะไรถูกบันทึก */
+      const { data: upd, error } = await supabase.from('cqi15_event_approvals')
         .update({ status, approved_by: user.id, approved_at: new Date().toISOString(), notes: rejectNote || null })
         .eq('event_log_id', log.id)
-        .eq('role_key', roleKey);
+        .eq('role_key', roleKey)
+        .select('id');
       if (error) throw error;
+      if (!upd?.length) throw new Error(`ไม่มีรายการอนุมัติ [${roleKey}] ถูกบันทึก — ไม่มีสิทธิ์หรือไม่พบรายการ`);
 
       // Refresh approvals
-      const { data: newApprovals } = await supabase
+      const { data: newApprovals, error: eReload } = await supabase
         .from('cqi15_event_approvals').select('*, profiles(full_name)').eq('event_log_id', log.id);
+      if (eReload) throw new Error(`บันทึกผลอนุมัติแล้ว แต่โหลดสถานะรวมไม่สำเร็จ (${eReload.message}) — สถานะใบอาจยังไม่อัพเดท เปิดใบใหม่อีกครั้ง`);
       setApprovals(newApprovals || []);
 
       // Check if all approved → update log status
@@ -1068,9 +1074,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
       if (allApproved || anyRejected) {
         const finalUpdate = { overall_status: anyRejected ? 'rejected' : 'approved' };
         if (allApproved) finalUpdate.approved_at = new Date().toISOString();
-        await supabase.from('cqi15_event_logs')
+        const { data: fin, error: eFin } = await supabase.from('cqi15_event_logs')
           .update(finalUpdate)
-          .eq('id', log.id);
+          .eq('id', log.id)
+          .select('id');
+        if (eFin || !fin?.length) {
+          throw new Error(`บันทึกผลอนุมัติ [${roleKey}] แล้ว แต่ปิดสถานะใบไม่สำเร็จ${eFin ? ` (${eFin.message})` : ' (ไม่มีสิทธิ์/ไม่พบใบ)'} — ใบยังค้างสถานะเดิม แจ้ง admin`);
+        }
         toast.success(status === 'approved' ? 'อนุมัติสำเร็จ' : 'ปฏิเสธแล้ว');
         onRefresh();
       } else {
@@ -1093,9 +1103,10 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
 
   const handleCheckResult = async (checkNo, result) => {
     const { data: { user } } = await supabase.auth.getUser();
-    await supabase.from('cqi15_check_completions')
+    // เดิมไม่อ่าน error — บันทึกผลตรวจล้มแล้วจอไม่บอก (QC 05/10 · กฎเขียน DB ข้อ 1)
+    if (!checkWrite(await supabase.from('cqi15_check_completions')
       .upsert({ event_log_id: log.id, check_no: checkNo, result, completed_by: user.id, completed_at: new Date().toISOString() },
-               { onConflict: 'event_log_id,check_no' });
+               { onConflict: 'event_log_id,check_no' }), `บันทึกผลตรวจข้อ ${checkNo} `)) return;
     const { data } = await supabase.from('cqi15_check_completions')
       .select('*, profiles(full_name)').eq('event_log_id', log.id);
     setCompletions(data || []);

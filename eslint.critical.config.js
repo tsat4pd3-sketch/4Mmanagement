@@ -28,6 +28,10 @@ export default [
       // hook หลัง early return / ใน if / ใน loop = React #310 (จอ error) — build ไม่จับ เจอตอน runtime
       // เคสจริง 2026-07-30: MtnRepair (useMemo หลัง `if (loading) return`) + ProtectedLayout (session guard)
       'react-hooks/rules-of-hooks': 'error',
+      // อ่าน const/let ก่อนประกาศใน scope เดียวกัน = TDZ "Cannot access 'x' before initialization" ทั้งจอขาว · build ไม่จับ
+      // เคสจริง 2026-09-30: ObeyaKpiBoard `const dense = data.some(…)` ก่อน `const data = …` (เจอจาก harness ไม่ใช่ด่าน)
+      // variables:false = ฟ้องเฉพาะ scope เดียวกัน (อ้าง const ระดับโมดูลจากในฟังก์ชันที่ประกาศก่อน = ถูกเรียกทีหลัง ไม่พัง ไม่ฟ้อง)
+      'no-use-before-define': ['error', { functions: false, classes: false, variables: false }],
     },
   },
 ];

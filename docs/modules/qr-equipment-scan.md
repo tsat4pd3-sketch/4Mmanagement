@@ -89,3 +89,8 @@ user ถาม: *"พิมพ์ QR ติดเครื่องแล้ว 
 
 ### งานค้าง
 ยังไม่มีปุ่มสแกนใน: ประวัติ PM (`?tab=plan`) · `/order-trace` (ค้นด้วย `prod_no` อย่างเดียว ยังไม่รับป้ายเครื่อง)
+
+### 🛠️ QC 05/10 — `/scan`
+- 🔴 **ตาราง DR `jigs` ไม่มีคอลัมน์ `department`** — `/scan` เคย select ไปด้วย ⇒ 42703 ⇒ จิ๊กไม่เคยถูกพบ ปุ่มตรวจ PM ไม่เคยโผล่ (มีด่าน `jigs-has-no-department-column`)
+- แผนกของใบตรวจ PM อ่านจาก `checklists.department` (module=mtn) แล้วส่ง `&dept=` ไป `/pm?tab=check` (ไม่ส่ง = เปิดแผนก maintenance เสมอ · วัด 05/10: 106/147 ใบตรวจ mtn เป็น jig_maintenance) · มีหลายแผนก = ปุ่มละแผนก
+- ป้ายจุดส่งงาน `ESM:D:<uuid>` (QrLabels พิมพ์เป็นลิงก์ /scan) → หน้า /scan แสดงจุดส่ง + ทางไป /heijunka (เดิมขึ้น "ไม่พบอุปกรณ์")

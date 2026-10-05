@@ -851,7 +851,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
           return (
             <button key={d.key} onClick={() => setOnly(d.key)} style={{
               fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
               border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
             }}>{d.icon} {d.label}</button>
           );
@@ -1623,7 +1623,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
             <button onClick={() => navigate(peLink)} style={{
               marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
-              cursor: 'pointer', background: 'var(--accent)', color: '#08120a', border: 'none',
+              cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             }}>เปิดดู →</button>
           </div>
         ) : !demoOn && (

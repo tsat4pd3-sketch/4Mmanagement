@@ -25,7 +25,7 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
-import { stepMeta } from './mtnStepPerm.js';
+import { stepMeta, nextStepOf } from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
@@ -66,11 +66,14 @@ export function isMe({ uid, name }, me) {
  *   byName = true แปลว่าขั้นนี้ผูกกับตัวบุคคลจริง (ผู้เปิดใบ / ช่างที่รับงาน)
  *
  * 🔴 ไม่เดาเลขขั้นเอง — `stepMeta()` เป็นคนบอกว่าขั้นนี้ `byReporter` หรือ `stage === 'service'`
+ * 🔴 ขั้นที่ "รอ" มาจาก `nextStepOf()` (ตัดสินจาก status) — **ห้ามอ่าน `current_step` ตรงๆ**
+ *    current_step = ขั้นที่ทำเสร็จแล้ว ⇒ เดิมช้าไป 1 ขั้นทุกใบ (workflow audit 05/10: ใบรอ QA 204 ใบ
+ *    ไปโผล่เป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิวเลย)
  */
 export function moWaitingOn(o = {}) {
   const mtnForm = isMtnFormRow(o);
-  const step = Number(o.current_step) || 0;
-  const meta = stepMeta(step, { mtnForm });
+  const step = nextStepOf(o) ?? 0;
+  const meta = step ? stepMeta(step, { mtnForm }) : null;
   if (!meta) return { step, meta: null, who: null, byName: false };
 
   if (meta.byReporter) {

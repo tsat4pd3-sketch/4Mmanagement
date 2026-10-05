@@ -33,19 +33,19 @@ import { isMtnFormRow, mtnApprovalState, qaAppliesTo } from './mtnMoForm.js';
 export const MTN_STEPS = {
   2: {
     stage: 'assign',
-    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false,
+    key: 'assign', fallback: 'service', ownTeam: true, byReporter: false, side: 'mtn',
     icon: '🔧', title: 'รับงาน / จ่ายงาน',
     who: 'หัวหน้าช่าง (คนจ่ายงานให้ทีม)', whoShort: 'หัวหน้าช่าง',
   },
   3: {
     stage: 'service',
-    key: 'service', fallback: null, ownTeam: true, byReporter: false,
+    key: 'service', fallback: null, ownTeam: true, byReporter: false, side: 'mtn',
     icon: '🛠', title: 'ลงมือซ่อม / อัพเดทผล',
     who: 'ช่างที่ได้รับมอบหมาย', whoShort: 'ช่างที่รับงาน',
   },
   4: {
     stage: 'accept_work',
-    key: 'accept_work', fallback: 'service', ownTeam: false, byReporter: true, reporterSide: true,
+    key: 'accept_work', fallback: 'service', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter',
     icon: '☑️', title: 'ตรวจรับงานหลังซ่อม',
     who: 'ผู้เปิดใบแจ้งซ่อม (ฝ่ายที่แจ้ง)', whoShort: 'ผู้เปิดใบ',
   },
@@ -57,13 +57,13 @@ export const MTN_STEPS = {
   },
   6: {
     stage: 'handover',
-    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true,
+    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: 40,
     icon: '🤝', title: 'รับมอบ / ติดตามผล',
     who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
   },
   7: {
     stage: 'close',
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
+    key: 'close_cost', fallback: 'approve', ownTeam: false, byReporter: false, reporterSide: true, side: 'reporter', minRank: 50,
     icon: '✅', title: 'อนุมัติปิดใบ MO',
     who: 'หัวหน้าแผนก / หัวหน้าส่วน / ผจก. ของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าส่วน / ผจก.',
   },
@@ -100,25 +100,25 @@ export const MTN_FORM_STEPS = {
   /* แทนที่ขั้น 5 (QA) ของฟอร์มอื่น — ลูป MTN ไม่มี QA จึงเดินจากตรวจรับงาน (4) มารับมอบเลย */
   5: {
     stage: 'handover',
-    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true,
+    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: 40,
     icon: '🤝', title: 'รับมอบ / ติดตามผล',
     who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
   },
   6: {
     stage: 'mtn_head',
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    key: 'mtn_head', fallback: 'approve', ownTeam: false, byReporter: false, reporterSide: false, teamSide: true, side: 'mtn', minRank: 50,
     icon: '👔', title: 'หัวหน้าแผนกช่าง ตรวจสอบงานหลังแก้ไข',
     who: 'หัวหน้าแผนกซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'หัวหน้าแผนกช่าง',
   },
   7: {
     stage: 'mtn_approve',
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true,
+    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: false, teamSide: true, side: 'mtn', minRank: 60,
     icon: '✅', title: 'ผจก.ช่าง อนุมัติ',
     who: 'ผจก.ส่วนซ่อมบำรุง (ฝั่งช่าง)', whoShort: 'ผจก.ช่าง',
   },
   8: {
     stage: 'cost_mgr_close',
-    key: 'approve', fallback: null, ownTeam: false, byReporter: false, reporterSide: true,
+    key: 'close_cost', fallback: 'approve', ownTeam: false, byReporter: false, reporterSide: true, side: 'reporter', minRank: 60,
     icon: '🏁', title: 'ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ',
     who: 'ผู้จัดการฝ่ายที่แจ้ง (เจ้าของค่าใช้จ่าย — ผู้ปิดใบ)', whoShort: 'ผจก.ฝ่ายที่แจ้ง',
   },
@@ -137,6 +137,31 @@ export function mtnCloseStage(order = {}) {
   if (!order.mtn_head_at) return 6;
   if (!order.approve_at) return 7;
   return 8;
+}
+
+/** สถานะใบที่ยัง "มีคนต้องทำต่อ" — ตัวโหลดคิวงานใช้กรอง (ปิด/ตีกลับ/โอน/ปฏิเสธ = ไม่อยู่ในคิว) */
+export const OPEN_MO_STATUSES = ['pending', 'assigned', 'repairing', 'repaired', 'checked', 'qa', 'handover'];
+
+/**
+ * 🔴 ขั้น "ถัดไปที่ต้องทำ" ของใบ — ตัดสินจาก `status` ไม่ใช่ `current_step`   (2026-10-05 · workflow audit)
+ * `current_step` = ขั้นที่ **ทำเสร็จแล้ว** (เปิดใบ = 1 · StepBox ถือว่าขั้น N เสร็จเมื่อ current_step ≥ N)
+ * ⇒ ผู้ที่ถามว่า "ใบนี้รอใคร" ต้องใช้ตัวนี้ — เคยอ่าน current_step ตรงๆ แล้ว**ช้าไป 1 ขั้นทุกใบ**
+ *   (ใบรอ QA 204 ใบไปโผล่ที่ผู้แจ้งที่เซ็นตรวจรับไปแล้ว · ใบรอจ่ายงาน 32 ใบไม่โผล่ที่ไหนเลย)
+ * คืนเลขขั้น · `null` = ใบปิด/ไม่อยู่ในลูป · ใบ MTN ช่วง handover ที่ไม่ได้ select เวลาเซ็น → ขั้น 6 (ตาม MtnRepair เดิม)
+ */
+export function nextStepOf(order = {}) {
+  const mtnForm = isMtnFormRow(order);
+  switch (order?.status) {
+    case 'pending':   return 2;
+    case 'assigned':
+    case 'repairing': return 3;
+    case 'repaired':  return 4;
+    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE) · ของใบ MTN ขั้น 5 คือ "รับมอบ" (ลูปนี้ไม่มี QA ⇒ isWaitingQa = false เสมอ) */
+    case 'checked':   return isWaitingQa(order) ? 5 : (mtnForm ? 5 : 6);
+    case 'qa':        return 6;
+    case 'handover':  return mtnForm ? (mtnCloseStage(order) ?? 6) : 7;
+    default:          return null;
+  }
 }
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
@@ -188,8 +213,69 @@ export function isOrderReporter(order, fullName) {
  *
  * คืน { ok, code } — `code` ไว้ให้จอบอกเหตุผล ห้ามคืนแค่ boolean
  */
+/* ═══ 🔒 ล็อก "ตำแหน่ง + ฝั่ง" ของคนกด — 2026-10-02 (คำสั่ง user) ═══════════════════════
+   user: *"ไม่มีลอคตำแหน่งในการกด บางทีหัวหน้าแผนกกดอนุมัติเลย ก็ไปอนุมัติของคนอื่นได้
+           ผจก ช่าง อนุมัติเลยก็มาอนุมัติแทน ผจก ผลิตได้"*
+
+   วัดจริง 02/10 — รั่ว 4 ชั้น ไม่ใช่ชั้นเดียว:
+     1. `manage_master` อยู่บรรทัดแรกของตัวตรวจ = ผ่านทุกขั้นทุกใบ ไม่ดูฝั่ง ไม่ดูส่วนงาน
+        (ศักดา สังกัด PD1 เซ็นปิดใบ DIE-BM-280926-0005 ของ PD3)
+     2. ด่าน `teamSide` มีเงื่อนไข `hasTeams` ⇒ คนที่ยังไม่กรอก `mtn_teams` **ข้ามด่านได้ทั้งหมด**
+        (ผู้เซ็นจริงทั้ง 4 คน mtn_teams = null ⇒ ด่านไม่เคยทำงานเลย)
+     3. ขั้น 6/7/8 ใช้คีย์สิทธิ์ตัวเดียวกัน (`approve`) ⇒ ใครอนุมัติขั้นช่างได้ ก็กดขั้น ผจก.ผลิต ได้
+     4. `profiles.position` มีข้อมูล 87/98 คน แต่**ไม่เคยถูกเอามาตัดสินเลย**
+        (ณัฐวุฒิ ตำแหน่ง dept_head เซ็นช่อง "อนุมัติปิดใบ" ไป 8 ใบ)
+
+   🔴 กติกาใหม่ — **ล็อกเต็ม** (ข้อ "ก" ที่ user เลือก 2026-10-04):
+     · ขั้นของฝั่งช่าง  คนฝั่งผู้แจ้งกดไม่ได้ · ขั้นของฝั่งผู้แจ้ง คนฝั่งช่างกดไม่ได้
+     · ขั้นระดับ ผจก. คนตำแหน่งต่ำกว่ากดไม่ได้ (เทียบด้วย rank ใน POSITION_LEVELS)
+     · 🔴 **`manage_master` ก็ข้ามฝั่ง/ตำแหน่งไม่ได้** — ไม่มีทางออก "เซ็นแทน" ในระบบ
+       (user รับทราบผลข้างเคียงแล้ว: คนที่ควรเซ็นลาหยุด = ใบค้าง · ทางออกคือมอบตำแหน่ง/ฝั่ง
+        ให้คนรักษาการที่ `/add-user` ไม่ใช่ให้หัวหน้ากดแทน)
+       ⚠️ เคยร่างเป็นข้อ "ข" (กดแทนได้ถ้ากรอกเหตุผล) ไว้ช่วงหนึ่ง — **ถอดออกแล้ว ห้ามรื้อกลับ
+          โดยไม่ถาม user** · ถ้าเห็น `override` ที่ไหนในโมดูลนี้ = ของค้างจากร่างนั้น
+     · 🔴 **ไม่รู้ = ไม่บล็อก แต่ต้องไม่เงียบ** (`side: 'unknown'` / ไม่มี position)
+       — บล็อกคนที่ข้อมูลไม่ครบ = ใบค้างทั้งโรงงานทันที (31% ยังไม่มี sections · 79% ไม่มี mtn_teams)
+       ให้ผ่านแล้วให้จอเขียนบอกผ่าน `stepAssumptions()`/`assumptionHint()` + ชี้ว่าต้องไปเติมที่ไหน
+
+   ⚠️ ไฟล์นี้ pure — ผู้เรียกคำนวณ `actorSide`/`posRank` มาให้ (ดู actorSideOf ด้านล่าง) */
+
+/** ฝั่งของคนกด — ตัดสินจาก "ข้อมูลที่บันทึกไว้จริง" เท่านั้น ห้ามเดาจากชื่อ/ตำแหน่ง
+ *  คืน 'mtn' | 'reporter' | 'unknown'  —  🔴 unknown ไม่ใช่ "ผ่าน" แต่คือ "ระบบไม่รู้ ต้องเขียนบนจอ" */
+export function actorSideOf({ mtnTeams = [], role = '', sections = [] } = {}) {
+  if (Array.isArray(mtnTeams) && mtnTeams.length > 0) return 'mtn';
+  if (String(role || '').trim() === 'mtn') return 'mtn';
+  if (Array.isArray(sections) && sections.length > 0) return 'reporter';
+  return 'unknown';
+}
+
+/** ข้อความเตือนตอนระบบ "ปล่อยผ่านเพราะไม่รู้" — คืน null เมื่อไม่มีอะไรต้องเตือน
+ *  🔴 ต้องเขียนบนจอเสมอ ห้ามปล่อยผ่านเงียบ (ไม่งั้นคนเข้าใจว่าด่านตรวจแล้ว ทั้งที่ไม่ได้ตรวจ) */
+export function assumptionHint(assumed = []) {
+  if (!assumed?.length) return null;
+  const what = [];
+  if (assumed.includes('side')) what.push('ฝั่งงาน (ช่าง / ผู้แจ้ง)');
+  if (assumed.includes('rank')) what.push('ตำแหน่ง');
+  return `⚠️ ระบบยังไม่รู้${what.join(' และ ')}ของบัญชีนี้ จึง**ไม่ได้ตรวจว่าช่องนี้เป็นของคุณจริงไหม** — ให้ admin เติมที่ /add-user`;
+}
+
+/** ขั้นนี้ระบบ "ต้องเดา" อะไรบ้างเพราะข้อมูลคนกดไม่ครบ → ['side'] | ['rank'] | ทั้งคู่ | []
+ *
+ *  🔴 แยกจาก `canDoStep` โดยตั้งใจ — verdict ตอบว่า "กดได้ไหม" ส่วนตัวนี้ตอบว่า "เชื่อได้แค่ไหน"
+ *     ปนกันเมื่อไหร่ รูปร่าง verdict จะเปลี่ยนทุกใบจนคนอ่านชินแล้วมองข้าม (ธงที่ขึ้นตลอด = ไม่ใช่ธง)
+ *  ใช้ที่จอเพื่อเขียนบอกว่า "ระบบไม่รู้ฝั่ง/ตำแหน่งของคุณ จึงไม่ได้ตรวจ" + ชี้ว่าต้องไปเติมที่ไหน */
+export function stepAssumptions(step, { mtnForm = false, actorSide = 'unknown', posRank = null } = {}) {
+  const meta = stepMeta(step, { mtnForm });
+  if (!meta) return [];
+  const out = [];
+  if (meta.side && actorSide === 'unknown') out.push('side');
+  if (meta.minRank != null && posRank == null) out.push('rank');
+  return out;
+}
+
 export function canDoStep(step, opts = {}) {
-  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, hasTeams = false, mtnForm = false, approvalBlocked = false } = opts;
+  const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, hasTeams = false, mtnForm = false, approvalBlocked = false,
+    actorSide = 'unknown', posRank = null } = opts;
 
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
@@ -197,7 +283,25 @@ export function canDoStep(step, opts = {}) {
   const meta = stepMeta(step, { mtnForm });
   if (!meta) return { ok: false, code: 'unknown_step' };
 
-  // หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
+  /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
+     "ถ้าไม่ใช่ผู้ถือคีย์หัวหน้า คนนี้จะกดได้ไหม" ⇒ ตอบได้ว่านี่คือการ "เซ็นแทน" หรือไม่ */
+  const sideBad = meta.side && actorSide !== 'unknown' && actorSide !== meta.side;
+  const rankBad = meta.minRank != null && posRank != null && posRank < meta.minRank;
+  // ผู้เปิดใบทำขั้นของตัวเองได้เสมอ (เช็คก่อนด่านฝั่ง/ตำแหน่ง — เจ้าของใบต้องไม่ถูกล็อกออก)
+  const isReporterSelf = meta.byReporter && isOrderReporter(order, fullName);
+
+  /* 🔴 **ล็อกเต็ม** (ข้อ "ก" ที่ user เลือก 2026-10-04) — ผิดฝั่ง/ต่ำกว่าตำแหน่งที่ช่องนั้นต้องการ
+     = กดไม่ได้ **แม้แต่ผู้ถือ `manage_master`** · ตรงกับใบกระดาษที่มีช่องเซ็นแยกตามตำแหน่งจริง
+     (ผู้ตรวจสอบ=หัวหน้าแผนก · รับรองโดย=ผจก.ส่วน · ผู้จัดการ) เซ็นแทนกันไม่ได้
+     ⚠️ ผลข้างเคียงที่ user รับทราบแล้ว: คนที่ควรเซ็นลาหยุด = ใบค้างรอจนกว่าจะกลับมา
+        (ทางออกคือมอบตำแหน่ง/ฝั่งให้คนรักษาการที่ `/add-user` ไม่ใช่ให้หัวหน้ากดแทนเงียบๆ) */
+  if (!isReporterSelf && (sideBad || rankBad)) {
+    return { ok: false, code: sideBad ? 'wrong_side' : 'rank_too_low', need: meta.side, needRank: meta.minRank };
+  }
+
+  /* หัวหน้า (ผู้ถือ manage_master) แก้ย้อนหลังได้ทุกขั้น — พฤติกรรมเดิม ห้ามถอด
+     ⚠️ ตกมาถึงตรงนี้แปลว่า "ฝั่งและตำแหน่งถูกต้องแล้ว" ⇒ คีย์นี้ปลดได้แค่เรื่อง *สิทธิ์/ลำดับขั้น*
+        **ปลดด่านฝั่ง/ตำแหน่งไม่ได้อีกต่อไป** (ด่านอยู่ข้างบนแล้ว ห้ามย้ายบรรทัดนี้ขึ้นไปก่อนมัน) */
   if (can('manage_master')) return { ok: true, code: 'manage_master' };
 
   /* 🔒 ใบ MTN "งานปรับปรุง/สร้าง" ต้องมีลายเซ็นผู้จัดการก่อน ช่างถึงจะรับงานได้ — 2026-09-15
@@ -208,7 +312,7 @@ export function canDoStep(step, opts = {}) {
 
   // ผู้เปิดใบตรวจรับงานของตัวเองได้เสมอ (ขั้น 4, 6) — ไม่ต้องรอ admin ติ๊ก role และไม่ติด scope
   // (เช็คก่อน perm: เจ้าของใบต้องไม่ถูกล็อกออกด้วยเกณฑ์ scope ไม่ว่ากรณีไหน)
-  if (meta.byReporter && isOrderReporter(order, fullName)) return { ok: true, code: 'reporter' };
+  if (meta.byReporter && isOrderReporter(order, fullName)) return { ok: true, code: 'reporter' };   // เจ้าของใบ = ไม่ต้องเดา ไม่ติดธง
 
   /* 🔒 ขั้นของ "ฝ่ายที่แจ้ง" (4/6/7) ทำได้เฉพาะใบในส่วนงานตัวเอง — 2026-09-07 (คำสั่ง user "ลุยข้อ 2")
      inReporterScope: true = ใบอยู่ในขอบเขต · false = อยู่นอกขอบเขต (ล็อก) · null = ตัดสินไม่ได้
@@ -529,10 +633,24 @@ export function canSkipQa(opts = {}) {
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null } = {}) {
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
   const meta = stepMeta(step, { mtnForm });
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
+  /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — ต้องบอกให้ตรงเหตุ ไม่งั้นคนจะไปขอ role เพิ่ม
+     ทั้งที่ปัญหาคือ "ช่องนี้ไม่ใช่ของคุณ" ไม่ใช่ "สิทธิ์ไม่พอ" */
+  if (wrongSide) {
+    lines.push(meta.side === 'reporter'
+      ? 'ช่องนี้เป็นของ **ฝ่ายที่แจ้ง** (เจ้าของค่าใช้จ่าย) — ฝั่งช่างเซ็นแทนไม่ได้ ตามใบ MO ฉบับกระดาษที่แยกช่องเซ็นไว้'
+      : 'ช่องนี้เป็นของ **ฝั่งซ่อมบำรุง** — ฝ่ายที่แจ้งเซ็นแทนไม่ได้ ตามใบ MO ฉบับกระดาษที่แยกช่องเซ็นไว้');
+    lines.push('ถ้าคุณอยู่ฝั่งนั้นจริง แปลว่าบัญชีนี้ยังตั้งข้อมูลไม่ตรง — ให้ admin แก้ “🔧 ทีมช่างซ่อม” หรือ “ส่วนงาน” ที่ /add-user');
+    return lines;
+  }
+  if (rankTooLow) {
+    lines.push(`ช่องนี้ต้องเป็นระดับ${meta.minRank >= 60 ? 'ผู้จัดการ' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องนั้นกำหนด`);
+    lines.push('ให้ผู้มีตำแหน่งตามช่องเป็นคนกด · ถ้าตำแหน่งในระบบไม่ตรงกับของจริง ให้ admin แก้ที่ /add-user');
+    return lines;
+  }
   /* ติดด่านอนุมัติ ไม่ใช่ติดสิทธิ์ — ต้องบอกให้ตรงเหตุ ไม่งั้นช่างจะไปขอ role เพิ่มทั้งที่ไม่ใช่เรื่อง role
      awaitApproval = { missing: ['dept'|'plant'], deptName, plantName } (ผู้เรียกส่งมาจาก mtnApprovalState) */
   if (awaitApproval) {

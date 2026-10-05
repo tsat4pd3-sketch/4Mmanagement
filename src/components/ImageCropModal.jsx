@@ -270,7 +270,7 @@ export default function ImageCropModal({
               ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
           <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
           <button type="button" onClick={handleConfirm} disabled={!srcFile || converting}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
             {converting ? 'กำลังแปลง…' : '✓ ใช้รูปนี้'}
           </button>
         </div>

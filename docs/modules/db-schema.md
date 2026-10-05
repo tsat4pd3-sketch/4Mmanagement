@@ -16,6 +16,7 @@
 | `oee_targets` | Target **A/P/Q รายกรุ๊ป** (parent line/ไลน์เดี่ยว) — **เป้า OEE ไม่ตั้งเอง คำนวณจาก A×P×Q เสมอ** · ระดับ section ไม่เก็บใน DB ใช้**ค่าเฉลี่ยของกรุ๊ป**คำนวณสดในหน้า OEE (2026-07-13) | group_name (unique), target_a/p/q (null = ค่ามาตรฐาน 90/90/99 → OEE 80.2) · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้ (แอปคำนวณเอง) · ตั้งจากปุ่ม 🎯 ใน /oee-analytics (สิทธิ์ manage_master_data) · migration `20260713_oee_targets.sql` |
 | `profiles` | User roles + scope · **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดว่ามี จนเป็นต้นเหตุให้ `fn_audit` อ่าน `coalesce(full_name, email)` แล้วพังเงียบ ไม่บันทึกผู้แก้เลยทั้งระบบ ดูหัวข้อ Traceability) · **ระบบไม่มีการส่งอีเมล** — `notify_email` เป็นคอลัมน์ที่ไม่เคยถูกใช้ส่งอะไร (ช่องกรอกใน `/add-user` ถอดออกแล้ว 2026-08-17) | id, role, **position** (ตำแหน่งจริง — แสดงผลเท่านั้น), full_name, line_id, section, sections[], **mtn_teams[]** (ทีมช่างซ่อมที่สังกัด — แยกคิวใบแจ้งซ่อม MO · แยกจาก sections ที่คุม scope ผลิต · ตั้งที่ /add-user เฉพาะ role งานซ่อม · migration `20260722_profiles_mtn_teams.sql` · 2026-07-22), notify_email, signature_url, avatar_url (รูปโปรไฟล์ user — 2026-07-14) |
 | `role_permissions` | สิทธิ์เข้าหน้า/action ตาม role (data-driven) | role, permission_key, allowed |
+| `org_nodes` | ผังองค์กร 4 ชั้น (section/department/line/team) — **FK ที่ชี้มาเป็น `restrict` ทั้งหมดแล้ว** (05/10 · `parent_id` เดิม cascade · `employees/profiles.org_node_id` เดิม set null = คนหลุดสังกัดเงียบ) · RLS เขียน `org:manage` / `org:manage_own_unit` · ลบ/เปลี่ยนชื่อต้องผ่าน `src/utils/orgNodeRefs.js` (มีสำเนาชื่อแบบ text ในทะเบียนอื่นที่ไม่มี FK คุม) · 📄 `org-hierarchy.md` §relate table | id, kind, name, code, parent_id, ref_line_id, cost_center, labor_type, division, sort_order, is_active |
 | `cost_centers` | ทะเบียน Cost Center (2026-09-08 · single-source audit) — production_lines/org_nodes/cost_center_rates เก็บ code text เหมือนเดิม · แก้ที่ /org-setup แผง 💰 · picker `CostCenterSelect` · RLS เขียน `cost_rate:manage` | code (pk), name, section, is_active |
 | `customers` / `suppliers` / `die_press_lines` (**DR**) | ทะเบียนลูกค้า / ผู้ขาย-ผู้รับจ้าง / กลุ่มเครื่องปั๊มแม่พิมพ์ (2026-09-08) — คอลัมน์ปลายทาง (customer · supplier/vendor_name/maker_name · die line_name) เก็บ **name text เหมือนเดิม ไม่ผูก FK** · code = คีย์ normalize · seed จากค่าที่มีอยู่จริง · จัดการที่ /products แท็บ 🏷️ ลูกค้า · 🏭 Supplier และ /die-registry แผง ⚙️ · picker `CustomerSelect` (alias → สะกดหลัก) / `SupplierSelect` / `useDiePressLines` · **die_press_lines ตั้งใจแยกจาก production_lines** (ไม่ให้ "LINE A ( 800 Ton )" โผล่ใน dropdown ไลน์ผลิต) | code (pk), name, aliases[] / kind / tonnage+ref_production_line, is_active |
 
@@ -78,3 +79,42 @@
 > 📄 `prod_problem_reports` (ใบ FM-PD1-019 ที่ออกไปแล้ว + `snapshot` เนื้อใบ) ·
 > `quality_bin_records` (+`qa_decision`/`special_use_doc_no`) · `repair_wi_registry` (QRs ↔ WI ซ่อม)
 > พร้อมกฎว่าทำไมไม่มีคอลัมน์ `tag_date`/`closed_at` → `docs/modules/production-problem-report-bins.md`
+
+---
+
+## 🏷️ `employees.department` = ต้นทางของชื่อหน่วยงานในตารางกะ (2026-10-04)
+
+`shift_schedules.dept_name` **ไม่ใช่ทะเบียน** — `ShiftOrganize` ปั้นรายชื่อแผนกจาก
+`employees.department` (ชื่อในผังองค์กรชนะชื่อที่พนักงานกรอก) แล้วเขียนลงทุกครั้งที่บันทึกกะ
+⇒ **แก้ชื่อผิดที่ `shift_schedules` ไม่มีผล** สัปดาห์ถัดไปแถวผิดกลับมาใหม่ · ต้องแก้ที่ `employees`
+
+⚠️ `employees.department` ถูกอ่านใน ~12 หน้า (ขอบเขตแจ้งเตือน · รายงาน · ตารางกะ)
+⇒ เปลี่ยนค่าผิดตัวเดียว = คนหลุด scope เงียบๆ · **สำรองลง `archive.` ก่อนเสมอ**
+
+**รวมชื่อไปแล้ว 04/10** (migration `20261004_employees_department_typos_main.sql` · apply + ตรวจกลับแล้ว ·
+สำรอง `archive._bak_20261004_emp_dept` 6 แถว): `Smail Press`→`SMALL PRESS` · `Big Press`→`BIG PRESS`
+· `ฝ่าผลิต`→`ฝ่ายผลิต`
+
+🔴 **จงใจไม่แตะ** คู่ที่ตัดสินแทนคนไม่ได้ — ต้องให้ส่วนงานยืนยันก่อน:
+`APRON ASSY` (8) vs `LINE APRON ASSY` (54) · `HDF` (3) vs `HYDROFORM` (46) ·
+และ `ASSY2` (13) / `ฝ่ายผลิต` (39) ที่**ยังไม่มีในผังองค์กร** (คนละปัญหา: ผังไม่ครบ ไม่ใช่พิมพ์ผิด)
+
+---
+
+## § RLS ฝั่ง DR project — เคสที่เคยทำพังทั้งระบบ (ย้ายจาก CLAUDE.md 2026-10-05)
+
+กฎย่ออยู่ใน CLAUDE.md §Supabase Projects — ที่นี่เก็บว่าพังแบบไหน
+
+`supabaseDR` ถูกสร้างด้วย `createClient(url, anonKey)` เฉยๆ **ไม่มี `auth` config ผูกกับ session**
+⇒ ไม่ว่า user จะ login เข้าแอปแล้วหรือไม่ ทุก query ผ่าน client นี้วิ่งด้วย role `anon` เสมอ
+
+**เคยทำพังจริง 1 ครั้ง:** มี session เปลี่ยน RLS policy ตารางฝั่ง DR จาก `public`/`anon`
+ไปเป็น `TO authenticated` แบบเหมา เพราะคิดว่า "ปลอดภัยขึ้น" ⇒ **หายทั้งระบบทันที**:
+Product Master · Machine List · PM data · การเปิดกะ — ต้อง **revert ฉุกเฉิน**
+
+**เคสคู่กัน (2026-09-07):** คิวรีเช็ค NPI (ตารางฝั่ง Main) ถูกรันบน "Product DB" แล้วขึ้น
+`42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว — เสียเวลาไล่หาสาเหตุทั้งที่
+migration ไม่ได้ผิดอะไร ⇒ ที่มาของกฎ "ระบุทั้งชื่อในจอและ project id ทุกครั้ง"
+
+🔴 **ทางแก้ที่ถูกต้องถ้าจะ secure ฝั่ง DR จริง = Edge Function ที่ validate ฝั่ง server เอง**
+(ยังไม่ได้ทำ — known gap · ห้ามแก้ด้วยการเปลี่ยน policy)

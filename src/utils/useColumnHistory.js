@@ -7,9 +7,9 @@
      picker แสดงเป็นกลุ่ม "📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)" เลือกได้ + ติดป้าย ⚠ ให้เห็นว่านอกทะเบียน
 
    ⚠️ best-effort: อ่านล่าสุด `limit` แถวแล้ว dedupe ฝั่ง client (PostgREST ไม่มี distinct) · cache ร่วม
-   ผ่าน masterCache · คิวรีล้ม = คืน [] (ไม่ทำให้ picker พัง) */
+   ผ่าน masterCache · ตาราง/คอลัมน์ไม่มี = คืน [] · คิวรีล้มจริง = โยน (ห้าม cache ว่างทับ) */
 import { useEffect, useState } from 'react';
-import { cachedMaster, invalidateMaster } from './masterCache';
+import { cachedMaster, invalidateMaster, mrows } from './masterCache';
 
 const norm = (v) => String(v ?? '').trim();
 
@@ -22,10 +22,10 @@ const norm = (v) => String(v ?? '').trim();
 export async function loadColumnHistory(client, table, column, { limit = 3000, upper = false } = {}) {
   const key = `hist:${table}.${column}`;
   return cachedMaster(key, async () => {
-    const r = await client.from(table).select(column).not(column, 'is', null).limit(limit);
-    if (r.error) return [];
+    // mrows: คอลัมน์/ตารางไม่มี → [] (เดิม) · error อื่น → โยน (ไม่งั้น "ค่าที่เคยบันทึก" หายเงียบ 4 ชม.)
+    const rows = mrows(await client.from(table).select(column).not(column, 'is', null).limit(limit));
     const seen = new Set(); const out = [];
-    for (const row of r.data || []) {
+    for (const row of rows) {
       const v = norm(row[column]); if (!v) continue;
       const k = upper ? v.toUpperCase() : v;
       if (seen.has(k)) continue; seen.add(k); out.push(upper ? k : v);

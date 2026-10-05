@@ -16,3 +16,9 @@
 - **🔔 ช่วง Production Support ที่กำลังจะถึง (2026-07-23):** แผงแดงบนหน้ารวมทุกขั้นงานที่ติ๊ก `is_support` ของแผนที่ยังไม่ done/cancelled (วันนี้เป็นต้นไป · scope ตามไลน์) เรียงตามวัน — เตือน Production ล่วงหน้าว่าถูกนัด support วันไหน/เวลาไหน
 - **✅ sync "เสร็จ" กลับระบบแผน PM (2026-07-23):** ปิดแผนที่ผูก `pm_plan_id` เป็น "เสร็จ" → confirm แล้ว stamp `pm_plans.last_done_at = วันนี้` · แผนตามรอบเวลา (ไม่ใช่ usage) เลื่อน `next_due_date = วันทำ + interval_days` ให้อัตโนมัติ · usage → forecast คำนวณเองจาก last_done_at (การทำ PM checklist จริงยังบันทึกที่ PMCheckData แยกกัน — อันนี้แค่ sync วันรอบถัดไป)
 - **ต้อง deploy edge `send-notification`** ให้รู้จัก event `pm_coordination` (ก่อน deploy: กด "แจ้ง" ได้ 400 เงียบ แต่ status ยังเป็น notified — ตัวใบ/พิมพ์ใช้ได้ปกติ)
+
+### 🛠️ QC 05/10
+- แจ้ง Production: อ่าน `{ error }` ของ `functions.invoke` (ไม่ throw) — ล้ม = ไม่ตั้งสถานะ "แจ้งแล้ว" · toast เขียวเฉพาะเมื่อเขียนสถานะสำเร็จ · ลบแผนนับแถว
+- 🔴 บันทึกรายการงาน = **insert ชุดใหม่ก่อน แล้วลบชุดเดิมตาม id** (เดิมลบก่อน-เขียนทีหลัง ⇒ insert ล้ม = งานหายทั้งแผน + ปุ่มค้างเพราะลืม `setBusy(false)`)
+- แผนใหม่: หัวแผนสร้างแล้วแต่รายการงานล้ม = หน้าต่างค้างไว้ (ของที่พิมพ์ไม่หาย) กดบันทึกซ้ำ = แก้หัวเดิม (`createdIdRef`) ไม่สร้างหัวซ้ำ
+- ปิดแผน "เสร็จ" แล้ว stamp `pm_plans.last_done_at` = `getWorkDate()` (ชุดเดียวกับ PMCheckData) + นับแถว (RLS 0 แถว = แจ้ง)

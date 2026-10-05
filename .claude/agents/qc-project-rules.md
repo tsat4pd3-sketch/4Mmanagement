@@ -83,6 +83,8 @@ model: inherit
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
+- **[C-RLS-3]** policy เขียนที่เป็น `using (true)` บนตาราง**ทะเบียน/master** ฝั่ง Main = ใครที่ login ก็ลบทิ้งได้ ถึงปุ่มบนจอจะซ่อน — ต้องมี `has_perm()` ด้วยคีย์เดียวกับปุ่ม (05/10 · `org_nodes` เคยเปิดโล่งทั้ง insert/update/delete · `20261005_org_nodes_ref_integrity_main.sql`) · ตรวจ: `select relname, polname, polcmd from pg_policy ... where polqual = 'true' and polcmd <> 'r'`
+- **[C-REF-1]** ปุ่มลบ/เปลี่ยนชื่อแถวใน **ทะเบียนที่ปลายทางจับคู่ด้วยข้อความ (ไม่ผูก FK)** ต้องไล่เช็ค/ไล่แก้ปลายทางก่อน ห้ามเช็คแค่ "มีลูกในตารางตัวเอง" · ต้นแบบ `src/utils/orgNodeRefs.js` (`loadOrgNodeRefs`/`orgRefBlockMessage`/`renameOrgRefs`) · นับไม่ครบ = ห้ามลบ (fail-closed) · 📄 `docs/modules/org-hierarchy.md` §relate table
 - **[C-RLS-2]** ตารางที่ client เรียก `.upsert()` ต้องมี UPDATE policy (ไม่มี = ชนแถวเดิมแล้ว 42501) · ตารางที่ client `.update()/.delete()` แล้วผลลัพธ์สำคัญ ต้อง `.select('id')` นับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)
 - **[B-WRITE-1]** ทุก `insert/update/delete/upsert` ต้องอ่าน `error` (ใช้ `checkWrite` จาก `src/utils/dbWrite.js` หรืออ่าน `{ error }` เอง) · grep: `^\s*await supabase(DR)?\.from\('[^']+'\)\.(insert|update|delete|upsert)\(` ต้องได้ 0 (ยกเว้น `AddUser.jsx` mtn_teams ที่ตั้งใจ · `webpush.js` ใน try ของ unsubscribe) — `await supabase.from(...).insert(...)` เปล่าๆ หรือ `const { data } = ...` = กลืน error · `try{await supabase…}catch{}` = โค้ดตาย (supabase-js ไม่ throw)
 - **[B-WRITE-2]** effect ที่ await แล้ว set state ตาม selection ต้องมี guard กัน stale response (`alive`/request id) — CLAUDE.md §กฎเหล็กการเขียน DB จาก client ข้อ 4
@@ -328,6 +330,12 @@ model: inherit
       (ใช้ `lead`/`title`/`code`/`sub` ของ `<SearchSelect>` แทน · ด่าน `picker-label-stuffed-with-codes`)
     · ตารางที่มีคอลัมน์ `ชื่อชิ้นงาน` กับ `MAT` แยกกัน = 🟡 → ยุบเป็นคอลัมน์เดียววาดด้วย `<MatLabel>` (UI §6.21)
   · ไม่ตรวจ `src/lib/**` — ใบพิมพ์/export เรียงตามฟอร์มกระดาษทางการ ห้ามสลับ
+
+- **F-AXIS0** แกน Y ที่ไม่เริ่ม 0 ต้องมาจาก `focusDomain()` + `<FocusAxisNote>` (ObeyaSheet) — ห้าม `domain={[dataMin => …]}` / `domain={[95, 100]}` เอง
+  · grep: `domain=\{\[(dataMin|\(?\w+\)? =>|[1-9])` · `domain:\s*\[(dataMin|\w+ =>)` · ด่าน `chart-yaxis-domain-hand-made`
+- **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
+  · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
+- **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

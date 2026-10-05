@@ -17,7 +17,8 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -31,7 +32,8 @@ import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
-import { isDie } from '../utils/equipmentKinds';
+import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
+import { useDieItemTypeMap } from '../utils/useDieSetKinds'; // เลขแม่พิมพ์ → ชนิดอุปกรณ์ จากทะเบียน (2026-10-05)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -194,7 +196,7 @@ const notifyMtn = (payload, event) => {
 
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 
 /* ── ลายเซ็น: ใช้ลายเซ็นโปรไฟล์ (ไม่เพิ่มไฟล์ใหม่) หรือเซ็นใหม่ ── */
@@ -324,7 +326,11 @@ export default function MtnRepair() {
   const [fStatus, setFStatus] = useState('open');
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
-  const [fText, setFText] = useState('');
+  /* 🔗 `?q=` = คำค้นตั้งต้นจากลิงก์ภายนอก (/scan → "ดูใบซ่อมของเครื่องนี้" ส่งเลขเครื่องมา)
+     เดิมไม่มีใครอ่าน ⇒ สแกนป้ายเครื่องแล้วเห็นใบซ่อมทุกเครื่อง (QC 05/10) · q เปลี่ยน (สแกนป้ายใหม่) = ตามค่าใหม่ */
+  const qParam = sp.get('q') || '';
+  const [fText, setFText] = useState(qParam);
+  useEffect(() => { if (qParam) setFText(qParam); }, [qParam]);
   /* 📅 วันที่ + กะ + ประเภทงานซ่อม (2026-09-25 · feedback ณัฐพล สีพิมพ์ขัด 24/09
      *"เพิ่มแท๊ปในรายการแจ้งซ่อมที่สามารถดูเลือกวันที่และกะประเภทของการแจ้งซ่อมได้"*)
      ทำเป็น **ตัวกรองในแท็บเดิม ไม่ใช่แท็บใหม่** — ตัวกรองช่วงเวลาต้องหน้าตาเดียวกันทุกหน้า
@@ -433,9 +439,15 @@ export default function MtnRepair() {
     teamDefaulted.current = true;
   }, [userTeams, role, lines.length]);
 
+  /* โหลดใบล้ม / ชนเพดาน 1000 ใบ ต้องเขียนบนจอ (QC 05/10) — เดิม error ถูกกลืนแล้วขึ้น "ไม่มีรายการ"
+     และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
+  const ORDER_CAP = 1000;
+  const [ordersErr, setOrdersErr] = useState('');
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
-    const { data } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(1000);
+    const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
+    if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
+    setOrdersErr('');
     setOrders(data || []);
   }, []);
 
@@ -584,8 +596,18 @@ export default function MtnRepair() {
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
-          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, padding: '0 16px' }}>➕ แจ้งซ่อมใหม่</button>}
+          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
+        {ordersErr && (
+          <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444', border: '1px solid #ef4444', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ โหลดรายการใบซ่อมไม่สำเร็จ: {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด
+          </div>
+        )}
+        {orders.length >= ORDER_CAP && (
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ใบที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นใบเก่าด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง)
+          </div>
+        )}
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
         {dateHidden.n > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)',
@@ -601,9 +623,20 @@ export default function MtnRepair() {
             )}
           </div>
         )}
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 340px), 1fr))' }}>
-          {shown.map(o => <MoCard key={o.id} o={o} onOpen={() => openDetail(o)} />)}
-          {!shown.length && <div style={{ color: 'var(--muted)', padding: 24 }}>ไม่มีรายการ</div>}
+        {/* 📋 รายการ = ตาราง 1 ใบ 1 บรรทัด (05/10 · คำสั่ง user "ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก")
+            สแกนตาลงทีละคอลัมน์ได้ · เดิมการ์ด 5 ใบ/แถว = เห็นแค่ ~15 ใบต่อจอ */}
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 170px)' }}>
+          {/* กรอบเลื่อนเอง (สูงไม่เกินจอ) ⇒ หัวตาราง sticky ค้างอยู่ตอนเลื่อนลง 300 ใบ */}
+          <table className="mo-list">
+            <thead><tr>
+              <th>เลข MO</th><th>สถานะ</th><th>ขั้น</th><th>แจ้งเมื่อ</th><th>ทีมช่าง</th>
+              <th>ไลน์</th><th>ชนิด · เครื่อง</th><th>ปัญหา</th><th>รายละเอียด</th><th>ประเภท</th>
+            </tr></thead>
+            <tbody>
+              {shown.map(o => <MoRow key={o.id} o={o} onOpen={() => openDetail(o)} />)}
+              {!shown.length && <tr><td colSpan={10} style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>ไม่มีรายการ</td></tr>}
+            </tbody>
+          </table>
         </div>
       </>}
 
@@ -620,27 +653,45 @@ export default function MtnRepair() {
   );
 }
 
-function MoCard({ o, onOpen }) {
+function MoRow({ o, onOpen }) {
   const m = statusMetaOf(o);
+  const last = lastStep({ mtnForm: isMtnFormOrder(o) });
   // ใบเก่าปิดที่ current_step 8 (flow 8 ขั้นก่อน 22/09) — ปิดแล้วต้องเต็ม 100% ห้ามค้าง 89%
-  const pct = o.status === 'closed' ? 100
-    : Math.round((o.current_step / lastStep({ mtnForm: isMtnFormOrder(o) })) * 100);
+  const pct = o.status === 'closed' ? 100 : Math.round((o.current_step / last) * 100);
   const dept = o.mtn_dept || deptForItem(o.item_type);
+  const pending = o.status === 'pending';
   return (
-    <div className={o.status === 'pending' ? 'mo-card-alert' : ''} onClick={onOpen}
-      style={{ background: 'var(--card)', border: `1px solid ${o.status === 'pending' ? '#ef4444' : 'var(--border)'}`, borderRadius: 12, padding: 12, cursor: 'pointer' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข MO)'}</div>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 10px', whiteSpace: 'nowrap' }}>{m.label}</span>
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🏢 {deptNameOf(dept)}</div>
-      <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 3 }}>🏭 <b>{o.line_name || '—'}</b> · {o.item_type || '—'} {o.machine_no ? `· ${o.machine_no}` : ''}</div>
-      <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3 }}>🛑 {o.problem_characteristic || '—'}</div>
-      {o.report_note && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.report_note}</div>}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 7, fontSize: 11, color: 'var(--muted)' }}>
-        <span>{fmtDateTime(o.report_at)}</span>{o.status !== 'rejected' && <span>ขั้น {o.current_step}/{lastStep({ mtnForm: isMtnFormOrder(o) })}</span>}
-      </div>
-      {o.status !== 'rejected' && <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 4, marginTop: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: o.status === 'closed' ? '#22c55e' : '#f59e0b' }} /></div>}
+    <tr onClick={onOpen} tabIndex={0} role="button" className={pending ? 'mo-row-alert' : ''}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
+      <td style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>(ยังไม่ออกเลข)</span>}</td>
+      <td><span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>{m.label}</span></td>
+      <td style={{ whiteSpace: 'nowrap' }}>
+        {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
+          <div style={{ width: 52, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 2 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: o.status === 'closed' ? 'var(--green)' : 'var(--amber)' }} />
+          </div>
+        </>}
+      </td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{fmtDateTime(o.report_at)}</td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{deptNameOf(dept)}</td>
+      <td style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>{o.line_name || '—'}</td>
+      <td style={{ color: 'var(--text2)', minWidth: 120 }}>{o.item_type || '—'}{o.machine_no ? <> · <b style={{ color: 'var(--text)' }}>{o.machine_no}</b></> : ''}</td>
+      <td style={{ minWidth: 140 }}>{o.problem_characteristic || '—'}</td>
+      <td className="mo-note" title={o.report_note || ''}>{o.report_note || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
+      <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{o.repair_type || '—'}</td>
+    </tr>
+  );
+}
+
+/* หัวขั้นของฟอร์มคอลัมน์เดียว — เลขวงกลม + ชื่อขั้น · `visible={false}` = ไม่วาด (ขั้นที่มีเฉพาะบางทีม) */
+function FormStep({ n, title, visible = true }) {
+  if (!visible) return null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n > 1 ? 10 : 0, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+      <span style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12.5, fontWeight: 800,
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{title}</span>
     </div>
   );
 }
@@ -705,6 +756,30 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     () => /^DIE\b/i.test(f.item_type || '') || (!f.item_type && teamKeyOf(f.mtn_dept) === 'die_maintenance'),
     [f.item_type, f.mtn_dept],
   );
+  /* 🔨 แจ้งซ่อมแม่พิมพ์: "ชนิดอุปกรณ์" มาจากทะเบียน ไม่ต้องให้ผู้แจ้งเลือก (2026-10-05 · คำสั่ง user)
+     *"เลือกแม่พิมพ์แล้ว ก็ควรดึงจากฐานข้อมูลได้ว่าแม่พิมพ์นี้คือแม่พิมพ์อะไร"*
+     วัดจริง 05/10: ใบ DIE ที่ผู้แจ้งเลือกชนิดเอง **ไม่ตรงทะเบียน 2 ใน 4 ใบ** ที่ระบุชนิด (เลือก SINGLE บนชุด tandem ฯลฯ)
+     ทางเดิน = แม่พิมพ์ → ชุด (equipment_die) → รูปแบบชุด (die_sets.kind) → die_set_kinds.mo_item_type
+     · ชี้ไม่ได้ (ไม่ผูกชุด / รูปแบบยังไม่ตั้งชนิดในใบแจ้งซ่อม / โหลดทะเบียนไม่ได้) = **ให้ผู้แจ้งเลือกเองตามเดิม ห้ามเดา**
+     · เปลี่ยนแม่พิมพ์ไปตัวที่ชี้ไม่ได้ = ล้างเฉพาะค่าที่ "ระบบเติม" (autoItemRef) — ค่าที่คนเลือกเองไม่แตะ
+     · ทะเบียนผิด = แก้ที่ /equipment?tab=die (ต้นทาง) ไม่ใช่แก้ในใบ */
+  const dieItemMap = useDieItemTypeMap(wantDie);
+  const dieDerived = wantDie ? dieItemTypeOf(dieItemMap, f.machine_no) : null;
+  const dieItemAuto = !!dieDerived?.itemType && f.item_type === dieDerived.itemType;
+  const autoItemRef = useRef('');
+  useEffect(() => {
+    const it = dieDerived?.itemType || '';
+    setF(p => {
+      if (it) {
+        if (p.item_type === it) return p;
+        autoItemRef.current = it;
+        return { ...p, item_type: it, mtn_dept: p.mtn_dept || deptForItem(it, itemTypes) };
+      }
+      if (autoItemRef.current && p.item_type === autoItemRef.current) { autoItemRef.current = ''; return { ...p, item_type: '' }; }
+      return p;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dieDerived?.itemType]);
   const lineMachines = useMemo(() => {
     if (wantDie) return machines.filter(m => isDie(m.equipment_kind));
     // ไม่ใช่งานแม่พิมพ์ → ตัดแม่พิมพ์ออกจากลิสต์เครื่องจักร (262 ตัวอยู่ตารางเดียวกัน เคยปนกันมาตลอด)
@@ -863,38 +938,29 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); const { error: eImg } = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); if (eImg) throw new Error(`ผูกรูปเข้าใบไม่สำเร็จ (${eImg.message}) — แนบใหม่ได้ด้วยปุ่มแก้ไข`); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
   };
 
   return (
-    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty} wide>
-      <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty}>
+      {/* 📝 คอลัมน์เดียว ไล่กรอกลงทีละขั้น · แต่ละมิติเรียง "ใหญ่ → เล็ก" (05/10 · คำสั่ง user — เดิม 2 คอลัมน์ ตาต้องสลับซ้าย-ขวา)
+          ① ทีม/ชนิดงาน → ② ที่ไหน (แผนก → ส่วนงาน → ไลน์) → ③ อุปกรณ์ (ชนิด → เลข) → ④ ปัญหา (กลุ่ม → หัวข้อย่อย → รายละเอียด → รูป)
+          → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
+      <div style={{ display: 'grid', gap: 12 }}>
+        <FormStep n={1} title="แจ้งถึงทีมช่าง · ชนิดงาน" />
         <Field label="แจ้งถึงทีมช่าง" required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
-        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          <Field label="ขอบเขตการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
-          <Field label="ประเภทงานซ่อม (BM/PM)">
+        <Field label="ขอบเขตการซ่อม"><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}</select></Field>
+        <Field label="ประเภทงานซ่อม (BM/PM)">
             <select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>
               <option value="">— ให้หัวหน้าช่างระบุ —</option>
               {teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}
             </select>
           </Field>
-        </div>
-        {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
-        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
-          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
-        </Field>
-        <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
-          <Field label="ส่วนงาน (ASSY)">
-            <select value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp}>
-              <option value="">— ไม่ระบุ —</option>
-              {f.work_area && !deptsOf(f.dept_section).includes(f.work_area) && <option value={f.work_area}>⚠ {f.work_area} (ไม่มีในผัง)</option>}
-              {deptsOf(f.dept_section).map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
+
+        <FormStep n={2} title="ที่ไหน — แผนก → ส่วนงาน → ไลน์" />
           {/* แผนก = section จากผังองค์กร (default ตามไลน์ · เปลี่ยนได้เฉพาะผ่านตัวเลือก — คีย์ scope ของ mtnStepPerm) · 2026-09-07 */}
           <Field label="แผนก (PD)">
             <select value={f.dept_section} onChange={e => { setDirty(true); setF(p => ({ ...p, dept_section: e.target.value, work_area: '' })); }} style={inp}>
@@ -903,8 +969,32 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
               {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </Field>
-        </div>
-        <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
+          {/* ส่วนงาน (แผนกใต้ section) จากผังองค์กร cascade ตามแผนกที่เลือก (§5.3) — ว่างได้ · ค่าเก่านอกผังยังเลือกค้างได้ · 2026-09-07 */}
+          <Field label="ส่วนงาน (ASSY)">
+            <select value={f.work_area} onChange={e => set('work_area', e.target.value)} style={inp}>
+              <option value="">— ไม่ระบุ —</option>
+              {f.work_area && !deptsOf(f.dept_section).includes(f.work_area) && <option value={f.work_area}>⚠ {f.work_area} (ไม่มีในผัง)</option>}
+              {deptsOf(f.dept_section).map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+        {/* <LineSelect> = ลำดับชั้น + ปลดระวาง + ค่าเก่าไม่หายเงียบ (lines ถูก scope ไว้แล้วจากหน้าหลัก) · 2026-09-07 */}
+        <Field label={`ไลน์การผลิต${f.dept_section && scopedLines.length < lines.length ? ` (${scopedLines.length} ไลน์ของ ${f.dept_section})` : ''}`} required>
+          <LineSelect lines={scopedLines} value={f.line_name} onChange={onLine} placeholder="— เลือก —" style={inp} required />
+        </Field>
+        {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
+        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
+
+        <FormStep n={3} title="อุปกรณ์ — ชนิด → หมายเลข" />
+        {dieItemAuto ? (
+          <Field label="ชนิดอุปกรณ์" required>
+            {/* ล็อกเพราะมาจากทะเบียนแม่พิมพ์ — ผู้แจ้งไม่ต้องเลือก (ข้อมูลผิดให้แก้ที่ทะเบียน ไม่ใช่ในใบ) */}
+            <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)' }}>
+              <b>{f.item_type}</b>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 จากทะเบียนแม่พิมพ์ · ชุดแบบ {dieDerived.kindLabel}</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ตรงกับของจริง? แจ้งทีมแม่พิมพ์แก้รูปแบบชุดที่ /equipment (แท็บแม่พิมพ์)</div>
+          </Field>
+        ) : <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
           ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
           : /* ยังไม่เลือกทีม = เห็นทุกทีมได้ แต่ต้องจัดกลุ่มบอกว่าของทีมไหน (เลือกแล้วระบบเติมทีมให้) */
             (() => {
@@ -916,7 +1006,14 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
               });
               return [...g.entries()].sort((a, b) => (a[0].startsWith('🌐') ? 1 : b[0].startsWith('🌐') ? -1 : a[0].localeCompare(b[0], 'th')))
                 .map(([label, items]) => <optgroup key={label} label={label}>{items.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}</optgroup>);
-            })()}</select></Field>
+            })()}</select>
+          {wantDie && !f.machine_no && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
+          )}
+          {wantDie && f.machine_no && dieItemMap && !dieDerived?.itemType && (
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(ชุดแบบ ${dieDerived.kindLabel}) รูปแบบนี้ยังไม่ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุดในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
+          )}
+        </Field>}
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
             {/* <MachineSelect> แทน datalist — ค้นเลข/ชื่อ/ไลน์ · เครื่องของไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
@@ -985,6 +1082,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             );
           })()}
         </Field>
+        <FormStep n={4} title="ปัญหา — กลุ่ม → หัวข้อย่อย → รายละเอียด" />
         <Field label="ลักษณะปัญหา — กลุ่ม" required>
           <select value={f.problem_group} onChange={e => setF(p => ({ ...p, problem_group: e.target.value, problem_characteristic: '' }))} style={inp}>
             <option value="">— เลือกกลุ่ม —</option>
@@ -998,7 +1096,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
           </select>
         </Field>
         {/* ค้นหาข้ามชั้น — ช่างที่รู้อยู่แล้วว่าจะเลือกอะไร ไม่ต้องไล่เลือกกลุ่มก่อน */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div>
           <Field label="🔍 หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
             <input value={probQ} onChange={e => setProbQ(e.target.value)} placeholder="เช่น ลมรั่ว / พันช์ / เซนเซอร์" style={inp} />
           </Field>
@@ -1014,22 +1112,26 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             </div>
           )}
         </div>
-        {/* ── ช่องที่มีเฉพาะบนฟอร์มกระดาษของทีม MTN (user 2026-09-15 "ใช้รูปแบบใบเดิม 100%") ──
-            โชว์เฉพาะเมื่อแจ้งถึงทีม MTN — ทีม JIG/DIE ใช้ FM-JIG-008 ที่ไม่มีช่องพวกนี้ */}
+        <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field>
+        <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
+        <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
+          <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>
+        </Field>
+
+        <FormStep n={5} title="ข้อมูลฟอร์ม MTN" visible={teamKeyOf(f.mtn_dept) === 'maintenance'} />
         {teamKeyOf(f.mtn_dept) === 'maintenance' && <>
           <Field label="เบอร์ติดต่อ (ผู้แจ้ง)"><input value={f.contact_phone} onChange={e => set('contact_phone', e.target.value)} style={inp} placeholder="เช่น 183" /></Field>
-          <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
+          <Field label="PR.No."><input value={f.pr_no} onChange={e => set('pr_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
             <Field label="I/O."><input value={f.io_no} onChange={e => set('io_no', e.target.value.toUpperCase())} maxLength={11} style={{ ...inp, fontFamily: 'monospace' }} /></Field>
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div>
             <Field label="จุดประสงค์">
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {PURPOSES.map(pp => { const on = (f.purpose || 'repair') === pp.key; return (
                   <button key={pp.key} type="button" onClick={() => set('purpose', pp.key)} style={{
                     padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{pp.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{pp.label}</button>
                 ); })}
               </div>
               {/* จุดประสงค์ไม่ใช่แค่ช่องติ๊กบนใบ — มันเปลี่ยนเส้นทางของใบจริง ต้องบอกผลตั้งแต่ตอนเลือก */}
@@ -1045,22 +1147,16 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             <Field label="ผู้จัดการโรงงาน (งานสร้างต้องเซ็นด้วย)"><PersonSelect value={f.plant_manager_name} source="both" onChange={res => set('plant_manager_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการโรงงาน" /></Field>
           )}
         </>}
-        {/* Cost Center derive จากไลน์ (production_lines.cost_center / ไลน์แม่) เท่านั้น — เลิกให้พิมพ์ทับ (2026-09-07) */}
-        <Field label="Cost Center (จากฐานข้อมูลไลน์)"><input value={f.cost_center} readOnly style={{ ...inp, background: 'var(--bg2)', color: 'var(--text2)' }} placeholder="auto จากไลน์ — ตั้งที่ /linesetup" title="อ่านจากทะเบียนไลน์ — แก้ที่ตั้งค่าไลน์" /></Field>
+        <FormStep n={teamKeyOf(f.mtn_dept) === 'maintenance' ? 6 : 5} title="กำหนดการ · ผู้แจ้ง" />
         <DateField label="วันที่ต้องการให้เสร็จ" value={f.want_at} onChange={v => set('want_at', v)} />
-        <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
-          <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>
-        </Field>
         {/* ลูกค้า = <CustomerSelect> (รายชื่อจาก Product Master · พิมพ์ใหม่ได้พร้อมป้าย) · โมเดลไม่มี master — พิมพ์เอง (2026-09-07) */}
-        <Field label="โมเดล / ลูกค้า"><div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}><input value={f.model} onChange={e => set('model', e.target.value)} style={{ ...inp, flex: 1, minWidth: 0 }} placeholder="โมเดล" /><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} /></div></Field>
-        <div style={{ gridColumn: '1 / -1' }}><Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)"><textarea value={f.report_note} onChange={e => set('report_note', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></div>
+        <Field label="โมเดล"><input value={f.model} onChange={e => set('model', e.target.value)} style={inp} placeholder="โมเดล" /></Field>
+        <Field label="ลูกค้า"><CustomerSelect value={f.customer} onChange={res => set('customer', res.customer)} history={customerHist} placeholder="ลูกค้า" inputStyle={{ background: 'var(--bg)' }} /></Field>
         {/* ชื่อคน = <PersonSelect> (profiles + employees · คนของไลน์/แผนกที่เลือกขึ้นก่อน) — เก็บ snapshot ชื่อเหมือนเดิม
             ตัวตนจริงของผู้เปิดใบยังเป็น reported_by_name (stamp ตอนบันทึก) · 2026-09-07 */}
         <Field label="ผู้แจ้ง (ผลิต)"><PersonSelect value={f.reporter_prod} source="both" lines={lineFam} section={f.dept_section} history={reporterHist} onChange={res => set('reporter_prod', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
         <Field label="ผู้แจ้ง (คุณภาพ)"><PersonSelect value={f.reporter_qa} source="both" roles={QA_ROLES} section="QA" onChange={res => set('reporter_qa', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อ QA (เว้นว่างได้)" /></Field>
-        <div style={{ gridColumn: '1 / -1' }}><ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} /></div>
-        <label style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)' }}><input type="checkbox" checked={f.is_sample} onChange={e => set('is_sample', e.target.checked)} /> งานตัวอย่าง</label>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={btnGhost}>ยกเลิก</button>
@@ -1080,23 +1176,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
 
 /* ขั้นถัดไปของใบ — ป้ายปุ่มมาจาก stepLabel() (mtnStepPerm.js) ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
    ⚠️ ไม่มี field `perm` แล้ว — สิทธิ์ตัดสินด้วย canDoStep() ซึ่งดูทั้งคีย์/ทีม/ผู้เปิดใบ */
+/* ตรรกะ "ขั้นถัดไป" ย้ายไป nextStepOf() (mtnStepPerm.js) ให้คิวงานของฉันใช้ชุดเดียวกัน (05/10)
+   — ใบ MTN ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็นจริง (mtnCloseStage) ไม่ใช่ current_step */
 function nextStepFor(order) {
-  const mtnForm = isMtnFormOrder(order);
-  const S = (step) => ({ step, label: stepLabel(step, { mtnForm }) });
-  switch (order.status) {
-    case 'pending':   return S(2);
-    case 'assigned':
-    case 'repairing': return S(3);
-    case 'repaired':  return S(4);
-    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE — ข้ามได้ด้วยปุ่ม ⏭ canSkipQa) · ของใบ MTN ขั้น 5 คือ "รับมอบ"
-       อยู่แล้ว (ลูปนี้ไม่มี QA) ⇒ isWaitingQa เป็น false เสมอ แล้วลงมาที่ขั้นรับมอบของฟอร์มนั้นเอง */
-    case 'checked':   return isWaitingQa(order) ? S(5) : S(mtnForm ? 5 : 6);
-    case 'qa':        return S(6);   // ใบ MTN ไปไม่ถึงสถานะนี้ (ไม่มี QA ในลูป)
-    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
-       — แยกด้วย **เวลาเซ็นจริง** ผ่าน mtnCloseStage() ไม่ใช่ current_step (ใบเก่ามีเลขปนกัน) */
-    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 6) : S(7);
-    default:          return null;
-  }
+  const step = nextStepOf(order);
+  return step == null ? null : { step, label: stepLabel(step, { mtnForm: isMtnFormOrder(order) }) };
 }
 
 /* ช่อง "5.คุณภาพ" ในใบพิมพ์: ใบที่ไม่ต้องตรวจ QA ต้องพิมพ์ว่า "ไม่เกี่ยวกับคุณภาพ" ไม่ใช่ปล่อยว่าง
@@ -1427,6 +1511,13 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
 
 /* ── Detail drawer ───────────────────────────────────── */
 function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+  /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
+     🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
+        ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
+  const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const posRank = positionRank(myPosition);
+
   const o = order;
   const m = statusMetaOf(o);
   const next = nextStepFor(o);
@@ -1459,7 +1550,7 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
      (คำสั่ง user 2026-09-15 — เกณฑ์อยู่ที่ mtnApprovalState() ใน mtnMoForm.js ที่เดียว) */
   const mtnForm = isMtnFormOrder(o);
   const appr = mtnForm ? mtnApprovalState(o) : null;
-  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, ...stepPerms(role) };
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -2034,8 +2125,18 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team', orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
+            {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
+              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
+              orderLine: o.line_name, orderSection: o.dept_section, mtnForm,
               awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
+            {/* 🔴 ระบบปล่อยผ่านเพราะ "ไม่รู้ฝั่ง/ตำแหน่งของคนกด" ⇒ ต้องเขียนบนจอ ห้ามเงียบ
+                (ไม่งั้นคนเข้าใจว่าด่านตรวจแล้ว ทั้งที่ไม่ได้ตรวจ — 31% ยังไม่มีส่วนงาน · 79% ไม่มีทีมช่าง) */}
+            {(() => {
+              const hint = canDoStep(next.step, stepCtx).ok
+                ? assumptionHint(stepAssumptions(next.step, { mtnForm, actorSide, posRank }))
+                : null;
+              return hint ? <div style={{ color: '#f59e0b', marginTop: 3 }}>{hint}</div> : null;
+            })()}
             {isWaitingQa(o) && (skipQa.ok
               ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ <b>ต้องให้ QA เป็นผู้กด</b> (ขั้น 5) — ฝ่ายที่แจ้ง/ผู้เปิดใบ ข้ามขั้น QA เองไม่ได้แล้ว ตั้งแต่ 14/09/2026</div>)}
@@ -2078,6 +2179,13 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
 
 /* ── Step 2-7 action modal (รองรับ editMode) ─────────── */
 function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, parts, laborRates = [], lines = NO_LINES, fullName, signatureUrl, role, userTeams = [], reporterScope = null, onClose, onSaved }) {
+  /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
+     🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
+        ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนบอก (stepAssumptions) — ห้ามเดาแทนคน */
+  const { mtnTeams: myTeams, sections: mySections, position: myPosition } = useContext(UserContext);
+  const actorSide = actorSideOf({ mtnTeams: myTeams, role, sections: mySections });
+  const posRank = positionRank(myPosition);
+
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
@@ -2141,14 +2249,29 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   /* ตารางค่าแรงรายคนของฟอร์ม MTN (ชื่อ × ค่าแรง/ชม. × ชม.) — เดิมมีแค่ยอดรวมก้อนเดียว
      เปิดแก้ไขขั้น 3 ให้โหลดของเดิมมาแสดง (ไม่งั้นบันทึกซ้ำแล้วค่าแรงหาย) */
   const [laborRows, setLaborRows] = useState([]);
-  useEffect(() => {
-    if (step !== 3 || !isMtnForm) return;
+  /* 🔴 สถานะโหลดค่าแรงเดิม: 'loading' | 'ok' | 'error' (QC 05/10)
+     ตอนบันทึก ระบบ "ลบค่าแรงเดิมทั้งชุดแล้วเขียนใหม่" ⇒ ถ้ายังโหลดไม่เสร็จ/โหลดล้ม แล้วกดบันทึก
+     = ลบค่าแรงจริงทิ้ง เขียนชุดว่างแทน · และผลโหลดที่มาช้าห้ามทับแถวที่ช่างเพิ่งพิมพ์
+     ⇒ ปุ่มเพิ่มคน/บันทึก รอจนโหลดเสร็จ · โหลดล้ม = บล็อกบันทึก + บอกบนจอ */
+  const needLabor = step === 3 && isMtnForm;
+  const [laborState, setLaborState] = useState(needLabor ? 'loading' : 'ok');
+  const [laborErr, setLaborErr] = useState('');
+  const loadLabor = useCallback(() => {
+    if (!needLabor) { setLaborState('ok'); return () => {}; }
     let alive = true;
+    setLaborState('loading'); setLaborErr('');
     supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq')
-      .then(({ data }) => { if (alive && data?.length) setLaborRows(data.map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }))); });
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setLaborErr(error.message); setLaborState('error'); return; }
+        const loaded = (data || []).map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }));
+        setLaborRows(cur => (cur.length ? cur : loaded));   // มีแถวที่ช่างพิมพ์แล้ว = ไม่ทับ
+        setLaborState('ok');
+      });
     return () => { alive = false; };
-  }, [step, isMtnForm, o.id]);
-  const addLabor = () => { touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
+  }, [needLabor, o.id]);
+  useEffect(() => loadLabor(), [loadLabor]);
+  const addLabor = () => { if (laborState !== 'ok') return; touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
   const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
@@ -2217,14 +2340,21 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
     if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
     if (fillCallAt) {
-      await supabaseDR.from('downtime_logs')
+      // 0 แถว = มีเวลาเรียกช่างอยู่แล้ว (ตั้งใจไม่ทับ) — แต่ error ต้องบอก (QC 05/10 · เดิมไม่อ่านผล)
+      checkWrite(await supabaseDR.from('downtime_logs')
         .update({ call_mtn: true, call_mtn_at: fillCallAt })
-        .eq('id', order.source_downtime_id).is('call_mtn_at', null);
+        .eq('id', order.source_downtime_id).is('call_mtn_at', null), 'บันทึกใบ MO แล้ว แต่ส่งเวลาเรียกช่างกลับไปที่รายการเครื่องหยุด');
     }
   };
 
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
+    /* ค่าแรงเดิมยังไม่ได้โหลด/โหลดล้ม = ห้ามบันทึก (ขั้นบันทึกจะลบค่าแรงเดิมทั้งชุด) */
+    if (needLabor && laborState !== 'ok') {
+      return toast.error(laborState === 'loading'
+        ? 'รอโหลดค่าแรงเดิมของใบนี้ก่อน แล้วกดบันทึกอีกครั้ง'
+        : `โหลดค่าแรงเดิมไม่สำเร็จ (${laborErr}) — กด "โหลดใหม่" ในช่องค่าแรงก่อนบันทึก ไม่งั้นค่าแรงเดิมจะหาย`);
+    }
     setSaving(true);
     try {
       /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
@@ -2235,7 +2365,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const inReporterScope = orderInReporterScope(o, reporterScope || {});
       // 🔒 ด่านอนุมัติของใบ MTN (งานปรับปรุง/สร้าง) — เกณฑ์เดียวกับตัวซ่อนปุ่มใน DetailDrawer
       const approvalBlocked = isMtnForm && mtnApprovalState(o).blocked;
-      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, ...stepPerms(role) };
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -2253,6 +2383,14 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           return toast.error('ใบนี้เป็นงานปรับปรุง/สร้าง — ต้องให้ผู้จัดการเซ็นอนุมัติก่อนช่างเริ่มงาน (ปุ่ม “✍️ อนุมัติใบ MO” ในใบ)');
         if (meta?.ownTeam && can('mtn_repair', 'service_own_team', role) && !inOrderTeam)
           return toast.error(`ใบนี้แจ้งถึงทีม ${deptNameOf(orderTeam)} — คุณทำได้เฉพาะใบของทีมตัวเอง`);
+        /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — "ไม่มีสิทธิ์" เฉยๆ ทำให้คนไปขอ role เพิ่ม
+           ทั้งที่ปัญหาคือ "ช่องนี้ไม่ใช่ของคุณ" · ต้องชี้ทางแก้ที่ถูก (ไปแก้ข้อมูลบัญชี ไม่ใช่ขอสิทธิ์) */
+        if (verdict.code === 'wrong_side')
+          return toast.error(meta?.side === 'reporter'
+            ? `ช่องนี้เป็นของฝ่ายที่แจ้ง (${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'เจ้าของค่าใช้จ่าย'}) — ฝั่งช่างเซ็นแทนไม่ได้`
+            : 'ช่องนี้เป็นของฝั่งซ่อมบำรุง — ฝ่ายที่แจ้งเซ็นแทนไม่ได้');
+        if (verdict.code === 'rank_too_low')
+          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
         if (verdict.code === 'out_of_scope')
           return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)
@@ -2532,7 +2670,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button key={c.key} type="button" onClick={() => set('cause_category', on ? '' : c.key)} style={{
                     padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? '#071008' : 'var(--text2)' }}>{c.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.label}</button>
                 ); })}
               </div>
               {f.cause_category === 'other' && (
@@ -2551,8 +2689,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label style={lbl}>ค่าแรงในการปฏิบัติงาน (รายคน) · วิศวกร 200 บาท/ชม. · ช่างเทคนิค 100 บาท/ชม.</label>
-                <button type="button" onClick={addLabor} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่มคน</button>
+                <button type="button" onClick={addLabor} disabled={laborState !== 'ok'} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, opacity: laborState !== 'ok' ? 0.5 : 1 }}>+ เพิ่มคน</button>
               </div>
+              {laborState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดค่าแรงเดิมของใบนี้…</div>}
+              {laborState === 'error' && (
+                <div role="alert" style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+                  ⚠️ โหลดค่าแรงเดิมไม่สำเร็จ ({laborErr}) — ยังบันทึกขั้นนี้ไม่ได้ (กันค่าแรงเดิมหาย){' '}
+                  <button type="button" onClick={loadLabor} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
+                </div>
+              )}
               {laborRows.map((r, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2565,7 +2710,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                 </div>
               ))}
-              {!laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
+              {laborState === 'ok' && !laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
               {sumLabor(laborRows) != null && <div style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 800, marginTop: 2 }}>(1) รวมค่าแรง {sumLabor(laborRows).toLocaleString()} บาท</div>}
             </div>
           )}
@@ -2721,6 +2866,7 @@ const AUDIT_TABLES = {
   mtn_labor_rates:     '💰 ค่าแรงมาตรฐาน',
   equipment_die:       '🔨 แม่พิมพ์ (สถานะ/ตำแหน่ง/สเปค)',
   die_storage_areas:   '🗺️ ผังจัดเก็บแม่พิมพ์',
+  die_set_kinds:       '🔨 รูปแบบชุดแม่พิมพ์',
 };
 
 function MasterAuditLog({ teams = [] }) {

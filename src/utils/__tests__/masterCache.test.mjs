@@ -82,13 +82,34 @@ test('cache ของ CACHE_EPOCH เก่าต้องถูกทิ้ง 
   assert.deepEqual(data, [{ id: 1, name: 'เครื่อง A' }], 'ยังใช้ cache ของ build เก่าอยู่');
 });
 
-test('loader ล้ม → คืนค่าเดิมที่มี ไม่โยน error ใส่หน้าจอ', async () => {
+test('loader ล้ม → ไม่ throw · ไม่มีของเก่าให้คืน ต้องได้ [] ไม่ใช่ undefined', async () => {
   await cachedMaster('machines', loader);
   invalidateMemoryOnly();
   store.clear();                                 // ไม่มีทั้ง memory และ localStorage
   const bad = async () => { throw new Error('network'); };
   const data = await cachedMaster('machines', bad);
-  assert.equal(data, undefined);                 // ไม่มีของเก่าให้คืน แต่ต้องไม่ throw
+  /* 🔴 เปลี่ยนจาก undefined เป็น [] เมื่อ 2026-10-04 — ผู้เรียกหลายจุดทำ `.map()` ต่อทันที
+     คืน undefined = จอพังทั้งหน้าแทนที่จะแค่ลิสต์ว่าง (ดู §read ที่ลงแคช ใน db-write-rules.md) */
+  assert.deepEqual(data, []);
+});
+
+test('🔴 loader ล้ม ต้องไม่เขียนลิสต์ว่างทับของเดิมใน localStorage (เคส 30/09)', async () => {
+  await cachedMaster('machines', loader);        // โหลดสำเร็จ → ของดีลง localStorage
+  const good = store.get('esm_mc_machines');
+  invalidateMemoryOnly();                        // ปิดแอปเปิดใหม่ (memory หาย · localStorage อยู่)
+  const bad = async () => { throw new Error('network'); };
+  const data = await cachedMaster('machines', bad);
+  assert.deepEqual(data, [{ id: 1, name: 'เครื่อง A' }], 'ต้องคืนของเดิม ไม่ใช่ลิสต์ว่าง');
+  assert.equal(store.get('esm_mc_machines'), good, 'localStorage ต้องไม่ถูกทับ');
+});
+
+test('🔴 loader ล้ม แต่ของใน localStorage หมด TTL แล้ว — ยังต้องคืนของเก่า ดีกว่าลิสต์ว่าง', async () => {
+  await cachedMaster('machines', loader);
+  invalidateMemoryOnly();
+  const o = JSON.parse(store.get('esm_mc_machines'));
+  store.set('esm_mc_machines', JSON.stringify({ ...o, at: Date.now() - 99 * 3600_000 }));
+  const bad = async () => { throw new Error('network'); };
+  assert.deepEqual(await cachedMaster('machines', bad), [{ id: 1, name: 'เครื่อง A' }]);
 });
 
 /* จำลอง "ปิดแอปแล้วเปิดใหม่": memory cache หาย แต่ localStorage ยังอยู่

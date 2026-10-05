@@ -19,6 +19,7 @@ import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind } from '../utils/mtnTeams'
 import { checkWrite } from '../utils/dbWrite';
+import { getWorkDate } from '../utils/workDate'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -102,7 +103,7 @@ const S = {
     border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }),
   saveBtn: {
     width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700,
-    background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', marginTop: 12,
+    background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', marginTop: 12,
   },
 }
 
@@ -312,7 +313,7 @@ function CpZoom({ cp, idx, onClose }) {
       {cp.description && (
         <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{cp.description}</div>
       )}
-      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
+      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
     </div>
   )
 }
@@ -325,7 +326,7 @@ function CpImage({ cp }) {
   return (
     <>
       {/* เปิดซูมในแอป — เดิม <a target="_blank"> ซึ่งบนมือถือ = เด้งออกจากใบตรวจที่กรอกค้างอยู่ */}
-      <img src={url} alt="" title="แตะเพื่อดูรูปซูมของจุดนี้" onClick={() => setZoom(true)}
+      <img loading="lazy" src={url} alt="" title="แตะเพื่อดูรูปซูมของจุดนี้" onClick={() => setZoom(true)}
         style={{ height: 52, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', display: 'block', cursor: 'zoom-in' }} />
       {zoom && <CpZoom cp={cp} onClose={() => setZoom(false)} />}
     </>
@@ -482,7 +483,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
           </div>
         </div>
       )}
-      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
+      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
         {saving ? 'กำลังบันทึก...' : 'บันทึก Action'}
       </button>
     </div>
@@ -626,7 +627,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
                   </div>
                   {r.evidence_path && (
                     <a href={getPublicUrl(r.evidence_path)} target="_blank" rel="noreferrer" title="รูปหลักฐาน (สภาพจริงตอนพบผิดปกติ)" style={{ display: 'inline-block', marginTop: 6 }}>
-                      <img src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
+                      <img loading="lazy" src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
                       <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
                     </a>
                   )}
@@ -657,7 +658,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : '⬇ PDF'}</button>
-            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : '⬇ Excel'}</button>
+            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : '⬇ Excel'}</button>
           </div>
         </div>
       </motion.div>
@@ -1008,7 +1009,14 @@ export default function PMCheckData() {
         return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
       })
       const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
-      if (e2) throw e2
+      if (e2) {
+        /* 🔴 หัวใบตรวจถูกสร้างไปแล้วแต่ผลรายจุดเข้าไม่ได้ ⇒ ลบหัวใบทิ้ง (QC 05/10)
+           ไม่ลบ = มีแถว inspections ที่ไม่มีผลสักจุด แต่ถูกนับว่า "ตรวจแล้ว" ในประวัติ/สรุปรายกะ/Dashboard
+           ลบไม่ได้ต้องบอกบนจอ ห้ามเงียบ */
+        const { data: gone, error: eDel } = await supabaseDR.from('inspections').delete().eq('id', insp.id).select('id')
+        const orphan = eDel || !gone?.length
+        throw new Error(`บันทึกผลรายจุดไม่สำเร็จ: ${e2.message}${orphan ? ' — ⚠️ และลบหัวใบตรวจที่สร้างค้างไม่สำเร็จ ใบนี้จะขึ้นในประวัติโดยไม่มีผล แจ้ง admin' : ' (ยกเลิกใบนี้แล้ว กดบันทึกใหม่ได้)'}`)
+      }
 
       // 🔩 ค่าชิมที่กรอกมาด้วย → ประวัติชิมของจุด (ผูก inspection_id) — ล้มต้องบอก ห้ามให้ใบตรวจหลักล้มตาม
       const shimEntries = shimPoints.map(pt => [pt, shimVals[pt.id]]).filter(([, v]) => v && v.mm !== '' && v.mm != null && !Number.isNaN(Number(v.mm)))
@@ -1039,8 +1047,9 @@ export default function PMCheckData() {
           const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
             .select('id, plan_type, interval_days, last_done_at').eq('checklist_id', checklistId).eq('is_active', true)
           if (pErr) throw pErr
-          const now = new Date()
-          const done = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` // local — ห้าม toISOString
+          // วันที่ทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — เดิมใช้วันปฏิทินเครื่อง ⇒ กะดึกตรวจตี 2
+          // ได้วันถัดไป แผนเลื่อนรอบเกินจริง 1 วัน + ข้ามด่าน "วันนี้ stamp แล้ว" (QC 05/10)
+          const done = getWorkDate()
           for (const pl of (plans || [])) {
             if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
             const patch = { last_done_at: done }
@@ -1248,7 +1257,7 @@ export default function PMCheckData() {
               {isNarrow && (
                 <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>← อุปกรณ์</button>
               )}
-              {jigImg && <img src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
+              {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{selectedJig.name}</h1>
                 <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{selectedJig.jig_no && `No: ${selectedJig.jig_no}`}{selectedJig.process && ` · ${selectedJig.process}`}</p>
@@ -1394,7 +1403,7 @@ export default function PMCheckData() {
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
                               style={{ marginTop: 10, padding: '7px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
-                                border: 'none', background: 'var(--accent)', color: '#071008' }}>
+                                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)' }}>
                               เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
                             </button>
                           )}
@@ -1648,7 +1657,7 @@ export default function PMCheckData() {
               }}>ไว้ก่อน</button>
               <button onClick={createMoFromInspection} disabled={moSaving} style={{
                 padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                border: 'none', background: 'var(--accent)', color: '#071008', opacity: moSaving ? 0.6 : 1,
+                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
               }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>

@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
+import { useState, useEffect, useMemo, useContext, useCallback, useRef } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -16,6 +16,7 @@ import { toast } from '../components/Toast';
 import tsLogoUrl from '../assets/TS logo.png';
 import { loadDocForms, withDocFoot, docFormSync } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import { getWorkDate } from '../utils/workDate';
 import SearchSelect from '../components/SearchSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -31,7 +32,7 @@ loadDocForms(); // ทะเบียนเอกสาร — แถบเล�
 */
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
-const btnPri = { background: 'var(--accent)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
+const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 
 const STATUS_META = {
@@ -76,7 +77,7 @@ export default function PmCoordination() {
     const [{ data: ln }, mc, { data: pl }, plansRes, clsRes] = await Promise.all([
       loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-      cachedMaster('machines:pmcoord', async () => (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order')).data || []),
+      cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
       // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
       supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),
@@ -216,15 +217,18 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
 
   const notify = async () => {
     try {
-      await supabase.functions.invoke('send-notification', {
+      /* functions.invoke ไม่ throw — คืน { error } (QC 05/10 · เดิมกลืน แล้วขึ้น "แจ้งแล้ว" ทั้งที่ไม่มีใครได้รับ) */
+      const { error: eFn } = await supabase.functions.invoke('send-notification', {
         body: { event: 'pm_coordination', plan: {
           title: p.title, machine_name: p.machine_name, machine_no: p.machine_no, line_name: p.line_name,
           remark: p.remark, by_name: fullName || '',
           tasks: tasks.map(t => ({ task_date: t.task_date, team: teamLabelOf(t.team), description: t.description, time_from: t.time_from, time_to: t.time_to, is_support: t.is_support })),
         } },
       });
-      checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ตั้งสถานะ "แจ้งแล้ว"');
-      toast.success('แจ้ง Production แล้ว'); onReload();
+      if (eFn) throw eFn;
+      const ok = checkWrite(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id), 'ส่งแจ้งเตือนแล้ว แต่ตั้งสถานะ "แจ้งแล้ว"');
+      if (ok) toast.success('แจ้ง Production แล้ว');
+      onReload();
     } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
   };
   const setStatus = async (status) => {
@@ -233,15 +237,18 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
     if (status === 'done' && p.pm_plan_id && pmPlan) {
       if (confirm('PM ของเครื่องนี้ทำเสร็จจริงแล้ว?\nกด OK เพื่ออัพเดท "วันทำล่าสุด" ในระบบแผน PM (เลื่อนรอบถัดไปให้อัตโนมัติ)')) {
-        const done = todayStr();
+        // วันทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — ชุดเดียวกับ PMCheckData (QC 05/10)
+        const done = getWorkDate();
         const patch = { last_done_at: done };
         // ตามรอบเวลา → เลื่อน next_due = วันทำ + interval_days · ตาม usage → forecast คำนวณเองจาก last_done_at
         if (!pmPlan.is_usage && pmPlan.interval_days) {
           const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pmPlan.interval_days));
           patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
-        const { error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id);
+        // RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error ⇒ นับแถว (กฎเขียน DB ข้อ 2)
+        const { data: upd, error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id).select('id');
         if (error) toast.error('อัพเดทแผน PM ไม่สำเร็จ: ' + error.message);
+        else if (!upd?.length) toast.error('อัพเดทแผน PM ไม่สำเร็จ — ไม่มีสิทธิ์หรือแผนถูกลบไปแล้ว');
         else toast.success('อัพเดทวันทำล่าสุดในระบบแผน PM แล้ว');
       }
     }
@@ -253,8 +260,13 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
   };
   const del = async () => {
     if (!confirm('ลบแผนนี้?')) return;
-    checkWrite(await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id), 'ลบแผน');
-    toast.success('ลบแล้ว'); onReload();
+    // RLS DELETE ปฏิเสธ = 0 แถวไม่มี error ⇒ นับแถวก่อนขึ้น "ลบแล้ว" (กฎเขียน DB ข้อ 2)
+    const res = await supabaseDR.from('pm_coordination_plans').delete().eq('id', p.id).select('id');
+    if (checkWrite(res, 'ลบแผน')) {
+      if (res.data?.length) toast.success('ลบแล้ว');
+      else toast.error('ลบแผนไม่สำเร็จ — ไม่มีสิทธิ์หรือแผนถูกลบไปแล้ว');
+    }
+    onReload();
   };
 
   return (
@@ -305,6 +317,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
 
 /* ── modal สร้าง/แก้แผน ─────────────────────── */
 function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, fullName, onClose, onSaved }) {
+  const createdIdRef = useRef(null);   // id หัวแผนที่สร้างไปแล้วในหน้าต่างนี้ (แผนใหม่)
   const [f, setF] = useState({
     title: plan.title || '', machine_id: plan.machine_id || '', machine_no: plan.machine_no || '',
     machine_name: plan.machine_name || '', line_name: plan.line_name || '', remark: plan.remark || '',
@@ -362,22 +375,40 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
       machine_name: f.machine_name || null, line_name: f.line_name || null, remark: f.remark || null,
       pm_plan_id: f.pm_plan_id || null, updated_at: nowIso };
-    let planId = plan._new ? null : plan.id;
-    if (plan._new) {
+    /* แผนใหม่ที่หัวแผนสร้างไปแล้วแต่รายการงานล้ม → กดบันทึกซ้ำต้อง "แก้หัวเดิม" ไม่สร้างหัวใหม่ซ้ำ */
+    const isNew = plan._new && !createdIdRef.current;
+    let planId = plan._new ? createdIdRef.current : plan.id;
+    /* 🔴 รายการงาน: "เขียนชุดใหม่ก่อน แล้วค่อยลบชุดเดิม" (QC 05/10)
+       เดิม ลบก่อน-เขียนทีหลัง ⇒ insert ล้ม = งานทั้งแผนหายถาวร (+ ลืม setBusy(false) ปุ่มค้าง)
+       ตอนนี้: insert ล้ม = ของเดิมยังอยู่ครบ · ลบชุดเดิมล้ม = มีแถวซ้ำ ⇒ บอกบนจอ (ไม่เงียบ) */
+    let oldIds = [];
+    if (isNew) {
       const { data, error } = await supabaseDR.from('pm_coordination_plans').insert({ ...head, status: 'draft', created_by: fullName || null }).select('id').single();
       if (error) { setBusy(false); return toast.error(error.message); }
       planId = data.id;
+      createdIdRef.current = data.id;
     } else {
       const { error } = await supabaseDR.from('pm_coordination_plans').update(head).eq('id', planId);
       if (error) { setBusy(false); return toast.error(error.message); }
-      const { error: wErr350 } = await supabaseDR.from('pm_coordination_tasks').delete().eq('plan_id', planId);
-      if (wErr350) { toast.error('ล้างรายการงานเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr350.message); return; }
+      const { data: olds, error: eOld } = await supabaseDR.from('pm_coordination_tasks').select('id').eq('plan_id', planId);
+      if (eOld) { setBusy(false); return toast.error('อ่านรายการงานเดิมไม่สำเร็จ (ยังไม่แก้รายการงาน): ' + eOld.message); }
+      oldIds = (olds || []).map(r => r.id);
     }
     const rows = tasks.filter(t => t.description?.trim() || t.task_date).map((t, i) => ({
       plan_id: planId, task_date: t.task_date || null, team: t.team || null, description: t.description || null,
       time_from: t.time_from || null, time_to: t.time_to || null, is_support: !!t.is_support, done: !!t.done, sort_order: i,
     }));
-    if (rows.length) { const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows); if (error) { setBusy(false); return toast.error(error.message); } }
+    if (rows.length) {
+      const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows);
+      if (error) {
+        setBusy(false);   // คงหน้าต่างไว้ — รายการที่พิมพ์ไม่หาย กดบันทึกซ้ำได้
+        return toast.error(`บันทึกรายการงานไม่สำเร็จ${isNew ? ' (หัวแผนสร้างแล้ว — กดบันทึกอีกครั้งเพื่อเพิ่มรายการงาน)' : ' (รายการเดิมยังอยู่)'}: ${error.message}`);
+      }
+    }
+    if (oldIds.length) {
+      const { error: eDel } = await supabaseDR.from('pm_coordination_tasks').delete().in('id', oldIds);
+      if (eDel) { setBusy(false); toast.error(`บันทึกรายการใหม่แล้ว แต่ลบรายการเดิมไม่สำเร็จ — แผนนี้อาจมีงานซ้ำ ลบแถวเกินออกเอง: ${eDel.message}`); onSaved(); return; }
+    }
     setBusy(false); toast.success('บันทึกแล้ว'); onSaved();
   };
 

@@ -57,6 +57,78 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'myqueue-next-step-not-current-step',
+    scan: ['src/utils/myQueue.js'], ext: ['.js'],
+    /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
+    re: /\.current_step\b/g,
+    why: '`mtn_orders.current_step` = ขั้นที่ **ทำเสร็จแล้ว** ไม่ใช่ขั้นที่รอ — คิวงานเคยอ่านตรงๆ แล้วช้าไป 1 ขั้นทุกใบ '
+       + '(workflow audit 05/10: ใบรอ QA 204 ใบไปขึ้นเป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิว · '
+       + 'ใบรอจ่ายงาน 32 ใบไม่โผล่ที่ไหนเลย)',
+    fix: 'ใช้ `nextStepOf(order)` จาก src/utils/mtnStepPerm.js (ตัดสินจาก status · ตัวเดียวกับปุ่มขั้นถัดไปใน MtnRepair)',
+    allow: {},
+  },
+  {
+    id: 'jigs-has-no-department-column',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */
+    re: /from\(['"]jigs['"]\)\s*\.select\(['"`][^'"`]*\bdepartment\b/g,
+    why: 'ตาราง DR `jigs` **ไม่มีคอลัมน์ department** (วัด 05/10) — /scan เคย select ไปด้วย ⇒ 42703 ทั้งคิวรี '
+       + '⇒ จิ๊กไม่เคยถูกพบ + ปุ่ม "ตรวจ PM เครื่องนี้" ไม่เคยโผล่ (QC 05/10)',
+    fix: 'แผนกของใบตรวจ PM อยู่ที่ `checklists.department` (module=mtn, equipment_id=jig.id) — ดู ScanLanding.jsx',
+
+    allow: {},
+  },
+  {
+    id: 'pm-checkpoints-no-delete-all',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการลบจุดตรวจ/รูปทั้งชุดด้วยคีย์แม่ (checklist_id / jig_id) — pattern "ลบหมดแล้ว insert ใหม่" */
+    re: /from\(['"](jig_checkpoints|jig_images)['"]\)\s*\.delete\(\)\s*\.eq\(['"](checklist_id|jig_id)['"]/g,
+    why: '`inspection_results.checkpoint_id` เป็น ON DELETE CASCADE ⇒ กดบันทึกรายการตรวจ PM 1 ครั้ง (ลบทั้งชุดแล้ว insert ใหม่) '
+       + '= **ประวัติผลตรวจของใบนั้นหายถาวร** + `fixture_points.checkpoint_id/image_id` หลุดเป็น null ทุกครั้ง '
+       + '(QC 05/10: fixture_points 18 จุด เหลือผูก checkpoint 0 · image 1)',
+    fix: 'sync แบบแก้ตาม id: update แถวที่มี id · insert แถวใหม่ · delete เฉพาะ id ที่ถูกถอดจริง '
+       + '(มีประวัติผลตรวจต้องยืนยันก่อน) — ดู handleSave ใน src/pages/PMSetup.jsx',
+    allow: { 'src/lib/pmChecklists.js': 'คัดลอกทับแผนกอื่น (ผู้ใช้กด "ทับ" เอง) — เช็คก่อนว่าปลายทางไม่มีประวัติผลตรวจ มี = โยน error ไม่ลบ' },
+  },
+  {
+    id: 'die-set-kinds-from-registry',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
+    re: /DIE_SET_KINDS\.(map|filter|find)\(/g,
+    why: 'รูปแบบชุดแม่พิมพ์เคย hardcode 4 ค่า (+ check constraint) — ทีมแม่พิมพ์เพิ่ม HYDROFORM/BEND เองไม่ได้ '
+       + 'และศัพท์ทางการหน้างานไม่เข้าใจ (user 2026-10-05) ⇒ ย้ายเป็นทะเบียน DR `die_set_kinds` '
+       + 'ถ้ามีจอวาดจาก DIE_SET_KINDS ตรงๆ อีก ชนิดที่ทีมเพิ่มเองจะไม่โผล่/ป้ายเป็นชื่อเก่า',
+    fix: 'ใช้ `useDieSetKinds()` (src/utils/useDieSetKinds.js) + `dieSetKindOptions()`/`dieSetKindLabel(v, kinds)` '
+       + '— DIE_SET_KINDS เหลือไว้เป็นค่าสำรองตอนยังไม่ apply migration เท่านั้น',
+    allow: { 'src/utils/useDieSetKinds.js': 'ตัวโหลดทะเบียน — ใช้ค่าสำรองเฉพาะตอนตารางยังไม่มี/ก่อนโหลดเสร็จ' },
+  },
+  {
+    id: 'master-cache-swallow',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
+    re: /cachedMaster\([^\n]*\.data\s*\|\|\s*\[\]/g,
+    why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
+       + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
+       + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
+       + '⇒ "ผมไม่เห็น แต่ User คนอื่นเห็น" · เกิดจริง 30/09 (คุณนพดล · /daily-report · งาน 068 '
+       + 'หายจากลิสต์ทั้งที่ข้อมูลใน DB ปกติทุกอย่าง) แล้วหาต้นเหตุไม่เจอเพราะไม่มีร่องรอยอะไรเลย',
+    fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
+       + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
+    allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'role-retired-flag-honored',
+    scan: ['src'], ext: ['.js'],
+    /* จับการสร้างลิสต์ "ให้คนเลือก role" จาก ROLE_META โดยไม่กรอง retired ออก */
+    re: /Object\.entries\(ROLE_META\)(?![^\n]*\bisLive\b)(?![^\n]*\bretired\b)[^\n]*\.map\(/g,
+    why: 'role ที่ปลดระวางแล้ว (`retired: true`) ต้องหายจากลิสต์ที่ให้คนเลือก — ไม่งั้นยังตั้งให้ user ใหม่ได้ '
+       + 'และยังกินพื้นที่เป็นคอลัมน์ใน /permissions · เคยเกิดจริง: ธงถูกเขียนตอนปลด `sale` (23/09) '
+       + 'แต่**ไม่มีใครอ่าน** ⇒ 2026-10-04 ยังเจอคอลัมน์ `sale` 46 ช่องติ๊กที่มีคนถือจริง 0 คน',
+    fix: 'กรองด้วย `isLive` ก่อน `.map()` · **ห้ามกรองใน `roleLabel()`** — ป้ายต้องอ่าน role เก่าออกเสมอ '
+       + 'ไม่งั้น audit log / ใบเก่าขึ้นเป็นคีย์ดิบ (= เหตุผลที่เก็บแถวไว้ตั้งแต่แรก)',
+    allow: {},
+  },
+  {
     id: 'monitor-grid-math-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการหยิบสูตร recurrence ของบอร์ด Monitoring ไปคิดเองนอก monitorGrid.js */
@@ -72,6 +144,22 @@ const RULES = [
       'src/utils/monitorGrid.js': 99,    // เจ้าของสูตร
       'src/utils/monitorBoards.js': 99,  // เช็คว่าสูตรที่ DB อ้างมีอยู่จริงไหม (unknownRecur)
     },
+  },
+  {
+    id: 'monitor-parts-key-is-mat-plus-part',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการกลับไปใช้ "MAT เดี่ยว" เป็นคีย์แถวพาร์ทของบอร์ด Monitoring */
+    re: /onConflict:\s*['"`]board_id,\s*mat_no['"`]/g,
+    why: 'คีย์แถวพาร์ทของบอร์ด Monitoring ไม่ใช่ MAT เดี่ยว — ไฟล์จริงของทีมวางแผนมี MAT เดียวกัน '
+       + 'หลายแถว (300T: `20059152` = N1WB-E16A416 คว่ำครีบ / N1WB-E16A417 หงายครีบ · Total SL '
+       + '2,100 กับ 1,500) ⇒ คีย์ (board_id, mat_no) ทำให้ **แถวที่ 2 ถูกเขียนทับหายไปเงียบๆ** '
+       + 'หรือ upsert ล้มทั้งก้อน · เคยเกิดจริง 02–05/10: user นำเข้าไฟล์ไม่ได้ 2 รอบ '
+       + '(`no unique or exclusion constraint matching the ON CONFLICT specification` → '
+       + '`ON CONFLICT DO UPDATE command cannot affect row a second time`)',
+    fix: 'ใช้ `onConflict: \'board_id,row_key\'` โดย row_key มาจาก `partRowKey(mat_no, part_no)` '
+       + '(`src/utils/monitorBoards.js` — สูตรเดียวกับ trigger `monitor_parts_set_row_key()` ฝั่ง DR) '
+       + '· และยุบของซ้ำในก้อนเดียวด้วย `dedupeByKey()` ก่อนส่ง **ค่าล่างชนะ ห้ามรวมยอด**',
+    allow: {},
   },
   {
     id: 'modal-closes-on-backdrop',
@@ -198,7 +286,7 @@ const RULES = [
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ "เรียงชื่อไลน์ด้วย sort ดิบ" — `.sort()` เปล่า / `localeCompare` บนลิสต์ชื่อไลน์
        (ชื่อตัวแปร lines/lineNames/lineOpts/byLine/… หรือ `.map(x => x.line_name)`) */
-    re: /(?:\.map\(\s*\(?\w+\)?\s*=>\s*\w+\.line(?:_name)?\)[^;\n]{0,60}|Object\.keys\(byLine\)|\[\.\.\.(?:lines|lineSet|byLine\.keys\(\))\]|\b(?:line_?[nN]ames?|lineOpts)\b[^;\n]{0,40})\.sort\(\s*(?:\)|\(a, ?b\) => a\.localeCompare\(b\)\))/g,
+    re: /(?:\.map\(\s*\(?\w+\)?\s*=>\s*\w+\.line(?:_name)?\)[^;\n]{0,60}|liveLines[^;\n]{0,120}\.map\(l => l\.name\)|Object\.keys\(byLine\)|\[\.\.\.(?:lines|lineSet|byLine\.keys\(\))\]|\b(?:line_?[nN]ames?|lineOpts)\b[^;\n]{0,40})\.sort\(\s*(?:\)|\(a, ?b\) => a\.localeCompare\(b\)\))/g,
     why: 'dropdown/หัวกลุ่มไลน์เรียงคนละแบบทุกหน้า — user ทัก 01/10/2026 *"บางหน้าโอเค บางหน้าเรียงมั่ว '
        + 'ไม่มีแพทเทิร์น"*: sort ดิบเรียงตาม code unit ⇒ `Line 60` แยกจาก `LINE …` · `LINE 10` มาก่อน `LINE 9` '
        + 'และไม่แยกส่วนงาน (LINE A ของ PD1 ไปอยู่ระหว่าง APRON ของ PD3 กับ ASSY ของ PD2)',
@@ -706,6 +794,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'accent-bg-hardcoded-ink',
+    scan: ['src/pages', 'src/components', 'src/App.jsx'], ext: ['.jsx'],
+    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#/g,
+    why: 'สี --accent กลับด้านตามธีม (มืด = เขียวสว่าง #3dd65c · สว่าง = เขียวเข้ม #0d3d14) '
+       + 'ตัวหนังสือสีดิบบนพื้น accent จึงจมเสมอ 1 ธีม — ดำ (#071008) จมในธีมสว่าง · ขาว (#fff) จมในธีมมืด '
+       + '(05/10 · ปุ่ม "แจ้งซ่อมใหม่" /mtn-repair อ่านไม่ออก · เจอ 144 จุด 82 ไฟล์)',
+    fix: "ตัวหนังสือบนพื้น var(--accent) ใช้ color: 'var(--accent-ink)' เสมอ",
+    allow: {},
+  },
+  {
     id: 'card-shadow-via-token',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* จับเงาแบบ "การ์ด/ชิป" ที่เขียนค่าดิบ (offset แนวตั้ง 0-3px และเป็นเงาเดี่ยวทั้งค่า)
@@ -915,6 +1013,37 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'kpi-yn-boolean-compare',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* คอลัมน์ตัดสิน yn/ynTotal ที่คืน boolean จากการเทียบเอง (>= / <=) แทนระดับ 1/0.5/0 ของ scoreDef */
+    re: /\byn(?:Total)?:\s*[^,\n]*?\s(?:>=|<=|<|>)\s/g,
+    why: 'ระดับ KPI = 1/0.5/0 (scoreDef) ไม่ใช่ boolean — LV_SYM ใน kpiExportExcel เทียบ === 1 / === 0.5 ⇒ true/false ตกเป็น ✗ ทั้งคู่ · '
+       + 'เคยเกิดจริง (audit 05/10): คอลัมน์สรุปปี OEE ในฟอร์ม FM-HRM-6-022 พิมพ์ ✗ เสมอแม้ผ่านเป้า',
+    fix: 'yn: v => scoreDef(v, { target_compare, target_value }).level (null เมื่อไม่มีเป้า)',
+    allow: {},
+  },
+  {
+    id: 'obeya-actions-unscoped',
+    scan: ['src/components', 'src/pages'], ext: ['.jsx'],
+    /* ACTION BOARD ที่เอาแถว meeting_action_items ดิบไปคิด health โดยไม่ผ่าน scopeActions() */
+    re: /actionHealth\(\s*(?:actions|items|rows|data)\s*,/g,
+    why: 'ใบ Action ต้องเดินตามขอบเขตเดียวกับข้อมูลผลิต (scope user ∩ ขอบเขตที่เลือก) — audit 05/10: SQDCM โชว์ทุกใบทั้งโรงงาน '
+       + 'ไม่ว่าจะเลือกส่วนงานไหน และ user ที่ถูกจำกัดส่วนงานก็เห็นใบของหน่วยอื่น',
+    fix: 'const scoped = scopeActions(actions, { sections, scopeSecs, lineOk }) → actionHealth(scoped.items, today) + เขียน scoped.hidden บนจอ',
+    allow: {},
+  },
+  {
+    id: 'chart-yaxis-domain-hand-made',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* แกน Y ที่ไม่เริ่ม 0 แบบเขียนเอง: domain={[dataMin => …, …]} / domain={[95, 100]} / domain: [min => …] */
+    re: /(?:domain=\{\[|domain:\s*\[)\s*(?:dataMin|\(?\s*\w+\s*\)?\s*=>|[1-9]\d*)/g,
+    why: 'แกน Y ที่ไม่เริ่ม 0 ทำให้ "แท่งสูง 2 เท่า ≠ ค่ามาก 2 เท่า" — กติกาความซื่อสัตย์ (UI §กราฟ 30/09): ช่วงต้องมาจาก '
+       + '`focusDomain()` (ทุกอย่างที่วาดอยู่ในช่วง · มี 0 จริง = ไม่โฟกัส) และต้องมี <FocusAxisNote> บนกราฟ · '
+       + 'เคยหลุด 05/10: SQDCM %Q เขียน domain 95–100 เองโดยไม่มีป้าย',
+    fix: 'const f = focusDomain(values, { max }) → domain={f ? f.domain : [0, max]} ticks={f?.ticks} + <FocusAxisNote loText=…/> (ObeyaSheet)',
+    allow: {},
+  },
+  {
     id: 'chart-negative-margin',
     scan: ['src'], ext: ['.jsx', '.js'],
     re: /margin=\{\{[^}\n]*\bleft:[^,}\n]*-\s*\d/g,
@@ -1082,6 +1211,37 @@ const RULES = [
       'src/utils/planLots.js': 'เจ้าของสูตร — เป็นที่คิด qty × CT เอง',
     },
   },
+  {
+    id: 'legacy-redirect-keeps-query',
+    scan: ['src/App.jsx'], ext: ['.jsx'],
+    /* route เก่าที่ยุบเป็นแท็บ แต่ redirect ด้วย <Navigate to="...?tab=..."> ลอยๆ */
+    re: /<Navigate\s+to="[^"]*\?tab=/g,
+    why: '`<Navigate to="/pm?tab=forecast">` **ทิ้ง query เดิมทั้งหมด** — ลิงก์/บุ๊กมาร์กเก่า `/pm-forecast?tab=usage` '
+       + 'ตกแท็บแรกเงียบๆ และ `?dept=`/`?line=` หาย (QC 05/10: PM 5 route + Daily Checker 4 route)',
+    fix: 'ใช้ `<LegacyTabRedirect to="/pm" tab="forecast" subParam="fc" />` (App.jsx) — ส่งต่อ param ครบ '
+       + 'และย้าย `?tab=` เก่าไปเป็น param ของหน้าลูก (ชื่อเดียวกับที่หน้าลูกส่งให้ useTabParam)',
+    allow: {},
+  },
+  {
+    id: 'daily-report-close-by-permission',
+    scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
+    /* ตัดสิน "ปิดตรง vs ส่งขอปิด" ด้วยชื่อ role */
+    re: /(isLeaderRequest\s*=\s*role\s*===|role\s*===\s*'leader'\s*\?\s*'📋)/g,
+    why: 'ปิดกะตรง/ส่งขอปิดเคยตัดสินด้วย `role === \'leader\'` ⇒ role ที่ /permissions แจก `request_close` อย่างเดียว '
+       + '(ไม่มี `close_shift`) **ปิดกะตรงข้ามการอนุมัติ SV ได้** (QC 05/10)',
+    fix: 'ใช้ `closeIsRequest` (= `!can(\'daily_report\',\'close_shift\')`) ที่ประกาศคู่ canManage',
+    allow: {},
+  },
+  {
+    id: 'daily-report-backfill-shift-window',
+    scan: ['src/pages/DailyReport.jsx'], ext: ['.jsx'],
+    /* เช็คเวลาย้อนหลังด้วยช่วงชั่วโมงตายตัว 08–20 */
+    re: /\b\w+\s*>=\s*8\s*&&\s*\w+\s*<\s*20\b/g,
+    why: 'ด่านเวลาย้อนหลังเคย hardcode 08–20 ⇒ กะดึกที่เริ่ม 22:30 / กะเช้าลาก OT ข้าม 20:00 ถูกบล็อกผิด '
+       + 'และกะดึกกรอก 08:30 (ส่งกะ) ถูกตีว่าหลุดกรอบ (QC 05/10 · CLAUDE.md §เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง)',
+    fix: '`backfillWindowError(hhmm)` ใน DailyReport (→ `resolveShiftTime` + `checkShiftTime` ของ src/utils/shiftWindow.js)',
+    allow: {},
+  },
 ];
 
 function violations(rule) {
@@ -1112,6 +1272,33 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ close-time-needs-downtimes (2026-10-05)
+   `checkCloseTime()` ตัดสินว่า "เวลาปิดกะที่กรอกล้ำหน้าเวลาจริงเกินไปไหม" — แต่ปลายกะที่
+   **ลง downtime คลุมไว้แล้ว ไม่ใช่ความผิด** (ปิดงานเที่ยงแล้วลง "ไม่มีแผนผลิต" ถึงเลิกงาน
+   = กะเดินถึงเวลานั้นจริง ส่วนที่เหลือเป็น planned stop ที่ถูกกันออกจากฐานเวลาไปแล้ว)
+   ไม่ส่ง `downtimes` เข้าไป = ฟังก์ชันถือว่าไม่มีอะไรรองรับ ⇒ **เตือนผิด/ติดป้ายผิด**
+   วัดจริง 05/10: เกณฑ์ที่ดูแต่ `aheadMin` ติดป้ายผิด 5 ใบจาก 9 ใบที่เข้าเกณฑ์ (SP-72/74/88 · Line 60/61) */
+test('🛡️ close-time-needs-downtimes — ทุกจุดที่เรียก checkCloseTime ต้องส่ง downtimes', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/shiftWindow.js') continue;          // ตัวนิยามกฎเอง
+    if (rel.includes('__tests__')) continue;                   // เทสตั้งใจเรียกแบบไม่ส่ง เพื่อตรวจ fallback
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /checkCloseTime\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 260);
+      const line = code.slice(0, m.index).split('\n').length;
+      if (!/downtimes\s*:/.test(win)) bad.push(`${rel}:${line}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เรียก checkCloseTime โดยไม่ส่ง { downtimes } — ปลายกะที่ลง downtime คลุมไว้แล้วจะถูกเตือนว่าผิด\n'
+    + '   แก้: checkCloseTime(hhmm, session, Date.now(), { downtimes: dtLogs })\n'
+    + `   จุดที่ขาด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ oee-suspect-needs-qbin-embed (2026-09-30)
    ตัวนี้เป็นกฎ "ระดับไฟล์" ไม่ใช่ระดับบรรทัด (เงื่อนไขไขว้กัน 3 อย่าง) จึงเขียนเป็นเทสเดี่ยว
    ไม่ได้อยู่ใน RULES ที่สแกนทีละบรรทัด
@@ -1120,6 +1307,60 @@ for (const rule of RULES) {
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ list-thumb-needs-lazy (2026-10-05) ────────────────────────────────────────────
+   รูป "ย่อในลิสต์" (กว้าง/สูง ≤ 64px) ที่ชี้ไป Supabase Storage **ต้องมี `loading="lazy"`**
+   เพราะ thumbnail 34-52px ดาวน์โหลด**ไฟล์เต็มใบ ~19-90 KB** เสมอ (ระบบนี้ไม่มี image transform
+   — เป็นฟีเจอร์ของ Pro เท่านั้น) ⇒ เปิดหน้าทีเดียวโหลดทุกแถว ทั้งที่คนเห็นบนจอ ~6-10 แถว
+   วัดจริง 02/10/2026 (storage egress รวม 74 MB/วัน = 1.4 GB/เดือน ≈ 28% ของโควต้า Free ทั้งก้อน):
+     jig-images 24.2 MB · employee-photos 22.7 MB · mtn-images 17.1 MB · signatures 7.0 MB
+   ดูรายนาทีแล้วเป็น **การเปิดหน้าแกลเลอรี**: 47 รูป = 4.08 MB ในนาทีเดียวจากเครื่องเดียว
+   ⚠️ ห้ามใส่ `loading="lazy"` กับรูปที่มี `ref=`/`onLoad=` (ผังโรงงาน/ผังชั้นวาง/โมดัลซูม) —
+      พวกนั้นต้องวัดขนาดจริงตอนโหลดเพื่อวาง marker ⇒ lazy = คำนวณพิกัดจากรูปที่ยังไม่มา */
+test('🛡️ list-thumb-needs-lazy — รูปย่อในลิสต์ (≤64px) ต้องมี loading="lazy"', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /<img\b[\s\S]{0,600}?\/>/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const tag = m[0];
+      if (tag.includes('loading=')) continue;
+      if (/\bref=|onLoad=/.test(tag)) continue;              // รูปที่ต้องวัดขนาด — ห้าม lazy
+      if (!/\bsrc=\{/.test(tag)) continue;                   // โลโก้ import มา = อยู่ในบันเดิล ไม่ใช่ egress
+      // ขนาดเล็กทั้ง width และ height = thumbnail ในลิสต์ (รูปเต็ม/โมดัลใช้ maxWidth/maxHeight)
+      const w = /(?:^|[^x])\bwidth:\s*(\d+)\b/.exec(tag);
+      const h = /(?:^|[^x])\bheight:\s*(\d+)\b/.exec(tag);
+      if (!w || !h) continue;
+      if (Number(w[1]) > 64 || Number(h[1]) > 64) continue;
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}  ${tag.replace(/\s+/g, ' ').slice(0, 100)}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    'รูปย่อในลิสต์ที่ยังไม่มี loading="lazy" — ใส่ `loading="lazy"` ที่แท็ก <img> '
+  + '(รูปที่ต้องวัดขนาดด้วย ref/onLoad ยกเว้นให้แล้ว) · เหตุผล + ตัวเลขดูคอมเมนต์เหนือเทสนี้');
+});
+
+/* ── 🛡️ unfiltered-session-bump-needs-shift-tier (2026-10-05) ─────────────────────────
+   subscribe `production_sessions` ของ DailyReport **กรองด้วยไลน์ไม่ได้** (หน้านี้ต้องแสดง
+   "รายการกะทั้งวัน" จึงต้องรู้เมื่อไลน์อื่นเปิดกะใหม่) ⇒ ทุก event ของทั้งโรงงาน ~20 ไลน์
+   ถึงทุกเครื่องที่เปิดหน้านี้ ~40 เครื่อง · แต่เนื้อที่จอใช้ (รายการกะ + ยอดค้างกะก่อน)
+   เปลี่ยน**ไม่กี่ครั้งต่อกะ** ⇒ เพดาน 15 วิ (LIVE.PAGE) จ่าย egress ~20 เท่าโดยไม่มีใครเห็นของใหม่
+   วัดจริง 02/10/2026: ยอดค้างกะก่อน 3,746 req/วัน + รายการกะทั้งวัน 2,564 req/วัน
+     = **คู่คิวรีที่หนักที่สุดของทั้งระบบ** (40-41 เครื่อง) ⇒ ย้ายเป็น LIVE.SHIFT = −5,250 req/วัน
+   🔴 LIVE.PAGE ถูกต้องสำหรับ bumpOrd/bumpDt/bumpDef เท่านั้น — 3 ตัวนั้นกรอง `session_id` ฝั่ง server แล้ว
+   (เป็นเทสแยก ไม่ใช่กฎในลิสต์ เพราะตัวสแกนของลิสต์ตรวจ**บรรทัดต่อบรรทัด** จับ coalesce ที่คร่อม 4 บรรทัดไม่ได้) */
+test('🛡️ unfiltered-session-bump-needs-shift-tier — bump ที่เกาะ subscribe ซึ่งกรองไลน์ไม่ได้ ต้องใช้ LIVE.SHIFT', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const m = /bumpSess\s*=\s*coalesce\([\s\S]{0,400}?LIVE\.([A-Z]+)/.exec(code);
+  assert.ok(m, 'หา `bumpSess = coalesce(…, LIVE.*)` ใน DailyReport.jsx ไม่เจอ — เปลี่ยนชื่อ/ย้ายที่ '
+             + '(หรือเลิกใช้เพดานจาก refreshRates) แล้วต้องมาแก้เทสนี้ด้วย ห้ามลบทิ้งเฉยๆ');
+  assert.equal(m[1], 'SHIFT',
+    'bumpSess (subscribe `production_sessions` ทั้งตาราง กรองไลน์ไม่ได้) ต้องใช้เพดาน LIVE.SHIFT (5 นาที) '
+  + 'ไม่ใช่ LIVE.PAGE — วัดจริง 02/10/2026: LIVE.PAGE ทำให้ 2 คิวรีนี้รวม 6,310 req/วัน '
+  + 'ทั้งที่เนื้อเปลี่ยนไม่กี่ครั้งต่อกะ · เหตุผลเต็ม + ตัวเลข ดู LIVE.SHIFT ใน src/utils/refreshRates.js');
+});
+
 test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
@@ -1838,5 +2079,87 @@ test('🛡️ ห้าม fallback ชื่อพาร์ทเป็นเ�
     + '   ทำไมห้าม: ชื่อที่หายเพราะอ่านไฟล์ไม่ออก จะถูกกลบด้วยเลข MAT แล้วดูเหมือนข้อมูลปกติ\n'
     + '              (เกิดจริง 02/10/2026 — ใบ 10102017 ได้ชื่อเป็นเลขทั้ง 7 แถว ไม่มี error ให้เห็น)\n'
     + '   แก้ยังไง: ชื่อจากไฟล์ → ชื่อในทะเบียน parts_master → **ไม่มี = ไม่เขียน แล้วบอกบนจอว่าแถวไหน**\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+test('🛡️ ตัวนำเข้า 862 ต้องตัดแถว "ยอดค้างตาม Cum" ของ ship-to ที่ใช้ e-SMART ก่อนสร้างใบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/PlannerSales.jsx'), 'utf8'));
+  assert.ok(/splitCumCatchUp\(\s*edi\.records/.test(code),
+    '\n\n❌ PlannerSales.jsx ไม่เรียก splitCumCatchUp(edi.records, …) ก่อนสร้างใบ 862 แล้ว\n'
+    + '   ทำไมห้าม: แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่รับแล้ว ไม่ใช่เที่ยวรถ\n'
+    + '              ถ้าสร้างเป็นใบจะชนใบ e-SMART (เกิดจริง AAT 01–02/10: ค้างแดง 1,605 + 1,415 ชิ้น)\n'
+    + '   แก้ยังไง: ดู splitCumCatchUp ใน src/utils/ediMerge.js\n');
+});
+
+/* ── คน "หายทั้งส่วนงาน" เพราะกรองส่วนงานด้วย line_id (บั๊กจริง 05/10/2026) ────────────
+   หัวหน้า PD2 แจ้ง "เช็คชื่อพนักงานผมหายหมดเลย" — ตั้งแผนก Assembly Line D ครบทุกคนแล้ว
+   แต่ `employees.line_id` ยัง null ทั้ง 35 คน (กลุ่ม Assembly Line D2-D6 ในผังยังไม่ผูกไลน์ผลิต)
+   จอเช็คชื่อกรอง section ด้วย `sectionFamilyIds.has(line_id)` ⇒ ไม่มีใครผ่านเลย = "แสดง 0 คน"
+   กฎ: เลือก "ส่วนงาน" ต้องยึด `section` · เลือก "ไลน์" ค่อยยึด `line_id` (เข้มเหมือนเดิม) */
+test('🛡️ /checkin: กรองด้วยส่วนงานต้องไม่ทิ้งคนที่ยังไม่ผูกไลน์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  assert.ok(/if\s*\(\s*selSection\s*\)\s*return[^;]*emp\.section\s*===\s*selSection/.test(code),
+    '\n\n❌ Checkin.jsx กรอง selSection โดยไม่มีทางออกให้คนที่ line_id ว่าง\n'
+    + '   ทำไมห้าม: ผู้ใช้เลือก "ส่วนงาน" แต่โค้ดถามว่า "อยู่ไลน์ไหน" ⇒ คนที่ยังไม่ผูกไลน์หายเงียบทั้งกอง\n'
+    + '              (เกิดจริง 05/10/2026 — PD2 คนหน้างาน 35 คน เช็คชื่อขึ้น 0 คน)\n'
+    + '   แก้ยังไง: `return sectionFamilyIds.has(el) || (!el && emp.section === selSection)`\n'
+    + '              แล้วนับคนที่ไม่มีไลน์ขึ้นเตือนบนจอ (noLineCount) — ห้ามปนเงียบ ๆ\n');
+});
+
+/* ── ตัวเลือกใน dropdown ต้องมาจากกองเดียวกับที่ตารางโชว์ (บั๊กจริง 05/10/2026) ──────────
+   /operator สร้างตัวเลือก แผนก/กลุ่ม/ทีม จาก [...employees, ...inactiveEmployees] ขณะที่ตาราง
+   โชว์ทีละกองตาม showInactive ⇒ dropdown เสนอค่าที่เลือกแล้วได้ 0 แถว (user: "ตัวกรองมั่ว") */
+test('🛡️ /operator: ตัวเลือกตัวกรองต้องมาจากกองที่กำลังโชว์ ไม่ใช่รวมคนที่ปิดใช้งาน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+optPool\s*=\s*useMemo\(\s*\(\)\s*=>\s*\(\s*showInactive\s*\?/.test(code),
+    '\n\n❌ operator.jsx ไม่ได้สร้างตัวเลือกตัวกรองจาก optPool (กองที่กำลังโชว์)\n'
+    + '   ทำไมห้าม: ตารางโชว์ทีละกองตาม showInactive แต่ตัวเลือกมาจากทั้ง 2 กอง\n'
+    + '              ⇒ หัวหน้ากดกรองแล้วจอว่าง นึกว่าคนหาย (เกิดจริง 05/10/2026 PD2)\n'
+    + '   แก้ยังไง: `const optPool = useMemo(() => (showInactive ? inactiveEmployees : employees), …)`\n');
+  /* ห้ามเฉพาะ "แหล่งตัวเลือก" — การค้นคนตาม id ข้ามทั้ง 2 กอง (handleEdit/toggle) ยังถูกต้อง */
+  assert.ok(/const\s+empsInSec\s*=\s*useMemo\(\s*\(\)\s*=>\s*optPool\./.test(code),
+    '\n\n❌ operator.jsx: empsInSec (ต้นทางตัวเลือก แผนก/กลุ่ม/ทีม) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
+  assert.ok(/optPool\.map\(e\s*=>\s*e\.section\)/.test(code),
+    '\n\n❌ operator.jsx: ตัวเลือกส่วนงาน (fallback) ไม่ได้มาจาก optPool — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ลบโหนดผังองค์กร ต้องเช็ค "ทุกตารางที่อ้างถึง" ไม่ใช่แค่ลูกในผัง (05/10/2026) ──────────
+   user: "เช็ค relate table ที แก้ไห้ถูก" — ของเดิมเช็คแค่ `nodes.filter(parent_id === id)`
+   แต่ที่ชี้มาจริงยังมี employees.org_node_id (308 แถว) · profiles.org_node_id (72) ·
+   org_assignments (4) + สำเนาชื่อแบบ text (employees.section/department/group_name/team)
+   ⇒ ลบแผนกที่ "ไม่มีลูก" แต่มีคน 9 คน = FK set null เงียบ · ลบกลุ่ม = 35 คนเหลือชื่อกลุ่มที่ไม่มีอยู่ */
+test('🛡️ /org-setup: ลบโหนดต้องผ่าน loadOrgNodeRefs + orgRefBlockMessage', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  assert.ok(/loadOrgNodeRefs\s*\(/.test(code) && /orgRefBlockMessage\s*\(/.test(code),
+    '\n\n❌ OrgSetup.jsx ลบโหนดโดยไม่ได้เช็คตารางที่อ้างถึง\n'
+    + '   ทำไมห้าม: employees.org_node_id/profiles.org_node_id เคยเป็น ON DELETE SET NULL\n'
+    + '              ⇒ พนักงานหลุดสังกัดเงียบ · สำเนาชื่อแบบ text ไม่มี FK คุมเลย\n'
+    + '   แก้ยังไง: `const refs = await loadOrgNodeRefs(supabase, node, nodes)` แล้วบล็อกด้วย\n'
+    + '              `orgRefBlockMessage(node, refs)` ก่อนยิง delete (src/utils/orgNodeRefs.js)\n');
+  assert.ok(/orgRefKeyChange\s*\(/.test(code) && /renameOrgRefs\s*\(/.test(code),
+    '\n\n❌ OrgSetup.jsx เปลี่ยนชื่อ/code โหนดโดยไม่ไล่แก้ "สำเนาชื่อ" ในทะเบียนอื่น\n'
+    + '   ทำไมห้าม: ทะเบียนพนักงาน/บัญชี จับคู่หน่วยงานด้วยข้อความ (ไม่ใช่ FK)\n'
+    + '              เปลี่ยนคีย์แล้วไม่ตามแก้ = คนหลุดหน่วยงานเงียบ (เคยตามเก็บด้วย migration)\n');
+});
+
+/* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
+test('🛡️ orgNodeRefs: คีย์จับคู่ของกลุ่มต้องเป็นชื่อ ไม่ใช่ code (code = เลขไลน์)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeRefs.js'), 'utf8'));
+  assert.ok(/kind\s*===\s*'line'[\s\S]{0,120}node\.name\s*,\s*node\.code/.test(code),
+    '\n\n❌ orgNodeRefs.orgRefValues: กลุ่ม (kind=line) ต้องเอา name มาก่อน code\n'
+    + '   ทำไม: code ของ kind=line เป็นเลขไลน์ (\'9\'/\'12\') ส่วน employees.group_name เก็บชื่อกลุ่ม\n'
+    + '          สลับลำดับ = ไล่เปลี่ยนชื่อผิดคอลัมน์/นับคนไม่เจอ (operator.jsx §เลือกกลุ่ม)\n');
+});
+
+test('🛡️ insert/upsert ลง dr_products ห้ามส่ง created_by (ตารางไม่มีคอลัมน์นี้ — ผู้แก้ประทับเองที่ updated_by_*)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /from\(\s*'dr_products'\s*\)\s*\.\s*(?:insert|upsert)\(\s*\{[^}]*\bcreated_by\s*:/g;
+    for (const m of code.matchAll(re)) bad.push(`${relative(ROOT, file)}:${code.slice(0, m.index).split('\n').length}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ส่ง created_by เข้า dr_products ${bad.length} จุด\n`
+    + '   ทำไมห้าม: PostgREST ปฏิเสธทั้งแถว "Could not find the created_by column" (เกิดจริง 05/10 ปุ่มเปิดใบ BOM ใช้ไม่ได้)\n'
+    + '   แก้ยังไง: ตัดฟิลด์นี้ออก — dr_products อยู่ใน DR_AUDIT_TABLES ผู้แก้ถูกประทับที่ updated_by_name/uid ให้เอง\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
