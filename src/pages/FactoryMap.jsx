@@ -14,7 +14,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, QBIN_EMBED } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -611,7 +611,8 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('downtime_logs').select('session_id, duration_min, ended_at, started_at, machine_no, dr_downtime_types(category)').in('session_id', sessIds),
       // ⚠️ NG ต้องมาจาก defect_logs — prod_orders.qty_ng ไม่เคยถูกเขียนทั้งระบบ (ยืนยัน 0/6100 แถว)
       // เดิมไม่ส่ง ngQty เข้า computeLiveOee → Q สดเป็น 100% เสมอ = OEE บนผังสูงกว่าความจริงทุกไลน์ (แก้ 2026-08-05)
-      supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', sessIds),
+      // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+      supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', sessIds),
       // ⚡ master 3 ตัวล่างนี้ผ่าน cache (10 นาที) — เดิมดึงทั้งตารางทุก 30 วิ กิน egress ~70% ของรอบ
       //    โดยไม่ได้ความสดอะไรเพิ่ม (CT/นโยบายพัก เปลี่ยนเดือนละไม่กี่ครั้ง) ดู src/utils/masterCache.js
       cachedMaster('dr_products:ct', async () =>
@@ -640,6 +641,8 @@ export default function FactoryMap({ setupMode = false }) {
     const dtBySess = {}; (dts || []).forEach(d => { (dtBySess[d.session_id] ||= []).push(d); });
     // ⚠️ Q ไม่นับ "งานทดลอง" (is_trial / ประเภทที่ตั้ง excl_from_q) — สูตรเดียวกับตอนปิดกะ
     const ngBySess = {}; (defs || []).forEach(d => { if (isTrialDefect(d)) return; ngBySess[d.session_id] = (ngBySess[d.session_id] || 0) + defectQty(d); });
+    // คนละตัวกับ ngBySess: %Q ไม่นับงานทดลอง · %P นับทุกชิ้นที่เครื่องทำออกมา (รวมทดลอง/ของสงสัย)
+    const defBySess = {}; (defs || []).forEach(d => (defBySess[d.session_id] ||= []).push(d));
     const nowMs = Date.now();
     // ต้นชั่วโมงปัจจุบัน (clock hour) — ใช้คิด downtime "สะสมเฉพาะชั่วโมงนี้" สำหรับสีบนแผนที่
     const hourStart = (() => { const d = new Date(nowMs); d.setMinutes(0, 0, 0); return d.getTime(); })();
@@ -650,6 +653,7 @@ export default function FactoryMap({ setupMode = false }) {
       // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับ computeOEE ใน DailyReport
       const r = computeLiveOee({
         session: s, orders: os, downtimes: dl, ctMap, workDate, nowMs, ngQty: ngBySess[s.id] || 0,
+        ngForP: ngByMatFrom(defBySess[s.id] || [], os),
         /* ⚠️ ต้องส่งนโยบายพัก + process ของกะ ไม่งั้น A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14)
            process มาจาก mat ของใบที่เปิดในกะ — วิธีเดียวกับที่ "ควรผลิตได้ตอนนี้" ใช้อยู่ด้านล่าง */
         breakPolicies: breaks || [],

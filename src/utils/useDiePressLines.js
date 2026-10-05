@@ -5,16 +5,14 @@
    จัดการที่ /die-registry แผง ⚙️ กลุ่มเครื่องปั๊ม · แก้แล้วเรียก invalidateDiePressLines() */
 import { useEffect, useState } from 'react';
 import { supabaseDR } from '../supabaseClient';
-import { cachedMaster, invalidateMaster } from './masterCache';
+import { cachedMaster, invalidateMaster, mrows } from './masterCache';
 
 const KEY = 'die_press_lines:master';
 
 export async function loadDiePressLines() {
   return cachedMaster(KEY, async () => {
-    const { data, error } = await supabaseDR.from('die_press_lines')
-      .select('code, name, tonnage, ref_production_line, note, sort_order, is_active').order('sort_order').order('name');
-    if (error) return [];
-    return data || [];
+    return mrows(await supabaseDR.from('die_press_lines')
+      .select('code, name, tonnage, ref_production_line, note, sort_order, is_active').order('sort_order').order('name'));
   });
 }
 export const invalidateDiePressLines = () => invalidateMaster(KEY);

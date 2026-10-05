@@ -15,6 +15,19 @@
     4) computeLiveOee               — OEE สดของกะที่ยังไม่ปิด
     5) strictOee                    — "OEE จริง" นับหยุดในแผนเป็นการสูญเสีย
     6) orderProducedQty             — "ใบผลิตใบนี้ผลิตได้กี่ชิ้น" (สูตรบังคับของโปรเจค)
+    7) ngByMatFrom                  — ชิ้นที่เครื่องทำออกมาแต่ไม่ดี แยกตาม MAT (ตัวเศษ %P)
+
+  🔴🔴 กฎเหล็ก — **%P นับ "ทุกชิ้นที่เครื่องทำออกมา" · %Q นับ "กี่ชิ้นในนั้นที่ดี"** (2026-10-04)
+     P = CT × **Total Count** ÷ Run Time   ·   Q = **Good** ÷ Total Count   (Nakajima / SEMI E79)
+     Total Count = งานดี **+ ของเสีย + งานทดลอง + ของสงสัย** — ทุกชิ้นกินรอบเครื่องเท่ากันหมด
+     ⇒ นับแต่งานดีในตัวเศษ %P = ของเสีย 1 ชิ้นถูกหัก **2 ครั้ง** (ที่ %P และที่ %Q) = OEE ต่ำกว่าจริง
+     (ที่มา: หัวหน้าทัก 04/10 *"P คิดที่งานผลิตได้ งานที่ผลิตเสียออกมาไม่คิด ทำให้ P ตก"* — จริง
+      · user ชี้ขาดว่า**งานทดลองก็ต้องเข้า** เพราะ "ใช้เครื่องลองผลิต" เครื่องเดินรอบจริง)
+     · ตัวเศษเติมผ่าน `ngByMatFrom` → พารามิเตอร์ `ngForP` (computeLiveOee) / จาก `defects` (computeSessionOee)
+     · 🔴 **%P ใช้ `defectQtyAll` (เห็นทุกชิ้น) · %Q ใช้ `defectQty`/`sumDefectQty` line-mode — ห้ามสลับ**
+       ผลพลอยได้ที่ถูกต้อง: QA ตัดสินของสงสัยแล้ว **%Q ขยับ · %P ไม่ขยับ** (ความเร็วไม่ได้เปลี่ยน)
+     · 🔴 ของเสียที่ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ **ไม่เข้า %P แต่ต้องรายงาน `ngNoMatP` ออกจอ** ห้ามเดา
+     · มีด่าน `oee-live-needs-ngforp` ใน regressionGuards (ลืมส่ง = จอตอบ %P ต่ำกว่าจออื่นเงียบๆ)
 */
 
 // งานคู่ gang die / RH-LH — ยุบเป็น "1 shot" ก่อนคิดเวลามาตรฐานของ %P (ดูกติกา ชิ้น≠shot ในไฟล์นั้น)
@@ -358,7 +371,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -431,6 +444,22 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     row.qty += q; row.ct = Math.max(row.ct, ct);
     stdRows.set(key, row);
   });
+  /* 🔴 ของเสีย/งานทดลอง/ของสงสัย **ก็กินรอบเครื่อง** ⇒ เข้าตัวเศษของ %P ด้วย (ดู `ngByMatFrom`)
+     ไม่ส่ง `ngForP` = ไม่บวกอะไรเลย = พฤติกรรมเดิมเป๊ะ (back-compatible) */
+  let ngInP = 0, ngNoCtP = 0;
+  Object.entries(ngForP?.byMat || {}).forEach(([mat, v]) => {
+    const n = Number(v) || 0;
+    if (!(n > 0)) return;
+    const ct = Number(ctMap[mat]) || 0;
+    if (!(ct > 0)) { ngNoCtP += n; if (mat) matsNoCt.add(mat); return; }   // ไม่มี CT = คิดไม่ได้ ห้ามเดา
+    const row = stdRows.get(mat) || { mat_no: mat, qty: 0, ct };
+    row.qty += n; row.ct = Math.max(row.ct, ct);
+    stdRows.set(mat, row);
+    ngInP += n;
+  });
+  qtyNoCt += ngNoCtP;
+  const ngPInfo = { ngInP, ngNoMatP: Number(ngForP?.noMat) || 0, ngNoCtP };
+
   const pairOf = pairMap ? (m => pairMap[m] ?? null) : undefined;
   const stdMin = collapsePairShots([...stdRows.values()], pairOf)
     .reduce((s, r) => s + r.qty * r.ct / 60, 0);
@@ -462,7 +491,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   if (stdMin <= 0) {
     return { A: pct(A), P: null, Q: pct(Q), oee: null, elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
       stdMin: 0, denomMin: Math.round(runMin),
-      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...baseInfo };
+      produced, ngQty: ng, noOutput: false, noCt: true, qtyNoCt, matsNoCt: [...matsNoCt], ...ngPInfo, ...baseInfo };
   }
 
   /* ไลน์เครื่องขนาน: ตัวหารต้องเป็น "เวลาเครื่อง" ไม่ใช่ "เวลาไลน์"
@@ -491,7 +520,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   // qtyNoCt > 0 = ตั้ง CT ไม่ครบทุกชิ้นงาน → stdMin ขาด → %P ต่ำกว่าจริง (จอควรติดป้ายเตือน)
   return { A: pct(A), P: pct(P), Q: pct(Q), oee: pct(oee), elapsedMin: Math.round(elapsed), runMin: Math.round(runMin),
     stdMin: Math.round(stdMin), denomMin: Math.round(denomMin),
-    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt],
+    produced, ngQty: ng, noOutput: false, noCt: false, qtyNoCt, matsNoCt: [...matsNoCt], ...ngPInfo,
     pOver: pRaw > 1.001, pRawPct: Math.round(pRaw * 1000) / 10,
     machineMin: machineMin == null ? null : Math.round(machineMin), parallelCap: cap, ...baseInfo };
 }
@@ -761,6 +790,39 @@ export const defectQty = (d) => {
  *    🔴 ห้ามเอาไปคิด %Q (นั่นคือ `defectQty`) — สลับ 2 ตัวนี้ = จอเดียวกันตอบคนละเลข
  */
 export const defectQtyAll = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/**
+ * 🔴 **จำนวนชิ้นที่เครื่องทำออกมาจริง แยกตาม MAT — ไว้บวกเข้า "ตัวเศษ" ของ %P**
+ * (2026-10-04 · คำสั่ง user: *"ต้องเข้าหมดเพราะใช้เครื่องลองผลิต"*)
+ *
+ * %P วัด **ความเร็ว** ไม่ใช่ความดี ⇒ ชิ้นที่ออกมาเสีย/ทดลอง/รอ QA ก็ **กินรอบเครื่องเท่ากับชิ้นดี**
+ * ⇒ ต้องอยู่ในตัวเศษ ไม่งั้นของเสีย 1 ชิ้นถูกหัก 2 ครั้ง (ทั้ง %P และ %Q) = OEE ต่ำกว่าจริง
+ * — ตรงกับสูตรสากล (Nakajima/SEMI E79): `P = CT × Total Count ÷ Run Time` · `Q = Good ÷ Total Count`
+ *
+ * ใช้ `defectQtyAll` (NG + ของสงสัยทุกใบ **ไม่สน** `is_trial`/`excl_from_q`/ผล QA) เพราะคำถามของ %P คือ
+ * *"เครื่องเดินไปกี่รอบ"* ไม่ใช่ *"ใครผิด"* — ผลพลอยได้: **%P นิ่ง ไม่ขยับตอน QA ตัดสินของสงสัย**
+ * (ต่างจาก %Q ที่ต้องขยับ — นั่นคือ `defectQty` · 🔴 ห้ามสลับ 2 ตัวนี้)
+ *
+ * @param {Array} defects  แถว defect_logs (ต้องมี `prod_order_id` หรือ embed `prod_orders(mat_no)`)
+ * @param {Array} orders   ใบในกะ (ใช้ map `id → mat_no`)
+ * @returns {{ byMat: Object<string,number>, noMat: number }}
+ *          `noMat` = ของเสียที่**ชี้ MAT ไม่ได้** (ไม่ผูกใบ) ⇒ ไม่รู้ CT ⇒ บวกเข้า %P ไม่ได้
+ *          🔴 ห้ามเกลี่ยมั่วลง MAT อื่น — คืนตัวเลขออกไปให้จอเขียนบอกแทน
+ */
+export function ngByMatFrom(defects = [], orders = []) {
+  const matOf = new Map();
+  (orders || []).forEach(o => { if (o?.id != null) matOf.set(o.id, o.mat_no ?? null); });
+  const byMat = {};
+  let noMat = 0;
+  (defects || []).forEach(d => {
+    const q = defectQtyAll(d);
+    if (!(q > 0)) return;
+    const mat = d?.prod_orders?.mat_no ?? (d?.prod_order_id != null ? matOf.get(d.prod_order_id) : null);
+    if (mat == null) { noMat += q; return; }          // ชี้ MAT ไม่ได้ = ไม่รู้ CT (ห้ามเดา)
+    byMat[mat] = (byMat[mat] || 0) + q;
+  });
+  return { byMat, noMat };
+}
 
 /** จำนวนของสงสัยที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้) */
 export const suspectPendingQty = (d) =>
@@ -1164,18 +1226,24 @@ export function computeSessionOee({
   const A = totalNetAvailByMat > 0 ? Math.min(1, totalRunMinByMat / totalNetAvailByMat)
     : (netAvail > 0 ? Math.min(1, runMin / netAvail) : null);
 
-  /* ── %P ── */
+  /* ── %P ──
+     🔴 ตัวเศษ = **ชิ้นที่เครื่องทำออกมาทั้งหมด** = งานดี + ของเสีย/ทดลอง/ของสงสัย (ดู `ngByMatFrom`)
+        ไม่ใช่ "งานดีอย่างเดียว" — ของเสียกินรอบเครื่องไปแล้ว ถ้าไม่นับ = ถูกหักซ้ำทั้ง %P และ %Q */
+  const { byMat: ngPByMat, noMat: ngNoMatP } = ngByMatFrom(defects, orders);
   const runSec = runMin * 60;
   const matPDataRaw = [];
-  let unknownQty = 0;
+  let unknownQty = 0, ngInP = 0;
   Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
     const ords = orders.filter(o => o.mat_no === matNo);
+    const ngThis = Number(ngPByMat[matNo]) || 0;
     const qty = ords.filter(o => o.status === 'confirmed').reduce((s, o) => s + o.qty, 0)
       + ords.filter(o => ['open', 'carry_over', 'cancelled', 'imported'].includes(o.status))
-        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0);
+        .reduce((s, o) => s + (parseInt(carryQtyActual[o.id]) || Number(o.qty_actual) || 0), 0)
+      + ngThis;
     if (!qty) return;
     const ctSec = ctForMatNo(matNo);
     if (ctSec <= 0) { unknownQty += qty; return; }
+    ngInP += ngThis;
     const openedTimes = ords.map(o => o.opened_at).filter(Boolean).map(t => new Date(t).getTime());
     const closedTimes = ords.filter(o => o.status === 'confirmed' && o.confirmed_at).map(o => new Date(o.confirmed_at).getTime());
     const stopTimes = ords.filter(o => o.status === 'open' && carryOverDecisions[o.id]).map(o => {
@@ -1249,7 +1317,7 @@ export function computeSessionOee({
   matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
   return {
     A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
-    totalProduced, ngQty, knownQty, unknownQty, ctUsed,
+    totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP,
     loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
     pOver: pRawRatio != null && pRawRatio > 1.001,
     pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,

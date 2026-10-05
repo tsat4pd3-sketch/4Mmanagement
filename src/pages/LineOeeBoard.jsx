@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, dtMinBySession, QBIN_EMBED } from '../utils/oee';
+import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, ngByMatFrom, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
@@ -136,7 +136,8 @@ export default function LineOeeBoard() {
         .select('id, session_id, duration_min, started_at, ended_at, machine_no, description, call_mtn, dr_downtime_types(name_th, category)')
         .in('session_id', c)),
       fetchByIds(ids, c => supabaseDR.from('defect_logs')
-        .select(`id, session_id, qty_ng, qty_suspect, is_trial, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
+        // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+        .select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c)),
       // master ผ่าน cache กลาง — key เดียวกับ FactoryMap = แชร์กัน ไม่ดึงซ้ำ (กฎ egress)
       cachedMaster('dr_products:ct', async () =>
@@ -179,6 +180,8 @@ export default function LineOeeBoard() {
     });
     const dtBySess = {}; dtR.rows.forEach(d2 => (dtBySess[d2.session_id] ||= []).push(d2));
     const ngBySess = {}; defR.rows.forEach(d2 => { if (isTrialDefect(d2)) return; ngBySess[d2.session_id] = (ngBySess[d2.session_id] || 0) + defectQty(d2); });
+    // คนละตัวกับ ngBySess: %Q ไม่นับงานทดลอง · %P นับทุกชิ้นที่เครื่องทำออกมา (รวมทดลอง/ของสงสัย)
+    const defBySess = {}; defR.rows.forEach(d2 => (defBySess[d2.session_id] ||= []).push(d2));
     const lineCfg = Object.fromEntries(lines.map(l => [l.name, l]));
     const ordBySess = {}; orders.forEach(o => (ordBySess[o.session_id] ||= []).push(o));
     const liveBySess = {};
@@ -186,6 +189,7 @@ export default function LineOeeBoard() {
       liveBySess[s.id] = computeLiveOee({
         session: s, orders: ordBySess[s.id] || [], downtimes: dtBySess[s.id] || [], ctMap,
         workDate: today, nowMs: Date.now(), ngQty: ngBySess[s.id] || 0,
+        ngForP: ngByMatFrom(defBySess[s.id] || [], ordBySess[s.id] || []),
         parallelN: parallelUnitsOf(lineCfg[s.line_name]),
         parallelCap: flowModeOf(lineCfg[s.line_name]?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(lineCfg[s.line_name]) : 1,
         breakPolicies: breaks || [],
