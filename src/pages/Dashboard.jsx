@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, orderProducedQty, liveTimeSplit, QBIN_EMBED } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, liveTimeSplit, QBIN_EMBED } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -344,7 +344,8 @@ export default function Dashboard() {
       const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
-        supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, description, dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`).in('session_id', sessionIds),
+        // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
+        supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, description, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`).in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
       let orders = ordRes.data;
@@ -373,6 +374,8 @@ export default function Dashboard() {
         downtimes: dtBySession[s.id] || [],
         ctMap,
         ngQty: sumDefectQty(defectBySession[s.id] || [], 'line'),
+        // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
+        ngForP: ngByMatFrom(defectBySession[s.id] || [], ordersBySession[s.id] || []),
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,

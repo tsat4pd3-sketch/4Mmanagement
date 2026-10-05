@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useContext, useCallback } from 'react';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
@@ -76,7 +76,7 @@ export default function PmCoordination() {
     const [{ data: ln }, mc, { data: pl }, plansRes, clsRes] = await Promise.all([
       loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
       /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-      cachedMaster('machines:pmcoord', async () => (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order')).data || []),
+      cachedMaster('machines:pmcoord', async () => mrows(await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_kind').eq('is_active', true).order('sort_order'))),
       supabaseDR.from('pm_coordination_plans').select('*').order('created_at', { ascending: false }).limit(500),
       // แผน PM เดิม (best-effort — ยังไม่มีตารางก็ไม่พัง)
       supabaseDR.from('pm_plans').select('id, checklist_id, next_due_date, plan_type, interval_days, usage_metric, usage_threshold').eq('is_active', true).then(r => r).catch(() => ({ data: [] })),

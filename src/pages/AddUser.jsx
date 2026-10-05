@@ -22,10 +22,17 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
-// ทีมช่างซ่อม (profiles.mtn_teams) แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม — โผล่เฉพาะ role ที่เกี่ยวกับงานซ่อม
-// (mtn = ทีมซ่อม, engineer = วิศวกรรม, leader/supervisor = ช่างฝ่ายผลิตที่ first-response บาง PD)
-// admin/manager เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม
-const MTN_TEAM_ROLES = ['mtn', 'engineer', 'leader', 'supervisor'];
+/* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
+   🔴 ตั้งแต่ 2026-10-04 ช่องนี้ยังเป็นตัวบอก **"อยู่ฝั่งช่าง หรือ ฝั่งผู้แจ้ง"** ของด่านล็อกช่องเซ็น
+      ขั้น 6/7/8 ด้วย (`actorSideOf()` ใน `utils/mtnStepPerm.js`)
+
+   ⚠️ เดิมซ่อนช่องนี้จาก `admin`/`manager` ด้วยเหตุผล "เห็นคิวทุกทีมอยู่แล้ว ไม่ต้องผูกทีม" —
+      พอมีด่านฝั่ง เหตุผลนั้นใช้ไม่ได้อีก: **ผจก.ช่าง (role=manager) ที่ไม่ได้ผูกทีม จะถูกตีเป็น
+      "ฝั่งผู้แจ้ง" ตาม sections แล้วกดช่อง "ผจก.ช่าง อนุมัติ" ไม่ได้ และไม่มีที่ให้แก้ในแอปเลย**
+      (ตรวจเจอจริง 05/10: ศักดา กาละศรี role=manager · sections=[PD1] · mtn_teams ว่าง → wrong_side)
+   ⇒ เปิดช่องให้ `manager`/`admin` ด้วย · ไม่ติ๊ก = ฝั่งผู้แจ้งตามเดิม (ไม่เปลี่ยนพฤติกรรมของคนที่ไม่ใช่ช่าง)
+   ยังซ่อนจาก role หน้างาน (operator ฯลฯ) — คนกลุ่มนั้นไม่มีช่องเซ็นฝั่งช่างให้กดอยู่แล้ว */
+const MTN_TEAM_ROLES = ['mtn', 'engineer', 'leader', 'supervisor', 'manager', 'admin'];
 const isMtnTeamRole = (r) => MTN_TEAM_ROLES.includes(r);
 
 // ชื่อ/สี/คำอธิบายชุดสิทธิ์ อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
@@ -1240,7 +1247,13 @@ export default function AddUser() {
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
               {isMtnTeamRole(form.role) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO)</label>
+                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)</label>
+                  {/* 🔒 ช่องนี้ตัดสิน "ฝั่ง" ของด่านล็อกช่องเซ็นขั้น 6/7/8 ด้วย — ต้องเขียนบอกคนตั้งค่า
+                      ไม่งั้น ผจก.ช่างที่ไม่ได้ติ๊กจะกดช่องของตัวเองไม่ได้ แล้วหาสาเหตุไม่เจอ */}
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-2px 0 6px', lineHeight: 1.6 }}>
+                    ติ๊ก = <b>ฝั่งซ่อมบำรุง</b> (กดช่องเซ็น “หัวหน้าแผนกช่าง” / “ผจก.ช่าง” ในใบ MO ได้) ·
+                    ไม่ติ๊ก = <b>ฝั่งผู้แจ้ง</b> (กดช่อง “ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ” ได้)
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border2)' }}>
                     {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) แทน MTN_TEAMS hardcode · ค่าที่เก็บ = key เสมอ */}
                     {pmTeamsSync().map(team => {

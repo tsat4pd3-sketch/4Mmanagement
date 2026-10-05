@@ -7,7 +7,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { loadDeliveryPoints } from '../utils/useDeliveryPoints';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
@@ -1943,7 +1943,7 @@ export default function HeijunkaKanban() {
         supabaseDR.from('kanban_targets').select('session_id, mat_no, part_name, qty_target').in('session_id', sessIds),
         // cycle_time_sec → ใช้แปลง "ยอดที่เหลือ" เป็น "เวลา" บนไทม์ไลน์
         /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-        cachedMaster('dr_products:heijunka', async () => (await supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true)).data || []),
+        cachedMaster('dr_products:heijunka', async () => mrows(await supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true))),
       ]);
       const prodByMat = {};
       (products || []).forEach(p => { if (p.mat_no) prodByMat[p.mat_no] = p; });

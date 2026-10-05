@@ -16,7 +16,7 @@
  * ⚠️ ชั้นนี้เป็น "มุมมองสด" เท่านั้น — ห้ามเอาไป stamp/บันทึกทับ snapshot ของใบ VSM
  */
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
-import { computeLiveOee, wavg, wLoad, sumDefectQty, dtMinBySession } from '../utils/oee.js';
+import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
@@ -94,6 +94,8 @@ export function buildVsmLive({
       downtimes: dtBy[openSess.id] || [],
       ctMap,
       ngQty: sumDefectQty(dfBy[openSess.id] || [], 'line'),
+      // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
+      ngForP: ngByMatFrom(dfBy[openSess.id] || [], ordBy[openSess.id] || []),
       workDate: openSess.work_date,
       nowMs, parallelN, parallelCap,
       breakPolicies,

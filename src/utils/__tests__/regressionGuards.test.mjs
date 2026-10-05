@@ -57,6 +57,32 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'master-cache-swallow',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
+    re: /cachedMaster\([^\n]*\.data\s*\|\|\s*\[\]/g,
+    why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
+       + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
+       + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
+       + '⇒ "ผมไม่เห็น แต่ User คนอื่นเห็น" · เกิดจริง 30/09 (คุณนพดล · /daily-report · งาน 068 '
+       + 'หายจากลิสต์ทั้งที่ข้อมูลใน DB ปกติทุกอย่าง) แล้วหาต้นเหตุไม่เจอเพราะไม่มีร่องรอยอะไรเลย',
+    fix: 'ห่อด้วย `mrows(await …)` จาก `src/utils/masterCache.js` — ตาราง/คอลัมน์ยังไม่มี (42P01/42703) '
+       + 'ยังคืน [] เหมือนเดิม · error อื่นโยน ⇒ cache ไม่ถูกทับ + ขึ้น toast ให้คนเห็น',
+    allow: {},   // ตัวอย่างใน masterCache.js อยู่ในคอมเมนต์ — ตัวสแกนตัดคอมเมนต์ก่อนตรวจอยู่แล้ว
+  },
+  {
+    id: 'role-retired-flag-honored',
+    scan: ['src'], ext: ['.js'],
+    /* จับการสร้างลิสต์ "ให้คนเลือก role" จาก ROLE_META โดยไม่กรอง retired ออก */
+    re: /Object\.entries\(ROLE_META\)(?![^\n]*\bisLive\b)(?![^\n]*\bretired\b)[^\n]*\.map\(/g,
+    why: 'role ที่ปลดระวางแล้ว (`retired: true`) ต้องหายจากลิสต์ที่ให้คนเลือก — ไม่งั้นยังตั้งให้ user ใหม่ได้ '
+       + 'และยังกินพื้นที่เป็นคอลัมน์ใน /permissions · เคยเกิดจริง: ธงถูกเขียนตอนปลด `sale` (23/09) '
+       + 'แต่**ไม่มีใครอ่าน** ⇒ 2026-10-04 ยังเจอคอลัมน์ `sale` 46 ช่องติ๊กที่มีคนถือจริง 0 คน',
+    fix: 'กรองด้วย `isLive` ก่อน `.map()` · **ห้ามกรองใน `roleLabel()`** — ป้ายต้องอ่าน role เก่าออกเสมอ '
+       + 'ไม่งั้น audit log / ใบเก่าขึ้นเป็นคีย์ดิบ (= เหตุผลที่เก็บแถวไว้ตั้งแต่แรก)',
+    allow: {},
+  },
+  {
     id: 'monitor-grid-math-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการหยิบสูตร recurrence ของบอร์ด Monitoring ไปคิดเองนอก monitorGrid.js */
@@ -722,6 +748,34 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'pm-run-day-via-helper',
+    scan: ['src/pages', 'src/components', 'src/lib'], ext: ['.jsx', '.js'],
+    /* จับการเทียบสถานะ "ไม่ได้ผลิตเลยไม่ต้องตรวจ" ด้วยสตริงดิบในหน้า */
+    re: /['"`]idle_skip['"`]\s*(?:===|==|!==|!=)|(?:===|==|!==|!=)\s*['"`]idle_skip['"`]/g,
+    why: 'สถานะ `idle_skip` (รอบ PM ที่นับจากวันเดินเครื่อง · 02/10) มีกฎพ่วงอยู่ 2 ข้อที่มองไม่เห็น '
+       + 'จากตัวสตริง: **ห้ามนับในตัวหารของ %ความครบถ้วน** และ **เทาเท่านั้น ห้ามเขียว** · '
+       + 'หน้าที่เทียบสตริงเองจะตกหล่นข้อใดข้อหนึ่งเสมอเมื่อเพิ่มสถานะใหม่ทีหลัง '
+       + '(คลาสเดียวกับที่เคยก๊อป ORDER map ไว้ใน PMSchedule แล้วสถานะใหม่หล่นไปท้ายลิสต์เงียบๆ)',
+    fix: "ใช้ `countsForCompliance(status)` จาก src/utils/pmRunDay.js ตัดสินว่านับเข้า KPI ไหม · "
+       + "สีมาจาก `STATUS_META[status]` (src/lib/pmSchedule.js) · ข้อความมาจาก `runDayText(res)`",
+    allow: {
+      'src/pages/PMSchedule.jsx': 'จอเดียวที่ต้องแยก "เทา" ออกจากสีสถานะอื่นตอนวาดแถว — ตัวหาร KPI ใช้ countsForCompliance แล้ว',
+    },
+  },
+  {
+    id: 'pm-run-day-needs-line-family',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* เรียก runDaysOf โดยส่งชื่อไลน์ตรงๆ จาก record (ไม่ผ่าน getLineFamilyNames) */
+    re: /runDaysOf\([^)]*\[\s*\w+\.line_name\s*\]\s*\)/g,
+    why: '`runDaysOf` ที่เทียบชื่อไลน์ตรงตัวจะมองไม่เห็นใบผลิตของไลน์ลูก — เคสจริง 02/10: '
+       + 'PF-H101 ลงทะเบียนที่ไลน์แม่ **HYDROFORM** แต่ใบผลิตเปิดที่ **HDF1/HDF2** ⇒ ระบบอ่านว่า '
+       + '"ไม่เคยเดินเลย 60 วัน" ทั้งที่ของจริงเดิน 38 วัน แล้ว**ข้ามการตรวจที่จำเป็นเงียบๆ** '
+       + '(ผิดทิศที่อันตรายกว่าตรวจเกิน)',
+    fix: 'กางครอบครัวไลน์ก่อนเสมอ: `runDaysOf(rows, getLineFamilyNames(lines, eq.line_name))` '
+       + '(src/utils/lineHierarchy.js) — กติกาเดียวกับ `sumUsage` ใน pmUsage.js',
+    allow: {},
+  },
+  {
     id: 'nav-alsoin-is-shortcut-not-second-home',
     scan: ['src', 'audit'], ext: ['.jsx', '.js', '.mjs'],
     /* จับ "เอา group กับ alsoIn มากองรวมเป็นลิสต์หมวดของหน้านี้" — รูปที่บั๊กเคยเขียนไว้เป๊ะๆ */
@@ -1096,8 +1150,8 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1281': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1346': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx:1285': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
+    'src/pages/FactoryMap.jsx:1350': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -1124,6 +1178,43 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
     + '   แก้ยังไง: import { QBIN_EMBED } from "../utils/oee" แล้วต่อท้าย select:\n'
     + '            .select(`session_id, qty_ng, qty_suspect, is_trial, ..., ${QBIN_EMBED}`)\n'
     + '            ถ้าคิวรีนั้นแสดงยอดดิบจริงๆ ไม่ได้คิด %Q ให้เติม ALLOW ในเทสนี้พร้อมเหตุผล\n\n'
+    + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
+
+/* 🛡️ oee-live-needs-ngforp (2026-10-04)
+   กฎ "ระดับไฟล์" อีกตัว (ต้องดูทั้งก้อน argument ของ computeLiveOee ไม่ใช่บรรทัดเดียว)
+
+   หัวหน้าทัก 04/10: *"P คิดที่งานผลิตได้ งานที่ผลิตเสียออกมาไม่คิด ทำให้ P ตก"* — จริง
+   %P วัด**ความเร็ว** ⇒ ชิ้นที่ออกมาเสีย/ทดลอง/รอ QA ก็กินรอบเครื่องเท่าชิ้นดี ต้องอยู่ในตัวเศษ
+   ไม่งั้นของเสีย 1 ชิ้นถูกหัก 2 ครั้ง (ทั้ง %P และ %Q) — ตรงกับสูตรสากล Total Count = ดี + เสีย
+   🔴 จอที่ลืมส่ง `ngForP` จะ **ไม่พัง ไม่เตือน** แค่ตอบ %P ต่ำกว่าจออื่นเงียบๆ = คลาสเดียวกับ
+      ที่เคยเกิดกับ `pairMap` (ลืมส่ง = นับ 2 เท่า) และ `excl_from_q` (ลืม join = Q เพี้ยน) */
+test('🛡️ oee-live-needs-ngforp — ทุกจุดที่เรียก computeLiveOee ต้องส่ง ngForP', () => {
+  /* ยกเว้นรายจุด (ไฟล์:บรรทัด) — ต้องเขียนเหตุผลทุกตัว */
+  const ALLOW = {};
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/oee.js') continue;                 // ตัวนิยามเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /computeLiveOee\(\s*\{/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const win = code.slice(m.index, m.index + 1200);        // ก้อน argument ของ call นี้
+      const line = code.slice(0, m.index).split('\n').length;
+      const key = `${rel}:${line}`;
+      if (ALLOW[key]) continue;
+      if (!/\bngForP\s*:/.test(win)) bad.push(key);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เรียก computeLiveOee แต่ไม่ได้ส่ง ngForP ⇒ %P ของจอนี้นับแค่ "งานดี"\n'
+    + '   ทำไมห้าม: ของเสีย/งานทดลอง/ของสงสัย กินรอบเครื่องไปแล้ว ไม่นับ = หักซ้ำทั้ง %P และ %Q\n'
+    + '            ⇒ จอนี้ตอบ %P ต่ำกว่าจออื่นที่ส่งมา (ข้อมูลชุดเดียวกัน 2 คำตอบ) และไม่มีอะไรเตือน\n'
+    + '   แก้ยังไง: import { ngByMatFrom } from "../utils/oee" แล้วใส่ในก้อน argument:\n'
+    + '            ngForP: ngByMatFrom(<แถว defect_logs ของกะนั้น>, <ใบในกะ>)\n'
+    + '            คิวรี defect_logs ต้อง embed `prod_orders(mat_no)` (หรือ select prod_order_id + ใบมี id)\n'
+    + '            ไม่งั้นชี้ CT ของ NG ไม่ได้ → ตกไปอยู่ noMat (ไม่เข้า %P แต่รายงานออกจอ)\n\n'
     + bad.map(f => '   • ' + f).join('\n') + '\n');
 });
 
