@@ -130,7 +130,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
   /* 05/10 (QC audit): `qa_fme_obligations` อยู่ **Main** — เดิมรวมอยู่ใน board เดียวกับตาราง DR (client default = supabaseDR)
      ⇒ subscribe ผิด project = cron สร้างงานแล้วจอไม่รู้ (รอ poll) · แยก 2 board ตาม project (pattern QaFmeQueue) */
   useLiveBoard(load, { tables: ['production_sessions', 'prod_orders'], topic: 'qa-fme-board' });
-  useLiveBoard(load, { tables: ['qa_fme_obligations'], topic: 'qa-fme-board-main', client: supabase });
+  useLiveBoard(load, { tables: ['qa_fme_obligations'], topic: 'qa-fme-board-main', client: supabase, rate: RATE.BACKUP });
   useEffect(() => visibleInterval(() => { setNow(Date.now()); setWd(getWorkDate()); }, RATE.BOARD), []);
 
   const nowMin = useMemo(() => {

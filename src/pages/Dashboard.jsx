@@ -417,7 +417,8 @@ export default function Dashboard() {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
       /* ⭐ `imported` = ใบยกยอดที่กะถัดไป "กดรับ" ไปแล้ว — ต้องแยก 2 ฝั่ง (2026-09-09 · oee.js §6):
-         - **เป้า** ห้ามนับ (เป้าถูกย้ายไปอยู่ใบของกะถัดไปแล้ว → นับ 2 รอบ 35+30=65)
+         - **เป้า** นับเฉพาะส่วนที่ใช้ไปในกะนี้ = orderPlanQty (min(เป้า, qty_actual) · ที่เหลือย้ายไปใบของกะถัดไปแล้ว
+           → นับเต็มจะได้ 2 รอบ 35+30=65 · ตัดทิ้งทั้งใบ = ยอดผลิตเกินเป้า) — oee §6.1 · 05/10
          - **ผลิตได้** ต้องนับ (ยอดที่กะนี้ทำได้จริงอยู่ใน qty_actual ของมัน · ไม่นับ = หายเงียบตอนกะหน้ากดรับ) */
       const handed  = orders.filter(o => o.status === 'imported');
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
