@@ -119,3 +119,7 @@
 - **เชื่อมกับ MTN Work-Order (2026-07-14):** `problem_source = 'mtn'` (migration `20260714_improvements_mtn_source.sql` ขยาย check constraint) → วัดผลก่อน/หลังจาก**ใบซ่อม MO** (จำนวนใบ + นาที breakdown จาก `mtn_orders`) แทน downtime/defect · พาเรโต้ตอนสร้างมีโหมด "ใบซ่อม MTN" (เครื่อง+อาการที่มีใบเยอะสุด) · การ์ดโชว์ชิป "🔧 ใบ MO N ใบ" (นับตั้งแต่ start_date) · ฝั่ง MtnRepair: ปุ่ม "💡 เปิดโปรเจคปรับปรุง" ใน DetailDrawer ส่ง prefill ผ่าน `sessionStorage['imp_prefill']` แล้ว navigate มา /improvements (เด่นเมื่อ step6 ติดตามได้ "เกิดปัญหาซ้ำ/แก้ไขไม่ได้") + ชิป "มีโปรเจคปรับปรุงกำลังทำ" บนใบของเครื่องที่มี improvement status=monitoring
 
 ---
+
+### 🛠️ QC 05/10
+- `computeResult()`: คิวรีกะล้ม = `{ noData, error }` (การ์ดเขียน "โหลดไม่สำเร็จ" ไม่ใช่ "ไม่มีข้อมูล") · `fetchByIds` error/truncated = `partial` → การ์ดเขียน "ข้อมูลไม่ครบ"
+- `rateFor()` ถอยไปใช้ rate เก่าสุดเมื่อไม่มี rate ก่อนวันเริ่ม — ตรวจด้วย `rateIsFallback()` (`utils/costSaving.js` · เทส `costSavingRate.test.mjs`) แล้วเขียนบนจอว่าใช้ rate ของวันไหน · ป้ายเงินโชว์ `rate เริ่ม <วันที่>` เสมอ

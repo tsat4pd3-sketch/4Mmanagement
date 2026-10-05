@@ -625,8 +625,12 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
           const { error: e3 } = await supabaseDR.from('mtn_spare_usage_monthly').upsert(rows, { onConflict: 'part_id,month_key,source' });
           if (e3) toast.error('บันทึกยอดใช้ย้อนหลังไม่สำเร็จ: ' + e3.message);
         }
-        if (clear.length) await supabaseDR.from('mtn_spare_usage_monthly')
-          .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+        if (clear.length) {
+          // เดิมไม่อ่าน error — ล้างยอดเดือนที่ลบออกไม่สำเร็จ = ยอดเก่ายังนับใน Rank A/B/C เงียบๆ (QC 05/10)
+          const { error: e4 } = await supabaseDR.from('mtn_spare_usage_monthly')
+            .delete().eq('part_id', part.id).eq('source', 'manual').in('month_key', clear);
+          if (e4) toast.error('ล้างยอดใช้ย้อนหลังที่ลบออกไม่สำเร็จ (ยอดเดิมยังถูกนับ): ' + e4.message);
+        }
       }
     }
     setSaving(false);

@@ -117,3 +117,8 @@
 ### ขั้นต่อไปของฟีเจอร์นี้ (ยังไม่ทำ — รอ user สั่ง)
 - PE ไล่ **ยืนยัน 43 กระบวนการ** ที่ระบบจัดกลุ่มให้ (ยังไม่ยืนยัน = ไม่ขึ้นเป็นตัวเลือกใน `/npi` ตามกฎข้อ 6)
 - ตามเก็บ 159 แถวที่ยังไม่ผูก · แจ้งเตือน yokoten อัตโนมัติ · master ของ Control Plan · merge master ซ้ำ
+
+### 🛠️ QC 05/10
+- **รับข้อเสนอ master (`PeMasterLibrary` accept) = claim ก่อน** (`status='proposed'` → `accepted` + `.select('id')` ต้องได้ 1 แถว) แล้วค่อยเขียน master · เขียน master ล้ม = คืนข้อเสนอเป็น `proposed` · ขึ้น version กระบวนการล้ม = บอกบนจอ
+- `PeChangeRequests` ออก revision: ส่ง `ref_kind` ตรงตัว (check รับ `capa` แล้ว — เดิมแปลง capa→ncr ⇒ ref_id ของ CAPA ถูกอ่านเป็น NCR)
+- `PeSetFromMasterModal` rollback ลบชุดครึ่งเดียว: นับแถว — ลบไม่ได้ต้องบอกว่าชุดค้าง

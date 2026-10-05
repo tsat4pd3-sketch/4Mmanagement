@@ -22,7 +22,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
-import { isTrialDefect, defectQty, orderProducedQty, QBIN_EMBED } from '../utils/oee';
+import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, QBIN_EMBED } from '../utils/oee';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import LineSelect from '../components/LineSelect';
@@ -314,6 +314,8 @@ function QualityDashboard() {
   const [defects, setDefects] = useState([]);
   const [ncrOpen, setNcrOpen] = useState(0);
   const [capaOverdue, setCapaOverdue] = useState(0);
+  /* ⚠️ คิวรีส่วนไหนล้ม/ไม่ครบ ต้องเขียนบนจอ — ห้ามโชว์ 0 เหมือน "ไม่มีของเสีย" (QC 05/10 · กฎความซื่อสัตย์ของจอ) */
+  const [loadErr, setLoadErr] = useState([]);
 
 
   const sessById = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions]);
@@ -349,12 +351,12 @@ function QualityDashboard() {
     let alive = true;
     (async () => {
       setLoading(true);
-      if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoading(false); return; }
+      if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoadErr([]); setLoading(false); return; }
       let ssQ = supabaseDR.from('production_sessions')
         .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
         .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
       if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
-      const { data: ss } = await ssQ.order('work_date');
+      const { data: ss, error: ssErr } = await ssQ.order('work_date');
       const ids = (ss || []).map(s => s.id);
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
       //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
@@ -374,17 +376,25 @@ function QualityDashboard() {
       // นับ NCR ค้างให้ตรงกับ scope ของ leader (ตัวเลข KPI จะได้ตรงกับรายการในแท็บ NCR)
       let ncrCountQ = supabase.from('qa_ncr').select('id', { count: 'exact', head: true }).neq('status', 'closed');
       if (scopedLineNames) ncrCountQ = ncrCountQ.in('line_name', scopedLineNames);
-      const [{ count: nOpen }, { data: capas }] = await Promise.all([
+      const [{ count: nOpen, error: ncrErr }, { data: capas, error: capaErr }] = await Promise.all([
         ncrCountQ,
         supabase.from('qa_capa').select('id, due_date, status').neq('status', 'closed'),
       ]);
       if (!alive) return;
+      const errs = [];
+      if (ssErr) errs.push(`กะผลิต: ${ssErr.message}`);
+      else if ((ss || []).length >= 1000) errs.push('กะผลิตเกิน 1,000 กะ — ตัวเลขอาจไม่ครบ ลองย่อช่วงวันที่');
+      if (ooRes.error || ooRes.truncated) errs.push(`ใบผลิต: ${ooRes.error || 'โหลดไม่ครบ'}`);
+      if (ddRes.error || ddRes.truncated) errs.push(`ของเสีย: ${ddRes.error || 'โหลดไม่ครบ'}`);
+      if (ncrErr) errs.push(`NCR: ${ncrErr.message}`);
+      if (capaErr) errs.push(`CAPA: ${capaErr.message}`);
+      setLoadErr(errs);
       setSessions(ss || []);
       setOrders(oo || []);
       setDefects(dd || []);
-      setNcrOpen(nOpen || 0);
+      setNcrOpen(ncrErr ? null : (nOpen || 0));
       const today = getWorkDate();
-      setCapaOverdue((capas || []).filter(c => c.due_date && c.due_date < today).length);
+      setCapaOverdue(capaErr ? null : (capas || []).filter(c => c.due_date && c.due_date < today).length);
       setLoading(false);
     })();
     return () => { alive = false; };
@@ -399,7 +409,9 @@ function QualityDashboard() {
       const cur = byType.get(name) || { qty: 0, color: d.dr_defect_types?.color || '#6b7280' };
       cur.qty += (d.qty_ng || 0) + (d.qty_suspect || 0); byType.set(name, cur);
     };
-    let total = 0, ng = 0;
+    let total = 0, ng = 0, pendingSuspect = 0;
+    /* ของสงสัยที่ QA ยังไม่ตัดสิน — ไม่นับใน NG/PPM (defectQty) แต่ต้องเขียนบนจอว่ารอกี่ชิ้น (oee.js §7.1) */
+    const notePending = (d) => { if (!isTrialDefect(d) && isSuspectPending(d)) pendingSuspect += Number(d.qty_suspect) || 0; };
 
     if (productFilter) {
       // ── ระดับ product: ยอดผลิตจากใบงานของ product นั้น · NG จาก defect ที่ผูกใบงาน ──
@@ -412,9 +424,13 @@ function QualityDashboard() {
       });
       defects.forEach(d => {
         if (!d.prod_order_id || !orderIds.has(d.prod_order_id)) return;
-        const s = sessById.get(d.session_id); const g = d.qty_ng || 0; ng += g;
+        addType(d);   // พาเรโตเห็นทุกอย่าง (รวมงานทดลอง/สงสัย) — เหมือนทางไม่กรองสินค้า
+        /* 🔴 สูตรเดียวกับทางไม่กรองสินค้า (QC 05/10) — เดิมใช้ qty_ng ดิบ ⇒ กดกรองสินค้าแล้ว
+           งานทดลองถูกนับ + ของสงสัยที่ QA ตัดสินว่าเสียหาย = เลขเปลี่ยนแค่เพราะกดตัวกรอง */
+        if (isTrialDefect(d)) return;
+        notePending(d);
+        const s = sessById.get(d.session_id); const g = defectQty(d); ng += g;
         if (s) { addDate(s.work_date, 0, g); addLine(s.line_name || '—', 0, g); }
-        addType(d);
       });
     } else {
       // ── ระดับกะ (เดิม): actual_qty + qty_ng ของ session + defect logs ──
@@ -432,6 +448,7 @@ function QualityDashboard() {
       const sessHasDefect = new Set();
       shownDefects.forEach(d => {
         sessHasDefect.add(d.session_id);
+        notePending(d);
         if (!isTrialDefect(d)) defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + defectQty(d));
         addType(d);
       });
@@ -461,7 +478,7 @@ function QualityDashboard() {
       (p) => p.qty,
     );
     return {
-      total, ng,
+      total, ng, pendingSuspect,
       // total = ยอดสแกน = "ของดี" ล้วน · ผลิตจริงทั้งหมด = total + ng → PPM/FTT ต้องหารด้วยผลิตจริง ไม่ใช่ของดี
       // (กฎ Q "การ์ดที่สแกน=ของดีล้วน" 2026-08-02 · เดิม ng/total ทำ PPM สูงเกินจริง, (total−ng)/total ทำ FTT ต่ำเกินจริง)
       ppm: (total + ng) ? Math.round(ng / (total + ng) * 1e6) : null,
@@ -492,6 +509,11 @@ function QualityDashboard() {
         {loading && <span className="filter-count">กำลังโหลด…</span>}
       </TimeRangeBar>
 
+      {loadErr.length > 0 && (
+        <div role="alert" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e05252', color: '#e05252', fontSize: 12.5, fontWeight: 700 }}>
+          ⚠️ ข้อมูลบางส่วนโหลดไม่สำเร็จ — ตัวเลขด้านล่างอาจต่ำกว่าจริง: {loadErr.join(' · ')}
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {/* 🚦 สีทุกใบมาจาก `statusTone` ชุดเดียวกับทั้งระบบ (23/09) — เดิมตั้ง hex เอง 6 จุด
             และ **ยอดผลิต/NG ถูกทาเขียวเมื่อ 0** ทั้งที่ "ผลิต 0 ชิ้น" ไม่ใช่เรื่องดี
@@ -501,7 +523,7 @@ function QualityDashboard() {
           sub={productFilter ? `ชิ้นงาน: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
         <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} unit="ชิ้น"
           color={statusColor(toneOf({ value: stat.ng, zeroIsGood: true }))}
-          sub={stat.total + stat.ng > 0 ? `จากผลิตจริง ${(stat.total + stat.ng).toLocaleString()} ชิ้น` : 'ยังไม่มีข้อมูล'} />
+          sub={`${stat.total + stat.ng > 0 ? `จากผลิตจริง ${(stat.total + stat.ng).toLocaleString()} ชิ้น` : 'ยังไม่มีข้อมูล'}${stat.pendingSuspect ? ` · ⏳ ของสงสัยรอ QA ${stat.pendingSuspect.toLocaleString()} ชิ้น (ยังไม่นับ — PPM/FTT ยังไม่สรุป)` : ''}`} />
         <KpiCard primary label="PPM — ของเสียต่อล้านชิ้น" value={stat.ppm != null ? stat.ppm.toLocaleString() : null}
           color={stat.ppm == null ? 'var(--text)'
             : statusColor(stat.ppm <= 500 ? 'good' : stat.ppm <= 3000 ? 'warn' : 'bad')}
@@ -962,6 +984,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     const f = createModal;
     if (!f.defect_desc.trim()) { toast.error('กรอกรายละเอียดของเสีย'); return; }
     const ncr_no = await nextDocNo('qa_ncr', 'ncr_no', 'NCR');
+    if (!ncr_no) { toast.error('ออกเลขที่ NCR ไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return; }
     const { error } = await supabase.from('qa_ncr').insert({
       ncr_no, report_date: f.report_date || getWorkDate(),
       line_name: f.line_name || null, part_no: f.part_no.trim() || null, part_name: f.part_name.trim() || null,
@@ -1255,9 +1278,12 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     /* คอลัมน์ของเฟส 4 อาจยังไม่ apply migration → ลองเต็มก่อน เจอ 42703 ค่อยตัดทิ้งแล้วลองใหม่
        ⚠️ ต้องบอกผู้ใช้ว่าอะไรไม่ถูกบันทึก ห้ามเงียบ (กฎ best-effort ของโปรเจค) */
     const EFF_COLS = ['d6_effective_from', 'eff_window_days', 'eff_defect_type_id', 'eff_defect_type_label', 'eff_verdict', 'eff_measured_at', 'eff_snapshot'];
+    // ใบใหม่: ออกเลขครั้งเดียวก่อนเขียน — ออกไม่ได้ = ไม่บันทึก (ห้าม insert capa_no null/เลขซ้ำ)
+    const newCapaNo = f.id ? null : await nextDocNo('qa_capa', 'capa_no', 'CAPA');
+    if (!f.id && !newCapaNo) { toast.error('ออกเลขที่ CAPA ไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง'); return; }
     const write = async (p) => (f.id
       ? supabase.from('qa_capa').update(p).eq('id', f.id)
-      : supabase.from('qa_capa').insert({ ...p, capa_no: await nextDocNo('qa_capa', 'capa_no', 'CAPA'), created_by: fullName || null }));
+      : supabase.from('qa_capa').insert({ ...p, capa_no: newCapaNo, created_by: fullName || null }));
     let { error } = await write(payload);
     if (error?.code === '42703' && EFF_COLS.some((c) => c in payload)) {
       const slim = { ...payload };
