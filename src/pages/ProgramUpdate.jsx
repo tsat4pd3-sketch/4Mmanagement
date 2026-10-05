@@ -21,7 +21,7 @@ import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { useMergeParams } from '../utils/useTabParam';
-import { KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
+import { KINDS, USER_KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
 
 /* เพดานรายการที่วาดต่อรอบ — ช่วงกว้างมาก (ทั้งประวัติ = 1,157 รายการ) ทำจอ TV/มือถือหน่วง
    🔴 ตัดแล้วต้องเขียนบนจอว่า "แสดงกี่จากกี่" + ปุ่มดูเพิ่ม **ห้ามตัดเงียบ** */
@@ -45,12 +45,12 @@ export default function ProgramUpdate() {
   const { from, to } = tr;
   /* ชนิดที่กรองอยู่ต้องอยู่ใน URL ด้วย — มาตรฐานเดียวกับ `useTabParam`/`useTimeRange`:
      สิ่งที่ผู้ใช้เห็นว่า "กำลังดูอะไรอยู่" ต้องแชร์ลิงก์ได้ (เอาไปใส่สไลด์พรีเซนต์ได้เลย)
-     · ค่า default ('all') ไม่เขียนลง URL — ลิงก์สะอาด · `mergeParams` กัน `?from=/?to=` หลุด */
+     · ค่า default ('user' = สำหรับผู้ใช้ · 05/10) ไม่เขียนลง URL — ลิงก์สะอาด · `mergeParams` กัน `?from=/?to=` หลุด */
   const [sp] = useSearchParams();
   const merge = useMergeParams();
   const rawKind = sp.get('kind');
-  const kind = KINDS.some(k => k.key === rawKind) ? rawKind : 'all';
-  const setKind = (v) => merge({ kind: v === 'all' ? null : v }, { replace: true });
+  const kind = rawKind === 'all' || KINDS.some(k => k.key === rawKind) ? rawKind : 'user';
+  const setKind = (v) => merge({ kind: v === 'user' ? null : v }, { replace: true });
   const [q, setQ] = useState('');
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -83,7 +83,9 @@ export default function ProgramUpdate() {
      จะวาดทีเดียวเป็นพันแถวโดยที่ผู้ใช้ไม่ได้ขอ) */
   useEffect(() => { setCap(PAGE_ROWS); }, [from, to, kind, q]);
 
+  const userN = USER_KINDS.reduce((n, k) => n + (counts[k] || 0), 0);
   const segOpts = [
+    { value: 'user', label: `สำหรับผู้ใช้ ${userN}`, title: 'ฟีเจอร์ใหม่ · แก้ปัญหา · ปรับปรุง (ไม่รวมเอกสาร/งานระบบ)' },
     { value: 'all', label: `ทั้งหมด ${inRange.length}` },
     ...KINDS.map(k => ({ value: k.key, label: `${k.icon} ${k.label}${counts[k.key] ? ` ${counts[k.key]}` : ''}`,
       disabled: !counts[k.key], title: k.hint })),

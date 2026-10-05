@@ -594,16 +594,18 @@ export default function Management() {
       const periodStart = getPeriodStartDate(period, workDate);
 
       // ปิด record เดิมที่ยังเปิดอยู่ของพนักงานคนนี้
-      await supabase
+      // 🔴 ปิดไม่สำเร็จ = ห้าม insert ต่อ (QC 05/10 · กฎเขียน DB ข้อ 1) — ไม่งั้นมี record เปิดค้าง 2 จุดพร้อมกัน
+      //    ⇒ ประวัติประจำจุด/Workforce Insight นับคนคนเดียวอยู่ 2 ที่ · การย้ายจุดหลัก (daily_production_logs) สำเร็จไปแล้ว
+      const closedOk = checkWrite(await supabase
         .from('station_assignment_logs')
         .update({ ended_at: periodStart.toISOString() })
         .eq('employee_id', droppedWorker.employee_id)
         .eq('work_date', workDate)
         .eq('shift', shift)
-        .is('ended_at', null);
+        .is('ended_at', null), 'ย้ายจุดแล้ว แต่ปิดประวัติประจำจุดเดิม');
 
       // สร้าง record ใหม่เฉพาะเมื่อย้ายไปสถานี (ไม่สร้างตอนย้ายกลับ pool)
-      if (finalAssign) {
+      if (closedOk && finalAssign) {
         const station = dynamicStations.find(s => String(s.id) === String(finalAssign));
         checkWrite(await supabase.from('station_assignment_logs').insert({
           employee_id:      droppedWorker.employee_id,
@@ -669,6 +671,21 @@ export default function Management() {
           } else {
             const desc = `${droppedWorker.employees?.name} ${moveType === 'cross' ? 'ย้ายข้ามไลน์ไปจุด' : 'ย้ายไปจุด'} ${station.station_name}`;
             const mc = MAN_CASE_META[manCase];
+            /* 🔴 กันใบซ้ำ (CLAUDE.md §4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ · QC 05/10)
+               ลากคนเดิมเข้า-ออกจุดเดิมหลายรอบ = ใบรอเอกสารซ้อนในคิวทีละใบ — ใบที่ยังค้าง (คน+จุด+ไลน์เดียวกัน) มีอยู่แล้ว = ไม่ออกใหม่
+               ไม่จำกัดวัน (ต่างจาก case 1): ใบ pending ของเมื่อวานยังเป็นงานเดียวกันที่รอ OJT อยู่ */
+            const { data: dupPend, error: dupErr } = await supabase.from('four_m_logs')
+              .select('id').eq('category', 'Man').eq('line_name', station.line_name).eq('description', desc)
+              .in('status', ['pending_doc', 'pending', 'pending_qa']).limit(1);
+            if (dupErr) {
+              // เช็คซ้ำไม่ได้ = ไม่ออกใบ (เสี่ยงท่วมคิว) แต่ต้องบอกให้คนเปิดเอง — ห้ามเงียบ
+              toast.error('เข้าตำแหน่งแล้ว แต่ตรวจใบ 4M Man ซ้ำไม่สำเร็จ — ยังไม่ได้เปิดใบ ให้เปิดเองที่หน้า 4M: ' + dupErr.message);
+              return;
+            }
+            if (dupPend?.length) {
+              toast.info('เข้าตำแหน่งแล้ว — มีใบ 4M Man ของคน/จุดนี้รอเอกสารอยู่แล้ว (ไม่ออกใบซ้ำ)');
+              return;
+            }
             const { error: m4Err } = await supabase.from('four_m_logs').insert([{
               work_date: today,
               line_name: station.line_name,
