@@ -1012,28 +1012,36 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const noOtCutoff = new Date(stdDT.getTime() + 60 * 60000);
       pick = new Date() <= noOtCutoff ? std : ot;
     }
-    /* 🔴 ห้ามเดาเวลาจบที่ "ล้ำหน้าเวลาจริง" เกินเกณฑ์ (2026-10-02 · user หน้างาน)
+    /* 🔴 ห้ามเดาเวลาจบที่ "ล้ำหน้าเวลาจริง" เกินเกณฑ์ (2026-10-02 · ปรับ 10-05)
        เดิมเดาเวลาเลิกงานมาตรฐานให้เสมอ ⇒ เปิดกล่องปิดกะตอน 13:37 ก็ได้ 17:30 มาให้
        แล้วคนกดผ่าน ⇒ shift_min = เต็มกะ ทั้งที่เดินจริงครึ่งเดียว = %A/%P ต่ำกว่าจริงทั้งกะ
        (เคสจริง LINE ASSY TSRA 01/10 · Laser LWR กะดึก 24/09 ล้ำ 9.5 ชม.)
-       ⇒ ล้ำเกินเกณฑ์เมื่อไหร่ ถอยมาเสนอ "เวลาตอนนี้" ซึ่งเป็นสิ่งเดียวที่รู้จริง */
-    const chk = checkCloseTime(pick, selSession);
+       ⇒ ล้ำเกินเกณฑ์เมื่อไหร่ ถอยมาเสนอ "เวลาตอนนี้" ซึ่งเป็นสิ่งเดียวที่รู้จริง
+       🔴 ส่ง `dtLogs` ไปด้วยเสมอ — ปลายกะที่ลง downtime คลุมไว้แล้ว (เช่น "ไม่มีแผนผลิต" ถึงเลิกงาน)
+          **ไม่ใช่ความผิด** ⇒ ยังเสนอเวลาเลิกงานมาตรฐานได้เหมือนเดิม (05/10) */
+    const chk = checkCloseTime(pick, selSession, Date.now(), { downtimes: dtLogs });
     return (chk && !chk.ok) ? nowTime() : pick;
   };
 
   /* แถบเตือนใต้ช่อง "เวลาปิดกะ" — เห็นตั้งแต่ตอนกรอก + กดแก้เป็นเวลาตอนนี้ได้คลิกเดียว
      🔴 เตือนอย่างเดียว ไม่บล็อก และ **ห้ามแก้ค่าให้เอง** (กฎเดียวกับด่านเวลา downtime) */
   const closeAheadWarn = () => {
-    const chk = selSession ? checkCloseTime(closeEndTime, selSession) : null;
+    const chk = selSession ? checkCloseTime(closeEndTime, selSession, Date.now(), { downtimes: dtLogs }) : null;
     if (!chk || chk.ok) return null;
     return (
       <div style={{ gridColumn: '1 / -1', marginTop: -4, padding: '8px 12px', borderRadius: 8,
         background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)',
         fontSize: 12, color: '#f59e0b', fontWeight: 700, lineHeight: 1.6 }}>
-        ⚠️ เวลาปิดกะที่กรอกอยู่ <b>ล้ำหน้าเวลาจริง {fmtOffset(chk.aheadMin)}</b> (ตอนนี้ {chk.nowHHmm} น.)
+        ⚠️ เวลาปิดกะที่กรอกอยู่ ล้ำหน้าเวลาจริง {fmtOffset(chk.aheadMin)} โดย
+        <b>ไม่มีอะไรรองรับ {fmtOffset(chk.unaccountedMin)}</b> (ตอนนี้ {chk.nowHHmm} น.)
         <div style={{ fontWeight: 600, color: 'var(--text2)' }}>
           ปกติปิดกะก่อนเลิกงาน 30-60 นาที — ถ้าเลิกผลิตจริงตอนนี้ ให้ใช้เวลาตอนนี้
-          ไม่งั้นระบบจะคิดเวลาเดินเครื่องเกินจริง {fmtOffset(chk.aheadMin)} ⇒ <b>%A/%P ของกะนี้ต่ำกว่าความจริง</b>
+          ไม่งั้นระบบจะคิดเวลาเดินเครื่องเกินจริง {fmtOffset(chk.unaccountedMin)} ⇒ <b>%A/%P ของกะนี้ต่ำกว่าความจริง</b>
+          {chk.coveredMin > 0 && <> · (หักส่วนที่ลง Downtime คลุมไว้แล้ว {fmtOffset(chk.coveredMin)} ออกให้แล้ว)</>}
+          <div style={{ marginTop: 2 }}>
+            ถ้ากะนี้เดินถึงเวลานั้นจริงแต่ไม่ได้ผลิต — ลง Downtime (เช่น "ไม่มีแผนผลิต") คลุมช่วงที่เหลือ
+            แล้วเวลาจบเดิมจะถูกต้อง
+          </div>
         </div>
         <button type="button" onClick={() => setCloseEndTime(chk.nowHHmm)}
           style={{ marginTop: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer',
