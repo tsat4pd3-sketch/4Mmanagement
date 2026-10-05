@@ -37,6 +37,7 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import PageHeader from './PageHeader';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import { A4, GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -235,7 +236,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
         const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
         if (!live()) return;
-        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
+        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุนต่อชิ้น (ทะเบียนชิ้นส่วน) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
         setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
     } finally { if (live()) setLoading(false); }
@@ -274,7 +275,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
         /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
         const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
         if (!live()) return;
-        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
+        if (pm.error) setLoadWarn(w => w || `โหลดต้นทุนต่อชิ้น (ทะเบียนชิ้นส่วน) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
         setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
     } finally { if (live()) setLoading(false); }
@@ -514,7 +515,17 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      ⚠️ ต้องประกาศ **ก่อน** คำนวณจำนวนหน้า เพราะจำนวนหน้าขึ้นกับความสูงที่วัดได้
      `null` = ที่ไม่พอจริง (มือถือหัวเพจสูง) ⇒ ถอยไปโหมดเลื่อนแบบเดิม */
   const [fitRef, availH] = useFitHeight(12, 120);
-  const fitOn = availH != null;
+  /* 💻 จอเตี้ย (< 800px เช่นโน้ตบุ๊ก 1366×768) — ไม่บีบลงจอเดียว (UX audit 05/10: แผ่นเหลือสูง ~220px
+     กล่องเตือนในแผ่นทับกราฟจนอ่านไม่ได้) ⇒ ให้กริดสูงคงที่ SHORT_GRID_H แล้วหน้าเลื่อนได้ · โหมดจอ TV ยังคุมเต็มจอเหมือนเดิม */
+  const SHORT_VH = 800, SHORT_GRID_H = 760;
+  const [vh, setVh] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 1080));
+  useEffect(() => {
+    const on = () => setVh(window.innerHeight);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  const shortScreen = !board && vh < SHORT_VH;
+  const fitOn = availH != null && !shortScreen;
 
   /* ช่องต่อหน้า = คอลัมน์ × **แถวที่ลงจอจริง** — จอเตี้ย/จอแคบใส่ได้น้อยแถว ก็แบ่งหน้าเพิ่ม
      ห้ามบีบแผ่นให้เล็กลงเพื่อยัดลงจอ (ฟอนต์จะต่ำกว่า 11px = ผิดกติกา UI จอ TV) */
@@ -695,7 +706,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       {!board && (
         <PageHeader
           tabs={tabs} tab={tab} onTab={onTab}
-          title="OBEYA — ห้องบัญชาการโรงงาน" icon="🏛️"
+          title={OBEYA_TITLE} icon={OBEYA_ICON}
           sub={`${periodText} · ${from} → ${to} · ${shiftCount.toLocaleString()} กะที่ปิดแล้ว`}
           filters={(
             <>
@@ -779,11 +790,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           แล้วแถวล่างถูก `overflow: clip` ตัดหายเงียบๆ (เจอจริงตอนวัดด้วย Playwright) */}
       <div ref={fitRef} style={{
         display: 'flex', minHeight: 0,
-        flex: board ? 1 : 'none', height: board ? undefined : (fitOn ? `${availH}px` : undefined),
+        flex: board ? 1 : 'none', height: board ? undefined : (fitOn ? `${availH}px` : shortScreen ? `${SHORT_GRID_H}px` : undefined),
         padding: board ? 8 : 0,
       }}>
       {/* 🔴 `clip` เมื่อคุมความสูงได้ · ที่ไม่พอจริง = ถอยไป `auto` ยอมให้เลื่อน (ดู useFitHeight) */}
-      <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn ? 'clip' : 'auto' }}>
+      <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn || shortScreen ? 'clip' : 'auto' }}>
         {loading && (isYear ? !yr : !fSess.length) ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
         ) : (
@@ -1033,10 +1044,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                             </span>
                           )}
                           <span title={a.problem} style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {a.problem}
+                            {(a.problem || '').trim() || '(ไม่มีหัวข้อ)'}
                           </span>
                           <span style={{ fontSize: fs(10), color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                            {a.line_name || '—'} · {a.assignee || 'ยังไม่ระบุ'} · {a.due_date || 'ไม่มีกำหนด'}
+                            {a.line_name || '—'} · {(a.assignee || '').trim() || 'ยังไม่ระบุผู้รับผิดชอบ'} · {a.due_date || 'ไม่มีกำหนด'}
                           </span>
                           {canRecord && (
                             <button onClick={() => setStatus(a, 'done')} style={{

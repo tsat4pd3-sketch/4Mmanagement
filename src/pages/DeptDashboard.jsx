@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
 import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk } from '../utils/statusTone';
@@ -884,7 +885,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
            ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
-          title={embedded ? 'OBEYA — งานค้างของส่วนงาน' : 'Dashboard ส่วนงาน'} icon={embedded ? '📌' : '📊'}
+          title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
