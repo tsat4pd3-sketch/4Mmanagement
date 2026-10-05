@@ -157,3 +157,9 @@ test('monthBarScore: เกณฑ์ทางการ 1/0.5/0 — เหลื�
   assert.equal(monthBarScore({ v: null }, def), 'none');
   assert.equal(monthBarScore({ v: 50 }, { direction: 'up' }), 'none');   // ไม่มีเป้า = ตัดสินไม่ได้
 });
+
+test('PPM: ยอดผลิต 0 แต่มีของเสีย = null ไม่ใช่ 1,000,000 (UX audit 05/10)', async () => {
+  const { axisPpmYear } = await import('../obeyaYear.js');
+  const p = axisPpmYear({ sessions: [], defects: [{ m: '2026-01', ng: 91, trial_ng: 0, rows: 4 }], year: 2026 });
+  assert.equal(p.series[0].v, null);
+});

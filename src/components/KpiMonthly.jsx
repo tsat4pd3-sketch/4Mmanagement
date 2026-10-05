@@ -520,7 +520,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     });
     out.forEach(m => {
       m.oee = m.sess.length ? wavg(m.sess, x => x.oee, wLoad) : null;
-      m.ppm = (m.produce + m.ng) > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
+      /* ไม่มียอดผลิตเลยแต่มีของเสีย = ยอดผลิตยังไม่ถูกบันทึก ไม่ใช่ "เสียล้านชิ้นในล้าน" ⇒ null (จอเขียน "—")
+         (UX audit 05/10: แท็บตั้งค่าโชว์ PPM 1,000,000 ตอนผลิต 0 · NG 91) */
+      m.ppm = m.produce > 0 ? (m.ng / (m.produce + m.ng)) * 1e6 : null;
       /* ⚠️ "ตีมูลค่าไม่ได้" ≠ "ไม่มีต้นทุน" — ของเสียมีจริงแต่ไม่มีพาร์ทไหนตีมูลค่าได้เลย
          ต้องเป็น "—" ห้ามเป็น 0 (กฎเดียวกับ OEE: ประเมินไม่ได้ = null ห้ามแปลงเป็นศูนย์)
          ไม่มีของเสียเลย → 0 ถูกต้อง                                                     */
@@ -537,7 +539,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       n: out.reduce((s, m) => s + m.n, 0),
       oee: allSess.length ? wavg(allSess, x => x.oee, wLoad) : null,
     };
-    tot.ppm = (tot.produce + tot.ng) > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
+    tot.ppm = tot.produce > 0 ? (tot.ng / (tot.produce + tot.ng)) * 1e6 : null;
     tot.costKnown = tot.costQty > 0 || tot.costMissQty === 0;
     return { out, tot };
   }, [data]);

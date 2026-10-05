@@ -221,7 +221,8 @@ export function axisPpmYear({ sessions = [], defects = [], year, target = null, 
     const a = map.get(k); a.ng += n(d.ng) - n(d.trial_ng); a.rows += n(d.rows);
   });
   const { series, ytd, total, months } = monthSeries(year, map, seedPpm,
-    a => ((a.qty + a.ng) > 0 ? Math.round((a.ng / (a.qty + a.ng)) * 1e6) : null), 'avg');
+    /* ยอดผลิต 0 แต่มีของเสีย = ยอดผลิตยังไม่ถูกบันทึก ⇒ null ไม่ใช่ 1,000,000 (UX audit 05/10) */
+    a => (a.qty > 0 ? Math.round((a.ng / (a.qty + a.ng)) * 1e6) : null), 'avg');
   return {
     key: 'PPM', unit: 'PPM', better: direction === 'up' ? 'up' : 'down', target, months,
     value: ytd, series, summaryKind: 'avg', ngQty: total.ng, qty: total.qty, defectRows: total.rows,

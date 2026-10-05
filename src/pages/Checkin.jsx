@@ -149,7 +149,20 @@ export default function Checkin() {
   const [otBookLoading,    setOtBookLoading]    = useState(false);
   const [otBookSaving,     setOtBookSaving]     = useState(false);
 
-  const realShiftInfo = getShiftInfo();
+  /* 🔴 กะถูก "ตรึง" ตอนโหลดหน้า (QC 05/10) — เดิมคำนวณใหม่ทุก render
+     ⇒ หัวหน้ากะเช้าเปิดหน้าค้าง แล้วกดบันทึกหลัง 20:00 = save ทำงานเป็น "กะดึก" ทั้งที่ข้อมูลบนจอเป็นของกะเช้า
+     ⇒ `isBooked` อ่าน otBookings (ว่าง) ⇒ **ยกเลิกจองรถ OT คืนพรุ่งนี้ของทุกคนบนจอ** เงียบๆ
+     ตอนนี้: รายชื่อ/จองรถ/บันทึก ใช้กะเดียวกับที่โหลดมาเสมอ · กะจริงเปลี่ยน = แถบเตือน + ปุ่มโหลดกะใหม่ (ไม่สลับให้เอง
+     เพราะจะทิ้งสิ่งที่กรอกค้างไว้) */
+  const [realShiftInfo, setRealShiftInfo] = useState(getShiftInfo);
+  const [shiftChanged, setShiftChanged]   = useState(null);   // ข้อมูลกะใหม่เมื่อเวลาจริงข้ามกะไปแล้ว
+  useEffect(() => {
+    const t = setInterval(() => {
+      const now = getShiftInfo();
+      setShiftChanged(now.shift !== realShiftInfo.shift || now.workDateStr !== realShiftInfo.workDateStr ? now : null);
+    }, 60000);
+    return () => clearInterval(t);
+  }, [realShiftInfo]);
   const shiftInfo = previewNight
     ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
     : realShiftInfo;
@@ -164,7 +177,7 @@ export default function Checkin() {
   }, []);
 
   useEffect(() => { loadCompanyCalendar().then(() => setCalLoaded(true)); }, []);
-  useEffect(() => { fetchData(); }, [previewNight, calLoaded]);
+  useEffect(() => { fetchData(); }, [previewNight, calLoaded, realShiftInfo]);
 
   // 🤝 ค้นหาพนักงานทั้งโรงงานสำหรับยืมตัว (debounce 350ms — ค้นด้วยชื่อ/รหัสอย่างน้อย 2 ตัวอักษร)
   useEffect(() => {
@@ -660,11 +673,11 @@ export default function Checkin() {
           ), 'จองรถ OT ล่วงหน้า');
         }
         if (toUnbookExtra.length) {
-          await supabase.from('ot_night_bookings')
+          checkWrite(await supabase.from('ot_night_bookings')
             .delete()
             .eq('work_date', d)
             .eq('shift', otShift)
-            .in('employee_id', toUnbookExtra);
+            .in('employee_id', toUnbookExtra), 'ยกเลิกจองรถ OT ล่วงหน้า');
         }
       }
     }
@@ -1350,6 +1363,21 @@ export default function Checkin() {
         ) : null)}
         {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
       </div>
+
+      {shiftChanged && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
+          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
+          fontSize: 13, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, flexWrap: 'wrap',
+        }}>
+          ⏰ เวลาข้ามเข้า {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว — หน้านี้ยังเป็นรายชื่อ{realShiftInfo.label} ({realShiftInfo.workDateStr})
+          · กดบันทึกตอนนี้ = บันทึกของกะเดิม (ถูกต้องถ้ายังกรอกกะเดิมอยู่)
+          <button onClick={() => { setPreviewNight(false); setShiftChanged(null); setRealShiftInfo(getShiftInfo()); }}
+            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #f59e0b', background: 'transparent', color: '#f59e0b', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
+            โหลดรายชื่อกะใหม่ (สิ่งที่ยังไม่บันทึกจะหาย)
+          </button>
+        </div>
+      )}
 
       {previewNight && (
         <div style={{
