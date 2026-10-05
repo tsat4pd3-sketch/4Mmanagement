@@ -16,7 +16,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
-import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -995,6 +995,13 @@ export default function ProductMaster() {
                           🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
                         </span>
                       )}
+                      {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
+                      {rawAsOutputWarning(item.mat_no, item.is_operation) && (
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700 }}
+                          title={rawAsOutputWarning(item.mat_no, item.is_operation)}>
+                          ⚠ วัตถุดิบ ไม่ใช่ของที่ผลิตได้
+                        </span>
+                      )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
                       {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
                       {item.code && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
@@ -1400,7 +1407,7 @@ export default function ProductMaster() {
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -3260,7 +3267,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];

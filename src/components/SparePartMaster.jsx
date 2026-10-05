@@ -348,7 +348,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                 <tr key={p.id}>
                   <td style={td}>
                     {p.image_url
-                      ? <img src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
+                      ? <img loading="lazy" src={p.image_url} alt="" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(p.image_url, '_blank')} />
                       : <div style={{ width: 34, height: 34, borderRadius: 5, background: 'var(--bg3)', border: '1px dashed var(--border)', display: 'grid', placeItems: 'center', fontSize: 13, color: 'var(--muted)' }}>🔩</div>}
                   </td>
                   <td style={td}>
