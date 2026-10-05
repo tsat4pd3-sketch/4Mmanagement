@@ -201,7 +201,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button onClick={() => setForm(null)} style={btnSt}>ยกเลิก</button>
                     <button onClick={save} disabled={saving}
-                      style={{ ...btnSt, background: 'var(--accent)', color: '#08130a', border: 'none', fontWeight: 800, opacity: saving ? 0.6 : 1 }}>
+                      style={{ ...btnSt, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontWeight: 800, opacity: saving ? 0.6 : 1 }}>
                       {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                     </button>
                   </div>

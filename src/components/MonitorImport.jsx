@@ -291,7 +291,7 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
                 ยกเลิก
               </button>
               <button type="button" onClick={run} disabled={busy || !preview.made.length}
-                style={{ fontSize: 13, fontWeight: 700, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: '#08120a', border: 'none' }}>
+                style={{ fontSize: 13, fontWeight: 700, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                 {busy ? 'กำลังนำเข้า…' : `✅ ยืนยันนำเข้า ${preview.made.length} บอร์ด`}
               </button>
             </div>

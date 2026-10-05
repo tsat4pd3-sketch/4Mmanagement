@@ -244,7 +244,7 @@ export default function QrLabels() {
         </select>
         {canPrint && (
           <button onClick={handlePrint} disabled={!sel.size}
-            style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? '#08130c' : 'var(--muted)' }}>
+            style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? 'var(--accent-ink)' : 'var(--muted)' }}>
             🖨️ พิมพ์ป้าย ({sel.size})
           </button>
         )}

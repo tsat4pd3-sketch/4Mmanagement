@@ -356,7 +356,7 @@ export default function TransportMapEditor() {
             <button key={k} onClick={() => { setMode(k); setEdgeFrom(null); setSel(null); resetChain() }} style={btn(mode === k)}>{l}</button>
           ))}
           {mode === 'draw' && chainLast && (
-            <button onClick={resetChain} style={{ padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: '1.5px solid var(--accent)', background: 'var(--accent)', color: '#08130a' }}>✓ จบเส้น (Esc)</button>
+            <button onClick={resetChain} style={{ padding: '7px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: '1.5px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)' }}>✓ จบเส้น (Esc)</button>
           )}
           {mode === 'node' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
@@ -540,7 +540,7 @@ export default function TransportMapEditor() {
               {ok && <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 8 }}>→ 1 หน่วยผัง ≈ {(m / unitDist).toFixed(2)} ม. (ทั้งผังกว้าง ≈ {(m / unitDist * 100).toFixed(0)} ม.)</div>}
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
                 <button onClick={() => setScalePts([])} style={{ padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>เลือกจุดใหม่</button>
-                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 8, cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? '#08130a' : 'var(--muted)', border: 'none' }}>💾 บันทึก</button>
+                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 8, cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? 'var(--accent-ink)' : 'var(--muted)', border: 'none' }}>💾 บันทึก</button>
               </div>
             </div>
           </div>

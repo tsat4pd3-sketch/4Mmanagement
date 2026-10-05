@@ -179,7 +179,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
               onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) post(); }}
               style={{ flex: 1, fontSize: 13, resize: 'vertical', minHeight: 40, width: 'auto' }} />
             <button className="tbtn" onClick={post} disabled={posting || !body.trim()}
-              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', cursor: posting || !body.trim() ? 'default' : 'pointer', background: body.trim() ? 'var(--accent)' : 'var(--border2)', color: body.trim() ? '#08130a' : 'var(--muted)', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
+              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', cursor: posting || !body.trim() ? 'default' : 'pointer', background: body.trim() ? 'var(--accent)' : 'var(--border2)', color: body.trim() ? 'var(--accent-ink)' : 'var(--muted)', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
               {posting ? '...' : 'ส่ง'}
             </button>
           </div>

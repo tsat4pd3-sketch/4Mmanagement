@@ -687,6 +687,6 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
 
 const chip = (on) => ({
   fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)',
+  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

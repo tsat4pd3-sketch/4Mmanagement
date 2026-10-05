@@ -240,7 +240,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
             <button onClick={run} disabled={busy || !n}
               style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 8,
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,
-                background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
+                background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
               {busy ? 'กำลังบันทึก…' : `${nextLabel} ${fmt(n)} ใบ`}
             </button>
           </div>

@@ -582,7 +582,7 @@ function CycleModal({ rows, byName, byUid, onClose, onSaved }) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving || !valid} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: valid ? 'var(--accent)' : 'var(--bg3)', color: valid ? '#fff' : 'var(--muted)', cursor: valid ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+          <button onClick={save} disabled={saving || !valid} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: valid ? 'var(--accent)' : 'var(--bg3)', color: valid ? 'var(--accent-ink)' : 'var(--muted)', cursor: valid ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
         </div>
       </div>
     </div>
@@ -866,7 +866,7 @@ function DayModal({ sel, onClose, onCheck }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.eq.name ?? '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.eq.line_name ?? '—'} · {r.cycleText} · <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span></div>
                 </div>
-                <button onClick={() => onCheck(r.cl.equipment_id)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, border: 'none', background: 'var(--accent)', color: '#071008', cursor: 'pointer' }}>✓ ตรวจ</button>
+                <button onClick={() => onCheck(r.cl.equipment_id)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer' }}>✓ ตรวจ</button>
               </div>
             )
           })}

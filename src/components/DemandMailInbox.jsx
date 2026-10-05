@@ -105,7 +105,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
               open(r);
             }}
               style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
-                background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>
+                background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>
               {busy === r.id ? 'กำลังเปิด…' : '📥 เปิดเพื่อนำเข้า'}
             </button>
             <button type="button" onClick={() => skip(r)}
