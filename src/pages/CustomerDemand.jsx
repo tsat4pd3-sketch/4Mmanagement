@@ -462,7 +462,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           });
         });
       let cut = want - left;
-      let insertFailed = false;
+      let insertFailed = false, insertErrMsg = '';
       if (txns.length) {
         let { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
         // คอลัมน์ ref_shipment_id ยังไม่ถูก apply (42703) → ตัดสต็อกให้ได้ก่อน (งานหลักต้องไม่พัง)
@@ -472,7 +472,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
             .insert(txns.map(({ ref_shipment_id, ...t }) => t)));   // eslint-disable-line no-unused-vars
           if (!e2) toast.info('ตัดสต็อกแล้ว แต่ยังผูกกับรอบส่งไม่ได้ — ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment (แจ้ง admin)');
         }
-        if (e2) { cut = 0; insertFailed = true; toast.error('ส่งแล้วแต่ตัดสต็อกไม่สำเร็จ: ' + e2.message); }
+        if (e2) { cut = 0; insertFailed = true; insertErrMsg = e2.message; }   // ข้อความเดียวไปรวมที่ shipMsg (คืนสถานะได้/ไม่ได้)
       }
       // ขั้นที่หักสต็อกอาจไม่ใช่ "ส่งแล้ว" อีกต่อไป (SAP หักตอนเตรียมของ) → ข้อความต้องตรงกับขั้นที่เพิ่งกด
       const at = to === 'shipped' ? 'จบงาน' : (SHIP_STATUS[to]?.label || to);
@@ -487,8 +487,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           .update(back).eq('id', o.id).eq('status', to).select('id');
         reverted = !eRb && (rb?.length || 0) > 0;
         shipMsg = reverted
-          ? `🔴 ตัดสต็อก ${o.mat_no} ไม่สำเร็จ (ระบบ) — คืนสถานะใบเป็น "${SHIP_STATUS[o.status]?.label || o.status}" แล้ว กดใหม่อีกครั้ง`
-          : `🔴 ${at} ${o.mat_no} แล้ว — ตัดสต็อกไม่สำเร็จ (ระบบ) และคืนสถานะใบไม่ได้ ยอดคงเหลือยังไม่ถูกหัก · แจ้ง admin`;
+          ? `🔴 ตัดสต็อก ${o.mat_no} ไม่สำเร็จ (ระบบ) — คืนสถานะใบเป็น "${SHIP_STATUS[o.status]?.label || o.status}" แล้ว กดใหม่อีกครั้ง · ${insertErrMsg}`
+          : `🔴 ${at} ${o.mat_no} แล้ว — ตัดสต็อกไม่สำเร็จ (ระบบ) และคืนสถานะใบไม่ได้ ยอดคงเหลือยังไม่ถูกหัก · แจ้ง admin · ${insertErrMsg}`;
       } else if (cut <= 0) {
         // ยอดคลังไม่ขยับ → ยอดคงเหลือจะสูงกว่าความจริงไปเรื่อยๆ ต้องบอกให้รู้ว่าติดตรงไหน
         // แยก 2 สาเหตุที่คนละวิธีแก้: จับคู่เลขไม่ได้ (แก้ master) vs จับคู่ได้แต่ของไม่เคยเข้าคลัง (แก้การปิดออเดอร์ผลิต)

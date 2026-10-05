@@ -6,7 +6,7 @@
    ห้ามแก้เทสนี้ให้ผ่านด้วยการกลับไปหาร elapsed ดิบ — นั่นคือบั๊กที่แก้ไปแล้ว */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { computeLiveOee, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks } from '../oee.js';
+import { computeLiveOee, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, halfDayBreakIntervals } from '../oee.js';
 
 const WD = '2026-09-01';
 const OPEN = new Date(`${WD}T08:00:00`).getTime();
@@ -168,4 +168,24 @@ test('ot_scope: กะสั้นที่ไม่แตะนโยบาย 
   assert.equal(brkFor(540), 80, 'เลิก 17:00 — ยังไม่ถึง 5ส. 17:10 ด้วยซ้ำ');
   // เลิก 18:00 = ทำโอ (แตะเบรค OT 17:30 เต็ม 30 นาที) ⇒ ทิ้ง 5ส.(ไม่ทำโอ) · ยังไม่ถึง 5ส.(ทำโอ) 19:40
   assert.equal(brkFor(600), 110, '10+10+50+10 + เบรค OT 30 — ไม่มี 5ส. ทั้งสองรอบ');
+});
+
+/* ── halfDayBreakIntervals (QC 05/10) — ช่วงพักบนกริดครึ่งวันของบอร์ดไทม์ไลน์ ─────────────
+   เดิม 3 จอก๊อปสูตรเอง ไม่กรอง ot_scope ⇒ พัก 5ส.(ไม่ทำโอ) กับพักโอขึ้นพร้อมกัน */
+test('halfDayBreakIntervals — กะเช้า 08→20 = กะทำโอ ทิ้ง no_ot · กะดึกหลังเที่ยงคืนลงวันถัดไป · กรองกะ', () => {
+  const at = (d, hm) => new Date(`${d}T${hm}:00`).getTime();
+  const pol = [
+    { shift: 'day', process_type: 'common', ot_scope: 'always', start_time: '11:50:00', duration_min: 50 },
+    { shift: 'day', process_type: 'common', ot_scope: 'no_ot', start_time: '17:10:00', duration_min: 20 },
+    { shift: 'day', process_type: 'common', ot_scope: 'ot', start_time: '17:30:00', duration_min: 30 },
+    { shift: 'night', process_type: 'common', ot_scope: 'always', start_time: '02:30:00', duration_min: 50 },
+    { shift: 'day', process_type: 'welding', ot_scope: 'always', start_time: '09:00:00', duration_min: 5 },
+  ];
+  const am = halfDayBreakIntervals({ policies: pol, half: { key: 'am', startMs: at(WD, '08:00') } });
+  assert.deepEqual(am, [[at(WD, '11:50'), at(WD, '12:40')], [at(WD, '17:30'), at(WD, '18:00')]],
+    'ไม่มี 17:10 (no_ot) · ไม่มีพักเฉพาะ welding (ไม่รู้กระบวนการ = common เท่านั้น) · ไม่มีพักกะดึก');
+  const pm = halfDayBreakIntervals({ policies: pol, half: { key: 'pm', startMs: at(WD, '20:00') } });
+  assert.deepEqual(pm, [[at('2026-09-02', '02:30'), at('2026-09-02', '03:20')]]);
+  assert.equal(halfDayBreakIntervals({ policies: pol, half: { key: 'am', startMs: at(WD, '08:00') }, processType: 'welding' }).length, 3);
+  assert.deepEqual(halfDayBreakIntervals({ policies: pol, half: null }), []);
 });

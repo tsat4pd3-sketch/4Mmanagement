@@ -7,11 +7,11 @@ import MatLabel from '../components/MatLabel';
 import Page from '../components/Page';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { usePolling } from '../utils/usePolling';
+import { visibleInterval } from '../utils/usePolling';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { orderDonePcs } from '../utils/planLots';
 import { RATE, LIVE } from '../utils/refreshRates';
-import { coalesce } from '../utils/liveRefresh';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
@@ -158,19 +158,27 @@ export default function FlowTower() {
   }, [workDate]);
 
   useEffect(() => { loadDivisions().then(setDivs); }, []);
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.ANALYTIC);
-  /* เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
-     🔴 2026-09-15 — เดิมผูก `load` เข้า handler ตรงๆ **ไม่มี debounce/เพดานเลย**
-        ⇒ ทุกครั้งที่ใครแตะใบผลิตในโรงงาน จอนี้โหลดใหม่ทันที (วันทำงานยุ่ง = รัวไม่จำกัด)
-        ใส่ coalesce(LIVE.BOARD) ดู src/utils/liveRefresh.js */
+  /* 🔁 รีเฟรช = realtime เป็นช่องทางหลัก + poll ที่ "ข้ามรอบเมื่อไม่มีอะไรเปลี่ยน" (กฎเขียน DB ข้อ 8 · QC 05/10)
+     เดิม usePolling ยิงเต็ม 11 คิวรีทุก 20 นาทีตลอด 24 ชม. ทั้งที่ไม่มีใครแตะอะไร + โหลดซ้ำ 2 รอบตอนเปิดหน้า
+     · ใบผลิต/กะ → touch + โหลด (coalesce LIVE.BOARD — เดิม 2026-09-15 ผูก load ตรงไม่มีเพดาน)
+     · ledger สต็อก/ใบสั่งผลิตลูก → touch อย่างเดียว (ถี่มาก — ให้ tick ถัดไปโหลดทีเดียว)
+     ⚠️ hard floor = RATE.SLOW ไม่ใช่ LIVE.FLOOR: ออเดอร์ลูกค้า/ใบสั่งซื้อ/ใบเบิก/ใบขอเติม
+        **ไม่อยู่ใน publication realtime** (เช็ค pg_publication_tables 05/10) ⇒ ต้องมีรอบโหลดของมันเอง */
   useEffect(() => {
-    const bump = coalesce(load, LIVE.BOARD);
+    const g = makeIdleGate(RATE.SLOW);
+    const run = () => { g.loaded(); return load(); };
+    const bump = coalesce(run, LIVE.BOARD);
+    const onOrder = () => { g.touch(); bump(); };
+    const onTouch = () => g.touch();
+    run();
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) run(); }, RATE.ANALYTIC);
     const ch = liveChannel(supabaseDR, 'flow-tower')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
-      .subscribe();
-    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'line_stock_transactions' }, onTouch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'child_lot_requests' }, onTouch)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
+    return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
   const setLot = async (row) => {

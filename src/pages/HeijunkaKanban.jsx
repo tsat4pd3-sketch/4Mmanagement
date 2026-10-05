@@ -1994,14 +1994,16 @@ export default function HeijunkaKanban() {
       // demand ระดับ parent ต่อ session: ใช้ prod_orders ก่อน, session ไหนไม่มี order → fallback kanban_targets
       // opened_at ใช้จัดสรร demand เข้ารอบจัดส่ง (targets ไม่มีเวลาสแกน → เกลี่ยทุกรอบแบบ heijunka)
       /* 🔴 สถานะ "ใช้ไปแล้ว" ตาม SPENT_STATUSES (utils/shiftCapacity.js) — QC 05/10
-         · cancelled / imported = ไม่ใช่ demand ของกะนี้ (imported = ใบต้นทางที่ถูกรับไปกะอื่น — นับที่ใบปลายทาง)
-         · carry_over = ส่งยอดที่เหลือไปเป็นใบใหม่กะถัดไปแล้ว ⇒ นับเฉพาะที่ทำไปจริงในกะนี้ (qty_actual)
-           เดิมนับเต็ม qty ⇒ ยอดที่เหลือถูกนับ 2 ที่ (ใบนี้ + ใบใหม่) · วัด 05/10: 10 ใบ qty 1,130 ทำจริง 854 */
-      const activeOrders = (orders || []).filter(o => o.status === 'carry_over' || !SPENT_STATUSES.includes(o.status));
+         · cancelled = ไม่ใช่ demand
+         · carry_over / imported = ยอดที่เหลือถูกยกไปเป็นใบใหม่ (กะถัดไป/ใบที่รับเข้า) แล้ว
+           ⇒ ใบนี้นับเฉพาะที่ทำไปจริงในกะนี้ (`qty_actual`) — กติกาเดียวกับ obeyaYear/DailyReport
+           เดิมนับเต็ม qty ⇒ ยอดที่เหลือถูกนับ 2 ที่ (ใบนี้ + ใบใหม่) · วัด 05/10: carry_over 10 ใบ qty 1,130 ทำจริง 854 · imported 919 ใบ qty 66,254 ทำจริง 3,932 */
+      const partialStatus = (st) => st === 'carry_over' || st === 'imported';
+      const activeOrders = (orders || []).filter(o => partialStatus(o.status) || !SPENT_STATUSES.includes(o.status));
       const sessionsWithOrders = new Set(activeOrders.map(o => o.session_id));
       const dem = [];
       activeOrders.forEach(o => {
-        const q = o.status === 'carry_over' ? (Number(o.qty_actual) || 0) : o.qty;
+        const q = partialStatus(o.status) ? (Number(o.qty_actual) || 0) : o.qty;
         if (!q) return;
         dem.push({
           session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: q,

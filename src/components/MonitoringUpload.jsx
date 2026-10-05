@@ -18,7 +18,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import fetchAllRows from '../utils/fetchAllRows';
-import { parseMonitoringWorkbook, monitoringToRecords, sheetReport } from '../utils/monitoringSheet';
+import { parseMonitoringWorkbook, monitoringToRecords, sheetReport, stockAdjustPlan } from '../utils/monitoringSheet';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
@@ -33,15 +33,6 @@ const monthKeyOf = (d) => String(d || '').slice(0, 7);
 const fmt = (n) => (Number(n) || 0).toLocaleString();
 const CHUNK = 400;   // กันคำขอยาวเกินเพดาน proxy (กฎเหล็กการเขียน DB ข้อ 5)
 
-/* ส่วนต่างสต็อก = ยอดในไฟล์ − ยอดปัจจุบัน (ต่อไลน์+พาร์ท) · 0 = ไม่ต้องลง */
-function stockPlanOf(recStock, stkRows, norm) {
-  const have = {};
-  (stkRows || []).forEach(s => { have[`${s.line_name}|${norm(s.mat_no)}`] = Number(s.qty_on_hand) || 0; });
-  return (recStock || []).map(s => {
-    const cur = have[`${s.line_name}|${norm(s.mat_no)}`] || 0;
-    return { ...s, have: cur, delta: s.qty - cur };
-  }).filter(s => s.delta !== 0);
-}
 const readStock = () => fetchAllRows(
   supabaseDR, 'line_stock_summary', 'line_name, mat_no, qty_on_hand', q => q.order('line_name').order('mat_no'));
 
@@ -106,7 +97,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
       /* สต็อก: คิดส่วนต่างจากยอดปัจจุบัน (ลง ledger เป็น adjust — ย้อนได้ ตรวจได้) */
       const { data: stkRows, error: stkErr } = await readStock();
       if (stkErr) { toast.error(`อ่านยอดคงเหลือไม่สำเร็จ: ${stkErr.message} — ยังไม่เขียนอะไร`); setBusy(false); return; }
-      const stockPlan = stockPlanOf(rec.stock, stkRows, norm);
+      const stockPlan = stockAdjustPlan(rec.stock, stkRows, norm);
 
       /* LOT/Packing: เทียบกับ kanban_standards — แสดงอย่างเดียว ไม่เขียน */
       const { data: kbRows, error: kbErr } = await fetchAllRows(
@@ -205,7 +196,7 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     if (ok && stockPlan.length) {
       const { data: freshStk, error: freshErr } = await readStock();
       if (freshErr) { toast.error(`อ่านยอดคงเหลือล่าสุดไม่สำเร็จ — ยังไม่ปรับสต็อก: ${freshErr.message}`); ok = false; }
-      const plan = ok ? stockPlanOf(stockPlan, freshStk, norm) : [];
+      const plan = ok ? stockAdjustPlan(stockPlan, freshStk, norm) : [];
       stockDone = plan.length;
       const tx = plan.map(s => ({
         line_name: s.line_name, mat_no: s.mat_no, part_name: s.part_name || nameOfMat[norm(s.mat_no)] || null,
@@ -217,7 +208,10 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     }
 
     setBusy(false);
-    if (!ok) { toast.error('นำเข้าไม่ครบ — ดูข้อความแดงด้านบน แล้วลองใหม่ (อัพซ้ำได้ ไม่เกิดแถวซ้ำ)'); return; }
+    /* 🔴 QC 05/10 — ข้อความเดิม "อัพซ้ำได้ ไม่เกิดแถวซ้ำ" ไม่จริงสำหรับสต็อก (ลงส่วนต่างพรีวิวซ้ำ = ซ้อน)
+       ตอนนี้จริงแล้ว (สต็อกคิดส่วนต่างจากยอดสด · FC/ออเดอร์ล้างของรอบก่อนแล้วลงใหม่ · ประวัติ/MIN upsert)
+       แต่ต้องบอกด้วยว่า **ระหว่างนี้ข้อมูลบางขั้นหายไปแล้ว** (FC/ออเดอร์ถูกล้างก่อนลงใหม่) — ห้ามปล่อยค้าง */
+    if (!ok) { toast.error('นำเข้าไม่ครบ — ข้อมูลบางขั้น (Forecast/ออเดอร์) อาจถูกล้างไปแล้วแต่ยังลงใหม่ไม่ครบ: กดยืนยันนำเข้าอีกครั้ง (ขั้นที่ลงไปแล้วจะถูกแทนที่ · สต็อกคิดส่วนต่างจากยอดล่าสุด จึงไม่ซ้อน)'); return; }
     toast.success(`นำเข้าสำเร็จ — FC ${rec.forecasts.length} · ออเดอร์ ${future.length} · ประวัติ ${histUniq.length} · MIN ${rec.levels.length} · สต็อก ${stockDone}`
       + (stockDone < stockPlan.length ? ` (อีก ${stockPlan.length - stockDone} รายการตรงไฟล์อยู่แล้ว)` : ''));
     setPreview(null);

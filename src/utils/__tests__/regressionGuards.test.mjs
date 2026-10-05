@@ -81,6 +81,17 @@ const RULES = [
     allow: { 'src/utils/useDieSetKinds.js': 'ตัวโหลดทะเบียน — ใช้ค่าสำรองเฉพาะตอนตารางยังไม่มี/ก่อนโหลดเสร็จ' },
   },
   {
+    id: 'timeline-break-intervals-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับสูตรวางช่วงพักบนกริดครึ่งวันที่ก๊อปเอง — กรองกะด้วย `p.shift === 'day' && half.key === 'am'`
+       (การหา "ชื่อพัก" จาก start_time เพื่อทำ tooltip ไม่โดน — ไม่ได้สร้างช่วงเวลา) */
+    re: /\.shift\s*===\s*'day'\s*&&\s*\w+\.key\s*===\s*'am'/g,
+    why: 'บอร์ดไทม์ไลน์ 3 จอ (Dashboard · /management · Heijunka) เคยก๊อปสูตรช่วงพักเอง ไม่กรอง ot_scope/process '
+       + '⇒ พัก 5ส.(ไม่ทำโอ) 17:10 กับพักโอ 17:30/19:40 ขึ้นพร้อมกัน คิวการ์ดถูกดันเกินจริง (QC 05/10)',
+    fix: 'ใช้ `halfDayBreakIntervals({ policies, half })` จาก src/utils/oee.js (ผ่าน breakIntervalsIn ที่เดียว)',
+    allow: {},
+  },
+  {
     id: 'master-cache-swallow',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
