@@ -57,6 +57,18 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'pm-checkpoints-no-delete-all',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการลบจุดตรวจ/รูปทั้งชุดด้วยคีย์แม่ (checklist_id / jig_id) — pattern "ลบหมดแล้ว insert ใหม่" */
+    re: /from\(['"](jig_checkpoints|jig_images)['"]\)\s*\.delete\(\)\s*\.eq\(['"](checklist_id|jig_id)['"]/g,
+    why: '`inspection_results.checkpoint_id` เป็น ON DELETE CASCADE ⇒ กดบันทึกรายการตรวจ PM 1 ครั้ง (ลบทั้งชุดแล้ว insert ใหม่) '
+       + '= **ประวัติผลตรวจของใบนั้นหายถาวร** + `fixture_points.checkpoint_id/image_id` หลุดเป็น null ทุกครั้ง '
+       + '(QC 05/10: fixture_points 18 จุด เหลือผูก checkpoint 0 · image 1)',
+    fix: 'sync แบบแก้ตาม id: update แถวที่มี id · insert แถวใหม่ · delete เฉพาะ id ที่ถูกถอดจริง '
+       + '(มีประวัติผลตรวจต้องยืนยันก่อน) — ดู handleSave ใน src/pages/PMSetup.jsx',
+    allow: { 'src/lib/pmChecklists.js': 'คัดลอกทับแผนกอื่น (ผู้ใช้กด "ทับ" เอง) — เช็คก่อนว่าปลายทางไม่มีประวัติผลตรวจ มี = โยน error ไม่ลบ' },
+  },
+  {
     id: 'die-set-kinds-from-registry',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
