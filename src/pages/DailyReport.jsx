@@ -787,7 +787,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         (ประหยัดกว่ากรองฝั่ง client เพราะไม่กิน egress ของ realtime ด้วย)
         · effect นี้มี `selSession` ใน deps อยู่แล้ว → สลับกะ = subscribe ใหม่ด้วย filter ใหม่ ถูกต้อง
         · `production_sessions` **กรองไม่ได้** — หน้านี้แสดง "รายการกะทั้งวัน" ต้องรู้เมื่อมีกะใหม่
-          จึงคงไว้ทั้งตาราง แต่ผ่านเพดานของ ② เหมือนกัน
+          จึงคงไว้ทั้งตาราง **แต่ต้องใช้เพดานคนละตัว (`LIVE.SHIFT`) ไม่ใช่ ② —** ดูเหตุผลที่ `bumpSess`
         · ⚠️ **DELETE กรองด้วย session_id ไม่ได้** — ตารางเป็น REPLICA IDENTITY default (`d`)
           แถว `old` ของ DELETE จึงมีแค่ primary key ⇒ filter จะตัด event ทิ้งทั้งหมด
           (เคยพลาดง่ายมาก: ลบ DT แล้วจอคนอื่นไม่อัปเดต หาสาเหตุไม่เจอเพราะ insert/update ปกติดี)
@@ -803,10 +803,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const sid = selSession?.id;
     /* กะอื่นปิด/ส่งขอปิด = `production_sessions` ขยับ (subscribe ตัวนี้ไม่กรอง) ⇒ **ทางเดียว**
        ที่ยอดค้างกะก่อนเปลี่ยนได้จากภายนอก — เกาะรอบนี้พอ ไม่ต้องคิดใหม่ทุก bump ของใบผลิต */
+    /* 🔴 2026-10-05 — เพดานของ bump นี้ต้องเป็น `LIVE.SHIFT` (5 นาที) **ไม่ใช่ LIVE.PAGE**
+       subscribe ตัวนี้กรองไลน์ไม่ได้ (ดู ① ข้างบน) ⇒ ทุกกะที่เปิด/ปิดทั้งโรงงานถึงทุกเครื่อง
+       แต่เนื้อที่จอใช้ (รายการกะทั้งวัน + ยอดค้างกะก่อน) เปลี่ยนไม่กี่ครั้งต่อกะ
+       วัดจริง 02/10: 2 คิวรีนี้รวม 6,310 req/วัน = **คู่ที่หนักที่สุดของทั้งระบบ** ทั้งที่
+       แทบไม่มีรอบไหนได้ข้อมูลใหม่ · เหตุผลเต็ม + ตัวเลข ดู LIVE.SHIFT ใน utils/refreshRates.js */
     const bumpSess = coalesce(() => {
       load();
       if (sid) loadCarryOrders(sid, selSession.line_name);
-    }, LIVE.PAGE);
+    }, LIVE.SHIFT);
     const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
     const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
     const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
