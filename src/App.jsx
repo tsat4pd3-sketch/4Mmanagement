@@ -492,7 +492,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         marginBottom: 2, cursor: clickable ? 'pointer' : 'default', userSelect: 'none',
       }}>
       {userAvatarUrl ? (
-        <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+        <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
         /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
            เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง

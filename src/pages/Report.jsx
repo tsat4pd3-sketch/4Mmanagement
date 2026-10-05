@@ -2511,7 +2511,7 @@ ${catHeaderCells}
                   <div key={emp.id} className="card" style={{ padding: '10px 12px', cursor: 'pointer' }} onClick={() => setSelectedEmp(emp)}>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       {emp.image_url
-                        ? <img src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
+                        ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
                         : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                       }
                       <div>
@@ -2593,7 +2593,7 @@ ${catHeaderCells}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
-                          ? <img src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
+                          ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
                           : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
@@ -3286,7 +3286,10 @@ const Thumb = ({ src }) => {
   if (!src || failed) {
     return <div style={{ ...box, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👤</div>;
   }
-  return <img src={src} alt="" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
+  /* loading="lazy" — Thumb อยู่ในตารางยาว (รายการเช็คชื่อ/ทักษะ) · วัดจริง 02/10: bucket
+     employee-photos ถูกดึง 1,213 ครั้ง/วัน = 22.7 MB ทั้งที่มีรูปจริงแค่ 226 ใบ (เฉลี่ย 5.4 รอบ/ใบ)
+     เปิดหน้าทีเดียวโหลดทุกแถวทั้งที่คนเห็นบนจอ ~10 แถว — ดู docs/EGRESS-AUDIT-2026-09-17.md */
+  return <img src={src} alt="" loading="lazy" onError={() => setFailed(true)} style={{ ...box, objectFit: 'cover' }} />;
 };
 
 const StatusBadge = ({ ok, label }) => (

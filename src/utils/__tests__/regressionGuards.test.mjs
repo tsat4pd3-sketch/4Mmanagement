@@ -1189,6 +1189,40 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ list-thumb-needs-lazy (2026-10-05) ────────────────────────────────────────────
+   รูป "ย่อในลิสต์" (กว้าง/สูง ≤ 64px) ที่ชี้ไป Supabase Storage **ต้องมี `loading="lazy"`**
+   เพราะ thumbnail 34-52px ดาวน์โหลด**ไฟล์เต็มใบ ~19-90 KB** เสมอ (ระบบนี้ไม่มี image transform
+   — เป็นฟีเจอร์ของ Pro เท่านั้น) ⇒ เปิดหน้าทีเดียวโหลดทุกแถว ทั้งที่คนเห็นบนจอ ~6-10 แถว
+   วัดจริง 02/10/2026 (storage egress รวม 74 MB/วัน = 1.4 GB/เดือน ≈ 28% ของโควต้า Free ทั้งก้อน):
+     jig-images 24.2 MB · employee-photos 22.7 MB · mtn-images 17.1 MB · signatures 7.0 MB
+   ดูรายนาทีแล้วเป็น **การเปิดหน้าแกลเลอรี**: 47 รูป = 4.08 MB ในนาทีเดียวจากเครื่องเดียว
+   ⚠️ ห้ามใส่ `loading="lazy"` กับรูปที่มี `ref=`/`onLoad=` (ผังโรงงาน/ผังชั้นวาง/โมดัลซูม) —
+      พวกนั้นต้องวัดขนาดจริงตอนโหลดเพื่อวาง marker ⇒ lazy = คำนวณพิกัดจากรูปที่ยังไม่มา */
+test('🛡️ list-thumb-needs-lazy — รูปย่อในลิสต์ (≤64px) ต้องมี loading="lazy"', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /<img\b[\s\S]{0,600}?\/>/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const tag = m[0];
+      if (tag.includes('loading=')) continue;
+      if (/\bref=|onLoad=/.test(tag)) continue;              // รูปที่ต้องวัดขนาด — ห้าม lazy
+      if (!/\bsrc=\{/.test(tag)) continue;                   // โลโก้ import มา = อยู่ในบันเดิล ไม่ใช่ egress
+      // ขนาดเล็กทั้ง width และ height = thumbnail ในลิสต์ (รูปเต็ม/โมดัลใช้ maxWidth/maxHeight)
+      const w = /(?:^|[^x])\bwidth:\s*(\d+)\b/.exec(tag);
+      const h = /(?:^|[^x])\bheight:\s*(\d+)\b/.exec(tag);
+      if (!w || !h) continue;
+      if (Number(w[1]) > 64 || Number(h[1]) > 64) continue;
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}  ${tag.replace(/\s+/g, ' ').slice(0, 100)}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    'รูปย่อในลิสต์ที่ยังไม่มี loading="lazy" — ใส่ `loading="lazy"` ที่แท็ก <img> '
+  + '(รูปที่ต้องวัดขนาดด้วย ref/onLoad ยกเว้นให้แล้ว) · เหตุผล + ตัวเลขดูคอมเมนต์เหนือเทสนี้');
+});
+
 /* ── 🛡️ unfiltered-session-bump-needs-shift-tier (2026-10-05) ─────────────────────────
    subscribe `production_sessions` ของ DailyReport **กรองด้วยไลน์ไม่ได้** (หน้านี้ต้องแสดง
    "รายการกะทั้งวัน" จึงต้องรู้เมื่อไลน์อื่นเปิดกะใหม่) ⇒ ทุก event ของทั้งโรงงาน ~20 ไลน์
