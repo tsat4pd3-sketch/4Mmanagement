@@ -60,7 +60,7 @@ import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } fr
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite } from '../utils/dbWrite';
 import MachineSelect from '../components/MachineSelect';
@@ -488,13 +488,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [ln, pr, dt, ks, bp, mc, dft] = await Promise.all([
-      cachedMaster('production_lines:dr', async () => (await loadLinesRes()).data || []),
-      cachedMaster('dr_products:full', async () => (await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name')).data || []),
-      cachedMaster('dr_downtime_types:active', async () => (await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order')).data || []),
-      cachedMaster('kanban_standards:full', async () => (await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no')).data || []),
-      cachedMaster('break_policies:active', async () => (await supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order')).data || []),
-      cachedMaster('machines:full', async () => (await supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order')).data || []),
-      cachedMaster('dr_defect_types:active', async () => (await supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order')).data || []),
+      cachedMaster('production_lines:dr', async () => mrows(await loadLinesRes())),
+      cachedMaster('dr_products:full', async () => mrows(await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'))),
+      cachedMaster('dr_downtime_types:active', async () => mrows(await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'))),
+      cachedMaster('kanban_standards:full', async () => mrows(await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'))),
+      cachedMaster('break_policies:active', async () => mrows(await supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'))),
+      cachedMaster('machines:full', async () => mrows(await supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'))),
+      cachedMaster('dr_defect_types:active', async () => mrows(await supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'))),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
     ]);
 

@@ -16,7 +16,7 @@ import imageCompression from 'browser-image-compression';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { usePerms } from '../utils/usePerms';
 import useIsMobile from '../utils/useIsMobile';
 import { QA_STAGES } from '../utils/qaStages';
@@ -333,7 +333,7 @@ export default function QAInspectionSetup() {
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
       const [prods, { data: boms }] = await Promise.all([
         /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
-        cachedMaster('dr_products:qa', async () => (await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name')).data || []),
+        cachedMaster('dr_products:qa', async () => mrows(await supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('name'))),
         supabaseDR.from('bom_items').select('id, product_id, mat_no, part_no, part_name, supplier').eq('is_active', true).order('part_name'),
       ]);
       if (!alive) return;
