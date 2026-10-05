@@ -24,6 +24,7 @@ import {
   summarizeOtMonth, otCoverage, daysOfMonth, prevMonthKey, projectTotal, monthDayStats,
 } from '../utils/otSummary';
 import { exportOtMonthlyExcel } from '../lib/otExportExcel';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, Tooltip, Legend, Cell,
@@ -154,7 +155,10 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  // เปลี่ยนช่วงวันระหว่างโหลด (หลายหน้า × fetchAllPages = นาน) = คำตอบช่วงเก่าห้ามทับจอ (กฎ DB ข้อ 4 · 05/10)
+  const begin = useLatestRequest();
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('daily_production_logs')
@@ -162,6 +166,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['work_date', 'id'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRows(data || []);
@@ -305,7 +310,9 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  const begin = useLatestRequest();   // กันคำตอบช่วงเก่าทับจอ (กฎ DB ข้อ 4 · 05/10)
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('station_assignment_logs')
@@ -313,6 +320,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['employee_id', 'work_date', 'started_at'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRaw(data || []);

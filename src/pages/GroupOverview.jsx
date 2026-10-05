@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
-import { wavg } from '../utils/oee';
+import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
+import { valueInk, statusOf } from '../utils/statusTone';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
@@ -44,7 +47,7 @@ function reviewDefaultDate() {
 const shiftDate = (s, delta) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + delta); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
 const fmtNum = (n) => (n == null ? '0' : Math.round(n).toLocaleString('en-US'));
-const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
+/* สี OEE เทียบเป้ากลุ่มจริง (oeeTargetForLines + statusOf) — ประกาศใน component · 05/10 เดิม 80/65 ตายตัว */
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -162,6 +165,10 @@ export default function GroupOverview() {
   const [usedDate, setUsedDate] = useState(null);      // วันที่ที่มีข้อมูลจริง (อาจถอยหลังจาก date)
   const [baseLines, setBaseLines] = useState([]);      // aggregate จริงต่อไลน์บนสุด (= ฐานของ TSAT4)
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');          // โหลดไม่สำเร็จ ≠ "ไม่มีข้อมูล" — ต้องเขียนบนจอ (05/10)
+  const [lineMeta, setLineMeta] = useState([]);        // ทะเบียนไลน์ (หาไลน์แม่ → เป้า OEE กลุ่ม)
+  const [oeeTargets, setOeeTargets] = useState(null);  // null = ยังไม่รู้เป้า ⇒ สี OEE "ตัดสินไม่ได้" (ห้ามถอยไป 80/65)
+  const begin = useLatestRequest();
   const [sel, setSel] = useState({ axis: 'map', node: null, comp: null });  // axis: map=โซนพื้นที่ · biz=กลุ่มธุรกิจ · node/comp=null คือระดับ TSG
   const [showHow, setShowHow] = useState(false);
   const [ltFilter, setLtFilter] = useState(null);   // กรองเฉพาะไลน์ประเภทนี้ทั้งกลุ่ม (null = ทุกประเภท)
@@ -170,12 +177,20 @@ export default function GroupOverview() {
 
   /* ── โหลดข้อมูลจริงของวันที่เลือก (ถ้าไม่มีกะเลย ถอยหลังหาไม่เกิน 7 วัน เพื่อให้ตัวอย่างมีข้อมูลโชว์เสมอ) ── */
   const load = useCallback(async () => {
-    setLoading(true);
+    const live = begin();   // เปลี่ยนวันระหว่างโหลด = คำตอบวันเก่าห้ามทับจอ (กฎ DB ข้อ 4)
+    setLoading(true); setLoadErr('');
+    /* 05/10 (QC audit): เดิมอ่านแค่ data + `catch {}` เงียบ ⇒ คิวรีล้ม = "ไม่พบข้อมูลการผลิต" (จอโกหก)
+       → ทุกคิวรีหลักเช็ค error แล้วโยน ⇒ จอเขียนว่าโหลดไม่สำเร็จ */
+    const need = (res, label) => { if (res?.error) throw new Error(`โหลด${label}ไม่สำเร็จ: ${res.error.message || res.error}`); return res?.data; };
     try {
-      const [plRes, empRes] = await Promise.all([
+      const [plRes, empRes, tg] = await Promise.all([
         loadLinesRes(),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
+        fetchOeeTargets(),
       ]);
+      need(plRes, 'ทะเบียนไลน์'); need(empRes, 'รายชื่อพนักงาน');
+      if (!live()) return;
+      setLineMeta(plRes.data || []); setOeeTargets(tg.byGroup);
       const parentOf = {}; (plRes.data || []).forEach(l => { if (l.parent_line_name) parentOf[l.name] = l.parent_line_name; });
       const topOf = (n) => { let cur = n, g = 0; while (parentOf[cur] && g++ < 6) cur = parentOf[cur]; return cur; };
       const lineOfId = {}; (plRes.data || []).forEach(l => { lineOfId[l.id] = l.name; });
@@ -193,11 +208,13 @@ export default function GroupOverview() {
 
       let d = date, sessions = null;
       for (let i = 0; i < 8; i++) {
-        const { data } = await supabaseDR.from('production_sessions')
-          .select('id, line_name, shift, status, oee, shift_min').eq('work_date', d);
+        // work_date + start_time = กรอบกะ ⇒ dtMinBySession ตัด downtime ที่ทับพักก่อนคิดน้ำหนัก wLoad
+        const data = need(await supabaseDR.from('production_sessions')
+          .select('id, line_name, shift, status, oee, shift_min, work_date, start_time').eq('work_date', d), 'ข้อมูลกะ');
         if (data?.length) { sessions = data; break; }
         d = shiftDate(d, -1);
       }
+      if (!live()) return;
       if (!sessions) { setBaseLines([]); setUsedDate(null); setLoading(false); return; }
       setUsedDate(d);
 
@@ -208,8 +225,8 @@ export default function GroupOverview() {
       }));
 
       // คนเข้างานของวันนั้น (พนักงานผูกไลน์แม่ตามกฎกำลังคน — roll up ให้ไลน์บนสุดอยู่ดี)
-      const { data: logs } = await supabase.from('daily_production_logs')
-        .select('employee_id, is_present').eq('work_date', d);
+      const logs = need(await supabase.from('daily_production_logs')
+        .select('employee_id, is_present').eq('work_date', d), 'บันทึกเช็คชื่อ');
       const presentSet = new Set((logs || []).filter(l => l.is_present).map(l => l.employee_id));
       (empRes.data || []).forEach(e => {
         const ln = lineOfId[e.line_id]; if (!ln) return;
@@ -217,13 +234,17 @@ export default function GroupOverview() {
       });
 
       const sessIds = sessions.map(s => s.id);
-      const [{ data: orders }, { data: dts }, { data: defs }, pairMap] = await Promise.all([   // loadPairMap() คืน map/null ไม่ใช่ { data }
+      const [ordRes, dtRes, defRes, pairMap, , brk] = await Promise.all([   // loadPairMap() คืน map/null ไม่ใช่ { data }
         supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
         supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
         supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
         loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09) — เดิมดึงทั้งตารางทุกรอบโหลด
         loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 5 ไม่เข้า destructure แค่ให้ cache พร้อม
+        loadBreakPolicies(),   // ล้ม = โยน ⇒ จอบอกโหลดไม่สำเร็จ (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ)
       ]);
+      const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), defs = need(defRes, 'ของเสีย');
+      // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนทับพัก · กฎเหล็ก OEE downtime ทับพัก)
+      const effBySess = dtMinBySession(sessions, dts || [], brk || []);
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
       const pairOf = (m) => pairMap?.[m] ?? null;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} — จะกลายเป็น "รู้แล้วว่าไม่มีคู่")
       const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
@@ -238,20 +259,21 @@ export default function GroupOverview() {
         os.forEach(od => {
           if (!od.mat_no) return;
           const e = perMat[od.mat_no] || (perMat[od.mat_no] = { mat_no: od.mat_no, target: 0, produced: 0 });
-          e.target += od.qty_target ?? od.qty ?? 0;
+          e.target += orderPlanQty(od);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
           e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
         });
         const nullOs = os.filter(od => !od.mat_no);
         const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
-        o.target += pt.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+        o.target += pt.target + nullOs.reduce((a, od) => a + orderPlanQty(od), 0);
         o.actual += pt.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
 
-        let planned = 0;
+        // dtMin = "เครื่องหยุดกี่นาที" (นาทีเต็ม) · planned = น้ำหนัก (ตัดส่วนทับพักแล้ว) — ห้ามสลับ 2 ชุดนี้
         (dtBySess[s.id] || []).forEach(x => {
-          const mins = x.duration_min != null ? (Number(x.duration_min) || 0)
+          if (x.dr_downtime_types?.category === 'planned') return;
+          o.dtMin += x.duration_min != null ? (Number(x.duration_min) || 0)
             : (x.started_at && x.ended_at ? Math.max(0, (new Date(x.ended_at) - new Date(x.started_at)) / 60000) : 0);
-          if (x.dr_downtime_types?.category === 'planned') planned += mins; else o.dtMin += mins;
         });
+        const planned = effBySess[s.id]?.planned || 0;
         o.plannedMin += planned;
         o.ng += ngBySess[s.id] || 0;              // NG ยึด defect_logs เสมอ (คอลัมน์ session เป็น rollup)
         if (s.oee != null) {
@@ -274,12 +296,24 @@ export default function GroupOverview() {
           oee: o.oeeWLoad > 0 ? +(o.oeeWSum / o.oeeWLoad).toFixed(1) : (o.oeeN ? +(o.oeeSum / o.oeeN).toFixed(1) : null),
         }))
         .sort((a, b) => b.target - a.target);
+      if (!live()) return;
       setBaseLines(rows);
-    } catch {
-      setBaseLines([]); setUsedDate(null);
-    } finally { setLoading(false); }
-  }, [date]);
+    } catch (e) {
+      console.error('[GroupOverview] โหลดไม่สำเร็จ:', e);
+      if (!live()) return;
+      setBaseLines([]); setUsedDate(null); setLoadErr(e?.message || String(e));
+    } finally { if (live()) setLoading(false); }
+  }, [date, begin]);
   useEffect(() => { load(); }, [load]);
+
+  /* เป้า OEE — กติกาเดียวกับ OBEYA (oeeTargetForLines) · ระดับบริษัท/กลุ่ม (รวมบริษัทจำลอง) ใช้เป้าของไลน์จริงทั้งชุด
+     ไลน์รายตัวใช้เป้ากลุ่มของมันเอง · เป้าโหลดไม่ได้ = null ⇒ สี "ตัดสินไม่ได้" */
+  const plantTarget = useMemo(
+    () => oeeTargetForLines(baseLines.map(l => l.line), lineMeta, oeeTargets)?.oee ?? null,
+    [baseLines, lineMeta, oeeTargets]);
+  const oeeCol = useCallback(
+    (o, names = null) => valueInk(o, names ? (oeeTargetForLines(names, lineMeta, oeeTargets)?.oee ?? null) : plantTarget),
+    [lineMeta, oeeTargets, plantTarget]);
 
   /* ── ปั้นต้นไม้องค์กร: TSG → กลุ่มธุรกิจ → บริษัท → ไลน์ (จากฐานจริงชุดเดียว) ───────── */
   const tree = useMemo(() => {
@@ -294,8 +328,12 @@ export default function GroupOverview() {
         target, actual, pct, oee,
         dtMin: sum(l => l.dtMin), ng: sum(l => l.ng),
         present: sum(l => l.present), head: sum(l => l.head),
-        status: (pct != null && pct < 80) || (oee != null && oee < 65) ? 'bad'
-          : (pct != null && pct < 95) || (oee != null && oee < 80) ? 'ok' : 'good',
+        // OEE เทียบเป้ากลุ่ม (statusOf) ไม่ใช่ 80/65 ตายตัว · เป้าไม่รู้ = ไม่เอา OEE มาตัดสิน (ไม่เดา)
+        status: (() => {
+          const t = statusOf(oee, plantTarget);
+          return (pct != null && pct < 80) || t === 'bad' ? 'bad'
+            : (pct != null && pct < 95) || t === 'warn' ? 'ok' : 'good';
+        })(),
       };
     };
 
@@ -357,7 +395,7 @@ export default function GroupOverview() {
 
     const allLines = allComps.flatMap(c => c.lines.map(l => ({ ...l, comp: c })));
     return { groups, zones, allComps, allLines, typeCount, hiddenComps, ...aggregate(allLines) };
-  }, [baseLines, usedDate, date, ltFilter]);
+  }, [baseLines, usedDate, date, ltFilter, plantTarget]);
 
   /* ── ขอบเขตที่กำลังดูอยู่ (breadcrumb) — แกน map (โซน) หรือ biz (กลุ่มธุรกิจ) ── */
   const axisNodes = sel.axis === 'map' ? tree.zones : tree.groups;
@@ -505,7 +543,13 @@ export default function GroupOverview() {
       )}
 
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {!loading && !baseLines.length && (
+      {!loading && loadErr && (
+        <div role="alert" style={{ ...card, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+          🔴 โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอนี้ยังเชื่อไม่ได้ (ไม่ใช่ "ไม่มีผลิต")
+          <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, wordBreak: 'break-all' }}>{loadErr}</div>
+        </div>
+      )}
+      {!loading && !loadErr && !baseLines.length && (
         <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>
           ไม่พบข้อมูลการผลิตย้อนหลัง 7 วันจากวันที่เลือก — ลองเลือกวันอื่น
         </div>
@@ -767,7 +811,7 @@ export default function GroupOverview() {
                         <td style={TDR}>{fmtNum(l.target)}</td>
                         <td style={TDR}>{fmtNum(l.actual)}</td>
                         <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
-                        <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                        <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
                         <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
                         <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                         <td style={TDR}>{fmtNum(l.present)}/{fmtNum(l.head)}</td>
@@ -818,7 +862,7 @@ export default function GroupOverview() {
                       <td style={{ ...TD, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ltShort(l.ltype)}</td>
                       <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
                       <td style={{ ...TDR, color: pctCol(lp) }}>{fmtNum(l.actual)}/{fmtNum(l.target)} ({lp}%)</td>
-                      <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                      <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
                       <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
                       <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                     </tr>

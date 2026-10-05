@@ -1,4 +1,4 @@
-import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { fmtAxis, tooltipProps, CELL_BAR_FILL, focusDomain, shortTick } from '../utils/chartAxis';
 import { ALL } from '../utils/filterLabels';
 /* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (SQDCM + ลูปปิด countermeasure) ═══════════════════════
    ออกแบบ: docs/OBEYA-DESIGN.md · KPI ทั้งหมด: src/utils/obeyaKpi.js (ห้ามคำนวณซ้ำในไฟล์นี้)
@@ -56,7 +56,8 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { loadLinesRes } from '../utils/useProductionLines';
-import { avgOeeTarget, sumDefectQty, QBIN_EMBED } from '../utils/oee';
+import { oeeTargetForLines, sumDefectQty, orderPlanQty, orderProducedQty, isTrialDefect, QBIN_EMBED } from '../utils/oee';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { notifyEvent } from '../utils/notifyEvent';
 import TimeRangeBar from './TimeRangeBar';
@@ -182,11 +183,16 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      ข้อมูลก้อนนี้ก้อนเดียว ถ้าไม่รู้ว่ามันล้ม ไฟจะขึ้น **เขียว "ไม่มีเครื่องหยุด"** ทั้งที่แปลว่าโหลดไม่ได้
      — ว่างเพราะไม่มีเหตุการณ์ กับ ว่างเพราะคิวรีพัง ต้องไม่หน้าตาเหมือนกัน (กฎความซื่อสัตย์ของจอ) */
   const [dtBad, setDtBad] = useState(false);
+  // ของเสียโหลดไม่ได้ = ครึ่งหนึ่งของ C หาย ⇒ ไฟ C ต้องเทา "โหลดไม่ได้" เหมือน dtBad (05/10)
+  const [dfBad, setDfBad] = useState(false);
   const [loading, setLoading] = useState(true);
+  // เปลี่ยนเดือน/ปีระหว่างโหลด = คำตอบของช่วงเก่าห้ามทับจอ (กฎ DB ข้อ 4 · QC 05/10)
+  const begin = useLatestRequest();
 
   /* ⚠️ deps ต้องเป็น primitive ล้วน (กฎเหล็ก DB ข้อ 9) — ห้ามใส่ array/object
      scope ส่วนงานกรองทีหลังใน useMemo ไม่ใช่ในคิวรี เพื่อไม่ให้สลับส่วนงาน = ยิง DB ใหม่ทุกครั้ง */
   const loadBoard = useCallback(async () => {
+    const live = begin();
     setLoading(true);
     try {
       const sRes = await fetchAllPages(() => supabaseDR.from('production_sessions')
@@ -214,10 +220,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           .gte('work_date', from).lte('work_date', to), { orderBy: ['work_date'] }),
       ]);
 
+      if (!live()) return;
       setSess(sRes.rows); setPrevSess(pRes.rows);
       setDts(dtRes.rows); setDefs(dfRes.rows); setOrders(ordRes.rows); setAttend(atRes.rows);
       // โหลดไม่ครบ = ตัวเลขต่ำกว่าจริง **ต้องบอกบนจอ** ห้ามเงียบ (บทเรียนแท็บแนวโน้ม /oee-analytics)
-      setDtBad(!!(dtRes.error || dtRes.truncated));
+      // กะโหลดไม่ได้ = ไม่มี id ไปดึง downtime ⇒ "ว่าง" ของ downtime ก็เชื่อไม่ได้เช่นกัน
+      setDtBad(!!(dtRes.error || dtRes.truncated || sRes.error || sRes.truncated));
+      setDfBad(!!(dfRes.error || dfRes.truncated || sRes.error || sRes.truncated));
       const bad = [sRes, dtRes, dfRes, ordRes, pRes, atRes].find(r => r.error || r.truncated);
       setLoadWarn(bad ? (bad.error || 'ข้อมูลบางส่วนถูกตัด (ช่วงยาวเกิน) — ตัวเลขอาจต่ำกว่าจริง') : null);
 
@@ -225,11 +234,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       if (mats.length) {
         /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
         const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
+        if (!live()) return;
         if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
         setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
-    } finally { setLoading(false); }
-  }, [from, to, prev.from, prev.to]);
+    } finally { if (live()) setLoading(false); }
+  }, [from, to, prev.from, prev.to, begin]);
 
   useLiveBoard(loadBoard, {
     tables: ['production_sessions'], topic: 'obeya-board', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
@@ -241,13 +251,18 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
      · RPC คืน Σ อย่างเดียว — การหาร/ถ่วง/ตัดสินอยู่ใน obeyaYear.js (ห้ามย้ายสูตรลง SQL) */
   const [yr, setYr] = useState(null);           // { sessions, downtime, defects, orders, attend }
   const loadYear = useCallback(async () => {
+    const live = begin();
     setLoading(true);
     try {
       const [dr, at] = await Promise.all([
         supabaseDR.rpc('obeya_year_rollup', { p_from: from, p_to: to }),
         supabase.rpc('obeya_attendance_rollup', { p_from: from, p_to: to }),
       ]);
+      if (!live()) return;
       const bad = dr.error || at.error;
+      /* RPC ฝั่ง DR ล้ม = ไม่มีทั้ง downtime และของเสีย ⇒ C/Pareto ต้องเทา "โหลดไม่ได้"
+         เดิมโหมดปีไม่เคยตั้งธงนี้ ⇒ ล้มแล้วขึ้นเขียว "ไม่มีความสูญเสีย/ไม่มีเครื่องหยุด" (QC 05/10) */
+      setDtBad(!!dr.error); setDfBad(!!dr.error);
       setLoadWarn(bad ? `โหลดสรุปรายปีไม่สำเร็จ: ${bad.message || bad}` : null);
       const j = dr.data || {};
       setYr({
@@ -258,11 +273,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       if (mats.length) {
         /* audit 05/10: เดิม `.in(mats.slice(0,300))` ตัดเงียบ + ไม่อ่าน error ⇒ แกน C บอก "N พาร์ทยังไม่มีต้นทุน" ทั้งที่คิวรีล้ม */
         const pm = await fetchByIds(mats, c => supabaseDR.from('parts_master').select('mat_no, material_cost, standard_cost').in('mat_no', c));
+        if (!live()) return;
         if (pm.error) setLoadWarn(w => w || `โหลดต้นทุน/ชิ้น (parts_master) ไม่สำเร็จ — แกน C คิดเงินไม่ครบ: ${pm.error.message || pm.error}`);
         setPartCost(Object.fromEntries((pm.rows || []).map(r => [r.mat_no, r])));
       } else setPartCost({});
-    } finally { setLoading(false); }
-  }, [from, to]);
+    } finally { if (live()) setLoading(false); }
+  }, [from, to, begin]);
   useLiveBoard(loadYear, {
     tables: ['production_sessions'], topic: 'obeya-year', tier: LIVE.BOARD, rate: RATE.ANALYTIC,
     enabled: isYear,
@@ -328,11 +344,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   // ── เป้า OEE ของขอบเขตที่เลือก (เฉลี่ยรายกรุ๊ป — ไม่เก็บระดับ section ใน DB) ──────
   const target = useMemo(() => {
     const names = isYear ? ySess.map(s => s.line) : fSess.map(s => s.line_name);
-    const groups = [...new Set(names.map((nm) => {
-      const l = lines.find(x => x.name === nm);
-      return l?.parent_line_name || nm;
-    }).filter(Boolean))];
-    return avgOeeTarget(groups.map(g => targets[g] || null));
+    // กติกากลางตัวเดียวกับ FactoryMap/GroupOverview/DeptDashboard (oee.js oeeTargetForLines · 05/10)
+    return oeeTargetForLines(names, lines, targets);
   }, [fSess, ySess, isYear, lines, targets]);
 
   // ── KPI รายแกน (คำนวณใน obeyaKpi.js ทั้งหมด) ────────────────────────────────────
@@ -347,9 +360,10 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     const byDay = {};
     const dayOf = Object.fromEntries(fSess.map(s => [s.id, s.work_date]));
     fOrders.forEach((o) => {
-      const t = Number(o.qty) || 0;
-      const p = o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0)
-        : ['carry_over', 'imported'].includes(o.status) ? (o.qty_actual ?? 0) : 0;
+      /* เป้า/ยอดผ่านสูตรกลาง (oee §6 / §6.1) — เดิม Σqty ทุกสถานะ ⇒ ใบยกยอดนับเป้า 2 รอบ + นับใบยกเลิก
+         (ยอดผลิต vs แผน 71% ทั้งที่งานจบครบ) · ยอดของใบ open = qty_actual ที่กรอกระหว่างกะ (เดิมให้ 0) */
+      const t = orderPlanQty(o);
+      const p = orderProducedQty(o);
       plan += t; made += Number(p) || 0;
       const d = dayOf[o.session_id];
       if (!d) return;
@@ -380,6 +394,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       (byDay[wd] || (byDay[wd] = { k: wd, dt: 0, ng: 0 })).dt += v;
     });
     fDefs.forEach((d) => {
+      /* งานทดลอง/ประเภทที่กันออกจาก %Q ไม่ใช่ความสูญเสียของการผลิต — กติกาเดียวกับโหมดปี
+         (`ng − trial_ng`) และแผ่น Q (QC 05/10: เดิมเดือนนับ ปีไม่นับ ⇒ C เดือน ≠ ผลรวมในปี) */
+      if (isTrialDefect(d)) return;
       const mat = d.prod_orders?.mat_no;
       const { unit } = defectUnitCost(mat ? partCost[mat] : null);
       if (!unit) { if (mat) noCost.add(mat); return; }
@@ -390,7 +407,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     });
     const series = Object.values(byDay).sort((a, b) => a.k.localeCompare(b.k))
       .map(b => ({ ...b, v: Math.round(b.dt + b.ng) }));
-    return axisCost({ dtBaht, ngBaht, series, missingRate: noRate.size, missingCost: noCost.size });
+    return axisCost({ dtBaht, ngBaht, series, missingRate: noRate.size, missingCost: noCost.size, sessions: fSess.length });
   }, [fDts, fDefs, fSess, lines, ccRates, partCost]);
 
   // ── โหมดปี: KPI จากผลรวมรายเดือน (obeyaYear.js) — โครงผลลัพธ์เดียวกับโหมดเดือน ─────────
@@ -414,8 +431,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       if (!unit) { if (d.mat) noCost.add(d.mat); return; }
       rows.push({ m: d.m, dt: 0, ng: ((Number(d.ng) || 0) - (Number(d.trial_ng) || 0)) * unit });
     });
-    return axisCostYear({ rows, year, missingRate: noRate.size, missingCost: noCost.size });
-  }, [yDts, yDefs, year, lines, ccRates, partCost]);
+    return axisCostYear({ rows, year, missingRate: noRate.size, missingCost: noCost.size, sessions: ySess.length });
+  }, [yDts, yDefs, ySess, year, lines, ccRates, partCost]);
   const paretoY = useMemo(() => paretoYear(yDts), [yDts]);
 
   /* จอวาดจากชุดเดียว — โหมดปีกับโหมดวันให้โครงผลลัพธ์เหมือนกัน (value/target/state/note/series) */
@@ -451,21 +468,24 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   /* ── ไฟสถานะของ 3 แผ่นที่ "ไม่มีเป้าให้เทียบ" — ต้องเขียนเองแทน statusWhy() ────────────
      กฎความซื่อสัตย์ของจอ: ห้ามแต่งเป้าขึ้นมาเองเพื่อให้ไฟติดสวย และห้ามปล่อยเทาเฉยๆ
      โดยไม่บอกว่าเทาเพราะอะไร — ทุกดวงต้องตอบได้ว่า "สีนี้เพราะอะไร" ใน tooltip */
+  const nSess = isYear ? ySess.length : fSess.length;   // 0 = ช่วงนี้ยังไม่มีกะ ⇒ "ไม่มีข้อมูล" ไม่ใช่ "ไม่มีความสูญเสีย"
   const costStat = useMemo(() => {
-    if (dtBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุดล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
-    if (kC.value == null) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีความสูญเสียที่คิดเป็นเงินได้' };
+    if (dtBad || dfBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุด/ของเสียล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
+    if (kC.value == null) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: kC.note || 'ช่วงนี้ยังไม่มีความสูญเสียที่คิดเป็นเงินได้' };
+    if (!nSess) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีกะที่ปิดแล้ว — ยังตัดสินไม่ได้ว่ามีความสูญเสียหรือไม่' };
     if (kC.value <= 0) return { status: 'good', label: 'ไม่มีความสูญเสีย', why: 'ช่วงนี้ไม่มีเครื่องหยุดนอกแผน/ของเสียที่คิดเป็นเงินได้' };
     // ⚠️ แดงนี้ = "มีเงินหายไป" ไม่ใช่ "เกินเป้า" — ยังไม่มีใครตั้งเพดานค่าความสูญเสียไว้
     return { status: 'bad', label: 'มีความสูญเสีย', why: `เสียไป ${fmtBaht(kC.value)} (ยังไม่ได้ตั้งเพดานค่าความสูญเสีย — แดงนี้แปลว่า "มีเงินหายไป" ไม่ใช่ "เกินเป้า")` };
-  }, [kC.value, dtBad]);
+  }, [kC.value, kC.note, dtBad, dfBad, nSess]);
 
   const paretoStat = useMemo(() => {
     if (dtBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุดล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
+    if (!pareto.total && !nSess) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีกะที่ปิดแล้ว — "ไม่มีเครื่องหยุด" กับ "ยังไม่มีข้อมูล" ต้องไม่หน้าตาเหมือนกัน' };
     if (!pareto.total) return { status: 'good', label: 'ไม่มีเครื่องหยุด', why: 'ช่วงนี้ไม่มีเวลาเครื่องหยุดนอกแผนเลย' };
     // แผ่นนี้ตอบ "ทำไม" ไม่ใช่ KPI ของตัวเอง ⇒ ไม่มีเป้าของ "นาทีที่หยุด" ให้ตัดสิน = เทาเสมอ
     const top = pareto.rows[0];
     return { status: 'none', label: 'ไม่มีเป้า', why: `หยุดรวม ${pareto.total.toLocaleString()} นาที · อันดับ 1 "${top.name}" ${top.min.toLocaleString()} นาที — ยังไม่ได้ตั้งเป้าเวลาหยุด จึงตัดสินผ่าน/ไม่ผ่านไม่ได้` };
-  }, [pareto, dtBad]);
+  }, [pareto, dtBad, nSess]);
 
   const actionStat = useMemo(() => {
     if (health.empty) return { status: 'none', label: 'ยังไม่มีใบ', why: 'ยังไม่มีใครบันทึกสิ่งที่ตกลงกันว่าจะแก้สักใบ — ตามงานไม่ได้' };
@@ -945,7 +965,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 {/* แกนตัวเลขซ่อนเพื่อประหยัดที่ในแผ่น A4 ⇒ ต้องเขียนตัวเลขที่ปลายแท่งแทน (กราฟไม่มีตัวเลข = อ่านไม่ได้ · chartsweep) */}
                 <BarChart data={pareto.rows} layout="vertical" margin={{ top: 2, right: 44, left: 2, bottom: 2 }}>
                   <XAxis type="number" tick={axisTick} hide />
-                  <YAxis type="category" dataKey="name" tick={{ ...axisTick, fontSize: fs(9.5) }} width={Math.round(cw * 0.42)} />
+                  {/* ชื่อสาเหตุยาวกว่าแกน = Recharts ตัดขึ้นบรรทัดใหม่ แถวล่างสุดล้นขอบล่างของ SVG (chartsweep 05/10: "Sensor / Ree…" ยื่น 3px) ⇒ ตัดให้อยู่บรรทัดเดียวด้วย shortTick ตามความกว้างแกน · ชื่อเต็มอยู่ใน tooltip */}
+                  <YAxis type="category" dataKey="name" tick={{ ...axisTick, fontSize: fs(9.5) }} width={Math.round(cw * 0.42)}
+                    tickFormatter={shortTick(Math.max(8, Math.floor((Math.round(cw * 0.42) - 8) / (fs(9.5) * 0.8))))} />
                   <Tooltip {...chartTip} formatter={v => [`${v} นาที`, 'เวลาที่เสีย']} />
                   <Bar dataKey="min" fill="#fb923c" radius={[0, 3, 3, 0]}>
                     <LabelList dataKey="min" position="right" formatter={v => `${Math.round(v).toLocaleString()} น.`}

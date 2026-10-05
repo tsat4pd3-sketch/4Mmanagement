@@ -11,10 +11,14 @@ import { getLineFamilyNames, getLeafLineNames, getAncestorNames, isLeafLine } fr
 import LineSelect, { lineOptions } from '../components/LineSelect';
 import { getWorkDate } from '../utils/workDate';
 import { cachedMaster } from '../utils/masterCache';
+import { loadBreakPolicies, loadCtProducts, loadCtKanban } from '../utils/oeeMasters';
 import { fetchByIds } from '../utils/fetchByIds';
 import { usePolling } from '../utils/usePolling';
 import RATE from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import { mrows } from '../utils/masterCache';
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -79,9 +83,14 @@ export default function LineOeeBoard() {
   const [everLines, setEverLines] = useState(null); // null = ยังโหลดไม่เสร็จ — อย่าเพิ่งกรองด้วยเงื่อนไขนี้
   useEffect(() => {
     (async () => {
-      const rows = await cachedMaster('production_sessions:line_names_ever', async () =>
-        (await supabaseDR.from('production_sessions').select('line_name')).data || []);
-      setEverLines(new Set((rows || []).map(r => r.line_name).filter(Boolean)));
+      /* 05/10 (QC audit): เดิม `select('line_name')` เปล่า = ตัดที่ 1,000 แถว (กะทั้งระบบเกินไปนานแล้ว)
+         ⇒ ไลน์ที่เปิดกะหลังแถวที่ 1,000 "ไม่เคยผลิต" หายจาก dropdown · และ `.data || []` = ล้มแล้ว cache
+         ลิสต์ว่าง 4 ชม. ⇒ แบ่งหน้าครบ + โยนเมื่อล้ม (cache ไม่ถูกทับ) · ล้ม = ไม่กรองด้วยเงื่อนไขนี้ (ดีกว่าหาย) */
+      try {
+        const rows = await cachedMaster('production_sessions:line_names_ever:v2', async () =>
+          mrows(await fetchAllRows(supabaseDR, 'production_sessions', 'line_name', q => q.order('id'))));
+        setEverLines(new Set((rows || []).map(r => r.line_name).filter(Boolean)));
+      } catch (e) { console.error('[LineOeeBoard] โหลดประวัติไลน์ไม่สำเร็จ — ไม่กรองไลน์ที่ไม่เคยเปิดกะ', e); }
     })();
   }, []);
   /* 🔴 2026-09-24 บั๊กที่ user จับได้ต่อจากรอบ 08-25: dropdown มีแต่ **ไลน์แม่** (9-10 ตัว)
@@ -112,8 +121,10 @@ export default function LineOeeBoard() {
   const setLine = (v) => { const n = new URLSearchParams(sp); n.set('line', v); setSp(n, { replace: true }); };
 
   /* ── โหลดข้อมูลทั้งหน้าต่าง (ไลน์เดียว 14 วัน — payload เล็ก) · poll RATE.BOARD ── */
+  const begin = useLatestRequest();   // เปลี่ยนไลน์ระหว่างโหลด = คำตอบของไลน์เก่าห้ามทับจอ (กฎ DB ข้อ 4)
   const load = useCallback(async () => {
     if (!line || !lines.length) return;
+    const live = begin();
     const today = getWorkDate();
     /* 🔴 ไลน์ที่ไม่มีลูก (leaf) = ดู **ของตัวเองอย่างเดียว**
        getLineFamilyNames คืน "ตัวเอง + สายบน" ด้วย ⇒ เลือก Laser GOR แล้วกะเก่าของไลน์แม่ GOR
@@ -127,6 +138,7 @@ export default function LineOeeBoard() {
       .select('id, line_name, work_date, shift, status, oee, oee_a, oee_p, oee_q, shift_min, actual_qty, start_time')
       .gte('work_date', from).lte('work_date', today).in('line_name', fam.length ? fam : [line])
       .order('id').limit(1000);
+    if (!live()) return;
     if (e1) { setData(null); setPartial(true); return; }
     const sessions = sess || [];
     const ids = sessions.map(s => s.id);
@@ -140,14 +152,13 @@ export default function LineOeeBoard() {
         .select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`)
         .in('session_id', c)),
       // master ผ่าน cache กลาง — key เดียวกับ FactoryMap = แชร์กัน ไม่ดึงซ้ำ (กฎ egress)
-      cachedMaster('dr_products:ct', async () =>
-        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
-      cachedMaster('kanban_standards:ct', async () =>
-        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      // ล้ม = null (loader กลางโยน ไม่ cache ลิสต์ว่างทับของดี) ⇒ ติดธง partial บอกบนจอ ห้ามถือว่า "ไม่มี CT/ไม่มีพัก"
+      loadCtProducts().catch(() => null),
+      loadCtKanban().catch(() => null),
       // นโยบายพัก — ต้องส่งเข้า computeLiveOee ไม่งั้น A/P สดไม่ตรงกับค่าที่ stamp ตอนปิดกะ (2026-09-14)
-      cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
+      loadBreakPolicies().catch(() => null),
     ]);
+    if (prods == null || kstds == null || breaks == null) bad = true;
     if (dtR.error || dtR.truncated || defR.error || defR.truncated) bad = true;
 
     // orders เฉพาะกะที่ยังเปิดของวันนี้ (สำหรับ OEE สด + ยอดระหว่างกะ)
@@ -165,15 +176,16 @@ export default function LineOeeBoard() {
        ⇒ เลือกไลน์ลูกแล้ว .eq(line) ได้ null → จอตกไป DEFAULT_TARGET 80.19 เงียบๆ ทั้งที่กรุ๊ปตั้ง 85.05
        ให้ไล่ขึ้นสายบนหาตัวที่ใกล้ที่สุด แล้ว**บอกบนจอว่าเป็นเป้าของกรุ๊ปไหน** (ห้ามยืมเงียบ) */
     const tgNames = [line, ...getAncestorNames(lines, line)];
-    const { data: tgRows } = await supabase.from('oee_targets')
+    const { data: tgRows, error: tgErr } = await supabase.from('oee_targets')
       .select('group_name, target_a, target_p, target_q').in('group_name', tgNames);
+    if (tgErr) bad = true;   // โหลดเป้าไม่ได้ ≠ "ไม่ได้ตั้งเป้า" — ห้ามตกไปเป้ามาตรฐานเงียบๆ
     const tgBy = Object.fromEntries((tgRows || []).map(r => [r.group_name, r]));
     const tgName = tgNames.find(n => tgBy[n]) || null;
     const tg = tgName ? { ...tgBy[tgName], inheritedFrom: tgName === line ? null : tgName } : null;
 
     // ── OEE สดของกะเปิดวันนี้ — util กลางตัวเดียวกับ FactoryMap/OEE Analytics ──
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
-    const procByMat = {}; const pairMap = {};
+    const procByMat = {}; const pairMap = prods ? {} : null;   // โหลดไม่ได้ = null (ไม่ยุบ) ห้าม {} (= รู้แล้วว่าไม่มีคู่)
     (prods || []).forEach(p2 => {
       procByMat[p2.mat_no] = p2.process_type;
       if (p2.pair_mat_no) pairMap[p2.mat_no] = p2.pair_mat_no;   // งานคู่ RH/LH (แม่พิมพ์คู่/gang die)
@@ -199,10 +211,11 @@ export default function LineOeeBoard() {
       });
     });
 
+    if (!live()) return;
     setPartial(bad);
     setData({ today, sessions, dts: dtR.rows, defs: defR.rows, ordBySess, dtBySess, ngBySess, liveBySess, target: tg || null, breaks: breaks || [] });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- linesKey แทน lines (ดูหมายเหตุด้านล่าง)
-  }, [line, linesKey]);
+  }, [line, linesKey, begin]);
 
   /* 🔴 2026-09-15 — ผูก deps ของตัวโหลดกับ "เนื้อ" (string) ไม่ใช่ identity ของ array
      array ใบใหม่เนื้อเดิม = ตัวโหลดเปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำฟรีๆ
