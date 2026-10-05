@@ -30,9 +30,18 @@
 | `sale` | 🚚 ขาย-จัดส่ง (Sales & Delivery) | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
-| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่ 2 หน้า: `/npi` + `/pe-docs`** (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
+| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่กลุ่มหน้า NM** (seed แรก: `/npi` + `/pe-docs` · ขอบเขตวันนี้ดูกล่อง 🧪 ใต้ตาราง) (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
+
+> **🧪 บัญชีทดลองของทีม New Model (2026-10-05 · คำขอ user *"ลองเทส function new model ที่จะไม่ยุ่งไม่กระทบกับงานหลักที่แมสอยู่"*)**
+> วันนี้ role นี้เปิด 5 หน้า: `/npi` · `/pe-docs` · `/nm-board` · `/program-update` · `/schema` (2 ตัวท้ายติดมากับ seed `enum_range` ของหน้ารวม — อ่านอย่างเดียว ไม่มีของแมสให้แก้)
+> · 🔴 **`pe:edit` = คีย์เดียวที่แตะงานแมสได้จริง ⇒ ปิดไว้ (`allowed=false`) 2026-10-05** — `/pe-docs` เก็บ PFC/PFMEA/Control Plan **ของจริงที่ใช้ผลิตอยู่** และสิทธิ์เป็น *ต่อ role ไม่ใช่ต่อพาร์ท* ⇒ แก้แถวของพาร์ทที่แมสอยู่ได้ · `pe_*` ถูกอ่านต่อที่ QualityControl (ลูป 8D) · OrderTrace · VSM · AdoptionOutlook
+>   ⇒ ทีม NM **เปิดอ่าน** /pe-docs ได้ แต่แก้ไม่ได้ · PFMEA พาร์ทใหม่เดินผ่าน `/npi` + ลูปเสนอเข้า master (`pe_master_proposals`) ตามปกติ · จะเปิดกลับ = ติ๊กที่ `/permissions` คลิกเดียว
+> · `page:/storage-maintenance` ปิดด้วย (เครื่องมือดูแลระบบหลัก ไม่ใช่ฟังก์ชัน NM · ปุ่มลบจริงถูกกันด้วย `storage_maintain:run` ที่ role นี้ไม่มีอยู่แล้ว)
+> · **ปิดด้วย `allowed=false` ไม่ใช่ `delete`** — แถวหาย = หายจากจอ `/permissions` แล้ว user ต้องมา SQL ใหม่ทุกครั้ง (มีแค่ SQL Editor บนเว็บ)
+> · บัญชีทีม (ไม่ผูกพนักงานรายคน) ⇒ `account_kind = 'shared'` + `employee_id` ว่าง
+> · migration `20261005_engineer_nm_trim_pages.sql` — **apply แล้ว 2026-10-05**
 
 ### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
 
@@ -259,6 +268,26 @@
   "จะได้รับแจ้งเตือนของทุกส่วนงาน"
 - **⚠️ ผังยังไม่มีชั้น "ฝ่าย"** — `org_nodes` มี section 6 ตัวเป็น root ทั้งหมด จึงไม่มี "ฝ่าย" ให้เลือก
   (ดู `docs/IDENTITY-NOTIFY-DESIGN.md` §4.3 — ต้องเพิ่มโหนดฝ่ายก่อนถึงจะเลือกได้)
+
+### 🔒 ช่องที่ "ล็อกไว้" ต้องโชว์ค่าที่มีผลจริง + บอกทางออก (2026-09-25 · feedback user)
+
+**เกิดจริง:** ตีรณา (หัวหน้าแผนก Store) — ฐานพนักงาน `team='A'` แต่ `profiles.team` เป็น `null`
+⇒ ช่อง Team ใน `/add-user` ขึ้น **"— เลือก —"** ทั้งที่ป้ายข้างบนเขียนว่า *"· จากฐานพนักงาน"*
+แล้วกดแก้ก็ไม่ได้เพราะช่องถูก `disabled` ไว้ → *"เราจะลองแก้ในระบบก็คลิกไม่ได้"*
+
+2 อาการในที่เดียว:
+1. **จอโกหก** — ตัวตัดสินจริงอยู่ที่ `App.jsx`: `emp.team ?? profiles.team` (**ฐานพนักงานชนะเมื่อมีค่า**)
+   ⇒ ระบบมองว่าเธออยู่ทีม A อยู่แล้ว แต่จอบอกว่า "ยังไม่ได้ตั้ง"
+   🔴 **กฎ: ช่องที่ล็อกเพราะ "ค่ามาจากที่อื่น" ต้องคิดด้วยสูตรเดียวกับที่ระบบใช้จริง
+   ห้ามวาดค่าที่ค้างในตารางของจอตัวเอง** (แถบ "ตัวตนไม่ตรงกับฐานพนักงาน" ด้านบนช่วยไม่ได้
+   เพราะคนอ่านช่องตรงหน้าก่อนเสมอ)
+2. **ทางตัน** — บอกว่า "แก้ที่ฐานพนักงาน" ไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงเห็น
+   **มือถือไม่มีทางรู้เลย** ⇒ ตอนนี้มีลิงก์ **👥 ฐานข้อมูลพนักงาน →** ใต้ช่อง พาไปที่ตัวคนเลย
+   (`/operator?q=<รหัสพนักงาน>` — `empSearch` รับค่าตั้งต้นจาก `?q=` อ่านครั้งเดียวตอน mount
+   แล้วพิมพ์ทับได้ ไม่ผูก URL ต่อ)
+
+> 🔴 **ขยายผล:** ทุกที่ที่ `disabled` เพราะค่ามาจากทะเบียนอื่น ต้องมีครบ 2 อย่าง —
+> **ค่าที่มีผลจริง** + **ลิงก์ไปแก้ที่ต้นทาง** · ล็อกเฉยๆ = ผู้ใช้ติดตาย
 
 ### 🔴 "บัญชีของคน" บันทึกไม่ได้ถ้ายังไม่ผูกตัวตน (2026-09-23 · เกิดจริง)
 

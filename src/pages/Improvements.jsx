@@ -15,7 +15,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
 import { fetchByIds } from '../utils/fetchByIds';
 import { fmtDate } from '../utils/dateFormat';
-import { RATE_COMPONENTS, lineCostCenter, rateFor, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
+import { RATE_COMPONENTS, lineCostCenter, rateFor, rateIsFallback, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import PeChangeRequests from '../components/PeChangeRequests';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -377,11 +377,16 @@ export default function Improvements() {
     // ⚠️ ตัดกะที่ยัง `open` — กะเพิ่งเปิด 1 ชม. ถูกนับเป็น "วันผลิตเต็มวัน" ในตัวหาร
     //    ขณะที่ตัวตั้ง (ของเสีย/DT) มีแค่ชั่วโมงเดียว → อัตราต่อวันต่ำเกินจริง = ผลดูดีเกิน
     //    (pending_close = กะจบแล้วรออนุมัติ ข้อมูลครบ → นับได้) (QC audit 2026-08-20 · T2-7)
-    const { data: sessions } = await supabaseDR.from('production_sessions')
+    const { data: sessions, error: sessErr } = await supabaseDR.from('production_sessions')
       .select('id, work_date').eq('line_name', imp.line_name)
       .neq('status', 'open')
       .gte('work_date', from).lte('work_date', to);
+    /* ⚠️ คิวรีล้ม ≠ ไม่มีข้อมูล — จอต้องเขียนต่างกัน (QC 05/10 · กฎความซื่อสัตย์ของจอ) */
+    if (sessErr) return { noData: true, error: `โหลดกะผลิตไม่สำเร็จ: ${sessErr.message}` };
     if (!sessions?.length) return { noData: true };
+    /* fetchByIds คืน error/truncated — ห้ามกลืน: ผลก่อน/หลังจากข้อมูลไม่ครบ = % หลอกตา
+       เก็บไว้ใน `partial` ให้การ์ดเขียนว่า "ข้อมูลไม่ครบ" */
+    const partialOf = (res, what) => (res.error || res.truncated ? `${what}${res.error ? `: ${res.error}` : ' โหลดไม่ครบ'}` : null);
 
     const beforeIds = [], afterIds = [], beforeDays = new Set(), afterDays = new Set();
     sessions.forEach(s => {
@@ -406,10 +411,12 @@ export default function Improvements() {
          ใบที่ไม่มี DT ผูก = ไม่รู้นาทีเครื่องหยุด → นับ 0 + รายงานจำนวนใบ ห้ามเดา */
       const dtIds = [...bMO, ...aMO].map(m => m.source_downtime_id).filter(Boolean);
       const dtMin = {};
+      let dtPartial = null;
       if (dtIds.length) {
-        const { rows: dtRows } = await fetchByIds(dtIds, c =>
+        const dtRes = await fetchByIds(dtIds, c =>
           supabaseDR.from('downtime_logs').select('id, duration_min').in('id', c));
-        dtRows.forEach(d => { dtMin[d.id] = Number(d.duration_min) || 0; });
+        dtPartial = partialOf(dtRes, 'downtime ที่ผูกใบซ่อม');
+        dtRes.rows.forEach(d => { dtMin[d.id] = Number(d.duration_min) || 0; });
       }
       const sumMin = (arr) => Math.round(arr.reduce((a, m) => a + (dtMin[m.source_downtime_id] || 0), 0));
       const unlinked = (arr) => arr.filter(m => !m.source_downtime_id || dtMin[m.source_downtime_id] == null).length;
@@ -423,6 +430,7 @@ export default function Improvements() {
         beforeMin: sumMin(bMO), afterMin: sumMin(aMO),
         beforeMinUnlinked: unlinked(bMO), afterMinUnlinked: unlinked(aMO),
         beforeCost: sumCost(bMO), afterCost: sumCost(aMO),
+        partial: dtPartial,
       };
     }
 
@@ -430,14 +438,15 @@ export default function Improvements() {
     if (imp.problem_source === 'downtime') {
       // ⚠️ ห้าม .in('session_id', allIds) ตรงๆ — หน้าต่าง 90 วัน = หลายร้อยกะ → URL ยาวเกิน
       //    คิวรีล้มเหลวเงียบ แล้วผลก่อน/หลังจะเป็น 0 ทั้งคู่ = โปรเจคดูเหมือน "แก้หายสนิท" ทั้งที่วัดไม่ได้
-      rows = (await fetchByIds(allIds, c => {
+      const dtRes = await fetchByIds(allIds, c => {
         let q = supabaseDR.from('downtime_logs')
           .select('session_id, duration_min, machine_no, mat_no, dr_downtime_types(category)')
           .in('session_id', c);
         if (imp.problem_type_id) q = q.eq('downtime_type_id', imp.problem_type_id);
         if (imp.mat_no) q = q.eq('mat_no', imp.mat_no);
         return q;
-      })).rows;
+      });
+      rows = dtRes.rows;
       // กรองเครื่องฝั่ง client ด้วย normCode — .eq ตรงๆ จะพลาด log ที่พิมพ์เว้นวรรค ("RB- 107")
       if (imp.machine_no) rows = rows.filter(r => sameMc(r.machine_no, imp.machine_no));
       // นับเฉพาะ downtime "นอกแผน" เหมือน KPI หลัก (planned = นับสต็อก/ไม่มีแผนผลิต ไม่ใช่ loss)
@@ -452,16 +461,18 @@ export default function Improvements() {
         beforeCount: bRows.length, afterCount: aRows.length,
         beforePerDay: beforeDays.size ? sum(bRows) / beforeDays.size : 0,
         afterPerDay: afterDays.size ? sum(aRows) / afterDays.size : 0,
+        partial: partialOf(dtRes, 'downtime'),
       };
     }
     // defect: qty NG — กรองสินค้า (ถ้าระบุ) ผ่าน prod_orders.mat_no
-    rows = (await fetchByIds(allIds, c => {
+    const dfRes = await fetchByIds(allIds, c => {
       let q = supabaseDR.from('defect_logs')
         .select('session_id, qty_ng, prod_orders(mat_no)')
         .in('session_id', c);
       if (imp.problem_type_id) q = q.eq('defect_type_id', imp.problem_type_id);
       return q;
-    })).rows.filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
+    });
+    rows = dfRes.rows.filter(r => !imp.mat_no || r.prod_orders?.mat_no === imp.mat_no);
     const sum = (arr) => arr.reduce((a, r) => a + (Number(r.qty_ng) || 0), 0);
     const bRows = rows.filter(r => !idSetAfter.has(r.session_id));
     const aRows = rows.filter(r => idSetAfter.has(r.session_id));
@@ -479,6 +490,7 @@ export default function Improvements() {
       beforePerDay: beforeDays.size ? sum(bRows) / beforeDays.size : 0,
       afterPerDay: afterDays.size ? sum(aRows) / afterDays.size : 0,
       matBefore: perMat.before, matAfter: perMat.after,
+      partial: partialOf(dfRes, 'ของเสีย'),
     };
   }, [mtnOrders]);
 
@@ -505,6 +517,8 @@ export default function Improvements() {
     const missing = [];
     if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
     else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
+    /* ไม่มี rate ที่มีผลก่อนวันเริ่มโปรเจค → rateFor ถอยไปใช้ rate เก่าสุดที่มี — ต้องบอกว่าเป็น rate ของวันไหน (QC 05/10) */
+    else if (rateIsFallback(rate, imp.start_date)) missing.push(`ไม่มี activity rate ของ ${cc} ที่มีผลก่อนวันเริ่ม ${imp.start_date} — ใช้ rate ที่เริ่ม ${rate.effective_from} แทน (เงินอาจคลาดจากจริง)`);
     // ไม่มีกะปิดแล้วก่อนวันเริ่ม = ไม่มีฐานเทียบ — เดิม beforePerDay=0 ทำให้ขึ้น
     // "ต้นทุนเพิ่ม X บาท/วัน" ทั้งที่แค่ยังไม่มีข้อมูล (QC audit 2026-08-20 · T2-7)
     if (!r.beforeDays) {
@@ -599,7 +613,7 @@ export default function Improvements() {
     (async () => {
       for (const imp of visibleItems) {
         if (results[imp.id]) continue;
-        const r = await computeResult(imp).catch(() => ({ noData: true }));
+        const r = await computeResult(imp).catch(e => ({ noData: true, error: `คำนวณผลไม่สำเร็จ: ${e?.message || e}` }));
         if (cancelled) return;
         setResults(prev => ({ ...prev, [imp.id]: r }));
       }
@@ -1028,9 +1042,14 @@ export default function Improvements() {
                   {!r ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>กำลังคำนวณ...</div>
                   ) : r.noData ? (
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ยังไม่มีข้อมูลการผลิตในช่วงเทียบ</div>
+                    r.error
+                      ? <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700, marginTop: 6 }}>⚠️ {r.error} — ยังสรุปผลไม่ได้ (ไม่ใช่ "ไม่มีข้อมูล")</div>
+                      : <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ยังไม่มีข้อมูลการผลิตในช่วงเทียบ</div>
                   ) : (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {r.partial && (
+                        <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>⚠️ ข้อมูลไม่ครบ ({r.partial}) — ตัวเลขก่อน/หลังด้านล่างอาจต่ำกว่าจริง</div>
+                      )}
                       {/* ยังไม่ลงมือแก้ = ไม่มีแถบ "หลังแก้" ให้ดู (ช่วงนั้นคือช่วงที่ยังไม่ได้แก้อะไรเลย) */}
                       {[[started ? 'ก่อนแก้' : 'ปัจจุบัน', r.beforePerDay, r.beforeTotal, r.beforeCount, r.beforeDays, '#ef4444'],
                         ...(started ? [['หลังแก้', r.afterPerDay, r.afterTotal, r.afterCount, r.afterDays, improved || r.afterPerDay === 0 ? '#22c55e' : '#f59e0b']] : [])
@@ -1103,7 +1122,7 @@ export default function Improvements() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                           {tooEarly ? '💰 มูลค่าปัญหานี้ (ก่อนแก้)' : '💰 Cost Saving'}{' '}
-                          <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? 'จาก baseline ที่วัดแล้ว' : 'ประมาณการจากผลจริง'}{cs.cc ? ` · CC ${cs.cc}` : ''})</span>
+                          <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? 'จาก baseline ที่วัดแล้ว' : 'ประมาณการจากผลจริง'}{cs.cc ? ` · CC ${cs.cc}` : ''}{cs.rate?.effective_from ? ` · rate เริ่ม ${cs.rate.effective_from}` : ''})</span>
                         </span>
                         {/* เลือกก้อน rate ที่นับเป็น saving — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · มีผลทุกการ์ด */}
                         <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>

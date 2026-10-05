@@ -58,28 +58,50 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
   };
   const delItem = (it) => { if (window.confirm(`ลบ "${it.failure_mode}" ออกจาก master? (แถวในพาร์ทที่ผูกอยู่ไม่ถูกลบ แค่หลุดจาก master)`)) write('ลบรายการ', () => supabase.from('pe_master_items').delete().eq('id', it.id)); };
 
-  /* รับข้อเสนอ = ทับค่า master + version+1 (improve) หรือเพิ่มแถวใหม่ (new_item) แล้วปิดข้อเสนอ */
+  /* รับข้อเสนอ = ทับค่า master + version+1 (improve) หรือเพิ่มแถวใหม่ (new_item) แล้วปิดข้อเสนอ
+     🔴 claim ก่อน (compare-and-swap `status='proposed'` → 'accepted' นับแถว) แล้วค่อยเขียน master (QC 05/10)
+        เดิมเขียน master ก่อนแล้วค่อยปิดข้อเสนอ ⇒ กด 2 เครื่องพร้อมกัน = เพิ่มแถว/ขึ้น version ซ้ำ ·
+        ปิดข้อเสนอล้ม = master ถูกแก้แล้วแต่ข้อเสนอยังค้าง (กดรับซ้ำได้) · เขียน master ล้ม = คืน claim (กฎเขียน DB ข้อ 6) */
   const accept = async (p) => {
     if (!canApprove) return;
-    setSaving(true);
-    let err;
+    let m = null;
     if (p.kind === 'improve' && p.master_item_id) {
-      const m = itemById[p.master_item_id];
-      if (!m) { setSaving(false); return toast.error('ไม่พบ master item แล้ว (ถูกลบ?) — ปฏิเสธข้อเสนอนี้แทน'); }
+      m = itemById[p.master_item_id];
+      if (!m) return toast.error('ไม่พบ master item แล้ว (ถูกลบ?) — ปฏิเสธข้อเสนอนี้แทน');
+    }
+    setSaving(true);
+    const { data: claimed, error: eClaim } = await supabase.from('pe_master_proposals')
+      .update({ status: 'accepted', decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() })
+      .eq('id', p.id).eq('status', 'proposed').select('id');
+    if (eClaim) { setSaving(false); return toast.error(`รับข้อเสนอไม่สำเร็จ: ${eClaim.message}`); }
+    if (!claimed?.length) { setSaving(false); onChanged(); return toast.error('ข้อเสนอนี้ถูกตัดสินไปแล้ว (หรือไม่มีสิทธิ์) — โหลดรายการใหม่ให้แล้ว'); }
+
+    let err;
+    if (m) {
       const next = applyProposal(m, p);
       const { id, master_process_id, created_at, created_by_name, origin_set_id, origin_item_id, updated_at, ...patch } = next; // eslint-disable-line no-unused-vars
-      ({ error: err } = await supabase.from('pe_master_items').update(patch).eq('id', m.id));
+      const { data, error } = await supabase.from('pe_master_items').update(patch).eq('id', m.id).select('id');
+      err = error || (!data?.length ? { message: 'ไม่มีแถว master ถูกแก้ (ถูกลบ/ไม่มีสิทธิ์)' } : null);
     } else {
       const a = p.after || {};
       ({ error: err } = await supabase.from('pe_master_items').insert({ master_process_id: p.master_process_id, seq: items.length + 1, requirement: a.requirement || null, failure_mode: a.failure_mode, effects: a.effects || null,
         severity: a.severity ?? null, classification: a.classification || null, causes: a.causes || null, prevention: a.prevention || null, occurrence: a.occurrence ?? null, detection_ctrl: a.detection_ctrl || null, detection: a.detection ?? null,
         best_practice: a.best_practice || null, origin_set_id: p.source_set_id || null, origin_item_id: p.source_item_id || null, created_by_name: fullName || null }));
     }
-    if (!err) ({ error: err } = await supabase.from('pe_master_processes').update({ version: ((masters.find(m => m.id === p.master_process_id)?.version) || 1) + 1 }).eq('id', p.master_process_id));
-    if (!err) ({ error: err } = await supabase.from('pe_master_proposals').update({ status: 'accepted', decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() }).eq('id', p.id));
+    if (err) {
+      // เขียน master ไม่ได้ ⇒ คืนข้อเสนอเป็น "proposed" ให้ตัดสินใหม่ได้ (คืนไม่ได้ต้องบอกบนจอ ห้ามเงียบ)
+      const { data: back, error: eBack } = await supabase.from('pe_master_proposals')
+        .update({ status: 'proposed', decided_by: null, decided_at: null }).eq('id', p.id).eq('status', 'accepted').select('id');
+      setSaving(false); onChanged();
+      return toast.error(`รับข้อเสนอไม่สำเร็จ: ${err.message}${eBack || !back?.length ? ' — ⚠️ คืนสถานะข้อเสนอไม่สำเร็จ ข้อเสนอค้างเป็น "รับแล้ว" ทั้งที่ master ยังไม่เปลี่ยน แจ้ง admin' : ''}`);
+    }
+    const { data: vRows, error: eVer } = await supabase.from('pe_master_processes')
+      .update({ version: ((masters.find(x => x.id === p.master_process_id)?.version) || 1) + 1 })
+      .eq('id', p.master_process_id).select('id');
     setSaving(false);
-    if (err) return toast.error(`รับข้อเสนอไม่สำเร็จ: ${err.message}`);
-    toast.success('อัพเดท master แล้ว — พาร์ทอื่นที่ถือเวอร์ชันเก่าจะเห็นป้าย ⬆️'); onChanged();
+    onChanged();
+    if (eVer || !vRows?.length) return toast.error(`อัพเดท master แล้ว แต่ขึ้นเลข version กระบวนการไม่สำเร็จ${eVer ? `: ${eVer.message}` : ''} — พาร์ทอื่นจะยังไม่เห็นป้าย ⬆️ แจ้ง admin`);
+    toast.success('อัพเดท master แล้ว — พาร์ทอื่นที่ถือเวอร์ชันเก่าจะเห็นป้าย ⬆️');
   };
   const reject = async () => {
     const r = rejectModal; if (!r.reason?.trim()) return toast.error('กรอกเหตุผล');

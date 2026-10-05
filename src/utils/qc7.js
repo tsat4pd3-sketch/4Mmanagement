@@ -349,6 +349,17 @@ export const ASSET_CLASSES = [
 ];
 export const ASSET_KEYS = ASSET_CLASSES.map(a => a.key);
 
+/**
+ * แท็บชนิดสินทรัพย์ตั้งต้น = กลุ่มแรก (ตามลำดับ ASSET_CLASSES) ที่ "มีเหตุการณ์" ในช่วงที่เลือก
+ * (QC/UX 05/10 — เดิมตรึง 'machine' ⇒ ช่วงที่มีแต่งานแม่พิมพ์/จิ๊ก เปิดมาเจอจอว่างก่อนเสมอ)
+ * ไม่มีกลุ่มไหนมีข้อมูลเลย = คืน `fallback` (แท็บว่างยังต้องโชว์ — ห้ามซ่อนแท็บ)
+ * @param byClass { [classKey]: rows[] }
+ */
+export function firstAssetWithData(byClass = {}, fallback = 'machine') {
+  const hit = ASSET_CLASSES.find(a => (byClass?.[a.key] || []).length > 0);
+  return hit ? hit.key : fallback;
+}
+
 const KIND_TO_CLASS = (() => {
   const m = {};
   ASSET_CLASSES.forEach(a => a.kinds.forEach(k => { m[k] = a.key; }));

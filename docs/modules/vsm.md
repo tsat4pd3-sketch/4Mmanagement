@@ -65,3 +65,7 @@
 - **ยังไม่ทำ (เฟส 2-4):** Future state + kaizen burst ผูก `/improvements` · รอบส่ง supplier · เทียบ current vs future อัตโนมัติ
 
 ---
+
+### 🛠️ QC 05/10 — Order/year
+- `demandOf()` (`lib/vsmModel.js`): **Order/year = 12 เดือนนับจากเดือนที่เลือก · แต่ละเดือน EDI 830 ชนะ manual** — เดิมบวก forecast ทุกแถวที่เคยมี (ทุกปี + EDI ซ้อน manual) ⇒ พองหลายเท่า
+- มี forecast ไม่ครบ 12 เดือน = ค่าเฉลี่ยของเดือนที่มี × 12 แล้วคืน `yearMonths` → ผังเขียน `≈… pcs (N ด.)` · เทส `src/lib/__tests__/vsmDemand.test.mjs` (import ใน vsmModel.js ใส่ `.js` แล้วให้ node เทสได้)

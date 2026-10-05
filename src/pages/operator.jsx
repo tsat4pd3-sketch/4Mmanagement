@@ -184,7 +184,11 @@ export default function Operator() {
   const [filterTeam,    setFilterTeam]    = useState('');
   const [filterGrade,   setFilterGrade]   = useState('');
   const [filterLabor,   setFilterLabor]   = useState(''); // direct/indirect (labor_type จากผังองค์กร)
-  const [empSearch,     setEmpSearch]     = useState(''); // 🔎 ค้นชื่อ/รหัส — 223 คน เลื่อนหาไม่ไหว (feedback 23/09)
+  /* 🔎 ค้นชื่อ/รหัส — 223 คน เลื่อนหาไม่ไหว (feedback 23/09)
+     · รับค่าตั้งต้นจาก `?q=` เพื่อให้จอที่ "ล็อกช่องไว้" (เช่น ทีม/ไลน์ ใน /add-user) ลิงก์มาที่คนนั้นได้ตรงๆ
+       — อ่านครั้งเดียวตอน mount แล้วปล่อยให้พิมพ์ทับได้ ไม่ผูก URL ต่อ (กัน URL เด้งทุกตัวอักษร) */
+  const [empSearch,     setEmpSearch]     = useState(
+    () => new URLSearchParams(window.location.search).get('q') || '');
   const [filterStaffKind, setFilterStaffKind] = useState(''); // shopfloor/support (staff_kind — แกนเช็คชื่อ)
   const [filterOffOrg,  setFilterOffOrg]  = useState(false); // ดูเฉพาะคนที่ข้อมูลไม่ตรงผังองค์กร (ไล่แก้)
   const [filterNoPhoto, setFilterNoPhoto] = useState(false); // ดูเฉพาะคนที่ยังไม่มีรูป (ไล่ถ่ายใหม่ — 2026-09-11)

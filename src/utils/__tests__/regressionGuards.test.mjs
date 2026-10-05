@@ -57,6 +57,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'jigs-has-no-department-column',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* select จากตาราง jigs (DR) ที่ขอคอลัมน์ department — ตารางนี้ไม่มีคอลัมน์นั้น */
+    re: /from\(['"]jigs['"]\)\s*\.select\(['"`][^'"`]*\bdepartment\b/g,
+    why: 'ตาราง DR `jigs` **ไม่มีคอลัมน์ department** (วัด 05/10) — /scan เคย select ไปด้วย ⇒ 42703 ทั้งคิวรี '
+       + '⇒ จิ๊กไม่เคยถูกพบ + ปุ่ม "ตรวจ PM เครื่องนี้" ไม่เคยโผล่ (QC 05/10)',
+    fix: 'แผนกของใบตรวจ PM อยู่ที่ `checklists.department` (module=mtn, equipment_id=jig.id) — ดู ScanLanding.jsx',
+
+    allow: {},
+  },
+  {
     id: 'pm-checkpoints-no-delete-all',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการลบจุดตรวจ/รูปทั้งชุดด้วยคีย์แม่ (checklist_id / jig_id) — pattern "ลบหมดแล้ว insert ใหม่" */
