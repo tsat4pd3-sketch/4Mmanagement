@@ -1189,6 +1189,26 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ unfiltered-session-bump-needs-shift-tier (2026-10-05) ─────────────────────────
+   subscribe `production_sessions` ของ DailyReport **กรองด้วยไลน์ไม่ได้** (หน้านี้ต้องแสดง
+   "รายการกะทั้งวัน" จึงต้องรู้เมื่อไลน์อื่นเปิดกะใหม่) ⇒ ทุก event ของทั้งโรงงาน ~20 ไลน์
+   ถึงทุกเครื่องที่เปิดหน้านี้ ~40 เครื่อง · แต่เนื้อที่จอใช้ (รายการกะ + ยอดค้างกะก่อน)
+   เปลี่ยน**ไม่กี่ครั้งต่อกะ** ⇒ เพดาน 15 วิ (LIVE.PAGE) จ่าย egress ~20 เท่าโดยไม่มีใครเห็นของใหม่
+   วัดจริง 02/10/2026: ยอดค้างกะก่อน 3,746 req/วัน + รายการกะทั้งวัน 2,564 req/วัน
+     = **คู่คิวรีที่หนักที่สุดของทั้งระบบ** (40-41 เครื่อง) ⇒ ย้ายเป็น LIVE.SHIFT = −5,250 req/วัน
+   🔴 LIVE.PAGE ถูกต้องสำหรับ bumpOrd/bumpDt/bumpDef เท่านั้น — 3 ตัวนั้นกรอง `session_id` ฝั่ง server แล้ว
+   (เป็นเทสแยก ไม่ใช่กฎในลิสต์ เพราะตัวสแกนของลิสต์ตรวจ**บรรทัดต่อบรรทัด** จับ coalesce ที่คร่อม 4 บรรทัดไม่ได้) */
+test('🛡️ unfiltered-session-bump-needs-shift-tier — bump ที่เกาะ subscribe ซึ่งกรองไลน์ไม่ได้ ต้องใช้ LIVE.SHIFT', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const m = /bumpSess\s*=\s*coalesce\([\s\S]{0,400}?LIVE\.([A-Z]+)/.exec(code);
+  assert.ok(m, 'หา `bumpSess = coalesce(…, LIVE.*)` ใน DailyReport.jsx ไม่เจอ — เปลี่ยนชื่อ/ย้ายที่ '
+             + '(หรือเลิกใช้เพดานจาก refreshRates) แล้วต้องมาแก้เทสนี้ด้วย ห้ามลบทิ้งเฉยๆ');
+  assert.equal(m[1], 'SHIFT',
+    'bumpSess (subscribe `production_sessions` ทั้งตาราง กรองไลน์ไม่ได้) ต้องใช้เพดาน LIVE.SHIFT (5 นาที) '
+  + 'ไม่ใช่ LIVE.PAGE — วัดจริง 02/10/2026: LIVE.PAGE ทำให้ 2 คิวรีนี้รวม 6,310 req/วัน '
+  + 'ทั้งที่เนื้อเปลี่ยนไม่กี่ครั้งต่อกะ · เหตุผลเต็ม + ตัวเลข ดู LIVE.SHIFT ใน src/utils/refreshRates.js');
+});
+
 test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
   /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
