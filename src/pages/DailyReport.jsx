@@ -1763,8 +1763,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       loadProdOrders(selSession.id, selSession.line_name);
       return;
     }
-    const { error: se } = await supabaseDR.from('line_stock_transactions')
+    const { error: seDel } = await supabaseDR.from('line_stock_transactions')
       .delete().eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+    /* 🔴 DB audit 05/10: ตาราง ledger นี้ **ไม่มี DELETE policy** ⇒ delete ได้ "สำเร็จ 0 แถว ไม่มี error" (กฎเขียน DB ข้อ 2)
+       เดิมขึ้น toast เขียว "ถอนยอด stock ให้เรียบร้อย" ทั้งที่ยอดยังค้างใน stock ⇒ เช็คว่าแถวยังอยู่ไหมก่อนบอกว่าถอนแล้ว */
+    let se = seDel;
+    if (!se) {
+      const { count: left, error: eLeft } = await supabaseDR.from('line_stock_transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+      if (eLeft) se = eLeft;
+      else if (left > 0) se = { message: `ระบบไม่อนุญาตให้ลบรายการรับเข้า (${left} รายการยังอยู่ใน stock)` };
+    }
     /* 📥 กฎโหมด "ต้องยืนยันรับ" (2026-10-02) — ของไม่ได้เข้าสต็อกตอนปิดใบ แต่ไปรออยู่ในคิว `stock_receipts`
        · ใบที่ยังรอรับ → ยกเลิก (ไม่งั้นคลังกดรับของที่ไลน์ถอยไปแล้ว) · ปิดใบใหม่ trigger จะออกใบรอรับใหม่ให้
        · ใบที่คลังรับไปแล้ว = ของถึงคลังจริง **ห้ามถอนเงียบ** → บอกให้คลังปรับยอดเอง */
