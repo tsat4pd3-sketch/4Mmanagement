@@ -38,7 +38,7 @@ export const DR_AUDIT_TABLES = new Set([
   'kanban_calc_settings','kanban_targets','product_packaging','scrap_defect_types',
   'energy_monthly',
   'machine_automation_levels','machine_operation_modes',
-  'die_sets','equipment_die','die_op_types','die_storage_areas','storage_zones','storage_locations',
+  'die_sets','equipment_die','die_op_types','die_set_kinds','die_storage_areas','storage_zones','storage_locations',
   'part_routings',
   'quality_bin_records',
   'repair_wi_registry',      // ทะเบียน QRs ↔ WI ซ่อม (WI-PD3-069 §6) — doc_control แก้เองได้ ต้องรู้ว่าใครแก้

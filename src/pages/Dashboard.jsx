@@ -1408,7 +1408,7 @@ export default function Dashboard() {
                   style={{ width: 148, padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
-                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: '#08130a', border: '1px solid var(--accent)' }}>วันนี้</button>
+                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>วันนี้</button>
                 )}
               </div>
             </div>

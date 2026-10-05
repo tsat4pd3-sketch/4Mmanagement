@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
@@ -89,19 +90,40 @@ export default function OrgScopePicker({
     };
   }, [index, value, ccAllowed, isCc, ccOpts]);
 
+  /* 💰 ลิสต์รหัส: "ใต้หน่วยที่เลือก" ขึ้นก่อน แล้วที่เหลือจัดกลุ่มตามหน่วยบนสุดในผัง (ลำดับ = ลำดับผัง · 05/10 คำสั่ง user) */
+  const ccGroups = useMemo(() => {
+    if (!index || !ccOpts.length) return [];
+    const inside = !isCc && !isPlant(value) && index.ccUnder ? index.ccUnder(value.kind, value.value) : null;
+    const mine = inside ? ccOpts.filter(o => inside.has(o.value)) : [];
+    const rest = inside ? ccOpts.filter(o => !inside.has(o.value)) : ccOpts;
+    const groups = [];
+    if (mine.length) groups.push({ label: `📍 ใน ${index.labelOf(value.kind, value.value)}`, items: mine });
+    let cur = null;
+    rest.forEach((o) => {
+      const g = o.cc_group || 'รหัสที่ผังยังไม่ผูกหน่วย';
+      if (!cur || cur.label !== g) { cur = { label: g, items: [] }; groups.push(cur); }
+      cur.items.push(o);
+    });
+    return groups;
+  }, [index, ccOpts, value, isCc]);
+
   const ccSelect = ccAllowed && ccOpts.length ? (
     <select
       value={isCc ? curKey : ''} disabled={disabled}
       title="Cost Center — แกนคนละสายกับผังองค์กร (1 กลุ่มไลน์ครอบหลายรหัสได้ และหลายไลน์ใช้รหัสเดียวกันได้)"
       onChange={e => (e.target.value ? emit(e.target.value) : emit('plant'))}
       style={{ width: 210, fontSize: 13, ...inputStyle }}>
-      <option value="">💰 Cost Center — ทั้งหมด</option>
+      <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
       {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
-      {ccOpts.map(o => (
-        <option key={o.key} value={o.key}>
-          {`💰 ${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
-        </option>
+      {ccGroups.map(g => (
+        <optgroup key={g.label} label={g.label}>
+          {g.items.map(o => (
+            <option key={o.key} value={o.key}>
+              {`💰 ${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   ) : null;
@@ -141,15 +163,15 @@ export default function OrgScopePicker({
       // 🔴 รหัส cc อยู่ใน keywords ⇒ พิมพ์ "2140462000" เจอ "PD3" (คำสั่ง user 23/09)
       keywords: [o.kind, SCOPE_KIND_META[o.kind]?.label, o.cost_center, ...(index.pathOf(o.kind, o.value) || [])].filter(Boolean).join(' '),
     }));
-    const ccRows = ccOpts.map(o => ({
+    const ccRows = ccGroups.flatMap(g => g.items.map(o => ({
       id: o.key,
       label: `💰 ${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`,
       sub: (o.owners || []).length
         ? `ผูกกับ ${(o.owners || []).map(w => index.labelOf(w.kind, w.value)).join(' · ')}`
         : 'ผังยังไม่มีหน่วยไหนผูกรหัสนี้',
-      group: '💰 Cost Center',
+      group: `💰 ${g.label}`,
       keywords: [o.cc_name, ...(o.owners || []).map(w => w.value)].filter(Boolean).join(' '),
-    }));
+    })));
     const sOpts = ccAllowed ? [...orgRows, ...ccRows] : orgRows;
     const sel = sOpts.find(o => o.id === curKey) || null;
     return (

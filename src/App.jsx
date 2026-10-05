@@ -1333,7 +1333,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--accent2)', fontWeight: 600 }}>⚠️ การลงทะเบียนหลุด — กดเปิดใหม่</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1351,7 +1351,7 @@ function NotificationBell({ userId, role }) {
                 <>
                   <span style={{ color: 'var(--text2)' }}>📲 เด้งแจ้งเตือนเข้ามือถือแม้ปิดแอป</span>
                   <button onClick={enablePush} disabled={pushBusy}
-                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#071008', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                     {pushBusy ? 'กำลังเปิด…' : 'เปิด'}
                   </button>
                 </>
@@ -1598,7 +1598,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
           <button onClick={onStay} style={{
             padding: '10px 24px', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer',
-            background: 'var(--accent)', color: '#fff', border: 'none',
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
           }}>
             ยังอยู่ที่นี่
           </button>

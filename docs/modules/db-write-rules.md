@@ -54,6 +54,19 @@ CLAUDE.md เหลือ "หัวข้อ + สิ่งที่ต้อ�
 
 ---
 
+## ข้อ 12 — helper ที่คืนค่าเปล่า ห้ามแกะ `{ data }` (2026-10-02 · ย้ายรายละเอียดมา 10-05)
+
+ของกลางที่โหลดทะเบียนให้ (`loadPairMap` · `loadOpInfo` · `loadProductsMaster` · `loadProductionLines`)
+**คืน "ก้อนข้อมูล" ตรงๆ ไม่ได้ห่อ `{ data, error }`** ⇒ เขียน `const { data } = await loadPairMap()`
+ได้ `undefined` **เงียบสนิท** (ไม่มี error ให้จับ · build/lint/เทสผ่านหมด)
+
+**เคสจริง:** ผังรวมโรงงานโชว์ `0/0` อยู่ **7 วัน** ก่อนมีคนทัก — ไม่มีใครรู้ว่าจอตาย
+เพราะหน้าจอขึ้น "ไม่มีข้อมูล" ซึ่งดูเหมือนกะที่ยังไม่เปิด
+
+**กติกา:** รับค่าตรงๆ (`const pairMap = await loadPairMap(...)`) · มีด่านใน `regressionGuards`
+🔴 **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก** — โหลดไม่สำเร็จต้องเขียนบนจอว่าโหลดไม่สำเร็จ
+(หลักเดียวกับ §read ที่ลงแคช ข้างล่าง)
+
 ## 🔴 read ที่ลงแคช — "โหลดไม่สำเร็จ" ห้ามถูกเก็บเป็น "ไม่มีข้อมูล" (2026-10-04 · feedback หน้างาน)
 
 กฎเหล็กข้อ 1 (`supabase-js ไม่ throw`) เขียนไว้สำหรับ **write** — ฝั่ง **read ที่ผลลัพธ์ลง
@@ -94,3 +107,20 @@ cachedMaster เห็นเป็น "สำเร็จ ได้ 0 แถว"
 
 `DailyReport` (7) · `QAInspectionSetup` · `HeijunkaKanban` · `PmCoordination` · `PlannerSales`
 · `useCostCenters` · `useDiePressLines` · `useStorageLocations` · `useSuppliers` · `useColumnHistory`
+
+---
+
+## § ส่ง SQL ให้ user รันเอง — เคสที่เคยพลาด (ย้ายมาจาก CLAUDE.md 2026-10-05 ตามกฎรับเข้า)
+
+กฎย่ออยู่ใน CLAUDE.md แล้ว (วาง SQL เต็มๆ · ระบุ project · แนบคิวรีเช็คผล) — ที่นี่เก็บ**ว่าทำไม**:
+
+**user รันผ่าน Supabase SQL Editor บนเว็บเท่านั้น — ไม่มี CLI/terminal และเปิดไฟล์ในรีโปไม่ได้**
+
+| เคยเกิดจริง | ผล |
+|---|---|
+| บอกแค่ชื่อไฟล์ migration ไป | user ก๊อป **path** ไปวางใน SQL Editor → `42601 syntax error at or near "supabase"` |
+| ส่งคำสั่ง CLI ให้ (07/09) | user ก๊อป `supabase functions deploy` ไปวางใน **SQL Editor** |
+| คิวรีเช็ค NPI (ตาราง Main) ถูกรันบน "Product DB" (07/09) | `42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว ⇒ ต้องบอก**ทั้งชื่อในจอและ project id** |
+
+⇒ ให้ user ทำเฉพาะสิ่งที่ทำได้จากเว็บ: **SQL Editor · secrets ใน dashboard · เมนูในแอป**
+· migration ที่ย้อนได้ + edge function → **AI session ลงเองผ่าน MCP แล้วคิวรีตรวจกลับ** (`docs/modules/edge-functions.md`)

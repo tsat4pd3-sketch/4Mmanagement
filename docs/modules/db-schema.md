@@ -97,3 +97,23 @@
 🔴 **จงใจไม่แตะ** คู่ที่ตัดสินแทนคนไม่ได้ — ต้องให้ส่วนงานยืนยันก่อน:
 `APRON ASSY` (8) vs `LINE APRON ASSY` (54) · `HDF` (3) vs `HYDROFORM` (46) ·
 และ `ASSY2` (13) / `ฝ่ายผลิต` (39) ที่**ยังไม่มีในผังองค์กร** (คนละปัญหา: ผังไม่ครบ ไม่ใช่พิมพ์ผิด)
+
+---
+
+## § RLS ฝั่ง DR project — เคสที่เคยทำพังทั้งระบบ (ย้ายจาก CLAUDE.md 2026-10-05)
+
+กฎย่ออยู่ใน CLAUDE.md §Supabase Projects — ที่นี่เก็บว่าพังแบบไหน
+
+`supabaseDR` ถูกสร้างด้วย `createClient(url, anonKey)` เฉยๆ **ไม่มี `auth` config ผูกกับ session**
+⇒ ไม่ว่า user จะ login เข้าแอปแล้วหรือไม่ ทุก query ผ่าน client นี้วิ่งด้วย role `anon` เสมอ
+
+**เคยทำพังจริง 1 ครั้ง:** มี session เปลี่ยน RLS policy ตารางฝั่ง DR จาก `public`/`anon`
+ไปเป็น `TO authenticated` แบบเหมา เพราะคิดว่า "ปลอดภัยขึ้น" ⇒ **หายทั้งระบบทันที**:
+Product Master · Machine List · PM data · การเปิดกะ — ต้อง **revert ฉุกเฉิน**
+
+**เคสคู่กัน (2026-09-07):** คิวรีเช็ค NPI (ตารางฝั่ง Main) ถูกรันบน "Product DB" แล้วขึ้น
+`42P01 relation does not exist` ทั้งที่ migration ลง MAIN สำเร็จแล้ว — เสียเวลาไล่หาสาเหตุทั้งที่
+migration ไม่ได้ผิดอะไร ⇒ ที่มาของกฎ "ระบุทั้งชื่อในจอและ project id ทุกครั้ง"
+
+🔴 **ทางแก้ที่ถูกต้องถ้าจะ secure ฝั่ง DR จริง = Edge Function ที่ validate ฝั่ง server เอง**
+(ยังไม่ได้ทำ — known gap · ห้ามแก้ด้วยการเปลี่ยน policy)

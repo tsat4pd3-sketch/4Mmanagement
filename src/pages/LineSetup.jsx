@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useTabParam from '../utils/useTabParam';
 import LineFlowPanel from '../components/LineFlowPanel';
+import CollapseCard from '../components/CollapseCard';
 import DeliveryPointPanel from '../components/DeliveryPointPanel';
 import SearchSelect from '../components/SearchSelect';
 import LineSelect from '../components/LineSelect';
@@ -75,16 +76,13 @@ export default function LineSetup({ embedded = false } = {}) {
   const [formData, setFormData] = useState({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' });
   const isMobile = useIsMobile();
   const [collisionWarn, setCollisionWarn] = useState(null); // string message หรือ null
-  const [showManpower, setShowManpower] = useState(false);
   const [skillDefs, setSkillDefs] = useState([]);
   const [sectionOpts, setSectionOpts] = useState([]);
   // ⚠️ ใช้ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ 'ผลิต' ของ /layout-setup ซึ่งจอง ?tab= ไปแล้ว
   const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stations', 'sub');
   // UX แถบขวา: ค้นหา + พับรายการ (ข้อมูลเยอะ เลื่อนหายาก — 2026-07-24)
   const [lineSearch, setLineSearch] = useState('');
-  const [lineListOpen, setLineListOpen] = useState(() => { try { return localStorage.getItem('ls_lineList_open') !== '0'; } catch { return true; } });
   const [pointSearch, setPointSearch] = useState('');
-  const toggleLineList = () => setLineListOpen(o => { const n = !o; try { localStorage.setItem('ls_lineList_open', n ? '1' : '0'); } catch { /* private */ } return n; });
   // พับ/กางไลน์ย่อยราย "ไลน์แม่" (ปุ่ม ▼/▶ หน้าไลน์แม่) — เก็บชื่อไลน์แม่ที่พับอยู่ · จำใน localStorage
   const [collapsedParents, setCollapsedParents] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('ls_collapsed_parents') || '[]')); } catch { return new Set(); } });
   const toggleParent = (name) => setCollapsedParents(s => {
@@ -207,6 +205,27 @@ export default function LineSetup({ embedded = false } = {}) {
   // รหัส cost center ที่ไลน์อื่นใช้อยู่ — ส่งเป็น history ให้ <CostCenterSelect> (กลุ่ม 📜) รหัสที่ยังไม่ลงทะเบียน cost_centers ยังเลือกได้ ไม่บล็อกงานเก่า (2026-09-07 datalist → 2026-09-08 picker กลาง)
   const ccCodes = [...new Set(lines.map(l => String(l.cost_center || '').trim()).filter(Boolean))].sort();
   const childLines    = lines.filter(l => l.parent_line_name === selectedLine);
+
+  /* ⚠️ แผง "ตั้งค่าไลน์" กด 💾 เองเท่านั้น — เดิมสลับไลน์ขณะแก้ค้าง ค่าหายเงียบ ไม่มีอะไรบอก (user 05/10)
+     เทียบเป็น string ทุกช่อง เพราะ input คืน string แต่ค่าในฐานเป็น number/null */
+  const mpDirty = !!selLineObj && (
+    String(stdDay ?? '') !== String(selLineObj.std_day_shift ?? 0) ||
+    String(stdNight ?? '') !== String(selLineObj.std_night_shift ?? 0) ||
+    String(costCenter ?? '') !== String(selLineObj.cost_center ?? '') ||
+    String(lineType ?? '') !== String(selLineObj.line_type ?? '') ||
+    String(flowMode ?? '') !== String(selLineObj.flow_mode ?? 'one_piece_flow') ||
+    String(parallelStations ?? '') !== (selLineObj.parallel_stations != null ? String(selLineObj.parallel_stations) : '') ||
+    String(signerHead ?? '') !== String(selLineObj.head_name ?? '')
+  );
+
+  /* เลือกไลน์จากลิสต์ — ทางเดียวที่ใช้สลับไลน์ ห้าม setSelectedLine ตรงจากแถว (ด่านค่าค้างจะถูกข้าม) */
+  const selectLine = (name) => {
+    if (name === selectedLine) return;
+    if (mpDirty && !window.confirm(
+      `⚙️ "ตั้งค่าไลน์" ของ ${selectedLine} ยังมีการแก้ไขที่ยังไม่ได้กด 💾 บันทึก\n\nเปลี่ยนไปไลน์ ${name} ตอนนี้ = ค่าที่แก้ไว้หายไป\n\nเปลี่ยนไลน์ต่อไหม?`
+    )) return;
+    setSelectedLine(name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} });
+  };
 
   const fetchLines = async () => {
     /* 🔴 2026-09-15 — หน้านี้แก้ทะเบียนไลน์โดยตรง: ทุก save เรียก fetchLines() ต่อทันที
@@ -1154,17 +1173,29 @@ export default function LineSetup({ embedded = false } = {}) {
         background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
-        <div style={{ marginBottom: 16 }}>
-          {/* หัวหมวดพับได้ + ตัวนับ — คลิกเพื่อพับ/กางรายการไลน์ (ข้อมูลเยอะ พับเก็บได้) */}
-          <button onClick={toggleLineList}
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-            <span style={labelSt}>{lineListOpen ? '▼' : '▶'} ไลน์ผลิต ({lines.length})</span>
-          </button>
-          {lineListOpen && lines.length > 6 && (
+        {/* 🏭 แถบ "ไลน์ที่กำลังตั้งค่า" — ตรึงหัวแผงไว้ (05/10)
+            เดิมจะสลับไลน์ต้องเลื่อนขึ้นไปบนสุดผ่านฟอร์มทั้งหมด · ป้าย "ยังไม่บันทึก" ต้องเห็นตลอดด้วย
+            📱 มือถือคอลัมน์เดียว = ถอด sticky (UI-CONVENTIONS §7 ข้อ 1) */}
+        {selectedLine && (
+          <div style={{
+            ...(isMobile ? {} : { position: 'sticky', top: 0, zIndex: 3 }),
+            background: 'var(--card)', borderBottom: '1px solid var(--border)',
+            paddingBottom: 10, marginBottom: 12,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ ...labelSt, marginBottom: 0 }}>🏭 ไลน์ที่กำลังตั้งค่า</span>
+              {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
+            </div>
+            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…"
+              style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
+          </div>
+        )}
+
+        <CollapseCard id="lineList" storePrefix="ls" title="🏭 ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
+          {lines.length > 6 && (
             <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
               style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
           )}
-          {lineListOpen && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
               // Build ordered display: parents first, their children indented below
@@ -1198,7 +1229,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : l._isChild ? 'var(--border)' : 'var(--border)'}`,
                     transition: 'background 0.15s, border-color 0.15s',
                   }}
-                  onClick={() => { setSelectedLine(l.name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} }); }}
+                  onClick={() => selectLine(l.name)}
                 >
                   {l._isChild && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>└</span>}
                   {l._isParent && (() => {
@@ -1234,7 +1265,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   {editingLineId === l.id ? (
                     <>
                       <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
-                        style={{ background: 'var(--accent)', border: 'none', color: '#fff', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
+                        style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
                         style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
                     </>
@@ -1273,7 +1304,6 @@ export default function LineSetup({ embedded = false } = {}) {
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
             )}
           </div>
-          )}
           {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1292,12 +1322,12 @@ export default function LineSetup({ embedded = false } = {}) {
               value={newLineParent} onChange={setNewLineParent} placeholder="ไม่มีไลน์หลัก (standalone)"
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
             <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
+              style={{ padding: '8px 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
           )}
-        </div>
+        </CollapseCard>
 
         {selectedLine && <>
           {canEdit && layoutImage && (
@@ -1417,15 +1447,12 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
             )}
           </div>
-          <div style={{ borderTop: '1px solid var(--border)', margin: '10px 0 10px' }} />
-          <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-            รายการจุดงาน ({stations.length})
-          </h4>
+          <CollapseCard id="stations" storePrefix="ls" title="📍 รายการจุดงาน" count={stations.length} defaultOpen={stations.length > 0}>
           {stations.length > 6 && (
             <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
               style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
           )}
-          <div style={{ flex: 1, minHeight: showManpower ? 120 : 260, overflowY: 'auto' }}>
+          <div>
             {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
               const reqs = st.station_requirements || [];
               return (
@@ -1448,7 +1475,11 @@ export default function LineSetup({ embedded = false } = {}) {
                 </div>
               );
             })}
+            {stations.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '10px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุดงาน</div>
+            )}
           </div>
+          </CollapseCard>
           </>}
 
           {activeTab === 'machines' && (
@@ -1511,14 +1542,12 @@ export default function LineSetup({ embedded = false } = {}) {
                   {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
                 </div>
               )}
-              <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                รายการจุดเครื่องจักร ({machinePoints.length})
-              </h4>
+              <CollapseCard id="machinePoints" storePrefix="ls" title="⚙️ รายการจุดเครื่องจักร" count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
               {machinePoints.length > 6 && (
                 <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
                   style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
               )}
-              <div style={{ flex: 1, minHeight: 260, overflowY: 'auto' }}>
+              <div>
                 {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {
                   const mc = drMachines.find(m => m.machine_no === p.machine_no);
                   return (
@@ -1538,17 +1567,15 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุดเครื่องจักร</div>
                 )}
               </div>
+              </CollapseCard>
 
-              <div style={{ borderTop: '1px solid var(--border)', marginTop: 14, paddingTop: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                    🔗 เส้นทางการผลิต
-                  </h4>
-                  {canEdit && (
+              <CollapseCard id="flowLinks" storePrefix="ls" title="🔗 เส้นทางการผลิต" count={flowLinks.length}
+                defaultOpen={flowLinks.length > 0}
+                right={canEdit && (
                   <button
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
-                      position: 'relative',
+                      position: 'relative', flexShrink: 0,
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
                       background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
@@ -1557,12 +1584,11 @@ export default function LineSetup({ embedded = false } = {}) {
                     {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
                     <ToggleDot on={connectMode} />
                   </button>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+                )}>
+                <Hint label="เชื่อมเครื่องจักรไว้ทำไม">
                   เชื่อมเครื่องจักรที่ทำงาน <b>ต่อเนื่องกัน (Sequential)</b> — ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย<br />
                   เครื่องที่ <b>ไม่เชื่อม</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
-                </div>
+                </Hint>
                 {connectMode && (
                   <div style={{ fontSize: 11, color: '#f97316', background: 'rgba(249,115,22,0.1)', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
                     {connectFrom
@@ -1570,7 +1596,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       : 'คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน'}
                   </div>
                 )}
-                <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                <div>
                   {flowLinks.map(link => {
                     const from = machinePoints.find(p => p.id === link.from_machine_point_id);
                     const to = machinePoints.find(p => p.id === link.to_machine_point_id);
@@ -1585,28 +1611,30 @@ export default function LineSetup({ embedded = false } = {}) {
                     <div style={{ textAlign: 'center', padding: '8px 0', color: 'var(--muted)', fontSize: 11 }}>ยังไม่มีการเชื่อมต่อสายงาน</div>
                   )}
                 </div>
-              </div>
+              </CollapseCard>
             </div>
           )}
 
-          {/* ── Standard Manpower ─────────────────────────── */}
-          <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <button
-            onClick={() => setShowManpower(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-              background: 'none', border: 'none', padding: 0, marginBottom: showManpower ? 10 : 0, cursor: 'pointer',
-            }}
-          >
-            <h4 style={{ margin: 0, color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-              {/* ชื่อแผงต้องครอบทุกอย่างที่อยู่ข้างใน — เดิมชื่อ "Standard Manpower" อย่างเดียว
-                  แต่ข้างในมีคุณสมบัติไลน์ (ประเภท/โหมดไหลงาน/เครื่องขนาน) ด้วย user ทักว่าสับสน (2026-08-06) */}
-              ⚙️ ตั้งค่าไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· กำลังคน + คุณสมบัติไลน์</span>
-            </h4>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{showManpower ? '▲ ซ่อน' : '▼ แสดง'}</span>
-          </button>
-          {showManpower && (
-          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 14 }}>
+          {/* ── ตั้งค่าไลน์ (กำลังคน + คุณสมบัติไลน์) ───────────────────────────
+              ชื่อแผงต้องครอบทุกอย่างที่อยู่ข้างใน — เดิมชื่อ "Standard Manpower" อย่างเดียว
+              แต่ข้างในมีคุณสมบัติไลน์ (ประเภท/โหมดไหลงาน/เครื่องขนาน) ด้วย user ทักว่าสับสน (2026-08-06)
+              🔴 ปุ่ม 💾 อยู่ที่หัวการ์ด — เดิมอยู่ท้ายฟอร์มที่ยาว ~500px ต้องเลื่อนหา และไม่มีอะไรบอกว่ามีของค้าง */}
+          <CollapseCard id="lineSettings" storePrefix="ls" defaultOpen={false}
+            title={<>⚙️ ตั้งค่าไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· กำลังคน + คุณสมบัติไลน์</span></>}
+            right={canEdit && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>● ยังไม่บันทึก</span>}
+                <button onClick={handleSaveStdManpower} disabled={mpSaving || !mpDirty}
+                  title={mpDirty ? 'บันทึกการตั้งค่าไลน์นี้' : 'ยังไม่มีอะไรเปลี่ยน'}
+                  style={{ padding: '6px 14px', background: mpSaving || !mpDirty ? 'var(--bg3)' : 'var(--accent)',
+                    color: mpSaving || !mpDirty ? 'var(--muted)' : '#fff',
+                    border: `1px solid ${mpSaving || !mpDirty ? 'var(--border2)' : 'var(--accent)'}`,
+                    borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: mpDirty && !mpSaving ? 'pointer' : 'default' }}>
+                  {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                </button>
+              </div>
+            )}>
+          <div>
             {/* ══ ข้อมูลของกลุ่ม — ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตกทอดค่าจากไลน์แม่ ══ */}
             <div style={groupHeadSt}>
               🏢 ข้อมูลของกลุ่ม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่</span>
@@ -1638,7 +1666,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
             </div>
             {parentLineObj && (
-              <div style={{ ...inheritNoteSt, marginBottom: 12 }}>
+              <Hint label="ตัวเลขนี้ถูกนับยังไง">
                 {(parentLineObj.std_day_shift || 0) > 0 || (parentLineObj.std_night_shift || 0) > 0 ? (
                   <>
                     ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ตั้งกำลังคน
@@ -1652,7 +1680,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <>ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ไม่ได้ตั้งกำลังคนไว้ —
                     ระบบจะ<strong style={{ color: 'var(--text)' }}>รวมกำลังคนจากไลน์ย่อยแต่ละไลน์</strong> ตัวเลขที่กรอกที่นี่จึงถูกนับจริง</>
                 )}
-              </div>
+              </Hint>
             )}
             <div style={{ marginBottom: 12 }}>
               <label style={labelSt}>🏷️ Cost Center</label>
@@ -1697,10 +1725,12 @@ export default function LineSetup({ embedded = false } = {}) {
                 style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
                 {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
-                {flowMode === 'parallel_machine'
-                  ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order'
-                  : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)'}
+              <div style={{ marginTop: 5 }}>
+                <Hint label="โหมดนี้ทำอะไร">
+                  {flowMode === 'parallel_machine'
+                    ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order'
+                    : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)'}
+                </Hint>
               </div>
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...labelSt, fontSize: 11 }}>
@@ -1709,10 +1739,12 @@ export default function LineSetup({ embedded = false } = {}) {
                 <input type="number" min="1" value={parallelStations} disabled={!canEdit}
                   onChange={e => setParallelStations(e.target.value)}
                   placeholder="เช่น 3" style={{ marginTop: 4, width: 120 }} />
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
-                  = <strong style={{ color: 'var(--text)' }}>เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง</strong> (ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน)
-                  · ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow แต่ตั้ง N=3
-                  · <strong style={{ color: 'var(--text)' }}>มีผล 2 ที่: หัก Downtime 1/N ในสูตร OEE และตัวเลข "ควรผลิตได้ตอนนี้" บนผังรวมโรงงาน</strong>
+                <div style={{ marginTop: 4 }}>
+                  <Hint label="N คือเลขอะไร">
+                    = <strong style={{ color: 'var(--text)' }}>เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง</strong> (ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน)
+                    · ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow แต่ตั้ง N=3
+                    · <strong style={{ color: 'var(--text)' }}>มีผล 2 ที่: หัก Downtime 1/N ในสูตร OEE และตัวเลข "ควรผลิตได้ตอนนี้" บนผังรวมโรงงาน</strong>
+                  </Hint>
                 </div>
                 {flowMode === 'parallel_machine' && !(parseInt(parallelStations) > 0) && (
                   // ⚠️ ไลน์เครื่องขนานที่ไม่ตั้ง N = ผังรวมคำนวณกำลังผลิตไม่ได้ ต้องถอยไปสูตรอัตราตามเวลา — ห้ามปล่อยเงียบ
@@ -1723,27 +1755,22 @@ export default function LineSetup({ embedded = false } = {}) {
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              {/* ⏸ ปลดระวางไลน์ — ทางเลือกแทนการ "ลบไลน์" ซึ่งทำให้ชื่อไลน์ที่ถูกเก็บเป็น text
-                  ในหลายสิบตาราง 2 project กำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
-                  ปลดระวาง = ไม่โผล่ใน dropdown ให้เลือกใหม่ แต่ข้อมูลเก่ายังอ่านออกครบ */}
-              {canEdit && selLineObj && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, color: selLineObj.is_active === false ? '#f59e0b' : 'var(--muted)', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
-                  <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
-                    ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
-                    : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์'}</span>
-                </label>
-              )}
-              {canEdit && (
-              <button onClick={handleSaveStdManpower} disabled={mpSaving}
-                style={{ padding: '7px 18px', background: mpSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
-              </button>
-              )}
-            </div>
+            {/* ⏸ ปลดระวางไลน์ — ทางเลือกแทนการ "ลบไลน์" ซึ่งทำให้ชื่อไลน์ที่ถูกเก็บเป็น text
+                ในหลายสิบตาราง 2 project กำพร้าเงียบทันที (ดูกฎ rename cascade ใน CLAUDE.md)
+                ปลดระวาง = ไม่โผล่ใน dropdown ให้เลือกใหม่ แต่ข้อมูลเก่ายังอ่านออกครบ
+                ⚠️ กดแล้วมีผลทันที ไม่ผ่านปุ่ม 💾 — แยกกล่องให้เห็นว่าคนละเรื่องกับฟอร์มข้างบน */}
+            {canEdit && selLineObj && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, marginTop: 4, padding: '8px 10px',
+                borderTop: '1px solid var(--border)', paddingTop: 12,
+                color: selLineObj.is_active === false ? '#f59e0b' : 'var(--muted)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
+                <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
+                  ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
+                  : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์ · มีผลทันที ไม่ต้องกดบันทึก'}</span>
+              </label>
+            )}
           </div>
-          )}
+          </CollapseCard>
 
           {/* 🔗 สายการไหลระหว่างไลน์ — ไลน์นี้ป้อนงานให้ใคร / รับของจากใคร (2026-08-19) */}
           <LineFlowPanel lineName={selectedLine} lines={lines} canEdit={canEdit} />
@@ -1760,6 +1787,29 @@ export default function LineSetup({ embedded = false } = {}) {
         </>}
       </div>
     </div>
+    </div>
+  );
+}
+
+/* ── (?) คำอธิบาย ───────────────────────────────────────────────────────────
+   แผงนี้มีย่อหน้าอธิบาย 11px ต่อท้ายเกือบทุกช่อง (ตกทอดจากไลน์แม่ · flow mode · N)
+   ⇒ ในคอลัมน์กว้าง 400px คำอธิบายกินที่จนมองไม่เห็นว่ามีช่องกรอกอะไรบ้าง (user 05/10)
+   🔴 ใช้กับ "คำอธิบาย" เท่านั้น — **คำเตือนที่บอกว่าระบบคำนวณไม่ได้ ห้ามเอามาซ่อนในนี้** */
+function Hint({ children, label = 'คำอธิบาย' }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+          fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)', textDecoration: 'underline dotted' }}>
+        {open ? '▴ ซ่อนคำอธิบาย' : `(?) ${label}`}
+      </button>
+      {open && (
+        <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', background: 'var(--bg2)',
+          border: '1px solid var(--border2)', borderRadius: 6, padding: '6px 8px', marginTop: 5 }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -1785,6 +1835,6 @@ const inheritNoteSt = {
 
 const uploadBtnSt = {
   display: 'inline-block', padding: '10px 20px',
-  background: 'var(--accent)', color: '#fff',
+  background: 'var(--accent)', color: 'var(--accent-ink)',
   borderRadius: 8, cursor: 'pointer', fontSize: 14
 };

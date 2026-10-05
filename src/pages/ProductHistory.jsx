@@ -319,7 +319,7 @@ export default function ProductHistory() {
                     <div key={p.id} onClick={() => { setSelMat(p); setPickerOpen(false); setShowAllDays(false); setOpenDays(new Set()); setOpenShifts(new Set()); }}
                       style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '6px 12px', cursor: 'pointer',
                         borderBottom: '1px solid var(--border)',
-                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? '#08131f' : 'var(--text)' }}>
+                        background: sel ? 'var(--accent)' : 'transparent', color: sel ? 'var(--accent-ink)' : 'var(--text)' }}>
                       {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
                       {p.p_no && <span style={{ fontWeight: 800, fontSize: 12, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap', minWidth: 90 }}>{p.p_no}</span>}
                       <span style={{ fontSize: 12, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: p.p_no ? 400 : 800 }}>{p.name}{!p.is_active && ' ⛔'}</span>

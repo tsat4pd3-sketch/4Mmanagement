@@ -102,7 +102,7 @@ const S = {
     border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }),
   saveBtn: {
     width: '100%', padding: '12px 0', borderRadius: 10, fontSize: 14, fontWeight: 700,
-    background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', marginTop: 12,
+    background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', marginTop: 12,
   },
 }
 
@@ -312,7 +312,7 @@ function CpZoom({ cp, idx, onClose }) {
       {cp.description && (
         <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{cp.description}</div>
       )}
-      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
+      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
     </div>
   )
 }
@@ -482,7 +482,7 @@ function NgRecheckPanel({ result, cp, onSaved }) {
           </div>
         </div>
       )}
-      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
+      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
         {saving ? 'กำลังบันทึก...' : 'บันทึก Action'}
       </button>
     </div>
@@ -657,7 +657,7 @@ function HistoryModal({ inspection, checkpoints, jig, onClose, userId, userRole 
           )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : '⬇ PDF'}</button>
-            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: '#071008', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : '⬇ Excel'}</button>
+            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : '⬇ Excel'}</button>
           </div>
         </div>
       </motion.div>
@@ -1394,7 +1394,7 @@ export default function PMCheckData() {
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
                               style={{ marginTop: 10, padding: '7px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
-                                border: 'none', background: 'var(--accent)', color: '#071008' }}>
+                                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)' }}>
                               เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
                             </button>
                           )}
@@ -1648,7 +1648,7 @@ export default function PMCheckData() {
               }}>ไว้ก่อน</button>
               <button onClick={createMoFromInspection} disabled={moSaving} style={{
                 padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                border: 'none', background: 'var(--accent)', color: '#071008', opacity: moSaving ? 0.6 : 1,
+                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
               }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>

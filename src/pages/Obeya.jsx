@@ -14,12 +14,12 @@ import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 const DeptDashboard = lazy(() => import('./DeptDashboard'));
 
-/* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (หน้าเดียว 3 แท็บ) ═══════════════════════════════
+/* ══ 🏛️ OBEYA — ห้องบัญชาการโรงงาน (หน้าเดียว 4 แท็บ: kpi · sqdcm · todo · table) ═══════════════════════════════
    2026-09-15 — รวมงาน 2 session ที่ทำ `/obeya` คนละมุมโดยไม่รู้ว่าอีกฝั่งทำอยู่
    2026-09-17 — ย้าย 📑 KPI รายเดือน เข้ามาเป็นแท็บที่ 3 (คำสั่ง user: "สองหน้าซ้ำซ้อนกัน")
 
      แท็บ 📋 บอร์ด KPI ส่วนงาน (default)  = ยุบ "กระดาษ OBEYA KPI monitoring" ที่แปะผนังเข้ามา
-        รายเดือน × กลุ่มไลน์ (คอลัมน์) × 8 หัวข้อ (แถว) — **จอสำหรับดู**
+        รายเดือน × ขอบเขตผัง · แผ่น = KPI ที่หน่วยถือจริง (utils/kpiBoardRows.js · 05/10) — **จอสำหรับดู**
         → docs/modules/obeya-kpi-board.md
      แท็บ 🖥️ จอ SQDCM                    = บอร์ดจอ TV "กระดาษ A4 สิบแผ่นปูเต็มจอ"
         สัปดาห์/เดือน/ปี × 5 แกน SQDCM เป็นกราฟ + ACTION BOARD ปิดลูป → docs/modules/obeya.md

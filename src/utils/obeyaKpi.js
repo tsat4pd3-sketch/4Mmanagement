@@ -108,9 +108,10 @@ export function axisOee({ sessions = [], target = null } = {}) {
   return {
     key: 'OEE', unit: '%', better: 'up', target: tg,
     value: val == null ? null : +val.toFixed(1),
-    a: round1(wavg(rows, r => Number(r.oee_a), wLoad)),
-    p: round1(wavg(rows, r => Number(r.oee_p), wRun)),
-    q: round1(wavg(rows, r => Number(r.oee_q), wProd)),
+    /* audit 05/10: `Number(null) = 0` ⇒ กะที่ stamp oee แต่ a/p/q ว่าง เคยถูกถ่วงเป็น 0 ลาก A·P·Q ต่ำกว่าจริง — null ต้องเป็น null ให้ wavg ข้าม */
+    a: round1(wavg(rows, r => (r.oee_a == null ? null : Number(r.oee_a)), wLoad)),
+    p: round1(wavg(rows, r => (r.oee_p == null ? null : Number(r.oee_p)), wRun)),
+    q: round1(wavg(rows, r => (r.oee_q == null ? null : Number(r.oee_q)), wProd)),
     shifts: rows.length,
     state: 'ok', note: null,
     series: bucketBy(rows, r => r.work_date, (acc, r) => acc.rows.push(r), () => ({ rows: [] }))
@@ -255,6 +256,32 @@ export function actionBuckets(items = [], today) {
 }
 
 /** สุขภาพของลูปปิด — ใช้ตอบคำถามเดียวที่สำคัญที่สุดของ Obeya: "ที่ตกลงกันไว้ ทำจริงไหม" */
+/** 🔒 ใบ Action ที่ "อยู่ในขอบเขต" (05/10 · audit: ACTION BOARD เดิมโชว์ทุกใบทั้งโรงงานไม่สนทั้ง scope user และขอบเขตที่เลือก)
+ *  · ใบที่ระบุไลน์ → ตัดสินด้วย `lineOk(line)` = ชุดเดียวกับที่กรองข้อมูลผลิตบนจอ (scope user ∩ ขอบเขตที่เลือก)
+ *    `lineOk` คืน `null` = ไลน์นี้ไม่อยู่ในทะเบียนแล้ว (เปลี่ยนชื่อ/ยุบ) → ถอยไปตัดสินด้วยส่วนงานของใบแทน ไม่ทิ้งใบเงียบ
+ *  · ใบที่ระบุแค่ส่วนงาน → ต้องอยู่ในสังกัด user (`sections` · [] = ไม่จำกัด) และใต้ขอบเขตที่เลือก (`scopeSecs` · null = ทั้งโรงงาน)
+ *  · ใบที่ไม่ระบุทั้งคู่ = ใบระดับโรงงาน → เห็นเมื่อดู "ทั้งโรงงาน" และ user ไม่ถูกจำกัดส่วนงาน
+ *  คืน `{ items, hidden }` — hidden = จำนวนที่ถูกกรองออก **จอต้องเขียนบอก ห้ามหายเงียบ** (กฎความซื่อสัตย์) */
+export function scopeActions(items = [], { sections = [], scopeSecs = null, lineOk = null } = {}) {
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const secLimited = !!(sections && sections.length);
+  const userSecs = secLimited ? new Set(sections.map(norm)) : null;
+  const sel = scopeSecs ? new Set([...scopeSecs].map(norm)) : null;
+  const ok = (a) => {
+    if (a.line_name) {
+      const r = lineOk ? lineOk(a.line_name) : true;
+      if (r !== null && r !== undefined) return !!r;
+    }
+    const s = norm(a.section);
+    if (!s) return !secLimited && !sel;
+    if (userSecs && !userSecs.has(s)) return false;
+    if (sel && !sel.has(s)) return false;
+    return true;
+  };
+  const kept = items.filter(ok);
+  return { items: kept, hidden: items.length - kept.length };
+}
+
 export function actionHealth(items = [], today) {
   const b = actionBuckets(items, today);
   const live = b.overdue.length + b.dueSoon.length + b.open.length;

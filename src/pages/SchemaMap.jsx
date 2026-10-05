@@ -764,6 +764,6 @@ const card = () => ({ background: 'var(--card)', border: '1px solid var(--border
 const sub = () => ({ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' });
 const subTitle = () => ({ fontSize: 12.5, fontWeight: 700, marginBottom: 5 });
 const btn = () => ({ fontSize: 12.5, fontWeight: 700, padding: '6px 11px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' });
-const chip = (on) => ({ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? '#08120a' : 'var(--text)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}` });
+const chip = (on) => ({ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 999, cursor: 'pointer', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}` });
 const tag = (color) => ({ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'var(--bg3)', color: color || 'var(--text2)', border: `1px solid ${color || 'var(--border2)'}` });
 const linkBtn = () => ({ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 12, textDecoration: 'underline' });

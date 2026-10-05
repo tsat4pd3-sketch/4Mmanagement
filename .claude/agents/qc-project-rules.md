@@ -329,6 +329,12 @@ model: inherit
     · ตารางที่มีคอลัมน์ `ชื่อชิ้นงาน` กับ `MAT` แยกกัน = 🟡 → ยุบเป็นคอลัมน์เดียววาดด้วย `<MatLabel>` (UI §6.21)
   · ไม่ตรวจ `src/lib/**` — ใบพิมพ์/export เรียงตามฟอร์มกระดาษทางการ ห้ามสลับ
 
+- **F-AXIS0** แกน Y ที่ไม่เริ่ม 0 ต้องมาจาก `focusDomain()` + `<FocusAxisNote>` (ObeyaSheet) — ห้าม `domain={[dataMin => …]}` / `domain={[95, 100]}` เอง
+  · grep: `domain=\{\[(dataMin|\(?\w+\)? =>|[1-9])` · `domain:\s*\[(dataMin|\w+ =>)` · ด่าน `chart-yaxis-domain-hand-made`
+- **F-KPILEVEL** ช่องตัดสิน KPI (`yn`/`ynTotal`/สีจุดกราฟ) ต้องเป็นระดับ 1/0.5/0 จาก `scoreDef` — ห้าม `v >= target` / `v < target` เอง (2 สีไม่รู้จัก Commitment)
+  · grep: `yn(Total)?:\s*[^,]*(>=|<=)` · `const \w*(miss|hit|pass)Target\w* =` · ด่าน `kpi-yn-boolean-compare`
+- **F-TDZ** อ่าน `const/let` ก่อนบรรทัดประกาศใน scope เดียวกัน (จอขาว "Cannot access before initialization") — lint `no-use-before-define` จับให้แล้ว แต่ถ้าเห็น `const a = b.x` เหนือ `const b` ให้รายงาน
+
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่
   ต้องอยู่ใน CLAUDE.md — เทียบโค้ดจริงกับเอกสาร หาจุดที่**เอกสารล้าสมัย** (เอกสารผิดแย่กว่าไม่มี)

@@ -204,7 +204,7 @@ export default function ParetoAbcChart({
             {[['value', unit], ['baht', '฿ บาท']].map(([k, lb]) => (
               <button key={k} onClick={() => setMeasure(k)}
                 title={k === 'baht' ? 'เรียงตามมูลค่าความสูญเสีย (นาที/60 × activity rate ของไลน์)' : `เรียงตาม${unit}`}
-                style={{ background: measure === k ? 'var(--accent)' : 'transparent', color: measure === k ? '#04140a' : 'var(--text2)',
+                style={{ background: measure === k ? 'var(--accent)' : 'transparent', color: measure === k ? 'var(--accent-ink)' : 'var(--text2)',
                   border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
             ))}
           </div>

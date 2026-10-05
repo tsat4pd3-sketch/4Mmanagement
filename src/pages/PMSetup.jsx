@@ -129,7 +129,7 @@ const S = {
   }),
   primaryBtn: {
     padding: '9px 18px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700,
-    background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer',
+    background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
   },
   empty: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -166,7 +166,7 @@ const S = {
   }),
   cpCard: { background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 },
   cancelBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', cursor: 'pointer' },
-  saveBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700, background: 'var(--accent)', color: '#071008', border: 'none', cursor: 'pointer' },
+  saveBtn: { flex: 1, padding: '9px 0', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer' },
   modeBtn: (active) => ({
     flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
@@ -287,7 +287,7 @@ function ImageAnnotator({ imageUrl, checkpoints, labels, activePinKey, onImageCl
           )}
           {activePinKey && (
             <div style={{ position: 'sticky', bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: '#071008', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
+              <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 คลิกที่รูปเพื่อวางตำแหน่ง</span>
             </div>
           )}
         </div>

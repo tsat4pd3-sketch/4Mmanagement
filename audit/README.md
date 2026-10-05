@@ -12,7 +12,8 @@
 npx vite --config audit/vite.audit.mjs        # เปิดที่ :5199
 # แล้วเปิด http://localhost:5199/audit/index.html?p=DailyReport
 ```
-`?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin`
+`?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin` · `?role=<role>` สลับ role · **`?sections=PD2,PD3` จำลอง user ที่ถูกจำกัดส่วนงาน** (05/10 — ใช้ตรวจสาย "ขอบเขตจาก URL นอกสังกัด" / ตัวกรองส่วนงานของบอร์ด OBEYA)
+· หน้าปกติ mount `<ToastContainer/>` แล้ว (05/10) — ก่อนหน้านี้ toast ของทุกหน้าไม่เคยโผล่ใน harness (มีแค่ใน FeedbackLab) ⇒ เทสที่รอข้อความ toast จะ false-negative
 
 **หน้าที่ต้องส่ง props ถึงจะเรนเดอร์จริง มี harness แยก** (main.jsx mount แบบ `<C/>` ไม่ส่ง props):
 
