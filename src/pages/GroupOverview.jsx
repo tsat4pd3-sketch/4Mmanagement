@@ -174,7 +174,8 @@ export default function GroupOverview() {
   const begin = useLatestRequest();
   const [sel, setSel] = useState({ axis: 'map', node: null, comp: null });  // axis: map=โซนพื้นที่ · biz=กลุ่มธุรกิจ · node/comp=null คือระดับ TSG
   const [showHow, setShowHow] = useState(false);
-  const [hotAll, setHotAll] = useState(false);   // ไลน์ด่วน: ตั้งต้น 5 อันดับ (หน้าไม่ยาวเกิน 2 จอ · UX 05/10) — กดดูครบ 10
+  const [hotAll, setHotAll] = useState(false);
+  const [lv1View, setLv1View] = useState('map');   // ระดับ TSG แกนพื้นที่: 'map' แผนที่ | 'rank' แท่งเทียบรายโซน   // ไลน์ด่วน: ตั้งต้น 5 อันดับ (หน้าไม่ยาวเกิน 2 จอ · UX 05/10) — กดดูครบ 10
   const [ltFilter, setLtFilter] = useState(null);   // กรองเฉพาะไลน์ประเภทนี้ทั้งกลุ่ม (null = ทุกประเภท)
   const [pickComp, setPickComp] = useState(null);   // บริษัทที่กดเลือก → ถามก่อนว่าจะเข้าผังโรงงาน หรือดูภาพรวมในหน้านี้
   const navigate = useNavigate();
@@ -457,6 +458,12 @@ export default function GroupOverview() {
     );
   };
 
+  const lv1Switch = (
+    <span style={{ marginLeft: 'auto' }}>
+      <Segmented value={lv1View} onChange={setLv1View}
+        options={[{ value: 'map', label: '🌏 แผนที่' }, { value: 'rank', label: '📊 เทียบรายโซน' }]} />
+    </span>
+  );
   const crumbBtn = (label, onClick, active) => (
     <button onClick={onClick} disabled={active} style={{
       background: 'none', border: 'none', padding: '2px 4px', fontSize: 13, fontWeight: active ? 800 : 600,
@@ -531,6 +538,11 @@ export default function GroupOverview() {
                 </button>
               );
             })}
+            <InfoMore size={11.5}>
+              ประเภทไลน์ของ <b>TSAT4</b> มาจากที่ตั้งไว้ในหน้า ⚙️ ตั้งค่าผังไลน์ ·
+              <b> ไฮโดรฟอร์มนับรวมใน "ปั๊มขึ้นรูป / Metal Forming"</b> (งานขึ้นรูปโลหะเหมือนกัน — รวมเฉพาะการแสดงผลหน้านี้) ·
+              * = ประเภทที่โรงงานเรายังไม่มี (เราเป็นงานโลหะ) ต้องเพิ่มเมื่อเปิดใช้หลายบริษัทจริง
+            </InfoMore>
           </div>
           {ltFilter && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 7 }}>
@@ -538,11 +550,6 @@ export default function GroupOverview() {
               {tree.hiddenComps > 0 && <> · ซ่อน <b>{tree.hiddenComps}</b> บริษัทที่ไม่มีไลน์ประเภทนี้</>}
             </div>
           )}
-          <InfoMore size={11.5} style={{ marginTop: 6 }}>
-            ประเภทไลน์ของ <b>TSAT4</b> มาจากที่ตั้งไว้ในหน้า ⚙️ ตั้งค่าผังไลน์ ·
-            <b> ไฮโดรฟอร์มนับรวมใน "ปั๊มขึ้นรูป / Metal Forming"</b> (งานขึ้นรูปโลหะเหมือนกัน — รวมเฉพาะการแสดงผลหน้านี้) ·
-            * = ประเภทที่โรงงานเรายังไม่มี (เราเป็นงานโลหะ) ต้องเพิ่มเมื่อเปิดใช้หลายบริษัทจริง
-          </InfoMore>
         </div>
       )}
 
@@ -584,12 +591,13 @@ export default function GroupOverview() {
 
         {/* ══ ระดับ 1: TSG ══ (แกนแผนที่ = โซนพื้นที่ · แกนกลุ่มธุรกิจ = การ์ดกลุ่ม) */}
         {!bizNode && (<>
-          {/* แผนที่ + แท่งเทียบ วางคู่กันบนจอกว้าง (UX audit 05/10: เดิมเรียงต่อกันแนวตั้ง หน้ายาว 2.6 เท่าของจอ) */}
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile || sel.axis !== 'map' ? 'minmax(0, 1fr)' : 'minmax(0, 1.55fr) minmax(320px, 1fr)', alignItems: 'start', alignContent: 'start' }}>
-          {sel.axis === 'map' && (
+          {/* แผนที่ ↔ แท่งเทียบ = สลับดูทีละมุมในการ์ดเดียว (UX audit 05/10: เดิมเรียงต่อกันแนวตั้ง หน้ายาว 2.6 เท่าของจอ)
+              ⚠️ ห้ามวางคู่กันซ้าย-ขวา — แผนที่เป็น SVG สเกลตามความกว้าง แคบลงแล้วป้ายประเทศเหลือ ~8px (chartsweep) */}
+          {sel.axis === 'map' && lv1View === 'map' && (
             <div style={card}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
                 <div style={{ fontSize: 15, fontWeight: 700 }}>🌏 แผนที่โรงงานทั่วโลก</div>
+                {lv1Switch}
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {tree.allComps.length} โรงงาน · {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
                 </span>
@@ -599,22 +607,24 @@ export default function GroupOverview() {
                 countries={COUNTRY_META}
                 groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
                 isMobile={isMobile}
-                height={420}
+                height={isMobile ? 420 : 500}
                 onPickCompany={(c) => setPickComp(c)}
               />
             </div>
           )}
 
+          {(sel.axis !== 'map' || lv1View === 'rank') && (
           <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-              📊 เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>📊 เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
+              {sel.axis === 'map' && lv1Switch}
             </div>
             <RankBars items={axisNodes} onPick={(g) => setSel(s => ({ ...s, node: g.key, comp: null }))} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
               แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>คลิกชื่อเพื่อดูบริษัทข้างใน</b>
             </div>
           </div>
-          </div>
+          )}
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', alignContent: 'start' }}>
             {axisNodes.map(g => {
@@ -824,10 +834,10 @@ export default function GroupOverview() {
 
         {/* ── ไลน์ที่ต้องดูแลด่วน (ตามขอบเขตที่กำลังดู) ── */}
         <div style={card}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
             🚨 ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
+            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)</span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)</div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 700 }}>
               <thead><tr>

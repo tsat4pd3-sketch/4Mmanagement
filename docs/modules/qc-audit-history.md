@@ -71,7 +71,7 @@
 | 24 | ทะเบียน CT/พัก | `utils/oeeMasters.js` แบ่งหน้าครบ + โยนเมื่อล้ม (`:v2`) · LineOeeBoard ไลน์เคยผลิตแบ่งหน้าครบ · ด่าน `master-cache-swallow` จับ 2 บรรทัด |
 | 25 | CapacityBoard / QaFmeBoard | `oee_targets` อ่านจาก Main + เตือนเมื่อล้ม · realtime `qa_fme_obligations` แยก board `client: supabase` |
 | 26 | chartsweep/stdsweep | ป้ายหน่วยแกน `axisUnitLabel`/`axisUnitTop` + Pareto `shortTick` (Obeya 0 ปัญหา) · StockReceiptQueue แถบกรองชิดแท็บ · MaterialRequests ตัด padding บน (QualityControl 20→16px) |
-| UX | จอเดโม | TV มีชื่อไลน์ในกรอบ (`utils/regionGeom.js`) · GroupOverview พับ mockup/คำอธิบาย + ตัดข้อความนักพัฒนา + "ยังไม่มีข้อมูล" แทน 0/0 (2.61→1.94 จอ) · SQDCM จอ < 800px ไม่บีบ · Obeya หัวเพจเดียว · งานค้างไม่มี "?"/หัวข้อว่าง · ตัด `scoreDef`/`parts_master`/`safety_events` ออกจากข้อความบนจอ |
+| UX | จอเดโม | TV มีชื่อไลน์ในกรอบ (`utils/regionGeom.js`) · GroupOverview พับ mockup/คำอธิบาย + ตัดข้อความนักพัฒนา + "ยังไม่มีข้อมูล" แทน 0/0 (2.61→1.98 จอ) · SQDCM จอ < 800px ไม่บีบ · Obeya หัวเพจเดียว · งานค้างไม่มี "?"/หัวข้อว่าง · ตัด `scoreDef`/`parts_master`/`safety_events` ออกจากข้อความบนจอ |
 
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
 - จอเดโม (ที่เหลือ): stale-response MtnAnalysis/ProductHistory/QualityBins · Obeya SQDCM โหลด `oee_targets` ล้มแล้วใช้เป้ามาตรฐานเงียบ
