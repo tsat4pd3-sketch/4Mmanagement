@@ -42,6 +42,27 @@ export const classByDigit = (d) => MAT_CLASSES.find(c => c.digit === matDigit(d)
 /** class ของ "เลข MAT" — ไม่ใช่เลข SAP 8 หลัก = คืน null (ไม่เดาจากตัวแรก) */
 export const matClassOf = (mat) => (isSapMat(mat) ? classByDigit(matDigit(mat)) : null);
 
+/* ── 🚫 "ของที่ออกจากกระบวนการ ห้ามเป็นเลขวัตถุดิบ" (2026-10-05 · คำสั่ง user) ──────────────
+   *"5XX มันคือ raw material เป็นแค่วัตถุดิบมาผลิต ไม่สามารถเป็น product ที่ผ่าน process"*
+
+   ของจริงที่เจอ: ไลน์เลเซอร์บันทึก "ขั้นตอนตัด" โดยใช้**เลขวัตถุดิบ**เป็นชื่อของที่ผลิตได้
+   4 เลข 208 ใบ (50029017 · 50031625 · 50031601 · 50031602) ⇒ สิ่งที่ถูกคือตั้งเป็น **ชั้น OP**
+   (`is_operation = true` + ผูก `op_parent_mat` กับพาร์ทจริงที่มันไปประกอบต่อ)
+
+   ทำไมสำคัญ: ถ้าปล่อยเป็น "พาร์ท" ธรรมดา ยอดของขั้นตอนจะถูกบวกรวมกับพาร์ทจริง (นับซ้ำ)
+   และเลขวัตถุดิบจะไปโผล่ใน dropdown ให้คนเลือกเป็นของที่ผลิตได้
+
+   🔴 เตือนเท่านั้น ห้ามบล็อก — ทะเบียนของจริงมีเคสที่เรายังไม่รู้ ให้คนตัดสิน (หลักเดียวกับ checkStdSelection)
+   ไม่ใช่เลข SAP 8 หลัก = `matClassOf` คืน null อยู่แล้ว ⇒ ตอบ null (ไม่เดา) */
+/** @returns {string|null} ข้อความเตือน · null = ไม่มีปัญหา/ตอบไม่ได้ */
+export function rawAsOutputWarning(matNo, isOperation) {
+  if (isOperation) return null;                       // ตั้งเป็นชั้น OP แล้ว = ถูกต้องแล้ว
+  return matClassOf(matNo)?.key === 'raw'
+    ? 'เลขวัตถุดิบ (5xx) ถูกตั้งเป็นพาร์ทที่ผลิตได้ — ของที่ออกจากกระบวนการไม่ควรเป็นเลขวัตถุดิบ '
+      + '· ถ้านี่คือ "ขั้นตอน" ให้ติ๊ก 🔩 รายการขั้นตอน แล้วผูกพาร์ทจริงที่มันไปประกอบต่อ'
+    : null;
+}
+
 export const matColor = (mat) => matClassOf(mat)?.color || 'var(--muted)';
 export const matLabel = (mat) => matClassOf(mat)?.short || '—';
 
