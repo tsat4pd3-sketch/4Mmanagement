@@ -48,7 +48,7 @@ import { can } from '../utils/permissions';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import { PLANT, isPlant, parseScopeKey, drillParams } from '../utils/orgScope';
@@ -64,7 +64,7 @@ import Segmented from './Segmented';
 import { LOOKBACK_DAYS, presetRange, addDays, rangeDays, normalizeRange } from '../utils/timeRange';
 import {
   OBEYA_AXES, PERIODS, periodRange, prevRange, statusColor, statusOf, statusWhy, gapToTarget,
-  axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, fillDays, round1,
+  axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan, actionHealth, scopeActions, fillDays, round1,
 } from '../utils/obeyaKpi';
 import {
   yearOf, yearRange, monthRange, prevMonthRange, monthLabel, SUMMARY_KEY, monthBarStatus,
@@ -150,6 +150,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const scopeLineSet = useMemo(() => (isPlant(scope) ? null : new Set(org.lineNamesOf(scope.kind, scope.value))), [scope, org]);
   // ส่วนงานที่ขอบเขตนี้สังกัด — ใช้ตอนตั้ง Action item / ส่งต่อ ?section= ให้หน้าที่ยังอ่านแค่ section
   const secFilter = isPlant(scope) ? '' : (org.sectionOf(scope.kind, scope.value) || '');
+  /* ส่วนงานทั้งหมดที่อยู่ใต้ขอบเขตที่เลือก (ฝ่าย = หลายส่วนงาน) — ใช้กรองใบ Action ที่ระบุแค่ส่วนงาน · null = ทั้งโรงงาน */
+  const scopeSecs = useMemo(() => (isPlant(scope) ? null : org.sectionsOf(scope.kind, scope.value)), [scope, org]);
   const scopeText = isPlant(scope) ? 'ทุกส่วนงาน' : org.labelOf(scope.kind, scope.value);
   const [targets, setTargets] = useState({});
   const [ccRates, setCcRates] = useState([]);
@@ -283,12 +285,22 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const secOfLine = useMemo(
     () => Object.fromEntries(lines.map(l => [l.name, l.section])), [lines],
   );
+  /* scope ไลน์ของ user ผ่าน helper กลางตัวเดียวกับบอร์ด KPI (05/10 · audit) — leader = ครอบครัวไลน์ตัวเอง
+     ไม่ใช่แค่ส่วนงาน · null = ไม่จำกัด (ห้ามคืน [] — lines ยังไม่โหลด = เห็นทั้งหมดชั่วคราว ไม่ใช่ว่างเปล่า) */
+  const userLineSet = useMemo(() => {
+    const names = scopedLineNames({ role, lineId, sections, lines });
+    return names ? new Set(names) : null;
+  }, [role, lineId, sections, lines]);
   const lineOk = useCallback((name) => {
     const sec = secOfLine[name];
-    if (!inSectionScope(sections, sec)) return false;           // scope ของ user
+    if (!inSectionScope(sections, sec)) return false;           // scope ของ user (ส่วนงาน)
+    if (userLineSet && !userLineSet.has(name)) return false;    // scope ของ user (ครอบครัวไลน์ของ leader)
     if (scopeLineSet && !scopeLineSet.has(name)) return false;  // ตัวกรองขอบเขตบนจอ (ทุกมิติของผัง)
     return true;
-  }, [secOfLine, sections, scopeLineSet]);
+  }, [secOfLine, sections, userLineSet, scopeLineSet]);
+  /* 🔒 ใบ Action ก็ต้องเดินตามขอบเขตเดียวกับข้อมูลผลิต (05/10) — เดิมโชว์ทุกใบทั้งโรงงานไม่ว่าจะเลือกส่วนงานไหน */
+  const actLineOk = useCallback((n) => (Object.prototype.hasOwnProperty.call(secOfLine, n) ? lineOk(n) : null), [secOfLine, lineOk]);
+  const scopedActs = useMemo(() => scopeActions(actions, { sections, scopeSecs, lineOk: actLineOk }), [actions, sections, scopeSecs, actLineOk]);
 
   const fSess = useMemo(() => sess.filter(s => lineOk(s.line_name)), [sess, lineOk]);
   const fPrev = useMemo(() => prevSess.filter(s => lineOk(s.line_name)), [prevSess, lineOk]);
@@ -432,7 +444,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   }, [fDts]);
   const pareto = isYear ? paretoY : paretoM;
 
-  const health = useMemo(() => actionHealth(actions, today), [actions, today]);
+  const health = useMemo(() => actionHealth(scopedActs.items, today), [scopedActs, today]);
   const ngTotalM = useMemo(() => sumDefectQty(fDefs, 'line'), [fDefs]);
   const ngTotal = isYear ? (kQY.ngQty || 0) : ngTotalM;
 
@@ -948,7 +960,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           {/* ═══ ACTION BOARD — แผ่นแนวนอน (2 ช่อง) · ที่เดียวของหน้าที่เขียนข้อมูลได้ ═══ */}
           {has('action') && (
           <Sheet k={k} cw={cw} span={2} icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
-            sub={health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}
+            sub={`${health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}${scopedActs.hidden ? ` · นอกขอบเขต ${scopedActs.hidden} ใบ` : ''}`}
             big={health.overdue.length || (health.empty ? '0' : health.liveCount)}
             unit={health.overdue.length ? 'ใบเกินกำหนด' : 'ใบค้าง'}
             stat={actionStat}>

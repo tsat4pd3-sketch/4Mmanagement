@@ -911,12 +911,17 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 | 🟡 ข้อความล้าสมัย: "แผง Key Performance" · "แท็บ 📑" · "Y/N" · "(13/07) 8,000+ ครั้ง" · หัวคอมเมนต์ "3 แท็บ/8 หัวข้อ" | แก้เป็นของจริง (⚙️ · ○△✗ · แผ่นแยก) | — |
 | 🟡 ฟอนต์ 9.5–10.5px ใน KpiMonthly/KpiStandardModal (8 จุด) · ป้าย "— ทั้งหมด" · `plantLabel="ทุกส่วนงาน"` | 11px · `allOf('รหัส Cost Center')` · `ALL.section` | UI §4 / UI-STANDARD §3.4 |
 
-**ยังไม่แก้ — ต้องให้ user ตัดสินก่อน (เปลี่ยนพฤติกรรม/ขอบเขตข้อมูล):**
-1. SQDCM **ACTION BOARD ไม่กรองตาม scope ที่เลือก/sections ของ user** (`actions` → `actionHealth`) — เลือก PD3 ยังนับใบ PD4 · ถ้าตั้งใจให้ห้อง Obeya เห็นทั้งโรงงาน ต้องเขียนไว้ใน obeya.md §5
-2. บอร์ด KPI: เปิด `?scope=` นอกสังกัด (เช่น PD1 ด้วยบัญชี PD3) → OEE/PPM ว่าง แต่ `safety_events`/`meeting_action_items` ยังเห็นของ PD1 — ควร reset เป็นขอบเขตของตัวเอง + toast
-3. SQDCM `lineOk` กรองด้วย `inSectionScope` อย่างเดียว ไม่ผ่าน `scopedLineNames` (branch leader ระดับไลน์/ทีมไม่ถูกใช้) ต่างจากแท็บ 📋
-4. บอร์ด KPI ยัง `usePolling` ล้วน (ไม่มี realtime) — ควรเป็น `useLiveBoard(load, { tables:['production_sessions'] })` เหมือนแท็บ SQDCM
-5. `KpiMonthly` `parts_master` select ไม่มี filter (เพดาน 1000 แถวเงียบ) · `ObeyaKpiBoard` `.in('line_name', names.slice(0,200))` นับ "กะยังไม่ปิด" ขาดเมื่อขอบเขต >200 ไลน์
-6. `ChartModal` กราฟเส้น `domain=['auto','auto']` (แกนไม่เริ่ม 0 ไม่มีป้าย) · sparkline `MiniChart` พื้นแกน = min (ยอมรับได้ที่ 150×30 — ระบุเจตนาแล้ว)
+**รอบ 3 (05/10 · user เคาะ "หมวด 3 แก้หมด") — แก้ครบ 6 ข้อที่เคยอยู่ในลิสต์ "ยังไม่แก้":**
+
+| เดิม | แก้เป็น | หลักฐาน/ด่าน |
+|---|---|---|
+| 1. SQDCM **ACTION BOARD ไม่กรองตาม scope ที่เลือก/sections ของ user** — เลือก PD3 ยังนับใบ PD4 | `scopeActions()` (`obeyaKpi.js`) กรอง 3 ชั้น: ใบที่ระบุไลน์ → `lineOk` ชุดเดียวกับข้อมูลผลิต · ใบที่ระบุแค่ส่วนงาน → sections ของ user ∩ `org.sectionsOf(scope)` · ใบไม่ระบุอะไร = ใบระดับโรงงาน เห็นเฉพาะ "ทั้งโรงงาน" · ไลน์ที่หายจากทะเบียน (`lineOk` คืน null) ถอยไปใช้ส่วนงาน **ไม่ทิ้งเงียบ** · การ์ดเขียน "นอกขอบเขต N ใบ" | เทส `obeyaKpi.test.mjs` · ด่าน `obeya-actions-unscoped` · harness: ทั้งโรงงาน 14 ใบ → PD1 13 ใบ + นอกขอบเขต 1 → JIG MTN 0 + นอกขอบเขต 14 |
+| 2. บอร์ด KPI: เปิด `?scope=` นอกสังกัด (PD1 ด้วยบัญชี PD2) → ค้างอยู่ จอว่าง/เห็นของหน่วยอื่น | effect default-scope เช็ค `scopeOpts.some(o => o.key === scopeKeyStr)` เพิ่มจาก `org.has` → reset เป็น mine/first/PLANT + `toast.info("ขอบเขต … อยู่นอกสังกัดของคุณ")` ไม่สลับเงียบ | harness `?sections=PD2&scope=section:PD1` → picker=plant + toast ขึ้น |
+| 3. SQDCM `lineOk` ไม่ผ่าน `scopedLineNames` (leader ครอบครัวไลน์ไม่ถูกใช้) | เพิ่ม `userLineSet` จาก `scopedLineNames({ role, lineId, sections, lines })` ชุดเดียวกับแท็บ 📋 (null = ไม่จำกัด) | — |
+| 4. บอร์ด KPI `useEffect+usePolling` ประกอบเอง ไม่มี idle gate/realtime | `useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD })` (ยังไม่ subscribe prod_orders/downtime_logs ตามกฎ) | กฎ DB ข้อ 8 |
+| 5. `KpiMonthly` `parts_master` select ทั้งตาราง (เพดาน 1000 เงียบ) · บอร์ด KPI `.in('line_name', names.slice(0,200))` | parts_master ดึงเฉพาะ MAT ที่มีของเสีย ผ่าน `fetchByIds` (truncated = throw บอกว่า Cost of defect จะต่ำกว่าจริง) · กะเปิดค้างผ่าน `fetchByIds(names, …)` (error/truncated → warn "กะที่เปิดค้าง") | กฎ DB ข้อ 5 |
+| 6. `ChartModal` กราฟเส้น `domain=['auto','auto']` ยกพื้นแกนเงียบ | `focusDomain([...vals, target])` + `<FocusAxisNote fixed>` (ชิป "🎯 แกนเริ่ม 79 ไม่ใช่ 0") · แท่งยังเริ่ม 0 · sparkline `MiniChart` 150×30 คงเดิมโดยตั้งใจ | ด่าน `chart-yaxis-domain-hand-made` |
+
+- harness เพิ่ม `?sections=PD2,PD3` (จำลอง user ที่ถูกจำกัดส่วนงาน) และ mount `<ToastContainer/>` ในหน้าปกติ (เดิมมีแค่ FeedbackLab ⇒ toast ของทุกหน้าไม่เคยโผล่ใน harness) → `audit/README.md`
 
 > 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)

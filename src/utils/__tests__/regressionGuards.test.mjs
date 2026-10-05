@@ -989,6 +989,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'obeya-actions-unscoped',
+    scan: ['src/components', 'src/pages'], ext: ['.jsx'],
+    /* ACTION BOARD ที่เอาแถว meeting_action_items ดิบไปคิด health โดยไม่ผ่าน scopeActions() */
+    re: /actionHealth\(\s*(?:actions|items|rows|data)\s*,/g,
+    why: 'ใบ Action ต้องเดินตามขอบเขตเดียวกับข้อมูลผลิต (scope user ∩ ขอบเขตที่เลือก) — audit 05/10: SQDCM โชว์ทุกใบทั้งโรงงาน '
+       + 'ไม่ว่าจะเลือกส่วนงานไหน และ user ที่ถูกจำกัดส่วนงานก็เห็นใบของหน่วยอื่น',
+    fix: 'const scoped = scopeActions(actions, { sections, scopeSecs, lineOk }) → actionHealth(scoped.items, today) + เขียน scoped.hidden บนจอ',
+    allow: {},
+  },
+  {
     id: 'chart-yaxis-domain-hand-made',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* แกน Y ที่ไม่เริ่ม 0 แบบเขียนเอง: domain={[dataMin => …, …]} / domain={[95, 100]} / domain: [min => …] */
