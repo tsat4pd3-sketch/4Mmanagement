@@ -10,6 +10,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { rpnOf, applyProposal } from '../utils/peMaster';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal, WarnBar } from './NpiUi';
 import SearchInput from './SearchInput';
+import { DeleteButton } from './IconButton';
 
 const KIND_LABEL = { process: 'Process', incoming_insp: 'Incoming Insp.', storage: 'Storage', transport: 'Transport', inspection: 'Inspection', rework: 'Rework', warehouse: 'Warehouse', delivery: 'Delivery' };
 const rpnColor = (v) => (v == null ? 'var(--muted)' : v >= 100 ? '#ef4444' : v >= 70 ? '#f59e0b' : '#22c55e');
@@ -224,7 +225,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                         <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: rpnColor(rpnOf(it)) }}>{rpnOf(it) ?? '—'}</td>
                         <td style={tdSt}>v{it.version}</td>
                         <td style={{ ...tdSt, fontSize: 11 }}>{it.origin_set_id ? (setById[it.origin_set_id]?.part_no || '—') : '—'}</td>
-                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delItem(it)}>🗑</button></>}</td>
+                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <DeleteButton onClick={() => delItem(it)} title="ลบ" /></>}</td>
                       </tr>
                     ))}</tbody>
                   </table>

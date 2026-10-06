@@ -25,6 +25,7 @@ import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import { DeleteButton } from '../components/IconButton';
 
 /* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
    MAN/MACHINE ที่หน้า Management — UI-CONVENTIONS §1
@@ -1301,9 +1302,8 @@ export default function LineSetup({ embedded = false } = {}) {
                             style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
                         </span>
                       )}
-                      {canDel && <button className="tbtn" onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                        style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 13, padding: '0 2px', lineHeight: 1, flexShrink: 0 }}
-                        title="ลบไลน์">🗑️</button>}
+                      {canDel && <DeleteButton onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
+                        style={{ width: 26, height: 26 }} title={`ลบไลน์ ${l.name}`} />}
                     </>
                   )}
                 </div>
@@ -1480,7 +1480,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         : 'ไม่มีสกิลที่กำหนด'}
                     </div>
                   </div>
-                  {canDel && <button className="tbtn" onClick={() => deleteStation(st.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                  {canDel && <DeleteButton onClick={() => deleteStation(st.id)} title="ลบจุดงาน" />}
                 </div>
               );
             })}
@@ -1568,7 +1568,7 @@ export default function LineSetup({ embedded = false } = {}) {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
-                      {canDel && <button className="tbtn" onClick={() => deleteMachinePoint(p.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>🗑️</button>}
+                      {canDel && <DeleteButton onClick={() => deleteMachinePoint(p.id)} title="ลบจุดเครื่องจักร" />}
                     </div>
                   );
                 })}
@@ -1612,7 +1612,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                         <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
-                        {canDel && <button className="tbtn" onClick={() => deleteFlowLink(link.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>🗑️</button>}
+                        {canDel && <DeleteButton onClick={() => deleteFlowLink(link.id)} title="ลบเส้นทางไหล" />}
                       </div>
                     );
                   })}

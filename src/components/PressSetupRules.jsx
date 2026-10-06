@@ -225,7 +225,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                     <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>แก้ล่าสุด: {r.updated_by_name}</span>
                   )}
                   {canEdit && <>
-                    {dirty && <button onClick={() => saveRow(r)} disabled={busy} style={btn('var(--accent)', '#071008')}>💾 บันทึก</button>}
+                    {dirty && <button onClick={() => saveRow(r)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>💾 บันทึก</button>}
                     <button onClick={() => toggle(r)} style={btn('var(--bg2)', 'var(--text2)')}>{off ? 'เปิดใช้' : 'ปิดใช้'}</button>
                   </>}
                 </div>
@@ -307,7 +307,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
               <StepsEditor steps={adding.height_steps} onChange={v => setAdding(a => ({ ...a, height_steps: v }))} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button onClick={() => setAdding(null)} style={btn('var(--bg2)', 'var(--text2)')}>ยกเลิก</button>
-                <button onClick={addRule} disabled={busy} style={btn('var(--accent)', '#071008')}>บันทึกกฎใหม่</button>
+                <button onClick={addRule} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>บันทึกกฎใหม่</button>
               </div>
             </div>
           ) : (

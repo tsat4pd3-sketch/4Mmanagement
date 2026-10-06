@@ -19,6 +19,7 @@ import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
+import { DeleteButton } from '../components/IconButton';
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, hint, children }) {
@@ -669,7 +670,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
               {canEdit && (
                 <>
                   <button className="tbtn" onClick={() => startEdit(t)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
-                  <button className="tbtn" onClick={() => handleDelete(t)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>🗑️</button>
+                  <DeleteButton onClick={() => handleDelete(t)} title="ลบรายการนี้" />
                 </>
               )}
             </div>

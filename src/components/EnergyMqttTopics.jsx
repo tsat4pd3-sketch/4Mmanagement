@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { MQTT_FIELDS, mqttField, LIVE_STALE_MIN, liveAgeMin } from '../utils/energy';
+import { DeleteButton } from './IconButton';
 
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
@@ -256,7 +257,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                           {r.is_active ? 'ใช้อยู่' : 'ปิด'}
                         </button>
                         <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
-                        <button onClick={() => del(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--border2)', background: 'var(--bg3)', color: BAD, cursor: 'pointer' }}>🗑</button>
+                        <DeleteButton onClick={() => del(r)} title="ลบ" />
                       </td>
                     )}
                   </tr>

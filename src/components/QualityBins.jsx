@@ -35,6 +35,7 @@ import { printQualityBin } from '../lib/qualityBinPrint';
 import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, SPECIAL_USE_FORM } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
 import { notifyEvent } from '../utils/notifyEvent';
+import { DeleteButton } from './IconButton';
 
 const BINS = [
   { key: 'yellow', label: '🟡 ถังเหลือง — ชิ้นงานต้องสงสัย', short: 'ถังเหลือง', color: '#f5b942' },
@@ -488,7 +489,7 @@ export default function QualityBins() {
                   {isY && redChildOf.has(r.id) && (
                     <span title="ย้ายลงถังแดงไปแล้ว" style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>🔴 ย้ายแล้ว</span>
                   )}
-                  {canManage && <button onClick={() => remove(r)} title="ลบ" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🗑</button>}
+                  {canManage && <DeleteButton onClick={() => remove(r)} title="ลบ" />}
                 </td>
               </tr>
             ))}
