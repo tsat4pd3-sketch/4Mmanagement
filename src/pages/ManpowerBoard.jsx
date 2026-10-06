@@ -4,6 +4,9 @@ import { UserContext } from '../App';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
+import BoardPager from '../components/BoardPager';
+import useFitHeight from '../utils/useFitHeight';
+import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import { useSearchParams } from 'react-router-dom';
 import useProductionLines from '../utils/useProductionLines';
@@ -20,7 +23,7 @@ import { ALL } from '../utils/filterLabels';
 import { markerScale } from '../utils/markerScale';
 import useImgBox from '../utils/useImgBox';
 import {
-  buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf,
+  buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
@@ -41,7 +44,7 @@ import {
 const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind';
 
 export default function ManpowerBoard() {
-  const { sections: scopeSecs = [] } = useContext(UserContext);
+  const { sections: scopeSecs = [], role } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['org', 'layout', 'fourm'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
@@ -107,6 +110,9 @@ export default function ManpowerBoard() {
   const secParam = params.get('sec') || '';
   const section = sectionNodes.find(n => orgKey(n) === secParam) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
+  // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
+  const tvParam = params.get('tv');
+  const tv = tvParam != null ? tvParam === '1' : role === 'display';
 
   const attendance = useMemo(() => {
     const m = {};
@@ -145,13 +151,21 @@ export default function ManpowerBoard() {
         ]}
         tab={tab} onTab={setTab}
         filters={filters}
+        actions={(
+          <button type="button" onClick={() => merge({ tv: tv ? '0' : '1' })} aria-pressed={tv}
+            style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+              border: `1px solid ${tv ? 'var(--accent)' : 'var(--border2)'}`, background: tv ? 'var(--accent-dim)' : 'var(--bg2)', color: tv ? 'var(--accent)' : 'var(--text2)' }}
+            title="จอ TV ไม่มีเมาส์: ไม่เลื่อน แบ่งเป็นหน้า เปลี่ยนหน้าเองทุก 20 วิ (← → หรือรีโมตก็ได้)">
+            📺 {tv ? 'ออกจากโหมดจอ TV' : 'โหมดจอ TV'}
+          </button>
+        )}
       />
       {err && <div className="card" style={{ padding: 10, marginBottom: 12, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดข้อมูลไม่ครบ — {err}</div>}
       {loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div>
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
-        : tab === 'org' ? <OrgTab board={board} depts={depts} skills={skills} />
-        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} />
-        : <FourMTab depts={depts} logs={fourM} />}
+        : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
+        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} />
+        : <FourMTab depts={depts} logs={fourM} tv={tv} />}
     </Page>
   );
 }
@@ -167,8 +181,9 @@ function Counter({ label, value, sub, tone }) {
   );
 }
 
-function RoleTag({ children }) {
-  return <span style={{ display: 'inline-block', maxWidth: '100%', overflowWrap: 'anywhere', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#facc15', color: '#1f2937' }}>{children}</span>;
+function RoleTag({ children, nowrap }) {
+  return <span style={{ display: 'inline-block', maxWidth: nowrap ? '40%' : '100%', overflowWrap: 'anywhere', flexShrink: 0,
+    ...(nowrap ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null), fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#facc15', color: '#1f2937' }}>{children}</span>;
 }
 
 function Photo({ p, size = 44 }) {
@@ -339,7 +354,7 @@ function OrgTab({ board, depts, skills }) {
 }
 
 /* ═════════════════════════ 🗺️ ผัง LAYOUT ═════════════════════════ */
-function LayoutTab({ board, depts, lines, attendance, maps }) {
+function LayoutTab({ board, depts, lines, attendance, maps, tv }) {
   const [layouts, setLayouts] = useState([]);
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
@@ -369,7 +384,10 @@ function LayoutTab({ board, depts, lines, attendance, maps }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [famKey]);
 
-  const layout = layouts.find(l => String(l.id) === pick) || layouts[0] || null;
+  // 📺 จอ TV: หลายผัง = วนทีละผังเอง (ไม่มีเมาส์ไปเลือก dropdown) · โหมดปกติ = เลือกเอง
+  const [tvIdx, setTvIdx] = useAutoPage(tv ? layouts.length : 0);
+  const layout = tv ? layouts[clampPage(tvIdx, layouts.length)] || null
+    : layouts.find(l => String(l.id) === pick) || layouts[0] || null;
   useEffect(() => {
     let alive = true;
     if (!layout) { setStations([]); return undefined; }
@@ -395,7 +413,7 @@ function LayoutTab({ board, depts, lines, attendance, maps }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <FilterBar bare>
-        {layouts.length > 1 && (
+        {!tv && layouts.length > 1 && (
           <select value={String(layout?.id ?? '')} onChange={e => setPick(e.target.value)} aria-label="ผังไลน์">
             {layouts.map(l => <option key={l.id} value={String(l.id)}>{l.line_name}</option>)}
           </select>
@@ -410,22 +428,25 @@ function LayoutTab({ board, depts, lines, attendance, maps }) {
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>
         {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''} — ตั้งจุดประจำที่ /management
       </div>
-      <LayoutMap layout={layout} placed={placed} />
+      <LayoutMap layout={layout} placed={placed} reserve={tv ? 48 : 12} />
+      {tv && <BoardPager page={clampPage(tvIdx, layouts.length)} count={layouts.length} onPage={setTvIdx} labels={layouts.map(l => l.line_name)} />}
     </div>
   );
 }
 
-function LayoutMap({ layout, placed }) {
+function LayoutMap({ layout, placed, reserve = 12 }) {
   const { imgRef, imgBox, recalc } = useImgBox([layout?.image_url]);
+  // ผังต้องจบในจอเดียว (จอ TV ไม่มีเมาส์) — วัดที่เหลือจริง ห้ามเดา vh (UI §6.23 ข้อ 1) · วัดไม่ได้ = สูงตามรูป
+  const [fitRef, fitH] = useFitHeight(reserve, 240);
   const pts = placed.filter(x => x.station.pos_top != null && x.station.pos_left != null)
     .map(x => ({ x: parseFloat(x.station.pos_left), y: parseFloat(x.station.pos_top) }));
   const ms = imgBox ? markerScale(imgBox.rw, { points: pts, mapHeight: imgBox.rh }) : null;
   const sz = ms ? Math.round(ms.MK * 0.62) : 28;
   return (
-    <div className="card" style={{ padding: 8, position: 'relative' }}>
+    <div ref={fitRef} className="card" style={{ padding: 8, position: 'relative' }}>
       <div style={{ position: 'relative' }}>
         <img ref={imgRef} src={layout.image_url} alt={layout.line_name} onLoad={recalc}
-          style={{ width: '100%', maxHeight: '78vh', objectFit: 'contain', display: 'block' }} />
+          style={{ width: '100%', maxHeight: fitH ? fitH - 16 : undefined, objectFit: 'contain', display: 'block' }} />
         {imgBox && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {placed.filter(x => x.station.pos_top != null && x.station.pos_left != null).map(({ station, people }) => (
@@ -461,45 +482,233 @@ function LayoutMap({ layout, placed }) {
 }
 
 /* ═════════════════════════ 🚦 ป้ายสถานะ 4M ═════════════════════════ */
-function FourMTab({ depts, logs }) {
+/* โหมด TV: การ์ดสูงคงที่ (แถวละ 1 บรรทัดรายละเอียด + "+N") ⇒ นับได้ว่าหน้าหนึ่งลงกี่ใบ */
+const FOURM_CARD_W = 420, FOURM_CARD_H = 330, FOURM_GAP = 12;
+
+function FourMCard({ d, logs, tv }) {
+  const st = fourMStatus(d.lines, logs);
+  const descMax = tv ? 1 : 3;
+  return (
+    <div className="card" style={{ padding: 12, ...(tv ? { height: FOURM_CARD_H, overflow: 'hidden' } : null) }}>
+      <div style={{ marginBottom: 8 }}><RoleTag>ป้ายแจ้งสถานะ {d.name}</RoleTag>
+        <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>สถานะการเปลี่ยนแปลงวันนี้ · {d.lines.length} ไลน์</span>
+      </div>
+      {!d.lines.length && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 6 }}>⚠️ แผนกนี้ยังไม่ผูกไลน์ผลิต — ตัดสิน 4M ไม่ได้</div>}
+      <div style={{ display: 'grid', gap: 6 }}>
+        {FOUR_M.map(m => {
+          const s = st[m.key];
+          const bad = s.abnormal;
+          const tone = !d.lines.length ? '#64748b' : bad ? '#ef4444' : '#22c55e';
+          return (
+            <div key={m.key} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'stretch' }}>
+              <div style={{ background: m.color, color: m.key === 'machine' ? '#1f2937' : '#fff', fontWeight: 800, fontSize: 14, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px' }}>{m.label}</div>
+              <div style={{ border: `2px solid ${tone}`, borderRadius: 6, padding: '6px 10px', minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 16, color: tone }}>
+                  {!d.lines.length ? 'ไม่รู้' : bad ? `ผิดปกติ · ${s.rows.length} ใบ` : 'ปกติ'}
+                  {bad && s.pending > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginLeft: 6 }}>(รออนุมัติ {s.pending})</span>}
+                </div>
+                {s.rows.slice(0, descMax).map(r => (
+                  <div key={r.id} style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>
+                    · {r.line_name} — {r.description || '(ไม่มีรายละเอียด)'}
+                  </div>
+                ))}
+                {s.rows.length > descMax && <div style={{ fontSize: 12, color: 'var(--muted)' }}>+ อีก {s.rows.length - descMax} ใบ</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FourMTab({ depts, logs, tv }) {
   if (!depts.length) return <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีแผนกให้แสดง</div>;
+  if (tv) return <FourMTv depts={depts} logs={logs} />;
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', gap: 12, alignItems: 'start' }}>
-      {depts.map(d => {
-        const st = fourMStatus(d.lines, logs);
+      {depts.map(d => <FourMCard key={d.key} d={d} logs={logs} />)}
+    </div>
+  );
+}
+
+function FourMTv({ depts, logs }) {
+  const [ref, fitH] = useFitHeight(48, 320);
+  const w = useWidth(ref);
+  const cols = Math.max(1, Math.floor((w + FOURM_GAP) / (FOURM_CARD_W + FOURM_GAP)));
+  const rows = fitH ? Math.max(1, Math.floor((fitH + FOURM_GAP) / (FOURM_CARD_H + FOURM_GAP))) : 1;
+  const pages = useMemo(() => packPages(depts, cols * rows), [depts, cols, rows]);
+  const [page, setPage] = useAutoPage(pages.length);
+  const cur = pages[clampPage(page, pages.length)] || [];
+  return (
+    <>
+      <div ref={ref} style={{ height: fitH || undefined, overflow: 'clip', display: 'grid', alignContent: 'start',
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: FOURM_GAP }}>
+        {cur.map(d => <FourMCard key={d.key} d={d} logs={logs} tv />)}
+      </div>
+      <BoardPager page={clampPage(page, pages.length)} count={pages.length} onPage={setPage} labels={pages.map(pg => pg.map(d => d.name).join(' · '))} />
+    </>
+  );
+}
+
+/* ═════════════════════════ 📺 ผังกำลังคน — โหมดจอ TV ═════════════════════════ */
+/* กติกา (UI §6.23): ไม่เลื่อน · ที่ไม่พอ = แบ่งหน้า (ห้ามบีบการ์ด) · BoardPager ของกลาง · เปลี่ยนหน้าเองทุก 20 วิ
+   การ์ด/แถบหัวขนาดคงที่ ⇒ นับความจุได้แน่นอน (`tvCardCapacity`) แล้วให้ `paginateTv` ตัดหน้า (pure + เทส) */
+const TV_CARD = { w: 136, h: 128 };
+const TV_TOP_H = 64, TV_DEPT_H = 56, TV_COLHEAD_H = 50, TV_GAP = 8;
+const TV_AUTO_MS = 20_000;   // จอแขวน: วนหน้าเองให้คนเดินผ่านเห็นครบ · กดเอง/ลูกศร = นับใหม่
+
+/** กว้างจริงของกล่อง (ResizeObserver) — 0 จนกว่าจะวัดได้ */
+function useWidth(ref) {
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const set = () => setW(cur => (Math.abs(cur - el.clientWidth) < 4 ? cur : el.clientWidth));   // โซนหน่วง กันวงจรป้อนกลับ
+    set();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(set) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [ref]);
+  return w;
+}
+
+/** หน้าปัจจุบัน + วนเองทุก TV_AUTO_MS (เปลี่ยนหน้าเอง = ตั้งนาฬิกาใหม่ เพราะ effect ผูกกับ page) */
+function useAutoPage(count) {
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    if (!(count > 1)) return undefined;
+    const t = setTimeout(() => setPage(p => (clampPage(p, count) + 1) % count), TV_AUTO_MS);
+    return () => clearTimeout(t);
+  }, [page, count]);
+  return [page, setPage];
+}
+
+/** ชิปคนแบบบรรทัดเดียว (แถบหัวจอ TV) */
+function MiniPerson({ p }) {
+  return (
+    <div title={`${p.name} · ${positionLabel(p.position) || ''}`} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
+      <Photo p={p} size={26} />
+      <div style={{ minWidth: 0, lineHeight: 1.2 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{positionLabel(p.position)}</div>
+      </div>
+    </div>
+  );
+}
+
+function TvCard({ p, skills }) {
+  const top = (skills.byEmp[p.id] || []).slice(0, 2);
+  return (
+    <div style={{ width: TV_CARD.w, height: TV_CARD.h, overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
+      background: 'var(--card)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+        <Photo p={p} size={34} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.employee_id_code || ''}</div>
+        </div>
+      </div>
+      <AttendDot p={p} />
+      {top.length ? top.map(s => {
+        const d = skills.defs[s.skill_name];
         return (
-          <div key={d.key} className="card" style={{ padding: 12 }}>
-            <div style={{ marginBottom: 8 }}><RoleTag>ป้ายแจ้งสถานะ {d.name}</RoleTag>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>สถานะการเปลี่ยนแปลงวันนี้ · {d.lines.length} ไลน์</span>
+          <div key={s.skill_name} title={`${d?.label || s.skill_name}: ${s.score}`}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, gap: 4 }}>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d?.label || s.skill_name}</span>
+              <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{s.score}</span>
             </div>
-            {!d.lines.length && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 6 }}>⚠️ แผนกนี้ยังไม่ผูกไลน์ผลิต — ตัดสิน 4M ไม่ได้</div>}
-            <div style={{ display: 'grid', gap: 6 }}>
-              {FOUR_M.map(m => {
-                const s = st[m.key];
-                const bad = s.abnormal;
-                const tone = !d.lines.length ? '#64748b' : bad ? '#ef4444' : '#22c55e';
+            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg3)' }}>
+              <div style={{ width: `${Math.min(100, s.score || 0)}%`, height: '100%', borderRadius: 2, background: d?.color || 'var(--accent)' }} />
+            </div>
+          </div>
+        );
+      }) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีคะแนน skill</span>}
+    </div>
+  );
+}
+
+function OrgTv({ board, depts, skills }) {
+  const [ref, fitH] = useFitHeight(48, 360);
+  const w = useWidth(ref);
+  const areaH = (fitH || 0) - TV_TOP_H - TV_DEPT_H - TV_COLHEAD_H - TV_GAP * 3 - 16;
+  const pages = useMemo(() => paginateTv(depts, (nCols) => tvCardCapacity({
+    areaW: w, areaH, nCols, cardW: TV_CARD.w, cardH: TV_CARD.h, colPad: 16, colGap: TV_GAP,
+  })), [depts, w, areaH]);
+  const [page, setPage] = useAutoPage(pages.length);
+  const pi = clampPage(page, pages.length);
+  const pg = pages[pi];
+
+  // ที่ไม่พอจริงๆ (มือถือ/จอเตี้ย) = ถอยไปโหมดเลื่อน — ซื่อสัตย์กว่าบีบจนอ่านไม่ออก (UI §6.23 ข้อ 7)
+  // ⚠️ กล่องที่ผูก ref ต้องเป็น element เดิมทั้ง 2 โหมด — สลับ element = ตัววัดเฝ้าตัวที่หลุดจากจอแล้ว
+  // จอแคบกว่าแท็บเล็ต (มือถือ) ไม่ใช่จอ TV — คอลัมน์ทีมเหลือการ์ดเดียว แถบหัวอ่านไม่ออก ⇒ โหมดเลื่อน
+  const fallback = w > 0 && (fitH == null || w < 768);
+  const t = board.totals;
+  const d = pg?.dept;
+  return (
+    <>
+      <div ref={ref} style={fallback ? undefined : { height: fitH || undefined, overflow: 'clip', display: 'flex', flexDirection: 'column', gap: TV_GAP }}>
+        {fallback ? (
+          <>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>📺 จอนี้เล็กเกินกว่าจะแบ่งหน้าแบบจอ TV ได้ — แสดงแบบเลื่อนแทน</div>
+            <OrgTab board={board} depts={depts} skills={skills} />
+          </>
+        ) : (<>
+        {/* แถบหัวผังส่วนงาน — สูงคงที่ คนเยอะเกินถูกตัด (ดูครบได้ที่โหมดปกติ) */}
+        <div className="card" style={{ height: TV_TOP_H, flexShrink: 0, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 14, overflow: 'hidden' }}>
+          <RoleTag nowrap>{board.section.name}</RoleTag>
+          <div style={{ display: 'flex', gap: 14, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+            {[...board.top, ...board.support].map(p => <MiniPerson key={p.id} p={p} />)}
+          </div>
+          <Counter label="แผน" value={t.plan} />
+          <Counter label="ในทะเบียน" value={t.ops} />
+          <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
+        </div>
+        {!d ? <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีพนักงานหน้างานในทะเบียน</div> : (
+          <>
+            <div style={{ height: TV_DEPT_H, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14, overflow: 'hidden' }}>
+              <RoleTag nowrap>หัวหน้าแผนก {d.name}{pg.parts > 1 ? ` · ส่วนที่ ${pg.part + 1}/${pg.parts}` : ''}</RoleTag>
+              <div style={{ display: 'flex', gap: 14, flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                {d.heads.map(p => <MiniPerson key={p.id} p={p} />)}
+                {d.techs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', alignSelf: 'center' }}>🔧 ช่างประจำไลน์ {d.techs.length}:</span>}
+                {d.techs.map(p => <MiniPerson key={p.id} p={p} />)}
+              </div>
+              <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
+              <Counter label="ในทะเบียน" value={d.opsTotal} />
+              <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: TV_GAP }}>
+              {pg.cols.map(({ col: c, items, more }) => {
+                const sm = shiftMeta(c.shift);
                 return (
-                  <div key={m.key} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'stretch' }}>
-                    <div style={{ background: m.color, color: m.key === 'machine' ? '#1f2937' : '#fff', fontWeight: 800, fontSize: 14, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px' }}>{m.label}</div>
-                    <div style={{ border: `2px solid ${tone}`, borderRadius: 6, padding: '6px 10px', minWidth: 0 }}>
-                      <div style={{ fontWeight: 800, fontSize: 16, color: tone }}>
-                        {!d.lines.length ? 'ไม่รู้' : bad ? `ผิดปกติ · ${s.rows.length} ใบ` : 'ปกติ'}
-                        {bad && s.pending > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginLeft: 6 }}>(รออนุมัติ {s.pending})</span>}
+                  <div key={c.team || '-'} style={{ flex: '1 1 0', minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: 8, background: 'var(--bg2)', overflow: 'hidden' }}>
+                    <div style={{ height: TV_COLHEAD_H, display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', whiteSpace: 'nowrap' }}>
+                        <strong style={{ fontSize: 15 }}>{c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม'}</strong>
+                        <span style={{ fontSize: 12.5, fontWeight: 700, color: sm.color }}>● {c.shift ? `${sm.label}วันนี้` : sm.label}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{c.ops.length} คน{c.slots != null ? ` · ว่าง ${c.slots}` : ''}</span>
                       </div>
-                      {s.rows.slice(0, 3).map(r => (
-                        <div key={r.id} style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.description}>
-                          · {r.line_name} — {r.description || '(ไม่มีรายละเอียด)'}
-                        </div>
-                      ))}
-                      {s.rows.length > 3 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>+ อีก {s.rows.length - 3} ใบ</div>}
+                      <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        หัวหน้ากลุ่ม: {c.leaders.length ? c.leaders.map(p => p.name).join(', ') : '— ยังไม่มีในทะเบียน'}
+                      </div>
                     </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignContent: 'flex-start' }}>
+                      {items.map((it, i) => it.kind === 'op'
+                        ? <TvCard key={it.p.id} p={it.p} skills={skills} />
+                        : <div key={`s${i}`} style={{ width: TV_CARD.w, height: TV_CARD.h, border: '2px dashed var(--border2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>ช่องว่าง</div>)}
+                      {!items.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่มีการ์ดในส่วนนี้ —</span>}
+                    </div>
+                    {more > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ต่อหน้าถัดไปอีก {more} ใบ ▶</div>}
                   </div>
                 );
               })}
             </div>
-          </div>
-        );
-      })}
-    </div>
+          </>
+        )}
+        </>)}
+      </div>
+      {!fallback && <BoardPager page={pi} count={pages.length} onPage={setPage}
+        labels={pages.map(x => `${x.dept.name}${x.parts > 1 ? ` (${x.part + 1}/${x.parts})` : ''}`)} />}
+    </>
   );
 }
