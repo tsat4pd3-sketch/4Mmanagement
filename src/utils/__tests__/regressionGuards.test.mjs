@@ -1901,6 +1901,127 @@ test('🛡️ mobilesweep-must-mute-tap-target-ghost — ด่านมือ�
 });
 
 
+/* ═══ 📜 ตารางที่ `useColumnHistory` ชี้ ต้องมีอยู่จริง (2026-10-06 · QC audit) ═══
+   ฟีเจอร์ "📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)" ดึงค่าที่คนเคยพิมพ์ไว้มาให้เลือกซ้ำ
+   (คำสั่ง user 07/09 *"ถ้าข้อมูลจะไม่มีในทะเบียน ใช้ข้อมูลที่เคยลงไว้ได้มั้ย"*)
+   🔴 พิมพ์ชื่อตารางผิด = **ตายเงียบสนิท ไม่มีอะไรฟ้องบนจอ** — `masterCache.mrows()` จับ `42P01`
+   คืน `[]` + console.warn แล้ว `useColumnHistory` ยัง `.catch(() => {})` ทับอีกชั้น
+   เจอจริง 06/10 ผิด 4 จุด: `npi_part_deliverables`(→npi_deliverables) · `npi_eci`(→npi_change_requests)
+   · `qa_claims`(→qa_customer_claims) · `qa_check_items`(→qa_inspection_items)
+   ทั้ง 4 อยู่ในไฟล์ที่ query ข้อมูลชุดเดียวกันด้วย*ชื่อจริง* อยู่แล้ว (= พิมพ์ผิด ไม่ใช่ตารางคู่ขนาน)
+   ต้นตอ: `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` เขียนชื่อผิดแบบเดียวกัน แล้วคนก๊อปไปใช้ */
+test('🛡️ column-history-table-must-exist — ตารางของ useColumnHistory ต้องมี create/alter ในรีโป', () => {
+  const sqlDirs = ['supabase/migrations', 'docs/sql'];
+  const known = new Set();
+  for (const d of sqlDirs) {
+    let files = [];
+    try { files = readdirSync(join(ROOT, d)).filter(f => f.endsWith('.sql')); } catch { continue; }
+    for (const f of files) {
+      const t = readFileSync(join(ROOT, d, f), 'utf8');
+      for (const m of t.matchAll(/create\s+(?:or\s+replace\s+)?(?:table|view|materialized\s+view)\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi)) known.add(m[1]);
+      for (const m of t.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi)) known.add(m[1]);
+      /* trigger/policy ผูกกับตาราง = ตารางมีอยู่จริงแน่ (ตารางยุคก่อนมี migration ไม่มี create ในรีโป) */
+      for (const m of t.matchAll(/\bon\s+(?:public\.)?"?([a-z0-9_]+)"?\s*(?:for\s+each\s+row|as\s|for\s+(?:all|select|insert|update|delete))/gi)) known.add(m[1]);
+      /* docs/sql/00_schema_snapshot_*.sql บันทึก ~39 ตารางยุคก่อนกฎ migration ไว้เป็นคอมเมนต์
+         `-- <ตาราง> (col type, …)` — เป็นที่เดียวในรีโปที่มีหลักฐานว่าตารางพวกนี้มีจริง */
+      for (const m of t.matchAll(/^--\s*([a-z0-9_]+)\s*\([a-z0-9_]+\s+[a-z]/gim)) known.add(m[1]);
+    }
+  }
+  if (known.size < 50) return;   // อ่าน SQL ไม่ได้ = ไม่ตัดสิน (ห้ามฟ้องผิด)
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/useColumnHistory\(\s*supabase[A-Za-z]*\s*,\s*'([a-z0-9_]+)'/g)) {
+      if (!known.has(m[1])) bad.push(`${relative(ROOT, f)} → '${m[1]}'`);
+    }
+  }
+  assert.deepEqual([...new Set(bad)], [],
+    '\n\n❌ useColumnHistory ชี้ตารางที่ไม่มี create/alter ในรีโป (น่าจะพิมพ์ชื่อผิด):\n'
+    + '   ' + [...new Set(bad)].join('\n   ') + '\n'
+    + '   ทำไมอันตราย: ตารางไม่มี → 42P01 → masterCache คืน [] + useColumnHistory .catch(() => {})\n'
+    + '   ⇒ กลุ่ม "📜 เคยบันทึกไว้" **ว่างตลอดกาล ไม่มี error บนจอ** = คนต้องพิมพ์ชื่อใหม่ทุกครั้ง\n'
+    + '     สะกดไม่ตรง → จับกลุ่ม/ค้นหาย้อนหลังแตก (เคสจริง 06/10 ผิด 4 จุด)\n'
+    + '   แก้: ใช้ชื่อตารางจริง — ดูว่าไฟล์เดียวกัน `.from(...)` ตารางอะไรอยู่\n'
+    + '   ถ้าตารางมีจริงแต่สร้างผ่าน dashboard ไม่มี migration: เขียน migration/บันทึกใน docs/sql ก่อน\n');
+});
+
+
+/* ═══ 🗑️ ลบไฟล์ใน storage ได้ ต่อเมื่อ "ยืนยันว่าแถวหายจริง" แล้ว (2026-10-06 · QC audit) ═══
+   RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2 — มีแต่ INSERT ที่โยน 42501)
+   ⇒ โค้ดที่เช็คแค่ `error` แล้วเดินไปลบไฟล์ = **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว"
+   เจอจริง 06/10 ที่ `QAInspectionSetup.delPart` (ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒
+   ใบตรวจพาร์ทเสียถาวร) · `OjtTraining.handleDelete` (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด
+   + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) · `LineSetup` (รูปผังไลน์)
+   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์ */
+const STORAGE_DEL_ALLOW = {
+  /* delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติ = 0 คน ⇒ 0 แถวเป็นเรื่องปกติ นับแถวไม่มีความหมาย
+     และไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" (`_replacedSigPaths`) ไม่ใช่ของแถวที่ลบ
+     = window ของด่านคาบเกี่ยวกันเท่านั้น ไม่ใช่คลาสบั๊กนี้ */
+  'src/pages/OjtTraining.jsx': ["from('ojt_training_attendees').delete()"],
+};
+test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต้องมาหลังนับแถวที่ลบได้จริง', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.delete\(\)/.test(ln)) return;
+      if ((STORAGE_DEL_ALLOW[rel] || []).some(sig => ln.includes(sig))) return;
+      const win = lines.slice(i, i + 16).join('\n');
+      const k = win.search(/storage[\s\S]{0,40}?\.remove\(/);
+      if (k < 0) return;                       // ไม่มีการลบไฟล์ตามหลัง = ไม่เกี่ยว
+      if (/\.select\(/.test(win.slice(0, k))) return;   // นับแถวแล้วก่อนแตะไฟล์ = ถูกต้อง
+      bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 90)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบไฟล์ใน storage ตามหลัง `.delete()` ที่ไม่ได้ `.select()` นับแถว:\n'
+    + '   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมอันตราย: RLS ปฏิเสธ DELETE = **0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2)\n'
+    + '     ⇒ แถวยังอยู่ แต่ไฟล์ถูกลบถาวร แล้วจอขึ้น "ลบแล้ว" = ข้อมูลเสียแบบกู้ไม่ได้\n'
+    + '   แก้: const res = await supabase.from(t).delete().eq(...).select(\'id\');\n'
+    + '        if (!checkWrite(res, \'ลบ…\')) return;\n'
+    + '        if (!(res.data || []).length) { toast.error(\'ลบไม่สำเร็จ (0 แถว) — ไฟล์ยังอยู่\'); return; }\n'
+    + '        // ← ลบไฟล์ storage ได้หลังบรรทัดนี้เท่านั้น\n'
+    + '   ถ้า "0 แถว = เรื่องปกติ" จริง (เช่น ลบของที่อาจไม่มีอยู่แต่แรก) ให้เพิ่มใน STORAGE_DEL_ALLOW\n'
+    + '   พร้อมเหตุผล — ห้ามใส่เพราะแก้ไม่ไหว\n');
+});
+
+
+/* ═══ 🔐 จอที่คุมสิทธิ์ ต้องเช็คสิทธิ์ "คนที่เปิดดู" ด้วย (2026-10-06 · QC audit) ═══
+   `/permissions` เคย**ไม่เช็คสิทธิ์ผู้ดูเลย** (grep UserContext|can( = 0) — ตัวแปร `role` ในหน้านี้
+   คือ role ของ**คอลัมน์ใน matrix** ไม่ใช่ของผู้ใช้ ⇒ อ่านโค้ดผ่านตาแล้วเหมือนมีด่านอยู่
+   ประตูเดียวคือ `page:/permissions` ซึ่ง**ติ๊กให้ role อื่นได้จากจอนั้นเอง**
+   ⇒ คนที่ได้คีย์นั้นกดแก้แถวที่มีอยู่แล้ว → RLS ปฏิเสธ = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2)
+   → ช่องติ๊กเปลี่ยนบนจอ ฐานไม่เปลี่ยน ไม่มี toast = **จอโกหกเรื่อง "ใครมีสิทธิ์อะไร"**
+   ซึ่งเป็นข้อมูลที่ทุกจอในระบบพึ่ง · แก้แล้วด้วย `canSeeded('permissions','manage')` + นับแถว
+   + migration `20261006_permissions_manage_perm_main.sql` (policy อ่านคีย์เดียวกับปุ่ม) */
+test('🔐 permissions-page-needs-viewer-gate — /permissions ต้องเช็คสิทธิ์ผู้ดู + นับแถวที่เขียนได้', () => {
+  const f = 'src/pages/PermissionsManagement.jsx';
+  const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  const miss = [];
+  if (!/canSeeded\(\s*'permissions'\s*,\s*'manage'/.test(src))
+    miss.push("ไม่พบ canSeeded('permissions', 'manage', …) — ด่านของคนที่เปิดจอ");
+  if (!/\bcanManage\b/.test(src))
+    miss.push('ไม่พบตัวแปร canManage ที่เอาไปปิดช่องติ๊ก');
+  /* upsert ของ role_permissions ต้อง .select() เพื่อนับแถว — RLS ปฏิเสธ = 0 แถว ไม่มี error */
+  const up = src.match(/from\('role_permissions'\)[\s\S]{0,400}?\.upsert\([\s\S]{0,300}?\)/);
+  if (!up) miss.push("ไม่พบ upsert ของ role_permissions (โครงหน้าเปลี่ยน — ทวนกฎนี้ใหม่)");
+  else if (!/\.select\(/.test(src.slice(src.indexOf(up[0]), src.indexOf(up[0]) + up[0].length + 120)))
+    miss.push('upsert ไม่ได้ .select() ⇒ ไม่นับแถว = RLS ปฏิเสธแล้วจอยังโชว์ว่าบันทึกสำเร็จ');
+  assert.deepEqual(miss, [],
+    `\n\n❌ ${f} หลุดด่านของตัวเอง:\n   ` + miss.join('\n   ') + '\n'
+    + '   ทำไมสำคัญ: นี่คือจอที่ตัดสินว่า "ใครทำอะไรได้" ทั้งระบบ — ถ้าจอนี้โกหก\n'
+    + '     ทุกการตั้งสิทธิ์หลังจากนั้นเชื่อถือไม่ได้ และคนตั้งจะไม่รู้ตัวเลย\n'
+    + '   🔴 ระวัง: `role` ในไฟล์นี้คือ role ของ**คอลัมน์ใน matrix** ไม่ใช่ของผู้ใช้\n'
+    + '     ⇒ `can(..., role)` ในหน้านี้ **ไม่ใช่** ด่านของผู้ดู ต้องอ่าน role จาก UserContext\n'
+    + '   แก้: const { role: myRole } = useContext(UserContext);\n'
+    + '        const canManage = canSeeded(\'permissions\', \'manage\', myRole);\n'
+    + '        → ใช้ปิด disabled ของ checkbox + ด่านใน toggle() + <ReadOnlyNote show={!canManage} …>\n'
+    + '        → upsert ต้อง .select() แล้วเช็ค res.data.length ก่อนถือว่าสำเร็จ\n');
+});
+
+
 /* ═══ กฎเชิงความสัมพันธ์ #4 — ภาระเวลาของงานคู่ RH/LH ห้ามบวกกัน (2026-09-22 · audit แผนผลิต) ═══
    `ProductionPlan` แปลงความต้องการเป็น shift-load ด้วย `qty ÷ กำลังต่อกะ` ต่อพาร์ท แล้ว**บวกรวม**
    ⇒ คู่ RH/LH (ปั๊มทีเดียวได้ 2 ข้าง) ถูกนับเวลา 2 เท่า
@@ -2535,6 +2656,40 @@ test('🛡️ BOM: ปุ่มเปิดใบลูกต้องตัด�
     + '   กฎความซื่อสัตย์ของจอ: ข้อมูลขัดกัน **ต้องเขียนบนจอ ห้ามเงียบ** (CLAUDE.md §OBEYA)\n');
 });
 
+/* ── 🔴 กดเลข MAT ในต้นไม้ BOM ต้องค้นจาก `products` ไม่ใช่ `items` (2026-10-06) ───────
+   บั๊กจริงที่หลุดไปพร้อมฟีเจอร์: `openSheetOfMat` ค้นจาก `items` (= bom_items ของใบที่เปิดอยู่)
+   แล้วเจอ "บรรทัด BOM" ที่มี mat ตรงกัน → `setSelProduct(<bom row>)`
+   ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
+   เงียบสนิท: ไม่มี error ไม่มี toast ไม่มีอะไรบนจอบอกว่ากดไปเจอใบผิด
+   ⇒ `selProduct` ต้องมาจาก `products` (= dr_products) เท่านั้น                        */
+test('🛡️ /products BOM: openSheetOfMat ต้องค้นจาก products (dr_products) ไม่ใช่ items (bom_items)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const i = code.indexOf('const openSheetOfMat');
+  assert.ok(i > 0, '\n\n❌ หา openSheetOfMat ใน ProductMaster.jsx ไม่เจอ — เปลี่ยนชื่อแล้วต้องอัปเดตด่านนี้\n');
+  const fn = code.slice(i, i + 900);
+  assert.ok(!/items\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ค้นใบจาก `items` (= bom_items ของใบที่เปิดอยู่)\n'
+    + '   ทำไมผิด: เจอ "บรรทัด BOM" แล้วเอา id ของบรรทัดไปเป็น selProduct.id\n'
+    + '            ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = เปิดมาเจอใบเปล่า **เงียบสนิท**\n'
+    + '   แก้ยังไง: `products.find(p => upMat(p.mat_no) === k)` (products = dr_products)\n');
+  assert.ok(/products\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ไม่ได้ค้นจาก `products` — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ใบขั้นงาน (OP) ห้ามถูกเทียบชุดลูกกับใบพาร์ท (2026-10-06) ──────────────────────────
+   ใบ OP ตอบ "ขั้นนี้กินอะไร" (ขั้นเชื่อมนัท M6 → นัท 30044771)
+   ใบพาร์ท ตอบ "พาร์ทนี้ประกอบจากอะไร" (คอยล์ 50027969) — **ถูกทั้งคู่ ไม่ใช่ขัดกัน**
+   เทียบรวม = เตือนผิด 5 คู่จาก 19 (26%) · สัญญาณหลอกทำให้คนเลิกเชื่อคำเตือนทั้งจอ        */
+test('🛡️ /products BOM: ต้องส่ง isOpSheet ให้ BomTreeView (ไม่งั้นเตือนผิดที่ใบขั้นงาน)', () => {
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/isOpSheet=\{/.test(page),
+    '\n\n❌ ProductMaster ไม่ส่ง `isOpSheet` ให้ BomTreeView\n'
+    + '   ผล: ใบขั้นงานจะขึ้น "⚠️ ต่างกัน N รายการ" ทั้งที่ 2 ใบตอบคนละคำถาม (เตือนผิด 5 คู่จาก 19)\n');
+  const view = stripComments(readFileSync(join(ROOT, 'src/components/BomTreeView.jsx'), 'utf8'));
+  assert.ok(/isOpSheet/.test(view),
+    '\n\n❌ BomTreeView ไม่รับ/ไม่ใช้ `isOpSheet` แล้ว — ถอดออกแล้วใบขั้นงานจะถูกเทียบผิด\n');
+});
+
 /* ── การ์ดบนบอร์ด NM ต้องมี "ตัวเลข" ไม่ใช่แค่สี (06/10/2026 · feedback user "design obeya ยังดีกว่า") ──
    วัดจริงก่อนแก้: บอร์ด 737D MLM มีข้อมูลนับได้ทั้ง 21 แผง แต่ไม่โชว์ตัวเลขสักใบ
    ⇒ ตัวเลขทุกตัวต้องมาจาก panelMetric() (pure · มีเทส) ห้ามนับเองในหน้า */
@@ -2641,4 +2796,45 @@ test('🛡️ LinePartCallPanel: ยกเลิกได้แค่ใบ hold
     '\n\n❌ ปุ่ม "ไม่ใช้แล้ว" ยกเลิกใบได้ทุกสถานะ — จอค้างแล้วยกเลิกใบที่สโตร์ตัดสต็อกไปแล้วได้\n');
   assert.ok(!/neq\('status',\s*'received'\)/.test(code) && /\.eq\('status',\s*'delivered'\)\.select\(/.test(code),
     '\n\n❌ ปุ่ม "รับ" ต้อง .eq(status, delivered) — .neq(received) ชุบชีวิตใบที่ถูกยกเลิก/ปิดลูปใบที่สต็อกยังไม่ถูกตัด\n');
+});
+
+/* ── 📞 เรียกช่าง: ทีมที่ "คนกดเลือกเอง" ต้องชนะการเดา และต้องโชว์บนจอห้องช่าง
+   (06/10/2026 · ทีม MTN: *"เราจะไม่รู้ว่า PD เรียกใคร … จะรู้ได้ยังไงว่าเค้าเรียกเรา"*)
+   เกิดจริง 06/10 15:33 — ทดสอบเรียกทีม JIG แล้วจอ Andon ขึ้นแค่ "📞 เรียกช่าง" เฉยๆ
+   เพราะ `teamOfDt()` เดาจากเลขเครื่อง/ใบ MO เท่านั้น และแถวนั้น `machine_no` ว่าง ⇒ คืน null
+   ทั้งที่ `downtime_logs.call_mtn_team` เก็บ 'jig_maintenance' ไว้ตั้งแต่ตอนกดแล้ว            */
+test('🛡️ Andon/ไซเรน: ต้องดึง call_mtn_team มาด้วย (ไม่งั้นจอบอกไม่ได้ว่าเรียกทีมไหน)', () => {
+  for (const f of ['src/components/MtnAndonBoard.jsx', 'src/components/DowntimeSiren.jsx']) {
+    const code = readFileSync(join(ROOT, f), 'utf8');
+    assert.ok(/\.select\([^)]*call_mtn_team/s.test(code),
+      `\n\n❌ ${f} ไม่ได้ select 'call_mtn_team'\n`
+      + '   ทำไมสำคัญ: เป็นช่องเดียวที่บอกว่า "ฝ่ายผลิตกดเรียกทีมไหน"\n'
+      + '              ไม่ดึงมา = จอห้องช่างขึ้น "📞 เรียกช่าง" เหมือนกันหมด แยกไม่ออกว่าของใคร\n'
+      + '              และไซเรนดังทุกห้องทุกใบ (ห้อง DIE ได้ยินงาน JIG)\n');
+  }
+});
+
+test('🛡️ Andon: call_mtn_team (ของจริง) ต้องชนะการเดาจากชนิดอุปกรณ์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MtnAndonBoard.jsx'), 'utf8'));
+  const fn = code.match(/const teamOfDt\s*=\s*useCallback\([\s\S]*?\}, \[[^\]]*\]\);/);
+  assert.ok(fn, '\n\n❌ หา teamOfDt ใน MtnAndonBoard.jsx ไม่เจอ — ย้ายแล้วต้องอัปเดตด่านนี้\n');
+  const body = fn[0];
+  const iDeclared = body.indexOf('call_mtn_team');
+  const iGuess = body.indexOf('teamForEquipmentKind');
+  assert.ok(iDeclared !== -1 && (iGuess === -1 || iDeclared < iGuess),
+    '\n\n❌ teamOfDt อ่าน call_mtn_team ทีหลัง (หรือไม่อ่านเลย)\n'
+    + '   กฎ (utils/mtnTeams.js หัวไฟล์): ชนิดอุปกรณ์เป็นแค่ "การเดา" —\n'
+    + '        ตัวตัดสินจริงคือ mtn_orders.mtn_dept และ downtime_logs.call_mtn_team\n'
+    + '   ของจริงต้องมาก่อนการเดาเสมอ · และห้าม return null ทิ้งตั้งแต่ไม่มีเลขเครื่อง\n'
+    + '   (ใบที่ไม่ระบุเครื่องแต่ระบุทีมไว้ จะกลายเป็น "ไม่รู้ทีม" ทั้งที่คนกดระบุชัดเจน)\n');
+});
+
+/* ── คิว rack / บรรจุภัณฑ์ ห้ามโหลด "ล่าสุด N ใบ ไม่กรองสถานะ" (06/10 · ช่องโหว่สโตร์ข้อ 7) ── */
+test('🛡️ rack_requests / packaging_withdrawal_requests: คิวต้องโหลดใบค้างครบผ่าน openPlusHistory', () => {
+  for (const f of ['src/pages/HeijunkaKanban.jsx', 'src/pages/RackCenter.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\('(?:rack_requests|packaging_withdrawal_requests)'\)\.select\('\*'\)\.order\([^)]*\)\.limit\(/.test(code),
+      `\n\n❌ ${f} โหลดคิว rack/บรรจุภัณฑ์แบบ order().limit() ไม่กรองสถานะ — ใบค้างเก่าหลุดจากจอเมื่อใบโตขึ้น\n`
+      + '   แก้ยังไง: openPlusHistory(ใบค้าง, ประวัติ, N, คอลัมน์เวลา) จาก src/utils/fetchByIds.js\n');
+  }
 });

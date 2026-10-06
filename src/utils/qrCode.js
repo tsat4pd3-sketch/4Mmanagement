@@ -3,7 +3,7 @@
  *
  * รูปแบบที่พิมพ์ลงป้าย:  ESM:<ชนิด>:<รหัส>
  *   ESM:M:<uuid>     เครื่องจักร (machines.id)
- *   ESM:J:<uuid>     จิ๊ก / แม่พิมพ์ (jigs.id)
+ *   ESM:J:<uuid>     จิ๊ก / อุปกรณ์ในทะเบียน PM (jigs.id) — ⚠️ แม่พิมพ์ใช้ ESM:M (อยู่ใน machines)
  *   ESM:P:<mat_no>   สินค้า/พาร์ท (mat_no — unique ทั้ง dr_products/parts_master/kanban_standards)
  *   ESM:D:<uuid>     จุดส่งงานหน้าไลน์ (line_delivery_points.id — DR · ลูปสโตร์เฟส 4 · 2026-09-03)
  *                    สโตร์ยิงป้ายนี้ตอนวางของถึงไลน์ = หมุดเวลา delivered_at + ด่านตรวจ "ส่งถูกจุดไหม"
@@ -24,8 +24,8 @@ export const QR_PREFIX = 'ESM';
 
 /** ชนิดของสิ่งที่สแกนได้ — เพิ่มชนิดใหม่ที่นี่ที่เดียว */
 export const QR_KINDS = {
-  machine: { code: 'M', label: 'เครื่องจักร', icon: '⚙️' },
-  jig: { code: 'J', label: 'จิ๊ก/แม่พิมพ์', icon: '🧩' },
+  machine: { code: 'M', label: 'เครื่องจักร/แม่พิมพ์', icon: '⚙️' },   // แม่พิมพ์ = แถวใน machines (equipment_kind='die')
+  jig: { code: 'J', label: 'จิ๊ก (ทะเบียน PM)', icon: '🧩' },           // jigs = ทะเบียนอุปกรณ์ที่มีแผน PM
   product: { code: 'P', label: 'สินค้า/พาร์ท', icon: '📦' },
   delivery: { code: 'D', label: 'จุดส่งงาน', icon: '🎯' },
 };
@@ -177,4 +177,35 @@ export function resolveDeliveryPoint(scan, points = []) {
     return points.find(p => p.code && normCode(p.code) === n) || null;
   }
   return null;
+}
+
+/**
+ * 🔨 สแกนป้ายแม่พิมพ์ → แม่พิมพ์ตัวไหน (2026-10-06 · คำสั่ง user "สแกน QR แม่พิมพ์เด้งเข้าผัง")
+ * แม่พิมพ์ใช้ตัวตนเดียวกับเครื่องจักร (`machines` · equipment_kind='die') ⇒ ป้าย = `ESM:M:<uuid>` / เลขแม่พิมพ์เปล่า
+ * คืน `{ die }` หรือ `{ error }` — **ทุกทางที่หาไม่เจอต้องบอกเหตุ** (ป้ายผิดชนิด · ไม่มีในทะเบียน · ปิดใช้ · นอกขอบเขต)
+ * ห้ามคืน null เงียบ: คนยืนหน้าชั้นวางแม่พิมพ์ต้องรู้ว่าทำไมหมุดไม่เด้ง
+ * @param {object}   scan    ผลจาก parseQrPayload
+ * @param {Array}    dies    แม่พิมพ์ **ทั้งหมด** (ไม่กรองขอบเขต — ไม่งั้นแยก "นอกขอบเขต" กับ "ไม่มี" ไม่ได้)
+ * @param {Function} inScope (die) => boolean — ขอบเขตไลน์ที่จอเลือกอยู่
+ */
+export function findDieByScan(scan, dies = [], inScope = () => true) {
+  if (!scan) return { error: 'อ่านรหัสจากป้ายไม่ได้' };
+  // ป้ายแม่พิมพ์พิมพ์จากแท็บ ⚙️ เครื่องจักร ของ /qr-labels (machines รวมแม่พิมพ์) — ESM:J = ทะเบียน PM/จิ๊ก คนละตัว
+  if (scan.kind === 'jig') {
+    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ 🔨 แม่พิมพ์' };
+  }
+  if (scan.kind && scan.kind !== 'machine') {
+    return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้ายแม่พิมพ์` };
+  }
+  const die = resolveMachine(scan, dies);
+  if (!die) {
+    return { error: scan.typed
+      ? 'ไม่พบในทะเบียนแม่พิมพ์ — ป้ายนี้อาจเป็นของเครื่องจักร ไม่ใช่แม่พิมพ์'
+      : `ไม่พบแม่พิมพ์เลข "${scan.id}" ในทะเบียน` };
+  }
+  if (die.is_active === false) return { error: `แม่พิมพ์ ${die.machine_no} ปิดใช้งานแล้ว` };
+  if (!inScope(die)) {
+    return { error: `แม่พิมพ์ ${die.machine_no} อยู่นอกขอบเขตไลน์ที่เลือกอยู่${die.line_name ? ` (${die.line_name})` : ''} — เปลี่ยนขอบเขตแล้วสแกนใหม่` };
+  }
+  return { die };
 }

@@ -270,8 +270,8 @@ export default function QaClaims({ lines = [], role, lineId, sections, partOpts 
 
 function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts = [], canRecord, canManage, busy, save, openCapa, repeats }) {
   // 📜 ค่าที่เคยบันทึกใน qa_claims (Main) — พาร์ท/ลูกค้าที่ทะเบียนยังไม่มี ยังเลือกซ้ำได้ (สะกดเดิม = ไม่แตกกลุ่มเคลมซ้ำ) (2026-09-07)
-  const partHist = useColumnHistory(supabase, 'qa_claims', 'part_no', { upper: true });
-  const custHist = useColumnHistory(supabase, 'qa_claims', 'customer');
+  const partHist = useColumnHistory(supabase, 'qa_customer_claims', 'part_no', { upper: true });
+  const custHist = useColumnHistory(supabase, 'qa_customer_claims', 'customer');
   const set = (k) => (e) => setDetail((f) => ({ ...f, [k]: e.target.value }));
   const ro = !canRecord || detail.status === 'closed';
   return (

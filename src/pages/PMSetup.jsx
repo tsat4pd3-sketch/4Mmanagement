@@ -1577,9 +1577,12 @@ export default function PMSetup() {
 
   const handleDelete = async (jig) => {
     if (!confirm(`ลบ "${jig.name}" ?`)) return
-    const { error } = await supabaseDR.from('jigs').delete().eq('id', jig.id)
-    if (error) { toast.error(error.message); return }
-    // ลบ jig สำเร็จแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
+       แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */
+    const dres = await supabaseDR.from('jigs').delete().eq('id', jig.id).select('id')
+    if (!checkWrite(dres, 'ลบจิ๊ก')) return
+    if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — รูปและประวัติยังอยู่ครบ'); return }
+    // ยืนยันแถวหายจริงแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
     try {
       const folder = `jigs/${jig.id}`
       const { data: files } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })

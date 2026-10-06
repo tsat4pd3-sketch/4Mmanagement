@@ -6,6 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { checkWrite } from '../utils/dbWrite';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
@@ -334,6 +335,9 @@ export default function OjtTraining() {
       if (!editing.isNew) {
         let del = supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
         if (keptIds.length) del = del.not('id', 'in', `(${keptIds.join(',')})`);
+        /* ⚠️ จุดนี้ **ห้ามนับแถว** — delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติคือ 0 คน
+           ⇒ 0 แถว = เรื่องปกติ ไม่ใช่สัญญาณล้มเหลว (ต่างจาก delete ที่ลบของที่เลือกไว้แน่ๆ)
+           ไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" ไม่ใช่ของแถวที่ลบที่นี่ */
         const { error: delErr } = await del;
         // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
         if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
@@ -363,9 +367,12 @@ export default function OjtTraining() {
   const handleDelete = async (t) => {
     if (!window.confirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
     const { data: att } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
-    const { error } = await supabase.from('ojt_trainings').delete().eq('id', t.id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    // ลบไฟล์ลายเซ็นของใบนี้ (best-effort หลัง DB delete สำเร็จ — กฎ storage)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ = 0 แถว ไม่มี error
+       ไม่นับ = ใบอบรมยังอยู่ แต่ลายเซ็นพนักงานทุกคนถูกลบ ⇒ ใบเสียถาวร เซ็นใหม่ไม่ได้ */
+    const dres = await supabase.from('ojt_trainings').delete().eq('id', t.id).select('id');
+    if (!checkWrite(dres, 'ลบใบอบรม')) return;
+    if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · ใบและลายเซ็นยังอยู่ครบ'); return; }
+    // ยืนยันใบหายจริงแล้ว ค่อยลบไฟล์ลายเซ็นของใบนี้ (best-effort — กฎ storage)
     const { data: { user } } = await supabase.auth.getUser();
     const paths = (att || []).map(a => a.sign_url).filter(u => u?.includes('/signatures/'))
       .map(u => decodeURIComponent(u.split('/signatures/')[1] || '').split('?')[0])
