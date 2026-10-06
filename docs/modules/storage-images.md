@@ -190,7 +190,13 @@
 > → **polling ของจอทำแค่ "เปลี่ยนสีบนผัง"** · ในเมื่อเกณฑ์เตือนคือ 15 นาที การ poll ทุก 30-60 วิ **ไม่ได้ทำให้ใครรู้เร็วขึ้นเลย แค่เปลืองโควต้า** (เหตุผลที่ ANDON ยืดจาก 30 วิ → 5 นาทีได้โดยไม่เสียอะไร)
 > **(ข) realtime มาก่อน · poll เป็นตัวกันเหนียว** — push ส่งเฉพาะแถวที่เปลี่ยน (~200 bytes) ถูกกว่า poll ทั้งชุด (22 KB) เป็นร้อยเท่า **และเร็วกว่าด้วย**
 > จอที่มี realtime: Dashboard · Management · DailyPM · DowntimeSiren · **FactoryMap (เพิ่ม 2026-08-19 — เดิม polling ล้วน 0 channel จึงต้องตั้ง 30 วิ)**
-> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ** — `mtn_orders` เคยตกหล่น (migration `20260819_realtime_mtn_orders.sql` · **apply แล้ว**) · ตอนนี้ครบ 5: `downtime_logs` `prod_orders` `defect_logs` `production_sessions` `mtn_orders`
+> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ**
+> 🔴 **ห้ามเก็บลิสต์ตารางเป็นมือที่นี่อีก** — บรรทัดนี้เคยเขียนว่า "ตอนนี้ครบ 5" แล้วล้าสมัย
+> คนถัดไปเชื่อลิสต์นั้น จึงตกหล่นอีก 4 ตาราง (QC 06/10: `monitor_cells`/`monitor_board_parts` ฝั่ง DR
+> · `daily_production_logs`/`four_m_logs` ฝั่ง Main) ⇒ `/monitoring` + แถบหน้าแรกช้าได้ถึง 2 ชม.
+> ⇒ **ทะเบียนจริงอยู่ที่ `src/utils/realtimeTables.js`** (มีด่าน `realtime-table-registered` ใน build)
+> · ของจริงใน DB อ่านสด: `select tablename from pg_publication_tables where pubname='supabase_realtime' order by 1;`
+>   **รันทั้ง 2 project** — ชื่อเดียวกันมีได้ทั้งสองฝั่ง (`notifications` มีทั้งคู่ แต่โค้ด subscribe เฉพาะ Main)
 >
 > #### 🔴🔴 กฎเหล็ก — subscribe realtime ต้องผ่าน **`liveChannel(client, name)`** ห้ามเรียก `client.channel('ชื่อคงที่')` (2026-08-26 · feedback หน้างาน)
 > *"หน้า line management เปิดไปเปิดมา โชว์สกิลพนักงาน ซักพักหน่วงๆ ละค้างไปเลย"* — **ไม่ใช่เรื่องกราฟ/การ์ดสกิล**

@@ -19,6 +19,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { BACKUP_RE } from '../schemaAudit.js';   // ตัวตัดสิน "ชื่อตารางสำรอง" จุดเดียวทั้งระบบ
+import { REALTIME_TABLES } from '../realtimeTables.js';   // ทะเบียนตารางที่ subscribe realtime
 import { join, relative } from 'node:path';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
@@ -677,9 +678,16 @@ const RULES = [
   {
     id: 'no-utc-workdate',
     scan: ['src'], ext: ['.jsx', '.js'],
-    re: /new Date\(\)\.toISOString\(\)\.slice/g,
-    why: 'toISOString() = UTC ⇒ ช่วง 00:00-06:59 เวลาไทยได้ "วันก่อนหน้า" (กฎเหล็ก Date/Time ใน CLAUDE.md)',
-    fix: 'ใช้ getWorkDate() (วันงานตัด 08:00) หรือ todayLocal() จาก src/utils/dateFormat.js',
+    /* ⚠️ เดิมจับแค่รูป `new Date().toISOString().slice` — **แคบเกินไป** ด่านจึงมองไม่เห็น
+       2 เคสที่หลุดจริง (QC 06/10): `new Date(Date.now() - n).toISOString().slice(0,10)` (CtReview)
+       และ `d.toISOString().slice(0,10)` ที่ `d` มาจาก parse แบบ `+07:00` (MonitorFgSync — คลาด 1 วันทุก TZ)
+       ⇒ จับ "ปิดท้ายด้วย toISOString().slice(0,10)" ทั้งหมด ไม่สนว่าตัวรับคืออะไร */
+    re: /\.toISOString\(\)\s*\.slice\(\s*0\s*,\s*10/g,
+    why: 'toISOString() อ่านฝั่ง UTC ⇒ ถ้าขาเข้าไม่ใช่ UTC ล้วน จะคลาดวันแบบเงียบ '
+       + '(ช่วง 00:00-06:59 เวลาไทยได้ "วันก่อนหน้า" · วัด 06/10: MonitorFgSync ผสม parse +07:00 กับ output UTC '
+       + 'แล้ว addDays(today, 0) คืน "เมื่อวาน" ⇒ หน้าต่างสแกน FG เลื่อนไป 1 วันทุกครั้ง)',
+    fix: 'วันนี้/วันงาน = getWorkDate() · บวกลบวัน = addDaysStr() ทั้งคู่ใน src/utils/workDate.js '
+       + '(UTC ล้วนทั้งขาเข้า-ออก) · แปลง Date เป็นสตริงวันที่ = localDateStr() / todayLocal()',
     allow: {},
   },
   {
@@ -2380,4 +2388,61 @@ test('🛡️ UI: fontSize บนจอต้องไม่ต่ำกว่�
     + '   แก้ยังไง: ยกเป็น 11 · ที่แน่นเกินให้ **เว้นป้าย/ซ่อนป้าย ไม่ใช่ลดฟอนต์** (UI-CONVENTIONS §4)\n'
     + '             ตัวที่สเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)` อยู่แล้ว\n\n'
     + bad.slice(0, 20).map(b => '   • ' + b).join('\n') + (bad.length > 20 ? `\n   …อีก ${bad.length - 20}` : '') + '\n');
+});
+
+/* ── ไฟล์ source ห้ามมีไบต์ NUL (QC audit 06/10) ───────────────────────────────────
+   เคสจริง: `EventLog.jsx:149` มี `'\0__none__'` (NUL หลุดเข้ามาตอนพิมพ์ sentinel ที่ใช้ match ไม่เจอ)
+   โค้ด**ทำงานถูก**ทุกอย่าง — แต่ `grep`/`ripgrep` ถือว่าไฟล์นั้นเป็น **binary** แล้ว
+   **ข้ามไปเลย** ⇒ ไฟล์หายจากทุกการสแกน: ด่าน regression ข้างบนนี้ · QC agent · audit sweep
+   = มีไฟล์ที่ "ไม่มีด่านไหนมองเห็น" อยู่ในรีโปโดยไม่มีใครรู้ (ตรวจเจอตอนด่านอื่นรายงานไฟล์น้อยกว่าที่ควร)
+   ⇒ อันตรายกว่าบั๊กเอง เพราะมันปิดตาเครื่องมือตรวจทั้งชุด */
+test('🛡️ ไฟล์ source ต้องไม่มีไบต์ NUL (ไม่งั้น grep ข้ามไฟล์ = หลุดทุกด่าน)', () => {
+  const bad = [];
+  for (const dir of ['src', 'scripts', 'audit', 'supabase', 'docs']) {
+    let files = [];
+    try { files = walk(join(ROOT, dir), ['.js', '.jsx', '.mjs', '.cjs', '.sql', '.md', '.css', '.json', '.html']); }
+    catch { continue; }                       // โฟลเดอร์ไม่มีก็ข้าม
+    for (const file of files) {
+      const buf = readFileSync(file);
+      const at = buf.indexOf(0);
+      if (at >= 0) bad.push(`${relative(ROOT, file)} @ byte ${at}`);
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ พบไบต์ NUL ${bad.length} ไฟล์\n`
+    + '   ทำไมห้าม: grep/ripgrep ถือว่าไฟล์เป็น binary แล้วข้ามทั้งไฟล์ ⇒ ไฟล์นั้นหลุดจาก\n'
+    + '             ด่าน regression · QC agent · audit sweep ทั้งหมด โดยไม่มีสัญญาณเตือนใดๆ\n'
+    + '   แก้ยังไง: ลบไบต์นั้นออก — sentinel ที่อยากให้ match ไม่เจอ ใช้สตริงธรรมดาพอ (เช่น \'__none__\')\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── ตารางที่โค้ด subscribe realtime ต้องอยู่ในทะเบียน (QC audit 06/10) ─────────────────
+   subscribe ตารางที่ไม่อยู่ใน publication `supabase_realtime` = **เงียบสนิท ไม่มี error**
+   จอยังอัปเดตเพราะมี poll กันเหนียว แต่ช้าได้ถึง hard floor 2 ชม. ⇒ ไม่มีใครรู้ว่าพัง
+   เกิดซ้ำ 3 รอบ (19/08 `mtn_orders` · 15/09 ทั้งชุด · 06/10 อีก 4 ตาราง) เพราะลิสต์อยู่ใน
+   **เอกสารที่เขียนมือ** แล้วล้าสมัย ⇒ ย้ายมาเป็นทะเบียนในโค้ด + ด่านนี้บังคับให้ตรงกัน
+   เหตุผลเต็ม + SQL ตรวจของจริง → src/utils/realtimeTables.js */
+test('🛡️ realtime-table-registered — ตารางที่ subscribe ต้องอยู่ใน REALTIME_TABLES', () => {
+  const missing = new Map();                  // ชื่อตาราง → จุดที่เจอ
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('realtimeTables.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    code.split('\n').forEach((ln, i) => {
+      const found = [];
+      for (const m of ln.matchAll(/\btables:\s*\[([^\]]*)\]/g))
+        for (const q of m[1].matchAll(/['"]([a-z0-9_]+)['"]/g)) found.push(q[1]);
+      for (const m of ln.matchAll(/\btable:\s*['"]([a-z0-9_]+)['"]/g)) found.push(m[1]);
+      for (const t of found) {
+        if (REALTIME_TABLES[t]) continue;
+        if (!missing.has(t)) missing.set(t, `${rel}:${i + 1}`);
+      }
+    });
+  }
+  assert.deepEqual([...missing.keys()], [],
+    `\n\n❌ มี ${missing.size} ตารางที่โค้ด subscribe แต่ไม่อยู่ในทะเบียน\n`
+    + '   ทำไมสำคัญ: ถ้าตารางนั้นไม่อยู่ใน publication `supabase_realtime` ของ project ที่ถูกต้อง\n'
+    + '             subscription จะ **เงียบสนิท ไม่มี error** — จอช้าได้ถึง 2 ชม. โดยไม่มีใครรู้\n'
+    + '   แก้ยังไง: 1) เติมชื่อตาราง + project ลง src/utils/realtimeTables.js\n'
+    + '             2) เช็คว่าอยู่ใน publication แล้วจริง (SQL อยู่ในหัวไฟล์นั้น) — ไม่อยู่ให้เขียน migration\n\n'
+    + [...missing].map(([t, at]) => `   • ${t}  (${at})`).join('\n') + '\n');
 });

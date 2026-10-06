@@ -19,6 +19,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import { summarizeObservedCt, FLAG_TEXT, SAMPLE_RULES } from '../utils/ctReview';
+import { getWorkDate, addDaysStr } from '../utils/workDate';
 
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
@@ -55,7 +56,9 @@ export default function CtReview({ lines = [] }) {
     let alive = true;                       // กัน stale-response race (กฎเหล็ก 4)
     (async () => {
       setLoading(true); setErr('');
-      const since = new Date(Date.now() - DAYS_BACK * 86400000).toISOString().slice(0, 10);
+      /* ⚠️ `work_date` คือ "วันทำงาน" (ตัด 08:00) — ขอบล่างต้องคิดจาก getWorkDate()
+         ไม่ใช่ Date.now().toISOString() ที่เป็น UTC (ช่วง 00:00-06:59 ไทยได้วันก่อนหน้า) */
+      const since = addDaysStr(getWorkDate(), -DAYS_BACK);
       const [sRes, pRes, bRes] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('id, work_date, shift, start_time, end_time')

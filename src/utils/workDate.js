@@ -66,3 +66,25 @@ export function workDateOfTime(ts) {
   const d = toDate(ts);
   return d ? getWorkDate(d) : null;
 }
+
+/**
+ * บวก/ลบวันจากสตริง `'YYYY-MM-DD'` — **คำนวณฝั่ง UTC ล้วน ไม่พึ่ง timezone เครื่อง**
+ *
+ * ⚠️ ทำไมต้องมีตัวนี้: สำรวจ 06/10 เจอ `addDays(dateStr, n)` ถูกก๊อปนิยามซ้ำ **18 ชุด**
+ *    ทดสอบทั้ง 18 ชุดใต้ TZ ={UTC, Asia/Bangkok, America/Los_Angeles, Pacific/Kiritimati}
+ *    → **พัง 1 ชุด** (`MonitorFgSync`) เพราะผสม 2 ระบบเวลาในฟังก์ชันเดียว:
+ *      parse ด้วย `+07:00` → เลื่อนวันด้วย `setDate/getDate` (เวลาเครื่อง) → คืนค่าด้วย `toISOString` (UTC)
+ *    ⇒ **คลาดไป 1 วันทุก timezone** (`addDays(today, 0)` คืนเมื่อวาน)
+ *
+ * 🔴 กฎ: ตัวที่คืน "สตริงวันที่" **ห้ามปิดท้ายด้วย `.toISOString().slice(0,10)`** —
+ *    toISOString อ่านฝั่ง UTC ⇒ ถ้าขาเข้าไม่ใช่ UTC ล้วน จะคลาดวันแบบเงียบ (มีด่าน `no-toisostring-date`)
+ *
+ * @returns `'YYYY-MM-DD'` · **`null` เมื่อแกะวันที่ไม่ออก (ห้ามเดาเป็นวันนี้)**
+ */
+export function addDaysStr(iso, n = 0) {
+  const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const t = new Date(Date.UTC(y, m - 1, d + Number(n || 0)));
+  if (Number.isNaN(t.getTime())) return null;
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}

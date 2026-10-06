@@ -9,6 +9,7 @@
    จุดใหม่ที่ทำเรื่องพวกนี้ให้เรียกไฟล์นี้ ห้ามเขียนเอง
 
    "วันนี้" รับเป็น 'YYYY-MM-DD' (จาก todayLocal — ห้าม toISOString) เทียบเป็น string ได้เลย */
+import { addDaysStr } from './workDate.js';
 
 export const DUE_SOON_DAYS = 7;   // เหลือ ≤ 7 วัน = เหลือง (1 สัปดาห์พอให้ตามงานทัน — เกณฑ์เดียวกับ PM forecast)
 
@@ -129,11 +130,8 @@ export function daysBetween(a, b) {
   if (Number.isNaN(da) || Number.isNaN(db)) return null;
   return Math.round((db - da) / 86400000);
 }
-export function addDays(ymd, n) {
-  if (!ymd) return null;
-  const d = new Date(Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10) + (n || 0)));
-  return d.toISOString().slice(0, 10);   // UTC ล้วนทั้งขาเข้า-ออก → ไม่เพี้ยน timezone (ไม่ใช่ "วันนี้")
-}
+/** บวก/ลบวันจากสตริงวันที่ — ของกลาง `addDaysStr` (UTC ล้วน · ไม่พึ่ง timezone เครื่อง) */
+export const addDays = (ymd, n) => addDaysStr(ymd, n);
 
 /** ไฟสีของเอกสารส่งมอบ 1 รายการ */
 export function deliverableLight(d, today) {
