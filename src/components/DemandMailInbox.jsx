@@ -43,10 +43,14 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
     setLatestDone(latest);
     /* 📭 หัวเรื่องบอก "830 & 862" แต่ไฟล์มาไม่ครบ = ห้ามเงียบ (05/10 ได้แค่ 830 · บอร์ดถือแผนเก่าโดยไม่มีใครรู้)
        ดู 7 วันล่าสุดทุกสถานะ ⇒ เมลที่นำเข้าไปแล้วก็ยังเตือนได้ว่าขาดอีกไฟล์ */
-    const since = new Date(Date.now() - 7 * 86400000).toISOString();
+    const since = new Date(Date.now() - 15 * 86400000).toISOString();   // เผื่อรอบ 830 (ทั้งสัปดาห์) ของเมลเก่าสุดในจอ
     const { data: recent, error: eRecent } = await supabaseDR.from('demand_mail_inbox')
       .select('message_id, subject, file_name, received_at').gte('received_at', since).limit(200);
-    setMissing(eRecent ? [] : mailsMissingFiles(recent || []).slice(0, 3));
+    /* นำเข้าเอง (ลากไฟล์) ก็นับว่าได้ของแล้ว — 862 = kind 'orders' · 830 = 'forecast' */
+    const { data: batches, error: eB } = await supabaseDR.from('demand_upload_batches')
+      .select('kind, file_name, uploaded_at').gte('uploaded_at', new Date(Date.now() - 15 * 86400000).toISOString()).limit(200);
+    const imports = (batches || []).filter(b => /^EDI /.test(b.file_name || '')).map(b => ({ kind: b.kind === 'orders' ? '862' : b.kind === 'forecast' ? '830' : null, at: b.uploaded_at }));
+    setMissing(eRecent || eB ? [] : mailsMissingFiles(recent || [], { imports }).slice(0, 3));
   }, []);
   useEffect(() => { load(); }, [load, refreshKey]);
 

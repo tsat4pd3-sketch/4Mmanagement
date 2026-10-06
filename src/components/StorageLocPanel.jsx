@@ -328,7 +328,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             <input autoFocus={isNew} disabled={!isNew} maxLength={6}
               style={{ ...inputSt, fontFamily: 'monospace', fontSize: 18, fontWeight: 800, textAlign: 'center', textTransform: 'uppercase', opacity: isNew ? 1 : 0.55 }}
               value={f.code} onChange={e => setF(v => ({ ...v, code: e.target.value }))} placeholder="S401" />
-            <div style={{ fontSize: 10.5, marginTop: 3, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
               {badFormat
                 ? <span style={{ color: '#ef4444', fontWeight: 700 }}>🔴 {SLOC_FORMAT_HINT}</span>
                 : <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT}</span>}
@@ -348,7 +348,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             </select>
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
             {guess && guess !== f.kind && (
-              <div onClick={() => setF(v => ({ ...v, kind: guess }))} style={{ fontSize: 10.5, color: '#0ea5e9', cursor: 'pointer', marginTop: 3, fontWeight: 700 }}>
+              <div onClick={() => setF(v => ({ ...v, kind: guess }))} style={{ fontSize: 11, color: '#0ea5e9', cursor: 'pointer', marginTop: 3, fontWeight: 700 }}>
                 💡 รหัสขึ้นต้น {code[0]} — น่าจะเป็น “{slocKindMeta(guess).label}” (กดเพื่อใช้)
               </div>
             )}
@@ -378,7 +378,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                     </button>
                   ))}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                   ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว
                   {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>→ ครอบเพิ่ม {preview.length} ไลน์: {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
                 </div>

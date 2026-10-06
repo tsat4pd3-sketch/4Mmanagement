@@ -34,7 +34,11 @@ const INDENT = '  ';   // en-space ×2 ต่อชั้น — `<option>` ไ�
 function optionLabel(o, { withIcon = true } = {}) {
   const m = SCOPE_KIND_META[o.kind] || {};
   const icon = o.icon || m.icon || '';
-  const flags = [o.noData ? '· ไม่มีไลน์ผลิต' : '', o.unlinked ? '· ผังยังไม่ผูก' : ''].filter(Boolean).join(' ');
+  /* 🔗 `refShared` (06/10) = หน่วยนี้ **ใช้ไลน์ร่วมกับหน่วยอื่น** (ผังกับทะเบียนไลน์เป็น 2 แกน ไม่ได้ 1:1)
+     ตัวเลขผลิตเกาะอยู่กับไลน์ ⇒ เลือกหน่วยนี้แล้วได้เลขชุดเดียวกับหน่วยที่ใช้ไลน์เดียวกัน **แยกไม่ได้**
+     ⇒ ต้องเขียนบอก ไม่ใช่เพราะข้อมูลผิด แต่เพราะถ้าไม่บอก คนจะเชื่อว่าเป็นเลขของหน่วยตัวเองเท่านั้น */
+  const flags = [o.noData ? '· ไม่มีไลน์ผลิต' : '', o.unlinked ? '· ผังยังไม่ผูก' : '',
+    o.refShared ? '· ใช้ไลน์ร่วมกับหน่วยอื่น (เลขแยกไม่ได้)' : ''].filter(Boolean).join(' ');
   return `${INDENT.repeat(Math.max(0, o.depth))}${withIcon && icon ? icon + ' ' : ''}${o.label}${flags ? ' ' + flags : ''}`;
 }
 

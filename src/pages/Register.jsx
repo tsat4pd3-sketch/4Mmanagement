@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext } from 'react';
+import { Link } from 'react-router-dom';
 import { orgNodeCompare } from '../utils/listOrder';
 import { useObjectUrl } from '../utils/useObjectUrl';
 import { supabase } from '../supabaseClient';
@@ -90,6 +91,8 @@ export default function Register() {
 
   const handleRegister = async (e) => {
     e.preventDefault();
+    // ด่านชั้นสอง — ปุ่ม disabled อย่างเดียวไม่พอ (ฟอร์มอาจค้างอยู่ตอนสิทธิ์เปลี่ยน · Enter ในช่องกรอกก็ submit ได้)
+    if (!canRegister) return toast.error('บัญชีของคุณไม่มีสิทธิ์ลงทะเบียนพนักงาน');
     setIsUploading(true);
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -229,16 +232,43 @@ export default function Register() {
               // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
               //   ตั้ง line_id ผ่าน ref_line_id ของกลุ่ม (production ยังทำงาน) · ผังยังไม่มีกลุ่ม → fallback production_lines
               if (orgGroupOpts.length) {
+                /* 🔴 เก็บ "ชื่อกลุ่ม" ไม่ใช่ `code || name` — ต้องตรงกับ /operator (06/10)
+                     `org_nodes(kind='line').code` บางตัวเป็นคนละสตริงกับชื่อ (ของจริง:
+                     ASSEMBLY 1 → code 'Assembly Line D1' · GWM → code 'Assembly Line D2')
+                     ⇒ เดิมคนที่ลงทะเบียนใหม่ได้ `group_name='Assembly Line D1'` ขณะที่เพื่อน
+                       ร่วมกลุ่ม 35 คนเป็น 'ASSEMBLY 1' = แยกกันคนละกลุ่มในทุกตัวกรอง
+                       และ /operator โชว์ว่า "(นอกผัง — ค่าเดิม)"
+                   🔴 กลุ่มที่ยังไม่ผูกไลน์ผลิต (`ref_line_id` ว่าง) ⇒ line_id = null
+                     = พนักงานใหม่ **ไม่ขึ้นหน้าเช็คชื่อ** ต้องเตือนตรงนี้ ห้ามเงียบ
+                     (เคสจริง 05/10: PD2 ตั้งแผนก+กลุ่มครบแล้วแต่เช็คชื่อว่าง 35 คน) */
+                const curNode = orgGroupOpts.find(g => g.name === groupName || g.code === groupName);
+                const noRef = orgGroupOpts.filter(g => !g.ref_line_id);
                 return (
-                  <select value={groupName} disabled={!department} onChange={e => {
+                  <>
+                  <select value={curNode ? curNode.name : groupName} disabled={!department} onChange={e => {
                     const val = e.target.value;
                     setGroupName(val);
-                    const g = orgGroupOpts.find(x => (x.code || x.name) === val);
+                    const g = orgGroupOpts.find(x => x.name === val || x.code === val);
                     setLineId(g?.ref_line_id || null);
                   }}>
                     <option value="">{department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
-                    {orgGroupOpts.map(g => <option key={g.id} value={g.code || g.name}>{g.name}</option>)}
+                    {orgGroupOpts.map(g => (
+                      <option key={g.id} value={g.name}>{g.name}{g.ref_line_id ? '' : '  ⚠ ยังไม่ผูกไลน์'}</option>
+                    ))}
                   </select>
+                  {curNode && !curNode.ref_line_id && (
+                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                      ⚠️ กลุ่ม <b>{curNode.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่พนักงานคนนี้
+                      <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
+                      <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                    </div>
+                  )}
+                  {!curNode && noRef.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
+                      ⚠ {noRef.length} กลุ่มในลิสต์นี้ยังไม่ผูกไลน์ผลิต — เลือกแล้วคนจะไม่ขึ้นหน้าเช็คชื่อ
+                    </div>
+                  )}
+                  </>
                 );
               }
               // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยดูทุกไลน์แล้วให้ filterLinesByDept คัดตามแผนก

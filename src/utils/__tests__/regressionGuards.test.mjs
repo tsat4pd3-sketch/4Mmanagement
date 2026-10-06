@@ -1833,6 +1833,29 @@ test('🛡️ virtual-module-plugin-in-both-vite-configs — plugin ที่ห
 });
 
 
+/* ═══ 👻 พื้นที่กดเผื่อนิ้ว ต้องไม่ถูกนับเป็น "ของล้น" (2026-10-06) ═══
+   `src/index.css` @media (pointer:coarse) วาง `button:not(:has(*))::before` absolute + min 40×40
+   ทับกลางปุ่มเล็ก = ขยายพื้นที่รับสัมผัสให้คนใส่ถุงมือ โดยไม่ขยับ layout สักพิกเซล
+   แต่ pseudo ที่ absolute **นับเข้า scrollWidth ของปุ่ม แล้วลามถึงแถวแม่** ⇒ mobilesweep เห็น
+   "แถวล้นปัดไม่ได้" ทั้งที่ไม่มีอะไรโผล่ออกมาเลย (วัด 06/10: desktop sw===cw ทุกปุ่ม ·
+   ปุ่มตัวอักษร "X" ก็เป็น = ไม่เกี่ยวอีโมจิ)
+   เคยหลงมาแล้ว 05/10 (54da354a): ไล่แก้ที่อีโมจิ แล้ว "หาย" เพราะห่อ <span> ทำให้
+   `:not(:has(*))` เลิกแมตช์ = **ถอดพื้นที่กด 40px ทิ้งเงียบๆ** เพื่อให้ตัวเลขในด่านสวย */
+test('🛡️ mobilesweep-must-mute-tap-target-ghost — ด่านมือถือต้องตัดพื้นที่กดเผื่อนิ้วก่อนวัด', () => {
+  const css = readFileSync(join(ROOT, 'src/index.css'), 'utf8');
+  if (!/button:not\(:has\(\*\)\)::before/.test(css)) return;   // เลิกใช้ทริกนี้แล้ว = ไม่ต้องบังคับ
+  const sweep = readFileSync(join(ROOT, 'audit/mobilesweep.mjs'), 'utf8');
+  const muted = /button:not\(:has\(\*\)\)::before\{min-width:0!important/.test(sweep);
+  assert.ok(muted,
+    '\n\n❌ audit/mobilesweep.mjs ไม่ได้ตัด min-width/min-height ของ `button:not(:has(*))::before` ก่อนวัด\n'
+    + '   ⇒ ด่านจะฟ้อง "ล้นปัดไม่ได้" จากพื้นที่กดเผื่อนิ้วที่มองไม่เห็น (ปุ่ม 25px ได้ scrollWidth 33)\n'
+    + '   แล้ว session ถัดไปจะ "แก้" ด้วยการห่อไอคอนใน <span> ซึ่ง**ถอดพื้นที่กด 40px ทิ้ง**\n'
+    + '   = ทำให้หน้างานใส่ถุงมือกดยากขึ้น เพื่อให้ตัวเลขในด่านสวย (เกิดจริง 05/10 กับ SheetIconBtn)\n'
+    + '   แก้: ใส่ addStyleTag ที่ตั้ง min-width:0!important/min-height:0!important ให้ pseudo นี้ก่อน evaluate\n'
+    + '   📄 docs/UI-CONVENTIONS.md §7.1\n');
+});
+
+
 /* ═══ กฎเชิงความสัมพันธ์ #4 — ภาระเวลาของงานคู่ RH/LH ห้ามบวกกัน (2026-09-22 · audit แผนผลิต) ═══
    `ProductionPlan` แปลงความต้องการเป็น shift-load ด้วย `qty ÷ กำลังต่อกะ` ต่อพาร์ท แล้ว**บวกรวม**
    ⇒ คู่ RH/LH (ปั๊มทีเดียวได้ 2 ข้าง) ถูกนับเวลา 2 เท่า
@@ -2305,4 +2328,96 @@ test('🛡️ /nm-board: ห้ามเรียงการ์ดใหม่�
     '\n\n❌ NewModelBoard.jsx เรียง/สลับตำแหน่งแผงเอง (sort หรือ gridAutoFlow:dense)\n'
     + '   ทำไมห้าม: สีเปลี่ยนทุกสัปดาห์ ถ้าใบย้ายที่ตามสี คนหาแผงที่ต้องการไม่เจอ\n'
     + '              บอร์ดกระดาษของจริง ตำแหน่งแผงคงที่เสมอ — ระบบต้องเหมือนกัน\n');
+});
+
+/* ── หมวดฐานพนักงาน: "จอโชว์ว่าทำได้ แต่ระบบไม่ให้ทำ" (ไล่ตรวจทั้งหมวด 06/10/2026) ─────────
+   คลาสเดียวกับ /org-setup 05/10 (ปุ่มโชว์ แต่ด่านตอนบันทึกไม่รู้จักชั้นใหม่) — user สั่งให้
+   ไล่ตรวจให้หมดในหมวดฐานพนักงาน · เจอ 4 จุด แก้แล้ว ด่านข้างล่างกันไม่ให้ย้อนกลับ */
+test('🛡️ /operator: ปุ่มอนุมัติอัพระดับ ต้องเช็คสิทธิ์ที่ "การเขียนจริง" ต้องใช้ด้วย', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+writeBlock\s*=/.test(code) && /canApprove\s*=\s*mayApprove\s*&&\s*!writeBlock/.test(code),
+    '\n\n❌ operator.jsx: canApprove ดูแค่ skills:approve_levelup\n'
+    + '   ทำไมห้าม: การอนุมัติเขียน employee_skills.score = to_level ซึ่ง RLS WITH CHECK บังคับ\n'
+    + '              score ≤ 50 ‖ skills:edit_high · สกิลค่าฝีมือ ‖ skills:edit_allowance\n'
+    + '              ⇒ ผู้อนุมัติที่ไม่มี edit_high กด Lv.75/100 = เด้ง error ดิบจาก Postgres\n'
+    + '   แก้ยังไง: คิด writeBlock จาก SKILL_EDIT_CAP + canEditHighSkill/canEditAllowance\n'
+    + '              แล้ว canApprove = mayApprove && !writeBlock (จอต้องบอกว่าขาดคีย์ไหน)\n');
+});
+
+test('🛡️ /operator: ช่องติ๊กสกิลที่คะแนนเกินเพดาน ต้องถูกล็อกเหมือนช่องคะแนน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/rowEditable\s*=[^;]*!lockedAllowance\s*&&\s*!lockedHigh/.test(code),
+    '\n\n❌ operator.jsx: rowEditable ไม่ได้รวม !lockedHigh\n'
+    + '   ทำไมห้าม: ช่องคะแนนถูกล็อก แต่ช่องติ๊กยังกดออกได้ ⇒ handleSaveEmp ข้ามแถวนั้นเงียบ\n'
+    + '              แล้วขึ้น "อัปเดตเรียบร้อย!" · เปิดดูใหม่สกิลยังอยู่ (วัดจริง 06/10:\n'
+    + '              720 แถว / 148 คน มีคะแนนเกินเพดาน 50 ที่ role leader ตั้งได้)\n');
+  assert.ok(/skipped\.push\(/.test(code) && /skipNote/.test(code),
+    '\n\n❌ operator.jsx: แถวที่สิทธิ์ไม่ถึงถูกข้ามโดยไม่บอกผู้ใช้ — ต้องเก็บ skipped แล้วรายงาน\n');
+});
+
+test('🛡️ /register: ช่องกลุ่มต้องเก็บ "ชื่อกลุ่ม" + เตือนกลุ่มที่ยังไม่ผูกไลน์ (เท่ากับ /operator)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Register.jsx'), 'utf8'));
+  assert.ok(!/orgGroupOpts\.map\(g\s*=>\s*<option[^>]*value=\{g\.code\s*\|\|\s*g\.name\}/.test(code),
+    '\n\n❌ Register.jsx เก็บ group_name เป็น `code || name` — ไม่ตรงกับ /operator ที่เก็บ "ชื่อ"\n'
+    + '   ทำไมห้าม: org_nodes(kind=line).code บางตัวคนละสตริงกับชื่อ (ของจริง 06/10:\n'
+    + '              ASSEMBLY 1 → code \'Assembly Line D1\') ⇒ คนลงทะเบียนใหม่แยกออกจาก\n'
+    + '              เพื่อนร่วมกลุ่ม 35 คนในทุกตัวกรอง และ /operator โชว์ว่า "(นอกผัง)"\n');
+  assert.ok(/ref_line_id\s*\?\s*''\s*:\s*'\s*⚠ ยังไม่ผูกไลน์'/.test(code) && /จะไม่ขึ้นในหน้าเช็คชื่อ/.test(code),
+    '\n\n❌ Register.jsx ไม่เตือนตอนเลือกกลุ่มที่ยังไม่ผูกไลน์ผลิต\n'
+    + '   ทำไมห้าม: ref_line_id ว่าง ⇒ line_id = null ⇒ พนักงานใหม่ไม่ขึ้นหน้าเช็คชื่อ เงียบสนิท\n'
+    + '              (เคสจริง 05/10 PD2 35 คน — /operator เตือนแล้ว หน้าลงทะเบียนต้องเตือนด้วย)\n');
+  assert.ok(/if\s*\(!canRegister\)\s*return toast\.error/.test(code),
+    '\n\n❌ Register.jsx: handleRegister ไม่มีด่านชั้นสอง — ปุ่ม disabled อย่างเดียวไม่พอ (Enter ก็ submit ได้)\n');
+});
+
+/* ── /nm-board ↔ /npi: ผูกกันด้วย "ตัวชี้" ห้ามให้ระบบเขียนทับสี EVA (06/10/2026 · คำสั่ง user) ──
+   IEC เขียนกติกาไว้เองว่า EVA **คนตั้งสีเอง** (`Obeya_E_Board-V2.pptx` ข้อ 1) — ระบบ *เสนอ* ได้
+   แต่ห้ามเขียนทับ · ถ้าบอร์ดเริ่มเอาสถานะเอกสารจาก NPI มาคิดสีเอง = ผิดกติกาเจ้าของบอร์ด */
+test('🛡️ /nm-board: ห้ามเอาข้อมูล NPI ไปคิดสี EVA เอง (คนตั้งสีเท่านั้น — กติกา IEC ข้อ 1)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(!/eva\s*[:=]\s*[^;,\n]*\b(sum|npi)\b/i.test(code),
+    '\n\n❌ NewModelBoard.jsx เอาค่าจาก NPI ไปตั้ง eva ของแผง/รุ่น\n'
+    + '   ทำไมห้าม: IEC เขียนกติกามาเองว่า EVA คนตั้งสีเอง ระบบเสนอได้แต่ห้ามเขียนทับ\n'
+    + '              บอร์ดคือภาพที่คนตัดสินใจร่วมกัน ไม่ใช่รายงานอัตโนมัติ\n'
+    + '   แก้ยังไง: ยกตัวเลข NPI มา "แสดงข้างๆ" (NpiLinkCard) แล้วให้คนตัดสินสีเอง\n');
+  /* เขียนกลับฝั่ง NPI จากบอร์ดก็ห้าม — บอร์ดเป็นจอดูอย่างเดียวในเฟสนี้ */
+  assert.ok(!/from\(\s*'npi_[a-z_]+'\s*\)\s*\.\s*(insert|update|upsert|delete)/.test(code),
+    '\n\n❌ NewModelBoard.jsx เขียนข้อมูลลงตาราง npi_* — บอร์ดเป็นจออ่านอย่างเดียวในเฟสนี้\n');
+});
+
+test('🛡️ /nm-board ↔ /npi: ห้ามเดาการผูกจากชื่อ/ลูกค้า — ต้องอ่านจาก npi_projects.nm_board_id', () => {
+  const board = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(/\.eq\(\s*'nm_board_id'/.test(board),
+    '\n\n❌ NewModelBoard.jsx ไม่ได้หาโปรเจค NPI ด้วยคอลัมน์ผูก `nm_board_id`\n'
+    + '   ทำไมสำคัญ: `model` ซ้ำกันได้ (หลายรุ่นย่อยของ platform เดียว) เดาผิด = บอร์ดโชว์ตัวเลขของรุ่นอื่น\n'
+    + '              ซึ่งแย่กว่าไม่โชว์เลย · ยังไม่ผูก = เขียนบนจอว่ายังไม่ผูก\n'
+    + '   แก้ยังไง: `.eq(\'nm_board_id\', <รหัสรุ่นบนบอร์ด>)` · คนผูกเองที่ /npi → ✏️ โปรเจค\n');
+  assert.ok(!/nm_board_id[\s\S]{0,80}(toLowerCase|includes|match)\s*\(/.test(board),
+    '\n\n❌ NewModelBoard.jsx จับคู่โปรเจค NPI ด้วยการเทียบข้อความ — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ฟอนต์บนจอห้ามต่ำกว่า 11px (user เคาะเลขเดียว 06/10 หลัง QC audit) ────────────────
+   เอกสาร (CLAUDE.md §Design System · UI-CONVENTIONS §4) เขียน "ขั้นต่ำ 11-12px" มาตลอด
+   แต่ **ไม่เคยมีด่าน** ⇒ drift กลับมาเรื่อยๆ (วัด 06/10: 160 จุดที่ต่ำกว่า 11 · ด่าน chartsweep
+   เองก็ตั้งเกณฑ์ไว้ 10.5 ทำให้ 92 จุด "ผ่านด่าน แต่ผิดเอกสาร")
+   จอหน้างานเป็น TV 43" แขวนไกล — 10px อ่านไม่ออกจริง ไม่ใช่เรื่องสวยงาม
+   ข้อยกเว้น: `src/lib/**` = ใบพิมพ์/PPTX (หน่วย pt บนกระดาษ) · บรรทัด jsPDF autoTable */
+test('🛡️ UI: fontSize บนจอต้องไม่ต่ำกว่า 11px', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.startsWith('lib/') || rel.startsWith('src/lib/') || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    code.split('\n').forEach((ln, i) => {
+      if (ln.includes('cellPadding') || ln.includes("font: 'Sarabun'")) return;   // jsPDF = pt
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*\{?\s*(\d+(?:\.\d+)?)\s*\}?/g)) {
+        if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → fontSize ${m[1]}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ฟอนต์ต่ำกว่า 11px ${bad.length} จุด\n`
+    + '   ทำไมห้าม: จอหน้างานคือ TV 43" แขวนไกล — ต่ำกว่า 11px อ่านไม่ออกจริง\n'
+    + '   แก้ยังไง: ยกเป็น 11 · ที่แน่นเกินให้ **เว้นป้าย/ซ่อนป้าย ไม่ใช่ลดฟอนต์** (UI-CONVENTIONS §4)\n'
+    + '             ตัวที่สเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)` อยู่แล้ว\n\n'
+    + bad.slice(0, 20).map(b => '   • ' + b).join('\n') + (bad.length > 20 ? `\n   …อีก ${bad.length - 20}` : '') + '\n');
 });

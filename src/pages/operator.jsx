@@ -647,6 +647,9 @@ export default function Operator() {
       // ที่ไม่ติ๊ก (รวมตัวที่ไม่เคยมีแถวอยู่แล้ว) → แตะ employee_skills ทุกครั้งที่กดบันทึกแม้แก้แค่ชื่อ/รูป
       // ทำให้คนที่ไม่มีสิทธิ์สกิลโดน RLS ปฏิเสธจนบันทึกประวัติพนักงานไม่ผ่านทั้งใบ
       let skillWarn = '';
+      /* แถวที่ "คนตั้งใจเอาออก" แต่สิทธิ์ไม่ถึง — ต้องบอก ห้ามข้ามเงียบ (ช่องติ๊กถูกล็อกแล้ว
+         นี่คือด่านชั้นสอง เผื่อ state มาจากทางอื่น) · ประกาศนอกบล็อกเพราะอ่านตอนสรุปผล */
+      const skipped = [];
       if (canEditSkillsFor(editingEmp)) {
         const origMap = new Map((editingEmp.employee_skills || []).map(s => [s.skill_name, s]));
         const upserts = [];
@@ -667,7 +670,7 @@ export default function Operator() {
               upserts.push({ employee_id: editingEmp.id, skill_name: sd.name, score, updated_at: new Date().toISOString() });
             }
           } else if (orig) {
-            if (!canEditHighSkill && Number(orig.score) > scoreCap) return;
+            if (!canEditHighSkill && Number(orig.score) > scoreCap) { skipped.push(sd.label || sd.name); return; }
             removals.push(sd.name);   // ลบเฉพาะที่เคยมีแถวจริง
           }
         });
@@ -694,7 +697,15 @@ export default function Operator() {
           ? 'ไม่มีสิทธิ์ตั้งค่าสกิลบางตัว (ใบเซอร์ค่าฝีมือต้องหัวหน้าแผนกขึ้นไป)'
           : `ตั้งคะแนนได้ไม่เกิน ${scoreCap} — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง`;
       }
+      /* แถวที่สิทธิ์ไม่ถึงถูกข้าม = ต้องบอก ห้ามขึ้น "เรียบร้อย!" เฉยๆ (ของเดิมเงียบ ⇒ เปิดดูใหม่
+         สกิลยังอยู่เหมือนเดิม คนกดนึกว่าระบบพัง) · แยกตัวแปรจาก skillWarn เพราะ skillWarn
+         ใช้ short-circuit การเขียนก้อนถัดไปด้วย — เอามาปนแล้วจะไปบล็อกการลบที่ถูกต้อง */
+      const skipNote = skipped.length
+        ? `ข้าม ${skipped.length} สกิลที่คะแนนเกินเพดาน ${scoreCap} (${skipped.slice(0, 3).join(', ')}`
+          + `${skipped.length > 3 ? ` …อีก ${skipped.length - 3}` : ''}) — ต้องให้หัวหน้าส่วนขึ้นไปแก้`
+        : '';
       if (skillWarn) toast.error('บันทึกข้อมูลพนักงานแล้ว แต่ระดับทักษะยังบันทึกไม่ได้: ' + skillWarn);
+      else if (skipNote) toast.info('บันทึกข้อมูลพนักงานแล้ว · ' + skipNote);
       else toast.success('อัปเดตข้อมูลพนักงานเรียบร้อย!');
       setEditingEmp(null);
       fetchEmployees();
@@ -1674,9 +1685,23 @@ export default function Operator() {
                 const emp = req.employees;
                 const toLv = SKILL_LEVELS.find(l => l.min === req.to_level);
                 const needsDoc = req.to_level === 100;
-                const canApprove = req.to_level === 100
+                /* 🔴 ปุ่ม "อนุมัติ" ต้องเช็ค **สิทธิ์ที่การเขียนจริงต้องใช้** ด้วย ไม่ใช่แค่สิทธิ์อนุมัติ (06/10)
+                   การอนุมัติเขียน `employee_skills.score = to_level` ซึ่ง RLS WITH CHECK บังคับว่า
+                     score ≤ 50  ‖ has_perm('skills:edit_high')
+                     สกิลหมวดค่าฝีมือ ‖ has_perm('skills:edit_allowance')
+                   ⇒ ผู้มีสิทธิ์อนุมัติแต่ไม่มี edit_high กด Lv.75/100 = เด้ง error ดิบจาก Postgres
+                      (ปุ่มโชว์ว่าทำได้ แต่ระบบปฏิเสธ — คลาสเดียวกับ /org-setup 05/10)
+                   ⚠️ 2 คีย์นี้ตั้งแยกกันได้ที่ /permissions — วันนี้ผู้อนุมัติมีครบ แต่ถอดเมื่อไหร่พังทันที */
+                const mayApprove = req.to_level === 100
                   ? can('skills', 'approve_levelup_100', role)
                   : can('skills', 'approve_levelup', role);
+                const writeBlock =
+                  (req.to_level > SKILL_EDIT_CAP && !canEditHighSkill)
+                    ? `ต้องมีสิทธิ์ skills:edit_high ด้วย (คะแนน ${req.to_level} เกินเพดาน ${SKILL_EDIT_CAP} ที่บัญชีนี้ตั้งได้)`
+                  : (skillDefs.find(sd => sd.name === req.skill_name)?.category === 'allowance_skill' && !canEditAllowance)
+                    ? 'ต้องมีสิทธิ์ skills:edit_allowance ด้วย (สกิลหมวดใบเซอร์ค่าฝีมือ)'
+                  : '';
+                const canApprove = mayApprove && !writeBlock;
                 return (
                   <div key={req.id} className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1749,8 +1774,11 @@ export default function Operator() {
                       </div>
                     )}
                     {!canApprove && (
-                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        {req.to_level === 100 ? 'รอชุดสิทธิ์ทั้งฝ่ายอนุมัติ' : 'รอชุดสิทธิ์ระดับส่วนอนุมัติ'}
+                      // มีสิทธิ์อนุมัติแต่เขียนไม่ได้ = คนละเรื่องกับ "ไม่ใช่คิวของคุณ" ต้องบอกให้ต่างกัน
+                      <span style={{ fontSize: 11, color: writeBlock ? '#f59e0b' : 'var(--muted)', maxWidth: 200, lineHeight: 1.45, flexShrink: 0 }}>
+                        {writeBlock
+                          ? <>🔒 อนุมัติไม่ได้ — {writeBlock}</>
+                          : (req.to_level === 100 ? 'รอชุดสิทธิ์ทั้งฝ่ายอนุมัติ' : 'รอชุดสิทธิ์ระดับส่วนอนุมัติ')}
                       </span>
                     )}
                   </div>
@@ -2127,7 +2155,11 @@ export default function Operator() {
                           // ใบเซอร์ค่าฝีมือ = คนละสิทธิ์กับสกิลทั่วไป (หัวหน้าแผนกขึ้นไป)
                           const isAllowance = sd.category === 'allowance_skill';
                           const lockedAllowance = isAllowance && !canEditAllowance;
-                          const rowEditable = canEditSkillsFor(editingEmp) && !lockedAllowance;
+                          /* 🔴 ล็อก "ช่องติ๊ก" ด้วย ไม่ใช่แค่ช่องคะแนน (06/10)
+                             เดิมติ๊กออกได้ แต่ตอนบันทึก handleSaveEmp ข้ามแถวนี้เงียบๆ แล้วขึ้น
+                             "อัปเดตเรียบร้อย!" ⇒ เปิดดูใหม่สกิลยังอยู่ (ของจริง 720 แถว/148 คน
+                             มีคะแนนเกินเพดาน 50 ที่ leader ตั้งได้) — ปุ่มโชว์ว่าทำได้ แต่ระบบไม่ทำ */
+                          const rowEditable = canEditSkillsFor(editingEmp) && !lockedAllowance && !lockedHigh;
                           return (
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
@@ -2179,7 +2211,7 @@ export default function Operator() {
                                 <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
                               )}
                               {lockedHigh && (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 เกินเพดาน {scoreCap} — แก้ไม่ได้</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 เกินเพดาน {scoreCap} — แก้/เอาออกไม่ได้</div>
                               )}
                               {lockedAllowance && (
                                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 หัวหน้าแผนกขึ้นไปเท่านั้น</div>

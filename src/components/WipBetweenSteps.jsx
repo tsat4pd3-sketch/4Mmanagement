@@ -243,7 +243,7 @@ export default function WipBetweenSteps() {
                           </div>
                         ))}
                         {r.stations.length > 1 && (
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>เรียงตามยอดสะสม (ต้นทางมาก่อน)</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>เรียงตามยอดสะสม (ต้นทางมาก่อน)</div>
                         )}
                       </td>
                       <td style={{ padding: '7px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
@@ -252,13 +252,13 @@ export default function WipBetweenSteps() {
                             {r.inFlight.toLocaleString()}
                           </b>
                         ) : (
-                          <b style={{ fontSize: 15 }}>{r.stepThrough.toLocaleString()} <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 400 }}>สะสม</span></b>
+                          <b style={{ fontSize: 15 }}>{r.stepThrough.toLocaleString()} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>สะสม</span></b>
                         )}
                         {r.inFlight < 0 && chainView.parentIsProduced && (
-                          <div style={{ fontSize: 10.5, color: '#f59e0b' }}>⚠ ติดลบ — กดนับจริงเพื่อตั้งต้นใหม่</div>
+                          <div style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ติดลบ — กดนับจริงเพื่อตั้งต้นใหม่</div>
                         )}
                         {r.baseline && (
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                             นับจริงล่าสุด {r.baseline.qty.toLocaleString()} · {new Date(r.baseline.ts).toLocaleDateString('th-TH')}
                           </div>
                         )}

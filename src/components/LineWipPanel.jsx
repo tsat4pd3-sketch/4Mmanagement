@@ -297,7 +297,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
                 <div style={{ fontSize: 20, fontWeight: 900, color: k.tone, fontFamily: 'var(--font-display)', lineHeight: 1.25 }}>
                   {fmt(k.now ?? k.all)}
                 </div>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {k.now != null ? <>สะสม {fmt(k.all)} · {k.note}</> : k.note}
                 </div>
               </div>
@@ -324,7 +324,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
 
           {/* ── รายพาร์ท ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <div style={{ display: 'flex', gap: 8, fontSize: 10.5, color: 'var(--muted)', fontWeight: 700, padding: '2px 0', borderBottom: '1px solid var(--border2)' }}>
+            <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '2px 0', borderBottom: '1px solid var(--border2)' }}>
               <span style={{ width: 18 }} />
               <span style={{ flex: 1 }}>พาร์ท</span>
               <span style={{ width: 74, textAlign: 'right' }}>📥 รับเข้า</span>
@@ -359,7 +359,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
             </button>
           )}
 
-          <div style={{ marginTop: 8, fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
             📥 <b>รับเข้า</b> = บันทึกจริงจากสโตร์ (issue + ปรับยอด − คืน) ·
             🏭 <b>ตัดเป็น FG</b> = <b>คำนวณ</b> จากยอดผลิต × BOM (ไม่ได้อ่านยอดตัดสต็อก เพราะ backflush ยังไม่ทำงาน) ·
             📦 <b>ค้าง</b> = รับเข้า − ตัดเป็น FG ·

@@ -3,6 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import useIsMobile from '../utils/useIsMobile';
+import { supabase } from '../supabaseClient';
+import { fetchByIds } from '../utils/fetchByIds';
+import { summarizeNpi, npiLinkFor, linkedPanelCount } from '../utils/nmNpiLink';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
   PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions,
@@ -112,6 +115,162 @@ function useBoardData() {
     for (const p of PROJECTS) byCustomer.get(p.customer)?.projects.push(p);
     return { customers: [...byCustomer.values()], projects: PROJECTS };
   }, []);
+}
+
+/* ══ 🔗 โปรเจค NPI ที่ผูกกับรุ่นนี้ (2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน") ══════
+   บอร์ด = ภาพที่คนตัดสินใจร่วมกัน (สีมาจากคน) · NPI = หลักฐาน (สถานะมาจากเอกสารจริง)
+   ⇒ ยกตัวเลขจริงมาโชว์ข้างบอร์ด **ไม่เขียนอะไรกลับ ไม่แตะสี EVA** (กฎ IEC ข้อ 1)
+   🔴 โหลดไม่สำเร็จ ≠ ยังไม่ผูก — ต้องแยก 3 สถานะให้จอเขียนต่างกัน: loading / unlinked / error
+      ("โหลดล่ม" แล้วเขียนว่า "ยังไม่ผูก" = จอโกหก · กฎความซื่อสัตย์ของจอ) */
+function useNpiLink(boardProjectId) {
+  const [state, setState] = useState({ loading: true, sum: null, error: null });
+
+  useEffect(() => {
+    if (!boardProjectId) { setState({ loading: false, sum: null, error: null }); return undefined; }
+    let alive = true;                                  // กัน stale-response race (กฎเขียน DB ข้อ 4)
+    setState({ loading: true, sum: null, error: null });
+    (async () => {
+      /* เลือกเฉพาะคอลัมน์ที่ใช้ — ตารางนี้กว้าง (15 คอลัมน์) และ egress คิดเป็นไบต์ (กฎข้อ 11) */
+      const pr = await supabase.from('npi_projects')
+        .select('id, project_code, name, customer, model, status, leader_name, sop_date')
+        .eq('nm_board_id', boardProjectId).limit(1);
+      if (!alive) return;
+      if (pr.error) { setState({ loading: false, sum: null, error: pr.error.message }); return; }
+      const project = pr.data?.[0] || null;
+      if (!project) { setState({ loading: false, sum: null, error: null }); return; }
+
+      const [partsRes, eciRes] = await Promise.all([
+        supabase.from('npi_parts').select('id, ppap_status').eq('project_id', project.id),
+        supabase.from('npi_change_requests').select('id, status').eq('project_id', project.id),
+      ]);
+      if (!alive) return;
+      const parts = partsRes.error ? null : (partsRes.data || []);
+      const ecis = eciRes.error ? null : (eciRes.data || []);
+
+      /* เอกสารผูกกับ "พาร์ท" ไม่ใช่โปรเจค ⇒ ต้องไล่จาก part ids · ผ่าน fetchByIds (กฎข้อ 5: .in ยาว = URL ล้น) */
+      let deliverables = null;
+      if (parts?.length) {
+        const r = await fetchByIds(parts.map(x => x.id),
+          (ids) => supabase.from('npi_deliverables').select('id, status').in('part_id', ids));
+        if (!alive) return;
+        deliverables = r.error || r.truncated ? null : r.rows;   // นับไม่ครบ = ไม่รู้ ห้ามโชว์ % ที่ต่ำกว่าจริง
+      } else if (parts) {
+        deliverables = [];
+      }
+      setState({ loading: false, error: null, sum: summarizeNpi({ project, parts, deliverables, ecis }) });
+    })();
+    return () => { alive = false; };
+  }, [boardProjectId]);
+
+  return state;
+}
+
+/* ตัวชี้อย่างเดียว (ไม่ดึงพาร์ท/เอกสาร) — ใช้ในหน้าแผงที่ต้องการแค่ "ลิงก์ไปไหน"
+   แยกจาก useNpiLink เพราะหน้าแผงไม่ต้องใช้ตัวเลขสรุป ⇒ ไม่ต้องจ่าย egress ของ 3 คิวรีนั้น (กฎข้อ 11) */
+function useNpiProjectRef(boardProjectId) {
+  const [ref, setRef] = useState({ loading: true, id: null, code: null });
+  useEffect(() => {
+    if (!boardProjectId) { setRef({ loading: false, id: null, code: null }); return undefined; }
+    let alive = true;
+    setRef({ loading: true, id: null, code: null });
+    supabase.from('npi_projects').select('id, project_code').eq('nm_board_id', boardProjectId).limit(1)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        const row = error ? null : data?.[0];
+        setRef({ loading: false, id: row?.id || null, code: row?.project_code || null });
+      });
+    return () => { alive = false; };
+  }, [boardProjectId]);
+  return ref;
+}
+
+/* แถบ "ของจริงของแผงนี้อยู่ที่ไหน" — โผล่เฉพาะแผงที่ NPI เป็นเจ้าของข้อมูลนั้นจริง (PANEL_NPI_MAP) */
+function PanelNpiLink({ proj, panel }) {
+  const ref = useNpiProjectRef(proj.id);
+  const link = npiLinkFor(panel.key, ref.id);
+  if (ref.loading || !link) return null;
+  return (
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 10,
+      '--nmb-color': 'var(--accent)', fontSize: 12.5, lineHeight: 1.55 }}>
+      🔗 <b>ของจริงของแผงนี้อยู่ใน NPI</b> — {link.what}
+      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>เปิด {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
+    </div>
+  );
+}
+
+/** ตัวเลข 1 ช่องในการ์ด NPI — ไม่รู้ค่า = ขีด `–` ห้ามโชว์ 0 */
+function NpiStat({ label, value, suffix, tone }) {
+  const unknown = value === null || value === undefined;
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div className="nmb-eyebrow" style={{ fontSize: 11 }}>{label}</div>
+      <div className="nmb-num" style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25, color: unknown ? 'var(--muted)' : (tone || 'var(--text)') }}>
+        {unknown ? '–' : value}{!unknown && suffix ? <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> {suffix}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/* การ์ด "โปรเจค NPI ของรุ่นนี้" — อยู่บนสุดของชั้นรุ่น เพราะเป็นคำตอบของ "หลักฐานอยู่ไหน" */
+function NpiLinkCard({ proj, isMobile }) {
+  const { loading, sum, error } = useNpiLink(proj.id);
+  const linkable = linkedPanelCount(proj.panels);
+
+  if (loading) {
+    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>🔗 กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…</div>;
+  }
+  if (error) {
+    /* 🔴 โหลดล่ม ต้องเขียนว่าล่ม ห้ามกลืนเป็น "ยังไม่ผูก" */
+    return (
+      <div className="nmb-card" data-eva="R" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+        '--nmb-color': '#ef4444', fontSize: 12.5 }}>
+        <b>อ่านข้อมูล NPI ไม่สำเร็จ</b> — ตัวเลขฝั่ง NPI จึงยังไม่แสดง (ไม่ได้แปลว่ารุ่นนี้ยังไม่ผูก)
+        <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>{error}</div>
+      </div>
+    );
+  }
+  if (!sum) {
+    return (
+      <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.6 }}>
+        🔗 <b>รุ่นนี้ยังไม่ผูกกับโปรเจค NPI</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
+        <div style={{ color: 'var(--text2)', marginTop: 4 }}>
+          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>🚀 พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
+          <b> “🧭 รุ่นบนบอร์ด New Model”</b> → เลือก <b>{proj.title}</b>
+          {linkable > 0 && <> · ผูกแล้ว <b>{linkable}</b> แผงบนบอร์ดนี้จะกดเข้าไปดูของจริงได้</>}
+        </div>
+      </div>
+    );
+  }
+
+  const st = { display: 'grid', gap: 14, alignContent: 'start',
+    gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fit, minmax(96px, 1fr))' };
+  return (
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+      '--nmb-color': 'var(--accent)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span className="nmb-eyebrow" style={{ fontSize: 11 }}>โปรเจค NPI ของรุ่นนี้</span>
+        <b style={{ fontSize: 13 }}>{sum.code || '(ไม่มีรหัสโปรเจค)'}</b>
+        <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sum.name}</span>
+        <a href={`/npi?project=${encodeURIComponent(sum.projectId)}`} style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+          เปิดใน /npi →
+        </a>
+      </div>
+      <div style={st}>
+        <NpiStat label="พาร์ท" value={sum.parts} suffix="ตัว" />
+        <NpiStat label="PPAP ผ่าน" value={sum.ppapApproved} suffix={sum.parts != null ? `/ ${sum.parts}` : ''} />
+        <NpiStat label="เอกสารครบ" value={sum.docPct} suffix="%" />
+        <NpiStat label="ECI ยังไม่จบ" value={sum.eciOpen} suffix={sum.eciTotal != null ? `/ ${sum.eciTotal}` : ''}
+          tone={sum.eciOpen ? '#eab308' : undefined} />
+        <NpiStat label="ถึง SOP" value={sum.sopIn == null ? null : (sum.sopIn >= 0 ? sum.sopIn : -sum.sopIn)}
+          suffix={sum.sopIn == null ? '' : (sum.sopIn >= 0 ? 'วัน' : 'วัน (เลยแล้ว)')}
+          tone={sum.sopIn != null && sum.sopIn < 0 ? '#ef4444' : undefined} />
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, lineHeight: 1.5 }}>
+        ตัวเลขชุดนี้มาจากเอกสารจริงใน NPI · <b>ไม่ได้เอาไปเปลี่ยนสี EVA บนบอร์ด</b> — สีบอร์ดคนตั้งเองตามกติกา IEC
+        {sum.docTotal === null && ' · นับเอกสารไม่ครบรอบนี้ จึงยังไม่แสดง %'}
+      </div>
+    </div>
+  );
 }
 
 /* ══ ชั้นที่ 1 — ภาพรวมทั้งฝ่าย ═══════════════════════════════════════════════ */
@@ -427,6 +586,9 @@ function LevelProject({ proj, go }) {
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(230px, 1fr))' }}>
         {PROJECT_AXES.map(a => <EvaBadge key={a.key} big eva={proj.eva?.[a.key]} label={a.label} />)}
       </div>
+
+      {/* 🔗 หลักฐานของรุ่นนี้อยู่ที่ไหน — ตอบก่อนทุกอย่าง (2026-10-06) */}
+      <NpiLinkCard proj={proj} isMobile={isMobile} />
       {proj.evaNote && (
         <div style={{ ...CARD, borderLeft: '3px solid #ef4444', marginBottom: 12, fontSize: 12.5, lineHeight: 1.5 }}>
           <b>ทำไมถึงแดง:</b> {proj.evaNote}
@@ -843,6 +1005,7 @@ function LevelPanel({ proj, panel }) {
         </div>
       </div>
       <div style={CARD}><Body p={panel} /></div>
+      <PanelNpiLink proj={proj} panel={panel} />
       {panel.key === 'eva-milestone' && (
         <div style={{ ...CARD, marginTop: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>เกณฑ์ผ่านของแต่ละด่าน (Requirement of SPTT Milestone)</div>
