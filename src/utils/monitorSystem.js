@@ -57,16 +57,18 @@ export function firstByMat(rows = [], { mat = 'mat_no', value = 'min_qty' } = {}
  * @param {Map}    a.partMat   partId → mat_no
  * @param {Map}    [a.inIdx]   `mat|date` → ยอดผลิตเข้า
  * @param {Map}    [a.outIdx]  `mat|date` → ยอดจ่ายออก
+ * @param {Map}    [a.orderIdx] `mat|date` → ยอดลูกค้าสั่ง (EDI 862/830 · บอร์ด FG)
  * @param {Map}    [a.minByMat] mat → min_qty
  * @param {string} [a.seedKey] คอลัมน์แรก (ที่ใส่ค่า MIN)
  * @returns {Function} คืน `undefined` เมื่อระบบไม่รู้ (ห้ามคืน 0)
  */
-export function makeSystemLookup({ partMat, inIdx, outIdx, minByMat, seedKey } = {}) {
+export function makeSystemLookup({ partMat, inIdx, outIdx, orderIdx, minByMat, seedKey } = {}) {
   return (partId, rowKey, periodKey) => {
     const mat = partMat?.get?.(partId);
     if (!mat) return undefined;
     if (rowKey === 'in' && inIdx) return inIdx.get(`${mat}|${periodKey}`);
     if (rowKey === 'out' && outIdx) return outIdx.get(`${mat}|${periodKey}`);
+    if (rowKey === 'order' && orderIdx) return orderIdx.get(`${mat}|${periodKey}`);
     /* MIN ใส่ช่องยอดยกมาช่องเดียว แล้ว RECUR 'carry' พาไปขวาเอง */
     if (rowKey === 'min' && minByMat && periodKey === seedKey) return minByMat.get(mat);
     return undefined;
@@ -92,3 +94,8 @@ export function orderInQty(o) {
   if (ok !== null) return ok;
   return num(o?.qty_actual);
 }
+
+/** ออเดอร์ลูกค้าที่ยัง "นับเป็นความต้องการ" — ยกเลิกแล้วไม่นับ
+ *  🔴 ส่งแล้ว (`shipped`) **ยังนับ** เพราะบอร์ด FG หักยอดตามวันส่งที่ลูกค้าขอ
+ *     (ของออกไปแล้วก็ต้องหายจากสต๊อก — ไม่ใช่ว่าหายไปจากความต้องการ) */
+export const DEMAND_SKIP_STATUS = ['cancelled'];

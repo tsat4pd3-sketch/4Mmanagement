@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   sumByMatDate, firstByMat, makeSystemLookup,
-  OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty,
+  OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty, DEMAND_SKIP_STATUS,
 } from '../monitorSystem.js';
 
 test('sumByMatDate — รวมยอดต่อ (พาร์ท, วัน)', () => {
@@ -110,4 +110,34 @@ test('makeSystemLookup — ไม่ส่งดัชนีมา = ไม่�
   const look = makeSystemLookup({ partMat });
   assert.equal(look('p1', 'in', '2026-10-02'), undefined);
   assert.equal(makeSystemLookup()('p1', 'in', 'x'), undefined);
+});
+
+/* ── บอร์ด FG: ยอดลูกค้าสั่งจาก EDI 862/830 (06/10) ─────────────────────────── */
+test('makeSystemLookup — แถว order อ่านจาก orderIdx · ไม่รู้ = undefined ห้ามเป็น 0', () => {
+  const sys = makeSystemLookup({
+    partMat: new Map([['p1', '10101001'], ['p2', '10101002']]),
+    orderIdx: new Map([['10101001|2026-10-06', 1200]]),
+    seedKey: '2026-10-06',
+  });
+  assert.equal(sys('p1', 'order', '2026-10-06'), 1200);
+  // พาร์ทที่ลูกค้าไม่ได้สั่งวันนั้น ≠ "สั่ง 0 ชิ้น"
+  assert.equal(sys('p1', 'order', '2026-10-07'), undefined);
+  assert.equal(sys('p2', 'order', '2026-10-06'), undefined);
+  // ไม่ส่ง orderIdx มา = ไม่รู้ ไม่ใช่ 0
+  assert.equal(makeSystemLookup({ partMat: new Map([['p1', 'A']]) })('p1', 'order', '2026-10-06'), undefined);
+});
+
+test('DEMAND_SKIP_STATUS — ยกเลิกแล้วไม่นับ · ส่งแล้วยังนับ (ของออกไปแล้วต้องหายจากสต๊อก)', () => {
+  assert.ok(DEMAND_SKIP_STATUS.includes('cancelled'));
+  assert.ok(!DEMAND_SKIP_STATUS.includes('shipped'));
+  assert.ok(!DEMAND_SKIP_STATUS.includes('pending'));
+  const idx = sumByMatDate(
+    [
+      { mat_no: 'A', due_date: '2026-10-06', qty: 100, status: 'pending' },
+      { mat_no: 'A', due_date: '2026-10-06', qty: 50, status: 'shipped' },
+      { mat_no: 'A', due_date: '2026-10-06', qty: 999, status: 'cancelled' },
+    ],
+    { date: 'due_date', keep: (r) => !DEMAND_SKIP_STATUS.includes(r.status) },
+  );
+  assert.equal(idx.get('A|2026-10-06'), 150);
 });

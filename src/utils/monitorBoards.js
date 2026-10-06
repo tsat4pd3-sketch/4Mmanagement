@@ -18,6 +18,10 @@ export const BOARD_TABS = [
   { key: 'great',  label: '📅 ความต้องการรายสัปดาห์', sheets: 'Argen' },
   { key: 'raw',    label: '🧱 วัตถุดิบ (R402)',  sheets: 'mat' },
   { key: 'vendor', label: '🔗 งานส่งชุบ',        sheets: 'RA · 824-825' },
+  /* 📦 FG ทุกตัวที่ลูกค้าสั่งจริง — ไม่ได้มาจากไฟล์ Excel แต่มาจาก EDI 862/830 ที่นำเข้าทุกวัน
+     (คำขอ user 06/10: "อยากให้มอนิเตอร์ได้ทุก product FG ด้วย ที่อัพจาก 862 830")
+     🔴 บอร์ดชนิดนี้ผูก **ลูกค้า** (`monitor_boards.customer`) ไม่ใช่ไลน์ */
+  { key: 'fg',     label: '📦 FG ทุกตัว (862/830)', sheets: 'สร้างจากออเดอร์ลูกค้า ไม่ใช่จากไฟล์ Excel' },
 ];
 export const BOARD_KINDS = BOARD_TABS.map((t) => t.key);
 
@@ -32,6 +36,7 @@ export const ROW_LABEL = {
   min:         'MIN · ขั้นต่ำ',
   max:         'MAX · สูงสุด',
   order:       'ORDER · ลูกค้าสั่ง',
+  ship:        'ส่งจริงแล้ว',
   order_req:   'ความต้องการลูกค้า',
   prod_date:   'วันที่ผลิต',
   stock_wh:    'STOCK W/H · สต๊อกคลัง',
@@ -89,6 +94,15 @@ export const ROW_PRESETS = {
     R('on_hand_kg', 'input'),
     R('queue_pcs', 'input'),
   ],
+  /* 📦 FG ต่อลูกค้า — ยอดลูกค้าสั่งมาจาก EDI 862/830 **ระบบเติมให้ ไม่ต้องพิมพ์**
+     คงเหลือ = ยกมา + ผลิตเข้า − ลูกค้าสั่ง (สูตร `fg_run` ใน monitorGrid.js)
+     🔴 ORDER/IN เป็น `system` ⇒ ยังกรอกทับได้ (คนกรอกชนะระบบเสมอ) — ใช้ตอนลูกค้าโทรแก้ยอด */
+  fg: [
+    R('order', 'system'),
+    R('in', 'system'),
+    R('balance', 'recur', 'fg_run'),
+    R('min', 'const'),
+  ],
   /* RA · 824-825 — งานส่งชุบข้างนอก */
   vendor: [
     R('to_vendor', 'input'),
@@ -104,6 +118,9 @@ export const BOARD_DEFAULTS = {
   great:  { period_kind: 'week', period_count: 13, sl_row: 'send',  sl_includes_seed: false },
   raw:    { period_kind: 'day',  period_count: 1,  sl_row: 'queue_pcs', sl_includes_seed: false },
   vendor: { period_kind: 'day',  period_count: 34, sl_row: 'to_vendor', sl_includes_seed: false },
+  /* 🔴 ใช้ `day` (ปฏิทินต่อเนื่อง) ไม่ใช่ `date` — คอลัมน์ของ `date` มาจาก "ช่องที่กรอกไว้"
+     แต่บอร์ด FG ไม่มีใครกรอก (ระบบเติมทั้งแถว) ⇒ ถ้าใช้ `date` จะได้บอร์ดเปล่าตลอดกาล */
+  fg:     { period_kind: 'day',  period_count: 34, sl_row: 'order', sl_includes_seed: false },
 };
 
 /**
