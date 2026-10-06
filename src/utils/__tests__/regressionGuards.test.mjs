@@ -2028,6 +2028,31 @@ test('🛡️ PRODUCT_COLUMNS ต้องมี pair_mat_no + op_seq · แล�
   }
 });
 
+/* ── ชั้น OP ต้องยุบเข้า "สินค้า" ไม่ใช่ "MAT ตัวเดียว" (2026-10-05 · คำสั่ง user) ──────────
+   `op_parent_mat` เป็น text ช่องเดียว แต่สินค้าตัวเดียวแตกเป็นหลาย MAT ตามลูกค้า
+   (แยกบิล/รหัส/MAT SAP) ⇒ กะที่ไลน์รันลูกค้าอื่น ขั้นตอนไม่ยุบ แล้วยอดถูกนับ 2 ครั้ง
+   วัดจริงฐาน DR 05/10 (ต่อวันทำงาน+กะ ทั้งโรงงาน): **27 กะ · 18,659 ชิ้น · OP 5 ตัว**
+   ⇒ `loadOpInfo` ต้องแนบ `alts` (พี่น้องแกน p_no เดียวกัน) · `collapseOps` ต้องเช็ค `alts` ด้วย */
+test('🛡️ op-parent-is-product-not-mat — loadOpInfo ต้องแนบ alts · collapseOps ต้องใช้ alts', () => {
+  const op = readFileSync(join(ROOT, 'src/utils/opItems.js'), 'utf8');
+  const code = stripComments(op);
+  assert.ok(/partCoreOf/.test(code), '\n\n❌ src/utils/opItems.js ไม่ได้ใช้ partCoreOf\n'
+    + '   ทำไมสำคัญ: ไม่จับกลุ่มด้วยแกน p_no = `alts` ว่าง = ขั้นตอนไม่ยุบเมื่อไลน์รันลูกค้าอื่น\n'
+    + '              ⇒ ยอดผลิตถูกนับ 2 ครั้ง (ขั้น + พาร์ทจริง) โดยไม่มี error (วัดจริง 18,659 ชิ้น)\n'
+    + '   แก้ยังไง: import { partCoreOf } from \'./partGroup\' แล้วแนบ alts ใน loadOpInfo\n');
+  assert.ok(/\balts\b/.test(code), '\n\n❌ loadOpInfo ไม่ได้คืน `alts` — ดูเหตุผลข้างบน\n');
+  // ห้ามจับกลุ่มด้วย "ชื่อ" (ชื่อเป็นข้อความที่คนพิมพ์ ชนกันได้ ⇒ ยุบเกิน = ยอดขาด กู้ไม่ได้)
+  assert.ok(!/groupSameProductKeys/.test(code),
+    '\n\n❌ opItems.js ห้ามใช้ groupSameProductKeys (รวมด้วย "ชื่อ" ด้วย)\n'
+    + '   ยุบเกิน = ตัดขั้นที่ไม่ควรตัด = ยอด**ขาด** ซึ่งแย่กว่านับซ้ำ · ใช้ partCoreOf (แกน p_no) เท่านั้น\n');
+
+  const pt = stripComments(readFileSync(join(ROOT, 'src/utils/pairTotals.js'), 'utf8'));
+  const fn = pt.slice(pt.indexOf('export function collapseOps'), pt.indexOf('function resolvePairAcrossOps'));
+  assert.ok(fn.includes('op.alts'), '\n\n❌ collapseOps ไม่ได้เช็ค `op.alts`\n'
+    + '   ทำไมสำคัญ: opItems แนบ alts มาแล้วแต่ไม่มีใครอ่าน = การแก้ตายเงียบ ยอดยังนับซ้ำ\n'
+    + '   แก้ยังไง: ก่อนยุบเป็นกลุ่ม ให้ตัดขั้นทิ้งเมื่อ `(op.alts||[]).some(a => present.has(a))`\n');
+});
+
 /* ── คิวรับเข้าคลัง: ถอนยอด "auto" ของใบผลิต ต้องจัดการใบรอรับด้วย (2026-10-02) ──
    กฎรับเข้าโหมด 🟡 ต้องยืนยันรับ ⇒ ปิดใบผลิตแล้วของ**ไม่ได้ลงสต็อก** แต่ไปรอใน `stock_receipts`
    จุดที่ถอยใบ/ถอนยอดด้วย `created_by = 'auto'` อย่างเดียว = ใบรอรับค้างอยู่ → คลังกดรับของที่ไลน์ถอยไปแล้ว
@@ -2160,6 +2185,27 @@ test('🛡️ /org-setup: ลบโหนดต้องผ่าน loadOrgNode
     + '              เปลี่ยนคีย์แล้วไม่ตามแก้ = คนหลุดหน่วยงานเงียบ (เคยตามเก็บด้วย migration)\n');
 });
 
+/* ── เพิ่มชั้นใหม่ใน /org-setup แล้วลืมเติม map = ปุ่มโชว์แต่ใช้ไม่ได้ (05/10/2026) ──────────
+   เกิดจริงวันเดียวกับที่เพิ่มชั้น "ทีม": หัวโมดัลขึ้น "เพิ่ม undefined" (ขาดใน KIND_LABEL) และ
+   กดบันทึกเด้ง "แก้ได้เฉพาะแผนก/กลุ่ม…" เพราะ guard เป็นเชน ternary ที่ลงท้าย `: false`
+   ⇒ ชั้นที่มีพาเนล/ปุ่ม ➕ ต้องมีครบทั้ง "ป้าย" และ "ตัวตรวจสิทธิ์" */
+test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพิ่ม ต้องมีป้าย + ตัวตรวจสิทธิ์ครบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  const kinds = ['section', 'department', 'line', 'team'];
+  const label = code.match(/const\s+KIND_LABEL\s*=\s*\{[^}]*\}/)?.[0] || '';
+  const missing = kinds.filter(k => !new RegExp(`\\b${k}\\s*:`).test(label));
+  assert.deepEqual(missing, [], `\n\n❌ KIND_LABEL ขาดชั้น: ${missing.join(', ')}\n`
+    + '   ผลที่เกิด: หัวโมดัลขึ้น "เพิ่ม undefined" (เกิดจริง 05/10/2026 ตอนเพิ่มชั้นทีม)\n');
+  const map = code.match(/const\s+CAN_ADD_HERE\s*=\s*\{[^}]*\}/)?.[0] || '';
+  assert.ok(/department\s*:/.test(map) && /line\s*:/.test(map) && /team\s*:/.test(map),
+    '\n\n❌ OrgSetup.jsx ไม่มี CAN_ADD_HERE ครบ department/line/team\n'
+    + '   ทำไมห้ามเขียนเป็นเชน ternary: ลงท้าย `: false` ⇒ ชั้นที่ลืมต่อสาขาถูกบล็อกเงียบ\n'
+    + '              ปุ่ม ➕ โชว์ (เช็คคนละที่) แต่กดบันทึกไม่ผ่าน = ผู้ใช้ไม่รู้ว่าทำอะไรผิด\n'
+    + '   แก้ยังไง: `const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere }`\n');
+  assert.ok(/CAN_ADD_HERE\[modal\.kind\]/.test(code),
+    '\n\n❌ handleSave ไม่ได้ใช้ CAN_ADD_HERE ตัดสินสิทธิ์เพิ่ม — ดูเหตุผลด้านบน\n');
+});
+
 /* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
 test('🛡️ orgNodeRefs: คีย์จับคู่ของกลุ่มต้องเป็นชื่อ ไม่ใช่ code (code = เลขไลน์)', () => {
   const code = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeRefs.js'), 'utf8'));
@@ -2180,4 +2226,32 @@ test('🛡️ insert/upsert ลง dr_products ห้ามส่ง created_by 
     + '   ทำไมห้าม: PostgREST ปฏิเสธทั้งแถว "Could not find the created_by column" (เกิดจริง 05/10 ปุ่มเปิดใบ BOM ใช้ไม่ได้)\n'
     + '   แก้ยังไง: ตัดฟิลด์นี้ออก — dr_products อยู่ใน DR_AUDIT_TABLES ผู้แก้ถูกประทับที่ updated_by_name/uid ให้เอง\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── บอร์ด New Model: การ์ดทุกใบขนาดเท่ากัน = บอร์ดไม่มีลำดับสายตา (feedback user 05/10/2026) ──
+   *"สเกลการ์ดเท่ากันแบบนี้มันดูไม่มีการ design ที่ดี มันควรมีน้ำหนักที่ต่างกันในแต่ละการ์ด"*
+   บอร์ด 737D MLM: 21 แผง มี 14 ใบ (67%) ที่ไม่มีข้อความให้อ่านเลย แต่กินที่เท่าใบแดงที่มี 3 บรรทัด */
+test('🛡️ /nm-board โหมดจอ TV: ขนาดการ์ดต้องมาจาก tvWeightedLayout ห้ามกลับไปกริด 1fr เท่ากันทุกใบ', () => {
+  const file = 'src/pages/NewModelBoard.jsx';
+  const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+  assert.ok(/tvWeightedLayout\s*\(/.test(code),
+    '\n\n❌ NewModelBoard.jsx ไม่ได้ใช้ tvWeightedLayout — การ์ดกลับไปขนาดเท่ากันหมดแล้ว\n'
+    + '   ทำไมห้าม: น้ำหนักการ์ด = ปริมาณที่ต้องอ่าน (แดง 3 : เหลือง 2 : เขียว/ยังไม่ประเมิน 1)\n'
+    + '              ใบเขียว/ยังไม่ประเมินไม่มีข้อความเลย ถ้ากินที่เท่าใบแดง คนยืนหน้าบอร์ดต้องกวาดตาทีละใบ\n'
+    + '   แก้ยังไง: `const { rows } = tvWeightedLayout(proj.panels)` แล้ววาดแถวละ flex ตาม panelWeight()\n');
+  assert.ok(!/gridTemplateRows:\s*`repeat\(\$\{rows\}/.test(code),
+    `\n\n❌ ${file} กลับไปใช้กริด rows×cols ช่องเท่ากันแล้ว — ดูเหตุผลด้านบน\n`);
+  /* 🔴 กดการ์ดแล้วต้องเจาะเข้าแผงได้ — ก่อน 05/10 การ์ดบนจอ TV เป็น <div> เฉยๆ กดไม่ได้เลย
+     (user: "ยังกดเจาะไปในแต่ละการ์ดไม่ได้") */
+  assert.ok(/onPick\s*\(\s*p\s*\)/.test(code),
+    `\n\n❌ ${file}: การ์ดบนบอร์ด TV กดเจาะไม่ได้ (ไม่มี onPick)\n`
+    + '   ทำไมต้องมี: บอร์ดคือจุดเริ่มของการไล่ปัญหา — เห็นใบแดงแล้วต้องกดดูได้ว่าแดงเพราะอะไร\n');
+});
+
+test('🛡️ /nm-board: ห้ามเรียงการ์ดใหม่ตามสี (คนจำตำแหน่งแผงบนบอร์ดกระดาษ)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(!/panels[\s\S]{0,40}\.sort\(/.test(code) && !/gridAutoFlow:\s*'dense'/.test(code),
+    '\n\n❌ NewModelBoard.jsx เรียง/สลับตำแหน่งแผงเอง (sort หรือ gridAutoFlow:dense)\n'
+    + '   ทำไมห้าม: สีเปลี่ยนทุกสัปดาห์ ถ้าใบย้ายที่ตามสี คนหาแผงที่ต้องการไม่เจอ\n'
+    + '              บอร์ดกระดาษของจริง ตำแหน่งแผงคงที่เสมอ — ระบบต้องเหมือนกัน\n');
 });

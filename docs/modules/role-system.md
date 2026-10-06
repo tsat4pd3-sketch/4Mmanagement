@@ -479,6 +479,8 @@
 2. เติมคีย์ที่ `sale` มีแต่ `planner_store` ไม่มี: `mtn_repair:report` · `page:/improvements` · `page:/morning-meeting`
 3. เพิ่ม `org:manage_own_unit` ให้ `planner_store` (ขอบเขตถูกจำกัดด้วย `profiles.section` ของคนกดอยู่แล้ว · ตัว section ยังเป็นของ admin)
 4. เติม `org_nodes.code = 'Planning&Store'` ให้ node `PLN & STO` (ชื่อที่แสดงบนผังไม่เปลี่ยน)
+   · 🔁 **05/10: ยกระดับเป็นการ normalize เต็ม** — `name` เปลี่ยนเป็น `Planning&Store` ด้วย
+     และกวาด `employees.section` 10 แถว ⇒ เลิกมี 2 สะกด (📄 `org-hierarchy.md` §ชื่อหน่วยงานต้องมีสะกดเดียว)
 5. ปิด `employees:edit_all_sections` ของ `planner_store` — บัญชีสโตร์ตั้ง `sections = []` (ไม่จำกัดขอบเขต)
    ย้ายแล้วจะแก้ประวัติพนักงานได้ทุกส่วนงาน · ตอนปิดยังไม่มีใครถือ role นี้ = ไม่มีใครเสียสิทธิ์ที่เคยมี
 

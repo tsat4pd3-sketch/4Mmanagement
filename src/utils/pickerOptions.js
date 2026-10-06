@@ -13,19 +13,23 @@ export const sameName = (a, b) => normName(a).toLowerCase() === normName(b).toLo
 /** คน — profiles (user ระบบ) + employees (ทะเบียนพนักงาน)
  *  prefer ด้วย lines / lineIds / section / roles = ขึ้นก่อน (strict = ตัดคนอื่นทิ้ง) */
 export function personOptions({
-  profiles = [], employees = [], source = 'profiles', lines, lineIds, section, roles, strict = false,
+  profiles = [], employees = [], source = 'profiles', lines, lineIds, section, roles, teams, strict = false,
   posLabel = (v) => String(v || ''), roleLabel = (v) => String(v || ''),
 } = {}) {
   const prefLines = new Set((lines || []).map(up).filter(Boolean));
   const prefLineIds = new Set((lineIds || []).filter(x => x != null && x !== '').map(Number));
   const prefSection = up(section);
   const prefRoles = new Set((roles || []).map(String));
-  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size);
+  // ทีมช่าง (mtn_teams ของ profile / mtn_team ของ employee) — 06/10 คอมเมนต์ทีม DIE: หัวหน้าช่างที่เป็น "พนักงาน" ไม่มี role
+  // ⇒ prefer ด้วย roles อย่างเดียวไม่มีวันขึ้น 🎯 · ส่ง teams=[ทีมของใบ] ให้คนในทีมขึ้นก่อน (ไม่ตัดคนอื่น)
+  const prefTeams = new Set((teams || []).filter(Boolean).map(String));
+  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size || prefTeams.size);
   const prefer = (o) =>
     (prefLineIds.size && o.line_id != null && prefLineIds.has(Number(o.line_id))) ||
     (prefLines.size && o.line_name && prefLines.has(up(o.line_name))) ||
     (prefSection && o.section && up(o.section) === prefSection) ||
-    (prefRoles.size && o.role && prefRoles.has(String(o.role))) || false;
+    (prefRoles.size && o.role && prefRoles.has(String(o.role))) ||
+    (prefTeams.size && (o.mtn_teams || []).some(t => prefTeams.has(String(t)))) || false;
 
   const out = [];
   const byName = new Map();
@@ -39,6 +43,7 @@ export function personOptions({
         kind: 'profile', uid: p.id, employee_id: p.employee_id || null, employee_code: null,
         signature_url: p.signature_url || null, section: p.section || null, position: p.position || null,
         role: p.role || null, line_id: p.line_id ?? null, line_name: p.line_name || null, team: null,
+        mtn_teams: Array.isArray(p.mtn_teams) ? p.mtn_teams : [],
       };
       out.push(o); byName.set(o.label.toLowerCase(), o);
     }
@@ -55,6 +60,7 @@ export function personOptions({
         if (dup.line_id == null) dup.line_id = e.line_id ?? null;
         if (!dup.position) dup.position = e.position || null;
         if (!dup.section) dup.section = e.section || null;
+        if (e.mtn_team && !dup.mtn_teams.includes(e.mtn_team)) dup.mtn_teams = [...dup.mtn_teams, e.mtn_team];
         continue;
       }
       out.push({
@@ -63,15 +69,19 @@ export function personOptions({
         keywords: `${e.employee_id_code || ''} ${e.section || ''} ${e.department || ''} ${e.group_name || ''} ${e.team || ''} ${e.position || ''}`,
         kind: 'employee', uid: null, employee_id: e.id, employee_code: e.employee_id_code || null, signature_url: null,
         section: e.section || null, position: e.position || null, role: null, line_id: e.line_id ?? null, line_name: e.line_name || null, team: e.team || null,
+        mtn_teams: e.mtn_team ? [e.mtn_team] : [],
       });
     }
   }
-  const tagged = out.map(o => ({ ...o, _pref: hasPref ? !!prefer(o) : false }));
+  // คนในทีมช่างของใบ (teams) อยู่ชั้นบนสุด — เหนือ "มี role หัวหน้า" ที่กว้างทั้งโรงงาน
+  const inTeam = (o) => prefTeams.size > 0 && (o.mtn_teams || []).some(t => prefTeams.has(String(t)));
+  const tagged = out.map(o => ({ ...o, _pref: hasPref ? (inTeam(o) ? 2 : prefer(o) ? 1 : 0) : 0 }));
   const kept = strict && hasPref ? tagged.filter(o => o._pref) : tagged;
   kept.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, 'th'));
   return kept.map(o => ({
     ...o,
-    group: hasPref && o._pref ? '🎯 ที่เกี่ยวข้อง' : (o.kind === 'profile' ? '👤 ผู้ใช้ระบบ' : '🪪 พนักงาน'),
+    _pref: o._pref > 0,
+    group: o._pref === 2 ? '👷 ทีมช่างของใบนี้' : (hasPref && o._pref ? '🎯 ที่เกี่ยวข้อง' : (o.kind === 'profile' ? '👤 ผู้ใช้ระบบ' : '🪪 พนักงาน')),
     badge: o.signature_url ? '✍️' : null,
   }));
 }

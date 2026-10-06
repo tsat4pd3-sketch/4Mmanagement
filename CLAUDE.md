@@ -103,7 +103,6 @@
 
 ## Pages & Routes
 
-สิทธิ์เข้าถึงแต่ละหน้า ไม่ได้ hardcode ในโค้ดอีกต่อไป …
 > 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md`
 
 ---
@@ -160,7 +159,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17)
 
-Planner/Sale อัพโหลด forecast ลูกค้า → ระบบคำนวณจำนวน kanban ที่ใช้ในระบบดึงอัตโนมัติ …
 > 📄 รายละเอียดเต็ม → `docs/modules/kanban-auto-calc.md`
 
 ---
@@ -181,14 +179,12 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
 
-เลิก hardcode รายชื่อกระบวนการแล้ว (คำสั่ง user …
 > 📄 รายละเอียดเต็ม → `docs/modules/process-types.md`
 
 ---
 
 ## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
 
-dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` …
 > 📄 รายละเอียดเต็ม → `docs/modules/daily-report-mixed-process.md`
 
 ---
@@ -232,6 +228,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 >   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
 >   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
+> ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
+> *"ต่างแค่ลูกค้า แต่ product ตัวเดียวกัน แค่ต้องแยกบิล แยกรหัส แยก mat SAP"* · `op_parent_mat` เป็น
+> **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
+> · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
+>   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
+>   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
+
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
 >   (หลักเดียวกับงานทดลอง `is_trial`/`excl_from_q`) · ผลพิจารณาอ่านจาก `quality_bin_records`
@@ -255,7 +258,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Morning Meeting — ประชุมแถวเช้า (2026-07-13)
 
-หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์ วาระ …
 > 📄 รายละเอียดเต็ม → `docs/modules/morning-meeting.md`
 
 ---
@@ -508,7 +510,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
 
-`/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ …
 > 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
 
 ---
@@ -624,7 +625,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
-เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร …
 > 📄 รายละเอียดเต็ม → `docs/modules/traceability-audit-log.md`
 
 ---

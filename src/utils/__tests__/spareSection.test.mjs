@@ -42,7 +42,8 @@ before(async () => {
   const out = join(tmpdir(), `spare-section-under-test-${process.pid}.mjs`);
   await bundle.write({ format: 'esm', file: out });
 
-  // ผังจริง: PD1-PD4 (ฝ่ายผลิต) + Planning&Store · โค้ดของ Planning&Store เป็น null → ใช้ name แทน
+  // เทสกติกา fallback `code || name` — แถวนี้จงใจตั้ง code=null เพื่อบังคับให้ตกไปใช้ name
+  // ⚠️ ไม่ใช่สภาพจริงของฐาน: ของจริง Planning&Store มี code ตรงกับ name แล้ว (normalize 05/10)
   globalThis.__FAKE_ORG = [
     { code: 'PD1', name: 'PD1', sort_order: 1 },
     { code: 'PD2', name: 'PD2', sort_order: 2 },

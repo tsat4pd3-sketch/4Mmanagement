@@ -42,7 +42,8 @@ test('แม่พิมพ์ → ชนิดอุปกรณ์ในใบ
     { machine_no: 'D-300', kind: 'ghost' },        // key ไม่อยู่ในทะเบียน
     { machine_no: '', kind: 'tandem' },
   ], kinds);
-  assert.deepEqual(dieItemTypeOf(map, ' D-101'), { kindKey: 'tandem', kindLabel: 'Tandem (ชุดเรียง OP)', itemType: 'DIE TANDEM' });
+  const d101 = dieItemTypeOf(map, ' D-101');
+  assert.equal(d101.itemType, 'DIE TANDEM'); assert.equal(d101.source, 'set'); assert.equal(d101.kindLabel, 'Tandem (ชุดเรียง OP)');
   assert.equal(dieItemTypeOf(map, 'D-200').itemType, null);
   assert.equal(dieItemTypeOf(map, 'D-300').kindLabel, 'ghost');
   assert.equal(dieItemTypeOf(map, 'D-300').itemType, null);
@@ -52,4 +53,25 @@ test('แม่พิมพ์ → ชนิดอุปกรณ์ในใบ
 
 test('ค่าสำรองมี mo_item_type ตรงกับชื่อใน mtn_item_types เดิม', () => {
   assert.deepEqual(DIE_SET_KINDS.map(k => k.mo_item_type), ['DIE TANDEM', 'DIE PROGRESSIVE', 'DIE TRANSFER', 'DIE SINGLE']);
+});
+
+test('ประเภท OP ของแม่พิมพ์รายตัว ชนะรูปแบบชุด (HDF: ชุด Single 1 ชุดมี HYDRO/BENDING/PREFORM)', () => {
+  const singleKinds = [normDieSetKind({ key: 'single', label: 'Single', mo_item_type: 'DIE SINGLE' })];
+  const ops = [
+    { key: 'hydro', label: 'Hydroform', mo_item_type: 'DIE HYDRO' },
+    { key: 'bend', label: 'Bend (ดัด)', mo_item_type: 'DIE BENDING' },
+    { key: 'form', label: 'Form', mo_item_type: null },          // ไม่ตั้ง = ใช้ของชุด
+  ];
+  const map = buildDieItemTypeMap([
+    { machine_no: 'X HYDRO1', kind: 'single', op_type: 'hydro' },
+    { machine_no: 'X BENDING1', kind: 'single', op_type: 'bend' },
+    { machine_no: 'X FORM', kind: 'single', op_type: 'form' },
+    { machine_no: 'NO SET', kind: null, op_type: 'hydro' },      // ไม่ผูกชุดแต่มีประเภท OP = ยังชี้ได้
+  ], singleKinds, ops);
+  assert.equal(dieItemTypeOf(map, 'X HYDRO1').itemType, 'DIE HYDRO');
+  assert.equal(dieItemTypeOf(map, 'X HYDRO1').source, 'op');
+  assert.equal(dieItemTypeOf(map, 'X BENDING1').itemType, 'DIE BENDING');
+  assert.equal(dieItemTypeOf(map, 'X FORM').itemType, 'DIE SINGLE');
+  assert.equal(dieItemTypeOf(map, 'X FORM').source, 'set');
+  assert.equal(dieItemTypeOf(map, 'NO SET').itemType, 'DIE HYDRO');
 });
