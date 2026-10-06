@@ -2467,3 +2467,25 @@ test('🛡️ /heijunka: "จ่ายวัตถุดิบ" ต้องเ�
   assert.ok(/from\('raw_withdrawal_requests'\)\s*\.update\(\{ status: 'issued' \}\)\.eq\('lot_request_id', lot\.id\)\.eq\('status', 'pending'\)\s*\.select\(/.test(code),
     '\n\n❌ ปิดล็อตต้อง claim ใบเบิก pending→issued แล้วตัดเฉพาะแถวที่ claim ได้ (กันตัดซ้ำกับ issueRaw)\n');
 });
+
+/* ── 🔴 ปุ่ม "เปิดใบ BOM ของพาร์ทนี้" ห้ามผูกกับ `fromOtherSheet` (2026-10-06) ─────────
+   บั๊กจริง: user สั่งทำปุ่มกระโดดเข้าใบลูก แล้วทดสอบใบจริง 10105772 → 20070036 **กดไม่ได้เลย**
+   เพราะเงื่อนไขเดิมเป็น `fromOtherSheet` = "ลูกถูกอ่านมาจากใบอื่น" ⇒ ใบที่ก๊อปลูกมาใส่เอง
+   (`sheetFor` คืนใบเดิม) ปุ่มหายหมด — ซึ่งเป็น**เคสที่ต้องกดเข้าไปเทียบที่สุด**
+   เพราะของชิ้นเดียวถูกนิยามไว้ 2 ใบ และวัดจริงแล้วว่า**ไม่ตรงกัน**
+   วัดทั้งฐาน 06/10: นิยาม 2 ที่ = 94 บรรทัด / 47 MAT · ยืมใบจริง = 9 บรรทัด / 5 ใบ (3%)
+   ⇒ คลิกได้/ไม่ได้ ตัดสินด้วย `ownSheet` (มีใบของตัวเองที่ไม่ว่าง) เท่านั้น            */
+test('🛡️ BOM: ปุ่มเปิดใบลูกต้องตัดสินด้วย ownSheet ไม่ใช่ fromOtherSheet', () => {
+  const view = stripComments(readFileSync(join(ROOT, 'src/components/BomTreeView.jsx'), 'utf8'));
+  assert.ok(!/fromOtherSheet\s*&&\s*onOpenSheet/.test(view),
+    '\n\n❌ BomTreeView ผูกปุ่มเปิดใบลูกไว้กับ `fromOtherSheet`\n'
+    + '   ทำไมผิด: `fromOtherSheet` = ลูกถูกอ่านมาจากใบอื่น ⇒ ใบที่ก๊อปลูกมาใส่เองจะไม่มีปุ่ม\n'
+    + '            ทั้งที่นั่นคือเคสที่ต้องกดเข้าไปเทียบที่สุด (นิยาม 2 ใบ · วัดจริง 94 บรรทัด/47 MAT)\n'
+    + '   แก้ยังไง: `r.ownSheet && onOpenSheet` (ดู explodeBom ใน src/utils/bomTree.js)\n');
+  assert.ok(/r\.ownSheet\s*&&\s*onOpenSheet/.test(view),
+    '\n\n❌ BomTreeView ไม่มีปุ่มเปิดใบลูกที่ตัดสินด้วย `ownSheet` แล้ว — ถอดออกไปทำไม?\n'
+    + '   user สั่งไว้ 06/10 ("กดคลิกดู component เบอร์ 200 ที่ตาราง แล้วแตกย่อยลงไป")\n');
+  assert.ok(/sheetConflict/.test(view),
+    '\n\n❌ จอไม่เตือนเคส "นิยามไว้ 2 ใบ" (`sheetConflict`) แล้ว\n'
+    + '   กฎความซื่อสัตย์ของจอ: ข้อมูลขัดกัน **ต้องเขียนบนจอ ห้ามเงียบ** (CLAUDE.md §OBEYA)\n');
+});

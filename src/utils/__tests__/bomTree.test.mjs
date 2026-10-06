@@ -213,7 +213,7 @@ test('slocLabel — ตัวพิมพ์ใหญ่/ตัดช่อง�
   assert.equal(slocLabel('   '), '');
 });
 
-import { buildParentIndex, targetAncestorsOf } from '../bomTree.js';
+import { buildParentIndex, targetAncestorsOf, buildBomIndex, sheetChildDiff } from '../bomTree.js';
 test('targetAncestorsOf: 2xx ก่อนแพ็ค → เดินขึ้น BOM เจอตัวขาย 1xx (เคสจริง RB3B E111E50 AB)', () => {
   const rows = [
     { product_id: 'p1', mat_no: '20067541' },                          // ใบของ 10102017 ชั้น 1 = PACK
@@ -262,4 +262,66 @@ test('🔴 ไม่ส่ง sheetFor = พฤติกรรมเดิมเ
   const bom = (mat) => (mat === 'FG' ? [{ mat_no: 'SUB', qty_per_unit: 1 }] : []);
   const t = explodeBom('FG', bom);
   assert.equal(t.rows.find(r => r.mat_no === 'SUB').fromOtherSheet, false);
+});
+
+/* ── 🔴 กดเข้าใบของตัวเองได้ "ทุกเคส" ไม่ใช่แค่เคสยืมใบ (2026-10-06 · user ทดสอบใบจริง) ──
+   user: *"ลองดูใบ 10105772 ว่ากดเข้าใบ 20070036 ได้จริงมั้ย"* → **กดไม่ได้**
+   เพราะใบ FG จัดลูกของ 20070036 ไว้เองครบ 12 บรรทัด ⇒ `sheetFor` คืนใบเดิม ⇒ `fromOtherSheet=false`
+   ⇒ ปุ่มหายในเคสที่ "ต้องกดเข้าไปเทียบที่สุด" (ของชิ้นเดียวถูกนิยามไว้ 2 ใบ และ**ไม่ตรงกัน**)
+   วัดจริงทั้งฐาน: เคสนิยาม 2 ที่ = 94 บรรทัด / 47 MAT · เคสยืมใบจริง = 9 บรรทัด / 5 ใบ
+   ⇒ ปุ่มต้องตัดสินจาก `ownSheet` (มีใบของตัวเองที่ไม่ว่าง) **ห้ามตัดสินจาก `fromOtherSheet`** */
+test('🔴 ใบนี้กรอกลูกไว้เอง แต่ของชิ้นนั้นมีใบของตัวเองด้วย ⇒ ownSheet ต้องมี + sheetConflict ต้องเตือน', () => {
+  const rows = [
+    // ใบ FG (pF) จัดลูกของ SUB ไว้เองในใบตัวเอง
+    { product_id: 'pF', mat_no: 'SUB',  parent_mat: null,  qty_per_unit: 1 },
+    { product_id: 'pF', mat_no: 'NUT',  parent_mat: 'SUB', qty_per_unit: 8 },
+    { product_id: 'pF', mat_no: 'EXTRA', parent_mat: 'SUB', qty_per_unit: 1 },   // มีแค่ใบ FG
+    // ใบของ SUB เอง (pS) — ชุดลูกไม่ตรงกับข้างบน
+    { product_id: 'pS', mat_no: 'NUT',  parent_mat: null, qty_per_unit: 8 },
+    { product_id: 'pS', mat_no: 'OTHER', parent_mat: null, qty_per_unit: 1 },    // มีแค่ใบ SUB
+  ];
+  const ix = buildBomIndex(rows, { pF: 'FG', pS: 'SUB' });
+  const t = explodeBom('FG', ix.bomOf, { sheetFor: ix.sheetFor, ownSheetOf: ix.ownSheetOf });
+
+  const sub = t.rows.find(r => r.mat_no === 'SUB');
+  assert.equal(sub.fromOtherSheet, false, 'ใบนี้จัดลูกไว้เอง = ไม่ได้ยืมใบ');
+  assert.equal(sub.ownSheet, 'pS', '🔴 ยังต้องกดเข้าใบของตัวเองได้');
+  assert.equal(sub.sheetConflict, true, '🔴 ต้องเตือนว่านิยามไว้ 2 ที่');
+
+  // ลูกที่ไม่มีใบของตัวเอง = ไม่มีปุ่ม ไม่มีคำเตือน
+  const nut = t.rows.find(r => r.mat_no === 'NUT' && r.level === 2);
+  assert.equal(nut.ownSheet, null);
+  assert.equal(nut.sheetConflict, false);
+
+  // เทียบ 2 ใบ: ตรงกัน NUT · ใบ FG เกิน EXTRA · ใบ SUB เกิน OTHER
+  const d = sheetChildDiff('SUB', ix.bomOf, sub.sheet, sub.ownSheet);
+  assert.equal(d.same, 1);
+  assert.deepEqual(d.onlyHere, ['EXTRA']);
+  assert.deepEqual(d.onlyOwn, ['OTHER']);
+  assert.equal(d.differs, 2);
+});
+
+test('ใบของตัวเองที่ "ว่าง" ห้ามทำให้มีปุ่ม (กดไปเจอหน้าเปล่า)', () => {
+  const rows = [{ product_id: 'pF', mat_no: 'SUB', parent_mat: null, qty_per_unit: 1 }];
+  const ix = buildBomIndex(rows, { pF: 'FG', pS: 'SUB' });   // pS ประกาศไว้แต่ไม่มีบรรทัด
+  const t = explodeBom('FG', ix.bomOf, { sheetFor: ix.sheetFor, ownSheetOf: ix.ownSheetOf });
+  assert.equal(t.rows.find(r => r.mat_no === 'SUB').ownSheet, null);
+});
+
+test('🔴 ไม่ส่ง ownSheetOf = พฤติกรรมเดิมเป๊ะ (ไม่มีปุ่ม ไม่มีคำเตือน)', () => {
+  const rows = [
+    { product_id: 'pF', mat_no: 'SUB', parent_mat: null, qty_per_unit: 1 },
+    { product_id: 'pF', mat_no: 'NUT', parent_mat: 'SUB', qty_per_unit: 8 },
+    { product_id: 'pS', mat_no: 'NUT', parent_mat: null, qty_per_unit: 8 },
+  ];
+  const ix = buildBomIndex(rows, { pF: 'FG', pS: 'SUB' });
+  const t = explodeBom('FG', ix.bomOf, { sheetFor: ix.sheetFor });
+  const sub = t.rows.find(r => r.mat_no === 'SUB');
+  assert.equal(sub.ownSheet, null);
+  assert.equal(sub.sheetConflict, false);
+});
+
+test('sheetChildDiff — ไม่รู้ใบ (null) ต้องไม่ระเบิด และต้องไม่สรุปว่าต่างกัน', () => {
+  const d = sheetChildDiff('SUB', () => [], null, null);
+  assert.deepEqual(d, { onlyHere: [], onlyOwn: [], same: 0, differs: 0 });
 });
