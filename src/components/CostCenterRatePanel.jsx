@@ -195,7 +195,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {lns.length > 0 && !cur && <span title="ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้" style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
                         {lns.length > 0 && !cc.startsWith('21406') && (
                           <span title="ไลน์ใช้รหัสนี้อยู่ แต่ไม่ใช่ชุดระดับกลุ่ม (21406) — เช็คกับบัญชีแล้วแก้ที่หน้าจัดการไลน์/ผังองค์กร"
-                            style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
+                            style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.13)', borderRadius: 5, padding: '1px 5px' }}>ไม่ใช่ 21406?</span>
                         )}
                       </td>
                       <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>

@@ -87,7 +87,7 @@ export default function PlanTimeline({
                 {ticks.map(t => (
                   <span key={t.ms} style={{ position: 'absolute', left: `${t.pct}%`,
                     transform: t.pct === 0 ? 'none' : t.pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-                    fontSize: 10.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{t.label}</span>
                 ))}
               </div>
 
@@ -169,7 +169,7 @@ export default function PlanTimeline({
                               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', lineHeight: 1.2, pointerEvents: 'none' }}>
                                 {run.cutLeft && '↩ '}{isTrial && '🧪 '}{b.pairedWithPrev && '👯 '}#{b.seq} {lotKeyText(b.lot)}
                               </div>
-                              <div style={{ fontSize: 10.5, color: 'var(--text2)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+                              <div style={{ fontSize: 11, color: 'var(--text2)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
                                 {isUnknown ? '⚠ ไม่มี CT'
                                   /* ยังไม่จบในกะนี้ — ในโหมดกะเดียวไม่มี "กะถัดไป" ให้ไหลไป จึงบอกเวลาตามเดิม */
                                   : run.cutRight ? (multi ? `${qtyText(b.lot.qty_plan)} ชิ้น · ทำต่อกะถัดไป ↪`

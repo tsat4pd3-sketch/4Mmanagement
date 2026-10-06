@@ -234,8 +234,8 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                   <tr key={r.id} style={r.is_active ? null : { opacity: 0.5 }}>
                     <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>
                       {r.topic}
-                      {r.json_path && <div style={{ color: 'var(--muted)', fontSize: 10.5 }}>{r.json_path}</div>}
-                      {r.note && <div style={{ color: 'var(--muted)', fontSize: 10.5, fontFamily: 'var(--font-body)' }}>{r.note}</div>}
+                      {r.json_path && <div style={{ color: 'var(--muted)', fontSize: 11 }}>{r.json_path}</div>}
+                      {r.note && <div style={{ color: 'var(--muted)', fontSize: 11, fontFamily: 'var(--font-body)' }}>{r.note}</div>}
                     </td>
                     <td style={td}>{f.label}<span style={{ color: 'var(--muted)' }}>{f.unit ? ` (${f.unit})` : ''}</span></td>
                     <td style={td}>{r.scope_kind === 'zone' ? '🔧' : '🏭'} {r.scope_name}</td>

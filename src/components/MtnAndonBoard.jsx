@@ -477,17 +477,17 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                 </span>
                 <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 800, color: r._s.color }}>{r._s.label}</span>
               </div>
-              {r.description && <div style={{ fontSize: 10.5 * big, color: 'var(--muted)' }}>💬 {r.description}</div>}
-              {r._min == null && <div style={{ fontSize: 10 * big, color: 'var(--muted)' }}>⏱ ไม่ได้ระบุเวลาเริ่ม — บอกไม่ได้ว่าหยุดมานานแค่ไหน</div>}
+              {r.description && <div style={{ fontSize: 11 * big, color: 'var(--muted)' }}>💬 {r.description}</div>}
+              {r._min == null && <div style={{ fontSize: 11 * big, color: 'var(--muted)' }}>⏱ ไม่ได้ระบุเวลาเริ่ม — บอกไม่ได้ว่าหยุดมานานแค่ไหน</div>}
               {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้ */}
               {!r.machine_no && (
-                <div style={{ fontSize: 10 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
                   ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม)
                 </div>
               )}
               {/* ของทีมอื่น: บอกให้ชัดว่าไลน์หยุดจริง แต่คิวซ่อมไม่ใช่ของห้องนี้ */}
               {oth && (
-                <div style={{ fontSize: 10 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
+                <div style={{ fontSize: 11 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
                   🔁 ไลน์นี้หยุดอยู่จริง แต่เป็นคิวซ่อมของทีม <b>{deptNameOf(r._team)}</b>
                 </div>
               )}
@@ -503,7 +503,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {planned.map(r => (
-                  <span key={r.id} style={{ fontSize: 10.5 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
+                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
                     {r.machine_no || r.production_sessions?.line_name} · {r.dr_downtime_types?.name_th || ''} · {fmtMin(r._min)}
                   </span>
                 ))}
@@ -519,7 +519,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           <div style={{ ...card, borderColor: pmOver ? '#ef4444' : pm.length ? '#f59e0b' : 'var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>📅 PM ที่ต้องทำ</span>
-              <span style={{ marginLeft: 'auto', fontSize: 10.5 * big, color: 'var(--muted)', fontWeight: 700 }}>
+              <span style={{ marginLeft: 'auto', fontSize: 11 * big, color: 'var(--muted)', fontWeight: 700 }}>
                 เกินกำหนด {pmOver} · วันนี้ {pmToday}
               </span>
             </div>
@@ -533,7 +533,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             )}
             {pm.slice(0, 8).map(p => (
               <div key={p.id} onClick={() => navigate('/pm?tab=plan')}
-                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
                 <span style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <b style={{ color: 'var(--text)' }}>{p.name}</b>
                   {/* ช่างต้องรู้ว่าต้องเดินไปไหน — ชื่ออุปกรณ์อย่างเดียวไม่พอ */}
@@ -547,7 +547,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
             ))}
             {pm.length > 8 && (
-              <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 10.5 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
+              <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 11 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
                 + อีก {pm.length - 8} แผน — ดูทั้งหมดที่แผน PM ›
               </div>
             )}
@@ -567,12 +567,12 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   </div>
                 ))}
               </div>
-              <div style={{ fontSize: 10 * big, fontWeight: 800, color: 'var(--muted)', marginBottom: 4 }}>ค้างนานสุด</div>
+              <div style={{ fontSize: 11 * big, fontWeight: 800, color: 'var(--muted)', marginBottom: 4 }}>ค้างนานสุด</div>
               {mo.slice(0, 4).map(o => {
                 const age = daysSince(o.report_at);
                 return (
                   <div key={o.id} onClick={() => navigate('/mtn-repair')}
-                    style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 10.5 * big }}>
+                    style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
                     <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {o.machine_no || o.line_name || o.mo_no || '-'}
                     </span>

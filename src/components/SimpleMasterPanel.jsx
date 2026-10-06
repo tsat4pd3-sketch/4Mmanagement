@@ -139,8 +139,8 @@ export default function SimpleMasterPanel({
 
           {adding && (
             <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 8, background: 'var(--bg2)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
-              {!keyFrom && <div><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
-              {fields.map(f => <div key={f.key}><div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
+              {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
+              {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={add} disabled={busy} style={btn('var(--accent)', '#08130a')}>บันทึก</button>
                 <button onClick={() => setAdding(null)} style={btn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
@@ -160,7 +160,7 @@ export default function SimpleMasterPanel({
                   const k = r[keyCol]; const d = draft[k];
                   return (
                     <tr key={k} style={{ borderTop: '1px solid var(--border)', opacity: r.is_active === false ? 0.55 : 1 }}>
-                      <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{k}{r.is_active === false && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>⏸</span>}</td>
+                      <td style={{ padding: '5px 8px', fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>{k}{r.is_active === false && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>⏸</span>}</td>
                       {fields.map(f => (
                         <td key={f.key} style={{ padding: '4px 6px' }}>
                           {canManage

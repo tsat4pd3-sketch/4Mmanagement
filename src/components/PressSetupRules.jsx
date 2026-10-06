@@ -65,7 +65,7 @@ function StepsEditor({ steps, onChange, disabled }) {
           + เพิ่มขั้น
         </button>
       )}
-      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         เว้น "ไม่เกิน" ว่าง = ขั้นสุดท้าย (ไม่จำกัด) · ระบบเรียงขั้นให้เองจากน้อยไปมาก
       </div>
     </div>
@@ -222,7 +222,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                   {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ปิดใช้)</span>}
                   <span className="spacer" style={{ flex: 1 }} />
                   {r.updated_by_name && (
-                    <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>แก้ล่าสุด: {r.updated_by_name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>แก้ล่าสุด: {r.updated_by_name}</span>
                   )}
                   {canEdit && <>
                     {dirty && <button onClick={() => saveRow(r)} disabled={busy} style={btn('var(--accent)', '#071008')}>💾 บันทึก</button>}
@@ -253,7 +253,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                         {heightRuleText({ per_mm_sec: valOf(r, 'per_mm_sec'), height_steps: valOf(r, 'height_steps') })}
                       </span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBottom: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
                       ขั้นบันไดด้านล่างเป็น <b>ของเสริม</b> (บวกทับอัตราต่อมม.) — ไว้ใส่เงื่อนไขแบบขั้น เช่น "เกิน 200 มม. ต้องเปลี่ยนบล็อกรอง +30 น." · ไม่มีก็เว้นว่างได้
                     </div>
                     <StepsEditor steps={valOf(r, 'height_steps')} disabled={!canEdit}

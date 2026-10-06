@@ -790,7 +790,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 <span title={`มีงานรอคุณโดยตรง ${myQueue.badge} รายการ`} style={{
                   position: 'absolute', right: -4, bottom: -2, minWidth: 17, height: 17, padding: '0 4px',
                   borderRadius: 999, background: '#ef4444', color: '#fff',
-                  fontSize: 10.5, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
+                  fontSize: 11, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
                   border: '2px solid var(--bg2)', boxShadow: 'var(--shadow-float)',
                 }}>{myQueue.badge > 99 ? '99+' : myQueue.badge}</span>
               )}
@@ -964,7 +964,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               >
                 <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
                 <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
             ))
           ) : (<>
@@ -1011,7 +1011,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
                   {open && items.map((item, i) => (

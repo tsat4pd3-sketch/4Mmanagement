@@ -243,7 +243,7 @@ export default function WorldFactoryMap({
                   {c.meta.flag} {c.meta.name}
                 </text>
                 <text x={lx} y={ly + 26 / k} textAnchor="middle" fill={col}
-                  fontSize={12 / k} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#050d18', strokeWidth: 3.4 / k }}>
+                  fontSize={13 / k} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#050d18', strokeWidth: 3.4 / k }}>
                   {c.list.length} โรง · {fmt(c.actual)} ชิ้น
                 </text>
               </g>
@@ -267,7 +267,7 @@ export default function WorldFactoryMap({
                 <text x={x} y={y + 3.6 * k} textAnchor="middle" fontSize={11 * k}>{c.groupMeta?.icon || '🏭'}</text>
                 {c.real && <>
                   <circle cx={x + r} cy={y - r} r={6 * k} fill="#22c55e" stroke="#fff" strokeWidth={1.2 * k} />
-                  <text x={x + r} y={y - r + 3 * k} textAnchor="middle" fill="#08120a" fontSize={8 * k} fontWeight="900">★</text>
+                  <text x={x + r} y={y - r + 3 * k} textAnchor="middle" fill="#08120a" fontSize={11 * k} fontWeight="900">★</text>
                 </>}
                 {!dim && (
                   <g transform={`translate(${lx}, ${ly})`}>

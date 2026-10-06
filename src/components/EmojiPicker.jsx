@@ -37,7 +37,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
           background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 12px 34px rgba(0,0,0,0.5)', padding: 10 }}>
           {EMOJI_GROUPS.map(g => (
             <div key={g.label} style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{g.label}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{g.label}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 {g.items.map(em => {
                   const on = value === em;

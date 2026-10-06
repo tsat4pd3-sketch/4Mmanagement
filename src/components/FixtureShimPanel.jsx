@@ -175,20 +175,20 @@ export default function FixtureShimPanel({
             ].map(([k, v, c]) => (
               <div key={k} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
                                     padding: '8px 14px', minWidth: 128 }}>
-                <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{k}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k}</div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: c }}>{v}</div>
               </div>
             ))}
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
                           padding: '8px 14px', minWidth: 150 }}>
-              <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>อายุชิ้นส่วน (tool life)</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>อายุชิ้นส่วน (tool life)</div>
               <div style={{ fontSize: 17, fontWeight: 800,
                             color: life.level === 'over' ? '#ef4444' : life.level === 'warn' ? '#f59e0b'
                                  : life.level === 'unknown' ? '#94a3b8' : '#22c55e' }}>
                 {life.pct == null ? 'ประเมินไม่ได้' : `${Math.round(life.pct)}%`}
               </div>
               {life.pct == null && (
-                <div style={{ fontSize: 10, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {point.expected_life_cycles == null ? 'ยังไม่ตั้งอายุชิ้นส่วน' : 'ยังนับ shot ไม่ได้'}
                 </div>
               )}
