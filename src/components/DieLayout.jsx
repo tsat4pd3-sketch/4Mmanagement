@@ -22,6 +22,7 @@ import { moStatusLabel } from '../utils/mtnStepPerm';   // ป้ายสถา
 import DieStatusEditor from './DieStatusEditor';
 import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
+import ScanModal from './ScanModal';   // 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุด (2026-10-06)
 import { uploadOpts } from '../utils/storageUpload';
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -63,7 +64,7 @@ const missErr = (e) => e && (e.code === '42703' || e.code === '42P01');
 
 export default function DieLayout({
   dies, setsById, areas, openMos, products = [], canEdit, fullName, ready, reload, patchDieExt, reloadAreas,
-  focusDieId, onFocusConsumed,
+  focusDieId, onFocusConsumed, onScanDie,
 }) {
   const navigate = useNavigate();
   const [sp, setSp] = useSearchParams();
@@ -77,6 +78,8 @@ export default function DieLayout({
   const [areaForm, setAreaForm] = useState(null);
   const [mapW, setMapW] = useState(800);
   const [mapH, setMapH] = useState(450);
+  const [scanOpen, setScanOpen] = useState(false);
+  const panelRef = useRef(null);   // แผงรายละเอียดหมุด — สแกนแล้วเลื่อนมาให้เห็น (มือถือแผงอยู่ใต้ผัง)
   const wrapRef = useRef(null);
   const moveRef = useRef(null);
 
@@ -199,10 +202,15 @@ export default function DieLayout({
     if (d) {
       setSelId(d.id);
       if (d.ext?.area_id && d.ext?.pos_x != null) setAreaId(d.ext.area_id);
-      else toast.info('แม่พิมพ์ตัวนี้ยังไม่ได้วางบนผัง — ดูข้อมูลได้ที่แผงขวา');
+      else toast.info(`${d.machine_no} ยังไม่ได้วางบนผัง` + (canEdit ? ' — ✏️ แก้ผัง แล้ว 📍 วาง' : ''));
+      // รอให้แผงวาดก่อนค่อยเลื่อน (เปลี่ยนผัง = รูปใหม่ · layout ขยับ)
+      setTimeout(() => panelRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }), 150);
+    } else {
+      // แม่ถูกตัดสินว่าเจอแล้ว แต่ไม่อยู่ใน activeDies ของจอนี้ — ห้ามเงียบ
+      toast.error('หาแม่พิมพ์ตัวนี้บนผังไม่เจอ (อาจถูกปิดใช้งาน/อยู่นอกขอบเขต)');
     }
     onFocusConsumed?.();
-  }, [focusDieId, activeDies, onFocusConsumed]);
+  }, [focusDieId, activeDies, onFocusConsumed, canEdit]);
 
   /* ── วาง / ย้าย / เอาออก ─────────────────────────────────────────── */
   const writePlacement = async (dieId, patch, snapForHist) => {
@@ -315,6 +323,11 @@ export default function DieLayout({
           {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
+        {onScanDie && (
+          <button onClick={() => setScanOpen(true)} style={btnGhost} title="สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น">
+            📷 สแกนป้ายแม่พิมพ์
+          </button>
+        )}
         <span className="spacer" />
         <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
           🏷️ {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
@@ -466,7 +479,7 @@ export default function DieLayout({
           {/* ── แผงขวา ── */}
           <div style={{ display: 'grid', gap: 10 }}>
             {selDie ? (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+              <div ref={panelRef} style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
                   <div style={{ fontSize: 13.5, fontWeight: 800, wordBreak: 'break-word', flex: 1 }}>🔨 {selDie.machine_no}</div>
                   <button onClick={() => setSelId(null)} style={{ ...btnGhost, padding: '3px 8px', fontSize: 12 }}>✕</button>
@@ -571,6 +584,11 @@ export default function DieLayout({
         </div>
       )}
 
+      {scanOpen && (
+        <ScanModal title="📷 สแกนป้ายแม่พิมพ์" hint="ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์"
+          onScan={(parsed) => onScanDie(parsed)}   // คืนข้อความ = โชว์ในโมดัลให้สแกนใหม่ · undefined = เจอ ปิดเอง
+          onClose={() => setScanOpen(false)} />
+      )}
       {areaForm && (
         <AreaFormModal {...areaForm} onClose={() => setAreaForm(null)}
           onSaved={async (id) => { setAreaForm(null); await reloadAreas(); if (id) setAreaId(id); }} />
