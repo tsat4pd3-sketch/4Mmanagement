@@ -35,7 +35,8 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
  * @param {string}   rootName
  * @param {Function} bomOf    (mat) => [{ mat_no, part_name, qty_per_unit, uom }]
  */
-export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDeleteDupes }) {
+/* `onOpenSheet(mat)` = พาไปเปิด "ใบของพาร์ทตัวนั้น" — ไม่ส่งมา = ไม่มีปุ่ม (จอ read-only ยังใช้ได้เหมือนเดิม) */
+export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDeleteDupes, onOpenSheet }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -159,10 +160,27 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
                   </td>
                   <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap',
                     paddingLeft: 9 + (r.level - 1) * 14 }}>
-                    {r.level > 1 && <span style={{ color: 'var(--muted)' }}>└ </span>}{r.mat_no}
+                    {r.level > 1 && <span style={{ color: 'var(--muted)' }}>└ </span>}
+                    {/* 📄 แถวที่ลูกมาจาก "ใบของตัวมันเอง" — กดแล้วไปเปิดใบนั้นเลย
+                        (user 06/10 เข้าใจว่าต้องสร้าง 2 ใบแยกกัน ที่จริงใบนั้นคือการนิยามครั้งเดียว
+                         แล้วใบ FG ยืมมากางให้ — แต่จอไม่เคยบอก) */}
+                    {r.fromOtherSheet && onOpenSheet ? (
+                      <button type="button" onClick={() => onOpenSheet(r.mat_no)}
+                        title={`เปิดใบ BOM ของ ${r.mat_no} — ชั้นที่ลึกกว่านี้ถูกนิยามไว้ในใบนั้น ไม่ได้กรอกซ้ำในใบนี้`}
+                        style={{ font: 'inherit', color: 'inherit', background: 'none', border: 'none', padding: 0,
+                          cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                        {r.mat_no} ↗
+                      </button>
+                    ) : r.mat_no}
                   </td>
                   <td style={{ ...td, maxWidth: 260 }}>
                     {r.part_name || '—'}
+                    {r.fromOtherSheet && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
+                        title="นิยามไว้ครั้งเดียวในใบของตัวเอง — ใบนี้ยืมมากางให้ ไม่ได้กรอกซ้ำ">
+                        📄 ชั้นล่างมาจากใบของ {r.mat_no} เอง
+                      </div>
+                    )}
                     {r.isDupeRow && (
                       <div style={{ fontSize: 11, color: TONE.crit, fontWeight: 700, marginTop: 1,
                         display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
