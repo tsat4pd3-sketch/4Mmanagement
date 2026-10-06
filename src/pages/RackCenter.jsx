@@ -114,9 +114,12 @@ export default function RackCenter() {
   const issuePkg = async (p) => {
     setPkgBusy(p.id);
     try {
-      const { error } = await supabaseDR.from('packaging_withdrawal_requests').update({ status: 'issued' }).eq('id', p.id);
+      /* CAS + นับแถว (QC 05/10 · กฎเขียน DB ข้อ 2) — 2 เครื่องกดพร้อมกัน / ใบถูกเปลี่ยนไปแล้ว = 0 แถว ห้ามขึ้นเขียว */
+      const { data: upd, error } = await supabaseDR.from('packaging_withdrawal_requests')
+        .update({ status: 'issued' }).eq('id', p.id).eq('status', p.status).select('id');
       if (error) throw error;
-      toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
+      if (!upd?.length) toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — โหลดใหม่');
+      else toast.success(`จ่าย packaging ${p.packaging_code} แล้ว`);
       await load();
     } catch (err) { toast.error(err.message); }
     setPkgBusy(null);
@@ -259,20 +262,23 @@ export default function RackCenter() {
     if (next === 'preparing') { payload.prepared_by = fullName; payload.prepared_at = new Date().toISOString(); }
     if (next === 'delivered') { payload.delivered_by = fullName; payload.delivered_at = new Date().toISOString(); }
     if (next === 'received')  { payload.received_by  = fullName; payload.received_at  = new Date().toISOString(); }
-    const { error } = await supabaseDR.from('rack_requests').update(payload).eq('id', r.id);
+    // CAS + นับแถว (QC 05/10) — กันกดรัว/2 เครื่องเลื่อนขั้นเดียวกันซ้ำ (เวลา/ชื่อผู้ทำถูกเขียนทับ)
+    const { data: upd, error } = await supabaseDR.from('rack_requests').update(payload).eq('id', r.id).eq('status', r.status).select('id');
     setBusyId(null);
     if (error) { toast.error(error.message); return; }
+    if (!upd?.length) toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — โหลดใหม่');
     load();
   };
 
   const cancel = async (r) => {
     if (!window.confirm('ยืนยันยกเลิกการเรียกภาชนะนี้?')) return;
     setBusyId(r.id);
-    const { error } = await supabaseDR.from('rack_requests').update({
+    const { data: upd, error } = await supabaseDR.from('rack_requests').update({
       status: 'cancelled', cancelled_by: fullName, cancelled_at: new Date().toISOString(),
-    }).eq('id', r.id);
+    }).eq('id', r.id).eq('status', r.status).select('id');   // CAS — ใบที่ส่ง/รับไปแล้วระหว่างนั้น ห้ามถูกยกเลิกทับ
     setBusyId(null);
     if (error) { toast.error(error.message); return; }
+    if (!upd?.length) toast.info('ใบนี้ถูกอัปเดตจากเครื่องอื่นแล้ว — ยกเลิกไม่ได้ โหลดใหม่');
     load();
   };
 

@@ -18,11 +18,12 @@ import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
-import { wavg, wLoad, dtMinBySession } from '../utils/oee';
+import { wavg, wLoad, dtMinBySession, orderPlanQty } from '../utils/oee';
 import { notifyEvent } from '../utils/notifyEvent';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import { ALL } from '../utils/filterLabels';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
@@ -79,6 +80,8 @@ export default function MorningMeeting() {
   const [orgSections, setOrgSections] = useState([]); // ส่วนงานจากผังองค์กร (source of truth) — ไม่เดาจาก production_lines
   const [secFilter, setSecFilter]     = useState('');
   const [loading, setLoading]         = useState(true);
+  const [loadErr, setLoadErr]         = useState('');   // คิวรีล้ม ≠ "ไม่มีปัญหา" — ต้องเขียนบนจอ (05/10)
+  const begin = useLatestRequest();   // เปลี่ยนวัน/ส่วนงานระหว่างโหลด = คำตอบเก่าห้ามทับจอ (กฎ DB ข้อ 4)
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
@@ -153,16 +156,21 @@ export default function MorningMeeting() {
   /* ── โหลดข้อมูลของวันประชุม ── */
   const load = useCallback(async () => {
     if (!allLines.length) return;
+    const live = begin();
     if (!lineNames.length) {
       setSessions([]); setDowntimes([]); setDefects([]); setOrders([]);
       setFourM([]); setAttendance([]); setOpenDts([]); setActions([]); setLoading(false);
       return;
     }
     setLoading(true);
+    /* 05/10 (QC audit): เดิมอ่านแค่ data ทุกคิวรี ⇒ downtime/ของเสีย/4M ล้ม = แผง "ไม่มีปัญหา" ว่างเปล่า
+       ⇒ เก็บชื่อคิวรีที่ล้มไว้บอกบนจอ (ตัวเลขที่เหลือยังโชว์ได้ แต่ต้องรู้ว่าไม่ครบ) */
+    const errs = [];
+    const chk = (res, label) => { if (res?.error) { errs.push(label); console.error('[MorningMeeting]', label, res.error); } return res?.data; };
     try {
       const D = meetingDate;
       await loadOpInfo(); // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณยอด (cache · ครั้งแรกครั้งเดียว)
-      const [{ data: sess }, { data: fm }, { data: att }, { data: actToday }, { data: actCarry }, { data: mcs }, { data: brkPols }] = await Promise.all([
+      const [sessRes, fmRes, attRes, actTodayRes, actCarryRes, mcsRes, brkRes] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
           .eq('work_date', D).in('line_name', lineNames).limit(500),
@@ -184,6 +192,10 @@ export default function MorningMeeting() {
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
         supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true),
       ]);
+      if (!live()) return;
+      const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');
+      const actToday = chk(actTodayRes, 'Action วันนี้'), actCarry = chk(actCarryRes, 'Action ค้าง');
+      const mcs = chk(mcsRes, 'ทะเบียนเครื่อง'), brkPols = chk(brkRes, 'นโยบายพัก');
       setBreakPols(brkPols || []);
       setSessions(sess || []);
       const mCnt = {};
@@ -207,35 +219,43 @@ export default function MorningMeeting() {
 
       const ids = (sess || []).map(s => s.id);
       if (ids.length) {
-        const [{ data: dt }, { data: def }, { data: po }] = await Promise.all([
+        const [dtRes, defRes, poRes] = await Promise.all([
           supabaseDR.from('downtime_logs')
             .select('*, dr_downtime_types(name_th, color, category)').in('session_id', ids),
           supabaseDR.from('defect_logs')
             .select('*, dr_defect_types(name_th, color), prod_orders(prod_no, part_name, mat_no)').in('session_id', ids),
           supabaseDR.from('prod_orders').select('*').in('session_id', ids).order('opened_at'),
         ]);
+        const pm = await loadPairMap();   // คู่ RH/LH จาก cache ทะเบียนสินค้ากลาง (25/09) — แหล่งเดียวกับทุกจอ
+        if (!live()) return;
+        const dt = chk(dtRes, 'เครื่องหยุด'), def = chk(defRes, 'ของเสีย'), po = chk(poRes, 'ใบผลิต');
         setDowntimes(dt || []); setDefects(def || []); setOrders(po || []);
-        // คู่ RH/LH มาจาก cache ทะเบียนสินค้ากลาง (25/09) — แหล่งเดียวกับทุกจอ ห้ามยิงเอง
-        setPairMat(await loadPairMap() || {});
+        setPairMat(pm || {});
       } else {
         setDowntimes([]); setDefects([]); setOrders([]); setPairMat({});
       }
 
       // readiness: เครื่องที่ยังซ่อมค้าง "ตอนนี้" — มองจากกะ 3 วันล่าสุด (รวม carry-over ข้ามกะ)
-      const { data: recentSess } = await supabaseDR.from('production_sessions')
+      const recentSess = chk(await supabaseDR.from('production_sessions')
         .select('id, line_name, shift')
-        .gte('work_date', dayAdd(getWorkDate(), -2)).in('line_name', lineNames).limit(300);
+        .gte('work_date', dayAdd(getWorkDate(), -2)).in('line_name', lineNames).limit(300), 'กะล่าสุด (เครื่องค้างซ่อม)');
       const rIds = (recentSess || []).map(s => s.id);
       if (rIds.length) {
-        const { data: odt } = await supabaseDR.from('downtime_logs')
+        const odt = chk(await supabaseDR.from('downtime_logs')
           .select('*, dr_downtime_types(name_th, color)')
-          .in('session_id', rIds).is('ended_at', null).is('duration_min', null).limit(100);
+          .in('session_id', rIds).is('ended_at', null).is('duration_min', null).limit(100), 'เครื่องค้างซ่อม');
+        if (!live()) return;
         const lineBySess = {};
         (recentSess || []).forEach(s => { lineBySess[s.id] = s.line_name; });
         setOpenDts((odt || []).map(d => ({ ...d, _line: lineBySess[d.session_id] })));
       } else setOpenDts([]);
+      if (!live()) return;
+      setLoadErr(errs.length ? `⚠️ โหลด${errs.join(' / ')}ไม่สำเร็จ — แผงที่เกี่ยวข้องยังไม่ครบ (ว่าง ≠ ไม่มีปัญหา) อย่าเพิ่งใช้ตัดสินใจ` : '');
+    } catch (e) {
+      console.error('[MorningMeeting] load', e);
+      if (live()) setLoadErr(`🔴 โหลดข้อมูลไม่สำเร็จ: ${e?.message || e}`);
     } finally {
-      setLoading(false);
+      if (live()) setLoading(false);
     }
   }, [allLines.length, lineNames, viewLines, meetingDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -258,10 +278,13 @@ export default function MorningMeeting() {
   // orderTotal = pair-aware + op-aware (รายการขั้นตอน OP งานขับนัทไม่บวกซ้ำ — collapseOps ใน pairTotals)
   const pairSum = (os, pick) => orderTotal(os, pick, m => pairMat[m] || null, opInfoSync());
   const sessTarget = (s) => {
-    const os = (ordersBySession[s.id] || []).filter(o => !['cancelled', 'imported', 'carry_over'].includes(o.status));
-    if (hasPairIn(os)) return pairSum(os, o => o.qty_target ?? o.qty ?? 0);
+    /* เป้าของใบ = orderPlanQty (oee §6.1 · 05/10) — เดิมตัด imported/carry_over ทิ้งทั้งใบ แต่ยอดผลิต
+       (sessActual) ยังนับ ⇒ กะที่ส่งงานต่อ % เกิน 100 · ตอนนี้ imported = ส่วนของเป้าที่ทำในกะนี้
+       carry_over (ยังไม่มีใครรับ) = เป้าเต็ม — สูตรเดียวกับ Obeya/FactoryMap/DeptDashboard/GroupOverview */
+    const os = (ordersBySession[s.id] || []).filter(o => o.status !== 'cancelled');
+    if (hasPairIn(os)) return pairSum(os, orderPlanQty);
     if (s.target_qty) return s.target_qty;
-    return orderTotal(os, o => o.qty_target ?? o.qty ?? 0, () => null, opInfoSync());
+    return orderTotal(os, orderPlanQty, () => null, opInfoSync());
   };
   /* ยอดจริงของกะ — คิดจาก "ใบงาน" ผ่าน orderTotal (pair-aware + op-aware) เสมอเมื่อมีใบให้ดึง
      (QC audit 2026-08-20 · T1-10) เดิม fallback ไป s.qty_ok/s.actual_qty ก่อน ซึ่งเป็น "ผลรวมดิบ"
@@ -1022,6 +1045,11 @@ export default function MorningMeeting() {
         <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
       </FilterBar>
 
+      {!loading && loadErr && (
+        <div role="alert" style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+          {loadErr}
+        </div>
+      )}
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
       ) : (

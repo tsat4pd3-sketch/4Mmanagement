@@ -103,6 +103,7 @@ export default function DieRegistry() {
   // 2026-09-08: ทะเบียน die_press_lines — แหล่งหลักของชื่อ "ไลน์/กลุ่มเครื่องปั๊ม" ของแม่พิมพ์ (แยกจาก production_lines)
   const pressLines = useDiePressLines();
   // 2026-10-05: รูปแบบชุด = ทะเบียน die_set_kinds (เดิม hardcode 4 ค่า) — ทีมแม่พิมพ์เพิ่ม/ตั้งชื่อเรียกเองได้
+  const [opTypes, setOpTypes] = useState([]);
   const [kindsVer, setKindsVer] = useState(0);
   const setKinds = useDieSetKinds(kindsVer);
   /* ตัวเลือก "ชนิดอุปกรณ์ในใบแจ้งซ่อม" ของแผง ⚙️ รูปแบบชุด = ชื่อใน mtn_item_types ของทีม DIE + ของกลาง
@@ -120,13 +121,13 @@ export default function DieRegistry() {
   const dieItemTypeOpts = useMemo(() => {
     const names = new Set(dieItemTypes);
     setKinds.forEach(k => { if (k.mo_item_type) names.add(k.mo_item_type); }); // ค่าที่ตั้งไว้แล้วต้องอยู่ในลิสต์เสมอ
+    opTypes.forEach(o => { if (o.mo_item_type) names.add(o.mo_item_type); });
     return [...names].map(n => ({ value: n, label: n }));
-  }, [dieItemTypes, setKinds]);
+  }, [dieItemTypes, setKinds, opTypes]);
 
   const [lines, setLines]   = useState([]);
   const [dies, setDies]     = useState([]);   // machines (equipment_kind='die') + equipment_die
   const [sets, setSets]     = useState([]);
-  const [opTypes, setOpTypes] = useState([]);
   const [products, setProducts] = useState([]); // dr_products — ผูก mat_no ของชุด
   const [areas, setAreas]     = useState([]);   // die_storage_areas — ผังจัดเก็บ
   const [openMos, setOpenMos] = useState([]);   // ใบซ่อม MO ที่ยังไม่ปิด (derive สถานะซ่อม)
@@ -362,6 +363,7 @@ export default function DieRegistry() {
     setSaving(false);
     if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
     toast.success('บันทึกแม่พิมพ์แล้ว');
+    invalidateDieSetKinds(); // ประเภท OP ของแม่พิมพ์ = ตัวเติม "ชนิดอุปกรณ์" ในใบแจ้งซ่อม — ล้าง cache ให้เห็นค่าใหม่
     setEditDie(null); load();
   };
 
@@ -647,6 +649,20 @@ export default function DieRegistry() {
       {/* ⚙️ ทะเบียนรูปแบบชุดแม่พิมพ์ (DR die_set_kinds · 2026-10-05) — เดิม hardcode 4 ค่า (Tandem/Progressive/Transfer/Single)
           ทีมแม่พิมพ์เพิ่มเอง (HYDROFORM/BEND ฯลฯ) + ตั้ง "ชื่อที่หน้างานเรียก" เอง (ศัพท์ทางการหน้างานไม่เข้าใจ)
           key สร้างให้อัตโนมัติ — คนกรอกแค่ชื่อ · mo_item_type = ชนิดอุปกรณ์ที่ใบแจ้งซ่อมเติมให้เมื่อเลือกแม่พิมพ์ */}
+      {/* ⚙️ ทะเบียนประเภท OP ของแม่พิมพ์ (DR die_op_types · แผงจัดการ 2026-10-06) — เดิมมีตารางแต่ไม่มีที่แก้บนจอ
+          mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
+      <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
+        <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
+          keyFrom={dieSetKindKey}
+          stampCol="updated_by_name" stampName={fullName}
+          onChanged={() => { invalidateDieSetKinds(); load(); }}
+          help="ประเภท OP = หน้าที่ของแม่พิมพ์ตัวนั้น (ตั้งที่ปุ่มแก้แม่พิมพ์รายตัว) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; ที่ตั้งตรงนี้ **ชนะ** ค่าของรูปแบบชุด — ใช้กับชุดที่มีแม่พิมพ์ต่างหน้าที่กันในชุดเดียว (เช่น HDF: HYDRO / BENDING / PREFORM) · ว่าง = ใช้ค่าของรูปแบบชุด · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (แม่พิมพ์เก่ายังอ่านออก)"
+          fields={[
+            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น Hydroform / ดัด' },
+            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+          ]} />
+      </CollapseCard>
+
       <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
           keyFrom={dieSetKindKey}

@@ -3,7 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { wavg } from '../utils/oee';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
+import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
+import { valueInk } from '../utils/statusTone';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -43,7 +46,7 @@ function getWorkDate() {
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); } catch { return s; } };
-const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
+/* สี OEE เทียบเป้ากลุ่มจริง (oeeTargetForLines + statusOf/valueInk) — คิดใน ProductionView · 05/10 เดิม 80/65 ตายตัว */
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
 const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null;
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
@@ -154,7 +157,8 @@ async function loadProduction(ctx) {
   const { workDate, prevDate, inScope } = ctx;
   const d7 = dayAdd(workDate, -6);
   const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
-    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date').in('work_date', [prevDate, workDate]),
+    // start_time = กรอบกะ ⇒ dtMinBySession ตัด downtime ที่ทับพักก่อนคิดน้ำหนัก wLoad (05/10)
+    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
     /* ⚠️ `four_m_logs` **ไม่มีคอลัมน์ `created_by_name`** (มีแต่ `created_by`) — เคยใส่ไว้แล้ว
        คิวรีล้มทั้งก้อน ⇒ การ์ด "4M รออนุมัติ" ขึ้น 0 ทั้งที่ค้างจริง 16 ใบ (วัดจากฐาน 22/09)
@@ -180,13 +184,16 @@ async function loadProduction(ctx) {
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
   ]);
+  // นโยบายพัก + เป้า OEE — ล้ม = ติดธง loadErr (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ / ห้ามเดาเป้า 80/65)
+  const [breaks, tg] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets()]);
   /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
+    breaks: breaks || [], oeeTargets: tg.byGroup,
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
-      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error),
+      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -203,6 +210,8 @@ function ProductionView({ d, ctx }) {
     const bySess = {}; d.orders.forEach(o => (bySess[o.session_id] ||= []).push(o));
     const dtBy = {}; d.dts.forEach(x => (dtBy[x.session_id] ||= []).push(x));
     const ngBy = {}; d.defs.forEach(x => { ngBy[x.session_id] = (ngBy[x.session_id] || 0) + (+x.qty_ng || 0) + (+x.qty_suspect || 0); });
+    // น้ำหนัก wLoad: planned ที่ "หักได้จริง" (ตัดส่วนทับพัก) · L.dt = "เครื่องหยุดกี่นาที" ยังเป็นนาทีเต็ม — ห้ามสลับ
+    const eff = dtMinBySession(d.sess, d.dts, d.breaks || []);
     const out = {};
     d.sess.forEach(s => {
       const day = s.work_date === workDate ? 'today' : 'prev';
@@ -213,15 +222,15 @@ function ProductionView({ d, ctx }) {
       os.forEach(od => {
         if (!od.mat_no) return;
         const e = (perMat[od.mat_no] ||= { mat_no: od.mat_no, target: 0, produced: 0 });
-        e.target += od.qty_target ?? od.qty ?? 0;
+        e.target += orderPlanQty(od);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
         e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
       });
       const nulls = os.filter(od => !od.mat_no);
       const pt = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
-      L.target += pt.target + nulls.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+      L.target += pt.target + nulls.reduce((a, od) => a + orderPlanQty(od), 0);
       L.actual += pt.produced + nulls.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
-      let planned = 0;
-      (dtBy[s.id] || []).forEach(x => { const m = dtMinOf(x); if (x.dr_downtime_types?.category === 'planned') planned += m; else L.dt += m; });
+      (dtBy[s.id] || []).forEach(x => { if (x.dr_downtime_types?.category !== 'planned') L.dt += dtMinOf(x); });
+      const planned = eff[s.id]?.planned || 0;
       L.planned += planned;
       L.ng += ngBy[s.id] || 0;
       if (s.status !== 'closed') L.open++;
@@ -232,6 +241,8 @@ function ProductionView({ d, ctx }) {
 
   const today = per.today || { lines: {}, rows: [] };
   const prev = per.prev || { lines: {}, rows: [] };
+  // สี OEE = เทียบเป้ากลุ่ม (กติกาเดียวกับ OBEYA) · เป้าโหลดไม่ได้ = สีปกติ "ตัดสินไม่ได้" (ไม่เดา 80/65)
+  const oeeCol = (o, names) => valueInk(o, oeeTargetForLines(names, lines, d.oeeTargets)?.oee ?? null);
   const sum = (o, f) => Object.values(o.lines).reduce((a, l) => a + (f(l) || 0), 0);
   const oeeToday = wavg(today.rows.filter(r => r.oee != null), r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
   const oeePrev = wavg(prev.rows.filter(r => r.oee != null), r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
@@ -293,7 +304,7 @@ function ProductionView({ d, ctx }) {
 
     <div style={KPI_GRID(isMobile)}>
       <Kpi label="📦 ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
-      <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday)}
+      <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
         sub={oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`} />
       <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? '#f59e0b' : undefined}
@@ -316,7 +327,7 @@ function ProductionView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: '#f59e0b' }}> · ยังไม่ปิดกะ</span> : null}</td>
                 <td style={TDR}>{fmtNum(l.target)}</td><td style={TDR}>{fmtNum(l.actual)}</td>
                 <td style={{ ...TDR, color: pctCol(l.pct), fontWeight: 700 }}>{l.pct == null ? '—' : l.pct + '%'}</td>
-                <td style={{ ...TDR, color: oeeCol(l.oee), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
                 <td style={{ ...TDR, color: l.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
                 <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
               </tr>
@@ -874,7 +885,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
            ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
-          title={embedded ? 'OBEYA — งานค้างของส่วนงาน' : 'Dashboard ส่วนงาน'} icon={embedded ? '📌' : '📊'}
+          title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
           actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)

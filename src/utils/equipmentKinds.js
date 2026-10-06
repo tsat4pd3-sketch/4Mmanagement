@@ -81,18 +81,29 @@ export function dieSetKindKey(row, now = Date.now()) {
 }
 
 /** ใบแจ้งซ่อมแม่พิมพ์: เลขแม่พิมพ์ → "ชนิดอุปกรณ์" (mtn_item_types.name) จากทะเบียน
- *  ทางเดิน: machines(machine_no) → equipment_die.die_set_id → die_sets.kind → die_set_kinds.mo_item_type
- *  คืน null เมื่อชี้ไม่ได้ (ไม่อยู่ในชุด · ชุดไม่มี kind · รูปแบบนั้นยังไม่ตั้ง mo_item_type) — **ห้ามเดา**
- *  ให้ผู้แจ้งเลือกเองตามเดิม · เทียบเลขแบบ trim+uppercase (กฎเดียวกับ dieStatus)
- *  @param links  [{ machine_no, kind }]  (1 แถวต่อแม่พิมพ์ที่ผูกชุดแล้ว) */
-export function buildDieItemTypeMap(links, kinds) {
+ *  2 ชั้น (06/10 · คอมเมนต์ทีม DIE): **ประเภท OP ของแม่พิมพ์รายตัว ชนะ รูปแบบชุด**
+ *    เพราะ HDF 1 ชุด (Single) มีแม่พิมพ์ HYDRO/BENDING/PREFORM — ชนิดเป็นของ "ตัว" ไม่ใช่ของ "ชุด"
+ *    1) equipment_die.op_type → die_op_types.mo_item_type
+ *    2) equipment_die.die_set_id → die_sets.kind → die_set_kinds.mo_item_type
+ *  คืน null เมื่อชี้ไม่ได้ทั้ง 2 ชั้น — **ห้ามเดา** ให้ผู้แจ้งเลือกเองตามเดิม · เทียบเลขแบบ trim+uppercase
+ *  @param links    [{ machine_no, kind, op_type }]
+ *  @param kinds    แถว die_set_kinds (normDieSetKind) · @param opTypes แถว die_op_types {key,label,mo_item_type} */
+export function buildDieItemTypeMap(links, kinds, opTypes = []) {
   const byKey = new Map((kinds || []).map(k => [k.key, k]))
+  const byOp = new Map((opTypes || []).map(o => [o.key, o]))
   const out = new Map()
   for (const l of links || []) {
     const no = String(l?.machine_no ?? '').trim().toUpperCase()
-    if (!no || !l.kind) continue
-    const k = byKey.get(l.kind)
-    out.set(no, { kindKey: l.kind, kindLabel: k?.label || l.kind, itemType: k?.mo_item_type || null })
+    if (!no || (!l.kind && !l.op_type)) continue
+    const k = l.kind ? byKey.get(l.kind) : null
+    const op = l.op_type ? byOp.get(l.op_type) : null
+    const fromOp = op?.mo_item_type || null
+    out.set(no, {
+      kindKey: l.kind || null, kindLabel: l.kind ? (k?.label || l.kind) : null,
+      opKey: l.op_type || null, opLabel: l.op_type ? (op?.label || l.op_type) : null,
+      itemType: fromOp || k?.mo_item_type || null,
+      source: fromOp ? 'op' : (k?.mo_item_type ? 'set' : null),
+    })
   }
   return out
 }

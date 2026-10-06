@@ -1229,3 +1229,14 @@ toast หลังกด · **และข้อความใน ledger** (`no
 | `storage_location` | **ว่างทั้ง 4** |
 | สาเหตุ | **ไม่ใช่ "ลืมกด backfill"** — ไลน์ปั๊มทั้ง 4 เป็น **ไลน์ราก (`parent_line_name` = null)** และ `storage_locations` ที่ผูกไลน์ไว้มีแค่ 4 แถว (`P409` HYDROFORM · `P411` LINE APRON ASSY · `S401` STORE · `W401` FG WAREHOUSE) ⇒ `slocOfLine()` คืน `null` ⇒ **ไม่มีอะไรให้ derive** |
 | ทางแก้ | คนต้องลงทะเบียนพื้นที่ของไลน์ปั๊มที่ `/line-stock?tab=zones` ก่อน แล้วค่อยกด ✏️ แก้ + บันทึกจุดซ้ำ (หรือกดปุ่ม backfill ใน `StorageLocPanel.jsx`) — 🔴 **ห้ามเดารหัสให้** (`storageLoc.js`: ไม่ระบุ = `''` ห้ามเดา) |
+
+---
+
+## 🔴 QC audit 05/10 — "ผลิตวันนี้" + รอบรีเฟรช
+- ยอด "ผลิตวันนี้" = ผลรวม `orderDonePcs()` (planLots.js) ของใบในกะวันนี้ · โหลดผ่าน `fetchByIds` · ล้ม/เกินเพดาน = `null` ("—") + ข้อความบนจอ
+  (เดิม `.in(sids)` ไม่แบ่งหน้า + กลืน error + confirmed ไม่มี qty_ok ถอยไปใช้เป้า + นับใบ cancelled)
+- รีเฟรช = realtime + `makeIdleGate` (กฎเขียน DB ข้อ 8): ใบผลิต/กะ → touch+โหลด (coalesce `LIVE.BOARD`) · ledger สต็อก/ใบสั่งผลิตลูก → touch
+  · poll ทุก `RATE.ANALYTIC` ยิงเฉพาะเมื่อมี touch · **hard floor = `RATE.SLOW`** (ไม่ใช่ `LIVE.FLOOR`) เพราะ
+    `customer_shipping_orders`/`purchase_requests`/`raw_withdrawal_requests`/`wip_replenish_requests` **ไม่อยู่ใน publication realtime** (เช็ค 05/10)
+- 🔴 `raw_withdrawal_requests` มีแค่ `pending`/`issued`/`cancelled` (**ไม่มี `done`**) — "ค้าง" = `eq('status','pending')` · ยอดรวม = ไม่นับ `cancelled`
+  (เดิม `.neq('status','done')` ขึ้นค้าง 1,472 แทน 482 · ด่าน `raw-withdrawal-status-set`)

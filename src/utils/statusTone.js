@@ -84,5 +84,10 @@ export function toneOf({ value, target = null, better = 'up', zeroIsGood = false
  */
 export const toneInk = (s) => (s === 'none' ? 'var(--text)' : statusColor(s));
 
+/** สีตัวเลข (ink) ของค่าเทียบเป้า — ไม่มีค่า = muted · ไม่มีเป้า = สีตัวหนังสือปกติ (ไม่ทาเขียว)
+ *  ใช้แทน `o >= 80 ? เขียว : o >= 65 ? เหลือง : แดง` ที่เคยตายตัวอยู่หลายจอ (QC 05/10) */
+export const valueInk = (value, target, better = 'up') =>
+  (value == null || Number.isNaN(Number(value)) ? 'var(--muted)' : toneInk(statusOf(value, target, better)));
+
 /** มี "เป้า" ให้เทียบจริงไหม — จอควรเขียนกำกับเมื่อไม่มี (ห้ามเงียบแล้วปล่อยให้เดาว่าเขียว = ดี) */
 export const hasTarget = (target) => target != null && !Number.isNaN(Number(target));

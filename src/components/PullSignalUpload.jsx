@@ -404,11 +404,15 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     }
 
     if (batchId) {
-      await supabaseDR.from('customer_pull_batches').update({
+      /* ตัวนับบนแถวประวัติไฟล์ — ใบจริงลงไปแล้ว ล้มตรงนี้ไม่ทำให้ยอดผิด แต่แท็บประวัติจะโชว์ 0/0
+         ⇒ ห้ามเงียบ (QC 05/10 · กฎเขียน DB ข้อ 1-2: อ่าน error + นับแถว) */
+      const { data: cnt, error: eCnt } = await supabaseDR.from('customer_pull_batches').update({
         orders_updated: updated, orders_created: created,
         // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
         orders_skipped: plan.filter(x => x.action !== 'update' && x.action !== 'create').length,
-      }).eq('id', batchId);
+      }).eq('id', batchId).select('id');
+      // แยกจาก `failed` — ใบส่งลงครบแล้ว ห้ามค้างโมดัลชวนให้กดยืนยันซ้ำ แค่บอกว่าประวัติไม่ตรง
+      if (eCnt || !cnt?.length) toast.error(`บันทึกตัวนับลงประวัติไฟล์ไม่สำเร็จ — ใบส่งลงครบแล้ว แต่แท็บประวัติจะโชว์ตัวเลขไม่ตรง: ${eCnt?.message || 'ไม่มีแถวถูกแก้ (สิทธิ์?)'}`);
     }
     setSaving(false);
     // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")

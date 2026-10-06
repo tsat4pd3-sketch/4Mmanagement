@@ -86,9 +86,43 @@
 **✅ DB audit (05/10) — แก้ฝั่งโค้ด:** ถอยใบผลิตที่ปิดแล้ว ลบแถว `issue` ใน `line_stock_transactions` ที่**ไม่มี DELETE policy** ⇒ ลบได้ 0 แถวเงียบ แต่ขึ้น toast เขียว "ถอนยอด stock ให้เรียบร้อย" → เช็คแถวที่เหลือ ถ้ายังอยู่ = แจ้งเตือนให้ Store ตรวจยอด (ทางแก้ถาวร = นโยบายลบเฉพาะ `created_by='auto' and type='issue'` หรือ RPC — **รอ user**)
 **⛔ DB audit (05/10) — รอ user ตัดสิน (SQL เต็มอยู่ในแชท 05/10):** MAIN ~40 ตารางเขียน/ลบได้ทุก authenticated (เคยเสียหายจริง: workstation ถูกลบ 39 ครั้ง ⇒ `daily_production_logs.assigned_line` 41% ชี้จุดงานที่ไม่มีแล้ว) · CQI-15/4M ไม่มี audit trigger (ข้อมูล CQI-15 ถูกลบโดยไม่มีร่องรอย) · `notifications` 81 MB/20k แถว กระดิ่ง ~0.5 วิ · DR anon ลบประวัติได้ทุกตาราง (one-curl wipe ผ่าน cascade) · CASCADE จาก master → ประวัติ (jigs/machines/mtn_spare_parts/mtn_orders/child_lot_requests) · stock ผี 108 แถว 6,245 ชิ้นจากใบที่ถูกลบ · ไฟล์ EDI ลูกค้าใน bucket `demand-mail` anon อ่านได้
 
+**✅ แก้แล้ว (batch จอเดโม/ผู้บริหาร · branch `fix/qc-exec-screens`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 17 | `orderPlanQty()` (oee §6.1) | เป้าใบผลิตกติกาเดียว: cancelled 0 · imported = min(เป้า, ทำได้) · carry_over เต็ม — Obeya D (เดือน+ปี) · FactoryMap · GroupOverview · DeptDashboard · Dashboard · MorningMeeting · vsmLive · ด่าน `order-plan-via-helper` · RPC ปีส่ง Σ ต่อสถานะ (ข้อจำกัดระดับกลุ่ม — ไม่แก้ SQL) |
+| 18 | Obeya C/Pareto | ไม่มีกะ = เทา "ยังไม่มีข้อมูล" (`axisCost`/`axisCostYear` รับ `sessions`) · ปี RPC ล้มตั้ง `dtBad`/`dfBad` · C เดือนตัดของเสียทดลองเหมือนปี |
+| 19 | สี OEE | `oeeTargetForLines` + `statusOf`/`valueInk` แทน 80/65 (FactoryMap · GroupOverview · DeptDashboard) · ไม่รู้เป้า = เทา |
+| 20 | wLoad | `dtMinBySession` ที่ FactoryMap (ทบทวน + sparkline) · DeptDashboard · GroupOverview · ด่าน `no-wload-without-break-helper` จับสูตรเขียนเอง |
+| 21 | stale-response | `useLatestRequest()` ใหม่ (+เทส) — SQDCM · WorkforceInsight · MorningMeeting · Energy · OEEAnalytics · LineOeeBoard · Dashboard · FactoryMap ทบทวน · GroupOverview |
+| 22 | โหลดล้ม ≠ 0 | MorningMeeting · FactoryMap ทบทวน · GroupOverview · TvBoard (แถบแดง + ลองใหม่ 30 วิ) · Dashboard (ซ่อน OEE สด) · OEEAnalytics วันนี้ |
+| 23 | Dashboard | live OEE ใช้ `pairMap` ของรอบโหลดนั้น (เดิม state เก่า ⇒ %P คู่ RH/LH 2 เท่า) |
+| 24 | ทะเบียน CT/พัก | `utils/oeeMasters.js` แบ่งหน้าครบ + โยนเมื่อล้ม (`:v2`) · LineOeeBoard ไลน์เคยผลิตแบ่งหน้าครบ · ด่าน `master-cache-swallow` จับ 2 บรรทัด |
+| 25 | CapacityBoard / QaFmeBoard | `oee_targets` อ่านจาก Main + เตือนเมื่อล้ม · realtime `qa_fme_obligations` แยก board `client: supabase` |
+| 26 | chartsweep/stdsweep | ป้ายหน่วยแกน `axisUnitLabel`/`axisUnitTop` + Pareto `shortTick` (Obeya 0 ปัญหา) · StockReceiptQueue แถบกรองชิดแท็บ · MaterialRequests ตัด padding บน (QualityControl 20→16px) |
+| UX | จอเดโม | TV มีชื่อไลน์ในกรอบ (`utils/regionGeom.js`) · GroupOverview พับ mockup/คำอธิบาย + ตัดข้อความนักพัฒนา + "ยังไม่มีข้อมูล" แทน 0/0 (2.61→1.98 จอ) · SQDCM จอ < 800px ไม่บีบ · Obeya หัวเพจเดียว · งานค้างไม่มี "?"/หัวข้อว่าง · ตัด `scoreDef`/`parts_master`/`safety_events` ออกจากข้อความบนจอ |
+
+**✅ แก้แล้ว batch 3 — planning/store (branch `fix/qc-planning-store`)**
+| # | ที่ | สาระ |
+|---|---|---|
+| 1 | `PlannerSales.jsx` ลบไฟล์ | 🔴 detach ใบประวัติด้วยตัวกรอง (ไม่ใช่ `.in()` ยาว) · นับ exact ก่อน/หลัง · ไม่เท่ากัน = ยกเลิกการลบ (FK cascade จริง) |
+| 2 | `PlannerSales.jsx` EDI | insert ก่อน → ลบฉบับเดิมตาม id (ทีละ 200) · ล้ม = ถอย batch ใหม่ · ใบวันเก่า/ที่ทำแล้วอ่านแบ่งหน้า+เช็ค error · ship_to upsert/จับคู่ MAT เช็คผล |
+| 3 | `PlannedLotQueue.jsx` | 🔴 โหลดใบผลิตทุกกะของไลน์+วันงานเอง (`production_sessions!inner`) · stale guard · โหลดไม่ได้ = แถบเตือน |
+| 4 | `ProdLotPlanner.jsx` | หลัง insert โหลดใหม่เสมอ (กันล็อตซ้ำ) · UPDATE 0 แถว = ล้ม · โหลดใบผลิตล้ม = แถบเตือน |
+| 5 | `HeijunkaKanban.jsx` | ตัดสต็อกล้ม → ลองใหม่ก่อน "ถึงไลน์" (กันตัดซ้ำจาก note) · รับไม่ครบ ledger ล้ม = คืน claim · demand แบ่งหน้า+error · carry_over/imported = `qty_actual` |
+| 6 | ช่วงพักบอร์ดไทม์ไลน์ | `halfDayBreakIntervals()` แทนสูตรก๊อป 4 จุด (Heijunka ×2 · Dashboard · Management) + ด่าน + เทส |
+| 7 | `deliveryRounds.js` `timeStrToMs` | 🔴 ทุกเวลาเลื่อน +8 ชม. (ฐาน 08:00 + ชั่วโมงเต็ม) → ฐานเที่ยงคืน · เทสใหม่ |
+| 8 | `CustomerDemand.jsx` advance | ตัดสต็อก FG ล้ม = คืนสถานะใบ + ไม่ยิงแจ้ง "ส่งแล้ว" |
+| 9 | `RackCenter.jsx` | เลื่อนขั้น/ยกเลิก/จ่าย packaging = CAS + นับแถว |
+| 10 | `FlowTower.jsx` | "ผลิตวันนี้" = `orderDonePcs` + fetchByIds + ล้ม = "—" · poll ผ่าน `makeIdleGate` (floor `RATE.SLOW`) |
+| 11 | `planLots.js` `orderDonePcs` | ใช้ `orderInQty` (ห้ามถอยไปเป้า) · cancelled = 0 · null-safe · เทส |
+| 12 | `ProductHistory` / `OrderTrace` | stale guard · ค้นล้มขึ้นแถบแดง · `orIlike()` escape `,()` (`pgrstFilter.js` + เทส) · ช่องค้น+ปุ่มกลุ่มเดียว placeholder สั้น |
+| 13 | `MonitoringUpload.jsx` | ส่วนต่างสต็อกคิดใหม่จากยอดสดตอนยืนยัน (`stockAdjustPlan` + เทส) · ข้อความล้มบอกตรงว่าข้อมูลบางขั้นถูกล้าง |
+| 14 | `Transport.jsx` saveStops / `PullSignalUpload.jsx` | เส้นทาง insert-first (seq สลับช่วง) · ตัวนับ batch e-SMART นับแถว |
+| 15 | `FlowTower.jsx` · `HeijunkaKanban.jsx` ใบเบิก/ใบ child | ค้าง = `pending` (ตารางไม่มี `done` — เดิมนับ cancelled เป็นค้าง 1,472 แทน 482) · คิวสโตร์โหลดใบค้างทุกหน้า + ประวัติล่าสุด (เดิม 172 ใบรอจ่ายหาย · ใบยกเลิกขึ้นปุ่มจ่าย) · ด่าน `raw-withdrawal-status-set` |
+
 **⏳ ค้าง — โค้ดล้วน (ทำได้เลย · เรียงตามผลต่อ roadshow)**
-- จอเดโม: Obeya/FactoryMap/GroupOverview/DeptDashboard นับเป้าซ้ำใบ `imported`/`carry_over` (ยอดผลิต vs แผน 71% แทน 100%) · Obeya C/Pareto เขียว "ไม่มีความสูญเสีย" ตอนไม่มีข้อมูล · C เดือน vs ปีคนละสูตร · สีเกณฑ์ OEE hardcode (map 80/65 vs Obeya target) · wLoad 4 จอไม่ผ่าน `dtMinOutsideBreaks` · stale-response (SQDCM/WorkforceInsight/MorningMeeting/Energy/OEEAnalytics/LineOeeBoard/ProductHistory) · TvBoard ค้าง "กำลังโหลด" ถ้าโหลดไลน์ล้ม · Dashboard live OEE ส่ง `pairMap` state เก่า (คู่ RH/LH %P นับ 2 เท่า) · LineOeeBoard dropdown ไลน์ตัด 1000 แถว + cache error 4 ชม. · `CapacityBoard` อ่าน `oee_targets` ผิด project · `QaFmeBoard` realtime ผิด project
-- ข้อมูล/สต็อก: PlannerSales ลบ batch ⇒ cascade ลบประวัติส่ง (`.in()` ยาว + 1000 แถว) · EDI import ลบก่อน insert ไม่มี rollback · ProdLotPlanner save ซ้ำ = ล็อตซ้ำ · PlannedLotQueue เทียบแผนทั้งวันกับใบกะเดียว · HeijunkaKanban deduct/receive ไม่คืนสถานะ · CustomerDemand advance ไม่คืนสถานะ · RackCenter ไม่มี CAS · break intervals ก๊อป 4 จุด · write ไม่เช็ค error ~8 จุด
+- จอเดโม: Obeya SQDCM โหลดเป้า OEE ล้มแล้วถอยไปเป้า default เงียบ · MtnAnalysis แท็บ QC7 พาเรโต ป้าย "100.0%" ล้นกรอบ 11px (chartsweep)
+- ข้อมูล/สต็อก: write ไม่เช็ค error ~8 จุด (ลำดับรอง)
 **⛔ ค้าง — ต้องให้ user ตัดสิน (RLS/edge/security — ห้าม auto-merge)**
 - 🔴 `telegram_channels` / `notification_rules` เขียนได้ทุก authenticated (เปลี่ยน chat_id รับแจ้งเตือนทั้งโรงงานได้)
 - 🔴 edge แจ้งเตือน (`send-notification`/`-event-`/`-mtn-`/`-store-`/`-cqi15-`/`send-push`) `verify_jwt=false` ไม่เช็คผู้เรียก ⇒ ยิงแจ้งเตือนปลอม/ push ใครก็ได้จากภายนอก · `daily-4m-summary` รับ Bearer อะไรก็ได้

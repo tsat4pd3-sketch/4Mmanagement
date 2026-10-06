@@ -131,3 +131,18 @@ test('pickerText: picker ที่เก็บแค่ FK id ต้องไม
   assert.equal(pickerText({ selLabel: null, value: 'MC-99', storesText: true }), 'MC-99');
   assert.equal(pickerText({ selLabel: null, value: '', storesText: true }), '');
 });
+test('personOptions: teams = คนในทีมช่างของใบขึ้นบนสุด เหนือคนที่แค่มี role หัวหน้า (คอมเมนต์ทีม DIE 06/10)', () => {
+  const opts = personOptions({
+    source: 'both',
+    profiles: [{ id: 'p1', full_name: 'กรกฎ หัวหน้าทั่วไป', role: 'supervisor' }],
+    employees: [
+      { id: 'e1', name: 'นายศรัณย์ธรณ์ ถาวรศิลป์ ', position: 'section_head', mtn_team: 'die_maintenance' },
+      { id: 'e2', name: 'ขวัญพร คนอื่น', position: 'engineer' },
+    ],
+    roles: ['mtn', 'supervisor', 'manager'], teams: ['die_maintenance'],
+  });
+  assert.equal(opts[0].label.trim(), 'นายศรัณย์ธรณ์ ถาวรศิลป์');
+  assert.equal(opts[0].group, '👷 ทีมช่างของใบนี้');
+  assert.equal(opts[1].group, '🎯 ที่เกี่ยวข้อง');
+  assert.equal(opts[2].group, '🪪 พนักงาน');
+});

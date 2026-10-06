@@ -580,3 +580,14 @@ median ของจริงรวมความสูญเสียไปแ�
 - เส้นเพดานวาดจากเดือนแรก (เหมือนสไลด์) — เดือนที่วันทำงานต่างกันมากจะเห็นเส้นไม่ตรงเป๊ะกับเดือนนั้น
 
 > 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎข้าม session (Layer 1/2 · ห้าม session_id เป็น null · ยกเลิก = cancelled · canSeeded · ของที่ถอดแล้วห้ามรื้อ) — รายละเอียดที่เหลืออยู่ไฟล์นี้ครบ ไม่มีกฎไหนถูกตัดหาย
+
+---
+
+## 🔴 QC audit 05/10 — ยอดจริงเทียบแผน (branch `fix/qc-planning-store`)
+- **`PlannedLotQueue` โหลดใบผลิตของ "ทุกกะในวันงานของไลน์" เอง** (`prod_orders` + `production_sessions!inner` กรอง line+work_date)
+  — เดิมรับ `orders` ของกะที่เปิดอยู่กะเดียว ⇒ เปิดกะดึกแล้วล็อตที่กะเช้าทำครบขึ้น "ยังไม่เริ่ม"
+  · โหลดไม่ได้ = ถอยใช้ใบกะนี้ + **แถบเตือนบนจอ** · มี stale guard (`alive()`) · deps เป็น primitive (`ordersSig`)
+- **`ProdLotPlanner`** — หลังขั้น insert ล็อตใหม่สำเร็จ **โหลดจากฐานใหม่เสมอ** แม้ขั้นอัพเดทล้ม (ไม่งั้นล็อตใหม่ยังไม่มี id กดซ้ำ = ล็อตซ้ำ)
+  · UPDATE 0 แถว = ล้ม (นับแถว) · โหลดใบผลิตผ่าน `fetchByIds` · ล้ม/ไม่ครบ = แถบเตือน "ไม่ใช่ยังไม่เริ่ม"
+- **`orderDonePcs()` (planLots.js)** = ยอดที่ทำได้ต่อใบ **ตัวเดียวของระบบ** — `confirmed` ใช้ `orderInQty` (qty_ok → qty_actual · ห้ามถอยไป `qty` = เป้า)
+  · `cancelled` = 0 · ใบอื่น (open/carry_over/imported) = `qty_actual` · null-safe · ใช้ที่ matchPlanToActual / PlannedLotQueue / FlowTower
