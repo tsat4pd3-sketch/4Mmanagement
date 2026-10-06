@@ -198,7 +198,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
             position: 'absolute', left: `${px(hover.lon) / 1000 * 100}%`, top: `${py(hover.lat) / H * 100}%`,
             transform: 'translate(-50%, calc(-100% - 26px))', pointerEvents: 'none', zIndex: 5,
             background: 'var(--card)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 8,
-            padding: '8px 11px', minWidth: 190, boxShadow: '0 8px 22px rgba(0,0,0,0.45)',
+            padding: '8px 11px', minWidth: 190, boxShadow: 'var(--shadow-float)',
           }}>
             <div style={{ fontSize: 14, fontWeight: 800 }}>{hover.flag} {hover.code}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5 }}>{hover.name}</div>

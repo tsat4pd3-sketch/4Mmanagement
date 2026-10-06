@@ -444,6 +444,13 @@ export default function OEEAnalytics() {
 
   const tdScopeLabel = tdLine || tdDept || (tdUnit ? `แผนก ${tdUnit}` : '') || tdSection || 'ทุกไลน์';
 
+  /* 🔴 ไลน์ที่ส่งให้แท็บ "เจาะลึก" ต้องเป็น array **ตัวเดิม** ตราบใดที่ค่ายังไม่เปลี่ยน
+     เดิมเขียน `linesFull.filter(...)` ตรงใน JSX ⇒ array ใหม่ทุก render ⇒ `run` ในแผงนั้น
+     เปลี่ยน identity ทุก render ⇒ ยิงคิวรีซ้ำไม่หยุด (กฎเหล็กการเขียน DB ข้อ 9 · QC 06/10) */
+  const insightLines = useMemo(
+    () => (tdSection ? linesFull.filter(l => l.section === tdSection) : linesFull),
+    [tdSection, linesFull]);
+
   // ── Target ตาม scope ที่เลือก ──
   // กรุ๊ปของไลน์ = parent_line_name (ไลน์เดี่ยวไม่มีแม่ = ตัวมันเอง)
   const groupOfLine = useCallback((lineName) => {
@@ -1891,7 +1898,7 @@ export default function OEEAnalytics() {
       ) : viewTab === 'insight' ? (
         /* ขอบเขตที่เจาะมา (section จากแท็บวันนี้ = ค่าที่รับจาก URL แล้วตรวจสิทธิ์แล้ว) ต้องตามมาถึงแท็บนี้ด้วย
            ไม่งั้นเจาะ "ดูของเสียละเอียด" จาก OBEYA ที่กรอง PD4 แล้วได้พาเรโตทั้งโรงงาน */
-        <OeeInsightPanel lines={tdSection ? linesFull.filter(l => l.section === tdSection) : linesFull} ccRates={ccRates}
+        <OeeInsightPanel lines={insightLines} ccRates={ccRates}
           sectionHint={tdSection} initLine={tdLine || tdDept} />
       ) : (
       <>

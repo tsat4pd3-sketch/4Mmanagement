@@ -186,3 +186,58 @@
 - **รอบ 3:** เกต HEIC ของ `SignatureModal` · array ใน deps (`OeeInsightPanel`) · เลขฟอร์ม hardcode
   ใน `kpiExportExcel` · MAT มาก่อนชื่อพาร์ท 9 จุด · picker ลูกค้าใน `/customer-demand` ·
   pointer events ของ `/line-setup`
+
+---
+
+## ✅ ลงมือแก้ครบ 3 รอบ (2026-10-06 · คำสั่ง user "ทำหมด")
+
+ต่อจากรายการค้างในหัวข้อ audit 06/10 ข้างบน — **ทำครบทุกข้อ** ยกเว้นที่ระบุว่าตั้งใจไม่ทำ
+
+### รอบ 1 — บั๊กเงียบที่ไม่มี error ให้เห็น
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| publication ขาด 4 ตาราง | ✅ apply ทั้ง 2 project | DR: `monitor_cells`/`monitor_board_parts`/`monitor_boards` · Main: `daily_production_logs`/`four_m_logs` · ตรวจกลับ **ครบ 18/18 ตารางที่โค้ด subscribe** |
+| ทะเบียน + ด่าน กัน publication ตกหล่นรอบที่ 4 | ✅ | `src/utils/realtimeTables.js` + ด่าน `realtime-table-registered` (ต้นเหตุร่วม 3 รอบ = ลิสต์อยู่ในเอกสารที่เขียนมือ) |
+| ไบต์ NUL ใน `EventLog.jsx:149` | ✅ + ด่าน | สแกนทั้งรีโปแล้วเหลือ 0 ไฟล์ |
+| `addDays` คืนวันผิด (`MonitorFgSync`) | ✅ | **ทดสอบทั้ง 18 ชุดใต้ 5 timezone → พัง 1 ชุด** · ของกลางใหม่ `addDaysStr()` · 📄 `time-range-filter.md` |
+| `CtReview` `since` คิดจาก UTC | ✅ | → `addDaysStr(getWorkDate(), -DAYS_BACK)` |
+| เอกสารที่เป็นต้นเหตุ (`storage-images.md` ลิสต์มือ) | ✅ | เลิกเก็บลิสต์มือ · ชี้ทะเบียนในโค้ด + คิวรีอ่านสด **ทั้ง 2 project** |
+
+### รอบ 2 — ปิดคลาสบั๊ก + รัด RLS + ขยายด่านที่รั่ว
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| `checkWriteRows()` ของกลาง | ✅ + 2 ด่าน | แปลง 7 จุดที่ต่อ `.select()` ไว้แล้วแต่ส่งเข้า `checkWrite` · 📄 `db-write-rules.md` |
+| RLS 6 ตารางเปิดโล่ง | ✅ apply | `doc_forms`(+2) · `factory_map`(+1) · `oee_targets` → ตรงคีย์ปุ่มบนจอ · 📄 `role-system.md` |
+| `org_assignments` จอ ≠ RLS | ✅ | จอตรงกับ RLS + เขียนบนจอว่าทำไมไม่มีปุ่ม (ไม่เปิด RLS ให้ `manage_own_unit` ลอยๆ) |
+| `positions` role array มือ · `grades` คีย์เกษียณ | ✅ apply | `page:/add-user` · คีย์ใหม่ `grades:manage` seed = ชุดเดิมเป๊ะ |
+| คีย์ที่ไม่มีในทะเบียน (`CapacityBoard`) | ✅ | `production_plan:edit`+`master_data:manage` → `production_plan:write` (เดิม **ทีมวางแผนแก้ไม่ได้เลย**) |
+| ด่าน `no-utc-workdate` รั่ว | ✅ ขยาย | จับ `.toISOString().slice(0,10)` ทุกรูป · เหลือ 0 จุด **ไม่ยกเว้นไฟล์ไหน** |
+| ด่าน `card-shadow-via-token` รั่ว | ✅ ขยาย + แก้ 32 จุด | เดิมจับแค่ offset 0-3px ⇒ modal/popover รั่วหมด · เหลือ 12 จุดที่ยกเว้นโดยเจตนา (เงาเรืองแสงสี · เงาแนวนอน sticky · เงาผสม inset) |
+| ด่าน `picker-label-stuffed-with-codes` รั่ว | ✅ ขยาย + แก้ `/line-stock` | รูป "ข้อความมาก่อน รหัสต่อท้าย" = กลไกเสียหายตัวเดียวกัน |
+| ด่าน `<Cell>`→`tooltipProps` | ✅ ด่านใหม่ | **วัดแล้ว 0 จุด** — ข้อนี้ audit ประเมินเกินจริง ด่านที่ใส่ไว้คือล็อกสถานะที่ดี |
+
+### รอบ 3
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| HEIC + objectURL leak (`SignatureModal`) | ✅ + ด่าน | พบว่าเป็นคลาสใหญ่: **12 ช่องรับรูปใน 9 ไฟล์** ⇒ ของกลาง `acceptImageFile()` · 📄 `storage-images.md` |
+| array ใน deps (`OeeInsightPanel` ← `OEEAnalytics`) | ✅ | แก้ 2 ชั้น: `useMemo` ที่หน้าแม่ + deps ใช้คีย์ string ในแผง · **ไม่ทำด่าน** (เหตุผลใน `build-gates.md`) |
+| เลขฟอร์ม hardcode (`kpiExportExcel`) | ✅ apply | 3 ชีท = 3 doc_key · + ตัวล้างชื่อชีท (ทะเบียนเป็น input จากคน) · 📄 `doc-forms.md` |
+| ลากหมุดด้วยเมาส์อย่างเดียว (`LineSetup`) | ✅ + ด่าน | pointer events + `pointercancel` + `touchAction` · เดิม **แก้ผังบนจอทัชไม่ได้ทั้งหน้า** |
+| CLAUDE.md แตะโซนเตือน | ✅ | เพิ่มกฎใหม่ 3 ข้อ แล้วรีดสุทธิ **112.7 → 109.5 KB** ในคอมมิทเดียวกัน (ตามกฎของตัวเอง) |
+
+### ที่เหลือ — ตั้งใจไม่ทำในรอบนี้ (มีเหตุผลกำกับ ไม่ใช่ลืม)
+
+- **54 จุดที่ `checkWrite` ห่อ UPDATE/DELETE โดยไม่นับแถว** — 0 แถวเป็นเรื่องปกติในหลายจุด
+  (touch best-effort · ผูกของที่อาจหายแล้ว) ⇒ แปลงเหมา = toast แดงหลอกหน้างาน · **ต้องอ่านบริบทรายจุด**
+  · 42 จุดในนั้นเป็นรูป `.eq('id', …)` = กลุ่มที่ควรแปลงก่อนเมื่อมีคนไล่ต่อ
+- **14 ชุด `addDays` ที่เหลือ** — วัดแล้วถูกต้องทั้งหมด · การยุบเหลือชุดเดียว = งานกวาด ไม่ใช่แก้บั๊ก
+- **`manage_master_data` (คีย์เกษียณ) ยังมีแถวอยู่** — ยังไม่ได้ไล่ครบว่ามี policy อื่นอ่านอยู่หรือไม่ · ลบ = เสี่ยง
+- **`shiftFrameOf()` vs `computeLiveOee()` ไม่ตรงกันบนกะดึกที่เริ่ม 00:00–07:59** — เป็น product decision
+  (ตกลงนิยาม "กรอบกะ" ก่อน) ไม่ใช่บั๊กที่แก้เองได้ · **ต้องถาม user**
+- **`page:/flow-tower` ไม่เคย seed** — หน้านี้เป็นจอผู้บริหาร/เดโม · การเปิดให้ใครเห็นเป็น decision ของ user
+- **3 กราฟรายวันที่ข้ามวันไม่มีข้อมูล** · **select → picker กลาง (VSM/PEDocs/ProductMaster)** ·
+  **`SearchInput` 11 จุด** · **`StoreTimeChart` แกนเวลา 2 ชุด** · **`ShiftOrganize` canEdit/canDel**
+  — งาน UI standardization ที่ไม่มีบั๊กทำงาน ค้างไว้เป็นรอบถัดไป (ไม่กระทบตัวเลข/สิทธิ์/ข้อมูล)

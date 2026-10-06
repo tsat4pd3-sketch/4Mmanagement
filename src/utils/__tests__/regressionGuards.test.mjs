@@ -847,18 +847,27 @@ const RULES = [
   },
   {
     id: 'card-shadow-via-token',
-    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
-    /* จับเงาแบบ "การ์ด/ชิป" ที่เขียนค่าดิบ (offset แนวตั้ง 0-3px และเป็นเงาเดี่ยวทั้งค่า)
-       — เงาของ modal (`0 20px 60px`) และเงาผสม inset ไม่เข้าข่าย ปล่อยไว้ตามเดิม */
-    re: /boxShadow:\s*['"`]0 [0-3]px \d+px rgba\([^)]*\)['"`]/g,
+    scan: ['src', 'src/pages', 'src/components'], ext: ['.jsx'],
+    /* ⚠️ เดิมจับแค่ offset แนวตั้ง **0-3px** ⇒ เงา modal/แผงลอย (`0 8px 28px`, `0 20px 60px`)
+       รั่วทั้งหมด — วัด 06/10 เจอ 32 จุดที่ด่านมองไม่เห็น (แผง dropdown · popover · modal
+       ของ 25 ไฟล์) ⇒ ธีมสว่างได้เงาเข้มเกินจริง และธีมมืดมีเงาโผล่กลับมาทีละจุด
+       ⇒ ขยายเป็น "เงาเดี่ยว offset แนวตั้ง สี **ดำ**" ทุกขนาด
+
+       สิ่งที่ **ไม่เข้าข่ายโดยเจตนา** (ลองขยายคลุมแล้วได้ false positive เพียบ = คนจะอยากปิดด่าน):
+       · เงาเรืองแสงสี — `0 0 4px 1px rgba(61,214,92,.6)` ไฟ LED เขียว · `rgba(239,68,68,…)` ไซเรนแดง
+         (offset 0 ทั้งคู่ + สีไม่ใช่ดำ) → เป็น "สัญญาณ" ไม่ใช่ "ของลอย" ธีมไม่ควรตัดสินให้
+       · เงาแนวนอน — `2px 0 6px` เส้นแบ่งคอลัมน์ sticky ใน /operator (token ไม่มีตัวแนวนอน)
+       · เงาผสม/มี inset — `0 3px 14px rgba(…), inset 0 0 0 1px …` (ป้ายบนผังโรงงาน) */
+    re: /boxShadow:\s*(['"`])0 \d+px \d+px rgba\(0,\s*0,\s*0[^)]*\)\1/g,
     why: 'เงาใต้การ์ดในธีมมืดถูกถอดออกแล้ว (24/09 · คำสั่ง user) เพราะบนพื้นเกือบดำมันมองแทบไม่เห็น '
        + 'เหลือแค่ขอบมัวๆ = ของตกแต่งล้วน · แต่**ธีมสว่างยังต้องมีเงา** (ขอบจาง เงาคือตัวแยกการ์ด '
        + 'ออกจากพื้นขาว) ⇒ ค่าเงาต้องมาจาก token ที่ธีมตัดสินให้ · เขียน rgba ดิบไว้ในหน้า = '
        + 'เงานั้นไม่ฟังธีม แล้วธีมมืดจะมีเงาโผล่กลับมาทีละจุดโดยไม่มีใครรู้ '
        + '(วัดจริงก่อนแก้ด้วย audit/uxsweep.mjs: 6 หน้ามีรวมกัน ~60 จุด)',
     fix: "การ์ดแบนที่ไม่ได้ลอย → boxShadow: 'var(--shadow-sm)' (ธีมมืด = none) · "
-       + "ของที่ลอยทับเนื้อหาจริง (ป้ายบนรูปผัง · tooltip กราฟ · badge ที่ยื่นออกนอกการ์ด · ปุ่ม toggle) "
-       + "→ 'var(--shadow-float)' (มีเงาทั้ง 2 ธีม) · modal/overlay → 'var(--shadow-md|lg)'",
+       + "ของที่ลอยทับเนื้อหาจริง (dropdown · popover · tooltip กราฟ · ป้ายบนรูปผัง · badge ที่ยื่นออกนอกการ์ด) "
+       + "→ 'var(--shadow-float)' (มีเงาทั้ง 2 ธีม) · modal/overlay เต็มจอ → 'var(--shadow-lg)' "
+       + "(เกณฑ์ที่ใช้ตอนกวาด 06/10: offset ≥ 8px และ blur ≥ 34px = modal · ที่เหลือ = แผงลอย)",
     allow: {},
   },
   {
@@ -1141,6 +1150,22 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'drag-start-via-pointer-event',
+    scan: ['src'], ext: ['.jsx'],
+    /* จับเฉพาะ "เริ่มลาก" ที่ผูกกับ mouse event — ตัวที่ไม่ใช่การลาก (เช่น onMouseDown ที่
+       preventDefault เพื่อเลือกก่อน blur ใน SearchSelect · แคนวาสวาดลายเซ็นที่มี onTouch* ครบแล้ว)
+       ไม่เข้าข่าย เพราะไม่ได้เรียก startDrag */
+    re: /onMouseDown=\{[^}]*\bstartDrag\b/g,
+    why: 'จอหน้างาน/แท็บเล็ตที่หัวหน้าไลน์ใช้เป็น **จอทัช** — นิ้วไม่ยิง mousedown/mousemove '
+       + '⇒ ลากหมุดย้ายตำแหน่งไม่ได้เลย และ "แตะหมุด" ก็ไม่เข้า onUp ⇒ panel แก้ไขไม่เปิดด้วย '
+       + '(QC 06/10: /line-setup แก้ผังบนจอทัชไม่ได้ทั้งหน้า ทั้งที่ MachineFloorMap ทำถูกอยู่แล้ว)',
+    fix: 'onPointerDown + window listener `pointermove`/`pointerup`/**`pointercancel`** '
+       + '(cancel = ระบบยกเลิก gesture เช่นจอหมุน ⇒ ห้าม commit ตำแหน่ง) '
+       + "· หมุดต้องมี `touchAction: 'none'` ตอนโหมดแก้ไข ไม่งั้นจอ scroll แทนการลาก "
+       + '· ต้นแบบ: src/components/MachineFloorMap.jsx',
+    allow: {},
+  },
+  {
     id: 'picker-arms-first-row-on-open',
     scan: ['src/components'], ext: ['.jsx'],
     /* จับการตั้ง active = 0 ตอนลิสต์เปิด (ไม่ผ่าน initialActiveRow) ใน picker */
@@ -1209,7 +1234,12 @@ const RULES = [
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการยัด "หลายรหัส + ชื่อ" ลง `label:` ของ option ในนิพจน์เดียว
        (label = บรรทัดเดียว ถูก ellipsis ตัดท้าย ⇒ ตัวท้ายหายทุกแถว) */
-    re: /\blabel:\s*`[^`]*\b(p_no|part_no|partNo)\b[^`]*\bmat_no\b|\blabel:\s*`[^`]*\bmat_no\b[^`]*\b(p_no|part_no|partNo)\b/g,
+    /* ⚠️ ขยาย 06/10 — เดิมจับเฉพาะ "2 รหัสปนกัน" (p_no + mat_no) ⇒ พลาดรูปที่พบจริงบ่อยกว่า:
+       **ข้อความอิสระมาก่อน แล้วรหัสต่อท้าย** (`${p.name} · MAT ${p.mat_no}` ที่ /line-stock)
+       ellipsis กินท้ายบรรทัด ⇒ รหัสที่อยู่ท้ายสุดหายทุกแถว = กลไกเสียหายตัวเดียวกันเป๊ะ
+       · รูป "รหัสมาก่อน ข้อความต่อท้าย" (`${p.mat_no} · ${p.name}`) **ไม่เข้าข่าย** —
+         ellipsis กินชื่อ ซึ่งเดาต่อได้ ไม่ใช่รหัสที่อ่านผิดตัวได้ */
+    re: /\blabel:\s*`[^`]*\b(p_no|part_no|partNo)\b[^`]*\bmat_no\b|\blabel:\s*`[^`]*\bmat_no\b[^`]*\b(p_no|part_no|partNo)\b|\blabel:\s*`[^`]*\b(name|part_name)\b[^`]*(\bmat_no\b|MAT )/g,
     why: 'feedback หน้างาน 30/09 ("ตอนเปิด Tag ตรงนี้ขอเห็นเลข Mat ด้วยครับ") — ลิสต์เลือก MAT.NO '
        + 'ยัด Part No. + ชื่อสินค้า + MAT ลง `label` บรรทัดเดียว แล้ว `textOverflow: ellipsis` '
        + 'กินท้ายบรรทัด ⇒ **เลข MAT หายทุกแถว** เพราะอยู่ท้ายสุด '
@@ -2445,4 +2475,122 @@ test('🛡️ realtime-table-registered — ตารางที่ subscribe �
     + '   แก้ยังไง: 1) เติมชื่อตาราง + project ลง src/utils/realtimeTables.js\n'
     + '             2) เช็คว่าอยู่ใน publication แล้วจริง (SQL อยู่ในหัวไฟล์นั้น) — ไม่อยู่ให้เขียน migration\n\n'
     + [...missing].map(([t, at]) => `   • ${t}  (${at})`).join('\n') + '\n');
+});
+
+/* ── checkWrite vs checkWriteRows ใช้ให้ถูกตัว (QC audit 06/10) ────────────────────
+   สองด่านคู่กัน เพราะเป็นความเข้าใจผิดคนละทาง:
+   (ก) ต่อ `.select()` ไว้แล้ว **แต่ส่งเข้า `checkWrite`** ซึ่งไม่เคยอ่าน `data`
+       ⇒ `.select('id')` นั้นเสียเปล่า และ **ผู้เขียนคิดว่าตัวเองกันบั๊กนี้แล้ว** (เจอ 7 จุด 06/10)
+       อันตรายกว่าไม่เช็คเลย เพราะไม่มีใครกลับมาดูอีก
+   (ข) เรียก `checkWriteRows` **โดยไม่ต่อ `.select()`** ⇒ supabase คืน `data: null` นับแถวไม่ได้
+       helper จะถอยไปเช็คแค่ error (ไม่ทำปุ่มพัง) แต่เจตนา "นับแถว" หายไปเงียบๆ
+   เหตุผลเต็ม → src/utils/dbWrite.js */
+function checkWriteCalls() {
+  const out = [];                                   // { file, line, fn, arg }
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/dbWrite.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const fn of ['checkWriteRows(', 'checkWrite(']) {
+      let i = 0;
+      while ((i = code.indexOf(fn, i)) >= 0) {
+        // `checkWrite(` เป็นสตริงย่อยของ `checkWriteRows(` ไม่ได้ (มี Rows คั่น) — ไม่ต้องกันซ้ำ
+        let j = i + fn.length, depth = 1;
+        while (j < code.length && depth > 0) { const c = code[j]; if (c === '(') depth++; else if (c === ')') depth--; j++; }
+        out.push({ file: rel, line: code.slice(0, i).split('\n').length, fn: fn.slice(0, -1), arg: code.slice(i, j) });
+        i = j;
+      }
+    }
+  }
+  return out;
+}
+
+test('🛡️ checkwrite-rows-not-plain — ต่อ .select() แล้วต้องใช้ checkWriteRows', () => {
+  const bad = checkWriteCalls()
+    .filter(c => c.fn === 'checkWrite' && /\.(update|delete|upsert)\(/.test(c.arg) && /\.select\(/.test(c.arg))
+    .map(c => `${c.file}:${c.line}`);
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดต่อ .select() ไว้แต่ส่งเข้า checkWrite\n`
+    + '   ทำไมผิด: checkWrite อ่านแค่ `error` ไม่เคยอ่าน `data` ⇒ `.select()` ที่ต่อไว้เสียเปล่า\n'
+    + '             RLS ที่ปฏิเสธ UPDATE/DELETE คืน "0 แถว ไม่มี error" ⇒ toast เขียวทั้งที่ไม่ได้บันทึก\n'
+    + '   แก้ยังไง: เปลี่ยนเป็น checkWriteRows(...) (import จาก utils/dbWrite)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+test('🛡️ checkwriterows-needs-select — checkWriteRows ต้องต่อ .select()', () => {
+  const bad = checkWriteCalls()
+    /* ⚠️ ตรวจได้เฉพาะตอนที่คิวรีเขียนเป็น chain อยู่ในวงเล็บเดียวกัน (`.from(` อยู่ใน arg)
+       — ที่เก็บผลใส่ตัวแปรก่อนแล้วส่ง `checkWriteRows(res, …)` **มองไม่เห็น** `.select()`
+       จะฟ้องก็เป็น false positive (เจอทันทีที่เขียนด่านนี้: CapacityBoard ต่อ .select('key') ไว้แล้ว)
+       ⇒ ข้ามรูปนั้นไป ดีกว่ามีด่านที่คนอยากปิด (กติกาข้อ 1 ของไฟล์นี้) */
+    .filter(c => c.fn === 'checkWriteRows' && /\.from\(/.test(c.arg)
+      && !/\.select\(/.test(c.arg) && !/\.(single|maybeSingle)\(/.test(c.arg))
+    .map(c => `${c.file}:${c.line}`);
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดเรียก checkWriteRows โดยไม่ต่อ .select()\n`
+    + '   ทำไมผิด: ไม่ต่อ .select() → supabase คืน `data: null` → นับแถวไม่ได้\n'
+    + '             helper จะถอยไปเช็คแค่ error (ปุ่มไม่พัง) แต่เจตนา "นับแถว" หายไปเงียบๆ\n'
+    + '   แก้ยังไง: ต่อ `.select(\'id\')` ท้ายคิวรี · ถ้าไม่ต้องนับแถวจริงให้ใช้ checkWrite ตามเดิม\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── <Tooltip> ของ Recharts ต้องมีธีม (QC audit 06/10) ────────────────────────────
+   Recharts default = พื้นขาว ตัวหนังสือดำ ⇒ บนการ์ดธีมมืดอ่านไม่ออก
+   (เคสจริง 30/09: user ส่งภาพ "พื้นเขียวเข้ม text ดำ" จากบอร์ด KPI — แก้ด้วย fill={CELL_BAR_FILL})
+   ✅ วัด 06/10: **ตอนนี้ 0 จุด** ทุกตัวมี `tooltipProps` / `{...chartTip}` / `contentStyle` /
+      `content={<CustomTip/>}` อยู่แล้ว — ด่านนี้เป็นตัว "ล็อกสถานะที่ดีไว้" ไม่ใช่ตัวแก้บั๊กค้าง
+   ⚠️ ต้องอ่านข้ามบรรทัด (prop อยู่หลายบรรทัด) จึงเป็นเทสแยก ไม่ใช่กฎใน RULES */
+test('🛡️ tooltip-needs-theme — <Tooltip> ต้องมี tooltipProps/contentStyle/content', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const rel = relative(ROOT, file);
+    let i = 0;
+    while ((i = code.indexOf('<Tooltip', i)) >= 0) {
+      let j = i, depth = 0, end = -1;
+      while (j < code.length) {                    // ปลายแท็ก = '>' ที่อยู่นอก {}
+        const c = code[j];
+        if (c === '{') depth++;
+        else if (c === '}') depth--;
+        else if (depth === 0 && c === '>') { end = j; break; }
+        j++;
+      }
+      if (end < 0) break;
+      const tag = code.slice(i, end + 1);
+      if (!/tooltipProps|chartTip|contentStyle|content=/.test(tag))
+        bad.push(`${rel}:${code.slice(0, i).split('\n').length}`);
+      i = end + 1;
+    }
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} <Tooltip> ไม่มีธีม\n`
+    + '   ทำไมผิด: default ของ Recharts = พื้นขาว ตัวหนังสือดำ → บนการ์ดธีมมืดอ่านไม่ออก\n'
+    + '   แก้ยังไง: <Tooltip {...tooltipProps(fs)}> (จาก src/utils/chartAxis.js)\n'
+    + '             หรือ content={<CustomTip/>} ที่วาดกล่องเองตามธีม\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── ช่องรับรูปทุกช่องต้องผ่าน acceptImageFile (QC audit 06/10) ──────────────────────
+   `docs/modules/storage-images.md` เขียนกฎไว้ว่า "ทุกจุดรับรูปต้องผ่าน toDecodableImage"
+   แต่ **ไม่มีด่าน** ⇒ วัด 06/10: มี 12 ช่อง `accept="image/*"` ใน 9 ไฟล์ที่รับไฟล์ตรงๆ
+   · รูปจาก iPhone (HEIC) ใช้ไม่ได้ — บางจุดพังตอนกดบันทึก บางจุดอัปไฟล์ดิบขึ้นไปเงียบๆ
+   · เลือกไฟล์ที่ไม่ใช่รูป (PDF/Excel) ไม่มีใครเตือน (ขัดคำสั่ง user 11/09 ตรงๆ)
+   ✅ ผ่านได้ 3 ทาง: `acceptImageFile` · `<ImageCropModal>` (มี toDecodableImage ในตัว)
+      · เรียก `toDecodableImage` เองในไฟล์นั้น
+   เหตุผลเต็ม → src/utils/acceptImageFile.js */
+test('🛡️ image-input-via-accept-helper — <input accept="image/*"> ต้องผ่านด่านรับรูป', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const raw = readFileSync(file, 'utf8');
+    if (!/accept=["']image\//.test(raw)) continue;
+    if (/acceptImageFile|ImageCropModal|toDecodableImage/.test(raw)) continue;
+    const rel = relative(ROOT, file);
+    raw.split('\n').forEach((ln, i) => {
+      if (/accept=["']image\//.test(ln)) bad.push(`${rel}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} ช่องรับรูปไม่ผ่านด่าน\n`
+    + '   ทำไมต้องผ่าน: HEIC จาก iPhone เบราว์เซอร์ Android/Chrome decode ไม่ได้\n'
+    + '                 ⇒ พังตอนกดบันทึก หรืออัปไฟล์ดิบขึ้นไปแล้วทุกคนเห็นรูปเสีย\n'
+    + '                 + ไฟล์ที่ไม่ใช่รูปต้องขึ้น toast บอกเหตุผล ห้ามเงียบ (คำสั่ง user 11/09)\n'
+    + '   แก้ยังไง: const f = await acceptImageFile(e.target.files?.[0]); if (!f) return;\n'
+    + '             (src/utils/acceptImageFile.js — ใช้ค่าที่คืนมา ไม่ใช่ไฟล์เดิม)\n\n'
+    + bad.map(b => '   • ' + b).join('\n') + '\n');
 });

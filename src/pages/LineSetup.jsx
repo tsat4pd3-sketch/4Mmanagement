@@ -703,11 +703,19 @@ export default function LineSetup({ embedded = false } = {}) {
       setDragInfo(null);
       setDragPos(null);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    /* 🔴 pointer events ไม่ใช่ mouse events (QC 06/10) — จอหน้างาน/แท็บเล็ตที่หัวหน้าไลน์ใช้
+       เป็นจอทัช: `mousedown/mousemove` **ไม่เกิดจากนิ้ว** ⇒ ลากหมุดย้ายตำแหน่งไม่ได้เลย
+       และ "แตะหมุด" ก็ไม่เข้า onUp ⇒ panel แก้ไขไม่เปิดด้วย = หน้านี้แก้ผังบนจอทัชไม่ได้
+       (ต้นแบบที่ทำถูกอยู่แล้ว: src/components/MachineFloorMap.jsx)
+       · ต้องมี `pointercancel` ด้วย — ระบบยกเลิก gesture (จอหมุน/นิ้วที่ 2) **ห้าม commit ตำแหน่ง** */
+    const onCancel = () => { setDragInfo(null); setDragPos(null); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
   }, [dragInfo]);
 
@@ -1045,7 +1053,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 return (
                   <div
                     key={st.id}
-                    onMouseDown={(e) => startDrag(e, 'station', st.id)}
+                    onPointerDown={(e) => startDrag(e, 'station', st.id)}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: MK, height: MK, borderRadius: '50%',
@@ -1053,6 +1061,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
+                      touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
@@ -1114,7 +1123,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 return (
                   <div
                     key={p.id}
-                    onMouseDown={(e) => startDrag(e, 'machine', p.id)}
+                    onPointerDown={(e) => startDrag(e, 'machine', p.id)}
                     title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — คลิกเพื่อเชื่อมต่อสายงาน` : `${p.machine_no} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง`}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
@@ -1123,6 +1132,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex',
+                      touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}

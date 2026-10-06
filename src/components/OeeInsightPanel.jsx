@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
@@ -45,6 +45,8 @@ const SEV = {
 /* `initLine` = ไลน์/กลุ่มที่เจาะมาจากบอร์ด (30/09) · `sectionHint` = ส่วนงานที่หน้าแม่กรอง `lines` ให้แล้ว —
    ต้องเขียนบนจอ ไม่งั้นคนไม่รู้ว่าพาเรโตนี้เป็นของส่วนงานเดียว (กฎ: ตัวกรองที่มีผลต้องมองเห็น) */
 export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', sectionHint = '' }) {
+  /* คีย์ string ของรายชื่อไลน์ — ใช้แทนตัว array ใน deps ของ `run` (ดูเหตุผลที่ท้าย useCallback) */
+  const lineKey = useMemo(() => (lines || []).map(l => `${l.id}:${l.name}`).join('|'), [lines]);
   // ตัวเลือกไลน์เรียงตามผัง: ไลน์แม่ก่อน แล้วไลน์ลูกตามใต้แม่ (ไม่ใช่เรียงชื่อรวดเดียวจนลูกหลุดจากแม่)
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) — เดิมเป็น dropdown "N วันล่าสุด" อย่างเดียว เลือกช่วงในอดีตไม่ได้
      · แผงนี้ฝังอยู่ในหน้าแม่ ⇒ ใช้ `?from=&to=` ร่วมกับแท็บอื่นของหน้าเดียวกัน (สลับแท็บแล้วช่วงไม่หาย)
@@ -326,7 +328,13 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       setMeta({ error: e.message });
     }
     setLoading(false);
-  }, [tr.from, tr.to, selLine, lines]);
+    /* 🔴 deps ห้ามมี array (กฎเหล็กการเขียน DB ข้อ 9) — หน้าแม่ส่ง `linesFull.filter(...)`
+       = array ตัวใหม่ทุก render ⇒ `run` เปลี่ยน identity ทุก render ⇒ useEffect([run])
+       ยิงคิวรีซ้ำไม่หยุดตราบใดที่หน้ายัง render (build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น)
+       ⇒ ใส่ **คีย์ string** ของรายชื่อไลน์แทน · ตัว `lines` ยังใช้ในบอดี้ได้
+         (คีย์เท่ากัน = เนื้อในเท่ากัน จึงไม่มีปัญหา closure เก่า) */
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tr.from, tr.to, selLine, lineKey]);
 
   useEffect(() => { run(); }, [run]);
 

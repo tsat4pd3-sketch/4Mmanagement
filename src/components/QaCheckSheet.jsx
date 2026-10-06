@@ -28,7 +28,7 @@ import CalloutPin from './CalloutPin';
 import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
@@ -398,7 +398,7 @@ export default function QaCheckSheet({ canRecord }) {
     const next = evalSequence([...pieces, pc], actions);
     const patch = { seq_round: next.round, seq_state: next.state, alarm_count: next.alarmCount };
     if (next.state === 'accepted') Object.assign(patch, { status: 'done', result: 'pass', closed_by: fullName || null, closed_at: now });
-    if (!checkWrite(await supabase.from('qa_inspection_sheets').update(patch).eq('id', sh.id).select('id'), 'สถานะใบตรวจ')) { setBusy(false); loadSheet(); return; }
+    if (!checkWriteRows(await supabase.from('qa_inspection_sheets').update(patch).eq('id', sh.id).select('id'), 'สถานะใบตรวจ')) { setBusy(false); loadSheet(); return; }
     if (next.state === 'accepted') {
       await linkFme(sh.id, 'done_ok');
       toast.success(next.acceptedBy === 'first_pass' ? 'ชิ้นแรกผ่านทุกจุด — ยอมรับ ปิดใบแล้ว ✓' : 'ผ่านติดกัน 2 ชิ้น — ยอมรับ ปิดใบแล้ว ✓');
@@ -448,7 +448,7 @@ export default function QaCheckSheet({ canRecord }) {
       sheet_id: sheet.id, round_no: roundNo, action_text: a.text, action_by: a.by, four_m_log_id, recorded_by: fullName || null,
     });
     if (error) { setBusy(false); toast.error(`บันทึก action ไม่สำเร็จ: ${error.message}`); return; }
-    checkWrite(await supabase.from('qa_inspection_sheets').update({ seq_state: 'inspecting', seq_round: roundNo + 1 }).eq('id', sheet.id).select('id'), 'สถานะใบตรวจ');
+    checkWriteRows(await supabase.from('qa_inspection_sheets').update({ seq_state: 'inspecting', seq_round: roundNo + 1 }).eq('id', sheet.id).select('id'), 'สถานะใบตรวจ');
     notifyEvent({
       event: 'qa_seq_action', type: 'info', ref_table: 'qa_inspection_sheets', ref_id: sheet.id,
       line_name: part?.line_name || null, actor: a.by,

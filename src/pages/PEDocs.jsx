@@ -36,6 +36,7 @@ import PeMasterLibrary from '../components/PeMasterLibrary';
 import PeMasterPullModal from '../components/PeMasterPullModal';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { compareToMaster, CMP_META, improvementProposals, newItemProposals, suggestMaster, setMasterSummary } from '../utils/peMaster';
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -731,7 +732,7 @@ export default function PEDocs() {
                   <img src={setImgPreview || setModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
-                <input type="file" accept="image/*" onChange={e => { setSetImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />
+                <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setSetImgFile(f); }} style={{ fontSize: 11, width: 'auto' }} />
               </div>
             </div>
           </div>
@@ -830,7 +831,7 @@ export default function PEDocs() {
                   <img src={procImgPreview || procModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
-                <input type="file" accept="image/*" onChange={e => { setProcImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />
+                <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setProcImgFile(f); }} style={{ fontSize: 11, width: 'auto' }} />
               </div>
             </div>
           </div>

@@ -36,7 +36,7 @@ import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { divisionsSync, loadDivisions } from '../utils/orgDivisions';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import { uploadOpts } from '../utils/storageUpload';
 import TimeRangeBar from '../components/TimeRangeBar';
@@ -45,6 +45,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 let tsLogoDataUrlPromise = null;
 function getTsLogoDataUrl() {
@@ -1843,14 +1844,15 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
-                onChange={e => {
+                onChange={async e => {
                   const f = e.target.files?.[0];
                   e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง (หลังแนบล้มแล้วลองรูปเดิม)
-                  if (!f) return;
-                  setQaImageFile(f);
+                  const img = await acceptImageFile(f);   // ด่านรับรูปจุดเดียว (HEIC → JPEG · ไม่ใช่รูป = toast)
+                  if (!img) return;
+                  setQaImageFile(img);
                   const reader = new FileReader();
                   reader.onload = ev => setQaImagePreview(ev.target.result);
-                  reader.readAsDataURL(f);
+                  reader.readAsDataURL(img);
                 }} />
               {qaImagePreview
                 ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
@@ -2180,7 +2182,7 @@ function DocumentControlPanel() {
 
   const removeRevision = async (r) => {
     if (!window.confirm(`ลบ Rev "${r.rev}"?`)) return;
-    checkWrite(await supabase.from('doc_form_revisions').delete().eq('id', r.id), 'ลบ revision');
+    checkWriteRows(await supabase.from('doc_form_revisions').delete().eq('id', r.id).select('id'), 'ลบ revision');
     load();
   };
 
@@ -3072,9 +3074,10 @@ function MultiSkillFormTab() {
                       <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
                         📎 อัปโหลดลายเซ็น
                       </div>
-                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
-                        const file = e.target.files[0];
+                      <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
+                        const picked = e.target.files?.[0];
                         e.target.value = '';   // เลือกไฟล์เดิมซ้ำต้องยิง change อีกครั้ง
+                        const file = await acceptImageFile(picked);   // ด่านรับรูปจุดเดียว (HEIC → JPEG)
                         if (!file) return;
                         // revoke ของเดิมก่อนสร้างใหม่ — blob URL ที่ไม่ revoke ตรึงไฟล์ในหน่วยความจำจนรีเฟรช
                         if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig);

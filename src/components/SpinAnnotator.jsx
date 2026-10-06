@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from './CalloutPin'
+import { acceptImageFile } from '../utils/acceptImageFile';
 
 /* 360° spin annotator for PM equipment setup.
    Multiple photo frames of one piece of equipment; drag left/right to rotate
@@ -131,7 +132,14 @@ export default function SpinAnnotator({
           </div>
         ))}
         {!readOnlyFrames && <label style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
-          <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={e => { if (e.target.files?.length) onAddFrames?.(e.target.files); e.target.value = '' }} />
+          <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={async e => {
+        const picked = [...(e.target.files || [])];
+        e.target.value = '';
+        /* ด่านรับรูปจุดเดียว — HEIC จากมือถือแปลงเป็น JPEG · ตัวที่ไม่ผ่านถูก toast แล้วคัดออก
+           (ไฟล์ดีที่เลือกมาพร้อมกันยังเข้าได้ — ห้ามทิ้งทั้งชุดเพราะมีตัวเสีย 1 ตัว) */
+        const ok = (await Promise.all(picked.map(f => acceptImageFile(f)))).filter(Boolean);
+        if (ok.length) onAddFrames?.(ok);
+      }} />
           {busy ? '…' : '+'}
         </label>}
       </div>

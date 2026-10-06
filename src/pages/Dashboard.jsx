@@ -2614,7 +2614,7 @@ export default function Dashboard() {
                 maxWidth: '97vw',
                 maxHeight: '97vh',
                 overflow: 'hidden',
-                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                boxShadow: 'var(--shadow-lg)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>

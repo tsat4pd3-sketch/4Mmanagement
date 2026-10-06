@@ -242,7 +242,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (

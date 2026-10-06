@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceL
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import { fetchOeeTargets } from '../utils/oeeMasters';
 import FilterBar from './FilterBar';
 import LineSelect from './LineSelect';
@@ -49,7 +49,12 @@ const monthLabel = (mk) => {
 };
 
 export default function CapacityBoard({ role, scope, lines, months, calMap, demandByMonth, ctOf, lineOfMat, pairOf, lineOee, estOf, netMin, customerOf, nameOfMat }) {
-  const canEdit = can('production_plan', 'edit', role) || can('master_data', 'manage', role);
+  /* 🔴 2 คีย์เดิม (`production_plan:edit` · `master_data:manage`) **ไม่มีในทะเบียนสิทธิ์เลย**
+     (QC 06/10 — `master_data:manage` คือชื่อเก่าที่ถูกเกษียณไปแล้ว 22/07 แตกเป็นคีย์ย่อย)
+     `can()` ของคีย์ที่ไม่ถูก seed คืน false เสมอ ⇒ **ทีมวางแผนแก้รูปแบบกะไม่ได้เลย**
+     เหลือแค่ admin ที่ผ่านเพราะ bypass — จอโชว์ช่องให้แก้ แต่ไม่มีใครใช้ได้จริง
+     ⇒ ใช้คีย์จริงของทีมวางแผน `production_plan:write` (seed แล้ว 30/09 · ตัวเดียวกับ ProdLotPlanner) */
+  const canEdit = can('production_plan', 'write', role);
   const [patterns, setPatterns] = useState(SEED_PATTERNS);
   const [patErr, setPatErr]     = useState(false);   // โหลดทะเบียนไม่ได้ = ใช้ค่า seed แต่ต้องบอกบนจอ
   const [showReg, setShowReg]   = useState(false);
@@ -175,8 +180,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       const res = await supabaseDR.from('capacity_shift_patterns')
         .update({ hours_per_day: hours, day_source: patch.day_source, updated_at: new Date().toISOString() })
         .eq('key', key).select('key');
-      ok = checkWrite(res, 'บันทึกรูปแบบกะ');
-      if (ok && !res.data?.length) { toast.error(`${key}: บันทึกไม่สำเร็จ (0 แถว) — ตรวจสิทธิ์`); ok = false; }
+      ok = checkWriteRows(res, 'บันทึกรูปแบบกะ', { zeroMsg: `${key}: บันทึกไม่สำเร็จ (0 แถว) — ตรวจสิทธิ์ หรือแถวนี้ถูกลบไปแล้ว` });
     }
     setSaving(false);
     if (ok) { toast.success('✅ บันทึกทะเบียนรูปแบบกะแล้ว'); setDraft({}); load(); }

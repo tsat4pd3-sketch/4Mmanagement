@@ -672,7 +672,17 @@ function StockTab({ role, scope }) {
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
                 <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
-                  options={products.map(p => ({ id: String(p.id), label: `${p.name}${p.mat_no ? ` · MAT ${p.mat_no}` : ''}`, sub: p.line_name || '', keywords: p.mat_no || '' }))}
+                  /* 🔴 เลข MAT ต้องอยู่ช่อง `code` (nowrap ห้ามตัด) ไม่ใช่ต่อท้าย `label`
+                     — label ถูก ellipsis ตัดท้าย ⇒ MAT ที่อยู่ท้ายสุดหายทุกแถว (QC 06/10)
+                     รหัสที่ถูกตัดครึ่งไม่ได้แค่อ่านไม่ครบ แต่ **อ่านผิดตัวได้** */
+                  options={products.map(p => ({
+                    id: String(p.id),
+                    label: p.name || `MAT ${p.mat_no}`,           // ชื่อที่ช่องโชว์เมื่อเลือกแล้ว (ไม่มีชื่อ = ยก MAT ขึ้น ห้ามได้ช่องว่าง)
+                    title: p.name || `MAT ${p.mat_no}`,
+                    code: p.name && p.mat_no ? `MAT ${p.mat_no}` : null,
+                    sub: p.line_name || '',
+                    keywords: p.mat_no || '',
+                  }))}
                   onChange={({ id }) => setBomProduct(id)} />
                 {bomProduct && (productBom[bomProduct] || []).length > 0 && (
                   <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
@@ -1234,7 +1244,7 @@ function DeliveryTimeBoardTab() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.45)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

@@ -188,7 +188,7 @@ export default function GestureCam({ onGesture, onError }) {
     <div style={{
       position: 'absolute', right: 16, bottom: 16, zIndex: 30,
       borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border2)',
-      background: '#000', boxShadow: '0 4px 20px rgba(0,0,0,0.6)', width: 176,
+      background: '#000', boxShadow: 'var(--shadow-float)', width: 176,
     }}>
       {/* mirror preview ให้เป็นธรรมชาติเหมือนส่องกระจก (การคำนวณใช้พิกัดเฟรมจริง ไม่เกี่ยว preview) */}
       <video ref={videoRef} muted playsInline style={{ width: '100%', height: 132, objectFit: 'cover', transform: 'scaleX(-1)', display: 'block', opacity: status === 'running' ? 1 : 0.3 }} />

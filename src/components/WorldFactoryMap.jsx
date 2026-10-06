@@ -291,7 +291,7 @@ export default function WorldFactoryMap({
             <div style={{
               position: 'absolute', left, top, transform: 'translate(-50%, calc(-100% - 22px))',
               pointerEvents: 'none', zIndex: 5, background: 'var(--card)', border: `1px solid ${col}`,
-              borderRadius: 8, padding: '8px 11px', minWidth: 196, boxShadow: '0 10px 26px rgba(0,0,0,0.5)',
+              borderRadius: 8, padding: '8px 11px', minWidth: 196, boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 14, fontWeight: 800 }}>
                 {hover.kind === 'country' ? `${o.meta.flag} ${o.meta.name}` : `${o.flag} ${o.code}`}

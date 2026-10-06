@@ -639,3 +639,61 @@ user เห็นคอลัมน์ `🚫 ขาย-แผนงาน (เ�
   (ไม่มีผลกับใคร · ลบ enum value ย้อนยาก ต้องทำเป็น migration แยกเมื่อ user สั่ง)
 - role อื่นที่ยังไม่มีคนถือแต่**ไม่ใช่ retired**: `dept_admin` (เป็น bucket ของ flag `is_dept_admin`
   มีหน้าที่จริง) · `engineer_nm` (ยังไม่เคยใช้ — ต่างจาก retired ตรงที่ยังตั้งใจให้ใช้ได้)
+
+---
+
+## 🔒 RLS ที่เปิดโล่ง + คีย์ที่ไม่มีในทะเบียน (2026-10-06 · QC audit)
+
+### (ก) 6 ตารางที่ "ใครล็อกอินก็เขียนได้" — รัดแล้ว (Main)
+
+policy `FOR ALL TO authenticated USING (true) WITH CHECK (true)` = ด่านอยู่ที่ UI ชั้นเดียว
+⇒ เรียก REST ตรงๆ ก็ผ่าน (กฎเหล็กข้อ 3 + ข้อ 10 *"สมมติฐานเรื่องสิทธิ์มีอายุ"*)
+
+| ตาราง | ของที่เขียนได้ | predicate ใหม่ |
+|---|---|---|
+| `doc_forms` · `doc_form_revisions` · `doc_form_scopes` | **เลขฟอร์ม · Rev · ลายเซ็น · footer · โลโก้ ของทุกใบในระบบ** | `doc_forms:manage` **or** `four_m:manage_docs` |
+| `factory_map` · `factory_line_regions` | รูปผังโรงงาน + polygon ของทุกไลน์ | `factory_map:edit` |
+| `oee_targets` | เป้า OEE ที่ทุกจอใช้ตัดสินสี เขียว/เหลือง/แดง | `oee:set_target` |
+
+🔴 **predicate = union ของคีย์ที่ "เปิดปุ่มเขียน" บนจอจริง** ไม่ใช่คีย์ที่เราคิดว่าควรเป็น —
+แคบกว่าปุ่ม = สร้างบั๊ก "กดแล้วเขียวแต่ไม่บันทึก" ขึ้นมาใหม่เอง
+(`doc_forms` มี 2 ทางเข้า: `/doc-forms` ใช้ `doc_forms:manage` · แผงลัดในแท็บ 4M ใช้ `four_m:manage_docs`)
+
+🔴 **ตารางที่มีแต่ policy `FOR ALL` ต้องเพิ่ม policy อ่านก่อน แล้วค่อยรัดตัว FOR ALL** —
+`loadDocForms()` อ่านทะเบียนทุกครั้งที่มีใครพิมพ์เอกสาร/export CSV ⇒ ปิดอ่านด้วย = เลขฟอร์มหายจากทุกใบ
+
+migration: `20261006_rls_tighten_open_write_main.sql` (**apply แล้ว** · ตรวจกลับครบ 6 ตาราง)
+
+### (ข) จอโชว์ปุ่มให้คนที่ RLS ปฏิเสธ — `org_assignments`
+
+`OrgAssignmentsPanel` เขียน `can('org','manage') || can('org','manage_own_unit')` แต่ RLS = `org:manage` เท่านั้น
+⇒ หัวหน้าหน่วย (dept_admin/manager/supervisor/planner_store) **เห็นปุ่ม ยืนยัน/ลบ/กำหนดวันสิ้นสุด**
+แล้ว UPDATE/DELETE ถูกปฏิเสธแบบ **0 แถว ไม่มี error** ⇒ toast เขียว "ยืนยันแล้ว" ทั้งที่ไม่มีอะไรถูกบันทึก
+
+**แก้: ให้จอตรงกับ RLS** (`org:manage` เท่านั้น) + เขียนบนจอว่าทำไมไม่มีปุ่ม
+🔴 **ไม่เปิด RLS ให้ `manage_own_unit` ลอยๆ** — นั่น = แต่งตั้งหัวหน้าหน่วยอื่นได้ทั้งโรงงาน
+จะให้หัวหน้าหน่วยแก้ได้จริงต้องรัด RLS เป็น "เฉพาะหน่วยของตัวเอง" ก่อน (**ยังไม่ทำ**)
+
+### (ค) คีย์ที่โค้ดเรียก แต่ไม่มีในทะเบียนเลย
+
+`CapacityBoard` เขียน `can('production_plan','edit') || can('master_data','manage')` —
+**ทั้งคู่ไม่ถูก seed** (`master_data:manage` คือชื่อเก่าที่เกษียณไปแล้ว 22/07 แตกเป็นคีย์ย่อย)
+`can()` ของคีย์ที่ไม่ถูก seed คืน `false` เสมอ ⇒ **ทีมวางแผนแก้รูปแบบกะไม่ได้เลย** เหลือแค่ admin ที่ bypass
+→ แก้เป็น `production_plan:write` (คีย์จริง · seed แล้ว 30/09 · ตัวเดียวกับ `ProdLotPlanner`)
+
+### (ง) RLS ที่พึ่ง role array มือ / คีย์ที่เกษียณ
+
+| policy | เดิม | ใหม่ |
+|---|---|---|
+| `positions_write_admin` | `exists(select … profiles.role='admin')` = **role array มือ** | `has_perm('page:/add-user')` |
+| `grades_write` | `has_perm('manage_master_data')` = **คีย์ที่ประกาศเกษียณ 22/07** | `has_perm('grades:manage')` |
+
+· `positions`: วันนี้ตรงกับจอพอดี (`page:/add-user` = admin เท่านั้น) แต่พอเปิดหน้านี้ให้ dept_admin
+  ที่ `/permissions` **จอจะเปิด แต่ DB ยังปฏิเสธ** — นี่คือเหตุผลที่กฎห้าม role array
+· `grades`: migration 22/07 เขียนกำกับเองว่าคีย์นี้ "ไม่มีโค้ดอ่านแล้ว" แล้ว policy ที่เพิ่มทีหลัง 24/09
+  กลับไปอ่านมันอีก = **drift ข้าม session** · วันนี้ยังทำงานเพราะแถวเก่ายังอยู่ แต่ใครมาเก็บกวาดคีย์เกษียณ
+  **สิทธิ์แก้ทะเบียนเกรดจะหายเงียบๆ** ⇒ ออกคีย์จริง `grades:manage` seed = **ชุดเดียวกับที่ถืออยู่วันนี้เป๊ะ**
+  (admin · dept_admin · manager · supervisor → ตรวจกลับแล้วเท่ากัน ไม่มี behavior change)
+
+migration: `20261006_rls_positions_grades_perm_keys_main.sql` (**apply แล้ว**)
+⚠️ **ไม่แตะแถว `manage_master_data`** — ยังไม่ได้ไล่ครบว่ามี policy อื่นอ่านอยู่หรือไม่ (ลบ = เสี่ยง)

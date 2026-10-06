@@ -108,3 +108,39 @@ CLAUDE.md เหลือ "คำสั่งที่ต้องรัน + �
 
 > 📄 **ประวัติผล audit ที่ตรวจ+แก้ไปแล้ว → `docs/modules/qc-audit-history.md`**
 > (รอบเต็ม 2026-08-03/04 ครบ 7 หมวด · วิธี audit "migration ค้างไม่ได้ apply" ที่เชื่อถือได้ 2026-08-06)
+
+---
+
+## 🛡️ ด่านที่เพิ่ม/ขยายรอบ QC audit 2026-10-06
+
+### ด่านใหม่ (6 ตัว)
+
+| ด่าน | จับอะไร | บั๊กที่เคยเกิด |
+|---|---|---|
+| **ไฟล์ source ห้ามมีไบต์ NUL** | ไบต์ `\0` ในไฟล์ source ทั้งรีโป | `EventLog.jsx:149` มี `'\0__none__'` ⇒ grep ถือว่า binary **ข้ามทั้งไฟล์** ⇒ ไฟล์หลุดจาก regressionGuards · QC agent · audit sweep ทั้งชุด **โดยไม่มีสัญญาณเตือน** — อันตรายกว่าตัวบั๊กเอง เพราะมันปิดตาเครื่องมือตรวจ |
+| `realtime-table-registered` | ชื่อตารางใน `tables:`/`table:` ที่ไม่อยู่ใน `src/utils/realtimeTables.js` | publication ขาดตาราง = subscribe **เงียบสนิท ไม่มี error** ⇒ จอช้าได้ถึง 2 ชม. · เกิดซ้ำ **3 รอบ** (19/08 · 15/09 · 06/10) เพราะลิสต์อยู่ในเอกสารที่เขียนมือ |
+| `checkwrite-rows-not-plain` | ต่อ `.select()` แล้วส่งเข้า `checkWrite` | 7 จุดเชื่อว่าตัวเองนับแถวแล้ว แต่ `checkWrite` ไม่เคยอ่าน `data` |
+| `checkwriterows-needs-select` | `checkWriteRows` ที่ไม่ต่อ `.select()` | เจตนา "นับแถว" หายเงียบ (helper ถอยไปเช็คแค่ error) |
+| `image-input-via-accept-helper` | `<input accept="image/*">` ที่ไม่ผ่านด่านรับรูป | 12 ช่องใน 9 ไฟล์ ⇒ รูป HEIC จาก iPhone พังตอนเซฟ หรืออัปดิบขึ้นไปแล้วเห็นรูปเสีย |
+| `drag-start-via-pointer-event` | `onMouseDown={… startDrag …}` | จอทัชลากหมุดไม่ได้เลย **และแตะหมุดก็ไม่เปิด panel** (`/line-setup` แก้ผังบนจอทัชไม่ได้ทั้งหน้า) |
+| `tooltip-needs-theme` | `<Tooltip>` ที่ไม่มี `tooltipProps`/`contentStyle`/`content` | default Recharts = พื้นขาวตัวดำ อ่านไม่ออกบนธีมมืด · **วัด 06/10 = 0 จุด** ด่านนี้ล็อกสถานะที่ดีไว้ |
+
+### ด่านที่ขยายเพราะ "รั่ว"
+
+| ด่าน | เดิมจับ | ขยายเป็น | ที่หลุด |
+|---|---|---|---|
+| `no-utc-workdate` | `new Date().toISOString().slice` | `.toISOString().slice(0, 10)` **ทุกรูป** | `new Date(Date.now()-n).…` · `d.toISOString()` ที่ `d` parse แบบ offset |
+| `card-shadow-via-token` | offset แนวตั้ง **0-3px** | เงาเดี่ยว offset แนวตั้ง **สีดำ** ทุกขนาด | 32 จุด (modal · dropdown · popover ของ 25 ไฟล์) |
+| `picker-label-stuffed-with-codes` | 2 รหัสปนกัน (`p_no`+`mat_no`) | + **ข้อความอิสระมาก่อน แล้วรหัสต่อท้าย** | `${p.name} · MAT ${p.mat_no}` ที่ `/line-stock` |
+
+🔴 **บทเรียนรอบนี้: ด่านที่ "มีอยู่แล้ว" ไม่เท่ากับ "ครอบคลุม"** — 3 ด่านข้างบนทำงานถูกตามที่เขียนไว้
+แต่ regex แคบกว่ากลไกความเสียหายจริง ⇒ ผ่านด่านแต่บั๊กคลาสเดิมยังเข้าได้
+**ตอนเพิ่มด่าน ให้เขียน regex ตาม "กลไกที่ทำให้เสียหาย" ไม่ใช่ตามรูปที่เพิ่งเจอ**
+
+### ของที่ตัดสินใจ **ไม่** ทำด่าน (บันทึกเหตุผลไว้ กันคนมาทำซ้ำ)
+
+- **array/object ใน deps ของ hook ที่ยิง DB** (กฎเหล็กข้อ 9) — ไม่มีทาง grep ได้ว่าตัวแปรไหนเป็น array
+  · เขียนแบบกว้าง (`<Comp prop={x.filter(...)}>`) ได้ false positive เพียบจากลิสต์ presentational ธรรมดา
+  ⇒ ผิดกติกาข้อ 1 ของ `regressionGuards` · แก้เป็นรายจุดเมื่อเจอ (รอบนี้: `OeeInsightPanel` ← `OEEAnalytics`)
+- **`checkWrite` → `checkWriteRows` เหมาทั้ง 54 จุดที่เหลือ** — หลายจุด 0 แถวเป็นเรื่องปกติ
+  (touch best-effort · ผูกของที่อาจหายไปแล้ว) ⇒ แปลงมั่ว = toast แดงหลอกหน้างาน · ต้องอ่านบริบทรายจุด

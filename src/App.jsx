@@ -1673,7 +1673,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
       position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 10000,
       display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderRadius: 999,
       background: 'rgba(147,51,234,0.16)', border: '1.5px solid #a855f7', color: '#c084fc',
-      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: '0 4px 18px rgba(0,0,0,0.4)',
+      fontSize: 12.5, fontWeight: 700, backdropFilter: 'blur(6px)', boxShadow: 'var(--shadow-float)',
       maxWidth: '92vw', flexWrap: 'wrap', justifyContent: 'center',
     }}>
       <span>🎭 กำลังดูในมุมมอง: {roleLabel(viewAs.role)}{viewAs.deptAdmin ? ' + 🛡️ แอดมินหน่วยงาน' : ''}{viewAs.mtnTeams?.length ? ` + 🔧 ${viewAs.mtnTeams.length} ทีมช่าง` : ''}</span>

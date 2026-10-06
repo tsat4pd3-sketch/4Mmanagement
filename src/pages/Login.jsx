@@ -72,7 +72,7 @@ export default function Login() {
         border: '1px solid var(--border2)',
         borderRadius: 'var(--radius-lg)',
         padding: '40px 36px',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        boxShadow: 'var(--shadow-lg)',
       }}>
         {/* VX Logo */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>

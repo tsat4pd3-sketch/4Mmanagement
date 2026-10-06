@@ -108,7 +108,7 @@ export default function RemoteReceiver({ code, onStop }) {
         position: 'fixed', left: 14, bottom: 14, zIndex: 9999,
         display: 'flex', alignItems: 'center', gap: 10,
         background: 'var(--bg2)', border: `1px solid ${connected ? 'var(--accent)' : 'var(--border2)'}`,
-        borderRadius: 12, padding: '8px 14px', boxShadow: '0 4px 18px rgba(0,0,0,0.5)',
+        borderRadius: 12, padding: '8px 14px', boxShadow: 'var(--shadow-float)',
       }}>
         <span style={{ fontSize: 13 }}>📺</span>
         <div>
