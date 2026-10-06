@@ -261,7 +261,13 @@ const TABLE_ROWS = {
       : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
           part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
-    const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
+    /* 🔴 `line_name` ต้องเป็นชื่อที่**มีอยู่จริงในทะเบียนไลน์ของ mock** (`LINE_NAME(i)`) — 06/10
+       เดิมตั้งเป็น 'LINE C ( 200&250 Ton )' / 'LINE APRON ASSY / HYDROFORM' ซึ่ง**ไม่มีในทะเบียน**
+       ⇒ `lineOfMat()` คืน null ทุกพาร์ท ⇒ **การ์ดไลน์ของ /production-plan (รายวัน+รายเดือน)
+          ไม่เคยถูกเรนเดอร์ใน harness เลยสักครั้ง** (กราฟภาระ/ปฏิทิน/ตารางเดือน ไม่เคยถูกตรวจ)
+       · ยังคงเจตนาเดิมไว้: i<=2 อยู่**คนละไลน์**กับที่เหลือ (ต้องมีมากกว่า 1 ไลน์ถึงจะเห็น
+         ว่าโค้ดแยกการ์ดตามไลน์ถูกต้อง) แค่เปลี่ยนเป็นชื่อที่ทะเบียนรู้จัก */
+    const base = { ...r, line_name: i <= 2 ? LINE_NAME(2) : LINE_NAME(1) };
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
     if (i === 5) return { ...base, is_operation: true, op_parent_mat: null, op_seq: null };
     return { ...base, is_operation: false, op_parent_mat: null, op_seq: null };
