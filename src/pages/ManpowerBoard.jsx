@@ -5,6 +5,8 @@ import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import BoardPager from '../components/BoardPager';
+import TimeRangeBar from '../components/TimeRangeBar';
+import useTimeRange from '../utils/useTimeRange';
 import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage } from '../utils/boardPager';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
@@ -27,6 +29,7 @@ import { canSeeded } from '../utils/permissions';
 import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
+  describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
@@ -48,7 +51,7 @@ const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id
 
 export default function ManpowerBoard() {
   const { sections: scopeSecs = [], role } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['org', 'layout', 'fourm'], 'org');
+  const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
   const lines = useProductionLines();
@@ -189,6 +192,7 @@ export default function ManpowerBoard() {
           { key: 'org', label: '🧑‍🤝‍🧑 ผังกำลังคน' },
           { key: 'layout', label: '🗺️ ผัง LAYOUT' },
           { key: 'fourm', label: '🚦 ป้ายสถานะ 4M' },
+          { key: 'history', label: '📜 ประวัติการเปลี่ยนช่อง' },
         ]}
         tab={tab} onTab={setTab}
         filters={filters}
@@ -212,6 +216,7 @@ export default function ManpowerBoard() {
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} />
+        : tab === 'history' ? <HistoryTab section={section} nodes={nodes} lines={lines} stations={stations} employees={employees} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
@@ -820,5 +825,120 @@ function OrgTv({ board, depts, skills }) {
       {!fallback && <BoardPager page={pi} count={pages.length} onPage={setPage}
         labels={pages.map(x => `${x.dept.name}${x.parts > 1 ? ` (${x.part + 1}/${x.parts})` : ''}`)} />}
     </>
+  );
+}
+
+/* ═════════════════════════ 📜 ประวัติการเปลี่ยนช่อง ═════════════════════════
+   อ่าน audit_log ของ 3 ตารางค่าตั้งบอร์ด (ไม่มีตารางประวัติแยก) · ตัดตามส่วนงานที่เลือก ·
+   แปลเป็นภาษาคน + สรุปรายเดือนผ่าน describeSlotChanges/summarizeSlotChanges (manpowerBoard.js · มีเทส)
+   รายงานย้อนหลัง ⇒ โหลดเมื่อเปลี่ยนช่วง/ส่วนงานเท่านั้น ไม่ poll ไม่ realtime */
+const HISTORY_CAP = 3000;
+function HistoryTab({ section, nodes, lines, stations, employees }) {
+  const tr = useTimeRange({ defaultDays: 120 });
+  const [rows, setRows] = useState([]);
+  const [state, setState] = useState({ loading: true, error: '', truncated: false });
+  const from = tr.from, to = tr.to;
+
+  useEffect(() => {
+    let alive = true;
+    setState(s0 => ({ ...s0, loading: true }));
+    // ขอบช่วงเป็นวันไทย — แปลงเป็นเวลา +07:00 เอง (ห้าม toISOString ของวันที่ท้องถิ่น)
+    fetchAllPages(() => supabase.from('audit_log')
+      .select('id, table_name, action, actor, old_data, new_data, changed_at')
+      .in('table_name', SLOT_AUDIT_TABLES)
+      .gte('changed_at', `${from}T00:00:00+07:00`).lte('changed_at', `${to}T23:59:59+07:00`),
+    { orderBy: 'id', maxPages: Math.ceil(HISTORY_CAP / 1000) })
+      .then(({ rows: r, error, truncated }) => {
+        if (!alive) return;
+        setRows(r || []);
+        setState({ loading: false, error: error || '', truncated });
+      });
+    return () => { alive = false; };
+  }, [from, to]);
+
+  const list = useMemo(() => {
+    if (!section) return [];
+    const kids = new Map();
+    for (const n of nodes) if (n.parent_id) (kids.get(n.parent_id) || kids.set(n.parent_id, []).get(n.parent_id)).push(n);
+    const sub = new Set([section.id]);
+    for (const stack = [section.id]; stack.length;) for (const c of kids.get(stack.pop()) || []) { sub.add(c.id); stack.push(c.id); }
+    const refs = nodes.filter(n => sub.has(n.id) && n.kind === 'line' && n.ref_line_id != null).map(n => n.ref_line_id);
+    const famIds = new Set(lineFamilyOf(lines, refs).map(l => String(l.id)));
+    return describeSlotChanges(rows, {
+      nodeById: new Map(nodes.map(n => [n.id, n])),
+      stationById: new Map(stations.map(st => [String(st.id), st])),
+      lineById: new Map(lines.map(l => [String(l.id), l])),
+      empById: new Map(employees.map(e => [e.id, e])),
+      // จุดงานที่ถูกลบไปแล้ว (lineId ไม่รู้) = โชว์ไว้ก่อน — ประวัติห้ามหาย ดีกว่าตัดทิ้งเพราะสืบส่วนงานไม่ได้
+      inScope: ({ kind, nodeId, lineId }) => (kind === 'team' ? sub.has(nodeId) : lineId == null || famIds.has(String(lineId))),
+    });
+  }, [rows, section, nodes, lines, stations, employees]);
+  const months = useMemo(() => summarizeSlotChanges(list), [list]);
+
+  const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
+  const td = { padding: '7px 10px', fontSize: 13, borderTop: '1px solid var(--border)', verticalAlign: 'top' };
+  const signed = (n) => (n > 0 ? `+${n}` : String(n));
+  const fmtAt = (t) => new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' });
+  const monthTh = (ym) => { const [y, m] = ym.split('-'); return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('th-TH', { month: 'short', year: 'numeric' }); };
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <TimeRangeBar scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+        note={`ส่วนงาน ${section?.name || '–'} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
+      {state.error && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดประวัติไม่สำเร็จ — {state.error}</div>}
+      {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ แสดงได้ไม่เกิน {HISTORY_CAP.toLocaleString()} รายการ — ช่วงนี้มีมากกว่านั้น ให้ย่อช่วงวันที่</div>}
+      {state.loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div> : !list.length ? (
+        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีการเปลี่ยนช่อง/คนต่อกะ/ช่างประจำไลน์ของส่วนงานนี้ในช่วงที่เลือก</div>
+      ) : (
+        <>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>สรุปรายเดือน</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>แก้ (ครั้ง)</th>
+                <th style={{ ...th, textAlign: 'right' }}>🧑‍🤝‍🧑 ช่องต่อทีม สุทธิ</th><th style={{ ...th, textAlign: 'right' }}>📍 คน/กะของจุด สุทธิ</th>
+                <th style={{ ...th, textAlign: 'right' }}>🔧 ช่าง เข้า / ออก</th><th style={th}>คนแก้</th>
+              </tr></thead>
+              <tbody>
+                {months.map(m => (
+                  <tr key={m.month}>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{monthTh(m.month)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{m.count}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{signed(m.teamDelta)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{signed(m.stationDelta)}</td>
+                    <td style={{ ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>+{m.techIn} / −{m.techOut}</td>
+                    <td style={{ ...td, color: 'var(--text2)' }}>{m.actors.join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ padding: '6px 12px 10px', fontSize: 12, color: 'var(--muted)' }}>
+              สุทธิ = ผลรวมของ (ค่าใหม่ − ค่าเดิม) · ล้างค่า = ลดเท่าค่าเดิม (บอร์ดกลับไปใช้ค่าถัดไปในลำดับ: ช่องต่อทีม → จุดงาน → std)
+            </div>
+          </div>
+          <div className="card table-sticky" style={{ padding: 0, overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>เวลา</th><th style={th}>คนแก้</th><th style={th}>เรื่อง</th><th style={th}>ที่ไหน</th>
+                <th style={th}>ทีม</th><th style={th}>เปลี่ยนเป็น</th>
+              </tr></thead>
+              <tbody>
+                {list.map(c => (
+                  <tr key={c.id}>
+                    <td style={{ ...td, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtAt(c.at)}</td>
+                    <td style={td}>{c.actor}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{SLOT_KIND_META[c.kind].icon} {SLOT_KIND_META[c.kind].label}</td>
+                    <td style={td}>{c.where}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.kind === 'team' ? (c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม') : '–'}</td>
+                    {/* ไม่ใส่สีเขียว/แดง — ช่องเพิ่มไม่ได้แปลว่า "ดี" (UI §6.17 สี = ความหมาย) */}
+                    <td style={{ ...td, fontWeight: 700 }}>{c.text}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

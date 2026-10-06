@@ -447,3 +447,83 @@ export function tvCardCapacity({ areaW, areaH, nCols, cardW, cardH, gap = 6, col
   const rows = Math.max(1, Math.floor((areaH + gap) / (cardH + gap)));
   return perRow * rows;
 }
+
+/* ── 📜 ประวัติการเปลี่ยนช่อง (2026-10-06 · คำสั่ง user "ทำจอสรุปประวัติการเปลี่ยนช่องต่อเลย") ─────────
+   อ่านจาก `audit_log` (fn_audit ของ 3 ตารางค่าตั้งบอร์ด) — **ไม่มีตารางประวัติแยก** (audit คือแหล่งความจริงเดียว)
+   ตาราง: manpower_slot_plans (ช่องต่อทีม) · station_slot_plans (คนต่อกะของจุด) · line_technicians (ช่างประจำไลน์)
+   🔴 แถวที่อ้างของที่ถูกลบไปแล้ว (แผนก/จุด/คน) = ใช้ชื่อเท่าที่รู้ + "(ถูกลบแล้ว)" ห้ามทิ้งแถว (ประวัติต้องครบ)
+   🔴 actor ว่าง = เขียนโดยระบบ/migration — เขียนว่า "ระบบ" ห้ามเว้นว่างให้ดูเหมือนข้อมูลหาย */
+export const SLOT_AUDIT_TABLES = Object.freeze(['manpower_slot_plans', 'station_slot_plans', 'line_technicians']);
+export const SLOT_KIND_META = Object.freeze({
+  team:    { label: 'ช่องต่อทีม', icon: '🧑‍🤝‍🧑' },
+  station: { label: 'คนต่อกะของจุด', icon: '📍' },
+  tech:    { label: 'ช่างประจำไลน์', icon: '🔧' },
+});
+const KIND_OF_TABLE = { manpower_slot_plans: 'team', station_slot_plans: 'station', line_technicians: 'tech' };
+
+/**
+ * @param {object[]} rows   audit_log (table_name, action, actor, old_data, new_data, changed_at)
+ * @param {object}   ctx    { nodeById: Map, stationById: Map, lineById: Map, empById: Map,
+ *                            inScope: ({ kind, nodeId, lineId }) => boolean }  — ตัดตามส่วนงานที่ดูอยู่
+ * @returns {Array<{ id, at, month, actor, kind, action, where, team, before, after, delta, text }>}
+ *   before/after = จำนวน (ช่อง/คน) · null = ไม่มีค่า (สร้างใหม่/ลบ) · delta = after−before (ช่างนับ +1/−1)
+ */
+export function describeSlotChanges(rows, ctx = {}) {
+  const { nodeById = new Map(), stationById = new Map(), lineById = new Map(), empById = new Map(), inScope = () => true } = ctx;
+  const out = [];
+  for (const r of rows || []) {
+    const kind = KIND_OF_TABLE[r.table_name];
+    if (!kind) continue;
+    const o = r.old_data || null, n = r.new_data || null, d = n || o || {};
+    let where = '', team = null, before = null, after = null, nodeId = null, lineId = null;
+    if (kind === 'team') {
+      nodeId = d.org_node_id;
+      where = nodeById.get(nodeId)?.name || 'แผนก (ถูกลบแล้ว)';
+      team = d.team ?? '';
+      before = o ? Number(o.slots) : null; after = n ? Number(n.slots) : null;
+    } else if (kind === 'station') {
+      const st = stationById.get(String(d.station_id));
+      lineId = st?.line_id ?? null;
+      const ln = st ? (lineById.get(String(st.line_id))?.name || st.line_name || '') : '';
+      where = st ? `${st.station_name}${ln ? ` · ${ln}` : ''}` : 'จุดงาน (ถูกลบแล้ว)';
+      before = o ? Number(o.per_shift) : null; after = n ? Number(n.per_shift) : null;
+    } else {
+      lineId = d.line_id;
+      const ln = lineById.get(String(d.line_id))?.name || 'ไลน์ (ถูกลบแล้ว)';
+      const emp = empById.get(d.employee_id)?.name || 'พนักงาน (ไม่อยู่ในทะเบียนแล้ว)';
+      where = `${ln} · ${emp}`;
+      before = r.action === 'INSERT' ? 0 : r.action === 'DELETE' ? 1 : null;
+      after = r.action === 'INSERT' ? 1 : r.action === 'DELETE' ? 0 : null;
+    }
+    if (!inScope({ kind, nodeId, lineId })) continue;
+    // UPDATE ที่ค่าไม่เปลี่ยน (แก้แค่ note) — นับเป็นการแก้ แต่ delta 0
+    const delta = (after ?? 0) - (before ?? 0);
+    const unit = kind === 'station' ? 'คน/กะ' : kind === 'team' ? 'ช่อง' : '';
+    const text = kind === 'tech'
+      ? (r.action === 'INSERT' ? 'ผูกเป็นช่างประจำไลน์' : r.action === 'DELETE' ? 'เอาออกจากช่างประจำไลน์' : 'แก้ข้อมูล')
+      : r.action === 'INSERT' ? `ตั้ง ${after} ${unit}`
+      : r.action === 'DELETE' ? `ล้างค่า (เดิม ${before} ${unit}) → กลับไปใช้ค่าถัดไปในลำดับ`
+      : before === after ? `แก้รายละเอียด (ค่าเท่าเดิม ${after} ${unit})`
+      : `${before} → ${after} ${unit}`;
+    out.push({
+      id: r.id, at: r.changed_at, month: String(r.changed_at || '').slice(0, 7),
+      actor: r.actor || 'ระบบ', kind, action: r.action, where, team, before, after, delta, text,
+    });
+  }
+  out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return out;
+}
+
+/** สรุปรายเดือน — จำนวนครั้ง · ช่องสุทธิที่เพิ่ม/ลด (ทีม + จุดงาน) · ช่างเข้า/ออก · คนแก้ (ไม่ซ้ำ) */
+export function summarizeSlotChanges(list) {
+  const by = new Map();
+  for (const c of list || []) {
+    if (!by.has(c.month)) by.set(c.month, { month: c.month, count: 0, teamDelta: 0, stationDelta: 0, techIn: 0, techOut: 0, actors: new Set() });
+    const m = by.get(c.month);
+    m.count += 1; m.actors.add(c.actor);
+    if (c.kind === 'team') m.teamDelta += c.delta;
+    else if (c.kind === 'station') m.stationDelta += c.delta;
+    else if (c.delta > 0) m.techIn += 1; else if (c.delta < 0) m.techOut += 1;
+  }
+  return [...by.values()].sort((a, b) => b.month.localeCompare(a.month)).map(m => ({ ...m, actors: [...m.actors] }));
+}

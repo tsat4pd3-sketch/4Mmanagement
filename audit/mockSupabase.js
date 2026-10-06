@@ -243,6 +243,17 @@ const TABLE_ROWS = {
   manpower_slot_plans: (r, i) => ({ ...r, org_node_id: 'id-2', team: ['A', 'B', 'D'][i % 3], slots: isNullish(r) ? 0 : 6 }),
   // 📍 คนต่อกะของจุดงาน — 1 คน/กะ ทุกจุด (บางจุดตั้ง 2) ⇒ สายช่องว่างระบุจุด + วงประบนผัง LAYOUT ถูกรัน
   station_slot_plans: (r, i) => ({ ...r, station_id: `id-${i}`, per_shift: i % 5 === 0 ? 2 : 1 }),
+  /* 📜 audit_log — คละ 3 ตารางค่าตั้งบอร์ด × INSERT/UPDATE/DELETE + actor ว่าง ⇒ จอประวัติการเปลี่ยนช่องถูกรันครบทุกสาขา
+     (แถวที่ไม่ใช่ 3 ตารางนี้ = ตัวกรองต้องตัดทิ้ง) */
+  audit_log: (r, i) => {
+    const t = ['manpower_slot_plans', 'station_slot_plans', 'line_technicians', 'employees'][i % 4];
+    const act = ['INSERT', 'UPDATE', 'DELETE'][i % 3];
+    const data = t === 'manpower_slot_plans' ? { org_node_id: 'id-2', team: 'A', slots: i }
+      : t === 'station_slot_plans' ? { station_id: `id-${i}`, per_shift: 1 } : { employee_id: `id-${i}`, line_id: 'id-3' };
+    return { ...r, id: i, table_name: t, action: act, actor: isNullish(r) ? null : `ผู้แก้ ${i}`,
+      old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
+      changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
+  },
   line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */

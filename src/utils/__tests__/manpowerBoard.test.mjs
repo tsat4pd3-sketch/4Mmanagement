@@ -239,3 +239,29 @@ test('📍 ผัง LAYOUT: ช่องที่ขาดต่อกะขอ
   assert.deepEqual(r2[0].missing, { day: 0, night: 0, unknown: 3 });
   assert.equal(res[1].need, null); assert.equal(res[1].missing, null);
 });
+
+test('📜 ประวัติการเปลี่ยนช่อง: แปลง audit_log เป็นภาษาคน · ของที่ถูกลบยังอยู่ · actor ว่าง = ระบบ · ตัดตามขอบเขต · สรุปรายเดือน', () => {
+  const rows = [
+    { id: 1, table_name: 'manpower_slot_plans', action: 'INSERT', actor: 'สมชาย', new_data: { org_node_id: 'd1', team: 'A', slots: 6 }, changed_at: '2026-09-02T01:00:00Z' },
+    { id: 2, table_name: 'manpower_slot_plans', action: 'UPDATE', actor: 'สมชาย', old_data: { org_node_id: 'd1', team: 'A', slots: 6 }, new_data: { org_node_id: 'd1', team: 'A', slots: 8 }, changed_at: '2026-10-01T01:00:00Z' },
+    { id: 3, table_name: 'station_slot_plans', action: 'DELETE', actor: null, old_data: { station_id: 'gone', per_shift: 2 }, changed_at: '2026-10-02T01:00:00Z' },
+    { id: 4, table_name: 'line_technicians', action: 'INSERT', actor: 'สมหญิง', new_data: { employee_id: 'e1', line_id: 10 }, changed_at: '2026-10-03T01:00:00Z' },
+    { id: 5, table_name: 'manpower_slot_plans', action: 'INSERT', actor: 'x', new_data: { org_node_id: 'other', team: 'B', slots: 3 }, changed_at: '2026-10-04T01:00:00Z' },
+    { id: 6, table_name: 'employees', action: 'UPDATE', actor: 'x', changed_at: '2026-10-04T01:00:00Z' },
+  ];
+  const list = M.describeSlotChanges(rows, {
+    nodeById: new Map([['d1', { name: 'HYDROFORM' }]]),
+    lineById: new Map([['10', { name: 'HYDROFORM' }]]),
+    empById: new Map([['e1', { name: 'ช่างเอ' }]]),
+    inScope: ({ kind, nodeId }) => kind !== 'team' || nodeId === 'd1',
+  });
+  assert.deepEqual(list.map(c => c.id), [4, 3, 2, 1], 'ล่าสุดก่อน · ตัดนอกขอบเขต · ไม่ใช่ตารางบอร์ด = ไม่เอา');
+  assert.equal(list.find(c => c.id === 2).text, '6 → 8 ช่อง'); assert.equal(list.find(c => c.id === 2).delta, 2);
+  const del = list.find(c => c.id === 3);
+  assert.equal(del.where, 'จุดงาน (ถูกลบแล้ว)'); assert.equal(del.actor, 'ระบบ'); assert.equal(del.delta, -2);
+  assert.equal(list.find(c => c.id === 4).where, 'HYDROFORM · ช่างเอ');
+  const sum = M.summarizeSlotChanges(list);
+  assert.deepEqual(sum.map(m => m.month), ['2026-10', '2026-09']);
+  assert.equal(sum[0].teamDelta, 2); assert.equal(sum[0].stationDelta, -2); assert.equal(sum[0].techIn, 1);
+  assert.equal(sum[1].teamDelta, 6);
+});
