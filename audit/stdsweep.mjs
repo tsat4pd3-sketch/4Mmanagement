@@ -100,6 +100,12 @@ for (const name of PAGES) {
   try {
     await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 25000 });
     await p.waitForTimeout(1800);
+    /* ⏳ หน้าที่ต้องรอข้อมูลก่อน render หัวเรื่อง = 1800ms ไม่พอ **เป็นระยะ** (2026-10-06 · QC audit)
+       เคสจริง: `SchemaMap` อ่านโครงสร้างจาก RPC **ทั้ง 2 project** ก่อน ⇒ รอบเต็มฟ้อง
+       "ไม่มีหัวเรื่อง h1/h2" แต่รันเจาะหน้าเดียวผ่าน (เครื่องว่างกว่า) = ด่านร้องหมาป่า
+       ⇒ ให้เวลาเพิ่มเฉพาะหน้าที่ยังไม่มีหัวเรื่อง · หน้าที่พร้อมแล้วไม่ถูกหน่วง
+       🔴 ห้ามแก้ด้วยการเพิ่ม waitForTimeout ให้ทุกหน้า (82 หน้า × ทุกแท็บ = รอบเต็มช้าขึ้นหลายนาที) */
+    await p.waitForSelector('#mainbox h1, #mainbox h2', { timeout: 6000 }).catch(() => {});
     /* หาแถบแท็บจาก `data-tabbar` ของ PageHeader (24/09) — เดิมยืม `data-ux-ok="tab-indicator"`
        ของ uxsweep มาใช้ พอ uxsweep เลิกต้องการแล้วถอดออก ตัวนี้ก็เหลือหน้าละ 1 แท็บเงียบๆ */
     const n = await p.evaluate(() => document.querySelectorAll('#mainbox [data-tabbar] > button').length || 1);
