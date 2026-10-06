@@ -14,6 +14,7 @@ import { DeleteButton } from './IconButton';
    2 เรื่อง — ตาราง Main (migration 20261006b) · สิทธิ์ `manpower_board:edit` (RLS has_perm คีย์เดียวกัน)
      1. ช่องตำแหน่งต่อ (แผนก × ทีม) → manpower_slot_plans · ช่องว่าง = ใช้ std ของไลน์เหมือนเดิม
      2. ช่างประจำไลน์ → line_technicians (ช่างแผนกไหนก็ได้ — ไม่แตะ employees.line_id ของเขา)
+     3. คนต่อกะของแต่ละจุดงาน → station_slot_plans (migration 20261006c) · ช่องว่างบอกได้ว่าขาดที่จุดไหน
    บันทึกทีละแถวทันที (ไม่มีปุ่มบันทึกรวม) ⇒ ไม่มีข้อมูลค้างให้หายเวลาปิดหน้าต่าง
    🔴 RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว" ⇒ ทุกการเขียน `.select('id')` แล้วนับแถว (กฎเหล็กข้อ 2)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
@@ -21,7 +22,7 @@ import { DeleteButton } from './IconButton';
 const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
-export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, onChanged, onClose }) {
+export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({});    // key `${node}|${team}` → ข้อความในช่อง (ยังไม่บันทึก)
 
@@ -38,6 +39,49 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
     return order.map(nm => fam.find(l => l.name === nm)).filter(Boolean);
   }, [nodes, lines, section]);
   const empById = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
+  const needOf = useMemo(() => new Map(stationPlans.map(p => [String(p.station_id), p.per_shift])), [stationPlans]);
+  const stationsOf = (l) => stations.filter(st => st.line_id === l.id || (st.line_id == null && st.line_name === l.name))
+    .sort((a, b) => String(a.station_name || '').localeCompare(String(b.station_name || ''), 'th', { numeric: true }));
+
+  // 📍 จำนวนคนต่อกะของจุดงาน — ว่าง = ไม่นับจุดนี้ · 0 = จุดนี้ไม่ต้องมีคนประจำ
+  const saveStation = async (stationId, raw) => {
+    const v = String(raw ?? '').trim();
+    const cur = needOf.get(String(stationId));
+    setBusy(true);
+    try {
+      if (v === '') {
+        if (cur == null) return;
+        const res = await supabase.from('station_slot_plans').delete().eq('station_id', stationId).select('station_id');
+        if (!checkWrite(res, 'ล้างจำนวนคนของจุด')) return;
+        if (!res.data?.length) { toast.error('ล้างไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
+      } else {
+        const n = Number(v);
+        if (!Number.isInteger(n) || n < 0 || n > 20) { toast.error('คนต่อกะต้องเป็นเลขเต็ม 0–20'); return; }
+        if (cur === n) return;
+        const res = await supabase.from('station_slot_plans').upsert({ station_id: stationId, per_shift: n }, { onConflict: 'station_id' }).select('station_id');
+        if (!checkWrite(res, 'บันทึกจำนวนคนของจุด')) return;
+        if (!res.data?.length) { toast.error('บันทึกไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์ manpower_board:edit'); return; }
+      }
+      onChanged();
+    } finally {
+      setDraft(d => { const x = { ...d }; delete x[`st|${stationId}`]; return x; });
+      setBusy(false);
+    }
+  };
+  // ตั้ง "จุดละ 1 คน/กะ" ให้ทุกจุดของไลน์ที่ยังไม่ได้ตั้ง (ไม่ทับค่าที่ตั้งไว้แล้ว)
+  const fillLine = async (l) => {
+    const rows = stationsOf(l).filter(st => !needOf.has(String(st.id))).map(st => ({ station_id: st.id, per_shift: 1 }));
+    if (!rows.length) { toast.info('ทุกจุดของไลน์นี้ตั้งไว้แล้ว'); return; }
+    setBusy(true);
+    try {
+      const res = await supabase.from('station_slot_plans').upsert(rows, { onConflict: 'station_id' }).select('station_id');
+      if (!checkWrite(res, 'ตั้งจุดละ 1 คน')) return;
+      if ((res.data?.length || 0) < rows.length) toast.error(`บันทึกได้ ${res.data?.length || 0}/${rows.length} จุด — ตรวจสิทธิ์ manpower_board:edit`);
+      else toast.success(`ตั้ง ${rows.length} จุด = 1 คน/กะ แล้ว`);
+      onChanged();
+    } finally { setBusy(false); }
+  };
+
 
   const saveSlot = async (nodeId, team) => {
     const key = `${nodeId}|${team}`;
@@ -139,8 +183,55 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           )}
         </section>
 
+        <section style={{ marginBottom: 18 }}>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>2. คนต่อกะของแต่ละจุดงาน</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
+            ตั้งแล้ว ช่องว่างบนบอร์ดจะบอกได้ว่า <b>ขาดที่จุดไหน กะไหน</b> (นับจากจุดประจำของคน — ตั้งที่ /management) ·
+            <b> เว้นว่าง = ไม่นับจุดนั้น</b> · ลำดับที่บอร์ดใช้: ช่องต่อทีม (ข้อ 1) ชนะ → จุดงาน → std ของไลน์ · พิมพ์แล้วกด Enter/คลิกที่อื่นเพื่อบันทึก
+          </div>
+          {!secLines.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่ได้ผูกไลน์ผลิตในผังองค์กร</div> : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {secLines.map(l => {
+                const sts = stationsOf(l);
+                if (!sts.length) return null;
+                const sum = sts.reduce((a, st) => a + (needOf.get(String(st.id)) || 0), 0);
+                return (
+                  <div key={l.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                      <strong>{l.name}</strong>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sts.length} จุด · ต้องการรวม {sum} คน/กะ</span>
+                      <button type="button" className="tbtn" disabled={busy} onClick={() => fillLine(l)}
+                        style={{ marginLeft: 'auto', height: 30, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
+                        ตั้งจุดที่ยังว่าง = 1 คน/กะ</button>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: 6 }}>
+                      {sts.map(st => {
+                        const key = `st|${st.id}`;
+                        const cur = needOf.get(String(st.id));
+                        const val = draft[key] ?? (cur != null ? String(cur) : '');
+                        return (
+                          <label key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg2)', minWidth: 0 }}>
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.station_name}>📍 {st.station_name}</span>
+                            <input type="number" min={0} max={20} inputMode="numeric" value={val} placeholder="–" disabled={busy}
+                              aria-label={`คนต่อกะ จุด ${st.station_name}`}
+                              onChange={e => setDraft(x => ({ ...x, [key]: e.target.value }))}
+                              onBlur={e => { if (draft[key] != null) saveStation(st.id, e.target.value); }}
+                              onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                              style={{ width: 56, textAlign: 'center' }} />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         <section>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>2. ช่างประจำไลน์</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>3. ช่างประจำไลน์</div>
+
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             ช่างแผนกไหนก็ได้ (MTN · DIE · JIG …) — ขึ้นแถว "ช่างเทคนิคประจำไลน์" ของแผนกที่ดูแลไลน์นั้น · <b>ไม่เปลี่ยนสังกัดของช่าง</b>
           </div>
