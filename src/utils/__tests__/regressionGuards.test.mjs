@@ -2673,3 +2673,13 @@ test('🛡️ Andon: call_mtn_team (ของจริง) ต้องชนะ
     + '   ของจริงต้องมาก่อนการเดาเสมอ · และห้าม return null ทิ้งตั้งแต่ไม่มีเลขเครื่อง\n'
     + '   (ใบที่ไม่ระบุเครื่องแต่ระบุทีมไว้ จะกลายเป็น "ไม่รู้ทีม" ทั้งที่คนกดระบุชัดเจน)\n');
 });
+
+/* ── คิว rack / บรรจุภัณฑ์ ห้ามโหลด "ล่าสุด N ใบ ไม่กรองสถานะ" (06/10 · ช่องโหว่สโตร์ข้อ 7) ── */
+test('🛡️ rack_requests / packaging_withdrawal_requests: คิวต้องโหลดใบค้างครบผ่าน openPlusHistory', () => {
+  for (const f of ['src/pages/HeijunkaKanban.jsx', 'src/pages/RackCenter.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\('(?:rack_requests|packaging_withdrawal_requests)'\)\.select\('\*'\)\.order\([^)]*\)\.limit\(/.test(code),
+      `\n\n❌ ${f} โหลดคิว rack/บรรจุภัณฑ์แบบ order().limit() ไม่กรองสถานะ — ใบค้างเก่าหลุดจากจอเมื่อใบโตขึ้น\n`
+      + '   แก้ยังไง: openPlusHistory(ใบค้าง, ประวัติ, N, คอลัมน์เวลา) จาก src/utils/fetchByIds.js\n');
+  }
+});
