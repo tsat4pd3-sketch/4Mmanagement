@@ -84,6 +84,11 @@
 **⛔ workflow audit — รอ user ตัดสิน:** trigger `fn_explode_child_demand` ไม่เคารพชั้น BOM (`parent_mat`) ⇒ ระเบิดซ้ำ 217 แถว/70 FG (ความต้องการ/ใบขอซื้อเกินจริง) · ทุก MO ต้องผ่าน QA (ค้างโต ~70 ใบ/สัปดาห์) · รับของ bulk 01/10 (4,005 ใบ ≈2M ชิ้น) จริงหรือไม่ · PM ตรวจไม่ผ่านเปิด MO อัตโนมัติไหม · ใบเศษถังแดงดึงข้ามวันได้ไหม · ให้ mtn/engineer มี `obeya:record` · qa มี `morning_meeting:record`
 
 **✅ DB audit (05/10) — แก้ฝั่งโค้ด:** ถอยใบผลิตที่ปิดแล้ว ลบแถว `issue` ใน `line_stock_transactions` ที่**ไม่มี DELETE policy** ⇒ ลบได้ 0 แถวเงียบ แต่ขึ้น toast เขียว "ถอนยอด stock ให้เรียบร้อย" → เช็คแถวที่เหลือ ถ้ายังอยู่ = แจ้งเตือนให้ Store ตรวจยอด (ทางแก้ถาวร = นโยบายลบเฉพาะ `created_by='auto' and type='issue'` หรือ RPC — **รอ user**)
+**✅ DB audit ชุด A (apply 06/10 · คำสั่ง user "ทำ A ได้" · ตรวจกลับแล้ว):**
+MAIN — `trg_audit` (fn_audit) ที่ `cqi15_event_logs`/`cqi15_event_approvals`/`four_m_logs`/`meeting_action_items` (`20261006_audit_cqi15_4m_actions_main.sql`) ·
+policy กระดิ่ง `(select auth.uid())` + พัก cron `qa-fme-scan` (`20261006_notifications_rls_initplan_main.sql` — เปิด FME เมื่อไหร่เปิด job คืน) ·
+DR — revoke DELETE จาก anon/authenticated 13 ตารางประวัติที่แอปไม่เคยลบ (`20261006_revoke_delete_history_dr.sql` · เหลือสิทธิ์ลบ 0) ·
+index 4 ตัว valid (`20261006_hot_indexes_dr.sql`) · ⚠️ MCP DDL หลายคำสั่งรวดเดียว timeout 60 วิ — apply ทีละคำสั่ง + `lock_timeout`
 **⛔ DB audit (05/10) — รอ user ตัดสิน (SQL เต็มอยู่ในแชท 05/10):** MAIN ~40 ตารางเขียน/ลบได้ทุก authenticated (เคยเสียหายจริง: workstation ถูกลบ 39 ครั้ง ⇒ `daily_production_logs.assigned_line` 41% ชี้จุดงานที่ไม่มีแล้ว) · CQI-15/4M ไม่มี audit trigger (ข้อมูล CQI-15 ถูกลบโดยไม่มีร่องรอย) · `notifications` 81 MB/20k แถว กระดิ่ง ~0.5 วิ · DR anon ลบประวัติได้ทุกตาราง (one-curl wipe ผ่าน cascade) · CASCADE จาก master → ประวัติ (jigs/machines/mtn_spare_parts/mtn_orders/child_lot_requests) · stock ผี 108 แถว 6,245 ชิ้นจากใบที่ถูกลบ · ไฟล์ EDI ลูกค้าใน bucket `demand-mail` anon อ่านได้
 
 **✅ แก้แล้ว (batch จอเดโม/ผู้บริหาร · branch `fix/qc-exec-screens`)**
