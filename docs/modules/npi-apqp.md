@@ -18,10 +18,19 @@ ESM ที่มีอยู่คุม **mass production** (ปลายน้
 | แผน tooling | ทะเบียนแม่พิมพ์ `/die-registry` (DR) | `npi_tooling_plans.die_set_code` (text = `die_sets.set_code`) |
 | ECI ขา PE | คำขอแก้เอกสาร PE (ลูปปิด 8D) | `npi_change_requests.pe_change_request_id → pe_change_requests` |
 | ECI ขากระบวนการ | ใบ 4M Method | `npi_change_requests.four_m_log_id → four_m_logs` |
+| **โปรเจค** | **บอร์ด New Model `/nm-board`** | **`npi_projects.nm_board_id` (text = รหัสรุ่นบนบอร์ด · 06/10)** |
 | ECI ขาแบบ / tooling | ทะเบียน rev แบบ / แผน tooling ในโมดูลเดียวกัน | FK |
 
 เทียบ E-SPT: Problem follow-up + Dashboard ของ ESM ครอบคลุมกว่าอยู่แล้ว (8D closed-loop · dept-dashboard) จึง**ไม่สร้างซ้ำ** —
 ที่สร้างใหม่คือ 3 ก้อนที่ IATF gap review (2026-08-14) ระบุว่าไม่มี: **APQP tracker · PPAP register · ECN workflow** + tooling development plan
+
+> ### 🔗 ผูกกับบอร์ด New Model (`/nm-board`) — 2026-10-06 · คำสั่ง user
+> `npi_projects.nm_board_id` (text · nullable · migration `20261006_npi_nm_board_link.sql` — apply แล้ว)
+> · ผูกที่ **✏️ โปรเจค → ช่อง 🧭 รุ่นบนบอร์ด New Model** · ผูกแล้วหัวเพจมีปุ่ม 🧭 ข้ามไปบอร์ด
+> · 🔴 **ห้ามเดาการผูกจากชื่อ/ลูกค้า** (`model` ซ้ำกันได้) — ระบบแค่เรียงตัวที่น่าจะใช่ขึ้นก่อน คนเลือกเอง
+> · 🔴 **บอร์ดอ่านอย่างเดียว ห้ามเอาสถานะ NPI ไปเขียนทับสี EVA** (กติกา IEC: คนตั้งสีเอง · มีด่าน)
+> · การแมป "แผงบนบอร์ด → แท็บใน NPI" อยู่ที่ `src/utils/nmNpiLink.js` (`PANEL_NPI_MAP`)
+> 📄 เหตุผลเต็ม → `docs/IEC-NEW-MODEL-OBEYA-DESIGN.md` §7.9
 
 ## 2. หน้า `/npi` (`src/pages/NPI.jsx` · หมวด คุณภาพ & วิศวกรรม)
 
