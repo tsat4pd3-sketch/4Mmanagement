@@ -674,10 +674,10 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
-## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board` (2026-10-06)
+## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
 
-แทนบอร์ดกระดาษหน้าไลน์ (ผังคน · ผัง LAYOUT · ป้าย 4M) · **อ่านอย่างเดียว ไม่มีตารางใหม่** · กฎอยู่ `utils/manpowerBoard.js` ที่เดียว
-· แถวของคน = **ตำแหน่ง** · คอลัมน์ = ทีม · กะของทีม = `shiftFromTeam` **ห้ามเขียน A = Shift 01** · ตารางกะไม่ตั้ง = ไม่คิดช่องว่าง (null)
+กฎทั้งหมด `utils/manpowerBoard.js` · แถวคน = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = ช่องว่าง `null`
+· ช่องที่ตั้งเอง `manpower_slot_plans` ชนะ std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
 > 📄 `docs/modules/manpower-board.md`
 
 ---
