@@ -15,6 +15,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
+import { DeleteButton } from '../components/IconButton';
 const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
@@ -199,7 +200,7 @@ export default function PokaYokeCheck() {
                   {canManage && (
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button className="tbtn" onClick={() => setDEditing({ ...d })} style={{ ...btnGray, padding: '4px 8px', fontSize: 12 }}>✏️</button>
-                      <button className="tbtn" onClick={() => deleteDevice(d)} style={{ ...btnGray, color: '#ef4444', padding: '4px 8px', fontSize: 12 }}>🗑</button>
+                      <DeleteButton onClick={() => deleteDevice(d)} title="ลบ" />
                     </div>
                   )}
                 </div>

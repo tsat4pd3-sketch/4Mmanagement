@@ -153,16 +153,18 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     }
 
     // ③ ประวัติการส่ง → ตารางของตัวเอง (ห้ามปนกับใบส่งของ)
+    /* 🔴 `sheet` ห้ามส่ง null — เป็นส่วนหนึ่งของคีย์ upsert ซึ่งต้องเป็น **คอลัมน์ล้วน**
+       (คอลัมน์ฝั่ง DB เป็น NOT NULL DEFAULT '' โดยเจตนา · ดู migration 20261006) */
     const hist = [
       ...rec.shipped.filter(s => s.due_date < today)
-        .map(s => ({ mat_no: s.mat_no, ship_date: s.due_date, qty: s.qty, kind: 'out', sheet: s.sheet })),
+        .map(s => ({ mat_no: s.mat_no, ship_date: s.due_date, qty: s.qty, kind: 'out', sheet: s.sheet || '' })),
       ...rec.orders.filter(o => o.past)
         .map(o => ({ mat_no: o.mat_no, ship_date: o.due_date, qty: o.qty, kind: 'requirement',
-                     sheet: (String(o.note || '').split('·')[1] || '').trim() || null })),
+                     sheet: (String(o.note || '').split('·')[1] || '').trim() })),
     ];
     const seen = new Set(), histUniq = [];
     hist.forEach(h => {
-      const k = `${h.mat_no}|${h.ship_date}|${h.kind}|${h.sheet || ''}`;
+      const k = `${h.mat_no}|${h.ship_date}|${h.kind}|${h.sheet}`;
       if (seen.has(k)) return;
       seen.add(k); histUniq.push({ ...h, created_by_name: by });
     });

@@ -250,7 +250,7 @@ export default function QaPieceStepper({
               {result === 'fail' ? `ชิ้นนี้ตก ${failedItems.length} จุด` : result === 'pass' ? 'ชิ้นนี้ผ่านทุกจุด' : `เหลืออีก ${missing.length} จุด`}
             </span>
             <button disabled={busy || !result} onClick={submitPiece}
-              style={btn(result === 'fail' ? '#ef4444' : 'var(--accent)', '#fff', { fontWeight: 800, opacity: result ? 1 : 0.5 })}>
+              style={btn(result === 'fail' ? '#ef4444' : 'var(--accent)', result === 'fail' ? '#fff' : 'var(--accent-ink)', { fontWeight: 800, opacity: result ? 1 : 0.5 })}>
               {result === 'fail' ? `✕ บันทึกชิ้นที่ ${seq?.nextPiece} (ตก) →` : `✓ บันทึกชิ้นที่ ${seq?.nextPiece}`}
             </button>
           </div>

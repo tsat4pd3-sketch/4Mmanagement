@@ -89,6 +89,20 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
   const pickedQty = useMemo(() => picked.reduce((s, r) => s + (Number(r.qty) || 0), 0), [picked]);
   const noDest    = byDest.find(d => !d.dest);
 
+  /* คืนใบที่ claim ไปแล้วกลับสถานะเดิม (กฎข้อ 6) · คืน { reverted, backErr } — นับแถวจริง ไม่เชื่อ !error */
+  const revertClaimed = async (ids) => {
+    let reverted = 0;
+    for (let i = 0; i < ids.length; i += IN_CHUNK) {
+      const { data: back, error: eBack } = await supabaseDR.from('purchase_requests')
+        .update({ status: prev, ...(next === 'ordered' ? { ordered_by: null, ordered_at: null } : {}),
+          ...(next === 'received' ? { received_by: null, received_at: null } : {}) })
+        .in('id', ids.slice(i, i + IN_CHUNK)).eq('status', next).select('id');
+      if (eBack) return { reverted, backErr: eBack.message };
+      reverted += back?.length || 0;
+    }
+    return { reverted, backErr: '' };
+  };
+
   const run = async () => {
     if (!picked.length || busy) return;
     setBusy(true);
@@ -107,7 +121,13 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         const { data, error } = await supabaseDR.from('purchase_requests')
           .update(patch).in('id', part).eq('status', prev)
           .select('id, qty, dest_line, part_name, work_date');
-        if (error) throw error;
+        if (error) {
+          /* ก้อนก่อนหน้าถูก claim ไปแล้ว แต่ยังไม่มีแถวสต็อก ⇒ คืนก่อนโยน (ไม่งั้นค้าง "รับเข้าแล้ว" กดใหม่ไม่ได้) */
+          const { reverted, backErr } = await revertClaimed(done.map(r => r.id));
+          throw new Error(reverted === done.length
+            ? `เลื่อนสถานะไม่สำเร็จ — ไม่มีใบไหนเปลี่ยน ลองกดใหม่อีกครั้ง (${error.message})`
+            : `เลื่อนสถานะไม่สำเร็จ และคืนได้แค่ ${reverted} จาก ${done.length} ใบที่เลื่อนไปแล้ว — แจ้ง admin (${error.message}${backErr ? ` · ${backErr}` : ''})`);
+        }
         done.push(...(data || []));
       }
 
@@ -116,7 +136,6 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         await onDone?.(); onClose?.(); return;
       }
 
-      let stockErr = '';
       let posted = 0;
       if (next === 'received') {
         /* ของเข้าคลังก้อนเดียว = แถวเดียว · ไลน์ที่รอของถูกเขียนไว้ในหมายเหตุ (ดูหัวไฟล์ + stockReceipt.js)
@@ -126,17 +145,23 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           matNo: mat, partName: group.part_name, slips: done,
           supplier: group.supplier, workDate, by: fullName,
         });
-        if (rows.length) {
-          const { error } = await supabaseDR.from('line_stock_transactions').insert(rows);
-          if (error) stockErr = error.message;
+        const { error: eLedger } = rows.length
+          ? await supabaseDR.from('line_stock_transactions').insert(rows)
+          : { error: null };
+        /* 🔴 06/10 — claim สถานะไปแล้ว (CAS ข้างบน) แต่ ledger ล้ม ⇒ **ต้องคืนใบที่ขยับทั้งหมด** (กฎข้อ 6)
+           เดิมแค่ toast "ไปบันทึกเองที่ Line Stock" ⇒ ใบค้าง "รับเข้าแล้ว" ทั้งที่สต็อกไม่ขึ้น และกดใหม่ไม่ได้อีก
+           (ปุ่มทีละใบ `advancePurchase` คืนสถานะอยู่แล้ว — ทางรวมยอดต้องเหมือนกัน) */
+        if (eLedger) {
+          const { reverted, backErr } = await revertClaimed(done.map(r => r.id));
+          throw new Error(reverted === done.length
+            ? `รับเข้าคลังไม่สำเร็จ — คืน ${done.length} ใบกลับเป็นสถานะเดิมแล้ว ลองกดใหม่อีกครั้ง (${eLedger.message})`
+            : `รับเข้าคลังไม่สำเร็จ และคืนสถานะได้แค่ ${reverted} จาก ${done.length} ใบ — ที่เหลือค้าง "รับเข้าแล้ว" ทั้งที่สต็อกยังไม่เข้า แจ้ง admin ทันที (${eLedger.message}${backErr ? ` · ${backErr}` : ''})`);
         }
       }
 
-      /* รายงานผลตามจริง — สำเร็จไม่ครบ/สต็อกไม่ถูกเติม ห้ามขึ้น toast เขียวเฉยๆ */
+      /* รายงานผลตามจริง — สำเร็จไม่ครบ ห้ามขึ้น toast เขียวเฉยๆ */
       const short = done.length < picked.length;
-      if (stockErr) {
-        toast.error(`เลื่อนสถานะ ${done.length} ใบแล้ว แต่บันทึกรับเข้าคลังไม่สำเร็จ — ${stockErr} · ไปบันทึกเองที่ Line Stock`);
-      } else if (short) {
+      if (short) {
         toast.error(`เลื่อนได้ ${done.length} จาก ${picked.length} ใบ — ที่เหลือถูกคนอื่นเลื่อน/ยกเลิกไปแล้ว`);
       } else {
         toast.success(next === 'ordered'
@@ -147,6 +172,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
       onClose?.();
     } catch (e) {
       toast.error(e.message || String(e));
+      await load(); await onDone?.();   // ใบอาจถูกคืน/ขยับบางส่วน — โหลดใหม่ให้จอตรงความจริง
     } finally { setBusy(false); }
   };
 

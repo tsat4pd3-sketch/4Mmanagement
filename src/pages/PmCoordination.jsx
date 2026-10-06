@@ -23,6 +23,7 @@ import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { DeleteButton } from '../components/IconButton';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -308,7 +309,7 @@ function PlanCard({ plan: p, tasks, canManage, pmPlan, fullName, onEdit, onReloa
           <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>📤 แจ้ง Production</button>
           <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>✏️ แก้ไข</button>
           {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: '#22c55e' }}>✓ เสร็จ</button>}
-          <button onClick={del} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: '#ef4444' }}>🗑</button>
+          <DeleteButton onClick={del} title="ลบ" />
         </>}
       </div>
     </div>

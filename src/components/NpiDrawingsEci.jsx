@@ -12,6 +12,7 @@ import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode } from '../utils/npi
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName, WarnBar } from './NpiUi';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
+import { DeleteButton } from './IconButton';
 
 const DWG_KIND = { '2d': '2D', '3d': '3D', spec: 'Spec', other: 'อื่นๆ' };
 const DWG_STATUS = { draft: { label: 'ร่าง', color: '#94a3b8' }, released: { label: 'ปล่อยแล้ว', color: '#22c55e' }, obsolete: { label: 'ยกเลิก', color: '#64748b' } };
@@ -167,7 +168,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
                     <td style={tdSt}>{dw.released_by ? `${dw.released_by} · ${fmtDate(dw.released_at)}` : '—'}</td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                       {canApprove && dw.status !== 'released' && <button style={{ ...btn('#22c55e'), padding: '3px 8px', fontSize: 11 }} disabled={saving} onClick={() => releaseDrawing(dw)}>✅ ปล่อย</button>}{' '}
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDwModal({ ...dw, rev_date: dw.rev_date || '', eci_no: dw.eci_no || '', description: dw.description || '', external_url: dw.external_url || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delDrawing(dw)}>🗑</button></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDwModal({ ...dw, rev_date: dw.rev_date || '', eci_no: dw.eci_no || '', description: dw.description || '', external_url: dw.external_url || '' })}>✏️</button> <DeleteButton onClick={() => delDrawing(dw)} title="ลบ" /></>}
                     </td>
                   </tr>
                 ))}
@@ -206,7 +207,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
                       </td>
                       <td style={{ ...tdSt, color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : 400 }}>{e.target_date ? fmtDate(e.target_date) : '—'}{e.effective_date ? <div style={{ fontSize: 11, color: '#22c55e' }}>มีผล {fmtDate(e.effective_date)}</div> : null}</td>
                       <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setEciModal({ ...blankEci(), ...e, _orig_status: e.status, requested_date: e.requested_date || '', target_date: e.target_date || '', effective_date: e.effective_date || '', drawing_revision_id: e.drawing_revision_id || '', pe_change_request_id: e.pe_change_request_id || '', four_m_log_id: e.four_m_log_id || '', tooling_plan_id: e.tooling_plan_id || '', reject_reason: e.reject_reason || '', part_id: e.part_id || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delEci(e)}>🗑</button></>}
+                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setEciModal({ ...blankEci(), ...e, _orig_status: e.status, requested_date: e.requested_date || '', target_date: e.target_date || '', effective_date: e.effective_date || '', drawing_revision_id: e.drawing_revision_id || '', pe_change_request_id: e.pe_change_request_id || '', four_m_log_id: e.four_m_log_id || '', tooling_plan_id: e.tooling_plan_id || '', reject_reason: e.reject_reason || '', part_id: e.part_id || '' })}>✏️</button> <DeleteButton onClick={() => delEci(e)} title="ลบ" /></>}
                       </td>
                     </tr>
                   );

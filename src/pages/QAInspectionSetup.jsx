@@ -33,6 +33,7 @@ import { checkWrite } from '../utils/dbWrite';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import SearchInput from '../components/SearchInput';
+import { DeleteButton } from '../components/IconButton';
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -40,7 +41,7 @@ const inputSt = {
   width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13,
   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
 };
-const btnSt = (bg = 'var(--accent)', color = '#fff') => ({
+const btnSt = (bg = 'var(--accent)', color = bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff') => ({
   padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
   fontWeight: 700, fontSize: 13, background: bg, color,
 });
@@ -763,8 +764,7 @@ export default function QAInspectionSetup() {
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
                       <button className="tbtn" title={`เปลี่ยนรูปแผ่น "${activeDwg.title}"`} disabled={uploading} onClick={() => replaceRef.current?.click()}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🔄</button>
-                      <button className="tbtn" title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                      <DeleteButton title={`ลบแผ่น "${activeDwg.title}"`} onClick={() => deleteDrawing(activeDwg)} />
                     </div>
                   )}
                 </div>
@@ -898,7 +898,7 @@ export default function QAInspectionSetup() {
                               <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>→SPC</button>
                             )}
-                            <button className="tbtn" title="ลบ" onClick={() => delItem(it)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444' }}>🗑</button>
+                            <DeleteButton title="ลบ" onClick={() => delItem(it)} />
                           </td>
                         )}
                       </tr>

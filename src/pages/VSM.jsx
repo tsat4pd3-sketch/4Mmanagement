@@ -39,6 +39,7 @@ import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
+import { DeleteButton } from '../components/IconButton';
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 // วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
@@ -602,8 +603,7 @@ export default function VSM() {
                         onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
                         style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
-                <button onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                <DeleteButton onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))} title="ลบ" />
               </div>
             ))}
             {!(a3.plan || []).length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีแถว — กด "+ เพิ่มแถว"</div>}

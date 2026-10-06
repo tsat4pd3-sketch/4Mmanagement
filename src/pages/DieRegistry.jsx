@@ -15,7 +15,9 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
-import useTabParam from '../utils/useTabParam';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
+import { useSearchParams } from 'react-router-dom';
+import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';   // 📷 สแกนป้ายแม่พิมพ์ → หมุดบนผัง (2026-10-06)
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
@@ -311,6 +313,26 @@ export default function DieRegistry() {
   /* ── ข้อมูลใช้ร่วมแท็บ 🗺️ ผังจัดเก็บ / 📊 สถานะ ── */
   const scopedDies = useMemo(() => dies.filter(d => inScope(d.line_name)), [dies, inScope]);
   const setsById = useMemo(() => Object.fromEntries(sets.map(s => [s.id, s])), [sets]);
+  /* ── 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (2026-10-06 · คำสั่ง user) ──
+     2 ทางเข้า ใช้ตัวตัดสินเดียวกัน (`findDieByScan`):
+       (1) ปุ่ม 📷 ในแท็บผัง  (2) ลิงก์จากหน้า /scan → `?die=layout&focus=<machines.id>`
+     ค้นใน `dies` ทั้งหมด (ไม่ใช่ scopedDies) — ไม่งั้นแยก "นอกขอบเขตไลน์" ออกจาก "ไม่มีในทะเบียน" ไม่ได้ */
+  const focusFromScan = useCallback((parsed) => {
+    const r = findDieByScan(parsed, dies, d => inScope(d.line_name));
+    if (r.error) return r.error;
+    setFocusDieId(r.die.id);
+    return undefined;
+  }, [dies, inScope]);
+  const [sp] = useSearchParams();
+  const setParams = useMergeParams();
+  const focusParam = sp.get('focus');
+  useEffect(() => {
+    if (!focusParam || loading) return;
+    const err = focusFromScan(parseQrPayload(buildQrPayload('machine', focusParam)));
+    if (err) toast.error(err);   // ห้ามเงียบ — คนสแกนมาจากหน้าชั้นวาง ต้องรู้ว่าทำไมหมุดไม่เด้ง
+    setParams({ focus: null, die: 'layout' }, { replace: true });
+  }, [focusParam, loading, focusFromScan, setParams]);
+
   const moDieCount = useMemo(() => {
     const m = buildOpenMoMap(openMos);
     return scopedDies.filter(d => d.is_active && openMosOf(d, m).length > 0).length;
@@ -421,6 +443,7 @@ export default function DieRegistry() {
           canEdit={canEdit} fullName={fullName} ready={layoutReady}
           reload={load} reloadAreas={reloadAreas} patchDieExt={patchDieExt}
           focusDieId={focusDieId} onFocusConsumed={() => setFocusDieId(null)}
+          onScanDie={focusFromScan}
         />
       )}
 

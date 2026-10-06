@@ -158,3 +158,84 @@ test('📺 จอ TV: ความจุการ์ดต่อคอลัม�
   assert.equal(M.tvCardCapacity({ areaW: 1000, areaH: 300, nCols: 2, cardW: 130, cardH: 120 }), 6);
   assert.equal(M.tvCardCapacity({ areaW: 50, areaH: 10, nCols: 3, cardW: 130, cardH: 120 }), 1);
 });
+
+test('ช่องที่ตั้งเอง (manpower_slot_plans) ชนะ std · ทีมที่ตั้งช่องแต่ยังไม่มีคน = คอลัมน์ช่องว่างล้วน', () => {
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES,
+    maps: { byLine: { 10: 'A' }, byDept: {} },
+    slotPlans: [{ org_node_id: 'd1', team: 'B', slots: 5 }, { org_node_id: 'd1', team: 'D', slots: 2 }, { org_node_id: 'd3', team: 'A', slots: 3 }] });
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  const B = h.cols.find(c => c.team === 'B');
+  assert.equal(B.slots, 4); assert.equal(B.slotSource, 'plan');      // ตั้ง 5 · มีคน 1
+  const D = h.cols.find(c => c.team === 'D');
+  assert.equal(D.ops.length, 0); assert.equal(D.slots, 2);
+  assert.equal(h.cols.find(c => c.team === 'A').slotSource, 'std', 'กะเช้ายังใช้ std เหมือนเดิม');
+  const e = b.depts.find(d => d.name === 'EMPTY');
+  assert.ok(e, 'แผนกเปล่าที่ตั้งช่องไว้ต้องโผล่ (ให้เห็นว่าว่างทั้งแผนก)');
+  assert.equal(e.cols[0].slots, 3);
+  assert.equal(b.emptyDepts.includes('EMPTY'), false);
+});
+
+test('ช่างประจำไลน์ข้ามแผนก (line_technicians) ขึ้นแถวช่าง ติดธง external · ไม่นับเป็นกำลังคนแผนก', () => {
+  const mtn = { id: 'mtn1', name: 'ช่าง MTN', position: 'technician', team: '', org_node_id: 'x', line_id: null };
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: [...EMPS, mtn], lines: LINES,
+    maps: { byLine: { 10: 'A' }, byDept: {} },
+    lineTechs: [{ employee_id: 'mtn1', line_id: 11 }, { employee_id: 'tech', line_id: 10 }, { employee_id: 'ghost', line_id: 10 }] });
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.techs.map(t => t.id), ['tech', 'mtn1'], 'คนในสังกัดก่อน · คนนอกต่อท้าย · คนที่ไม่อยู่ในทะเบียน active ไม่วาด');
+  assert.equal(h.techs[1].external, true); assert.deepEqual(h.techs[1].linkedLines, ['HDF1']);
+  assert.deepEqual(h.techs[0].linkedLines, ['HYDROFORM']);
+  assert.equal(h.opsTotal, 5);
+});
+
+test('🤝 คนยืมตัว: ยืมมาช่วย = แถว borrowed (ไม่นับทะเบียน) · คนในสังกัดที่ไปช่วยที่อื่น = lentTo', () => {
+  const helpers = [
+    { id: 'zz', name: 'คนยืม', position: 'operator', team: 'A', _helperFrom: 'GOR', _helperTo: 'HDF1', _helperShift: 'day' },
+    { id: 'b1', name: 'b1', position: 'operator', team: 'B', _helperFrom: 'HYDROFORM', _helperTo: 'APRON', _helperShift: 'night' },
+  ];
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} }, helpers });
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.borrowed.map(p => p.id), ['zz']);
+  assert.deepEqual(h.borrowed[0].borrowed, { from: 'GOR', to: 'HDF1', shift: 'day' });
+  assert.equal(h.opsTotal, 5, 'คนยืมไม่เข้าทะเบียนแผนก');
+  assert.deepEqual(h.cols.find(c => c.team === 'B').ops[0].lentTo, { to: 'APRON', shift: 'night' });
+  assert.equal(h.lentOut, 1);
+  const ap = b.depts.find(d => d.name === 'APRON');
+  assert.deepEqual(ap.borrowed.map(p => p.id), ['b1'], 'ยืมข้ามแผนกในส่วนงานเดียวกัน = โผล่ทั้ง 2 ฝั่ง (ไปช่วย / มาช่วย)');
+  assert.equal(b.totals.borrowed, 2);
+});
+
+test('📍 ช่องระดับจุดงาน: ขาดที่จุดไหน กะไหน · ชนะ std แต่แพ้ช่องต่อทีม · คนไม่มีจุดประจำต้องถูกนับบอก', () => {
+  const stations = [
+    { id: 's1', line_id: 10, station_name: 'ST-1' },
+    { id: 's2', line_id: 11, station_name: 'ST-2' },
+    { id: 's3', line_id: 99, station_name: 'นอกแผนก' },
+  ];
+  const stationPlans = [{ station_id: 's1', per_shift: 2 }, { station_id: 's2', per_shift: 1 }, { station_id: 's3', per_shift: 5 }];
+  const homeByEmp = { a1: 's1', b1: 's1', a2: 's2' };   // A = เช้า · B = ดึก (byLine 10 → A)
+  const base = { section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} }, stations, stationPlans, homeByEmp };
+  const h = M.buildManpowerBoard(base).depts.find(d => d.name === 'HYDROFORM');
+  assert.equal(h.stationInfo.planned, 2, 'จุดนอกไลน์ของแผนกไม่นับ');
+  assert.deepEqual(h.stationInfo.need, { day: 3, night: 3 });
+  const A = h.cols.find(c => c.team === 'A'), B = h.cols.find(c => c.team === 'B');
+  assert.equal(A.slotSource, 'station'); assert.equal(A.slots, 1); assert.deepEqual(A.slotStations, ['ST-1']);   // เช้า: ST-1 มี a1 (ขาด 1) · ST-2 มี a2
+  assert.equal(B.slots, 2); assert.deepEqual(B.slotStations.sort(), ['ST-1', 'ST-2']);                          // ดึก: ST-1 มี b1 (ขาด 1) · ST-2 ขาด 1
+  assert.equal(h.stationInfo.noHome, 2, 'weird + c1 ยังไม่มีจุดประจำ');
+  // ช่องต่อทีมที่ตั้งเองยังชนะ (กะดึก)
+  const h2 = M.buildManpowerBoard({ ...base, slotPlans: [{ org_node_id: 'd1', team: 'B', slots: 4 }] }).depts.find(d => d.name === 'HYDROFORM');
+  assert.equal(h2.cols.find(c => c.team === 'B').slotSource, 'plan');
+  assert.equal(h2.cols.find(c => c.team === 'A').slotSource, 'station');
+});
+
+test('📍 ผัง LAYOUT: ช่องที่ขาดต่อกะของจุด · ไม่ตั้ง = null · คนย้ายมาชั่วคราวไม่นับเป็นคนประจำ', () => {
+  const emp = { a: { id: 'a', name: 'a' }, b: { id: 'b', name: 'b' } };
+  const res = M.layoutPeople({
+    stations: [{ id: 1 }, { id: 2 }], homeByEmp: { a: 1 },
+    attendance: { b: { is_present: true, assigned_line: '1' } }, empById: emp,
+    shiftOfEmp: (e) => (e.id === 'a' ? 'day' : 'night'), stationPlans: [{ station_id: 1, per_shift: 1 }],
+  });
+  assert.deepEqual(res[0].missing, { day: 0, night: 1, unknown: 0 });
+  // คนประจำที่ไม่รู้กะ ⇒ ไม่เดา บอกยอดรวมที่ขาดแบบไม่รู้กะ
+  const r2 = M.layoutPeople({ stations: [{ id: 1 }], homeByEmp: { a: 1 }, empById: emp, shiftOfEmp: () => null, stationPlans: [{ station_id: 1, per_shift: 2 }] });
+  assert.deepEqual(r2[0].missing, { day: 0, night: 0, unknown: 3 });
+  assert.equal(res[1].need, null); assert.equal(res[1].missing, null);
+});

@@ -275,10 +275,15 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const cancel = async (r) => {
     if (!window.confirm(`ยกเลิก "${r.mat_no}" จริงๆ?\n\n(ใช้เมื่อ "ไม่ใช้พาร์ทนี้แล้ว" เท่านั้น\nถ้าแค่ยังไม่เบิกตอนนี้ ให้ใช้ ⏸ พักไว้ก่อน)`)) return;
     setBusy(r.id);
-    const { error } = await supabase.from('wip_replenish_requests')
-      .update({ status: 'cancelled' }).eq('id', r.id);
+    /* 🔴 06/10 (ช่องโหว่สโตร์ข้อ 8) — ยกเลิกได้เฉพาะใบ "พักไว้" (ปุ่มนี้โชว์แค่ที่นั่น) · CAS + นับแถว
+       เดิม `.eq('id')` ล้วน ⇒ จอค้างแล้วคนอื่นปลดเป็นใบเบิก/สโตร์หยิบไปแล้ว (ตัดสต็อก STORE→ไลน์แล้ว)
+       ก็ยังยกเลิกได้ = ใบหายจากคิวทั้งที่ของเคลื่อนไปแล้ว · RLS ปฏิเสธก็ได้ "สำเร็จ 0 แถว" เงียบ (กฎข้อ 2) */
+    const { data, error } = await supabase.from('wip_replenish_requests')
+      .update({ status: 'cancelled' }).eq('id', r.id).eq('status', 'hold').select('id');
     setBusy(null);
     if (error) { toast.error(error.message); return; }
+    if (!data?.length) { toast.error('ยกเลิกไม่ได้ — รายการนี้ถูกเปลี่ยนสถานะไปแล้ว (เบิกแล้ว/สโตร์กำลังจัด) หรือไม่มีสิทธิ์ · กด ↻'); load(); return; }
+    toast.info(`✕ ยกเลิก "${r.mat_no}" แล้ว`);
     load();
   };
 
@@ -297,10 +302,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     const { data, error } = await supabase.from('wip_replenish_requests')
       .update({ status: 'received', received_at: new Date().toISOString(),
                 received_by_name: fullName || null, received_qty: qty, received_note: note })
-      .eq('id', r.id).neq('status', 'received').select('id');
+      .eq('id', r.id).eq('status', 'delivered').select('id');
+    /* 🔴 06/10 (ข้อ 8) — รับได้เฉพาะใบ "ส่งแล้ว" (ปุ่มโชว์แค่ที่นั่น) · เดิม `.neq('received')` ⇒ จอค้างกดรับ
+       ใบที่ถูกยกเลิก = ชุบชีวิตใบขยะ · ใบที่สโตร์ยังไม่หยิบ (pending) = ปิดลูปทั้งที่สต็อกยังไม่เคยถูกตัด */
     setBusy(null);
     if (error) { toast.error(error.message); return; }
-    if (!data?.length) { toast.error('รายการนี้ถูกยืนยันรับไปแล้ว'); load(); return; }
+    if (!data?.length) { toast.error('ยืนยันรับไม่ได้ — รายการนี้ถูกรับ/ยกเลิก/เปลี่ยนสถานะไปแล้ว หรือไม่มีสิทธิ์ · กด ↻'); load(); return; }
     const lead = agoMin(r.requested_at);
     toast.success(`✅ ปิดงาน ${r.mat_no}${lead != null ? ` · ใช้เวลา ${lead} นาที` : ''}`);
     load();

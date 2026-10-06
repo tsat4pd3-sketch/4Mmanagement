@@ -5,6 +5,7 @@ import { loadProcessTypes } from '../utils/processTypes';
 import { toast } from './Toast';
 import EmojiPicker from './EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
+import { DeleteButton } from './IconButton';
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
    component เดียว ใช้ได้หลายจุด (Daily Report ⚙️ + หน้า /process-setup ในหมวดตั้งค่าฯ)
@@ -83,7 +84,7 @@ export default function ProcessTypeSetup({ role }) {
             </div>
             {canEdit && <>
               <button onClick={() => openEdit(it)} className="tbtn" style={{ ...cancelBtnStyle, padding: '5px 12px' }}>✏️</button>
-              <button onClick={() => handleDelete(it)} className="tbtn" style={{ ...cancelBtnStyle, padding: '5px 12px', color: '#ef4444' }}>🗑</button>
+              <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />
             </>}
           </div>
         ))}

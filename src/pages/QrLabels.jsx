@@ -30,8 +30,10 @@ import { ALL } from '../utils/filterLabels';
 
 // ชนิดป้าย 3 ตัวเลือกเท่ากัน ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
 const KIND_OPTIONS = [
-  { value: 'machine', label: '⚙️ เครื่องจักร' },
-  { value: 'jig', label: '🧩 จิ๊ก/แม่พิมพ์' },
+  /* 2026-10-06 · คำสั่ง user: เดิมแท็บจิ๊กชื่อ "จิ๊ก/แม่พิมพ์" ทั้งที่ป้ายแม่พิมพ์ต้องพิมพ์จากแท็บเครื่องจักร
+     (แม่พิมพ์ = แถวใน machines · ESM:M) — แท็บจิ๊ก = ทะเบียน PM (`jigs` · ESM:J) สแกนเข้าผังแม่พิมพ์ไม่ได้ */
+  { value: 'machine', label: '⚙️ เครื่องจักร / 🔨 แม่พิมพ์' },
+  { value: 'jig', label: '🧩 จิ๊ก (ทะเบียน PM)' },
   { value: 'delivery', label: '🎯 จุดส่งงาน' },
 ];
 
@@ -207,7 +209,7 @@ export default function QrLabels() {
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/จิ๊ก แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของเครื่องตัวนั้นเลย (ตรวจ PM · แจ้งซ่อม)" />
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของเครื่องตัวนั้นเลย (ตรวจ PM · แจ้งซ่อม)" />
 
       {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
       <div style={{
@@ -267,9 +269,15 @@ export default function QrLabels() {
           พิมพ์ป้ายเครื่องจักรที่แท็บ <b>⚙️ เครื่องจักร</b> ทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน
         </div>
       )}
+      {kind === 'jig' && (
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
+          🔨 <b>ป้ายแม่พิมพ์ไม่ได้อยู่แท็บนี้</b> — พิมพ์ที่แท็บ <b>⚙️ เครื่องจักร / 🔨 แม่พิมพ์</b> (สแกนแล้วเด้งเข้าผังจัดเก็บแม่พิมพ์ได้) ·
+          แท็บนี้คือจิ๊กและอุปกรณ์ที่มีแผนตรวจ PM
+        </div>
+      )}
       {kind === 'jig' && !loading && !visible.length && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ยังไม่มีข้อมูลจิ๊ก/แม่พิมพ์ในระบบ — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+          ⚠️ ยังไม่มีข้อมูลจิ๊กในทะเบียน PM — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
         </div>
       )}
       {missingNo > 0 && kind !== 'delivery' && (
