@@ -69,7 +69,7 @@ export default function SkillEditHistory({ employeeId, limit = 30 }) {
           color: 'var(--text2)', fontSize: 12, fontWeight: 600,
           display: 'flex', alignItems: 'center', gap: 6, width: 'auto',
         }}>
-        <span style={{ fontSize: 10 }}>{open ? '▼' : '▶'}</span>
+        <span style={{ fontSize: 11 }}>{open ? '▼' : '▶'}</span>
         🕓 ประวัติการแก้คะแนน
       </button>
 

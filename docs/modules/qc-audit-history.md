@@ -153,3 +153,41 @@ index 4 ตัว valid (`20261006_hot_indexes_dr.sql`) · ⚠️ MCP DDL หล
 - **แปลง `<select>` → ช่องค้นหา ไม่ใช่งาน mechanical** — ต้องยกโครงกลุ่มมาด้วย และเช็คว่าพาเรนต์มี "ที่เก็บคำค้น" จริงไหม
 - **build/lint/เทสหน่วยผ่านครบ แต่ช่องพิมพ์ไม่ได้เลย** — บั๊ก UI แบบ controlled/uncontrolled ต้องเปิดเบราว์เซอร์จริงวัด `input.value` หลังพิมพ์ + จำนวนแถวที่เหลือ (ทำผ่าน `audit/vite.audit.mjs` + Playwright · lab เล็กๆ ที่ mount component ตรง เร็วกว่าไล่หาปุ่มในหน้าจริงที่ติด permission gate)
 
+
+---
+
+## QC audit เต็มโปรเจค 2026-10-06 (4 agent ขนาน A–G) + ผลการเคาะของ user
+
+รันบน main `63c8c944` · พบ **🔴 9 · 🟡 28 · 🔵 25** · ด่านอัตโนมัติทุกตัวยังผ่านหมดตอนรัน
+(เทส 2,392 · stdsweep · searchsweep · lint) ⇒ **ของที่เจอคือสิ่งที่ด่านยังมองไม่เห็น**
+
+### 🔑 ประเด็นที่ใหญ่กว่าตัวบั๊ก — ด่านรั่ว 6 จุด
+| ด่าน | รั่วตรงไหน | หลุดกี่จุด |
+|---|---|---|
+| **grep ทั้งระบบ** | `src/pages/EventLog.jsx:149` มีไบต์ NUL ⇒ `file` อ่านเป็น binary ⇒ **ripgrep ข้ามทั้งไฟล์เงียบๆ** | ทุก audit ที่ผ่านมาไม่เคยตรวจไฟล์นี้ |
+| `no-utc-workdate` | regex ผูกกับ `new Date()` เปล่าๆ | 2 |
+| `matOrderSweep` | ไม่รู้จักคอลัมน์ชื่อ `name` (รู้จักแค่ `part_name`/`p_no`) | 9 |
+| `card-shadow-via-token` | จับแค่รูป `0 [0-3]px Npx rgba(...)` | 48 |
+| `<Cell>` guard | เช็คแค่ `fill` ไม่เช็ค `tooltipProps` | 2 |
+| *(ไม่มีด่าน fontSize)* | เอกสารเขียน 11 มาตลอดแต่ไม่เคยมีด่าน | 160 |
+
+➕ `checkWrite()` **ไม่นับแถว** แต่หน้าตา API ทำให้คนคิดว่านับ ⇒ 10 จุดใส่ `.select('id')` ไว้เปล่าๆ
+
+### ✅ ที่ user เคาะแล้วและทำเสร็จในรอบนี้ (06/10)
+1. **CSV export เข้าข่ายกฎ doc-forms → "ทำเลย"** — seed 8 doc_key + ของกลาง `src/utils/csvDoc.js`
+   · 📄 `doc-forms.md` §CSV export ก็เป็นเอกสาร
+2. **3 หน้าที่ไม่มีตัวกรองขอบเขต → "เอาให้เป็นมาตรฐาน"** — `/heijunka` เติม `<LineScopeSelect>` (เป็น
+   ตัวกรองมุมมอง ไม่ใช่การบังคับ) · `/monitoring` + `/rundown-stock` ไม่เติมพร้อมเหตุผล
+   · 📄 `role-system.md` §เคาะเพิ่ม 2026-10-06
+3. **ฟอนต์ 11 vs 10.5 → "แก้ให้เป็นมาตรฐาน"** — ยึด **11** ทั้งเอกสารและด่าน · กวาด 160 จุด ·
+   ด่านใหม่ `font-min-11` + chartsweep 10.5→11 · 📄 `UI-CONVENTIONS.md` §4
+
+### ⏳ ที่ยังไม่ได้แตะในรอบนี้ (รอ user สั่ง — เรียงตามที่เสนอไว้)
+- **รอบ 1:** publication ขาด 4 ตาราง (`monitor_cells`/`monitor_board_parts` ฝั่ง DR ·
+  `daily_production_logs`/`four_m_logs` ฝั่ง Main) ⇒ จอช้าได้ถึง 2 ชม. · ไบต์ NUL ใน `EventLog.jsx` ·
+  `addDays` ใน `MonitorFgSync` คืนวันย้อน 1 วัน
+- **รอบ 2:** `checkWriteRows()` ของกลาง + 10 จุด · RLS `org_assignments` / `doc_forms` /
+  `factory_map` / `oee_targets` ให้ตรงคีย์ปุ่ม · ขยายด่านที่รั่ว
+- **รอบ 3:** เกต HEIC ของ `SignatureModal` · array ใน deps (`OeeInsightPanel`) · เลขฟอร์ม hardcode
+  ใน `kpiExportExcel` · MAT มาก่อนชื่อพาร์ท 9 จุด · picker ลูกค้าใน `/customer-demand` ·
+  pointer events ของ `/line-setup`

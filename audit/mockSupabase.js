@@ -191,6 +191,28 @@ const TABLE_ROWS = {
     cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
     sort_order: i,
   }),
+  /* 🧑‍🤝‍🧑 Manpower Control Board (2026-10-06) — ผังคนต้องได้ "ตำแหน่ง + หน่วย + ทีม" คละกัน
+     ไม่งั้นทุกคนตกแถวพนักงานของ "ไม่ระบุแผนก" แล้วสายหัวผัง/หัวหน้าแผนก/หัวหน้ากลุ่ม/ช่าง/คอลัมน์ทีม
+     ไม่เคยถูกรันใน harness · แถว NULLISH ยังว่างตามกติกา (ไม่มีตำแหน่ง/หน่วย = ต้องไม่หายจากบอร์ด) */
+  employees: (r, i) => isNullish(r) ? r : ({
+    ...r,
+    position: ['manager', 'engineer', 'dept_head', 'line_leader', 'line_leader', 'technician'][i - 1] || 'operator',
+    team: i === 1 || i === 2 ? 'C' : i % 2 ? 'A' : 'B',
+    org_node_id: i <= 2 ? 'id-1' : 'id-2',
+    line_id: i <= 2 ? null : 'id-3',
+    image_url: i % 4 === 0 ? FACTORY_MAP_IMG : '',
+  }),
+  // ทะเบียนตำแหน่ง — key จริงตาม seed (positions.js DEFAULT_POSITIONS) ไม่งั้นทุกคนกลายเป็น "ตำแหน่งที่ระบบไม่รู้จัก"
+  positions: (r, i) => ({ ...r, ...([
+    ['operator', 'พนักงานฝ่ายผลิต', 'operator'], ['technician', 'ช่างเทคนิค', 'technician'], ['engineer', 'วิศวกร', 'engineer'],
+    ['line_leader', 'หัวหน้าไลน์', 'leader'], ['dept_head', 'หัวหน้าแผนก', 'supervisor'], ['section_head', 'หัวหน้าส่วน', 'supervisor'],
+    ['manager', 'ผู้จัดการฝ่าย', 'manager'], ['officer', 'เจ้าหน้าที่', 'staff'],
+  ].map(([key, label_th, level]) => ({ key, label_th, level }))[i - 1] || {}), sort_order: i }),
+  /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
+  workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
+    pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
+  employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
   stock_receipts: (r, i) => ({
     ...r, prod_order_id: `po-${i}`, prod_no: `01203${90000 + i}`, mat_no: i % 2 ? '30047001' : '20057003',
@@ -239,7 +261,13 @@ const TABLE_ROWS = {
       : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
           part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
-    const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
+    /* 🔴 `line_name` ต้องเป็นชื่อที่**มีอยู่จริงในทะเบียนไลน์ของ mock** (`LINE_NAME(i)`) — 06/10
+       เดิมตั้งเป็น 'LINE C ( 200&250 Ton )' / 'LINE APRON ASSY / HYDROFORM' ซึ่ง**ไม่มีในทะเบียน**
+       ⇒ `lineOfMat()` คืน null ทุกพาร์ท ⇒ **การ์ดไลน์ของ /production-plan (รายวัน+รายเดือน)
+          ไม่เคยถูกเรนเดอร์ใน harness เลยสักครั้ง** (กราฟภาระ/ปฏิทิน/ตารางเดือน ไม่เคยถูกตรวจ)
+       · ยังคงเจตนาเดิมไว้: i<=2 อยู่**คนละไลน์**กับที่เหลือ (ต้องมีมากกว่า 1 ไลน์ถึงจะเห็น
+         ว่าโค้ดแยกการ์ดตามไลน์ถูกต้อง) แค่เปลี่ยนเป็นชื่อที่ทะเบียนรู้จัก */
+    const base = { ...r, line_name: i <= 2 ? LINE_NAME(2) : LINE_NAME(1) };
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
     if (i === 5) return { ...base, is_operation: true, op_parent_mat: null, op_seq: null };
     return { ...base, is_operation: false, op_parent_mat: null, op_seq: null };
@@ -313,7 +341,39 @@ const TABLE_ROWS = {
    TABLE_ROWS ข้างบนคือ "แปลง ROWS ทีละแถว" (1 แถวเข้า → 1 แถวออก) ⇒ ตารางที่มีรูปทรงคนละเรื่อง
    กับ ROWS ต้องมาอยู่ที่นี่แทน **ห้ามเขียน `() => [...]` ใน TABLE_ROWS** (เคยพลาดมาแล้ว 22/09:
    mapper คืนอาร์เรย์ต่อ 1 แถว ⇒ ได้อาร์เรย์ซ้อน 14 ชั้น → `r.line_name` undefined → หน้าพังเงียบ) */
+/* วันงานสัมพัทธ์สำหรับ mock ที่ต้อง "ชนวันนี้" จริงๆ — บอร์ดที่ใช้วันที่ตายตัวจะไม่มีคอลัมน์
+   "📍 วันนี้" ให้ harness รันเลยสักครั้ง (เพิ่ม 06/10) · ใช้เฉพาะบอร์ด FG ซึ่งตัวเลขมาจาก
+   `customer_shipping_orders` ไม่ได้ผูกกับ `monitor_cells` ⇒ เลื่อนวันแล้วไม่มีอะไรหลุด */
+const MOCK_DAY = (n) => {
+  const d = new Date(Date.now() + 7 * 3600e3)   // เวลาไทยจาก epoch — ห้ามพึ่ง timezone เครื่อง
+  if (d.getUTCHours() < 8) d.setUTCDate(d.getUTCDate() - 1)   // ก่อน 08:00 = วันงานก่อนหน้า
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
 const TABLE_FIXED = {
+  /* 📦 ออเดอร์ลูกค้าจาก EDI 862/830 — **ห้ามถอด** (2026-10-06)
+     เป็นแหล่งเดียวของแถว ORDER บนบอร์ด FG และของตัวสร้างบอร์ด `MonitorFgSync`
+     🔴 ต้องมีครบ 3 เคสที่ของจริงมี ไม่งั้นสาขาเหล่านี้ไม่เคยถูกรัน:
+       · `cancelled` = ต้องถูกกันออก (`DEMAND_SKIP_STATUS`) — ใส่ยอดโต 99,999 ให้เห็นทันทีถ้าหลุด
+       · `shipped`   = ส่งแล้วแต่**ยังนับ** (ของออกไปแล้วต้องหายจากสต๊อก)
+       · `customer: null` = ผูกบอร์ดไม่ได้ ⇒ ตัวสร้างต้องนับแล้วเขียนบนจอ ห้ามทิ้งเงียบ
+     · 2 แถวแรกเป็น mat เดียวกันคนละวัน — พิสูจน์ว่า `sumByMatDate` แยกวันจริง */
+  customer_shipping_orders: [
+    { id: 'cso-1', customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH',
+      customer_part_no: 'GR-8841', qty: 1200, due_date: MOCK_DAY(0), status: 'pending' },
+    { id: 'cso-2', customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH',
+      customer_part_no: 'GR-8841', qty: 800, due_date: MOCK_DAY(1), status: 'shipped' },
+    { id: 'cso-3', customer: 'GRBNA', mat_no: '10105763', part_name: 'MBR-SIDE MID INR LH',
+      customer_part_no: null, qty: 300, due_date: MOCK_DAY(1), status: 'pending' },
+    { id: 'cso-4', customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH',
+      customer_part_no: 'GR-8841', qty: 99999, due_date: MOCK_DAY(2), status: 'cancelled' },
+    { id: 'cso-5', customer: 'GBL9A', mat_no: '10076603', part_name: 'BRACKET;SHOCK ABS 4X4 (STEP 1)',
+      customer_part_no: 'BL-2210', qty: 500, due_date: MOCK_DAY(1), status: 'pending' },
+    { id: 'cso-6', customer: null, mat_no: '10088639', part_name: 'ไม่ระบุลูกค้า',
+      customer_part_no: null, qty: 60, due_date: MOCK_DAY(1), status: 'pending' },
+  ],
+
   /* 🎓 ทะเบียนเกรดตามผังองค์กรทางการ — **ห้ามถอด** (2026-09-24)
      ช่อง "เกรด" ใน /operator จะไม่เรนเดอร์เลยถ้าทะเบียนว่าง (`gradesSync().length === 0`)
      ⇒ ไม่มีชุดนี้ = harness ไม่เคยรันโค้ดสายเกรด/คำเตือน "เกรดไม่ตรงตำแหน่ง" สักบรรทัด
@@ -439,6 +499,20 @@ const TABLE_FIXED = {
         { key: 'balance', label: 'BALANCE · คงเหลือ', kind: 'recur', recur: 'stock_run' },
         { key: 'min', label: 'MIN · ขั้นต่ำ', kind: 'const' },
       ] },
+    /* 📦 บอร์ด FG ต่อลูกค้า — **ห้ามถอด** (2026-10-06)
+       บอร์ดชนิดนี้เป็นชนิดเดียวที่ผูก `customer` แทน `line_name` และดึงแถว ORDER จาก
+       `customer_shipping_orders` (EDI 862/830) ⇒ ไม่มีบอร์ดนี้ใน mock = สาขา `isFg`
+       ใน `Monitoring.loadSystem` + สูตร `fg_run` ไม่เคยถูกรันใน harness เลย */
+    { id: 'mon-fg', board_key: 'fg-grbna', name: 'GRBNA', kind: 'fg',
+      line_name: null, customer: 'GRBNA', period_kind: 'day', period_count: 6,
+      /* 🔴 เริ่ม "เมื่อวาน" เสมอ ⇒ คอลัมน์ 📍 วันนี้ โผล่ทุกครั้งที่รัน harness (ห้ามเปลี่ยนเป็นวันตายตัว) */
+      start_date: MOCK_DAY(-1), sl_row: 'order', sl_includes_seed: false, sort_order: 1, note: null,
+      rows: [
+        { key: 'order', label: 'ORDER · ลูกค้าสั่ง', kind: 'system' },
+        { key: 'in', label: 'IN · ผลิตเข้า', kind: 'system' },
+        { key: 'balance', label: 'BALANCE · คงเหลือ', kind: 'recur', recur: 'fg_run' },
+        { key: 'min', label: 'MIN · ขั้นต่ำ', kind: 'const' },
+      ] },
     { id: 'mon-rack', board_key: 'rack-tspk', name: 'TSPK', kind: 'rack',
       line_name: null, customer: 'TSPK', period_kind: 'date', period_count: 8,
       start_date: null, sl_row: 'order', sl_includes_seed: false, sort_order: 1, note: null,
@@ -476,6 +550,14 @@ const TABLE_FIXED = {
     { id: 'mp-3', board_id: 'mon-line2', mat_no: '99999999', part_no: null, part_name: null,
       model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: null, cost: null,
       ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },
+    /* พาร์ทบนบอร์ด FG — mp-fg2 **ไม่มีเลขพาร์ทของลูกค้า** โดยตั้งใจ (ออเดอร์จริงบางใบไม่ส่งมา)
+       ⇒ `partRowKey(mat, null)` กับหัวพาร์ทที่ไม่มี Part No. ถูกรันจาก harness ด้วย */
+    { id: 'mp-fg1', board_id: 'mon-fg', mat_no: '10101001', part_no: 'GR-8841', part_name: 'BRACKET;SHOCK ABS 4X4,LH',
+      model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: 100, cost: null,
+      ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },
+    { id: 'mp-fg2', board_id: 'mon-fg', mat_no: '10105763', part_no: null, part_name: 'MBR-SIDE MID INR LH',
+      model: null, raw_mat: null, process: null, rack: null, lot_qty: null, packing: null, cost: null,
+      ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 2, note: null, is_active: true },
     { id: 'mp-4', board_id: 'mon-rack', mat_no: '10101001', part_no: 'BHS07706 (LH)', part_name: null,
       model: '20TF/RG01', raw_mat: null, process: null, rack: '1', lot_qty: null, packing: 100, cost: null,
       ct_sec: null, fc: null, pieces_per_shot: null, kg_per_piece: null, spec: null, semi_part: null, sort_order: 1, note: null, is_active: true },

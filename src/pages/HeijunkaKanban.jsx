@@ -25,6 +25,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import LineScopeSelect from '../components/LineScopeSelect';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -39,6 +40,8 @@ import PartCard, { partCardGrid } from '../components/PartCard';
 import StatusZones from '../components/StatusZones';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc } from '../utils/csvDoc';
 
 /* 🧭 ทะเบียนมุมมองของบอร์ดสโตร์ (2026-09-25 · คำสั่ง user *"สับสนการใช้งาน แต่ละ tab มากๆ"*)
 
@@ -1461,6 +1464,8 @@ const openPlusHistory = async (openQ, histQ, histN) => {
 };
 
 export default function HeijunkaKanban() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { fullName, role } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
@@ -1496,6 +1501,13 @@ export default function HeijunkaKanban() {
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
+  /* ขอบเขตไลน์ — ช่องเดียวมาตรฐานเดียวกับทุกหน้า (QC audit 06/10 · user: "เอาให้เป็นมาตรฐาน")
+     🔴 เป็น **ตัวกรองมุมมอง** ไม่ใช่การจำกัดสิทธิ์ — default = ทั้งหมด
+     เหตุ: สโตร์/วางแผนป้อนของให้ทั้งโรงงาน และหน่วยงานสนับสนุนไม่มีไลน์ผลิตสังกัด
+     ⇒ ถ้าบังคับด้วย profiles.sections จะเหลือ 0 แถวทันที (กับดักที่ operator.jsx เตือนไว้) */
+  const [scopeSec,  setScopeSec]      = useState('');
+  const [scopeLine, setScopeLine]     = useState('');
+  const [scopeSet,  setScopeSet]      = useState(null);   // null = ไม่กรอง
   const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
@@ -2231,7 +2243,8 @@ export default function HeijunkaKanban() {
   const view = useMemo(() => {
     const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));
     const groupOf = (line) => lineMap[line]?.parent_line_name || line;
-    const visibleSessions = sessions.filter(s => shiftFilter === 'all' || s.shift === shiftFilter);
+    const visibleSessions = sessions.filter(s => (shiftFilter === 'all' || s.shift === shiftFilter)
+      && (!scopeSet || scopeSet.has(s.line_name)));
     const visibleIds = new Set(visibleSessions.map(s => s.id));
 
     // columns = ไลน์·กะ ที่มี demand
@@ -2450,7 +2463,7 @@ export default function HeijunkaKanban() {
       groupOrders, bomByMat, ctByMat, wipByGroup,
       linesOfGroup: Object.fromEntries(Object.entries(linesOfGroup).map(([g, s]) => [g, [...s]])),
     };
-  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
+  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate, scopeSet]);
 
   /* ⚠️ ต้อง guard null — เป็น fmt ตัวเดียวใน 14 ตัวทั้งโปรเจคที่เคยไม่ guard
      (ที่เหลือใช้ `n == null ? '—'` หรือ `Number(n || 0)` หมด)
@@ -2486,12 +2499,10 @@ export default function HeijunkaKanban() {
       const per = kanbanStd[r.mat_no];
       return [r.mat_no, `"${r.part_name}"`, r.uom, r.supplier || '', ...view.cols.map(c => r.perCol[c.id] || 0), r.grossTotal, r.totalStock, r.netTotal, per || '', per ? Math.ceil(r.netTotal / per) : ''].join(',');
     });
-    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}${matFilter ? '_' + matFilter : ''}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10) · ยังไม่ตั้งเลขฟอร์ม = ชื่อเดิมเป๊ะ
+    downloadCsvDoc('csv_heijunka_kanban',
+      `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}${matFilter ? '_' + matFilter : ''}`,
+      [head.join(','), ...lines].join('\n'));
   };
 
   return (
@@ -2521,6 +2532,11 @@ export default function HeijunkaKanban() {
           )}
         </>} />
       <FilterBar>
+        <LineScopeSelect lines={Object.values(lineMap)} section={scopeSec} line={scopeLine}
+          onChange={(sec, ln, meta) => {
+            setScopeSec(sec); setScopeLine(ln);
+            setScopeSet(meta?.lines?.length ? new Set(meta.lines) : null);
+          }} />
         <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} />
         <Segmented value={shiftFilter} onChange={setShiftFilter} label="กะ"
           options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />

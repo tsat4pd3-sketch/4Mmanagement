@@ -183,7 +183,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
                   <div>
                     <label style={lbl}>จำนวน (ชิ้น)</label>
                     <input type="number" value={r.qty} onChange={e => set(b.key, { qty: e.target.value })} style={inp} />
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       ลงไว้ {b.fromLabel} {src.toLocaleString('th-TH')} ชิ้น
                     </div>
                   </div>

@@ -15,6 +15,8 @@ import PersonSelect from '../components/PersonSelect';
 import CustomerSelect from '../components/CustomerSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import useTabParam from '../utils/useTabParam';
+import { boardOptions, linkedPanelCount } from '../utils/nmNpiLink';
+import { PROJECTS as NM_BOARD_PROJECTS } from '../data/nmBoard737D';
 import { todayLocal, fmtDate } from '../utils/dateFormat';
 import { loadDocForms } from '../utils/docForms';
 import {
@@ -73,7 +75,7 @@ async function fetchAll(table, select) {
   return { data: rows, error: null };
 }
 
-const emptyProject = { project_code: '', name: '', customer: '', model: '', template_id: '', kickoff_date: '', sop_date: '', status: 'planning', leader_name: '', description: '' };
+const emptyProject = { project_code: '', name: '', customer: '', model: '', template_id: '', kickoff_date: '', sop_date: '', status: 'planning', leader_name: '', description: '', nm_board_id: '' };
 const emptyPart = { part_no: '', part_name: '', mat_no: '', line_name: '', pe_set_id: '', qa_part_id: '', ppap_level: 3, owner_name: '', remark: '' };
 
 export default function NPI() {
@@ -232,6 +234,8 @@ export default function NPI() {
       name: m.name.trim(), customer: m.customer?.trim() || null, model: m.model?.trim() || null,
       template_id: m.template_id, kickoff_date: m.kickoff_date || null, sop_date: m.sop_date || null,
       status: m.status, leader_name: m.leader_name?.trim() || null, description: m.description?.trim() || null,
+      /* 🔗 รุ่นบนบอร์ด New Model — ว่าง = ยังไม่ผูก (ห้ามเดาให้จากชื่อ/ลูกค้า · utils/nmNpiLink.js) */
+      nm_board_id: m.nm_board_id?.trim() || null,
     };
     let res;
     if (m.id) res = await supabase.from('npi_projects').update(row).eq('id', m.id).select().single();
@@ -303,6 +307,11 @@ export default function NPI() {
     ? `${project.project_code} · ${project.customer || '—'} · ${template?.label || 'ไม่พบแม่แบบ'} · SOP ${project.sop_date ? fmtDate(project.sop_date) : '—'}${sopLeft != null ? ` (${sopLeft >= 0 ? `อีก ${sopLeft} วัน` : `เลยมา ${-sopLeft} วัน`})` : ''}`
     : `${projects.length} โปรเจค · เลือกโปรเจคเพื่อดูรายละเอียด`;
 
+  /* 🔗 ลิงก์ไปบอร์ด New Model ของรุ่นที่ผูกไว้ — ต้องมีรุ่นนั้นอยู่จริงบนบอร์ดด้วย
+     (รุ่นถูกถอดออกจากบอร์ดแล้ว แต่ค่าเก่าค้างในฐาน ⇒ ปุ่มจะพาไปหน้าว่าง) */
+  const nmBoard = project?.nm_board_id ? NM_BOARD_PROJECTS.find(b => b.id === project.nm_board_id) : null;
+  const nmBoardHref = nmBoard ? `/nm-board?cust=${encodeURIComponent(nmBoard.customer)}&proj=${encodeURIComponent(nmBoard.id)}` : null;
+
   const projectSelect = (
     <select value={projectId} onChange={e => setProject(e.target.value)} className="grow" style={{ minWidth: 220, maxWidth: 420 }}>
       <option value="">— เลือกโปรเจครุ่นใหม่ —</option>
@@ -315,6 +324,12 @@ export default function NPI() {
       <PageHeader title="พาร์ทใหม่ — APQP / PPAP" icon="🚀" sub={sub}
         filters={<><span className="filter-label">โปรเจค</span>{projectSelect}</>}
         actions={<>
+          {/* 🧭 ข้ามไปบอร์ด New Model ของรุ่นเดียวกัน — โผล่เฉพาะเมื่อผูกแล้วเท่านั้น
+              (ปุ่มที่กดไปแล้วไม่ตรงรุ่น แย่กว่าไม่มีปุ่ม · ยังไม่ผูก = ไปติ๊กที่ ✏️ โปรเจค) */}
+          {nmBoardHref && (
+            <a href={nmBoardHref} style={{ ...ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">🧭 บอร์ด New Model</a>
+          )}
           {project && canEdit && <button style={ghost} onClick={() => setProjModal({ ...emptyProject, ...project })}>✏️ โปรเจค</button>}
           {canEdit && <button style={btn()} onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
         </>}
@@ -406,6 +421,19 @@ export default function NPI() {
             <Field label="สถานะ"><MetaSelect value={projModal.status} onChange={v => setProjModal({ ...projModal, status: v })} meta={PROJECT_STATUS} /></Field>
             {/* leader = user ระบบ (profiles) → PersonSelect แทน datalist (npi_projects ยังไม่มีคอลัมน์ leader_uid — เก็บชื่ออย่างเดียว · 2026-09-07) */}
             <Field label="Project leader"><PersonSelect value={projModal.leader_name || ''} history={leaderHist} onChange={r => setProjModal({ ...projModal, leader_name: r.name })} /></Field>
+            {/* 🔗 ผูกกับบอร์ด New Model (/nm-board) — 2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน"
+                🔴 ระบบ **เรียง** ตัวที่น่าจะใช่ขึ้นก่อนเท่านั้น ห้ามเลือกให้เอง — ผูกผิดรุ่น = บอร์ดโชว์ตัวเลขของรุ่นอื่น
+                   ซึ่งแย่กว่าไม่โชว์เลย (กฎความซื่อสัตย์ของจอ) */}
+            <Field label="🧭 รุ่นบนบอร์ด New Model" span={2}
+              hint="ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก">
+              <select style={inp} value={projModal.nm_board_id || ''}
+                onChange={e => setProjModal({ ...projModal, nm_board_id: e.target.value })}>
+                <option value="">— ยังไม่ผูกกับบอร์ด —</option>
+                {boardOptions(NM_BOARD_PROJECTS, { customer: projModal.customer, model: projModal.model }).map(o => (
+                  <option key={o.id} value={o.id}>{o.label}{o.hint ? ` — ${o.hint}` : ''}</option>
+                ))}
+              </select>
+            </Field>
             <Field label="รายละเอียด" span={2}><textarea style={{ ...inp, minHeight: 60 }} value={projModal.description || ''} onChange={e => setProjModal({ ...projModal, description: e.target.value })} /></Field>
           </div>
         </Modal>

@@ -96,6 +96,8 @@ function SignPadModal({ title, onCancel, onDone }) {
 
 export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
   // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
@@ -169,7 +171,7 @@ export default function OjtTraining() {
       if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+  }, [lines, role, userLineId, scopeKey, scopeLineIds]);
 
   /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
      feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)

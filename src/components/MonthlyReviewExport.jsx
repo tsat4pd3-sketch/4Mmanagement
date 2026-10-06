@@ -57,6 +57,8 @@ function TriBox({ state, onChange }) { // state: 'all' | 'some' | 'none'
 
 export default function MonthlyReviewExport({ onClose }) {
   const { fullName, position, sections: scopeSecs } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const [monthKey, setMonthKey] = useState(prevMonthKey());
   // จำนวนเดือนที่แสดงในเด็ค (รวมเดือนรายงาน) — 1 = เหมือนเดิม ไม่มีสไลด์เทรนด์
   const [trendMonths, setTrendMonths] = useState(3);
@@ -109,7 +111,7 @@ export default function MonthlyReviewExport({ onClose }) {
       setSelLines(new Set(out.flatMap(s => s.groups.flatMap(g => g.lines)))); // default = ทุกไลน์ใน scope
     })();
     return () => { alive = false; };
-  }, [scopeSecs]);
+  }, [scopeKey]);
 
   const linesOfSec = (s) => s.groups.flatMap(g => g.lines);
   const stateOf = (lines) => {

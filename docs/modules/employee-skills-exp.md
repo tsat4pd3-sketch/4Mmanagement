@@ -140,3 +140,55 @@ farm ชนเพดานขั้น (24/49/74/99) → คำขอ level up (
 - **`gate_25_needs_ojt`** — default `false` เพราะมีประวัติ OJT แค่ 66 จาก 231 คน · เปิดเมื่อ OJT ลงระบบครบ
 - **`employees` ↔ `profiles` ยังไม่มีคอลัมน์เชื่อม** — `is_trainer` จึงเทียบด้วย `ojt_trainings.trainer_name`
   = ชื่อ (เสี่ยงสะกดต่าง) · ถ้าวันหน้าเพิ่ม `employees.profile_id` ให้เปลี่ยนมาเทียบ uid
+
+---
+
+## 🔍 ไล่ตรวจคลาส "จอโชว์ว่าทำได้ แต่ระบบไม่ให้ทำ" ทั้งหมวดฐานพนักงาน (2026-10-06 · คำสั่ง user)
+
+ต่อจากเคส `/org-setup` 05/10 (ปุ่มโชว์ แต่ด่านตอนบันทึกไม่รู้จักชั้นใหม่) — ไล่ทั้ง 6 หน้าในหมวด
+พนักงาน & ทักษะ (`/register` · `/operator` · `/ojt-training` · `/skills-report` · `/workforce-insight`
+· `/shift-organize`) **เจอ 4 จุด แก้แล้วทั้งหมด** (อีก 2 จุดในหมวดนี้ดู `org-hierarchy.md`)
+
+### 1. ปุ่ม "✅ อนุมัติ" อัพระดับ เช็คสิทธิ์ไม่ครบที่การเขียนจริงต้องใช้
+
+`canApprove` เดิมดูแค่ `skills:approve_levelup` / `_100` — แต่การอนุมัติ **เขียน
+`employee_skills.score = to_level`** ซึ่ง RLS `employee_skills_write` WITH CHECK บังคับว่า
+
+```
+(score <= 50  OR  has_perm('skills:edit_high'))
+AND (สกิลไม่ใช่หมวด allowance_skill  OR  has_perm('skills:edit_allowance'))
+```
+
+⇒ ผู้มีสิทธิ์อนุมัติแต่**ไม่มี `skills:edit_high`** กดอนุมัติ Lv.75/100 = เด้ง error ดิบจาก Postgres
+("new row violates row-level security policy") — ปุ่มโชว์ว่าทำได้ แต่ระบบปฏิเสธ
+
+🔴 **สองคีย์นี้ตั้งแยกกันได้ที่ `/permissions`** — วันที่ตรวจ (06/10) ผู้อนุมัติ (admin/manager/supervisor)
+มี `edit_high` ครบพอดีจึงยังไม่พัง **แต่ `skills:edit_high` มีไว้เพื่อ "กดเพดาน supervisor ไว้ที่ 50"
+โดยเฉพาะ** — ถอดเมื่อไหร่พังทันที และตอนนี้มีคำขอค้าง **Lv.75 = 46 ใบ · Lv.100 = 56 ใบ**
+
+**แก้:** คิด `writeBlock` จาก `SKILL_EDIT_CAP` + `canEditHighSkill` / `canEditAllowance` แล้ว
+`canApprove = mayApprove && !writeBlock` · จอเขียนบอกว่า **ขาดคีย์ไหน** (สีส้ม) แยกจาก
+"ไม่ใช่คิวของคุณ" (สีเทา) · มีด่าน `regressionGuards`
+
+### 2. ช่องติ๊กสกิลที่คะแนนเกินเพดาน ติ๊กออกได้ แต่บันทึกแล้วไม่หาย
+
+`lockedHigh` (คะแนนใน DB > เพดานที่บัญชีนี้ตั้งได้) เดิม **disable แค่ช่องคะแนน ไม่ได้ disable ช่องติ๊ก**
+⇒ ติ๊กออกได้ → `handleSaveEmp` เจอ `if (!canEditHighSkill && orig.score > scoreCap) return;`
+**ข้ามเงียบ** → ขึ้น "อัปเดตข้อมูลพนักงานเรียบร้อย!" สีเขียว → เปิดดูใหม่สกิลยังอยู่เหมือนเดิม
+
+🔴 **ถึงจริงแน่** — วัด 06/10: **720 แถว / 148 คน** มีคะแนน > 50 และ role `leader`
+มี `skills:edit` แต่ไม่มี `skills:edit_high` (เพดาน 50)
+
+**แก้:** `rowEditable` รวม `!lockedHigh` (ล็อกช่องติ๊กด้วย) · ป้ายล็อกเขียนว่า "แก้/เอาออกไม่ได้" ·
+ด่านชั้นสองใน `handleSaveEmp` เก็บ `skipped[]` แล้วรายงานเป็น toast info
+🔴 **ตัวแจ้ง "ข้าม" ต้องเป็นตัวแปรแยกจาก `skillWarn`** — `skillWarn` ถูกใช้ short-circuit การเขียน
+ก้อนถัดไป (`if (!skillWarn && removals.length)`) เอามาปนแล้วจะไป**บล็อกการลบที่ถูกต้อง**
+
+### ✅ จุดที่ตรวจแล้วไม่พบปัญหา
+
+- `/ojt-training` — สิทธิ์ `ojt:record`/`ojt:delete` ใช้ตรงกันทั้งปุ่มและ handler · ตาราง RLS เปิด ·
+  ลำดับเขียน attendee (upsert ชุดใหม่ก่อน แล้วค่อยลบส่วนเกิน) ทำไว้ถูกแล้วตั้งแต่ QC 05/10
+- `/shift-organize` — ด่านชั้นสองใน `handleSave` กรอง `canEditDeptRow` / `canEdit` ตรงกับปุ่มทุกจุด ·
+  `fetchSchedules()` เคลียร์ pending ให้หลังบันทึกสำเร็จ
+- `/skills-report` · `/workforce-insight` — อ่านอย่างเดียว ไม่มีปุ่มเขียน
+- ขาอนุมัติ/ไม่อนุมัติอัพระดับ **นับแถวที่เขียนจริงอยู่แล้ว** (`.select('id')`) ตั้งแต่รอบ 09/16

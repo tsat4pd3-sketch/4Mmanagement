@@ -314,3 +314,38 @@ test('rackCount — ของ ÷ packing std (ตรงไฟล์ TSPK G3 = L3
   assert.equal(rackCount({ qty: 100, packStd: 0 }), null);
   assert.equal(rackCount({ qty: null, packStd: 100 }), null);
 });
+
+/* ── บอร์ด FG ต่อลูกค้า (06/10) ─────────────────────────────────────────────── */
+test('fg_run — คงเหลือ = ยกมา + ผลิตเข้า − ลูกค้าสั่ง (ไม่ใช่ − ที่ส่งจริง)', () => {
+  const rows = [
+    { key: 'order', label: 'ลูกค้าสั่ง', kind: 'system' },
+    { key: 'in', label: 'ผลิตเข้า', kind: 'system' },
+    { key: 'balance', label: 'คงเหลือ', kind: 'recur', recur: 'fg_run' },
+  ];
+  const periods = buildDayPeriods('2026-10-01', 4);
+  const manual = (pid, rk, pk) => (rk === 'balance' && pk === periods[0].key ? 1000 : undefined);
+  const system = (pid, rk, pk) => {
+    const i = periods.findIndex(p => p.key === pk);
+    if (rk === 'order') return [0, 300, 200, 0][i];
+    if (rk === 'in') return [0, 100, 0, 500][i];
+    return undefined;
+  };
+  const g = buildGrid({ parts: [{ id: 'p1' }], periods, rows, manual, system });
+  // 1000 → +100−300 = 800 → +0−200 = 600 → +500−0 = 1100
+  assert.deepEqual(periods.map(p => valueAt(g, 'p1', 'balance', p.key)), [1000, 800, 600, 1100]);
+});
+
+test('fg_run — ไม่ใส่ยอดยกมา = null ทั้งแถว (ห้ามเดา 0 แล้วบอกว่าของจะขาด)', () => {
+  const rows = [
+    { key: 'order', label: 'ลูกค้าสั่ง', kind: 'system' },
+    { key: 'in', label: 'ผลิตเข้า', kind: 'system' },
+    { key: 'balance', label: 'คงเหลือ', kind: 'recur', recur: 'fg_run' },
+  ];
+  const periods = buildDayPeriods('2026-10-01', 3);
+  const g = buildGrid({
+    parts: [{ id: 'p1' }], periods, rows,
+    manual: () => undefined,
+    system: (pid, rk) => (rk === 'order' ? 500 : undefined),
+  });
+  assert.deepEqual(periods.map(p => valueAt(g, 'p1', 'balance', p.key)), [null, null, null]);
+});
