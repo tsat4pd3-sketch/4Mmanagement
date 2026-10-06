@@ -23,7 +23,6 @@
 - สร้าง/เปลี่ยน pattern ที่ใช้ร่วมกันหลายหน้า → อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่)
 - เปลี่ยน schema/ตาราง/Edge Function/workflow/กฎธุรกิจ → อัพเดท **`docs/modules/<module>.md` ของโมดูลนั้น** (พร้อมวันที่) · CLAUDE.md แก้เฉพาะกฎที่ผ่านกฎรับเข้าข้างล่าง
 - **📏 กฎรับเข้า CLAUDE.md (2026-10-05 · คำสั่ง user) — ด่าน `npm run check:context` = ขั้นแรกของ build**
-  ไฟล์นี้ถูกโหลดเข้า memory **ทุก session ทั้งไฟล์** ⇒ ทุกบรรทัดคือภาษีที่ทุก session จ่าย
   **ผ่านทั้ง 4 ข้อจึงมีสิทธิ์อยู่** — ตกข้อใดข้อหนึ่ง ไปอยู่ `docs/modules/<module>.md` แล้วเหลือ 📄 pointer:
   1. **ข้าม session จริง** — session ที่ไม่แตะโมดูลนี้ ก็ยังต้องรู้ (ไม่งั้นมันพลาด) · "น่ารู้" ไม่ผ่าน
   2. **เป็นกฎ ไม่ใช่เรื่องเล่า** — บอกว่า*ต้อง/ห้าม*ทำอะไร · **เหตุผล·ประวัติ·ตัวเลขที่วัดมา·ก่อน-หลัง
@@ -34,7 +33,7 @@
   · **`@path` import ห้ามเด็ดขาด** (ดูดไฟล์เข้า memory ทุก session — ต้นเหตุจริงของ 550k tokens
     ไม่ใช่ขนาดไฟล์) · ห้าม CLAUDE.md ซ้อนในโฟลเดอร์ย่อย · **ห้ามถอดด่าน/ขยายเพดานเพื่อให้ deploy ผ่าน**
   · 🔴 **เพิ่มกฎใหม่ตอนไฟล์ใกล้เต็ม = ต้องรีดของเก่าในคอมมิทเดียวกัน** (ห้ามฝากให้ session หน้า)
-  · 📄 ที่มา + สิ่งที่ย้ายไปแล้ว + วิธีรีด → `docs/modules/claude-md-slim.md`
+  · 📄 เหตุผลของทุกข้อ + สิ่งที่ย้ายไปแล้ว + วิธีรีด → `docs/modules/claude-md-slim.md`
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกในไฟล์โมดูล (ข้ามโมดูลจริง เช่น "กับดัก CSS" ค่อยไว้ที่นี่)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
 - **⚠️ ส่ง SQL/คำสั่งให้ user: วาง SQL เต็มๆ ในแชท ห้ามบอกแค่ชื่อไฟล์ · ระบุ project (Main/DR) ทุกครั้ง · แนบคิวรีเช็คผล (คำสั่งถาวร 2026-08-21)** — user มีแค่ **Supabase SQL Editor บนเว็บ ไม่มี CLI/terminal เปิดไฟล์ในรีโปไม่ได้** ⇒ **ห้ามส่งคำสั่ง shell/CLI ให้รัน** · migration ที่ย้อนได้ + edge function = AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ · 📄 เคสที่เคยพลาด + ขั้นตอน → `docs/modules/db-write-rules.md` §ส่ง SQL ให้ user · `docs/modules/edge-functions.md`
@@ -90,30 +89,16 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ---
 
-## Pages & Routes
+## Pages & Routes · สายธารความต้องการ (`/flow-tower`)
 
-> 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md`
-
----
-
-## 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19)
-
-โจทย์จาก user: ไล่ audit การส่งต่อ "ความต้องการ" ตั้งแต่ Sales → Warehouse → Production FG → WIP →
-> 📄 รายละเอียดเต็ม → `docs/modules/demand-flow-tower.md`
+> 📄 `docs/modules/pages-routes.md` · `docs/modules/demand-flow-tower.md`
 
 ---
 
-## Organizational Hierarchy (Thai Summit Group)
+## Organizational Hierarchy · Role System
 
-ลำดับชั้นองค์กรที่สอดคล้องกันทั้งระบบ — ห้ามเพิ่มฟีเจอร์ที่ขัดกับลำดับชั้นนี้
-> 📄 รายละเอียดเต็ม → `docs/modules/org-hierarchy.md`
-
----
-
-## Role System
-
-role = "ชุดสิทธิ์ใช้ระบบ" ไม่ใช่ตำแหน่งงาน (2026-07-10) — ตำแหน่งจริงในโรงงาน
-> 📄 รายละเอียดเต็ม → `docs/modules/role-system.md`
+**ห้ามเพิ่มฟีเจอร์ที่ขัดลำดับชั้นองค์กร** · **role = "ชุดสิทธิ์ใช้ระบบ" ไม่ใช่ตำแหน่งงาน**
+> 📄 `docs/modules/org-hierarchy.md` · `docs/modules/role-system.md`
 
 ---
 
@@ -190,15 +175,14 @@ Reject → status: "rejected" + reject_reason
 > · 🔴 **ชี้ MAT ไม่ได้ = ไม่รู้ CT ⇒ ไม่เข้า %P ต้องเขียนบนจอ (`ngNoMatP`)** · "ผลิตได้" ยังเป็นงานดี
 
 > ### 🔴🔴 กฎเหล็กข้าม session — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15)
-> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพัก
-> บวกเข้าไปอีก = หักซ้ำ (เครื่องเสีย 11:30-13:00 คร่อมพักเที่ยง 50 น. → หักไป 140 ทั้งที่จริง 90)
+> พักตามนโยบาย = planned stop ที่**ถูกกันออกจากฐานเวลาไปแล้ว** ⇒ นาที downtime ที่ตกในช่วงพักบวกเข้าไปอีก = หักซ้ำ
 > · **ทุกจุดที่เอา downtime ไปหักจากฐานเวลา (netAvail/runMin/wLoad/strictOee/MTBF) ต้องผ่าน
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
-> · backfill แล้ว (รายละเอียด+rollback ใน `oee.md`)
 
 > ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
-> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) **ห้ามคิดเองในหน้า** ·
+> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
+>   ต้นเหตุ/ผู้ถูกพาล = `dayDelaySummaryOf()` / `pushChainOf()` · `<DelayBlameBar>` ·
 >   **หน้าที่วาดบอร์ดต้องส่ง `frameEndMs`** · 🔴 **ไม่มี CT / ไม่มีงานเหลือ / ไม่ส่งปลายกะ = `null` ห้ามคืน 0**
 > · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
 >   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
@@ -206,16 +190,14 @@ Reject → status: "rejected" + reject_reason
 > 📄 ตัววาด (`PlanSlipBar`/`DelayBlameBar`) + ตัวเลข/เคสเต็ม → `docs/modules/oee.md` §หลุดแผนไปแค่ไหน
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
-> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน
-> 2 เท่า → **%P ทะลุ 100 แล้วถูก cap เงียบ**
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
 >   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
 >   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
-> *"ต่างแค่ลูกค้า แต่ product ตัวเดียวกัน แค่ต้องแยกบิล แยกรหัส แยก mat SAP"* · `op_parent_mat` เป็น
-> **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
+> `op_parent_mat` เป็น **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของ "สินค้าเดียวกัน" ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
 > · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
 >   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
 >   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
@@ -228,9 +210,9 @@ Reject → status: "rejected" + reject_reason
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
 > · 🔴 **คิวรีที่เอาไปคิด %Q ต้องต่อ `${QBIN_EMBED}` ใน select** ไม่ต่อ = `suspectState()` คืน `unknown`
 >   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
->   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่ (backfill 30/09 แล้ว)
+>   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
 
-> 📄 รายละเอียดเต็ม → `docs/modules/oee.md`
+> 📄 รายละเอียดเต็ม (เคส · ตัวเลขที่วัดมา · คำพูด user · ผล backfill) → `docs/modules/oee.md`
 
 ---
 
@@ -374,7 +356,7 @@ Reject → status: "rejected" + reject_reason
 3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก
    "ไม่กรอกเลย" · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
 4. 🔑 **ถังขยะที่มีคีย์อื่นกรอกไว้แล้ว ต้องแตกด้วยคีย์นั้นก่อน อย่ารีบเดาจากคำ** (มีด่าน)
-   downtime: ถัง "อื่นๆ/Alarm ไม่ระบุ" **92% มี `machine_no`** ⇒ `dtBucketName` (`utils/downtimeCategory.js`)
+   downtime: ถัง "อื่นๆ/Alarm ไม่ระบุ" **เกือบทุกใบมี `machine_no`** ⇒ `dtBucketName` (`utils/downtimeCategory.js`)
    แตกเป็น `"<เครื่อง> · <ประเภท>"`
 5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
    ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
@@ -462,7 +444,7 @@ Reject → status: "rejected" + reject_reason
 
 2 แท็บ `?tab=kpi|qc7` · สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` —
 **โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** · 🔴 แยกชนิดสินทรัพย์ (`?asset=`) ด้วย `machines.equipment_kind`
-**ห้ามใช้ `mtn_dept`** (89% ของใบเป็นทีม production ปนทุกชนิด)
+**ห้ามใช้ `mtn_dept`** (ส่วนใหญ่ลงเป็นทีม production ปนทุกชนิดของสินทรัพย์)
 · 🔴 **พาเรโตอยู่แท็บ `qc7` ที่เดียว** (เดิมซ้ำใน KPI = จอเดียวกันตอบคนละเลข)
 > 📄 `docs/modules/mtn-problem-analysis.md`
 
@@ -524,10 +506,9 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
-## ⚫ ของที่ยุบ/ถอดออกแล้ว (archived — อย่ารื้อกลับโดยไม่ถาม user)
+## ⚫ ของที่ยุบ/ถอดออกแล้ว — **อย่ารื้อกลับโดยไม่ถาม user**
 
-- **ผังรวมโรงงาน** ยุบเป็น `/factory-map` ที่เดียว (2026-07-16) → `docs/modules/_archived/factory-overview-merged.md`
-- **PM Photo-Compare** (เทียบรูปเงา) ถอดทิ้ง ไม่คุ้ม (2026-07-22) → `docs/modules/_archived/pm-photo-compare-removed.md`
+> 📄 รายการ + เหตุผลรายตัว → `docs/modules/_archived/` (ดัชนีใน `docs/modules/README.md`)
 
 ---
 
@@ -549,7 +530,7 @@ Reject → status: "rejected" + reject_reason
 - **⭐ v2 (2026-09-24) วัด "ความสามารถ" ไม่ใช่ "การมาทำงาน"** — 4 ขา (ปริมาณสะสมแบบ log · คุณภาพ ·
   ความหลากหลาย/เหตุผิดปกติ · การรับรอง) + **ประตูรายขั้น** · ค่าเกณฑ์ทุกตัวอยู่ใน `skill_exp_config`
   **ห้าม hardcode ใน SQL/JS** · `fn_skill_exp_rebuild()` **คำนวณใหม่ทั้งก้อนทุกคืน** (idempotent โดยโครงสร้าง)
-- 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** (ไลน์ยังไม่มีข้อมูลยอดผลิต 18% ของแถว) —
+- 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
   ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
 - ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
 > 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
@@ -601,7 +582,7 @@ Reject → status: "rejected" + reject_reason
 > (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
 > ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
 > migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
-> 📄 `docs/modules/bom-levels.md` (ทำไมเดิม ~90% ตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
+> 📄 `docs/modules/bom-levels.md` (ทำไมเดิมตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
 
 ---
 
@@ -635,7 +616,7 @@ Reject → status: "rejected" + reject_reason
 ## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
 
 กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
-- **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push (กระดิ่งวัดจริง 25/09: **19,095 แถว/7 วัน อ่าน 7.3%**)
+- **ดึง ไม่ใช่ยิง** — ไม่สร้างแถว `notifications` ไม่เรียก send-push
 - **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว ห้ามแตกรายตัว**)
   — ชื่อในใบ ≠ งานส่วนตัว (ตัวเลขวัดจริงใน `my-queue.md`)
 - **🔴 badge นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
@@ -694,6 +675,7 @@ Reject → status: "rejected" + reject_reason
 - **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js`) — มีเทสในด่าน build** (2026-09-11)
   ไม่ส่ง `cacheControl` = ได้ default 1 ชม. ⇒ รูปถูกโหลดใหม่ทุกชั่วโมง · **เคยทำ egress ทะลุโควต้าจน Supabase
   ล็อกบริการทั้ง organization มาแล้ว (ทั้งโรงงาน login ไม่ได้)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน `image-input-via-accept-helper`) — HEIC จาก iPhone เบราว์เซอร์ Android/Chrome decode ไม่ได้ ⇒ ไม่แปลง = พังตอนกดบันทึก หรืออัปไฟล์ดิบขึ้นไปแล้วทุกคนเห็นรูปเสีย · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` ตามเดิม (มีในตัวแล้ว)
 - **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}`) — บีบไม่ได้ เฉลี่ย 4.3 MB/รูป · ตัวตรวจชนิดไฟล์ =
   `src/utils/imageFileKind.js` จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME) · **ปฏิเสธไฟล์ต้องขึ้น toast
   บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ** (คำสั่ง user 2026-09-11)
@@ -733,6 +715,8 @@ Reject → status: "rejected" + reject_reason
 
 > ⚠️ **ห้ามใช้ `new Date().toISOString()` เพื่อหาวันที่งาน** — คืน UTC ต่างจากไทย (UTC+7) วันที่คลาดเคลื่อน
 > · **วันที่งาน = `getWorkDate()`** (`src/utils/workDate.js` · ก่อน 08:00 = วันก่อนหน้า — กะดึกข้ามวัน)
+> · **บวก/ลบวันจากสตริงวันที่ = `addDaysStr()`** (ไฟล์เดียวกัน · UTC ล้วน ไม่พึ่ง timezone เครื่อง · แกะไม่ออก = `null`)
+>   🔴 **ตัวที่คืน "สตริงวันที่" ห้ามปิดท้ายด้วย `.toISOString().slice(0,10)`** — ผสม 2 ระบบเวลา = คลาดวันเงียบ (มีด่าน `no-utc-workdate`)
 > · กะปัจจุบัน = `getCurrentShift()` (day 08:00–19:59 / night 20:00–07:59) · `getShiftInfo()` คืน `{ shift, label }`
 > · **แสดงผล**เวลาใช้ `toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })` (ไม่ใช่สำหรับ query)
 > · **ฝั่ง SQL (DR) ใช้ `work_date_bangkok()` ห้ามใช้ `current_date`** (= UTC · เพี้ยน 07:00-07:59 ไทย)
@@ -747,14 +731,14 @@ Reject → status: "rejected" + reject_reason
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
 1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง `.select('id')` แล้ว**นับแถว** ห้าม toast เขียวจาก `!error` อย่างเดียว · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน `storage-delete-after-row-count`) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า + คิดว่ากันแล้ว (2 ด่าน: `checkwrite-rows-not-plain` · `checkwriterows-needs-select`) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน `storage-delete-after-row-count`) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
 3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ · **จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (PostgREST infer ไม่เจอ = `42P10` = ไม่เขียนเลยทั้งก้อน · เกิดมา 3 รอบ · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
-7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`**
+7. **realtime ต้องมี "เพดาน" ไม่ใช่ debounce · และต้องกรองว่า "เรื่องนี้ของฉันไหม"** — **`coalesce(fn, LIVE.x)` (`src/utils/liveRefresh.js`) เท่านั้น ห้าม debounce/`setTimeout` เอง** · ระดับใน `src/utils/refreshRates.js` **ห้ามใส่ ms ดิบ** · **subscribe ต้องมี `filter:` เมื่อรู้ขอบเขต** — ⚠️ **DELETE กรองด้วยคอลัมน์ที่ไม่ใช่ pk ไม่ได้** ให้แยก subscribe DELETE ไม่กรอง **ห้ามแก้ด้วย `REPLICA IDENTITY FULL`** · 🔴 **ตารางที่ subscribe ต้องอยู่ในทะเบียน `src/utils/realtimeTables.js` + publication จริง** (ไม่อยู่ = เงียบสนิท ไม่มี error · มีด่าน)
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` ห้ามประกอบเองทีละชิ้น**
-9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (ให้แปลงเป็น string/primitive ก่อน) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
+9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (แปลงเป็น string/primitive ก่อน · prop ที่เป็น array ต้อง `useMemo` ที่หน้าแม่) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
 11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
 12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
@@ -763,34 +747,30 @@ Reject → status: "rejected" + reject_reason
 
 ## กฎการทำงานของทุก AI session (Workflow Discipline)
 
-ลำดับที่ต้องทำทุกครั้ง ไม่ว่าจะแก้อะไร:
-1. **เช็คกฎก่อนลงมือ** — section ที่เกี่ยวข้องใน CLAUDE.md + `docs/modules/<module>.md` ของโมดูลที่แตะ +
-   **ทุกงาน → `docs/ENGINEERING-PRINCIPLES.md`** · แก้ UI → `docs/UI-CONVENTIONS.md` (บังคับ) ·
-   แตะสิทธิ์/role → `docs/PERMISSIONS-DESIGN.md` · แตะ DB → §Supabase Projects (**2 projects!**) + เขียน migration เสมอ
-2. **ทำงานให้สอดคล้องกับกฎ** — ขัดกับ convention เดิม ให้ทำตาม convention ก่อน เว้นแต่ user สั่งเปลี่ยน
-   (แล้วต้องไล่แก้ทุกจุดที่ใช้ pattern นั้นให้ตรงกัน)
-3. **อัพเดทกฎหลังทำ** — งานที่สร้าง/เปลี่ยน pattern · schema · สิทธิ์ · workflow ที่ session อื่นต้องรู้ →
-   อัพเดทเอกสาร (`docs/modules/<module>.md` เป็นหลัก · CLAUDE.md เฉพาะกฎข้าม session) **ในคอมมิทเดียวกัน** พร้อมวันที่
-4. **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = deploy จริง
-   📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
-   - **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
+> ขั้น "เช็คกฎก่อน / ทำตาม convention / อัพเดทกฎในคอมมิทเดียวกัน" อยู่ที่ **§กฎการทำงานทุก session** หัวไฟล์
+> (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
+> · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
+
+**build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = deploy จริง
+📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
+- **`npm run build` = `check:context` → `lint:critical` → `npm test` → `vite build`** ·
      ตัวรันเทส = `scripts/run-tests.mjs` (เก็บ `src/**/__tests__/*.test.mjs` เอง — **วางไฟล์เทสใหม่แล้วถูกเก็บอัตโนมัติ**)
-     · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (Render อาจใช้ node 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
-     · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
-     ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
-   - **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** (คำสั่ง user
+  · **ห้ามเปลี่ยนเป็น `node --test '<glob>'`** (Render อาจใช้ node 20 ⇒ deploy ล่มทั้งที่โค้ดไม่ผิด)
+  · **⏱️ `npm test` รัน 2 รอบ: ปกติ + "นาฬิกา +400 วัน"** จับ**เทสระเบิดเวลา** ⇒ **ฟังก์ชันที่กินเวลาปัจจุบัน
+  ต้องรับ `now` เป็นพารามิเตอร์ แล้วเทสตรึงค่า** · ตกรอบนี้ให้แก้เทส **ห้ามถอดรอบนี้ออก**
+- **🛡️ `src/utils/__tests__/regressionGuards.test.mjs` = ด่าน "บั๊กเก่าห้ามกลับมา"** (คำสั่ง user
      *"ปัญหาที่เคยแก้เคยเกิด ไม่ควรเกิดซ้ำ"*) — **เจอบั๊กคลาสใหม่ที่คนถัดไปน่าจะพลาดซ้ำ → เพิ่มกฎที่ไฟล์นี้
      ในคอมมิทเดียวกับที่แก้บั๊ก** (ใส่เฉพาะกฎที่ grep ได้แม่น ห้ามใส่กฎจุกจิก)
-   - **ด่าน lint กฎ crash** (`eslint.critical.config.js`) — เฉพาะกฎที่ทำแอปพังตอน runtime ที่ bundler ไม่จับ ·
-     **ห้าม bypass ด้วย `vite build` ตรงๆ · ห้ามเพิ่มกฎ style จุกจิกในไฟล์นี้**
-     · `react-hooks/rules-of-hooks` เปิดอยู่ — **hook ทุกตัวต้องอยู่บนสุดก่อน early return** (ผิด = React #310 จอ error ทั้งหน้า)
-     **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
-   - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
+- **ด่าน lint กฎ crash** (`eslint.critical.config.js`) — เฉพาะกฎที่ทำแอปพังตอน runtime ที่ bundler ไม่จับ ·
+  **ห้าม bypass ด้วย `vite build` ตรงๆ · ห้ามเพิ่มกฎ style จุกจิกในไฟล์นี้**
+  · `react-hooks/rules-of-hooks` เปิดอยู่ — **hook ทุกตัวต้องอยู่บนสุดก่อน early return** (ผิด = React #310 จอ error ทั้งหน้า)
+  **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
+- **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
-     · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · KPI `manual`+`auto:` · เอกสารที่ออกเลขใบแล้ว)
-     · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
-   - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
-     ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)
+  · 🔴 **แถวพิเศษใน mock ห้ามถอด** (`NULLISH` · ชั้น OP · ไลน์แม่-ลูก 3 ชั้น · KPI `manual`+`auto:` · เอกสารที่ออกเลขใบแล้ว)
+  · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
+- **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
+  ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)
 
 ### QC Agent — `/qc-audit` (subagent `qc-project-rules` · read-only)
 
@@ -837,12 +817,7 @@ Reject → status: "rejected" + reject_reason
 
 ## Shift Logic
 
-| กะ | เวลา | OT |
-|----|------|-----|
-| กะเช้า (Day) | 08:00–17:30 | 17:30–20:00 |
-| กะดึก (Night) | 20:00–07:59 | 20:00–22:30 |
-| Extended OT | 20:00–23:00 | กะเช้าพิเศษ |
-
+**กะเช้า 08:00–17:30** (OT 17:30–20:00) · **กะดึก 20:00–07:59** (OT 20:00–22:30) · Extended OT 20:00–23:00
 - **Team A/B** หมุนกะสลับกัน · **Team C** กะเช้าตลอด · **work date: ก่อน 08:00 = วันก่อนหน้า** (`getWorkDate()`)
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**

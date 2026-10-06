@@ -27,6 +27,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { machineReliability, normEquipKey, resolveEquip, buildEquipIndex } from './mtnMetrics.js';
 import { resolvePlanDue, ymdBangkok, STATUS_META } from '../lib/pmSchedule.js';
+import { addDaysStr } from './workDate.js';
 
 /** หน้าต่างเปรียบเทียบ: 30 วันล่าสุด vs 60 วันก่อนหน้า (รวม 90 = เท่ากับที่ downtime มีข้อมูลสม่ำเสมอ
  *  เริ่ม 19/06) · ช่วงก่อนยาวกว่า 2 เท่าเพื่อให้ฐานนิ่ง ไม่แกว่งตามเดือนเดียว — เทียบกันด้วย "ต่อชั่วโมงเดิน" */
@@ -63,10 +64,7 @@ export const TREND_META = {
 };
 
 const DAY_MS = 86400000;
-const addYmd = (ymd, n) => {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d) + n * DAY_MS).toISOString().slice(0, 10);
-};
+const addYmd = (ymd, n) => addDaysStr(ymd, n);
 /** วันทำงาน (ตัด 08:00 ไทย) ของ timestamp — เหมือน getWorkDate แต่ pure ไม่พึ่ง timezone เครื่อง */
 export const workYmdOf = (iso) => {
   const t = iso ? new Date(iso).getTime() : NaN;

@@ -25,6 +25,7 @@ import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import SearchInput from '../components/SearchInput';
 import { DeleteButton } from '../components/IconButton';
 
 /* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
@@ -708,11 +709,19 @@ export default function LineSetup({ embedded = false } = {}) {
       setDragInfo(null);
       setDragPos(null);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    /* 🔴 pointer events ไม่ใช่ mouse events (QC 06/10) — จอหน้างาน/แท็บเล็ตที่หัวหน้าไลน์ใช้
+       เป็นจอทัช: `mousedown/mousemove` **ไม่เกิดจากนิ้ว** ⇒ ลากหมุดย้ายตำแหน่งไม่ได้เลย
+       และ "แตะหมุด" ก็ไม่เข้า onUp ⇒ panel แก้ไขไม่เปิดด้วย = หน้านี้แก้ผังบนจอทัชไม่ได้
+       (ต้นแบบที่ทำถูกอยู่แล้ว: src/components/MachineFloorMap.jsx)
+       · ต้องมี `pointercancel` ด้วย — ระบบยกเลิก gesture (จอหมุน/นิ้วที่ 2) **ห้าม commit ตำแหน่ง** */
+    const onCancel = () => { setDragInfo(null); setDragPos(null); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
     };
   }, [dragInfo]);
 
@@ -1050,7 +1059,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 return (
                   <div
                     key={st.id}
-                    onMouseDown={(e) => startDrag(e, 'station', st.id)}
+                    onPointerDown={(e) => startDrag(e, 'station', st.id)}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: MK, height: MK, borderRadius: '50%',
@@ -1058,6 +1067,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
+                      touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
@@ -1119,7 +1129,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 return (
                   <div
                     key={p.id}
-                    onMouseDown={(e) => startDrag(e, 'machine', p.id)}
+                    onPointerDown={(e) => startDrag(e, 'machine', p.id)}
                     title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — คลิกเพื่อเชื่อมต่อสายงาน` : `${p.machine_no} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง`}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
@@ -1128,6 +1138,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
                       boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex',
+                      touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
                       zIndex: isDragging ? 15 : 5, opacity: isDragging ? 0.85 : 1,
                     }}
@@ -1207,8 +1218,8 @@ export default function LineSetup({ embedded = false } = {}) {
 
         <CollapseCard id="lineList" storePrefix="ls" title="🏭 ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
           {lines.length > 6 && (
-            <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
-              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+            <SearchInput value={lineSearch} onChange={setLineSearch} fields="ไลน์"
+              style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
@@ -1462,8 +1473,8 @@ export default function LineSetup({ embedded = false } = {}) {
           </div>
           <CollapseCard id="stations" storePrefix="ls" title="📍 รายการจุดงาน" count={stations.length} defaultOpen={stations.length > 0}>
           {stations.length > 6 && (
-            <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
-              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+            <SearchInput value={pointSearch} onChange={setPointSearch} fields="จุดงาน"
+              style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div>
             {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
@@ -1557,8 +1568,8 @@ export default function LineSetup({ embedded = false } = {}) {
               )}
               <CollapseCard id="machinePoints" storePrefix="ls" title="⚙️ รายการจุดเครื่องจักร" count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
               {machinePoints.length > 6 && (
-                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+                <SearchInput value={pointSearch} onChange={setPointSearch} fields="เลขเครื่อง / ชื่อเครื่อง"
+                  style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
               )}
               <div>
                 {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {

@@ -34,6 +34,7 @@
 import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
+import { WORK_DAY_START_HOUR } from './workDate.js';   // ขอบวันทำงาน (ก่อน 08:00 = วันก่อนหน้า) — เจ้าของกฎ
 
 /* ═══ 6) ยอดผลิตของใบผลิต 1 ใบ ═══════════════════════════════════════════════════════
    สูตรบังคับของโปรเจค: confirmed → `qty_ok ?? qty` · สถานะอื่นทั้งหมด → `qty_actual ?? 0`
@@ -428,10 +429,7 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
   const startTimeOutOfFrame = isNight ? inDayWindow : (session.shift === 'day' && !inDayWindow);
   let openedDate = wd, openedHm = startHm;
   if (startTimeOutOfFrame) openedHm = isNight ? '20:00' : '08:00';
-  else if (isNight && startH < 8) {                        // กะดึกข้ามคืน — เวลาเริ่มอยู่เช้าวันถัดไป
-    const d = new Date(`${wd}T12:00:00`); d.setDate(d.getDate() + 1);
-    openedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
+  else openedDate = shiftStartDate(wd, startHm, session.shift);   // กะดึกข้ามคืน — ของกลางเดียวกับ shiftFrameOf
   const opened = new Date(`${openedDate}T${openedHm}:00`).getTime();
   let elapsed = (nowMs - opened) / 60000;
   if (session.shift_min) elapsed = Math.min(elapsed, session.shift_min);
@@ -1041,6 +1039,32 @@ import { groupSameProductKeys } from './partGroup.js';
       (ทั้ง %A แยกตาม MAT · ตัวหาร %P · "ควรได้" บนจอ) — พาร์ทวิ่งนอกกะของตัวเองไม่ได้
    ⚠️ ห้ามแก้ด้วยการทิ้งใบที่เวลาเกินไปเฉยๆ — ยอดผลิตของใบนั้นเป็นของกะนี้จริง หายไม่ได้ */
 
+/**
+ * วันปฏิทินของ "เวลาเริ่มกะ" — กะดึกที่บันทึกเวลาเริ่มเป็น 00:00–07:59 คือ **เช้าของวันถัดไป**
+ *
+ * 🔴 ของกลางของกฎนี้ (QC 06/10) — เดิม `computeLiveOee` บวก 1 วันให้ แต่ `shiftFrameOf` **ไม่บวก**
+ *    ⇒ กะดึกที่เริ่ม 02:00 ได้กรอบกะ **เร็วไป 20 ชั่วโมง** ⇒ `clampWinToShift()` รัดช่วงของพาร์ท/
+ *      downtime ทิ้งทั้งหมดเพราะ "อยู่นอกกรอบ" ⇒ **%A หาย downtime · "ควรได้" เพี้ยน** แบบเงียบ
+ *    วัดฐานจริง 06/10: มี **5 กะ** (23/09–05/10) ที่ `shift='night'` + `start_time` 00:00–07:59
+ *    ⇒ ไม่ใช่เคสทฤษฎี และยังเกิดเพิ่มเรื่อยๆ
+ *    ⚠️ กะดึกเข้างานปกติ 22:30 ไม่เข้าเงื่อนไขนี้ — ห้ามเลื่อนวัน
+ *
+ * 🧭 **ทำไมที่นี่ดูเลขชั่วโมงได้ ทั้งที่ด่าน `shift-midnight-hardcoded-hour` ห้าม**
+ *    ด่านนั้นห้าม "เดาวันของ **เวลาที่คนกรอก**" (เช่น เวลาปิด 5ส. ท้ายกะ) เพราะกะดึกที่จบ 08:00+
+ *    จะหลุดเงื่อนไข `< 8` แล้วถูกตรึงผิดวัน — ตัวนั้นต้องใช้ `resolveShiftTime()` ซึ่งเทียบกับ**กรอบกะ**
+ *    แต่ฟังก์ชันนี้คือ **ตัวสร้างกรอบกะเอง** จะไปเทียบกับกรอบกะไม่ได้ (วนลูป)
+ *    ⇒ ที่นี่เทียบกับ **ขอบวันทำงาน** `WORK_DAY_START_HOUR` (เจ้าของกฎ "ก่อน 08:00 = วันก่อนหน้า"
+ *       ใน `workDate.js`) ไม่ใช่เลข 8 ดิบ — ขยับขอบวันทำงานวันหลัง ที่นี่ตามไปเอง
+ * @returns `'YYYY-MM-DD'` ของวันที่เวลาเริ่มกะอยู่จริง
+ */
+export function shiftStartDate(workDate, startHm, shift) {
+  const h = Number(String(startHm || '').slice(0, 2));
+  if (shift !== 'night' || !(h >= 0 && h < WORK_DAY_START_HOUR)) return workDate;
+  const d = new Date(`${workDate}T12:00:00`);            // เที่ยงวัน = ไม่โดน DST/ขอบวัน
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /** กรอบเวลาของกะเป็น ms — คืน null ถ้าข้อมูลเวลาไม่พอ · กะดึกข้ามวันบวก 1 วันให้เอง
  *  overrides: เวลาที่หัวหน้าแก้ในฟอร์มปิดกะ (มาก่อนค่าที่เก็บไว้ใน session) */
 export function shiftFrameOf(session, { startTime = null, endTime = null } = {}) {
@@ -1048,10 +1072,12 @@ export function shiftFrameOf(session, { startTime = null, endTime = null } = {})
   const st = startTime || session?.start_time;
   const et = endTime   || session?.end_time;
   if (!wd || !st) return null;
-  const startMs = new Date(`${wd}T${String(st).slice(0, 5)}:00`).getTime();
+  // 🔴 วันของเวลาเริ่มกะต้องใช้กฎเดียวกับ computeLiveOee — ดู shiftStartDate() ข้างบน
+  const startDate = shiftStartDate(wd, String(st).slice(0, 5), session?.shift);
+  const startMs = new Date(`${startDate}T${String(st).slice(0, 5)}:00`).getTime();
   if (!Number.isFinite(startMs)) return null;
   if (!et) return { startMs, endMs: null };
-  let endMs = new Date(`${wd}T${String(et).slice(0, 5)}:00`).getTime();
+  let endMs = new Date(`${startDate}T${String(et).slice(0, 5)}:00`).getTime();
   if (!Number.isFinite(endMs)) return { startMs, endMs: null };
   if (endMs <= startMs) endMs += 86400000;   // กะดึกข้ามเที่ยงคืน
   return { startMs, endMs };

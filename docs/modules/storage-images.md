@@ -202,7 +202,13 @@
 > → **polling ของจอทำแค่ "เปลี่ยนสีบนผัง"** · ในเมื่อเกณฑ์เตือนคือ 15 นาที การ poll ทุก 30-60 วิ **ไม่ได้ทำให้ใครรู้เร็วขึ้นเลย แค่เปลืองโควต้า** (เหตุผลที่ ANDON ยืดจาก 30 วิ → 5 นาทีได้โดยไม่เสียอะไร)
 > **(ข) realtime มาก่อน · poll เป็นตัวกันเหนียว** — push ส่งเฉพาะแถวที่เปลี่ยน (~200 bytes) ถูกกว่า poll ทั้งชุด (22 KB) เป็นร้อยเท่า **และเร็วกว่าด้วย**
 > จอที่มี realtime: Dashboard · Management · DailyPM · DowntimeSiren · **FactoryMap (เพิ่ม 2026-08-19 — เดิม polling ล้วน 0 channel จึงต้องตั้ง 30 วิ)**
-> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ** — `mtn_orders` เคยตกหล่น (migration `20260819_realtime_mtn_orders.sql` · **apply แล้ว**) · ตอนนี้ครบ 5: `downtime_logs` `prod_orders` `defect_logs` `production_sessions` `mtn_orders`
+> **⚠️ ตารางที่ subscribe ต้องอยู่ใน publication `supabase_realtime` ไม่งั้น subscription เงียบไม่ทำงานและไม่มี error ใดๆ**
+> 🔴 **ห้ามเก็บลิสต์ตารางเป็นมือที่นี่อีก** — บรรทัดนี้เคยเขียนว่า "ตอนนี้ครบ 5" แล้วล้าสมัย
+> คนถัดไปเชื่อลิสต์นั้น จึงตกหล่นอีก 4 ตาราง (QC 06/10: `monitor_cells`/`monitor_board_parts` ฝั่ง DR
+> · `daily_production_logs`/`four_m_logs` ฝั่ง Main) ⇒ `/monitoring` + แถบหน้าแรกช้าได้ถึง 2 ชม.
+> ⇒ **ทะเบียนจริงอยู่ที่ `src/utils/realtimeTables.js`** (มีด่าน `realtime-table-registered` ใน build)
+> · ของจริงใน DB อ่านสด: `select tablename from pg_publication_tables where pubname='supabase_realtime' order by 1;`
+>   **รันทั้ง 2 project** — ชื่อเดียวกันมีได้ทั้งสองฝั่ง (`notifications` มีทั้งคู่ แต่โค้ด subscribe เฉพาะ Main)
 >
 > #### 🔴🔴 กฎเหล็ก — subscribe realtime ต้องผ่าน **`liveChannel(client, name)`** ห้ามเรียก `client.channel('ชื่อคงที่')` (2026-08-26 · feedback หน้างาน)
 > *"หน้า line management เปิดไปเปิดมา โชว์สกิลพนักงาน ซักพักหน่วงๆ ละค้างไปเลย"* — **ไม่ใช่เรื่องกราฟ/การ์ดสกิล**
@@ -336,3 +342,26 @@
 · ใช้จริงแล้ว: รูปในใบ MO ทุก step (`MO_IMG_ASPECT` ใน `MtnRepair.jsx`)
 · 🔴 **เป็น opt-in เท่านั้น** — ตัวนี้เป็น single source ของ 6 หน้า ตั้ง default เมื่อไหร่
   ทุกหน้าที่อัปโหลดรูปจะถูกตัดขอบเงียบๆ พร้อมกัน
+
+---
+
+## 📷 `acceptImageFile()` — ด่านรับไฟล์รูปจุดเดียว (2026-10-06 · QC audit)
+
+เอกสารนี้เขียนกฎไว้แล้วว่า *"ทุกจุดรับรูปต้องผ่าน `toDecodableImage`"* แต่ **ไม่มีด่านบังคับ**
+⇒ วัด 06/10: มี **12 ช่อง `accept="image/*"` ใน 9 ไฟล์** ที่รับไฟล์ตรงๆ ไม่เคยผ่าน
+
+**2 อาการที่เกิดจริง:**
+1. **รูปจาก iPhone (HEIC) ใช้ไม่ได้** — Chrome/Android decode HEIC ไม่ได้
+   · `SignatureModal` พังตอนกด "บันทึก" (`new Image()` → onerror → *"ไฟล์นี้ไม่ใช่รูปที่รองรับ"*)
+     = เลือกไฟล์ → เห็นพรีวิว → กดเซฟ → พังเอาตอนท้าย (ถ่ายรูปลายเซ็นด้วยมือถือแล้วอัปไม่ได้เลย)
+   · จุดอื่น **อัปโหลดไฟล์ HEIC ดิบขึ้นไปเงียบๆ** แล้วทุกคนที่เปิดดูเห็นรูปเสีย
+2. **เลือกไฟล์ที่ไม่ใช่รูป (PDF/Excel) ไม่มีใครเตือน** — ขัดคำสั่ง user 11/09 ตรงๆ
+   (*"ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้เสมอ ห้ามปิดหน้าต่างเงียบๆ"*)
+
+**แก้แล้วครบ 12 จุด:** `SignatureModal` · `SpinAnnotator` (หลายไฟล์พร้อมกัน) · `PEDocs` ×2 ·
+`MtnRepair` · `Improvements` · `Management` ×2 · `Report` ×2 · `DailyReport`
+· ผ่านได้ 3 ทาง: `acceptImageFile()` · `<ImageCropModal>` (มีในตัวแล้ว) · เรียก `toDecodableImage` เอง
+· **มีด่าน `image-input-via-accept-helper`** ใน build
+
+**พลอยแก้:** `SignatureModal` ไม่เคย `URL.revokeObjectURL()` ⇒ blob ตรึงไฟล์ในหน่วยความจำจนรีเฟรชหน้า
+(ลายเซ็นถ่ายจากมือถืออาจหลาย MB · ลองใหม่หลายครั้งก็ค้างทับกันไปเรื่อยๆ) → ย้ายไป `finally`

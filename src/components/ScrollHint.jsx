@@ -84,7 +84,7 @@ export default function ScrollHint() {
         padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
         fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
         color: 'var(--text)', background: 'var(--bg3)',
-        border: '1px solid var(--border2)', boxShadow: '0 4px 14px rgba(0,0,0,0.45)',
+        border: '1px solid var(--border2)', boxShadow: 'var(--shadow-float)',
       }}>
       เลื่อนลงดูต่อ <span style={{ fontSize: 14, lineHeight: 1 }}>▾</span>
     </button>

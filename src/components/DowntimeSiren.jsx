@@ -212,7 +212,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
       {alerts.map(a => {
         const m = metaOf(a)
         return (
-        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: '0 6px 28px rgba(0,0,0,0.6)' }}>
+        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
           <span style={{ fontSize: 22 }}>{m.icon}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>

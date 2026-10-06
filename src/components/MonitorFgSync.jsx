@@ -5,7 +5,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages } from '../utils/fetchByIds';
 import { DEMAND_SKIP_STATUS } from '../utils/monitorSystem';
 import { ROW_PRESETS, BOARD_DEFAULTS, boardKeyOfSheet, partRowKey, dedupeByKey } from '../utils/monitorBoards';
-import { getWorkDate } from '../utils/workDate';
+import { getWorkDate, addDaysStr } from '../utils/workDate';
 
 /* ══ 📦 MonitorFgSync — สร้าง/อัพเดทบอร์ด "FG ทุกตัว" จากออเดอร์ลูกค้า (2026-10-06) ═══════
    คำขอ user: *"อยากไห้มอนิเตอร์ได้ทุก product FG ก็ได้ด้วยที่อัพจาก 862 830"*
@@ -33,11 +33,6 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 /** ย้อนหลังกี่วันถึงนับว่า "ลูกค้ายังสั่งอยู่" — 90 วันครอบ 1 ไตรมาส (พาร์ทตามฤดูไม่หลุด) */
 const BACK_DAYS = 90;
 
-const addDays = (iso, n) => {
-  const d = new Date(`${iso}T00:00:00+07:00`);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
 
 export default function MonitorFgSync({ onClose, fullName, onSynced }) {
   const [busy, setBusy] = useState(false);
@@ -47,7 +42,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
   const scan = useCallback(async () => {
     setBusy(true); setErr(''); setPreview(null);
     const today = getWorkDate();
-    const from = addDays(today, -BACK_DAYS);
+    const from = addDaysStr(today, -BACK_DAYS);
     const [ordR, bR] = await Promise.all([
       fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
         .select('customer, mat_no, part_name, customer_part_no, status, due_date')

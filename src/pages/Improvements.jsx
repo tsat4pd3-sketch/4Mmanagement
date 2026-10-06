@@ -27,6 +27,7 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
@@ -1470,7 +1471,7 @@ export default function Improvements() {
                         <img src={preview || existing} alt={label} style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 4 }} />
                       )}
                       {/* reset value เสมอ — เลือกไฟล์เดิมซ้ำแล้ว change ไม่ยิง (เคสหน้างาน: ลองแนบรูปเดิมหลังล้มแล้วเงียบ) */}
-                      <input type="file" accept="image/*" onChange={e => { setFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11 }} />
+                      <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setFile(f); }} style={{ fontSize: 11 }} />
                     </div>
                   ))}
                 </div>

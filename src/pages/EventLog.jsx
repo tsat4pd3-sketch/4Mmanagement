@@ -148,7 +148,7 @@ export default function EventLog() {
     let logQ = supabase.from('cqi15_event_logs')
       .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*, profiles(full_name)), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)
       .order('created_at', { ascending: false });
-    if (scopedNames) logQ = scopedNames.length ? logQ.in('line_name', scopedNames) : logQ.eq('line_name', ' __none__');
+    if (scopedNames) logQ = scopedNames.length ? logQ.in('line_name', scopedNames) : logQ.eq('line_name', '__none__');
     logQ = logQ.limit(200);
     const [
       { data: logData },

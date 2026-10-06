@@ -13,7 +13,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from './SearchSelect';
 import {
   ASSIGNMENT_KINDS, kindLabel, assignmentStatus, STATUS,
@@ -24,7 +24,16 @@ const NODE_KIND_TH = { section: 'ส่วน', department: 'แผนก', line
 
 export default function OrgAssignmentsPanel({ nodes = [] }) {
   const { role } = useContext(UserContext);
-  const canEdit = can('org', 'manage', role) || can('org', 'manage_own_unit', role);
+  /* 🔴 ต้องตรงกับ RLS ของ `org_assignments` = `has_perm('org:manage')` เท่านั้น (QC audit 06/10)
+     เดิมเขียน `|| can('org','manage_own_unit')` ⇒ หัวหน้าหน่วย (dept_admin/manager/supervisor/
+     planner_store) **เห็นปุ่ม ยืนยัน/ลบ/กำหนดวันสิ้นสุด** แต่ RLS ปฏิเสธ UPDATE/DELETE
+     ซึ่ง **ไม่โยน error** — คืน 0 แถวเฉยๆ ⇒ toast เขียว "ยืนยันแล้ว" ทั้งที่ไม่มีอะไรถูกบันทึก
+     (คลาสเดียวกับบั๊กสร้างทีมในผังองค์กรที่แก้ไปแล้ว)
+     ⚠️ จะให้หัวหน้าหน่วยแก้ได้จริง ต้องรัด RLS เป็น "เฉพาะหน่วยของตัวเอง" ก่อน
+        (ไม่ใช่เปิด `manage_own_unit` ลอยๆ — นั่น = แต่งตั้งหัวหน้าหน่วยอื่นได้ทั้งโรงงาน)
+        ยังไม่ทำ — ดู docs/modules/org-hierarchy.md §สิทธิ์ตารางผูกคน */
+  const canEdit = can('org', 'manage', role);
+  const canSeeOnly = !canEdit && can('org', 'manage_own_unit', role);
 
   const [rows, setRows]   = useState([]);
   const [people, setPeople] = useState([]);
@@ -54,14 +63,14 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   /* ── เขียน ─────────────────────────────────────────────────────────── */
   const setEnd = async (row, value) => {
     setBusy(true);
-    const ok = checkWrite(await supabase.from('org_assignments')
+    const ok = checkWriteRows(await supabase.from('org_assignments')
       .update({ ends_on: value || null }).eq('id', row.id).select('id'), 'กำหนดวันสิ้นสุด');
     setBusy(false);
     if (ok) { toast.success(value ? `กำหนดวันสิ้นสุด ${value}` : 'ล้างวันสิ้นสุดแล้ว'); load(); }
   };
   const confirmRow = async (row) => {
     setBusy(true);
-    const ok = checkWrite(await supabase.from('org_assignments')
+    const ok = checkWriteRows(await supabase.from('org_assignments')
       .update({ confirmed_at: new Date().toISOString() }).eq('id', row.id).select('id'), 'ยืนยันรายการ');
     setBusy(false);
     if (ok) { toast.success('ยืนยันแล้ว'); load(); }
@@ -69,7 +78,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   const remove = async (row) => {
     if (!window.confirm(`ลบ "${nameOf(row.profile_id)} — ${nodeById.get(row.org_node_id)?.name || '?'}" ?`)) return;
     setBusy(true);
-    const ok = checkWrite(await supabase.from('org_assignments').delete().eq('id', row.id).select('id'), 'ลบรายการ');
+    const ok = checkWriteRows(await supabase.from('org_assignments').delete().eq('id', row.id).select('id'), 'ลบรายการ');
     setBusy(false);
     if (ok) { toast.success('ลบแล้ว'); load(); }
   };
@@ -107,6 +116,16 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           </button>
         )}
       </div>
+
+      {/* 🔒 บอกตรงๆ ว่าทำไมไม่มีปุ่ม — ห้ามซ่อนเงียบ (กฎความซื่อสัตย์ของจอ)
+          เดิมโชว์ปุ่มให้ role เหล่านี้ แล้ว RLS ปฏิเสธเงียบ ⇒ กดแล้วขึ้นเขียวแต่ไม่บันทึก */}
+      {canSeeOnly && (
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '7px 10px',
+          background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          🔒 ดูได้อย่างเดียว — การแต่งตั้งหัวหน้าหน่วย/รักษาการ ต้องมีสิทธิ์ <b>org:manage</b>
+          (สิทธิ์ <b>org:manage_own_unit</b> ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้)
+        </div>
+      )}
 
       {/* 📋 คิวทบทวนสิทธิ์ — โชว์เฉพาะที่มีของจริง ไม่ขึ้นแถบว่างให้รก */}
       {(sum.openEnded.length + sum.expired.length + sum.expiring.length + sum.unconfirmed.length) > 0 && (

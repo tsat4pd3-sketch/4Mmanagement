@@ -177,3 +177,45 @@ CLAUDE.md เขียนกฎ "ใช้ `getWorkDate()`" มาตั้ง�
 `src/utils/workDate.js` สร้างแล้วเป็น single source (**โค้ดใหม่ต้อง import จากที่นี่**)
 แต่ **ยังไม่ได้ย้าย 27 จุดเดิม** — เป็นงานกวาดแยก ควรทำพร้อมเพิ่มด่าน `regressionGuards`
 ห้ามนิยาม `getWorkDate` เองในไฟล์ (เพิ่มด่านก่อนกวาดไม่ได้ เพราะจะต้อง `allow` 27 ไฟล์ซึ่งผิดกติกาของด่าน)
+
+---
+
+## 📅 `addDaysStr()` — ของกลางใหม่ + ผลสำรวจ `addDays` ทั้ง 18 ชุด (2026-10-06 · QC audit)
+
+`src/utils/workDate.js` เขียนไว้ตั้งแต่ 23/09 ว่า `getWorkDate` เคยถูกก๊อป **27 ไฟล์**
+และการยุบเป็นของกลางคือ "งานกวาดแยกต่างหาก" — รอบนี้ไปสำรวจพี่น้องของมันคือ `addDays(dateStr, n)`
+
+**เจอ 18 ชุดนิยาม** กระจายใน `utils/` (8 ตัว export) · `pages/` (7) · `components/` (1) · `lib/` (1) · ตัวที่ไม่ export (1)
+
+**ทดสอบทั้ง 18 ชุด** ใต้ `TZ = {UTC, Asia/Bangkok, America/Los_Angeles, Pacific/Kiritimati, Australia/Lord_Howe}`
+กับ 5 เคส (`+0`, `-90`, `+1`, ข้ามเดือน, ข้ามปี) → **พัง 1 ชุด**
+
+🔴 **ตัวที่พัง: `src/components/MonitorFgSync.jsx:36`** — ผสม **3 ระบบเวลา** ในฟังก์ชันเดียว
+```js
+const d = new Date(`${iso}T00:00:00+07:00`);  // parse ด้วย offset +07:00
+d.setDate(d.getDate() + n);                   // เลื่อนวันด้วย "เวลาเครื่อง"
+return d.toISOString().slice(0, 10);          // คืนค่าด้วย UTC
+```
+⇒ **คลาดไป 1 วันทุก timezone** — `addDays(today, 0)` คืน **เมื่อวาน**
+⇒ หน้าต่างสแกน FG (`BACK_DAYS = 90`) เลื่อนไป 1 วันทุกครั้งที่กดสแกน
+
+**อีก 17 ชุดถูกต้องหมด** — ทุกตัวใช้รูปแบบใดรูปแบบหนึ่งของ 2 แบบที่ปลอดภัย:
+· สร้างจาก local parts + อ่านด้วย local getters (`new Date(y, m-1, d)` + `getFullYear/getMonth/getDate`)
+· สร้างจาก `Date.UTC(...)` + อ่านฝั่ง UTC
+**ที่พังคือตัวที่ผสม 2 แบบนี้เข้าหากัน** — นี่คือสิ่งที่ด่านต้องจับ ไม่ใช่ "มีหลายชุด"
+
+**ของกลางใหม่: `addDaysStr(iso, n)` ใน `src/utils/workDate.js`** (UTC ล้วนทั้งขาเข้า-ออก · ไม่มี `toISOString`)
+🔴 **แกะวันที่ไม่ออก = `null` ห้ามเดาเป็นวันนี้**
+
+**ย้ายมาใช้ของกลางแล้ว 4 จุด** — ตัวที่พัง (`MonitorFgSync`) + 3 ตัวที่ยังปิดท้ายด้วย `.toISOString()`
+(`utils/npi.js` · `utils/maintenanceLevels.js` · `lib/pmSchedule.js` — ถูกต้องอยู่แล้ว แต่ย้ายเพื่อให้ด่านไม่ต้องยกเว้นใครเลย)
+**อีก 14 ชุดยังอยู่ที่เดิม** — ถูกต้องตามที่วัด · การยุบให้เหลือชุดเดียวเป็นงานกวาดต่อ ไม่ใช่การแก้บั๊ก
+
+**ด่าน `no-utc-workdate` ขยายแล้ว** — เดิม regex จับแค่ `new Date().toISOString().slice`
+⇒ พลาด 2 รูปที่หลุดจริง: `new Date(Date.now() - n).toISOString().slice(0,10)` (`CtReview`)
+และ `d.toISOString().slice(0,10)` ที่ `d` มาจาก parse แบบ offset (`MonitorFgSync`)
+→ จับ `.toISOString().slice(0, 10)` **ทุกรูป ไม่สนตัวรับ** · เหลือ **0 จุดในรีโป โดยไม่ยกเว้นไฟล์ไหนเลย**
+
+**พลอยแก้: `src/components/CtReview.jsx:58`** — `since` คิดจาก `Date.now().toISOString()` (UTC)
+แต่ไปเทียบกับคอลัมน์ `work_date` ซึ่งเป็น **"วันทำงาน" ตัด 08:00** ⇒ คลาดช่วง 00:00–06:59 เวลาไทย
+→ `addDaysStr(getWorkDate(), -DAYS_BACK)`

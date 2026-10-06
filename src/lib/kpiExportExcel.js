@@ -1,18 +1,24 @@
 /**
  * kpiExportExcel — export KPI รายเดือนเป็น Excel 3 ชีทตามโครงไฟล์ KPI จริงของบริษัท (2026-08-24)
- *   ชีท 1: KPI Appraisal        (FM-HRM-6-022) — ตาราง No/KPI/Commitment/Target/Result/Weight แยก 4 หมวด
- *   ชีท 2: Monitoring FM-HRM-6-024(01) — Item/TOPIC/Formula/Scope/Commitment/Target/ม.ค.–ธ.ค./เฉลี่ย-รวม/Y-N
- *   ชีท 3: Action FM-HRM-6-025(01)     — TOPIC/Commitment/Target/IMPROVEMENT ACTIVITY/RESPONSIBILITY
+ *   ชีท 1: KPI Appraisal — ตาราง No/KPI/Commitment/Target/Result/Weight แยก 4 หมวด
+ *   ชีท 2: Monitoring   — Item/TOPIC/Formula/Scope/Commitment/Target/ม.ค.–ธ.ค./เฉลี่ย-รวม/Y-N
+ *   ชีท 3: Action       — TOPIC/Commitment/Target/IMPROVEMENT ACTIVITY/RESPONSIBILITY
+ *   (เลขฟอร์มของแต่ละชีทอยู่ในทะเบียน doc_forms — ดูหมายเหตุข้างล่าง)
  *
  * กติกา:
  * - exceljs ต้อง dynamic import เสมอ (~930KB — กฎเดียวกับ pptxgenjs/xlsx)
- * - เลขฟอร์ม/Rev อ่านจากทะเบียน doc_forms (doc_key: kpi_monthly) — ห้าม hardcode
+ * - เลขฟอร์ม/Rev อ่านจากทะเบียน doc_forms — **ห้าม hardcode** (กฎ doc-forms ใน CLAUDE.md)
+ *   🔴 3 ชีท = **3 ฟอร์มคนละเลข** ⇒ ต้องมี 3 doc_key ไม่ใช่ตัวเดียว (แก้ 06/10 · เดิมหัวไฟล์
+ *      เขียนกฎนี้ไว้เองแล้วยัง hardcode FM-HRM-6-022/-024/-025 ทั้ง 3 ที่ รวมชื่อชีทด้วย)
+ *        · `kpi_appraisal`  → ชีท 1   · `kpi_monitoring` → ชีท 2   · `kpi_action` → ชีท 3
+ *      `kpi_monthly` ยังใช้กับ **ใบพิมพ์** ของหน้า KpiMonthly ตามเดิม (คนละใบกับ Excel นี้)
  * - โครง 3 ชีทถอดจากไฟล์จริง FY2023 (คอลัมน์/ลำดับหมวด) — เนื้อหามาจากข้อมูลในระบบ + KPI กรอกมือ
  *   ช่องที่ระบบไม่มีข้อมูล (PM CODE/ชื่อผู้ถือ KPI/Appraisal คะแนน) ปล่อยว่างให้กรอก ห้ามเดา
  *
  * rows: [{ category, name, formula, scope, commitment, target, monthVals[12] (null=ไม่มีข้อมูล),
  *          summary, summaryLabel, ynVals[12]|null, weight, actionPlan, actionOwner, sectionTag }]
  */
+import { getDocForm, fullCode } from '../utils/docForms';
 
 /* ระดับคะแนนทางการ → สัญลักษณ์/สีบนใบ (1 = ○ Achieve · 0.5 = △ Improvement · 0 = ✗ Miss goal)
    ⚠️ **0.5 เป็นค่า truthy** — เทียบด้วย `=== 1` เสมอ ห้ามเขียน `lv ? 'Y' : 'N'` (เคยเป็นแบบนั้น
@@ -45,17 +51,34 @@ function styleBody(row, { numFrom = 0 } = {}) {
 }
 const num = v => (v == null || !Number.isFinite(v) ? '' : Math.round(v * 100) / 100);
 
+/* ชื่อชีท Excel: ≤31 ตัวอักษร และห้ามมี : \\ / ? * [ ]
+   ⇒ เลขฟอร์มที่ doc_control แก้เองได้ ต้องถูกล้างก่อนเอาไปตั้งชื่อชีท ไม่งั้นไฟล์เปิดไม่ได้ */
+const sheetName = (base, code) => {
+  const safe = String(code || '').replace(/[:\\/?*[\]]/g, '-').trim();
+  return (safe ? `${base} ${safe}` : base).slice(0, 31);
+};
+
 export async function exportKpiExcel({ year, sectionLabel, rows, formCode, note }) {
   const { default: ExcelJS } = await import('exceljs');
+  /* เลขฟอร์มของแต่ละชีทจากทะเบียน — fallback = เลขที่ใช้อยู่จริงวันนี้
+     ⇒ ก่อนที่ doc_control จะแก้ ผลลัพธ์เหมือนเดิมเป๊ะ (ไม่มี behavior change) */
+  const [dfAppraisal, dfMonitor, dfAction] = await Promise.all([
+    getDocForm('kpi_appraisal',  { form_code: 'FM-HRM-6-022' }),
+    getDocForm('kpi_monitoring', { form_code: 'FM-HRM-6-024(01)' }),
+    getDocForm('kpi_action',     { form_code: 'FM-HRM-6-025(01)' }),
+  ]);
+  const codeAppraisal = fullCode(dfAppraisal);
+  const codeMonitor   = fullCode(dfMonitor);
+  const codeAction    = fullCode(dfAction);
   const wb = new ExcelJS.Workbook();
   const byCat = CAT_ORDER.map(c => ({ cat: c, items: rows.filter(r => r.category === c) })).filter(g => g.items.length);
   const titleTail = `${sectionLabel || 'ทุกส่วนงาน'} · ปี ${year + 543}${formCode ? ` · ${formCode}` : ''}`;
 
-  /* ═ ชีท 1: KPI Appraisal (FM-HRM-6-022) ═ */
+  /* ═ ชีท 1: KPI Appraisal (เลขฟอร์มจากทะเบียน doc_key `kpi_appraisal`) ═ */
   {
     const ws = wb.addWorksheet('KPI Appraisal', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
     ws.columns = [{ width: 5 }, { width: 46 }, { width: 16 }, { width: 16 }, { width: 14 }, { width: 9 }, { width: 11 }, { width: 9 }];
-    ws.addRow([`KPI Appraisal Form (FM-HRM-6-022) — ${titleTail}`]).font = { bold: true, size: 13 };
+    ws.addRow([`KPI Appraisal Form${codeAppraisal ? ` (${codeAppraisal})` : ''} — ${titleTail}`]).font = { bold: true, size: 13 };
     ws.mergeCells('A1:H1');
     // header block ตามฟอร์มจริง — ช่องข้อมูลบุคคลปล่อยว่างให้กรอก (ระบบไม่มีข้อมูลผู้ถือ KPI ห้ามเดา)
     ws.addRow(['PM CODE :', '', 'Company :', 'TSAT', 'Department :', sectionLabel || '', '', '']);
@@ -81,12 +104,12 @@ export async function exportKpiExcel({ year, sectionLabel, rows, formCode, note 
     ws.addRow(['', 'Reviewed by ______________________', '', '', 'Approved by ______________________']);
   }
 
-  /* ═ ชีท 2: Monitoring FM-HRM-6-024(01) ═ */
+  /* ═ ชีท 2: Monitoring (เลขฟอร์มจากทะเบียน doc_key `kpi_monitoring`) ═ */
   {
-    const ws = wb.addWorksheet('Monitoring FM-HRM-6-024(01)', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+    const ws = wb.addWorksheet(sheetName('Monitoring', codeMonitor), { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
     ws.columns = [{ width: 5 }, { width: 34 }, { width: 26 }, { width: 16 }, { width: 13 }, { width: 13 },
       ...Array.from({ length: 12 }, () => ({ width: 9 })), { width: 12 }, { width: 6 }];
-    ws.addRow([`KPI Monitoring (FM-HRM-6-024) — ${titleTail}`]).font = { bold: true, size: 13 };
+    ws.addRow([`KPI Monitoring${codeMonitor ? ` (${codeMonitor})` : ''} — ${titleTail}`]).font = { bold: true, size: 13 };
     ws.mergeCells('A1:T1');
     if (note) { const nr = ws.addRow([note]); nr.font = { size: 9, color: { argb: 'FF666666' } }; ws.mergeCells(`A${nr.number}:T${nr.number}`); }
     const head = ws.addRow(['Item', 'TOPIC', 'Formula', 'Scope', 'Commitment', 'Target', ...TH_M, 'เฉลี่ย/รวม', 'Y/N']);
@@ -112,11 +135,11 @@ export async function exportKpiExcel({ year, sectionLabel, rows, formCode, note 
     });
   }
 
-  /* ═ ชีท 3: Action FM-HRM-6-025(01) ═ */
+  /* ═ ชีท 3: Action (เลขฟอร์มจากทะเบียน doc_key `kpi_action`) ═ */
   {
-    const ws = wb.addWorksheet('Action FM-HRM-6-025(01)', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+    const ws = wb.addWorksheet(sheetName('Action', codeAction), { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
     ws.columns = [{ width: 5 }, { width: 34 }, { width: 16 }, { width: 16 }, { width: 52 }, { width: 20 }];
-    ws.addRow([`KPI Action Plan (FM-HRM-6-025) — ${titleTail}`]).font = { bold: true, size: 13 };
+    ws.addRow([`KPI Action Plan${codeAction ? ` (${codeAction})` : ''} — ${titleTail}`]).font = { bold: true, size: 13 };
     ws.mergeCells('A1:F1');
     const head = ws.addRow(['ITEM', 'TOPIC', 'Commitment', 'Target', 'IMPROVEMENT ACTIVITY', 'RESPONSIBILITY']);
     styleHeader(head);

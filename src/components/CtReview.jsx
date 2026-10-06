@@ -16,9 +16,10 @@ import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from './Toast';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import { summarizeObservedCt, FLAG_TEXT, SAMPLE_RULES } from '../utils/ctReview';
+import { getWorkDate, addDaysStr } from '../utils/workDate';
 
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
@@ -55,7 +56,9 @@ export default function CtReview({ lines = [] }) {
     let alive = true;                       // กัน stale-response race (กฎเหล็ก 4)
     (async () => {
       setLoading(true); setErr('');
-      const since = new Date(Date.now() - DAYS_BACK * 86400000).toISOString().slice(0, 10);
+      /* ⚠️ `work_date` คือ "วันทำงาน" (ตัด 08:00) — ขอบล่างต้องคิดจาก getWorkDate()
+         ไม่ใช่ Date.now().toISOString() ที่เป็น UTC (ช่วง 00:00-06:59 ไทยได้วันก่อนหน้า) */
+      const since = addDaysStr(getWorkDate(), -DAYS_BACK);
       const [sRes, pRes, bRes] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('id, work_date, shift, start_time, end_time')
@@ -140,15 +143,12 @@ export default function CtReview({ lines = [] }) {
       + 'CT มาตรฐานจะถูกเปลี่ยนทันที และ %P ของกะถัดไปจะคิดจากค่าใหม่\n'
       + '(กะที่ปิดไปแล้วไม่กระทบ — ค่าที่ stamp ไว้ไม่ถูกคำนวณใหม่)')) return;
     setBusy(q.id);
-    // 🔴 RLS ปฏิเสธ UPDATE = 0 แถวเงียบ (กฎเหล็ก 2) ⇒ ต้อง .select() แล้วนับแถว
-    const upd = await supabaseDR.from('dr_products')
-      .update({ cycle_time_sec: q.ct_observed }).eq('mat_no', q.mat_no).select('mat_no');
-    if (!checkWrite(upd, 'เขียน CT มาตรฐาน')) { setBusy(''); return; }
-    if (!upd.data?.length) {
-      toast.error(`ไม่พบสินค้า ${q.mat_no} ใน Product Master — CT ไม่ถูกเปลี่ยน`);
-      setBusy(''); return;
-    }
-    const ok = checkWrite(await supabaseDR.from('ct_proposals').update({
+    // 🔴 RLS ปฏิเสธ UPDATE = 0 แถวเงียบ (กฎเหล็ก 2) ⇒ นับแถวผ่าน checkWriteRows
+    const ok1 = checkWriteRows(await supabaseDR.from('dr_products')
+      .update({ cycle_time_sec: q.ct_observed }).eq('mat_no', q.mat_no).select('mat_no'),
+      'เขียน CT มาตรฐาน', { zeroMsg: `ไม่พบสินค้า ${q.mat_no} ใน Product Master — CT ไม่ถูกเปลี่ยน` });
+    if (!ok1) { setBusy(''); return; }
+    const ok = checkWriteRows(await supabaseDR.from('ct_proposals').update({
       status: 'accepted', decided_by: fullName || null, decided_at: new Date().toISOString(),
     }).eq('id', q.id).select('id'), 'ปิดใบข้อเสนอ');
     setBusy('');
@@ -163,7 +163,7 @@ export default function CtReview({ lines = [] }) {
     if (reason == null) return;
     if (!reason.trim()) { toast.error('ต้องระบุเหตุผล'); return; }
     setBusy(q.id);
-    const ok = checkWrite(await supabaseDR.from('ct_proposals').update({
+    const ok = checkWriteRows(await supabaseDR.from('ct_proposals').update({
       status: 'rejected', reject_reason: reason.trim(),
       decided_by: fullName || null, decided_at: new Date().toISOString(),
     }).eq('id', q.id).select('id'), 'ปฏิเสธข้อเสนอ');

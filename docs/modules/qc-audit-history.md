@@ -196,3 +196,95 @@ B5 — Edge Function `demand-mail-file` (ตรวจ token Main + has_perm) + �
 - **รอบ 3:** เกต HEIC ของ `SignatureModal` · array ใน deps (`OeeInsightPanel`) · เลขฟอร์ม hardcode
   ใน `kpiExportExcel` · MAT มาก่อนชื่อพาร์ท 9 จุด · picker ลูกค้าใน `/customer-demand` ·
   pointer events ของ `/line-setup`
+
+---
+
+## ✅ ลงมือแก้ครบ 3 รอบ (2026-10-06 · คำสั่ง user "ทำหมด")
+
+ต่อจากรายการค้างในหัวข้อ audit 06/10 ข้างบน — **ทำครบทุกข้อ** ยกเว้นที่ระบุว่าตั้งใจไม่ทำ
+
+### รอบ 1 — บั๊กเงียบที่ไม่มี error ให้เห็น
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| publication ขาด 4 ตาราง | ✅ apply ทั้ง 2 project | DR: `monitor_cells`/`monitor_board_parts`/`monitor_boards` · Main: `daily_production_logs`/`four_m_logs` · ตรวจกลับ **ครบ 18/18 ตารางที่โค้ด subscribe** |
+| ทะเบียน + ด่าน กัน publication ตกหล่นรอบที่ 4 | ✅ | `src/utils/realtimeTables.js` + ด่าน `realtime-table-registered` (ต้นเหตุร่วม 3 รอบ = ลิสต์อยู่ในเอกสารที่เขียนมือ) |
+| ไบต์ NUL ใน `EventLog.jsx:149` | ✅ + ด่าน | สแกนทั้งรีโปแล้วเหลือ 0 ไฟล์ |
+| `addDays` คืนวันผิด (`MonitorFgSync`) | ✅ | **ทดสอบทั้ง 18 ชุดใต้ 5 timezone → พัง 1 ชุด** · ของกลางใหม่ `addDaysStr()` · 📄 `time-range-filter.md` |
+| `CtReview` `since` คิดจาก UTC | ✅ | → `addDaysStr(getWorkDate(), -DAYS_BACK)` |
+| เอกสารที่เป็นต้นเหตุ (`storage-images.md` ลิสต์มือ) | ✅ | เลิกเก็บลิสต์มือ · ชี้ทะเบียนในโค้ด + คิวรีอ่านสด **ทั้ง 2 project** |
+
+### รอบ 2 — ปิดคลาสบั๊ก + รัด RLS + ขยายด่านที่รั่ว
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| `checkWriteRows()` ของกลาง | ✅ + 2 ด่าน | แปลง 7 จุดที่ต่อ `.select()` ไว้แล้วแต่ส่งเข้า `checkWrite` · 📄 `db-write-rules.md` |
+| RLS 6 ตารางเปิดโล่ง | ✅ apply | `doc_forms`(+2) · `factory_map`(+1) · `oee_targets` → ตรงคีย์ปุ่มบนจอ · 📄 `role-system.md` |
+| `org_assignments` จอ ≠ RLS | ✅ | จอตรงกับ RLS + เขียนบนจอว่าทำไมไม่มีปุ่ม (ไม่เปิด RLS ให้ `manage_own_unit` ลอยๆ) |
+| `positions` role array มือ · `grades` คีย์เกษียณ | ✅ apply | `page:/add-user` · คีย์ใหม่ `grades:manage` seed = ชุดเดิมเป๊ะ |
+| คีย์ที่ไม่มีในทะเบียน (`CapacityBoard`) | ✅ | `production_plan:edit`+`master_data:manage` → `production_plan:write` (เดิม **ทีมวางแผนแก้ไม่ได้เลย**) |
+| ด่าน `no-utc-workdate` รั่ว | ✅ ขยาย | จับ `.toISOString().slice(0,10)` ทุกรูป · เหลือ 0 จุด **ไม่ยกเว้นไฟล์ไหน** |
+| ด่าน `card-shadow-via-token` รั่ว | ✅ ขยาย + แก้ 32 จุด | เดิมจับแค่ offset 0-3px ⇒ modal/popover รั่วหมด · เหลือ 12 จุดที่ยกเว้นโดยเจตนา (เงาเรืองแสงสี · เงาแนวนอน sticky · เงาผสม inset) |
+| ด่าน `picker-label-stuffed-with-codes` รั่ว | ✅ ขยาย + แก้ `/line-stock` | รูป "ข้อความมาก่อน รหัสต่อท้าย" = กลไกเสียหายตัวเดียวกัน |
+| ด่าน `<Cell>`→`tooltipProps` | ✅ ด่านใหม่ | **วัดแล้ว 0 จุด** — ข้อนี้ audit ประเมินเกินจริง ด่านที่ใส่ไว้คือล็อกสถานะที่ดี |
+
+### รอบ 3
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| HEIC + objectURL leak (`SignatureModal`) | ✅ + ด่าน | พบว่าเป็นคลาสใหญ่: **12 ช่องรับรูปใน 9 ไฟล์** ⇒ ของกลาง `acceptImageFile()` · 📄 `storage-images.md` |
+| array ใน deps (`OeeInsightPanel` ← `OEEAnalytics`) | ✅ | แก้ 2 ชั้น: `useMemo` ที่หน้าแม่ + deps ใช้คีย์ string ในแผง · **ไม่ทำด่าน** (เหตุผลใน `build-gates.md`) |
+| เลขฟอร์ม hardcode (`kpiExportExcel`) | ✅ apply | 3 ชีท = 3 doc_key · + ตัวล้างชื่อชีท (ทะเบียนเป็น input จากคน) · 📄 `doc-forms.md` |
+| ลากหมุดด้วยเมาส์อย่างเดียว (`LineSetup`) | ✅ + ด่าน | pointer events + `pointercancel` + `touchAction` · เดิม **แก้ผังบนจอทัชไม่ได้ทั้งหน้า** |
+| CLAUDE.md แตะโซนเตือน | ✅ | เพิ่มกฎใหม่ 3 ข้อ แล้วรีดสุทธิ **112.7 → 109.5 KB** ในคอมมิทเดียวกัน (ตามกฎของตัวเอง) |
+
+### ที่เหลือ — ตั้งใจไม่ทำในรอบนี้ (มีเหตุผลกำกับ ไม่ใช่ลืม)
+
+- **54 จุดที่ `checkWrite` ห่อ UPDATE/DELETE โดยไม่นับแถว** — 0 แถวเป็นเรื่องปกติในหลายจุด
+  (touch best-effort · ผูกของที่อาจหายแล้ว) ⇒ แปลงเหมา = toast แดงหลอกหน้างาน · **ต้องอ่านบริบทรายจุด**
+  · 42 จุดในนั้นเป็นรูป `.eq('id', …)` = กลุ่มที่ควรแปลงก่อนเมื่อมีคนไล่ต่อ
+- **14 ชุด `addDays` ที่เหลือ** — วัดแล้วถูกต้องทั้งหมด · การยุบเหลือชุดเดียว = งานกวาด ไม่ใช่แก้บั๊ก
+- **`manage_master_data` (คีย์เกษียณ) ยังมีแถวอยู่** — ยังไม่ได้ไล่ครบว่ามี policy อื่นอ่านอยู่หรือไม่ · ลบ = เสี่ยง
+- ~~`shiftFrameOf()` vs `computeLiveOee()` ไม่ตรงกัน = product decision ต้องถาม user~~
+  → **ตรวจแล้วเป็นบั๊กชัดเจน ไม่ใช่เรื่องต้องตกลงนิยาม** (วัดได้ว่ากรอบกะเพี้ยน 20 ชม. · มีของจริง 5 กะ)
+  **แก้แล้ว** — ของกลาง `shiftStartDate()` · 📄 `oee.md` §shiftStartDate
+  ⚠️ ที่ยังค้าง: ยังไม่ backfill ค่า OEE ที่ stamp ไว้ของ 5 กะนั้น
+- ~~`page:/flow-tower` ไม่เคย seed~~ → **ตรวจแล้ว seed ไว้อยู่แล้ว 11 role**
+  (admin · display · document_control · engineer · leader · manager · mtn · planner_store · qa ·
+  supervisor · warehouse_delivery) ⇒ **audit รายงานผิด ไม่มีอะไรต้องแก้**
+  (เทียบ: `page:/group-overview` และ `page:/adoption-outlook` = admin + manager เท่านั้น — จอผู้บริหารจริง)
+- **3 กราฟรายวันที่ข้ามวันไม่มีข้อมูล** · **select → picker กลาง (VSM/PEDocs/ProductMaster)** ·
+  **`SearchInput` 11 จุด** · **`StoreTimeChart` แกนเวลา 2 ชุด** · **`ShiftOrganize` canEdit/canDel**
+  — งาน UI standardization ที่ไม่มีบั๊กทำงาน ค้างไว้เป็นรอบถัดไป (ไม่กระทบตัวเลข/สิทธิ์/ข้อมูล)
+
+### 🔁 รอบ 3 (ต่อ) — งาน UI standardization ที่ทำเพิ่มในรอบเดียวกัน
+
+| ข้อ | สถานะ | หมายเหตุ |
+|---|---|---|
+| `UserContext` value เป็น object literal 3 ที่ | ✅ | ทั้งอ็อบเจกต์ + array `sections` ใหม่ทุก render ⇒ ทุกหน้าที่มี `sections` ใน deps ยิง DB ซ้ำ · `useMemo` + ต้องวางก่อน guard `if (!session)` (ไม่งั้น React #310) |
+| `effSections` array ใหม่ทุก render ตอน ViewAs | ✅ | memo ด้วยคีย์ string ของ `viewAs.sections` |
+| `ShiftOrganize` ลบ override แบบเงียบ | ✅ | ไฟล์เดียวกันมี 2 ตัวลบที่ทำไม่เหมือนกัน — ตัวหนึ่งนับแถว ตัวหนึ่งไม่นับ · + ด่านชั้นที่ 2 (`canDel`) ทั้งคู่ |
+| ช่องค้นหาที่เป็น `<input>` เปล่า | ✅ 6 จุด | → `<SearchInput>` · 📄 `UI-CONVENTIONS.md` §5.1.3 |
+| `<select>` ที่ควรเป็น picker กลาง | ✅ 3 จุด | `/vsm` (เดิมมี **SearchInput + select = 2 ตัวทำงานเดียวกัน**) · `/pe-docs` · `/customer-demand` |
+| `FRAME_START` ประกาศซ้ำ | ✅ + ด่าน | `InternalTimeBoard` = ตัววาดบอร์ดที่หลายหน้าใช้ร่วม ⇒ แกนเวลา 2 ชุดที่บังเอิญตรงกัน |
+
+### ❌ ข้อที่ตรวจแล้ว **ไม่เป็นอย่างที่ audit ว่า** (บันทึกไว้กันคนมาแก้ของที่ไม่ผิด)
+
+- **`<Tooltip>` ไม่มีธีม** — วัดทั้งรีโป **0 จุด** · ทุกตัวมี `tooltipProps`/`{...chartTip}`/`contentStyle`/
+  `content={<CustomTip/>}` อยู่แล้ว (ใส่ด่านไว้ล็อกสถานะที่ดี ไม่ใช่แก้บั๊ก)
+- **`addDays` หลายชุดพัง** — วัด 18 ชุดใต้ 5 timezone → **พังชุดเดียว** · อีก 17 ชุดถูกต้องหมด
+- **`StoreTimeChart` แกนเวลา 2 ชุด** — จอนี้ไม่ได้ใช้ Recharts และ import ของกลาง `timeFrame.js` อยู่แล้ว
+  · ตัวที่ประกาศซ้ำจริงคือ `InternalTimeBoard` (แก้แล้ว) — audit ชี้ผิดไฟล์
+- **กราฟรายวันข้ามวันที่ไม่มีข้อมูล** — ที่ตรวจดู (`FactoryMap` sparkline OEE) **ข้ามถูกแล้ว**:
+  วันที่ไม่มีการผลิตคือ "ไม่มีข้อมูล" ไม่ใช่ OEE = 0 · เติม 0 จะขัดกฎที่แรงกว่า ("ห้ามโชว์ 0 แทนไม่มีข้อมูล")
+  🔴 สิ่งที่ควรทำคือ **เขียนบนจอว่าช่วงนี้มีข้อมูลกี่วัน** ไม่ใช่เติมศูนย์ — เป็นงานออกแบบ ต้องถาม user
+
+### 🆕 เจอใหม่ระหว่างทำ (ยังไม่แก้ — บันทึกไว้)
+
+- **`/morning-meeting` React warning "two children with the same key" × 13** —
+  ดักค่าจริงแล้วได้ `id-1` … `id-13` = **id ของ mock** (`audit/mockSupabase.js` ออก `id-${i}` ให้ทุกตาราง)
+  ⇒ เกิดเฉพาะใต้ mock ของ audit · ข้อมูลจริงเป็น uuid ต่อตาราง ชนกันไม่ได้ **ยังไม่พบผลกระทบกับของจริง**
+  ⚠️ แต่ยังไม่ชี้ได้ว่าเป็นลิสต์ไหน (หน้านี้มี `key={line.id}` / `key={m.id}` / `key={d.id}` หลายจุด)
+  🔴 **ถ้าเจอว่าลิสต์ไหนรวมแถวจาก 2 ตารางเข้าด้วยกัน ให้ใส่คำนำหน้าแหล่งในคีย์** (`mo-${id}` / `4m-${id}`)
+  — ไม่ใช่เพราะ mock แต่เพราะคีย์ที่อิง id ดิบของหลายตารางเปราะโดยการออกแบบ · ไล่ให้จบรอบหน้า
+- **`checkWrite` ห่อ UPDATE/DELETE อีก 54 จุด** (42 จุดเป็นรูป `.eq('id', …)`) — ดู `db-write-rules.md`

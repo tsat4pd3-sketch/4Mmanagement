@@ -14,7 +14,7 @@ import { toast } from '../components/Toast';
 
 import InfoMore from '../components/InfoMore';
 import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -336,8 +336,13 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteOverride = async (id) => {
+    /* ด่านชั้นที่ 2 — "ปุ่มถูกซ่อนอยู่แล้ว" ไม่ใช่ด่าน (กฎเหล็กข้อ 10: สมมติฐานเรื่องสิทธิ์มีอายุ) */
+    if (!canDel) return toast.error('บัญชีนี้ไม่มีสิทธิ์ลบรายการเปลี่ยนกะ');
     if (!confirm('ยืนยันลบรายการเปลี่ยนกะรายบุคคลนี้?')) return;
-    checkWrite(await supabase.from('shift_overrides').delete().eq('id', id), 'ลบ override กะ');
+    /* 🔴 เดิมใช้ checkWrite = RLS ปฏิเสธ DELETE แล้วเงียบ (0 แถว ไม่มี error) ⇒ แถวยังอยู่
+       แต่ไม่มีใครรู้ · ตัวลบ "เหตุการณ์ยุบกะ" ข้างล่างนับแถวถูกอยู่แล้ว — 2 ตัวในไฟล์เดียวกัน
+       ทำไม่เหมือนกัน (QC 06/10) */
+    checkWriteRows(await supabase.from('shift_overrides').delete().eq('id', id).select('id'), 'ลบ override กะ');
     fetchOverrides();
   };
 
@@ -375,10 +380,10 @@ export default function ShiftOrganize() {
   };
 
   const handleDeleteMergeEvent = async (id) => {
+    if (!canDel) return toast.error('บัญชีนี้ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
     if (!confirm('ยืนยันลบเหตุการณ์ยุบกะนี้?')) return;
-    const { data: gone, error } = await supabase.from('shift_merge_events').delete().eq('id', id).select('id');
-    if (error) toast.error('ลบไม่สำเร็จ: ' + error.message);
-    else if (!gone?.length) toast.error('ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ');
+    checkWriteRows(await supabase.from('shift_merge_events').delete().eq('id', id).select('id'),
+      'ลบเหตุการณ์ยุบกะ', { zeroMsg: 'ลบไม่ติด (0 แถว) — ไม่มีสิทธิ์ลบเหตุการณ์ยุบกะ หรือถูกลบไปแล้ว' });
     fetchMergeEvents();
   };
 

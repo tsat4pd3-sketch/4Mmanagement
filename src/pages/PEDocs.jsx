@@ -36,6 +36,7 @@ import PeMasterLibrary from '../components/PeMasterLibrary';
 import PeMasterPullModal from '../components/PeMasterPullModal';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { compareToMaster, CMP_META, improvementProposals, newItemProposals, suggestMaster, setMasterSummary } from '../utils/peMaster';
+import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
@@ -344,10 +345,17 @@ export default function PEDocs() {
 
       {/* ── เลือกชุดเอกสาร (1 พาร์ท = 1 ชุด PFC+FMEA+CP) ── */}
       <FilterBar>
-        <select value={setId} onChange={e => pickSet(e.target.value)}>
-          <option value="">— เลือกพาร์ท/ชุดเอกสาร —</option>
-          {sets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || ''} {s.status === 'obsolete' ? '(obsolete)' : ''}</option>)}
-        </select>
+        {/* 🔴 ชุดเอกสารมีทีละหลายสิบพาร์ท — `<select>` ยาวๆ เลือกยาก และรหัสพาร์ทถูกตัดท้าย
+            ⇒ ใช้ <SearchSelect> (UI §5.1.2) · `lead` = เลขพาร์ท (nowrap ห้ามตัด) · `title` = ชื่อ
+            · ชุด obsolete ยังเลือกได้ แต่ติดป้ายให้เห็น ห้ามซ่อน (ต้องเปิดดูของเก่าได้) */}
+        <SearchSelect value={setId} onChange={({ id }) => pickSet(id || '')} style={{ flex: 1, minWidth: 260 }}
+          placeholder="— ค้นเลขพาร์ท / ชื่อพาร์ท เพื่อเลือกชุดเอกสาร —"
+          options={sets.map(s => ({
+            id: s.id, label: `${s.part_no} · ${s.part_name || ''}`,
+            lead: s.part_no, title: s.part_name || '(ไม่มีชื่อพาร์ท)',
+            badge: s.status === 'obsolete' ? 'obsolete' : null, badgeColor: 'var(--muted)',
+            keywords: `${s.part_no} ${s.part_name || ''}`,
+          }))} />
         {curSet?.image_url && (
           <img loading="lazy" src={curSet.image_url} alt="product" onClick={() => setImgView(curSet.image_url)}
             style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', cursor: 'zoom-in' }} />
@@ -732,7 +740,7 @@ export default function PEDocs() {
                   <img src={setImgPreview || setModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
-                <input type="file" accept="image/*" onChange={e => { setSetImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />
+                <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setSetImgFile(f); }} style={{ fontSize: 11, width: 'auto' }} />
               </div>
             </div>
           </div>
@@ -831,7 +839,7 @@ export default function PEDocs() {
                   <img src={procImgPreview || procModal.image_url} alt=""
                     style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                 )}
-                <input type="file" accept="image/*" onChange={e => { setProcImgFile(e.target.files?.[0] || null); e.target.value = ''; }} style={{ fontSize: 11, width: 'auto' }} />
+                <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setProcImgFile(f); }} style={{ fontSize: 11, width: 'auto' }} />
               </div>
             </div>
           </div>

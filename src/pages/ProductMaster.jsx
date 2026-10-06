@@ -150,7 +150,7 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
           placeholder={placeholder || 'พิมพ์เลข MAT หรือชื่อ เพื่อค้นหา…'} style={inputSt} />
       )}
       {open && !sel && (
-        <div style={{ position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 260, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+        <div style={{ position: 'absolute', zIndex: 30, top: '100%', left: 0, right: 0, marginTop: 4, maxHeight: 260, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-float)' }}>
           {filtered.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>ไม่พบ "{q}" ในลิสต์</div>}
           {filtered.slice(0, 60).map(o => (
             <div key={o.mat_no} onClick={() => { onChange(o.mat_no); setOpen(false); setQ(''); }}
@@ -199,7 +199,8 @@ function PartsPickModal({ parts, onPick, onClose }) {
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
-        <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นหา MAT / ชื่อ / P.NO / supplier..." style={{ ...inputSt, marginBottom: 10 }} />
+        <SearchInput autoFocus value={q} onChange={setQ} fields="MAT / ชื่อ / P.NO / supplier"
+          style={{ marginBottom: 10 }} inputStyle={inputSt} />
         <div style={{ overflowY: 'auto', flex: 1, minHeight: 120, border: '1px solid var(--border)', borderRadius: 8 }}>
           {filtered.length === 0 && (
             <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ไม่พบพาร์ทที่ตรงเงื่อนไข — เพิ่มได้ที่ tab 🗂 Parts Master</div>
@@ -2539,7 +2540,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 
             {/* search */}
             <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-              <input autoFocus style={{ ...inputSt, background: 'var(--bg2)' }} placeholder="🔍 ค้นหา Part Name / Mat SAP / Part No. / Supplier..." value={pickerQ} onChange={e => setPickerQ(e.target.value)} />
+              <SearchInput autoFocus value={pickerQ} onChange={setPickerQ}
+                fields="Part Name / Mat SAP / Part No. / Supplier" inputStyle={{ ...inputSt, background: 'var(--bg2)' }} />
             </div>
 
             {/* list */}

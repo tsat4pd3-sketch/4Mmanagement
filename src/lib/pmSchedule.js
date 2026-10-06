@@ -1,4 +1,5 @@
 const FREQ_DAYS = { daily: 1, weekly: 7, monthly: 30, quarterly: 90 }
+import { addDaysStr } from '../utils/workDate.js'
 
 /* ═══ รอบ PM = "จำนวนวัน" (2026-09-23 · feedback "ตั้งแผน PM ไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่") ═══
    ต้นเหตุ: รอบเดิมเลือกได้แค่ 5 ค่าของ `checklists.frequency` และค่า default ของฟอร์มคือ 'periodic'
@@ -149,7 +150,7 @@ export function ymdBangkok(v) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
 }
 const ymdUtc = (ymd) => { const [y, m, d] = ymd.split('-').map(Number); return Date.UTC(y, m - 1, d) }
-const addYmd = (ymd, n) => new Date(ymdUtc(ymd) + n * 86400000).toISOString().slice(0, 10)   // UTC ล้วน ปลอดภัย (ไม่ใช่เวลาปัจจุบัน)
+const addYmd = (ymd, n) => addDaysStr(ymd, n)   // ของกลาง — UTC ล้วน ไม่พึ่ง timezone เครื่อง
 export const diffYmd = (from, to) => Math.round((ymdUtc(to) - ymdUtc(from)) / 86400000)
 
 export function resolvePlanDue({ frequency, plan = null, lastInspectedAt = null, todayStr }) {

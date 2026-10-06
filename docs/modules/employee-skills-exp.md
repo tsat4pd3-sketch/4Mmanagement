@@ -192,3 +192,11 @@ AND (สกิลไม่ใช่หมวด allowance_skill  OR  has_perm('s
   `fetchSchedules()` เคลียร์ pending ให้หลังบันทึกสำเร็จ
 - `/skills-report` · `/workforce-insight` — อ่านอย่างเดียว ไม่มีปุ่มเขียน
 - ขาอนุมัติ/ไม่อนุมัติอัพระดับ **นับแถวที่เขียนจริงอยู่แล้ว** (`.select('id')`) ตั้งแต่รอบ 09/16
+
+### 🎯 Skill Fit Scoring (ย้ายมาจาก CLAUDE.md · 2026-10-06 — ตกกฎรับเข้าข้อ 1 "ข้าม session จริง")
+
+```js
+computeFit(employee, station)  // % ของทักษะที่ผ่าน min_score
+fitColor(score)                // 80+ green | 60-79 amber | 40-59 orange | <40 red
+```
+ใช้ที่ `/management` (จัดคนเข้าสถานี) และแผงทักษะใน `/operator` — session ที่ไม่แตะ 2 หน้านี้ไม่ต้องรู้
