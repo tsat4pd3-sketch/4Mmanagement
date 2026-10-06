@@ -1204,7 +1204,7 @@ export default function AddUser() {
                                 border: `1px solid ${on ? col : 'var(--border2)'}`,
                                 color: on ? col : 'var(--text2)' }}>
                               {m.icon} {m.label}
-                              {d === suggested && <span style={{ fontSize: 10, opacity: 0.75 }}> · แนะนำ</span>}
+                              {d === suggested && <span style={{ fontSize: 11, opacity: 0.75 }}> · แนะนำ</span>}
                             </button>
                           );
                         })}

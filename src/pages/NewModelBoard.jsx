@@ -203,7 +203,7 @@ function NpiStat({ label, value, suffix, tone }) {
   const unknown = value === null || value === undefined;
   return (
     <div style={{ minWidth: 0 }}>
-      <div className="nmb-eyebrow" style={{ fontSize: 10 }}>{label}</div>
+      <div className="nmb-eyebrow" style={{ fontSize: 11 }}>{label}</div>
       <div className="nmb-num" style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25, color: unknown ? 'var(--muted)' : (tone || 'var(--text)') }}>
         {unknown ? '–' : value}{!unknown && suffix ? <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> {suffix}</span> : null}
       </div>
@@ -248,7 +248,7 @@ function NpiLinkCard({ proj, isMobile }) {
     <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
       '--nmb-color': 'var(--accent)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span className="nmb-eyebrow" style={{ fontSize: 10 }}>โปรเจค NPI ของรุ่นนี้</span>
+        <span className="nmb-eyebrow" style={{ fontSize: 11 }}>โปรเจค NPI ของรุ่นนี้</span>
         <b style={{ fontSize: 13 }}>{sum.code || '(ไม่มีรหัสโปรเจค)'}</b>
         <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sum.name}</span>
         <a href={`/npi?project=${encodeURIComponent(sum.projectId)}`} style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>

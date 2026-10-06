@@ -27,7 +27,7 @@ const fmtQty = (n) => {
 };
 const TONE = { crit: '#ef4444', warn: '#f59e0b' };
 
-const th = { padding: '6px 9px', fontSize: 10.5, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
+const th = { padding: '6px 9px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
 
 /**
@@ -108,7 +108,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
             </button>
           )}
           {onDeleteDupes && delRows.length < dupCount && (
-            <div style={{ marginTop: 5, fontSize: 10.5, color: TONE.warn }}>
+            <div style={{ marginTop: 5, fontSize: 11, color: TONE.warn }}>
               ⚠️ อีก {dupCount - delRows.length} แถวยังลบจากจอนี้ไม่ได้ (ไม่มี id ของบรรทัด) — ลบที่ตารางด้านล่าง
             </div>
           )}
@@ -119,7 +119,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
         <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 9,
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
           ⚠️ <b style={{ color: TONE.warn }}>ผิด pattern การไหล {flowCount} รายการ</b> — ดูคำอธิบายในแถว
-          <div style={{ marginTop: 2, color: 'var(--muted)', fontFamily: 'monospace', fontSize: 10.5 }}>
+          <div style={{ marginTop: 2, color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>
             5xx coil ─ไลน์ปั๊ม→ 2xx ─สโตร์→ ไลน์ประกอบ → 1xx FG · (งานปั๊มแล้วขายเลย 5→1 ถือว่าปกติ)
           </div>
         </div>
@@ -164,12 +164,12 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
                   <td style={{ ...td, maxWidth: 260 }}>
                     {r.part_name || '—'}
                     {r.isDupeRow && (
-                      <div style={{ fontSize: 10, color: TONE.crit, fontWeight: 700, marginTop: 1,
+                      <div style={{ fontSize: 11, color: TONE.crit, fontWeight: 700, marginTop: 1,
                         display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         🔴 นับซ้ำ — ตัวนี้อยู่ชั้นลึกอยู่แล้ว
                         {onDeleteDupes && r.id && (
                           <button onClick={() => doDelete([r])} disabled={busy} title="ลบแถวชั้น 1 นี้ทิ้ง"
-                            style={{ fontSize: 10, fontWeight: 800, padding: '1px 7px', borderRadius: 5,
+                            style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 5,
                               cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)',
                               color: TONE.crit, border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
                             🗑 ลบแถวนี้
@@ -178,11 +178,11 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
                       </div>
                     )}
                     {w && (
-                      <div style={{ fontSize: 10, color: TONE[w.level] || TONE.warn, marginTop: 1, lineHeight: 1.45 }}>
+                      <div style={{ fontSize: 11, color: TONE[w.level] || TONE.warn, marginTop: 1, lineHeight: 1.45 }}>
                         {w.level === 'crit' ? '🔴' : '⚠️'} {w.text}
                       </div>
                     )}
-                    {r.cycle && <div style={{ fontSize: 10, color: TONE.crit, marginTop: 1 }}>🔴 วนกลับหาตัวเอง — หยุดกาง</div>}
+                    {r.cycle && <div style={{ fontSize: 11, color: TONE.crit, marginTop: 1 }}>🔴 วนกลับหาตัวเอง — หยุดกาง</div>}
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtQty(r.qty)}</td>
                   {/* หน่วยต้องมีเสมอ — ไม่มีในฐาน = บอกตรงๆ ห้ามเดา */}
@@ -208,7 +208,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
         </button>
       )}
 
-      <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
         <b>จำนวน/ตัวแม่</b> = ต่อ 1 หน่วยของชิ้นที่อยู่เหนือขึ้นไป (ตรงกับคอลัมน์ Qty ของ SAP) ·
         <b> ต่อ 1 FG</b> = คูณสะสมทั้งสายแล้ว
         <br />จอนี้แก้ BOM ไม่ได้ (ยกเว้นปุ่มลบแถว<b>นับซ้ำ</b>) — เพิ่ม/แก้พาร์ทที่ตารางด้านล่าง

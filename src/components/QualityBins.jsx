@@ -419,7 +419,7 @@ export default function QualityBins() {
                     <span style={{ fontSize: 11.5, fontWeight: age.over ? 800 : 600, color: age.over ? '#f97316' : 'var(--text2)' }}
                       title={`ลงถัง ${r.work_date} · อายุแท็กสูงสุด ${age.limit} วันตาม WI-PD3-087 §5.6`}>
                       {age.over ? '⏱ ' : ''}{age.days} / {age.limit} วัน
-                      {age.over && <span style={{ display: 'block', fontSize: 10, fontWeight: 700 }}>เกิน {age.overBy} วัน</span>}
+                      {age.over && <span style={{ display: 'block', fontSize: 11, fontWeight: 700 }}>เกิน {age.overBy} วัน</span>}
                     </span>
                   );
                 })()}</td>
@@ -447,8 +447,8 @@ export default function QualityBins() {
                       {d.label}
                       {r.qa_decision === 'use_as_is' && (
                         r.special_use_doc_no
-                          ? <span style={{ display: 'block', fontSize: 10, color: 'var(--muted)' }}>{SPECIAL_USE_FORM} {r.special_use_doc_no}</span>
-                          : <span style={{ display: 'block', fontSize: 10, color: '#f59e0b' }}>⏳ รอเลขใบ {SPECIAL_USE_FORM}</span>
+                          ? <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{SPECIAL_USE_FORM} {r.special_use_doc_no}</span>
+                          : <span style={{ display: 'block', fontSize: 11, color: '#f59e0b' }}>⏳ รอเลขใบ {SPECIAL_USE_FORM}</span>
                       )}
                     </span>
                   );

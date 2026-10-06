@@ -364,7 +364,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}
                     <span>· ปั๊มไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> / สั่งค้าง {fmt(ordered)} ชิ้น</span>
                     <button onClick={() => setOpenMat(o => ({ ...o, [g.mat]: !o[g.mat] }))}
-                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {detail ? '▾ ซ่อนรายล็อต' : `▸ รายล็อต (${g.lots.length})`}
                     </button>
                   </div>
@@ -397,7 +397,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                             </span>
                             {canOperate && lot.status === 'pending' && (
                               <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
-                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>
+                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
                                 {busy === lot.id ? '...' : '▶'}
                               </button>
                             )}
@@ -419,7 +419,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                 (ยาว 8 แถว + คำอธิบาย 3 บรรทัด บังคิวงานจริงที่อยู่ข้างบน) */}
             <div onClick={() => setOpenBlocks(o => !o)}
               style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: openBlocks ? 4 : 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10, transform: openBlocks ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+              <span style={{ fontSize: 11, transform: openBlocks ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
               ⚠️ สโตร์ต้องการของจากไลน์นี้ แต่ระบบออกใบสั่งไม่ได้ ({blocks.length} พาร์ท)
             </div>
             {openBlocks && (<>

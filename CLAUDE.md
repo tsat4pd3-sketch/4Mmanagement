@@ -38,7 +38,8 @@
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกในไฟล์โมดูล (ข้ามโมดูลจริง เช่น "กับดัก CSS" ค่อยไว้ที่นี่)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
 - **⚠️ ส่ง SQL/คำสั่งให้ user: วาง SQL เต็มๆ ในแชท ห้ามบอกแค่ชื่อไฟล์ · ระบุ project (Main/DR) ทุกครั้ง · แนบคิวรีเช็คผล (คำสั่งถาวร 2026-08-21)** — user มีแค่ **Supabase SQL Editor บนเว็บ ไม่มี CLI/terminal เปิดไฟล์ในรีโปไม่ได้** ⇒ **ห้ามส่งคำสั่ง shell/CLI ให้รัน** · migration ที่ย้อนได้ + edge function = AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ · 📄 เคสที่เคยพลาด + ขั้นตอน → `docs/modules/db-write-rules.md` §ส่ง SQL ให้ user · `docs/modules/edge-functions.md`
-- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` · 📄 `docs/modules/doc-forms.md` · UI §6.6
+- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` · **CSV ก็นับ** — ชื่อไฟล์ผ่าน `src/utils/csvDoc.js`
+  (🔴 เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV = คอลัมน์เลื่อนทั้งไฟล์) · 📄 `docs/modules/doc-forms.md` · UI §6.6
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
@@ -673,6 +674,14 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
+## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board` (2026-10-06)
+
+แทนบอร์ดกระดาษหน้าไลน์ (ผังคน · ผัง LAYOUT · ป้าย 4M) · **อ่านอย่างเดียว ไม่มีตารางใหม่** · กฎอยู่ `utils/manpowerBoard.js` ที่เดียว
+· แถวของคน = **ตำแหน่ง** · คอลัมน์ = ทีม · กะของทีม = `shiftFromTeam` **ห้ามเขียน A = Shift 01** · ตารางกะไม่ตั้ง = ไม่คิดช่องว่าง (null)
+> 📄 `docs/modules/manpower-board.md`
+
+---
+
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
 
 จออ่านอย่างเดียว บอกว่าช่วงที่เลือก **เพิ่ม/แก้/ปรับ** อะไรไปบ้าง · **ไม่แตะ Supabase เลย**
@@ -859,7 +868,9 @@ subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) 
 - **`position:sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX:'clip'` — ห้ามเปลี่ยนเป็น `hidden`/`auto`**
   · กล่องที่แค่ตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent:'start'`** (ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน · flexbox ไม่เป็น)
-- **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
+- **จอ TV/บอร์ดหน้างาน: ฟอนต์พื้น 11px ห้ามต่ำกว่านี้** (ชิป/ป้าย 11–12 · หัวข้อ 14–15) — **มีด่าน `font-min-11`**
+  + `audit/chartsweep.mjs` วัด "ขนาดที่เห็นบนจอ" (รวมสเกล SVG) · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
+  · ยกเว้น `src/lib/**` (ใบพิมพ์/PPTX = pt บนกระดาษ) · ตัวสเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)`
 - 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
   (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 

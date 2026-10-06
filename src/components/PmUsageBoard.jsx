@@ -143,8 +143,8 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                   <tr onClick={() => setOpen(o => ({ ...o, [r.name]: !o[r.name] }))} style={{ borderTop: '1px solid var(--border)', cursor: 'pointer' }}>
                     <td style={{ ...td, fontWeight: 800, color: 'var(--text)' }}>
                       {open[r.name] ? '▾' : '▸'} {r.name}
-                      {r.famLines.length > 1 && <span style={{ fontSize: 10.5, color: 'var(--muted)', fontWeight: 500 }}> (รวมไลน์ลูก {r.famLines.length - 1})</span>}
-                      {r.unknownLine && <span style={{ fontSize: 10.5, color: 'var(--accent2)', fontWeight: 500 }}> · ไม่อยู่ในทะเบียนไลน์</span>}
+                      {r.famLines.length > 1 && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}> (รวมไลน์ลูก {r.famLines.length - 1})</span>}
+                      {r.unknownLine && <span style={{ fontSize: 11, color: 'var(--accent2)', fontWeight: 500 }}> · ไม่อยู่ในทะเบียนไลน์</span>}
                     </td>
                     <td style={{ ...td, color: r.eqCount ? 'var(--text2)' : 'var(--muted)' }}>{r.eqCount ? `${r.eqCount} ตัว` : '— ไม่มีในทะเบียน'}</td>
                     <td style={{ ...td, fontWeight: 800, fontFamily: 'monospace', color: 'var(--accent)' }}>{N(r.d30.qty)}</td>
@@ -183,8 +183,8 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                                     <td style={{ padding: '5px 8px', color: 'var(--text2)' }}>{kind.icon} {kind.label}</td>
                                     <td style={{ padding: '5px 8px', fontFamily: 'monospace' }}>
                                       {N(accum)}{shots != null && <span style={{ color: 'var(--muted)' }}> ({N(shots)} shot)</span>}
-                                      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{since ? `PM ล่าสุด ${fmtThai(since)}` : 'ยังไม่เคยบันทึก PM — นับทั้งช่วง'}</div>
-                                      {needPps && <div style={{ fontSize: 10.5, color: 'var(--accent2)' }}>ตั้ง “ชิ้น/stroke” ที่ทะเบียนแม่พิมพ์ก่อน ถึงจะนับเป็น shot ได้</div>}
+                                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{since ? `PM ล่าสุด ${fmtThai(since)}` : 'ยังไม่เคยบันทึก PM — นับทั้งช่วง'}</div>
+                                      {needPps && <div style={{ fontSize: 11, color: 'var(--accent2)' }}>ตั้ง “ชิ้น/stroke” ที่ทะเบียนแม่พิมพ์ก่อน ถึงจะนับเป็น shot ได้</div>}
                                     </td>
                                     <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: thr ? 'var(--text2)' : 'var(--muted)' }}>{thr ? N(thr) : 'ยังไม่ตั้ง'}</td>
                                     <td style={{ padding: '5px 8px' }}>
