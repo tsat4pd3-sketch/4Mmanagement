@@ -60,6 +60,9 @@ export default function ManpowerBoard() {
   const [fourM, setFourM] = useState([]);
   const [slotPlans, setSlotPlans] = useState([]);
   const [lineTechs, setLineTechs] = useState([]);
+  const [stations, setStations] = useState([]);
+  const [stationPlans, setStationPlans] = useState([]);
+  const [homeByEmp, setHomeByEmp] = useState({});
   const [helpers, setHelpers] = useState([]);
   const [setupOpen, setSetupOpen] = useState(false);
   const canSetup = canSeeded('manpower_board', 'edit', role);
@@ -99,14 +102,20 @@ export default function ManpowerBoard() {
   // ── ค่าตั้งบอร์ด (ช่องต่อทีม · ช่างประจำไลน์) — โหลดตอนเปิด + หลังแก้ในหน้าต่างตั้งค่า ──
   //    ตารางยังไม่ apply (42P01) = บอร์ดทำงานแบบเดิม (std) แต่ต้องเขียนบนจอ ห้ามเงียบ
   const loadSetup = useCallback(async () => {
-    const [sp, lt] = await Promise.all([
+    const [sp, lt, ws, ssp, hp] = await Promise.all([
       supabase.from('manpower_slot_plans').select('id, org_node_id, team, slots'),
       supabase.from('line_technicians').select('id, employee_id, line_id'),
+      fetchAllPages(() => supabase.from('workstations').select('id, line_id, line_name, station_name')),
+      supabase.from('station_slot_plans').select('station_id, per_shift'),
+      fetchAllPages(() => supabase.from('employee_home_positions').select('employee_id, station_id'), { orderBy: 'employee_id' }),
     ]);
-    const e = [sp.error, lt.error].filter(Boolean).map(x => x.message);
+    const e = [sp.error?.message, lt.error?.message, ws.error, ssp.error?.message, hp.error].filter(Boolean);
     if (e.length) setErr(`ค่าตั้งบอร์ด: ${e.join(' · ')}`);
     setSlotPlans(sp.data || []);
     setLineTechs(lt.data || []);
+    setStations(ws.rows || []);
+    setStationPlans(ssp.data || []);
+    setHomeByEmp(Object.fromEntries((hp.rows || []).map(h => [h.employee_id, h.station_id])));
   }, []);
   useEffect(() => { loadSetup(); }, [loadSetup]);
 
@@ -152,8 +161,8 @@ export default function ManpowerBoard() {
     return m;
   }, [attLogs]);
   const maps = useMemo(() => buildScheduleMaps(sched), [sched]);
-  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers }),
-    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers]);
+  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp }),
+    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers, stations, stationPlans, homeByEmp]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
 
   const filters = (
@@ -202,11 +211,12 @@ export default function ManpowerBoard() {
       {loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div>
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
-        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} />
+        : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
-          slotPlans={slotPlans} lineTechs={lineTechs} onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
+          slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans}
+          onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
       )}
     </Page>
   );
@@ -311,16 +321,22 @@ function SkillCard({ p, skills }) {
   );
 }
 
-function EmptySlot() {
+/** ช่องว่าง — รู้จุดงาน (ช่องระดับจุดงาน) = เขียนชื่อจุดด้วย หัวหน้าจะได้รู้ว่าต้องหาคนลงตรงไหน */
+function EmptySlot({ station, h }) {
   return (
-    <div style={{ border: '2px dashed var(--border2)', borderRadius: 8, minHeight: 92, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>ช่องว่าง</div>
+    <div title={station ? `จุด ${station} ยังขาดคนประจำ` : 'ช่องว่าง'} style={{ border: '2px dashed var(--border2)', borderRadius: 8, minHeight: h || 92, height: h,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 4, overflow: 'hidden',
+      color: 'var(--muted)', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>
+      ช่องว่าง
+      {station && <span style={{ fontSize: 11.5, color: 'var(--text2)', overflowWrap: 'anywhere' }}>📍 {station}</span>}
+    </div>
   );
 }
 
 /** ป้ายช่องว่างของคอลัมน์ — บอกที่มาเสมอ (ตั้งเอง vs std ของไลน์) ไม่งั้นคนเถียงกันว่าเลขมาจากไหน */
 const slotText = (c) => (c.slots == null ? ''
-  : c.slotSource === 'plan' ? ` · ว่าง ${c.slots} (ตั้งไว้ ${c.slotPlan} ช่อง)` : ` · ว่าง ${c.slots} (ตาม std)`);
+  : c.slotSource === 'plan' ? ` · ว่าง ${c.slots} (ตั้งไว้ ${c.slotPlan} ช่อง)`
+  : c.slotSource === 'station' ? ` · ว่าง ${c.slots} (ตามจุดงาน)` : ` · ว่าง ${c.slots} (ตาม std)`);
 
 const CARD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 6, alignItems: 'start' };
 // แถวชิปหัวหน้า — min(100%, …) กันล้นจอมือถือ (ชิปกว้าง 200 บนจอ 390 − padding = ล้น)
@@ -344,7 +360,7 @@ function TeamColumn({ c, skills }) {
         : <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>ยังไม่มีหัวหน้ากลุ่มในทะเบียน</div>}
       <div style={CARD_GRID}>
         {c.ops.map(p => <SkillCard key={p.id} p={p} skills={skills} />)}
-        {Array.from({ length: slots }, (_, i) => <EmptySlot key={`e${i}`} />)}
+        {Array.from({ length: slots }, (_, i) => <EmptySlot key={`e${i}`} station={c.slotStations?.[i]} />)}
       </div>
     </div>
   );
@@ -396,6 +412,12 @@ function OrgTab({ board, depts, skills }) {
             <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
             {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="#0ea5e9" />}
           </div>
+          {d.stationInfo && (
+            <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
+              📍 ช่องว่างคิดจากจุดงาน {d.stationInfo.planned}/{d.stationInfo.total} จุดที่ตั้งจำนวนคนไว้ (ต้องการ เช้า {d.stationInfo.need.day} · ดึก {d.stationInfo.need.night} คน)
+              {d.stationInfo.noHome > 0 && <span style={{ color: '#f59e0b' }}> · ⚠️ {d.stationInfo.noHome} คนยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ช่องว่างอาจมากกว่าจริง (ตั้งจุดประจำที่ /management)</span>}
+            </div>
+          )}
           {d.unknownShiftTeams.length > 0 && (
             <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
               ⚠️ ทีม {d.unknownShiftTeams.join(', ')} ยังไม่ได้ตั้งตารางกะวันนี้ — ไม่รู้ว่าเข้ากะไหน จึงยังไม่คำนวณช่องว่าง (ตั้งที่ /shift-organize)
@@ -430,7 +452,7 @@ function OrgTab({ board, depts, skills }) {
 }
 
 /* ═════════════════════════ 🗺️ ผัง LAYOUT ═════════════════════════ */
-function LayoutTab({ board, depts, lines, attendance, maps, tv }) {
+function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans }) {
   const [layouts, setLayouts] = useState([]);
   const [stations, setStations] = useState([]);
   const [homes, setHomes] = useState({});
@@ -480,12 +502,14 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv }) {
     return m;
   }, [board]);
   const shiftOfEmp = useCallback((e) => (e?.team ? shiftFromTeam(scheduleTeamFor(e, maps), e.team) : null), [maps]);
-  const placed = useMemo(() => layoutPeople({ stations, homeByEmp: homes, attendance, empById, shiftOfEmp }),
-    [stations, homes, attendance, empById, shiftOfEmp]);
+  const placed = useMemo(() => layoutPeople({ stations, homeByEmp: homes, attendance, empById, shiftOfEmp, stationPlans }),
+    [stations, homes, attendance, empById, shiftOfEmp, stationPlans]);
 
   if (!layouts.length) return <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไลน์ของแผนกที่เลือกยังไม่มีรูปผัง (อัพโหลดที่ /line-setup){err ? ` · ${err}` : ''}</div>;
   const unplaced = stations.filter(s => s.pos_top == null || s.pos_left == null).length;
   const emptyStations = placed.filter(x => !x.people.length).length;
+  const shortage = placed.reduce((acc, x) => (x.missing ? { day: acc.day + x.missing.day, night: acc.night + x.missing.night, unknown: acc.unknown + x.missing.unknown,
+    n: acc.n + x.missing.day + x.missing.night + x.missing.unknown } : acc), { day: 0, night: 0, unknown: 0, n: 0 });
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <FilterBar bare>
@@ -497,12 +521,13 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv }) {
         <span className="spacer" />
         <span style={{ display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap' }}>
           {Object.entries(SHIFT_META).map(([k, m]) => <span key={k} style={{ color: m.color, fontWeight: 700 }}>● {m.label}</span>)}
-          <span style={{ color: 'var(--muted)' }}>จาง = ลา/ขาด · ✳ = ย้ายมาวันนี้ · ↗ = วันนี้ไปจุดอื่น</span>
+          <span style={{ color: 'var(--muted)' }}>จาง = ลา/ขาด · ✳ = ย้ายมาวันนี้ · ↗ = วันนี้ไปจุดอื่น · วงประ + สีกะ = ขาดคนประจำกะนั้น</span>
         </span>
       </FilterBar>
       {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠️ {err}</div>}
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-        {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''} — ตั้งจุดประจำที่ /management
+        {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''}
+        {shortage.n > 0 && <span style={{ color: '#f59e0b' }}> · 📍 ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
       </div>
       <LayoutMap layout={layout} placed={placed} reserve={tv ? 48 : 12} />
       {tv && <BoardPager page={clampPage(tvIdx, layouts.length)} count={layouts.length} onPage={setTvIdx} labels={layouts.map(l => l.line_name)} />}
@@ -525,7 +550,7 @@ function LayoutMap({ layout, placed, reserve = 12 }) {
           style={{ width: '100%', maxHeight: fitH ? fitH - 16 : undefined, objectFit: 'contain', display: 'block' }} />
         {imgBox && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
-            {placed.filter(x => x.station.pos_top != null && x.station.pos_left != null).map(({ station, people }) => (
+            {placed.filter(x => x.station.pos_top != null && x.station.pos_left != null).map(({ station, people, missing }) => (
               <div key={station.id} style={{ position: 'absolute', top: `${station.pos_top}%`, left: `${station.pos_left}%`, transform: 'translate(-50%, -50%)', pointerEvents: 'auto' }}>
                 <div style={{ position: 'relative', display: 'flex', gap: 2 }}>
                   {people.length ? people.map(({ emp, shift, attend, temp, away }) => {
@@ -540,9 +565,15 @@ function LayoutMap({ layout, placed, reserve = 12 }) {
                         {(temp || away) && <span style={{ position: 'absolute', top: 0, right: 0, fontSize: 11, lineHeight: 1, background: 'rgba(0,0,0,.75)', color: '#fff', borderRadius: 6, padding: '0 2px' }}>{temp ? '✳' : '↗'}</span>}
                       </div>
                     );
-                  }) : (
+                  }) : !missing ? (
                     <div title={`${station.station_name} · ยังไม่มีคนประจำ`} style={{ width: sz, height: sz, borderRadius: '50%', border: '2px dashed #64748b', background: 'rgba(0,0,0,.35)', color: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>+</div>
-                  )}
+                  ) : null}
+                  {/* 📍 ช่องที่ขาดต่อกะ (station_slot_plans) — วงประสีของกะ ⇒ เห็นเลยว่าจุดไหนขาดคนกะไหน */}
+                  {missing && ['day', 'night', 'unknown'].flatMap(sh => Array.from({ length: missing[sh] || 0 }, (_, i) => (
+                    <div key={`${sh}${i}`} title={sh === 'unknown' ? `${station.station_name} · ขาดคนประจำ (ยังไม่รู้กะ — ตารางกะยังไม่ตั้ง)` : `${station.station_name} · ขาดคนประจำ${shiftMeta(sh).label}`}
+                      style={{ width: sz, height: sz, borderRadius: '50%', border: `2px dashed ${shiftMeta(sh === 'unknown' ? null : sh).color}`, background: 'rgba(0,0,0,.35)',
+                        color: shiftMeta(sh === 'unknown' ? null : sh).color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{sh === 'unknown' ? '?' : '+'}</div>
+                  )))}
                   <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 2, background: 'rgba(0,0,0,0.78)', color: '#fff', borderRadius: 4,
                     padding: '0 5px', fontSize: ms?.pillFont || 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: ms?.pillMaxW || 96 }}>
                     {station.station_name}
@@ -774,7 +805,7 @@ function OrgTv({ board, depts, skills }) {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignContent: 'flex-start' }}>
                       {items.map((it, i) => it.kind === 'op'
                         ? <TvCard key={it.p.id} p={it.p} skills={skills} />
-                        : <div key={`s${i}`} style={{ width: TV_CARD.w, height: TV_CARD.h, border: '2px dashed var(--border2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 12, fontWeight: 700 }}>ช่องว่าง</div>)}
+                        : <div key={`s${i}`} style={{ width: TV_CARD.w }}><EmptySlot station={it.station} h={TV_CARD.h} /></div>)}
                       {!items.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>— ไม่มีการ์ดในส่วนนี้ —</span>}
                     </div>
                     {more > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ต่อหน้าถัดไปอีก {more} ใบ ▶</div>}
