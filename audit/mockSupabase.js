@@ -217,6 +217,23 @@ const TABLE_ROWS = {
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
   employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  /* 🔴 ใบแจ้งซ่อม MO — ต้องคละ **สถานะจริงของ workflow** (2026-10-06)
+     เดิมทุกแถวได้ `status: 'open'` จาก ROW() ซึ่ง **ไม่ใช่สถานะของ mtn_orders เลย**
+     ⇒ `nextStepOf()` คืน null ทุกแถว ⇒ โค้ดสาย "ใบนี้รอขั้นไหน / รอใคร" (ตัวกรองรอขั้นไหน ·
+       บรรทัดสรุปในคิวงานของฉัน · ป้ายขั้นในลิสต์) **ไม่เคยถูกเรนเดอร์ใน harness เลย**
+     🔴 ต้องมีทั้ง 2 ฟอร์ม: `mtn_dept` = ทีมที่ใช้ฟอร์ม MTN (8 ขั้น ไม่มี QA) และทีมอื่น (7 ขั้น มี QA)
+        เพราะ **เลขขั้นเดียวกันคนละความหมาย** (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN)
+        ⇒ ถอดทีมใดทีมหนึ่งออก = สาขา `stageOf` ฝั่งนั้นหลุดด่าน */
+  mtn_orders: (r, i) => ({
+    ...r,
+    mo_no: `MO-2610-${String(i).padStart(3, '0')}`,
+    status: ['pending', 'assigned', 'repaired', 'checked', 'handover', 'closed'][i % 6],
+    mtn_dept: ['production', 'maintenance', 'jig_maintenance'][i % 3],
+    qa_skipped_at: null, purpose: i % 4 === 0 ? 'improve' : 'repair',
+    report_at: '2026-08-04T09:30:00+07:00',
+    mtn_head_at: i % 2 ? '2026-08-05T09:00:00+07:00' : null, approve_at: null,
+    reported_by_name: 'สมชาย ใจดี', assigned_to: 'ช่างเอก',
+  }),
   line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
   stock_receipts: (r, i) => ({
