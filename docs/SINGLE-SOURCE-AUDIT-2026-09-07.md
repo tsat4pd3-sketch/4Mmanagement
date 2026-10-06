@@ -1,5 +1,12 @@
 # 🔍 Single-Source-of-Truth Audit — ช่องกรอก "ชื่อ/รหัส" ทุกหน้า (2026-09-07)
 
+> ⚠️ **แก้ชื่อตาราง 4 ตัวแล้ว 2026-10-06 (QC audit)** — ฉบับแรกเขียนผิดเป็น `qa_claims` ·
+> `qa_check_items` · `npi_part_deliverables` · `npi_eci` ซึ่ง**ไม่มีอยู่จริง** ชื่อจริงคือ
+> `qa_customer_claims` · `qa_inspection_items` · `npi_deliverables` · `npi_change_requests`
+> · มีคนก๊อปชื่อจากไฟล์นี้ไปใช้ใน `useColumnHistory` แล้วฟีเจอร์ "📜 เคยบันทึกไว้" **ตายเงียบ 4 จุด**
+> ⇒ มีด่าน `column-history-table-must-exist` กันซ้ำแล้ว · ชื่อตารางจริงอ่านสดที่หน้า `/schema`
+
+
 > **คำสั่ง user:** ตรวจทุกฟีเจอร์ทุกหน้า — ชื่อคน / เครื่อง / ชิ้นส่วน / ประเภท / รหัส อะไรก็ตามที่ให้เลือกกรอก
 > ถ้ามีทะเบียนในฐานข้อมูลแล้ว **ต้องไม่มีให้พิมพ์เอง** ให้เป็นการเลือก + กรองตามลำดับชั้นองค์กร หรือพิมพ์ค้นได้
 >
@@ -671,8 +678,8 @@ Also seen: `QualityControl.jsx:445` line filter and `:450` product filter are `<
 | # | file:line | Field | Entity → column | Control | Master | Sev | Fix |
 |---|---|---|---|---|---|---|---|
 | 13 | `QAInspectionSetup.jsx:948-952` | ไลน์ผลิต (Part modal) | line → `qa_parts.line_name` | `<select>` manual `toHierarchicalOptions(lines).map(<option>)`; query selects only `id, name, parent_line_name` (no `section`, `is_active`) | `production_lines` | 🟡 (LineSelect drift) | `<LineSelect>` + select `id, name, parent_line_name, section, is_active`. `qa_parts.line_name` is used to scope parts in `QaCheckSheet` (`scopedParts`) → wrong name = part invisible to inspectors. |
-| 14 | `QAInspectionSetup.jsx:945` | ลูกค้า | customer → `qa_parts.customer` | `<input type=text>` free | **NO MASTER** (customer is a text column on `dr_products`, `pe_doc_sets`, `npi_projects`, `qa_claims`, `kanban_standards`…) | 🟡 (candidate) | Cross-page repeated entity → candidate `customers` master (see summary note). Short-term: `<datalist>` of distinct `dr_products.customer`. |
-| 15 | `QAInspectionSetup.jsx:1027` | วิธี / เครื่องมือตรวจ (check item) | instrument/method → `qa_check_items.method` | `<input type=text>` free (placeholder `Vernier / CF / Visual`) | `qa_instruments` (Main) | 🟡 | `SearchSelect` over `qa_instruments` with `allowFree` for methods that are not instruments (Visual). |
+| 14 | `QAInspectionSetup.jsx:945` | ลูกค้า | customer → `qa_parts.customer` | `<input type=text>` free | **NO MASTER** (customer is a text column on `dr_products`, `pe_doc_sets`, `npi_projects`, `qa_customer_claims`, `kanban_standards`…) | 🟡 (candidate) | Cross-page repeated entity → candidate `customers` master (see summary note). Short-term: `<datalist>` of distinct `dr_products.customer`. |
+| 15 | `QAInspectionSetup.jsx:1027` | วิธี / เครื่องมือตรวจ (check item) | instrument/method → `qa_inspection_items.method` | `<input type=text>` free (placeholder `Vernier / CF / Visual`) | `qa_instruments` (Main) | 🟡 | `SearchSelect` over `qa_instruments` with `allowFree` for methods that are not instruments (Visual). |
 
 ✅: `:917` BOM/Product Master search-and-fill for Part No. (custom list from `dr_products` + `bom_items`) — good pattern; `part_no` remains editable text after fill (acceptable, qa_parts *is* the master being defined). Stage/rank/kind selects are app enums.
 
@@ -743,8 +750,8 @@ Also seen: `QualityControl.jsx:445` line filter and `:450` product filter are `<
 | # | file:line | Field | Entity → column | Control | Master | Sev | Fix |
 |---|---|---|---|---|---|---|---|
 | 38 | `NpiPartPanel.jsx:296` | ผู้รับผิดชอบเฟส | person → `npi_part_phases.owner_name` | `<input list="npi-users">` datalist | `profiles` | 🟡 | `SearchSelect` over users (as `NpiTasks`). |
-| 39 | `NpiPartPanel.jsx:311` | ผู้รับผิดชอบ (deliverable) | person → `npi_part_deliverables.owner_name` | `<input list="npi-users">` datalist | `profiles` | 🟡 | Same. |
-| 40 | `NpiPartPanel.jsx:312` (and `NpiTemplates.jsx:159`) | ทีมเจ้าของ (owner_role) | team/department → `npi_part_deliverables.owner_role`, `npi_template_deliverables.owner_role` | `<select>` from hardcoded `OWNER_ROLE` in `src/utils/npi.js:96` (engineer/qa/production/planning/sales/purchasing/mtn/manager) | `org_nodes` (departments, Main) — partial overlap | 🔵 | Low priority: keep as app enum if it is meant to map to permission roles; otherwise drive from `org_nodes` departments so new plants/departments need no code change (CLAUDE.md rule "data-driven ก่อน hardcode"). |
+| 39 | `NpiPartPanel.jsx:311` | ผู้รับผิดชอบ (deliverable) | person → `npi_deliverables.owner_name` | `<input list="npi-users">` datalist | `profiles` | 🟡 | Same. |
+| 40 | `NpiPartPanel.jsx:312` (and `NpiTemplates.jsx:159`) | ทีมเจ้าของ (owner_role) | team/department → `npi_deliverables.owner_role`, `npi_template_deliverables.owner_role` | `<select>` from hardcoded `OWNER_ROLE` in `src/utils/npi.js:96` (engineer/qa/production/planning/sales/purchasing/mtn/manager) | `org_nodes` (departments, Main) — partial overlap | 🔵 | Low priority: keep as app enum if it is meant to map to permission roles; otherwise drive from `org_nodes` departments so new plants/departments need no code change (CLAUDE.md rule "data-driven ก่อน hardcode"). |
 
 ✅ 3: phase `<select>`, ref-kind linked selects (drawing / tooling) `:315-316`.
 
@@ -752,8 +759,8 @@ Also seen: `QualityControl.jsx:445` line filter and `:450` product filter are `<
 
 | # | file:line | Field | Entity → column | Control | Master | Sev | Fix |
 |---|---|---|---|---|---|---|---|
-| 41 | `NpiDrawingsEci.jsx:223` (+datalist `:234`) | ECI/ECN ที่ทำให้เกิด rev นี้ | ECI record → `npi_drawing_revisions.eci_no` (text) | `<input list="npi-eci-nos">` datalist over `npi_eci` | `npi_eci` (Main) | 🟡 | `<select>`/`SearchSelect` of this part's ECIs storing `eci_id` (FK) + snapshot no.; ECI closure check (`affects_drawing` → `drawing_revision_id`) already links by id in the other direction, so the text link is a second, unvalidated path. |
-| 42 | `NpiDrawingsEci.jsx:257` | ผู้ขอ/ต้นเรื่อง | person → `npi_eci.requested_by` | `<input type=text>` free | `profiles` (internal) — customer contacts have no master | 🟡 | `SearchSelect` over `profiles` with `allowFree` (source = customer → free text justified). |
+| 41 | `NpiDrawingsEci.jsx:223` (+datalist `:234`) | ECI/ECN ที่ทำให้เกิด rev นี้ | ECI record → `npi_drawing_revisions.eci_no` (text) | `<input list="npi-eci-nos">` datalist over `npi_change_requests` | `npi_change_requests` (Main) | 🟡 | `<select>`/`SearchSelect` of this part's ECIs storing `eci_id` (FK) + snapshot no.; ECI closure check (`affects_drawing` → `drawing_revision_id`) already links by id in the other direction, so the text link is a second, unvalidated path. |
+| 42 | `NpiDrawingsEci.jsx:257` | ผู้ขอ/ต้นเรื่อง | person → `npi_change_requests.requested_by` | `<input type=text>` free | `profiles` (internal) — customer contacts have no master | 🟡 | `SearchSelect` over `profiles` with `allowFree` (source = customer → free text justified). |
 
 ✅ 6: part `<select>` `:137`, ECI part `:253`, drawing-rev `:269`, PE change request `:276`, 4M log `:283`, tooling plan `:290`.
 
@@ -785,10 +792,10 @@ Also seen: `QualityControl.jsx:445` line filter and `:450` product filter are `<
 
 | # | file:line | Field | Entity → column | Control | Master | Sev | Fix |
 |---|---|---|---|---|---|---|---|
-| 48 | `QaClaims.jsx:296` | เลขพาร์ท (กุญแจหาเอกสาร PFMEA) | part → `qa_claims.part_no` | `<input type=text>` free | `pe_doc_sets` (Main) / `dr_products` (DR) / `qa_parts` | 🔴 | `SearchSelect` as #2. Label itself says it is the key; it is passed to `PeChangeRequests` `matchDocSet` and copied into the CAPA created from the claim (`:145`). |
-| 49 | `QaClaims.jsx:299-302` | ไลน์ผลิต | line → `qa_claims.line_name` | `<select>` with `lines.map(l => <option>)` — `lines` prop is a **flat array of names** (`QualityControl.jsx:1638`), no hierarchy / scope / retired handling | `production_lines` | 🟡 (LineSelect drift) | Pass line objects and use `<LineSelect>`; value is also used by `matchDocSet` line fallback. |
-| 50 | `QaClaims.jsx:293` | ลูกค้า * | customer → `qa_claims.customer` | `<input type=text>` free (placeholder `FTM / AAT`) | **NO MASTER** (see #14) | 🟡 (candidate) | `<datalist>` of distinct `dr_products.customer` now; master later. Claim register per customer is a natural report grouping → typos split the group. |
-| 51 | `QaClaims.jsx:297` | ชื่อพาร์ท | part name → `qa_claims.part_name` | `<input type=text>` free | same as #48 | 🟡 | Auto-fill from part picker. |
+| 48 | `QaClaims.jsx:296` | เลขพาร์ท (กุญแจหาเอกสาร PFMEA) | part → `qa_customer_claims.part_no` | `<input type=text>` free | `pe_doc_sets` (Main) / `dr_products` (DR) / `qa_parts` | 🔴 | `SearchSelect` as #2. Label itself says it is the key; it is passed to `PeChangeRequests` `matchDocSet` and copied into the CAPA created from the claim (`:145`). |
+| 49 | `QaClaims.jsx:299-302` | ไลน์ผลิต | line → `qa_customer_claims.line_name` | `<select>` with `lines.map(l => <option>)` — `lines` prop is a **flat array of names** (`QualityControl.jsx:1638`), no hierarchy / scope / retired handling | `production_lines` | 🟡 (LineSelect drift) | Pass line objects and use `<LineSelect>`; value is also used by `matchDocSet` line fallback. |
+| 50 | `QaClaims.jsx:293` | ลูกค้า * | customer → `qa_customer_claims.customer` | `<input type=text>` free (placeholder `FTM / AAT`) | **NO MASTER** (see #14) | 🟡 (candidate) | `<datalist>` of distinct `dr_products.customer` now; master later. Claim register per customer is a natural report grouping → typos split the group. |
+| 51 | `QaClaims.jsx:297` | ชื่อพาร์ท | part name → `qa_customer_claims.part_name` | `<input type=text>` free | same as #48 | 🟡 | Auto-fill from part picker. |
 
 `category`/`severity` selects are app enums (not flagged).
 
@@ -833,7 +840,7 @@ Other fields (`part_no`, `part_name`, `model`, doc numbers) define the new `pe_d
 
 ## Cross-file notes
 
-1. **`customer` has no master anywhere** but is typed free-text in at least 6 places in this group alone (`qa_parts`, `qa_claims`, `pe_doc_sets` ×2 forms, `npi_projects`, `npi_templates`) plus `dr_products.customer`/`kanban_standards.customer` elsewhere — and is used to group claims/forecasts/templates. Clear candidate for a small `customers` master (code, name, aliases like FTM/AAT/FORD) with a shared picker; until then a shared `<datalist>` of distinct `dr_products.customer` would already stop drift.
+1. **`customer` has no master anywhere** but is typed free-text in at least 6 places in this group alone (`qa_parts`, `qa_customer_claims`, `pe_doc_sets` ×2 forms, `npi_projects`, `npi_templates`) plus `dr_products.customer`/`kanban_standards.customer` elsewhere — and is used to group claims/forecasts/templates. Clear candidate for a small `customers` master (code, name, aliases like FTM/AAT/FORD) with a shared picker; until then a shared `<datalist>` of distinct `dr_products.customer` would already stop drift.
 2. **`part_no` as PE-doc key is typed free in 4 sinks** (CAPA #2, NCR #4, Claims #48, SPC #6) while `matchDocSet()` in `PeChangeRequests` and `CapaEffectiveness` need an exact normalized match. One shared "PartSelect" (`SearchSelect` over `pe_doc_sets ∪ qa_parts ∪ dr_products`, keywords = mat_no/p_no/name) used in all four would fix the whole 8D→PFMEA closed loop entry point.
 3. **`npi-users` datalist pattern** (5 fields across `NPI.jsx`, `NpiPartPanel.jsx`, `NpiTooling.jsx`) stores only names; `NpiTasks` already shows the right pattern (`SearchSelect` + `assignee_uid` + name snapshot). Converging on it also enables bell notifications for owners.
 4. **LineSelect drift** — 10 manual `…map(<option>)` line dropdowns in this group: `QualityControl` ×3, `QAInspectionSetup` ×1, `LayerProcessAudit` ×3, `BbsCheck` ×1, `QaClaims` ×1 (names-only), `MaterialRequests` ×1; plus 2 datalists (`PeRoutingSuggest`, and `PEDocs` machine list which is a machine, not a line). Several of the backing queries omit `section`/`is_active`, so retired lines keep appearing and scope is not applied.

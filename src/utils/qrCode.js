@@ -3,7 +3,7 @@
  *
  * รูปแบบที่พิมพ์ลงป้าย:  ESM:<ชนิด>:<รหัส>
  *   ESM:M:<uuid>     เครื่องจักร (machines.id)
- *   ESM:J:<uuid>     จิ๊ก / แม่พิมพ์ (jigs.id)
+ *   ESM:J:<uuid>     จิ๊ก / อุปกรณ์ในทะเบียน PM (jigs.id) — ⚠️ แม่พิมพ์ใช้ ESM:M (อยู่ใน machines)
  *   ESM:P:<mat_no>   สินค้า/พาร์ท (mat_no — unique ทั้ง dr_products/parts_master/kanban_standards)
  *   ESM:D:<uuid>     จุดส่งงานหน้าไลน์ (line_delivery_points.id — DR · ลูปสโตร์เฟส 4 · 2026-09-03)
  *                    สโตร์ยิงป้ายนี้ตอนวางของถึงไลน์ = หมุดเวลา delivered_at + ด่านตรวจ "ส่งถูกจุดไหม"
@@ -24,8 +24,8 @@ export const QR_PREFIX = 'ESM';
 
 /** ชนิดของสิ่งที่สแกนได้ — เพิ่มชนิดใหม่ที่นี่ที่เดียว */
 export const QR_KINDS = {
-  machine: { code: 'M', label: 'เครื่องจักร', icon: '⚙️' },
-  jig: { code: 'J', label: 'จิ๊ก/แม่พิมพ์', icon: '🧩' },
+  machine: { code: 'M', label: 'เครื่องจักร/แม่พิมพ์', icon: '⚙️' },   // แม่พิมพ์ = แถวใน machines (equipment_kind='die')
+  jig: { code: 'J', label: 'จิ๊ก (ทะเบียน PM)', icon: '🧩' },           // jigs = ทะเบียนอุปกรณ์ที่มีแผน PM
   product: { code: 'P', label: 'สินค้า/พาร์ท', icon: '📦' },
   delivery: { code: 'D', label: 'จุดส่งงาน', icon: '🎯' },
 };
@@ -192,7 +192,7 @@ export function findDieByScan(scan, dies = [], inScope = () => true) {
   if (!scan) return { error: 'อ่านรหัสจากป้ายไม่ได้' };
   // ป้ายแม่พิมพ์พิมพ์จากแท็บ ⚙️ เครื่องจักร ของ /qr-labels (machines รวมแม่พิมพ์) — ESM:J = ทะเบียน PM/จิ๊ก คนละตัว
   if (scan.kind === 'jig') {
-    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ ⚙️ เครื่องจักร' };
+    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ 🔨 แม่พิมพ์' };
   }
   if (scan.kind && scan.kind !== 'machine') {
     return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้ายแม่พิมพ์` };

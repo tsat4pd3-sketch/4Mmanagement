@@ -24,6 +24,7 @@ export const AUDIT_TABLE_LABELS = {
   line_helpers:            '🤝 ยืมพนักงานข้ามไลน์ (รายกะ)',
   manpower_slot_plans:     '🧑‍🤝‍🧑 จำนวนช่องตำแหน่งต่อทีม (Manpower Board)',
   line_technicians:        '🔧 ช่างประจำไลน์ (Manpower Board)',
+  station_slot_plans:      '📍 คนต่อกะของจุดงาน (Manpower Board)',
   // ── ผังองค์กร & ไลน์ (Main) ──
   org_nodes:               '🏢 ผังองค์กร',
   production_lines:        '🏭 ไลน์ผลิต',

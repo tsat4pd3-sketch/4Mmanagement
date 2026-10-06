@@ -356,6 +356,24 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
           </div>
         </div>
       )}
+      {/* 🔴 พาร์ทซ้ำของ Forecast/MIN-MAX ต้องบอกเสมอ — ค่าไม่ตรงกัน = ไฟล์ต้นทางมีปัญหา คนต้องรู้ */}
+      {!!(rec.forecastDupes || rec.levelDupes) && (
+        <div style={warnBox('#78350f22', '#f59e0b')}>
+          <b style={{ fontSize: 12 }}>
+            🔁 พาร์ทซ้ำ — Forecast {rec.forecastDupes} แถว · MIN/MAX {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
+          </b>
+          <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
+            พาร์ทเดียวเขียนหลายบรรทัด (เช่น 300T MAT 20059152 คว่ำครีบ/หงายครีบ — FC เดือนเป็นของพาร์ทเดียวกัน)
+            · ไม่ยุบ = ยอดพยากรณ์ 2 เท่า และ MIN/MAX เขียนไม่ลงทั้งก้อน
+            {!!(rec.forecastConflicts || rec.levelConflicts) && (
+              <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>
+                ⚠️ ในนั้น <b>ค่าไม่ตรงกัน {rec.forecastConflicts + rec.levelConflicts} คู่</b> — ระบบเลือกค่ามากสุดให้ก่อน
+                แต่ควรไปแก้ไฟล์ต้นทางให้เหลือค่าเดียว
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {!!lotDiff.length && (
         <div style={warnBox('#1e3a8a22', '#60a5fa')}>
           <b style={{ fontSize: 12 }}>📋 LOT / Packing ไม่ตรงกับทะเบียน kanban {lotDiff.length} พาร์ท — <u>ระบบไม่แก้ให้</u></b>
