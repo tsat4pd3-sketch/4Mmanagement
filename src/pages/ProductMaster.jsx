@@ -3224,7 +3224,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       const e = ecOf(ecIx, p.mat_no);
                       if (!e) return null;
                       if (e.supersededByMat) return (
-                        <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 2, fontWeight: 700 }}
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2, fontWeight: 700 }}
                           title={`ทำ EC ที่แท็บ 3️⃣ Products${e.supersededAt ? ` · มีผล ${e.supersededAt}` : ''}`}>
                           🔄 ถูกแทนโดย <span style={{ fontFamily: 'monospace' }}>{e.supersededByMat}</span>
                           {e.supersededAt && ` · ${e.supersededAt}`}
@@ -3234,7 +3234,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                         </div>
                       );
                       if (e.replacesMat) return (
-                        <div style={{ fontSize: 10.5, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
+                        <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
                           🔄 rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
                         </div>
                       );
