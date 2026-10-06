@@ -192,7 +192,7 @@ export function findDieByScan(scan, dies = [], inScope = () => true) {
   if (!scan) return { error: 'อ่านรหัสจากป้ายไม่ได้' };
   // ป้ายแม่พิมพ์พิมพ์จากแท็บ ⚙️ เครื่องจักร ของ /qr-labels (machines รวมแม่พิมพ์) — ESM:J = ทะเบียน PM/จิ๊ก คนละตัว
   if (scan.kind === 'jig') {
-    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ ⚙️ เครื่องจักร / 🔨 แม่พิมพ์' };
+    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ 🔨 แม่พิมพ์' };
   }
   if (scan.kind && scan.kind !== 'machine') {
     return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้ายแม่พิมพ์` };
