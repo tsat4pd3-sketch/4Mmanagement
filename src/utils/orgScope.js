@@ -71,6 +71,31 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   const bySort = orgNodeCompare;   // ลำดับผังมาตรฐานจุดเดียว (listOrder.js · 2026-10-01)
   kids.forEach(arr => arr.sort(bySort));
 
+  /* 🔗 **ผังองค์กรกับทะเบียนไลน์เป็น 2 แกนคนละเรื่อง — แค่ ref กัน** (2026-10-06 · user ยืนยัน)
+     1 โหนด `kind='line'` ในผัง **ครอบไลน์ย่อยได้หลายไลน์โดยออกแบบ** (`ref_line_id` → `groupOf` → `familyOf`)
+     และ **หลายหน่วยในผังชี้ไลน์กายภาพตัวเดียวกันได้ตามปกติ** เพราะผังแบ่งตามมิติของตัวเอง
+     (PD2 แบ่งตาม**ลูกค้า**: A-GM / B-FORD / C-Suzuki / D-GWM&RA) ขณะที่หน้าไลน์มีไลน์กายภาพชุดเดียว
+     🔴 **ห้ามถือว่านี่คือ "ผูกผิด" และห้ามพยายามแก้ข้อมูลให้ 1:1** — มันไม่ได้ออกแบบให้ 1:1
+
+     แต่**ผลที่ตามมาต้องเขียนบนจอ**: ตัวเลขผลิตเกาะอยู่กับ "ไลน์" ⇒ หน่วยที่ใช้ไลน์ร่วมกัน
+     **ได้ตัวเลขชุดเดียวกันเป๊ะ แยกตามหน่วยไม่ได้** · วัดจริง MAIN 06/10: 4 แผนกของ PD2 ครอบไลน์
+     ชุดเดียวกัน 6 ไลน์ (`ASSEMBLY 1, GWM, SPARE PART, SUB-STATIONARY, TSRA-1, TSRA-2`)
+     ⇒ เลือก "Assembly Line A - GM" บน OBEYA แล้วได้เลขเดียวกับสาย D **โดยจอไม่บอกอะไร** = จอโกหก
+     ⇒ ติดธง `refShared` ให้จอเขียนว่า "ใช้ไลน์ร่วมกับหน่วยอื่น" (กฎความซื่อสัตย์ของจอ)
+     ⚠️ นับเฉพาะ **ข้ามแผนก** — หลายโหนดใต้แผนกเดียวกันชี้ไลน์เดียวกันไม่เข้าข่าย
+        (ยุบเป็นกลุ่มเดียวในบ้านตัวเอง ไม่ได้ไปชนกับหน่วยอื่น)
+     🔴 **ห้ามเปลี่ยนเป็นบล็อก/ซ่อน option และห้ามเขียนทำนองว่าข้อมูลผิด** */
+  const refParents = new Map();   // ref_line_id → Set(parent_id ของโหนดไลน์ที่ชี้มา)
+  act.forEach((n) => {
+    if (n.kind !== 'line' || n.ref_line_id == null) return;
+    const r = String(n.ref_line_id);
+    if (!refParents.has(r)) refParents.set(r, new Set());
+    refParents.get(r).add(String(n.parent_id ?? ''));
+  });
+  /** โหนดไลน์นี้แชร์ไลน์ผลิตกับโหนดใต้แผนกอื่นไหม (true = ขอบเขตจะซ้ำกับหน่วยอื่น) */
+  const refSharedNode = (n) => n.ref_line_id != null
+    && (refParents.get(String(n.ref_line_id))?.size ?? 0) > 1;
+
   const liveLines = lines.filter(l => l && l.name && l.is_active !== false);
   const lineById = new Map(liveLines.map(l => [String(l.id), l]));
   const byName = new Map(liveLines.map(l => [l.name, l]));
@@ -143,7 +168,9 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     });
     const all = new Set();
     groups.forEach((_, grp) => familyOf(grp).forEach(x => all.add(x)));
-    push('department', nodeCode(dep), nodeCode(dep), depth, parentKey, all, { cost_center: dep.cost_center || null });
+    const shared = lineNodes.filter(refSharedNode).map(n => nodeCode(n));
+    push('department', nodeCode(dep), nodeCode(dep), depth, parentKey, all,
+      { cost_center: dep.cost_center || null, ...(shared.length ? { refShared: shared } : {}) });
     if (secCode) sectionOfKey.set(dKey, secCode);
     [...groups.keys()].sort(naturalCompare).forEach((grp) => {
       const fam = familyOf(grp);
