@@ -59,6 +59,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
+import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
@@ -183,9 +184,7 @@ const nowTime = () => new Date().toTimeString().slice(0, 5);
    ⚠️ ความหมายกลับด้านกับกลุ่มไลน์: มีคีย์ = "ผู้ใช้กางเอง" (ถังนี้ค่าเริ่มต้นคือพับ)
    ตั้งชื่อขึ้นต้น __ กันชนกับชื่อไลน์จริง */
 const STALE_BUCKET_KEY = '__stale_bucket__';
-// กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
-const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
-const currentShift = () => { const h = new Date().getHours(); return (h >= 20 || h < 8) ? 'night' : 'day'; };
+// เวลาเริ่มกะ/กะปัจจุบัน/ค่าเริ่มต้นฟอร์มเปิดกะ = `src/utils/workDate.js` (เลิกประกาศซ้ำในหน้า 06/10)
 /* ── เพดานลิสต์ยาวของหน้านี้ (2026-09-09 · feedback user "ข้อมูลเยอะๆ ต้อง default ยุบ + มีปุ่มขยาย") ──
    8 = จำนวนแถวที่ยังกวาดตาอ่านจบได้ในจอเดียวโดยไม่ต้องเลื่อน (ใบผลิตแถวละ ~67px · 8 แถว ≈ 540px)
    เกินเท่านี้ถือว่า "เยอะ" → แผงเริ่มต้นแบบยุบ และเมื่อกางก็ยังตัดเหลือ 8 แถวแรก + ปุ่มแสดงอีก */
@@ -363,7 +362,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const [showOpen, setShowOpen] = useState(false);
   const [openingSession, setOpeningSession] = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
-  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [openForm, setOpenForm] = useState(() => ({ line_name: '', product_id: '', ...openShiftDefaults() }));
   const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
 
@@ -2962,7 +2961,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>ยังไม่มีกะที่เปิดอยู่</div>
             <div style={{ fontSize: 13, marginBottom: 24 }}>เปิดกะเพื่อเริ่มบันทึกผลผลิตและ Downtime</div>
             {canOpen && (
-              <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+              <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
             )}
           </div>
         )}
@@ -3004,7 +3004,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
                       (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}
                   {canOpen && (
-                    <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+                    <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
                   )}
 
                   {/* pending_close — SV sees approve/reject */}
@@ -4040,7 +4041,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
                 </Field>
                 <Field label="กะทำงาน">
-                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStart(e.target.value) }))} style={inputStyle}>
+                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStartTime(e.target.value) }))} style={inputStyle}>
                     <option value="day">☀️ กะเช้า (08:00–20:00)</option>
                     <option value="night">🌙 กะดึก (20:00–08:00)</option>
                   </select>
