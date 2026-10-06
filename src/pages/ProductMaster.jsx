@@ -2381,7 +2381,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 {showTree && (
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
-                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor}
+                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
                       onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
                       onOpenSheet={openSheetOfMat} />
                   </div>

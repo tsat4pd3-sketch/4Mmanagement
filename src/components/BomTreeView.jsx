@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { explodeBom, checkBomFlow, uomLabel, itemNoLabel, slocLabel } from '../utils/bomTree';
+import { explodeBom, checkBomFlow, uomLabel, itemNoLabel, slocLabel, sheetChildDiff } from '../utils/bomTree';
 
 /* ═══ 🌳 BOM หลายชั้น — เทียบเคียงจอ SAP "Display Multilevel BOM" (CS12) ══════════
    user ส่งภาพจอ SAP มาให้ศึกษา 2026-09-02 แล้วสั่งยกระดับ feature BOM
@@ -36,14 +36,14 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
  * @param {Function} bomOf    (mat) => [{ mat_no, part_name, qty_per_unit, uom }]
  */
 /* `onOpenSheet(mat)` = พาไปเปิด "ใบของพาร์ทตัวนั้น" — ไม่ส่งมา = ไม่มีปุ่ม (จอ read-only ยังใช้ได้เหมือนเดิม) */
-export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDeleteDupes, onOpenSheet }) {
+export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownSheetOf, onDeleteDupes, onOpenSheet }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const { rows, flatDupes, cycles, truncated, maxLevel, flowWarn } = useMemo(() => {
+  const { rows, flatDupes, cycles, truncated, maxLevel, flowWarn, diffs } = useMemo(() => {
     /* ⚠️ ต้องส่ง sheetFor เสมอ — ไม่งั้น `parent_mat` ข้ามใบ ต้นไม้ระเบิด (บั๊กจริง 21/09:
        10101158 กางได้ 1,276 แถว ลึก 5 ชั้น ทั้งที่มี 22 พาร์ท) ดู buildBomIndex */
-    const r = explodeBom(rootMat, bomOf, { sheetFor });
+    const r = explodeBom(rootMat, bomOf, { sheetFor, ownSheetOf });
     /* คำเตือน pattern การไหล — ตรวจ "ทั้งชุดพี่น้อง" ของแต่ละแม่ ไม่ใช่รายคู่
        (งานปั๊มแล้วขายเลยมีลูก 5xx ตัวเดียว = ถูกต้อง ห้ามเตือน) */
     const fw = new Map();
@@ -53,8 +53,15 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
         fw.set(`${p}|${mat}`, w);   // ผูกกับ "แม่|ลูก" — mat เดียวอาจอยู่หลายแม่ สถานะต่างกันได้
       });
     });
-    return { ...r, flowWarn: fw };
-  }, [rootMat, bomOf, sheetFor]);
+    /* 🔎 แถวที่ "ใบนี้จัดลูกไว้เอง ทั้งที่ของชิ้นนี้มีใบของตัวเอง" — เทียบให้เห็นว่าต่างกันกี่รายการ
+       (ไม่เทียบ = จอเงียบ แล้วไม่มีใครรู้ว่า 2 ใบให้ตัวเลขต่างกัน — เคสจริง 10105772 vs 20070036) */
+    const diffs = new Map();
+    r.rows.filter(x => x.sheetConflict).forEach(x => {
+      if (diffs.has(x.mat_no)) return;
+      diffs.set(x.mat_no, sheetChildDiff(x.mat_no, bomOf, x.sheet, x.ownSheet));
+    });
+    return { ...r, flowWarn: fw, diffs };
+  }, [rootMat, bomOf, sheetFor, ownSheetOf]);
 
   if (!rows.length) {
     return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี BOM ของ {rootMat}</div>;
@@ -164,9 +171,11 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
                     {/* 📄 แถวที่ลูกมาจาก "ใบของตัวมันเอง" — กดแล้วไปเปิดใบนั้นเลย
                         (user 06/10 เข้าใจว่าต้องสร้าง 2 ใบแยกกัน ที่จริงใบนั้นคือการนิยามครั้งเดียว
                          แล้วใบ FG ยืมมากางให้ — แต่จอไม่เคยบอก) */}
-                    {r.fromOtherSheet && onOpenSheet ? (
+                    {r.ownSheet && onOpenSheet ? (
                       <button type="button" onClick={() => onOpenSheet(r.mat_no)}
-                        title={`เปิดใบ BOM ของ ${r.mat_no} — ชั้นที่ลึกกว่านี้ถูกนิยามไว้ในใบนั้น ไม่ได้กรอกซ้ำในใบนี้`}
+                        title={r.fromOtherSheet
+                          ? `เปิดใบ BOM ของ ${r.mat_no} — ชั้นที่ลึกกว่านี้ถูกนิยามไว้ในใบนั้น ไม่ได้กรอกซ้ำในใบนี้`
+                          : `เปิดใบ BOM ของ ${r.mat_no} — ของชิ้นนี้มีใบของตัวเองด้วย กดเข้าไปเทียบได้`}
                         style={{ font: 'inherit', color: 'inherit', background: 'none', border: 'none', padding: 0,
                           cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3 }}>
                         {r.mat_no} ↗
@@ -181,6 +190,20 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, onDele
                         📄 ชั้นล่างมาจากใบของ {r.mat_no} เอง
                       </div>
                     )}
+                    {/* ⚠️ นิยามไว้ 2 ที่ — บอกตรงๆ ว่าต่างกันกี่รายการ ห้ามเงียบ (จอต้องซื่อสัตย์)
+                        ไม่ต่างกันเลยก็ยังต้องบอกว่า "ซ้ำ 2 ใบ" — แก้ใบเดียวแล้วอีกใบค้างคือกับดักถัดไป */}
+                    {r.sheetConflict && (() => {
+                      const d = diffs.get(r.mat_no);
+                      return (
+                        <div style={{ fontSize: 11, color: TONE.warn, fontWeight: 700, marginTop: 1, lineHeight: 1.45 }}
+                          title={`ลูกของ ${r.mat_no} ถูกกรอกไว้ทั้งในใบนี้ และในใบ BOM ของ ${r.mat_no} เอง`}>
+                          ⚠️ ใบนี้กรอกลูกไว้เอง · {r.mat_no} มีใบของตัวเองด้วย
+                          {d ? (d.differs
+                            ? ` — ต่างกัน ${d.differs} รายการ${d.onlyHere.length ? ` (ใบนี้เกิน: ${d.onlyHere.join(', ')})` : ''}${d.onlyOwn.length ? ` (ใบนั้นเกิน: ${d.onlyOwn.join(', ')})` : ''}`
+                            : ' — ตรงกันทั้ง ' + d.same + ' รายการ แต่ต้องแก้ 2 ที่') : ''}
+                        </div>
+                      );
+                    })()}
                     {r.isDupeRow && (
                       <div style={{ fontSize: 11, color: TONE.crit, fontWeight: 700, marginTop: 1,
                         display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
