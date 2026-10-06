@@ -1166,6 +1166,35 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'time-frame-start-single-source',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการประกาศ `FRAME_START` ซ้ำนอกไฟล์เจ้าของ (ของกลาง = utils/timeFrame.js) */
+    re: /\b(const|let|var)\s+FRAME_START\s*=/g,
+    why: 'กรอบวันงาน 08:00→08:00 เป็นฐานของทุกบอร์ดไทม์ไลน์ (รอบกะดึกข้ามเที่ยงคืนต้องอยู่แถวเดียวกัน) '
+       + '· `InternalTimeBoard` เคยประกาศค่าเดียวกันซ้ำในไฟล์ตัวเอง (QC 06/10) ⇒ ตัวบอร์ดกับตัวที่คำนวณ '
+       + 'ตำแหน่งแท่ง/ช่วงพักที่ส่งเข้ามา เป็น **แกนเวลา 2 ชุด** ที่บังเอิญตรงกันวันนี้ '
+       + '· ใครขยับค่าในของกลางวันหลัง บอร์ดจะเพี้ยนเงียบๆ ทีละจอ โดยไม่มี error',
+    fix: "import { FRAME_START } from '../utils/timeFrame'",
+    allow: {
+      'src/utils/timeFrame.js': 'เจ้าของค่า — เป็นที่ประกาศจริง',
+    },
+  },
+  {
+    id: 'shift-start-date-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการ "บวก 1 วันให้กะดึก" ที่เขียนเองนอกของกลาง — รูปที่เจอจริงคือ
+       `d.setDate(d.getDate() + 1)` ที่อยู่ในบล็อกเดียวกับการเช็ค `shift === 'night'` */
+    re: /shift\s*===\s*['"]night['"][^\n]{0,120}setDate\([^)]*\+\s*1\s*\)|isNight[^\n]{0,80}setDate\([^)]*\+\s*1\s*\)/g,
+    why: 'กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59 = **เช้าของวันถัดไป** — เดิมกฎนี้อยู่ 2 ที่ที่ตัดสินไม่เหมือนกัน '
+       + '(`computeLiveOee` บวกวันให้ · `shiftFrameOf` ไม่บวก) ⇒ กรอบกะเร็วไป 20 ชม. '
+       + '⇒ `clampWinToShift()` รัดช่วง downtime/พาร์ททิ้งทั้งหมดเพราะ "อยู่นอกกรอบ" '
+       + '⇒ **%A หาย downtime · "ควรได้" เพี้ยน แบบเงียบ** (วัดฐานจริง 06/10: 5 กะเข้าเงื่อนไขนี้ 23/09-05/10)',
+    fix: "ใช้ `shiftStartDate(workDate, startHm, shift)` จาก src/utils/oee.js (ของกลางของกฎนี้)",
+    allow: {
+      'src/utils/oee.js': 'เจ้าของกฎ — เป็นที่คำนวณ shiftStartDate เอง',
+    },
+  },
+  {
     id: 'picker-arms-first-row-on-open',
     scan: ['src/components'], ext: ['.jsx'],
     /* จับการตั้ง active = 0 ตอนลิสต์เปิด (ไม่ผ่าน initialActiveRow) ใน picker */

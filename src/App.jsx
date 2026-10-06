@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import { createContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import tsLogo from './assets/TS logo.png';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
@@ -1720,6 +1720,24 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     });
   }, []);
 
+  /* 🔴 ค่าของ UserContext ต้องเป็น "อ็อบเจกต์ตัวเดิม" ตราบใดที่ค่ายังไม่เปลี่ยน (QC 06/10)
+     เดิมเขียนเป็น object literal ตรงใน `value={{ … }}` **3 ที่** และข้างในมี `userSections || []`
+     ⇒ ทั้งอ็อบเจกต์ **และ array `sections`** เป็นตัวใหม่ทุก render ของ layout
+     ⇒ ทุกหน้าที่มี `useEffect([... sections])` ยิง DB ซ้ำทุกครั้งที่ layout re-render
+       (กฎเหล็กการเขียน DB ข้อ 9 — คลาสที่ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น)
+     ⚠️ ต้องอยู่**ก่อน** guard `if (!session)` ข้างล่าง — ไม่งั้น hook count เปลี่ยนตอน session
+        null→มีค่า = React #310 จอ error ทั้งหน้า (คอมเมนต์เหนือ guard นั้นเตือนไว้แล้ว) */
+  const userCtx = useMemo(() => ({
+    role: userRole, lineId: userLineId, team: userTeam, section: userSection,
+    sections: userSections || [], mtnTeams: userMtnTeams || [],
+    position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl,
+    avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin,
+    realRole: realRole ?? userRole,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userMtnTeams, userPosition,
+       userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole]);
+  /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
+  const userCtxLayout = useMemo(() => ({ ...userCtx, sidebarOpen: isOpen }), [userCtx, isOpen]);
+
   // ⚠️ guard นี้ต้องอยู่ "หลัง" hooks ทุกตัว (useAutoLogout/useState/useCallback ด้านบน) —
   // ถ้าวางก่อน hooks จะเกิด React #310 (hook count เปลี่ยนตอน session null→มีค่า) จอ error
   /* 🔗 ยังไม่ได้ล็อกอินแล้วเปิด deep link (เช่น ส่อง QR เครื่อง → /scan?c=ESM:M:…)
@@ -1744,7 +1762,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   if (location.pathname === '/tv') {
     if (!canAccessPage('/tv', role)) return <Navigate to="/" replace />;
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <TvBoard />
         </Suspense>
@@ -1757,7 +1775,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   // หน้า Hub (เลือกส่วนงาน) — แสดงเต็มจอ ไม่มี sidebar / toggle / bell
   if (location.pathname === '/') {
     return (
-      <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role }}>
+      <UserContext.Provider value={userCtx}>
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: 'var(--muted)', fontSize: 14, background: 'var(--bg)' }}>กำลังโหลด...</div>}>
           <DeptHub onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} userFullName={userFullName} userRole={role} userPosition={userPosition}
             userEmail={userEmail} userAvatarUrl={userAvatarUrl} onAvatarSaved={onAvatarSaved}
@@ -1784,7 +1802,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   }
 
   return (
-    <UserContext.Provider value={{ role, lineId: userLineId, team: userTeam, section: userSection, sections: userSections || [], mtnTeams: userMtnTeams || [], position: userPosition, notifyEmail: userNotifyEmail, signatureUrl: userSignatureUrl, avatarUrl: userAvatarUrl, fullName: userFullName, isDeptAdmin: userIsDeptAdmin, realRole: realRole ?? role, sidebarOpen: isOpen }}>
+    <UserContext.Provider value={userCtxLayout}>
       {warnSecsLeft !== null && (
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
@@ -2136,9 +2154,14 @@ export default function App() {
   const effLineId   = impersonating ? (viewAs.lineId ?? null) : userLineId;
   const effTeam     = impersonating ? (viewAs.team ?? null) : userTeam;
   const effSection  = impersonating ? ((viewAs.sections || [])[0] ?? null) : userSection;
-  const effSections = impersonating
+  /* 🔴 โหมดจำลอง (ViewAs) สร้าง array ใหม่ทุก render ⇒ prop `userSections` ของ layout สั่นตาม
+     ⇒ หน้าที่รับไปใส่ deps ยิง DB ซ้ำไม่หยุด (กฎเหล็กข้อ 9) · ตอนไม่จำลอง `userSections` เป็น state อยู่แล้ว */
+  const viewAsSecKey = impersonating ? (viewAs.sections || []).join('|') : '';
+  const effSections = useMemo(() => (impersonating
     ? effectiveSections(viewAs.role, viewAs.sections || [], (viewAs.sections || [])[0] ?? null, viewAs.scope_depth)
-    : userSections;
+    : userSections),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [impersonating, viewAs?.role, viewAsSecKey, viewAs?.scope_depth, userSections]);
   const effMtnTeams = impersonating ? (Array.isArray(viewAs.mtnTeams) ? viewAs.mtnTeams : []) : userMtnTeams;
   const effDeptAdmin = impersonating ? !!viewAs.deptAdmin : userIsDeptAdmin;
 

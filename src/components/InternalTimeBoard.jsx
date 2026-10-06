@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import useIsMobile from '../utils/useIsMobile';
+import { FRAME_START } from '../utils/timeFrame';   // กรอบวันงาน 08:00→08:00 — ของกลาง ห้ามประกาศซ้ำ
 
 /* ─── Internal Time Board — บอร์ดเวลาสไตล์ Shipping Chart สำหรับงานส่งภายในโรงงาน ──
    ปลายทาง = ไลน์/จุดภายใน · กรอบวันงาน 08:00 → 08:00 · เต็ม 24 ชม.ในจอเดียว
@@ -19,7 +20,9 @@ import useIsMobile from '../utils/useIsMobile';
    - hint: ข้อความช่วยเหลือมุมขวา */
 // มือถือ ≤768px: จอแคบเกินกว่าจะอัด 24 ชม.ในจอเดียว → บอร์ดเลื่อนแนวนอนได้ (minWidth ~780px = 1 ชม.≈28px)
 // + ป้ายปลายทาง sticky ซ้าย · desktop ยังเต็มจอเดียวไม่มี scroll ตาม UI-CONVENTIONS §6 เหมือนเดิมเป๊ะ
-const FRAME_START = 8 * 60;
+/* 🔴 กรอบวันงาน 08:00→08:00 มีของกลางอยู่แล้ว (`utils/timeFrame.js`) — ไฟล์นี้เคยประกาศซ้ำ
+   (QC 06/10) ⇒ ตัวบอร์ดกับตัวที่คำนวณตำแหน่งแท่ง/ช่วงพักที่ส่งเข้ามา เป็น "แกนเวลา 2 ชุด"
+   ที่บังเอิญตรงกันวันนี้ · ใครขยับค่าในของกลางวันหลัง บอร์ดจะเพี้ยนเงียบๆ ทีละจอ */
 const SPAN = 1440;
 const SPAN_MIN = 40;
 const LANE_H = 28;

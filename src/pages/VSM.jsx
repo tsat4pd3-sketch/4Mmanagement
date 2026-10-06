@@ -33,7 +33,7 @@ import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
-import SearchInput from '../components/SearchInput';
+import ProductSelect from '../components/ProductSelect';
 import useTabParam from '../utils/useTabParam';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
@@ -81,7 +81,6 @@ export default function VSM() {
   const [matNo, setMatNo] = useState('');
   const [monthKey, setMonthKey] = useState(monthKeyNow());
   const [state, setState] = useState('current');
-  const [search, setSearch] = useState('');
 
   const [model, setModel] = useState(null);
   const [mapMeta, setMapMeta] = useState(null);       // แถว vsm_maps ที่กำลังแก้ (null = ยังไม่บันทึก)
@@ -131,23 +130,18 @@ export default function VSM() {
     return null;
   }, [role, lineId, lines, scopeSecs]);
 
-  // ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
-  const fgOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return products.filter(p => {
-      if (p.is_active === false) return false;
-      if (!isFgMat(p.mat_no)) return false;
-      if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
-      if (!q) return true;
-      return [p.mat_no, p.name, p.p_no].some(v => String(v || '').toLowerCase().includes(q));
-    });
-  }, [products, search, scopeLineNames]);
-
-  const fgByLine = useMemo(() => {
-    const g = {};
-    fgOptions.forEach(p => { (g[p.line_name || '— ไม่ระบุไลน์'] ||= []).push(p); });
-    return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [fgOptions]);
+  /* ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
+     🔴 ไม่กรองด้วยคำค้นที่นี่อีก (QC 06/10) — เดิมหน้านี้มี **2 ตัวควบคุมทำงานเดียวกัน**:
+        `<SearchInput>` สำหรับพิมพ์ค้น + `<select>` ยาวๆ สำหรับเลือก
+        ขัด UI §5.1.2 ("ช่องที่รับ MAT ต้องใช้ picker กลาง") และคนต้องทำ 2 ก้าวเพื่อเลือก 1 ค่า
+     ⇒ ใช้ <ProductSelect> ตัวเดียว (ค้น mat_no / ชื่อ / P/N / ลูกค้า / ไลน์ ในช่องเดียว
+        · รหัสไม่ถูก ellipsis ตัด · สินค้าของไลน์ที่เลือกขึ้นก่อน) */
+  const fgOptions = useMemo(() => products.filter(p => {
+    if (p.is_active === false) return false;
+    if (!isFgMat(p.mat_no)) return false;
+    if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
+    return true;
+  }), [products, scopeLineNames]);
 
   // ชุด PFC (/pe-docs) ที่ตรงกับ FG นี้ — worklist ใช้ชี้ปุ่ม "เสนอ routing จาก PFC" ให้ตรงชุด
   const peSetForFg = useMemo(() => {
@@ -481,15 +475,8 @@ export default function VSM() {
   const fgPicker = (
     <>
       <span className="filter-label">สินค้าสำเร็จรูป (FG · เบอร์ 1)</span>
-      <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อ / P/N" />
-      <select className="grow" value={matNo} onChange={e => setMatNo(e.target.value)}>
-        <option value="">— เลือกสินค้า —</option>
-        {fgByLine.map(([ln, ps]) => (
-          <optgroup key={ln} label={ln}>
-            {ps.map(p => <option key={p.id} value={p.mat_no}>{p.mat_no} · {p.name}</option>)}
-          </optgroup>
-        ))}
-      </select>
+      <ProductSelect value={matNo} products={fgOptions} onChange={({ mat_no }) => setMatNo(mat_no || '')}
+        placeholder="— ค้น MAT / ชื่อ / P/N เพื่อเลือกสินค้า —" style={{ flex: 1, minWidth: 240 }} />
     </>
   );
 

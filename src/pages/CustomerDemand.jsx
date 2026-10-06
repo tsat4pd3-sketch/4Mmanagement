@@ -12,6 +12,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { buildPnIndex, pickStockMat, stockLookupKeys, matIssueText } from '../utils/matResolve';
+import CustomerSelect from '../components/CustomerSelect';
 import ProductSelect from '../components/ProductSelect';
 import useProducts from '../utils/useProducts';
 const PullSignalUpload = lazy(() => import('../components/PullSignalUpload'));   // 📥 อัพโหลด e-SMART (ตัวอ่าน xlsx โหลดตอนเปิดเท่านั้น)
@@ -1216,7 +1217,6 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
      ⇒ พิมพ์เองแล้วสะกดต่างนิดเดียว = แยกไม่ออก ออเดอร์ทุกเจ้าไปกองเลขเดียวเงียบๆ
      → ต้องเลือกจากรายชื่อลูกค้าที่ Product Master ใช้จริง (ยังพิมพ์เองได้ แต่ต้องเตือน) */
   const [custOpts, setCustOpts] = useState([]);   // [{ name, n }] จาก dr_products.customer
-  const [freeText, setFreeText] = useState({});   // code → true = โหมดพิมพ์เอง
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(async () => {
@@ -1229,7 +1229,6 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
     (prods || []).forEach(p => { const c = String(p.customer || '').trim(); if (c) cnt[c] = (cnt[c] || 0) + 1; });
     setCustOpts(Object.entries(cnt).map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)));
     setDraft({});
-    setFreeText({});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -1291,7 +1290,6 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
                 <td style={{ ...cell, fontFamily: 'monospace', fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>{r.code}</td>
                 <td style={cell}>{canEdit ? <CustomerPicker
                     value={val(r, 'customer_name')} code={r.code} opts={custOpts}
-                    free={!!freeText[r.code]} setFree={(v) => setFreeText(f => ({ ...f, [r.code]: v }))}
                     onChange={(v) => setVal(r, 'customer_name', v)} edSt={edSt} />
                   : <span style={{ fontSize: 13, fontWeight: 700 }}>{r.customer_name}</span>}</td>
                 <td style={cell}>{canEdit ? <input value={val(r, 'plant_name')} onChange={e => setVal(r, 'plant_name', e.target.value)} style={edSt} /> : <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.plant_name || '—'}</span>}</td>
@@ -1380,31 +1378,22 @@ export default function CustomerDemand() {
   );
 }
 
-/* เลือก "ชื่อลูกค้า" จากรายชื่อที่ Product Master ใช้จริง — กันพิมพ์ผิดจนแยกออเดอร์ไม่ออก
-   ⚠️ ไม่บังคับให้เลือกจากลิสต์อย่างเดียว (ลูกค้าใหม่ที่ยังไม่มีสินค้าต้องกรอกได้)
-      แต่ค่าที่ไม่ตรงกับใครเลย **ต้องขึ้นเตือน ห้ามเงียบ** */
-function CustomerPicker({ value, code, opts, free, setFree, onChange, edSt }) {
+/* ช่อง "ชื่อลูกค้า" — ใช้ <CustomerSelect> ตัวกลาง (UI §5.1.2 · คำสั่ง user 07/09)
+   🔴 เดิมเป็น `<select>` + `<input>` ที่เขียนเองในหน้านี้ (QC 06/10) ⇒ ไม่ได้ของที่ตัวกลางมีให้:
+      ทะเบียน DR `customers` · การแม็ป alias เข้าสะกดหลัก (MYANMAR → Myanmar) ·
+      ค้นด้วยคีย์เวิร์ด · ป้าย "นอกทะเบียน" · normalize ตอนพิมพ์ตรงกับที่มีอยู่
+   ⚠️ สิ่งที่เป็นของหน้านี้โดยเฉพาะ **คงไว้**: บอกทันทีว่าชื่อนี้ตรงกับกี่สินค้าใน Product Master
+      (ไม่ตรงกับใครเลย = แยกออเดอร์ตามลูกค้าไม่ได้ — ต้องเห็นก่อนกดบันทึก ห้ามเงียบ) */
+function CustomerPicker({ value, code, opts, onChange, edSt }) {
   const v = String(value || '').trim();
   const norm = (x) => String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const hit = opts.find(o => norm(o.name) === norm(v));
   const unset = !v || norm(v) === norm(code);          // ยังไม่ตั้ง = ชื่อเท่ากับ code เอง
-  const showFree = free || (!hit && !unset);           // ค่าเดิมที่ไม่อยู่ในลิสต์ → เปิดโหมดพิมพ์เองให้แก้ได้
   return (
     <div>
-      {showFree ? (
-        <div style={{ display: 'flex', gap: 5 }}>
-          <input value={v} onChange={e => onChange(e.target.value)} style={edSt} placeholder="พิมพ์ชื่อลูกค้า" autoFocus={free} />
-          <button type="button" onClick={() => { setFree(false); onChange(''); }}
-            title="กลับไปเลือกจากลิสต์" style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>☰</button>
-        </div>
-      ) : (
-        <select value={hit ? hit.name : ''} style={edSt}
-          onChange={e => { if (e.target.value === '__free') { setFree(true); onChange(''); } else onChange(e.target.value); }}>
-          <option value="">— ยังไม่ตั้ง —</option>
-          {opts.map(o => <option key={o.name} value={o.name}>{o.name} ({o.n} สินค้า)</option>)}
-          <option value="__free">✏️ พิมพ์เอง (ลูกค้าใหม่)</option>
-        </select>
-      )}
+      <CustomerSelect value={v} onChange={({ customer }) => onChange(customer)} inputStyle={edSt}
+        extra={opts.map(o => o.name)}
+        freeHint="ลูกค้าใหม่ — ถ้าไม่มีสินค้าไหนใช้ชื่อนี้ จะแยกออเดอร์ตามลูกค้าไม่ได้" />
       {/* บอกผลการจับคู่ทันที — "SOUTH ARFIGA" ต้องเห็นว่าไม่ตรงกับใครตั้งแต่ยังไม่กดบันทึก */}
       {unset ? (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>

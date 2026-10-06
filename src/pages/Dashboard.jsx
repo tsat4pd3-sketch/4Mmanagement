@@ -34,6 +34,7 @@ import { openOnly } from '../utils/shipStatus';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
+import SearchInput from '../components/SearchInput';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -1474,9 +1475,8 @@ export default function Dashboard() {
                     <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
                   ))}
                   {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
-                  <input value={boardQuery} onChange={e => setBoardQuery(e.target.value)} placeholder="🔎 ค้นพาร์ท / MAT / เลขใบ"
-                    style={{ width: 210, marginLeft: 'auto', padding: '4px 10px', borderRadius: 7, fontSize: 12.5,
-                      background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
+                    style={{ width: 210, marginLeft: 'auto' }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
                   {(effSel || boardQuery) && (
                     <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
                       style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>

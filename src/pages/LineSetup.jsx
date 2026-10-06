@@ -25,6 +25,7 @@ import { invalidateProductionLines } from '../utils/useProductionLines';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import SearchInput from '../components/SearchInput';
 
 /* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
    MAN/MACHINE ที่หน้า Management — UI-CONVENTIONS §1
@@ -1212,8 +1213,8 @@ export default function LineSetup({ embedded = false } = {}) {
 
         <CollapseCard id="lineList" storePrefix="ls" title="🏭 ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
           {lines.length > 6 && (
-            <input value={lineSearch} onChange={e => setLineSearch(e.target.value)} placeholder="🔍 ค้นหาไลน์..."
-              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+            <SearchInput value={lineSearch} onChange={setLineSearch} fields="ไลน์"
+              style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
             {(() => {
@@ -1468,8 +1469,8 @@ export default function LineSetup({ embedded = false } = {}) {
           </div>
           <CollapseCard id="stations" storePrefix="ls" title="📍 รายการจุดงาน" count={stations.length} defaultOpen={stations.length > 0}>
           {stations.length > 6 && (
-            <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาจุดงาน..."
-              style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+            <SearchInput value={pointSearch} onChange={setPointSearch} fields="จุดงาน"
+              style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div>
             {stations.filter(st => { const q = pointSearch.trim().toLowerCase(); return !q || (st.station_name || '').toLowerCase().includes(q); }).map(st => {
@@ -1563,8 +1564,8 @@ export default function LineSetup({ embedded = false } = {}) {
               )}
               <CollapseCard id="machinePoints" storePrefix="ls" title="⚙️ รายการจุดเครื่องจักร" count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
               {machinePoints.length > 6 && (
-                <input value={pointSearch} onChange={e => setPointSearch(e.target.value)} placeholder="🔍 ค้นหาเครื่องจักร (เลข/ชื่อ)..."
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 12.5, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', marginBottom: 8 }} />
+                <SearchInput value={pointSearch} onChange={setPointSearch} fields="เลขเครื่อง / ชื่อเครื่อง"
+                  style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
               )}
               <div>
                 {machinePoints.filter(p => { const q = pointSearch.trim().toLowerCase(); if (!q) return true; const mc = drMachines.find(m => m.machine_no === p.machine_no); return (p.machine_no || '').toLowerCase().includes(q) || (mc?.machine_name || '').toLowerCase().includes(q); }).map(p => {
