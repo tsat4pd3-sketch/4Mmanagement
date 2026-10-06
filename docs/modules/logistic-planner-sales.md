@@ -19,7 +19,7 @@
 → นำเข้าสำเร็จ ปิดแถวคิวเป็น `imported` + `batch_id` เอง (`markMailImported`)
 · 🔒 **เปิดไฟล์ผ่าน Edge Function `demand-mail-file` เท่านั้น (06/10 · DB audit B5)** — `downloadMailFile(id)` ใน
   `DemandMailInbox.jsx` ส่ง access token ของ Main → function ตรวจ `/auth/v1/user` + `has_perm('demand:upload')`
-  หรือ `page:/planner-sales` แล้วค่อยโหลดด้วย service role · policy `demand_mail_read` ถูกถอด
+  หรือ `page:/planner-sales` แล้วค่อยโหลดด้วย service role · policy `demand_mail_read` ถูกปิดเป็น `using (false)`
   (`20261006_demand_mail_bucket_private_dr.sql`) — เดิมใครถือ anon key ก็โหลดยอดสั่งลูกค้าได้ไม่ต้องล็อกอิน ·
   **ห้ามกลับไปเรียก `storage.from('demand-mail')` จากหน้าเว็บ** (มีด่าน `demand-mail-via-edge-function`)
 

@@ -91,7 +91,7 @@ DR — revoke DELETE จาก anon/authenticated 13 ตารางประว
 index 4 ตัว valid (`20261006_hot_indexes_dr.sql`) · ⚠️ MCP DDL หลายคำสั่งรวดเดียว timeout 60 วิ — apply ทีละคำสั่ง + `lock_timeout`
 **✅ DB audit ชุด B ข้อ B2 + B5 (apply 06/10 · คำสั่ง user "ทำข้อ 5 กับ 8" · ตรวจกลับแล้ว):**
 B2 — `trg_audit_delete` 53 ตาราง DR (`20261006_delete_audit_dr.sql` · เทสในธุรกรรมย้อนกลับ: ลบ 1 → audit 1 · ข้อมูลคืนครบ) ·
-B5 — Edge Function `demand-mail-file` (ตรวจ token Main + has_perm) + ถอด policy anon อ่าน bucket `demand-mail`
+B5 — Edge Function `demand-mail-file` (ตรวจ token Main + has_perm) + ปิด policy anon อ่าน bucket `demand-mail` (`using (false)` — `drop policy` ผ่าน MCP ค้าง)
 (`20261006_demand_mail_bucket_private_dr.sql`) · ด่าน `demand-mail-via-edge-function` · anon ยิง function ⇒ 401
 · ⚠️ MCP: DO-block ที่จบด้วย `raise exception` เพื่อย้อนกลับ = timeout 60 วิ ⇒ ใช้ `pg_temp` function + inner block จับ exception แทน
 **⛔ DB audit (05/10) — รอ user ตัดสิน (SQL เต็มอยู่ในแชท 05/10):** MAIN ~40 ตารางเขียน/ลบได้ทุก authenticated (เคยเสียหายจริง: workstation ถูกลบ 39 ครั้ง ⇒ `daily_production_logs.assigned_line` 41% ชี้จุดงานที่ไม่มีแล้ว) · CQI-15/4M ไม่มี audit trigger (ข้อมูล CQI-15 ถูกลบโดยไม่มีร่องรอย) · `notifications` 81 MB/20k แถว กระดิ่ง ~0.5 วิ · DR anon ลบประวัติได้ทุกตาราง (one-curl wipe ผ่าน cascade) · CASCADE จาก master → ประวัติ (jigs/machines/mtn_spare_parts/mtn_orders/child_lot_requests) · stock ผี 108 แถว 6,245 ชิ้นจากใบที่ถูกลบ · ไฟล์ EDI ลูกค้าใน bucket `demand-mail` anon อ่านได้
