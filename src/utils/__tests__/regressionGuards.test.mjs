@@ -2642,3 +2642,34 @@ test('🛡️ LinePartCallPanel: ยกเลิกได้แค่ใบ hold
   assert.ok(!/neq\('status',\s*'received'\)/.test(code) && /\.eq\('status',\s*'delivered'\)\.select\(/.test(code),
     '\n\n❌ ปุ่ม "รับ" ต้อง .eq(status, delivered) — .neq(received) ชุบชีวิตใบที่ถูกยกเลิก/ปิดลูปใบที่สต็อกยังไม่ถูกตัด\n');
 });
+
+/* ── 📞 เรียกช่าง: ทีมที่ "คนกดเลือกเอง" ต้องชนะการเดา และต้องโชว์บนจอห้องช่าง
+   (06/10/2026 · ทีม MTN: *"เราจะไม่รู้ว่า PD เรียกใคร … จะรู้ได้ยังไงว่าเค้าเรียกเรา"*)
+   เกิดจริง 06/10 15:33 — ทดสอบเรียกทีม JIG แล้วจอ Andon ขึ้นแค่ "📞 เรียกช่าง" เฉยๆ
+   เพราะ `teamOfDt()` เดาจากเลขเครื่อง/ใบ MO เท่านั้น และแถวนั้น `machine_no` ว่าง ⇒ คืน null
+   ทั้งที่ `downtime_logs.call_mtn_team` เก็บ 'jig_maintenance' ไว้ตั้งแต่ตอนกดแล้ว            */
+test('🛡️ Andon/ไซเรน: ต้องดึง call_mtn_team มาด้วย (ไม่งั้นจอบอกไม่ได้ว่าเรียกทีมไหน)', () => {
+  for (const f of ['src/components/MtnAndonBoard.jsx', 'src/components/DowntimeSiren.jsx']) {
+    const code = readFileSync(join(ROOT, f), 'utf8');
+    assert.ok(/\.select\([^)]*call_mtn_team/s.test(code),
+      `\n\n❌ ${f} ไม่ได้ select 'call_mtn_team'\n`
+      + '   ทำไมสำคัญ: เป็นช่องเดียวที่บอกว่า "ฝ่ายผลิตกดเรียกทีมไหน"\n'
+      + '              ไม่ดึงมา = จอห้องช่างขึ้น "📞 เรียกช่าง" เหมือนกันหมด แยกไม่ออกว่าของใคร\n'
+      + '              และไซเรนดังทุกห้องทุกใบ (ห้อง DIE ได้ยินงาน JIG)\n');
+  }
+});
+
+test('🛡️ Andon: call_mtn_team (ของจริง) ต้องชนะการเดาจากชนิดอุปกรณ์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MtnAndonBoard.jsx'), 'utf8'));
+  const fn = code.match(/const teamOfDt\s*=\s*useCallback\([\s\S]*?\}, \[[^\]]*\]\);/);
+  assert.ok(fn, '\n\n❌ หา teamOfDt ใน MtnAndonBoard.jsx ไม่เจอ — ย้ายแล้วต้องอัปเดตด่านนี้\n');
+  const body = fn[0];
+  const iDeclared = body.indexOf('call_mtn_team');
+  const iGuess = body.indexOf('teamForEquipmentKind');
+  assert.ok(iDeclared !== -1 && (iGuess === -1 || iDeclared < iGuess),
+    '\n\n❌ teamOfDt อ่าน call_mtn_team ทีหลัง (หรือไม่อ่านเลย)\n'
+    + '   กฎ (utils/mtnTeams.js หัวไฟล์): ชนิดอุปกรณ์เป็นแค่ "การเดา" —\n'
+    + '        ตัวตัดสินจริงคือ mtn_orders.mtn_dept และ downtime_logs.call_mtn_team\n'
+    + '   ของจริงต้องมาก่อนการเดาเสมอ · และห้าม return null ทิ้งตั้งแต่ไม่มีเลขเครื่อง\n'
+    + '   (ใบที่ไม่ระบุเครื่องแต่ระบุทีมไว้ จะกลายเป็น "ไม่รู้ทีม" ทั้งที่คนกดระบุชัดเจน)\n');
+});

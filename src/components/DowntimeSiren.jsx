@@ -6,6 +6,8 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { isAlarmingDT, isOverDtThreshold, loadDtAlertMin, DT_OPEN_ALERT_MIN_DEFAULT } from '../utils/downtimeAlarm'
 import { liveChannel } from '../utils/liveChannel'
 import { checkWrite } from '../utils/dbWrite';
+/* ทีมที่ถูกเรียกเก็บเป็น key — แปลงเป็นชื่อผ่านของกลางเท่านั้น (utils/mtnTeams.js) */
+import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -27,7 +29,12 @@ import { checkWrite } from '../utils/dbWrite';
    → ตอนนี้สร้าง AudioContext ตั้งแต่ mount (suspended = ถูกต้อง ไม่เปลือง) + ฟัง statechange
      แล้วโชว์ชิปเล็กๆ สงบๆ ตลอดเวลาที่เสียงยังล็อก **แม้ยังไม่มี alert**
    ⚠️ ชิปนี้ **ห้ามกระพริบ/ห้ามใช้สีแดง** — เป็นสถานะความพร้อม ไม่ใช่ alarm (UI-CONVENTIONS §2) */
-export default function DowntimeSiren({ mode = 'open_15min' }) {
+/* `team` = ทีมของ "ห้องนี้" (ชิป `?team=` บนบอร์ด Andon) — ใช้กรองเฉพาะเสียง "เรียกช่าง"
+   🔴 กรองได้เฉพาะแกน "ใครไปซ่อม" เท่านั้น — เสียง "เครื่องหยุดเกินเกณฑ์" เป็นข้อเท็จจริงของ
+      ฝ่ายผลิต **ห้ามกรองทีมเด็ดขาด** (กฎเดียวกับ MtnAndonBoard §ตัวกรองทีมห้ามกรองเครื่องหยุด)
+   🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
+      แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
+export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
   const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
   const [loadErr, setLoadErr] = useState(false) // อ่านรายการเครื่องหยุดไม่ได้ — ห้ามเงียบ (จอ TV ไม่มีใครเฝ้า)
@@ -40,14 +47,21 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
      "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
   const kindOf = (d) => (d.call_mtn && !d.call_mtn_ack_at ? 'call' : 'open')
   const META = {
-    call: { ackField: 'call_mtn_ack_at', label: '📞 เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },
+    call: { ackField: 'call_mtn_ack_at', label: '📞 เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
     open: { ackField: 'open_ack_at',     label: '🚨 เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
   }
-  const metaOf = (d) => META[mode === 'call_mtn' ? 'call' : mode === 'open_15min' ? 'open' : kindOf(d)]
+  /* 🔴 แถบเตือน "เรียกช่าง" ต้องบอกทีมที่ถูกเรียก (06/10 · ทีม MTN: "จะรู้ได้ยังไงว่าเค้าเรียกเรา")
+     ไม่ระบุทีม = เขียนตรงๆ ว่าไม่ระบุ ห้ามเดาให้ */
+  const metaOf = (d) => {
+    const m = META[mode === 'call_mtn' ? 'call' : mode === 'open_15min' ? 'open' : kindOf(d)]
+    if (m !== META.call) return m
+    const ct = teamKeyOf(d?.call_mtn_team)
+    return { ...m, label: ct ? `📞 เรียก ${deptNameOf(ct)} เข้าหน้างาน` : '📞 เรียกช่าง MTN เข้าหน้างาน (ไม่ระบุทีม)' }
+  }
 
   const fetchAlerts = useCallback(async () => {
     let q = supabaseDR.from('downtime_logs')
-      .select('id, machine_no, description, started_at, call_mtn, call_mtn_at, call_mtn_ack_at, open_alerted_at, open_ack_at, dr_downtime_types(name_th, category), production_sessions(line_name, status)')
+      .select('id, machine_no, description, started_at, call_mtn, call_mtn_at, call_mtn_ack_at, call_mtn_team, open_alerted_at, open_ack_at, dr_downtime_types(name_th, category), production_sessions(line_name, status)')
       .is('duration_min', null).is('ended_at', null)
     // โหมด 'all' กรอง ack รายแถวตอนจัดชนิด (แถวเดียวมี 2 ช่อง ack) — downtime ที่เปิดค้างพร้อมกันมีไม่กี่แถว
     if (mode === 'call_mtn') q = q.eq('call_mtn', true).is('call_mtn_ack_at', null)
@@ -70,13 +84,21 @@ export default function DowntimeSiren({ mode = 'open_15min' }) {
       ⇒ Telegram ล่ม/ปิด rule = ธงไม่ถูกตั้ง → **ไซเรนบนจอไม่เคยดังเลย** · เจอจริง 2026-08-26)
      ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
      ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
+  /* ใบ "เรียกช่าง" ใบนี้เป็นของห้องนี้ไหม — ไม่เลือกทีม หรือใบไม่ระบุทีม = ใช่เสมอ */
+  const myCall = useCallback((d) => {
+    const want = teamKeyOf(team); if (!want) return true
+    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true   // ไม่ระบุ = ดังทุกห้อง
+    return got === want
+  }, [team])
+
   const alerts = useMemo(() => {
     const overThr = (d) => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT)
-    if (mode === 'call_mtn') return raw
+    if (mode === 'call_mtn') return raw.filter(myCall)
     if (mode === 'open_15min') return raw.filter(overThr)
     // 'all' = เรียกช่างที่ยังไม่รับทราบ ∪ เครื่องหยุดเกินเกณฑ์ที่ยังไม่รับทราบ (แถวเดียวนับครั้งเดียว)
-    return raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at) || (overThr(d) && !d.open_ack_at))
-  }, [raw, mode, thr])
+    //   ⚠️ ขาซ้ายกรองทีมได้ · ขาขวา (เครื่องหยุดเกินเกณฑ์) ห้ามกรอง — คนละแกนกัน
+    return raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at && myCall(d)) || (overThr(d) && !d.open_ack_at))
+  }, [raw, mode, thr, myCall])
 
   useEffect(() => {
     fetchAlerts()
