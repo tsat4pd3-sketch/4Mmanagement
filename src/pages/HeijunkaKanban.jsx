@@ -1667,6 +1667,7 @@ export default function HeijunkaKanban() {
            ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
               โดยที่สต็อกไม่เคยขยับ และ **ไม่มีทางกดใหม่ให้ระบบเขียนให้**
            → ล้มเหลวเมื่อไหร่ต้องคืนสถานะกลับที่เดิมเสมอ แล้วให้คนกดใหม่ได้ */
+        let claimedRawIds = [];
         try {
           const wd = lot.work_date || getWorkDate();
           const txns = [];
@@ -1674,12 +1675,18 @@ export default function HeijunkaKanban() {
           if (lot.source_line) {
             txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
               type: 'issue', work_date: wd, note: `auto: รับ child เข้าสโตร์ (ล็อต ${lot.lot_qty})`, created_by: fullName || 'สโตร์' });
-            // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
-            //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
+            // (2) ตัดสต็อกวัตถุดิบตามใบเบิก **ที่ยังไม่ถูกจ่าย** — query สดจาก DB ห้ามใช้ state
+            //    (state เคยโหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
             //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
+            /* 🔴 06/10 — claim ใบเบิก (pending → issued) **ก่อน** เขียน ledger แล้วตัดเฉพาะแถวที่ claim ได้
+               ใบที่สโตร์กด "จ่ายวัตถุดิบ" ไปก่อนแล้ว = issued + ตัดสต็อกไปแล้วตอนจ่าย (`issueRaw`) ⇒ ข้าม
+               ⇒ ใบเบิก 1 ใบถูกตัดสต็อกครั้งเดียวเสมอ ไม่ว่ากดลำดับไหน หรือ 2 จอกดพร้อมกัน
+               (เดิม: ตัดแค่ใบ pending แต่ "จ่ายวัตถุดิบ" ไม่เขียน ledger ⇒ จ่ายก่อนปิดล็อต = วัตถุดิบไม่เคยลด) */
             const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
-              .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
+              .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending')
+              .select('id, raw_mat_no, part_name, qty');
             if (eRaw) throw eRaw;
+            claimedRawIds = (lotRaws || []).map(r => r.id);
             (lotRaws || []).forEach(r => {
               txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
                 type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'สโตร์' });
@@ -1689,13 +1696,19 @@ export default function HeijunkaKanban() {
             const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
             if (e2) throw e2;
           }
-          /* ใบเบิกวัตถุดิบที่ผูกไว้ → issued
-             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่)
-                แต่ห้ามเงียบด้วย — ใบเบิกค้าง pending = คิวสโตร์โชว์งานที่ทำไปแล้ว */
-          const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
-            .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
-          if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} + ตัดสต็อกเรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+          /* ล็อตของซื้อ (ไม่มี source_line) ไม่ตัดวัตถุดิบ — แค่ปิดใบเบิกที่ผูกไว้ไม่ให้ค้างในคิวสโตร์
+             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่) แต่ห้ามเงียบ */
+          if (!lot.source_line) {
+            const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
+              .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
+            if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} เรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+          }
         } catch (ledgerErr) {
+          /* ใบเบิกที่ claim ไว้ต้องคืน pending ด้วย — ไม่งั้นกดใหม่แล้ววัตถุดิบไม่ถูกตัด (กฎข้อ 6 · claim แล้ว ledger ล้ม = คืน) */
+          const { error: eRawBack } = claimedRawIds.length
+            ? await supabaseDR.from('raw_withdrawal_requests').update({ status: 'pending' }).in('id', claimedRawIds).eq('status', 'issued')
+            : { error: null };
+          if (eRawBack) toast.error(`คืนสถานะใบเบิกวัตถุดิบของล็อต ${lot.child_mat_no} ไม่สำเร็จ — แจ้ง admin (${eRawBack.message})`);
           const { error: eBack } = await supabaseDR.from('child_lot_requests')
             .update({ status: lot.status }).eq('id', lot.id).eq('status', next);
           throw new Error(eBack
@@ -1796,7 +1809,30 @@ export default function HeijunkaKanban() {
         toast.info(`ใบเบิก ${raw.raw_mat_no} ถูกจ่ายไปแล้ว — รีเฟรชให้ใหม่`);
         await loadPull(); setPullBusy(null); return;
       }
-      toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
+      /* 🔴 06/10 — จ่าย = วัตถุดิบออกจากสต็อกจริง ⇒ ตัดสต็อกตอนนี้ (consume ที่ไลน์ผลิตของล็อต · แถวเดียวกับที่ปิดล็อตเคยเขียน)
+         เดิมเปลี่ยนแค่สถานะ แล้วปิดล็อตตัดเฉพาะใบ pending ⇒ จ่ายก่อนปิด (ลำดับที่ถูกตามหน้างาน) = สต็อกวัตถุดิบไม่เคยลด
+         ปิดล็อตตอนนี้ claim เฉพาะใบ pending ⇒ ใบที่จ่ายแล้วไม่ถูกตัดซ้ำ
+         · ล็อตของซื้อ (ไม่มี source_line) ไม่ตัด — ตรงกับตอนปิดล็อต
+         · ledger ล้ม = คืนใบเป็น pending (กฎข้อ 6) ให้กดใหม่ได้ */
+      try {
+        const { data: lot, error: eLot } = await supabaseDR.from('child_lot_requests')
+          .select('source_line, child_mat_no').eq('id', raw.lot_request_id).maybeSingle();
+        if (eLot) throw eLot;
+        if (lot?.source_line) {
+          const { error: eTx } = await supabaseDR.from('line_stock_transactions').insert({
+            line_name: lot.source_line, mat_no: raw.raw_mat_no, part_name: raw.part_name, qty: raw.qty,
+            type: 'consume', work_date: getWorkDate(), note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต · จ่ายวัตถุดิบ)`,
+            created_by: fullName || 'สโตร์' });
+          if (eTx) throw eTx;
+        }
+      } catch (ledgerErr) {
+        const { error: eBack } = await supabaseDR.from('raw_withdrawal_requests')
+          .update({ status: 'pending' }).eq('id', raw.id).eq('status', 'issued');
+        throw new Error(eBack
+          ? `ตัดสต็อกวัตถุดิบไม่สำเร็จ และคืนสถานะใบเบิกไม่ได้ — ใบ ${raw.raw_mat_no} เป็น "จ่ายแล้ว" ทั้งที่สต็อกยังไม่ลด แจ้ง admin (${ledgerErr.message})`
+          : `ตัดสต็อกวัตถุดิบไม่สำเร็จ — คืนใบเบิก ${raw.raw_mat_no} เป็น "รอจ่าย" แล้ว ลองกดใหม่ (${ledgerErr.message})`);
+      }
+      toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว · ตัดสต็อก ${(Number(raw.qty) || 0).toLocaleString()}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);

@@ -1306,6 +1306,39 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ open-shift-date-and-shift-together (2026-10-06)
+   ฟอร์ม "เปิดกะใหม่" ต้องตั้ง **วันทำงาน + กะ พร้อมกัน** จาก `openShiftDefaults()` (`utils/workDate.js`)
+   เดิมปุ่มรีเฟรชแค่ `shift` จากนาฬิกา ปล่อย `work_date` ค้าง ⇒ ตอน 07:40 ได้ "กะดึกของวันนี้"
+   = เริ่ม 20:00 คืนนี้ = เปิดกะล่วงหน้า 12 ชม. (เคสจริง LINE C 05/10 · ปิดทิ้งใน 1 นาที
+   เหลือใบผี shift_min 720 ค้างในฐาน แล้วไปโผล่เป็นแถบ 12 ชม. บนไทม์ไลน์)
+   ⇒ ห้ามมีจุดไหนตั้ง `shift:` ให้ฟอร์มเปิดกะ โดยไม่ตั้ง `work_date` ในก้อนเดียวกัน
+   (ช่อง dropdown ที่คนเลือกกะเอง = ตั้งแค่ `start_time` ไม่เข้าข่าย) */
+test('🛡️ open-shift-date-and-shift-together — ฟอร์มเปิดกะห้ามตั้ง shift โดยไม่ตั้ง work_date', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /setOpenForm\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      /* หน้าต่าง = ตัว call นี้เท่านั้น — ตัดก่อนถึง setOpenForm ตัวถัดไป
+         (ไม่ตัด = หน้าต่างล้นไปเจอ `shift:` ของ call ข้างล่างแล้วแจ้งผิดจุด) */
+      const nextCall = code.indexOf('setOpenForm', m.index + 11);
+      const end = Math.min(m.index + 220, nextCall === -1 ? Infinity : nextCall);
+      const win = code.slice(m.index, end);
+      if (!/\bshift\s*:/.test(win)) continue;              // ไม่ได้ตั้งกะ = ไม่เกี่ยว
+      if (/e\.target\.value/.test(win)) continue;           // คนเลือกกะเองจาก dropdown
+      if (/openShiftDefaults/.test(win)) continue;          // ใช้ของกลางแล้ว
+      if (/work_date\s*:/.test(win)) continue;              // ตั้งคู่กันเองก็ยอม
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ตั้ง `shift` ให้ฟอร์มเปิดกะโดยไม่ตั้ง `work_date` คู่กัน — ตอนก่อน 08:00 จะได้กะที่ยังไม่เริ่ม\n'
+    + '   แก้: setOpenForm(f => ({ ...f, ...openShiftDefaults() }))\n'
+    + `   จุดที่ผิด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ close-time-needs-downtimes (2026-10-05)
    `checkCloseTime()` ตัดสินว่า "เวลาปิดกะที่กรอกล้ำหน้าเวลาจริงเกินไปไหม" — แต่ปลายกะที่
    **ลง downtime คลุมไว้แล้ว ไม่ใช่ความผิด** (ปิดงานเที่ยงแล้วลง "ไม่มีแผนผลิต" ถึงเลิกงาน
@@ -2455,4 +2488,15 @@ test('🛡️ /mtn-repair: ถังสังเคราะห์ของแ�
     + '   ทำไมสำคัญ: ช่องเลือกกลุ่มถือป้าย "ยังไม่จัดกลุ่ม" ได้ (เป็นป้ายของจอ ไม่ใช่ taxonomy)\n'
     + '              เขียนลงใบ = ปลอมกลุ่มให้พาเรโต · ผิดกฎชั้น 1 "ห้ามเขียนทับค่าที่ระบบรู้อยู่แล้ว"\n'
     + '   แก้ยังไง: problem_group: groupForDb(f.problem_group) (คืนค่าว่างเมื่อเป็นป้ายสังเคราะห์)\n');
+});
+
+/* ── ใบเบิกวัตถุดิบ: ตัดสต็อกครั้งเดียวต่อใบ ไม่ว่ากด "จ่าย" ก่อนหรือ "ปิดล็อต" ก่อน (06/10) ──
+   เดิม "จ่ายวัตถุดิบ" เปลี่ยนแค่สถานะ แล้วปิดล็อตตัดเฉพาะใบ pending ⇒ จ่ายก่อนปิด = วัตถุดิบไม่เคยลด */
+test('🛡️ /heijunka: "จ่ายวัตถุดิบ" ต้องเขียน consume · ปิดล็อตต้อง claim ใบ pending ก่อนตัด', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  const issue = code.slice(code.indexOf('const issueRaw'), code.indexOf('const issueRaw') + 3000);
+  assert.ok(/from\('line_stock_transactions'\)\.insert/.test(issue) && /type: 'consume'/.test(issue),
+    '\n\n❌ issueRaw ไม่ตัดสต็อกวัตถุดิบแล้ว — จ่ายก่อนปิดล็อต = สต็อกวัตถุดิบไม่ลด (ปิดล็อตตัดเฉพาะใบ pending)\n');
+  assert.ok(/from\('raw_withdrawal_requests'\)\s*\.update\(\{ status: 'issued' \}\)\.eq\('lot_request_id', lot\.id\)\.eq\('status', 'pending'\)\s*\.select\(/.test(code),
+    '\n\n❌ ปิดล็อตต้อง claim ใบเบิก pending→issued แล้วตัดเฉพาะแถวที่ claim ได้ (กันตัดซ้ำกับ issueRaw)\n');
 });
