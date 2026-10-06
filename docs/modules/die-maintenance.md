@@ -50,6 +50,20 @@
 · วัดก่อนทำ: ใบ DIE ที่ผู้แจ้งเลือกชนิดเอง **ไม่ตรงทะเบียน 2 ใน 4 ใบ** · แม่พิมพ์ 259/266 ตัวผูกชุดแล้ว
 · ทะเบียนผิด = แก้ที่ต้นทาง (ฟอร์มชุด) ไม่ใช่ในใบ · cache 4 ชม. ข้ามเครื่อง (DieRegistry ล้างของเครื่องตัวเองตอนบันทึกชุด)
 
+### 🧩 รอบ 2 (06/10 · คอมเมนต์ทีม DIE `MO_ESM_Website.pptx`) — ชนิดเป็นของ "แม่พิมพ์รายตัว" ก่อน "ชุด"
+ไลน์ HDF01/02 ขอ `DIE HYDRO / DIE BENDING / DIE PREFORM` แต่ HDF 1 พาร์ท = **ชุด Single 1 ชุด มีแม่พิมพ์ 3 ตัว**
+⇒ ดึงจากรูปแบบชุดอย่างเดียวได้ "DIE SINGLE" ทั้ง 3 ตัว (ผิด) · แกนที่ถูก = **ประเภท OP** (`equipment_die.op_type` → `die_op_types`)
+- migration **`20261006_die_op_item_type_dr.sql`** (DR · apply แล้ว 06/10) — `die_op_types.mo_item_type` ·
+  เปลี่ยนชื่อชนิดเป็นคำที่ทีมขอ (`DIE HYDRO`/`DIE BENDING` + เพิ่ม `DIE PREFORM`) · ตั้ง `op_type` ให้แม่พิมพ์ HDF 12 ตัว
+  **จากชื่อที่ลงท้าย HYDRO1/BENDING2/PREFORM1 ชัดเจน** (แตะเฉพาะที่ว่าง · ป้าย `updated_by_name` ไว้ถอยได้)
+- 🔴 **ลำดับตัดสิน: ประเภท OP ชนะ รูปแบบชุด** (`buildDieItemTypeMap` · `source:'op'|'set'`) — ชี้ไม่ได้ทั้งคู่ = ผู้แจ้งเลือกเอง
+- แผงใหม่ **⚙️ ประเภท OP ของแม่พิมพ์** ท้ายแท็บทะเบียน (เดิมตาราง `die_op_types` ไม่มีที่แก้บนจอ) — เพิ่ม/ลบ/ปิดใช้/ตั้งชนิดในใบแจ้งซ่อมเอง
+- 🔴 **ทุกรายการในเรื่องนี้เป็นทะเบียนที่ทีมเพิ่มลบเอง ห้าม hardcode** (คำสั่ง user 06/10): `mtn_item_types` (/mtn-repair ข้อมูลหลัก) ·
+  `die_op_types` · `die_set_kinds` (แผง ⚙️ ทั้ง 2 ใน /equipment?tab=die)
+- ใบแจ้งซ่อม: ไลน์ที่ยังไม่มีแม่พิมพ์ลงทะเบียน (E50 · GOR · LWR BAR ณ 06/10) ⇒ **ขึ้นป้ายส้มบอกตรงๆ** (เดิมลิสต์ขึ้น LINE A
+  มาก่อน หน้างานอ่านว่า "ไม่มี Part Name") · **ต้นเหตุคือข้อมูล — ทีม DIE ต้องลงทะเบียนแม่พิมพ์ 3 ไลน์นี้**
+- ใบพิมพ์ FM-JIG-008 ของทีม DIE: ป้าย **"Die No. / Die Type"** แทน "Jig No / MC Name" (`printMoReport` · `isDieTeam`)
+
 ### 🔙 rollback
 revert โค้ดก่อน แล้วค่อย (ถ้าจำเป็น): `alter table die_sets add constraint die_sets_kind_chk check (kind in ('tandem','progressive','transfer','single'));`
 (**ทำได้เฉพาะเมื่อไม่มีชุดใช้ key ใหม่**) + `drop table die_set_kinds;` + ลบ `DIE HYDROFORM`/`DIE BEND` ใน `mtn_item_types` ที่ `updated_by_name='migration 20261005'`
