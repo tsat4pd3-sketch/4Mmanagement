@@ -29,8 +29,44 @@ user: *"recheck work flow ทุก tab ให้ที ใครทำอะไ
 > ตรวจซ้ำกับ main 06/10: **ข้อ 5 แก้แล้ว** (QC 05/10 `deductStockForPick` ตัดซ้ำก่อน "ถึงไลน์แล้ว" · กันซ้ำด้วย note เลขใบ) ·
 > **ข้อ 7 แก้บางส่วน** (ใบ child/ใบเบิกวัตถุดิบโหลดค้างครบทุกใบผ่าน `openPlusHistory` แล้ว · rack/บรรจุภัณฑ์ยัง `limit(200)` ไม่กรองสถานะ) ·
 > ข้อที่เหลือยังเปิดอยู่
-1. **วัตถุดิบไม่ถูกตัดถ้าสโตร์กด "จ่ายวัตถุดิบ" ก่อนปิดล็อต** — ตอนปิดล็อต consume เฉพาะใบเบิกที่ยัง `pending`
-   แต่ "จ่ายวัตถุดิบ" เปลี่ยนเป็น `issued` โดยไม่เขียน ledger ⇒ ลำดับที่ถูกต้องตามหน้างานกลับทำให้สต็อกวัตถุดิบไม่ลด
+1. ✅ **แก้แล้ว 06/10 (user สั่ง)** — ~~วัตถุดิบไม่ถูกตัดถ้าสโตร์กด "จ่ายวัตถุดิบ" ก่อนปิดล็อต~~
+   ตอนนี้ **ใบเบิก 1 ใบ = ตัดสต็อกครั้งเดียว ที่จุดแรกที่ถึง**: `issueRaw` claim pending→issued แล้วเขียน `consume`
+   ที่ `source_line` ของล็อตทันที (ล้ม = คืน pending) · ปิดล็อต (`advanceLot` → done) **claim ใบ pending ก่อน** แล้วตัดเฉพาะ
+   แถวที่ claim ได้ (ledger ล้ม = คืนทั้งใบเบิกและล็อต) · ล็อตของซื้อ (ไม่มี `source_line`) ไม่ตัดทั้ง 2 ทาง · ด่าน regressionGuards
+   · ⚠️ **ข้อมูลเก่า (แก้คำสรุปเดิม 06/10)** — ใบเบิก issued ของล็อตที่ปิดแล้ว 291 ใบ **ไม่มีแถว consume คู่ 30 ใบ**
+     (สร้าง 20/08–30/09 · LINE C 200&250T / LINE D 110&300T) · ล็อตที่ยังไม่ปิดไม่มีใบ issued ⇒ ไม่มีใบที่**จะ**พลาดอีก
+     ผลคิวรีด้านล่าง (user รัน 06/10): **ทั้ง 30 ใบ = จ่ายก่อนปิดล็อต (บั๊กข้อนี้)** · ทางอื่น (ledger ล้มก่อน 03/09) = 0
+   · ✅ **backfill แล้ว 06/10 (user รันเองที่ SQL Editor)** — ลง `consume` ย้อนหลัง **30 แถว / 76,721.6** (LINE C 6 MAT · LINE D 3 MAT)
+     · `work_date` = วันเดียวกับแถว "รับ child" ของล็อต (ปิดล็อตลงด้วย `lot.work_date` ไม่ใช่วันกด ⇒ บางแถวเป็น 07/07, 03/08)
+       ⇒ ยอดคงเหลือ 9 รายการลดตั้งแต่วันนั้น · หมายเหตุ `auto: ใช้ผลิต <child> (ล็อต · ย้อนหลัง 06/10 ใบเบิก <id 8 ตัว>)` (กันลงซ้ำด้วยหมายเหตุนี้)
+     · เช็ค: `select count(*), sum(qty) from line_stock_transactions where type='consume' and note like 'auto: ใช้ผลิต % (ล็อต · ย้อนหลัง 06/10 ใบเบิก %'` = 30 / 76721.6
+     · ย้อน: `delete from line_stock_transactions where type='consume' and note like 'auto: ใช้ผลิต % (ล็อต · ย้อนหลัง 06/10 ใบเบิก %'`
+     · ⚠️ หลัง backfill คิวรีแยกต้นเหตุด้านล่าง**ยังขึ้น 30 ใบ** (จับคู่หมายเหตุ `(ล็อต)` ตรงตัว) — นับแถวย้อนหลังด้วยคิวรีเช็คข้างบนแทน
+   · ❌ ตัวเลข "แถวรับ child เข้าสโตร์มีแค่ 3" ที่เคยเขียน **ผิด** — หมายเหตุ ledger เปลี่ยนคำเมื่อ 02/10 (`fdd933fe`)
+     จาก `auto: ผลิตเสร็จ เติมสต็อก Store Child (ล็อต N)` เป็น `auto: รับ child เข้าสโตร์ (ล็อต N)` ⇒ **คิวรีหาแถวของล็อตต้องนับทั้ง 2 แบบ**
+     · ทางเดียวที่ตั้งล็อตเป็น `done` = `advanceLot` ใน `HeijunkaKanban.jsx` (ไม่มีฟังก์ชัน DB/migration ไหนตั้ง) ·
+     ก่อน 03/09 (`0c918315`) ledger ล้มแล้ว**ล็อตค้าง done เงียบๆ** (ไม่คืนสถานะ) = อีกทางที่ทำให้ไม่มีแถวคู่
+   · คิวรีแยกต้นเหตุ (DR "Product DB" `eyhclzkifitbhbljgoav` · อ่านอย่างเดียว) — ล็อตมีแถวรับ child แต่ใบเบิกไม่มี consume
+     = ใบถูก "จ่ายวัตถุดิบ" ก่อนปิดล็อต (บั๊กข้อนี้) · ล็อตไม่มีแถวรับ child เลย = ledger ล้มก่อน 03/09 หรือไม่มี `source_line` ตอนปิด
+     ```sql
+     with r as (
+       select r.id, r.raw_mat_no, r.qty, r.created_at, l.id lot_id, l.child_mat_no, l.source_line, l.lot_qty,
+         row_number() over (partition by l.source_line, r.raw_mat_no, r.qty, l.child_mat_no order by r.id) rn
+       from raw_withdrawal_requests r join child_lot_requests l on l.id = r.lot_request_id
+       where r.status = 'issued' and l.status = 'done'),
+     t as (
+       select line_name, mat_no, qty, note,
+         row_number() over (partition by line_name, mat_no, qty, note order by id) rn
+       from line_stock_transactions where type = 'consume' and note like 'auto: ใช้ผลิต %(ล็อต%')
+     select case when exists (select 1 from line_stock_transactions x
+                  where x.type = 'issue' and x.line_name = r.source_line and x.mat_no = r.child_mat_no
+                    and (x.note like 'auto: รับ child เข้าสโตร์%' or x.note like 'auto: ผลิตเสร็จ เติมสต็อก Store Child%'))
+                 then 'จ่ายก่อนปิดล็อต (บั๊กข้อ 1)' else 'ล็อตไม่มีแถวรับ child (ledger ล้ม/ไม่มี source_line)' end cause,
+            count(*) raws, sum(r.qty) qty
+     from r left join t on t.line_name = r.source_line and t.mat_no = r.raw_mat_no and t.qty = r.qty
+       and t.note = 'auto: ใช้ผลิต ' || r.child_mat_no || ' (ล็อต)' and t.rn = r.rn
+     where t.mat_no is null group by 1;
+     ```
 2. **ขั้น "ปล่อยเข้าไลน์" มีเจ้าของ 2 คน** (สโตร์บนบอร์ด + ไลน์ใน StoreLotQueue) — CAS กันชนแล้ว แต่ความรับผิดชอบไม่ชัด
 3. **Child ลงสต็อกซ้ำทาง** — ปิดล็อตลง `issue` ที่ `source_line` · ไลน์ปั๊มปิดใบผลิต 2xx ลงสโตร์ผ่าน `fn_post_confirmed_output` (เดิม known)
 4. **รับของซื้อแบบรวมหลายใบ ไม่ย้อนเมื่อ ledger ล้ม** (`PurchaseBulkModal`) — ใบเป็น received แต่สต็อกไม่ขึ้น (ทางใบเดียวย้อนได้)
