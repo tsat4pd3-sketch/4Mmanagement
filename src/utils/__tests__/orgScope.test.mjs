@@ -281,3 +281,37 @@ test('cost center: ลำดับตามผังองค์กร (ไม�
   assert.ok(!under.has('2140563100') && !under.has('2140524100'), 'รหัสของหน่วยอื่นต้องไม่ติดมา');
   assert.equal(idx.ccUnder('plant', '').size, ccs.length, 'ทั้งโรงงาน = ทุกรหัส');
 });
+
+/* 💰 เลือก CC = เลือกหน่วยเจ้าของรหัส (06/10 · user: "เลือกส่วนของ MTN เหมือนกัน ทำไมไม่เหมือนกัน") */
+test('unitsOf/chainOf: CC → เจ้าของรหัส · ขอบเขตอื่น → ตัวเอง · โซ่หานิยาม ตัวเอง→เจ้าของ→แม่→โรงงาน', () => {
+  assert.deepEqual(idx.unitsOf('cost_center', '2140563100'), [{ kind: 'department', value: 'JIG MTN' }]);
+  assert.deepEqual(idx.unitsOf('section', 'PD3'), [{ kind: 'section', value: 'PD3' }]);
+  assert.deepEqual(idx.unitsOf('cost_center', 'ไม่มี'), []);
+  const ch = idx.chainOf('cost_center', '2140563100').map(a => `${a.kind}:${a.value}`);
+  assert.equal(ch[0], 'cost_center:2140563100');
+  assert.equal(ch[1], 'department:JIG MTN');
+  assert.equal(ch[ch.length - 1], 'plant:', 'โรงงานปิดท้ายเสมอ');
+  assert.deepEqual(idx.chainOf('line', 'HDF1').map(a => a.kind), ['line', 'line_group', 'department', 'section', 'division', 'plant']);
+  assert.deepEqual(idx.chainOf('plant', ''), [PLANT]);
+  // ancestorsOf ของ CC ยังมีแค่ plant (แกนแยก) — ไม่เปลี่ยนความหมายเดิม
+  assert.deepEqual(idx.ancestorsOf('cost_center', '2140563100'), [PLANT]);
+});
+
+test('scopeCovers ผ่าน CC: นิยามของแผนก MTN/JIG MTN ต้องตกทอดถึง CC ของแผนกนั้น · CC คนละแผนกไม่เห็น', () => {
+  const cc = { kind: 'cost_center', value: '2140563100' };
+  assert.equal(scopeCovers(idx, { kind: 'department', value: 'JIG MTN' }, cc), true, 'นิยามของเจ้าของรหัส');
+  assert.equal(scopeCovers(idx, cc, cc), true, 'นิยามที่ตั้งไว้ที่ CC ตรงๆ');
+  assert.equal(scopeCovers(idx, PLANT, cc), true);
+  assert.equal(scopeCovers(idx, { kind: 'section', value: 'PD3' }, cc), false, 'คนละหน่วย');
+  // รหัสของไลน์ลูก 60/61 → เห็นนิยามของกลุ่ม/แผนก/ส่วนงานที่ครอบไลน์นั้น
+  const ccLine = { kind: 'cost_center', value: '2140662201' };
+  assert.equal(scopeCovers(idx, { kind: 'section', value: 'PD3' }, ccLine), true);
+  assert.equal(scopeCovers(idx, { kind: 'department', value: 'JIG MTN' }, ccLine), false);
+});
+
+test('sectionOf/sectionsOf ของ CC = ของเจ้าของรหัส (ใบ Action/safety กรองส่วนงานได้เหมือนเลือกหน่วย)', () => {
+  assert.equal(idx.sectionOf('cost_center', '2140462000'), 'PD3');
+  assert.deepEqual([...idx.sectionsOf('cost_center', '2140662201')], ['PD3']);
+  assert.equal(idx.sectionOf('cost_center', '2140563100'), null, 'แผนกขึ้นตรงฝ่าย ไม่มีส่วนงาน');
+  assert.deepEqual([...idx.sectionsOf('cost_center', 'ไม่มี')], [], 'รหัสไม่มีเจ้าของ = ว่าง ไม่ใช่ทั้งโรงงาน');
+});

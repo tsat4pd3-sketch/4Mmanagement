@@ -135,7 +135,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
     <CollapseCard id="deliveryPoints" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
       title={<>🎯 จุดส่งงานหน้าไลน์{open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}</>}
       right={open && canManage && isLeaf && !form && !missing && (
-        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', '#08130c'), flexShrink: 0 }}>+ เพิ่มจุดส่ง</button>
+        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', 'var(--accent-ink)'), flexShrink: 0 }}>+ เพิ่มจุดส่ง</button>
       )}>
       <>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</div>
@@ -161,7 +161,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
               {canManage && leafKids.length > 0 && (
                 <div style={{ marginTop: 10 }}>
                   <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
-                    style={btnSt('var(--accent)', '#08130c')}>
+                    style={btnSt('var(--accent)', 'var(--accent-ink)')}>
                     + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
                   </button>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
@@ -276,7 +276,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
               </label>
               <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
                 <button onClick={() => setForm(null)} disabled={saving} style={btnSt('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={btnSt('var(--accent)', '#08130c')}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+                <button onClick={save} disabled={saving} style={btnSt('var(--accent)', 'var(--accent-ink)')}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
               </div>
             </div>
           )}

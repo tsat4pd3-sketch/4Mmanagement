@@ -18,6 +18,7 @@ import { checkWrite } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -747,8 +748,7 @@ export default function ShiftOrganize() {
                 <td style={{ fontSize: 12, color: 'var(--muted)' }}>{o.reason || '—'}</td>
                 {canEdit && (
                   <td style={{ textAlign: 'center' }}>
-                    {canDel && <button className="tbtn" onClick={() => handleDeleteOverride(o.id)}
-                      style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
+                    {canDel && <DeleteButton onClick={() => handleDeleteOverride(o.id)} title="ลบการสลับกะรายคนนี้" />}
                   </td>
                 )}
               </tr>
@@ -818,8 +818,7 @@ export default function ShiftOrganize() {
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{evt.reason || '—'}</td>
                   {canEdit && (
                     <td style={{ textAlign: 'center' }}>
-                      {canDel && <button className="tbtn" onClick={() => handleDeleteMergeEvent(evt.id)}
-                        style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15, padding: '2px 6px' }}>🗑️</button>}
+                      {canDel && <DeleteButton onClick={() => handleDeleteMergeEvent(evt.id)} title="ลบการรวมกะนี้" />}
                     </td>
                   )}
                 </tr>

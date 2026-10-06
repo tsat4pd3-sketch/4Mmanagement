@@ -8,6 +8,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { TASK_STATUS } from '../utils/npi';
 import SearchSelect from './SearchSelect';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal } from './NpiUi';
+import { DeleteButton } from './IconButton';
 
 export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, users, canEdit, fullName, today, onChanged }) {
   const [modal, setModal] = useState(null);
@@ -92,7 +93,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                         {t.status === 'open' && <button style={{ ...ghost, padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'doing')}>▶ เริ่ม</button>}{' '}
                         <button style={{ ...btn('#22c55e'), padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'done')}>✓ เสร็จ</button>{' '}
                       </>}
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => del(t)}>🗑</button></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <DeleteButton onClick={() => del(t)} title="ลบ" /></>}
                     </td>
                   </tr>
                 );

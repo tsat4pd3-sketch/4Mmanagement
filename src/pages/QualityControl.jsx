@@ -58,6 +58,7 @@ import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
+import { DeleteButton } from '../components/IconButton';
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -198,7 +199,7 @@ const inputSt = {
   width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13,
   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
 };
-const btnSt = (bg = 'var(--accent)', color = '#fff') => ({
+const btnSt = (bg = 'var(--accent)', color = bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff') => ({
   padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
   fontWeight: 700, fontSize: 13, background: bg, color,
 });
@@ -872,7 +873,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                           <td style={{ ...tdSt, fontWeight: 700 }}>{fmtNum(mean(vals))}</td>
                           <td style={tdSt}>{r.operator_name || '—'}</td>
                           {canManage && <td style={tdSt}>
-                            <button className="tbtn" onClick={() => delMeasurement(r.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 12 }}>🗑</button>
+                            <DeleteButton onClick={() => delMeasurement(r.id)} title="ลบ" />
                           </td>}
                         </tr>
                       );

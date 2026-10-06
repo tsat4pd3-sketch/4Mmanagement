@@ -131,8 +131,13 @@ export function planOf(familyLines, shift) {
  * @param {object[]} p.lines         production_lines (ผ่าน useProductionLines)
  * @param {object}   p.maps          buildScheduleMaps(shift_schedules ของวันนี้)
  * @param {object}   p.attendance    { [employee_id]: แถว daily_production_logs วันนี้ }
+ * @param {object[]} [p.slotPlans]   manpower_slot_plans { org_node_id, team, slots } — จำนวนช่องที่หัวหน้าตั้งเอง (ชนะ std)
+ * @param {object[]} [p.lineTechs]   line_technicians { employee_id, line_id } — ช่างประจำไลน์ (ข้ามแผนกได้ เช่นช่าง MTN)
+ * @param {object[]} [p.helpers]     ผลของ mergeBorrowedEmployees() (พนักงาน + _helperTo/_helperFrom/_helperShift)
+ *                                   — คนยืมตัววันนี้ · **ห้ามคิวรี line_helpers เอง** (UI §6.13)
  */
-export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {} }) {
+export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {},
+  slotPlans = [], lineTechs = [], helpers = [] }) {
   if (!section) return null;
   const idx = indexNodes(nodes);
   const sub = descendants(idx, section.id);
@@ -166,48 +171,92 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
   }
 
   const byName = (a, b) => naturalCompare(a.name || '', b.name || '');
+  const empById = new Map(employees.map(e => [e.id, e]));
+  const lineById = new Map(lines.map(l => [String(l.id), l]));
+  const helperByEmp = new Map(helpers.map(h => [h.id, h]));
+  const cardOf = (e, extra) => ({ ...e, row: rowOfPosition(e.position), team: normTeam(e.team),
+    attend: attendanceState(attendance[e.id]), log: attendance[e.id] || null, unknownPos: !levelOfPosition(e.position), ...extra });
   const out = [];
   for (const b of depts.values()) {
-    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน) = ไม่วาด · แต่นับไว้บอกบนจอ
-    if (!b.heads.length && !b.techs.length && !b.people.length) continue;
-
     // ไลน์ของแผนก = ไลน์ที่ผัง (kind='line'.ref_line_id) ชี้ + ไลน์ที่คนในแผนกสังกัด
     const lineRefs = new Set();
     if (b.node) for (const n of descendants(idx, b.node.id)) if (n.kind === 'line' && n.ref_line_id != null) lineRefs.add(n.ref_line_id);
     for (const p of [...b.heads, ...b.techs, ...b.people]) if (p.line_id != null) lineRefs.add(p.line_id);
     const family = lineFamilyOf(lines, [...lineRefs]);
+    const famIds = new Set(family.map(l => String(l.id)));
+    const famNames = new Set(family.map(l => String(l.name || '').trim().toLowerCase()));
     const plan = { day: planOf(family, 'day'), night: planOf(family, 'night') };
 
-    // คอลัมน์ทีม
-    const teams = [...new Set(b.people.map(p => p.team))].sort(teamCompare);
+    // 🔧 ช่างประจำไลน์ (line_technicians) — ช่างแผนกอื่น (MTN/DIE/JIG) ที่ผูกไลน์ของแผนกนี้ไว้ ขึ้นแถวช่างด้วย
+    //    `linkedLines` = ไลน์ที่ผูก · `external` = ไม่ใช่คนในสังกัดแผนกนี้ (ห้ามนับเป็นกำลังคนแผนก)
+    const techById = new Map(b.techs.map(t => [t.id, t]));
+    for (const lt of lineTechs) {
+      if (!famIds.has(String(lt.line_id))) continue;
+      const ln = lineById.get(String(lt.line_id))?.name;
+      const cur = techById.get(lt.employee_id);
+      if (cur) { (cur.linkedLines ||= []).push(ln); continue; }
+      const e = empById.get(lt.employee_id);
+      if (!e) continue;   // พนักงานลาออก/ไม่ active — ไม่วาด (ทะเบียนผูกไว้แต่คนไม่อยู่แล้ว)
+      const card = cardOf(e, { linkedLines: [ln], external: true });
+      techById.set(e.id, card); b.techs.push(card);
+    }
+
+    // 🤝 คนยืมตัววันนี้ — ยืมมาช่วยไลน์ของแผนกนี้ (ไม่ใช่คนในสังกัด) · คนในสังกัดที่ไปช่วยที่อื่น = ติดป้าย lentTo
+    const memberIds = new Set([...b.heads, ...b.people].map(p => p.id));
+    const borrowed = [];
+    for (const h of helpers) {
+      if (memberIds.has(h.id) || !famNames.has(String(h._helperTo || '').trim().toLowerCase())) continue;
+      borrowed.push(cardOf(h, { borrowed: { from: h._helperFrom || '', to: h._helperTo || '', shift: h._helperShift || null } }));
+    }
+    for (const p of b.people) {
+      const h = helperByEmp.get(p.id);
+      if (h && !famNames.has(String(h._helperTo || '').trim().toLowerCase())) p.lentTo = { to: h._helperTo || '', shift: h._helperShift || null };
+    }
+
+    // ช่องที่หัวหน้าตั้งเอง (manpower_slot_plans) ของแผนกนี้ — ทีม → จำนวนช่อง
+    const planned = new Map(slotPlans.filter(sp => b.node && sp.org_node_id === b.node.id).map(sp => [normTeam(sp.team), Number(sp.slots) || 0]));
+
+    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน/ช่องที่ตั้งไว้/คนยืม) = ไม่วาด · แต่นับไว้บอกบนจอ
+    if (!b.heads.length && !b.techs.length && !b.people.length && !planned.size && !borrowed.length) continue;
+
+    // คอลัมน์ทีม — ทีมที่มีคน ∪ ทีมที่ตั้งช่องไว้ (ตั้งช่องแต่ยังไม่มีคน = คอลัมน์ช่องว่างล้วน)
+    // ตั้ง 0 ช่องและไม่มีคน = ไม่ต้องมีคอลัมน์ (ตั้ง 0 = "ทีมนี้ไม่มีตำแหน่ง" ไม่ใช่คอลัมน์ว่าง)
+    const teams = [...new Set([...b.people.map(p => p.team), ...[...planned].filter(([, n]) => n > 0).map(([t]) => t)])].sort(teamCompare);
     const cols = teams.map(t => {
       const ppl = b.people.filter(p => p.team === t);
       const rep = ppl.find(p => p.line_id != null) || ppl[0];
       const shift = t ? shiftFromTeam(scheduleTeamFor(rep, maps), t) : null;
       const leaders = ppl.filter(p => p.row === ROW.LEADER).sort(byName);
       const ops = ppl.filter(p => p.row === ROW.OPERATOR).sort(byName);
-      return { team: t, shift, leaders, ops, slots: null };
+      // ตั้งช่องเองไว้ = ใช้ค่านั้นตรงๆ (ไม่ต้องรู้กะ) · `slotSource` บอกจอว่าเลขมาจากไหน
+      if (planned.has(t)) return { team: t, shift, leaders, ops, slots: Math.max(0, planned.get(t) - ops.length), slotPlan: planned.get(t), slotSource: 'plan' };
+      return { team: t, shift, leaders, ops, slots: null, slotPlan: null, slotSource: null };
     });
 
-    // ช่องว่าง — std ของกะ − คนในทะเบียนของกะนั้น · ลงที่คอลัมน์ทีมหมุนกะ (A/B) ของกะนั้นใบแรก
+    // ช่องว่างจาก std (เฉพาะคอลัมน์ที่ไม่ได้ตั้งช่องเอง) — std ของกะ − คนในทะเบียนของกะนั้น
+    // ลงที่คอลัมน์ทีมหมุนกะ (A/B) ของกะนั้นใบแรก · คอลัมน์ที่ตั้งเองถูกนับคนแล้ว ต้องหักออกจาก std ด้วย
     const reg = { day: 0, night: 0 };
     for (const c of cols) if (c.shift) reg[c.shift] += c.ops.length;
+    const free = cols.filter(c => c.slotSource !== 'plan');
     for (const sh of ['day', 'night']) {
       if (plan[sh] == null) continue;
-      const host = cols.find(c => c.shift === sh && c.team !== 'C') || cols.find(c => c.shift === sh);
-      if (host) host.slots = Math.max(0, plan[sh] - reg[sh]);
+      if (cols.some(c => c.shift === sh && c.slotSource === 'plan')) continue;   // กะนี้หัวหน้าตั้งช่องเองแล้ว — std ไม่ทับ
+      const host = free.find(c => c.shift === sh && c.team !== 'C') || free.find(c => c.shift === sh);
+      if (host) { host.slots = Math.max(0, plan[sh] - reg[sh]); host.slotSource = 'std'; }
     }
-    const unknownShiftTeams = cols.filter(c => c.team && !c.shift && c.ops.length).map(c => c.team);
+    const unknownShiftTeams = cols.filter(c => c.team && !c.shift && c.ops.length && c.slotSource !== 'plan').map(c => c.team);
 
     const allOps = cols.flatMap(c => c.ops);
     out.push({
       key: b.key, name: b.name, node: b.node,
-      heads: b.heads.sort(byName), techs: b.techs.sort(byName), cols,
+      heads: b.heads.sort(byName), techs: b.techs.sort((x, y) => (!!x.external - !!y.external) || byName(x, y)), cols,
+      borrowed: borrowed.sort(byName),
       lines: family,
       plan, registered: reg,
       planTotal: plan.day == null && plan.night == null ? null : (plan.day || 0) + (plan.night || 0),
       opsTotal: allOps.length,
       present: allOps.filter(p => p.attend === 'present').length,
+      lentOut: allOps.filter(p => p.lentTo).length,
       unknownShiftTeams,
       unknownPos: allOps.filter(p => p.unknownPos).length,
     });
@@ -224,6 +273,7 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       plan: out.some(d => d.planTotal != null) ? sum(d => d.planTotal) : null,
       ops: sum(d => d.opsTotal),
       present: sum(d => d.present),
+      borrowed: sum(d => d.borrowed.length),
       members: members.length,
     },
   };

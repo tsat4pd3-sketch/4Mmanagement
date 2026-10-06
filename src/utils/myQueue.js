@@ -152,11 +152,28 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     return st === 'in';
   };
 
+  /* 🔴 ขั้นที่ "รอตำแหน่ง" (QA · จ่ายงาน · หัวหน้าแผนก · ผจก.) ไม่มีเจ้าภาพรายใบ (2026-10-06)
+     ⇒ เข้าชั้น `mine` ไม่ได้ (ไม่ได้รอ "เรา" เป็นตัวบุคคล) และกฎ badge นับเฉพาะ `mine`
+     ⇒ **ไม่มีสัญญาณเลยว่ามีงานค้าง** · วัดจริง 06/10: รอ QA 188 ใบ (ค้างเกิน 7 วัน 169) ไม่มีใครเห็นตัวเลข
+     ⇒ สรุปเป็น **บรรทัดเดียวต่อขั้น ในชั้น `floor`** (ของทั้งโรงงานที่ไม่มีเจ้าภาพ — กติกาเดิมของชั้นนี้)
+     🔴 **ห้ามแตกรายตัวในชั้นนี้ · ห้ามให้ขึ้น badge** (ยัดเข้า `mine` = badge เลขสูงค้างถาวรกับคนหลายคน
+        = ซ้ำรอยกระดิ่งเดิมที่วัดได้ 19,095 แถว/7 วัน อ่าน 7.3%)
+     · นับ **ทั้งโรงงาน ไม่กรองขอบเขต** (ตอบคำถาม "กองนี้ใหญ่แค่ไหน") — ใบของหน่วยเราเองยังโชว์รายตัว
+       ในชั้น `unit` ตามเดิม ⇒ 2 ชั้นตอบคนละคำถาม ไม่ใช่ตัวเลขซ้อนกัน */
+  const byPos = new Map();   // `step` → { step, meta, count, oldest }
+
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
+    if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
+      const cur = byPos.get(w.step) || { step: w.step, meta: w.meta, count: 0, oldest: null };
+      cur.count += 1;
+      const age = ageDays(o.work_date, now);
+      if (age != null && (cur.oldest == null || age > cur.oldest)) cur.oldest = age;
+      byPos.set(w.step, cur);
+    }
     if (keep(o)) unit.push(moItem(o, w, TIER.UNIT));
   }
 
@@ -203,6 +220,19 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
 
   // ── ชั้น 3: ของทั้งโรงงานที่ไม่มีเจ้าภาพ — **สรุปบรรทัดเดียว ห้ามแตกรายตัว** ──────
   //    ใบขอซื้อค้าง 6,743 รายการมาจากตัวระเบิดความต้องการ ไม่ใช่ "งานที่คนหนึ่งต้องทำทีละใบ"
+  //    ใบ MO ที่รอ "ตำแหน่ง" ก็เข้าชั้นนี้ด้วย (ดูคอมเมนต์ที่ `byPos` ข้างบน)
+  [...byPos.values()].sort((a, b) => b.count - a.count).forEach((g) => {
+    floor.push({
+      key: `mowait:${g.step}`, icon: g.meta.icon || '🔧', tier: TIER.FLOOR, count: g.count,
+      /* ชื่อขั้น/ผู้รับผิดชอบ อ่านจาก `stepMeta()` เท่านั้น — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
+         (อีโมจิอยู่ `meta.icon` ไม่ได้อยู่ใน `meta.title` ⇒ ต่อ title ตรงๆ ได้) */
+      title: `ใบซ่อมรอ${g.meta.title} ${g.count.toLocaleString()} ใบ`,
+      detail: ['ทั้งโรงงาน', g.meta.whoShort || g.meta.who || 'ผู้รับผิดชอบ',
+        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+      age: null, to: '/mtn-repair?tab=list',
+    });
+  });
+
   for (const s of (src.summaries || [])) {
     if (!s || !Number(s.count)) continue;
     floor.push({ key: `sum:${s.key}`, icon: s.icon || '📦', tier: TIER.FLOOR,

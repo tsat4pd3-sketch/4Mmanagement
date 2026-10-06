@@ -134,7 +134,7 @@ export default function SimpleMasterPanel({
             <input placeholder="🔍 ค้นหา…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
             {offCount > 0 && <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} /> แสดงที่ปิดใช้ ({offCount})</label>}
             <div style={{ flex: 1 }} />
-            {canManage && !adding && <button onClick={() => setAdding({})} style={btn('var(--accent)', '#08130a')}>+ เพิ่ม</button>}
+            {canManage && !adding && <button onClick={() => setAdding({})} style={btn('var(--accent)', 'var(--accent-ink)')}>+ เพิ่ม</button>}
           </div>
 
           {adding && (
@@ -142,7 +142,7 @@ export default function SimpleMasterPanel({
               {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
               {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={add} disabled={busy} style={btn('var(--accent)', '#08130a')}>บันทึก</button>
+                <button onClick={add} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>บันทึก</button>
                 <button onClick={() => setAdding(null)} style={btn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
               </div>
             </div>
@@ -170,7 +170,7 @@ export default function SimpleMasterPanel({
                       ))}
                       {canManage && (
                         <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>
-                          {d && <button onClick={() => saveRow(r)} disabled={busy} style={{ ...btn('var(--accent)', '#08130a'), marginRight: 4 }}>💾</button>}
+                          {d && <button onClick={() => saveRow(r)} disabled={busy} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), marginRight: 4 }}>💾</button>}
                           <button onClick={() => toggle(r)} style={{ ...btn('transparent', 'var(--text2)'), marginRight: 4 }}>{r.is_active === false ? 'เปิดใช้' : 'ปิดใช้'}</button>
                           <button onClick={() => remove(r)} style={btn('transparent', '#ef4444')}>ลบ</button>
                         </td>

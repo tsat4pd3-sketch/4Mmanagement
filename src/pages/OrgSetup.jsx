@@ -20,6 +20,7 @@ import CostCenterSelect from '../components/CostCenterSelect';
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { IconButton, DeleteButton } from '../components/IconButton';
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
    (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / ทีม' };
@@ -359,7 +360,7 @@ export default function OrgSetup() {
 
   const colStyle = { flex: 1, minWidth: 240, display: 'flex', flexDirection: 'column' };
   const itemStyle = (active) => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
     padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
     background: active ? 'rgba(77,159,255,0.12)' : 'var(--bg2)',
     border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
@@ -398,13 +399,11 @@ export default function OrgSetup() {
             <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
             {sections.map(s => (
               <div key={s.id} style={itemStyle(selSection === s.id)} onClick={() => setSelSection(s.id)}>
-                <span style={{ fontSize: 13, color: s.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: s.is_active ? 'none' : 'line-through' }}>
-                  {s.name}
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>
-                  {s.cost_center && <CostBadge code={s.cost_center} />}
-                  <LaborBadge type={s.labor_type} />
-                  <DivBadge node={s} nodes={nodes} />
-                </span>
+                <NodeLabel node={s} meta={<span style={{ fontSize: 11, color: 'var(--muted)' }}> ({deptsOf(s.id).length} แผนก)</span>}>
+                  {s.cost_center && <CostBadge key="cc" code={s.cost_center} />}
+                  {s.labor_type && <LaborBadge key="lb" type={s.labor_type} />}
+                  {(s.division || divisionOfNode(s.id, nodes)) && <DivBadge key="dv" node={s} nodes={nodes} />}
+                </NodeLabel>
                 {canEditNode(s) && <RowActions node={s} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -428,13 +427,11 @@ export default function OrgSetup() {
             </div>
             {!selSection ? <Empty text="เลือก Section ก่อน" /> : currentDepts.map(d => (
               <div key={d.id} style={itemStyle(selDept === d.id)} onClick={() => setSelDept(d.id)}>
-                <span style={{ fontSize: 13, color: d.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: d.is_active ? 'none' : 'line-through' }}>
-                  {d.name}
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>
-                  {d.cost_center && <CostBadge code={d.cost_center} />}
-                  <LaborBadge type={d.labor_type} />
-                  <DivBadge node={d} nodes={nodes} />
-                </span>
+                <NodeLabel node={d} meta={<span style={{ fontSize: 11, color: 'var(--muted)' }}> ({linesOf(d.id).length} กลุ่ม)</span>}>
+                  {d.cost_center && <CostBadge key="cc" code={d.cost_center} />}
+                  {d.labor_type && <LaborBadge key="lb" type={d.labor_type} />}
+                  {(d.division || divisionOfNode(d.id, nodes)) && <DivBadge key="dv" node={d} nodes={nodes} />}
+                </NodeLabel>
                 {canEditNode(d) && <RowActions node={d} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -451,14 +448,11 @@ export default function OrgSetup() {
             </div>
             {!selDept ? <Empty text="เลือกแผนกก่อน" /> : currentLines.map(l => (
               <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
-                <span style={{ fontSize: 13, color: l.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: l.is_active ? 'none' : 'line-through' }}>
-                  {l.name} {!l.ref_line_id && <span style={{ fontSize: 11, color: '#f59e0b' }}>(ไม่ผูก production_lines)</span>}
-                  {/* จำนวนทีมใต้กลุ่ม — เห็นตั้งแต่ก่อนกด จะได้รู้ว่าทำไมลบไม่ได้ */}
-                  {teamsOf(l.id).length > 0 && (
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({teamsOf(l.id).length} ทีม)</span>
-                  )}
-                  {lineCostCenter(l) && <CostBadge code={lineCostCenter(l)} />}
-                </span>
+                {/* จำนวนทีมใต้กลุ่ม — เห็นตั้งแต่ก่อนกด จะได้รู้ว่าทำไมลบไม่ได้ */}
+                <NodeLabel node={l} meta={teamsOf(l.id).length > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({teamsOf(l.id).length} ทีม)</span>}>
+                  {!l.ref_line_id && <span key="nr" style={{ fontSize: 11, color: '#f59e0b', whiteSpace: 'nowrap' }}>(ไม่ผูก production_lines)</span>}
+                  {lineCostCenter(l) && <CostBadge key="cc" code={lineCostCenter(l)} />}
+                </NodeLabel>
                 {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -476,9 +470,7 @@ export default function OrgSetup() {
             </div>
             {!selLine ? <Empty text="เลือกกลุ่มก่อน" /> : currentTeams.map(t => (
               <div key={t.id} style={itemStyle(false)}>
-                <span style={{ fontSize: 13, color: t.is_active ? 'var(--text)' : 'var(--muted)', textDecoration: t.is_active ? 'none' : 'line-through' }}>
-                  {t.name}{t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>}
-                </span>
+                <NodeLabel node={t} meta={t.code && t.code !== t.name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({t.code})</span>} />
                 {canEditNode(t) && <RowActions node={t} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
               </div>
             ))}
@@ -659,18 +651,33 @@ export default function OrgSetup() {
 }
 
 function RowActions({ node, onEdit, onToggle, onDelete }) {
+  // ปุ่มกล่อง 30×30 ชุดเดียวกัน (IconButton) — เดิมเป็นอีโมจิเปล่า 13px ถังขยะเล็กจนดูไม่ออก (user 06/10)
   return (
-    <div style={{ display: 'flex', gap: 4 }} onClick={e => e.stopPropagation()}>
-      <button className="tbtn" onClick={() => onEdit(node)} title="แก้ไข" style={iconBtnSt}>✏️</button>
-      <button className="tbtn" onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'} style={iconBtnSt}>{node.is_active ? '🟢' : '⚪'}</button>
-      <button className="tbtn" onClick={() => onDelete(node)} title="ลบ" style={iconBtnSt}>🗑️</button>
+    <div style={{ display: 'flex', gap: 4, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+      <IconButton onClick={() => onEdit(node)} title={`แก้ไข ${node.name}`}>✏️</IconButton>
+      <IconButton onClick={() => onToggle(node)} title={node.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}>{node.is_active ? '🟢' : '⚪'}</IconButton>
+      <DeleteButton onClick={() => onDelete(node)} title={`ลบ ${node.name}`} />
+    </div>
+  );
+}
+
+/** ชื่อหน่วย 1 บรรทัด + ป้ายอีกบรรทัด (ป้ายแต่ละอันไม่ตัดกลางคำ)
+ *  เดิมชื่อ+จำนวน+ป้าย 3 อันอยู่ใน <span> เดียว ⇒ ตัดบรรทัดกลางป้าย "🏭 ฝ่ายผลิต" ขาดเป็น 2 ท่อน (user 06/10) */
+function NodeLabel({ node, meta, children }) {
+  const badges = [children].flat().filter(Boolean);
+  return (
+    <div style={{ minWidth: 0, flex: 1, color: node.is_active ? 'var(--text)' : 'var(--muted)' }}>
+      <div style={{ fontSize: 13, textDecoration: node.is_active ? 'none' : 'line-through', overflowWrap: 'anywhere' }}>
+        {node.name}{meta}
+      </div>
+      {badges.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>{badges}</div>}
     </div>
   );
 }
 
 function CostBadge({ code }) {
   return (
-    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)' }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
       💰{code}
     </span>
   );
@@ -685,7 +692,7 @@ function DivBadge({ node, nodes }) {
   return (
     <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
       style={{
-        marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 999,
+        fontSize: 11, padding: '1px 6px', borderRadius: 999, whiteSpace: 'nowrap',
         border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
         color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
       }}>
@@ -698,7 +705,7 @@ function LaborBadge({ type }) {
   if (!type) return null;
   const m = laborMeta(type);
   return (
-    <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600 }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {m.icon}{m.short}
     </span>
   );
@@ -709,7 +716,6 @@ function Empty({ text }) {
 }
 
 const addBtnSt = { padding: '4px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer', fontSize: 13 };
-const iconBtnSt = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, padding: 2 };
 const labelSt = {
   display: 'block', fontSize: 12, fontWeight: 600,
   color: 'var(--text2)', marginBottom: 6,
