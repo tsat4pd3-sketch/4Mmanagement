@@ -15,9 +15,11 @@ import MonitorBoardGrid from '../components/MonitorBoardGrid';
 import { BOARD_TABS, boardPeriods, rowDefs } from '../utils/monitorBoards';
 import {
   sumByMatDate, firstByMat, makeSystemLookup, OUT_TXN_TYPES, IN_ORDER_STATUS, orderInQty,
+  DEMAND_SKIP_STATUS,
 } from '../utils/monitorSystem';
 
 const MonitorImport = lazy(() => import('../components/MonitorImport'));
+const MonitorFgSync = lazy(() => import('../components/MonitorFgSync'));
 
 /* ══ 📉 /monitoring — บอร์ดติดตามแผน-สต๊อก (ยกไฟล์ Excel ของทีมวางแผนเข้าระบบ) ═══════════
    user 01/10: *"ตอนนี้ทีมวางแผนจะต้องทำข้อมูลนี้ใน excel เค้าอยากทำในระบบเรา ทำได้มั้ย"*
@@ -50,6 +52,7 @@ export default function Monitoring() {
   const [parts, setParts] = useState([]);
   const [cells, setCells] = useState([]);
   const [sysIn, setSysIn] = useState(() => new Map());
+  const [sysOrder, setSysOrder] = useState(() => new Map());   // บอร์ด FG: ยอดลูกค้าสั่งจาก EDI 862/830
   const [sysOut, setSysOut] = useState(() => new Map());
   const [sysMin, setSysMin] = useState(() => new Map());
   const [registry, setRegistry] = useState(() => new Set());
@@ -57,6 +60,7 @@ export default function Monitoring() {
   const [warn, setWarn] = useState('');
   const [truncated, setTruncated] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showFgSync, setShowFgSync] = useState(false);
 
   const canEdit = canSeeded('monitoring', 'manage', role);
   const today = getWorkDate();
@@ -86,6 +90,10 @@ export default function Monitoring() {
   const bId = board?.id || '';
   const bKind = board?.kind || '';
   const bLine = board?.line_name || '';
+  /* 📦 บอร์ด FG ผูก "ลูกค้า" ไม่ใช่ "ไลน์" — ยอดลูกค้าสั่งมาจาก EDI 862/830 ที่นำเข้าทุกวัน
+     🔴 IN ของบอร์ด FG **ห้ามกรองไลน์** (FG ตัวเดียวผลิตได้หลายไลน์ กรองไลน์ = ยอดหายเงียบ) */
+  const bCust = board?.customer || '';
+  const isFg = board?.kind === 'fg';
   /* 🔴 deps เป็น primitive ล้วน — ส่ง object/array เข้า deps = พ่อ setState ใบใหม่เนื้อเดิม
      แล้วลูกยิงคิวรีซ้ำฟรีๆ (กฎเหล็กการเขียน DB ข้อ 9) */
   /* 🔴 guard กัน stale-response (กฎเหล็กการเขียน DB ข้อ 4) — สลับบอร์ดเร็วๆ แล้วคำตอบของ
@@ -150,11 +158,43 @@ export default function Monitoring() {
 
   const curSysRef = useRef('');
   const loadSystem = useCallback(async () => {
-    if (!bLine || !dFrom || !dTo || !matsKey) { setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); return; }
+    const scope = isFg ? bCust : bLine;
+    if (!scope || !dFrom || !dTo || !matsKey) {
+      setSysIn(new Map()); setSysOut(new Map()); setSysMin(new Map()); setSysOrder(new Map()); return;
+    }
     const mats = matsKey.split(',');
-    const myKey = `${bLine}|${dFrom}|${dTo}|${matsKey}`;
+    const myKey = `${isFg ? 'fg' : 'line'}|${scope}|${dFrom}|${dTo}|${matsKey}`;
     const mine = () => curSysRef.current === myKey;
     curSysRef.current = myKey;
+
+    /* ── บอร์ด FG: ยอดลูกค้าสั่ง (862/830) + ผลิตเข้า (ทุกไลน์) ───────────────────── */
+    if (isFg) {
+      const [demR, inR, prodR2] = await Promise.all([
+        fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+          .select('mat_no, qty, due_date, status')
+          .eq('customer', bCust).in('mat_no', mats)
+          .gte('due_date', dFrom).lte('due_date', dTo), { orderBy: ['mat_no'] }),
+        fetchAllPages(() => supabaseDR.from('prod_orders')
+          .select('mat_no, qty_ok, qty_actual, production_sessions!inner(work_date)')
+          .in('status', IN_ORDER_STATUS).in('mat_no', mats)
+          .gte('production_sessions.work_date', dFrom)
+          .lte('production_sessions.work_date', dTo), { orderBy: ['mat_no'] }),
+        fetchAllPages(() => supabaseDR.from('dr_products').select('mat_no').in('mat_no', mats), { orderBy: ['mat_no'] }),
+      ]);
+      if (!mine()) return;
+      setSysOrder(sumByMatDate(demR.rows || [], {
+        date: 'due_date',
+        keep: (r) => !DEMAND_SKIP_STATUS.includes(String(r?.status || '')),
+      }));
+      setSysIn(sumByMatDate(
+        (inR.rows || []).map(x => ({ mat_no: x.mat_no, work_date: x.production_sessions?.work_date, qty: orderInQty(x) })),
+      ));
+      /* ไม่มีไลน์ ⇒ ไม่รู้ MIN/OUT ของบอร์ดนี้ — ปล่อยว่างให้จอขึ้นขีด ห้ามเดา 0 */
+      setSysOut(new Map()); setSysMin(new Map());
+      setRegistry(new Set((prodR2.rows || []).map(r => String(r.mat_no || '').trim())));
+      return;
+    }
+
     const [ordR, txnR, lvlR, prodR] = await Promise.all([
       fetchAllPages(() => supabaseDR.from('prod_orders')
         .select('mat_no, qty_ok, qty_actual, production_sessions!inner(work_date, line_name)')
@@ -178,8 +218,9 @@ export default function Monitoring() {
     ));
     setSysOut(sumByMatDate(txnR.rows || []));
     setSysMin(firstByMat(lvlR.rows || []));
+    setSysOrder(new Map());
     setRegistry(new Set((prodR.rows || []).map(r => String(r.mat_no || '').trim())));
-  }, [bLine, dFrom, dTo, matsKey]);
+  }, [isFg, bCust, bLine, dFrom, dTo, matsKey]);
 
   useEffect(() => { loadSystem(); }, [loadSystem]);
 
@@ -195,8 +236,10 @@ export default function Monitoring() {
 
   const partMat = useMemo(() => new Map(parts.map(p => [p.id, String(p.mat_no || '').trim()])), [parts]);
   const systemMap = useMemo(
-    () => makeSystemLookup({ partMat, inIdx: sysIn, outIdx: sysOut, minByMat: sysMin, seedKey: periods[0]?.key }),
-    [partMat, sysIn, sysOut, sysMin, periods],
+    () => makeSystemLookup({
+      partMat, inIdx: sysIn, outIdx: sysOut, orderIdx: sysOrder, minByMat: sysMin, seedKey: periods[0]?.key,
+    }),
+    [partMat, sysIn, sysOut, sysOrder, sysMin, periods],
   );
 
   const partsWithFlag = useMemo(
@@ -256,11 +299,21 @@ export default function Monitoring() {
         sub="บอร์ดแทนไฟล์ Excel ของทีมวางแผน — PLAN กรอกเอง · ของเข้า/ออก/ขั้นต่ำ ระบบเติมให้"
         tabs={tabs} tab={tab} onTab={setTab}
         actions={canEdit ? (
-          <button type="button" onClick={() => setShowImport(true)}
-            style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
-              background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-            📗 นำเข้าจากไฟล์ Excel
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {/* 📦 บอร์ด FG ไม่ได้มาจากไฟล์ Excel — ปุ่มจึงแยกจาก "นำเข้าจากไฟล์" ตั้งแต่หัวเพจ
+                (ปุ่มเดียวกันแล้วเดาจากแท็บ = คนกดผิดแล้วงงว่าทำไมไม่ขอไฟล์) */}
+            <button type="button" onClick={() => setShowFgSync(true)}
+              title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
+              style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+              📦 สร้างบอร์ด FG จากออเดอร์
+            </button>
+            <button type="button" onClick={() => setShowImport(true)}
+              style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
+              📗 นำเข้าจากไฟล์ Excel
+            </button>
+          </div>
         ) : null}
         filters={tabBoards.length ? (
           <FilterBar>
@@ -279,9 +332,15 @@ export default function Monitoring() {
               </select>
             </label>
             <span style={{ fontSize: FS, color: 'var(--muted)', flex: '1 1 100%', minWidth: 0 }}>
-              {board?.line_name
-                ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้`
-                : 'ยังไม่ผูกไลน์ ⇒ ทุกช่องต้องกรอกเอง'}
+              {/* 🔴 บอร์ด FG ไม่ผูกไลน์ แต่**ไม่ใช่** "ต้องกรอกเองทุกช่อง" — ยอดลูกค้าสั่งมาจาก
+                  EDI 862/830 · ผลิตเข้าจากใบผลิตทุกไลน์ ⇒ ต้องแยกข้อความ ไม่งั้นจอโกหก (06/10) */}
+              {isFg
+                ? (bCust
+                  ? `ผูกลูกค้า ${bCust} ⇒ ยอดลูกค้าสั่งมาจาก EDI 862/830 · ผลิตเข้านับจากใบผลิตทุกไลน์ (ไม่รู้ MIN เพราะไม่ผูกไลน์)`
+                  : '⚠️ บอร์ด FG ใบนี้ยังไม่ผูกลูกค้า ⇒ ระบบดึงยอดลูกค้าสั่งให้ไม่ได้ — กด "📦 สร้างบอร์ด FG จากออเดอร์" ใหม่อีกครั้ง')
+                : board?.line_name
+                  ? `ผูกไลน์ ${board.line_name} ⇒ ระบบเติมของเข้า/ออก/ขั้นต่ำให้`
+                  : 'ยังไม่ผูกไลน์ ⇒ ทุกช่องต้องกรอกเอง'}
             </span>
           </FilterBar>
         ) : null}
@@ -308,6 +367,15 @@ export default function Monitoring() {
           windowSize={board?.period_kind === 'week' ? 10 : 14}
         />
       )}
+
+      {showFgSync ? (
+        <Suspense fallback={null}>
+          <MonitorFgSync
+            onClose={() => setShowFgSync(false)} fullName={fullName}
+            onSynced={() => { setTab('fg'); loadBoards(); }}
+          />
+        </Suspense>
+      ) : null}
 
       {showImport ? (
         <Suspense fallback={null}>
