@@ -9,7 +9,17 @@ import { chromium } from 'playwright'
 const TZ = { timezoneId: 'Asia/Bangkok' }
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
 const p0 = await b.newPage({ ...TZ }); await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200)
-const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close()
+/* ONLY=Obeya&tab=table,DailyReport node audit/crashsweep.mjs — สวีปเฉพาะหน้า/แท็บที่ระบุ (06/10)
+   ค่าใน ONLY = ส่วนต่อท้าย `?p=` ตรงๆ (ใส่ `&tab=`/`&scope=` ได้) ⇒ ใช้ไล่ทีละแท็บหลังแก้หน้าเดียว ไม่ต้องรอ 60 หน้า */
+const ONLY = (process.env.ONLY || '').split(',').map(s => s.trim()).filter(Boolean)
+const PAGES = ONLY.length ? ONLY : await p0.evaluate(() => window.__PAGES); await p0.close()
+
+/* 🔴 ปุ่มพิมพ์/ดาวน์โหลด ต้องข้าม (06/10 · วัดจริงที่ /obeya?tab=table)
+   `window.print()` เปิด print preview ที่ `closeOverlay` ปิดไม่ได้ (ไม่ใช่ div ใน DOM) ⇒ ปุ่มที่เหลือ **ทั้งแท็บ**
+   click timeout ทุกตัว แล้วถูกกลืนเงียบ — โมดัลตั้งค่า KPI 8 ตัวหลัง "🖨️ พิมพ์ / PDF" ไม่เคยถูกเปิดเลย
+   ทั้งที่เครื่องมือรายงาน "พัง 0" · ดาวน์โหลด Excel/CSV ก็ไม่มีอะไรให้ตรวจบนจอ (ไฟล์ออกนอกเบราว์เซอร์)
+   ⚠️ ห้ามข้าม "💾 บันทึก" / "📥 นำเข้า" — พวกนั้นเปิดฟอร์ม/โมดัลที่ต้องสวีป · จำนวนที่ข้ามต้องพิมพ์ออกมาเสมอ */
+const SKIP_RE = /🖨|⬇️|📤|ดาวน์โหลด|ส่งออก|Export|(?<!นำเข้า\s?)(?:Excel|PDF|CSV)/
 
 /* 🔴 ปิด "ฉากทับจอ" ให้ได้จริงก่อนกดปุ่มถัดไป (23/09)
    หลายโมดัลในระบบ **ไม่ปิดด้วย Escape** (ตั้งใจ — กันปิดทิ้งฟอร์มที่กรอกค้าง)
@@ -66,7 +76,9 @@ for (const name of PAGES) {
         if (t && !labels.includes(t)) labels.push(t)
         if (labels.length >= CAP) break
       }
+      let skipped = 0
       for (const label of labels) {
+        if (SKIP_RE.test(label)) { skipped++; continue }
         try {
           const loc = p.locator('main button, header button').filter({ hasText: label }).first()
           if (!(await loc.count())) continue
@@ -75,6 +87,7 @@ for (const name of PAGES) {
         if (await p.evaluate(() => window.__crash)) { bad.push({ name, where: `หลังกด "${label}"`, errs: [...errs] }); break }
         await closeOverlay(p)
       }
+      if (skipped) console.log(`  ⤼ ${name}: ข้ามปุ่มพิมพ์/ดาวน์โหลด ${skipped} ปุ่ม`)
     }
   } catch (e) { bad.push({ name, where: 'โหลดไม่ขึ้น', errs: [String(e).slice(0, 120)] }) }
   await p.close()
