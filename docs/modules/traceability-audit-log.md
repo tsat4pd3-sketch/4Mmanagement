@@ -33,6 +33,14 @@
   - **แยกฝั่งด้วยแท็บ ไม่ query รวม** — `audit_log` มีคนละชุดต่อ project (คนละ database join กันไม่ได้)
   - ตัวเลือกตาราง/คนแก้ในตัวกรอง **สร้างจากข้อมูลจริงที่โหลดมา** ไม่ hardcode → ตารางใหม่โผล่เอง
   - สิทธิ์ `page:/audit-log` seed **admin/manager เท่านั้น** (เห็นการเปลี่ยนสิทธิ์ + ข้อมูลพนักงาน = อ่อนไหว) · role อื่นเปิดเองที่ `/permissions` · migration `20260819_audit_log_page.sql` (**apply แล้ว**)
+- **🗑️ บันทึกการลบตารางงาน/ประวัติฝั่ง DR (2026-10-06 · DB audit B2 · คำสั่ง user):** trigger `trg_audit_delete`
+  (AFTER DELETE → `fn_audit()` ตัวเดิม) ที่ **53 ตาราง** ซึ่ง anon ลบได้แต่ไม่เคยมี audit (prod_orders · downtime_logs ·
+  defect_logs · mtn_orders · inspections · bom_items · scrap_* · material_* · kanban_* · transport_* ฯลฯ — รายชื่อเต็มใน
+  `20261006_delete_audit_dr.sql`) ⇒ ลบแล้ว `old_data` ทั้งแถวอยู่ใน `audit_log` กู้คืนได้ · **บันทึกเฉพาะ DELETE**
+  (INSERT/UPDATE ไม่ log — ตารางเขียนถี่) · ลบ `production_sessions` แล้ว cascade ลงลูก = ลูกทุกแถวถูกบันทึกด้วย
+  · **ไม่รวมโดยตั้งใจ:** ตารางที่ระบบลบ-สร้างใหม่ทั้งก้อนเป็นปกติ (`customer_forecasts` · `*_alerts` ·
+  `child_demand_accumulator` · ตัวนับ MO) · actor = คนแก้ล่าสุด (ข้อจำกัด DR เดิม) · ทดสอบในธุรกรรมย้อนกลับ 06/10:
+  ลบ 1 แถว → audit 1 แถว · **ตารางงานใหม่ฝั่ง DR ที่ client ลบได้ ต้องผูก `trg_audit_delete` ด้วย**
 - **⏳ retention 6 เดือน (2026-08-19 · คำสั่ง user):** cron `purge-audit-log` ทั้ง 2 project ลบแถวเก่ากว่า 6 เดือนทุกวัน 17:30 UTC (00:30 ไทย) — migration `20260819_audit_log_retention.sql` (**apply แล้วทั้ง Main + DR**)
   - **เหตุผล:** วัดอัตราโตจริงแล้ว **audit_log เป็นตัวโตเร็วที่สุดของทั้ง 2 project** (DR 197 KB/วัน = 42% ของการโตทั้งหมด · Main 89 KB/วัน ≈ 43%) เพราะเก็บ `old_data` + `new_data` เป็น jsonb **ทั้งแถว** (1,100-1,400 bytes/แถว)
   - **⭐ retention ทำให้ audit_log "หยุดโต" ไม่ใช่แค่ "โตช้าลง"** (ตกผลึกกับ user 2026-08-19) — มันเข้าสมดุลที่ `อัตรา/วัน × 180 วัน` แล้วนิ่ง (ลบเท่าที่เพิ่ม): 20/วัน = ~5 MB · 50/วัน = ~13 MB · 141/วัน = ~35 MB → **เลิกเป็นปัญหาถาวรไม่ว่าใช้หนักแค่ไหน**

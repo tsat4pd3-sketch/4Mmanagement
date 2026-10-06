@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabaseDR } from '../supabaseClient';
+import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { mailsMissingFiles } from '../utils/mailInbox';
@@ -19,6 +19,25 @@ const tsOf = (r) => new Date(r.received_at || r.created_at).getTime();
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', {
   timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
 }) : '—');
+
+/** 🔒 ไฟล์จากเมลอ่านผ่าน Edge Function `demand-mail-file` เท่านั้น (06/10 · B5)
+    bucket `demand-mail` ไม่เปิดให้ anon แล้ว — ฟังก์ชันตรวจ token ล็อกอินของ Main + สิทธิ์ก่อนส่งไฟล์
+    ห้ามกลับไปเรียก `supabaseDR.storage.from('demand-mail').download()` (จะได้ 400/ไม่พบไฟล์) */
+async function downloadMailFile(id) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('ต้องล็อกอินก่อน');
+  const { data, error } = await supabaseDR.functions.invoke('demand-mail-file', {
+    body: { id },
+    headers: { 'x-esm-token': session.access_token, 'x-esm-apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+  });
+  if (error) {
+    let msg = error.message;
+    try { msg = (await error.context.json()).error || msg; } catch { /* ตอบไม่ใช่ JSON — ใช้ข้อความเดิม */ }
+    throw new Error(msg);
+  }
+  if (!(data instanceof Blob) || !data.size) throw new Error('ได้ไฟล์ว่างกลับมา');
+  return data;
+}
 
 export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const [rows, setRows] = useState([]);
@@ -57,8 +76,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const open = async (r) => {
     setBusy(r.id);
     try {
-      const { data, error } = await supabaseDR.storage.from('demand-mail').download(r.storage_path);
-      if (error) throw error;
+      const data = await downloadMailFile(r.id);
       await onOpen([new File([data], r.file_name)], [r]);
     } catch (e) { toast.error(`เปิดไฟล์จากเมลไม่ได้: ${e.message}`); }
     setBusy(null);

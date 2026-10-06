@@ -14,9 +14,14 @@
 
 **สายงาน:** Outlook คลาสสิกบนเครื่อง user → `tools/outlook-mail-ingest/esm_mail_ingest.py` (pywin32 · รันเองตอน login
 ผ่าน Startup folder · เช็คทุก 15 นาที) → Edge Function **`ingest-demand-mail` (DR · verify_jwt=false · ตรวจ `x-ingest-token`)**
-→ Storage `demand-mail` (private · anon อ่านได้) + ตารางคิว **`demand_mail_inbox`** → แผง **📬 ไฟล์จากเมลรอนำเข้า**
+→ Storage `demand-mail` (private · **anon อ่านไม่ได้แล้ว 06/10**) + ตารางคิว **`demand_mail_inbox`** → แผง **📬 ไฟล์จากเมลรอนำเข้า**
 ในแท็บอัพโหลด (`src/components/DemandMailInbox.jsx`) → กด "เปิดเพื่อนำเข้า" = ไฟล์เข้า `handleFiles` → preview → `doImportEdi` เดิม
 → นำเข้าสำเร็จ ปิดแถวคิวเป็น `imported` + `batch_id` เอง (`markMailImported`)
+· 🔒 **เปิดไฟล์ผ่าน Edge Function `demand-mail-file` เท่านั้น (06/10 · DB audit B5)** — `downloadMailFile(id)` ใน
+  `DemandMailInbox.jsx` ส่ง access token ของ Main → function ตรวจ `/auth/v1/user` + `has_perm('demand:upload')`
+  หรือ `page:/planner-sales` แล้วค่อยโหลดด้วย service role · policy `demand_mail_read` ถูกถอด
+  (`20261006_demand_mail_bucket_private_dr.sql`) — เดิมใครถือ anon key ก็โหลดยอดสั่งลูกค้าได้ไม่ต้องล็อกอิน ·
+  **ห้ามกลับไปเรียก `storage.from('demand-mail')` จากหน้าเว็บ** (มีด่าน `demand-mail-via-edge-function`)
 
 - 🔴 **สคริปต์และ Edge Function ไม่แกะไฟล์** — ตัวอ่าน 830/862 มีที่เดียว (`PlannerSales.jsx` + `ediDetect`/`ediMerge`) ห้ามเขียนชุดที่ 2 ใน Python/Deno
 - 🔴 **เฟสนี้ยังให้คนกดยืนยัน** (กลไก A แก้แล้ว 01/10 — เหลือเหตุผลเรื่องความไว้ใจก่อนเปิดนำเข้าเองทั้งหมด) · จะให้นำเข้าเองทั้งหมด
