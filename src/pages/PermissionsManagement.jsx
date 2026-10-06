@@ -1,7 +1,10 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { supabase } from '../supabaseClient';
-import { loadPermissions } from '../utils/permissions';
+import { loadPermissions, canSeeded } from '../utils/permissions';
+import { UserContext } from '../App';
+import { checkWrite } from '../utils/dbWrite';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 import PageHeader from '../components/PageHeader';
@@ -174,6 +177,11 @@ const PAGE_GROUPS = [
 ];
 
 export default function PermissionsManagement() {
+  /* 🔴 ด่านของผู้ที่เปิดจอ — `canSeeded` ไม่ใช่ `can` (QC audit 06/10)
+     ยังไม่ apply `20261006_permissions_manage_perm_main.sql` ⇒ คีย์ไม่อยู่ในทะเบียน ⇒ admin เท่านั้น
+     = พฤติกรรมเดิมเป๊ะ · apply แล้ว admin จึงแจกให้ role อื่นได้จริง (DB ยอมรับด้วย policy เดียวกัน) */
+  const { role: myRole } = useContext(UserContext);
+  const canManage = canSeeded('permissions', 'manage', myRole);
   const [tab, setTab] = useTabParam(['matrix', 'pages', 'actions'], 'matrix');
   const [rows, setRows] = useState([]);
   const [catalog, setCatalog] = useState([]);
@@ -260,6 +268,10 @@ export default function PermissionsManagement() {
 
   const toggle = async (permissionKey, role, current) => {
     if (role === 'admin') return; // admin เข้าถึงได้เสมอ แก้ไม่ได้
+    /* 🔴 ด่านของ "คนที่เปิดจอนี้" (QC audit 2026-10-06) — เดิมหน้านี้ไม่เช็คสิทธิ์ผู้ดูเลย
+       (`role` ในพารามิเตอร์คือ role ของ**คอลัมน์** ไม่ใช่ของผู้ใช้) ⇒ ใครที่ถือ `page:/permissions`
+       ได้ matrix ที่ติ๊กได้ทุกช่อง · `canSeeded` = deploy-safe (ยังไม่ apply migration ⇒ admin เท่านั้น) */
+    if (!canManage) { toast.error('ไม่มีสิทธิ์แก้ตารางสิทธิ์ (ต้องมี permissions:manage)'); return; }
     // ยืนยันเฉพาะตอน "ปิดสิทธิ์" (current=true→false) — มีผลทุกเครื่องทันที กันแตะ matrix พลาด
     // (เปิดสิทธิ์ = additive ไม่ต้องถาม ให้แก้ matrix ลื่น)
     if (current && !confirm(`ปิดสิทธิ์ "${permissionKey}" ของ role "${role}" ?\n\nมีผลทุกเครื่องทันที — ผู้ใช้ role นี้จะเข้า/ทำสิ่งนี้ไม่ได้`)) return;
@@ -274,12 +286,19 @@ export default function PermissionsManagement() {
     });
     // upsert (ไม่ใช่ update) — เผื่อ catalog เพิ่มรายการใหม่ที่ยังไม่มีแถว role_permissions
     // update ที่ไม่เจอแถวจะเงียบ (ไม่ error) ทำให้ UI โชว์สำเร็จทั้งที่ไม่ได้บันทึก
-    const { error } = await supabase.from('role_permissions')
-      .upsert({ role, permission_key: permissionKey, allowed: nextVal }, { onConflict: 'role,permission_key' });
+    /* 🔴 ต้อง `.select()` แล้ว**นับแถว** (กฎเหล็ก DB ข้อ 2 · QC audit 06/10)
+       RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ เดิม `setRows` ติ๊กล่วงหน้าไว้แล้ว
+       แต่ฐานไม่เปลี่ยน และไม่มี toast แดง = **จอโกหกเรื่อง "ใครมีสิทธิ์อะไร"**
+       ซึ่งเป็นข้อมูลที่ทุกจอในระบบพึ่ง ⇒ 0 แถว ต้องคืนช่องติ๊กกลับ + บอกเหตุผล */
+    const res = await supabase.from('role_permissions')
+      .upsert({ role, permission_key: permissionKey, allowed: nextVal }, { onConflict: 'role,permission_key' })
+      .select('role');
     setSaving(prev => { const n = { ...prev }; delete n[cellId]; return n; });
-    if (error) {
-      toast.error('บันทึกไม่สำเร็จ: ' + error.message);
-      setRows(prev => prev.map(r => (r.role === role && r.permission_key === permissionKey) ? { ...r, allowed: current } : r));
+    const revert = () => setRows(prev => prev.map(r => (r.role === role && r.permission_key === permissionKey) ? { ...r, allowed: current } : r));
+    if (!checkWrite(res, 'บันทึกสิทธิ์')) { revert(); return; }
+    if (!(res.data || []).length) {
+      toast.error('บันทึกไม่ติด (0 แถว) — ไม่มีสิทธิ์แก้ทะเบียนสิทธิ์ (ต้องมี permissions:manage)');
+      revert();
       return;
     }
     await loadPermissions(true); // รีเฟรช cache ของเซสชันนี้ (เซสชันอื่น sync ผ่าน realtime ใน App.jsx)
@@ -291,11 +310,12 @@ export default function PermissionsManagement() {
     return (
       <td style={{ textAlign: 'center', padding: '8px 4px' }}>
         {/* label.tbtn = ขยาย hit area ≥40px บนจอทัช (matrix ช่องแน่น 11 คอลัมน์) — desktop ไม่เปลี่ยน */}
-        <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: role === 'admin' ? 'not-allowed' : 'pointer' }}>
+        <label className="tbtn" title={!canManage ? 'ดูอย่างเดียว — ต้องมีสิทธิ์ permissions:manage' : undefined}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: (role === 'admin' || !canManage) ? 'not-allowed' : 'pointer', opacity: canManage ? 1 : 0.55 }}>
           <input
             type="checkbox"
             checked={checked}
-            disabled={role === 'admin' || isSaving}
+            disabled={role === 'admin' || isSaving || !canManage}
             onChange={() => toggle(permissionKey, role, checked)}
             style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: role === 'admin' ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.4 : 1 }}
           />
@@ -425,6 +445,10 @@ export default function PermissionsManagement() {
         ]}
         tab={tab} onTab={setTab}
       />
+
+      {/* 🔒 ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล — ไม่งั้นช่องติ๊กที่กดไม่ได้จะดูเหมือนจอพัง */}
+      <ReadOnlyNote show={!canManage} role={myRole} what="แก้ตารางสิทธิ์" permKey="permissions:manage"
+        hint="ดูได้ทั้งตาราง แต่ติ๊กไม่ได้ — ฐานข้อมูลใช้คีย์เดียวกันนี้เป็นด่าน (เดิมติ๊กได้บนจอแต่ไม่บันทึกจริง)" />
 
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —

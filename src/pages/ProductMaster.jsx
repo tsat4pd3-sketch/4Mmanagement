@@ -1715,7 +1715,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         : r;
     };
     const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
-      supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
+      // is_operation = ต้องรู้ว่า "ใบนี้เป็นขั้นงานไหม" (ใบขั้นงานห้ามเอาไปเทียบกับใบพาร์ท)
+      supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name, is_operation').eq('is_active', true).order('line_name').order('name'),
       fetchBom(),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
@@ -2027,11 +2028,22 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      (user 06/10: เข้าใจว่าต้องสร้างใบแยกกันเอง ที่จริงใบนั้นคือการนิยามครั้งเดียวที่ใบ FG ยืมมากาง) */
   const openSheetOfMat = useCallback((mat) => {
     const k = upMat(mat);
-    const target = items.find(i => upMat(i.mat_no) === k);
+    /* 🔴 ต้องค้นจาก `products` (= dr_products) **ห้ามค้นจาก `items`** (= bom_items ของใบที่เปิดอยู่)
+       บั๊กจริง 06/10: ค้นจาก items แล้วเจอ "บรรทัด BOM" ที่มี mat ตรงกัน → setSelProduct(bom row)
+       ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
+       (ไม่มี error ไม่มี toast — กดแล้วเจอใบว่าง เงียบๆ) */
+    const target = products.find(p => upMat(p.mat_no) === k);
     if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
     setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
     setSelProduct(target); setSearch(target.mat_no || '');
-  }, [items, selProduct]);
+  }, [products, selProduct]);
+
+  /* ใบไหนเป็น "ขั้นงาน (OP)" — ใบขั้นงานตอบ "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท
+     ⇒ ห้ามเอามาเทียบว่าชุดลูกต่างกัน (เตือนผิด 5 คู่จาก 19 · วัดจริง 06/10) */
+  const opSheetIds = useMemo(
+    () => new Set(products.filter(p => p.is_operation).map(p => p.id)),
+    [products]);
+  const isOpSheet = useCallback((sheetId) => opSheetIds.has(sheetId), [opSheetIds]);
 
   const openPicker = (parentMat) => {
     setPickerQ(''); setPickerSel([]);
@@ -2382,6 +2394,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                      isOpSheet={isOpSheet}
                       onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
                       onOpenSheet={openSheetOfMat} />
                   </div>
