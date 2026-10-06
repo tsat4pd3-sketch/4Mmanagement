@@ -301,3 +301,42 @@ export const SHIFT_META = Object.freeze({
   none:  { label: 'ยังไม่ตั้งกะ', color: '#64748b' },
 });
 export const shiftMeta = (s) => SHIFT_META[s] || SHIFT_META.none;
+
+/* ── 📺 โหมดจอ TV — แบ่งหน้าแทนการเลื่อน (2026-10-06 · คำสั่ง user · UI §6.23) ───────────────
+   จอ TV หน้าไลน์ไม่มีเมาส์ ⇒ ของใต้ขอบจอ = ไม่มีใครเห็น · กติกาเดียวกับ OBEYA (BoardPager)
+   1 หน้า = 1 แผนก · คอลัมน์ทีมเรียงข้างกันเหมือนบอร์ดกระดาษ · การ์ดขนาดคงที่ ⇒ นับได้ว่าลงกี่ใบ
+   แผนกที่การ์ดล้นช่อง → ตัดเป็นหลายหน้า (หน้า k แสดงช่วงที่ k ของ "ทุกคอลัมน์" พร้อมกัน
+   ทีม A หน้า 2 จึงอยู่คู่ทีม B หน้า 2 เสมอ) · ช่องว่างนับเป็นการ์ด 1 ใบ (ห้ามหายเพราะไม่พอที่)
+   🔴 ห้ามบีบการ์ดให้เล็กลงเพื่อยัดให้ครบ — แบ่งหน้าเพิ่มแทน (UI §6.23 ข้อ 2)
+
+   @param {object[]} depts   board.depts (หลังกรองแผนก)
+   @param {(nCols:number)=>number} capOf  จำนวนการ์ดที่ลงได้ต่อคอลัมน์ เมื่อแผนกมี nCols คอลัมน์ (≥1)
+   @returns {Array<{ dept, part:number, parts:number, cols:Array<{ col, items:Array<{kind:'op',p}|{kind:'slot'}>, more:number }> }>} */
+export function paginateTv(depts, capOf) {
+  const pages = [];
+  for (const d of depts || []) {
+    const cols = d.cols || [];
+    const cap = Math.max(1, Math.floor(Number(capOf(Math.max(1, cols.length))) || 1));
+    const itemsOf = (c) => [
+      ...c.ops.map(p => ({ kind: 'op', p })),
+      ...Array.from({ length: c.slots || 0 }, () => ({ kind: 'slot' })),
+    ];
+    const all = cols.map(itemsOf);
+    const parts = Math.max(1, ...all.map(a => Math.ceil(a.length / cap)));
+    for (let k = 0; k < parts; k++) {
+      pages.push({
+        dept: d, part: k, parts,
+        cols: cols.map((c, i) => ({ col: c, items: all[i].slice(k * cap, (k + 1) * cap), more: Math.max(0, all[i].length - (k + 1) * cap) })),
+      });
+    }
+  }
+  return pages;
+}
+
+/** การ์ดต่อคอลัมน์จากขนาดจริง — pure (เทสได้) · ไม่มีที่สักแถว/คอลัมน์ = 1 (กันหารศูนย์ · จอยังแบ่งหน้าต่อได้) */
+export function tvCardCapacity({ areaW, areaH, nCols, cardW, cardH, gap = 6, colPad = 16, colGap = 8 }) {
+  const colW = (areaW - colGap * (nCols - 1)) / Math.max(1, nCols) - colPad;
+  const perRow = Math.max(1, Math.floor((colW + gap) / (cardW + gap)));
+  const rows = Math.max(1, Math.floor((areaH + gap) / (cardH + gap)));
+  return perRow * rows;
+}

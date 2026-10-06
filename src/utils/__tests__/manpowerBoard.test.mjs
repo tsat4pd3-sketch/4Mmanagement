@@ -137,3 +137,24 @@ test('ผัง LAYOUT: คนประจำจุด + ย้ายมาช�
   assert.deepEqual(res[1].people.map(p => p.emp.id), ['c']);
   assert.equal(res[1].people[0].away, true, 'จุดประจำต้องบอกว่าวันนี้ไปยืนที่อื่น');
 });
+
+test('📺 จอ TV: แผนกที่การ์ดล้น ตัดหลายหน้า · ทุกคอลัมน์ตัดช่วงเดียวกัน · ช่องว่างนับเป็นการ์ด', () => {
+  const P = (n, t) => Array.from({ length: n }, (_, i) => ({ id: `${t}${i}` }));
+  const depts = [
+    { key: 'd1', cols: [{ team: 'A', ops: P(5, 'a'), slots: 2 }, { team: 'B', ops: P(3, 'b'), slots: null }] },
+    { key: 'd2', cols: [{ team: 'A', ops: P(2, 'x'), slots: 0 }] },
+  ];
+  const pages = M.paginateTv(depts, () => 4);
+  assert.equal(pages.length, 3);                       // d1: A มี 7 ใบ (5+ว่าง 2) ⇒ 2 หน้า · d2: 1 หน้า
+  assert.deepEqual(pages.map(p => [p.dept.key, p.part, p.parts]), [['d1', 0, 2], ['d1', 1, 2], ['d2', 0, 1]]);
+  assert.equal(pages[0].cols[0].items.length, 4); assert.equal(pages[0].cols[0].more, 3);
+  assert.deepEqual(pages[1].cols[0].items.map(i => i.kind), ['op', 'slot', 'slot']);
+  assert.equal(pages[1].cols[1].items.length, 0, 'ทีม B หมดแล้วหน้า 2 ยังมีคอลัมน์ (หัวทีม) แต่ไม่มีการ์ด');
+  assert.deepEqual(M.paginateTv([], () => 4), []);
+});
+
+test('📺 จอ TV: ความจุการ์ดต่อคอลัมน์ · ที่ไม่พอ = 1 (ไม่หารศูนย์)', () => {
+  // คอลัมน์กว้าง (1000-8)/2-16 = 480 ⇒ (480+6)/(130+6) = 3 ใบ/แถว · สูง (300+6)/(120+6) = 2 แถว
+  assert.equal(M.tvCardCapacity({ areaW: 1000, areaH: 300, nCols: 2, cardW: 130, cardH: 120 }), 6);
+  assert.equal(M.tvCardCapacity({ areaW: 50, areaH: 10, nCols: 3, cardW: 130, cardH: 120 }), 1);
+});
