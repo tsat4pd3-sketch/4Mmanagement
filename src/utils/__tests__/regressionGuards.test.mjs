@@ -2561,3 +2561,74 @@ test('🛡️ PurchaseBulkModal: บันทึกรับเข้าคล�
   assert.ok(/if\s*\(\s*error\s*\)\s*\{\s*const\s*\{[^}]*\}\s*=\s*await\s+revertClaimed\(/.test(code),
     '\n\n❌ PurchaseBulkModal ไม่คืนก้อนที่ claim ไปแล้วเมื่อก้อนถัดไปล้ม\n');
 });
+/* ═══ กฎเชิงความสัมพันธ์ — คีย์ของ upsert ต้องเป็น "คอลัมน์ล้วน" (2026-10-06 · เกิดเป็นครั้งที่ 3) ═══
+
+   PostgREST ส่งได้แค่ `on_conflict=<ชื่อคอลัมน์>` ⇒ Postgres ต้อง **infer** index จากรายชื่อนั้น
+   index ที่เป็น **expression** (`coalesce(x,'')`, `lower(x)`) หรือ **partial** (`where …`)
+   อ้างแบบนี้ไม่ได้ ⇒ 42P10 `there is no unique or exclusion constraint matching the ON CONFLICT
+   specification` ⇒ **ทั้งก้อนไม่ถูกเขียนเลย** (supabase-js ไม่ throw — เห็นก็ต่อเมื่อมี checkWrite)
+
+   เกิดจริงมาแล้ว 3 รอบ:
+     • 09/09 `customer_pull_signals` — index ใช้ coalesce(supplier_ref, customer_part_no) ⇒ แถวหลักฐานหายทั้งชุด
+     • 02–05/10 `monitor_board_parts` — index เป็น partial (`where mat_no is not null and is_active`)
+     • 06/10 `monitoring_shipments` — index ใช้ coalesce(sheet,'') ⇒ ประวัติการส่ง 804 แถวไม่ลง
+   ทางแก้มาตรฐานของโปรเจคนี้: **คอลัมน์ในคีย์ทำเป็น NOT NULL DEFAULT '' แล้ว index ด้วยคอลัมน์ล้วน**
+
+   ด่านนี้ไม่ได้ห้าม expression/partial index (มีที่ใช้ถูกต้องเยอะ) — ห้ามเฉพาะ **การจับคู่**:
+   ตารางที่ client upsert ด้วย onConflict ชุดหนึ่ง แต่ในไฟล์ migration มีแค่ index ที่อ้างชุดนั้นไม่ได้ */
+const SQL_KEYS_CACHE = (() => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const plain = new Map(), bad = new Map();        // table → Set<"a,b,c">
+  const add = (map, t, cols) => { if (!map.has(t)) map.set(t, new Set()); map.get(t).add(cols); };
+  const norm = (list) => {
+    const parts = []; let depth = 0, cur = '';
+    for (const ch of list) {
+      if (ch === '(') depth++; if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+    }
+    parts.push(cur);
+    return parts.map(s => s.trim().toLowerCase().replace(/\s+(asc|desc)$/, ''));
+  };
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.sql')) continue;
+    const sql = readFileSync(join(dir, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ').split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+    const re = /create\s+unique\s+index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?[\w.]+\s+on\s+(?:\w+\.)?(\w+)\s*\(([^;]*?)\)\s*(where[^;]*)?;/gi;
+    for (const m of sql.matchAll(re)) {
+      const [, table, colList, where] = m;
+      const cols = norm(colList);
+      const key = cols.join(',');
+      const inferable = !where && !cols.some(c => c.includes('('));
+      /* คีย์ "ฐาน" ของ index ที่อ้างไม่ได้ = ชื่อคอลัมน์ที่ห่อด้วยฟังก์ชัน (coalesce(sheet,'') → sheet) */
+      add(inferable ? plain : bad, table,
+        inferable ? key : cols.map(c => (c.match(/\(\s*(\w+)/) || [, c])[1]).join(','));
+    }
+  }
+  return { plain, bad };
+})();
+
+test('🛡️ upsert-key-must-be-plain-columns — onConflict ต้องตรงกับ unique index ที่เป็นคอลัมน์ล้วน', () => {
+  const hits = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(/from\(\s*['"`](\w+)['"`]\s*\)([\s\S]{0,700}?)onConflict:\s*['"`]([^'"`]+)['"`]/g)) {
+      const [, table, between, conflict] = m;
+      if (!between.includes('.upsert(') || /from\(\s*['"`]/.test(between)) continue;   // คนละคำสั่ง
+      const key = conflict.split(',').map(s => s.trim().toLowerCase()).join(',');
+      if (SQL_KEYS_CACHE.plain.get(table)?.has(key)) continue;          // มี index คอลัมน์ล้วนตรงชุด = ผ่าน
+      if (!SQL_KEYS_CACHE.bad.get(table)?.has(key)) continue;           // ไม่รู้จัก = ไม่เดา (ด่านนี้ไม่ตะโกนมั่ว)
+      hits.push(`${relative(ROOT, file)} → from('${table}') onConflict '${conflict}'`);
+    }
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ upsert ด้านล่างอ้างคีย์ที่ตรงกับ **expression/partial unique index** เท่านั้น\n'
+    + '   PostgREST ส่งได้แค่ชื่อคอลัมน์ ⇒ Postgres infer index ไม่เจอ ⇒ 42P10\n'
+    + '   "there is no unique or exclusion constraint matching the ON CONFLICT specification"\n'
+    + '   ⇒ **ทั้งก้อนไม่ถูกเขียนเลย** (supabase-js ไม่ throw — เงียบถ้าไม่มี checkWrite)\n'
+    + '   เคยเกิดจริง 3 รอบ: customer_pull_signals 09/09 · monitor_board_parts 02–05/10 ·\n'
+    + '   monitoring_shipments 06/10 (ประวัติการส่ง 804 แถวไม่ลง ทั้งที่จอขึ้นสรุปว่าจะลง)\n'
+    + '   แก้ยังไง: ทำคอลัมน์ในคีย์เป็น NOT NULL DEFAULT \'\' แล้วสร้าง unique index **คอลัมน์ล้วน**\n'
+    + '   (เขียน migration ไว้ใน supabase/migrations/ ด้วย ไม่งั้นด่านนี้ยังไม่เห็นว่ามีคีย์ใหม่แล้ว)\n'
+    + '   ⚠️ ห้ามแก้ด้วย coalesce() ใน index — นั่นคือสิ่งที่พากลับมา 42P10 ทุกครั้ง\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
