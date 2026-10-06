@@ -36,7 +36,12 @@ const td = { padding: '5px 9px', fontSize: 11.5, color: 'var(--text)', borderTop
  * @param {Function} bomOf    (mat) => [{ mat_no, part_name, qty_per_unit, uom }]
  */
 /* `onOpenSheet(mat)` = พาไปเปิด "ใบของพาร์ทตัวนั้น" — ไม่ส่งมา = ไม่มีปุ่ม (จอ read-only ยังใช้ได้เหมือนเดิม) */
-export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownSheetOf, onDeleteDupes, onOpenSheet }) {
+/* `isOpSheet(sheetId)` = ใบนั้นเป็น "ขั้นงาน (OP)" ไหม — ไม่ส่งมา = ถือว่าเป็นใบพาร์ททั้งหมด
+   🔴 ใบ OP กับใบพาร์ท **ตอบคนละคำถาม** ⇒ ห้ามเอามาเทียบว่า "ต่างกัน"
+      ใบ OP = "ขั้นนี้กินอะไร" (เช่น ขั้นเชื่อมนัท M6 → นัท 30044771)
+      ใบพาร์ท = "พาร์ทนี้ประกอบจากอะไร" (เช่น คอยล์ 50027969)
+   วัดจริง 06/10: เทียบรวม OP = เตือนผิด 5 คู่จาก 19 (26%) — สัญญาณหลอกทำให้คนเลิกเชื่อคำเตือน */
+export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownSheetOf, isOpSheet, onDeleteDupes, onOpenSheet }) {
   const [showAll, setShowAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -56,12 +61,14 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
     /* 🔎 แถวที่ "ใบนี้จัดลูกไว้เอง ทั้งที่ของชิ้นนี้มีใบของตัวเอง" — เทียบให้เห็นว่าต่างกันกี่รายการ
        (ไม่เทียบ = จอเงียบ แล้วไม่มีใครรู้ว่า 2 ใบให้ตัวเลขต่างกัน — เคสจริง 10105772 vs 20070036) */
     const diffs = new Map();
+    const isOp = typeof isOpSheet === 'function' ? isOpSheet : () => false;
     r.rows.filter(x => x.sheetConflict).forEach(x => {
       if (diffs.has(x.mat_no)) return;
-      diffs.set(x.mat_no, sheetChildDiff(x.mat_no, bomOf, x.sheet, x.ownSheet));
+      // ใบที่กำลังดูเป็นขั้นงาน = ไม่เทียบ (คนละคำถาม) · ยังให้กดเข้าไปดูใบพาร์ทได้เหมือนเดิม
+      diffs.set(x.mat_no, isOp(x.sheet) ? null : sheetChildDiff(x.mat_no, bomOf, x.sheet, x.ownSheet));
     });
     return { ...r, flowWarn: fw, diffs };
-  }, [rootMat, bomOf, sheetFor, ownSheetOf]);
+  }, [rootMat, bomOf, sheetFor, ownSheetOf, isOpSheet]);
 
   if (!rows.length) {
     return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี BOM ของ {rootMat}</div>;
@@ -194,13 +201,21 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                         ไม่ต่างกันเลยก็ยังต้องบอกว่า "ซ้ำ 2 ใบ" — แก้ใบเดียวแล้วอีกใบค้างคือกับดักถัดไป */}
                     {r.sheetConflict && (() => {
                       const d = diffs.get(r.mat_no);
+                      /* 🔴 ใบขั้นงาน (OP) ไม่เทียบ — บอกแค่ว่ามีใบของตัวเองให้กดดู ห้ามเขียนว่า "ต่างกัน"
+                         (ขั้นเชื่อมนัทกินนัท · ใบพาร์ทบอกคอยล์ = ถูกทั้งคู่ ไม่ใช่ขัดกัน) */
+                      if (!d) return (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
+                          title={`${r.mat_no} มีใบ BOM ของตัวเอง — ใบขั้นงานบอก "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท จึงไม่เทียบให้`}>
+                          📄 {r.mat_no} มีใบของตัวเองด้วย (ใบขั้นงานไม่เทียบกับใบพาร์ท)
+                        </div>
+                      );
                       return (
                         <div style={{ fontSize: 11, color: TONE.warn, fontWeight: 700, marginTop: 1, lineHeight: 1.45 }}
                           title={`ลูกของ ${r.mat_no} ถูกกรอกไว้ทั้งในใบนี้ และในใบ BOM ของ ${r.mat_no} เอง`}>
                           ⚠️ ใบนี้กรอกลูกไว้เอง · {r.mat_no} มีใบของตัวเองด้วย
-                          {d ? (d.differs
+                          {d.differs
                             ? ` — ต่างกัน ${d.differs} รายการ${d.onlyHere.length ? ` (ใบนี้เกิน: ${d.onlyHere.join(', ')})` : ''}${d.onlyOwn.length ? ` (ใบนั้นเกิน: ${d.onlyOwn.join(', ')})` : ''}`
-                            : ' — ตรงกันทั้ง ' + d.same + ' รายการ แต่ต้องแก้ 2 ที่') : ''}
+                            : ` — ตรงกันทั้ง ${d.same} รายการ แต่ต้องแก้ 2 ที่`}
                         </div>
                       );
                     })()}

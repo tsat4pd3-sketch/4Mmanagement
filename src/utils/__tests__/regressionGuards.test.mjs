@@ -2535,6 +2535,40 @@ test('🛡️ BOM: ปุ่มเปิดใบลูกต้องตัด�
     + '   กฎความซื่อสัตย์ของจอ: ข้อมูลขัดกัน **ต้องเขียนบนจอ ห้ามเงียบ** (CLAUDE.md §OBEYA)\n');
 });
 
+/* ── 🔴 กดเลข MAT ในต้นไม้ BOM ต้องค้นจาก `products` ไม่ใช่ `items` (2026-10-06) ───────
+   บั๊กจริงที่หลุดไปพร้อมฟีเจอร์: `openSheetOfMat` ค้นจาก `items` (= bom_items ของใบที่เปิดอยู่)
+   แล้วเจอ "บรรทัด BOM" ที่มี mat ตรงกัน → `setSelProduct(<bom row>)`
+   ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
+   เงียบสนิท: ไม่มี error ไม่มี toast ไม่มีอะไรบนจอบอกว่ากดไปเจอใบผิด
+   ⇒ `selProduct` ต้องมาจาก `products` (= dr_products) เท่านั้น                        */
+test('🛡️ /products BOM: openSheetOfMat ต้องค้นจาก products (dr_products) ไม่ใช่ items (bom_items)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const i = code.indexOf('const openSheetOfMat');
+  assert.ok(i > 0, '\n\n❌ หา openSheetOfMat ใน ProductMaster.jsx ไม่เจอ — เปลี่ยนชื่อแล้วต้องอัปเดตด่านนี้\n');
+  const fn = code.slice(i, i + 900);
+  assert.ok(!/items\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ค้นใบจาก `items` (= bom_items ของใบที่เปิดอยู่)\n'
+    + '   ทำไมผิด: เจอ "บรรทัด BOM" แล้วเอา id ของบรรทัดไปเป็น selProduct.id\n'
+    + '            ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = เปิดมาเจอใบเปล่า **เงียบสนิท**\n'
+    + '   แก้ยังไง: `products.find(p => upMat(p.mat_no) === k)` (products = dr_products)\n');
+  assert.ok(/products\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ไม่ได้ค้นจาก `products` — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ใบขั้นงาน (OP) ห้ามถูกเทียบชุดลูกกับใบพาร์ท (2026-10-06) ──────────────────────────
+   ใบ OP ตอบ "ขั้นนี้กินอะไร" (ขั้นเชื่อมนัท M6 → นัท 30044771)
+   ใบพาร์ท ตอบ "พาร์ทนี้ประกอบจากอะไร" (คอยล์ 50027969) — **ถูกทั้งคู่ ไม่ใช่ขัดกัน**
+   เทียบรวม = เตือนผิด 5 คู่จาก 19 (26%) · สัญญาณหลอกทำให้คนเลิกเชื่อคำเตือนทั้งจอ        */
+test('🛡️ /products BOM: ต้องส่ง isOpSheet ให้ BomTreeView (ไม่งั้นเตือนผิดที่ใบขั้นงาน)', () => {
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/isOpSheet=\{/.test(page),
+    '\n\n❌ ProductMaster ไม่ส่ง `isOpSheet` ให้ BomTreeView\n'
+    + '   ผล: ใบขั้นงานจะขึ้น "⚠️ ต่างกัน N รายการ" ทั้งที่ 2 ใบตอบคนละคำถาม (เตือนผิด 5 คู่จาก 19)\n');
+  const view = stripComments(readFileSync(join(ROOT, 'src/components/BomTreeView.jsx'), 'utf8'));
+  assert.ok(/isOpSheet/.test(view),
+    '\n\n❌ BomTreeView ไม่รับ/ไม่ใช้ `isOpSheet` แล้ว — ถอดออกแล้วใบขั้นงานจะถูกเทียบผิด\n');
+});
+
 /* ── การ์ดบนบอร์ด NM ต้องมี "ตัวเลข" ไม่ใช่แค่สี (06/10/2026 · feedback user "design obeya ยังดีกว่า") ──
    วัดจริงก่อนแก้: บอร์ด 737D MLM มีข้อมูลนับได้ทั้ง 21 แผง แต่ไม่โชว์ตัวเลขสักใบ
    ⇒ ตัวเลขทุกตัวต้องมาจาก panelMetric() (pure · มีเทส) ห้ามนับเองในหน้า */
