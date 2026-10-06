@@ -2290,6 +2290,46 @@ test('🛡️ /nm-board: ห้ามเรียงการ์ดใหม่�
     + '              บอร์ดกระดาษของจริง ตำแหน่งแผงคงที่เสมอ — ระบบต้องเหมือนกัน\n');
 });
 
+/* ── หมวดฐานพนักงาน: "จอโชว์ว่าทำได้ แต่ระบบไม่ให้ทำ" (ไล่ตรวจทั้งหมวด 06/10/2026) ─────────
+   คลาสเดียวกับ /org-setup 05/10 (ปุ่มโชว์ แต่ด่านตอนบันทึกไม่รู้จักชั้นใหม่) — user สั่งให้
+   ไล่ตรวจให้หมดในหมวดฐานพนักงาน · เจอ 4 จุด แก้แล้ว ด่านข้างล่างกันไม่ให้ย้อนกลับ */
+test('🛡️ /operator: ปุ่มอนุมัติอัพระดับ ต้องเช็คสิทธิ์ที่ "การเขียนจริง" ต้องใช้ด้วย', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+writeBlock\s*=/.test(code) && /canApprove\s*=\s*mayApprove\s*&&\s*!writeBlock/.test(code),
+    '\n\n❌ operator.jsx: canApprove ดูแค่ skills:approve_levelup\n'
+    + '   ทำไมห้าม: การอนุมัติเขียน employee_skills.score = to_level ซึ่ง RLS WITH CHECK บังคับ\n'
+    + '              score ≤ 50 ‖ skills:edit_high · สกิลค่าฝีมือ ‖ skills:edit_allowance\n'
+    + '              ⇒ ผู้อนุมัติที่ไม่มี edit_high กด Lv.75/100 = เด้ง error ดิบจาก Postgres\n'
+    + '   แก้ยังไง: คิด writeBlock จาก SKILL_EDIT_CAP + canEditHighSkill/canEditAllowance\n'
+    + '              แล้ว canApprove = mayApprove && !writeBlock (จอต้องบอกว่าขาดคีย์ไหน)\n');
+});
+
+test('🛡️ /operator: ช่องติ๊กสกิลที่คะแนนเกินเพดาน ต้องถูกล็อกเหมือนช่องคะแนน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/rowEditable\s*=[^;]*!lockedAllowance\s*&&\s*!lockedHigh/.test(code),
+    '\n\n❌ operator.jsx: rowEditable ไม่ได้รวม !lockedHigh\n'
+    + '   ทำไมห้าม: ช่องคะแนนถูกล็อก แต่ช่องติ๊กยังกดออกได้ ⇒ handleSaveEmp ข้ามแถวนั้นเงียบ\n'
+    + '              แล้วขึ้น "อัปเดตเรียบร้อย!" · เปิดดูใหม่สกิลยังอยู่ (วัดจริง 06/10:\n'
+    + '              720 แถว / 148 คน มีคะแนนเกินเพดาน 50 ที่ role leader ตั้งได้)\n');
+  assert.ok(/skipped\.push\(/.test(code) && /skipNote/.test(code),
+    '\n\n❌ operator.jsx: แถวที่สิทธิ์ไม่ถึงถูกข้ามโดยไม่บอกผู้ใช้ — ต้องเก็บ skipped แล้วรายงาน\n');
+});
+
+test('🛡️ /register: ช่องกลุ่มต้องเก็บ "ชื่อกลุ่ม" + เตือนกลุ่มที่ยังไม่ผูกไลน์ (เท่ากับ /operator)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Register.jsx'), 'utf8'));
+  assert.ok(!/orgGroupOpts\.map\(g\s*=>\s*<option[^>]*value=\{g\.code\s*\|\|\s*g\.name\}/.test(code),
+    '\n\n❌ Register.jsx เก็บ group_name เป็น `code || name` — ไม่ตรงกับ /operator ที่เก็บ "ชื่อ"\n'
+    + '   ทำไมห้าม: org_nodes(kind=line).code บางตัวคนละสตริงกับชื่อ (ของจริง 06/10:\n'
+    + '              ASSEMBLY 1 → code \'Assembly Line D1\') ⇒ คนลงทะเบียนใหม่แยกออกจาก\n'
+    + '              เพื่อนร่วมกลุ่ม 35 คนในทุกตัวกรอง และ /operator โชว์ว่า "(นอกผัง)"\n');
+  assert.ok(/ref_line_id\s*\?\s*''\s*:\s*'\s*⚠ ยังไม่ผูกไลน์'/.test(code) && /จะไม่ขึ้นในหน้าเช็คชื่อ/.test(code),
+    '\n\n❌ Register.jsx ไม่เตือนตอนเลือกกลุ่มที่ยังไม่ผูกไลน์ผลิต\n'
+    + '   ทำไมห้าม: ref_line_id ว่าง ⇒ line_id = null ⇒ พนักงานใหม่ไม่ขึ้นหน้าเช็คชื่อ เงียบสนิท\n'
+    + '              (เคสจริง 05/10 PD2 35 คน — /operator เตือนแล้ว หน้าลงทะเบียนต้องเตือนด้วย)\n');
+  assert.ok(/if\s*\(!canRegister\)\s*return toast\.error/.test(code),
+    '\n\n❌ Register.jsx: handleRegister ไม่มีด่านชั้นสอง — ปุ่ม disabled อย่างเดียวไม่พอ (Enter ก็ submit ได้)\n');
+});
+
 /* ── /nm-board ↔ /npi: ผูกกันด้วย "ตัวชี้" ห้ามให้ระบบเขียนทับสี EVA (06/10/2026 · คำสั่ง user) ──
    IEC เขียนกติกาไว้เองว่า EVA **คนตั้งสีเอง** (`Obeya_E_Board-V2.pptx` ข้อ 1) — ระบบ *เสนอ* ได้
    แต่ห้ามเขียนทับ · ถ้าบอร์ดเริ่มเอาสถานะเอกสารจาก NPI มาคิดสีเอง = ผิดกติกาเจ้าของบอร์ด */
