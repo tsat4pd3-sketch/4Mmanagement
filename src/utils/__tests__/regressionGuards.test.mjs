@@ -2551,3 +2551,13 @@ test('🛡️ /nm-board: ตัวเลขบนการ์ดต้องม�
     + '   ทำไมห้าม: กติกา "แถวที่ยังไม่ประเมินห้ามนับเป็นผ่าน" + "ตัวหารต้องเป็นแถวที่ประเมินแล้ว"\n'
     + '              อยู่ใน panelMetric() ที่เดียว · นับเองในหน้า = กติกาหลุดทีละจุดโดยไม่มีใครรู้\n');
 });
+
+/* ── รับของซื้อแบบรวมหลายใบ: ledger ล้มต้องคืนใบที่ claim ไป (06/10 · ช่องโหว่สโตร์ข้อ 4) ──
+   เดิมแค่ toast "ไปบันทึกเองที่ Line Stock" ⇒ ใบค้าง "รับเข้าแล้ว" ทั้งที่สต็อกไม่ขึ้น กดใหม่ไม่ได้ */
+test('🛡️ PurchaseBulkModal: บันทึกรับเข้าคลังล้ม/เลื่อนก้อนหลังล้ม ต้องคืนสถานะใบที่ขยับไปแล้ว', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/PurchaseBulkModal.jsx'), 'utf8'));
+  assert.ok(/if\s*\(\s*eLedger\s*\)\s*\{\s*const\s*\{[^}]*\}\s*=\s*await\s+revertClaimed\(/.test(code),
+    '\n\n❌ PurchaseBulkModal ไม่คืนสถานะใบเมื่อเขียน line_stock_transactions ล้ม (กฎเขียน DB ข้อ 6)\n');
+  assert.ok(/if\s*\(\s*error\s*\)\s*\{\s*const\s*\{[^}]*\}\s*=\s*await\s+revertClaimed\(/.test(code),
+    '\n\n❌ PurchaseBulkModal ไม่คืนก้อนที่ claim ไปแล้วเมื่อก้อนถัดไปล้ม\n');
+});
