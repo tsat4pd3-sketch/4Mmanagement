@@ -33,7 +33,7 @@ import useTabParam from '../utils/useTabParam';
 import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
-import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
+import { fetchByIds, openPlusHistory } from '../utils/fetchByIds';
 import { halfDayBreakIntervals } from '../utils/oee';
 import { SPENT_STATUSES } from '../utils/shiftCapacity';
 import PartCard, { partCardGrid } from '../components/PartCard';
@@ -1451,17 +1451,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   );
 }
 
-/* ใบค้าง (ทุกหน้า) + ประวัติล่าสุด N ใบ → { data, error } รูปเดียวกับผลคิวรีเดี่ยว (เรียงใหม่→เก่า)
-   ใบค้างโหลดไม่ครบ (error/เกินเพดาน) = error ทั้งก้อน ⇒ จอคงข้อมูลรอบก่อน + บอกว่าโหลดไม่ได้ */
-const openPlusHistory = async (openQ, histQ, histN) => {
-  const [op, hi] = await Promise.all([
-    fetchAllPages(openQ),
-    histQ().order('created_at', { ascending: false }).limit(histN),
-  ]);
-  const err = op.error ? { message: op.error } : op.truncated ? { message: 'ใบค้างเยอะเกินเพดาน — โหลดได้ไม่ครบ' } : hi.error;
-  const data = [...op.rows, ...(hi.data || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-  return { data, error: err || null };
-};
+/* ใบค้าง (ทุกหน้า) + ประวัติล่าสุด N ใบ → `openPlusHistory()` ของกลางใน utils/fetchByIds.js (ย้าย 06/10) */
 
 export default function HeijunkaKanban() {
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
@@ -1596,8 +1586,14 @@ export default function HeijunkaKanban() {
         () => supabaseDR.from('raw_withdrawal_requests').select('*').eq('status', 'issued'), 200),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
-      supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
-      supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
+      /* 🔴 06/10 (ช่องโหว่สโตร์ข้อ 7) — rack/บรรจุภัณฑ์ เดิม "ล่าสุด 200 ใบ ไม่กรองสถานะ" แบบเดียวกับใบเบิกเดิม
+         ⇒ ใบค้างเก่าหลุดหน้าต่างเมื่อใบโตขึ้น · ใบค้าง = ทุกใบ · ประวัติ = ล่าสุด N ใบ (rack ไม่มี created_at → requested_at) */
+      openPlusHistory(
+        () => supabaseDR.from('rack_requests').select('*').not('status', 'in', '(received,cancelled)'),
+        () => supabaseDR.from('rack_requests').select('*').eq('status', 'received'), 100, 'requested_at'),
+      openPlusHistory(
+        () => supabaseDR.from('packaging_withdrawal_requests').select('*').not('status', 'in', '(issued,cancelled)'),
+        () => supabaseDR.from('packaging_withdrawal_requests').select('*').eq('status', 'issued'), 100),
       /* ⚠️⚠️ กรอง `suggested`/`hold` ออกเสมอ — 2 สถานะนี้ยัง "ไม่ใช่คำสั่ง"
          suggested = ระบบเสนอแต่หัวหน้าไลน์ยังไม่ตัดสิน · hold = หัวหน้าเลือกพักไว้ก่อน
          สโตร์เห็น = ไปหยิบของที่ยังไม่มีใครสั่ง (docs/STORE-PULL-LOOP-DESIGN.md §4.1)
