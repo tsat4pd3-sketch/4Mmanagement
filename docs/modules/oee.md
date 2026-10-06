@@ -324,6 +324,9 @@ Dashboard คิดเองจาก `created_at` + CT ระดับ session 
   (std-second = ยอด × CT รวมข้ามพาร์ท · หักเวลาพัก) — ไม่มีสูตรที่ 2 ในระบบ
 - ตัววาด **`src/components/PlanSlipBar.jsx`** ใช้ร่วม `/dashboard` + `/management` (กันดริฟท์ซ้ำรอยเดิม)
   · หัวบอร์ด = ประโยคเต็ม · **แถว = ตัวเลขเดียว** (`compact`) เพราะคอลัมน์ซ้ายกว้างจริง ~120px
+- ตัววาด "ต้นเหตุ/ผู้ถูกพาล" = **`src/components/DelayBlameBar.jsx`** (กิน `dayDelaySummaryOf()` +
+  `pushChainOf()` · ใช้ `fmtSlipMin` ร่วมกับ `PlanSlipBar`) — **ห้ามประกอบประโยคโทษใครเองในหน้า**
+  (ย้ายชื่อตัวนี้มาจาก CLAUDE.md ตอนรีด 2026-10-06 — เดิมถูกอ้างใน CLAUDE.md ที่เดียว)
 
 **🔴 กฎที่ล็อกไว้ (เทส `heijunkaPlanStatus.test.mjs` 12 เคส):**
 - **ไม่มี CT = `null` ทุกตัวที่เกี่ยวกับเวลา/ชิ้น ห้ามคืน 0** · จอเขียน "⚠️ ไม่มี CT" ตรงๆ

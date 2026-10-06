@@ -2282,3 +2282,26 @@ user: *"ที่ว่างด้านข้างเหลือเยอะ
 
 · ปุ่ม/ป้ายคุมรูป (▶ หมุนเอง · 🔄 n/N · "ลากซ้าย-ขวา") ย้ายมา **ใต้รูป ห้ามทับรูป**
   — บนมือถือรูปเล็กอยู่แล้ว ป้ายทับกินพื้นที่เกือบครึ่งและบังจุดตรวจที่มักอยู่กลางรูป
+
+---
+
+## 🎨 Design tokens — ตัวแปรสี · breakpoints · ฟอนต์ (ย้ายมาจาก CLAUDE.md §Design System 2026-10-06)
+
+> ย้ายมาเพราะเป็น**ค่าอ้างอิง ไม่ใช่กฎ** (กฎรับเข้า CLAUDE.md ข้อ 2) — ของจริงอยู่ `src/index.css`
+> CLAUDE.md เหลือเฉพาะกฎที่พังแล้วเห็น (`color-mix` ห้ามใช้ · ฟอนต์ขั้นต่ำ 11px · เงาผ่าน token)
+
+### CSS Variables (`src/index.css`)
+`--bg` / `--bg2` / `--bg3` (พื้น 3 ระดับ) · `--card` · `--border` / `--border2` ·
+`--accent` (green) · `--accent2` (amber) · `--text` / `--text2` / `--muted` ·
+`--sidebar-w: 252px` · `--radius-lg: 8px` · เงา `--shadow-sm|float|md|lg` (ดู §6.20)
+
+### Breakpoints
+| ชื่อ | ขนาด |
+|---|---|
+| Mobile | < 768px |
+| Tablet | 768–1279px |
+| Desktop | 1280–1599px |
+| Ultra-wide | ≥ 1600px |
+
+### ฟอนต์
+**Sarabun** = Thai body · **Tahoma** = display (`var(--font-display)`)
