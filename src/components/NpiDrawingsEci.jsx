@@ -20,7 +20,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
   const [dwModal, setDwModal] = useState(null);
   const [eciModal, setEciModal] = useState(null);
   // 📜 ผู้ขอ ECI ที่เคยบันทึกไว้ (Main npi_eci) — ผู้ติดต่อฝั่งลูกค้าไม่มีใน profiles เลือกซ้ำได้ไม่ต้องพิมพ์ใหม่ (2026-09-07)
-  const reqHist = useColumnHistory(supabase, 'npi_eci', 'requested_by');
+  const reqHist = useColumnHistory(supabase, 'npi_change_requests', 'requested_by');
   const [saving, setSaving] = useState(false);
   const [fourM, setFourM] = useState([]);       // ใบ 4M Method ล่าสุด (ผูก ECI)
   const [peCrs, setPeCrs] = useState([]);       // คำขอแก้เอกสาร PE ของชุดที่พาร์ทในโปรเจคผูก

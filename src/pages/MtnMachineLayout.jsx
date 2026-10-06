@@ -326,9 +326,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
     if (!editMode) return
     if (!window.confirm('ลบโซนนี้? (อุปกรณ์ที่วางบนโซนนี้จะถูกเอาออกจากผัง แต่ตัวอุปกรณ์+ประวัติ PM ไม่หาย)')) return
     const oldPath = areas.find(a => a.id === id)?.image_path
-    const { error } = await supabaseDR.from('pm_facility_areas').delete().eq('id', id)
-    if (error) return toast.error(error.message)
-    // ลบ row สำเร็จแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = โซนยังอยู่ แต่รูปผังถูกลบ */
+    const dres = await supabaseDR.from('pm_facility_areas').delete().eq('id', id).select('id')
+    if (!checkWrite(dres, 'ลบโซน')) return
+    if (!(dres.data || []).length) return toast.error('ลบโซนไม่สำเร็จ (0 แถว) — รูปผังยังอยู่')
+    // ยืนยันโซนหายจริงแล้วค่อยเก็บกวาดไฟล์รูปผังโซน กันไฟล์กำพร้าใน storage (best-effort)
     if (oldPath) supabaseDR.storage.from('jig-images').remove([oldPath]).then(() => {}, () => {})
     setAreaId(prev => prev === id ? null : prev); await reloadAreas()
   }

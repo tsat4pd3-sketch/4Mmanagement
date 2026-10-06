@@ -23,7 +23,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
   const [dvModal, setDvModal] = useState(null);
   // 📜 ชื่อผู้รับผิดชอบที่เคยบันทึกไว้ (Main) — คนนอก profiles (เช่น ฝั่งลูกค้า) ยังเลือกซ้ำได้ (2026-09-07)
   const phaseOwnerHist = useColumnHistory(supabase, 'npi_part_phases', 'owner_name');
-  const dvOwnerHist = useColumnHistory(supabase, 'npi_part_deliverables', 'owner_name');
+  const dvOwnerHist = useColumnHistory(supabase, 'npi_deliverables', 'owner_name');
   const [ppapModal, setPpapModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(() => new Set());   // เฟสที่ "ย่อ" (default กางทั้งหมด)

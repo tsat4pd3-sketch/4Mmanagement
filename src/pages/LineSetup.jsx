@@ -603,8 +603,12 @@ export default function LineSetup({ embedded = false } = {}) {
       : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่องจักร ที่วางไว้ยังอยู่ครบ';
     if (!window.confirm(`ลบรูปผังของ "${selectedLine}" ?\n${backTo}`)) return;
     try {
-      const { error } = await supabase.from('line_layouts').delete().eq('line_name', selectedLine);
-      if (error) throw error;
+      /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ DELETE = 0 แถว ไม่มี error
+         เดิมรอดมาได้เพราะด่าน `sharers` ข้างล่าง (แถวที่ลบไม่ออกยังถือ image_url เดิม ⇒ นับเป็นคนแชร์
+         ⇒ ไฟล์ไม่ถูกลบ) — แต่จอยังขึ้น "ลบรูปผังแล้ว" ทั้งที่รูปยังอยู่ = จอโกหก ⇒ นับให้ชัด */
+      const dres = await supabase.from('line_layouts').delete().eq('line_name', selectedLine).select('line_name');
+      if (dres.error) throw dres.error;
+      if (!(dres.data || []).length) { toast.error('ลบรูปผังไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · รูปผังยังอยู่'); return; }
       // ลบไฟล์จาก storage หลัง DB สำเร็จ (best-effort) — เฉพาะเมื่อไม่มีไลน์อื่นแชร์ URL เดียวกัน
       if (layoutImage.includes('/employee-photos/layouts/')) {
         const { data: sharers } = await supabase.from('line_layouts').select('line_name').eq('image_url', layoutImage).limit(1);

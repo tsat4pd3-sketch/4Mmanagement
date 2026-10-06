@@ -141,7 +141,7 @@ export default function QAInspectionSetup() {
   const { can } = usePerms();
   const canManage = can('qa', 'manage');
   // 📜 ค่าที่เคยบันทึกไว้ (Main) — วิธีตรวจ (Visual/CF ที่ไม่ใช่เครื่องมือในทะเบียน) / ลูกค้า ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
-  const methodHist = useColumnHistory(supabase, 'qa_check_items', 'method');
+  const methodHist = useColumnHistory(supabase, 'qa_inspection_items', 'method');
   const custHist = useColumnHistory(supabase, 'qa_parts', 'customer');
 
   const [parts, setParts] = useState([]);
@@ -420,9 +420,17 @@ export default function QAInspectionSetup() {
     if (!sel) return;
     if (!window.confirm(`ลบ ${sel.part_no} พร้อมจุดตรวจทั้งหมด ${items.length} จุด?`)) return;
     const partId = sel.id;
-    const { error } = await supabase.from('qa_parts').delete().eq('id', sel.id);
-    if (error) { toast.error(error.message); return; }
-    // ลบ part สำเร็จแล้ว เก็บกวาดไฟล์ drawing ทั้งโฟลเดอร์ของ part นี้ กันไฟล์กำพร้าใน storage (best-effort)
+    /* 🔴 ต้อง `.select('id')` แล้ว**นับแถว** ก่อนแตะ storage (QC audit 2026-10-06)
+       RLS ปฏิเสธ DELETE = "สำเร็จ 0 แถว ไม่มี error" (กฎเหล็ก DB ข้อ 2) — เดิมเช็คแค่ `error`
+       แล้วเดินไปลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒ **แถวยังอยู่ แต่แบบหายหมด กู้ไม่ได้**
+       แล้วจอยังขึ้น "ลบแล้ว" · ลำดับที่ปลอดภัยมีทางเดียว: ยืนยันแถวหายจริงก่อน ค่อยเก็บกวาดไฟล์ */
+    const res = await supabase.from('qa_parts').delete().eq('id', sel.id).select('id');
+    if (!checkWrite(res, 'ลบพาร์ท')) return;
+    if (!(res.data || []).length) {
+      toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์ qa:manage ไม่พอ · แบบและจุดตรวจยังอยู่ครบ');
+      return;
+    }
+    // แถวหายจริงแล้ว เก็บกวาดไฟล์ drawing ทั้งโฟลเดอร์ กันไฟล์กำพร้าใน storage (best-effort)
     try {
       const { data: files } = await supabase.storage.from('qa-drawings').list(`parts/${partId}`, { limit: 1000 });
       const paths = (files || []).map(f => `parts/${partId}/${f.name}`);
@@ -533,9 +541,12 @@ export default function QAInspectionSetup() {
     /* ถอดตำแหน่ง balloon ก่อนลบแผ่น — ล้มแล้วต้องหยุด (เดิมไม่อ่าน error แล้วลบแผ่นต่อ
        ⇒ จุดตรวจชี้ drawing_id ที่ไม่มีแล้ว / FK บล็อกการลบแบบงงๆ · QC 05/10) */
     if (cnt && !checkWrite(await supabase.from('qa_inspection_items').update({ pos_x: null, pos_y: null, drawing_id: null }).eq('drawing_id', dwg.id), 'ถอดตำแหน่ง balloon ')) return;
-    const { error } = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id);
-    if (error) { toast.error(error.message); return; }
-    // ลบ row สำเร็จแล้ว ค่อยลบไฟล์จาก storage ด้วย กันไฟล์กำพร้า (best-effort)
+    /* 🔴 นับแถวก่อนแตะ storage — RLS ปฏิเสธ DELETE = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2)
+       ไม่นับ = แถวแผ่นแบบยังอยู่ แต่ไฟล์แบบถูกลบ ⇒ แผ่นเสียถาวร (QC audit 06/10) */
+    const dres = await supabase.from('qa_part_drawings').delete().eq('id', dwg.id).select('id');
+    if (!checkWrite(dres, 'ลบแผ่นแบบ')) return;
+    if (!(dres.data || []).length) { toast.error('ลบแผ่นไม่สำเร็จ (0 แถว) — สิทธิ์ qa:manage ไม่พอ · ไฟล์แบบยังอยู่'); return; }
+    // ยืนยันแถวหายจริงแล้ว ค่อยลบไฟล์จาก storage กันไฟล์กำพร้า (best-effort)
     const dwgPath = qaDrawingPath(dwg.drawing_url);
     if (dwgPath) supabase.storage.from('qa-drawings').remove([dwgPath]).catch(() => {});
     toast.success('ลบแผ่นแล้ว');
