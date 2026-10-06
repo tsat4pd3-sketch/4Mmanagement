@@ -255,3 +255,41 @@ test('buildQueue — ไม่จำกัดขอบเขต = unattributed �
   assert.equal(q.unattributed, 0);
   assert.equal(q.counts.unit, 1, 'ไม่จำกัดขอบเขต = เห็นใบนั้นตามปกติ');
 });
+
+/* ── 🔴 ขั้นที่ "รอตำแหน่ง" ต้องสรุปในชั้น floor ไม่ใช่หายไปเลย (2026-10-06 · user เคาะ ข2) ──────
+   ขั้น QA/จ่ายงาน/หัวหน้าแผนก ไม่มีเจ้าภาพรายใบ ⇒ เข้า `mine` ไม่ได้ ⇒ badge ไม่ขึ้น
+   ⇒ เดิมไม่มีสัญญาณเลยว่ามีงานค้าง (วัดจริง: รอ QA 188 ใบ) · ห้ามแก้ด้วยการยัดเข้า `mine` */
+test('floor — ใบ MO ที่รอตำแหน่ง ต้องสรุปบรรทัดเดียวต่อขั้น + นับทั้งโรงงานไม่กรองขอบเขต', () => {
+  const q = buildQueue({
+    mo: [
+      { id: 'a', status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: '2026-09-01' },
+      { id: 'b', status: 'checked', mtn_dept: 'production', dept_section: 'PD1', work_date: '2026-09-20' },
+      { id: 'c', status: 'checked', mtn_dept: 'production', dept_section: null, work_date: '2026-09-10' },
+      { id: 'd', status: 'pending', mtn_dept: 'production', dept_section: 'PD1', work_date: '2026-09-25' },
+    ],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-06T03:00:00Z'));
+  const qa = q.floor.find(f => f.key.startsWith('mowait:'));
+  assert.ok(qa, 'ต้องมีบรรทัดสรุปของขั้นที่รอตำแหน่ง');
+  assert.equal(qa.count, 3, 'นับใบรอ QA ทั้งโรงงาน (รวมหน่วยอื่น + ใบที่ชี้ส่วนงานไม่ได้)');
+  assert.match(qa.title, /3 ใบ/);
+  assert.match(qa.detail, /ทั้งโรงงาน/);
+  assert.match(qa.detail, /เก่าสุด/);
+  assert.equal(q.floor.filter(f => f.key.startsWith('mowait:')).length, 2,
+    'คนละขั้น (รอ QA / รอจ่ายงาน) = คนละบรรทัด ห้ามยุบรวม');
+});
+
+test('🔴 floor — บรรทัดสรุปนี้ห้ามขึ้น badge (badge นับเฉพาะ mine)', () => {
+  const q = buildQueue({
+    mo: [{ id: 'a', status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: '2026-09-01' }],
+    sessions: [], fourM: [], actions: [],
+  }, ME);
+  assert.ok(q.floor.some(f => f.key.startsWith('mowait:')));
+  assert.equal(q.counts.mine, 0);
+  assert.equal(badgeCount(q), 0, 'กองที่ไม่มีเจ้าภาพรายใบ ห้ามทำให้ badge เด้ง');
+});
+
+test('floor — ไม่มีใบรอตำแหน่ง = ไม่มีบรรทัดสรุป (ห้ามวาดบรรทัดเลข 0)', () => {
+  const q = buildQueue({ mo: [], sessions: [], fourM: [], actions: [] }, ME);
+  assert.equal(q.floor.filter(f => f.key.startsWith('mowait:')).length, 0);
+});
