@@ -35,6 +35,7 @@ import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
 import { parseSapBom, diffSapBom, missingInPartsMaster, decodeSapExport } from '../utils/sapBomImport';
 import { learnPartNoVocab, proposePartNos } from '../utils/partNoExtract';
+import { buildEcIndex, ecOf, countSuperseded } from '../utils/ecRevisions';
 
 /** คีย์ MAT มาตรฐานของหน้านี้ — ตัดช่องว่าง + ตัวพิมพ์ใหญ่ (ใช้ร่วมหลายฟังก์ชัน) */
 const upMat = (m) => String(m ?? '').trim().toUpperCase();
@@ -462,12 +463,16 @@ export default function ProductMaster() {
             try {
               const effDate = form.effective_from || localDateStr();
               const { data: exist } = await supabaseDR.from('parts_master').select('id').eq('mat_no', payload.mat_no).limit(1);
+              /* 🔴 แถวทะเบียนของ "เลขเดิม" ต้องถูกติดหมายเหตุเสมอ — ไม่ว่าเลขใหม่จะลงทะเบียนไว้ก่อนแล้วหรือยัง
+                 (บั๊กจริง 05/10: ทั้งก้อนนี้เคยอยู่ใน `if (!exist?.length)` ⇒ พอเลขใหม่มีในทะเบียนอยู่แล้ว
+                  ซึ่งเป็นเรื่องปกติ มันข้ามทั้งบล็อก **รวมถึงการติดหมายเหตุที่แถวเก่า**
+                  วัดจริง: ทะเบียน 370 แถว มีโน้ตที่พูดถึง EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง) */
+              let oldPm = null;
+              if (ecSource.mat_no) {
+                const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
+                oldPm = data?.[0] || null;
+              }
               if (!exist?.length) {
-                let oldPm = null;
-                if (ecSource.mat_no) {
-                  const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
-                  oldPm = data?.[0] || null;
-                }
                 const { error: pmErr } = await supabaseDR.from('parts_master').insert({
                   mat_no: payload.mat_no, part_name: payload.name, part_no: payload.p_no,
                   uom: oldPm?.uom || null, qty_per_pkg: oldPm?.qty_per_pkg ?? null, supplier: oldPm?.supplier || null,
@@ -477,10 +482,13 @@ export default function ProductMaster() {
                 if (pmErr) toast.error('ลงทะเบียน Parts Master ไม่สำเร็จ: ' + pmErr.message + ' — ไปเพิ่มเองที่ tab 🗂');
                 else if (oldPm) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว (สืบทอดข้อมูลจากเลขเดิม · ต้นทุนให้บัญชีเติม)');
                 else toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
-                // ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม ให้คนเปิดทะเบียนเห็นว่าถูกแทนแล้ว (best-effort · ไม่ปิด is_active —
-                // ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้ในทะเบียนเป็นการตัดสินใจของคน)
-                if (oldPm) {
-                  const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
+              }
+              /* ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม (นอกเงื่อนไขข้างบน — ดูคอมเมนต์ 🔴)
+                 ไม่ปิด `is_active`: ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้เป็นการตัดสินใจของคน
+                 ⚠️ โน้ตเป็นแค่ "ร่องรอยให้คนอ่าน" — จอใช้ `buildEcIndex()` อ่านของจริงจาก dr_products ไม่ได้พึ่งโน้ตนี้ */
+              if (oldPm) {
+                const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
+                if (!String(oldPm.note || '').includes(tag)) {
                   checkWrite(await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id), 'ติดหมายเหตุทะเบียนกลางเดิม');
                 }
               }
@@ -2972,6 +2980,11 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
   const csvRef = useRef(null);
+  /* 🔄 EC: ของจริงอยู่ที่ `dr_products` (superseded_by/at) — ทะเบียนแค่ "อ่าน" ไม่เก็บซ้ำ
+     user 05/10: *"part master ไม่มีระบบ ecn หรอ … หรืออยู่ที่ product"* → อยู่ที่ Products
+     แต่ทะเบียนไม่เคยรู้ ⇒ rev เก่ากับใหม่ขึ้น "ใช้งาน" เท่ากัน (วัดจริง: 23 กลุ่ม · 91 แถว active) */
+  const [ecIx, setEcIx] = useState(() => new Map());
+  const [hideOld, setHideOld] = useState(false);
 
   // material_cost/standard_cost (บาท/ชิ้น — cost saving ใน /improvements): ไฟล์เก่าที่ไม่มี 2 คอลัมน์นี้ยังนำเข้าได้
   // และจะไม่ล้างค่าต้นทุนเดิม (อัพเดทเฉพาะฟิลด์ที่มีค่าในไฟล์)
@@ -3026,8 +3039,13 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabaseDR.from('parts_master').select('*').order('mat_no');
-    setParts(data || []);
+    const [pm, pr] = await Promise.all([
+      supabaseDR.from('parts_master').select('*').order('mat_no'),
+      // คอลัมน์เท่าที่ใช้สร้างดัชนี EC (egress คิดเป็นไบต์ — ห้าม select('*') ที่นี่)
+      supabaseDR.from('dr_products').select('id, mat_no, superseded_by, superseded_at'),
+    ]);
+    setParts(pm.data || []);
+    setEcIx(buildEcIndex(pr.data || []));
     setLoading(false);
   }, []);
 
@@ -3045,8 +3063,21 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         p.supplier?.toLowerCase().includes(q)
       );
     }
+    if (hideOld) r = r.filter(p => !ecOf(ecIx, p.mat_no)?.supersededByMat);
     return r;
-  }, [parts, search, prefixFilter]);
+  }, [parts, search, prefixFilter, hideOld, ecIx]);
+
+  /* นับจากชุดที่ "ผ่านตัวกรองอื่นแล้ว" เพื่อให้เลขบนปุ่มตรงกับที่จะถูกซ่อนจริง */
+  const supersededCount = useMemo(() => {
+    let r = parts;
+    if (prefixFilter) r = r.filter(p => matMatches(p.mat_no, prefixFilter));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      r = r.filter(p => p.part_name?.toLowerCase().includes(q) || p.mat_no?.toLowerCase().includes(q)
+        || p.part_no?.toLowerCase().includes(q) || p.supplier?.toLowerCase().includes(q));
+    }
+    return countSuperseded(ecIx, r.map(p => p.mat_no));
+  }, [parts, search, prefixFilter, ecIx]);
 
   function openNew() { setEditPart(null); setForm(EMPTY_PART); setImageFile(null); setShowModal(true); }
   function openEdit(p) { setEditPart(p); setForm({ ...EMPTY_PART, ...p }); setImageFile(null); setShowModal(true); }
@@ -3127,6 +3158,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
       {/* toolbar */}
       <FilterBar>
+        {supersededCount > 0 && (
+          <button type="button" onClick={() => setHideOld(v => !v)}
+            title="rev เก่าที่ถูก EC แทนแล้ว — ของจริงอยู่ที่แท็บ 3️⃣ Products"
+            style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap',
+              borderColor: hideOld ? 'var(--accent)' : 'var(--border)', color: hideOld ? 'var(--accent)' : 'var(--text2)' }}>
+            {hideOld ? '☑' : '☐'} ซ่อน rev ที่ถูกแทนแล้ว ({supersededCount})
+          </button>
+        )}
         <select value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
           <option value="">{ALL.type}</option>
           {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
@@ -3184,6 +3223,28 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
                       {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
                     </div>
+                    {/* 🔄 สถานะ revision — อ่านจาก dr_products (ของจริง) ไม่ได้เก็บซ้ำในทะเบียน
+                        ไม่รู้จัก (ไม่มีใน Products) = ไม่พูดอะไร ห้ามเดาว่า "ล่าสุด" */}
+                    {(() => {
+                      const e = ecOf(ecIx, p.mat_no);
+                      if (!e) return null;
+                      if (e.supersededByMat) return (
+                        <div style={{ fontSize: 10.5, color: '#f59e0b', marginTop: 2, fontWeight: 700 }}
+                          title={`ทำ EC ที่แท็บ 3️⃣ Products${e.supersededAt ? ` · มีผล ${e.supersededAt}` : ''}`}>
+                          🔄 ถูกแทนโดย <span style={{ fontFamily: 'monospace' }}>{e.supersededByMat}</span>
+                          {e.supersededAt && ` · ${e.supersededAt}`}
+                          {e.latestMat && e.latestMat !== e.supersededByMat &&
+                            <> · ล่าสุด <span style={{ fontFamily: 'monospace' }}>{e.latestMat}</span></>}
+                          {e.chainBroken && <span style={{ color: 'var(--muted)' }}> · ไล่สายต่อไม่ได้</span>}
+                        </div>
+                      );
+                      if (e.replacesMat) return (
+                        <div style={{ fontSize: 10.5, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
+                          🔄 rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
+                        </div>
+                      );
+                      return null;
+                    })()}
                   </td>
                   <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
