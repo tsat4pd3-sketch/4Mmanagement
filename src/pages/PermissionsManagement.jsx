@@ -50,6 +50,7 @@ const PAGE_GROUPS = [
       { key: 'page:/morning-meeting', label: 'ประชุมแถวเช้า' },
       { key: 'page:/checkin',       label: 'เช็คชื่อ & PPE' },
       { key: 'page:/management',   label: 'จัดการไลน์ผลิต' },
+      { key: 'page:/manpower-board', label: 'Manpower Control Board' },
       { key: 'page:/daily-report', label: 'Daily Report' },
       // คาบ 2 หมวด (sidebar โชว์ทั้งฝ่ายผลิตและ Logistic-แผนงาน ผ่าน alsoIn) แต่สิทธิ์มีชุดเดียว → ติ๊กที่นี่ที่เดียว
       { key: 'page:/production-plan', label: 'วางแผนการผลิต · คาบ 2 หมวด' },

@@ -51,6 +51,7 @@ const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -149,6 +150,8 @@ export const NAV_ITEMS = [
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  // 🧑‍🤝‍🧑 แทนบอร์ดกระดาษหน้าไลน์ (ผังคน + ผัง LAYOUT + ป้าย 4M) — อ่านอย่างเดียว (2026-10-06)
+  { to: '/manpower-board', icon: '🧑‍🤝‍🧑', label: 'Manpower Control Board', group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
   // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
@@ -1881,6 +1884,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
+              } />
+              <Route path="/manpower-board" element={
+                <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
               } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
