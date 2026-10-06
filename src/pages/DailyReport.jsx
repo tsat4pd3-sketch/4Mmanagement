@@ -281,6 +281,22 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
+     2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
+       ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
+          มาเมื่อไหร่ ค่า default สร้าง array **ใบใหม่ทุก render**
+       ② `<UserContext.Provider value={{ … sections: userSections || [] }}>` ใน App.jsx
+          เป็น object literal ใบใหม่ทุก render ของ App — `|| []` ก็สร้างใบใหม่เช่นกัน
+     ⇒ `load` ใบใหม่ ⇒ `useEffect(() => { load() }, [load])` ยิงใหม่ทั้งชุด
+     วัดจริง 02/10/2026 — "คิวรีเดิมเป๊ะจาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+       prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+       · v_demand_flow_blocks 745 · child_lot_requests 747  ← **สองตัวนี้เท่ากัน**
+         = 2 คิวรีใน `load()` ของ StoreLotQueue ตัวเดียวกัน ⇒ ยืนยันว่าเป็น "โหลดซ้ำทั้ง load()"
+         ไม่ใช่คนละคนเปิดพร้อมกัน (คนละคนไม่ทำให้ 2 ตารางได้เลขเท่ากัน)
+     🔑 แปลงเป็น "คีย์เนื้อหา" (string) แบบเดียวกับ `famKey`/`upKey` ในแผงลูก
+        — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
+     ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
@@ -599,7 +615,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   /* ── แยก "กะที่กำลังทำอยู่" ออกจาก "กะค้างจากวันก่อน" (2026-08-26 · feedback "ปวดหัวกับกะที่รก ค้างจังเลย")
      ข้อมูลจริงที่หน้างานเจอ: sidebar ขึ้น 49 กะ ในนั้น 37 กะเป็นของวันก่อนที่ยังไม่ปิด
@@ -6056,6 +6073,8 @@ function StaleTab({ stale, onOpenSession, role }) {
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
   const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -6162,7 +6181,8 @@ function HistoryTab({ role }) {
     setLoading(false);
     // ใบรายงานปัญหาที่เคยออกของกะเหล่านี้ (โหลดพร้อมกัน — ป้ายเลขที่ใบต้องเห็นตั้งแต่ยังไม่กางแถว)
     setProbDocs(await loadProblemDocs((ss || []).map(x => x.id)));
-  }, [filter, role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [filter, role, scopeKey, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
   // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
@@ -6715,6 +6735,8 @@ function HistoryTab({ role }) {
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -6742,7 +6764,8 @@ function ExportTab() {
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

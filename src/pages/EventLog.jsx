@@ -94,6 +94,8 @@ function getApprovedAt(log) {
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
   const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [tab, setTab] = useTabParam(['list', 'create'], 'list');   // โหมดหน้า (list ⇄ ฟอร์มบันทึก) ผูก ?tab=
   const [logs, setLogs]           = useState([]);
   const [eventDefs, setEventDefs] = useState([]);
@@ -171,7 +173,8 @@ export default function EventLog() {
     setMatrix(matData || []);
     setLines(visibleLines);
     setLoading(false);
-  }, [role, userLineId, scopeSecs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs
+  }, [role, userLineId, scopeKey]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
