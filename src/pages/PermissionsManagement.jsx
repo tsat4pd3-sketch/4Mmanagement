@@ -1,11 +1,20 @@
-import { useState, useEffect, useMemo, Fragment } from 'react';
+import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { supabase } from '../supabaseClient';
-import { loadPermissions } from '../utils/permissions';
+import { loadPermissions, canSeeded } from '../utils/permissions';
+import { UserContext } from '../App';
+import { checkWrite } from '../utils/dbWrite';
+import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import { PERMISSION_COLUMN_ROLES } from '../utils/roleMeta';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import FilterBar from '../components/FilterBar';
+import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
+import { normSearch } from '../components/SearchSelect';
+import { POSITION_LEVELS } from '../utils/positions';
+import { SCOPE_DEPTH_META, SCOPE_DEPTHS } from '../utils/scopeDepth';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
 
@@ -168,11 +177,23 @@ const PAGE_GROUPS = [
 ];
 
 export default function PermissionsManagement() {
-  const [tab, setTab] = useTabParam(['pages', 'actions'], 'pages');
+  /* 🔴 ด่านของผู้ที่เปิดจอ — `canSeeded` ไม่ใช่ `can` (QC audit 06/10)
+     ยังไม่ apply `20261006_permissions_manage_perm_main.sql` ⇒ คีย์ไม่อยู่ในทะเบียน ⇒ admin เท่านั้น
+     = พฤติกรรมเดิมเป๊ะ · apply แล้ว admin จึงแจกให้ role อื่นได้จริง (DB ยอมรับด้วย policy เดียวกัน) */
+  const { role: myRole } = useContext(UserContext);
+  const canManage = canSeeded('permissions', 'manage', myRole);
+  const [tab, setTab] = useTabParam(['matrix', 'pages', 'actions'], 'matrix');
   const [rows, setRows] = useState([]);
   const [catalog, setCatalog] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({}); // { [`${role}:${key}`]: true }
+  /* 🔭 แท็บภาพรวม (matrix) — อ่านอย่างเดียว ใช้ข้อมูลชุดเดียวกับ 2 แท็บที่แก้ได้
+     (ห้ามแยกแหล่ง ไม่งั้นจอเดียวกันตอบคนละเลข) */
+  const [q, setQ] = useState('');
+  const [kind, setKind] = useState('all');          // all | page | action
+  const [onlyDiff, setOnlyDiff] = useState(false);  // ซ่อนแถวที่ทุก role เหมือนกันหมด
+  const [hideUnused, setHideUnused] = useState(true); // ซ่อนคอลัมน์ role ที่ไม่มีบัญชีจริง
+  const [accounts, setAccounts] = useState(null);   // { [role]: จำนวนบัญชี } · null = ยังไม่รู้ (ห้ามโชว์ 0)
   const [loadErr, setLoadErr] = useState(null);   // โหลดสิทธิ์ไม่ครบ = ห้ามโชว์ตาราง (ติ๊กทับค่าจริงได้)
 
   const load = async () => {
@@ -211,6 +232,14 @@ export default function PermissionsManagement() {
     setRows(perms || []);
     setCatalog(cat || []);
     setLoading(false);
+    /* จำนวนบัญชีจริงต่อ role — บอกว่าคอลัมน์ไหน "มีคนใช้อยู่จริง"
+       แยกคิวรีและไม่ throw: ล้มแล้วแค่ไม่โชว์ตัวเลข (null) ตารางสิทธิ์ยังใช้ได้ · ห้ามโชว์ 0 แทน "ไม่รู้" */
+    const { data: ppl, error: pplErr } = await supabase.from('profiles').select('role');
+    if (!pplErr && ppl) {
+      const n = {};
+      for (const r of ppl) if (r?.role) n[r.role] = (n[r.role] || 0) + 1;
+      setAccounts(n);
+    }
   };
   useEffect(() => { load(); }, []);
 
@@ -239,6 +268,10 @@ export default function PermissionsManagement() {
 
   const toggle = async (permissionKey, role, current) => {
     if (role === 'admin') return; // admin เข้าถึงได้เสมอ แก้ไม่ได้
+    /* 🔴 ด่านของ "คนที่เปิดจอนี้" (QC audit 2026-10-06) — เดิมหน้านี้ไม่เช็คสิทธิ์ผู้ดูเลย
+       (`role` ในพารามิเตอร์คือ role ของ**คอลัมน์** ไม่ใช่ของผู้ใช้) ⇒ ใครที่ถือ `page:/permissions`
+       ได้ matrix ที่ติ๊กได้ทุกช่อง · `canSeeded` = deploy-safe (ยังไม่ apply migration ⇒ admin เท่านั้น) */
+    if (!canManage) { toast.error('ไม่มีสิทธิ์แก้ตารางสิทธิ์ (ต้องมี permissions:manage)'); return; }
     // ยืนยันเฉพาะตอน "ปิดสิทธิ์" (current=true→false) — มีผลทุกเครื่องทันที กันแตะ matrix พลาด
     // (เปิดสิทธิ์ = additive ไม่ต้องถาม ให้แก้ matrix ลื่น)
     if (current && !confirm(`ปิดสิทธิ์ "${permissionKey}" ของ role "${role}" ?\n\nมีผลทุกเครื่องทันที — ผู้ใช้ role นี้จะเข้า/ทำสิ่งนี้ไม่ได้`)) return;
@@ -253,12 +286,19 @@ export default function PermissionsManagement() {
     });
     // upsert (ไม่ใช่ update) — เผื่อ catalog เพิ่มรายการใหม่ที่ยังไม่มีแถว role_permissions
     // update ที่ไม่เจอแถวจะเงียบ (ไม่ error) ทำให้ UI โชว์สำเร็จทั้งที่ไม่ได้บันทึก
-    const { error } = await supabase.from('role_permissions')
-      .upsert({ role, permission_key: permissionKey, allowed: nextVal }, { onConflict: 'role,permission_key' });
+    /* 🔴 ต้อง `.select()` แล้ว**นับแถว** (กฎเหล็ก DB ข้อ 2 · QC audit 06/10)
+       RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ เดิม `setRows` ติ๊กล่วงหน้าไว้แล้ว
+       แต่ฐานไม่เปลี่ยน และไม่มี toast แดง = **จอโกหกเรื่อง "ใครมีสิทธิ์อะไร"**
+       ซึ่งเป็นข้อมูลที่ทุกจอในระบบพึ่ง ⇒ 0 แถว ต้องคืนช่องติ๊กกลับ + บอกเหตุผล */
+    const res = await supabase.from('role_permissions')
+      .upsert({ role, permission_key: permissionKey, allowed: nextVal }, { onConflict: 'role,permission_key' })
+      .select('role');
     setSaving(prev => { const n = { ...prev }; delete n[cellId]; return n; });
-    if (error) {
-      toast.error('บันทึกไม่สำเร็จ: ' + error.message);
-      setRows(prev => prev.map(r => (r.role === role && r.permission_key === permissionKey) ? { ...r, allowed: current } : r));
+    const revert = () => setRows(prev => prev.map(r => (r.role === role && r.permission_key === permissionKey) ? { ...r, allowed: current } : r));
+    if (!checkWrite(res, 'บันทึกสิทธิ์')) { revert(); return; }
+    if (!(res.data || []).length) {
+      toast.error('บันทึกไม่ติด (0 แถว) — ไม่มีสิทธิ์แก้ทะเบียนสิทธิ์ (ต้องมี permissions:manage)');
+      revert();
       return;
     }
     await loadPermissions(true); // รีเฟรช cache ของเซสชันนี้ (เซสชันอื่น sync ผ่าน realtime ใน App.jsx)
@@ -270,11 +310,12 @@ export default function PermissionsManagement() {
     return (
       <td style={{ textAlign: 'center', padding: '8px 4px' }}>
         {/* label.tbtn = ขยาย hit area ≥40px บนจอทัช (matrix ช่องแน่น 11 คอลัมน์) — desktop ไม่เปลี่ยน */}
-        <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: role === 'admin' ? 'not-allowed' : 'pointer' }}>
+        <label className="tbtn" title={!canManage ? 'ดูอย่างเดียว — ต้องมีสิทธิ์ permissions:manage' : undefined}
+          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: (role === 'admin' || !canManage) ? 'not-allowed' : 'pointer', opacity: canManage ? 1 : 0.55 }}>
           <input
             type="checkbox"
             checked={checked}
-            disabled={role === 'admin' || isSaving}
+            disabled={role === 'admin' || isSaving || !canManage}
             onChange={() => toggle(permissionKey, role, checked)}
             style={{ width: 16, height: 16, accentColor: 'var(--accent)', cursor: role === 'admin' ? 'not-allowed' : 'pointer', opacity: isSaving ? 0.4 : 1 }}
           />
@@ -330,6 +371,54 @@ export default function PermissionsManagement() {
     </div>
   );
 
+  /* ══ 🔭 แท็บภาพรวม (Matrix) — "ใครทำอะไรได้บ้าง" ในจอเดียว (2026-10-06 · คำสั่ง user) ═══
+     อ่านอย่างเดียว · แหล่งข้อมูลเดียวกับ 2 แท็บที่แก้ได้ (map/rows) — ห้ามอ่านจากที่อื่น
+     🔴 3 สถานะของช่อง ห้ามยุบเหลือ 2: ✅ เปิด · · ปิด · – **ยังไม่มีแถวในทะเบียน**
+        (แท็บที่แก้ได้ใช้ `?? false` = ยุบ "ไม่ได้ seed" ไปรวมกับ "ปิด" ซึ่งโอเคสำหรับการติ๊ก
+         แต่จอภาพรวมต้องแยก ไม่งั้นอ่านว่า "ปิดไว้ตั้งใจ" ทั้งที่จริงคือ "ไม่เคยตั้ง") */
+  const matrixCols = useMemo(() => {
+    if (!hideUnused || !accounts) return ROLES;   // ไม่รู้จำนวนบัญชี = โชว์ทุกคอลัมน์ ห้ามเดาซ่อน
+    return ROLES.filter(r => r.bucket || (accounts[r.value] || 0) > 0);
+  }, [hideUnused, accounts]);
+
+  const matrixGroups = useMemo(() => {
+    const src = [
+      ...(kind === 'action' ? [] : PAGE_GROUPS.map(g => ({
+        group: g.group, items: g.pages.map(x => ({ ...x, type: 'page' })) }))),
+      ...(kind === 'page' ? [] : actionGroups.map(g => ({
+        group: g.group, items: g.items.map(x => ({ ...x, type: 'action' })) }))),
+    ];
+    /* ยุบหมวดชื่อซ้ำ (หน้า+การทำงาน ของหมวดเดียวกัน) ให้อยู่ก้อนเดียว — คนอ่านคิดเป็น "หมวดงาน" ไม่ใช่ "ชนิดคีย์" */
+    const merged = [];
+    for (const g of src) {
+      const hit = merged.find(m => m.group === g.group);
+      if (hit) hit.items.push(...g.items); else merged.push({ group: g.group, items: [...g.items] });
+    }
+    const nq = normSearch(q);
+    const out = [];
+    for (const g of merged) {
+      const items = g.items.filter(it => {
+        if (nq && !normSearch(it.label).includes(nq) && !normSearch(it.key).includes(nq)) return false;
+        if (!onlyDiff) return true;
+        /* "ต่างกัน" ตัดสินจากคอลัมน์ที่โชว์อยู่จริง และนับ admin ด้วยไม่ได้ (เปิดเสมอ) */
+        const vals = matrixCols.filter(r => r.value !== 'admin')
+          .map(r => (map[it.key]?.[r.value] === true));
+        return vals.some(Boolean) && vals.some(v => !v);
+      });
+      if (items.length) out.push({ group: g.group, items });
+    }
+    return out;
+  }, [kind, actionGroups, q, onlyDiff, map, matrixCols]);
+
+  const matrixStat = useMemo(() => {
+    let rowsN = 0, unseeded = 0;
+    for (const g of matrixGroups) for (const it of g.items) {
+      rowsN++;
+      for (const r of matrixCols) if (r.value !== 'admin' && map[it.key]?.[r.value] === undefined) unseeded++;
+    }
+    return { rowsN, unseeded };
+  }, [matrixGroups, matrixCols, map]);
+
   if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
   if (loadErr) return (
     <Page>
@@ -350,11 +439,16 @@ export default function PermissionsManagement() {
         title="จัดการสิทธิ์" icon="🔐"
         sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
         tabs={[
+          { key: 'matrix', label: '🔭 ภาพรวม (ใครทำอะไรได้)' },
           { key: 'pages', label: '📄 การเข้าถึงหน้า' },
           { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
         ]}
         tab={tab} onTab={setTab}
       />
+
+      {/* 🔒 ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล — ไม่งั้นช่องติ๊กที่กดไม่ได้จะดูเหมือนจอพัง */}
+      <ReadOnlyNote show={!canManage} role={myRole} what="แก้ตารางสิทธิ์" permKey="permissions:manage"
+        hint="ดูได้ทั้งตาราง แต่ติ๊กไม่ได้ — ฐานข้อมูลใช้คีย์เดียวกันนี้เป็นด่าน (เดิมติ๊กได้บนจอแต่ไม่บันทึกจริง)" />
 
       <div style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
@@ -365,6 +459,128 @@ export default function PermissionsManagement() {
           เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
         </div>
       </div>
+
+      {tab === 'matrix' && (<>
+        {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
+        <div style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
+            {[
+              { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',
+                d: <>ตัวเดียวที่<b>ให้/ไม่ให้</b>ปุ่มกับหน้า — คือตารางข้างล่างนี้ · ตั้งที่แท็บ 📄 / 🛠️</> },
+              { ic: '🌳', t: 'ขอบเขต (ระดับการมองเห็น)', c: '#4d9fff',
+                d: <>หุบว่า<b>เห็นข้อมูลของใคร</b> — ไม่เพิ่ม/ลดปุ่ม · {SCOPE_DEPTHS.map(d => SCOPE_DEPTH_META[d].short).join(' → ')} · ตั้งรายคนที่ 🔑 จัดการผู้ใช้</> },
+              { ic: '🪪', t: 'ตำแหน่ง / ระดับ', c: '#eab308',
+                d: <><b>ไม่ให้สิทธิ์</b> ใช้เป็นคำแนะนำ+ค่าตั้งต้นเท่านั้น — <b>ยกเว้นช่องเซ็นในใบ MO</b> (ขั้นผู้ตรวจสอบ/รับรอง/ผจก.) ที่ล็อกด้วยระดับจริง</> },
+            ].map(x => (
+              <div key={x.t} style={{ background: 'var(--card)', padding: '12px 14px' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: x.c, marginBottom: 4 }}>{x.ic} {x.t}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>{x.d}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '9px 14px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+            🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
+            {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
+            {' '}— ช่องส่งมอบต้อง ≥40 · ผู้ตรวจสอบ/หัวหน้าช่าง ≥50 · อนุมัติ/ปิดค่าใช้จ่าย ≥60
+          </div>
+        </div>
+
+        <FilterBar>
+          <Segmented value={kind} onChange={setKind} label="ชนิดสิทธิ์" size="sm" options={[
+            { value: 'all', label: 'ทั้งหมด' },
+            { value: 'page', label: '📄 เข้าหน้า' },
+            { value: 'action', label: '🛠️ การทำงาน' },
+          ]} />
+          <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
+          <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            เฉพาะที่ชุดสิทธิ์ต่างกัน
+          </label>
+          <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={hideUnused} onChange={e => setHideUnused(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
+            ซ่อนชุดสิทธิ์ที่ยังไม่มีใครถือ
+          </label>
+          <span className="spacer" />
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            {matrixStat.rowsN.toLocaleString()} ฟังก์ชัน · {matrixCols.length} ชุดสิทธิ์
+          </span>
+        </FilterBar>
+
+        <div style={{ ...s.section, padding: '10px 14px', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+          <b>วิธีอ่านช่อง:</b> <b style={{ color: 'var(--accent)' }}>✓</b> = ทำได้ ·
+          <span style={{ color: 'var(--muted)' }}> · </span> = ปิดไว้ ·
+          <b style={{ color: '#eab308' }}> – </b> = <b>ยังไม่เคยตั้งค่าในทะเบียน</b> (ไม่ใช่ "ปิดไว้ตั้งใจ" — ระบบถือว่าไม่ได้สิทธิ์ แต่ถ้าเป็นฟังก์ชันที่ควรได้ ต้องไปติ๊กให้ชัด)
+          {matrixStat.unseeded > 0 && (
+            <div style={{ marginTop: 4, color: '#eab308' }}>
+              ⚠️ ช่องที่ยังไม่เคยตั้งค่า <b>{matrixStat.unseeded.toLocaleString()}</b> ช่อง จากที่แสดงอยู่
+            </div>
+          )}
+          <div style={{ marginTop: 4 }}>
+            🛡️ <b>ผู้ดูแลระบบ (admin) ติ๊กเต็มเสมอ</b> — ล็อกไว้ในโค้ด ไม่ได้มาจากทะเบียน (กันตั้งค่าผิดจนไม่มีใครเข้าได้)
+          </div>
+        </div>
+
+        {matrixGroups.length === 0 ? (
+          <div style={{ ...s.section, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+            ไม่พบฟังก์ชันที่ตรงกับตัวกรอง
+          </div>
+        ) : (
+          <div className="table-sticky">
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)', minWidth: 240 }}>ฟังก์ชัน</th>
+                  {matrixCols.map(r => {
+                    const n = accounts ? (accounts[r.value] || 0) : null;
+                    return (
+                      <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 82 }} title={`${r.value}${r.desc ? ' — ' + r.desc : ''}`}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</div>
+                        <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
+                          {r.bucket ? 'ธงเสริม' : n == null ? '—' : n > 0 ? `${n} คน` : 'ยังไม่มีใครถือ'}
+                        </div>
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {matrixGroups.map(g => (
+                  <Fragment key={g.group}>
+                    <tr>
+                      <td colSpan={matrixCols.length + 1} style={{ paddingTop: 14, paddingBottom: 4 }}>
+                        <span style={s.groupTitle}>{g.group}</span>
+                      </td>
+                    </tr>
+                    {g.items.map(it => (
+                      <tr key={it.key} style={{ borderTop: '1px solid var(--border)' }}>
+                        <td style={{ padding: '6px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 420 }}>
+                          <span style={{ opacity: 0.65, marginRight: 5 }}>{it.type === 'page' ? '📄' : '🛠️'}</span>
+                          {it.label}
+                        </td>
+                        {matrixCols.map(r => {
+                          const raw = r.value === 'admin' ? true : map[it.key]?.[r.value];
+                          /* หน้า (`page:`) × คอลัมน์ธงเสริม = ช่องตาย — hasPermission() บล็อกไว้ในโค้ด */
+                          const dead = r.bucket && it.type === 'page';
+                          const txt = dead ? '✕' : raw === true ? '✓' : raw === false ? '·' : '–';
+                          const col = dead ? 'var(--border2)'
+                            : raw === true ? 'var(--accent)' : raw === false ? 'var(--muted)' : '#eab308';
+                          return (
+                            <td key={r.value} title={dead ? 'เปิดหน้าให้ธงเสริมไม่ได้ (ระบบบล็อกในโค้ด)'
+                              : raw === true ? 'ทำได้' : raw === false ? 'ปิดไว้' : 'ยังไม่เคยตั้งค่าในทะเบียน'}
+                              style={{ textAlign: 'center', padding: '5px 4px', color: col, fontWeight: 800, fontSize: 14 }}>
+                              {txt}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>)}
 
       {tab === 'pages' && (
         <>

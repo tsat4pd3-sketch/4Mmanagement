@@ -21,6 +21,7 @@ import InternalTimeBoard from '../components/InternalTimeBoard';
 import { frameMin, frameMinFromIso, breaksToFrame } from '../utils/timeFrame';
 import { withDocFoot } from '../utils/docForms';
 import { liveChannel } from '../utils/liveChannel';
+import { openPlusHistory } from '../utils/fetchByIds';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import PartCard, { partCardGrid } from '../components/PartCard';
@@ -96,18 +97,25 @@ export default function RackCenter() {
   const setParams = useMergeParams();
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: ct }, { data: req }, { data: pkg }, { data: slaRow }] = await Promise.all([
+    const [{ data: ln }, { data: ct }, { data: req, error: eReq }, { data: pkg, error: ePkg }, { data: slaRow }] = await Promise.all([
       // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
       loadLinesRes(),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
-      supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
-      supabaseDR.from('packaging_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(200),
+      /* 🔴 06/10 (ช่องโหว่สโตร์ข้อ 7) — เดิม "ล่าสุด 200 ใบ ไม่กรองสถานะ" ⇒ ใบค้างเก่าหลุดจากบอร์ดเมื่อใบโตขึ้น
+         ใบค้าง = ครบทุกใบ · ประวัติ = ล่าสุด 200 ใบ (เท่าเดิม) · ของกลาง `openPlusHistory` (utils/fetchByIds.js) */
+      openPlusHistory(
+        () => supabaseDR.from('rack_requests').select('*').not('status', 'in', '(received,cancelled)'),
+        () => supabaseDR.from('rack_requests').select('*').in('status', ['received', 'cancelled']), 200, 'requested_at'),
+      openPlusHistory(
+        () => supabaseDR.from('packaging_withdrawal_requests').select('*').not('status', 'in', '(issued,cancelled)'),
+        () => supabaseDR.from('packaging_withdrawal_requests').select('*').in('status', ['issued', 'cancelled']), 200),
       supabaseDR.from('internal_delivery_sla').select('*').eq('kind', 'rack').maybeSingle(),
     ]);
     setLines(ln || []);
     setContainerTypes(ct || []);
-    setRequests(req || []);
-    setPkgReqs(pkg || []);
+    /* โหลดไม่ครบ = บอก + คงข้อมูลรอบก่อน (เดิมกลืน error แล้วบอร์ดว่าง = "ไม่มีใบค้าง" ทั้งที่คิวรีล่ม) */
+    if (eReq) toast.error(`โหลดใบเรียกภาชนะไม่ได้ — ${eReq.message}`); else setRequests(req || []);
+    if (ePkg) toast.error(`โหลดใบเบิก packaging ไม่ได้ — ${ePkg.message}`); else setPkgReqs(pkg || []);
     if (slaRow) setSla(slaRow);
   }, []);
 

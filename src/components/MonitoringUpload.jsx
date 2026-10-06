@@ -153,16 +153,18 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
     }
 
     // ③ ประวัติการส่ง → ตารางของตัวเอง (ห้ามปนกับใบส่งของ)
+    /* 🔴 `sheet` ห้ามส่ง null — เป็นส่วนหนึ่งของคีย์ upsert ซึ่งต้องเป็น **คอลัมน์ล้วน**
+       (คอลัมน์ฝั่ง DB เป็น NOT NULL DEFAULT '' โดยเจตนา · ดู migration 20261006) */
     const hist = [
       ...rec.shipped.filter(s => s.due_date < today)
-        .map(s => ({ mat_no: s.mat_no, ship_date: s.due_date, qty: s.qty, kind: 'out', sheet: s.sheet })),
+        .map(s => ({ mat_no: s.mat_no, ship_date: s.due_date, qty: s.qty, kind: 'out', sheet: s.sheet || '' })),
       ...rec.orders.filter(o => o.past)
         .map(o => ({ mat_no: o.mat_no, ship_date: o.due_date, qty: o.qty, kind: 'requirement',
-                     sheet: (String(o.note || '').split('·')[1] || '').trim() || null })),
+                     sheet: (String(o.note || '').split('·')[1] || '').trim() })),
     ];
     const seen = new Set(), histUniq = [];
     hist.forEach(h => {
-      const k = `${h.mat_no}|${h.ship_date}|${h.kind}|${h.sheet || ''}`;
+      const k = `${h.mat_no}|${h.ship_date}|${h.kind}|${h.sheet}`;
       if (seen.has(k)) return;
       seen.add(k); histUniq.push({ ...h, created_by_name: by });
     });
@@ -351,6 +353,24 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
           <b style={{ fontSize: 12 }}>🔁 บล็อกซ้ำในไฟล์ {rec.orderDupes} แถว — ยุบให้แล้ว</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             พาร์ทเดียวถูกเขียนไว้หลายบล็อกในชีทเดียวกัน · ถ้าไม่ยุบ ความต้องการจะกลายเป็น 2 เท่า
+          </div>
+        </div>
+      )}
+      {/* 🔴 พาร์ทซ้ำของ Forecast/MIN-MAX ต้องบอกเสมอ — ค่าไม่ตรงกัน = ไฟล์ต้นทางมีปัญหา คนต้องรู้ */}
+      {!!(rec.forecastDupes || rec.levelDupes) && (
+        <div style={warnBox('#78350f22', '#f59e0b')}>
+          <b style={{ fontSize: 12 }}>
+            🔁 พาร์ทซ้ำ — Forecast {rec.forecastDupes} แถว · MIN/MAX {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
+          </b>
+          <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
+            พาร์ทเดียวเขียนหลายบรรทัด (เช่น 300T MAT 20059152 คว่ำครีบ/หงายครีบ — FC เดือนเป็นของพาร์ทเดียวกัน)
+            · ไม่ยุบ = ยอดพยากรณ์ 2 เท่า และ MIN/MAX เขียนไม่ลงทั้งก้อน
+            {!!(rec.forecastConflicts || rec.levelConflicts) && (
+              <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>
+                ⚠️ ในนั้น <b>ค่าไม่ตรงกัน {rec.forecastConflicts + rec.levelConflicts} คู่</b> — ระบบเลือกค่ามากสุดให้ก่อน
+                แต่ควรไปแก้ไฟล์ต้นทางให้เหลือค่าเดียว
+              </div>
+            )}
           </div>
         </div>
       )}

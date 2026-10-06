@@ -764,3 +764,46 @@ test('stockAdjustPlan — ส่วนต่าง = ไฟล์ − ปัจ�
   assert.deepEqual(stockAdjustPlan(p, after, norm), []);
   assert.deepEqual(stockAdjustPlan(null, null), []);
 });
+
+/* ── 🔴 พาร์ทเดียวเขียน 2 บรรทัดในชีทเดียว (ของจริง 300T: MAT 20059152 คว่ำครีบ/หงายครีบ) ──
+   FC เดือน + MIN เป็นของ "พาร์ท" ตัวเดียวกัน ⇒ ส่งซ้ำในก้อนเดียวพังคนละแบบ 2 ทาง:
+     · MIN/MAX เป็น upsert → PostgreSQL ปฏิเสธทั้งก้อน
+       "ON CONFLICT DO UPDATE command cannot affect row a second time" (user เจอจริง 06/10)
+     · Forecast เป็น insert และตารางไม่มี unique → ลงซ้ำเงียบๆ ⇒ ยอดพยากรณ์ 2 เท่า
+       (ของจริงในฐาน: 20059152 ก.ย. 15,734 · ต.ค. 20,234 ถูกนับซ้ำทั้งคู่)                       */
+const DUP_PRESS = [
+  ['Item', 'Picture', 'Mat SAP', 'PART NO.', 'PART NAME', 'Raw material', 'Model', 'LOT', 'Packing', 'Cost', 'FC', 'Total SL', 'Diff FC', '%SL', 'PLAN', 'Sun'],
+  [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, D(2026, 9, 1)],
+  [1, null, 20059152, 'N1WB-E16A416 (BL) คว่ำครีบ', 'BRKT RH', null, null, 2000, 400, 5, 20234, 2100, 0, 1, 'PLAN', 2000],
+  [null, null, null, null, null, null, null, null, null, null, null, null, null, null, 'MIN', 600],
+  [2, null, 20059152, 'N1WB-E16A417 (BL) หงายครีบ', 'BRKT LH', null, null, 2000, 400, 5, 20234, 1500, 0, 1, 'PLAN', 1500],
+  [null, null, null, null, null, null, null, null, null, null, null, null, null, null, 'MIN', 800],
+];
+
+test('🔴 MAT เดียวกัน 2 บรรทัด — Forecast/MIN ต้องเหลือแถวเดียวต่อคีย์ (ห้ามส่งซ้ำในก้อนเดียว)', () => {
+  const parsed = parseMonitoringWorkbook([{ name: '300T', rows: DUP_PRESS }]);
+  const rec = monitoringToRecords(parsed, { monthKey: '2026-10', lineOfMat: () => 'LINE A ( 300 Ton )' });
+
+  assert.equal(rec.forecasts.length, 1, 'FC ต้องเหลือแถวเดียวต่อ (mat, เดือน)');
+  assert.equal(rec.forecasts[0].qty, 20234, '🔴 ห้ามบวกกันเป็น 40,468 — เป็นค่าเดียวที่เขียนซ้ำ');
+  assert.equal(rec.forecastDupes, 1);
+
+  const keys = rec.levels.map(l => `${l.line_name}|${l.mat_no}`);
+  assert.equal(new Set(keys).size, keys.length, '🔴 คีย์ (ไลน์, MAT) ห้ามซ้ำในก้อนที่จะ upsert');
+  assert.equal(rec.levels.length, 1);
+  assert.equal(rec.levels[0].min_qty, 800, 'ค่าไม่ตรงกัน = เอาค่ามากสุด (เลือกน้อย = ของขาด)');
+  assert.equal(rec.levelDupes, 1);
+  assert.equal(rec.levelConflicts, 1, 'ต้องนับไว้บอกบนจอว่าไฟล์ต้นทางมีค่าไม่ตรงกัน');
+});
+
+test('ค่าซ้ำที่ "ตรงกันเป๊ะ" ต้องยุบเงียบได้ แต่ยังนับ dupes (ไม่ใช่ conflict)', () => {
+  const same = DUP_PRESS.map(r => r.slice());
+  same[5] = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, 'MIN', 600];
+  const rec = monitoringToRecords(parseMonitoringWorkbook([{ name: '300T', rows: same }]),
+    { monthKey: '2026-10', lineOfMat: () => 'LINE A ( 300 Ton )' });
+  assert.equal(rec.levels.length, 1);
+  assert.equal(rec.levels[0].min_qty, 600);
+  assert.equal(rec.levelDupes, 1);
+  assert.equal(rec.levelConflicts, 0);
+  assert.equal(rec.forecastConflicts, 0);
+});

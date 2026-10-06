@@ -171,6 +171,35 @@ for i, r in enumerate(rows):
         xx += cw[j]
 notes(s, "ตารางนี้คือคำตอบของคำถาม \"workflow ที่ต้องเกี่ยวข้องกับคนอื่นดีขึ้นยังไง\" — คอลัมน์สถานะพูดตรงๆ: ขาที่ระบบทำเองทำงานครบ แต่ขาที่ต้องมีคนกด (QA ตัดสิน, สโตร์รับใบ, ประชุมออกใบติดตาม) ยังค้าง")
 
+# ── 6 Paper replaced + usage (measured round 2) ──────────────────
+s = content("Paper replaced — records per month", MEASURED)
+rows = [
+    ("Shift reports", "Daily production report (paper)", "497", "505"),
+    ("Downtime records", "Downtime log book / board", "3,688", "3,792"),
+    ("Repair orders", "FM-MTN-006 / FM-JIG-008", "76", "496"),
+    ("LPA audits", "FM-QMR-008", "289", "222"),
+    ("Attendance rows", "Check-in sheet / manpower board", "2,897", "3,489"),
+    ("PM inspection sheets", "Paper PM check sheet", "6", "88"),
+    ("BBS / OJT / quality bins", "Excel BBS · FM-HRM-004 · bin tags", "32", "26"),
+]
+x0, y0, cw = 0.5, 1.75, [3.0, 3.9, 1.3, 1.3]
+for j, t in enumerate(["Record", "Replaces", "Aug", "Sep"]):
+    xx = x0 + sum(cw[:j])
+    T.rect(s, xx, y0, cw[j], 0.42, fill=GREEN_D)
+    T.text(s, xx + 0.08, y0, cw[j] - 0.1, 0.42, [[(t, {"sz": 12, "b": True, "c": WHITE})]], anchor=MSO_ANCHOR.MIDDLE, align=PP_ALIGN.LEFT if j < 2 else PP_ALIGN.CENTER)
+for i, r in enumerate(rows):
+    yy = y0 + 0.42 + i * 0.5
+    for j, t in enumerate(r):
+        xx = x0 + sum(cw[:j])
+        T.rect(s, xx, yy, cw[j], 0.5, fill=GREEN_TINT if i % 2 == 0 else WHITE)
+        T.text(s, xx + 0.08, yy, cw[j] - 0.12, 0.5, [[(t, {"sz": 12, "b": j in (0, 3), "c": ORANGE if j == 3 else GREEN_M})]], anchor=MSO_ANCHOR.MIDDLE, align=PP_ALIGN.LEFT if j < 2 else PP_ALIGN.CENTER)
+stat(s, 10.3, 1.75, 2.55, "71 / 100", "Accounts active in 30 days", "47 in the last 7 days")
+stat(s, 10.3, 3.7, 2.55, "1", "PM plans overdue today", "of 147 active plans")
+notes(s, "ทุกแถว = ใบ/บันทึกที่เมื่อก่อนเขียนมือหรือทำ Excel — ตอนนี้บันทึกครั้งเดียวในระบบแล้วทุกแผนกเห็น (ตัวเลขนับจากฐานข้อมูลจริง 06/10)\n"
+          "เด่นสุด: ใบซ่อม 76 → 496 ใบ/เดือน · ใบตรวจ PM 6 → 88 · downtime เกือบ 3,800 รายการ/เดือน\n"
+          "บัญชีผู้ใช้ 100 · เข้าใช้ใน 30 วัน 71 คน · ใน 7 วัน 47 คน\n"
+          "อย่าอ้าง: ใบรายงานของเสีย FM-PD2-002 ก.ย. = 0 ใบ และใบเบิก FM-STO-003 ยังไม่เคยใช้")
+
 # ── Department slides ───────────────────────────────────────────────
 T_LIVE, T_PART, T_NOT = ("Live", GREEN_M), ("Partly live", AMBER), ("Not started", ORANGE)
 
@@ -210,6 +239,7 @@ dept("Maintenance (MTN)", "Repair orders that move by themselves", *T_LIVE,
      "MTN: ตัวเลขจริง ก.ย. — ช่างรับทราบการเรียก P80 30 นาที (ส.ค. 529 นาที) · เครื่องหยุด→เปิดใบซ่อม 3.2 นาที · ใบซ่อม→ซ่อมเสร็จ P80 0.9 ชม.\n"
      "ก่อนแก้ 21/09: เรียกช่างครั้งเดียวเด้งถึงช่างทั้ง 13 คน 278 ครั้ง/30 วัน — ตอนนี้เด้งเฉพาะทีมที่ถูกเรียก\n"
      "Demo: /daily-report กด 📞 เรียกช่าง → เลือกทีม → เปิด /mtn-repair ใบเดียวกันเห็นข้อมูลเครื่องเติมแล้ว → /mtn-analysis?tab=qc7\n"
+     "PM: ใบตรวจ ส.ค. 6 → ก.ย. 88 ใบ · แผน PM 147 แผน เลยกำหนดวันนี้แค่ 1\n"
      "ห้ามพูดเกิน: ซ่อมเร็วแล้ว แต่ปิดใบช้า — ใบค้างที่ขั้น QA 205 ใบ (06/10) · ห้ามใช้เลข \"ใบซ่อม 7 ใบ\" ใน infographic เก่า")
 
 dept("JIG & DIE Maintenance", "Equipment records that answer 'where is it, what state?'", *T_NOT,
@@ -246,6 +276,7 @@ dept("Store", "From reading the LINE chat to a pull board", *T_PART,
      "สโตร์: เล่าด้วยคำของทีมเอง (27/08) \"อ่านจาก LINE chat กลุ่มว่ามีใครเบิกงาน เห็นใครเบิกก่อนก็จัดของไปส่งเลย มั่วมาก\"\n"
      "ขาที่ระบบทำเองทำงานครบ (ปิดใบผลิต/ระเบิด BOM สำเร็จ 15,094/15,185 ครั้ง ณ 24/09) — ขาที่ต้องมีคนกดยังค้าง\n"
      "Demo: /heijunka แท็บคิวเติม WIP ให้เห็นใบที่เดินครบทุกขั้น หรือ /flow-tower ให้เห็นว่าปิดใบ FG ใบเดียวไหลไปถึงใบสั่งซื้อ\n"
+     "ตัวเลขจริง (ต.ค.): ใบรอรับเข้าคลัง ปิดใบ→คลังกดรับ ค่ากลาง ~73 ชม. (โหมดนับก่อนรับเพิ่งเริ่ม 02/10 — ยังช้า) · ใบขอซื้อ \"เร็วขึ้น\" ห้ามอ้าง เพราะปนกับการเคลียร์แบบ bulk\n"
      "ห้ามพูดเกิน: ไลน์ประกอบยังไม่ตั้ง min/max · ห้ามวาดว่ามีขั้นสแกน lot · ยอดรับของ bulk 01/10 (~2 ล้านชิ้น) ยังรอยืนยันว่าเป็นของจริง")
 
 dept("Logistic / Delivery / Warehouse", "Customer mail in, delivery rounds out", *T_PART,
@@ -262,6 +293,7 @@ dept("Logistic / Delivery / Warehouse", "Customer mail in, delivery rounds out",
      "receives customer demand · receives FG from Production · alerts Production when stock is short",
      "Logistic: Demo /planner-sales แผง 📬 ไฟล์จากเมลรอนำเข้า → กดนำเข้า → /customer-demand ดูสีรอบส่ง (เมลเข้า → แผนส่ง โดยไม่มีคนเปิดไฟล์แนบ)\n"
      "ใช้เลขใหม่: ปิดส่งลูกค้า 232 เที่ยว/8 วัน (30/09) — ห้ามใช้เลข \"38 จาก 472\" ของ 25/08\n"
+     "ตัวเลขจริง: ส่งลูกค้าตรง/ก่อนกำหนด ส.ค. 91% → ก.ย. 72% (แย่ลง — ต้องอธิบายสาเหตุ) → ต.ค. 87% (6 วัน) · EDI จากเมลถึง→นำเข้า ค่ากลาง 87 → 5 ชม. (ข้อมูลน้อย)\n"
      "ห้ามพูดเกิน: ยังใช้บัญชีร่วมเป็นหลัก · ตัวดึงเมลทำงานเฉพาะตอนเครื่อง Outlook เปิด และยังต้องกดยืนยันนำเข้า")
 
 dept("Sales & Planning", "From a 13-sheet Excel to a live board", *T_PART,
@@ -321,7 +353,7 @@ dept("HR & Administration", "Training, attendance and the calendar everyone depe
       "Wrong working-day counts (calendar now set to 2027)"],
      "the calendar feeds every department · attendance feeds manpower and skills",
      "HR/ธุรการ: เน้นว่าปฏิทินบริษัทเป็น \"ข้อมูลกลาง\" — ถ้าผิด kanban / แผนผลิต / PM / LPA ผิดตามหมดเงียบๆ (บทเรียนจริง 28–29 ก.ย.) · ตอนนี้ปฏิทินมีถึงปี 2027 แล้ว\n"
-     "ก่อนพูด: ยังไม่มีตัวเลขการใช้งาน OJT จริงในเอกสาร ต้องคิวรีก่อน (ถ้าไม่มีใบจริง อย่าเปิดจอ)")
+     "ตัวเลขจริง: ใบ OJT ในระบบ ก.ค. 1 · ส.ค. 12 · ก.ย. 6 · ต.ค. 1 ใบ · เช็คชื่อ ~3,500 แถว/เดือน · BBS 8/6/11 ใบ (ส.ค.–ต.ค.)")
 
 dept("Management / OBEYA", "From a paper wall to one scoreboard", *T_PART,
      ["Paper OBEYA KPI board on the wall",
