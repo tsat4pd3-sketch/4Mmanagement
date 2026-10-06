@@ -343,7 +343,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>
                     <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{sizeTxt}</span>
                     {/* 🔴 เดิมเขียน "รอสโตร์จ่ายวัตถุดิบ N/N" ซึ่ง **เป็น false alarm ถาวร**:
-                        raw_withdrawal_requests.status ถูกเซ็ตเป็น issued ที่เดียว = ตอนคนกดปิดล็อต
+                        raw_withdrawal_requests.status ถูกเซ็ตเป็น issued เฉพาะตอนคนกดปิดล็อต (06/10: หรือกด "จ่ายวัตถุดิบ")
                         ที่ /heijunka · วัดจริง 10/09 ทั้งระบบ pending 727 / issued 13 (ครั้งสุดท้าย 27/08)
                         ⇒ ทุกล็อตขึ้น "รอสโตร์จ่าย" ตลอดกาล ทั้งที่ไลน์ผลิตอยู่ 100%
                         มันไม่ได้วัดว่าของมาหรือยัง — มันวัดว่ามีคนกดปุ่มบนบอร์ดสโตร์หรือยัง
@@ -352,7 +352,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                       <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
                     ) : (
                       <span title={`ใบเบิกที่ผูกกับล็อตชุดนี้ ${g.rawAll} ใบ · ปิดในระบบแล้ว ${g.rawAll - g.rawWait} ใบ
-(สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เฉพาะตอนกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
+(สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เมื่อสโตร์กด "จ่ายวัตถุดิบ" หรือกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
                         · 🪨 ใช้ของ {g.mats} รายการ
                         {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · 🏭 ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
                         {g.buy.length > 0 && <span> · 🛒 ของซื้อ {g.buy.length}</span>}
