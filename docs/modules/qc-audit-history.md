@@ -235,9 +235,14 @@
   · 42 จุดในนั้นเป็นรูป `.eq('id', …)` = กลุ่มที่ควรแปลงก่อนเมื่อมีคนไล่ต่อ
 - **14 ชุด `addDays` ที่เหลือ** — วัดแล้วถูกต้องทั้งหมด · การยุบเหลือชุดเดียว = งานกวาด ไม่ใช่แก้บั๊ก
 - **`manage_master_data` (คีย์เกษียณ) ยังมีแถวอยู่** — ยังไม่ได้ไล่ครบว่ามี policy อื่นอ่านอยู่หรือไม่ · ลบ = เสี่ยง
-- **`shiftFrameOf()` vs `computeLiveOee()` ไม่ตรงกันบนกะดึกที่เริ่ม 00:00–07:59** — เป็น product decision
-  (ตกลงนิยาม "กรอบกะ" ก่อน) ไม่ใช่บั๊กที่แก้เองได้ · **ต้องถาม user**
-- **`page:/flow-tower` ไม่เคย seed** — หน้านี้เป็นจอผู้บริหาร/เดโม · การเปิดให้ใครเห็นเป็น decision ของ user
+- ~~`shiftFrameOf()` vs `computeLiveOee()` ไม่ตรงกัน = product decision ต้องถาม user~~
+  → **ตรวจแล้วเป็นบั๊กชัดเจน ไม่ใช่เรื่องต้องตกลงนิยาม** (วัดได้ว่ากรอบกะเพี้ยน 20 ชม. · มีของจริง 5 กะ)
+  **แก้แล้ว** — ของกลาง `shiftStartDate()` · 📄 `oee.md` §shiftStartDate
+  ⚠️ ที่ยังค้าง: ยังไม่ backfill ค่า OEE ที่ stamp ไว้ของ 5 กะนั้น
+- ~~`page:/flow-tower` ไม่เคย seed~~ → **ตรวจแล้ว seed ไว้อยู่แล้ว 11 role**
+  (admin · display · document_control · engineer · leader · manager · mtn · planner_store · qa ·
+  supervisor · warehouse_delivery) ⇒ **audit รายงานผิด ไม่มีอะไรต้องแก้**
+  (เทียบ: `page:/group-overview` และ `page:/adoption-outlook` = admin + manager เท่านั้น — จอผู้บริหารจริง)
 - **3 กราฟรายวันที่ข้ามวันไม่มีข้อมูล** · **select → picker กลาง (VSM/PEDocs/ProductMaster)** ·
   **`SearchInput` 11 จุด** · **`StoreTimeChart` แกนเวลา 2 ชุด** · **`ShiftOrganize` canEdit/canDel**
   — งาน UI standardization ที่ไม่มีบั๊กทำงาน ค้างไว้เป็นรอบถัดไป (ไม่กระทบตัวเลข/สิทธิ์/ข้อมูล)
