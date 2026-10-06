@@ -178,3 +178,34 @@ export function resolveDeliveryPoint(scan, points = []) {
   }
   return null;
 }
+
+/**
+ * 🔨 สแกนป้ายแม่พิมพ์ → แม่พิมพ์ตัวไหน (2026-10-06 · คำสั่ง user "สแกน QR แม่พิมพ์เด้งเข้าผัง")
+ * แม่พิมพ์ใช้ตัวตนเดียวกับเครื่องจักร (`machines` · equipment_kind='die') ⇒ ป้าย = `ESM:M:<uuid>` / เลขแม่พิมพ์เปล่า
+ * คืน `{ die }` หรือ `{ error }` — **ทุกทางที่หาไม่เจอต้องบอกเหตุ** (ป้ายผิดชนิด · ไม่มีในทะเบียน · ปิดใช้ · นอกขอบเขต)
+ * ห้ามคืน null เงียบ: คนยืนหน้าชั้นวางแม่พิมพ์ต้องรู้ว่าทำไมหมุดไม่เด้ง
+ * @param {object}   scan    ผลจาก parseQrPayload
+ * @param {Array}    dies    แม่พิมพ์ **ทั้งหมด** (ไม่กรองขอบเขต — ไม่งั้นแยก "นอกขอบเขต" กับ "ไม่มี" ไม่ได้)
+ * @param {Function} inScope (die) => boolean — ขอบเขตไลน์ที่จอเลือกอยู่
+ */
+export function findDieByScan(scan, dies = [], inScope = () => true) {
+  if (!scan) return { error: 'อ่านรหัสจากป้ายไม่ได้' };
+  // ป้ายแม่พิมพ์พิมพ์จากแท็บ ⚙️ เครื่องจักร ของ /qr-labels (machines รวมแม่พิมพ์) — ESM:J = ทะเบียน PM/จิ๊ก คนละตัว
+  if (scan.kind === 'jig') {
+    return { error: 'ป้ายนี้เป็นป้ายจิ๊ก (ESM:J) — ป้ายแม่พิมพ์ต้องพิมพ์จากหน้าพิมพ์ป้าย QR แท็บ ⚙️ เครื่องจักร' };
+  }
+  if (scan.kind && scan.kind !== 'machine') {
+    return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้ายแม่พิมพ์` };
+  }
+  const die = resolveMachine(scan, dies);
+  if (!die) {
+    return { error: scan.typed
+      ? 'ไม่พบในทะเบียนแม่พิมพ์ — ป้ายนี้อาจเป็นของเครื่องจักร ไม่ใช่แม่พิมพ์'
+      : `ไม่พบแม่พิมพ์เลข "${scan.id}" ในทะเบียน` };
+  }
+  if (die.is_active === false) return { error: `แม่พิมพ์ ${die.machine_no} ปิดใช้งานแล้ว` };
+  if (!inScope(die)) {
+    return { error: `แม่พิมพ์ ${die.machine_no} อยู่นอกขอบเขตไลน์ที่เลือกอยู่${die.line_name ? ` (${die.line_name})` : ''} — เปลี่ยนขอบเขตแล้วสแกนใหม่` };
+  }
+  return { die };
+}

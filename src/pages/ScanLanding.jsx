@@ -112,6 +112,8 @@ export default function ScanLanding() {
     : hit?.jig ? [hit.jig.name, hit.jig.line_name].filter(Boolean).join(' · ') : '';
 
   const found = !!(hit?.machine || hit?.jig);
+  // 🔨 แม่พิมพ์ใช้ตัวตนเดียวกับเครื่องจักร (machines · equipment_kind='die') — ป้าย ESM:M ชุดเดียวกัน (2026-10-06)
+  const isDie = hit?.machine?.equipment_kind === 'die';
 
   /* แผนกที่มีใบตรวจของอุปกรณ์นี้ (checklists.department = key ทีมช่าง) — ส่ง `dept=` ไปหน้า PM
      ไม่ส่ง = PMCheckData เปิดแผนก maintenance เสมอ ⇒ จิ๊กของ JIG MTN/AM หาใบตรวจไม่เจอ (QC 05/10)
@@ -193,13 +195,18 @@ export default function ScanLanding() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={card}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 2 }}>
-              {hit.machine ? '⚙️ เครื่องจักร' : '🧩 อุปกรณ์'}
+              {isDie ? '🔨 แม่พิมพ์' : hit.machine ? '⚙️ เครื่องจักร' : '🧩 อุปกรณ์'}
             </div>
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{title}</div>
             {subtitle && <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{subtitle}</div>}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* 🔨 แม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (แผงหมุดมีเปลี่ยนสถานะ + ใบซ่อมค้าง) · ตัวตัดสิน = findDieByScan ใน DieRegistry */}
+            {isDie && canAccessPage('/die-registry', role) && (
+              <ActionLink to={`/equipment?tab=die&die=layout&focus=${encodeURIComponent(hit.machine.id)}`} icon="🗺️"
+                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="#a78bfa" />
+            )}
             {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
               ? pmDepts.map(d => (
                   <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon="✅"
