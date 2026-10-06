@@ -205,6 +205,27 @@ const FACTORY_MAP_IMG = 'data:image/svg+xml;utf8,'
     + '<rect width="1600" height="900" fill="#1f2937"/>'
     + '<rect x="60" y="60" width="1480" height="780" fill="none" stroke="#475569" stroke-width="6"/></svg>')
 const isNullish = (r) => r.qty === null
+/* 🔧 AM รายวัน — ผังคีย์ของ jig / ใบตรวจ / รายการลงทะเบียน (เหตุผลเต็มอยู่ที่ TABLE_ROWS.jigs)
+   AM_JIG[i]    = [ไลน์ที่, equipment_type, equipment_category]
+   AM_TARGET[i] = [ไลน์ที่, jig ที่, shift (null = ทุกกะ)]
+   AM_INSP[i]   = ผลตรวจของ jig ที่ i (ว่าง = pass) */
+const AM_JIG = {
+  1: [1, 'machine', 'production'],  2: [1, 'jig', 'production'],
+  3: [2, 'machine', 'production'],  4: [2, 'jig', 'production'],
+  5: [3, 'machine', 'production'],  6: [3, 'machine', 'production'],
+  7: [5, 'die', 'facility'],        8: [5, 'machine', 'production'],
+  9: [4, 'jig', 'production'],     10: [4, 'jig', 'production'],
+  11: [4, 'machine', 'facility'],  12: [4, 'die', 'facility'],
+  13: [4, 'machine', 'production'],
+}
+const AM_TARGET = {
+  1: [1, 1, null],  2: [1, 2, null],  3: [2, 3, null],  4: [2, 4, null],
+  5: [3, 5, null],  6: [3, 6, null],  7: [5, 7, null],
+  8: [5, 8, 'night'], 9: [5, 14, 'day'], 10: [4, 13, null],
+  11: [4, 9, null], 12: [4, 10, null], 13: [4, 11, null], 14: [4, 12, null],
+}
+const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
+
 const TABLE_ROWS = {
   /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
@@ -243,6 +264,17 @@ const TABLE_ROWS = {
   manpower_slot_plans: (r, i) => ({ ...r, org_node_id: 'id-2', team: ['A', 'B', 'D'][i % 3], slots: isNullish(r) ? 0 : 6 }),
   // 📍 คนต่อกะของจุดงาน — 1 คน/กะ ทุกจุด (บางจุดตั้ง 2) ⇒ สายช่องว่างระบุจุด + วงประบนผัง LAYOUT ถูกรัน
   station_slot_plans: (r, i) => ({ ...r, station_id: `id-${i}`, per_shift: i % 5 === 0 ? 2 : 1 }),
+  /* 📜 audit_log — คละ 3 ตารางค่าตั้งบอร์ด × INSERT/UPDATE/DELETE + actor ว่าง ⇒ จอประวัติการเปลี่ยนช่องถูกรันครบทุกสาขา
+     (แถวที่ไม่ใช่ 3 ตารางนี้ = ตัวกรองต้องตัดทิ้ง) */
+  audit_log: (r, i) => {
+    const t = ['manpower_slot_plans', 'station_slot_plans', 'line_technicians', 'employees'][i % 4];
+    const act = ['INSERT', 'UPDATE', 'DELETE'][i % 3];
+    const data = t === 'manpower_slot_plans' ? { org_node_id: 'id-2', team: 'A', slots: i }
+      : t === 'station_slot_plans' ? { station_id: `id-${i}`, per_shift: 1 } : { employee_id: `id-${i}`, line_id: 'id-3' };
+    return { ...r, id: i, table_name: t, action: act, actor: isNullish(r) ? null : `ผู้แก้ ${i}`,
+      old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
+      changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
+  },
   line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
   line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
@@ -360,6 +392,40 @@ const TABLE_ROWS = {
      · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
      · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
   production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
+     `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
+     **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
+     เดิม mock **ไม่มี `jig_id` เลยสักแถว** ⇒ ทุก target ตกที่ `if (!j) continue` ⇒ ทั้งหน้าเหลือ
+     ข้อความ "ยังไม่มีไลน์ที่ลงทะเบียนเครื่องตรวจ" ⇒ **`computeDailyPmStatus` (`src/lib/pmDailyStatus.js`)
+     และสีทั้งชุด (เขียว/แดง/ส้ม/idle) ไม่เคยถูกเรนเดอร์ใน harness เลยสักครั้ง**
+     (คลาสเดียวกับ `session_id` / `checklist_id` ข้างบน)
+     กติกาที่ต้องคงไว้:
+     · `jigs` — ชนิด/หมวดตามสัดส่วนจริง (jig/production 106 · machine/production 38 ·
+       machine/facility 14 · die/facility 2) ⇒ ได้ทั้งสาขา "ตัดออกเพราะชนิด/หมวด" และ
+       "ไม่ระบุชนิด (legacy) ต้องไม่หายจากลิสต์" (แถว NULLISH คงความว่างไว้ = เคส legacy)
+     · `checklists.equipment_id` — ชี้ `jigs.id` จริงแค่ **บางส่วน** (i ≤ 8) ⇒ เปิดสาขา
+       "มี checklist AM อยู่แล้ว ชนะการเดาจากชนิด" (jig/die ที่ฝ่ายผลิตตั้งใจตรวจเอง · คำสั่ง user 11/08)
+       ที่เหลือชี้ `e-*` = ใบของอุปกรณ์ฝั่ง MTN — **ห้ามตั้ง null** (ของจริงไม่เคยว่าง 147/147)
+     · `inspections.status` — คละ `pass`/`pending`/`fail` ตามของจริง (100/16/9) ·
+       **`pending` ยังไม่ถือว่าตรวจแล้ว** (ดู `computeDailyPmStatus`)
+     · ไลน์ของ target เลือกให้ครบ 4 สี: ไลน์ 1 = แดง (มี fail) · 2 = เขียว · 3,4 = ส้ม (เกินเวลา
+       ยังไม่ครบ) · 5 = idle (**ไลน์ 1-4 เท่านั้นที่มีกะเปิด** ดู `production_sessions` ข้างบน)
+     · target 11-14 ชี้ jig ที่ถูกกรองออก = เคสจริง "ลงทะเบียนไว้แล้วอุปกรณ์เปลี่ยนชนิด/ถูกย้ายหมวด"
+     · แถวเฉพาะกะต้องมีคู่กันบนไลน์เดียวกัน (8 = night · 9 = day) ⇒ รันกะไหนก็ได้ทั้งสาขา
+       "ข้ามเพราะคนละกะ" และ "นับรวม" และสีของไลน์ไม่แกว่งตามเวลาที่รัน sweep
+     ⚠️ 2 สีที่ **ยังเรนเดอร์ใน harness ไม่ได้** (รู้ตัว ไม่ใช่ลืม): `pending` = อยู่ในกรอบ 60 นาที
+        หลังเปิดใบ ต้องมี `opened_at` ใกล้เวลาจริงซึ่งจะทำให้ mock ไม่นิ่ง · `none` = total 0
+        ซึ่งบอร์ดนี้สร้างไม่ได้ (จัดกลุ่มจาก target ที่มีอยู่) — ใช้ที่ `src/lib/pmDailyAlarm.js` */
+  jigs: (r, i) => (isNullish(r) || !AM_JIG[i] ? r : ({
+    ...r, line_name: LINE_NAME(AM_JIG[i][0]),
+    equipment_type: AM_JIG[i][1], equipment_category: AM_JIG[i][2],
+  })),
+  checklists: (r, i) => ({ ...r, equipment_id: i <= 8 ? `id-${i}` : `e-${i}` }),
+  inspections: (r, i) => ({ ...r, jig_id: `id-${i}`, status: AM_INSP[i] || 'pass' }),
+  pm_daily_line_targets: (r, i) => ({
+    ...r, line_name: LINE_NAME(AM_TARGET[i][0]), jig_id: `id-${AM_TARGET[i][1]}`,
+    shift: AM_TARGET[i][2], is_active: true, sort_order: i,
+  }),
   /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
      `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
      ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**
