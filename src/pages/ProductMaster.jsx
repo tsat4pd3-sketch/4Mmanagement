@@ -1856,6 +1856,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      ⚠️ ไม่ติดธง OP — นี่คือพาร์ทจริง (ชั้น OP ต้องติ๊กเองที่แท็บ Products ตามเดิม) */
   const [headBusy, setHeadBusy] = useState(false);
   const [headPick, setHeadPick] = useState(false);
+  const [bomBack, setBomBack] = useState([]);   // เส้นทางที่กดเข้ามา (ใบแม่ → ใบลูก) สำหรับปุ่มย้อนกลับ
   const makeBomHead = async (part) => {
     const mat = String(part?.mat_no ?? '').trim().toUpperCase();
     if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
@@ -2020,6 +2021,16 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     await loadAll(); await loadItems(target.id);
     void parsed;
   };
+
+  /* 📄 กดเลข MAT ในต้นไม้ → เปิด "ใบของพาร์ทตัวนั้น" + จำใบเดิมไว้ให้กดย้อนกลับ
+     (user 06/10: เข้าใจว่าต้องสร้างใบแยกกันเอง ที่จริงใบนั้นคือการนิยามครั้งเดียวที่ใบ FG ยืมมากาง) */
+  const openSheetOfMat = useCallback((mat) => {
+    const k = upMat(mat);
+    const target = items.find(i => upMat(i.mat_no) === k);
+    if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
+    setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
+    setSelProduct(target); setSearch(target.mat_no || '');
+  }, [items, selProduct]);
 
   const openPicker = (parentMat) => {
     setPickerQ(''); setPickerSel([]);
@@ -2300,7 +2311,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             const active = selProduct?.id === p.id;
             const n = counts[p.id] || 0;
             return (
-              <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
+              <div key={p.id} onClick={() => { setSelProduct(p); setBomBack([]); }} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: '#0ea5e9', marginRight: 4 }}>🔩</span>}
@@ -2326,6 +2337,18 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
+                {/* ↩ เส้นทางที่กดเข้ามาจากต้นไม้ (ใบ FG → ใบ sub-assembly) — ย้อนกลับได้ทีละชั้น */}
+                {bomBack.length > 0 && (
+                  <button type="button"
+                    onClick={() => { const prev = bomBack[bomBack.length - 1];
+                      const back = items.find(i => i.id === prev.id);
+                      setBomBack(b => b.slice(0, -1));
+                      if (back) { setSelProduct(back); setSearch(back.mat_no || ''); }
+                      else toast.info('ใบเดิมไม่อยู่ในลิสต์แล้ว — เลือกจากด้านซ้ายได้'); }}
+                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginTop: 6 }}>
+                    ↩ กลับไปใบ {bomBack[bomBack.length - 1].mat_no || bomBack[bomBack.length - 1].name}
+                  </button>
+                )}
                 {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
                 {selProduct._op && (
                   <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
@@ -2358,7 +2381,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor}
-                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
+                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
+                      onOpenSheet={openSheetOfMat} />
                   </div>
                 )}
               </div>
