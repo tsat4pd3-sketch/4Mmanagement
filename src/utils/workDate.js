@@ -110,3 +110,22 @@ export function addDaysStr(iso, n = 0) {
   if (Number.isNaN(t.getTime())) return null;
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 }
+
+/**
+ * `'YYYY-MM-DD'` **ตามเวลาไทย** ของ timestamp — ไม่พึ่ง timezone ของเครื่อง
+ *
+ * สำนวนที่ถูกต้อง: เลื่อน epoch ไป +7 ชม. แล้วอ่านฝั่ง UTC
+ * (หลักเดียวกับ `bkkHourKey()` ใน `timeRange.js` ที่ตอบ "ชั่วโมงไหนของวันไทย")
+ *
+ * 🔴 **ห้ามใช้หาวันที่งาน** — ตัวนี้ตอบ "วันตามปฏิทินไทย" ไม่ได้ตัด 08:00
+ *    วันทำงานใช้ `getWorkDate()` · ตัวนี้ไว้ตอบ "ย้อนหลัง N วันจากตอนนี้ ได้วันที่อะไร"
+ *    เพื่อส่งเป็น `from=` ให้หน้าปลายทาง (เช่น คิวงานของฉัน)
+ *
+ * @param ms epoch ms · ค่าที่อ่านไม่ออกคืน `null` (ห้ามเดาเป็นวันนี้)
+ */
+export function bkkDateStr(ms) {
+  const t = typeof ms === 'number' ? ms : Date.parse(ms);
+  if (!Number.isFinite(t)) return null;
+  const d = new Date(t + 7 * 3600000);        // +07:00 แล้วอ่าน UTC = วันตามปฏิทินไทย
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}

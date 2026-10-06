@@ -27,6 +27,7 @@
 import { personKey, normPersonName } from './actorStamp.js';
 import { stepMeta, nextStepOf } from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
+import { bkkDateStr } from './workDate.js';
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
 export const TIER = { MINE: 'mine', UNIT: 'unit', FLOOR: 'floor' };
@@ -41,10 +42,10 @@ const norm = (s) => String(s ?? '').trim().toLowerCase();
 
 /** วันที่ห่างจากวันนี้ — รับ 'YYYY-MM-DD' หรือ ISO · ค่าที่อ่านไม่ออกคืน null (ไม่ใช่ 0) */
 /** วันที่ (YYYY-MM-DD ตามเวลาไทย) ย้อนหลังไป `days` วันจาก `now` — ใช้ส่ง `from=` ให้หน้าปลายทาง
- *  🔴 บวก 7 ชม. จาก epoch เอง **ห้ามพึ่ง timezone ของเครื่อง** (กฎเดียวกับ `bkkHourKey`) */
+ *  🔴 ต้องไม่พึ่ง timezone ของเครื่อง ⇒ ผ่านของกลาง `bkkDateStr()` (`workDate.js`)
+ *     ซึ่งเลื่อน epoch +7 ชม. แล้วอ่านฝั่ง UTC — หลักเดียวกับ `bkkHourKey` */
 export function dayKeyBack(days, now = new Date()) {
-  const ms = now.getTime() - (Number(days) || 0) * 86400000 + 7 * 3600000;
-  return new Date(ms).toISOString().slice(0, 10);
+  return bkkDateStr(now.getTime() - (Number(days) || 0) * 86400000);
 }
 
 export function ageDays(dateLike, now = new Date()) {
