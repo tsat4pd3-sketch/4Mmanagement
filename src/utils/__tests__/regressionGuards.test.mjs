@@ -2632,3 +2632,13 @@ test('🛡️ upsert-key-must-be-plain-columns — onConflict ต้องตร
     + '   ⚠️ ห้ามแก้ด้วย coalesce() ใน index — นั่นคือสิ่งที่พากลับมา 42P10 ทุกครั้ง\n\n'
     + hits.map(h => '   • ' + h).join('\n') + '\n');
 });
+
+
+/* ── ฝั่งไลน์ยกเลิก/รับใบ WIP ต้องล็อกสถานะต้นทาง + นับแถว (06/10 · ช่องโหว่สโตร์ข้อ 8) ── */
+test('🛡️ LinePartCallPanel: ยกเลิกได้แค่ใบ hold · รับได้แค่ใบ delivered (CAS + .select)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  assert.ok(/\.update\(\{\s*status:\s*'cancelled'\s*\}\)\.eq\('id',\s*r\.id\)\.eq\('status',\s*'hold'\)\.select\(/.test(code),
+    '\n\n❌ ปุ่ม "ไม่ใช้แล้ว" ยกเลิกใบได้ทุกสถานะ — จอค้างแล้วยกเลิกใบที่สโตร์ตัดสต็อกไปแล้วได้\n');
+  assert.ok(!/neq\('status',\s*'received'\)/.test(code) && /\.eq\('status',\s*'delivered'\)\.select\(/.test(code),
+    '\n\n❌ ปุ่ม "รับ" ต้อง .eq(status, delivered) — .neq(received) ชุบชีวิตใบที่ถูกยกเลิก/ปิดลูปใบที่สต็อกยังไม่ถูกตัด\n');
+});
