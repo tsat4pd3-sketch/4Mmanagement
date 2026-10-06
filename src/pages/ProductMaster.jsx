@@ -52,6 +52,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
+import { DeleteButton } from '../components/IconButton';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -2476,7 +2477,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
                               {canEdit && <button className="tbtn" onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                              {canDelete && <button className="tbtn" onClick={() => handleDelete(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>}
+                              {canDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
                             </div>
                           </TD>
                         )}
@@ -3558,7 +3559,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
                           {(canEdit || canDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
                             {canEdit && <button className="tbtn" onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                            {canDelete && <button className="tbtn" onClick={() => delLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>}
+                            {canDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
                           </div></TD>}
                         </tr>
                       ))}
@@ -3638,7 +3639,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                     <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
                       <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-                      <button className="tbtn" onClick={() => delMaster(m)} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 11 }}>🗑</button>
+                      <DeleteButton onClick={() => delMaster(m)} title="ลบ" />
                     </div></TD>}
                   </tr>
                 ))}

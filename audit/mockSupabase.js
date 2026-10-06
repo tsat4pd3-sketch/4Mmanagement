@@ -208,6 +208,11 @@ const TABLE_ROWS = {
     ['line_leader', 'หัวหน้าไลน์', 'leader'], ['dept_head', 'หัวหน้าแผนก', 'supervisor'], ['section_head', 'หัวหน้าส่วน', 'supervisor'],
     ['manager', 'ผู้จัดการฝ่าย', 'manager'], ['officer', 'เจ้าหน้าที่', 'staff'],
   ].map(([key, label_th, level]) => ({ key, label_th, level }))[i - 1] || {}), sort_order: i }),
+  /* 🧑‍🤝‍🧑 ค่าตั้งบอร์ด (06/10) — ให้สาย "ช่องที่ตั้งเอง" (มีคน/ไม่มีคน) · ช่างประจำไลน์ · คนในสังกัดไปช่วยไลน์อื่น ถูกรัน
+     ทีม D = ตั้งช่องไว้แต่ยังไม่มีใคร ⇒ คอลัมน์ช่องว่างล้วน · line_helpers ชี้ไลน์นอกแผนก (id-9) ⇒ ป้าย "↗ ไปช่วย" */
+  manpower_slot_plans: (r, i) => ({ ...r, org_node_id: 'id-2', team: ['A', 'B', 'D'][i % 3], slots: isNullish(r) ? 0 : 6 }),
+  line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),

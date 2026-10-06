@@ -113,7 +113,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
             </div>
           )}
           {!overriding && (
-            <button onClick={() => setScanOpen(true)} disabled={busy} style={{ ...btn('var(--accent)', '#08130c', 'transparent', busy), marginTop: 8 }}>
+            <button onClick={() => setScanOpen(true)} disabled={busy} style={{ ...btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy), marginTop: 8 }}>
               📷 {partOk ? 'สแกนใหม่' : 'สแกนพาร์ท'}
             </button>
           )}

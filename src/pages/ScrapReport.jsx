@@ -36,6 +36,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import { DeleteButton } from '../components/IconButton';
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -49,7 +50,7 @@ function getWorkDate() {
 const fmtD = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
 
 const inputSt = { width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' };
-const btnSt = (bg = 'var(--accent)', color = '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: bg, color });
+const btnSt = (bg = 'var(--accent)', color = bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: bg, color });
 const ghostBtn = { padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 };
 const thSt = { padding: '6px 8px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border2)' };
@@ -617,7 +618,7 @@ export default function ScrapReport() {
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>🖨️ PDF</button>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>⬇ Excel</button>
                   {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canDel && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4, color: '#ef4444' }} onClick={() => delReport(rep)}>🗑</button>}
+                  {canDel && <DeleteButton style={{ marginLeft: 4 }} onClick={() => delReport(rep)} title="ลบ" />}
                 </td>
               </tr>
             ))}
@@ -809,7 +810,7 @@ export default function ScrapReport() {
                         {it.defect_codes || '+ เลือก'}
                       </button>
                     </td>
-                    <td style={tdSt}><button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }} onClick={() => delItem(it._key)}>🗑</button></td>
+                    <td style={tdSt}><DeleteButton onClick={() => delItem(it._key)} title="ลบ" /></td>
                   </tr>
                 ))}
                 {editor.items.length === 0 && <tr><td style={tdSt} colSpan={14}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}

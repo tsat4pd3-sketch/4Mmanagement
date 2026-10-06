@@ -210,6 +210,18 @@
    ข้างล่างอยู่แล้ว จึงไม่ส่ง `name` ซ้ำ) · 💡 **ตรวจงานที่แตะ UI ด้วยการ "ดูจอจริง" เสมอ
    สวีปบอกได้แค่ว่าไม่พัง ไม่ได้บอกว่าอ่านรู้เรื่อง**
 
+10. 🔴🔴 **คีย์ของ `upsert` ต้องเป็น unique index "คอลัมน์ล้วน" — expression ก็ไม่ได้ ไม่ใช่แค่ partial**
+    (06/10 · เกิดกับ `monitoring_shipments` ของจอ `MonitoringUpload` — **คลาสเดียวกับข้อ 6 รอบที่ 3**)
+    index เดิม `(mat_no, ship_date, kind, coalesce(sheet,''))` · client ส่ง `onConflict:
+    'mat_no,ship_date,kind,sheet'` ⇒ **42P10** `there is no unique or exclusion constraint matching
+    the ON CONFLICT specification` ⇒ **ประวัติการส่ง 804 แถวไม่ถูกเขียนเลย** และเพราะชั้น forecast/
+    ออเดอร์ "ลบของรอบก่อนแล้วค่อยลงใหม่" ⇒ นำเข้าค้างกลางคัน ต้องกดยืนยันซ้ำ
+    · PostgREST ส่งได้แค่ **ชื่อคอลัมน์** ⇒ Postgres ต้อง infer index เอง — expression/partial infer ไม่ได้
+    · ✅ ทางแก้มาตรฐานของโปรเจค (เหมือน `customer_pull_signals.dock_code` 15/09):
+      **คอลัมน์ในคีย์เป็น `NOT NULL DEFAULT ''` แล้ว index ด้วยคอลัมน์ล้วน** — `20261006_…_sheet_plain_uniq_dr.sql`
+    · 🛡️ มีด่านแล้ว `upsert-key-must-be-plain-columns` (`regressionGuards`) — อ่าน unique index จากไฟล์
+      migration แล้วเทียบกับทุก `onConflict` ในโค้ด · **ตารางที่ไม่มี migration = ด่านมองไม่เห็น**
+
 ---
 
 ## 6.5 📦 บอร์ด FG ต่อลูกค้า — มาจาก EDI 862/830 ไม่ใช่จากไฟล์ Excel (2026-10-06)

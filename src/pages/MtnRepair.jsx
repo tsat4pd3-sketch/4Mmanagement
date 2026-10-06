@@ -65,6 +65,7 @@ import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import { DeleteButton } from '../components/IconButton';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -3015,7 +3016,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
               <select defaultValue={teamKeyOf(it.dept) || 'maintenance'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}><TeamOpts list={mtnDepts} /></select>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
-              <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_technicians', it.id)} title="ลบ" />
             </div>))}</div>
         </div>); })}
     </div>
@@ -3043,7 +3044,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
             <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
             <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
-            <button onClick={() => delRow('mtn_labor_rates', r.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+            <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_labor_rates', r.id)} title="ลบ" />
           </div>))}
         {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
       </div>
@@ -3210,7 +3211,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                 </div>);
             })()}
             {ok
-              ? <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              ? <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow(table, it.id)} title="ลบ" />
               : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
           </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>

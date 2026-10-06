@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import Page from '../components/Page';
@@ -22,6 +22,9 @@ import { getWorkDate } from '../utils/workDate';
 import { ALL } from '../utils/filterLabels';
 import { markerScale } from '../utils/markerScale';
 import useImgBox from '../utils/useImgBox';
+import { mergeBorrowedEmployees } from '../utils/lineHelpers';
+import { canSeeded } from '../utils/permissions';
+import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
@@ -55,6 +58,11 @@ export default function ManpowerBoard() {
   const [sched, setSched] = useState([]);
   const [attLogs, setAttLogs] = useState([]);
   const [fourM, setFourM] = useState([]);
+  const [slotPlans, setSlotPlans] = useState([]);
+  const [lineTechs, setLineTechs] = useState([]);
+  const [helpers, setHelpers] = useState([]);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const canSetup = canSeeded('manpower_board', 'edit', role);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(true);
   const workDate = getWorkDate();
@@ -88,20 +96,44 @@ export default function ManpowerBoard() {
     return () => { alive = false; };
   }, []);
 
-  // ── ของวันนี้ (เช็คชื่อ · ตารางกะ · 4M) — สดผ่าน realtime ──
+  // ── ค่าตั้งบอร์ด (ช่องต่อทีม · ช่างประจำไลน์) — โหลดตอนเปิด + หลังแก้ในหน้าต่างตั้งค่า ──
+  //    ตารางยังไม่ apply (42P01) = บอร์ดทำงานแบบเดิม (std) แต่ต้องเขียนบนจอ ห้ามเงียบ
+  const loadSetup = useCallback(async () => {
+    const [sp, lt] = await Promise.all([
+      supabase.from('manpower_slot_plans').select('id, org_node_id, team, slots'),
+      supabase.from('line_technicians').select('id, employee_id, line_id'),
+    ]);
+    const e = [sp.error, lt.error].filter(Boolean).map(x => x.message);
+    if (e.length) setErr(`ค่าตั้งบอร์ด: ${e.join(' · ')}`);
+    setSlotPlans(sp.data || []);
+    setLineTechs(lt.data || []);
+  }, []);
+  useEffect(() => { loadSetup(); }, [loadSetup]);
+
+  // ── ของวันนี้ (เช็คชื่อ · ตารางกะ · 4M · คนยืมตัว) — สดผ่าน realtime ──
+  // ทะเบียนไลน์ผ่าน ref — ห้ามใส่ array ลง deps ของ useCallback ที่ยิง DB (กฎเหล็กข้อ 9)
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const lineCount = lines.length;
   const loadToday = useCallback(async () => {
-    const [a, s, f] = await Promise.all([
+    // 🤝 คนยืมตัว — ผ่าน mergeBorrowedEmployees() ตัวกลางเท่านั้น (UI §6.13) · ทั้ง 2 กะของวันงาน
+    //    ไม่จำกัดขอบเขต (lineIds null + scopeSecs []) แล้วให้ buildManpowerBoard ตัดตามไลน์ของแต่ละแผนกเอง
+    //    อ่านไม่ได้ = คืน [] + console.warn (ฟีเจอร์ "เติมคน" พังต้องไม่ทำให้บอร์ดหลักหาย)
+    const hp = lineCount ? mergeBorrowedEmployees([], { lines: linesRef.current, columns: EMP_COLS, workDate }) : Promise.resolve([]);
+    const [a, s, f, h] = await Promise.all([
       supabase.from('daily_production_logs').select('employee_id, shift, is_present, leave_type, assigned_line').eq('work_date', workDate),
       supabase.from('shift_schedules').select('*').eq('work_date', workDate),
       supabase.from('four_m_logs').select('id, line_name, line_id, category, description, status, created_at').eq('work_date', workDate),
+      hp,
     ]);
     const e = [a.error, s.error, f.error].filter(Boolean).map(x => x.message);
     if (e.length) setErr(e.join(' · '));
     setAttLogs(a.data || []);
     setSched(s.data || []);
     setFourM(f.data || []);
-  }, [workDate]);
-  useLiveBoard(loadToday, { tables: ['daily_production_logs', 'four_m_logs'], topic: 'manpower-board', client: supabase, tier: LIVE.BOARD });
+    setHelpers(h || []);
+  }, [workDate, lineCount]);
+  useLiveBoard(loadToday, { tables: ['daily_production_logs', 'four_m_logs', 'line_helpers'], topic: 'manpower-board', client: supabase, tier: LIVE.BOARD });
 
   // ── ส่วนงานที่เลือกได้ (ตามผัง + scope ของ user) ──
   const sectionNodes = useMemo(() => nodes.filter(n => n.kind === 'section')
@@ -120,8 +152,8 @@ export default function ManpowerBoard() {
     return m;
   }, [attLogs]);
   const maps = useMemo(() => buildScheduleMaps(sched), [sched]);
-  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance }),
-    [section, nodes, employees, lines, maps, attendance]);
+  const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers }),
+    [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers]);
   const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
 
   const filters = (
@@ -151,14 +183,20 @@ export default function ManpowerBoard() {
         ]}
         tab={tab} onTab={setTab}
         filters={filters}
-        actions={(
+        actions={(<>
+          {canSetup && section && (
+            <button type="button" onClick={() => setSetupOpen(true)}
+              style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}
+              title="ตั้งจำนวนช่องตำแหน่งต่อทีม + ผูกช่างประจำไลน์ (สิทธิ์ manpower_board:edit)">⚙️ ตั้งค่าบอร์ด</button>
+          )}
           <button type="button" onClick={() => merge({ tv: tv ? '0' : '1' })} aria-pressed={tv}
             style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
               border: `1px solid ${tv ? 'var(--accent)' : 'var(--border2)'}`, background: tv ? 'var(--accent-dim)' : 'var(--bg2)', color: tv ? 'var(--accent)' : 'var(--text2)' }}
             title="จอ TV ไม่มีเมาส์: ไม่เลื่อน แบ่งเป็นหน้า เปลี่ยนหน้าเองทุก 20 วิ (← → หรือรีโมตก็ได้)">
             📺 {tv ? 'ออกจากโหมดจอ TV' : 'โหมดจอ TV'}
           </button>
-        )}
+        </>)}
       />
       {err && <div className="card" style={{ padding: 10, marginBottom: 12, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดข้อมูลไม่ครบ — {err}</div>}
       {loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div>
@@ -166,6 +204,10 @@ export default function ManpowerBoard() {
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
+      {setupOpen && section && (
+        <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
+          slotPlans={slotPlans} lineTechs={lineTechs} onChanged={loadSetup} onClose={() => setSetupOpen(false)} />
+      )}
     </Page>
   );
 }
@@ -204,6 +246,19 @@ function AttendDot({ p }) {
   return <span title={label} style={{ fontSize: 11, fontWeight: 700, color: m.color, whiteSpace: 'nowrap' }}>● {label}</span>;
 }
 
+/** 🤝 ป้ายคนยืมตัว (UI §6.13 — ฟ้า #0ea5e9 = ข้อมูลบริบท ไม่ใช่ Andon)
+ *  ยืมมา = ต้นสังกัดยังเป็นที่เดิม มาช่วยเฉพาะวันนี้ · ไปช่วย = คนในสังกัดที่วันนี้ไปยืนไลน์อื่น */
+const SHIFT_TH = { day: 'กะเช้า', night: 'กะดึก' };
+function HelperTag({ p }) {
+  const b = p.borrowed, l = p.lentTo;
+  if (!b && !l) return null;
+  const sh = (x) => (x?.shift ? ` · ${SHIFT_TH[x.shift] || x.shift}` : '');
+  const text = b ? `🤝 ยืมจาก ${b.from || 'ไลน์อื่น'}` : `↗ ไปช่วย ${l.to || 'ไลน์อื่น'}`;
+  const title = b ? `มาช่วย ${b.to}${sh(b)} เฉพาะวันนี้ — ต้นสังกัดยังเป็น ${b.from || 'ที่เดิม'}`
+    : `วันนี้ไปช่วย ${l.to}${sh(l)} — ยังสังกัดแผนกนี้`;
+  return <span title={title} style={{ fontSize: 11, fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>;
+}
+
 /** ชิปคนระดับหัวหน้า — รูป + ชื่อ + ตำแหน่ง */
 function PersonChip({ p }) {
   return (
@@ -211,7 +266,10 @@ function PersonChip({ p }) {
       <Photo p={p} size={34} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{positionLabel(p.position) || 'ไม่ระบุตำแหน่ง'}{p.team ? ` · ทีม ${p.team}` : ''}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{positionLabel(p.position) || 'ไม่ระบุตำแหน่ง'}{p.team ? ` · ทีม ${p.team}` : ''}{p.external && p.department ? ` · สังกัด ${p.department}` : ''}</div>
+        {p.linkedLines?.length > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>🔧 {p.linkedLines.join(', ')}</div>
+        )}
         <AttendDot p={p} />
       </div>
     </div>
@@ -233,6 +291,7 @@ function SkillCard({ p, skills }) {
         </div>
       </div>
       <AttendDot p={p} />
+      <HelperTag p={p} />
       {p.unknownPos && <span style={{ fontSize: 11, color: '#f59e0b' }} title="ตำแหน่งนี้ไม่อยู่ในทะเบียนตำแหน่ง — แก้ที่ /operator">⚠️ {p.position}</span>}
       {top.length ? top.map(s => {
         const d = skills.defs[s.skill_name];
@@ -259,6 +318,10 @@ function EmptySlot() {
   );
 }
 
+/** ป้ายช่องว่างของคอลัมน์ — บอกที่มาเสมอ (ตั้งเอง vs std ของไลน์) ไม่งั้นคนเถียงกันว่าเลขมาจากไหน */
+const slotText = (c) => (c.slots == null ? ''
+  : c.slotSource === 'plan' ? ` · ว่าง ${c.slots} (ตั้งไว้ ${c.slotPlan} ช่อง)` : ` · ว่าง ${c.slots} (ตาม std)`);
+
 const CARD_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 6, alignItems: 'start' };
 // แถวชิปหัวหน้า — min(100%, …) กันล้นจอมือถือ (ชิปกว้าง 200 บนจอ 390 − padding = ล้น)
 const CHIP_GRID = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: 6, alignItems: 'start' };
@@ -273,7 +336,7 @@ function TeamColumn({ c, skills }) {
         <strong style={{ fontSize: 14 }}>{c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม'}</strong>
         <span style={{ fontSize: 12, fontWeight: 700, color: sm.color }}>● {c.shift ? `${sm.label}วันนี้` : sm.label}</span>
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>
-          {c.ops.length} คน{c.slots != null ? ` · ว่าง ${c.slots}` : ''}
+          {c.ops.length} คน{slotText(c)}
         </span>
       </div>
       {c.leaders.length
@@ -311,6 +374,7 @@ function OrgTab({ board, depts, skills }) {
           <Counter label="แผน (std 2 กะ)" value={t.plan} sub={t.plan == null ? 'ยังไม่ตั้ง std' : null} />
           <Counter label="ในทะเบียน" value={t.ops} />
           <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
+          {t.borrowed > 0 && <Counter label="ยืมมาช่วย" value={t.borrowed} tone="#0ea5e9" />}
         </div>
       </div>
 
@@ -330,6 +394,7 @@ function OrgTab({ board, depts, skills }) {
             <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} sub={d.planTotal == null ? 'ยังไม่ตั้ง std ที่ไลน์' : null} />
             <Counter label="ในทะเบียน" value={d.opsTotal} />
             <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
+            {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="#0ea5e9" />}
           </div>
           {d.unknownShiftTeams.length > 0 && (
             <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
@@ -339,6 +404,17 @@ function OrgTab({ board, depts, skills }) {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
             {d.cols.map(c => <TeamColumn key={c.team || '-'} c={c} skills={skills} />)}
           </div>
+          {d.borrowed.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              {/* 🤝 ไม่นับรวมในทะเบียน/ช่องว่างของแผนก — มาช่วยเฉพาะวันนี้ ต้นสังกัดยังเป็นที่เดิม (UI §6.13) */}
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#0ea5e9', color: '#fff' }}>
+                🤝 ยืมมาช่วยวันนี้ {d.borrowed.length} คน</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>ไม่นับรวมในทะเบียนของแผนก</span>
+              <div style={{ ...CARD_GRID, marginTop: 6 }}>
+                {d.borrowed.map(p => <SkillCard key={p.id} p={p} skills={skills} />)}
+              </div>
+            </div>
+          )}
           {d.techs.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <RoleTag>ช่างเทคนิคประจำไลน์</RoleTag>
@@ -610,6 +686,7 @@ function TvCard({ p, skills }) {
         </div>
       </div>
       <AttendDot p={p} />
+      <HelperTag p={p} />
       {top.length ? top.map(s => {
         const d = skills.defs[s.skill_name];
         return (
@@ -672,6 +749,8 @@ function OrgTv({ board, depts, skills }) {
                 {d.heads.map(p => <MiniPerson key={p.id} p={p} />)}
                 {d.techs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', alignSelf: 'center' }}>🔧 ช่างประจำไลน์ {d.techs.length}:</span>}
                 {d.techs.map(p => <MiniPerson key={p.id} p={p} />)}
+                {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: '#0ea5e9', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🤝 ยืมมาช่วย {d.borrowed.length}:</span>}
+                {d.borrowed.map(p => <MiniPerson key={p.id} p={p} />)}
               </div>
               <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
               <Counter label="ในทะเบียน" value={d.opsTotal} />
@@ -686,7 +765,7 @@ function OrgTv({ board, depts, skills }) {
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', whiteSpace: 'nowrap' }}>
                         <strong style={{ fontSize: 15 }}>{c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม'}</strong>
                         <span style={{ fontSize: 12.5, fontWeight: 700, color: sm.color }}>● {c.shift ? `${sm.label}วันนี้` : sm.label}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{c.ops.length} คน{c.slots != null ? ` · ว่าง ${c.slots}` : ''}</span>
+                        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{c.ops.length} คน{slotText(c)}</span>
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         หัวหน้ากลุ่ม: {c.leaders.length ? c.leaders.map(p => p.name).join(', ') : '— ยังไม่มีในทะเบียน'}

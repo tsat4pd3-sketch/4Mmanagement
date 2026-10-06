@@ -38,6 +38,7 @@ import SearchSelect from '../components/SearchSelect';
 import StockReceiptQueue from '../components/StockReceiptQueue';
 import Segmented from '../components/Segmented';
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor } from '../utils/stockReceipts';
+import { IconButton, DeleteButton } from '../components/IconButton';
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -354,7 +355,7 @@ function StockTab({ role, scope }) {
             <ToggleDot on={showPending} />
           </button>
         )}
-        <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? '#08130a' : 'var(--text)')}>
+        <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? 'var(--accent-ink)' : 'var(--text)')}>
           {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
         </button>
         {canIssue && (
@@ -984,14 +985,8 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                         {canEdit && (
                           <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
                             <div style={{ display:'flex', gap:6 }}>
-                              <button className="tbtn" onClick={() => openEdit(r)}
-                                style={{ ...btn('rgba(2,132,199,0.1)', '#0284c7'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(2,132,199,0.3)' }}>
-                                ✏️
-                              </button>
-                              <button className="tbtn" onClick={() => handleDelete(r.id)}
-                                style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), padding:'4px 8px', fontSize:11, border:'1px solid rgba(239,68,68,0.3)' }}>
-                                🗑️
-                              </button>
+                              <IconButton onClick={() => openEdit(r)} title="แก้ไข">✏️</IconButton>
+                              <DeleteButton onClick={() => handleDelete(r.id)} title="ลบรายการนี้" />
                             </div>
                           </td>
                         )}
@@ -1418,7 +1413,7 @@ function InflowRulesTab({ canEdit }) {
                 placeholder="— เลือกปลายทาง —" style={{ ...inputSt, width: 240 }}
                 extraGroups={[{ label: '🏬 คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
-            <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', '#08130a'), opacity: saving ? 0.6 : 1 }}>
+            <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
               {saving ? '...' : '💾 บันทึก'}
             </button>
           </div>

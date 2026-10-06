@@ -19,9 +19,12 @@ export const normKpiRowName = x => String(x ?? '').toLowerCase().replace(/[\s\-_
  * @param hasLines   ขอบเขตมีไลน์ผลิตไหม (members.groups.length > 0)
  * @param findManual (row) => { def, at } | null — นิยามกรอกมือที่ใกล้สุดสำหรับช่องนี้ (ตาม board_slot/ชื่อ)
  * @param findAuto   (autoKey) => def | null — นิยาม `auto:<key>` ที่ใกล้สุด
+ * @param ownScopes  ขอบเขตที่นับว่าเป็น "ของตัวเอง" สำหรับแผ่นพิเศษ (06/10: เลือก CC = หน่วยเจ้าของรหัสด้วย `[scope, ...unitsOf(scope)]`)
+ *                   — ไม่ส่ง = [scope] (พฤติกรรมเดิม)
  * @returns { rows, fallbackTemplate }
  */
-export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, findAuto }) {
+export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, findAuto, ownScopes = null }) {
+  const own = ownScopes && ownScopes.length ? ownScopes : [scope];
   const plantView = isPlant(scope);
   const isMan = d => !String(d?.source || '').startsWith('auto:');
   const held = (kdefs || []).filter(d => plantView || !isPlant(scopeOfDef(d)));
@@ -39,7 +42,7 @@ export function pickBoardRows({ templates, kdefs, scope, hasLines, findManual, f
   /* อยู่บนช่องมาตรฐานแล้ว (ตาม board_slot หรือชื่อ) = ไม่ทำแผ่นซ้ำ · slot ที่ปีนี้ไม่มีช่อง (dl/oh ปี 2026) = แผ่นพิเศษ */
   const onMain = d => (boardSlotOf(d) ? mainKeys.has(boardSlotOf(d)) : mainNames.has(normKpiRowName(d.kpi_catalog?.name || d.name)));
   const extras = (kdefs || [])
-    .filter(d => sameScope(scopeOfDef(d), scope) && isMan(d) && !onMain(d))
+    .filter(d => own.some(sc => sameScope(scopeOfDef(d), sc)) && isMan(d) && !onMain(d))
     .sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     .map(d => ({ key: `def:${d.id}`, name: d.kpi_catalog?.name || d.name || '(ไม่มีชื่อ)', icon: '📌', auto: null, defId: d.id, extra: true }));
   return { rows: [...templates.filter(holds), ...extras], fallbackTemplate: !hasAnyDef };

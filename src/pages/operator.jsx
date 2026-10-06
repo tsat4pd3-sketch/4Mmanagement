@@ -39,6 +39,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchByIds } from '../utils/fetchByIds';
 import SkillEvidencePanel from '../components/SkillEvidencePanel';
+import { DeleteButton } from '../components/IconButton';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -1450,8 +1451,7 @@ export default function Operator() {
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
                         {can('skills', 'delete', role) && (
-                          <button onClick={() => handleDeleteSkill(sd)}
-                            className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
+                          <DeleteButton onClick={() => handleDeleteSkill(sd)} title="ลบทักษะนี้" />
                         )}
                       </div>
                     </div>
@@ -2361,7 +2361,7 @@ function SkillSubItemsModal({ skill, onClose }) {
                     <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                       <button onClick={() => move(i, -1)} disabled={i === 0} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === 0 ? 'default' : 'pointer', fontSize: 13, opacity: i === 0 ? 0.3 : 1, padding: '2px 4px' }}>▲</button>
                       <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === rows.length - 1 ? 'default' : 'pointer', fontSize: 13, opacity: i === rows.length - 1 ? 0.3 : 1, padding: '2px 4px' }}>▼</button>
-                      <button onClick={() => delItem(r.id)} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>🗑️</button>
+                      <DeleteButton onClick={() => delItem(r.id)} title="ลบรายการนี้" />
                     </div>
                   )}
                 </div>

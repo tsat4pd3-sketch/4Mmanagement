@@ -37,7 +37,7 @@ const SEVERITY = { minor: { label: 'เล็กน้อย', color: '#6b7280' 
 const inputSt = { width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 };
 const thSt = { padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const tdSt = { padding: '8px 10px', fontSize: 12.5, color: 'var(--text2)', borderTop: '1px solid var(--border)', verticalAlign: 'top' };
-const btnSt = (bg = 'var(--accent)', fg = '#08130a') => ({ padding: '7px 14px', borderRadius: 8, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer' });
+const btnSt = (bg = 'var(--accent)', fg = 'var(--accent-ink)') => ({ padding: '7px 14px', borderRadius: 8, border: 'none', background: bg, color: fg, fontWeight: 800, fontSize: 12.5, cursor: 'pointer' });
 const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 
 const Chip = ({ label, color }) => (
