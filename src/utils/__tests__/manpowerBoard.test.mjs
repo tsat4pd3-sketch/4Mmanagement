@@ -1,0 +1,139 @@
+/**
+ * เทส src/utils/manpowerBoard.js — Manpower Control Board (2026-10-06)
+ * กติกาที่ห้าม regress:
+ *   1. คนจัดแถวตาม "ตำแหน่ง" (ผจก./หัวหน้าส่วน → หัวผัง · หัวหน้าแผนก · หัวหน้ากลุ่ม · ช่าง · พนักงาน)
+ *   2. ตำแหน่งที่ระบบไม่รู้จัก ต้องไม่หายจากบอร์ด (ลงแถวพนักงาน + ธง)
+ *   3. กะของทีมมาจากตารางกะ (A/B หมุน · C เช้าตลอด) · ตารางกะยังไม่ตั้ง = ไม่คำนวณช่องว่าง (null)
+ *   4. ช่องว่าง = std ของกะ − คนในทะเบียนกะนั้น · std ไม่ได้ตั้ง = null (ไม่ใช่ 0)
+ *   5. 4M: ใบ rejected ไม่นับ · ใบไลน์ลูกนับให้แผนกของไลน์แม่
+ * positions.js import supabaseClient → bundle ด้วย rolldown + stub (วิธีเดียวกับ permissions.test.mjs)
+ */
+import assert from 'node:assert/strict';
+import test, { before } from 'node:test';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const STUB = `export const supabase = { from() { throw new Error('no db in test'); } }; export const supabaseDR = supabase;`;
+let M;
+before(async () => {
+  const { rolldown } = await import('rolldown');
+  const bundle = await rolldown({
+    input: 'src/utils/manpowerBoard.js',
+    plugins: [{
+      name: 'stub-supabase',
+      resolveId(id) { return /supabaseClient$/.test(id) ? '\0stub' : null; },
+      load(id) { return id === '\0stub' ? STUB : null; },
+    }],
+  });
+  const out = join(tmpdir(), `manpowerBoard-under-test-${process.pid}.mjs`);
+  await bundle.write({ format: 'esm', file: out });
+  M = await import(pathToFileURL(out).href);
+});
+
+const NODES = [
+  { id: 's', kind: 'section', name: 'PD3', code: 'PD3', parent_id: null, sort_order: 1 },
+  { id: 'd1', kind: 'department', name: 'HYDROFORM', parent_id: 's', sort_order: 1 },
+  { id: 'd2', kind: 'department', name: 'APRON', parent_id: 's', sort_order: 2 },
+  { id: 'd3', kind: 'department', name: 'EMPTY', parent_id: 's', sort_order: 3 },
+  { id: 'l1', kind: 'line', name: 'HDF1', parent_id: 'd1', ref_line_id: 11 },
+  { id: 'x', kind: 'section', name: 'PD4', code: 'PD4', parent_id: null },
+];
+const LINES = [
+  { id: 10, name: 'HYDROFORM', parent_line_name: null, std_day_shift: 4, std_night_shift: 3 },
+  { id: 11, name: 'HDF1', parent_line_name: 'HYDROFORM', std_day_shift: 4, std_night_shift: 3 },
+  { id: 20, name: 'APRON', parent_line_name: null, std_day_shift: 0, std_night_shift: 0 },
+];
+const E = (id, position, team, node, extra = {}) => ({ id, name: id, position, team, org_node_id: node, line_id: node === 'd1' ? 10 : node === 'd2' ? 20 : null, ...extra });
+const EMPS = [
+  E('mgr', 'manager', 'C', 's'),
+  E('sh', 'section_head', 'C', 'd1'),                 // หัวหน้าส่วนแต่ผูกแผนก → ยังขึ้นหัวผัง
+  E('eng', 'engineer', 'C', 's'),
+  E('dh', 'dept_head', 'A', 'd1'),
+  E('llA', 'line_leader', 'A', 'd1'), E('llB', 'line_leader', 'B', 'd1'),
+  E('tech', 'technician', 'B', 'd1'),
+  E('a1', 'operator', 'A', 'l1'), E('a2', 'operator', 'A', 'd1'),
+  E('b1', 'operator', 'B', 'd1'),
+  E('c1', 'operator', 'C', 'd1'),
+  E('weird', 'นักบินอวกาศ', 'A', 'd1'),                // ตำแหน่งไม่รู้จัก
+  E('p1', 'operator', 'A', 'd2'),
+  E('other', 'operator', 'A', 'x'),                   // ส่วนงานอื่น ห้ามโผล่
+];
+
+test('จัดแถวตามตำแหน่ง + ตัดส่วนงานอื่น + แผนกเปล่าไม่วาดแต่บอกชื่อ', () => {
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } });
+  assert.deepEqual(b.top.map(p => p.id).sort(), ['mgr', 'sh']);
+  assert.deepEqual(b.support.map(p => p.id), ['eng']);
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  assert.deepEqual(h.heads.map(p => p.id), ['dh']);
+  assert.deepEqual(h.techs.map(p => p.id), ['tech']);
+  assert.deepEqual(h.cols.map(c => c.team), ['A', 'B', 'C']);
+  const A = h.cols[0];
+  assert.deepEqual(A.leaders.map(p => p.id), ['llA']);
+  assert.ok(A.ops.some(p => p.id === 'weird' && p.unknownPos), 'ตำแหน่งไม่รู้จักต้องอยู่บนบอร์ด');
+  assert.equal(b.emptyDepts.includes('EMPTY'), true);
+  assert.equal(b.depts.some(d => d.cols.some(c => c.ops.some(p => p.id === 'other'))), false);
+});
+
+test('กะ + ช่องว่าง: A เช้า B ดึก C เช้าตลอด · std เช้า 4 ดึก 3', () => {
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 10: 'A' }, byDept: {} } });
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  const [A, B, C] = h.cols;
+  assert.equal(A.shift, 'day'); assert.equal(B.shift, 'night'); assert.equal(C.shift, 'day');
+  assert.deepEqual(h.plan, { day: 4, night: 3 });   // แม่ตั้ง 4 แล้ว ลูกไม่บวกซ้ำ
+  // กะเช้า: A 3 คน (a1,a2,weird) + C 1 คน = 4 → ว่าง 0 · ลงที่ A (ทีมหมุน)
+  assert.equal(A.slots, 0); assert.equal(C.slots, null);
+  // กะดึก: B 1 คน → ว่าง 2
+  assert.equal(B.slots, 2);
+});
+
+test('ตารางกะยังไม่ตั้ง → ไม่รู้ว่าทีมไหนเข้ากะไหน = ไม่คำนวณช่องว่าง + บอกทีม', () => {
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: {}, byDept: {} } });
+  const h = b.depts.find(d => d.name === 'HYDROFORM');
+  assert.equal(h.cols.find(c => c.team === 'A').slots, null);
+  assert.deepEqual(h.unknownShiftTeams, ['A', 'B', 'C']);
+  // ทีม C: ตาม shiftFromTeam กลาง — ไม่มี dayTeam = null (ห้ามเดาเองในหน้านี้)
+  assert.equal(h.cols.find(c => c.team === 'C').shift, null);
+});
+
+test('std ไม่ได้ตั้ง = แผน null ไม่ใช่ 0', () => {
+  const b = M.buildManpowerBoard({ section: NODES[0], nodes: NODES, employees: EMPS, lines: LINES, maps: { byLine: { 20: 'A' }, byDept: {} } });
+  const ap = b.depts.find(d => d.name === 'APRON');
+  assert.equal(ap.plan.day, null); assert.equal(ap.planTotal, null);
+  assert.equal(ap.cols[0].slots, null);
+});
+
+test('สถานะเช็คชื่อ', () => {
+  assert.equal(M.attendanceState(undefined), 'unchecked');
+  assert.equal(M.attendanceState({ is_present: true }), 'present');
+  assert.equal(M.attendanceState({ is_present: false, leave_type: 'sick' }), 'leave');
+  assert.equal(M.attendanceState({ is_present: false }), 'absent');
+});
+
+test('4M: rejected ไม่นับ · ใบไลน์ลูกนับให้ครอบครัว · ไม่มีใบ = ปกติ', () => {
+  const fam = M.lineFamilyOf(LINES, [10]);
+  const r = M.fourMStatus(fam, [
+    { line_name: 'HDF1', category: 'Man', status: 'pending' },
+    { line_id: 10, category: 'Machine', status: 'rejected' },
+    { line_name: 'APRON', category: 'Method', status: 'approved' },
+  ]);
+  assert.equal(r.man.abnormal, true); assert.equal(r.man.pending, 1);
+  assert.equal(r.machine.abnormal, false);
+  assert.equal(r.method.abnormal, false);
+  assert.equal(r.material.abnormal, false);
+});
+
+test('ผัง LAYOUT: คนประจำจุด + ย้ายมาชั่วคราววันนี้ + เรียงเช้าก่อนดึก', () => {
+  const emp = { a: { id: 'a', name: 'a' }, b: { id: 'b', name: 'b' }, c: { id: 'c', name: 'c' } };
+  const res = M.layoutPeople({
+    stations: [{ id: 1 }, { id: 2 }],
+    homeByEmp: { a: 1, b: 1, c: 2 },
+    attendance: { c: { is_present: true, assigned_line: '1' } },
+    empById: emp,
+    shiftOfEmp: (e) => (e.id === 'b' ? 'day' : 'night'),
+  });
+  assert.deepEqual(res[0].people.map(p => p.emp.id), ['b', 'a', 'c']);
+  assert.equal(res[0].people.find(p => p.emp.id === 'c').temp, true);
+  assert.deepEqual(res[1].people.map(p => p.emp.id), ['c']);
+  assert.equal(res[1].people[0].away, true, 'จุดประจำต้องบอกว่าวันนี้ไปยืนที่อื่น');
+});

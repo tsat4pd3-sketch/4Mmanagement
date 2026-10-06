@@ -191,6 +191,28 @@ const TABLE_ROWS = {
     cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
     sort_order: i,
   }),
+  /* 🧑‍🤝‍🧑 Manpower Control Board (2026-10-06) — ผังคนต้องได้ "ตำแหน่ง + หน่วย + ทีม" คละกัน
+     ไม่งั้นทุกคนตกแถวพนักงานของ "ไม่ระบุแผนก" แล้วสายหัวผัง/หัวหน้าแผนก/หัวหน้ากลุ่ม/ช่าง/คอลัมน์ทีม
+     ไม่เคยถูกรันใน harness · แถว NULLISH ยังว่างตามกติกา (ไม่มีตำแหน่ง/หน่วย = ต้องไม่หายจากบอร์ด) */
+  employees: (r, i) => isNullish(r) ? r : ({
+    ...r,
+    position: ['manager', 'engineer', 'dept_head', 'line_leader', 'line_leader', 'technician'][i - 1] || 'operator',
+    team: i === 1 || i === 2 ? 'C' : i % 2 ? 'A' : 'B',
+    org_node_id: i <= 2 ? 'id-1' : 'id-2',
+    line_id: i <= 2 ? null : 'id-3',
+    image_url: i % 4 === 0 ? FACTORY_MAP_IMG : '',
+  }),
+  // ทะเบียนตำแหน่ง — key จริงตาม seed (positions.js DEFAULT_POSITIONS) ไม่งั้นทุกคนกลายเป็น "ตำแหน่งที่ระบบไม่รู้จัก"
+  positions: (r, i) => ({ ...r, ...([
+    ['operator', 'พนักงานฝ่ายผลิต', 'operator'], ['technician', 'ช่างเทคนิค', 'technician'], ['engineer', 'วิศวกร', 'engineer'],
+    ['line_leader', 'หัวหน้าไลน์', 'leader'], ['dept_head', 'หัวหน้าแผนก', 'supervisor'], ['section_head', 'หัวหน้าส่วน', 'supervisor'],
+    ['manager', 'ผู้จัดการฝ่าย', 'manager'], ['officer', 'เจ้าหน้าที่', 'staff'],
+  ].map(([key, label_th, level]) => ({ key, label_th, level }))[i - 1] || {}), sort_order: i }),
+  /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
+  workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
+    pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
+  employee_home_positions: (r, i) => ({ ...r, employee_id: `id-${i}`, station_id: `id-${(i % 7) + 1}` }),
+  line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
   stock_receipts: (r, i) => ({
     ...r, prod_order_id: `po-${i}`, prod_no: `01203${90000 + i}`, mat_no: i % 2 ? '30047001' : '20057003',
@@ -239,7 +261,13 @@ const TABLE_ROWS = {
       : { ...r, mat_no: `${i % 3 === 1 ? '3004' : '2005'}${7000 + i}`,
           part_name: `ชิ้นส่วน ${i}`, part_no: `W5207${20 + i}-S300` },
   dr_products: (r, i) => {
-    const base = i <= 2 ? { ...r, line_name: 'LINE C ( 200&250 Ton )' } : r;
+    /* 🔴 `line_name` ต้องเป็นชื่อที่**มีอยู่จริงในทะเบียนไลน์ของ mock** (`LINE_NAME(i)`) — 06/10
+       เดิมตั้งเป็น 'LINE C ( 200&250 Ton )' / 'LINE APRON ASSY / HYDROFORM' ซึ่ง**ไม่มีในทะเบียน**
+       ⇒ `lineOfMat()` คืน null ทุกพาร์ท ⇒ **การ์ดไลน์ของ /production-plan (รายวัน+รายเดือน)
+          ไม่เคยถูกเรนเดอร์ใน harness เลยสักครั้ง** (กราฟภาระ/ปฏิทิน/ตารางเดือน ไม่เคยถูกตรวจ)
+       · ยังคงเจตนาเดิมไว้: i<=2 อยู่**คนละไลน์**กับที่เหลือ (ต้องมีมากกว่า 1 ไลน์ถึงจะเห็น
+         ว่าโค้ดแยกการ์ดตามไลน์ถูกต้อง) แค่เปลี่ยนเป็นชื่อที่ทะเบียนรู้จัก */
+    const base = { ...r, line_name: i <= 2 ? LINE_NAME(2) : LINE_NAME(1) };
     if (i === 4) return { ...base, is_operation: true, op_parent_mat: `1010${1001}`, op_seq: 10 };
     if (i === 5) return { ...base, is_operation: true, op_parent_mat: null, op_seq: null };
     return { ...base, is_operation: false, op_parent_mat: null, op_seq: null };

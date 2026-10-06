@@ -45,12 +45,12 @@ const ScanLanding   = lazy(() => import('./pages/ScanLanding'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
-const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const Monitoring     = lazy(() => import('./pages/Monitoring'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -149,6 +149,8 @@ export const NAV_ITEMS = [
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  // 🧑‍🤝‍🧑 แทนบอร์ดกระดาษหน้าไลน์ (ผังคน + ผัง LAYOUT + ป้าย 4M) — อ่านอย่างเดียว (2026-10-06)
+  { to: '/manpower-board', icon: '🧑‍🤝‍🧑', label: 'Manpower Control Board', group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
   // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
@@ -178,7 +180,6 @@ export const NAV_ITEMS = [
      บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
   { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
 
@@ -1882,6 +1883,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
               } />
+              <Route path="/manpower-board" element={
+                <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
+              } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
@@ -2019,9 +2023,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
               } />
-              <Route path="/rundown-stock" element={
-                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
-              } />
+              {/* 📉 "คาดการณ์ของจะขาด" ยุบเป็นมุมมองหนึ่งของแท็บ FG ใน /monitoring (2026-10-06 ·
+                  user: *"เรื่องเดียวกันปะ สองเรื่องนี้"*) — จอเดิมยังอยู่ครบ แค่ย้ายที่อยู่
+                  ⚠️ หน้าเดิมไม่เคยมี `?tab=` ของตัวเอง จึงไม่ต้องส่ง subParam */}
+              <Route path="/rundown-stock" element={<LegacyTabRedirect to="/monitoring" tab="fg" />} />
               <Route path="/monitoring" element={
                 <RoleRoute path="/monitoring" userRole={role}><Monitoring /></RoleRoute>
               } />

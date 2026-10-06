@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   paretoGeometry, pickLabelAngle, labelBandHeight, collapseTail,
-  PARETO_CUTOFF, labelWidthPx,
+  PARETO_CUTOFF, labelWidthPx, pctLabelY,
 } from '../utils/pareto';
 
 /* ══ 📊 Pareto มาตรฐานสากล — แท่งตั้ง + เส้น % สะสม 2 แกน (2026-09-22 · คำสั่ง user) ════════
@@ -142,10 +142,10 @@ export default function ParetoChart({
           <g key={`p${p.i}`}>
             <rect x={p.x - 3.5} y={p.y - 3.5} width="7" height="7" fill={LINE_COLOR} stroke="var(--card)" strokeWidth="1.2" />
             {/* หมุด i อยู่ระดับ "ยอดสะสมถึงแท่ง i" ⇒ หมุดแรก = หัวแท่งแรกพอดี (ดู pareto.js)
-                ป้าย % จึงชนเลขค่าของแท่งนั้นแน่นอน — ยกป้ายแรกขึ้นอีกขั้น */}
+                ป้าย % จึงชนเลขค่าของแท่งนั้นแน่นอน — ยกป้ายแรกขึ้นอีกขั้น
+                🔴 ตำแหน่งคิดที่ `pctLabelY()` ที่เดียว (ยกไม่พอที่ = ห้อยใต้หมุด ห้ามให้ขอบบนตัด) */}
             {(roomy || p.row?._cls === 'A' || p.i === g.line.length - 2) && (
-              <text x={p.x} y={Math.max(FONT + 2, p.y - (p.i === 0 ? 22 : 10))}   /* 🔴 clamp ขอบบน — แท่งแรกกินเกือบ 100% ⇒ หมุดอยู่ที่ padTop พอดี ยก 22 แล้วหลุดกรอบ
-                            ไปทับหัวข้อแผง (ด่าน chartsweep จับได้ 06/10) */ fontSize={FONT} textAnchor="middle" fontWeight="700"
+              <text x={p.x} y={pctLabelY(p.y, { first: p.i === 0, font: FONT })} fontSize={FONT} textAnchor="middle" fontWeight="700"
                 fill={LINE_COLOR} stroke="var(--card)" strokeWidth="3" paintOrder="stroke">
                 {p.pct.toFixed(1)}%
               </text>

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   classifyAbc, paretoGeometry, pickLabelAngle, labelBandHeight,
-  collapseTail, labelWidthPx, niceAxisStep, isVagueLabel,
+  collapseTail, labelWidthPx, niceAxisStep, isVagueLabel, pctLabelY,
 } from '../pareto.js';
 
 /* ── ด่านกฎ "Pareto ตามมาตรฐานสากล" (2026-09-22 · user เทียบกับใบมาตรฐานแล้วบอกว่าของเราเทียบไม่ติด)
@@ -165,4 +165,30 @@ test('🔴 หางยาวค่าน้อยมาก ต้องยั�
   assert.ok(last.h < 1, 'เคสนี้ต้องเล็กกว่า 1 พิกเซลจริง — ไม่งั้นเทสนี้ไม่ได้ทดสอบอะไร');
   // ยอดสะสมยังต้องจบ 100% เป๊ะแม้หางจะจิ๋ว
   assert.ok(Math.abs(g.line.at(-1).pct - 100) < 1e-6);
+});
+
+test('🔴 ป้าย % สะสม ห้ามยื่นเลยขอบบน viewBox (หมวดเดียว = หมุดแรก 100% ชิดเพดาน · ด่าน chartsweep 06/10)', () => {
+  const FONT = 11.5;
+  /* เคสจริงที่หลุด: พาเรโตเหลือหมวดเดียว ⇒ `_cum` = 100 ⇒ หมุดอยู่ที่ padTop พอดี */
+  const one = classifyAbc([{ name: 'JIG ชำรุด', v: 6 }], r => r.v);
+  const g = paretoGeometry(one, { width: 860, height: 330, padBottom: 40 });
+  const pin = g.line.at(-1);
+  assert.equal(Math.round(pin.pct), 100);
+  assert.ok(Math.abs(pin.y - g.padTop) < 1e-9, 'หมุด 100% ต้องอยู่ที่เพดานกราฟ — ไม่งั้นเทสนี้ไม่ได้ทดสอบอะไร');
+
+  for (const first of [true, false]) {
+    const y = pctLabelY(pin.y, { first, font: FONT });
+    /* ascent + เส้นขอบ stroke ของป้าย ~0.9×ฟอนต์ เหนือเส้นฐานตัวอักษร */
+    assert.ok(y - FONT * 0.9 > 0, `ป้าย % (first=${first}) ยื่นเลยขอบบน viewBox ⇒ ถูกตัด อ่านเป็นคนละเลข`);
+  }
+  // ยกไม่พอที่ = ห้อยใต้หมุด (ไม่ใช่แค่ clamp มาทับหมุด)
+  assert.ok(pctLabelY(pin.y, { first: true, font: FONT }) > pin.y + 7);
+});
+
+test('ป้าย % ที่มีที่ให้ยก ต้องยังยกเหนือหมุดเหมือนเดิม (ป้ายแรกสูงกว่า เพราะชนเลขบนหัวแท่ง)', () => {
+  const FONT = 11.5;
+  const yFirst = pctLabelY(200, { first: true, font: FONT });
+  const yRest = pctLabelY(200, { first: false, font: FONT });
+  assert.ok(yFirst < yRest && yRest < 200, 'ทั้งคู่ต้องอยู่เหนือหมุด และป้ายแรกต้องสูงกว่า');
+  assert.ok(Math.round(200 - yFirst) === 22 && Math.round(200 - yRest) === 10, 'ระยะยกเดิมต้องไม่เปลี่ยน');
 });
