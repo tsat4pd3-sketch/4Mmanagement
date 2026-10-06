@@ -4,6 +4,8 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { toast } from '../components/Toast'
 import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
+// ⏱️ ของกลาง — ห้ามเขียนสูตรนาที→ชม. เองในหน้า (จอเคยขึ้น "เกินกำหนดมาแล้ว 91098 นาที")
+import { fmtDur } from '../utils/duration'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
@@ -340,12 +342,12 @@ export default function DailyPM() {
                   </div>
                   {row.status === 'pending' && dueDiffMin != null && (
                     <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: dueDiffMin <= 15 ? '#f59a3f' : 'var(--muted)' }}>
-                      ⏳ ครบกำหนด {fmtTime(new Date(dueMs))} — เหลืออีก {Math.max(0, dueDiffMin)} นาที
+                      ⏳ ครบกำหนด {fmtTime(new Date(dueMs))} — เหลืออีก {fmtDur(Math.max(0, dueDiffMin))}
                     </div>
                   )}
                   {row.status === 'orange' && dueDiffMin != null && (
                     <div style={{ marginTop: 4, fontSize: 12, fontWeight: 800, color: '#f59a3f' }}>
-                      ⚠ เกินกำหนดมาแล้ว {Math.abs(dueDiffMin)} นาที
+                      ⚠ เกินกำหนดมาแล้ว {fmtDur(Math.abs(dueDiffMin))}
                     </div>
                   )}
                   {row.ng.length > 0 && (
