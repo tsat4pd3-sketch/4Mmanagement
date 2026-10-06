@@ -673,6 +673,14 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
+## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board` (2026-10-06)
+
+แทนบอร์ดกระดาษหน้าไลน์ (ผังคน · ผัง LAYOUT · ป้าย 4M) · **อ่านอย่างเดียว ไม่มีตารางใหม่** · กฎอยู่ `utils/manpowerBoard.js` ที่เดียว
+· แถวของคน = **ตำแหน่ง** · คอลัมน์ = ทีม · กะของทีม = `shiftFromTeam` **ห้ามเขียน A = Shift 01** · ตารางกะไม่ตั้ง = ไม่คิดช่องว่าง (null)
+> 📄 `docs/modules/manpower-board.md`
+
+---
+
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
 
 จออ่านอย่างเดียว บอกว่าช่วงที่เลือก **เพิ่ม/แก้/ปรับ** อะไรไปบ้าง · **ไม่แตะ Supabase เลย**

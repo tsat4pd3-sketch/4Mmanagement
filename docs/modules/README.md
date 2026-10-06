@@ -49,6 +49,7 @@
 | 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07) | `docs/modules/npi-apqp.md` | 20 KB |
 | Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24) | `docs/modules/traceability-audit-log.md` | 30 KB |
 | Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02) | `docs/modules/workforce-insight.md` | 18 KB |
+| 🧑‍🤝‍🧑 Manpower Control Board — ผังกำลังคน · ผัง LAYOUT · ป้าย 4M (`/manpower-board` · 2026-10-06) | `docs/modules/manpower-board.md` | 5 KB |
 | ประวัติผลิต by Product — `/product-history` (2026-07-24) | `docs/modules/product-history.md` | 17 KB |
 | สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30) | `docs/modules/order-trace.md` | 40 KB |
 | 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user) | `docs/modules/feedback-inbox.md` | 31 KB |
