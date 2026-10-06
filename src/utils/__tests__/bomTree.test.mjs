@@ -227,3 +227,39 @@ test('targetAncestorsOf: 2xx ก่อนแพ็ค → เดินขึ้�
   assert.deepEqual(r, [{ mat: '10102017', via: ['20067541', '10102017'] }]);
   assert.deepEqual(targetAncestorsOf('10102017', up, isFg), []);
 });
+
+/* ── 📄 แถวที่ "ลูกมาจากใบของตัวเอง" ต้องบอกได้ (2026-10-06 · คำถาม user) ──────────
+   user เข้าใจว่าต้องสร้างใบแยกกัน 2 ใบ (FG 1xxx + sub 2xxx) ที่จริงใบของ sub คือ
+   **การนิยามครั้งเดียว** ที่ใบ FG ยืมมากางให้เองผ่าน sheetFor — แต่จอไม่เคยบอก
+   ⇒ explodeBom ต้องคืน `fromOtherSheet` ให้จอขึ้นชิป + ปุ่มกระโดดไปใบนั้น */
+test('fromOtherSheet — ลูกที่มาจากใบของตัวเองต้องถูกมาร์ค · ลูกที่อยู่ใบเดียวกันต้องไม่ถูกมาร์ค', () => {
+  // ใบ FG 'F1' มีลูก SUB (ไม่มีลูกต่อในใบ F1) · ใบ 'S1' เป็นใบของ SUB มีลูก NUT
+  const bom = (mat, sheet) => {
+    if (sheet === 'F1' && mat === 'FG') return [{ mat_no: 'SUB', qty_per_unit: 1 }, { mat_no: 'BOLT', qty_per_unit: 2 }];
+    if (sheet === 'F1' && mat === 'BOLT') return [];
+    if (sheet === 'S1' && mat === 'SUB') return [{ mat_no: 'NUT', qty_per_unit: 4 }];
+    return [];
+  };
+  // sheetFor ตัวจริงคืน "ใบของ mat นั้น" เมื่อมันไม่มีลูกในใบปัจจุบัน (รวมตอนหาใบของหัวใบด้วย)
+  const sheetFor = (mat, cur) => (mat === 'SUB' ? 'S1' : mat === 'FG' ? 'F1' : cur);
+  const t = explodeBom('FG', bom, { sheetFor });
+
+  const sub = t.rows.find(r => r.mat_no === 'SUB');
+  assert.equal(sub.fromOtherSheet, true, 'SUB กางลูกจากใบของตัวเอง');
+  assert.equal(sub.childSheet, 'S1');
+  assert.equal(sub.sheet, 'F1', 'ตัวบรรทัดเองยังถูกอ่านมาจากใบ FG');
+
+  const bolt = t.rows.find(r => r.mat_no === 'BOLT');
+  assert.equal(bolt.fromOtherSheet, false, 'ไม่มีลูก = ไม่ใช่การข้ามใบ');
+
+  const nut = t.rows.find(r => r.mat_no === 'NUT');
+  assert.ok(nut, 'ลูกของ SUB ต้องถูกกางมาด้วย ทั้งที่ไม่ได้กรอกในใบ FG');
+  assert.equal(nut.fromOtherSheet, false);
+  assert.equal(nut.qtyPerRoot, 4, 'ยอดสะสมต้องคูณต่อข้ามใบได้');
+});
+
+test('🔴 ไม่ส่ง sheetFor = พฤติกรรมเดิมเป๊ะ (อยู่ใบเดิมตลอด · ไม่มีอะไรถูกมาร์คข้ามใบ)', () => {
+  const bom = (mat) => (mat === 'FG' ? [{ mat_no: 'SUB', qty_per_unit: 1 }] : []);
+  const t = explodeBom('FG', bom);
+  assert.equal(t.rows.find(r => r.mat_no === 'SUB').fromOtherSheet, false);
+});

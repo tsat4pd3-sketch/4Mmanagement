@@ -641,3 +641,86 @@ jig-images 24.2 · employee-photos 22.7 · mtn-images 17.1 · signatures 7.0 · 
 3. `purchase_requests?select=id&ordered_at=is.null` 983 req/วัน จาก **81 เครื่อง** = 12/เครื่อง ⇒ ปกติ ไม่ต้องแตะ
 4. `signatures` เฉลี่ย **106 KB/ใบ** (18 ใบ 7 MB) — ลายเซ็นควรเป็น PNG เล็ก ⇒ น่าจะไม่ผ่านตัวบีบ
 5. `mtn_orders` 3,497 req/วัน (176 คำถาม) — ยังไม่วินิจฉัย
+
+---
+
+## §10 รอบ 7 — แก้วิธีวัดที่ผิด แล้วเจอ "โหลดซ้ำทั้ง load()" (2026-10-06)
+
+### 🔴🔴 ต้องแก้ความเชื่อของ §8 ก่อน — **นับ "จำนวนเครื่อง" จาก IP ไม่ได้ ทั้งโรงงานอยู่หลัง NAT ตัวเดียว**
+
+§8 เขียนว่า *"line_stock_transactions 2,356 ครั้ง จาก 14 เครื่อง = 168 ครั้ง/เครื่อง/วัน
+(≈ ทุก 4 นาที — ไม่มีใครเปิดจอถี่ขนาดนั้นด้วยมือ)"* แล้วสรุปว่าเป็นบั๊ก
+
+**ผิด** — วัดจริง 02/10: IP `171.103.218.222` ตัวเดียว = **77,909 จาก 106,664 request (73%)**
+และ **2,435 จาก 3,216 writes (76%)** · มี 10 user-agent ⇒ นี่คือ **เกตเวย์อินเทอร์เน็ตของโรงงาน**
+ไม่ใช่เครื่องเดียวที่วิ่งรัว
+
+⇒ `uniq(cf_connecting_ip)` **ไม่ใช่จำนวนเครื่อง** และฝั่ง DR นับเครื่องไม่ได้เลย
+(ทุก request เป็น `anon` ⇒ ไม่มี `request.sb.auth_user`)
+⇒ **ทุกข้อสรุปที่หารด้วย "จำนวนเครื่อง" ใช้ไม่ได้** รวมทั้งเบาะแส `LineWipPanel`/`LinePartCallPanel`
+ที่ §8 ตั้งไว้ว่าเป็นบั๊ก — **ถอนข้อสรุปนั้น**
+
+🔑 **บทเรียน: ตัวหารต้องพิสูจน์ได้ก่อนเอาไปหาร** — ตัวเลข "ต่อเครื่อง" ที่ดูน่าตกใจ
+มาจากตัวหารที่เราเดาเอง ไม่ใช่จากข้อมูล · ของที่วัดได้จริงฝั่ง DR มีแค่
+**"ต่อ 1 งานที่คนทำ" (writes)** และ **"ซ้ำกันเองในเวลาสั้นๆ"**
+
+### ✅ ตัวชี้วัดใหม่ที่ใช้ได้จริง — "คิวรีเดิมเป๊ะ จาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที"
+
+```sql
+dateDiff('second', lagInFrame(timestamp) over (
+  partition by log_attributes['request.path'], log_attributes['request.search'],
+               log_attributes['request.headers.cf_connecting_ip'],
+               log_attributes['request.headers.user_agent']
+  order by timestamp rows between 1 preceding and current row), timestamp) as gap
+```
+(ต้อง partition ด้วย **user_agent ด้วย** ไม่ใช่ IP เดียว — ไม่งั้น NAT ทำให้ "คนละคนเปิดพร้อมกัน"
+ถูกนับเป็นซ้ำ · หน้าต่าง 5 วินาทีให้ผลเกินจริง ใช้ **2 วินาที**)
+
+ผล 02/10 (วันทำงานเต็ม):
+
+| คิวรี | รวม | ซ้ำ ≤2 วิ | % |
+|---|---:|---:|---:|
+| `prod_orders` | 15,822 | **3,559** | 22.5% |
+| `production_sessions` | 12,280 | **2,597** | 21.1% |
+| `v_demand_flow_blocks` | 2,509 | **745** | 29.7% |
+| `child_lot_requests` | 2,533 | **747** | 29.5% |
+| `line_stock_summary` | 2,948 | 330 | 11.2% |
+| `line_part_levels` | 2,512 | 257 | 10.2% |
+
+🎯 **`745` กับ `747` เท่ากันเกือบเป๊ะ** = 2 คิวรีที่อยู่ใน `load()` **ตัวเดียวกัน** ของ `StoreLotQueue`
+⇒ พิสูจน์ว่าเป็น **"โหลดซ้ำทั้ง `load()`"** ไม่ใช่คนละคนเปิดพร้อมกัน
+(คนละคนไม่มีทางทำให้ 2 ตารางได้เลขซ้ำเท่ากัน) — **นี่คือหลักฐานที่ NAT ปนไม่ได้**
+
+### ✅ ต้นเหตุ: array/object ที่ identity ไม่นิ่ง อยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
+
+**① `selSession` (object)** — `load()` ปิดท้ายด้วย `setSelSession(ss.find(...))` = object ใบใหม่
+เนื้อเดิมทุกรอบ ⇒ effect โหลดข้อมูลกะยิง 4 คิวรีใหม่ทั้งชุด **และ** effect realtime รีรัน
+⇒ cleanup เรียก `bump*.cancel()` สร้าง `coalesce` ใบใหม่ ⇒ **เพดาน `LIVE.*` ถูกล้าง**
+⇒ เป็นลูป: bump → load → selSession ใบใหม่ → เพดานรีเซ็ต → bump ถัดไปยิงทันที
+**= คำตอบว่าทำไมใส่เพดานมาหลายรอบแล้วตัวเลขไม่ลงเท่าที่ควร เพดานไม่เคยอยู่ครบอายุ**
+
+**② `scopeSecs` (array จาก UserContext)** — ได้ใบใหม่เนื้อเดิม 2 ทาง:
+- destructure `sections: scopeSecs = []` — ค่า default สร้าง array **ใบใหม่ทุก render** เมื่อ context ส่ง `undefined`
+- `<UserContext.Provider value={{ … sections: userSections || [] }}>` ใน `App.jsx` = object literal ใบใหม่ทุก render
+
+⇒ แก้เป็น **คีย์เนื้อหา**: `const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs])`
+(useMemo คิดใหม่ทุก render ได้ แต่**ได้ string เท่าเดิม** ⇒ `useCallback` ที่ผูก `scopeKey` จึงนิ่ง
+— ท่าเดียวกับ `famKey`/`upKey` ที่แผงลูกใช้อยู่แล้วตั้งแต่ 16/09)
+· แก้ 6 จุดที่ยิง DB: `DailyReport` (3) · `EventLog` · `OjtTraining` · `MonthlyReviewExport`
+
+### ⚠️ ด่านรอบแรกที่เขียนเอง "กว้างเกิน" — จับของดีไปด้วย
+
+ด่าน `no-unstable-ref-in-db-effect-deps` รอบแรกจับ `}, [deps])` ทุกตัว ⇒ ติด **`useMemo` 3 ตัว
+ที่คิดเลขเฉยๆ ไม่ยิง DB** (`DailyPM` `scopedProdLines` · `Dashboard` `scopedLines`
+· `DailyReport` `openScopeLineNames`) — พวกนี้เปลืองซีพียูเล็กน้อย **ไม่จ่าย egress**
+⇒ รัดด่านให้จับเฉพาะ `useCallback`/`useEffect` ที่ body มี `supabase`/`.from(`/`.rpc(`/`load…()`
+
+🔑 **บทเรียน: ด่านที่จับของดีด้วย จะถูกถอดทิ้งในที่สุด** — เขียนด่านแล้วต้องดูรายชื่อที่มันจับ
+ทีละตัว ว่าเป็นปัญหาจริงหรือไม่ ก่อนปล่อยเข้า build
+
+### 📌 ยังไม่แก้ (บันทึกไว้ ห้ามหยิบไปทำโดยไม่ถาม user)
+
+`<UserContext.Provider value={{...}}>` ใน `App.jsx:1746/1759/1786` เป็น object literal ใบใหม่
+ทุก render ⇒ ทุกหน้าที่ `useContext(UserContext)` re-render ตามหมด · **แก้ที่นี่ = แตะทุกหน้าพร้อมกัน**
+และยังพิสูจน์ไม่ได้ว่าทำให้ยิง DB เพิ่ม (ตอนนี้เป็น render churn) ⇒ กันไว้ก่อน
+**การแก้ฝั่งผู้ใช้ (คีย์เนื้อหา) เป็นไปตามกฎข้อ 9 และ immune กับสิ่งที่ App ทำอยู่ดี**
