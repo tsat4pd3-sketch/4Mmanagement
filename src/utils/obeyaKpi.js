@@ -200,11 +200,18 @@ export function axisDelivery({ target = 0, produced = 0, series = [], lateOrders
    แต่ยังไม่รู้ "ราคาขาย" ⇒ ทำ margin ไม่ได้ (ดู docs/FINANCIAL-GAP-ANALYSIS.md)
    ⇒ KPI ของแกนนี้คือ **มูลค่าความสูญเสีย** — ยิ่งน้อยยิ่งดี (better: 'down')
    ⚠️ ไม่มีอัตราค่าแรงของ cost center = คิดไม่ได้ ต้องบอก ห้ามใส่ 0 แทน (0 บาท = "ไม่เสียอะไรเลย" ซึ่งโกหก) */
-export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0 } = {}) {
+/* `sessions` = จำนวนกะ (ปิดแล้ว) ในขอบเขต — **0 = ไม่มีข้อมูล ⇒ value null (เทา)** ห้ามคืน 0 บาท
+   (0 บาท = "ไม่เสียอะไรเลย" ⇒ ไฟเขียว "ไม่มีความสูญเสีย" ทั้งที่ยังไม่มีกะผลิตสักกะ — QC audit 05/10)
+   ไม่ส่ง (null) = ไม่รู้ ⇒ พฤติกรรมเดิม */
+export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
   const total = (Number(dtBaht) || 0) + (Number(ngBaht) || 0);
   const notes = [];
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
+  if (sessions === 0 && !(total > 0)) {
+    return { key: 'C', unit: 'บาท', better: 'down', target, value: null, dtBaht: 0, ngBaht: 0,
+      state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในช่วงนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย', series };
+  }
   return {
     key: 'C', unit: 'บาท', better: 'down', target,
     value: total > 0 ? Math.round(total) : (notes.length ? null : 0),

@@ -46,6 +46,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+/* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
+import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
@@ -61,6 +63,7 @@ import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster, mrows } from '../utils/masterCache';
+import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite } from '../utils/dbWrite';
 import MachineSelect from '../components/MachineSelect';
@@ -280,6 +283,22 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
+     2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
+       ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
+          มาเมื่อไหร่ ค่า default สร้าง array **ใบใหม่ทุก render**
+       ② `<UserContext.Provider value={{ … sections: userSections || [] }}>` ใน App.jsx
+          เป็น object literal ใบใหม่ทุก render ของ App — `|| []` ก็สร้างใบใหม่เช่นกัน
+     ⇒ `load` ใบใหม่ ⇒ `useEffect(() => { load() }, [load])` ยิงใหม่ทั้งชุด
+     วัดจริง 02/10/2026 — "คิวรีเดิมเป๊ะจาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+       prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+       · v_demand_flow_blocks 745 · child_lot_requests 747  ← **สองตัวนี้เท่ากัน**
+         = 2 คิวรีใน `load()` ของ StoreLotQueue ตัวเดียวกัน ⇒ ยืนยันว่าเป็น "โหลดซ้ำทั้ง load()"
+         ไม่ใช่คนละคนเปิดพร้อมกัน (คนละคนไม่ทำให้ 2 ตารางได้เลขเท่ากัน)
+     🔑 แปลงเป็น "คีย์เนื้อหา" (string) แบบเดียวกับ `famKey`/`upKey` ในแผงลูก
+        — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
+     ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
@@ -503,7 +522,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       cachedMaster('dr_products:full', async () => mrows(await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'))),
       cachedMaster('dr_downtime_types:active', async () => mrows(await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'))),
       cachedMaster('kanban_standards:full', async () => mrows(await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'))),
-      cachedMaster('break_policies:active', async () => mrows(await supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'))),
+      loadBreakPolicies(),   // loader กลาง (utils/breakPolicies.js · 05/10)
       cachedMaster('machines:full', async () => mrows(await supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'))),
       cachedMaster('dr_defect_types:active', async () => mrows(await supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'))),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
@@ -524,7 +543,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
     // ⚠️ คิวรี production_lines รอบที่ 2 ของ load() เดียวกัน — cache ด้วย ไม่งั้นยิงซ้ำทุกรอบเช่นกัน
     cachedMaster('production_lines:flow', async () =>
-      (await loadLinesRes()).data || []).then((data) => {
+      mrows(await loadLinesRes())).then((data) => {
       if (!data) return;
       const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
       setLineFlow(fm);
@@ -598,7 +617,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   /* ── แยก "กะที่กำลังทำอยู่" ออกจาก "กะค้างจากวันก่อน" (2026-08-26 · feedback "ปวดหัวกับกะที่รก ค้างจังเลย")
      ข้อมูลจริงที่หน้างานเจอ: sidebar ขึ้น 49 กะ ในนั้น 37 กะเป็นของวันก่อนที่ยังไม่ปิด
@@ -786,15 +806,32 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   }, [isStaleSess]);
 
   useEffect(() => { load(); }, [load]);
+  /* 🔴🔴 2026-10-06 — deps ต้องเป็น `selSession?.id` + `?.line_name` (string) **ห้ามเป็น `selSession`**
+     (กฎเหล็กข้อ 9 · บรรทัด 1378 ในไฟล์นี้ใช้ท่าถูกอยู่แล้ว — ตัวนี้หลุดไป)
+
+     กลไกที่ทำให้เสียเปล่า: `load()` (โหลดรายการกะ) ปิดท้ายด้วย
+       setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0])
+     ⇒ ได้ **object ใบใหม่ เนื้อเหมือนเดิมเป๊ะ** ทุกครั้ง ⇒ effect นี้เห็น deps เปลี่ยน
+     ⇒ **ยิง 4 คิวรีหนักใหม่ทั้งชุดทั้งที่กะที่เลือกไม่ได้เปลี่ยนอะไรเลย**
+       (downtime_logs · prod_orders+embed · ยอดค้างกะก่อน · defect_logs+embed)
+     ⇒ ทุก bump ของ realtime / ทุกรอบโหลดรายการกะ = จ่าย 4 คิวรีฟรี × ~40 เครื่อง
+
+     🔑 ปลอดภัยเพราะ: ตัวโหลดทั้ง 4 เป็น `useCallback(..., [])` (identity นิ่งแน่นอน) ·
+        body ใช้แค่ `.id`/`.line_name` · เนื้อกะที่เปลี่ยน (status ฯลฯ) ไม่ต้องโหลด 4 ตัวนี้ใหม่
+        — จอวาดจาก `selSession` ตรงๆ อยู่แล้ว และจุดที่เปลี่ยนสถานะเอง setSelSession ให้แล้ว
+     🔑 `setSessLoadErr({})` ก็ตรงความหมายเดิมขึ้นด้วย — คอมเมนต์เขียนว่า "สลับกะ = เริ่มนับใหม่"
+        ของเดิมรีเซ็ตทุกรอบโหลด (ไม่ใช่ตอนสลับกะ) ซึ่งไม่ตรงกับที่เขียนไว้ */
   useEffect(() => {
-    if (selSession) {
+    const sid = selSession?.id;
+    if (sid) {
       setSessLoadErr({}); // สลับกะ = เริ่มนับใหม่ (ไม่งั้น error ของกะเก่าค้างบล็อกกะใหม่)
-      loadDT(selSession.id);
-      loadProdOrders(selSession.id, selSession.line_name);
-      loadCarryOrders(selSession.id, selSession.line_name);
-      loadDefectLogs(selSession.id);
+      loadDT(sid);
+      loadProdOrders(sid, selSession.line_name);
+      loadCarryOrders(sid, selSession.line_name);
+      loadDefectLogs(sid);
     }
-  }, [selSession, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   /* ── Realtime ────────────────────────────────────────────────────────────────
      🔴 2026-09-15 — แก้ 2 อย่างพร้อมกัน (งานลด egress · เตรียมรับจอ/แท็บเล็ต ~40 เครื่อง)
@@ -855,7 +892,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       bumpSess.cancel(); bumpOrd.cancel(); bumpDt.cancel(); bumpDef.cancel();
       supabaseDR.removeChannel(ch);
     };
-  }, [selSession, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    /* 🔴🔴 2026-10-06 — deps ต้องเป็น string ไม่ใช่ `selSession` (object) — **เหตุผลคนละข้อกับ effect ข้างบน
+       และสำคัญกว่า:** cleanup ของ effect นี้เรียก `bump*.cancel()` แล้วสร้าง `coalesce` ใบใหม่
+       ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้างทุกครั้งที่ effect รีรัน ⇒ event ถัดไปยิงทันที = เพดานหายไปเลย**
+       (`LIVE.SHIFT` 5 นาที / `LIVE.PAGE` 15 วิ มีผลเท่าอายุของ coalesce ใบนั้นเท่านั้น)
+       และ `load()` ปิดท้ายด้วย `setSelSession(ss.find(...))` = object ใบใหม่เนื้อเดิม
+       ⇒ ทุก bump → load → selSession ใบใหม่ → effect รีรัน → **เพดานรีเซ็ต → bump ถัดไปยิงทันที**
+       = ลูปที่ทำให้เพดานไม่เคยทำงานจริงเลย + รื้อ/ต่อ websocket channel ใหม่ทุกรอบ
+
+       🔑 ปลอดภัยเพราะ body ใช้แค่ `selSession?.id` (เป็น `filter:` ของ subscribe) กับ `.line_name`
+          ⇒ สลับกะ = id เปลี่ยน = subscribe ใหม่ด้วย filter ใหม่ (ถูกต้องเหมือนเดิม) */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -1293,15 +1341,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        (ไม่ย้อนกลับไปเป็นบั๊ก "ลิสต์ว่าง เปิดใบไม่ได้ทั้งกะ" ของ 17/08) */
   const scanMat = useMemo(
     () => scopeMatRows(kanbanStds, lines, selSession?.line_name || ''),
-    [kanbanStds, lines, selSession]);
+    // 🔴 06/10 — ผูกกับ `line_name` (string) ไม่ใช่ `selSession` (object ใบใหม่ทุกรอบโหลด)
+    //    ของเดิมคิด scope ใหม่ทุกครั้งที่รายการกะรีเฟรช ทั้งที่ไลน์ไม่เปลี่ยน
+    [kanbanStds, lines, selSession?.line_name]);
   const scanMatStds = scanMat.rows;
 
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
-    if (!showScanOpen || !selSession || scanMatStds.length !== 1) return;
+    if (!showScanOpen || !selSession?.id || scanMatStds.length !== 1) return;
     if (!openProdForm.mat_no) handleOpenProdMatNoChange(scanMatStds[0].mat_no);
+  /* 🔴 06/10 — `selSession?.id` ไม่ใช่ `selSession`: object ใบใหม่ทุกรอบโหลดรายการกะ
+     ⇒ ของเดิมเติม mat_no ให้ซ้ำทุกรอบ **ทับค่าที่คนเพิ่งล้างทิ้งไป** ได้ด้วย (ไม่ใช่แค่เปลือง render) */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showScanOpen, scanMatStds, selSession]);
+  }, [showScanOpen, scanMatStds, selSession?.id]);
 
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
@@ -2676,9 +2728,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
          เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
          พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
          กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
-         ยังไม่จับคู่ = 'อื่นๆ' ตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards */
+         ยังไม่จับคู่ = ถังขยะตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards
+         ⚠️ 06/10: กลุ่มที่ไม่จับคู่ใช้ `OTHER_GROUP` ('อื่นๆ / ยังระบุไม่ได้') ให้ตรงกับ
+            ชื่อกลุ่มในทะเบียน `mtn_problem_types` — เดิมเขียน 'อื่นๆ' ลอยๆ ซึ่งเป็นป้าย
+            ถังสังเคราะห์ของจอ ไม่มีอยู่ในทะเบียน ⇒ แท่งพาเรโตแยกจากกลุ่มจริงเงียบๆ */
       problem_characteristic: dtType?.name_th || 'อื่นๆ',
-      problem_group: dtType?.mo_problem_group || 'อื่นๆ',
+      problem_group: dtType?.mo_problem_group || OTHER_GROUP,
       // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
       report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
@@ -6023,6 +6078,8 @@ function StaleTab({ stale, onOpenSession, role }) {
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
   const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -6129,7 +6186,8 @@ function HistoryTab({ role }) {
     setLoading(false);
     // ใบรายงานปัญหาที่เคยออกของกะเหล่านี้ (โหลดพร้อมกัน — ป้ายเลขที่ใบต้องเห็นตั้งแต่ยังไม่กางแถว)
     setProbDocs(await loadProblemDocs((ss || []).map(x => x.id)));
-  }, [filter, role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [filter, role, scopeKey, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
   // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
@@ -6682,6 +6740,8 @@ function HistoryTab({ role }) {
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -6709,7 +6769,8 @@ function ExportTab() {
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

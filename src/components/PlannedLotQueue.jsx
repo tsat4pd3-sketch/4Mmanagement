@@ -17,15 +17,24 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import MatLabel from './MatLabel';
 import { qtyText, splitPlanForSession, matchPlanToActual } from '../utils/planLots';
+import { fetchAllPages } from '../utils/fetchByIds';
 
 const shiftLabel = (sh) => (sh === 'night' ? 'กะดึก' : 'กะเช้า');
 const STATE_COLOR = { done: '#22c55e', partial: '#4d9fff', pending: 'var(--border2)' };
 
 export default function PlannedLotQueue({ session, orders = [] }) {
   const [lots, setLots] = useState([]);
+  /* 🔴 ยอดจริงต้องเป็น "ทั้งวันงานของไลน์" ให้ตรงกับแผนที่โหลดทั้งวัน (QC 05/10)
+     เดิมรับ `orders` ของ**กะที่เปิดอยู่กะเดียว**จาก DailyReport ⇒ เปิดกะดึกแล้วล็อตที่กะเช้าทำครบ
+     ขึ้น "ยังไม่เริ่ม" · ยอดกะเช้าหายจากการปันข้ามกะ (ขัดกติกา matchPlanToActual เอง)
+     → โหลดใบของทุกกะในวันงานเอง · `orders` (กะนี้) ใช้เป็นตัวกระตุ้นโหลดใหม่ + ถอยใช้ตอนโหลดไม่ได้ */
+  const [dayOrders, setDayOrders] = useState(null);     // null = ยังไม่รู้/โหลดไม่ได้
+  const [dayErr, setDayErr] = useState(null);
+  /* primitive ล้วน (กฎเขียน DB ข้อ 9) — ใบกะนี้เปลี่ยนเมื่อไหร่ โหลดยอดทั้งวันใหม่ */
+  const ordersSig = (orders || []).map(o => `${o.id}:${o.status}:${o.qty_actual ?? ''}:${o.qty_ok ?? ''}`).join('|');
 
   const load = useCallback(async (alive = () => true) => {
-    if (!session?.line_name || !session?.work_date) { setLots([]); return; }
+    if (!session?.line_name || !session?.work_date) { setLots([]); setDayOrders(null); return; }
     /* 🔴 โหลดทั้งวันงานของไลน์ ไม่กรองกะ — กรองกะเคยทำให้กะดึกมองไม่เห็นแผนกะเช้าที่ยังไม่ได้เริ่ม
        แล้วจอเงียบสนิท (เคสจริง 30/09 LINE B 6 ล็อต) · แบ่งกองที่ `splitPlanForSession()` */
     const { data, error } = await supabaseDR.from('production_plan_lots')
@@ -35,7 +44,15 @@ export default function PlannedLotQueue({ session, orders = [] }) {
     if (!alive()) return;
     if (error) { toast.error(`โหลดแผนสั่งงานไม่สำเร็จ: ${error.message}`); return; }
     setLots(data || []);
-  }, [session?.line_name, session?.work_date]);
+    if (!data?.length) { setDayOrders(null); setDayErr(null); return; }   // ไม่มีแผน = ไม่ต้องโหลดยอด
+    const r = await fetchAllPages(() => supabaseDR.from('prod_orders')
+      .select('id, mat_no, status, qty, qty_ok, qty_actual, production_sessions!inner(line_name, work_date)')
+      .eq('production_sessions.line_name', session.line_name)
+      .eq('production_sessions.work_date', session.work_date));
+    if (!alive()) return;
+    if (r.error || r.truncated) { setDayOrders(null); setDayErr(r.error || 'ใบผลิตเยอะเกินเพดาน'); return; }
+    setDayOrders(r.rows); setDayErr(null);
+  }, [session?.line_name, session?.work_date, ordersSig]);   // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { let on = true; load(() => on); return () => { on = false; }; }, [load]);
 
   const split = splitPlanForSession(lots, session);
@@ -43,7 +60,7 @@ export default function PlannedLotQueue({ session, orders = [] }) {
 
   /* 🔴 ปันยอดต่อ (ไลน์+วันงาน+พาร์ท) **ข้ามกะ** — แยกกะจะทำให้ยอดเดียวถูกนับ 2 รอบ
      เมื่อล็อตกะเช้าถูกทำต่อในกะดึก (ของจริงเกิดแล้ว 30/09) */
-  const m = matchPlanToActual([...split.mine, ...split.other], orders);
+  const m = matchPlanToActual([...split.mine, ...split.other], dayOrders ?? orders);
   const rowOf = (lotId) => m.rows.find(r => r.lot.id === lotId);
   /* 🔴 "ค้างจากกะก่อน" ตัดสินจาก**ยอดที่ทำได้จริง** ไม่ใช่คอลัมน์สถานะ (ไม่มีใครเขียนแล้ว)
      ⇒ ล็อตกะอื่นที่ยังไม่ครบ = งานที่กะนี้ทำต่อได้ · ที่ครบแล้ว = แค่บอกให้รู้ */
@@ -87,8 +104,13 @@ export default function PlannedLotQueue({ session, orders = [] }) {
         )}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-        แผนเป็น<b>กรอบ</b> ไม่ได้สั่งให้เปิดใบ — หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ ระบบรวมยอดมาเทียบให้เอง
+        แผนเป็น<b>กรอบ</b> ไม่ได้สั่งให้เปิดใบ — หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ ระบบรวมยอดทุกกะของวันมาเทียบให้เอง
       </div>
+      {dayErr && (
+        <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 6 }}>
+          ⚠️ โหลดยอดทั้งวันไม่ได้ ({dayErr}) — ตัวเลขด้านล่างนับเฉพาะใบของกะนี้ ล็อตที่กะอื่นทำไปแล้วอาจขึ้นว่ายังไม่เริ่ม
+        </div>
+      )}
 
       {split.mine.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

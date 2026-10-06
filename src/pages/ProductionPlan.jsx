@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -18,6 +19,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import CapacityBoard from '../components/CapacityBoard';
+import CapacityLoadChart from './../components/CapacityLoadChart';
 import ProdLotPlanner from '../components/ProdLotPlanner';
 import { openOnly } from '../utils/shipStatus';
 import {
@@ -63,7 +65,27 @@ const PLAN_META = {
 export default function ProductionPlan() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
-  const [tab, setTab] = useTabParam(['daily', 'monthly', 'capacity', 'lots'], 'daily');
+  /* 📊 ยุบ 3 แท็บแรกเป็นแท็บเดียว (user 06/10: *"3 tab แรกเราว่าฟุ่มเฟือย มันคือเรื่องเดียวกัน
+     คนละมุมมอง ซึ่งโรงงานชอบแบบกราฟ"*) — รายวัน/รายเดือนคือ**คำถามเดียวกันคนละหน่วยเวลา**
+     ⇒ เป็น "ช่วงเวลา" ของแท็บเดียว ไม่ใช่คนละแท็บ · สไลด์โรงงานเป็น**รูปแบบนำเสนอ** ไม่ใช่การวิเคราะห์ใหม่
+     ⇒ เป็นปุ่มสลับโหมด · 🔴 แท็บซ้อนแท็บต้องคนละ query param (UI §6.8 ข้อ 2.4) ⇒ `?cap=` / `?mode=` */
+  const [tab, setTab] = useTabParam(['plan', 'lots'], 'plan');
+  const [cap, setCap] = useTabParam(['day', 'month'], 'day', 'cap');
+  const [mode, setMode] = useTabParam(['chart', 'slide'], 'chart', 'mode');
+
+  /* 🔗 ลิงก์/บุ๊กมาร์กเก่าของทีมวางแผน (`?tab=daily|monthly|capacity`) — แท็บพวกนั้นไม่มีแล้ว
+     `useTabParam` จะตกกลับ 'plan' ให้เองก็จริง แต่**ช่วงเวลา/โหมดจะไม่ตรงกับที่เขาบุ๊กมาร์กไว้**
+     ⇒ แปลงให้ครั้งเดียวตอนเปิดหน้า แล้ว replace (ไม่ push — ปุ่ม Back ไม่ควรวนกลับ URL เก่า) */
+  const [sp, setSp] = useSearchParams();
+  useEffect(() => {
+    const legacy = sp.get('tab');
+    if (!['daily', 'monthly', 'capacity'].includes(legacy)) return;
+    const next = new URLSearchParams(sp);
+    next.set('tab', 'plan');
+    if (legacy === 'monthly') next.set('cap', 'month');
+    if (legacy === 'capacity') next.set('mode', 'slide');
+    setSp(next, { replace: true });
+  }, [sp, setSp]);
   const [capMode, setCapMode] = useState('median'); // 'median' | 'safe'
   const [loading, setLoading] = useState(true);
   const [planWarn, setPlanWarn] = useState('');   // โหลดไม่ครบ → เตือน (แผนอาจต่ำกว่าจริง)
@@ -588,10 +610,8 @@ export default function ProductionPlan() {
       <PageHeader
         title="วางแผนการผลิต" icon="🗓️"
         tabs={[
-          { key: 'daily', label: '📅 รายวัน (ออเดอร์)' },
-          { key: 'monthly', label: '📆 รายเดือน (Forecast)' },
-          { key: 'capacity', label: '📊 Capacity (แบบสไลด์โรงงาน)' },
-          /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — อีก 3 แท็บวิเคราะห์อย่างเดียว
+          { key: 'plan', label: '📊 กำลังการผลิต' },
+          /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — แท็บกำลังการผลิตวิเคราะห์อย่างเดียว
              (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
           { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
         ]}
@@ -744,7 +764,7 @@ export default function ProductionPlan() {
 
       {/* 🌑 ไลน์ที่ไม่มีความต้องการในระบบเลย — เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างอ่านได้ว่า "ไลน์ว่าง"
            ทั้งที่ความจริงคือ "ยังไม่มีทางรับ order ของลูกค้าเจ้านั้นเข้าระบบ" (วัดจริง 22/09: 10 จาก 22 ไลน์) */}
-      {!loading && tab === 'daily' && silentLines.length > 0 && (
+      {!loading && tab === 'plan' && cap === 'day' && mode === 'chart' && silentLines.length > 0 && (
         <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
           🌑 <b>{silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ</b> — ไม่ใช่ "ไลน์ว่าง" แต่คือยังไม่มี order/forecast ของพาร์ทในไลน์นี้เข้าระบบ
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 11.5 }}>
@@ -759,6 +779,33 @@ export default function ProductionPlan() {
         </div>
       )}
 
+      {/* ── ช่วงเวลา + รูปแบบของแท็บกำลังการผลิต ─────────────────────────────────────
+           🔴 "รายวัน" กับ "รายเดือน" ไม่ใช่คนละเรื่อง — เป็นคำถามเดียวกันคนละหน่วยเวลา
+              (รายวันใช้ออเดอร์จริง · รายเดือนใช้ forecast) ⇒ เป็นตัวเลือกช่วง ไม่ใช่คนละแท็บ
+           🔴 "สไลด์โรงงาน" เป็น**รูปแบบนำเสนอ**ของเลขชุดเดียวกัน ⇒ เป็นปุ่มสลับโหมด */}
+      {tab === 'plan' ? (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Segmented
+            value={cap} onChange={setCap}
+            options={[
+              { value: 'day', label: `📅 รายวัน (${DAILY_HORIZON} วัน · ออเดอร์จริง)` },
+              { value: 'month', label: '📆 รายเดือน (Forecast)' },
+            ]}
+          />
+          <button type="button" onClick={() => setMode(mode === 'slide' ? 'chart' : 'slide')}
+            aria-pressed={mode === 'slide'}
+            title="รูปแบบนำเสนอสำหรับฉายขึ้นจอโรงงาน — เลขชุดเดียวกับกราฟ"
+            style={{
+              marginLeft: 'auto', padding: '6px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
+              border: `1px solid ${mode === 'slide' ? 'var(--accent)' : 'var(--border2)'}`,
+              background: mode === 'slide' ? 'var(--accent-dim)' : 'var(--bg2)',
+              color: mode === 'slide' ? 'var(--accent)' : 'var(--text2)',
+            }}>
+            🖥️ {mode === 'slide' ? 'กลับไปดูกราฟ' : 'โหมดสไลด์โรงงาน'}
+          </button>
+        </div>
+      ) : null}
+
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'lots' ? (
@@ -770,14 +817,14 @@ export default function ProductionPlan() {
              ส่ง null ตอนยังโหลดไม่เสร็จ เพื่อให้แท็บเขียนบนจอว่ายังไม่ได้เช็ควันหยุด (ห้ามเดาเงียบ) */
           calOf={Object.keys(calMap).length ? calOf : null}
         />
-      ) : tab === 'capacity' ? (
+      ) : tab === 'plan' && mode === 'slide' ? (
         <CapacityBoard
           role={role} scope={{ role, lineId: userLineId, sections: scopeSecs }}
           lines={viewLines} months={capMonths} calMap={calMap}
           demandByMonth={demandPcs.byMonth} ctOf={ctOf} lineOfMat={lineOfMat} pairOf={pairOf}
           lineOee={lineOee} estOf={estOf} netMin={shiftNet?.netMin} customerOf={customerOf} nameOfMat={nameOfMat}
         />
-      ) : tab === 'daily' ? (
+      ) : cap === 'day' ? (
         daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
         {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
         {daily.some(r => r.sd75Total > 0) && (() => {
@@ -819,7 +866,19 @@ export default function ProductionPlan() {
               {carryPcs > 0 && <span style={chip('#f59e0b')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
               {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
-            {/* แถบปฏิทินวันต่อวัน */}
+            {/* 📊 กราฟก่อน ตารางทีหลัง — โรงงานอ่านกราฟเร็วกว่า (user 06/10)
+                แท่ง = ภาระของวันนั้น (กะ) · เส้น = กำลังที่มี ⇒ แท่งพ้นเส้น = ต้องเปิดเพิ่ม */}
+            <CapacityLoadChart
+              data={days.map(d => ({
+                key: d.date,
+                label: `${new Date(`${d.date}T12:00:00`).getDate()}/${new Date(`${d.date}T12:00:00`).getMonth() + 1}`,
+                load: d.dueLoad,
+                note: `${fmtDate(d.date)}${d.sd75 ? ' (ม.75)' : d.holiday ? ' (วันหยุด)' : ''}`,
+              }))}
+              capacity={1}
+              capacityMax={hasNightShift(viewLines, line.name) ? 2 : 1}
+            />
+            {/* แถบปฏิทินวันต่อวัน — รายละเอียดว่าต้องเปิดอะไรบ้าง (กราฟบอกแค่ "เกินไหม") */}
             <div style={{ display: 'flex', gap: 3, overflowX: 'auto', paddingBottom: 4 }}>
               {days.map(d => {
                 const top = d.plan.includes('holiday_work') ? PLAN_META.holiday_work : d.plan.includes('recall75') ? PLAN_META.recall75 : d.plan.includes('night') ? PLAN_META.night : d.plan.includes('ot') ? PLAN_META.ot : d.plan.includes('day') ? PLAN_META.day : null;
@@ -847,6 +906,17 @@ export default function ProductionPlan() {
         monthly.map(({ line, rows }) => (
           <div key={line.id} style={card}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{line.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{line.section}{hasNightShift(viewLines, line.name) ? ' · มีกะดึก' : ' · กะเช้าอย่างเดียว'}</span></div>
+            {/* 📊 เดือนไหนงานล้นกำลัง — เห็นจากกราฟก่อน แล้วค่อยอ่านเลขในตาราง
+                🔴 เดือนที่ไม่มี forecast ต้องไม่กลายเป็นแท่ง 0 (= "ไม่มีงาน") ⇒ กรองออกจากกราฟ
+                   แล้วตารางยังโชว์ "—" ให้เห็นว่าเดือนนั้นไม่มีข้อมูล */}
+            <CapacityLoadChart
+              data={rows.filter(r => r.fcCount).map(r => ({ key: r.mk, label: r.mk.slice(2), load: r.shiftsNeeded, note: `${r.mk} · ${Math.round(r.pcs).toLocaleString()} ชิ้น` }))}
+              capacity={rows.find(r => r.fcCount)?.dayShifts ?? null}
+              capacityMax={(() => {
+                const ds = rows.find(r => r.fcCount)?.dayShifts;
+                return ds == null ? null : (hasNightShift(viewLines, line.name) ? ds * 2 : ds);
+              })()}
+            />
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead><tr>

@@ -86,6 +86,14 @@ export const RECUR = {
     needs: ['in', 'send'],
     calc: (prev, cur) => (prev === null ? null : prev + flow(cur.in) - flow(cur.send)),
   },
+  /* BALANCE[d] = BALANCE[d-1] + IN[d] − ORDER[d]  — บอร์ด FG ต่อลูกค้า (06/10)
+     🔴 หักด้วย "ยอดที่ลูกค้าสั่ง" ไม่ใช่ "ยอดที่ส่งจริง" เพราะบอร์ดนี้ตอบคำถาม**ล่วงหน้า**
+        ว่า "ของจะพอส่งไหม" — ของที่ส่งไปแล้วตอบได้แค่อดีต (หลักเดียวกับ `deplete` ของบอร์ดแร็ค) */
+  fg_run: {
+    label: 'สต๊อก FG เดิน',
+    needs: ['in', 'order'],
+    calc: (prev, cur) => (prev === null ? null : prev + flow(cur.in) - flow(cur.order)),
+  },
   /* stock ที่ร้านชุบ = เมื่อวาน + ส่งไป − รับคืน (RA/824-825) */
   vendor_wip: {
     label: 'ค้างที่ร้าน',

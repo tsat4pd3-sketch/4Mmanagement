@@ -131,22 +131,39 @@ export default function Transport() {
   }, [roundStops]);
   const nRoutes = useMemo(() => Object.values(stopsByRound).filter(a => a.length >= 2).length, [stopsByRound]);
 
-  // เขียนลำดับจุดจอดใหม่ทั้งรอบ (delete-then-insert — กัน unique(round_id,seq) ชน)
-  // actionByNode: คงค่า load/drop เดิมของแต่ละจุดไว้ตอนเรียงใหม่ (คอลัมน์ action — migration 20260803)
+  /* เขียนลำดับจุดจอดใหม่ทั้งรอบ — 🔴 **ใส่ชุดใหม่ก่อน แล้วค่อยลบชุดเดิมตาม id** (QC 05/10)
+     เดิม delete-then-insert: insert ล้ม (เน็ตหลุด/สิทธิ์) = เส้นทางของรอบนั้นหายทั้งเส้นเงียบๆ
+     · unique(round_id, seq) ⇒ ชุดใหม่ใช้ seq คนละช่วงกับชุดเดิม (สลับ 0.. ⇄ 1000..) ไม่ชนกัน
+       ลำดับยังเรียงด้วย seq เหมือนเดิม (จอเรียง a.seq - b.seq · ไม่มีใครอ่านค่า seq ดิบ)
+     · ลบชุดเดิมล้ม = ชุดใหม่อยู่ครบแล้วแต่มีจุดซ้อน ⇒ บอกตรงๆ ให้กดบันทึกซ้ำ (จะเก็บกวาดเอง)
+     actionByNode: คงค่า load/drop เดิมของแต่ละจุดไว้ตอนเรียงใหม่ (คอลัมน์ action — migration 20260803) */
   const saveStops = async (roundId, orderedNodeIds, actionByNode = {}) => {
     setBusy(roundId);
     try {
       // ใส่คีย์ action เฉพาะเมื่อคอลัมน์มีจริง (แถวที่ select มามีคีย์นี้) — ยังไม่ apply migration ก็ยังบันทึกได้
       const hasActionCol = roundStops.some(s => 'action' in s);
-      const { error: wErr138 } = await supabaseDR.from('transport_round_stops').delete().eq('round_id', roundId);
-      if (wErr138) { setBusy(null); toast.error('ล้างจุดจอดเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr138.message); return; }
+      // อ่านชุดเดิม "สด" จากฐาน (ไม่ใช้ state — อีกเครื่องอาจแก้ไปแล้ว) · อ่านไม่ได้ = หยุด ห้ามเดาว่าไม่มี
+      const { data: old, error: eOld } = await supabaseDR.from('transport_round_stops').select('id, seq').eq('round_id', roundId);
+      if (eOld) throw new Error('อ่านจุดจอดเดิมไม่สำเร็จ — ยังไม่เขียนอะไร: ' + eOld.message);
+      const used = new Set((old || []).map(s => Number(s.seq)));
+      const n = orderedNodeIds.length;
+      const free = (b) => { for (let i = 0; i < n; i++) if (used.has(b + i)) return false; return true; };
+      // ปกติสลับ 0 ⇄ 1000 · ชุดเดิมซ้อนค้างจากรอบที่ล้างไม่ครบ = ต่อท้าย seq สูงสุด
+      const base = free(0) ? 0 : free(1000) ? 1000 : Math.max(...used) + 1;
       if (orderedNodeIds.length) {
         const rows = orderedNodeIds.map((nid, i) => ({
-          round_id: roundId, seq: i, node_id: nid, updated_by_name: fullName,
+          round_id: roundId, seq: base + i, node_id: nid, updated_by_name: fullName,
           ...(hasActionCol ? { action: actionByNode[nid] ?? null } : {}),
         }));
         const { error } = await supabaseDR.from('transport_round_stops').insert(rows);
-        if (error) throw error;
+        if (error) throw new Error('บันทึกเส้นทางใหม่ไม่สำเร็จ — เส้นทางเดิมยังอยู่ครบ: ' + error.message);
+      }
+      const oldIds = (old || []).map(s => s.id);
+      if (oldIds.length) {
+        const { data: del, error: eDel } = await supabaseDR.from('transport_round_stops').delete().in('id', oldIds).select('id');
+        if (eDel || (del?.length || 0) !== oldIds.length) {
+          toast.error(`บันทึกเส้นทางใหม่แล้ว แต่ล้างจุดจอดเดิมไม่ครบ (${del?.length || 0}/${oldIds.length}) — จุดอาจซ้อนกัน กดบันทึกอีกครั้ง${eDel ? ': ' + eDel.message : ''}`);
+        }
       }
       await load();
     } catch (err) { toast.error(err.message); }

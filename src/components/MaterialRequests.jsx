@@ -290,7 +290,8 @@ export default function MaterialRequests() {
     setPicker(null); setPq('');
   };
 
-  const wrap = { padding: '4px 2px' };
+  // ไม่มี padding บน — ระยะแท็บ→แถบกรองเป็นของ PageHeader (16px มาตรฐาน · stdsweep 05/10 เดิมเกิน 4px = 20px)
+  const wrap = { padding: '0 2px 4px' };
 
   return (
     <div style={wrap}>

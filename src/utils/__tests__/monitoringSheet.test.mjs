@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cellDate, detectMonitoringKind, parsePressSheet, parseCustomerSheet, parseGridSheet,
-  parseMonitoringWorkbook, monitoringToRecords,
+  parseMonitoringWorkbook, monitoringToRecords, stockAdjustPlan,
 } from '../monitoringSheet.js';
 
 const D = (y, m, d) => new Date(y, m - 1, d);
@@ -746,4 +746,21 @@ test('FG ยังลง forecast/ออเดอร์ได้ตามปก�
   assert.equal(r.levels.length, 0, 'ไม่ลง min/max ที่ไลน์');
   assert.equal(r.forecasts.length, 1, 'แต่ยังเป็น forecast ของ FG ได้ — คนละเรื่องกัน');
   assert.equal(r.forecasts[0].mat_no, '10088639');
+});
+
+/* ── stockAdjustPlan (QC 05/10) — ส่วนต่างต้องคิดจากยอดสด กดซ้ำไม่ซ้อน ───────────── */
+test('stockAdjustPlan — ส่วนต่าง = ไฟล์ − ปัจจุบัน · ตรงแล้ว = ไม่ลง · ไม่มีแถว = ฐาน 0', () => {
+  const norm = (s) => String(s ?? '').replace(/[\s-]/g, '').toUpperCase();
+  const file = [
+    { line_name: 'L1', mat_no: '100-1', qty: 50 },
+    { line_name: 'L1', mat_no: '200', qty: 10 },
+    { line_name: 'L2', mat_no: '300', qty: 7 },
+  ];
+  const stk = [{ line_name: 'L1', mat_no: '1001', qty_on_hand: 40 }, { line_name: 'L1', mat_no: '200', qty_on_hand: '10' }];
+  const p = stockAdjustPlan(file, stk, norm);
+  assert.deepEqual(p.map(x => [x.mat_no, x.have, x.delta]), [['100-1', 40, 10], ['300', 0, 7]]);
+  // กดยืนยันซ้ำหลังก้อนแรกลงไปแล้ว: ยอดสดเท่าไฟล์ ⇒ ไม่มีอะไรลงซ้ำ
+  const after = [{ line_name: 'L1', mat_no: '1001', qty_on_hand: 50 }, { line_name: 'L2', mat_no: '300', qty_on_hand: 7 }];
+  assert.deepEqual(stockAdjustPlan(p, after, norm), []);
+  assert.deepEqual(stockAdjustPlan(null, null), []);
 });

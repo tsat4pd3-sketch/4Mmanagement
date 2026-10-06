@@ -404,11 +404,15 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
     }
 
     if (batchId) {
-      await supabaseDR.from('customer_pull_batches').update({
+      /* ตัวนับบนแถวประวัติไฟล์ — ใบจริงลงไปแล้ว ล้มตรงนี้ไม่ทำให้ยอดผิด แต่แท็บประวัติจะโชว์ 0/0
+         ⇒ ห้ามเงียบ (QC 05/10 · กฎเขียน DB ข้อ 1-2: อ่าน error + นับแถว) */
+      const { data: cnt, error: eCnt } = await supabaseDR.from('customer_pull_batches').update({
         orders_updated: updated, orders_created: created,
         // นับ "ตรงกับ 862 อยู่แล้ว" รวมด้วย — ไม่งั้นไฟล์ที่ยอดตรงพอดีจะดูเหมือนไม่ได้ทำอะไรเลย
         orders_skipped: plan.filter(x => x.action !== 'update' && x.action !== 'create').length,
-      }).eq('id', batchId);
+      }).eq('id', batchId).select('id');
+      // แยกจาก `failed` — ใบส่งลงครบแล้ว ห้ามค้างโมดัลชวนให้กดยืนยันซ้ำ แค่บอกว่าประวัติไม่ตรง
+      if (eCnt || !cnt?.length) toast.error(`บันทึกตัวนับลงประวัติไฟล์ไม่สำเร็จ — ใบส่งลงครบแล้ว แต่แท็บประวัติจะโชว์ตัวเลขไม่ตรง: ${eCnt?.message || 'ไม่มีแถวถูกแก้ (สิทธิ์?)'}`);
     }
     setSaving(false);
     // ⚠️ ห้ามขึ้นเขียวล้วนเมื่อมีบางรายการล้ม (หลักเดียวกับ "กดส่งแล้วหักสต็อกไม่ได้ต้องรายงาน")
@@ -619,7 +623,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                     return (
                       <tr key={i}>
                         <td style={{ ...td, fontWeight: 700 }}>{x.group.customer_part_no}
-                          <div style={{ fontSize: 10, color: 'var(--muted)' }}>{x.group.part_name || ''}</div></td>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.group.part_name || ''}</div></td>
                         <td style={{ ...td, fontFamily: 'monospace', color: x.mat ? '#0ea5e9' : 'var(--muted)' }}>{x.mat || '—'}</td>
                         <td style={tdR}>{x.group.pulls}</td>
                         <td style={{ ...tdR, fontWeight: 900 }}>{fmt(x.group.qty)}</td>
@@ -630,14 +634,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                         <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>
                           {x.order ? String(x.order.ship_time || '').slice(0, 5) : shipTime}
                           {x.order && String(x.order.ship_time || '').slice(0, 5) !== shipTime && (
-                            <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม</div>
                           )}
                         </td>
                         <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
-                          {x.reason && <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
+                          {x.reason && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
                           {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
                           {x.extras?.length > 0 && (
-                            <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
+                            <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
                               ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
                             </div>
                           )}</td>

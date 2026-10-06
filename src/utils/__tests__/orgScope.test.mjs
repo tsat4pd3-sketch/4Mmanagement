@@ -215,7 +215,12 @@ test('ccOwnersOf: พิมพ์รหัสแล้วย้อนกลั�
   // รหัสที่ไลน์ลูกใช้ร่วมกัน (แต่ไลน์แม่มีรหัสของตัวเอง) ⇒ เจ้าของคือไลน์ลูกทั้งคู่ ไม่ใช่กลุ่ม
   assert.deepEqual(idx.ccOwnersOf('2140662201').map(o => `${o.kind}:${o.value}`), ['line:Line 60', 'line:Line 61']);
   assert.deepEqual(idx.ccOwnersOf('2140562100').map(o => `${o.kind}:${o.value}`),
-    ['department:HYDROFORM', 'line_group:LINE APRON ASSY'], 'รหัสเดียวผูก 2 หน่วย = ต้องคืนครบ (ข้อมูลจริงมีซ้ำ)');
+    ['department:HYDROFORM', 'line_group:LINE APRON ASSY'],
+    /* รหัสเดียวผูก 2 หน่วย = ต้องคืนครบ ห้ามหยิบตัวใดตัวหนึ่ง — fixture นี้จงใจตั้งให้ซ้ำ
+       (เคสที่มาจากข้อมูลจริง PD3 ถูกแก้ไปแล้ว 06/10 ด้วย migration
+        20261006_fix_hydroform_apron_cost_center_main.sql แต่ยังเหลือรหัสที่ชื่อหน่วยสะกดไม่ตรงกัน
+        ระหว่าง org_nodes/production_lines อีก 13 ตัว ⇒ ความสามารถนี้ยังต้องมี) */
+    'รหัสเดียวผูก 2 หน่วย = ต้องคืนครบ');
   assert.deepEqual(idx.ccOwnersOf('2140662101').map(o => `${o.kind}:${o.value}`), ['line_group:HYDROFORM', 'line:HDF1']);
   assert.deepEqual(idx.ccOwnersOf('ไม่มีรหัสนี้'), [], 'รหัสที่ผังไม่มีใครอ้าง = ว่าง ไม่ใช่พัง');
   assert.deepEqual(idx.ccOwnersOf(null), []);

@@ -3,9 +3,13 @@ import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import useIsMobile from '../utils/useIsMobile';
+import { supabase } from '../supabaseClient';
+import { fetchByIds } from '../utils/fetchByIds';
+import { summarizeNpi, npiLinkFor, linkedPanelCount } from '../utils/nmNpiLink';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
-  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions, tvGrid,
+  PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions,
+  tvWeightedLayout, panelWeight,
   BUCKETS, bucketOf, flattenPop, mainEva, bucketCounts, leavesInBucket, redWithoutNote, EVA_RULE,
 } from '../utils/nmBoard';
 import {
@@ -38,18 +42,28 @@ function Dot({ eva, size = 14, title }) {
   );
 }
 
+/* ไฟสถานะหลักของรุ่น — วงแหวน (ไม่ใช่วงกลมทึบ) ชุดเดียวกับหัวบอร์ดโหมดจอ TV
+   เดิมเป็นวงกลมสีทึบตัวอักษรดำ = ดูเป็น badge ของ bootstrap ทั่วไป · วงแหวน + แกนมืดอ่านง่ายกว่า
+   บนพื้นเข้ม และไม่ตะโกนทับชื่อแกน */
 function EvaBadge({ eva, label, note, big }) {
   const m = evaMeta(eva);
+  const none = eva === 'none' || !eva;
+  const d = big ? 42 : 30;
   return (
-    <div style={{ ...CARD, display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
-      <div style={{
-        width: big ? 40 : 30, height: big ? 40 : 30, borderRadius: '50%', flex: `0 0 ${big ? 40 : 30}px`,
-        background: m.color, color: '#0b1220', fontWeight: 800, fontSize: big ? 18 : 14,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        opacity: eva === 'none' || !eva ? 0.55 : 1,
+    <div className="nmb-card" data-eva={eva || 'none'}
+      style={{ ...CARD, display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0,
+        padding: '12px 13px 12px 17px', borderRadius: 10,
+        borderColor: none ? 'var(--border)' : `${m.color}4d`,
+        '--nmb-color': none ? 'var(--border2)' : m.color, '--nmb-rail': big ? '5px' : '4px' }}>
+      <div className="nmb-ring" style={{
+        width: d, height: d, flex: `0 0 ${d}px`, fontWeight: 800, fontSize: big ? 17 : 13,
+        color: none ? 'var(--muted)' : m.color,
+        '--nmb-color': none ? 'var(--border2)' : m.color,
+        '--nmb-glow': eva === 'R' ? 'rgba(239,68,68,0.3)' : 'transparent',
+        '--nmb-ring-w': big ? '4px' : '3px',
       }}>{m.short}</div>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>{label}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em' }}>{label}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{m.label}</div>
         {note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, lineHeight: 1.45 }}>{note}</div>}
       </div>
@@ -101,6 +115,162 @@ function useBoardData() {
     for (const p of PROJECTS) byCustomer.get(p.customer)?.projects.push(p);
     return { customers: [...byCustomer.values()], projects: PROJECTS };
   }, []);
+}
+
+/* ══ 🔗 โปรเจค NPI ที่ผูกกับรุ่นนี้ (2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน") ══════
+   บอร์ด = ภาพที่คนตัดสินใจร่วมกัน (สีมาจากคน) · NPI = หลักฐาน (สถานะมาจากเอกสารจริง)
+   ⇒ ยกตัวเลขจริงมาโชว์ข้างบอร์ด **ไม่เขียนอะไรกลับ ไม่แตะสี EVA** (กฎ IEC ข้อ 1)
+   🔴 โหลดไม่สำเร็จ ≠ ยังไม่ผูก — ต้องแยก 3 สถานะให้จอเขียนต่างกัน: loading / unlinked / error
+      ("โหลดล่ม" แล้วเขียนว่า "ยังไม่ผูก" = จอโกหก · กฎความซื่อสัตย์ของจอ) */
+function useNpiLink(boardProjectId) {
+  const [state, setState] = useState({ loading: true, sum: null, error: null });
+
+  useEffect(() => {
+    if (!boardProjectId) { setState({ loading: false, sum: null, error: null }); return undefined; }
+    let alive = true;                                  // กัน stale-response race (กฎเขียน DB ข้อ 4)
+    setState({ loading: true, sum: null, error: null });
+    (async () => {
+      /* เลือกเฉพาะคอลัมน์ที่ใช้ — ตารางนี้กว้าง (15 คอลัมน์) และ egress คิดเป็นไบต์ (กฎข้อ 11) */
+      const pr = await supabase.from('npi_projects')
+        .select('id, project_code, name, customer, model, status, leader_name, sop_date')
+        .eq('nm_board_id', boardProjectId).limit(1);
+      if (!alive) return;
+      if (pr.error) { setState({ loading: false, sum: null, error: pr.error.message }); return; }
+      const project = pr.data?.[0] || null;
+      if (!project) { setState({ loading: false, sum: null, error: null }); return; }
+
+      const [partsRes, eciRes] = await Promise.all([
+        supabase.from('npi_parts').select('id, ppap_status').eq('project_id', project.id),
+        supabase.from('npi_change_requests').select('id, status').eq('project_id', project.id),
+      ]);
+      if (!alive) return;
+      const parts = partsRes.error ? null : (partsRes.data || []);
+      const ecis = eciRes.error ? null : (eciRes.data || []);
+
+      /* เอกสารผูกกับ "พาร์ท" ไม่ใช่โปรเจค ⇒ ต้องไล่จาก part ids · ผ่าน fetchByIds (กฎข้อ 5: .in ยาว = URL ล้น) */
+      let deliverables = null;
+      if (parts?.length) {
+        const r = await fetchByIds(parts.map(x => x.id),
+          (ids) => supabase.from('npi_deliverables').select('id, status').in('part_id', ids));
+        if (!alive) return;
+        deliverables = r.error || r.truncated ? null : r.rows;   // นับไม่ครบ = ไม่รู้ ห้ามโชว์ % ที่ต่ำกว่าจริง
+      } else if (parts) {
+        deliverables = [];
+      }
+      setState({ loading: false, error: null, sum: summarizeNpi({ project, parts, deliverables, ecis }) });
+    })();
+    return () => { alive = false; };
+  }, [boardProjectId]);
+
+  return state;
+}
+
+/* ตัวชี้อย่างเดียว (ไม่ดึงพาร์ท/เอกสาร) — ใช้ในหน้าแผงที่ต้องการแค่ "ลิงก์ไปไหน"
+   แยกจาก useNpiLink เพราะหน้าแผงไม่ต้องใช้ตัวเลขสรุป ⇒ ไม่ต้องจ่าย egress ของ 3 คิวรีนั้น (กฎข้อ 11) */
+function useNpiProjectRef(boardProjectId) {
+  const [ref, setRef] = useState({ loading: true, id: null, code: null });
+  useEffect(() => {
+    if (!boardProjectId) { setRef({ loading: false, id: null, code: null }); return undefined; }
+    let alive = true;
+    setRef({ loading: true, id: null, code: null });
+    supabase.from('npi_projects').select('id, project_code').eq('nm_board_id', boardProjectId).limit(1)
+      .then(({ data, error }) => {
+        if (!alive) return;
+        const row = error ? null : data?.[0];
+        setRef({ loading: false, id: row?.id || null, code: row?.project_code || null });
+      });
+    return () => { alive = false; };
+  }, [boardProjectId]);
+  return ref;
+}
+
+/* แถบ "ของจริงของแผงนี้อยู่ที่ไหน" — โผล่เฉพาะแผงที่ NPI เป็นเจ้าของข้อมูลนั้นจริง (PANEL_NPI_MAP) */
+function PanelNpiLink({ proj, panel }) {
+  const ref = useNpiProjectRef(proj.id);
+  const link = npiLinkFor(panel.key, ref.id);
+  if (ref.loading || !link) return null;
+  return (
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 10,
+      '--nmb-color': 'var(--accent)', fontSize: 12.5, lineHeight: 1.55 }}>
+      🔗 <b>ของจริงของแผงนี้อยู่ใน NPI</b> — {link.what}
+      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>เปิด {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
+    </div>
+  );
+}
+
+/** ตัวเลข 1 ช่องในการ์ด NPI — ไม่รู้ค่า = ขีด `–` ห้ามโชว์ 0 */
+function NpiStat({ label, value, suffix, tone }) {
+  const unknown = value === null || value === undefined;
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div className="nmb-eyebrow" style={{ fontSize: 11 }}>{label}</div>
+      <div className="nmb-num" style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.25, color: unknown ? 'var(--muted)' : (tone || 'var(--text)') }}>
+        {unknown ? '–' : value}{!unknown && suffix ? <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> {suffix}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+/* การ์ด "โปรเจค NPI ของรุ่นนี้" — อยู่บนสุดของชั้นรุ่น เพราะเป็นคำตอบของ "หลักฐานอยู่ไหน" */
+function NpiLinkCard({ proj, isMobile }) {
+  const { loading, sum, error } = useNpiLink(proj.id);
+  const linkable = linkedPanelCount(proj.panels);
+
+  if (loading) {
+    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>🔗 กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…</div>;
+  }
+  if (error) {
+    /* 🔴 โหลดล่ม ต้องเขียนว่าล่ม ห้ามกลืนเป็น "ยังไม่ผูก" */
+    return (
+      <div className="nmb-card" data-eva="R" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+        '--nmb-color': '#ef4444', fontSize: 12.5 }}>
+        <b>อ่านข้อมูล NPI ไม่สำเร็จ</b> — ตัวเลขฝั่ง NPI จึงยังไม่แสดง (ไม่ได้แปลว่ารุ่นนี้ยังไม่ผูก)
+        <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>{error}</div>
+      </div>
+    );
+  }
+  if (!sum) {
+    return (
+      <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.6 }}>
+        🔗 <b>รุ่นนี้ยังไม่ผูกกับโปรเจค NPI</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
+        <div style={{ color: 'var(--text2)', marginTop: 4 }}>
+          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>🚀 พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
+          <b> “🧭 รุ่นบนบอร์ด New Model”</b> → เลือก <b>{proj.title}</b>
+          {linkable > 0 && <> · ผูกแล้ว <b>{linkable}</b> แผงบนบอร์ดนี้จะกดเข้าไปดูของจริงได้</>}
+        </div>
+      </div>
+    );
+  }
+
+  const st = { display: 'grid', gap: 14, alignContent: 'start',
+    gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fit, minmax(96px, 1fr))' };
+  return (
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+      '--nmb-color': 'var(--accent)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+        <span className="nmb-eyebrow" style={{ fontSize: 11 }}>โปรเจค NPI ของรุ่นนี้</span>
+        <b style={{ fontSize: 13 }}>{sum.code || '(ไม่มีรหัสโปรเจค)'}</b>
+        <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sum.name}</span>
+        <a href={`/npi?project=${encodeURIComponent(sum.projectId)}`} style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+          เปิดใน /npi →
+        </a>
+      </div>
+      <div style={st}>
+        <NpiStat label="พาร์ท" value={sum.parts} suffix="ตัว" />
+        <NpiStat label="PPAP ผ่าน" value={sum.ppapApproved} suffix={sum.parts != null ? `/ ${sum.parts}` : ''} />
+        <NpiStat label="เอกสารครบ" value={sum.docPct} suffix="%" />
+        <NpiStat label="ECI ยังไม่จบ" value={sum.eciOpen} suffix={sum.eciTotal != null ? `/ ${sum.eciTotal}` : ''}
+          tone={sum.eciOpen ? '#eab308' : undefined} />
+        <NpiStat label="ถึง SOP" value={sum.sopIn == null ? null : (sum.sopIn >= 0 ? sum.sopIn : -sum.sopIn)}
+          suffix={sum.sopIn == null ? '' : (sum.sopIn >= 0 ? 'วัน' : 'วัน (เลยแล้ว)')}
+          tone={sum.sopIn != null && sum.sopIn < 0 ? '#ef4444' : undefined} />
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, lineHeight: 1.5 }}>
+        ตัวเลขชุดนี้มาจากเอกสารจริงใน NPI · <b>ไม่ได้เอาไปเปลี่ยนสี EVA บนบอร์ด</b> — สีบอร์ดคนตั้งเองตามกติกา IEC
+        {sum.docTotal === null && ' · นับเอกสารไม่ครบรอบนี้ จึงยังไม่แสดง %'}
+      </div>
+    </div>
+  );
 }
 
 /* ══ ชั้นที่ 1 — ภาพรวมทั้งฝ่าย ═══════════════════════════════════════════════ */
@@ -416,6 +586,9 @@ function LevelProject({ proj, go }) {
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(230px, 1fr))' }}>
         {PROJECT_AXES.map(a => <EvaBadge key={a.key} big eva={proj.eva?.[a.key]} label={a.label} />)}
       </div>
+
+      {/* 🔗 หลักฐานของรุ่นนี้อยู่ที่ไหน — ตอบก่อนทุกอย่าง (2026-10-06) */}
+      <NpiLinkCard proj={proj} isMobile={isMobile} />
       {proj.evaNote && (
         <div style={{ ...CARD, borderLeft: '3px solid #ef4444', marginBottom: 12, fontSize: 12.5, lineHeight: 1.5 }}>
           <b>ทำไมถึงแดง:</b> {proj.evaNote}
@@ -451,16 +624,34 @@ function LevelProject({ proj, go }) {
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(245px, 1fr))' }}>
         {proj.panels.map(p => {
           const kind = PANEL_KIND[p.kind] || PANEL_KIND.doc;
+          /* น้ำหนักเดียวกับโหมดจอ TV — ใบแดงมีเหตุผลต้องอ่าน กินสองคอลัมน์
+             (ลำดับแผงคงเดิมเสมอ ⇒ ห้ามใส่ gridAutoFlow:'dense' มาอุดรู มันสลับที่ใบ) */
+          const hot = panelWeight(p) >= 3 && !isMobile;
           return (
             <button key={p.key} onClick={() => go({ cust: proj.customer, proj: proj.id, panel: p.key })}
+              data-eva={p.eva || 'none'} className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
               style={{ ...CARD, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column',
-                gap: 6, minHeight: 104 }}>
-              <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                <Dot eva={p.eva} size={15} />
-                <span style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{p.label}</span>
+                gap: 6, minHeight: 104, gridColumn: hot ? 'span 2' : undefined,
+                padding: '12px 13px 12px 17px', borderRadius: 10,
+                /* วัสดุชุดเดียวกับโหมดจอ TV — สีอยู่ที่รางซ้าย ไม่ใช่กรอบสีเต็มใบ */
+                borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${evaMeta(p.eva).color}4d`,
+                '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : evaMeta(p.eva).color,
+                '--nmb-rail': hot ? '6px' : '4px' }}>
+              <div style={{ display: 'flex', gap: 7, alignItems: 'baseline' }}>
+                <span className="nmb-num" style={{ flex: '0 0 auto', fontSize: 11, fontWeight: 800,
+                  letterSpacing: '0.04em', color: p.eva === 'none' || !p.eva ? 'var(--muted)' : evaMeta(p.eva).color }}>
+                  {evaMeta(p.eva).short}
+                </span>
+                <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{p.label}</span>
+                <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: 14, flex: '0 0 auto' }}>›</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
-              {p.evaNote && <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>}
+              {p.evaNote
+                ? <div style={{ fontSize: hot ? 12.5 : 11.5, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>
+                : p.eva === 'R'
+                  /* กฎ IEC ข้อ 2 — แดงต้องมีข้อความ · ยังไม่เขียน = ฟ้องบนจอ ห้ามปล่อยว่างเนียนๆ */
+                  ? <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.45 }}>⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง</div>
+                  : null}
               <div style={{ marginTop: 'auto' }}><FreshChip iso={p.updated_at} /></div>
             </button>
           );
@@ -814,6 +1005,7 @@ function LevelPanel({ proj, panel }) {
         </div>
       </div>
       <div style={CARD}><Body p={panel} /></div>
+      <PanelNpiLink proj={proj} panel={panel} />
       {panel.key === 'eva-milestone' && (
         <div style={{ ...CARD, marginTop: 12 }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>เกณฑ์ผ่านของแต่ละด่าน (Requirement of SPTT Milestone)</div>
@@ -865,7 +1057,7 @@ function LevelPanel({ proj, panel }) {
    🔴 ต้องมีทางออกเสมอ (ปุ่มมุมขวาบน) ห้ามตัดทางออกแม้เป็นจอแขวน
    ⚠️ เบราว์เซอร์เป้าหมาย = สมาร์ททีวี Chromium 94 → ห้าม dvh/svh · ห้าม color-mix · ห้าม @container
    ═════════════════════════════════════════════════════════════════════════════ */
-function TvView({ projects, index, onIndex, onExit }) {
+function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClosePanel }) {
   const proj = projects[index] || projects[0];
   const [now, setNow] = useState(() => new Date());
   const [paused, setPaused] = useState(false);
@@ -877,13 +1069,30 @@ function TvView({ projects, index, onIndex, onExit }) {
 
   // สลับรุ่นอัตโนมัติเมื่อมีมากกว่า 1 บอร์ด (จอแขวนไม่มีคนกด)
   useEffect(() => {
-    if (paused || projects.length < 2) return undefined;
+    if (paused || openPanelKey || projects.length < 2) return undefined;
     const t = setInterval(() => onIndex((index + 1) % projects.length), 25000);
     return () => clearInterval(t);
-  }, [paused, projects.length, index, onIndex]);
+  }, [paused, openPanelKey, projects.length, index, onIndex]);
+
+  /* ⎋ ปิดแผงที่เปิดอยู่ — จอแขวนบางตัวมีแต่รีโมท ปุ่ม Back/Esc คือทางออกเดียวที่มี
+     🔴 ห้ามหยุดสลับรุ่นค้างไว้ตอนเปิดแผง ถ้าไม่มีใครปิด (จอแขวนไม่มีคนยืนเฝ้า) ⇒ ปิดเองใน 90 วิ */
+  useEffect(() => {
+    if (!openPanelKey) return undefined;
+    const esc = (e) => { if (e.key === 'Escape') onClosePanel?.(); };
+    window.addEventListener('keydown', esc);
+    const t = setTimeout(() => onClosePanel?.(), 90000);
+    return () => { window.removeEventListener('keydown', esc); clearTimeout(t); };
+  }, [openPanelKey, onClosePanel]);
 
   if (!proj) return null;
-  const { cols, rows } = tvGrid(proj.panels.length);
+  const { rows } = tvWeightedLayout(proj.panels);
+  /* แถวที่มีใบแดงสูงกว่าแถวเขียวล้วน — น้ำหนักต้องต่างทั้ง "กว้าง" และ "สูง"
+     ไม่งั้นแถวที่มี 7 ใบเขียวจะสูงเท่าแถวที่มี 2 ใบแดงที่มี 4 บรรทัดต้องอ่าน */
+  const rowFlex = (row) => {
+    const top = row.items.reduce((m, p) => Math.max(m, panelWeight(p)), 1);
+    return top >= 3 ? 1.45 : top === 2 ? 1.15 : 1;
+  };
+  const openPanel = proj.panels.find(p => p.key === openPanelKey) || null;
   const counts = evaCounts(proj.panels);
   const clock = now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' });
 
@@ -893,6 +1102,11 @@ function TvView({ projects, index, onIndex, onExit }) {
     axis:  'clamp(13px, 1.05vw, 28px)',
     panel: 'clamp(12px, 1.02vw, 27px)',
     note:  'clamp(10px, 0.78vw, 20px)',
+    // ชั้น "ร้อน" (แดง) — ใหญ่กว่าชั้นปกติ ~25% · ขั้นต่ำยังเกิน 11px ตาม UI §จอ TV
+    panelHot: 'clamp(14px, 1.3vw, 34px)',
+    noteHot:  'clamp(11.5px, 0.92vw, 24px)',
+    eyebrow:  'clamp(9px, 0.62vw, 16px)',
+    clock:    'clamp(22px, 2.3vw, 62px)',
   };
 
   return (
@@ -900,93 +1114,198 @@ function TvView({ projects, index, onIndex, onExit }) {
       position: 'fixed', inset: 0, zIndex: 900, background: 'var(--bg)', color: 'var(--text)',
       display: 'flex', flexDirection: 'column', padding: '1.1vh 1vw', gap: '1vh', overflow: 'clip',
     }}>
-      {/* หัวบอร์ด */}
+      {/* ══ หัวบอร์ด ══ ป้าย MODEL เป็น eyebrow · ชื่อรุ่นเป็น hero เดียวของจอ
+           เดิมเขียน "MODEL : 737D MLM" รวมเป็นบรรทัดเดียวขนาดเท่ากันหมด = ไม่มีลำดับสายตา */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1.4vw', flex: '0 0 auto' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: F.title, fontWeight: 800, lineHeight: 1.05, whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' }}>
-            MODEL : {proj.title}
-          </div>
-          <div style={{ fontSize: F.sub, color: 'var(--muted)' }}>
-            ลูกค้า {proj.customer?.toUpperCase()} · ด่าน {proj.stage} · ส่งชิ้นงาน {proj.pad} · ทีม {proj.team}
+          <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, lineHeight: 1 }}>Model</div>
+          <div style={{
+            fontSize: F.title, fontWeight: 800, lineHeight: 1.02, letterSpacing: '-0.015em',
+            whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis', marginTop: '0.3vh',
+          }}>{proj.title}</div>
+          <div style={{ display: 'flex', gap: '0.5vw', flexWrap: 'wrap', marginTop: '0.6vh' }}>
+            {[
+              ['ลูกค้า', proj.customer?.toUpperCase()],
+              ['ด่าน', proj.stage],
+              ['ส่งชิ้นงาน', proj.pad],
+              ['ทีม', proj.team],
+            ].filter(([, v]) => v).map(([k, v]) => (
+              <span key={k} style={{
+                display: 'inline-flex', alignItems: 'baseline', gap: '0.3vw',
+                background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999,
+                padding: '0.25vh 0.7vw', fontSize: F.sub, whiteSpace: 'nowrap',
+              }}>
+                <span style={{ color: 'var(--muted)' }}>{k}</span>
+                <b className="nmb-num" style={{ color: 'var(--text)' }}>{v}</b>
+              </span>
+            ))}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.8vw', marginLeft: 'auto', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1vw', marginLeft: 'auto', alignItems: 'center' }}>
           {PROJECT_AXES.map(a => {
-            const m = evaMeta(proj.eva?.[a.key]);
+            const k = proj.eva?.[a.key] || 'none';
+            const m = evaMeta(k);
             return (
               <div key={a.key} style={{ textAlign: 'center' }}>
-                <div style={{
-                  width: '4.2vw', height: '4.2vw', maxWidth: 96, maxHeight: 96, minWidth: 40, minHeight: 40,
-                  borderRadius: '50%', background: m.color, color: '#0b1220', fontWeight: 800,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 'clamp(16px, 1.9vw, 46px)', margin: '0 auto',
-                  opacity: (proj.eva?.[a.key] || 'none') === 'none' ? 0.5 : 1,
+                <div className="nmb-ring" style={{
+                  width: '4.4vw', height: '4.4vw', maxWidth: 104, maxHeight: 104, minWidth: 44, minHeight: 44,
+                  margin: '0 auto', fontWeight: 800, color: k === 'none' ? 'var(--muted)' : m.color,
+                  fontSize: 'clamp(15px, 1.75vw, 42px)',
+                  '--nmb-color': k === 'none' ? 'var(--border2)' : m.color,
+                  '--nmb-glow': k === 'R' ? 'rgba(239,68,68,0.35)' : 'transparent',
+                  '--nmb-ring-w': 'clamp(3px, 0.32vw, 8px)',
                 }}>{m.short}</div>
-                <div style={{ fontSize: F.axis, marginTop: '0.4vh', whiteSpace: 'nowrap' }}>{a.label}</div>
+                <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, marginTop: '0.6vh', whiteSpace: 'nowrap' }}>{a.label}</div>
               </div>
             );
           })}
-          <div style={{ textAlign: 'right', marginLeft: '0.8vw' }}>
-            <div style={{ fontSize: F.title, fontWeight: 700, lineHeight: 1 }}>{clock}</div>
-            <div style={{ fontSize: F.note, color: 'var(--muted)' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
+          <div style={{ textAlign: 'right', marginLeft: '0.6vw' }}>
+            <div className="nmb-num" style={{ fontSize: F.clock, fontWeight: 300, lineHeight: 1, letterSpacing: '-0.02em' }}>{clock}</div>
+            <div style={{ fontSize: F.note, color: 'var(--muted)', marginTop: '0.4vh' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
           </div>
           <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
             background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
-            borderRadius: 8, padding: '0.6vh 0.7vw', cursor: 'pointer', fontSize: F.sub,
+            borderRadius: 999, width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', fontSize: F.sub, padding: 0,
           }}>✕</button>
         </div>
       </div>
 
+      {/* เส้นคั่นหัวบอร์ดกับเนื้อบอร์ด — hairline ไล่จาง ไม่ใช่เส้นตรงทึบทั้งเส้น */}
+      <div style={{ flex: '0 0 auto', height: 1, background: 'linear-gradient(90deg, var(--border2), rgba(0,0,0,0) 70%)' }} />
+
       {/* เหตุผลที่แดง — บนบอร์ดจริงเป็นกล่องคำอธิบายชี้ที่แถวต้นเหตุ */}
       {proj.evaNote && (
-        <div style={{
-          flex: '0 0 auto', background: 'var(--card)', borderLeft: '0.4vw solid #ef4444',
-          borderRadius: 6, padding: '0.7vh 0.9vw', fontSize: F.axis, lineHeight: 1.35,
-        }}>{proj.evaNote}</div>
+        <div className="nmb-card" data-eva="R" style={{
+          flex: '0 0 auto', borderRadius: 10, padding: '0.8vh 1vw 0.8vh 1.5vw',
+          '--nmb-color': '#ef4444', '--nmb-rail': 'clamp(4px, 0.3vw, 8px)',
+        }}>
+          {/* ป้ายไทย — ห้ามใช้ชั้น .nmb-eyebrow (letter-spacing .16em ดันสระ/วรรณยุกต์ออกจากพยัญชนะ) */}
+          <div style={{ fontSize: F.eyebrow, color: '#f87171', fontWeight: 700, letterSpacing: '0.02em' }}>ทำไมบอร์ดถึงแดง</div>
+          <div style={{ fontSize: F.axis, lineHeight: 1.35, marginTop: '0.25vh' }}>{proj.evaNote}</div>
+        </div>
       )}
 
-      {/* ผังแผง — 1fr ทุกช่อง ⇒ สูงเท่ากันและลงจอพอดีเสมอ */}
-      <div style={{
-        flex: '1 1 auto', minHeight: 0, display: 'grid', gap: '0.8vh 0.6vw',
-        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
-      }}>
-        {proj.panels.map(p => {
-          const m = evaMeta(p.eva);
-          return (
-            <div key={p.key} className={p.eva === 'R' ? 'mo-card-alert' : undefined} style={{
-              background: 'var(--card)', border: `2px solid ${p.eva === 'none' || !p.eva ? 'var(--border)' : m.color}`,
-              borderRadius: 8, padding: '0.7vh 0.7vw', display: 'flex', flexDirection: 'column',
-              gap: '0.4vh', minWidth: 0, minHeight: 0, overflow: 'clip',
-            }}>
-              <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'center', minWidth: 0 }}>
-                <span style={{
-                  width: '0.95vw', height: '0.95vw', minWidth: 10, minHeight: 10, maxWidth: 22, maxHeight: 22,
-                  borderRadius: '50%', background: m.color, flex: '0 0 auto',
-                  opacity: p.eva === 'none' || !p.eva ? 0.5 : 1,
-                }} />
-                <span style={{
-                  fontSize: F.panel, fontWeight: 700, lineHeight: 1.18, minWidth: 0,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
-                }}>{p.label}</span>
-              </div>
-              {p.evaNote && (
-                <div style={{
-                  fontSize: F.note, color: 'var(--text2)', lineHeight: 1.3,
-                  display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'clip',
-                }}>{p.evaNote}</div>
-              )}
-              <div style={{ marginTop: 'auto', fontSize: F.note, color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
-                {freshLabel(p.updated_at)}
-              </div>
-            </div>
-          );
-        })}
+      {/* ผังแผง — แถวละหลายใบ กว้างตามน้ำหนัก (แดง 3 : เหลือง 2 : เขียว/ยังไม่ประเมิน 1)
+         🔴 ความกว้าง = "ปริมาณที่ต้องอ่าน" ไม่ใช่ลำดับความสำคัญลอยๆ · ลำดับแผงคงเดิมเสมอ
+         🔴 ห้ามกลับไปใช้กริด 1fr เท่ากันทุกใบ — 67% ของใบไม่มีข้อความให้อ่าน แต่กินที่เท่าใบแดง
+            (feedback user 2026-10-05) · สูตรอยู่ที่ tvWeightedLayout ห้ามคิดเองในหน้า */}
+      <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '0.8vh' }}>
+        {rows.map((row, ri) => (
+          <div key={ri} style={{ flex: `${rowFlex(row)} 1 0`, minHeight: 0, display: 'flex', gap: '0.6vw' }}>
+            {row.items.map(p => {
+              const m = evaMeta(p.eva);
+              const w = panelWeight(p);
+              const hot = p.eva === 'R';
+              return (
+                <button key={p.key} onClick={() => onPick(p)} title={`เปิดแผง ${p.label}`}
+                  data-eva={p.eva || 'none'}
+                  className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
+                  style={{
+                    flex: `${w} 1 0`, minWidth: 0, minHeight: 0, overflow: 'clip', textAlign: 'left',
+                    font: 'inherit', color: 'var(--text)', cursor: 'pointer',
+                    borderRadius: 10, borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${m.color}4d`,
+                    /* สีสถานะอยู่ที่ "ราง" ซ้าย + พื้นไล่สีจางๆ — ไม่ใช่กรอบสีเต็มใบทั้ง 21 ใบ */
+                    '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : m.color,
+                    '--nmb-rail': hot ? 'clamp(5px, 0.34vw, 9px)' : 'clamp(3px, 0.2vw, 6px)',
+                    backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0) 46%)${
+                      hot ? `, linear-gradient(100deg, ${m.color}1f, rgba(0,0,0,0) 62%)` : ''}`,
+                    padding: hot ? '1vh 1vw 1vh 1.5vw' : '0.7vh 0.7vw 0.7vh 1.1vw',
+                    display: 'flex', flexDirection: 'column', gap: '0.35vh',
+                  }}>
+                  <div style={{ display: 'flex', gap: '0.45vw', alignItems: 'baseline', minWidth: 0 }}>
+                    {/* 🔤 ตัวอักษร EVA — สถานะต้องอ่านได้โดย**ไม่พึ่งสีอย่างเดียว**
+                        (ตาบอดสี/จอ TV ที่สีเพี้ยน · กติกาเดียวกับวงแหวน R/Y/G บนหัวบอร์ด) */}
+                    <span className="nmb-num" style={{
+                      flex: '0 0 auto', fontSize: F.note, fontWeight: 800, letterSpacing: '0.04em',
+                      color: p.eva === 'none' || !p.eva ? 'var(--muted)' : m.color,
+                    }}>{m.short}</span>
+                    <span style={{
+                      fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700,
+                      lineHeight: 1.16, minWidth: 0, letterSpacing: hot ? '-0.01em' : 0,
+                      display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
+                    }}>{p.label}</span>
+                    <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: F.panel, flex: '0 0 auto' }}>›</span>
+                  </div>
+                  {p.evaNote ? (
+                    /* 🔴 ต้องมี `flex:'0 1 auto'` + `minHeight:0` — ไม่งั้นกล่องข้อความไม่ยอมหด
+                       แล้วบรรทัด "อัปเดต N วันก่อน" ถูกดันทับข้อความ (เจอจริงที่ใบ Order Information
+                       บนจอ 1366 · 2026-10-05) · ใบน้ำหนัก 1 แคบกว่า ⇒ ตัดที่ 2 บรรทัด */
+                    <div style={{
+                      flex: '0 1 auto', minHeight: 0,
+                      fontSize: hot ? F.noteHot : F.note, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.32,
+                      display: '-webkit-box', WebkitLineClamp: hot ? 4 : w === 2 ? 3 : 2,
+                      WebkitBoxOrient: 'vertical', overflow: 'clip',
+                    }}>{p.evaNote}</div>
+                  ) : hot ? (
+                    /* กฎ IEC ข้อ 2: แดงต้องมีข้อความ — ยังไม่เขียน = ฟ้องบนจอ ห้ามย่อการ์ดให้เนียน */
+                    <div style={{ fontSize: F.noteHot, color: '#fca5a5', lineHeight: 1.32 }}>
+                      ⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง
+                    </div>
+                  ) : null}
+                  <div style={{ marginTop: 'auto', flex: '0 0 auto', fontSize: F.note,
+                    color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
+                    {freshLabel(p.updated_at)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
+
+      {/* 🔎 แผงที่กดเจาะ — ซ้อนบนบอร์ด ไม่ใช่ออกจากโหมดจอ TV
+           บอร์ดยังอยู่ข้างหลัง ⇒ คนที่ยืนประชุมไม่หลุดบริบทว่ากำลังดูรุ่นไหน
+           🔴 บอร์ด (ข้างหลัง) ห้ามเลื่อน — แต่ "ใบที่เปิดอ่าน" เลื่อนในตัวเองได้
+              (ตาราง Kadai/เมทริกซ์พาร์ท ยาวเกินจอจริง · ตัดทิ้ง = จอโกหก) */}
+      {openPanel && (
+        <div onClick={onClosePanel} style={{
+          position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(2,6,23,0.72)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3vh 3vw',
+        }}>
+          <div onClick={(e) => e.stopPropagation()} style={{
+            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+            width: 'min(1500px, 94vw)', maxHeight: '94vh', overflow: 'auto',
+            padding: '18px 20px', boxShadow: 'var(--shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+                {proj.title} · แผงบนบอร์ด
+              </div>
+              <button onClick={onClosePanel} style={{
+                marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)',
+                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13,
+              }}>✕ ปิด (Esc)</button>
+            </div>
+            <LevelPanel proj={proj} panel={openPanel} />
+          </div>
+        </div>
+      )}
 
       {/* แถบล่าง — ตัวนับสี + ตัวสลับรุ่น */}
       <div style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', gap: '1vw', fontSize: F.sub, color: 'var(--muted)' }}>
-        <span>{proj.panels.length} แผง · {countsLabel(counts)}</span>
+        {/* ตัวนับสถานะเป็น "ชิป" — ตัวอักษร EVA + จำนวน (ไม่ใช่อีโมจิวงกลมต่อกันเป็นพรืด)
+            🔴 ชิปที่นับได้ 0 ต้องยังอยู่ แค่จาง — "ไม่มีใบแดงเลย" เป็นข้อมูล ห้ามให้หายไปเฉยๆ */}
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.45vw', flexWrap: 'wrap' }}>
+          <span className="nmb-num" style={{ color: 'var(--text2)' }}>{proj.panels.length} แผง</span>
+          {['R', 'Y', 'G', 'none'].map(k => {
+            const m = evaMeta(k);
+            const n = counts[k] || 0;
+            return (
+              <span key={k} title={m.label} style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.3vw', opacity: n ? 1 : 0.35,
+                background: 'var(--bg2)', border: `1px solid ${n ? `${m.color}59` : 'var(--border)'}`,
+                borderRadius: 999, padding: '0.2vh 0.55vw', fontSize: F.sub, lineHeight: 1.3,
+              }}>
+                <span style={{ width: '0.5vw', height: '0.5vw', minWidth: 7, minHeight: 7, maxWidth: 12, maxHeight: 12,
+                  borderRadius: '50%', background: m.color, flex: '0 0 auto' }} />
+                <b className="nmb-num" style={{ color: 'var(--text)' }}>{n}</b>
+                <span style={{ color: 'var(--muted)' }}>{m.label}</span>
+              </span>
+            );
+          })}
+        </span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.5vw', alignItems: 'center' }}>
           {projects.length > 1 && (
             <>
@@ -1072,8 +1391,14 @@ export default function NewModelBoard() {
     : `ถอดจากบอร์ดผนังของ IEC เมื่อ ${SOURCE_DATE} · ยังไม่ต่อฐานข้อมูล`;
 
   if (tvOn && data.projects.length) {
+    const tvProj = data.projects[Math.min(tvIndex, data.projects.length - 1)];
     return <TvView projects={data.projects} index={Math.min(tvIndex, data.projects.length - 1)}
-      onIndex={setTvIndex} onExit={() => go({ cust: custCode || undefined, proj: projId || undefined })} />;
+      onIndex={setTvIndex} onExit={() => go({ cust: custCode || undefined, proj: projId || undefined })}
+      openPanelKey={panelKey}
+      /* กดการ์ด = เปิดแผงซ้อนบนบอร์ด **คง `tv=1` ไว้** — ออกจากโหมดจอไปเลยจะทำให้
+         จอแขวนที่ไม่มีคีย์บอร์ดกลับเข้าโหมดจอเองไม่ได้ (เคยเป็นกับดักของหน้าอื่นมาแล้ว) */
+      onPick={(p) => go({ cust: tvProj.customer, proj: tvProj.id, panel: p.key, tv: '1' })}
+      onClosePanel={() => go({ cust: tvProj.customer, proj: tvProj.id, tv: '1' })} />;
   }
 
   return (

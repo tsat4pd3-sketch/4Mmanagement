@@ -91,6 +91,17 @@ const RULES = [
     allow: { 'src/lib/pmChecklists.js': 'คัดลอกทับแผนกอื่น (ผู้ใช้กด "ทับ" เอง) — เช็คก่อนว่าปลายทางไม่มีประวัติผลตรวจ มี = โยน error ไม่ลบ' },
   },
   {
+    id: 'order-plan-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการรวม "เป้า" ของใบผลิตด้วย qty_target ?? qty ดิบ (ไม่สนสถานะ) */
+    re: /target\s*\+=\s*\(?\s*\w+\.qty_target\s*\?\?\s*\w+\.qty\b/g,
+    why: 'ใบยกยอด (`imported`) ถือเป้าเต็มไว้ ขณะที่กะถัดไปออกใบใหม่ด้วยยอดที่เหลือ ⇒ Σ เป้าดิบนับ 2 รอบ '
+       + '(35 + 30 = 65 ทั้งที่งานจริง 35) + นับใบยกเลิกด้วย · QC 05/10: จอเดโม Obeya/FactoryMap/GroupOverview/'
+       + 'DeptDashboard ขึ้น "ผลิตได้ 71% ของแผน" ทั้งที่จบครบ',
+    fix: 'ใช้ `orderPlanQty(o)` จาก src/utils/oee.js §6.1 (คู่กับ orderProducedQty)',
+    allow: {},
+  },
+  {
     id: 'die-set-kinds-from-registry',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการวาดตัวเลือกรูปแบบชุดแม่พิมพ์จากค่าสำรองในโค้ด แทนทะเบียน die_set_kinds */
@@ -103,10 +114,33 @@ const RULES = [
     allow: { 'src/utils/useDieSetKinds.js': 'ตัวโหลดทะเบียน — ใช้ค่าสำรองเฉพาะตอนตารางยังไม่มี/ก่อนโหลดเสร็จ' },
   },
   {
+    id: 'timeline-break-intervals-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับสูตรวางช่วงพักบนกริดครึ่งวันที่ก๊อปเอง — กรองกะด้วย `p.shift === 'day' && half.key === 'am'`
+       (การหา "ชื่อพัก" จาก start_time เพื่อทำ tooltip ไม่โดน — ไม่ได้สร้างช่วงเวลา) */
+    re: /\.shift\s*===\s*'day'\s*&&\s*\w+\.key\s*===\s*'am'/g,
+    why: 'บอร์ดไทม์ไลน์ 3 จอ (Dashboard · /management · Heijunka) เคยก๊อปสูตรช่วงพักเอง ไม่กรอง ot_scope/process '
+       + '⇒ พัก 5ส.(ไม่ทำโอ) 17:10 กับพักโอ 17:30/19:40 ขึ้นพร้อมกัน คิวการ์ดถูกดันเกินจริง (QC 05/10)',
+    fix: 'ใช้ `halfDayBreakIntervals({ policies, half })` จาก src/utils/oee.js (ผ่าน breakIntervalsIn ที่เดียว)',
+    allow: {},
+  },
+  {
+    id: 'raw-withdrawal-status-set',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* raw_withdrawal_requests มีสถานะ pending / issued / cancelled เท่านั้น — "ไม่ใช่ done" = นับใบยกเลิกเป็นค้าง */
+    re: /from\(\s*'raw_withdrawal_requests'\s*\)[^;]*?\.neq\(\s*'status'\s*,\s*'(?:done|issued)'\s*\)/g,
+    why: 'Flow Tower นับใบเบิกค้างด้วย `.neq(status, done)` ทั้งที่ตารางไม่มีสถานะ done ⇒ ใบ cancelled 700 ใบถูกนับเป็นค้าง '
+       + '(จอขึ้น 1,472 แทน 482 · QC 05/10) · คิวสโตร์เดิมโหลดล่าสุด 400 ใบไม่กรองสถานะ ใบรอจ่ายเก่า 172 ใบหายจากจอ',
+    fix: 'งานค้าง = `.eq(\'status\', \'pending\')` (+ fetchAllPages ถ้าเป็นลิสต์) · ยอดรวม = `.neq(\'status\', \'cancelled\')`',
+    allow: {},
+  },
+  {
     id: 'master-cache-swallow',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ loader ของ cachedMaster ที่กลืน error เป็นลิสต์ว่าง — `.data || []` บนบรรทัดเดียวกับ cachedMaster( */
-    re: /cachedMaster\([^\n]*\.data\s*\|\|\s*\[\]/g,
+    /* 05/10 ขยายเป็น 2 บรรทัด — loader ที่ขึ้นบรรทัดใหม่หลัง `async () =>` หลบด่านเดิมได้ทั้งที่กลืน error เหมือนกัน
+       (เจอจริง: FactoryMap dr_products:ct / kanban_standards:ct / break_policies:active / machines:* · LineOeeBoard) */
+    re: /cachedMaster\([^\n]*(?:\n[^\n]*)?\.data\s*\|\|\s*\[\]/g,
     why: 'supabase-js **ไม่ throw** ⇒ `(await …).data || []` ทำให้คิวรีที่ล้ม (เน็ตสะดุด/timeout/RLS) '
        + 'กลายเป็น "โหลดสำเร็จ ได้ 0 แถว" แล้ว `cachedMaster` **เขียนลิสต์ว่างลง localStorage ทับของดี '
        + 'ค้างในเครื่องนั้นอีก 4 ชม.** โดยไม่มีข้อความบนจอเลย — เครื่องอื่นที่โหลดติดยังเห็นครบ '
@@ -1307,6 +1341,57 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ no-session-object-in-db-effect-deps (2026-10-06) ──────────────────────────────
+   deps ของ effect/useCallback ที่ยิง DB **ห้ามมี object** (กฎเหล็กข้อ 9 ใน CLAUDE.md)
+   `selSession` เป็นตัวที่พลาดซ้ำได้ง่ายที่สุด เพราะ `load()` ของ DailyReport ปิดท้ายด้วย
+     setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0])
+   ⇒ ได้ **object ใบใหม่ เนื้อเหมือนเดิมเป๊ะ** ทุกรอบโหลด ⇒ ทุก effect ที่ผูก `selSession` รีรันฟรี
+
+   ผลที่วัดได้ (02/10/2026 · ~40 เครื่อง) — เสียเปล่า 2 ทาง:
+   ① effect โหลดข้อมูลกะ ยิง **4 คิวรีหนักใหม่ทั้งชุด** ทั้งที่กะที่เลือกไม่เปลี่ยนอะไรเลย
+      (downtime_logs 1,706 · prod_orders+embed 2,112 · ยอดค้าง 3,746 · defect_logs+embed 3,136 req/วัน)
+   ② 🔴 effect realtime — cleanup เรียก `bump*.cancel()` แล้วสร้าง `coalesce` ใบใหม่
+      ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้าง ⇒ event ถัดไปยิงทันที = เพดาน LIVE.* หายไปเลย**
+      เป็นลูป: bump → load → selSession ใบใหม่ → effect รีรัน → เพดานรีเซ็ต → bump ถัดไปยิงทันที
+      ⇒ **ของที่แพงที่สุดคือ "เพดานที่ถูกรีเซ็ต" ไม่ใช่ตัวคิวรีเอง** — ใส่เพดานแล้วแต่ไม่มีผล
+   🔑 แก้ด้วย `selSession?.id` + `selSession?.line_name` (string) · ตัวโหลดต้องเป็น `useCallback(..., [])`
+
+   ── `scopeSecs` (array จาก UserContext) = คลาสเดียวกัน (06/10) ──────────────────────
+   ได้ array "ใบใหม่เนื้อเดิม" 2 ทาง: ① destructure `sections: scopeSecs = []` — ค่า default
+   สร้างใบใหม่**ทุก render** เมื่อ context ส่ง `undefined` · ② `<UserContext.Provider
+   value={{ … sections: userSections || [] }}>` ใน App.jsx เป็น object literal ใบใหม่ทุก render
+   วัดจริง 02/10 — "คิวรีเดิมเป๊ะ จาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+     prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+     · v_demand_flow_blocks 745 · child_lot_requests 747  ← **เท่ากัน = 2 คิวรีใน load() ตัวเดียว**
+       ⇒ พิสูจน์ว่าเป็น "โหลดซ้ำทั้ง load()" ไม่ใช่คนละคนเปิดพร้อมกัน
+   ⚠️ ด่านนี้จับเฉพาะ `useCallback`/`useEffect` ที่**ยิง DB จริง** — `useMemo` ที่คิดเลขจาก scopeSecs
+      ไม่เข้าข่าย (คิดใหม่ทุก render เปลืองซีพียูเล็กน้อย แต่ไม่จ่าย egress) · รอบแรกที่เขียนด่านนี้
+      กว้างเกินไปจนจับ useMemo 3 ตัวที่ไม่ใช่ปัญหา — **ด่านที่จับของดีด้วย จะถูกถอดทิ้งในที่สุด**
+   🔑 แก้ด้วยคีย์เนื้อหา: `const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs])`
+      (useMemo คิดใหม่ทุก render ได้ แต่**ได้ string เท่าเดิม** ⇒ useCallback ที่ผูก scopeKey จึงนิ่ง) */
+test('🛡️ no-unstable-ref-in-db-effect-deps — ห้ามใส่ `selSession` (object) / `scopeSecs` (array) ใน deps ของ effect ที่ยิง DB', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    /* เฉพาะ `useCallback(` / `useEffect(` ที่ **ยิง DB จริง** — `useMemo` ที่คิดเลขเฉยๆ ไม่เข้าข่าย
+       (ของกลาง/loader ที่ขึ้นต้นด้วย load… นับเป็นยิง DB ด้วย เพราะข้างในมันยิง) */
+    const re = /\b(useCallback|useEffect)\(([\s\S]*?)\}\s*,\s*\[([^\]]*)\]\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const body = m[2], deps = m[3];
+      if (!/(^|[\s,])(selSession|scopeSecs)\s*(,|$)/.test(deps)) continue;
+      if (!/supabase|\.from\(|\.rpc\(|\bload[A-Z]\w*\(/.test(body)) continue;   // ไม่ยิง DB = ไม่เกี่ยว
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}  deps = [${deps.replace(/\s+/g, ' ').trim().slice(0, 90)}]`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    'deps มี object/array ที่ identity ไม่นิ่ง — `selSession` → ใช้ `selSession?.id`/`?.line_name` · '
+  + '`scopeSecs` → ใช้คีย์เนื้อหา `[...scopeSecs].sort().join("|")` (ดู `scopeKey` ใน DailyReport.jsx) · '
+  + 'ใบใหม่เนื้อเดิม = ยิงคิวรีซ้ำ **และล้างเพดาน coalesce** · '
+  + 'เหตุผล + ตัวเลขที่วัดมา ดูคอมเมนต์เหนือเทสนี้ และที่ effect ใน src/pages/DailyReport.jsx');
+});
+
 /* ── 🛡️ list-thumb-needs-lazy (2026-10-05) ────────────────────────────────────────────
    รูป "ย่อในลิสต์" (กว้าง/สูง ≤ 64px) ที่ชี้ไป Supabase Storage **ต้องมี `loading="lazy"`**
    เพราะ thumbnail 34-52px ดาวน์โหลด**ไฟล์เต็มใบ ~19-90 KB** เสมอ (ระบบนี้ไม่มี image transform
@@ -1363,10 +1448,13 @@ test('🛡️ unfiltered-session-bump-needs-shift-tier — bump ที่เก�
 
 test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่ดึง qty_suspect ในไฟล์ที่คิด %Q ต้อง embed ทะเบียนถัง', () => {
   const Q_HELPERS = /\b(defectQty|sumDefectQty|splitDefectQty|sumSuspectPending|suspectPendingQty)\b/;
-  /* ยกเว้นรายคิวรี (ไฟล์:บรรทัดของ from('defect_logs')) — ต้องเขียนเหตุผลทุกตัว */
+  /* ยกเว้นรายคิวรี — ต้องเขียนเหตุผลทุกตัว · 05/10: เปลี่ยนจาก "ไฟล์:บรรทัด" เป็น "ไฟล์ + ข้อความใน select"
+     (คีย์บรรทัดเลื่อนทุกครั้งที่ใครแก้ไฟล์ข้างบน ⇒ ด่านล้มทั้งที่คิวรีเดิมไม่ได้เปลี่ยน) */
   const ALLOW = {
-    'src/pages/FactoryMap.jsx:1285': 'popup ไลน์ — โชว์ยอดดิบแยกช่อง ไม่ได้เอาไปคิด %Q',
-    'src/pages/FactoryMap.jsx:1350': 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว',
+    'src/pages/FactoryMap.jsx': [
+      ["select('session_id, qty_ng, qty_suspect')", 'แผงทบทวนทั้งวัน — NG ดิบของไลน์ (ไม่ได้เอาไปคิด %Q · %Q ใช้ค่า stamp ของกะ)'],
+      ['qty_suspect, qty_repair, description', 'popup รายการของเสียของกะ — แสดง ng/สงสัย/ซ่อม แยกกัน ไม่รวมเป็นตัวเลขเดียว'],
+    ],
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
@@ -1381,7 +1469,7 @@ test('🛡️ oee-suspect-needs-qbin-embed — ทุกคิวรีที่
       if (!win.includes('qty_suspect')) continue;             // ไม่ได้ดึงของสงสัยมา = ไม่เกี่ยว
       const line = code.slice(0, m.index).split('\n').length;
       const key = `${rel}:${line}`;
-      if (ALLOW[key]) continue;
+      if ((ALLOW[rel] || []).some(([snip]) => win.includes(snip))) continue;
       if (!win.includes('QBIN_EMBED')) bad.push(key);
     }
   }
@@ -1468,6 +1556,8 @@ test('🛡️ ตัวสแกนต้องไม่พลาดของจ
    vsmLive · monthlyReviewPptx ×2 · VSM) — จุดสุดท้าย QC audit เองก็ตกหล่น เพราะ VSM
    ไม่ได้ import wLoad ตรงๆ แต่เซ็ต `s.plannedMin` ให้ util ไปใช้ */
 const BREAK_AWARE = /dtMinBySession|dtMinOutsideBreaks|breakIntervalsIn|policyBreakForShift|policyBreakOverlapMin/;
+// สูตรน้ำหนักที่เขียนเองในหน้า: `(s.shift_min || 570) - plannedMin` · `r.shift_min - r.plannedMin`
+const INLINE_WLOAD = /shift_?[mM]in[^;\n]{0,30}\)? *- *[A-Za-z_.]*[pP]lanned/;
 const WLOAD_ALLOW = {
   'src/utils/obeyaKpi.js':
     'โมดูล pure — รับ rows ที่มี plannedMin มาแล้ว ไม่ได้อ่าน downtime เอง (หน้าที่เรียกเป็นคนรับผิดชอบ)',
@@ -1483,7 +1573,11 @@ test('🛡️ no-wload-without-break-helper — ไฟล์ที่ถ่ว�
     const rel = relative(ROOT, file);
     if (WLOAD_ALLOW[rel] || rel === 'src/utils/oee.js') continue;
     const code = stripComments(readFileSync(file, 'utf8'));
-    if (!/^import[^\n]*\bwLoad\b/m.test(code)) continue;   // ใช้จริง ไม่ใช่แค่ชื่อคล้าย (borrowLoading ฯลฯ)
+    /* 05/10 (QC audit) ขยาย: นอกจาก import wLoad แล้ว ยังจับ "สูตรน้ำหนักเขียนเอง" `shift_min − planned…`
+       (GroupOverview/DeptDashboard เขียนตรงๆ ไม่ import wLoad ⇒ หลุดด่านเดิม ทั้งที่หักพักซ้ำจริง) */
+    const usesWLoad = /^import[^\n]*\bwLoad\b/m.test(code)   // ใช้จริง ไม่ใช่แค่ชื่อคล้าย (borrowLoading ฯลฯ)
+      || INLINE_WLOAD.test(code);
+    if (!usesWLoad) continue;
     if (!BREAK_AWARE.test(code)) hits.push(rel);
   }
   assert.deepEqual(hits, [],
@@ -1736,6 +1830,29 @@ test('🛡️ virtual-module-plugin-in-both-vite-configs — plugin ที่ห
     + '   ตกที่ audit/vite.audit.mjs = crashsweep/mobilesweep เปิดหน้าไม่ได้ ⇒ หน้าพังโดยไม่มีด่านไหนเห็น\n'
     + '   แก้ยังไง: import schemaUsage จาก scripts/vite-plugin-schema-usage.mjs แล้วใส่ใน plugins ของ config นั้น\n\n'
     + missing.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+
+/* ═══ 👻 พื้นที่กดเผื่อนิ้ว ต้องไม่ถูกนับเป็น "ของล้น" (2026-10-06) ═══
+   `src/index.css` @media (pointer:coarse) วาง `button:not(:has(*))::before` absolute + min 40×40
+   ทับกลางปุ่มเล็ก = ขยายพื้นที่รับสัมผัสให้คนใส่ถุงมือ โดยไม่ขยับ layout สักพิกเซล
+   แต่ pseudo ที่ absolute **นับเข้า scrollWidth ของปุ่ม แล้วลามถึงแถวแม่** ⇒ mobilesweep เห็น
+   "แถวล้นปัดไม่ได้" ทั้งที่ไม่มีอะไรโผล่ออกมาเลย (วัด 06/10: desktop sw===cw ทุกปุ่ม ·
+   ปุ่มตัวอักษร "X" ก็เป็น = ไม่เกี่ยวอีโมจิ)
+   เคยหลงมาแล้ว 05/10 (54da354a): ไล่แก้ที่อีโมจิ แล้ว "หาย" เพราะห่อ <span> ทำให้
+   `:not(:has(*))` เลิกแมตช์ = **ถอดพื้นที่กด 40px ทิ้งเงียบๆ** เพื่อให้ตัวเลขในด่านสวย */
+test('🛡️ mobilesweep-must-mute-tap-target-ghost — ด่านมือถือต้องตัดพื้นที่กดเผื่อนิ้วก่อนวัด', () => {
+  const css = readFileSync(join(ROOT, 'src/index.css'), 'utf8');
+  if (!/button:not\(:has\(\*\)\)::before/.test(css)) return;   // เลิกใช้ทริกนี้แล้ว = ไม่ต้องบังคับ
+  const sweep = readFileSync(join(ROOT, 'audit/mobilesweep.mjs'), 'utf8');
+  const muted = /button:not\(:has\(\*\)\)::before\{min-width:0!important/.test(sweep);
+  assert.ok(muted,
+    '\n\n❌ audit/mobilesweep.mjs ไม่ได้ตัด min-width/min-height ของ `button:not(:has(*))::before` ก่อนวัด\n'
+    + '   ⇒ ด่านจะฟ้อง "ล้นปัดไม่ได้" จากพื้นที่กดเผื่อนิ้วที่มองไม่เห็น (ปุ่ม 25px ได้ scrollWidth 33)\n'
+    + '   แล้ว session ถัดไปจะ "แก้" ด้วยการห่อไอคอนใน <span> ซึ่ง**ถอดพื้นที่กด 40px ทิ้ง**\n'
+    + '   = ทำให้หน้างานใส่ถุงมือกดยากขึ้น เพื่อให้ตัวเลขในด่านสวย (เกิดจริง 05/10 กับ SheetIconBtn)\n'
+    + '   แก้: ใส่ addStyleTag ที่ตั้ง min-width:0!important/min-height:0!important ให้ pseudo นี้ก่อน evaluate\n'
+    + '   📄 docs/UI-CONVENTIONS.md §7.1\n');
 });
 
 
@@ -2142,6 +2259,27 @@ test('🛡️ /org-setup: ลบโหนดต้องผ่าน loadOrgNode
     + '              เปลี่ยนคีย์แล้วไม่ตามแก้ = คนหลุดหน่วยงานเงียบ (เคยตามเก็บด้วย migration)\n');
 });
 
+/* ── เพิ่มชั้นใหม่ใน /org-setup แล้วลืมเติม map = ปุ่มโชว์แต่ใช้ไม่ได้ (05/10/2026) ──────────
+   เกิดจริงวันเดียวกับที่เพิ่มชั้น "ทีม": หัวโมดัลขึ้น "เพิ่ม undefined" (ขาดใน KIND_LABEL) และ
+   กดบันทึกเด้ง "แก้ได้เฉพาะแผนก/กลุ่ม…" เพราะ guard เป็นเชน ternary ที่ลงท้าย `: false`
+   ⇒ ชั้นที่มีพาเนล/ปุ่ม ➕ ต้องมีครบทั้ง "ป้าย" และ "ตัวตรวจสิทธิ์" */
+test('🛡️ /org-setup: ทุกชั้นที่มีปุ่มเพิ่ม ต้องมีป้าย + ตัวตรวจสิทธิ์ครบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrgSetup.jsx'), 'utf8'));
+  const kinds = ['section', 'department', 'line', 'team'];
+  const label = code.match(/const\s+KIND_LABEL\s*=\s*\{[^}]*\}/)?.[0] || '';
+  const missing = kinds.filter(k => !new RegExp(`\\b${k}\\s*:`).test(label));
+  assert.deepEqual(missing, [], `\n\n❌ KIND_LABEL ขาดชั้น: ${missing.join(', ')}\n`
+    + '   ผลที่เกิด: หัวโมดัลขึ้น "เพิ่ม undefined" (เกิดจริง 05/10/2026 ตอนเพิ่มชั้นทีม)\n');
+  const map = code.match(/const\s+CAN_ADD_HERE\s*=\s*\{[^}]*\}/)?.[0] || '';
+  assert.ok(/department\s*:/.test(map) && /line\s*:/.test(map) && /team\s*:/.test(map),
+    '\n\n❌ OrgSetup.jsx ไม่มี CAN_ADD_HERE ครบ department/line/team\n'
+    + '   ทำไมห้ามเขียนเป็นเชน ternary: ลงท้าย `: false` ⇒ ชั้นที่ลืมต่อสาขาถูกบล็อกเงียบ\n'
+    + '              ปุ่ม ➕ โชว์ (เช็คคนละที่) แต่กดบันทึกไม่ผ่าน = ผู้ใช้ไม่รู้ว่าทำอะไรผิด\n'
+    + '   แก้ยังไง: `const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere }`\n');
+  assert.ok(/CAN_ADD_HERE\[modal\.kind\]/.test(code),
+    '\n\n❌ handleSave ไม่ได้ใช้ CAN_ADD_HERE ตัดสินสิทธิ์เพิ่ม — ดูเหตุผลด้านบน\n');
+});
+
 /* ── สำเนาชื่อของผัง: กลุ่มเก็บ "ชื่อ" · ที่เหลือเก็บ code||name — ห้ามเดาเป็น name หมด ───── */
 test('🛡️ orgNodeRefs: คีย์จับคู่ของกลุ่มต้องเป็นชื่อ ไม่ใช่ code (code = เลขไลน์)', () => {
   const code = stripComments(readFileSync(join(ROOT, 'src/utils/orgNodeRefs.js'), 'utf8'));
@@ -2162,4 +2300,159 @@ test('🛡️ insert/upsert ลง dr_products ห้ามส่ง created_by 
     + '   ทำไมห้าม: PostgREST ปฏิเสธทั้งแถว "Could not find the created_by column" (เกิดจริง 05/10 ปุ่มเปิดใบ BOM ใช้ไม่ได้)\n'
     + '   แก้ยังไง: ตัดฟิลด์นี้ออก — dr_products อยู่ใน DR_AUDIT_TABLES ผู้แก้ถูกประทับที่ updated_by_name/uid ให้เอง\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── บอร์ด New Model: การ์ดทุกใบขนาดเท่ากัน = บอร์ดไม่มีลำดับสายตา (feedback user 05/10/2026) ──
+   *"สเกลการ์ดเท่ากันแบบนี้มันดูไม่มีการ design ที่ดี มันควรมีน้ำหนักที่ต่างกันในแต่ละการ์ด"*
+   บอร์ด 737D MLM: 21 แผง มี 14 ใบ (67%) ที่ไม่มีข้อความให้อ่านเลย แต่กินที่เท่าใบแดงที่มี 3 บรรทัด */
+test('🛡️ /nm-board โหมดจอ TV: ขนาดการ์ดต้องมาจาก tvWeightedLayout ห้ามกลับไปกริด 1fr เท่ากันทุกใบ', () => {
+  const file = 'src/pages/NewModelBoard.jsx';
+  const code = stripComments(readFileSync(join(ROOT, file), 'utf8'));
+  assert.ok(/tvWeightedLayout\s*\(/.test(code),
+    '\n\n❌ NewModelBoard.jsx ไม่ได้ใช้ tvWeightedLayout — การ์ดกลับไปขนาดเท่ากันหมดแล้ว\n'
+    + '   ทำไมห้าม: น้ำหนักการ์ด = ปริมาณที่ต้องอ่าน (แดง 3 : เหลือง 2 : เขียว/ยังไม่ประเมิน 1)\n'
+    + '              ใบเขียว/ยังไม่ประเมินไม่มีข้อความเลย ถ้ากินที่เท่าใบแดง คนยืนหน้าบอร์ดต้องกวาดตาทีละใบ\n'
+    + '   แก้ยังไง: `const { rows } = tvWeightedLayout(proj.panels)` แล้ววาดแถวละ flex ตาม panelWeight()\n');
+  assert.ok(!/gridTemplateRows:\s*`repeat\(\$\{rows\}/.test(code),
+    `\n\n❌ ${file} กลับไปใช้กริด rows×cols ช่องเท่ากันแล้ว — ดูเหตุผลด้านบน\n`);
+  /* 🔴 กดการ์ดแล้วต้องเจาะเข้าแผงได้ — ก่อน 05/10 การ์ดบนจอ TV เป็น <div> เฉยๆ กดไม่ได้เลย
+     (user: "ยังกดเจาะไปในแต่ละการ์ดไม่ได้") */
+  assert.ok(/onPick\s*\(\s*p\s*\)/.test(code),
+    `\n\n❌ ${file}: การ์ดบนบอร์ด TV กดเจาะไม่ได้ (ไม่มี onPick)\n`
+    + '   ทำไมต้องมี: บอร์ดคือจุดเริ่มของการไล่ปัญหา — เห็นใบแดงแล้วต้องกดดูได้ว่าแดงเพราะอะไร\n');
+});
+
+test('🛡️ /nm-board: ห้ามเรียงการ์ดใหม่ตามสี (คนจำตำแหน่งแผงบนบอร์ดกระดาษ)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(!/panels[\s\S]{0,40}\.sort\(/.test(code) && !/gridAutoFlow:\s*'dense'/.test(code),
+    '\n\n❌ NewModelBoard.jsx เรียง/สลับตำแหน่งแผงเอง (sort หรือ gridAutoFlow:dense)\n'
+    + '   ทำไมห้าม: สีเปลี่ยนทุกสัปดาห์ ถ้าใบย้ายที่ตามสี คนหาแผงที่ต้องการไม่เจอ\n'
+    + '              บอร์ดกระดาษของจริง ตำแหน่งแผงคงที่เสมอ — ระบบต้องเหมือนกัน\n');
+});
+
+/* ── หมวดฐานพนักงาน: "จอโชว์ว่าทำได้ แต่ระบบไม่ให้ทำ" (ไล่ตรวจทั้งหมวด 06/10/2026) ─────────
+   คลาสเดียวกับ /org-setup 05/10 (ปุ่มโชว์ แต่ด่านตอนบันทึกไม่รู้จักชั้นใหม่) — user สั่งให้
+   ไล่ตรวจให้หมดในหมวดฐานพนักงาน · เจอ 4 จุด แก้แล้ว ด่านข้างล่างกันไม่ให้ย้อนกลับ */
+test('🛡️ /operator: ปุ่มอนุมัติอัพระดับ ต้องเช็คสิทธิ์ที่ "การเขียนจริง" ต้องใช้ด้วย', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/const\s+writeBlock\s*=/.test(code) && /canApprove\s*=\s*mayApprove\s*&&\s*!writeBlock/.test(code),
+    '\n\n❌ operator.jsx: canApprove ดูแค่ skills:approve_levelup\n'
+    + '   ทำไมห้าม: การอนุมัติเขียน employee_skills.score = to_level ซึ่ง RLS WITH CHECK บังคับ\n'
+    + '              score ≤ 50 ‖ skills:edit_high · สกิลค่าฝีมือ ‖ skills:edit_allowance\n'
+    + '              ⇒ ผู้อนุมัติที่ไม่มี edit_high กด Lv.75/100 = เด้ง error ดิบจาก Postgres\n'
+    + '   แก้ยังไง: คิด writeBlock จาก SKILL_EDIT_CAP + canEditHighSkill/canEditAllowance\n'
+    + '              แล้ว canApprove = mayApprove && !writeBlock (จอต้องบอกว่าขาดคีย์ไหน)\n');
+});
+
+test('🛡️ /operator: ช่องติ๊กสกิลที่คะแนนเกินเพดาน ต้องถูกล็อกเหมือนช่องคะแนน', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  assert.ok(/rowEditable\s*=[^;]*!lockedAllowance\s*&&\s*!lockedHigh/.test(code),
+    '\n\n❌ operator.jsx: rowEditable ไม่ได้รวม !lockedHigh\n'
+    + '   ทำไมห้าม: ช่องคะแนนถูกล็อก แต่ช่องติ๊กยังกดออกได้ ⇒ handleSaveEmp ข้ามแถวนั้นเงียบ\n'
+    + '              แล้วขึ้น "อัปเดตเรียบร้อย!" · เปิดดูใหม่สกิลยังอยู่ (วัดจริง 06/10:\n'
+    + '              720 แถว / 148 คน มีคะแนนเกินเพดาน 50 ที่ role leader ตั้งได้)\n');
+  assert.ok(/skipped\.push\(/.test(code) && /skipNote/.test(code),
+    '\n\n❌ operator.jsx: แถวที่สิทธิ์ไม่ถึงถูกข้ามโดยไม่บอกผู้ใช้ — ต้องเก็บ skipped แล้วรายงาน\n');
+});
+
+test('🛡️ /register: ช่องกลุ่มต้องเก็บ "ชื่อกลุ่ม" + เตือนกลุ่มที่ยังไม่ผูกไลน์ (เท่ากับ /operator)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/Register.jsx'), 'utf8'));
+  assert.ok(!/orgGroupOpts\.map\(g\s*=>\s*<option[^>]*value=\{g\.code\s*\|\|\s*g\.name\}/.test(code),
+    '\n\n❌ Register.jsx เก็บ group_name เป็น `code || name` — ไม่ตรงกับ /operator ที่เก็บ "ชื่อ"\n'
+    + '   ทำไมห้าม: org_nodes(kind=line).code บางตัวคนละสตริงกับชื่อ (ของจริง 06/10:\n'
+    + '              ASSEMBLY 1 → code \'Assembly Line D1\') ⇒ คนลงทะเบียนใหม่แยกออกจาก\n'
+    + '              เพื่อนร่วมกลุ่ม 35 คนในทุกตัวกรอง และ /operator โชว์ว่า "(นอกผัง)"\n');
+  assert.ok(/ref_line_id\s*\?\s*''\s*:\s*'\s*⚠ ยังไม่ผูกไลน์'/.test(code) && /จะไม่ขึ้นในหน้าเช็คชื่อ/.test(code),
+    '\n\n❌ Register.jsx ไม่เตือนตอนเลือกกลุ่มที่ยังไม่ผูกไลน์ผลิต\n'
+    + '   ทำไมห้าม: ref_line_id ว่าง ⇒ line_id = null ⇒ พนักงานใหม่ไม่ขึ้นหน้าเช็คชื่อ เงียบสนิท\n'
+    + '              (เคสจริง 05/10 PD2 35 คน — /operator เตือนแล้ว หน้าลงทะเบียนต้องเตือนด้วย)\n');
+  assert.ok(/if\s*\(!canRegister\)\s*return toast\.error/.test(code),
+    '\n\n❌ Register.jsx: handleRegister ไม่มีด่านชั้นสอง — ปุ่ม disabled อย่างเดียวไม่พอ (Enter ก็ submit ได้)\n');
+});
+
+/* ── /nm-board ↔ /npi: ผูกกันด้วย "ตัวชี้" ห้ามให้ระบบเขียนทับสี EVA (06/10/2026 · คำสั่ง user) ──
+   IEC เขียนกติกาไว้เองว่า EVA **คนตั้งสีเอง** (`Obeya_E_Board-V2.pptx` ข้อ 1) — ระบบ *เสนอ* ได้
+   แต่ห้ามเขียนทับ · ถ้าบอร์ดเริ่มเอาสถานะเอกสารจาก NPI มาคิดสีเอง = ผิดกติกาเจ้าของบอร์ด */
+test('🛡️ /nm-board: ห้ามเอาข้อมูล NPI ไปคิดสี EVA เอง (คนตั้งสีเท่านั้น — กติกา IEC ข้อ 1)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(!/eva\s*[:=]\s*[^;,\n]*\b(sum|npi)\b/i.test(code),
+    '\n\n❌ NewModelBoard.jsx เอาค่าจาก NPI ไปตั้ง eva ของแผง/รุ่น\n'
+    + '   ทำไมห้าม: IEC เขียนกติกามาเองว่า EVA คนตั้งสีเอง ระบบเสนอได้แต่ห้ามเขียนทับ\n'
+    + '              บอร์ดคือภาพที่คนตัดสินใจร่วมกัน ไม่ใช่รายงานอัตโนมัติ\n'
+    + '   แก้ยังไง: ยกตัวเลข NPI มา "แสดงข้างๆ" (NpiLinkCard) แล้วให้คนตัดสินสีเอง\n');
+  /* เขียนกลับฝั่ง NPI จากบอร์ดก็ห้าม — บอร์ดเป็นจอดูอย่างเดียวในเฟสนี้ */
+  assert.ok(!/from\(\s*'npi_[a-z_]+'\s*\)\s*\.\s*(insert|update|upsert|delete)/.test(code),
+    '\n\n❌ NewModelBoard.jsx เขียนข้อมูลลงตาราง npi_* — บอร์ดเป็นจออ่านอย่างเดียวในเฟสนี้\n');
+});
+
+test('🛡️ /nm-board ↔ /npi: ห้ามเดาการผูกจากชื่อ/ลูกค้า — ต้องอ่านจาก npi_projects.nm_board_id', () => {
+  const board = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(/\.eq\(\s*'nm_board_id'/.test(board),
+    '\n\n❌ NewModelBoard.jsx ไม่ได้หาโปรเจค NPI ด้วยคอลัมน์ผูก `nm_board_id`\n'
+    + '   ทำไมสำคัญ: `model` ซ้ำกันได้ (หลายรุ่นย่อยของ platform เดียว) เดาผิด = บอร์ดโชว์ตัวเลขของรุ่นอื่น\n'
+    + '              ซึ่งแย่กว่าไม่โชว์เลย · ยังไม่ผูก = เขียนบนจอว่ายังไม่ผูก\n'
+    + '   แก้ยังไง: `.eq(\'nm_board_id\', <รหัสรุ่นบนบอร์ด>)` · คนผูกเองที่ /npi → ✏️ โปรเจค\n');
+  assert.ok(!/nm_board_id[\s\S]{0,80}(toLowerCase|includes|match)\s*\(/.test(board),
+    '\n\n❌ NewModelBoard.jsx จับคู่โปรเจค NPI ด้วยการเทียบข้อความ — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ฟอนต์บนจอห้ามต่ำกว่า 11px (user เคาะเลขเดียว 06/10 หลัง QC audit) ────────────────
+   เอกสาร (CLAUDE.md §Design System · UI-CONVENTIONS §4) เขียน "ขั้นต่ำ 11-12px" มาตลอด
+   แต่ **ไม่เคยมีด่าน** ⇒ drift กลับมาเรื่อยๆ (วัด 06/10: 160 จุดที่ต่ำกว่า 11 · ด่าน chartsweep
+   เองก็ตั้งเกณฑ์ไว้ 10.5 ทำให้ 92 จุด "ผ่านด่าน แต่ผิดเอกสาร")
+   จอหน้างานเป็น TV 43" แขวนไกล — 10px อ่านไม่ออกจริง ไม่ใช่เรื่องสวยงาม
+   ข้อยกเว้น: `src/lib/**` = ใบพิมพ์/PPTX (หน่วย pt บนกระดาษ) · บรรทัด jsPDF autoTable */
+test('🛡️ UI: fontSize บนจอต้องไม่ต่ำกว่า 11px', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.startsWith('lib/') || rel.startsWith('src/lib/') || rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    code.split('\n').forEach((ln, i) => {
+      if (ln.includes('cellPadding') || ln.includes("font: 'Sarabun'")) return;   // jsPDF = pt
+      for (const m of ln.matchAll(/fontSize\s*[:=]\s*\{?\s*(\d+(?:\.\d+)?)\s*\}?/g)) {
+        if (Number(m[1]) < 11) bad.push(`${rel}:${i + 1} → fontSize ${m[1]}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ฟอนต์ต่ำกว่า 11px ${bad.length} จุด\n`
+    + '   ทำไมห้าม: จอหน้างานคือ TV 43" แขวนไกล — ต่ำกว่า 11px อ่านไม่ออกจริง\n'
+    + '   แก้ยังไง: ยกเป็น 11 · ที่แน่นเกินให้ **เว้นป้าย/ซ่อนป้าย ไม่ใช่ลดฟอนต์** (UI-CONVENTIONS §4)\n'
+    + '             ตัวที่สเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)` อยู่แล้ว\n\n'
+    + bad.slice(0, 20).map(b => '   • ' + b).join('\n') + (bad.length > 20 ? `\n   …อีก ${bad.length - 20}` : '') + '\n');
+});
+
+/* ── 🛑 ทะเบียนลักษณะปัญหา MO: กลุ่มต้องอยู่ในลูกโซ่ cascade + ห้ามใช้ป้าย "อื่นๆ" เป็นถังสังเคราะห์
+   (06/10/2026 · user: "ตรงนี้มั่วด้วย ระบบ dropdown" → "มั่ว")
+   2 บั๊กที่เจอพร้อมกันในหน้าเดียว:
+     1. `NAME_CASCADE` ไม่มี `group_name` ⇒ เปลี่ยนชื่อกลุ่มในทะเบียน ใบเก่าค้างชื่อเดิม
+        พาเรโตแตก 2 แท่งเงียบๆ (วัดจริง: 2 ใบค้างกลุ่ม "MTN ระบบ…" ที่ไม่มีในทะเบียนแล้ว)
+     2. ถังสังเคราะห์ของแถวที่ไม่มีกลุ่ม ถูกตั้งชื่อว่า 'อื่นๆ' **ชนกับแถวจริงชื่อ "อื่นๆ"**
+        ⇒ dropdown เดียวมีป้ายซ้ำ 2 ความหมาย · และค่านั้นถูกเขียนลงใบเป็นกลุ่มปลอม          */
+test('🛡️ /mtn-repair: NAME_CASCADE ต้องครอบ group_name (ไม่งั้นเปลี่ยนชื่อกลุ่มแล้วพาเรโตแตกเงียบ)', () => {
+  const code = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const block = code.match(/const NAME_CASCADE\s*=\s*\{[\s\S]*?\n\};/);
+  assert.ok(block, '\n\n❌ หา NAME_CASCADE ใน MtnRepair.jsx ไม่เจอ — ย้ายแล้วต้องอัปเดตด่านนี้ด้วย\n');
+  assert.ok(/mtn_problem_types:\s*\{[^}]*group_name:\s*'problem_group'/.test(block[0]),
+    '\n\n❌ NAME_CASCADE.mtn_problem_types ไม่มี `group_name: \'problem_group\'`\n'
+    + '   ทำไมสำคัญ: ใบซ่อมเก็บ `problem_group` เป็น **สำเนาข้อความ** ไม่ผูก FK\n'
+    + '              ไม่มีในลูกโซ่ = เปลี่ยนชื่อกลุ่มในทะเบียนแล้วใบเก่าค้างชื่อเดิม\n'
+    + '              ⇒ พาเรโตกลุ่มแตกเป็น 2 แท่ง และไม่มีใครรู้ (ไม่มี error ไม่มี toast)\n'
+    + '   แก้ยังไง: เติม group_name: \'problem_group\' ใน NAME_CASCADE (MtnRepair.jsx)\n');
+});
+
+test('🛡️ /mtn-repair: ถังสังเคราะห์ของแถวไม่มีกลุ่ม ห้ามตั้งชื่อ "อื่นๆ" (ชนกับแถวจริงในทะเบียน)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(!/NO_GROUP\s*=\s*['"]อื่น\s*ๆ?['"]/.test(code),
+    '\n\n❌ MtnRepair.jsx ตั้ง NO_GROUP = \'อื่นๆ\' อีกแล้ว\n'
+    + '   ทำไมห้าม: ทะเบียน mtn_problem_types มีแถวจริงชื่อ "อื่นๆ" (221 ใบใช้อยู่)\n'
+    + '              ป้ายเดียวกัน 2 ความหมายใน dropdown เดียว = คนแจ้งเลือกแล้วไม่รู้ว่าได้อะไร\n'
+    + '   แก้ยังไง: ใช้ UNGROUPED_LABEL จาก src/utils/unclassified.js (= "ยังไม่จัดกลุ่ม")\n'
+    + '              และกลุ่มจริงของอาการที่ระบุไม่ได้ = OTHER_GROUP ("อื่นๆ / ยังระบุไม่ได้")\n');
+  /* ป้ายถังสังเคราะห์ห้ามหลุดลง DB — ต้องผ่าน groupForDb() ก่อนใส่ payload */
+  assert.ok(/groupForDb\s*\(/.test(code) && /problem_group:\s*groupForDb\(/.test(code),
+    '\n\n❌ payload ของใบแจ้งซ่อมไม่ได้กรอง problem_group ผ่าน groupForDb()\n'
+    + '   ทำไมสำคัญ: ช่องเลือกกลุ่มถือป้าย "ยังไม่จัดกลุ่ม" ได้ (เป็นป้ายของจอ ไม่ใช่ taxonomy)\n'
+    + '              เขียนลงใบ = ปลอมกลุ่มให้พาเรโต · ผิดกฎชั้น 1 "ห้ามเขียนทับค่าที่ระบบรู้อยู่แล้ว"\n'
+    + '   แก้ยังไง: problem_group: groupForDb(f.problem_group) (คืนค่าว่างเมื่อเป็นป้ายสังเคราะห์)\n');
 });

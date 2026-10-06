@@ -7,7 +7,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { toast } from '../components/Toast';
 import {
   loadOrgNodeRefs, orgRefBlockMessage, orgRefDeleteNote, orgRefDeactivateNote,
-  orgRefKeyChange, renameOrgRefs,
+  orgRefKeyChange, renameOrgRefs, ORG_KIND_TH,
 } from '../utils/orgNodeRefs';
 import { loadDivisions, divisionsSync, divisionOfNode } from '../utils/orgDivisions';
 import { laborMeta, laborTypeOfNode } from '../utils/laborType';
@@ -20,7 +20,9 @@ import CostCenterSelect from '../components/CostCenterSelect';
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
-const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม' };
+/* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
+   (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
+const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / ทีม' };
 const COST_CENTER_REQUIRED = ['section', 'department', 'line'];
 
 export default function OrgSetup() {
@@ -128,6 +130,11 @@ export default function OrgSetup() {
     const dep = ln && allDepts.find(d => d.id === ln.parent_id);
     return canOwn && !!mySecId && !!dep && dep.parent_id === mySecId;
   };
+  /* 🔴 ด่านชั้นสองตอนบันทึก ต้องครอบ "ทุกชั้นที่หน้านี้มีปุ่มเพิ่ม" — เดิมเป็นเชน ternary ลงท้าย `: false`
+     ⇒ เพิ่มชั้นใหม่ (ทีม 05/10) แล้วลืมต่อสาขา = ปุ่ม ➕ โชว์ แต่กดบันทึกเด้ง "แก้ได้เฉพาะ…" (เกิดจริง)
+     ใช้ map แทน: ชั้นที่ไม่มีตัวตรวจ = admin เท่านั้น (section) ซึ่งตรงกับปุ่มบนจอ · มีด่าน regressionGuards */
+  const CAN_ADD_HERE = { department: canAddDeptHere, line: canAddLineHere, team: canAddTeamHere };
+
   // single source: cost center ระดับไลน์มาจาก production_lines (ตั้งที่หน้าจัดการไลน์) — org group node ที่ผูก ref_line_id ไม่เก็บซ้ำ
   const lineById = useMemo(() => Object.fromEntries(lines.map(l => [String(l.id), l])), [lines]);
 
@@ -225,8 +232,9 @@ export default function OrgSetup() {
     // guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ (โมดัลอาจถูกเปิดค้างไว้ตอนสิทธิ์เปลี่ยน)
     if (!isAdmin) {
       const okAdd = modal.editing ? canEditNode(modal.editing)
-        : (modal.kind === 'department' ? canAddDeptHere(modal.parentId) : modal.kind === 'line' ? canAddLineHere(modal.parentId) : false);
-      if (!okAdd) return toast.error('แก้ได้เฉพาะแผนก/กลุ่มใต้ส่วนงานของคุณ');
+        : !!CAN_ADD_HERE[modal.kind]?.(modal.parentId);
+      if (!okAdd) return toast.error(`ไม่มีสิทธิ์${modal.editing ? 'แก้' : 'เพิ่ม'}`
+        + `${ORG_KIND_TH[modal.kind] || 'หน่วยงาน'}ตรงนี้ — ทำได้เฉพาะใต้ส่วนงานของคุณ`);
     }
     // group/line node ที่ผูก production_lines → cost center มาจาก production_lines (single source) ไม่บังคับ/ไม่เช็คซ้ำ
     const linkedLine = modal.kind === 'line' && !!formRefLineId;
@@ -320,8 +328,7 @@ export default function OrgSetup() {
        (user ถามตรง ๆ 05/10: "ลูกอยู่ไหน" — ลูกของกลุ่มคือ *ทีม* ซึ่งตอนนั้นยังไม่มีพาเนลให้เห็น) */
     const children = nodes.filter(n => n.parent_id === node.id);
     if (children.length > 0) {
-      const KIND_TH = { section: 'ส่วนงาน', department: 'แผนก', line: 'กลุ่ม', team: 'ทีม' };
-      const kinds = [...new Set(children.map(c => KIND_TH[c.kind] || c.kind))].join('/');
+      const kinds = [...new Set(children.map(c => ORG_KIND_TH[c.kind] || c.kind))].join('/');
       const names = children.slice(0, 6).map(c => c.name).join(', ')
                   + (children.length > 6 ? ` …อีก ${children.length - 6}` : '');
       return toast.error(`ลบไม่ได้: "${node.name}" ยังมี${kinds}ลูก ${children.length} รายการ — ${names}`
@@ -548,8 +555,19 @@ export default function OrgSetup() {
                 </div>
               )}
               <div>
-                <label style={labelSt}>Code (ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)</label>
-                <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)} placeholder="เช่น PD5 / A" />
+                {/* 🔴 ชั้น "ทีม" ใช้ `code` เป็นคีย์จับคู่จริง — ทะเบียนพนักงานเก็บ 'A'/'B'/'C' ไม่ใช่ "Team A"
+                    (ดู src/utils/orgNodeRefs.js) ⇒ เว้นว่าง = dropdown ทีมได้ชื่อเต็มมา แล้วไม่ตรงกับคนที่มีอยู่ */}
+                <label style={labelSt}>
+                  Code {modal.kind === 'team' ? '(ค่าที่บันทึกในทะเบียนพนักงาน เช่น A / B / C)' : '(ใช้อ้างอิงค่าเดิมในระบบ — ไม่บังคับ)'}
+                </label>
+                <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)}
+                  placeholder={modal.kind === 'team' ? 'เช่น A' : 'เช่น PD5 / A'} />
+                {modal.kind === 'team' && !formCode.trim() && (
+                  <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                    ⚠️ ไม่ใส่ Code = ตัวเลือกทีมจะใช้ชื่อเต็ม <b>"{formName.trim() || 'ชื่อทีม'}"</b> ซึ่ง
+                    <b> ไม่ตรงกับทีมที่พนักงานถูกบันทึกไว้</b> (ของเดิมเก็บเป็น A / B / C)
+                  </div>
+                )}
               </div>
               <div>
                 <label style={labelSt}>

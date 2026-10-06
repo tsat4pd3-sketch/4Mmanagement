@@ -14,11 +14,16 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, QBIN_EMBED } from '../utils/oee';
+import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { cachedMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
+import { fetchAllRows } from '../utils/fetchAllRows';
+import { loadBreakPolicies, loadCtProducts, loadCtKanban, fetchOeeTargets } from '../utils/oeeMasters';
+import { valueInk, statusOf } from '../utils/statusTone';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
@@ -57,7 +62,8 @@ const shiftDate = (s, delta) => { const d = new Date(`${s}T00:00:00`); d.setDate
 const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
 const fmtNum = (n) => (n == null ? '0' : Math.round(n).toLocaleString('en-US'));
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
-const oeeCol = (o) => o == null ? 'var(--muted)' : o >= 80 ? '#22c55e' : o >= 65 ? '#f59e0b' : '#ef4444';
+/* สี OEE = เทียบเป้ากลุ่ม (oee_targets) ผ่าน oeeTargetForLines + statusOf — ประกาศใน component (ต้องรู้ lines/เป้า)
+   05/10: เดิมเลขตายตัว 80/65 ⇒ ไลน์เดียวกันจอนี้เขียว ห้อง OBEYA เหลือง/แดง */
 
 // สีตามหมวดสถานะ (คำนวณต่อ metric) — down = แดงกระพริบ (Andon), อื่นๆ นิ่ง
 const CAT = {
@@ -185,7 +191,9 @@ const METRICS = {
          5.5-8 ชม. จากกะ 12 ชม. คนดูจอ TV เข้าใจว่าระบบค้าง แทนที่จะรู้ว่าต้องไปปิดการ์ด */
       : (s.oeeNoCt ? '⚠ ยังไม่ตั้ง CT' : s.hasOpen ? 'กำลังรอการคอนเฟิร์มยอดงาน' : ''),
     short: s => s.oee != null ? `${Math.round(s.oee)}%${s.oeePOver ? '⚠' : ''}` : (s.oeeNoCt ? '⚠CT' : ''),
-    cat: s => s.oee == null ? 'idle' : s.oee >= 80 ? 'good' : s.oee >= 65 ? 'ok' : 'bad',
+    /* 05/10: เทียบเป้ากลุ่ม (s.oeeTarget จาก oeeTargetForLines) ผ่าน statusOf — เดิม 80/65 ตายตัว
+       ไม่รู้เป้า (โหลดไม่ได้) = 'idle' (เทา "ตัดสินไม่ได้") ห้ามเดาสี */
+    cat: s => { if (s.oee == null) return 'idle'; const t = statusOf(s.oee, s.oeeTarget); return t === 'good' ? 'good' : t === 'warn' ? 'ok' : t === 'bad' ? 'bad' : 'idle'; },
   },
   breakdown: {
     label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
@@ -386,18 +394,7 @@ const placeBox = (cands, w, h, placed, maxY, bb, obstacles, allowDrop, search, o
 };
 // ผังแคบกว่านี้ = ย่อข้อความบนป้าย (มือถือ/แท็บเล็ตแนวตั้ง) — PC/จอ TV กว้างกว่านี้เสมอ จึงได้ข้อมูลครบ
 const COMPACT_W = 820;
-const polyArea = (pts) => {
-  let a = 0;
-  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += pts[j][0] * pts[i][1] - pts[i][0] * pts[j][1];
-  return Math.abs(a) / 2;
-};
-const centroid = (pts) => pts.length
-  ? [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
-  : [50, 50];
-// จุดยึดป้าย = กึ่งกลางแนวนอน + ขอบบนสุดของ polygon → ป้ายเกาะขอบบน ไม่ทับกลางผังไลน์ (2026-07-22)
-const labelAnchor = (pts) => pts.length
-  ? [(Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, Math.min(...pts.map(p => p[1]))]
-  : [50, 50];
+// polyArea/centroid/labelAnchor ย้ายไป utils/regionGeom.js (05/10 — ใช้ร่วมกับ <FactoryMiniMap> จอ TV)
 const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
@@ -439,6 +436,14 @@ export default function FactoryMap({ setupMode = false }) {
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [lines, setLines] = useState([]);
+  // เป้า OEE รายกลุ่ม — null = ยังไม่รู้/โหลดไม่ได้ ⇒ สี OEE เป็น "ตัดสินไม่ได้" (ห้ามถอยไป 80/65)
+  const [oeeTargets, setOeeTargets] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetchOeeTargets().then(r => { if (alive) setOeeTargets(r.byGroup); });
+    return () => { alive = false; };
+  }, []);
+  const oeeCol = useCallback((o, names = []) => valueInk(o, oeeTargetForLines(names, lines, oeeTargets)?.oee), [lines, oeeTargets]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(canEdit); // setup mode + มีสิทธิ์ → เข้าโหมดแก้เลย
   const [uploading, setUploading] = useState(false);
@@ -615,13 +620,11 @@ export default function FactoryMap({ setupMode = false }) {
       supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', sessIds),
       // ⚡ master 3 ตัวล่างนี้ผ่าน cache (10 นาที) — เดิมดึงทั้งตารางทุก 30 วิ กิน egress ~70% ของรอบ
       //    โดยไม่ได้ความสดอะไรเพิ่ม (CT/นโยบายพัก เปลี่ยนเดือนละไม่กี่ครั้ง) ดู src/utils/masterCache.js
-      cachedMaster('dr_products:ct', async () =>
-        (await supabaseDR.from('dr_products').select('mat_no, cycle_time_sec, pair_mat_no, process_type')).data || []),
-      cachedMaster('break_policies:active', async () =>
-        (await supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope').eq('is_active', true)).data || []),
+      loadCtProducts().catch((e) => { console.error('[FactoryMap] โหลด CT สินค้าไม่สำเร็จ:', e); return null; }),
+      // loader กลาง — ล้ม = โยน (เดิม `.data || []` ⇒ ล้ม = "ไม่มีพัก" ค้าง cache 4 ชม.) · จับไว้แล้วบอกบนแถบ
+      loadBreakPolicies().catch((e) => { console.error('[FactoryMap] โหลดนโยบายพักไม่สำเร็จ:', e); return null; }),
       // CT ต้องมาจาก fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products) ไม่งั้น P สด ≠ P ที่ stamp
-      cachedMaster('kanban_standards:ct', async () =>
-        (await supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').eq('is_active', true)).data || []),
+      loadCtKanban().catch((e) => { console.error('[FactoryMap] โหลด CT kanban ไม่สำเร็จ:', e); return null; }),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — collapseOps ตอนรวมยอด ไม่นับซ้ำ
     ]);
     /* 🔴 query ลูกล้มเหลว = ตัวเลขบนผัง "ผิดแบบดูดี" ไม่ใช่ว่าง — ต้องบอกทุกครั้ง
@@ -631,10 +634,11 @@ export default function FactoryMap({ setupMode = false }) {
        จอ /line-oee มี banner `partial` แบบนี้อยู่แล้ว — 2 จอโชว์ OEE ชุดเดียวกัน
        จอหนึ่งบอกว่าโหลดไม่ครบ อีกจอเงียบ = คนเชื่อจอที่โกหก */
     const { data: orders, error: oErr } = oRes, { data: dts, error: dErr } = dRes, { data: defs, error: fErr } = fRes;
-    const miss = [oErr && 'ใบผลิต', dErr && 'เครื่องหยุด', fErr && 'ของเสีย'].filter(Boolean);
+    const miss = [oErr && 'ใบผลิต', dErr && 'เครื่องหยุด', fErr && 'ของเสีย', breaks == null && 'นโยบายเวลาพัก', (prods == null || kstds == null) && 'CT สินค้า'].filter(Boolean);
     if (miss.length) console.error('[FactoryMap] โหลดไม่ครบ:', { oErr, dErr, fErr });
     setPartial(miss.length ? `⚠️ โหลด${miss.join('/')}ไม่สำเร็จ — OEE/Andon บนผังยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
-    const pairMap = {}, procMap = {};
+    // โหลด CT/คู่ไม่ได้ ⇒ pairMap = null ("ยังไม่รู้คู่" = ไม่ยุบ) ห้ามเป็น {} ("รู้แล้วว่าไม่มีคู่")
+    const pairMap = prods ? {} : null, procMap = {};
     (prods || []).forEach(p => { if (p.pair_mat_no) pairMap[p.mat_no] = p.pair_mat_no; procMap[p.mat_no] = p.process_type; });
     const ctMap = buildCtMap({ kanbanStds: kstds || [], products: prods || [] });
     const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
@@ -681,12 +685,12 @@ export default function FactoryMap({ setupMode = false }) {
       os.forEach(o => {
         if (!o.mat_no) return;
         const e = perMat[o.mat_no] || (perMat[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.target += o.qty_target ?? o.qty ?? 0;
+        e.target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
         e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
       });
       const nullOs = os.filter(o => !o.mat_no);
-      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap[m] || null);
-      const target = ptot.target + nullOs.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+      const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), m => pairMap?.[m] || null);
+      const target = ptot.target + nullOs.reduce((a, o) => a + orderPlanQty(o), 0);
       const actual = ptot.produced + nullOs.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
       const dl = dtBySess[s.id] || [];
       // Downtime — นับเฉพาะ "นอกแผน" (planned เช่นนับสต็อก ไม่ใช่ loss) + รวมเวลาที่ "กำลังหยุด" (ยังไม่ปิด) จนถึงตอนนี้
@@ -745,7 +749,7 @@ export default function FactoryMap({ setupMode = false }) {
         // หักเวลาพักตามแผนที่ผ่านไปแล้ว — ใช้สูตรกลางจาก utils/oee.js (เดิมเขียน overlap ซ้ำที่นี่เป็นก๊อปที่ 4)
         const procOfSess = os.map(o => procMap[o.mat_no]).find(Boolean) || null;
         const brkIvWin = breakIntervalsIn({
-          policies: breaks, startMs: anchor, endMs: Math.min(nowMs, capMs),
+          policies: breaks || [], startMs: anchor, endMs: Math.min(nowMs, capMs),
           workDate, shift: s.shift, processType: procOfSess,
         });
         availMin -= brkIvWin.reduce((a, [x, y]) => a + (y - x) / 60000, 0);
@@ -801,7 +805,7 @@ export default function FactoryMap({ setupMode = false }) {
          (ตัดส่วนที่ทับพักออก ไม่งั้นน้ำหนักของกะที่มี PM คร่อมพักเบาเกินจริง · utils/oee §3.1) */
       const wLoadBrkIv = (s.start_time && Number(s.shift_min || 570) > 0)
         ? breakIntervalsIn({
-            policies: breaks,
+            policies: breaks || [],
             startMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime(),
             endMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
             workDate, shift: s.shift,
@@ -922,20 +926,24 @@ export default function FactoryMap({ setupMode = false }) {
   const loadOeeHist = useCallback(async () => {
     const to = shiftDate(getWorkDate(), -1), from = shiftDate(getWorkDate(), -7);
     const { data: sess, error } = await supabaseDR.from('production_sessions')
-      .select('id, line_name, work_date, oee, shift_min')
+      .select('id, line_name, work_date, shift, start_time, oee, shift_min')
       .eq('status', 'closed').gte('work_date', from).lte('work_date', to).order('id').limit(1000);
     if (error) { setOeeHistRaw([]); return; }   // โหลดไม่ได้ = การ์ดไม่มี sparkline/Δ (ค่า OEE หลักยังขึ้นปกติ)
     const rows = (sess || []).filter(s => s.oee != null);
-    const planned = {};
+    /* 05/10: น้ำหนัก wLoad ต้องตัด downtime ที่ทับพักออก (dtMinBySession) — เดิมบวก duration_min ดิบ
+       · downtime/นโยบายพักโหลดไม่ได้ = ไม่มี sparkline (ห้ามถ่วงด้วยน้ำหนักที่ผิดเงียบๆ) */
+    let brk;
+    try { brk = await loadBreakPolicies(); } catch { setOeeHistRaw([]); return; }
+    const dtsAll = [];
     for (let i = 0; i < rows.length; i += 120) {
       const ids = rows.slice(i, i + 120).map(s => s.id);
-      const { data: dts } = await supabaseDR.from('downtime_logs')
-        .select('session_id, duration_min, dr_downtime_types(category)').in('session_id', ids);
-      (dts || []).forEach(r => {
-        if (r.dr_downtime_types?.category === 'planned') planned[r.session_id] = (planned[r.session_id] || 0) + (Number(r.duration_min) || 0);
-      });
+      const { data: dts, error: dErr } = await supabaseDR.from('downtime_logs')
+        .select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', ids);
+      if (dErr) { setOeeHistRaw([]); return; }
+      dtsAll.push(...(dts || []));
     }
-    setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: planned[s.id] || 0 })));
+    const eff = dtMinBySession(rows, dtsAll, brk || []);
+    setOeeHistRaw(rows.map(s => ({ line_name: s.line_name, work_date: s.work_date, oee: Number(s.oee), shift_min: s.shift_min, plannedMin: eff[s.id]?.planned || 0 })));
   }, []);
   useEffect(() => { if (metric === 'oee' && oeeHistRaw == null) loadOeeHist(); }, [metric, oeeHistRaw, loadOeeHist]);
 
@@ -1032,10 +1040,13 @@ export default function FactoryMap({ setupMode = false }) {
        แล้วคืนค่าว่าง "เงียบ" (บทเรียนเดิม: จอโชว์ 0 ทั้งที่มีของจริง) */
     const [jgRes, machines] = await Promise.all([
       fetchByIds(eqIds, c => supabaseDR.from('jigs').select('id, line_name, machine_id').in('id', c)),
-      cachedMaster('machines:idline', async () =>
-        (await supabaseDR.from('machines').select('id, line_name').eq('is_active', true)).data || []),
+      // 05/10: เดิม `.data || []` = ล้มแล้ว cache ลิสต์ว่าง 4 ชม. (หลบด่าน master-cache-swallow เพราะเขียน 2 บรรทัด)
+      cachedMaster('machines:idline:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'machines', 'id, line_name', q => q.eq('is_active', true).order('id'))))
+        .catch((e) => { console.warn('loadPM machines', e); return null; }),
     ]);
     if (jgRes.error) { console.warn('loadPM jigs', jgRes.error); return; }
+    if (machines == null) return;   // คงค่าเดิม (ห้ามล้าง = "ไม่มีแผน PM")
     const lineOfMachine = {}; (machines || []).forEach(m => { lineOfMachine[m.id] = m.line_name; });
     const lineOfEq = {}; jgRes.rows.forEach(j => { lineOfEq[j.id] = j.line_name || lineOfMachine[j.machine_id] || ''; });
     const lineOfChecklist = {}; (cls || []).forEach(c => { lineOfChecklist[c.id] = lineOfEq[c.equipment_id]; });
@@ -1110,13 +1121,17 @@ export default function FactoryMap({ setupMode = false }) {
     // ⚡ links/machines เป็น master (เปลี่ยนนานๆ ครั้ง) → cache · เหลือแต่ใบซ่อมที่ต้องสดจริง
     //    และกรอง "ใบที่ยังไม่ปิด" ฝั่ง server — เดิมดึง mtn_orders ทั้งตารางมากรองในเบราว์เซอร์
     const [linkRows, machineRows, mos] = await Promise.all([
-      cachedMaster('facility_supply_links', async () =>
-        (await supabaseDR.from('facility_supply_links').select('machine_id, line_name')).data || []),
-      cachedMaster('machines:supply', async () =>
-        (await supabaseDR.from('machines').select('id, machine_no, machine_name, line_name, equipment_category')).data || []),
+      // 05/10: ล้ม = โยน (ไม่ cache ลิสต์ว่างทับ) · ล้มแล้ว "คงค่าเดิม" ห้ามวาดว่าไม่มีเครื่องเสีย
+      cachedMaster('facility_supply_links:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'facility_supply_links', 'machine_id, line_name', q => q.order('machine_id').order('line_name'))))
+        .catch((e) => { console.warn('loadSupply links', e); return null; }),
+      cachedMaster('machines:supply:v2', async () =>
+        mrows(await fetchAllRows(supabaseDR, 'machines', 'id, machine_no, machine_name, line_name, equipment_category', q => q.order('id'))))
+        .catch((e) => { console.warn('loadSupply machines', e); return null; }),
       supabaseDR.from('mtn_orders').select('machine_no')
-        .not('status', 'in', '("closed","rejected")').then(r => r, () => ({ data: [] })),
+        .not('status', 'in', '("closed","rejected")').then(r => r, (e) => ({ data: null, error: e })),
     ]);
+    if (linkRows == null || machineRows == null || mos?.error) { if (mos?.error) console.warn('loadSupply mtn_orders', mos.error); return; }
     const mcRows = machineRows || [];
     const byId = {}; mcRows.forEach(m => { byId[m.id] = m; });
     const openNos = new Set((mos?.data || []).map(o => o.machine_no));
@@ -1254,17 +1269,25 @@ export default function FactoryMap({ setupMode = false }) {
 
   /* ── สรุปทบทวนทั้งวัน (กะเช้า+ดึก) ตาม reviewDate — โหลดเมื่อเปลี่ยนวัน/เข้าโหมด review (ไม่ auto refresh) ──
      ต่างจากผังที่โชว์สด: แผงนี้ใช้ค่าที่ปิดกะแล้ว (OEE ที่ stamp, DT/NG/ผลิตทั้งวัน) ไว้ประชุมผู้จัดการ */
+  const beginReview = useLatestRequest();   // เปลี่ยนวันระหว่างโหลด = คำตอบวันเก่าห้ามทับแผง (กฎ DB ข้อ 4)
   const loadReview = useCallback(async () => {
+    const live = beginReview();
     setReviewLoading(true); setReviewError('');
+    /* 05/10 (QC audit): เดิมอ่านแค่ data ทุกคิวรี ⇒ คิวรีล้ม = แผงขึ้น 0/0 "ไม่มีผลิต" ทั้งที่ผลิตจริง
+       → error ของคิวรีหลักโยนเข้า catch ⇒ แผงเขียนว่าโหลดไม่สำเร็จ (reviewError) */
+    const need = (res, label) => { if (res?.error) throw new Error(`โหลด${label}ไม่สำเร็จ: ${res.error.message || res.error}`); return res?.data; };
     try {
-      const [{ data: sessions }, empRes, plRes, logRes] = await Promise.all([
+      const [sessRes, empRes, plRes, logRes] = await Promise.all([
         // ⚠️ ต้องมี `shift` — ตาราง "กางวิธีคิด OEE" (oeeRows) โชว์กะ ถ้าไม่ select จะขึ้น "—" ทุกแถว
         //    ซึ่งเป็นแผงที่มีไว้ตอบคำถาม "ทำไมบวกหารแล้วไม่ตรง" โดยเฉพาะ (กะเช้า/ดึกแยกไม่ออก)
-        supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min').eq('work_date', reviewDate),
+        // work_date + start_time = กรอบกะ ⇒ ตัด downtime ที่ทับเวลาพักก่อนคิดน้ำหนัก wLoad (dtMinBySession)
+        supabaseDR.from('production_sessions').select('id, line_name, status, shift, oee, qty_ng, ng_qty, shift_min, work_date, start_time').eq('work_date', reviewDate),
         supabase.from('employees').select('id, line_id').eq('is_active', true),
         loadLinesRes(),
         supabase.from('daily_production_logs').select('employee_id, is_present').eq('work_date', reviewDate),
       ]);
+      const sessions = need(sessRes, 'ข้อมูลกะ');
+      need(empRes, 'รายชื่อพนักงาน'); need(logRes, 'บันทึกเช็คชื่อ');
       const out = {};
       // oeeWSum/oeeWLoad = ถ่วงน้ำหนักด้วยเวลารับภาระ (กฎ OEE: ห้าม mean-of-percentages) · oeeSum/oeeN = fallback เมื่อไม่มีน้ำหนัก
       const ensure = (ln) => (out[ln] || (out[ln] = { actual: 0, target: 0, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] }));
@@ -1279,12 +1302,16 @@ export default function FactoryMap({ setupMode = false }) {
         const sessIds = sessions.map(s => s.id);
         /* ⚠️ loadPairMap() คืน map ตรงๆ (หรือ null) ไม่ใช่ { data } — เคยแกะ `{ data: prods }` ⇒ undefined
            ⇒ `pairMap[m]` ระเบิด ⇒ catch กลืน ⇒ แผงนี้เป็น 0/0 ทั้งแผงตั้งแต่ 25/09 ถึง 02/10 (user ทัก "เมื่อวานมีผลิตงานนะ") */
-        const [{ data: orders }, { data: dts }, { data: rvDefs }, pairMap] = await Promise.all([
+        const [ordRes, dtRes, defRes, pairMap, rvBreaks] = await Promise.all([
           supabaseDR.from('prod_orders').select('session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', sessIds),
           supabaseDR.from('downtime_logs').select('session_id, duration_min, started_at, ended_at, dr_downtime_types(category)').in('session_id', sessIds),
           supabaseDR.from('defect_logs').select('session_id, qty_ng, qty_suspect').in('session_id', sessIds),
           loadPairMap(),   // cache ทะเบียนสินค้ากลาง (25/09)
+          loadBreakPolicies(),   // ล้ม = โยน ⇒ แผงบอกโหลดไม่สำเร็จ (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ)
         ]);
+        const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), rvDefs = need(defRes, 'ของเสีย');
+        // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนที่ทับพักออก · กฎเหล็ก OEE downtime ทับพัก)
+        const effBySess = dtMinBySession(sessions, dts || [], rvBreaks || []);
         const rvNgBySess = {}; (rvDefs || []).forEach(d => { rvNgBySess[d.session_id] = (rvNgBySess[d.session_id] || 0) + (Number(d.qty_ng) || 0) + (Number(d.qty_suspect) || 0); });
         const pairOf = (m) => pairMap?.[m] ?? null;   // pairMap null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} และห้าม index ตรงๆ)
         const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
@@ -1298,21 +1325,20 @@ export default function FactoryMap({ setupMode = false }) {
           os.forEach(od => {
             if (!od.mat_no) return;
             const e = perMat[od.mat_no] || (perMat[od.mat_no] = { mat_no: od.mat_no, target: 0, produced: 0 });
-            e.target += od.qty_target ?? od.qty ?? 0;
+            e.target += orderPlanQty(od);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
             e.produced += od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0);
           });
           const nullOs = os.filter(od => !od.mat_no);
           const ptot = pairAwareTotal(collapseOps(Object.values(perMat), opInfoSync()), pairOf);
-          o.target += ptot.target + nullOs.reduce((a, od) => a + (od.qty_target ?? od.qty ?? 0), 0);
+          o.target += ptot.target + nullOs.reduce((a, od) => a + orderPlanQty(od), 0);
           o.actual += ptot.produced + nullOs.reduce((a, od) => a + (od.status === 'confirmed' ? (od.qty_ok ?? od.qty ?? 0) : (od.qty_actual ?? 0)), 0);
-          // Downtime นอกแผนทั้งวัน (dtMin) + เวลาที่วางแผนหยุด (plannedMin) สำหรับถ่วงน้ำหนัก OEE
-          let plannedMin = 0;
+          // Downtime นอกแผนทั้งวัน (dtMin = "เครื่องหยุดกี่นาที" ใช้นาทีเต็ม) · plannedMin (น้ำหนัก) ตัดส่วนทับพักแล้ว
           (dtBySess[s.id] || []).forEach(d => {
-            const mins = d.duration_min != null ? (Number(d.duration_min) || 0)
+            if (d.dr_downtime_types?.category === 'planned') return;
+            o.dtMin += d.duration_min != null ? (Number(d.duration_min) || 0)
               : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-            if (d.dr_downtime_types?.category === 'planned') plannedMin += mins;
-            else o.dtMin += mins;
           });
+          const plannedMin = effBySess[s.id]?.planned || 0;
           o.ng += rvNgBySess[s.id] ?? s.qty_ng ?? s.ng_qty ?? 0;   // NG ยึด defect_logs (คอลัมน์ session ไม่น่าเชื่อถือ)
           // OEE ถ่วงด้วย "เวลารับภาระ" (shift_min − plannedMin) ตามกฎถ่วงน้ำหนัก OEE
           if (s.oee != null) {
@@ -1325,10 +1351,11 @@ export default function FactoryMap({ setupMode = false }) {
         });
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
+      if (!live()) return;
       setReviewStatus(out);
-    } catch (e) { console.error('[loadReview]', e); setReviewStatus({}); setReviewError(e?.message || String(e)); }
-    finally { setReviewLoading(false); }
-  }, [reviewDate]);
+    } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
+    finally { if (live()) setReviewLoading(false); }
+  }, [reviewDate, beginReview]);
   useEffect(() => { if (panelMode === 'review' && !editing) loadReview(); }, [loadReview, panelMode, editing]);
 
   /* ── สรุปเรื่องราวทั้งวันของไลน์ที่คลิก (modal) — ผลิตรายพาร์ท · Downtime+เหตุผล · ของเสีย · 4M · คน ──
@@ -1362,7 +1389,7 @@ export default function FactoryMap({ setupMode = false }) {
         (ordRes.data || []).forEach(o => {
           const k = o.mat_no || '(ไม่ระบุ MAT)';
           const e = byMat[k] || (byMat[k] = { mat: k, name: prodName[o.mat_no] || '', target: 0, produced: 0, orders: 0, manual: 0 });
-          e.target += o.qty_target ?? o.qty ?? 0;
+          e.target += orderPlanQty(o);   // เป้านับครั้งเดียวทั้งสายยกยอด (oee §6.1)
           e.produced += o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
           e.orders++; if (o.is_manual) e.manual++;
         });
@@ -1396,7 +1423,7 @@ export default function FactoryMap({ setupMode = false }) {
         // สรุปรายกะ
         const shifts = (sessions || []).map(s => {
           const sOrders = (ordRes.data || []).filter(o => o.session_id === s.id);
-          const t = sOrders.reduce((a, o) => a + (o.qty_target ?? o.qty ?? 0), 0);
+          const t = sOrders.reduce((a, o) => a + orderPlanQty(o), 0);
           const p = sOrders.reduce((a, o) => a + (o.status === 'confirmed' ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0)), 0);
           const dt = dtRows.filter(d => d.session_id === s.id && !d.planned).reduce((a, d) => a + d.mins, 0);
           const ng = (defRes.data || []).filter(d => d.session_id === s.id).reduce((a, d) => a + (d.qty_ng || 0), 0);
@@ -1601,6 +1628,8 @@ export default function FactoryMap({ setupMode = false }) {
     agg.oeeA = wavg(agg.oeeRows, r => r.a, wLoad);
     agg.oeeP = wavg(agg.oeeRows, r => r.p, wRun);
     agg.oeeQ = wavg(agg.oeeRows, r => r.q, wProd);
+    // เป้า OEE ของครอบครัวนี้ (กติกาเดียวกับ OBEYA) — METRICS.oee.cat ตัดสีจากตัวนี้ ไม่ใช่ 80/65 ตายตัว
+    agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     return agg;
@@ -2436,7 +2465,7 @@ export default function FactoryMap({ setupMode = false }) {
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
                       textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
                         {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                         {parent && <span style={{ color: 'rgba(255,255,255,0.5)' }}>↳ </span>}{r.line_name}
@@ -2445,11 +2474,11 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {Math.round(st.oee)}
                         </span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>% OEE</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={series} color={meta.color} /></span>
                       </div>
                       {/* แถวเนื้อหาการ์ดทุกแถวต้อง nowrap — ข้อความยาวห้ามดันการ์ดสูงเกิน KPI_H ที่ layout จองไว้ (2026-08-26 "box ทับกันเละ") */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·วันก่อน`}</span>
                         {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
                         {st.oeeCtPartial && <span style={{ color: '#f59e0b' }}>· ⚠CT ไม่ครบ</span>}
@@ -2457,7 +2486,7 @@ export default function FactoryMap({ setupMode = false }) {
                       </div>
                       {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
                       {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
-                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 9.5, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', gap: 7, marginTop: 2, fontSize: 11, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden' }}>
                           <span style={{ color: '#4ade80' }}>A {st.oeeA != null ? Math.round(st.oeeA) : '–'}</span>
                           <span style={{ color: '#60a5fa' }}>P {st.oeeP != null ? Math.round(st.oeeP) : '–'}</span>
                           <span style={{ color: '#c084fc' }}>Q {st.oeeQ != null ? Math.round(st.oeeQ) : '–'}</span>
@@ -2486,7 +2515,7 @@ export default function FactoryMap({ setupMode = false }) {
                       borderRadius: 8, padding: '5px 9px 6px', boxShadow: '0 4px 18px rgba(0,0,0,0.55)',
                       textShadow: '0 1px 3px rgba(0,0,0,0.95)', maxWidth: 150,
                     }}>
-                      <div style={{ fontSize: 9.5, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
+                      <div style={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.72)', letterSpacing: 0.3,
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', lineHeight: 1.25 }}>
                         {st.dtActive && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}
                         {st.isFac ? (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ') : ''}{r.line_name}
@@ -2495,10 +2524,10 @@ export default function FactoryMap({ setupMode = false }) {
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {fmtKwh(st.kwh)}
                         </span>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>kWh</span>
                         <span style={{ marginLeft: 'auto' }}><Spark data={st.kwhSeries} color={meta.color} /></span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9.5, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
                         {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
                         {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
@@ -2583,7 +2612,7 @@ export default function FactoryMap({ setupMode = false }) {
                     const t = reviewTotals; const pct = t.target > 0 ? Math.round(t.actual / t.target * 100) : null;
                     const stats = [
                       { label: 'ผลิตได้รวม / เป้า', val: `${fmtNum(t.actual)}/${fmtNum(t.target)}${pct != null ? ` · ${pct}%` : ''}`, color: pctCol(pct) },
-                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee),
+                      { label: 'OEE เฉลี่ย', val: t.oee != null ? `${t.oee}%` : '—', color: oeeCol(t.oee, Object.keys(reviewStatus || {})),
                         explain: t.oeeRows?.length ? { title: 'OEE เฉลี่ยทั้งโรงงาน', rows: t.oeeRows } : null },
                       { label: 'Downtime รวม', val: `${fmtNum(t.dtMin)} น.`, color: t.dtMin > 0 ? '#f59e0b' : 'var(--text)' },
                       { label: 'ของเสียรวม', val: fmtNum(t.ng), color: t.ng > 0 ? '#ef4444' : 'var(--text)' },
@@ -2635,7 +2664,7 @@ export default function FactoryMap({ setupMode = false }) {
                           <div style={{ fontSize: 13, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
                         </div>
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingLeft: 27 }}>
-                          <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee)} />
+                          <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                           <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                           <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? '#ef4444' : 'var(--muted)'} />
                           {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
@@ -2978,7 +3007,7 @@ export default function FactoryMap({ setupMode = false }) {
                           <b>{r.line}</b> <span style={{ color: 'var(--muted)' }}>· {sh(r.shift)}</span>
                           {r.planned > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} (หยุดตามแผน)</div>}
                         </td>
-                        <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee) }}>{r.oee.toFixed(1)}%</td>
+                        <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee, [r.line]) }}>{r.oee.toFixed(1)}%</td>
                         <td style={{ padding: '6px 7px' }}>{fmtNum(r.w)} น.</td>
                         <td style={{ padding: '6px 7px', color: 'var(--muted)' }}>{fmtNum(r.oee * r.w)}</td>
                       </tr>
@@ -2997,7 +3026,7 @@ export default function FactoryMap({ setupMode = false }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
                 <div style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 9, padding: '10px 12px' }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted, rows.map(x => x.line)) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtNum(sumWX)} ÷ {fmtNum(sumW)}</div>
                 </div>
                 <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 9, padding: '10px 12px' }}>
@@ -3088,7 +3117,7 @@ export default function FactoryMap({ setupMode = false }) {
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee)} />
+                              <Chip label="OEE" val={x.oee != null ? `${Math.round(x.oee)}%${x.oeeLive ? ' (สด)' : ''}` : '—'} color={oeeCol(x.oee, [x.line])} />
                               {x.a != null && <Chip label="A" val={`${Math.round(x.a)}%`} color="var(--text2)" />}
                               {x.p != null && <Chip label="P" val={`${Math.round(x.p)}%`} color="var(--text2)" />}
                               {x.q != null && <Chip label="Q" val={`${Math.round(x.q)}%`} color="var(--text2)" />}
@@ -3376,7 +3405,7 @@ export default function FactoryMap({ setupMode = false }) {
                 <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รวมทั้งกลุ่ม</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: pctCol(ppct) }}>{parent.target > 0 ? `${fmtNum(parent.actual)}/${fmtNum(parent.target)} · ${ppct}%` : '—'}</div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee)} />
+                  <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee, [reviewDetail])} />
                   {parent.oeeRows?.length > 1 && (
                     <button onClick={() => setOeeExplain({ title: `OEE เฉลี่ย · ${reviewDetail}`, rows: parent.oeeRows })}
                       title="ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?"
@@ -3401,7 +3430,7 @@ export default function FactoryMap({ setupMode = false }) {
                         <div style={{ fontSize: 13.5, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee)} />
+                        <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                         <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? '#f59e0b' : 'var(--muted)'} />
                         <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? '#ef4444' : 'var(--muted)'} />
                         {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}

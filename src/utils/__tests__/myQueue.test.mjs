@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  TIER, CAP, ageDays, isMe, moWaitingOn, inMyScope, buildQueue,
+  TIER, CAP, ageDays, isMe, moWaitingOn, inMyScope, scopeStateOf, buildQueue,
   badgeCount, capped, EMPTY_TEXT,
 } from '../myQueue.js';
 
@@ -210,4 +210,48 @@ test('capped — รับค่าที่ไม่ใช่ array ได้ �
 test('🔴 ไม่มีงาน ต้องมีข้อความบอก ห้ามปล่อยว่าง (ผู้ใช้ต้องแยก "เคลียร์หมด" ออกจาก "จอพัง")', () => {
   assert.ok(EMPTY_TEXT[TIER.MINE].length > 0);
   assert.ok(EMPTY_TEXT[TIER.UNIT].length > 0);
+});
+
+/* ── 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" ต้องถูกนับ ไม่ใช่หายเงียบ (2026-10-06) ──────────────
+   วัดจริงบน DR 06/10: ใบรอ QA 188 ใบ — 152 ใบผูก PD3 แต่ **36 ใบ `dept_section` ว่าง**
+   `inMyScope` คืน false ทั้ง "ของหน่วยอื่น" และ "ไม่ระบุส่วนงาน" เหมือนกัน
+   ⇒ 36 ใบนั้นตกจากคิวของทุกคนทั้งโรงงานโดยไม่มีสัญญาณ (ขัดกฎ "ห้ามล้มเหลวเงียบ") */
+test('scopeStateOf — แยก "ของหน่วยอื่น" ออกจาก "ไม่ระบุส่วนงาน" ห้ามยุบเป็น false เดียว', () => {
+  assert.equal(scopeStateOf({ dept_section: 'PD3' }, ME), 'in');
+  assert.equal(scopeStateOf({ dept_section: 'PD1' }, ME), 'other');
+  assert.equal(scopeStateOf({ dept_section: null }, ME), 'unknown');
+  assert.equal(scopeStateOf({ dept_section: '  ' }, ME), 'unknown');
+  assert.equal(scopeStateOf({ dept_section: null }, { sections: [] }), 'in',
+    'ไม่จำกัดขอบเขต = เห็นหมด ไม่ต้องนับว่าชี้ไม่ได้');
+});
+
+test('inMyScope — พฤติกรรมเดิมเป๊ะหลังยืมคำตอบจาก scopeStateOf', () => {
+  assert.equal(inMyScope({ dept_section: ' pd3 ' }, ME), true);
+  assert.equal(inMyScope({ dept_section: 'PD1' }, ME), false);
+  assert.equal(inMyScope({ dept_section: null }, ME), false);
+  assert.equal(inMyScope({ dept_section: 'PD1' }, { sections: [] }), true);
+});
+
+test('buildQueue — นับ unattributed แยกจาก "ของหน่วยอื่น" · ของหน่วยอื่นห้ามถูกนับ', () => {
+  const q = buildQueue({
+    mo: [
+      { id: 'a', status: 'checked', mtn_dept: 'production', dept_section: 'PD3' },  // ของเรา
+      { id: 'b', status: 'checked', mtn_dept: 'production', dept_section: 'PD1' },  // หน่วยอื่น
+      { id: 'c', status: 'checked', mtn_dept: 'production', dept_section: null },   // ชี้ไม่ได้
+      { id: 'd', status: 'checked', mtn_dept: 'production', dept_section: '' },     // ชี้ไม่ได้
+    ],
+    sessions: [], fourM: [], actions: [],
+  }, ME);
+  assert.equal(q.unattributed, 2, 'นับเฉพาะใบที่ไม่ระบุส่วนงาน');
+  assert.equal(q.counts.unit, 1, 'ใบของหน่วยอื่นไม่เข้าคิว และไม่ถูกนับเป็น unattributed');
+  assert.equal(q.partial, false, 'คิวรีไม่ได้ล่ม ⇒ ห้ามติด partial');
+});
+
+test('buildQueue — ไม่จำกัดขอบเขต = unattributed ต้องเป็น 0 (ห้ามเตือนหมาหอน)', () => {
+  const q = buildQueue({
+    mo: [{ id: 'c', status: 'checked', mtn_dept: 'production', dept_section: null }],
+    sessions: [], fourM: [], actions: [],
+  }, { uid: 'u1', name: 'x', sections: [] });
+  assert.equal(q.unattributed, 0);
+  assert.equal(q.counts.unit, 1, 'ไม่จำกัดขอบเขต = เห็นใบนั้นตามปกติ');
 });

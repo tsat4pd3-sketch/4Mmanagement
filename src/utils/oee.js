@@ -51,13 +51,32 @@ import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
    ✅ ไม่ double count: ตอนรับยอด กะถัดไปเปิดใบใหม่ด้วย **ยอดที่เหลือ** เท่านั้น
       (`remainQty = qty − qty_actual` ใน handleImportCarryOrders) → 5 (ต้นทาง) + 30 (ปลายทาง) = 35 ✅
 
-   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — เป้าของใบ `imported` ถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว
-      จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม ไม่งั้นเป้าถูกนับซ้ำ  */
+   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — ใช้ `orderPlanQty()` (§6.1 ข้างล่าง) ที่เดียว
+      (เป้าของใบ `imported` ส่วนที่ยังไม่ทำถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว)  */
 export function orderProducedQty(o) {
   if (!o) return 0;
   return o.status === 'confirmed'
     ? Number(o.qty_ok ?? o.qty ?? 0)
     : Number(o.qty_actual ?? 0);
+}
+
+/* ═══ 6.1) "เป้า/แผน" ของใบผลิต 1 ใบ — คู่กับ orderProducedQty (QC audit 05/10 · roadshow) ═══
+   เดิมแต่ละจอคิดเป้าเอง 3 แบบ: (ก) Σqty ทุกสถานะ (Obeya/FactoryMap/GroupOverview/DeptDashboard)
+   ⇒ ใบยกยอดถูกนับเป้า 2 รอบ: ต้นทาง 35 + ปลายทาง 30 = 65 ทั้งที่งานจริง 35 (จอเดโมขึ้น 71% แทน 100%)
+   (ข) ตัด imported/carry_over ทิ้งทั้งใบ (MorningMeeting) ⇒ ยอดผลิตของต้นทางยังนับ แต่เป้าหาย = เกิน 100%
+   กติกาเดียว (นับเป้าครั้งเดียวทั้งสาย ไม่ว่าจะยกกี่ทอด):
+     · `cancelled`  → 0 (ยกเลิกแล้ว ไม่ใช่แผน)
+     · `imported`   → min(เป้า, qty_actual) = ส่วนของเป้าที่ "ใช้ไปในกะนี้" — ที่เหลือถูกออกใบใหม่ที่กะถัดไป
+                      ด้วย `qty − qty_actual` แล้ว (handleImportCarryOrders) ⇒ 5 + 30 = 35 ✅
+     · `carry_over` → เป้าเต็ม (ยังไม่มีใครรับไป = ส่วนที่เหลือยังไม่ได้ออกใบที่ไหน — ตัดทิ้ง = แผนหายเงียบ)
+     · อื่นๆ        → `qty_target ?? qty` (ใบ manual/ปิดยอดเศษเก็บเป้าเดิมไว้ที่ qty_target)
+   ⚠️ trade-off ที่ยอมรับ: กะต้นทางที่ส่งงานต่อ จะเห็นเป้าของใบนั้น = ยอดที่ทำได้ (ส่วนที่เหลือย้ายไปกะถัดไป)
+   🔴 จุดที่รวม "เป้า" ของใบผลิตต้องเรียกตัวนี้ **ห้ามเขียน `o.qty_target ?? o.qty` / `Number(o.qty)` เองในหน้า** */
+export function orderPlanQty(o) {
+  if (!o || o.status === 'cancelled') return 0;
+  const t = Number(o.qty_target ?? o.qty ?? 0) || 0;
+  if (o.status === 'imported') return Math.max(0, Math.min(t, Number(o.qty_actual ?? 0) || 0));
+  return t;
 }
 
 
@@ -185,6 +204,23 @@ export function overlapMinutesWith(sMs, eMs, intervals = []) {
 export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
   return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType })
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
+}
+
+/** ช่วงพักบน "ครึ่งวัน" ของกริดเวลา 24 ชม. (บอร์ดไทม์ไลน์ Dashboard · /management · Heijunka)
+ *  half = { key: 'am' | 'pm', startMs } — am = กะเช้า 08:00→20:00 · pm = กะดึก 20:00→08:00 วันถัดไป
+ *  🔴 QC 05/10 — เดิม 4 จอก๊อปสูตรเอง (`half.hours.indexOf(ชั่วโมง)`) ไม่กรอง process_type/ot_scope
+ *     ⇒ พัก 5ส. ไม่ทำโอ (17:10) กับพักโอ (17:30/19:40) ขึ้นพร้อมกัน = คิวการ์ดถูกดันเกินจริง
+ *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
+ *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
+export function halfDayBreakIntervals({ policies = [], half, processType = null }) {
+  if (!half?.startMs) return [];
+  const d = new Date(half.startMs);
+  const p2 = (n) => String(n).padStart(2, '0');
+  const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  return breakIntervalsIn({
+    policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
+    shift: half.key === 'pm' ? 'night' : 'day', processType,
+  });
 }
 
 /* ═══ 3.1) 🔴🔴 กฎเหล็ก — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15 · user ถาม) ═══
@@ -928,6 +964,21 @@ export function avgOeeTarget(rows = []) {
   const oees = effs.map(e => ((e.a ?? D.a) * (e.p ?? D.p) * (e.q ?? D.q)) / 10000);
   out.oee = Math.round((oees.reduce((s, v) => s + v, 0) / oees.length) * 10) / 10;
   return out;
+}
+
+/**
+ * เป้า OEE ของ "ชุดไลน์" — กติกาเดียวกับห้อง OBEYA (QC audit 05/10 · เดิม FactoryMap/GroupOverview/DeptDashboard
+ * ตัดสีด้วยเลขตายตัว 80/65 ขณะที่ Obeya ใช้เป้ากลุ่ม ⇒ ไลน์เดียวกันเขียวจอหนึ่ง แดงอีกจอ)
+ *  · กลุ่มของไลน์ = `parent_line_name || name` (oee_targets ตั้งที่ระดับกลุ่ม/ไลน์แม่)
+ *  · `targetsByGroup` = { [group_name]: แถว oee_targets } · **null = ยังไม่รู้เป้า (โหลดไม่ได้/ยังไม่โหลด) ⇒ คืน null**
+ *    (ผู้เรียกต้องวาดเป็น "ตัดสินไม่ได้" — ห้ามถอยไปเลขตายตัว) · กลุ่มที่ไม่ตั้ง = ค่ามาตรฐาน 90×90×99 ตาม avgOeeTarget
+ * คืนผลของ avgOeeTarget ({ a, p, q, oee, configured, missing }) หรือ null
+ */
+export function oeeTargetForLines(names = [], lines = [], targetsByGroup = null) {
+  if (!targetsByGroup) return null;
+  const byName = new Map((lines || []).map(l => [l.name, l]));
+  const groups = [...new Set((names || []).filter(Boolean).map(n => byName.get(n)?.parent_line_name || n))];
+  return avgOeeTarget(groups.map(g => targetsByGroup[g] || null));
 }
 
 /**

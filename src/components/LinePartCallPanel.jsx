@@ -380,7 +380,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               onPlace={place} onHold={hold} btn={btn} />
           ))}
           {!canDecide && (
-            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
               👁 ดูอย่างเดียว — คนตัดสินใจเบิกคือหัวหน้ากลุ่มของไลน์ (สิทธิ์ <code>wip_request:decide</code>)
             </div>
           )}
@@ -627,7 +627,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
                     <td style={{ padding: '5px 0', fontWeight: 700, color: 'var(--text)' }}>
                       {r.mat_no}
                       {/* ของยังอยู่ที่ไลน์แม่ — ตั้ง min ไว้ล่วงหน้าได้ แต่ต้องรู้ว่ายังไม่ใช่ของไลน์นี้ */}
-                      {r.atParent && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent2)', fontWeight: 700 }}>⬆ ยังอยู่ไลน์แม่</span>}
+                      {r.atParent && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent2)', fontWeight: 700 }}>⬆ ยังอยู่ไลน์แม่</span>}
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--muted)', paddingRight: 10 }}>
                       {r.have == null ? <span title="ไม่มีแถวสต็อกของไลน์นี้ — ยังเช็คไม่ได้ ไม่ใช่ของหมด">—</span> : fmtQty(r.have)}

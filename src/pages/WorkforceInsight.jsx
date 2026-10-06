@@ -2,6 +2,8 @@ import { fmtAxis } from '../utils/chartAxis';
 import { sortLike } from '../utils/listOrder';
 import { useState, useEffect, useMemo, useContext, Fragment } from 'react';
 import { supabase } from '../supabaseClient';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { loadLinesRes } from '../utils/useProductionLines';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
@@ -24,6 +26,7 @@ import {
   summarizeOtMonth, otCoverage, daysOfMonth, prevMonthKey, projectTotal, monthDayStats,
 } from '../utils/otSummary';
 import { exportOtMonthlyExcel } from '../lib/otExportExcel';
+import { useLatestRequest } from '../utils/useLatestRequest';
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, Tooltip, Legend, Cell,
@@ -79,17 +82,10 @@ const monthLabel = (ym) => {
   const TH_M = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   return `${TH_M[Number(m) - 1] || m} ${String(Number(y) + 543).slice(-2)}`;
 };
-function downloadCSV(filename, headers, rows) {
-  const escape = v => {
-    let s = v == null ? '' : String(v);
-    if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
-    return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+/* CSV = เอกสาร ⇒ ชื่อไฟล์ต้องผ่านทะเบียน /doc-forms (src/utils/csvDoc.js · 06/10)
+   ทะเบียนยังไม่ตั้งเลขฟอร์ม = ได้ชื่อเดิมเป๊ะ ไม่มีอะไรเปลี่ยน */
+function downloadCSV(docKey, filename, headers, rows) {
+  downloadCsvDoc(docKey, filename, csvText(headers, rows));
 }
 
 // UI-STANDARD 2026-09-24 — ปุ่ม export ในแถบกรอง (ขนาดช่อง/ความสูงมาจาก .filter-bar)
@@ -154,7 +150,10 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  // เปลี่ยนช่วงวันระหว่างโหลด (หลายหน้า × fetchAllPages = นาน) = คำตอบช่วงเก่าห้ามทับจอ (กฎ DB ข้อ 4 · 05/10)
+  const begin = useLatestRequest();
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('daily_production_logs')
@@ -162,6 +161,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['work_date', 'id'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRows(data || []);
@@ -224,7 +224,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         </select>
         <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
         <span className="spacer" />
-        <button onClick={() => downloadCSV(`manpower_${from}_${to}.csv`,
+        <button onClick={() => downloadCSV('csv_manpower_daily', `manpower_${from}_${to}.csv`,
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
           style={csvBtnSt}>
@@ -305,7 +305,9 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
   const [loading, setLoading] = useState(false);
   const [partial, setPartial] = useState(false);
 
+  const begin = useLatestRequest();   // กันคำตอบช่วงเก่าทับจอ (กฎ DB ข้อ 4 · 05/10)
   const load = async () => {
+    const live = begin();
     setLoading(true);
     const { rows: data, error, truncated } = await fetchAllPages(
       () => supabase.from('station_assignment_logs')
@@ -313,6 +315,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
         .gte('work_date', from).lte('work_date', to),
       { orderBy: ['employee_id', 'work_date', 'started_at'] },
     );
+    if (!live()) return;
     if (error) toast.error('โหลดข้อมูลไม่ครบ: ' + error);
     setPartial(!!error || truncated);
     setRaw(data || []);
@@ -378,7 +381,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
           {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <span className="spacer" />
-        <button onClick={() => downloadCSV(`station_moves_${from}_${to}.csv`,
+        <button onClick={() => downloadCSV('csv_station_moves', `station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
           style={csvBtnSt}>
@@ -797,7 +800,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
   };
   const doCSV = () => {
     if (!shown.length) { toast.info('ไม่มีข้อมูลให้ export'); return; }
-    downloadCSV(`OT-รายบุคคล-${month}.csv`,
+    downloadCSV('csv_ot_individual', `OT-รายบุคคล-${month}.csv`,
       ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-นามสกุล', 'ตำแหน่ง', 'ส่วน', 'ฝ่าย', 'OT วันทำงาน', 'OT วันหยุด', 'Total (วัน)', 'หมายเหตุ'],
       exportRows().map((r, i) => [i + 1, r.code, r.name, r.position, r.section, r.department, r.working, r.holiday, r.total, r.reason]));
   };
@@ -1000,6 +1003,8 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 /* ══════════════════════════════ หน้าหลัก ══════════════════════════════ */
 export default function WorkforceInsight() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const [tab, setTab] = useTabParam(['manpower', 'moves', 'turnover', 'ot'], 'manpower');
   const [lines, setLines] = useState([]);
   const [employees, setEmployees] = useState([]);

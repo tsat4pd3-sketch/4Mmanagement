@@ -7,10 +7,11 @@ import MatLabel from '../components/MatLabel';
 import Page from '../components/Page';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
-import { usePolling } from '../utils/usePolling';
-import { fetchAllPages } from '../utils/fetchByIds';
+import { visibleInterval } from '../utils/usePolling';
+import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
+import { orderDonePcs } from '../utils/planLots';
 import { RATE, LIVE } from '../utils/refreshRates';
-import { coalesce } from '../utils/liveRefresh';
+import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
@@ -84,8 +85,10 @@ export default function FlowTower() {
         supabaseDR.from('production_sessions').select('id, line_name, status').eq('work_date', workDate),
         fetchAllPages(() => supabaseDR.from('child_lot_requests')
           .select('id, status, lot_qty, source_line')),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }),
-        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'done'),
+        /* 🔴 QC 05/10 — ตารางนี้มีแค่ pending / issued / cancelled (ไม่มี 'done')
+           เดิม `.neq('status','done')` = นับ cancelled เป็น "ค้าง" (1,472 แทน 482) · ยอดรวมก็ไม่นับใบยกเลิก */
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).neq('status', 'cancelled'),
+        supabaseDR.from('raw_withdrawal_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         supabaseDR.from('purchase_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
         // มิติเวลาของสถานีสั่งซื้อ: มีใบขยับ (สั่งซื้อ/รับเข้า) ใน 7 วัน = ✅ ไหลจริง (QC flow-audit #22 —
         // เดิมสถานีนี้ไม่มีทางเป็น flow เลย ขัดนิยาม 4 สถานะของหน้าตัวเอง)
@@ -117,15 +120,20 @@ export default function FlowTower() {
       const lotBy = (st) => lots.filter(l => l.status === st);
 
       // ยอดผลิตวันนี้ (ใบที่ปิดแล้ว + ยอดสะสมของใบที่ยังเปิด) — สูตรบังคับของระบบ
+      /* 🔴 QC 05/10 — เดิม `.in(sids)` ไม่แบ่งหน้า (ตัด 1000 ใบเงียบ) + error ถูกกลืน + ใบ confirmed ที่ไม่มี
+         qty_ok ถอยไปใช้ `qty` (= เป้า ไม่ใช่ของที่ทำได้) + นับใบ cancelled
+         → fetchByIds · ยอดต่อใบผ่าน `orderDonePcs()` (planLots.js → orderInQty ของ monitorSystem.js) ที่เดียว */
       const sids = (prodToday.data || []).map(s => s.id);
-      let po = [];
+      let po = [], poFail = false;
       if (sids.length) {
-        const r = await supabaseDR.from('prod_orders')
-          .select('status, qty, qty_ok, qty_actual').in('session_id', sids).order('id');
-        po = r.data || [];
+        const r = await fetchByIds(sids, part => supabaseDR.from('prod_orders')
+          .select('id, status, qty, qty_ok, qty_actual').in('session_id', part));
+        poFail = !!(r.error || r.truncated);
+        if (poFail) setErr(e => [e, `โหลดไม่ได้: ยอดผลิตวันนี้ (${r.error || 'เกินเพดาน'})`].filter(Boolean).join(' · '));
+        po = r.rows;
       }
-      const producedToday = po.reduce((a, o) =>
-        a + (o.status === 'confirmed' ? Number(o.qty_ok ?? o.qty ?? 0) : Number(o.qty_actual ?? 0)), 0);
+      // โหลดไม่ครบ = ไม่รู้ (null → "—") ห้ามโชว์ยอดที่ขาดเป็นตัวเลขจริง
+      const producedToday = poFail ? null : po.reduce((a, o) => a + orderDonePcs(o), 0);
 
       setD({
         fgStock: sum(byPrefix('1')), fgParts: byPrefix('1').length,
@@ -152,19 +160,27 @@ export default function FlowTower() {
   }, [workDate]);
 
   useEffect(() => { loadDivisions().then(setDivs); }, []);
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.ANALYTIC);
-  /* เปิดหลายจอพร้อมกัน → จอทุกใบขยับพร้อมกันตอนมีคนปิดใบผลิตอีกจอหนึ่ง
-     🔴 2026-09-15 — เดิมผูก `load` เข้า handler ตรงๆ **ไม่มี debounce/เพดานเลย**
-        ⇒ ทุกครั้งที่ใครแตะใบผลิตในโรงงาน จอนี้โหลดใหม่ทันที (วันทำงานยุ่ง = รัวไม่จำกัด)
-        ใส่ coalesce(LIVE.BOARD) ดู src/utils/liveRefresh.js */
+  /* 🔁 รีเฟรช = realtime เป็นช่องทางหลัก + poll ที่ "ข้ามรอบเมื่อไม่มีอะไรเปลี่ยน" (กฎเขียน DB ข้อ 8 · QC 05/10)
+     เดิม usePolling ยิงเต็ม 11 คิวรีทุก 20 นาทีตลอด 24 ชม. ทั้งที่ไม่มีใครแตะอะไร + โหลดซ้ำ 2 รอบตอนเปิดหน้า
+     · ใบผลิต/กะ → touch + โหลด (coalesce LIVE.BOARD — เดิม 2026-09-15 ผูก load ตรงไม่มีเพดาน)
+     · ledger สต็อก/ใบสั่งผลิตลูก → touch อย่างเดียว (ถี่มาก — ให้ tick ถัดไปโหลดทีเดียว)
+     ⚠️ hard floor = RATE.SLOW ไม่ใช่ LIVE.FLOOR: ออเดอร์ลูกค้า/ใบสั่งซื้อ/ใบเบิก/ใบขอเติม
+        **ไม่อยู่ใน publication realtime** (เช็ค pg_publication_tables 05/10) ⇒ ต้องมีรอบโหลดของมันเอง */
   useEffect(() => {
-    const bump = coalesce(load, LIVE.BOARD);
+    const g = makeIdleGate(RATE.SLOW);
+    const run = () => { g.loaded(); return load(); };
+    const bump = coalesce(run, LIVE.BOARD);
+    const onOrder = () => { g.touch(); bump(); };
+    const onTouch = () => g.touch();
+    run();
+    const stopPoll = visibleInterval(() => { if (g.shouldRun()) run(); }, RATE.ANALYTIC);
     const ch = liveChannel(supabaseDR, 'flow-tower')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, bump)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, bump)
-      .subscribe();
-    return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prod_orders' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_sessions' }, onOrder)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'line_stock_transactions' }, onTouch)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'child_lot_requests' }, onTouch)
+      .subscribe((st) => { if (st === 'SUBSCRIBED') g.touch(); });
+    return () => { stopPoll(); bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
   const setLot = async (row) => {

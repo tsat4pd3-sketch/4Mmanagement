@@ -144,6 +144,13 @@ export function explodeBom(root, bomOf, opt = {}) {
         parent: path[path.length - 1] || null,
         path: [...path, m],
         hasChildren: kidsOf.length > 0,
+        /* 📄 ใบที่ "บรรทัดนี้" ถูกอ่านมา vs ใบที่ "ลูกของมัน" จะไปอ่านต่อ
+           ต่างกัน = ของชิ้นนี้มีใบของตัวเอง แล้วต้นไม้ไปยืมมากางให้ (ไม่ได้กรอกซ้ำในใบนี้)
+           user 06/10: *"มันควรจะทำจากเบอร์ 1 ทีเดียว แต่กดดู component เบอร์ 200 แล้วแตกย่อยลงไป"*
+           → ระบบทำแบบนั้นอยู่แล้ว แต่**จอไม่เคยบอก** คนเลยคิดว่าต้องสร้าง 2 ใบแยกกัน */
+        sheet,
+        childSheet: kidsOf.length ? kidSheet : null,
+        fromOtherSheet: kidsOf.length > 0 && kidSheet !== sheet,
         flatDupe: false,
         isDupeRow: false,
         cycle: isCycle,
