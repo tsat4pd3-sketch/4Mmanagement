@@ -3080,3 +3080,15 @@ test('🛡️ rack_requests / packaging_withdrawal_requests: คิวต้อ�
       + '   แก้ยังไง: openPlusHistory(ใบค้าง, ประวัติ, N, คอลัมน์เวลา) จาก src/utils/fetchByIds.js\n');
   }
 });
+
+/* ── ไฟล์ EDI จากเมล ห้ามดาวน์โหลดตรงจาก bucket (06/10 · B5 — bucket ไม่เปิดให้ anon แล้ว) ── */
+test('🛡️ demand-mail-via-edge-function — ไฟล์ใน bucket demand-mail ต้องเปิดผ่าน Edge Function demand-mail-file', () => {
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => /storage\s*\.from\(\s*['"]demand-mail['"]\s*\)/.test(stripComments(readFileSync(f, 'utf8'))));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีจอดาวน์โหลดไฟล์ EDI ตรงจาก storage bucket `demand-mail`: ' + hits.join(', ') + '\n'
+    + '   ทำไม: bucket นี้ถูกปิดไม่ให้ anon อ่านแล้ว (supabaseDR เป็น anon เสมอ ⇒ ได้ error/ไฟล์ว่าง)\n'
+    + '         เดิมเปิดไว้ = ใครถือ anon key ในบันเดิลเว็บก็โหลดยอดสั่งลูกค้าได้โดยไม่ล็อกอิน\n'
+    + '   แก้ยังไง: เรียก downloadMailFile(id) ใน src/components/DemandMailInbox.jsx\n'
+    + '            (Edge Function `demand-mail-file` ตรวจ token ล็อกอิน Main + สิทธิ์ก่อนส่งไฟล์)\n');
+});

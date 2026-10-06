@@ -664,14 +664,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   border-color: #ef4444 !important;
 }
 /* 📋 รายการ MO แบบ 1 ใบ 1 บรรทัด (/mtn-repair · 05/10) — แถวแน่นกว่าตารางฐาน · ใบรอรับงาน = แถบแดงซ้ายกระพริบ (Andon แดง) ไม่กระพริบทั้งแถว — 100+ แถวกระพริบพร้อมกันอ่านไม่ได้ */
-table.mo-list { font-size: 13px; }
-table.mo-list th { font-size: 11.5px; letter-spacing: 0.04em; padding: 9px 10px; white-space: nowrap; position: sticky; top: 0; background: var(--card); z-index: 1; }
-table.mo-list td { font-size: 13px; padding: 7px 10px; }
-table.mo-list tbody tr { cursor: pointer; }
-table.mo-list tbody tr:focus-visible td { background: var(--accent-dim); outline: none; }
-table.mo-list td.mo-note { color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-table.mo-list tr.mo-row-alert td { background: rgba(239, 68, 68, 0.06); }
-table.mo-list tr.mo-row-alert td:first-child { box-shadow: inset 4px 0 0 #ef4444; animation: moRowBar 1.1s ease-in-out infinite; }
+/* ─── จอรายการ (record list) = ตาราง 1 รายการ 1 บรรทัด ──────────────────────────────
+   `.rec-list` = คลาสกลางของทุกหน้า · `.mo-list` = ชื่อเดิมของ /mtn-repair (ที่มาของ pattern นี้)
+   คงไว้เป็นชื่อพ้อง ห้ามถอด — ดู docs/UI-CONVENTIONS.md §6.22 ว่า "จอไหนเป็นการ์ด จอไหนเป็นตาราง" */
+table.rec-list, table.mo-list { font-size: 13px; }
+table.rec-list th, table.mo-list th { font-size: 11.5px; letter-spacing: 0.04em; padding: 9px 10px; white-space: nowrap; position: sticky; top: 0; background: var(--card); z-index: 1; }
+table.rec-list td, table.mo-list td { font-size: 13px; padding: 7px 10px; }
+table.rec-list tbody tr, table.mo-list tbody tr { cursor: pointer; }
+table.rec-list tbody tr:focus-visible td, table.mo-list tbody tr:focus-visible td { background: var(--accent-dim); outline: none; }
+/* ช่องข้อความยาว (รายละเอียด/หมายเหตุ) — ตัดด้วย … ไม่ให้ดันแถวสูงเป็น 3 บรรทัด */
+table.rec-list td.rec-note, table.mo-list td.mo-note { color: var(--muted); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* แถวที่ "รอคนทำ" — แถบแดงซ้ายกระพริบ **แถวเดียว ไม่กระพริบทั้งตาราง** (Andon: กระพริบสงวนให้แดง) */
+table.rec-list tr.rec-row-alert td, table.mo-list tr.mo-row-alert td { background: rgba(239, 68, 68, 0.06); }
+table.rec-list tr.rec-row-alert td:first-child, table.mo-list tr.mo-row-alert td:first-child { box-shadow: inset 4px 0 0 #ef4444; animation: moRowBar 1.1s ease-in-out infinite; }
 @keyframes moRowBar { 50% { box-shadow: inset 4px 0 0 rgba(239, 68, 68, 0.35); } }
 @keyframes dtAlarmBannerPulse {
   0%, 100% { background-color: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.45); }

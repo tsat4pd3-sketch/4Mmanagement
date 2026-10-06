@@ -484,13 +484,7 @@ export function summarizeByKind(rows = [], weighted = false) {
   })).sort((a, b) => b.dtMin - a.dtMin);
 }
 
-/** นาที → "2 ชม. 15 น." อ่านง่ายบนจอหน้างาน · null = "—" (ไม่รู้ ไม่ใช่ 0) */
-export function fmtDur(min) {
-  if (min == null || Number.isNaN(min)) return '—';
-  const m = Math.round(min);
-  if (m < 60) return `${m} น.`;
-  const h = Math.floor(m / 60), rest = m % 60;
-  if (h < 24) return rest ? `${h} ชม. ${rest} น.` : `${h} ชม.`;
-  const dd = Math.floor(h / 24), hh = h % 24;
-  return hh ? `${dd} วัน ${hh} ชม.` : `${dd} วัน`;
-}
+/* ⏱️ `fmtDur` ย้ายไป `src/utils/duration.js` แล้ว (2026-10-06) — จอที่ไม่เกี่ยวกับงานช่าง
+   (เช่น AM รายวัน) ก็ต้องใช้ ⇒ ไม่ควรต้อง import โมดูล KPI ช่างทั้งก้อนมาเพื่อฟอร์แมตเวลา
+   re-export ไว้ให้ 10 จุดที่เรียกจากที่นี่อยู่แล้วทำงานเหมือนเดิมเป๊ะ — ของใหม่ให้ import จาก duration.js */
+export { fmtDur } from './duration.js';
