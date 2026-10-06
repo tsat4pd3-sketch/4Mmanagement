@@ -343,7 +343,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 5, fontSize: 11, color: 'var(--muted)' }}>
                     <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{sizeTxt}</span>
                     {/* 🔴 เดิมเขียน "รอสโตร์จ่ายวัตถุดิบ N/N" ซึ่ง **เป็น false alarm ถาวร**:
-                        raw_withdrawal_requests.status ถูกเซ็ตเป็น issued ที่เดียว = ตอนคนกดปิดล็อต
+                        raw_withdrawal_requests.status ถูกเซ็ตเป็น issued เฉพาะตอนคนกดปิดล็อต (06/10: หรือกด "จ่ายวัตถุดิบ")
                         ที่ /heijunka · วัดจริง 10/09 ทั้งระบบ pending 727 / issued 13 (ครั้งสุดท้าย 27/08)
                         ⇒ ทุกล็อตขึ้น "รอสโตร์จ่าย" ตลอดกาล ทั้งที่ไลน์ผลิตอยู่ 100%
                         มันไม่ได้วัดว่าของมาหรือยัง — มันวัดว่ามีคนกดปุ่มบนบอร์ดสโตร์หรือยัง
@@ -352,7 +352,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                       <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
                     ) : (
                       <span title={`ใบเบิกที่ผูกกับล็อตชุดนี้ ${g.rawAll} ใบ · ปิดในระบบแล้ว ${g.rawAll - g.rawWait} ใบ
-(สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เฉพาะตอนกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
+(สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เมื่อสโตร์กด "จ่ายวัตถุดิบ" หรือกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
                         · 🪨 ใช้ของ {g.mats} รายการ
                         {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · 🏭 ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
                         {g.buy.length > 0 && <span> · 🛒 ของซื้อ {g.buy.length}</span>}
@@ -364,7 +364,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}
                     <span>· ปั๊มไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> / สั่งค้าง {fmt(ordered)} ชิ้น</span>
                     <button onClick={() => setOpenMat(o => ({ ...o, [g.mat]: !o[g.mat] }))}
-                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {detail ? '▾ ซ่อนรายล็อต' : `▸ รายล็อต (${g.lots.length})`}
                     </button>
                   </div>
@@ -397,7 +397,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                             </span>
                             {canOperate && lot.status === 'pending' && (
                               <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
-                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>
+                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
                                 {busy === lot.id ? '...' : '▶'}
                               </button>
                             )}
@@ -419,7 +419,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                 (ยาว 8 แถว + คำอธิบาย 3 บรรทัด บังคิวงานจริงที่อยู่ข้างบน) */}
             <div onClick={() => setOpenBlocks(o => !o)}
               style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginBottom: openBlocks ? 4 : 0, cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 10, transform: openBlocks ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+              <span style={{ fontSize: 11, transform: openBlocks ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
               ⚠️ สโตร์ต้องการของจากไลน์นี้ แต่ระบบออกใบสั่งไม่ได้ ({blocks.length} พาร์ท)
             </div>
             {openBlocks && (<>

@@ -46,6 +46,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+/* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
+import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
@@ -62,6 +64,7 @@ import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster, mrows } from '../utils/masterCache';
+import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
 import { checkWrite } from '../utils/dbWrite';
 import MachineSelect from '../components/MachineSelect';
@@ -279,6 +282,22 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
+     2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
+       ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
+          มาเมื่อไหร่ ค่า default สร้าง array **ใบใหม่ทุก render**
+       ② `<UserContext.Provider value={{ … sections: userSections || [] }}>` ใน App.jsx
+          เป็น object literal ใบใหม่ทุก render ของ App — `|| []` ก็สร้างใบใหม่เช่นกัน
+     ⇒ `load` ใบใหม่ ⇒ `useEffect(() => { load() }, [load])` ยิงใหม่ทั้งชุด
+     วัดจริง 02/10/2026 — "คิวรีเดิมเป๊ะจาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+       prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+       · v_demand_flow_blocks 745 · child_lot_requests 747  ← **สองตัวนี้เท่ากัน**
+         = 2 คิวรีใน `load()` ของ StoreLotQueue ตัวเดียวกัน ⇒ ยืนยันว่าเป็น "โหลดซ้ำทั้ง load()"
+         ไม่ใช่คนละคนเปิดพร้อมกัน (คนละคนไม่ทำให้ 2 ตารางได้เลขเท่ากัน)
+     🔑 แปลงเป็น "คีย์เนื้อหา" (string) แบบเดียวกับ `famKey`/`upKey` ในแผงลูก
+        — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
+     ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
@@ -316,6 +335,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [binTarget, setBinTarget]   = useState(null);
   const [binLinks, setBinLinks]     = useState({});
   const [selSession, setSelSession] = useState(null);
+  /* 🔴 stale-response guard (QC 05/10 · กฎเขียน DB ข้อ 4) — loader ทุกตัวของกะ (loadDT/loadProdOrders/
+     loadCarryOrders/loadDefectLogs) เช็คกับ ref นี้หลัง await: คำตอบของกะที่ "ไม่ได้เลือกอยู่แล้ว" ต้องทิ้ง
+     ไม่งั้นคำตอบช้าของกะก่อนหน้าเขียนทับกะที่เลือก แล้วถูก stamp ตอนปิดกะ (ยอด/DT/NG ผิดกะ)
+     ตั้งค่าตอน render (pattern เดียวกับ staleRef ข้างบน) ⇒ สลับกะปุ๊บ คำตอบเก่าที่มาถึงทีหลังถูกทิ้งทันที */
+  const selSessIdRef = useRef(null); selSessIdRef.current = selSession?.id ?? null;
+  const isStaleSess = useCallback((sid) => selSessIdRef.current !== sid, []);
   // §139 ย่อ/ขยายกลุ่มไลน์ในลิสต์กะ — กะค้างไม่ปิดสะสมทำให้ลิสต์ยาวมาก (เจอจริง 34 กะ) · จำใน localStorage
   const [sessGroupCollapsed, setSessGroupCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('dr_sess_group_collapse') || '[]')); } catch { return new Set(); }
@@ -474,7 +499,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const canDeleteSession = can('daily_report', 'delete_session', role); // ลบกะ (seed: admin — ปรับที่ /permissions)
   // leader แก้ไข/ลบ order, defect, downtime ได้เฉพาะตอนกะยังเปิดอยู่ (ยังไม่ส่งขออนุมัติปิดกะ) —
   // ถ้าส่งขอปิดกะแล้ว (pending_close) ต้องรอ SV อนุมัติ/ปฏิเสธก่อน ถ้าโดนปฏิเสธ สถานะจะกลับเป็น open ให้แก้ไขได้อีก
-  const canEditRecords   = canManage || (role === 'leader' && selSession?.status === 'open');
+  const canEditRecords   = canManage || (canRequestClose && selSession?.status === 'open');
+  /* 🔴 ปิดกะตรง vs ส่งขอปิด ตัดสินจาก "สิทธิ์" ไม่ใช่ชื่อ role (QC 05/10 · ห้าม hardcode role)
+     มี close_shift = ปิดตรง · มีแค่ request_close = ส่งขอปิด (pending_close) — เดิมเช็ค role==='leader'
+     ⇒ role ที่ถูกแจก request_close อย่างเดียวที่ /permissions จะ "ปิดตรง" ข้ามการอนุมัติ SV ได้
+     (default seed: request_close = admin/manager/supervisor/leader · close_shift ไม่มี leader ⇒ พฤติกรรมเดิมเท่าเดิม) */
+  const closeIsRequest   = !canManage;
 
   /* 🔴 2026-09-15 — master 7 ตารางนี้ **เคยดึงใหม่ทุกครั้งที่ `load()` ถูกเรียก** และ `load()`
      ถูกเรียกจาก realtime ของ `production_sessions` ด้วย ⇒ มีคนเปิด/ปิดกะที่ไลน์ไหนก็ตาม
@@ -491,7 +521,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       cachedMaster('dr_products:full', async () => mrows(await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'))),
       cachedMaster('dr_downtime_types:active', async () => mrows(await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'))),
       cachedMaster('kanban_standards:full', async () => mrows(await supabaseDR.from('kanban_standards').select('*, dr_products(id, name, line_name, cycle_time_sec, process_type, p_no)').eq('is_active', true).order('mat_no'))),
-      cachedMaster('break_policies:active', async () => mrows(await supabaseDR.from('break_policies').select('*').eq('is_active', true).order('sort_order'))),
+      loadBreakPolicies(),   // loader กลาง (utils/breakPolicies.js · 05/10)
       cachedMaster('machines:full', async () => mrows(await supabaseDR.from('machines').select('*').eq('is_active', true).order('line_name').order('sort_order'))),
       cachedMaster('dr_defect_types:active', async () => mrows(await supabaseDR.from('dr_defect_types').select('*').eq('is_active', true).order('sort_order'))),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 8 ไม่เข้า destructure แค่ให้ cache พร้อม
@@ -512,7 +542,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
     // ⚠️ คิวรี production_lines รอบที่ 2 ของ load() เดียวกัน — cache ด้วย ไม่งั้นยิงซ้ำทุกรอบเช่นกัน
     cachedMaster('production_lines:flow', async () =>
-      (await loadLinesRes()).data || []).then((data) => {
+      mrows(await loadLinesRes())).then((data) => {
       if (!data) return;
       const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
       setLineFlow(fm);
@@ -586,7 +616,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   /* ── แยก "กะที่กำลังทำอยู่" ออกจาก "กะค้างจากวันก่อน" (2026-08-26 · feedback "ปวดหัวกับกะที่รก ค้างจังเลย")
      ข้อมูลจริงที่หน้างานเจอ: sidebar ขึ้น 49 กะ ในนั้น 37 กะเป็นของวันก่อนที่ยังไม่ปิด
@@ -612,11 +643,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .select('*, dr_downtime_types(name_th, color, category)')
       .eq('session_id', sessionId)
       .order('started_at', { ascending: false });
+    if (isStaleSess(sessionId)) return;   // กะถูกสลับระหว่างรอ — คำตอบนี้ไม่ใช่ของกะที่เลือก
     // โหลดพลาด = ห้ามล้างของเดิมเป็น [] (จอจะบอกว่า "ไม่มี Downtime" ซึ่งคนละเรื่องกับ "อ่านไม่ได้")
     if (error) { console.warn('[loadDT]', error.message); setSessLoadErr(e => ({ ...e, Downtime: error.message })); return; }
     setSessLoadErr(e => (e.Downtime ? { ...e, Downtime: null } : e));
     setDtLogs(data || []);
-  }, []);
+  }, [isStaleSess]);
 
   const loadProdOrders = useCallback(async (sessionId, lineName) => {
     if (!sessionId) return;
@@ -625,6 +657,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .select('*')
       .eq('session_id', sessionId)
       .order('opened_at');
+    if (isStaleSess(sessionId)) return;
     // ⚠️ ใบผลิตพลาด = ยอดผลิต/เป้า/ยอดยก ผิดหมด — ปิดกะไปคือ stamp ยอดที่ไม่มีอยู่จริง
     if (error) { console.warn('[loadProdOrders]', error.message); setSessLoadErr(e => ({ ...e, 'ใบผลิต': error.message })); return; }
     setSessLoadErr(e => (e['ใบผลิต'] ? { ...e, 'ใบผลิต': null } : e));
@@ -637,6 +670,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         .select('order_id, qty_accum, qty_delta, is_final, logged_at, logged_by')
         .in('order_id', manualIds)
         .order('logged_at');
+      if (isStaleSess(sessionId)) return;
       const byOrder = {};
       (upd || []).forEach(u => { (byOrder[u.order_id] ||= []).push(u); });
       setQtyUpdatesByOrder(byOrder);
@@ -644,7 +678,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setQtyUpdatesByOrder({});
     }
 
-  }, []);
+  }, [isStaleSess]);
 
   /**
    * ยอดค้างจากกะก่อนหน้าของไลน์เดียวกัน — **แยกออกจาก `loadProdOrders` (2026-10-01)**
@@ -663,6 +697,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (!sessionId || !lineName) { setCarryOrders([]); return; }
     const { data } = await supabaseDR.from('prod_orders')
       .select('prod_no').eq('session_id', sessionId);
+    if (isStaleSess(sessionId)) return;
     {
       /* ⚠️ ดึงกะก่อนหน้า **ทุกสถานะ** รวม `open` ด้วย แล้วค่อยแยกบทบาททีหลัง (แก้รอบ 2 · 2026-09-09):
            - "กะที่หยิบยอดค้างมาได้" = `closed` / `pending_close` เท่านั้น (ยอดยกถูกบันทึกถาวรตั้งแต่
@@ -678,6 +713,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         .neq('id', sessionId)
         .order('created_at', { ascending: false })
         .limit(8);
+      if (isStaleSess(sessionId)) return;
       if (prevSessions?.length) {
         const prevIds = prevSessions.map(s => s.id);
         // กะที่ "ยอดค้างของมัน" หยิบมาได้จริง — กะที่ยังเปิดอยู่ห้ามหยิบ (เจ้าของกะยังทำงานอยู่)
@@ -697,6 +733,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           .select(CARRY_COLS)
           .in('session_id', prevIds)
           .order('opened_at', { ascending: false });
+        if (isStaleSess(sessionId)) return;
         // ลำดับความใหม่ของกะ (prevSessions เรียง created_at desc อยู่แล้ว) → 0 = ใหม่สุด
         const sessRank = {};
         prevSessions.forEach((sx, i) => { sessRank[sx.id] = i; });
@@ -739,7 +776,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         setCarryOrders([]);
       }
     }
-  }, []);
+  }, [isStaleSess]);
 
   const loadDefectLogs = useCallback(async (sessionId) => {
     if (!sessionId) return;
@@ -747,6 +784,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .select(`*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name), ${QBIN_EMBED}`)
       .eq('session_id', sessionId)
       .order('logged_at', { ascending: false });
+    if (isStaleSess(sessionId)) return;
     if (error) { console.warn('[loadDefectLogs]', error.message); setSessLoadErr(e => ({ ...e, 'ของเสีย': error.message })); return; }
     setSessLoadErr(e => (e['ของเสีย'] ? { ...e, 'ของเสีย': null } : e));
     setDefectLogs(data || []);
@@ -756,6 +794,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (!ids.length) { setBinLinks({}); return; }
     const { data: bins, error: binErr } = await supabaseDR.from('quality_bin_records')
       .select('bin, qty, defect_log_id').in('defect_log_id', ids).eq('is_active', true);
+    if (isStaleSess(sessionId)) return;
     if (binErr) { console.warn('[bin links]', binErr.message); setBinLinks({}); return; }
     const m = {};
     (bins || []).forEach(r => {
@@ -763,18 +802,35 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       m[r.defect_log_id][r.bin] += Number(r.qty) || 0;
     });
     setBinLinks(m);
-  }, []);
+  }, [isStaleSess]);
 
   useEffect(() => { load(); }, [load]);
+  /* 🔴🔴 2026-10-06 — deps ต้องเป็น `selSession?.id` + `?.line_name` (string) **ห้ามเป็น `selSession`**
+     (กฎเหล็กข้อ 9 · บรรทัด 1378 ในไฟล์นี้ใช้ท่าถูกอยู่แล้ว — ตัวนี้หลุดไป)
+
+     กลไกที่ทำให้เสียเปล่า: `load()` (โหลดรายการกะ) ปิดท้ายด้วย
+       setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0])
+     ⇒ ได้ **object ใบใหม่ เนื้อเหมือนเดิมเป๊ะ** ทุกครั้ง ⇒ effect นี้เห็น deps เปลี่ยน
+     ⇒ **ยิง 4 คิวรีหนักใหม่ทั้งชุดทั้งที่กะที่เลือกไม่ได้เปลี่ยนอะไรเลย**
+       (downtime_logs · prod_orders+embed · ยอดค้างกะก่อน · defect_logs+embed)
+     ⇒ ทุก bump ของ realtime / ทุกรอบโหลดรายการกะ = จ่าย 4 คิวรีฟรี × ~40 เครื่อง
+
+     🔑 ปลอดภัยเพราะ: ตัวโหลดทั้ง 4 เป็น `useCallback(..., [])` (identity นิ่งแน่นอน) ·
+        body ใช้แค่ `.id`/`.line_name` · เนื้อกะที่เปลี่ยน (status ฯลฯ) ไม่ต้องโหลด 4 ตัวนี้ใหม่
+        — จอวาดจาก `selSession` ตรงๆ อยู่แล้ว และจุดที่เปลี่ยนสถานะเอง setSelSession ให้แล้ว
+     🔑 `setSessLoadErr({})` ก็ตรงความหมายเดิมขึ้นด้วย — คอมเมนต์เขียนว่า "สลับกะ = เริ่มนับใหม่"
+        ของเดิมรีเซ็ตทุกรอบโหลด (ไม่ใช่ตอนสลับกะ) ซึ่งไม่ตรงกับที่เขียนไว้ */
   useEffect(() => {
-    if (selSession) {
+    const sid = selSession?.id;
+    if (sid) {
       setSessLoadErr({}); // สลับกะ = เริ่มนับใหม่ (ไม่งั้น error ของกะเก่าค้างบล็อกกะใหม่)
-      loadDT(selSession.id);
-      loadProdOrders(selSession.id, selSession.line_name);
-      loadCarryOrders(selSession.id, selSession.line_name);
-      loadDefectLogs(selSession.id);
+      loadDT(sid);
+      loadProdOrders(sid, selSession.line_name);
+      loadCarryOrders(sid, selSession.line_name);
+      loadDefectLogs(sid);
     }
-  }, [selSession, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   /* ── Realtime ────────────────────────────────────────────────────────────────
      🔴 2026-09-15 — แก้ 2 อย่างพร้อมกัน (งานลด egress · เตรียมรับจอ/แท็บเล็ต ~40 เครื่อง)
@@ -835,7 +891,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       bumpSess.cancel(); bumpOrd.cancel(); bumpDt.cancel(); bumpDef.cancel();
       supabaseDR.removeChannel(ch);
     };
-  }, [selSession, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    /* 🔴🔴 2026-10-06 — deps ต้องเป็น string ไม่ใช่ `selSession` (object) — **เหตุผลคนละข้อกับ effect ข้างบน
+       และสำคัญกว่า:** cleanup ของ effect นี้เรียก `bump*.cancel()` แล้วสร้าง `coalesce` ใบใหม่
+       ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้างทุกครั้งที่ effect รีรัน ⇒ event ถัดไปยิงทันที = เพดานหายไปเลย**
+       (`LIVE.SHIFT` 5 นาที / `LIVE.PAGE` 15 วิ มีผลเท่าอายุของ coalesce ใบนั้นเท่านั้น)
+       และ `load()` ปิดท้ายด้วย `setSelSession(ss.find(...))` = object ใบใหม่เนื้อเดิม
+       ⇒ ทุก bump → load → selSession ใบใหม่ → effect รีรัน → **เพดานรีเซ็ต → bump ถัดไปยิงทันที**
+       = ลูปที่ทำให้เพดานไม่เคยทำงานจริงเลย + รื้อ/ต่อ websocket channel ใหม่ทุกรอบ
+
+       🔑 ปลอดภัยเพราะ body ใช้แค่ `selSession?.id` (เป็น `filter:` ของ subscribe) กับ `.line_name`
+          ⇒ สลับกะ = id เปลี่ยน = subscribe ใหม่ด้วย filter ใหม่ (ถูกต้องเหมือนเดิม) */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -1273,15 +1340,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        (ไม่ย้อนกลับไปเป็นบั๊ก "ลิสต์ว่าง เปิดใบไม่ได้ทั้งกะ" ของ 17/08) */
   const scanMat = useMemo(
     () => scopeMatRows(kanbanStds, lines, selSession?.line_name || ''),
-    [kanbanStds, lines, selSession]);
+    // 🔴 06/10 — ผูกกับ `line_name` (string) ไม่ใช่ `selSession` (object ใบใหม่ทุกรอบโหลด)
+    //    ของเดิมคิด scope ใหม่ทุกครั้งที่รายการกะรีเฟรช ทั้งที่ไลน์ไม่เปลี่ยน
+    [kanbanStds, lines, selSession?.line_name]);
   const scanMatStds = scanMat.rows;
 
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
-    if (!showScanOpen || !selSession || scanMatStds.length !== 1) return;
+    if (!showScanOpen || !selSession?.id || scanMatStds.length !== 1) return;
     if (!openProdForm.mat_no) handleOpenProdMatNoChange(scanMatStds[0].mat_no);
+  /* 🔴 06/10 — `selSession?.id` ไม่ใช่ `selSession`: object ใบใหม่ทุกรอบโหลดรายการกะ
+     ⇒ ของเดิมเติม mat_no ให้ซ้ำทุกรอบ **ทับค่าที่คนเพิ่งล้างทิ้งไป** ได้ด้วย (ไม่ใช่แค่เปลือง render) */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showScanOpen, scanMatStds, selSession]);
+  }, [showScanOpen, scanMatStds, selSession?.id]);
 
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
@@ -1458,6 +1529,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const r = resolveShiftTime(hhmm, selSession);
     return r ? new Date(r.ms).toISOString() : null;
   };
+  /* ด่าน "เวลาย้อนหลังอยู่ในกรอบกะไหม" — ผ่าน checkShiftTime (กรอบกะจริง start_time+shift_min/end_time)
+     เดิม hardcode 08–20 ⇒ กะดึกเริ่ม 22:30 / กะเช้าลาก OT ข้าม 20:00 ถูกบล็อกผิด และกะดึกที่กรอก 08:30
+     (ส่งกะ) ถูกตีว่าเป็นกะเช้า (QC 05/10 · CLAUDE.md §เวลาที่คนกรอก ต้อง resolve ด้วยกรอบกะจริง)
+     คืนข้อความ error หรือ null · ไม่รู้กรอบกะ (`unknown`) = ปล่อยผ่าน · **ห้ามดัดค่าที่คนกรอกเอง** — เสนอเฉยๆ */
+  const backfillWindowError = (hhmm) => {
+    if (!hhmm || !selSession) return null;
+    const r = resolveShiftTime(hhmm, selSession);
+    if (!r) return null;
+    const chk = checkShiftTime(r.ms, selSession);
+    if (chk.ok) return null;
+    const win = windowLabel(selSession) || '-';
+    const whereTxt = chk.kind === 'before' ? `ก่อนเปิดกะ ${fmtOffset(chk.minutesOff)}`
+      : chk.kind === 'future' ? `ล่วงหน้าจากเวลาจริง ${fmtOffset(chk.minutesOff)}`
+      : `เลยเวลาปิดกะ ${fmtOffset(chk.minutesOff)}`;
+    const hint = chk.suggestHHmm ? ` · น่าจะหมายถึง ${chk.suggestHHmm} น. (AM/PM สลับ?)` : '';
+    return `เวลา ${hhmm} อยู่นอกกรอบกะ (${whereTxt} · กะนี้ ${win})${hint} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`;
+  };
   const backfillOpenedAt = () => {
     if (!openProdForm.is_backfill) return null;
     return backfillIsoFromTime(openProdForm.backfill_time);
@@ -1468,12 +1556,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const guessBackfillTime = () => {
     if (!selSession) return '';
     // คุมให้เวลาที่เดา อยู่ในกรอบกะเสมอ (กะเช้า 08:00–19:59 · กะดึก 20:00–07:59) กัน guess หลุดไปคนละกะ
+    // กรอบกะจริงจาก resolveShiftTime (ไม่ใช่ 08–20 hardcode) · ไม่รู้กรอบ = คืนค่าเดาเดิม
     const clampToShift = (hhmm) => {
       if (!hhmm) return hhmm;
-      const h = Number(hhmm.split(':')[0]);
-      const inDay = h >= 8 && h < 20;
-      if (selSession.shift === 'day'   && !inDay) return (selSession.start_time || '08:00').slice(0, 5);
-      if (selSession.shift === 'night' && inDay)  return (selSession.start_time || '20:00').slice(0, 5);
+      const r = resolveShiftTime(hhmm, selSession);
+      if (r && !r.inWindow) return (selSession.start_time || hhmm).slice(0, 5);
       return hhmm;
     };
     const prev = [...prodOrders].sort((a, b) => new Date(b.opened_at) - new Date(a.opened_at))[0];
@@ -1533,12 +1620,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (openProdForm.is_backfill && !openProdForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับยิงย้อนหลัง)'); return; }
     // กันเวลา backfill หลุดกรอบกะ (เช่น กะเช้าเผลอกรอก 23:0x → การ์ดเด้งไปกะกลางคืนใน Heijunka)
     if (openProdForm.is_backfill && openProdForm.backfill_time && selSession) {
-      const bh = Number(openProdForm.backfill_time.split(':')[0]);
-      const inDay = bh >= 8 && bh < 20;   // กะเช้า 08:00–19:59 · กะดึก 20:00–07:59
-      if ((selSession.shift === 'day' && !inDay) || (selSession.shift === 'night' && inDay)) {
-        toast.error(`เวลา ${openProdForm.backfill_time} อยู่นอกกรอบกะ${selSession.shift === 'day' ? 'เช้า (08:00–20:00)' : 'ดึก (20:00–08:00)'} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`);
-        return;
-      }
+      const winErr = backfillWindowError(openProdForm.backfill_time);
+      if (winErr) { toast.error(winErr); return; }
       // กันกรอกเวลา "อนาคต" — เคยเจอจริง: ปิดใบ 04:35 แต่กรอกเวลาเริ่มย้อนหลัง 05:17 → ใบปิดก่อนเปิด 42 นาที
       const iso = backfillIsoFromTime(openProdForm.backfill_time);
       if (iso && new Date(iso) > new Date()) {
@@ -1613,10 +1696,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       const baseMs = new Date(data?.opened_at || Date.now()).getTime();
       if (ctSec2 > 0) {
         const est = new Date(baseMs + qty * ctSec2 * 1000).toTimeString().slice(0, 5);
-        const eh = Number(est.split(':')[0]);
-        const inDay = eh >= 8 && eh < 20;
-        // เวลาที่เดาเกินกรอบกะ = ปล่อยว่างให้กรอกเอง (กันหลุดกะเหมือน guard ตอนบันทึก)
-        nextBackfillTime = ((selSession.shift === 'day' && inDay) || (selSession.shift === 'night' && !inDay)) ? est : '';
+        // เวลาที่เดาเกินกรอบกะ = ปล่อยว่างให้กรอกเอง (ด่านเดียวกับตอนบันทึก — กรอบกะจริง ไม่ใช่ 08–20)
+        nextBackfillTime = backfillWindowError(est) ? '' : est;
       } else {
         nextBackfillTime = openProdForm.backfill_time;
       }
@@ -1722,11 +1803,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     };
     // ใบ manual: ตอนปิดใบ qty ถูกแทนด้วยยอดจริง — ถอยแล้วคืนเป้าเดิม (ยอดสะสม qty_actual คงไว้)
     if (o.is_manual) upd.qty = o.qty_target ?? o.qty;
-    const { error } = await supabaseDR.from('prod_orders')
-      .update(upd).eq('id', o.id).eq('status', 'confirmed'); // guard กันถอยซ้ำ/ชนกันสองเครื่อง
+    const { data: reverted, error } = await supabaseDR.from('prod_orders')
+      .update(upd).eq('id', o.id).eq('status', 'confirmed') // guard กันถอยซ้ำ/ชนกันสองเครื่อง
+      .select('id');
     if (error) { toast.error(error.message); return; }
-    const { error: se } = await supabaseDR.from('line_stock_transactions')
+    /* 🔴 CAS ไม่โดนแถว (อีกเครื่องถอยไปก่อน / ใบไม่ใช่ confirmed แล้ว) = หยุด (QC 05/10 · กฎเขียน DB ข้อ 2/6)
+       เดิมไหลต่อไปถอน stock + ยกเลิกใบรอรับ + toast เขียว ทั้งที่ใบไม่ได้ถอย ⇒ ถอนยอดซ้ำ */
+    if (!reverted?.length) {
+      toast.error(`ใบ ${o.prod_no} ไม่ได้อยู่ในสถานะ "ปิดแล้ว" (อาจถูกถอย/แก้จากอีกเครื่อง) — ไม่ได้แตะยอด stock · รีเฟรชรายการแล้วลองใหม่`);
+      loadProdOrders(selSession.id, selSession.line_name);
+      return;
+    }
+    const { error: seDel } = await supabaseDR.from('line_stock_transactions')
       .delete().eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+    /* 🔴 DB audit 05/10: ตาราง ledger นี้ **ไม่มี DELETE policy** ⇒ delete ได้ "สำเร็จ 0 แถว ไม่มี error" (กฎเขียน DB ข้อ 2)
+       เดิมขึ้น toast เขียว "ถอนยอด stock ให้เรียบร้อย" ทั้งที่ยอดยังค้างใน stock ⇒ เช็คว่าแถวยังอยู่ไหมก่อนบอกว่าถอนแล้ว */
+    let se = seDel;
+    if (!se) {
+      const { count: left, error: eLeft } = await supabaseDR.from('line_stock_transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('ref_order_id', o.id).eq('type', 'issue').eq('created_by', 'auto');
+      if (eLeft) se = eLeft;
+      else if (left > 0) se = { message: `ระบบไม่อนุญาตให้ลบรายการรับเข้า (${left} รายการยังอยู่ใน stock)` };
+    }
     /* 📥 กฎโหมด "ต้องยืนยันรับ" (2026-10-02) — ของไม่ได้เข้าสต็อกตอนปิดใบ แต่ไปรออยู่ในคิว `stock_receipts`
        · ใบที่ยังรอรับ → ยกเลิก (ไม่งั้นคลังกดรับของที่ไลน์ถอยไปแล้ว) · ปิดใบใหม่ trigger จะออกใบรอรับใหม่ให้
        · ใบที่คลังรับไปแล้ว = ของถึงคลังจริง **ห้ามถอนเงียบ** → บอกให้คลังปรับยอดเอง */
@@ -1758,12 +1857,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // เปิดเป้าย้อนหลัง — กติกาเดียวกับใบสแกน: บังคับกรอกเวลา + กันเวลาหลุดกรอบกะ
     if (manualForm.is_backfill && !manualForm.backfill_time) { toast.error('ระบุเวลาที่เริ่มผลิตจริงก่อน (บังคับสำหรับเปิดย้อนหลัง)'); return; }
     if (manualForm.is_backfill && manualForm.backfill_time && selSession) {
-      const bh = Number(manualForm.backfill_time.split(':')[0]);
-      const inDay = bh >= 8 && bh < 20;   // กะเช้า 08:00–19:59 · กะดึก 20:00–07:59
-      if ((selSession.shift === 'day' && !inDay) || (selSession.shift === 'night' && inDay)) {
-        toast.error(`เวลา ${manualForm.backfill_time} อยู่นอกกรอบกะ${selSession.shift === 'day' ? 'เช้า (08:00–20:00)' : 'ดึก (20:00–08:00)'} — ตรวจเวลาที่เริ่มผลิตอีกครั้ง`);
-        return;
-      }
+      const winErr = backfillWindowError(manualForm.backfill_time);
+      if (winErr) { toast.error(winErr); return; }
     }
     setSavingManual(true);
     const std = kanbanStds.find(s => s.mat_no === matNo);
@@ -2302,7 +2397,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        (เฟส 0 Adaptive CT · null เมื่อไม่มี MAT ไหนมี CT เลย ไม่เขียนออบเจกต์ว่างให้รก) */
     const ctSnap = Object.keys(ctUsed || {}).length ? ctUsed : null;
     // Leader → request close (pending_close), SV+ → close directly
-    const isLeaderRequest = role === 'leader';
+    const isLeaderRequest = closeIsRequest;   // ดู closeIsRequest — ตัดสินด้วยสิทธิ์ ไม่ใช่ role
     const payload = isLeaderRequest ? {
       status:                  'pending_close',
       close_requested_by_name: fullName,
@@ -2632,9 +2727,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
          เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
          พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
          กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
-         ยังไม่จับคู่ = 'อื่นๆ' ตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards */
+         ยังไม่จับคู่ = ถังขยะตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards
+         ⚠️ 06/10: กลุ่มที่ไม่จับคู่ใช้ `OTHER_GROUP` ('อื่นๆ / ยังระบุไม่ได้') ให้ตรงกับ
+            ชื่อกลุ่มในทะเบียน `mtn_problem_types` — เดิมเขียน 'อื่นๆ' ลอยๆ ซึ่งเป็นป้าย
+            ถังสังเคราะห์ของจอ ไม่มีอยู่ในทะเบียน ⇒ แท่งพาเรโตแยกจากกลุ่มจริงเงียบๆ */
       problem_characteristic: dtType?.name_th || 'อื่นๆ',
-      problem_group: dtType?.mo_problem_group || 'อื่นๆ',
+      problem_group: dtType?.mo_problem_group || OTHER_GROUP,
       // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
       report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
@@ -2952,12 +3050,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}
                       style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700,
                         ...(sessLoadErrList.length ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
-                      {role === 'leader' ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
+                      {closeIsRequest ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
                     </button>
                   )}
 
                   {/* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */}
-                  {(canManage || role === 'leader') && ['closed', 'pending_close'].includes(selSession.status) && (
+                  {(canManage || canRequestClose) && ['closed', 'pending_close'].includes(selSession.status) && (
                     <button onClick={openEditTimes}
                       style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
                       ✏️ แก้เวลากะ
@@ -4371,9 +4469,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             <div className="overlay" style={{ zIndex: 2000 }}>
               <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid rgba(239,68,68,0.4)', borderRadius: 14, padding: 24, width: 'min(96vw,1500px)', maxHeight: '94vh', overflowY: 'auto' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2, color: '#ef4444' }}>
-                  {role === 'leader' ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
+                  {closeIsRequest ? '📋 ขอปิดกะ — สรุปผลและ OEE' : '🔒 ปิดกะ — สรุปผลและ OEE'}
                 </div>
-                {role === 'leader' && (
+                {closeIsRequest && (
                   <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 4 }}>
                     ⚠ กรอกข้อมูลให้ครบแล้วกด "ส่งขอปิดกะ" — SV จะอนุมัติขั้นสุดท้าย
                   </div>
@@ -4936,7 +5034,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     คนขอไม่มีที่อธิบายว่าทำไมยอดไม่ถึง/เกิดอะไรขึ้น · ไม่บังคับ */}
                 <div style={{ marginTop: 14 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
-                    📝 {role === 'leader' ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
+                    📝 {closeIsRequest ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
                   </div>
                   <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
                     placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
@@ -4948,7 +5046,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button onClick={handleCloseSession} disabled={savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: '#ef4444',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
-                    {savingClose ? '...' : role === 'leader' ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
+                    {savingClose ? '...' : closeIsRequest ? '📋 ส่งขอปิดกะ' : '🔒 ยืนยันปิดกะ'}
                   </button>
                 </div>
               </div>
@@ -5981,6 +6079,8 @@ function StaleTab({ stale, onOpenSession, role }) {
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
   const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -5991,6 +6091,9 @@ function HistoryTab({ role }) {
   const [defectMap, setDefectMap] = useState({});
   const [orderMap, setOrderMap]   = useState({});
   const [deleting, setDeleting]   = useState(null);
+  // โหลดล้ม ≠ "ไม่มีประวัติ" (กฎความซื่อสัตย์ของจอ · QC 05/10) — รายการกะ / รายละเอียดรายกะ แยกกัน
+  const [loadErr, setLoadErr]     = useState(null);
+  const [detailErr, setDetailErr] = useState({});   // { sessionId: message }
   const [ordersMinimized, setOrdersMinimized] = useState({});
   const [ctByMat, setCtByMat]     = useState({});  // mat_no → cycle_time_sec (สำหรับ %P รายชิ้น)
   /* 📝 ใบรายงานปัญหาการผลิต ของกะที่ปิดไปแล้ว (2026-09-25 · feedback Sup Assy2 "ไปกดดูย้อนหลังไม่ได้ หาที่ดูไม่เจอ")
@@ -6069,13 +6172,23 @@ function HistoryTab({ role }) {
     if (filter.date)      q = q.eq('work_date', filter.date);
     if (filter.line_name) q = q.eq('line_name', filter.line_name);
     if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
-    const { data: ss } = await q;
+    const { data: ss, error: ssErr } = await q;
+    if (ssErr) {
+      // ห้ามขึ้น "ไม่พบข้อมูล" — คิวรีล่มคนละเรื่องกับไม่มีกะ
+      console.warn('[history load]', ssErr.message);
+      setLoadErr(ssErr.message);
+      setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
+      setLoading(false);
+      return;
+    }
+    setLoadErr(null);
     setSessions(ss || []);
     setLineNames(allowedLineNames ?? (ln || []).map(l => l.name));
     setLoading(false);
     // ใบรายงานปัญหาที่เคยออกของกะเหล่านี้ (โหลดพร้อมกัน — ป้ายเลขที่ใบต้องเห็นตั้งแต่ยังไม่กางแถว)
     setProbDocs(await loadProblemDocs((ss || []).map(x => x.id)));
-  }, [filter, role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [filter, role, scopeKey, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
   // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
@@ -6094,9 +6207,9 @@ function HistoryTab({ role }) {
 
   /* คืนค่าที่โหลดด้วย (ไม่ใช่แค่ setState) — ปุ่ม 📝 ใบรายงานปัญหาย้อนหลังต้องใช้ข้อมูลทันทีในคลิกเดียว
      อ่านจาก state ตรงๆ ไม่ได้ เพราะ setState ยังไม่ทันมีผลใน handler เดียวกัน */
-  const loadDetail = async (sessionId) => {
-    if (dtMap[sessionId]) return { dts: dtMap[sessionId], defects: defectMap[sessionId] || [] }; // already loaded
-    const [{ data: dts }, { data: defects }, { data: orders }] = await Promise.all([
+  const loadDetail = async (sessionId, { force = false } = {}) => {
+    if (!force && dtMap[sessionId]) return { dts: dtMap[sessionId], defects: defectMap[sessionId] || [] }; // already loaded
+    const [{ data: dts, error: e1 }, { data: defects, error: e2 }, { data: orders, error: e3 }] = await Promise.all([
       supabaseDR.from('downtime_logs')
         .select('*, dr_downtime_types(name_th, color, category)')
         .eq('session_id', sessionId).order('started_at'),
@@ -6108,6 +6221,15 @@ function HistoryTab({ role }) {
         .select('*')
         .eq('session_id', sessionId).order('opened_at'),
     ]);
+    /* โหลดล้ม = ห้าม cache [] (เดิม cache แล้วกางแถวซ้ำก็ยังว่าง + ปุ่มใบรายงานบอก "กะนี้ไม่มี Downtime")
+       คืน null ให้ผู้เรียกบอกผู้ใช้ · กางแถวใหม่ = ลองโหลดอีกรอบเอง */
+    const err = e1 || e2 || e3;
+    if (err) {
+      console.warn('[history detail]', err.message);
+      setDetailErr(m => ({ ...m, [sessionId]: err.message }));
+      return null;
+    }
+    setDetailErr(m => (m[sessionId] ? { ...m, [sessionId]: null } : m));
     setDtMap(m     => ({ ...m,      [sessionId]: dts     || [] }));
     setDefectMap(m => ({ ...m,      [sessionId]: defects || [] }));
     setOrderMap(m  => ({ ...m,      [sessionId]: orders  || [] }));
@@ -6133,7 +6255,12 @@ function HistoryTab({ role }) {
         <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
       </FilterBar>
 
-      {sessions.length === 0 && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>ไม่พบข้อมูล</div>}
+      {loadErr && (
+        <div style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
+          ⚠️ โหลดประวัติกะไม่สำเร็จ ({loadErr}) — รายการด้านล่างอาจไม่ครบ/ไม่ใช่ล่าสุด · <button onClick={load} style={cancelBtnStyle}>ลองใหม่</button>
+        </div>
+      )}
+      {!loadErr && sessions.length === 0 && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>ไม่พบข้อมูล</div>}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {sessions.map(s => {
@@ -6192,7 +6319,8 @@ function HistoryTab({ role }) {
                     onClick={async e => {
                       e.stopPropagation();
                       const d = await loadDetail(s.id);
-                      const dts = d?.dts || [], defs = d?.defects || [];
+                      if (!d) { toast.error('โหลดรายละเอียดกะนี้ไม่สำเร็จ — ลองใหม่อีกครั้ง (ยังไม่ออกใบ)'); return; }
+                      const dts = d.dts || [], defs = d.defects || [];
                       if (!dts.length && !defs.length) {
                         toast.info('กะนี้ไม่มี Downtime และของเสียบันทึกไว้ — ไม่มีอะไรเข้าใบรายงานปัญหา');
                         return;
@@ -6226,6 +6354,12 @@ function HistoryTab({ role }) {
               </div>
               {expanded === s.id && (
                 <div style={{ borderTop: '1px solid var(--border)', padding: '12px 16px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {detailErr[s.id] && (
+                    <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 12px' }}>
+                      ⚠️ โหลดรายละเอียดกะนี้ไม่สำเร็จ ({detailErr[s.id]}) — Downtime/ของเสีย/ใบผลิตด้านล่างอาจว่างเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี ·{' '}
+                      <button onClick={e => { e.stopPropagation(); loadDetail(s.id, { force: true }); }} style={cancelBtnStyle}>ลองใหม่</button>
+                    </div>
+                  )}
                   {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
                   {s.close_request_note && (
                     <div style={{ fontSize: 12, color: '#c4b5fd', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
@@ -6542,8 +6676,8 @@ function HistoryTab({ role }) {
           actorName={fullName}
           onClose={() => setHistFix(null)}
           onSaved={async () => {
-            setDtMap(m => { const n = { ...m }; delete n[histFix.sessionId]; return n; });   // บังคับโหลดใหม่
-            await loadDetail(histFix.sessionId);
+            // force — closure ของ loadDetail ยังเห็น dtMap เก่า (ลบ key ใน state ไม่ทันมีผลในรอบนี้)
+            await loadDetail(histFix.sessionId, { force: true });
           }}
         />
       )}
@@ -6607,6 +6741,8 @@ function HistoryTab({ role }) {
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -6634,7 +6770,8 @@ function ExportTab() {
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

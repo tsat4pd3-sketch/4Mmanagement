@@ -326,7 +326,8 @@ RPC `notif_rule_reach()` คืนเพิ่ม `waste_n` (แถวที่�
 - **19 กฎไม่มี `inapp_roles` เลย** ⇒ ไม่เข้ากระดิ่งในแอปใครทั้งนั้น แต่**ไม่ใช่กฎตาย**:
   ไม่เลือกห้อง Telegram = ตกไป**กลุ่มเดิม (fallback)** ตามที่จอบอกไว้แล้ว
   (`downtime` · `pm_daily_*` · `qa_seq_alarm` · `morning_meeting` ฯลฯ — Telegram-only โดยตั้งใจ)
-- ค่าส่วนงานในฐานยังไม่ normalize: เจอทั้ง `Planning&Store` และ `PLN & STO` และ `TEST`
+- ~~ค่าส่วนงานในฐานยังไม่ normalize: เจอทั้ง `Planning&Store` และ `PLN & STO`~~ **แก้แล้ว 05/10**
+  (เหลือสะกดเดียว `Planning&Store` · migration `20261005_section_name_canonical_main.sql` · 📄 `org-hierarchy.md`) · `TEST` ยังค้าง
   ⇒ กฎที่ปักส่วนงานเองด้วยข้อความอาจพลาดคน · ยังไม่แก้ (ต้องให้ user เคาะว่าชื่อจริงคืออะไร)
 
 ### ยังไม่อ่าน `scope_depth`

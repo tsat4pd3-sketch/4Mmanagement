@@ -16,7 +16,7 @@ import useIsMobile from '../utils/useIsMobile';
 import RoutingPanel from '../components/RoutingPanel';
 import useTabParam from '../utils/useTabParam';
 import CtReview from '../components/CtReview';
-import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat } from '../utils/matPrefix';
+import { MAT_CLASSES, matClassOf, matColor, matLabel, matMatches, isSapMat, rawAsOutputWarning } from '../utils/matPrefix';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import LineSelect from '../components/LineSelect';
 import CustomerSelect from '../components/CustomerSelect';
@@ -35,6 +35,7 @@ import BomTreeView from '../components/BomTreeView';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
 import { parseSapBom, diffSapBom, missingInPartsMaster, decodeSapExport } from '../utils/sapBomImport';
 import { learnPartNoVocab, proposePartNos } from '../utils/partNoExtract';
+import { buildEcIndex, ecOf, countSuperseded } from '../utils/ecRevisions';
 
 /** คีย์ MAT มาตรฐานของหน้านี้ — ตัดช่องว่าง + ตัวพิมพ์ใหญ่ (ใช้ร่วมหลายฟังก์ชัน) */
 const upMat = (m) => String(m ?? '').trim().toUpperCase();
@@ -49,6 +50,8 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -249,6 +252,8 @@ function ReadyChips({ ready, onGo, compact }) {
 }
 
 export default function ProductMaster() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { role, fullName, isDeptAdmin } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
   // ถ้าไม่ consume ค่านี้จาก context ปุ่มแก้ไขจะไม่โผล่จนกว่าจะ re-render ด้วยเหตุอื่น (แอดมินหน่วยงานติ๊กแล้วแต่แก้ไม่ได้)
@@ -462,12 +467,16 @@ export default function ProductMaster() {
             try {
               const effDate = form.effective_from || localDateStr();
               const { data: exist } = await supabaseDR.from('parts_master').select('id').eq('mat_no', payload.mat_no).limit(1);
+              /* 🔴 แถวทะเบียนของ "เลขเดิม" ต้องถูกติดหมายเหตุเสมอ — ไม่ว่าเลขใหม่จะลงทะเบียนไว้ก่อนแล้วหรือยัง
+                 (บั๊กจริง 05/10: ทั้งก้อนนี้เคยอยู่ใน `if (!exist?.length)` ⇒ พอเลขใหม่มีในทะเบียนอยู่แล้ว
+                  ซึ่งเป็นเรื่องปกติ มันข้ามทั้งบล็อก **รวมถึงการติดหมายเหตุที่แถวเก่า**
+                  วัดจริง: ทะเบียน 370 แถว มีโน้ตที่พูดถึง EC = 0 แถว ทั้งที่ทำ EC ไปแล้ว 4 ครั้ง) */
+              let oldPm = null;
+              if (ecSource.mat_no) {
+                const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
+                oldPm = data?.[0] || null;
+              }
               if (!exist?.length) {
-                let oldPm = null;
-                if (ecSource.mat_no) {
-                  const { data } = await supabaseDR.from('parts_master').select('*').eq('mat_no', ecSource.mat_no).limit(1);
-                  oldPm = data?.[0] || null;
-                }
                 const { error: pmErr } = await supabaseDR.from('parts_master').insert({
                   mat_no: payload.mat_no, part_name: payload.name, part_no: payload.p_no,
                   uom: oldPm?.uom || null, qty_per_pkg: oldPm?.qty_per_pkg ?? null, supplier: oldPm?.supplier || null,
@@ -477,10 +486,13 @@ export default function ProductMaster() {
                 if (pmErr) toast.error('ลงทะเบียน Parts Master ไม่สำเร็จ: ' + pmErr.message + ' — ไปเพิ่มเองที่ tab 🗂');
                 else if (oldPm) toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว (สืบทอดข้อมูลจากเลขเดิม · ต้นทุนให้บัญชีเติม)');
                 else toast.info('🗂 ลงทะเบียน MAT ใหม่ใน Parts Master แล้ว — เลขเดิมไม่มีในทะเบียน ไปเติม จำนวนต่อกล่อง/supplier/ต้นทุน ที่ tab 🗂');
-                // ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม ให้คนเปิดทะเบียนเห็นว่าถูกแทนแล้ว (best-effort · ไม่ปิด is_active —
-                // ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้ในทะเบียนเป็นการตัดสินใจของคน)
-                if (oldPm) {
-                  const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
+              }
+              /* ฝากรอยไว้ที่แถวทะเบียนของเลขเดิม (นอกเงื่อนไขข้างบน — ดูคอมเมนต์ 🔴)
+                 ไม่ปิด `is_active`: ของ rev เก่ายังไหลอยู่ในคลัง/รอบส่งช่วงเปลี่ยนผ่าน การเลิกใช้เป็นการตัดสินใจของคน
+                 ⚠️ โน้ตเป็นแค่ "ร่องรอยให้คนอ่าน" — จอใช้ `buildEcIndex()` อ่านของจริงจาก dr_products ไม่ได้พึ่งโน้ตนี้ */
+              if (oldPm) {
+                const tag = `ถูกแทนโดย EC → ${payload.mat_no} มีผล ${effDate}`;
+                if (!String(oldPm.note || '').includes(tag)) {
                   checkWrite(await supabaseDR.from('parts_master').update({ note: oldPm.note ? `${oldPm.note} · ${tag}` : tag }).eq('id', oldPm.id), 'ติดหมายเหตุทะเบียนกลางเดิม');
                 }
               }
@@ -682,10 +694,7 @@ export default function ProductMaster() {
   ].join('\n');
 
   const downloadProductTemplate = () => {
-    const bom = `﻿${PRODUCT_CSV_HEADER}\n${PRODUCT_CSV_EXAMPLE}`;
-    const blob = new Blob([bom], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'product_template.csv'; a.click();
+    downloadCsvDoc('csv_product_template', 'product_template', `${PRODUCT_CSV_HEADER}\n${PRODUCT_CSV_EXAMPLE}`);
   };
 
   const handleProductCsvUpload = async (e) => {
@@ -875,7 +884,7 @@ export default function ProductMaster() {
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
-              กด "แก้ไข" แล้วใส่ช่อง <b>"ทำต่อจากของชิ้นไหน"</b>
+              กด "แก้ไข" แล้วใส่ช่อง <b>"ยอดของขั้นนี้ไปรวมกับพาร์ทจริงตัวไหน"</b>
             </span>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>
               ({risky.map(r => `${r.item.mat_no} → ${r.candidates.join('/')}`).join(' · ')})
@@ -993,6 +1002,13 @@ export default function ProductMaster() {
                         <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: item.op_parent_mat ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
                           title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
                           🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                        </span>
+                      )}
+                      {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
+                      {rawAsOutputWarning(item.mat_no, item.is_operation) && (
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700 }}
+                          title={rawAsOutputWarning(item.mat_no, item.is_operation)}>
+                          ⚠ วัตถุดิบ ไม่ใช่ของที่ผลิตได้
                         </span>
                       )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
@@ -1321,7 +1337,7 @@ export default function ProductMaster() {
                     {/* 🔩 คำถามเดียวที่ระบบต้องการคำตอบ: "ยอดของขั้นนี้ไปซ้ำกับใบผลิตของใคร"
                         **ไม่บังคับ** — user 2026-09-16 "ทุกขั้นก็มองเป็นพาร์ทตัวใหม่ได้ ไม่อยากให้มีหลายแบบ"
                         (เคยแยก op_kind sequence/assembly แล้วถอดออกวันเดียวกัน — ถามคำถามผิด) */}
-                    <Field label="ทำต่อจากของชิ้นไหน (ว่างได้)">
+                    <Field label="ยอดของขั้นนี้ไปรวมกับพาร์ทจริงตัวไหน — MAT SAP (ว่างได้)">
                       {/* parent เป็นได้ทั้งสินค้าที่ผลิตในไลน์ และพาร์ทซื้อนอก (เบอร์ 3/5) จากทะเบียนกลาง —
                           เคสจริง: ขั้นขับนัทบนพาร์ทซื้อนอกที่ตัวตนยังเป็นเลขเดิม (user ทัก 2026-08-17 "เบอร์ 3 หาไม่เจอ") */}
                       <MatSearchField value={form.op_parent_mat} onChange={v => setForm(f => ({ ...f, op_parent_mat: v }))}
@@ -1344,8 +1360,8 @@ export default function ProductMaster() {
                               tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
                           return [...real, ...bought];
                         })()}
-                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ของที่ประกอบมาไม่มีใบผลิตของตัวเอง)"
-                        hint="ใส่เมื่อของที่ขั้นนี้รับมา **มีใบผลิตของตัวเอง** (ไม่งั้นชิ้นเดียวกันถูกนับ 2 รอบ) · ประกอบจากหลายชิ้นที่ไม่มีใบผลิตของตัวเอง = ปล่อยว่าง · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
+                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ไม่มีพาร์ทจริงให้ยอดไปซ้ำ)"
+                        hint="ชิ้นงานเดียวกันถูกนับ 2 รอบ (ใบของขั้น + ใบของพาร์ทจริง) — ชี้ว่าไปซ้ำกับตัวไหน ระบบจะยุบยอดขั้นเข้าพาร์ทนั้น · **ปลายทางต้องเป็นพาร์ทจริงที่มีใบผลิต (1xxx FG / 2xxx ผลิตเอง)** · เป็น sub ของ sub = ชี้ไปที่ขั้นอื่นก่อนได้ แต่สุดท้ายต้องจบที่ 1xxx/2xxx · ของซื้อนอก (3xxx) / วัตถุดิบ (5xxx) ไม่มีใบผลิต ⇒ ผูกไปก็ไม่มีผล · ไม่มีตัวให้ซ้ำ = ปล่อยว่าง (ถูกแล้ว ไม่ใช่กรอกไม่ครบ) · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
                       <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
@@ -1353,9 +1369,10 @@ export default function ProductMaster() {
                     {/* ⚠️ บอกเมื่อค่าไม่สอดคล้องกับสูตรจริง ห้ามเงียบ
                         (แต่ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — นั่นคือเรื่องปกติ) */}
                     {(() => {
-                      const cur = editing !== 'new' ? items.find(i => i.id === editing) : null;
-                      const own = cur ? bomRows.filter(b => b.product_id === cur.id).map(b => b.mat_no) : [];
-                      const issues = opLinkIssues({ ...form, is_operation: true }, own);
+                      /* ไล่สาย "ขั้น → ขั้น → พาร์ทจริง" ให้ด้วย (sub ของ sub · user 05/10) */
+                      const opOf = (m) => items.find(i => i.is_operation
+                        && String(i.mat_no ?? '').trim().toUpperCase() === String(m ?? '').trim().toUpperCase())?.op_parent_mat;
+                      const issues = opLinkIssues({ ...form, is_operation: true }, { parentOf: opOf });
                       if (!issues.length) return null;
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1400,7 +1417,7 @@ export default function ProductMaster() {
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];
@@ -1839,6 +1856,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      ⚠️ ไม่ติดธง OP — นี่คือพาร์ทจริง (ชั้น OP ต้องติ๊กเองที่แท็บ Products ตามเดิม) */
   const [headBusy, setHeadBusy] = useState(false);
   const [headPick, setHeadPick] = useState(false);
+  const [bomBack, setBomBack] = useState([]);   // เส้นทางที่กดเข้ามา (ใบแม่ → ใบลูก) สำหรับปุ่มย้อนกลับ
   const makeBomHead = async (part) => {
     const mat = String(part?.mat_no ?? '').trim().toUpperCase();
     if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
@@ -1849,7 +1867,9 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (!headName) { toast.error(`${mat} ยังไม่มีชื่อพาร์ทในทะเบียน — ใส่ชื่อที่แท็บ 1️⃣ Parts Master ก่อน`); return; }
     setHeadBusy(true);
     const { data, error } = await supabaseDR.from('dr_products')
-      .insert({ mat_no: mat, name: headName, p_no: part.part_no || null, is_active: true, created_by: fullName })
+      .insert({ mat_no: mat, name: headName, p_no: part.part_no || null, is_active: true })
+      /* 🔴 ห้ามส่ง created_by — dr_products ไม่มีคอลัมน์นี้ (PostgREST ปฏิเสธทั้งแถว · เคสจริง 05/10 เปิดใบ 306 FVL ไม่ได้)
+         ผู้แก้ถูกประทับให้เองที่ updated_by_name/uid (dr_products อยู่ใน DR_AUDIT_TABLES) */
       .select('id, name, code, mat_no, p_no, customer, line_name').single();
     setHeadBusy(false);
     if (error) { toast.error(`เปิดใบ BOM ไม่สำเร็จ: ${error.message}`); return; }
@@ -2001,6 +2021,16 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     await loadAll(); await loadItems(target.id);
     void parsed;
   };
+
+  /* 📄 กดเลข MAT ในต้นไม้ → เปิด "ใบของพาร์ทตัวนั้น" + จำใบเดิมไว้ให้กดย้อนกลับ
+     (user 06/10: เข้าใจว่าต้องสร้างใบแยกกันเอง ที่จริงใบนั้นคือการนิยามครั้งเดียวที่ใบ FG ยืมมากาง) */
+  const openSheetOfMat = useCallback((mat) => {
+    const k = upMat(mat);
+    const target = items.find(i => upMat(i.mat_no) === k);
+    if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
+    setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
+    setSelProduct(target); setSearch(target.mat_no || '');
+  }, [items, selProduct]);
 
   const openPicker = (parentMat) => {
     setPickerQ(''); setPickerSel([]);
@@ -2281,7 +2311,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             const active = selProduct?.id === p.id;
             const n = counts[p.id] || 0;
             return (
-              <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
+              <div key={p.id} onClick={() => { setSelProduct(p); setBomBack([]); }} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: '#0ea5e9', marginRight: 4 }}>🔩</span>}
@@ -2307,6 +2337,18 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
+                {/* ↩ เส้นทางที่กดเข้ามาจากต้นไม้ (ใบ FG → ใบ sub-assembly) — ย้อนกลับได้ทีละชั้น */}
+                {bomBack.length > 0 && (
+                  <button type="button"
+                    onClick={() => { const prev = bomBack[bomBack.length - 1];
+                      const back = items.find(i => i.id === prev.id);
+                      setBomBack(b => b.slice(0, -1));
+                      if (back) { setSelProduct(back); setSearch(back.mat_no || ''); }
+                      else toast.info('ใบเดิมไม่อยู่ในลิสต์แล้ว — เลือกจากด้านซ้ายได้'); }}
+                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginTop: 6 }}>
+                    ↩ กลับไปใบ {bomBack[bomBack.length - 1].mat_no || bomBack[bomBack.length - 1].name}
+                  </button>
+                )}
                 {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
                 {selProduct._op && (
                   <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
@@ -2339,7 +2381,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor}
-                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
+                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
+                      onOpenSheet={openSheetOfMat} />
                   </div>
                 )}
               </div>
@@ -2767,7 +2810,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                                   style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11.5, padding: '2px 6px', borderRadius: 5,
                                     border: `1px solid ${hit?.conflict ? '#ef4444' : 'var(--border)'}`, background: 'var(--bg2)', color: 'var(--text)' }} />
                               </label>
-                              <div style={{ fontSize: 10.5, color: hit?.conflict ? '#ef4444' : hit?.confidence === 'high' ? 'var(--accent)' : '#f59e0b', marginTop: 2 }}>
+                              <div style={{ fontSize: 11, color: hit?.conflict ? '#ef4444' : hit?.confidence === 'high' ? 'var(--accent)' : '#f59e0b', marginTop: 2 }}>
                                 {hit?.conflict ? `⚠ ทะเบียนเดิมคือ ${hit.current}` : hit?.confidence === 'high' ? '✓ ' + hit.reason : '~ ' + hit?.reason}
                               </div>
                             </td>
@@ -2832,13 +2875,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 }
 
 /* ─── CSV download helper ─────────────────────────────────────── */
-function downloadCsv(filename, headers, rows) {
-  const lines = [headers.join(','), ...rows.map(r => headers.map(h => {
-    const v = String(r[h] ?? '');
-    return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
-  }).join(','))];
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+/* CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10 · src/utils/csvDoc.js)
+   ของกลางกัน formula injection ให้ด้วย (ของเดิมในไฟล์นี้ไม่ได้กัน) */
+function downloadCsv(docKey, filename, headers, rows) {
+  downloadCsvDoc(docKey, filename, csvText(headers, rows.map(r => headers.map(h => r[h] ?? ''))));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2895,7 +2935,7 @@ function ExportPanel() {
       }
       if (!rows.length) { toast.info(`${e.label} ยังไม่มีข้อมูล`); return; }
       const headers = e.cols.length ? e.cols : Object.keys(rows[0]).filter(k => k !== 'id');
-      downloadCsv(`${e.key}_${today}.csv`, headers, rows);
+      downloadCsv('csv_product_master', `${e.key}_${today}`, headers, rows);
       toast.success(`⬇️ ${e.label} ${rows.length.toLocaleString()} แถว`);
     } finally { setBusy(''); }
   };
@@ -2962,6 +3002,11 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   const [imageUploading, setImageUploading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
   const csvRef = useRef(null);
+  /* 🔄 EC: ของจริงอยู่ที่ `dr_products` (superseded_by/at) — ทะเบียนแค่ "อ่าน" ไม่เก็บซ้ำ
+     user 05/10: *"part master ไม่มีระบบ ecn หรอ … หรืออยู่ที่ product"* → อยู่ที่ Products
+     แต่ทะเบียนไม่เคยรู้ ⇒ rev เก่ากับใหม่ขึ้น "ใช้งาน" เท่ากัน (วัดจริง: 23 กลุ่ม · 91 แถว active) */
+  const [ecIx, setEcIx] = useState(() => new Map());
+  const [hideOld, setHideOld] = useState(false);
 
   // material_cost/standard_cost (บาท/ชิ้น — cost saving ใน /improvements): ไฟล์เก่าที่ไม่มี 2 คอลัมน์นี้ยังนำเข้าได้
   // และจะไม่ล้างค่าต้นทุนเดิม (อัพเดทเฉพาะฟิลด์ที่มีค่าในไฟล์)
@@ -2972,10 +3017,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   ].join('\n');
 
   const downloadPartsTemplate = () => {
-    const content = `﻿${PARTS_CSV_HEADER}\n${PARTS_CSV_EXAMPLE}`;
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'parts_master_template.csv'; a.click();
+    downloadCsvDoc('csv_parts_template', 'parts_master_template', `${PARTS_CSV_HEADER}\n${PARTS_CSV_EXAMPLE}`);
   };
 
   const handlePartsCsvUpload = async (e) => {
@@ -3016,8 +3058,13 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabaseDR.from('parts_master').select('*').order('mat_no');
-    setParts(data || []);
+    const [pm, pr] = await Promise.all([
+      supabaseDR.from('parts_master').select('*').order('mat_no'),
+      // คอลัมน์เท่าที่ใช้สร้างดัชนี EC (egress คิดเป็นไบต์ — ห้าม select('*') ที่นี่)
+      supabaseDR.from('dr_products').select('id, mat_no, superseded_by, superseded_at'),
+    ]);
+    setParts(pm.data || []);
+    setEcIx(buildEcIndex(pr.data || []));
     setLoading(false);
   }, []);
 
@@ -3035,8 +3082,21 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         p.supplier?.toLowerCase().includes(q)
       );
     }
+    if (hideOld) r = r.filter(p => !ecOf(ecIx, p.mat_no)?.supersededByMat);
     return r;
-  }, [parts, search, prefixFilter]);
+  }, [parts, search, prefixFilter, hideOld, ecIx]);
+
+  /* นับจากชุดที่ "ผ่านตัวกรองอื่นแล้ว" เพื่อให้เลขบนปุ่มตรงกับที่จะถูกซ่อนจริง */
+  const supersededCount = useMemo(() => {
+    let r = parts;
+    if (prefixFilter) r = r.filter(p => matMatches(p.mat_no, prefixFilter));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      r = r.filter(p => p.part_name?.toLowerCase().includes(q) || p.mat_no?.toLowerCase().includes(q)
+        || p.part_no?.toLowerCase().includes(q) || p.supplier?.toLowerCase().includes(q));
+    }
+    return countSuperseded(ecIx, r.map(p => p.mat_no));
+  }, [parts, search, prefixFilter, ecIx]);
 
   function openNew() { setEditPart(null); setForm(EMPTY_PART); setImageFile(null); setShowModal(true); }
   function openEdit(p) { setEditPart(p); setForm({ ...EMPTY_PART, ...p }); setImageFile(null); setShowModal(true); }
@@ -3117,6 +3177,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
 
       {/* toolbar */}
       <FilterBar>
+        {supersededCount > 0 && (
+          <button type="button" onClick={() => setHideOld(v => !v)}
+            title="rev เก่าที่ถูก EC แทนแล้ว — ของจริงอยู่ที่แท็บ 3️⃣ Products"
+            style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap',
+              borderColor: hideOld ? 'var(--accent)' : 'var(--border)', color: hideOld ? 'var(--accent)' : 'var(--text2)' }}>
+            {hideOld ? '☑' : '☐'} ซ่อน rev ที่ถูกแทนแล้ว ({supersededCount})
+          </button>
+        )}
         <select value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
           <option value="">{ALL.type}</option>
           {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
@@ -3174,6 +3242,28 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
                       {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
                     </div>
+                    {/* 🔄 สถานะ revision — อ่านจาก dr_products (ของจริง) ไม่ได้เก็บซ้ำในทะเบียน
+                        ไม่รู้จัก (ไม่มีใน Products) = ไม่พูดอะไร ห้ามเดาว่า "ล่าสุด" */}
+                    {(() => {
+                      const e = ecOf(ecIx, p.mat_no);
+                      if (!e) return null;
+                      if (e.supersededByMat) return (
+                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2, fontWeight: 700 }}
+                          title={`ทำ EC ที่แท็บ 3️⃣ Products${e.supersededAt ? ` · มีผล ${e.supersededAt}` : ''}`}>
+                          🔄 ถูกแทนโดย <span style={{ fontFamily: 'monospace' }}>{e.supersededByMat}</span>
+                          {e.supersededAt && ` · ${e.supersededAt}`}
+                          {e.latestMat && e.latestMat !== e.supersededByMat &&
+                            <> · ล่าสุด <span style={{ fontFamily: 'monospace' }}>{e.latestMat}</span></>}
+                          {e.chainBroken && <span style={{ color: 'var(--muted)' }}> · ไล่สายต่อไม่ได้</span>}
+                        </div>
+                      );
+                      if (e.replacesMat) return (
+                        <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
+                          🔄 rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
+                        </div>
+                      );
+                      return null;
+                    })()}
                   </td>
                   <td style={{ padding: '8px 12px', fontSize: 13, color: 'var(--text)', fontWeight: 600, borderTop: '1px solid var(--border)' }}>{p.part_name}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
@@ -3260,7 +3350,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
-                    <img src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
+                    <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                   )}
                   <input type="file" accept="image/*" onChange={e => {
                     const f = e.target.files?.[0];

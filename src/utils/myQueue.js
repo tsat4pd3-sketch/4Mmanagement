@@ -25,7 +25,7 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
-import { stepMeta } from './mtnStepPerm.js';
+import { stepMeta, nextStepOf } from './mtnStepPerm.js';
 import { isMtnFormRow } from './mtnMoForm.js';
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
@@ -66,11 +66,14 @@ export function isMe({ uid, name }, me) {
  *   byName = true แปลว่าขั้นนี้ผูกกับตัวบุคคลจริง (ผู้เปิดใบ / ช่างที่รับงาน)
  *
  * 🔴 ไม่เดาเลขขั้นเอง — `stepMeta()` เป็นคนบอกว่าขั้นนี้ `byReporter` หรือ `stage === 'service'`
+ * 🔴 ขั้นที่ "รอ" มาจาก `nextStepOf()` (ตัดสินจาก status) — **ห้ามอ่าน `current_step` ตรงๆ**
+ *    current_step = ขั้นที่ทำเสร็จแล้ว ⇒ เดิมช้าไป 1 ขั้นทุกใบ (workflow audit 05/10: ใบรอ QA 204 ใบ
+ *    ไปโผล่เป็น "ตรวจรับงาน" ที่ผู้แจ้งซึ่งเซ็นไปแล้ว · QA ไม่เห็นในคิวเลย)
  */
 export function moWaitingOn(o = {}) {
   const mtnForm = isMtnFormRow(o);
-  const step = Number(o.current_step) || 0;
-  const meta = stepMeta(step, { mtnForm });
+  const step = nextStepOf(o) ?? 0;
+  const meta = step ? stepMeta(step, { mtnForm }) : null;
   if (!meta) return { step, meta: null, who: null, byName: false };
 
   if (meta.byReporter) {
@@ -92,14 +95,23 @@ export function moWaitingOn(o = {}) {
   return { step, meta, who: null, byName: false };
 }
 
-/** ใบนี้อยู่ในขอบเขตของเราไหม — `sections: []` = ไม่จำกัด (เห็นทุกส่วนงาน) */
-export function inMyScope(row, me) {
+/* ── แถวนี้ตกขอบเขตเพราะอะไร ────────────────────────────────────────  2026-10-06
+   🔴 "ของหน่วยอื่น" กับ "ใบไม่ระบุส่วนงาน" **คนละเรื่อง ห้ามยุบเป็น false เดียว**
+      ของหน่วยอื่น = ถูกแล้วที่ไม่เห็น · ใบไม่ระบุส่วนงาน = **ไม่มีใครเห็นเลยทั้งโรงงาน**
+      (วัดจริง 06/10: ใบรอ QA 188 ใบ — 152 ใบผูก PD3 แต่ **36 ใบ `dept_section` ว่าง**
+       ⇒ ตกจากคิวของทุกคนเงียบๆ ไม่มีใครรู้ว่ามีอยู่) ⇒ ต้องนับแล้วให้จอเขียนบอก
+   คืน 'in' อยู่ในขอบเขต · 'other' ของหน่วยอื่น · 'unknown' แถวไม่ระบุส่วนงาน */
+export function scopeStateOf(row, me) {
   const secs = Array.isArray(me?.sections) ? me.sections.filter(Boolean) : [];
-  if (!secs.length) return true;                    // ไม่จำกัด
+  if (!secs.length) return 'in';                    // ไม่จำกัด = เห็นทุกส่วนงาน
   const s = norm(row?.dept_section || row?.section);
-  if (!s) return false;                             // ใบไม่ระบุส่วนงาน = ตอบไม่ได้ว่าของเรา
-  return secs.some(x => norm(x) === s);
+  if (!s) return 'unknown';                         // แถวไม่ระบุส่วนงาน = ตอบไม่ได้ว่าของเรา
+  return secs.some(x => norm(x) === s) ? 'in' : 'other';
 }
+
+/** แถวนี้อยู่ในขอบเขตของเราไหม — `sections: []` = ไม่จำกัด (เห็นทุกส่วนงาน)
+ *  ⚠️ พฤติกรรมเหมือนเดิมเป๊ะ (แถวไม่ระบุส่วนงาน = false) — แค่ยืมคำตอบจาก `scopeStateOf` จุดเดียว */
+export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
 
 /* ── ตัวแปลงแถวดิบ → รายการบนจอ ─────────────────────────────────────────────
    ทุกตัวคืนรูปเดียวกัน: { key, icon, title, detail, age, tier, tag, to }
@@ -132,18 +144,25 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   const mine = []; const unit = []; const floor = [];
   const missing = [];
   const need = (k, v) => { if (v === undefined || v === null) { missing.push(k); return []; } return v; };
+  /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
+  let unattributed = 0;
+  const keep = (row) => {
+    const st = scopeStateOf(row, me);
+    if (st === 'unknown') { unattributed += 1; return false; }
+    return st === 'in';
+  };
 
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
-    if (inMyScope(o, me)) unit.push(moItem(o, w, TIER.UNIT));
+    if (keep(o)) unit.push(moItem(o, w, TIER.UNIT));
   }
 
   // ── กะที่ขอปิด รอหัวหน้าอนุมัติ ────────────────────────────────────────────
   for (const s of need('sessions', src.sessions)) {
-    if (!inMyScope(s, me)) continue;
+    if (!keep(s)) continue;
     unit.push({
       key: `ses:${s.id}`, icon: '📋', tier: TIER.UNIT,
       title: `คำขอปิดกะ — ${s.line_name || '-'}`,
@@ -155,7 +174,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
 
   // ── 4M รออนุมัติ ─────────────────────────────────────────────────────────
   for (const f of need('fourM', src.fourM)) {
-    if (!inMyScope(f, me)) continue;
+    if (!keep(f)) continue;
     unit.push({
       key: `4m:${f.id}`, icon: '📝', tier: TIER.UNIT,
       title: `4M ${f.category || ''} — ${f.line_name || '-'}`.trim(),
@@ -179,7 +198,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       tier: TIER.MINE,
     };
     if (isMe({ uid: a.assignee_uid, name: a.assignee }, me)) mine.push(it);
-    else if (inMyScope(a, me)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
+    else if (keep(a)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
   }
 
   // ── ชั้น 3: ของทั้งโรงงานที่ไม่มีเจ้าภาพ — **สรุปบรรทัดเดียว ห้ามแตกรายตัว** ──────
@@ -198,6 +217,9 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     counts: { mine: mine.length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
     missing,
     partial: missing.length > 0,
+    /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`
+       เพราะคิวรีไม่ได้ล่ม · ข้อมูลไม่ครบที่ต้นทาง) · 0 = ไม่ต้องเขียน */
+    unattributed,
   };
 }
 

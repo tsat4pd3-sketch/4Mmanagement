@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { getWorkDate } from '../utils/workDate';
 import {
   buildGrid, cellAt, valueAt, slSummary, gridSummary, minBreaches, firstShortDate,
   rackCount, rawPieces, rawCoverage,
@@ -145,6 +146,8 @@ export default function MonitorBoardGrid({
   }
 
   const unknownRecur = rows.filter((r) => r.unknownRecur);
+  /* "วันนี้" ของโรงงาน = วันงาน (ก่อน 08:00 นับเป็นวันก่อนหน้า) ไม่ใช่วันปฏิทินของเครื่อง */
+  const todayKey = getWorkDate();
   const body = periods.slice(1);
   const canPage = periods.length > windowSize;
 
@@ -206,6 +209,30 @@ export default function MonitorBoardGrid({
         ) : null}
       </div>
 
+      {/* ── 🔴 บอกให้เห็นว่า "ช่องนี้แก้ได้" (2026-10-05 · ทีมวางแผนถามว่าแก้ตัวเลขไม่ได้ใช่ไหม
+             ต้อง export file เข้าอย่างเดียว) — เดิมสัญญาณเดียวที่มีคือรูปเคอร์เซอร์ `cursor:'cell'`
+             กับคำอธิบายที่อยู่ "ใต้ตาราง" ซึ่งต้องเลื่อนผ่านทุกแถวถึงจะเจอ ⇒ ไม่มีใครรู้ว่าคลิกได้
+             กติกา: ความสามารถที่ไม่มีใครเห็น = ไม่มีอยู่จริง · ต้องบอกเหนือตาราง ก่อนตัวเลข ───── */}
+      <div style={{
+        ...card, padding: '7px 11px', fontSize: FS + 0.5, lineHeight: 1.7,
+        borderColor: editable ? 'var(--accent)' : 'var(--border)',
+        background: 'var(--bg2)',
+      }}>
+        {editable ? (
+          <>✏️ <b>แก้ตัวเลขได้เลย — คลิกที่ช่องแล้วพิมพ์ทับ</b>
+            <span style={{ color: 'var(--muted)' }}>
+              {' · '}<b>Enter</b> ลงช่องล่าง{' · '}<b>Tab</b> ไปช่องขวา{' · '}<b>Esc</b> ยกเลิก
+              {' · '}แถวที่ติดป้าย <b>ƒ สูตร</b> (พื้นเทา ตัวเอียง) ระบบคำนวณให้ พิมพ์ทับไม่ได้
+              {' · '}ค่าที่คนกรอกชนะค่าที่ระบบดึงเสมอ
+            </span>
+          </>
+        ) : (
+          <>👁️ <b>อ่านอย่างเดียว</b>
+            <span style={{ color: 'var(--muted)' }}> — บัญชีนี้ยังไม่มีสิทธิ์ <code>monitoring:manage</code> จึงแก้ตัวเลขในบอร์ดไม่ได้ (ขอสิทธิ์ที่หน้า /permissions)</span>
+          </>
+        )}
+      </div>
+
       {/* ── ตาราง ───────────────────────────────────────────────────────────────── */}
       <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: FS, width: 'max-content', minWidth: '100%' }}>
@@ -218,16 +245,27 @@ export default function MonitorBoardGrid({
               {win.map((p, i) => {
                 const d = dayLabel(p.date);
                 const isSeed = p.key === seed?.key;
+                const isToday = p.date === todayKey;
                 return (
                   <th key={p.key} style={{
                     ...thBase, minWidth: COL_W, width: COL_W,
-                    background: isSeed ? 'var(--bg3)' : (d.weekend ? 'var(--bg2)' : 'var(--bg2)'),
-                    borderLeft: isSeed || i === 1 ? '2px solid var(--border2)' : thBase.borderLeft,
+                    background: isToday ? 'var(--accent-dim)' : (isSeed ? 'var(--bg3)' : 'var(--bg2)'),
+                    borderLeft: isToday ? '2px solid var(--accent)'
+                      : (isSeed || i === 1 ? '2px solid var(--border2)' : thBase.borderLeft),
+                    borderRight: isToday ? '2px solid var(--accent)' : undefined,
                   }}>
-                    <div style={{ color: isSeed ? 'var(--accent2)' : (d.weekend ? 'var(--muted)' : 'var(--text2)'), fontSize: FS - 1 }}>
-                      {isSeed ? 'ยกมา' : (board.period_kind === 'week' ? 'สัปดาห์' : d.top)}
+                    <div style={{
+                      fontSize: FS - 1,
+                      fontWeight: isToday ? 800 : undefined,
+                      color: isToday ? 'var(--accent)'
+                        : (isSeed ? 'var(--accent2)' : (d.weekend ? 'var(--muted)' : 'var(--text2)')),
+                    }}>
+                      {/* 🔴 ต้องบอกว่า "วันนี้" อยู่คอลัมน์ไหน (user 06/10) — บอร์ดกว้าง 34 คอลัมน์
+                          ไล่หาวันที่เองทุกครั้ง = เสียเวลาและอ่านผิดแถว · ใช้ `getWorkDate()`
+                          (ก่อน 08:00 = วันก่อนหน้า) ไม่ใช่วันปฏิทิน — กะดึกต้องชี้วันงานของตัวเอง */}
+                      {isToday ? '📍 วันนี้' : (isSeed ? 'ยกมา' : (board.period_kind === 'week' ? 'สัปดาห์' : d.top))}
                     </div>
-                    <div>{d.bot}</div>
+                    <div style={{ fontWeight: isToday ? 800 : undefined, color: isToday ? 'var(--accent)' : undefined }}>{d.bot}</div>
                   </th>
                 );
               })}
@@ -263,37 +301,59 @@ export default function MonitorBoardGrid({
                   cover: rawCoverage({ onHandKg: kg, queuePieces: q, kgPerPiece: part.kg_per_piece, pieces: part.pieces_per_shot || 1 }),
                 };
               })() : null;
-              return rows.map((row, ri) => (
-                <tr key={`${part.id}|${row.key}`} style={{ background: pi % 2 ? 'var(--bg2)' : 'transparent' }}>
+              return rows.map((row, ri) => {
+                /* 🔴 แถวสูตร (recur) ต้องดู "ไม่ใช่ของที่เรากรอก" ตั้งแต่แรกเห็น (user 06/10:
+                   *"แถวสูตรคำนวนกับแถวที่พิมพ์ได้ มันควรจะต่างกันมากกว่านี้"*)
+                   เดิมต่างแค่ตัวอักษรจาง + ตัว ƒ เล็กๆ ⇒ บนจอจริงที่มี 7 แถว/พาร์ท แยกไม่ออก
+                   ⇒ ทั้งแถวเปลี่ยนพื้น + ป้ายติดชื่อแถว + ตัวเลขเอียง (3 สัญญาณ ไม่ใช่สัญญาณเดียว) */
+                const isCalc = row.kind === 'recur';
+                const rowBg = isCalc ? 'var(--bg3)' : (pi % 2 ? 'var(--bg2)' : 'transparent');
+                return (
+                <tr key={`${part.id}|${row.key}`} style={{ background: rowBg }}>
                   {ri === 0 ? (
                     <td rowSpan={rows.length} style={{ ...tdSticky, width: HEAD_W, verticalAlign: 'top', background: pi % 2 ? 'var(--bg2)' : 'var(--card)' }}>
                       <PartHead part={part} board={board} shortAt={shortAt} racks={racks} raw={raw} />
                     </td>
                   ) : null}
                   <td style={{
-                    ...tdBase, whiteSpace: 'nowrap', fontWeight: row.kind === 'recur' ? 400 : 600,
-                    color: row.kind === 'recur' ? 'var(--text2)' : 'var(--text)',
+                    ...tdBase, whiteSpace: 'nowrap', fontWeight: isCalc ? 400 : 700,
+                    color: isCalc ? 'var(--muted)' : 'var(--text)',
                   }}>
                     {row.label}
                     {row.kind === 'system' ? <span title="ระบบดึงให้เอง — กรอกทับได้" style={{ color: 'var(--muted)' }}> ⚙</span> : null}
-                    {row.kind === 'recur' ? <span title="คำนวณจากคอลัมน์ก่อนหน้า — แก้ไม่ได้" style={{ color: 'var(--muted)' }}> ƒ</span> : null}
+                    {isCalc ? (
+                      <span title="ระบบคำนวณจากแถวอื่น — พิมพ์ทับไม่ได้"
+                        style={{
+                          marginLeft: 6, fontSize: FS - 1.5, fontWeight: 800, padding: '0 5px',
+                          borderRadius: 4, border: '1px solid var(--border2)',
+                          background: 'var(--bg2)', color: 'var(--muted)', whiteSpace: 'nowrap',
+                        }}>ƒ สูตร</span>
+                    ) : null}
                   </td>
                   {win.map((p, ci) => {
                     const c = cellAt(grid, part.id, row.key, p.key);
                     const isSeed = p.key === seed?.key;
+                    const isToday = p.date === todayKey;
                     const editing = edit && edit.partId === part.id && edit.rowKey === row.key && edit.periodKey === p.key;
                     const br = balKey === row.key ? breachBy.get(`${part.id}|${p.date}`) : null;
                     const neg = balKey === row.key && c?.v !== null && c?.v < 0;
                     return (
                       <td key={p.key}
+                        /* คลาสนี้ให้ hover + เส้นประใต้ตัวเลข = "ช่องนี้กดแก้ได้" (index.css · เฉพาะเครื่องที่มีเมาส์) */
+                        className={c?.editable && editable ? 'mon-cell-edit' : undefined}
                         onClick={() => c?.editable && !editing && startEdit(part.id, row.key, p.key, c.v)}
                         title={br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ' : undefined)}
                         style={{
                           ...tdBase, textAlign: 'right', cursor: c?.editable && editable ? 'cell' : 'default',
                           minWidth: COL_W, width: COL_W, padding: editing ? 0 : tdBase.padding,
-                          borderLeft: isSeed || ci === 1 ? '2px solid var(--border2)' : tdBase.borderLeft,
-                          background: isSeed ? 'var(--bg3)' : undefined,
-                          color: neg || br ? '#f87171' : (c?.src === 'system' ? 'var(--text2)' : (c?.src === 'recur' ? 'var(--text2)' : 'var(--text)')),
+                          borderLeft: isToday ? '2px solid var(--accent)'
+                            : (isSeed || ci === 1 ? '2px solid var(--border2)' : tdBase.borderLeft),
+                          borderRight: isToday ? '2px solid var(--accent)' : undefined,
+                          background: isToday ? 'var(--accent-dim)' : (isSeed ? 'var(--bg3)' : undefined),
+                          color: neg || br ? '#f87171' : (c?.src === 'system' ? 'var(--text2)' : (isCalc ? 'var(--muted)' : 'var(--text)')),
+                          /* ตัวเลขของแถวสูตร = เอียง ⇒ มองผ่านๆ ก็รู้ว่า "เครื่องคิดให้" ไม่ใช่ของที่ใครพิมพ์
+                             (สีจางอย่างเดียวไม่พอ — ตัวเลขที่ระบบดึงมา `system` ก็จางเหมือนกัน แต่กรอกทับได้) */
+                          fontStyle: isCalc ? 'italic' : undefined,
                           fontWeight: br || neg ? 700 : (c?.src === 'input' ? 600 : 400),
                         }}>
                         {editing ? (
@@ -337,7 +397,8 @@ export default function MonitorBoardGrid({
                     </>
                   ) : null}
                 </tr>
-              ));
+                );
+              });
             })}
           </tbody>
         </table>
@@ -347,7 +408,7 @@ export default function MonitorBoardGrid({
       <div style={{ fontSize: FS, color: 'var(--muted)', lineHeight: 1.8 }}>
         <b>Total SL</b> ของบอร์ดนี้นับจากแถว <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
         {board.sl_includes_seed ? ' + ยอดยกมา' : ''} (ข้ามคอลัมน์ยอดยกมาในการรวม)
-        {' · '}<b>ƒ</b> = ช่องที่ระบบคำนวณจากคอลัมน์ก่อนหน้า แก้ไม่ได้
+        {' · '}<b>ƒ สูตร</b> = แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้
         {' · '}<b>⚙</b> = ระบบดึงจากใบผลิต/สต๊อกให้ กรอกทับได้ (ค่าที่คนกรอกชนะเสมอ)
         {' · '}<b>–</b> = ข้อมูลไม่พอให้คิด (ไม่ใช่ 0)
         {!editable ? <> · <b>อ่านอย่างเดียว</b> (ไม่มีสิทธิ์แก้บอร์ดนี้)</> : null}
@@ -367,7 +428,12 @@ function PartHead({ part, board, shortAt, racks = null, raw = null }) {
   if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ชิ้น/จังหวะ`);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxWidth: HEAD_W - 16 }}>
-      <div style={{ fontWeight: 700, fontSize: FS + 0.5 }}>{matText(part) || part.mat_no || '(ไม่มีเลข)'}</div>
+      {/* 🔴 `matText(mat, index, row)` — อาร์กิวเมนต์แรกคือ "เลข MAT" ไม่ใช่ทั้งแถว
+          เดิมส่ง `matText(part)` ⇒ หัวพาร์ททุกแถวขึ้น `MAT [object Object]` แทนเลขจริง (แก้ 05/10)
+          ชื่อพาร์ทวาดเป็นบรรทัดของตัวเองข้างล่าง (clamp 2 บรรทัด) จึงไม่ส่ง `name` เข้ามาซ้ำ */}
+      <div style={{ fontWeight: 700, fontSize: FS + 0.5 }}>
+        {matText(part.mat_no, null, { pNo: part.part_no }) || part.mat_no || '(ไม่มีเลข)'}
+      </div>
       {part.part_name ? (
         <div style={{
           color: 'var(--text2)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',

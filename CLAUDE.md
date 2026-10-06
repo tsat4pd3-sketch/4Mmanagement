@@ -38,7 +38,8 @@
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกในไฟล์โมดูล (ข้ามโมดูลจริง เช่น "กับดัก CSS" ค่อยไว้ที่นี่)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
 - **⚠️ ส่ง SQL/คำสั่งให้ user: วาง SQL เต็มๆ ในแชท ห้ามบอกแค่ชื่อไฟล์ · ระบุ project (Main/DR) ทุกครั้ง · แนบคิวรีเช็คผล (คำสั่งถาวร 2026-08-21)** — user มีแค่ **Supabase SQL Editor บนเว็บ ไม่มี CLI/terminal เปิดไฟล์ในรีโปไม่ได้** ⇒ **ห้ามส่งคำสั่ง shell/CLI ให้รัน** · migration ที่ย้อนได้ + edge function = AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ · 📄 เคสที่เคยพลาด + ขั้นตอน → `docs/modules/db-write-rules.md` §ส่ง SQL ให้ user · `docs/modules/edge-functions.md`
-- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` · 📄 `docs/modules/doc-forms.md` · UI §6.6
+- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` · **CSV ก็นับ** — ชื่อไฟล์ผ่าน `src/utils/csvDoc.js`
+  (🔴 เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV = คอลัมน์เลื่อนทั้งไฟล์) · 📄 `docs/modules/doc-forms.md` · UI §6.6
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
@@ -94,13 +95,15 @@
 - `daily_production_logs.assigned_line` = **id จุดงาน ไม่ใช่ชื่อไลน์**
 - `employee_skills` — ห้ามเขียนคะแนนจาก client (ดู "Employee Skills & EXP Farming")
 - ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`die_set_kinds`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
+  🔴 **ทะเบียนที่จับคู่ด้วย "ข้อความ" (ไม่ผูก FK) — ลบ/เปลี่ยนชื่อแถวทะเบียน ต้องไล่เช็คและไล่แก้ปลายทางในคราวเดียว**
+  ห้ามเช็คแค่ "มีลูกในตารางตัวเองไหม" · ต้นแบบ `src/utils/orgNodeRefs.js` (ผังองค์กร — เช็ค FK + สำเนาชื่อ ·
+  ต่างชั้นใช้คีย์ต่างกัน code vs name) · **นับไม่ครบ = ห้ามลบ (fail-closed)** · 📄 `docs/modules/org-hierarchy.md`
 - **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
 
 ---
 
 ## Pages & Routes
 
-สิทธิ์เข้าถึงแต่ละหน้า ไม่ได้ hardcode ในโค้ดอีกต่อไป …
 > 📄 รายละเอียดเต็ม → `docs/modules/pages-routes.md`
 
 ---
@@ -142,7 +145,6 @@ Reject → status: "rejected" + reject_reason
 ```
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
-> **เคยเกิดจริง:** ตัวสร้าง 4M Man อัตโนมัติยิงใบท่วมคิว จน**ใบจริงถูกกลบ 2 เดือนครึ่ง**
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
 > เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
 > 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
@@ -158,7 +160,6 @@ Reject → status: "rejected" + reject_reason
 
 ## Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17)
 
-Planner/Sale อัพโหลด forecast ลูกค้า → ระบบคำนวณจำนวน kanban ที่ใช้ในระบบดึงอัตโนมัติ …
 > 📄 รายละเอียดเต็ม → `docs/modules/kanban-auto-calc.md`
 
 ---
@@ -179,14 +180,12 @@ Planner/Sale อัพโหลด forecast ลูกค้า → ระบบ�
 
 ## กระบวนการผลิต (process types) — master data-driven (2026-07-23)
 
-เลิก hardcode รายชื่อกระบวนการแล้ว (คำสั่ง user …
 > 📄 รายละเอียดเต็ม → `docs/modules/process-types.md`
 
 ---
 
 ## Daily Report — ไลน์ผสมหลาย process (welding + metal forming ในไลน์เดียว · 2026-07-22)
 
-dropdown ประเภท Downtime/งานเสีย ใช้ `sessionProcessTypesAll()` …
 > 📄 รายละเอียดเต็ม → `docs/modules/daily-report-mixed-process.md`
 
 ---
@@ -230,6 +229,13 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 >   ในไฟล์เดียวกัน** (22/09 · มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap`
 >   ทุกจอ (มีด่าน `regressionGuards`) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
+> ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
+> *"ต่างแค่ลูกค้า แต่ product ตัวเดียวกัน แค่ต้องแยกบิล แยกรหัส แยก mat SAP"* · `op_parent_mat` เป็น
+> **text ช่องเดียว** ⇒ กะที่รันลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ แล้ว**นับซ้ำเงียบๆ**
+> · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
+>   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
+>   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
+
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
 >   (หลักเดียวกับงานทดลอง `is_trial`/`excl_from_q`) · ผลพิจารณาอ่านจาก `quality_bin_records`
@@ -253,7 +259,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Morning Meeting — ประชุมแถวเช้า (2026-07-13)
 
-หน้า `/morning-meeting` (กลุ่มฝ่ายผลิต) — บอร์ดประชุมทบทวนเช้าก่อนเริ่มงาน ข้อมูลดึงอัตโนมัติทั้งหมด ไม่ต้องทำสไลด์ วาระ …
 > 📄 รายละเอียดเต็ม → `docs/modules/morning-meeting.md`
 
 ---
@@ -506,7 +511,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 > · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
 > 📄 `docs/modules/die-maintenance.md`
 
-`/equipment?tab=die` (เดิม `/die-registry`) เป็น 3 แท็บ …
 > 📄 รายละเอียดเต็ม → `docs/modules/die-maintenance.md`
 
 ---
@@ -622,7 +626,6 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 
 ## Traceability / Audit Log — ใครแก้อะไรเมื่อไหร่ (2026-07-24)
 
-เดิมตาราง master ~90% track แค่ `created_at` → แก้ไขแล้วสืบไม่ได้ว่าใคร/เมื่อไหร่/ค่าเก่าอะไร …
 > 📄 รายละเอียดเต็ม → `docs/modules/traceability-audit-log.md`
 
 ---
@@ -666,7 +669,16 @@ dropdown ประเภท Downtime/งานเสีย ใช้ `sessionPro
 `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
 · 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบเสมอ
 · ⚠️ **แต่ละชีทคิด Total SL คนละสูตร — เก็บเป็น `sl_row` ห้ามยุบเอง**
+· 📦 **บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ "ไลน์"** (ยอดสั่งจาก EDI 862/830) ⇒ **IN ห้ามกรองไลน์**
 📄 `docs/modules/monitoring-boards.md`
+
+---
+
+## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board` (2026-10-06)
+
+แทนบอร์ดกระดาษหน้าไลน์ (ผังคน · ผัง LAYOUT · ป้าย 4M) · **อ่านอย่างเดียว ไม่มีตารางใหม่** · กฎอยู่ `utils/manpowerBoard.js` ที่เดียว
+· แถวของคน = **ตำแหน่ง** · คอลัมน์ = ทีม · กะของทีม = `shiftFromTeam` **ห้ามเขียน A = Shift 01** · ตารางกะไม่ตั้ง = ไม่คิดช่องว่าง (null)
+> 📄 `docs/modules/manpower-board.md`
 
 ---
 
@@ -856,7 +868,9 @@ subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) 
 - **`position:sticky` เกาะจอได้เพราะ `<main>` ใน App.jsx เป็น `overflowX:'clip'` — ห้ามเปลี่ยนเป็น `hidden`/`auto`**
   · กล่องที่แค่ตัดของล้นใช้ `clip` · sticky ไม่ทำงาน ให้ไล่หาบรรพบุรุษที่ overflow ≠ visible/clip ก่อนแก้ที่หน้า
 - **`display:grid` ที่อาจสูงกว่าเนื้อหา ต้องใส่ `alignContent:'start'`** (ไม่งั้นการ์ดถูกยืดสูงผิดสัดส่วน · flexbox ไม่เป็น)
-- **จอ TV/บอร์ดหน้างาน ห้าม font 8–9px** — เริ่มที่ 11–12px (ชิป/ป้าย) · 14–15px (หัวข้อ)
+- **จอ TV/บอร์ดหน้างาน: ฟอนต์พื้น 11px ห้ามต่ำกว่านี้** (ชิป/ป้าย 11–12 · หัวข้อ 14–15) — **มีด่าน `font-min-11`**
+  + `audit/chartsweep.mjs` วัด "ขนาดที่เห็นบนจอ" (รวมสเกล SVG) · แน่นเกิน = **เว้นป้าย/ซ่อนป้าย ห้ามลดฟอนต์**
+  · ยกเว้น `src/lib/**` (ใบพิมพ์/PPTX = pt บนกระดาษ) · ตัวสเกลตามจอใช้ `fs()` ที่มีพื้น `Math.max(11, …)`
 - 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
   (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 

@@ -42,6 +42,7 @@ import useOrgScope from '../utils/useOrgScope';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
+import { useLatestRequest } from '../utils/useLatestRequest';
 
 import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
@@ -482,7 +483,9 @@ export default function OEEAnalytics() {
     return targetOf(pool.map(g => g.name));
   }, [tdLine, tdDept, tdUnit, tdUnitLines, tdSection, allGroups, targetOf, groupOfLine]);
 
+  const beginToday = useLatestRequest();   // เปลี่ยนวัน/กะ/ขอบเขตระหว่างโหลด = คำตอบเก่าห้ามทับจอ (กฎ DB ข้อ 4 · 05/10)
   const loadToday = useCallback(async () => {
+    const live = beginToday();
     // scope แล้วแต่รายชื่อไลน์ยังไม่มา (หรือไม่มีไลน์ใน scope) — ห้าม query แบบไม่กรอง
     if (isScoped && !(tdScopeLines || []).length) { setTdSessions([]); setTdDowntimes([]); setTdDefects([]); return; }
     setTdLoading(true);
@@ -496,7 +499,14 @@ export default function OEEAnalytics() {
       if (tdScopeLines?.length === 1) q = q.eq('line_name', tdScopeLines[0]);
       else if (tdScopeLines?.length > 1) q = q.in('line_name', tdScopeLines);
       if (tdShift) q = q.eq('shift', tdShift);
-      const { data: sess } = await q;
+      /* 05/10 (QC audit): เดิม `{ data: sess }` ⇒ คิวรีกะล้ม = "วันนี้ไม่มีกะ" ทุกแผงเป็น 0 เงียบๆ */
+      const { data: sess, error: sErr } = await q;
+      if (!live()) return;
+      if (sErr) {
+        console.error('[OEEAnalytics] loadToday กะ:', sErr);
+        setTdLoadWarn(`โหลดข้อมูลกะไม่สำเร็จ: ${sErr.message || sErr} — ตัวเลขด้านล่างเป็นของรอบก่อนหน้า`);
+        return;
+      }
 
       const sessionIds = (sess || []).map(s => s.id);
       // วันเดียวมีกะไม่มาก แต่ใช้ helper เดียวกับแท็บแนวโน้มไว้ — กันพลาดซ้ำถ้าวันหน้าไลน์เยอะขึ้น
@@ -509,6 +519,7 @@ export default function OEEAnalytics() {
         fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
           .select('session_id, mat_no, status, qty, qty_target, qty_ok, qty_actual').in('session_id', c)),
       ]);
+      if (!live()) return;
       const ord = ordRes.rows;
 
       setTdSessions(sess || []);
@@ -523,11 +534,14 @@ export default function OEEAnalytics() {
       if (mats.length) {
         // + cycle_time_sec/name: ใช้คำนวณ OEE สดของกะที่ยังไม่ปิด (computeLiveOee) และแสดงชื่อพาร์ทในการ์ดกำลังผลิต
         // CT ผ่าน buildCtMap — fallback chain เดียวกับตอนปิดกะ (kanban_standards → dr_products)
-        const [{ data: prod }, kstd] = await Promise.all([
+        const [{ data: prod, error: pErr }, kstd] = await Promise.all([
           supabaseDR.from('dr_products').select('mat_no, pair_mat_no, cycle_time_sec, name').in('mat_no', mats),
           supabaseDR.from('kanban_standards').select('mat_no, dr_products(cycle_time_sec)').in('mat_no', mats).then(r => r, () => ({ data: [] })),
           loadOpInfo(), // map รายการขั้นตอน (OP) — ให้ opInfoSync พร้อมก่อนคำนวณ tdKpi
         ]);
+        if (!live()) return;
+        // ทะเบียนสินค้าโหลดไม่ได้ = ไม่รู้ CT/คู่ RH-LH ⇒ OEE สดเชื่อไม่ได้ ต้องบอก (เดิมเงียบ)
+        if (pErr) setTdLoadWarn(w => w || `โหลดทะเบียนสินค้า (CT/คู่ RH-LH) ไม่สำเร็จ: ${pErr.message || pErr}`);
         const pm = {}, nm = {};
         (prod || []).forEach(p => {
           if (p.pair_mat_no) pm[p.mat_no] = p.pair_mat_no;
@@ -544,9 +558,9 @@ export default function OEEAnalytics() {
       (sess || []).forEach(s => { if (s.dr_products?.mat_no) matMap[s.dr_products.mat_no] = s.dr_products.name; });
       setTdProductsByMat(prev => ({ ...prev, ...matMap }));
     } finally {
-      setTdLoading(false);
+      if (live()) setTdLoading(false);
     }
-  }, [tdDate, tdShift, tdScopeLines, isScoped]);
+  }, [tdDate, tdShift, tdScopeLines, isScoped, beginToday]);
 
   const loadTdHistory = useCallback(async () => {
     if (isScoped && !(tdScopeLines || []).length) { setTdHistory([]); return; }
@@ -926,7 +940,9 @@ export default function OEEAnalytics() {
   }, [selLine, allGroups, targetOf, groupOfLine]);
 
   // ── Load data ──────────────────────────────────────────────────
+  const beginData = useLatestRequest();   // เปลี่ยนช่วง/ไลน์ระหว่างไล่หน้า = คำตอบเก่าห้ามทับจอ (กฎ DB ข้อ 4 · 05/10)
   const loadData = useCallback(async () => {
+    const live = beginData();
     setLoading(true);
     try {
       const pcm = parentChildrenMap; // pre-loaded by shared effect above
@@ -974,6 +990,7 @@ export default function OEEAnalytics() {
         //    (เลือกไลน์นั้นดูแนวโน้มไม่ได้เลย และไม่มีอะไรบอกว่าหายไป)
         fetchAllPages(() => supabaseDR.from('production_sessions').select('line_name').eq('status', 'closed')),
       ]);
+      if (!live()) return;
       const linesData = lineRes.rows;
 
       setSessions(sess || []);
@@ -994,6 +1011,7 @@ export default function OEEAnalytics() {
       //    แล้ว trTotalQty ถอยไปใช้ actual_qty เงียบๆ (ยอดที่เห็นเลยตรงกับ sum(actual_qty) เป๊ะ)
       const ordRes = await fetchByIds(sessionIds, c => supabaseDR.from('prod_orders')
         .select('session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c));
+      if (!live()) return;
       setTrOrders(ordRes.rows);
       // โหลดไม่ครบ = ตัวเลขรวมต่ำกว่าจริง ต้องบอกบนจอ ห้ามเงียบ
       setTrLoadWarn(
@@ -1010,6 +1028,7 @@ export default function OEEAnalytics() {
           const { data: pr } = await supabaseDR.from('dr_products').select('mat_no, pair_mat_no').in('mat_no', trMats.slice(i, i + 300));
           (pr || []).forEach(p2 => { if (p2.pair_mat_no) pm[p2.mat_no] = p2.pair_mat_no; });
         }
+        if (!live()) return;
         setTrPairMat(pm);
       } else setTrPairMat({});
 
@@ -1021,9 +1040,9 @@ export default function OEEAnalytics() {
         .sort();
       setLines(uniqueLines);
     } finally {
-      setLoading(false);
+      if (live()) setLoading(false);
     }
-  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap, isScoped, linesFull]);
+  }, [dateFrom, dateTo, selLine, selShift, parentChildrenMap, isScoped, linesFull, beginData]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

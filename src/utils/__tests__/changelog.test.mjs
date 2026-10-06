@@ -93,3 +93,15 @@ test('limitFeed — ชุดว่าง/เพดาน 0 ไม่ throw', ()
   assert.deepEqual(limitFeed([], 5), { days: [], shown: 0, total: 0, hidden: 0 });
   assert.equal(limitFeed([day('2026-09-30', 2)], 0).shown, 2);  // 0 = ไม่ตั้งเพดาน (ไม่ใช่ซ่อนทั้งหมด)
 });
+
+test('มุมมอง "สำหรับผู้ใช้" (ตั้งต้น) ซ่อนเอกสาร/งานระบบ · "ทั้งหมด" ยังเห็นครบ (UX audit 05/10)', async () => {
+  const { buildFeed } = await import('../changelog.js');
+  const rows = [
+    { d: '2026-10-05', t: 'feat', m: 'a' }, { d: '2026-10-05', t: 'fix', m: 'b' },
+    { d: '2026-10-05', t: 'perf', m: 'c' }, { d: '2026-10-05', t: 'docs', m: 'd' },
+    { d: '2026-10-05', t: '', m: 'e ไม่มี prefix' },
+  ];
+  assert.deepEqual(buildFeed(rows, { kind: 'user' })[0].items.map(r => r.m), ['a', 'b', 'c']);
+  assert.equal(buildFeed(rows, { kind: 'all' })[0].items.length, 5);
+});
+

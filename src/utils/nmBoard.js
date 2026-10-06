@@ -159,6 +159,72 @@ export function tvGrid(n, ratio = 16 / 9) {
 }
 
 
+/* ══ ⚖️ น้ำหนักของการ์ดบนบอร์ด — "ทุกใบเท่ากัน" = บอร์ดไม่มีลำดับสายตา (2026-10-05 · feedback user)
+   *"สเกลการ์ดเท่ากันแบบนี้มันดูไม่มีการ design ที่ดี มันควรมีน้ำหนักที่ต่างกันในแต่ละการ์ด"*
+
+   ปัญหาที่วัดได้จากบอร์ด 737D MLM: 21 แผง = 🔴4 · 🟡3 · 🟢8 · ⚪6
+   ⇒ 14 ใบจาก 21 ใบ (67%) **ไม่มีข้อความให้อ่านเลย** แต่กินพื้นที่เท่าใบแดงที่มี 3 บรรทัดต้องอ่าน
+   = คนยืนหน้าบอร์ดต้องกวาดตาทีละใบเพื่อหาว่าปัญหาอยู่ไหน ทั้งที่สีบอกไปแล้ว
+
+   🔴 กติกา (ห้ามแก้เป็น "ทุกใบเท่ากัน" อีก):
+   - น้ำหนัก = **ปริมาณที่ต้องอ่าน** ไม่ใช่ "ความสำคัญ" ลอยๆ — แดงมีเหตุผลต้องอ่าน ⇒ กว้าง 3
+     เหลืองต้องเฝ้า ⇒ 2 · เขียว/ยังไม่ประเมินเหลือแค่ชื่อ+ไฟ ⇒ 1
+   - 🔴 **ห้ามเรียงใหม่ตามสี** — ลำดับแผงบนบอร์ดกระดาษคือสิ่งที่คนจำตำแหน่งได้
+     (สีเปลี่ยนทุกสัปดาห์ · ถ้าใบย้ายที่ตามสี คนจะหาแผงที่ต้องการไม่เจอ) ⇒ pack ตามลำดับเดิมเสมอ
+   - 🔴 **แดงที่ยังไม่เขียนเหตุผล ยังได้น้ำหนัก 3** — ช่องว่างใหญ่ๆ คือตัวฟ้องว่ายังไม่กรอก
+     (กฎ IEC ข้อ 2: แดงต้องมีข้อความ) ย่อให้เล็ก = ซ่อนความผิดปกติ
+   - 🔴 **ห้ามซ่อน/ยุบแผงที่เขียวหรือยังไม่ประเมิน** — เล็กลงได้ หายไปไม่ได้ (กฎความซื่อสัตย์ของจอ)
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+export const PANEL_WEIGHT = { R: 3, Y: 2, G: 1, none: 1 };
+
+/** น้ำหนักของแผง 1 ใบ — ใช้เป็น flex-grow ของการ์ดในแถว */
+export const panelWeight = (p) => PANEL_WEIGHT[p?.eva] || 1;
+
+/**
+ * จัดแผงลงแถว โดย **คงลำดับเดิม** และให้ผลรวมน้ำหนักต่อแถวไม่เกิน `perRow`
+ * ⚠️ ใบที่หนักเกินโควต้าทั้งแถว (เช่น perRow=2 เจอใบน้ำหนัก 3) ต้องได้อยู่แถวของตัวเอง
+ *    ไม่ใช่ถูกตัดทิ้งหรือวนลูป
+ * @returns {Array<{items:Array, weight:number}>}
+ */
+export function packWeightedRows(panels, perRow, weightOf = panelWeight) {
+  const list = (Array.isArray(panels) ? panels : []).filter(Boolean);
+  if (!list.length) return [];
+  const cap = Math.max(1, Math.floor(Number(perRow) || 0) || 1);
+  const rows = [];
+  let cur = [];
+  let w = 0;
+  for (const it of list) {
+    const iw = Math.max(1, Math.floor(Number(weightOf(it)) || 1));
+    if (cur.length && w + iw > cap) { rows.push({ items: cur, weight: w }); cur = []; w = 0; }
+    cur.push(it);
+    w += iw;
+  }
+  if (cur.length) rows.push({ items: cur, weight: w });
+  return rows;
+}
+
+/**
+ * เลือก `perRow` ที่ทำให้การ์ดบนจอ 16:9 ได้สัดส่วนอ่านง่ายที่สุด แล้วคืนแถวที่จัดเสร็จแล้ว
+ * - การ์ดเป็น "กล่องข้อความ" ไม่ใช่รูป ⇒ เล็งทรงนอน ~1.6:1 (กว้างกว่าสูง) ไม่ใช่จัตุรัส
+ * - หักคะแนนแถวสุดท้ายที่โหว่เยอะ (ใบในแถวนั้นจะถูกยืดจนผิดสเกลจากแถวอื่น)
+ * @returns {{ perRow:number, rows:Array<{items:Array, weight:number}> }}
+ */
+export function tvWeightedLayout(panels, { ratio = 16 / 9, weightOf = panelWeight } = {}) {
+  const list = (Array.isArray(panels) ? panels : []).filter(Boolean);
+  if (!list.length) return { perRow: 1, rows: [] };
+  const maxW = list.reduce((m, p) => Math.max(m, weightOf(p)), 1);
+  let best = null;
+  for (let perRow = maxW; perRow <= Math.max(maxW, 14); perRow++) {
+    const rows = packWeightedRows(list, perRow, weightOf);
+    const cellRatio = (ratio / perRow) / (1 / rows.length);      // กว้าง:สูง ของช่องน้ำหนัก 1
+    const slack = (perRow - rows[rows.length - 1].weight) / perRow;
+    const score = Math.abs(Math.log(cellRatio / 1.6)) + slack * 0.5;
+    if (!best || score < best.score) best = { perRow, rows, score };
+  }
+  return { perRow: best.perRow, rows: best.rows };
+}
+
+
 /* ══ 🧭 work flow การไล่ดูบอร์ด — กติกาจาก IEC เอง (Obeya_E_Board-V2.pptx · 2026-09-24) ══
    IEC ส่งสไลด์บอกลำดับการเจาะมาเอง 4 ชั้น: 4 แผงหน้าแรก → POP → หัวข้อย่อย → เอกสาร/ไฟล์
    🔴 กติกาที่เขาเขียนกำกับไว้ ห้ามตีความใหม่:

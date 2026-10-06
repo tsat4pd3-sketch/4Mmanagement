@@ -200,11 +200,18 @@ export function axisDelivery({ target = 0, produced = 0, series = [], lateOrders
    แต่ยังไม่รู้ "ราคาขาย" ⇒ ทำ margin ไม่ได้ (ดู docs/FINANCIAL-GAP-ANALYSIS.md)
    ⇒ KPI ของแกนนี้คือ **มูลค่าความสูญเสีย** — ยิ่งน้อยยิ่งดี (better: 'down')
    ⚠️ ไม่มีอัตราค่าแรงของ cost center = คิดไม่ได้ ต้องบอก ห้ามใส่ 0 แทน (0 บาท = "ไม่เสียอะไรเลย" ซึ่งโกหก) */
-export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0 } = {}) {
+/* `sessions` = จำนวนกะ (ปิดแล้ว) ในขอบเขต — **0 = ไม่มีข้อมูล ⇒ value null (เทา)** ห้ามคืน 0 บาท
+   (0 บาท = "ไม่เสียอะไรเลย" ⇒ ไฟเขียว "ไม่มีความสูญเสีย" ทั้งที่ยังไม่มีกะผลิตสักกะ — QC audit 05/10)
+   ไม่ส่ง (null) = ไม่รู้ ⇒ พฤติกรรมเดิม */
+export function axisCost({ dtBaht = 0, ngBaht = 0, series = [], target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
   const total = (Number(dtBaht) || 0) + (Number(ngBaht) || 0);
   const notes = [];
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
+  if (sessions === 0 && !(total > 0)) {
+    return { key: 'C', unit: 'บาท', better: 'down', target, value: null, dtBaht: 0, ngBaht: 0,
+      state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในช่วงนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย', series };
+  }
   return {
     key: 'C', unit: 'บาท', better: 'down', target,
     value: total > 0 ? Math.round(total) : (notes.length ? null : 0),
@@ -256,6 +263,32 @@ export function actionBuckets(items = [], today) {
 }
 
 /** สุขภาพของลูปปิด — ใช้ตอบคำถามเดียวที่สำคัญที่สุดของ Obeya: "ที่ตกลงกันไว้ ทำจริงไหม" */
+/** 🔒 ใบ Action ที่ "อยู่ในขอบเขต" (05/10 · audit: ACTION BOARD เดิมโชว์ทุกใบทั้งโรงงานไม่สนทั้ง scope user และขอบเขตที่เลือก)
+ *  · ใบที่ระบุไลน์ → ตัดสินด้วย `lineOk(line)` = ชุดเดียวกับที่กรองข้อมูลผลิตบนจอ (scope user ∩ ขอบเขตที่เลือก)
+ *    `lineOk` คืน `null` = ไลน์นี้ไม่อยู่ในทะเบียนแล้ว (เปลี่ยนชื่อ/ยุบ) → ถอยไปตัดสินด้วยส่วนงานของใบแทน ไม่ทิ้งใบเงียบ
+ *  · ใบที่ระบุแค่ส่วนงาน → ต้องอยู่ในสังกัด user (`sections` · [] = ไม่จำกัด) และใต้ขอบเขตที่เลือก (`scopeSecs` · null = ทั้งโรงงาน)
+ *  · ใบที่ไม่ระบุทั้งคู่ = ใบระดับโรงงาน → เห็นเมื่อดู "ทั้งโรงงาน" และ user ไม่ถูกจำกัดส่วนงาน
+ *  คืน `{ items, hidden }` — hidden = จำนวนที่ถูกกรองออก **จอต้องเขียนบอก ห้ามหายเงียบ** (กฎความซื่อสัตย์) */
+export function scopeActions(items = [], { sections = [], scopeSecs = null, lineOk = null } = {}) {
+  const norm = (s) => (s || '').toString().trim().toLowerCase();
+  const secLimited = !!(sections && sections.length);
+  const userSecs = secLimited ? new Set(sections.map(norm)) : null;
+  const sel = scopeSecs ? new Set([...scopeSecs].map(norm)) : null;
+  const ok = (a) => {
+    if (a.line_name) {
+      const r = lineOk ? lineOk(a.line_name) : true;
+      if (r !== null && r !== undefined) return !!r;
+    }
+    const s = norm(a.section);
+    if (!s) return !secLimited && !sel;
+    if (userSecs && !userSecs.has(s)) return false;
+    if (sel && !sel.has(s)) return false;
+    return true;
+  };
+  const kept = items.filter(ok);
+  return { items: kept, hidden: items.length - kept.length };
+}
+
 export function actionHealth(items = [], today) {
   const b = actionBuckets(items, today);
   const live = b.overdue.length + b.dueSoon.length + b.open.length;

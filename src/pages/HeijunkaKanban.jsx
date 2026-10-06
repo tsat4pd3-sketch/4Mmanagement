@@ -25,6 +25,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import LineScopeSelect from '../components/LineScopeSelect';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -32,10 +33,15 @@ import useTabParam from '../utils/useTabParam';
 import { groupAccumulator, STALE_DAYS } from '../utils/pullAccumulator';
 import { storeBtn } from '../utils/storeUi';
 import MatLabel from '../components/MatLabel';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
+import { halfDayBreakIntervals } from '../utils/oee';
+import { SPENT_STATUSES } from '../utils/shiftCapacity';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import StatusZones from '../components/StatusZones';
 import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc } from '../utils/csvDoc';
 
 /* 🧭 ทะเบียนมุมมองของบอร์ดสโตร์ (2026-09-25 · คำสั่ง user *"สับสนการใช้งาน แต่ละ tab มากๆ"*)
 
@@ -382,18 +388,8 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
   );
 
   // ช่วง break_policies ที่ตรงกับ half นี้ (เป็น [startMs, endMs]) — ใช้ทั้งวาดแถบและกันรอบจัดส่งวางทับเวลาพัก
-  const getBreakIntervals = (half) => breakPolicies
-    .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-    .map(p => {
-      const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-      if (idx < 0) return null;
-      const mins = Number(String(p.start_time).slice(3,5)) || 0;
-      const s = half.startMs + idx * 3600000 + mins * 60000;
-      const e = s + (p.duration_min || 0) * 60000;
-      return [s, e];
-    })
-    .filter(Boolean)
-    .sort((a, b) => a[0] - b[0]);
+  // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+  const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
 
   /* รอบที่ "ตกอยู่ในครึ่งวันนี้" — ใช้ทั้งวาดบล็อกและนับเลขบนป้ายซ้าย (ต้องเป็นชุดเดียวกันเสมอ
      ไม่งั้นป้ายบอก 3 รอบ แต่แถวว่างเปล่า = จอขัดกันเอง) */
@@ -434,7 +430,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
             return half.startMs + idx * 3600000 + mins * 60000 === bs;
           }) || {};
           return (
-            <div key={`brk-${pi}`} title={`${p.name_th || p.name_en} — ไลน์ไม่รองรับ KANBAN`}
+            <div key={`brk-${pi}`} title={`${p.name_th || p.name_en || 'พัก'} — ไลน์ไม่รองรับ KANBAN`}
               style={{
                 position: 'absolute', top: 0, bottom: 0, left: `${leftPct}%`, width: `${widthPct}%`,
                 background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
@@ -710,10 +706,13 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
   const nextCutMins = nextCut ? Math.round((nextCut.ms - nowMs) / 60000) : null;
 
   // ⚠️ ตรวจตารางรอบ: cutoff ต้องมาก่อนเวลาส่ง + ช่วงส่งไม่ควรชนช่วงพักของกะนั้น
-  const breakIvs = breakPolicies.map(p => {
-    const s = timeStrToMs(workDate, p.start_time);
-    return s == null ? null : { s, e: s + (p.duration_min || 0) * 60000, name: p.name_th || p.name_en || p.name || 'พัก', shift: p.shift || 'both' };
-  }).filter(Boolean);
+  /* 🔴 ช่วงพักต่อกะผ่าน halfDayBreakIntervals (QC 05/10) — เดิม timeStrToMs(workDate, 00:30) วางพักกะดึก
+     หลังเที่ยงคืนไว้ "เช้าวันงาน" (ผิดวัน) + ไม่กรอง ot_scope · ชื่อพักหาจากเวลาเริ่มที่ตรงกัน */
+  const fStart = dayFrameMs(workDate).startMs;
+  const hhmmOf = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const brkName = (ms) => { const p = breakPolicies.find(bp => String(bp.start_time || '').slice(0, 5) === hhmmOf(ms)); return p?.name_th || p?.name_en || p?.name || 'พัก'; };
+  const breakIvs = [['day', 'am', fStart], ['night', 'pm', fStart + 12 * 3600000]].flatMap(([shift, key, startMs]) =>
+    halfDayBreakIntervals({ policies: breakPolicies, half: { key, startMs } }).map(([s, e]) => ({ s, e, name: brkName(s), shift })));
   const warnings = [];
   rounds.forEach(r => {
     const cut = timeStrToMs(workDate, r.cutoff_time);
@@ -1175,7 +1174,7 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
     fg: rounds.filter(r => !confirmedSet.has(`${r.line_name}|${r.shift}|${r.round_no}`)).length,
     child: lotRequests.filter(l => l.status !== 'done').length,
     purchase: openPurchases.length,
-    raw: rawRequests.filter(r => r.status !== 'issued').length,
+    raw: rawRequests.filter(r => r.status === 'pending').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
     wip: wipRequests.filter(w => w.status !== 'delivered').length,
   };
@@ -1452,7 +1451,21 @@ function UnifiedStoreBoard({ store, setStore, rounds, deliveries, view, onConfir
   );
 }
 
+/* ใบค้าง (ทุกหน้า) + ประวัติล่าสุด N ใบ → { data, error } รูปเดียวกับผลคิวรีเดี่ยว (เรียงใหม่→เก่า)
+   ใบค้างโหลดไม่ครบ (error/เกินเพดาน) = error ทั้งก้อน ⇒ จอคงข้อมูลรอบก่อน + บอกว่าโหลดไม่ได้ */
+const openPlusHistory = async (openQ, histQ, histN) => {
+  const [op, hi] = await Promise.all([
+    fetchAllPages(openQ),
+    histQ().order('created_at', { ascending: false }).limit(histN),
+  ]);
+  const err = op.error ? { message: op.error } : op.truncated ? { message: 'ใบค้างเยอะเกินเพดาน — โหลดได้ไม่ครบ' } : hi.error;
+  const data = [...op.rows, ...(hi.data || [])].sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  return { data, error: err || null };
+};
+
 export default function HeijunkaKanban() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { fullName, role } = useContext(UserContext);
   const navigate = useNavigate();
   const canOperate = can('heijunka', 'operate', role);
@@ -1488,6 +1501,13 @@ export default function HeijunkaKanban() {
   const [lotSizeMap, setLotSizeMap]   = useState({});   // mat_no → lot_size
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
+  /* ขอบเขตไลน์ — ช่องเดียวมาตรฐานเดียวกับทุกหน้า (QC audit 06/10 · user: "เอาให้เป็นมาตรฐาน")
+     🔴 เป็น **ตัวกรองมุมมอง** ไม่ใช่การจำกัดสิทธิ์ — default = ทั้งหมด
+     เหตุ: สโตร์/วางแผนป้อนของให้ทั้งโรงงาน และหน่วยงานสนับสนุนไม่มีไลน์ผลิตสังกัด
+     ⇒ ถ้าบังคับด้วย profiles.sections จะเหลือ 0 แถวทันที (กับดักที่ operator.jsx เตือนไว้) */
+  const [scopeSec,  setScopeSec]      = useState('');
+  const [scopeLine, setScopeLine]     = useState('');
+  const [scopeSet,  setScopeSet]      = useState(null);   // null = ไม่กรอง
   const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
   const [parentChildrenMap, setParentChildrenMap] = useState({}); // parent → [children]
   // ── ตู้ Kanban รวม: Rack Center (ภาชนะ + packaging) ──
@@ -1564,8 +1584,16 @@ export default function HeijunkaKanban() {
     //     ทำให้แท็บ Store Child ขึ้น 158 การ์ด · จัดซื้อขึ้น 300 การ์ด — user: "ดูรก อะไรเยอะไปหมด")
     //    precedent เดียวกับ rackRequests ที่กรอง cancelled อยู่แล้ว
     const [{ data: lots, error: eLots }, { data: raws, error: eRaws }, { data: acc, error: eAcc }, { data: ks, error: eKs }, { data: racks, error: eRacks }, { data: pkgs, error: ePkgs }, { data: wips, error: eWips }, { data: dps, error: dpErr }, { data: purchases, error: purErr }, { data: slocRows, error: slocErr }] = await Promise.all([
-      supabaseDR.from('child_lot_requests').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }).limit(200),
-      supabaseDR.from('raw_withdrawal_requests').select('*').order('created_at', { ascending: false }).limit(400),
+      /* 🔴 QC 05/10 — "งานค้าง" ต้องโหลดครบทุกใบ (แบ่งหน้า) · "ประวัติ" ค่อยตัดล่าสุด N ใบ
+         เดิม: ใบเบิก = ล่าสุด 400 ใบ**ไม่กรองสถานะ** ⇒ ปนใบ cancelled 700 ใบ (ขึ้นเป็น "รอจ่าย" มีปุ่มจ่าย)
+               แล้วใบรอจ่ายเก่า 172 ใบหลุดหน้าต่างหายจากจอสโตร์ (วัด 05/10: pending 482 · issued 290 · cancelled 700)
+               ใบ child = ล่าสุด 200 ใบ (ตอนนี้ 164 — โตอีกนิดใบค้างเก่าก็หลุดแบบเดียวกัน) */
+      openPlusHistory(
+        () => supabaseDR.from('child_lot_requests').select('*').in('status', ['pending', 'producing']),
+        () => supabaseDR.from('child_lot_requests').select('*').eq('status', 'done'), 100),
+      openPlusHistory(
+        () => supabaseDR.from('raw_withdrawal_requests').select('*').eq('status', 'pending'),
+        () => supabaseDR.from('raw_withdrawal_requests').select('*').eq('status', 'issued'), 200),
       supabaseDR.from('child_demand_accumulator').select('*').gt('pending_qty', 0).order('pending_qty', { ascending: false }),
       supabaseDR.from('kanban_standards').select('mat_no, lot_size').eq('is_active', true),
       supabaseDR.from('rack_requests').select('*').order('requested_at', { ascending: false }).limit(200),
@@ -1639,6 +1667,7 @@ export default function HeijunkaKanban() {
            ⇒ ถ้าเขียน ledger ไม่สำเร็จแล้วปล่อยไว้เฉยๆ ใบจะค้างสถานะ "ผลิตเสร็จ" ตลอดกาล
               โดยที่สต็อกไม่เคยขยับ และ **ไม่มีทางกดใหม่ให้ระบบเขียนให้**
            → ล้มเหลวเมื่อไหร่ต้องคืนสถานะกลับที่เดิมเสมอ แล้วให้คนกดใหม่ได้ */
+        let claimedRawIds = [];
         try {
           const wd = lot.work_date || getWorkDate();
           const txns = [];
@@ -1646,12 +1675,18 @@ export default function HeijunkaKanban() {
           if (lot.source_line) {
             txns.push({ line_name: lot.source_line, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
               type: 'issue', work_date: wd, note: `auto: รับ child เข้าสโตร์ (ล็อต ${lot.lot_qty})`, created_by: fullName || 'สโตร์' });
-            // (2) ตัดสต็อกวัตถุดิบที่ใช้จริงตามใบเบิก — query สดจาก DB ห้ามใช้ state
-            //    (state rawRequests โหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
+            // (2) ตัดสต็อกวัตถุดิบตามใบเบิก **ที่ยังไม่ถูกจ่าย** — query สดจาก DB ห้ามใช้ state
+            //    (state เคยโหลดแค่ 400 แถวล่าสุด: ใบเบิกของล็อตเก่าหลุดหน้าต่าง = ถูกมาร์ค issued
             //     โดยไม่มีแถว consume แล้วสต็อกวัตถุดิบสูงเกินจริงเงียบๆ · QC flow-audit #40)
+            /* 🔴 06/10 — claim ใบเบิก (pending → issued) **ก่อน** เขียน ledger แล้วตัดเฉพาะแถวที่ claim ได้
+               ใบที่สโตร์กด "จ่ายวัตถุดิบ" ไปก่อนแล้ว = issued + ตัดสต็อกไปแล้วตอนจ่าย (`issueRaw`) ⇒ ข้าม
+               ⇒ ใบเบิก 1 ใบถูกตัดสต็อกครั้งเดียวเสมอ ไม่ว่ากดลำดับไหน หรือ 2 จอกดพร้อมกัน
+               (เดิม: ตัดแค่ใบ pending แต่ "จ่ายวัตถุดิบ" ไม่เขียน ledger ⇒ จ่ายก่อนปิดล็อต = วัตถุดิบไม่เคยลด) */
             const { data: lotRaws, error: eRaw } = await supabaseDR.from('raw_withdrawal_requests')
-              .select('raw_mat_no, part_name, qty').eq('lot_request_id', lot.id).eq('status', 'pending');
+              .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending')
+              .select('id, raw_mat_no, part_name, qty');
             if (eRaw) throw eRaw;
+            claimedRawIds = (lotRaws || []).map(r => r.id);
             (lotRaws || []).forEach(r => {
               txns.push({ line_name: lot.source_line, mat_no: r.raw_mat_no, part_name: r.part_name, qty: r.qty,
                 type: 'consume', work_date: wd, note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต)`, created_by: fullName || 'สโตร์' });
@@ -1661,13 +1696,19 @@ export default function HeijunkaKanban() {
             const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(txns);
             if (e2) throw e2;
           }
-          /* ใบเบิกวัตถุดิบที่ผูกไว้ → issued
-             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่)
-                แต่ห้ามเงียบด้วย — ใบเบิกค้าง pending = คิวสโตร์โชว์งานที่ทำไปแล้ว */
-          const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
-            .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
-          if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} + ตัดสต็อกเรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+          /* ล็อตของซื้อ (ไม่มี source_line) ไม่ตัดวัตถุดิบ — แค่ปิดใบเบิกที่ผูกไว้ไม่ให้ค้างในคิวสโตร์
+             ⚠️ ถึงตรงนี้ stock ลงไปแล้ว **ห้าม rollback** (จะได้แถวซ้ำตอนกดใหม่) แต่ห้ามเงียบ */
+          if (!lot.source_line) {
+            const { error: e3 } = await supabaseDR.from('raw_withdrawal_requests')
+              .update({ status: 'issued' }).eq('lot_request_id', lot.id).eq('status', 'pending');
+            if (e3) toast.error(`ปิดล็อต ${lot.child_mat_no} เรียบร้อย แต่ปิดใบเบิกวัตถุดิบไม่สำเร็จ — ไปปิดเองที่คิวใบเบิก (${e3.message})`);
+          }
         } catch (ledgerErr) {
+          /* ใบเบิกที่ claim ไว้ต้องคืน pending ด้วย — ไม่งั้นกดใหม่แล้ววัตถุดิบไม่ถูกตัด (กฎข้อ 6 · claim แล้ว ledger ล้ม = คืน) */
+          const { error: eRawBack } = claimedRawIds.length
+            ? await supabaseDR.from('raw_withdrawal_requests').update({ status: 'pending' }).in('id', claimedRawIds).eq('status', 'issued')
+            : { error: null };
+          if (eRawBack) toast.error(`คืนสถานะใบเบิกวัตถุดิบของล็อต ${lot.child_mat_no} ไม่สำเร็จ — แจ้ง admin (${eRawBack.message})`);
           const { error: eBack } = await supabaseDR.from('child_lot_requests')
             .update({ status: lot.status }).eq('id', lot.id).eq('status', next);
           throw new Error(eBack
@@ -1768,7 +1809,30 @@ export default function HeijunkaKanban() {
         toast.info(`ใบเบิก ${raw.raw_mat_no} ถูกจ่ายไปแล้ว — รีเฟรชให้ใหม่`);
         await loadPull(); setPullBusy(null); return;
       }
-      toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว`);
+      /* 🔴 06/10 — จ่าย = วัตถุดิบออกจากสต็อกจริง ⇒ ตัดสต็อกตอนนี้ (consume ที่ไลน์ผลิตของล็อต · แถวเดียวกับที่ปิดล็อตเคยเขียน)
+         เดิมเปลี่ยนแค่สถานะ แล้วปิดล็อตตัดเฉพาะใบ pending ⇒ จ่ายก่อนปิด (ลำดับที่ถูกตามหน้างาน) = สต็อกวัตถุดิบไม่เคยลด
+         ปิดล็อตตอนนี้ claim เฉพาะใบ pending ⇒ ใบที่จ่ายแล้วไม่ถูกตัดซ้ำ
+         · ล็อตของซื้อ (ไม่มี source_line) ไม่ตัด — ตรงกับตอนปิดล็อต
+         · ledger ล้ม = คืนใบเป็น pending (กฎข้อ 6) ให้กดใหม่ได้ */
+      try {
+        const { data: lot, error: eLot } = await supabaseDR.from('child_lot_requests')
+          .select('source_line, child_mat_no').eq('id', raw.lot_request_id).maybeSingle();
+        if (eLot) throw eLot;
+        if (lot?.source_line) {
+          const { error: eTx } = await supabaseDR.from('line_stock_transactions').insert({
+            line_name: lot.source_line, mat_no: raw.raw_mat_no, part_name: raw.part_name, qty: raw.qty,
+            type: 'consume', work_date: getWorkDate(), note: `auto: ใช้ผลิต ${lot.child_mat_no} (ล็อต · จ่ายวัตถุดิบ)`,
+            created_by: fullName || 'สโตร์' });
+          if (eTx) throw eTx;
+        }
+      } catch (ledgerErr) {
+        const { error: eBack } = await supabaseDR.from('raw_withdrawal_requests')
+          .update({ status: 'pending' }).eq('id', raw.id).eq('status', 'issued');
+        throw new Error(eBack
+          ? `ตัดสต็อกวัตถุดิบไม่สำเร็จ และคืนสถานะใบเบิกไม่ได้ — ใบ ${raw.raw_mat_no} เป็น "จ่ายแล้ว" ทั้งที่สต็อกยังไม่ลด แจ้ง admin (${ledgerErr.message})`
+          : `ตัดสต็อกวัตถุดิบไม่สำเร็จ — คืนใบเบิก ${raw.raw_mat_no} เป็น "รอจ่าย" แล้ว ลองกดใหม่ (${ledgerErr.message})`);
+      }
+      toast.success(`จ่ายวัตถุดิบ ${raw.raw_mat_no} แล้ว · ตัดสต็อก ${(Number(raw.qty) || 0).toLocaleString()}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
     setPullBusy(null);
@@ -1841,11 +1905,24 @@ export default function HeijunkaKanban() {
      · STORE ไม่มีแถวสต็อกของพาร์ทนี้ = "ไม่รู้" → ไม่หัก (หักแล้วติดลบจากของที่ไม่เคยลงรับ) แต่จดเหตุผลไว้บนใบ + toast ห้ามเงียบ
      · id แถวเก็บที่ใบ (stock_txn_ids) — มีแล้วไม่ตัดซ้ำ · ledger ล้ม = ใบยังเป็น preparing แต่ stock_txn_note บอกว่ายังไม่ได้ตัด
      ⚠️ เปลี่ยนกฎเหล็ก 5 เดิม (ลูปไม่ตัดสต็อก) — สโตร์ห้ามไปบันทึก "จ่ายพาร์ทเข้าไลน์" ซ้ำสำหรับใบเหล่านี้ */
+  /* คืน true = ตัดแล้ว (หรือเคยตัดไปแล้ว) · false = ยังไม่ได้ตัด
+     🔴 QC 05/10 — ตัดล้มแล้วใบเดินต่อเป็น "กำลังเตรียม → ส่งแล้ว" โดยไม่มีใครตัดสต็อกซ้ำ ⇒ advanceWip
+        เรียกตัวนี้อีกรอบก่อน "ถึงไลน์แล้ว" เมื่อใบยังไม่มี stock_txn_ids · กันตัดซ้ำด้วยการหาแถว ledger
+        ของใบนี้ก่อน (note ฝังเลขใบ) — ใช้ได้แม้ผูก id กลับใบไม่ติด/ยังไม่มีคอลัมน์ stock_txn_ids */
   const deductStockForPick = async (w, qty) => {
-    if (w.stock_txn_ids?.length) return;
+    if (w.stock_txn_ids?.length) return true;
     const wd = getWorkDate();
+    const tag = `ใบ ${String(w.id).slice(0, 8)})`;
     const base = { mat_no: w.mat_no, part_name: w.part_name || null, status: 'approved', work_date: wd, created_by: fullName || 'สโตร์',
-      note: `auto: ใบขอเติม ${w.mat_no} → ${w.line_name} (ยืนยันเตรียม · ใบ ${String(w.id).slice(0, 8)})` };
+      note: `auto: ใบขอเติม ${w.mat_no} → ${w.line_name} (ยืนยันเตรียม · ${tag}` };
+    const { data: prior, error: priorErr } = await supabaseDR.from('line_stock_transactions')
+      .select('id').eq('mat_no', w.mat_no).like('note', `%${tag}%`);
+    if (priorErr) { toast.error(`เช็คว่าเคยตัดสต็อกใบนี้แล้วหรือยังไม่ได้ — ยังไม่ตัด (กันตัดซ้ำ): ${priorErr.message}`); return false; }
+    if (prior?.length) {
+      const { error: eb } = await supabase.from('wip_replenish_requests').update({ stock_txn_ids: prior.map(r => r.id) }).eq('id', w.id);
+      if (eb && eb.code !== '42703') toast.error('ผูกเลข ledger กับใบไม่สำเร็จ: ' + eb.message);
+      return true;
+    }
     const { data: st, error: stErr } = await supabaseDR.from('line_stock_summary').select('qty_on_hand').eq('line_name', 'STORE').eq('mat_no', w.mat_no).maybeSingle();
     let note = null;
     /* 🏬 มุม SAP ของรายการเดียวกัน: ไลน์ → P4xx (ตกทอดจากไลน์แม่) · STORE → S401 — tag ตอนเขียน ไม่เดา
@@ -1865,12 +1942,14 @@ export default function HeijunkaKanban() {
     }
     if (error) {
       toast.error(`ตัดสต็อกไม่สำเร็จ (ใบยังเป็น "กำลังเตรียม"): ${error.message}`);
-      await supabase.from('wip_replenish_requests').update({ stock_txn_note: `ตัดสต็อกไม่สำเร็จ: ${error.message}` }).eq('id', w.id);
-      return;
+      const { error: en } = await supabase.from('wip_replenish_requests').update({ stock_txn_note: `ตัดสต็อกไม่สำเร็จ: ${error.message}` }).eq('id', w.id);
+      if (en && en.code !== '42703') toast.error('จดเหตุผลตัดสต็อกไม่สำเร็จลงใบไม่ได้: ' + en.message);
+      return false;
     }
     if (note) toast.error(`⚠ ${note}`);
     const { error: e2 } = await supabase.from('wip_replenish_requests').update({ stock_txn_ids: (ins || []).map(r => r.id), stock_txn_note: note }).eq('id', w.id);
     if (e2 && e2.code !== '42703') toast.error('ผูกเลข ledger กับใบไม่สำเร็จ: ' + e2.message);
+    return true;
   };
 
   // gate = { payload, event } จาก DeliverScanModal / PickScanModal
@@ -1884,6 +1963,12 @@ export default function HeijunkaKanban() {
     if (next === 'preparing' && !gate) { setPickModal(w); return; }
     setPullBusy(w.id);
     try {
+      /* 🔴 ตัดสต็อกตอนเตรียมเคยล้ม ⇒ ลองตัดอีกรอบก่อนมาร์ก "ส่งแล้ว" · ยังล้ม = ห้ามส่ง
+         (ใบ "ส่งแล้ว" ที่ไม่มี ledger = ของออกจาก STORE แต่ยอดไม่ขยับ ไม่มีจุดให้ตามแก้อีก) */
+      if (next === 'delivered' && Number(w.picked_qty) > 0 && !w.stock_txn_ids?.length) {
+        const dOk = await deductStockForPick(w, Number(w.picked_qty));
+        if (!dOk) throw new Error('ยังตัดสต็อกของใบนี้ไม่สำเร็จ — มาร์ก "ถึงไลน์แล้ว" ไม่ได้จนกว่าจะตัดได้ (กดลองอีกครั้ง)');
+      }
       const payload = { status: next, ...(gate?.payload || {}) };
       /* 4 หมุดเวลาต้องครบ ไม่งั้นตอบได้แค่ "ช้า" แต่ตอบไม่ได้ว่า **ช้าตรงไหน**
          (รอสโตร์หยิบ? รอรถ? รอผลิตมาเซ็นรับ?) — docs/STORE-PULL-LOOP-DESIGN.md §4.1
@@ -1910,7 +1995,8 @@ export default function HeijunkaKanban() {
       setDeliverModal(null);
       setPickModal(null);
       // ขั้น "Scan for SAP update (Deduct stock)" — ยืนยันเตรียมแล้วตัดสต็อกให้เลย (STORE −qty · ไลน์ +qty)
-      if (next === 'preparing' && gate?.payload?.picked_qty > 0) await deductStockForPick(w, gate.payload.picked_qty);
+      const deducted = (next === 'preparing' && gate?.payload?.picked_qty > 0)
+        ? await deductStockForPick(w, gate.payload.picked_qty) : true;
       const what = w.mat_no || w.part_name || 'รายการนี้';
       /* ⚠️ ลูปนี้เป็น "การสื่อสาร" ไม่ใช่ ledger — ไม่บวกสต็อกให้เองตอนส่งถึง
          (เขียนเองด้วย = สต็อกโผล่ 2 ที่ เพราะตัดไปแล้วตอนสโตร์ยืนยันเตรียม ขั้น 5)
@@ -1918,7 +2004,9 @@ export default function HeijunkaKanban() {
       toast.success(next === 'delivered'
         ? `🚚 ส่ง ${what} แล้ว — รอไลน์ ${w.line_name} กดยืนยันรับ`
         : next === 'preparing'
-          ? `🔧 เริ่มเตรียม ${what} — ตัดสต็อกให้แล้ว หยิบเสร็จไปวางที่ไลน์แล้วกด "ถึงไลน์แล้ว"`
+          ? (deducted
+            ? `🔧 เริ่มเตรียม ${what} — ตัดสต็อกให้แล้ว หยิบเสร็จไปวางที่ไลน์แล้วกด "ถึงไลน์แล้ว"`
+            : `🔧 เริ่มเตรียม ${what} — ⚠ ยังไม่ได้ตัดสต็อก ระบบจะลองตัดอีกครั้งตอนกด "ถึงไลน์แล้ว"`)
           : `อัปเดต ${what} → ${next}`);
       await loadPull();
     } catch (err) { toast.error(err.message); }
@@ -1955,26 +2043,38 @@ export default function HeijunkaKanban() {
 
       // 2) แผนผลิต: prod_orders + kanban_targets ของ sessions เหล่านี้
    // ⚠️ ตัวที่ผ่าน cachedMaster คืน **array ตรงๆ** (ไม่ใช่ { data }) — destructure ต้องไม่ห่อ { data: … }
-      const [{ data: orders }, { data: targets }, products] = await Promise.all([
+      /* 🔴 QC 05/10 — เดิม `.in(sessIds)` ดิบ: ติดเพดาน 1000 แถว + error ถูกกลืน ⇒ demand พาร์ทหายเงียบ
+         → fetchByIds (แบ่งก้อน+หน้า) · ล้ม = throw (จอขึ้น error ไม่ใช่ demand 0) */
+      const [ordRes, tgtRes, products] = await Promise.all([
         // qty_ok/qty_actual/confirmed_at → ใช้หัก WIP ด้วยของที่ผลิตไปแล้ว (forecast runout · utils/wipRunout.js)
-        supabaseDR.from('prod_orders').select('session_id, mat_no, part_name, qty, qty_ok, qty_actual, status, opened_at, confirmed_at').in('session_id', sessIds),
-        supabaseDR.from('kanban_targets').select('session_id, mat_no, part_name, qty_target').in('session_id', sessIds),
+        fetchByIds(sessIds, part => supabaseDR.from('prod_orders').select('id, session_id, mat_no, part_name, qty, qty_ok, qty_actual, status, opened_at, confirmed_at').in('session_id', part)),
+        fetchByIds(sessIds, part => supabaseDR.from('kanban_targets').select('id, session_id, mat_no, part_name, qty_target').in('session_id', part)),
         // cycle_time_sec → ใช้แปลง "ยอดที่เหลือ" เป็น "เวลา" บนไทม์ไลน์
         /* cache master (2026-09-16) — ทะเบียนเปลี่ยนเดือนละไม่กี่ครั้ง · ล้างด้วย invalidateTable() ที่หน้าแก้ทะเบียน */
         cachedMaster('dr_products:heijunka', async () => mrows(await supabaseDR.from('dr_products').select('id, name, mat_no, cycle_time_sec').eq('is_active', true))),
       ]);
+      if (ordRes.error) throw new Error(`โหลดใบผลิตของวันไม่ได้: ${ordRes.error}`);
+      if (tgtRes.error) throw new Error(`โหลดเป้าคัมบังของวันไม่ได้: ${tgtRes.error}`);
+      const orders = ordRes.rows, targets = tgtRes.rows;
       const prodByMat = {};
       (products || []).forEach(p => { if (p.mat_no) prodByMat[p.mat_no] = p; });
 
       // demand ระดับ parent ต่อ session: ใช้ prod_orders ก่อน, session ไหนไม่มี order → fallback kanban_targets
       // opened_at ใช้จัดสรร demand เข้ารอบจัดส่ง (targets ไม่มีเวลาสแกน → เกลี่ยทุกรอบแบบ heijunka)
-      const activeOrders = (orders || []).filter(o => o.status !== 'cancelled');
+      /* 🔴 สถานะ "ใช้ไปแล้ว" ตาม SPENT_STATUSES (utils/shiftCapacity.js) — QC 05/10
+         · cancelled = ไม่ใช่ demand
+         · carry_over / imported = ยอดที่เหลือถูกยกไปเป็นใบใหม่ (กะถัดไป/ใบที่รับเข้า) แล้ว
+           ⇒ ใบนี้นับเฉพาะที่ทำไปจริงในกะนี้ (`qty_actual`) — กติกาเดียวกับ obeyaYear/DailyReport
+           เดิมนับเต็ม qty ⇒ ยอดที่เหลือถูกนับ 2 ที่ (ใบนี้ + ใบใหม่) · วัด 05/10: carry_over 10 ใบ qty 1,130 ทำจริง 854 · imported 919 ใบ qty 66,254 ทำจริง 3,932 */
+      const partialStatus = (st) => st === 'carry_over' || st === 'imported';
+      const activeOrders = (orders || []).filter(o => partialStatus(o.status) || !SPENT_STATUSES.includes(o.status));
       const sessionsWithOrders = new Set(activeOrders.map(o => o.session_id));
       const dem = [];
       activeOrders.forEach(o => {
-        if (!o.qty) return;
+        const q = partialStatus(o.status) ? (Number(o.qty_actual) || 0) : o.qty;
+        if (!q) return;
         dem.push({
-          session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: o.qty,
+          session_id: o.session_id, mat_no: o.mat_no, part_name: o.part_name, qty: q,
           opened_at: o.opened_at, product: prodByMat[o.mat_no] || null,
           qty_ok: o.qty_ok, qty_actual: o.qty_actual, confirmed: o.status === 'confirmed',
         });
@@ -2093,7 +2193,12 @@ export default function HeijunkaKanban() {
       }));
       if (issueRows.length) {
         const { error: e2 } = await supabaseDR.from('line_stock_transactions').insert(issueRows);
-        if (e2) throw e2;
+        if (e2) {
+          // ledger ล้ม ⇒ คืนแถวยืนยัน (กฎเขียน DB ข้อ 6) — ไม่งั้นรอบนี้ขึ้น "ส่งแล้ว" ทั้งที่ไม่มีของเข้าสต็อก
+          // แล้วกดซ้ำไม่ได้อีกเลย (ชน claim ⇒ "ไม่บันทึกซ้ำ")
+          const { error: eUndo } = await supabaseDR.from('kanban_deliveries').delete().eq('id', claimed[0].id);
+          throw new Error(`บันทึกสต็อกไม่สำเร็จ: ${e2.message}${eUndo ? ' · คืนสถานะรอบไม่สำเร็จ แจ้ง admin' : ' · ยกเลิกการยืนยันแล้ว กดใหม่ได้'}`);
+        }
       }
       toast.success(`✅ ยืนยันส่งแล้ว: ${r.line_name} รอบ ${r.round_no}`);
       await loadDeliveries();
@@ -2151,8 +2256,17 @@ export default function HeijunkaKanban() {
       }
       if (shortRows.length) {
         const { error: eShort } = await supabaseDR.from('line_stock_transactions').insert(shortRows);
-        // สถานะรับถูกบันทึกไปแล้ว — consume พลาดต้องบอกชัด ห้ามเงียบ (ยอดสต็อกจะสูงเกินจริง)
-        if (eShort) throw new Error(`บันทึกสถานะรับแล้ว แต่ปรับยอดของที่ขาดไม่สำเร็จ — แจ้ง admin: ${eShort.message}`);
+        /* 🔴 QC 05/10 (กฎเขียน DB ข้อ 6) — claim แล้ว ledger ล้ม ⇒ ต้องคืน claim ไม่งั้นรอบขึ้น "รับแล้ว"
+           แต่ยอดของที่ขาดไม่ถูกหัก และกดซ้ำไม่ได้อีก (ล็อก received_status ไว้แล้ว) */
+        if (eShort) {
+          const { data: back, error: eBack } = await supabaseDR.from('kanban_deliveries')
+            .update({ received_at: null, received_by: null, received_status: null, received_note: null })
+            .in('id', claimed.map(c => c.id)).eq('received_status', mode).select('id');
+          const reverted = !eBack && (back?.length || 0) === claimed.length;
+          throw new Error(reverted
+            ? `ปรับยอดของที่ขาดไม่สำเร็จ — ยกเลิกการบันทึกรับแล้ว กดยืนยันรับอีกครั้ง: ${eShort.message}`
+            : `บันทึกสถานะรับแล้ว แต่ปรับยอดของที่ขาดไม่สำเร็จ และคืนสถานะไม่ได้ — แจ้ง admin: ${eShort.message}`);
+        }
       }
       toast.success(mode === 'full' ? '✔️ ยืนยันรับครบแล้ว' : '⚠️ บันทึกรับไม่ครบแล้ว');
       setReceiveModal(null);
@@ -2165,7 +2279,8 @@ export default function HeijunkaKanban() {
   const view = useMemo(() => {
     const sessById = Object.fromEntries(sessions.map(s => [s.id, s]));
     const groupOf = (line) => lineMap[line]?.parent_line_name || line;
-    const visibleSessions = sessions.filter(s => shiftFilter === 'all' || s.shift === shiftFilter);
+    const visibleSessions = sessions.filter(s => (shiftFilter === 'all' || s.shift === shiftFilter)
+      && (!scopeSet || scopeSet.has(s.line_name)));
     const visibleIds = new Set(visibleSessions.map(s => s.id));
 
     // columns = ไลน์·กะ ที่มี demand
@@ -2384,7 +2499,7 @@ export default function HeijunkaKanban() {
       groupOrders, bomByMat, ctByMat, wipByGroup,
       linesOfGroup: Object.fromEntries(Object.entries(linesOfGroup).map(([g, s]) => [g, [...s]])),
     };
-  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate]);
+  }, [sessions, demands, bomMap, kanbanStd, lineStock, shiftFilter, matFilter, rounds, lineMap, workDate, scopeSet]);
 
   /* ⚠️ ต้อง guard null — เป็น fmt ตัวเดียวใน 14 ตัวทั้งโปรเจคที่เคยไม่ guard
      (ที่เหลือใช้ `n == null ? '—'` หรือ `Number(n || 0)` หมด)
@@ -2405,7 +2520,7 @@ export default function HeijunkaKanban() {
   const viewTabs = useMemo(() => {
     const openWip  = wipRequests.filter(w => w.status !== 'delivered').length;
     const openLot  = lotRequests.filter(l => l.status !== 'done').length;
-    const openRaw  = rawRequests.filter(r => r.status !== 'issued').length;
+    const openRaw  = rawRequests.filter(r => r.status === 'pending').length;
     const openBuy  = purchaseRequests.filter(r => r.status !== 'received' && r.status !== 'cancelled').length;
     const badgeOf  = { unified: openWip + openLot + openRaw + openBuy, pull: openLot + openRaw };
     return Object.entries(VIEW_META)
@@ -2420,12 +2535,10 @@ export default function HeijunkaKanban() {
       const per = kanbanStd[r.mat_no];
       return [r.mat_no, `"${r.part_name}"`, r.uom, r.supplier || '', ...view.cols.map(c => r.perCol[c.id] || 0), r.grossTotal, r.totalStock, r.netTotal, per || '', per ? Math.ceil(r.netTotal / per) : ''].join(',');
     });
-    const blob = new Blob(['﻿' + [head.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}${matFilter ? '_' + matFilter : ''}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10) · ยังไม่ตั้งเลขฟอร์ม = ชื่อเดิมเป๊ะ
+    downloadCsvDoc('csv_heijunka_kanban',
+      `heijunka_kanban_${workDate}${shiftFilter !== 'all' ? '_' + shiftFilter : ''}${matFilter ? '_' + matFilter : ''}`,
+      [head.join(','), ...lines].join('\n'));
   };
 
   return (
@@ -2455,6 +2568,11 @@ export default function HeijunkaKanban() {
           )}
         </>} />
       <FilterBar>
+        <LineScopeSelect lines={Object.values(lineMap)} section={scopeSec} line={scopeLine}
+          onChange={(sec, ln, meta) => {
+            setScopeSec(sec); setScopeLine(ln);
+            setScopeSet(meta?.lines?.length ? new Set(meta.lines) : null);
+          }} />
         <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} />
         <Segmented value={shiftFilter} onChange={setShiftFilter} label="กะ"
           options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />

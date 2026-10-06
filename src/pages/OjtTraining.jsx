@@ -96,6 +96,8 @@ function SignPadModal({ title, onCancel, onDone }) {
 
 export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
   // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
@@ -169,7 +171,7 @@ export default function OjtTraining() {
       if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+  }, [lines, role, userLineId, scopeKey, scopeLineIds]);
 
   /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
      feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)
@@ -264,13 +266,20 @@ export default function OjtTraining() {
       const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
       if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
       const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
-      // เซ็นทับของเดิม — ลบไฟล์เก่าทิ้ง (best-effort, เฉพาะโฟลเดอร์ตัวเอง)
+      /* เซ็นทับของเดิม — **จดไว้ก่อน ลบหลังบันทึกใบสำเร็จ** (QC 05/10)
+         เดิมลบไฟล์เก่าทันทีตอนเซ็น ⇒ ยกเลิก/บันทึกล้ม = แถวในฐานยังชี้ไฟล์เก่าที่ถูกลบไปแล้ว = ลายเซ็นหายถาวร
+         (best-effort · เฉพาะโฟลเดอร์ตัวเอง ตาม RLS bucket signatures) */
       const old = editing.attendees[idx]?.sign_url;
+      let oldPath = null;
       if (old?.includes('/signatures/')) {
-        const oldPath = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
-        if (oldPath.startsWith(`${user.id}/`)) supabase.storage.from('signatures').remove([oldPath]).catch(() => {});
+        const p0 = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
+        if (p0.startsWith(`${user.id}/`)) oldPath = p0;
       }
-      setAtt(idx, 'sign_url', url);
+      setEditing(prev => ({
+        ...prev,
+        attendees: prev.attendees.map((a, i) => (i === idx ? { ...a, sign_url: url } : a)),
+        _replacedSigPaths: oldPath ? [...(prev._replacedSigPaths || []), oldPath] : (prev._replacedSigPaths || []),
+      }));
       toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
   };
@@ -298,20 +307,40 @@ export default function OjtTraining() {
       };
       const { error } = await supabase.from('ojt_trainings').upsert(row, { onConflict: 'id' });
       if (error) throw error;
-      // attendees: ล้างของเดิมแล้ว insert ชุดปัจจุบัน (จำนวนน้อย — ง่ายและ sort_order ตรงตามหน้าจอเสมอ)
-      const { error: delErr } = await supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
-      if (delErr) throw delErr;
-      const { error: insErr } = await supabase.from('ojt_training_attendees').insert(
-        editing.attendees.map((a, i) => ({
-          training_id: editing.id, employee_id: a.employee_id || null,
-          emp_code: a.emp_code || null, emp_name: a.emp_name || null,
-          pre_score: a.pre_score === null || a.pre_score === '' ? null : Number(a.pre_score),
-          post_score: a.post_score === null || a.post_score === '' ? null : Number(a.post_score),
-          sign_url: a.sign_url || null, eval_agree: a.eval_agree === null ? null : !!a.eval_agree,
-          evaluator_name: a.evaluator_name || null, sort_order: i,
-        }))
-      );
-      if (insErr) throw insErr;
+      /* attendees: **เขียนชุดใหม่ก่อน แล้วค่อยลบคนที่ถูกเอาออก** (QC 05/10)
+         เดิม delete ทั้งใบแล้ว insert ⇒ insert ล้ม (check score/เน็ต) = ผู้เข้าอบรม+ลายเซ็นทั้งใบหายถาวร
+         แถวเดิม (มี id) = upsert ทับด้วย id · แถวใหม่ = insert · แล้วลบเฉพาะ id ที่ไม่อยู่ในชุดแล้ว */
+      const toRow = (a, i) => ({
+        training_id: editing.id, employee_id: a.employee_id || null,
+        emp_code: a.emp_code || null, emp_name: a.emp_name || null,
+        pre_score: a.pre_score === null || a.pre_score === '' ? null : Number(a.pre_score),
+        post_score: a.post_score === null || a.post_score === '' ? null : Number(a.post_score),
+        sign_url: a.sign_url || null, eval_agree: a.eval_agree === null ? null : !!a.eval_agree,
+        evaluator_name: a.evaluator_name || null, sort_order: i,
+      });
+      const keepRows = editing.attendees.map((a, i) => (a.id ? { id: a.id, ...toRow(a, i) } : null)).filter(Boolean);
+      const newRows  = editing.attendees.map((a, i) => (a.id ? null : toRow(a, i))).filter(Boolean);
+      const keptIds = keepRows.map(r => r.id);
+      if (keepRows.length) {
+        const { error: upErr } = await supabase.from('ojt_training_attendees').upsert(keepRows, { onConflict: 'id' });
+        if (upErr) throw upErr;
+      }
+      if (newRows.length) {
+        const { data: ins, error: insErr } = await supabase.from('ojt_training_attendees').insert(newRows).select('id');
+        if (insErr) throw insErr;
+        keptIds.push(...(ins || []).map(r => r.id));
+      }
+      if (!editing.isNew) {
+        let del = supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
+        if (keptIds.length) del = del.not('id', 'in', `(${keptIds.join(',')})`);
+        const { error: delErr } = await del;
+        // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
+        if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
+      }
+      // ใบบันทึกสำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเก่าที่ถูกเซ็นทับ (best-effort)
+      if (editing._replacedSigPaths?.length) {
+        supabase.storage.from('signatures').remove(editing._replacedSigPaths).catch(() => {});
+      }
       if (editing.isNew) notifyEvent({
         event: 'ojt_training', type: 'info', ref_table: 'ojt_trainings', ref_id: editing.id,
         section: sectionValueForSave(editing.section) || null, actor: fullName,
@@ -494,17 +523,14 @@ table{border-collapse:collapse}
   };
 
   /* ── profile picker สำหรับช่องลายเซ็นหัวเอกสาร ── */
-  const SigPicker = ({ label, nameKey, sigKey }) => (
+  /* picker กลาง (UI §5.1.2 — ช่องชื่อคนห้ามเป็น <select> ยาว) · เรียกเป็นฟังก์ชัน ไม่ใช่ <SigPicker/>
+     (component ที่ประกาศใน render = remount ทุก render ⇒ ช่องค้นหาเสียโฟกัส/คำค้นหาย)
+     allowFree=false = ตรงพฤติกรรมเดิม (เลือกได้เฉพาะบัญชีในระบบ — ลายเซ็นมาจาก profiles.signature_url) */
+  const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-      <select value={editing[nameKey] || ''} onChange={e => {
-        const p = profiles.find(x => x.full_name === e.target.value);
-        setF(nameKey, e.target.value);
-        setF(sigKey, p?.signature_url || null);
-      }} style={{ width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
-        <option value="">— เลือก —</option>
-        {profiles.filter(p => p.full_name).map(p => <option key={p.id} value={p.full_name}>{p.full_name}{p.signature_url ? ' ✍️' : ''}</option>)}
-      </select>
+      <PersonSelect source="profiles" allowFree={false} value={editing[nameKey] || ''}
+        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: p.signature_url || null }))} />
       {editing[sigKey] && <img src={editing[sigKey]} alt="" style={{ height: 30, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
     </div>
   );
@@ -738,9 +764,9 @@ table{border-collapse:collapse}
 
               {/* ลายเซ็นหัวเอกสาร */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-                <SigPicker label="ผู้จัดทำ" nameKey="maker_name" sigKey="maker_sig_url" />
-                <SigPicker label="ระดับจัดการอนุมัติ" nameKey="approver_name" sigKey="approver_sig_url" />
-                <SigPicker label="ผู้รับทราบ" nameKey="hr_name" sigKey="hr_sig_url" />
+                {sigPicker('ผู้จัดทำ', 'maker_name', 'maker_sig_url')}
+                {sigPicker('ระดับจัดการอนุมัติ', 'approver_name', 'approver_sig_url')}
+                {sigPicker('ผู้รับทราบ', 'hr_name', 'hr_sig_url')}
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>

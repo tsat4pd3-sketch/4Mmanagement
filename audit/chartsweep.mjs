@@ -53,7 +53,9 @@ const measure = () => {
       /* ขนาด "ที่เห็นบนจอ" = font-size × สเกลของ SVG (viewBox ย่อ/ขยาย) — ไม่ใช่ตัวเลขในโค้ด */
       const ctm = t.getScreenCTM(); const scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
       const fs = Math.round(parseFloat(getComputedStyle(t).fontSize) * scale * 10) / 10;
-      if (fs < 10.5) out.tiny.push(`[${name}] "${txt}" ${fs}px`);
+      /* 🔴 พื้น 11px — เลขเดียวกับ CLAUDE.md §Design System / UI-CONVENTIONS §4 / ด่าน font-min-11
+         (เดิมด่านนี้ตั้ง 10.5 ⇒ มี 92 จุดที่ "ผ่านด่าน แต่ผิดเอกสาร" · user เคาะ 06/10 ให้ใช้ 11) */
+      if (fs < 11) out.tiny.push(`[${name}] "${txt}" ${fs}px`);
     }
     // Recharts: มีแท่ง/เส้น "จริง" แต่ไม่มีตัวเลขแกน Y
     //   ⚠️ Recharts 3 วางป้ายแกนในกลุ่มแยก `.recharts-yAxis-tick-labels` (ไม่ได้อยู่ใต้ `.recharts-yAxis`)

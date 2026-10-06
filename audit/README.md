@@ -12,7 +12,8 @@
 npx vite --config audit/vite.audit.mjs        # เปิดที่ :5199
 # แล้วเปิด http://localhost:5199/audit/index.html?p=DailyReport
 ```
-`?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin`
+`?p=<ชื่อไฟล์ใน src/pages ไม่ต้องมี .jsx>` เช่น `?p=Checkin` · `?role=<role>` สลับ role · **`?sections=PD2,PD3` จำลอง user ที่ถูกจำกัดส่วนงาน** (05/10 — ใช้ตรวจสาย "ขอบเขตจาก URL นอกสังกัด" / ตัวกรองส่วนงานของบอร์ด OBEYA)
+· หน้าปกติ mount `<ToastContainer/>` แล้ว (05/10) — ก่อนหน้านี้ toast ของทุกหน้าไม่เคยโผล่ใน harness (มีแค่ใน FeedbackLab) ⇒ เทสที่รอข้อความ toast จะ false-negative
 
 **หน้าที่ต้องส่ง props ถึงจะเรนเดอร์จริง มี harness แยก** (main.jsx mount แบบ `<C/>` ไม่ส่ง props):
 
@@ -34,6 +35,10 @@ node audit/sweep.mjs  # ต้องเปิด vite audit ค้างไว�
 ```bash
 node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px + กดปุ่มบนหัวเพจทีละอัน แล้วเช็ค window.__crash
 ```
+`ONLY=Obeya&tab=table,DailyReport node audit/crashsweep.mjs` — สวีปเฉพาะหน้า/แท็บที่ระบุ (ค่า = ส่วนต่อท้าย `?p=` ใส่ `&tab=` ได้ · 06/10)
+· **ปุ่มพิมพ์/ดาวน์โหลด (🖨 ⬇️ Export Excel PDF CSV) ถูกข้ามและพิมพ์จำนวนที่ข้ามออกมา** (06/10) — `window.print()`
+  เปิด print preview ที่ `closeOverlay` ปิดไม่ได้ ⇒ ปุ่มที่เหลือทั้งแท็บ timeout เงียบ (วัดจริง `/obeya?tab=table`:
+  โมดัลตั้งค่า KPI 8 ตัวหลังปุ่มพิมพ์ **ไม่เคยถูกเปิด** แต่รายงาน "พัง 0") · "💾 บันทึก"/"📥 นำเข้า" ยังกดตามปกติ
 รันทุกครั้งที่ **merge งานหลาย session ชนกันในไฟล์เดียว** — `npm run build` (lint+เทส+vite) ผ่านได้
 ทั้งที่หน้าพังตอน runtime · เคสจริง: resolve conflict แล้วบรรทัด `setSelSession` หลุด → Daily Report
 จอหลักว่างทั้งหน้า · `/products` แท็บ Kanban Std พังจาก `undefined.toLocaleString()`

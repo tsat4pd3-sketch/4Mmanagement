@@ -410,7 +410,7 @@ export default function FeedbackModal({ onClose }) {
                           ))}
                         </div>
                       )}
-                      <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {r.user_name || '—'}{r.user_role ? ` · ${r.user_role}` : ''}{r.page_path ? ` · ${r.page_path}` : ''}
                         {r.handled_by ? ` · ปิดโดย ${r.handled_by}` : ''}
                       </div>
@@ -418,7 +418,7 @@ export default function FeedbackModal({ onClose }) {
                       {r.admin_note && (
                         <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8,
                           background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
-                          <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
                             💬 คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
@@ -443,7 +443,7 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS).map(([key, s]) => (
                             <button key={key} onClick={() => setStatus(r, key)} disabled={r.status === key}
-                              style={{ fontSize: 10.5, padding: '2px 8px', borderRadius: 12, cursor: r.status === key ? 'default' : 'pointer',
+                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: r.status === key ? 'default' : 'pointer',
                                 border: `1px solid ${r.status === key ? s.color : 'var(--border)'}`,
                                 background: r.status === key ? `${s.color}22` : 'transparent', color: r.status === key ? s.color : 'var(--text2)' }}>
                               {s.label}

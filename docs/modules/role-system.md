@@ -30,9 +30,18 @@
 | `sale` | 🚚 ขาย-จัดส่ง (Sales & Delivery) | ทีมขาย — Planner & Sales, Delivery, Kanban, Dashboard (seed: `20260708_sale_role_demand_page_permissions.sql`) |
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
-| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่ 2 หน้า: `/npi` + `/pe-docs`** (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
+| `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่กลุ่มหน้า NM** (seed แรก: `/npi` + `/pe-docs` · ขอบเขตวันนี้ดูกล่อง 🧪 ใต้ตาราง) (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
+
+> **🧪 บัญชีทดลองของทีม New Model (2026-10-05 · คำขอ user *"ลองเทส function new model ที่จะไม่ยุ่งไม่กระทบกับงานหลักที่แมสอยู่"*)**
+> วันนี้ role นี้เปิด 5 หน้า: `/npi` · `/pe-docs` · `/nm-board` · `/program-update` · `/schema` (2 ตัวท้ายติดมากับ seed `enum_range` ของหน้ารวม — อ่านอย่างเดียว ไม่มีของแมสให้แก้)
+> · 🔴 **`pe:edit` = คีย์เดียวที่แตะงานแมสได้จริง ⇒ ปิดไว้ (`allowed=false`) 2026-10-05** — `/pe-docs` เก็บ PFC/PFMEA/Control Plan **ของจริงที่ใช้ผลิตอยู่** และสิทธิ์เป็น *ต่อ role ไม่ใช่ต่อพาร์ท* ⇒ แก้แถวของพาร์ทที่แมสอยู่ได้ · `pe_*` ถูกอ่านต่อที่ QualityControl (ลูป 8D) · OrderTrace · VSM · AdoptionOutlook
+>   ⇒ ทีม NM **เปิดอ่าน** /pe-docs ได้ แต่แก้ไม่ได้ · PFMEA พาร์ทใหม่เดินผ่าน `/npi` + ลูปเสนอเข้า master (`pe_master_proposals`) ตามปกติ · จะเปิดกลับ = ติ๊กที่ `/permissions` คลิกเดียว
+> · `page:/storage-maintenance` ปิดด้วย (เครื่องมือดูแลระบบหลัก ไม่ใช่ฟังก์ชัน NM · ปุ่มลบจริงถูกกันด้วย `storage_maintain:run` ที่ role นี้ไม่มีอยู่แล้ว)
+> · **ปิดด้วย `allowed=false` ไม่ใช่ `delete`** — แถวหาย = หายจากจอ `/permissions` แล้ว user ต้องมา SQL ใหม่ทุกครั้ง (มีแค่ SQL Editor บนเว็บ)
+> · บัญชีทีม (ไม่ผูกพนักงานรายคน) ⇒ `account_kind = 'shared'` + `employee_id` ว่าง
+> · migration `20261005_engineer_nm_trim_pages.sql` — **apply แล้ว 2026-10-05**
 
 ### สิทธิ์ตามหน้า/action — `role_permissions` (data-driven, ไม่ hardcode)
 
@@ -260,6 +269,26 @@
 - **⚠️ ผังยังไม่มีชั้น "ฝ่าย"** — `org_nodes` มี section 6 ตัวเป็น root ทั้งหมด จึงไม่มี "ฝ่าย" ให้เลือก
   (ดู `docs/IDENTITY-NOTIFY-DESIGN.md` §4.3 — ต้องเพิ่มโหนดฝ่ายก่อนถึงจะเลือกได้)
 
+### 🔒 ช่องที่ "ล็อกไว้" ต้องโชว์ค่าที่มีผลจริง + บอกทางออก (2026-09-25 · feedback user)
+
+**เกิดจริง:** ตีรณา (หัวหน้าแผนก Store) — ฐานพนักงาน `team='A'` แต่ `profiles.team` เป็น `null`
+⇒ ช่อง Team ใน `/add-user` ขึ้น **"— เลือก —"** ทั้งที่ป้ายข้างบนเขียนว่า *"· จากฐานพนักงาน"*
+แล้วกดแก้ก็ไม่ได้เพราะช่องถูก `disabled` ไว้ → *"เราจะลองแก้ในระบบก็คลิกไม่ได้"*
+
+2 อาการในที่เดียว:
+1. **จอโกหก** — ตัวตัดสินจริงอยู่ที่ `App.jsx`: `emp.team ?? profiles.team` (**ฐานพนักงานชนะเมื่อมีค่า**)
+   ⇒ ระบบมองว่าเธออยู่ทีม A อยู่แล้ว แต่จอบอกว่า "ยังไม่ได้ตั้ง"
+   🔴 **กฎ: ช่องที่ล็อกเพราะ "ค่ามาจากที่อื่น" ต้องคิดด้วยสูตรเดียวกับที่ระบบใช้จริง
+   ห้ามวาดค่าที่ค้างในตารางของจอตัวเอง** (แถบ "ตัวตนไม่ตรงกับฐานพนักงาน" ด้านบนช่วยไม่ได้
+   เพราะคนอ่านช่องตรงหน้าก่อนเสมอ)
+2. **ทางตัน** — บอกว่า "แก้ที่ฐานพนักงาน" ไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงเห็น
+   **มือถือไม่มีทางรู้เลย** ⇒ ตอนนี้มีลิงก์ **👥 ฐานข้อมูลพนักงาน →** ใต้ช่อง พาไปที่ตัวคนเลย
+   (`/operator?q=<รหัสพนักงาน>` — `empSearch` รับค่าตั้งต้นจาก `?q=` อ่านครั้งเดียวตอน mount
+   แล้วพิมพ์ทับได้ ไม่ผูก URL ต่อ)
+
+> 🔴 **ขยายผล:** ทุกที่ที่ `disabled` เพราะค่ามาจากทะเบียนอื่น ต้องมีครบ 2 อย่าง —
+> **ค่าที่มีผลจริง** + **ลิงก์ไปแก้ที่ต้นทาง** · ล็อกเฉยๆ = ผู้ใช้ติดตาย
+
 ### 🔴 "บัญชีของคน" บันทึกไม่ได้ถ้ายังไม่ผูกตัวตน (2026-09-23 · เกิดจริง)
 
 บัญชี `jennipha.cha@` ถูกบันทึกโดย `account_kind='person'` แต่ **`employee_id` และ `full_name`
@@ -382,6 +411,16 @@
 - หน้าใหม่ที่ query ข้อมูลตาม line/section **ต้องเพิ่ม scope filter แบบเดียวกัน** ไม่งั้นเห็นข้อมูลข้ามส่วนงานโดยไม่ตั้งใจ
 - **ข้อยกเว้นทางการ — `/factory-map` (ผังรวมโรงงาน) ไม่ scope โดยตั้งใจ ทุก role เห็นทั้งโรงงาน** (คำสั่ง user 2026-08-05 ปิดเคสจาก QC audit) — เป็นผังภาพรวมสำหรับจอ TV/ผู้บริหาร/ประชุม การกรองเหลือเฉพาะไลน์ตัวเองทำให้ "ภาพรวม" หมดความหมาย · **ห้ามเติม scope filter ให้หน้านี้** เว้นแต่ user สั่งเปลี่ยน · หน้าอื่นยังยึดกฎ scope ตามปกติ (รวมหน้าที่ deep-link ออกไปจากผัง เช่น Dashboard/MtnMachineLayout ซึ่ง gate ด้วย RoleRoute/scope ของตัวเองอยู่แล้ว)
 - **ข้อยกเว้นทางการ (เพิ่ม 2026-08-24 · คำสั่ง user) — `/flow-tower` (สายธารความต้องการ) ก็ไม่ scope เช่นกัน ทุก role เห็นทั้งโรงงาน** — เป็นจอ "สายธารทั้งเส้น" ตั้งแต่ลูกค้าถึงจัดซื้อ สำหรับผู้บริหาร/เปิดหลายจอพร้อมกัน · กรองเหลือเฉพาะส่วนงานตัวเองแล้ว**สายธารขาดกลางทาง = หมดความหมายของหน้า** · **ห้ามเติม scope filter** · เดิม destructure `sections` มาแต่ไม่เคยใช้ (ดูเหมือนลืมทำ ทั้งที่ตั้งใจ) → ถอดออกแล้วพร้อมคอมเมนต์กำกับ **ห้ามเอากลับมา**
+- **เคาะเพิ่ม 2026-10-06 (คำสั่ง user "เอาให้เป็นมาตรฐาน" หลัง QC audit) — 3 หน้าที่ถูกตั้งคำถามว่า "ลืม scope หรือเปล่า":**
+  - **`/heijunka` → เติมตัวกรองมาตรฐานแล้ว** (`<LineScopeSelect>` ในแถบกรอง) · ข้อมูลเป็นใบผลิตรายไลน์จริง ⇒ ขอบเขตมีความหมาย
+    🔴 **เป็นตัวกรองมุมมอง ไม่ใช่การจำกัดสิทธิ์ — default = ทั้งหมด** เพราะสโตร์/วางแผนป้อนของให้ทั้งโรงงาน
+    และหน่วยงานสนับสนุน (`Planning&Store`) ไม่มีไลน์ผลิตสังกัด ⇒ บังคับด้วย `profiles.sections` = เหลือ 0 แถวทันที
+    (กับดักเดียวกับที่ `operator.jsx` เตือนไว้ · ห้ามเปลี่ยนเป็นการบังคับ)
+  - **`/monitoring` → ไม่เติม** — บอร์ดแต่ละใบผูกไลน์เดียวอยู่แล้ว (`monitor_boards.line_name`)
+    **ช่องเลือกบอร์ด = ตัวกรองขอบเขตของหน้านี้** · เติมอีกช่องคือซ้ำซ้อน
+    ⚠️ บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ไลน์ ⇒ ยิ่งกรองด้วยไลน์ไม่ได้
+  - **`/rundown-stock` → ไม่เติม** — แถวคือ **ออเดอร์ FG ของลูกค้า** เทียบสต็อกที่คลัง FG ไม่ใช่ข้อมูลรายไลน์ผลิต
+    (`line_stock_summary` ถูกใช้หาของที่คลังปลายทางจาก `stock_inflow_rules` เท่านั้น) ⇒ ขอบเขตไลน์ไม่มีความหมายกับหน้านี้
 - **จอภาพรวมผู้บริหารอื่นที่ไม่ scope โดยตั้งใจ (documented อยู่แล้ว):** `/group-overview` · `/adoption-outlook`
 - **⚠️ หน้าหลัก (DeptHub) เคยไม่ scope เลยสักตัว — แก้แล้ว 2026-08-19 (feedback หน้างาน):** telemetry ทั้ง 4 (ไลน์กำลังผลิต/เช็คชื่อ/Downtime ค้าง/4M รออนุมัติ) นับทั้งโรงงานให้ทุก role → หัวหน้าไลน์เห็น Andon ของแผนกอื่นแล้วถามว่า "ไลน์ผมทำไมไม่แจ้งเตือนแบบนี้" · **กติกาที่ user สั่ง: หน่วยงานช่างเห็นทั้งโรงงาน (ดูแลเครื่องทุกไลน์) · หน่วยงานผลิตเห็นเฉพาะส่วนงานตัวเอง** · **helper กลาง `scopedLineNames({role, lineId, sections, lines})` ใน `src/utils/sectionScope.js`** — คืน `null` = ไม่จำกัด · ~~`MAINTENANCE_ROLES` = `['mtn','engineer']`~~ **ถอดออกแล้ว 25/09** (ช่าง/วิศวกรทั้ง 16 บัญชีไม่มี `sections` เลยสักใบ ⇒ ผลลัพธ์เท่าเดิมเป๊ะ แต่เดิม hardcode ครอบไว้ = admin ติ๊กส่วนงานให้ช่างแล้ว**ไม่เกิดอะไร = จอโกหก**) · **หน้าใหม่ที่นับตัวเลขรวมให้ใช้ helper นี้ ห้ามเขียน pattern scope ซ้ำเอง** (เดิมกระจาย ~6 หน้า) · **⚠️ ต้องรอ `production_lines` โหลดเสร็จก่อนเรียก** — lines ว่างคืน `null` (ไม่จำกัด) **ห้ามคืน `[]`** เพราะ `.in('line_name', [])` = ไม่เห็นอะไรเลย · จอที่โชว์ตัวเลขรวมต้อง**ติดป้ายบอกขอบเขต** (🏭 ทั้งโรงงาน / 👥 ส่วนงานของฉัน) ห้ามให้คนอ่านเดาเอง
 - **⚠️ dropdown ก็ต้อง scope ไม่ใช่แค่ query (audit 2026-07-23):** `<select>` ที่ลิสต์ **ไลน์/ส่วนงาน/พนักงาน** ต้องกรองตาม scope เหมือนกัน (ไม่งั้น supervisor/leader เห็นไลน์ข้ามส่วนงานใน dropdown แม้ข้อมูลกรองแล้ว) · ปิดช่องโหว่ dropdown แล้ว: **DailyReport เปิดกะ** (leaf+optgroup ตาม `openScopeLineNames`), **Checkin** (แถบ section + ไลน์), **MtnRepair** ReportModal (ผ่าน `scopedLineObjs` ใน cp), **PmCoordination** PlanModal, **DailyPM** ทะเบียน (assign/move — เพิ่ม `scopedProdLines`) · ยังเหลือ (primary user = store/logistic ไม่ใช่ผลิต เลยยัง N/A): LineStock/RackCenter line filter — ถ้าให้ leader ใช้ตรงต้องเพิ่ม scope
@@ -450,6 +489,8 @@
 2. เติมคีย์ที่ `sale` มีแต่ `planner_store` ไม่มี: `mtn_repair:report` · `page:/improvements` · `page:/morning-meeting`
 3. เพิ่ม `org:manage_own_unit` ให้ `planner_store` (ขอบเขตถูกจำกัดด้วย `profiles.section` ของคนกดอยู่แล้ว · ตัว section ยังเป็นของ admin)
 4. เติม `org_nodes.code = 'Planning&Store'` ให้ node `PLN & STO` (ชื่อที่แสดงบนผังไม่เปลี่ยน)
+   · 🔁 **05/10: ยกระดับเป็นการ normalize เต็ม** — `name` เปลี่ยนเป็น `Planning&Store` ด้วย
+     และกวาด `employees.section` 10 แถว ⇒ เลิกมี 2 สะกด (📄 `org-hierarchy.md` §ชื่อหน่วยงานต้องมีสะกดเดียว)
 5. ปิด `employees:edit_all_sections` ของ `planner_store` — บัญชีสโตร์ตั้ง `sections = []` (ไม่จำกัดขอบเขต)
    ย้ายแล้วจะแก้ประวัติพนักงานได้ทุกส่วนงาน · ตอนปิดยังไม่มีใครถือ role นี้ = ไม่มีใครเสียสิทธิ์ที่เคยมี
 

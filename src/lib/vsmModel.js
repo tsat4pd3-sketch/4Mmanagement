@@ -15,10 +15,10 @@
  *            P/8 RADIATOR GRL   → 82.65 × 56,400 + 53,100 = 4,714,560 → 1.13% ตรงใบ
  *   (ถ้าใช้ 86,400 จะได้ตัวหาร 7 ล้าน = %VA ต่ำกว่าใบจริงเกือบเท่าตัว)
  */
-import { matDigit } from '../utils/matPrefix';
-import { wavg, wLoad, ctForMat, policyBreakForShift } from '../utils/oee';
-import { stdCapacityOf } from '../utils/stdManpower';
-import { stepsFor } from '../utils/routing';
+import { matDigit } from '../utils/matPrefix.js';
+import { wavg, wLoad, ctForMat, policyBreakForShift } from '../utils/oee.js';
+import { stdCapacityOf } from '../utils/stdManpower.js';
+import { stepsFor } from '../utils/routing.js';
 
 const num = v => (v === null || v === undefined || v === '' ? null : (Number.isFinite(+v) ? +v : null));
 const round = (v, d = 2) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
@@ -66,28 +66,57 @@ export function availableTimeSec({ sessions = [], breakPolicies = [], processTyp
   return { atSec: total, shifts: byShift.size };
 }
 
-/** ตัวเลขความต้องการลูกค้า — ต่อปี/เดือน/วัน (วันทำงานจากปฏิทินบริษัท ห้าม hardcode 21/22) */
-export function demandOf({ forecasts = [], orders = [], monthKey, workingDays }) {
-  const inMonth = forecasts.filter(f => String(f.period_month || '').slice(0, 7) === monthKey);
-  // รวม source เดียวกัน กัน double-count (กฎเดียวกับ Kanban Auto-Calc: EDI 830 ชนะ manual)
+/** forecast ของ 1 เดือน — รวม source เดียวกัน กัน double-count (กฎเดียวกับ Kanban Auto-Calc: EDI 830 ชนะ manual) */
+function forecastOfMonth(forecasts, mk) {
+  const inMonth = forecasts.filter(f => String(f.period_month || '').slice(0, 7) === mk);
   const hasEdi = inMonth.some(f => f.source === 'edi_830');
   const picked = hasEdi ? inMonth.filter(f => f.source === 'edi_830') : inMonth;
-  let perMonth = picked.reduce((s, f) => s + (num(f.qty) || 0), 0);
-  let src = picked.length ? 'forecast' : null;
+  return { rows: picked.length, qty: picked.reduce((s, f) => s + (num(f.qty) || 0), 0) };
+}
+
+/** 'YYYY-MM' + n เดือน */
+function addMonths(mk, n) {
+  const [y, m] = String(mk || '').split('-').map(Number);
+  if (!y || !m) return null;
+  const t = (y * 12 + (m - 1)) + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, '0')}`;
+}
+
+/**
+ * ตัวเลขความต้องการลูกค้า — ต่อปี/เดือน/วัน (วันทำงานจากปฏิทินบริษัท ห้าม hardcode 21/22)
+ * 🔴 ต่อปี = **12 เดือนนับจากเดือนที่เลือก** แต่ละเดือนใช้ EDI 830 ชนะ manual (QC 05/10)
+ *    เดิมบวก forecast ทุกแถวที่เคยมี (ทุกปี + EDI ซ้อน manual) ⇒ Order/year พองหลายเท่า
+ *    มี forecast ไม่ครบ 12 เดือน = ค่าเฉลี่ยของเดือนที่มี × 12 แล้วคืน `yearMonths` ให้จอเขียนว่าประมาณจากกี่เดือน
+ */
+export function demandOf({ forecasts = [], orders = [], monthKey, workingDays }) {
+  const cur = forecastOfMonth(forecasts, monthKey);
+  let perMonth = cur.qty;
+  let src = cur.rows ? 'forecast' : null;
 
   if (!perMonth && orders.length) {          // ไม่มี forecast → ใช้ order จริงที่ส่งในช่วง
     perMonth = orders.reduce((s, o) => s + (num(o.qty) || 0), 0);
     src = 'order';
   }
-  const perYear = picked.length
-    ? forecasts.reduce((s, f) => s + (num(f.qty) || 0), 0)   // ทุกเดือนที่มี forecast
-    : (perMonth ? perMonth * 12 : 0);
+  let perYear = 0, yearMonths = null;
+  if (cur.rows) {
+    let sum = 0, covered = 0;
+    for (let i = 0; i < 12; i++) {
+      const f = forecastOfMonth(forecasts, addMonths(monthKey, i));
+      if (f.rows) { sum += f.qty; covered++; }
+    }
+    yearMonths = covered;
+    perYear = covered >= 12 ? sum : (covered ? Math.round((sum / covered) * 12) : 0);
+  } else if (perMonth) {
+    perYear = perMonth * 12;
+    yearMonths = 1;
+  }
   const wd = workingDays || 0;
   return {
     perYear: perYear || null,
     perMonth: perMonth || null,
     perDay: perMonth && wd ? Math.round(perMonth / wd) : null,
     source: src,
+    yearMonths,
   };
 }
 
@@ -288,6 +317,7 @@ export function buildVsmModel(input) {
     info: {
       workingDays, monthKey,
       orderYear: demand.perYear, orderMonth: demand.perMonth, orderDay: demand.perDay,
+      orderYearMonths: demand.yearMonths,   // < 12 = Order/year เป็นค่าประมาณจากเดือนที่มีข้อมูล (จอต้องบอก)
       demandSource: demand.source,
       atSec, ttSec,
       /* ── ข้อเท็จจริงของ "เส้นข้อมูล" บนผัง — นับจากข้อมูลจริง ห้าม canvas hardcode เอง

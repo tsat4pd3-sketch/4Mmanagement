@@ -465,6 +465,19 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
  *  @param {string} sheet        ชื่อชีท
  *  @param {Array}  registry     แถวจาก `customers` [{ code, name, aliases }]
  */
+/** ส่วนต่างสต็อกที่ต้องลง ledger (`adjust`) ให้ยอดเท่าไฟล์ = ยอดในไฟล์ − ยอดปัจจุบัน ต่อไลน์+พาร์ท · 0 = ไม่ต้องลง
+ *  🔴 QC 05/10 — ต้องเรียก**ซ้ำด้วยยอดสด ณ ตอนกดยืนยัน** (MonitoringUpload) ห้ามใช้ส่วนต่างตอนพรีวิว:
+ *     กดยืนยันรอบแรกลงไปบางก้อนแล้วล้ม → กดซ้ำด้วยส่วนต่างเดิม = ยอดเพี้ยนซ้อน · คิดจากยอดสด ⇒ ก้อนที่ลงแล้วได้ 0 (ข้าม)
+ *  `norm` = ตัวจับคู่เลข MAT ของหน้า (ตัดช่องว่าง/ขีด) · พาร์ทที่ไม่มีแถวสต็อก = ยอดปัจจุบัน 0 */
+export function stockAdjustPlan(fileStock = [], stockRows = [], norm = (s) => String(s ?? '')) {
+  const have = {};
+  (stockRows || []).forEach(s => { have[`${s.line_name}|${norm(s.mat_no)}`] = Number(s.qty_on_hand) || 0; });
+  return (fileStock || []).map(s => {
+    const cur = have[`${s.line_name}|${norm(s.mat_no)}`] || 0;
+    return { ...s, have: cur, delta: (Number(s.qty) || 0) - cur };
+  }).filter(s => s.delta !== 0);
+}
+
 export function sheetCustomer(sheet, registry = []) {
   const raw = String(sheet ?? '').trim();
   if (!raw) return null;

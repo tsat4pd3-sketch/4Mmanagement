@@ -62,7 +62,7 @@ export function Histogram({ values, unit = 'นาที', valOf, minN = 5 }) {
           return (
             <div key={i} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%' }}
               title={`${fmt(b.from, 2)}–${fmt(b.to, 2)} ${unit} · ${b.count} ครั้ง${b.overflow ? ' (ค่าสุดโต่ง)' : ''}`}>
-              <div style={{ fontSize: 10.5, color: 'var(--text2)', fontWeight: 700 }}>{b.count || ''}</div>
+              <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700 }}>{b.count || ''}</div>
               <div style={{ width: '100%', height: `${Math.max(pct, b.count ? 3 : 0)}%`, background: c, borderRadius: '4px 4px 0 0', border: `1px solid ${c}` }} />
             </div>
           );
@@ -70,7 +70,7 @@ export function Histogram({ values, unit = 'นาที', valOf, minN = 5 }) {
       </div>
       <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
         {h.bins.map((b, i) => (
-          <div key={i} style={{ flex: 1, minWidth: 0, fontSize: 9.5, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+          <div key={i} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
             {b.overflow ? `>${fmt(b.from)}` : fmt(b.from, h.step < 1 ? 2 : 0)}
           </div>
         ))}
@@ -112,10 +112,10 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
             </circle>
           ))}
         </svg>
-        <div style={{ position: 'absolute', right: 2, top: `${y(c.ucl)}%`, transform: 'translateY(-100%)', fontSize: 10, color: '#ef4444', fontWeight: 700 }}>UCL {fmt(c.ucl, 1)}</div>
-        <div style={{ position: 'absolute', right: 2, top: `${y(c.cl)}%`, transform: 'translateY(-100%)', fontSize: 10, color: '#22c55e', fontWeight: 700 }}>CL {fmt(c.cl, 1)}</div>
+        <div style={{ position: 'absolute', right: 2, top: `${y(c.ucl)}%`, transform: 'translateY(-100%)', fontSize: 11, color: '#ef4444', fontWeight: 700 }}>UCL {fmt(c.ucl, 1)}</div>
+        <div style={{ position: 'absolute', right: 2, top: `${y(c.cl)}%`, transform: 'translateY(-100%)', fontSize: 11, color: '#22c55e', fontWeight: 700 }}>CL {fmt(c.cl, 1)}</div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9.5, color: 'var(--muted)', marginTop: 2 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
         <span>{c.rows[0]?.label}</span><span>{c.rows[c.rows.length - 1]?.label}</span>
       </div>
       <div style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.8 }}>
@@ -151,7 +151,7 @@ export function ScatterPlot({ records, xOf, yOf, labelOf, xLabel, yLabel, minN =
           ))}
         </svg>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
         <span>{xLabel} →</span><span>↑ {yLabel}</span>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6, lineHeight: 1.7 }}>
@@ -197,7 +197,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
                 </div>
                 <b style={{ fontSize: 12.5 }}>{b.count}</b>
               </div>
-              {b.guessed > 0 && <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 2 }}>ในนี้เดามา {b.guessed}</div>}
+              {b.guessed > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ในนี้เดามา {b.guessed}</div>}
             </button>
           );
         })}
@@ -211,7 +211,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
             <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 9px', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 11.5 }}>
               <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{it.label || '—'}</span>
               <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{it.text || '(ไม่ได้ระบุสาเหตุ)'}</span>
-              {it.guessed && <span style={{ fontSize: 10, color: '#f59e0b', flexShrink: 0 }}>เดา</span>}
+              {it.guessed && <span style={{ fontSize: 11, color: '#f59e0b', flexShrink: 0 }}>เดา</span>}
             </div>
           ))}
           {cur.items.length > 60 && <div style={{ padding: '5px 9px', fontSize: 11, color: 'var(--muted)' }}>… อีก {cur.items.length - 60} รายการ</div>}
@@ -287,7 +287,7 @@ export function Stratify({ records, keyOf, valOf, unit = 'ครั้ง', top 
             <div style={{ width: `${(g.value / max) * 100}%`, height: '100%', background: 'var(--accent)' }} />
           </div>
           <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', minWidth: 62, textAlign: 'right' }}>{fmt(g.value, 1)} {unit}</span>
-          <span style={{ fontSize: 10.5, color: 'var(--muted)', minWidth: 38, textAlign: 'right' }}>{g.pct == null ? '' : `${g.pct.toFixed(0)}%`}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 38, textAlign: 'right' }}>{g.pct == null ? '' : `${g.pct.toFixed(0)}%`}</span>
         </div>
       ))}
       {s.hidden > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>… อีก {s.hidden} รายการ (รวมทั้งหมด {fmt(s.total, 1)} {unit} จาก {s.groups} รายการ)</div>}
@@ -305,13 +305,13 @@ export function RunChart({ records, keyOf, valOf, keys, unit = 'ครั้ง'
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 120 }}>
         {rc.points.map(p => (
           <div key={p.label} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', height: '100%' }} title={`${p.label}: ${fmt(p.value, 1)} ${unit}`}>
-            <div style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 700 }}>{p.value ? fmt(p.value) : ''}</div>
+            <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700 }}>{p.value ? fmt(p.value) : ''}</div>
             <div style={{ width: '100%', height: `${(p.value / max) * 100}%`, background: p.value ? 'var(--accent)' : 'transparent', borderRadius: '3px 3px 0 0', minHeight: p.value ? 2 : 0 }} />
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 9.5, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{p.label.slice(-5)}</div>)}
+        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{p.label.slice(-5)}</div>)}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6 }}>
         รวม <b>{fmt(rc.total, 1)}</b> {unit} · เฉลี่ยช่วงละ <b>{fmt(rc.mean, 1)}</b>

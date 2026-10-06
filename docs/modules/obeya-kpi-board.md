@@ -605,8 +605,16 @@ migration `20260923_kpi_seed_h1_fy2026_main.sql` (**apply แล้ว** · MAIN
 | # | อาการ | ข้อมูลที่ขัดกัน |
 |---|---|---|
 | 1 | ~~รหัส `2140471000` ผูก 2 ส่วนงาน~~ **✅ ปิดแล้ว 24/09** | ค่าที่ถูก (ผังทางการ ORG-001 Rev.09 + user ยืนยัน): **PD2 = `2140470000` (Assembly 1) · PD4 = `2140471000` (Assembly 2)** · แก้ด้วย `20260924_fix_pd2_pd4_cost_center.sql` · ทั้ง 6 ส่วนงานรหัสไม่ซ้ำและชื่อในทะเบียนตรงกันแล้ว · 🔴 **รอบแรกผมแก้ผิด** (เดา `2140472000` จากแพตเทิร์นตัวเลข 461/462/471/472) — เลขจริงเรียงตาม**ส่วนงานในผัง** ไม่ใช่ตามชื่อ PD1-PD4 ⇒ รายละเอียด + บทเรียนอยู่หัวไฟล์ `20260924_cost_center_pd4_fix_main.sql` |
-| 2 | **HYDROFORM ↔ LINE APRON ASSY สลับกัน** | ทะเบียน + `production_lines`: `2140562100` = LINE APRON ASSY · `2140562200` = HYDROFORM · แต่ `org_nodes`: HYDROFORM → `2140562100` · LINE APRON ASSY → `2140562200` (**ตรงข้าม**) ⇒ ตอนนี้ `ccOwnersOf('2140562100')` คืน 2 หน่วยพร้อมกัน |
+| 2 | ~~HYDROFORM ↔ LINE APRON ASSY สลับกัน~~ **✅ ปิดแล้ว 06/10** | **ค่าที่ถูก (user เคาะ 06/10):** *"562100 คือระดับแผนก HYDROFORM ที่ประกอบด้วยคอร์สกลุ่ม 66210x"* ⇒ `2140562100` = แผนก **HYDROFORM** · `2140562200` = แผนก **LINE APRON ASSY** · **`org_nodes` ถูกอยู่แล้ว** ผิดที่ `cost_centers.name` (สลับชื่อ) + `production_lines` แถวไลน์แม่ 2 แถว (สลับรหัส) · แก้ด้วย `20261006_fix_hydroform_apron_cost_center_main.sql` (apply แล้ว · ตรวจกลับ 3 แหล่งตรงกัน) |
 | 3 | **รหัสไม่มีชื่อ ~30 ตัว** | `cost_centers` แถว `2140671101`–`2140674106` มี `name = ''` และรหัสระดับส่วนงาน (PD1/PD2/PD3) มี `section` ว่าง ⇒ ช่อง 💰 โชว์รหัสเปล่า เทียบกับใบบัญชีไม่ได้ |
+
+**🔎 บันทึกการสืบ 06/10 — ทำไมห้ามตัดสินด้วยเสียงข้างมาก (เก็บไว้เป็นบทเรียน):**
+- ข้อ 2: ตอนแรก `cost_centers` + `production_lines` ตรงกัน มีแต่ `org_nodes` ที่สวนทาง — **ถ้าเชื่อเสียงข้างมาก 2-ต่อ-1 ก็จะแก้ผิด** เพราะ 2 แหล่งนั้นไม่ใช่พยานอิสระ · ของที่ชี้ขาดคือ **ลำดับชั้นของรหัสเอง**: ลูกของ HYDROFORM ถือ `66210x` ทั้งชุด (HDF1/LASER-345=…2101 · HDF2/LASER-789=…2102 · LASER E50=…2103 · LASER EXPORT=…2104) และลูกของ APRON ถือ `66220x` (Line 60/61=…2201 · SUB APRON=…2202) ⇒ แผนกแม่ของ `66210x` ต้องเป็น HYDROFORM — ตรงกับที่ user เคาะ ✔
+- 🔴 **ใบบอร์ดกระดาษจริงไม่เห็นด้วยกับทั้งสองฝั่ง** — `OBEYA-KPI-SOURCES.md` §10 (ถอดจากรูปบอร์ด) เขียนว่า **LINE HYDROFORM 1&2 = `2140662101` & `2140662102`** (ขึ้นต้น 21406 ไม่ใช่ 21405) และ §2.0 เขียนว่า **`2140562100` = แถว Overhead (รวม)** ⇒ รหัส 21405621xx อาจเป็น**รหัสคนละระดับ** ที่ถูกเอามาผูกไลน์ผิดทั้ง 2 ฝั่ง
+- ข้อ 3: รหัสชื่อว่าง **29 ตัว** (จาก 83) + `section` ว่าง **43 ตัว** · เช็คแล้วทั้ง 29 ตัว **ไม่มีชื่อที่ไหนในระบบเลย** (ไม่มีทั้งใน `production_lines` และ `org_nodes`) ⇒ **เติมจากข้อมูลในระบบไม่ได้ ต้องให้เจ้าของข้อมูลให้ชื่อมา** — ห้าม AI session เดาชื่อจากแพตเทิร์นเลข (เคยพลาดมาแล้ว ดูข้อ 1)
+- `ccOwnersOf()`/`ccLabel()` ถูก export แต่**ไม่มีจอไหนเรียก** (grep 06/10 = 0) · จอใช้แค่ `ccOf()` ซึ่งคืน `multi` อย่างซื่อสัตย์อยู่แล้ว ⇒ ตอนนั้นจึงเป็นระเบิดเวลา ไม่ใช่บั๊กที่เห็นบนจอ (ตอนนี้ปลดแล้ว)
+- blast radius ที่เช็คก่อนแก้ (06/10): `kpi_definitions.scope_value` · `kpi_month_notes.scope_value` · `kpi_base_inputs.scope_value` · `cost_center_rates.cost_center` = **0 แถวอ้าง 2 รหัสนี้** ⇒ ไม่มีค่า KPI/เป้า/หมายเหตุใดเปลี่ยนความหมาย
+- ⚠️ **งานต่อ (ยังไม่แก้ · ต้องให้เจ้าของข้อมูลเคาะ): ชื่อหน่วยเดียวกันเขียนไม่ตรงกัน 13 รหัส** ระหว่าง `org_nodes` กับ `production_lines` ⇒ รหัสเดียวตอบได้หลายชื่อ เช่น `2140662101` = `HDF1` | **`HTDROFORM1`** (typo) | `LASER-345` · `2140662103` = `LASER E50` | `E50,C-CHANNEL` · `2140671212` = `GOR ASSY` | `Assy GOR` · `2140671212`/`…1212` มี `Assy  LWR` (เว้นวรรค 2 ที่) 🔴 **คนละคลาสกับข้อ 2** (ข้อ 2 = ผูกรหัสผิดหน่วย · อันนี้ = หน่วยเดียวกันสะกดไม่ตรง) · ชื่อในผังเป็นของ **ORG-001** ⇒ ห้าม AI session เปลี่ยนชื่อหน่วยเอง
 
 **ที่ user ยืนยันเองแล้ว (ถือเป็นของจริง):** `2140462000` = **PD3** — ตรงกับทั้งทะเบียนและ `org_nodes` ✔
 ⚠️ `docs/OBEYA-KPI-SOURCES.md` §12.3 เขียน PD3 = `2140462100` — นั่นคือรหัสของ**แถว DL&OH ในไฟล์ Excel**
@@ -911,12 +919,17 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 | 🟡 ข้อความล้าสมัย: "แผง Key Performance" · "แท็บ 📑" · "Y/N" · "(13/07) 8,000+ ครั้ง" · หัวคอมเมนต์ "3 แท็บ/8 หัวข้อ" | แก้เป็นของจริง (⚙️ · ○△✗ · แผ่นแยก) | — |
 | 🟡 ฟอนต์ 9.5–10.5px ใน KpiMonthly/KpiStandardModal (8 จุด) · ป้าย "— ทั้งหมด" · `plantLabel="ทุกส่วนงาน"` | 11px · `allOf('รหัส Cost Center')` · `ALL.section` | UI §4 / UI-STANDARD §3.4 |
 
-**ยังไม่แก้ — ต้องให้ user ตัดสินก่อน (เปลี่ยนพฤติกรรม/ขอบเขตข้อมูล):**
-1. SQDCM **ACTION BOARD ไม่กรองตาม scope ที่เลือก/sections ของ user** (`actions` → `actionHealth`) — เลือก PD3 ยังนับใบ PD4 · ถ้าตั้งใจให้ห้อง Obeya เห็นทั้งโรงงาน ต้องเขียนไว้ใน obeya.md §5
-2. บอร์ด KPI: เปิด `?scope=` นอกสังกัด (เช่น PD1 ด้วยบัญชี PD3) → OEE/PPM ว่าง แต่ `safety_events`/`meeting_action_items` ยังเห็นของ PD1 — ควร reset เป็นขอบเขตของตัวเอง + toast
-3. SQDCM `lineOk` กรองด้วย `inSectionScope` อย่างเดียว ไม่ผ่าน `scopedLineNames` (branch leader ระดับไลน์/ทีมไม่ถูกใช้) ต่างจากแท็บ 📋
-4. บอร์ด KPI ยัง `usePolling` ล้วน (ไม่มี realtime) — ควรเป็น `useLiveBoard(load, { tables:['production_sessions'] })` เหมือนแท็บ SQDCM
-5. `KpiMonthly` `parts_master` select ไม่มี filter (เพดาน 1000 แถวเงียบ) · `ObeyaKpiBoard` `.in('line_name', names.slice(0,200))` นับ "กะยังไม่ปิด" ขาดเมื่อขอบเขต >200 ไลน์
-6. `ChartModal` กราฟเส้น `domain=['auto','auto']` (แกนไม่เริ่ม 0 ไม่มีป้าย) · sparkline `MiniChart` พื้นแกน = min (ยอมรับได้ที่ 150×30 — ระบุเจตนาแล้ว)
+**รอบ 3 (05/10 · user เคาะ "หมวด 3 แก้หมด") — แก้ครบ 6 ข้อที่เคยอยู่ในลิสต์ "ยังไม่แก้":**
+
+| เดิม | แก้เป็น | หลักฐาน/ด่าน |
+|---|---|---|
+| 1. SQDCM **ACTION BOARD ไม่กรองตาม scope ที่เลือก/sections ของ user** — เลือก PD3 ยังนับใบ PD4 | `scopeActions()` (`obeyaKpi.js`) กรอง 3 ชั้น: ใบที่ระบุไลน์ → `lineOk` ชุดเดียวกับข้อมูลผลิต · ใบที่ระบุแค่ส่วนงาน → sections ของ user ∩ `org.sectionsOf(scope)` · ใบไม่ระบุอะไร = ใบระดับโรงงาน เห็นเฉพาะ "ทั้งโรงงาน" · ไลน์ที่หายจากทะเบียน (`lineOk` คืน null) ถอยไปใช้ส่วนงาน **ไม่ทิ้งเงียบ** · การ์ดเขียน "นอกขอบเขต N ใบ" | เทส `obeyaKpi.test.mjs` · ด่าน `obeya-actions-unscoped` · harness: ทั้งโรงงาน 14 ใบ → PD1 13 ใบ + นอกขอบเขต 1 → JIG MTN 0 + นอกขอบเขต 14 |
+| 2. บอร์ด KPI: เปิด `?scope=` นอกสังกัด (PD1 ด้วยบัญชี PD2) → ค้างอยู่ จอว่าง/เห็นของหน่วยอื่น | effect default-scope เช็ค `scopeOpts.some(o => o.key === scopeKeyStr)` เพิ่มจาก `org.has` → reset เป็น mine/first/PLANT + `toast.info("ขอบเขต … อยู่นอกสังกัดของคุณ")` ไม่สลับเงียบ | harness `?sections=PD2&scope=section:PD1` → picker=plant + toast ขึ้น |
+| 3. SQDCM `lineOk` ไม่ผ่าน `scopedLineNames` (leader ครอบครัวไลน์ไม่ถูกใช้) | เพิ่ม `userLineSet` จาก `scopedLineNames({ role, lineId, sections, lines })` ชุดเดียวกับแท็บ 📋 (null = ไม่จำกัด) | — |
+| 4. บอร์ด KPI `useEffect+usePolling` ประกอบเอง ไม่มี idle gate/realtime | `useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD })` (ยังไม่ subscribe prod_orders/downtime_logs ตามกฎ) | กฎ DB ข้อ 8 |
+| 5. `KpiMonthly` `parts_master` select ทั้งตาราง (เพดาน 1000 เงียบ) · บอร์ด KPI `.in('line_name', names.slice(0,200))` | parts_master ดึงเฉพาะ MAT ที่มีของเสีย ผ่าน `fetchByIds` (truncated = throw บอกว่า Cost of defect จะต่ำกว่าจริง) · กะเปิดค้างผ่าน `fetchByIds(names, …)` (error/truncated → warn "กะที่เปิดค้าง") | กฎ DB ข้อ 5 |
+| 6. `ChartModal` กราฟเส้น `domain=['auto','auto']` ยกพื้นแกนเงียบ | `focusDomain([...vals, target])` + `<FocusAxisNote fixed>` (ชิป "🎯 แกนเริ่ม 79 ไม่ใช่ 0") · แท่งยังเริ่ม 0 · sparkline `MiniChart` 150×30 คงเดิมโดยตั้งใจ | ด่าน `chart-yaxis-domain-hand-made` |
+
+- harness เพิ่ม `?sections=PD2,PD3` (จำลอง user ที่ถูกจำกัดส่วนงาน) และ mount `<ToastContainer/>` ในหน้าปกติ (เดิมมีแค่ FeedbackLab ⇒ toast ของทุกหน้าไม่เคยโผล่ใน harness) → `audit/README.md`
 
 > 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)

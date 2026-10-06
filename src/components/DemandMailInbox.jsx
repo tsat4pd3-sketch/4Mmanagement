@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
+import { mailsMissingFiles } from '../utils/mailInbox';
 
 /* ─── 📬 ไฟล์จากเมลรอนำเข้า (2026-09-30) ─────────────────────────────────────
    แถวในคิว `demand_mail_inbox` (DR) เกิดจากสคริปต์ Outlook บนเครื่อง user
@@ -21,7 +22,8 @@ const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', {
 
 export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   const [rows, setRows] = useState([]);
-  const [latestDone, setLatestDone] = useState({});   // ชนิด → เวลาเมลของฉบับล่าสุดที่นำเข้าแล้ว
+  const [latestDone, setLatestDone] = useState({});
+  const [missing, setMissing] = useState([]);         // เมลที่หัวเรื่องบอกว่ามีไฟล์ แต่ไฟล์ไม่มาถึง   // ชนิด → เวลาเมลของฉบับล่าสุดที่นำเข้าแล้ว
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(null);
 
@@ -39,6 +41,16 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
     const latest = {};
     (done || []).forEach(r => { const k = kindOf(r.file_name); if (k && !(latest[k] >= tsOf(r))) latest[k] = tsOf(r); });
     setLatestDone(latest);
+    /* 📭 หัวเรื่องบอก "830 & 862" แต่ไฟล์มาไม่ครบ = ห้ามเงียบ (05/10 ได้แค่ 830 · บอร์ดถือแผนเก่าโดยไม่มีใครรู้)
+       ดู 7 วันล่าสุดทุกสถานะ ⇒ เมลที่นำเข้าไปแล้วก็ยังเตือนได้ว่าขาดอีกไฟล์ */
+    const since = new Date(Date.now() - 15 * 86400000).toISOString();   // เผื่อรอบ 830 (ทั้งสัปดาห์) ของเมลเก่าสุดในจอ
+    const { data: recent, error: eRecent } = await supabaseDR.from('demand_mail_inbox')
+      .select('message_id, subject, file_name, received_at').gte('received_at', since).limit(200);
+    /* นำเข้าเอง (ลากไฟล์) ก็นับว่าได้ของแล้ว — 862 = kind 'orders' · 830 = 'forecast' */
+    const { data: batches, error: eB } = await supabaseDR.from('demand_upload_batches')
+      .select('kind, file_name, uploaded_at').gte('uploaded_at', new Date(Date.now() - 15 * 86400000).toISOString()).limit(200);
+    const imports = (batches || []).filter(b => /^EDI /.test(b.file_name || '')).map(b => ({ kind: b.kind === 'orders' ? '862' : b.kind === 'forecast' ? '830' : null, at: b.uploaded_at }));
+    setMissing(eRecent || eB ? [] : mailsMissingFiles(recent || [], { imports }).slice(0, 3));
   }, []);
   useEffect(() => { load(); }, [load, refreshKey]);
 
@@ -83,6 +95,14 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
           background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer' }}>↻</button>
       </div>
       {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
+      {missing.map(m => (
+        <div key={m.message_id || m.subject} style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginTop: 4,
+          padding: '6px 8px', borderRadius: 8, border: '1px solid rgba(239,68,68,0.5)', background: 'var(--card)' }}>
+          📭 เมล "{m.subject}" ({fmtTime(m.received_at)}) หัวเรื่องบอกว่ามีไฟล์ {m.missing.join(' + ')} แต่ระบบได้รับแค่
+          {m.got.length ? ` ${m.got.join(' + ')}` : 'ไม่มีไฟล์'} — ข้อมูล {m.missing.join('/')} ของวันนั้นยังไม่เข้าระบบ ·
+          เช็คเมลต้นทางว่าแนบมาครบไหม (ชื่อไฟล์ต้องขึ้นต้น {m.missing.map(k => `${k}_`).join(' / ')}) หรือลากไฟล์มาอัพเองด้านล่าง
+        </div>
+      ))}
       {rows.map(r => {
         const ageH = (now - new Date(r.received_at || r.created_at).getTime()) / 3600000;
         const newer = newerOf(r);

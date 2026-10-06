@@ -5,6 +5,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
+import { fetchOeeTargets } from '../utils/oeeMasters';
 import FilterBar from './FilterBar';
 import LineSelect from './LineSelect';
 import { pairLoadTotal } from '../utils/pairTotals';
@@ -55,6 +56,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
   const [oeeMode, setOeeMode]   = useState('actual'); // 'actual' | 'target' — ตัวเลขในตารางยึดเส้นไหน
   const [lineName, setLineName] = useState('');
   const [targets, setTargets]   = useState({});      // group_name → แถว oee_targets
+  const [tgErr, setTgErr]       = useState(false);   // โหลดเป้า OEE ไม่ได้ = กำลังใช้ค่ามาตรฐาน ต้องบอกบนจอ
   const [draft, setDraft]       = useState({});      // key → { hours_per_day, day_source }
   const [saving, setSaving]     = useState(false);
 
@@ -63,12 +65,14 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       supabaseDR.from('capacity_shift_patterns')
         .select('key, label, hours_per_day, day_source, sort_order, color, is_active, note')
         .eq('is_active', true).order('sort_order'),
-      supabaseDR.from('oee_targets').select('group_name, target_a, target_p, target_q'),
+      /* 05/10 (QC audit): `oee_targets` อยู่ **Main** — เดิมอ่านผ่าน supabaseDR (ตารางไม่มีฝั่ง DR = 42P01)
+         แล้วไม่เช็ค error ⇒ ทุกไลน์ได้ "เป้ามาตรฐาน 80.2%" เงียบๆ แทนเป้าที่ทีมตั้งไว้จริง */
+      fetchOeeTargets(),
     ]);
     // ทะเบียนยังไม่ได้ apply / โหลดไม่ได้ → ถอยไปใช้ค่า seed (จอไม่พัง) **แต่ต้องขึ้นจอบอก ห้ามเงียบ**
     if (pat.error || !pat.data?.length) { setPatterns(SEED_PATTERNS); setPatErr(true); }
     else { setPatterns(pat.data); setPatErr(false); }
-    setTargets(Object.fromEntries((tg.data || []).map(r => [r.group_name, r])));
+    setTargets(tg.byGroup || {}); setTgErr(!!tg.error);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -209,6 +213,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         <div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>OEE เป้า (A×P×Q)</div>
           <div style={{ fontSize:20, fontWeight:800, color:'#f59e0b' }}>{(oee.target * 100).toFixed(1)}%</div>
+          {tgErr && <div style={{ fontSize:11, color:'#ef4444', fontWeight:700 }}>⚠️ โหลดเป้าไม่ได้ — นี่คือค่ามาตรฐาน ไม่ใช่เป้าที่ทีมตั้ง</div>}
         </div>
         {oee.hasActual && (
           <div style={{ fontSize:12, color: oee.actual >= oee.target ? '#22c55e' : '#ef4444', fontWeight:700 }}>
@@ -310,15 +315,15 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
               <Legend wrapperStyle={{ fontSize:11 }} />
               {refLines.map(p => (
                 <ReferenceLine key={p.key} y={p.hours} stroke={p.color || 'var(--muted)'} strokeDasharray="4 4"
-                  label={{ value: p.label, position:'right', fontSize:10, fill:p.color || 'var(--muted)' }} />
+                  label={{ value: p.label, position:'right', fontSize:11, fill:p.color || 'var(--muted)' }} />
               ))}
               {/* ป้ายชั่วโมงบนหัวแท่ง (คำขอ user 25/09) — จอ TV อ่านตัวเลขจากแท่งเองไม่ได้ */}
               <Bar dataKey="ActWorkload" name="ภาระงาน (ActWorkload)" fill="#3b82f6">
-                <LabelList dataKey="ActWorkload" position="top" fontSize={10} fill="#3b82f6"
+                <LabelList dataKey="ActWorkload" position="top" fontSize={11} fill="#3b82f6"
                   formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
               </Bar>
               <Bar dataKey="RworkOEE"    name="ต้องใช้จริงเมื่อคิด OEE (RworkOEE)" fill="#ef4444">
-                <LabelList dataKey="RworkOEE" position="top" fontSize={10} fill="#ef4444"
+                <LabelList dataKey="RworkOEE" position="top" fontSize={11} fill="#ef4444"
                   formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
               </Bar>
             </BarChart>
@@ -334,17 +339,17 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
             <thead><tr>
               <th style={{ ...th, textAlign:'left' }}>เดือน</th>
               <th style={th}>วันทำงาน</th>
-              <th style={th}>จำนวนชิ้น<div style={{ fontWeight:400, fontSize:10 }}>รวมทุกลูกค้า</div></th>
+              <th style={th}>จำนวนชิ้น<div style={{ fontWeight:400, fontSize:11 }}>รวมทุกลูกค้า</div></th>
               {custCols.map(c => (
                 <th key={c.customer} style={{ ...th, color: c.customer === NO_CUST ? '#f59e0b' : 'var(--muted)' }}>
-                  {c.customer}<div style={{ fontWeight:400, fontSize:10 }}>ชิ้น</div>
+                  {c.customer}<div style={{ fontWeight:400, fontSize:11 }}>ชิ้น</div>
                 </th>
               ))}
-              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:10 }}>เพดาน (ชม.)</div></th>
-              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:10 }}>ภาระงาน (ชม.)</div></th>
-              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:10 }}>ต้องใช้จริง (ชม.)</div></th>
-              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:10 }}>เพดาน×OEE</div></th>
-              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:10 }}>เหลือ/ขาด</div></th>
+              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:11 }}>เพดาน (ชม.)</div></th>
+              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:11 }}>ภาระงาน (ชม.)</div></th>
+              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:11 }}>ต้องใช้จริง (ชม.)</div></th>
+              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:11 }}>เพดาน×OEE</div></th>
+              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:11 }}>เหลือ/ขาด</div></th>
               <th style={{ ...th, textAlign:'left' }}>ต้องเปิดกะแบบไหน</th>
             </tr></thead>
             <tbody>
@@ -355,7 +360,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   <td style={{ ...td, fontWeight:700 }}>
                     {r.pcs.toLocaleString()}
                     {r.noCt > 0 && (
-                      <div style={{ fontSize:10, color:'#f59e0b' }} title="พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้">
+                      <div style={{ fontSize:11, color:'#f59e0b' }} title="พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้">
                         ⚠️ {r.noCt.toLocaleString()} ชิ้นไม่มี CT
                       </div>
                     )}
@@ -446,7 +451,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                       <td style={{ ...td, textAlign:'left' }}>
                         <span style={{ fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</span>
                         {r.paired && <span title="งานคู่ RH/LH — 1 จังหวะได้ 2 ชิ้น"> 👯</span>}
-                        {r.name && <div style={{ fontSize:10, color:'var(--muted)', whiteSpace:'normal' }}>{r.name}</div>}
+                        {r.name && <div style={{ fontSize:11, color:'var(--muted)', whiteSpace:'normal' }}>{r.name}</div>}
                       </td>
                       <td style={{ ...td, textAlign:'left', color: r.customer ? 'var(--text2)' : 'var(--muted)' }}>
                         {r.customer || NO_CUST}
@@ -459,9 +464,9 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                       <td style={{ ...td, fontWeight:700, color: r.ratio == null ? 'var(--muted)' : m.color }}>{pct(r.ratio)}</td>
                       <td style={{ ...td, textAlign:'left' }}>
                         <span style={{ fontSize:11, fontWeight:700, color:m.color }}>{m.label}</span>
-                        {r.note && <div style={{ fontSize:10, color:'var(--muted)', whiteSpace:'normal', maxWidth:300 }}>{r.note}</div>}
+                        {r.note && <div style={{ fontSize:11, color:'var(--muted)', whiteSpace:'normal', maxWidth:300 }}>{r.note}</div>}
                         {r.flag !== 'no_actual' && r.n > 0 && (
-                          <div style={{ fontSize:10, color:'var(--muted)' }}>จาก {r.n} กะที่ปิดแล้ว</div>
+                          <div style={{ fontSize:11, color:'var(--muted)' }}>จาก {r.n} กะที่ปิดแล้ว</div>
                         )}
                       </td>
                     </tr>

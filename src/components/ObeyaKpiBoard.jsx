@@ -13,13 +13,15 @@ import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
 import { PLANT, isPlant, scopeKey, parseScopeKey, scopeOfDef, scopeCovers, sameScope, filterScopeOptions, drillParams } from '../utils/orgScope';
 import { canAccessPage } from '../utils/permissions';
-import usePolling from '../utils/usePolling';
-import { RATE } from '../utils/refreshRates';
+import { useLiveBoard } from '../utils/useLiveBoard';
+import { LIVE, RATE } from '../utils/refreshRates';
+import { toast } from './Toast';
 import PageHeader from './PageHeader';
+import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
-import { tooltipProps, CELL_BAR_FILL, focusDomain } from '../utils/chartAxis';
+import { tooltipProps, CELL_BAR_FILL, focusDomain, axisUnitLabel, axisUnitTop } from '../utils/chartAxis';
 import { pickBoardRows, normKpiRowName } from '../utils/kpiBoardRows';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
@@ -64,7 +66,7 @@ import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
    • **ไม่มีเป้า ≠ ผ่าน** = เทา + บอกว่าไปตั้งที่ไหน · **ไม่มีค่า ≠ 0** = ไม่มีแท่ง
    • **Safety**: ค่า KPI = สรุปจากหน่วยงานความปลอดภัย (กรอกมือ · user 07/09) → ไม่มีค่อยถอยไปนับ `safety_events`
      · ไม่มีบันทึกเลย = เทา **ห้ามเขียว** · ห้ามบวก 2 แหล่ง
-   • egress: usePolling(RATE.BOARD) — แท็บซ่อน = หยุดยิง · ห้าม subscribe realtime prod_orders/downtime_logs
+   • egress: useLiveBoard(production_sessions · RATE.BOARD + idle gate) — แท็บซ่อน = หยุดยิง · ห้าม subscribe realtime prod_orders/downtime_logs
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 8 หัวข้อบนบอร์ดจริง (ถอดจากป้ายเหลืองในรูปที่ user ถ่ายมา 2026-09-01) ───────────────────────
@@ -180,11 +182,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ⚠️ รอผังโหลดก่อน (orgReady) ไม่งั้นค่าจาก URL เช่น department:HYDROFORM ถูกตีว่าไม่รู้จักแล้วล้างทิ้ง */
   useEffect(() => {
     if (!orgReady || !lines.length) return;
-    if (scope && (isPlant(scope) || org.has(scope.kind, scope.value))) return;
+    const known = !!scope && (isPlant(scope) || org.has(scope.kind, scope.value));
+    /* 🔒 ขอบเขตจาก URL ที่ผังรู้จักแต่ **อยู่นอกสังกัด user** (05/10 · audit) — เดิมผ่านด่าน org.has แล้วค้างอยู่
+       ทั้งที่ dropdown ไม่มีให้เลือก ⇒ จอว่าง/ตัวเลขของหน่วยอื่น · ให้ถอยกลับหน่วยของตัวเองแล้วบอกบนจอ ไม่สลับเงียบ */
+    const allowed = known && (isPlant(scope) || scopeOpts.some(o => o.key === scopeKeyStr));
+    if (allowed) return;
     const mine = (sections || []).map(x => scopeOpts.find(o => o.kind === 'section' && o.value === x)).find(Boolean);
     const first = scopeOpts.find(o => o.kind === 'section');
+    if (known) toast.info(`ขอบเขต "${org.labelOf(scope.kind, scope.value)}" อยู่นอกสังกัดของคุณ — สลับไปดูหน่วยของคุณแทน`);
     setScope(mine || first || PLANT);
-  }, [orgReady, lines.length, scope, org, sections, scopeOpts, setScope]);
+  }, [orgReady, lines.length, scope, scopeKeyStr, org, sections, scopeOpts, setScope]);
 
   /* ไลน์ในขอบเขตที่เลือก ∩ ขอบเขต user · ขอบเขตที่ไม่มีไลน์ผลิต (แผนกช่าง) = [] → แผ่นอัตโนมัติว่างโดยตั้งใจ */
   const lineNames = useMemo(() => {
@@ -230,9 +237,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (yr.error) warn.push('ผลรวมรายเดือน (OEE/PPM)');
       const roll = yr.data || {};
       // 2) กะที่ยังเปิดค้างของวันที่ดู — ตัวเลขวันนี้ยังไม่ครบ ต้องบอก
-      const op = names.length ? await supabaseDR.from('production_sessions').select('id')
-        .eq('work_date', date).neq('status', 'closed').in('line_name', names.slice(0, 200)) : { data: [] };
-      if (op.error) warn.push('กะที่เปิดค้าง');
+      /* `.in()` ยาวทะลุเพดาน URL = คืนว่างเงียบ (กฎเหล็ก DB ข้อ 5) → ซอยก้อนผ่าน fetchByIds แทน `slice(0, 200)` เดิม
+         ที่ตัดไลน์ที่ 201+ ทิ้งเงียบๆ (05/10 · audit) */
+      const op = names.length ? await fetchByIds(names, part => supabaseDR.from('production_sessions').select('id')
+        .eq('work_date', date).neq('status', 'closed').in('line_name', part)) : { rows: [] };
+      if (op.error || op.truncated) warn.push('กะที่เปิดค้าง');
       // 3) เป้า OEE (A×P×Q รายกรุ๊ป)
       const tg = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q');
       if (tg.error) warn.push('เป้า OEE');
@@ -283,7 +292,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
-        openSess: (op.data || []).length, targets: tg.data || [],
+        openSess: (op.rows || []).length, targets: tg.data || [],
         safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn,
       });
     } catch (e) {
@@ -292,8 +301,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (seq === reqRef.current) setLoading(false);
     }
   }, [lineKey, scopeKeyStr, secKey, year, date, org]);
-  useEffect(() => { load(); }, [load]);
-  usePolling(load, RATE.BOARD);
+  /* โหลดครั้งแรก + poll + realtime ผ่านตัวกลางตัวเดียว (กฎเหล็ก DB ข้อ 8 · เดิมประกอบ useEffect+usePolling เอง ไม่มี idle gate)
+     ฟังแค่ production_sessions (เปิด/ปิดกะ = ตัวเลขเดือนเปลี่ยน) — prod_orders/downtime_logs ห้าม subscribe ในหน้านี้ */
+  useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD });
 
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
@@ -400,7 +410,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           series.push({ k: SUMMARY_KEY, v: total, summary: true, kind: 'sum' });
           months = upto.length; sumKind = 'sum';
           def = { target_value: 0, direction: 'down' };
-          note = `นับจากบันทึกหน้างาน (safety_events) · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
+          note = `นับจากบันทึกเหตุการณ์ความปลอดภัยหน้างาน · เป้า 0 ครั้ง${members.names.size ? ' · เหตุที่ไม่ระบุไลน์ไม่ถูกนับในขอบเขตนี้' : ' · นับตามส่วนงานที่บันทึก'}`;
         } else {
           series = monthKeys(year).map(k => ({ k, v: null, empty: true })).concat([{ k: SUMMARY_KEY, v: null, summary: true }]);
           note = 'ยังไม่มีใครบันทึกเหตุการณ์ และยังไม่กรอกสรุปจากหน่วยงานความปลอดภัย';
@@ -478,15 +488,17 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     if (!data) return [];
     const acts = (data.actions || []).map(a => ({
       id: `a-${a.id}`, icon: a.source === 'obeya' ? '🏛️' : '🌅', kind: 'action',
-      title: a.problem || '(ไม่ได้ระบุปัญหา)',
+      // หัวข้อว่าง/ช่องว่างล้วน = เขียนให้รู้ว่าว่าง ห้ามปล่อยแถวไม่มีชื่อ (UX audit 05/10)
+      title: (a.problem || '').trim() || '(ไม่มีหัวข้อ)',
       meta: [a.line_name, a.assignee ? `ผู้รับผิดชอบ ${a.assignee}` : 'ยังไม่ระบุผู้รับผิดชอบ'].filter(Boolean).join(' · '),
       due: a.due_date || null, color: '#3b82f6', to: a.source === 'obeya' ? '/obeya?tab=sqdcm' : '/morning-meeting',
     }));
     const sf = (data.safety || []).filter(e => e.status === 'open').map((e) => {
       const k = safetyKind(e.kind);
       return {
-        id: `s-${e.id}`, icon: k.icon, kind: 'safety', ev: e,
-        title: `${k.short} — ${e.description}`,
+        id: `s-${e.id}`, icon: k.unknown ? '🦺' : k.icon, kind: 'safety', ev: e,
+        /* ชนิดที่ไม่อยู่ในทะเบียน = safetyKind คืน short '?' ⇒ เดิมขึ้น "? — …" (UX audit 05/10) — เขียนเป็นคำแทน */
+        title: `${k.unknown ? 'ไม่ระบุชนิด' : k.short} — ${(e.description || '').trim() || '(ไม่มีรายละเอียด)'}`,
         meta: [e.line_name, e.employee_name].filter(Boolean).join(' · ') || 'ยังไม่ปิดเคส',
         due: null, color: k.color, to: null, warn: !e.countermeasure ? 'ยังไม่ได้ลงมาตรการแก้ไข' : null,
       };
@@ -621,13 +633,13 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {/* 🔴 กติกาความซื่อสัตย์: แกนไม่เริ่ม 0 ต้องเขียนบนจอ — ตัวร่วมใน ObeyaSheet (SQDCM %Q ใช้ตัวเดียวกัน) */}
       {focus && <FocusAxisNote k={kk} loText={nf(focus.domain[0], r.dec)} />}
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: r.unit ? fs(21) : fs(12), right: 6, left: 4, bottom: 0 }}>
+        <ComposedChart data={data} margin={{ top: r.unit ? axisUnitTop(fs(9.5), fs(6)) : fs(12), right: 6, left: 4, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis dataKey="label" tick={axisTick} interval={0} />
           {/* 📏 หน่วยของแกน Y ต้องเขียนบนกราฟ (30/09 · user: "unit มันไม่มีบอก บาท/%/hrs") — ป้ายเหนือแกน ไม่ใช่ต่อท้ายทุก tick (8kPPM อ่านยาก) */}
           <YAxis domain={yDomain} ticks={focus ? focus.ticks : undefined} allowDataOverflow={!!focus} tick={axisTick} width="auto"
             tickFormatter={v => (Math.abs(v) >= 1000 ? `${Math.round(v / 1000)}k` : v)}
-            label={r.unit ? { value: r.unit, position: 'top', offset: 2, dy: -fs(6), fontSize: fs(9.5), fill: 'var(--muted)', fontWeight: 700 } : undefined} />
+            label={axisUnitLabel(r.unit, { fontSize: fs(9.5), lift: fs(6) })} />
           <Tooltip {...chartTip} formatter={(v, name) => [`${nf(v, r.dec)}${r.unit ? ' ' + r.unit : ''}`, name === 'plan' ? '📅 แผน' : r.name]}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
@@ -720,7 +732,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {!board && (
         <PageHeader
           tabs={tabs} tab={tab} onTab={onTab}
-          title="OBEYA — บอร์ด KPI ส่วนงาน" icon="📋"
+          title={OBEYA_TITLE} icon={OBEYA_ICON}
           sub={`KPI ที่ตั้งไว้ของ ${scopeText}${members.ccs.length && members.ccs.length <= 3 ? ` (cost ${members.ccs.join(' · ')})` : ''} · ${monthText} · ประเมินได้ ${overall.known}/${overall.total} ช่อง`}
           filters={controls}
           actions={(
@@ -804,7 +816,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? '#ef4444' : x.color}` }}>
                         <span style={{ fontSize: fs(11) }}>{x.icon}</span>
                         <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.title}</span>
-                        <span style={{ fontSize: fs(10), color: late ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        {/* ป้ายท้ายแถวห้ามกินที่ชื่อเรื่องจนหาย (UX audit 05/10: ชื่อไลน์ยาว → หัวข้อกว้าง 0) */}
+                        <span style={{ fontSize: fs(10), color: late ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap', maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>
                           {x.warn ? `⚠ ${x.warn}` : (x.due ? `ครบ ${x.due}` : x.meta)}
                         </span>
                       </div>

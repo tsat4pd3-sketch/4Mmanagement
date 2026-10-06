@@ -23,6 +23,8 @@ import { roleLabel } from './utils/roleMeta';                       // ป้า
 import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
+import { coalesce } from './utils/liveRefresh';
+import { LIVE } from './utils/refreshRates';
 import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
 import { FEEDBACK_EVENT } from './utils/feedbackPrefill';   // 💬 หน้าอื่นสั่งเปิดกล่องแจ้งปัญหา
@@ -43,12 +45,12 @@ const ScanLanding   = lazy(() => import('./pages/ScanLanding'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
-const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const Monitoring     = lazy(() => import('./pages/Monitoring'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
 const DailyReport   = lazy(() => import('./pages/DailyReport'));
@@ -147,6 +149,8 @@ export const NAV_ITEMS = [
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
+  // 🧑‍🤝‍🧑 แทนบอร์ดกระดาษหน้าไลน์ (ผังคน + ผัง LAYOUT + ป้าย 4M) — อ่านอย่างเดียว (2026-10-06)
+  { to: '/manpower-board', icon: '🧑‍🤝‍🧑', label: 'Manpower Control Board', group: 'ฝ่ายผลิต' },
   { to: '/daily-report',   icon: '📊', label: 'Daily Report',      group: 'ฝ่ายผลิต' },
   // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
   // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
@@ -176,7 +180,6 @@ export const NAV_ITEMS = [
      บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
   { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
 
@@ -492,7 +495,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         marginBottom: 2, cursor: clickable ? 'pointer' : 'default', userSelect: 'none',
       }}>
       {userAvatarUrl ? (
-        <img src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
+        <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
         /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
            เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
@@ -787,7 +790,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 <span title={`มีงานรอคุณโดยตรง ${myQueue.badge} รายการ`} style={{
                   position: 'absolute', right: -4, bottom: -2, minWidth: 17, height: 17, padding: '0 4px',
                   borderRadius: 999, background: '#ef4444', color: '#fff',
-                  fontSize: 10.5, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
+                  fontSize: 11, fontWeight: 800, lineHeight: '17px', textAlign: 'center',
                   border: '2px solid var(--bg2)', boxShadow: 'var(--shadow-float)',
                 }}>{myQueue.badge > 99 ? '99+' : myQueue.badge}</span>
               )}
@@ -961,7 +964,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               >
                 <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
                 <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
             ))
           ) : (<>
@@ -1008,7 +1011,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
-                    <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
                   {open && items.map((item, i) => (
@@ -1157,11 +1160,14 @@ function NotificationBell({ userId, role }) {
   useEffect(() => {
     load();
     if (!userId) return;
+    // เพดานด้วย coalesce (กฎเขียน DB ข้อ 7 · QC 05/10) — edge ยิงแจ้งเตือนเป็นชุด (หลายแถว/วินาที)
+    // เดิม load() ทุก INSERT = โหลดกระดิ่งซ้ำเท่าจำนวนแถว · เสียงยังเล่นทันทีทุกครั้งเหมือนเดิม
+    const bump = coalesce(load, LIVE.PAGE);
     const ch = liveChannel(supabase, `notif-${userId}`)
       // INSERT = มี notification ใหม่จริง (initial load ไม่เข้าตรงนี้) → รีโหลด + เล่นเสียง
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { load(); playNotifChime(); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, () => { bump(); playNotifChime(); })
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [userId, load]);
 
   const toggleMute = () => {
@@ -1877,6 +1883,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/skills-report" element={
                 <RoleRoute path="/skills-report" userRole={role}><Report mode="skills" /></RoleRoute>
               } />
+              <Route path="/manpower-board" element={
+                <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
+              } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
@@ -1953,16 +1962,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               {/* ⤵ route เก่าที่ยุบเข้าแท็บ Daily Checker แล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้
                   และทุกคนเห็นภาพเดียวกัน ไม่ใช่หน้าเดี่ยวที่ไม่มีแท็บพี่น้อง — ดู NAVIGATION-REVIEW §2.4)
                   สิทธิ์เข้า /daily-checker piggyback บน page:/daily-pm‖/pokayoke‖/lpa อยู่แล้ว (permissions.js) */}
-              <Route path="/pokayoke" element={<Navigate to="/daily-checker?tab=pokayoke" replace />} />
-              <Route path="/daily-pm" element={<Navigate to="/daily-checker?tab=pm" replace />} />
-              <Route path="/bbs" element={<Navigate to="/daily-checker?tab=bbs" replace />} />
+              <Route path="/pokayoke" element={<LegacyTabRedirect to="/daily-checker" tab="pokayoke" />} />
+              <Route path="/daily-pm" element={<LegacyTabRedirect to="/daily-checker" tab="pm" subParam="sub" />} />
+              <Route path="/bbs" element={<LegacyTabRedirect to="/daily-checker" tab="bbs" />} />
               <Route path="/improvements" element={
                 <RoleRoute path="/improvements" userRole={role}><Improvements /></RoleRoute>
               } />
               <Route path="/ojt-training" element={
                 <RoleRoute path="/ojt-training" userRole={role}><OjtTraining /></RoleRoute>
               } />
-              <Route path="/lpa" element={<Navigate to="/daily-checker?tab=lpa" replace />} />
+              <Route path="/lpa" element={<LegacyTabRedirect to="/daily-checker" tab="lpa" subParam="sub" />} />
               <Route path="/doc-forms" element={
                 <RoleRoute path="/doc-forms" userRole={role}><DocFormsRegistry /></RoleRoute>
               } />
@@ -2014,9 +2023,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
               } />
-              <Route path="/rundown-stock" element={
-                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
-              } />
+              {/* 📉 "คาดการณ์ของจะขาด" ยุบเป็นมุมมองหนึ่งของแท็บ FG ใน /monitoring (2026-10-06 ·
+                  user: *"เรื่องเดียวกันปะ สองเรื่องนี้"*) — จอเดิมยังอยู่ครบ แค่ย้ายที่อยู่
+                  ⚠️ หน้าเดิมไม่เคยมี `?tab=` ของตัวเอง จึงไม่ต้องส่ง subParam */}
+              <Route path="/rundown-stock" element={<LegacyTabRedirect to="/monitoring" tab="fg" />} />
               <Route path="/monitoring" element={
                 <RoleRoute path="/monitoring" userRole={role}><Monitoring /></RoleRoute>
               } />
@@ -2039,11 +2049,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                 <RoleRoute path="/pm" userRole={role}><PmHub /></RoleRoute>
               } />
               {/* ⤵ route เก่าที่ยุบเข้าแท็บแล้ว → redirect (ลิงก์/bookmark เก่ายังใช้ได้ · ห้าม render ซ้ำ 2 ทาง) */}
-              <Route path="/pm-check"        element={<Navigate to="/pm?tab=check" replace />} />
-              <Route path="/pm-schedule"     element={<Navigate to="/pm?tab=plan" replace />} />
-              <Route path="/pm-forecast"     element={<Navigate to="/pm?tab=forecast" replace />} />
-              <Route path="/pm-coordination" element={<Navigate to="/pm?tab=coord" replace />} />
-              <Route path="/pm-setup"        element={<Navigate to="/pm?tab=setup" replace />} />
+              <Route path="/pm-check"        element={<LegacyTabRedirect to="/pm" tab="check" />} />
+              <Route path="/pm-schedule"     element={<LegacyTabRedirect to="/pm" tab="plan" />} />
+              <Route path="/pm-forecast"     element={<LegacyTabRedirect to="/pm" tab="forecast" subParam="fc" />} />
+              <Route path="/pm-coordination" element={<LegacyTabRedirect to="/pm" tab="coord" />} />
+              <Route path="/pm-setup"        element={<LegacyTabRedirect to="/pm" tab="setup" />} />
               <Route path="/energy" element={
                 <RoleRoute path="/energy" userRole={role}><Energy /></RoleRoute>
               } />
@@ -2260,13 +2270,16 @@ export default function App() {
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
+    // admin ติ๊กสิทธิ์รัวๆ = event ต่อแถว ⇒ ทุกเครื่องในโรงงานดึง role_permissions ทั้งตาราง (>1000 แถว) ซ้ำทุกติ๊ก
+    // coalesce = ยุบเป็นรอบเดียวต่อเพดาน (กฎเขียน DB ข้อ 7 · QC 05/10)
+    const bump = coalesce(async () => {
+      await loadPermissions(true);
+      setPermsVersion(v => v + 1);
+    }, LIVE.PAGE);
     const ch = liveChannel(supabase, 'role-permissions-sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, async () => {
-        await loadPermissions(true);
-        setPermsVersion(v => v + 1);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, () => bump())
       .subscribe();
-    return () => supabase.removeChannel(ch);
+    return () => { bump.cancel(); supabase.removeChannel(ch); };
   }, [session?.user?.id]);
 
   return (

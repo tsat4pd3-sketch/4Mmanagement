@@ -51,13 +51,32 @@ import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
    ✅ ไม่ double count: ตอนรับยอด กะถัดไปเปิดใบใหม่ด้วย **ยอดที่เหลือ** เท่านั้น
       (`remainQty = qty − qty_actual` ใน handleImportCarryOrders) → 5 (ต้นทาง) + 30 (ปลายทาง) = 35 ✅
 
-   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — เป้าของใบ `imported` ถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว
-      จุดที่รวมเป้าด้วย `o.qty` ดิบ ต้องกรอง `imported` ออกเหมือนเดิม ไม่งั้นเป้าถูกนับซ้ำ  */
+   ⛔ **ห้ามใช้ฟังก์ชันนี้คิด "เป้า"** — ใช้ `orderPlanQty()` (§6.1 ข้างล่าง) ที่เดียว
+      (เป้าของใบ `imported` ส่วนที่ยังไม่ทำถูกย้ายไปอยู่ที่ใบของกะถัดไปแล้ว)  */
 export function orderProducedQty(o) {
   if (!o) return 0;
   return o.status === 'confirmed'
     ? Number(o.qty_ok ?? o.qty ?? 0)
     : Number(o.qty_actual ?? 0);
+}
+
+/* ═══ 6.1) "เป้า/แผน" ของใบผลิต 1 ใบ — คู่กับ orderProducedQty (QC audit 05/10 · roadshow) ═══
+   เดิมแต่ละจอคิดเป้าเอง 3 แบบ: (ก) Σqty ทุกสถานะ (Obeya/FactoryMap/GroupOverview/DeptDashboard)
+   ⇒ ใบยกยอดถูกนับเป้า 2 รอบ: ต้นทาง 35 + ปลายทาง 30 = 65 ทั้งที่งานจริง 35 (จอเดโมขึ้น 71% แทน 100%)
+   (ข) ตัด imported/carry_over ทิ้งทั้งใบ (MorningMeeting) ⇒ ยอดผลิตของต้นทางยังนับ แต่เป้าหาย = เกิน 100%
+   กติกาเดียว (นับเป้าครั้งเดียวทั้งสาย ไม่ว่าจะยกกี่ทอด):
+     · `cancelled`  → 0 (ยกเลิกแล้ว ไม่ใช่แผน)
+     · `imported`   → min(เป้า, qty_actual) = ส่วนของเป้าที่ "ใช้ไปในกะนี้" — ที่เหลือถูกออกใบใหม่ที่กะถัดไป
+                      ด้วย `qty − qty_actual` แล้ว (handleImportCarryOrders) ⇒ 5 + 30 = 35 ✅
+     · `carry_over` → เป้าเต็ม (ยังไม่มีใครรับไป = ส่วนที่เหลือยังไม่ได้ออกใบที่ไหน — ตัดทิ้ง = แผนหายเงียบ)
+     · อื่นๆ        → `qty_target ?? qty` (ใบ manual/ปิดยอดเศษเก็บเป้าเดิมไว้ที่ qty_target)
+   ⚠️ trade-off ที่ยอมรับ: กะต้นทางที่ส่งงานต่อ จะเห็นเป้าของใบนั้น = ยอดที่ทำได้ (ส่วนที่เหลือย้ายไปกะถัดไป)
+   🔴 จุดที่รวม "เป้า" ของใบผลิตต้องเรียกตัวนี้ **ห้ามเขียน `o.qty_target ?? o.qty` / `Number(o.qty)` เองในหน้า** */
+export function orderPlanQty(o) {
+  if (!o || o.status === 'cancelled') return 0;
+  const t = Number(o.qty_target ?? o.qty ?? 0) || 0;
+  if (o.status === 'imported') return Math.max(0, Math.min(t, Number(o.qty_actual ?? 0) || 0));
+  return t;
 }
 
 
@@ -185,6 +204,23 @@ export function overlapMinutesWith(sMs, eMs, intervals = []) {
 export function policyBreakOverlapMin({ policies = [], startMs, endMs, workDate, shift, processType = null }) {
   return breakIntervalsIn({ policies, startMs, endMs, workDate, shift, processType })
     .reduce((s, [a, b]) => s + (b - a) / 60000, 0);
+}
+
+/** ช่วงพักบน "ครึ่งวัน" ของกริดเวลา 24 ชม. (บอร์ดไทม์ไลน์ Dashboard · /management · Heijunka)
+ *  half = { key: 'am' | 'pm', startMs } — am = กะเช้า 08:00→20:00 · pm = กะดึก 20:00→08:00 วันถัดไป
+ *  🔴 QC 05/10 — เดิม 4 จอก๊อปสูตรเอง (`half.hours.indexOf(ชั่วโมง)`) ไม่กรอง process_type/ot_scope
+ *     ⇒ พัก 5ส. ไม่ทำโอ (17:10) กับพักโอ (17:30/19:40) ขึ้นพร้อมกัน = คิวการ์ดถูกดันเกินจริง
+ *     ⇒ ผ่าน `breakIntervalsIn` ที่เดียว · กรอบ 12 ชม. ครอบช่วงโอ = ตีเป็นกะทำโอ (ทิ้ง `no_ot`)
+ *  processType = null → เฉพาะนโยบาย common (จอที่ไม่รู้กระบวนการของไลน์ ห้ามเดานโยบายเฉพาะ) */
+export function halfDayBreakIntervals({ policies = [], half, processType = null }) {
+  if (!half?.startMs) return [];
+  const d = new Date(half.startMs);
+  const p2 = (n) => String(n).padStart(2, '0');
+  const workDate = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  return breakIntervalsIn({
+    policies, startMs: half.startMs, endMs: half.startMs + 12 * 3600000, workDate,
+    shift: half.key === 'pm' ? 'night' : 'day', processType,
+  });
 }
 
 /* ═══ 3.1) 🔴🔴 กฎเหล็ก — downtime ที่ทับ "เวลาพักตามนโยบาย" ห้ามหักซ้ำ (2026-09-15 · user ถาม) ═══
@@ -733,7 +769,7 @@ export const isTrialDefect = (d) =>
 
 /** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
 export const QBIN_EMBED =
-  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id)';
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active)';
 
 /** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
 const QA_SCRAP = 'scrap';
@@ -752,12 +788,17 @@ export function suspectState(d) {
   if (!(Number(d?.qty_suspect) || 0)) return 'none';
   const bins = d?.quality_bin_records;
   if (bins === undefined || bins === null) return 'unknown';
-  const rows = Array.isArray(bins) ? bins : [bins];
+  /* ใบที่ถูกลบ (soft delete `is_active=false`) ห้ามมีสิทธิ์ตัดสิน — ไม่ select มา (undefined) = ถือว่ายังใช้อยู่ */
+  const rows = (Array.isArray(bins) ? bins : [bins]).filter(r => r && r.is_active !== false);
   if (!rows.length) return 'pending';
 
-  /* ใบแดงที่ผูกกับใบของเสียนี้ (หรือใบเหลืองที่ถูกย้ายลงแดง) = ยืนยันเสียแล้ว */
+  /* ยืนยันเสียแล้ว = ใบเหลืองของแถวนี้ถูกย้ายลงแดง (`from_yellow_id` ชี้ใบเหลืองในชุด)
+     🔴 ใบแดงที่ลงตรงจาก NG (`from_yellow_id` ว่าง) **ไม่ใช่คำตัดสินของสงสัย** ถ้าแถวนี้มีใบเหลืองอยู่ด้วย
+        (QA 05/10: โมดัลลงถังติ๊ก 2 ถังพร้อมกัน — แดงจาก NG + เหลืองจากสงสัย ⇒ เดิมนับสงสัยเป็นเสียทันที)
+        ไม่มีใบเหลืองเลย = เอาของสงสัยลงแดงตรง ⇒ ยังถือว่าเสีย (พฤติกรรมเดิม) */
   const yellowIds = new Set(rows.filter(r => r?.bin === 'yellow').map(r => r?.id).filter(Boolean));
-  const movedToRed = rows.some(r => r?.bin === 'red' && (r?.from_yellow_id == null || yellowIds.has(r.from_yellow_id)));
+  const movedToRed = rows.some(r => r?.bin === 'red'
+    && (yellowIds.size ? yellowIds.has(r.from_yellow_id) : r?.from_yellow_id == null));
   if (movedToRed) return QA_SCRAP;
 
   const yellows = rows.filter(r => r?.bin === 'yellow');
@@ -926,6 +967,21 @@ export function avgOeeTarget(rows = []) {
 }
 
 /**
+ * เป้า OEE ของ "ชุดไลน์" — กติกาเดียวกับห้อง OBEYA (QC audit 05/10 · เดิม FactoryMap/GroupOverview/DeptDashboard
+ * ตัดสีด้วยเลขตายตัว 80/65 ขณะที่ Obeya ใช้เป้ากลุ่ม ⇒ ไลน์เดียวกันเขียวจอหนึ่ง แดงอีกจอ)
+ *  · กลุ่มของไลน์ = `parent_line_name || name` (oee_targets ตั้งที่ระดับกลุ่ม/ไลน์แม่)
+ *  · `targetsByGroup` = { [group_name]: แถว oee_targets } · **null = ยังไม่รู้เป้า (โหลดไม่ได้/ยังไม่โหลด) ⇒ คืน null**
+ *    (ผู้เรียกต้องวาดเป็น "ตัดสินไม่ได้" — ห้ามถอยไปเลขตายตัว) · กลุ่มที่ไม่ตั้ง = ค่ามาตรฐาน 90×90×99 ตาม avgOeeTarget
+ * คืนผลของ avgOeeTarget ({ a, p, q, oee, configured, missing }) หรือ null
+ */
+export function oeeTargetForLines(names = [], lines = [], targetsByGroup = null) {
+  if (!targetsByGroup) return null;
+  const byName = new Map((lines || []).map(l => [l.name, l]));
+  const groups = [...new Set((names || []).filter(Boolean).map(n => byName.get(n)?.parent_line_name || n))];
+  return avgOeeTarget(groups.map(g => targetsByGroup[g] || null));
+}
+
+/**
  * เฉลี่ย OEE ข้ามหลายเดือน (ไตรมาส/ทั้งปี) — **ถ่วงน้ำหนักด้วยเวลารับภาระ ห้าม mean-of-percentages**
  * rows = [{ oee, loadHr, nSess }] · ข้ามเดือนที่ไม่มีกะปิด (nSess = 0) และเดือนที่ OEE เป็น null
  * ไม่มีน้ำหนักเลย (loadHr หายทุกแถว) → ถอยไปเฉลี่ยธรรมดา ดีกว่าคืน null ทั้งที่มีข้อมูล
@@ -958,59 +1014,15 @@ export const weekOfMonth = (workDate) => {
 };
 
 /* ═══ 7) จับกลุ่ม "ชิ้นงานเดียวกัน" — ใช้ตรวจ parallel ใน computeOEE ═══════════════════════
-   ปัญหาที่แก้ (2026-09-09 · ทวนสอบกับ Excel หน้างาน ดู docs/OEE-EXCEL-VERIFY-2026-09-09.md):
-   พาร์ทตัวเดียวกันที่แตก MAT ตาม **ลูกค้า/เรฟวิชั่น** ถูกตีเป็นคนละ product เพราะจับกลุ่มด้วย
-   "ชื่อ product" ซึ่งสะกดไม่ตรงกันในทะเบียน:
-     10105769 REINF ASY RAD SUPT LWR(306)(AAT)          RB3B-8C306-BC
-     10105770 REINF ASY RAD SUPT LWR(RB3B-8C306-BC)     RB3B-8C306-BC
-     10100381 REINF ASY RAD SUPT LWR (FVL)              RB3B-8C306-BB
-     20066630 REINF ASY RAD LWR(MB3B-8C306-BA)ก่อนแพ็ก  MB3B - 8C306 - BA
-   → 4 กลุ่ม → window ทับกัน → isParallel = true → ตัวหาร %P เปลี่ยน → P เพี้ยน
-   (Assy LWR 06/08 กะดึก P 71.8 ที่ควรเป็น ~92.5 · 31/08 กะดึก 71.0 ที่ควรเป็น ~96.6)
-
-   ⭐ กติกา: **ชื่อเดียวกัน "หรือ" เลขพาร์ทแกนกลางเดียวกัน = กลุ่มเดียวกัน (union)**
-   ใช้ union ไม่ใช่เปลี่ยนคีย์ เพื่อให้กลุ่ม "หยาบขึ้นได้อย่างเดียว ห้ามละเอียดขึ้น" —
-   ทุกคู่ที่เคยรวมกันด้วยชื่อยังรวมเหมือนเดิม (ไม่มีไลน์ไหนพฤติกรรมแย่ลงกว่าเดิม)
-   และการรวมกลุ่มกระทบเฉพาะ heuristic `isParallel` เท่านั้น — ตัวหารของไลน์ parallel_machine
-   (`Σ g.runMin`) ไม่เปลี่ยนค่า เพราะเป็นผลรวมข้ามทุกกลุ่มอยู่แล้ว
-
-   ⚠️ ห้ามใช้ `family_id` เป็นคีย์ — วัดจริง 09/09: 145 สินค้า / 142 family = family คือ
-   "MAT ตัวเดียวกันข้ามเรฟ" (คู่กับ effective_from/superseded_by) ไม่ใช่ "พาร์ทเดียวกันข้ามลูกค้า" */
-
-/** แกนกลางของเลขพาร์ท: 'RB3B-8C306-BC' / 'MB3B - 8C306 - BA' → '8C306'
- *  ตัดตัวคั่นทุกแบบ แล้วเอา token กลาง (prefix รุ่นรถ + suffix เรฟ ต่างกันได้ในพาร์ทเดียวกัน)
- *  เข้าเงื่อนไขเฉพาะเมื่อ token กลางเป็นเลขพาร์ทจริง (≥3 ตัว + มีตัวเลข) ไม่งั้นคืนทั้งก้อน
- *  เพื่อไม่ให้ฟอร์แมตแปลกๆ ('SP-83', 'MB3BE102D04BC') ถูกรวมมั่ว */
-export function partCoreOf(pNo) {
-  const toks = String(pNo || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
-  if (!toks.length) return '';
-  if (toks.length >= 3) {
-    const mid = toks.slice(1, -1).join('');
-    if (mid.length >= 3 && /\d/.test(mid)) return mid;
-  }
-  return toks.join('');
-}
-
-/** rows = [{ matNo, name, pNo }] → { [matNo]: groupKey }
- *  MAT ที่ไม่มีทั้งชื่อและเลขพาร์ท จะอยู่กลุ่มของตัวเอง (พฤติกรรมเดิม) */
-export function groupSameProductKeys(rows = []) {
-  const parent = {};
-  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
-  const add = (x) => { if (parent[x] === undefined) parent[x] = x; return x; };
-
-  rows.forEach(r => {
-    const self = add(`MAT:${r.matNo}`);
-    const nm = String(r.name || '').trim().toUpperCase();
-    if (nm) union(self, add(`NM:${nm}`));
-    const core = partCoreOf(r.pNo);
-    if (core) union(self, add(`PN:${core}`));
-  });
-
-  const out = {};
-  rows.forEach(r => { out[r.matNo] = find(`MAT:${r.matNo}`); });
-  return out;
-}
+   🔁 ตัวสูตรย้ายไป `src/utils/partGroup.js` แล้ว (05/10) เพราะชั้น OP ใน `pairTotals.js`
+   ต้องตัดสิน "สินค้าตัวเดียวกัน" ด้วยกฎเดียวกัน และ `oee.js` import `pairTotals.js` อยู่แล้ว
+   (ให้ pairTotals ดึง oee กลับ = import วงกลม)
+   ⚠️ ห้ามก๊อปสูตรกลับมาไว้ที่นี่ — re-export ไว้ให้ที่เรียกเดิมใช้ `from '../utils/oee'` ได้เหมือนเดิม
+   ⚠️ ห้ามใช้ `family_id` เป็นคีย์ (เหตุผล + ตัวเลขวัดจริง 09/09 เขียนไว้ในหัว partGroup.js) */
+export { partCoreOf, groupSameProductKeys } from './partGroup.js';
+/* `export … from` ไม่ได้ผูกชื่อเข้าสโคปไฟล์นี้ — `computeOEE` เรียก `groupSameProductKeys`
+   เองด้วย ⇒ ต้อง import คู่กันเสมอ (ลืม = `no-undef` ที่ด่าน lint:critical จับได้) */
+import { groupSameProductKeys } from './partGroup.js';
 
 
 /* ═══ 7) 🔴 กรอบเวลาของกะ — ช่วงเวลาของพาร์ทต้องอยู่ในกะเสมอ (2026-09-17 · user จับได้) ═══

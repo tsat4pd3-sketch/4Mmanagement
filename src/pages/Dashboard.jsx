@@ -6,7 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserContext } from '../App';
 import { isAlarmingDT, isOpenDT, isPlannedDT, dtElapsedMin, fmtDtElapsed } from '../utils/downtimeAlarm';
-import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, liveTimeSplit, QBIN_EMBED } from '../utils/oee';
+import { sumDefectQty, computeLiveOee, ngByMatFrom, orderProducedQty, orderPlanQty, liveTimeSplit, QBIN_EMBED, halfDayBreakIntervals } from '../utils/oee';
 import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
@@ -31,6 +31,9 @@ import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุป�
 import { liveChannel } from '../utils/liveChannel';
 import { ALL } from '../utils/filterLabels';
 import { openOnly } from '../utils/shipStatus';
+import { useLatestRequest } from '../utils/useLatestRequest';
+import { loadBreakPolicies } from '../utils/oeeMasters';
+import { fetchAllRows } from '../utils/fetchAllRows';
 
 const FADE_UP = { initial: { opacity: 0, y: 16 }, animate: { opacity: 1, y: 0 } };
 const stagger = (i) => ({ ...FADE_UP, transition: { delay: i * 0.06, duration: 0.35 } });
@@ -291,16 +294,28 @@ export default function Dashboard() {
   const [fgStockByMat,  setFgStockByMat]  = useState({});   // mat_no → stock FG พร้อมส่งรวมทุกคลัง
 
   // โหลดเฉพาะข้อมูลผลิต/OEE จาก DR — เบากว่า fetchAll มาก ใช้กับ realtime
+  const [prodErr, setProdErr] = useState('');   // โหลดข้อมูลผลิตไม่ครบ — ต้องบอกบนจอ ห้ามโชว์ 0/100% เงียบ
+  const beginProd = useLatestRequest();
+  const beginAll = useLatestRequest();
   const fetchProdStatus = useCallback(async () => {
-    const [{ data: sessions }, { data: breakPolicies }, { data: products }] = await Promise.all([
+    const live = beginProd();   // เปลี่ยนวันระหว่างโหลด = คำตอบของวันเก่าห้ามทับจอ (กฎ DB ข้อ 4)
+    /* 🔴 05/10 (QC audit): เดิมอ่านแค่ `data` ทุกคิวรี ⇒ downtime โหลดไม่ได้ = %A 100% บนจอ Andon ·
+       ของเสียโหลดไม่ได้ = %Q 100% · สินค้า `select()` เปล่าตัดที่ 1,000 แถว (ทะเบียน ~1,500) ⇒ พาร์ทท้ายๆ
+       ไม่มี CT/คู่ RH-LH เงียบๆ → แบ่งหน้าครบ + ทุก error ขึ้นแถบแดง + OEE สดของกะนั้นเป็น "—" แทนเลขสวย */
+    const [{ data: sessions, error: sErr }, breakPolicies, { data: products, error: pErr }] = await Promise.all([
       supabaseDR
         .from('production_sessions')
         .select('id, line_name, shift, status, work_date, start_time, created_at, dr_products(name, target_per_shift, cycle_time_sec, process_type)')
         .eq('work_date', boardDate),
-      supabaseDR.from('break_policies').select('*').eq('is_active', true),
-      supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no').not('mat_no', 'is', null),
+      loadBreakPolicies().catch((e) => { console.error('[Dashboard] นโยบายพัก:', e); return null; }),
+      fetchAllRows(supabaseDR, 'dr_products', 'mat_no, name, cycle_time_sec, image_url, line_name, pair_mat_no', q => q.not('mat_no', 'is', null).order('id')),
       loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ยอด demand/actual ไม่นับซ้ำ (ตัวที่ 4 ไม่เข้า destructure)
     ]);
+    if (!live()) return;
+    if (sErr) { console.error('[Dashboard] โหลดกะไม่สำเร็จ:', sErr); setProdErr('โหลดข้อมูลกะไม่สำเร็จ — สถานะไลน์บนจอเป็นของรอบก่อนหน้า'); return; }
+    const miss = [];
+    if (breakPolicies == null) miss.push('นโยบายพัก');
+    if (pErr) miss.push('ทะเบียนสินค้า (CT/คู่ RH-LH)');
     // production_sessions.product_id ไม่ได้ตั้งค่าเสมอ (กะนึงมีได้หลาย mat_no) — ใช้ map นี้
     // เป็น fallback หา cycle_time_sec รายออเดอร์จาก mat_no ตรง ๆ แทนการพึ่ง session.dr_products
     const ctMap = {};
@@ -319,6 +334,8 @@ export default function Dashboard() {
     setLineByMat(lineMap);
     setPairMatByMat(pairMap);
     setBreakPolicies(breakPolicies || []);
+    // pErr = ไม่รู้คู่ ⇒ null (ไม่ยุบ) ห้าม {} ("รู้แล้วว่าไม่มีคู่" = นับงานคู่ 2 เท่า)
+    const pairMapLive = pErr ? null : pairMap;
     // 📡 รอบส่งลูกค้า (EDI 862) ของวันนี้→พรุ่งนี้ ที่ยังไม่ส่ง — ใช้พยากรณ์กะดึกล่วงหน้าแม้ยังไม่เปิดใบผลิต
     {
       const nd = new Date(`${boardDate}T12:00:00`);
@@ -339,20 +356,25 @@ export default function Dashboard() {
     }
     const sessionIds = (sessions || []).map(s => s.id);
     let ordersBySession = {}, dtBySession = {}, defectBySession = {};
+    let oeeBlind = !!pErr;   // ข้อมูลไม่ครบ ⇒ OEE สดคิดไม่ได้ (ห้ามโชว์ %A/%Q 100% จากลิสต์ว่าง)
     if (sessionIds.length > 0) {
       const ordCols = 'session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, prod_no, part_name, mat_no, machine_no, opened_at, confirmed_at';
-      const [ordRes, { data: dtLogs }, { data: defectLogs }] = await Promise.all([
+      const [ordRes, { data: dtLogs, error: dtErr }, { data: defectLogs, error: dfErr }] = await Promise.all([
         supabaseDR.from('prod_orders').select(ordCols).in('session_id', sessionIds),
         supabaseDR.from('downtime_logs').select('id, session_id, machine_no, description, duration_min, started_at, ended_at, created_at, dr_downtime_types(category, name_th)').in('session_id', sessionIds),
         // prod_orders(mat_no) = ไว้ชี้ CT ของ NG ตอนบวกเข้าตัวเศษ %P (ngByMatFrom)
         supabaseDR.from('defect_logs').select(`session_id, qty_ng, qty_suspect, is_trial, description, prod_orders(mat_no), dr_defect_types(name_th, excl_from_q), ${QBIN_EMBED}`).in('session_id', sessionIds),
       ]);
       // machine_no อาจยังไม่ apply migration (20260723) — retry โดยตัดคอลัมน์ออก ไม่ให้บอร์ดพัง
-      let orders = ordRes.data;
-      if (ordRes.error) {
-        ({ data: orders } = await supabaseDR.from('prod_orders')
+      let orders = ordRes.data, oErr = ordRes.error;
+      if (oErr) {
+        ({ data: orders, error: oErr } = await supabaseDR.from('prod_orders')
           .select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
       }
+      if (oErr) miss.push('ใบผลิต');
+      if (dtErr) miss.push('เครื่องหยุด');
+      if (dfErr) miss.push('ของเสีย');
+      oeeBlind = !!(oErr || dtErr || dfErr || pErr);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
       (dtLogs     || []).forEach(d => { (dtBySession[d.session_id]      ||= []).push(d); });
       (defectLogs || []).forEach(d => { (defectBySession[d.session_id]  ||= []).push(d); });
@@ -380,7 +402,7 @@ export default function Dashboard() {
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
         // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
-        pairMap: pairMatByMat,
+        pairMap: pairMapLive,   // 05/10: เดิม state `pairMatByMat` (deps [boardDate] = ค่ารอบก่อน/ว่างตอนเปิดจอครั้งแรก ⇒ คู่ RH/LH %P นับ 2 เท่า)
         /* ⚠️ นโยบายพัก + process ของกะ — ขาดไปแล้ว A สด ≠ A ที่ stamp ตอนปิดกะ (2026-09-14) */
         breakPolicies: breakPolicies || [],
         processType: s.dr_products?.process_type || null,
@@ -395,7 +417,8 @@ export default function Dashboard() {
       const orders  = ordersBySession[s.id] || [];
       const active  = orders.filter(o => !['cancelled','imported'].includes(o.status));
       /* ⭐ `imported` = ใบยกยอดที่กะถัดไป "กดรับ" ไปแล้ว — ต้องแยก 2 ฝั่ง (2026-09-09 · oee.js §6):
-         - **เป้า** ห้ามนับ (เป้าถูกย้ายไปอยู่ใบของกะถัดไปแล้ว → นับ 2 รอบ 35+30=65)
+         - **เป้า** นับเฉพาะส่วนที่ใช้ไปในกะนี้ = orderPlanQty (min(เป้า, qty_actual) · ที่เหลือย้ายไปใบของกะถัดไปแล้ว
+           → นับเต็มจะได้ 2 รอบ 35+30=65 · ตัดทิ้งทั้งใบ = ยอดผลิตเกินเป้า) — oee §6.1 · 05/10
          - **ผลิตได้** ต้องนับ (ยอดที่กะนี้ทำได้จริงอยู่ใน qty_actual ของมัน · ไม่นับ = หายเงียบตอนกะหน้ากดรับ) */
       const handed  = orders.filter(o => o.status === 'imported');
       // นับงานคู่ RH/LH เป็น 1 คู่/stroke (ไม่บวกชิ้น LH+RH ซ้ำในภาพใหญ่) · พาร์ทเดี่ยว/ไม่ระบุ mat = บวกปกติ
@@ -403,12 +426,13 @@ export default function Dashboard() {
       handed.forEach(o => {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.produced += o.qty_actual ?? 0;   // เป้าไม่บวก — ดูหมายเหตุด้านบน
+        e.produced += o.qty_actual ?? 0;
+        e.target += orderPlanQty(o);       // = ส่วนของเป้าที่ใช้ไปในกะนี้ (ที่เหลือย้ายไปใบกะถัดไป · oee §6.1)
       });
       active.forEach(o => {
         if (!o.mat_no) return;
         const e = perMatD[o.mat_no] || (perMatD[o.mat_no] = { mat_no: o.mat_no, target: 0, produced: 0 });
-        e.target += o.qty || 0;
+        e.target += orderPlanQty(o);
         /* 🔴 สูตรบังคับของโปรเจค: confirmed ? (qty_ok ?? qty) : (qty_actual ?? 0)  (audit 2026-09-02)
            เดิมใบที่ยังไม่ปิดให้ 0 ทั้งที่ `active` รวม open + carry_over ไว้แล้ว
            ⇒ ยอดที่หัวหน้ากรอกระหว่างกะ และยอดจริงของใบยกยอด **หายจากจอ TV ทั้งหมด**
@@ -418,13 +442,14 @@ export default function Dashboard() {
       });
       const nullD = active.filter(o => !o.mat_no);
       const ptotD = pairAwareTotal(collapseOps(Object.values(perMatD), opInfoSync()), m => pairMap[m] || null);
-      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const demand  = ptotD.target + nullD.reduce((sum, o) => sum + orderPlanQty(o), 0)
+        + handed.filter(o => !o.mat_no).reduce((sum, o) => sum + orderPlanQty(o), 0);
       const actual  = ptotD.produced
         + nullD.reduce((sum, o) => sum + orderProducedQty(o), 0)
         // ใบยกยอดที่ถูกรับไปแล้วและไม่มี mat_no — ยอดที่ทำได้ก็ต้องไม่หายเหมือนกัน
         + handed.filter(o => !o.mat_no).reduce((sum, o) => sum + (o.qty_actual ?? 0), 0);
       const target  = s.dr_products?.target_per_shift || 0;
-      const oeeData = s.status === 'open' ? computeSessionOEE(s) : null;
+      const oeeData = s.status === 'open' && !oeeBlind ? computeSessionOEE(s) : null;
       // downtime ที่กำลัง alarm (ยังไม่ปิดรายการ = เครื่องยังหยุดอยู่) — เฉพาะกะที่ยังไม่ปิด
       const activeDT = ['open', 'pending_close'].includes(s.status)
         ? (dtBySession[s.id] || []).filter(isAlarmingDT)
@@ -434,10 +459,13 @@ export default function Dashboard() {
         dtLogs: dtBySession[s.id] || [], defectLogs: sessDefects,
         ngQty: sessDefects.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) };
     });
+    if (!live()) return;
+    setProdErr(miss.length ? `⚠️ โหลด${miss.join(' / ')}ไม่สำเร็จ — ${oeeBlind ? 'OEE สดซ่อนไว้ (คิดไม่ได้) · ' : ''}ตัวเลขบนจอยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
     setProdStatus(ps);
-  }, [boardDate]);
+  }, [boardDate, beginProd]);
 
   const fetchAll = useCallback(async (date) => {
+    const live = beginAll();   // เปลี่ยนวันระหว่างโหลด = คำตอบของวันเก่าห้ามทับจอ
     setLoading(true);
     const [
       { data: logData },
@@ -468,6 +496,7 @@ export default function Dashboard() {
       supabase.from('machine_points').select('id, line_name, machine_no, pos_top, pos_left'),
     ]);
 
+    if (!live()) return;
     // ตารางกะ: ไลน์ผลิต + หน่วยงานสนับสนุน — สูตรเดียวกับ Checkin ผ่าน utils/shiftAssign.js
     // (เดิมหน้านี้เขียนซ้ำเองแล้ว **ตกเงื่อนไข Team C** → คนทีม C หายจากบอร์ดทั้งกะเช้าและกะดึก
     //  เพราะบอร์ดกรองด้วย assignedShift ซึ่งเป็น null)
@@ -492,6 +521,7 @@ export default function Dashboard() {
     // เติมโหมดการไหลงาน (flow_mode/parallel_stations) แบบ best-effort — ถ้ายังไม่ apply migration 20260723 ก็ข้ามไป
     let linesEnriched = lineData || [];
     const { data: flowData } = await loadLinesRes();
+    if (!live()) return;
     if (flowData) {
       const fm = {};
       flowData.forEach(l => { fm[l.name] = l; });
@@ -598,7 +628,7 @@ export default function Dashboard() {
 
     // ข้อมูลผลิต/OEE โหลดแยก (เบากว่า) — realtime จะอัปเดตเฉพาะส่วนนี้
     fetchProdStatus();
-  }, [fetchProdStatus]);
+  }, [fetchProdStatus, beginAll]);
 
   useEffect(() => { fetchAll(selectedDate); }, [selectedDate, fetchAll]);
 
@@ -878,6 +908,11 @@ export default function Dashboard() {
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
       <DowntimeSiren mode="open_15min" />
+      {prodErr && (
+        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+          {prodErr}
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
@@ -1349,17 +1384,8 @@ export default function Dashboard() {
           { key: 'pm', hours: HOURS.slice(12), startMs: gridStartMs + 12 * 3600000 },
         ];
         // ช่วง break_policies ที่ตรงกับ half นี้ ([startMs, endMs]) — ใช้ทั้งวาดแถบและกันการ์ดวางทับเวลาพัก
-        const getBreakIntervals = (half) => breakPolicies
-          .filter(p => p.shift === 'both' || (p.shift === 'day' && half.key === 'am') || (p.shift === 'night' && half.key === 'pm'))
-          .map(p => {
-            const idx = half.hours.indexOf(Number(String(p.start_time).slice(0,2)));
-            if (idx < 0) return null;
-            const mins = Number(String(p.start_time).slice(3,5)) || 0;
-            const st = half.startMs + idx * 3600000 + mins * 60000;
-            return [st, st + (p.duration_min || 0) * 60000];
-          })
-          .filter(Boolean)
-          .sort((a, b) => a[0] - b[0]);
+        // 🔴 ผ่าน halfDayBreakIntervals (utils/oee.js) ที่เดียว — กรอง process/ot_scope เหมือนสูตร OEE (QC 05/10)
+        const getBreakIntervals = (half) => halfDayBreakIntervals({ policies: breakPolicies, half });
         // รวมเวลาพักทั้งวัน (เช้า+ดึก) — คิวต้องต่อเนื่องข้ามกะได้ถ้าดีเลย์ล้นจากกะเช้าไปกะดึก
         const allBreaksOnce = () => [...getBreakIntervals(HALVES[0]), ...getBreakIntervals(HALVES[1])].sort((a, b) => a[0] - b[0]);
         /* จัดการ์ดเป็น "รอบสแกน" ทุก 2 ชม. ตามเวลาเปิดจริง — จำกัดผลของดีเลย์ให้อยู่ในรอบตัวเอง
@@ -2130,7 +2156,7 @@ export default function Dashboard() {
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
                               {/* Left summary — ป้ายเดียวครอบทั้ง 2 แถบเวลา */}
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
-                                {row.img && <img src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
+                                {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
                                     {row.label}

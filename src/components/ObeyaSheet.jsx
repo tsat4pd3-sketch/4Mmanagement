@@ -113,17 +113,20 @@ function SheetZoom({ onClose, children }) {
     document.body,
   );
 }
-/* 🔴 `inline-flex` ไม่ใช่ `inline-block` (2026-10-05) — ปุ่มนี้มีอีโมจิ (🔍/✕) เป็นเนื้อหา
-   อีโมจิมาจากฟอนต์สำรองที่ความกว้างจริงกว้างกว่า `font-size` ที่ตั้งไว้ ⇒ กล่องปุ่มแคบกว่าตัวอักษร
-   แล้วส่วนเกินล้นออกนอกแถวหัวแผ่น (flex row · nowrap · ไม่มี overflow) = **แถวล้นแต่ปัดไม่ได้**
-   วัดจริง @390px: แถวกว้าง 346 เนื้อหา 352 · ปุ่ม w=29 แต่ sw=33 (จับได้จาก audit/mobilesweep.mjs)
-   `inline-flex` ทำให้อีโมจิเป็น flex item ⇒ ความกว้างปุ่มคิดจาก max-content ของมันจริงๆ */
+/* 🔴 ห้ามห่อไอคอนด้วย element ลูก (`<span>`) เพื่อ "แก้แถวล้น" — แก้ผิดที่ (2026-10-06)
+   เคยทำมาแล้ว 05/10 แล้วตัวเลขหายจริง แต่หายเพราะ `src/index.css` มี
+   `@media (pointer:coarse) button:not(:has(*))::before` = พื้นที่กดเผื่อนิ้ว 40×40 (คนใส่ถุงมือ)
+   พอมีลูกเป็น element ⇒ `:not(:has(*))` ไม่แมตช์ ⇒ **พื้นที่กดถูกถอดทิ้งเงียบๆ** บนจอสัมผัสหน้างาน
+   ของที่ "ล้น" คือ pseudo-element โปร่งใสตัวนั้นเอง (นับเข้า scrollWidth แต่มองไม่เห็นสักพิกเซล)
+   วัดจริง 06/10: desktop `sw === cw` ทุกปุ่ม · ปุ่มตัวอักษร "X" ก็ขึ้นอาการเดียวกัน = ไม่เกี่ยวอีโมจิ
+   ⇒ ด่าน `audit/mobilesweep.mjs` ตัด min-width/height ของ pseudo นี้ก่อนวัดแล้ว · UI §7.1
+   (`inline-flex` คงไว้เพราะจัดไอคอนให้อยู่กลางปุ่มพอดีจริง ไม่ได้เกี่ยวกับการล้น) */
 const SheetIconBtn = ({ fs, title, onClick, children }) => (
   <button type="button" onClick={onClick} title={title} aria-label={title} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 4, flexShrink: 0, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
-  }}><span aria-hidden="true" style={{ display: 'block' }}>{children}</span></button>
+  }}>{children}</button>
 );
 
 /* `bigNote` (30/09 · user: "ตัวเลขที่โชว์คืออะไร ไม่มี text บอก") = ป้ายเล็กติดตัวเลขใหญ่ว่าเป็นค่าของอะไร (เช่น "ก.ย." = ค่าเดือนที่เลือก) */
@@ -218,7 +221,7 @@ export const WarnNote = ({ k, text, tone = '#f59e0b' }) => (
    วางในกล่อง position:relative ที่ครอบกราฟ · `fixed` = กราฟที่โฟกัสถาวร (ค่ากระจุกใกล้ 100 เช่น %Q) ไม่มีปุ่มปิด */
 export const FocusAxisNote = ({ k, loText, fixed = false }) => (
   <div title={fixed
-    ? 'กราฟนี้ขยายช่วงค่าถาวร (ค่ากระจุกใกล้ 100) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้'
+    ? 'กราฟนี้ขยายช่วงค่าถาวรให้เห็นความต่าง (ไม่มีปุ่มปิด) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้'
     : 'โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)'}
     style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: '#f59e0b',
       background: 'var(--card)', border: '1px solid #f59e0b55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>

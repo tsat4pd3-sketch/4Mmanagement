@@ -157,7 +157,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
                   <div style={{ height: 4, borderRadius: 3, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                     <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: col(l.pct) }} />
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>🎫 {l.cnt} ใบ{l.open > 0 ? ` · ยังเปิด ${l.open}` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>🎫 {l.cnt} ใบ{l.open > 0 ? ` · ยังเปิด ${l.open}` : ''}</div>
                 </>
               ) : (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต</div>

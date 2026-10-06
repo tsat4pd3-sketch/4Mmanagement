@@ -142,6 +142,16 @@ export async function copyChecklistToDept(checklistId, toDepartment, userId, { r
   const tCps = rCps.count
   if (tCps > 0) {
     if (!replace) return { copied: false, reason: 'target_has_checkpoints', targetCheckpoints: tCps }
+    // 🔴 inspection_results.checkpoint_id = ON DELETE CASCADE ⇒ ทับจุดตรวจปลายทาง = ลบประวัติผลตรวจของแผนกนั้นถาวร
+    //    (กฎเดียวกับ "ย้าย" ข้างบน) — มีประวัติ = ห้ามทับ (QC 05/10)
+    const { data: tCpIds, error: eIds } = await supabaseDR.from('jig_checkpoints').select('id').eq('checklist_id', target.id)
+    if (eIds) throw eIds
+    const rHist = await supabaseDR.from('inspection_results')
+      .select('id', { count: 'exact', head: true }).in('checkpoint_id', (tCpIds ?? []).map(r => r.id))
+    if (rHist.error || rHist.count == null)
+      throw new Error('ตรวจประวัติผลตรวจของแผนกปลายทางไม่สำเร็จ — ยังทับไม่ได้ ' + (rHist.error?.message || ''))
+    if (rHist.count > 0)
+      throw new Error(`แผนกปลายทางมีประวัติผลตรวจ ${rHist.count} รายการ — ทับไม่ได้ (ประวัติจะหายถาวร) แก้จุดตรวจที่หน้าตั้งค่าแทน`)
     const { error: eDel } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', target.id)
     if (eDel) throw eDel
   }

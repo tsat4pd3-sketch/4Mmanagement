@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { orgNodeCompare } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
+import { toast } from '../components/Toast';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { accessSummaryForRole } from '../App';
 import { ROLE_OPTIONS, roleLabel, groupRolesByAxis } from '../utils/roleMeta';
@@ -259,17 +260,29 @@ export default function AddUser() {
       .update({ team: e.team || null, line_id: e.line_id || null, section: e.section || null })
       .eq('id', u.id).select('id');
     // RLS ปฏิเสธ update = 0 แถว ไม่ error → ต้องนับแถว ห้ามขึ้นว่าสำเร็จลอยๆ
-    if (error || !data?.length) { setError('อัปเดตไม่สำเร็จ: ' + (error?.message || 'ไม่มีสิทธิ์แก้บัญชีนี้')); return; }
+    // ⚠️ ปุ่มนี้อยู่บนตาราง (modal ปิดอยู่) — setError แสดงเฉพาะใน modal ⇒ ต้องเป็น toast ไม่งั้นล้มเงียบ (QC 05/10)
+    if (error || !data?.length) { toast.error('อัปเดตไม่สำเร็จ: ' + (error?.message || 'ไม่มีสิทธิ์แก้บัญชีนี้')); return; }
     setMessage(`อัปเดต "${u.full_name}" ให้ตรงกับฐานพนักงานแล้ว`);
     fetchUsers();
   };
 
-  // เขียน mtn_teams แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
-  //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · error (ยังไม่ apply migration) = เงียบ ไม่ทำ flow หลักพัง
+  /* 🔴 ขั้นย่อยหลังสร้าง/แก้บัญชี (QC 05/10) — **คืนข้อความ error (หรือ null) ให้ผู้เรียกรวบ** ห้าม setError เอง
+     เดิม setError แล้วผู้เรียก setShowModal(false) + ข้อความเขียว "สำเร็จ" ⇒ error อยู่ใน modal ที่ปิดไปแล้ว = มองไม่เห็น
+     ⇒ admin เข้าใจว่าผูกพนักงาน/ตั้งขอบเขต/แอดมินหน่วยงานแล้ว ทั้งที่ไม่ได้ตั้ง
+     นับแถวด้วย — RLS ปฏิเสธ UPDATE = 0 แถว ไม่ error (กฎเขียน DB ข้อ 2) */
+  const subStepErr = (label, { data, error }) => {
+    if (error) return `${label}: ${error.message}`;
+    if (!data?.length) return `${label}: ไม่มีแถวถูกแก้ (ไม่มีสิทธิ์?)`;
+    return null;
+  };
+  // เขียน mtn_teams แยก (คอลัมน์เพิ่ม 20260722 · create-user edge ยังไม่รู้จัก field นี้)
+  //   role ที่ไม่เกี่ยวงานซ่อม → เคลียร์เป็น null · 42703 (ยังไม่ apply migration) = ข้ามได้ ไม่ใช่ความล้มเหลว
   const saveMtnTeams = async (id) => {
-    if (!id) return;
+    if (!id) return null;
     const val = isMtnTeamRole(form.role) && form.mtnTeams.length ? form.mtnTeams : null;
-    await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id); // ignore error โดยตั้งใจ
+    const res = await supabase.from('profiles').update({ mtn_teams: val }).eq('id', id).select('id');
+    if (res.error?.code === '42703') return null;
+    return subStepErr('ทีมช่างซ่อม', res);
   };
 
   // เขียน employee_id / account_kind แยก best-effort (create-user edge ยังไม่รู้จัก field พวกนี้)
@@ -278,10 +291,10 @@ export default function AddUser() {
     if (!id) return;
     const kind = form.accountKind || null;
     const eid  = kind === 'person' ? (form.employeeId || null) : null;
-    const { error } = await supabase.from('profiles')
+    const res = await supabase.from('profiles')
       .update({ employee_id: eid, account_kind: kind }).eq('id', id).select('id');
     // ⚠️ ห้ามเงียบ — ยังไม่ apply migration แล้วบอกว่าสำเร็จ = คนเข้าใจผิดว่าผูกแล้ว
-    if (error) setError('บันทึกบัญชีแล้ว แต่ยังผูกกับพนักงานไม่ได้: ' + error.message);
+    return subStepErr('ผูกกับพนักงาน', res);
   };
 
   /* 🔭 ความกว้างของขอบเขต — เขียนตามหลังตอน "สร้างบัญชีใหม่"
@@ -289,21 +302,28 @@ export default function AddUser() {
       ซึ่ง**แคบ** = ปลอดภัยตาม deny-by-default · แล้วค่อยอัพเป็นค่าที่ admin เลือก)
      ⚠️ ห้ามเงียบเมื่อล้ม — บอกว่าสร้างสำเร็จทั้งที่ขอบเขตไม่ได้ตั้ง = คนเข้าใจผิดว่าคุมแล้ว */
   const saveScopeDepth = async (id) => {
-    if (!id) return;
-    const { error } = await supabase.from('profiles')
+    if (!id) return null;
+    const res = await supabase.from('profiles')
       .update({ scope_depth: form.scopeDepth || 'unit', scope_depth_src: 'manual' })
       .eq('id', id).select('id');
-    if (error) setError('สร้างบัญชีแล้ว แต่ตั้งขอบเขตการมองเห็นไม่ได้: ' + error.message);
+    return subStepErr('ขอบเขตการมองเห็น', res);
   };
 
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
   const saveDeptAdmin = async (id) => {
-    if (!id) return;
+    if (!id) return null;
     const val = DEPT_ADMIN_ELIGIBLE(form.role) ? !!form.deptAdmin : false;
     // supabase-js ไม่ throw — try/catch เดิมไม่มีวันจับ · migration 20260803 apply แล้ว ไม่มีเหตุให้เงียบอีก
-    const { error } = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id);
-    if (error) setError('บันทึกบัญชีแล้ว แต่ตั้ง "แอดมินหน่วยงาน" ไม่สำเร็จ: ' + error.message);
+    const res = await supabase.from('profiles').update({ is_dept_admin: val }).eq('id', id).select('id');
+    return subStepErr('แอดมินหน่วยงาน', res);
+  };
+  /** ผลรวมขั้นย่อย → ข้อความเขียวเฉพาะเมื่อครบทุกขั้น · ขาดขั้นไหน = toast แดงบอกรายขั้น (modal ปิดแล้วก็ยังเห็น) */
+  const reportSubSteps = (okMsg, errs) => {
+    const bad = errs.filter(Boolean);
+    if (!bad.length) { setMessage(okMsg); return; }
+    setMessage(null);
+    toast.error(`${okMsg.replace('สำเร็จ', '')}แล้ว แต่บางส่วนตั้งไม่สำเร็จ — ${bad.join(' · ')} (เปิดแก้บัญชีนี้แล้วบันทึกซ้ำ)`);
   };
 
   // ป้องกันบั๊ก fail-open: ถ้า supervisor/leader ไม่มี section/line_id ทุกหน้าที่กรองข้อมูลตาม
@@ -403,12 +423,13 @@ export default function AddUser() {
       if (!res.ok) throw new Error(data.error || 'เกิดข้อผิดพลาด');
       // create-user v14 เขียนโปรไฟล์ครบทุก field ในจังหวะเดียวแล้ว (ไม่มีจังหวะสองให้พลาด)
       // mtn_teams เขียนตามหลัง best-effort (edge ยังไม่รู้จัก field นี้)
-      await saveMtnTeams(data.user?.id);
-      await saveDeptAdmin(data.user?.id);
-      await saveEmpLink(data.user?.id);
-      await saveScopeDepth(data.user?.id);
-
-      setMessage(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`);
+      const subErrs = [
+        await saveMtnTeams(data.user?.id),
+        await saveDeptAdmin(data.user?.id),
+        await saveEmpLink(data.user?.id),
+        await saveScopeDepth(data.user?.id),
+      ];
+      reportSubSteps(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`, subErrs);
       setShowModal(false);
       fetchUsers();
     } catch (err) {
@@ -478,7 +499,7 @@ export default function AddUser() {
     setMessage(null);
     setError(null);
     try {
-      const { error: err } = await supabase.from('profiles').update({
+      const { data: updRows, error: err } = await supabase.from('profiles').update({
         full_name:    form.fullName    || null,
         role:         form.role,
         position:     form.position    || null,
@@ -491,12 +512,16 @@ export default function AddUser() {
         team:         form.team        || null,
         line_id:      form.lineId      ? Number(form.lineId) : null,
         notify_email: form.notifyEmail || null,
-      }).eq('id', editingId);
+      }).eq('id', editingId).select('id');
       if (err) throw err;
-      await saveMtnTeams(editingId); // best-effort แยก กัน edit พังถ้ายังไม่ apply migration
-      await saveDeptAdmin(editingId); // best-effort แยก (migration 20260803)
-      await saveEmpLink(editingId);   // best-effort แยก (migration 20260821)
-      setMessage('อัปเดตข้อมูลผู้ใช้สำเร็จ');
+      // RLS ปฏิเสธ = 0 แถว ไม่ error — ห้ามขึ้นเขียว (modal ยังเปิด ⇒ setError ผ่าน catch เห็นได้)
+      if (!updRows?.length) throw new Error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้บัญชีนี้ หรือบัญชีถูกลบไปแล้ว');
+      const subErrs = [
+        await saveMtnTeams(editingId),   // แยกเขียน กัน edit พังถ้ายังไม่ apply migration
+        await saveDeptAdmin(editingId),  // (migration 20260803)
+        await saveEmpLink(editingId),    // (migration 20260821)
+      ];
+      reportSubSteps('อัปเดตข้อมูลผู้ใช้สำเร็จ', subErrs);
       setShowModal(false);
       fetchUsers();
     } catch (err) {
@@ -1179,7 +1204,7 @@ export default function AddUser() {
                                 border: `1px solid ${on ? col : 'var(--border2)'}`,
                                 color: on ? col : 'var(--text2)' }}>
                               {m.icon} {m.label}
-                              {d === suggested && <span style={{ fontSize: 10, opacity: 0.75 }}> · แนะนำ</span>}
+                              {d === suggested && <span style={{ fontSize: 11, opacity: 0.75 }}> · แนะนำ</span>}
                             </button>
                           );
                         })}
@@ -1309,13 +1334,32 @@ export default function AddUser() {
                   (ต้นเหตุเดิมของ "ทีมสลับกัน" คือช่องพวกนี้ให้กรอกเองได้) */}
               {(() => {
                 const linked = form.accountKind === 'person' && !!form.employeeId;
+                /* 🔴 ช่องที่ล็อก ต้องโชว์ "ค่าที่มีผลจริง" ไม่ใช่ค่าที่ค้างในบัญชี (25/09 · feedback user)
+                   เกิดจริง: ตีรณา — ฐานพนักงาน team='A' แต่ `profiles.team` เป็น null ⇒ ช่องขึ้น
+                   "— เลือก —" ทั้งที่ป้ายเขียนว่า "จากฐานพนักงาน" = จอโกหก แล้วกดแก้ก็ไม่ได้เพราะล็อกไว้
+                   ตัวตัดสินจริงอยู่ที่ App.jsx: `emp.team ?? profiles.team` (ฐานพนักงานชนะเมื่อมีค่า)
+                   ⇒ ที่นี่ต้องคิดด้วยสูตรเดียวกัน ห้ามอ่าน form.team เฉยๆ ตอน linked */
+                const emp = linked ? empById[form.employeeId] : null;
+                const effTeam = linked ? (emp?.team ?? form.team ?? '') : form.team;
+                const effLine = linked ? (emp?.line_id ?? form.lineId ?? '') : form.lineId;
+                /* ลิงก์ออกจากทางตัน — ช่องที่แก้ที่นี่ไม่ได้ ต้องบอกว่าไปแก้ที่ไหน และพาไปถึงตัวคน
+                   (เดิมบอกไว้ใน `title` อย่างเดียว = ต้องเอาเมาส์ไปจ่อถึงจะเห็น มือถือไม่มีทางรู้เลย) */
+                const empLink = emp
+                  ? `/operator?q=${encodeURIComponent(emp.employee_id_code || emp.name || '')}`
+                  : '/operator';
+                const fixHint = linked && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                  </div>
+                );
                 return (<>
                   <div>
                     <label style={labelSt}>
                       Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <select value={form.team} disabled={linked}
+                    <select value={effTeam} disabled={linked}
                       title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
                       onChange={e => setF('team', e.target.value)}>
                       <option value="">— เลือก —</option>
@@ -1330,6 +1374,7 @@ export default function AddUser() {
                         {' '}<b style={{ color: 'var(--text2)' }}>C</b> = ไม่หมุนกะ <b>เห็นคนทั้งไลน์ทุกทีม</b> (สำหรับหัวหน้าที่ไม่ได้ยืนประจำกะ)
                       </div>
                     )}
+                    {fixHint}
                   </div>
 
                   {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
@@ -1338,8 +1383,9 @@ export default function AddUser() {
                       ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
                       {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
                     </label>
-                    <LineSelect lines={lines} value={form.lineId} valueKey="id"
+                    <LineSelect lines={lines} value={effLine} valueKey="id"
                       disabled={linked} onChange={v => setF('lineId', v)} />
+                    {fixHint}
                   </div>
                 </>);
               })()}

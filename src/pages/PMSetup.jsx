@@ -834,7 +834,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             const { error: upErr } = await supabaseDR.storage.from('jig-images').upload(path, blob, uploadOpts({ mutable: true, upsert: true }))
             if (upErr) throw upErr
           }
-          if (path) resolvedFrames.push({ key: f._key, path, title: f.title ?? null })
+          if (path) resolvedFrames.push({ key: f._key, id: f.id ?? null, path, title: f.title ?? null })
         }
       }
       const imagePath = layoutType === 'list' ? null : (resolvedFrames[0]?.path ?? null)
@@ -851,17 +851,31 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       })
       if (jigErr) throw jigErr
 
-      // ── replace jig_images (spin frames) → map each frameKey to its new row id ──
+      // ── sync jig_images (spin frames) แบบ "แก้ตาม id" — ห้ามลบทั้งชุดแล้ว insert ใหม่ (QC 05/10)
+      //    เดิม delete-all ⇒ fixture_points.image_id / jig_checkpoints.image_id (ON DELETE SET NULL) หลุดทุกครั้งที่กดบันทึก
       const frameIdByKey = {}
-      const { error: wErr753 } = await supabaseDR.from('jig_images').delete().eq('jig_id', jigId);
-      if (wErr753) { toast.error('ล้างรูปจิ๊กเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr753.message); return; }
-      if (resolvedFrames.length) {
-        const { data: insImgs, error: imgErr } = await supabaseDR.from('jig_images')
-          .insert(resolvedFrames.map((f, i) => ({ jig_id: jigId, image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title })))
-          .select('id, image_path')
-        if (imgErr) throw imgErr
-        const idByPath = Object.fromEntries((insImgs ?? []).map(r => [r.image_path, r.id]))
-        resolvedFrames.forEach(f => { frameIdByKey[f.key] = idByPath[f.path] })
+      {
+        const { data: curImgs, error: eCur } = await supabaseDR.from('jig_images').select('id').eq('jig_id', jigId)
+        if (eCur) throw eCur
+        const keepIds = new Set()
+        for (let i = 0; i < resolvedFrames.length; i++) {
+          const f = resolvedFrames[i]
+          const row = { image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title }
+          if (f.id) {
+            const { error: eU } = await supabaseDR.from('jig_images').update(row).eq('id', f.id)
+            if (eU) throw eU
+            keepIds.add(f.id); frameIdByKey[f.key] = f.id
+          } else {
+            const { data: ins, error: eI } = await supabaseDR.from('jig_images').insert({ jig_id: jigId, ...row }).select('id').single()
+            if (eI) throw eI
+            frameIdByKey[f.key] = ins.id
+          }
+        }
+        const dropImg = (curImgs ?? []).map(r => r.id).filter(id => !keepIds.has(id))
+        if (dropImg.length) {
+          const { error: eD } = await supabaseDR.from('jig_images').delete().in('id', dropImg)
+          if (eD) throw eD
+        }
       }
 
       const cl = await getOrCreateChecklist(jigId, 'mtn', department, userId)
@@ -920,11 +934,10 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       const { named, ordered } = groupCheckpoints(checkpoints)
       const groupOrderMap = Object.fromEntries(named.map((g, i) => [g.name, i]))
 
-      const { error: wErr808 } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', cl.id);
-      if (wErr808) { toast.error('ล้างจุดตรวจเดิม (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr808.message); return; }
-      if (ordered.length > 0) {
-        const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(
-          ordered.map((c, i) => ({
+      /* 🔴 sync จุดตรวจแบบ "แก้ตาม id" (QC 05/10) — ห้าม delete ทั้ง checklist แล้ว insert ใหม่
+         `inspection_results.checkpoint_id` เป็น ON DELETE CASCADE ⇒ เดิมกดบันทึก 1 ครั้ง = **ประวัติผลตรวจทั้งใบหายถาวร**
+         และ fixture_points.checkpoint_id (SET NULL) หลุดทุกครั้ง · จุดที่ถูกถอดจริงเท่านั้นที่ลบ — มีประวัติต้องยืนยันก่อน */
+      const cpRow = (c, i) => ({
             checklist_id: cl.id, jig_id: jigId, name: c.name.trim(), type: c.type,
             axis: c.type === 'variable' ? (c.axis ?? null) : null,
             category: c.category ?? null, checking_method: c.checking_method ?? null, unit: c.unit || null,
@@ -944,9 +957,37 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
             group_order: groupOrderMap[(c.group_name || '').trim()] ?? null,
             description: (c.description || '').trim() || null,
             image_path: cpImagePaths[c._key] ?? c.image_path ?? null,
-          }))
-        )
+      })
+      const { data: curCps, error: eCurCp } = await supabaseDR.from('jig_checkpoints').select('id, name').eq('checklist_id', cl.id)
+      if (eCurCp) throw eCurCp
+      const curIds = new Set((curCps ?? []).map(r => r.id))
+      const keepCp = new Set(ordered.map(c => c.id).filter(id => id && curIds.has(id)))
+      const dropCp = (curCps ?? []).filter(r => !keepCp.has(r.id))
+      if (dropCp.length) {
+        const { count: histN, error: eHist } = await supabaseDR.from('inspection_results')
+          .select('id', { count: 'exact', head: true }).in('checkpoint_id', dropCp.map(r => r.id))
+        if (eHist) throw eHist
+        if (histN > 0 && !window.confirm(
+          `จุดตรวจที่ถูกลบ ${dropCp.length} จุด (${dropCp.map(r => r.name).slice(0, 5).join(', ')}${dropCp.length > 5 ? ' …' : ''})\n` +
+          `มีประวัติผลตรวจผูกอยู่ ${histN} รายการ — ลบจุดแล้ว **ประวัติผลตรวจของจุดนั้นจะหายถาวร**\n\nยืนยันลบ?`)) {
+          toast.info('ยังไม่บันทึก — จุดตรวจเดิมยังอยู่ครบ'); return
+        }
+      }
+      for (let i = 0; i < ordered.length; i++) {
+        const c = ordered[i]
+        if (c.id && keepCp.has(c.id)) {
+          const { error: eU } = await supabaseDR.from('jig_checkpoints').update(cpRow(c, i)).eq('id', c.id)
+          if (eU) throw eU
+        }
+      }
+      const fresh = ordered.map((c, i) => [c, i]).filter(([c]) => !(c.id && keepCp.has(c.id))).map(([c, i]) => cpRow(c, i))
+      if (fresh.length) {
+        const { error: cpErr } = await supabaseDR.from('jig_checkpoints').insert(fresh)
         if (cpErr) throw cpErr
+      }
+      if (dropCp.length) {
+        const { error: eD } = await supabaseDR.from('jig_checkpoints').delete().in('id', dropCp.map(r => r.id))
+        if (eD) throw eD
       }
       // เก็บกวาดไฟล์เฟรม/รูปจุดตรวจที่ถูกถอดออกในรอบแก้ไขนี้ — ลบหลัง DB สำเร็จเท่านั้น (best-effort, กติกา CLAUDE.md)
       {

@@ -17,7 +17,7 @@ import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded } from '../utils/permissions';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { inSectionScope } from '../utils/sectionScope';
@@ -44,6 +44,8 @@ import useTimeRange from '../utils/useTimeRange';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
+/* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
+import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -106,8 +108,12 @@ const deptForItem = teamForItem;
 /* ⚠️ ใบซ่อมเก็บ "ชื่อ" ของ taxonomy ไว้เป็น snapshot (ตาม pattern เดียวกับ lpa_audit_answers.question_text)
    ข้อดี: ใบเก่ายังอ่านออกเหมือนวันที่แจ้ง · ข้อเสีย: เปลี่ยนชื่อใน master แล้ว KPI/พาเรโต้ (จัดกลุ่มด้วยข้อความ)
    จะแตกเป็น 2 กลุ่ม → ตอนแก้ชื่อจึงถามก่อนว่าจะให้ใบเก่าตามไปด้วยไหม (ไม่เขียนทับประวัติเงียบๆ) */
+/* 🔴 `group_name` ต้องอยู่ในตารางนี้ด้วย (เพิ่ม 2026-10-06) — ใบซ่อมเก็บ `problem_group`
+      เป็นสำเนาข้อความเหมือนกัน · เดิมไม่มี ⇒ เปลี่ยนชื่อกลุ่มในทะเบียนแล้วใบเก่าค้างชื่อเดิม
+      **พาเรโตแตกเป็น 2 แท่งเงียบๆ ไม่มีใครรู้** (วัดจริง 06/10: 2 ใบค้างกลุ่ม "MTN ระบบ…"
+      ที่ไม่มีอยู่ในทะเบียนอีกแล้ว) · มีด่าน `mtn-name-cascade-covers-group` ใน regressionGuards */
 const NAME_CASCADE = {
-  mtn_problem_types: { characteristic: 'problem_characteristic', detail: 'problem_detail' },
+  mtn_problem_types: { group_name: 'problem_group', characteristic: 'problem_characteristic', detail: 'problem_detail' },
   mtn_item_types:    { name: 'item_type' },
   mtn_repair_types:  { name: 'repair_type' },
 };
@@ -326,7 +332,11 @@ export default function MtnRepair() {
   const [fStatus, setFStatus] = useState('open');
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
-  const [fText, setFText] = useState('');
+  /* 🔗 `?q=` = คำค้นตั้งต้นจากลิงก์ภายนอก (/scan → "ดูใบซ่อมของเครื่องนี้" ส่งเลขเครื่องมา)
+     เดิมไม่มีใครอ่าน ⇒ สแกนป้ายเครื่องแล้วเห็นใบซ่อมทุกเครื่อง (QC 05/10) · q เปลี่ยน (สแกนป้ายใหม่) = ตามค่าใหม่ */
+  const qParam = sp.get('q') || '';
+  const [fText, setFText] = useState(qParam);
+  useEffect(() => { if (qParam) setFText(qParam); }, [qParam]);
   /* 📅 วันที่ + กะ + ประเภทงานซ่อม (2026-09-25 · feedback ณัฐพล สีพิมพ์ขัด 24/09
      *"เพิ่มแท๊ปในรายการแจ้งซ่อมที่สามารถดูเลือกวันที่และกะประเภทของการแจ้งซ่อมได้"*)
      ทำเป็น **ตัวกรองในแท็บเดิม ไม่ใช่แท็บใหม่** — ตัวกรองช่วงเวลาต้องหน้าตาเดียวกันทุกหน้า
@@ -435,9 +445,15 @@ export default function MtnRepair() {
     teamDefaulted.current = true;
   }, [userTeams, role, lines.length]);
 
+  /* โหลดใบล้ม / ชนเพดาน 1000 ใบ ต้องเขียนบนจอ (QC 05/10) — เดิม error ถูกกลืนแล้วขึ้น "ไม่มีรายการ"
+     และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
+  const ORDER_CAP = 1000;
+  const [ordersErr, setOrdersErr] = useState('');
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
-    const { data } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(1000);
+    const { data, error } = await supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP);
+    if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
+    setOrdersErr('');
     setOrders(data || []);
   }, []);
 
@@ -517,6 +533,38 @@ export default function MtnRepair() {
     return d && (!a || d < a) ? d : a;
   }, null), [shownNoDate]);
 
+  /* ── ⬇️ Export Excel ของช่วงที่เลือก (2026-10-06 · คำขอ user) ────────────────────
+     ส่ง `shown` (ใบที่เห็นบนจอหลังกรองทุกชั้น) ⇒ ไฟล์ตรงกับจอเสมอ
+     · ตัวตัดสิน "ค้าง/จบ" และ "ป้ายสถานะ" ส่ง `isMoOpen`/`moStatusLabel` เข้าไป
+       **ห้ามให้ไฟล์ export เดาจาก `status` เอง** (เลขขั้น/สถานะต่างกัน 2 ฟอร์ม — กฎ stageOf)
+     · ตัวแปลงคีย์ทีม → ชื่อ ส่ง `deptNameOf` (ค่าใน DB เป็น key ไม่ใช่ชื่อ)
+     · ก้อน exceljs โหลดตอนกดเท่านั้น (lazy ~960KB) — จอรายการห้ามหนักขึ้นเพราะปุ่มนี้ */
+  const [exporting, setExporting] = useState(false);
+  const doExport = useCallback(async () => {
+    if (!shown.length) return toast.error('ไม่มีใบในช่วง/ตัวกรองที่เลือก');
+    setExporting(true);
+    try {
+      const { exportMoExcel } = await import('../lib/mtnMoExportExcel');
+      const note = [
+        fDept && `ทีมช่าง: ${deptNameOf(fDept)}`,
+        fLine && `ไลน์: ${fLine}`,
+        fStatus !== 'all' && `สถานะ: ${fStatus === 'open' ? 'ยังไม่ปิด' : (STATUS_META[fStatus]?.label || fStatus)}`,
+        fShift && `กะ: ${fShift === 'day' ? 'เช้า' : 'ดึก'}`,
+        fRepairType && `ประเภทงานซ่อม: ${fRepairType}`,
+        fText.trim() && `คำค้น: "${fText.trim()}"`,
+      ].filter(Boolean).join(' · ') || 'ไม่ได้กรองอะไร (ทั้งช่วงที่เลือก)';
+      const r = await exportMoExcel({
+        rows: shown, from: tr.from, to: tr.to,
+        dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
+        isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
+      });
+      /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
+      toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
+    } catch (e) {
+      toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e));
+    } finally { setExporting(false); }   // ล้มกลางทาง ปุ่มต้องปลดเสมอ
+  }, [shown, tr.from, tr.to, fDept, fLine, fStatus, fShift, fRepairType, fText]);
+
   const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
@@ -586,8 +634,27 @@ export default function MtnRepair() {
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
+          {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
+              ที่เกิดขึ้นในแต่ละช่วงเดือน" — เดิมมีแต่พิมพ์ใบทีละใบ)
+              ส่ง `shown` = ใบที่เห็นบนจอจริง ⇒ ไฟล์ตรงกับที่คนกรองไว้ ไม่ใช่ทั้งฐาน */}
+          <button onClick={doExport} disabled={exporting || !shown.length}
+            title={shown.length ? `ออกไฟล์ Excel ${shown.length} ใบ ตามช่วง/ตัวกรองที่เลือกอยู่` : 'ไม่มีใบในช่วง/ตัวกรองที่เลือก'}
+            style={{ ...btnGhost, height: 'var(--ctl-h)', padding: '0 13px', fontSize: 'var(--ctl-fs)',
+              opacity: (exporting || !shown.length) ? 0.5 : 1, cursor: (exporting || !shown.length) ? 'not-allowed' : 'pointer' }}>
+            {exporting ? '⏳ กำลังทำไฟล์…' : '⬇️ Excel'}
+          </button>
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
+        {ordersErr && (
+          <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444', border: '1px solid #ef4444', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ โหลดรายการใบซ่อมไม่สำเร็จ: {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด
+          </div>
+        )}
+        {orders.length >= ORDER_CAP && (
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            ⚠️ แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ใบที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นใบเก่าด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง)
+          </div>
+        )}
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
         {dateHidden.n > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)',
@@ -801,6 +868,10 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     : lineMachines.filter(m => famSet.has(String(m.line_name ?? '').trim().toUpperCase())).length),
     [wantDie, f.line_name, lineMachines, famSet]);
   const machineStrict = !wantDie && !!f.line_name && !allMachines && famMachineCount > 0;
+  // แม่พิมพ์ของไลน์ที่เลือก — นับเพื่อบอกบนจอเมื่อไลน์นี้ยังไม่มีแม่พิมพ์ลงทะเบียน (ไม่ใช้ตัดลิสต์)
+  const dieFamCount = useMemo(() => (!wantDie || !f.line_name ? 0
+    : lineMachines.filter(m => famSet.has(String(m.line_name ?? '').trim().toUpperCase())).length),
+    [wantDie, f.line_name, lineMachines, famSet]);
 
 
   const onLine = (name) => {
@@ -855,7 +926,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
      ⚠️ ต้องมีช่องค้นหาข้ามชั้นด้วย — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร
         การบังคับเลือกกลุ่มก่อนคือเพิ่มขั้นตอนให้เขา */
   const [probQ, setProbQ] = useState('');
-  const NO_GROUP = 'อื่นๆ';
+  /* 🔴 ถังสังเคราะห์ของแถวที่ยังไม่ตั้งกลุ่ม = "ยังไม่จัดกลุ่ม" **ห้ามใช้ชื่อ "อื่นๆ"**
+        (06/10 · user: "มั่ว ระบบ dropdown") — ทะเบียนมีแถวจริงชื่อ "อื่นๆ" อยู่แล้ว
+        ใช้ชื่อเดียวกัน = dropdown เดียวมี 2 ป้ายความหมายต่างกัน เลือกแล้วไม่รู้ว่าได้อะไร
+        · ป้ายนี้ **โชว์บนจอเท่านั้น ห้ามเขียนลง DB** (ดู onChar ล่าง) */
+  const NO_GROUP = UNGROUPED_LABEL;
   const probGroups = useMemo(() => {
     const m = new Map();
     for (const p of teamProblemTypes) {
@@ -863,8 +938,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
       if (!m.has(g)) m.set(g, []);
       m.get(g).push(p);
     }
-    // กลุ่ม "อื่นๆ" ไปท้ายเสมอ
-    return [...m.entries()].sort((a, b) => (a[0] === NO_GROUP ? 1 : b[0] === NO_GROUP ? -1 : 0));
+    /* กลุ่มที่ "บอกอะไรไม่ได้" ไปท้ายลิสต์เสมอ — ทั้งถังสังเคราะห์ และกลุ่มจริงที่กำกวม
+       (เช่น "อื่นๆ / ยังระบุไม่ได้") ⇒ ตัวเลือกที่ชี้เป้าได้อยู่บนมือคนแจ้งก่อน
+       ⚠️ เรียงเท่านั้น **ห้ามตัดออกจากลิสต์** — ไม่มีให้เลือก = คนกรอกมั่วหนักกว่าเดิม */
+    const vagueRank = (g) => (g === NO_GROUP ? 2 : isVague(g) ? 1 : 0);
+    return [...m.entries()].sort((a, b) => vagueRank(a[0]) - vagueRank(b[0]));
   }, [teamProblemTypes]);
   const probHits = useMemo(() => {
     const q = probQ.trim().toLowerCase();
@@ -882,6 +960,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     const pt = teamProblemTypes.find(x => x.characteristic === c);
     setF(p => ({ ...p, problem_characteristic: c, problem_group: (pt?.group_name || '').trim() || p.problem_group || '' }));
   };
+  /* 🔴 กลุ่มที่ "เก็บลงใบ" ต้องเป็น taxonomy จริงเท่านั้น — ป้ายถังสังเคราะห์
+        ("ยังไม่จัดกลุ่ม") เป็นของจอ ไม่ใช่ของทะเบียน ⇒ บันทึกเป็นค่าว่าง
+        (เขียนลงใบ = ปลอมกลุ่มให้พาเรโต · ผิดกฎชั้น 1 "ห้ามเขียนทับค่าที่ระบบรู้อยู่แล้ว")
+        เก็บไว้ในช่องเลือกได้ตามปกติ เพื่อให้ dropdown หัวข้อย่อยยังเปิดอยู่ */
+  const groupForDb = (g) => (String(g || '').trim() === NO_GROUP ? '' : String(g || '').trim());
 
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
@@ -906,7 +989,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         plant_manager_name: needsPlantManager(f.purpose) ? (f.plant_manager_name || null) : null,
       } : {};
       const { contact_phone, pr_no, io_no, purpose, dept_manager_name, plant_manager_name, ...fRest } = f;  // eslint-disable-line no-unused-vars
-      const payload = { ...fRest, ...mtnForm, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
+      const payload = { ...fRest, ...mtnForm, problem_group: groupForDb(f.problem_group), want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
         report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
@@ -918,7 +1001,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         if (!error && occurredIso) toast.error('บันทึกใบแล้ว แต่ "วันเวลาที่เกิดเหตุ" ยังไม่ถูกเก็บ — ฐาน DR ยังไม่มีคอลัมน์ occurred_at (รัน migration 20260908_mtn_orders_occurred_at)');
       }
       if (error) return toast.error(error.message);
-      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
+      if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); const { error: eImg } = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); if (eImg) throw new Error(`ผูกรูปเข้าใบไม่สำเร็จ (${eImg.message}) — แนบใหม่ได้ด้วยปุ่มแก้ไข`); data.before_img = url; } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message); } }
       notifyMtn(data, 'mtn_reported');
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
@@ -970,9 +1053,9 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             {/* ล็อกเพราะมาจากทะเบียนแม่พิมพ์ — ผู้แจ้งไม่ต้องเลือก (ข้อมูลผิดให้แก้ที่ทะเบียน ไม่ใช่ในใบ) */}
             <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)' }}>
               <b>{f.item_type}</b>
-              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 จากทะเบียนแม่พิมพ์ · ชุดแบบ {dieDerived.kindLabel}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 จากทะเบียนแม่พิมพ์ · {dieDerived.source === 'op' ? `ประเภท OP ${dieDerived.opLabel}` : `ชุดแบบ ${dieDerived.kindLabel}`}</span>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ตรงกับของจริง? แจ้งทีมแม่พิมพ์แก้รูปแบบชุดที่ /equipment (แท็บแม่พิมพ์)</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ตรงกับของจริง? แจ้งทีมแม่พิมพ์แก้ประเภท OP / รูปแบบชุดที่ /equipment (แท็บแม่พิมพ์)</div>
           </Field>
         ) : <Field label="ชนิดอุปกรณ์" required><select value={f.item_type} onChange={e => onItem(e.target.value)} style={inp}><option value="">— เลือก —</option>{f.mtn_dept
           ? teamItemTypes.map(t => <option key={t.id} value={t.name}>{t.name}</option>)
@@ -991,7 +1074,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
           )}
           {wantDie && f.machine_no && dieItemMap && !dieDerived?.itemType && (
-            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(ชุดแบบ ${dieDerived.kindLabel}) รูปแบบนี้ยังไม่ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุดในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
+            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(${[dieDerived.opLabel && `OP ${dieDerived.opLabel}`, dieDerived.kindLabel && `ชุดแบบ ${dieDerived.kindLabel}`].filter(Boolean).join(' · ')}) ยังไม่ได้ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุด/ประเภท OP ในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
           )}
         </Field>}
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
@@ -1023,9 +1106,13 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
           )}
           {wantDie && (
             <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
-              {lineMachines.length
-                ? '🔨 ลิสต์แม่พิมพ์ทั้งหมด (ไม่กรองตามไลน์ — แม่พิมพ์ถอดย้ายเครื่องได้) · พิมพ์เลขเพื่อค้น'
-                : '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /die-registry ก่อน (พิมพ์เลขเองได้)'}
+              {!lineMachines.length
+                ? '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /equipment (แท็บแม่พิมพ์) ก่อน (พิมพ์เลขเองได้)'
+                : f.line_name && dieFamCount === 0
+                  /* คอมเมนต์ทีม DIE 06/10 (BENDING E50 · GOR · LWR BAR): ลิสต์ขึ้นแม่พิมพ์ LINE A มาก่อน = ดูเหมือน "ไม่มี Part Name"
+                     ที่จริงไลน์นี้ยังไม่มีแม่พิมพ์ลงทะเบียนเลย ⇒ บอกตรงๆ (ห้ามปล่อยให้คนนึกว่าระบบพัง) */
+                  ? <span style={{ color: '#f59e0b' }}>⚠ ไลน์ {f.line_name} ยังไม่มีแม่พิมพ์ลงทะเบียน — ลิสต์ด้านบนเป็นแม่พิมพ์ไลน์อื่น · แจ้งทีม DIE ลงทะเบียนที่ /equipment (แท็บแม่พิมพ์) หรือพิมพ์เลขแม่พิมพ์เองไปก่อน</span>
+                  : '🔨 ลิสต์แม่พิมพ์ทั้งหมด (แม่พิมพ์ของไลน์ที่เลือกขึ้นก่อน — ถอดย้ายเครื่องได้) · พิมพ์เลขเพื่อค้น'}
             </div>
           )}
           {/* 🔁 เตือนใบซ้ำ — **เตือนเท่านั้น ห้ามบล็อก** (เครื่องเดียวเสีย 2 เรื่องในวันเดียวเกิดได้จริง)
@@ -1156,23 +1243,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
 
 /* ขั้นถัดไปของใบ — ป้ายปุ่มมาจาก stepLabel() (mtnStepPerm.js) ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
    ⚠️ ไม่มี field `perm` แล้ว — สิทธิ์ตัดสินด้วย canDoStep() ซึ่งดูทั้งคีย์/ทีม/ผู้เปิดใบ */
+/* ตรรกะ "ขั้นถัดไป" ย้ายไป nextStepOf() (mtnStepPerm.js) ให้คิวงานของฉันใช้ชุดเดียวกัน (05/10)
+   — ใบ MTN ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็นจริง (mtnCloseStage) ไม่ใช่ current_step */
 function nextStepFor(order) {
-  const mtnForm = isMtnFormOrder(order);
-  const S = (step) => ({ step, label: stepLabel(step, { mtnForm }) });
-  switch (order.status) {
-    case 'pending':   return S(2);
-    case 'assigned':
-    case 'repairing': return S(3);
-    case 'repaired':  return S(4);
-    /* ขั้น 5 = QA (ฟอร์ม JIG/DIE — ข้ามได้ด้วยปุ่ม ⏭ canSkipQa) · ของใบ MTN ขั้น 5 คือ "รับมอบ"
-       อยู่แล้ว (ลูปนี้ไม่มี QA) ⇒ isWaitingQa เป็น false เสมอ แล้วลงมาที่ขั้นรับมอบของฟอร์มนั้นเอง */
-    case 'checked':   return isWaitingQa(order) ? S(5) : S(mtnForm ? 5 : 6);
-    case 'qa':        return S(6);   // ใบ MTN ไปไม่ถึงสถานะนี้ (ไม่มี QA ในลูป)
-    /* ใบ MTN ค้างที่ handover ได้ 3 ขั้น (6 หัวหน้าแผนกช่างตรวจ · 7 ผจก.ช่างอนุมัติ · 8 ปิดใบ)
-       — แยกด้วย **เวลาเซ็นจริง** ผ่าน mtnCloseStage() ไม่ใช่ current_step (ใบเก่ามีเลขปนกัน) */
-    case 'handover':  return mtnForm ? S(mtnCloseStage(order) ?? 6) : S(7);
-    default:          return null;
-  }
+  const step = nextStepOf(order);
+  return step == null ? null : { step, label: stepLabel(step, { mtnForm: isMtnFormOrder(order) }) };
 }
 
 /* ช่อง "5.คุณภาพ" ในใบพิมพ์: ใบที่ไม่ต้องตรวจ QA ต้องพิมพ์ว่า "ไม่เกี่ยวกับคุณภาพ" ไม่ใช่ปล่อยว่าง
@@ -1185,6 +1260,8 @@ function printMoReport(o, dparts = [], logo0, dlabor = []) {
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
   if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
+  // ใบทีม DIE พิมพ์ป้าย "Die No. / Die Type" แทน "Jig No / MC Name" (คอมเมนต์ทีม DIE 06/10 — ฟอร์มเดียวกับ JIG แต่ของที่ซ่อมคือแม่พิมพ์)
+  const isDieTeam = teamKey === 'die_maintenance';
   // เลขฟอร์ม/Rev/Effective จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
   const dfMo = docFormSync('mo_report', { form_code: 'FM-JIG-008', rev: 'REV.00', effective_date: '05/12/2025', sig_blocks: ['JIG APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'] });
   const moSig = dfMo.sig_blocks || ['JIG APPROVE', 'QA APPROVE', 'PD APPROVE', 'MGR APPROVE'];
@@ -1244,7 +1321,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = []) {
         ${P(L('ส่วน:', o.work_area), L('แผนก:', o.dept_section))}
         ${P(L('ไลน์การผลิต:', o.line_name), L('Cost Ctr:', o.cost_center))}
         ${P(L('PD:', o.reporter_prod), L('QA:', o.reporter_qa))}
-        ${L('MC Name:', o.item_type)}${L('Jig No:', o.machine_no)}
+        ${L(isDieTeam ? 'Die Type:' : 'MC Name:', o.item_type)}${L(isDieTeam ? 'Die No.:' : 'Jig No:', o.machine_no)}
         ${P(L('Customer:', o.customer), L('Model:', o.model))}
         ${P(L('วันที่แจ้ง:', beDT(o.report_at)), L('ต้องการ:', beD(o.want_at)))}${o.occurred_at ? L('เกิดเหตุ:', beDT(o.occurred_at)) : ''}
         ${L('ลักษณะปัญหา:', o.problem_characteristic)}${L('รายละเอียด:', o.report_note || o.problem_detail)}
@@ -2180,6 +2257,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 
   // ประเภทงานซ่อม = มุมมองทีม → กรองตามทีมของใบ (แถวไม่ตั้งทีม = 🌐 ใช้ร่วม ติดมาเสมอ)
   const teamRepairTypes = useMemo(() => filterByTeam(repairTypes, order?.mtn_dept), [repairTypes, order?.mtn_dept]);
+  // ช่อง "ผู้รับเรื่อง/จ่ายงาน": คนในทีมช่างของใบขึ้นบนสุด (06/10 คอมเมนต์ทีม DIE — หัวหน้าช่างที่เป็นพนักงานไม่มี role
+  //   จึงจมอยู่ในลิสต์ 280 คน) · ทีมของคน = employees.mtn_team / profiles.mtn_teams (ตั้งที่ /operator)
+  const orderTeamKey = teamKeyOf(order?.mtn_dept || deptForItem(order?.item_type));
+  const acceptTeams = useMemo(() => (orderTeamKey ? [orderTeamKey] : NO_LINES), [orderTeamKey]);
   /* 👷 ลิสต์มอบหมายช่าง — แยกกลุ่ม "ทีมของใบนี้" ขึ้นก่อน (feedback หน้างาน 2026-08-21:
      "หัวหน้าช่าง MTN ต้องเห็นทีมช่างตัวเอง ไม่ใช่เห็นมั่ว")
      ⚠️ **ไม่ตัดทีมอื่นทิ้ง** — งานข้ามทีมมีจริง (เช่นงาน JIG ที่ MTN รับไปทำ)
@@ -2241,14 +2322,29 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   /* ตารางค่าแรงรายคนของฟอร์ม MTN (ชื่อ × ค่าแรง/ชม. × ชม.) — เดิมมีแค่ยอดรวมก้อนเดียว
      เปิดแก้ไขขั้น 3 ให้โหลดของเดิมมาแสดง (ไม่งั้นบันทึกซ้ำแล้วค่าแรงหาย) */
   const [laborRows, setLaborRows] = useState([]);
-  useEffect(() => {
-    if (step !== 3 || !isMtnForm) return;
+  /* 🔴 สถานะโหลดค่าแรงเดิม: 'loading' | 'ok' | 'error' (QC 05/10)
+     ตอนบันทึก ระบบ "ลบค่าแรงเดิมทั้งชุดแล้วเขียนใหม่" ⇒ ถ้ายังโหลดไม่เสร็จ/โหลดล้ม แล้วกดบันทึก
+     = ลบค่าแรงจริงทิ้ง เขียนชุดว่างแทน · และผลโหลดที่มาช้าห้ามทับแถวที่ช่างเพิ่งพิมพ์
+     ⇒ ปุ่มเพิ่มคน/บันทึก รอจนโหลดเสร็จ · โหลดล้ม = บล็อกบันทึก + บอกบนจอ */
+  const needLabor = step === 3 && isMtnForm;
+  const [laborState, setLaborState] = useState(needLabor ? 'loading' : 'ok');
+  const [laborErr, setLaborErr] = useState('');
+  const loadLabor = useCallback(() => {
+    if (!needLabor) { setLaborState('ok'); return () => {}; }
     let alive = true;
+    setLaborState('loading'); setLaborErr('');
     supabaseDR.from('mtn_order_labor').select('*').eq('order_id', o.id).order('seq')
-      .then(({ data }) => { if (alive && data?.length) setLaborRows(data.map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }))); });
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setLaborErr(error.message); setLaborState('error'); return; }
+        const loaded = (data || []).map(r => ({ worker_name: r.worker_name || '', rate_per_hour: r.rate_per_hour ?? '', hours: r.hours ?? '' }));
+        setLaborRows(cur => (cur.length ? cur : loaded));   // มีแถวที่ช่างพิมพ์แล้ว = ไม่ทับ
+        setLaborState('ok');
+      });
     return () => { alive = false; };
-  }, [step, isMtnForm, o.id]);
-  const addLabor = () => { touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
+  }, [needLabor, o.id]);
+  useEffect(() => loadLabor(), [loadLabor]);
+  const addLabor = () => { if (laborState !== 'ok') return; touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
   const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
   // แตะอะไรไปแล้วบ้าง — ใช้ถามยืนยันก่อนปิด (ขั้น 3 มีทั้งอะไหล่/รูป/ลายเซ็น กรอกใหม่ทั้งขั้นเจ็บมาก)
@@ -2317,14 +2413,21 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     const { error } = await supabaseDR.from('downtime_logs').update(patch).eq('id', order.source_downtime_id);
     if (error) { toast.error('บันทึกใบ MO แล้ว แต่ส่งเวลากลับไปที่รายการเครื่องหยุดไม่สำเร็จ — ' + error.message); return; }
     if (fillCallAt) {
-      await supabaseDR.from('downtime_logs')
+      // 0 แถว = มีเวลาเรียกช่างอยู่แล้ว (ตั้งใจไม่ทับ) — แต่ error ต้องบอก (QC 05/10 · เดิมไม่อ่านผล)
+      checkWrite(await supabaseDR.from('downtime_logs')
         .update({ call_mtn: true, call_mtn_at: fillCallAt })
-        .eq('id', order.source_downtime_id).is('call_mtn_at', null);
+        .eq('id', order.source_downtime_id).is('call_mtn_at', null), 'บันทึกใบ MO แล้ว แต่ส่งเวลาเรียกช่างกลับไปที่รายการเครื่องหยุด');
     }
   };
 
   const save = async () => {
     if (saving) return;   // กันกดซ้ำรัว — เคสจริง: บันทึกล้มเพราะรูป ช่างกดซ้ำจน toast ซ้อน 13 อัน
+    /* ค่าแรงเดิมยังไม่ได้โหลด/โหลดล้ม = ห้ามบันทึก (ขั้นบันทึกจะลบค่าแรงเดิมทั้งชุด) */
+    if (needLabor && laborState !== 'ok') {
+      return toast.error(laborState === 'loading'
+        ? 'รอโหลดค่าแรงเดิมของใบนี้ก่อน แล้วกดบันทึกอีกครั้ง'
+        : `โหลดค่าแรงเดิมไม่สำเร็จ (${laborErr}) — กด "โหลดใหม่" ในช่องค่าแรงก่อนบันทึก ไม่งั้นค่าแรงเดิมจะหาย`);
+    }
     setSaving(true);
     try {
       /* guard ชั้นสอง — ซ่อนปุ่มอย่างเดียวไม่พอ
@@ -2598,7 +2701,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
           {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
-            <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+            <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} teams={acceptTeams} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
             <Field label={`มอบหมายช่างซ่อม${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
               <select value={f.assigned_to} onChange={e => set('assigned_to', e.target.value)} style={inp}>
                 <option value="">— เลือกช่าง —</option>
@@ -2659,8 +2762,15 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <label style={lbl}>ค่าแรงในการปฏิบัติงาน (รายคน) · วิศวกร 200 บาท/ชม. · ช่างเทคนิค 100 บาท/ชม.</label>
-                <button type="button" onClick={addLabor} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }}>+ เพิ่มคน</button>
+                <button type="button" onClick={addLabor} disabled={laborState !== 'ok'} style={{ ...btnGhost, padding: '4px 10px', fontSize: 12, opacity: laborState !== 'ok' ? 0.5 : 1 }}>+ เพิ่มคน</button>
               </div>
+              {laborState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดค่าแรงเดิมของใบนี้…</div>}
+              {laborState === 'error' && (
+                <div role="alert" style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+                  ⚠️ โหลดค่าแรงเดิมไม่สำเร็จ ({laborErr}) — ยังบันทึกขั้นนี้ไม่ได้ (กันค่าแรงเดิมหาย){' '}
+                  <button type="button" onClick={loadLabor} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
+                </div>
+              )}
               {laborRows.map((r, i) => (
                 <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -2673,7 +2783,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                 </div>
               ))}
-              {!laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
+              {laborState === 'ok' && !laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
               {sumLabor(laborRows) != null && <div style={{ fontSize: 12.5, textAlign: 'right', fontWeight: 800, marginTop: 2 }}>(1) รวมค่าแรง {sumLabor(laborRows).toLocaleString()} บาท</div>}
             </div>
           )}
@@ -2986,6 +3096,24 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       if (!confirm(msg + '\n\nยืนยัน?')) return;
       updRow(table, it.id, { team: to });
     };
+
+    /* 🩺 "ทะเบียนครบไหม" — กฎความซื่อสัตย์ของจอ (ชั้น 3 ของกฎอื่นๆ/ไม่ระบุ · 2026-10-06)
+       เคสจริงที่ทำให้ต้องมีแผงนี้: JIG MTN **13/13 แถวไม่ได้ตั้งกลุ่ม** ⇒ ช่างทีมนั้นเปิด
+       ฟอร์มแจ้งซ่อมเจอกลุ่มเดียวทั้งทีม = ตัวเลือก 2 ชั้นไร้ผล และทุกใบลงกลุ่มเป็นถังขยะ
+       — ไม่มีใครรู้เลย เพราะจอทะเบียนไม่เคยบอก · ต้องบอกทั้งตอน "ไม่ครบ" และ "ครบแล้ว" */
+    const hasGroupCol = fields.some(fl => fl.k === 'group_name');
+    const gaps = !hasGroupCol ? null : (() => {
+      const byTeam = new Map(); const seen = new Map();
+      for (const it of items) {
+        const tk = teamKeyOf(it.team) || '';
+        if (!(it.group_name || '').trim()) byTeam.set(tk, (byTeam.get(tk) || 0) + 1);
+        const key = [tk, (it.group_name || '').trim(), (it.characteristic || '').trim()].join('\u0000');
+        seen.set(key, (seen.get(key) || 0) + 1);
+      }
+      return { byTeam: [...byTeam.entries()], dupN: [...seen.values()].filter(n => n > 1).length };
+    })();
+    const warnBox = { fontSize: 11.5, borderRadius: 7, padding: '7px 10px', marginBottom: 10, lineHeight: 1.65 };
+
     return (
       <div>
         {teamed && (
@@ -3007,6 +3135,15 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               : <>🔒 แก้ได้เฉพาะรายการของทีม <b>{myKeys.map(teamNameOf).join(' · ')}</b> — ของทีมอื่นและรายการ 🌐 ใช้ร่วมทุกทีม ดูได้อย่างเดียว (แก้ทีเดียวกระทบทุกทีม ต้องให้หัวหน้าแก้)</>}
           </div>
         )}
+        {hasGroupCol && (gaps.byTeam.length || gaps.dupN
+          ? <div style={{ ...warnBox, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--accent2)' }}>
+              ⚠️ <b>ทะเบียนยังไม่ครบ</b>
+              {!!gaps.byTeam.length && <> — {gaps.byTeam.map(([k, n]) => `${teamNameOf(k)} ${n} แถว`).join(' · ')} ยังไม่ได้ตั้ง<b>กลุ่มใหญ่</b> ⇒ ช่างทีมนั้นเปิดฟอร์มแจ้งซ่อมจะเจอกลุ่ม “{UNGROUPED_LABEL}” แทนกลุ่มจริง และทุกใบของทีมจะลงกลุ่มเป็นถังขยะ</>}
+              {!!gaps.dupN && <> {gaps.byTeam.length ? '·' : '—'} มี<b>หัวข้อย่อยซ้ำ</b>ในทีม+กลุ่มเดียวกัน {gaps.dupN} ชุด ⇒ คนแจ้งเห็น 2 บรรทัดเหมือนกันใน dropdown เดียว แล้วพาเรโตแตกเป็น 2 แท่ง</>}
+            </div>
+          : <div style={{ ...warnBox, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+              ✅ ทุกแถวมีกลุ่มใหญ่ครบ · ไม่มีหัวข้อย่อยซ้ำในทีม+กลุ่มเดียวกัน
+            </div>)}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
           {teamed && (

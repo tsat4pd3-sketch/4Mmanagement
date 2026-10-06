@@ -880,3 +880,18 @@ MAT ที่ระบบตีคลาสไม่ออก (ไม่ใช�
   🔴 **แยก 2 กลุ่มนี้ ห้ามยุบ** — "ไม่มีใบ" ต้องไปเปิดใบ · "ไม่ผูก" กดผูกได้ ยอดไม่หาย
 
 กติกาทั้งหมดอยู่ **`src/utils/pairOrder.js`** (pure · 9 เทส) — `pairQtyPlan()` / `pairOrderGaps()` **ห้ามคิดเองในหน้า**
+
+## 🛡️ QC audit 05/10 — กะที่เลือก · ปิดกะตามสิทธิ์ · ด่านเวลาย้อนหลัง · ประวัติ (2026-10-05)
+
+- **stale-response guard:** `loadDT` / `loadProdOrders` / `loadCarryOrders` / `loadDefectLogs` เช็ค `isStaleSess(sessionId)`
+  (ref `selSessIdRef` ตั้งตอน render) **หลังทุก await** — คำตอบของกะที่ไม่ได้เลือกอยู่แล้วถูกทิ้ง
+  ⇒ คำตอบช้าของกะก่อนหน้าเขียนทับกะที่เลือกแล้วถูก stamp ตอนปิดกะไม่ได้อีก · **loader ใหม่ของกะต้องทำแบบเดียวกัน**
+- **ปิดตรง vs ส่งขอปิด = สิทธิ์ ไม่ใช่ role:** `closeIsRequest = !can('daily_report','close_shift')` ·
+  `canEditRecords = canManage || (canRequestClose && open)` — default seed พฤติกรรมเท่าเดิม (leader = ส่งขอปิด)
+  · มีด่าน `daily-report-close-by-permission`
+- **ด่านเวลาย้อนหลัง (ยิงย้อนหลัง/เปิดเป้าย้อนหลัง/เดาเวลาใบถัดไป)** = `backfillWindowError(hhmm)` →
+  `resolveShiftTime` + `checkShiftTime` (กรอบกะจริง) · เลิก hardcode 08–20 · มีด่าน `daily-report-backfill-shift-window`
+- **ถอยใบ (handleRevertOrder):** CAS `.eq('status','confirmed').select('id')` ไม่โดนแถว = **หยุด** ไม่ถอน stock/ไม่ยกเลิกใบรอรับ/ไม่ขึ้นเขียว
+- **แท็บประวัติ:** คิวรีรายการกะล้ม = แถบแดง + ปุ่มลองใหม่ (ไม่ขึ้น "ไม่พบข้อมูล") · รายละเอียดรายกะล้ม = **ไม่ cache []**
+  (แถบแดงในแถวที่กาง + ลองใหม่) · ปุ่ม 📝 ออกใบรายงานปัญหาย้อนหลังไม่ออกใบเมื่อโหลดรายละเอียดไม่ได้ ·
+  `loadDetail(id, { force: true })` หลังลงวิธีแก้ไขย้อนหลัง (เดิม closure เห็น cache เก่า = ไม่โหลดใหม่จริง)

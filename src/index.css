@@ -616,7 +616,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .kpi-lift { transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
 @media (hover: hover) {
   .kpi-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  /* ช่องตารางที่กดแก้ได้ (/monitoring) — เดิมมีแต่ cursor:'cell' ซึ่งไม่มีใครสังเกต
+     ทีมวางแผนจึงคิดว่าแก้ตัวเลขไม่ได้ ต้องนำเข้าไฟล์อย่างเดียว (05/10) */
+  .mon-cell-edit:hover { background: var(--accent-dim) !important; }
 }
+/* เส้นประใต้ตัวเลข = "ช่องนี้กรอกทับได้" — เห็นได้ทั้งจอสัมผัสและจอที่มีเมาส์ */
+.mon-cell-edit { text-decoration: underline dotted var(--border2); text-underline-offset: 3px; }
 
 /* ─── Loading spinner กลาง — ใช้ animation: 'spin ...' ได้ทุกหน้า (ห้าม define ซ้ำต่อหน้า) ── */
 @keyframes spin {
@@ -798,3 +803,65 @@ table.mo-list tr.mo-row-alert td:first-child { box-shadow: inset 4px 0 0 #ef4444
   background: transparent !important;
 }
 .dr-partbox > *:last-child { border-bottom-width: 0 !important; }
+
+/* ══ 🧭 บอร์ด New Model (/nm-board) — ชั้น "วัสดุ" ของการ์ด (2026-10-05 · คำสั่ง user) ══════════
+   *"ไม่อยากให้ design ออกมาเหมือนเว็บทั่วไปที่สร้างจาก AI ง่อยๆ ... ต้องสวยกว่านี้ ดู premium กว่านี้"*
+
+   สิ่งที่ทำให้บอร์ดเดิมดู "เว็บ AI": **ทุกใบคือกล่องขอบสีเต็มใบ** ⇒ 21 ใบ = 21 กรอบสีแย่งสายตากัน
+   ไม่มีพื้นผิว ไม่มีลำดับชั้น เหลือแต่สี่เหลี่ยมเรียงกัน
+   ⇒ เปลี่ยนเป็น **พื้นผิวเรียบ + รางสถานะด้านซ้าย** (สีอยู่ที่ราง ไม่ใช่ทั้งกรอบ)
+     · ขอบเป็นเส้นผมสีสถานะจางๆ · ใบแดงเท่านั้นที่ได้กรอบเต็ม + แสงเรือง (Andon แดงต้องตะโกน)
+
+   🔴 ข้อห้ามของจอ TV (Chromium 94 · UI-CONVENTIONS §เพดานเบราว์เซอร์) ที่บล็อกนี้ทำตาม:
+      ห้าม color-mix · ห้าม CSS nesting · ห้าม @container — ใช้ alpha-rgba + custom property ล้วน
+   🔴 เงาที่นี่เป็น **แสงเรืองสถานะ (`0 0 Npx`)** ไม่ใช่เงาการ์ด — คนละเรื่องกับ §6.20
+      (uxsweep ไม่นับ `0 0 Npx` เป็นเงา · การ์ดแบนยังไม่มีเงาตามกฎเดิม)
+   ═══════════════════════════════════════════════════════════════════════════════════════════ */
+.nmb-card {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--card);
+  /* แสงตกจากด้านบนบางๆ — ทำให้การ์ดเป็น "แผ่นวัสดุ" ไม่ใช่สี่เหลี่ยมทึบ */
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0) 46%);
+  transition: border-color .15s ease, transform .15s ease;
+}
+/* รางสถานะ — สีอยู่ตรงนี้ที่เดียว อ่านจากระยะไกลได้เท่ากรอบเต็มใบ แต่ไม่แย่งสายตากันเอง */
+.nmb-card::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: var(--nmb-rail, 5px);
+  background: var(--nmb-color, var(--border2));
+  border-top-left-radius: inherit;
+  border-bottom-left-radius: inherit;
+}
+/* ใบที่ยังไม่ประเมิน — รางเป็นลายขีด ไม่ใช่สีทึบ: "ไม่มีข้อมูล" ต้องดูต่างจาก "ประเมินแล้วได้เทา" */
+.nmb-card[data-eva="none"]::before {
+  background-image: repeating-linear-gradient(135deg,
+    rgba(255, 255, 255, 0.22) 0 3px, rgba(255, 255, 255, 0) 3px 7px);
+}
+.nmb-card[data-eva="R"] {
+  box-shadow: 0 0 26px rgba(239, 68, 68, 0.16);   /* แสงเรืองสถานะ ไม่ใช่เงาการ์ด */
+}
+.nmb-go { opacity: .3; transition: opacity .15s ease; }
+@media (hover: hover) {
+  .nmb-card:hover { border-color: var(--nmb-color, var(--border2)); transform: translateY(-1px); }
+  .nmb-card:hover .nmb-go { opacity: 1; }
+}
+/* ป้ายกำกับตัวเล็ก (MODEL · ลูกค้า · สถานะ) — ตัวพิมพ์เล็กจัด + ระยะห่างตัวอักษร = อ่านว่า "ป้าย" ไม่ใช่ "เนื้อหา" */
+.nmb-eyebrow {
+  letter-spacing: .16em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700;
+}
+.nmb-num { font-variant-numeric: tabular-nums; }
+/* วงแหวน KPI หัวบอร์ด — วงแหวนสถานะ + แกนมืด (เดิมเป็นวงกลมทึบแบนๆ) */
+.nmb-ring {
+  border-radius: 50%;
+  background: var(--bg2);
+  border: var(--nmb-ring-w, 6px) solid var(--nmb-color, var(--border2));
+  box-shadow: 0 0 22px var(--nmb-glow, transparent), inset 0 0 14px rgba(0, 0, 0, .5);
+  display: flex; align-items: center; justify-content: center;
+}
+/* จอเบา (data-perf="lite") — ตัดแสงเรือง/ทรานซิชันที่เป็นความสวยงามล้วน เก็บสีกับรางไว้ */
+[data-perf="lite"] .nmb-card,
+[data-perf="lite"] .nmb-card[data-eva="R"] { box-shadow: none; transition: none; }
+[data-perf="lite"] .nmb-ring { box-shadow: none; }

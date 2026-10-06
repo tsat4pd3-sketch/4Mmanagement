@@ -40,6 +40,7 @@ import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
 import { shortTick, fmtAxis, alignedYWidth, CELL_BAR_FILL } from '../utils/chartAxis';
+import { useLatestRequest } from '../utils/useLatestRequest';
 /* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
 const fmtPieces = v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v || 0).toLocaleString());
 
@@ -148,7 +149,10 @@ export default function Energy() {
      ⚠️ ต้อง paginate — Supabase ตัดที่ 1000 แถว ไม่ตัดแบบมี error (หายเงียบ = SEC สูงเกินจริง)
      ⚠️ **ไม่ scope ตามไลน์โดยตั้งใจ** — ตัวหารต้องครอบเท่ากับตัวตั้ง (บิลทั้งโรงงาน)
         เอาไฟทั้งโรงงานหารด้วยชิ้นของบางไลน์ = ตัวเลขขยะ · จอติดป้าย "ทั้งโรงงาน" กำกับไว้ */
+  // เปลี่ยนเดือนระหว่างไล่หน้า (สูงสุด 20 รอบ) = ยอดของเดือนเก่าห้ามทับจอ (กฎ DB ข้อ 4 · QC 05/10)
+  const beginProd = useLatestRequest();
   const loadProduction = useCallback(async () => {
+    const live = beginProd();
     setProdErr('');
     const ms = monthRange(month, TREND_MONTHS);
     const from = `${ms[0]}-01`;
@@ -163,6 +167,7 @@ export default function Energy() {
         .gte('production_sessions.work_date', from).lte('production_sessions.work_date', to)
         .order('id')   // ⚠️ .range() ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
         .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (!live()) return;
       if (error) { setProdErr(error.message); setProd({}); return }
       all.push(...(data || []));
       if ((data || []).length < PAGE) break;
@@ -187,8 +192,9 @@ export default function Energy() {
       out[mk] = collapseOps(Object.values(bucket), opMap)
         .reduce((s, r) => s + (Number(r.produced) || 0), 0);
     }
+    if (!live()) return;
     setProd(out);
-  }, [month]);
+  }, [month, beginProd]);
   useEffect(() => { if (tab === 'summary' && prod == null) loadProduction(); }, [tab, prod, loadProduction]);
   useEffect(() => { setProd(null); }, [month]);   // เปลี่ยนเดือน = ช่วงเปลี่ยน ต้องโหลดใหม่
 

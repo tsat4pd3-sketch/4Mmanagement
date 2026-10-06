@@ -74,7 +74,7 @@ test('S/M ปี: จากผลรวมเช็คชื่อ · S นั�
   assert.equal(axisManYear({ rows: [], year: 2026 }).value, null);
 });
 
-test('D ปี: แผน = Σqty ทุกสถานะ · ทำได้นับตามสถานะ (กติกาเดียวกับโหมดเดือน)', () => {
+test('D ปี: แผน = orderPlanQty · ทำได้นับตามสถานะ (กติกาเดียวกับโหมดเดือน)', () => {
   const rows = [
     { m: '2026-05', line: 'L1', status: 'confirmed', n: 2, qty: 100, qty_ok_fb: 90, qty_actual: 0 },
     { m: '2026-05', line: 'L1', status: 'carry_over', n: 1, qty: 50, qty_ok_fb: 50, qty_actual: 20 },
@@ -86,6 +86,18 @@ test('D ปี: แผน = Σqty ทุกสถานะ · ทำได้น
   assert.equal(axisDeliveryYear({ rows: [], year: 2026 }).value, null);
 });
 
+test('⭐ D ปี: ใบยกยอด (imported) ไม่นับเป้าซ้ำ · ใบยกเลิกไม่ใช่แผน (QC 05/10 · oee §6.1)', () => {
+  const rows = [
+    { m: '2026-05', line: 'L1', status: 'imported', n: 1, qty: 35, qty_ok_fb: 35, qty_actual: 5 },   // ต้นทางทำได้ 5
+    { m: '2026-05', line: 'L1', status: 'confirmed', n: 1, qty: 30, qty_ok_fb: 30, qty_actual: 0 },  // ปลายทาง 30 ที่เหลือ
+    { m: '2026-05', line: 'L1', status: 'cancelled', n: 1, qty: 80, qty_ok_fb: 80, qty_actual: 0 },
+  ];
+  const d = axisDeliveryYear({ rows, year: 2026 });
+  assert.equal(d.plan, 35);       // เดิม 145 (35+30+80) ⇒ 24%
+  assert.equal(d.produced, 35);
+  assert.equal(d.value, 100);
+});
+
 test('C ปี: แท่งสรุป = ผลรวม · คิดไม่ครบ = null + บอกว่าขาดอะไร (ห้ามโชว์ 0)', () => {
   const c = axisCostYear({ rows: [{ m: '2026-01', dt: 1000, ng: 500 }, { m: '2026-02', dt: 200, ng: 0 }], year: 2026 });
   assert.equal(c.value, 1700);
@@ -93,6 +105,12 @@ test('C ปี: แท่งสรุป = ผลรวม · คิดไม่
   assert.equal(c.series[0].dt, 1000);
   const miss = axisCostYear({ rows: [], year: 2026, missingRate: 3 });
   assert.equal(miss.value, null); assert.equal(miss.state, 'thin'); assert.match(miss.note, /3 ไลน์/);
+});
+
+test('⭐ C ปี: ไม่มีกะทั้งปี = null ไม่ใช่ 0 บาท (QC 05/10)', () => {
+  const c = axisCostYear({ rows: [], year: 2026, sessions: 0 });
+  assert.equal(c.value, null); assert.equal(c.state, 'none'); assert.match(c.note, /ยังไม่มีกะ/);
+  assert.equal(axisCostYear({ rows: [], year: 2026, sessions: 5 }).value, null);   // ไม่มีเดือนให้คิด = null (เดิม)
 });
 
 test('Pareto ปี: ตัดหยุดตามแผนออก · เรียงมาก→น้อย · top N', () => {
@@ -138,4 +156,10 @@ test('monthBarScore: เกณฑ์ทางการ 1/0.5/0 — เหลื�
   assert.equal(monthBarScore({ v: 70 }, def), 'bad');
   assert.equal(monthBarScore({ v: null }, def), 'none');
   assert.equal(monthBarScore({ v: 50 }, { direction: 'up' }), 'none');   // ไม่มีเป้า = ตัดสินไม่ได้
+});
+
+test('PPM: ยอดผลิต 0 แต่มีของเสีย = null ไม่ใช่ 1,000,000 (UX audit 05/10)', async () => {
+  const { axisPpmYear } = await import('../obeyaYear.js');
+  const p = axisPpmYear({ sessions: [], defects: [{ m: '2026-01', ng: 91, trial_ng: 0, rows: 4 }], year: 2026 });
+  assert.equal(p.series[0].v, null);
 });

@@ -42,8 +42,14 @@ export default function PeSetFromMasterModal({ masters, masterItems, lines, role
       ({ error: e3 } = await supabase.from('pe_fmea_items').insert(rows));
     }
     if (e2 || e3) {
-      await supabase.from('pe_doc_sets').delete().eq('id', set.id);   // ห้ามทิ้งชุดครึ่งเดียว
+      /* ห้ามทิ้งชุดครึ่งเดียว — แต่ "ลบชุดคืน" ก็ล้มได้ (RLS DELETE = 0 แถวไม่มี error) ⇒ นับแถว
+         เดิมขึ้น "ยกเลิกชุดแล้ว" เสมอ ทั้งที่ชุดครึ่งเดียวอาจยังค้าง (QC 05/10) */
+      const { data: gone, error: eDel } = await supabase.from('pe_doc_sets').delete().eq('id', set.id).select('id');
       setSaving(false);
+      if (eDel || !gone?.length) {
+        onCreated?.(set);   // ให้รายการรีโหลดเห็นชุดที่ค้าง
+        return toast.error(`สร้าง OP/FMEA ไม่สำเร็จ: ${(e2 || e3).message} — ⚠️ และลบชุด ${set.part_no} ที่สร้างค้างไว้ไม่สำเร็จ${eDel ? ` (${eDel.message})` : ''} ต้องลบเองที่รายการชุด`);
+      }
       return toast.error(`สร้าง OP/FMEA ไม่สำเร็จ (ยกเลิกชุดแล้ว): ${(e2 || e3).message}`);
     }
     setSaving(false);

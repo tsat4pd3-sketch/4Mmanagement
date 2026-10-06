@@ -31,6 +31,8 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc } from '../utils/csvDoc';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -576,15 +578,17 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       `มีไฟล์ ${kind === 'forecast' ? 'Forecast' : 'Orders'} นำเข้าไว้แล้ว ${sameKind.length} ไฟล์\n` +
       `การนำเข้านี้จะ "เพิ่มทับ" ยอดเดิม (ไม่ได้แทนที่) — ถ้าเป็นไฟล์แก้ไข ให้ลบไฟล์เดิมก่อน\nยืนยันนำเข้าเพิ่ม?`)) return;
     setSaving(true);
+    let newBatchId = null;
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
         .insert({ kind, file_name: fileName, row_count: records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
+      newBatchId = batch.id;
       const table = kind === 'forecast' ? 'customer_forecasts' : 'customer_shipping_orders';
       for (let i = 0; i < records.length; i += 500) {
         const { error: e2 } = await supabaseDR.from(table).insert(records.slice(i, i + 500).map(x => ({ source: 'manual', ...x, batch_id: batch.id })));
-        if (e2) throw e2;
+        if (e2) { await rollbackBatch(newBatchId); newBatchId = null; throw e2; }   // ลงครึ่งไฟล์ = ห้ามค้าง
       }
       toast.success(`✅ นำเข้า ${records.length} แถวสำเร็จ${skipped ? ` (ข้าม ${skipped} แถวที่ข้อมูลไม่ครบ)` : ''}`);
       await markMailImported(batch.id);
@@ -600,17 +604,35 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   const ediKind = edi ? (edi.kindForced || edi.kind) : null;
 
   /* 🔴 แทนที่เฉพาะชุดที่ไฟล์ส่งมา (ship-to · dock · พาร์ท) — ดู scopedReplaceIds ใน ediMerge.js
-     อ่านแถวเดิมที่ "ลบได้" มาก่อน แล้วลบตาม id · อ่านไม่ได้ = หยุด (ห้ามเดาว่าไม่มีแล้วใส่ทับ) */
-  const replaceScoped = async (table, buildQuery, toCmp, fileRecs, opt) => {
+     อ่านแถวเดิมที่ "ลบได้" มาก่อน (จด id ไว้) · อ่านไม่ได้ = หยุด (ห้ามเดาว่าไม่มีแล้วใส่ทับ)
+     🔴 **ใส่ฉบับใหม่ให้ครบก่อน แล้วค่อยลบฉบับเดิมตาม id ที่จดไว้** (QC 05/10) — เดิมลบก่อน insert:
+        insert ล้มกลางทาง = ฉบับเดิมหายไปแล้ว ฉบับใหม่ลงครึ่งเดียว (ยอดลูกค้าหายเงียบ)
+        ตอนนี้ insert ล้ม ⇒ ลบ batch ใหม่ทิ้ง (FK cascade เก็บแถวที่ลงไปแล้ว) ฉบับเดิมอยู่ครบ */
+  const planReplace = async (table, buildQuery, toCmp, fileRecs, opt) => {
     const { rows, error, truncated } = await fetchAllPages(buildQuery);
     if (error) throw new Error(`อ่านข้อมูลเดิม (${table}) ไม่ได้: ${error}`);
     if (truncated) throw new Error(`ข้อมูลเดิม (${table}) เยอะเกินเพดาน — ไม่นำเข้าเพื่อกันลบไม่ครบ`);
     const { ids, kept } = scopedReplaceIds(rows.map(toCmp), fileRecs, opt);
-    for (let i = 0; i < ids.length; i += 200) {
-      const { error: e } = await supabaseDR.from(table).delete().in('id', ids.slice(i, i + 200));
-      if (e) throw e;
+    return { table, ids, kept };
+  };
+  /** ลบฉบับเดิมตาม id ที่จดไว้ (ทีละก้อน) — คืนจำนวนที่ลบไม่สำเร็จ (0 = ครบ) */
+  const deletePlanned = async (plans) => {
+    let left = 0, firstErr = null;
+    for (const { table, ids, onlyPending } of plans) {
+      for (let i = 0; i < ids.length; i += 200) {
+        let q = supabaseDR.from(table).delete().in('id', ids.slice(i, i + 200));
+        if (onlyPending) q = q.eq('status', 'pending');   // ใบที่ถูกหยิบไปทำระหว่างนำเข้า = ห้ามลบ
+        const { error: e } = await q;
+        if (e) { left += ids.length - i; firstErr = firstErr || e.message; break; }
+      }
     }
-    return { replaced: ids.length, kept };
+    return { left, firstErr };
+  };
+  /** ถอยการนำเข้า — ลบ batch ใหม่ (cascade ลบแถวที่ลงไปแล้ว) · ล้มก็ต้องบอก ห้ามเงียบ */
+  const rollbackBatch = async (batchId) => {
+    if (!batchId) return;
+    const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', batchId);
+    if (error) toast.error(`ถอยการนำเข้าไม่สำเร็จ (batch ${batchId}) — ลบไฟล์นี้ที่ตาราง "ไฟล์ที่นำเข้า" เอง: ${error.message}`);
   };
 
   const doImportEdi = async () => {
@@ -621,25 +643,30 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       return;
     }
     setSaving(true);
+    let newBatchId = null;      // ยังไม่ถึงขั้นลบฉบับเดิม = ถอยได้ด้วยการลบ batch ใหม่
     try {
       const { data: batch, error: e1 } = await supabaseDR.from('demand_upload_batches')
         .insert({ kind: ediKind, file_name: `EDI ${ediKind === 'orders' ? '862' : '830'} × ${edi.files.length} ไฟล์ (${edi.shipTos.join(',')})`, row_count: edi.records.length, uploaded_by: fullName || 'Sales' })
         .select().single();
       if (e1) throw e1;
+      newBatchId = batch.id;
+      const plans = [];         // ฉบับเดิมที่จะลบ — ลบหลัง insert ฉบับใหม่ครบแล้วเท่านั้น
       // code ปลายทางใหม่ที่ยังไม่อยู่ใน config → เพิ่มให้อัตโนมัติ (ชื่อตั้งต้น = code รอทีมตั้งชื่อลูกค้า)
-      await supabaseDR.from('ship_to_plants')
+      const { error: eShip } = await supabaseDR.from('ship_to_plants')
         .upsert(edi.shipTos.map(c => ({ code: c, customer_name: c })), { onConflict: 'code', ignoreDuplicates: true });
+      if (eShip) throw new Error(`เพิ่มปลายทางส่ง (ship-to) ไม่สำเร็จ: ${eShip.message}`);
       if (ediKind === 'forecast') {
         // ลบ forecast เดิม "เฉพาะช่วงเดือนที่ไฟล์นี้ครอบคลุม" ไม่ใช่ลบทั้งหมด —
         // เดิมลบ edi_830 ทุกเดือน ถ้าไฟล์ใหม่ horizon สั้นกว่า เดือนที่เลยช่วงจะหายถาวร (bounded เหมือน path 862)
         /* แทนที่เฉพาะ ship-to·พาร์ทที่ไฟล์ส่งมา ในช่วงเดือนของพาร์ทนั้น (2026-10-01) — พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ห้ามลบ */
         if (edi.records.length) {
-          const r830 = await replaceScoped('customer_forecasts',
+          const r830 = await planReplace('customer_forecasts',
             () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
               .eq('source', 'edi_830').in('customer', edi.shipTos).gte('period_month', edi.dateFrom).lte('period_month', edi.dateTo),
             x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
             edi.records, { useDock: false });
           keptCount = r830.kept;
+          plans.push(r830);
         }
         const recs = edi.records.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
@@ -679,28 +706,34 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
            เลขพาร์ทสะกดคนละแบบ (`RB3B-16E060-BA` vs `RB3B 16E060 BA`) และเวลาคนละกริด
            (862 08:00 = เที่ยวเดียวกับ e-SMART 09:00) ⇒ สร้างใบซ้ำ + หักสต็อกซ้ำ
            ดู `src/utils/ediMerge.js` (เทียบด้วย MAT + dock + เที่ยวที่ใกล้กัน) */
-        const { data: keepRows, error: eKeep } = await supabaseDR.from('customer_shipping_orders')
+        const { rows: keepRows, error: eKeep, truncated: tKeep } = await fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
           .select('id, customer, customer_part_no, mat_no, due_date, ship_time, status, dock_code, qty, source')
-          .in('customer', edi.shipTos).gte('due_date', delFrom).in('status', DONE_STATUSES);
-        if (eKeep) throw eKeep;      // อ่านใบเดิมไม่ได้ = ห้ามเดาว่า "ไม่มี" แล้วสร้างทับ
+          .in('customer', edi.shipTos).gte('due_date', delFrom).in('status', DONE_STATUSES));
+        if (eKeep) throw new Error(`อ่านใบที่ทำไปแล้วไม่ได้: ${eKeep}`);      // อ่านใบเดิมไม่ได้ = ห้ามเดาว่า "ไม่มี" แล้วสร้างทับ
+        if (tKeep) throw new Error('ใบที่ทำไปแล้วเยอะเกินเพดาน — ไม่นำเข้าเพื่อกันสร้างใบซ้ำ');
         /* ⚠️ ต้องมีขอบบน .lte(dateTo) ด้วย (semantics เดียวกับ path 830) — ไฟล์ horizon สั้น
            จะลบ pending อนาคตที่เกินช่วงไฟล์ทิ้งถาวรโดยไม่มีอะไร insert คืน (QC flow-audit D1) */
         /* 🔴 แทนที่เฉพาะ ship-to·dock·พาร์ทที่ไฟล์ส่งมา ในช่วงวันที่ของชุดนั้น (2026-10-01 · ปิดกลไก A)
            dock/พาร์ทที่ไม่อยู่ในไฟล์ = ไม่มีอัพเดท ⇒ ใบ pending เดิมอยู่ครบ · วันที่หายกลางช่วงของชุด = ยกเลิก */
-        const r862 = await replaceScoped('customer_shipping_orders',
+        const r862 = await planReplace('customer_shipping_orders',
           () => supabaseDR.from('customer_shipping_orders').select('id, customer, customer_part_no, mat_no, dock_code, due_date')
             .eq('source', 'edi_862').eq('status', 'pending').in('customer', edi.shipTos)
             .gte('due_date', delFrom).lte('due_date', edi.dateTo),
           x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, dock: x.dock_code, date: x.due_date }),
           [...edi.records, ...(edi.zeroRecs || [])], { useDock: true, from: delFrom });
         keptCount = r862.kept;
+        plans.push({ ...r862, onlyPending: true });
         /* รายการวันเก่าที่อยู่ในไฟล์ ไม่ต้อง insert ซ้ำ (ของเดิมยังอยู่) — ไม่งั้นยอดทบซ้อนกัน */
         const pastKeys = new Set();
         if (edi.dateFrom < delFrom) {
-          const { data: pastRows } = await supabaseDR.from('customer_shipping_orders')
-            .select('customer, customer_part_no, mat_no, due_date, ship_time')
-            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom);
-          (pastRows || []).forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
+          /* 🔴 อ่านไม่ได้/ได้ไม่ครบ = ห้ามเดาว่า "ไม่มีของเก่า" (QC 05/10) — เดิมไม่เช็ค error + ติดเพดาน 1000 แถว
+             ⇒ รายการวันเก่าที่มีอยู่แล้วถูก insert ซ้ำ = ยอดลูกค้า 862 นับซ้ำเงียบๆ */
+          const { rows: pastRows, error: ePast, truncated: tPast } = await fetchAllPages(() => supabaseDR.from('customer_shipping_orders')
+            .select('id, customer, customer_part_no, mat_no, due_date, ship_time')
+            .in('customer', edi.shipTos).gte('due_date', edi.dateFrom).lt('due_date', delFrom));
+          if (ePast) throw new Error(`อ่านใบวันเก่าที่มีอยู่แล้วไม่ได้: ${ePast}`);
+          if (tPast) throw new Error('ใบวันเก่าเยอะเกินเพดาน — ไม่นำเข้าเพื่อกันยอดซ้ำ');
+          pastRows.forEach(k => pastKeys.add(`${k.customer}|${k.customer_part_no || k.mat_no}|${k.due_date}|${(k.ship_time || '').slice(0, 5)}`));
         }
         /* กันซ้ำ 2 ชั้น: ① ใบที่ทำไปแล้ว (เทียบเที่ยว) ② รายการวันเก่าที่ยังอยู่ (เทียบตรงตัวตามเดิม) */
         const { insert: fresh862, covered } = splitAlreadyDone(
@@ -724,13 +757,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         fcSkipped = fcRecs.length - fcOk.length;
         const fcDates = fcRecs.map(r => r.date).filter(Boolean);
         if (fcDates.length) {
-          await replaceScoped('customer_forecasts',
+          plans.push(await planReplace('customer_forecasts',
             () => supabaseDR.from('customer_forecasts').select('id, customer, customer_part_no, mat_no, period_month')
               .eq('source', 'edi_862').in('customer', edi.shipTos)
               .gte('period_month', fcDates.reduce((a, b) => (a < b ? a : b)))
               .lte('period_month', fcDates.reduce((a, b) => (a > b ? a : b))),
             x => ({ id: x.id, shipTo: x.customer, part: x.customer_part_no || x.mat_no, date: x.period_month }),
-            fcRecs, { useDock: false });
+            fcRecs, { useDock: false }));
         }
         const fcIns = fcOk.map(r => ({
           batch_id: batch.id, customer: r.shipTo, mat_no: r.mat_no, part_name: r.part_name,
@@ -742,6 +775,11 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           if (error) throw error;
         }
       }
+      /* ฉบับใหม่ลงครบแล้ว → ค่อยลบฉบับเดิม · จากนี้ห้ามถอย batch ใหม่ (ฉบับใหม่คือของที่ครบ)
+         ลบเดิมไม่ครบ = ยอดซ้อน ⇒ ต้องบอกตรงๆ · อัพไฟล์เดิมซ้ำจะเก็บกวาดให้ (ชุดเดิม+ใหม่อยู่ในขอบเขตเดียวกัน) */
+      newBatchId = null;
+      const { left: delLeft, firstErr: delErr } = await deletePlanned(plans);
+      if (delLeft) toast.error(`⚠️ ลงฉบับใหม่ครบแล้ว แต่ลบฉบับเดิมไม่ครบ ${delLeft} รายการ (${delErr}) — ยอดอาจซ้ำ ให้กดนำเข้าไฟล์นี้ซ้ำอีกครั้งเพื่อเคลียร์`);
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
         + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
@@ -760,7 +798,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       setEdi(null);
       await loadBatches();
       onImported?.();
-    } catch (err) { toast.error(err.message); }
+    } catch (err) {
+      await rollbackBatch(newBatchId);   // ยังไม่ได้ลบฉบับเดิม ⇒ ถอย batch ใหม่ = ข้อมูลกลับไปเหมือนก่อนกด
+      toast.error(err.message);
+    }
     setSaving(false);
   };
 
@@ -771,19 +812,32 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
        → detach ใบประวัติออกจาก batch ก่อน (batch_id = null) แล้วค่อยลบ ให้ cascade โดนเฉพาะ pending อนาคต */
     if (!window.confirm(`ลบชุดข้อมูล "${b.file_name}" (${b.row_count} แถว)? ข้อมูลที่นำเข้าจากไฟล์นี้จะถูกลบทั้งหมด`)) return;
     if (b.kind === 'orders') {
+      /* 🔴 QC 05/10 — เดิม select ใบประวัติ (ติดเพดาน 1000 แถว) แล้ว detach ด้วย `.in('id', [ids ยาว])`
+         (URL ยาวเกิน = คืนว่างเงียบ) ⇒ ใบที่ detach ไม่ครบโดน cascade ลบ = ประวัติส่งหายถาวร
+         → นับด้วย head count แบบ exact · detach ด้วย "ตัวกรองเดียวกัน" (ไม่ใช้ลิสต์ id) · นับซ้ำหลัง detach ต้องเหลือ 0
+           ไม่เท่ากัน = **ยกเลิกการลบ** (ห้ามลบ batch ทั้งที่ยังมีประวัติผูกอยู่) */
       const wd = workDateStr();
-      const { data: hist, error: eH } = await supabaseDR.from('customer_shipping_orders')
-        .select('id, status, due_date').eq('batch_id', b.id)
-        .or(`status.neq.pending,due_date.lt.${wd}`);
-      if (eH) { toast.error(eH.message); return; }
-      if (hist?.length) {
-        const shipped = hist.filter(h => h.status !== 'pending').length;
+      const histFilter = `status.neq.pending,due_date.lt.${wd}`;
+      const countHist = (extra) => {
+        let q = supabaseDR.from('customer_shipping_orders').select('id', { count: 'exact', head: true }).eq('batch_id', b.id);
+        return extra ? extra(q) : q.or(histFilter);
+      };
+      const { count: histN, error: eH } = await countHist();
+      if (eH) { toast.error('นับใบประวัติของไฟล์นี้ไม่ได้ — ยกเลิกการลบ: ' + eH.message); return; }
+      if (histN) {
+        const { count: shipped, error: eS } = await countHist(q => q.neq('status', 'pending'));
+        if (eS) { toast.error('นับใบประวัติของไฟล์นี้ไม่ได้ — ยกเลิกการลบ: ' + eS.message); return; }
         if (!window.confirm(
-          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${hist.length} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${hist.length - shipped})\n` +
+          `ไฟล์นี้มีใบที่เป็น "ประวัติ" ${histN} ใบ (เริ่ม workflow/ส่งแล้ว ${shipped} · วันส่งผ่านมาแล้ว ${histN - shipped})\n` +
           `ใบพวกนี้จะถูก "เก็บไว้" (ไม่ลบ) — ลบเฉพาะใบ pending ในอนาคตของไฟล์นี้\nยืนยัน?`)) return;
-        const { error: eDet } = await supabaseDR.from('customer_shipping_orders')
-          .update({ batch_id: null }).in('id', hist.map(h => h.id));
+        const { data: det, error: eDet } = await supabaseDR.from('customer_shipping_orders')
+          .update({ batch_id: null }).eq('batch_id', b.id).or(histFilter).select('id');
         if (eDet) { toast.error('แยกใบประวัติออกจากไฟล์ไม่สำเร็จ — ยกเลิกการลบ: ' + eDet.message); return; }
+        const { count: still, error: eL } = await countHist();
+        if (eL || still) {
+          toast.error(`แยกใบประวัติออกจากไฟล์ไม่ครบ (แยกได้ ${det?.length ?? 0}/${histN} · ยังผูกอยู่ ${eL ? 'ไม่ทราบ' : still}) — ยกเลิกการลบเพื่อกันประวัติหาย`);
+          return;
+        }
       }
     }
     const { error } = await supabaseDR.from('demand_upload_batches').delete().eq('id', b.id);
@@ -1410,12 +1464,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       ? ['', 'สรุปภาระการผลิต (Capacity Load)', 'Line,Parts,WorkTime(hr/mo),Available(hr/mo),Load%',
          ...capacity.list.map(l => [esc(l.line), l.parts, (l.workSec / 3600).toFixed(1), (capacity.availSec / 3600).toFixed(1), l.loadPct.toFixed(1)].join(','))]
       : [];
-    const blob = new Blob(['﻿' + [head.join(','), ...dataLines, ...capBlock].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kanban_${calcType}_${month}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10) · ยังไม่ตั้งเลขฟอร์ม = ชื่อเดิมเป๊ะ
+    downloadCsvDoc('csv_kanban_calc', `kanban_${calcType}_${month}`,
+      [head.join(','), ...dataLines, ...capBlock].join('\n'));
   };
 
   const saveSettings = async () => {
@@ -1485,16 +1536,23 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
     if (skipped) toast.info(`ข้าม ${skipped} พาร์ทที่เลข SAP ไม่มีใน Product Master`);
     setMapping(true);
     try {
+      /* นับคู่ที่เขียนไม่ครบ — checkWrite โชว์ toast แดงแล้ว แต่ห้ามตามด้วย toast เขียว "จับคู่ N พาร์ทแล้ว" (QC 05/10) */
+      let failed = 0;
       for (const [cust, sap] of pairs) {
         const name = drMap[sap]?.name || null;
-        checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
+        let ok = checkWrite(await supabaseDR.from('dr_products').update({ p_no: cust }).eq('mat_no', sap), 'ผูกเลขลูกค้าเข้าสินค้า');                       // future uploads
         // single source: p_no เก็บซ้ำใน kanban_standards ด้วย — เขียน write-through กันตาราง 2 ฝั่ง map เลข SAP ไม่ตรง (stale → map ผิด)
         // best-effort (บางพาร์ทไม่มีแถว kanban = 0 แถว ไม่ใช่ error) — แต่ error จริงต้องเห็น (supabase-js ไม่ throw · try/catch เดิมไม่มีวันจับ)
-        checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards');
-        checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่'); // existing forecast
+        ok = checkWrite(await supabaseDR.from('kanban_standards').update({ p_no: cust }).eq('mat_no', sap), 'เขียน p_no ลง kanban_standards') && ok;
+        ok = checkWrite(await supabaseDR.from('customer_forecasts').update({ mat_no: sap, part_name: name }).eq('mat_no', cust), 'แก้ forecast เดิมให้ใช้ MAT ใหม่') && ok; // existing forecast
+        if (!ok) failed++;
       }
-      toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
-      setMapModal(false); setMapSel({});
+      if (failed) {
+        toast.error(`จับคู่สำเร็จ ${pairs.length - failed}/${pairs.length} พาร์ท — ${failed} พาร์ทเขียนไม่ครบ กดจับคู่ซ้ำอีกครั้ง`);
+      } else {
+        toast.success(`🔗 จับคู่ ${pairs.length} พาร์ทเข้าเลข SAP แล้ว — Store/Planner จะ sync ตามเลขเดียวกัน`);
+        setMapModal(false); setMapSel({});
+      }
       await load();
     } catch (err) { toast.error(err.message); }
     setMapping(false);
@@ -1818,6 +1876,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 }
 
 export default function PlannerSales() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload', 'monitoring'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);

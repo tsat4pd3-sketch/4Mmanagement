@@ -29,6 +29,7 @@ import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { positionLabel } from '../utils/positions';
 import { TAG_MAX_DAYS } from '../utils/qualityBin';
+import { notifyEvent } from '../utils/notifyEvent';
 
 const num = v => (v === '' || v == null ? 0 : (Number(v) || 0));
 
@@ -115,6 +116,18 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
     }
     if (!data?.length) { toast.error('บันทึกไม่สำเร็จ — ไม่มีรายการถูกสร้าง'); return; }
     toast.success(`ลงถังแล้ว ${data.length} รายการ`);
+    /* แจ้ง QA เหมือนฟอร์ม "เพิ่ม" ใน /qa (QualityBins) — เดิมทางนี้ (ลงถังจาก Daily Report = ทางหลักของหน้างาน)
+       ไม่แจ้งใครเลย ⇒ notification `quality_bin_added` = 0 ตลอดประวัติ · QA ไม่รู้ว่ามีของรอตัดสิน (workflow audit 05/10) */
+    picked.forEach((b, i) => notifyEvent({
+      event: 'quality_bin_added', type: b.key === 'red' ? 'error' : 'info',
+      ref_table: 'quality_bin_records', ref_id: data[i]?.id, line_name: session?.line_name || null, actor: reportedBy || actorName,
+      lines: [
+        `${b.key === 'red' ? '🔴 ถังแดง (ของเสียยืนยันแล้ว)' : '🟡 ถังเหลือง (ต้องสงสัย)'}`,
+        `🏭 ไลน์: ${session?.line_name || '—'} · ${defect?.prod_orders?.part_name || matNo || '—'}`,
+        `🔢 ${num(rows[b.key].qty)} ชิ้น`,
+        rows[b.key].cause.trim() ? `📝 ${rows[b.key].cause.trim()}` : '',
+      ],
+    }));
     onSaved?.();
     // ไม่ปิดทันที — บอกว่าสร้างใบอะไรไว้ และกดไปดู/กรอกต่อได้ที่ไหน (เดิมปิดเงียบ คนเลยหาใบไม่เจอ)
     setCreated(picked.map(b => ({ key: b.key, icon: b.icon, name: b.name, qty: num(rows[b.key].qty) })));
@@ -170,7 +183,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
                   <div>
                     <label style={lbl}>จำนวน (ชิ้น)</label>
                     <input type="number" value={r.qty} onChange={e => set(b.key, { qty: e.target.value })} style={inp} />
-                    <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       ลงไว้ {b.fromLabel} {src.toLocaleString('th-TH')} ชิ้น
                     </div>
                   </div>

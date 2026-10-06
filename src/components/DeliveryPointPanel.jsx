@@ -17,6 +17,7 @@
  * ตาราง: line_delivery_points (DR · anon) · สิทธิ์ `delivery_point:manage` · actor stamp ผ่าน DR_AUDIT_TABLES
  */
 import { useState, useEffect, useCallback, useContext, useMemo } from 'react';
+import CollapseCard from './CollapseCard';
 import { Link } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { loadStorageLocations } from '../utils/useStorageLocations';
@@ -24,7 +25,7 @@ import { invalidateTable } from '../utils/masterInvalidate';
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
-import { isLeafLine, getChildLineNames } from '../utils/lineHierarchy';
+import { isLeafLine, getChildLineNames, getLeafLineNames } from '../utils/lineHierarchy';
 import { slocOfLine, slocCodeOfLine } from '../utils/storageLoc';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
@@ -54,6 +55,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
 
   const isLeaf = useMemo(() => isLeafLine(lines, lineName), [lines, lineName]);
   const kids   = useMemo(() => getChildLineNames(lines, lineName), [lines, lineName]);
+  /* ไลน์ลูก "ที่ย่อยที่สุด" ของทั้งกลุ่ม — ไลน์แม่ 3 ชั้น ลูกชั้นกลางก็ยังเป็นแม่ ผูกจุดส่งไม่ได้
+     ใช้ตอนตั้งจุดเดียวที่รับของให้ทั้งแผนก (แร็คเดียวป้อนทุกไลน์ในพื้นที่ — เกิดจริงที่ Apron Assy) */
+  const leafKids = useMemo(() => getLeafLineNames(lines, lineName), [lines, lineName]);
   // จุดส่งผูกได้เฉพาะไลน์ leaf — dropdown เพิ่มไลน์ต้องกรองไลน์แม่ออกตั้งแต่ต้น (กรอง dropdown ด้วย ไม่ใช่แค่ข้อมูล)
   const leafLines = useMemo(() => lines.filter(l => isLeafLine(lines, l.name)), [lines]);
 
@@ -126,24 +130,16 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
 
   if (!lineName) return null;
 
-  const box = { marginTop: 16, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 16px' };
-
   return (
-    <div style={box}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <button onClick={() => setOpen(v => !v)} className="tbtn"
-          style={{ background: 'none', border: 'none', color: 'var(--text)', fontSize: 14, fontWeight: 800, cursor: 'pointer', padding: 0 }}>
-          {open ? '▾' : '▸'} 🎯 จุดส่งงานหน้าไลน์
-          {open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}
-        </button>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</span>
-        {open && canManage && isLeaf && !form && !missing && (
-          <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', '#08130c'), marginLeft: 'auto' }}>+ เพิ่มจุดส่ง</button>
-        )}
-      </div>
-
-      {open && (
-        <div style={{ marginTop: 10 }}>
+    /* พับด้วย CollapseCard ของกลาง (05/10) — ปุ่ม "+ เพิ่มจุดส่ง" อยู่หัวการ์ด เห็นแม้พับอยู่ */
+    <CollapseCard id="deliveryPoints" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
+      title={<>🎯 จุดส่งงานหน้าไลน์{open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}</>}
+      right={open && canManage && isLeaf && !form && !missing && (
+        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', '#08130c'), flexShrink: 0 }}>+ เพิ่มจุดส่ง</button>
+      )}>
+      <>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</div>
+        <div>
           <ReadOnlyNote show={!canManage} role={role} what="ตั้งจุดส่งงานของไลน์" permKey="delivery_point:manage" compact />
 
           {missing && (
@@ -153,11 +149,27 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
           )}
           {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>โหลดจุดส่งไม่สำเร็จ: {loadErr}</div>}
 
-          {/* ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ — ไม่ให้ตั้ง บอกทางไป */}
-          {!isLeaf && !missing && (
-            <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 12px' }}>
-              🏢 <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ ให้ตั้งจุดส่งที่ไลน์ย่อยแทน:
-              <span style={{ marginLeft: 6 }}>{kids.join(' · ')}</span>
+          {/* ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ ⇒ `line_names` เก็บ**ชื่อไลน์ลูก**เสมอ
+              (เก็บชื่อไลน์แม่ = ขอบเขตของจุดเปลี่ยนเองเงียบๆ วันที่มีคนเพิ่มไลน์ใหม่เข้าใต้แม่
+               โดยไม่มีใครตัดสินใจว่าแร็คนั้นรับของให้ไลน์ใหม่ด้วยไหม)
+              🔴 แต่ "ตั้งไม่ได้" ≠ "ทางตัน" — แร็คเดียวรับของให้ทั้งแผนกมีจริง (Apron Assy)
+              ⇒ ให้ปุ่มตั้งจุดเดียวที่ติ๊กไลน์ลูกครบให้เลย (แก้ออกได้) 05/10 */}
+          {!isLeaf && !missing && !form && (
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
+              🏢 <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ
+              จุดส่งจึงผูกกับ<b>ไลน์ย่อย</b>: <span>{kids.join(' · ')}</span>
+              {canManage && leafKids.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
+                    style={btnSt('var(--accent)', '#08130c')}>
+                    + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
+                  </button>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
+                    ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
+                    · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -177,9 +189,21 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                       {r.code && <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13, color: off ? 'var(--muted)' : '#22c55e' }}>{r.code}</span>}
                       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', flex: '1 1 120px' }}>{r.name}</span>
-                      {r.storage_location && <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>}
+                      {r.storage_location
+                        ? <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>
+                        /* 🔴 จุดที่ไม่มีรหัสคลัง = ด่าน "ส่งถูกพื้นที่ SAP ไหม" ไม่ทำงานกับจุดนี้
+                           ต้องเขียนบนจอ ห้ามเงียบ — วัดจริง 05/10: จุดส่งที่มีอยู่ 4 จุด ว่างทั้ง 4
+                           (ไลน์ปั๊ม A/B/C/D เป็นไลน์ราก ไม่มี `storage_locations` แถวไหนครอบ ⇒ derive ไม่ได้
+                            ไม่ใช่ "ลืมกด backfill" — ต้องมีคนลงทะเบียนพื้นที่ก่อน) */
+                        : <span title="จุดนี้ยังไม่ผูกพื้นที่ SAP — ระบบตรวจไม่ได้ว่าสโตร์ส่งถูกพื้นที่ไหม" style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>🏬 ไม่ผูกพื้นที่ SAP</span>}
                       {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏸ ปิดใช้งาน</span>}
                     </div>
+                    {!r.storage_location && (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3, lineHeight: 1.45 }}>
+                        ด่าน "ส่งถูกพื้นที่ไหม" ยังไม่ทำงานกับจุดนี้ — ลงทะเบียนพื้นที่ของไลน์ที่
+                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 Line Stock → 🏬 โซนคลัง</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
+                      </div>
+                    )}
                     {others.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔀 ใช้ร่วมกับ {others.join(' · ')}</div>}
                     {r.note && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                     {canManage && (
@@ -257,7 +281,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
             </div>
           )}
         </div>
-      )}
-    </div>
+      </>
+    </CollapseCard>
   );
 }

@@ -348,7 +348,7 @@ export default function PEDocs() {
           {sets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || ''} {s.status === 'obsolete' ? '(obsolete)' : ''}</option>)}
         </select>
         {curSet?.image_url && (
-          <img src={curSet.image_url} alt="product" onClick={() => setImgView(curSet.image_url)}
+          <img loading="lazy" src={curSet.image_url} alt="product" onClick={() => setImgView(curSet.image_url)}
             style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', cursor: 'zoom-in' }} />
         )}
         {curSet && (

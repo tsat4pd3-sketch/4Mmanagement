@@ -27,7 +27,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
-  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, isPullable,
+  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable,
 } from '../utils/materialRequest';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -121,16 +121,30 @@ export default function MaterialRequests() {
   );
   const hidden = rows.length - visible.length;
 
+  /* ── เลขใบภายใน = "เลขสูงสุดของเดือน + 1" จากทะเบียนจริง (ไม่ผูกตัวกรองบนจอ · ห้าม count()+1)
+     คิวรีล้ม = คืน null ⇒ ไม่ออกเลข ดีกว่าออกเลขที่อาจซ้ำ (หลักเดียวกับ nextProblemDocNo) ── */
+  const issueReqNo = async (d) => {
+    const pre = reqNoPrefix(d);
+    if (!pre) return null;
+    const { data, error } = await supabaseDR.from('material_requests')
+      .select('doc_no').like('doc_no', `${pre}%`);
+    if (error) return null;
+    return nextReqNo(d, maxReqSeq((data || []).map(r => r.doc_no), d));
+  };
+
   /* ── เปิดฟอร์ม ── */
-  const openNew = () => {
+  const openNew = async () => {
     const d = today();
+    const autoNo = await issueReqNo(d);
+    if (!autoNo) toast.error('ออกเลขที่ใบอัตโนมัติไม่สำเร็จ — กรอกเลขเองหรือลองเปิดใหม่');
     setEditor({
       req: {
         kind: 'withdraw', move_code: 'prod', request_date: d, need_date: d,
         // หน่วยงาน default = ส่วนงานของ user (profiles.section) — เดิม hardcode 'QUALITY' ทุกคน (2026-09-07)
         requester_name: fullName || '', requester_dept: mySection || 'QUALITY',
         plant_code: '2140', status: 'draft',
-        doc_no: nextReqNo(d, rows.length),
+        doc_no: autoNo || '',
+        _autoNo: autoNo || null,   // เลขที่ระบบเสนอ — ตอนบันทึกจะออกใหม่ถ้ายังไม่ถูกแก้ (กันชนกับคนที่เปิดฟอร์มพร้อมกัน)
         made_by_name: fullName || '', made_by_date: d,
         made_by_sig_url: signers.find(s => s.full_name === fullName)?.signature_url || null,
       },
@@ -165,6 +179,14 @@ export default function MaterialRequests() {
 
     const payload = { ...req, updated_by_name: fullName || null };
     delete payload.id;
+    delete payload._autoNo;
+    /* ใบใหม่ที่ยังใช้เลขที่ระบบเสนอ → ออกเลขใหม่ ณ ตอนบันทึก (อีกคนอาจบันทึกเลขเดียวกันไปก่อน)
+       เปลี่ยนวันที่เบิกข้ามเดือนก็ได้เลขของเดือนใหม่ · คนพิมพ์เลขเองแล้ว = เคารพค่าที่คนกรอก */
+    if (!req.id && req._autoNo && req.doc_no === req._autoNo) {
+      const fresh = await issueReqNo(req.request_date);
+      if (!fresh) return toast.error('ออกเลขที่ใบไม่สำเร็จ — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง');
+      payload.doc_no = fresh;
+    }
     if (nextStatus) payload.status = nextStatus;
 
     let id = req.id;
@@ -207,7 +229,7 @@ export default function MaterialRequests() {
       event: 'material_request', type: 'info', ref_table: 'material_requests', ref_id: id,
       line_name: req.line_name || null, actor: fullName,
       lines: [
-        `📄 ${req.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
+        `📄 ${payload.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
         `🏭 ไลน์: ${req.line_name || '—'} · หน่วยงาน: ${req.requester_dept || '—'}`,
         `📦 ${real.length} รายการ · รวม ${real.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
         req.detail ? `📝 ${String(req.detail).slice(0, 200)}` : '',
@@ -228,6 +250,12 @@ export default function MaterialRequests() {
   };
 
   const remove = async (r) => {
+    /* 🔴 ใบที่อนุมัติ/จ่ายของแล้ว = บันทึกการเคลื่อนไหวของคลังจริง (ใบ scrap ดึงไปอ้างอิงได้) ⇒ ห้ามลบจริง
+       ให้ "ยกเลิก" (status cancelled) แทน — สืบย้อนได้ (QC 05/10 · หลักเดียวกับยกเลิกล็อต) */
+    if (isPullable(r)) {
+      if (!window.confirm(`ใบ ${r.doc_no || ''} ${statusMeta(r.status).label} — ลบทิ้งไม่ได้ (เป็นบันทึกการเบิกจริง)\n\nเปลี่ยนสถานะเป็น "ยกเลิก" แทน?`)) return;
+      return setStatus(r, 'cancelled');
+    }
     if (!window.confirm(`ลบใบ ${r.doc_no || ''} ?\nรายการในใบจะถูกลบด้วย · ใบรายงานของเสียที่ดึงจากใบนี้ไปแล้วจะยังอยู่ แต่ลิงก์สืบย้อนจะขาด`)) return;
     const { error } = await supabaseDR.from('material_requests').delete().eq('id', r.id);
     if (error) return toast.error(`ลบไม่สำเร็จ: ${error.message}`);
@@ -262,7 +290,8 @@ export default function MaterialRequests() {
     setPicker(null); setPq('');
   };
 
-  const wrap = { padding: '4px 2px' };
+  // ไม่มี padding บน — ระยะแท็บ→แถบกรองเป็นของ PageHeader (16px มาตรฐาน · stdsweep 05/10 เดิมเกิน 4px = 20px)
+  const wrap = { padding: '0 2px 4px' };
 
   return (
     <div style={wrap}>

@@ -18,7 +18,7 @@
    ════════════════════════════════════════════════════════════════════════════════════════ */
 import { round1, statusOf, Q_THIN_DEFECT_ROWS } from './obeyaKpi.js';
 import { scoreDef, summaryOf } from './kpiSetup.js';
-import { DEFAULT_OEE_TARGET } from './oee.js';
+import { DEFAULT_OEE_TARGET, orderPlanQty } from './oee.js';
 
 /* ── ช่วงเวลา ─────────────────────────────────────────────────────────────────────── */
 export const MONTH_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -148,12 +148,15 @@ export function axisManYear({ rows = [], year, target = 95 } = {}) {
 }
 
 /* ════ D ════ rows จาก rollup.orders: { m, line, status, n, qty, qty_ok_fb, qty_actual }
-   กติกาเดียวกับโหมดเดือน: แผน = Σqty ทุกสถานะ · ทำได้ = confirmed→qty_ok(??qty) · carry_over/imported→qty_actual */
+   กติกาเดียวกับโหมดเดือน (oee §6/§6.1 — 05/10): แผน = orderPlanQty · ทำได้ = orderProducedQty
+   แถว RPC เป็น "ผลรวมต่อสถานะ" ⇒ ส่ง { status, qty, qty_actual } รวมเข้าสูตรเดียวกันได้ตรงๆ
+   ⚠️ ข้อจำกัด: imported คิด min(Σqty, Σqty_actual) ระดับกลุ่ม ไม่ใช่ Σmin รายใบ (RPC ไม่ส่งรายใบ · ไม่มี qty_target)
+      ⇒ แผนสูงกว่าจริงได้เฉพาะเดือนที่มีใบ imported ผลิตเกินเป้า (หายาก) — แก้ที่ RPC เท่านั้น ห้ามเดาในนี้ */
 const seedOrd = () => ({ plan: 0, made: 0 });
 const addOrd = (a, r) => {
-  a.plan += n(r.qty);
+  a.plan += orderPlanQty({ status: r.status, qty: n(r.qty), qty_actual: n(r.qty_actual) });
   if (r.status === 'confirmed') a.made += n(r.qty_ok_fb);
-  else if (r.status === 'carry_over' || r.status === 'imported') a.made += n(r.qty_actual);
+  else a.made += n(r.qty_actual);   // open/carry_over/imported/cancelled = qty_actual (orderProducedQty)
 };
 export function axisDeliveryYear({ rows = [], year, targetPct = 100 } = {}) {
   const map = byMonth(rows, seedOrd, addOrd);
@@ -171,10 +174,15 @@ export function axisDeliveryYear({ rows = [], year, targetPct = 100 } = {}) {
    rows: { m, dt (บาท), ng (บาท) } · missingRate/missingCost = จำนวนไลน์/พาร์ทที่คิดไม่ได้ (ห้ามใส่ 0 แทน) */
 const seedCost = () => ({ dt: 0, ng: 0 });
 const addCost = (a, r) => { a.dt += n(r.dt); a.ng += n(r.ng); };
-export function axisCostYear({ rows = [], year, target = null, missingRate = 0, missingCost = 0 } = {}) {
+// `sessions` = จำนวนกะในขอบเขต (0 = ไม่มีข้อมูล ⇒ null ห้ามเป็น 0 บาท "ไม่มีความสูญเสีย" · QC 05/10) · null = ไม่รู้ (พฤติกรรมเดิม)
+export function axisCostYear({ rows = [], year, target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
   const map = byMonth(rows, seedCost, addCost);
   const { series, total, months } = monthSeries(year, map, seedCost, a => Math.round(a.dt + a.ng), 'sum');
   const sum = total.dt + total.ng;
+  if (sessions === 0 && !(sum > 0)) {
+    return { key: 'C', unit: 'บาท', better: 'down', target, months, value: null, dtBaht: 0, ngBaht: 0,
+      series, summaryKind: 'sum', state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในปีนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย' };
+  }
   const notes = [];
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
@@ -213,7 +221,8 @@ export function axisPpmYear({ sessions = [], defects = [], year, target = null, 
     const a = map.get(k); a.ng += n(d.ng) - n(d.trial_ng); a.rows += n(d.rows);
   });
   const { series, ytd, total, months } = monthSeries(year, map, seedPpm,
-    a => ((a.qty + a.ng) > 0 ? Math.round((a.ng / (a.qty + a.ng)) * 1e6) : null), 'avg');
+    /* ยอดผลิต 0 แต่มีของเสีย = ยอดผลิตยังไม่ถูกบันทึก ⇒ null ไม่ใช่ 1,000,000 (UX audit 05/10) */
+    a => (a.qty > 0 ? Math.round((a.ng / (a.qty + a.ng)) * 1e6) : null), 'avg');
   return {
     key: 'PPM', unit: 'PPM', better: direction === 'up' ? 'up' : 'down', target, months,
     value: ytd, series, summaryKind: 'avg', ngQty: total.ng, qty: total.qty, defectRows: total.rows,

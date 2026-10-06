@@ -183,15 +183,15 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         </select>
                         {/* 🔴 ของอยู่ผิดแผนก ไม่ใช่แค่ผิดชั้น — ปลายทางที่ถูกอยู่คนละแผนก */}
                         {r.warn && (
-                          <div style={{ fontSize: 10, color: '#ef4444', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
+                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
                             🔴 {r.warn.text}
                           </div>
                         )}
                         {!r.sure && !r.warn && (
-                          <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 2 }}>⚠ มีหลายปลายทาง — เลือกเอง</div>
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>⚠ มีหลายปลายทาง — เลือกเอง</div>
                         )}
                         {sel && hint?.note && (
-                          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>

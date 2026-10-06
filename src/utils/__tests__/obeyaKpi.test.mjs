@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   statusOf, statusWhy, statusLabel, gapToTarget, axisOee, axisSafety, axisQuality, axisDelivery, axisCost, axisMan,
-  actionBuckets, actionHealth, periodRange, prevRange, addDays, fillDays, bucketBy,
+  actionBuckets, actionHealth, scopeActions, periodRange, prevRange, addDays, fillDays, bucketBy,
 } from '../obeyaKpi.js';
 
 const S = (o) => ({ shift_min: 570, plannedMin: 0, oee: 80, oee_a: 90, oee_p: 90, oee_q: 99, actual_qty: 100, qty_ng: 0, work_date: '2026-09-01', ...o });
@@ -96,6 +96,17 @@ test('axisCost: ขาดอัตราค่าแรง/ต้นทุน = 
   const ok = axisCost({ dtBaht: 1200.4, ngBaht: 300.6 });
   assert.equal(ok.value, 1501);
   assert.equal(ok.better, 'down');
+});
+
+test('⭐ axisCost: ไม่มีกะในช่วง = "ไม่มีข้อมูล" (null) ห้ามเป็น 0 บาท/เขียว "ไม่มีความสูญเสีย" (QC 05/10)', () => {
+  const none = axisCost({ dtBaht: 0, ngBaht: 0, sessions: 0 });
+  assert.equal(none.value, null);
+  assert.equal(none.state, 'none');
+  assert.match(none.note, /ยังไม่มีกะ/);
+  // มีกะผลิตจริงแต่ไม่เสียอะไร = 0 บาทได้ (ข้อเท็จจริง ไม่ใช่ข้อมูลขาด)
+  assert.equal(axisCost({ dtBaht: 0, ngBaht: 0, sessions: 12 }).value, 0);
+  // ไม่ส่ง sessions = พฤติกรรมเดิม
+  assert.equal(axisCost({ dtBaht: 0, ngBaht: 0 }).value, 0);
 });
 
 test('axisMan: อัตรามาทำงาน + แยกจำนวนมา/ขาด', () => {
@@ -207,4 +218,33 @@ test('statusLabel: ครบ 4 ระดับ และค่าแปลกๆ
   assert.equal(statusLabel('bad'), 'หลุดเป้า');
   assert.equal(statusLabel(undefined), 'ตัดสินไม่ได้');
   assert.equal(statusLabel('อะไรไม่รู้'), 'ตัดสินไม่ได้');
+});
+
+/* 🔒 ACTION BOARD ต้องเดินตามขอบเขตเดียวกับข้อมูลผลิต (audit 05/10) — เดิมโชว์ทุกใบทั้งโรงงานไม่ว่า user/ขอบเขตไหน */
+test('scopeActions: ใบที่ระบุไลน์ตัดสินด้วย lineOk · ใบที่ระบุส่วนงานตัดสินด้วย sections ∩ ขอบเขต · บอกจำนวนที่ซ่อน', () => {
+  const items = [
+    { id: 1, line_name: 'L1', section: 'PD1' },
+    { id: 2, line_name: 'L9', section: 'PD2' },
+    { id: 3, section: 'pd1' },           // ตัวพิมพ์ต่าง = ส่วนงานเดียวกัน
+    { id: 4, section: 'PD2' },
+    { id: 5 },                           // ไม่ระบุอะไรเลย = ใบระดับโรงงาน
+  ];
+  const lineOk = (n) => n === 'L1';
+  // user ไม่จำกัด + ดูทั้งโรงงาน → ใบไลน์ยังผ่าน lineOk (ขอบเขตบนจอ) · ใบส่วนงาน/ใบโรงงานเห็นหมด
+  const all = scopeActions(items, { sections: [], scopeSecs: null, lineOk: () => true });
+  assert.deepEqual(all.items.map(a => a.id), [1, 2, 3, 4, 5]);
+  assert.equal(all.hidden, 0);
+  // เลือกขอบเขต PD1 (user ไม่จำกัด) → ใบ L9 ตก lineOk · PD2 ตก · ใบโรงงานไม่โชว์ในขอบเขตย่อย
+  const pd1 = scopeActions(items, { sections: [], scopeSecs: new Set(['PD1']), lineOk });
+  assert.deepEqual(pd1.items.map(a => a.id), [1, 3]);
+  assert.equal(pd1.hidden, 3);
+  // user สังกัด PD2 ดูทั้งโรงงาน → เห็นเฉพาะของ PD2 (ใบไลน์ให้ lineOk ตัดสิน ซึ่งรวม scope user แล้ว)
+  const u2 = scopeActions(items, { sections: ['PD2'], scopeSecs: null, lineOk: (n) => n === 'L9' });
+  assert.deepEqual(u2.items.map(a => a.id), [2, 4]);
+  // lineOk คืน null (ไลน์ไม่อยู่ในทะเบียนแล้ว) → ถอยไปใช้ส่วนงานของใบ ไม่ทิ้งเงียบ
+  const unk = scopeActions(items, { sections: [], scopeSecs: new Set(['PD2']), lineOk: () => null });
+  assert.deepEqual(unk.items.map(a => a.id), [2, 4]);
+  // ไม่ส่ง lineOk = ใบไลน์ผ่านหมด (ไม่เดาแทน) · items ว่าง = ว่าง ไม่พัง
+  assert.equal(scopeActions(items, {}).items.length, 5);
+  assert.deepEqual(scopeActions([], { sections: ['PD1'] }), { items: [], hidden: 0 });
 });

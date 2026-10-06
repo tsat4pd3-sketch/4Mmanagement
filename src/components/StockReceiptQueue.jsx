@@ -110,13 +110,8 @@ export default function StockReceiptQueue() {
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-        📥 ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
-        สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} ใบ · {fmt(pendingQty)} ชิ้น</b>
-        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว</span>}
-      </div>
-
-      <FilterBar bare>
+      {/* UI-STANDARD §1: แท็บ → แถบกรอง ติดกัน (ห้ามมีคำอธิบายคั่น) · แถบระดับหน้า = แถบมาตรฐาน ไม่ใช่ `bare` (stdsweep 05/10: เดิมห่าง 48px) */}
+      <FilterBar>
         <Segmented value={dest} onChange={setDest} label="คลังปลายทาง"
           options={[{ value: '', label: allOf('คลัง') }, ...dests.map(d => ({ value: d, label: d }))]} />
         <SearchInput value={q} onChange={setQ} fields="เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์" grow={false} onKeyDown={onSearchKey} />
@@ -124,6 +119,12 @@ export default function StockReceiptQueue() {
           {showDone ? '⏳ เฉพาะที่รอรับ' : '✅ รวมที่รับแล้ว 24 ชม.'}
         </button>
       </FilterBar>
+
+      <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
+        📥 ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
+        สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} ใบ · {fmt(pendingQty)} ชิ้น</b>
+        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว</span>}
+      </div>
 
       {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>⚠ โหลดคิวไม่ครบ — {loadErr} · ตัวเลขบนจออาจขาด</div>}
 
