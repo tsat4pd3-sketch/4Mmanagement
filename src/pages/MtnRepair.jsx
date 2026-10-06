@@ -43,7 +43,7 @@ import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
-import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
+import { ALL, SHIFT_OPTIONS, allOf } from '../utils/filterLabels';
 /* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
 import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
@@ -178,6 +178,13 @@ const STAGE_EVENT = {
   cost_mgr_close: 'mtn_closed',     // ขั้น 8 ใบ MTN — ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ
 };
 const stepEventOf = (step, mtnForm) => STAGE_EVENT[stageOf(step, { mtnForm })] || null;
+
+/** ใบนี้รอ "จังหวะงาน" อะไรอยู่ — คืน `stage` (qa/assign/close/…) · `null` = จบแล้ว/ตัดสินไม่ได้
+ *  🔴 ต้องผ่าน `stageOf()` เสมอ ห้ามเทียบเลขขั้น (เลขทับกัน 2 ฟอร์ม — กฎใน CLAUDE.md) */
+const waitStageOf = (o) => {
+  const step = nextStepOf(o);
+  return step ? stageOf(step, { mtnForm: isMtnFormRow(o) }) : null;
+};
 
 /* "ขั้นไหนใครทำ" ย้ายไป src/utils/mtnStepPerm.js (MTN_STEPS/canDoStep) แล้ว — 2026-09-02
    เดิมเป็น STEP_PERM ที่นี่ แล้วเกณฑ์ถูกเขียนซ้ำ 2 ก้อน (ตัวซ่อนปุ่ม + guard ตอนบันทึก)
@@ -331,6 +338,13 @@ export default function MtnRepair() {
     else if (tab === 'spare' || tab === 'rack') navigate(`/equipment?tab=${tab}`, { replace: true });
   }, [tab, navigate]);
   const [fStatus, setFStatus] = useState('open');
+  /* 🔗 `?wait=<stage>` = "กองที่รอขั้นนี้" — ลิงก์มาจากบรรทัดสรุปในแผง 📌 คิวงานของฉัน (06/10)
+     🔴 **กรองด้วย `stage` ไม่ใช่เลขขั้น** — เลขขั้นเดียวกันคนละความหมาย 2 ฟอร์ม
+        (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN · กฎ `stageOf`)
+     ค่าที่ไม่รู้จัก = ไม่กรอง (ไม่ใช่ลิสต์ว่าง) — ลิงก์เก่า/พิมพ์มือผิดห้ามทำให้จอว่างเปล่า
+     ⚠️ **อ่านจาก URL ตรงๆ ไม่เก็บ state ซ้อน** — มี 2 แหล่งแล้วจะเถียงกันตอนกดย้อนกลับ/กดลิงก์ใหม่ */
+  const fWait = sp.get('wait') || '';
+  const setFWait = useCallback((v) => mergeSp({ wait: v || null }), [mergeSp]);
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
   /* 🔗 `?q=` = คำค้นตั้งต้นจากลิงก์ภายนอก (/scan → "ดูใบซ่อมของเครื่องนี้" ส่งเลขเครื่องมา)
@@ -495,7 +509,7 @@ export default function MtnRepair() {
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [loadMasters, loadOrders, reloadAll]);
 
-  const shownNoDate = useMemo(() => {
+  const beforeWait = useMemo(() => {
     let rows = orders;
     if (scopeLines) rows = rows.filter(o => !o.line_name || scopeLines.has(o.line_name));
     if (fStatus === 'open') rows = rows.filter(isMoOpen);   // รวม transferred = จบแล้ว (utils/mtnStepPerm)
@@ -513,6 +527,28 @@ export default function MtnRepair() {
     if (fText.trim()) { const t = fText.trim().toLowerCase(); rows = rows.filter(o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name].some(v => (v || '').toLowerCase().includes(t))); }
     return rows;
   }, [orders, scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
+
+  /* 🔴 ตัวกรอง "รอขั้นไหน" แยกชั้นจาก `beforeWait` — ไม่เอาไปรวมในชั้นเดียวกับตัวกรองอื่น
+     เพราะ dropdown ด้านล่างนับตัวเลือกจาก `beforeWait` ⇒ เลือกขั้นหนึ่งแล้วขั้นอื่นต้องยังอยู่ให้เลือกกลับ */
+  const shownNoDate = useMemo(
+    () => (fWait ? beforeWait.filter(o => waitStageOf(o) === fWait) : beforeWait),
+    [beforeWait, fWait]);
+
+  /* 🕰️ ตัวเลือก "รอขั้นไหน" — นับจากใบที่เหลือหลังกรองอย่างอื่น **ยกเว้นตัวกรอง wait เอง**
+     (ถ้านับหลังกรอง wait แล้ว เลือกขั้นหนึ่งจะทำให้ขั้นอื่นหายจาก dropdown = กลับไปเลือกไม่ได้)
+     · ขั้นที่ไม่มีใบค้าง = ไม่โผล่ · เรียงมาก→น้อย ให้กองใหญ่อยู่บน */
+  const waitOpts = useMemo(() => {
+    const m = new Map();
+    for (const o of beforeWait) {
+      const st = waitStageOf(o);
+      if (!st) continue;
+      const step = nextStepOf(o);
+      const meta = stepMeta(step, { mtnForm: isMtnFormRow(o) });
+      const cur = m.get(st) || { stage: st, title: meta?.title || st, icon: meta?.icon || '🔧', n: 0 };
+      cur.n += 1; m.set(st, cur);
+    }
+    return [...m.values()].sort((a, b) => b.n - a.n);
+  }, [beforeWait]);
 
   /* วันของใบ = `work_date` ที่กรอกไว้ก่อน (คนแก้มือได้) ถอยไปคำนวณจากเวลาที่แจ้งเมื่อว่าง
      — กติกาเดียวกับ MatLabel: **ค่าที่อยู่ในแถวชนะค่าที่ระบบคำนวณ**
@@ -631,6 +667,13 @@ export default function MtnRepair() {
           <select value={fRepairType} onChange={e => setFRepairType(e.target.value)} aria-label="ประเภทงานซ่อม">
             <option value="">{ALL.type}</option>
             {repairTypes.map(r => <option key={r.id} value={r.name}>{r.name}{r.prefix ? ` (${r.prefix})` : ''}</option>)}
+          </select>
+          {/* 🕰️ "รอขั้นไหน" — ตัวเลือกสร้างจากใบที่มีจริง (ขั้นที่ไม่มีใบค้างไม่ต้องโผล่)
+              ค่าเก็บเป็น `stage` ไม่ใช่เลขขั้น · ป้ายมาจาก `stepMeta()` ห้ามพิมพ์ชื่อขั้นซ้ำ */}
+          <select value={fWait} onChange={e => setFWait(e.target.value)} aria-label="รอขั้นไหน">
+            <option value="">{allOf('ขั้น')}</option>
+            {waitOpts.map(w => <option key={w.stage} value={w.stage}>{w.icon} รอ{w.title} ({w.n})</option>)}
+            {fWait && !waitOpts.some(w => w.stage === fWait) && <option value={fWait}>⚠ {fWait} (ไม่มีใบค้าง)</option>}
           </select>
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />

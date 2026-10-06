@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  TIER, CAP, ageDays, isMe, moWaitingOn, inMyScope, scopeStateOf, buildQueue,
+  TIER, CAP, ageDays, dayKeyBack, isMe, moWaitingOn, inMyScope, scopeStateOf, buildQueue,
   badgeCount, capped, EMPTY_TEXT,
 } from '../myQueue.js';
 
@@ -292,4 +292,40 @@ test('🔴 floor — บรรทัดสรุปนี้ห้ามขึ�
 test('floor — ไม่มีใบรอตำแหน่ง = ไม่มีบรรทัดสรุป (ห้ามวาดบรรทัดเลข 0)', () => {
   const q = buildQueue({ mo: [], sessions: [], fourM: [], actions: [] }, ME);
   assert.equal(q.floor.filter(f => f.key.startsWith('mowait:')).length, 0);
+});
+
+/* ── 🔴 เลขขั้นเดียวกันคนละ stage ⇒ ห้ามยุบเป็นกองเดียว (06/10) ────────────────────
+   วัดจาก MTN_STEPS/MTN_FORM_STEPS จริง: **ขั้น 7 ชนกัน** — JIG/DIE = `close` (รอตำแหน่ง)
+   · MTN = `mtn_approve` (รอตำแหน่ง) ⇒ ถ้าคีย์กองด้วยเลขขั้น 2 กองนี้ยุบเป็นบรรทัดเดียว
+   แล้วได้ป้ายของฟอร์มที่มาถึงก่อน = จอโกหก (กฎ `stageOf` ใน CLAUDE.md: ห้ามตัดสินด้วยเลขขั้น)
+   ⚠️ ขั้น 5 ไม่ชน (MTN ขั้น 5 = รับมอบ รอ "ตัวคน" จึงไม่เข้ากองสรุปตั้งแต่ต้น) */
+test('🔴 floor — ขั้น 7 ที่ stage ต่างกัน (JIG=ปิดใบ / MTN=ผจก.ช่างอนุมัติ) ต้องแยกบรรทัด', () => {
+  const q = buildQueue({
+    mo: [
+      { id: 'jig', status: 'handover', mtn_dept: 'jig_maintenance', dept_section: 'PD3', work_date: '2026-09-01' },
+      { id: 'mtn', status: 'handover', mtn_dept: 'maintenance', dept_section: 'PD3', work_date: '2026-09-01',
+        mtn_head_at: '2026-09-02T00:00:00Z', approve_at: null },
+    ], sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-06T03:00:00Z'));
+  const rows = q.floor.filter(f => f.key.startsWith('mowait:'));
+  assert.equal(rows.length, 2, 'คนละ stage = คนละกอง ห้ามยุบด้วยเลขขั้น');
+  assert.deepEqual(rows.map(r => r.key).sort(), ['mowait:close', 'mowait:mtn_approve'],
+    'คีย์ต้องเป็น stage ไม่ใช่เลขขั้น');
+});
+
+test('floor — ลิงก์ต้องพาไปถึงกองนั้น: กรอง stage + ถอย from= ให้ครอบใบเก่าสุด', () => {
+  const q = buildQueue({
+    mo: [{ id: 'a', status: 'checked', mtn_dept: 'production', dept_section: 'PD3', work_date: '2026-09-26' }],
+    sessions: [], fourM: [], actions: [],
+  }, ME, new Date('2026-10-06T03:00:00Z'));
+  const qa = q.floor.find(f => f.key === 'mowait:qa');
+  assert.match(qa.to, /^\/mtn-repair\?tab=list&wait=qa&from=2026-09-26$/,
+    'ต้องส่ง wait= + from= ที่ครอบใบเก่าสุด (ไม่งั้นตัวกรองวันที่ซ่อนใบค้างหมด)');
+});
+
+test('dayKeyBack — คิดวันไทยเองจาก epoch ห้ามพึ่ง timezone เครื่อง', () => {
+  assert.equal(dayKeyBack(0, new Date('2026-10-06T03:00:00Z')), '2026-10-06', '03:00 UTC = 10:00 ไทย');
+  assert.equal(dayKeyBack(0, new Date('2026-10-05T18:00:00Z')), '2026-10-06', '18:00 UTC = 01:00 ไทยของวันถัดไป');
+  assert.equal(dayKeyBack(10, new Date('2026-10-06T03:00:00Z')), '2026-09-26');
+  assert.equal(dayKeyBack(null, new Date('2026-10-06T03:00:00Z')), '2026-10-06', 'ไม่รู้จำนวนวัน = วันนี้');
 });

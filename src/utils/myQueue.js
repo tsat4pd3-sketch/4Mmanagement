@@ -40,6 +40,13 @@ export const OLD_DAYS = 7;
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 
 /** วันที่ห่างจากวันนี้ — รับ 'YYYY-MM-DD' หรือ ISO · ค่าที่อ่านไม่ออกคืน null (ไม่ใช่ 0) */
+/** วันที่ (YYYY-MM-DD ตามเวลาไทย) ย้อนหลังไป `days` วันจาก `now` — ใช้ส่ง `from=` ให้หน้าปลายทาง
+ *  🔴 บวก 7 ชม. จาก epoch เอง **ห้ามพึ่ง timezone ของเครื่อง** (กฎเดียวกับ `bkkHourKey`) */
+export function dayKeyBack(days, now = new Date()) {
+  const ms = now.getTime() - (Number(days) || 0) * 86400000 + 7 * 3600000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 export function ageDays(dateLike, now = new Date()) {
   if (!dateLike) return null;
   const t = new Date(typeof dateLike === 'string' && dateLike.length === 10
@@ -160,7 +167,11 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
         = ซ้ำรอยกระดิ่งเดิมที่วัดได้ 19,095 แถว/7 วัน อ่าน 7.3%)
      · นับ **ทั้งโรงงาน ไม่กรองขอบเขต** (ตอบคำถาม "กองนี้ใหญ่แค่ไหน") — ใบของหน่วยเราเองยังโชว์รายตัว
        ในชั้น `unit` ตามเดิม ⇒ 2 ชั้นตอบคนละคำถาม ไม่ใช่ตัวเลขซ้อนกัน */
-  const byPos = new Map();   // `step` → { step, meta, count, oldest }
+  /* 🔴 คีย์ด้วย **`meta.stage` ไม่ใช่เลขขั้น** — เลขขั้นเดียวกันคนละความหมายระหว่าง 2 ฟอร์ม
+     (ขั้น 5 = QA ของ JIG/DIE แต่ = รับมอบ ของ MTN · กฎ `stageOf` ใน CLAUDE.md)
+     คีย์ด้วยเลขขั้น = 2 กองยุบเป็นบรรทัดเดียว แล้วใบ MTN ที่รอรับมอบถูกป้ายว่า "รอ QA"
+     (เกิดจริงในคอมมิทแรกของฟีเจอร์นี้ 06/10 — เทสด้านล่างกันไว้แล้ว) */
+  const byPos = new Map();   // `stage` → { stage, step, meta, count, oldest }
 
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
@@ -168,11 +179,12 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
     if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
-      const cur = byPos.get(w.step) || { step: w.step, meta: w.meta, count: 0, oldest: null };
+      const sk = w.meta.stage || `step${w.step}`;           // ไม่รู้ stage = ยังแยกกองด้วยเลขขั้น ห้ามยุบรวม
+      const cur = byPos.get(sk) || { stage: sk, step: w.step, meta: w.meta, count: 0, oldest: null };
       cur.count += 1;
       const age = ageDays(o.work_date, now);
       if (age != null && (cur.oldest == null || age > cur.oldest)) cur.oldest = age;
-      byPos.set(w.step, cur);
+      byPos.set(sk, cur);
     }
     if (keep(o)) unit.push(moItem(o, w, TIER.UNIT));
   }
@@ -223,13 +235,18 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   //    ใบ MO ที่รอ "ตำแหน่ง" ก็เข้าชั้นนี้ด้วย (ดูคอมเมนต์ที่ `byPos` ข้างบน)
   [...byPos.values()].sort((a, b) => b.count - a.count).forEach((g) => {
     floor.push({
-      key: `mowait:${g.step}`, icon: g.meta.icon || '🔧', tier: TIER.FLOOR, count: g.count,
+      key: `mowait:${g.stage}`, icon: g.meta.icon || '🔧', tier: TIER.FLOOR, count: g.count,
       /* ชื่อขั้น/ผู้รับผิดชอบ อ่านจาก `stepMeta()` เท่านั้น — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
          (อีโมจิอยู่ `meta.icon` ไม่ได้อยู่ใน `meta.title` ⇒ ต่อ title ตรงๆ ได้) */
       title: `ใบซ่อมรอ${g.meta.title} ${g.count.toLocaleString()} ใบ`,
       detail: ['ทั้งโรงงาน', g.meta.whoShort || g.meta.who || 'ผู้รับผิดชอบ',
         g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
-      age: null, to: '/mtn-repair?tab=list',
+      /* 🔴 ลิงก์ต้องพาไปถึง "กองนั้น" จริง (06/10) — `?wait=<stage>` กรองขั้นที่รออยู่
+         + `from=` ถอยขอบล่างให้ครอบใบที่เก่าสุดของกอง ไม่งั้นตัวกรองวันที่ default ซ่อนใบค้างหมด
+         (กับดักเดียวกับคิว 4M: "ใบค้างมักเก่ากว่าช่วง default") · ไม่รู้อายุ = ไม่ส่ง from ให้หน้าใช้ค่าเดิม */
+      age: null,
+      to: `/mtn-repair?tab=list&wait=${encodeURIComponent(g.stage)}`
+        + (g.oldest != null ? `&from=${dayKeyBack(g.oldest, now)}` : ''),
     });
   });
 
