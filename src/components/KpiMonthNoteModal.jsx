@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { checkWrite } from '../utils/dbWrite';
 import { toast } from './Toast';
+import { DeleteButton } from './IconButton';
 
 export const NOTE_KINDS = [
   { key: 'remark', icon: '💬', label: 'Remark',  hint: 'เกิดอะไรขึ้นเดือนนี้' },
@@ -75,7 +76,7 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
                   <div style={{ fontSize: 13.5, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.text}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{m.label} · {n.created_by_name || 'ไม่ระบุผู้บันทึก'} · {fmtWhen(n.created_at)}</div>
                 </div>
-                {canEdit && <button onClick={() => remove(n)} title="ลบ" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13, color: 'var(--muted)' }}>🗑</button>}
+                {canEdit && <DeleteButton onClick={() => remove(n)} title="ลบ" />}
               </div>
             );
           })}

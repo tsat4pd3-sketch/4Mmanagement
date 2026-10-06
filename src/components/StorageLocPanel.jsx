@@ -29,6 +29,7 @@ import { isLeafLine } from '../utils/lineHierarchy';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
 import { SLOC_KINDS, slocKindMeta, slocKindGuess, slocLabel, slocValid, SLOC_FORMAT_HINT, slocOfLine, linesOfSloc } from '../utils/storageLoc';
+import { DeleteButton } from './IconButton';
 
 const inputSt = {
   width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)',
@@ -281,7 +282,7 @@ export default function StorageLocPanel() {
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                    <button className="tbtn" onClick={() => remove(r)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                    <DeleteButton onClick={() => remove(r)} title="ลบ" />
                   </div>
                 )}
               </div>

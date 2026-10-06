@@ -19,6 +19,7 @@ import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -594,8 +595,7 @@ table{border-collapse:collapse}
                         style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
                     {canDelete && (
-                      <button onClick={() => handleDelete(t)}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)' }}>🗑</button>
+                      <DeleteButton onClick={() => handleDelete(t)} title="ลบ" />
                     )}
                   </td>
                 </tr>

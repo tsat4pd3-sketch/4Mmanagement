@@ -21,6 +21,7 @@ import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
@@ -1199,7 +1200,7 @@ ${issuesHtml}
                         <>
                           <button className="tbtn" onClick={() => setQEditing({ ...q })} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>✏️</button>
                           <button className="tbtn" onClick={() => toggleQuestion(q)} style={{ ...btnGray, padding: '4px 10px', fontSize: 12 }}>{q.is_active ? '⏸' : '▶'}</button>
-                          <button className="tbtn" onClick={() => deleteQuestion(q)} style={{ ...btnGray, color: '#ef4444', padding: '4px 10px', fontSize: 12 }}>🗑</button>
+                          <DeleteButton onClick={() => deleteQuestion(q)} title="ลบ" />
                         </>
                       )}
                     </div>

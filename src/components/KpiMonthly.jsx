@@ -22,6 +22,7 @@ import ReadOnlyNote from './ReadOnlyNote';
 import PersonSelect from './PersonSelect';
 import SearchSelect, { normSearch } from './SearchSelect';
 import KpiStandardModal from './KpiStandardModal';
+import { DeleteButton } from './IconButton';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -1124,7 +1125,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
-                              <button onClick={() => removeDef(d2)} title="ปิดใช้งาน" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>🗑</button>
+                              <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />
                             </td>
                           )}
                         </tr>

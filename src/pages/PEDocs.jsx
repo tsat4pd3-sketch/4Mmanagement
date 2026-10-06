@@ -36,6 +36,7 @@ import PeMasterLibrary from '../components/PeMasterLibrary';
 import PeMasterPullModal from '../components/PeMasterPullModal';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { compareToMaster, CMP_META, improvementProposals, newItemProposals, suggestMaster, setMasterSummary } from '../utils/peMaster';
+import { DeleteButton } from '../components/IconButton';
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -518,7 +519,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {canEdit && <>
                               <button style={btnSm} onClick={() => { setProcImgFile(null); setProcModal({ ...p }); }}>✏️</button>{' '}
-                              <button style={btnSm} onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ของ OP นี้จะถูกลบด้วย)`, () => loadDetail(setId), p.image_url)}>🗑</button>
+                              <DeleteButton onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ของ OP นี้จะถูกลบด้วย)`, () => loadDetail(setId), p.image_url)} title="ลบ" />
                             </>}
                           </td>
                         </tr>
@@ -569,7 +570,7 @@ export default function PEDocs() {
                         })()}
                         {canEdit && <>
                           <button style={btnSm} onClick={() => setFmeaModal({ ...it, target_date: it.target_date || '' })}>✏️</button>
-                          <button style={btnSm} onClick={() => deleteRow('pe_fmea_items', it.id, 'แถว FMEA นี้', () => loadDetail(setId))}>🗑</button>
+                          <DeleteButton onClick={() => deleteRow('pe_fmea_items', it.id, 'แถว FMEA นี้', () => loadDetail(setId))} title="ลบ" />
                         </>}
                       </div>
                       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(230px,100%), 1fr))', gap: 10, marginTop: 8, fontSize: 11, color: 'var(--text2)' }}>
@@ -633,7 +634,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {canEdit && <>
                               <button style={btnSm} onClick={() => setCpModal({ ...it })}>✏️</button>{' '}
-                              <button style={btnSm} onClick={() => deleteRow('pe_cp_items', it.id, 'จุดควบคุมนี้', () => loadDetail(setId))}>🗑</button>
+                              <DeleteButton onClick={() => deleteRow('pe_cp_items', it.id, 'จุดควบคุมนี้', () => loadDetail(setId))} title="ลบ" />
                             </>}
                           </td>
                         </tr>
@@ -674,7 +675,7 @@ export default function PEDocs() {
                         <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                           {canApprove && <>
                             <button style={btnSm} onClick={() => setRevModal({ ...r, rev_date: r.rev_date || '' })}>✏️</button>{' '}
-                            <button style={btnSm} onClick={() => deleteRow('pe_doc_revisions', r.id, `revision ${r.rev_no ?? ''}`, () => loadDetail(setId))}>🗑</button>
+                            <DeleteButton onClick={() => deleteRow('pe_doc_revisions', r.id, `revision ${r.rev_no ?? ''}`, () => loadDetail(setId))} title="ลบ" />
                           </>}
                         </td>
                       </tr>

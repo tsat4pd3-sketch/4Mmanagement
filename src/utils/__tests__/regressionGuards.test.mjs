@@ -830,11 +830,23 @@ const RULES = [
   {
     id: 'accent-bg-hardcoded-ink',
     scan: ['src/pages', 'src/components', 'src/App.jsx'], ext: ['.jsx'],
-    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#/g,
+    /* 3 ทาง: (1) background:'var(--accent)' … color:'#…' (2) ternary คู่ (3) ส่งผ่านอาร์กิวเมนต์ฟังก์ชันสไตล์
+       เช่น btn('var(--accent)', '#08130a') / btnSt(on ? 'var(--accent)' : …, on ? '#…' : …) — ทาง (3) หลุดรอบแรก
+       ไป 14 จุด (06/10) เพราะไม่มีคำว่า background:/color: ให้จับ */
+    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#|'var\(--accent\)'(?:\s*:\s*'[^'\n]*')?\s*,\s*(?:\w+\s*=\s*|[\w.]+\s*\?\s*)?'#[0-9a-fA-F]{3,6}'/g,
     why: 'สี --accent กลับด้านตามธีม (มืด = เขียวสว่าง #3dd65c · สว่าง = เขียวเข้ม #0d3d14) '
        + 'ตัวหนังสือสีดิบบนพื้น accent จึงจมเสมอ 1 ธีม — ดำ (#071008) จมในธีมสว่าง · ขาว (#fff) จมในธีมมืด '
        + '(05/10 · ปุ่ม "แจ้งซ่อมใหม่" /mtn-repair อ่านไม่ออก · เจอ 144 จุด 82 ไฟล์)',
     fix: "ตัวหนังสือบนพื้น var(--accent) ใช้ color: 'var(--accent-ink)' เสมอ",
+    allow: {},
+  },
+  {
+    id: 'icon-only-trash-emoji',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    re: />\s*🗑️?\s*<\/button>/g,
+    why: 'ปุ่มลบที่เป็นอีโมจิ 🗑️ เปล่าตัวเล็ก ไม่มีกรอบ — Windows วาดเป็นถังเส้นบางสีเทา "เล็กจนดูไม่ออก" '
+       + 'และใส่ color แดงไม่มีผลกับอีโมจิ (06/10 · /org-setup · เจอ 12 จุด 7 ไฟล์)',
+    fix: "ใช้ <DeleteButton onClick=… title=\"ลบ …\" /> จาก src/components/IconButton.jsx (กล่อง 30px + ถังขยะ SVG สีแดง)",
     allow: {},
   },
   {

@@ -34,6 +34,7 @@ import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from './SearchSelect';
 import FilterBar from './FilterBar';
 import { ALL } from '../utils/filterLabels';
+import { DeleteButton } from './IconButton';
 
 const today = () => {
   const d = new Date();
@@ -361,7 +362,7 @@ export default function MaterialRequests() {
                       {canRecord && r.status === 'draft' && <button onClick={() => setStatus(r, 'submitted')} style={miniBtn} title="ส่งขออนุมัติ">📤</button>}
                       {canManage && r.status === 'submitted' && <button onClick={() => setStatus(r, 'approved')} style={miniBtn} title="อนุมัติ">✅</button>}
                       {canRecord && r.status === 'approved' && <button onClick={() => setStatus(r, 'issued')} style={miniBtn} title="สโตร์จ่ายของแล้ว">📦</button>}
-                      {canManage && <button onClick={() => remove(r)} style={miniBtn} title="ลบ">🗑</button>}
+                      {canManage && <DeleteButton onClick={() => remove(r)} title="ลบ" />}
                     </td>
                   </tr>
                 );
@@ -519,7 +520,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 <td style={tdSt}><input type="number" min="0" value={it.qty_issued ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty_issued: e.target.value })} style={{ ...inpSt, width: 84 }} /></td>
                 <td style={tdSt}><input type="date" value={it.produced_date || ''} readOnly={ro} onChange={e => setItem(it._key, { produced_date: e.target.value })} style={{ ...inpSt, width: 130 }} /></td>
                 <td style={tdSt}><input value={it.batch_no || ''} readOnly={ro} onChange={e => setItem(it._key, { batch_no: e.target.value })} style={{ ...inpSt, width: 90 }} /></td>
-                <td style={tdSt}>{canRecord && <button onClick={() => delItem(it._key)} style={miniBtn}>🗑</button>}</td>
+                <td style={tdSt}>{canRecord && <DeleteButton onClick={() => delItem(it._key)} title="ลบ" />}</td>
               </tr>
             ))}
           </tbody>

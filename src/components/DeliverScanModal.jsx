@@ -131,7 +131,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
 
               {!overriding && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', '#08130c', 'transparent', busy)}>
+                  <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy)}>
                     📷 {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
                   </button>
                   <div style={{ flex: 1 }} />

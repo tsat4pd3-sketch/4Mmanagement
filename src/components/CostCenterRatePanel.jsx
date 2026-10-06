@@ -9,6 +9,7 @@ import { invalidateCostCenters } from '../utils/useCostCenters';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
+import { DeleteButton } from './IconButton';
 
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
    rate ที่บัญชีคำนวณ ต่อ cost center (ก้อนตาม RATE_COMPONENTS) — ใช้แปลงผล Improvement เป็น cost saving
@@ -244,7 +245,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {canEdit && <>
                             <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                            <button onClick={() => handleDelete(r)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                            <DeleteButton onClick={() => handleDelete(r)} title="ลบ" />
                           </>}
                         </td>
                       </tr>

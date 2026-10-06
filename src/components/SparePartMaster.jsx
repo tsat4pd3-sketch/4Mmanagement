@@ -31,6 +31,7 @@ import MachineSelect from './MachineSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
 import useSuppliers from '../utils/useSuppliers';
 import { uploadOpts } from '../utils/storageUpload';
+import { DeleteButton } from './IconButton';
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
 const appendCsv = (cur, v) => {
@@ -396,7 +397,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                     </>}
                     <button className="tbtn" onClick={() => setHistPart(p)} title="ประวัติเคลื่อนไหว" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>📜</button>
                     {canEdit && <button className="tbtn" onClick={() => setEditPart(p)} title="แก้ไข" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, marginLeft: 4 }}>✏️</button>}
-                    {canDelete('mtn_repair', 'manage_master', role) && <button className="tbtn" onClick={() => doDelete(p)} title="ลบ" style={{ ...btnGhost, padding: '5px 9px', fontSize: 12, color: '#ef4444', marginLeft: 4 }}>🗑</button>}
+                    {canDelete('mtn_repair', 'manage_master', role) && <DeleteButton style={{ marginLeft: 4 }} onClick={() => doDelete(p)} title="ลบ" />}
                   </td>
                 </tr>
               );
@@ -1157,7 +1158,7 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
                 <option value="">🌐 ใช้ร่วมทุกทีม</option>
                 {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
-              <button className="tbtn" onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} style={{ ...btnGhost, padding: '5px 9px', color: '#ef4444' }}>🗑</button>
+              <DeleteButton onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} title="ลบ" />
             </div>
           ))}
         </div>
