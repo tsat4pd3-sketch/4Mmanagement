@@ -434,13 +434,47 @@ export function monitoringToRecords(parsed, { monthKey, lineOfMat, today, custom
   const ordersUniq = [...orderMap.values()];
   const orderDupes = orders.length - ordersUniq.length;
 
+  /* 🔴 MIN/MAX และ Forecast ต้องเหลือ **แถวเดียวต่อคีย์** ก่อนส่ง (06/10 · หลุดถึงมือ user)
+     พาร์ทเดียวโผล่ได้หลายแถว/หลายชีท (300T: MAT 20059152 เขียน 2 บรรทัด คว่ำครีบ/หงายครีบ
+     โดย FC เดือนเป็นของ "พาร์ท" ตัวเดียวกัน) ⇒ ส่งซ้ำในก้อนเดียวแล้ว:
+       · MIN/MAX (upsert) → PostgreSQL ปฏิเสธ **ทั้งก้อน**
+         `ON CONFLICT DO UPDATE command cannot affect row a second time`
+       · Forecast (insert · ตารางไม่มี unique) → **ลงซ้ำเงียบๆ ⇒ ยอดพยากรณ์เป็น 2 เท่า**
+         (เจอของจริงในฐาน 2 คู่: 20059152 ก.ย. 15,734 + ต.ค. 20,234 ถูกนับซ้ำ)
+     ⇒ ยุบด้วย **ค่ามากสุด ห้ามบวกกัน** (เป็นข้อมูลชุดเดียวที่เขียนซ้ำ ไม่ใช่ของ 2 ก้อน)
+     และต้องรายงานจำนวนที่ยุบ + จำนวนที่ "ค่าไม่ตรงกัน" ออกไปให้คนเห็น (ห้ามเงียบ) */
+  const squash = (arr, keyOf, pick) => {
+    const at = new Map(); let conflict = 0;
+    for (const r of arr) {
+      const k = keyOf(r); const prev = at.get(k);
+      if (!prev) { at.set(k, r); continue; }
+      const merged = pick(prev, r);
+      if (merged.__differs) conflict++;
+      delete merged.__differs;
+      at.set(k, merged);
+    }
+    return { rows: [...at.values()], dupes: arr.length - at.size, conflict };
+  };
+  const lv = squash(levels, l => `${l.line_name}|${l.mat_no}`, (a, b) => ({
+    ...a,
+    min_qty: Math.max(a.min_qty, b.min_qty),
+    max_qty: Math.max(a.max_qty || 0, b.max_qty || 0) || null,
+    __differs: a.min_qty !== b.min_qty || (a.max_qty || null) !== (b.max_qty || null),
+  }));
+  const fc = squash(forecasts, f => `${f.mat_no}|${f.period_month}`, (a, b) => ({
+    ...a, qty: Math.max(a.qty, b.qty), __differs: a.qty !== b.qty,
+  }));
+
   const stockUniq = [...new Map(stock.map(s => [`${s.line_name}|${s.mat_no}`, s])).values()];
   /* 🔴 ยอดคงเหลือติดลบในไฟล์นี้ = "ความต้องการที่ยังไม่ได้ผลิต" ไม่ใช่ของติดลบในคลัง
      (วัดจริง 23/09: ชีท Argen มี 5 พาร์ทที่ BALANCE ถึง −47,168 เพราะลงความต้องการล่วงหน้าไว้
       แต่ยังไม่ลงแผนผลิต) ⇒ ห้ามเอาไปตั้งยอดทับสต็อกจริง · แยกออกมาให้คนดู */
   const stockOk = stockUniq.filter(s => s.qty >= 0);
   const stockNegative = stockUniq.filter(s => s.qty < 0);
-  return { forecasts, orders: ordersUniq, orderDupes, levels, lots, stock: stockOk, stockNegative,
+  return { forecasts: fc.rows, forecastDupes: fc.dupes, forecastConflicts: fc.conflict,
+           orders: ordersUniq, orderDupes,
+           levels: lv.rows, levelDupes: lv.dupes, levelConflicts: lv.conflict,
+           lots, stock: stockOk, stockNegative,
            stockDupes: stock.length - stockUniq.length, shipped, fgLevelsSkipped };
 }
 
