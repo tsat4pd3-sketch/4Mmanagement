@@ -6,6 +6,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { supabase } from '../supabaseClient';
 import { fetchByIds } from '../utils/fetchByIds';
 import { summarizeNpi, npiLinkFor, linkedPanelCount } from '../utils/nmNpiLink';
+import { panelMetric, metricSuffix, metricWarn } from '../utils/nmPanelMetric';
 import {
   EVA, evaMeta, rollupEva, evaCounts, countsLabel, freshness, freshLabel,
   PROJECT_AXES, projectEva, customerEva, PANEL_KIND, panelsNeedingAttention, overdueActions,
@@ -269,6 +270,77 @@ function NpiLinkCard({ proj, isMobile }) {
         ตัวเลขชุดนี้มาจากเอกสารจริงใน NPI · <b>ไม่ได้เอาไปเปลี่ยนสี EVA บนบอร์ด</b> — สีบอร์ดคนตั้งเองตามกติกา IEC
         {sum.docTotal === null && ' · นับเอกสารไม่ครบรอบนี้ จึงยังไม่แสดง %'}
       </div>
+    </div>
+  );
+}
+
+/* ══ 📊 บล็อกตัวเลขประจำแผง — ถอดโครงจากแผ่น OBEYA (2026-10-06 · feedback user) ══════════
+   *"design obeya ยังดีกว่า"* — ที่ดีกว่าไม่ใช่สี แต่คือ **การ์ดหนึ่งใบตอบหลายคำถาม**:
+   ตัวเลขฮีโร่ · เทียบแล้วเป็นยังไง (ชิป) · มาจากไหน (บรรทัดที่มา) · ความคืบหน้า (แถบ) · คำเตือน
+   วัดจริงก่อนแก้: บอร์ด 737D MLM มีข้อมูลนับได้ทั้ง 21 แผง แต่**ไม่โชว์ตัวเลขสักใบ**
+   🔴 ตัวเลขทุกตัวมาจาก `panelMetric()` เท่านั้น — ห้ามนับเองในหน้า (null = ไม่วาดช่องนี้เลย)
+   🔴 สีมาจาก `evaMeta()` (ภาษาสีของบอร์ดนี้) **ห้ามประกาศตารางสีใหม่ในหน้า** —
+   ด่าน `status-palette-single-source` จับได้ตอน build รอบนี้จริงๆ (จอเดียวกันจะมีเหลือง 2 เฉด) */
+function MetricBlock({ panel, size = 'page', level = 3, trailing = null }) {
+  const m = panelMetric(panel);
+  if (!m) return null;
+  const tv = size === 'tv';
+  /* 🔴 บนจอ TV ความสูงการ์ดเป็นของตายตัว — เติมบรรทัดเข้าไปเฉยๆ แล้วบรรทัด "อัปเดต N วันก่อน"
+     ถูกดันตกขอบการ์ด (เจอจริงรอบแรก 06/10: 7 ใบโดนตัด)
+     ⇒ ไล่ลำดับความสำคัญตามขนาดการ์ด: ใบใหญ่ (แดง) ได้ครบ · ใบกลางตัดบรรทัดที่มา · ใบเล็กเหลือแค่ตัวเลข+แถบ */
+  const showSource = !tv || level >= 3;
+  /* 🔴 บนจอ TV มีที่พอแค่ 2 บรรทัดสำหรับใบที่ไม่ใช่แดง (วัดจริง 1366×768: ส่วนตายตัว 85px / มีที่ 78px)
+     ⇒ ยุบ "อัปเดต N วันก่อน" ขึ้นไปอยู่แถวฮีโร่ · ใบเล็กสุดซ่อนตัวเลข % ด้วย (แถบบอกอยู่แล้ว) */
+  const inlineFresh = tv && level <= 2;
+  const tiny = tv && level === 1;
+  /* ทะเบียนปัญหา: บรรทัดที่มา ("ทะเบียนทั้งหมด N เรื่อง") ซ้ำกับตัวหารที่โชว์อยู่แล้ว ⇒ บนจอ TV ตัดทิ้ง */
+  const dropSource = tv && m.kind === 'issues';
+  const warn = metricWarn(m);
+  const color = m.eva === 'none' ? 'var(--text2)' : evaMeta(m.eva).color;
+  const F = tv
+    ? { hero: 'clamp(16px, 1.5vw, 40px)', suffix: 'clamp(10px, 0.8vw, 20px)', meta: 'clamp(9px, 0.68vw, 17px)' }
+    : { hero: 22, suffix: 12, meta: 11 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: tv ? '0.3vh' : 4, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: tv ? '0.3vw' : 5, minWidth: 0 }}>
+        {/* ตัวเลขฮีโร่ — ตัวเลขเดี่ยวขนาดใหญ่ใช้ figure สัดส่วนปกติ (tabular-nums ทำให้ดูหลวม) */}
+        <b style={{ fontSize: F.hero, lineHeight: 1, fontWeight: 800, color, letterSpacing: '-0.02em' }}>{m.value}</b>
+        {metricSuffix(m) && (
+          <span className="nmb-num" style={{ fontSize: F.suffix, color: 'var(--muted)', fontWeight: 700 }}>{metricSuffix(m)}</span>
+        )}
+        <span style={{ fontSize: F.meta, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {m.label}
+        </span>
+        {inlineFresh && trailing && (
+          <span style={{ marginLeft: 'auto', fontSize: F.meta, color: 'var(--muted)', flex: '0 0 auto' }}>{trailing}</span>
+        )}
+        {m.pct != null && !tiny && (
+          <span className="nmb-num" style={{ marginLeft: inlineFresh && trailing ? 0 : 'auto', fontSize: F.suffix, fontWeight: 800, color, flex: '0 0 auto' }}>{m.pct}%</span>
+        )}
+      </div>
+
+      {/* แถบความคืบหน้า — เฉพาะตัวที่มีตัวหารจริง · ใบเอกสาร (count) ไม่มีแถบ เพราะไม่มีความคืบหน้า */}
+      {m.pct != null && (
+        <div style={{ height: tv ? 4 : 5, borderRadius: 99, background: 'var(--bg3)', overflow: 'clip' }}>
+          <div style={{ width: `${m.pct}%`, height: '100%', background: color, borderRadius: 99 }} />
+        </div>
+      )}
+
+      {((showSource && !dropSource) || (trailing && !inlineFresh)) && (
+        <div style={{ display: 'flex', gap: tv ? '0.4vw' : 6, fontSize: F.meta, color: 'var(--muted)', minWidth: 0 }}>
+          {showSource && !dropSource && <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.source}</span>}
+          {trailing && !inlineFresh && <span style={{ marginLeft: showSource && !dropSource ? 'auto' : 0, flex: '0 0 auto' }}>{trailing}</span>}
+        </div>
+      )}
+
+      {/* คำเตือนแบบแผ่น OBEYA — "ข้อมูลไม่ครบต้องเขียนบนจอ" ไม่ใช่ซ่อน */}
+      {warn && !tv && (
+        <div style={{ fontSize: F.meta, color: m.overdue ? '#fca5a5' : '#fde68a', lineHeight: 1.45 }}>⚠️ {warn}</div>
+      )}
+      {warn && tv && m.overdue ? (
+        <div style={{ fontSize: F.meta, color: '#fca5a5', lineHeight: 1.35 }}>⚠️ {warn}</div>
+      ) : null}
     </div>
   );
 }
@@ -646,6 +718,7 @@ function LevelProject({ proj, go }) {
                 <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: 14, flex: '0 0 auto' }}>›</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
+              <MetricBlock panel={p} />
               {p.evaNote
                 ? <div style={{ fontSize: hot ? 12.5 : 11.5, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>
                 : p.eva === 'R'
@@ -1004,6 +1077,13 @@ function LevelPanel({ proj, panel }) {
           <FreshChip iso={panel.updated_at} />
         </div>
       </div>
+      {/* แผ่นสรุปตัวเลขของแผงนี้ — ตอบ "เท่าไหร่ / จากอะไร" ก่อนให้ไล่ดูตารางข้างล่าง */}
+      <div className="nmb-card" data-eva={panel.eva || 'none'}
+        style={{ ...CARD, marginBottom: 12, padding: '14px 15px 14px 19px', borderRadius: 10,
+          borderColor: panel.eva === 'none' || !panel.eva ? 'var(--border)' : `${evaMeta(panel.eva).color}4d`,
+          '--nmb-color': panel.eva === 'none' || !panel.eva ? 'var(--border2)' : evaMeta(panel.eva).color }}>
+        <MetricBlock panel={panel} />
+      </div>
       <div style={CARD}><Body p={panel} /></div>
       <PanelNpiLink proj={proj} panel={panel} />
       {panel.key === 'eva-milestone' && (
@@ -1198,6 +1278,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               const m = evaMeta(p.eva);
               const w = panelWeight(p);
               const hot = p.eva === 'R';
+              const hasMetric = !!panelMetric(p);
               return (
                 <button key={p.key} onClick={() => onPick(p)} title={`เปิดแผง ${p.label}`}
                   data-eva={p.eva || 'none'}
@@ -1228,14 +1309,19 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                     }}>{p.label}</span>
                     <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: F.panel, flex: '0 0 auto' }}>›</span>
                   </div>
+                  <MetricBlock panel={p} size="tv" level={w}
+                    trailing={w <= 2 && hasMetric ? freshLabel(p.updated_at) : null} />
                   {p.evaNote ? (
                     /* 🔴 ต้องมี `flex:'0 1 auto'` + `minHeight:0` — ไม่งั้นกล่องข้อความไม่ยอมหด
                        แล้วบรรทัด "อัปเดต N วันก่อน" ถูกดันทับข้อความ (เจอจริงที่ใบ Order Information
                        บนจอ 1366 · 2026-10-05) · ใบน้ำหนัก 1 แคบกว่า ⇒ ตัดที่ 2 บรรทัด */
                     <div style={{
-                      flex: '0 1 auto', minHeight: 0,
+                      /* 🔴 `1 1 0` ไม่ใช่ `0 1 auto` — line-clamp กำหนดความสูงตายตัวตามจำนวนบรรทัด
+                         กล่องจึงไม่ยอมหดเมื่อจอเตี้ยลง แล้วดันบรรทัด "อัปเดต" ตกขอบการ์ด
+                         (วัดจริง 06/10 ที่ 1366×768: 3 ใบโดนตัด 4px) · ให้กินที่ว่างแล้วคลิปตัวเองแทน */
+                      flex: '1 1 0', minHeight: 0,
                       fontSize: hot ? F.noteHot : F.note, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.32,
-                      display: '-webkit-box', WebkitLineClamp: hot ? 4 : w === 2 ? 3 : 2,
+                      display: '-webkit-box', WebkitLineClamp: hot ? 3 : w === 2 ? 2 : 1,
                       WebkitBoxOrient: 'vertical', overflow: 'clip',
                     }}>{p.evaNote}</div>
                   ) : hot ? (
@@ -1244,10 +1330,13 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                       ⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง
                     </div>
                   ) : null}
-                  <div style={{ marginTop: 'auto', flex: '0 0 auto', fontSize: F.note,
-                    color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
-                    {freshLabel(p.updated_at)}
-                  </div>
+                  {/* ใบเล็กที่มีตัวเลขแล้ว ยุบบรรทัดนี้ไปรวมกับแถวที่มา (ประหยัด 1 บรรทัด ไม่ให้ล้นการ์ด) */}
+                  {!(w <= 2 && hasMetric) && (
+                    <div style={{ marginTop: 'auto', flex: '0 0 auto', fontSize: F.note,
+                      color: freshness(p.updated_at) === 'fresh' ? 'var(--muted)' : '#eab308' }}>
+                      {freshLabel(p.updated_at)}
+                    </div>
+                  )}
                 </button>
               );
             })}

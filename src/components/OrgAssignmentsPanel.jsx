@@ -7,6 +7,7 @@
  * 🔴 แผงนี้ **ยังไม่ได้ต่อเข้าตัวคำนวณขอบเขตจริง** — เก็บ/แสดง/เตือนเท่านั้น
  *    การต่อสายทำพร้อม `scope_depth` ครั้งเดียว (ORG-AXES-DECISION §7.6)
  */
+import { DeleteButton } from './IconButton';
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -216,13 +217,16 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                     </td>
                     {canEdit && (
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        {needsConfirm(r) && (
-                          <button className="tbtn" onClick={() => confirmRow(r)} disabled={busy}
-                            title="ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง"
-                            style={{ fontSize: 11, marginRight: 4 }}>✓ ยืนยัน</button>
-                        )}
-                        <button className="tbtn" onClick={() => remove(r)} disabled={busy}
-                          style={{ fontSize: 11, color: '#ef4444' }}>🗑</button>
+                        {/* ปุ่มสูง 30 เท่ากันทั้งคู่ — เดิม 11px "✓ ยืนยัน" เล็ก + 🗑 กลายเป็นขีดแดงบาง (user 06/10) */}
+                        <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                          {needsConfirm(r) && (
+                            <button type="button" className="tbtn" onClick={() => confirmRow(r)} disabled={busy}
+                              title="ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง"
+                              style={{ height: 30, padding: '0 10px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
+                                border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>✓ ยืนยัน</button>
+                          )}
+                          <DeleteButton onClick={() => remove(r)} disabled={busy} title="ลบรายการนี้" />
+                        </div>
                       </td>
                     )}
                   </tr>

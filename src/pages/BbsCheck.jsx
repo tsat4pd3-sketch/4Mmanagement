@@ -35,6 +35,7 @@ import useIsMobile from '../utils/useIsMobile';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
+import { DeleteButton } from '../components/IconButton';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -780,9 +781,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
                 </td>
                 {canManage && (
                   <td style={td()}>
-                    <button onClick={() => setRows(rr => rr.filter((_, k) => k !== i))}
-                      title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)"
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 14 }}>🗑</button>
+                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)" />
                   </td>
                 )}
               </tr>

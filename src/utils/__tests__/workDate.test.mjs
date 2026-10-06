@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getWorkDate, getCurrentShift, localDateStr, WORK_DAY_START_HOUR, shiftOfTime, workDateOfTime } from '../workDate.js';
+import { getWorkDate, getCurrentShift, localDateStr, WORK_DAY_START_HOUR, shiftOfTime, workDateOfTime,
+         openShiftDefaults, shiftStartTime } from '../workDate.js';
 
 /* 📅 วันทำงาน — ทุกเคสส่ง `now` เองเสมอ ห้ามอ้างเวลาจริง (กันเทสระเบิดเวลา) */
 
@@ -59,4 +60,40 @@ test('🔴 ค่าที่อ่านไม่ได้ต้องเป็
 test('รับ Date object ได้เหมือนกับสตริง (ผู้เรียกบางที่ส่ง Date มาแล้ว)', () => {
   assert.equal(shiftOfTime(at('2026-09-23T21:30:00')), 'night');
   assert.equal(workDateOfTime(at('2026-09-23T21:30:00')), '2026-09-23');
+});
+
+/* ── ค่าเริ่มต้นฟอร์มเปิดกะ — วัน+กะ ต้องมาจากเวลาเดียวกัน (06/10 · เคสจริง LINE C) ──────
+   เดิมหน้าจอคิดแยกชิ้น: รีเฟรช `shift` จากนาฬิกา แต่ `work_date` ค้างค่าเดิม
+   ⇒ 07:40 ได้ "กะดึกของวันนี้" = เริ่ม 20:00 คืนนี้ = เปิดกะล่วงหน้า 12 ชม. */
+
+test('openShiftDefaults: ตอน 07:40 = กะดึกของ "เมื่อวาน" (กะที่กำลังเดินอยู่) ไม่ใช่ของวันนี้', () => {
+  assert.deepEqual(openShiftDefaults(at('2026-10-05T07:40:00')),
+    { work_date: '2026-10-04', shift: 'night', start_time: '20:00' });
+});
+
+test('openShiftDefaults: รอยต่อ 4 จุดของวัน', () => {
+  const d = (t) => openShiftDefaults(at(t));
+  assert.deepEqual(d('2026-10-05T07:59:59'), { work_date: '2026-10-04', shift: 'night', start_time: '20:00' });
+  assert.deepEqual(d('2026-10-05T08:00:00'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
+  assert.deepEqual(d('2026-10-05T19:59:59'), { work_date: '2026-10-05', shift: 'day',   start_time: '08:00' });
+  assert.deepEqual(d('2026-10-05T20:00:00'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
+  assert.deepEqual(d('2026-10-06T00:30:00'), { work_date: '2026-10-05', shift: 'night', start_time: '20:00' });
+});
+
+test('🔴 openShiftDefaults: กะที่เสนอต้อง "เริ่มแล้ว" ไม่ใช่กะที่เริ่มในอนาคต', () => {
+  /* ตรวจทุกชั่วโมงของวัน: เวลาเริ่มของกะที่เสนอ ต้องไม่อยู่หลัง "ตอนนี้"
+     (เดิมบั๊กโผล่เฉพาะ 00:00-07:59 ซึ่งเป็นช่วงที่คนเปลี่ยนกะจริง จึงพลาดกันง่าย) */
+  for (let h = 0; h < 24; h++) {
+    const now = at(`2026-10-05T${String(h).padStart(2, '0')}:30:00`);
+    const d = openShiftDefaults(now);
+    const startMs = new Date(`${d.work_date}T${d.start_time}:00`).getTime();
+    assert.ok(startMs <= now.getTime(),
+      `${h}:30 เสนอ ${d.shift} ของ ${d.work_date} เริ่ม ${d.start_time} = ยังไม่เริ่ม (ล่วงหน้า ${Math.round((startMs - now.getTime()) / 60000)} น.)`);
+  }
+});
+
+test('shiftStartTime: กะดึก 20:00 · อย่างอื่น 08:00', () => {
+  assert.equal(shiftStartTime('night'), '20:00');
+  assert.equal(shiftStartTime('day'), '08:00');
+  assert.equal(shiftStartTime(undefined), '08:00', 'ไม่รู้กะ = ใช้เวลาเริ่มกะเช้า ไม่ throw');
 });

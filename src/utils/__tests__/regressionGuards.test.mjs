@@ -838,11 +838,23 @@ const RULES = [
   {
     id: 'accent-bg-hardcoded-ink',
     scan: ['src/pages', 'src/components', 'src/App.jsx'], ext: ['.jsx'],
-    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#/g,
+    /* 3 ทาง: (1) background:'var(--accent)' … color:'#…' (2) ternary คู่ (3) ส่งผ่านอาร์กิวเมนต์ฟังก์ชันสไตล์
+       เช่น btn('var(--accent)', '#08130a') / btnSt(on ? 'var(--accent)' : …, on ? '#…' : …) — ทาง (3) หลุดรอบแรก
+       ไป 14 จุด (06/10) เพราะไม่มีคำว่า background:/color: ให้จับ */
+    re: /background:\s*'var\(--accent\)'[^}\n]{0,120}?color:\s*'#|\?\s*'var\(--accent\)'\s*:[^}\n]{0,140}?color:[^,}\n]*\?\s*'#|'var\(--accent\)'(?:\s*:\s*'[^'\n]*')?\s*,\s*(?:\w+\s*=\s*|[\w.]+\s*\?\s*)?'#[0-9a-fA-F]{3,6}'/g,
     why: 'สี --accent กลับด้านตามธีม (มืด = เขียวสว่าง #3dd65c · สว่าง = เขียวเข้ม #0d3d14) '
        + 'ตัวหนังสือสีดิบบนพื้น accent จึงจมเสมอ 1 ธีม — ดำ (#071008) จมในธีมสว่าง · ขาว (#fff) จมในธีมมืด '
        + '(05/10 · ปุ่ม "แจ้งซ่อมใหม่" /mtn-repair อ่านไม่ออก · เจอ 144 จุด 82 ไฟล์)',
     fix: "ตัวหนังสือบนพื้น var(--accent) ใช้ color: 'var(--accent-ink)' เสมอ",
+    allow: {},
+  },
+  {
+    id: 'icon-only-trash-emoji',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    re: />\s*🗑️?\s*<\/button>/g,
+    why: 'ปุ่มลบที่เป็นอีโมจิ 🗑️ เปล่าตัวเล็ก ไม่มีกรอบ — Windows วาดเป็นถังเส้นบางสีเทา "เล็กจนดูไม่ออก" '
+       + 'และใส่ color แดงไม่มีผลกับอีโมจิ (06/10 · /org-setup · เจอ 12 จุด 7 ไฟล์)',
+    fix: "ใช้ <DeleteButton onClick=… title=\"ลบ …\" /> จาก src/components/IconButton.jsx (กล่อง 30px + ถังขยะ SVG สีแดง)",
     allow: {},
   },
   {
@@ -1373,6 +1385,39 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ open-shift-date-and-shift-together (2026-10-06)
+   ฟอร์ม "เปิดกะใหม่" ต้องตั้ง **วันทำงาน + กะ พร้อมกัน** จาก `openShiftDefaults()` (`utils/workDate.js`)
+   เดิมปุ่มรีเฟรชแค่ `shift` จากนาฬิกา ปล่อย `work_date` ค้าง ⇒ ตอน 07:40 ได้ "กะดึกของวันนี้"
+   = เริ่ม 20:00 คืนนี้ = เปิดกะล่วงหน้า 12 ชม. (เคสจริง LINE C 05/10 · ปิดทิ้งใน 1 นาที
+   เหลือใบผี shift_min 720 ค้างในฐาน แล้วไปโผล่เป็นแถบ 12 ชม. บนไทม์ไลน์)
+   ⇒ ห้ามมีจุดไหนตั้ง `shift:` ให้ฟอร์มเปิดกะ โดยไม่ตั้ง `work_date` ในก้อนเดียวกัน
+   (ช่อง dropdown ที่คนเลือกกะเอง = ตั้งแค่ `start_time` ไม่เข้าข่าย) */
+test('🛡️ open-shift-date-and-shift-together — ฟอร์มเปิดกะห้ามตั้ง shift โดยไม่ตั้ง work_date', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /setOpenForm\s*\(/g;
+    let m;
+    while ((m = re.exec(code))) {
+      /* หน้าต่าง = ตัว call นี้เท่านั้น — ตัดก่อนถึง setOpenForm ตัวถัดไป
+         (ไม่ตัด = หน้าต่างล้นไปเจอ `shift:` ของ call ข้างล่างแล้วแจ้งผิดจุด) */
+      const nextCall = code.indexOf('setOpenForm', m.index + 11);
+      const end = Math.min(m.index + 220, nextCall === -1 ? Infinity : nextCall);
+      const win = code.slice(m.index, end);
+      if (!/\bshift\s*:/.test(win)) continue;              // ไม่ได้ตั้งกะ = ไม่เกี่ยว
+      if (/e\.target\.value/.test(win)) continue;           // คนเลือกกะเองจาก dropdown
+      if (/openShiftDefaults/.test(win)) continue;          // ใช้ของกลางแล้ว
+      if (/work_date\s*:/.test(win)) continue;              // ตั้งคู่กันเองก็ยอม
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ตั้ง `shift` ให้ฟอร์มเปิดกะโดยไม่ตั้ง `work_date` คู่กัน — ตอนก่อน 08:00 จะได้กะที่ยังไม่เริ่ม\n'
+    + '   แก้: setOpenForm(f => ({ ...f, ...openShiftDefaults() }))\n'
+    + `   จุดที่ผิด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ close-time-needs-downtimes (2026-10-05)
    `checkCloseTime()` ตัดสินว่า "เวลาปิดกะที่กรอกล้ำหน้าเวลาจริงเกินไปไหม" — แต่ปลายกะที่
    **ลง downtime คลุมไว้แล้ว ไม่ใช่ความผิด** (ปิดงานเที่ยงแล้วลง "ไม่มีแผนผลิต" ถึงเลิกงาน
@@ -1421,24 +1466,41 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
       ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้าง ⇒ event ถัดไปยิงทันที = เพดาน LIVE.* หายไปเลย**
       เป็นลูป: bump → load → selSession ใบใหม่ → effect รีรัน → เพดานรีเซ็ต → bump ถัดไปยิงทันที
       ⇒ **ของที่แพงที่สุดคือ "เพดานที่ถูกรีเซ็ต" ไม่ใช่ตัวคิวรีเอง** — ใส่เพดานแล้วแต่ไม่มีผล
-   🔑 แก้ด้วย `selSession?.id` + `selSession?.line_name` (string) · ตัวโหลดต้องเป็น `useCallback(..., [])` */
-test('🛡️ no-session-object-in-db-effect-deps — ห้ามใส่ `selSession` (object) ใน deps ของ effect ที่ยิง DB', () => {
+   🔑 แก้ด้วย `selSession?.id` + `selSession?.line_name` (string) · ตัวโหลดต้องเป็น `useCallback(..., [])`
+
+   ── `scopeSecs` (array จาก UserContext) = คลาสเดียวกัน (06/10) ──────────────────────
+   ได้ array "ใบใหม่เนื้อเดิม" 2 ทาง: ① destructure `sections: scopeSecs = []` — ค่า default
+   สร้างใบใหม่**ทุก render** เมื่อ context ส่ง `undefined` · ② `<UserContext.Provider
+   value={{ … sections: userSections || [] }}>` ใน App.jsx เป็น object literal ใบใหม่ทุก render
+   วัดจริง 02/10 — "คิวรีเดิมเป๊ะ จาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+     prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+     · v_demand_flow_blocks 745 · child_lot_requests 747  ← **เท่ากัน = 2 คิวรีใน load() ตัวเดียว**
+       ⇒ พิสูจน์ว่าเป็น "โหลดซ้ำทั้ง load()" ไม่ใช่คนละคนเปิดพร้อมกัน
+   ⚠️ ด่านนี้จับเฉพาะ `useCallback`/`useEffect` ที่**ยิง DB จริง** — `useMemo` ที่คิดเลขจาก scopeSecs
+      ไม่เข้าข่าย (คิดใหม่ทุก render เปลืองซีพียูเล็กน้อย แต่ไม่จ่าย egress) · รอบแรกที่เขียนด่านนี้
+      กว้างเกินไปจนจับ useMemo 3 ตัวที่ไม่ใช่ปัญหา — **ด่านที่จับของดีด้วย จะถูกถอดทิ้งในที่สุด**
+   🔑 แก้ด้วยคีย์เนื้อหา: `const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs])`
+      (useMemo คิดใหม่ทุก render ได้ แต่**ได้ string เท่าเดิม** ⇒ useCallback ที่ผูก scopeKey จึงนิ่ง) */
+test('🛡️ no-unstable-ref-in-db-effect-deps — ห้ามใส่ `selSession` (object) / `scopeSecs` (array) ใน deps ของ effect ที่ยิง DB', () => {
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
     const rel = relative(ROOT, file);
     const code = stripComments(readFileSync(file, 'utf8'));
-    // deps array ที่มี `selSession` แบบเปล่าๆ (ไม่ใช่ selSession?.xxx / selSession.xxx)
-    const re = /\}\s*,\s*\[([^\]]*)\]\s*\)/g;
+    /* เฉพาะ `useCallback(` / `useEffect(` ที่ **ยิง DB จริง** — `useMemo` ที่คิดเลขเฉยๆ ไม่เข้าข่าย
+       (ของกลาง/loader ที่ขึ้นต้นด้วย load… นับเป็นยิง DB ด้วย เพราะข้างในมันยิง) */
+    const re = /\b(useCallback|useEffect)\(([\s\S]*?)\}\s*,\s*\[([^\]]*)\]\s*\)/g;
     let m;
     while ((m = re.exec(code))) {
-      const deps = m[1];
-      if (!/(^|[\s,])selSession\s*(,|$)/.test(deps)) continue;
+      const body = m[2], deps = m[3];
+      if (!/(^|[\s,])(selSession|scopeSecs)\s*(,|$)/.test(deps)) continue;
+      if (!/supabase|\.from\(|\.rpc\(|\bload[A-Z]\w*\(/.test(body)) continue;   // ไม่ยิง DB = ไม่เกี่ยว
       bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}  deps = [${deps.replace(/\s+/g, ' ').trim().slice(0, 90)}]`);
     }
   }
   assert.deepEqual(bad, [],
-    'deps มี `selSession` (object) — ใช้ `selSession?.id` / `selSession?.line_name` แทน · '
-  + 'object ใบใหม่เนื้อเดิมทุกรอบโหลด = ยิงคิวรีซ้ำ **และล้างเพดาน coalesce** · '
+    'deps มี object/array ที่ identity ไม่นิ่ง — `selSession` → ใช้ `selSession?.id`/`?.line_name` · '
+  + '`scopeSecs` → ใช้คีย์เนื้อหา `[...scopeSecs].sort().join("|")` (ดู `scopeKey` ใน DailyReport.jsx) · '
+  + 'ใบใหม่เนื้อเดิม = ยิงคิวรีซ้ำ **และล้างเพดาน coalesce** · '
   + 'เหตุผล + ตัวเลขที่วัดมา ดูคอมเมนต์เหนือเทสนี้ และที่ effect ใน src/pages/DailyReport.jsx');
 });
 
@@ -1880,6 +1942,150 @@ test('🛡️ virtual-module-plugin-in-both-vite-configs — plugin ที่ห
     + '   ตกที่ audit/vite.audit.mjs = crashsweep/mobilesweep เปิดหน้าไม่ได้ ⇒ หน้าพังโดยไม่มีด่านไหนเห็น\n'
     + '   แก้ยังไง: import schemaUsage จาก scripts/vite-plugin-schema-usage.mjs แล้วใส่ใน plugins ของ config นั้น\n\n'
     + missing.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+
+/* ═══ 👻 พื้นที่กดเผื่อนิ้ว ต้องไม่ถูกนับเป็น "ของล้น" (2026-10-06) ═══
+   `src/index.css` @media (pointer:coarse) วาง `button:not(:has(*))::before` absolute + min 40×40
+   ทับกลางปุ่มเล็ก = ขยายพื้นที่รับสัมผัสให้คนใส่ถุงมือ โดยไม่ขยับ layout สักพิกเซล
+   แต่ pseudo ที่ absolute **นับเข้า scrollWidth ของปุ่ม แล้วลามถึงแถวแม่** ⇒ mobilesweep เห็น
+   "แถวล้นปัดไม่ได้" ทั้งที่ไม่มีอะไรโผล่ออกมาเลย (วัด 06/10: desktop sw===cw ทุกปุ่ม ·
+   ปุ่มตัวอักษร "X" ก็เป็น = ไม่เกี่ยวอีโมจิ)
+   เคยหลงมาแล้ว 05/10 (54da354a): ไล่แก้ที่อีโมจิ แล้ว "หาย" เพราะห่อ <span> ทำให้
+   `:not(:has(*))` เลิกแมตช์ = **ถอดพื้นที่กด 40px ทิ้งเงียบๆ** เพื่อให้ตัวเลขในด่านสวย */
+test('🛡️ mobilesweep-must-mute-tap-target-ghost — ด่านมือถือต้องตัดพื้นที่กดเผื่อนิ้วก่อนวัด', () => {
+  const css = readFileSync(join(ROOT, 'src/index.css'), 'utf8');
+  if (!/button:not\(:has\(\*\)\)::before/.test(css)) return;   // เลิกใช้ทริกนี้แล้ว = ไม่ต้องบังคับ
+  const sweep = readFileSync(join(ROOT, 'audit/mobilesweep.mjs'), 'utf8');
+  const muted = /button:not\(:has\(\*\)\)::before\{min-width:0!important/.test(sweep);
+  assert.ok(muted,
+    '\n\n❌ audit/mobilesweep.mjs ไม่ได้ตัด min-width/min-height ของ `button:not(:has(*))::before` ก่อนวัด\n'
+    + '   ⇒ ด่านจะฟ้อง "ล้นปัดไม่ได้" จากพื้นที่กดเผื่อนิ้วที่มองไม่เห็น (ปุ่ม 25px ได้ scrollWidth 33)\n'
+    + '   แล้ว session ถัดไปจะ "แก้" ด้วยการห่อไอคอนใน <span> ซึ่ง**ถอดพื้นที่กด 40px ทิ้ง**\n'
+    + '   = ทำให้หน้างานใส่ถุงมือกดยากขึ้น เพื่อให้ตัวเลขในด่านสวย (เกิดจริง 05/10 กับ SheetIconBtn)\n'
+    + '   แก้: ใส่ addStyleTag ที่ตั้ง min-width:0!important/min-height:0!important ให้ pseudo นี้ก่อน evaluate\n'
+    + '   📄 docs/UI-CONVENTIONS.md §7.1\n');
+});
+
+
+/* ═══ 📜 ตารางที่ `useColumnHistory` ชี้ ต้องมีอยู่จริง (2026-10-06 · QC audit) ═══
+   ฟีเจอร์ "📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)" ดึงค่าที่คนเคยพิมพ์ไว้มาให้เลือกซ้ำ
+   (คำสั่ง user 07/09 *"ถ้าข้อมูลจะไม่มีในทะเบียน ใช้ข้อมูลที่เคยลงไว้ได้มั้ย"*)
+   🔴 พิมพ์ชื่อตารางผิด = **ตายเงียบสนิท ไม่มีอะไรฟ้องบนจอ** — `masterCache.mrows()` จับ `42P01`
+   คืน `[]` + console.warn แล้ว `useColumnHistory` ยัง `.catch(() => {})` ทับอีกชั้น
+   เจอจริง 06/10 ผิด 4 จุด: `npi_part_deliverables`(→npi_deliverables) · `npi_eci`(→npi_change_requests)
+   · `qa_claims`(→qa_customer_claims) · `qa_check_items`(→qa_inspection_items)
+   ทั้ง 4 อยู่ในไฟล์ที่ query ข้อมูลชุดเดียวกันด้วย*ชื่อจริง* อยู่แล้ว (= พิมพ์ผิด ไม่ใช่ตารางคู่ขนาน)
+   ต้นตอ: `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md` เขียนชื่อผิดแบบเดียวกัน แล้วคนก๊อปไปใช้ */
+test('🛡️ column-history-table-must-exist — ตารางของ useColumnHistory ต้องมี create/alter ในรีโป', () => {
+  const sqlDirs = ['supabase/migrations', 'docs/sql'];
+  const known = new Set();
+  for (const d of sqlDirs) {
+    let files = [];
+    try { files = readdirSync(join(ROOT, d)).filter(f => f.endsWith('.sql')); } catch { continue; }
+    for (const f of files) {
+      const t = readFileSync(join(ROOT, d, f), 'utf8');
+      for (const m of t.matchAll(/create\s+(?:or\s+replace\s+)?(?:table|view|materialized\s+view)\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi)) known.add(m[1]);
+      for (const m of t.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:public\.)?"?([a-z0-9_]+)"?/gi)) known.add(m[1]);
+      /* trigger/policy ผูกกับตาราง = ตารางมีอยู่จริงแน่ (ตารางยุคก่อนมี migration ไม่มี create ในรีโป) */
+      for (const m of t.matchAll(/\bon\s+(?:public\.)?"?([a-z0-9_]+)"?\s*(?:for\s+each\s+row|as\s|for\s+(?:all|select|insert|update|delete))/gi)) known.add(m[1]);
+      /* docs/sql/00_schema_snapshot_*.sql บันทึก ~39 ตารางยุคก่อนกฎ migration ไว้เป็นคอมเมนต์
+         `-- <ตาราง> (col type, …)` — เป็นที่เดียวในรีโปที่มีหลักฐานว่าตารางพวกนี้มีจริง */
+      for (const m of t.matchAll(/^--\s*([a-z0-9_]+)\s*\([a-z0-9_]+\s+[a-z]/gim)) known.add(m[1]);
+    }
+  }
+  if (known.size < 50) return;   // อ่าน SQL ไม่ได้ = ไม่ตัดสิน (ห้ามฟ้องผิด)
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/useColumnHistory\(\s*supabase[A-Za-z]*\s*,\s*'([a-z0-9_]+)'/g)) {
+      if (!known.has(m[1])) bad.push(`${relative(ROOT, f)} → '${m[1]}'`);
+    }
+  }
+  assert.deepEqual([...new Set(bad)], [],
+    '\n\n❌ useColumnHistory ชี้ตารางที่ไม่มี create/alter ในรีโป (น่าจะพิมพ์ชื่อผิด):\n'
+    + '   ' + [...new Set(bad)].join('\n   ') + '\n'
+    + '   ทำไมอันตราย: ตารางไม่มี → 42P01 → masterCache คืน [] + useColumnHistory .catch(() => {})\n'
+    + '   ⇒ กลุ่ม "📜 เคยบันทึกไว้" **ว่างตลอดกาล ไม่มี error บนจอ** = คนต้องพิมพ์ชื่อใหม่ทุกครั้ง\n'
+    + '     สะกดไม่ตรง → จับกลุ่ม/ค้นหาย้อนหลังแตก (เคสจริง 06/10 ผิด 4 จุด)\n'
+    + '   แก้: ใช้ชื่อตารางจริง — ดูว่าไฟล์เดียวกัน `.from(...)` ตารางอะไรอยู่\n'
+    + '   ถ้าตารางมีจริงแต่สร้างผ่าน dashboard ไม่มี migration: เขียน migration/บันทึกใน docs/sql ก่อน\n');
+});
+
+
+/* ═══ 🗑️ ลบไฟล์ใน storage ได้ ต่อเมื่อ "ยืนยันว่าแถวหายจริง" แล้ว (2026-10-06 · QC audit) ═══
+   RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2 — มีแต่ INSERT ที่โยน 42501)
+   ⇒ โค้ดที่เช็คแค่ `error` แล้วเดินไปลบไฟล์ = **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว"
+   เจอจริง 06/10 ที่ `QAInspectionSetup.delPart` (ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒
+   ใบตรวจพาร์ทเสียถาวร) · `OjtTraining.handleDelete` (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด
+   + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) · `LineSetup` (รูปผังไลน์)
+   🔴 ลำดับที่ปลอดภัยมีทางเดียว: `.select(...)` → นับแถว > 0 → **ค่อย** ลบไฟล์ */
+const STORAGE_DEL_ALLOW = {
+  /* delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติ = 0 คน ⇒ 0 แถวเป็นเรื่องปกติ นับแถวไม่มีความหมาย
+     และไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" (`_replacedSigPaths`) ไม่ใช่ของแถวที่ลบ
+     = window ของด่านคาบเกี่ยวกันเท่านั้น ไม่ใช่คลาสบั๊กนี้ */
+  'src/pages/OjtTraining.jsx': ["from('ojt_training_attendees').delete()"],
+};
+test('🛡️ storage-delete-after-row-count — ลบไฟล์ storage ต้องมาหลังนับแถวที่ลบได้จริง', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.delete\(\)/.test(ln)) return;
+      if ((STORAGE_DEL_ALLOW[rel] || []).some(sig => ln.includes(sig))) return;
+      const win = lines.slice(i, i + 16).join('\n');
+      const k = win.search(/storage[\s\S]{0,40}?\.remove\(/);
+      if (k < 0) return;                       // ไม่มีการลบไฟล์ตามหลัง = ไม่เกี่ยว
+      if (/\.select\(/.test(win.slice(0, k))) return;   // นับแถวแล้วก่อนแตะไฟล์ = ถูกต้อง
+      bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 90)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ลบไฟล์ใน storage ตามหลัง `.delete()` ที่ไม่ได้ `.select()` นับแถว:\n'
+    + '   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมอันตราย: RLS ปฏิเสธ DELETE = **0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2)\n'
+    + '     ⇒ แถวยังอยู่ แต่ไฟล์ถูกลบถาวร แล้วจอขึ้น "ลบแล้ว" = ข้อมูลเสียแบบกู้ไม่ได้\n'
+    + '   แก้: const res = await supabase.from(t).delete().eq(...).select(\'id\');\n'
+    + '        if (!checkWrite(res, \'ลบ…\')) return;\n'
+    + '        if (!(res.data || []).length) { toast.error(\'ลบไม่สำเร็จ (0 แถว) — ไฟล์ยังอยู่\'); return; }\n'
+    + '        // ← ลบไฟล์ storage ได้หลังบรรทัดนี้เท่านั้น\n'
+    + '   ถ้า "0 แถว = เรื่องปกติ" จริง (เช่น ลบของที่อาจไม่มีอยู่แต่แรก) ให้เพิ่มใน STORAGE_DEL_ALLOW\n'
+    + '   พร้อมเหตุผล — ห้ามใส่เพราะแก้ไม่ไหว\n');
+});
+
+
+/* ═══ 🔐 จอที่คุมสิทธิ์ ต้องเช็คสิทธิ์ "คนที่เปิดดู" ด้วย (2026-10-06 · QC audit) ═══
+   `/permissions` เคย**ไม่เช็คสิทธิ์ผู้ดูเลย** (grep UserContext|can( = 0) — ตัวแปร `role` ในหน้านี้
+   คือ role ของ**คอลัมน์ใน matrix** ไม่ใช่ของผู้ใช้ ⇒ อ่านโค้ดผ่านตาแล้วเหมือนมีด่านอยู่
+   ประตูเดียวคือ `page:/permissions` ซึ่ง**ติ๊กให้ role อื่นได้จากจอนั้นเอง**
+   ⇒ คนที่ได้คีย์นั้นกดแก้แถวที่มีอยู่แล้ว → RLS ปฏิเสธ = 0 แถว ไม่มี error (กฎเหล็ก DB ข้อ 2)
+   → ช่องติ๊กเปลี่ยนบนจอ ฐานไม่เปลี่ยน ไม่มี toast = **จอโกหกเรื่อง "ใครมีสิทธิ์อะไร"**
+   ซึ่งเป็นข้อมูลที่ทุกจอในระบบพึ่ง · แก้แล้วด้วย `canSeeded('permissions','manage')` + นับแถว
+   + migration `20261006_permissions_manage_perm_main.sql` (policy อ่านคีย์เดียวกับปุ่ม) */
+test('🔐 permissions-page-needs-viewer-gate — /permissions ต้องเช็คสิทธิ์ผู้ดู + นับแถวที่เขียนได้', () => {
+  const f = 'src/pages/PermissionsManagement.jsx';
+  const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  const miss = [];
+  if (!/canSeeded\(\s*'permissions'\s*,\s*'manage'/.test(src))
+    miss.push("ไม่พบ canSeeded('permissions', 'manage', …) — ด่านของคนที่เปิดจอ");
+  if (!/\bcanManage\b/.test(src))
+    miss.push('ไม่พบตัวแปร canManage ที่เอาไปปิดช่องติ๊ก');
+  /* upsert ของ role_permissions ต้อง .select() เพื่อนับแถว — RLS ปฏิเสธ = 0 แถว ไม่มี error */
+  const up = src.match(/from\('role_permissions'\)[\s\S]{0,400}?\.upsert\([\s\S]{0,300}?\)/);
+  if (!up) miss.push("ไม่พบ upsert ของ role_permissions (โครงหน้าเปลี่ยน — ทวนกฎนี้ใหม่)");
+  else if (!/\.select\(/.test(src.slice(src.indexOf(up[0]), src.indexOf(up[0]) + up[0].length + 120)))
+    miss.push('upsert ไม่ได้ .select() ⇒ ไม่นับแถว = RLS ปฏิเสธแล้วจอยังโชว์ว่าบันทึกสำเร็จ');
+  assert.deepEqual(miss, [],
+    `\n\n❌ ${f} หลุดด่านของตัวเอง:\n   ` + miss.join('\n   ') + '\n'
+    + '   ทำไมสำคัญ: นี่คือจอที่ตัดสินว่า "ใครทำอะไรได้" ทั้งระบบ — ถ้าจอนี้โกหก\n'
+    + '     ทุกการตั้งสิทธิ์หลังจากนั้นเชื่อถือไม่ได้ และคนตั้งจะไม่รู้ตัวเลย\n'
+    + '   🔴 ระวัง: `role` ในไฟล์นี้คือ role ของ**คอลัมน์ใน matrix** ไม่ใช่ของผู้ใช้\n'
+    + '     ⇒ `can(..., role)` ในหน้านี้ **ไม่ใช่** ด่านของผู้ดู ต้องอ่าน role จาก UserContext\n'
+    + '   แก้: const { role: myRole } = useContext(UserContext);\n'
+    + '        const canManage = canSeeded(\'permissions\', \'manage\', myRole);\n'
+    + '        → ใช้ปิด disabled ของ checkbox + ด่านใน toggle() + <ReadOnlyNote show={!canManage} …>\n'
+    + '        → upsert ต้อง .select() แล้วเช็ค res.data.length ก่อนถือว่าสำเร็จ\n');
 });
 
 
@@ -2622,4 +2828,255 @@ test('🛡️ image-input-via-accept-helper — <input accept="image/*"> ต้�
     + '   แก้ยังไง: const f = await acceptImageFile(e.target.files?.[0]); if (!f) return;\n'
     + '             (src/utils/acceptImageFile.js — ใช้ค่าที่คืนมา ไม่ใช่ไฟล์เดิม)\n\n'
     + bad.map(b => '   • ' + b).join('\n') + '\n');
+});
+
+/* ── 🛑 ทะเบียนลักษณะปัญหา MO: กลุ่มต้องอยู่ในลูกโซ่ cascade + ห้ามใช้ป้าย "อื่นๆ" เป็นถังสังเคราะห์
+   (06/10/2026 · user: "ตรงนี้มั่วด้วย ระบบ dropdown" → "มั่ว")
+   2 บั๊กที่เจอพร้อมกันในหน้าเดียว:
+     1. `NAME_CASCADE` ไม่มี `group_name` ⇒ เปลี่ยนชื่อกลุ่มในทะเบียน ใบเก่าค้างชื่อเดิม
+        พาเรโตแตก 2 แท่งเงียบๆ (วัดจริง: 2 ใบค้างกลุ่ม "MTN ระบบ…" ที่ไม่มีในทะเบียนแล้ว)
+     2. ถังสังเคราะห์ของแถวที่ไม่มีกลุ่ม ถูกตั้งชื่อว่า 'อื่นๆ' **ชนกับแถวจริงชื่อ "อื่นๆ"**
+        ⇒ dropdown เดียวมีป้ายซ้ำ 2 ความหมาย · และค่านั้นถูกเขียนลงใบเป็นกลุ่มปลอม          */
+test('🛡️ /mtn-repair: NAME_CASCADE ต้องครอบ group_name (ไม่งั้นเปลี่ยนชื่อกลุ่มแล้วพาเรโตแตกเงียบ)', () => {
+  const code = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const block = code.match(/const NAME_CASCADE\s*=\s*\{[\s\S]*?\n\};/);
+  assert.ok(block, '\n\n❌ หา NAME_CASCADE ใน MtnRepair.jsx ไม่เจอ — ย้ายแล้วต้องอัปเดตด่านนี้ด้วย\n');
+  assert.ok(/mtn_problem_types:\s*\{[^}]*group_name:\s*'problem_group'/.test(block[0]),
+    '\n\n❌ NAME_CASCADE.mtn_problem_types ไม่มี `group_name: \'problem_group\'`\n'
+    + '   ทำไมสำคัญ: ใบซ่อมเก็บ `problem_group` เป็น **สำเนาข้อความ** ไม่ผูก FK\n'
+    + '              ไม่มีในลูกโซ่ = เปลี่ยนชื่อกลุ่มในทะเบียนแล้วใบเก่าค้างชื่อเดิม\n'
+    + '              ⇒ พาเรโตกลุ่มแตกเป็น 2 แท่ง และไม่มีใครรู้ (ไม่มี error ไม่มี toast)\n'
+    + '   แก้ยังไง: เติม group_name: \'problem_group\' ใน NAME_CASCADE (MtnRepair.jsx)\n');
+});
+
+test('🛡️ /mtn-repair: ถังสังเคราะห์ของแถวไม่มีกลุ่ม ห้ามตั้งชื่อ "อื่นๆ" (ชนกับแถวจริงในทะเบียน)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(!/NO_GROUP\s*=\s*['"]อื่น\s*ๆ?['"]/.test(code),
+    '\n\n❌ MtnRepair.jsx ตั้ง NO_GROUP = \'อื่นๆ\' อีกแล้ว\n'
+    + '   ทำไมห้าม: ทะเบียน mtn_problem_types มีแถวจริงชื่อ "อื่นๆ" (221 ใบใช้อยู่)\n'
+    + '              ป้ายเดียวกัน 2 ความหมายใน dropdown เดียว = คนแจ้งเลือกแล้วไม่รู้ว่าได้อะไร\n'
+    + '   แก้ยังไง: ใช้ UNGROUPED_LABEL จาก src/utils/unclassified.js (= "ยังไม่จัดกลุ่ม")\n'
+    + '              และกลุ่มจริงของอาการที่ระบุไม่ได้ = OTHER_GROUP ("อื่นๆ / ยังระบุไม่ได้")\n');
+  /* ป้ายถังสังเคราะห์ห้ามหลุดลง DB — ต้องผ่าน groupForDb() ก่อนใส่ payload */
+  assert.ok(/groupForDb\s*\(/.test(code) && /problem_group:\s*groupForDb\(/.test(code),
+    '\n\n❌ payload ของใบแจ้งซ่อมไม่ได้กรอง problem_group ผ่าน groupForDb()\n'
+    + '   ทำไมสำคัญ: ช่องเลือกกลุ่มถือป้าย "ยังไม่จัดกลุ่ม" ได้ (เป็นป้ายของจอ ไม่ใช่ taxonomy)\n'
+    + '              เขียนลงใบ = ปลอมกลุ่มให้พาเรโต · ผิดกฎชั้น 1 "ห้ามเขียนทับค่าที่ระบบรู้อยู่แล้ว"\n'
+    + '   แก้ยังไง: problem_group: groupForDb(f.problem_group) (คืนค่าว่างเมื่อเป็นป้ายสังเคราะห์)\n');
+});
+
+/* ── ใบเบิกวัตถุดิบ: ตัดสต็อกครั้งเดียวต่อใบ ไม่ว่ากด "จ่าย" ก่อนหรือ "ปิดล็อต" ก่อน (06/10) ──
+   เดิม "จ่ายวัตถุดิบ" เปลี่ยนแค่สถานะ แล้วปิดล็อตตัดเฉพาะใบ pending ⇒ จ่ายก่อนปิด = วัตถุดิบไม่เคยลด */
+test('🛡️ /heijunka: "จ่ายวัตถุดิบ" ต้องเขียน consume · ปิดล็อตต้อง claim ใบ pending ก่อนตัด', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8'));
+  const issue = code.slice(code.indexOf('const issueRaw'), code.indexOf('const issueRaw') + 3000);
+  assert.ok(/from\('line_stock_transactions'\)\.insert/.test(issue) && /type: 'consume'/.test(issue),
+    '\n\n❌ issueRaw ไม่ตัดสต็อกวัตถุดิบแล้ว — จ่ายก่อนปิดล็อต = สต็อกวัตถุดิบไม่ลด (ปิดล็อตตัดเฉพาะใบ pending)\n');
+  assert.ok(/from\('raw_withdrawal_requests'\)\s*\.update\(\{ status: 'issued' \}\)\.eq\('lot_request_id', lot\.id\)\.eq\('status', 'pending'\)\s*\.select\(/.test(code),
+    '\n\n❌ ปิดล็อตต้อง claim ใบเบิก pending→issued แล้วตัดเฉพาะแถวที่ claim ได้ (กันตัดซ้ำกับ issueRaw)\n');
+});
+
+/* ── 🔴 ปุ่ม "เปิดใบ BOM ของพาร์ทนี้" ห้ามผูกกับ `fromOtherSheet` (2026-10-06) ─────────
+   บั๊กจริง: user สั่งทำปุ่มกระโดดเข้าใบลูก แล้วทดสอบใบจริง 10105772 → 20070036 **กดไม่ได้เลย**
+   เพราะเงื่อนไขเดิมเป็น `fromOtherSheet` = "ลูกถูกอ่านมาจากใบอื่น" ⇒ ใบที่ก๊อปลูกมาใส่เอง
+   (`sheetFor` คืนใบเดิม) ปุ่มหายหมด — ซึ่งเป็น**เคสที่ต้องกดเข้าไปเทียบที่สุด**
+   เพราะของชิ้นเดียวถูกนิยามไว้ 2 ใบ และวัดจริงแล้วว่า**ไม่ตรงกัน**
+   วัดทั้งฐาน 06/10: นิยาม 2 ที่ = 94 บรรทัด / 47 MAT · ยืมใบจริง = 9 บรรทัด / 5 ใบ (3%)
+   ⇒ คลิกได้/ไม่ได้ ตัดสินด้วย `ownSheet` (มีใบของตัวเองที่ไม่ว่าง) เท่านั้น            */
+test('🛡️ BOM: ปุ่มเปิดใบลูกต้องตัดสินด้วย ownSheet ไม่ใช่ fromOtherSheet', () => {
+  const view = stripComments(readFileSync(join(ROOT, 'src/components/BomTreeView.jsx'), 'utf8'));
+  assert.ok(!/fromOtherSheet\s*&&\s*onOpenSheet/.test(view),
+    '\n\n❌ BomTreeView ผูกปุ่มเปิดใบลูกไว้กับ `fromOtherSheet`\n'
+    + '   ทำไมผิด: `fromOtherSheet` = ลูกถูกอ่านมาจากใบอื่น ⇒ ใบที่ก๊อปลูกมาใส่เองจะไม่มีปุ่ม\n'
+    + '            ทั้งที่นั่นคือเคสที่ต้องกดเข้าไปเทียบที่สุด (นิยาม 2 ใบ · วัดจริง 94 บรรทัด/47 MAT)\n'
+    + '   แก้ยังไง: `r.ownSheet && onOpenSheet` (ดู explodeBom ใน src/utils/bomTree.js)\n');
+  assert.ok(/r\.ownSheet\s*&&\s*onOpenSheet/.test(view),
+    '\n\n❌ BomTreeView ไม่มีปุ่มเปิดใบลูกที่ตัดสินด้วย `ownSheet` แล้ว — ถอดออกไปทำไม?\n'
+    + '   user สั่งไว้ 06/10 ("กดคลิกดู component เบอร์ 200 ที่ตาราง แล้วแตกย่อยลงไป")\n');
+  assert.ok(/sheetConflict/.test(view),
+    '\n\n❌ จอไม่เตือนเคส "นิยามไว้ 2 ใบ" (`sheetConflict`) แล้ว\n'
+    + '   กฎความซื่อสัตย์ของจอ: ข้อมูลขัดกัน **ต้องเขียนบนจอ ห้ามเงียบ** (CLAUDE.md §OBEYA)\n');
+});
+
+/* ── 🔴 กดเลข MAT ในต้นไม้ BOM ต้องค้นจาก `products` ไม่ใช่ `items` (2026-10-06) ───────
+   บั๊กจริงที่หลุดไปพร้อมฟีเจอร์: `openSheetOfMat` ค้นจาก `items` (= bom_items ของใบที่เปิดอยู่)
+   แล้วเจอ "บรรทัด BOM" ที่มี mat ตรงกัน → `setSelProduct(<bom row>)`
+   ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
+   เงียบสนิท: ไม่มี error ไม่มี toast ไม่มีอะไรบนจอบอกว่ากดไปเจอใบผิด
+   ⇒ `selProduct` ต้องมาจาก `products` (= dr_products) เท่านั้น                        */
+test('🛡️ /products BOM: openSheetOfMat ต้องค้นจาก products (dr_products) ไม่ใช่ items (bom_items)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  const i = code.indexOf('const openSheetOfMat');
+  assert.ok(i > 0, '\n\n❌ หา openSheetOfMat ใน ProductMaster.jsx ไม่เจอ — เปลี่ยนชื่อแล้วต้องอัปเดตด่านนี้\n');
+  const fn = code.slice(i, i + 900);
+  assert.ok(!/items\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ค้นใบจาก `items` (= bom_items ของใบที่เปิดอยู่)\n'
+    + '   ทำไมผิด: เจอ "บรรทัด BOM" แล้วเอา id ของบรรทัดไปเป็น selProduct.id\n'
+    + '            ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = เปิดมาเจอใบเปล่า **เงียบสนิท**\n'
+    + '   แก้ยังไง: `products.find(p => upMat(p.mat_no) === k)` (products = dr_products)\n');
+  assert.ok(/products\.find\s*\(/.test(fn),
+    '\n\n❌ openSheetOfMat ไม่ได้ค้นจาก `products` — ดูเหตุผลด้านบน\n');
+});
+
+/* ── ใบขั้นงาน (OP) ห้ามถูกเทียบชุดลูกกับใบพาร์ท (2026-10-06) ──────────────────────────
+   ใบ OP ตอบ "ขั้นนี้กินอะไร" (ขั้นเชื่อมนัท M6 → นัท 30044771)
+   ใบพาร์ท ตอบ "พาร์ทนี้ประกอบจากอะไร" (คอยล์ 50027969) — **ถูกทั้งคู่ ไม่ใช่ขัดกัน**
+   เทียบรวม = เตือนผิด 5 คู่จาก 19 (26%) · สัญญาณหลอกทำให้คนเลิกเชื่อคำเตือนทั้งจอ        */
+test('🛡️ /products BOM: ต้องส่ง isOpSheet ให้ BomTreeView (ไม่งั้นเตือนผิดที่ใบขั้นงาน)', () => {
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/ProductMaster.jsx'), 'utf8'));
+  assert.ok(/isOpSheet=\{/.test(page),
+    '\n\n❌ ProductMaster ไม่ส่ง `isOpSheet` ให้ BomTreeView\n'
+    + '   ผล: ใบขั้นงานจะขึ้น "⚠️ ต่างกัน N รายการ" ทั้งที่ 2 ใบตอบคนละคำถาม (เตือนผิด 5 คู่จาก 19)\n');
+  const view = stripComments(readFileSync(join(ROOT, 'src/components/BomTreeView.jsx'), 'utf8'));
+  assert.ok(/isOpSheet/.test(view),
+    '\n\n❌ BomTreeView ไม่รับ/ไม่ใช้ `isOpSheet` แล้ว — ถอดออกแล้วใบขั้นงานจะถูกเทียบผิด\n');
+});
+
+/* ── การ์ดบนบอร์ด NM ต้องมี "ตัวเลข" ไม่ใช่แค่สี (06/10/2026 · feedback user "design obeya ยังดีกว่า") ──
+   วัดจริงก่อนแก้: บอร์ด 737D MLM มีข้อมูลนับได้ทั้ง 21 แผง แต่ไม่โชว์ตัวเลขสักใบ
+   ⇒ ตัวเลขทุกตัวต้องมาจาก panelMetric() (pure · มีเทส) ห้ามนับเองในหน้า */
+test('🛡️ /nm-board: ตัวเลขบนการ์ดต้องมาจาก panelMetric() ห้ามนับ rows เองในหน้า', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/NewModelBoard.jsx'), 'utf8'));
+  assert.ok(/panelMetric\s*\(/.test(code),
+    '\n\n❌ NewModelBoard.jsx ไม่ได้ใช้ panelMetric() — การ์ดกลับไปมีแต่ชื่อกับสี\n'
+    + '   ทำไมต้องมี: การ์ด OBEYA ตอบ 5 คำถาม (เท่าไหร่/เทียบแล้วไง/มาจากไหน/คืบไปแค่ไหน/กดอะไรต่อ)\n'
+    + '              การ์ดที่มีแต่สี ตอบได้ข้อเดียว\n'
+    + '   แก้ยังไง: `<MetricBlock panel={p} />` · สูตรอยู่ที่ src/utils/nmPanelMetric.js\n');
+  /* กันการนับเองในหน้า — เช่น rows.filter(...).length ของแผง */
+  assert.ok(!/panel\.rows\s*\.\s*filter\(/.test(code) && !/p\.rows\s*\.\s*filter\(/.test(code),
+    '\n\n❌ NewModelBoard.jsx นับแถวของแผงเองในหน้า\n'
+    + '   ทำไมห้าม: กติกา "แถวที่ยังไม่ประเมินห้ามนับเป็นผ่าน" + "ตัวหารต้องเป็นแถวที่ประเมินแล้ว"\n'
+    + '              อยู่ใน panelMetric() ที่เดียว · นับเองในหน้า = กติกาหลุดทีละจุดโดยไม่มีใครรู้\n');
+});
+
+/* ── รับของซื้อแบบรวมหลายใบ: ledger ล้มต้องคืนใบที่ claim ไป (06/10 · ช่องโหว่สโตร์ข้อ 4) ──
+   เดิมแค่ toast "ไปบันทึกเองที่ Line Stock" ⇒ ใบค้าง "รับเข้าแล้ว" ทั้งที่สต็อกไม่ขึ้น กดใหม่ไม่ได้ */
+test('🛡️ PurchaseBulkModal: บันทึกรับเข้าคลังล้ม/เลื่อนก้อนหลังล้ม ต้องคืนสถานะใบที่ขยับไปแล้ว', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/PurchaseBulkModal.jsx'), 'utf8'));
+  assert.ok(/if\s*\(\s*eLedger\s*\)\s*\{\s*const\s*\{[^}]*\}\s*=\s*await\s+revertClaimed\(/.test(code),
+    '\n\n❌ PurchaseBulkModal ไม่คืนสถานะใบเมื่อเขียน line_stock_transactions ล้ม (กฎเขียน DB ข้อ 6)\n');
+  assert.ok(/if\s*\(\s*error\s*\)\s*\{\s*const\s*\{[^}]*\}\s*=\s*await\s+revertClaimed\(/.test(code),
+    '\n\n❌ PurchaseBulkModal ไม่คืนก้อนที่ claim ไปแล้วเมื่อก้อนถัดไปล้ม\n');
+});
+/* ═══ กฎเชิงความสัมพันธ์ — คีย์ของ upsert ต้องเป็น "คอลัมน์ล้วน" (2026-10-06 · เกิดเป็นครั้งที่ 3) ═══
+
+   PostgREST ส่งได้แค่ `on_conflict=<ชื่อคอลัมน์>` ⇒ Postgres ต้อง **infer** index จากรายชื่อนั้น
+   index ที่เป็น **expression** (`coalesce(x,'')`, `lower(x)`) หรือ **partial** (`where …`)
+   อ้างแบบนี้ไม่ได้ ⇒ 42P10 `there is no unique or exclusion constraint matching the ON CONFLICT
+   specification` ⇒ **ทั้งก้อนไม่ถูกเขียนเลย** (supabase-js ไม่ throw — เห็นก็ต่อเมื่อมี checkWrite)
+
+   เกิดจริงมาแล้ว 3 รอบ:
+     • 09/09 `customer_pull_signals` — index ใช้ coalesce(supplier_ref, customer_part_no) ⇒ แถวหลักฐานหายทั้งชุด
+     • 02–05/10 `monitor_board_parts` — index เป็น partial (`where mat_no is not null and is_active`)
+     • 06/10 `monitoring_shipments` — index ใช้ coalesce(sheet,'') ⇒ ประวัติการส่ง 804 แถวไม่ลง
+   ทางแก้มาตรฐานของโปรเจคนี้: **คอลัมน์ในคีย์ทำเป็น NOT NULL DEFAULT '' แล้ว index ด้วยคอลัมน์ล้วน**
+
+   ด่านนี้ไม่ได้ห้าม expression/partial index (มีที่ใช้ถูกต้องเยอะ) — ห้ามเฉพาะ **การจับคู่**:
+   ตารางที่ client upsert ด้วย onConflict ชุดหนึ่ง แต่ในไฟล์ migration มีแค่ index ที่อ้างชุดนั้นไม่ได้ */
+const SQL_KEYS_CACHE = (() => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const plain = new Map(), bad = new Map();        // table → Set<"a,b,c">
+  const add = (map, t, cols) => { if (!map.has(t)) map.set(t, new Set()); map.get(t).add(cols); };
+  const norm = (list) => {
+    const parts = []; let depth = 0, cur = '';
+    for (const ch of list) {
+      if (ch === '(') depth++; if (ch === ')') depth--;
+      if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+    }
+    parts.push(cur);
+    return parts.map(s => s.trim().toLowerCase().replace(/\s+(asc|desc)$/, ''));
+  };
+  for (const f of readdirSync(dir)) {
+    if (!f.endsWith('.sql')) continue;
+    const sql = readFileSync(join(dir, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ').split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+    const re = /create\s+unique\s+index\s+(?:concurrently\s+)?(?:if\s+not\s+exists\s+)?[\w.]+\s+on\s+(?:\w+\.)?(\w+)\s*\(([^;]*?)\)\s*(where[^;]*)?;/gi;
+    for (const m of sql.matchAll(re)) {
+      const [, table, colList, where] = m;
+      const cols = norm(colList);
+      const key = cols.join(',');
+      const inferable = !where && !cols.some(c => c.includes('('));
+      /* คีย์ "ฐาน" ของ index ที่อ้างไม่ได้ = ชื่อคอลัมน์ที่ห่อด้วยฟังก์ชัน (coalesce(sheet,'') → sheet) */
+      add(inferable ? plain : bad, table,
+        inferable ? key : cols.map(c => (c.match(/\(\s*(\w+)/) || [, c])[1]).join(','));
+    }
+  }
+  return { plain, bad };
+})();
+
+test('🛡️ upsert-key-must-be-plain-columns — onConflict ต้องตรงกับ unique index ที่เป็นคอลัมน์ล้วน', () => {
+  const hits = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const m of code.matchAll(/from\(\s*['"`](\w+)['"`]\s*\)([\s\S]{0,700}?)onConflict:\s*['"`]([^'"`]+)['"`]/g)) {
+      const [, table, between, conflict] = m;
+      if (!between.includes('.upsert(') || /from\(\s*['"`]/.test(between)) continue;   // คนละคำสั่ง
+      const key = conflict.split(',').map(s => s.trim().toLowerCase()).join(',');
+      if (SQL_KEYS_CACHE.plain.get(table)?.has(key)) continue;          // มี index คอลัมน์ล้วนตรงชุด = ผ่าน
+      if (!SQL_KEYS_CACHE.bad.get(table)?.has(key)) continue;           // ไม่รู้จัก = ไม่เดา (ด่านนี้ไม่ตะโกนมั่ว)
+      hits.push(`${relative(ROOT, file)} → from('${table}') onConflict '${conflict}'`);
+    }
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ upsert ด้านล่างอ้างคีย์ที่ตรงกับ **expression/partial unique index** เท่านั้น\n'
+    + '   PostgREST ส่งได้แค่ชื่อคอลัมน์ ⇒ Postgres infer index ไม่เจอ ⇒ 42P10\n'
+    + '   "there is no unique or exclusion constraint matching the ON CONFLICT specification"\n'
+    + '   ⇒ **ทั้งก้อนไม่ถูกเขียนเลย** (supabase-js ไม่ throw — เงียบถ้าไม่มี checkWrite)\n'
+    + '   เคยเกิดจริง 3 รอบ: customer_pull_signals 09/09 · monitor_board_parts 02–05/10 ·\n'
+    + '   monitoring_shipments 06/10 (ประวัติการส่ง 804 แถวไม่ลง ทั้งที่จอขึ้นสรุปว่าจะลง)\n'
+    + '   แก้ยังไง: ทำคอลัมน์ในคีย์เป็น NOT NULL DEFAULT \'\' แล้วสร้าง unique index **คอลัมน์ล้วน**\n'
+    + '   (เขียน migration ไว้ใน supabase/migrations/ ด้วย ไม่งั้นด่านนี้ยังไม่เห็นว่ามีคีย์ใหม่แล้ว)\n'
+    + '   ⚠️ ห้ามแก้ด้วย coalesce() ใน index — นั่นคือสิ่งที่พากลับมา 42P10 ทุกครั้ง\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+
+/* ── ฝั่งไลน์ยกเลิก/รับใบ WIP ต้องล็อกสถานะต้นทาง + นับแถว (06/10 · ช่องโหว่สโตร์ข้อ 8) ── */
+test('🛡️ LinePartCallPanel: ยกเลิกได้แค่ใบ hold · รับได้แค่ใบ delivered (CAS + .select)', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  assert.ok(/\.update\(\{\s*status:\s*'cancelled'\s*\}\)\.eq\('id',\s*r\.id\)\.eq\('status',\s*'hold'\)\.select\(/.test(code),
+    '\n\n❌ ปุ่ม "ไม่ใช้แล้ว" ยกเลิกใบได้ทุกสถานะ — จอค้างแล้วยกเลิกใบที่สโตร์ตัดสต็อกไปแล้วได้\n');
+  assert.ok(!/neq\('status',\s*'received'\)/.test(code) && /\.eq\('status',\s*'delivered'\)\.select\(/.test(code),
+    '\n\n❌ ปุ่ม "รับ" ต้อง .eq(status, delivered) — .neq(received) ชุบชีวิตใบที่ถูกยกเลิก/ปิดลูปใบที่สต็อกยังไม่ถูกตัด\n');
+});
+
+/* ── 📞 เรียกช่าง: ทีมที่ "คนกดเลือกเอง" ต้องชนะการเดา และต้องโชว์บนจอห้องช่าง
+   (06/10/2026 · ทีม MTN: *"เราจะไม่รู้ว่า PD เรียกใคร … จะรู้ได้ยังไงว่าเค้าเรียกเรา"*)
+   เกิดจริง 06/10 15:33 — ทดสอบเรียกทีม JIG แล้วจอ Andon ขึ้นแค่ "📞 เรียกช่าง" เฉยๆ
+   เพราะ `teamOfDt()` เดาจากเลขเครื่อง/ใบ MO เท่านั้น และแถวนั้น `machine_no` ว่าง ⇒ คืน null
+   ทั้งที่ `downtime_logs.call_mtn_team` เก็บ 'jig_maintenance' ไว้ตั้งแต่ตอนกดแล้ว            */
+test('🛡️ Andon/ไซเรน: ต้องดึง call_mtn_team มาด้วย (ไม่งั้นจอบอกไม่ได้ว่าเรียกทีมไหน)', () => {
+  for (const f of ['src/components/MtnAndonBoard.jsx', 'src/components/DowntimeSiren.jsx']) {
+    const code = readFileSync(join(ROOT, f), 'utf8');
+    assert.ok(/\.select\([^)]*call_mtn_team/s.test(code),
+      `\n\n❌ ${f} ไม่ได้ select 'call_mtn_team'\n`
+      + '   ทำไมสำคัญ: เป็นช่องเดียวที่บอกว่า "ฝ่ายผลิตกดเรียกทีมไหน"\n'
+      + '              ไม่ดึงมา = จอห้องช่างขึ้น "📞 เรียกช่าง" เหมือนกันหมด แยกไม่ออกว่าของใคร\n'
+      + '              และไซเรนดังทุกห้องทุกใบ (ห้อง DIE ได้ยินงาน JIG)\n');
+  }
+});
+
+test('🛡️ Andon: call_mtn_team (ของจริง) ต้องชนะการเดาจากชนิดอุปกรณ์', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/MtnAndonBoard.jsx'), 'utf8'));
+  const fn = code.match(/const teamOfDt\s*=\s*useCallback\([\s\S]*?\}, \[[^\]]*\]\);/);
+  assert.ok(fn, '\n\n❌ หา teamOfDt ใน MtnAndonBoard.jsx ไม่เจอ — ย้ายแล้วต้องอัปเดตด่านนี้\n');
+  const body = fn[0];
+  const iDeclared = body.indexOf('call_mtn_team');
+  const iGuess = body.indexOf('teamForEquipmentKind');
+  assert.ok(iDeclared !== -1 && (iGuess === -1 || iDeclared < iGuess),
+    '\n\n❌ teamOfDt อ่าน call_mtn_team ทีหลัง (หรือไม่อ่านเลย)\n'
+    + '   กฎ (utils/mtnTeams.js หัวไฟล์): ชนิดอุปกรณ์เป็นแค่ "การเดา" —\n'
+    + '        ตัวตัดสินจริงคือ mtn_orders.mtn_dept และ downtime_logs.call_mtn_team\n'
+    + '   ของจริงต้องมาก่อนการเดาเสมอ · และห้าม return null ทิ้งตั้งแต่ไม่มีเลขเครื่อง\n'
+    + '   (ใบที่ไม่ระบุเครื่องแต่ระบุทีมไว้ จะกลายเป็น "ไม่รู้ทีม" ทั้งที่คนกดระบุชัดเจน)\n');
+});
+
+/* ── คิว rack / บรรจุภัณฑ์ ห้ามโหลด "ล่าสุด N ใบ ไม่กรองสถานะ" (06/10 · ช่องโหว่สโตร์ข้อ 7) ── */
+test('🛡️ rack_requests / packaging_withdrawal_requests: คิวต้องโหลดใบค้างครบผ่าน openPlusHistory', () => {
+  for (const f of ['src/pages/HeijunkaKanban.jsx', 'src/pages/RackCenter.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(!/from\('(?:rack_requests|packaging_withdrawal_requests)'\)\.select\('\*'\)\.order\([^)]*\)\.limit\(/.test(code),
+      `\n\n❌ ${f} โหลดคิว rack/บรรจุภัณฑ์แบบ order().limit() ไม่กรองสถานะ — ใบค้างเก่าหลุดจากจอเมื่อใบโตขึ้น\n`
+      + '   แก้ยังไง: openPlusHistory(ใบค้าง, ประวัติ, N, คอลัมน์เวลา) จาก src/utils/fetchByIds.js\n');
+  }
 });

@@ -110,10 +110,15 @@
 > - **⚠️ ต้องเช็คนามสกุลไฟล์ด้วย ไม่ใช่ดูแต่ MIME** — Android/Chrome หลายรุ่นส่ง `type` เป็นค่าว่าง/`application/octet-stream` กับไฟล์ `.heic`
 > - **⚠️ แปลงให้เร็วที่สุดที่ต้น handler** — โค้ดที่ derive `ext`/ชนิดจากชื่อไฟล์ต่อจากนั้นจะได้ค่าถูกต้องตาม (ไฟล์ที่แปลงแล้วเป็น `.jpg`)
 >   แปลงทีหลังจะได้ไฟล์ JPEG แต่ตั้งชื่อบน storage เป็น `.heic`
-> - **จุดที่ผ่านเกตแล้ว (ครบทุกทางเข้ารูปในระบบ):** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
+> - **จุดที่ผ่านเกตแล้ว:** `resizeImage.js` (MtnRepair/Improvements/PEDocs/Report/Management/operator) · `NpiUi.uploadNpiFile` (เพิ่ม 2026-09-08 — เคยหลุด)
 >   · `ImageCropModal` (รูปพนักงาน/โปรไฟล์/สินค้า/อะไหล่/PMSetup frames) · LineSetup ผังไลน์ · FactoryMap ผังโรงงาน
 >   · MtnMachineLayout โซน facility · PMSetup รูปจุดตรวจ · QAInspectionSetup drawing · DieLayout/RackMap `compressPlan`
 >   → **เพิ่มจุดรับไฟล์รูปใหม่ต้องเรียก `toDecodableImage()` ก่อนเสมอ**
+> - 🔴 **ลิสต์นี้เคยเขียนว่า "ครบทุกทางเข้ารูปในระบบ" — ไม่จริง ตัดคำนั้นออกแล้ว 2026-10-06**
+>   QC audit เจอ `SignatureModal` (แท็บอัปโหลดลายเซ็น) ไม่อยู่ในลิสต์และไม่ผ่านเกตจริง
+>   ⇒ คำว่า "ครบ" ทำให้ session ถัดไปเลิกไล่ตรวจ = เอกสารที่ผิดแย่กว่าไม่มี
+>   **วิธีตรวจว่าครบจริง: `grep -rln "type=\"file\"" src/ | xargs grep -Ln toDecodableImage`**
+>   (ไฟล์ที่รับรูปแล้วไม่เรียกเกต = ต้องมีเหตุผลกำกับ เช่น รับ PDF/ไฟล์อื่นล้วน)
 > - ข้อความบนจอห้ามพูดเรื่อง "ขนาด/ใหญ่เกินไป" กับปัญหา decode — ต้องชี้ "ฟอร์แมต + วิธีตั้งกล้องเป็น JPEG"
 >   (Samsung: ตั้งค่ากล้อง → รูปแบบภาพ → ปิด HEIF · iPhone: ตั้งค่า → กล้อง → รูปแบบ → "เข้ากันได้มากที่สุด")
 > #### ⚠️⚠️ กับดัก worker ของ heic2any — "รูปแรกลงได้ ลงหลายรูปแล้วลงไม่ได้อีกเลยจนรีเฟรช" (2026-09-08 · feedback Samsung/Android ทั้ง PWA + Chrome)
@@ -130,7 +135,14 @@
 > - **ยังไม่ทำ:** ตัวบีบรูปสาย "ผัง/drawing" (2560px/q0.9) ยังกระจาย 7 จุด (`imageCompression` 5 จุด + `compressPlan` ที่ก๊อปกัน 2 ไฟล์)
 >   — ควรยุบเป็น util เดียวเมื่อไปแตะจุดนั้นครั้งหน้า (ตอนนี้เกต HEIC เข้าครบแล้วทุกจุด จึงไม่เร่ง)
 - **GIF (รูปขยับ) ถูกส่งทั้งไฟล์โดยไม่แปลง** เพื่อคงการเคลื่อนไหว (วาดลง canvas จะเหลือเฟรมแรกเฟรมเดียว = การขยับหายเงียบๆ) — จำกัด ≤ 2MB **ทุกจุดที่รับ GIF** (ImageCropModal + LineSetup) **ห้ามถอด cap ออก** (GIF ไม่จำกัดขนาดเฉลี่ย ~4MB เคยกินครึ่ง bucket)
-- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB update สำเร็จเท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผัง/ตอนลบไลน์/**ปุ่ม 🗑 ลบรูปผัง** (2026-08-04 — เคสเผลออัพรูปทับ ลบแล้วไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ · เช็ค sharers ก่อนลบไฟล์) — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
+- 🔴 **"หลัง DB สำเร็จ" ไม่พอ — ต้อง "หลังนับแถวได้ > 0"** (QC audit 2026-10-06 · มีด่าน `storage-delete-after-row-count`)
+  RLS ปฏิเสธ DELETE = **สำเร็จ 0 แถว ไม่มี error** (กฎเหล็ก DB ข้อ 2) ⇒ เช็คแค่ `error` แล้วลบไฟล์ =
+  **แถวยังอยู่ แต่ไฟล์หายถาวร** แล้วจอขึ้น "ลบแล้ว" · แก้ไปแล้ว 5 จุด: `QAInspectionSetup` (delPart
+  ลบ `qa-drawings/parts/<id>` ทั้งโฟลเดอร์ ⇒ ใบตรวจพาร์ทเสียถาวร · deleteDrawing) · `OjtTraining`
+  (ลายเซ็นพนักงานทั้งใบ) · `PMSetup` (รูปจิ๊กทั้งชุด + โมเดล 3D) · `MtnMachineLayout` (รูปผังโซน) ·
+  `LineSetup` (รูปผังไลน์) · **ข้อยกเว้นเดียว = delete ที่ "0 แถวคือเรื่องปกติ"** (เช่นลบของที่อาจ
+  ไม่มีอยู่แต่แรก) ⇒ ขึ้นทะเบียนใน `STORAGE_DEL_ALLOW` พร้อมเหตุผล
+- **เปลี่ยน/ลบรูปแล้วต้องลบไฟล์เก่าจาก storage เสมอ** (ลบ**หลัง** DB สำเร็จ**และนับแถวได้**เท่านั้น + best-effort ห้ามทำ flow หลักพัง) — ทำแล้วใน: DeptHub.jsx (รูปโปรไฟล์ user — bucket `avatars` **แยกจาก employee-photos โดยเจตนา** เพราะ cleanup-orphan-photos สแกน employee-photos เทียบ employees/line_layouts เท่านั้น ไฟล์ avatar ที่ไปอยู่ที่นั่นจะโดนลบ · migration `20260714_profiles_avatar.sql`), operator.jsx (รูปพนักงาน), LineSetup.jsx (ผังไลน์ ทั้งตอนเปลี่ยนผัง/ตอนลบไลน์/**ปุ่ม 🗑 ลบรูปผัง** (2026-08-04 — เคสเผลออัพรูปทับ ลบแล้วไลน์ลูกกลับไปยืมผังไลน์แม่อัตโนมัติ · เช็ค sharers ก่อนลบไฟล์) — เฉพาะผังของตัวเอง **ห้ามลบผังที่ยืมแสดงจากไลน์แม่**), ProductMaster.jsx (dr_products + parts_master ทั้งตอนเปลี่ยนรูปและตอนลบสินค้า — มี guard ไม่ลบรูปที่สินค้า/พาร์ทอื่นแชร์ URL เดียวกัน), QAInspectionSetup.jsx (replace/delete drawing + ลบทั้งโฟลเดอร์ตอนลบ part), PMSetup.jsx (ลบ jig = ลบรูปทั้งชุด frame-*/cp-*), SignatureModal.jsx (ลายเซ็นเก่า — เฉพาะโฟลเดอร์ user ตัวเอง), Management.jsx (รูปหลักฐาน OJT แนบทับ = ลบรูปเดิม), MtnMachineLayout.jsx (รูปโซน facility), Improvements.jsx (รูป before/after ทั้งตอนเปลี่ยนและตอนลบโปรเจค) · หน้าใหม่ที่มีการเปลี่ยนรูปต้องทำแบบเดียวกัน ไม่งั้นไฟล์กำพร้าสะสม (เคยค้าง 117 ไฟล์ / 100MB เพราะอัปโหลดชื่อใหม่ `emp_<timestamp>` โดยไม่ลบของเดิม)
 - **อุปกรณ์ PM ใช้ "รูปหลายมุม (spin)" เท่านั้น — ไม่มีโมเดล 3D แล้ว** (ถอดออก 2026-07-10 เพราะเกินจำเป็น + dep หนัก three/occt wasm 7.6MB): PMSetup อัปหลายรูปมุมต่างๆ (SpinAnnotator) ปักหมุดจุดตรวจต่อเฟรม, หน้าตรวจ (JigSpinCheck) ปัดหมุน+auto-play+หมุด sync checklist 
 > #### ⚠️ ความถี่การตรวจ — ค่าที่ UI ให้เลือก ต้องตรงกับที่ DB รับ (2026-08-21 · feedback "เลือกรายไตรมาสแล้วเซฟไม่ได้")
 > `FREQ_LABEL` (`src/lib/pmSchedule.js`) มี 5 ค่า **daily · weekly · monthly · quarterly · periodic**

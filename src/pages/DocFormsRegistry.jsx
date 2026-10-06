@@ -11,6 +11,7 @@ import SearchSelect from '../components/SearchSelect';
 import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -338,7 +339,7 @@ export default function DocFormsRegistry() {
                         </span>
                         <button onClick={() => preview(editing, sc.section)} style={sbtn}>🖨️ ตัวอย่าง</button>
                         {canManage && <button onClick={() => openScope(editing, sc)} style={sbtn}>✏️</button>}
-                        {canManage && <button onClick={() => removeScope(sc)} style={{ ...sbtn, color: '#e05252' }}>🗑</button>}
+                        {canManage && <DeleteButton onClick={() => removeScope(sc)} title="ลบ" />}
                       </div>
                     ))}
                   </div>
@@ -376,8 +377,7 @@ export default function DocFormsRegistry() {
                           <td style={{ textAlign: 'center' }}>{r.responsible || '—'}</td>
                           <td style={{ textAlign: 'center' }}>{r.approved_name || '—'}</td>
                           <td style={{ textAlign: 'center' }}>
-                            <button className="tbtn" onClick={() => removeRevision(r)} title="ลบ"
-                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>🗑</button>
+                            <DeleteButton onClick={() => removeRevision(r)} title="ลบ" />
                           </td>
                         </tr>
                       ))}

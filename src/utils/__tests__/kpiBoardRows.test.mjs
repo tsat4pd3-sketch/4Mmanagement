@@ -93,3 +93,17 @@ test('ดูทั้งโรงงาน: นิยามโรงงานน
 test('normKpiRowName: ตัวพิมพ์/ช่องว่าง/วงเล็บไม่สำคัญ', () => {
   assert.equal(normKpiRowName('%RM (Raw Material)'), normKpiRowName('%rm raw-material'));
 });
+
+/* 💰 เลือก CC ของ MTN ต้องได้แผ่นเดียวกับเลือกแผนก MTN (06/10 · user: "เลือกส่วนของ MTN เหมือนกัน ทำไมไม่เหมือนกัน") */
+test('ownScopes: CC ของแผนก MTN เห็นแผ่นพิเศษ def:<id> ของ MTN · ไม่ส่ง ownScopes = พฤติกรรมเดิม (CC ไม่มีแผ่น)', () => {
+  const cc = { kind: 'cost_center', value: '2140456000' };
+  const mtn = { kind: 'department', value: 'MTN' };
+  const mtnDefs = DEFS.filter(d => d.scope_kind === 'department' && d.scope_value === 'MTN');
+  const base = { templates: T, kdefs: mtnDefs, scope: cc, hasLines: false, findManual: () => null, findAuto: () => null };
+  const withOwn = pickBoardRows({ ...base, ownScopes: [cc, mtn] });
+  // def:10 'Safety' ตรงชื่อช่องมาตรฐาน ⇒ อยู่บนช่อง ไม่ใช่แผ่นพิเศษ
+  assert.deepEqual(withOwn.rows.filter(r => r.extra).map(r => r.key), ['def:11', 'def:12', 'def:13']);
+  assert.equal(withOwn.rows.some(r => r.auto === 'oee'), false, 'CC ของช่างไม่มีไลน์ = ไม่มี OEE');
+  const without = pickBoardRows(base);
+  assert.deepEqual(without.rows.filter(r => r.extra), [], 'ไม่บอกเจ้าของ = นิยามของแผนกเป็นแค่ตกทอด ไม่ทำแผ่นพิเศษ');
+});

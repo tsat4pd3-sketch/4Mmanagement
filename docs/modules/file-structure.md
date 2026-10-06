@@ -67,3 +67,29 @@ docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.
 
 ---
 
+
+---
+
+## ของกลางที่ใช้บ่อย — ตัวอย่างการเรียก (ย้ายมาจาก CLAUDE.md §Patterns 2026-10-06)
+
+> ย้ายมาเพราะเป็น **ตัวอย่างโค้ด** ไม่ใช่กฎ (กฎรับเข้า CLAUDE.md ข้อ 2) — CLAUDE.md เหลือแค่ชื่อของกลาง
+
+### Toast (singleton · `src/components/Toast.jsx`)
+```js
+import { toast } from '../components/Toast'
+toast.success('บันทึกสำเร็จ')
+toast.error('เกิดข้อผิดพลาด')
+toast.info('กำลังโหลด...')
+```
+
+### UserContext (`src/App.jsx`)
+```js
+const { role, lineId, team, section, sections, fullName } = useContext(UserContext)
+// sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array · [] = ไม่จำกัด)
+```
+
+### Skill Fit Scoring (`src/utils/` — ใช้ในหน้าจัดคนเข้าสถานี)
+```js
+computeFit(employee, station)  // % ของทักษะที่ผ่าน min_score
+fitColor(score)                // 80+ green | 60-79 amber | 40-59 orange | <40 red
+```

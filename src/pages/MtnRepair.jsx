@@ -44,6 +44,8 @@ import useTimeRange from '../utils/useTimeRange';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
 import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
+/* ป้ายถังขยะของ taxonomy — ของกลาง ห้ามเขียนสตริง "อื่นๆ" เองในหน้า (ดู unclassified.js) */
+import { isVague, UNGROUPED_LABEL } from '../utils/unclassified';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -64,6 +66,7 @@ import { coalesce } from '../utils/liveRefresh';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { DeleteButton } from '../components/IconButton';
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
 // (โลโก้ต่าง origin เช่น Supabase Storage จะพิมพ์ไม่ติดถ้าใช้ <img src=url> ตรงๆ)
@@ -107,8 +110,12 @@ const deptForItem = teamForItem;
 /* ⚠️ ใบซ่อมเก็บ "ชื่อ" ของ taxonomy ไว้เป็น snapshot (ตาม pattern เดียวกับ lpa_audit_answers.question_text)
    ข้อดี: ใบเก่ายังอ่านออกเหมือนวันที่แจ้ง · ข้อเสีย: เปลี่ยนชื่อใน master แล้ว KPI/พาเรโต้ (จัดกลุ่มด้วยข้อความ)
    จะแตกเป็น 2 กลุ่ม → ตอนแก้ชื่อจึงถามก่อนว่าจะให้ใบเก่าตามไปด้วยไหม (ไม่เขียนทับประวัติเงียบๆ) */
+/* 🔴 `group_name` ต้องอยู่ในตารางนี้ด้วย (เพิ่ม 2026-10-06) — ใบซ่อมเก็บ `problem_group`
+      เป็นสำเนาข้อความเหมือนกัน · เดิมไม่มี ⇒ เปลี่ยนชื่อกลุ่มในทะเบียนแล้วใบเก่าค้างชื่อเดิม
+      **พาเรโตแตกเป็น 2 แท่งเงียบๆ ไม่มีใครรู้** (วัดจริง 06/10: 2 ใบค้างกลุ่ม "MTN ระบบ…"
+      ที่ไม่มีอยู่ในทะเบียนอีกแล้ว) · มีด่าน `mtn-name-cascade-covers-group` ใน regressionGuards */
 const NAME_CASCADE = {
-  mtn_problem_types: { characteristic: 'problem_characteristic', detail: 'problem_detail' },
+  mtn_problem_types: { group_name: 'problem_group', characteristic: 'problem_characteristic', detail: 'problem_detail' },
   mtn_item_types:    { name: 'item_type' },
   mtn_repair_types:  { name: 'repair_type' },
 };
@@ -528,6 +535,38 @@ export default function MtnRepair() {
     return d && (!a || d < a) ? d : a;
   }, null), [shownNoDate]);
 
+  /* ── ⬇️ Export Excel ของช่วงที่เลือก (2026-10-06 · คำขอ user) ────────────────────
+     ส่ง `shown` (ใบที่เห็นบนจอหลังกรองทุกชั้น) ⇒ ไฟล์ตรงกับจอเสมอ
+     · ตัวตัดสิน "ค้าง/จบ" และ "ป้ายสถานะ" ส่ง `isMoOpen`/`moStatusLabel` เข้าไป
+       **ห้ามให้ไฟล์ export เดาจาก `status` เอง** (เลขขั้น/สถานะต่างกัน 2 ฟอร์ม — กฎ stageOf)
+     · ตัวแปลงคีย์ทีม → ชื่อ ส่ง `deptNameOf` (ค่าใน DB เป็น key ไม่ใช่ชื่อ)
+     · ก้อน exceljs โหลดตอนกดเท่านั้น (lazy ~960KB) — จอรายการห้ามหนักขึ้นเพราะปุ่มนี้ */
+  const [exporting, setExporting] = useState(false);
+  const doExport = useCallback(async () => {
+    if (!shown.length) return toast.error('ไม่มีใบในช่วง/ตัวกรองที่เลือก');
+    setExporting(true);
+    try {
+      const { exportMoExcel } = await import('../lib/mtnMoExportExcel');
+      const note = [
+        fDept && `ทีมช่าง: ${deptNameOf(fDept)}`,
+        fLine && `ไลน์: ${fLine}`,
+        fStatus !== 'all' && `สถานะ: ${fStatus === 'open' ? 'ยังไม่ปิด' : (STATUS_META[fStatus]?.label || fStatus)}`,
+        fShift && `กะ: ${fShift === 'day' ? 'เช้า' : 'ดึก'}`,
+        fRepairType && `ประเภทงานซ่อม: ${fRepairType}`,
+        fText.trim() && `คำค้น: "${fText.trim()}"`,
+      ].filter(Boolean).join(' · ') || 'ไม่ได้กรองอะไร (ทั้งช่วงที่เลือก)';
+      const r = await exportMoExcel({
+        rows: shown, from: tr.from, to: tr.to,
+        dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
+        isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
+      });
+      /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
+      toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
+    } catch (e) {
+      toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e));
+    } finally { setExporting(false); }   // ล้มกลางทาง ปุ่มต้องปลดเสมอ
+  }, [shown, tr.from, tr.to, fDept, fLine, fStatus, fShift, fRepairType, fText]);
+
   const openCount = useMemo(() => orders.filter(o => isMoOpen(o) && (!scopeLines || !o.line_name || scopeLines.has(o.line_name))).length, [orders, scopeLines]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
@@ -597,6 +636,15 @@ export default function MtnRepair() {
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
+          {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
+              ที่เกิดขึ้นในแต่ละช่วงเดือน" — เดิมมีแต่พิมพ์ใบทีละใบ)
+              ส่ง `shown` = ใบที่เห็นบนจอจริง ⇒ ไฟล์ตรงกับที่คนกรองไว้ ไม่ใช่ทั้งฐาน */}
+          <button onClick={doExport} disabled={exporting || !shown.length}
+            title={shown.length ? `ออกไฟล์ Excel ${shown.length} ใบ ตามช่วง/ตัวกรองที่เลือกอยู่` : 'ไม่มีใบในช่วง/ตัวกรองที่เลือก'}
+            style={{ ...btnGhost, height: 'var(--ctl-h)', padding: '0 13px', fontSize: 'var(--ctl-fs)',
+              opacity: (exporting || !shown.length) ? 0.5 : 1, cursor: (exporting || !shown.length) ? 'not-allowed' : 'pointer' }}>
+            {exporting ? '⏳ กำลังทำไฟล์…' : '⬇️ Excel'}
+          </button>
           {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
         {ordersErr && (
@@ -880,7 +928,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
      ⚠️ ต้องมีช่องค้นหาข้ามชั้นด้วย — ช่างที่แจ้งทุกวันรู้อยู่แล้วว่าจะเลือกอะไร
         การบังคับเลือกกลุ่มก่อนคือเพิ่มขั้นตอนให้เขา */
   const [probQ, setProbQ] = useState('');
-  const NO_GROUP = 'อื่นๆ';
+  /* 🔴 ถังสังเคราะห์ของแถวที่ยังไม่ตั้งกลุ่ม = "ยังไม่จัดกลุ่ม" **ห้ามใช้ชื่อ "อื่นๆ"**
+        (06/10 · user: "มั่ว ระบบ dropdown") — ทะเบียนมีแถวจริงชื่อ "อื่นๆ" อยู่แล้ว
+        ใช้ชื่อเดียวกัน = dropdown เดียวมี 2 ป้ายความหมายต่างกัน เลือกแล้วไม่รู้ว่าได้อะไร
+        · ป้ายนี้ **โชว์บนจอเท่านั้น ห้ามเขียนลง DB** (ดู onChar ล่าง) */
+  const NO_GROUP = UNGROUPED_LABEL;
   const probGroups = useMemo(() => {
     const m = new Map();
     for (const p of teamProblemTypes) {
@@ -888,8 +940,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
       if (!m.has(g)) m.set(g, []);
       m.get(g).push(p);
     }
-    // กลุ่ม "อื่นๆ" ไปท้ายเสมอ
-    return [...m.entries()].sort((a, b) => (a[0] === NO_GROUP ? 1 : b[0] === NO_GROUP ? -1 : 0));
+    /* กลุ่มที่ "บอกอะไรไม่ได้" ไปท้ายลิสต์เสมอ — ทั้งถังสังเคราะห์ และกลุ่มจริงที่กำกวม
+       (เช่น "อื่นๆ / ยังระบุไม่ได้") ⇒ ตัวเลือกที่ชี้เป้าได้อยู่บนมือคนแจ้งก่อน
+       ⚠️ เรียงเท่านั้น **ห้ามตัดออกจากลิสต์** — ไม่มีให้เลือก = คนกรอกมั่วหนักกว่าเดิม */
+    const vagueRank = (g) => (g === NO_GROUP ? 2 : isVague(g) ? 1 : 0);
+    return [...m.entries()].sort((a, b) => vagueRank(a[0]) - vagueRank(b[0]));
   }, [teamProblemTypes]);
   const probHits = useMemo(() => {
     const q = probQ.trim().toLowerCase();
@@ -907,6 +962,11 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
     const pt = teamProblemTypes.find(x => x.characteristic === c);
     setF(p => ({ ...p, problem_characteristic: c, problem_group: (pt?.group_name || '').trim() || p.problem_group || '' }));
   };
+  /* 🔴 กลุ่มที่ "เก็บลงใบ" ต้องเป็น taxonomy จริงเท่านั้น — ป้ายถังสังเคราะห์
+        ("ยังไม่จัดกลุ่ม") เป็นของจอ ไม่ใช่ของทะเบียน ⇒ บันทึกเป็นค่าว่าง
+        (เขียนลงใบ = ปลอมกลุ่มให้พาเรโต · ผิดกฎชั้น 1 "ห้ามเขียนทับค่าที่ระบบรู้อยู่แล้ว")
+        เก็บไว้ในช่องเลือกได้ตามปกติ เพื่อให้ dropdown หัวข้อย่อยยังเปิดอยู่ */
+  const groupForDb = (g) => (String(g || '').trim() === NO_GROUP ? '' : String(g || '').trim());
 
   const save = async () => {
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
@@ -931,7 +991,7 @@ function ReportModal({ lines, machines, orders = [], itemTypes, problemTypes, re
         plant_manager_name: needsPlantManager(f.purpose) ? (f.plant_manager_name || null) : null,
       } : {};
       const { contact_phone, pr_no, io_no, purpose, dept_manager_name, plant_manager_name, ...fRest } = f;  // eslint-disable-line no-unused-vars
-      const payload = { ...fRest, ...mtnForm, want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
+      const payload = { ...fRest, ...mtnForm, problem_group: groupForDb(f.problem_group), want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
         report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
@@ -2957,7 +3017,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, flex: '2 1 180px', width: 'auto' }} />
               <select defaultValue={teamKeyOf(it.dept) || 'maintenance'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, flex: '1 1 120px', width: 'auto' }}><TeamOpts list={mtnDepts} /></select>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
-              <button onClick={() => delRow('mtn_technicians', it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_technicians', it.id)} title="ลบ" />
             </div>))}</div>
         </div>); })}
     </div>
@@ -2985,7 +3045,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: 100 }} />
             <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: 100 }} />
             <select defaultValue={teamKeyOf(r.dept) || ''} onChange={e => updRow('mtn_labor_rates', r.id, { dept: e.target.value || null })} style={{ ...inp, width: 130 }}><option value="">{ALL.team}</option><TeamOpts list={mtnDepts} /></select>
-            <button onClick={() => delRow('mtn_labor_rates', r.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+            <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow('mtn_labor_rates', r.id)} title="ลบ" />
           </div>))}
         {!laborRates.length && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีราคามาตรฐาน — เพิ่มด้านบน</div>}
       </div>
@@ -3038,6 +3098,24 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       if (!confirm(msg + '\n\nยืนยัน?')) return;
       updRow(table, it.id, { team: to });
     };
+
+    /* 🩺 "ทะเบียนครบไหม" — กฎความซื่อสัตย์ของจอ (ชั้น 3 ของกฎอื่นๆ/ไม่ระบุ · 2026-10-06)
+       เคสจริงที่ทำให้ต้องมีแผงนี้: JIG MTN **13/13 แถวไม่ได้ตั้งกลุ่ม** ⇒ ช่างทีมนั้นเปิด
+       ฟอร์มแจ้งซ่อมเจอกลุ่มเดียวทั้งทีม = ตัวเลือก 2 ชั้นไร้ผล และทุกใบลงกลุ่มเป็นถังขยะ
+       — ไม่มีใครรู้เลย เพราะจอทะเบียนไม่เคยบอก · ต้องบอกทั้งตอน "ไม่ครบ" และ "ครบแล้ว" */
+    const hasGroupCol = fields.some(fl => fl.k === 'group_name');
+    const gaps = !hasGroupCol ? null : (() => {
+      const byTeam = new Map(); const seen = new Map();
+      for (const it of items) {
+        const tk = teamKeyOf(it.team) || '';
+        if (!(it.group_name || '').trim()) byTeam.set(tk, (byTeam.get(tk) || 0) + 1);
+        const key = [tk, (it.group_name || '').trim(), (it.characteristic || '').trim()].join('\u0000');
+        seen.set(key, (seen.get(key) || 0) + 1);
+      }
+      return { byTeam: [...byTeam.entries()], dupN: [...seen.values()].filter(n => n > 1).length };
+    })();
+    const warnBox = { fontSize: 11.5, borderRadius: 7, padding: '7px 10px', marginBottom: 10, lineHeight: 1.65 };
+
     return (
       <div>
         {teamed && (
@@ -3059,6 +3137,15 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               : <>🔒 แก้ได้เฉพาะรายการของทีม <b>{myKeys.map(teamNameOf).join(' · ')}</b> — ของทีมอื่นและรายการ 🌐 ใช้ร่วมทุกทีม ดูได้อย่างเดียว (แก้ทีเดียวกระทบทุกทีม ต้องให้หัวหน้าแก้)</>}
           </div>
         )}
+        {hasGroupCol && (gaps.byTeam.length || gaps.dupN
+          ? <div style={{ ...warnBox, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--accent2)' }}>
+              ⚠️ <b>ทะเบียนยังไม่ครบ</b>
+              {!!gaps.byTeam.length && <> — {gaps.byTeam.map(([k, n]) => `${teamNameOf(k)} ${n} แถว`).join(' · ')} ยังไม่ได้ตั้ง<b>กลุ่มใหญ่</b> ⇒ ช่างทีมนั้นเปิดฟอร์มแจ้งซ่อมจะเจอกลุ่ม “{UNGROUPED_LABEL}” แทนกลุ่มจริง และทุกใบของทีมจะลงกลุ่มเป็นถังขยะ</>}
+              {!!gaps.dupN && <> {gaps.byTeam.length ? '·' : '—'} มี<b>หัวข้อย่อยซ้ำ</b>ในทีม+กลุ่มเดียวกัน {gaps.dupN} ชุด ⇒ คนแจ้งเห็น 2 บรรทัดเหมือนกันใน dropdown เดียว แล้วพาเรโตแตกเป็น 2 แท่ง</>}
+            </div>
+          : <div style={{ ...warnBox, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+              ✅ ทุกแถวมีกลุ่มใหญ่ครบ · ไม่มีหัวข้อย่อยซ้ำในทีม+กลุ่มเดียวกัน
+            </div>)}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {fields.map(fl => <input key={fl.k} value={nw[fl.k] || ''} onChange={e => setNw(p => ({ ...p, [fl.k]: e.target.value }))} placeholder={fl.ph} style={{ ...inp, width: fl.w || 200 }} />)}
           {teamed && (
@@ -3125,7 +3212,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                 </div>);
             })()}
             {ok
-              ? <button onClick={() => delRow(table, it.id)} className="tbtn" style={{ ...btnGhost, color: '#ef4444', padding: '6px 10px', marginLeft: 'auto' }}>🗑</button>
+              ? <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => delRow(table, it.id)} title="ลบ" />
               : <span title={lockNote(it)} style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
           </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>

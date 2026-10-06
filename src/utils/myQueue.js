@@ -95,14 +95,23 @@ export function moWaitingOn(o = {}) {
   return { step, meta, who: null, byName: false };
 }
 
-/** ใบนี้อยู่ในขอบเขตของเราไหม — `sections: []` = ไม่จำกัด (เห็นทุกส่วนงาน) */
-export function inMyScope(row, me) {
+/* ── แถวนี้ตกขอบเขตเพราะอะไร ────────────────────────────────────────  2026-10-06
+   🔴 "ของหน่วยอื่น" กับ "ใบไม่ระบุส่วนงาน" **คนละเรื่อง ห้ามยุบเป็น false เดียว**
+      ของหน่วยอื่น = ถูกแล้วที่ไม่เห็น · ใบไม่ระบุส่วนงาน = **ไม่มีใครเห็นเลยทั้งโรงงาน**
+      (วัดจริง 06/10: ใบรอ QA 188 ใบ — 152 ใบผูก PD3 แต่ **36 ใบ `dept_section` ว่าง**
+       ⇒ ตกจากคิวของทุกคนเงียบๆ ไม่มีใครรู้ว่ามีอยู่) ⇒ ต้องนับแล้วให้จอเขียนบอก
+   คืน 'in' อยู่ในขอบเขต · 'other' ของหน่วยอื่น · 'unknown' แถวไม่ระบุส่วนงาน */
+export function scopeStateOf(row, me) {
   const secs = Array.isArray(me?.sections) ? me.sections.filter(Boolean) : [];
-  if (!secs.length) return true;                    // ไม่จำกัด
+  if (!secs.length) return 'in';                    // ไม่จำกัด = เห็นทุกส่วนงาน
   const s = norm(row?.dept_section || row?.section);
-  if (!s) return false;                             // ใบไม่ระบุส่วนงาน = ตอบไม่ได้ว่าของเรา
-  return secs.some(x => norm(x) === s);
+  if (!s) return 'unknown';                         // แถวไม่ระบุส่วนงาน = ตอบไม่ได้ว่าของเรา
+  return secs.some(x => norm(x) === s) ? 'in' : 'other';
 }
+
+/** แถวนี้อยู่ในขอบเขตของเราไหม — `sections: []` = ไม่จำกัด (เห็นทุกส่วนงาน)
+ *  ⚠️ พฤติกรรมเหมือนเดิมเป๊ะ (แถวไม่ระบุส่วนงาน = false) — แค่ยืมคำตอบจาก `scopeStateOf` จุดเดียว */
+export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
 
 /* ── ตัวแปลงแถวดิบ → รายการบนจอ ─────────────────────────────────────────────
    ทุกตัวคืนรูปเดียวกัน: { key, icon, title, detail, age, tier, tag, to }
@@ -135,18 +144,42 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   const mine = []; const unit = []; const floor = [];
   const missing = [];
   const need = (k, v) => { if (v === undefined || v === null) { missing.push(k); return []; } return v; };
+  /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
+  let unattributed = 0;
+  const keep = (row) => {
+    const st = scopeStateOf(row, me);
+    if (st === 'unknown') { unattributed += 1; return false; }
+    return st === 'in';
+  };
+
+  /* 🔴 ขั้นที่ "รอตำแหน่ง" (QA · จ่ายงาน · หัวหน้าแผนก · ผจก.) ไม่มีเจ้าภาพรายใบ (2026-10-06)
+     ⇒ เข้าชั้น `mine` ไม่ได้ (ไม่ได้รอ "เรา" เป็นตัวบุคคล) และกฎ badge นับเฉพาะ `mine`
+     ⇒ **ไม่มีสัญญาณเลยว่ามีงานค้าง** · วัดจริง 06/10: รอ QA 188 ใบ (ค้างเกิน 7 วัน 169) ไม่มีใครเห็นตัวเลข
+     ⇒ สรุปเป็น **บรรทัดเดียวต่อขั้น ในชั้น `floor`** (ของทั้งโรงงานที่ไม่มีเจ้าภาพ — กติกาเดิมของชั้นนี้)
+     🔴 **ห้ามแตกรายตัวในชั้นนี้ · ห้ามให้ขึ้น badge** (ยัดเข้า `mine` = badge เลขสูงค้างถาวรกับคนหลายคน
+        = ซ้ำรอยกระดิ่งเดิมที่วัดได้ 19,095 แถว/7 วัน อ่าน 7.3%)
+     · นับ **ทั้งโรงงาน ไม่กรองขอบเขต** (ตอบคำถาม "กองนี้ใหญ่แค่ไหน") — ใบของหน่วยเราเองยังโชว์รายตัว
+       ในชั้น `unit` ตามเดิม ⇒ 2 ชั้นตอบคนละคำถาม ไม่ใช่ตัวเลขซ้อนกัน */
+  const byPos = new Map();   // `step` → { step, meta, count, oldest }
 
   // ── ใบซ่อม MO ────────────────────────────────────────────────────────────
   for (const o of need('mo', src.mo)) {
     const w = moWaitingOn(o);
     if (!w.meta) continue;                                  // ใบยังไม่เข้าลูป (ขั้น 1) — ไม่ใช่งานค้างของใคร
     if (w.byName && w.who && isMe(w.who, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
-    if (inMyScope(o, me)) unit.push(moItem(o, w, TIER.UNIT));
+    if (!w.byName) {                                        // รอ "ตำแหน่ง" ⇒ สะสมไว้สรุปชั้น floor
+      const cur = byPos.get(w.step) || { step: w.step, meta: w.meta, count: 0, oldest: null };
+      cur.count += 1;
+      const age = ageDays(o.work_date, now);
+      if (age != null && (cur.oldest == null || age > cur.oldest)) cur.oldest = age;
+      byPos.set(w.step, cur);
+    }
+    if (keep(o)) unit.push(moItem(o, w, TIER.UNIT));
   }
 
   // ── กะที่ขอปิด รอหัวหน้าอนุมัติ ────────────────────────────────────────────
   for (const s of need('sessions', src.sessions)) {
-    if (!inMyScope(s, me)) continue;
+    if (!keep(s)) continue;
     unit.push({
       key: `ses:${s.id}`, icon: '📋', tier: TIER.UNIT,
       title: `คำขอปิดกะ — ${s.line_name || '-'}`,
@@ -158,7 +191,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
 
   // ── 4M รออนุมัติ ─────────────────────────────────────────────────────────
   for (const f of need('fourM', src.fourM)) {
-    if (!inMyScope(f, me)) continue;
+    if (!keep(f)) continue;
     unit.push({
       key: `4m:${f.id}`, icon: '📝', tier: TIER.UNIT,
       title: `4M ${f.category || ''} — ${f.line_name || '-'}`.trim(),
@@ -182,11 +215,24 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       tier: TIER.MINE,
     };
     if (isMe({ uid: a.assignee_uid, name: a.assignee }, me)) mine.push(it);
-    else if (inMyScope(a, me)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
+    else if (keep(a)) unit.push({ ...it, tier: TIER.UNIT, tag: a.assignee || 'ยังไม่มีผู้รับผิดชอบ' });
   }
 
   // ── ชั้น 3: ของทั้งโรงงานที่ไม่มีเจ้าภาพ — **สรุปบรรทัดเดียว ห้ามแตกรายตัว** ──────
   //    ใบขอซื้อค้าง 6,743 รายการมาจากตัวระเบิดความต้องการ ไม่ใช่ "งานที่คนหนึ่งต้องทำทีละใบ"
+  //    ใบ MO ที่รอ "ตำแหน่ง" ก็เข้าชั้นนี้ด้วย (ดูคอมเมนต์ที่ `byPos` ข้างบน)
+  [...byPos.values()].sort((a, b) => b.count - a.count).forEach((g) => {
+    floor.push({
+      key: `mowait:${g.step}`, icon: g.meta.icon || '🔧', tier: TIER.FLOOR, count: g.count,
+      /* ชื่อขั้น/ผู้รับผิดชอบ อ่านจาก `stepMeta()` เท่านั้น — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่
+         (อีโมจิอยู่ `meta.icon` ไม่ได้อยู่ใน `meta.title` ⇒ ต่อ title ตรงๆ ได้) */
+      title: `ใบซ่อมรอ${g.meta.title} ${g.count.toLocaleString()} ใบ`,
+      detail: ['ทั้งโรงงาน', g.meta.whoShort || g.meta.who || 'ผู้รับผิดชอบ',
+        g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
+      age: null, to: '/mtn-repair?tab=list',
+    });
+  });
+
   for (const s of (src.summaries || [])) {
     if (!s || !Number(s.count)) continue;
     floor.push({ key: `sum:${s.key}`, icon: s.icon || '📦', tier: TIER.FLOOR,
@@ -201,6 +247,9 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     counts: { mine: mine.length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
     missing,
     partial: missing.length > 0,
+    /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`
+       เพราะคิวรีไม่ได้ล่ม · ข้อมูลไม่ครบที่ต้นทาง) · 0 = ไม่ต้องเขียน */
+    unattributed,
   };
 }
 

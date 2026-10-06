@@ -28,6 +28,7 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { DeleteButton } from '../components/IconButton';
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
    เก็บเป็นคอลัมน์ `improvement_milestones.phase` (migration 20260819_improvement_milestone_phase_dr)
@@ -1338,7 +1339,7 @@ export default function Improvements() {
                   {/* 📐 คำขอแก้เอกสาร PE — เข้าได้ทุกเมื่อ (ดูสถานะคำขอ/เสนอเพิ่ม) ไม่ใช่ one-shot ตอนปิดจ๊อบ */}
                   <button onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>📐 PE</button>
                   {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>✏️ แก้ไข</button>}
-                  {canDel && <button onClick={() => handleDelete(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: 'none', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>🗑</button>}
+                  {canDel && <DeleteButton onClick={() => handleDelete(imp)} title="ลบ" />}
                 </div>
               </div>
             );

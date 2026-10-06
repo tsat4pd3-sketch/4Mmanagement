@@ -31,6 +31,21 @@ const PARENT_OF = { 2: 1, 3: 1, 4: 2 }
    ตั้งเป็นคู่กัน 2 ทางที่แถว 6↔7 (ต้องครบทั้ง 2 ทางเหมือนของจริง ไม่งั้นจับคู่ไม่ติด)  */
 const PAIR_OF = { 6: 7, 7: 6 }
 
+/* ⚠️ **รอบ PM ต้องมีใน mock เสมอ ห้ามถอด** (2026-10-06)
+   เดิม `ROW()` **ไม่มี `frequency`/`interval_days`/`cycle_basis` เลยสักคอลัมน์** ⇒ ทุกแผนใน harness
+   ตกเป็น "ยังไม่ตั้งรอบ PM" (`periodic`) ทั้ง 14 แถว ⇒ สายที่ **มีรอบจริง** ไม่เคยถูกรันเลย:
+   `computeNextDue`/`dueStatus`/`statusForDays` (เกินกำหนด/ใกล้ครบ/ตามกำหนด) · การ์ดสรุปสถานะ ·
+   บาร์นับถอยหลังในมุมมอง Timeline · และ (ตั้งแต่ 02/10) **ทั้งคลาสของ `cycle_basis='run_day'`**
+   — `resolveRunDayDue` · สถานะ `idle_skip` · `<RunDayCell>` · แถบสรุป "นับรอบจากวันเดินเครื่อง"
+   ⇒ crashsweep ผ่านเขียวทั้งที่โค้ดครึ่งหน้าไม่เคยถูกเรียก (คลาสเดียวกับ pair_mat_no/ไลน์แม่-ลูก)
+   โครงที่ใส่ = คละ 3 แบบให้ทุกสาขาถูกวาดจริง:
+     · แถว 2,3 = `run_day` (2 = ไลน์เดินวันนี้ → ถึงรอบ · 3 = ไลน์ไม่เดิน → `idle_skip` เทา)
+     · แถว 5   = ไม่มีรอบ (`periodic`) — เคส "ยังไม่ตั้งรอบ" ต้องไม่หายไป
+     · ที่เหลือ = รอบปฏิทินคละ 1/7/30/90 วัน */
+const CYCLE_BASIS_OF = { 2: 'run_day', 3: 'run_day' }
+const CYCLE_DAYS = [7, 1, 1, 30, null, 90, 7, 30, 1, 180, 7, 365, 30, 90]
+const FREQ_OF = { 1: 'daily', 7: 'weekly', 30: 'monthly', 90: 'quarterly' }
+
 /* แถวปลอม 1 ชุด ครอบคอลัมน์ที่ใช้บ่อยที่สุดในโปรเจค — ให้ตาราง/ลิสต์ render ของจริงออกมาวัดได้ */
 const ROW = (i) => ({
   id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
@@ -68,7 +83,20 @@ const ROW = (i) => ({
   description: 'ตัวกระบอกลมที่สลับ reed ไปครับ เป็นอีกแล้ว รบกวนช่างมาดูให้หน่อยครับ ขอบคุณครับ',
   category: 'unplanned', image_url: '', is_active: true,
   created_at: '2026-08-04T01:00:00+07:00', started_at: '2026-08-04T01:00:00+07:00',
-  ended_at: '2026-08-04T01:30:00+07:00', checklist_id: `c-${i}`,
+  /* ⚠️ `checklist_id` ต้องชี้ไปที่ `id` ของแถวจริง (2026-10-06 · คลาสเดียวกับ `session_id` ข้างบน)
+     เดิมเป็น `c-${i}` ซึ่ง **ไม่ตรงกับ `id-${i}` เลยสักแถว** ⇒ ทุกหน้าที่จับคู่ checklist → แผน PM
+     (`pm_plans`) หรือ → ผลตรวจ (`inspections`) ได้ 0 แถวเสมอ ⇒ ทุกแผนตกเป็น "ยังไม่เคยตรวจ"
+     = สาย "มีแผน/เคยตรวจแล้ว" (วันครบกำหนด · เกินกำหนด · health · run_day) ไม่เคยถูกรันใน harness */
+  ended_at: '2026-08-04T01:30:00+07:00', checklist_id: `id-${i}`,
+  /* รอบ PM — ดูเหตุผลที่บล็อก CYCLE_BASIS_OF ข้างบน (ห้ามถอด) */
+  interval_days: CYCLE_DAYS[i % CYCLE_DAYS.length],
+  frequency: FREQ_OF[CYCLE_DAYS[i % CYCLE_DAYS.length]] || 'periodic',
+  cycle_basis: CYCLE_BASIS_OF[i] || 'calendar',
+  max_idle_days: CYCLE_BASIS_OF[i] ? 30 : null,
+  plan_type: 'time', next_due_reason: CYCLE_BASIS_OF[i] ? 'run_day' : 'time',
+  /* ครบกำหนดคละ: แถวคู่ = เลยกำหนด (แดง) · แถวคี่ = ยังไม่ถึง (เขียว) · run_day = null เสมอ */
+  next_due_date: CYCLE_BASIS_OF[i] ? null : (i % 2 ? '2026-12-20' : '2026-09-01'),
+  last_done_at: '2026-09-28T01:00:00+07:00',
   full_name: `นายดุลยทรรศน์ ลาภธนสารสมบัติ ${i}`, position: 'operator', role: 'leader', email: `u${i}@x.co`,
   title: `หัวข้อทดสอบ ${i}`, label: `ป้าย ${i}`, note: 'หมายเหตุ', remark: 'หมายเหตุ',
   /* ⚠️ ต้อง **แตกต่างกันตาม i** (2026-09-02) — เดิมทุกแถวคืนชื่อประเภทเดียวกัน
@@ -141,6 +169,8 @@ const NULLISH = (i) => ({
   problem_title: null, min_minutes: null,
   scrap_report_id: null, defect_log_id: null, qa_decision: null, special_use_doc_no: null,
   symptom: null, wi_no: null,
+  /* รอบ PM ที่ยังไม่ตั้ง — เคส "แผนไม่มีรอบ" ต้องมีแถวรองรับเสมอ (ห้ามถอด · ดู CYCLE_BASIS_OF) */
+  interval_days: null, next_due_date: null, last_done_at: null, max_idle_days: null,
 })
 
 const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
@@ -175,6 +205,27 @@ const FACTORY_MAP_IMG = 'data:image/svg+xml;utf8,'
     + '<rect width="1600" height="900" fill="#1f2937"/>'
     + '<rect x="60" y="60" width="1480" height="780" fill="none" stroke="#475569" stroke-width="6"/></svg>')
 const isNullish = (r) => r.qty === null
+/* 🔧 AM รายวัน — ผังคีย์ของ jig / ใบตรวจ / รายการลงทะเบียน (เหตุผลเต็มอยู่ที่ TABLE_ROWS.jigs)
+   AM_JIG[i]    = [ไลน์ที่, equipment_type, equipment_category]
+   AM_TARGET[i] = [ไลน์ที่, jig ที่, shift (null = ทุกกะ)]
+   AM_INSP[i]   = ผลตรวจของ jig ที่ i (ว่าง = pass) */
+const AM_JIG = {
+  1: [1, 'machine', 'production'],  2: [1, 'jig', 'production'],
+  3: [2, 'machine', 'production'],  4: [2, 'jig', 'production'],
+  5: [3, 'machine', 'production'],  6: [3, 'machine', 'production'],
+  7: [5, 'die', 'facility'],        8: [5, 'machine', 'production'],
+  9: [4, 'jig', 'production'],     10: [4, 'jig', 'production'],
+  11: [4, 'machine', 'facility'],  12: [4, 'die', 'facility'],
+  13: [4, 'machine', 'production'],
+}
+const AM_TARGET = {
+  1: [1, 1, null],  2: [1, 2, null],  3: [2, 3, null],  4: [2, 4, null],
+  5: [3, 5, null],  6: [3, 6, null],  7: [5, 7, null],
+  8: [5, 8, 'night'], 9: [5, 14, 'day'], 10: [4, 13, null],
+  11: [4, 9, null], 12: [4, 10, null], 13: [4, 11, null], 14: [4, 12, null],
+}
+const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
+
 const TABLE_ROWS = {
   /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
@@ -208,6 +259,24 @@ const TABLE_ROWS = {
     ['line_leader', 'หัวหน้าไลน์', 'leader'], ['dept_head', 'หัวหน้าแผนก', 'supervisor'], ['section_head', 'หัวหน้าส่วน', 'supervisor'],
     ['manager', 'ผู้จัดการฝ่าย', 'manager'], ['officer', 'เจ้าหน้าที่', 'staff'],
   ].map(([key, label_th, level]) => ({ key, label_th, level }))[i - 1] || {}), sort_order: i }),
+  /* 🧑‍🤝‍🧑 ค่าตั้งบอร์ด (06/10) — ให้สาย "ช่องที่ตั้งเอง" (มีคน/ไม่มีคน) · ช่างประจำไลน์ · คนในสังกัดไปช่วยไลน์อื่น ถูกรัน
+     ทีม D = ตั้งช่องไว้แต่ยังไม่มีใคร ⇒ คอลัมน์ช่องว่างล้วน · line_helpers ชี้ไลน์นอกแผนก (id-9) ⇒ ป้าย "↗ ไปช่วย" */
+  manpower_slot_plans: (r, i) => ({ ...r, org_node_id: 'id-2', team: ['A', 'B', 'D'][i % 3], slots: isNullish(r) ? 0 : 6 }),
+  // 📍 คนต่อกะของจุดงาน — 1 คน/กะ ทุกจุด (บางจุดตั้ง 2) ⇒ สายช่องว่างระบุจุด + วงประบนผัง LAYOUT ถูกรัน
+  station_slot_plans: (r, i) => ({ ...r, station_id: `id-${i}`, per_shift: i % 5 === 0 ? 2 : 1 }),
+  /* 📜 audit_log — คละ 3 ตารางค่าตั้งบอร์ด × INSERT/UPDATE/DELETE + actor ว่าง ⇒ จอประวัติการเปลี่ยนช่องถูกรันครบทุกสาขา
+     (แถวที่ไม่ใช่ 3 ตารางนี้ = ตัวกรองต้องตัดทิ้ง) */
+  audit_log: (r, i) => {
+    const t = ['manpower_slot_plans', 'station_slot_plans', 'line_technicians', 'employees'][i % 4];
+    const act = ['INSERT', 'UPDATE', 'DELETE'][i % 3];
+    const data = t === 'manpower_slot_plans' ? { org_node_id: 'id-2', team: 'A', slots: i }
+      : t === 'station_slot_plans' ? { station_id: `id-${i}`, per_shift: 1 } : { employee_id: `id-${i}`, line_id: 'id-3' };
+    return { ...r, id: i, table_name: t, action: act, actor: isNullish(r) ? null : `ผู้แก้ ${i}`,
+      old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
+      changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
+  },
+  line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
@@ -323,6 +392,40 @@ const TABLE_ROWS = {
      · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
      · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
   production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
+     `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
+     **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
+     เดิม mock **ไม่มี `jig_id` เลยสักแถว** ⇒ ทุก target ตกที่ `if (!j) continue` ⇒ ทั้งหน้าเหลือ
+     ข้อความ "ยังไม่มีไลน์ที่ลงทะเบียนเครื่องตรวจ" ⇒ **`computeDailyPmStatus` (`src/lib/pmDailyStatus.js`)
+     และสีทั้งชุด (เขียว/แดง/ส้ม/idle) ไม่เคยถูกเรนเดอร์ใน harness เลยสักครั้ง**
+     (คลาสเดียวกับ `session_id` / `checklist_id` ข้างบน)
+     กติกาที่ต้องคงไว้:
+     · `jigs` — ชนิด/หมวดตามสัดส่วนจริง (jig/production 106 · machine/production 38 ·
+       machine/facility 14 · die/facility 2) ⇒ ได้ทั้งสาขา "ตัดออกเพราะชนิด/หมวด" และ
+       "ไม่ระบุชนิด (legacy) ต้องไม่หายจากลิสต์" (แถว NULLISH คงความว่างไว้ = เคส legacy)
+     · `checklists.equipment_id` — ชี้ `jigs.id` จริงแค่ **บางส่วน** (i ≤ 8) ⇒ เปิดสาขา
+       "มี checklist AM อยู่แล้ว ชนะการเดาจากชนิด" (jig/die ที่ฝ่ายผลิตตั้งใจตรวจเอง · คำสั่ง user 11/08)
+       ที่เหลือชี้ `e-*` = ใบของอุปกรณ์ฝั่ง MTN — **ห้ามตั้ง null** (ของจริงไม่เคยว่าง 147/147)
+     · `inspections.status` — คละ `pass`/`pending`/`fail` ตามของจริง (100/16/9) ·
+       **`pending` ยังไม่ถือว่าตรวจแล้ว** (ดู `computeDailyPmStatus`)
+     · ไลน์ของ target เลือกให้ครบ 4 สี: ไลน์ 1 = แดง (มี fail) · 2 = เขียว · 3,4 = ส้ม (เกินเวลา
+       ยังไม่ครบ) · 5 = idle (**ไลน์ 1-4 เท่านั้นที่มีกะเปิด** ดู `production_sessions` ข้างบน)
+     · target 11-14 ชี้ jig ที่ถูกกรองออก = เคสจริง "ลงทะเบียนไว้แล้วอุปกรณ์เปลี่ยนชนิด/ถูกย้ายหมวด"
+     · แถวเฉพาะกะต้องมีคู่กันบนไลน์เดียวกัน (8 = night · 9 = day) ⇒ รันกะไหนก็ได้ทั้งสาขา
+       "ข้ามเพราะคนละกะ" และ "นับรวม" และสีของไลน์ไม่แกว่งตามเวลาที่รัน sweep
+     ⚠️ 2 สีที่ **ยังเรนเดอร์ใน harness ไม่ได้** (รู้ตัว ไม่ใช่ลืม): `pending` = อยู่ในกรอบ 60 นาที
+        หลังเปิดใบ ต้องมี `opened_at` ใกล้เวลาจริงซึ่งจะทำให้ mock ไม่นิ่ง · `none` = total 0
+        ซึ่งบอร์ดนี้สร้างไม่ได้ (จัดกลุ่มจาก target ที่มีอยู่) — ใช้ที่ `src/lib/pmDailyAlarm.js` */
+  jigs: (r, i) => (isNullish(r) || !AM_JIG[i] ? r : ({
+    ...r, line_name: LINE_NAME(AM_JIG[i][0]),
+    equipment_type: AM_JIG[i][1], equipment_category: AM_JIG[i][2],
+  })),
+  checklists: (r, i) => ({ ...r, equipment_id: i <= 8 ? `id-${i}` : `e-${i}` }),
+  inspections: (r, i) => ({ ...r, jig_id: `id-${i}`, status: AM_INSP[i] || 'pass' }),
+  pm_daily_line_targets: (r, i) => ({
+    ...r, line_name: LINE_NAME(AM_TARGET[i][0]), jig_id: `id-${AM_TARGET[i][1]}`,
+    shift: AM_TARGET[i][2], is_active: true, sort_order: i,
+  }),
   /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
      `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
      ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**
@@ -672,7 +775,24 @@ const KPI_MTN_ROLL = () => ({
     { m: '2026-09', kind: 'machine', events: 50, breakdown_min: 600 },
   ],
 })
+/* ยอดผลิตรายไลน์รายวัน (RPC `pm_usage_daily`) — ใช้ตอบ "วันไหนเครื่องเดินจริง" ของรอบ run_day
+   🔴 ต้องมีไลน์ของแถว 2 (เดินถึงวันนี้) และ **ไม่มี**ของแถว 3 (จอดมานาน) เพื่อให้จอวาดครบทั้ง
+      "ถึงรอบตรวจวันนี้" และ "ไม่ได้ผลิต — ไม่ต้องตรวจ" (เทา) · ไม่มีไลน์ไหนเลย = เห็นแค่สาขาเดียว */
+const PM_USAGE_DAILY = () => {
+  const out = []; const today = new Date();
+  for (let d = 0; d < 20; d++) {
+    const t = new Date(today); t.setDate(t.getDate() - d);
+    const ymd = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+    /* 🔴 **ต้องข้าม d = 0 (วันนี้)** — ให้ "วันนี้ไลน์ไม่ได้เปิดใบผลิต" เป็นจริงใน harness
+       ไม่งั้นแถว run_day ที่รอบยังไม่ครบจะตกเป็น "ตามกำหนด" ทุกแถว แล้ว **สถานะ `idle_skip`
+       (เทา · "ไม่ได้ผลิต — ไม่ต้องตรวจ") ไม่เคยถูกวาดเลย** = ครึ่งหนึ่งของฟีเจอร์ไม่ถูกตรวจ */
+    if (d % 3 !== 0) out.push({ line_name: LINE_NAME(2), work_date: ymd, qty: 500 + d, orders: 4 });
+  }
+  return out;
+};
+
 const RPC_RESULT = {
+  pm_usage_daily: PM_USAGE_DAILY,
   kpi_mtn_rollup: KPI_MTN_ROLL,
   obeya_year_rollup: OBEYA_YEAR,
   obeya_attendance_rollup: OBEYA_ATTEND,

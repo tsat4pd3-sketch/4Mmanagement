@@ -24,30 +24,29 @@
 - เปลี่ยน schema/ตาราง/Edge Function/workflow/กฎธุรกิจ → อัพเดท **`docs/modules/<module>.md` ของโมดูลนั้น** (พร้อมวันที่) · CLAUDE.md แก้เฉพาะกฎที่ผ่านกฎรับเข้าข้างล่าง
 - **📏 กฎรับเข้า CLAUDE.md (2026-10-05 · คำสั่ง user) — ด่าน `npm run check:context` = ขั้นแรกของ build**
   **ผ่านทั้ง 4 ข้อจึงมีสิทธิ์อยู่** — ตกข้อใดข้อหนึ่ง ไปอยู่ `docs/modules/<module>.md` แล้วเหลือ 📄 pointer:
-  1. **ข้าม session จริง** — session ที่ไม่แตะโมดูลนี้ ก็ยังต้องรู้ · "น่ารู้" ไม่ผ่าน
-  2. **เป็นกฎ ไม่ใช่เรื่องเล่า** — **เหตุผล·ประวัติ·ตัวเลขที่วัดมา·เคสจริง·ผล backfill·คำพูด user
-     ห้ามอยู่ที่นี่** (ย้ายไปโมดูล แล้วอ้างว่า "มีด่าน"/"📄 ดูเอกสาร" พอ)
-  3. **ชี้ได้ว่าอยู่ไฟล์ไหน** — ต้องมี `path` หรือ `fn()` ที่เป็นเจ้าของกฎ
-  4. **ยังจริงวันนี้** — ของที่ถอด/เลิกใช้แล้ว ย้ายไป `_archived/`
-  · **เพดาน: ทั้งไฟล์ 120 KB · ต่อหัวข้อ `##` 8 KB** (เกิน = build ล่ม) · **เตือนตั้งแต่ 110 KB**
-  · **`@path` import ห้ามเด็ดขาด** · ห้าม CLAUDE.md ซ้อนในโฟลเดอร์ย่อย · **ห้ามถอดด่าน/ขยายเพดานเพื่อให้ deploy ผ่าน**
+  1. **ข้าม session จริง** — session ที่ไม่แตะโมดูลนี้ ก็ยังต้องรู้ (ไม่งั้นมันพลาด) · "น่ารู้" ไม่ผ่าน
+  2. **เป็นกฎ ไม่ใช่เรื่องเล่า** — บอกว่า*ต้อง/ห้าม*ทำอะไร · **เหตุผล·ประวัติ·ตัวเลขที่วัดมา·ก่อน-หลัง
+     ·เคสจริง·ผล backfill ห้ามอยู่ที่นี่** (ย้ายไปโมดูล แล้วอ้างว่า "มีด่าน"/"📄 ดูเอกสาร" พอ)
+  3. **ชี้ได้ว่าอยู่ไฟล์ไหน** — ต้องมี `path` หรือ `fn()` ที่เป็นเจ้าของกฎ (ด่านตรวจทุกบล็อก 🔴)
+  4. **ยังจริงวันนี้** — ของที่ถอด/เลิกใช้แล้ว ย้ายไป `_archived/` ไม่เก็บไว้เตือนความจำ
+  · **เพดาน: ทั้งไฟล์ 120 KB · ต่อหัวข้อ `##` 9 KB** (เกิน = build ล่ม) · **เตือนตั้งแต่ 110 KB**
+  · **`@path` import ห้ามเด็ดขาด** (ดูดไฟล์เข้า memory ทุก session — ต้นเหตุจริงของ 550k tokens
+    ไม่ใช่ขนาดไฟล์) · ห้าม CLAUDE.md ซ้อนในโฟลเดอร์ย่อย · **ห้ามถอดด่าน/ขยายเพดานเพื่อให้ deploy ผ่าน**
   · 🔴 **เพิ่มกฎใหม่ตอนไฟล์ใกล้เต็ม = ต้องรีดของเก่าในคอมมิทเดียวกัน** (ห้ามฝากให้ session หน้า)
   · 📄 เหตุผลของทุกข้อ + สิ่งที่ย้ายไปแล้ว + วิธีรีด → `docs/modules/claude-md-slim.md`
 - เจอกับดัก/บั๊กที่คนถัดไปน่าจะเจอซ้ำ → บันทึกในไฟล์โมดูล (ข้ามโมดูลจริง เช่น "กับดัก CSS" ค่อยไว้ที่นี่)
 - เปลี่ยน DB schema → เขียน migration file ใน `supabase/migrations/` เสมอ
 - **⚠️ ส่ง SQL/คำสั่งให้ user: วาง SQL เต็มๆ ในแชท ห้ามบอกแค่ชื่อไฟล์ · ระบุ project (Main/DR) ทุกครั้ง · แนบคิวรีเช็คผล (คำสั่งถาวร 2026-08-21)** — user มีแค่ **Supabase SQL Editor บนเว็บ ไม่มี CLI/terminal เปิดไฟล์ในรีโปไม่ได้** ⇒ **ห้ามส่งคำสั่ง shell/CLI ให้รัน** · migration ที่ย้อนได้ + edge function = AI session apply/deploy เองผ่าน MCP แล้วตรวจกลับ · 📄 เคสที่เคยพลาด + ขั้นตอน → `docs/modules/db-write-rules.md` §ส่ง SQL ให้ user · `docs/modules/edge-functions.md`
-- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` · **CSV ก็นับ** — ชื่อไฟล์ผ่าน `src/utils/csvDoc.js`
-  (🔴 เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV = คอลัมน์เลื่อนทั้งไฟล์) · 📄 `docs/modules/doc-forms.md` · UI §6.6
+- **เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน/CSV — ไม่มีข้อยกเว้น) ต้อง register เข้าทะเบียน `/doc-forms`** ให้ doc_control แก้เลขฟอร์ม/Rev/ลายเซ็น/footer/โลโก้ได้เองโดยไม่ต้องแก้โค้ด · **ห้าม hardcode เลขฟอร์ม/Rev/โลโก้ · ห้ามสร้างตารางทะเบียนเอกสารใหม่** · อ่านค่าผ่าน `src/utils/docForms.js` (CSV = `src/utils/csvDoc.js` · 🔴 เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV) · 📄 `docs/modules/doc-forms.md` · UI §6.6
 - **ห้าม**แก้พฤติกรรมระบบแล้วปล่อยให้เอกสารล้าสมัย — เอกสารที่ผิดแย่กว่าไม่มีเอกสาร
 
 ---
 
 ## Tech Stack
 
-React 19 + **Vite** · React Router DOM · Framer Motion · **Recharts** (กราฟทุกตัว) ·
-**Supabase** (PostgreSQL + Auth + Storage + Realtime + Edge Functions ที่เป็น Deno) ·
-แจ้งเตือน = **Telegram Bot API** (ไม่มีอีเมล) · deploy = **Render.com static site**
-> 🔴 **เวอร์ชันจริงอ่านที่ `package.json`** — ตัวเลขที่เขียนมือที่นี่ล้าสมัยทุกครั้ง
+React · Vite · React Router · Framer Motion · Recharts · Supabase (PostgreSQL + Auth + Storage +
+Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Static Site)
+**เวอร์ชันจริงอ่านจาก `package.json` เสมอ** (ตารางเวอร์ชันที่เขียนมือล้าสมัยทุกครั้งที่อัปเกรด)
 
 ---
 
@@ -166,7 +165,6 @@ Reject → status: "rejected" + reject_reason
 
 ## OEE (computeOEE ใน DailyReport) — กฎ P สำหรับหลาย MAT.NO (2026-07-14)
 
-- ตรวจ parallel ระดับ "product" ไม่ใช่ระดับ MAT.NO …
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
@@ -182,14 +180,14 @@ Reject → status: "rejected" + reject_reason
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 
-> ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30 · feedback หน้างาน)
-> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า**
-> · 🔴 **ไม่มี CT / ไม่มีงานเหลือ / ไม่ส่งปลายกะ = `null` ห้ามคืน 0** · **หน้าที่วาดบอร์ดต้องส่ง `frameEndMs`** (ไม่ส่ง = ตัวเลขเพี้ยนมหาศาล)
-> · 🔗 ต้นเหตุ/ผู้ถูกพาล = `dayDelaySummaryOf()` / `pushChainOf()` · `<DelayBlameBar>` ·
->   🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษได้ไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
->   🔴 **จัดอันดับด้วย `blameTotalMin` ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
+> ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
+> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
+>   ต้นเหตุ/ผู้ถูกพาล = `dayDelaySummaryOf()` / `pushChainOf()` · `<DelayBlameBar>` ·
+>   **หน้าที่วาดบอร์ดต้องส่ง `frameEndMs`** · 🔴 **ไม่มี CT / ไม่มีงานเหลือ / ไม่ส่งปลายกะ = `null` ห้ามคืน 0**
+> · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
+>   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
 > · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
-> 📄 `docs/modules/oee.md` §หลุดแผนไปแค่ไหน · §รอบ 2 · §รอบ 3 (ตัวเลข/เคสเต็ม)
+> 📄 ตัววาด (`PlanSlipBar`/`DelayBlameBar`) + ตัวเลข/เคสเต็ม → `docs/modules/oee.md` §หลุดแผนไปแค่ไหน
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
 > CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า (%P ทะลุ 100 แล้วถูก cap เงียบ)
@@ -363,11 +361,8 @@ Reject → status: "rejected" + reject_reason
 5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
    ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
    · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-   · 🇹🇭 **ชั้นภาษา `utils/thaiText.js`** (24/09) — ICU `Intl.Segmenter` · คีย์เสียงข้ามสคริปต์ · ทนพิมพ์ผิด
-     🔴 **เทียบเสียงเฉพาะข้ามสคริปต์ · ตรงเป๊ะ · คำ ≥4 ตัว คีย์ ≥3 พยัญชนะ** (ผ่อน = พังทันที)
-     ข้อยกเว้นเดียว = **r ท้ายคำ** (คอนเวเย่อ=conveyor)
-   · 🔴 **คำกำกวมตัดสินด้วยการใช้งานจริง ไม่ใช่ยุบป้ายทะเบียน** (`buildDtIndex` เรียนจากใบที่คนจัดแล้ว)
-   · 📐 **คำที่เรียนจากใบเก่า: log-odds z ≥ 1.96 + พื้น 3 ใบ** (`utils/termStats.js`) เลิกใช้ "ชนะ 80%"
+   · 🔴 **ชั้นภาษาไทย = `utils/thaiText.js` · สถิติคำ = `utils/termStats.js` เท่านั้น** (เกณฑ์ตัดสิน/
+     คีย์เสียง/คำกำกวม อยู่ในไฟล์โมดูล — **ผ่อนเกณฑ์เมื่อไหร่พังทันที ห้ามแก้โดยไม่อ่าน**)
 > 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
 
 ## 📦 ของหน้าไลน์คุมที่ "พื้นที่ → ไลน์ → พาร์ท" — **เลิกจุด WIP แล้ว** (2026-10-01 · คำสั่ง user)
@@ -574,7 +569,7 @@ Reject → status: "rejected" + reject_reason
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง**
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · **เลือก CC = หน่วยเจ้าของรหัส** — ตีความขอบเขตผ่าน `unitsOf()`/`chainOf()` ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ · 06/10)
 - **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
 > 📄 **รายละเอียดทั้งหมด (หน่วย/ทศนิยม/วิธีรวม 12 เดือน · KPI ค่าของโรงงาน · แผน 12 เดือน + หมายเหตุ ·
 > โฟกัสช่วงค่า · ทะเบียนมาตรฐาน · KPI ช่างอัตโนมัติ · ACTION BOARD)** → `docs/modules/obeya-kpi-board.md`
@@ -641,10 +636,10 @@ Reject → status: "rejected" + reject_reason
 
 ---
 
-## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board` (2026-10-06)
+## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
 
-แทนบอร์ดกระดาษหน้าไลน์ (ผังคน · ผัง LAYOUT · ป้าย 4M) · **อ่านอย่างเดียว ไม่มีตารางใหม่** · กฎอยู่ `utils/manpowerBoard.js` ที่เดียว
-· แถวของคน = **ตำแหน่ง** · คอลัมน์ = ทีม · กะของทีม = `shiftFromTeam` **ห้ามเขียน A = Shift 01** · ตารางกะไม่ตั้ง = ไม่คิดช่องว่าง (null)
+กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
+· ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
 > 📄 `docs/modules/manpower-board.md`
 
 ---
@@ -713,17 +708,8 @@ Reject → status: "rejected" + reject_reason
 
 ## Patterns & Utilities
 
-### Toast (Singleton)
-```js
-import { toast } from '../components/Toast'
-toast.success('บันทึกสำเร็จ') · toast.error('เกิดข้อผิดพลาด') · toast.info('กำลังโหลด...')
-```
-
-### UserContext
-```js
-const { role, lineId, team, section, sections, fullName } = useContext(UserContext)
-// sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array, [] = ไม่จำกัด)
-```
+### ของกลาง: `toast` (`components/Toast`) · `UserContext` (`sections` = ขอบเขตส่วนงาน · `[]` = ไม่จำกัด)
+> 📄 ตัวอย่างการเรียก → `docs/modules/file-structure.md` §ของกลางที่ใช้บ่อย
 
 ### Date/Time Utilities — 📄 ตัวอย่างโค้ด + ฝั่ง SQL → `docs/modules/date-time-rules.md`
 
@@ -744,9 +730,9 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 
 > 📄 **คำอธิบายเต็ม + ตัวเลข/เคสจริงของทุกข้อ → `docs/modules/db-write-rules.md`** (ห้ามตัดข้อไหนออกจากลิสต์นี้)
 
-1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite()`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
-2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** (`src/utils/dbWrite.js`) — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า + คิดว่ากันแล้ว (มีด่าน `checkwrite-rows-not-plain` · `checkwriterows-needs-select`)
-3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE**
+1. **supabase-js ไม่ throw** (`const { data } = await …` = กลืน error 100%) ⇒ **ทุก insert/update/delete อ่าน `error` ผ่าน `checkWrite(await …, 'ป้ายงาน')`** (`src/utils/dbWrite.js`) · delete-then-insert: delete ล้ม = หยุด ห้าม insert ต่อ
+2. **RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว ไม่มี error"** (มีแต่ INSERT ที่โยน 42501) ⇒ ปุ่มที่ผลลัพธ์สำคัญต้อง **`checkWriteRows(await ….select('id'), 'ป้ายงาน')`** — `checkWrite` **ไม่นับแถว** ⇒ ต่อ `.select()` แล้วส่งเข้า `checkWrite` = เสียเปล่า + คิดว่ากันแล้ว (2 ด่าน: `checkwrite-rows-not-plain` · `checkwriterows-needs-select`) · 🔴 **ลบไฟล์ใน storage ได้หลังนับแถว > 0 เท่านั้น** (เช็คแค่ `error` = แถวยังอยู่แต่ไฟล์หายถาวร · มีด่าน `storage-delete-after-row-count`) · 🔴 **ทะเบียนที่จับคู่ด้วยข้อความ ลบได้หลังนับปลายทางครบ — นับไม่ได้ = ห้ามลบ** (`utils/orgNodeRefs.js` · `utils/processTypeRefs.js`)
+3. **policy RLS ต้อง `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` ห้าม hardcode role array** (role array มือแคบกว่าสิทธิ์ที่ `/permissions` แจกเสมอ · **จอที่คุมสิทธิ์เองก็ต้องเช็คสิทธิ์ผู้ดู** — มีด่าน) · **ตารางใหม่ต้องมี policy ครบทุก cmd ที่ client ใช้ — `upsert` ต้องมี UPDATE** · 🔑 **คีย์ของ `upsert` ต้องเป็น unique index คอลัมน์ล้วน ห้าม expression/partial** (PostgREST infer ไม่เจอ = `42P10` = ไม่เขียนเลยทั้งก้อน · เกิดมา 3 รอบ · มีด่าน)
 4. **stale-response race** — ทุก effect ที่ await แล้ว set state ต้องมี guard (`let alive = true` + cleanup / request id / ref ปัจจุบัน)
 5. **`.in(ids)` ยาว = URL เกินเพดาน proxy → คืนค่าว่างเงียบ** ⇒ ผ่าน `fetchByIds` (chunk) · **เพดาน 1000 แถว/คิวรี** ⇒ ตารางที่โตได้ห้าม `select()` เปล่า
 6. **claim สถานะ (compare-and-swap) ก่อนเขียน ledger ⇒ ledger ล้มต้องคืนสถานะ**
@@ -754,8 +740,10 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 8. **จอที่มี realtime — poll ต้องข้ามรอบเมื่อไม่มีอะไรเปลี่ยน** (`makeIdleGate(LIVE.FLOOR)`) · **ห้ามใช้กับจอที่ไม่มี realtime** (ไม่มีใคร touch = จอค้าง) · **จอใหม่ใช้ `useLiveBoard(load, { tables, topic })` ห้ามประกอบเองทีละชิ้น**
 9. **`useCallback`/`useEffect` ที่ยิง DB ห้ามมี object/array ใน deps** (แปลงเป็น string/primitive ก่อน · prop ที่เป็น array ต้อง `useMemo` ที่หน้าแม่) · **คลาสนี้ build/lint/เทส/จอผ่านหมด เห็นจาก log เท่านั้น**
 10. **สมมติฐานเรื่องสิทธิ์ที่เขียนในคอมเมนต์ "มีอายุ"** — ห้ามพึ่ง "หน้านี้ admin-only อยู่แล้ว" เป็นด่านของแผง/ตาราง
-11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "request"** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
-12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (= undefined เงียบ · มีด่านคุมรายชื่อ) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
+11. **🔴 egress คิดเป็น "ไบต์" ไม่ใช่ "จำนวน request" — `select('*')` บนตารางกว้างคือตัวกินจริง** ⇒ **จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ** (`.eq('id', id)`) — มีด่าน · **รูปผังห้ามเป็น PNG** ใช้ `compressLayoutImage()` (`src/utils/layoutImage.js`) **ห้ามลดความละเอียด**
+12. **helper ที่คืนค่าเปล่าห้ามแกะ `{ data }`** (`loadPairMap`/`loadOpInfo`/`loadProductsMaster`/`loadProductionLines` = undefined เงียบ · มีด่าน) · **`catch {}` แล้วโชว์ "ไม่มีข้อมูล" = จอโกหก**
+
+### Skill Fit — `computeFit(employee, station)` / `fitColor(score)` (📄 `docs/modules/file-structure.md`)
 
 ## กฎการทำงานของทุก AI session (Workflow Discipline)
 
@@ -784,15 +772,12 @@ const { role, lineId, team, section, sections, fullName } = useContext(UserConte
 - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
   ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)
 
-### QC Agent — ตรวจโค้ดขัดกฎโปรเจค
+### QC Agent — `/qc-audit` (subagent `qc-project-rules` · read-only)
 
-`/qc-audit` (ไม่มี argument = ทั้งโปรเจค · ระบุหมวด `/qc-audit B D` หรือไฟล์ได้) →
-subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) มี checklist 7 หมวด
-(A Date/Time · B Supabase 2 projects · C Permissions · D Section scoping · E Storage/รูป · F UI · G Workflow/เอกสาร)
-รายงาน 🔴 ขัดกฎเหล็ก / 🟡 ขัด convention / 🔵 legacy / ✅ ผ่าน พร้อม file:line + วิธีแก้
-· **เพิ่ม/เปลี่ยนกฎที่ตรวจอัตโนมัติได้ → อัพเดท checklist ในไฟล์ agent ในคอมมิทเดียวกัน** ไม่งั้น QC ตรวจไม่ครบ
-· แนะนำรันก่อน merge งานใหญ่ + รันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
-> 📄 ประวัติผล audit ที่ตรวจ+แก้ไปแล้ว → `docs/modules/qc-audit-history.md`
+รันก่อน merge งานใหญ่ + รันเต็มเป็นระยะเพื่อจับ drift ระหว่าง session ขนาน
+· **เพิ่ม/เปลี่ยนกฎที่ตรวจอัตโนมัติได้ → อัพเดท checklist ใน `.claude/agents/qc-project-rules.md`
+  ในคอมมิทเดียวกัน** ไม่งั้น QC ตรวจไม่ครบ
+> 📄 หมวดที่ตรวจ + วิธีใช้ → `docs/modules/build-gates.md` · ประวัติผล → `docs/modules/qc-audit-history.md`
 
 ## Design System
 
@@ -805,13 +790,7 @@ subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) 
 > สิทธิ์ action ผ่าน `can()` **ห้าม hardcode role array**
 > **สร้าง/เปลี่ยน pattern ที่ใช้หลายหน้า = อัพเดท `docs/UI-CONVENTIONS.md` (พร้อมวันที่) ในคอมมิทเดียวกัน**
 
-### CSS Variables
-`--bg`/`--bg2`/`--bg3` (พื้น 3 ระดับ) · `--card` · `--border`/`--border2` · `--accent` (green) ·
-`--accent2` (amber) · `--text`/`--text2`/`--muted` · `--sidebar-w: 252px` · `--radius-lg: 8px`
-
-### 📺 เพดานเบราว์เซอร์ = **จอ TV ไม่ใช่ PC** (วัดกับบันเดิลจริง 2026-08-26)
-
-จอหน้างาน **LG 43UR751C0SC · webOS 23 = Chromium 94** ⇒ ผ่านทุกหน้า · webOS 22 (Cr 87) **หน้าที่มีกราฟพัง** · เก่ากว่า = จอขาว
+### 📺 เพดานเบราว์เซอร์ = **จอ TV ไม่ใช่ PC** — ต้องผ่านบน **Chromium 94** (webOS 23 หน้างาน)
 
 > #### ⚠️ กฎเหล็ก — ห้ามใช้ CSS ที่ต้องการ Chromium > 94 กับค่าที่ "พังแล้วมองเห็น"
 > - **ห้ามใช้ `color-mix()` (Cr 111)** — parse ไม่ได้ = **ทิ้งทั้งบรรทัด declaration** (เคยหลุดจริง → พื้นการ์ดโปร่งบนจอ TV)
@@ -834,9 +813,7 @@ subagent `qc-project-rules` (read-only · `.claude/agents/qc-project-rules.md`) 
 - 🌑 **เงา = "ของชิ้นนี้ลอยอยู่" ห้ามเขียน rgba ดิบในหน้า** (ด่าน `card-shadow-via-token`) — การ์ดแบน `var(--shadow-sm)`
   (ธีมมืด = none · ธีมสว่างยังมี) · ของที่ลอยจริง `var(--shadow-float)` · modal `--shadow-md|lg` (UI §6.20)
 
-### Breakpoints · Fonts
-Mobile < 768px · Tablet 768–1279 · Desktop 1280–1599 · Ultra-wide ≥ 1600px ·
-ฟอนต์ **Sarabun** (Thai body) / **Tahoma** (display)
+> 📄 CSS variables · breakpoints · ฟอนต์ → `docs/UI-CONVENTIONS.md` §Design tokens
 
 ## Shift Logic
 

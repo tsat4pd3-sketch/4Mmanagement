@@ -27,11 +27,12 @@ import { chromium } from 'playwright';
 const VIEW = { width: 390, height: 844 };   // iPhone 14/15 — เล็กที่สุดที่หน้างานใช้จริง
 // 🕐 timezone ไทยเหมือน crashsweep — ไม่งั้นโค้ดสายเวลาถูกข้ามทั้งคลาส (ดูคอมเมนต์ใน crashsweep.mjs)
 const TZ = { timezoneId: 'Asia/Bangkok' };
-/* 📵 หน้าที่ user ตัดสินใจแล้วว่าไม่ต้องรองรับมือถือ — ค่า = เหตุผลที่ user ให้มา (ห้ามแก้เป็นเหตุผลอื่น) */
+/* 📵 หน้าที่ user ตัดสินใจแล้วว่าไม่ต้องรองรับมือถือ — ค่า = เหตุผลที่ user ให้มา (ห้ามแก้เป็นเหตุผลอื่น)
+   ⬅️ Management ถูกถอดออกแล้ว (คำสั่ง user 06/10) — ที่เคยติดทะเบียนไว้ 23/09 เป็น**ผี**จากพื้นที่กด
+   เผื่อนิ้ว ไม่ใช่หน้าใช้บนมือถือไม่ได้จริง (ดู addStyleTag ด้านล่าง) ⇒ ต้องผ่านด่านเหมือนหน้าอื่น */
 const ACCEPTED = {
   LineSetup: 'ทำในคอม — วางจุดงาน/ลากผังบนจอ 390px ทำไม่ไหวด้วยข้อจำกัดขนาดจอ (user 23/09)',
   MorningMeeting: 'ไว้เปิดจอประชุม ไม่ใช่จอมือถือ (user 23/09)',
-  Management: 'จัดคนเข้าสถานีบนจอเล็กทำได้ไม่สมบูรณ์ด้วยข้อจำกัดขนาดจอ — เก็บไว้ก่อน (user 23/09)',
 };
 
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
@@ -49,6 +50,18 @@ for (const name of PAGES) {
        ⇒ ครึ่งหนึ่งของส่วนที่กดได้ทั้งแอป **ไม่เคยถูกสวีปเลย** — โมดัลที่พังทั้งใบจึงหลุดถึงหน้างาน */
     await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=admin`, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await p.waitForTimeout(1300);
+    /* 👻 ปิด "พื้นที่กดเผื่อนิ้ว" ก่อนวัด (2026-10-06) — ไม่ใช่การผ่อนด่าน แต่เป็นการวัดให้ตรงความจริง
+       `src/index.css` @media (pointer:coarse) ใส่ `button:not(:has(*))::before` ที่ absolute + min 40×40
+       ทับกลางปุ่มเล็ก เพื่อขยาย *พื้นที่รับสัมผัส* โดยไม่ขยับ layout (คนใส่ถุงมือกดพลาด)
+       แต่ pseudo-element ที่ absolute **นับเข้า `scrollWidth` ของปุ่ม แล้วลามขึ้นไปถึงแถวแม่**
+       ⇒ ปุ่ม 25px ได้ sw 33 · ปุ่ม 10px ได้ sw 25 ทั้งที่**ไม่มีอะไรโผล่ออกมาให้เห็นสักพิกเซล**
+       วัดจริง 06/10 (เทียบ touch vs desktop บนหน้าเดียวกัน): desktop `sw === cw` ทุกปุ่ม
+       · ปุ่มตัวอักษรล้วน "X" ก็ขึ้นอาการเดียวกัน ⇒ **ไม่เกี่ยวกับอีโมจิ/ฟอนต์สำรอง**
+       🔴 เคยทำให้เข้าใจผิดมาแล้ว (54da354a): ไล่แก้ที่อีโมจิ แล้ว "หาย" เพราะการห่อ `<span>`
+       ทำให้ `:not(:has(*))` ไม่แมตช์ = **ถอดพื้นที่กด 40px ทิ้งเงียบๆ** (แก้อาการ ไม่ใช่ต้นเหตุ)
+       ⇒ ตัดเฉพาะ `min-width/min-height` ของ pseudo นี้ (เหลือ 100% = เท่าปุ่มพอดี ไม่ล้น)
+       `::before` อื่นที่มี content จริงไม่ถูกแตะ ⇒ ของที่ล้นจริงยังถูกจับเหมือนเดิม */
+    await p.addStyleTag({ content: '@media (pointer: coarse){button:not(:has(*))::before{min-width:0!important;min-height:0!important}}' });
     const hits = await p.evaluate(() => {
       const out = [], VW = innerWidth, VH = innerHeight;
       for (const el of document.querySelectorAll('*')) {

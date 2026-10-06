@@ -15,7 +15,9 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
-import useTabParam from '../utils/useTabParam';
+import useTabParam, { useMergeParams } from '../utils/useTabParam';
+import { useSearchParams } from 'react-router-dom';
+import { buildQrPayload, parseQrPayload, findDieByScan } from '../utils/qrCode';   // 📷 สแกนป้ายแม่พิมพ์ → หมุดบนผัง (2026-10-06)
 import DieLayout from '../components/DieLayout';
 import DieStatusBoard from '../components/DieStatusBoard';
 import ProductSelect from '../components/ProductSelect'; // MAT SAP = picker กลาง (single-source audit 2026-09-07)
@@ -86,9 +88,11 @@ const numOrNull = (v) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const KIND_NONE = '__none__';   // ตัวกรอง "ยังไม่ระบุรูปแบบชุด" (die_sets.kind = null)
+
 const emptySet = {
   id: null, set_code: '', part_no: '', part_name: '', model: '', line_name: '',
-  kind: 'tandem', op_total: '', pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
+  kind: '', op_total: '',   // ว่าง = "ยังไม่ระบุ" (06/10 · คำสั่ง user — เดิม default tandem = เดาแทนหน้างาน) pieces_per_stroke: 1, mat_no: '', note: '', is_active: true,
 };
 
 export default function DieRegistry() {
@@ -263,6 +267,7 @@ export default function DieRegistry() {
     if (dup > 0) out.push(`OP ซ้ำ ${dup} ตัว — อาจเป็นหลายชุดที่ถูกรวมกัน (เช่นแยกตามวัสดุ) ต้องแยกชุดเอง`);
     const noOp = mem.filter(d => d.ext?.op_seq == null).length;
     if (noOp) out.push(`ยังไม่ระบุ OP ${noOp} ตัว`);
+    if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
     if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
     if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
     if (s.op_total && mem.length !== s.op_total && dup === 0)
@@ -275,7 +280,7 @@ export default function DieRegistry() {
     return sets
       .filter(s => inScope(s.line_name))                                    // scope ก่อน filter อิสระเสมอ
       .filter(s => !filterLine || s.line_name === filterLine)
-      .filter(s => !filterKind || s.kind === filterKind)
+      .filter(s => !filterKind || (filterKind === KIND_NONE ? !s.kind : s.kind === filterKind))
       .filter(s => !q || [s.part_no, s.part_name, s.model, s.set_code, s.mat_no]
         .some(v => (v || '').toLowerCase().includes(q))
         || (diesBySet[s.id] || []).some(d => (d.machine_no || '').toLowerCase().includes(q)))
@@ -295,6 +300,7 @@ export default function DieRegistry() {
       unlinked: unlinked.length,
       noTon: visDie.filter(d => d.ext?.tonnage_ton == null).length,
       noHeight: visDie.filter(d => d.ext?.die_height_mm == null).length,
+      noKind: vis.filter(s => !s.kind).length,   // รูปแบบชุด = null (ยังไม่ระบุ · 06/10)
     };
   }, [sets, dies, unlinked, inScope, issuesOf]);
 
@@ -307,6 +313,26 @@ export default function DieRegistry() {
   /* ── ข้อมูลใช้ร่วมแท็บ 🗺️ ผังจัดเก็บ / 📊 สถานะ ── */
   const scopedDies = useMemo(() => dies.filter(d => inScope(d.line_name)), [dies, inScope]);
   const setsById = useMemo(() => Object.fromEntries(sets.map(s => [s.id, s])), [sets]);
+  /* ── 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (2026-10-06 · คำสั่ง user) ──
+     2 ทางเข้า ใช้ตัวตัดสินเดียวกัน (`findDieByScan`):
+       (1) ปุ่ม 📷 ในแท็บผัง  (2) ลิงก์จากหน้า /scan → `?die=layout&focus=<machines.id>`
+     ค้นใน `dies` ทั้งหมด (ไม่ใช่ scopedDies) — ไม่งั้นแยก "นอกขอบเขตไลน์" ออกจาก "ไม่มีในทะเบียน" ไม่ได้ */
+  const focusFromScan = useCallback((parsed) => {
+    const r = findDieByScan(parsed, dies, d => inScope(d.line_name));
+    if (r.error) return r.error;
+    setFocusDieId(r.die.id);
+    return undefined;
+  }, [dies, inScope]);
+  const [sp] = useSearchParams();
+  const setParams = useMergeParams();
+  const focusParam = sp.get('focus');
+  useEffect(() => {
+    if (!focusParam || loading) return;
+    const err = focusFromScan(parseQrPayload(buildQrPayload('machine', focusParam)));
+    if (err) toast.error(err);   // ห้ามเงียบ — คนสแกนมาจากหน้าชั้นวาง ต้องรู้ว่าทำไมหมุดไม่เด้ง
+    setParams({ focus: null, die: 'layout' }, { replace: true });
+  }, [focusParam, loading, focusFromScan, setParams]);
+
   const moDieCount = useMemo(() => {
     const m = buildOpenMoMap(openMos);
     return scopedDies.filter(d => d.is_active && openMosOf(d, m).length > 0).length;
@@ -323,7 +349,7 @@ export default function DieRegistry() {
       part_name: f.part_name.trim(),
       model: f.model?.trim() || null,
       line_name: f.line_name || null,
-      kind: f.kind || 'tandem',
+      kind: f.kind || null,   // null = ยังไม่ระบุ (ห้ามเดาเป็นค่าใดค่าหนึ่ง)
       op_total: numOrNull(f.op_total),
       pieces_per_stroke: numOrNull(f.pieces_per_stroke) ?? 1,
       mat_no: f.mat_no?.trim() || null,
@@ -417,6 +443,7 @@ export default function DieRegistry() {
           canEdit={canEdit} fullName={fullName} ready={layoutReady}
           reload={load} reloadAreas={reloadAreas} patchDieExt={patchDieExt}
           focusDieId={focusDieId} onFocusConsumed={() => setFocusDieId(null)}
+          onScanDie={focusFromScan}
         />
       )}
 
@@ -439,6 +466,8 @@ export default function DieRegistry() {
              (ตั้งใจโชว์จำนวนที่ "ยังไม่รู้" ตรงๆ ไม่ซ่อน ตามกฎความซื่อสัตย์ของจอ) */
           { t: 'ยังไม่ระบุความสูง', v: stat.noHeight, warn: stat.noHeight > 0,
             hint: 'ความสูงแม่พิมพ์ (มม.) ใช้คำนวณเวลาเปลี่ยนรุ่นงานปั๊ม — ยังไม่กรอก = ระบบจัดลำดับให้ประหยัดเวลาไม่ได้' },
+          { t: 'ยังไม่ระบุรูปแบบชุด', v: stat.noKind, warn: stat.noKind > 0,
+            hint: 'รูปแบบชุดว่าง = ใบแจ้งซ่อมเติมชนิดอุปกรณ์ให้ไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP) · กรองด้วยช่อง "รูปแบบชุด" → ยังไม่ระบุ' },
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
           <div key={c.t} title={c.hint || undefined} style={{
@@ -498,6 +527,7 @@ export default function DieRegistry() {
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
           <option value="">{allOf('รูปแบบชุด')}</option>
+          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
           {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
         </select>
         <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
@@ -548,7 +578,7 @@ export default function DieRegistry() {
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
-                    }}>{dieSetKindLabel(s.kind, setKinds)}</span>
+                    ...(s.kind ? null : { color: '#f59e0b' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
@@ -721,12 +751,13 @@ export default function DieRegistry() {
             </Field>
             <Field label="รูปแบบชุด">
               {/* ตัวเลือกจากทะเบียน die_set_kinds (แผง ⚙️ ท้ายแท็บ) · ค่าปัจจุบันที่ถูกปิดใช้ยังอยู่ในลิสต์ (ไม่บันทึกทับเงียบ) */}
-              <select style={inputStyle} value={editSet.kind || 'tandem'}
+              <select style={inputStyle} value={editSet.kind || ''}
                 onChange={e => setEditSet(f => ({ ...f, kind: e.target.value }))}>
-                {dieSetKindOptions(setKinds, editSet.kind || 'tandem').map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+                <option value="">— ยังไม่ระบุ —</option>
+                {dieSetKindOptions(setKinds, editSet.kind || '').map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                {setKinds.find(k => k.key === (editSet.kind || 'tandem'))?.desc}
+                {editSet.kind ? setKinds.find(k => k.key === editSet.kind)?.desc : 'ยังไม่ระบุ — ใบแจ้งซ่อมจะเติมชนิดอุปกรณ์จากรูปแบบชุดไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP ผู้แจ้งต้องเลือกเอง)'}
                 {canEdit && <> · ไม่มีแบบที่ต้องการ? เพิ่มได้ที่แผง ⚙️ รูปแบบชุดแม่พิมพ์ ท้ายแท็บนี้</>}
               </div>
             </Field>

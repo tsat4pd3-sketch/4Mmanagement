@@ -4,6 +4,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { buildFlowGraph, downstreamOf, upstreamOf, lineAvgCtSec, bufferCoverMin } from '../utils/lineFlow';
 import LineSelect from './LineSelect';
+import { DeleteButton } from './IconButton';
 
 /* ═══ 🔗 สายการไหลระหว่างไลน์ — แผงใน /linesetup (2026-08-19) ═══
    ตอบ "ไลน์นี้ป้อนงานให้ใคร / รับของมาจากใคร" ซึ่งระบบเดิมไม่เคยเก็บไว้ที่ไหนเลย
@@ -115,7 +116,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
             style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ {other} เป็นแผนก ไม่ใช่ไลน์</span>
         )}
         {canEdit && (
-          <button onClick={() => remove(l)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.6 }}>🗑</button>
+          <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => remove(l)} title="ลบ" />
         )}
       </div>
     );

@@ -17,13 +17,14 @@ import PersonSelect from './PersonSelect';
 import Segmented from './Segmented';
 import { allOf } from '../utils/filterLabels';
 import useColumnHistory from '../utils/useColumnHistory';
+import { DeleteButton } from './IconButton';
 
 export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged }) {
   const [phaseModal, setPhaseModal] = useState(null);
   const [dvModal, setDvModal] = useState(null);
   // 📜 ชื่อผู้รับผิดชอบที่เคยบันทึกไว้ (Main) — คนนอก profiles (เช่น ฝั่งลูกค้า) ยังเลือกซ้ำได้ (2026-09-07)
   const phaseOwnerHist = useColumnHistory(supabase, 'npi_part_phases', 'owner_name');
-  const dvOwnerHist = useColumnHistory(supabase, 'npi_part_deliverables', 'owner_name');
+  const dvOwnerHist = useColumnHistory(supabase, 'npi_deliverables', 'owner_name');
   const [ppapModal, setPpapModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(() => new Set());   // เฟสที่ "ย่อ" (default กางทั้งหมด)
@@ -278,7 +279,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                             </td>
                             <td style={{ ...tdSt, maxWidth: 220, fontSize: 11.5 }}>{d.note || ''}</td>
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                              {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, due_date: d.due_date || '', done_at: d.done_at || '' })}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => delDeliv(d)}>🗑</button></>}
+                              {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setDvModal({ ...d, due_date: d.due_date || '', done_at: d.done_at || '' })}>✏️</button> <DeleteButton onClick={() => delDeliv(d)} title="ลบ" /></>}
                             </td>
                           </tr>
                         );

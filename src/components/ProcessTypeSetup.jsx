@@ -5,6 +5,8 @@ import { loadProcessTypes } from '../utils/processTypes';
 import { toast } from './Toast';
 import EmojiPicker from './EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
+import { DeleteButton } from './IconButton';
+import { loadProcessTypeRefs, processTypeBlockMessage } from '../utils/processTypeRefs';
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
    component เดียว ใช้ได้หลายจุด (Daily Report ⚙️ + หน้า /process-setup ในหมวดตั้งค่าฯ)
@@ -28,6 +30,7 @@ export default function ProcessTypeSetup({ role }) {
   const canEdit = can('daily_report', 'setup', role);
   const [items, setItems] = useState([]);
   const [editing, setEditing] = useState(null); // 'new' | key
+  const [busyKey, setBusyKey] = useState(null);  // กำลังนับการใช้งานของแถวนี้อยู่
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -55,8 +58,17 @@ export default function ProcessTypeSetup({ role }) {
     toast.success('บันทึกกระบวนการแล้ว — มีผลทุกจุดที่ใช้ทันที');
     setEditing(null); load();
   };
+  /* 🔴 fail-closed ก่อนลบ (QC audit 2026-10-06) — `process_types.key` จับคู่ด้วย**ข้อความ ไม่ผูก FK**
+     เดิมมีแค่ข้อความเตือนใน confirm แล้วลบให้เลย โดย**ไม่เคยนับปลายทาง** ⇒ ค่าที่ tag ไว้กำพร้าเงียบ
+     ที่อันตรายสุด = `break_policies.process_type` (สูตรเวลาพัก) ⇒ นับพักผิด ⇒ %A/%P ของกะนั้นเพี้ยน
+     กฎ: CLAUDE.md §Database Schema *"นับไม่ครบ = ห้ามลบ (fail-closed)"* · ตัวนับ `utils/processTypeRefs.js` */
   const handleDelete = async (it) => {
-    if (!window.confirm(`ลบกระบวนการ "${it.label}"?\nเครื่องจักร/สินค้า/ประเภทที่ tag ค่านี้ไว้จะกลายเป็น "ยังไม่กำหนด" — แนะนำใช้ปิดใช้งานแทนถ้าเคยมีข้อมูล`)) return;
+    setBusyKey(it.key);
+    const refs = await loadProcessTypeRefs(supabaseDR, it.key);
+    setBusyKey(null);
+    const block = processTypeBlockMessage(it.label || it.key, refs);
+    if (block) { toast.error(block); return; }
+    if (!window.confirm(`ลบกระบวนการ "${it.label}"?\nตรวจแล้วไม่มีเครื่องจักร/สินค้า/สูตรพัก/ขั้นตอน ที่ tag ค่านี้อยู่`)) return;
     const { error } = await supabaseDR.from('process_types').delete().eq('key', it.key);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบแล้ว'); load();
@@ -83,7 +95,9 @@ export default function ProcessTypeSetup({ role }) {
             </div>
             {canEdit && <>
               <button onClick={() => openEdit(it)} className="tbtn" style={{ ...cancelBtnStyle, padding: '5px 12px' }}>✏️</button>
-              <button onClick={() => handleDelete(it)} className="tbtn" style={{ ...cancelBtnStyle, padding: '5px 12px', color: '#ef4444' }}>🗑</button>
+              {/* ตรวจปลายทางก่อนลบเสมอ (fail-closed) — ระหว่างนับ ปิดปุ่มไว้ไม่ให้กดซ้ำ */}
+              <DeleteButton onClick={() => handleDelete(it)} disabled={busyKey === it.key}
+                title={busyKey === it.key ? 'กำลังตรวจว่ามีอะไรใช้กระบวนการนี้อยู่…' : 'ลบกระบวนการนี้ (ตรวจการใช้งานก่อนเสมอ)'} />
             </>}
           </div>
         ))}

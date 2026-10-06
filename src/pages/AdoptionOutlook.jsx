@@ -1271,7 +1271,7 @@ const StepHead = ({ n, icon, title, sub, tone }) => (
   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
     <div style={{
       width: 28, height: 28, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
-      background: tone || 'var(--accent)', color: '#08120a', fontWeight: 800, fontSize: 13,
+      background: tone || 'var(--accent)', color: tone ? '#08120a' : 'var(--accent-ink)', fontWeight: 800, fontSize: 13,
     }}>{n}</div>
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: 15, fontWeight: 800 }}>{icon} {title}</div>

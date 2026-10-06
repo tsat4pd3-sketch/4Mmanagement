@@ -155,7 +155,7 @@ export default function WorldFactoryMap({
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
         <button onClick={zoomOut} style={{
           fontSize: 12.5, fontWeight: 700, padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
-          background: zoomCc ? 'var(--bg3)' : 'var(--accent)', color: zoomCc ? 'var(--text)' : '#08120a',
+          background: zoomCc ? 'var(--bg3)' : 'var(--accent)', color: zoomCc ? 'var(--text)' : 'var(--accent-ink)',
           border: `1px solid ${zoomCc ? 'var(--border2)' : 'var(--accent)'}`,
         }}>🌏 ทั้งโลก</button>
         {byCc.map(c => (

@@ -46,6 +46,8 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+/* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
+import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import useProductionLines, { loadLinesRes } from '../utils/useProductionLines';
@@ -57,6 +59,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
+import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
@@ -182,9 +185,7 @@ const nowTime = () => new Date().toTimeString().slice(0, 5);
    ⚠️ ความหมายกลับด้านกับกลุ่มไลน์: มีคีย์ = "ผู้ใช้กางเอง" (ถังนี้ค่าเริ่มต้นคือพับ)
    ตั้งชื่อขึ้นต้น __ กันชนกับชื่อไลน์จริง */
 const STALE_BUCKET_KEY = '__stale_bucket__';
-// กะเช้าเริ่ม 08:00, กะดึกเริ่ม 20:00 — ใช้เป็น default start_time เสมอ
-const shiftStart = (shift) => shift === 'night' ? '20:00' : '08:00';
-const currentShift = () => { const h = new Date().getHours(); return (h >= 20 || h < 8) ? 'night' : 'day'; };
+// เวลาเริ่มกะ/กะปัจจุบัน/ค่าเริ่มต้นฟอร์มเปิดกะ = `src/utils/workDate.js` (เลิกประกาศซ้ำในหน้า 06/10)
 /* ── เพดานลิสต์ยาวของหน้านี้ (2026-09-09 · feedback user "ข้อมูลเยอะๆ ต้อง default ยุบ + มีปุ่มขยาย") ──
    8 = จำนวนแถวที่ยังกวาดตาอ่านจบได้ในจอเดียวโดยไม่ต้องเลื่อน (ใบผลิตแถวละ ~67px · 8 แถว ≈ 540px)
    เกินเท่านี้ถือว่า "เยอะ" → แผงเริ่มต้นแบบยุบ และเมื่อกางก็ยังตัดเหลือ 8 แถวแรก + ปุ่มแสดงอีก */
@@ -282,6 +283,22 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const { fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
+     2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
+       ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
+          มาเมื่อไหร่ ค่า default สร้าง array **ใบใหม่ทุก render**
+       ② `<UserContext.Provider value={{ … sections: userSections || [] }}>` ใน App.jsx
+          เป็น object literal ใบใหม่ทุก render ของ App — `|| []` ก็สร้างใบใหม่เช่นกัน
+     ⇒ `load` ใบใหม่ ⇒ `useEffect(() => { load() }, [load])` ยิงใหม่ทั้งชุด
+     วัดจริง 02/10/2026 — "คิวรีเดิมเป๊ะจาก IP+เบราว์เซอร์เดิม ซ้ำภายใน 2 วินาที":
+       prod_orders 3,559 (22.5%) · production_sessions 2,597 (21.1%)
+       · v_demand_flow_blocks 745 · child_lot_requests 747  ← **สองตัวนี้เท่ากัน**
+         = 2 คิวรีใน `load()` ของ StoreLotQueue ตัวเดียวกัน ⇒ ยืนยันว่าเป็น "โหลดซ้ำทั้ง load()"
+         ไม่ใช่คนละคนเปิดพร้อมกัน (คนละคนไม่ทำให้ 2 ตารางได้เลขเท่ากัน)
+     🔑 แปลงเป็น "คีย์เนื้อหา" (string) แบบเดียวกับ `famKey`/`upKey` ในแผงลูก
+        — เรียงก่อน join เพื่อให้ลำดับที่ต่างกันแต่เนื้อเดียวกัน ได้คีย์เดียวกัน
+     ⚠️ ตัวแปรที่ body ใช้ยังเป็น `scopeSecs` เหมือนเดิม (คีย์กับเนื้อผูกกัน 1:1) */
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
@@ -346,7 +363,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   const [showOpen, setShowOpen] = useState(false);
   const [openingSession, setOpeningSession] = useState(false); // กันกดปุ่ม "เปิดกะ" ซ้ำระหว่างรอ insert
-  const [openForm, setOpenForm] = useState(() => { const s = currentShift(); return { work_date: workDate(), line_name: '', shift: s, product_id: '', start_time: shiftStart(s) }; });
+  const [openForm, setOpenForm] = useState(() => ({ line_name: '', product_id: '', ...openShiftDefaults() }));
   const [lineFlow, setLineFlow] = useState({});   // line_name → { flow_mode, parallel_stations } (best-effort — ไลน์เครื่องขนาน)
   const [openMachineNo, setOpenMachineNo] = useState(''); // เครื่องที่จะผูกกับใบที่เปิดถัดไป (เฉพาะไลน์ parallel_machine)
 
@@ -600,7 +617,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   /* ── แยก "กะที่กำลังทำอยู่" ออกจาก "กะค้างจากวันก่อน" (2026-08-26 · feedback "ปวดหัวกับกะที่รก ค้างจังเลย")
      ข้อมูลจริงที่หน้างานเจอ: sidebar ขึ้น 49 กะ ในนั้น 37 กะเป็นของวันก่อนที่ยังไม่ปิด
@@ -2710,9 +2728,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
          เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
          พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
          กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
-         ยังไม่จับคู่ = 'อื่นๆ' ตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards */
+         ยังไม่จับคู่ = ถังขยะตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards
+         ⚠️ 06/10: กลุ่มที่ไม่จับคู่ใช้ `OTHER_GROUP` ('อื่นๆ / ยังระบุไม่ได้') ให้ตรงกับ
+            ชื่อกลุ่มในทะเบียน `mtn_problem_types` — เดิมเขียน 'อื่นๆ' ลอยๆ ซึ่งเป็นป้าย
+            ถังสังเคราะห์ของจอ ไม่มีอยู่ในทะเบียน ⇒ แท่งพาเรโตแยกจากกลุ่มจริงเงียบๆ */
       problem_characteristic: dtType?.name_th || 'อื่นๆ',
-      problem_group: dtType?.mo_problem_group || 'อื่นๆ',
+      problem_group: dtType?.mo_problem_group || OTHER_GROUP,
       // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
       report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
       reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
@@ -2941,7 +2962,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>ยังไม่มีกะที่เปิดอยู่</div>
             <div style={{ fontSize: 13, marginBottom: 24 }}>เปิดกะเพื่อเริ่มบันทึกผลผลิตและ Downtime</div>
             {canOpen && (
-              <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+              <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
             )}
           </div>
         )}
@@ -2983,7 +3005,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
                       (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}
                   {canOpen && (
-                    <button onClick={() => { const s = currentShift(); setOpenForm(f => ({ ...f, shift: s, start_time: shiftStart(s) })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+                    <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
                   )}
 
                   {/* pending_close — SV sees approve/reject */}
@@ -4019,7 +4042,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
                 </Field>
                 <Field label="กะทำงาน">
-                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStart(e.target.value) }))} style={inputStyle}>
+                  <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStartTime(e.target.value) }))} style={inputStyle}>
                     <option value="day">☀️ กะเช้า (08:00–20:00)</option>
                     <option value="night">🌙 กะดึก (20:00–08:00)</option>
                   </select>
@@ -6057,6 +6080,8 @@ function StaleTab({ stale, onOpenSession, role }) {
 ═══════════════════════════════════════════════════════════════ */
 function HistoryTab({ role }) {
   const { lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [sessions, setSessions]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState({ date: '', line_name: '' });
@@ -6163,7 +6188,8 @@ function HistoryTab({ role }) {
     setLoading(false);
     // ใบรายงานปัญหาที่เคยออกของกะเหล่านี้ (โหลดพร้อมกัน — ป้ายเลขที่ใบต้องเห็นตั้งแต่ยังไม่กางแถว)
     setProbDocs(await loadProblemDocs((ss || []).map(x => x.id)));
-  }, [filter, role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [filter, role, scopeKey, userLineId]);
 
   // CT ต่อ MAT.NO + break policies — โหลดครั้งเดียว ใช้คำนวณ %P รายชิ้นตอน expand
   // CT ผ่าน buildCtMap (fallback kanban_standards → dr_products ตัวเดียวกับตอนปิดกะ) —
@@ -6716,6 +6742,8 @@ function HistoryTab({ role }) {
 ═══════════════════════════════════════════════════════════════ */
 function ExportTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด — เหตุผลเต็มดูที่ scopeKey ตัวแรกในไฟล์นี้
+  const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
   const firstOfMonth = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`; };
 
@@ -6743,7 +6771,8 @@ function ExportTab() {
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });
-  }, [role, scopeSecs, userLineId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
+  }, [role, scopeKey, userLineId]);
 
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {

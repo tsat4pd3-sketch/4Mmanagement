@@ -22,6 +22,7 @@ import ReadOnlyNote from './ReadOnlyNote';
 import PersonSelect from './PersonSelect';
 import SearchSelect, { normSearch } from './SearchSelect';
 import KpiStandardModal from './KpiStandardModal';
+import { DeleteButton } from './IconButton';
 import {
   ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis,
   CartesianGrid, ReferenceLine, LabelList, Cell,
@@ -266,9 +267,15 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t) setPmTeams(t); }); return () => { alive = false; }; }, []);
   const normTeam = (v) => String(v || '').toLowerCase().replace(/[\s\-_]+/g, '');
   const mtnTeam = useMemo(() => {
-    if (isPlant(scope) || !['department', 'section'].includes(scope.kind)) return null;
-    return (pmTeams || []).find(t => normTeam(t.dept_name) === normTeam(scope.value) || normTeam(t.label) === normTeam(scope.value)) || null;
-  }, [scope, pmTeams]);
+    if (isPlant(scope)) return null;
+    /* เลือก CC = เลือกหน่วยเจ้าของรหัส (06/10) — CC 2140456000 ต้องเจอทีม MTN เหมือนเลือกแผนก MTN */
+    const units = (org.unitsOf ? org.unitsOf(scope.kind, scope.value) : [scope]).filter(u => ['department', 'section'].includes(u.kind));
+    for (const u of units) {
+      const t = (pmTeams || []).find(x => normTeam(x.dept_name) === normTeam(u.value) || normTeam(x.label) === normTeam(u.value));
+      if (t) return t;
+    }
+    return null;
+  }, [scope, org, pmTeams]);
   useEffect(() => {
     if (!mtnTeam) { setMtnRoll(null); return undefined; }
     let alive = true;
@@ -293,10 +300,20 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     toast.success(`เติม ${rows.length} เดือนแล้ว`);
   };
 
+  const isPlantScope = isPlant(scope);   // primitive สำหรับ deps (กฎ DB ข้อ 9)
   const load = useCallback(async () => {
-    if (!lines.length) return;
-    if (scopeNoLines) { setData(null); setLoading(false); setProg(''); return; }   // ไม่มีไลน์ = ไม่มีอะไรให้คำนวณ (จอบอกเอง)
+    /* 🔴 รอผังพร้อมก่อน — ก่อน orgReady ขอบเขตย่อยทุกตัว lineNamesOf() = [] ⇒ lineNames ว่าง ⇒ คิวรีด้านล่าง
+       "ไม่กรองไลน์" = โหลดทั้งโรงงาน แล้วผลค้างกลับมาทับทีหลัง (เคยเกิด 06/10: CC ของแผนกช่างขึ้นตาราง
+       ยอดผลิต/OEE 1,464 กะของทั้งโรงงาน ใต้ป้าย "ไม่มีไลน์ผลิตในผัง") */
+    if (!lines.length || !orgReady) return;
     const lineNames = lineKey ? lineKey.split('|') : [];
+    if (scopeNoLines || (!isPlantScope && !lineNames.length)) {
+      /* ไม่มีไลน์ = ไม่มีอะไรให้คำนวณ (จอบอกเอง) · ขอบเขตย่อยที่ไลน์ว่าง = ห้ามยิงคิวรีไม่กรองไลน์ (fail-closed)
+         · bump reqRef เพื่อทิ้งผลโหลดของขอบเขตก่อนหน้าที่ยังค้างอยู่ — ไม่งั้นมันกลับมา setData ทับ (กฎ DB ข้อ 4) */
+      reqRef.current++;
+      setData(null); setErr(null); setLoading(false); setProg('');
+      return;
+    }
     const key = `${year}|${scopeKeyStr}|${lineKey}`;
     const seq = ++reqRef.current;      // กันผลโหลดเก่าทับผลใหม่ (เปลี่ยนปี/ส่วนงานรัวๆ)
     setLoading(true); setErr(null); setProg('');
@@ -358,7 +375,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       if (seq !== reqRef.current) return;
       setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null);
     } finally { if (seq === reqRef.current) { setLoading(false); setProg(''); } }
-  }, [lines.length, year, scopeKeyStr, scopeNoLines, lineKey]);   // 🔴 กฎ DB ข้อ 9: ห้าม array ใน deps ของตัวโหลด — ใช้คีย์ string
+  }, [lines.length, orgReady, isPlantScope, year, scopeKeyStr, scopeNoLines, lineKey]);   // 🔴 กฎ DB ข้อ 9: ห้าม array ใน deps ของตัวโหลด — ใช้คีย์ string
   useEffect(() => { load(); }, [load]);
 
   /* ── โหลดนิยาม KPI กรอกมือ + ค่ารายเดือน (tolerant — ยังไม่ apply migration ต้องไม่พังทั้งแท็บ) ── */
@@ -1124,7 +1141,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                               <button onClick={() => setEditDef(d2)} title="แก้นิยาม KPI" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>✏️</button>
-                              <button onClick={() => removeDef(d2)} title="ปิดใช้งาน" style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>🗑</button>
+                              <DeleteButton onClick={() => removeDef(d2)} title="ปิดใช้งาน" />
                             </td>
                           )}
                         </tr>

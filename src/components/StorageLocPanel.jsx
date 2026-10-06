@@ -29,6 +29,7 @@ import { isLeafLine } from '../utils/lineHierarchy';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
 import { SLOC_KINDS, slocKindMeta, slocKindGuess, slocLabel, slocValid, SLOC_FORMAT_HINT, slocOfLine, linesOfSloc } from '../utils/storageLoc';
+import { DeleteButton } from './IconButton';
 
 const inputSt = {
   width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)',
@@ -43,7 +44,10 @@ export default function StorageLocPanel() {
   const canManage = can('storage', 'manage', role);
 
   const [rows, setRows]     = useState([]);
-  const [used, setUsed]     = useState([]);      // รหัสที่ถูกใช้ใน bom_items จริง
+  /* รหัสที่ถูกใช้จริงที่ปลายทาง · 🔴 `null` = **นับไม่ได้** ไม่ใช่ "ไม่มีใครใช้" (QC audit 06/10)
+     เดิม `r2.error ? []` ⇒ คิวรีนับล้ม = ด่านลบเปิดโล่ง = ลบรหัสที่ยังมีคนผูกได้ (ขัด fail-closed
+     ใน CLAUDE.md §Database Schema "นับไม่ครบ = ห้ามลบ") */
+  const [used, setUsed]     = useState([]);
   const [lines, setLines]   = useState([]);      // production_lines (Main) — ลำดับชั้นสำหรับตกทอด
   const [missing, setMissing] = useState(false); // ตารางยังไม่ apply (42P01) — ห้ามเงียบ
   const [noLineMap, setNoLineMap] = useState(false); // มีตารางแต่ยังไม่มี line_names (ยังไม่ apply 20260908)
@@ -54,11 +58,15 @@ export default function StorageLocPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [r1, r2, r3, r4] = await Promise.all([
+    const [r1, r2, r3, r4, r5, r6] = await Promise.all([
       supabaseDR.from('storage_locations').select('*').order('sort_order').order('code'),
       supabaseDR.from('bom_items').select('storage_location').eq('is_active', true),
       loadLinesRes(),
       supabaseDR.from('line_stock_transactions').select('id', { count: 'exact', head: true }).is('storage_location', null).eq('status', 'approved'),
+      /* ปลายทางที่ถือรหัสนี้เหมือนกัน — `backfill()` ข้างล่างเขียนลง 2 ตารางนี้เอง
+         นับแค่ bom_items = ลบรหัสที่ ledger ย้อนหลังยังอ้างอยู่ได้ (รหัสกำพร้าในประวัติ) */
+      supabaseDR.from('line_stock_transactions').select('storage_location').not('storage_location', 'is', null).limit(1000),
+      supabaseDR.from('line_delivery_points').select('storage_location').not('storage_location', 'is', null),
     ]);
     setLoading(false);
     if (r1.error?.code === '42P01') { setMissing(true); setRows([]); return; }
@@ -67,24 +75,32 @@ export default function StorageLocPanel() {
     setRows(r1.data || []);
     // ตารางมีแต่ยังไม่มีคอลัมน์ line_names = ยังไม่ apply 20260908 → ชั้นบัญชียังไม่ทำงาน ต้องบอก ห้ามให้ดูเหมือน "ยังไม่มีใครผูก"
     setNoLineMap((r1.data || []).length > 0 && !('line_names' in r1.data[0]));
-    // ⚠️ ยังไม่ apply migration ของ bom_items = อ่านคอลัมน์ไม่ได้ → ถือว่ายังไม่มีใครใช้ (ไม่ใช่ error)
-    setUsed(r2.error ? [] : [...new Set((r2.data || []).map(b => slocLabel(b.storage_location)).filter(Boolean))]);
+    /* 🔴 นับไม่ได้ = `null` ห้ามแปลว่า "ไม่มีใครใช้" — ด่านลบต้องปิดไว้ก่อน (fail-closed)
+       `42P01`/`42703` = ยังไม่ apply migration ของปลายทางนั้น ⇒ ปลายทางนั้นยังไม่มีข้อมูลจริง
+       ถือว่าว่างได้ · error อื่น (เน็ต/RLS/timeout) = ไม่รู้ ⇒ null */
+    const SCHEMA_GAP = ['42P01', '42703'];
+    const codesOf = (res) => (SCHEMA_GAP.includes(res.error?.code) ? []
+      : res.error ? null
+      : (res.data || []).map(x => slocLabel(x.storage_location)).filter(Boolean));
+    const parts = [codesOf(r2), codesOf(r5), codesOf(r6)];
+    setUsed(parts.some(x => x === null) ? null : [...new Set(parts.flat())]);
     if (r3.error) toast.error('โหลดทะเบียนไลน์ (Main) ไม่ได้: ' + r3.error.message);
     setLines(r3.data || []);
     setUntagged(r4.error ? null : (r4.count ?? 0));
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const countFailed = used === null;             // นับไม่ได้ = ห้ามลบ + ต้องเขียนบนจอ
   const usedCount = useMemo(() => {
     const m = {};
-    used.forEach(c => { m[c] = true; });
+    (used || []).forEach(c => { m[c] = true; });
     return m;
   }, [used]);
   /* รหัสที่ถูกใช้ใน BOM แต่ยังไม่มีในทะเบียน = worklist **ห้ามซ่อน**
      (ซ่อนแล้วหาตัวที่พิมพ์ผิด/ตัวที่ต้องลงทะเบียนไม่เจอ — หลักเดียวกับ optgroup "นอกผัง") */
   const orphan = useMemo(() => {
     const reg = new Set(rows.map(r => slocLabel(r.code)));
-    return used.filter(c => !reg.has(c));
+    return (used || []).filter(c => !reg.has(c));
   }, [rows, used]);
 
   /* ไลน์ย่อยที่สุดที่ยังไม่ตกอยู่ใน SLoc ไหนเลย = ใบ/ledger ของไลน์นั้นจะไม่มีมุม SAP → worklist ห้ามซ่อน */
@@ -133,8 +149,10 @@ export default function StorageLocPanel() {
   };
 
   const remove = async (r) => {
-    const n = usedCount[slocLabel(r.code)] ? 1 : 0;
-    if (n) { toast.error(`รหัส ${r.code} ถูกใช้ใน BOM อยู่ — ปิดใช้งานแทนการลบ (กดแก้ไข → เอาติ๊ก "ใช้งาน" ออก)`); return; }
+    /* 🔴 fail-closed — นับการใช้งานไม่ได้ = ห้ามลบ (QC audit 06/10)
+       เดิมคิวรีนับล้มแล้วถือว่า "ไม่มีใครใช้" ⇒ ลบรหัสที่ BOM/ledger/จุดส่ง ยังอ้างอยู่ได้ */
+    if (countFailed) { toast.error('ตรวจการใช้งานของรหัสนี้ไม่ได้ — ยังลบไม่ได้ (กดรีเฟรชแล้วลองอีกครั้ง)'); return; }
+    if (usedCount[slocLabel(r.code)]) { toast.error(`รหัส ${r.code} ถูกใช้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ (กดแก้ไข → เอาติ๊ก "ใช้งาน" ออก)`); return; }
     if (!window.confirm(`ลบรหัส ${r.code} · ${r.name}?`)) return;
     const { error } = await supabaseDR.from('storage_locations').delete().eq('code', r.code);
     if (error) { toast.error(error.message); return; }
@@ -218,6 +236,15 @@ export default function StorageLocPanel() {
         </div>
       )}
 
+      {/* 🔴 กฎความซื่อสัตย์ของจอ — นับการใช้งานไม่ได้ ต้องเขียนบนจอ ห้ามเงียบ (ไม่งั้นปุ่มลบ
+          ที่ถูกบล็อกจะดูเหมือนบั๊ก) · ลบไม่ได้ทุกแถวตราบที่ยังนับไม่ได้ */}
+      {!missing && countFailed && (
+        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#ef4444', marginBottom: 10 }}>
+          <b>⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่</b> — คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ
+          ⇒ <b>ปุ่มลบถูกปิดไว้ทั้งหมด</b> กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง
+        </div>
+      )}
+
       {!missing && orphan.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
           <b>⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน {orphan.length} รหัส</b> — อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน
@@ -277,11 +304,15 @@ export default function StorageLocPanel() {
                     </div>
                   )}
                 </div>
-                {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>ใช้ใน BOM</span>}
+                {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>มีคนใช้อยู่</span>}
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                    <button className="tbtn" onClick={() => remove(r)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>
+                    {/* ลบได้เฉพาะตอน "นับการใช้งานได้ และไม่มีใครใช้" — นอกนั้นปิดไว้ (fail-closed)
+                        ปุ่มยังอยู่ (ไม่ซ่อน) + title บอกเหตุผล ไม่งั้นดูเหมือนฟีเจอร์หาย */}
+                    <DeleteButton onClick={() => remove(r)} disabled={countFailed || inUse}
+                      title={countFailed ? 'ตรวจการใช้งานไม่ได้ — ยังลบรหัสนี้ไม่ได้'
+                        : inUse ? 'มีคนใช้รหัสนี้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ' : 'ลบรหัสคลังนี้'} />
                   </div>
                 )}
               </div>

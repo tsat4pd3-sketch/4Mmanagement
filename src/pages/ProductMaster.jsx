@@ -52,6 +52,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
+import { DeleteButton } from '../components/IconButton';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1715,7 +1716,8 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
         : r;
     };
     const [{ data: prods }, { data: boms }, { data: parts }, opMap, { data: locs }] = await Promise.all([
-      supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name').eq('is_active', true).order('line_name').order('name'),
+      // is_operation = ต้องรู้ว่า "ใบนี้เป็นขั้นงานไหม" (ใบขั้นงานห้ามเอาไปเทียบกับใบพาร์ท)
+      supabaseDR.from('dr_products').select('id, name, code, mat_no, p_no, customer, line_name, is_operation').eq('is_active', true).order('line_name').order('name'),
       fetchBom(),
       supabaseDR.from('parts_master').select('*').eq('is_active', true).order('part_name'),
       loadOpInfo(),
@@ -1857,6 +1859,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
      ⚠️ ไม่ติดธง OP — นี่คือพาร์ทจริง (ชั้น OP ต้องติ๊กเองที่แท็บ Products ตามเดิม) */
   const [headBusy, setHeadBusy] = useState(false);
   const [headPick, setHeadPick] = useState(false);
+  const [bomBack, setBomBack] = useState([]);   // เส้นทางที่กดเข้ามา (ใบแม่ → ใบลูก) สำหรับปุ่มย้อนกลับ
   const makeBomHead = async (part) => {
     const mat = String(part?.mat_no ?? '').trim().toUpperCase();
     if (!mat) { toast.error('พาร์ทนี้ไม่มี MAT'); return; }
@@ -2021,6 +2024,27 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
     await loadAll(); await loadItems(target.id);
     void parsed;
   };
+
+  /* 📄 กดเลข MAT ในต้นไม้ → เปิด "ใบของพาร์ทตัวนั้น" + จำใบเดิมไว้ให้กดย้อนกลับ
+     (user 06/10: เข้าใจว่าต้องสร้างใบแยกกันเอง ที่จริงใบนั้นคือการนิยามครั้งเดียวที่ใบ FG ยืมมากาง) */
+  const openSheetOfMat = useCallback((mat) => {
+    const k = upMat(mat);
+    /* 🔴 ต้องค้นจาก `products` (= dr_products) **ห้ามค้นจาก `items`** (= bom_items ของใบที่เปิดอยู่)
+       บั๊กจริง 06/10: ค้นจาก items แล้วเจอ "บรรทัด BOM" ที่มี mat ตรงกัน → setSelProduct(bom row)
+       ⇒ `selProduct.id` กลายเป็น id ของบรรทัด BOM ⇒ โหลดใบด้วย product_id ที่ไม่มีจริง = **ใบเปล่า**
+       (ไม่มี error ไม่มี toast — กดแล้วเจอใบว่าง เงียบๆ) */
+    const target = products.find(p => upMat(p.mat_no) === k);
+    if (!target) { toast.info(`${mat} ยังไม่มีใบ BOM ของตัวเอง — กด "➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน" ได้`); return; }
+    setBomBack(prev => (selProduct ? [...prev, { id: selProduct.id, mat_no: selProduct.mat_no, name: selProduct.name }] : prev));
+    setSelProduct(target); setSearch(target.mat_no || '');
+  }, [products, selProduct]);
+
+  /* ใบไหนเป็น "ขั้นงาน (OP)" — ใบขั้นงานตอบ "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท
+     ⇒ ห้ามเอามาเทียบว่าชุดลูกต่างกัน (เตือนผิด 5 คู่จาก 19 · วัดจริง 06/10) */
+  const opSheetIds = useMemo(
+    () => new Set(products.filter(p => p.is_operation).map(p => p.id)),
+    [products]);
+  const isOpSheet = useCallback((sheetId) => opSheetIds.has(sheetId), [opSheetIds]);
 
   const openPicker = (parentMat) => {
     setPickerQ(''); setPickerSel([]);
@@ -2301,7 +2325,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
             const active = selProduct?.id === p.id;
             const n = counts[p.id] || 0;
             return (
-              <div key={p.id} onClick={() => setSelProduct(p)} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
+              <div key={p.id} onClick={() => { setSelProduct(p); setBomBack([]); }} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: '#0ea5e9', marginRight: 4 }}>🔩</span>}
@@ -2327,6 +2351,18 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{selProduct.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{[selProduct.p_no && `P/No: ${selProduct.p_no}`, selProduct.mat_no && `Mat: ${selProduct.mat_no}`, selProduct.line_name, selProduct.customer].filter(Boolean).join(' · ')}</div>
+                {/* ↩ เส้นทางที่กดเข้ามาจากต้นไม้ (ใบ FG → ใบ sub-assembly) — ย้อนกลับได้ทีละชั้น */}
+                {bomBack.length > 0 && (
+                  <button type="button"
+                    onClick={() => { const prev = bomBack[bomBack.length - 1];
+                      const back = items.find(i => i.id === prev.id);
+                      setBomBack(b => b.slice(0, -1));
+                      if (back) { setSelProduct(back); setSearch(back.mat_no || ''); }
+                      else toast.info('ใบเดิมไม่อยู่ในลิสต์แล้ว — เลือกจากด้านซ้ายได้'); }}
+                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginTop: 6 }}>
+                    ↩ กลับไปใบ {bomBack[bomBack.length - 1].mat_no || bomBack[bomBack.length - 1].name}
+                  </button>
+                )}
                 {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
                 {selProduct._op && (
                   <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
@@ -2358,8 +2394,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                 {showTree && (
                   <div style={{ marginTop: 10 }}>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
-                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor}
-                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined} />
+                      bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
+                      isOpSheet={isOpSheet}
+                      onDeleteDupes={canDelete ? handleDeleteDupes : undefined}
+                      onOpenSheet={openSheetOfMat} />
                   </div>
                 )}
               </div>
@@ -2453,7 +2491,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
                               {canEdit && <button className="tbtn" onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                              {canDelete && <button className="tbtn" onClick={() => handleDelete(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>}
+                              {canDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
                             </div>
                           </TD>
                         )}
@@ -3536,7 +3574,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
                           {(canEdit || canDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
                             {canEdit && <button className="tbtn" onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
-                            {canDelete && <button className="tbtn" onClick={() => delLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 12 }}>🗑</button>}
+                            {canDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
                           </div></TD>}
                         </tr>
                       ))}
@@ -3616,7 +3654,7 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
                     <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
                       <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
-                      <button className="tbtn" onClick={() => delMaster(m)} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', cursor: 'pointer', fontSize: 11 }}>🗑</button>
+                      <DeleteButton onClick={() => delMaster(m)} title="ลบ" />
                     </div></TD>}
                   </tr>
                 ))}

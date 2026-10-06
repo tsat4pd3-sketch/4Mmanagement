@@ -131,8 +131,17 @@ export function planOf(familyLines, shift) {
  * @param {object[]} p.lines         production_lines (ผ่าน useProductionLines)
  * @param {object}   p.maps          buildScheduleMaps(shift_schedules ของวันนี้)
  * @param {object}   p.attendance    { [employee_id]: แถว daily_production_logs วันนี้ }
+ * @param {object[]} [p.slotPlans]   manpower_slot_plans { org_node_id, team, slots } — จำนวนช่องที่หัวหน้าตั้งเอง (ชนะ std)
+ * @param {object[]} [p.lineTechs]   line_technicians { employee_id, line_id } — ช่างประจำไลน์ (ข้ามแผนกได้ เช่นช่าง MTN)
+ * @param {object[]} [p.helpers]     ผลของ mergeBorrowedEmployees() (พนักงาน + _helperTo/_helperFrom/_helperShift)
+ *                                   — คนยืมตัววันนี้ · **ห้ามคิวรี line_helpers เอง** (UI §6.13)
+ * @param {object[]} [p.stations]     workstations { id, line_id, line_name, station_name }
+ * @param {object[]} [p.stationPlans] station_slot_plans { station_id, per_shift } — จุดงานต้องมีกี่คนต่อกะ
+ * @param {object}   [p.homeByEmp]    { [employee_id]: station_id } (employee_home_positions)
+ *  ลำดับที่มาของ "ช่องว่าง" ต่อกะ: ① ช่องต่อทีมที่ตั้งเอง ② ผลรวมช่องจุดงาน ③ std ของไลน์ — ตัวแรกที่มีชนะ
  */
-export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {} }) {
+export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {},
+  slotPlans = [], lineTechs = [], helpers = [], stations = [], stationPlans = [], homeByEmp = {} }) {
   if (!section) return null;
   const idx = indexNodes(nodes);
   const sub = descendants(idx, section.id);
@@ -166,50 +175,131 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
   }
 
   const byName = (a, b) => naturalCompare(a.name || '', b.name || '');
+  const empById = new Map(employees.map(e => [e.id, e]));
+  const lineById = new Map(lines.map(l => [String(l.id), l]));
+  const helperByEmp = new Map(helpers.map(h => [h.id, h]));
+  const needOf = new Map(stationPlans.map(sp => [String(sp.station_id), Number(sp.per_shift) || 0]));
+  const cardOf = (e, extra) => ({ ...e, row: rowOfPosition(e.position), team: normTeam(e.team),
+    attend: attendanceState(attendance[e.id]), log: attendance[e.id] || null, unknownPos: !levelOfPosition(e.position), ...extra });
   const out = [];
   for (const b of depts.values()) {
-    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน) = ไม่วาด · แต่นับไว้บอกบนจอ
-    if (!b.heads.length && !b.techs.length && !b.people.length) continue;
-
     // ไลน์ของแผนก = ไลน์ที่ผัง (kind='line'.ref_line_id) ชี้ + ไลน์ที่คนในแผนกสังกัด
     const lineRefs = new Set();
     if (b.node) for (const n of descendants(idx, b.node.id)) if (n.kind === 'line' && n.ref_line_id != null) lineRefs.add(n.ref_line_id);
     for (const p of [...b.heads, ...b.techs, ...b.people]) if (p.line_id != null) lineRefs.add(p.line_id);
     const family = lineFamilyOf(lines, [...lineRefs]);
+    const famIds = new Set(family.map(l => String(l.id)));
+    const famNames = new Set(family.map(l => String(l.name || '').trim().toLowerCase()));
     const plan = { day: planOf(family, 'day'), night: planOf(family, 'night') };
 
-    // คอลัมน์ทีม
-    const teams = [...new Set(b.people.map(p => p.team))].sort(teamCompare);
+    // 🔧 ช่างประจำไลน์ (line_technicians) — ช่างแผนกอื่น (MTN/DIE/JIG) ที่ผูกไลน์ของแผนกนี้ไว้ ขึ้นแถวช่างด้วย
+    //    `linkedLines` = ไลน์ที่ผูก · `external` = ไม่ใช่คนในสังกัดแผนกนี้ (ห้ามนับเป็นกำลังคนแผนก)
+    const techById = new Map(b.techs.map(t => [t.id, t]));
+    for (const lt of lineTechs) {
+      if (!famIds.has(String(lt.line_id))) continue;
+      const ln = lineById.get(String(lt.line_id))?.name;
+      const cur = techById.get(lt.employee_id);
+      if (cur) { (cur.linkedLines ||= []).push(ln); continue; }
+      const e = empById.get(lt.employee_id);
+      if (!e) continue;   // พนักงานลาออก/ไม่ active — ไม่วาด (ทะเบียนผูกไว้แต่คนไม่อยู่แล้ว)
+      const card = cardOf(e, { linkedLines: [ln], external: true });
+      techById.set(e.id, card); b.techs.push(card);
+    }
+
+    // 🤝 คนยืมตัววันนี้ — ยืมมาช่วยไลน์ของแผนกนี้ (ไม่ใช่คนในสังกัด) · คนในสังกัดที่ไปช่วยที่อื่น = ติดป้าย lentTo
+    const memberIds = new Set([...b.heads, ...b.people].map(p => p.id));
+    const borrowed = [];
+    for (const h of helpers) {
+      if (memberIds.has(h.id) || !famNames.has(String(h._helperTo || '').trim().toLowerCase())) continue;
+      borrowed.push(cardOf(h, { borrowed: { from: h._helperFrom || '', to: h._helperTo || '', shift: h._helperShift || null } }));
+    }
+    for (const p of b.people) {
+      const h = helperByEmp.get(p.id);
+      if (h && !famNames.has(String(h._helperTo || '').trim().toLowerCase())) p.lentTo = { to: h._helperTo || '', shift: h._helperShift || null };
+    }
+
+    // ช่องที่หัวหน้าตั้งเอง (manpower_slot_plans) ของแผนกนี้ — ทีม → จำนวนช่อง
+    const planned = new Map(slotPlans.filter(sp => b.node && sp.org_node_id === b.node.id).map(sp => [normTeam(sp.team), Number(sp.slots) || 0]));
+
+    // แผนกเปล่า (ไม่มีหัวหน้า/ช่าง/คน/ช่องที่ตั้งไว้/คนยืม) = ไม่วาด · แต่นับไว้บอกบนจอ
+    if (!b.heads.length && !b.techs.length && !b.people.length && !planned.size && !borrowed.length) continue;
+
+    // คอลัมน์ทีม — ทีมที่มีคน ∪ ทีมที่ตั้งช่องไว้ (ตั้งช่องแต่ยังไม่มีคน = คอลัมน์ช่องว่างล้วน)
+    // ตั้ง 0 ช่องและไม่มีคน = ไม่ต้องมีคอลัมน์ (ตั้ง 0 = "ทีมนี้ไม่มีตำแหน่ง" ไม่ใช่คอลัมน์ว่าง)
+    const teams = [...new Set([...b.people.map(p => p.team), ...[...planned].filter(([, n]) => n > 0).map(([t]) => t)])].sort(teamCompare);
     const cols = teams.map(t => {
       const ppl = b.people.filter(p => p.team === t);
       const rep = ppl.find(p => p.line_id != null) || ppl[0];
       const shift = t ? shiftFromTeam(scheduleTeamFor(rep, maps), t) : null;
       const leaders = ppl.filter(p => p.row === ROW.LEADER).sort(byName);
       const ops = ppl.filter(p => p.row === ROW.OPERATOR).sort(byName);
-      return { team: t, shift, leaders, ops, slots: null };
+      // ตั้งช่องเองไว้ = ใช้ค่านั้นตรงๆ (ไม่ต้องรู้กะ) · `slotSource` บอกจอว่าเลขมาจากไหน
+      if (planned.has(t)) return { team: t, shift, leaders, ops, slots: Math.max(0, planned.get(t) - ops.length), slotPlan: planned.get(t), slotSource: 'plan' };
+      return { team: t, shift, leaders, ops, slots: null, slotPlan: null, slotSource: null };
     });
 
-    // ช่องว่าง — std ของกะ − คนในทะเบียนของกะนั้น · ลงที่คอลัมน์ทีมหมุนกะ (A/B) ของกะนั้นใบแรก
+    // ช่องว่างจาก std (เฉพาะคอลัมน์ที่ไม่ได้ตั้งช่องเอง) — std ของกะ − คนในทะเบียนของกะนั้น
+    // ลงที่คอลัมน์ทีมหมุนกะ (A/B) ของกะนั้นใบแรก · คอลัมน์ที่ตั้งเองถูกนับคนแล้ว ต้องหักออกจาก std ด้วย
     const reg = { day: 0, night: 0 };
     for (const c of cols) if (c.shift) reg[c.shift] += c.ops.length;
-    for (const sh of ['day', 'night']) {
-      if (plan[sh] == null) continue;
-      const host = cols.find(c => c.shift === sh && c.team !== 'C') || cols.find(c => c.shift === sh);
-      if (host) host.slots = Math.max(0, plan[sh] - reg[sh]);
+    const free = cols.filter(c => c.slotSource !== 'plan');
+
+    // 📍 ช่องระดับจุดงาน — จุดที่ตั้ง "ต้องมีกี่คนต่อกะ" ไว้ · มีคน = พนักงานในแผนกที่จุดประจำ (home) อยู่ที่จุดนั้น
+    //    และทีมของเขาเข้ากะนั้นวันนี้ · ขาด = ช่องว่างที่บอกได้ว่า "จุดไหน"
+    const shiftOfTeam = new Map(cols.map(c => [c.team, c.shift]));
+    const famStations = stations.filter(st => famIds.has(String(st.line_id)) || famNames.has(String(st.line_name || '').trim().toLowerCase()));
+    const plannedStations = famStations.filter(st => (needOf.get(String(st.id)) || 0) > 0);
+    let stationInfo = null;
+    if (plannedStations.length) {
+      const opsAll = cols.flatMap(c => c.ops);
+      const missing = { day: [], night: [] };
+      const need = { day: 0, night: 0 };
+      for (const st of plannedStations) {
+        const n = needOf.get(String(st.id));
+        const here = opsAll.filter(p => String(homeByEmp[p.id] ?? '') === String(st.id));
+        for (const sh of ['day', 'night']) {
+          need[sh] += n;
+          const have = here.filter(p => shiftOfTeam.get(p.team) === sh).length;
+          if (have < n) missing[sh].push({ station: st, n: n - have });
+        }
+      }
+      const stIds = new Set(famStations.map(st => String(st.id)));
+      stationInfo = {
+        planned: plannedStations.length, total: famStations.length, need, missing,
+        // คนในแผนกที่ยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ⇒ ช่องว่างอาจดูมากกว่าความจริง ต้องบอกบนจอ
+        noHome: opsAll.filter(p => !stIds.has(String(homeByEmp[p.id] ?? ''))).length,
+      };
     }
-    const unknownShiftTeams = cols.filter(c => c.team && !c.shift && c.ops.length).map(c => c.team);
+
+    for (const sh of ['day', 'night']) {
+      if (cols.some(c => c.shift === sh && c.slotSource === 'plan')) continue;   // ① กะนี้หัวหน้าตั้งช่องต่อทีมเองแล้ว
+      const host = free.find(c => c.shift === sh && c.team !== 'C') || free.find(c => c.shift === sh);
+      if (!host) continue;
+      if (stationInfo) {                                                         // ② ช่องจุดงาน
+        host.slots = stationInfo.missing[sh].reduce((a, m) => a + m.n, 0);
+        host.slotSource = 'station';
+        host.slotStations = stationInfo.missing[sh].flatMap(m => Array.from({ length: m.n }, () => m.station.station_name || ''));
+        continue;
+      }
+      if (plan[sh] == null) continue;                                            // ③ std
+      host.slots = Math.max(0, plan[sh] - reg[sh]); host.slotSource = 'std';
+    }
+    const unknownShiftTeams = cols.filter(c => c.team && !c.shift && c.ops.length && c.slotSource !== 'plan').map(c => c.team);
 
     const allOps = cols.flatMap(c => c.ops);
     out.push({
       key: b.key, name: b.name, node: b.node,
-      heads: b.heads.sort(byName), techs: b.techs.sort(byName), cols,
+      heads: b.heads.sort(byName), techs: b.techs.sort((x, y) => (!!x.external - !!y.external) || byName(x, y)), cols,
+      borrowed: borrowed.sort(byName),
       lines: family,
       plan, registered: reg,
       planTotal: plan.day == null && plan.night == null ? null : (plan.day || 0) + (plan.night || 0),
       opsTotal: allOps.length,
       present: allOps.filter(p => p.attend === 'present').length,
+      lentOut: allOps.filter(p => p.lentTo).length,
       unknownShiftTeams,
       unknownPos: allOps.filter(p => p.unknownPos).length,
+      stationInfo,
     });
   }
   out.sort((a, b) => (a.key === NO_DEPT) - (b.key === NO_DEPT) || (a.node && b.node ? orgNodeCompare(a.node, b.node) : 0));
@@ -224,6 +314,7 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       plan: out.some(d => d.planTotal != null) ? sum(d => d.planTotal) : null,
       ops: sum(d => d.opsTotal),
       present: sum(d => d.present),
+      borrowed: sum(d => d.borrowed.length),
       members: members.length,
     },
   };
@@ -267,7 +358,8 @@ export function fourMStatus(familyLines, logs) {
  *   temp = วันนี้ถูกจัดมาจุดนี้ แต่จุดประจำอยู่ที่อื่น (ย้ายชั่วคราว)
  *   away = จุดนี้คือจุดประจำ แต่วันนี้ไปยืนจุดอื่น
  */
-export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, empById = {}, shiftOfEmp = () => null }) {
+export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, empById = {}, shiftOfEmp = () => null, stationPlans = [] }) {
+  const needOf = new Map(stationPlans.map(sp => [String(sp.station_id), Number(sp.per_shift) || 0]));
   const sid = new Set(stations.map(s => String(s.id)));
   const at = new Map(stations.map(s => [String(s.id), new Map()]));
   for (const [empId, st] of Object.entries(homeByEmp)) {
@@ -290,7 +382,22 @@ export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, e
     });
     const so = { day: 0, night: 1 };
     people.sort((a, b) => (so[a.shift] ?? 2) - (so[b.shift] ?? 2) || naturalCompare(a.emp.name || '', b.emp.name || ''));
-    return { station: s, people };
+    // 📍 ช่องที่ยังขาดต่อกะ (station_slot_plans) — นับเฉพาะคนประจำจุดนี้ (ไม่นับคนย้ายมาชั่วคราว ✳)
+    //    ไม่ตั้ง = need null (จอวาด + แบบเดิมเมื่อไม่มีใครเลย)
+    const need = needOf.has(String(s.id)) ? needOf.get(String(s.id)) : null;
+    let missing = null;
+    if (need != null) {
+      const own = people.filter(p => !p.temp);
+      const unknown = own.filter(p => p.shift !== 'day' && p.shift !== 'night').length;
+      if (unknown) {
+        // 🔴 มีคนประจำที่ระบบไม่รู้ว่าเข้ากะไหน (ตารางกะยังไม่ตั้ง) — ห้ามเดาว่าเขาเติมกะไหน
+        //    ⇒ บอกแค่ "ขาดรวม N ช่อง ยังไม่รู้กะ" (จอวาดวงเทา ?)
+        missing = { day: 0, night: 0, unknown: Math.max(0, need * 2 - own.length) };
+      } else {
+        missing = { ...Object.fromEntries(['day', 'night'].map(sh => [sh, Math.max(0, need - own.filter(p => p.shift === sh).length)])), unknown: 0 };
+      }
+    }
+    return { station: s, people, need, missing };
   });
 }
 
@@ -319,7 +426,7 @@ export function paginateTv(depts, capOf) {
     const cap = Math.max(1, Math.floor(Number(capOf(Math.max(1, cols.length))) || 1));
     const itemsOf = (c) => [
       ...c.ops.map(p => ({ kind: 'op', p })),
-      ...Array.from({ length: c.slots || 0 }, () => ({ kind: 'slot' })),
+      ...Array.from({ length: c.slots || 0 }, (_, i) => ({ kind: 'slot', station: c.slotStations?.[i] || null })),
     ];
     const all = cols.map(itemsOf);
     const parts = Math.max(1, ...all.map(a => Math.ceil(a.length / cap)));
@@ -339,4 +446,84 @@ export function tvCardCapacity({ areaW, areaH, nCols, cardW, cardH, gap = 6, col
   const perRow = Math.max(1, Math.floor((colW + gap) / (cardW + gap)));
   const rows = Math.max(1, Math.floor((areaH + gap) / (cardH + gap)));
   return perRow * rows;
+}
+
+/* ── 📜 ประวัติการเปลี่ยนช่อง (2026-10-06 · คำสั่ง user "ทำจอสรุปประวัติการเปลี่ยนช่องต่อเลย") ─────────
+   อ่านจาก `audit_log` (fn_audit ของ 3 ตารางค่าตั้งบอร์ด) — **ไม่มีตารางประวัติแยก** (audit คือแหล่งความจริงเดียว)
+   ตาราง: manpower_slot_plans (ช่องต่อทีม) · station_slot_plans (คนต่อกะของจุด) · line_technicians (ช่างประจำไลน์)
+   🔴 แถวที่อ้างของที่ถูกลบไปแล้ว (แผนก/จุด/คน) = ใช้ชื่อเท่าที่รู้ + "(ถูกลบแล้ว)" ห้ามทิ้งแถว (ประวัติต้องครบ)
+   🔴 actor ว่าง = เขียนโดยระบบ/migration — เขียนว่า "ระบบ" ห้ามเว้นว่างให้ดูเหมือนข้อมูลหาย */
+export const SLOT_AUDIT_TABLES = Object.freeze(['manpower_slot_plans', 'station_slot_plans', 'line_technicians']);
+export const SLOT_KIND_META = Object.freeze({
+  team:    { label: 'ช่องต่อทีม', icon: '🧑‍🤝‍🧑' },
+  station: { label: 'คนต่อกะของจุด', icon: '📍' },
+  tech:    { label: 'ช่างประจำไลน์', icon: '🔧' },
+});
+const KIND_OF_TABLE = { manpower_slot_plans: 'team', station_slot_plans: 'station', line_technicians: 'tech' };
+
+/**
+ * @param {object[]} rows   audit_log (table_name, action, actor, old_data, new_data, changed_at)
+ * @param {object}   ctx    { nodeById: Map, stationById: Map, lineById: Map, empById: Map,
+ *                            inScope: ({ kind, nodeId, lineId }) => boolean }  — ตัดตามส่วนงานที่ดูอยู่
+ * @returns {Array<{ id, at, month, actor, kind, action, where, team, before, after, delta, text }>}
+ *   before/after = จำนวน (ช่อง/คน) · null = ไม่มีค่า (สร้างใหม่/ลบ) · delta = after−before (ช่างนับ +1/−1)
+ */
+export function describeSlotChanges(rows, ctx = {}) {
+  const { nodeById = new Map(), stationById = new Map(), lineById = new Map(), empById = new Map(), inScope = () => true } = ctx;
+  const out = [];
+  for (const r of rows || []) {
+    const kind = KIND_OF_TABLE[r.table_name];
+    if (!kind) continue;
+    const o = r.old_data || null, n = r.new_data || null, d = n || o || {};
+    let where = '', team = null, before = null, after = null, nodeId = null, lineId = null;
+    if (kind === 'team') {
+      nodeId = d.org_node_id;
+      where = nodeById.get(nodeId)?.name || 'แผนก (ถูกลบแล้ว)';
+      team = d.team ?? '';
+      before = o ? Number(o.slots) : null; after = n ? Number(n.slots) : null;
+    } else if (kind === 'station') {
+      const st = stationById.get(String(d.station_id));
+      lineId = st?.line_id ?? null;
+      const ln = st ? (lineById.get(String(st.line_id))?.name || st.line_name || '') : '';
+      where = st ? `${st.station_name}${ln ? ` · ${ln}` : ''}` : 'จุดงาน (ถูกลบแล้ว)';
+      before = o ? Number(o.per_shift) : null; after = n ? Number(n.per_shift) : null;
+    } else {
+      lineId = d.line_id;
+      const ln = lineById.get(String(d.line_id))?.name || 'ไลน์ (ถูกลบแล้ว)';
+      const emp = empById.get(d.employee_id)?.name || 'พนักงาน (ไม่อยู่ในทะเบียนแล้ว)';
+      where = `${ln} · ${emp}`;
+      before = r.action === 'INSERT' ? 0 : r.action === 'DELETE' ? 1 : null;
+      after = r.action === 'INSERT' ? 1 : r.action === 'DELETE' ? 0 : null;
+    }
+    if (!inScope({ kind, nodeId, lineId })) continue;
+    // UPDATE ที่ค่าไม่เปลี่ยน (แก้แค่ note) — นับเป็นการแก้ แต่ delta 0
+    const delta = (after ?? 0) - (before ?? 0);
+    const unit = kind === 'station' ? 'คน/กะ' : kind === 'team' ? 'ช่อง' : '';
+    const text = kind === 'tech'
+      ? (r.action === 'INSERT' ? 'ผูกเป็นช่างประจำไลน์' : r.action === 'DELETE' ? 'เอาออกจากช่างประจำไลน์' : 'แก้ข้อมูล')
+      : r.action === 'INSERT' ? `ตั้ง ${after} ${unit}`
+      : r.action === 'DELETE' ? `ล้างค่า (เดิม ${before} ${unit}) → กลับไปใช้ค่าถัดไปในลำดับ`
+      : before === after ? `แก้รายละเอียด (ค่าเท่าเดิม ${after} ${unit})`
+      : `${before} → ${after} ${unit}`;
+    out.push({
+      id: r.id, at: r.changed_at, month: String(r.changed_at || '').slice(0, 7),
+      actor: r.actor || 'ระบบ', kind, action: r.action, where, team, before, after, delta, text,
+    });
+  }
+  out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return out;
+}
+
+/** สรุปรายเดือน — จำนวนครั้ง · ช่องสุทธิที่เพิ่ม/ลด (ทีม + จุดงาน) · ช่างเข้า/ออก · คนแก้ (ไม่ซ้ำ) */
+export function summarizeSlotChanges(list) {
+  const by = new Map();
+  for (const c of list || []) {
+    if (!by.has(c.month)) by.set(c.month, { month: c.month, count: 0, teamDelta: 0, stationDelta: 0, techIn: 0, techOut: 0, actors: new Set() });
+    const m = by.get(c.month);
+    m.count += 1; m.actors.add(c.actor);
+    if (c.kind === 'team') m.teamDelta += c.delta;
+    else if (c.kind === 'station') m.stationDelta += c.delta;
+    else if (c.delta > 0) m.techIn += 1; else if (c.delta < 0) m.techOut += 1;
+  }
+  return [...by.values()].sort((a, b) => b.month.localeCompare(a.month)).map(m => ({ ...m, actors: [...m.actors] }));
 }

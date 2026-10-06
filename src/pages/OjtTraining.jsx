@@ -6,6 +6,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { checkWrite } from '../utils/dbWrite';
 import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
@@ -19,6 +20,7 @@ import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { DeleteButton } from '../components/IconButton';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -96,6 +98,8 @@ function SignPadModal({ title, onCancel, onDone }) {
 
 export default function OjtTraining() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
+  const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
   const canDelete = can('ojt', 'delete', role);
   // 📜 ชื่อผู้สอน/ผู้ประเมินที่เคยบันทึกไว้ (Main ojt_*) — วิทยากรภายนอกที่ไม่มีใน profiles/employees ยังเลือกซ้ำได้ (2026-09-07)
@@ -169,7 +173,7 @@ export default function OjtTraining() {
       if (alive) setEmployees(data || []);
     })();
     return () => { alive = false; };
-  }, [lines, role, userLineId, scopeSecs, scopeLineIds]);
+  }, [lines, role, userLineId, scopeKey, scopeLineIds]);
 
   /* 🤝 คนที่ถูก "ยืมตัว" มาไลน์ใน scope **ของวันที่ในใบอบรม** (ไม่ใช่ของวันนี้)
      feedback 2026-09-07: ยืมข้ามส่วนงานแล้วเปิดใบ OJT ให้ไม่ได้ (picker กรองตามสังกัดเดิม)
@@ -331,6 +335,9 @@ export default function OjtTraining() {
       if (!editing.isNew) {
         let del = supabase.from('ojt_training_attendees').delete().eq('training_id', editing.id);
         if (keptIds.length) del = del.not('id', 'in', `(${keptIds.join(',')})`);
+        /* ⚠️ จุดนี้ **ห้ามนับแถว** — delete นี้ลบ "คนที่ถูกเอาออกจากใบ" ซึ่งปกติคือ 0 คน
+           ⇒ 0 แถว = เรื่องปกติ ไม่ใช่สัญญาณล้มเหลว (ต่างจาก delete ที่ลบของที่เลือกไว้แน่ๆ)
+           ไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" ไม่ใช่ของแถวที่ลบที่นี่ */
         const { error: delErr } = await del;
         // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
         if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
@@ -360,9 +367,12 @@ export default function OjtTraining() {
   const handleDelete = async (t) => {
     if (!window.confirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
     const { data: att } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
-    const { error } = await supabase.from('ojt_trainings').delete().eq('id', t.id);
-    if (error) { toast.error('ลบไม่สำเร็จ: ' + error.message); return; }
-    // ลบไฟล์ลายเซ็นของใบนี้ (best-effort หลัง DB delete สำเร็จ — กฎ storage)
+    /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ = 0 แถว ไม่มี error
+       ไม่นับ = ใบอบรมยังอยู่ แต่ลายเซ็นพนักงานทุกคนถูกลบ ⇒ ใบเสียถาวร เซ็นใหม่ไม่ได้ */
+    const dres = await supabase.from('ojt_trainings').delete().eq('id', t.id).select('id');
+    if (!checkWrite(dres, 'ลบใบอบรม')) return;
+    if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ · ใบและลายเซ็นยังอยู่ครบ'); return; }
+    // ยืนยันใบหายจริงแล้ว ค่อยลบไฟล์ลายเซ็นของใบนี้ (best-effort — กฎ storage)
     const { data: { user } } = await supabase.auth.getUser();
     const paths = (att || []).map(a => a.sign_url).filter(u => u?.includes('/signatures/'))
       .map(u => decodeURIComponent(u.split('/signatures/')[1] || '').split('?')[0])
@@ -592,8 +602,7 @@ table{border-collapse:collapse}
                         style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
                     {canDelete && (
-                      <button onClick={() => handleDelete(t)}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'transparent', color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)' }}>🗑</button>
+                      <DeleteButton onClick={() => handleDelete(t)} title="ลบ" />
                     )}
                   </td>
                 </tr>

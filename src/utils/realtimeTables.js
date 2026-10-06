@@ -43,6 +43,7 @@ export const REALTIME_TABLES = {
   /* ── Main — ชื่อในจอ Supabase "MAIN" · ewhdfqwfwofivojtsizn ── */
   daily_production_logs:   'main',
   four_m_logs:             'main',
+  line_helpers:            'main',   // เพิ่ม 06/10 — ด่านนี้จับได้ตอน merge ว่าตกหล่น publication (รอบที่ 4 ของบั๊กคลาสนี้)
   meeting_action_items:    'main',
   notifications:           'main',
   qa_fme_obligations:      'main',

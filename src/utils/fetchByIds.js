@@ -68,6 +68,26 @@ export async function fetchAllPages(run, opt = {}) {
   return { rows, error, truncated };
 }
 
+/**
+ * openPlusHistory — คิวงาน = "ใบค้างทุกใบ" + "ประวัติล่าสุด N ใบ" (QC 05/10 · ย้ายมาเป็นของกลาง 06/10)
+ * 🔴 ห้ามโหลดคิวแบบ `.order(เวลา desc).limit(N)` ไม่กรองสถานะ — ใบค้างเก่าหลุดหน้าต่างหายจากจอเงียบๆ
+ *    และใบปิดแล้ว/ยกเลิกกินที่ในหน้าต่าง (วัดจริง 05/10: ใบรอจ่ายเก่า 172 ใบหายจากจอสโตร์)
+ * @param {() => any} openQ  query ใบค้าง (ยังไม่ await · ยังไม่ order/range) — ดึงครบทุกหน้า
+ * @param {() => any} histQ  query ประวัติ (ยังไม่ await) — ตัดล่าสุด histN ใบ
+ * @param {number} histN
+ * @param {string} [timeKey='created_at']  คอลัมน์เวลาไว้เรียง (บางตารางไม่มี created_at เช่น rack_requests ใช้ requested_at)
+ * @returns {Promise<{ data:any[], error:{message:string}|null }>}  error ไม่ null = โหลดไม่ครบ ห้ามแทนที่ของเดิมเงียบๆ
+ */
+export const openPlusHistory = async (openQ, histQ, histN, timeKey = 'created_at') => {
+  const [op, hi] = await Promise.all([
+    fetchAllPages(openQ),
+    histQ().order(timeKey, { ascending: false }).limit(histN),
+  ]);
+  const err = op.error ? { message: op.error } : op.truncated ? { message: 'ใบค้างเยอะเกินเพดาน — โหลดได้ไม่ครบ' } : hi.error;
+  const data = [...op.rows, ...(hi.data || [])].sort((a, b) => String(b[timeKey] || '').localeCompare(String(a[timeKey] || '')));
+  return { data, error: err || null };
+};
+
 export async function fetchByIds(ids, run, opt = {}) {
   const { chunk = IN_CHUNK, page = PAGE_SIZE, orderBy = 'id', maxPages = 60 } = opt;
   const rows = [];

@@ -13,7 +13,7 @@ export const inp = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 export const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
-export const btn = (bg = 'var(--accent)', fg = '#08130a') => ({
+export const btn = (bg = 'var(--accent)', fg = 'var(--accent-ink)') => ({
   padding: '6px 12px', borderRadius: 8, border: 'none', background: bg, color: fg, fontSize: 12, fontWeight: 800, cursor: 'pointer',
 });
 export const ghost = {

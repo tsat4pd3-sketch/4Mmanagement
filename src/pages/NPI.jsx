@@ -31,6 +31,7 @@ import NpiTooling from '../components/NpiTooling';
 import NpiTasks from '../components/NpiTasks';
 import NpiTemplates from '../components/NpiTemplates';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
+import { DeleteButton } from '../components/IconButton';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    🚀 NPI — พาร์ทใหม่: APQP / PPAP / Drawing Rev / ECI / Tooling Plan — /npi
@@ -534,7 +535,7 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
                     </td>
                     <td style={tdSt}><Pill label={PART_STATUS[p.status]?.label || p.status} color={PART_STATUS[p.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => onEdit(p)}>✏️</button> <button className="tbtn" style={{ ...ghost, padding: '2px 7px', color: '#ef4444' }} onClick={() => onDel(p)}>🗑</button></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => onEdit(p)}>✏️</button> <DeleteButton onClick={() => onDel(p)} title="ลบ" /></>}
                     </td>
                   </tr>
                 );

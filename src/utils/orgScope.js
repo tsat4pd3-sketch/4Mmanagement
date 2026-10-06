@@ -317,12 +317,34 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     if (!out.length && !isPlant({ kind, value })) out.unshift({ ...PLANT });
     return out;
   };
+  const chainOf = (kind, value) => {
+    if (isPlant({ kind, value })) return [{ ...PLANT }];
+    const seen = new Set(); const out = [];
+    const add = (sc) => { const k = isPlant(sc) ? 'plant' : scopeKey(sc.kind, sc.value); if (!seen.has(k)) { seen.add(k); out.push(sc); } };
+    add({ kind, value });
+    const owners = kind === 'cost_center' ? (ccOwners.get(String(value || '')) || []).slice().reverse() : [{ kind, value }];
+    owners.forEach((u) => { if (kind === 'cost_center') add(u); ancestorsOf(u.kind, u.value).slice().reverse().forEach(a => { if (!isPlant(a)) add(a); }); });
+    add({ ...PLANT });
+    return out;
+  };
+  /* 💰 เลือก "รหัส cost center" = เลือก **หน่วยเจ้าของรหัส** (06/10 · user: "เลือกส่วน MTN เหมือนกัน ทำไมไม่เหมือนกัน")
+     แกน CC แยกจากต้นไม้ (ancestorsOf คืนแค่ plant — ตั้งใจ) แต่ทุกอย่างที่ "ตีความขอบเขต" (นิยาม KPI ตกทอด ·
+     ทีมช่าง · ส่วนงานของใบ Action) ต้องไปอ่านที่เจ้าของรหัสแทน ไม่งั้น CC 2140456000 กับ แผนก MTN ตอบคนละชุด
+     · `unitsOf` = หน่วยที่ขอบเขตนี้ "หมายถึง" (CC → เจ้าของทุกตัว กว้าง→แคบ · อื่นๆ → ตัวเอง · CC ไม่มีเจ้าของ → [])
+     · `chainOf` = ลำดับไต่หานิยาม "ใกล้สุดก่อน" (ตัวเอง → เจ้าของแคบสุด → แม่ของมัน … → โรงงาน) */
+  const unitsOf = (kind, value) => (kind === 'cost_center' ? (ccOwners.get(String(value || '')) || []).slice() : [{ kind, value }]);
   const sectionOf = (kind, value) => {
     if (kind === 'section') return value;
+    if (kind === 'cost_center') return unitsOf(kind, value).map(u => sectionOf(u.kind, u.value)).find(Boolean) || null;
     return sectionOfKey.get(scopeKey(kind, value)) || null;
   };
   const sectionsOf = (kind, value) => {
     if (isPlant({ kind, value })) return null;   // null = ไม่จำกัด
+    if (kind === 'cost_center') {
+      const set = new Set();
+      unitsOf(kind, value).forEach((u) => { const s = sectionsOf(u.kind, u.value); if (s) s.forEach(x => set.add(x)); });
+      return set;   // รหัสที่ไม่มีเจ้าของในผัง = ว่าง (ไม่มีส่วนงานให้กรอง ไม่ใช่ "ทั้งโรงงาน")
+    }
     const own = sectionOf(kind, value);
     if (own) return new Set([own]);
     const k = scopeKey(kind, value);
@@ -374,7 +396,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     return out;
   };
 
-  return { options: opts, lineNamesOf, ancestorsOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf, ccOf, ccOwnersOf, ccLabel, ccUnder };
+  return { options: opts, lineNamesOf, ancestorsOf, unitsOf, chainOf, sectionOf, sectionsOf, labelOf, pathOf, has, childrenOf, optionOf, ccOf, ccOwnersOf, ccLabel, ccUnder };
 }
 
 /** ขอบเขต `def` (นิยาม KPI) ครอบขอบเขตที่เลือกอยู่ไหม — เท่ากัน หรือเป็นบรรพบุรุษ (นิยามระดับแม่ตกทอดถึงลูก) */
@@ -400,9 +422,10 @@ export function drillParams(index, sc) {
 export function scopeCovers(index, defScope, selected) {
   if (isPlant(defScope)) return true;
   if (isPlant(selected)) return false;
-  if (defScope.kind === selected.kind && defScope.value === selected.value) return true;
-  return index.ancestorsOf(selected.kind, selected.value)
-    .some(a => a.kind === defScope.kind && a.value === defScope.value);
+  const same = (a) => a.kind === defScope.kind && a.value === defScope.value;
+  /* เลือก CC = เลือกหน่วยเจ้าของรหัส (06/10) — นิยามของ แผนก MTN ต้องเห็นเมื่อเลือก CC ของ MTN ด้วย */
+  const units = [selected, ...(index.unitsOf ? index.unitsOf(selected.kind, selected.value) : [])];
+  return units.some(u => same(u) || index.ancestorsOf(u.kind, u.value).some(same));
 }
 export const sameScope = (a, b) => (isPlant(a) && isPlant(b)) || (!!a && !!b && a.kind === b.kind && a.value === b.value);
 
