@@ -144,7 +144,8 @@ export default function ParetoChart({
             {/* หมุด i อยู่ระดับ "ยอดสะสมถึงแท่ง i" ⇒ หมุดแรก = หัวแท่งแรกพอดี (ดู pareto.js)
                 ป้าย % จึงชนเลขค่าของแท่งนั้นแน่นอน — ยกป้ายแรกขึ้นอีกขั้น */}
             {(roomy || p.row?._cls === 'A' || p.i === g.line.length - 2) && (
-              <text x={p.x} y={p.y - (p.i === 0 ? 22 : 10)} fontSize={FONT} textAnchor="middle" fontWeight="700"
+              <text x={p.x} y={Math.max(FONT + 2, p.y - (p.i === 0 ? 22 : 10))}   /* 🔴 clamp ขอบบน — แท่งแรกกินเกือบ 100% ⇒ หมุดอยู่ที่ padTop พอดี ยก 22 แล้วหลุดกรอบ
+                            ไปทับหัวข้อแผง (ด่าน chartsweep จับได้ 06/10) */ fontSize={FONT} textAnchor="middle" fontWeight="700"
                 fill={LINE_COLOR} stroke="var(--card)" strokeWidth="3" paintOrder="stroke">
                 {p.pct.toFixed(1)}%
               </text>

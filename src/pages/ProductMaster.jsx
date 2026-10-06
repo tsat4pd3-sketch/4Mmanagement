@@ -49,6 +49,8 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -249,6 +251,8 @@ function ReadyChips({ ready, onGo, compact }) {
 }
 
 export default function ProductMaster() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { role, fullName, isDeptAdmin } = useContext(UserContext);
   // อ้าง isDeptAdmin เพื่อผูก re-render — can() อ่าน flag จาก module var (_deptAdmin) ที่โหลด async
   // ถ้าไม่ consume ค่านี้จาก context ปุ่มแก้ไขจะไม่โผล่จนกว่าจะ re-render ด้วยเหตุอื่น (แอดมินหน่วยงานติ๊กแล้วแต่แก้ไม่ได้)
@@ -682,10 +686,7 @@ export default function ProductMaster() {
   ].join('\n');
 
   const downloadProductTemplate = () => {
-    const bom = `﻿${PRODUCT_CSV_HEADER}\n${PRODUCT_CSV_EXAMPLE}`;
-    const blob = new Blob([bom], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'product_template.csv'; a.click();
+    downloadCsvDoc('csv_product_template', 'product_template', `${PRODUCT_CSV_HEADER}\n${PRODUCT_CSV_EXAMPLE}`);
   };
 
   const handleProductCsvUpload = async (e) => {
@@ -2777,7 +2778,7 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
                                   style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11.5, padding: '2px 6px', borderRadius: 5,
                                     border: `1px solid ${hit?.conflict ? '#ef4444' : 'var(--border)'}`, background: 'var(--bg2)', color: 'var(--text)' }} />
                               </label>
-                              <div style={{ fontSize: 10.5, color: hit?.conflict ? '#ef4444' : hit?.confidence === 'high' ? 'var(--accent)' : '#f59e0b', marginTop: 2 }}>
+                              <div style={{ fontSize: 11, color: hit?.conflict ? '#ef4444' : hit?.confidence === 'high' ? 'var(--accent)' : '#f59e0b', marginTop: 2 }}>
                                 {hit?.conflict ? `⚠ ทะเบียนเดิมคือ ${hit.current}` : hit?.confidence === 'high' ? '✓ ' + hit.reason : '~ ' + hit?.reason}
                               </div>
                             </td>
@@ -2842,13 +2843,10 @@ function BOMPanel({ canCreate, canEdit, canDelete, fullName }) {
 }
 
 /* ─── CSV download helper ─────────────────────────────────────── */
-function downloadCsv(filename, headers, rows) {
-  const lines = [headers.join(','), ...rows.map(r => headers.map(h => {
-    const v = String(r[h] ?? '');
-    return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g, '""')}"` : v;
-  }).join(','))];
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+/* CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10 · src/utils/csvDoc.js)
+   ของกลางกัน formula injection ให้ด้วย (ของเดิมในไฟล์นี้ไม่ได้กัน) */
+function downloadCsv(docKey, filename, headers, rows) {
+  downloadCsvDoc(docKey, filename, csvText(headers, rows.map(r => headers.map(h => r[h] ?? ''))));
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -2905,7 +2903,7 @@ function ExportPanel() {
       }
       if (!rows.length) { toast.info(`${e.label} ยังไม่มีข้อมูล`); return; }
       const headers = e.cols.length ? e.cols : Object.keys(rows[0]).filter(k => k !== 'id');
-      downloadCsv(`${e.key}_${today}.csv`, headers, rows);
+      downloadCsv('csv_product_master', `${e.key}_${today}`, headers, rows);
       toast.success(`⬇️ ${e.label} ${rows.length.toLocaleString()} แถว`);
     } finally { setBusy(''); }
   };
@@ -2982,10 +2980,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
   ].join('\n');
 
   const downloadPartsTemplate = () => {
-    const content = `﻿${PARTS_CSV_HEADER}\n${PARTS_CSV_EXAMPLE}`;
-    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'parts_master_template.csv'; a.click();
+    downloadCsvDoc('csv_parts_template', 'parts_master_template', `${PARTS_CSV_HEADER}\n${PARTS_CSV_EXAMPLE}`);
   };
 
   const handlePartsCsvUpload = async (e) => {

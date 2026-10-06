@@ -199,7 +199,7 @@ export default function SearchSelect({
               return (
                 <div key={o.id}>
                   {o.group && head && (
-                    <div style={{ padding: '5px 10px 3px', fontSize: 10.5, fontWeight: 800, color: 'var(--muted)', background: 'var(--bg3)' }}>{o.group}</div>
+                    <div style={{ padding: '5px 10px 3px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', background: 'var(--bg3)' }}>{o.group}</div>
                   )}
                   <div
                     onMouseEnter={() => setActive(i)}
@@ -221,7 +221,7 @@ export default function SearchSelect({
                       </div>
                       {/* บรรทัด 2 — รหัสนำ (ห้ามตัด) + ข้อความประกอบ (ตัดได้) */}
                       {(o.code || o.sub) && (
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, fontSize: 10.5, color: 'var(--muted)' }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, fontSize: 11, color: 'var(--muted)' }}>
                           {o.code && (
                             <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', color: 'var(--text2)' }}>{o.code}</span>
                           )}
@@ -245,7 +245,7 @@ export default function SearchSelect({
           </div>
           {/* ⚠️ ห้ามตัดของหายเงียบ — บอกเสมอว่าซ่อนไปกี่รายการ */}
           {hidden > 0 && (
-            <div style={{ padding: '5px 10px', fontSize: 10.5, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
+            <div style={{ padding: '5px 10px', fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
               แสดง {rows.length} จาก {matched.length} — พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน {hidden})
             </div>
           )}

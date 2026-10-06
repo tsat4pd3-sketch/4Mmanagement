@@ -145,7 +145,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           <div>
             <input type="date" value={form.ends_on} style={{ width: '100%' }}
               onChange={e => setForm(f => ({ ...f, ends_on: e.target.value }))} />
-            <div style={{ fontSize: 10, color: form.kind === 'acting' && !form.ends_on ? '#f59e0b' : 'var(--muted)', marginTop: 2 }}>
+            <div style={{ fontSize: 11, color: form.kind === 'acting' && !form.ends_on ? '#f59e0b' : 'var(--muted)', marginTop: 2 }}>
               {form.kind === 'acting'
                 ? (form.ends_on ? 'วันสิ้นสุด' : '⚠️ รักษาการควรมีวันสิ้นสุด')
                 : 'วันสิ้นสุด (ไม่ใส่ก็ได้)'}
@@ -182,12 +182,12 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                   <tr key={r.id}>
                     <td>{n ? `${NODE_KIND_TH[n.kind] || n.kind} · ${n.name}` : '(หน่วยถูกลบ)'}</td>
                     <td>{nameOf(r.profile_id)}
-                      {r.note && <div style={{ fontSize: 10, color: 'var(--muted)' }}>{r.note}</div>}</td>
+                      {r.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.note}</div>}</td>
                     <td style={{ textAlign: 'center' }}>
                       {ASSIGNMENT_KINDS[r.kind]?.icon} {kindLabel(r.kind)}</td>
                     <td style={{ textAlign: 'center' }}>
                       {chip(`${m.color}22`, m.color, m.label)}
-                      {needsConfirm(r) && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>จากผังองค์กร</div>}
+                      {needsConfirm(r) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>จากผังองค์กร</div>}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       {canEdit

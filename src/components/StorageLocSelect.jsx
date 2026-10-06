@@ -32,7 +32,7 @@ export default function StorageLocSelect({ value = '', onChange, allowFree = tru
         allowFree={allowFree} placeholder={placeholder} freeHint="รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก"
         emptyText="ไม่พบรหัสคลังนี้ในทะเบียน" disabled={disabled}
         inputStyle={{ fontFamily: 'monospace', textTransform: 'uppercase', ...(bad ? { borderColor: '#ef4444' } : {}), ...inputStyle }} />
-      {bad && <div style={{ fontSize: 10.5, color: '#ef4444', marginTop: 2 }}>✗ รูปแบบรหัสคลังไม่ถูกต้อง (เช่น S401 / P402)</div>}
+      {bad && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>✗ รูปแบบรหัสคลังไม่ถูกต้อง (เช่น S401 / P402)</div>}
     </div>
   );
 }

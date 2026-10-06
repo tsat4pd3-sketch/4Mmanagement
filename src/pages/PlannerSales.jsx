@@ -31,6 +31,8 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { dedupeForecastRows } from '../utils/demandSupply';
 import { checkWrite } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
+import { loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc } from '../utils/csvDoc';
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -1462,12 +1464,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       ? ['', 'สรุปภาระการผลิต (Capacity Load)', 'Line,Parts,WorkTime(hr/mo),Available(hr/mo),Load%',
          ...capacity.list.map(l => [esc(l.line), l.parts, (l.workSec / 3600).toFixed(1), (capacity.availSec / 3600).toFixed(1), l.loadPct.toFixed(1)].join(','))]
       : [];
-    const blob = new Blob(['﻿' + [head.join(','), ...dataLines, ...capBlock].join('\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `kanban_${calcType}_${month}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (06/10) · ยังไม่ตั้งเลขฟอร์ม = ชื่อเดิมเป๊ะ
+    downloadCsvDoc('csv_kanban_calc', `kanban_${calcType}_${month}`,
+      [head.join(','), ...dataLines, ...capBlock].join('\n'));
   };
 
   const saveSettings = async () => {
@@ -1877,6 +1876,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 }
 
 export default function PlannerSales() {
+  // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
+  useEffect(() => { loadDocForms(); }, []);
   const { role, fullName } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['planner', 'kanban', 'upload', 'monitoring'], 'planner');
   const [refreshKey, setRefreshKey] = useState(0);

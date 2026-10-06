@@ -480,10 +480,10 @@ export default function ProdLotPlanner({
                       {isTrialLot(l) ? (
                         <>
                           <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 4,
-                            padding: '1px 5px', fontSize: 10.5, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>🧪 ทดลอง</span>
+                            padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>🧪 ทดลอง</span>
                           <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
                           {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
-                          <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                             {[l.trial_customer, l.trial_reason, l.requested_by && `ขอโดย ${l.requested_by}`].filter(Boolean).join(' · ') || 'ยังไม่ระบุที่มา'}
                           </div>
                         </>
@@ -542,7 +542,7 @@ export default function ProdLotPlanner({
                           {dieOptsForMat(l.mat_no).map(d => <option key={d.id} value={d.set_code}>{d.set_code}</option>)}
                         </select>
                       ) : (l.die_no || <span style={{ color: 'var(--muted)' }}>—</span>)}
-                      {die && <div style={{ fontSize: 10.5, color: die.die_height_mm == null ? '#f59e0b' : 'var(--muted)' }}>
+                      {die && <div style={{ fontSize: 11, color: die.die_height_mm == null ? '#f59e0b' : 'var(--muted)' }}>
                         {die.die_height_mm == null ? '⚠ ไม่รู้ความสูง' : `สูง ${die.die_height_mm} มม.`}</div>}
                     </td>
                     <td style={td}>
@@ -552,7 +552,7 @@ export default function ProdLotPlanner({
                         : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>✓ ครบตามกรอบ</span>
                         : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
                         : <span style={{ color: 'var(--muted)' }}>ยังไม่เริ่ม</span>}
-                      {l.cancel_reason && <div style={{ fontSize: 10.5, color: 'var(--muted)' }}>{l.cancel_reason}</div>}
+                      {l.cancel_reason && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.cancel_reason}</div>}
                     </td>
                     {mayWrite && (
                       <td style={{ ...td, textAlign: 'center' }}>

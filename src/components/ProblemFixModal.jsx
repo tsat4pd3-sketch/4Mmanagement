@@ -156,7 +156,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                     background: w.why === 'code' ? 'rgba(168,85,247,0.14)' : 'var(--bg2)',
                     border: `1px solid ${w.why === 'code' ? 'rgba(168,85,247,0.45)' : 'var(--border2)'}` }}>
                   <span style={{ display: 'block', fontWeight: 800, fontFamily: 'monospace' }}>{w.wi_no}</span>
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {w.code} · {w.symptom} · {w.why === 'code' ? 'ตรงเลขพาร์ท' : 'ตรงคำอาการ'}
                   </span>
                 </button>
@@ -186,7 +186,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                   <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {p.fix_action}
                   </span>
-                  <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {p.machine_no ? `${p.machine_no} · ` : ''}{dmy(p.fix_at)}
                   </span>
                 </button>

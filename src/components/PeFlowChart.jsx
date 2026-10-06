@@ -271,7 +271,7 @@ export default function PeFlowChart({ procs = [], onPick, mode = 'dark', highlig
             {n.proc.special_class && (
               <>
                 <rect x={n.x + n.w - 30} y={n.y + 4} width={26} height={15} rx={3} fill="#dc2626" />
-                <text x={n.x + n.w - 17} y={n.y + 15} textAnchor="middle" fontSize={10} fontWeight="800" fill="#fff">{String(n.proc.special_class).slice(0, 3)}</text>
+                <text x={n.x + n.w - 17} y={n.y + 15} textAnchor="middle" fontSize={11} fontWeight="800" fill="#fff">{String(n.proc.special_class).slice(0, 3)}</text>
               </>
             )}
           </g>
