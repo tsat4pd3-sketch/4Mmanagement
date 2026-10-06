@@ -135,9 +135,13 @@ export function planOf(familyLines, shift) {
  * @param {object[]} [p.lineTechs]   line_technicians { employee_id, line_id } — ช่างประจำไลน์ (ข้ามแผนกได้ เช่นช่าง MTN)
  * @param {object[]} [p.helpers]     ผลของ mergeBorrowedEmployees() (พนักงาน + _helperTo/_helperFrom/_helperShift)
  *                                   — คนยืมตัววันนี้ · **ห้ามคิวรี line_helpers เอง** (UI §6.13)
+ * @param {object[]} [p.stations]     workstations { id, line_id, line_name, station_name }
+ * @param {object[]} [p.stationPlans] station_slot_plans { station_id, per_shift } — จุดงานต้องมีกี่คนต่อกะ
+ * @param {object}   [p.homeByEmp]    { [employee_id]: station_id } (employee_home_positions)
+ *  ลำดับที่มาของ "ช่องว่าง" ต่อกะ: ① ช่องต่อทีมที่ตั้งเอง ② ผลรวมช่องจุดงาน ③ std ของไลน์ — ตัวแรกที่มีชนะ
  */
 export function buildManpowerBoard({ section, nodes = [], employees = [], lines = [], maps = null, attendance = {},
-  slotPlans = [], lineTechs = [], helpers = [] }) {
+  slotPlans = [], lineTechs = [], helpers = [], stations = [], stationPlans = [], homeByEmp = {} }) {
   if (!section) return null;
   const idx = indexNodes(nodes);
   const sub = descendants(idx, section.id);
@@ -174,6 +178,7 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
   const empById = new Map(employees.map(e => [e.id, e]));
   const lineById = new Map(lines.map(l => [String(l.id), l]));
   const helperByEmp = new Map(helpers.map(h => [h.id, h]));
+  const needOf = new Map(stationPlans.map(sp => [String(sp.station_id), Number(sp.per_shift) || 0]));
   const cardOf = (e, extra) => ({ ...e, row: rowOfPosition(e.position), team: normTeam(e.team),
     attend: attendanceState(attendance[e.id]), log: attendance[e.id] || null, unknownPos: !levelOfPosition(e.position), ...extra });
   const out = [];
@@ -238,11 +243,46 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
     const reg = { day: 0, night: 0 };
     for (const c of cols) if (c.shift) reg[c.shift] += c.ops.length;
     const free = cols.filter(c => c.slotSource !== 'plan');
+
+    // 📍 ช่องระดับจุดงาน — จุดที่ตั้ง "ต้องมีกี่คนต่อกะ" ไว้ · มีคน = พนักงานในแผนกที่จุดประจำ (home) อยู่ที่จุดนั้น
+    //    และทีมของเขาเข้ากะนั้นวันนี้ · ขาด = ช่องว่างที่บอกได้ว่า "จุดไหน"
+    const shiftOfTeam = new Map(cols.map(c => [c.team, c.shift]));
+    const famStations = stations.filter(st => famIds.has(String(st.line_id)) || famNames.has(String(st.line_name || '').trim().toLowerCase()));
+    const plannedStations = famStations.filter(st => (needOf.get(String(st.id)) || 0) > 0);
+    let stationInfo = null;
+    if (plannedStations.length) {
+      const opsAll = cols.flatMap(c => c.ops);
+      const missing = { day: [], night: [] };
+      const need = { day: 0, night: 0 };
+      for (const st of plannedStations) {
+        const n = needOf.get(String(st.id));
+        const here = opsAll.filter(p => String(homeByEmp[p.id] ?? '') === String(st.id));
+        for (const sh of ['day', 'night']) {
+          need[sh] += n;
+          const have = here.filter(p => shiftOfTeam.get(p.team) === sh).length;
+          if (have < n) missing[sh].push({ station: st, n: n - have });
+        }
+      }
+      const stIds = new Set(famStations.map(st => String(st.id)));
+      stationInfo = {
+        planned: plannedStations.length, total: famStations.length, need, missing,
+        // คนในแผนกที่ยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ⇒ ช่องว่างอาจดูมากกว่าความจริง ต้องบอกบนจอ
+        noHome: opsAll.filter(p => !stIds.has(String(homeByEmp[p.id] ?? ''))).length,
+      };
+    }
+
     for (const sh of ['day', 'night']) {
-      if (plan[sh] == null) continue;
-      if (cols.some(c => c.shift === sh && c.slotSource === 'plan')) continue;   // กะนี้หัวหน้าตั้งช่องเองแล้ว — std ไม่ทับ
+      if (cols.some(c => c.shift === sh && c.slotSource === 'plan')) continue;   // ① กะนี้หัวหน้าตั้งช่องต่อทีมเองแล้ว
       const host = free.find(c => c.shift === sh && c.team !== 'C') || free.find(c => c.shift === sh);
-      if (host) { host.slots = Math.max(0, plan[sh] - reg[sh]); host.slotSource = 'std'; }
+      if (!host) continue;
+      if (stationInfo) {                                                         // ② ช่องจุดงาน
+        host.slots = stationInfo.missing[sh].reduce((a, m) => a + m.n, 0);
+        host.slotSource = 'station';
+        host.slotStations = stationInfo.missing[sh].flatMap(m => Array.from({ length: m.n }, () => m.station.station_name || ''));
+        continue;
+      }
+      if (plan[sh] == null) continue;                                            // ③ std
+      host.slots = Math.max(0, plan[sh] - reg[sh]); host.slotSource = 'std';
     }
     const unknownShiftTeams = cols.filter(c => c.team && !c.shift && c.ops.length && c.slotSource !== 'plan').map(c => c.team);
 
@@ -259,6 +299,7 @@ export function buildManpowerBoard({ section, nodes = [], employees = [], lines 
       lentOut: allOps.filter(p => p.lentTo).length,
       unknownShiftTeams,
       unknownPos: allOps.filter(p => p.unknownPos).length,
+      stationInfo,
     });
   }
   out.sort((a, b) => (a.key === NO_DEPT) - (b.key === NO_DEPT) || (a.node && b.node ? orgNodeCompare(a.node, b.node) : 0));
@@ -317,7 +358,8 @@ export function fourMStatus(familyLines, logs) {
  *   temp = วันนี้ถูกจัดมาจุดนี้ แต่จุดประจำอยู่ที่อื่น (ย้ายชั่วคราว)
  *   away = จุดนี้คือจุดประจำ แต่วันนี้ไปยืนจุดอื่น
  */
-export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, empById = {}, shiftOfEmp = () => null }) {
+export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, empById = {}, shiftOfEmp = () => null, stationPlans = [] }) {
+  const needOf = new Map(stationPlans.map(sp => [String(sp.station_id), Number(sp.per_shift) || 0]));
   const sid = new Set(stations.map(s => String(s.id)));
   const at = new Map(stations.map(s => [String(s.id), new Map()]));
   for (const [empId, st] of Object.entries(homeByEmp)) {
@@ -340,7 +382,22 @@ export function layoutPeople({ stations = [], homeByEmp = {}, attendance = {}, e
     });
     const so = { day: 0, night: 1 };
     people.sort((a, b) => (so[a.shift] ?? 2) - (so[b.shift] ?? 2) || naturalCompare(a.emp.name || '', b.emp.name || ''));
-    return { station: s, people };
+    // 📍 ช่องที่ยังขาดต่อกะ (station_slot_plans) — นับเฉพาะคนประจำจุดนี้ (ไม่นับคนย้ายมาชั่วคราว ✳)
+    //    ไม่ตั้ง = need null (จอวาด + แบบเดิมเมื่อไม่มีใครเลย)
+    const need = needOf.has(String(s.id)) ? needOf.get(String(s.id)) : null;
+    let missing = null;
+    if (need != null) {
+      const own = people.filter(p => !p.temp);
+      const unknown = own.filter(p => p.shift !== 'day' && p.shift !== 'night').length;
+      if (unknown) {
+        // 🔴 มีคนประจำที่ระบบไม่รู้ว่าเข้ากะไหน (ตารางกะยังไม่ตั้ง) — ห้ามเดาว่าเขาเติมกะไหน
+        //    ⇒ บอกแค่ "ขาดรวม N ช่อง ยังไม่รู้กะ" (จอวาดวงเทา ?)
+        missing = { day: 0, night: 0, unknown: Math.max(0, need * 2 - own.length) };
+      } else {
+        missing = { ...Object.fromEntries(['day', 'night'].map(sh => [sh, Math.max(0, need - own.filter(p => p.shift === sh).length)])), unknown: 0 };
+      }
+    }
+    return { station: s, people, need, missing };
   });
 }
 
@@ -369,7 +426,7 @@ export function paginateTv(depts, capOf) {
     const cap = Math.max(1, Math.floor(Number(capOf(Math.max(1, cols.length))) || 1));
     const itemsOf = (c) => [
       ...c.ops.map(p => ({ kind: 'op', p })),
-      ...Array.from({ length: c.slots || 0 }, () => ({ kind: 'slot' })),
+      ...Array.from({ length: c.slots || 0 }, (_, i) => ({ kind: 'slot', station: c.slotStations?.[i] || null })),
     ];
     const all = cols.map(itemsOf);
     const parts = Math.max(1, ...all.map(a => Math.ceil(a.length / cap)));

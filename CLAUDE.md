@@ -657,8 +657,8 @@ Reject → status: "rejected" + reject_reason
 
 ## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
 
-กฎทั้งหมด `utils/manpowerBoard.js` · แถวคน = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = ช่องว่าง `null`
-· ช่องที่ตั้งเอง `manpower_slot_plans` ชนะ std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
+กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
+· ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
 > 📄 `docs/modules/manpower-board.md`
 
 ---
