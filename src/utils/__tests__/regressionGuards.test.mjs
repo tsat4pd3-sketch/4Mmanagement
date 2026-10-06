@@ -1341,6 +1341,40 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ no-session-object-in-db-effect-deps (2026-10-06) ──────────────────────────────
+   deps ของ effect/useCallback ที่ยิง DB **ห้ามมี object** (กฎเหล็กข้อ 9 ใน CLAUDE.md)
+   `selSession` เป็นตัวที่พลาดซ้ำได้ง่ายที่สุด เพราะ `load()` ของ DailyReport ปิดท้ายด้วย
+     setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0])
+   ⇒ ได้ **object ใบใหม่ เนื้อเหมือนเดิมเป๊ะ** ทุกรอบโหลด ⇒ ทุก effect ที่ผูก `selSession` รีรันฟรี
+
+   ผลที่วัดได้ (02/10/2026 · ~40 เครื่อง) — เสียเปล่า 2 ทาง:
+   ① effect โหลดข้อมูลกะ ยิง **4 คิวรีหนักใหม่ทั้งชุด** ทั้งที่กะที่เลือกไม่เปลี่ยนอะไรเลย
+      (downtime_logs 1,706 · prod_orders+embed 2,112 · ยอดค้าง 3,746 · defect_logs+embed 3,136 req/วัน)
+   ② 🔴 effect realtime — cleanup เรียก `bump*.cancel()` แล้วสร้าง `coalesce` ใบใหม่
+      ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้าง ⇒ event ถัดไปยิงทันที = เพดาน LIVE.* หายไปเลย**
+      เป็นลูป: bump → load → selSession ใบใหม่ → effect รีรัน → เพดานรีเซ็ต → bump ถัดไปยิงทันที
+      ⇒ **ของที่แพงที่สุดคือ "เพดานที่ถูกรีเซ็ต" ไม่ใช่ตัวคิวรีเอง** — ใส่เพดานแล้วแต่ไม่มีผล
+   🔑 แก้ด้วย `selSession?.id` + `selSession?.line_name` (string) · ตัวโหลดต้องเป็น `useCallback(..., [])` */
+test('🛡️ no-session-object-in-db-effect-deps — ห้ามใส่ `selSession` (object) ใน deps ของ effect ที่ยิง DB', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const rel = relative(ROOT, file);
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // deps array ที่มี `selSession` แบบเปล่าๆ (ไม่ใช่ selSession?.xxx / selSession.xxx)
+    const re = /\}\s*,\s*\[([^\]]*)\]\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const deps = m[1];
+      if (!/(^|[\s,])selSession\s*(,|$)/.test(deps)) continue;
+      bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}  deps = [${deps.replace(/\s+/g, ' ').trim().slice(0, 90)}]`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    'deps มี `selSession` (object) — ใช้ `selSession?.id` / `selSession?.line_name` แทน · '
+  + 'object ใบใหม่เนื้อเดิมทุกรอบโหลด = ยิงคิวรีซ้ำ **และล้างเพดาน coalesce** · '
+  + 'เหตุผล + ตัวเลขที่วัดมา ดูคอมเมนต์เหนือเทสนี้ และที่ effect ใน src/pages/DailyReport.jsx');
+});
+
 /* ── 🛡️ list-thumb-needs-lazy (2026-10-05) ────────────────────────────────────────────
    รูป "ย่อในลิสต์" (กว้าง/สูง ≤ 64px) ที่ชี้ไป Supabase Storage **ต้องมี `loading="lazy"`**
    เพราะ thumbnail 34-52px ดาวน์โหลด**ไฟล์เต็มใบ ~19-90 KB** เสมอ (ระบบนี้ไม่มี image transform

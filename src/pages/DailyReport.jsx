@@ -787,15 +787,32 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   }, [isStaleSess]);
 
   useEffect(() => { load(); }, [load]);
+  /* 🔴🔴 2026-10-06 — deps ต้องเป็น `selSession?.id` + `?.line_name` (string) **ห้ามเป็น `selSession`**
+     (กฎเหล็กข้อ 9 · บรรทัด 1378 ในไฟล์นี้ใช้ท่าถูกอยู่แล้ว — ตัวนี้หลุดไป)
+
+     กลไกที่ทำให้เสียเปล่า: `load()` (โหลดรายการกะ) ปิดท้ายด้วย
+       setSelSession(s => s?.id ? (ss.find(x => x.id === s.id) || ss[0]) : ss[0])
+     ⇒ ได้ **object ใบใหม่ เนื้อเหมือนเดิมเป๊ะ** ทุกครั้ง ⇒ effect นี้เห็น deps เปลี่ยน
+     ⇒ **ยิง 4 คิวรีหนักใหม่ทั้งชุดทั้งที่กะที่เลือกไม่ได้เปลี่ยนอะไรเลย**
+       (downtime_logs · prod_orders+embed · ยอดค้างกะก่อน · defect_logs+embed)
+     ⇒ ทุก bump ของ realtime / ทุกรอบโหลดรายการกะ = จ่าย 4 คิวรีฟรี × ~40 เครื่อง
+
+     🔑 ปลอดภัยเพราะ: ตัวโหลดทั้ง 4 เป็น `useCallback(..., [])` (identity นิ่งแน่นอน) ·
+        body ใช้แค่ `.id`/`.line_name` · เนื้อกะที่เปลี่ยน (status ฯลฯ) ไม่ต้องโหลด 4 ตัวนี้ใหม่
+        — จอวาดจาก `selSession` ตรงๆ อยู่แล้ว และจุดที่เปลี่ยนสถานะเอง setSelSession ให้แล้ว
+     🔑 `setSessLoadErr({})` ก็ตรงความหมายเดิมขึ้นด้วย — คอมเมนต์เขียนว่า "สลับกะ = เริ่มนับใหม่"
+        ของเดิมรีเซ็ตทุกรอบโหลด (ไม่ใช่ตอนสลับกะ) ซึ่งไม่ตรงกับที่เขียนไว้ */
   useEffect(() => {
-    if (selSession) {
+    const sid = selSession?.id;
+    if (sid) {
       setSessLoadErr({}); // สลับกะ = เริ่มนับใหม่ (ไม่งั้น error ของกะเก่าค้างบล็อกกะใหม่)
-      loadDT(selSession.id);
-      loadProdOrders(selSession.id, selSession.line_name);
-      loadCarryOrders(selSession.id, selSession.line_name);
-      loadDefectLogs(selSession.id);
+      loadDT(sid);
+      loadProdOrders(sid, selSession.line_name);
+      loadCarryOrders(sid, selSession.line_name);
+      loadDefectLogs(sid);
     }
-  }, [selSession, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   /* ── Realtime ────────────────────────────────────────────────────────────────
      🔴 2026-09-15 — แก้ 2 อย่างพร้อมกัน (งานลด egress · เตรียมรับจอ/แท็บเล็ต ~40 เครื่อง)
@@ -856,7 +873,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       bumpSess.cancel(); bumpOrd.cancel(); bumpDt.cancel(); bumpDef.cancel();
       supabaseDR.removeChannel(ch);
     };
-  }, [selSession, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
+    /* 🔴🔴 2026-10-06 — deps ต้องเป็น string ไม่ใช่ `selSession` (object) — **เหตุผลคนละข้อกับ effect ข้างบน
+       และสำคัญกว่า:** cleanup ของ effect นี้เรียก `bump*.cancel()` แล้วสร้าง `coalesce` ใบใหม่
+       ⇒ **"เพิ่งยิงไปเมื่อไหร่" ถูกล้างทุกครั้งที่ effect รีรัน ⇒ event ถัดไปยิงทันที = เพดานหายไปเลย**
+       (`LIVE.SHIFT` 5 นาที / `LIVE.PAGE` 15 วิ มีผลเท่าอายุของ coalesce ใบนั้นเท่านั้น)
+       และ `load()` ปิดท้ายด้วย `setSelSession(ss.find(...))` = object ใบใหม่เนื้อเดิม
+       ⇒ ทุก bump → load → selSession ใบใหม่ → effect รีรัน → **เพดานรีเซ็ต → bump ถัดไปยิงทันที**
+       = ลูปที่ทำให้เพดานไม่เคยทำงานจริงเลย + รื้อ/ต่อ websocket channel ใหม่ทุกรอบ
+
+       🔑 ปลอดภัยเพราะ body ใช้แค่ `selSession?.id` (เป็น `filter:` ของ subscribe) กับ `.line_name`
+          ⇒ สลับกะ = id เปลี่ยน = subscribe ใหม่ด้วย filter ใหม่ (ถูกต้องเหมือนเดิม) */
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ตั้งใจผูกกับ id/line_name (string) ดูหมายเหตุด้านบน
+  }, [selSession?.id, selSession?.line_name, load, loadDT, loadProdOrders, loadCarryOrders, loadDefectLogs]);
 
   const handleOpenSession = async () => {
     if (!openForm.line_name) { toast.error('เลือกไลน์ก่อน'); return; }
@@ -1294,15 +1322,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        (ไม่ย้อนกลับไปเป็นบั๊ก "ลิสต์ว่าง เปิดใบไม่ได้ทั้งกะ" ของ 17/08) */
   const scanMat = useMemo(
     () => scopeMatRows(kanbanStds, lines, selSession?.line_name || ''),
-    [kanbanStds, lines, selSession]);
+    // 🔴 06/10 — ผูกกับ `line_name` (string) ไม่ใช่ `selSession` (object ใบใหม่ทุกรอบโหลด)
+    //    ของเดิมคิด scope ใหม่ทุกครั้งที่รายการกะรีเฟรช ทั้งที่ไลน์ไม่เปลี่ยน
+    [kanbanStds, lines, selSession?.line_name]);
   const scanMatStds = scanMat.rows;
 
   // Auto-select MAT.NO when scan modal opens — if line has only 1 option
   useEffect(() => {
-    if (!showScanOpen || !selSession || scanMatStds.length !== 1) return;
+    if (!showScanOpen || !selSession?.id || scanMatStds.length !== 1) return;
     if (!openProdForm.mat_no) handleOpenProdMatNoChange(scanMatStds[0].mat_no);
+  /* 🔴 06/10 — `selSession?.id` ไม่ใช่ `selSession`: object ใบใหม่ทุกรอบโหลดรายการกะ
+     ⇒ ของเดิมเติม mat_no ให้ซ้ำทุกรอบ **ทับค่าที่คนเพิ่งล้างทิ้งไป** ได้ด้วย (ไม่ใช่แค่เปลือง render) */
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showScanOpen, scanMatStds, selSession]);
+  }, [showScanOpen, scanMatStds, selSession?.id]);
 
   // หา Cycle Time (วินาที) ของ MAT.NO หนึ่งใบ จาก Kanban Standard → Product Master
   // ทำแบบ per-order เพราะกะเดียวอาจผลิตได้หลาย MAT.NO/สินค้า ไม่ใช่สินค้าเดียวตาม session.product_id
