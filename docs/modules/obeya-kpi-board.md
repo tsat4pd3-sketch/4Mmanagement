@@ -936,4 +936,25 @@ user: *"เคยเห็น feature graph analyze ที่ขยายดู�
 
 - harness เพิ่ม `?sections=PD2,PD3` (จำลอง user ที่ถูกจำกัดส่วนงาน) และ mount `<ToastContainer/>` ในหน้าปกติ (เดิมมีแค่ FeedbackLab ⇒ toast ของทุกหน้าไม่เคยโผล่ใน harness) → `audit/README.md`
 
+### 💰 เลือก Cost Center = เลือก "หน่วยเจ้าของรหัส" (06/10 · user ส่งจอ 2 ใบ: แผนก MTN กับ CC 2140456000·MTN ตอบคนละชุด)
+
+**อาการ:** แท็บ ⚙️ เลือก แผนก MTN เห็น DL&OH · MO Closed (+ ⚡ ระบบคำนวณ) · MTBF … แต่เลือก CC 2140456000·MTN เห็นแค่ %RM/CSat ของโรงงาน ·
+บอร์ด 📋 ที่ CC 2140563100·JIG MTN ขึ้น MO Closed/MBD/MTBF/MTTR "ยังไม่มีข้อมูล" ทั้งที่ระบบคำนวณได้
+**ต้นเหตุ:** แกน CC แยกจากต้นไม้ (`ancestorsOf(cc) = [plant]` — ตั้งใจ) แต่ทุกจุดที่ "ตีความขอบเขต" ใช้ `ancestorsOf`/`sameScope` ตรงๆ ⇒ นิยามของแผนกไม่ตกทอดถึง CC ·
+ทีมช่างจับคู่เฉพาะ `department/section` · แผ่นพิเศษ `def:<id>` นับเฉพาะ `sameScope(def, scope)`
+**แก้ (ที่เดียวใน `utils/orgScope.js` แล้วทุกจอใช้ตาม):**
+- `unitsOf(kind, value)` — CC → เจ้าของรหัสทุกตัว (กว้าง→แคบ) · อื่น → ตัวเอง · CC ไม่มีเจ้าของ → `[]`
+- `chainOf(kind, value)` — ลำดับหานิยาม "ใกล้สุดก่อน": ตัวเอง → เจ้าของแคบสุด → แม่ของมัน … → โรงงาน (บอร์ด `nearest()` ใช้แทนประกอบเอง)
+- `scopeCovers` เช็ค `[selected, ...unitsOf(selected)]` + บรรพบุรุษ · `sectionOf/sectionsOf(cc)` = ของเจ้าของ (ใบ Action/safety กรองได้เหมือนเลือกหน่วย)
+- `pickBoardRows({ ownScopes })` — แผ่นพิเศษนับนิยามของเจ้าของรหัสด้วย · ทีมช่าง (`mtnTeam`) ทั้ง ⚙️/📋 หาจาก `unitsOf`
+- 🔴 `ancestorsOf(cc)` **ยังคืน `[plant]`** (เทสเดิมล็อกไว้) — ใครต้องการ "หน่วยที่ CC หมายถึง" ให้ใช้ `unitsOf`/`chainOf` ห้ามแก้ ancestorsOf
+- เทส: `orgScope.test.mjs` (unitsOf/chainOf/scopeCovers ผ่าน CC/sectionsOf) · `kpiBoardRows.test.mjs` (ownScopes)
+
+### ⚡ บอร์ด 📋 โชว์ KPI ช่างที่ระบบคำนวณได้ แม้ยังไม่กด "ใช้ค่านี้" (06/10 · user: "ค่าที่ควรจะคำนวณจากโปรแกรมได้ไม่ขึ้น")
+- เดิมบอร์ดอ่านแค่ `kpi_manual_entries` ⇒ MO Closed/MBD/MTBF/MTTR ว่างจนกว่าจะมีคนกด "ใช้ค่านี้" ที่ ⚙️ ทุกเดือน
+- ตอนนี้: ขอบเขตที่จับคู่ทีมช่างได้ → โหลด `kpi_mtn_rollup` (DR · คืน Σ · `kpiAuto.mtnAutoSeries` คำนวณ) แล้วแถวที่ชื่อเข้าคู่ `autoKpiOfName`
+  **เติมเฉพาะเดือนที่ยังไม่มีค่ายืนยัน** เป็นจุด `computed: true` — ชิปแผ่น "⚡ ระบบคำนวณ · ยังไม่ยืนยัน" · แท่งจาง+ขอบประ · ท้ายแผ่นบอก "ระบบคำนวณ N เดือน · ยืนยันแล้ว M เดือน"
+- 🔴 **ไม่เขียนลงฐาน · ค่าที่กรอกมือ/กดใช้ค่านี้ ชนะเสมอ** (กฎเดิม "ระบบเสนอ คนตัดสิน") · หน่วยค่าแปลงด้วย `toRowUnit` ตามหน่วยของนิยาม (JIG = นาที)
+- harness: `?p=Obeya&tab=kpi&scope=department:JIG%20MTN` / `cost_center:2140600006` → แผ่น MTBF "⚡ ระบบคำนวณ · ยังไม่ยืนยัน · YTD 43,788.6 นาที"
+
 > 📌 **2026-10-05:** CLAUDE.md เหลือเฉพาะกฎที่ "ข้าม session จริง" (scoreDef · กฎความซื่อสัตย์ของจอ · ห้ามแข่ง KPI Online · โหมดปีห้ามโหลดแถวดิบ · not-null default · OrgScopePicker · ห้ามยุบ kpi/sqdcm) ตามกฎรับเข้าใหม่ — **รายละเอียดที่เหลือย้ายมาอยู่ไฟล์นี้ทั้งหมด ไม่มีกฎไหนถูกตัดหาย** (ตรวจแล้วว่าทุกคีย์มีในไฟล์นี้ 2-5 ที่)

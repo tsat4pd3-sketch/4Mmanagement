@@ -607,7 +607,7 @@ Reject → status: "rejected" + reject_reason
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง**
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · **เลือก CC = หน่วยเจ้าของรหัส** — ตีความขอบเขตผ่าน `unitsOf()`/`chainOf()` ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ · 06/10)
 - **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
 > 📄 **รายละเอียดทั้งหมด (หน่วย/ทศนิยม/วิธีรวม 12 เดือน · KPI ค่าของโรงงาน · แผน 12 เดือน + หมายเหตุ ·
 > โฟกัสช่วงค่า · ทะเบียนมาตรฐาน · KPI ช่างอัตโนมัติ · ACTION BOARD)** → `docs/modules/obeya-kpi-board.md`

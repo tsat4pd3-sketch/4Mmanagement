@@ -267,9 +267,15 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t) setPmTeams(t); }); return () => { alive = false; }; }, []);
   const normTeam = (v) => String(v || '').toLowerCase().replace(/[\s\-_]+/g, '');
   const mtnTeam = useMemo(() => {
-    if (isPlant(scope) || !['department', 'section'].includes(scope.kind)) return null;
-    return (pmTeams || []).find(t => normTeam(t.dept_name) === normTeam(scope.value) || normTeam(t.label) === normTeam(scope.value)) || null;
-  }, [scope, pmTeams]);
+    if (isPlant(scope)) return null;
+    /* เลือก CC = เลือกหน่วยเจ้าของรหัส (06/10) — CC 2140456000 ต้องเจอทีม MTN เหมือนเลือกแผนก MTN */
+    const units = (org.unitsOf ? org.unitsOf(scope.kind, scope.value) : [scope]).filter(u => ['department', 'section'].includes(u.kind));
+    for (const u of units) {
+      const t = (pmTeams || []).find(x => normTeam(x.dept_name) === normTeam(u.value) || normTeam(x.label) === normTeam(u.value));
+      if (t) return t;
+    }
+    return null;
+  }, [scope, org, pmTeams]);
   useEffect(() => {
     if (!mtnTeam) { setMtnRoll(null); return undefined; }
     let alive = true;
