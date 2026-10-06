@@ -23,6 +23,8 @@ import SafetyEventModal from './SafetyEventModal';
 import KpiMonthNoteModal from './KpiMonthNoteModal';
 import { tooltipProps, CELL_BAR_FILL, focusDomain, axisUnitLabel, axisUnitTop } from '../utils/chartAxis';
 import { pickBoardRows, normKpiRowName } from '../utils/kpiBoardRows';
+import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
+import { mtnAutoSeries, autoKpiOfName, toRowUnit } from '../utils/kpiAuto';
 import { GAP, useSheetGrid, StatusLamp, Sheet, WarnNote, EmptyChart, FocusAxisNote } from './ObeyaSheet';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
@@ -148,6 +150,22 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const scopeKeyStr = scope ? scopeKey(scope.kind, scope.value) : '';
   const year = yearOf(date);
   const monthKey = date.slice(0, 7);
+  /* ⚡ ทีมช่างของขอบเขตนี้ (แผนก/ส่วนงาน · หรือเจ้าของรหัส CC) → KPI ช่าง MO Closed/MBD/MTBF/MTTR ระบบคำนวณให้
+     (06/10 · user ส่งจอ CC JIG MTN "ยังไม่มีข้อมูล" ทั้งที่ระบบคำนวณได้) — ระบบ **เสนอ** บนบอร์ด แต่ไม่เขียนลงฐาน
+     ค่ายืนยัน = คนกด "ใช้ค่านี้" ที่แท็บ ⚙️ (กฎเดิม ห้ามเขียนทับค่าที่กรอกมือ) · ทีมเทียบชื่อแบบเดียวกับ KpiMonthly */
+  const [pmTeams, setPmTeams] = useState(() => pmTeamsSync());
+  useEffect(() => { let alive = true; loadPmTeams().then(t => { if (alive && t) setPmTeams(t); }); return () => { alive = false; }; }, []);
+  const mtnTeam = useMemo(() => {
+    if (!scope || isPlant(scope)) return null;
+    const normTeam = (v) => String(v || '').toLowerCase().replace(/[\s\-_]+/g, '');
+    const units = (org.unitsOf ? org.unitsOf(scope.kind, scope.value) : [scope]).filter(u => ['department', 'section'].includes(u.kind));
+    for (const u of units) {
+      const t = (pmTeams || []).find(x => normTeam(x.dept_name) === normTeam(u.value) || normTeam(x.label) === normTeam(u.value));
+      if (t) return t;
+    }
+    return null;
+  }, [scope, org, pmTeams]);
+  const mtnTeamKey = mtnTeam?.key || '';
   const monthNo = Number(date.slice(5, 7));
   const setParam = useCallback((k, v) => {
     setSp(prev => {
@@ -289,18 +307,24 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         .order('created_at', { ascending: true }).limit(1000);
       if (kn.error && (kn.error.code || '') !== '42P01') warn.push('หมายเหตุรายเดือน');
       const knotes = kn.data || [];
+      /* ⚡ KPI ช่าง — RPC คืน Σ รายเดือน (mo/dt/machines) แล้ว utils/kpiAuto คำนวณ (RPC ห้ามคำนวณ KPI) · ไม่มีทีมช่าง = ไม่ยิง */
+      let mtnRoll = null;
+      if (mtnTeamKey) {
+        const mr = await supabaseDR.rpc('kpi_mtn_rollup', { p_from: `${year}-01-01`, p_to: `${year}-12-31` });
+        if (mr.error) warn.push('KPI ช่างอัตโนมัติ'); else mtnRoll = mr.data || {};
+      }
       if (seq !== reqRef.current) return;                 // มีคำขอใหม่แล้ว — ทิ้งผลเก่า
       setData({
         sessions: roll.sessions || [], defects: roll.defects || [],
         openSess: (op.rows || []).length, targets: tg.data || [],
-        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn,
+        safety, safetyMissing, actions, actsMissing, kdefs, kentries, kplans, knotes, kpiMissing, warn, mtnRoll,
       });
     } catch (e) {
       if (seq === reqRef.current) { setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); setData(null); }
     } finally {
       if (seq === reqRef.current) setLoading(false);
     }
-  }, [lineKey, scopeKeyStr, secKey, year, date, org]);
+  }, [lineKey, scopeKeyStr, secKey, year, date, org, mtnTeamKey]);
   /* โหลดครั้งแรก + poll + realtime ผ่านตัวกลางตัวเดียว (กฎเหล็ก DB ข้อ 8 · เดิมประกอบ useEffect+usePolling เอง ไม่มี idle gate)
      ฟังแค่ production_sessions (เปิด/ปิดกะ = ตัวเลขเดือนเปลี่ยน) — prod_orders/downtime_logs ห้าม subscribe ในหน้านี้ */
   useLiveBoard(load, { tables: ['production_sessions'], topic: 'obeya-kpi', tier: LIVE.BOARD, rate: RATE.BOARD });
@@ -308,7 +332,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ── แถว KPI 8 หัวข้อของกลุ่มที่เลือก — ทุกแถวมี series 12 เดือน + แท่งสรุป ──────────────────── */
   const rows = useMemo(() => {
     if (!data || !scope) return [];
-    const { sessions, defects, targets, safety, kdefs, kentries, kplans, knotes } = data;
+    const { sessions, defects, targets, safety, kdefs, kentries, kplans, knotes, mtnRoll } = data;
+    const autoSeries = mtnTeam && mtnRoll ? mtnAutoSeries(mtnRoll, year, mtnTeam) : null;
     const planByKpi = {};
     (kplans || []).forEach(e => (planByKpi[e.kpi_id] = planByKpi[e.kpi_id] || {})[e.month] = e.plan_value);
     const notesBy = {};
@@ -322,7 +347,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     (kentries || []).forEach(e => (entByKpi[e.kpi_id] = entByKpi[e.kpi_id] || {})[e.month] = e.value);
     /* เป้า/นิยาม = ของขอบเขตที่เลือกก่อน ไม่มีค่อยไต่ขึ้นบรรพบุรุษทีละชั้น (แผนก → ส่วนงาน → ฝ่าย → โรงงาน)
        แหล่งเดียวกับแท็บ ⚙️ ห้ามตั้งคนละที่ · `inherited` = เอามาจากระดับแม่ (จอต้องบอก) */
-    const chain = [scope, ...org.ancestorsOf(scope.kind, scope.value).slice().reverse()];
+    const chain = org.chainOf(scope.kind, scope.value);   // CC → เจ้าของรหัส → แม่ … → โรงงาน (06/10)
     const nearest = (pred, needEntries = false) => {
       let firstHit = null;
       for (const sc of chain) {
@@ -369,11 +394,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const { rows: boardRows } = pickBoardRows({
       templates: boardRowsFor(year), kdefs, scope, hasLines: members.groups.length > 0,
       findManual: (r) => manualOf(r.name, false, r.key), findAuto: autoDefOf,
+      ownScopes: [scope, ...(org.unitsOf ? org.unitsOf(scope.kind, scope.value) : [])],   // CC = หน่วยเจ้าของรหัส (06/10)
     });
     return boardRows.map((r) => {
       const man = manualOf(r.name, false, r.key, r.defId || null);
       let series = [], def = null, unit = r.unit || man?.unit || '', note = '', fromDept = !!man?.inherited, manual = !r.auto;
-      let months = 0, sumKind = 'average', sumApprox = false;
+      let months = 0, sumKind = 'average', sumApprox = false, computedN = 0;
 
       if (r.auto === 'oee') {
         const k = axisOeeYear({ rows: gSess, year, target: { oee: oeeTarget } });
@@ -418,9 +444,24 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       } else {
         /* 🔴 24/09: วิธีรวมแท่ง "สรุป" มาจาก `kpi_catalog.summary_mode` ของ KPI ตัวนั้น
            เดิมเฉลี่ยตายตัว ⇒ Scrap/Cost Reduction ที่ต้องรวมทั้งปีโชว์ค่าเฉลี่ย */
-        const k = manualMonthSeries({ entries: man?.entries || {}, year, summary: summaryModeOf(man?.def) });
-        series = k.series; months = k.months; def = man?.def || null;
+        /* ⚡ KPI ช่างที่ระบบคำนวณได้ (MO Closed/MBD/MTBF/MTTR): เดือนที่ยังไม่มีค่ายืนยัน เติมค่าที่ระบบคำนวณ **แบบติดป้าย**
+           (`computed`) — ค่าที่คนกด "ใช้ค่านี้"/กรอกมือ ชนะเสมอ · ไม่เขียนลงฐาน · จอต้องบอกว่ากี่เดือนเป็นค่าเสนอ */
+        const manEntries = man?.entries || {};
+        const ak = autoSeries && man?.def ? autoKpiOfName(man.def.kpi_catalog?.name || man.def.name) : null;
+        const compMonths = {};
+        if (ak) autoSeries.months.forEach((m, i) => {
+          const v = toRowUnit(m[ak.key], ak.key, unitOf(man.def) || unit);
+          if (v != null && (manEntries[i + 1] ?? null) == null) compMonths[i + 1] = v;
+        });
+        const k = manualMonthSeries({ entries: { ...compMonths, ...manEntries }, year, summary: summaryModeOf(man?.def) });
+        series = k.series.map((p, i) => (i < 12 && compMonths[i + 1] != null ? { ...p, computed: true } : p));
+        months = k.months; def = man?.def || null;
         sumKind = k.effMode; sumApprox = k.approx;
+        computedN = Object.keys(compMonths).length;
+        if (computedN) {
+          const confirmed = Object.values(manEntries).filter(v => v != null && v !== '').length;
+          note = `⚡ ระบบคำนวณ ${computedN} เดือน (ทีม ${mtnTeam.label} · สูตร KPI Guideline 2026 หน้า 10 · ยังไม่กด "ใช้ค่านี้" ที่แท็บ ⚙️) · ยืนยันแล้ว ${confirmed} เดือน`;
+        }
       }
 
       if (man?.shared === 'ok' && !r.auto) note = note || (isPlant(scope) ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' : 'ค่าโรงงาน (ทุกหน่วยใช้ตัวเลขเดียวกัน) · กรอกที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน');
@@ -450,6 +491,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ตอนแก้นิยาม KPI';
       }
       if (stale) why = `ค่าล่าสุด ${monthLabel(valueKey)} (${monthLabel(monthKey)} ยังไม่กรอก) · ${why}`;
+      const curComputed = value != null && !!series.find(p => p.k === valueKey)?.computed;
+      if (curComputed) why = `⚡ ค่าที่ระบบคำนวณ ยังไม่ยืนยัน · ${why}`;
       const ytd = series[12]?.v ?? null;
       const actualMonths = series.slice(0, 12).filter(p => p.v != null).length;
       /* 📈 คาดปลายปี = ผลจริง + แผนของเดือนที่เหลือ (30/09) — แผนอยู่ที่นิยามของขอบเขตนี้ (แถว auto = นิยาม auto:<key>)
@@ -474,14 +517,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || def.commit_value != null || def.commitment)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, computedN, curComputed,
         commit: def?.commit_value == null ? null : Number(def.commit_value), hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
         delta: target != null && value != null && dir ? gapToTarget(value, target, dir) : null,
         hasDef: !!def,
       };
     });
-  }, [data, scope, members, year, monthKey, org]);
+  }, [data, scope, members, year, monthKey, org, mtnTeam]);
 
   /* งานค้างที่ต้องตามแก้ — action item + เหตุการณ์ความปลอดภัยที่ยังไม่ปิด · เรียง "เกินกำหนดก่อน แล้วเก่าก่อน" */
   const todo = useMemo(() => {
@@ -652,9 +695,9 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
             {data.map((p, i) => (
               <Cell key={i} fill={statusColor(r.def ? monthBarScore(p, r.def) : 'none')}
-                fillOpacity={p.summary ? 0.55 : (p.k === monthKey ? 1 : 0.8)}
-                stroke={p.summary ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
-                strokeDasharray={p.summary ? '3 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
+                fillOpacity={p.summary ? 0.55 : p.computed ? 0.38 : (p.k === monthKey ? 1 : 0.8)}
+                stroke={p.summary || p.computed ? 'var(--text2)' : (p.k === monthKey ? 'var(--text)' : 'none')}
+                strokeDasharray={p.summary ? '3 2' : p.computed ? '2 2' : undefined} cursor={p.summary ? 'default' : 'pointer'} />
             ))}
           </Bar>
           {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
@@ -773,7 +816,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               {pageItems.filter((x) => x.kind === 'kpi').map(({ row: r }) => (
                 <Sheet key={r.key} k={k} cw={cw} icon={r.icon} title={r.name}
                   /* 30/09 (user): เลขใหญ่ = ค่าเดือนที่เลือก · บรรทัดรอง = YTD บอกวิธีรวม+จำนวนเดือน · ท้ายแผ่น = คาดปลายปี */
-                  sub={`${r.manual ? '✍️ กรอกมือ' : '⚡ ระบบคำนวณ'}${r.ytd != null
+                  sub={`${r.manual ? (r.curComputed ? '⚡ ระบบคำนวณ · ยังไม่ยืนยัน' : '✍️ กรอกมือ') : '⚡ ระบบคำนวณ'}${r.ytd != null
                     ? ` · YTD ${nf(r.ytd, r.dec)}${r.unit ? ' ' + r.unit : ''} (${r.sumApprox ? '≈ เฉลี่ย' : summaryShort(r.sumKind)}${r.auto && !r.fromDept && r.sumKind !== 'sum' ? 'ถ่วงน้ำหนัก' : ''} ${r.actualMonths} เดือน)`
                     : ''}`}
                   big={r.value == null ? '—' : nf(r.value, r.dec)}
