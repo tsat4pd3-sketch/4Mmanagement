@@ -45,7 +45,6 @@ const ScanLanding   = lazy(() => import('./pages/ScanLanding'));
 const AddUser      = lazy(() => import('./pages/AddUser'));
 const CustomerDemand = lazy(() => import('./pages/CustomerDemand'));
 const PlannerSales   = lazy(() => import('./pages/PlannerSales'));
-const RundownStock   = lazy(() => import('./pages/RundownStock'));
 const Monitoring     = lazy(() => import('./pages/Monitoring'));
 const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
@@ -178,7 +177,6 @@ export const NAV_ITEMS = [
      บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
   { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
-  { to: '/rundown-stock',   icon: '📉', label: 'คาดการณ์ของจะขาด',        group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
 
@@ -2019,9 +2017,10 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/planner-sales" element={
                 <RoleRoute path="/planner-sales" userRole={role}><PlannerSales /></RoleRoute>
               } />
-              <Route path="/rundown-stock" element={
-                <RoleRoute path="/rundown-stock" userRole={role}><RundownStock /></RoleRoute>
-              } />
+              {/* 📉 "คาดการณ์ของจะขาด" ยุบเป็นมุมมองหนึ่งของแท็บ FG ใน /monitoring (2026-10-06 ·
+                  user: *"เรื่องเดียวกันปะ สองเรื่องนี้"*) — จอเดิมยังอยู่ครบ แค่ย้ายที่อยู่
+                  ⚠️ หน้าเดิมไม่เคยมี `?tab=` ของตัวเอง จึงไม่ต้องส่ง subParam */}
+              <Route path="/rundown-stock" element={<LegacyTabRedirect to="/monitoring" tab="fg" />} />
               <Route path="/monitoring" element={
                 <RoleRoute path="/monitoring" userRole={role}><Monitoring /></RoleRoute>
               } />
