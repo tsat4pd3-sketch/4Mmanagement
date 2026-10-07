@@ -14,6 +14,8 @@ import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
 import { PLANT, isPlant, parseScopeKey, scopeKey, scopeOfDef, scopeCovers, sameScope, defScopeColumns } from '../utils/orgScope';
+import { checkWriteRows } from '../utils/dbWrite';
+import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
 import { scoreDef, KPI_LEVELS, KPI_PERSPECTIVES, perspectiveLabel, KPI_SUMMARY_MODES,
   unitOf, decimalsOf, summaryModeOf, summaryShort, summaryModeLabel, fmtKpi, summaryOf, planProgress, valueScopeOf, sharedValueDef, KPI_VALUE_SCOPES, KPI_BOARD_SLOTS, boardSlotOf } from '../utils/kpiSetup';
 import { getDocForm, withDocFoot, loadDocForms, fullCode } from '../utils/docForms';
@@ -227,6 +229,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   const [data, setData] = useState(null); // { key, sessions, dtBySession, dtUnpBySession, defects, partCost, targets }
   // ── KPI กรอกมือ (เฟส 2) ──
   const [allDefs, setAllDefs] = useState(null);          // null = ยังโหลด
+  const [closedDefs, setClosedDefs] = useState([]);      // 🗄️ นิยามที่ปิดใช้งานอยู่ (is_active=false) ในขอบเขตที่ดู — ให้เปิดคืนได้จากจอ (07/10)
   const [entries, setEntries] = useState({});      // kpi_id -> { month: value }
   /* แผนรายเดือน (kpi_month_plans) — คนละตารางกับค่าจริงโดยตั้งใจ (unique(kpi_id,month) ของค่าจริงจะพังถ้ายัด kind เข้าไป) */
   const [plans, setPlans] = useState({});          // kpi_id -> { month: plan_value }
@@ -414,6 +417,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
        ดูทั้งโรงงาน = เห็นเฉพาะระดับโรงงาน (ไม่ใช่รวมทุกแผนกปนกัน — ใบ KPI เป็นของหน่วยงาน) */
     const rows = (d || []).filter(x => scopeCovers(org, scopeOfDef(x), scope));
     setAllDefs(rows);
+    /* 🗄️ แถวที่ปิดใช้งานอยู่ — ยังครองคีย์ unique อยู่ ⇒ ต้องมีที่ให้ "เปิดคืน" บนจอ (07/10 · feedback: ปิดหัวข้อแล้ว add ใหม่ไม่ได้)
+       โหลดล้ม = ถือว่าไม่มี (ไม่ทำทั้งแท็บล่ม) · กรองขอบเขตแบบเดียวกับตารางหลัก */
+    const cl = await supabase.from('kpi_definitions').select(CAT_EMBED).eq('year', year).eq('is_active', false)
+      .order('category').order('seq');
+    if (!alive()) return;
+    setClosedDefs(cl.error ? [] : (cl.data || []).filter(x => x.is_active === false && scopeCovers(org, scopeOfDef(x), scope)));
     if (!rows.length) { setEntries({}); setPlans({}); return; }
     // KPI 1 ตัว × 12 เดือน — นิยามเยอะขึ้นเมื่อไหร่ก็เกิน 1000 แถวได้ (fetchByIds ทำครบทั้งก้อนและหน้า)
     const map = {};
@@ -791,6 +800,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     } else {
       const { error } = await supabase.from('kpi_definitions').insert(payload);
       if (error) {
+        /* 🗄️ ชนคีย์ unique กับแถวที่ "ปิดใช้งาน" อยู่ → เสนอเปิดคืนแถวเดิม (ค่าเก่ากลับมา) แทนทางตัน "แก้ที่แถวเดิม" ที่มองไม่เห็น */
+        const twin = error.code === '23505' ? findClosedTwin(closedDefs, payload) : null;
+        if (twin) return window.confirm(restoreQuestion(twin, year + 543)) ? restoreDef(twin, { silentConfirm: true }) : false;
         toast.error(error.code === '23505'
           ? `KPI นี้ถูกตั้งไว้ในปี ${year + 543} ขอบเขต ${org.labelOf(form.scope?.kind, form.scope?.value)} แล้ว — แก้ที่แถวเดิมแทน`
           : 'เพิ่มไม่สำเร็จ: ' + error.message);
@@ -866,6 +878,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     } else {
       const { error } = await supabase.from('kpi_definitions').insert(payload);
       if (error) {
+        const twin = error.code === '23505' ? findClosedTwin(closedDefs, payload) : null;   // 🗄️ เป้าแถว auto ที่เคยปิดไว้ → เปิดคืน
+        if (twin) return window.confirm(restoreQuestion(twin, year + 543)) ? restoreDef(twin, { silentConfirm: true }) : false;
         toast.error(error.code === '42703'
           ? 'ยังไม่ได้ apply migration 20260901_kpi_auto_target.sql (Main) — แจ้ง admin'
           : 'บันทึกไม่สำเร็จ: ' + error.message);
@@ -877,8 +891,18 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     return true;
   };
 
+  /* 🗄️ เปิดคืนนิยามที่ปิดใช้งาน — นับแถว (RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error · กฎ DB ข้อ 2) · ค่าเดิมผูก id เดิมกลับมาเอง */
+  const restoreDef = async (d2, { silentConfirm = false } = {}) => {
+    if (!silentConfirm && !window.confirm(`เปิดคืน KPI "${defName(d2)}"?\nค่ารายเดือน/แผน/หมายเหตุที่เคยกรอกไว้จะกลับมาด้วย`)) return false;
+    const ok = checkWriteRows(await supabase.from('kpi_definitions').update({ is_active: true }).eq('id', d2.id).select('id'),
+      `เปิดคืน KPI "${defName(d2)}"`, { zeroMsg: 'ไม่มีสิทธิ์ kpi:manage หรือแถวถูกลบไปแล้ว' });
+    if (!ok) return false;
+    toast.success(`เปิดคืน "${defName(d2)}" แล้ว`);
+    loadDefs();
+    return true;
+  };
   const removeDef = async d2 => {
-    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) เปิดคืนได้จากฐานข้อมูล`)) return;
+    if (!window.confirm(`ปิดใช้งาน KPI "${defName(d2)}"?\nค่าที่กรอกไว้ยังอยู่ (soft delete) — เปิดคืนได้ที่แผง "🗄️ ปิดใช้งานอยู่" ใต้แถบปุ่มของตารางนี้`)) return;
     const { data: r, error } = await supabase.from('kpi_definitions').update({ is_active: false }).eq('id', d2.id).select('id');
     if (error || !r?.length) { toast.error('ปิดใช้งานไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     loadDefs();
@@ -1044,6 +1068,29 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               </span>
             )}
           </div>
+          {/* 🗄️ นิยามที่ปิดใช้งานอยู่ในขอบเขตนี้ — ต้องเห็นและเปิดคืนได้จากจอ (07/10 · feedback หน้างาน "เผลอปิดหัวข้อ KPI ไป add ใหม่ไม่ได้")
+              ปิดแล้วแถวยังครองคีย์ unique ⇒ เพิ่มซ้ำไม่ได้ · ไม่มีแผงนี้ = ทางออกเดียวคือไปแก้ในฐานข้อมูล */}
+          {closedDefs.length > 0 && (
+            <details style={{ margin: '6px 0 10px', fontSize: 12, color: 'var(--text2)' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                🗄️ ปิดใช้งานอยู่ {closedDefs.length} รายการ — เปิดคืนได้ (เพิ่มชื่อเดิมซ้ำไม่ได้จนกว่าจะเปิดคืนหรือลบจริงในฐาน)
+              </summary>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                {closedDefs.map(d2 => {
+                  const sc = scopeOfDef(d2);
+                  return (
+                    <div key={d2.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--text)' }}>{defName(d2)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{perspectiveLabel(d2.category)} · {isPlant(sc) ? 'ทั้งโรงงาน' : org.labelOf(sc.kind, sc.value)}{d2.source && d2.source !== 'manual' ? ` · ${d2.source}` : ''}</span>
+                      {canManage && (
+                        <button onClick={() => restoreDef(d2)} style={{ ...btnSt, padding: '2px 8px', fontSize: 11.5 }} title="เปิดใช้งานแถวเดิมคืน — ค่าที่เคยกรอกไว้กลับมาด้วย">↩ เปิดคืน</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          )}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
             ⏪ <b>ลงย้อนหลังได้</b> — เลือกปีที่หัวเพจแล้วกรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
             ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
@@ -1250,6 +1297,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           year={year} scope={scope} scopeCols={defScopeColumns(org, scope)} scopeText={org.labelOf(scope.kind, scope.value)} defs={defsForStd} canManage={canManage}
           onClose={() => setShowStd(false)}
           onChanged={() => { loadCatalog(); loadDefs(); }}
+          closedDefs={closedDefs} onRestore={(d2) => restoreDef(d2, { silentConfirm: true })}
         />
       )}
 

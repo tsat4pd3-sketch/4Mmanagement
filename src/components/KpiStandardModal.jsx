@@ -16,13 +16,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
+import { findClosedTwin, restoreQuestion } from '../utils/kpiClosed';
 import {
   KPI_STD_UNITS, KPI_TOTAL_WEIGHT, stdUnitLabel, isStdParent, isStdFixed,
   matchStdItems, checkStdSelection, requirementOf, KPI_PERSPECTIVES,
 } from '../utils/kpiSetup';
 
 /* 23/09: รับ `scope`/`scopeCols` จาก OrgScopePicker (แทน section+group) — แถวที่หยิบเขียน scope_kind/scope_value ตรง */
-export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged }) {
+export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged, closedDefs = [], onRestore }) {
   /* หน่วยงานมาตรฐานที่ใบนี้อิงอยู่ — จำไว้ที่ `kpi_definitions.std_unit` ของแถวในใบ
      (ไม่มีตารางตั้งค่าแยก: ใบคือของจริง ทะเบียนเป็นเอกสารอ้างอิง) */
   const savedUnit = useMemo(() => defs.map(d => d.std_unit).find(Boolean) || '', [defs]);
@@ -59,7 +60,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
     if (!canManage || isStdParent(it)) return;
     setBusy(it.id);
     try {
-      const ok = checkWrite(await supabase.from('kpi_definitions').insert({
+      const payload = {
         year, ...scopeCols, category: it.perspective,
         name: it.topic, formula_text: it.formula_text || null,
         // ⚠️ ต้องผูกขอบเขตที่กำลังดูอยู่เป๊ะ (scope_kind/scope_value) ไม่งั้นแถวใหม่หายจากจอทันที
@@ -68,7 +69,19 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
            ซึ่งพังทันทีที่คนแก้ชื่อ KPI ให้สั้นลง/ใส่วงเล็บเพิ่ม ⇒ จอฟ้อง "ยังไม่ได้หยิบ" ทั้งที่หยิบแล้ว */
         std_item_id: it.id,
         std_unit: unit, is_active: true,
-      }), `หยิบ "${it.topic}" เข้าใบ`);
+      };
+      /* 🗄️ ข้อนี้เคยถูก "ปิดใช้งาน" ไว้ในใบนี้ → เปิดคืนแถวเดิมแทน (insert ซ้ำจะชน unique 23505 แล้วค้างเป็นทางตัน · 07/10) */
+      const twin = findClosedTwin(closedDefs, payload);
+      if (twin && onRestore) {
+        if (window.confirm(restoreQuestion(twin, year + 543)) && await onRestore(twin)) onChanged?.();
+        return;
+      }
+      const res = await supabase.from('kpi_definitions').insert(payload);
+      if (res.error?.code === '23505') {
+        toast.error(`"${it.topic}" มีอยู่ในใบนี้แล้ว (อาจอยู่ในสถานะปิดใช้งาน — ดูแผง 🗄️ ปิดใช้งานอยู่ ที่ตารางแล้วกด เปิดคืน)`);
+        return;
+      }
+      const ok = checkWrite(res, `หยิบ "${it.topic}" เข้าใบ`);
       if (ok) { toast.success(`เพิ่ม "${it.topic}" แล้ว — ไปตั้งเป้า/น้ำหนักที่ตาราง`); onChanged?.(); }
     } finally { setBusy(''); }
   };
