@@ -1385,6 +1385,32 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ session-status-no-neq (2026-10-08)
+   มีสถานะกะ `void` ("ไม่ใช่กะจริง") แล้ว ⇒ `.neq('status', …)` บน `production_sessions` อันตราย:
+   "ไม่ใช่ closed" จะลากใบโมฆะเข้ามาเป็น **กะที่เปิดค้าง** · "ไม่ใช่ open" จะนับเป็น **วันผลิต**
+   (เจอจริง 2 จุดตอนเพิ่มสถานะ: ObeyaKpiBoard "กะเปิดค้าง" · Improvements ตัวหารวันผลิต)
+   ⇒ ต้องระบุสถานะที่ต้องการเป็นรายตัวผ่าน `SESSION_STATUSES_*` (`utils/sessionStatus.js`) */
+test('🛡️ session-status-no-neq — คิวรี production_sessions ห้ามใช้ .neq(\'status\', …)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/sessionStatus.js') continue;           // ตัวนิยามกฎเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /from\(\s*'production_sessions'\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const at = m.index + m[0].length;          // JS: regex match ไม่มี .end() (อย่าเผลอเขียนแบบ Python)
+      const nextQ = code.indexOf("from('", at);
+      const win = code.slice(at, nextQ === -1 ? at + 420 : Math.min(nextQ, at + 420));
+      if (/\.neq\(\s*'status'/.test(win)) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใช้ .neq(\'status\', …) กับ production_sessions — ใบโมฆะ (void) จะหลุดเข้ามาเงียบๆ\n'
+    + "   แก้: .in('status', SESSION_STATUSES_LIVE / _DONE / _REAL) จาก utils/sessionStatus.js\n"
+    + `   จุดที่ผิด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ open-shift-date-and-shift-together (2026-10-06)
    ฟอร์ม "เปิดกะใหม่" ต้องตั้ง **วันทำงาน + กะ พร้อมกัน** จาก `openShiftDefaults()` (`utils/workDate.js`)
    เดิมปุ่มรีเฟรชแค่ `shift` จากนาฬิกา ปล่อย `work_date` ค้าง ⇒ ตอน 07:40 ได้ "กะดึกของวันนี้"

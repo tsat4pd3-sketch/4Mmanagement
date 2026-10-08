@@ -173,7 +173,9 @@ const NULLISH = (i) => ({
   interval_days: null, next_due_date: null, last_done_at: null, max_idle_days: null,
 })
 
-const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
+/* 13 แถวปกติ + แถว 14 = NULLISH (ค่า null ทุกช่องที่ nullable ได้) + แถว 15 = ที่ว่างให้เคสพิเศษ
+   รายตาราง (ตอนนี้: กะโมฆะใน `production_sessions` · ดู PATCH ข้างล่าง) — **ห้ามลดจำนวนแถว** */
+const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14), ROW(15)]
 
 const thenable = (rows = ROWS) => {
   const res = { data: rows, error: null, count: rows.length }
@@ -408,7 +410,16 @@ const TABLE_ROWS = {
      = สาขา "มีกะเปิดอยู่" ซึ่งเป็นสถานะปกติของวันทำงาน ไม่เคยถูกรันใน harness เลย
      · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
      · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
-  production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🚫 แถว 15 = **กะโมฆะ** (`status: 'void'` · 2026-10-08) **ห้ามถอด** — สาขา "ใบที่ไม่ใช่กะจริง"
+     (ป้าย 🚫 ในลิสต์ประวัติ · `voidBadge`/`isVoidSession` · ปุ่มโมฆะต้องไม่โผล่กับใบนี้)
+     ถ้าไม่มีแถวนี้ harness จะไม่เคยเรนเดอร์สาขานั้นเลย */
+  production_sessions: (r, i) => ({
+    ...r,
+    line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
+    ...(i === 15 ? { status: 'void', void_reason: 'เปิดกะผิดแล้วปิดทิ้ง (mock)',
+                     voided_at: '2026-08-05T09:00:00+07:00', voided_by_name: 'ผู้ทดสอบ',
+                     actual_qty: 0, qty_ok: 0, qty_ng: 0 } : {}),
+  }),
   /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
      `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
      **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
