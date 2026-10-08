@@ -3,15 +3,15 @@ import { Link } from 'react-router-dom'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { toast } from '../components/Toast'
-import { computeDailyPmStatus, DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
+import { DAILY_PM_STATUS_META, DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus'
 // ⏱️ ของกลาง — ห้ามเขียนสูตรนาที→ชม. เองในหน้า (จอเคยขึ้น "เกินกำหนดมาแล้ว 91098 นาที")
 import { fmtDur } from '../utils/duration'
 import { fmtTime } from '../utils/dateFormat'
 import { can } from '../utils/permissions'
 import { inSectionScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
+import { loadDailyAm, amShiftInfo, dailyAmLineStatus } from '../lib/dailyAmBoard'
 import LineSelect from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
-import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -19,31 +19,9 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
-import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 
-/* ── date / shift (local, Asia/Bangkok = deployment local) ── */
-const toLocalDateStr = (d) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-
-// Current shift + the timestamp at which that shift began, so we can scope
-// "checked this shift". Day 08:00–19:59, night otherwise; before 08:00 belongs
-// to the previous day's night shift.
-function getShiftInfo(now = new Date()) {
-  const h = now.getHours()
-  const totalMin = h * 60 + now.getMinutes()
-  const isDay = totalMin >= 8 * 60 && totalMin < 20 * 60
-  const workDate = new Date(now)
-  if (h < 8) workDate.setDate(workDate.getDate() - 1)
-  const shiftStart = new Date(workDate)
-  shiftStart.setHours(isDay ? 8 : 20, 0, 0, 0)
-  return {
-    shift: isDay ? 'day' : 'night',
-    workDateStr: toLocalDateStr(workDate),
-    label: isDay ? '☀️ กะเช้า' : '🌙 กะดึก',
-    shiftStart,
-  }
-}
-
+/* ⏱️ กะ/เวลาเริ่มกะ + data-flow ทั้งชุด ย้ายไป `src/lib/dailyAmBoard.js` (2026-10-08) — ผังรวมโรงงานใช้ตัวเดียวกัน
+   ห้ามเขียน getShiftInfo/คิวรี inspections ซ้ำในหน้า (สองจอจะตอบคนละสี) */
 export default function DailyPM() {
   const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
@@ -70,7 +48,7 @@ export default function DailyPM() {
   const [loading, setLoading] = useState(true)
   const [now, setNow] = useState(new Date())
 
-  const shiftInfo = useMemo(() => getShiftInfo(now), [now])
+  const shiftInfo = useMemo(() => amShiftInfo(now), [now])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
@@ -84,94 +62,15 @@ export default function DailyPM() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const si = getShiftInfo()
-    const startISO = si.shiftStart.toISOString()
-
-    const [{ data: jigRows }, { data: targetRows }, { data: prodChecklists }, { data: lineRows }] = await Promise.all([
-      supabaseDR.from('jigs').select('id, name, machine_no, line_name, jig_no, equipment_type, equipment_category').eq('module', 'mtn').order('line_name').order('name'),
-      supabaseDR.from('pm_daily_line_targets').select('*').eq('is_active', true),
-      supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').eq('department', 'production'),
-      loadLinesRes(), // LINE_COLUMNS = ครบตามสัญญา <LineSelect> (2026-09-07)
-    ])
-    /* AM = operator ฝ่ายผลิตเช็คเครื่องผลิตรายวัน → default แสดงเฉพาะ "เครื่องผลิต"
-       ตัด jig/die tooling + facility/utility ออก ไม่ให้ลิสต์ลงทะเบียนรก (คำสั่ง user 2026-07-22)
-
-       ⚠️ แต่ "ชนิดอุปกรณ์ ไม่ได้ล็อกว่าใครเป็นคนตรวจ" (คำสั่ง user 2026-08-11)
-          แม่พิมพ์/จิ๊ก/ปั๊มลม ฝ่ายผลิตตรวจเองในหมวด AM ได้ ถ้าตั้งใจให้ตรวจ
-          → ตัวที่ **มี checklist ของ AM อยู่แล้ว** ต้องโผล่ให้ลงทะเบียนได้เสมอ
-          ไม่งั้นตั้งจุดตรวจ AM ที่ PM Setup ได้ แต่เครื่องไม่มีวันโผล่ให้ operator ตรวจ = ทางตัน
-          (หลักเดียวกับ union ใน PMCheckData: "มี checklist ของแผนกนี้" ชนะการเดาจากชนิดอุปกรณ์) */
-    const amEquipIds = new Set((prodChecklists ?? []).map(c => c.equipment_id).filter(Boolean))
-    const prodOnly = (jigRows ?? []).filter(j => {
-      if (amEquipIds.has(j.id)) return true            // ผลิตตั้งใจตรวจเอง → ชนะเงื่อนไขชนิด/หมวดทั้งหมด
-      if (j.equipment_category === 'facility' || j.equipment_category === 'utility') return false
-      if (j.equipment_type === 'jig' || j.equipment_type === 'die') return false
-      return true // machine / ไม่ระบุ (legacy) / production
-    })
-    setJigs(prodOnly)
-    setTargets(targetRows ?? [])
-    setProdLines(lineRows ?? [])
-
-    // "checked this shift" = a production-department inspection since the shift start
-    const prodClIds = new Set((prodChecklists ?? []).map(c => c.id))
-    const resMap = {}
-    if (prodClIds.size > 0) {
-      const { data: insp } = await supabaseDR
-        .from('inspections')
-        .select('jig_id, status, checklist_id, inspected_at')
-        .gte('inspected_at', startISO)
-        .order('inspected_at', { ascending: false })
-      for (const i of insp ?? []) {
-        if (!prodClIds.has(i.checklist_id)) continue
-        if (!resMap[i.jig_id]) resMap[i.jig_id] = { status: i.status }  // latest wins (ordered desc)
-      }
-    }
-    setResultByJig(resMap)
-
-    /* เวลาที่ "เริ่มผลิต" ของแต่ละไลน์กะนี้ → เริ่มนับนาฬิกา 60 นาที
-       ⚠️ ต้องใช้ `opened_at` (เปิดใบ = เริ่มผลิต) **ไม่ใช่ `confirmed_at`** (ปิดใบ = ผลิตเสร็จ)
-          feedback หน้างาน 2026-08-24: Daily Report เปิดกะเดินงานอยู่ แต่จอ AM ขึ้น "ยังไม่เริ่มผลิต" ทั้ง 7 ไลน์
-          เพราะยังไม่มีใบไหนถูกสแกนปิด · ใบที่ใช้เวลาหลายชั่วโมงจะทำให้สถานะค้าง idle ทั้งเช้า
-          แล้วนาฬิกาเพิ่งเริ่มเดินตอนใบแรกจบ = ผิดความหมายของ AM ที่ต้องตรวจ "ต้นกะ"
-       fallback ไป confirmed_at เผื่อใบเก่าที่ไม่มี opened_at (ข้อมูลก่อนมีคอลัมน์) */
-    const { data: sessions } = await supabaseDR
-      .from('production_sessions')
-      .select('id, line_name')
-      .eq('work_date', si.workDateStr)
-      .eq('shift', si.shift)
-      .in('status', SESSION_STATUSES_REAL)   // ใบโมฆะไม่ใช่กะจริง (08/10)
-    const sessionLine = {}
-    ;(sessions ?? []).forEach(s => { sessionLine[s.id] = s.line_name })
-    const startedRaw = {}
-    if (sessions && sessions.length > 0) {
-      const { data: orders } = await supabaseDR
-        .from('prod_orders')
-        .select('session_id, opened_at, confirmed_at')
-        .in('session_id', sessions.map(s => s.id))
-      for (const o of orders ?? []) {
-        const line = sessionLine[o.session_id]
-        const at = o.opened_at || o.confirmed_at
-        if (!line || !at) continue
-        if (!startedRaw[line] || at < startedRaw[line]) startedRaw[line] = at
-      }
-    }
-    /* ⚠️ ไลน์แม่-ไลน์ลูกต้องนับรวมกัน (pattern มาตรฐานของโปรเจค)
-       เคสจริง: อุปกรณ์ลงทะเบียน AM ไว้ที่ไลน์แม่ HYDROFORM แต่กะเปิดที่ไลน์ลูก HDF1/HDF2
-       เทียบชื่อไลน์ตรงตัว = การ์ด HYDROFORM ค้าง "ยังไม่เริ่มผลิต" ตลอดกาล */
-    const linesForFam = lineRows ?? []
-    const famStart = {}
-    for (const l of linesForFam) {
-      const fam = getLineFamilyNames(linesForFam, l.id)   // คืน array ของชื่อไลน์ (ตัวเอง+แม่+ลูก)
-      const names = fam?.length ? fam : [l.name]
-      for (const n of names) {
-        const at = startedRaw[n]
-        if (at && (!famStart[l.name] || at < famStart[l.name])) famStart[l.name] = at
-      }
-    }
-    // ชื่อไลน์ที่มี session แต่ไม่มีในทะเบียนไลน์ (เช่นเปิดกะด้วยชื่อเครื่อง) — ต้องไม่หายไป
-    for (const [n, at] of Object.entries(startedRaw)) if (!famStart[n]) famStart[n] = at
-    setFirstOrderByLine(famStart)
-    setOpenSessionLines(new Set(Object.values(sessionLine)))
+    const res = await loadDailyAm()
+    /* 🔴 โหลดล้ม = คงค่าเดิม + บอกคนดู — ล้างเป็นว่างแล้วจอจะเขียน "ยังไม่มีไลน์ที่ลงทะเบียน" ซึ่งเป็นคำตอบผิด */
+    if (!res.ok) { toast.error(`โหลดสถานะ AM ไม่สำเร็จ: ${res.error?.message || res.error}`); setLoading(false); return }
+    setJigs(res.jigs)
+    setTargets(res.targets)
+    setProdLines(res.lines)
+    setResultByJig(res.resultByJig)
+    setFirstOrderByLine(res.firstOrderByLine)
+    setOpenSessionLines(res.openSessionLines)
     setLoading(false)
   }, [])
 
@@ -202,28 +101,11 @@ export default function DailyPM() {
     return m
   }, [jigs])
 
-  // build a dashboard row per line that has registered targets
+  // build a dashboard row per line that has registered targets — สูตรเดียวกับผังรวมโรงงาน (lib/dailyAmBoard.js)
   const dashboard = useMemo(() => {
-    const jigById = Object.fromEntries(jigs.map(j => [j.id, j]))
-    const byLine = {}
-    for (const t of targets) {
-      if (t.shift && t.shift !== shiftInfo.shift) continue   // shift-specific target for another shift
-      const j = jigById[t.jig_id]
-      if (!j) continue
-      ;(byLine[t.line_name] ||= []).push({ jig_id: j.id, name: j.name, machine_no: j.machine_no })
-    }
+    const byLine = dailyAmLineStatus({ targets, jigs, resultByJig, firstOrderByLine, openSessionLines, shift: shiftInfo.shift, now })
     return Object.entries(byLine)
-      .map(([line_name, tg]) => ({
-        line_name,
-        // idle มีได้ 2 แบบ ต้องแยกให้ผู้ใช้เห็น ไม่งั้น "ยังไม่เริ่มผลิต" ตอนกะเดินอยู่ = จอโกหก
-        hasSession: openSessionLines.has(line_name),
-        ...computeDailyPmStatus({
-          targets: tg,
-          results: resultByJig,
-          firstOrderAt: firstOrderByLine[line_name] ?? null,
-          now,
-        }),
-      }))
+      .map(([line_name, st]) => ({ line_name, ...st }))
       .sort((a, b) => {
         const ord = { red: 0, orange: 1, pending: 2, idle: 3, green: 4, none: 5 }
         return (ord[a.status] ?? 9) - (ord[b.status] ?? 9)
