@@ -14,6 +14,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import useIsMobile from '../utils/useIsMobile';
 import { fmtDate } from '../utils/dateFormat';
+import { mergeById } from '../utils/mergeRows';
 import { orderTotal } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
@@ -216,7 +217,10 @@ export default function MorningMeeting() {
         (a.line_name && lineNames.includes(a.line_name)) ||
         (a.section && viewLines.some(l => l.section === a.section));
       const carry = (actCarry || []).map(a => ({ ...a, _carry: true }));
-      setActions([...carry, ...(actToday || [])].filter(inScope));
+      /* 2 คิวรีแยกวัน (ค้าง < D · วันนี้ = D) ไม่ใช่ transaction ⇒ ใบที่ถูกย้ายวันประชุมระหว่างอ่าน
+         โผล่ทั้ง 2 ชุด = คีย์ซ้ำในแผง Action (วัดจริง 08/10: harness เตือน 14 ใบ)
+         ⇒ ยุบด้วย mergeById — ชุดหลัง (วันนี้) ชนะ ไม่ติดป้าย ⏮ ค้างให้ใบของวันนี้ */
+      setActions(mergeById(carry, actToday || []).filter(inScope));
 
       const ids = (sess || []).map(s => s.id);
       if (ids.length) {

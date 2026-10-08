@@ -237,6 +237,23 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 🔑 ทะเบียน action ในตารางสิทธิ์ — **ห้ามปล่อยให้ resource/action เป็น null** (2026-10-08)
+     เดิม `permission_catalog` ได้ ROWS ทั่วไป (ไม่มี 2 คอลัมน์นี้) ⇒ คีย์ของทุกแถวกลายเป็น
+     `undefined:undefined` เหมือนกันหมด ⇒ harness เตือนคีย์ซ้ำ 14 แถว และ **แท็บ "การทำงาน"
+     ของ /permissions ไม่เคยถูกเรนเดอร์จริงเลย** (14 แถวที่ React กลืนเหลือแถวเดียว)
+     ของจริง 2 คอลัมน์นี้ not null + เป็น PK คู่กัน (`${resource}:${action}`)
+     แถว 15 ตั้งใจให้ `group_name` เป็นหมวดที่ไม่มีในเมนู ⇒ ต้องขึ้นป้าย ⚠️ หมวดกำพร้า */
+  permission_catalog: (r, i) => ({
+    ...r,
+    /* คู่ resource:action ต้อง **ไม่ซ้ำกันเลยทั้ง 15 แถว** (ของจริงเป็น PK คู่) —
+       จับคู่แบบ i%5 × ⌊i/5⌋ ⇒ 15 แถวได้ 15 คีย์ไม่ซ้ำ · แถว NULLISH(14) ก็ได้ค่าด้วย
+       เพราะ 2 คอลัมน์นี้ not null ของจริง (ของที่ nullable ยังปล่อย null ตามเดิม) */
+    resource: ['four_m', 'products', 'daily_report', 'mtn_order', 'line_stock'][i % 5],
+    action: ['create', 'approve', 'manage_master', 'close_cost', 'issue'][Math.floor(i / 5) % 5],
+    label: `สิทธิ์ทดสอบ ${i}`,
+    group_name: i >= 15 ? 'หมวดที่ไม่มีในเมนู' : ['ฝ่ายผลิต', 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม'][i % 3],
+    sort: i,
+  }),
   /* 🌳 BOM — **ห้ามถอดรูปทรง "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ"** (2026-10-08)
      เดิม `bom_items` ได้ ROWS ทั่วไปที่ `parent_mat` เป็น null ทุกแถว + `product_id` เป็น `p-N`
      ซึ่ง**ไม่ตรงกับ id ของ dr_products เลยสักแถว** ⇒ 2 สาขานี้ไม่เคยถูกเรนเดอร์ใน crashsweep:
