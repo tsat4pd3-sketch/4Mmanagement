@@ -16,7 +16,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildQrPayload, buildQrUrl, qrOriginUsable } from '../utils/qrCode';
+import { buildQrPayload, buildQrUrl, qrOriginUsable, mergeJigLabelRows } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -32,14 +32,16 @@ import { ALL } from '../utils/filterLabels';
    2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
    และแท็บจิ๊กชื่อ "จิ๊ก/แม่พิมพ์" = คนพิมพ์ป้ายแม่พิมพ์ผิดแท็บ) · แท็บจิ๊ก = ทะเบียน PM (`jigs` · ESM:J)
    🔴 แม่พิมพ์เป็นแถวใน `machines` (equipment_kind='die') ⇒ **รหัสในป้ายยังเป็น ESM:M** — ห้ามสร้างชนิดรหัสใหม่
-      (ป้ายที่พิมพ์ไปแล้วต้องสแกนได้เหมือนเดิม · /scan และผังจัดเก็บอ่าน ESM:M อยู่แล้ว) ⇒ แปลงผ่าน qrTypeOf() */
+      (ป้ายที่พิมพ์ไปแล้วต้องสแกนได้เหมือนเดิม · /scan และผังจัดเก็บอ่าน ESM:M อยู่แล้ว)
+   2026-10-08 · คำสั่ง user: แยก **จิ๊ก** ออกจากแท็บเครื่องจักรด้วย — จิ๊กตัวจริงอยู่ใน machines (equipment_kind='jig')
+      แท็บจิ๊ก = จิ๊กใน machines (ESM:M) + อุปกรณ์ที่มีแต่แผน PM ใน `jigs` (ESM:J) รวมผ่าน mergeJigLabelRows()
+   ⇒ **ชนิดรหัสในป้ายเป็นของ "แถว" (`r._qr`) ไม่ใช่ของแท็บ** — แท็บเดียวมีได้ 2 ชนิด */
 const KIND_OPTIONS = [
   { value: 'machine', label: '⚙️ เครื่องจักร' },
   { value: 'die', label: '🔨 แม่พิมพ์' },
-  { value: 'jig', label: '🧩 จิ๊ก (ทะเบียน PM)' },
+  { value: 'jig', label: '🧩 จิ๊ก' },
   { value: 'delivery', label: '🎯 จุดส่งงาน' },
 ];
-const qrTypeOf = (k) => (k === 'die' ? 'machine' : k);       // แท็บ → ชนิดรหัสในป้าย
 const tabLabelOf = (k) => KIND_OPTIONS.find(o => o.value === k)?.label || k;
 
 const SIZES = {
@@ -62,7 +64,8 @@ export default function QrLabels() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(() => new Set());
   const [size, setSize] = useState('md');
-  const [shadowCount, setShadowCount] = useState(0);   // เครื่องจักรที่มีแถวเงาในทะเบียน PM (ถูกกรองออกจากแท็บจิ๊ก)
+  const [shadowCount, setShadowCount] = useState(0);
+  const [dupJigs, setDupJigs] = useState([]);   // แถวทะเบียน PM ที่เลขซ้ำจิ๊กใน machines (ข้ามไม่พิมพ์ — บอกบนจอ)   // เครื่องจักรที่มีแถวเงาในทะเบียน PM (ถูกกรองออกจากแท็บจิ๊ก)
 
   useEffect(() => { loadDocForms(); }, []);
 
@@ -85,17 +88,20 @@ export default function QrLabels() {
   /* ── โหลดอุปกรณ์ ── */
   useEffect(() => {
     let alive = true;
-    setLoading(true); setSel(new Set()); setShadowCount(0);
+    setLoading(true); setSel(new Set()); setShadowCount(0); setDupJigs([]);
     const load = async () => {
-      if (kind === 'machine' || kind === 'die') {
-        // แยกแท็บด้วย equipment_kind · เครื่องที่ยังไม่ระบุชนิด (null) อยู่แท็บเครื่องจักร — ห้ามหายจากทั้ง 2 แท็บ
+      // แยกแท็บด้วย equipment_kind · ชนิดว่าง (null) / facility อยู่แท็บเครื่องจักร — ห้ามหายจากทุกแท็บ
+      const mcQuery = (k) => {
         let qy = supabaseDR.from('machines')
           .select('id, machine_no, machine_name, line_name, equipment_kind, equipment_category, is_active')
           .eq('is_active', true);
-        qy = kind === 'die' ? qy.eq('equipment_kind', 'die') : qy.or('equipment_kind.is.null,equipment_kind.neq.die');
-        const { data, error } = await qy.order('line_name').order('machine_no');
+        qy = k === 'machine' ? qy.or('equipment_kind.is.null,equipment_kind.not.in.(die,jig)') : qy.eq('equipment_kind', k);
+        return qy.order('line_name').order('machine_no');
+      };
+      if (kind === 'machine' || kind === 'die') {
+        const { data, error } = await mcQuery(kind);
         if (error) toast.error('โหลดรายการไม่ได้: ' + error.message);   // ห้ามเงียบ — จอว่างจะอ่านว่า "ไม่มีอุปกรณ์"
-        if (alive) setRows(data || []);
+        if (alive) setRows((data || []).map(r => ({ ...r, _qr: 'machine' })));
       } else if (kind === 'delivery') {
         /* 🎯 จุดส่งงานหน้าไลน์ (ลูปสโตร์เฟส 4) — 1 จุดหลายไลน์ได้ → line_name บนป้าย = ไลน์ทั้งหมดต่อกัน
            พิมพ์เฉพาะจุด active: ป้ายของจุดที่ปิดแล้วไม่ควรถูกพิมพ์ซ้ำไปติดหน้างานอีก */
@@ -103,17 +109,19 @@ export default function QrLabels() {
           .select('id, code, name, line_names, note, is_active')
           .eq('is_active', true).order('sort_order').order('name');
         if (error && error.code !== '42P01') toast.error('โหลดจุดส่งไม่ได้: ' + error.message);
-        if (alive) setRows((data || []).map(d => ({ ...d, line_name: (Array.isArray(d.line_names) ? d.line_names : []).join(' / '), _lines: Array.isArray(d.line_names) ? d.line_names : [] })));
+        if (alive) setRows((data || []).map(d => ({ ...d, _qr: 'delivery', line_name: (Array.isArray(d.line_names) ? d.line_names : []).join(' / '), _lines: Array.isArray(d.line_names) ? d.line_names : [] })));
       } else {
-        const { data } = await supabaseDR.from('jigs')
-          .select('id, jig_no, name, part_name, line_name, equipment_type, machine_id')
-          .order('line_name').order('jig_no');
-        // ⚠️ ตาราง jigs ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียนอุปกรณ์ที่มีแผน PM
-        // เครื่องจักรที่ถูกวางบนผัง PM จะมี "แถวเงา" อยู่ในนี้ด้วย (machine_id ชี้กลับไป machines)
-        // ต้องกรองเงาออก ไม่งั้นพิมพ์ป้ายซ้ำ = QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน (สแกนแล้วคนละที่)
-        // เครื่องจักรพิมพ์จากแท็บ "เครื่องจักร" ทางเดียวเท่านั้น
-        const realJigs = (data || []).filter(j => !j.machine_id && j.equipment_type !== 'machine');
-        if (alive) { setRows(realJigs); setShadowCount((data || []).length - realJigs.length); }
+        // ⚠️ ตาราง jigs ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียนอุปกรณ์ที่มีแผน PM · แถวที่มี machine_id = "เงา" ของแถวใน machines
+        // พิมพ์เงาด้วย = QR 2 ใบคนละรหัสติดของชิ้นเดียว (สแกนแล้วคนละที่) ⇒ รวม/ตัดผ่าน mergeJigLabelRows ที่เดียว
+        const [mc, pm] = await Promise.all([
+          mcQuery('jig'),
+          supabaseDR.from('jigs').select('id, jig_no, name, part_name, line_name, equipment_type, machine_id')
+            .order('line_name').order('jig_no'),
+        ]);
+        if (mc.error) toast.error('โหลดจิ๊กไม่ได้: ' + mc.error.message);
+        if (pm.error) toast.error('โหลดทะเบียน PM ไม่ได้: ' + pm.error.message);
+        const m = mergeJigLabelRows(mc.data || [], pm.data || []);
+        if (alive) { setRows(m.rows); setShadowCount(m.shadow); setDupJigs(m.dup); }
       }
       if (alive) setLoading(false);
     };
@@ -142,9 +150,9 @@ export default function QrLabels() {
     return [...s].sort();
   }, [rows, scopedLineNames]);
 
-  const isMc = kind === 'machine' || kind === 'die';   // แม่พิมพ์ = แถวใน machines
-  const noOf = (r) => (isMc ? r.machine_no : kind === 'delivery' ? r.code : r.jig_no) || '';
-  const nameOf = (r) => (isMc ? r.machine_name : (r.name || r.part_name)) || '';
+  // ชนิดของแถว (r._qr) ไม่ใช่ของแท็บ — แท็บจิ๊กมีทั้งแถว machines และแถวทะเบียน PM
+  const noOf = (r) => (r._qr === 'machine' ? r.machine_no : r._qr === 'delivery' ? r.code : r.jig_no) || '';
+  const nameOf = (r) => (r._qr === 'machine' ? r.machine_name : (r.name || r.part_name)) || '';
   const missingNo = visible.filter(r => !noOf(r).trim()).length;
 
   const toggle = (id) => setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -171,7 +179,7 @@ export default function QrLabels() {
          ค่าใน ?c= ยังเป็นรูปแบบเดิม ⇒ ป้ายเก่าที่เป็นข้อความเปล่ายังสแกนในแอปได้เหมือนเดิม
          🔴 โดเมนใช้ไม่ได้ (localhost/LAN) = ถอยไปป้ายข้อความเดิม ดีกว่าออกป้ายที่ลิงก์เสีย
             (ถ้าพิมพ์จาก localhost แล้วฝังลิงก์นั้นลงป้าย = ป้ายใช้ได้แค่เครื่องที่พิมพ์) */
-      const payload = linkLabels ? buildQrUrl(qrTypeOf(kind), r.id, origin) : buildQrPayload(qrTypeOf(kind), r.id);
+      const payload = linkLabels ? buildQrUrl(r._qr, r.id, origin) : buildQrPayload(r._qr, r.id);
       // margin:0 + errorCorrectionLevel M — ป้ายเล็กสแกนติดง่ายกว่าเมื่อ QR เต็มพื้นที่
       const svg = await QR.toString(payload, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
       const no = isDp ? `🎯 ${nameOf(r)}` : (noOf(r) || '— ยังไม่มีเลข —');
@@ -275,14 +283,16 @@ export default function QrLabels() {
 
       {kind === 'jig' && shadowCount > 0 && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
-          ℹ️ ซ่อน {shadowCount} รายการที่จริงๆ แล้วเป็น <b>เครื่องจักร</b> (อยู่ในทะเบียน PM ด้วยเพราะมีแผนตรวจ) —
-          พิมพ์ป้ายเครื่องจักรที่แท็บ <b>⚙️ เครื่องจักร</b> ทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดเครื่องตัวเดียวกัน
+          ℹ️ ซ่อน {shadowCount} รายการในทะเบียน PM ที่เป็น<b>เงา</b>ของเครื่อง/จิ๊ก/แม่พิมพ์ในทะเบียนอุปกรณ์ (มีแผนตรวจ) —
+          ป้ายของตัวจริงพิมพ์จากแถวหลักทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดของชิ้นเดียวกัน
         </div>
       )}
       {kind === 'jig' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
-          🔨 <b>ป้ายแม่พิมพ์ไม่ได้อยู่แท็บนี้</b> — พิมพ์ที่แท็บ <b>🔨 แม่พิมพ์</b> (สแกนแล้วเด้งเข้าผังจัดเก็บแม่พิมพ์ได้) ·
-          แท็บนี้คือจิ๊กและอุปกรณ์ที่มีแผนตรวจ PM
+          🧩 แท็บนี้ = <b>จิ๊กในทะเบียนอุปกรณ์</b> + อุปกรณ์ที่มีแต่แผนตรวจ PM (ป้ายชิป <b>ทะเบียน PM</b>) ·
+          🔨 <b>ป้ายแม่พิมพ์อยู่แท็บ 🔨 แม่พิมพ์</b> (สแกนแล้วเด้งเข้าผังจัดเก็บได้)
+          {dupJigs.length > 0 && <><br />⚠️ ข้าม {dupJigs.length} รายการในทะเบียน PM ที่เลขซ้ำกับจิ๊กในทะเบียนอุปกรณ์
+            ({dupJigs.map(j => j.jig_no).join(', ')}) — พิมพ์จากแถวจิ๊กแทน · ควรผูกแถว PM เข้ากับจิ๊กตัวนั้นที่หน้า PM Setup</>}
         </div>
       )}
       {kind === 'die' && !loading && !visible.length && (
@@ -292,7 +302,7 @@ export default function QrLabels() {
       )}
       {kind === 'jig' && !loading && !visible.length && (
         <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ยังไม่มีข้อมูลจิ๊กในทะเบียน PM — ลงทะเบียนที่หน้า PM Setup ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+          ⚠️ ยังไม่มีจิ๊ก — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ JIG (หรือ PM Setup) ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
         </div>
       )}
       {missingNo > 0 && kind !== 'delivery' && (
@@ -320,7 +330,9 @@ export default function QrLabels() {
               <tr key={r.id} onClick={() => toggle(r.id)} style={{ cursor: 'pointer', background: sel.has(r.id) ? 'var(--accent-dim)' : 'transparent' }}>
                 <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} onClick={e => e.stopPropagation()} style={{ width: 'auto', cursor: 'pointer' }} /></td>
                 <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: kind === 'delivery' ? 'var(--muted)' : '#f59e0b' }}>{kind === 'delivery' ? '—' : '— ไม่มีเลข —'}</span>}</td>
-                <td style={td}>{nameOf(r)}</td>
+                <td style={td}>{nameOf(r)}
+                  {kind === 'jig' && r._qr === 'jig' && <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ทะเบียน PM</span>}
+                </td>
                 <td style={{ ...td, color: 'var(--text2)' }}>{r.line_name || '—'}</td>
               </tr>
             ))}
