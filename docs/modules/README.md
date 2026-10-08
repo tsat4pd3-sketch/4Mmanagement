@@ -39,6 +39,7 @@
 | คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05) | `docs/modules/spare-part-master.md` | 24 KB |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` | 13 KB |
 | Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า) | `docs/modules/fixture-shim-record.md` | 24 KB |
+| 🔗 Audit AM↔PM ทั้งโปรเจค — 2 ระบบ AM ไม่ sync · null due = "ปกติ" · ลำดับแก้ 3 รอบ (2026-10-08 · ยังไม่แก้) | `docs/modules/am-pm-linkage-audit.md` | 12 KB |
 | PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16) · 🧭 3 ระดับ Preventive→Predictive→Prescriptive (2026-09-23) | `docs/modules/pm-predictive-planner-sync.md` | 22 KB |
 | PM Coordination — แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production · 2026-07-23) | `docs/modules/pm-coordination.md` | 7 KB |
 | 🔧 ศูนย์ PM — แท็บตรวจ PM + ตั้งค่าจุดตรวจ (ปุ่มบันทึกตรวจไม่ครบ · คัดลอกแผน PM ข้ามเครื่อง · 2026-10-07) | `docs/modules/pm-hub-check-setup.md` | 4 KB |
