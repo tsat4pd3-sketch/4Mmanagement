@@ -216,7 +216,7 @@ export default function ManpowerBoard() {
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} />
-        : tab === 'history' ? <HistoryTab section={section} nodes={nodes} lines={lines} stations={stations} employees={employees} />
+        : tab === 'history' ? <HistoryTab section={section} dept={deptParam ? (board?.depts || []).find(d => d.key === deptParam) || null : null} deptParam={deptParam} nodes={nodes} lines={lines} stations={stations} employees={employees} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
@@ -833,7 +833,7 @@ function OrgTv({ board, depts, skills }) {
    แปลเป็นภาษาคน + สรุปรายเดือนผ่าน describeSlotChanges/summarizeSlotChanges (manpowerBoard.js · มีเทส)
    รายงานย้อนหลัง ⇒ โหลดเมื่อเปลี่ยนช่วง/ส่วนงานเท่านั้น ไม่ poll ไม่ realtime */
 const HISTORY_CAP = 3000;
-function HistoryTab({ section, nodes, lines, stations, employees }) {
+function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employees }) {
   const tr = useTimeRange({ defaultDays: 120 });
   const [rows, setRows] = useState([]);
   const [state, setState] = useState({ loading: true, error: '', truncated: false });
@@ -856,23 +856,42 @@ function HistoryTab({ section, nodes, lines, stations, employees }) {
     return () => { alive = false; };
   }, [from, to]);
 
-  const list = useMemo(() => {
-    if (!section) return [];
+  const scoped = useMemo(() => {
+    if (!section) return { items: [], unattributed: 0 };
     const kids = new Map();
     for (const n of nodes) if (n.parent_id) (kids.get(n.parent_id) || kids.set(n.parent_id, []).get(n.parent_id)).push(n);
-    const sub = new Set([section.id]);
-    for (const stack = [section.id]; stack.length;) for (const c of kids.get(stack.pop()) || []) { sub.add(c.id); stack.push(c.id); }
+    const subOf = (rootId) => {
+      const set = new Set([rootId]);
+      for (const stack = [rootId]; stack.length;) for (const c of kids.get(stack.pop()) || []) { set.add(c.id); stack.push(c.id); }
+      return set;
+    };
+    const sub = subOf(section.id);
     const refs = nodes.filter(n => sub.has(n.id) && n.kind === 'line' && n.ref_line_id != null).map(n => n.ref_line_id);
     const famIds = new Set(lineFamilyOf(lines, refs).map(l => String(l.id)));
-    return describeSlotChanges(rows, {
+    // 🏷️ กรองแผนก (?dept=) — ทีม = ใต้ต้นไม้แผนกนั้น · จุดงาน/ช่าง = ไลน์ในกลุ่มไลน์ของแผนก (ชุดเดียวกับที่บอร์ดใช้ `dept.lines`)
+    //   แผนกที่เลือกไม่อยู่ในส่วนงานนี้แล้ว (dept=null) = ไม่มีอะไรตรง ห้ามถอยไปโชว์ทั้งส่วนงานเงียบๆ
+    const deptSub = deptParam && dept?.node ? subOf(dept.node.id) : new Set();
+    const deptLineIds = new Set((dept?.lines || []).map(l => String(l.id)));
+    let unattributed = 0;
+    const inSection = ({ kind, nodeId, lineId }) => (kind === 'team' ? sub.has(nodeId) : lineId == null || famIds.has(String(lineId)));
+    const out = describeSlotChanges(rows, {
       nodeById: new Map(nodes.map(n => [n.id, n])),
       stationById: new Map(stations.map(st => [String(st.id), st])),
       lineById: new Map(lines.map(l => [String(l.id), l])),
       empById: new Map(employees.map(e => [e.id, e])),
       // จุดงานที่ถูกลบไปแล้ว (lineId ไม่รู้) = โชว์ไว้ก่อน — ประวัติห้ามหาย ดีกว่าตัดทิ้งเพราะสืบส่วนงานไม่ได้
-      inScope: ({ kind, nodeId, lineId }) => (kind === 'team' ? sub.has(nodeId) : lineId == null || famIds.has(String(lineId))),
+      inScope: (c) => {
+        if (!inSection(c)) return false;
+        if (!deptParam) return true;
+        if (c.kind === 'team') return deptSub.has(c.nodeId);
+        // จุดงานที่ถูกลบไปแล้ว สืบแผนกไม่ได้ — ไม่ใส่ในแผนกไหน แต่นับไว้บอกบนจอ (ห้ามหายเงียบ)
+        if (c.lineId == null) { unattributed += 1; return false; }
+        return deptLineIds.has(String(c.lineId));
+      },
     });
-  }, [rows, section, nodes, lines, stations, employees]);
+    return { items: out, unattributed };
+  }, [rows, section, dept, deptParam, nodes, lines, stations, employees]);
+  const list = scoped.items;
   const months = useMemo(() => summarizeSlotChanges(list), [list]);
 
   const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -884,11 +903,14 @@ function HistoryTab({ section, nodes, lines, stations, employees }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <TimeRangeBar scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-        note={`ส่วนงาน ${section?.name || '–'} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
+        note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${dept?.name || '(ไม่อยู่ในส่วนงานนี้)'}` : ''} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
       {state.error && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดประวัติไม่สำเร็จ — {state.error}</div>}
       {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ แสดงได้ไม่เกิน {HISTORY_CAP.toLocaleString()} รายการ — ช่วงนี้มีมากกว่านั้น ให้ย่อช่วงวันที่</div>}
+      {!state.loading && scoped.unattributed > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>ℹ️ อีก {scoped.unattributed} รายการเป็นจุดงานที่ถูกลบไปแล้ว สืบไม่ได้ว่าเป็นของแผนกไหน — ไม่ได้แสดงในตัวกรองแผนก (เลือก "{ALL.dept}" เพื่อดู)</div>
+      )}
       {state.loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div> : !list.length ? (
-        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีการเปลี่ยนช่อง/คนต่อกะ/ช่างประจำไลน์ของส่วนงานนี้ในช่วงที่เลือก</div>
+        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีการเปลี่ยนช่อง/คนต่อกะ/ช่างประจำไลน์ของ{deptParam ? 'แผนก' : 'ส่วนงาน'}นี้ในช่วงที่เลือก</div>
       ) : (
         <>
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
