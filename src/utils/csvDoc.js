@@ -18,26 +18,33 @@
    ══════════════════════════════════════════════════════════════════════════════════ */
 import { docFormSync } from './docForms';
 
-/** ตัวอักษรที่ตั้งชื่อไฟล์ไม่ได้บน Windows/macOS — กันชื่อฟอร์มที่คนพิมพ์ `/` มาทำดาวน์โหลดล้ม */
-const safe = (s) => String(s || '').replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim();
+export { csvCell, csvText } from './csvCore';   // re-export — ผู้เรียกเดิมไม่ต้องแก้ import
+import { docFileNameFrom } from './csvCore';
 
 /**
- * ชื่อไฟล์ CSV ที่ doc_control คุมได้
+ * ชื่อไฟล์ที่ doc_control คุมได้ — ใช้กับไฟล์ที่ไม่มีหัวกระดาษให้ใส่เลขฟอร์ม (CSV / Excel)
  * @param {string} docKey      คีย์ในทะเบียน doc_forms
- * @param {string} legacyName  ชื่อไฟล์เดิม (รวมบริบท เช่น ช่วงวันที่/เดือน) — ใส่ `.csv` หรือไม่ก็ได้
+ * @param {string} legacyName  ชื่อไฟล์เดิม (รวมบริบท เช่น ช่วงวันที่/เดือน)
+ * @param {string} ext         นามสกุลผลลัพธ์ (ไม่มีจุด) เช่น `'csv'` · `'xlsx'`
+ * ⚠️ `docFormSync` เป็น sync ⇒ หน้าที่เรียกต้อง `loadDocForms()` เองก่อน
+ *    ไม่เรียก = ได้ชื่อไฟล์เดิม (ไม่ล้ม) แต่เลขฟอร์มที่ doc_control ตั้งไว้จะไม่โผล่
  */
-export function csvDocName(docKey, legacyName) {
-  const d = docFormSync(docKey, {});
-  const base = safe(String(legacyName || docKey).replace(/\.csv$/i, '')) || docKey;
-  const code = safe(d.form_code);
-  const rev = safe(d.rev);
-  const head = [code, rev && `Rev${rev}`].filter(Boolean).join('_');
-  return `${head ? `${head}_` : ''}${base}.csv`;
-}
+export const docFileName = (docKey, legacyName, ext = 'csv') =>
+  docFileNameFrom(docFormSync(docKey, {}), legacyName, ext, docKey);
+
+/** ชื่อไฟล์ CSV */
+export const csvDocName = (docKey, legacyName) => docFileName(docKey, legacyName, 'csv');
+
+/**
+ * ชื่อไฟล์ Excel — **Excel มีที่ใส่เลขฟอร์มในชีตได้ แต่ห้ามแทรกแถวบนสุด**
+ * เหตุผลเดียวกับ CSV: ตัวอ่านฝั่งผู้ใช้ (pivot/สูตร/ตัวนำเข้า) ยึด "แถวแรก = หัวตาราง"
+ * ⇒ เลขฟอร์มไปอยู่ที่ชื่อไฟล์เหมือนกัน
+ */
+export const xlsxDocName = (docKey, legacyName) => docFileName(docKey, legacyName, 'xlsx');
 
 /** สร้างไฟล์ + ดาวน์โหลด (BOM นำหน้าเสมอ — Excel ไทยอ่าน UTF-8 ไม่ออกถ้าไม่มี) */
-export function downloadCsvDoc(docKey, legacyName, csvText) {
-  const blob = new Blob([`﻿${csvText}`], { type: 'text/csv;charset=utf-8;' });
+export function downloadCsvDoc(docKey, legacyName, text) {
+  const blob = new Blob([`\ufeff${text}`], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -45,14 +52,3 @@ export function downloadCsvDoc(docKey, legacyName, csvText) {
   a.click();
   URL.revokeObjectURL(url);   // ไม่ revoke = รั่วทุกครั้งที่กด export
 }
-
-/** escape ตามมาตรฐาน CSV + กัน formula injection (`=`/`+`/`-`/`@` นำหน้า = Excel รันเป็นสูตร) */
-export function csvCell(v) {
-  let s = v == null ? '' : String(v);
-  if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-/** ตาราง → ข้อความ CSV (หัว + แถว) */
-export const csvText = (headers, rows) =>
-  [headers.map(csvCell).join(','), ...rows.map(r => r.map(csvCell).join(','))].join('\n');

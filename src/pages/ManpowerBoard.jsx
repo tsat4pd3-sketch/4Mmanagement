@@ -20,16 +20,17 @@ import { inSectionScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
 import { loadPositions, positionLabel } from '../utils/positions';
 import { buildScheduleMaps, shiftFromTeam, scheduleTeamFor } from '../utils/shiftAssign';
-import { getWorkDate } from '../utils/workDate';
+import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { ALL } from '../utils/filterLabels';
 import { markerScale } from '../utils/markerScale';
 import useImgBox from '../utils/useImgBox';
-import { mergeBorrowedEmployees } from '../utils/lineHelpers';
+import { mergeBorrowedEmployees, loadBorrowedRange } from '../utils/lineHelpers';
 import { canSeeded } from '../utils/permissions';
 import ManpowerBoardSetup from '../components/ManpowerBoardSetup';
 import {
   buildManpowerBoard, fourMStatus, layoutPeople, lineFamilyOf, paginateTv, tvCardCapacity,
   describeSlotChanges, summarizeSlotChanges, SLOT_AUDIT_TABLES, SLOT_KIND_META,
+  staffingOfDept, summarizeStaffing, rosterOn,
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
@@ -47,11 +48,11 @@ import {
    ⚠️ ข้อมูลไม่ครบต้องเขียนบนจอ: ตารางกะยังไม่ตั้ง · std ไม่ได้ตั้ง · แผนกเปล่า · ตำแหน่งที่ระบบไม่รู้จัก
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 
-const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind';
+const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind, start_date';
 
 export default function ManpowerBoard() {
   const { sections: scopeSecs = [], role } = useContext(UserContext);
-  const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'history'], 'org');
+  const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'staffing', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
   const lines = useProductionLines();
@@ -192,6 +193,7 @@ export default function ManpowerBoard() {
           { key: 'org', label: '🧑‍🤝‍🧑 ผังกำลังคน' },
           { key: 'layout', label: '🗺️ ผัง LAYOUT' },
           { key: 'fourm', label: '🚦 ป้ายสถานะ 4M' },
+          { key: 'staffing', label: '📊 แผน vs มาจริง' },
           { key: 'history', label: '📜 ประวัติการเปลี่ยนช่อง' },
         ]}
         tab={tab} onTab={setTab}
@@ -216,7 +218,9 @@ export default function ManpowerBoard() {
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
         : tab === 'layout' ? <LayoutTab board={board} depts={depts} lines={lines} attendance={attendance} maps={maps} tv={tv} stationPlans={stationPlans} />
-        : tab === 'history' ? <HistoryTab section={section} nodes={nodes} lines={lines} stations={stations} employees={employees} />
+        : tab === 'staffing' ? <StaffingTab section={section} deptParam={deptParam} today={workDate} nodes={nodes} employees={employees} lines={lines}
+            slotPlans={slotPlans} lineTechs={lineTechs} stations={stations} stationPlans={stationPlans} homeByEmp={homeByEmp} />
+        : tab === 'history' ? <HistoryTab section={section} dept={deptParam ? (board?.depts || []).find(d => d.key === deptParam) || null : null} deptParam={deptParam} nodes={nodes} lines={lines} stations={stations} employees={employees} />
         : <FourMTab depts={depts} logs={fourM} tv={tv} />}
       {setupOpen && section && (
         <ManpowerBoardSetup section={section} nodes={nodes} lines={lines} employees={employees}
@@ -828,12 +832,158 @@ function OrgTv({ board, depts, skills }) {
   );
 }
 
+/* ═════════════════════════ 📊 แผน vs มาจริงรายวัน (2026-10-08) ═════════════════════════
+   ย้อนหลังรายวัน × กะ ว่าแต่ละแผนกขาดคนกี่คน และขาดเพราะอะไร — สูตรทั้งหมดอยู่ที่ staffingOfDept/summarizeStaffing
+   🔴 ที่นั่งคิดจาก "ค่าตั้งบอร์ด + ทะเบียนพนักงานปัจจุบัน" (ยังไม่ย้อนค่าตามประวัติ) ⇒ ต้องเขียนข้อจำกัดนี้บนจอเสมอ
+   เพดาน 62 วัน (~7,500 แถวเช็คชื่อ) — เลือกยาวกว่านั้น = ตัดให้เหลือ 62 วันล่าสุดแล้วเขียนบอก ไม่บล็อก */
+const STAFFING_MAX_DAYS = 62;
+
+function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp }) {
+  const tr = useTimeRange({ defaultDays: 30 });
+  const to = tr.to > today ? today : tr.to;
+  const capFrom = addDaysStr(to, -(STAFFING_MAX_DAYS - 1));
+  const from = tr.from < capFrom ? capFrom : tr.from;
+  const clipped = from !== tr.from;
+  const [raw, setRaw] = useState({ logs: [], sched: [], borrowed: { byDate: {}, missing: 0 } });
+  const [state, setState] = useState({ loading: true, errors: [], truncated: false });
+  const linesRef = useRef(lines); linesRef.current = lines;
+  const empRef = useRef(employees); empRef.current = employees;
+  const lineCount = lines.length, empCount = employees.length;
+
+  useEffect(() => {
+    let alive = true;
+    setState(s0 => ({ ...s0, loading: true }));
+    Promise.all([
+      fetchAllPages(() => supabase.from('daily_production_logs').select('id, employee_id, work_date, shift, is_present, leave_type')
+        .gte('work_date', from).lte('work_date', to), { orderBy: 'id', maxPages: 10 }),
+      fetchAllPages(() => supabase.from('shift_schedules').select('id, work_date, line_id, dept_name, day_team')
+        .gte('work_date', from).lte('work_date', to), { orderBy: 'id', maxPages: 10 }),
+      loadBorrowedRange({ from, to, employees: empRef.current, lines: linesRef.current }),
+    ]).then(([a, s, b]) => {
+      if (!alive) return;
+      setRaw({ logs: a.rows || [], sched: s.rows || [], borrowed: b });
+      setState({ loading: false, errors: [a.error && `เช็คชื่อ: ${a.error}`, s.error && `ตารางกะ: ${s.error}`, b.error && `คนยืมตัว: ${b.error}`].filter(Boolean),
+        truncated: a.truncated || s.truncated || b.truncated });
+    });
+    return () => { alive = false; };
+  }, [from, to, lineCount, empCount]);
+
+  const days = useMemo(() => {
+    if (!section) return [];
+    const att = {}, sch = {};
+    for (const r of raw.logs) {
+      const m = (att[r.work_date] ||= {}); const cur = m[r.employee_id];
+      if (!cur || (!cur.is_present && r.is_present)) m[r.employee_id] = r;
+    }
+    for (const r of raw.sched) (sch[r.work_date] ||= []).push(r);
+    const out = [];
+    for (let d = from; d && d <= to; d = addDaysStr(d, 1)) {
+      const board = buildManpowerBoard({ section, nodes, employees: rosterOn(employees, d), lines, maps: buildScheduleMaps(sch[d] || []),
+        attendance: att[d] || {}, slotPlans, lineTechs, helpers: raw.borrowed.byDate?.[d] || [], stations, stationPlans, homeByEmp });
+      out.push({ date: d, depts: (board?.depts || []).filter(x => !deptParam || x.key === deptParam)
+        .map(x => ({ key: x.key, name: x.name, shifts: staffingOfDept(x) })) });
+    }
+    return out;
+  }, [raw, from, to, section, deptParam, nodes, employees, lines, slotPlans, lineTechs, stations, stationPlans, homeByEmp]);
+  const summary = useMemo(() => summarizeStaffing(days), [days]);
+  const rowsOf = useMemo(() => summary.flatMap(sm => ['day', 'night'].map(sh => ({ key: sm.key, name: sm.name, sh }))), [summary]);
+
+  const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
+  const td = { padding: '7px 10px', fontSize: 13, borderTop: '1px solid var(--border)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' };
+  const num = { ...td, textAlign: 'right' };
+  const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
+  const dShort = (d) => { const [, m, dd] = d.split('-'); return `${Number(dd)}/${Number(m)}`; };
+  const cellOf = (key, date, sh) => days.find(x => x.date === date)?.depts.find(x => x.key === key)?.shifts[sh] || null;
+  const tip = (s) => `ที่นั่ง ${s.seats} · ยืนจริง ${s.onFloor}\nช่องว่าง ${s.empty} · ลา ${s.leave} · ขาดงาน ${s.absent} · ยังไม่เช็ค ${s.unchecked} · ถูกยืมออก ${s.lentOut} · ยืมเข้า ${s.borrowedIn}${s.noPlan ? '\n⚠️ บางทีมไม่มีแผนช่อง — ใช้จำนวนคนในทะเบียนเป็นที่นั่ง' : ''}`;
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <TimeRangeBar scale={tr.scale} from={tr.from} to={tr.to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
+        note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${summary[0]?.name || '(ไม่มีข้อมูลในช่วงนี้)'}` : ''} · แท่งละ 1 วัน × กะ · ดูได้ครั้งละไม่เกิน ${STAFFING_MAX_DAYS} วัน`} />
+      <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
+        ℹ️ <b>ที่นั่ง</b> = การ์ดคนในทะเบียน + ช่องว่าง ของกะนั้น (กฎเดียวกับบอร์ด) · <b>ขาด</b> = ที่นั่ง − คนยืนจริง (มา + ยืมเข้า − ถูกยืมออก) ·
+        คิดจาก<b>ค่าตั้งบอร์ด/std และทะเบียนพนักงานปัจจุบัน</b> (ตัดคนที่เริ่มงานหลังวันนั้น — คนที่ลาออกไปแล้วไม่อยู่ในตัวเลขย้อนหลัง) ·
+        กะที่ไม่มีใครในแผนกถูกเช็คชื่อเลย = <b>ไม่ได้เช็คชื่อ</b> ไม่นับเป็นขาด
+      </div>
+      {clipped && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ ช่วงที่เลือกยาวเกิน {STAFFING_MAX_DAYS} วัน — แสดงเฉพาะ {from} ถึง {to}</div>}
+      {state.errors.length > 0 && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดไม่ครบ — {state.errors.join(' · ')} (ตัวเลขที่เห็นอาจขาดส่วนนี้)</div>}
+      {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ ข้อมูลช่วงนี้เกินเพดานที่โหลดได้ — ย่อช่วงวันที่ ตัวเลขยังไม่ครบ</div>}
+      {raw.borrowed.missing > 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ℹ️ คนยืมตัว {raw.borrowed.missing} รายการไม่อยู่ในทะเบียนพนักงานปัจจุบัน (ลาออก/ไม่ใช่พนักงานหน้างาน) — ไม่ได้นับเป็นยืมเข้า</div>}
+      {state.loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div> : !summary.length ? (
+        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีแผนกที่มีคน/ช่องในช่วงที่เลือก</div>
+      ) : (
+        <>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>สรุปต่อแผนก</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>แผนก</th><th style={{ ...th, textAlign: 'right' }}>กะที่เช็คแล้ว</th><th style={{ ...th, textAlign: 'right' }}>กะที่ขาดคน</th>
+                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ที่นั่ง</th><th style={{ ...th, textAlign: 'right' }}>ขาดรวม (คน-กะ)</th>
+                <th style={{ ...th, textAlign: 'right' }}>ช่องว่าง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
+                <th style={{ ...th, textAlign: 'right' }}>ยังไม่เช็ค</th><th style={{ ...th, textAlign: 'right' }}>ถูกยืมออก</th><th style={{ ...th, textAlign: 'right' }}>ยืมเข้า</th>
+                <th style={th}>ขาดหนักสุด</th><th style={{ ...th, textAlign: 'right' }}>กะไม่ได้เช็คชื่อ</th>
+              </tr></thead>
+              <tbody>
+                {summary.map(sm => (
+                  <tr key={sm.key}>
+                    <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{sm.name}{sm.noPlanShifts > 0 && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ {sm.noPlanShifts} กะมีทีมที่ไม่มีแผนช่อง</div>}</td>
+                    <td style={num}>{sm.shifts}</td>
+                    <td style={num}>{sm.shifts ? `${sm.shortShifts} (${pct(sm.shortShifts / sm.shifts)})` : '–'}</td>
+                    <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.seats} (${pct(sm.fill)})` : '–'}</td>
+                    <td style={{ ...num, fontWeight: 800 }}>{sm.shifts ? sm.short : '–'}</td>
+                    <td style={num}>{sm.empty}</td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
+                    <td style={num}>{sm.unchecked}</td><td style={num}>{sm.lentOut}</td><td style={num}>{sm.borrowedIn}</td>
+                    <td style={td}>{sm.worst ? `${dShort(sm.worst.date)} ${SHIFT_TH[sm.worst.shift]} ขาด ${sm.worst.gap}` : '–'}</td>
+                    <td style={num}>{sm.notChecked}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)' }}>
+              ช่องว่าง + ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า = ขาด (นับทุกกะ ทั้งกะที่ขาดและกะที่เกิน) · "ขาดรวม" นับเฉพาะกะที่ขาด
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — ขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = ขาด · +n = เกิน · ✓ = ครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ)</span></div>
+            <table style={{ borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={{ ...th, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>แผนก · กะ</th>
+                {days.map(d => <th key={d.date} style={{ ...th, textAlign: 'center', padding: '8px 4px' }}>{dShort(d.date)}</th>)}
+              </tr></thead>
+              <tbody>
+                {rowsOf.map(r => (
+                  <tr key={`${r.key}-${r.sh}`}>
+                    <td style={{ ...td, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.name}>
+                      <b style={{ color: shiftMeta(r.sh).color }}>{SHIFT_TH[r.sh]}</b> · {r.name}
+                    </td>
+                    {days.map(d => {
+                      const s = cellOf(r.key, d.date, r.sh);
+                      const base = { ...td, textAlign: 'center', padding: '6px 4px', minWidth: 34, fontSize: 12 };
+                      if (!s || (!s.seats && !s.evaluated)) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} />;
+                      if (!s.evaluated) return <td key={d.date} style={{ ...base, color: 'var(--muted)' }} title="ไม่มีใครในแผนกถูกเช็คชื่อกะนี้ — ไม่รู้ว่ามาครบไหม">·</td>;
+                      if (s.gap > 0) return <td key={d.date} title={tip(s)} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.gap * 0.08, 0.6).toFixed(2)})` }}>{s.gap}</td>;
+                      if (s.gap < 0) return <td key={d.date} title={tip(s)} style={{ ...base, color: '#0ea5e9' }}>+{-s.gap}</td>;
+                      return <td key={d.date} title={tip(s)} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ═════════════════════════ 📜 ประวัติการเปลี่ยนช่อง ═════════════════════════
    อ่าน audit_log ของ 3 ตารางค่าตั้งบอร์ด (ไม่มีตารางประวัติแยก) · ตัดตามส่วนงานที่เลือก ·
    แปลเป็นภาษาคน + สรุปรายเดือนผ่าน describeSlotChanges/summarizeSlotChanges (manpowerBoard.js · มีเทส)
    รายงานย้อนหลัง ⇒ โหลดเมื่อเปลี่ยนช่วง/ส่วนงานเท่านั้น ไม่ poll ไม่ realtime */
 const HISTORY_CAP = 3000;
-function HistoryTab({ section, nodes, lines, stations, employees }) {
+function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employees }) {
   const tr = useTimeRange({ defaultDays: 120 });
   const [rows, setRows] = useState([]);
   const [state, setState] = useState({ loading: true, error: '', truncated: false });
@@ -856,23 +1006,42 @@ function HistoryTab({ section, nodes, lines, stations, employees }) {
     return () => { alive = false; };
   }, [from, to]);
 
-  const list = useMemo(() => {
-    if (!section) return [];
+  const scoped = useMemo(() => {
+    if (!section) return { items: [], unattributed: 0 };
     const kids = new Map();
     for (const n of nodes) if (n.parent_id) (kids.get(n.parent_id) || kids.set(n.parent_id, []).get(n.parent_id)).push(n);
-    const sub = new Set([section.id]);
-    for (const stack = [section.id]; stack.length;) for (const c of kids.get(stack.pop()) || []) { sub.add(c.id); stack.push(c.id); }
+    const subOf = (rootId) => {
+      const set = new Set([rootId]);
+      for (const stack = [rootId]; stack.length;) for (const c of kids.get(stack.pop()) || []) { set.add(c.id); stack.push(c.id); }
+      return set;
+    };
+    const sub = subOf(section.id);
     const refs = nodes.filter(n => sub.has(n.id) && n.kind === 'line' && n.ref_line_id != null).map(n => n.ref_line_id);
     const famIds = new Set(lineFamilyOf(lines, refs).map(l => String(l.id)));
-    return describeSlotChanges(rows, {
+    // 🏷️ กรองแผนก (?dept=) — ทีม = ใต้ต้นไม้แผนกนั้น · จุดงาน/ช่าง = ไลน์ในกลุ่มไลน์ของแผนก (ชุดเดียวกับที่บอร์ดใช้ `dept.lines`)
+    //   แผนกที่เลือกไม่อยู่ในส่วนงานนี้แล้ว (dept=null) = ไม่มีอะไรตรง ห้ามถอยไปโชว์ทั้งส่วนงานเงียบๆ
+    const deptSub = deptParam && dept?.node ? subOf(dept.node.id) : new Set();
+    const deptLineIds = new Set((dept?.lines || []).map(l => String(l.id)));
+    let unattributed = 0;
+    const inSection = ({ kind, nodeId, lineId }) => (kind === 'team' ? sub.has(nodeId) : lineId == null || famIds.has(String(lineId)));
+    const out = describeSlotChanges(rows, {
       nodeById: new Map(nodes.map(n => [n.id, n])),
       stationById: new Map(stations.map(st => [String(st.id), st])),
       lineById: new Map(lines.map(l => [String(l.id), l])),
       empById: new Map(employees.map(e => [e.id, e])),
       // จุดงานที่ถูกลบไปแล้ว (lineId ไม่รู้) = โชว์ไว้ก่อน — ประวัติห้ามหาย ดีกว่าตัดทิ้งเพราะสืบส่วนงานไม่ได้
-      inScope: ({ kind, nodeId, lineId }) => (kind === 'team' ? sub.has(nodeId) : lineId == null || famIds.has(String(lineId))),
+      inScope: (c) => {
+        if (!inSection(c)) return false;
+        if (!deptParam) return true;
+        if (c.kind === 'team') return deptSub.has(c.nodeId);
+        // จุดงานที่ถูกลบไปแล้ว สืบแผนกไม่ได้ — ไม่ใส่ในแผนกไหน แต่นับไว้บอกบนจอ (ห้ามหายเงียบ)
+        if (c.lineId == null) { unattributed += 1; return false; }
+        return deptLineIds.has(String(c.lineId));
+      },
     });
-  }, [rows, section, nodes, lines, stations, employees]);
+    return { items: out, unattributed };
+  }, [rows, section, dept, deptParam, nodes, lines, stations, employees]);
+  const list = scoped.items;
   const months = useMemo(() => summarizeSlotChanges(list), [list]);
 
   const th = { textAlign: 'left', fontSize: 12, padding: '8px 10px', color: 'var(--muted)', whiteSpace: 'nowrap' };
@@ -884,11 +1053,14 @@ function HistoryTab({ section, nodes, lines, stations, employees }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <TimeRangeBar scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
-        note={`ส่วนงาน ${section?.name || '–'} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
+        note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${dept?.name || '(ไม่อยู่ในส่วนงานนี้)'}` : ''} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
       {state.error && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดประวัติไม่สำเร็จ — {state.error}</div>}
       {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ แสดงได้ไม่เกิน {HISTORY_CAP.toLocaleString()} รายการ — ช่วงนี้มีมากกว่านั้น ให้ย่อช่วงวันที่</div>}
+      {!state.loading && scoped.unattributed > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>ℹ️ อีก {scoped.unattributed} รายการเป็นจุดงานที่ถูกลบไปแล้ว สืบไม่ได้ว่าเป็นของแผนกไหน — ไม่ได้แสดงในตัวกรองแผนก (เลือก "{ALL.dept}" เพื่อดู)</div>
+      )}
       {state.loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div> : !list.length ? (
-        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีการเปลี่ยนช่อง/คนต่อกะ/ช่างประจำไลน์ของส่วนงานนี้ในช่วงที่เลือก</div>
+        <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีการเปลี่ยนช่อง/คนต่อกะ/ช่างประจำไลน์ของ{deptParam ? 'แผนก' : 'ส่วนงาน'}นี้ในช่วงที่เลือก</div>
       ) : (
         <>
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>

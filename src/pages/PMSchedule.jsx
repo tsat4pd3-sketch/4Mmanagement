@@ -22,6 +22,7 @@ import useColumnHistory from '../utils/useColumnHistory'
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
 import Segmented from '../components/Segmented'
+import { PlanSparesModal, SpareDemandBanner, sparesCountByChecklist } from '../components/PmSpares'
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
@@ -110,11 +111,16 @@ export default function PMSchedule() {
   const [view, setView] = useState('timeline')
   const [deferFor, setDeferFor] = useState(null)   // แถวที่กำลังเลื่อนแผน
   const [cycleFor, setCycleFor] = useState(null)   // แถว (array) ที่กำลังตั้งรอบ/วัน PM ครั้งถัดไป
+  // 🔩 อะไหล่ของแผน PM (2026-10-08) — แถวที่เปิดโมดัลอยู่ · จำนวนอะไหล่ที่ผูกต่อ checklist · ตัวกระตุ้นให้แถบสรุปโหลดใหม่
+  const [spareFor, setSpareFor] = useState(null)
+  const [spareCount, setSpareCount] = useState(() => new Map())
+  const [spareReload, setSpareReload] = useState(0)
   const [teams, setTeams] = useState(pmTeamsSync()) // ทีมช่าง data-driven (mtn_teams)
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
   const { role, fullName, uid } = useContext(UserContext)
   const canDefer = can('pm', 'setup', role)
+  const canIssueSpare = can('mtn_repair', 'service', role)
 
   // ⚠️ merge เสมอ — ไม่งั้น ?tab= ของ PmHub หาย แล้วเด้งไปแท็บแรก (บั๊ก 2026-09-16)
   const setDept = (d) => setParams({ dept: d })
@@ -219,10 +225,29 @@ export default function PMSchedule() {
     checklists.forEach(c => { eqNameByCl[c.id] = jigMap[c.equipment_id]?.name ?? '—' })
     setInsps((inspections ?? []).map(i => ({ ...i, eqName: eqNameByCl[i.checklist_id] ?? '—' })))
     setRows(built)
+    // จำนวนอะไหล่ที่ผูกต่อแผน — ล้ม = ไม่โชว์ตัวเลขบนปุ่ม (ปุ่มยังเปิดโมดัลได้ และโมดัลบอก error เอง)
+    const { data: spLines, error: spErr } = await supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', clIds)
+    if (spErr) console.warn('[pm-schedule] โหลดอะไหล่ของแผนไม่สำเร็จ:', spErr.message)
+    setSpareCount(sparesCountByChecklist(spLines || []))
     setLoading(false)
   }
 
   useEffect(() => { fetchData() }, [department]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* แก้อะไหล่ในโมดัลแล้ว → โหลดเฉพาะจำนวนบนปุ่ม (ไม่โหลดทั้งหน้า — fetchData ขึ้นสปินเนอร์ทับตาราง)
+     deps = สตริง id (ไม่ใช่ array rows — กฎเหล็ก DB ข้อ 9 กันยิงคิวรีซ้ำเมื่อ setRows ใบใหม่) */
+  const clIdKey = rows.map(r => r.cl.id).join(',')
+  useEffect(() => {
+    if (!spareReload || !clIdKey) return
+    let alive = true
+    supabaseDR.from('pm_plan_spares').select('checklist_id').in('checklist_id', clIdKey.split(','))
+      .then(({ data, error }) => {
+        if (!alive) return
+        if (error) return toast.error('โหลดจำนวนอะไหล่ของแผนไม่สำเร็จ: ' + error.message)
+        setSpareCount(sparesCountByChecklist(data || []))
+      })
+    return () => { alive = false }
+  }, [spareReload, clIdKey])
 
   /* แผนที่ยังไม่มีวันครบกำหนด (ไม่ตั้งรอบ หรือมีรอบแต่ไม่เคยตรวจ) — ไม่นับที่เลื่อนแผนไว้แล้ว
      🔴 แผน `run_day` **ตั้งใจไม่มีวันปฏิทิน** (ครบกำหนด = เงื่อนไข "เดินครบ N วัน")
@@ -291,6 +316,10 @@ export default function PMSchedule() {
           )}
         </div>
       )}
+
+      {/* 🔩 อะไหล่สำหรับ PM ที่จะถึง — คิดทั้งโรงงาน (คลังใช้ร่วมกันทุกทีม) ไม่ใช่เฉพาะทีมที่เปิดอยู่ */}
+      {!loading && <SpareDemandBanner todayStr={ymd(new Date())} reloadKey={spareReload}
+        onOpenPlan={(clId) => { const r = rows.find(x => x.cl.id === clId); if (r) setSpareFor(r); else toast.info('แผนนี้อยู่ทีมอื่น — สลับทีมด้านบนเพื่อเปิด') }} />}
 
       {/* ⚠️ แผนที่ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้ (feedback 2026-09-23 "ตั้งไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
           ห้ามซ่อน — บอกจำนวน + ปุ่มตั้งทีเดียวหลายรายการ */}
@@ -398,6 +427,7 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button onClick={() => setSpareFor(r)} title="อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน" style={{ ...S.actionBtn(spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>🔩 {spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
                         {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn(nextDue ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {nextDue ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
                         {canDefer && r.plan?.id && (isDeferred
                           ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
@@ -424,6 +454,8 @@ export default function PMSchedule() {
         <BucketView rows={rows} today={today} onCheck={goCheck} />
       )}
 
+      {spareFor && <PlanSparesModal row={spareFor} canEdit={canDefer} canIssue={canIssueSpare} byName={fullName} byUid={uid}
+        onClose={() => setSpareFor(null)} onChanged={() => setSpareReload(k => k + 1)} />}
       {cycleFor && <CycleModal rows={cycleFor} byName={fullName} byUid={uid} onClose={() => setCycleFor(null)} onSaved={() => { setCycleFor(null); fetchData() }} />}
       {deferFor && <DeferModal row={deferFor} byName={fullName} byUid={uid} onClose={() => setDeferFor(null)} onSaved={() => { setDeferFor(null); fetchData() }} />}
     </Page>

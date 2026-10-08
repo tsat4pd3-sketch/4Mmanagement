@@ -1192,6 +1192,23 @@ const RULES = [
     },
   },
   {
+    id: 'shift-frame-start-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการต่อ "เวลาเริ่มกะ" จาก work_date + start_time ตรงๆ เป็น timestamp
+       (รูปที่เจอจริงทั้ง 6 สำเนา: `${wd}T${st}` / `${work_date}T${start_time}`) */
+    re: /new Date\(`\$\{[\w.?]*(wd|work_date|workDate)\}T\$\{[^`]*(st|start_time|startHm|openHm|startTimeStr)\b/g,
+    why: 'กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59 = **เช้าของวันถัดไป** ⇒ ต่อ work_date + start_time ตรงๆ '
+       + 'ได้กรอบกะ **เร็วไป 20 ชม.** แล้วไปโดน clampWinToShift (ช่วงของ MAT) + dtMinOutsideWork '
+       + '⇒ %A/%P เพี้ยนเงียบ · และจุดที่ **เขียนลงฐาน** (ใบ downtime ที่ยกข้ามกะใน DailyReport) '
+       + 'ยังทำให้ timestamp ในฐานเพี้ยนไป 1 วันด้วย = ต้นทางของข้อมูลเสีย ไม่ใช่แค่จอ '
+       + '· กฎนี้ถูกก๊อป **6 สำเนา** (shiftFrameOf · computeLiveOee · computeSessionOee · sessionWindow '
+       + '· mtnMetrics · DailyReport) รอบแก้ 06/10 ไปแก้แค่ 2 ⇒ ที่เหลือยังพังต่ออีก 2 วัน (QC 08/10)',
+    fix: "ห่อวันด้วย `shiftStartDate(workDate, 'HH:MM', shift)` จาก src/utils/oee.js ก่อนต่อเป็น Date",
+    allow: {
+      'src/utils/oee.js': 'เจ้าของกฎ — shiftStartDate ประกาศและถูกเรียกครบทุกจุดในไฟล์นี้แล้ว (ตรวจด้วยเทส shiftStartDate.test.mjs)',
+    },
+  },
+  {
     id: 'shift-start-date-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการ "บวก 1 วันให้กะดึก" ที่เขียนเองนอกของกลาง — รูปที่เจอจริงคือ
@@ -1385,6 +1402,32 @@ for (const rule of RULES) {
   });
 }
 
+/* 🛡️ session-status-no-neq (2026-10-08)
+   มีสถานะกะ `void` ("ไม่ใช่กะจริง") แล้ว ⇒ `.neq('status', …)` บน `production_sessions` อันตราย:
+   "ไม่ใช่ closed" จะลากใบโมฆะเข้ามาเป็น **กะที่เปิดค้าง** · "ไม่ใช่ open" จะนับเป็น **วันผลิต**
+   (เจอจริง 2 จุดตอนเพิ่มสถานะ: ObeyaKpiBoard "กะเปิดค้าง" · Improvements ตัวหารวันผลิต)
+   ⇒ ต้องระบุสถานะที่ต้องการเป็นรายตัวผ่าน `SESSION_STATUSES_*` (`utils/sessionStatus.js`) */
+test('🛡️ session-status-no-neq — คิวรี production_sessions ห้ามใช้ .neq(\'status\', …)', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/sessionStatus.js') continue;           // ตัวนิยามกฎเอง
+    const code = stripComments(readFileSync(file, 'utf8'));
+    const re = /from\(\s*'production_sessions'\s*\)/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const at = m.index + m[0].length;          // JS: regex match ไม่มี .end() (อย่าเผลอเขียนแบบ Python)
+      const nextQ = code.indexOf("from('", at);
+      const win = code.slice(at, nextQ === -1 ? at + 420 : Math.min(nextQ, at + 420));
+      if (/\.neq\(\s*'status'/.test(win)) bad.push(`${rel}:${code.slice(0, m.index).split('\n').length}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ ใช้ .neq(\'status\', …) กับ production_sessions — ใบโมฆะ (void) จะหลุดเข้ามาเงียบๆ\n'
+    + "   แก้: .in('status', SESSION_STATUSES_LIVE / _DONE / _REAL) จาก utils/sessionStatus.js\n"
+    + `   จุดที่ผิด: ${bad.join(' · ')}\n`);
+});
+
 /* 🛡️ open-shift-date-and-shift-together (2026-10-06)
    ฟอร์ม "เปิดกะใหม่" ต้องตั้ง **วันทำงาน + กะ พร้อมกัน** จาก `openShiftDefaults()` (`utils/workDate.js`)
    เดิมปุ่มรีเฟรชแค่ `shift` จากนาฬิกา ปล่อย `work_date` ค้าง ⇒ ตอน 07:40 ได้ "กะดึกของวันนี้"
@@ -1453,6 +1496,22 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ self-save-must-touch-coalesce (2026-10-08) ────────────────────────────────────
+   จอที่ "บันทึกเองแล้วเรียกตัวโหลดตรงๆ" **และ** มี `coalesce` ฟัง realtime ของตารางเดียวกัน
+   ⇒ realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมาแล้วโหลดซ้ำใน ~600 ms (settleMs)
+   เพราะ `lastRun` ของ coalesce ขยับเฉพาะตอน `run()` ของมันเอง — ไม่รู้ว่าเราโหลดไปแล้ว
+   วัดจริง 06/10: รายการกะทั้งวันของ DailyReport 667 ครั้ง · ซ้ำใน 2 วิ **293 = 43.9%**
+   🔑 แก้ที่ปลาย `load()` ด้วย `<bumpRef>.current?.touch?.()` — ครอบทุกเส้นทางที่โหลด
+      **ห้ามเอาการบันทึกไปรอเพดาน** (กดบันทึกแล้วจอนิ่ง 600 ms บนจอกรอกงาน = แย่กว่าเดิม) */
+test('🛡️ self-save-must-touch-coalesce — DailyReport.load() ต้องเคาะเพดาน coalesce ตอนจบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(code, /sessBumpRef\.current\s*=\s*bumpSess/,
+    'ต้องผูก bumpSess เข้า ref ใน effect realtime — ไม่ผูก = touch() ไม่มีผล (เงียบ)');
+  assert.match(code, /sessBumpRef\.current\?\.touch\?\.\(\)/,
+    'ปลาย load() ต้องเรียก sessBumpRef.current?.touch?.() — ไม่เรียก = ทุกครั้งที่บันทึกบนจอที่เงียบ '
+  + 'มาก่อน จ่ายรอบโหลดฟรี 1 รอบ (วัดจริง 06/10 = 43.9% ของคิวรีที่หนักสุดในระบบ)');
+});
+
 /* ── 🛡️ no-session-object-in-db-effect-deps (2026-10-06) ──────────────────────────────
    deps ของ effect/useCallback ที่ยิง DB **ห้ามมี object** (กฎเหล็กข้อ 9 ใน CLAUDE.md)
    `selSession` เป็นตัวที่พลาดซ้ำได้ง่ายที่สุด เพราะ `load()` ของ DailyReport ปิดท้ายด้วย
@@ -3091,4 +3150,234 @@ test('🛡️ demand-mail-via-edge-function — ไฟล์ใน bucket demand
     + '         เดิมเปิดไว้ = ใครถือ anon key ในบันเดิลเว็บก็โหลดยอดสั่งลูกค้าได้โดยไม่ล็อกอิน\n'
     + '   แก้ยังไง: เรียก downloadMailFile(id) ใน src/components/DemandMailInbox.jsx\n'
     + '            (Edge Function `demand-mail-file` ตรวจ token ล็อกอิน Main + สิทธิ์ก่อนส่งไฟล์)\n');
+});
+
+test('🛡️ skill-exp-no-manual-nref-divide — ห้ามหาร cum_cycles ด้วย n_ref เองในหน้า', () => {
+  /* บั๊กที่เคยเกิดจริง 2026-10-08 (EXP v2 รอบแรก):
+     n_ref เดิมเป็นค่าเดียวทั้งโรงงาน (2,000) แล้วหน้าจอเอา cum_cycles ÷ n_ref เอง
+     พอตั้ง n_ref ต่อสถานีจาก CT จริง ค่ามันห่างกัน 34 เท่า (CT 2.5 วิ → 86 วิ)
+     ⇒ คนที่สลับหลายสถานี "เลือกตัวหารไม่ถูก" · ไลน์ปั๊มไต่ขั้นเร็วกว่าไลน์ประกอบหลายสิบเท่า
+     ของจริง: ฝั่ง DB สะสมเป็น `cum_ratio` รายวันไว้แล้ว (Σ shots ÷ parallel_staff ÷ n_ref ของวันนั้น) */
+  const hits = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/\bcum_cycles\b/.test(src)) continue;
+    // หาร cum_cycles ด้วยอะไรก็ตามที่ชื่อมี n_ref (เว้นวรรค/ขึ้นบรรทัดได้)
+    if (/\bcum_cycles\b[\s\S]{0,60}?\/[\s\S]{0,40}?n_?[Rr]ef/.test(src)
+     || /n_?[Rr]ef[\s\S]{0,40}?\/[\s\S]{0,60}?\bcum_cycles\b/.test(src)) hits.push(relative(ROOT, f));
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่างหาร `cum_cycles` ด้วย `n_ref` เองที่หน้าจอ\n'
+    + '   ทำไมพัง: n_ref เป็นค่า**ต่อสถานี** (คำนวณจาก CT จริง — ห่างกัน 34 เท่า · วัด 08/10/2026)\n'
+    + '   คนหนึ่งสลับ 5-6 สถานี ⇒ ไม่มี n_ref ตัวเดียวที่ถูกต้องสำหรับหาร\n'
+    + '   แก้ยังไง: ใช้ `employee_skill_evidence.cum_ratio` (DB สะสมสัดส่วนรายวันไว้แล้ว)\n'
+    + '   ผ่าน `bandProgress(cumRatio, band, cfg)` ใน src/utils/skillExp.js\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
+
+/* ── 🔁 จอ "BOM ซ้ำ 2 ใบ" — กฎที่ถอดแล้วจอโกหกทันที (2026-10-08) ──────────────────────
+   user สั่ง *"ทำจอสรุป 94 คู่ให้ PE ไล่เคลียร์เลย"* · กฎ 3 ข้อที่เป็นหัวใจของจอนี้:
+     1. `fingerprint` — ตรวจแล้วไม่ใช่จบตลอดกาล · BOM เปลี่ยนหลังตรวจ = คู่นั้นต้องกลับเข้าคิว
+        (วัดจริง: ระหว่างทำงานนี้เอง 06/10→08/10 มี 82 แถวถูกเพิ่มใน bom_items)
+     2. ใบขั้นงาน (OP) ห้ามถูกนับว่า "ทำของหาย" — คนละคำถามกับใบพาร์ท
+     3. จอต้องชี้อย่างเดียว **ห้ามลบ/ยุบ bom_items เอง** (ของบางตัวใช้ต่างกันตามรุ่นได้จริง
+        ลบผิด = ความต้องการวัตถุดิบหาย กู้ไม่ได้ — การตัดสินเป็นของ PE/Planning)            */
+test('🛡️ BOM ซ้ำ 2 ใบ: ต้องเทียบ fingerprint · ใบ OP ไม่นับของหาย · จอห้ามลบ bom_items เอง', () => {
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  assert.ok(/fingerprint\s*===|norm\(review\.fingerprint\)\s*===/.test(util),
+    '\n\n❌ `applyDupReviews` ไม่ได้เทียบ fingerprint แล้ว\n'
+    + '   ผล: คู่ที่เคยกด "ตรวจแล้ว" จะหายจากคิว **ตลอดกาล** แม้มีคนแก้ BOM ทีหลัง = จอโกหก\n');
+  assert.ok(/missingFromExplode:\s*verdict === 'op' \? \[\]/.test(util),
+    '\n\n❌ ใบขั้นงาน (OP) ถูกนับว่าทำของหายแล้ว\n'
+    + '   ทำไมผิด: ใบ OP ตอบ "ขั้นนี้กินอะไร" · ใบพาร์ทตอบ "พาร์ทนี้ประกอบจากอะไร" — ถูกทั้งคู่\n');
+
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/BomDupPanel.jsx'), 'utf8'));
+  assert.ok(!/from\('bom_items'\)[\s\S]{0,120}\.(delete|update|upsert|insert)\(/.test(panel),
+    '\n\n❌ จอ BomDupPanel เขียน/ลบ `bom_items` เอง\n'
+    + '   ทำไมห้าม: จอนี้ "ชี้ให้เห็นอย่างเดียว" — ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง\n'
+    + '            ยุบ 2 ชุดเอง = นับซ้ำ · ลบข้างใดข้างหนึ่ง = ยอดขาด กู้ไม่ได้\n'
+    + '   แก้ยังไง: ให้คนกดไปแก้ที่แท็บ BOM เอง (ปุ่ม ↗) แล้วบันทึกผลตรวจใน bom_dup_reviews\n');
+  assert.ok(/checkWriteRows\(await/.test(panel),
+    '\n\n❌ ปุ่มบันทึกผลตรวจไม่ได้นับแถวผ่าน `checkWriteRows` (RLS ปฏิเสธ = 0 แถว ไม่มี error)\n');
+});
+
+/* ═══ 🚪 modal ที่ "มีช่องกรอก" ห้ามปิดจากการคลิกพื้นหลัง — รูป `setX(null)` (2026-10-06 · QC audit) ═══
+   กฎเดิม `modal-closes-on-backdrop` (ข้อ 200 ด้านบน) จับเฉพาะลายเซ็น `onClick={onClose}`
+   ⇒ รูป `onClick={() => setXxx(null)}` **ลอดด่านมาได้** · เจอจริง `DailyReport` modal
+   "📞 เรียกช่างด่วน / 📝 เปิดใบแจ้งซ่อม" ที่มีปุ่มเลือกทีมช่าง + `<input type="file" capture>`
+   ⇒ เผลอแตะนอกกรอบบนแท็บเล็ตหน้าไลน์ = ทีมที่เลือก + รูปที่ถ่ายหายหมด ต้องถ่ายใหม่
+
+   🔴 ด่านนี้ **ดูเนื้อในจริง ไม่ใช้ allow list** — popup แสดงผลอย่างเดียว (ดูกราฟ/รูป/ประวัติ/drill)
+   ปิดจาก backdrop ได้ตามกฎ UI-CONVENTIONS §5 อยู่แล้ว (เผลอแตะก็ไม่เสียอะไร) ⇒ ไม่ต้องขึ้นทะเบียน
+   วัดจริง 06/10: 18 overlay ที่ใช้รูปนี้ — **17 ตัวไม่มีช่องกรอกเลย** ถ้าใช้ allow list ต้องเขียน
+   17 รายการที่ไม่ได้บอกอะไร แล้ว popup ตัวที่ 18 ที่มีฟอร์มจริงก็ยังหลุดได้อยู่ดี
+   ⇒ ขอบเขต overlay หาจาก `</div>` ตัวแรกที่ย่อหน้า ≤ บรรทัดเปิด (JSX ในรีโปนี้จัดย่อหน้าสม่ำเสมอ)
+     — เทียบกับที่ไล่ดูมือทั้ง 18 ตัวแล้วตรงกันเป๊ะ (window แบบนับบรรทัดตายตัวล้นไปโมดัลถัดไป) */
+test('🚪 backdrop-close-form-modal — overlay ที่ปิดด้วย setX(null) ห้ามมีช่องกรอกข้างใน', () => {
+  const OVERLAY = /position:\s*'fixed'|className="(?:overlay|modal-scroll)"/;
+  const CLOSER  = /onClick=\{\(\)\s*=>\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\(\s*(?:null|false|'')\s*\)\s*\}/;
+  const CTRL    = /<input(?![A-Za-z])|<textarea|<select(?![A-Za-z])|<SearchSelect|<PersonSelect|<MachineSelect|<ProductSelect|<PartSelect|<CustomerSelect|type="file"/;
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      if (!OVERLAY.test(ln) || !CLOSER.test(ln)) return;
+      const indent = ln.match(/^\s*/)[0].length;
+      let end = lines.length;
+      for (let k = i + 1; k < Math.min(lines.length, i + 400); k++) {
+        if (/^\s*<\/div>/.test(lines[k]) && lines[k].match(/^\s*/)[0].length <= indent) { end = k; break; }
+      }
+      const body = stripComments(lines.slice(i, end).join('\n'));
+      const m = body.match(CTRL);
+      if (m) bad.push(`${relative(ROOT, f)}:${i + 1}  (พบ ${m[0]} ข้างใน)`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ overlay ที่ปิดจากการคลิกพื้นหลัง แต่ข้างในมีช่องกรอก:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมห้าม (คำสั่ง user 2026-07-09): เผลอแตะนอกกรอบทีเดียว ที่กรอกไว้ทั้งฟอร์มหายหมด\n'
+    + '     ไม่มีทางเรียกคืน — บนแท็บเล็ต/จอทัชหน้าไลน์เกิดง่ายมาก (รูปที่ถ่ายไว้ก็หายด้วย)\n'
+    + '   แก้: เอา `onClick={() => setXxx(null)}` ออกจาก <div> ชั้น overlay\n'
+    + '        แล้วปิดด้วยปุ่ม ✕ / ยกเลิก ข้างในเท่านั้น (เกือบทุก modal มีปุ่มนั้นอยู่แล้ว)\n'
+    + '   ⚠️ ด่านนี้ไม่มี allow list โดยเจตนา — popup แสดงผลอย่างเดียวไม่เข้าข่ายอยู่แล้ว\n'
+    + '      ถ้าจำเป็นต้องมีช่องกรอกในของที่ปิดจาก backdrop ได้จริง ให้คุยกับ user ก่อน\n');
+});
+
+
+/* ═══ 📝 เขียน DB แล้วทิ้งผล `await` = กลืน error 100% (2026-10-06 · QC audit) ═══
+   `supabase-js` **ไม่ throw** — คืน `{ data, error }` เสมอ (กฎเหล็ก DB ข้อ 1)
+   ⇒ `await supabase.from(t).update(x)` ที่อยู่ "ตำแหน่ง statement" (ไม่มีใครรับผล) = ล้มแล้วไม่มีใครรู้
+   ด่านเดิมในลิสต์ RULES จับได้เฉพาะรูป `^\s*await supabase…` (ต้นบรรทัดล้วน) ⇒ รูปที่ซ่อนอยู่
+   หลัง `if (…)` / `else if (…)` / ใน one-liner arrow **ลอดมาได้ทั้งหมด**
+   วัดจริง 06/10 เจอ 7 จุด ที่หนักสุด 3 ตัว:
+     · `PeRoutingSuggest` เส้นทาง **rollback** — ขึ้น toast "คืนชุดเดิมให้แล้ว" โดยไม่เคยเช็ค
+       ⇒ ถ้าคืนล้ม ผู้ใช้ได้ข้อความยืนยัน**เท็จ** ทั้งที่ routing ของพาร์ทนั้นหายทั้งชุด
+     · `ProductMaster.delLink/delMaster` ปุ่มลบจริง — RLS ปฏิเสธ = 0 แถว ไม่มี error
+       ⇒ กดลบแล้วแถวเดิมวาดกลับมา ไม่มีอะไรบอกว่าทำไม ⇒ ผู้ใช้กดซ้ำ/คิดว่าจอค้าง
+     · `RoutingPanel` เรียง `seq` ใหม่หลังลบ — ล้มเงียบ ⇒ เลขกระโดด/ซ้ำ แล้วไปชน
+       `unique (mat_no, seq)` ในการบันทึกครั้งถัดไปแบบงงๆ
+   ข้อยกเว้นที่ถูกต้อง: ต่อ `.then(ok, err)` = **ตั้งใจ** best-effort (ไม่ใช่กลืนเงียบ) */
+test('📝 write-result-discarded — write ที่อยู่ตำแหน่ง statement ต้องมีคนรับผล', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    if (/__tests__|utils[/\\]dbWrite\.js/.test(rel)) continue;
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      const k = ln.search(/\bawait\s+supabase(?:DR)?\s*\.from\(/);
+      if (k < 0) return;
+      // chain เขียนจริงไหม (อาจพาดหลายบรรทัด)
+      if (!/\.(insert|update|delete|upsert)\(/.test(lines.slice(i, i + 3).join('\n'))) return;
+      /* "ตำแหน่ง statement" ตัดสินจากตัวอักษรที่ไม่ใช่ช่องว่าง **ตัวสุดท้ายก่อน `await`**
+         `{` `;` `}` = ต้นประโยคใหม่ · `)` = ท้ายหัว if/while/for · `else` = สาขา ⇒ ผลถูกทิ้ง
+         `=` `(` `?` `:` `,` `[` `>` / คำ `return` = ผลถูกรับไว้แล้ว (assign / checkWrite( / ternary)
+         (เลี่ยงการ strip วงเล็บ — วงเล็บซ้อน + template literal ภาษาไทยทำ regex พลาด) */
+      const tail = ln.slice(0, k).replace(/\s+$/, '');
+      if (!(tail === '' || /[{};)]$/.test(tail) || /\belse$/.test(tail))) return;
+      if (/\.then\(/.test(lines.slice(i, i + 5).join('\n'))) return;   // best-effort ที่ตั้งใจ
+      bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 95)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เขียน DB แล้วไม่มีใครรับผล (supabase-js ไม่ throw ⇒ ล้มแล้วเงียบ 100%):\n   '
+    + bad.join('\n   ') + '\n'
+    + '   แก้: const res = await supabase.from(t).update(x).eq(...).select(\'id\');\n'
+    + '        if (!checkWrite(res, \'ป้ายงาน\')) return;\n'
+    + '        if (!(res.data || []).length) { toast.error(\'ไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ\'); return; }\n'
+    + '   ⚠️ ปุ่มที่ผลลัพธ์สำคัญต้องนับแถวด้วย — RLS ปฏิเสธ UPDATE/DELETE = 0 แถว ไม่มี error (ข้อ 2)\n'
+    + '   ถ้าตั้งใจให้ best-effort จริง (งานหลักสำเร็จแล้ว ล้มตรงนี้ไม่ควรล้มทั้ง flow):\n'
+    + '        ต่อ `.then(() => {}, () => {})` + เขียนคอมเมนต์ว่าทำไม — **ห้ามปล่อยลอยๆ**\n'
+    + '        และถ้าของที่ล้มมีคนอ่านต่อ (ประวัติ/รายงาน) ควร toast.error บอกด้วย\n');
+});
+
+/* ── 💬 คอมเมนต์ใบ MO ต้องมี "กองเดียว" และต้องไปถึงใบพิมพ์ (07/10 · คอมเมนต์ทีม MTN ข้อ 1) ──
+   ที่มา: ทีม MTN ขอ *"แก้ไขรายละเอียด MO ได้"* เพราะเปิดเอกสารมาแล้วรายละเอียดไม่ตรงของจริง
+   user ตัดสิน: ไม่แก้ทับของผู้แจ้ง — เอาคอมเมนต์ที่คุยกันใต้ใบ ไปต่อท้ายในช่องเดียวกันบนใบพิมพ์
+   รอบแรกของงานนี้เกือบสร้างตาราง `mtn_order_comments` ใหม่ ทั้งที่ `event_comments` ใช้อยู่แล้ว
+   (74 คอมเมนต์ · 49 ใบ) ⇒ ใบเดียวมีคอมเมนต์ 2 กอง = ใบพิมพ์ไม่ตรงกับจอ
+   📄 `docs/modules/mtn-work-order.md` §คอมเมนต์บนใบพิมพ์ */
+test('🛡️ mo-comments-single-store — คอมเมนต์ใบ MO ต้องอยู่ที่ event_comments ที่เดียว', () => {
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => /mtn_order_comments/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีโค้ดอ้างตารางคอมเมนต์ใบ MO ชุดที่ 2 (`mtn_order_comments`): ' + hits.join(', ') + '\n'
+    + '   ทำไมห้าม: ใบ MO มีคอมเมนต์อยู่แล้วที่ `event_comments` (ref_kind=\'mtn_order\')\n'
+    + '            ซึ่ง <EventComments> บนจอใช้อยู่ · 2 กอง = ใบพิมพ์ไม่ตรงกับที่คนคุยกันบนจอ\n'
+    + '   แก้ยังไง: อ่าน/เขียนผ่าน event_comments · ฝั่งใบพิมพ์/Excel ใช้ src/lib/moComments.js\n');
+});
+
+test('🛡️ mo-print-needs-comments — ใบพิมพ์ MO ทั้ง 2 ฟอร์ม + Excel ต้องวางคอมเมนต์ต่อท้ายผู้แจ้ง', () => {
+  const mo = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  // ทั้ง 2 ฟอร์มต้องรับ cmt และเรียกตัววาดกลาง (ห้ามประกอบข้อความคอมเมนต์เองในแต่ละฟอร์ม)
+  for (const fn of ['printMoReport', 'printMoReportMtn']) {
+    assert.ok(new RegExp(`function ${fn}\\([^)]*cmt`).test(mo),
+      `\n\n❌ ${fn}() ไม่รับคอมเมนต์ (พารามิเตอร์ \`cmt\`) — ใบที่พิมพ์ออกไปจะไม่มีคอมเมนต์ที่คุยกันไว้\n`
+      + '   ที่มา: คอมเมนต์ทีม MTN 06/10 "เปิดเอกสารมาบางครั้งรายละเอียดไม่ตรงสาเหตุที่เกิดขึ้นจริง"\n');
+  }
+  // นับเฉพาะ "การเรียกในเทมเพลตใบ" (${cmtBlockHtml(…)) — ไม่นับบรรทัดประกาศฟังก์ชัน
+  assert.equal((mo.match(/\$\{cmtBlockHtml\(cmt/g) || []).length, 2,
+    '\n\n❌ ใบพิมพ์ MO ไม่ได้วาดบล็อกคอมเมนต์ครบทั้ง 2 ฟอร์ม (FM-JIG-008 + FM-MTN-006)\n'
+    + '   ทั้ง 2 ฟอร์มต้องเรียก cmtBlockHtml(cmt, esc) — ฟอร์มที่ลืม = ทีมนั้นไม่เห็นคอมเมนต์บนใบ\n');
+  // คอมเมนต์ต้องอยู่ "ต่อท้าย" รายละเอียดของผู้แจ้ง ไม่ใช่แทนที่ (คำสั่ง user: ต่อจากที่ผู้แจ้งแจ้งมา)
+  assert.ok(/report_note \|\| o\.problem_detail\)\}\$\{cmtBlockHtml/.test(mo),
+    '\n\n❌ ใบ FM-JIG-008 ไม่ได้วางคอมเมนต์ "ต่อท้าย" รายละเอียดของผู้แจ้ง\n'
+    + '   🔴 ของผู้แจ้งคือ **บันทึก ณ วันที่แจ้ง** ห้ามถูกแทนที่/ถูกดันหาย — คอมเมนต์ต่อท้ายเท่านั้น\n');
+  const xl = stripComments(readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8'));
+  assert.ok(/moCommentText\(/.test(xl) && /commentsError/.test(xl),
+    '\n\n❌ Excel export ใบ MO ไม่มีคอลัมน์คอมเมนต์ (หรือกลืน commentsError)\n'
+    + '   🔴 โหลดคอมเมนต์ไม่สำเร็จ = ต้องเขียนกำกับในไฟล์ · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์"\n');
+});
+
+test('🛡️ daily-am-single-loader — จอ AM รายวัน (DailyPM · FactoryMap) ต้องอ่านผ่าน lib/dailyAmBoard.js ห้ามคิวรี inspections/คิดกะเอง', () => {
+  for (const f of ['src/pages/DailyPM.jsx', 'src/pages/FactoryMap.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/from ['"]\.\.\/lib\/dailyAmBoard['"]/.test(src),
+      `\n\n❌ ${f} ไม่ได้ import lib/dailyAmBoard — สถานะ AM รายวันต้องมาจาก loader กลางตัวเดียว\n`
+      + '   ที่มา 2026-10-08: ผังรวมโรงงานอ่าน AM จาก pm_plans.next_due_date ขณะที่แผน AM รายวันเป็น run_day (null)\n'
+      + '            ⇒ "AM ปกติ (N)" ค้างตลอดกาลไม่ว่าจะตรวจหรือไม่ (user: "สเตตัสไม่อัพเดท")\n');
+    assert.ok(!/from\(['"]inspections['"]\)/.test(src) && !/function getShiftInfo\(/.test(src),
+      `\n\n❌ ${f} คิวรี inspections / ประกาศ getShiftInfo เอง — สองจอจะตอบคนละสี · ใช้ loadDailyAm()/amShiftInfo() จาก lib/dailyAmBoard.js\n`);
+  }
+  // ตัวตัดสินสี AM บนผังต้องไม่กลับไปใช้ตัวนับจากแผนปฏิทินล้วน (amTotal/amOverdue) เป็นตัวหลัก
+  const fm = stripComments(readFileSync(join(ROOT, 'src/pages/FactoryMap.jsx'), 'utf8'));
+  assert.ok(!/s\.amTotal \? \(s\.amOverdue/.test(fm) && /amDTotal/.test(fm),
+    '\n\n❌ METRICS.am ใน FactoryMap กลับไปตัดสินจาก amTotal/amOverdue (วันครบกำหนดแผน) — ต้องใช้ amD* จาก dailyAmLineStatus\n');
+});
+
+
+/* ═══ 📑 CSV export ต้องผ่านทะเบียนเอกสาร (2026-10-08 · QC audit รอบ 3) ═══
+   CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน/CSV —
+   **ไม่มีข้อยกเว้น**) ต้อง register เข้าทะเบียน `/doc-forms`"*
+   CSV ถูกมองข้ามมาตลอดเพราะไม่มีหัวกระดาษให้ใส่เลขฟอร์ม ⇒ เลขฟอร์มไปอยู่ที่ **ชื่อไฟล์**
+   (`csvDocName` ใน `src/utils/csvDoc.js`) — 🔴 ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อ CSV
+   เพราะ Excel/Sheets ใช้ "แถวแรก = หัวตาราง" ⇒ คอลัมน์เลื่อนทั้งไฟล์ = พัง pivot/สูตรของคนที่ใช้ทุกวัน
+
+   เจอจริง 08/10: `Report.jsx` (10 ปุ่ม) + `DailyReport.jsx` (2 ปุ่ม × 4 ชนิดรายงาน) เขียนตัว
+   ดาวน์โหลดเองโดยก๊อป logic ของ `csvDoc.js` มาทั้งดุ้น ⇒ doc_control แก้เลขฟอร์มไม่ได้เลย
+   🔴 และสำเนาใน `DailyReport` **ไม่มีด่านกัน formula injection** (ของ `Report.jsx` มี) ⇒ ค่าที่
+   หน้างานพิมพ์ในช่อง 'รายละเอียด'/'เครื่องจักร' ขึ้นต้นด้วย `=` `+` `@` ถูก Excel **รันเป็นสูตร
+   บนเครื่องคนรับไฟล์** — นี่คือเหตุผลที่ต้องมีทางเดียว ไม่ใช่สำเนาที่ต้องไปตามแก้ทีละที่ */
+test('📑 csv-export-via-csvDoc — สร้างไฟล์ CSV ต้องผ่าน src/utils/csvDoc.js', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/csvDoc.js') continue;              // ตัวของกลางเอง
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/new\s+Blob\([^)]*text\/csv/g)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  new Blob(… 'text/csv' …)`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ สร้างไฟล์ CSV เองโดยไม่ผ่านทะเบียนเอกสาร:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมต้องผ่านของกลาง:\n'
+    + '     1. doc_control ต้องแก้เลขฟอร์ม/Rev ได้เองจาก /doc-forms โดยไม่ต้องแก้โค้ด\n'
+    + '     2. กัน formula injection ที่เดียว — สำเนาที่ก๊อปไปมักตกข้อนี้ (เกิดจริงที่ DailyReport)\n'
+    + '        ค่าที่หน้างานพิมพ์ขึ้นต้น `=` `+` `@` = Excel รันเป็นสูตรบนเครื่องคนรับไฟล์\n'
+    + '     3. BOM นำหน้า (Excel ไทยอ่าน UTF-8 ไม่ออกถ้าไม่มี) + revoke blob URL ทุกทาง\n'
+    + '   แก้: import { downloadCsvDoc, csvText } from \'../utils/csvDoc\';\n'
+    + '        downloadCsvDoc(\'<doc_key>\', \'<ชื่อไฟล์เดิม>\', csvText(headers, rows));\n'
+    + '        + seed doc_key ใน migration (ดู 20261008_doc_forms_csv_round2_main.sql)\n'
+    + '        + เรียก loadDocForms() ที่หน้านั้น (docFormSync เป็น sync ⇒ ต้อง warm cache เอง)\n'
+    + '   🔴 ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อ CSV — เลขฟอร์มอยู่ที่ "ชื่อไฟล์" เท่านั้น\n');
 });

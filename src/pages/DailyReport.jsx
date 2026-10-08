@@ -27,7 +27,8 @@ import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
 import { pairQtyPlan, pairOrderGaps } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { getDocForm, fullCode } from '../utils/docForms';
+import { getDocForm, fullCode, loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
@@ -35,7 +36,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -66,9 +67,14 @@ import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
+
+/* ทะเบียนเอกสาร — ชื่อไฟล์ CSV ของแท็บรายงานอ่านผ่าน `docFormSync` (sync) ⇒ ต้อง warm cache เอง
+   ไม่เรียก = ได้ชื่อไฟล์เดิม (fallback) ไม่ล้ม แต่ doc_control ตั้งเลขฟอร์มแล้วไม่มีผล */
+loadDocForms();
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -302,6 +308,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
+  /* 🔴 2026-10-08 — ref ของ `bumpSess` (ตัว coalesce ใน effect realtime ข้างล่าง)
+     `load()` ต้อง "เคาะ" เพดานนี้ตอนจบ ไม่งั้น realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมา
+     แล้วโหลดซ้ำใน ~600 ms ทั้งที่เพิ่งโหลดไป
+     วัดจริง 06/10: รายการกะทั้งวัน 667 ครั้ง ซ้ำใน 2 วิ **293 ครั้ง = 43.9%**
+     ⚠️ ต้องเป็น ref: `bumpSess` ถูกสร้างใหม่ทุกครั้งที่ effect รีรัน (สลับกะ) แต่ `load` ต้องนิ่ง
+        (เป็น dep ของ effect นั้นเอง) ⇒ อ่านค่าตอน "เรียก" ไม่ใช่ตอน "สร้าง" */
+  const sessBumpRef = useRef(null);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -617,6 +630,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
+    /* เคาะเพดานของ realtime: "รายการกะชุดนี้เพิ่งโหลดไปแล้ว" — ครอบ**ทุก**เส้นทางที่เรียก load()
+       (effect ตอน mount · handler ที่บันทึกสำเร็จแล้วเรียกตรงๆ 6 จุด · ตัว bump เอง)
+       ⇒ จุดเรียก load() ที่เพิ่มในอนาคตได้ผลนี้เองโดยไม่ต้องไปเติมทีละจุด (ที่พลาดง่ายที่สุด) */
+    sessBumpRef.current?.touch?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
   }, [role, scopeKey, userLineId]);
 
@@ -868,6 +885,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       load();
       if (sid) loadCarryOrders(sid, selSession.line_name);
     }, LIVE.SHIFT);
+    sessBumpRef.current = bumpSess;   // ให้ load() เคาะเพดานตัวนี้ได้ (ดูหมายเหตุที่ sessBumpRef)
     const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
     const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
     const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
@@ -967,7 +985,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const done = new Set((conts || []).map(c => c.carried_from_id));
           const pending = carryDts.filter(d => !done.has(d.id));
           if (pending.length) {
-            const startISO = new Date(`${openForm.work_date}T${(openForm.start_time || '08:00').slice(0, 5)}:00`).toISOString();
+            /* 🔴 เวลาเริ่มกะของใบที่ยกข้ามกะ — ต้องผ่าน shiftStartDate() ไม่งั้นกะดึกที่เริ่ม
+               00:00-07:59 จะเขียน timestamp เร็วไป 1 วัน แล้วใบนั้นหลุดนอกกรอบกะของตัวเอง
+               (ตัวนี้ **เขียนลงฐาน** ⇒ เป็นต้นทางของข้อมูลเพี้ยน ไม่ใช่แค่จอ · QC 08/10) */
+            const openHm = (openForm.start_time || '08:00').slice(0, 5);
+            const startISO = new Date(
+              `${shiftStartDate(openForm.work_date, openHm, openForm.shift)}T${openHm}:00`).toISOString();
             const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
               session_id:       data.id,
               downtime_type_id: d.downtime_type_id,
@@ -3974,8 +3997,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
-        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0'; return (
-          <div className="overlay" style={{ zIndex: 2100 }} onClick={() => setMoDtPick(null)}>
+        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0';
+          /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
+             + ช่องถ่ายรูปก่อนซ่อม (`<input type="file" capture>`) ที่หน้างานถ่ายไว้แล้ว
+             ⇒ เผลอแตะนอกกรอบบนแท็บเล็ตหน้าไลน์ = ทีมที่เลือก + รูปที่ถ่ายหายหมด ต้องถ่ายใหม่
+             ปิดด้วยปุ่ม "ยกเลิก" ด้านล่างเท่านั้น (ด่านเดิมจับแค่ `onClick={onClose}` จึงลอดมาได้) */
+          return (
+          <div className="overlay" style={{ zIndex: 2100 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(95vw,420px)' }}>
               <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>
                 {moDtPick.mode === 'call' ? '📞 เรียกช่างด่วน — เรียกทีมไหน?' : '📝 เปิดใบแจ้งซ่อม — แจ้งถึงทีมช่างไหน?'}
@@ -4336,7 +4364,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว (full-width) */}
                 {(() => {
                   if (!selSession?.work_date || !selSession.start_time) return null;
-                  const winStart = new Date(`${selSession.work_date}T${selSession.start_time.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, selSession.start_time.slice(0,5), selSession.shift)}T${selSession.start_time.slice(0,5)}:00`).getTime();
                   const endTimeStr = selSession.end_time || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -4797,7 +4825,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   if (!selSession?.work_date) return null;
                   const startTimeStr = closeStartTime || selSession.start_time;
                   if (!startTimeStr) return null;
-                  const winStart = new Date(`${selSession.work_date}T${startTimeStr.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, startTimeStr.slice(0,5), selSession.shift)}T${startTimeStr.slice(0,5)}:00`).getTime();
                   const endTimeStr = closeEndTime || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -6137,6 +6165,36 @@ function HistoryTab({ role }) {
     histBreakIv(startMs, endMs, workDateStr, shift, processType).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
 
 
+  /* 🚫 ทำกะเป็นโมฆะ — ทางเลือกที่ไม่ทำลายประวัติ แทนการ `delete` (คำสั่ง user 08/10)
+     ใช้กับ "กะที่เปิดผิดแล้วปิดทิ้ง" ซึ่งเดิมเหลือเป็นใบผีที่ถูกนับเป็นกะจริง 1 กะ + ลากแถบ 12 ชม.
+     🔴 อ่านลูกจริงก่อนทุกครั้ง — "อ่านไม่ได้ ≠ ไม่มี" (บทเรียนปุ่มลบกะเปล่า) · ด่านจริงอยู่ที่
+        trigger `trg_session_void_guard` ฝั่ง DB ซึ่งจะปฏิเสธถ้ามีข้อมูล */
+  const handleVoidSession = async (s) => {
+    const [o, d, f] = await Promise.all([
+      supabaseDR.from('prod_orders').select('id').eq('session_id', s.id).limit(1),
+      supabaseDR.from('downtime_logs').select('id').eq('session_id', s.id).limit(1),
+      supabaseDR.from('defect_logs').select('id').eq('session_id', s.id).limit(1),
+    ]);
+    const block = voidBlockReason({
+      session: s, orders: o.data || [], downtimes: d.data || [], defects: f.data || [],
+      loadError: !!(o.error || d.error || f.error),
+    });
+    if (block) { toast.error(block); return; }
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(s.work_date)} เป็นโมฆะ\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับใบนี้):', 'เปิดกะผิด/ซ้ำ แล้วปิดทิ้ง'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
+    setDeleting(s.id);
+    const r = checkWriteRows(await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .eq('id', s.id).eq('status', 'closed').select('id'), 'ทำกะเป็นโมฆะ');
+    setDeleting(null);
+    if (!r) return;
+    toast.success('ทำเป็นโมฆะเรียบร้อย — ใบนี้จะไม่ถูกนับเป็นกะจริงอีก');
+    setSessions(prev => prev.map(x => x.id === s.id
+      ? { ...x, status: SESSION_VOID, void_reason: reason, voided_by_name: fullName } : x));
+  };
+
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
     setDeleting(s.id);
@@ -6165,9 +6223,11 @@ function HistoryTab({ role }) {
       allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
 
+    /* ใบโมฆะต้อง **เห็นในลิสต์** (ไม่ใช่หายไปเหมือนถูกลบ) — ติดป้าย 🚫 + ไม่เข้าชุดวิเคราะห์
+       (ชุดวิเคราะห์/ส่งออกคือ `fetchData()` ซึ่งกรอง `status = 'closed'` อยู่แล้ว) */
     let q = supabaseDR.from('production_sessions')
       .select('*, dr_products(name)')
-      .eq('status', 'closed')
+      .in('status', ['closed', SESSION_VOID])
       .order('work_date', { ascending: false })
       .limit(100);
     if (filter.date)      q = q.eq('work_date', filter.date);
@@ -6343,6 +6403,23 @@ function HistoryTab({ role }) {
                       padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
                     📝 ออกใบรายงานปัญหา
                   </button>
+                  {voidBadge(s) && (
+                    <span title={voidBadge(s).title}
+                      style={{ border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6,
+                        padding: '3px 9px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'help' }}>
+                      {voidBadge(s).text}
+                    </span>
+                  )}
+                  {/* 🚫 ทำโมฆะ — โชว์เฉพาะใบที่ยังไม่โมฆะ และยอดผลิตเป็น 0 (ด่านจริงอยู่ฝั่ง DB) */}
+                  {canDeleteSession && !isVoidSession(s) && !(Number(s.actual_qty) > 0) && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleVoidSession(s); }}
+                      disabled={deleting === s.id}
+                      title="กะที่เปิดผิดแล้วปิดทิ้ง — ทำเป็นโมฆะ (เก็บประวัติไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
+                      style={{ background: 'transparent', border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
+                      🚫 โมฆะ
+                    </button>
+                  )}
                   {canDeleteSession && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(s); }}
@@ -6426,7 +6503,7 @@ function HistoryTab({ role }) {
                   {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
                       ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/oee.js */}
                   {s.oee != null && (() => {
-                    const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
+                    const shiftStartMs = s.start_time ? new Date(`${shiftStartDate(s.work_date, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
                     const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift) : [];
@@ -6915,21 +6992,17 @@ function ExportTab() {
     }))
   );
 
-  // ── CSV export ─────────────────────────────────────────────────
-  const exportCSV = (rows, filename) => {
+  /* ── CSV export → ทะเบียนเอกสาร (QC audit 08/10) ────────────────────────────
+     CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว … CSV — ไม่มีข้อยกเว้น ต้อง register"*
+     🔴 ตัวเดิมที่เขียนในหน้านี้ **ไม่มีด่านกัน formula injection** (ต่างจาก Report.jsx ที่มี)
+        คอลัมน์ 'รายละเอียด'/'เครื่องจักร' เป็นข้อความที่หน้างานพิมพ์เอง ⇒ ค่าที่ขึ้นต้นด้วย
+        `=` `+` `@` ถูก Excel **รันเป็นสูตรบนเครื่องคนรับไฟล์** ⇒ ยุบไปใช้ `csvCell()` ของกลาง
+     · `docKey` มาจากชนิดรายงาน (kanban/output/oee/downtime) — คนละเลขฟอร์มกันได้
+     · เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV (คอลัมน์จะเลื่อนทั้งไฟล์) */
+  const exportCSV = (rows, filename, reportType) => {
     if (!rows.length) { toast.error('ไม่มีข้อมูล'); return; }
     const headers = Object.keys(rows[0]);
-    const lines   = [headers.join(','), ...rows.map(r =>
-      headers.map(h => {
-        const v = r[h] ?? '';
-        return String(v).includes(',') || String(v).includes('"') || String(v).includes('\n')
-          ? `"${String(v).replace(/"/g, '""')}"` : String(v);
-      }).join(',')
-    )];
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = filename + '.csv';
-    a.click(); URL.revokeObjectURL(url);
+    downloadCsvDoc(`csv_dr_${reportType}`, filename, csvText(headers, rows.map(r => headers.map(h => r[h] ?? ''))));
   };
 
   // ── PDF export via jsPDF + autoTable ──────────────────────────
@@ -7219,7 +7292,7 @@ function ExportTab() {
                 if (!sessions) return;
                 const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
                 const fn = `${r.key}_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}`;
-                exportCSV(rows, fn);
+                exportCSV(rows, fn, r.key);
               }} disabled={loading}>⬇ CSV</button>
               <button style={btnSm('#dc2626')} onClick={async () => {
                 const sessions = await fetchData();
@@ -7254,7 +7327,7 @@ function ExportTab() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btnSm('#16a34a')} onClick={() => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
-                exportCSV(preview.rows, fn);
+                exportCSV(preview.rows, fn, preview.type);
               }}>⬇ CSV</button>
               <button style={btnSm('#dc2626')} onClick={async () => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;

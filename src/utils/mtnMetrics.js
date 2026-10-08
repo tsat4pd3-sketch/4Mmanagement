@@ -40,7 +40,7 @@
    ⚠️ ทุกฟังก์ชันในไฟล์นี้ต้อง **pure** (ไม่ import supabase) — ผู้เรียกส่งข้อมูลมาให้
       (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
-import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith, shiftStartDate } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -272,7 +272,8 @@ export function machineReliability({
     for (const ss of sessions) {
       const wd = ss?.work_date, st = ss?.start_time, sm = Number(ss?.shift_min) || 0;
       if (!ss?.id || !wd || !st || sm <= 0) continue;
-      const startMs = new Date(`${wd}T${String(st).slice(0, 5)}:00`).getTime();
+      // 🔴 กะดึกเริ่ม 00:00-07:59 = เช้าวันถัดไป — ของกลาง shiftStartDate() (oee.js)
+      const startMs = new Date(`${shiftStartDate(wd, String(st).slice(0, 5), ss.shift)}T${String(st).slice(0, 5)}:00`).getTime();
       brkIvBy.set(ss.id, breakIntervalsIn({
         policies: breakPolicies, startMs, endMs: startMs + sm * 60000, workDate: wd, shift: ss.shift,
       }));
