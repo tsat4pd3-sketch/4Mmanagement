@@ -3462,3 +3462,53 @@ test('🛡️ csv-export-via-csvdoc — หน้าที่ทำไฟล์ 
     + '   แก้ยังไง: `downloadCsvDoc(docKey, legacyName, csvText(headers, rows))` + seed doc_key\n'
     + '             (form_code = null ⇒ วันที่ apply ชื่อไฟล์เหมือนเดิมเป๊ะ)\n');
 });
+
+/* ── 🎞️ ตัวเช็ค GIF + เพดานขนาด ต้องมาจาก `utils/imageFileKind.js` จุดเดียว (08/10 · QC audit) ──
+   กฎเดิม (storage-images.md): *"ตัวตรวจชนิดไฟล์ = imageFileKind.js จุดเดียว (ดูนามสกุลด้วย
+   ไม่ใช่แค่ MIME)"* — แต่ไม่มีด่าน ⇒ drift กลับมา **6 ไฟล์** (รวมของกลาง ImageCropModal เอง)
+   🔴 ทำไมสำคัญ: **Android/Chrome ส่ง MIME ว่างมากับรูปจริง** ⇒ `type === 'image/gif'` เป็นเท็จ
+      = เพดาน 2MB รั่ว = GIF เฉลี่ย 4 MB/ไฟล์ ขึ้น storage (เคยทำ egress ทะลุโควต้าจน
+      Supabase ล็อกบริการทั้ง organization — ทั้งโรงงาน login ไม่ได้)
+   · เลขเพดานก็ห้ามเขียนซ้ำ — `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` */
+test('🛡️ gif-check-via-imagefilekind — ห้ามเทียบ image/gif หรือเขียนเพดาน GIF เองในหน้า', () => {
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__') || rel.endsWith('utils/imageFileKind.js')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    // layoutImage.js เทียบ type ภายในตัวบีบ (ได้ไฟล์ที่ผ่านด่านมาแล้ว) — ข้อยกเว้นที่บันทึกไว้
+    if (!rel.endsWith('utils/layoutImage.js') && /['"]image\/gif['"]\s*===|===\s*['"]image\/gif['"]/.test(code)) {
+      bad.push(`${rel} (เทียบ 'image/gif' เอง → ใช้ isGifFile())`);
+    }
+    if (/2\s*\*\s*1024\s*\*\s*1024/.test(code) && /gif/i.test(code)) {
+      bad.push(`${rel} (เขียนเพดาน GIF 2MB เอง → ใช้ GIF_MAX_BYTES)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ตัวเช็ค GIF เขียนเองนอกของกลาง:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: Android ส่ง MIME ว่างมากับรูปจริง ⇒ เทียบ type ล้วน = เพดาน 2MB รั่ว\n'
+    + '         GIF บีบไม่ได้ (เฉลี่ย 4 MB/ไฟล์) · egress เคยทะลุโควต้าจนทั้งโรงงาน login ไม่ได้\n'
+    + '   แก้ยังไง: `isGifFile(file)` + `GIF_MAX_BYTES` / `GIF_TOO_BIG_MSG` จาก utils/imageFileKind.js\n');
+});
+
+/* ── 📦 ไลบรารี export ก้อนใหญ่ ต้อง lazy (08/10 · QC audit · egress ข้อ 11) ──────────────
+   `jspdf` ~400 KB · `jspdf-autotable` ~30 KB · `xlsx` ~424 KB · `exceljs` ~930 KB
+   static import = **โหลดตอน "เปิดหน้า" ไม่ใช่ตอน "กด export"** · วัดจากบันเดิลจริง 08/10:
+   `PMCheckData-*.js` ดึง jspdf + autotable มาทุกครั้งที่เปิด /pm?tab=check (429 KB)
+   และ `EventLog` ดึง xlsx 424 KB — ที่เหลือทั้งระบบ lazy อยู่แล้ว 2 จุดนี้เป็นตัวที่ตก */
+test('🛡️ export-libs-lazy-import — jspdf/xlsx/exceljs ห้าม static import', () => {
+  const LIBS = ['jspdf', 'jspdf-autotable', 'xlsx', 'exceljs'];
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = relative(ROOT, file);
+    if (rel.includes('__tests__')) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    for (const lib of LIBS) {
+      const re = new RegExp(`^\\s*import\\s[^;]*?from\\s+['"]${lib.replace('/', '\\/')}['"]`, 'm');
+      if (re.test(code)) bad.push(`${rel} → ${lib}`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไลบรารี export ถูก static import:\n' + bad.map(b => '   • ' + b).join('\n') + '\n'
+    + '   ทำไม: โหลดตอนเปิดหน้า แม้ผู้ใช้ไม่เคยกด export (jspdf 429 KB · xlsx 424 KB · exceljs 930 KB)\n'
+    + '   แก้ยังไง: `const { default: jsPDF } = await import(\'jspdf\')` ในฟังก์ชัน export\n'
+    + '             (ฟังก์ชันที่เป็น async อยู่แล้วเปลี่ยนได้โดยไม่กระทบผู้เรียก)\n');
+});

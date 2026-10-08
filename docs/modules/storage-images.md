@@ -365,3 +365,37 @@
 
 **พลอยแก้:** `SignatureModal` ไม่เคย `URL.revokeObjectURL()` ⇒ blob ตรึงไฟล์ในหน่วยความจำจนรีเฟรชหน้า
 (ลายเซ็นถ่ายจากมือถืออาจหลาย MB · ลองใหม่หลายครั้งก็ค้างทับกันไปเรื่อยๆ) → ย้ายไป `finally`
+
+---
+
+## รอบ 2026-10-08 (QC audit) — ตัวเช็ค GIF · รูปผัง · lazy ไลบรารี export
+
+### 🔴 ตัวเช็ค GIF + เพดานขนาด = `src/utils/imageFileKind.js` จุดเดียว · **มีด่าน `gif-check-via-imagefilekind`**
+
+กฎ *"ตัวตรวจชนิดไฟล์จุดเดียว (ดูนามสกุลด้วย ไม่ใช่แค่ MIME)"* มีมานาน **แต่ไม่มีด่าน**
+⇒ drift กลับมา **6 ไฟล์** รวมของกลางเอง: `ImageCropModal` (2 จุด) · `LineSetup` · `FactoryMap` ·
+`RackMap` · `DieLayout` · `PEDocs` (3 จุด)
+
+🔴 **Android/Chrome ส่ง MIME ว่างมากับรูปจริง** ⇒ `file.type === 'image/gif'` เป็นเท็จ
+= เพดาน 2MB **รั่ว** = GIF เฉลี่ย 4 MB/ไฟล์ขึ้น storage
+(คือคลาสเดียวกับที่เคยทำ egress ทะลุโควต้าจน Supabase ล็อกบริการทั้ง organization)
+
+**ของกลางใหม่:** `GIF_MAX_BYTES` + `GIF_TOO_BIG_MSG` (เดิมเลข `2 * 1024 * 1024` เขียนซ้ำ 6 ที่)
+ใช้คู่ `isGifFile(file)` เสมอ · ข้อยกเว้นเดียว: `layoutImage.js` เทียบ `type` ภายในตัวบีบ
+(ได้ไฟล์ที่ผ่านด่านมาแล้ว) — บันทึกไว้ในด่าน
+
+### 🔴 รูปผังต้องผ่าน `compressLayoutImage()` — `RackMap` / `DieLayout` เขียน `compressPlan()` เองซ้ำ
+
+ได้ **JPEG 2560px q0.9 เพดาน 2.5 MB** ขณะที่ของกลางได้ **WebP เพดาน 1.2 MB** (ปกติ 300-600 KB)
+⇒ ไฟล์ใหญ่กว่า **~4×** บน bucket `mtn-images` ฝั่ง DR ที่เป็นก้อน egress ใหญ่สุดอยู่แล้ว
+⚠️ 2 ไฟล์นี้สร้าง 24/09 ซึ่ง **หลัง** `layoutImage.js` (22/09) — ไม่ใช่ของค้างจากก่อนมีของกลาง
+· ด่านรับไฟล์เปลี่ยนมาใช้ `acceptImageFile()` (HEIC + ไม่ใช่รูป + toast) แล้วกันขนาด GIF ด้วยของกลาง
+· 🔴 นามสกุลมาจาก `ext` ที่ของกลางคืน **ห้ามเดา `.jpg`** (Safari เก่าเขียน webp ไม่ได้ ⇒ ได้ชนิดเดิม)
+
+### 🔴 ไลบรารี export ก้อนใหญ่ต้อง lazy · **มีด่าน `export-libs-lazy-import`**
+
+วัดจากบันเดิลจริง 08/10: `PMCheckData-*.js` ดึง **jspdf 400 KB + autotable 30 KB** ทุกครั้งที่เปิด
+`/pm?tab=check` แม้ไม่เคยกด PDF · `EventLog-*.js` ดึง **xlsx 424 KB** เช่นกัน
+(ที่เหลือทั้งระบบ lazy อยู่แล้ว — 2 จุดนี้เป็นตัวที่ตก)
+แก้: `await import('jspdf')` ในฟังก์ชัน export · ยืนยันหลัง build ว่า `from"./jspdf…"` = 0 และ
+`import(\`./jspdf…\`)` = 1 · ด่านครอบ `jspdf` · `jspdf-autotable` · `xlsx` · `exceljs`

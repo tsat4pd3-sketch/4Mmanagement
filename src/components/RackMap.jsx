@@ -10,8 +10,9 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
 import { supabaseDR } from '../supabaseClient';
-import { toDecodableImage } from '../utils/heicToJpeg';
-import { IMG_READ_ERROR } from '../utils/resizeImage';
+import { acceptImageFile } from '../utils/acceptImageFile';   // ด่านรับไฟล์รูปจุดเดียว (HEIC + ไม่ใช่รูป + toast)
+import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // 🔴 ห้ามเช็ค type === 'image/gif' เองในหน้า
+import { compressLayoutImage } from '../utils/layoutImage';
 import { toast } from './Toast';
 import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
@@ -26,32 +27,13 @@ const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const fmtNum = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString());
 
-/* รูปผังต้องอ่านป้ายบนชั้นออก — บีบเบากว่ารูปทั่วไปตามกฎ Storage (2560px / q0.9)
-   ห้ามลดลงไปกว่านี้ เคยบีบแรงจนผังเบลออ่านไม่ออกมาแล้ว (ดู CLAUDE.md "Storage & รูปภาพ") */
-async function compressPlan(file) {
-  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (ไฟล์อื่นคืนตัวเดิม · แปลงไม่ได้ = โยนข้อความบอกวิธีตั้งกล้อง)
-  file = await toDecodableImage(file);
-  if (file.type === 'image/gif') { if (file.size > 2 * 1024 * 1024) throw new Error('GIF ต้องไม่เกิน 2MB'); return file; }
-  const url = URL.createObjectURL(file);
-  let blob;
-  try {
-    const img = await new Promise((res, rej) => {
-      const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error(IMG_READ_ERROR)); i.src = url;
-    });
-    const MAX = 2560;
-    const scale = Math.min(1, MAX / Math.max(img.naturalWidth, img.naturalHeight));
-    const c = document.createElement('canvas');
-    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-    blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
-  } finally {
-    URL.revokeObjectURL(url);   // revoke ทุกทาง (เดิม revoke เฉพาะตอนสำเร็จ = รั่วทุกครั้งที่พัง)
-  }
-  // toBlob คืน null ได้บนมือถือ (canvas ใหญ่/หน่วยความจำไม่พอ) — เดิมพังเป็น "Cannot read properties of null"
-  if (!blob) throw new Error('บีบรูปผังไม่สำเร็จ (เบราว์เซอร์คืนค่าว่าง — มักเกิดบนมือถือเมื่อหน่วยความจำไม่พอ) — รีเฟรชหน้าแล้วลองใหม่');
-  if (blob.size > 2.5 * 1024 * 1024) throw new Error('รูปใหญ่เกินไป (เกิน 2.5MB หลังบีบ) — ลองถ่ายใหม่ให้เล็กลง');
-  return blob;
-}
+/* รูปผัง — บีบผ่านของกลาง `compressLayoutImage()` เท่านั้น (QC audit 08/10)
+   เดิมไฟล์นี้เขียน `compressPlan()` เองซ้ำกับอีกไฟล์ (JPEG 2560px q0.9 เพดาน 2.5MB)
+   ขณะที่ของกลางได้ **WebP เพดาน 1.2MB** (ปกติ ~300-600 KB) ⇒ ไฟล์ใหญ่กว่า ~4×
+   บน bucket `mtn-images` ฝั่ง DR ที่เป็นก้อน egress ใหญ่สุดอยู่แล้ว
+   (⚠️ 2 ไฟล์นี้สร้าง 24/09 ซึ่ง**หลัง** `layoutImage.js` 22/09 — ไม่ใช่ของค้างจากก่อนมีของกลาง)
+   🔴 ความละเอียดห้ามลด — ของกลางคง 2560px ไว้เหมือนกัน (เคยบีบแรงจนผังเบลออ่านไม่ออก)
+   🔴 นามสกุลต้อง derive จาก `ext` ที่ของกลางคืนมา ห้ามเดา `.jpg` (Safari เก่าเขียน webp ไม่ได้) */
 const rackImgPath = (url) => { const p = url?.split('/mtn-images/')[1]; return p ? decodeURIComponent(p) : null; };
 const removeRackImg = (url) => { const p = rackImgPath(url); if (p) supabaseDR.storage.from('mtn-images').remove([p]).catch(() => {}); };
 
@@ -293,12 +275,19 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
   };
 
   const uploadImg = async (e) => {
-    const file = e.target.files?.[0]; e.target.value = '';
-    if (!file || !rack) return;
+    const picked = e.target.files?.[0]; e.target.value = '';
+    if (!picked || !rack) return;
     try {
-      const blob = await compressPlan(file);
-      const path = `rack/${rack.id}_${Date.now()}.jpg`;
-      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type || 'image/jpeg' }));
+      /* 🔴 ด่านรับไฟล์ = `acceptImageFile()` จุดเดียว (QC audit 08/10) — เดิมเช็ค
+         `file.type === 'image/gif'` เองในหน้า ซึ่ง **Android ส่ง MIME ว่างมากับรูปจริง**
+         ⇒ เพดาน GIF 2MB รั่ว และ HEIC จาก iPhone ไม่ถูกแปลง (ขัดกฎ E-GIF/E4) */
+      const file = await acceptImageFile(picked);
+      if (!file) return;                                  // ปฏิเสธแล้ว + toast ขึ้นให้แล้ว
+      // GIF ส่งผ่านทั้งไฟล์ (บีบแล้วการเคลื่อนไหวหาย) ⇒ ผู้เรียกต้องกันขนาดเอง ตามหัว layoutImage.js
+      if (isGifFile(file) && file.size > GIF_MAX_BYTES) throw new Error(GIF_TOO_BIG_MSG);
+      const { blob, ext } = await compressLayoutImage(file);
+      const path = `rack/${rack.id}_${Date.now()}.${ext}`;
+      const { error } = await supabaseDR.storage.from('mtn-images').upload(path, blob, uploadOpts({ upsert: true, contentType: blob.type }));
       if (error) throw error;
       const url = supabaseDR.storage.from('mtn-images').getPublicUrl(path).data.publicUrl;
       const old = rack.image_url;

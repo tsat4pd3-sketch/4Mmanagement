@@ -40,6 +40,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -1904,8 +1905,9 @@ export default function FactoryMap({ setupMode = false }) {
       // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน derive ext/ชนิด (ไฟล์อื่นคืนตัวเดิม)
       file = await toDecodableImage(file);
       const srcExt = (file.name.split('.').pop() || 'jpg').toLowerCase();
-      const isGif = file.type === 'image/gif' || srcExt === 'gif';
-      if (isGif && file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return; }
+      // 🔴 ตัวเช็ค GIF + เพดานขนาด = utils/imageFileKind.js จุดเดียว (08/10)
+      const isGif = isGifFile(file);
+      if (isGif && file.size > GIF_MAX_BYTES) { toast.error(GIF_TOO_BIG_MSG); return; }
       /* คงความละเอียด 2560px (ผังโรงงานต้องซูมอ่านชื่อไลน์ได้) แต่แปลงเป็น WebP —
          ผังเดิมเป็น PNG 2.4 MB และจอ TV ทุกเครื่องโหลดทั้งก้อน · ดู src/utils/layoutImage.js */
       const { blob, ext } = isGif ? { blob: file, ext: 'gif' } : await compressLayoutImage(file);
