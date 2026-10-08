@@ -19,6 +19,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import fetchAllRows from '../utils/fetchAllRows';
 import { parseMonitoringWorkbook, monitoringToRecords, sheetReport, stockAdjustPlan } from '../utils/monitoringSheet';
+import { buildBoardPlan, writeBoardPlan, BoardPlanPreview } from './MonitorImport';
 
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
@@ -43,7 +44,7 @@ async function insertChunked(table, rows, label) {
   return true;
 }
 
-export default function MonitoringUpload({ canUpload, fullName, onImported }) {
+export default function MonitoringUpload({ canUpload, canBoard = true, fullName, onImported, asModal = false, onClose }) {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);   // { fileName, month, rec, parsed, stockPlan, lotDiff }
   const fileRef = useRef(null);
@@ -114,7 +115,10 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
         return null;
       }).filter(Boolean);
 
-      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, lotDiff, nameOfMat, norm, today, bySheet });
+      /* 🔴 ชั้นบอร์ด (ตาราง 13 ชีท) แกะจาก `sheets` ชุดเดียวกัน — อ่านไฟล์ครั้งเดียว เขียนครั้งเดียว
+         (08/10 คำสั่ง user: *"จุดอัพโหลดควรมีจุดเดียวแล้วโปรแกรมใช้ด้วยกัน"*) */
+      const board = buildBoardPlan(sheets, { today });
+      setPreview({ fileName: file.name, month, parsed, rec, stockPlan, lotDiff, nameOfMat, norm, today, bySheet, board });
     } catch (e) {
       toast.error(`อ่านไฟล์ไม่สำเร็จ: ${e.message}`);
     }
@@ -124,10 +128,21 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
   /* ── เขียนจริง (หลังกดยืนยัน) ────────────────────────────────────────────── */
   const doImport = useCallback(async () => {
     if (!preview) return;
-    const { rec, month, stockPlan, nameOfMat, norm, today } = preview;
+    const { rec, month, stockPlan, nameOfMat, norm, today, board } = preview;
     setBusy(true);
     const by = fullName || 'Monitoring import';
     let ok = true;
+
+    /* ⓪ ตารางบอร์ด 13 ชีท — เขียนก่อน เพราะชั้นนี้ไม่ลบอะไร (ล้ม = หยุด ยังไม่แตะชั้นที่ลบของเก่า) */
+    let boardRes = null;
+    if (canBoard && board?.made?.length) {
+      boardRes = await writeBoardPlan(board.made, { fullName });
+      if (!boardRes.ok) {
+        setBusy(false);
+        toast.error('เขียนตารางบอร์ดไม่สำเร็จ — ยังไม่แตะ Forecast/ออเดอร์/สต็อก กดยืนยันใหม่ได้เลย');
+        return;
+      }
+    }
 
     // ① FC รายเดือน — ลบของรอบก่อนของเดือนนี้ก่อน (อัพซ้ำได้ ไม่เกิดแถวซ้ำ)
     ok = ok && checkWrite(await supabaseDR.from('customer_forecasts')
@@ -214,34 +229,38 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
        ตอนนี้จริงแล้ว (สต็อกคิดส่วนต่างจากยอดสด · FC/ออเดอร์ล้างของรอบก่อนแล้วลงใหม่ · ประวัติ/MIN upsert)
        แต่ต้องบอกด้วยว่า **ระหว่างนี้ข้อมูลบางขั้นหายไปแล้ว** (FC/ออเดอร์ถูกล้างก่อนลงใหม่) — ห้ามปล่อยค้าง */
     if (!ok) { toast.error('นำเข้าไม่ครบ — ข้อมูลบางขั้น (Forecast/ออเดอร์) อาจถูกล้างไปแล้วแต่ยังลงใหม่ไม่ครบ: กดยืนยันนำเข้าอีกครั้ง (ขั้นที่ลงไปแล้วจะถูกแทนที่ · สต็อกคิดส่วนต่างจากยอดล่าสุด จึงไม่ซ้อน)'); return; }
-    toast.success(`นำเข้าสำเร็จ — FC ${rec.forecasts.length} · ออเดอร์ ${future.length} · ประวัติ ${histUniq.length} · MIN ${rec.levels.length} · สต็อก ${stockDone}`
+    toast.success((boardRes ? `นำเข้าสำเร็จ — บอร์ด ${boardRes.boardsN} (${fmt(boardRes.partsN)} พาร์ท) · ` : 'นำเข้าสำเร็จ — ')
+      + `FC ${rec.forecasts.length} · ออเดอร์ ${future.length} · ประวัติ ${histUniq.length} · MIN ${rec.levels.length} · สต็อก ${stockDone}`
       + (stockDone < stockPlan.length ? ` (อีก ${stockPlan.length - stockDone} รายการตรงไฟล์อยู่แล้ว)` : ''));
+    /* ซ้ำในไฟล์ที่ค่าไม่ตรงกัน = ไฟล์ขัดกันเอง ต้องให้คนไปดู ห้ามกลืน */
+    if (boardRes?.conflictParts || boardRes?.conflictCells) {
+      toast.error(`⚠️ ของซ้ำในไฟล์ที่ค่าไม่ตรงกัน ${fmt(boardRes.conflictParts)} พาร์ท · ${fmt(boardRes.conflictCells)} ช่อง`
+        + ' — ระบบใช้ค่าของบล็อกล่างสุด ให้ทีมวางแผนตรวจไฟล์');
+    }
     setPreview(null);
     if (fileRef.current) fileRef.current.value = '';
     onImported?.();
-  }, [preview, fullName, onImported]);
+  }, [preview, fullName, onImported, canBoard]);
 
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 };
   const warnBox = (bg, bd) => ({ ...card, background: bg, border: `1px solid ${bd}`, marginTop: 12 });
 
-  return (
+  const body = (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>📗 ไฟล์ Monitoring ของแพลนนิ่ง</div>
         <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
           ไฟล์ <b>1.Monitoring-&lt;เดือน&gt;.xlsx</b> — ลูกค้าที่ไม่ได้ส่ง EDI (TSPK · TSESA · TSLA · TSRA · GWM · Argen)<br />
-          ระบบจะอ่าน: <b>FC รายเดือน</b> · <b>MIN/MAX</b> · <b>ออเดอร์ล่วงหน้า</b>ของชีทลูกค้า/Argen ·
-          <b> ยอดคงเหลือ</b> · <b>ประวัติการส่ง</b> — แล้วขึ้นสรุปให้ตรวจก่อนเขียนเสมอ
+          ระบบจะอ่าน: <b>ตารางบอร์ดของทุกชีท</b> · <b>FC รายเดือน</b> · <b>MIN/MAX</b> ·
+          <b>ออเดอร์ล่วงหน้า</b>ของชีทลูกค้า/Argen · <b>ยอดคงเหลือ</b> · <b>ประวัติการส่ง</b>
+          — แล้วขึ้นสรุปให้ตรวจก่อนเขียนเสมอ
           <div style={{ marginTop: 6, color: 'var(--muted)' }}>
             ⏱️ ยอดคงเหลืออ่าน <b>ณ วันที่ {getWorkDate()}</b> · ช่องวันอนาคตในไฟล์เป็นยอดพยากรณ์ ไม่ใช่ของจริง
           </div>
-          {/* 🔴 ไฟล์เดียวกันถูกอัพ 2 ที่ คนละส่วน — ไม่เขียนไว้ = คนนึกว่าอัพซ้ำแล้วข้ามไป (user ถาม 08/10) */}
+          {/* 🔴 จุดอัพโหลดมีจุดเดียว เขียนครบทุกชั้นในครั้งเดียว (08/10 คำสั่ง user) — ห้ามแยกกลับเป็น 2 ปุ่ม */}
           <div style={{ marginTop: 6, color: 'var(--text2)' }}>
-            📌 <b>ไฟล์เดียวกับหน้า <code>Monitoring แผน-สต๊อก → 📥 นำเข้าจากไฟล์ Excel</code> — ต้องอัพทั้ง 2 ที่</b>
-            <div style={{ color: 'var(--muted)' }}>
-              ที่นี่เก็บ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (ไหลเข้าแผนผลิต · Delivery · คานบัง) ·
-              อีกหน้าเก็บ <b>ตัวตารางบอร์ด</b> ของ 13 ชีท — คนละตาราง ไม่ทับกัน
-            </div>
+            ✅ <b>อัพที่นี่ครั้งเดียวจบ</b> — ระบบลงให้ครบทั้ง <b>ตารางบอร์ด 13 ชีท</b> (หน้า Monitoring แผน-สต๊อก)
+            และ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (แผนผลิต · Delivery · คานบัง) ในการกดยืนยันครั้งเดียว
           </div>
         </div>
         {!canUpload && (
@@ -257,18 +276,39 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
         </div>
       </div>
 
-      {preview && <PreviewPanel p={preview} onCancel={() => { setPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
+      {preview && <PreviewPanel p={preview} canBoard={canBoard}
+                                onCancel={() => { setPreview(null); if (fileRef.current) fileRef.current.value = ''; }}
                                 onConfirm={doImport} busy={busy} card={card} warnBox={warnBox} />}
+    </div>
+  );
+
+  /* 🔴 ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) — เผลอแตะพื้นหลังแล้วต้องเลือกไฟล์+ตรวจสรุปใหม่ทั้งชุด */
+  if (!asModal) return body;
+  return (
+    <div className="overlay">
+      <div className="modal" onClick={(e) => e.stopPropagation()}
+        style={{ width: 'min(900px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 2 }}>✕</button>
+        </div>
+        {body}
+      </div>
     </div>
   );
 }
 
-function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
+function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox }) {
   const { rec, parsed, stockPlan, lotDiff, month, fileName, bySheet } = p;
   const future = rec.orders.filter(o => !o.past);
   const past = rec.orders.length - future.length;
   const histCount = rec.shipped.filter(s => s.due_date < p.today).length + past;
+  const boardMade = p.board?.made || [];
+  const boardParts = boardMade.reduce((a, b) => a + b.parts.length, 0);
   const rows = [
+    ['🗂️ ตารางบอร์ด (13 ชีท)',
+      canBoard ? `${boardMade.length} บอร์ด · ${fmt(boardParts)} พาร์ท` : '— ไม่มีสิทธิ์ ข้ามส่วนนี้',
+      canBoard ? 'หน้า Monitoring แผน-สต๊อก — นำเข้าซ้ำ = อัพเดทบอร์ดเดิม' : 'ต้องมีสิทธิ์ monitoring:manage'],
     ['📈 Forecast', `${rec.forecasts.length} แถว · ${fmt(rec.forecasts.reduce((s, r) => s + r.qty, 0))} ชิ้น`, `เดือน ${month} — เขียนทับรอบก่อนของเดือนนี้`],
     ['🚚 ออเดอร์ล่วงหน้า', `${future.length} แถว · ${fmt(future.reduce((s, r) => s + r.qty, 0))} ชิ้น`, 'ดิวตั้งแต่วันนี้ไป — เขียนทับรอบก่อน'],
     ['📜 ประวัติการส่ง', `${histCount} แถว`, 'ลงตารางประวัติ ไม่ใช่ใบส่งของ · อัพซ้ำไม่เกิดแถวซ้ำ'],
@@ -407,6 +447,16 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
           </div>
         </div>
       )}
+      {/* 🗂️ ส่วนตารางบอร์ด — รายชีท + ชีทที่ยกไม่ได้ (ตัววาดเดียวกับที่ `MonitorImport` เคยใช้) */}
+      {canBoard && !!boardMade.length && (
+        <div style={{ ...warnBox('var(--bg2)', 'var(--border)') }}>
+          <b style={{ fontSize: 12 }}>🗂️ ตารางบอร์ด — {boardMade.length} บอร์ด · {fmt(boardParts)} พาร์ท</b>
+          <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px' }}>
+            คือตารางที่เห็นในหน้า <b>Monitoring แผน-สต๊อก</b> · นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
+          </div>
+          <BoardPlanPreview made={boardMade} skipped={p.board?.skipped || []} />
+        </div>
+      )}
       {!!past && (
         <div style={{ ...warnBox('var(--bg2)', 'var(--border)'), fontSize: 12, color: 'var(--text2)' }}>
           ℹ️ ความต้องการที่ดิวเก่ากว่าวันนี้ <b>{past} แถว</b> ถูกเก็บเป็น<b>ประวัติ</b> ไม่ใช่งานค้างส่ง —
@@ -418,7 +468,7 @@ function PreviewPanel({ p, onCancel, onConfirm, busy, card, warnBox }) {
         <button onClick={onConfirm} disabled={busy}
                 style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 6,
                          background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
-          {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า'}
+          {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)'}
         </button>
         <button onClick={onCancel} disabled={busy}
                 style={{ padding: '8px 16px', fontSize: 13, borderRadius: 6, background: 'var(--bg3)',

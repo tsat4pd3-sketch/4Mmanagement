@@ -1,4 +1,3 @@
-import { useState, useCallback, useRef } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
@@ -45,47 +44,30 @@ async function insertChunked(table, rows, label, conflict) {
   return true;
 }
 
-export default function MonitorImport({ onClose, fullName, today, onImported }) {
-  const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const fileRef = useRef(null);
+/** แกะทุกชีทในไฟล์เป็น "แผนบอร์ด" — ยังไม่เขียนอะไร (ใช้โชว์สรุปก่อนยืนยัน)
+ *  @param sheets [{ name, rows }] ที่ผู้เรียกอ่านจาก xlsx มาแล้ว (อ่านไฟล์ครั้งเดียว ใช้ร่วมกับชั้นอื่น) */
+export function buildBoardPlan(sheets = [], { today } = {}) {
+  const made = [];
+  const skipped = [];
+  for (const { name, rows } of sheets) {
+    const r = parseSheetForBoard(name, rows, { asOf: today });
+    if (!r.kind) { skipped.push({ name, why: r.why, intentional: r.intentional }); continue; }
+    const cellCount = r.parts.reduce(
+      (a, p) => a + Object.entries(p.cells || {}).reduce(
+        (b, [rk, m]) => b + (RECUR_KEYS.has(rk) ? Math.min(1, Object.keys(m).length) : Object.keys(m).length), 0), 0);
+    made.push({ ...r, name, cellCount });
+  }
+  return { made, skipped };
+}
 
-  const handleFile = useCallback(async (file) => {
-    if (!file) return;
-    setBusy(true); setPreview(null);
-    try {
-      const XLSX = await import('xlsx');
-      const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-      const sheets = wb.SheetNames.map((name) => ({
-        name,
-        rows: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null, blankrows: true }),
-      }));
-      const made = [];
-      const skipped = [];
-      for (const { name, rows } of sheets) {
-        const r = parseSheetForBoard(name, rows, { asOf: today });
-        if (!r.kind) { skipped.push({ name, why: r.why, intentional: r.intentional }); continue; }
-        const cellCount = r.parts.reduce(
-          (a, p) => a + Object.entries(p.cells || {}).reduce(
-            (b, [rk, m]) => b + (RECUR_KEYS.has(rk) ? Math.min(1, Object.keys(m).length) : Object.keys(m).length), 0), 0);
-        made.push({ ...r, name, cellCount });
-      }
-      setPreview({ fileName: file.name, made, skipped });
-      if (!made.length) toast.error('ไม่พบชีทที่ยกเข้าระบบได้ในไฟล์นี้');
-    } catch (e) {
-      toast.error(`อ่านไฟล์ไม่สำเร็จ: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [today]);
-
-  const run = useCallback(async () => {
-    if (!preview?.made?.length) return;
-    setBusy(true);
-    try {
+/** เขียนแผนบอร์ดลง DR — คืนตัวนับให้ผู้เรียกไปสรุปรวมกับชั้นอื่น (ไม่ toast สำเร็จเอง)
+ *  ล้มกลางคัน = คืน `ok:false` ทันที (ชั้นถัดไปต้องไม่เขียนต่อ) */
+export async function writeBoardPlan(made = [], { fullName } = {}) {
+  const sum = { ok: false, boardsN: 0, partsN: 0, cellsN: 0, mergedParts: 0, mergedCells: 0, conflictParts: 0, conflictCells: 0 };
+  try {
       let boardsN = 0, partsN = 0, cellsN = 0;
       let mergedParts = 0, mergedCells = 0, conflictParts = 0, conflictCells = 0;
-      for (const sh of preview.made) {
+      for (const sh of made) {
         const kind = sh.kind;
         const def = BOARD_DEFAULTS[kind] || BOARD_DEFAULTS.line;
         /* ชีทไลน์ปั๊มที่มีแถว WIP ใช้ชุดแถวอีกชุด — ตัดสินจากสิ่งที่อยู่ในไฟล์จริง ไม่ใช่เดาจากชื่อ */
@@ -109,9 +91,9 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
           is_active: true,
           updated_by_name: fullName || null,
         }, { onConflict: 'board_key' }).select('id').single();
-        if (!checkWrite(bRes, `สร้างบอร์ด ${sh.name}`)) { setBusy(false); return; }
+        if (!checkWrite(bRes, `สร้างบอร์ด ${sh.name}`)) return sum;
         const boardId = bRes.data?.id;
-        if (!boardId) { toast.error(`สร้างบอร์ด ${sh.name} ไม่สำเร็จ — ไม่มีสิทธิ์เขียน`); setBusy(false); return; }
+        if (!boardId) { toast.error(`สร้างบอร์ด ${sh.name} ไม่สำเร็จ — ไม่มีสิทธิ์เขียน`); return sum; }
         boardsN++;
 
         /* พาร์ท — upsert ตาม (board_id, row_key) = MAT + เลขพาร์ท
@@ -147,15 +129,13 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
         const dPart = dedupeByKey(partRowsRaw, (r) => r.row_key, (a, b) => a.part_name === b.part_name && a.fc === b.fc);
         const partRows = dPart.rows.map((r, i) => ({ ...r, sort_order: i }));
         mergedParts += dPart.merged; conflictParts += dPart.conflict;
-        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `พาร์ทของ ${sh.name}`, 'board_id,row_key')) {
-          setBusy(false); return;
-        }
+        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `พาร์ทของ ${sh.name}`, 'board_id,row_key')) return sum;
         partsN += partRows.length;
 
         /* ต้องอ่าน id กลับมาเพื่อผูกช่อง (upsert คืนเฉพาะที่เพิ่งเขียน ไม่ครบเมื่อนำเข้าซ้ำ) */
         const { data: saved, error: sErr } = await supabaseDR
           .from('monitor_board_parts').select('id, mat_no, part_no').eq('board_id', boardId).eq('is_active', true);
-        if (sErr) { toast.error(`อ่านพาร์ทกลับไม่สำเร็จ: ${sErr.message}`); setBusy(false); return; }
+        if (sErr) { toast.error(`อ่านพาร์ทกลับไม่สำเร็จ: ${sErr.message}`); return sum; }
         const idOf = new Map((saved || []).map((r) => [partRowKey(r.mat_no, r.part_no), r.id]));
 
         const cellRowsRaw = [];
@@ -184,128 +164,69 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
           (a, b) => a.qty === b.qty && a.txt === b.txt,
         );
         mergedCells += dCell.merged; conflictCells += dCell.conflict;
-        if (dCell.rows.length && !await insertChunked('monitor_cells', dCell.rows, `ข้อมูลของ ${sh.name}`, 'board_part_id,row_key,period_key')) {
-          setBusy(false); return;
-        }
+        if (dCell.rows.length && !await insertChunked('monitor_cells', dCell.rows, `ข้อมูลของ ${sh.name}`, 'board_part_id,row_key,period_key')) return sum;
         cellsN += dCell.rows.length;
       }
-      toast.success(`นำเข้าแล้ว — ${boardsN} บอร์ด · ${fmt(partsN)} พาร์ท · ${fmt(cellsN)} ช่อง`
-        + (mergedParts || mergedCells ? ` · ยุบของซ้ำในไฟล์ ${fmt(mergedParts)} พาร์ท/${fmt(mergedCells)} ช่อง` : ''));
-      /* ซ้ำแล้วค่าไม่ตรงกัน = ไฟล์ขัดกันเอง ต้องให้คนไปดู ห้ามกลืน (ใช้ค่าบล็อกล่าง) */
-      if (conflictParts || conflictCells) {
-        toast.error(`⚠️ ของซ้ำในไฟล์ที่ค่าไม่ตรงกัน ${fmt(conflictParts)} พาร์ท · ${fmt(conflictCells)} ช่อง`
-          + ' — ระบบใช้ค่าของบล็อกล่างสุด ให้ทีมวางแผนตรวจไฟล์');
-      }
-      onImported?.();
-    } catch (e) {
-      toast.error(`นำเข้าไม่สำเร็จ: ${e.message}`);
-    } finally {
-      setBusy(false);
-    }
-  }, [preview, fullName, onImported]);
+      Object.assign(sum, { ok: true, boardsN, partsN, cellsN, mergedParts, mergedCells, conflictParts, conflictCells });
+      return sum;
+  } catch (e) {
+    toast.error(`นำเข้าบอร์ดไม่สำเร็จ: ${e.message}`);
+    return sum;
+  }
+}
 
-  const tabName = (k) => BOARD_TABS.find((t) => t.key === k)?.label || k;
+const tabName = (k) => BOARD_TABS.find((t) => t.key === k)?.label || k;
 
+/** สรุป "จะยกเข้าอะไรบ้าง" ก่อนกดยืนยัน — ชีทที่ยกไม่ได้ต้องขึ้นพร้อมเหตุผลทุกใบ ห้ามเงียบ */
+export function BoardPlanPreview({ made = [], skipped = [] }) {
   return (
-    /* 🔴 ไม่ปิดจาก backdrop — ห้ามใส่ onClick={onClose} ที่ชั้นนี้ (UI-CONVENTIONS §5)
-       จอนี้นับเป็น "ฟอร์ม" ถึงไม่มีช่องพิมพ์ — เผลอแตะพื้นหลังแล้วต้องเลือกไฟล์+ตรวจสรุปใหม่ทั้งชุด */
-    <div className="overlay">
-      <div className="modal" onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto', display: 'grid', gap: 12 }}>
-
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>📗 นำเข้าไฟล์ Monitoring</div>
-            <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', marginTop: 2 }}>
-              ไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ของทีมวางแผน — แต่ละชีทกลายเป็น 1 บอร์ด ·
-              นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
-            </div>
-            {/* 🔴 ไฟล์เดียวกันถูกอัพ 2 ที่ คนละส่วน — ไม่เขียนไว้ = คนนึกว่าอัพซ้ำแล้วข้ามไป (user ถาม 08/10) */}
-            <div style={{ fontSize: FS - 0.5, color: 'var(--text2)', marginTop: 5, lineHeight: 1.65 }}>
-              📌 <b>ไฟล์เดียวกับหน้า <code>Planner &amp; Sales → 📗 Monitoring (Planning)</code> — ต้องอัพทั้ง 2 ที่</b><br />
-              <span style={{ color: 'var(--muted)' }}>
-                ที่นี่เก็บ <b>ตัวตารางบอร์ด</b> (พาร์ท + ช่องรายวันของแต่ละชีท) ·
-                อีกหน้าเก็บ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (FC · ออเดอร์ · ประวัติการส่ง · MIN/MAX · ยอดสต็อก)
-                — คนละตาราง ไม่ทับกัน
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div style={{ display: 'grid', gap: 6 }}>
+        {made.map((sh) => (
+          <div key={sh.name} style={{
+            border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px',
+            background: 'var(--bg2)', fontSize: FS,
+          }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
+              <b style={{ fontSize: FS + 1 }}>{sh.name}</b>
+              <span style={{ color: 'var(--muted)' }}>→ {tabName(sh.kind)}</span>
+              {SHEET_LINE_HINT[sh.name.trim()] ? (
+                <span style={{ color: 'var(--accent)' }}>ผูกไลน์ {SHEET_LINE_HINT[sh.name.trim()]}</span>
+              ) : null}
+              <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>
+                {sh.parts.length} พาร์ท · {sh.dates.length} คอลัมน์ · {fmt(sh.cellCount)} ช่อง
               </span>
             </div>
+            <div style={{ color: 'var(--muted)', fontSize: FS - 1, marginTop: 2 }}>
+              แถว: {sh.rowKeys.map((k) => ROW_LABEL[k] || k).join(' · ') || '—'}
+            </div>
+            {sh.warnings?.map((w, i) => (
+              <div key={i} style={{ color: 'var(--accent2)', fontSize: FS - 1, marginTop: 2 }}>⚠️ {w}</div>
+            ))}
           </div>
-          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
-            style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 2 }}>✕</button>
+        ))}
+      </div>
+
+      {skipped.length ? (
+        <div style={{ fontSize: FS, lineHeight: 1.8 }}>
+          <b>ชีทที่ไม่ได้ยกเป็นบอร์ด {skipped.length} ชีท</b>
+          {skipped.map((s) => (
+            <div key={s.name} style={{ color: s.intentional ? 'var(--muted)' : '#f87171' }}>
+              {s.intentional ? '⏭' : '🔴'} <b>{s.name}</b> — {s.why}
+            </div>
+          ))}
+          {skipped.some((s) => !s.intentional) ? (
+            <div style={{ color: '#f87171', marginTop: 2 }}>
+              ชีทที่ขึ้น 🔴 คือระบบแกะโครงไม่ได้ ไม่ใช่ของที่ตั้งใจข้าม — ถ้าเป็นชีทที่ต้องใช้ ให้แจ้งไว้
+            </div>
+          ) : null}
         </div>
+      ) : null}
 
-        <input ref={fileRef} type="file" accept=".xlsx,.xlsm" disabled={busy}
-          onChange={(e) => handleFile(e.target.files?.[0])}
-          style={{ fontSize: FS + 1 }} />
-
-        {busy && !preview ? <div style={{ fontSize: FS + 1, color: 'var(--muted)' }}>กำลังอ่านไฟล์…</div> : null}
-
-        {preview ? (
-          <>
-            <div style={{ fontSize: FS + 1, fontWeight: 700 }}>
-              {preview.fileName} — จะยกเข้า {preview.made.length} บอร์ด
-            </div>
-
-            <div style={{ display: 'grid', gap: 6 }}>
-              {preview.made.map((sh) => (
-                <div key={sh.name} style={{
-                  border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px',
-                  background: 'var(--bg2)', fontSize: FS,
-                }}>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                    <b style={{ fontSize: FS + 1 }}>{sh.name}</b>
-                    <span style={{ color: 'var(--muted)' }}>→ {tabName(sh.kind)}</span>
-                    {SHEET_LINE_HINT[sh.name.trim()] ? (
-                      <span style={{ color: 'var(--accent)' }}>ผูกไลน์ {SHEET_LINE_HINT[sh.name.trim()]}</span>
-                    ) : null}
-                    <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>
-                      {sh.parts.length} พาร์ท · {sh.dates.length} คอลัมน์ · {fmt(sh.cellCount)} ช่อง
-                    </span>
-                  </div>
-                  <div style={{ color: 'var(--muted)', fontSize: FS - 1, marginTop: 2 }}>
-                    แถว: {sh.rowKeys.map((k) => ROW_LABEL[k] || k).join(' · ') || '—'}
-                  </div>
-                  {sh.warnings?.map((w, i) => (
-                    <div key={i} style={{ color: 'var(--accent2)', fontSize: FS - 1, marginTop: 2 }}>⚠️ {w}</div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {preview.skipped.length ? (
-              <div style={{ fontSize: FS, lineHeight: 1.8 }}>
-                <b>ชีทที่ไม่ได้ยกเข้า {preview.skipped.length} ชีท</b>
-                {preview.skipped.map((s) => (
-                  <div key={s.name} style={{ color: s.intentional ? 'var(--muted)' : '#f87171' }}>
-                    {s.intentional ? '⏭' : '🔴'} <b>{s.name}</b> — {s.why}
-                  </div>
-                ))}
-                {preview.skipped.some((s) => !s.intentional) ? (
-                  <div style={{ color: '#f87171', marginTop: 2 }}>
-                    ชีทที่ขึ้น 🔴 คือระบบแกะโครงไม่ได้ ไม่ใช่ของที่ตั้งใจข้าม — ถ้าเป็นชีทที่ต้องใช้ ให้แจ้งไว้
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 6, padding: '7px 10px' }}>
-              ℹ️ ช่อง <b>UNBOUND / BALANCE / ค้างที่ร้านชุบ</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
-              ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง ·
-              การนำเข้านี้ <b>ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า</b> — ยกผิดก็ลบบอร์ดทิ้งได้
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button type="button" onClick={onClose} disabled={busy}
-                style={{ fontSize: 13, padding: '7px 14px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                ยกเลิก
-              </button>
-              <button type="button" onClick={run} disabled={busy || !preview.made.length}
-                style={{ fontSize: 13, fontWeight: 700, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                {busy ? 'กำลังนำเข้า…' : `✅ ยืนยันนำเข้า ${preview.made.length} บอร์ด`}
-              </button>
-            </div>
-          </>
-        ) : null}
+      <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 6, padding: '7px 10px' }}>
+        ℹ️ ช่อง <b>UNBOUND / BALANCE / ค้างที่ร้านชุบ</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
+        ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง ·
+        ส่วนนี้ <b>ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า</b> — ยกผิดก็ลบบอร์ดทิ้งได้
       </div>
     </div>
   );

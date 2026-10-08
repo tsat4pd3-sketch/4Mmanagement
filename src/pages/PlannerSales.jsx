@@ -13,7 +13,7 @@ import useProductionLines from '../utils/useProductionLines';
 import { baseOfPart } from '../utils/matResolve';
 import { buildParentIndex, targetAncestorsOf } from '../utils/bomTree';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canSeeded } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
 import { calcWithdrawalKanban, calcProductionKanban, nextMonthKey } from '../utils/kanbanCalc';
 import { wavg, wLoad } from '../utils/oee';
@@ -1918,7 +1918,12 @@ export default function PlannerSales() {
       {tab === 'upload' && <UploadTab canUpload={canUpload} fullName={fullName} onImported={() => { setRefreshKey(k => k + 1); loadShipTo(); }} custLabel={custLabel} />}
       {/* 📗 ไฟล์ Monitoring ของแพลนนิ่ง = ช่องทางที่ 4 ต่อจาก EDI 830/862/e-SMART
           (ลูกค้าที่ไม่ส่ง EDI — TSPK/TSESA/TSLA/TSRA/GWM/Argen) — แยกแท็บเพราะโครงไฟล์คนละแบบสิ้นเชิง */}
-      {tab === 'monitoring' && <MonitoringUpload canUpload={canUpload} fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />}
+      {/* 🔴 จุดอัพโหลดไฟล์ Monitoring จุดเดียวทั้งระบบ — ตัวเดียวกับปุ่มใน `/monitoring`
+          (ลงทั้งตารางบอร์ดและตัวเลขที่ใช้ต่อในการยืนยันครั้งเดียว) */}
+      {tab === 'monitoring' && (
+        <MonitoringUpload canUpload={canUpload} canBoard={canSeeded('monitoring', 'manage', role)}
+          fullName={fullName} onImported={() => setRefreshKey(k => k + 1)} />
+      )}
     </Page>
   );
 }
