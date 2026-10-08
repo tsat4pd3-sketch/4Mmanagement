@@ -7,6 +7,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { scoreDef, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
@@ -258,7 +259,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       /* `.in()` ยาวทะลุเพดาน URL = คืนว่างเงียบ (กฎเหล็ก DB ข้อ 5) → ซอยก้อนผ่าน fetchByIds แทน `slice(0, 200)` เดิม
          ที่ตัดไลน์ที่ 201+ ทิ้งเงียบๆ (05/10 · audit) */
       const op = names.length ? await fetchByIds(names, part => supabaseDR.from('production_sessions').select('id')
-        .eq('work_date', date).neq('status', 'closed').in('line_name', part)) : { rows: [] };
+        /* 🔴 ระบุสถานะรายตัว ห้าม `.neq('status','closed')` — ใบโมฆะจะถูกนับเป็น "กะเปิดค้าง" (08/10 · มีด่าน) */
+        .eq('work_date', date).in('status', SESSION_STATUSES_LIVE).in('line_name', part)) : { rows: [] };
       if (op.error || op.truncated) warn.push('กะที่เปิดค้าง');
       // 3) เป้า OEE (A×P×Q รายกรุ๊ป)
       const tg = await supabase.from('oee_targets').select('group_name, target_a, target_p, target_q');

@@ -78,9 +78,20 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
     }
     const { error: insErr } = await supabaseDR.from('part_routings').insert(rows);
     if (insErr) {
-      // กู้ชุดเดิมกลับ — ห้ามปล่อยให้ routing หายทั้งที่ของใหม่ไม่เข้า
-      if (oldIds.length) await supabaseDR.from('part_routings').update({ is_active: true }).in('id', oldIds).select('id');
-      toast.error(`บันทึกไม่สำเร็จ: ${insErr.message}${oldIds.length ? ' — คืนชุดเดิมให้แล้ว' : ''}`);
+      /* กู้ชุดเดิมกลับ — ห้ามปล่อยให้ routing หายทั้งที่ของใหม่ไม่เข้า
+         🔴 ต้องนับแถวที่คืนได้จริงก่อนบอกผู้ใช้ (QC audit 06/10) — เดิมทิ้งผล `await` ทั้งก้อน
+         แล้วขึ้น "คืนชุดเดิมให้แล้ว" เสมอ ⇒ ถ้าคืนล้ม ผู้ใช้ได้ข้อความยืนยัน**เท็จ** ทั้งที่
+         routing ของพาร์ทนั้นหายทั้งชุด (ของเก่า inactive + ของใหม่ไม่เข้า) = ตรงข้ามกับเจตนา */
+      let backMsg = '';
+      if (oldIds.length) {
+        const back = await supabaseDR.from('part_routings')
+          .update({ is_active: true }).in('id', oldIds).select('id');
+        const n = (back.data || []).length;
+        backMsg = (!back.error && n === oldIds.length)
+          ? ' — คืนชุดเดิมให้แล้ว'
+          : ` — ⚠️ คืนชุดเดิมไม่ครบ (${n}/${oldIds.length}) ตรวจ routing ของ ${matNo} ด้วยตนเองทันที`;
+      }
+      toast.error(`บันทึกไม่สำเร็จ: ${insErr.message}${backMsg}`);
       setSaving(false); return;
     }
     setSaving(false); setDone(true);

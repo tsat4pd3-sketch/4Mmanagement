@@ -19,6 +19,7 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
+import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 
 /* ── date / shift (local, Asia/Bangkok = deployment local) ── */
 const toLocalDateStr = (d) =>
@@ -138,6 +139,7 @@ export default function DailyPM() {
       .select('id, line_name')
       .eq('work_date', si.workDateStr)
       .eq('shift', si.shift)
+      .in('status', SESSION_STATUSES_REAL)   // ใบโมฆะไม่ใช่กะจริง (08/10)
     const sessionLine = {}
     ;(sessions ?? []).forEach(s => { sessionLine[s.id] = s.line_name })
     const startedRaw = {}

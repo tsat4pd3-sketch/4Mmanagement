@@ -23,6 +23,7 @@
  */
 import { getDocForm, fullCode } from '../utils/docForms';
 import { isVague, isPlannedWork, PLANNED_GROUP } from '../utils/unclassified';
+import { moCommentText } from './moComments';   // 💬 รูปแบบบรรทัดคอมเมนต์ = ตัวเดียวกับใบพิมพ์
 
 const thin = { style: 'thin' };
 const allBorder = { top: thin, bottom: thin, left: thin, right: thin };
@@ -88,6 +89,9 @@ export function thaiMonthLabel(monthKey) {
 export async function exportMoExcel({
   rows = [], from = '', to = '', dateOf = (o) => o.work_date,
   isOpen = null, teamName = (k) => k, statusLabel = (o) => o.status, filterNote = '',
+  /* 💬 คอมเมนต์ใต้ใบ (event_comments) — map id ใบ → แถวคอมเมนต์ · โหลดจาก loadMoCommentsFor()
+     🔴 `commentsError` ไม่กลืน: โหลดไม่ครบต้องเขียนบนหัวชีท ไม่ใช่ปล่อยช่องว่างเหมือนไม่มีคอมเมนต์ */
+  commentsBy = {}, commentsError = null,
 }) {
   const df = await getDocForm('mtn_mo_monthly_export', { title: 'สรุปใบแจ้งซ่อม MO รายเดือน' });
   const ExcelJS = (await import('exceljs')).default;   // lazy — ก้อน ~960KB ใช้ร่วมกับ export ตัวอื่น
@@ -113,15 +117,22 @@ export async function exportMoExcel({
       open: isOpen ? isOpen(o) : o.status !== 'closed',
     };
   });
+  /* 💬 คอมเมนต์ของใบนี้ — id ใบเป็น uuid แต่ `event_comments.ref_id` เก็บเป็น **text** ⇒ อ้างด้วยสตริง */
+  const cmtOf = (o) => commentsBy[String(o.id)] || [];
   const total = enriched.length;
   const plannedN = enriched.filter(r => r.planned).length;
   const vagueN = enriched.filter(r => r.vague).length;
   const pct = (n) => (total ? `${((n / total) * 100).toFixed(1)}%` : DASH);
 
   /* ตัวหนังสือบอกความครบถ้วน — ต้องติดไปทุกชีท (ห้ามส่งตัวเลขลอยๆ ออกจากระบบ) */
+  const cmtN = total ? enriched.filter(r => cmtOf(r.o).length).length : 0;
   const honesty = total
     ? `ชี้เป้าไม่ได้ ${vagueN} ใบ (${pct(vagueN)}) = กลุ่ม/อาการเป็น "อื่นๆ" หรือว่าง`
       + ` · งานตามแผน (PM) ${plannedN} ใบ (${pct(plannedN)}) กันออกจากพาเรโตปัญหาแล้ว แต่ไม่ได้ซ่อน`
+      /* 🔴 โหลดคอมเมนต์ไม่ครบ = เขียนบนหัวชีท · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์" ซึ่งโกหก */
+      + (commentsError
+        ? ` · ⚠ คอมเมนต์โหลดไม่สำเร็จ (${commentsError}) — คอลัมน์คอมเมนต์ในไฟล์นี้ใช้อ้างอิงไม่ได้`
+        : ` · มีคอมเมนต์เพิ่มเติม ${cmtN} ใบ (${pct(cmtN)})`)
     : 'ไม่มีใบในช่วงที่เลือก';
 
   // ═══ ชีท 1 · รายการ MO (ข้อมูลดิบ 1 บรรทัด = 1 ใบ) ═══════════════════════════
@@ -129,10 +140,14 @@ export async function exportMoExcel({
     pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     views: [{ state: 'frozen', ySplit: 4 }],   // หัวตารางค้างไว้ — ไฟล์ยาวหลายร้อยบรรทัด
   });
+  /* 🔴 ลำดับคอลัมน์ = ลำดับเดียวกับใบพิมพ์: ของผู้แจ้งก่อน **แล้วคอมเมนต์ต่อท้าย**
+     (คอมเมนต์ทีม MTN ข้อ 1 · 07/10 — "ต่อจากที่ผู้แจ้งแจ้งมา") ห้ามสลับขึ้นไปก่อน */
   const H1 = ['วันที่', 'เลข MO', 'สถานะ', 'ค้าง/จบ', 'ทีมช่าง', 'ไลน์', 'เลขเครื่อง', 'ชนิดอุปกรณ์',
     'ประเภทงานซ่อม', 'กลุ่มปัญหา', 'อาการ (หัวข้อย่อย)', 'รายละเอียดที่คนแจ้งพิมพ์',
+    'คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)', 'จำนวนคอมเมนต์',
     'เวลาแจ้ง', 'เวลารับงาน', 'เวลาซ่อมเสร็จ', 'ตอบสนอง (นาที)', 'เวลาซ่อม (นาที)',
     'เกี่ยวคุณภาพ', 'ชี้เป้าได้?'];
+  const C = (label) => colRef(H1.indexOf(label));   // คอลัมน์อ้างด้วย "ชื่อหัว" — เพิ่มคอลัมน์แล้วไม่ต้องไล่ขยับตัวอักษร
   mergeSafe(ws1, `A1:${colRef(H1.length - 1)}1`);
   put(ws1, 'A1', `${df.title || 'สรุปใบแจ้งซ่อม MO รายเดือน'} · ช่วง ${from} → ${to} · ${total} ใบ`,
     { bold: true, size: 13, align: 'center', border: false });
@@ -142,31 +157,37 @@ export async function exportMoExcel({
     mergeSafe(ws1, `A3:${colRef(H1.length - 1)}3`);
     put(ws1, 'A3', `ตัวกรองที่เปิดอยู่ตอน export: ${filterNote}`, { size: 9, align: 'center', border: false, color: 'FF808080' });
   }
-  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 16, 16, 16, 13, 13, 11, 10]);
+  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10]);
 
   enriched.forEach((r, i) => {
     const n = 5 + i;
     const o = r.o;
-    put(ws1, `A${n}`, r.date || DASH, { align: 'center', size: 9.5 });
-    put(ws1, `B${n}`, o.mo_no || DASH, { size: 9.5 });
-    put(ws1, `C${n}`, statusLabel(o) || o.status || DASH, { size: 9.5 });
-    put(ws1, `D${n}`, r.open ? 'ค้าง' : 'จบแล้ว', { align: 'center', size: 9.5, color: r.open ? 'FFC00000' : undefined });
-    put(ws1, `E${n}`, teamName(o.mtn_dept) || DASH, { size: 9.5 });
-    put(ws1, `F${n}`, o.line_name || DASH, { size: 9.5 });
-    put(ws1, `G${n}`, o.machine_no || DASH, { size: 9.5 });
-    put(ws1, `H${n}`, o.item_type || DASH, { size: 9.5 });
-    put(ws1, `I${n}`, o.repair_type || DASH, { size: 9.5 });
-    put(ws1, `J${n}`, r.group || DASH, { size: 9.5, fill: r.group ? undefined : 'FFFFF2CC' });
-    put(ws1, `K${n}`, r.chara || DASH, { size: 9.5 });
-    put(ws1, `L${n}`, o.report_note || '', { size: 9, wrap: true });
-    put(ws1, `M${n}`, o.report_at ? new Date(o.report_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
-    put(ws1, `N${n}`, o.accept_at ? new Date(o.accept_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
-    put(ws1, `O${n}`, o.repair_done_at ? new Date(o.repair_done_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
+    put(ws1, `${C('วันที่')}${n}`, r.date || DASH, { align: 'center', size: 9.5 });
+    put(ws1, `${C('เลข MO')}${n}`, o.mo_no || DASH, { size: 9.5 });
+    put(ws1, `${C('สถานะ')}${n}`, statusLabel(o) || o.status || DASH, { size: 9.5 });
+    put(ws1, `${C('ค้าง/จบ')}${n}`, r.open ? 'ค้าง' : 'จบแล้ว', { align: 'center', size: 9.5, color: r.open ? 'FFC00000' : undefined });
+    put(ws1, `${C('ทีมช่าง')}${n}`, teamName(o.mtn_dept) || DASH, { size: 9.5 });
+    put(ws1, `${C('ไลน์')}${n}`, o.line_name || DASH, { size: 9.5 });
+    put(ws1, `${C('เลขเครื่อง')}${n}`, o.machine_no || DASH, { size: 9.5 });
+    put(ws1, `${C('ชนิดอุปกรณ์')}${n}`, o.item_type || DASH, { size: 9.5 });
+    put(ws1, `${C('ประเภทงานซ่อม')}${n}`, o.repair_type || DASH, { size: 9.5 });
+    put(ws1, `${C('กลุ่มปัญหา')}${n}`, r.group || DASH, { size: 9.5, fill: r.group ? undefined : 'FFFFF2CC' });
+    put(ws1, `${C('อาการ (หัวข้อย่อย)')}${n}`, r.chara || DASH, { size: 9.5 });
+    put(ws1, `${C('รายละเอียดที่คนแจ้งพิมพ์')}${n}`, o.report_note || '', { size: 9, wrap: true });
+    /* 💬 คอมเมนต์ต่อท้ายของผู้แจ้ง — ใบที่ไม่มีคอมเมนต์เว้นว่าง (ไม่ใช่ขีด: ขีด = "ไม่รู้"
+       แต่กรณีนี้รู้แน่ว่า "ยังไม่มีใครคอมเมนต์") · โหลดคอมเมนต์ล้ม = เขียนกำกับไว้ทุกแถว */
+    put(ws1, `${C('คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)')}${n}`,
+      commentsError ? '⚠ โหลดคอมเมนต์ไม่สำเร็จ' : moCommentText(cmtOf(o)), { size: 9, wrap: true });
+    put(ws1, `${C('จำนวนคอมเมนต์')}${n}`,
+      commentsError ? DASH : (cmtOf(o).length || ''), { align: 'center', size: 9.5 });
+    put(ws1, `${C('เวลาแจ้ง')}${n}`, o.report_at ? new Date(o.report_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
+    put(ws1, `${C('เวลารับงาน')}${n}`, o.accept_at ? new Date(o.accept_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
+    put(ws1, `${C('เวลาซ่อมเสร็จ')}${n}`, o.repair_done_at ? new Date(o.repair_done_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
     // 🔴 ยังไม่รับงาน/ยังไม่ปิด = ขีด ห้าม 0 (ไม่งั้น pivot หาค่าเฉลี่ยได้เลขที่ต่ำกว่าจริง)
-    put(ws1, `P${n}`, r.respMin == null ? DASH : r.respMin, { align: 'center', size: 9.5 });
-    put(ws1, `Q${n}`, r.fixMin == null ? DASH : r.fixMin, { align: 'center', size: 9.5 });
-    put(ws1, `R${n}`, o.quality_related ? 'ใช่' : '', { align: 'center', size: 9.5 });
-    put(ws1, `S${n}`, r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้', {
+    put(ws1, `${C('ตอบสนอง (นาที)')}${n}`, r.respMin == null ? DASH : r.respMin, { align: 'center', size: 9.5 });
+    put(ws1, `${C('เวลาซ่อม (นาที)')}${n}`, r.fixMin == null ? DASH : r.fixMin, { align: 'center', size: 9.5 });
+    put(ws1, `${C('เกี่ยวคุณภาพ')}${n}`, o.quality_related ? 'ใช่' : '', { align: 'center', size: 9.5 });
+    put(ws1, `${C('ชี้เป้าได้?')}${n}`, r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้', {
       align: 'center', size: 9.5, fill: r.vague ? 'FFFFF2CC' : undefined,
     });
   });
