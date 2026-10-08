@@ -3,7 +3,14 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- อ้างอิงอย่างเดียว (ไม่ใช่ migration) — ตารางส่วนใหญ่ถูกสร้างผ่าน dashboard/MCP
 -- ก่อนมีกฎ "เขียน migration เสมอ" จึงไม่มี CREATE ใน supabase/migrations/
--- snapshot นี้คือ source of truth สำหรับ session ที่ต้องรู้โครงสร้างโดยไม่ต้อง query จริง
+-- 🔴 **ไม่ใช่ source of truth** (แก้ข้อความนี้ 2026-10-08 · QC audit — เดิมเขียนว่าเป็น ซึ่งขัดกับ
+--    CLAUDE.md §Database Schema + หน้า `/schema` ที่สั่งว่า "อ่านสดจาก pg_catalog · ห้ามเขียน
+--    ลิสต์คอลัมน์เป็นมือที่ไหนอีก — snapshot มือล้าสมัยทุกครั้ง")
+--    พิสูจน์ว่าล้าสมัยจริง: `defect_logs` ในไฟล์นี้ไม่มี `is_trial` ทั้งที่ `src/utils/oee.js`
+--    ใช้คอลัมน์นั้นเป็นกฎหลักของ %Q
+-- ✅ **ยังต้องเก็บไฟล์นี้ไว้** — เป็นที่เดียวในรีโปที่บันทึกตารางยุคก่อนกฎ migration ว่า "มีจริง"
+--    (ด่าน `column-history-table-must-exist` อ่านไฟล์นี้เป็นหลักฐาน) ⇒ ใช้อ้าง "ตารางนี้มีไหม"
+--    ได้ แต่ **ห้ามใช้อ้างรายชื่อคอลัมน์** — ของจริงดูที่ `/schema`
 -- รูปแบบ: table (column type, ...) — dump ใหม่ได้ด้วย query ใน comment ท้ายไฟล์
 --
 -- attendances (id integer, employee_uuid uuid, date date, check_in_time timestamptz, status varchar)

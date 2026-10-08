@@ -63,7 +63,12 @@ update public.mtn_orders             set reported_by_uid = null, tech_main_uid =
 update public.line_stock_transactions set created_by_uid = null, reviewed_by_uid = null;
 update public.purchase_requests       set ordered_by_uid = null, received_by_uid = null;
 update public.customer_shipping_orders set shipped_by_uid = null, created_by_uid = null;
--- (ตารางอื่นทำแบบเดียวกัน — ดูรายการเต็มใน supabase/migrations/20260916_actor_uid_phase3_backfill_dr.sql)
+-- (ตารางอื่นทำแบบเดียวกัน — ⚠️ **ไฟล์ migration ของเฟส 3 ไม่มีในรีโป** เฟสนั้นรันผ่าน MCP
+--  แก้ข้อความนี้ 2026-10-08 · QC audit: เดิมชี้ไป `20260916_actor_uid_phase3_backfill_dr.sql`
+--  ที่ไม่มีอยู่จริง ⇒ ตอน rollback จริงจะหาไฟล์ไม่เจอ
+--  รายชื่อตารางที่ต้องย้อน หาได้จากคิวรีนี้แทน:
+--    select table_name from information_schema.columns
+--     where table_schema='public' and column_name='updated_by_uid' order by 1;)
 ```
 
 ---

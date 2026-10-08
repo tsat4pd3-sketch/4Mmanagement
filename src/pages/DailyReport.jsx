@@ -27,7 +27,8 @@ import { cardGrid } from '../utils/cardGrid';
 import { pairAwareOpTotal, orderTotal, collapsePairShots } from '../utils/pairTotals';
 import { pairQtyPlan, pairOrderGaps } from '../utils/pairOrder';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import { getDocForm, fullCode } from '../utils/docForms';
+import { getDocForm, fullCode, loadDocForms } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
@@ -70,6 +71,10 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
+
+/* ทะเบียนเอกสาร — ชื่อไฟล์ CSV ของแท็บรายงานอ่านผ่าน `docFormSync` (sync) ⇒ ต้อง warm cache เอง
+   ไม่เรียก = ได้ชื่อไฟล์เดิม (fallback) ไม่ล้ม แต่ doc_control ตั้งเลขฟอร์มแล้วไม่มีผล */
+loadDocForms();
 
 // โหลดโลโก้บริษัทเป็น base64 ครั้งเดียวต่อ URL สำหรับฝัง PDF
 // รับ url เพื่อรองรับโลโก้ที่อัปโหลดทับในทะเบียนเอกสาร (doc_forms.logo_url) — ไม่ส่ง = โลโก้ TS ทางการ
@@ -6970,21 +6975,17 @@ function ExportTab() {
     }))
   );
 
-  // ── CSV export ─────────────────────────────────────────────────
-  const exportCSV = (rows, filename) => {
+  /* ── CSV export → ทะเบียนเอกสาร (QC audit 08/10) ────────────────────────────
+     CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว … CSV — ไม่มีข้อยกเว้น ต้อง register"*
+     🔴 ตัวเดิมที่เขียนในหน้านี้ **ไม่มีด่านกัน formula injection** (ต่างจาก Report.jsx ที่มี)
+        คอลัมน์ 'รายละเอียด'/'เครื่องจักร' เป็นข้อความที่หน้างานพิมพ์เอง ⇒ ค่าที่ขึ้นต้นด้วย
+        `=` `+` `@` ถูก Excel **รันเป็นสูตรบนเครื่องคนรับไฟล์** ⇒ ยุบไปใช้ `csvCell()` ของกลาง
+     · `docKey` มาจากชนิดรายงาน (kanban/output/oee/downtime) — คนละเลขฟอร์มกันได้
+     · เลขฟอร์มอยู่ที่ **ชื่อไฟล์** ห้ามแทรกบรรทัดในเนื้อ CSV (คอลัมน์จะเลื่อนทั้งไฟล์) */
+  const exportCSV = (rows, filename, reportType) => {
     if (!rows.length) { toast.error('ไม่มีข้อมูล'); return; }
     const headers = Object.keys(rows[0]);
-    const lines   = [headers.join(','), ...rows.map(r =>
-      headers.map(h => {
-        const v = r[h] ?? '';
-        return String(v).includes(',') || String(v).includes('"') || String(v).includes('\n')
-          ? `"${String(v).replace(/"/g, '""')}"` : String(v);
-      }).join(',')
-    )];
-    const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = filename + '.csv';
-    a.click(); URL.revokeObjectURL(url);
+    downloadCsvDoc(`csv_dr_${reportType}`, filename, csvText(headers, rows.map(r => headers.map(h => r[h] ?? ''))));
   };
 
   // ── PDF export via jsPDF + autoTable ──────────────────────────
@@ -7274,7 +7275,7 @@ function ExportTab() {
                 if (!sessions) return;
                 const rows = { kanban: buildKanban, output: buildOutput, oee: buildOEE, downtime: buildDowntime }[r.key](sessions);
                 const fn = `${r.key}_${filter.date_from}_${filter.date_to}${filter.line_name ? '_' + filter.line_name : ''}`;
-                exportCSV(rows, fn);
+                exportCSV(rows, fn, r.key);
               }} disabled={loading}>⬇ CSV</button>
               <button style={btnSm('#dc2626')} onClick={async () => {
                 const sessions = await fetchData();
@@ -7309,7 +7310,7 @@ function ExportTab() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button style={btnSm('#16a34a')} onClick={() => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
-                exportCSV(preview.rows, fn);
+                exportCSV(preview.rows, fn, preview.type);
               }}>⬇ CSV</button>
               <button style={btnSm('#dc2626')} onClick={async () => {
                 const fn = `${preview.type}_${filter.date_from}_${filter.date_to}`;
