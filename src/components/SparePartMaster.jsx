@@ -32,6 +32,8 @@ import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเ
 import useSuppliers from '../utils/useSuppliers';
 import { uploadOpts } from '../utils/storageUpload';
 import { DeleteButton } from './IconButton';
+import { SpareDemandBanner } from './PmSpares';
+import { localDateStr } from '../utils/workDate'; // วันปฏิทินเดียวกับแท็บแผน PM (ymd(new Date())) — ไม่ใช่วันทำงานตัด 08:00
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
 const appendCsv = (cur, v) => {
@@ -258,6 +260,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       <ReadOnlyNote show={!canEdit && !canMove} role={role} what="แก้ทะเบียนอะไหล่/รับเข้า-เบิก"
         permKey="mtn_repair:manage_master, mtn_repair:service"
         hint="ค้นหาอะไหล่/ดูตำแหน่งชั้นวางได้ตามปกติ (ตั้งใจให้ช่างทุกคนค้นของได้)" />
+      {/* 🔩 อะไหล่ที่ PM ที่จะถึงต้องใช้ (2026-10-08) — ตัวเดียวกับแท็บแผน PM ⇒ ฝั่งคลัง/ฝั่งช่างเห็นเลขชุดเดียวกัน
+          reloadKey = จำนวนอะไหล่ + ยอดรวมสต็อก ⇒ รับเข้า/เบิกแล้วตัวเลขขยับตาม (primitive · กฎเหล็ก DB ข้อ 9) */}
+      <SpareDemandBanner todayStr={localDateStr()} reloadKey={`${parts.length}:${parts.reduce((t, p) => t + (Number(p.stock_qty) || 0), 0)}`} />
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24): ขอบเขต → ตัวกรอง → ค้นหา → ปุ่ม */}
       <FilterBar>
         <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
