@@ -32,6 +32,7 @@ import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
+import BomDupPanel from '../components/BomDupPanel';
 import { opDoubleCountRisk, opLinkIssues } from '../utils/opLink';
 import { parseSapBom, diffSapBom, missingInPartsMaster, decodeSapExport } from '../utils/sapBomImport';
 import { learnPartNoVocab, proposePartNos } from '../utils/partNoExtract';
@@ -264,7 +265,7 @@ export default function ProductMaster() {
   const canEdit   = can('products', 'edit', role);
   const canDelete = can('products', 'delete', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
-  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'bomdup', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
   /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
      บอกให้ "ไปหาเอง" = คนไม่ไป (บทเรียนเดียวกับ worklist ที่ต้องกดได้ ไม่ใช่แค่บอกว่ามีปัญหา) */
   const [searchParams, setSearchParams] = useSearchParams();
@@ -812,7 +813,7 @@ export default function ProductMaster() {
           <Link to="/heijunka" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Heijunka Kanban</Link> และ{' '}
           <Link to="/oee-analytics" style={{ color: 'var(--accent)', textDecoration: 'none' }}>OEE Analytics</Link>
         </>}
-        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'products', label:'3️⃣ 🔩 Products' },
+        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label:'🔁 BOM ซ้ำ 2 ใบ' }, { key:'products', label:'3️⃣ 🔩 Products' },
           { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
           { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' },
           { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }]}
@@ -1499,6 +1500,9 @@ export default function ProductMaster() {
       </>)}
 
       {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
+      {/* 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — กดแล้วเด้งไปเปิดใบนั้นในแท็บ BOM (ใช้ `openBomFor` ตัวเดิม
+          ที่ worklist ของ /vsm ใช้อยู่ — ลิสต์ยาว บอกให้ "ไปหาเอง" = คนไม่ไป) */}
+      {mainTab === 'bomdup' && <BomDupPanel onOpenSheet={openBomFor} />}
       {mainTab === 'packaging' && <PackagingPanel canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} fullName={fullName} />}
       {mainTab === 'parts' && <PartsMasterPanel canCreate={canCreate} canEdit={canEdit} fullName={fullName} setCsvPreview={setCsvPreview} reloadKey={partsReloadKey} />}
       {mainTab === 'kanban' && <KanbanStdPanel canEdit={canEdit} fullName={fullName} />}
