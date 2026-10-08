@@ -1760,7 +1760,7 @@ export default function Improvements() {
                 <button onClick={printA3} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>🖨 พิมพ์อย่างเดียว</button>
                 {canManage && (
                   <button onClick={async () => { await saveA3(); await printA3(); }} disabled={a3Modal.saving}
-                    style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#08131f', fontWeight: 800, fontSize: 12.5, cursor: a3Modal.saving ? 'default' : 'pointer', opacity: a3Modal.saving ? 0.6 : 1 }}>
+                    style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 12.5, cursor: a3Modal.saving ? 'default' : 'pointer', opacity: a3Modal.saving ? 0.6 : 1 }}>
                     {a3Modal.saving ? 'กำลังบันทึก…' : '💾 บันทึก & พิมพ์ A3'}
                   </button>
                 )}
