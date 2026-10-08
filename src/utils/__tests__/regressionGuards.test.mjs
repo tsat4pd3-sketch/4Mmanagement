@@ -3092,3 +3092,92 @@ test('🛡️ demand-mail-via-edge-function — ไฟล์ใน bucket demand
     + '   แก้ยังไง: เรียก downloadMailFile(id) ใน src/components/DemandMailInbox.jsx\n'
     + '            (Edge Function `demand-mail-file` ตรวจ token ล็อกอิน Main + สิทธิ์ก่อนส่งไฟล์)\n');
 });
+
+
+/* ═══ 🚪 modal ที่ "มีช่องกรอก" ห้ามปิดจากการคลิกพื้นหลัง — รูป `setX(null)` (2026-10-06 · QC audit) ═══
+   กฎเดิม `modal-closes-on-backdrop` (ข้อ 200 ด้านบน) จับเฉพาะลายเซ็น `onClick={onClose}`
+   ⇒ รูป `onClick={() => setXxx(null)}` **ลอดด่านมาได้** · เจอจริง `DailyReport` modal
+   "📞 เรียกช่างด่วน / 📝 เปิดใบแจ้งซ่อม" ที่มีปุ่มเลือกทีมช่าง + `<input type="file" capture>`
+   ⇒ เผลอแตะนอกกรอบบนแท็บเล็ตหน้าไลน์ = ทีมที่เลือก + รูปที่ถ่ายหายหมด ต้องถ่ายใหม่
+
+   🔴 ด่านนี้ **ดูเนื้อในจริง ไม่ใช้ allow list** — popup แสดงผลอย่างเดียว (ดูกราฟ/รูป/ประวัติ/drill)
+   ปิดจาก backdrop ได้ตามกฎ UI-CONVENTIONS §5 อยู่แล้ว (เผลอแตะก็ไม่เสียอะไร) ⇒ ไม่ต้องขึ้นทะเบียน
+   วัดจริง 06/10: 18 overlay ที่ใช้รูปนี้ — **17 ตัวไม่มีช่องกรอกเลย** ถ้าใช้ allow list ต้องเขียน
+   17 รายการที่ไม่ได้บอกอะไร แล้ว popup ตัวที่ 18 ที่มีฟอร์มจริงก็ยังหลุดได้อยู่ดี
+   ⇒ ขอบเขต overlay หาจาก `</div>` ตัวแรกที่ย่อหน้า ≤ บรรทัดเปิด (JSX ในรีโปนี้จัดย่อหน้าสม่ำเสมอ)
+     — เทียบกับที่ไล่ดูมือทั้ง 18 ตัวแล้วตรงกันเป๊ะ (window แบบนับบรรทัดตายตัวล้นไปโมดัลถัดไป) */
+test('🚪 backdrop-close-form-modal — overlay ที่ปิดด้วย setX(null) ห้ามมีช่องกรอกข้างใน', () => {
+  const OVERLAY = /position:\s*'fixed'|className="(?:overlay|modal-scroll)"/;
+  const CLOSER  = /onClick=\{\(\)\s*=>\s*[A-Za-z_$][A-Za-z0-9_$]*\s*\(\s*(?:null|false|'')\s*\)\s*\}/;
+  const CTRL    = /<input(?![A-Za-z])|<textarea|<select(?![A-Za-z])|<SearchSelect|<PersonSelect|<MachineSelect|<ProductSelect|<PartSelect|<CustomerSelect|type="file"/;
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx'])) {
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      if (!OVERLAY.test(ln) || !CLOSER.test(ln)) return;
+      const indent = ln.match(/^\s*/)[0].length;
+      let end = lines.length;
+      for (let k = i + 1; k < Math.min(lines.length, i + 400); k++) {
+        if (/^\s*<\/div>/.test(lines[k]) && lines[k].match(/^\s*/)[0].length <= indent) { end = k; break; }
+      }
+      const body = stripComments(lines.slice(i, end).join('\n'));
+      const m = body.match(CTRL);
+      if (m) bad.push(`${relative(ROOT, f)}:${i + 1}  (พบ ${m[0]} ข้างใน)`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ overlay ที่ปิดจากการคลิกพื้นหลัง แต่ข้างในมีช่องกรอก:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมห้าม (คำสั่ง user 2026-07-09): เผลอแตะนอกกรอบทีเดียว ที่กรอกไว้ทั้งฟอร์มหายหมด\n'
+    + '     ไม่มีทางเรียกคืน — บนแท็บเล็ต/จอทัชหน้าไลน์เกิดง่ายมาก (รูปที่ถ่ายไว้ก็หายด้วย)\n'
+    + '   แก้: เอา `onClick={() => setXxx(null)}` ออกจาก <div> ชั้น overlay\n'
+    + '        แล้วปิดด้วยปุ่ม ✕ / ยกเลิก ข้างในเท่านั้น (เกือบทุก modal มีปุ่มนั้นอยู่แล้ว)\n'
+    + '   ⚠️ ด่านนี้ไม่มี allow list โดยเจตนา — popup แสดงผลอย่างเดียวไม่เข้าข่ายอยู่แล้ว\n'
+    + '      ถ้าจำเป็นต้องมีช่องกรอกในของที่ปิดจาก backdrop ได้จริง ให้คุยกับ user ก่อน\n');
+});
+
+
+/* ═══ 📝 เขียน DB แล้วทิ้งผล `await` = กลืน error 100% (2026-10-06 · QC audit) ═══
+   `supabase-js` **ไม่ throw** — คืน `{ data, error }` เสมอ (กฎเหล็ก DB ข้อ 1)
+   ⇒ `await supabase.from(t).update(x)` ที่อยู่ "ตำแหน่ง statement" (ไม่มีใครรับผล) = ล้มแล้วไม่มีใครรู้
+   ด่านเดิมในลิสต์ RULES จับได้เฉพาะรูป `^\s*await supabase…` (ต้นบรรทัดล้วน) ⇒ รูปที่ซ่อนอยู่
+   หลัง `if (…)` / `else if (…)` / ใน one-liner arrow **ลอดมาได้ทั้งหมด**
+   วัดจริง 06/10 เจอ 7 จุด ที่หนักสุด 3 ตัว:
+     · `PeRoutingSuggest` เส้นทาง **rollback** — ขึ้น toast "คืนชุดเดิมให้แล้ว" โดยไม่เคยเช็ค
+       ⇒ ถ้าคืนล้ม ผู้ใช้ได้ข้อความยืนยัน**เท็จ** ทั้งที่ routing ของพาร์ทนั้นหายทั้งชุด
+     · `ProductMaster.delLink/delMaster` ปุ่มลบจริง — RLS ปฏิเสธ = 0 แถว ไม่มี error
+       ⇒ กดลบแล้วแถวเดิมวาดกลับมา ไม่มีอะไรบอกว่าทำไม ⇒ ผู้ใช้กดซ้ำ/คิดว่าจอค้าง
+     · `RoutingPanel` เรียง `seq` ใหม่หลังลบ — ล้มเงียบ ⇒ เลขกระโดด/ซ้ำ แล้วไปชน
+       `unique (mat_no, seq)` ในการบันทึกครั้งถัดไปแบบงงๆ
+   ข้อยกเว้นที่ถูกต้อง: ต่อ `.then(ok, err)` = **ตั้งใจ** best-effort (ไม่ใช่กลืนเงียบ) */
+test('📝 write-result-discarded — write ที่อยู่ตำแหน่ง statement ต้องมีคนรับผล', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    if (/__tests__|utils[/\\]dbWrite\.js/.test(rel)) continue;
+    const lines = readFileSync(f, 'utf8').split('\n');
+    lines.forEach((ln, i) => {
+      const k = ln.search(/\bawait\s+supabase(?:DR)?\s*\.from\(/);
+      if (k < 0) return;
+      // chain เขียนจริงไหม (อาจพาดหลายบรรทัด)
+      if (!/\.(insert|update|delete|upsert)\(/.test(lines.slice(i, i + 3).join('\n'))) return;
+      /* "ตำแหน่ง statement" ตัดสินจากตัวอักษรที่ไม่ใช่ช่องว่าง **ตัวสุดท้ายก่อน `await`**
+         `{` `;` `}` = ต้นประโยคใหม่ · `)` = ท้ายหัว if/while/for · `else` = สาขา ⇒ ผลถูกทิ้ง
+         `=` `(` `?` `:` `,` `[` `>` / คำ `return` = ผลถูกรับไว้แล้ว (assign / checkWrite( / ternary)
+         (เลี่ยงการ strip วงเล็บ — วงเล็บซ้อน + template literal ภาษาไทยทำ regex พลาด) */
+      const tail = ln.slice(0, k).replace(/\s+$/, '');
+      if (!(tail === '' || /[{};)]$/.test(tail) || /\belse$/.test(tail))) return;
+      if (/\.then\(/.test(lines.slice(i, i + 5).join('\n'))) return;   // best-effort ที่ตั้งใจ
+      bad.push(`${rel}:${i + 1}  ${ln.trim().slice(0, 95)}`);
+    });
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เขียน DB แล้วไม่มีใครรับผล (supabase-js ไม่ throw ⇒ ล้มแล้วเงียบ 100%):\n   '
+    + bad.join('\n   ') + '\n'
+    + '   แก้: const res = await supabase.from(t).update(x).eq(...).select(\'id\');\n'
+    + '        if (!checkWrite(res, \'ป้ายงาน\')) return;\n'
+    + '        if (!(res.data || []).length) { toast.error(\'ไม่สำเร็จ (0 แถว) — สิทธิ์ไม่พอ\'); return; }\n'
+    + '   ⚠️ ปุ่มที่ผลลัพธ์สำคัญต้องนับแถวด้วย — RLS ปฏิเสธ UPDATE/DELETE = 0 แถว ไม่มี error (ข้อ 2)\n'
+    + '   ถ้าตั้งใจให้ best-effort จริง (งานหลักสำเร็จแล้ว ล้มตรงนี้ไม่ควรล้มทั้ง flow):\n'
+    + '        ต่อ `.then(() => {}, () => {})` + เขียนคอมเมนต์ว่าทำไม — **ห้ามปล่อยลอยๆ**\n'
+    + '        และถ้าของที่ล้มมีคนอ่านต่อ (ประวัติ/รายงาน) ควร toast.error บอกด้วย\n');
+});
