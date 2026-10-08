@@ -30,6 +30,10 @@ loadDocForms(); // ทะเบียนเอกสาร — printMoReport (sy
 import { fmtDateTime } from '../utils/dateFormat';
 import tsLogo from '../assets/TS logo.png';
 import EventComments from '../components/EventComments';
+/* 💬 คอมเมนต์ใต้ใบ MO ไปโผล่ในช่องแรกของใบพิมพ์ด้วย (คอมเมนต์ทีม MTN ข้อ 1 · 07/10)
+   🔴 อ่าน `event_comments` ของเดิมที่ <EventComments> ใช้อยู่ — ห้ามทำที่เก็บคอมเมนต์ชุดที่ 2
+   🔴 รูปแบบบรรทัดอยู่ที่ moCommentLines() ที่เดียว (ใบ JIG + ใบ MTN + Excel ต้องเหมือนกัน) */
+import { loadMoComments, moCommentLines } from '../lib/moComments';
 import ScanModal from '../components/ScanModal';
 import { resolveMachine } from '../utils/qrCode';
 import { isDie, dieItemTypeOf } from '../utils/equipmentKinds';
@@ -591,11 +595,17 @@ export default function MtnRepair() {
         fRepairType && `ประเภทงานซ่อม: ${fRepairType}`,
         fText.trim() && `คำค้น: "${fText.trim()}"`,
       ].filter(Boolean).join(' · ') || 'ไม่ได้กรองอะไร (ทั้งช่วงที่เลือก)';
+      /* 💬 คอมเมนต์ของทุกใบในช่วง (คอมเมนต์ทีม MTN ข้อ 1 · 07/10) — โหลดเป็นก้อนเดียว
+         ผ่าน loadMoCommentsFor (chunk .in() ให้เอง) · 🔴 error ไม่กลืน ส่งต่อให้ไฟล์เขียนกำกับ */
+      const { loadMoCommentsFor } = await import('../lib/moComments');
+      const cmt = await loadMoCommentsFor(shown.map(o => o.id));
       const r = await exportMoExcel({
         rows: shown, from: tr.from, to: tr.to,
         dateOf: (o) => o.work_date || workDateOfTime(o.report_at),
         isOpen: isMoOpen, teamName: deptNameOf, statusLabel: moStatusLabel, filterNote: note,
+        commentsBy: cmt.byOrder, commentsError: cmt.error,
       });
+      if (cmt.error) toast.error('โหลดคอมเมนต์ไม่ครบ — คอลัมน์คอมเมนต์ในไฟล์ใช้อ้างอิงไม่ได้ (เขียนกำกับไว้ในไฟล์แล้ว)');
       /* 🔴 บอกความครบถ้วนตอนโหลดเสร็จด้วย — คนมักเอาไฟล์ไปใช้เลยโดยไม่อ่านหัวชีท */
       toast.success(`ออกไฟล์แล้ว ${r.rows} ใบ${r.vague ? ` · ในนั้นชี้เป้าไม่ได้ ${r.vague} ใบ (ดูชีทพาเรโต)` : ''}`);
     } catch (e) {
@@ -1299,11 +1309,28 @@ function nextStepFor(order) {
    (ว่าง = ผู้ตรวจสอบอ่านว่า "ยังไม่ได้ตรวจ") · ครอบคลุมทั้งใบที่กด ⏭ และใบที่ขั้น 4 ระบุไม่เกี่ยว */
 const qaSkippedPrint = (o) => moQaState(o) === 'skipped';
 
+/* ── 💬 บล็อก "คอมเมนต์เพิ่มเติม" ต่อท้ายช่องผู้แจ้งในใบพิมพ์ (คอมเมนต์ทีม MTN ข้อ 1 · 07/10) ──
+   ที่มา: ทีม MTN ขอ *"แก้ไขรายละเอียด MO ได้"* เพราะเปิดเอกสารมาแล้วรายละเอียดไม่ตรงของจริง
+   user ตัดสิน: **ไม่แก้ทับของผู้แจ้ง** — เอาคอมเมนต์ที่คุยกันใต้ใบ มาต่อท้ายในช่องเดียวกัน
+   🔴 ของผู้แจ้งอยู่ข้างบนเสมอ ไม่ถูกแทนที่ · ทุกบรรทัดมีชื่อ+เวลา (ใบนี้เก็บตามอายุเอกสาร)
+   🔴 โหลดคอมเมนต์ไม่สำเร็จ = **เขียนบนใบ** ห้ามพิมพ์ออกมาเหมือนใบที่ไม่มีคอมเมนต์เลย */
+const NO_CMT = { rows: [], error: null };
+function cmtBlockHtml(cmt, esc, opt = {}) {
+  const { fs = '7.2pt', head = 'คอมเมนต์เพิ่มเติม (หลังวันที่แจ้ง):' } = opt;
+  const c = cmt || NO_CMT;
+  if (c.error) return `<div style="font-size:${fs};color:#000;margin-top:3pt">⚠ ${esc(head)} โหลดไม่สำเร็จ — ใบนี้อาจมีคอมเมนต์ที่ไม่ได้พิมพ์ออกมา</div>`;
+  const { lines, hidden } = moCommentLines(c.rows);
+  if (!lines.length) return '';
+  const rows = lines.map(l => `<div style="margin-top:1.5pt"><b>[${esc(l.when)} · ${esc(l.who)}]</b> ${esc(l.body)}</div>`).join('');
+  const more = hidden > 0 ? `<div style="margin-top:1.5pt">(เก่ากว่านี้อีก ${hidden} คอมเมนต์ — ดูในระบบ)</div>` : '';
+  return `<div style="font-size:${fs};line-height:1.25;margin-top:3pt;padding-top:2.5pt;border-top:1px dotted #000;white-space:pre-wrap"><span style="font-weight:700">${esc(head)}</span>${more}${rows}</div>`;
+}
+
 /* ── พิมพ์ใบ MO — เลือก layout ตามทีมช่าง (JIG/DIE = FM-JIG-008 · MTN/PRODUCTION = FM-MTN-006) ── */
-function printMoReport(o, dparts = [], logo0, dlabor = []) {
+function printMoReport(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
   const teamKey = teamKeyOf(o.mtn_dept || deptForItem(o.item_type));
   // เฉพาะทีม MTN ใช้ฟอร์ม FM-MTN-006 · JIG MTN / DIE MTN / PRODUCTION ใช้ FM-JIG-008 เดิม (คำสั่ง user 2026-07-22)
-  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor);
+  if (teamKey === 'maintenance') return printMoReportMtn(o, dparts, logo0, dlabor, cmt);
   const dept = deptNameOf(teamKey);   // ใบพิมพ์แสดง "ชื่อทีม" ไม่ใช่ key
   // ใบทีม DIE พิมพ์ป้าย "Die No. / Die Type" แทน "Jig No / MC Name" (คอมเมนต์ทีม DIE 06/10 — ฟอร์มเดียวกับ JIG แต่ของที่ซ่อมคือแม่พิมพ์)
   const isDieTeam = teamKey === 'die_maintenance';
@@ -1369,7 +1396,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = []) {
         ${L(isDieTeam ? 'Die Type:' : 'MC Name:', o.item_type)}${L(isDieTeam ? 'Die No.:' : 'Jig No:', o.machine_no)}
         ${P(L('Customer:', o.customer), L('Model:', o.model))}
         ${P(L('วันที่แจ้ง:', beDT(o.report_at)), L('ต้องการ:', beD(o.want_at)))}${o.occurred_at ? L('เกิดเหตุ:', beDT(o.occurred_at)) : ''}
-        ${L('ลักษณะปัญหา:', o.problem_characteristic)}${L('รายละเอียด:', o.report_note || o.problem_detail)}
+        ${L('ลักษณะปัญหา:', o.problem_characteristic)}${L('รายละเอียด:', o.report_note || o.problem_detail)}${cmtBlockHtml(cmt, esc)}
       </td>
       <td style="height:102pt">${L('วันที่รับงาน:', beDT(o.accept_at))}
         ${P(L('ผู้รับงาน:', o.accepted_by), L('ผู้รับผิดชอบ:', o.assigned_to))}
@@ -1409,7 +1436,7 @@ function printMoReport(o, dparts = [], logo0, dlabor = []) {
    → ค่าใช้จ่าย (ค่าแรงรายคน | อะไหล่รายรายการ) → ความพึงพอใจ + ลายเซ็นท้าย → ความคิดเห็น
    ⚠️ รูปก่อน/หลังไม่มีในกระดาษ → ไปหน้า 2 และพิมพ์เฉพาะเมื่อมีรูปจริง (หน้าแรกต้องเหมือนต้นฉบับ)
    ⚠️ สูตรรวมเงิน/คะแนนอ่านจาก `src/utils/mtnMoForm.js` ที่เดียว ห้ามคิดเลขซ้ำที่นี่ */
-function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
+function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT) {
   const df = docFormSync('mo_report_mtn', { form_code: 'FM-MTN-006', rev: '', effective_date: '', footer_note: 'MAINTENANCE ORDER MO31 08 2015.xls' });
   const beDT = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day}/${+g.month}/${(+g.year + 543) % 100} ${g.hour === '24' ? '00' : g.hour}:${g.minute}`; };
   const beD = (v) => { if (!v) return ''; const d = new Date(v); const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d); const g = {}; p.forEach(x => g[x.type] = x.value); return `${+g.day} / ${+g.month} / ${(+g.year + 543) % 100}`; };
@@ -1525,6 +1552,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = []) {
         <div>รายละเอียด (ผู้แจ้งซ่อม) &nbsp;&nbsp;${line('เป้าหมาย', beD(o.want_at), '95px')} ${line('เวลา', beTime(o.want_at), '45px')}</div>
         <div style="margin-top:4px;font-weight:700">${esc(o.problem_characteristic || '')}</div>
         <div style="white-space:pre-wrap">${esc(o.report_note || o.problem_detail || '')}</div>
+        ${cmtBlockHtml(cmt, esc, { fs: '9px' })}
       </td>
       <td style="width:19%;padding:0">${sg('ผู้ออก M/O (ตัวบรรจง)', o.reported_by_name || o.reporter_prod, null, o.report_at)}</td>
       <td style="width:19%;padding:0">${sg('ผู้จัดการต้นสังกัด', o.dept_manager_name, o.dept_manager_sign, o.dept_manager_at)}</td>
@@ -2270,8 +2298,14 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           </div>
         </div>
       )}
-      {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง */}
+      {/* 💬 คอมเมนต์ใต้ใบซ่อม — คุยงานติดใบ + 🔔 mention แจ้งเตือนเข้ากระดิ่ง
+          ตั้งแต่ 07/10 คอมเมนต์พวกนี้ไปโผล่ใน **ช่องผู้แจ้งของใบพิมพ์ + Excel** ด้วย
+          (คอมเมนต์ทีม MTN: เปิดเอกสารมาแล้วรายละเอียดไม่ตรงของจริง)
+          ⇒ ต้องเขียนบอกคนที่กำลังพิมพ์ ไม่งั้นเขาคิดว่าคุยกันในนี้แล้วหายไปเฉยๆ */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
+      <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
+        🖨️ คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
         {canDelete('mtn_repair', 'manage_master', role) ? <button onClick={del} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>🗑 ลบใบนี้</button> : <span />}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2279,8 +2313,15 @@ function DetailDrawer({ order, role, mtnDepts = MTN_DEPTS, fullName, signatureUr
           <button onClick={async () => {
             const dept = o.mtn_dept || deptForItem(o.item_type);
             const key = teamKeyOf(dept) === 'maintenance' ? 'mo_report_mtn' : 'mo_report';
-            const logo = await logoDataUrl(docFormSync(key).logo_url);
-            printMoReport(o, dparts, logo, dlabor);
+            /* 💬 โหลดคอมเมนต์ **ตอนกดพิมพ์** ไม่ใช่ตอนเปิดใบ — คนเปิดดูเฉยๆ ไม่ต้องจ่าย query
+               (คอมเมนต์ที่โชว์บนจอเป็นของ <EventComments> ซึ่งโหลดเองอยู่แล้ว)
+               🔴 error ไม่กลืน — ส่งต่อให้ใบพิมพ์เขียนบนใบว่าคอมเมนต์อาจไม่ครบ */
+            const [logo, cmt] = await Promise.all([
+              logoDataUrl(docFormSync(key).logo_url),
+              loadMoComments(o.id),
+            ]);
+            if (cmt.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
+            printMoReport(o, dparts, logo, dlabor, cmt);
           }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
           <button onClick={onClose} style={btnGhost}>ปิด</button>
           {skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}

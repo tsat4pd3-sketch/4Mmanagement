@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext, lazy, Suspense } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { canSeeded } from '../utils/permissions';
+import { can, canSeeded } from '../utils/permissions';
 import { checkWrite } from '../utils/dbWrite';
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { useLiveBoard } from '../utils/useLiveBoard';
@@ -20,7 +20,9 @@ import {
 import { buildPnIndex, pickStockMat } from '../utils/matResolve';
 import { openOnly } from '../utils/shipStatus';
 
-const MonitorImport = lazy(() => import('../components/MonitorImport'));
+/* 🔴 จุดอัพโหลดไฟล์ Monitoring มี **จุดเดียวทั้งระบบ** (08/10 คำสั่ง user) — ตัวเดียวกับที่
+   `/planner-sales?tab=monitoring` ใช้ · กดที่ไหนก็ลงครบทุกชั้นในครั้งเดียว ห้ามแยกกลับเป็น 2 ตัว */
+const MonitoringUpload = lazy(() => import('../components/MonitoringUpload'));
 const MonitorFgSync = lazy(() => import('../components/MonitorFgSync'));
 /* 📉 "คาดการณ์ของจะขาด" ของเดิม — embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment · PmHub)
    เหตุผลที่**ยุบตารางเข้าด้วยกันตรงๆ ไม่ได้** เขียนไว้ที่ docs/modules/monitoring-boards.md §6.6 */
@@ -72,6 +74,9 @@ export default function Monitoring() {
   const [showFgSync, setShowFgSync] = useState(false);
 
   const canEdit = canSeeded('monitoring', 'manage', role);
+  /* ชั้น FC/ออเดอร์/สต็อก ของไฟล์เดียวกันใช้สิทธิ์เดิมของจออัพโหลด (demand:upload) —
+     ไม่มีสิทธิ์ = จอบอกว่าข้ามส่วนนั้น ไม่ใช่เขียนเงียบ */
+  const canUpload = can('demand', 'upload', role);
   const today = getWorkDate();
 
   /* ── ทะเบียนบอร์ด ─────────────────────────────────────────────────────────────── */
@@ -475,8 +480,9 @@ export default function Monitoring() {
 
       {showImport ? (
         <Suspense fallback={null}>
-          <MonitorImport
-            onClose={() => setShowImport(false)} fullName={fullName} today={today}
+          <MonitoringUpload
+            asModal onClose={() => setShowImport(false)}
+            canUpload={canUpload} canBoard={canEdit} fullName={fullName}
             onImported={() => { setShowImport(false); loadBoards(); load(); }}
           />
         </Suspense>

@@ -57,8 +57,15 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
       if (st.length) {
         const { error } = await supabase.from('npi_tooling_steps').insert(st);
         if (error) toast.error(`สร้างแผนแล้ว แต่เพิ่มขั้นงานจากแม่แบบไม่สำเร็จ: ${error.message}`);
-        // วันจบแผน = วันจบขั้นสุดท้าย ถ้ายังไม่ได้กรอก
-        else if (!m.plan_end && st[st.length - 1].plan_end) await supabase.from('npi_tooling_plans').update({ plan_end: st[st.length - 1].plan_end }).eq('id', res.data.id);
+        /* เพิ่มขั้นงานสำเร็จ → เติม "วันจบแผน" จากขั้นสุดท้าย ถ้ายังไม่ได้กรอก
+           🔴 ต้องอ่าน error (QC audit 06/10) — เดิมทิ้งผล `await` ⇒ ล้มแล้วเงียบ =
+           แผน tooling ไม่มีวันจบ ⇒ ไฟสี/สรุป NPI คำนวณจากข้อมูลไม่ครบ ทั้งที่จอบอก "บันทึกแผนแล้ว"
+           (branch `if (error)` บรรทัดบนอ่าน error ถูกอยู่แล้ว = ตกหล่นข้างเดียว) */
+        else if (!m.plan_end && st[st.length - 1].plan_end) {
+          const r = await supabase.from('npi_tooling_plans')
+            .update({ plan_end: st[st.length - 1].plan_end }).eq('id', res.data.id);
+          if (r.error) toast.error(`บันทึกแผนแล้ว แต่ตั้งวันจบแผนไม่สำเร็จ: ${r.error.message}`);
+        }
       } else toast.info(`ไม่มีแม่แบบขั้นงานของชนิด "${TOOL_KIND[m.tool_kind]?.label}" — เพิ่มขั้นเองได้`);
     }
     setSaving(false);

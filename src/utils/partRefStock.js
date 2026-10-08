@@ -8,6 +8,9 @@
    ผ่าน `fn_post_confirmed_output` ตามกฎ `stock_inflow_rules`) ⇒ ยอดหน้าไลน์ไม่ขยับตามการผลิตเลย
    แล้วยังเสนอให้ "📦 เบิกจากสโตร์" ซึ่งผิดทิศ — ของที่ไลน์ผลิตเองต้อง **ผลิตเติม** ไม่ใช่เบิก
 
+   🎴 08/10 (user): ขั้นต่ำ/สูงสุดของ "ของที่ไลน์ผลิตเอง" = `kanban_standards` (แท็บคำนวณ Kanban) ชุดเดียว
+      — ชุดเดียวกับที่ Line Stock ของสโตร์ใช้ · ตอนสลับ 60 พาร์ท ตัวเลข min ตรงกัน 38 · **ต่างกัน 21** · Kanban ไม่มี 1
+
    กติกา (pure · เทส `__tests__/partRefStock.test.mjs`):
    · พาร์ทที่ Product Master บอกว่าไลน์นี้ผลิต + มีกฎรับเข้าคลัง ⇒ `produce` · อ้างยอดคลังปลายทางของกฎ
      (ตรรกะเลือกกฎ = ตัวเดียวกับ trigger: กฎ MAT ชนะ prefix · prefix ยาวชนะสั้น)
@@ -53,26 +56,45 @@ export function refStockOf(mat, { lineName, products = [], rules = [], lotMats =
   return dest ? { kind: 'produce', loc: dest } : { kind: 'consume', loc: lineName };
 }
 
+/** MAT ที่ไลน์นี้ผลิตเอง (Product Master · ไม่ใช่ชั้น OP) — ตัวตั้งของรายการ "ต้องผลิตเติม" */
+export function madeHereMats(lineName, products = []) {
+  const out = new Set();
+  for (const p of products || []) {
+    if (p?.is_active === false || p?.is_operation) continue;
+    if (lineKey(p?.line_name) === lineKey(lineName) && key(p?.mat_no)) out.add(key(p.mat_no));
+  }
+  return [...out].sort();
+}
+
 /**
  * แบ่งจุดเรียกเติมของไลน์ออกเป็น 2 ทาง
- * @param {Array} levels   แถว line_part_levels (min_qty/max_qty/reorder_qty)
+ * · ของที่ไลน์ผลิตเอง: ขั้นต่ำ/สูงสุด **อ่านจาก `kanban_standards` (แท็บ 🎴 คำนวณ Kanban) ชุดเดียว**
+ *   (user 08/10 "ให้ใช้ขั้นต่ำจากแท็บคำนวณ Kanban ชุดเดียวกัน") · `line_part_levels` ของพาร์ทพวกนี้ไม่ถูกใช้แล้ว
+ *   ไม่มีขั้นต่ำใน Kanban = `produceNoStd` (ไม่เดา · ห้ามถอยไปใช้ line_part_levels = 2 แหล่งความจริง)
+ * · ของที่ไลน์ใช้: `line_part_levels` + ยอดหน้าไลน์ เหมือนเดิม
+ * @param {Array} levels  แถว line_part_levels ของไลน์
+ * @param {{ lineName, products, rules, lotMats, stds:Map<string,{min_qty,max_qty}> }} ctx
  * @param {(loc:string, mat:string) => number|null} haveAt  ยอดคงเหลือ (null = ไม่มีแถว = ยังเช็คไม่ได้)
- * @returns {{ produceDue:Array, produceUnknown:Array, produceOk:number, consumeLevels:Array }}
  */
 export function splitLevels(levels = [], ctx = {}, haveAt = () => null) {
   const num = (v) => (v == null || v === '' ? null : Number(v));
-  const out = { produceDue: [], produceUnknown: [], produceOk: 0, consumeLevels: [] };
+  const stds = ctx.stds instanceof Map ? ctx.stds : new Map(Object.entries(ctx.stds || {}));
+  const out = { produceDue: [], produceUnknown: [], produceNoStd: [], produceOk: 0, consumeLevels: [] };
   for (const lv of levels || []) {
-    const ref = refStockOf(lv.mat_no, ctx);
-    if (ref.kind === 'consume') { out.consumeLevels.push(lv); continue; }
-    const min = num(lv.min_qty);
-    if (min == null) continue;                                   // ไม่ตั้ง min = ไม่เฝ้า
-    const have = haveAt(ref.loc, lv.mat_no);
-    if (have == null) { out.produceUnknown.push({ ...lv, loc: ref.loc }); continue; }
+    if (refStockOf(lv.mat_no, ctx).kind === 'consume') out.consumeLevels.push(lv);
+  }
+  for (const mat of madeHereMats(ctx.lineName, ctx.products)) {
+    const ref = refStockOf(mat, ctx);
+    if (ref.kind !== 'produce') continue;                        // ไม่มีกฎรับเข้าคลัง = ไม่รู้ว่าของไปอยู่ไหน
+    const std = stds.get(mat);
+    const min = num(std?.min_qty);
+    if (min == null) { out.produceNoStd.push({ mat_no: mat, loc: ref.loc }); continue; }
+    const max = num(std?.max_qty);
+    const have = haveAt(ref.loc, mat);
+    if (have == null) { out.produceUnknown.push({ mat_no: mat, loc: ref.loc, min, max }); continue; }
     if (have > min) { out.produceOk += 1; continue; }
-    const max = num(lv.max_qty), reorder = num(lv.reorder_qty);
-    const qty = max != null ? Math.max(0, max - have) : (reorder ?? null);
-    out.produceDue.push({ ...lv, loc: ref.loc, have, min, suggestQty: qty ? Math.round(qty) : null });
+    const qty = max != null ? Math.max(0, max - have) : null;
+    out.produceDue.push({ mat_no: mat, loc: ref.loc, have, min, max, suggestQty: qty ? Math.round(qty) : null });
   }
   out.produceDue.sort((a, b) => (a.have / (a.min || 1)) - (b.have / (b.min || 1)));
   return out;

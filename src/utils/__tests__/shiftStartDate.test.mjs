@@ -42,3 +42,34 @@ test('shiftFrameOf — กรอบกะต้องตรงกับวัน
   // ไม่มีเวลาเลิก = รู้แค่ต้นกะ (ปลายเป็น null ไม่ใช่ 0)
   assert.equal(shiftFrameOf({ work_date: '2026-10-05', start_time: '20:00', shift: 'night' }).endMs, null);
 });
+
+/* ── computeSessionOee (ตัวที่ stamp ค่าตอนปิดกะ) ต้องใช้กฎวันเดียวกัน (QC 08/10) ────────
+   เดิมที่นั่นต่อ `work_date + start_time` ตรงๆ = **สำเนาที่ 3** ของกฎ ที่รอบแก้ 06/10 ไม่ได้แตะ
+   ⇒ กรอบกะเร็วไป 20 ชม. แล้วไปโดน clampWinToShift (ช่วง MAT) + dtMinOutsideWork
+     ⇒ %A/%P ที่ stamp เพี้ยนเงียบ
+   🔴 เทสนี้คุม 2 เรื่อง: (ก) กะดึกเริ่มเช้ามืดได้กรอบวันถัดไป (ข) **กะปกติค่าไม่เปลี่ยน** */
+test('computeSessionOee — shift_min ไม่เปลี่ยน · กรอบกะของกะดึกเช้ามืดเลื่อนวันถูก', async () => {
+  const { computeSessionOee } = await import('../oee.js');
+  const base = { orders: [], downtimes: [], defects: [], products: [], kanbanStds: [], breakPolicies: [] };
+
+  // (ก) กะดึกเริ่ม 02:00 จบ 07:00 → ความยาวกะ 300 นาที (ผลต่าง ไม่โดน offset)
+  const early = computeSessionOee({
+    ...base, session: { work_date: '2026-10-05', shift: 'night', start_time: '02:00:00' },
+    startTime: '02:00', endTime: '07:00',
+  });
+  assert.equal(early.shiftMin, 300);
+
+  // (ข) กะดึกเข้างานปกติ 22:30 → 07:00 ข้ามเที่ยงคืน = 510 นาที (ห้ามเลื่อนวันเริ่ม)
+  const normal = computeSessionOee({
+    ...base, session: { work_date: '2026-10-05', shift: 'night', start_time: '22:30:00' },
+    startTime: '22:30', endTime: '07:00',
+  });
+  assert.equal(normal.shiftMin, 510);
+
+  // (ค) กะเช้า — ไม่เกี่ยวกับกฎนี้เลย
+  const day = computeSessionOee({
+    ...base, session: { work_date: '2026-10-05', shift: 'day', start_time: '08:00:00' },
+    startTime: '08:00', endTime: '17:30',
+  });
+  assert.equal(day.shiftMin, 570);
+});

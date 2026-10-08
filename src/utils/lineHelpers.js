@@ -17,7 +17,7 @@
    - **ห้ามใช้เพื่อขยายสิทธิ์เขียน** — ใช้เติม "รายชื่อที่มองเห็น" เท่านั้น ส่วนปุ่มแก้ไขยังคุมด้วย can() เหมือนเดิม  */
 
 import { inSectionScope } from './sectionScope.js';
-import { fetchByIds } from './fetchByIds.js';
+import { fetchByIds, fetchAllPages } from './fetchByIds.js';
 
 /* ⚠️ supabaseClient ถูก import แบบ dynamic ในฟังก์ชัน ไม่ใช่บนหัวไฟล์ — **ห้ามเปลี่ยนเป็น static import**
    supabaseClient.js อ่าน `import.meta.env` ซึ่งพังนอก Vite ⇒ ไฟล์ util ที่ static import มัน
@@ -106,4 +106,37 @@ export async function mergeBorrowedEmployees(list, opts = {}) {
     _helperTo:    lineById[byEmp[e.id]?.to_line_id]?.name || '',
     _helperShift: byEmp[e.id]?.shift || null,   // ระบุกะเมื่อดึงทั้งวัน — ใช้บอกผู้ใช้ว่ามาช่วยกะไหน
   }))];
+}
+
+/** pure — แถว line_helpers (มี work_date) → { [work_date]: [พนักงาน + ป้าย _helper*] } หน้าตาเดียวกับผลของ
+ *  mergeBorrowedEmployees() · คนที่ไม่อยู่ใน `employees` (ลาออก/ไม่ใช่ shopfloor) = ข้าม (นับไว้ใน `missing`) */
+export function borrowedByDate(helpers, employees, lines) {
+  const empById = new Map((employees || []).map(e => [e.id, e]));
+  const lineById = Object.fromEntries((lines || []).map(l => [l.id, l]));
+  const byDate = {};
+  let missing = 0;
+  for (const h of helpers || []) {
+    const e = empById.get(h.employee_id);
+    if (!e) { missing += 1; continue; }
+    (byDate[h.work_date] ||= []).push({
+      ...e, _isHelper: true,
+      _helperFrom: lineById[e.line_id]?.name || e.section || 'ไลน์อื่น',
+      _helperTo: lineById[h.to_line_id]?.name || '',
+      _helperShift: h.shift || null,
+    });
+  }
+  return { byDate, missing };
+}
+
+/**
+ * คนยืมตัวย้อนหลังทั้งช่วง (รายงานย้อนหลัง · Manpower Board แท็บแผน vs มาจริง) — 1 คิวรีแทนการเรียก
+ * mergeBorrowedEmployees() ทีละวัน · ใช้ทะเบียนพนักงานที่หน้าโหลดไว้แล้ว (ไม่ยิง employees ซ้ำ)
+ * อ่านไม่ได้ = คืน `error` (ห้ามเงียบ — รายงานย้อนหลังต้องบอกว่าตัวเลขยืมเข้าไม่ครบ)
+ */
+export async function loadBorrowedRange({ from, to, employees = [], lines = [] }) {
+  const { supabase } = await import('../supabaseClient');
+  const { rows, error, truncated } = await fetchAllPages(() => supabase.from('line_helpers')
+    .select('id, employee_id, to_line_id, shift, work_date').gte('work_date', from).lte('work_date', to));
+  if (error) return { byDate: {}, missing: 0, error, truncated: false };
+  return { ...borrowedByDate(rows, employees, lines), error: null, truncated };
 }

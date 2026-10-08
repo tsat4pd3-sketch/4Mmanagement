@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import resizeImg from '../utils/resizeImage';
 // recharts ไม่ต้อง import ที่นี่แล้ว — radar ย้ายไปอยู่ใน SkillRadarPanel (2026-08-06)
 import { fmtDate, fmtDateTime } from '../utils/dateFormat';
@@ -47,11 +48,20 @@ import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { acceptImageFile } from '../utils/acceptImageFile';
 
-let tsLogoDataUrlPromise = null;
-function getTsLogoDataUrl() {
-  if (!tsLogoDataUrlPromise) tsLogoDataUrlPromise = urlToDataUrl(tsLogoUrl);
-  return tsLogoDataUrlPromise;
+/* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
+   🔴 ต้องรับ url ได้ เพราะ doc_control อัปโลโก้ทับรายฟอร์มได้ (`doc_forms.logo_url`)
+      เดิมไม่รับพารามิเตอร์ ⇒ 3 ใบ (changing_point · skill_pay_summary · attendance_record)
+      พิมพ์โลโก้เดิมตลอดแม้ตั้งใหม่แล้ว ส่วนใบ multi_skill ทำถูกอยู่แล้ว (ดูที่ `urlToDataUrl(
+      docFormSync('multi_skill', {}).logo_url || tsLogoUrl)`) = ตกหล่น 3 จาก 4 ใบ
+   · `src/pages/DailyReport.jsx` ใช้ pattern เดียวกันนี้ */
+const tsLogoDataUrlCache = new Map();
+function getTsLogoDataUrl(url) {
+  const key = url || tsLogoUrl;
+  if (!tsLogoDataUrlCache.has(key)) tsLogoDataUrlCache.set(key, urlToDataUrl(key));
+  return tsLogoDataUrlCache.get(key);
 }
+/** โลโก้ของฟอร์มนี้ — ทะเบียนชนะ แล้วค่อยถอยไปโลโก้ TS ทางการ */
+const formLogo = (docKey) => getTsLogoDataUrl(docFormSync(docKey, {}).logo_url);
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -109,20 +119,15 @@ async function fetchAllRows(buildQuery, pageSize = 1000, maxRows = 50000) {
   return out;
 }
 
-/* ── CSV export utility ── */
-function downloadCSV(filename, headers, rows) {
-  const escape = v => {
-    let s = v == null ? '' : String(v);
-    // กัน CSV formula injection — ค่าที่พิมพ์มือ (ชื่อ/หมายเหตุ) ขึ้นต้น = + - @ จะถูก Excel ตีความเป็นสูตร
-    // (ยกเว้นตัวเลขติดลบจริง เช่น -5 — ไม่ใช่สูตร)
-    if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
-    return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r') ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const lines = [headers.map(escape).join(','), ...rows.map(r => r.map(escape).join(','))];
-  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+/* ── CSV export → ทะเบียนเอกสาร ─────────────────────────────────────────────
+   CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว … CSV — ไม่มีข้อยกเว้น ต้อง register"*
+   🔴 เดิมไฟล์นี้เขียนตัวดาวน์โหลดเอง (ก๊อป logic ของ `utils/csvDoc.js` มาทั้งดุ้น) ⇒ 10 ปุ่มนี้
+   doc_control แก้เลขฟอร์ม/Rev ไม่ได้เลย · escape/BOM/กัน formula injection ก็เป็นสำเนาที่
+   ต้องไปตามแก้ 2 ที่ทุกครั้ง (QC audit 08/10) ⇒ ยุบไปใช้ของกลาง
+   · เลขฟอร์มอยู่ที่ **ชื่อไฟล์** (`csvDocName`) ห้ามแทรกบรรทัดในเนื้อ CSV — คอลัมน์จะเลื่อนทั้งไฟล์
+   · `loadDocForms()` ถูกเรียกที่หัวไฟล์แล้ว (บรรทัด ~162) ⇒ `docFormSync` มี cache ตอนกด */
+function downloadCSV(docKey, filename, headers, rows) {
+  downloadCsvDoc(docKey, filename, csvText(headers, rows));
 }
 
 function CsvBtn({ onClick, style = {} }) {
@@ -296,6 +301,7 @@ function OtTransportBookingTab({ autoOpenMaster }) {
 
   const handleExportCsv = () => {
     downloadCSV(
+      'csv_ot_bus_booking',
       `จองรถ_OT_${date}.csv`,
       ['ลำดับ', 'รหัสพนักงาน', 'ชื่อ-สกุล', 'ไลน์/แผนก', 'กะ', 'ช่วงเวลา OT', 'สายรถ', 'งานที่ทำ'],
       filteredRows.map((r, i) => [
@@ -768,6 +774,7 @@ table{border-collapse:collapse;width:100%}
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
+          'csv_daily_checkin',
           `daily_${date}_${shift}.csv`,
           ['วันที่', 'ประเภทวัน', 'กะ', 'รหัสพนักงาน', 'ชื่อ', 'แผนก', 'ทีม', 'หมวก', 'รองเท้า', 'ถุงมือ', 'OT'],
           // fallback กะจาก team: C = กะเช้าตลอด · A/B หมุนกะ ไม่รู้รอบจริง = เว้นว่าง (เดิมเดา A=เช้า B=ดึกตายตัว — ผิดครึ่งสัปดาห์)
@@ -948,6 +955,7 @@ table{border-collapse:collapse;width:100%}
         <CsvBtn onClick={() => {
           const emp = employees.find(e => e.id === selected);
           downloadCSV(
+            'csv_employee_month',
             `employee_${emp?.employee_id_code || selected}_${month}.csv`,
             ['วันที่', 'ประเภทวัน', 'มาทำงาน', 'หมวก', 'รองเท้า', 'ถุงมือ', 'จุดงาน'],
             // assigned_line เก็บ id จุดงาน — ต้อง map เป็นชื่อสถานีเหมือนหน้าจอ/PDF (เดิม CSV ออกเป็น uuid ดิบ)
@@ -1162,6 +1170,7 @@ table{border-collapse:collapse;width:100%}
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
+          'csv_station_attendance',
           `station_${station?.station_name || selectedStation}_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'รหัส', 'ชื่อ', 'ทีม', 'กะ', 'สังกัด', 'มาทำงาน', 'PPE ครบ'],
           filteredRows.map(r => [r.work_date, DAY_TYPE_META[getDayType(r.work_date)].label, r.employees?.employee_id_code, r.employees?.name, r.employees?.team || '', r.shift || '', r.employees?.section || '', r.is_present ? '✓' : '✗', (r.has_helmet && r.has_boots && r.has_gloves) ? '✓' : '✗'])
@@ -1343,6 +1352,7 @@ table{border-collapse:collapse;width:100%}
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
+          'csv_attendance_summary',
           `summary_${from}_${to}.csv`,
           ['รหัสพนักงาน', 'ชื่อ', 'วันที่มา', 'วันทั้งหมด', '%การมาทำงาน'],
           filteredRows.map(r => [r.code, r.name, r.present, r.total, r.total ? Math.round(r.present / r.total * 100) + '%' : '0%'])
@@ -1644,7 +1654,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       issued: issuedProfile,
     };
     const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
-    const logoDataUrl = await getTsLogoDataUrl();
+    const logoDataUrl = await formLogo('changing_point');
 
     // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
     const revisionRows = await getDocFormRevisions('changing_point');
@@ -1940,6 +1950,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         )}
         <span className="spacer" />
         <CsvBtn onClick={() => downloadCSV(
+          'csv_4m_changes',
           `4m_changes_${from}_${to}.csv`,
           ['วันที่', 'ประเภทวัน', 'ไลน์', 'ประเภท', 'ประเภทย่อย', 'รายละเอียด', 'สถานะ', 'เวลาสร้าง'],
           // export ชุดเดียวกับตารางบนจอ (ผ่าน filter ส่วนงาน) — เดิมใช้ logs ดิบ CSV ไม่ตรงจอ
@@ -2460,6 +2471,7 @@ ${catHeaderCells}
           const groups = groupSkillsByCategory(skillDefs);
           const ordered = groups.flatMap(g => g.skills);
           downloadCSV(
+            'csv_skill_matrix',
             `skill_matrix_${toLocalDateStr(new Date())}.csv`,
             ['รหัส', 'ชื่อ', 'ส่วนงาน', 'Team', ...ordered.map(s => s.label), 'เฉลี่ย'],
             employees.map(emp => {
@@ -3002,6 +3014,7 @@ function MultiSkillFormTab() {
             // header ต้องเป็น msVisibleDefs ชุดเดียวกับ levels ใน empLevelRows —
             // เดิมใช้ skill ทุกตัวเป็น header แต่ค่ามีเฉพาะตัวที่ visible → คอลัมน์เหลื่อมทั้งไฟล์
             downloadCSV(
+              'csv_multi_skill',
               `multi_skill_${toLocalDateStr(new Date())}.csv`,
               ['รหัส', 'ชื่อ', 'ตำแหน่ง', 'ส่วนงาน', 'Team', 'อายุงาน', ...msVisibleDefs.map(s => s.label), 'ทักษะโดยรวม'],
               empLevelRows.map(({ emp, levels, overall }) => [
@@ -3478,7 +3491,7 @@ function SkillAllowanceTab() {
     const days = periodDays();
     const dStr = `${days[0]}-${days[days.length-1]}`;
     const sectionLabel = section || (line ? `ไลน์ ${line}` : 'ทุกไลน์');
-    const logoDataUrl = await getTsLogoDataUrl();
+    const logoDataUrl = await formLogo('skill_pay_summary');
 
     // จำนวนแถวทั้งหมด เทียบกับความสูงที่ 1 หน้า A4 แนวนอนรับได้
     // ถ้าเกินไม่มาก (<=25%) ให้ย่อขนาดตัวอักษร/ระยะห่างเพื่อให้พอดี 1 หน้า
@@ -3703,6 +3716,7 @@ function SkillAllowanceTab() {
               });
             });
             downloadCSV(
+              'csv_skill_allowance',
               `skill_allowance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
               ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', 'กะ', ...daysArr.map(d => String(d)), 'รวมวัน'],
               csvRows
@@ -3854,7 +3868,11 @@ function AttendanceFormTab() {
   const [dept,    setDept]    = useState('');
   const [empDept, setEmpDept] = useState('');
   const [team,    setTeam]    = useState('');
-  const [formNo,  setFormNo]  = useState('F-HR-001');
+  /* เลขที่เอกสารของใบบันทึกการมาทำงาน — 🔴 ค่าตั้งต้นต้องมาจากทะเบียน (QC audit 08/10)
+     เดิม hardcode `'F-HR-001'` แล้วพิมพ์ลงหัวใบ ขณะที่ **ท้ายใบเดียวกัน** ห่อด้วย
+     `withDocFoot(html, 'attendance_record')` ที่อ่านจากทะเบียน ⇒ doc_control ตั้ง form_code ใหม่
+     = หัวใบขึ้นเลขหนึ่ง ท้ายใบขึ้นอีกเลข บนกระดาษใบเดียวกัน · ช่องนี้ยังแก้รายใบได้เหมือนเดิม */
+  const [formNo,  setFormNo]  = useState(() => docFormSync('attendance_record', { form_code: 'F-HR-001' }).form_code || 'F-HR-001');
   const [lines,   setLines]   = useState([]);
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
   const [loading, setLoading] = useState(false);
@@ -3999,7 +4017,7 @@ function AttendanceFormTab() {
     const { data: { user } } = await supabase.auth.getUser();
     const { data: prof } = await supabase.from('profiles').select('signature_url').eq('id', user.id).single();
     const sigDataUrl = prof?.signature_url ? await urlToDataUrl(prof.signature_url) : null;
-    const logoDataUrl = await getTsLogoDataUrl();
+    const logoDataUrl = await formLogo('attendance_record');
 
     const thStyle = 'border:1px solid #000;background:#e8e8e8;text-align:center;font-size:8px;padding:1px 0;';
     const tdStyle = 'border:1px solid #000;text-align:center;font-size:9px;padding:0;height:14px;';
@@ -4279,6 +4297,7 @@ function AttendanceFormTab() {
           <CsvBtn onClick={() => {
             const daysArr = periodDays();
             downloadCSV(
+              'csv_attendance_sheet',
               `attendance_${year}_${String(month).padStart(2,'0')}_p${period}.csv`,
               ['รหัสพนักงาน', 'ชื่อ', 'ส่วนงาน', 'Team', ...daysArr.map(d => isSunday(d) ? `${d}(หยุด)` : String(d)), 'รวมวัน', 'OT (ชม.)'],
               empRows.map(r => {

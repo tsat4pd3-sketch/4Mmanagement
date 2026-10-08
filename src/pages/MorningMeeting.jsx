@@ -25,6 +25,7 @@ import PageHeader from '../components/PageHeader';
 import FilterBar from '../components/FilterBar';
 import { useLatestRequest } from '../utils/useLatestRequest';
 import { ALL } from '../utils/filterLabels';
+import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -173,7 +174,7 @@ export default function MorningMeeting() {
       const [sessRes, fmRes, attRes, actTodayRes, actCarryRes, mcsRes, brkRes] = await Promise.all([
         supabaseDR.from('production_sessions')
           .select('*, dr_products(name, mat_no)')
-          .eq('work_date', D).in('line_name', lineNames).limit(500),
+          .eq('work_date', D).in('status', SESSION_STATUSES_REAL).in('line_name', lineNames).limit(500),
         supabase.from('four_m_logs')
           .select('id, line_name, category, change_subtype, description, status, created_at')
           .eq('work_date', D).in('line_name', lineNames).order('created_at'),

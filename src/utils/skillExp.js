@@ -29,25 +29,48 @@ export const EVIDENCE_LEGS = [
   { key: 'certified', icon: '📜', label: 'การรับรอง',     hint: 'OJT · เคยเป็นผู้สอน · เอกสารอบรม' },
 ];
 
+const bandEdges = (cfg) =>
+  [0, num(cfg?.band_cum_0), num(cfg?.band_cum_1), num(cfg?.band_cum_2), num(cfg?.band_cum_3)];
+
 /* ความคืบหน้าภายในขั้น (0..1) — ใช้วาดหลอด ไม่ใช่ตัดสินคะแนน
-   รูปโค้ง log ตาม Wright (1936): ต้องใช้ปริมาณสะสมเพิ่มแบบทบเท่าเพื่อขึ้นขั้นถัดไป */
-export function bandProgress(cumCycles, nRef, band, cfg) {
-  const edges = [0, num(cfg?.band_cum_0), num(cfg?.band_cum_1), num(cfg?.band_cum_2), num(cfg?.band_cum_3)];
+   รูปโค้ง log ตาม Wright (1936): ต้องใช้ปริมาณสะสมเพิ่มแบบทบเท่าเพื่อขึ้นขั้นถัดไป
+
+   🔴 รับ `cum_ratio` (เท่าของรอบอ้างอิง) จาก employee_skill_evidence ตรงๆ
+      **ห้ามเอา cum_cycles มาหาร n_ref ตัวเดียวที่นี่** — คนหนึ่งสลับหลายสถานีที่ n_ref
+      ต่างกันถึง 34 เท่า (CT 2.5 วิ → 86 วิ · วัด 08/10) ⇒ เลือกตัวหารไม่ถูก
+      ฝั่ง DB สะสมเป็นสัดส่วนรายวันไว้แล้ว (Σ shots ÷ parallel_staff ÷ n_ref ของสถานีวันนั้น) */
+export function bandProgress(cumRatio, band, cfg) {
+  const edges = bandEdges(cfg);
   const b = clampInt(band, 0, 4);
   if (b >= 4) return 1;
-  const r  = num(nRef) > 0 ? num(cumCycles) / num(nRef) : 0;
+  const r  = num(cumRatio);
   const lo = edges[b];
   const hi = edges[b + 1];
   if (!(hi > lo)) return 0;
   return Math.max(0, Math.min(1, (r - lo) / (hi - lo)));
 }
 
-/* รอบที่ยังขาดก่อนถึงเพดานขั้นปัจจุบัน — บอกหน้างานตรงๆ ว่า "อีกเท่าไหร่" */
-export function cyclesToNextBand(cumCycles, nRef, band, cfg) {
-  const edges = [0, num(cfg?.band_cum_0), num(cfg?.band_cum_1), num(cfg?.band_cum_2), num(cfg?.band_cum_3)];
+/* "อีกกี่รอบถึงเพดานขั้น" — แปลงสัดส่วนที่ขาดกลับเป็นจำนวนรอบด้วย n_ref ของสถานีที่กำลังดู
+   (ตัวเลขนี้ใช้ "บอกหน้างานให้เห็นภาพ" เท่านั้น ไม่ได้เอาไปตัดสินขั้น) */
+export function cyclesToNextBand(cumRatio, nRef, band, cfg) {
+  const edges = bandEdges(cfg);
   const b = clampInt(band, 0, 4);
   if (b >= 4 || !(num(nRef) > 0)) return null;
-  return Math.max(0, Math.round(edges[b + 1] * num(nRef) - num(cumCycles)));
+  const left = edges[b + 1] - num(cumRatio);
+  return Math.max(0, Math.round(left * num(nRef)));
+}
+
+/* เวลาที่คาดว่าเหลือถึงเพดานขั้น (วันทำงาน) — จากอัตราคืบหน้าจริงของคนนั้น
+   🔴 ไม่มีประวัติพอ (ยังไม่เคยคืบ) = null ห้ามเดา */
+export function daysToNextBand(cumRatio, daysWorked, band, cfg) {
+  const edges = bandEdges(cfg);
+  const b = clampInt(band, 0, 4);
+  const d = num(daysWorked);
+  const r = num(cumRatio);
+  if (b >= 4 || !(d > 0) || !(r > 0)) return null;
+  const left = edges[b + 1] - r;
+  if (left <= 0) return 0;
+  return Math.ceil(left / (r / d));
 }
 
 /* สถานะของแถวหลักฐาน — 🔴 "ประเมินไม่ได้" ต้องแยกจาก "คะแนนต่ำ" เสมอ

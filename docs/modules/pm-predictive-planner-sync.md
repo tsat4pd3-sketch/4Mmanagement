@@ -58,7 +58,7 @@
 
 | ระบบ | ไฟล์ | รู้ไหมว่าวันนี้ผลิต |
 |---|---|---|
-| AM รายวันต่อไลน์ (`pm_daily_line_targets`) | `src/lib/pmDailyStatus.js` | ✅ มีสถานะ `idle` ผูกกับ `prod_orders.opened_at` |
+| AM รายวันต่อไลน์ (`pm_daily_line_targets`) | `src/lib/pmDailyStatus.js` (pure) + **`src/lib/dailyAmBoard.js` (loader กลาง · 08/10 — DailyPM และผังรวมโรงงานใช้ตัวเดียวกัน)** | ✅ มีสถานะ `idle` ผูกกับ `prod_orders.opened_at` |
 | แผน PM รายเครื่อง (`pm_plans`) | `src/lib/pmSchedule.js` | ❌ `next_due = last_done + 1 วัน` ปฏิทินล้วน |
 
 **วัดฐานจริงก่อนแก้ (60 วันล่าสุด · แผน AM รายวัน 7 ตัว · ทุกแผนในระบบเป็น `plan_type='time'` 147/147
@@ -113,7 +113,7 @@
 
 - **ระดับเครื่องจริง** — `prod_orders.machine_no` กรอกแค่ **6.1%** (916/15,090 ใบ · 24 เครื่อง · 90 วัน)
   ⇒ เฟสนี้ตัดสินที่ **ครอบครัวไลน์** ทั้งหมด · ไลน์ที่มีเครื่องขนานจะถือว่าทุกเครื่อง "เดิน" พร้อมกัน
-- **ยุบ AM 2 ระบบให้เหลือกติกาเดียว** (`pm_daily_line_targets` 36 แถว ↔ `pm_plans` daily 7 แถว)
+- **ยุบ AM 2 ระบบให้เหลือกติกาเดียว** (📄 audit เต็ม + ตัวเลขจริง 08/10 → `am-pm-linkage-audit.md`) (`pm_daily_line_targets` 36 แถว ↔ `pm_plans` daily 7 แถว)
 - **แยกหัวข้อในใบตรวจตาม trigger** — "ลมรั่ว/น้ำมันหยด/5ส." ควรคงรอบปฏิทินแม้เครื่องจอด
 
 ---

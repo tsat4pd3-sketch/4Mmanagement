@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { currentWorkShift, isBorrowIntoScope } from '../lineHelpers.js';
+import { currentWorkShift, isBorrowIntoScope, borrowedByDate } from '../lineHelpers.js';
 
 /* 🤝 ยืมพนักงานข้ามไลน์ (line_helpers) — ล็อกกฎ 2 ข้อที่พลาดแล้วคนหายจากจอเงียบๆ:
    1) วัน+กะของ "การยืมที่ยังมีผลตอนนี้" ต้องใช้กฎ work date ไทย (ตัด 08:00) เหมือนทั้งระบบ
@@ -63,4 +63,15 @@ test('role ที่คุมด้วยส่วนงาน — ดูจา�
 test('admin/manager (ไม่จำกัด scope) — ผ่านหมด', () => {
   assert.equal(isBorrowIntoScope(null, [], LINE_BY_ID, 20), true);
   assert.equal(isBorrowIntoScope(null, [], LINE_BY_ID, 99), true);
+});
+
+test('borrowedByDate: จัดคนยืมตามวัน หน้าตาเดียวกับ mergeBorrowedEmployees · คนไม่อยู่ในทะเบียน = นับ missing', () => {
+  const { byDate, missing } = borrowedByDate(
+    [{ employee_id: 'e1', to_line_id: 2, shift: 'day', work_date: '2026-10-01' },
+     { employee_id: 'gone', to_line_id: 2, shift: 'night', work_date: '2026-10-01' }],
+    [{ id: 'e1', name: 'A', line_id: 1 }],
+    [{ id: 1, name: 'L1' }, { id: 2, name: 'L2' }],
+  );
+  assert.equal(missing, 1);
+  assert.deepEqual(byDate['2026-10-01'].map(h => [h.id, h._helperFrom, h._helperTo, h._helperShift, h._isHelper]), [['e1', 'L1', 'L2', 'day', true]]);
 });

@@ -6,6 +6,7 @@ import {
 } from '../utils/monitorGrid';
 import { rowDefs, balanceRowKey, minRowKey } from '../utils/monitorBoards';
 import { matText } from '../utils/matLabel';
+import { periodHead, isTodayPeriod, startIndexForToday, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวทุกตาราง (08/10)
 
 /* ══ 📉 MonitorBoardGrid — ตารางบอร์ด Monitoring (พาร์ท × ช่วงเวลา × แถว) ════════════════
    ใช้ร่วมทุกแท็บ (ไลน์ปั๊ม · FG รายแร็ค · Argen · วัตถุดิบ · งานส่งชุบ) — ชุดแถวมาจาก
@@ -34,11 +35,6 @@ const fmtN = (v, dec = 0) => (v === null || v === undefined || !Number.isFinite(
   ? '–'
   : Number(v).toLocaleString(undefined, { maximumFractionDigits: dec }));
 const fmtPct = (v) => (v === null || v === undefined ? '–' : `${(v * 100).toFixed(1)}%`);
-const dayLabel = (d) => {
-  const t = new Date(`${d}T00:00:00`);
-  const wd = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][t.getDay()];
-  return { top: wd, bot: `${t.getDate()}/${t.getMonth() + 1}`, weekend: t.getDay() === 0 || t.getDay() === 6 };
-};
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)',
@@ -60,6 +56,17 @@ export default function MonitorBoardGrid({
   /* คอลัมน์ที่กำลังมองอยู่ — 🔴 คอลัมน์แรก (ยอดยกมา) ต้องติดมาเสมอ ไม่งั้นเลื่อนไปแล้ว
      ตัวเลข BALANCE ดูเหมือนโผล่มาจากไหนไม่รู้ (ยอดยกมาคือที่มาของทั้งแถว) */
   const seed = periods[0] || null;
+  /* 🗓️ เปิดมา "วันนี้" ต้องเป็นคอลัมน์แรกถัดจากยกมา (08/10 · user: วันเริ่มของตารางทิศทางเดียวกัน)
+     เดิมเริ่มที่คอลัมน์แรกของไฟล์ที่นำเข้า (Argen = ธ.ค. ปีก่อน · ไลน์ปั๊ม = 29/09) ต้องกด → ไล่หาเอง
+     reset ทุกครั้งที่สลับบอร์ด/ชุดคอลัมน์เปลี่ยนรูป — ตัดสินที่ `startIndexForToday` (utils/periodHead.js) */
+  const todayKey = getWorkDate();
+  const pKind = board?.period_kind || 'day';
+  const firstKey = periods[0]?.key || '';
+  const homeStart = useMemo(
+    () => startIndexForToday(periods.slice(1), todayKey, pKind, windowSize - 1),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- คีย์รูปร่างคอลัมน์ (string) ไม่ใช่ identity ของ array
+    [firstKey, periods.length, todayKey, pKind, windowSize]);
+  useEffect(() => { setWinStart(homeStart); }, [board?.id, homeStart]);
   const win = useMemo(() => {
     if (periods.length <= windowSize) return periods;
     const body = periods.slice(1);
@@ -146,10 +153,11 @@ export default function MonitorBoardGrid({
   }
 
   const unknownRecur = rows.filter((r) => r.unknownRecur);
-  /* "วันนี้" ของโรงงาน = วันงาน (ก่อน 08:00 นับเป็นวันก่อนหน้า) ไม่ใช่วันปฏิทินของเครื่อง */
-  const todayKey = getWorkDate();
+  /* "วันนี้" ของโรงงาน = วันงาน (ก่อน 08:00 นับเป็นวันก่อนหน้า) — todayKey ประกาศไว้ด้านบนแล้ว */
   const body = periods.slice(1);
   const canPage = periods.length > windowSize;
+  /* FC / Total SL / %SL มีความหมายเฉพาะบอร์ดที่เป็น "การไหล" — บอร์ดวัตถุดิบเป็นภาพ ณ วัน (1 คอลัมน์) ⇒ ไม่โชว์ */
+  const showSl = board.kind !== 'raw';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -164,7 +172,7 @@ export default function MonitorBoardGrid({
           {summary.partial ? (
             <div>
               ⚠️ <b>{summary.seedMissingCount} พาร์ทยังไม่ใส่ยอดยกมา</b> (ช่องคอลัมน์แรก
-              {seed ? ` ${dayLabel(seed.date).bot}` : ''}) ⇒ แถวที่ต้องคำนวณของพาร์ทนั้นขึ้นขีด “–” ทั้งแถว
+              {seed ? ` ${periodHead(seed.date, { today: todayKey }).bot}` : ''}) ⇒ แถวที่ต้องคำนวณของพาร์ทนั้นขึ้นขีด “–” ทั้งแถว
               — ระบบไม่เดายอดยกมาให้ เพราะ “ยกมา 0” กับ “ไม่รู้ว่ายกมาเท่าไหร่” ตัดสินใจคนละแบบ
               <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                 {summary.seedMissing.slice(0, 12).map((s) => s.mat_no || '(ไม่มีเลข)').join(' · ')}
@@ -199,9 +207,11 @@ export default function MonitorBoardGrid({
             <button type="button" onClick={() => setWinStart((s) => Math.max(0, s - (windowSize - 1)))}
               disabled={winStart <= 0} aria-label="ย้อนช่วงวันที่">←</button>
             <span style={{ color: 'var(--muted)' }}>
-              {win.length > 1 ? `${dayLabel(win[1].date).bot} – ${dayLabel(win[win.length - 1].date).bot}` : ''}
+              {win.length > 1 ? `${periodHead(win[1].date, { today: todayKey }).bot} – ${periodHead(win[win.length - 1].date, { today: todayKey }).bot}` : ''}
               {` (จาก ${body.length} ช่วง)`}
             </span>
+            <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
+              title="กลับมาที่คอลัมน์วันนี้">📍 วันนี้</button>
             <button type="button"
               onClick={() => setWinStart((s) => Math.min(Math.max(0, body.length - (windowSize - 1)), s + (windowSize - 1)))}
               disabled={winStart >= body.length - (windowSize - 1)} aria-label="ช่วงวันที่ถัดไป">→</button>
@@ -242,41 +252,35 @@ export default function MonitorBoardGrid({
                 พาร์ท <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({shown.length}/{parts.length})</span>
               </th>
               <th style={{ ...thBase, minWidth: 108, textAlign: 'left' }}>แถว</th>
-              {win.map((p, i) => {
-                const d = dayLabel(p.date);
+              {win.map((p) => {
+                /* 🗓️ ป้าย + สี มาจาก utils/periodHead.js — ตัวเดียวกับตาราง Balance FG (RundownStock) */
                 const isSeed = p.key === seed?.key;
-                const isToday = p.date === todayKey;
+                const h = periodHead(p.date, { kind: pKind, today: todayKey, seed: isSeed && !isTodayPeriod(p.date, todayKey, pKind) });
+                const tone = periodTone({ isToday: h.isToday, seed: isSeed && !h.isToday, weekend: h.weekend });
                 return (
                   <th key={p.key} style={{
                     ...thBase, minWidth: COL_W, width: COL_W,
-                    background: isToday ? 'var(--accent-dim)' : (isSeed ? 'var(--bg3)' : 'var(--bg2)'),
-                    borderLeft: isToday ? '2px solid var(--accent)'
-                      : (isSeed || i === 1 ? '2px solid var(--border2)' : thBase.borderLeft),
-                    borderRight: isToday ? '2px solid var(--accent)' : undefined,
+                    background: tone.bg || 'var(--bg2)',
+                    borderLeft: tone.edge || thBase.borderLeft,
+                    borderRight: h.isToday ? tone.edge : undefined,
                   }}>
-                    <div style={{
-                      fontSize: FS - 1,
-                      fontWeight: isToday ? 800 : undefined,
-                      color: isToday ? 'var(--accent)'
-                        : (isSeed ? 'var(--accent2)' : (d.weekend ? 'var(--muted)' : 'var(--text2)')),
-                    }}>
-                      {/* 🔴 ต้องบอกว่า "วันนี้" อยู่คอลัมน์ไหน (user 06/10) — บอร์ดกว้าง 34 คอลัมน์
-                          ไล่หาวันที่เองทุกครั้ง = เสียเวลาและอ่านผิดแถว · ใช้ `getWorkDate()`
-                          (ก่อน 08:00 = วันก่อนหน้า) ไม่ใช่วันปฏิทิน — กะดึกต้องชี้วันงานของตัวเอง */}
-                      {isToday ? '📍 วันนี้' : (isSeed ? 'ยกมา' : (board.period_kind === 'week' ? 'สัปดาห์' : d.top))}
-                    </div>
-                    <div style={{ fontWeight: isToday ? 800 : undefined, color: isToday ? 'var(--accent)' : undefined }}>{d.bot}</div>
+                    <div style={{ fontSize: FS - 1, fontWeight: h.isToday ? 800 : undefined, color: tone.color }}>{h.top}</div>
+                    <div style={{ fontWeight: h.isToday ? 800 : undefined, color: h.isToday ? tone.color : undefined }}>{h.bot}</div>
                   </th>
                 );
               })}
-              <th style={{ ...thBase, minWidth: 78, borderLeft: '2px solid var(--border2)' }}>FC</th>
-              <th style={{ ...thBase, minWidth: 78 }}>Total SL</th>
-              <th style={{ ...thBase, minWidth: 66 }}>%SL</th>
+              {showSl ? (
+                <>
+                  <th style={{ ...thBase, minWidth: 78, borderLeft: '2px solid var(--border2)' }}>FC</th>
+                  <th style={{ ...thBase, minWidth: 78 }}>Total SL</th>
+                  <th style={{ ...thBase, minWidth: 66 }}>%SL</th>
+                </>
+              ) : null}
             </tr>
           </thead>
           <tbody>
             {shown.length === 0 ? (
-              <tr><td colSpan={win.length + 5} style={{ padding: 18, textAlign: 'center', color: 'var(--muted)' }}>
+              <tr><td colSpan={win.length + (showSl ? 5 : 2)} style={{ padding: 18, textAlign: 'center', color: 'var(--muted)' }}>
                 {parts.length === 0 ? 'บอร์ดนี้ยังไม่มีพาร์ท — นำเข้าจากไฟล์ Excel หรือเพิ่มเอง' : 'ไม่มีพาร์ทที่ตรงเงื่อนไข'}
               </td></tr>
             ) : shown.map((part, pi) => {
@@ -333,7 +337,7 @@ export default function MonitorBoardGrid({
                   {win.map((p, ci) => {
                     const c = cellAt(grid, part.id, row.key, p.key);
                     const isSeed = p.key === seed?.key;
-                    const isToday = p.date === todayKey;
+                    const isToday = isTodayPeriod(p.date, todayKey, pKind);
                     const editing = edit && edit.partId === part.id && edit.rowKey === row.key && edit.periodKey === p.key;
                     const br = balKey === row.key ? breachBy.get(`${part.id}|${p.date}`) : null;
                     const neg = balKey === row.key && c?.v !== null && c?.v < 0;
@@ -380,7 +384,7 @@ export default function MonitorBoardGrid({
                       </td>
                     );
                   })}
-                  {ri === 0 ? (
+                  {ri === 0 && showSl ? (
                     <>
                       <td rowSpan={rows.length} style={{ ...tdBase, textAlign: 'right', borderLeft: '2px solid var(--border2)', verticalAlign: 'top' }}>{fmtN(part.fc)}</td>
                       <td rowSpan={rows.length} style={{ ...tdBase, textAlign: 'right', verticalAlign: 'top' }}>
@@ -406,8 +410,8 @@ export default function MonitorBoardGrid({
 
       {/* ── ที่มาของตัวเลข (ต้องเขียนไว้ เพราะ 2 ชีทในไฟล์เดิมคิด Total SL คนละแบบ) ──── */}
       <div style={{ fontSize: FS, color: 'var(--muted)', lineHeight: 1.8 }}>
-        <b>Total SL</b> ของบอร์ดนี้นับจากแถว <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
-        {board.sl_includes_seed ? ' + ยอดยกมา' : ''} (ข้ามคอลัมน์ยอดยกมาในการรวม)
+        {showSl ? <><b>Total SL</b> ของบอร์ดนี้นับจากแถว <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
+        {board.sl_includes_seed ? ' + ยอดยกมา' : ''} (ข้ามคอลัมน์ยอดยกมาในการรวม)</> : null}
         {' · '}<b>ƒ สูตร</b> = แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้
         {' · '}<b>⚙</b> = ระบบดึงจากใบผลิต/สต๊อกให้ กรอกทับได้ (ค่าที่คนกรอกชนะเสมอ)
         {' · '}<b>–</b> = ข้อมูลไม่พอให้คิด (ไม่ใช่ 0)
