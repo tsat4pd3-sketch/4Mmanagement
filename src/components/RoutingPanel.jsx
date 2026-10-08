@@ -142,12 +142,18 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     if (!window.confirm(`ลบขั้น "${r.step_name}" ?`)) return;
     const { error } = await supabaseDR.from('part_routings').delete().eq('id', r.id);
     if (error) { toast.error(error.message); return; }
-    // เรียงลำดับที่เหลือให้ต่อเนื่อง 1..n
+    /* เรียงลำดับที่เหลือให้ต่อเนื่อง 1..n
+       🔴 ต้องอ่านผลทุกรอบ (QC audit 06/10) — เดิมทิ้งผล `await` ⇒ RLS ปฏิเสธ/คิวรีล้ม = เลข seq
+       กระโดดหรือซ้ำแบบเงียบ แล้วไปชน `unique (mat_no, seq)` ในการบันทึกครั้งถัดไปแบบงงๆ */
     const rest = steps.filter(s => s.id !== r.id).sort((x, y) => x.seq - y.seq);
+    let reseqFail = 0;
     for (let i = 0; i < rest.length; i++) {
-      if (rest[i].seq !== i + 1) await supabaseDR.from('part_routings').update({ seq: i + 1 }).eq('id', rest[i].id);
+      if (rest[i].seq === i + 1) continue;
+      const res = await supabaseDR.from('part_routings').update({ seq: i + 1 }).eq('id', rest[i].id).select('id');
+      if (res.error || !(res.data || []).length) reseqFail++;
     }
-    toast.success('ลบแล้ว');
+    if (reseqFail) toast.error(`ลบแล้ว แต่เรียงลำดับขั้นใหม่ไม่สำเร็จ ${reseqFail} ขั้น — ลำดับอาจกระโดด/ซ้ำ`);
+    else toast.success('ลบแล้ว');
     loadSteps(sel.mat_no); loadAll();
   };
 

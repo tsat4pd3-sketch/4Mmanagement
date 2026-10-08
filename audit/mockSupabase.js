@@ -1,6 +1,8 @@
 /* mock client สำหรับ audit layout เท่านั้น — คืนข้อมูลว่าง ให้หน้า render โครงออกมาได้ */
 
 /* ชื่อประเภทจริงจากระบบ — ยาว/สั้นคละกันเหมือนของจริง (ใช้ทดสอบกราฟจัดอันดับ + ป้ายแกนที่ถูกตัด) */
+/** วันงานย้อนหลัง n วันจากวันนี้ (เวลาไทย) — ให้รายงานย้อนหลังที่ default 30 วันมีข้อมูล */
+const _recentDay = (n) => new Date(Date.now() + 7 * 3600e3 - 8 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
 const DT_NAMES = ['JIG มีปัญหา (ชำรุด/ปรับแก้)', 'Robot (Alarm/Error)', 'เลเซอร์มีปัญหา',
   'เครื่องแจ้งเตือน Alarm (ไม่ระบุสาเหตุ)', 'อื่นๆ (นอกแผน)', 'แก้ไขปัญหาคุณภาพ',
   'รอกระบวนการก่อนหน้า (นอกแผน)', 'ราง Conveyor มีปัญหา', 'Sensor / Reed มีปัญหา', 'ลวดเชื่อมติด',
@@ -173,7 +175,9 @@ const NULLISH = (i) => ({
   interval_days: null, next_due_date: null, last_done_at: null, max_idle_days: null,
 })
 
-const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14)]
+/* 13 แถวปกติ + แถว 14 = NULLISH (ค่า null ทุกช่องที่ nullable ได้) + แถว 15 = ที่ว่างให้เคสพิเศษ
+   รายตาราง (ตอนนี้: กะโมฆะใน `production_sessions` · ดู PATCH ข้างล่าง) — **ห้ามลดจำนวนแถว** */
+const ROWS = [...Array.from({ length: 13 }, (_, i) => ROW(i + 1)), NULLISH(14), ROW(15)]
 
 const thenable = (rows = ROWS) => {
   const res = { data: rows, error: null, count: rows.length }
@@ -233,6 +237,23 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 🌳 BOM — **ห้ามถอดรูปทรง "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ"** (2026-10-08)
+     เดิม `bom_items` ได้ ROWS ทั่วไปที่ `parent_mat` เป็น null ทุกแถว + `product_id` เป็น `p-N`
+     ซึ่ง**ไม่ตรงกับ id ของ dr_products เลยสักแถว** ⇒ 2 สาขานี้ไม่เคยถูกเรนเดอร์ใน crashsweep:
+       · ต้นไม้ BOM หลายชั้น (`explodeBom` — ชั้น ..2/...3 · ปุ่มกระโดดข้ามใบ)
+       · แท็บ 🔁 BOM ซ้ำ 2 ใบ (`auditBomDupes`) — ได้ลิสต์ว่างตลอด
+     รูปทรงที่ตั้งไว้ (ของจริงมีจริง — วัดจากฐาน 08/10: 95 คู่ · subset 5 คู่):
+       ใบ `id-1` (MAT 10101001) จัดลูกของ `10101002` ไว้เอง 5 ตัว (30047007..30047011)
+       ใบ `id-2` (MAT 10101002 เอง) มีลูก 8 ตัว (30047007..30047014) = **ครอบของใบแรกทั้งหมด**
+       ⇒ ผลตรวจ `subset` "ใบนี้ขาดของ 3 รายการ" = สาขาที่ร้อนที่สุด ต้องถูกวาดทุกรอบ */
+  bom_items: (r, i) => ({
+    ...r,
+    product_id: i <= 6 ? 'id-1' : 'id-2',
+    parent_mat: i > 1 && i <= 6 ? '10101002' : null,
+    mat_no: i === 1 ? '10101002' : `3004${7000 + (i <= 6 ? i + 5 : i)}`,
+    qty_per_unit: i === 1 ? 1 : 2, uom: i % 3 === 0 ? 'KG' : 'PC', item_no: i * 10,
+    is_active: true,
+  }),
   /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
      (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
@@ -282,7 +303,13 @@ const TABLE_ROWS = {
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
   },
   line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
-  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
+    work_date: _recentDay(i % 20) }),
+  /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
+     ⇒ จอย้อนหลังรายวันมีทั้งกะที่ขาด/ครบ/เกิน/ไม่ได้เช็ค · หน้าอื่นที่อ่านเช็คชื่อวันนี้ยังได้แถววันนี้ (i%20 = 0) */
+  shift_schedules: (r, i) => ({ ...r, line_id: 'id-3', dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
+  daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
+    shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
@@ -414,7 +441,16 @@ const TABLE_ROWS = {
      = สาขา "มีกะเปิดอยู่" ซึ่งเป็นสถานะปกติของวันทำงาน ไม่เคยถูกรันใน harness เลย
      · กระจายลง 4 ไลน์แรก (มีทั้งแม่ 1 · ลูก 2,3 · หลาน 4) ⇒ ได้เคส rollup แม่-ลูกจริงด้วย
      · แถว 13-14 คงเป็น FAM_LINE ไว้ = เคส "กะของไลน์ที่ไม่มีในทะเบียน" ที่ของจริงก็มี (ชื่อไลน์เก่า) */
-  production_sessions: (r, i) => ({ ...r, line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE }),
+  /* 🚫 แถว 15 = **กะโมฆะ** (`status: 'void'` · 2026-10-08) **ห้ามถอด** — สาขา "ใบที่ไม่ใช่กะจริง"
+     (ป้าย 🚫 ในลิสต์ประวัติ · `voidBadge`/`isVoidSession` · ปุ่มโมฆะต้องไม่โผล่กับใบนี้)
+     ถ้าไม่มีแถวนี้ harness จะไม่เคยเรนเดอร์สาขานั้นเลย */
+  production_sessions: (r, i) => ({
+    ...r,
+    line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
+    ...(i === 15 ? { status: 'void', void_reason: 'เปิดกะผิดแล้วปิดทิ้ง (mock)',
+                     voided_at: '2026-08-05T09:00:00+07:00', voided_by_name: 'ผู้ทดสอบ',
+                     actual_qty: 0, qty_ok: 0, qty_ng: 0 } : {}),
+  }),
   /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
      `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
      **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
@@ -445,10 +481,13 @@ const TABLE_ROWS = {
   })),
   checklists: (r, i) => ({ ...r, equipment_id: i <= 8 ? `id-${i}` : `e-${i}` }),
   inspections: (r, i) => ({ ...r, jig_id: `id-${i}`, status: AM_INSP[i] || 'pass' }),
-  pm_daily_line_targets: (r, i) => ({
+  /* ⚠️ ROWS โตได้ (แถว 15 = กะ void เพิ่ม 08/10) — แถวที่ไม่มีใน AM_TARGET ต้องเป็นทะเบียนที่ปิดใช้แล้ว
+     (`is_active:false` ถูกกรองออกด้วย `.eq('is_active', true)`) **ห้าม `AM_TARGET[i][0]` ตรงๆ** — เคยพังทั้ง
+     DailyPM และ FactoryMap ในฮาร์เนสเงียบๆ (TypeError ใน mapper → หน้าโหลดค้าง "กำลังโหลด...") */
+  pm_daily_line_targets: (r, i) => (AM_TARGET[i] ? {
     ...r, line_name: LINE_NAME(AM_TARGET[i][0]), jig_id: `id-${AM_TARGET[i][1]}`,
     shift: AM_TARGET[i][2], is_active: true, sort_order: i,
-  }),
+  } : { ...r, line_name: LINE_NAME(5), jig_id: `id-${i}`, shift: null, is_active: false, sort_order: i }),
   /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
      `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
      ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**
@@ -478,6 +517,16 @@ const MOCK_DAY = (n) => {
 }
 
 const TABLE_FIXED = {
+  /* 🔁 ผลตรวจคู่ "BOM ซ้ำ 2 ใบ" — **ห้ามถอด** (2026-10-08)
+     ตั้ง `fingerprint` ให้ **ไม่ตรง** ของจริงโดยตั้งใจ ⇒ สาขา `staleReview`
+     ("⚠️ BOM เปลี่ยนหลังตรวจ — ต้องตรวจซ้ำ") ถูกวาดทุกรอบ
+     🔴 ถ้าตั้งให้ตรง จะได้แต่สาขา "เคลียร์แล้ว" แล้วกฎที่สำคัญที่สุดของจอนี้
+        (ตรวจแล้วไม่ใช่จบตลอดกาล) จะไม่เคยถูกทดสอบ */
+  bom_dup_reviews: [{
+    sheet_mat: '10101001', component_mat: '10101002', fingerprint: 'stale000',
+    verdict: 'subset', decision: 'ok_both', note: 'คนละรุ่น ตรวจแล้ว',
+    reviewed_by_name: 'PE ทดสอบ', reviewed_at: '2026-10-07T03:00:00Z',
+  }],
   /* 📦 ออเดอร์ลูกค้าจาก EDI 862/830 — **ห้ามถอด** (2026-10-06)
      เป็นแหล่งเดียวของแถว ORDER บนบอร์ด FG และของตัวสร้างบอร์ด `MonitorFgSync`
      🔴 ต้องมีครบ 3 เคสที่ของจริงมี ไม่งั้นสาขาเหล่านี้ไม่เคยถูกรัน:

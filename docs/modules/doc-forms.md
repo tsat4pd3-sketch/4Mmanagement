@@ -85,3 +85,59 @@ CSV ถูกเปิดด้วย Excel/Sheets แล้วใช้ "แถ
 ⇒ เลขฟอร์มที่ doc_control แก้เองได้ **ต้องถูกล้างก่อนเอาไปตั้งชื่อชีท** ไม่งั้นไฟล์เปิดไม่ได้
 → `sheetName(base, code)` ใน `kpiExportExcel.js` (แทนอักขระต้องห้าม + ตัดที่ 31)
 **ทุกที่ที่เอาค่าจากทะเบียนไปตั้งชื่อชีท/ชื่อไฟล์ ต้องมีตัวล้างแบบนี้** — ค่าในทะเบียนเป็น input จากคน
+
+## 📑 CSV / Excel — เลขฟอร์มอยู่ที่ "ชื่อไฟล์" (รอบ 2 เก็บครบแล้ว 2026-10-08)
+
+ไฟล์ที่ไม่มีหัวกระดาษให้ใส่เลขฟอร์ม (CSV · Excel) ⇒ **เลขฟอร์ม/Rev ไปอยู่ที่ชื่อไฟล์**
+🔴 **ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อไฟล์** — Excel/Sheets ยึด "แถวแรก = หัวตาราง"
+⇒ คอลัมน์เลื่อนทั้งไฟล์ = พัง pivot/สูตร/ตัวนำเข้า ของคนที่ใช้อยู่ทุกวัน
+
+**โครงไฟล์ (แยก pure ออกจากตัวที่อ่านฐาน):**
+
+| ไฟล์ | หน้าที่ | เทส |
+|---|---|---|
+| `src/utils/csvCore.js` | **pure** — ประกอบชื่อไฟล์ · escape · กัน formula injection | `__tests__/csvCore.test.mjs` (12 เคส) |
+| `src/utils/csvDoc.js` | ห่อด้วยการอ่านทะเบียน (`docFormSync`) + ตัวดาวน์โหลด | — (แตะ DOM/ฐาน) |
+
+**ทำไมต้องแยก:** `csvDoc.js` → `docForms` → `supabaseClient` ที่ใช้ `import.meta.env`
+⇒ `node --test` **โหลดโมดูลไม่ได้เลย** = ตรรกะที่พลาดแล้วเจ็บสุด (กัน formula injection)
+ไม่มีเทสคุมมาตลอด ⇒ ย้ายส่วนที่ไม่แตะฐานมาไว้ `csvCore.js`
+
+**วิธีใช้:**
+```js
+import { downloadCsvDoc, csvText } from '../utils/csvDoc';
+import { loadDocForms } from '../utils/docForms';
+loadDocForms();                       // ⚠️ docFormSync เป็น sync — ต้อง warm cache ที่หน้านั้นเอง
+downloadCsvDoc('<doc_key>', '<ชื่อไฟล์เดิม>', csvText(headers, rows));
+// Excel: XLSX.writeFile(wb, xlsxDocName('<doc_key>', '<ชื่อไฟล์เดิม>'))
+```
+· 🔴 ไม่เรียก `loadDocForms()` = **ได้ชื่อไฟล์เดิม ไม่ล้ม แต่ฟีเจอร์ไม่ทำงาน** (เงียบ)
+· 🔴 ทะเบียนยังไม่ตั้ง `form_code` = **ชื่อไฟล์เดิมเป๊ะ** ⇒ วันที่ apply migration ไม่มีอะไรเปลี่ยน
+· ด่าน **`csv-export-via-csvDoc`** — ห้าม `new Blob(… 'text/csv' …)` นอก `csvCore/csvDoc`
+
+**ที่เก็บไปแล้ว:** รอบ 1 (06/10) 8 คีย์ · **รอบ 2 (08/10) 16 คีย์** =
+`/report` 10 ปุ่ม + `/daily-report` 4 ชนิดรายงาน + Excel 2 ตัว (แม่แบบอะไหล่ · CQI-15 Event Log)
+migration `20261008_doc_forms_csv_round2_main.sql` (MAIN)
+
+🔴 **สำเนาที่ก๊อปไปมักตกข้อ "กัน formula injection"** — `DailyReport.exportCSV` ตัวเดิมไม่มีด่านนี้
+(ของ `Report.jsx` มี) ⇒ ค่าที่หน้างานพิมพ์ในช่อง 'รายละเอียด'/'เครื่องจักร' ขึ้นต้น `=` `+` `@`
+ถูก Excel **รันเป็นสูตรบนเครื่องคนรับไฟล์** · นี่คือเหตุผลที่ต้องมีทางเดียว ไม่ใช่สำเนา
+
+## 🖼️ โลโก้ในใบพิมพ์ ต้องอ่านจากทะเบียนก่อนเสมอ (2026-10-08)
+
+`urlToDataUrl(docFormSync('<doc_key>', {}).logo_url || tsLogoUrl)` — ทะเบียนชนะ แล้วถอยไปโลโก้ TS
+🔴 ตัว cache โลโก้ **ต้อง cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว** ไม่งั้นใบที่ตั้งโลโก้เองได้ค่าของใบอื่น
+· แก้แล้ว 4 ใบ: `Report.jsx` 3 ใบ (`changing_point` · `skill_pay_summary` · `attendance_record`
+  — ผ่าน helper `formLogo(docKey)`) + `PmCoordination` 1 ใบ
+· ⚠️ **ข้อสังเกตที่ audit แจ้งผิด:** `PmCoordination` ไม่ต้องแปลงเป็น dataURL เพราะใช้
+  `w.onload = () => w.print()` ซึ่ง **รอรูปโหลดเสร็จอยู่แล้ว** (ที่ผิดจริงคือไม่อ่านทะเบียน)
+· 🔴 **backtick ในคอมเมนต์ที่อยู่ "ใน" template literal จะปิด literal ทันที** — เจอจริงตอนแก้ใบนี้
+  ⇒ คอมเมนต์อธิบายต้องอยู่นอก template literal
+
+## 🔢 เลขฟอร์มที่คนแก้รายใบได้ — ค่าตั้งต้นต้องมาจากทะเบียน (2026-10-08)
+
+`Report.jsx` ใบบันทึกการมาทำงาน เคย `useState('F-HR-001')` hardcode แล้วพิมพ์ลงหัวใบ
+ขณะที่ **ท้ายใบเดียวกัน** ห่อด้วย `withDocFoot(html, 'attendance_record')` ที่อ่านจากทะเบียน
+⇒ doc_control ตั้ง `form_code` ใหม่ = **หัวใบขึ้นเลขหนึ่ง ท้ายใบขึ้นอีกเลข บนกระดาษใบเดียวกัน**
+⇒ `useState(() => docFormSync('attendance_record', { form_code: 'F-HR-001' }).form_code || 'F-HR-001')`
+(ช่องยังแก้รายใบได้เหมือนเดิม — แค่ค่าตั้งต้นไม่โกหก)
