@@ -1192,6 +1192,23 @@ const RULES = [
     },
   },
   {
+    id: 'shift-frame-start-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการต่อ "เวลาเริ่มกะ" จาก work_date + start_time ตรงๆ เป็น timestamp
+       (รูปที่เจอจริงทั้ง 6 สำเนา: `${wd}T${st}` / `${work_date}T${start_time}`) */
+    re: /new Date\(`\$\{[\w.?]*(wd|work_date|workDate)\}T\$\{[^`]*(st|start_time|startHm|openHm|startTimeStr)\b/g,
+    why: 'กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59 = **เช้าของวันถัดไป** ⇒ ต่อ work_date + start_time ตรงๆ '
+       + 'ได้กรอบกะ **เร็วไป 20 ชม.** แล้วไปโดน clampWinToShift (ช่วงของ MAT) + dtMinOutsideWork '
+       + '⇒ %A/%P เพี้ยนเงียบ · และจุดที่ **เขียนลงฐาน** (ใบ downtime ที่ยกข้ามกะใน DailyReport) '
+       + 'ยังทำให้ timestamp ในฐานเพี้ยนไป 1 วันด้วย = ต้นทางของข้อมูลเสีย ไม่ใช่แค่จอ '
+       + '· กฎนี้ถูกก๊อป **6 สำเนา** (shiftFrameOf · computeLiveOee · computeSessionOee · sessionWindow '
+       + '· mtnMetrics · DailyReport) รอบแก้ 06/10 ไปแก้แค่ 2 ⇒ ที่เหลือยังพังต่ออีก 2 วัน (QC 08/10)',
+    fix: "ห่อวันด้วย `shiftStartDate(workDate, 'HH:MM', shift)` จาก src/utils/oee.js ก่อนต่อเป็น Date",
+    allow: {
+      'src/utils/oee.js': 'เจ้าของกฎ — shiftStartDate ประกาศและถูกเรียกครบทุกจุดในไฟล์นี้แล้ว (ตรวจด้วยเทส shiftStartDate.test.mjs)',
+    },
+  },
+  {
     id: 'shift-start-date-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการ "บวก 1 วันให้กะดึก" ที่เขียนเองนอกของกลาง — รูปที่เจอจริงคือ
@@ -1479,6 +1496,22 @@ test('🛡️ close-time-needs-downtimes — ทุกจุดที่เร�
    ผลพิจารณาอยู่ในทะเบียนถังเหลือง/แดง ⇒ คิวรีที่เอา defect_logs ไปคิด %Q **ต้อง embed ทะเบียนถังมาด้วย**
    ไม่ embed = `suspectState()` คืน 'unknown' ⇒ ระบบถอยไปใช้พฤติกรรมเดิม (นับสงสัยเป็นของเสีย)
    ⇒ จอ 2 จออ่านข้อมูลชุดเดียวกันแล้วตอบ %Q ไม่เท่ากัน — คลาสเดียวกับที่เคยเกิดกับ `excl_from_q` */
+/* ── 🛡️ self-save-must-touch-coalesce (2026-10-08) ────────────────────────────────────
+   จอที่ "บันทึกเองแล้วเรียกตัวโหลดตรงๆ" **และ** มี `coalesce` ฟัง realtime ของตารางเดียวกัน
+   ⇒ realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมาแล้วโหลดซ้ำใน ~600 ms (settleMs)
+   เพราะ `lastRun` ของ coalesce ขยับเฉพาะตอน `run()` ของมันเอง — ไม่รู้ว่าเราโหลดไปแล้ว
+   วัดจริง 06/10: รายการกะทั้งวันของ DailyReport 667 ครั้ง · ซ้ำใน 2 วิ **293 = 43.9%**
+   🔑 แก้ที่ปลาย `load()` ด้วย `<bumpRef>.current?.touch?.()` — ครอบทุกเส้นทางที่โหลด
+      **ห้ามเอาการบันทึกไปรอเพดาน** (กดบันทึกแล้วจอนิ่ง 600 ms บนจอกรอกงาน = แย่กว่าเดิม) */
+test('🛡️ self-save-must-touch-coalesce — DailyReport.load() ต้องเคาะเพดาน coalesce ตอนจบ', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(code, /sessBumpRef\.current\s*=\s*bumpSess/,
+    'ต้องผูก bumpSess เข้า ref ใน effect realtime — ไม่ผูก = touch() ไม่มีผล (เงียบ)');
+  assert.match(code, /sessBumpRef\.current\?\.touch\?\.\(\)/,
+    'ปลาย load() ต้องเรียก sessBumpRef.current?.touch?.() — ไม่เรียก = ทุกครั้งที่บันทึกบนจอที่เงียบ '
+  + 'มาก่อน จ่ายรอบโหลดฟรี 1 รอบ (วัดจริง 06/10 = 43.9% ของคิวรีที่หนักสุดในระบบ)');
+});
+
 /* ── 🛡️ no-session-object-in-db-effect-deps (2026-10-06) ──────────────────────────────
    deps ของ effect/useCallback ที่ยิง DB **ห้ามมี object** (กฎเหล็กข้อ 9 ใน CLAUDE.md)
    `selSession` เป็นตัวที่พลาดซ้ำได้ง่ายที่สุด เพราะ `load()` ของ DailyReport ปิดท้ายด้วย

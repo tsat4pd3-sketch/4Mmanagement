@@ -34,7 +34,9 @@
  * @param {Function} fn         ตัวโหลดข้อมูล (เรียกได้ทั้ง sync/async)
  * @param {number}   minGapMs   เพดาน: ห่างกันอย่างน้อยเท่านี้ระหว่าง 2 รอบโหลด
  * @param {number}   [settleMs] หน่วงสั้นๆ ซับ burst (สแกนบาร์โค้ดรัว) — default 600 ms
- * @returns {Function} trigger() — เรียกจาก handler ของ realtime · มี .cancel() ให้ใช้ใน cleanup
+ * @returns {Function} trigger() — เรียกจาก handler ของ realtime
+ *   · `.cancel()` ใช้ใน cleanup
+ *   · `.touch()` = "เพิ่งโหลดไปเองนอกรอบนี้ นับเป็น 1 รอบด้วย" (ดูหมายเหตุ touch ข้างล่าง)
  */
 export function coalesce(fn, minGapMs, settleMs = 600) {
   let timer = null;
@@ -56,6 +58,24 @@ export function coalesce(fn, minGapMs, settleMs = 600) {
   };
 
   trigger.cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+
+  /* ── 🔴 touch() — "โหลดไปเองนอกรอบนี้แล้ว นับเป็น 1 รอบด้วย" (2026-10-08) ─────────────
+     กลไกที่เสียเปล่าก่อนมีตัวนี้ (วัดจริง 06/10: รายการกะทั้งวันของ DailyReport
+     667 ครั้ง **ซ้ำภายใน 2 วิ 293 ครั้ง = 43.9%**):
+
+       t=0      คนกดบันทึก → handler เรียก `load()` **ตรงๆ** (ถูกต้อง — เซฟเองต้องเห็นผลทันที
+                ไม่ควรรอเพดาน) แต่ `lastRun` ของ coalesce **ไม่ขยับ** เพราะ run() ไม่ได้ถูกเรียก
+       t≈200ms  Supabase ส่ง realtime ของการเซฟ **ตัวเราเอง** กลับมา → trigger()
+                → `since` = นานมาก (lastRun เก่า/0) → `max(settleMs, minGap - since)` = **settleMs**
+       t≈800ms  โหลดใหม่ทั้งชุด — **ทั้งที่ข้อมูลชุดนั้นเพิ่งโหลดไป 0.8 วิก่อน**
+
+     ⇒ ทุกครั้งที่บันทึกสำเร็จบนจอที่เงียบมาก่อน = จ่าย 2 รอบโหลดเสมอ
+     🔑 แก้ที่ "ให้ทางที่โหลดเองนับเป็นรอบด้วย" ไม่ใช่เอาการเซฟไปรอเพดาน
+        (เอาไปรอ = กดบันทึกแล้วจอนิ่ง 600 ms บนจอกรอกงาน = แย่กว่าเดิม)
+     ⚠️ ไม่กระทบ event ของ **คนอื่น**: `lastRun` เป็นของเครื่องนี้เครื่องเดียว —
+        คนอื่นบันทึกหลังจากนั้น ก็ยังถูกยุบตามเพดานเดิมเป๊ะ (ซึ่งคือเจตนาของ LIVE.*) */
+  trigger.touch = () => { lastRun = Date.now(); };
+
   return trigger;
 }
 
