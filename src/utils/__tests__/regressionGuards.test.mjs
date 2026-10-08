@@ -3246,3 +3246,19 @@ test('🛡️ mo-print-needs-comments — ใบพิมพ์ MO ทั้ง 
     '\n\n❌ Excel export ใบ MO ไม่มีคอลัมน์คอมเมนต์ (หรือกลืน commentsError)\n'
     + '   🔴 โหลดคอมเมนต์ไม่สำเร็จ = ต้องเขียนกำกับในไฟล์ · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์"\n');
 });
+
+test('🛡️ daily-am-single-loader — จอ AM รายวัน (DailyPM · FactoryMap) ต้องอ่านผ่าน lib/dailyAmBoard.js ห้ามคิวรี inspections/คิดกะเอง', () => {
+  for (const f of ['src/pages/DailyPM.jsx', 'src/pages/FactoryMap.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/from ['"]\.\.\/lib\/dailyAmBoard['"]/.test(src),
+      `\n\n❌ ${f} ไม่ได้ import lib/dailyAmBoard — สถานะ AM รายวันต้องมาจาก loader กลางตัวเดียว\n`
+      + '   ที่มา 2026-10-08: ผังรวมโรงงานอ่าน AM จาก pm_plans.next_due_date ขณะที่แผน AM รายวันเป็น run_day (null)\n'
+      + '            ⇒ "AM ปกติ (N)" ค้างตลอดกาลไม่ว่าจะตรวจหรือไม่ (user: "สเตตัสไม่อัพเดท")\n');
+    assert.ok(!/from\(['"]inspections['"]\)/.test(src) && !/function getShiftInfo\(/.test(src),
+      `\n\n❌ ${f} คิวรี inspections / ประกาศ getShiftInfo เอง — สองจอจะตอบคนละสี · ใช้ loadDailyAm()/amShiftInfo() จาก lib/dailyAmBoard.js\n`);
+  }
+  // ตัวตัดสินสี AM บนผังต้องไม่กลับไปใช้ตัวนับจากแผนปฏิทินล้วน (amTotal/amOverdue) เป็นตัวหลัก
+  const fm = stripComments(readFileSync(join(ROOT, 'src/pages/FactoryMap.jsx'), 'utf8'));
+  assert.ok(!/s\.amTotal \? \(s\.amOverdue/.test(fm) && /amDTotal/.test(fm),
+    '\n\n❌ METRICS.am ใน FactoryMap กลับไปตัดสินจาก amTotal/amOverdue (วันครบกำหนดแผน) — ต้องใช้ amD* จาก dailyAmLineStatus\n');
+});

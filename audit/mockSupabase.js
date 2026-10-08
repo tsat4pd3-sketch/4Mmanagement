@@ -456,10 +456,13 @@ const TABLE_ROWS = {
   })),
   checklists: (r, i) => ({ ...r, equipment_id: i <= 8 ? `id-${i}` : `e-${i}` }),
   inspections: (r, i) => ({ ...r, jig_id: `id-${i}`, status: AM_INSP[i] || 'pass' }),
-  pm_daily_line_targets: (r, i) => ({
+  /* ⚠️ ROWS โตได้ (แถว 15 = กะ void เพิ่ม 08/10) — แถวที่ไม่มีใน AM_TARGET ต้องเป็นทะเบียนที่ปิดใช้แล้ว
+     (`is_active:false` ถูกกรองออกด้วย `.eq('is_active', true)`) **ห้าม `AM_TARGET[i][0]` ตรงๆ** — เคยพังทั้ง
+     DailyPM และ FactoryMap ในฮาร์เนสเงียบๆ (TypeError ใน mapper → หน้าโหลดค้าง "กำลังโหลด...") */
+  pm_daily_line_targets: (r, i) => (AM_TARGET[i] ? {
     ...r, line_name: LINE_NAME(AM_TARGET[i][0]), jig_id: `id-${AM_TARGET[i][1]}`,
     shift: AM_TARGET[i][2], is_active: true, sort_order: i,
-  }),
+  } : { ...r, line_name: LINE_NAME(5), jig_id: `id-${i}`, shift: null, is_active: false, sort_order: i }),
   /* 🗺️ factory_map / factory_line_regions — **ต้องมีเสมอ ห้ามถอด** (2026-09-22)
      `/factory-map` เช็ค `if (!imageUrl) return <ยังไม่มีรูปผังโรงงาน>` ก่อนวาดอะไรทั้งนั้น
      ⇒ mock เดิมคืน `image_url: ''` (falsy) ⇒ **ทั้งหน้าไม่เคยเรนเดอร์อะไรเลยนอกจากข้อความว่าง**

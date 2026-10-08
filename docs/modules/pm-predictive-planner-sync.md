@@ -58,7 +58,7 @@
 
 | ระบบ | ไฟล์ | รู้ไหมว่าวันนี้ผลิต |
 |---|---|---|
-| AM รายวันต่อไลน์ (`pm_daily_line_targets`) | `src/lib/pmDailyStatus.js` | ✅ มีสถานะ `idle` ผูกกับ `prod_orders.opened_at` |
+| AM รายวันต่อไลน์ (`pm_daily_line_targets`) | `src/lib/pmDailyStatus.js` (pure) + **`src/lib/dailyAmBoard.js` (loader กลาง · 08/10 — DailyPM และผังรวมโรงงานใช้ตัวเดียวกัน)** | ✅ มีสถานะ `idle` ผูกกับ `prod_orders.opened_at` |
 | แผน PM รายเครื่อง (`pm_plans`) | `src/lib/pmSchedule.js` | ❌ `next_due = last_done + 1 วัน` ปฏิทินล้วน |
 
 **วัดฐานจริงก่อนแก้ (60 วันล่าสุด · แผน AM รายวัน 7 ตัว · ทุกแผนในระบบเป็น `plan_type='time'` 147/147
