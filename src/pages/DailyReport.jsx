@@ -302,6 +302,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const isMobile = useIsMobile(); // ≤768px: sidebar รายชื่อกะเป็นแถวบนสุด (สูงไม่เกิน 45vh เลื่อนในตัว) ไม่ sticky — desktop ไม่เปลี่ยน
   const wide1100 = !useIsMobile(1099); // ≥1100px → modal แผ่ 2 คอลัมน์ (reactive แทน innerWidth ครั้งเดียว)
   const navigate = useNavigate();
+  /* 🔴 2026-10-08 — ref ของ `bumpSess` (ตัว coalesce ใน effect realtime ข้างล่าง)
+     `load()` ต้อง "เคาะ" เพดานนี้ตอนจบ ไม่งั้น realtime ของการเซฟ **ตัวเราเอง** เด้งกลับมา
+     แล้วโหลดซ้ำใน ~600 ms ทั้งที่เพิ่งโหลดไป
+     วัดจริง 06/10: รายการกะทั้งวัน 667 ครั้ง ซ้ำใน 2 วิ **293 ครั้ง = 43.9%**
+     ⚠️ ต้องเป็น ref: `bumpSess` ถูกสร้างใหม่ทุกครั้งที่ effect รีรัน (สลับกะ) แต่ `load` ต้องนิ่ง
+        (เป็น dep ของ effect นั้นเอง) ⇒ อ่านค่าตอน "เรียก" ไม่ใช่ตอน "สร้าง" */
+  const sessBumpRef = useRef(null);
   const [lines, setLines]           = useState([]);
   const [lineMap, setLineMap]       = useState({});
   const [products, setProducts]     = useState([]);
@@ -617,6 +624,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       setSelSession(null);
     }
     setLoading(false);
+    /* เคาะเพดานของ realtime: "รายการกะชุดนี้เพิ่งโหลดไปแล้ว" — ครอบ**ทุก**เส้นทางที่เรียก load()
+       (effect ตอน mount · handler ที่บันทึกสำเร็จแล้วเรียกตรงๆ 6 จุด · ตัว bump เอง)
+       ⇒ จุดเรียก load() ที่เพิ่มในอนาคตได้ผลนี้เองโดยไม่ต้องไปเติมทีละจุด (ที่พลาดง่ายที่สุด) */
+    sessBumpRef.current?.touch?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- scopeKey (string) แทน scopeSecs ดูหมายเหตุที่ scopeKey
   }, [role, scopeKey, userLineId]);
 
@@ -868,6 +879,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       load();
       if (sid) loadCarryOrders(sid, selSession.line_name);
     }, LIVE.SHIFT);
+    sessBumpRef.current = bumpSess;   // ให้ load() เคาะเพดานตัวนี้ได้ (ดูหมายเหตุที่ sessBumpRef)
     const bumpOrd  = coalesce(() => { if (sid) loadProdOrders(sid, selSession.line_name); }, LIVE.PAGE);
     const bumpDt   = coalesce(() => { if (sid) loadDT(sid); }, LIVE.PAGE);
     const bumpDef  = coalesce(() => { if (sid) loadDefectLogs(sid); }, LIVE.PAGE);
