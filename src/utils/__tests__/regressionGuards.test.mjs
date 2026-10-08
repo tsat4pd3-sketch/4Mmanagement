@@ -3310,3 +3310,16 @@ test('🛡️ daily-am-single-loader — จอ AM รายวัน (DailyPM �
   assert.ok(!/s\.amTotal \? \(s\.amOverdue/.test(fm) && /amDTotal/.test(fm),
     '\n\n❌ METRICS.am ใน FactoryMap กลับไปตัดสินจาก amTotal/amOverdue (วันครบกำหนดแผน) — ต้องใช้ amD* จาก dailyAmLineStatus\n');
 });
+
+/* ── ตารางมอนิเตอร์ใช้หัวคอลัมน์/วันเริ่มชุดเดียว (08/10 · user "หัวตาราง/การกรอง/วันเริ่ม ให้ทิศทางเดียวกัน") ── */
+test('🛡️ MonitorBoardGrid + RundownStock: หัวคอลัมน์ช่วงเวลาผ่าน utils/periodHead.js · บอร์ดเปิดมาที่วันนี้', () => {
+  for (const f of ['src/components/MonitorBoardGrid.jsx', 'src/pages/RundownStock.jsx']) {
+    const code = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/from '\.\.\/utils\/periodHead'/.test(code) && /periodHead\(/.test(code),
+      `\n\n❌ ${f} เขียนป้ายหัวคอลัมน์เอง — ต้องใช้ periodHead() (ป้าย/วันนี้/สี ชุดเดียวทุกตาราง)\n`);
+    assert.ok(!/const dayLabel\s*=/.test(code), `\n\n❌ ${f} กลับไปมี dayLabel ของตัวเองอีกแล้ว\n`);
+  }
+  const grid = stripComments(readFileSync(join(ROOT, 'src/components/MonitorBoardGrid.jsx'), 'utf8'));
+  assert.ok(/startIndexForToday\(/.test(grid) && /isTodayPeriod\(/.test(grid),
+    '\n\n❌ บอร์ดต้องเปิดมาที่คอลัมน์วันนี้ (startIndexForToday) และชี้วันนี้แบบรู้จักบอร์ดรายสัปดาห์ (isTodayPeriod)\n');
+});
