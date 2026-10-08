@@ -874,6 +874,9 @@ export default function Improvements() {
         result: r,
         // โหมดเดียวกับการ์ดเป๊ะ: ยังไม่ยืนยันลงมือ / หลังแก้ยังไม่ถึงเกณฑ์ = ตัวเงินเป็น "เพดานจาก baseline"
         cost: costSavingOf(imp, r, mode !== 'confirmed'),
+        // เพดานจาก baseline ล้วน — ช่อง "สภาพปัจจุบัน" ต้องตอบ "ปัญหานี้ใหญ่แค่ไหน" ได้แม้ผลจริงยืนยันแล้ว
+        // (โหมด confirmed ตัว cost ข้างบนเป็น Δ ที่ประหยัดได้ ซึ่งคนละคำถาม)
+        potentialCost: costSavingOf(imp, r, true),
         target: targetSavingOf(imp, r),
         milestones: msByImp[imp.id] || [],
         started, peReqs, framework: data.framework,
