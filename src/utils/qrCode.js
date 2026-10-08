@@ -209,3 +209,27 @@ export function findDieByScan(scan, dies = [], inScope = () => true) {
   }
   return { die };
 }
+
+/**
+ * 🧩 แท็บจิ๊กของหน้าพิมพ์ป้าย — รวม 2 แหล่งให้ได้ "1 จิ๊กจริง = 1 ป้าย" (2026-10-08 · คำสั่ง user)
+ * จิ๊กตัวจริงลงทะเบียนอยู่ใน `machines` (equipment_kind='jig' → ป้าย ESM:M เหมือนแม่พิมพ์)
+ * ส่วน `jigs` = ทะเบียน PM: แถวที่มี machine_id = "เงา" ของแถวใน machines (ห้ามพิมพ์ซ้ำ)
+ * แถวที่ไม่มี machine_id = อุปกรณ์ที่มีแต่แผน PM (ป้าย ESM:J) — แต่ถ้าเลขตรงกับจิ๊กใน machines = ตัวซ้ำ (ข้าม + นับให้จอบอก)
+ * @param {Array} mcJigs  แถว machines (equipment_kind='jig')
+ * @param {Array} pmRows  แถว jigs ทั้งหมด
+ * @returns {{ rows: Array, shadow: number, dup: Array }} rows มี `_qr` = ชนิดรหัสในป้ายของแต่ละแถว
+ */
+export function mergeJigLabelRows(mcJigs = [], pmRows = []) {
+  const mcNos = new Set(mcJigs.map(m => normCode(m.machine_no)).filter(Boolean));
+  const orphans = pmRows.filter(j => !j.machine_id && j.equipment_type !== 'machine');
+  const dup = orphans.filter(j => j.jig_no && mcNos.has(normCode(j.jig_no)));
+  const dupIds = new Set(dup.map(j => j.id));
+  return {
+    rows: [
+      ...mcJigs.map(m => ({ ...m, _qr: 'machine' })),
+      ...orphans.filter(j => !dupIds.has(j.id)).map(j => ({ ...j, _qr: 'jig' })),
+    ],
+    shadow: pmRows.length - orphans.length,
+    dup,
+  };
+}

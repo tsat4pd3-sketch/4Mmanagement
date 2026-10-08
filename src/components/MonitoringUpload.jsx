@@ -235,6 +235,14 @@ export default function MonitoringUpload({ canUpload, fullName, onImported }) {
           <div style={{ marginTop: 6, color: 'var(--muted)' }}>
             ⏱️ ยอดคงเหลืออ่าน <b>ณ วันที่ {getWorkDate()}</b> · ช่องวันอนาคตในไฟล์เป็นยอดพยากรณ์ ไม่ใช่ของจริง
           </div>
+          {/* 🔴 ไฟล์เดียวกันถูกอัพ 2 ที่ คนละส่วน — ไม่เขียนไว้ = คนนึกว่าอัพซ้ำแล้วข้ามไป (user ถาม 08/10) */}
+          <div style={{ marginTop: 6, color: 'var(--text2)' }}>
+            📌 <b>ไฟล์เดียวกับหน้า <code>Monitoring แผน-สต๊อก → 📥 นำเข้าจากไฟล์ Excel</code> — ต้องอัพทั้ง 2 ที่</b>
+            <div style={{ color: 'var(--muted)' }}>
+              ที่นี่เก็บ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (ไหลเข้าแผนผลิต · Delivery · คานบัง) ·
+              อีกหน้าเก็บ <b>ตัวตารางบอร์ด</b> ของ 13 ชีท — คนละตาราง ไม่ทับกัน
+            </div>
+          </div>
         </div>
         {!canUpload && (
           <div style={{ marginTop: 10, fontSize: 12, color: '#f59e0b' }}>

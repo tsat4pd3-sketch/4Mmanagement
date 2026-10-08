@@ -33,3 +33,18 @@ test('นอกขอบเขตไลน์ ≠ ไม่มีในทะเ
   assert.equal(r.die, undefined);
   assert.match(r.error, /นอกขอบเขต.*LINE 2/);
 });
+
+import { mergeJigLabelRows } from '../qrCode.js';
+test('แท็บจิ๊ก: จิ๊กใน machines + PM-only · ตัดเงาและตัวซ้ำเลขเดียวกัน (1 จิ๊ก = 1 ป้าย)', () => {
+  const mc = [{ id: 'm1', machine_no: 'GPHYD05-01' }, { id: 'm2', machine_no: 'FX-9' }];
+  const pm = [
+    { id: 'j0', machine_id: 'm1', jig_no: null },                   // เงา
+    { id: 'j1', machine_id: null, jig_no: 'gphyd05 01', equipment_type: 'jig' },   // ซ้ำเลข m1
+    { id: 'j2', machine_id: null, jig_no: null, name: 'BLM', equipment_type: 'die' }, // PM-only
+    { id: 'j3', machine_id: null, jig_no: 'X', equipment_type: 'machine' },        // เงาแบบเก่า
+  ];
+  const r = mergeJigLabelRows(mc, pm);
+  assert.deepEqual(r.rows.map(x => [x.id, x._qr]), [['m1', 'machine'], ['m2', 'machine'], ['j2', 'jig']]);
+  assert.equal(r.shadow, 2);
+  assert.deepEqual(r.dup.map(x => x.id), ['j1']);
+});

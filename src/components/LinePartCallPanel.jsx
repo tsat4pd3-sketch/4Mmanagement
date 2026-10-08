@@ -37,7 +37,8 @@ import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
-import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+import useColumnHistory from '../utils/useColumnHistory';
+import { splitLevels, refStockOf } from '../utils/partRefStock';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -72,6 +73,11 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const [busy, setBusy]     = useState(null);
   const [showSetup, setShowSetup] = useState(false);
   const [showNoLevel, setShowNoLevel] = useState(false);
+  /* 🏭 2026-10-08 — พาร์ทที่ไลน์นี้ผลิตเอง อ้างยอดคลังปลายทาง (FG WAREHOUSE / STORE) ไม่ใช่ยอดหน้าไลน์
+     (utils/partRefStock.js) · refCtx = ทะเบียนสินค้า + กฎรับเข้า · whStock = ยอดคลังของพาร์ทเหล่านั้น */
+  const [refCtx, setRefCtx]   = useState({ products: [], rules: [], lotMats: [] });
+  const [whStock, setWhStock] = useState([]);
+  const [whErr, setWhErr]     = useState(null);
 
   const canDecide  = can('wip_request', 'decide', role);
   const canReceive = can('wip_request', 'receive', role);
@@ -122,6 +128,33 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setLevels(lv.data || []);
     setStock(st.data || []);
     setReqs(rq.data || []);
+    /* 🏭 ยอดคลังของพาร์ทที่ไลน์นี้ผลิตเอง — ล้มต้องบอกบนจอ (ห้ามถอยไปเทียบหน้าไลน์เงียบๆ = เสนอเบิกผิดทิศ) */
+    try {
+      const levelMats = [...new Set((lv.data || []).map(l => l.mat_no).filter(Boolean))];
+      const [products, rulesRes, lotRes] = await Promise.all([
+        loadProductsMaster(),
+        supabaseDR.from('stock_inflow_rules').select('match_type, match_value, dest_line_name, is_active').eq('is_active', true),
+        // พาร์ทที่สโตร์คุมเป็นล็อต = ยอดลงที่ไลน์ผลิต ไม่ใช่ STORE (utils/partRefStock.js)
+        levelMats.length
+          ? supabaseDR.from('child_lot_requests').select('child_mat_no').in('child_mat_no', levelMats).neq('status', 'cancelled').limit(1000)
+          : Promise.resolve({ data: [] }),
+      ]);
+      if (rulesRes.error) throw rulesRes.error;
+      if (lotRes.error) throw lotRes.error;
+      const ctx = { lineName, products: products || [], rules: rulesRes.data || [],
+                    lotMats: [...new Set((lotRes.data || []).map(r => r.child_mat_no))] };
+      const refs = (lv.data || []).map(l => ({ mat: l.mat_no, ...refStockOf(l.mat_no, ctx) })).filter(r => r.kind === 'produce');
+      let wh = [];
+      if (refs.length) {
+        const { data, error } = await supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand')
+          .in('line_name', [...new Set(refs.map(r => r.loc))]).in('mat_no', [...new Set(refs.map(r => r.mat))]);
+        if (error) throw error;
+        wh = data || [];
+      }
+      setRefCtx(ctx); setWhStock(wh); setWhErr(null);
+    } catch (e) {
+      setWhErr(e?.message || String(e));   // คงค่ารอบก่อนไว้ + แถบแดงบอก
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- upKey แทน upNames (ดูหมายเหตุที่ upKey)
   }, [lineName, upKey]);
 
@@ -162,9 +195,32 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   /* พาร์ทที่ถึงจุดเรียกเติมแล้ว และ **ยังไม่มีใบค้าง** = สิ่งที่เสนอให้หัวหน้าตัดสิน
      ⚠️ ไม่ persist เป็นแถว `suggested` — คำนวณสดจากยอดจริง
         (แถว suggested ต้องมี scanner คอยสร้าง/ล้าง ซึ่งเฟสนี้ยังไม่มี · สถานะเปิดไว้ใน DB รอเฟสหน้า) */
+  /* 🏭 แบ่งจุดเรียกเติม: ของที่ไลน์ผลิตเอง (อ้างคลัง → "ต้องผลิตเติม") / ของที่ไลน์ใช้ (อ้างหน้าไลน์ → เบิกจากสโตร์) */
+  const split = useMemo(() => {
+    const m = new Map();
+    for (const s of whStock) {
+      const k = `${s.line_name}|${s.mat_no}`;
+      m.set(k, (m.get(k) || 0) + (Number(s.qty_on_hand) || 0));
+    }
+    return splitLevels(levels, { lineName, ...refCtx }, (loc, mat) => (m.has(`${loc}|${mat}`) ? m.get(`${loc}|${mat}`) : null));
+  }, [levels, whStock, refCtx, lineName]);
+
+  /* ยอดที่ใช้เทียบของพาร์ทที่ไลน์ผลิตเอง — ส่งให้หน้าต่างตั้งค่าโชว์ว่าเทียบกับคลังไหน */
+  const refHave = useMemo(() => {
+    const m = new Map();
+    for (const lv of levels) {
+      const ref = refStockOf(lv.mat_no, { lineName, ...refCtx });
+      if (ref.kind !== 'produce') continue;
+      const have = whStock.filter(s => s.line_name === ref.loc && s.mat_no === lv.mat_no).reduce((a, s) => a + (Number(s.qty_on_hand) || 0), 0);
+      const known = whStock.some(s => s.line_name === ref.loc && s.mat_no === lv.mat_no);
+      m.set(lv.mat_no, { loc: ref.loc, have: known ? have : null });
+    }
+    return m;
+  }, [levels, whStock, refCtx, lineName]);
+
   const suggest = useMemo(() => {
     const out = [];
-    for (const lv of levels) {
+    for (const lv of split.consumeLevels) {
       const min = num(lv.min_qty);
       if (min == null) continue;                       // ไม่ตั้ง min = ไม่เฝ้า (ไม่เดาให้)
       if (reqByMat.has(norm(lv.mat_no))) continue;     // มีใบค้างอยู่แล้ว
@@ -178,7 +234,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       out.push({ ...lv, have, min, suggestQty: qty ? Math.round(qty) : null });
     }
     return out.sort((a, b) => (a.have / (a.min || 1)) - (b.have / (b.min || 1)));
-  }, [levels, onHand, reqByMat]);
+  }, [split, onHand, reqByMat]);
 
   const holds   = reqs.filter(r => r.status === 'hold');
   const inFlight = reqs.filter(r => ['pending', 'preparing', 'delivered'].includes(r.status));
@@ -330,7 +386,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     </div>
   );
 
-  const nothing = !err && !suggest.length && !holds.length && !inFlight.length && !noLevel.length && !stuckUp.length;
+  const nothing = !err && !whErr && !suggest.length && !holds.length && !inFlight.length && !noLevel.length && !stuckUp.length
+    && !split.produceDue.length && !split.produceUnknown.length;
   if (nothing) return null;         // ไลน์ที่ยังไม่ตั้งอะไรเลย + ไม่มีของ = ไม่ต้องรก
 
   const card = { background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 16px', marginBottom: 16 };
@@ -373,6 +430,48 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             {stuckUp.length > 8 && <span style={{ fontSize: 11, color: 'var(--muted)', alignSelf: 'center' }}>+ อีก {stuckUp.length - 8}</span>}
           </div>
           <div style={{ marginTop: 5, color: 'var(--muted)' }}>ย้ายลงไลน์ย่อยที่ <b>Line Stock → แท็บ Stock → 🔀 ย้ายเข้าไลน์ลูก</b></div>
+        </div>
+      )}
+
+      {whErr && (
+        <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>
+          ⚠ โหลดยอดคลัง (FG WAREHOUSE / STORE) ไม่สำเร็จ — {whErr} · พาร์ทที่ไลน์นี้ผลิตเองอาจถูกเทียบกับยอดหน้าไลน์แทน กด ↻ อีกครั้ง
+        </div>
+      )}
+
+      {/* ── 🏭 ของที่ไลน์นี้ผลิตเอง: ยอดคลังต่ำกว่าจุดเรียกเติม → ต้องผลิตเติม (สัญญาณ ไม่สร้างใบเบิก) ── */}
+      {(split.produceDue.length > 0 || split.produceUnknown.length > 0) && (
+        <div style={{ marginBottom: 12 }}>
+          {split.produceDue.length > 0 && (
+            <>
+              <div style={{ fontSize: 11.5, fontWeight: 800, color: '#38bdf8', marginBottom: 6 }}>
+                🏭 ยอดคลังต่ำกว่าจุดเรียกเติม {split.produceDue.length} พาร์ท — ต้องผลิตเติม
+              </div>
+              {split.produceDue.map(s => {
+                const short = s.have <= 0;
+                return (
+                  <div key={s.mat_no} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
+                    background: short ? 'rgba(239,68,68,0.08)' : 'rgba(56,189,248,0.07)',
+                    border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(56,189,248,0.3)'}`, borderRadius: 8 }}>
+                    <MatLabel mat={s.mat_no} size={12.5} />
+                    <span style={{ fontSize: 11.5, color: short ? '#ef4444' : 'var(--muted)', fontWeight: short ? 800 : 400 }}>
+                      {s.loc} เหลือ {fmtQty(s.have)} / จุดเรียกเติม {fmtQty(s.min)}{short ? ' · หมดแล้ว' : ''}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
+                      {s.suggestQty ? `ควรผลิต ${fmtQty(s.suggestQty)}` : 'ยังไม่ตั้ง max — กำหนดยอดผลิตเอง'}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
+          {split.produceUnknown.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+              ⚪ ยังเช็คไม่ได้ {split.produceUnknown.length} พาร์ท — ไม่มียอดในคลังเลย
+              ({split.produceUnknown.slice(0, 6).map(s => `${s.mat_no} @ ${s.loc}`).join(' · ')}{split.produceUnknown.length > 6 ? ' …' : ''})
+              · ไปตรวจนับที่ Line Stock ก่อน ระบบถึงจะเตือนได้
+            </div>
+          )}
         </div>
       )}
 
@@ -488,7 +587,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {showSetup && (
-        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand}
+        <LevelSetupModal lineName={lineName} lines={lines} upMats={[...new Set(stuckUp.map(s => s.mat_no))]} levels={levels} onHand={onHand} refHave={refHave}
           fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
       )}
     </div>
@@ -521,7 +620,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
 }
 
 /* ── ตั้ง min/max ต่อไลน์ (หัวหน้าไลน์ + หัวหน้าแผนกผลิต — ไม่ใช่ Planning) ──── */
-function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fullName, onClose }) {
+function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, refHave = new Map(), fullName, onClose }) {
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
@@ -533,7 +632,9 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
     return mats.map(m => {
       const l = byMat.get(m);
       return { mat_no: m, id: l?.id || null, min_qty: l?.min_qty ?? '', max_qty: l?.max_qty ?? '',
-               reorder_qty: l?.reorder_qty ?? '', have: onHand.get(m) ?? null,
+               reorder_qty: l?.reorder_qty ?? '',
+               // 🏭 ของที่ไลน์นี้ผลิตเอง = ยอดคลังปลายทาง (ไม่ใช่หน้าไลน์) · loc บอกว่าเทียบกับที่ไหน
+               have: refHave.has(m) ? refHave.get(m).have : (onHand.get(m) ?? null), loc: refHave.get(m)?.loc || null,
                atParent: !onHand.has(m) && upMats.includes(m) };
     });
   });
@@ -606,6 +707,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
             เหลือถึง <b>min</b> เมื่อไหร่ ระบบจะเสนอให้เบิก · <b>max</b> ใช้คำนวณว่าเบิกเท่าไหร่ (เติมให้เต็ม)
             <br />ไม่กรอก min = <b>ไม่เฝ้าพาร์ทนั้น</b> ระบบจะไม่เตือนเลย — คนที่ยืนหน้าไลน์เป็นคนรู้ว่าควรตั้งเท่าไหร่
+            <br />🏭 พาร์ทที่ <b>ไลน์นี้ผลิตเอง</b> เทียบกับ<b>ยอดคลัง</b> (เบอร์ 1 = FG WAREHOUSE · เบอร์ 2 = STORE ตามกฎรับเข้า) แล้วเตือนให้<b>ผลิตเติม</b> — ไม่ใช่เบิก
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
@@ -623,7 +725,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
               <th style={{ padding: '4px 0' }}>รหัสพาร์ท</th>
-              <th style={{ textAlign: 'right' }}>ในไลน์ตอนนี้</th>
+              <th style={{ textAlign: 'right' }}>ยอดที่ใช้เทียบ</th>
               <th style={{ width: 90 }}>min</th><th style={{ width: 90 }}>max</th><th style={{ width: 110 }}>เบิกครั้งละ</th>
             </tr></thead>
             <tbody>
@@ -637,7 +739,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, fu
                       {r.atParent && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent2)', fontWeight: 700 }}>⬆ ยังอยู่ไลน์แม่</span>}
                     </td>
                     <td style={{ textAlign: 'right', color: 'var(--muted)', paddingRight: 10 }}>
-                      {r.have == null ? <span title="ไม่มีแถวสต็อกของไลน์นี้ — ยังเช็คไม่ได้ ไม่ใช่ของหมด">—</span> : fmtQty(r.have)}
+                      {r.have == null ? <span title="ไม่มีแถวสต็อก — ยังเช็คไม่ได้ ไม่ใช่ของหมด">—</span> : fmtQty(r.have)}
+                      <div style={{ fontSize: 11, color: r.loc ? '#38bdf8' : 'var(--muted)' }}>{r.loc ? `🏭 ${r.loc}` : 'หน้าไลน์'}</div>
                     </td>
                     {['min_qty', 'max_qty', 'reorder_qty'].map(k => (
                       <td key={k} style={{ padding: '3px 4px 3px 0' }}>
