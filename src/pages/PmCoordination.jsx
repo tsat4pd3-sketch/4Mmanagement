@@ -504,6 +504,11 @@ const lblS = { display: 'block', fontSize: 11, color: 'var(--muted)', marginBott
 
 /* ── พิมพ์ใบแจ้งแผน (แบบเมล) ─────────────────── */
 function printPlan(p, tasks) {
+  /* 🔴 โลโก้ต้องอ่านจากทะเบียนก่อน (QC audit 2026-10-08) — doc_control อัปโลโก้ทับรายฟอร์มได้
+     (`doc_forms.logo_url`) เดิมยัด asset ในบันเดิลตรงๆ ⇒ ตั้งโลโก้ใหม่แล้วใบนี้ยังพิมพ์ตัวเดิม
+     · ไม่ต้องแปลงเป็น dataURL เพราะ `w.onload` ด้านล่างรอรูปโหลดเสร็จก่อน `w.print()` อยู่แล้ว
+     · ⚠️ ประกาศไว้ "นอก" template literal — backtick ในคอมเมนต์ที่อยู่ในนั้นจะปิด literal ทันที */
+  const logoSrc = docFormSync('pm_coordination', {}).logo_url || tsLogoUrl;
   const beD = (s) => beDate(s);
   const rows = (tasks || []).map(t => {
     const time = (t.time_from || t.time_to) ? ` (${t.time_from || ''}${t.time_to ? '–' + t.time_to : ''} น.)` : '';
@@ -524,7 +529,7 @@ function printPlan(p, tasks) {
     .sign{margin-top:40px;display:flex;justify-content:flex-end;gap:60px;font-size:14px;text-align:center;}
     .sign div{border-top:1px solid #444;padding-top:4px;min-width:180px;}
   </style></head><body>
-  <div class="hd"><img src="${tsLogoUrl}" alt=""><div><h1>แผนประสานงาน PM / งานเครื่องจักร</h1>
+  <div class="hd"><img src="${logoSrc}" alt=""><div><h1>แผนประสานงาน PM / งานเครื่องจักร</h1>
     <div style="font-size:13px;color:#666;">Thai Summit — Maintenance</div></div></div>
   <div style="font-size:17px;font-weight:700;">${p.title || ''}</div>
   <div class="meta">🔧 เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>

@@ -9,6 +9,7 @@ import { fmtDate } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
+import { xlsxDocName } from '../utils/csvDoc';
 loadDocForms(); // ทะเบียนเอกสาร — ใบพิมพ์/Excel CQI-15 อ่านเลขฟอร์มผ่าน docFormSync (2026-07-30)
 import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
@@ -695,7 +696,8 @@ function exportExcel(logs) {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Event Log');
-  XLSX.writeFile(wb, `CQI15_EventLog_${today}.xlsx`);
+  // ชื่อไฟล์ผ่านทะเบียนเอกสาร — เลขฟอร์มอยู่ที่ชื่อไฟล์ ห้ามแทรกแถวบนสุดของชีต (แถวแรก = หัวตาราง)
+  XLSX.writeFile(wb, xlsxDocName('xlsx_cqi15_event_log', `CQI15_EventLog_${today}`));
 }
 
 /* ─── PDF Export ─────────────────────────────────────────────── */
