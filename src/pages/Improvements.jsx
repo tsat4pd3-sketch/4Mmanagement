@@ -5,6 +5,7 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
@@ -387,7 +388,8 @@ export default function Improvements() {
     //    (pending_close = กะจบแล้วรออนุมัติ ข้อมูลครบ → นับได้) (QC audit 2026-08-20 · T2-7)
     const { data: sessions, error: sessErr } = await supabaseDR.from('production_sessions')
       .select('id, work_date').eq('line_name', imp.line_name)
-      .neq('status', 'open')
+      /* 🔴 ระบุสถานะรายตัว ห้าม `.neq('status','open')` — ใบโมฆะจะถูกนับเป็นวันผลิต (08/10 · มีด่าน) */
+      .in('status', SESSION_STATUSES_DONE)
       .gte('work_date', from).lte('work_date', to);
     /* ⚠️ คิวรีล้ม ≠ ไม่มีข้อมูล — จอต้องเขียนต่างกัน (QC 05/10 · กฎความซื่อสัตย์ของจอ) */
     if (sessErr) return { noData: true, error: `โหลดกะผลิตไม่สำเร็จ: ${sessErr.message}` };
