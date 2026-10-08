@@ -179,8 +179,14 @@ const thenable = (rows = ROWS) => {
   const res = { data: rows, error: null, count: rows.length }
   const h = {
     get(t, p) {
-      if (p === 'then') return (res2) => Promise.resolve(res).then(res2)
-      if (p === 'maybeSingle' || p === 'single') return () => Promise.resolve({ data: rows[0], error: null })
+      /* ⏱️ LAT — หน่วงคำตอบเหมือนเน็ตจริง (2026-10-08 · ตั้งด้วย `window.__lat = 150`)
+         mock ที่ตอบ 0 ms ทำให้ React ยุบทุก state update เป็น commit เดียว ⇒ **บั๊ก
+         "โหลดซ้ำเพราะ state มาเป็นระลอก" ไม่เคย reproduce ในฮาร์เนสเลย**
+         ค่าเริ่มต้น 0 = พฤติกรรมเดิมเป๊ะ (crashsweep/mobilesweep ไม่เปลี่ยน) */
+      const lat = () => (typeof window !== 'undefined' && Number(window.__lat)) || 0;
+      const settle = (v) => (lat() ? new Promise((r) => setTimeout(() => r(v), lat())) : Promise.resolve(v));
+      if (p === 'then') return (res2) => settle(res).then(res2)
+      if (p === 'maybeSingle' || p === 'single') return () => settle({ data: rows[0], error: null })
       if (p === 'catch' || p === 'finally') return () => proxy
       return () => proxy
     },
@@ -716,7 +722,52 @@ const rowsFor = (table) => {
   const fn = TABLE_ROWS[table]
   return fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
 }
-const q = (table) => thenable(rowsFor(typeof table === 'string' ? table : undefined))
+/* ── 📊 ตัวนับคิวรี (2026-10-08) — ใช้หาว่า "ใครโหลดซ้ำ" โดยไม่ต้องแตะโค้ดใน src/ ──────────
+   ที่มา: log ของ Supabase บอกได้แค่ว่า *มี* คิวรีซ้ำ (เช่น StoreLotQueue ยิง
+   `v_demand_flow_blocks` + `child_lot_requests` ซ้ำ ~29% ของครั้ง) แต่บอกไม่ได้ว่า **เพราะอะไร**
+   — ทั้งโรงงานอยู่หลัง NAT ตัวเดียว ⇒ แยก "คนละคนเปิดพร้อมกัน" จาก "โหลดซ้ำจริง" ไม่ได้
+   ⇒ วัดในฮาร์เนสแทน: `q()` เป็นประตูเดียวที่ทุกคิวรีผ่าน ⇒ นับที่นี่ที่เดียวพอ
+   🔑 เก็บ stack ไว้ด้วย จะได้รู้ว่า "ยิงจากบรรทัดไหน" ไม่ใช่แค่ "ตารางไหน"
+   ⚠️ ไฟล์นี้อยู่ใน audit/ ไม่ถูก bundle ขึ้น production — ของจริงไม่มีตัวนับนี้
+   อ่านผล: `window.__qlog.table('child_lot_requests')` · `window.__qlog.dups()` · `__qlog.reset()` */
+const QLOG = [];
+const callerOf = () => {
+  const lines = (new Error().stack || '').split('\n').slice(3);
+  // บรรทัดแรกที่ไม่ใช่ตัว mock เอง = จุดเรียกจริง
+  const hit = lines.find((l) => !l.includes('mockSupabase')) || lines[0] || '';
+  return hit.trim().replace(/^at\s+/, '').slice(0, 120);
+};
+if (typeof window !== 'undefined') {
+  window.__qlog = {
+    all: QLOG,
+    reset: () => { QLOG.length = 0; return 'reset'; },
+    /** ตารางไหนถูกยิงกี่ครั้ง เรียงมาก→น้อย */
+    count: () => Object.entries(QLOG.reduce((m, r) => ((m[r.table] = (m[r.table] || 0) + 1), m), {}))
+      .sort((a, b) => b[1] - a[1]),
+    /** รายละเอียดของตารางเดียว: ยิงเมื่อไหร่ (ms นับจากโหลดหน้า) + จากบรรทัดไหน */
+    table: (t) => QLOG.filter((r) => r.table === t).map((r) => ({ at: r.at, from: r.from })),
+    /** 🔴 "ยิงซ้ำภายใน 2 วินาที" — จับกลุ่มด้วย **ตาราง + จุดที่เรียก** ไม่ใช่ตารางเดียวๆ
+     *  🔑 นับแค่ชื่อตารางจะ over-report: `prod_orders` ถูกยิง 4 ครั้งใน 1 วินาทีจาก
+     *     **4 จุดต่างกัน** (คนละคิวรี คนละเรื่อง) = ไม่ใช่ของเสียเปล่า
+     *     ของเสียเปล่าจริงคือ "จุดเดิม ยิงซ้ำ" ⇒ ต้องรวม `from` เข้าไปในคีย์ */
+    dups: () => {
+      const by = {};
+      QLOG.forEach((r) => { const k = `${r.table}\u0000${r.from}`; (by[k] = by[k] || []).push(r.at); });
+      return Object.entries(by)
+        .map(([k, ats]) => {
+          const [table, from] = k.split('\u0000');
+          return { table, from, hits: ats.length, dup: ats.filter((a, i) => i > 0 && a - ats[i - 1] <= 2000).length };
+        })
+        .filter((r) => r.dup > 0).sort((a, b) => b.dup - a.dup);
+    },
+  };
+}
+const q = (table) => {
+  if (typeof table === 'string') {
+    QLOG.push({ table, at: Math.round(typeof performance !== 'undefined' ? performance.now() : 0), from: callerOf() });
+  }
+  return thenable(rowsFor(typeof table === 'string' ? table : undefined));
+};
 
 /* ── 🗄️ ผลของ RPC ที่คืน "ก้อน jsonb" ไม่ใช่ลิสต์แถว (2026-09-22) ─────────────────────
    mock เดิม `rpc: q` คืน ROWS (อาร์เรย์) ให้ทุกชื่อฟังก์ชัน ⇒ หน้าที่กิน jsonb ก้อนเดียว

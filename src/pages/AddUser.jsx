@@ -21,6 +21,7 @@ import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import { identityDiff, identityFallbacks, syncPatch } from '../utils/identitySync';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
@@ -138,7 +139,7 @@ export default function AddUser() {
         setOrgNodes({ sections: nodes.filter(n => n.kind === 'section'), depts: nodes.filter(n => n.kind === 'department') });
       });
     supabase.from('employees')
-      .select('id, employee_id_code, name, team, line_id, section, department, position, staff_kind')
+      .select('id, employee_id_code, name, team, line_id, section, department, position, staff_kind, org_node_id')
       .eq('is_active', true).order('name')
       .then(({ data }) => setEmps(data || []));
     fetchUsers();
@@ -148,7 +149,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src');
+      .select('id, full_name, role, position, line_id, section, sections, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src, org_node_id');   // 🪪 org_node_id ต้องมา ไม่งั้น identityDiff() เทียบช่องนั้นไม่ได้แล้วเงียบ
     const { data: authUsers } = await supabase.rpc('get_auth_users');
 
     const authMap = {};
@@ -252,12 +253,26 @@ export default function AddUser() {
   const empSearchMissed = !!nzThai(empSearch) && !emps.some(e =>
     nzThai(e.name).includes(nzThai(empSearch)) || nzThai(e.employee_id_code).includes(nzThai(empSearch)));
   const lineName = (id) => lines.find(l => String(l.id) === String(id))?.name || '';
+  /* 🪪 ค่าดิบในแถบ "ไม่ตรงกัน" ต้องอ่านออก — uuid ของผัง/คีย์ตำแหน่ง คนอ่านไม่รู้เรื่อง
+     ไม่รู้จัก id = โชว์ค่าดิบไว้ ห้ามโชว์ "—" (คนจะนึกว่าว่าง ทั้งที่มีค่าแต่ชี้ไปที่ที่ลบไปแล้ว) */
+  const idText = (key, v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    if (key === 'line_id') return lineName(v) || `(ไลน์ id ${v})`;
+    if (key === 'position') return positionLabel(v) || String(v);
+    if (key === 'org_node_id') {
+      const n = [...(orgNodes.sections || []), ...(orgNodes.depts || [])].find(x => String(x.id) === String(v));
+      return n ? (n.code || n.name) : `(หน่วย id ${String(v).slice(0, 8)}…)`;
+    }
+    return String(v);
+  };
   /** ดึงตัวตนจากฐานพนักงานมาทับบัญชี — ฐานพนักงานคือค่าจริง (หัวหน้าแผนกดูแล) */
   const syncFromEmployee = async (u) => {
     const e = empById[u.employee_id];
     if (!e) return;
+    /* 🔴 เขียนครบทุกช่องใน IDENTITY_FIELDS ผ่าน syncPatch() — เดิมเขียนแค่ team/line/section
+       ⇒ กดปุ่มแล้ว position/org_node ยังต่าง แถบเตือนไม่หาย คนกดซ้ำแล้วเลิกเชื่อปุ่ม */
     const { data, error } = await supabase.from('profiles')
-      .update({ team: e.team || null, line_id: e.line_id || null, section: e.section || null })
+      .update(syncPatch(e))
       .eq('id', u.id).select('id');
     // RLS ปฏิเสธ update = 0 แถว ไม่ error → ต้องนับแถว ห้ามขึ้นว่าสำเร็จลอยๆ
     // ⚠️ ปุ่มนี้อยู่บนตาราง (modal ปิดอยู่) — setError แสดงเฉพาะใน modal ⇒ ต้องเป็น toast ไม่งั้นล้มเงียบ (QC 05/10)
@@ -622,10 +637,12 @@ export default function AddUser() {
           ⚠️ ห้ามซ่อนเงียบ — ข้อมูลไม่ตรงทำให้ "มองไม่เห็นกะตัวเอง" (Checkin กรองด้วย team ของบัญชี)
              เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี */}
       {(() => {
-        const mism = users.filter(u => u.employee_id && empById[u.employee_id] && (
-          (u.team || '') !== (empById[u.employee_id].team || '') ||
-          String(u.line_id || '') !== String(empById[u.employee_id].line_id || '')
-        ));
+        /* 🪪 เทียบครบทุกช่องที่เก็บ 2 ที่ ผ่าน identityDiff() (`utils/identitySync.js` · มีเทส)
+           เดิมเทียบแค่ team+line ⇒ section/position/org_node เพี้ยนเงียบ (วัด 06/10: 8/8/6 ใบ) */
+        const mism = users
+          .map(u => ({ u, e: u.employee_id ? empById[u.employee_id] : null }))
+          .map(x => ({ ...x, diff: identityDiff(x.u, x.e) }))
+          .filter(x => x.diff.length);
         const unset = users.filter(u => !u.account_kind);
         if (!mism.length && !unset.length) return null;
         return (
@@ -640,42 +657,42 @@ export default function AddUser() {
                   · กดปุ่มเพื่อล้างให้ตรงกัน จะได้ไม่สับสนตอนเปิดดู
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {mism.map(u => {
-                    const e = empById[u.employee_id];
-                    return (
-                      <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px' }}>
-                        <b style={{ minWidth: 150 }}>{u.full_name}</b>
-                        <span style={{ color: 'var(--muted)' }}>
-                          บัญชี: ทีม {u.team || '—'} · ไลน์ {lineName(u.line_id) || '—'}
-                        </span>
-                        <span style={{ color: '#22c55e' }}>
-                          → ฐานพนักงาน: ทีม {e.team || '—'} · ไลน์ {lineName(e.line_id) || '—'}
-                        </span>
-                        <button type="button" onClick={() => syncFromEmployee(u)}
-                          style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
-                          ใช้ค่าจากฐานพนักงาน
-                        </button>
+                  {mism.map(({ u, diff }) => (
+                    <div key={u.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', fontSize: 12, background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px' }}>
+                      <b style={{ minWidth: 150 }}>{u.full_name}</b>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: '1 1 300px', minWidth: 0 }}>
+                        {diff.map(d => (
+                          <div key={d.key} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ color: 'var(--muted)', minWidth: 72 }}>{d.label}</span>
+                            <span style={{ color: 'var(--muted)' }}>บัญชี: {idText(d.key, d.acct)}</span>
+                            <span style={{ color: '#22c55e' }}>→ ฐานพนักงาน: {idText(d.key, d.emp)}</span>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
+                      <button type="button" onClick={() => syncFromEmployee(u)}
+                        style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
+                        ใช้ค่าจากฐานพนักงาน
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
             {(() => {
               // ⚠️ ผูกแล้วแต่ฐานพนักงานเว้นช่องนั้นว่าง → ระบบตกกลับไปใช้ค่าในบัญชี
               //    ต้องเห็นบนจอ ไม่งั้นเข้าใจผิดว่า single source แล้วทั้งที่ยังไม่ใช่
-              const fb = users.filter(u => {
-                const e = u.employee_id && empById[u.employee_id];
-                if (!e) return false;
-                return (!e.team && u.team) || (!e.line_id && u.line_id);
-              });
+              /* ครบทุกช่องเหมือนกัน ผ่าน identityFallbacks() — เดิมดูแค่ team/line */
+              const fb = users
+                .map(u => ({ u, miss: identityFallbacks(u, u.employee_id ? empById[u.employee_id] : null) }))
+                .filter(x => x.miss.length);
               if (!fb.length) return null;
               return (
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: unset.length ? 10 : 0 }}>
                   <b style={{ color: '#f59e0b' }}>ฐานพนักงานยังไม่ได้กรอก · {fb.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-                    {fb.map(u => u.full_name).join(', ')} — ระบบใช้ค่าเดิมในบัญชีไปก่อน
-                    ควรไปกรอกทีม/ไลน์ที่หน้าฐานข้อมูลพนักงาน แล้วค่าจะมาจากที่นั่นที่เดียว
+                    {fb.map(({ u, miss }) => `${u.full_name} (${miss.map(m => m.label).join('/')})`).join(' · ')}
+                    {' '}— ระบบใช้ค่าเดิมในบัญชีไปก่อน ควรไปกรอกช่องที่วงเล็บไว้ที่หน้าฐานข้อมูลพนักงาน
+                    แล้วค่าจะมาจากที่นั่นที่เดียว
                   </div>
                 </div>
               );
