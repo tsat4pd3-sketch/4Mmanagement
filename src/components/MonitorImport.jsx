@@ -220,6 +220,15 @@ export default function MonitorImport({ onClose, fullName, today, onImported }) 
               ไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ของทีมวางแผน — แต่ละชีทกลายเป็น 1 บอร์ด ·
               นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
             </div>
+            {/* 🔴 ไฟล์เดียวกันถูกอัพ 2 ที่ คนละส่วน — ไม่เขียนไว้ = คนนึกว่าอัพซ้ำแล้วข้ามไป (user ถาม 08/10) */}
+            <div style={{ fontSize: FS - 0.5, color: 'var(--text2)', marginTop: 5, lineHeight: 1.65 }}>
+              📌 <b>ไฟล์เดียวกับหน้า <code>Planner &amp; Sales → 📗 Monitoring (Planning)</code> — ต้องอัพทั้ง 2 ที่</b><br />
+              <span style={{ color: 'var(--muted)' }}>
+                ที่นี่เก็บ <b>ตัวตารางบอร์ด</b> (พาร์ท + ช่องรายวันของแต่ละชีท) ·
+                อีกหน้าเก็บ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (FC · ออเดอร์ · ประวัติการส่ง · MIN/MAX · ยอดสต็อก)
+                — คนละตาราง ไม่ทับกัน
+              </span>
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
             style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 2 }}>✕</button>
