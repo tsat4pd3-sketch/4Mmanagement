@@ -263,3 +263,44 @@ Workflow: admin ติ๊ก → upsert `role_permissions` → refresh cache →
   (OWASP A01 · ดู `docs/ACCESS-CONTROL-STANDARDS.md`) ⇒ **ติ๊กปิดในจอ ≠ ปิดจริงที่ฐานข้อมูล**
 - **จุดที่ยัง hardcode `role === '…'` ในโค้ด** ไม่โผล่ในตารางนี้ (วัดล่าสุด 147 จุด) — ตั้งค่าที่นี่ไม่มีผลกับจุดพวกนั้น
 - ไม่มีปุ่ม export (ทุกเอกสาร export ต้องขึ้นทะเบียน `/doc-forms` ก่อน — ยังไม่ทำ)
+
+---
+
+## §11 รัด RLS 13 ตารางที่ด่านอยู่ที่ UI ชั้นเดียว (2026-10-08 · QC audit)
+
+ตารางเหล่านี้เคยเป็น `for all to authenticated using (true)` = **ใครที่ login แล้วยิง REST ตรง
+ก็เขียนได้ทั้งตาราง ถึงปุ่มบนจอจะซ่อนอยู่** (ตรวจกับ `pg_policies` ของจริง ไม่ใช่เดาจาก migration)
+
+| ตาราง | predicate ใหม่ | คีย์ที่เปิดปุ่มบนจอ |
+|---|---|---|
+| `telegram_channels` · `notification_rules` | `has_perm('page:/notification-config')` | หน้านั้นไม่มี `can()` เลย (route-gated) · RPC 3 ตัวของหน้าเดียวกันใช้คีย์นี้อยู่แล้ว |
+| `pe_doc_sets` `pe_processes` `pe_fmea_items` `pe_cp_items` `pe_doc_revisions` `pe_change_requests` | `has_perm('pe:edit') or has_perm('pe:approve')` | `PEDocs.jsx:89-90` |
+| `lpa_questions` `lpa_plans` `lpa_plan_days` | `has_perm('lpa:manage')` | แท็บที่เปิดด้วย `canManage` เท่านั้น |
+| `lpa_audits` `lpa_audit_answers` | `has_perm('lpa:record') or has_perm('lpa:manage') or has_perm('lpa:delete')` | `canRecord` บันทึก · `canDelete` ลบ |
+
+### 🔴 กฎที่ต้องยึดทุกครั้งที่รัด RLS (บทเรียนรอบนี้)
+
+1. **predicate ห้ามแคบกว่าคีย์ที่เปิดปุ่มบนจอ** ⇒ ใช้ **union ของคีย์ที่ปุ่มใช้จริง**
+   แคบกว่า = "กดแล้วปุ่มเขียวแต่ไม่บันทึก" (RLS ปฏิเสธ UPDATE/DELETE = สำเร็จ 0 แถว ไม่มี error)
+   · เคสนี้ PE เกือบถูกรัดเป็น insert=`pe:edit` / update=`pe:approve` ซึ่ง**แคบกว่าจอ** (จอให้
+     คนถือ `pe:edit` แก้แถวได้) ⇒ เปลี่ยนเป็น union
+2. 🔴 **ตารางที่มี policy เดียว (`_all`) ต้องเพิ่ม `for select using (true)` ก่อนรัด**
+   รัด `using` ของ `_all` เลย = **ปิดการอ่านไปด้วย ทั้งหน้าดับ** · `lpa_*` ทั้ง 5 ตัวเข้าข่ายนี้
+   (telegram / notification / `pe_*` มี `_read`/`_select` แยกอยู่แล้ว)
+3. ใช้ **`alter policy` ไม่ใช่ drop+create** — drop แล้ว create มีช่วงที่ตารางไม่มี policy
+   = ปฏิเสธทุกคน ถ้า migration ล้มกลางทาง (บทเรียน 05/10)
+4. **เช็คก่อนรัดว่า "ใครถือคีย์นี้จริง"** (`role_permissions`) — ไม่มีใครถือ = รัดแล้วไม่มีใครเขียนได้
+   · `has_perm()` ให้ role `admin` ผ่านทุกคีย์อยู่แล้ว (admin bypass ในตัวฟังก์ชัน)
+5. **ซ้อมด้วย role จริงหลังรัด** — ตั้ง `request.jwt.claims` เป็น id ของบัญชีจริงแต่ละ role
+   แล้วเรียก `has_perm()` · ต้องผ่าน 2 ทิศ: คนที่ควรเขียนได้ยังได้ · `operator` เขียนไม่ได้
+6. 🔴 **ตรวจซ้ำว่าทุกตารางยังมีแถว `cmd='SELECT'`** — เหลือ 0 แม้ตารางเดียว = rollback ทันที
+
+### 💬 `event_comments` (DR) — ลบไม่ได้ ตั้งแต่คอมเมนต์ไปอยู่บนใบพิมพ์
+
+ตั้งแต่ 07/10 คอมเมนต์ใต้ใบ MO ถูกพิมพ์ลงใบ FM-JIG-008 / FM-MTN-006 + Excel
+⇒ ลบคอมเมนต์ = พิมพ์ใบเดิมซ้ำแล้วได้เนื้อไม่เหมือนใบที่ยื่นไปแล้ว (ขัดกฎ "ฟอร์มที่ยื่นออกไปแล้ว = บันทึก")
+
+**วิธีที่ใช้: restrictive policy** — `for delete using (false)` + `for insert with check (มีข้อความ + มีชื่อคนพูด)`
+ถูก **AND** กับ policy เดิม ⇒ DELETE เป็นไปไม่ได้ ขณะที่ select/insert/update ยังวิ่งผ่านของเดิม
+🔴 ดีกว่า drop+create: **ไม่มีช่วงที่ตารางไม่มี policy** และของเดิมไม่ถูกแตะ ⇒ ย้อนด้วยการลบ 2 policy นี้
+⚠️ ฝั่ง DR วิ่งด้วย `anon` เสมอ ⇒ policy เป็น `public` **ห้ามเปลี่ยนเป็น `TO authenticated`**

@@ -167,12 +167,45 @@ async function readSource(checklistId) {
   return { src, cps: cps ?? [] }
 }
 
+/* ── 🧹 เปิด checklist ปลายทางแบบ "ล้มแล้วเก็บกวาดคืน" (QC audit 08/10) ─────────────────
+   🔴 ปัญหา: `getOrCreateChecklist` สร้างแถวก่อน แล้ว `copyCheckpointsInto` โยนได้ 3 ทาง
+      (นับประวัติล้ม / delete ล้ม / insert ล้ม) ⇒ เหลือ **checklist เปล่า 0 จุดตรวจค้างถาวร**
+      = คลาสบั๊กเดียวกับที่ migration `20260805_pm_dept_ownership_cleanup` ต้องล้าง 24 แถว
+      และเป็นเหตุให้มีกฎ "checklist เกิดตอนบันทึกเท่านั้น" (หัวไฟล์นี้)
+      ยิ่งคัดลอกทีละหลายร้อยเครื่อง = ขยะหลายสิบแถวต่อการกดครั้งเดียว
+   🔴 ลบคืนได้เฉพาะแถวที่ **เราเพิ่งสร้างเอง และยังไม่มีจุดตรวจ** — ของที่มีอยู่ก่อนห้ามแตะ */
+async function withFreshChecklist(equipmentId, module, department, userId, run) {
+  const existing = await findChecklist(equipmentId, module, department)
+  const target = existing || await getOrCreateChecklist(equipmentId, module, department, userId)
+  try {
+    return await run(target)
+  } catch (e) {
+    if (!existing && target?.id) {
+      // เพิ่งสร้างแล้วล้ม — ลบคืนเฉพาะเมื่อยังว่างจริง (กันลบของที่ session อื่นเพิ่งเติม)
+      const { count, error: eCnt } = await supabaseDR.from('jig_checkpoints')
+        .select('id', { count: 'exact', head: true }).eq('checklist_id', target.id)
+      /* 🔴 นับไม่ได้ = ไม่ลบ (เดากันพลาดว่า "ว่าง" แล้วลบของที่ session อื่นเพิ่งเติม) */
+      if (!eCnt && count === 0) {
+        /* best-effort โดยเจตนา — error ตัวจริงที่ต้องถึงผู้ใช้คือตัวที่ทำให้ copy ล้ม (rethrow ด้านล่าง)
+           ล้มตรงนี้แปลว่าเหลือ checklist เปล่า 1 แถว = งานเก็บกวาด ไม่ใช่ความผิดพลาดของผู้ใช้
+           🔴 แต่ห้ามเงียบสนิท — ต้องเห็นใน log ว่ามีขยะค้าง (กฎเหล็ก DB ข้อ 1) */
+        const rmRes = await supabaseDR.from('checklists').delete().eq('id', target.id).select('id')
+        if (rmRes.error || !(rmRes.data || []).length) {
+          console.warn('[pmChecklists] คัดลอกล้มแล้วลบ checklist เปล่าคืนไม่สำเร็จ — เหลือแถวค้าง',
+            target.id, rmRes.error?.message || '0 แถว (สิทธิ์ไม่พอ)')
+        }
+      }
+    }
+    throw e
+  }
+}
+
 export async function copyChecklistToDept(checklistId, toDepartment, userId, { replace = false } = {}) {
   const { src, cps } = await readSource(checklistId)
   if (src.department === toDepartment) return { copied: false, reason: 'same' }
   if (!cps.length) return { copied: false, reason: 'empty' }
-  const target = await getOrCreateChecklist(src.equipment_id, src.module, toDepartment, userId)
-  const res = await copyCheckpointsInto(cps, target, replace)
+  const res = await withFreshChecklist(src.equipment_id, src.module, toDepartment, userId,
+    (target) => copyCheckpointsInto(cps, target, replace))
   // เดิมเคส "ปลายทางมีประวัติ" โยน error — คงพฤติกรรมเดิมไว้สำหรับหน้าที่เรียกอยู่แล้ว
   if (res.reason === 'target_has_history')
     throw new Error(`แผนกปลายทางมีประวัติผลตรวจ ${res.history} รายการ — ทับไม่ได้ (ประวัติจะหายถาวร) แก้จุดตรวจที่หน้าตั้งค่าแทน`)
@@ -202,8 +235,8 @@ export async function copyChecklistToEquipment(checklistId, toEquipmentIds, user
       results.push({ equipmentId, copied: false, reason: 'same' }); continue
     }
     try {
-      const target = await getOrCreateChecklist(equipmentId, src.module, dept, userId)
-      const r = await copyCheckpointsInto(cps, target, replace)
+      const r = await withFreshChecklist(equipmentId, src.module, dept, userId,
+        (target) => copyCheckpointsInto(cps, target, replace))
       results.push({ equipmentId, ...r })
     } catch (e) {
       // เครื่องเดียวล้ม ต้องไม่ทำให้ทั้งชุดหยุด — เก็บเหตุผลไว้รายงาน

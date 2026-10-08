@@ -334,3 +334,41 @@ B5 — Edge Function `demand-mail-file` (ตรวจ token Main + has_perm) + �
 
 ทั้งฐาน 1,521 กะ เข้าข่าย **5 กะ** · ไม่มี `shift`/`start_time` null · กะดึกที่เริ่ม 08:00–19:59 ไม่โดน
 📄 รายละเอียด + ตารางผลจำลอง + เหตุผลรายกะที่ไม่แตะ → `docs/modules/oee.md` §รอบ 2 (08/10)
+
+## รอบ 2026-10-08 — audit เต็ม 4 หมวด (A+B / C+D / E+G / F) + ฝั่งฐานข้อมูลจริง
+
+**วิธีรัน:** 4 subagent `qc-project-rules` ขนานกัน + ตรวจฝั่ง DB เองด้วย MCP
+(advisor ทั้ง 2 project · `pg_policies` · `pg_proc` · publication realtime) ซึ่ง agent เข้าไม่ถึง
+
+**ผล: 🔴 7 · 🟡 28 · 🔵 ~34** — ด่านอัตโนมัติเขียวหมดตอนนั้น
+(2540 เทส · stdsweep 192 มุมมองผิด 1 · chartsweep 0 · mobilesweep 0 · searchsweep 0)
+⇒ **ทุกข้อคือสิ่งที่ด่านมองไม่เห็น**
+
+### 🔴 แก้ครบ 7 ข้อในรอบเดียว (user: "ไล่ลุยเลย")
+
+| # | เรื่อง | ความรุนแรง |
+|---|---|---|
+| 1 | `PMSetup.handleDelete` ลบทั้งโฟลเดอร์ `jigs/<id>/` — รูปจุดตรวจถูกแชร์ตอนคัดลอกแผน PM | **ข้อมูลเสียกู้ไม่ได้** · ฟีเจอร์ 07/10 ขยายช่องนี้เอง |
+| 2 | RLS 13 ตารางฝั่ง Main `for all using(true)` (telegram · notification_rules · pe_* 6 · lpa_* 5) | ใครที่ login ยิง REST ตรงก็เขียนได้ |
+| 3 | `event_comments` ลบได้ด้วย anon ทั้งที่คอมเมนต์ไปอยู่บนใบ MO ที่ยื่นแล้ว | เอกสารที่ยื่นแล้วเปลี่ยนได้ |
+| 4 | `DemandMailInbox` ด่านกันนำเข้า EDI ทับ **fail-open** เมื่อคิวรีล้ม | ยอดลูกค้าถอยหลังเงียบ |
+| 5 | `PMSchedule` คิวรีหลักล้ม → จอบอก "ไม่มีแผน PM" | จอโกหก + ไม่มี paging |
+| 6 | CSV 12 จุดไม่เข้าทะเบียน + `DailyReport` ไม่กัน formula injection | ข้อมูลส่วนบุคคล + Excel รันสูตร |
+| 7 | `AddUser` อีเมล login หายเงียบถ้าคนเปิดไม่ใช่ `role=admin` | จอโกหกว่า "บัญชีไม่มีอีเมล" |
+
+### ของกลางใหม่ + ด่านใหม่
+
+- `src/utils/jigImageRefs.js` — `orphanImagePaths()` นับผู้อ้างรูปจาก 3 ตาราง · **นับไม่ได้ = ไม่ลบ**
+- `withFreshChecklist()` (`pmChecklists.js`) — คัดลอกล้มกลางทาง ไม่เหลือ checklist เปล่าค้าง
+- ด่าน `jig-image-delete-needs-ref-count` · `csv-export-via-csvdoc`
+
+### บทเรียนวิธีทำงาน
+
+- 🔴 **agent อ่านได้แค่ไฟล์ในรีโป** — ข้อ RLS agent เดาจาก migration · ของจริงต้องเช็ค `pg_policies`
+  (รอบนี้ตรงกัน แต่ **`lpa_*` มี policy เดียวไม่มี SELECT แยก** ซึ่งเห็นได้จากของจริงเท่านั้น
+  — รัดเลยโดยไม่เพิ่ม policy อ่านก่อน = ทั้งหน้า LPA ดับ)
+- 🔴 **ด่านที่เขียนกว้างเกินจะจับของที่ไม่ผิด** — ด่าน `jig-image-delete-*` รอบแรกจับ
+  `MtnMachineLayout` (รูปผังโซน `facility/<id>` = 1 path ต่อ 1 แถว ไม่ถูกแชร์)
+  ⇒ **รัดเงื่อนไขให้ตรงเป้า (path ใต้ `jigs/`) ไม่ใช่ใส่ allow-list รายไฟล์**
+- Supabase MCP บล็อกคำสั่ง `drop` (timeout) ⇒ ใช้ **restrictive policy** แทน drop+create
+  ซึ่งกลายเป็นวิธีที่ดีกว่าอยู่แล้ว (ไม่มีช่วงที่ตารางไม่มี policy)

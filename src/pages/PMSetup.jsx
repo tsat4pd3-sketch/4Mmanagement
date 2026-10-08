@@ -30,6 +30,9 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
+import { orphanImagePaths } from '../utils/jigImageRefs';   // 🖼️ นับผู้อ้างรูปก่อนลบ (รูปจุดตรวจถูกแชร์ตอนคัดลอกแผน PM)
+import { fetchAllPages } from '../utils/fetchByIds';   // 🔴 เพดาน 1000 แถว (กฎเหล็ก DB ข้อ 5)
+import SearchInput from '../components/SearchInput';   // ช่องกรองลิสต์ = ของกลาง (UI-STANDARD §4)
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 
@@ -549,6 +552,7 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   /* 📋 คัดลอกจุดตรวจไป "เครื่องอื่น" (06/10 · คอมเมนต์ทีม MTN ข้อ 2)
      *"MTN มีเครื่องจักรหลายตัว [325 Pc] แต่ชนิดซ้ำๆกัน จุดการ PM เหมือนกันหมด"* */
   const [allEquip, setAllEquip] = useState([])      // อุปกรณ์ทั้งหมดในโมดูล mtn (= ตาราง jigs)
+const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดรายชื่อเครื่องล้ม ≠ ไม่มีเครื่องชนิดเดียวกัน
   const [copyTo, setCopyTo] = useState([])          // jigs.id[] ที่ติ๊กไว้
   const [copyQ, setCopyQ] = useState('')
   const [copyBusy, setCopyBusy] = useState(false)
@@ -565,9 +569,17 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
     supabaseDR.from('pm_facility_areas').select('id, name').order('sort_order').order('name')
       .then(({ data }) => setFacilityAreas((data ?? []).filter(a => a.name)), () => {})
-    // อุปกรณ์พี่น้อง สำหรับ "คัดลอกจุดตรวจไปเครื่องอื่น" — เลือกเฉพาะคอลัมน์ที่ลิสต์ใช้ (กฎ egress)
-    supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name, machine_id').eq('module', 'mtn')
-      .then(({ data }) => setAllEquip(data ?? []), () => {})
+    /* อุปกรณ์พี่น้อง สำหรับ "คัดลอกจุดตรวจไปเครื่องอื่น" — เลือกเฉพาะคอลัมน์ที่ลิสต์ใช้ (กฎ egress)
+       🔴 QC audit 08/10: เดิมกลืน error + `, () => {}` เป็นโค้ดตาย (supabase-js ไม่ reject)
+          ⇒ คิวรีล้ม = ลิสต์ว่าง = จอบอก "ไม่มีเครื่องชนิดเดียวกันตัวอื่น" = **จอโกหก**
+          ในฟีเจอร์ที่มีไว้เพื่อไม่ต้องตั้งจุดตรวจ 325 รอบ
+       🔴 ไม่มี paging = ชนเพดาน 1000 แถวเงียบ ⇒ เครื่องปลายทางบางตัวหายจากลิสต์ติ๊ก */
+    fetchAllPages(() => supabaseDR.from('jigs')
+      .select('id, name, jig_no, machine_no, line_name, machine_id').eq('module', 'mtn'))
+      .then(({ rows, error, truncated }) => {
+        setAllEquip(rows ?? [])
+        setAllEquipErr(error || (truncated ? 'เครื่องเยอะเกินเพดาน — โหลดได้ไม่ครบ' : null))
+      })
     loadProcessTypes().then(() => setProcTypes(activeProcessTypes())).catch(() => {})
   }, [])
 
@@ -1032,14 +1044,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
         ])
         const stale = [...initialImagePathsRef.current].filter(p => !finalPaths.has(p) && p.startsWith('jigs/'))
         if (stale.length) {
-          // ⚠️ รูปจุดตรวจถูกแชร์ได้ถ้าเคย "คัดลอกรายการตรวจไปแผนกอื่น" (copy อ้าง image_path เดิม)
-          //    → ลบเฉพาะไฟล์ที่ไม่มี checkpoint ของแผนกอื่นอ้างถึงแล้ว
-          supabaseDR.from('jig_checkpoints').select('image_path').in('image_path', stale)
-            .then(({ data }) => {
-              const stillUsed = new Set((data ?? []).map(r => r.image_path))
-              const orphan = stale.filter(p => !stillUsed.has(p))
-              if (orphan.length) supabaseDR.storage.from('jig-images').remove(orphan).catch(() => {})
-            }, () => {})
+          /* ⚠️ รูปจุดตรวจถูกแชร์ได้ถ้าเคย "คัดลอกรายการตรวจ" ไปแผนก/เครื่องอื่น (copy อ้าง image_path เดิม)
+             🔴 นับผู้อ้างผ่าน `orphanImagePaths()` เท่านั้น (08/10) — เดิมเช็คแค่ `jig_checkpoints`
+                ตารางเดียวและกลืน error ⇒ รูปที่ `jigs`/`jig_images` ยังชี้อยู่ถูกลบได้
+                · นับไม่ได้ = ไม่ลบ (ของกลางคืน orphan ว่างเมื่อ error อยู่แล้ว) */
+          orphanImagePaths(stale).then(({ orphan }) => {
+            if (orphan.length) supabaseDR.storage.from('jig-images').remove(orphan).catch(() => {})
+          }, () => { /* นับไม่ได้ = ไฟล์เก่าค้างไว้ ดีกว่าลบของที่ยังมีคนใช้ */ })
         }
         initialImagePathsRef.current = finalPaths
       }
@@ -1176,9 +1187,15 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
                         📋 <b>คัดลอก {cur.checkpointCount} จุดนี้ไปเครื่องอื่น</b> (ชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง)
                       </div>
+                      {/* 🔴 โหลดรายชื่อเครื่องล้ม = เขียนบนจอ ห้ามปล่อยให้ลิสต์ว่างแล้วอ่านว่า "ไม่มีเครื่อง" (08/10) */}
+                      {allEquipErr && (
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>
+                          ⚠ โหลดรายชื่อเครื่องไม่สำเร็จ ({allEquipErr}) — ลิสต์ด้านล่าง<b>ไม่ครบ</b> ยังเลือกปลายทางไม่ได้อย่างมั่นใจ
+                        </div>
+                      )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
-                        <input value={copyQ} onChange={e => setCopyQ(e.target.value)} placeholder="ค้นเลขเครื่อง / ไลน์…"
-                          style={{ width: 'auto', minWidth: 170, fontSize: 12 }} />
+                        {/* ตัวกรองลิสต์ติ๊กหลายเครื่อง ⇒ ใช้ <SearchInput> (ไม่ใช่ MachineSelect ซึ่งเลือกได้ตัวเดียว) · UI-STANDARD §4 */}
+                        <SearchInput value={copyQ} onChange={setCopyQ} fields="เลขเครื่อง / ไลน์" grow={false} />
                         <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('#3b9dff')}>
                           ✓ เลือกที่เห็นทั้งหมด ({shown.length})
                         </button>
@@ -1189,6 +1206,14 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                           {copyBusy ? '…' : `⧉ คัดลอกไป ${copyTo.length} เครื่อง`}
                         </button>
                       </div>
+                      {/* 🔴 ตัดรายการต้องบอกจำนวนที่ซ่อน **เสมอ** (UI §5.1.1) — ฐานจริง 325 เครื่อง
+                           เดิมไม่ค้น = โชว์เฉพาะชนิดเดียวกันโดยไม่บอกว่าซ่อนไปกี่ตัว ⇒ ตัวกรองที่มองไม่เห็น */}
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
+                        แสดง <b style={{ color: 'var(--text2)' }}>{shown.length}</b> จาก {cands.length}
+                        {!q && cands.length > shown.length
+                          ? <> · ซ่อนเครื่องชนิดอื่น {cands.length - shown.length} ตัว — <b>พิมพ์ค้นเพื่อดูทุกชนิด</b></>
+                          : q ? ' · กรองด้วยคำค้น (ทุกชนิด)' : ' · ครบทุกเครื่องแล้ว'}
+                      </div>
                       <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
                         {shown.map(e => {
@@ -1197,10 +1222,11 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                             <label key={e.id} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11.5, cursor: 'pointer', padding: '2px 3px' }}>
                               <input type="checkbox" checked={on} onChange={() =>
                                 setCopyTo(p => on ? p.filter(x => x !== e.id) : [...p, e.id])} />
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              {/* 🔴 รหัสเครื่องห้ามถูกตัด (UI §6.21 ข้อ 1) — ตัดได้แค่ชื่อไลน์ */}
+                              <span style={{ display: 'flex', minWidth: 0, gap: 3 }}
                                 title={`${e.machine_no || e.jig_no || e.name} · ${e.line_name || 'ไม่ระบุไลน์'}`}>
-                                <b>{e.machine_no || e.jig_no || e.name}</b>
-                                <span style={{ color: 'var(--muted)' }}> · {e.line_name || '—'}</span>
+                                <b style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{e.machine_no || e.jig_no || e.name}</b>
+                                <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {e.line_name || '—'}</span>
                               </span>
                             </label>
                           )
@@ -1687,16 +1713,33 @@ export default function PMSetup() {
     const dres = await supabaseDR.from('jigs').delete().eq('id', jig.id).select('id')
     if (!checkWrite(dres, 'ลบจิ๊ก')) return
     if (!(dres.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — รูปและประวัติยังอยู่ครบ'); return }
-    // ยืนยันแถวหายจริงแล้ว เก็บกวาดรูปทั้งชุดของ jig นี้ (frame-*/cp-* อยู่ใต้ jigs/<id>/) กันไฟล์กำพร้าใน storage (best-effort)
+    /* ยืนยันแถวหายจริงแล้ว เก็บกวาดรูปของ jig นี้ (เฟรมหมุน + จุดตรวจ อยู่ใต้ jigs/<id>/)
+       🔴 ห้ามลบทั้งโฟลเดอร์ (QC audit 08/10) — `copyChecklistToEquipment/Dept` คัดลอกจุดตรวจไปเครื่องอื่น
+          โดย **ใช้ image_path เดิมร่วมกัน** ⇒ ลบเครื่องต้นแบบ = รูปจุดตรวจของทุกเครื่องที่ก๊อปไป
+          หายถาวร กู้ไม่ได้ และไม่มี error ฟ้อง · ต้องนับผู้อ้างจาก 3 ตารางก่อน (jigImageRefs.js)
+       🔴 นับไม่ได้ = ไม่ลบเลย (ไฟล์กำพร้าค้าง = กินที่ · ลบผิด = ข้อมูลเสีย) + เขียนบอกบนจอ */
+    let imgNote = ''
     try {
       const folder = `jigs/${jig.id}`
-      const { data: files } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })
+      const { data: files, error: eList } = await supabaseDR.storage.from('jig-images').list(folder, { limit: 1000 })
+      if (eList) throw eList
       const paths = (files ?? []).map(f => `${folder}/${f.name}`)
       if (jig.image_path && !paths.includes(jig.image_path)) paths.push(jig.image_path) // เผื่อ path เก่านอกโฟลเดอร์ (legacy)
       if (jig.model_path && !paths.includes(jig.model_path)) paths.push(jig.model_path) // โมเดล 3D อยู่ที่ models/<id>.glb (นอกโฟลเดอร์ jigs/)
-      if (paths.length) await supabaseDR.storage.from('jig-images').remove(paths)
-    } catch { /* ลบรูปพลาดไม่ต้องกระทบ flow หลัก */ }
-    toast.success('ลบแล้ว')
+      if (paths.length) {
+        const { orphan, stillUsed, error: eRef } = await orphanImagePaths(paths, { exceptJigId: jig.id })
+        if (eRef) {
+          imgNote = ' — แต่ตรวจไม่ได้ว่ารูปถูกเครื่องอื่นใช้อยู่ไหม จึงยังไม่ลบไฟล์รูป'
+        } else {
+          if (orphan.length) {
+            const { error: eRm } = await supabaseDR.storage.from('jig-images').remove(orphan)
+            if (eRm) imgNote = ' — แต่ลบไฟล์รูปไม่สำเร็จ (ไฟล์ยังค้างใน storage)'
+          }
+          if (stillUsed.length) imgNote = ` — เก็บรูปไว้ ${stillUsed.length} ไฟล์ เพราะเครื่องอื่นที่คัดลอกจุดตรวจไปยังใช้อยู่`
+        }
+      }
+    } catch { imgNote = ' — แต่เก็บกวาดไฟล์รูปไม่สำเร็จ (ไฟล์ยังค้างใน storage)' }
+    toast.success('ลบแล้ว' + imgNote)
     fetchData()
   }
 

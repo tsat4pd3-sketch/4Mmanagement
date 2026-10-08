@@ -38,6 +38,7 @@ import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { compareToMaster, CMP_META, improvementProposals, newItemProposals, suggestMaster, setMasterSummary } from '../utils/peMaster';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
+import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 
 /* ═══ PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13) ═══
    โมดูลของทีม Process Engineering — โครงถอดจากเอกสารจริง TSAT (PFC/FMEA/CNP-P703-01):
@@ -255,15 +256,17 @@ export default function PEDocs() {
   // อัปโหลดรูป → คืน public URL (GIF ส่งดิบ ≤2MB · อื่นบีบ 2560/q0.9) — เรียกหลัง DB row มี id แล้ว
   const uploadPeImage = async (path, file) => {
     let blob = file;
-    if (file.type === 'image/gif') {
-      if (file.size > 2 * 1024 * 1024) { toast.error('GIF ต้องไม่เกิน 2MB'); return null; }
+    // 🔴 ตัวเช็ค GIF + เพดานขนาด = utils/imageFileKind.js จุดเดียว (08/10 — MIME ล้วนพลาดบน Android)
+    const gif = isGifFile(file);
+    if (gif) {
+      if (file.size > GIF_MAX_BYTES) { toast.error(GIF_TOO_BIG_MSG); return null; }
     } else {
       blob = await resizeImage(file).catch(e => { toast.error(e.message); return null; });
       if (!blob) return null;
     }
-    const ext = file.type === 'image/gif' ? 'gif' : 'jpg';
+    const ext = gif ? 'gif' : 'jpg';
     const full = `${path}-${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('pe-images').upload(full, blob, uploadOpts({ upsert: true, contentType: file.type === 'image/gif' ? 'image/gif' : 'image/jpeg' }));
+    const { error } = await supabase.storage.from('pe-images').upload(full, blob, uploadOpts({ upsert: true, contentType: gif ? 'image/gif' : 'image/jpeg' }));
     if (error) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${error.message}`); return null; }
     return supabase.storage.from('pe-images').getPublicUrl(full).data.publicUrl;
   };
