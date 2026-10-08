@@ -26,6 +26,9 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { polyArea, centroid, labelAnchor } from '../utils/regionGeom';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { fetchByIds } from '../utils/fetchByIds';
+import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard';
+import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
+import { useLiveBoard } from '../utils/useLiveBoard';
 import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup } from '../utils/energy';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
@@ -117,8 +120,12 @@ const prodHealthSignals = (s) => {
   if (s.pmBusy) sig.push({ cat: 'good', txt: '🔧 กำลังทำ PM' });
   if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
   else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
-  if (s.amOverdue) sig.push({ cat: 'bad', txt: `AM เกิน ${s.amOverdue}` });
-  else if (s.amDueSoon) sig.push({ cat: 'ok', txt: `AM ใกล้ครบ ${s.amDueSoon}` });
+  /* 🏭 AM รายวัน — จาก "กะนี้ตรวจแล้วหรือยัง" (lib/dailyAmBoard.js) ไม่ใช่วันครบกำหนดของแผน (08/10) */
+  if (s.amDNg) sig.push({ cat: 'bad', txt: `AM พบผิดปกติ ${s.amDNg}` });
+  else if (s.amDLate) sig.push({ cat: 'bad', txt: `AM ยังไม่ตรวจ ${s.amDLate} (เกินเวลา)` });
+  else if (s.amDWait) sig.push({ cat: 'ok', txt: `AM รอตรวจ ${s.amDWait}` });
+  if (s.amOverdue) sig.push({ cat: 'bad', txt: `แผน AM เกิน ${s.amOverdue}` });
+  else if (s.amDueSoon) sig.push({ cat: 'ok', txt: `แผน AM ใกล้ครบ ${s.amDueSoon}` });
   if (s.hasOpen && s.headTotal > 0) {
     const pp = s.present / s.headTotal * 100;    // เกณฑ์ "แย่" ของแท็บคน (<80)
     if (pp < 80) sig.push({ cat: 'ok', txt: `คนมา ${s.present}/${s.headTotal}` });
@@ -136,6 +143,41 @@ const prodHealthText = (s) => {
   const t = sig.slice(0, 2).map(x => x.txt).join(' · ');
   return sig.length > 2 ? `${t} +${sig.length - 2}` : t;   // เกิน 2 เหตุ = นับบอก ห้ามตัดเงียบ
 };
+
+/* 🏭 AM รายวัน — ตัวแปลสถานะรวม (หลายไลน์ในครอบครัวบวกกันมาแล้ว) → สี/ข้อความ · กฎสีเดียวกับ computeDailyPmStatus:
+   NG ชนะ · ยังไม่ตรวจเกินเวลา = แดง · รอตรวจในกรอบ = เหลือง · ตรวจครบ = เขียว · ยังไม่เริ่มผลิต = เทา (ไม่ใช่เขียว) */
+const amDailyCat = (s) => {
+  if (s.amDNg || s.amDLate || s.amOverdue) return 'bad';
+  if (s.amDWait || s.amDueSoon) return 'ok';
+  if (s.amDTotal) return s.amDChecked >= s.amDTotal ? 'good' : 'idle';
+  return s.amTotal ? 'ok' : 'idle';   // มีแผน AM แต่ยังไม่ลงทะเบียนจุดตรวจรายวัน = ต้องเห็น
+};
+const amDailyText = (s) => {
+  const parts = [];
+  if (s.amDTotal) {
+    if (s.amDNg) parts.push(`⚠ พบผิดปกติ ${s.amDNg}`);
+    if (s.amDLate) parts.push(`⚠ ยังไม่ตรวจ ${s.amDLate}/${s.amDTotal} (เกินเวลา)`);
+    else if (s.amDWait) parts.push(`รอตรวจ ${s.amDWait}/${s.amDTotal}`);
+    if (!s.amDNg && !s.amDLate && !s.amDWait) {
+      parts.push(s.amDChecked >= s.amDTotal ? `✓ ตรวจครบ ${s.amDChecked}/${s.amDTotal}`
+        : s.amDHasSession ? `เปิดกะแล้ว ยังไม่เปิดใบผลิต (${s.amDTotal} จุด)` : `ยังไม่เริ่มผลิต (${s.amDTotal} จุด)`);
+    } else if (s.amDChecked) parts.push(`ตรวจแล้ว ${s.amDChecked}/${s.amDTotal}`);
+  } else if (s.amTotal) parts.push(`ยังไม่ลงทะเบียนจุดตรวจรายวัน (${s.amTotal} แผน)`);
+  if (s.amOverdue) parts.push(`แผน AM เกิน ${s.amOverdue}`);
+  else if (s.amDueSoon) parts.push(`แผน AM ใกล้ครบ ${s.amDueSoon}`);
+  return parts.join(' · ');
+};
+const amDailyShort = (s) => {
+  if (s.amDNg) return `⚠ NG ${s.amDNg}`;
+  if (s.amDLate) return `⚠ ${s.amDLate}/${s.amDTotal}`;
+  if (s.amDWait) return `~${s.amDWait}/${s.amDTotal}`;
+  if (s.amOverdue) return `⚠ ${s.amOverdue}`;
+  if (s.amDueSoon) return `~${s.amDueSoon}`;
+  if (!s.amDTotal && s.amTotal) return '?';
+  return '';
+};
+// อันดับ "แย่ก่อน" ของแผงจัดอันดับ — น้ำหนักเรียงตามความเร่งด่วนเดียวกับสี
+const amDailyRank = (s) => s.amDNg * 1e6 + s.amDLate * 1e4 + s.amOverdue * 1e3 + s.amDWait * 100 + s.amDueSoon * 10 + (!s.amDTotal && s.amTotal ? 1 : 0);
 
 const METRICS = {
   /* 🚦 แท็บ default — ตอบ "ทั้งโรงงานปกติไหม" ในแวบเดียว: เขียวหมด = จบ · ผิดปกติ = สีตามเรื่องของมัน
@@ -252,14 +294,16 @@ const METRICS = {
     cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : s.pmDueSoon ? 'ok' : 'good',
     short: s => s.pmBusy ? '🔧 PM' : !s.pmTotal ? '' : s.pmOverdue ? `⚠ ${s.pmOverdue}` : s.pmDueSoon ? `~${s.pmDueSoon}` : '',
   },
-  /* 🏭 AM — ผลิตตรวจเครื่องเองทุกต้นกะ (checklists.department ที่ mtn_teams.kind = 'am')
-     แยกแท็บจาก PM เพราะเป็นคนละงาน คนละคนรับผิดชอบ — เอามารวมนับก็ตอบไม่ได้ว่าใครต้องไปทำ */
+  /* 🏭 AM — ผลิตตรวจเครื่องเองทุกต้นกะ · ตัดสินจาก "กะนี้ตรวจแล้วหรือยัง" (`amDaily*` จาก lib/dailyAmBoard.js)
+     แยกแท็บจาก PM เพราะเป็นคนละงาน คนละคนรับผิดชอบ — เอามารวมนับก็ตอบไม่ได้ว่าใครต้องไปทำ
+     🔴 ห้ามกลับไปใช้ `pm_plans.next_due_date` เป็นตัวตัดสิน — แผน AM รายวันเป็น run_day ไม่มีวันครบกำหนด (migration 02/10)
+        เดิมทำแบบนั้นแล้วผังขึ้น "AM ปกติ (N)" ตลอดกาลไม่ว่าจะตรวจหรือไม่ (user ทัก 08/10)
+     · แผน AM ที่ยังเป็นรอบปฏิทิน (`amOverdue`/`amDueSoon`) = สัญญาณเสริม ยังโชว์
+     · มีแผน AM แต่ไม่มีจุดตรวจรายวัน = ช่องว่างทะเบียน **ต้องเขียนบนจอ** ไม่ใช่เขียว "ปกติ" */
   am: {
     label: '🏭 AM (ผลิตตรวจเอง)', worstFirst: true, desc: true,
-    value: s => s.amTotal ? s.amOverdue * 1000 + s.amDueSoon : null,
-    text: s => s.amTotal ? (s.amOverdue ? `⚠ เกินกำหนด ${s.amOverdue}` : s.amDueSoon ? `ใกล้ครบ ${s.amDueSoon}` : `AM ปกติ (${s.amTotal})`) : '',
-    cat: s => !s.amTotal ? 'idle' : s.amOverdue ? 'bad' : s.amDueSoon ? 'ok' : 'good',
-    short: s => !s.amTotal ? '' : s.amOverdue ? `⚠ ${s.amOverdue}` : s.amDueSoon ? `~${s.amDueSoon}` : '',
+    value: s => (s.amDTotal || s.amTotal) ? amDailyRank(s) : null,
+    text: amDailyText, cat: amDailyCat, short: amDailyShort,
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
@@ -398,6 +442,7 @@ const COMPACT_W = 820;
 const EMPTY_ST = { actual: 0, target: 0, onTimeTarget: 0, runN: 0, capN: 0, hasOpen: false, oee: null, oeeLive: false, oeeNoCt: false, oeeCtPartial: false, oeePOver: false, oeePRaw: 0, dtMin: 0, dtMinHour: 0, dtOpenMin: null, dtOpenUnknown: false, dtActive: false, ng: 0,
   headTotal: 0, present: 0, ppeBad: 0, stationTotal: 0, stationFilled: 0, pmTotal: 0, pmOverdue: 0, pmDueSoon: 0,
   amTotal: 0, amOverdue: 0, amDueSoon: 0, pmBusy: 0, pmBusyText: '',
+  amDTotal: 0, amDChecked: 0, amDNg: 0, amDLate: 0, amDWait: 0, amDIdle: 0, amDHasSession: false,
   supList: [], supAtRisk: false };
 // รวมชื่อ utility ที่จ่ายไลน์นี้ (dedup ตามเลขเครื่อง) เอาที่กำลังซ่อม (atRisk) ก่อน
 // รวมชื่อ utility ที่จ่ายไลน์นี้ — dedup ตามเลขเครื่องก่อน แล้วยุบชื่อที่ซ้ำเป็น "ชื่อ ×N" (กันโชว์ชื่อเดียวซ้ำหลายรอบ)
@@ -1115,6 +1160,25 @@ export default function FactoryMap({ setupMode = false }) {
   }, []);
   usePolling(loadPM, RATE.SLOW);
 
+  /* ── 🏭 AM รายวัน (DR: pm_daily_line_targets + inspections กะนี้ + prod_orders.opened_at) ──
+     🔴 08/10 user: "AM ควรทำทุกวัน แต่สเตตัสไม่อัพเดท" — เดิมอ่านจาก pm_plans.next_due_date ซึ่งแผน AM รายวัน
+        เป็น run_day (null) ตั้งแต่ migration 02/10 ⇒ "AM ปกติ (N)" ค้างตลอดกาล · ตอนนี้ใช้ data-flow เดียวกับ
+        /daily-checker?tab=pm ผ่าน lib/dailyAmBoard.js · ล้ม = คงค่าเดิม + ชิปเตือน (ห้ามล้างเป็น "ไม่มีจุดตรวจ")
+     ⏱️ สี pending→orange เปลี่ยนตามเวลาโดยไม่มี event ⇒ คิดใหม่ทุกนาทีจากของที่โหลดไว้ (ไม่ยิง DB) · เปลี่ยนกะ = โหลดใหม่ */
+  const [amRaw, setAmRaw] = useState(null);
+  const [amErr, setAmErr] = useState('');
+  const [amTick, setAmTick] = useState(() => Date.now());
+  const loadAmDaily = useCallback(async () => {
+    const res = await loadDailyAm();
+    if (!res.ok) { console.warn('loadAmDaily', res.error?.message || res.error); setAmErr(res.error?.message || String(res.error)); return; }
+    setAmErr(''); setAmRaw(res);
+  }, []);
+  useLiveBoard(loadAmDaily, { tables: ['inspections', 'prod_orders', 'production_sessions'], topic: 'factory-map-am' });
+  useEffect(() => { const t = setInterval(() => setAmTick(Date.now()), 60_000); return () => clearInterval(t); }, []);
+  const amLoadedShift = amRaw?.shift?.shift || '';
+  useEffect(() => { if (amLoadedShift && amShiftInfo(new Date(amTick)).shift !== amLoadedShift) loadAmDaily(); }, [amTick, amLoadedShift, loadAmDaily]);
+  const amDaily = useMemo(() => (amRaw ? dailyAmLineStatus({ ...amRaw, shift: amRaw.shift.shift, now: new Date(amTick) }) : {}), [amRaw, amTick]);
+
   /* ── Supply route (DR: facility_supply_links + machines + open MO) — refresh 30 วิ ──
      utility/facility จ่ายไลน์ไหน · ถ้ามีใบซ่อม (MO) เปิดค้างบนเครื่องนั้น = ไลน์ที่จ่ายกระทบ (แดง) */
   const loadSupply = useCallback(async () => {
@@ -1601,6 +1665,8 @@ export default function FactoryMap({ setupMode = false }) {
       if (pm) { agg.pmTotal += pm.pmTotal || 0; agg.pmOverdue += pm.pmOverdue || 0; agg.pmDueSoon += pm.pmDueSoon || 0;
                agg.amTotal += pm.amTotal || 0; agg.amOverdue += pm.amOverdue || 0; agg.amDueSoon += pm.amDueSoon || 0;
                agg.pmBusy += pm.pmBusy || 0; if (!agg.pmBusyText) agg.pmBusyText = pm.pmBusyText || ''; }
+      const ad = amDaily[n];   // 🏭 AM รายวัน — บวกทั้งครอบครัว (target ลงทะเบียนต่อไลน์ · เวลาเริ่มผลิตรวมแม่-ลูกมาแล้วใน loader)
+      if (ad) { agg.amDTotal += ad.total; agg.amDChecked += ad.checked; agg.amDNg += ad.ngN; agg.amDLate += ad.late; agg.amDWait += ad.wait; agg.amDIdle += ad.notStarted; agg.amDHasSession = agg.amDHasSession || !!ad.hasSession; }
       /* ⚡ พลังงาน — กรอกได้ทุกชั้นแล้ว (ไลน์แม่ + ไลน์ลูก) จึง **ต้องกรองด้วย energyCounted ก่อนบวก**
          ไม่งั้นกลุ่มที่ลงทั้งค่ารวมที่แม่และค่าแยกที่ลูก จะถูกบวกซ้ำเป็นสองเท่าบนผัง */
       const en = energyStatus[n];
@@ -1654,7 +1720,7 @@ export default function FactoryMap({ setupMode = false }) {
     const warn = all.filter(n => { const h = facHealth(stOf(n)); return h !== 'good' && h !== 'idle'; });
     return { all, warn };
     // facHealth อ่านสถานะปัจจุบันผ่าน stOf — ใส่ state ที่พึ่งพาเป็น deps แทน (pattern เดียวกับ ranked)
-  }, [regions, metric, editing, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, metric, editing, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, lineStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ⚙️ ซีรีส์ OEE รายวันต่อกรอบ (รวมครอบครัวไลน์) — คำนวณครั้งเดียวจาก oeeHistRaw ไม่คิดใน stOf (stOf ถูกเรียกถี่มาก)
      series = wavg รายวันถ่วง wLoad (สูตรบังคับ) เรียงเก่า→ใหม่ · prev = วันล่าสุดที่มีข้อมูล (ฐานเทียบ Δ ของวันนี้) */
@@ -1701,7 +1767,7 @@ export default function FactoryMap({ setupMode = false }) {
       return M.desc ? bv - av : av - bv;
     });
     return arr;
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, regions, metric, editing, showFac, topNames, parentOf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── 🏛️ บอร์ดสถานะ OBEYA (สด) — แผงขวาโหมด `obeya` ────────────────────────────────
      2026-09-22 · คำขอ user: แผงขวาเดิม ("จัดอันดับตาม metric") พูดเรื่องเดียวกับป้ายบนผัง
@@ -1791,7 +1857,7 @@ export default function FactoryMap({ setupMode = false }) {
 
     const axes = [oee, s, q, d, c, m];
     return { axes, overall: boardOverall(axes), lineCount: names.length, openCount: openLines.length };
-  }, [lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, regions, topNames, parentOf, lines]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineStatus, manpower, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, regions, topNames, parentOf, lines]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── สรุปทบทวนรายวัน: rollup ทั้งครอบครัว (แม่+ลูก) เหมือน stOf แต่อ่านจาก reviewStatus ──
   //    OEE ถ่วงน้ำหนักด้วยเวลารับภาระ (oeeWSum/oeeWLoad) — ห้าม mean-of-percentages · fallback = เฉลี่ยธรรมดา
@@ -2049,7 +2115,7 @@ export default function FactoryMap({ setupMode = false }) {
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, supplyStatus, facilitySupply, dieZones, storeZones, lblScale]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, lblScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -2243,6 +2309,14 @@ export default function FactoryMap({ setupMode = false }) {
               border: `1px solid ${pmOrphan.overdue ? '#ef444455' : '#f59e0b55'}` }}>
             ⚠ แผน PM {pmOrphan.total} รายการยังไม่ผูกไลน์ — ไม่ขึ้นบนผัง{pmOrphan.overdue ? ` · เกินกำหนดแล้ว ${pmOrphan.overdue}` : ''}
           </Link>
+        )}
+        {/* 🏭 AM รายวัน — บอกว่าตัดสินจากกะไหน · โหลดล้ม = เขียนบนจอ (ค่าที่เห็นเป็นของรอบก่อน ไม่ใช่ "ไม่มีจุดตรวจ") */}
+        {!editing && metric === 'am' && (amErr || amRaw) && (
+          <span title={amErr ? `โหลดสถานะ AM ล่าสุดไม่สำเร็จ: ${amErr}` : 'ตัดสินจากทะเบียนจุดตรวจรายวัน (/daily-checker?tab=pm) + ผลตรวจตั้งแต่เริ่มกะนี้ + เวลาเปิดใบผลิตใบแรก'}
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap', borderRadius: 6, padding: '3px 8px',
+              color: amErr ? '#ef4444' : 'var(--muted)', background: amErr ? '#ef44441a' : 'transparent', border: `1px solid ${amErr ? '#ef444455' : 'var(--border)'}` }}>
+            {amErr ? '⚠ โหลดสถานะ AM ล่าสุดไม่สำเร็จ — ค่าที่เห็นเป็นของรอบก่อน' : `${amRaw.shift.label} ${amRaw.shift.workDateStr} · ตรวจครบภายใน ${DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก`}
+          </span>
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (

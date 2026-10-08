@@ -34,6 +34,13 @@ function addDays(ymd: string, n: number): string {
 // 🔴 ต้องแบ่งหน้าอ่านเสมอ — PostgREST มีเพดาน max-rows 1000 แถวที่ `limit=` ใน query string
 //    **ชนะไม่ได้** และมัน "สำเร็จ" เงียบๆ (200 OK พร้อมข้อมูลไม่ครบ) · เจอจริงตอน backfill รอบแรก
 //    2026-09-24: ได้ sessions = 1000 เป๊ะ ทั้งที่ช่วง 140 วันมีมากกว่านั้น → rollup ขาดหายแบบไม่มี error
+const median = (xs: number[]): number | null => {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+
 const PAGE = 1000;
 async function dr(path: string): Promise<any[]> {
   const out: any[] = [];
@@ -84,16 +91,30 @@ Deno.serve(async (req) => {
     // 🔴 รุ่นต้องดึงจาก prod_orders.mat_no **ห้ามใช้ production_sessions.product_id**
     //    คอลัมน์นั้นเป็นคอลัมน์ร้าง = null ทั้งตาราง (วัด 2026-09-24: 0 จาก 1,318 แถว)
     //    ใบผลิตต่างหากที่ถือ mat — 1 กะมีได้หลายใบ/หลายรุ่น
+    // 🔴 ทะเบียนสินค้า: CT = เวลาต่อ **1 จังหวะ (shot)** · `pair_mat_no` = งานคู่ ปั๊มทีเดียวได้ 2 ชิ้น
+    //    ⇒ "จำนวนรอบที่มือทำ" (shots) ของงานคู่ = ชิ้น ÷ 2 — กฎเหล็ก "ชิ้น ≠ shot" ใน CLAUDE.md
+    //    ถ้านับชิ้นเป็นรอบ สายปั๊มงานคู่จะสะสมประสบการณ์เร็วเป็น 2 เท่าของจริง
+    type Prod = { ct: number | null; paired: boolean };
+    const prodByMat = new Map<string, Prod>();
+    for (const p of await dr('dr_products?select=mat_no,cycle_time_sec,pair_mat_no,is_active')) {
+      if (!p.mat_no) continue;
+      prodByMat.set(String(p.mat_no), {
+        ct: Number(p.cycle_time_sec) > 0 ? Number(p.cycle_time_sec) : null,
+        paired: !!p.pair_mat_no,
+      });
+    }
+
     const sessIds = sessions.map((s) => s.id);
     const dtBySess = new Map<string, number>();
     const dfBySess = new Map<string, number>();
     const matsBySess = new Map<string, Set<string>>();
+    const ordersBySess = new Map<string, { mat: string; qty: number }[]>();
     for (let i = 0; i < sessIds.length; i += 100) {
       const chunk = sessIds.slice(i, i + 100);
       const [dts, dfs, ords] = await Promise.all([
         dr(`downtime_logs?select=session_id&session_id=in.(${chunk.join(',')})`),
         dr(`defect_logs?select=session_id&session_id=in.(${chunk.join(',')})`),
-        dr(`prod_orders?select=session_id,mat_no&session_id=in.(${chunk.join(',')})`),
+        dr(`prod_orders?select=session_id,mat_no,qty_ok&session_id=in.(${chunk.join(',')})`),
       ]);
       for (const d of dts) dtBySess.set(String(d.session_id), (dtBySess.get(String(d.session_id)) || 0) + 1);
       for (const d of dfs) dfBySess.set(String(d.session_id), (dfBySess.get(String(d.session_id)) || 0) + 1);
@@ -102,13 +123,16 @@ Deno.serve(async (req) => {
         const k = String(o.session_id);
         if (!matsBySess.has(k)) matsBySess.set(k, new Set());
         matsBySess.get(k)!.add(String(o.mat_no));
+        if (!ordersBySess.has(k)) ordersBySess.set(k, []);
+        ordersBySess.get(k)!.push({ mat: String(o.mat_no), qty: Number(o.qty_ok || 0) });
       }
     }
 
     // 3) ยุบเป็น ไลน์ × วัน × กะ
     type Agg = {
       work_date: string; line_name: string; shift: string;
-      qty_ok: number; qty_ng: number; n_downtime: number; n_defect_ev: number; parts: Set<string>;
+      qty_ok: number; qty_ng: number; shots: number; cts: number[];
+      n_downtime: number; n_defect_ev: number; parts: Set<string>;
     };
     const agg = new Map<string, Agg>();
     for (const s of sessions) {
@@ -118,7 +142,8 @@ Deno.serve(async (req) => {
       let a = agg.get(key);
       if (!a) {
         a = { work_date: s.work_date, line_name: String(s.line_name), shift,
-              qty_ok: 0, qty_ng: 0, n_downtime: 0, n_defect_ev: 0, parts: new Set() };
+              qty_ok: 0, qty_ng: 0, shots: 0, cts: [],
+              n_downtime: 0, n_defect_ev: 0, parts: new Set() };
         agg.set(key, a);
       }
       a.qty_ok      += Number(s.qty_ok || 0);
@@ -126,6 +151,17 @@ Deno.serve(async (req) => {
       a.n_downtime  += dtBySess.get(String(s.id)) || 0;
       a.n_defect_ev += dfBySess.get(String(s.id)) || 0;
       for (const mat of matsBySess.get(String(s.id)) ?? []) a.parts.add(mat);
+
+      // shots = จำนวนจังหวะที่มือทำจริง (งานคู่ = ชิ้น ÷ 2) · CT ของรุ่นที่รันในกะนี้
+      const ords = ordersBySess.get(String(s.id)) ?? [];
+      for (const o of ords) {
+        const pr = prodByMat.get(o.mat);
+        a.shots += pr?.paired ? o.qty / 2 : o.qty;
+        if (pr?.ct) a.cts.push(pr.ct);
+      }
+      // ⚠️ กะที่ไม่มีใบผลิตเลย (วัด 08/10: 82 จาก 1,424 กะ) — ไม่รู้ mat ⇒ ใช้ชิ้นเป็นรอบตรงๆ
+      //    เป็นค่าประมาณแบบ "ไม่เกินจริงสำหรับงานเดี่ยว" (งานคู่จะเกิน 2 เท่า แต่ไม่มีทางรู้)
+      if (!ords.length) a.shots += Number(s.qty_ok || 0);
     }
 
     const rows = [...agg.values()].map((a) => {
@@ -133,6 +169,8 @@ Deno.serve(async (req) => {
       return {
         work_date: a.work_date, line_name: a.line_name, shift: a.shift,
         qty_ok: a.qty_ok, qty_ng: a.qty_ng,
+        shots: Math.round(a.shots),
+        ct_sec: median(a.cts),
         n_parts: parts.length,
         n_changeover: Math.max(0, parts.length - 1),
         n_downtime: a.n_downtime, n_defect_ev: a.n_defect_ev,

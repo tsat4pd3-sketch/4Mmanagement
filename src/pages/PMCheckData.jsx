@@ -1096,12 +1096,12 @@ export default function PMCheckData() {
     }
   }
 
-  const isFormReady = checkpoints.length > 0 && checkpoints.every(cp => {
-    const r = results[cp.id]
-    if (!r) return false
-    return cp.type === 'variable' ? (r.v1 !== '' && r.v2 !== '' && r.v3 !== '')
-      : cp.type === 'measure' ? (r.mval !== '' && r.mval != null) : r.attr !== ''
-  })
+  /* 🔴 เกณฑ์ "กรอกครบ" ต้องมาจาก `cpFilled()` ตัวเดียว (06/10) — เดิมเขียนไว้ 3 ที่
+     (cpFilled · isFormReady · นิพจน์ยาวในปุ่มบันทึก) และ **ตัวนี้เคยไม่ตรงกับอีก 2 ตัว**:
+     ใช้ `r.attr !== ''` ⇒ จุดที่ยังไม่มีค่า `attr` เลย (undefined) นับว่า "ครบ"
+     ⇒ แถบความคืบหน้าบอก "ยังไม่ตรวจ" แต่ปุ่มขึ้น "บันทึกผลการตรวจ" (เขียว) พร้อมกัน */
+  const nMissing = checkpoints.filter(cp => !cpFilled(cp)).length
+  const isFormReady = checkpoints.length > 0 && nMissing === 0
 
   const deptColor = teams.find(t => t.key === department)?.color || DEPT_COLORS[department] || '#3dd65c'
   const jigImg = selectedJig ? getPublicUrl(selectedJig.image_path) : null
@@ -1531,8 +1531,24 @@ export default function PMCheckData() {
                         )
                       })()}
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
-                      <button onClick={handleSave} disabled={saving || !canRecord} style={{ ...S.saveBtn, opacity: (saving || !canRecord) ? 0.6 : isFormReady ? 1 : 0.75 }}>
-                        {saving ? 'กำลังบันทึก...' : !canRecord ? `🔒 ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${checkpoints.filter(cp => { const r = results[cp.id]; return cp.type === 'variable' ? !(r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '') : cp.type === 'measure' ? (r?.mval === '' || r?.mval == null) : !r?.attr }).length} จุด)`}
+                      {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
+                          *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย
+                            ตอนนี้เป็นสีเขียว ถ้าพนักงานกดข้าม จะสามารถบันทึกได้ถึงข้อมูลจะไม่ครบ"*
+                          ⚠️ **ห้ามบล็อกไม่ให้กด** — ระบบตั้งใจให้บันทึกค้างได้ (ตรวจไม่ครบ = `pending`
+                             ไม่เลื่อนรอบ PM · ดูตอน save) ช่างตรวจค้างแล้วกลับมาทำต่อเป็นงานจริง
+                          ⇒ แก้ที่ "สี + ถามยืนยัน" ไม่ใช่ปิดปุ่ม: ไม่ครบ = เหลือง + confirm บอกจำนวนที่ขาด */}
+                      <button onClick={() => {
+                        if (!isFormReady && !confirm(
+                          `ยังกรอกไม่ครบ ${nMissing} จุด จาก ${checkpoints.length} จุด\n\n`
+                          + `[ตกลง] = บันทึกค้างไว้ก่อน — ผลตรวจจะเป็น "ยังไม่ครบ" และ**ไม่เลื่อนรอบ PM**\n`
+                          + `[ยกเลิก] = กลับไปกรอกให้ครบ`)) return
+                        handleSave()
+                      }} disabled={saving || !canRecord}
+                        style={{ ...S.saveBtn,
+                          background: isFormReady ? 'var(--accent)' : 'var(--accent2)',
+                          color: isFormReady ? 'var(--accent-ink)' : '#1a1a1a',
+                          opacity: (saving || !canRecord) ? 0.6 : 1 }}>
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? `🔒 ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `⚠️ บันทึก (ยังไม่ครบ ${nMissing} จุด)`}
                       </button>
                     </>
                   )}

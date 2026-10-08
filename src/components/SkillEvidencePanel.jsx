@@ -7,7 +7,7 @@
    props: ev = แถวจาก employee_skill_evidence · cfg = แถวจาก skill_exp_config
    🔴 ห้ามคำนวณคะแนนในนี้ — อ่านค่าที่ DB คำนวณมาแล้วเท่านั้น (ดู utils/skillExp.js)
    ══════════════════════════════════════════════════════════════════════ */
-import { bandProgress, cyclesToNextBand, evidenceState, shadowDelta } from '../utils/skillExp';
+import { bandProgress, daysToNextBand, evidenceState, shadowDelta } from '../utils/skillExp';
 
 const box = {
   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 7,
@@ -30,8 +30,9 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
   }
 
   const parts   = ev.parts_seen?.length ?? 0;
-  const prog    = bandProgress(ev.cum_cycles, cfg?.n_ref_default, ev.cur_band, cfg);
-  const left    = cyclesToNextBand(ev.cum_cycles, cfg?.n_ref_default, ev.cur_band, cfg);
+  // 🔴 ใช้ cum_ratio ที่ DB สะสมมา (รวมหลายสถานีที่ n_ref ต่างกันแล้ว) ห้ามหารเอาที่หน้า
+  const prog    = bandProgress(ev.cum_ratio, ev.cur_band, cfg);
+  const leftDay = daysToNextBand(ev.cum_ratio, ev.days_worked, ev.cur_band, cfg);
   const delta   = shadowDelta(currentScore, ev.shadow_score);
   const missing = ev.gate_missing || [];
 
@@ -58,13 +59,16 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <div style={box}>
-          <div style={capLabel}>📈 รอบสะสม</div>
+          <div style={capLabel}>📈 รอบสะสม (shot)</div>
           <div style={capValue}>{nf(ev.cum_cycles)}</div>
           <div style={{ height: 4, borderRadius: 2, background: 'var(--border2)', marginTop: 5, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.round(prog * 100)}%`, background: 'var(--accent)' }} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            {left == null ? 'ขั้นสูงสุด' : `อีก ${nf(left)} รอบถึงเพดานขั้น`}
+            {ev.cur_band >= 4 ? 'ขั้นสูงสุด'
+              : leftDay == null ? 'ยังประเมินเวลาที่เหลือไม่ได้'
+              : leftDay === 0   ? 'ถึงเพดานขั้นแล้ว'
+              : `อีกราว ${nf(leftDay)} วันทำงานถึงเพดานขั้น`}
           </div>
         </div>
 

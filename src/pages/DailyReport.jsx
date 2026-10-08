@@ -66,7 +66,8 @@ import { coalesce } from '../utils/liveRefresh';
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { invalidateTable } from '../utils/masterInvalidate';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { SESSION_VOID, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
 import { acceptImageFile } from '../utils/acceptImageFile';
 
@@ -3979,8 +3980,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
-        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0'; return (
-          <div className="overlay" style={{ zIndex: 2100 }} onClick={() => setMoDtPick(null)}>
+        {moDtPick && (() => { const pickColor = moDtPick.mode === 'call' ? '#e05c4a' : '#7c6cf0';
+          /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
+             + ช่องถ่ายรูปก่อนซ่อม (`<input type="file" capture>`) ที่หน้างานถ่ายไว้แล้ว
+             ⇒ เผลอแตะนอกกรอบบนแท็บเล็ตหน้าไลน์ = ทีมที่เลือก + รูปที่ถ่ายหายหมด ต้องถ่ายใหม่
+             ปิดด้วยปุ่ม "ยกเลิก" ด้านล่างเท่านั้น (ด่านเดิมจับแค่ `onClick={onClose}` จึงลอดมาได้) */
+          return (
+          <div className="overlay" style={{ zIndex: 2100 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(95vw,420px)' }}>
               <div style={{ fontSize: 15.5, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>
                 {moDtPick.mode === 'call' ? '📞 เรียกช่างด่วน — เรียกทีมไหน?' : '📝 เปิดใบแจ้งซ่อม — แจ้งถึงทีมช่างไหน?'}
@@ -6142,6 +6148,36 @@ function HistoryTab({ role }) {
     histBreakIv(startMs, endMs, workDateStr, shift, processType).reduce((s2, [a, b]) => s2 + (b - a) / 60000, 0);
 
 
+  /* 🚫 ทำกะเป็นโมฆะ — ทางเลือกที่ไม่ทำลายประวัติ แทนการ `delete` (คำสั่ง user 08/10)
+     ใช้กับ "กะที่เปิดผิดแล้วปิดทิ้ง" ซึ่งเดิมเหลือเป็นใบผีที่ถูกนับเป็นกะจริง 1 กะ + ลากแถบ 12 ชม.
+     🔴 อ่านลูกจริงก่อนทุกครั้ง — "อ่านไม่ได้ ≠ ไม่มี" (บทเรียนปุ่มลบกะเปล่า) · ด่านจริงอยู่ที่
+        trigger `trg_session_void_guard` ฝั่ง DB ซึ่งจะปฏิเสธถ้ามีข้อมูล */
+  const handleVoidSession = async (s) => {
+    const [o, d, f] = await Promise.all([
+      supabaseDR.from('prod_orders').select('id').eq('session_id', s.id).limit(1),
+      supabaseDR.from('downtime_logs').select('id').eq('session_id', s.id).limit(1),
+      supabaseDR.from('defect_logs').select('id').eq('session_id', s.id).limit(1),
+    ]);
+    const block = voidBlockReason({
+      session: s, orders: o.data || [], downtimes: d.data || [], defects: f.data || [],
+      loadError: !!(o.error || d.error || f.error),
+    });
+    if (block) { toast.error(block); return; }
+    const reason = cleanVoidReason(window.prompt(
+      `ทำกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} ${fmtDate(s.work_date)} เป็นโมฆะ\n`
+      + 'ระบุเหตุผล (บังคับ — จะถูกเก็บไว้กับใบนี้):', 'เปิดกะผิด/ซ้ำ แล้วปิดทิ้ง'));
+    if (!reason) { toast.info('ยกเลิก — ใบโมฆะต้องมีเหตุผล'); return; }
+    setDeleting(s.id);
+    const r = checkWriteRows(await supabaseDR.from('production_sessions')
+      .update({ status: SESSION_VOID, void_reason: reason, voided_by_name: fullName })
+      .eq('id', s.id).eq('status', 'closed').select('id'), 'ทำกะเป็นโมฆะ');
+    setDeleting(null);
+    if (!r) return;
+    toast.success('ทำเป็นโมฆะเรียบร้อย — ใบนี้จะไม่ถูกนับเป็นกะจริงอีก');
+    setSessions(prev => prev.map(x => x.id === s.id
+      ? { ...x, status: SESSION_VOID, void_reason: reason, voided_by_name: fullName } : x));
+  };
+
   const handleDelete = async (s) => {
     if (!window.confirm(`ลบกะ ${s.line_name} ${s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} วันที่ ${fmtDate(s.work_date)} ?\n(ข้อมูล Order, Downtime, Defect จะถูกลบทั้งหมด)`)) return;
     setDeleting(s.id);
@@ -6170,9 +6206,11 @@ function HistoryTab({ role }) {
       allowedLineNames = (ln || []).filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
     }
 
+    /* ใบโมฆะต้อง **เห็นในลิสต์** (ไม่ใช่หายไปเหมือนถูกลบ) — ติดป้าย 🚫 + ไม่เข้าชุดวิเคราะห์
+       (ชุดวิเคราะห์/ส่งออกคือ `fetchData()` ซึ่งกรอง `status = 'closed'` อยู่แล้ว) */
     let q = supabaseDR.from('production_sessions')
       .select('*, dr_products(name)')
-      .eq('status', 'closed')
+      .in('status', ['closed', SESSION_VOID])
       .order('work_date', { ascending: false })
       .limit(100);
     if (filter.date)      q = q.eq('work_date', filter.date);
@@ -6348,6 +6386,23 @@ function HistoryTab({ role }) {
                       padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}>
                     📝 ออกใบรายงานปัญหา
                   </button>
+                  {voidBadge(s) && (
+                    <span title={voidBadge(s).title}
+                      style={{ border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6,
+                        padding: '3px 9px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'help' }}>
+                      {voidBadge(s).text}
+                    </span>
+                  )}
+                  {/* 🚫 ทำโมฆะ — โชว์เฉพาะใบที่ยังไม่โมฆะ และยอดผลิตเป็น 0 (ด่านจริงอยู่ฝั่ง DB) */}
+                  {canDeleteSession && !isVoidSession(s) && !(Number(s.actual_qty) > 0) && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleVoidSession(s); }}
+                      disabled={deleting === s.id}
+                      title="กะที่เปิดผิดแล้วปิดทิ้ง — ทำเป็นโมฆะ (เก็บประวัติไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
+                      style={{ background: 'transparent', border: '1px solid #94a3b8', color: '#94a3b8', borderRadius: 6, padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
+                      🚫 โมฆะ
+                    </button>
+                  )}
                   {canDeleteSession && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(s); }}

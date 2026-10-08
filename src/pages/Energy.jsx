@@ -22,6 +22,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
+import { checkWrite } from '../utils/dbWrite';
 import { can } from '../utils/permissions';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
@@ -304,7 +305,12 @@ export default function Energy() {
       ...patch,
     };
     if (payload.qty == null && payload.cost == null && !payload.note) {
-      if (old?.id) { await supabaseDR.from('energy_monthly').delete().eq('id', old.id); load(); }
+      /* ล้างค่า = ลบแถว · ต้องอ่านผล (QC audit 06/10) — ทิ้งผลแล้ว `load()` จะวาดค่าเดิม
+         กลับมาเงียบๆ เหมือนจอค้าง (บรรทัด upsert ข้างล่างในฟังก์ชันเดียวกันอ่าน error ถูกอยู่แล้ว) */
+      if (old?.id) {
+        if (!checkWrite(await supabaseDR.from('energy_monthly').delete().eq('id', old.id), 'ล้างค่า')) return;
+        load();
+      }
       return;
     }
     const { error } = await supabaseDR.from('energy_monthly')
