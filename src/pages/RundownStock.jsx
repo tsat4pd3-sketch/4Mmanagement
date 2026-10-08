@@ -8,6 +8,7 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { openOnly } from '../utils/shipStatus';
+import { periodHead, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวกับบอร์ด Monitoring (08/10)
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -139,10 +140,15 @@ export default function RundownStock() {
 
   const shortCount = view.filter(r => r.firstShort != null).length;
   const untracked = view.filter(r => !r.tracked).length;
-  const dayLabel = (d, i) => {
-    const dt = new Date(`${d}T12:00:00`);
-    return `${i === 0 ? 'วันนี้ ' : ''}${dt.getDate()}/${dt.getMonth() + 1}`;
-  };
+  /* 🗓️ 08/10 (user: หัวตาราง/การ visualize/การกรอง ให้ทิศทางเดียวกัน) — แถบกรองชุดเดียวกับ MonitorBoardGrid
+     (ค้นหา + "เฉพาะพาร์ทที่ของจะขาด") · หัวคอลัมน์ + ไฮไลต์วันนี้ = utils/periodHead.js */
+  const [q, setQ] = useState('');
+  const [onlyShort, setOnlyShort] = useState(false);
+  const shown = useMemo(() => {
+    const k = q.trim().toLowerCase();
+    return view.filter(r => (!onlyShort || r.firstShort != null)
+      && (!k || [r.mat_no, ...(r.aliases || []), r.part_name || '', ...[...r.customers]].join(' ').toLowerCase().includes(k)));
+  }, [view, q, onlyShort]);
 
   return (
     <Page>
@@ -169,6 +175,22 @@ export default function RundownStock() {
           ))}
         </div>
 
+        {view.length > 0 && (
+          <div className="filter-bar" style={{ fontSize: 12 }}>
+            <div className="search-input grow">
+              <span className="search-ico" aria-hidden="true">🔍</span>
+              <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
+                placeholder="ค้นหา MAT / PART NO. / ชื่อ / ลูกค้า" aria-label="ค้นหาพาร์ท" style={{ paddingLeft: 30 }} />
+              {q ? <button type="button" className="search-clear" aria-label="ล้างคำค้น" onClick={() => setQ('')}>✕</button> : null}
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} />
+              เฉพาะพาร์ทที่ของจะขาด
+              {shortCount ? <b style={{ color: '#ef4444' }}>({shortCount})</b> : null}
+            </label>
+          </div>
+        )}
+
         {view.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
             ไม่มี order ค้างส่งใน {HORIZON} วันข้างหน้า — อัพโหลด Order (EDI 862) ที่หน้า 📈 Planner & Sales
@@ -183,17 +205,36 @@ export default function RundownStock() {
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg2)' }}>
-                    <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1, minWidth: 170 }}>พาร์ท</th>
-                    <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Stock ตอนนี้</th>
-                    {days.map((d, i) => (
-                      <th key={d} style={{ padding: '8px 6px', fontSize: 11, fontWeight: i === 0 ? 800 : 700, color: i === 0 ? 'var(--text2)' : 'var(--muted)', textAlign: 'center', minWidth: 52, background: i === 0 ? 'rgba(77,159,255,0.08)' : undefined }}>
-                        {dayLabel(d, i)}
-                      </th>
-                    ))}
+                    <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1, minWidth: 170 }}>
+                      พาร์ท <span style={{ fontWeight: 400 }}>({shown.length}/{view.length})</span>
+                    </th>
+                    {(() => {
+                      /* คอลัมน์ "ยกมา" = stock พร้อมส่งตอนนี้ — ป้าย/สีชุดเดียวกับคอลัมน์ยกมาของบอร์ด */
+                      const h = periodHead(today, { today, seed: true, seedBot: 'ตอนนี้' });
+                      const t = periodTone({ seed: true });
+                      return (
+                        <th style={{ padding: '6px 8px', fontSize: 11, textAlign: 'right', minWidth: 64, background: t.bg, borderLeft: t.edge, borderRight: t.edge }}>
+                          <div style={{ color: t.color }}>{h.top}</div><div style={{ color: 'var(--text2)' }}>{h.bot}</div>
+                        </th>
+                      );
+                    })()}
+                    {days.map((d) => {
+                      const h = periodHead(d, { today });
+                      const t = periodTone({ isToday: h.isToday, weekend: h.weekend });
+                      return (
+                        <th key={d} style={{ padding: '6px 6px', fontSize: 11, textAlign: 'center', minWidth: 52, background: t.bg,
+                          borderLeft: h.isToday ? t.edge : undefined, borderRight: h.isToday ? t.edge : undefined }}>
+                          <div style={{ color: t.color, fontWeight: h.isToday ? 800 : 700 }}>{h.top}</div>
+                          <div style={{ color: h.isToday ? t.color : 'var(--text2)', fontWeight: h.isToday ? 800 : 600 }}>{h.bot}</div>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                  {view.map(r => (
+                  {shown.length === 0 ? (
+                    <tr><td colSpan={days.length + 2} style={{ padding: 18, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีพาร์ทที่ตรงเงื่อนไข</td></tr>
+                  ) : shown.map(r => (
                     <tr key={r.mat_no} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 12px', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>
@@ -205,14 +246,19 @@ export default function RundownStock() {
                         </div>
                         {r.overdue > 0 && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⏰ ค้างส่ง {fmt(r.overdue)} ชิ้น (รวมในวันนี้แล้ว)</div>}
                       </td>
-                      <td title={r.issue || ''} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: r.tracked ? 'var(--text)' : '#f59e0b' }}>
+                      <td title={r.issue || ''} style={{ padding: '7px 10px', textAlign: 'right', fontSize: 13, fontWeight: 900, color: r.tracked ? 'var(--text)' : '#f59e0b',
+                        background: periodTone({ seed: true }).bg, borderLeft: periodTone({ seed: true }).edge, borderRight: periodTone({ seed: true }).edge }}>
                         {r.tracked ? fmt(r.start) : '❔'}
                       </td>
                       {r.cells.map((c, i) => (
-                        <td key={c.d} style={{ padding: '5px 6px', textAlign: 'center', background: (r.tracked && c.bal < 0) ? 'rgba(239,68,68,0.10)' : i === 0 ? 'rgba(77,159,255,0.05)' : undefined }}>
+                        /* วันนี้ = พื้น/ขอบชุดเดียวกับบอร์ด · ของขาด = ตัวแดงหนา (เหมือนแถวคงเหลือของบอร์ด) */
+                        <td key={c.d} style={{ padding: '5px 6px', textAlign: 'center',
+                          background: i === 0 ? periodTone({ isToday: true }).bg : undefined,
+                          borderLeft: i === 0 ? periodTone({ isToday: true }).edge : undefined,
+                          borderRight: i === 0 ? periodTone({ isToday: true }).edge : undefined }}>
                           <div style={{ fontSize: 11, color: c.dq > 0 ? 'var(--text2)' : 'var(--border2)', fontWeight: 600 }}>{c.dq > 0 ? `−${fmt(c.dq)}` : '·'}</div>
                           {/* แถวที่ยังจับคู่เลขไม่ได้ = ไม่รู้ยอดตั้งต้น → ห้ามโชว์ balance (จะอ่านเป็น "จะขาด" ทั้งที่ยังไม่รู้) */}
-                          <div style={{ fontSize: 12, fontWeight: 800, color: !r.tracked ? 'var(--border2)' : c.bal < 0 ? '#ef4444' : c.bal === 0 ? '#f59e0b' : '#22c55e' }}>
+                          <div style={{ fontSize: 12, fontWeight: !r.tracked ? 400 : c.bal < 0 ? 800 : 600, color: !r.tracked ? 'var(--border2)' : c.bal < 0 ? '#f87171' : 'var(--text)' }}>
                             {r.tracked ? fmt(c.bal) : '·'}
                           </div>
                         </td>
