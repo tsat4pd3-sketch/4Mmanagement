@@ -252,6 +252,32 @@ export const RULES = [
     }),
   },
   {
+    /* 🔩 PM ใกล้ถึง แต่อะไหล่ที่ผูกกับแผนไม่พอ (2026-10-08 · คำสั่ง user) — prescriptive ข้ามโมดูล PM ↔ คลัง
+       ข้อมูลมาจาก `spareDemand()` (utils/pmSpares.js) ตัวเดียวกับแถบ "อะไหล่สำหรับ PM 30 วัน" ⇒ เลขตรงกันทุกจอ
+       "ไม่พอ" = ยอดใช้สะสม *ทุก PM ทั้งโรงงาน* จนถึงวัน PM ใบนี้ เกินสต็อก (ไม่ใช่เทียบแค่ใบเดียว —
+       สต็อกพอสำหรับใบนี้ แต่ใบอื่นที่มาก่อนเบิกไปก่อน = ของก็ไม่พออยู่ดี)
+       ⚠️ ไม่ส่ง `spare` เข้า buildMaintenanceLevels = กฎนี้ไม่ทำงาน (ไม่ใช่ "อะไหล่พอ") */
+    key: 'spare_short',
+    when: ({ spareShort }) => !!spareShort?.length,
+    make: ({ spareShort, todayStr, t }) => {
+      const first = spareShort[0];   // เรียงตามวันใช้แล้ว
+      const late = spareShort.some(s => s.orderLate);
+      const names = spareShort.slice(0, 3).map(s => `${s.part.name} (ขาดรวม ${fmtN(s.shortQty, 2)} ${s.part.unit || ''})`.trim()).join(', ')
+        + (spareShort.length > 3 ? ` +อีก ${spareShort.length - 3}` : '');
+      const order = late ? 'สั่งไม่ทัน leadtime แล้ว — ต้องหาของด่วน/เลื่อน PM'
+        : first.orderByYmd ? `ต้องสั่งภายใน ${fmtYmd(first.orderByYmd)} (leadtime ${first.leadDays} วัน)`
+          : 'ไม่รู้ leadtime — ตั้งที่ทะเบียนอะไหล่';
+      const soon = first.useYmd <= addYmd(todayStr, 3);
+      return {
+        priority: late || soon ? 1 : 2,
+        action: 'เตรียมอะไหล่ก่อน PM',
+        why: `PM ${fmtYmd(first.useYmd)} ต้องใช้ ${names} แต่สต็อกไม่พอ (รวมความต้องการ PM ทุกใบในช่วงนั้น) · ${order}`,
+        byYmd: late ? todayStr : (first.orderByYmd && first.orderByYmd > todayStr ? first.orderByYmd : first.useYmd < todayStr ? todayStr : first.useYmd),
+        link: '/equipment?tab=spare', linkLabel: 'คลังอะไหล่',
+      };
+    },
+  },
+  {
     // ด้านกลับของ prescriptive: ลดงาน PM ที่ไม่ได้ช่วยอะไร (ยืดรอบ) — ต้องเดินจริงพอ ไม่ใช่แค่ไม่ได้ใช้
     key: 'extend_cycle',
     when: ({ pv, pd, t }) => pv.hasCycle && ['ok', 'due_soon'].includes(pv.status) && pd.trend === 'quiet'
@@ -277,8 +303,10 @@ export function buildMaintenanceLevels({
   checklists = [], jigs = [], plans = [], lastInspByChecklist = {},
   machines = [], downtimes = [], sessions = [], breakPolicies = [],
   lineFamilyOf = null, sessionLineOf = null,
+  spare = null,          // ผลของ spareDemand() — ไม่ส่ง = กฎ spare_short ไม่ทำงาน
   todayStr, nowMs, w = WINDOW, t = THRESH,
 } = {}) {
+  const spareShortByCl = spareShortageByChecklist(spare);
   const win = splitWindows({ downtimes, sessions, todayStr, w });
   const relArgs = { machines, lineFamilyOf, sessionLineOf, breakPolicies, includeIdle: true };
   const R = machineReliability({ ...relArgs, downtimes: win.recent.downtimes, sessions: win.recent.sessions });
@@ -332,10 +360,13 @@ export function buildMaintenanceLevels({
     const pd = predictiveOf(rec, base, { nowMs, w, t });
     // เครื่องที่ไม่มีแผน และไม่เคยเสียทั้ง 90 วัน = ไม่มีอะไรจะบอก ⇒ ไม่ขึ้นรายการ (แต่นับในสรุป)
     if (!pv.hasPlan && pd.stopsR === 0 && pd.stopsB === 0) continue;
-    const item = { key, ...meta, pv, pd, actions: [] };
+    // อะไหล่ไม่พอของ PM ทุกใบบนอุปกรณ์นี้ (เรียงตามวันใช้ · อะไหล่ตัวเดียวกันจากหลายใบ เก็บวันที่เร็วสุด)
+    const spareShort = mergeSpareShort((checksByKey.get(key) || []).map(c => spareShortByCl.get(c.checklistId)));
+    const item = { key, ...meta, pv, pd, spareShort, actions: [] };
+    const ctx = { e: item, pv, pd, spareShort, todayStr, t };
     for (const rule of RULES) {
-      if (!rule.when({ e: item, pv, pd, todayStr, t })) continue;
-      const a = { key: `${key}|${rule.key}`, rule: rule.key, equipKey: key, ...rule.make({ e: item, pv, pd, todayStr, t }) };
+      if (!rule.when(ctx)) continue;
+      const a = { key: `${key}|${rule.key}`, rule: rule.key, equipKey: key, ...rule.make(ctx) };
       item.actions.push(a);
       actions.push({ ...a, item });
     }
@@ -397,3 +428,33 @@ export const byActionOrder = (a, b) => a.priority - b.priority
 /** คิวคำแนะนำของรายการที่จอกรองอยู่ (เรียงแล้ว) */
 export const actionsOf = (items = []) =>
   items.flatMap(i => i.actions.map(a => ({ ...a, item: i }))).sort(byActionOrder);
+
+/* ── 🔩 อะไหล่ไม่พอ ต่อใบตรวจ PM (ป้อนกฎ spare_short) ────────────────────────────────
+   จาก spareDemand().rows: อะไหล่ที่มี firstShortYmd = วันแรกที่ยอดสะสมเกินสต็อก
+   ⇒ ทุก "ครั้งที่ใช้" ตั้งแต่วันนั้นไป ของไม่พอ · ต่อใบตรวจเก็บครั้งแรกที่ไม่พอ (ใกล้สุด = ด่วนสุด) */
+export function spareShortageByChecklist(spare) {
+  const out = new Map();
+  for (const r of spare?.rows || []) {
+    if (!r.firstShortYmd) continue;
+    for (const u of r.uses) {
+      if (u.ymd < r.firstShortYmd) continue;
+      const list = out.get(u.checklistId) || [];
+      if (list.some(x => x.part.id === r.part.id)) continue;   // ครั้งแรกพอ (uses เรียงตามวันแล้ว)
+      list.push({
+        part: r.part, useYmd: u.ymd, qty: u.qty, shortQty: r.shortQty,
+        orderByYmd: r.orderByYmd, orderLate: r.orderLate, leadDays: r.leadDays,
+      });
+      out.set(u.checklistId, list);
+    }
+  }
+  return out;
+}
+
+function mergeSpareShort(lists) {
+  const byPart = new Map();
+  for (const list of lists) for (const s of list || []) {
+    const cur = byPart.get(s.part.id);
+    if (!cur || s.useYmd < cur.useYmd) byPart.set(s.part.id, s);
+  }
+  return [...byPart.values()].sort((a, b) => a.useYmd.localeCompare(b.useYmd) || (b.orderLate - a.orderLate));
+}
