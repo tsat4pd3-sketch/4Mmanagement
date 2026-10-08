@@ -3092,3 +3092,26 @@ test('🛡️ demand-mail-via-edge-function — ไฟล์ใน bucket demand
     + '   แก้ยังไง: เรียก downloadMailFile(id) ใน src/components/DemandMailInbox.jsx\n'
     + '            (Edge Function `demand-mail-file` ตรวจ token ล็อกอิน Main + สิทธิ์ก่อนส่งไฟล์)\n');
 });
+
+test('🛡️ skill-exp-no-manual-nref-divide — ห้ามหาร cum_cycles ด้วย n_ref เองในหน้า', () => {
+  /* บั๊กที่เคยเกิดจริง 2026-10-08 (EXP v2 รอบแรก):
+     n_ref เดิมเป็นค่าเดียวทั้งโรงงาน (2,000) แล้วหน้าจอเอา cum_cycles ÷ n_ref เอง
+     พอตั้ง n_ref ต่อสถานีจาก CT จริง ค่ามันห่างกัน 34 เท่า (CT 2.5 วิ → 86 วิ)
+     ⇒ คนที่สลับหลายสถานี "เลือกตัวหารไม่ถูก" · ไลน์ปั๊มไต่ขั้นเร็วกว่าไลน์ประกอบหลายสิบเท่า
+     ของจริง: ฝั่ง DB สะสมเป็น `cum_ratio` รายวันไว้แล้ว (Σ shots ÷ parallel_staff ÷ n_ref ของวันนั้น) */
+  const hits = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/\bcum_cycles\b/.test(src)) continue;
+    // หาร cum_cycles ด้วยอะไรก็ตามที่ชื่อมี n_ref (เว้นวรรค/ขึ้นบรรทัดได้)
+    if (/\bcum_cycles\b[\s\S]{0,60}?\/[\s\S]{0,40}?n_?[Rr]ef/.test(src)
+     || /n_?[Rr]ef[\s\S]{0,40}?\/[\s\S]{0,60}?\bcum_cycles\b/.test(src)) hits.push(relative(ROOT, f));
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่างหาร `cum_cycles` ด้วย `n_ref` เองที่หน้าจอ\n'
+    + '   ทำไมพัง: n_ref เป็นค่า**ต่อสถานี** (คำนวณจาก CT จริง — ห่างกัน 34 เท่า · วัด 08/10/2026)\n'
+    + '   คนหนึ่งสลับ 5-6 สถานี ⇒ ไม่มี n_ref ตัวเดียวที่ถูกต้องสำหรับหาร\n'
+    + '   แก้ยังไง: ใช้ `employee_skill_evidence.cum_ratio` (DB สะสมสัดส่วนรายวันไว้แล้ว)\n'
+    + '   ผ่าน `bandProgress(cumRatio, band, cfg)` ใน src/utils/skillExp.js\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});

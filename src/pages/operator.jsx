@@ -282,7 +282,7 @@ export default function Operator() {
     if (!ids.length) { setEvByKey({}); return; }
     const { rows, error } = await fetchByIds(ids, part => supabase
       .from('employee_skill_evidence')
-      .select('employee_id, skill_name, cum_cycles, days_worked, parts_seen, n_changeover, n_abnormal,'
+      .select('employee_id, skill_name, cum_cycles, cum_ratio, days_worked, parts_seen, n_changeover, n_abnormal,'
             + ' ng_ratio, quality_ok, has_ojt, ojt_post_score, is_trainer, shadow_score, verified,'
             + ' gate_missing, next_level, cur_band, last_worked_date')
       .in('employee_id', part), { orderBy: 'employee_id' });   // ⚠️ ตารางนี้ไม่มีคอลัมน์ id (PK คู่)

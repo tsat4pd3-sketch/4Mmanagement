@@ -532,6 +532,9 @@ Reject → status: "rejected" + reject_reason
   **ห้าม hardcode ใน SQL/JS** · `fn_skill_exp_rebuild()` **คำนวณใหม่ทั้งก้อนทุกคืน** (idempotent โดยโครงสร้าง)
 - 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
   ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
+- 🔴 **ขา "ปริมาณ" นับ `shots` (จังหวะ) ไม่ใช่ `qty_ok` (ชิ้น)** — กฎ "ชิ้น ≠ shot" ใช้ที่นี่ด้วย ·
+  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง (ห่างกัน 34 เท่า) ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
+  ใช้ `cum_ratio` + `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
 - ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
 > 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
 > **เหตุผล/งานวิจัย/ตารางเวลาต่อขั้น → `docs/SKILL-EXP-ALGORITHM-DESIGN.md` (อ่านก่อนปรับเกณฑ์)**
