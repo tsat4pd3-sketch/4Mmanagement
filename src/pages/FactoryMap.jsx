@@ -14,7 +14,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
-import { computeLiveOee, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { usePolling } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
@@ -740,7 +740,7 @@ export default function FactoryMap({ setupMode = false }) {
       //   เดิมใช้ "เป้าเต็ม × สัดส่วนเวลาของกะ" ซึ่งต่ำเกินจริงในระบบ pull (ใบทยอยเปิด เป้าเลยโตทีหลัง)
       let onTimeTarget = target, runN = 0, capN = 0;   // เครื่องที่เดินได้จริง / เต็มกำลัง (ไว้อธิบายบนจอ)
       if (s.status === 'open' && s.start_time) {
-        const shiftStart = new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime();
+        const shiftStart = new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime();
         // เปิดใบแรกช้ากว่าเริ่มกะ = เพิ่งเริ่มผลิตตอนนั้น (ก่อนหน้านั้นยังไม่มีงานให้ทำ)
         const firstOpen = os.reduce((m, o) => { const t = o.opened_at ? new Date(o.opened_at).getTime() : null; return t && (m == null || t < m) ? t : m; }, null);
         const anchor = Math.max(shiftStart, firstOpen ?? shiftStart);
@@ -806,8 +806,8 @@ export default function FactoryMap({ setupMode = false }) {
       const wLoadBrkIv = (s.start_time && Number(s.shift_min || 570) > 0)
         ? breakIntervalsIn({
             policies: breaks || [],
-            startMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime(),
-            endMs: new Date(`${workDate}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
+            startMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime(),
+            endMs: new Date(`${shiftStartDate(workDate, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() + (s.shift_min || 570) * 60000,
             workDate, shift: s.shift,
           })
         : [];

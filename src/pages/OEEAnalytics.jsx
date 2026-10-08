@@ -21,7 +21,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
-import { computeLiveOee, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
+import { computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -77,7 +77,7 @@ function calcOEE(sessions, downtimes, defects, breakPols = []) {
     const sessionDefects = defects.filter(d => d.session_id === s.id);
 
     const startMs = (s.work_date && s.start_time)
-      ? new Date(`${s.work_date}T${String(s.start_time).slice(0, 5)}:00`).getTime() : null;
+      ? new Date(`${shiftStartDate(s.work_date, String(s.start_time).slice(0, 5), s.shift)}T${String(s.start_time).slice(0, 5)}:00`).getTime() : null;
     const brkIv = (startMs && Number(s.shift_min) > 0 && breakPols.length)
       ? breakIntervalsIn({ policies: breakPols, startMs, endMs: startMs + Number(s.shift_min) * 60000,
           workDate: s.work_date, shift: s.shift })

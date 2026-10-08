@@ -35,7 +35,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
+import { computeSessionOee, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending } from '../utils/oee';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
@@ -967,7 +967,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const done = new Set((conts || []).map(c => c.carried_from_id));
           const pending = carryDts.filter(d => !done.has(d.id));
           if (pending.length) {
-            const startISO = new Date(`${openForm.work_date}T${(openForm.start_time || '08:00').slice(0, 5)}:00`).toISOString();
+            /* 🔴 เวลาเริ่มกะของใบที่ยกข้ามกะ — ต้องผ่าน shiftStartDate() ไม่งั้นกะดึกที่เริ่ม
+               00:00-07:59 จะเขียน timestamp เร็วไป 1 วัน แล้วใบนั้นหลุดนอกกรอบกะของตัวเอง
+               (ตัวนี้ **เขียนลงฐาน** ⇒ เป็นต้นทางของข้อมูลเพี้ยน ไม่ใช่แค่จอ · QC 08/10) */
+            const openHm = (openForm.start_time || '08:00').slice(0, 5);
+            const startISO = new Date(
+              `${shiftStartDate(openForm.work_date, openHm, openForm.shift)}T${openHm}:00`).toISOString();
             const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
               session_id:       data.id,
               downtime_type_id: d.downtime_type_id,
@@ -4336,7 +4341,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {/* Timeline: machine run / policy break / planned-unplanned downtime — รายละเอียดของ %A, ใช้เวลาเริ่ม-ปิดกะที่บันทึกไว้แล้ว (full-width) */}
                 {(() => {
                   if (!selSession?.work_date || !selSession.start_time) return null;
-                  const winStart = new Date(`${selSession.work_date}T${selSession.start_time.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, selSession.start_time.slice(0,5), selSession.shift)}T${selSession.start_time.slice(0,5)}:00`).getTime();
                   const endTimeStr = selSession.end_time || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -4797,7 +4802,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   if (!selSession?.work_date) return null;
                   const startTimeStr = closeStartTime || selSession.start_time;
                   if (!startTimeStr) return null;
-                  const winStart = new Date(`${selSession.work_date}T${startTimeStr.slice(0,5)}:00`).getTime();
+                  const winStart = new Date(`${shiftStartDate(selSession.work_date, startTimeStr.slice(0,5), selSession.shift)}T${startTimeStr.slice(0,5)}:00`).getTime();
                   const endTimeStr = closeEndTime || nowTime();
                   let winEnd = new Date(`${selSession.work_date}T${endTimeStr.slice(0,5)}:00`).getTime();
                   if (winEnd <= winStart) winEnd += 86400000; // กะดึกข้ามวัน
@@ -6426,7 +6431,7 @@ function HistoryTab({ role }) {
                   {/* OEE จริง — นับ Downtime "ในแผน" เป็นการสูญเสียด้วย (กันการติ๊กในแผนเพื่อดัน OEE)
                       ฐาน = เวลากะ − พักตามนโยบาย · ดู src/utils/oee.js */}
                   {s.oee != null && (() => {
-                    const shiftStartMs = s.start_time ? new Date(`${s.work_date}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
+                    const shiftStartMs = s.start_time ? new Date(`${shiftStartDate(s.work_date, s.start_time.slice(0, 5), s.shift)}T${s.start_time.slice(0, 5)}:00`).getTime() : null;
                     let shiftEndMs = s.end_time ? new Date(`${s.work_date}T${s.end_time.slice(0, 5)}:00`).getTime() : null;
                     if (shiftStartMs && shiftEndMs && shiftEndMs <= shiftStartMs) shiftEndMs += 86400000;
                     const brkIvS = shiftStartMs && shiftEndMs ? histBreakIv(shiftStartMs, shiftEndMs, s.work_date, s.shift) : [];

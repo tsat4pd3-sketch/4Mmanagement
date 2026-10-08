@@ -1192,6 +1192,23 @@ const RULES = [
     },
   },
   {
+    id: 'shift-frame-start-via-helper',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการต่อ "เวลาเริ่มกะ" จาก work_date + start_time ตรงๆ เป็น timestamp
+       (รูปที่เจอจริงทั้ง 6 สำเนา: `${wd}T${st}` / `${work_date}T${start_time}`) */
+    re: /new Date\(`\$\{[\w.?]*(wd|work_date|workDate)\}T\$\{[^`]*(st|start_time|startHm|openHm|startTimeStr)\b/g,
+    why: 'กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59 = **เช้าของวันถัดไป** ⇒ ต่อ work_date + start_time ตรงๆ '
+       + 'ได้กรอบกะ **เร็วไป 20 ชม.** แล้วไปโดน clampWinToShift (ช่วงของ MAT) + dtMinOutsideWork '
+       + '⇒ %A/%P เพี้ยนเงียบ · และจุดที่ **เขียนลงฐาน** (ใบ downtime ที่ยกข้ามกะใน DailyReport) '
+       + 'ยังทำให้ timestamp ในฐานเพี้ยนไป 1 วันด้วย = ต้นทางของข้อมูลเสีย ไม่ใช่แค่จอ '
+       + '· กฎนี้ถูกก๊อป **6 สำเนา** (shiftFrameOf · computeLiveOee · computeSessionOee · sessionWindow '
+       + '· mtnMetrics · DailyReport) รอบแก้ 06/10 ไปแก้แค่ 2 ⇒ ที่เหลือยังพังต่ออีก 2 วัน (QC 08/10)',
+    fix: "ห่อวันด้วย `shiftStartDate(workDate, 'HH:MM', shift)` จาก src/utils/oee.js ก่อนต่อเป็น Date",
+    allow: {
+      'src/utils/oee.js': 'เจ้าของกฎ — shiftStartDate ประกาศและถูกเรียกครบทุกจุดในไฟล์นี้แล้ว (ตรวจด้วยเทส shiftStartDate.test.mjs)',
+    },
+  },
+  {
     id: 'shift-start-date-via-helper',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการ "บวก 1 วันให้กะดึก" ที่เขียนเองนอกของกลาง — รูปที่เจอจริงคือ
