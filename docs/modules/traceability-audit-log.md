@@ -104,6 +104,14 @@
 3. **มีคอลัมน์ `*_uid` ชนิด `text` อยู่ก่อนแล้ว 4 ตัว** (`production_sessions.opened_by_uid`/`closed_by_uid`
    · `downtime_logs.reported_by_uid` · `defect_logs.reported_by_uid`) ที่ `DailyReport.jsx` เขียนอยู่
    ⇒ `add column if not exists` ข้ามให้เอง แต่ **backfill ต้อง `where uid is null` เสมอ** ไม่งั้นทับของจริง
+4. 🔴 **`row_pk` ตรึงว่าเป็น `->>'id'` ⇒ ตารางที่ PK ไม่ใช่ `id` ได้ `null` = "รู้ว่าใครแก้ แต่ไม่รู้ว่าแถวไหน"**
+   (2026-10-08 · เจอตอนไล่ว่า 06/10 ใครลบ cost center รหัสไหน — ต้องแกะจาก `old_data->>'code'` เอง)
+   วัดก่อนแก้: **717 แถว 4 ตาราง** — `notification_rules`(event_key) 370 · `permission_catalog`(resource,action) 213
+   · `cost_centers`(code) 132 · `company_calendar`(work_date) 2
+   → `fn_audit` ใช้ `coalesce(->>'id', fn_audit_pk(TG_RELID, row))` · PK หลายคอลัมน์ต่อด้วย `|` ·
+   **`->>'id'` ต้องมาก่อนเสมอ** (ตารางส่วนใหญ่ของระบบ = พฤติกรรมเดิมเป๊ะ) · backfill แถวเก่าด้วยฟังก์ชันเดียวกัน
+   migration `20261008_audit_row_pk_real_pk_main.sql` (**apply แล้ว · เหลือ row_pk null 0 แถว**)
+   ⚠️ **ฝั่ง DR ยังไม่ทำ** — ถ้าจะทำต้องรัน `fn_audit_pk` + `fn_audit` รุ่นนี้ใน DR ด้วย (ตรรกะต้องตรงกัน)
 
 ### Migration (apply แล้วทั้งหมด 2026-09-16 · ตรวจกลับแล้ว)
 - `20260916_actor_uid_dr_phase1.sql` — `updated_by_uid` 45 ตาราง · `audit_log.actor_uid` + index · `fn_audit` ใหม่

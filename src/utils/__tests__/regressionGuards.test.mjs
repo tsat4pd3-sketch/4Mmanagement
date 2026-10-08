@@ -3310,3 +3310,23 @@ test('🛡️ daily-am-single-loader — จอ AM รายวัน (DailyPM �
   assert.ok(!/s\.amTotal \? \(s\.amOverdue/.test(fm) && /amDTotal/.test(fm),
     '\n\n❌ METRICS.am ใน FactoryMap กลับไปตัดสินจาก amTotal/amOverdue (วันครบกำหนดแผน) — ต้องใช้ amD* จาก dailyAmLineStatus\n');
 });
+
+/* ── ลบแถวทะเบียน cost center ต้องนับปลายทางก่อน (08/10 · เคสจริง 06/10) ──────────────
+   06/10 มีการลบ 31 แถวใน `cost_centers` ด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" — ตรวจย้อนพบว่า
+   29 รหัสในนั้นบัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน cost_center_rates.note)
+   แผงทะเบียนลบทันทีโดยไม่เคยนับปลายทาง — ขัดกฎ CLAUDE.md "นับไม่ครบ = ห้ามลบ (fail-closed)" */
+test('🛡️ cost-center-delete-needs-refs — แผงทะเบียน cost_centers ต้องส่ง onBeforeDelete', () => {
+  const bad = walk(join(ROOT, 'src'), ['.js', '.jsx']).filter((f) => {
+    const code = stripComments(readFileSync(f, 'utf8'));
+    if (!/table=["']cost_centers["']/.test(code)) return false;
+    return !/onBeforeDelete/.test(code) || !/costCenterRefs/.test(code);
+  }).map(f => f.replace(ROOT + '/', ''));
+  assert.deepEqual(bad, [],
+    '\n\n❌ แผงที่เรนเดอร์ทะเบียน `cost_centers` ไม่มีด่านนับปลายทางก่อนลบ: ' + bad.join(', ') + '\n'
+    + '   ทำไมผิด: cost_centers.code จับคู่ด้วย "ข้อความ" ไม่ผูก FK ⇒ ลบแล้วไม่มีใครเตือน\n'
+    + '            ปลายทางมี 3 ทาง: production_lines · org_nodes · **cost_center_rates (ค่าแรงจากบัญชี)**\n'
+    + '            + แกน KPI (scope_kind=cost_center) · เช็คแค่ไลน์/ผัง = ตอบ "ไม่มีใครใช้" ทั้งที่มี\n'
+    + '            รหัสที่หลุดจากทะเบียน <CostCenterSelect> (allowFree=false) เลือกไม่ได้อีก\n'
+    + '   แก้ยังไง: onBeforeDelete={async (r) => costCenterBlockMessage(r.code,\n'
+    + '               await loadCostCenterRefs(supabase, r.code))}  (src/utils/costCenterRefs.js)\n');
+});

@@ -9,6 +9,7 @@ import { invalidateCostCenters } from '../utils/useCostCenters';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
+import { loadCostCenterRefs, costCenterBlockMessage } from '../utils/costCenterRefs';
 import { DeleteButton } from './IconButton';
 
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
@@ -139,7 +140,13 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           สิทธิ์เขียนใช้คีย์เดียวกับ RLS (cost_rate:manage) · แก้แล้ว invalidate cache ให้ <CostCenterSelect> ทุกหน้าเห็นทันที */}
       <CollapseCard id="cc_master" storePrefix="orgsetup" defaultOpen={false}
         title={<span>💰 ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
+        {/* 🔴 onBeforeDelete = ด่านนับปลายทางก่อนลบ (fail-closed) — ห้ามถอด
+            06/10 มีการลบ 31 รหัสด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" แต่ 29 รหัสในนั้น
+            บัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน note ของแถว rate)
+            · รหัสที่หลุดจากทะเบียน = <CostCenterSelect> (allowFree=false) เลือกไม่ได้อีก
+            📄 docs/modules/org-hierarchy.md §"ชื่อว่าง" ≠ "ไม่ได้ใช้" */}
         <SimpleMasterPanel client={supabase} table="cost_centers" keyCol="code" canManage={canEdit} onChanged={invalidateCostCenters}
+          onBeforeDelete={async (r) => costCenterBlockMessage(r.code, await loadCostCenterRefs(supabase, r.code))}
           fields={[
             { key: 'name', label: 'ชื่อ/หน่วยงานที่ใช้', placeholder: 'เช่น กลุ่ม Assy 2' },
             { key: 'section', label: 'ส่วนงาน', placeholder: 'เช่น PD5' },
