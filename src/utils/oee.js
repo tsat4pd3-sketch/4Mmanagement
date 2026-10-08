@@ -271,7 +271,8 @@ export function sessionWindow(session, { nowMs = null } = {}) {
   const wd = session?.work_date;
   const st = session?.start_time;
   if (!wd || !st) return null;
-  const startMs = new Date(`${wd}T${String(st).slice(0, 5)}:00`).getTime();
+  // 🔴 วันของเวลาเริ่มกะต้องผ่าน shiftStartDate() — กะดึกเริ่ม 00:00-07:59 = เช้าวันถัดไป
+  const startMs = new Date(`${shiftStartDate(wd, String(st).slice(0, 5), session?.shift)}T${String(st).slice(0, 5)}:00`).getTime();
   if (!startMs) return null;
   const min = Number(session.shift_min) || 0;
   const endMs = min > 0 ? startMs + min * 60000 : (nowMs || null);
@@ -1162,10 +1163,18 @@ export function computeSessionOee({
     ? ngQtyOverride : sumDefectQty(defects, 'line');
 
   const startTimeStr = startTime || session?.start_time;
-  const openedAt = (workDate && startTimeStr) ? new Date(`${workDate}T${startTimeStr.slice(0, 5)}:00`) : null;
+  /* 🔴 วันของ "เวลาเริ่มกะ" ต้องผ่าน `shiftStartDate()` — กะดึกที่บันทึกเวลาเริ่ม 00:00-07:59
+     คือ **เช้าของวันถัดไป** (QC 08/10 · เดิมที่นี่ต่อ `work_date + start_time` ตรงๆ = **สำเนาที่ 3**
+     ของกฎเดียวกัน ที่รอบแก้ 06/10 ไปแก้แค่ `shiftFrameOf` กับ `computeLiveOee`)
+     ⇒ กรอบกะเร็วไป 20 ชม. แล้วไปโดน `clampWinToShift` (ช่วงของ MAT) + `dtMinOutsideWork`
+       ⇒ **%A และ %P ที่ stamp ตอนปิดกะเพี้ยนเงียบ** · `shift_min` ไม่โดน (เป็นผลต่าง หักกลบกันเอง)
+     ⚠️ กะดึกเข้างานปกติ 22:30 ไม่เข้าเงื่อนไข — ค่าเดิมทุกกะไม่เปลี่ยน (มีเทสคุม) */
+  const openedDate = (workDate && startTimeStr)
+    ? shiftStartDate(workDate, startTimeStr.slice(0, 5), session?.shift) : workDate;
+  const openedAt = (openedDate && startTimeStr) ? new Date(`${openedDate}T${startTimeStr.slice(0, 5)}:00`) : null;
   let closedAt = new Date();
-  if (workDate && endTime) {
-    closedAt = new Date(`${workDate}T${endTime.slice(0, 5)}:00`);
+  if (openedDate && endTime) {
+    closedAt = new Date(`${openedDate}T${endTime.slice(0, 5)}:00`);
     if (openedAt && closedAt < openedAt) closedAt = new Date(closedAt.getTime() + 86400000);
   }
   const shiftMin = openedAt ? Math.round((closedAt - openedAt) / 60000) : 0;
