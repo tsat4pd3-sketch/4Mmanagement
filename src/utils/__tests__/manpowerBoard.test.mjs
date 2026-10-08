@@ -265,3 +265,39 @@ test('📜 ประวัติการเปลี่ยนช่อง: แ�
   assert.equal(sum[0].teamDelta, 2); assert.equal(sum[0].stationDelta, -2); assert.equal(sum[0].techIn, 1);
   assert.equal(sum[1].teamDelta, 6);
 });
+
+test('แผน vs มาจริง: ที่นั่ง = การ์ด+ช่องว่าง · ขาดแตกลงตัว · กะไม่ได้เช็ค = null ไม่ใช่ขาดทั้งกะ', () => {
+  const op = (id, attend, extra = {}) => ({ id, attend, log: attend === 'unchecked' ? null : { is_present: attend === 'present' }, ...extra });
+  const d = {
+    cols: [
+      { team: 'A', shift: 'day', slots: 2, slotSource: 'plan',
+        ops: [op('1', 'present'), op('2', 'present', { lentTo: { to: 'X', shift: 'day' } }), op('3', 'leave'), op('4', 'absent'), op('5', 'unchecked')] },
+      { team: 'B', shift: 'night', slots: null, slotSource: null, ops: [op('6', 'unchecked'), op('7', 'unchecked')] },
+      { team: 'Z', shift: null, slots: null, slotSource: null, ops: [op('8', 'present')] },
+    ],
+    borrowed: [{ id: 'h', borrowed: { shift: 'day' } }],
+  };
+  const s = M.staffingOfDept(d);
+  assert.equal(s.day.seats, 7);
+  assert.equal(s.day.onFloor, 2, 'มา 1 (อีกคนถูกยืมออก) + ยืมเข้า 1');
+  assert.equal(s.day.gap, 5);
+  const D = s.day;
+  assert.equal(D.gap, D.empty + D.leave + D.absent + D.unchecked + D.lentOut - D.borrowedIn, 'ขาดต้องแตกลงตัว');
+  assert.equal(s.night.evaluated, false); assert.equal(s.night.gap, null, 'ไม่มีใครถูกเช็คชื่อ = ไม่รู้ ไม่ใช่ขาด 2');
+  assert.equal(s.night.noPlan, true);
+  assert.equal(s.unknown.registered, 1); assert.equal(s.unknown.gap, null);
+
+  const sum = M.summarizeStaffing([
+    { date: '2026-10-01', depts: [{ key: 'd', name: 'D', shifts: s }] },
+    { date: '2026-10-02', depts: [{ key: 'd', name: 'D', shifts: { ...s, day: { ...s.day, gap: -1, onFloor: 8 } } }] },
+  ])[0];
+  assert.equal(sum.shifts, 2); assert.equal(sum.notChecked, 2);
+  assert.equal(sum.shortShifts, 1); assert.equal(sum.overShifts, 1); assert.equal(sum.short, 5);
+  assert.deepEqual(sum.worst, { date: '2026-10-01', shift: 'day', gap: 5 });
+  assert.equal(sum.fill, 10 / 14);
+});
+
+test('rosterOn: ตัดคนที่เริ่มงานหลังวันนั้น · ไม่มี start_date = นับ', () => {
+  const r = M.rosterOn([{ id: 'a', start_date: '2026-10-05' }, { id: 'b', start_date: null }, { id: 'c', start_date: '2026-10-01' }], '2026-10-03');
+  assert.deepEqual(r.map(e => e.id), ['b', 'c']);
+});

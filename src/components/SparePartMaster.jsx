@@ -17,6 +17,7 @@ import { pmTeamsSync } from '../utils/pmTeams';
 import { teamKeyOf, filterByTeam } from '../utils/mtnTeams';
 import { loadSpareSections, spareSectionsSync, sectionOptions, inSectionScope, sectionLabel, sectionKeyOf, guessSectionFromCode, COMMON_SECTION_LABEL } from '../utils/spareSection';
 import { docFormSync, fullCode, withDocFoot } from '../utils/docForms';
+import { xlsxDocName } from '../utils/csvDoc';
 import { computeSpareRank, safetyStockIssue, stockState, RANK_META, RANK_RULE, monthKeysBack } from '../utils/spareRank';
 import ImageCropModal from './ImageCropModal';
 import { parseSpareSheet, matchExisting, TEMPLATE_HEADERS } from '../utils/spareImport';
@@ -951,7 +952,9 @@ function ImportModal({ parts, cats, teams, fullName, secOpts = [], orgSecs = [],
     ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'spare parts');
-    XLSX.writeFile(wb, 'spare_part_import_template.xlsx');
+    /* ชื่อไฟล์ผ่านทะเบียนเอกสาร (QC audit 08/10) — แม่แบบนำเข้าก็หลุดไปอยู่ในมือคนนอกเหมือนกัน
+       และโปรเจคตั้งบรรทัดฐานไว้แล้วว่าแม่แบบนำเข้าก็ register (csv_product_template · csv_parts_template) */
+    XLSX.writeFile(wb, xlsxDocName('xlsx_spare_import_template', 'spare_part_import_template'));
   };
 
   const apply = async () => {

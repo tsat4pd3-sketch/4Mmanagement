@@ -3330,3 +3330,41 @@ test('🛡️ cost-center-delete-needs-refs — แผงทะเบียน c
     + '   แก้ยังไง: onBeforeDelete={async (r) => costCenterBlockMessage(r.code,\n'
     + '               await loadCostCenterRefs(supabase, r.code))}  (src/utils/costCenterRefs.js)\n');
 });
+
+
+/* ═══ 📑 CSV export ต้องผ่านทะเบียนเอกสาร (2026-10-08 · QC audit รอบ 3) ═══
+   CLAUDE.md §doc-forms: *"เอกสาร export ใหม่ทุกตัว (ฟอร์มพิมพ์/PDF/Excel/รายงานภายใน/CSV —
+   **ไม่มีข้อยกเว้น**) ต้อง register เข้าทะเบียน `/doc-forms`"*
+   CSV ถูกมองข้ามมาตลอดเพราะไม่มีหัวกระดาษให้ใส่เลขฟอร์ม ⇒ เลขฟอร์มไปอยู่ที่ **ชื่อไฟล์**
+   (`csvDocName` ใน `src/utils/csvDoc.js`) — 🔴 ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อ CSV
+   เพราะ Excel/Sheets ใช้ "แถวแรก = หัวตาราง" ⇒ คอลัมน์เลื่อนทั้งไฟล์ = พัง pivot/สูตรของคนที่ใช้ทุกวัน
+
+   เจอจริง 08/10: `Report.jsx` (10 ปุ่ม) + `DailyReport.jsx` (2 ปุ่ม × 4 ชนิดรายงาน) เขียนตัว
+   ดาวน์โหลดเองโดยก๊อป logic ของ `csvDoc.js` มาทั้งดุ้น ⇒ doc_control แก้เลขฟอร์มไม่ได้เลย
+   🔴 และสำเนาใน `DailyReport` **ไม่มีด่านกัน formula injection** (ของ `Report.jsx` มี) ⇒ ค่าที่
+   หน้างานพิมพ์ในช่อง 'รายละเอียด'/'เครื่องจักร' ขึ้นต้นด้วย `=` `+` `@` ถูก Excel **รันเป็นสูตร
+   บนเครื่องคนรับไฟล์** — นี่คือเหตุผลที่ต้องมีทางเดียว ไม่ใช่สำเนาที่ต้องไปตามแก้ทีละที่ */
+test('📑 csv-export-via-csvDoc — สร้างไฟล์ CSV ต้องผ่าน src/utils/csvDoc.js', () => {
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, f);
+    if (rel === 'src/utils/csvDoc.js') continue;              // ตัวของกลางเอง
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/new\s+Blob\([^)]*text\/csv/g)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  new Blob(… 'text/csv' …)`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ สร้างไฟล์ CSV เองโดยไม่ผ่านทะเบียนเอกสาร:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไมต้องผ่านของกลาง:\n'
+    + '     1. doc_control ต้องแก้เลขฟอร์ม/Rev ได้เองจาก /doc-forms โดยไม่ต้องแก้โค้ด\n'
+    + '     2. กัน formula injection ที่เดียว — สำเนาที่ก๊อปไปมักตกข้อนี้ (เกิดจริงที่ DailyReport)\n'
+    + '        ค่าที่หน้างานพิมพ์ขึ้นต้น `=` `+` `@` = Excel รันเป็นสูตรบนเครื่องคนรับไฟล์\n'
+    + '     3. BOM นำหน้า (Excel ไทยอ่าน UTF-8 ไม่ออกถ้าไม่มี) + revoke blob URL ทุกทาง\n'
+    + '   แก้: import { downloadCsvDoc, csvText } from \'../utils/csvDoc\';\n'
+    + '        downloadCsvDoc(\'<doc_key>\', \'<ชื่อไฟล์เดิม>\', csvText(headers, rows));\n'
+    + '        + seed doc_key ใน migration (ดู 20261008_doc_forms_csv_round2_main.sql)\n'
+    + '        + เรียก loadDocForms() ที่หน้านั้น (docFormSync เป็น sync ⇒ ต้อง warm cache เอง)\n'
+    + '   🔴 ห้ามแทรกบรรทัดเลขฟอร์มในเนื้อ CSV — เลขฟอร์มอยู่ที่ "ชื่อไฟล์" เท่านั้น\n');
+});

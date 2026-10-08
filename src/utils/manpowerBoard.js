@@ -527,3 +527,79 @@ export function summarizeSlotChanges(list) {
   }
   return [...by.values()].sort((a, b) => b.month.localeCompare(a.month)).map(m => ({ ...m, actors: [...m.actors] }));
 }
+
+/* ── 📊 แผน vs มาจริงรายวัน (2026-10-08 · คำสั่ง user "ทำข้อ 3 ต่อเลย") ─────────────────────────
+   ตอบ "แต่ละแผนกขาดคนบ่อยแค่ไหน · ขาดเพราะอะไร" จากเช็คชื่อที่มีอยู่แล้ว (ไม่มีตารางใหม่)
+   หลัก:
+   - **ที่นั่ง (seats) = ตำแหน่งที่บอร์ดวาดในวันนั้น** = การ์ดคนในทะเบียน + ช่องว่าง ของกะนั้น
+     ⇒ ใช้กฎลำดับช่องเดียวกับบอร์ด (ช่องต่อทีม → จุดงาน → std) ห้ามคิดสูตรแผนใหม่ที่นี่
+     คอลัมน์ที่ไม่มีที่มาของช่องเลย (`slotSource` null) = ที่นั่งเท่าคนในทะเบียน + ธง `noPlan` ให้จอบอก
+   - 🔴 **กะที่ไม่มีใครในแผนกถูกเช็คชื่อเลย = "ไม่ได้เช็คชื่อ" (`gap: null`) ห้ามนับเป็นขาดทั้งกะ**
+     (วันหยุด/กะที่ไม่เปิด/หัวหน้าลืมเช็ค แยกกันไม่ออก — ไม่รู้ ≠ ขาด)
+   - ขาด (gap) = ที่นั่ง − คนยืนจริง · แตกได้ลงตัวเป๊ะ:
+       gap = ช่องว่าง + ลา + ขาดงาน + ยังไม่เช็ค + ถูกยืมออก − ยืมเข้า   (ติดลบ = เกิน)
+     "ยังไม่เช็ค" ในกะที่เช็คแล้ว = ไม่ยืนยันว่ามา ⇒ นับในช่องขาดแต่แยกคอลัมน์ให้เห็นว่าเป็น "ไม่รู้"
+   - กะไม่รู้ (ตารางกะไม่ตั้ง) = ถัง `unknown` นับคน ไม่คิดที่นั่ง  */
+const emptyShift = () => ({ seats: 0, registered: 0, empty: 0, present: 0, leave: 0, absent: 0, unchecked: 0,
+  lentOut: 0, borrowedIn: 0, checked: 0, noPlan: false, onFloor: 0, gap: null, evaluated: false });
+
+/** ผลของแผนก 1 แผนก (จาก `buildManpowerBoard().depts[i]` ที่สร้างด้วยเช็คชื่อ/ตารางกะ/คนยืมของวันนั้น) */
+export function staffingOfDept(d) {
+  const out = { day: emptyShift(), night: emptyShift(), unknown: emptyShift() };
+  for (const c of d.cols || []) {
+    const s = out[c.shift === 'day' || c.shift === 'night' ? c.shift : 'unknown'];
+    s.registered += c.ops.length;
+    if (c.shift) {
+      s.empty += c.slots || 0;
+      if (c.slotSource == null && c.ops.length) s.noPlan = true;
+    }
+    for (const p of c.ops) {
+      if (p.log) s.checked += 1;
+      const lent = p.lentTo && (p.lentTo.shift == null || p.lentTo.shift === c.shift);
+      if (p.attend === 'present') { if (lent) s.lentOut += 1; else s.present += 1; }
+      else if (p.attend === 'leave') s.leave += 1;
+      else if (p.attend === 'absent') s.absent += 1;
+      else s.unchecked += 1;
+    }
+  }
+  for (const b of d.borrowed || []) {
+    const sh = b.borrowed?.shift;
+    out[sh === 'day' || sh === 'night' ? sh : 'unknown'].borrowedIn += 1;
+  }
+  for (const k of ['day', 'night', 'unknown']) {
+    const s = out[k];
+    s.onFloor = s.present + s.borrowedIn;
+    if (k === 'unknown') continue;
+    s.seats = s.registered + s.empty;
+    s.evaluated = s.checked > 0 || s.borrowedIn > 0;
+    s.gap = s.evaluated ? s.seats - s.onFloor : null;
+  }
+  return out;
+}
+
+/** สรุปช่วงวันต่อแผนก · `days` = [{ date, depts: [{ key, name, shifts: staffingOfDept() }] }] */
+export function summarizeStaffing(days) {
+  const by = new Map();
+  for (const day of days || []) {
+    for (const d of day.depts || []) {
+      if (!by.has(d.key)) by.set(d.key, { key: d.key, name: d.name, shifts: 0, notChecked: 0, shortShifts: 0, overShifts: 0,
+        seats: 0, onFloor: 0, short: 0, empty: 0, leave: 0, absent: 0, unchecked: 0, lentOut: 0, borrowedIn: 0, noPlanShifts: 0,
+        worst: null });
+      const a = by.get(d.key);
+      for (const sh of ['day', 'night']) {
+        const s = d.shifts[sh];
+        if (!s.seats && !s.evaluated) continue;            // กะนี้แผนกไม่มีที่นั่งและไม่มีใครมา = ไม่ใช่กะของแผนก
+        if (!s.evaluated) { a.notChecked += 1; continue; }
+        a.shifts += 1; a.seats += s.seats; a.onFloor += s.onFloor;
+        for (const k of ['empty', 'leave', 'absent', 'unchecked', 'lentOut', 'borrowedIn']) a[k] += s[k];
+        if (s.noPlan) a.noPlanShifts += 1;
+        if (s.gap > 0) { a.shortShifts += 1; a.short += s.gap; } else if (s.gap < 0) a.overShifts += 1;
+        if (s.gap > 0 && (!a.worst || s.gap > a.worst.gap)) a.worst = { date: day.date, shift: sh, gap: s.gap };
+      }
+    }
+  }
+  return [...by.values()].map(a => ({ ...a, fill: a.seats ? a.onFloor / a.seats : null }));
+}
+
+/** คนในทะเบียน "ณ วันนั้น" — ตัดคนที่เริ่มงานหลังวันนั้น (start_date) · ไม่มี start_date = นับ (ไม่รู้ ≠ ยังไม่เข้า) */
+export const rosterOn = (employees, date) => (employees || []).filter(e => !e.start_date || String(e.start_date).slice(0, 10) <= date);

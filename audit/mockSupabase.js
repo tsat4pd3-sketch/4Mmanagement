@@ -1,6 +1,8 @@
 /* mock client สำหรับ audit layout เท่านั้น — คืนข้อมูลว่าง ให้หน้า render โครงออกมาได้ */
 
 /* ชื่อประเภทจริงจากระบบ — ยาว/สั้นคละกันเหมือนของจริง (ใช้ทดสอบกราฟจัดอันดับ + ป้ายแกนที่ถูกตัด) */
+/** วันงานย้อนหลัง n วันจากวันนี้ (เวลาไทย) — ให้รายงานย้อนหลังที่ default 30 วันมีข้อมูล */
+const _recentDay = (n) => new Date(Date.now() + 7 * 3600e3 - 8 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
 const DT_NAMES = ['JIG มีปัญหา (ชำรุด/ปรับแก้)', 'Robot (Alarm/Error)', 'เลเซอร์มีปัญหา',
   'เครื่องแจ้งเตือน Alarm (ไม่ระบุสาเหตุ)', 'อื่นๆ (นอกแผน)', 'แก้ไขปัญหาคุณภาพ',
   'รอกระบวนการก่อนหน้า (นอกแผน)', 'ราง Conveyor มีปัญหา', 'Sensor / Reed มีปัญหา', 'ลวดเชื่อมติด',
@@ -301,7 +303,13 @@ const TABLE_ROWS = {
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
   },
   line_technicians: (r, i) => ({ ...r, employee_id: `id-${i}`, line_id: 'id-3' }),
-  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night' }),
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
+    work_date: _recentDay(i % 20) }),
+  /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
+     ⇒ จอย้อนหลังรายวันมีทั้งกะที่ขาด/ครบ/เกิน/ไม่ได้เช็ค · หน้าอื่นที่อ่านเช็คชื่อวันนี้ยังได้แถววันนี้ (i%20 = 0) */
+  shift_schedules: (r, i) => ({ ...r, line_id: 'id-3', dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
+  daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
+    shift: i % 3 ? 'day' : 'night', is_present: i % 6 !== 0, leave_type: i % 12 === 0 ? 'ลาป่วย' : null }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
   workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
