@@ -3119,6 +3119,31 @@ test('🛡️ demand-mail-via-edge-function — ไฟล์ใน bucket demand
     + '            (Edge Function `demand-mail-file` ตรวจ token ล็อกอิน Main + สิทธิ์ก่อนส่งไฟล์)\n');
 });
 
+/* ── 🔁 จอ "BOM ซ้ำ 2 ใบ" — กฎที่ถอดแล้วจอโกหกทันที (2026-10-08) ──────────────────────
+   user สั่ง *"ทำจอสรุป 94 คู่ให้ PE ไล่เคลียร์เลย"* · กฎ 3 ข้อที่เป็นหัวใจของจอนี้:
+     1. `fingerprint` — ตรวจแล้วไม่ใช่จบตลอดกาล · BOM เปลี่ยนหลังตรวจ = คู่นั้นต้องกลับเข้าคิว
+        (วัดจริง: ระหว่างทำงานนี้เอง 06/10→08/10 มี 82 แถวถูกเพิ่มใน bom_items)
+     2. ใบขั้นงาน (OP) ห้ามถูกนับว่า "ทำของหาย" — คนละคำถามกับใบพาร์ท
+     3. จอต้องชี้อย่างเดียว **ห้ามลบ/ยุบ bom_items เอง** (ของบางตัวใช้ต่างกันตามรุ่นได้จริง
+        ลบผิด = ความต้องการวัตถุดิบหาย กู้ไม่ได้ — การตัดสินเป็นของ PE/Planning)            */
+test('🛡️ BOM ซ้ำ 2 ใบ: ต้องเทียบ fingerprint · ใบ OP ไม่นับของหาย · จอห้ามลบ bom_items เอง', () => {
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/bomDupAudit.js'), 'utf8'));
+  assert.ok(/fingerprint\s*===|norm\(review\.fingerprint\)\s*===/.test(util),
+    '\n\n❌ `applyDupReviews` ไม่ได้เทียบ fingerprint แล้ว\n'
+    + '   ผล: คู่ที่เคยกด "ตรวจแล้ว" จะหายจากคิว **ตลอดกาล** แม้มีคนแก้ BOM ทีหลัง = จอโกหก\n');
+  assert.ok(/missingFromExplode:\s*verdict === 'op' \? \[\]/.test(util),
+    '\n\n❌ ใบขั้นงาน (OP) ถูกนับว่าทำของหายแล้ว\n'
+    + '   ทำไมผิด: ใบ OP ตอบ "ขั้นนี้กินอะไร" · ใบพาร์ทตอบ "พาร์ทนี้ประกอบจากอะไร" — ถูกทั้งคู่\n');
+
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/BomDupPanel.jsx'), 'utf8'));
+  assert.ok(!/from\('bom_items'\)[\s\S]{0,120}\.(delete|update|upsert|insert)\(/.test(panel),
+    '\n\n❌ จอ BomDupPanel เขียน/ลบ `bom_items` เอง\n'
+    + '   ทำไมห้าม: จอนี้ "ชี้ให้เห็นอย่างเดียว" — ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง\n'
+    + '            ยุบ 2 ชุดเอง = นับซ้ำ · ลบข้างใดข้างหนึ่ง = ยอดขาด กู้ไม่ได้\n'
+    + '   แก้ยังไง: ให้คนกดไปแก้ที่แท็บ BOM เอง (ปุ่ม ↗) แล้วบันทึกผลตรวจใน bom_dup_reviews\n');
+  assert.ok(/checkWriteRows\(await/.test(panel),
+    '\n\n❌ ปุ่มบันทึกผลตรวจไม่ได้นับแถวผ่าน `checkWriteRows` (RLS ปฏิเสธ = 0 แถว ไม่มี error)\n');
+});
 
 /* ═══ 🚪 modal ที่ "มีช่องกรอก" ห้ามปิดจากการคลิกพื้นหลัง — รูป `setX(null)` (2026-10-06 · QC audit) ═══
    กฎเดิม `modal-closes-on-backdrop` (ข้อ 200 ด้านบน) จับเฉพาะลายเซ็น `onClick={onClose}`
