@@ -194,3 +194,37 @@ test('รอบ PM: periodic + interval 180 คิดวันครบได้
   assert.equal(dueStatus(null, 'periodic', 180), 'never');
   assert.equal(dueStatus(null, 'periodic', null), 'periodic');
 });
+
+/* ── 🔩 กฎ spare_short — PM ใกล้ถึงแต่อะไหล่ไม่พอ (2026-10-08) ── */
+import { spareShortageByChecklist } from '../maintenanceLevels.js';
+import { spareDemand } from '../pmSpares.js';
+
+test('spare_short: ใบหลังที่ใช้อะไหล่ต่อจากใบอื่นจนสต็อกหมด = ไม่พอ · ใบแรกยังพอ', () => {
+  const demand = spareDemand({
+    plans: [
+      { checklistId: 'c1', name: 'RB-55', dueYmd: '2026-09-25', cycleDays: null },   // ใช้ก่อน
+      { checklistId: 'c2', name: 'RB-56', dueYmd: '2026-09-28', cycleDays: null },   // ใช้ทีหลัง → ไม่พอ
+    ],
+    lines: [{ checklist_id: 'c1', part_id: 'p', qty_per_pm: 2 }, { checklist_id: 'c2', part_id: 'p', qty_per_pm: 2 }],
+    parts: [{ id: 'p', name: 'ปลายเชื่อม', unit: 'อัน', stock_qty: 3, lead_time_days: 2 }],
+    todayStr: TODAY,
+  });
+  const m = spareShortageByChecklist(demand);
+  assert.equal(m.has('c1'), false);
+  assert.equal(m.get('c2')[0].useYmd, '2026-09-28');
+  assert.equal(spareShortageByChecklist(null).size, 0);   // ไม่ส่งข้อมูลอะไหล่ = ไม่มีกฎนี้ ไม่ใช่ "พอ"
+});
+
+test('spare_short: ใกล้ถึง ≤3 วัน หรือสั่งไม่ทัน leadtime = ด่วน · ไกลกว่า = ภายในสัปดาห์', () => {
+  const rule = RULES.find(r => r.key === 'spare_short');
+  const part = { id: 'p', name: 'ซีล', unit: 'ชิ้น' };
+  assert.equal(rule.when({ spareShort: [] }), false);
+  const near = rule.make({ spareShort: [{ part, useYmd: '2026-09-25', shortQty: 1, orderByYmd: '2026-09-23', orderLate: false, leadDays: 2 }], todayStr: TODAY, t: baseT });
+  assert.equal(near.priority, 1);
+  const far = rule.make({ spareShort: [{ part, useYmd: '2026-10-10', shortQty: 1, orderByYmd: '2026-10-01', orderLate: false, leadDays: 9 }], todayStr: TODAY, t: baseT });
+  assert.equal(far.priority, 2);
+  assert.equal(far.byYmd, '2026-10-01');                  // ต้องสั่งภายใน ไม่ใช่วัน PM
+  const late = rule.make({ spareShort: [{ part, useYmd: '2026-10-10', shortQty: 1, orderByYmd: '2026-09-01', orderLate: true, leadDays: 40 }], todayStr: TODAY, t: baseT });
+  assert.equal(late.priority, 1);
+  assert.equal(late.byYmd, TODAY);
+});
