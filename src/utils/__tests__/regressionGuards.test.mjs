@@ -3181,3 +3181,42 @@ test('📝 write-result-discarded — write ที่อยู่ตำแหน
     + '        ต่อ `.then(() => {}, () => {})` + เขียนคอมเมนต์ว่าทำไม — **ห้ามปล่อยลอยๆ**\n'
     + '        และถ้าของที่ล้มมีคนอ่านต่อ (ประวัติ/รายงาน) ควร toast.error บอกด้วย\n');
 });
+
+/* ── 💬 คอมเมนต์ใบ MO ต้องมี "กองเดียว" และต้องไปถึงใบพิมพ์ (07/10 · คอมเมนต์ทีม MTN ข้อ 1) ──
+   ที่มา: ทีม MTN ขอ *"แก้ไขรายละเอียด MO ได้"* เพราะเปิดเอกสารมาแล้วรายละเอียดไม่ตรงของจริง
+   user ตัดสิน: ไม่แก้ทับของผู้แจ้ง — เอาคอมเมนต์ที่คุยกันใต้ใบ ไปต่อท้ายในช่องเดียวกันบนใบพิมพ์
+   รอบแรกของงานนี้เกือบสร้างตาราง `mtn_order_comments` ใหม่ ทั้งที่ `event_comments` ใช้อยู่แล้ว
+   (74 คอมเมนต์ · 49 ใบ) ⇒ ใบเดียวมีคอมเมนต์ 2 กอง = ใบพิมพ์ไม่ตรงกับจอ
+   📄 `docs/modules/mtn-work-order.md` §คอมเมนต์บนใบพิมพ์ */
+test('🛡️ mo-comments-single-store — คอมเมนต์ใบ MO ต้องอยู่ที่ event_comments ที่เดียว', () => {
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => /mtn_order_comments/.test(stripComments(readFileSync(f, 'utf8'))))
+    .map(f => relative(ROOT, f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีโค้ดอ้างตารางคอมเมนต์ใบ MO ชุดที่ 2 (`mtn_order_comments`): ' + hits.join(', ') + '\n'
+    + '   ทำไมห้าม: ใบ MO มีคอมเมนต์อยู่แล้วที่ `event_comments` (ref_kind=\'mtn_order\')\n'
+    + '            ซึ่ง <EventComments> บนจอใช้อยู่ · 2 กอง = ใบพิมพ์ไม่ตรงกับที่คนคุยกันบนจอ\n'
+    + '   แก้ยังไง: อ่าน/เขียนผ่าน event_comments · ฝั่งใบพิมพ์/Excel ใช้ src/lib/moComments.js\n');
+});
+
+test('🛡️ mo-print-needs-comments — ใบพิมพ์ MO ทั้ง 2 ฟอร์ม + Excel ต้องวางคอมเมนต์ต่อท้ายผู้แจ้ง', () => {
+  const mo = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  // ทั้ง 2 ฟอร์มต้องรับ cmt และเรียกตัววาดกลาง (ห้ามประกอบข้อความคอมเมนต์เองในแต่ละฟอร์ม)
+  for (const fn of ['printMoReport', 'printMoReportMtn']) {
+    assert.ok(new RegExp(`function ${fn}\\([^)]*cmt`).test(mo),
+      `\n\n❌ ${fn}() ไม่รับคอมเมนต์ (พารามิเตอร์ \`cmt\`) — ใบที่พิมพ์ออกไปจะไม่มีคอมเมนต์ที่คุยกันไว้\n`
+      + '   ที่มา: คอมเมนต์ทีม MTN 06/10 "เปิดเอกสารมาบางครั้งรายละเอียดไม่ตรงสาเหตุที่เกิดขึ้นจริง"\n');
+  }
+  // นับเฉพาะ "การเรียกในเทมเพลตใบ" (${cmtBlockHtml(…)) — ไม่นับบรรทัดประกาศฟังก์ชัน
+  assert.equal((mo.match(/\$\{cmtBlockHtml\(cmt/g) || []).length, 2,
+    '\n\n❌ ใบพิมพ์ MO ไม่ได้วาดบล็อกคอมเมนต์ครบทั้ง 2 ฟอร์ม (FM-JIG-008 + FM-MTN-006)\n'
+    + '   ทั้ง 2 ฟอร์มต้องเรียก cmtBlockHtml(cmt, esc) — ฟอร์มที่ลืม = ทีมนั้นไม่เห็นคอมเมนต์บนใบ\n');
+  // คอมเมนต์ต้องอยู่ "ต่อท้าย" รายละเอียดของผู้แจ้ง ไม่ใช่แทนที่ (คำสั่ง user: ต่อจากที่ผู้แจ้งแจ้งมา)
+  assert.ok(/report_note \|\| o\.problem_detail\)\}\$\{cmtBlockHtml/.test(mo),
+    '\n\n❌ ใบ FM-JIG-008 ไม่ได้วางคอมเมนต์ "ต่อท้าย" รายละเอียดของผู้แจ้ง\n'
+    + '   🔴 ของผู้แจ้งคือ **บันทึก ณ วันที่แจ้ง** ห้ามถูกแทนที่/ถูกดันหาย — คอมเมนต์ต่อท้ายเท่านั้น\n');
+  const xl = stripComments(readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8'));
+  assert.ok(/moCommentText\(/.test(xl) && /commentsError/.test(xl),
+    '\n\n❌ Excel export ใบ MO ไม่มีคอลัมน์คอมเมนต์ (หรือกลืน commentsError)\n'
+    + '   🔴 โหลดคอมเมนต์ไม่สำเร็จ = ต้องเขียนกำกับในไฟล์ · ช่องว่างเฉยๆ อ่านเป็น "ไม่มีใครคอมเมนต์"\n');
+});
