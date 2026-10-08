@@ -16,7 +16,7 @@ import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
-import { buildQrPayload, buildQrUrl, qrOriginUsable, mergeJigLabelRows } from '../utils/qrCode';
+import { buildQrPayload, buildQrUrl, qrOriginUsable, mergeJigLabelRows, labelRowKey } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
 import useProductionLines from '../utils/useProductionLines';
@@ -156,14 +156,14 @@ export default function QrLabels() {
   const missingNo = visible.filter(r => !noOf(r).trim()).length;
 
   const toggle = (id) => setSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const toggleAll = () => setSel(prev => prev.size === visible.length ? new Set() : new Set(visible.map(r => r.id)));
+  const toggleAll = () => setSel(prev => prev.size === visible.length ? new Set() : new Set(visible.map(labelRowKey)));
 
   /* ── พิมพ์ ── */
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const linkLabels = qrOriginUsable(origin);
 
   const handlePrint = async () => {
-    const picked = visible.filter(r => sel.has(r.id));
+    const picked = visible.filter(r => sel.has(labelRowKey(r)));
     if (!picked.length) return toast.error('ยังไม่ได้เลือกรายการ');
     const sz = SIZES[size];
     const QR = (await import('qrcode')).default;
@@ -326,16 +326,20 @@ export default function QrLabels() {
           <tbody>
             {loading && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</td></tr>}
             {!loading && !visible.length && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>ไม่พบรายการ</td></tr>}
-            {visible.map(r => (
-              <tr key={r.id} onClick={() => toggle(r.id)} style={{ cursor: 'pointer', background: sel.has(r.id) ? 'var(--accent-dim)' : 'transparent' }}>
-                <td style={td}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} onClick={e => e.stopPropagation()} style={{ width: 'auto', cursor: 'pointer' }} /></td>
+            {visible.map(r => {
+              // คีย์ = ชนิดแหล่ง + id (แท็บจิ๊กรวม 2 ทะเบียนที่ id คนละชุด — labelRowKey เป็นเจ้าของกฎ)
+              const k = labelRowKey(r);
+              return (
+              <tr key={k} onClick={() => toggle(k)} style={{ cursor: 'pointer', background: sel.has(k) ? 'var(--accent-dim)' : 'transparent' }}>
+                <td style={td}><input type="checkbox" checked={sel.has(k)} onChange={() => toggle(k)} onClick={e => e.stopPropagation()} style={{ width: 'auto', cursor: 'pointer' }} /></td>
                 <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: kind === 'delivery' ? 'var(--muted)' : '#f59e0b' }}>{kind === 'delivery' ? '—' : '— ไม่มีเลข —'}</span>}</td>
                 <td style={td}>{nameOf(r)}
                   {kind === 'jig' && r._qr === 'jig' && <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ทะเบียน PM</span>}
                 </td>
                 <td style={{ ...td, color: 'var(--text2)' }}>{r.line_name || '—'}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

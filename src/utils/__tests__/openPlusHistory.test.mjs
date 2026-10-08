@@ -34,3 +34,14 @@ test('คิวรีใบค้างล้ม = คืน error (ห้าม
   const { error } = await openPlusHistory(fakeQ([], 'boom'), fakeQ([]), 10);
   assert.equal(error?.message, 'boom');
 });
+
+/* 🔑 ใบที่เปลี่ยนสถานะ "ระหว่าง" 2 คิวรี (2 คิวรีใน Promise.all ไม่ใช่ transaction)
+   เข้าเงื่อนไขทั้งใบค้างและประวัติ ⇒ เคยมาถึงจอ 2 แถว id เดียวกัน = คีย์ซ้ำบนบอร์ด
+   (วัดจริง 08/10: /rack-center 15 ใบใน harness) · ประวัติ (ชุดหลัง) ต้องชนะ */
+test('ใบที่โผล่ทั้ง 2 คิวรี เหลือใบเดียว และเป็นสถานะที่ปิดแล้ว', async () => {
+  const open = [{ id: 'r1', status: 'requested', requested_at: '2026-03-01' }];
+  const hist = [{ id: 'r1', status: 'received', requested_at: '2026-03-01' }];
+  const { data } = await openPlusHistory(fakeQ(open), fakeQ(hist), 10, 'requested_at');
+  assert.equal(data.length, 1);
+  assert.equal(data[0].status, 'received');
+});

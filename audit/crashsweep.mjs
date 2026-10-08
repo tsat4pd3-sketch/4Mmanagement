@@ -42,10 +42,18 @@ const closeOverlay = async (p) => {
 }
 
 const bad = []
+/* 🔑 คีย์ซ้ำในลิสต์ — `pageerror` **จับไม่ได้** (React เตือนทาง console.error ไม่ throw)
+   แต่ของจริงมันกลืน/วาดซ้ำแถวแบบไม่การันตี: ตัวนับ "ค้างกี่ใบ" บวกเกิน · กดปุ่มบนแถวผีได้
+   วัดจริง 08/10: /morning-meeting 14 · /rack-center 15 · /customer-demand 4 · /permissions 14
+   ต้นเหตุทั้งชุด = ต่อผล 2 คิวรีของตารางเดียวกันด้วย `[...a, ...b]` (ดู src/utils/mergeRows.js)
+   ⇒ เฝ้าที่นี่ ไม่ใช่ด่าน grep: regex จับ "ต่ออาร์เรย์" แม่นไม่ได้ (ของถูก 20 จุดในรีโป) แต่ React ตัดสินถูกเสมอ */
+const dupKeys = []
 for (const name of PAGES) {
   const p = await b.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
   const errs = []
+  const dups = new Set()
   p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 150)))
+  p.on('console', m => { if (m.type() === 'error' && m.text().includes('same key')) dups.add(m.text().slice(-60)) })
   try {
     /* 🔴 ต้องส่ง `role=admin` (23/09) — ไม่ส่ง = harness เรนเดอร์มุมมอง **อ่านอย่างเดียว**
        ปุ่มของ admin (เพิ่ม/แก้ไข/⚙ ตั้งค่า/เปิดโมดัล) ไม่โผล่เลยสักปุ่ม
@@ -90,8 +98,11 @@ for (const name of PAGES) {
       if (skipped) console.log(`  ⤼ ${name}: ข้ามปุ่มพิมพ์/ดาวน์โหลด ${skipped} ปุ่ม`)
     }
   } catch (e) { bad.push({ name, where: 'โหลดไม่ขึ้น', errs: [String(e).slice(0, 120)] }) }
+  if (dups.size) dupKeys.push({ name, n: dups.size })
   await p.close()
 }
 await b.close()
-console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length}`)
+console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length} · คีย์ซ้ำ ${dupKeys.length} หน้า`)
 bad.forEach(x => console.log(`🔴 ${x.name} [${x.where}] ${x.errs[0] || ''}`))
+/* ห้ามปิดด่านนี้ด้วยการเลิกพิมพ์ — แก้ที่หน้า (ยุบด้วย mergeById / ตั้งคีย์ให้ไม่ซ้ำ) */
+dupKeys.forEach(x => console.log(`🔑 ${x.name}: คีย์ซ้ำในลิสต์ ${x.n} ตัว — ยุบแถวด้วย mergeById (src/utils/mergeRows.js) หรือ prefix คีย์ตามแหล่ง`))
