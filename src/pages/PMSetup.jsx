@@ -21,7 +21,7 @@ import useColumnHistory from '../utils/useColumnHistory' // 📜 เลขเค
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines'
 import { loadProcessTypes, activeProcessTypes } from '../utils/processTypes'
 import { teamsForUser } from '../utils/mtnTeams'
-import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept } from '../lib/pmChecklists'
+import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listChecklistsByDept, moveChecklistDept, copyChecklistToDept, copyChecklistToEquipment } from '../lib/pmChecklists'
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
@@ -546,6 +546,13 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [moveBusy, setMoveBusy] = useState(false)
   const [moveTo, setMoveTo] = useState('')
   const [existingNote, setExistingNote] = useState(null)  // เครื่องที่เลือกเคยขึ้นทะเบียน PM แผนกอื่นแล้ว
+  /* 📋 คัดลอกจุดตรวจไป "เครื่องอื่น" (06/10 · คอมเมนต์ทีม MTN ข้อ 2)
+     *"MTN มีเครื่องจักรหลายตัว [325 Pc] แต่ชนิดซ้ำๆกัน จุดการ PM เหมือนกันหมด"* */
+  const [allEquip, setAllEquip] = useState([])      // อุปกรณ์ทั้งหมดในโมดูล mtn (= ตาราง jigs)
+  const [copyTo, setCopyTo] = useState([])          // jigs.id[] ที่ติ๊กไว้
+  const [copyQ, setCopyQ] = useState('')
+  const [copyBusy, setCopyBusy] = useState(false)
+  const [copyReport, setCopyReport] = useState(null) // ผลรายเครื่อง — ห้ามสรุปก้อนเดียว
   useEffect(() => {
     getCurrentUserId().then(setUserId)
     // equipment_kind/is_active มาด้วย — <MachineSelect> ใช้ติดป้ายชนิด/⏸ และ derive ประเภทอุปกรณ์ (2026-09-07)
@@ -558,6 +565,9 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
       .then(({ data }) => setLineOptions((data ?? []).filter(l => l.name)))
     supabaseDR.from('pm_facility_areas').select('id, name').order('sort_order').order('name')
       .then(({ data }) => setFacilityAreas((data ?? []).filter(a => a.name)), () => {})
+    // อุปกรณ์พี่น้อง สำหรับ "คัดลอกจุดตรวจไปเครื่องอื่น" — เลือกเฉพาะคอลัมน์ที่ลิสต์ใช้ (กฎ egress)
+    supabaseDR.from('jigs').select('id, name, jig_no, machine_no, line_name, machine_id').eq('module', 'mtn')
+      .then(({ data }) => setAllEquip(data ?? []), () => {})
     loadProcessTypes().then(() => setProcTypes(activeProcessTypes())).catch(() => {})
   }, [])
 
@@ -617,6 +627,31 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
 
   const reloadDeptSummary = () => {
     if (editJig) listChecklistsByDept(editJig.id, 'mtn').then(setDeptSummary).catch(() => {})
+  }
+
+  /* ── 📋 คัดลอกจุดตรวจของแผนกนี้ ไป "เครื่องอื่น" ทีละหลายเครื่อง ──────────────────
+     🔴 ผลลัพธ์ต้องรายงาน **รายเครื่อง** ว่าสำเร็จ/ข้ามเพราะอะไร
+        ข้ามไปเงียบๆ = คนเชื่อว่าตั้ง PM ครบแล้ว ทั้งที่หลายเครื่องยังไม่มีจุดตรวจเลย
+     🔴 ไม่ส่ง `replace` — เครื่องปลายทางที่มีจุดตรวจอยู่แล้ว **ข้ามเสมอ ไม่ทับ**
+        (ทับ = ลบประวัติผลตรวจถาวร เพราะ inspection_results CASCADE · ดู pmChecklists.js) */
+  const handleCopyToEquipment = async () => {
+    const cur = deptSummary.find(d => d.department === department)
+    if (!cur) { setError('แผนกนี้ยังไม่มีรายการตรวจให้คัดลอก — บันทึกจุดตรวจก่อน'); return }
+    if (!copyTo.length) { setError('เลือกเครื่องปลายทางก่อน'); return }
+    const nameOf = (id) => { const e = allEquip.find(x => x.id === id); return e ? (e.machine_no || e.jig_no || e.name || id) : id }
+    if (!confirm(
+      `คัดลอก ${cur.checkpointCount} จุดตรวจ ไปอีก ${copyTo.length} เครื่อง\n`
+      + `(แผนก ${pmTeamsSync().find(t => t.key === department)?.label ?? department})\n\n`
+      + `⚠️ เครื่องที่ "มีจุดตรวจอยู่แล้ว" จะถูกข้าม ไม่ทับของเดิม\n\nยืนยัน?`)) return
+    setCopyBusy(true); setError(''); setCopyReport(null)
+    try {
+      const { results } = await copyChecklistToEquipment(cur.id, copyTo, userId, { replace: false })
+      setCopyReport(results.map(r => ({ ...r, label: nameOf(r.equipmentId) })))
+      const ok = results.filter(r => r.copied).length
+      if (ok) { setCopyTo([]); reloadDeptSummary() }
+    } catch (err) {
+      setError(err.message)
+    } finally { setCopyBusy(false) }
   }
 
   // ย้าย/คัดลอก "รายการตรวจของแผนกที่กำลังเปิดอยู่" ไปแผนกอื่น
@@ -1125,6 +1160,76 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
                     </button>
                   </div>
                 )}
+
+                {/* ── 📋 คัดลอกจุดตรวจไป "เครื่องอื่น" (06/10 · ทีม MTN: เครื่อง 325 ตัว ชนิดซ้ำกัน จุด PM เหมือนกัน) ── */}
+                {cur && cur.checkpointCount > 0 && (() => {
+                  const curKind = equipTypeOfMachine(machineOptions.find(m => m.id === machineId))
+                  const kindOfEquip = (e) => equipTypeOfMachine(machineOptions.find(m => m.id === e.machine_id))
+                  const q = copyQ.trim().toLowerCase()
+                  const cands = allEquip
+                    .filter(e => e.id !== editJig?.id)
+                    .filter(e => !q || [e.machine_no, e.jig_no, e.name, e.line_name].some(v => String(v || '').toLowerCase().includes(q)))
+                  const sameKind = cands.filter(e => kindOfEquip(e) === curKind)
+                  const shown = q ? cands : sameKind     // ไม่ค้น = โชว์เฉพาะชนิดเดียวกัน (ที่เหลือค้นเอา)
+                  return (
+                    <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
+                      <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
+                        📋 <b>คัดลอก {cur.checkpointCount} จุดนี้ไปเครื่องอื่น</b> (ชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง)
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
+                        <input value={copyQ} onChange={e => setCopyQ(e.target.value)} placeholder="ค้นเลขเครื่อง / ไลน์…"
+                          style={{ width: 'auto', minWidth: 170, fontSize: 12 }} />
+                        <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('#3b9dff')}>
+                          ✓ เลือกที่เห็นทั้งหมด ({shown.length})
+                        </button>
+                        {!!copyTo.length && <button type="button" onClick={() => setCopyTo([])} style={S.btnSm('#888')}>ล้าง</button>}
+                        <span className="spacer" style={{ flex: 1 }} />
+                        <button type="button" disabled={!copyTo.length || copyBusy} onClick={handleCopyToEquipment}
+                          style={{ ...S.btnSm('#3b9dff'), opacity: (!copyTo.length || copyBusy) ? 0.5 : 1, fontWeight: 800 }}>
+                          {copyBusy ? '…' : `⧉ คัดลอกไป ${copyTo.length} เครื่อง`}
+                        </button>
+                      </div>
+                      <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, padding: 6,
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
+                        {shown.map(e => {
+                          const on = copyTo.includes(e.id)
+                          return (
+                            <label key={e.id} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11.5, cursor: 'pointer', padding: '2px 3px' }}>
+                              <input type="checkbox" checked={on} onChange={() =>
+                                setCopyTo(p => on ? p.filter(x => x !== e.id) : [...p, e.id])} />
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={`${e.machine_no || e.jig_no || e.name} · ${e.line_name || 'ไม่ระบุไลน์'}`}>
+                                <b>{e.machine_no || e.jig_no || e.name}</b>
+                                <span style={{ color: 'var(--muted)' }}> · {e.line_name || '—'}</span>
+                              </span>
+                            </label>
+                          )
+                        })}
+                        {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4 }}>
+                          {q ? 'ไม่พบเครื่องที่ค้น' : 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'}</span>}
+                      </div>
+                      <p style={{ fontSize: 11, color: 'var(--muted)', margin: '5px 0 0', lineHeight: 1.6 }}>
+                        เครื่องที่<b>มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)
+                        · คัดลอกเฉพาะ<b>นิยามจุดตรวจ</b> รอบเวลา/วันครบกำหนดของแต่ละเครื่องตั้งแยกกันเหมือนเดิม
+                      </p>
+                      {/* 🔴 ผลรายเครื่อง — ห้ามสรุปเป็น "สำเร็จ" ก้อนเดียว */}
+                      {copyReport && (() => {
+                        const ok = copyReport.filter(r => r.copied)
+                        const skip = copyReport.filter(r => !r.copied)
+                        const why = { target_has_checkpoints: 'มีจุดตรวจอยู่แล้ว', target_has_history: 'มีประวัติผลตรวจแล้ว', same: 'เครื่องต้นทาง', empty: 'ต้นทางไม่มีจุดตรวจ', error: 'ผิดพลาด' }
+                        return (
+                          <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 9px' }}>
+                            <b style={{ color: 'var(--accent)' }}>✅ คัดลอกสำเร็จ {ok.length} เครื่อง</b>
+                            {!!ok.length && <span style={{ color: 'var(--muted)' }}> — {ok.map(r => r.label).join(' · ')}</span>}
+                            {!!skip.length && <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
+                              ⚠️ ข้าม {skip.length} เครื่อง — {skip.map(r => `${r.label} (${why[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
+                            </div>}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  )
+                })()}
                 {others.length > 0 && (
                   <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>
                     💡 จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)

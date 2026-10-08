@@ -3162,7 +3162,12 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
       if (imageFile && imageUrl && payload.mat_no) {
         const { data: dps } = await supabaseDR.from('dr_products').select('id, image_url').eq('mat_no', payload.mat_no);
         const emptyIds = (dps || []).filter(d => !d.image_url).map(d => d.id);
-        if (emptyIds.length) await supabaseDR.from('dr_products').update({ image_url: imageUrl }).in('id', emptyIds);
+        /* เติมรูปให้สินค้าที่ยังไม่มี — งานหลักสำเร็จแล้ว ⇒ ล้มตรงนี้ไม่ล้มทั้ง flow
+         แต่**ห้ามเงียบ** (QC audit 06/10) ไม่งั้นรูปไม่ขึ้นบนจอที่อ่าน dr_products โดยไม่มีร่องรอย */
+      if (emptyIds.length) {
+        const r = await supabaseDR.from('dr_products').update({ image_url: imageUrl }).in('id', emptyIds);
+        if (r.error) toast.error(`บันทึกแล้ว แต่เติมรูปให้สินค้าไม่สำเร็จ: ${r.error.message}`);
+      }
       }
       toast.success(editPart ? 'อัปเดตสำเร็จ' : 'เพิ่มพาร์ทสำเร็จ');
       setShowModal(false);
@@ -3503,7 +3508,17 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (error) { toast.error(error.message); return; }
     toast.success(editLink ? 'แก้ไขแล้ว' : 'ผูก packaging แล้ว'); setShowLink(false); loadLinks(selProduct.id); loadAll();
   };
-  const delLink = async (it) => { if (!window.confirm(`ลบ ${it.packaging_code} ออกจาก product นี้?`)) return; await supabaseDR.from('product_packaging').update({ is_active: false }).eq('id', it.id); loadLinks(selProduct.id); loadAll(); };
+  /* 🔴 ปุ่มลบจริง ต้องอ่าน error + นับแถว (QC audit 06/10) — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error
+     เดิมทิ้งผลทั้งก้อน ⇒ กดลบแล้ว `loadLinks()` วาดแถวเดิมกลับมา โดยไม่มีอะไรบอกว่าทำไม
+     ⇒ ผู้ใช้กดซ้ำ/คิดว่าจอค้าง (pattern ที่ถูก: SimpleMasterPanel.remove) */
+  const delLink = async (it) => {
+    if (!window.confirm(`ลบ ${it.packaging_code} ออกจาก product นี้?`)) return;
+    const res = await supabaseDR.from('product_packaging').update({ is_active: false }).eq('id', it.id).select('id');
+    if (!checkWrite(res, 'ลบบรรจุภัณฑ์ออกจากสินค้า')) return;
+    if (!(res.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์เขียนไม่พอ'); return; }
+    toast.success('ลบแล้ว');
+    loadLinks(selProduct.id); loadAll();
+  };
 
   const saveMaster = async () => {
     if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
@@ -3516,7 +3531,14 @@ function PackagingPanel({ canCreate, canEdit, canDelete, fullName }) {
     if (error) { toast.error(error.code === '23505' ? `code ${payload.code} ซ้ำ` : error.message); return; }
     toast.success('บันทึกภาชนะแล้ว'); setMasterForm(EMPTY_PKG_MASTER); setEditMaster(null); loadAll();
   };
-  const delMaster = async (m) => { if (!window.confirm(`ลบ ${m.code}?`)) return; await supabaseDR.from('container_types').update({ is_active: false }).eq('id', m.id); loadAll(); };
+  const delMaster = async (m) => {
+    if (!window.confirm(`ลบ ${m.code}?`)) return;
+    const res = await supabaseDR.from('container_types').update({ is_active: false }).eq('id', m.id).select('id');
+    if (!checkWrite(res, 'ปิดใช้งานภาชนะ')) return;
+    if (!(res.data || []).length) { toast.error('ลบไม่สำเร็จ (0 แถว) — สิทธิ์เขียนไม่พอ'); return; }
+    toast.success('ลบแล้ว');
+    loadAll();
+  };
 
   const filtered = useMemo(() => { const q = search.trim().toLowerCase(); if (!q) return products; return products.filter(p => (p.name || '').toLowerCase().includes(q) || (p.mat_no || '').toLowerCase().includes(q) || (p.line_name || '').toLowerCase().includes(q)); }, [products, search]);
 
