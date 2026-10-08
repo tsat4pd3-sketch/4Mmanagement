@@ -121,46 +121,94 @@ export async function moveChecklistDept(checklistId, toDepartment, { replace = f
   return { moved: true }
 }
 
-export async function copyChecklistToDept(checklistId, toDepartment, userId, { replace = false } = {}) {
-  const { data: src, error: e0 } = await supabaseDR
-    .from('checklists').select('id, equipment_id, module, department, frequency').eq('id', checklistId).single()
-  if (e0) throw e0
-  if (src.department === toDepartment) return { copied: false, reason: 'same' }
-
-  const { data: cps, error: e1 } = await supabaseDR
-    .from('jig_checkpoints').select('*').eq('checklist_id', checklistId).order('sort_order')
-  if (e1) throw e1
-  if (!cps?.length) return { copied: false, reason: 'empty' }
-
-  const target = await getOrCreateChecklist(src.equipment_id, src.module, toDepartment, userId)
+/* ── ของกลางของการ "คัดลอกจุดตรวจ" — ใช้ทั้งข้ามแผนก และข้ามเครื่อง (06/10) ──────────
+   🔴 ด่านกันพลาดทั้งหมดอยู่ที่นี่ที่เดียว **ห้ามก๊อปไปเขียนซ้ำในตัวเรียก**
+   คืนเหตุผลเป็นค่า (ไม่ throw) เมื่อ "ไม่ควรทับ" — ตัวเรียกเอาไปบอกคนได้ว่าข้ามเพราะอะไร */
+async function copyCheckpointsInto(srcCps, target, replace) {
   // ⚠️ นับไม่สำเร็จ = "ไม่รู้" ห้าม `?? 0` — จะข้ามด่านไปลง insert ทับของเดิม
   //    ⇒ จุดตรวจปลายทาง "ซ้ำสองชุด" เงียบๆ (ผู้ตรวจเห็นทุกจุดสองครั้ง) โดยไม่มีใครกดยืนยันอะไรเลย
   const rCps = await supabaseDR
     .from('jig_checkpoints').select('id', { count: 'exact', head: true }).eq('checklist_id', target.id)
   if (rCps.error || rCps.count == null)
-    throw new Error('ตรวจจุดตรวจที่แผนกปลายทางไม่สำเร็จ — ยังคัดลอกไม่ได้ (กันจุดตรวจซ้ำ) ' + (rCps.error?.message || ''))
+    throw new Error('ตรวจจุดตรวจที่ปลายทางไม่สำเร็จ — ยังคัดลอกไม่ได้ (กันจุดตรวจซ้ำ) ' + (rCps.error?.message || ''))
   const tCps = rCps.count
   if (tCps > 0) {
     if (!replace) return { copied: false, reason: 'target_has_checkpoints', targetCheckpoints: tCps }
-    // 🔴 inspection_results.checkpoint_id = ON DELETE CASCADE ⇒ ทับจุดตรวจปลายทาง = ลบประวัติผลตรวจของแผนกนั้นถาวร
-    //    (กฎเดียวกับ "ย้าย" ข้างบน) — มีประวัติ = ห้ามทับ (QC 05/10)
+    // 🔴 inspection_results.checkpoint_id = ON DELETE CASCADE ⇒ ทับจุดตรวจปลายทาง = ลบประวัติผลตรวจถาวร
+    //    มีประวัติ = ห้ามทับ (QC 05/10)
     const { data: tCpIds, error: eIds } = await supabaseDR.from('jig_checkpoints').select('id').eq('checklist_id', target.id)
     if (eIds) throw eIds
     const rHist = await supabaseDR.from('inspection_results')
       .select('id', { count: 'exact', head: true }).in('checkpoint_id', (tCpIds ?? []).map(r => r.id))
     if (rHist.error || rHist.count == null)
-      throw new Error('ตรวจประวัติผลตรวจของแผนกปลายทางไม่สำเร็จ — ยังทับไม่ได้ ' + (rHist.error?.message || ''))
-    if (rHist.count > 0)
-      throw new Error(`แผนกปลายทางมีประวัติผลตรวจ ${rHist.count} รายการ — ทับไม่ได้ (ประวัติจะหายถาวร) แก้จุดตรวจที่หน้าตั้งค่าแทน`)
+      throw new Error('ตรวจประวัติผลตรวจของปลายทางไม่สำเร็จ — ยังทับไม่ได้ ' + (rHist.error?.message || ''))
+    if (rHist.count > 0) return { copied: false, reason: 'target_has_history', history: rHist.count }
     const { error: eDel } = await supabaseDR.from('jig_checkpoints').delete().eq('checklist_id', target.id)
     if (eDel) throw eDel
   }
 
   // copy เฉพาะนิยามจุดตรวจ — ตัด id/created_at/audit ทิ้ง, รูปใช้ path เดิมร่วมกัน (ไม่ก๊อปไฟล์ storage)
-  const rows = cps.map(({ id, created_at, updated_at, updated_by_name, checklist_id, ...rest }) => ({
+  const rows = srcCps.map(({ id, created_at, updated_at, updated_by_name, checklist_id, ...rest }) => ({
     ...rest, checklist_id: target.id,
   }))
   const { error: e2 } = await supabaseDR.from('jig_checkpoints').insert(rows)
   if (e2) throw e2
   return { copied: true, count: rows.length, targetId: target.id }
+}
+
+/** อ่านจุดตรวจต้นทาง + หัว checklist (ใช้ร่วมกัน) */
+async function readSource(checklistId) {
+  const { data: src, error: e0 } = await supabaseDR
+    .from('checklists').select('id, equipment_id, module, department, frequency').eq('id', checklistId).single()
+  if (e0) throw e0
+  const { data: cps, error: e1 } = await supabaseDR
+    .from('jig_checkpoints').select('*').eq('checklist_id', checklistId).order('sort_order')
+  if (e1) throw e1
+  return { src, cps: cps ?? [] }
+}
+
+export async function copyChecklistToDept(checklistId, toDepartment, userId, { replace = false } = {}) {
+  const { src, cps } = await readSource(checklistId)
+  if (src.department === toDepartment) return { copied: false, reason: 'same' }
+  if (!cps.length) return { copied: false, reason: 'empty' }
+  const target = await getOrCreateChecklist(src.equipment_id, src.module, toDepartment, userId)
+  const res = await copyCheckpointsInto(cps, target, replace)
+  // เดิมเคส "ปลายทางมีประวัติ" โยน error — คงพฤติกรรมเดิมไว้สำหรับหน้าที่เรียกอยู่แล้ว
+  if (res.reason === 'target_has_history')
+    throw new Error(`แผนกปลายทางมีประวัติผลตรวจ ${res.history} รายการ — ทับไม่ได้ (ประวัติจะหายถาวร) แก้จุดตรวจที่หน้าตั้งค่าแทน`)
+  return res
+}
+
+/* ── 📋 คัดลอกจุดตรวจ "ข้ามเครื่อง" ทีละหลายเครื่อง (06/10 · คอมเมนต์ทีม MTN ข้อ 2) ──────
+   *"MTN มีเครื่องจักรหลายตัว [325 Pc] แต่ชนิดซ้ำๆกัน จุดการ PM เหมือนกันหมด"*
+   ⇒ ตั้งจุดตรวจเครื่องต้นแบบ 1 ตัว แล้วกระจายไปทั้งชนิด — ไม่ต้องนั่งพิมพ์ 325 รอบ
+
+   🔴 ผลลัพธ์เป็น **รายเครื่อง** — ตัวเรียกต้องเอาไปโชว์ว่าเครื่องไหนสำเร็จ/ข้ามเพราะอะไร
+      **ห้ามสรุปเป็น "สำเร็จ" ก้อนเดียว** (ข้ามไป 40 เครื่องเงียบๆ = คนเชื่อว่าตั้งครบแล้ว ทั้งที่ไม่)
+   🔴 เครื่องปลายทางที่ "มีประวัติผลตรวจแล้ว" = ข้ามเสมอ **แม้สั่ง replace** — ทับ = ประวัติหายถาวร
+      (ต่างจากข้ามแผนกที่โยน error เพราะทำทีละตัว · ที่นี่ทำทีละหลายตัว ต้องข้ามแล้วรายงาน ไม่ใช่ล้มทั้งชุด)
+   · `toDepartment` ไม่ส่ง = ใช้แผนกเดียวกับต้นทาง (ปกติ: ก๊อป PM ของ MTN ไปเครื่อง MTN ตัวอื่น) */
+export async function copyChecklistToEquipment(checklistId, toEquipmentIds, userId, { replace = false, toDepartment = null } = {}) {
+  const ids = [...new Set((toEquipmentIds || []).filter(Boolean))]
+  if (!ids.length) return { results: [] }
+  const { src, cps } = await readSource(checklistId)
+  if (!cps.length) return { results: ids.map(equipmentId => ({ equipmentId, copied: false, reason: 'empty' })) }
+  const dept = toDepartment || src.department
+
+  const results = []
+  for (const equipmentId of ids) {
+    // ต้นทางเอง = ข้าม (ก๊อปทับตัวเองไม่มีความหมาย และ replace จะลบของตัวเองทิ้ง)
+    if (equipmentId === src.equipment_id && dept === src.department) {
+      results.push({ equipmentId, copied: false, reason: 'same' }); continue
+    }
+    try {
+      const target = await getOrCreateChecklist(equipmentId, src.module, dept, userId)
+      const r = await copyCheckpointsInto(cps, target, replace)
+      results.push({ equipmentId, ...r })
+    } catch (e) {
+      // เครื่องเดียวล้ม ต้องไม่ทำให้ทั้งชุดหยุด — เก็บเหตุผลไว้รายงาน
+      results.push({ equipmentId, copied: false, reason: 'error', message: e?.message || String(e) })
+    }
+  }
+  return { results }
 }

@@ -20,6 +20,9 @@
    4. ทั้งไฟล์ pure — รับ `rows` (array ของ array) ที่ผู้เรียกอ่านมาแล้ว ไม่แตะ xlsx/supabase/react
       (มีเทส `__tests__/monitoringSheet.test.mjs`)
    ═══════════════════════════════════════════════════════════════════════════════ */
+/* คีย์แถวพาร์ทของบอร์ด — ต้องเป็นสูตรเดียวกับฝั่ง DB (trigger `monitor_parts_set_row_key()`)
+   ⇒ อ้าง `partRowKey` ตัวจริง ห้ามเขียน `mat + '|' + part` ซ้ำที่นี่ (มีด่าน regressionGuards) */
+import { partRowKey } from './monitorBoards.js';
 
 /** หัวคอลัมน์ → คีย์ · เทียบแบบตัดอักขระพิเศษ (ไฟล์จริงมีทั้ง "Mat SAP" / "Mat'l" / "MAT'L NO.") */
 const normHead = (s) => String(s ?? '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
@@ -858,33 +861,43 @@ export function parseSheetForBoard(name, rows = [], { asOf } = {}) {
   return { ...d, ...r, parts: m.parts, warnings: [...(r.warnings || []), ...m.warnings] };
 }
 
-/* ═══ เลข MAT ซ้ำในชีทเดียว → รวมเป็นพาร์ทเดียว (2026-10-05 · เคสจริงชีท Argen)
-   ตาราง `monitor_board_parts` unique (board_id, mat_no) ⇒ ส่ง MAT ซ้ำใน upsert ก้อนเดียว
-   = Postgres โยน *"ON CONFLICT DO UPDATE command cannot affect row a second time"* ⇒ **นำเข้าล้มทั้งบอร์ด**
-   กติกา (ห้ามทิ้งแถวเงียบ · ห้ามเดาเกินหลักฐาน):
-   · แถว "ยอดไหล" (PLAN/IN/OUT/ORDER REQUIREMENT/ส่งชุบ) = **บวกกัน** (ความต้องการ 2 บล็อกของ MAT เดียว = ต้องการรวม)
-   · แถว "ระดับ/ยอดคงเหลือ" (BALANCE/UNBOUND/WIP/MIN/MAX/STOCK W/H/ค้างที่ร้านชุบ) + ข้อความ + แอตทริบิวต์
-     = **แถวแรกชนะ** (ของชิ้นเดียวกันนับ 2 รอบ = สต็อกปลอม) · ค่าที่ขัดกันต้องขึ้นเป็นคำเตือน
-   · ทุก MAT ที่ซ้ำต้องขึ้นคำเตือนบนจอ preview ให้ทีมวางแผนไปแก้ไฟล์ต้นทาง */
-const FLOW_ROW_KEYS = new Set(['plan', 'in', 'out', 'order_req', 'send', 'order', 'to_vendor', 'from_vendor']);
+/* ═══ แถวซ้ำในชีทเดียว → รวมเป็นแถวเดียว (2026-10-05 · แก้คีย์ 2026-10-08) ══════════════
+   ส่งคีย์ซ้ำใน upsert ก้อนเดียว = Postgres โยน
+   *"ON CONFLICT DO UPDATE command cannot affect row a second time"* ⇒ **นำเข้าล้มทั้งบอร์ด**
 
+   🔴 **คีย์ = MAT + เลขพาร์ท (`partRowKey`) ไม่ใช่ MAT เดี่ยว**
+   รอบแรกเขียนตอน unique index ฝั่ง DB ยังเป็น `(board_id, mat_no)` จึงยุบด้วย MAT
+   แต่ไฟล์จริงมี **1 MAT = 2 พาร์ทคนละตัว** — 300T `20059152`
+   (`N1WB-E16A416 คว่ำครีบ` Total SL 2,100 / `N1WB-E16A417 หงายครีบ` 1,500)
+   ⇒ ยุบด้วย MAT = บอร์ดเหลือแถวเดียว **BALANCE/MIN ของอีกตัวหายเงียบ**
+   (วัดจริง 08/10 หลัง user นำเข้า: 300T ได้ 18 แถว ทั้งที่ควรเป็น 19 · แถวที่เหลือ seed
+    BALANCE 2,100 — ยอดของอีกพาร์ท 1,500 หายไปจากจอ)
+   คีย์ฝั่ง DB เป็น `row_key = mat|part_no` ตั้งแต่ migration `20261005` แล้ว — **ตรงนี้ต้องตรงกัน**
+
+   🔴 **ห้ามบวกยอด ไม่ว่าแถวชนิดไหน** — แถวที่ซ้ำจริง (Argen `20065715`/`20065635`
+   เลขพาร์ทเดียวกัน) วัดแล้วค่าทุกช่องที่ทับกัน **เท่ากันเป๊ะ** (256/256 · 192/192)
+   = เป็นสำเนาในไฟล์ ⇒ บวก = ยอด 2 เท่า (กฎเดียวกับ `dedupeByKey` และ `monitoringToRecords`)
+   ⇒ **แถวแรกชนะทุกชนิด** · ช่องที่ค่าไม่ตรงกันต้องขึ้นคำเตือนให้คนไปแก้ไฟล์ต้นทาง
+   · วันที่ที่มีแค่ในแถวหลัง ยังถูกเติมเข้ามา (คนละคีย์วัน ไม่ใช่การบวก) */
 export function mergeDuplicateParts(parts = []) {
-  const byMat = new Map();
+  const byKey = new Map();
   const out = [];
-  const dup = new Map();          // mat → จำนวนแถว
-  const clash = new Set();        // mat ที่ค่าระดับ/คงเหลือขัดกัน
+  const dup = new Map();          // คีย์แถว → จำนวนแถว
+  const clash = new Set();        // คีย์ที่ค่าในช่องเดียวกันขัดกัน
+  const label = (p) => [String(p?.mat_no ?? '').trim(), String(p?.part_no ?? '').trim()].filter(Boolean).join(' · ');
   for (const p of parts || []) {
-    const k = String(p?.mat_no ?? '').trim();
-    if (!k) { out.push(p); continue; }
-    const first = byMat.get(k);
+    const mat = String(p?.mat_no ?? '').trim();
+    if (!mat) { out.push(p); continue; }
+    const k = partRowKey(mat, p?.part_no);
+    const first = byKey.get(k);
     if (!first) {
       const copy = { ...p, cells: {}, texts: {} };
       for (const [rk, m] of Object.entries(p.cells || {})) copy.cells[rk] = { ...m };
       for (const [rk, m] of Object.entries(p.texts || {})) copy.texts[rk] = { ...m };
-      byMat.set(k, copy); out.push(copy);
+      byKey.set(k, copy); out.push(copy);
       continue;
     }
-    dup.set(k, (dup.get(k) || 1) + 1);
+    dup.set(label(p), (dup.get(label(p)) || 1) + 1);
     for (const [key, v] of Object.entries(p)) {
       if (key === 'cells' || key === 'texts') continue;
       if ((first[key] === null || first[key] === undefined || first[key] === '') && v !== null && v !== undefined) first[key] = v;
@@ -892,9 +905,8 @@ export function mergeDuplicateParts(parts = []) {
     for (const [rk, m] of Object.entries(p.cells || {})) {
       const bag = (first.cells[rk] ||= {});
       for (const [d, v] of Object.entries(m || {})) {
-        if (FLOW_ROW_KEYS.has(rk)) bag[d] = (bag[d] || 0) + v;
-        else if (bag[d] === undefined) bag[d] = v;
-        else if (bag[d] !== v) clash.add(k);
+        if (bag[d] === undefined) bag[d] = v;
+        else if (bag[d] !== v) clash.add(label(p));
       }
     }
     for (const [rk, m] of Object.entries(p.texts || {})) {
@@ -904,10 +916,10 @@ export function mergeDuplicateParts(parts = []) {
   }
   const warnings = [];
   if (dup.size) {
-    warnings.push(`เลข MAT ซ้ำในชีท ${dup.size} ตัว (${[...dup].map(([m, n]) => `${m} ×${n}`).join(', ')}) — `
-      + 'รวมเป็นแถวเดียว: ยอดไหล (PLAN/IN/OUT/ความต้องการ) บวกกัน · ยอดคงเหลือ/MIN/MAX ใช้แถวแรก — ตรวจไฟล์ต้นทาง');
+    warnings.push(`แถวซ้ำในชีท (MAT + เลขพาร์ทเดียวกัน) ${dup.size} ตัว (${[...dup].map(([m, n]) => `${m} ×${n}`).join(', ')}) — `
+      + 'รวมเป็นแถวเดียว **ไม่บวกยอด** (ค่าในไฟล์เป็นสำเนากัน) ใช้ค่าของแถวแรก — ตรวจไฟล์ต้นทาง');
   }
-  if (clash.size) warnings.push(`ยอดคงเหลือ/MIN/MAX ของ MAT ซ้ำไม่ตรงกัน: ${[...clash].join(', ')} — ใช้ค่าของแถวแรก`);
+  if (clash.size) warnings.push(`ค่าในช่องเดียวกันของแถวซ้ำไม่ตรงกัน: ${[...clash].join(', ')} — ใช้ค่าของแถวแรก`);
   return { parts: out, warnings };
 }
 

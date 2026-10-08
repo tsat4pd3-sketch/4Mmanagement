@@ -79,6 +79,10 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 - `profiles` — **⚠️ ไม่มีคอลัมน์ `email`** (อีเมล login อยู่ที่ `auth.users` เท่านั้น — เอกสารเคยเขียนผิดจน `fn_audit` อ่าน `coalesce(full_name, email)` แล้ว**พังเงียบ ไม่บันทึกผู้แก้ทั้งระบบ**) · **ระบบไม่มีการส่งอีเมลเลย** (`notify_email` ไม่เคยถูกใช้ส่งอะไร)
 - `oee_targets` — **เป้า OEE ห้ามตั้งเอง คำนวณจาก A×P×Q เสมอ** · `target_oee` เป็นคอลัมน์ vestigial ห้ามใช้
 - `meeting_action_items` — ใช้ร่วมกัน `/morning-meeting` + `/obeya` แยกด้วย `source` · **ตารางเดียว ห้ามสร้างใหม่**
+- `production_sessions.status` — มี **`void` = "ไม่ใช่กะจริง"** (กะที่เปิดผิดแล้วปิดทิ้ง · เก็บประวัติไว้แทน `delete`)
+  🔴 **ชุดสถานะอ่านจาก `src/utils/sessionStatus.js` เท่านั้น · ห้าม `.neq('status', …)`** — "ไม่ใช่ closed"
+  จะลากใบโมฆะเข้ามาเป็นกะเปิดค้าง / "ไม่ใช่ open" จะนับเป็นวันผลิต (มีด่าน `session-status-no-neq`)
+  · ทำโมฆะได้เฉพาะ**กะเปล่า + ต้องมีเหตุผล** (trigger `trg_session_void_guard` + CHECK ฝั่ง DB · `voidBlockReason()` ฝั่งจอ)
 - `daily_production_logs.assigned_line` = **id จุดงาน ไม่ใช่ชื่อไลน์**
 - `employee_skills` — ห้ามเขียนคะแนนจาก client (ดู "Employee Skills & EXP Farming")
 - ทะเบียน master ที่มี picker กลางแล้ว (`cost_centers` · **DR:** `customers`/`suppliers`/`die_press_lines`/`die_set_kinds`/`process_types`) — คอลัมน์ปลายทางเก็บ **name/code เป็น text เหมือนเดิม ไม่ผูก FK** · `die_press_lines` ตั้งใจแยกจาก `production_lines`
@@ -585,6 +589,9 @@ Reject → status: "rejected" + reject_reason
 > (มีด่านสแกนทั้งรีโป `regressionGuards` แล้ว) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
 > ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
 > migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว** · แถวเดิม null ทั้ง 506 = ไม่มีจอไหนเปลี่ยน)
+> 🔴 **`bomOf(mat, sheet)` = "ชุดของใบที่กางอยู่ชนะทั้งชุด" ไม่ได้รวม 2 ชุด** ⇒ ของที่มีแต่ในใบของพาร์ทเอง
+> **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
+> — **จอชี้อย่างเดียว ห้ามยุบ/ลบ `bom_items` ให้เอง** (ต่างรุ่น/ลูกค้าได้จริง · PE ตัดสิน · มีด่าน)
 > 📄 `docs/modules/bom-levels.md` (ทำไมเดิมตรึงชั้นเดียว · ทำไมเหนือ SAP · งานค้าง PFC↔MAT)
 
 ---

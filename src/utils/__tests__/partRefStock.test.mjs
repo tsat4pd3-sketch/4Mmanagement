@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inflowDestOf, refStockOf, splitLevels } from '../partRefStock.js';
+import { inflowDestOf, refStockOf, splitLevels, madeHereMats } from '../partRefStock.js';
 
 const RULES = [
   { match_type: 'prefix', match_value: '1', dest_line_name: 'FG WAREHOUSE', is_active: true },
@@ -30,18 +30,30 @@ test('ไลน์ผลิตเอง → อ้างคลัง · ขอ�
   assert.deepEqual(refStockOf('99999999', ctx), { kind: 'consume', loc: 'LINE A ( 800 Ton )' });
 });
 
-test('เคสจริง LINE A 08/10: FG 1,000 < min 1,700 → ต้องผลิต 700 ถึง max · ไม่มียอดคลัง = ยังเช็คไม่ได้', () => {
+test('ของที่ผลิตเอง: ขั้นต่ำ/สูงสุดจาก Kanban ชุดเดียว (line_part_levels ไม่ถูกใช้) · ไม่มีใน Kanban = produceNoStd', () => {
   const stock = { 'FG WAREHOUSE|10076603': 1000, 'STORE|20059076': 4000 };
+  const stds = new Map([
+    ['10076603', { min_qty: 1200, max_qty: 2000 }],     // Kanban ต่างจาก line_part_levels (1700) → ใช้ Kanban
+    ['20059076', { min_qty: 1500, max_qty: 3000 }],
+    ['20099999', { min_qty: 400, max_qty: 800 }],
+  ]);
   const r = splitLevels([
     { mat_no: '10076603', min_qty: 1700, max_qty: 1700 },
-    { mat_no: '20059076', min_qty: 1500 },
-    { mat_no: '20099999', min_qty: 400 },
     { mat_no: '20063136', min_qty: 100 },
-  ], ctx, (loc, mat) => stock[`${loc}|${mat}`] ?? null);
-  assert.deepEqual(r.produceDue.map(x => [x.mat_no, x.loc, x.have, x.suggestQty]), [['10076603', 'FG WAREHOUSE', 1000, 700]]);
+  ], { ...ctx, stds }, (loc, mat) => stock[`${loc}|${mat}`] ?? null);
+  assert.deepEqual(r.produceDue.map(x => [x.mat_no, x.loc, x.have, x.min, x.suggestQty]), [['10076603', 'FG WAREHOUSE', 1000, 1200, 1000]]);
   assert.equal(r.produceOk, 1);
   assert.deepEqual(r.produceUnknown.map(x => [x.mat_no, x.loc]), [['20099999', 'SUB APRON']]);
+  assert.deepEqual(r.produceNoStd, []);
   assert.deepEqual(r.consumeLevels.map(x => x.mat_no), ['20063136']);
+  // ไม่มีใน Kanban → ไม่เดา ไม่ถอยไปใช้ line_part_levels
+  const r2 = splitLevels([{ mat_no: '10076603', min_qty: 1700 }], { ...ctx, stds: new Map() }, () => 0);
+  assert.equal(r2.produceDue.length, 0);
+  assert.ok(r2.produceNoStd.some(x => x.mat_no === '10076603'));
+});
+
+test('madeHereMats ตัดชั้น OP / ไลน์อื่น', () => {
+  assert.deepEqual(madeHereMats('LINE A ( 800 Ton )', PRODUCTS), ['10076603', '20059076', '20099999']);
 });
 
 test('พาร์ทที่สโตร์คุมเป็นล็อต → อ้างยอดที่ไลน์ผลิตเอง (ปิดล็อตลงที่นั่น) แต่ยังเป็น "ผลิตเติม"', () => {
